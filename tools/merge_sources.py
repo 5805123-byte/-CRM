@@ -22,6 +22,7 @@ _ap.add_argument("--donations", required=True, help="קובץ Donations Summary 
 _ap.add_argument("--out", default="starter/crm-donors-filled.xlsx")
 _ap.add_argument("--review-json", default=None, help="ייצוא רשימת ההתאמות-לבדיקה כ-JSON (לדף האישור)")
 _ap.add_argument("--approvals", default=None, help="קובץ JSON של אישורים ידניים {שם_קוויטל: {choice}}")
+_ap.add_argument("--phone-matches", default=None, help="קובץ JSON {שם_קוויטל: טלפון} לחיבור טלפונים שנמצאו לפי צליל")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -109,6 +110,33 @@ def phone_join(r):
     raw=' / '.join(p.strip() for p in ps if p.strip())
     return raw.replace(' ::: ',' / ')
 
+def _norm_one_phone(x):
+    """מנרמל מספר בודד: אמריקאי -> +1XXXXXXXXXX ; ישראלי -> +972 ; אחר נשמר."""
+    x=x.strip()
+    if not x: return ''
+    has_plus=x.startswith('+')
+    digits=re.sub(r'\D','',x)
+    if not digits: return x
+    if digits.startswith('00'): digits=digits[2:]
+    if digits.startswith('972'):                     # ישראל
+        return '+972 '+digits[3:].lstrip('0')
+    if has_plus and not digits.startswith('1'):      # מדינה אחרת (בלגיה וכו') — נשמר
+        return '+'+digits
+    if digits.startswith('0') and len(digits)<=10:   # ישראלי מקומי 05x
+        return '+972 '+digits[1:]
+    if digits.startswith('1') and len(digits)==11:   # ארה"ב עם קידומת
+        digits=digits[1:]
+    if len(digits)==10:                              # ארה"ב 10 ספרות
+        return f'+1 ({digits[:3]}) {digits[3:6]}-{digits[6:]}'
+    if has_plus: return '+'+digits
+    return x
+
+def normalize_phone(p):
+    """מנרמל מחרוזת טלפון (יתכן כמה מספרים מופרדים ב-/)."""
+    if not p: return ''
+    parts=re.split(r'\s*/\s*',p)
+    return ' / '.join(z for z in (_norm_one_phone(x) for x in parts) if z)
+
 for r in rows:
     L = labs(r)
     if not (L & DON_L):   # רק כרטיסים עם תווית תורמים
@@ -140,6 +168,12 @@ donor_by_norm = {}
 for d in donors:
     donor_by_norm[norm(d['first'] + ' ' + d['last'])] = d
 n_linked = 0; n_newapproved = 0
+
+# חיבורי טלפון שנמצאו לפי צליל
+phone_matches = {}
+if _args.phone_matches:
+    import json as _json2
+    phone_matches = {norm(k): v for k, v in _json2.load(open(_args.phone_matches, encoding='utf-8')).items()}
 
 # אינדקס לפי שם-משפחה רופף מכל אנשי הקשר (לא רק תורמים), להצעת התאמות
 all_by_surname={}
@@ -264,6 +298,17 @@ def sheet(title,headers,rows_data,yellow=()):
     return ws
 
 owb.remove(owb.active)
+
+# חיבור טלפונים שנמצאו לפי צליל (למי שאין לו טלפון) + נרמול כל הטלפונים
+n_phone_added = 0
+for d in donors:
+    if not d.get('phone') and d.get('nm') in phone_matches and phone_matches[d['nm']]:
+        d['phone'] = phone_matches[d['nm']]
+        d['how'] = (d.get('how','') + ' +טלפון').strip()
+        d['n-flag'] = 'טלפון חובר לפי צליל'
+        n_phone_added += 1
+    d['phone'] = normalize_phone(d.get('phone',''))
+
 # תורמים
 tor_rows=[]
 for i,d in enumerate(sorted(donors,key=lambda x:(x['tier']!='יששכר_זבולון',x['first'])),1):
@@ -327,6 +372,8 @@ print('  עם דרגת קוויטל שהותאמה אוטומטית:',sum(tc.val
 print('  אופן ההתאמה:',dict(hc))
 if approvals:
     print('אישורים ידניים שהוחלו: חוברו לאיש קשר =',n_linked,'| נוספו כחדשים =',n_newapproved)
+if phone_matches:
+    print('טלפונים שחוברו לפי צליל:',n_phone_added)
 print('שמות קוויטל שנשארו לבדיקה:',len(review))
 one=sum(1 for d in review if d['n']==1); multi=sum(1 for d in review if d['n']>1); none=sum(1 for d in review if d['n']==0)
 print('   התאמה יחידה מוצעת:',one,'| כמה אפשרויות:',multi,'| חדש/לא נמצא:',none)
