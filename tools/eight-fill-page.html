@@ -1,0 +1,53 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מילוי שמות עברית</title>
+<style>
+  :root{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--yes:#2F7A57;--yes-soft:#E4F1EA;--shadow:0 6px 24px rgba(40,36,64,.10);}
+  @media (prefers-color-scheme:dark){:root{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--yes:#6FC79A;--yes-soft:#1E3329;--shadow:0 8px 30px rgba(0,0,0,.35);}}
+  :root[data-theme="light"]{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--gold:#9C7A2E;--yes:#2F7A57;--yes-soft:#E4F1EA;}
+  :root[data-theme="dark"]{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--gold:#D8B25E;--yes:#6FC79A;--yes-soft:#1E3329;}
+  *{box-sizing:border-box}html,body{margin:0;overflow-x:hidden}
+  body{font-family:-apple-system,"Segoe UI",system-ui,Arial,sans-serif;background:var(--ground);color:var(--ink);direction:rtl;padding:20px 14px 60px;line-height:1.5}
+  .wrap{max-width:600px;margin:0 auto}
+  header{text-align:center;margin-bottom:16px}
+  h1{font-size:1.4rem;margin:.2em 0}
+  .sub{color:var(--muted);font-size:.92rem;margin:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px;margin-bottom:12px}
+  .en{font-size:1.35rem;font-weight:800;direction:ltr;text-align:right}
+  .info{color:var(--gold);font-weight:700;font-size:.9rem;margin:4px 0 12px}
+  .fields{display:flex;gap:8px}
+  .fields label{flex:1;font-size:.8rem;color:var(--muted)}
+  input{width:100%;font-family:inherit;font-size:1.05rem;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ground);color:var(--ink);margin-top:3px}
+  input:focus{outline:2px solid var(--accent);border-color:transparent}
+  .cta{background:var(--accent);color:#fff;border:none;border-radius:13px;padding:15px;font-size:1.1rem;font-weight:800;width:100%;font-family:inherit;cursor:pointer;margin-top:6px}
+  .ok-toast{color:var(--yes);font-weight:700;margin-top:10px;min-height:1.2em;text-align:center}
+  textarea{width:100%;height:120px;margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:12px;font-family:ui-monospace,monospace;font-size:.8rem;background:var(--ground);color:var(--ink)}
+</style>
+<div class="wrap">
+  <header><h1>מילוי שמות בעברית</h1><p class="sub">הקלד את השם העברי לכל אחד, ובסוף לחץ העתק ושלח לי.</p></header>
+  <div id="list"></div>
+  <button class="cta" id="copy">העתק את התשובות</button>
+  <div class="ok-toast" id="toast"></div>
+  <textarea id="out" readonly></textarea>
+</div>
+<script>
+const EIGHT = [{"id": "M0002", "english": "David Aharoni", "type": "ישז", "amount": "700", "candidates": [{"name": "אלינה עזרן", "phone": "+1 347-762-6766", "tier": ""}, {"name": "ג'פרי גרין", "phone": "+1 773-332-2414", "tier": ""}, {"name": "המטיאן בריין", "phone": "+1 516-410-9398", "tier": ""}, {"name": "יעקב גרין", "phone": "+972 523028080", "tier": "קוויטל_כללי"}]}, {"id": "M0005", "english": "David Baruch", "type": "חודשי", "amount": "202", "candidates": [{"name": "דניאל יפרח", "phone": "+1 848-299-9772", "tier": ""}, {"name": "אסתר ברג", "phone": "+1 718-377-4603 / +1 718-986-7975", "tier": ""}, {"name": "ברק בר חיים", "phone": "+1 561-376-5837", "tier": ""}, {"name": "המטיאן בריין", "phone": "+1 516-410-9398", "tier": ""}]}, {"id": "M0011", "english": "Ezra Betesh", "type": "חודשי", "amount": "200", "candidates": [{"name": "אליהו ביטש", "phone": "+1 917-497-0682", "tier": "יששכר_זבולון"}, {"name": "רבקה יעבץ", "phone": "+1 516-528-2421 / +1 516-203-8382", "tier": ""}]}, {"id": "M0016", "english": "David Butler", "type": "חודשי", "amount": "52", "candidates": [{"name": "איתן טסטילר", "phone": "", "tier": ""}, {"name": "חנוך בלייר", "phone": "+4407741903048", "tier": ""}, {"name": "לקומב טיילר", "phone": "", "tier": ""}]}, {"id": "M0022", "english": "Shmuel Isaac Elhadad", "type": "חודשי", "amount": "29", "candidates": [{"name": "ישעיה העלד", "phone": "", "tier": ""}]}, {"id": "M0049", "english": "Gabe Khezrie", "type": "חודשי", "amount": "2400", "candidates": []}, {"id": "M0059", "english": "Rosalyn Levin", "type": "חודשי", "amount": "36", "candidates": [{"name": "בנימין לוין", "phone": "+1 323-420-3529", "tier": ""}, {"name": "שולמית לוין", "phone": "+1 647-761-0174", "tier": ""}, {"name": "יוסף יהושע לעווי", "phone": "+1 347-461-5168", "tier": ""}, {"name": "שמואל ליאונס", "phone": "+447941237928", "tier": ""}]}, {"id": "M0088", "english": "Michael Winner", "type": "חודשי", "amount": "101", "candidates": [{"name": "נטלי וינגר", "phone": "+1 347-266-7998", "tier": ""}, {"name": "אסתר וויין", "phone": "+1 412-709-7427", "tier": "קוויטל_כללי"}, {"name": "שפרה יונה", "phone": "+972 527601526", "tier": ""}, {"name": "דב וויזער", "phone": "+1 917-892-7865", "tier": "יששכר_זבולון"}]}];
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const list=document.getElementById('list');
+list.innerHTML=EIGHT.map((u,i)=>`<div class="card">
+  <div class="en">${esc(u.english)}</div>
+  <div class="info">$${esc(u.amount)} · ${u.type==='ישז'?'יששכר־זבולון':esc(u.type)}</div>
+  <div class="fields">
+    <label>שם פרטי<input data-i="${i}" data-k="first" placeholder="שם פרטי"></label>
+    <label>שם משפחה<input data-i="${i}" data-k="last" placeholder="שם משפחה"></label>
+  </div></div>`).join('');
+const vals=EIGHT.map(()=>({first:'',last:''}));
+list.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{vals[inp.dataset.i][inp.dataset.k]=inp.value.trim();});
+document.getElementById('copy').onclick=async()=>{
+  let lines=['שמות עברית ל-8 החדשים:'];
+  EIGHT.forEach((u,i)=>{const v=vals[i];if(v.first||v.last)lines.push((u.english+' = '+v.first+' '+v.last).trim());});
+  const t=lines.join('\n');const out=document.getElementById('out');out.value=t;out.select();
+  try{await navigator.clipboard.writeText(t);}catch(e){try{document.execCommand('copy');}catch(_){}}
+  document.getElementById('toast').textContent="הועתק! עכשיו הדבק לי בצ'אט.";
+};
+</script>
