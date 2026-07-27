@@ -29,7 +29,14 @@ _ap.add_argument("--regular-matches", default=None, help="קובץ JSON {שם א
 _ap.add_argument("--regular-review-json", default=None, help="ייצוא הקבועים שלא חוברו + מועמדים (לדף האישור)")
 _ap.add_argument("--new-regulars", default=None, help="קובץ JSON {שם אנגלי: שם עברי} ליצירת כרטיסי תורם קבוע חדשים")
 _ap.add_argument("--purposes", default=None, help="קובץ JSON {שם תורם: עבור מה תרם}")
+_ap.add_argument("--parnes-yom", default=None, help="קובץ JSON {שם תורם: {תאריך, יום, חודש, הקדשה, נוסח}}")
 _args = _ap.parse_args()
+
+# סדר החודשים העבריים (שנה מתחילה בתשרי)
+_HMONTHS = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול']
+def hmonth_order(m):
+    m = (m or '').replace('מרחשון','חשון').replace('סיוון','סיון').replace('אדר א','אדר').replace('אדר ב','אדר').strip()
+    return _HMONTHS.index(m)+1 if m in _HMONTHS else 99
 CONTACTS = _args.contacts
 DON = _args.donations
 OUT = _args.out
@@ -449,14 +456,27 @@ purposes = {}
 if _args.purposes:
     import json as _j8
     purposes = {norm(k): v for k, v in _j8.load(open(_args.purposes, encoding='utf-8')).items()}
+# פרנס יום (לילה מסוים בשנה) — קלט ידני
+parnes = {}
+if _args.parnes_yom:
+    import json as _j9
+    parnes = {norm(k): v for k, v in _j9.load(open(_args.parnes_yom, encoding='utf-8')).items()}
 
 for d in donors:
     d['ls'] = hskel(d['last']); d['fs'] = hskel(d['first'])
-    for k in ('category','dtype','amount','channel','pay_status','last_active','months','purpose'):
+    for k in ('category','dtype','amount','channel','pay_status','last_active','months','purpose',
+              'py_date','py_day','py_month','py_ded','py_text'):
         d.setdefault(k, '')
     for cand in (norm(d['first']+' '+d['last']), norm(d['last']+' '+d['first'])):
         if cand in purposes:
             d['purpose'] = purposes[cand]; break
+    for cand in (norm(d['first']+' '+d['last']), norm(d['last']+' '+d['first'])):
+        if cand in parnes:
+            p = parnes[cand]
+            d['py_date'] = p.get('תאריך',''); d['py_day'] = p.get('יום',''); d['py_month'] = p.get('חודש','')
+            d['py_ded'] = p.get('הקדשה',''); d['py_text'] = p.get('נוסח','')
+            if not d['purpose']: d['purpose'] = 'פרנס יום — ' + p.get('תאריך','')
+            break
 
 # תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק / אישור ידני
 regular_matches = {}
@@ -587,6 +607,13 @@ for i,d in enumerate(occ_rows,1):
     paid=';'.join(f'{m}:{v}' for m,v in d['vals'].items() if v)
     oc_rows.append([f'O-{i:04d}',d['nm'],int(d['total']) if d['total'] else '',paid])
 sheet('מזדמנים',['מפתח','שם_עברי','סכום_כולל_השנה','פירוט_חודשי'],oc_rows)
+
+# פרנס יום — לוח שנה לפי תאריך עברי
+py_rows=[]
+for d in sorted([x for x in donors if x.get('py_date')], key=lambda x:(hmonth_order(x.get('py_month','')), int(x['py_day']) if str(x.get('py_day','')).isdigit() else 99)):
+    py_rows.append([d.get('py_date',''), d.get('py_day',''), d.get('py_month',''), hmonth_order(d.get('py_month','')),
+                    (d['first']+' '+d['last']).strip(), d.get('py_ded',''), d.get('py_text',''), d['phone']])
+sheet('פרנס_יום',['תאריך','יום','חודש','סדר','שם_התורם','הקדשה','נוסח_תפילה','טלפון'],py_rows)
 
 # שמות_לתפילה — השמות שהאברכים קוראים, לפי דרגה
 sp_rows=[]
