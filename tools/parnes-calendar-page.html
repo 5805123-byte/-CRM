@@ -1,0 +1,115 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>לוח פרנס יום — שיוך תאריכים</title>
+<style>
+  :root{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--gold-soft:#F5ECD6;--yes:#2F7A57;--yes-soft:#E4F1EA;--no:#C43A2B;--shadow:0 6px 24px rgba(40,36,64,.10);}
+  @media (prefers-color-scheme:dark){:root{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--gold-soft:#2C2740;--yes:#6FC79A;--yes-soft:#1E3329;--no:#E86B5D;--shadow:0 8px 30px rgba(0,0,0,.35);}}
+  :root[data-theme="light"]{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--gold-soft:#F5ECD6;--yes:#2F7A57;--yes-soft:#E4F1EA;--no:#C43A2B;}
+  :root[data-theme="dark"]{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--gold-soft:#2C2740;--yes:#6FC79A;--yes-soft:#1E3329;--no:#E86B5D;}
+  *{box-sizing:border-box}html,body{margin:0;overflow-x:hidden}
+  body{font-family:-apple-system,"Segoe UI",system-ui,Arial,sans-serif;background:var(--ground);color:var(--ink);direction:rtl;padding:16px 12px 60px;line-height:1.5}
+  .wrap{max-width:640px;margin:0 auto}
+  header{text-align:center;margin-bottom:12px}
+  h1{font-size:1.3rem;margin:.2em 0}
+  .sub{color:var(--muted);font-size:.88rem;margin:0}
+  .navbar{display:flex;align-items:center;gap:10px;margin:14px 0 10px;justify-content:center}
+  .navbar button{background:var(--card);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:1.1rem;width:40px;height:40px;border-radius:10px;cursor:pointer}
+  .navbar .mname{font-size:1.35rem;font-weight:800;color:var(--gold);min-width:110px;text-align:center}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  @media(max-width:480px){.grid{grid-template-columns:repeat(4,1fr)}}
+  .day{background:var(--card);border:1px solid var(--line);border-radius:10px;min-height:64px;padding:6px;cursor:pointer;display:flex;flex-direction:column;transition:border-color .12s}
+  .day:hover{border-color:var(--accent)}
+  .day .dn{font-weight:800;color:var(--muted);font-size:.9rem}
+  .day.filled{background:var(--gold-soft);border-color:var(--gold)}
+  .day.filled .dn{color:var(--gold)}
+  .day .who{font-size:.72rem;font-weight:600;margin-top:2px;overflow:hidden;line-height:1.2}
+  .hint{text-align:center;color:var(--muted);font-size:.8rem;margin:12px 0}
+  .cta{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:1.05rem;font-weight:800;width:100%;font-family:inherit;cursor:pointer;margin-top:16px}
+  .ok-toast{color:var(--yes);font-weight:700;margin-top:10px;min-height:1.2em;text-align:center}
+  textarea{width:100%;height:110px;margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px;font-family:ui-monospace,monospace;font-size:.78rem;background:var(--card);color:var(--ink)}
+  /* modal */
+  .ov{position:fixed;inset:0;background:rgba(20,18,30,.55);display:none;align-items:flex-end;justify-content:center;z-index:50}
+  .ov.show{display:flex}
+  .modal{background:var(--card);width:100%;max-width:520px;max-height:86vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px}
+  @media(min-width:560px){.ov{align-items:center}.modal{border-radius:18px}}
+  .modal h3{margin:.2em 0 .1em}.modal .dt{color:var(--gold);font-weight:800;font-size:1.2rem;margin-bottom:10px}
+  input{width:100%;font-family:inherit;font-size:1rem;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ground);color:var(--ink)}
+  .results{margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+  .res{background:var(--ground);border:1px solid var(--line);border-radius:9px;padding:10px 12px;text-align:start;font-weight:600;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .res:hover{border-color:var(--accent)}
+  .cur{background:var(--gold-soft);border:1px solid var(--gold);border-radius:10px;padding:12px;margin-bottom:10px;font-weight:700}
+  .rm{background:var(--no);color:#fff;border:none;border-radius:9px;padding:9px 14px;font-family:inherit;font-weight:700;cursor:pointer;margin-top:8px}
+  .closex{float:inline-start;background:var(--line);border:none;color:var(--ink);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1rem}
+</style>
+<div class="wrap">
+  <header><h1>לוח פרנס יום</h1><p class="sub">דפדף בחודשים, לחץ על יום, ובחר תורם. בסוף העתק ושלח לי.</p></header>
+  <div class="navbar">
+    <button id="prev">‹</button>
+    <div class="mname" id="mname"></div>
+    <button id="next">›</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="hint">🟡 יום צהוב = תפוס. לחיצה עליו מאפשרת לשנות או להסיר.</p>
+  <button class="cta" id="copy">העתק את השיוכים ושלח לי</button>
+  <div class="ok-toast" id="toast"></div>
+  <textarea id="out" readonly></textarea>
+</div>
+<div class="ov" id="ov"><div class="modal" id="modal"></div></div>
+<script>
+const DB = {"donors": ["אבטליון יצחק", "אברמוביץ אלחנן", "אברמוביץ לאה", "אברמסון רחל", "אגיולר חנה", "אגמי יוסף", "אדולף רבקה", "אדלין יצחק", "אדלקופף זאב", "אהרוני דוד", "אוברמייסטר יוסי", "אודינסקי ירדן", "אווה ווינשניידר", "אוזיק הערשל", "אוזיק ליזה", "אולנדר דוד", "אופנהיימר שירה", "אופק אהובה", "אורדנטליך יוסף", "אושרוביץ טובה", "אזאגורי מאיר", "איגליקי אלחנן מאיר", "אייזנשטאט מאיר", "אינגבר שמואל ואסתר", "איצקוביץ ישראל", "אירני אברהם משה יוסף", "אלטון יונה", "אלטשולער ראובן", "אלכסנדר קולודנקו", "אמסעל ברוך", "אנהנג משה", "אנטין שלום ורבקי", "אסקל שפרה", "אסתר זיסקינד", "אפרים ווייס", "אקרמן בנימין", "אקרמן ישעיהו", "ארונס רות", "אריה נחמיה", "אריק דז'משידוף", "באבקנוב ארקדי", "באום אסתר", "באלאקני גואל", "בבחנוב ארקדי", "בודנר יעקב", "בוטלר דוד", "בוכינגר נפתלי", "בידאני עדן", "ביטש אליהו", "ביטש עזרא", "ביים אלי", "ביננפלד דינה", "ביננשטוק זאבי", "ביננשטוק שמאי", "בינעט משה", "ביסטריצקי שלמה", "בלאחאני גואל", "בלייר חנוך", "בליסקו יצחק", "בן זאב - קוויטל יוסף", "בן שושן דובי", "בנימין כהן", "בנימין שטטפלד", "בעכער רייזל", "בערגער יעקב", "בקר שלי", "בר חיים ברק", "בראון יצחק", "ברג אסתר", "ברגר אברומי", "ברגר דוד", "ברגר יצחק (איצי)", "ברגר סנדר", "ברגר שמואל", "ברודי ישראל", "ברודי שרה", "ברוך דוד", "בריין המטיאן", "בריסקין אינה", "ברנט רבקה", "ברקוביץ זאב יהודה ( בודי )", "ברקוביץ יעקב", "ג'ייקובס צבי", "ג'רט יוסף", "גאדין דוד", "גאלדשטיין יצחק ישראל", "גאנז יוסף", "גאנזבורג חנה", "גארמאני - כהאנצ'י אסתר", "גדולד מרדכי פרץ", "גוארי גאי", "גודינגר גדליה דוד", "גוזף שפרה", "גוטווין יהודה", "גוטווין מרדכי ברוך", "גוטמן בצלאל", "גוטפרב יוסלה", "גולד יעקב", "גולדבורד ארי", "גולדבורד יוסי", "גולדבורד יעקב", "גולדבורד שמואל", "גולדברג חיים", "גולדברג רבקה", "גולדברגר יחזקאל", "גולדברגר מרים", "גולדברגר נחמה", "גולדגלאנץ יוסף", "גולדגראב בערי", "גולדנברג חנניה", "גולדשטיין אברהם מנחם", "גולדשטיין ארי-שמחה", "גולדשטיין יעקב", "גולדשטיין משה", "גולדשטיין שמחה", "גונזאלס ראובן", "גורדון משה", "גורליק בן ציון", "גיטל הרליץ שמחה", "גייקובס רבקה", "גילאור עדנה", "גינצבורג מרים", "גלבר מרדכי", "גלצר יונה", "גמליאל אוהד", "גנסבורג שמואל", "געהלדצהלער מיכאל", "געווערצמאן פרץ", "גפנר אסתר", "גראבל עטרה (קטי)", "גרוס ברנדי", "גרוס מרדכי", "גרוס סנדרה", "גרוסמן לאוניד", "גרוסמן פייגא", "גרין ג'פרי", "גרין יעקב", "גרין קיילא", "גרין שלמה", "גרינבוים רחל", "גרינברג מרים", "גרינפלד ברק", "גרינפלד דוד", "גרינשטיין עמרם", "גרנפונקל פנחס", "דבורה בנדיקט", "דבורה פריינד", "דהאן אלירן", "דהן אברהם", "דואק נתנאל", "דוב פרכטר יעקב", "דוואק אברהם", "דויטש יהושע מאיר", "דויטש משה אלטר אפרים", "דונט מוטי", "דזמשידוף אריק", "דייוויס נתנאל", "דייטש יוסף", "דיסקינד בריינה", "דיקמן דבורה", "דניאלה שאדרוז", "האס יצחק מנחם", "האס שולמית", "האסט איטשע", "האשען פנחס", "הוכמן חיים", "הוכמן יעקב", "הולשטיין איגור", "הופמן אלישבע", "הופמן דוד", "הופמן טוביה", "הורוביץ יעקב קלמן", "הורן משה", "הירש דניאל", "הירש ליאורה", "הירשהורן יונתן", "הכהן מרדכי", "הלברשטם מארק", "הלל אילי", "הלפרין מינדי", "הנאנג שלמה זלמן", "הנדלסמן ראובן", "העלד ישעיה", "הערש ביילא", "הרליץ שמחה גיטל", "הרמן בנציון", "הרמן חיים", "הרצוג אהרן מרדכי", "הרצל יוסף", "הרשקוביץ ג'יי", "הרשקוביץ חיים", "הרשקוביץ מאיר שלום", "ואגו מיכאל", "וויזער דב", "וויין אסתר", "וויינברגר שמואל", "וויינפעלד אלי", "וויינשטוק אברהם", "ווייס חיים", "ווינגרדן אליעזר שמואל", "ווינפעלד בן ציון אליהו", "ווינפעלד יהושע", "ווינר מיכאל", "ווינשניידר חיים פסח", "וויס משה", "וויסברגר שמעון שלמה", "וויסמנדל אפי", "וויספיש אברהם", "וולד ביילא", "וולסי פיינגולד אוולין", "וולף אפל", "וולף פרל", "וולפסון הרב אליעזר", "וועבסטר יוסף", "וועג מאיר", "וורצברגר יידל", "וידערס אילנה", "וייס דוד", "וייס יואל", "וינגארדן שמואל", "וינגר נטלי", "זאגי מיכאל", "זאנטעג שמואל", "זוננשיין מוטי", "זייגלבוים לוי", "זיכרמן אלי", "זיכרמן יוסי", "זיכרמן לאה", "זילבר מאיר", "זינגר מיכאל", "זכריאן איתן", "זלוטניק דוד", "חיים הקלמן", "חכמוביץ אברהם", "חלימה ראובן", "חנה רפפורט", "טאבאק אלי", "טאוב משה מנדל", "טאובנפלד מרים", "טיילר לקומב", "טנדלר זאב", "טסטילר איתן", "טעפפער יצחק", "טעפפר יהושע", "טעפפר נתן יחזקאל", "טפלר רבקה", "טרזי ליסה", "טרייטעל רפאל", "טשרנס אהרן", "יאיש פנינה", "יהודית סנדרופי", "יהושע מוסקוביץ", "יואל יורמק", "יולנו אבי", "יונה שפרה", "יוסף קופרוואסר דוב יוסף", "ינאי מזל", "יעבץ רבקה", "יעקבסון מיכאל", "יעקובי שמואל", "יעקובסון דניאל", "יעקובסון ליסה", "יפה עזריאלה", "יפרח דניאל", "יצחקי אביגיל", "ירבלום נתן", "ירט רבקה", "כ\"ץ חנה", "כהן אילנה", "כהן דוד", "כהן יוסף", "כהן ישראל", "כהן לי", "כהן מנחם", "כהן שמואל", "לאה שטרן", "לאווי יצחק", "לאם אסתר", "לאם זאב", "לאם חיה שרה [אלינה]", "לאקומב קאסנדרה", "לאקס חיים הכהן", "לאקס לאה אסתר", "לארטש יוסי", "לארטש לאה", "לוין בנימין", "לוין חיה", "לוין רוזלין", "לוין שולמית", "לוינסון יואל", "לורברט אדם", "לורברט יצחק", "לזר מינדי", "לטיניק יוסף", "ליאונס שמואל", "ליבוביץ דוד", "ליבוביץ חיה", "ליברמן אברהם", "ליברמן יהודה", "ליברמן שרה", "לידער ישראל", "ליוויאם אברהם יוסף", "ליויאם מרדכי יהושע", "לייטמאן מלאני", "ליכטמן ארי", "ליכטער ברוך", "ליניאם טאנר", "ליפשיץ מרדכי", "ליפשיץ תורם אבי", "למפקוב כסנדרה", "לנדאו שיינא", "לעווי יוסף יהושע", "לערנער שלום", "לפקוביץ רייזי", "לרר אלחנן", "מאגאזינטש לינדה", "מאיירס אלי", "מאיר פינק", "מאסקאוויטש מיכל", "מאצעס דוד", "מאשער אלחנן נפתלי", "מוגרבי יצחק", "מוזיק שמעון", "מוזיק שמעון יהושע", "מונוקר שאנא", "מוס בנימין", "מוסקאוויטש רבי יעקב", "מוסקוביץ אסתר", "מוסקוביץ העני", "מוסקוביץ מנחם מנדל", "מוסקוביץ סקוט", "מוקאי יעקב", "מותהדה דוד", "מיטמן אפרים", "מיטמן גבריאל", "מיטמן מאיר", "מיטמן שניאור זלמן", "מילר יעקב", "מילר שמחה", "מלאני לייטמן", "מלבסקי נתנאל", "מלכה חסון אלישבע", "מנדל רונלד", "מנדל רני", "מנדלסון יוסף מרדכי", "מנדלסון לאה", "מנטל מנחם", "מנשהוף סיני", "מצגר דוד", "מקס ברכה", "מקס יעקב שלום", "מקס מינדי", "מרגליות מאיר יוסף", "מרמורשטיין זאב", "מרמלשטיין זושא", "מרמרשטיין בצלאל זושא", "מרמרשטיין משה", "מרסולה נעמי", "מרציאנו סלומון", "מרקוס שלמה", "נאבעל יעקב", "נויבירט אברהם", "נוימן חנוך", "נוסבוים מלכה פערל", "נוסבוים רבקה", "נייווירטה סנדר", "ניימארק ריסעל", "ניימארק שמחה", "סאויס דוד נחמן", "סאפטלאס זאב", "סאפיר שמואל", "סבלוסקי טוביה", "סוטון דוד", "סויבלמן דוד", "סחייאק אדי", "סיטון רחל", "סיטצר אורית", "סייד יחזקאל", "סימס רחל", "סימסוביץ יוסף", "סימקין אילנה", "סימקין אריה לייב יהודה", "סלומון אביגיל", "סלקוביץ עקיבא", "סמיילו שלמה", "סמינו אומיד משה יוסף", "סמרסטיין יוסי", "ספלמן מוריה", "סקלאר עליזה", "סרור טדי", "עובדיאן אבא", "עזרן אלינה", "עייאש משה פיליפ", "עימנואל ראובן", "עלבויגן יעקב", "עמר מרון", "ענגלאנדר יפה", "עקשטיין יחיאל", "עשור שמעון", "פאדווה אברהם שלמה", "פאללאק מוטי", "פאן דוד", "פולק לאה", "פונפדר הני", "פונפדר חני", "פונפדר פארן", "פוקס יצחק", "פוקס שמשון יוסף", "פוקסברוימר רונן", "פטמן אסתר", "פייביש ברכה", "פיין אברהם", "פיינגולד אווילין וולסין", "פינטער שמשון", "פינקוס הערשל", "פישמן יוסי", "פישמן נחום", "פישער משה חיים", "פישר מייקל", "פישר משה", "פלאוט ישראל", "פלברבוים שלמה", "פלדמן זכריה", "פלדמן יהושע", "פלדמן יוכבד", "פלדמן פסח", "פלור עזריאל", "פלורנס אברהם", "פלורנס הונזי", "פליישמן דוד", "פנג פטריק", "פנינה פלוטקין", "פנסטר גדליה", "פערל שלמה", "פק דוד", "פראנקס שיינא", "פרטיג זאבי", "פרטיג יעקב", "פריבלסקי דבורה", "פרידלנדר משה דוד", "פרידמן אלישבע", "פרידמן הרשל", "פרידמן טובה", "פרידמן יהושע (רולנד)", "פרידמן יוסף", "פרידמן יעקב", "פרידמן מיכאל", "פרידמן נחמה", "פרידמן שמעלקא", "פרידנלדר משה", "פרכטר יעקב דוב", "פרכטר פייגא לאה", "פרלוב אמי", "פרלמוטר יצחק", "פרנקו יעקב", "פרנקל אדם", "פרנקל יהושע", "פרס אסתר", "פרץ קלאודיה", "צוויק יצחק", "צוקר הינדה", "צוקרמן יעקב", "ציון נתנאל", "קאהן אברהם", "קאהן אורי", "קאהן אלון", "קאהן זאבי", "קאהן יורם", "קאהן ישראל", "קאהן מנחם", "קאהן שמואל ברוך", "קאופמן אריה לייב", "קאופמן שלומי", "קאליש אהרן דוד", "קארפ אסתר", "קארפ שושנה", "קווויטל אברהם פלורנס -", "קונקל יהודית", "קופרוואסר יוסף דוב", "קורבמן יוני", "קורלנד חיים יעקב", "קורץ אברהם", "קייזרי גבריאל", "קירזנר sharp managment יוסף", "קירזנר יוסף", "קירשבאום חיה", "קירשנר עליזה", "קלאוס יעקב מרדכי", "קלאק יעקב יוסף", "קלוק אבא", "קליין אלי", "קליין דניאל", "קליין רחל", "קליין שמעון", "קנופף רות", "קנופף שלמה", "קנצ'יק איגור", "קעס אברהם יעקב", "קעס אברהם יצחק", "קעס אלחנן", "קריאף יעקב", "קריים רבקה", "קרייף ויקי", "קרלבך דוד", "קרמר צבי אריה", "קרמר שושנה", "ראקובסקי אברהם", "רובינשטיין חנה", "רוזובסקי יהודה", "רוזנבאום שרה", "רוזנבלום חנה", "רוזנבלט מטבחים אהרן", "רוזנברג חיה רחל", "רוזנברג יוסי", "רוזנברג רבקה", "רוזנברג שמואל", "רוזנטל בת שבע נאווה", "רוזנפלד אילנה", "רוזנפלד אלי", "רוזנפלד יהושע", "רוזנפלד יצחק", "רוזנפלד ישראל אבא", "רוטנברג דסמונד", "רויז אהרן יהושע", "רומי מיכאל", "רייבן בריאן", "רפופורט חיים", "רקובסקי לאה מאלה", "שאול פנחס", "שבות אייזיק", "שבות ברוך", "שבות עוזי", "שווארץ שמואל", "שוורץ אברהם", "שוורץ בריינדל חנה", "שוורץ יוסף", "שוורץ מלכה", "שולגאסר חיים גד", "שטטפלד בנימין", "שטטפלד ברכה", "שטטפלד יואל", "שטטפלד יצחק", "שטיינברג דוד", "שטראה פנחס", "שטרן זאבי", "שטרנהל אליעזר", "שיטרית רבקה", "שיינפלד יחזקאל", "שיינפלד משה", "שיינפלד שיינא", "שילד ג'רי", "שילה יוחאי", "שילר שרה", "שירצקי חיה אולגה קירשבוים -", "שכטר בערי", "שמואל ארי", "שמואל יעקב בן", "שמואלביץ אוהד", "שמואלי רונית", "שמרלר יוסף", "שעהן משה", "שפירא מאיה", "שקאלו ברוך", "שקולניק יעל", "שרייבר אברהם", "שריייבר שרגא", "שרת ראובן"], "assignments": [{"donor": "לינדה מאגאזינטש", "day": 3, "month": "אב", "ded": "לעילוי נשמת האשה החשובה איבן בת תמו ע\"ה"}]};
+const MONTHS=['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
+let mi=10; // אב (ברירת מחדל, שם לינדה)
+// assignments: key "month|day" -> {donor, ded}
+const A={};
+DB.assignments.forEach(a=>{ if(a.day) A[a.month+'|'+a.day]={donor:a.donor,ded:a.ded||''}; });
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function hDay(n){
+  const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];
+  if(n===15)return 'ט"ו'; if(n===16)return 'ט"ז';
+  let t=Math.floor(n/10),o=n%10,s=tens[t]+ones[o];
+  if(s.length>1)s=s.slice(0,-1)+'"'+s.slice(-1);
+  return s||''+n;
+}
+const grid=document.getElementById('grid'),mname=document.getElementById('mname'),ov=document.getElementById('ov'),modal=document.getElementById('modal');
+function render(){
+  mname.textContent=MONTHS[mi];
+  let h='';
+  for(let day=1;day<=30;day++){
+    const k=MONTHS[mi]+'|'+day, a=A[k];
+    h+=`<div class="day ${a?'filled':''}" data-day="${day}"><div class="dn">${hDay(day)}</div>${a?`<div class="who">${esc(a.donor)}</div>`:''}</div>`;
+  }
+  grid.innerHTML=h;
+  grid.querySelectorAll('.day').forEach(c=>c.onclick=()=>openDay(+c.dataset.day));
+  buildOut();
+}
+document.getElementById('prev').onclick=()=>{mi=(mi+11)%12;render();};
+document.getElementById('next').onclick=()=>{mi=(mi+1)%12;render();};
+function openDay(day){
+  const k=MONTHS[mi]+'|'+day, a=A[k];
+  const dateStr=hDay(day)+' '+MONTHS[mi];
+  modal.innerHTML=`<button class="closex" id="cx">✕</button><h3>שיוך פרנס יום</h3><div class="dt">${dateStr}</div>
+    ${a?`<div class="cur">תפוס: ${esc(a.donor)}<br><button class="rm" id="rm">הסר מהיום הזה</button></div>`:''}
+    <input id="q" placeholder="חפש תורם לשיוך…" autocomplete="off"><div class="results" id="res"></div>`;
+  ov.classList.add('show');
+  document.getElementById('cx').onclick=()=>ov.classList.remove('show');
+  const rm=document.getElementById('rm'); if(rm)rm.onclick=()=>{delete A[k];ov.classList.remove('show');render();};
+  const q=document.getElementById('q'),res=document.getElementById('res');q.focus();
+  q.oninput=()=>{const v=q.value.trim();if(!v){res.innerHTML='';return;}
+    const hits=DB.donors.filter(n=>n.includes(v)).slice(0,20);
+    res.innerHTML=hits.map((n,i)=>`<button class="res" data-i="${i}">${esc(n)}</button>`).join('')||'<div style="color:var(--muted);padding:6px">אין תוצאה</div>';
+    res.querySelectorAll('.res').forEach(b=>b.onclick=()=>{A[k]={donor:hits[b.dataset.i],ded:(a?a.ded:'')};ov.classList.remove('show');render();});
+  };
+}
+ov.onclick=e=>{if(e.target===ov)ov.classList.remove('show');};
+function buildOut(){
+  const lines=['שיוכי פרנס יום:'];
+  Object.keys(A).forEach(k=>{const[m,day]=k.split('|');lines.push(`${A[k].donor} | ${hDay(+day)} ${m} | יום ${day} | חודש ${m}`);});
+  document.getElementById('out').value=lines.join('\n');
+}
+document.getElementById('copy').onclick=async()=>{
+  const out=document.getElementById('out');out.select();
+  try{await navigator.clipboard.writeText(out.value);}catch(e){try{document.execCommand('copy');}catch(_){}}
+  document.getElementById('toast').textContent="הועתק! הדבק לי בצ'אט.";
+};
+render();
+</script>
