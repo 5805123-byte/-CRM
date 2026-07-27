@@ -487,8 +487,12 @@ for r in range(2, dsheet.max_row+1):
     cands = [d for d in donors if d['ls'] and (d['ls']==es or edist(d['ls'],es)<=1)]
     best=None; bestsc=99; uniq=True
     ekey = norm(fn+' '+sur)
-    if ekey in regular_matches and regular_matches[ekey] != '__none__':
-        best = donor_by_name.get(norm(regular_matches[ekey])); bestsc=0; uniq=True
+    if ekey in regular_matches:
+        # אישור ידני: '__none__' = לבטל חיבור (לא לשייך), אחרת לשייך לתורם שצוין
+        if regular_matches[ekey] != '__none__':
+            best = donor_by_name.get(norm(regular_matches[ekey])); bestsc=0; uniq=True
+        else:
+            best = None; bestsc=99; uniq=False
     else:
         for d in cands:
             sc = edist(d['ls'],es)*2 + (edist(d['fs'],efs) if (efs and d['fs']) else 2)
