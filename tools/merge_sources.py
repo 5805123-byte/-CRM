@@ -24,6 +24,7 @@ _ap.add_argument("--review-json", default=None, help="ייצוא רשימת הה
 _ap.add_argument("--approvals", default=None, help="קובץ JSON של אישורים ידניים {שם_קוויטל: {choice}}")
 _ap.add_argument("--phone-matches", default=None, help="קובץ JSON {שם_קוויטל: טלפון} לחיבור טלפונים שנמצאו לפי צליל")
 _ap.add_argument("--manual-merges", default=None, help="קובץ JSON: רשימת קבוצות שמות למיזוג ידני")
+_ap.add_argument("--phone-overrides", default=None, help="קובץ JSON {שם: טלפון} לתיקון ידני של טלפון")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -123,8 +124,8 @@ def _norm_one_phone(x):
     if not x: return ''
     has_plus=x.startswith('+')
     digits=re.sub(r'\D','',x)
-    if not digits: return x
     if digits.startswith('00'): digits=digits[2:]
+    if len(digits)<7: return ''      # שארית לא-תקינה (למשל '+1' בודד) — מושמט
     if digits.startswith('972'):                     # ישראל
         return '+972 '+digits[3:].lstrip('0')
     if has_plus and not digits.startswith('1'):      # מדינה אחרת (בלגיה וכו') — נשמר
@@ -139,10 +140,16 @@ def _norm_one_phone(x):
     return x
 
 def normalize_phone(p):
-    """מנרמל מחרוזת טלפון (יתכן כמה מספרים מופרדים ב-/)."""
+    """מנרמל מחרוזת טלפון (יתכן כמה מספרים מופרדים ב-/), ומסיר כפילויות לפי הספרות."""
     if not p: return ''
-    parts=re.split(r'\s*/\s*',p)
-    return ' / '.join(z for z in (_norm_one_phone(x) for x in parts) if z)
+    out=[]; seen=set()
+    for x in re.split(r'\s*/\s*',p):
+        z=_norm_one_phone(x)
+        if not z: continue
+        sig=re.sub(r'\D','',z)        # חתימה = כל הספרות (מספר זהה לא יופיע פעמיים)
+        if sig in seen: continue
+        seen.add(sig); out.append(z)
+    return ' / '.join(out)
 
 for r in rows:
     L = labs(r)
@@ -333,6 +340,17 @@ for d in donors:
             d['first'] = ' '.join(toks[:-1]); d['last'] = toks[-1]
     em = (d.get('email') or '').strip().lower()
     if em in email_to_en: d['english'] = email_to_en[em]
+
+# תיקוני טלפון ידניים (שם -> טלפון נכון, מחליף)
+phone_overrides = {}
+if _args.phone_overrides:
+    import json as _j4
+    phone_overrides = {norm(k): v for k, v in _j4.load(open(_args.phone_overrides, encoding='utf-8')).items()}
+n_phone_fixed = 0
+for d in donors:
+    for cand in (norm(d['first']+' '+d['last']), norm(d['last']+' '+d['first'])):
+        if cand in phone_overrides:
+            d['phone'] = normalize_phone(phone_overrides[cand]); n_phone_fixed += 1; break
 
 # ---------- מיזוג כפילויות (שם משפחה זהה בשלד + שם פרטי דומה) ----------
 order_t = {'יששכר_זבולון':3,'קוויטל_101':2,'קוויטל_כללי':1,'':0}
