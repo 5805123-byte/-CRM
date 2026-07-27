@@ -2,27 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://crm.local/schema/donor.schema.json",
   "title": "תורם",
-  "description": "כרטיס תורם מאוחד — מאגד זהות, פרטי קשר, תרומות והיסטוריית קשר ממספר מקורות.",
+  "description": "כרטיס תורם מאוחד למערכת כולל חצות — זהות, קשר, תרומות, שמות לתפילה וקוויטלים.",
   "type": "object",
   "required": ["מזהה_תורם", "סוג_תורם", "זהות"],
   "properties": {
-    "מזהה_תורם": {
-      "type": "string",
-      "description": "מזהה פנימי יציב, למשל ת-000123",
-      "pattern": "^ת-\\d{6}$"
-    },
-    "סוג_תורם": {
-      "type": "string",
-      "enum": ["יחיד", "עסק", "משק_בית"]
-    },
+    "מזהה_תורם": { "type": "string", "description": "מזהה פנימי יציב, למשל ת-000123", "pattern": "^ת-\\d{6}$" },
+    "סוג_תורם": { "type": "string", "enum": ["יחיד", "עסק", "משק_בית"] },
     "זהות": {
       "type": "object",
       "properties": {
         "שם_פרטי_עברי": { "type": "string", "description": "ממולא ידנית דרך קובץ ההתאמה" },
         "שם_משפחה_עברי": { "type": "string", "description": "ממולא ידנית דרך קובץ ההתאמה" },
-        "שם_פרטי_אנגלי": { "type": "string", "description": "מקור: Google Contacts givenName / Donations Summary" },
-        "שם_משפחה_אנגלי": { "type": "string", "description": "מקור: Google Contacts familyName" },
-        "שם_עסק": { "type": "string", "description": "שם העסק באנגלית — לתרומות שמגיעות מהעסק" },
+        "שם_פרטי_אנגלי": { "type": "string" },
+        "שם_משפחה_אנגלי": { "type": "string" },
+        "שם_עסק": { "type": "string", "description": "לתרומות שמגיעות מהעסק" },
         "שם_לתצוגה": { "type": "string" }
       },
       "additionalProperties": false
@@ -33,8 +26,7 @@
         "טלפונים": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["ערך"],
+            "type": "object", "required": ["ערך"],
             "properties": {
               "ערך": { "type": "string" },
               "סוג": { "type": "string", "enum": ["נייד", "בית", "עבודה", "אחר"] },
@@ -47,8 +39,7 @@
         "אימיילים": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["ערך"],
+            "type": "object", "required": ["ערך"],
             "properties": {
               "ערך": { "type": "string", "format": "email" },
               "סוג": { "type": "string", "enum": ["אישי", "עבודה", "אחר"] },
@@ -57,22 +48,47 @@
             "additionalProperties": false
           }
         },
+        "כתובת": { "type": "string" },
         "ערוץ_מועדף": { "type": "string", "enum": ["טלפון", "מייל", "וואטסאפ"] }
       },
       "additionalProperties": false
     },
-    "תרומות": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/תרומה" }
+    "תאריכים": {
+      "type": "object",
+      "properties": {
+        "יום_הולדת_עברי": { "type": "string" },
+        "יום_הולדת_לועזי": { "type": "string", "format": "date" },
+        "יארצייטים": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "שם": { "type": "string" }, "תאריך_עברי": { "type": "string" } },
+            "additionalProperties": false
+          }
+        },
+        "תאריכי_תרומה_מועדפים": {
+          "type": "array",
+          "description": "תאריכים שהתורם רגיל לתרום בהם (מרשימת הוורד השנתית)",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
     },
-    "אינטראקציות": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/אינטראקציה" }
+    "דרגת_קוויטל": {
+      "type": "string",
+      "description": "דרגת התפילה שהתורם משתייך אליה כברירת מחדל",
+      "enum": ["יששכר_זבולון", "קוויטל_101", "קוויטל_כללי", "חד_פעמי"]
     },
-    "מקורות": {
+    "תוויות_קוויטל": {
       "type": "array",
-      "items": { "$ref": "#/$defs/מקור" }
+      "description": "תוויות כמו באנשי הקשר של גוגל תחת 'קוויטל'",
+      "items": { "type": "string" }
     },
+    "תרומות": { "type": "array", "items": { "$ref": "#/$defs/תרומה" } },
+    "שמות_לתפילה": { "type": "array", "items": { "$ref": "#/$defs/שם_לתפילה" } },
+    "אינטראקציות": { "type": "array", "items": { "$ref": "#/$defs/אינטראקציה" } },
+    "תזכורות": { "type": "array", "items": { "$ref": "#/$defs/תזכורת" } },
+    "מקורות": { "type": "array", "items": { "$ref": "#/$defs/מקור" } },
     "תגיות": { "type": "array", "items": { "type": "string" } },
     "הערות": { "type": "string" },
     "נוצר_בתאריך": { "type": "string", "format": "date-time" },
@@ -91,18 +107,36 @@
         "מטבע": { "type": "string", "default": "USD" },
         "ערוץ": {
           "type": "string",
-          "description": "ערוץ/אמצעי התרומה המדויק",
-          "enum": [
-            "אתר", "בנק_ווסט", "אותורייז", "פידליטי", "OJC",
-            "דונורס_פאנד", "צ'ק", "מזומן", "העברה_בנקאית", "זל", "פייפאל", "אחר"
-          ]
+          "description": "מאיפה הכסף הגיע",
+          "enum": ["אתר", "נדרים_פלוס", "בנק_ווסט", "אותורייז", "פידליטי", "OJC", "דונורס_פאנד", "וואטסאפ", "גימייל", "צ'ק", "מזומן", "העברה_בנקאית", "זל", "פייפאל", "אחר"]
         },
+        "סוג_תרומה": {
+          "type": "string",
+          "enum": ["שותפות_יששכר_זבולון", "שותפות_חודשית", "פרנס_יום", "פרנס_המאור_שבועי", "פרנס_חדר_קפה_שבועי", "פרנס_חדר_קפה_יומי", "ארוחות_בוקר", "לימוד_לילה_לזכות", "תרומה_לחגים", "מנין_בן", "מנין_101", "כולל_חצות_כללי", "חד_פעמי", "אחר"]
+        },
+        "תדירות": { "type": "string", "enum": ["חד_פעמי", "יומי", "שבועי", "חודשי", "שנתי"] },
         "ייעוד": { "type": "string", "description": "למה נועדה התרומה" },
-        "חוזרת": { "type": "boolean", "description": "תרומה חוזרת / הוראת קבע" },
-        "בשם": { "type": "string", "enum": ["אדם", "עסק"], "description": "האם התרומה בשם האדם או בשם העסק" },
+        "בשם": { "type": "string", "enum": ["אדם", "עסק"] },
         "מזהה_חיצוני": { "type": "string", "description": "מזהה עסקה במקור — למניעת כפילויות" },
         "מקור": { "type": "string" },
-        "גולמי": { "type": "object", "description": "הרשומה הגולמית המקורית" }
+        "גולמי": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "שם_לתפילה": {
+      "type": "object",
+      "required": ["מזהה_שם", "שמות"],
+      "properties": {
+        "מזהה_שם": { "type": "string" },
+        "מזהה_תורם": { "type": "string" },
+        "מזהה_תרומה": { "type": "string", "description": "התרומה שבעקבותיה נמסר השם" },
+        "שמות": { "type": "array", "items": { "type": "string" }, "description": "למשל 'פלוני בן פלונית'" },
+        "בקשה": { "type": "string", "description": "רפואה / זיווג / זרע של קיימא / פרנסה / ישועה..." },
+        "דרגת_תפילה": { "type": "string", "enum": ["יששכר_זבולון", "קוויטל_101", "קוויטל_כללי", "חד_פעמי"] },
+        "תוויות_קוויטל": { "type": "array", "items": { "type": "string" } },
+        "נכנס_בתאריך": { "type": "string", "format": "date" },
+        "פעיל_עד": { "type": "string", "format": "date", "description": "לחד-פעמי — עד מתי בקוויטל" },
+        "מקור": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -116,9 +150,20 @@
         "ערוץ": { "type": "string", "enum": ["טלפון", "מייל", "וואטסאפ", "פנים_אל_פנים", "סמס"] },
         "כיוון": { "type": "string", "enum": ["נכנס", "יוצא"] },
         "תמצית": { "type": "string", "description": "מה נדון" },
-        "משתתפים": { "type": "array", "items": { "type": "string" } },
-        "מזהה_חיצוני": { "type": "string", "description": "מזהה שיחה/שרשור במקור — למניעת כפילויות בסנכרון" },
+        "מזהה_חיצוני": { "type": "string" },
         "מקור": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "תזכורת": {
+      "type": "object",
+      "required": ["מזהה_תזכורת", "נושא"],
+      "properties": {
+        "מזהה_תזכורת": { "type": "string" },
+        "מזהה_תורם": { "type": "string" },
+        "נושא": { "type": "string", "description": "לחזור אליו / יום הולדת / תאריך תרומה קבוע" },
+        "תאריך_יעד": { "type": "string", "format": "date" },
+        "בוצע": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -126,15 +171,9 @@
       "type": "object",
       "required": ["מערכת", "מזהה_במקור"],
       "properties": {
-        "מערכת": {
-          "type": "string",
-          "enum": ["סיכום_תרומות", "גוגל_קונטקטס", "ידני", "אברכים"]
-        },
+        "מערכת": { "type": "string", "enum": ["אקסל_תורמים", "גוגל_קונטקטס", "רשימת_וורד", "וואטסאפ", "גימייל", "אתר", "ידני", "אברכים"] },
         "מזהה_במקור": { "type": "string" },
-        "הותאם_לפי": {
-          "type": "string",
-          "enum": ["שם_עברי_ידני", "אימייל", "טלפון", "שם_מדויק"]
-        },
+        "הותאם_לפי": { "type": "string", "enum": ["שם_עברי_ידני", "אימייל", "טלפון", "שם_מדויק"] },
         "רמת_ביטחון": { "type": "string", "enum": ["מאושר", "סביר", "לא_מאומת"] },
         "קושר_בתאריך": { "type": "string", "format": "date-time" }
       },
