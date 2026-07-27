@@ -127,7 +127,7 @@ def _norm_one_phone(x):
     if digits.startswith('1') and len(digits)==11:   # ארה"ב עם קידומת
         digits=digits[1:]
     if len(digits)==10:                              # ארה"ב 10 ספרות
-        return f'+1 ({digits[:3]}) {digits[3:6]}-{digits[6:]}'
+        return f'+1 {digits[:3]}-{digits[3:6]}-{digits[6:]}'
     if has_plus: return '+'+digits
     return x
 
@@ -264,8 +264,11 @@ data=wb['Data']; data_rows=[]
 for r in range(2,data.max_row+1):
     typ=s(data.cell(r,1).value); nm=s(data.cell(r,2).value)
     if not nm: continue
+    en_name=s(data.cell(r,4).value); en_sur=s(data.cell(r,5).value)
+    # שם עסק: כשעמודת Names אינה שם האדם (לא מכילה את שם המשפחה) — זהו שם עסק
+    business = nm if (en_sur and en_sur.lower() not in nm.lower()) else ''
     data_rows.append({'type':typ,'names':nm,'method':chan(s(data.cell(r,3).value)),
-        'en_name':s(data.cell(r,4).value),'en_sur':s(data.cell(r,5).value),
+        'en_name':en_name,'en_sur':en_sur,'business':business,
         'email':s(data.cell(r,6).value),'amount':s(data.cell(r,7).value)})
 
 occ=wb['Occasional']; occ_rows=[]
@@ -308,22 +311,27 @@ for d in donors:
         d['n-flag'] = 'טלפון חובר לפי צליל'
         n_phone_added += 1
     d['phone'] = normalize_phone(d.get('phone',''))
+    # פיצול שם שמופיע מלא בשדה אחד -> שם פרטי + שם משפחה (המילה האחרונה = שם משפחה)
+    if not d.get('last') and d.get('first'):
+        toks = d['first'].split()
+        if len(toks) >= 2:
+            d['first'] = ' '.join(toks[:-1]); d['last'] = toks[-1]
 
-# תורמים
+# תורמים — מיון לפי שם משפחה (א-ב), עמודת שם משפחה לפני שם פרטי
 tor_rows=[]
-for i,d in enumerate(sorted(donors,key=lambda x:(x['tier']!='יששכר_זבולון',x['first'])),1):
-    tor_rows.append([f'ת-{i:05d}',d['first'],d['last'],'','',d['org'],d['phone'],d['email'],
+for i,d in enumerate(sorted(donors,key=lambda x:(x['last'] or 'תתת', x['first'])),1):
+    tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d['org'],d['phone'],d['email'],
                      d['addr'],d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag']])
-sheet('תורמים',['מזהה_תורם','שם_פרטי_עברי','שם_משפחה_עברי','שם_פרטי_אנגלי','שם_משפחה_אנגלי',
-    'שם_עסק','טלפון','אימייל','כתובת','דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס'],tor_rows)
+sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_עסק','טלפון','אימייל','כתובת',
+    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס'],tor_rows)
 
 # קובץ התאמה (Data החודשיים) — עם עמודות עבריות ריקות
 mt_rows=[]
 for i,d in enumerate(data_rows,1):
     mt_rows.append([f'M-{i:04d}',(d['en_name']+' '+d['en_sur']).strip() or d['names'],
-        d['type'],d['method'],d['amount'],d['email'],'',''])
-sheet('קובץ_התאמה_חודשיים',['מפתח','שם_אנגלי','סוג(ישז/חודשי)','אמצעי_תשלום','סכום_חודשי',
-    'אימייל','שם פרטי עברי','שם משפחה עברי'],mt_rows,yellow=(7,8))
+        d['business'],d['type'],d['method'],d['amount'],d['email'],'',''])
+sheet('קובץ_התאמה_חודשיים',['מפתח','שם_אנגלי','שם_עסק','סוג(ישז/חודשי)','אמצעי_תשלום','סכום_חודשי',
+    'אימייל','שם פרטי עברי','שם משפחה עברי'],mt_rows,yellow=(8,9))
 
 # מזדמנים (כבר בעברית)
 oc_rows=[]
