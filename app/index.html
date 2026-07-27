@@ -5,14 +5,14 @@
   :root{
     --ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;
     --accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--gold-soft:#F5ECD6;
-    --klali:#5A7A8C;--klali-soft:#E6EEF2;--yes:#2F7A57;--yes-soft:#E4F1EA;--shadow:0 6px 24px rgba(40,36,64,.10);
+    --klali:#5A7A8C;--klali-soft:#E6EEF2;--yes:#2F7A57;--yes-soft:#E4F1EA;--no:#C43A2B;--no-soft:#F6E7E1;--shadow:0 6px 24px rgba(40,36,64,.10);
   }
   @media (prefers-color-scheme:dark){:root{
     --ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;
     --accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--gold-soft:#2C2740;
-    --klali:#8FB2C4;--klali-soft:#22303A;--yes:#6FC79A;--yes-soft:#1E3329;--shadow:0 8px 30px rgba(0,0,0,.4);}}
-  :root[data-theme="light"]{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--gold-soft:#F5ECD6;--klali:#5A7A8C;--klali-soft:#E6EEF2;--yes:#2F7A57;--yes-soft:#E4F1EA;--shadow:0 6px 24px rgba(40,36,64,.10);}
-  :root[data-theme="dark"]{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--gold-soft:#2C2740;--klali:#8FB2C4;--klali-soft:#22303A;--yes:#6FC79A;--yes-soft:#1E3329;--shadow:0 8px 30px rgba(0,0,0,.4);}
+    --klali:#8FB2C4;--klali-soft:#22303A;--yes:#6FC79A;--yes-soft:#1E3329;--no:#E86B5D;--no-soft:#3A2320;--shadow:0 8px 30px rgba(0,0,0,.4);}}
+  :root[data-theme="light"]{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--gold-soft:#F5ECD6;--klali:#5A7A8C;--klali-soft:#E6EEF2;--yes:#2F7A57;--yes-soft:#E4F1EA;--no:#C43A2B;--no-soft:#F6E7E1;--shadow:0 6px 24px rgba(40,36,64,.10);}
+  :root[data-theme="dark"]{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--gold-soft:#2C2740;--klali:#8FB2C4;--klali-soft:#22303A;--yes:#6FC79A;--yes-soft:#1E3329;--no:#E86B5D;--no-soft:#3A2320;--shadow:0 8px 30px rgba(0,0,0,.4);}
   *{box-sizing:border-box} html,body{margin:0;overflow-x:hidden}
   body{font-family:-apple-system,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;background:var(--ground);color:var(--ink);line-height:1.5;direction:rtl}
   .app{max-width:820px;margin:0 auto;padding:0 14px 60px}
@@ -45,8 +45,8 @@
   .mc{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700}
   .mc span{opacity:.85}
   .mc.gp{background:var(--yes-soft);color:var(--yes)}
-  .mc.gx{background:var(--no);color:#fff;box-shadow:0 0 0 2px var(--no)}
-  .mc.gmiss{background:var(--no-soft);color:var(--no);border:1.5px dashed var(--no)}
+  .mc.gx{background:#E23B2E;color:#fff}
+  .mc.gmiss{background:#E23B2E;color:#fff}
   .mc.gn{background:var(--line);color:var(--muted);opacity:.5}
   .rowc .meta{margin-inline-start:auto;text-align:end;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
   .rowc .ph{font-size:.82rem;color:var(--muted);direction:ltr;font-variant-numeric:tabular-nums}
@@ -127,16 +127,29 @@ function matchQ(s){return !q?true:norm(s).includes(norm(q));}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
 
 const MON=['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
-function gaps(m){ // מחזיר מערך אינדקסים של חודשים שלא עברו (x, או - פנימי לפני חודש ששולם)
+// חודש הגבייה הנוכחי = החודש האחרון עם גבייה משמעותית (מתעלם מבודדים ששילמו מראש)
+const GLAST=(function(){
+  const ms=DB.donors.map(d=>d.months||'').filter(Boolean);
+  const cnt=[...Array(12)].map((_,i)=>ms.filter(m=>m[i]==='p').length);
+  const mx=Math.max(1,...cnt); let last=0;
+  for(let i=0;i<12;i++){ if(cnt[i]>=0.3*mx) last=i; }
+  return last;
+})();
+function gaps(m){ // חודשים שלא עברו: בין החודש הראשון שנגבה לבין חודש הגבייה הנוכחי, וזה לא 'p'
   if(!m) return [];
-  const lastP=m.lastIndexOf('p'); const g=[];
-  for(let i=0;i<12;i++){ if(m[i]==='x') g.push(i); else if(m[i]==='-'&&i<lastP) g.push(i); }
+  const firstP=m.indexOf('p'); if(firstP<0) return [];
+  const g=[];
+  for(let i=firstP;i<=GLAST;i++){ if(m[i]!=='p') g.push(i); }
   return g;
 }
 function monthGrid(m){
   if(!m) return '';
+  const firstP=m.indexOf('p');
   return `<div class="mgrid">${MON.map((lbl,i)=>{
-    const c=m[i]==='p'?'gp':(m[i]==='x'?'gx':(i<m.lastIndexOf('p')?'gmiss':'gn'));
+    let c;
+    if(m[i]==='p') c='gp';
+    else if(firstP>=0&&i>=firstP&&i<=GLAST) c=(m[i]==='x'?'gx':'gmiss'); // חור בתוך תקופת הגבייה
+    else c='gn'; // עתידי / לפני שהצטרף
     return `<div class="mc ${c}"><span>${lbl}</span></div>`;}).join('')}</div>`;
 }
 function render(){
