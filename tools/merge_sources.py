@@ -25,6 +25,8 @@ _ap.add_argument("--approvals", default=None, help="קובץ JSON של אישו�
 _ap.add_argument("--phone-matches", default=None, help="קובץ JSON {שם_קוויטל: טלפון} לחיבור טלפונים שנמצאו לפי צליל")
 _ap.add_argument("--manual-merges", default=None, help="קובץ JSON: רשימת קבוצות שמות למיזוג ידני")
 _ap.add_argument("--phone-overrides", default=None, help="קובץ JSON {שם: טלפון} לתיקון ידני של טלפון")
+_ap.add_argument("--regular-matches", default=None, help="קובץ JSON {שם אנגלי: שם עברי} לאישור חיבור תורם קבוע")
+_ap.add_argument("--regular-review-json", default=None, help="ייצוא הקבועים שלא חוברו + מועמדים (לדף האישור)")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -445,7 +447,16 @@ for d in donors:
     for k in ('category','dtype','amount','channel','pay_status','last_active'):
         d.setdefault(k, '')
 
-# תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק
+# תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק / אישור ידני
+regular_matches = {}
+if _args.regular_matches:
+    import json as _j5
+    regular_matches = {norm(k): v for k, v in _j5.load(open(_args.regular_matches, encoding='utf-8')).items()}
+donor_by_name = {}
+for d in donors:
+    donor_by_name[norm(d['first']+' '+d['last'])] = d
+    donor_by_name[norm(d['last']+' '+d['first'])] = d
+
 n_reg = 0; unmatched_data = []
 dsheet = wb['Data']
 for r in range(2, dsheet.max_row+1):
@@ -457,10 +468,14 @@ for r in range(2, dsheet.max_row+1):
     es = eskel(sur); efs = eskel(fn)
     cands = [d for d in donors if d['ls'] and (d['ls']==es or edist(d['ls'],es)<=1)]
     best=None; bestsc=99; uniq=True
-    for d in cands:
-        sc = edist(d['ls'],es)*2 + (edist(d['fs'],efs) if (efs and d['fs']) else 2)
-        if sc < bestsc: bestsc=sc; best=d; uniq=True
-        elif sc == bestsc: uniq=False
+    ekey = norm(fn+' '+sur)
+    if ekey in regular_matches and regular_matches[ekey] != '__none__':
+        best = donor_by_name.get(norm(regular_matches[ekey])); bestsc=0; uniq=True
+    else:
+        for d in cands:
+            sc = edist(d['ls'],es)*2 + (edist(d['fs'],efs) if (efs and d['fs']) else 2)
+            if sc < bestsc: bestsc=sc; best=d; uniq=True
+            elif sc == bestsc: uniq=False
     if best is not None and bestsc<=3 and uniq:
         paid = sum(1 for x in statuses if x and 'ccep' in x.lower())
         decl = sum(1 for x in statuses if x and x.strip().upper()=='NR')
@@ -473,7 +488,20 @@ for r in range(2, dsheet.max_row+1):
         if not best.get('english'): best['english'] = (fn+' '+sur).strip()
         n_reg += 1
     else:
-        unmatched_data.append((fn, sur, typ, amount))
+        scored = sorted(cands, key=lambda d: edist(d['ls'],es)*2 + (edist(d['fs'],efs) if (efs and d['fs']) else 2))
+        unmatched_data.append({'fn':fn,'sur':sur,'typ':typ,'amount':amount,
+            'candidates':[{'name':(d['first']+' '+d['last']).strip(),'phone':d['phone'],'tier':d['tier']} for d in scored[:4]]})
+
+# ייצוא הקבועים שלא חוברו + מועמדים, לדף האישור
+if _args.regular_review_json:
+    import json as _j6
+    payload = {'unmatched':[{'id':f'M{i:04d}','english':(u['fn']+' '+u['sur']).strip(),
+                             'type':u['typ'],'amount':u['amount'],'candidates':u['candidates']}
+                            for i,u in enumerate(unmatched_data,1)],
+               'donors':[{'name':(d['first']+' '+d['last']).strip(),'phone':d['phone'],'tier':d['tier']}
+                         for d in sorted(donors,key=lambda x:x['last'] or '')]}
+    _j6.dump(payload, open(_args.regular_review_json,'w',encoding='utf-8'), ensure_ascii=False)
+    print('JSON אישור קבועים:', _args.regular_review_json, '(', len(unmatched_data), ')')
 
 # מזדמנים (עברית) -> חיבור לפי שם + חודש אחרון פעיל
 donor_loose = {}
