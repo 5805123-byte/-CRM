@@ -464,18 +464,19 @@ if _args.parnes_yom:
 
 for d in donors:
     d['ls'] = hskel(d['last']); d['fs'] = hskel(d['first'])
-    for k in ('category','dtype','amount','channel','pay_status','last_active','months','purpose',
-              'py_date','py_day','py_month','py_ded','py_text'):
+    for k in ('category','dtype','amount','channel','pay_status','last_active','months','purpose'):
         d.setdefault(k, '')
+    d.setdefault('py_list', [])
     for cand in (norm(d['first']+' '+d['last']), norm(d['last']+' '+d['first'])):
         if cand in purposes:
             d['purpose'] = purposes[cand]; break
     for cand in (norm(d['first']+' '+d['last']), norm(d['last']+' '+d['first'])):
         if cand in parnes:
-            p = parnes[cand]
-            d['py_date'] = p.get('תאריך',''); d['py_day'] = p.get('יום',''); d['py_month'] = p.get('חודש','')
-            d['py_ded'] = p.get('הקדשה',''); d['py_text'] = p.get('נוסח','')
-            if not d['purpose']: d['purpose'] = 'פרנס יום — ' + p.get('תאריך','')
+            nights = parnes[cand]
+            if isinstance(nights, dict): nights = [nights]
+            d['py_list'] = nights
+            if not d['purpose']:
+                d['purpose'] = ('פרנס יום — ' + nights[0].get('תאריך','')) if len(nights)==1 else f'פרנס יום ({len(nights)} לילות)'
             break
 
 # תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק / אישור ידני
@@ -608,11 +609,22 @@ for i,d in enumerate(occ_rows,1):
     oc_rows.append([f'O-{i:04d}',d['nm'],int(d['total']) if d['total'] else '',paid])
 sheet('מזדמנים',['מפתח','שם_עברי','סכום_כולל_השנה','פירוט_חודשי'],oc_rows)
 
-# פרנס יום — לוח שנה לפי תאריך עברי
-py_rows=[]
-for d in sorted([x for x in donors if x.get('py_date')], key=lambda x:(hmonth_order(x.get('py_month','')), int(x['py_day']) if str(x.get('py_day','')).isdigit() else 99)):
-    py_rows.append([d.get('py_date',''), d.get('py_day',''), d.get('py_month',''), hmonth_order(d.get('py_month','')),
-                    (d['first']+' '+d['last']).strip(), d.get('py_ded',''), d.get('py_text',''), d['phone']])
+# פרנס יום — לוח שנה לפי תאריך עברי (כמה לילות לתורם)
+def gen_nusach(date, ded):
+    return ('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול '
+            'של חצות הלילה עד הבוקר' + (', ' + date if date else '') + ', יהיו ויעמדו לזכות '
+            + (ded or ''))
+allnights = []
+for d in donors:
+    for n in d.get('py_list', []):
+        allnights.append((d, n))
+allnights.sort(key=lambda t:(hmonth_order(t[1].get('חודש','')), int(t[1].get('יום')) if str(t[1].get('יום','')).isdigit() else 99))
+py_rows = []
+for d, n in allnights:
+    date = n.get('תאריך',''); ded = n.get('הקדשה','')
+    nusach = n.get('נוסח','') or gen_nusach(date, ded)
+    py_rows.append([date, n.get('יום',''), n.get('חודש',''), hmonth_order(n.get('חודש','')),
+                    (d['first']+' '+d['last']).strip(), ded, nusach, d['phone']])
 sheet('פרנס_יום',['תאריך','יום','חודש','סדר','שם_התורם','הקדשה','נוסח_תפילה','טלפון'],py_rows)
 
 # שמות_לתפילה — השמות שהאברכים קוראים, לפי דרגה
