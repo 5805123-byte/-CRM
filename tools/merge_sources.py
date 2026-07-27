@@ -80,6 +80,25 @@ def lookup_tier(nm, lk):
     return '', ''
 matched_kv_keys = set()
 
+# ---------- חילוץ שמות התפילה מכרטיסי הקוויטל ----------
+# השמות שמורים בשדה המותאם 'קוויטל' או בהערות
+prayer_rows = []
+for r in rows:
+    L = labs(r)
+    if not (L & KV): continue
+    donor_nm = norm(r.get('First Name','')+' '+r.get('Middle Name','')+' '+r.get('Last Name',''))
+    cf = (r.get('Custom Field 1 - Value') or '').strip()
+    note = (r.get('Notes') or '').strip()
+    prayer = cf or note
+    if not prayer: continue
+    prayer = prayer.replace('\r','').strip()
+    prayer = re.sub(r',\s*,', ',', prayer)           # פסיקים כפולים
+    # דלג על שאריות שדות טכניים (טלפון/מייל) או ערך מספרי בלבד
+    if re.search(r'(Phone|E-?mail|- Value|:::)', prayer): continue
+    if re.fullmatch(r'[\d\s\-\+()]+', prayer): continue
+    prayer_rows.append({'donor':donor_nm, 'prayer':prayer, 'tier':tier_from_labels(L),
+                        'tags':';'.join(sorted(L & KV))})
+
 # ---------- בניית רשומות תורמים ----------
 donors = []
 seen = {}; seen_loose = set()
@@ -222,6 +241,16 @@ for i,d in enumerate(occ_rows,1):
     paid=';'.join(f'{m}:{v}' for m,v in d['vals'].items() if v)
     oc_rows.append([f'O-{i:04d}',d['nm'],int(d['total']) if d['total'] else '',paid])
 sheet('מזדמנים',['מפתח','שם_עברי','סכום_כולל_השנה','פירוט_חודשי'],oc_rows)
+
+# שמות_לתפילה — השמות שהאברכים קוראים, לפי דרגה
+sp_rows=[]
+torder={'יששכר_זבולון':0,'קוויטל_101':1,'קוויטל_כללי':2}
+for i,d in enumerate(sorted(prayer_rows,key=lambda x:(torder.get(x['tier'],9),x['donor'])),1):
+    sp_rows.append([f'ש-{i:04d}','',d['donor'],d['prayer'],'',d['tier'],d['tags']])
+sp_ws=sheet('שמות_לתפילה',['מזהה_שם','מזהה_תורם','שם_התורם','שמות','בקשה','דרגת_תפילה','תוויות_קוויטל'],sp_rows)
+sp_ws.column_dimensions['D'].width=70
+for rr in range(2,len(sp_rows)+2):
+    sp_ws.cell(rr,4).alignment=Alignment(wrap_text=True,vertical='top')
 
 # לבדיקה — שמות קוויטל ללא כרטיס תורם + הצעת התאמה
 rv_rows=[]

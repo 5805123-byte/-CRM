@@ -82,11 +82,12 @@ def main():
             continue
         if args.label and args.label not in labels:
             continue
+        donor_name = n.get("שם_התורם") or ((donor.get("שם_פרטי_עברי", "") or "") + " " + (donor.get("שם_משפחה_עברי", "") or "")).strip()
         selected.append({
             "שמות": n.get("שמות") or "",
             "בקשה": n.get("בקשה") or "",
             "דרגה": level,
-            "תורם": (donor.get("שם_פרטי_עברי", "") or "") + " " + (donor.get("שם_משפחה_עברי", "") or ""),
+            "תורם": donor_name,
         })
 
     return finish(selected, args)
@@ -115,7 +116,7 @@ def finish(selected, args):
     ws["A2"] = "הודפס: " + datetime.date.today().isoformat() + f"   |   סה\"כ שמות: {len(selected)}"
     ws["A2"].font = Font(name=FONT, italic=True, size=10, color="808080")
 
-    hdr = ["#", "שמות לתפילה", "בקשה", "דרגה"]
+    hdr = ["#", "שמות לתפילה", "שם התורם", "דרגה"]
     thin = Side(style="thin", color="BFBFBF")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     for c, h in enumerate(hdr, 1):
@@ -126,16 +127,19 @@ def finish(selected, args):
         cell.border = border
     for i, s in enumerate(selected, 1):
         row = 4 + i
-        vals = [i, s["שמות"], s["בקשה"], s["דרגה"].replace("_", " ")]
+        vals = [i, s["שמות"], s.get("תורם", ""), s["דרגה"].replace("_", " ")]
         for c, v in enumerate(vals, 1):
             cell = ws.cell(row=row, column=c, value=v)
-            cell.font = Font(name=FONT, size=13 if c == 2 else 11)
-            cell.alignment = Alignment(horizontal="right" if c == 2 else "center", vertical="center")
+            cell.font = Font(name=FONT, size=13 if c == 2 else 10)
+            cell.alignment = Alignment(horizontal="right" if c == 2 else "center",
+                                       vertical="top", wrap_text=(c == 2))
             cell.border = border
-        ws.row_dimensions[row].height = 22
+        # גובה שורה לפי מספר השמות בבלוק
+        lines = str(s["שמות"]).count("\n") + 1
+        ws.row_dimensions[row].height = max(22, min(200, lines * 15))
 
     ws.column_dimensions["A"].width = 6
-    ws.column_dimensions["B"].width = 40
+    ws.column_dimensions["B"].width = 75
     ws.column_dimensions["C"].width = 22
     ws.column_dimensions["D"].width = 16
     # הגדרות הדפסה
