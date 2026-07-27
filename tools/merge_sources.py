@@ -462,7 +462,8 @@ if _args.new_regulars:
         toks = norm(heb).split()
         first = ' '.join(toks[:-1]) if len(toks) >= 2 else heb
         last = toks[-1] if len(toks) >= 2 else ''
-        card = {'first':first,'last':last,'english':eng,'org':'','phone':'','email':'','addr':'',
+        ph = normalize_phone(phone_matches.get(norm(heb), ''))
+        card = {'first':first,'last':last,'english':eng,'org':'','phone':ph,'email':'','addr':'',
                 'tier':'','how':'חדש (הוזן ידנית)','tags':'','bday':'','notes':'','n-flag':'תורם קבוע חדש',
                 'nm':norm(heb),'aliases':[],'category':'','dtype':'','amount':'','channel':'',
                 'pay_status':'','last_active':'','ls':hskel(last),'fs':hskel(first)}
