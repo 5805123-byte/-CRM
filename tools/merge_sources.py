@@ -474,9 +474,7 @@ for d in donors:
         if cand in parnes:
             nights = parnes[cand]
             if isinstance(nights, dict): nights = [nights]
-            d['py_list'] = nights
-            if not d['purpose']:
-                d['purpose'] = ('פרנס יום — ' + nights[0].get('תאריך','')) if len(nights)==1 else f'פרנס יום ({len(nights)} לילות)'
+            d['py_list'] = nights   # פרנס יום = סעיף נפרד בכרטיס (לא הקטגוריה)
             break
 
 # תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק / אישור ידני
@@ -623,9 +621,10 @@ py_rows = []
 for d, n in allnights:
     date = n.get('תאריך',''); ded = n.get('הקדשה','')
     nusach = n.get('נוסח','') or gen_nusach(date, ded)
+    amount = str(n.get('סכום','')) if n.get('סכום','') != '' else '480'
     py_rows.append([date, n.get('יום',''), n.get('חודש',''), hmonth_order(n.get('חודש','')),
-                    (d['first']+' '+d['last']).strip(), ded, nusach, d['phone']])
-sheet('פרנס_יום',['תאריך','יום','חודש','סדר','שם_התורם','הקדשה','נוסח_תפילה','טלפון'],py_rows)
+                    (d['first']+' '+d['last']).strip(), amount, ded, nusach, d['phone']])
+sheet('פרנס_יום',['תאריך','יום','חודש','סדר','שם_התורם','סכום','הקדשה','נוסח_תפילה','טלפון'],py_rows)
 
 # שמות_לתפילה — השמות שהאברכים קוראים, לפי דרגה
 sp_rows=[]
