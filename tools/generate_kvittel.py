@@ -36,8 +36,8 @@ def read_sheet(wb, name):
     out = []
     for r in rows[1:]:
         rec = {headers[i]: r[i] for i in range(len(headers))}
-        # דילוג על שורות ריקות ועל שורת-הדוגמה האפורה
-        if not rec.get("מזהה_שם"):
+        # דילוג על שורות ריקות (העמודה הראשונה = מזהה)
+        if not (r and r[0] not in (None, "")):
             continue
         out.append(rec)
     return out
@@ -57,6 +57,22 @@ def main():
     donors = {d.get("מזהה_תורם"): d for d in read_sheet(wb, "תורמים") if d.get("מזהה_תורם")}
     names = read_sheet(wb, "שמות_לתפילה")
 
+    # אם אין עדיין גיליון 'שמות_לתפילה' — בונים קוויטל ישירות מרשימת התורמים לפי דרגה
+    if not names:
+        selected = []
+        for d in donors.values():
+            level = d.get("דרגת_קוויטל") or ""
+            if not level:
+                continue
+            labels = str(d.get("תוויות_גוגל") or d.get("תוויות_קוויטל") or "")
+            if args.level and level != args.level:
+                continue
+            if args.label and args.label not in labels:
+                continue
+            full = ((d.get("שם_פרטי_עברי", "") or "") + " " + (d.get("שם_משפחה_עברי", "") or "")).strip()
+            selected.append({"שמות": full, "בקשה": "", "דרגה": level, "תורם": full})
+        return finish(selected, args)
+
     selected = []
     for n in names:
         donor = donors.get(n.get("מזהה_תורם"), {})
@@ -73,6 +89,10 @@ def main():
             "תורם": (donor.get("שם_פרטי_עברי", "") or "") + " " + (donor.get("שם_משפחה_עברי", "") or ""),
         })
 
+    return finish(selected, args)
+
+
+def finish(selected, args):
     # מיון: לפי דרגה ואז לפי שם
     order = {"יששכר_זבולון": 0, "קוויטל_101": 1, "קוויטל_כללי": 2, "חד_פעמי": 3}
     selected.sort(key=lambda x: (order.get(x["דרגה"], 9), str(x["שמות"])))
