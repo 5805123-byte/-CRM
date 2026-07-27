@@ -480,11 +480,20 @@ for r in range(2, dsheet.max_row+1):
         paid = sum(1 for x in statuses if x and 'ccep' in x.lower())
         decl = sum(1 for x in statuses if x and x.strip().upper()=='NR')
         last = max([i for i,x in enumerate(statuses) if x], default=-1)
-        best['category'] = 'קבוע'
-        best['dtype'] = {'ישז':'שותפות יששכר-זבולון','חודשי':'חודשי'}.get(typ, typ)
-        best['amount'] = amount; best['channel'] = method
-        best['pay_status'] = (f'שולם {paid} חודשים' + (f', {decl} נדחו' if decl else '')) if (paid or decl) else ''
-        best['last_active'] = MONTHS_HE[last] if last>=0 else ''
+        def _num(v):
+            try: return float(str(v).replace(',',''))
+            except: return 0.0
+        def _fmt(x): return str(int(x)) if x==int(x) else str(round(x,2))
+        if best.get('category') == 'קבוע':
+            # תרומה נוספת לאותו תורם — סכום מצטבר
+            best['amount'] = _fmt(_num(best.get('amount')) + _num(amount))
+            best['dtype'] = (best.get('dtype','') + ' + נוסף') if 'נוסף' not in best.get('dtype','') else best['dtype']
+        else:
+            best['category'] = 'קבוע'
+            best['dtype'] = {'ישז':'שותפות יששכר-זבולון','חודשי':'חודשי'}.get(typ, typ)
+            best['amount'] = amount; best['channel'] = method
+            best['pay_status'] = (f'שולם {paid} חודשים' + (f', {decl} נדחו' if decl else '')) if (paid or decl) else ''
+            best['last_active'] = MONTHS_HE[last] if last>=0 else ''
         if not best.get('english'): best['english'] = (fn+' '+sur).strip()
         n_reg += 1
     else:
