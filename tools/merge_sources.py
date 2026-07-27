@@ -57,6 +57,27 @@ def skel(s):
     s = re.sub(r'[אהועי]','',s)
     return re.sub(r'\s+','',s)
 
+# ----- תעתיק עברית<->אנגלית לזיהוי שמות מאקסל התרומות -----
+_H2L = {'א':'','ב':'b','ג':'g','ד':'d','ה':'','ו':'v','ז':'z','ח':'h','ט':'t','י':'',
+        'כ':'k','ך':'k','ל':'l','מ':'m','ם':'m','נ':'n','ן':'n','ס':'s','ע':'','פ':'f',
+        'ף':'f','צ':'ts','ץ':'ts','ק':'k','ר':'r','ש':'s','ת':'t'}
+def _redu(s):
+    s = s.lower()
+    for a,b in [('sch','s'),('sh','s'),('tz','s'),('ts','s'),('ch','h'),('ck','k'),
+                ('ph','f'),('th','t'),('w','v'),('q','k'),('c','k'),('x','ks')]:
+        s = s.replace(a,b)
+    return re.sub(r'(.)\1+',r'\1', re.sub(r'[aeiou]','',s))
+def hskel(h): return _redu(''.join(_H2L.get(c,'') for c in norm(h)))
+def eskel(e): return _redu(re.sub(r'[^a-z]','', str(e or '').lower()))
+def edist(a,b):
+    if abs(len(a)-len(b))>1: return 9
+    dp=list(range(len(b)+1))
+    for i,ca in enumerate(a,1):
+        prev=dp[0]; dp[0]=i
+        for j,cb in enumerate(b,1):
+            cur=dp[j]; dp[j]=min(dp[j]+1,dp[j-1]+1,prev+(ca!=cb)); prev=cur
+    return dp[-1]
+
 # ---------- קריאת אנשי קשר ----------
 rows = list(csv.DictReader(open(CONTACTS, encoding='utf-8')))
 def labs(r): return set(l.strip() for l in (r.get('Labels') or '').split(' ::: ') if l.strip())
@@ -417,13 +438,66 @@ for group in manual_groups:
         if d in donors: donors.remove(d)
     n_manual += len(matched) - 1
 
+# ---------- העשרת תרומות + קטגוריות ----------
+MONTHS_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+for d in donors:
+    d['ls'] = hskel(d['last']); d['fs'] = hskel(d['first'])
+    for k in ('category','dtype','amount','channel','pay_status','last_active'):
+        d.setdefault(k, '')
+
+# תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק
+n_reg = 0; unmatched_data = []
+dsheet = wb['Data']
+for r in range(2, dsheet.max_row+1):
+    if not s(dsheet.cell(r,2).value): continue
+    sur = s(dsheet.cell(r,5).value); fn = s(dsheet.cell(r,4).value)
+    if not sur: continue
+    typ = s(dsheet.cell(r,1).value); method = chan(s(dsheet.cell(r,3).value)); amount = s(dsheet.cell(r,7).value)
+    statuses = [s(dsheet.cell(r,8+i).value) for i in range(12)]
+    es = eskel(sur); efs = eskel(fn)
+    cands = [d for d in donors if d['ls'] and (d['ls']==es or edist(d['ls'],es)<=1)]
+    best=None; bestsc=99; uniq=True
+    for d in cands:
+        sc = edist(d['ls'],es)*2 + (edist(d['fs'],efs) if (efs and d['fs']) else 2)
+        if sc < bestsc: bestsc=sc; best=d; uniq=True
+        elif sc == bestsc: uniq=False
+    if best is not None and bestsc<=3 and uniq:
+        paid = sum(1 for x in statuses if x and 'ccep' in x.lower())
+        decl = sum(1 for x in statuses if x and x.strip().upper()=='NR')
+        last = max([i for i,x in enumerate(statuses) if x], default=-1)
+        best['category'] = 'קבוע'
+        best['dtype'] = {'ישז':'שותפות יששכר-זבולון','חודשי':'חודשי'}.get(typ, typ)
+        best['amount'] = amount; best['channel'] = method
+        best['pay_status'] = (f'שולם {paid} חודשים' + (f', {decl} נדחו' if decl else '')) if (paid or decl) else ''
+        best['last_active'] = MONTHS_HE[last] if last>=0 else ''
+        if not best.get('english'): best['english'] = (fn+' '+sur).strip()
+        n_reg += 1
+    else:
+        unmatched_data.append((fn, sur, typ, amount))
+
+# מזדמנים (עברית) -> חיבור לפי שם + חודש אחרון פעיל
+donor_loose = {}
+for d in donors:
+    donor_loose.setdefault(loose(d['first']+' '+d['last']), d)
+    donor_loose.setdefault(loose(d['last']+' '+d['first']), d)
+n_occ = 0
+for o in occ_rows:
+    d = donor_loose.get(loose(o['nm']))
+    if d is None: continue
+    if not d['category']: d['category'] = 'מזדמן'
+    if not d['amount'] and o['total']: d['amount'] = str(int(o['total']))
+    active = [i for i,m in enumerate(months) if o['vals'].get(m)]
+    if active: d['last_active'] = MONTHS_HE[max(active)]
+    n_occ += 1
+
 # תורמים — מיון לפי שם משפחה (א-ב), עמודת שם משפחה לפני שם פרטי
 tor_rows=[]
 for i,d in enumerate(sorted(donors,key=lambda x:(x['last'] or 'תתת', x['first'])),1):
-    tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d.get('english',''),d['org'],d['phone'],d['email'],
-                     d['addr'],d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],
-                     ';'.join(d.get('aliases',[]))])
+    tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d.get('english',''),d['org'],d['phone'],d['email'],d['addr'],
+                     d.get('category',''),d.get('dtype',''),d.get('amount',''),d.get('channel',''),d.get('pay_status',''),d.get('last_active',''),
+                     d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],';'.join(d.get('aliases',[]))])
 sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_אנגלי','שם_עסק','טלפון','אימייל','כתובת',
+    'קטגוריה','סוג_תרומה','סכום','ערוץ_תשלום','סטטוס_תשלום','פעיל_לאחרונה',
     'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס','כינויים'],tor_rows)
 
 # קובץ התאמה (Data החודשיים) — עם עמודות עבריות ריקות
@@ -486,6 +560,8 @@ if phone_matches:
 print('כפילויות שמוזגו:',n_merged)
 if manual_groups:
     print('מיזוגים ידניים:',n_manual)
+print(f'תורמים קבועים שחוברו (מ-Data): {n_reg} | לא חוברו: {len(unmatched_data)}')
+print(f'מזדמנים שחוברו: {n_occ}')
 print('שמות קוויטל שנשארו לבדיקה:',len(review))
 one=sum(1 for d in review if d['n']==1); multi=sum(1 for d in review if d['n']>1); none=sum(1 for d in review if d['n']==0)
 print('   התאמה יחידה מוצעת:',one,'| כמה אפשרויות:',multi,'| חדש/לא נמצא:',none)
