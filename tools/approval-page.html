@@ -170,7 +170,7 @@ function buildText(){
     const d=decisions[it.id];
     if(!d) return;
     const val = d.choice==='__new__' ? 'אדם חדש' : d.choice;
-    lines.push(`${it.id} | ${it.kv} ⟵ ${val}`);
+    lines.push(`${it.id} | ${it.kvittel} ⟵ ${val}`);
   });
   lines.push(`(סה"כ אושרו: ${Object.keys(decisions).length})`);
   return lines.join('\n');

@@ -21,6 +21,7 @@ _ap.add_argument("--contacts", required=True, help="ייצוא Google Contacts �
 _ap.add_argument("--donations", required=True, help="קובץ Donations Summary (xlsx)")
 _ap.add_argument("--out", default="starter/crm-donors-filled.xlsx")
 _ap.add_argument("--review-json", default=None, help="ייצוא רשימת ההתאמות-לבדיקה כ-JSON (לדף האישור)")
+_ap.add_argument("--approvals", default=None, help="קובץ JSON של אישורים ידניים {שם_קוויטל: {choice}}")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -130,6 +131,16 @@ for r in rows:
     })
     seen[nm]=True; seen_loose.add(lk)
 
+# טעינת אישורים ידניים (מדף האישור)
+approvals = {}
+if _args.approvals:
+    import json as _json
+    approvals = {norm(k): v for k, v in _json.load(open(_args.approvals, encoding='utf-8')).items()}
+donor_by_norm = {}
+for d in donors:
+    donor_by_norm[norm(d['first'] + ' ' + d['last'])] = d
+n_linked = 0; n_newapproved = 0
+
 # אינדקס לפי שם-משפחה רופף מכל אנשי הקשר (לא רק תורמים), להצעת התאמות
 all_by_surname={}
 for r in rows:
@@ -160,6 +171,29 @@ for r in rows:
     if (L & KV) and not (L & DON_L):
         raw=(r.get('First Name','')+' '+r.get('Middle Name','')+' '+r.get('Last Name',''))
         nm=norm(raw); lk=loose(raw)
+        # החלת אישור ידני אם קיים
+        if nm in approvals:
+            ch = approvals[nm].get('choice')
+            tier_here = tier_from_labels(L)
+            if ch == '__new__':
+                donors.append({'first':nm,'last':'','org':'','phone':'','email':'','addr':'',
+                    'tier':tier_here,'how':'אושר: חדש','tags':';'.join(sorted(L&KV)),
+                    'bday':'','notes':'','n-flag':'תורם חדש (אושר ידנית)','nm':nm})
+                n_newapproved += 1
+            else:
+                dm = donor_by_norm.get(norm(ch))
+                if dm is not None:
+                    if not dm['tier']: dm['tier'] = tier_here
+                    dm['how'] = 'אושר ידנית'
+                else:
+                    # איש קשר קיים שאינו מתויג 'תורמים' — נוסיף אותו כתורם עם הטלפון שאושר
+                    donors.append({'first':ch,'last':'','org':'','phone':approvals[nm].get('phone',''),
+                        'email':'','addr':'','tier':tier_here,'how':'אושר ידנית','tags':';'.join(sorted(L&KV)),
+                        'bday':'','notes':'','n-flag':'חובר מאיש קשר (אושר ידנית)','nm':norm(ch)})
+                    donor_by_norm[norm(ch)] = donors[-1]
+                n_linked += 1
+            seen[nm]=True; seen_loose.add(lk)
+            continue
         if nm and nm not in seen and lk not in seen_loose:
             cands=suggest(nm)
             sug=cands[0] if cands else None
@@ -284,7 +318,9 @@ print('OUT:',OUT)
 print('כרטיסי תורם מלאים (מגוגל):',len(donors))
 print('  עם דרגת קוויטל שהותאמה אוטומטית:',sum(tc.values()),' ',dict(tc))
 print('  אופן ההתאמה:',dict(hc))
-print('שמות קוויטל לבדיקה (הצעת התאמה):',len(review))
+if approvals:
+    print('אישורים ידניים שהוחלו: חוברו לאיש קשר =',n_linked,'| נוספו כחדשים =',n_newapproved)
+print('שמות קוויטל שנשארו לבדיקה:',len(review))
 one=sum(1 for d in review if d['n']==1); multi=sum(1 for d in review if d['n']>1); none=sum(1 for d in review if d['n']==0)
 print('   התאמה יחידה מוצעת:',one,'| כמה אפשרויות:',multi,'| חדש/לא נמצא:',none)
 print('תורמים חודשיים (Data) לקובץ ההתאמה:',len(data_rows))
