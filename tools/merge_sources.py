@@ -196,6 +196,13 @@ for r in rows:
             continue
         if nm and nm not in seen and lk not in seen_loose:
             cands=suggest(nm)
+            # ללא הצעת התאמה כלל -> זהו תורם מוכר מהקוויטל, נוסיף אותו לרשימה (בלי טלפון עדיין)
+            if not cands:
+                donors.append({'first':nm,'last':'','org':'','phone':'','email':'','addr':'',
+                    'tier':tier_from_labels(L),'how':'מהקוויטל','tags':';'.join(sorted(L&KV)),
+                    'bday':'','notes':'','n-flag':'מהקוויטל — אין טלפון עדיין','nm':nm})
+                seen[nm]=True; seen_loose.add(lk); kv_only+=1
+                continue
             sug=cands[0] if cands else None
             prayer=(r.get('Custom Field 1 - Value') or r.get('Notes') or '').replace('\r','').strip()
             review.append({'kv':nm,'tier':tier_from_labels(L),'prayer':prayer,
