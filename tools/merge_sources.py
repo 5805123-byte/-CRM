@@ -445,7 +445,7 @@ for group in manual_groups:
 MONTHS_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
 for d in donors:
     d['ls'] = hskel(d['last']); d['fs'] = hskel(d['first'])
-    for k in ('category','dtype','amount','channel','pay_status','last_active'):
+    for k in ('category','dtype','amount','channel','pay_status','last_active','months'):
         d.setdefault(k, '')
 
 # תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק / אישור ידני
@@ -512,6 +512,8 @@ for r in range(2, dsheet.max_row+1):
             best['amount'] = amount; best['channel'] = method
             best['pay_status'] = (f'שולם {paid} חודשים' + (f', {decl} נדחו' if decl else '')) if (paid or decl) else ''
             best['last_active'] = MONTHS_HE[last] if last>=0 else ''
+            # מפת חודשים: p=עבר, x=נדחה, -=ריק
+            best['months'] = ''.join('p' if (x and 'ccep' in x.lower()) else 'x' if (x and x.strip().upper()=='NR') else '-' for x in statuses)
         if not best.get('english'): best['english'] = (fn+' '+sur).strip()
         n_reg += 1
     else:
@@ -550,10 +552,10 @@ tor_rows=[]
 for i,d in enumerate(sorted(donors,key=lambda x:(x['last'] or 'תתת', x['first'])),1):
     tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d.get('english',''),d['org'],d['phone'],d['email'],d['addr'],
                      d.get('category',''),d.get('dtype',''),d.get('amount',''),d.get('channel',''),d.get('pay_status',''),d.get('last_active',''),
-                     d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],';'.join(d.get('aliases',[]))])
+                     d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],';'.join(d.get('aliases',[])),d.get('months','')])
 sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_אנגלי','שם_עסק','טלפון','אימייל','כתובת',
     'קטגוריה','סוג_תרומה','סכום','ערוץ_תשלום','סטטוס_תשלום','פעיל_לאחרונה',
-    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס','כינויים'],tor_rows)
+    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס','כינויים','סטטוס_חודשים'],tor_rows)
 
 # קובץ התאמה (Data החודשיים) — עם עמודות עבריות ריקות
 mt_rows=[]
