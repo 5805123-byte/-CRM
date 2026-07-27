@@ -27,6 +27,7 @@ _ap.add_argument("--manual-merges", default=None, help="קובץ JSON: רשימ�
 _ap.add_argument("--phone-overrides", default=None, help="קובץ JSON {שם: טלפון} לתיקון ידני של טלפון")
 _ap.add_argument("--regular-matches", default=None, help="קובץ JSON {שם אנגלי: שם עברי} לאישור חיבור תורם קבוע")
 _ap.add_argument("--regular-review-json", default=None, help="ייצוא הקבועים שלא חוברו + מועמדים (לדף האישור)")
+_ap.add_argument("--new-regulars", default=None, help="קובץ JSON {שם אנגלי: שם עברי} ליצירת כרטיסי תורם קבוע חדשים")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -452,6 +453,23 @@ regular_matches = {}
 if _args.regular_matches:
     import json as _j5
     regular_matches = {norm(k): v for k, v in _j5.load(open(_args.regular_matches, encoding='utf-8')).items()}
+
+# יצירת כרטיסי תורם קבוע חדשים (שהוזנו ידנית)
+n_newreg = 0
+if _args.new_regulars:
+    import json as _j7
+    for eng, heb in _j7.load(open(_args.new_regulars, encoding='utf-8')).items():
+        toks = norm(heb).split()
+        first = ' '.join(toks[:-1]) if len(toks) >= 2 else heb
+        last = toks[-1] if len(toks) >= 2 else ''
+        card = {'first':first,'last':last,'english':eng,'org':'','phone':'','email':'','addr':'',
+                'tier':'','how':'חדש (הוזן ידנית)','tags':'','bday':'','notes':'','n-flag':'תורם קבוע חדש',
+                'nm':norm(heb),'aliases':[],'category':'','dtype':'','amount':'','channel':'',
+                'pay_status':'','last_active':'','ls':hskel(last),'fs':hskel(first)}
+        donors.append(card)
+        regular_matches[norm(eng)] = heb
+        n_newreg += 1
+
 donor_by_name = {}
 for d in donors:
     donor_by_name[norm(d['first']+' '+d['last'])] = d
