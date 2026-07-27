@@ -389,8 +389,13 @@ if _args.manual_merges:
     manual_groups = _j3.load(open(_args.manual_merges, encoding='utf-8'))
 n_manual = 0
 for group in manual_groups:
-    wanted = [keyset(x) for x in group]
-    matched = [d for d in donors if keyset(d['first'] + ' ' + d['last']) in wanted]
+    wanted = [keyset(x) for x in group if keyset(x)]
+    matched = []
+    for d in donors:
+        dk = keyset(d['first'] + ' ' + d['last'])
+        # התאמה אם שם-הקבוצה מוכל בשם התורם (או להיפך) עם חפיפה של 2+ מילים
+        if any((w <= dk or dk <= w) and len(w & dk) >= 2 for w in wanted):
+            matched.append(d)
     if len(matched) < 2: continue
     matched.sort(key=lambda x:(0 if x['phone'] else 1, 0 if x['tier'] else 1))
     base = matched[0]
