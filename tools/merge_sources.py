@@ -49,6 +49,12 @@ def loose(s):
     s = re.sub(r'\s+','',s)
     return s
 
+def skel(s):
+    """שלד עיצורי — מסיר אותיות חלשות (תנועות). לזיהוי כפילויות שם משפחה."""
+    s = norm(s).translate(FIN)
+    s = re.sub(r'[אהועי]','',s)
+    return re.sub(r'\s+','',s)
+
 # ---------- קריאת אנשי קשר ----------
 rows = list(csv.DictReader(open(CONTACTS, encoding='utf-8')))
 def labs(r): return set(l.strip() for l in (r.get('Labels') or '').split(' ::: ') if l.strip())
@@ -302,27 +308,64 @@ def sheet(title,headers,rows_data,yellow=()):
 
 owb.remove(owb.active)
 
-# חיבור טלפונים שנמצאו לפי צליל (למי שאין לו טלפון) + נרמול כל הטלפונים
+# מפת שם אנגלי מאקסל התרומות (לפי אימייל) — לקישור לכרטיס העברי
+email_to_en = {}
+for dr in data_rows:
+    em = (dr.get('email') or '').strip().lower()
+    en = (dr['en_name'] + ' ' + dr['en_sur']).strip()
+    if em and en: email_to_en[em] = en
+
+# חיבור טלפונים שנמצאו לפי צליל (למי שאין לו טלפון) + נרמול + פיצול שם + שם אנגלי
 n_phone_added = 0
 for d in donors:
+    d.setdefault('english', '')
     if not d.get('phone') and d.get('nm') in phone_matches and phone_matches[d['nm']]:
         d['phone'] = phone_matches[d['nm']]
         d['how'] = (d.get('how','') + ' +טלפון').strip()
         d['n-flag'] = 'טלפון חובר לפי צליל'
         n_phone_added += 1
     d['phone'] = normalize_phone(d.get('phone',''))
-    # פיצול שם שמופיע מלא בשדה אחד -> שם פרטי + שם משפחה (המילה האחרונה = שם משפחה)
     if not d.get('last') and d.get('first'):
         toks = d['first'].split()
         if len(toks) >= 2:
             d['first'] = ' '.join(toks[:-1]); d['last'] = toks[-1]
+    em = (d.get('email') or '').strip().lower()
+    if em in email_to_en: d['english'] = email_to_en[em]
+
+# ---------- מיזוג כפילויות (שם משפחה זהה בשלד + שם פרטי דומה) ----------
+order_t = {'יששכר_זבולון':3,'קוויטל_101':2,'קוויטל_כללי':1,'':0}
+from collections import OrderedDict
+groups = OrderedDict()
+for d in donors:
+    key = (skel(d['last']) or skel(d['first']), loose(d['first']))
+    groups.setdefault(key, []).append(d)
+merged = []; n_merged = 0
+for key, grp in groups.items():
+    if len(grp) == 1:
+        merged.append(grp[0]); continue
+    grp.sort(key=lambda x:(0 if x['phone'] else 1, 0 if x['tier'] else 1, 0 if x.get('email') else 1))
+    base = grp[0]
+    phones = []
+    for d in grp:
+        for p in re.split(r'\s*/\s*', d.get('phone','')):
+            if p and p not in phones: phones.append(p)
+    base['phone'] = ' / '.join(phones)
+    base['tier'] = max((d['tier'] for d in grp), key=lambda t:order_t.get(t,0))
+    for f in ['org','email','addr','bday','english']:
+        if not base.get(f):
+            for d in grp:
+                if d.get(f): base[f] = d[f]; break
+    base['tags'] = ';'.join(sorted({t for d in grp for t in (d.get('tags') or '').split(';') if t}))
+    base['n-flag'] = 'מוזג מכפילות'
+    merged.append(base); n_merged += len(grp) - 1
+donors[:] = merged
 
 # תורמים — מיון לפי שם משפחה (א-ב), עמודת שם משפחה לפני שם פרטי
 tor_rows=[]
 for i,d in enumerate(sorted(donors,key=lambda x:(x['last'] or 'תתת', x['first'])),1):
-    tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d['org'],d['phone'],d['email'],
+    tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d.get('english',''),d['org'],d['phone'],d['email'],
                      d['addr'],d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag']])
-sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_עסק','טלפון','אימייל','כתובת',
+sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_אנגלי','שם_עסק','טלפון','אימייל','כתובת',
     'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס'],tor_rows)
 
 # קובץ התאמה (Data החודשיים) — עם עמודות עבריות ריקות
@@ -382,6 +425,7 @@ if approvals:
     print('אישורים ידניים שהוחלו: חוברו לאיש קשר =',n_linked,'| נוספו כחדשים =',n_newapproved)
 if phone_matches:
     print('טלפונים שחוברו לפי צליל:',n_phone_added)
+print('כפילויות שמוזגו:',n_merged)
 print('שמות קוויטל שנשארו לבדיקה:',len(review))
 one=sum(1 for d in review if d['n']==1); multi=sum(1 for d in review if d['n']>1); none=sum(1 for d in review if d['n']==0)
 print('   התאמה יחידה מוצעת:',one,'| כמה אפשרויות:',multi,'| חדש/לא נמצא:',none)
