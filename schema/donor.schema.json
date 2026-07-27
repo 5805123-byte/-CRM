@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crm.local/schema/donor.schema.json",
+  "title": "תורם",
+  "description": "כרטיס תורם מאוחד — מאגד זהות, פרטי קשר, תרומות והיסטוריית קשר ממספר מקורות.",
+  "type": "object",
+  "required": ["מזהה_תורם", "סוג_תורם", "זהות"],
+  "properties": {
+    "מזהה_תורם": {
+      "type": "string",
+      "description": "מזהה פנימי יציב, למשל ת-000123",
+      "pattern": "^ת-\\d{6}$"
+    },
+    "סוג_תורם": {
+      "type": "string",
+      "enum": ["יחיד", "עסק", "משק_בית"]
+    },
+    "זהות": {
+      "type": "object",
+      "properties": {
+        "שם_פרטי_עברי": { "type": "string", "description": "ממולא ידנית דרך קובץ ההתאמה" },
+        "שם_משפחה_עברי": { "type": "string", "description": "ממולא ידנית דרך קובץ ההתאמה" },
+        "שם_פרטי_אנגלי": { "type": "string", "description": "מקור: Google Contacts givenName / Donations Summary" },
+        "שם_משפחה_אנגלי": { "type": "string", "description": "מקור: Google Contacts familyName" },
+        "שם_עסק": { "type": "string", "description": "שם העסק באנגלית — לתרומות שמגיעות מהעסק" },
+        "שם_לתצוגה": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "פרטי_קשר": {
+      "type": "object",
+      "properties": {
+        "טלפונים": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ערך"],
+            "properties": {
+              "ערך": { "type": "string" },
+              "סוג": { "type": "string", "enum": ["נייד", "בית", "עבודה", "אחר"] },
+              "וואטסאפ": { "type": "boolean" },
+              "מקור": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "אימיילים": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ערך"],
+            "properties": {
+              "ערך": { "type": "string", "format": "email" },
+              "סוג": { "type": "string", "enum": ["אישי", "עבודה", "אחר"] },
+              "מקור": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "ערוץ_מועדף": { "type": "string", "enum": ["טלפון", "מייל", "וואטסאפ"] }
+      },
+      "additionalProperties": false
+    },
+    "תרומות": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/תרומה" }
+    },
+    "אינטראקציות": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/אינטראקציה" }
+    },
+    "מקורות": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/מקור" }
+    },
+    "תגיות": { "type": "array", "items": { "type": "string" } },
+    "הערות": { "type": "string" },
+    "נוצר_בתאריך": { "type": "string", "format": "date-time" },
+    "עודכן_בתאריך": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "תרומה": {
+      "type": "object",
+      "required": ["מזהה_תרומה", "תאריך", "סכום", "ערוץ"],
+      "properties": {
+        "מזהה_תרומה": { "type": "string" },
+        "מזהה_תורם": { "type": "string" },
+        "תאריך": { "type": "string", "format": "date" },
+        "סכום": { "type": "number" },
+        "מטבע": { "type": "string", "default": "USD" },
+        "ערוץ": {
+          "type": "string",
+          "description": "ערוץ/אמצעי התרומה המדויק",
+          "enum": [
+            "אתר", "בנק_ווסט", "אותורייז", "פידליטי", "OJC",
+            "דונורס_פאנד", "צ'ק", "מזומן", "העברה_בנקאית", "זל", "פייפאל", "אחר"
+          ]
+        },
+        "ייעוד": { "type": "string", "description": "למה נועדה התרומה" },
+        "חוזרת": { "type": "boolean", "description": "תרומה חוזרת / הוראת קבע" },
+        "בשם": { "type": "string", "enum": ["אדם", "עסק"], "description": "האם התרומה בשם האדם או בשם העסק" },
+        "מזהה_חיצוני": { "type": "string", "description": "מזהה עסקה במקור — למניעת כפילויות" },
+        "מקור": { "type": "string" },
+        "גולמי": { "type": "object", "description": "הרשומה הגולמית המקורית" }
+      },
+      "additionalProperties": false
+    },
+    "אינטראקציה": {
+      "type": "object",
+      "required": ["מזהה_אינטראקציה", "חותמת_זמן", "ערוץ"],
+      "properties": {
+        "מזהה_אינטראקציה": { "type": "string" },
+        "מזהה_תורם": { "type": "string" },
+        "חותמת_זמן": { "type": "string", "format": "date-time", "description": "מתי היה הקשר" },
+        "ערוץ": { "type": "string", "enum": ["טלפון", "מייל", "וואטסאפ", "פנים_אל_פנים", "סמס"] },
+        "כיוון": { "type": "string", "enum": ["נכנס", "יוצא"] },
+        "תמצית": { "type": "string", "description": "מה נדון" },
+        "משתתפים": { "type": "array", "items": { "type": "string" } },
+        "מזהה_חיצוני": { "type": "string", "description": "מזהה שיחה/שרשור במקור — למניעת כפילויות בסנכרון" },
+        "מקור": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "מקור": {
+      "type": "object",
+      "required": ["מערכת", "מזהה_במקור"],
+      "properties": {
+        "מערכת": {
+          "type": "string",
+          "enum": ["סיכום_תרומות", "גוגל_קונטקטס", "ידני", "אברכים"]
+        },
+        "מזהה_במקור": { "type": "string" },
+        "הותאם_לפי": {
+          "type": "string",
+          "enum": ["שם_עברי_ידני", "אימייל", "טלפון", "שם_מדויק"]
+        },
+        "רמת_ביטחון": { "type": "string", "enum": ["מאושר", "סביר", "לא_מאומת"] },
+        "קושר_בתאריך": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
