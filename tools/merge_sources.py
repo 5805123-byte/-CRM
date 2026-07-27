@@ -20,6 +20,7 @@ _ap = argparse.ArgumentParser()
 _ap.add_argument("--contacts", required=True, help="ייצוא Google Contacts בפורמט CSV")
 _ap.add_argument("--donations", required=True, help="קובץ Donations Summary (xlsx)")
 _ap.add_argument("--out", default="starter/crm-donors-filled.xlsx")
+_ap.add_argument("--review-json", default=None, help="ייצוא רשימת ההתאמות-לבדיקה כ-JSON (לדף האישור)")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -162,10 +163,13 @@ for r in rows:
         if nm and nm not in seen and lk not in seen_loose:
             cands=suggest(nm)
             sug=cands[0] if cands else None
-            review.append({'kv':nm,'tier':tier_from_labels(L),
+            prayer=(r.get('Custom Field 1 - Value') or r.get('Notes') or '').replace('\r','').strip()
+            review.append({'kv':nm,'tier':tier_from_labels(L),'prayer':prayer,
                 'sug':(sug['first']+' '+sug['last']).strip() if sug else '',
                 'sug_phone':sug['phone'] if sug else '',
                 'sug_isdonor':('תורם' if sug and sug['is_donor'] else ('איש קשר' if sug else '')),
+                'cands':[{'name':(c['first']+' '+c['last']).strip(),'phone':c['phone'],
+                          'is_donor':c['is_donor']} for c in cands[:4]],
                 'n':len(cands)})
             kv_only+=1
 
@@ -261,6 +265,17 @@ sheet('לבדיקה_קוויטל',['מפתח','שם_בקוויטל','דרגה','
     rv_rows,yellow=(8,))
 
 owb.save(OUT)
+
+# ---------- ייצוא JSON לדף האישור ----------
+if _args.review_json:
+    import json
+    payload=[]
+    for i,d in enumerate(sorted(review,key=lambda x:(x['n']!=1,x['tier']!='יששכר_זבולון',x['kv'])),1):
+        payload.append({'id':f'R{i:04d}','kvittel':d['kv'],'tier':d['tier'],
+            'prayer':d.get('prayer','')[:220],'candidates':d['cands'],'n':d['n']})
+    json.dump(payload,open(_args.review_json,'w',encoding='utf-8'),ensure_ascii=False,indent=1)
+    print('JSON לאישור:',_args.review_json,'(',len(payload),'שורות )')
+
 # ---------- דוח ----------
 from collections import Counter
 tc=Counter(d['tier'] for d in donors if d['tier'])
