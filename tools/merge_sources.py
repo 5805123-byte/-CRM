@@ -23,6 +23,7 @@ _ap.add_argument("--out", default="starter/crm-donors-filled.xlsx")
 _ap.add_argument("--review-json", default=None, help="ייצוא רשימת ההתאמות-לבדיקה כ-JSON (לדף האישור)")
 _ap.add_argument("--approvals", default=None, help="קובץ JSON של אישורים ידניים {שם_קוויטל: {choice}}")
 _ap.add_argument("--phone-matches", default=None, help="קובץ JSON {שם_קוויטל: טלפון} לחיבור טלפונים שנמצאו לפי צליל")
+_ap.add_argument("--manual-merges", default=None, help="קובץ JSON: רשימת קבוצות שמות למיזוג ידני")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -319,6 +320,7 @@ for dr in data_rows:
 n_phone_added = 0
 for d in donors:
     d.setdefault('english', '')
+    d.setdefault('aliases', [])
     if not d.get('phone') and d.get('nm') in phone_matches and phone_matches[d['nm']]:
         d['phone'] = phone_matches[d['nm']]
         d['how'] = (d.get('how','') + ' +טלפון').strip()
@@ -360,13 +362,46 @@ for key, grp in groups.items():
     merged.append(base); n_merged += len(grp) - 1
 donors[:] = merged
 
+# ---------- מיזוגים ידניים שסומנו על ידי המשתמש ----------
+def keyset(s):
+    return frozenset(loose(t) for t in norm(s).split() if loose(t))
+manual_groups = []
+if _args.manual_merges:
+    import json as _j3
+    manual_groups = _j3.load(open(_args.manual_merges, encoding='utf-8'))
+n_manual = 0
+for group in manual_groups:
+    wanted = [keyset(x) for x in group]
+    matched = [d for d in donors if keyset(d['first'] + ' ' + d['last']) in wanted]
+    if len(matched) < 2: continue
+    matched.sort(key=lambda x:(0 if x['phone'] else 1, 0 if x['tier'] else 1))
+    base = matched[0]
+    phones = []
+    for d in matched:
+        for p in re.split(r'\s*/\s*', d.get('phone','')):
+            if p and p not in phones: phones.append(p)
+    base['phone'] = ' / '.join(phones)
+    base['tier'] = max((d['tier'] for d in matched), key=lambda t:order_t.get(t,0))
+    for f in ['org','email','addr','bday','english']:
+        if not base.get(f):
+            for d in matched:
+                if d.get(f): base[f] = d[f]; break
+    base.setdefault('aliases', [])
+    for d in matched:
+        base['aliases'].append(d['first'] + ' ' + d['last'])
+    base['n-flag'] = 'מוזג ידנית'
+    for d in matched[1:]:
+        if d in donors: donors.remove(d)
+    n_manual += len(matched) - 1
+
 # תורמים — מיון לפי שם משפחה (א-ב), עמודת שם משפחה לפני שם פרטי
 tor_rows=[]
 for i,d in enumerate(sorted(donors,key=lambda x:(x['last'] or 'תתת', x['first'])),1):
     tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d.get('english',''),d['org'],d['phone'],d['email'],
-                     d['addr'],d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag']])
+                     d['addr'],d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],
+                     ';'.join(d.get('aliases',[]))])
 sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_אנגלי','שם_עסק','טלפון','אימייל','כתובת',
-    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס'],tor_rows)
+    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס','כינויים'],tor_rows)
 
 # קובץ התאמה (Data החודשיים) — עם עמודות עבריות ריקות
 mt_rows=[]
@@ -426,6 +461,8 @@ if approvals:
 if phone_matches:
     print('טלפונים שחוברו לפי צליל:',n_phone_added)
 print('כפילויות שמוזגו:',n_merged)
+if manual_groups:
+    print('מיזוגים ידניים:',n_manual)
 print('שמות קוויטל שנשארו לבדיקה:',len(review))
 one=sum(1 for d in review if d['n']==1); multi=sum(1 for d in review if d['n']>1); none=sum(1 for d in review if d['n']==0)
 print('   התאמה יחידה מוצעת:',one,'| כמה אפשרויות:',multi,'| חדש/לא נמצא:',none)
