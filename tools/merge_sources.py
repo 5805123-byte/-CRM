@@ -621,7 +621,7 @@ py_rows = []
 for d, n in allnights:
     date = n.get('תאריך',''); ded = n.get('הקדשה','')
     nusach = n.get('נוסח','') or gen_nusach(date, ded)
-    amount = str(n.get('סכום','')) if n.get('סכום','') != '' else '480'
+    amount = str(n.get('סכום','')) if n.get('סכום','') != '' else ''
     py_rows.append([date, n.get('יום',''), n.get('חודש',''), hmonth_order(n.get('חודש','')),
                     (d['first']+' '+d['last']).strip(), amount, ded, nusach, d['phone']])
 sheet('פרנס_יום',['תאריך','יום','חודש','סדר','שם_התורם','סכום','הקדשה','נוסח_תפילה','טלפון'],py_rows)
