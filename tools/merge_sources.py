@@ -28,6 +28,7 @@ _ap.add_argument("--phone-overrides", default=None, help="קובץ JSON {שם: �
 _ap.add_argument("--regular-matches", default=None, help="קובץ JSON {שם אנגלי: שם עברי} לאישור חיבור תורם קבוע")
 _ap.add_argument("--regular-review-json", default=None, help="ייצוא הקבועים שלא חוברו + מועמדים (לדף האישור)")
 _ap.add_argument("--new-regulars", default=None, help="קובץ JSON {שם אנגלי: שם עברי} ליצירת כרטיסי תורם קבוע חדשים")
+_ap.add_argument("--purposes", default=None, help="קובץ JSON {שם תורם: עבור מה תרם}")
 _args = _ap.parse_args()
 CONTACTS = _args.contacts
 DON = _args.donations
@@ -443,10 +444,19 @@ for group in manual_groups:
 
 # ---------- העשרת תרומות + קטגוריות ----------
 MONTHS_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+# מטרות (עבור מה תרם) — קלט ידני
+purposes = {}
+if _args.purposes:
+    import json as _j8
+    purposes = {norm(k): v for k, v in _j8.load(open(_args.purposes, encoding='utf-8')).items()}
+
 for d in donors:
     d['ls'] = hskel(d['last']); d['fs'] = hskel(d['first'])
-    for k in ('category','dtype','amount','channel','pay_status','last_active','months'):
+    for k in ('category','dtype','amount','channel','pay_status','last_active','months','purpose'):
         d.setdefault(k, '')
+    for cand in (norm(d['first']+' '+d['last']), norm(d['last']+' '+d['first'])):
+        if cand in purposes:
+            d['purpose'] = purposes[cand]; break
 
 # תורמים קבועים (Data, אנגלית) -> חיבור בתעתיק / אישור ידני
 regular_matches = {}
@@ -466,7 +476,8 @@ if _args.new_regulars:
         card = {'first':first,'last':last,'english':eng,'org':'','phone':ph,'email':'','addr':'',
                 'tier':'','how':'חדש (הוזן ידנית)','tags':'','bday':'','notes':'','n-flag':'תורם קבוע חדש',
                 'nm':norm(heb),'aliases':[],'category':'','dtype':'','amount':'','channel':'',
-                'pay_status':'','last_active':'','ls':hskel(last),'fs':hskel(first)}
+                'pay_status':'','last_active':'','ls':hskel(last),'fs':hskel(first),
+                'purpose':purposes.get(norm(heb), '')}
         donors.append(card)
         regular_matches[norm(eng)] = heb
         n_newreg += 1
@@ -557,10 +568,10 @@ tor_rows=[]
 for i,d in enumerate(sorted(donors,key=lambda x:(x['last'] or 'תתת', x['first'])),1):
     tor_rows.append([f'ת-{i:05d}',d['last'],d['first'],d.get('english',''),d['org'],d['phone'],d['email'],d['addr'],
                      d.get('category',''),d.get('dtype',''),d.get('amount',''),d.get('channel',''),d.get('pay_status',''),d.get('last_active',''),
-                     d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],';'.join(d.get('aliases',[])),d.get('months','')])
+                     d['tier'],d.get('how',''),d['tags'],d['bday'],d['notes'],d['n-flag'],';'.join(d.get('aliases',[])),d.get('months',''),d.get('purpose','')])
 sheet('תורמים',['מזהה_תורם','שם_משפחה_עברי','שם_פרטי_עברי','שם_אנגלי','שם_עסק','טלפון','אימייל','כתובת',
     'קטגוריה','סוג_תרומה','סכום','ערוץ_תשלום','סטטוס_תשלום','פעיל_לאחרונה',
-    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס','כינויים','סטטוס_חודשים'],tor_rows)
+    'דרגת_קוויטל','אופן_התאמה','תוויות_גוגל','יום_הולדת','הערות','סטטוס','כינויים','סטטוס_חודשים','עבור_מה'],tor_rows)
 
 # קובץ התאמה (Data החודשיים) — עם עמודות עבריות ריקות
 mt_rows=[]
