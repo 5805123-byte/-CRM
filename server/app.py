@@ -4,7 +4,7 @@ import sqlite3, json, os, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, 'crm.db')
+DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
 STATIC = os.path.join(HERE, 'static')
 PORT = int(os.environ.get('PORT', 8000))
 
@@ -105,6 +105,9 @@ class H(BaseHTTPRequestHandler):
 
     def log_message(self, *a): pass
 
-if __name__ == '__main__':
-    print(f'CRM כולל חצות רץ על http://localhost:{PORT}')
+def serve():
+    print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
+
+if __name__ == '__main__':
+    serve()

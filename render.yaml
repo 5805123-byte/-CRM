@@ -1,0 +1,16 @@
+# הגדרת אירוח ל-Render — מערכת כולל חצות
+# מעלים דרך render.com: New > Blueprint > מחברים את הריפו הזה
+services:
+  - type: web
+    name: kollel-chatzot-crm
+    runtime: python
+    plan: starter          # כולל דיסק קבוע לשמירת הנתונים
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server/start.py
+    envVars:
+      - key: DB_PATH
+        value: /var/data/crm.db
+    disk:
+      name: crm-data
+      mountPath: /var/data   # דיסק קבוע — הנתונים נשמרים גם אחרי עדכונים
+      sizeGB: 1

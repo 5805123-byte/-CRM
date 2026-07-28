@@ -4,7 +4,7 @@ import sqlite3, openpyxl, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 XLSX = os.path.join(HERE, '..', 'starter', 'crm-donors-filled.xlsx')
-DB = os.path.join(HERE, 'crm.db')
+DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
 
 SCHEMA = """
 DROP TABLE IF EXISTS donors;
