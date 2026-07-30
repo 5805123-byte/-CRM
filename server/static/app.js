@@ -64,14 +64,16 @@ function render(){
 }
 
 /* ---------- תורמים ---------- */
+function amtNum(a){const n=parseFloat(String(a||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;}
 const DFILTERS={
   'iz':{label:'יששכר־זבולון', fn:d=>d.tier==='יששכר_זבולון'},
   'k101':{label:'קוויטל 101', fn:d=>d.tier==='קוויטל_101'},
+  'reglow':{label:'קבועים פחות מ-101', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['iz','k101','occ','klali',''];
+const DFORDER=['iz','k101','reglow','occ','klali',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
@@ -123,7 +125,9 @@ function renderCard(d){
 function cardDetails(d,body){
   const sel=CATS.map(c=>`<option ${c===d.category?'selected':''} value="${c}">${c||'— ללא —'}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
-  body.innerHTML=`${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
+  const gc=gaps(d.months).length, pend=(d.pledges||[]).filter(p=>p.status!=='נתן').length;
+  body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
+    ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
@@ -289,8 +293,14 @@ function renderPlaque(){
 
 /* ---------- לא עבר ---------- */
 function renderMissed(){
-  const list=DB.filter(d=>gaps(d.months).length>0&&matchQ(d.last+' '+d.first+' '+d.english)).sort((a,b)=>gaps(b.months).length-gaps(a.months).length);
-  view.innerHTML=`<div class="cnt">${list.length} תורמים עם חודש שלא עבר</div><div class="list">${list.map(d=>{const g=gaps(d.months);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>MON[i]).join(', ')}</div></div><div class="meta">${monthGrid(d.months)}</div></div>`;}).join('')||'<div class="empty">אין פספוסים 🎉</div>'}</div>`;
+  const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
+  const missed=q1.filter(d=>gaps(d.months).length>0).sort((a,b)=>gaps(b.months).length-gaps(a.months).length);
+  const debts=[];q1.forEach(d=>(d.pledges||[]).forEach(p=>{if(p.status!=='נתן')debts.push({d,p});}));
+  view.innerHTML=`
+    <div class="misshead">🔴 חובות והתחייבויות שטרם שולמו (${debts.length})</div>
+    <div class="list">${debts.map(({d,p})=>`<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">${esc(p.category)} ${p.amount?('· $'+esc(p.amount)):''} — טרם שולם</div></div><div class="meta"><span class="pill" style="background:var(--no-soft);color:var(--no)">חוב</span></div></div>`).join('')||'<div class="hintxt">אין חובות פתוחים 🎉</div>'}</div>
+    <div class="misshead" style="margin-top:16px">🔴 חודשים שלא עברו (${missed.length})</div>
+    <div class="list">${missed.map(d=>{const g=gaps(d.months);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>MON[i]).join(', ')}</div></div><div class="meta">${monthGrid(d.months)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
 }
 

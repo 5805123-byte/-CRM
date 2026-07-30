@@ -25,6 +25,9 @@
   .tabs{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
   .tab{flex:1;background:none;border:none;font-family:inherit;font-size:.92rem;font-weight:700;color:var(--muted);padding:9px;border-radius:9px;cursor:pointer;min-width:80px}
   .tab.on{background:var(--accent-soft);color:var(--accent)}
+  .tab.danger{color:var(--no)}.tab.danger.on{background:var(--no-soft);color:var(--no)}
+  .misshead{color:var(--no);font-weight:800;font-size:.95rem;margin:12px 2px 2px}
+  .notpassed{background:var(--no-soft);color:var(--no);border:1px solid var(--no);border-radius:10px;padding:8px 12px;font-weight:800;margin-bottom:8px}
   .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
   .chip{background:var(--card);border:1px solid var(--line);color:var(--muted);font-size:.83rem;font-weight:600;padding:6px 12px;border-radius:99px;cursor:pointer}
   .chip.on{background:var(--accent);color:#fff;border-color:transparent}
@@ -166,7 +169,7 @@
       <button class="tab" data-tab="tasks">משימות</button>
       <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
-      <button class="tab" data-tab="missed">לא עבר</button>
+      <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
     </div>
     <div class="chips" id="chips"></div>

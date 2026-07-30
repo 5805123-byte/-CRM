@@ -2,6 +2,7 @@
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
 import sqlite3, json, os, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from hebdate import week_before
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
@@ -182,8 +183,15 @@ class H(BaseHTTPRequestHandler):
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication) VALUES(?,?,?,?,?,?)",
                         (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication','')))
-            con.commit(); pid = cur.lastrowid; con.close()
-            return self._send(200, {'ok': True, 'id': pid})
+            pid = cur.lastrowid
+            due = week_before(b.get('date_text',''))
+            tid = None
+            if due:
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (b['donor_id'], due, 'parnes', 'פרנס יום ' + b.get('date_text','') + ' — הכן הדפסה וצור קשר'))
+                tid = cur.lastrowid
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due})
         if self.path == '/api/prayer':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",

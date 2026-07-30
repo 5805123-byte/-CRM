@@ -100,15 +100,24 @@ def main():
         for al in v(ws.cell(r,21)).split(';'):
             if al.strip(): idx[norm(al)] = did
 
-    # פרנס יום
+    # פרנס יום + תזכורת אוטומטית שבוע לפני
+    try:
+        from hebdate import week_before
+    except Exception:
+        week_before = lambda *a, **k: None
     if 'פרנס_יום' in wb.sheetnames:
         ws = wb['פרנס_יום']
         for r in range(2, ws.max_row+1):
             if not v(ws.cell(r,1)): continue
             did = idx.get(norm(v(ws.cell(r,5))))
+            date_text = v(ws.cell(r,1))
             cur.execute("INSERT INTO parnes(donor_id,day,month,ord,date_text,amount,dedication,nusach) VALUES(?,?,?,?,?,?,?,?)",
                 (did, int(v(ws.cell(r,2)) or 0), v(ws.cell(r,3)), int(v(ws.cell(r,4)) or 0),
-                 v(ws.cell(r,1)), v(ws.cell(r,6)), v(ws.cell(r,7)), v(ws.cell(r,8))))
+                 date_text, v(ws.cell(r,6)), v(ws.cell(r,7)), v(ws.cell(r,8))))
+            due = week_before(date_text)
+            if did and due:
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                    (did, due, 'parnes', 'פרנס יום ' + date_text + ' — הכן הדפסה וצור קשר'))
 
     # שמות לתפילה
     def match_prayer(name):
@@ -142,6 +151,22 @@ def main():
     HMON={'ינואר':'01','פברואר':'02','מרץ':'03','אפריל':'04','מאי':'05','יוני':'06',
           'יולי':'07','אוגוסט':'08','אוגסט':'08','ספטמבר':'09','אוקטובר':'10','נובמבר':'11','דצמבר':'12'}
     YEAR='2026'
+    # מיזוגים מפורשים של מזדמנים לתורם קיים (שם שונה מהותית)
+    OCC_ALIAS = { norm('דוויק אבי'): norm('דוואק אברהם') }
+    def match_occasional(name):
+        n = norm(name)
+        if n in idx: return idx[n]
+        if n in OCC_ALIAS and OCC_ALIAS[n] in idx: return idx[OCC_ALIAS[n]]
+        toks = n.split()
+        if len(toks) >= 2:
+            oc_last = toks[0]; oc_first = ' '.join(toks[1:])
+            for ln, lst in by_last.items():
+                if edist(oc_last, ln) <= 1:
+                    for cand_did, cand_first in lst:
+                        if cand_first and edist(oc_first, cand_first) <= 1:
+                            return cand_did
+        return None
+
     if 'מזדמנים' in wb.sheetnames:
         ws = wb['מזדמנים']
         nextid = cur.execute("SELECT COALESCE(MAX(id),0) FROM donors").fetchone()[0] + 1
@@ -150,7 +175,7 @@ def main():
             name=v(ws.cell(r,2))
             if not name: continue
             total=v(ws.cell(r,3)); detail=v(ws.cell(r,4))
-            did=idx.get(norm(name))
+            did=match_occasional(name)
             if not did:
                 toks=name.split()
                 last=toks[0] if toks else name; first=' '.join(toks[1:])
