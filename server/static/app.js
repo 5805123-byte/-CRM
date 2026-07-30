@@ -185,6 +185,7 @@ function cardDonations(d,body){
         <option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label>
       <div id="dn_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div></div>
+      <label class="fld" id="dn_catfree_l" style="display:none"><span>קטגוריה חופשית — כתוב בעצמך</span><input id="dn_catfree" placeholder="למשל: הכנסת אורחים, שיפוץ המקווה…"></label>
       <label class="fld"><span>תאריך (לועזי)</span><input id="dn_date" type="date"></label>
       <label class="fld"><span>🕯️ שם לתפילה (לקוויטל)</span><textarea id="dn_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
       <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="שבועי">שבועי</option><option value="קוויטל_כללי">כללי</option></select></label>
@@ -198,9 +199,10 @@ function cardDonations(d,body){
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderParnesEdit(d); renderPledges(d);
   const catSel=document.getElementById('dn_cat');
-  catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';};
+  catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=catSel.value==='אחר'?'block':'none';};
   document.getElementById('dn_add').onclick=async()=>{
-    const amt=document.getElementById('dn_amt').value.trim(),cat=catSel.value,method=document.getElementById('dn_method').value,
+    let cat=catSel.value;if(cat==='אחר')cat=document.getElementById('dn_catfree').value.trim()||'אחר';
+    const amt=document.getElementById('dn_amt').value.trim(),method=document.getElementById('dn_method').value,
       date=document.getElementById('dn_date').value,pray=document.getElementById('dn_pray').value.trim(),tier=document.getElementById('dn_tier').value,
       dayKind=catSel.options[catSel.selectedIndex].dataset.day;
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
