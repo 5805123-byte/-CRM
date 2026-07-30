@@ -73,7 +73,8 @@ function openDonor(d){
     <label class="fld"><span>כתובת</span><input id="f_addr" value="${esc(d.addr)}"></label>
     ${d.business?f('עסק',d.business,1):''}${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
-    ${d.prayers&&d.prayers.length?`<div class="sec"><h3>🕯️ שמות לתפילה</h3>${d.prayers.map(p=>`<div class="pr">${esc(p.text)}</div>`).join('')}</div>`:''}
+    <div class="sec"><h3>🕯️ שמות לתפילה (קוויטל)</h3><div id="prayers"></div>
+      <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)"><button class="btn sm" id="pr_add">הוסף</button></div></div>
     <div class="sec"><h3>💳 התחייבויות / קמפיינים</h3><div id="pledges"></div>
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>
     <div class="sec"><h3>🌙 פרנס יום</h3><div id="parnes"></div>
@@ -83,7 +84,8 @@ function openDonor(d){
   ['category','purpose','amount','phone','english','email','addr'].forEach(fld=>{
     document.getElementById('f_'+fld).onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='category'&&tab==='donors')renderDonors();};
   });
-  renderPledges(d); renderParnesEdit(d);
+  renderPledges(d); renderParnesEdit(d); renderPrayers(d);
+  document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
   document.getElementById('pl_add').onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});d.pledges.push({id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'});document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
   document.getElementById('py_add').onclick=async()=>{const date=document.getElementById('py_date').value.trim(),ded=document.getElementById('py_ded').value.trim();if(!date)return;const r=await api('POST','/api/parnes',{donor_id:d.id,date_text:date,dedication:ded});d.parnes.push({id:r.id,donor_id:d.id,date_text:date,dedication:ded,amount:''});document.getElementById('py_date').value='';document.getElementById('py_ded').value='';renderParnesEdit(d);toast('נוסף ✓');};
 }
@@ -92,6 +94,12 @@ function renderPledges(d){
   el.innerHTML=(d.pledges||[]).map(p=>{const g=p.status==='נתן';return `<div class="pledge ${g?'given':'pending'}"><div class="pi"><b>${esc(p.category)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${g?'נתן ✓':'טרם נתן'}</small></div><button class="stbtn" data-id="${p.id}">${g?'נתן':'טרם'}</button><button class="del" data-del="${p.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין עדיין. הוסף למטה.</div>';
   el.querySelectorAll('.stbtn').forEach(b=>b.onclick=async()=>{const p=d.pledges.find(x=>x.id==b.dataset.id);p.status=p.status==='נתן'?'טרם':'נתן';await api('PUT','/api/pledge/'+p.id,p);renderPledges(d);toast('עודכן ✓');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/pledge/'+b.dataset.del);d.pledges=d.pledges.filter(x=>x.id!=b.dataset.del);renderPledges(d);});
+}
+function renderPrayers(d){
+  const el=document.getElementById('prayers');
+  el.innerHTML=(d.prayers||[]).map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}" rows="2">${esc(p.text)}</textarea><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>';
+  el.querySelectorAll('.prtx').forEach(t=>{t.onblur=async()=>{const p=d.prayers.find(x=>x.id==t.dataset.id);if(!p||p.text===t.value)return;p.text=t.value;await api('PUT','/api/prayer/'+p.id,{text:t.value});toast('נשמר ✓');};});
+  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/prayer/'+b.dataset.del);d.prayers=d.prayers.filter(x=>x.id!=b.dataset.del);renderPrayers(d);toast('נמחק');});
 }
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
@@ -106,12 +114,14 @@ function renderKvittel(){
   chips.innerHTML=opts.map(([k,l])=>`<button class="chip ${flt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   let all=[];
-  DB.forEach(d=>(d.prayers||[]).forEach(p=>{const tier=p.tier||d.tier||'';all.push({text:p.text,tier,donor:(d.last+' '+d.first).trim(),last:d.last});}));
+  DB.forEach(d=>(d.prayers||[]).forEach(p=>{const tier=p.tier||d.tier||'';all.push({ref:p,text:p.text,tier,donor:(d.last+' '+d.first).trim(),last:d.last});}));
   all=all.filter(p=>(!flt||p.tier===flt)&&matchQ(p.donor+' '+p.text));
   all.sort((a,b)=>(order[a.tier]??9)-(order[b.tier]??9)||(a.last||'').localeCompare(b.last||'','he'));
   const title=flt&&TIERS[flt]?('קוויטל '+TIERS[flt][0]):'קוויטל — כל השמות';
   view.innerHTML=`<div class="kbar"><b>${title}</b><span class="cnt2">(${all.length})</span><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
-    ${all.map(p=>`<div class="kblock"><div class="who">${esc(p.donor)} · ${TIERS[p.tier]?TIERS[p.tier][0]:''}</div><div class="names">${esc(p.text)}</div></div>`).join('')||'<div class="empty">אין שמות</div>'}`;
+    <div class="hintxt" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר לבד.</div>
+    ${all.map(p=>`<div class="kblock"><div class="who">${esc(p.donor)} · ${TIERS[p.tier]?TIERS[p.tier][0]:''}</div><div class="names" contenteditable="true" data-id="${p.ref.id}">${esc(p.text)}</div></div>`).join('')||'<div class="empty">אין שמות</div>'}`;
+  view.querySelectorAll('.names[contenteditable]').forEach(n=>{n.onblur=async()=>{const item=all.find(x=>x.ref.id==n.dataset.id);const nt=n.innerText.replace(/\s+$/,'');if(!item||item.ref.text===nt)return;item.ref.text=nt;item.text=nt;await api('PUT','/api/prayer/'+n.dataset.id,{text:nt});toast('נשמר ✓');};});
 }
 
 /* ---------- פרנס יום + שלט ---------- */

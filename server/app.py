@@ -22,7 +22,7 @@ def get_all():
     for r in c.execute("SELECT * FROM parnes"):
         if r['donor_id'] in byid: byid[r['donor_id']]['parnes'].append(dict(r))
     for r in c.execute("SELECT * FROM prayers"):
-        if r['donor_id'] in byid: byid[r['donor_id']]['prayers'].append({'text': r['text'], 'tier': r['tier']})
+        if r['donor_id'] in byid: byid[r['donor_id']]['prayers'].append({'id': r['id'], 'text': r['text'], 'tier': r['tier']})
     occ = [dict(r) for r in c.execute("SELECT * FROM occasional ORDER BY name")]
     con.close()
     return donors, occ
@@ -80,6 +80,17 @@ class H(BaseHTTPRequestHandler):
                         (b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/prayer/(\d+)$', self.path)
+        if m:
+            b = self._body(); pid = int(m.group(1))
+            con = db(); sets = []; vals = []
+            if 'text' in b: sets.append('text=?'); vals.append(b['text'])
+            if 'tier' in b: sets.append('tier=?'); vals.append(b['tier'])
+            if sets:
+                con.execute("UPDATE prayers SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
+                con.commit()
+            con.close()
+            return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
@@ -96,10 +107,16 @@ class H(BaseHTTPRequestHandler):
                         (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/prayer':
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",
+                        (b['donor_id'], b.get('text',''), b.get('tier','')))
+            con.commit(); pid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': pid})
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
-        m = re.match(r'/api/(pledge|parnes)/(\d+)$', self.path)
+        m = re.match(r'/api/(pledge|parnes|prayer)/(\d+)$', self.path)
         if m:
             con = db(); con.execute(f"DELETE FROM {m.group(1)} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()
             return self._send(200, {'ok': True})
