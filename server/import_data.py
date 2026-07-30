@@ -46,7 +46,8 @@ CREATE TABLE tasks(
 );
 DROP TABLE IF EXISTS partners;
 CREATE TABLE partners(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, note TEXT
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT,
+  start_date TEXT, amount TEXT, note TEXT, active INTEGER DEFAULT 1, ended_date TEXT
 );
 DROP TABLE IF EXISTS donations;
 CREATE TABLE donations(

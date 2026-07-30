@@ -1,5 +1,7 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6;
+let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null;
+const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
+function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];if(n===15)return 'טו';if(n===16)return 'טז';return (tens[Math.floor(n/10)]||'')+(ones[n%10]||'');}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
@@ -48,7 +50,7 @@ async function load(){
   checkReminders();
 }
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;render();});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;render();});
 document.getElementById('q').oninput=e=>{q=e.target.value.trim();render();};
 ov.onclick=e=>{if(e.target===ov)ov.classList.remove('show');};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
@@ -59,6 +61,7 @@ function render(){
   if(tab==='tasks') return renderTasksTab();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return plaque?renderPlaque():renderParnes();
+  if(tab==='avreich') return renderAvreich();
   if(tab==='missed') return renderMissed();
   if(tab==='camp') return renderCamp();
 }
@@ -223,7 +226,8 @@ function renderDonations(d){
 }
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
-  el.innerHTML=(d.partners||[]).map(p=>`<div class="pledge"><div class="pi">👨‍🎓 <b>${esc(p.avreich)}</b>${p.note?('<br><small>'+esc(p.note)+'</small>'):''}</div><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין לא הוזן. יתמלא מהאקסל של האברכים.</div>';
+  const act=(d.partners||[]).filter(p=>p.active!=0);
+  el.innerHTML=act.map(p=>`<div class="pledge"><div class="pi">👨‍🎓 <b>${esc(p.avreich||'—')}</b>${(p.start_date||p.amount)?('<br><small>'+esc(p.start_date||'')+(p.amount?(' · $'+esc(p.amount)):'')+'</small>'):''}${p.note?('<br><small>'+esc(p.note)+'</small>'):''}</div><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין לא הוזן. ניהול מלא בלשונית "אברכים".</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/partner/'+b.dataset.del);d.partners=d.partners.filter(x=>x.id!=b.dataset.del);renderPartners(d);});
 }
 function renderContacts(d){
@@ -271,15 +275,49 @@ function renderKvittel(){
 }
 
 /* ---------- פרנס יום + שלט ---------- */
+function parnesTaken(){const taken={};DB.forEach(d=>(d.parnes||[]).forEach(p=>{if(p.month&&p.day)taken[p.month+'|'+p.day]={...p,donor:(d.last+' '+d.first).trim(),dref:d};}));return taken;}
 function renderParnes(){
-  let all=[];DB.forEach(d=>(d.parnes||[]).forEach(p=>all.push({...p,donor:(d.last+' '+d.first).trim()})));
-  all=all.filter(p=>matchQ((p.date_text||'')+' '+p.donor+' '+(p.dedication||'')));
-  all.sort((a,b)=>(a.ord||99)-(b.ord||99)||(a.day||0)-(b.day||0));
-  view.innerHTML=`<div class="cnt">${all.length} פרנסי יום · לחץ על לילה לנוסח מודפס</div>${all.map((p,i)=>`
-    <div class="pyc" data-i="${i}"><div class="pdate">${esc(p.date_text)}</div>
-      <div class="pbody"><div class="nm">${esc(p.donor)} ${p.amount?('· $'+esc(p.amount)):''}</div>
-      ${p.dedication?`<div class="ded">${esc(p.dedication)}</div>`:''}<div class="printhint">הדפס נוסח 🖨️</div></div></div>`).join('')||'<div class="empty">אין עדיין. הוסף בכרטיס תורם.</div>'}`;
-  const list=all; view.querySelectorAll('.pyc').forEach(c=>c.onclick=()=>{plaque=list[c.dataset.i];render();});
+  chips.innerHTML='';
+  const taken=parnesTaken();
+  if(!pyMonth){
+    view.innerHTML=`<div class="cnt">לוח פרנס יום — לחץ על חודש לראות ולשבץ את 30 הימים</div>
+      <div class="hmgrid">${HMORD.map(m=>{const cnt=Object.keys(taken).filter(k=>k.startsWith(m+'|')).length;return `<button class="hmbtn" data-m="${m}"><span>${m}</span>${cnt?`<span class="hmc">${cnt}</span>`:''}</button>`;}).join('')}</div>`;
+    view.querySelectorAll('.hmbtn').forEach(b=>b.onclick=()=>{pyMonth=b.dataset.m;pyDay=null;render();});
+    return;
+  }
+  const days=[];for(let i=1;i<=30;i++)days.push(i);
+  view.innerHTML=`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
+    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];return `<button class="daycell ${t?'full':'free'} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
+    <div id="daypanel"></div>`;
+  document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
+  view.querySelectorAll('.daycell').forEach(b=>b.onclick=()=>{pyDay=+b.dataset.d;render();});
+  if(pyDay)renderDayPanel(taken);
+}
+function renderDayPanel(taken){
+  const panel=document.getElementById('daypanel');if(!panel)return;
+  const t=taken[pyMonth+'|'+pyDay],dtext=heDay(pyDay)+"' "+pyMonth;
+  if(t){
+    panel.innerHTML=`<div class="sec"><h3>🌙 ${esc(dtext)} — תפוס</h3>
+      <div class="remitem"><div class="ri"><b>${esc(t.donor)}</b><br><small>${esc(t.dedication||'')} ${t.amount?('· $'+esc(t.amount)):''}</small></div></div>
+      <div class="addrow"><button class="btn sm" id="dpopen">פתח כרטיס</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק שיבוץ</button></div></div>`;
+    document.getElementById('dpopen').onclick=()=>openDonor(t.dref);
+    document.getElementById('dpprint').onclick=()=>{plaque={...t,date_text:t.date_text||dtext};render();};
+    document.getElementById('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);render();toast('נמחק');};
+  }else{
+    panel.innerHTML=`<div class="sec"><h3>➕ שבץ פרנס יום — ${esc(dtext)}</h3>
+      <input id="dp_q" placeholder="חפש תורם לשיבוץ…" autocomplete="off">
+      <div id="dp_res" class="dpres"></div>
+      <div id="dp_form" style="display:none">
+        <div class="chosen" id="dp_chosen"></div>
+        <label class="fld"><span>בקשה ללימוד הלילה / הקדשה</span><textarea id="dp_ded" rows="2"></textarea></label>
+        <label class="fld"><span>סכום (רשות)</span><input id="dp_amt"></label>
+        <button class="btn" id="dp_save">שבץ ללילה זה</button></div></div>`;
+    const qi=document.getElementById('dp_q'),res=document.getElementById('dp_res');let chosen=null;
+    qi.oninput=()=>{const s=norm(qi.value);if(!s){res.innerHTML='';return;}const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english).includes(s)).slice(0,8);
+      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('');
+      res.querySelectorAll('.dpr').forEach(x=>x.onclick=()=>{chosen=DB.find(y=>y.id==x.dataset.id);document.getElementById('dp_chosen').textContent='נבחר: '+chosen.last+' '+chosen.first;document.getElementById('dp_form').style.display='block';res.innerHTML='';qi.value=chosen.last+' '+chosen.first;});};
+    document.getElementById('dp_save').onclick=async()=>{if(!chosen){toast('בחר תורם');return;}const ded=document.getElementById('dp_ded').value.trim(),amt=document.getElementById('dp_amt').value.trim();const r=await api('POST','/api/parnes',{donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt});chosen.parnes=chosen.parnes||[];chosen.parnes.push({id:r.id,donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt});toast('שובץ ✓ (תזכורת שבוע לפני נקבעה)');render();};
+  }
 }
 function renderPlaque(){
   const p=plaque;
@@ -302,6 +340,43 @@ function renderMissed(){
     <div class="misshead" style="margin-top:16px">🔴 חודשים שלא עברו (${missed.length})</div>
     <div class="list">${missed.map(d=>{const g=gaps(d.months);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>MON[i]).join(', ')}</div></div><div class="meta">${monthGrid(d.months)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+}
+
+/* ---------- אברכים (יששכר־זבולון) ---------- */
+function renderAvreich(){
+  chips.innerHTML='';
+  let izd=DB.filter(d=>d.tier==='יששכר_זבולון').filter(d=>matchQ(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')));
+  izd.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
+  view.innerHTML=`<div class="cnt">${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות</div>
+    <div class="avlist">${izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
+      return `<div class="avrow"><div class="avtop"><b>${esc(d.last)} ${esc(d.first)}</b><span class="avsp"></span>${hist.length?`<button class="chip avhist" data-id="${d.id}">🕘 היסטוריה (${hist.length})</button>`:''}<button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
+        <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
+        <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button></div>`;}).join('')||'<div class="empty">אין תורמי יששכר־זבולון</div>'}</div>`;
+  view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+  view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
+  view.querySelectorAll('.avadd').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id),today=todayStr();const r=await api('POST','/api/partner',{donor_id:d.id,avreich:'',start_date:today});d.partners=d.partners||[];d.partners.push({id:r.id,donor_id:d.id,avreich:'',start_date:today,amount:'',note:'',active:1});renderAvreich();});
+  bindAvFields();
+}
+function avPartnerRow(p){
+  return `<div class="avp" data-pid="${p.id}">
+    <label class="fld"><span>שם האברך</span><input class="avf" data-k="avreich" value="${esc(p.avreich||'')}"></label>
+    <div class="two"><label class="fld"><span>תאריך התחלה</span><input class="avf" data-k="start_date" type="date" value="${esc(p.start_date||'')}"></label>
+      <label class="fld"><span>סכום</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}"></label></div>
+    <label class="fld"><span>הערות</span><input class="avf" data-k="note" value="${esc(p.note||'')}"></label>
+    <button class="del avend">⏹ סיים (האברך עזב) — לשמור בהיסטוריה</button></div>`;
+}
+function bindAvFields(){
+  view.querySelectorAll('.avp').forEach(row=>{const pid=row.dataset.pid;
+    row.querySelectorAll('.avf').forEach(inp=>inp.onchange=async()=>{const body={};body[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+pid,body);DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p[inp.dataset.k]=inp.value;}));toast('נשמר ✓');});
+    row.querySelector('.avend').onclick=async()=>{const today=todayStr();await api('PUT','/api/partner/'+pid,{active:0,ended_date:today});DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid){p.active=0;p.ended_date=today;}}));renderAvreich();toast('הסתיים — עבר להיסטוריה');};});
+}
+function showAvHist(d){
+  const hist=(d.partners||[]).filter(p=>p.active==0).sort((a,b)=>(b.start_date||'').localeCompare(a.start_date||''));
+  const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕘 היסטוריית אברכים — ${esc(d.last)} ${esc(d.first)}</h2>
+    ${hist.map(p=>`<div class="remitem"><div class="ri"><b>${esc(p.avreich||'—')}</b><br><small>התחיל: ${esc(p.start_date||'?')} · הסתיים: ${esc(p.ended_date||'?')} ${p.amount?('· $'+esc(p.amount)):''}${p.note?(' · '+esc(p.note)):''}</small></div></div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
 }
 
 /* ---------- קמפיינים ---------- */

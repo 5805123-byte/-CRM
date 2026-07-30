@@ -19,8 +19,12 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS donations(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, amount TEXT, category TEXT, method TEXT, note TEXT);
     CREATE TABLE IF NOT EXISTS contacts_log(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, channel TEXT, summary TEXT, next_date TEXT);
     CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, due_date TEXT, kind TEXT, note TEXT, done INTEGER DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS partners(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, note TEXT);
+    CREATE TABLE IF NOT EXISTS partners(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, start_date TEXT, amount TEXT, note TEXT, active INTEGER DEFAULT 1, ended_date TEXT);
     """)
+    # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
+        try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
+        except Exception: pass
     con.commit(); con.close()
 
 def get_all():
@@ -169,6 +173,17 @@ class H(BaseHTTPRequestHandler):
                 con.commit()
             con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/partner/(\d+)$', self.path)
+        if m:
+            b = self._body(); pid = int(m.group(1))
+            con = db(); sets = []; vals = []
+            for k in ('avreich','start_date','amount','note','active','ended_date'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            if sets:
+                con.execute("UPDATE partners SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
+                con.commit()
+            con.close()
+            return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
@@ -222,8 +237,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO partners(donor_id,avreich,note) VALUES(?,?,?)",
-                        (b['donor_id'], b.get('avreich',''), b.get('note','')))
+            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active) VALUES(?,?,?,?,?,1)",
+                        (b['donor_id'], b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         return self._send(404, {'error': 'not found'})

@@ -28,6 +28,31 @@
   .tab.danger{color:var(--no)}.tab.danger.on{background:var(--no-soft);color:var(--no)}
   .misshead{color:var(--no);font-weight:800;font-size:.95rem;margin:12px 2px 2px}
   .notpassed{background:var(--no-soft);color:var(--no);border:1px solid var(--no);border-radius:10px;padding:8px 12px;font-weight:800;margin-bottom:8px}
+  /* לוח פרנס יום */
+  .hmgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .hmbtn{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 8px;font-family:inherit;font-size:1.1rem;font-weight:800;color:var(--ink);cursor:pointer}
+  .hmbtn:hover{border-color:var(--gold)}
+  .hmc{position:absolute;top:6px;left:6px;background:var(--gold);color:#fff;border-radius:99px;font-size:.72rem;padding:1px 7px}
+  .daygrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:12px 0}
+  .daycell{aspect-ratio:1;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-family:inherit;padding:2px}
+  .daycell .dn{font-weight:800;font-size:1rem}
+  .daycell .dplus{color:var(--muted);font-size:1.1rem}
+  .daycell.full{background:var(--gold-soft);border-color:var(--gold)}
+  .daycell.full .dnm{font-size:.62rem;color:var(--gold);font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .daycell.sel{outline:3px solid var(--accent)}
+  .dpres{display:flex;flex-direction:column;gap:4px;margin:6px 0}
+  .dpr{background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:600}
+  .dpr:hover{border-color:var(--accent)}
+  .chosen{font-weight:800;color:var(--accent);margin:6px 0}
+  /* אברכים */
+  .avlist{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+  .avrow{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+  .avtop{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:1.05rem}
+  .avtop b{font-weight:800}.avsp{flex:1}
+  .avps{display:flex;flex-direction:column;gap:8px}
+  .avp{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--ground)}
+  .avp .fld{margin:6px 0}
+  .avend{margin-top:6px;background:none;border:1px solid var(--no);color:var(--no);border-radius:8px;padding:6px 10px;font-family:inherit;font-weight:700;cursor:pointer;font-size:.82rem}
   .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
   .chip{background:var(--card);border:1px solid var(--line);color:var(--muted);font-size:.83rem;font-weight:600;padding:6px 12px;border-radius:99px;cursor:pointer}
   .chip.on{background:var(--accent);color:#fff;border-color:transparent}
@@ -169,6 +194,7 @@
       <button class="tab" data-tab="tasks">משימות</button>
       <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
+      <button class="tab" data-tab="avreich">🤝 אברכים</button>
       <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
     </div>
