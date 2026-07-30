@@ -17,7 +17,7 @@ function matchQ(s){return !q?true:norm(s).includes(norm(q));}
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; OCC = d.occasional || []; UNLINKED = d.unlinked_prayers || [];
+  DB = d.donors; UNLINKED = d.unlinked_prayers || [];
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
@@ -35,7 +35,6 @@ function render(){
   if(tab==='parnes') return plaque?renderPlaque():renderParnes();
   if(tab==='missed') return renderMissed();
   if(tab==='camp') return renderCamp();
-  if(tab==='occ') return renderOcc();
 }
 
 /* ---------- תורמים ---------- */

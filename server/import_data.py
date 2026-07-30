@@ -29,9 +29,6 @@ CREATE TABLE prayers(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, name TEXT, text TEXT, tier TEXT
 );
 DROP TABLE IF EXISTS occasional;
-CREATE TABLE occasional(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, total TEXT, detail TEXT
-);
 DROP TABLE IF EXISTS donations;
 CREATE TABLE donations(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
@@ -50,6 +47,21 @@ CREATE TABLE tasks(
 DROP TABLE IF EXISTS partners;
 CREATE TABLE partners(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, note TEXT
+);
+DROP TABLE IF EXISTS donations;
+CREATE TABLE donations(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
+  amount TEXT, category TEXT, method TEXT, note TEXT
+);
+DROP TABLE IF EXISTS contacts_log;
+CREATE TABLE contacts_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
+  channel TEXT, summary TEXT, next_date TEXT
+);
+DROP TABLE IF EXISTS tasks;
+CREATE TABLE tasks(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, due_date TEXT,
+  kind TEXT, note TEXT, done INTEGER DEFAULT 0
 );
 """
 
@@ -126,16 +138,41 @@ def main():
                 (did, nm, v(ws.cell(r,4)), v(ws.cell(r,6))))
         print(f'  קוויטל: {linked} משויכים לכרטיס, {loose} עדיין לא משויכים')
 
-    # מזדמנים
+    # מזדמנים — ממוזגים לקטלוג הראשי: קיים -> תרומות לכרטיסו; חדש -> כרטיס מזדמן.
+    HMON={'ינואר':'01','פברואר':'02','מרץ':'03','אפריל':'04','מאי':'05','יוני':'06',
+          'יולי':'07','אוגוסט':'08','אוגסט':'08','ספטמבר':'09','אוקטובר':'10','נובמבר':'11','דצמבר':'12'}
+    YEAR='2026'
     if 'מזדמנים' in wb.sheetnames:
         ws = wb['מזדמנים']
+        nextid = cur.execute("SELECT COALESCE(MAX(id),0) FROM donors").fetchone()[0] + 1
+        new_c=match_c=don_c=0
         for r in range(2, ws.max_row+1):
-            if not v(ws.cell(r,1)): continue
-            cur.execute("INSERT INTO occasional(name,total,detail) VALUES(?,?,?)",
-                (v(ws.cell(r,2)), v(ws.cell(r,3)), v(ws.cell(r,4))))
+            name=v(ws.cell(r,2))
+            if not name: continue
+            total=v(ws.cell(r,3)); detail=v(ws.cell(r,4))
+            did=idx.get(norm(name))
+            if not did:
+                toks=name.split()
+                last=toks[0] if toks else name; first=' '.join(toks[1:])
+                did=nextid; nextid+=1
+                cur.execute("INSERT INTO donors(id,last,first,category) VALUES(?,?,?,?)",(did,last,first,'מזדמן'))
+                idx[norm(name)]=did; new_c+=1
+            else:
+                match_c+=1
+            if detail and detail.lower()!='none':
+                for part in detail.split(';'):
+                    if ':' not in part: continue
+                    mon,amt=part.split(':',1)
+                    mm=HMON.get(mon.strip())
+                    cur.execute("INSERT INTO donations(donor_id,date,amount,category) VALUES(?,?,?,?)",
+                        (did, f"{YEAR}-{mm}" if mm else '', amt.strip(), 'מזדמן')); don_c+=1
+            elif total and total.lower()!='none':
+                cur.execute("INSERT INTO donations(donor_id,date,amount,category) VALUES(?,?,?,?)",
+                    (did, YEAR, total, 'מזדמן')); don_c+=1
+        print(f'  מזדמנים: {new_c} כרטיסים חדשים, {match_c} חוברו לקיימים, {don_c} תרומות')
 
     con.commit()
-    for t in ('donors','pledges','parnes','prayers','occasional'):
+    for t in ('donors','pledges','parnes','prayers','donations'):
         n = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         print(f'  {t}: {n}')
     con.close()

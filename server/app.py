@@ -47,9 +47,8 @@ def get_all():
         if r['donor_id'] in byid: byid[r['donor_id']]['tasks'].append(dict(r))
     for r in c.execute("SELECT * FROM partners"):
         if r['donor_id'] in byid: byid[r['donor_id']]['partners'].append(dict(r))
-    occ = [dict(r) for r in c.execute("SELECT * FROM occasional ORDER BY name")]
     con.close()
-    return donors, occ, unlinked
+    return donors, unlinked
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes'}
@@ -68,8 +67,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/api/data':
-            donors, occ, unlinked = get_all()
-            return self._send(200, {'donors': donors, 'occasional': occ, 'unlinked_prayers': unlinked})
+            donors, unlinked = get_all()
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked})
         path = self.path.split('?')[0]
         if path == '/': path = '/index.html'
         fp = os.path.normpath(os.path.join(STATIC, path.lstrip('/')))
