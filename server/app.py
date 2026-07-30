@@ -25,6 +25,8 @@ def ensure_schema():
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
+    try: con.execute("ALTER TABLE parnes ADD COLUMN kind TEXT DEFAULT 'parnes'")
+    except Exception: pass
     con.commit(); con.close()
 
 def get_all():
@@ -198,8 +200,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication) VALUES(?,?,?,?,?,?)",
-                        (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication','')))
+            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind) VALUES(?,?,?,?,?,?,?)",
+                        (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes')))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
             tid = None

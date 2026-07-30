@@ -50,7 +50,7 @@ async function load(){
   checkReminders();
 }
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;kvSub=null;render();});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;render();});
 document.getElementById('q').oninput=e=>{q=e.target.value.trim();render();};
 ov.onclick=e=>{if(e.target===ov)ov.classList.remove('show');};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
@@ -174,23 +174,42 @@ function cardDonations(d,body){
   body.innerHTML=`
     ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
-    <div class="sec"><h3>💵 חיוב תרומה</h3>
+    <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
       <div class="two"><label class="fld"><span>סכום ($)</span><input id="dn_amt" placeholder="480"></label>
-        <label class="fld"><span>קטגוריה</span><input id="dn_cat" value="${esc(d.purpose||'')}" placeholder="עבור מה"></label></div>
-      <div class="two"><label class="fld"><span>אמצעי</span><select id="dn_method"><option>אשראי</option><option>המחאה</option><option>מזומן</option><option>העברה בנקאית</option><option>Authorize</option></select></label>
-        <label class="fld"><span>תאריך</span><input id="dn_date" type="date"></label></div>
-      <button class="btn" id="dn_add">➕ רשום חיוב</button>
+        <label class="fld"><span>אמצעי</span><select id="dn_method"><option>אשראי</option><option>אונליין</option><option>המחאה</option><option>מזומן</option><option>העברה בנקאית</option><option>Authorize</option></select></label></div>
+      <label class="fld"><span>סוג / עבור מה</span><select id="dn_cat">
+        <option value="">— בחר —</option><option>קבוע</option><option>יששכר־זבולון</option>
+        <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
+        <option value="חדר קפה" data-day="coffee">☕ חדר קפה / שתייה חמה (בחר יום)</option>
+        <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option>
+        <option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label>
+      <div id="dn_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div></div>
+      <label class="fld"><span>תאריך (לועזי)</span><input id="dn_date" type="date"></label>
+      <label class="fld"><span>🕯️ שם לתפילה (לקוויטל)</span><textarea id="dn_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
+      <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="שבועי">שבועי</option><option value="קוויטל_כללי">כללי</option></select></label>
+      <button class="btn" id="dn_add">➕ רשום תרומה</button>
       ${d.channel?`<div class="hintxt">ערוץ קבוע בתיק: ${esc(d.channel)}</div>`:''}</div>
     <div class="sec"><h3>📜 היסטוריית תרומות</h3><div id="donations"></div></div>
-    <div class="sec"><h3>🌙 פרנס יום</h3><div id="parnes"></div>
-      <div class="addrow"><input id="py_date" placeholder="תאריך (ג' אב)"><input id="py_ded" placeholder="הקדשה"><button class="btn sm" id="py_add">הוסף</button></div></div>
+    <div class="sec"><h3>🗓️ ימים משובצים (פרנס / קפה / בוקר)</h3><div id="parnes"></div>
+      <div class="hintxt">שיבוץ ימים חדשים דרך "רישום תרומה" למעלה (בחר סוג עם יום), או בלוח פרנס יום.</div></div>
     <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderParnesEdit(d); renderPledges(d);
-  document.getElementById('dn_add').onclick=async()=>{const amt=document.getElementById('dn_amt').value.trim(),cat=document.getElementById('dn_cat').value.trim(),method=document.getElementById('dn_method').value,date=document.getElementById('dn_date').value;if(!amt)return;const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method:method,date:date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method:method,date:date});document.getElementById('dn_amt').value='';renderDonations(d);toast('נרשם ✓');};
+  const catSel=document.getElementById('dn_cat');
+  catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';};
+  document.getElementById('dn_add').onclick=async()=>{
+    const amt=document.getElementById('dn_amt').value.trim(),cat=catSel.value,method=document.getElementById('dn_method').value,
+      date=document.getElementById('dn_date').value,pray=document.getElementById('dn_pray').value.trim(),tier=document.getElementById('dn_tier').value,
+      dayKind=catSel.options[catSel.selectedIndex].dataset.day;
+    if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
+    if(amt){const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method,date});}
+    if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,dtext=heDay(hd)+"' "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});}
+    if(pray){const tr=tier||d.tier||'';const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:pray,tier:tr});}
+    document.getElementById('dn_amt').value='';document.getElementById('dn_pray').value='';
+    renderDonations(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
   document.getElementById('pl_add').onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});d.pledges.push({id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'});document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
-  document.getElementById('py_add').onclick=async()=>{const date=document.getElementById('py_date').value.trim(),ded=document.getElementById('py_ded').value.trim();if(!date)return;const r=await api('POST','/api/parnes',{donor_id:d.id,date_text:date,dedication:ded});d.parnes.push({id:r.id,donor_id:d.id,date_text:date,dedication:ded,amount:''});document.getElementById('py_date').value='';document.getElementById('py_ded').value='';renderParnesEdit(d);toast('נוסף ✓');};
 }
 function cardContact(d,body){
   body.innerHTML=`
@@ -249,9 +268,10 @@ function renderPrayers(d){
   el.querySelectorAll('.prtx').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.prayers.find(x=>x.id==t.dataset.id);if(!p||p.text===t.value)return;p.text=t.value;await api('PUT','/api/prayer/'+p.id,{text:t.value});toast('נשמר ✓');};});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/prayer/'+b.dataset.del);d.prayers=d.prayers.filter(x=>x.id!=b.dataset.del);renderPrayers(d);toast('נמחק');});
 }
+const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
-  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge given"><div class="pi"><b>${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת ללילה: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
+  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge given"><div class="pi"><b>${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/parnes/'+b.dataset.del);d.parnes=d.parnes.filter(x=>x.id!=b.dataset.del);renderParnesEdit(d);});
   el.querySelectorAll('.pyrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt,done:0});toast('תזכורת פרנס נקבעה ✓');});
 }
@@ -278,17 +298,18 @@ function renderKvittel(){
 function bindKvEdit(){
   view.querySelectorAll('.names[contenteditable]').forEach(n=>{n.onblur=async()=>{const id=n.dataset.id,nt=n.innerText.replace(/\s+$/,'');let ref=null;DB.forEach(d=>(d.prayers||[]).forEach(p=>{if(p.id==id)ref=p;}));if(!ref)ref=UNLINKED.find(p=>p.id==id);if(!ref||ref.text===nt)return;ref.text=nt;await api('PUT','/api/prayer/'+id,{text:nt});toast('נשמר ✓ (גם בכרטיס)');};});
 }
+function prayerKvType(pt,d){
+  d=d||{};
+  if(pt==='יששכר_זבולון'||(!pt&&d.tier==='יששכר_זבולון'))return 'iz';
+  if(pt==='קוויטל_101'||(!pt&&d.tier==='קוויטל_101'))return '101';
+  if(pt==='שבועי'||(!pt&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101))return 'weekly';
+  if(d.category==='מזדמן'&&!d.tier)return 'occ';
+  return 'other';
+}
 function renderKvList(type){
-  const pass=d=> type==='iz'?d.tier==='יששכר_זבולון'
-    : type==='101'?d.tier==='קוויטל_101'
-    : type==='weekly'?(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)
-    : /*klali*/ !(d.category==='מזדמן'&&!d.tier);
   let entries=[];
-  DB.forEach(d=>{if(!pass(d))return;(d.prayers||[]).forEach(p=>entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last}));});
-  if(type==='iz'||type==='101'||type==='klali'){
-    const want=type==='iz'?'יששכר_זבולון':type==='101'?'קוויטל_101':null;
-    UNLINKED.forEach(p=>{if(type==='klali'||(want&&p.tier===want))entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
-  }
+  DB.forEach(d=>{(d.prayers||[]).forEach(p=>{const t=prayerKvType(p.tier,d);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last});});});
+  UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
   entries=entries.filter(e=>matchQ(e.donor+' '+e.text));
   entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   const title=KVTYPES.find(x=>x[0]===type)[1];
@@ -310,20 +331,26 @@ function renderKvOcc(){
 }
 
 /* ---------- פרנס יום + שלט ---------- */
-function parnesTaken(){const taken={};DB.forEach(d=>(d.parnes||[]).forEach(p=>{if(p.month&&p.day)taken[p.month+'|'+p.day]={...p,donor:(d.last+' '+d.first).trim(),dref:d};}));return taken;}
+let pyKind='parnes';
+const PKINDS=[['parnes','🌙 פרנס לילה'],['coffee','☕ חדר קפה'],['breakfast','🍳 ארוחת בוקר']];
+function parnesTaken(kind){const taken={};DB.forEach(d=>(d.parnes||[]).forEach(p=>{if((p.kind||'parnes')!==kind)return;if(p.month&&p.day)taken[p.month+'|'+p.day]={...p,donor:(d.last+' '+d.first).trim(),dref:d};}));return taken;}
+function kindToggle(){return `<div class="ktoggle">${PKINDS.map(([k,l])=>`<button class="ktog ${pyKind===k?'on':''}" data-k="${k}">${l}</button>`).join('')}</div>`;}
+function bindKindToggle(){view.querySelectorAll('.ktog').forEach(b=>b.onclick=()=>{pyKind=b.dataset.k;pyDay=null;render();});}
 function renderParnes(){
   chips.innerHTML='';
-  const taken=parnesTaken();
+  const taken=parnesTaken(pyKind);
   if(!pyMonth){
-    view.innerHTML=`<div class="cnt">לוח פרנס יום — לחץ על חודש לראות ולשבץ את 30 הימים</div>
+    view.innerHTML=kindToggle()+`<div class="cnt">בחר חודש לראות ולשבץ את 30 הימים</div>
       <div class="hmgrid">${HMORD.map(m=>{const cnt=Object.keys(taken).filter(k=>k.startsWith(m+'|')).length;return `<button class="hmbtn" data-m="${m}"><span>${m}</span>${cnt?`<span class="hmc">${cnt}</span>`:''}</button>`;}).join('')}</div>`;
+    bindKindToggle();
     view.querySelectorAll('.hmbtn').forEach(b=>b.onclick=()=>{pyMonth=b.dataset.m;pyDay=null;render();});
     return;
   }
   const days=[];for(let i=1;i<=30;i++)days.push(i);
-  view.innerHTML=`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
+  view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
     <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];return `<button class="daycell ${t?'full':'free'} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
+  bindKindToggle();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
   view.querySelectorAll('.daycell').forEach(b=>b.onclick=()=>{pyDay=+b.dataset.d;render();});
   if(pyDay)renderDayPanel(taken);
@@ -339,7 +366,7 @@ function renderDayPanel(taken){
     document.getElementById('dpprint').onclick=()=>{plaque={...t,date_text:t.date_text||dtext};render();};
     document.getElementById('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);render();toast('נמחק');};
   }else{
-    panel.innerHTML=`<div class="sec"><h3>➕ שבץ פרנס יום — ${esc(dtext)}</h3>
+    panel.innerHTML=`<div class="sec"><h3>➕ שבץ ${PKINDS.find(k=>k[0]===pyKind)[1]} — ${esc(dtext)}</h3>
       <input id="dp_q" placeholder="חפש תורם לשיבוץ…" autocomplete="off">
       <div id="dp_res" class="dpres"></div>
       <div id="dp_form" style="display:none">
@@ -351,7 +378,7 @@ function renderDayPanel(taken){
     qi.oninput=()=>{const s=norm(qi.value);if(!s){res.innerHTML='';return;}const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english).includes(s)).slice(0,8);
       res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('');
       res.querySelectorAll('.dpr').forEach(x=>x.onclick=()=>{chosen=DB.find(y=>y.id==x.dataset.id);document.getElementById('dp_chosen').textContent='נבחר: '+chosen.last+' '+chosen.first;document.getElementById('dp_form').style.display='block';res.innerHTML='';qi.value=chosen.last+' '+chosen.first;});};
-    document.getElementById('dp_save').onclick=async()=>{if(!chosen){toast('בחר תורם');return;}const ded=document.getElementById('dp_ded').value.trim(),amt=document.getElementById('dp_amt').value.trim();const r=await api('POST','/api/parnes',{donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt});chosen.parnes=chosen.parnes||[];chosen.parnes.push({id:r.id,donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt});toast('שובץ ✓ (תזכורת שבוע לפני נקבעה)');render();};
+    document.getElementById('dp_save').onclick=async()=>{if(!chosen){toast('בחר תורם');return;}const ded=document.getElementById('dp_ded').value.trim(),amt=document.getElementById('dp_amt').value.trim();const r=await api('POST','/api/parnes',{donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind});chosen.parnes=chosen.parnes||[];chosen.parnes.push({id:r.id,donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind});toast('שובץ ✓ (תזכורת שבוע לפני נקבעה)');render();};
   }
 }
 function renderPlaque(){

@@ -23,7 +23,8 @@ CREATE TABLE pledges(
 );
 CREATE TABLE parnes(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, day INTEGER, month TEXT,
-  ord INTEGER, date_text TEXT, amount TEXT, dedication TEXT, nusach TEXT
+  ord INTEGER, date_text TEXT, amount TEXT, dedication TEXT, nusach TEXT,
+  kind TEXT DEFAULT 'parnes'
 );
 CREATE TABLE prayers(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, name TEXT, text TEXT, tier TEXT
