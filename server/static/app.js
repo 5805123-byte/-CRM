@@ -39,12 +39,20 @@ function render(){
 }
 
 /* ---------- תורמים ---------- */
+const DFILTERS={
+  'iz':{label:'יששכר־זבולון', fn:d=>d.tier==='יששכר_זבולון'},
+  'k101':{label:'קוויטל 101', fn:d=>d.tier==='קוויטל_101'},
+  'reg':{label:'קבועים', fn:d=>d.category==='קבוע'},
+  'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן'},
+  'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
+  '':{label:'הכל', fn:d=>true}
+};
+const DFORDER=['iz','k101','reg','occ','klali',''];
 function renderDonors(){
-  const opts=[['','הכל'],['קבוע','קבועים'],['מזדמן','מזדמנים'],['py','פרנס יום']];
-  chips.innerHTML=opts.map(([k,l])=>`<button class="chip ${flt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
-  let list=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english));
-  if(flt==='py') list=list.filter(d=>d.parnes&&d.parnes.length); else if(flt) list=list.filter(d=>d.category===flt);
+  const ff=(DFILTERS[flt]||DFILTERS['']).fn;
+  let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english));
   view.innerHTML=`<div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
     <div class="rowc" data-id="${d.id}">
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div>
