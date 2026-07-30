@@ -53,11 +53,33 @@ def get_all():
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes'}
 
+KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
+           'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
+
+def build_ics():
+    """פיד יומן לכל התזכורות הפתוחות — לחיבור אוטומטי ליומן Google."""
+    con = db(); c = con.cursor()
+    names = {r['id']: (r['last'] + ' ' + (r['first'] or '')).strip() for r in c.execute("SELECT id,last,first FROM donors")}
+    out = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kollel Chatzot//CRM//HE',
+           'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:תזכורות כולל חצות', 'X-WR-TIMEZONE:Asia/Jerusalem']
+    for r in c.execute("SELECT * FROM tasks WHERE (done IS NULL OR done=0)"):
+        d = re.sub(r'\D', '', r['due_date'] or '')[:8]
+        if len(d) != 8: continue
+        who = names.get(r['donor_id'], '')
+        title = (KIND_HE.get(r['kind'], '🔔') + ' ' + who + ((' — ' + r['note']) if r['note'] else '')).strip()
+        title = title.replace('\n', ' ').replace(',', '\\,').replace(';', '\\;')
+        out += ['BEGIN:VEVENT', f'UID:task{r["id"]}@kollel-chatzot', f'DTSTART;VALUE=DATE:{d}',
+                'STATUS:CONFIRMED', f'SUMMARY:{title}', 'BEGIN:VALARM', 'ACTION:DISPLAY',
+                'TRIGGER:-PT9H', f'DESCRIPTION:{title}', 'END:VALARM', 'END:VEVENT']
+    out.append('END:VCALENDAR')
+    con.close()
+    return '\r\n'.join(out)
+
 class H(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype='application/json'):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode('utf-8')
         self.send_response(code)
-        self.send_header('Content-Type', ctype + ('; charset=utf-8' if 'json' in ctype or 'html' in ctype else ''))
+        self.send_header('Content-Type', ctype + ('; charset=utf-8' if 'json' in ctype or 'html' in ctype or 'calendar' in ctype else ''))
         self.send_header('Content-Length', str(len(data)))
         self.end_headers(); self.wfile.write(data)
 
@@ -69,6 +91,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/data':
             donors, unlinked = get_all()
             return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked})
+        if self.path.split('?')[0] == '/calendar.ics':
+            return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         path = self.path.split('?')[0]
         if path == '/': path = '/index.html'
         fp = os.path.normpath(os.path.join(STATIC, path.lstrip('/')))

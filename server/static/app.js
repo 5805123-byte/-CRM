@@ -6,6 +6,30 @@ const view = document.getElementById('view'), chips = document.getElementById('c
 const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['קוויטל 101','k101'],'קוויטל_כללי':['כללי','klali']};
 const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה', 'מזדמן/חד-פעמי'];
 const MON = ['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
+const KIND = {charge:'💳 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 להתפלל',followup:'📞 לחזור',other:'🔔 תזכורת'};
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function addDay(ymd8){const y=+ymd8.slice(0,4),m=+ymd8.slice(4,6)-1,d=+ymd8.slice(6,8);return new Date(Date.UTC(y,m,d+1)).toISOString().slice(0,10).replace(/-/g,'');}
+function gcalLink(t,donor){const d=(t.due_date||'').replace(/-/g,'');if(d.length!==8)return '';const title=encodeURIComponent((KIND[t.kind]||'תזכורת')+' — '+donor+(t.note?': '+t.note:''));return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}/${addDay(d)}`;}
+function dueTasks(){const td=todayStr(),out=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td)out.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));return out.sort((a,b)=>(a.due_date||'').localeCompare(b.due_date||''));}
+function checkReminders(){
+  const due=dueTasks(),ban=document.getElementById('rembanner');
+  if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
+  ban.textContent=`🔔 ${due.length} תזכורות ממתינות — לחץ לטיפול`;ban.classList.add('show');
+  ban.onclick=()=>openRemPopup();
+  if(!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
+}
+function openRemPopup(){
+  const due=dueTasks(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
+  if(!due.length){remov.classList.remove('show');return;}
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔔 תזכורות שהגיע זמנן (${due.length})</h2>
+    <div class="hintxt">סמן בוצע, או דחה למחר.</div>
+    ${due.map((t,i)=>`<div class="remitem over"><div class="ri"><b>${KIND[t.kind]||'🔔'} ${esc(t.donor)}</b><br><small>${esc(t.due_date)} ${esc(t.note||'')}</small></div>
+      <button class="btn sm rdone" data-i="${i}">בוצע ✓</button><button class="no rsnooze" data-i="${i}">דחה מחר</button></div>`).join('')}`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i];if(t.id)await api('PUT','/api/task/'+t.id,{done:1});const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;checkReminders();openRemPopup();render();toast('בוצע ✓');});
+  rs.querySelectorAll('.rsnooze').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i],nd=addDay(todayStr().replace(/-/g,'')),nds=nd.slice(0,4)+'-'+nd.slice(4,6)+'-'+nd.slice(6,8);if(t.id)await api('PUT','/api/task/'+t.id,{due_date:nds});const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.due_date=nds;checkReminders();openRemPopup();render();toast('נדחה למחר');});
+}
 
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function norm(s){return (s||'').replace(/["'`]/g,'').replace(/\s+/g,' ').trim();}
@@ -21,11 +45,13 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
+  checkReminders();
 }
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;render();});
 document.getElementById('q').oninput=e=>{q=e.target.value.trim();render();};
 ov.onclick=e=>{if(e.target===ov)ov.classList.remove('show');};
+document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
 
 function render(){
   chips.innerHTML='';
@@ -166,11 +192,24 @@ function cardContact(d,body){
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
       <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
       <div class="hintxt">התאריך התחתון = מתי לחזור אליו (נכנס ל"משימות")</div></div>
-    <div class="sec"><h3>🙏 תאריכים להתפלל עליו</h3><div id="tlist"></div>
-      <div class="addrow"><input id="tk_note" placeholder="על מה (ניתוח / פגישה / רפואה)"><input id="tk_date" type="date"><button class="btn sm" id="tk_add">הוסף</button></div></div>`;
-  renderContacts(d); renderTasks(d);
-  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';renderContacts(d);renderTasks(d);toast('נשמר ✓');};
-  document.getElementById('tk_add').onclick=async()=>{const note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:'prayer',note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:'prayer',note:note,done:0});document.getElementById('tk_note').value='';renderTasks(d);toast('נוסף ✓');};
+    <div class="sec"><h3>🔔 תזכורות</h3><div id="tlist"></div>
+      <div class="addrow"><select id="tk_kind"><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="prayer">🙏 להתפלל</option><option value="followup">📞 לחזור</option><option value="other">🔔 אחר</option></select><input id="tk_date" type="date"></div>
+      <div class="addrow"><input id="tk_note" placeholder="פרטים (על מה)"><button class="btn sm" id="tk_add">➕ קבע תזכורת</button></div>
+      <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></div>`;
+  renderContacts(d); renderReminders(d);
+  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';renderContacts(d);renderReminders(d);toast('נשמר ✓');};
+  document.getElementById('tk_add').onclick=async()=>{const kind=document.getElementById('tk_kind').value,note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';renderReminders(d);toast('נקבעה תזכורת ✓');};
+}
+function renderReminders(d){
+  const el=document.getElementById('tlist');if(!el)return;
+  const td=todayStr(),donor=(d.last+' '+d.first).trim();
+  const list=(d.tasks||[]).filter(t=>!t.done||t.done==0).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
+  el.innerHTML=list.map(t=>{const over=t.due_date&&t.due_date<=td,g=gcalLink(t,donor);
+    return `<div class="remitem ${over?'over':''}"><div class="ri"><b>${KIND[t.kind]||'🔔'}</b> ${esc(t.due_date||'')} ${t.note?('· '+esc(t.note)):''}</div>
+      ${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener">➕ ליומן</a>`:''}
+      <button class="stbtn" style="background:var(--yes);color:#fff" data-done="${t.id}">✓</button><button class="del" data-del="${t.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין תזכורות. הוסף למטה.</div>';
+  el.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const t=d.tasks.find(x=>x.id==b.dataset.done);if(t){t.done=1;await api('PUT','/api/task/'+t.id,{done:1});}renderReminders(d);toast('בוצע ✓');});
+  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/task/'+b.dataset.del);d.tasks=d.tasks.filter(x=>x.id!=b.dataset.del);renderReminders(d);});
 }
 function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
@@ -188,16 +227,12 @@ function renderContacts(d){
   el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}</div><button class="del" data-del="${c.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/contact/'+b.dataset.del);d.contacts=d.contacts.filter(x=>x.id!=b.dataset.del);renderContacts(d);});
 }
-function renderTasks(d){
-  const el=document.getElementById('tlist');if(!el)return;const t=(d.tasks||[]).filter(x=>x.kind==='prayer');
-  el.innerHTML=t.map(x=>`<div class="pledge pending"><div class="pi">🙏 <b>${esc(x.due_date||'')}</b> ${esc(x.note||'')}</div><button class="del" data-del="${x.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין תאריכים.</div>';
-  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/task/'+b.dataset.del);d.tasks=d.tasks.filter(x=>x.id!=b.dataset.del);renderTasks(d);});
-}
 function renderPledges(d){
   const el=document.getElementById('pledges');
-  el.innerHTML=(d.pledges||[]).map(p=>{const g=p.status==='נתן';return `<div class="pledge ${g?'given':'pending'}"><div class="pi"><b>${esc(p.category)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${g?'נתן ✓':'טרם נתן'}</small></div><button class="stbtn" data-id="${p.id}">${g?'נתן':'טרם'}</button><button class="del" data-del="${p.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין עדיין. הוסף למטה.</div>';
+  el.innerHTML=(d.pledges||[]).map(p=>{const g=p.status==='נתן';return `<div class="plwrap"><div class="pledge ${g?'given':'pending'}"><div class="pi"><b>${esc(p.category)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${g?'נתן ✓':'טרם נתן'}</small></div><button class="stbtn" data-id="${p.id}">${g?'נתן':'טרם'}</button><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת לחיוב: <input type="date" class="plrem" data-cat="${esc(p.category)}" data-amt="${esc(p.amount)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין. הוסף למטה.</div>';
   el.querySelectorAll('.stbtn').forEach(b=>b.onclick=async()=>{const p=d.pledges.find(x=>x.id==b.dataset.id);p.status=p.status==='נתן'?'טרם':'נתן';await api('PUT','/api/pledge/'+p.id,p);renderPledges(d);toast('עודכן ✓');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/pledge/'+b.dataset.del);d.pledges=d.pledges.filter(x=>x.id!=b.dataset.del);renderPledges(d);});
+  el.querySelectorAll('.plrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const note='חייב: '+x.dataset.cat+(x.dataset.amt?(' $'+x.dataset.amt):'');const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'charge',note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'charge',note,done:0});toast('תזכורת לחיוב נקבעה ✓');});
 }
 function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight+6)+'px';}
 function renderPrayers(d){
@@ -208,8 +243,9 @@ function renderPrayers(d){
 }
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
-  el.innerHTML=(d.parnes||[]).map(p=>`<div class="pledge given"><div class="pi"><b>${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
+  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge given"><div class="pi"><b>${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת ללילה: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/parnes/'+b.dataset.del);d.parnes=d.parnes.filter(x=>x.id!=b.dataset.del);renderParnesEdit(d);});
+  el.querySelectorAll('.pyrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt,done:0});toast('תזכורת פרנס נקבעה ✓');});
 }
 
 /* ---------- קוויטל ---------- */
@@ -268,8 +304,8 @@ function renderCamp(){
 
 /* ---------- משימות ---------- */
 function renderTasksTab(){
-  const today=new Date().toISOString().slice(0,10);
-  const opts=[['','הכל'],['followup','📞 לחזור'],['prayer','🙏 להתפלל']];
+  const today=todayStr();
+  const opts=[['','הכל'],['charge','💳 לחייב'],['parnes','🌙 פרנס'],['prayer','🙏 תפילה'],['followup','📞 לחזור']];
   chips.innerHTML=opts.map(([k,l])=>`<button class="chip ${flt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   let all=[];
@@ -277,14 +313,17 @@ function renderTasksTab(){
   if(flt) all=all.filter(t=>t.kind===flt);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
-  view.innerHTML=`<div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
-    const over=t.due_date&&t.due_date<today, icon=t.kind==='prayer'?'🙏':'📞';
+  const ics=location.origin+'/calendar.ics';
+  view.innerHTML=`<div class="icsbox"><b>📅 חיבור אוטומטי ליומן Google</b><br>הוסף פעם אחת את הכתובת (Google Calendar → יומנים אחרים → מכתובת URL), וכל התזכורות ייכנסו ליומן אוטומטית:<span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></div>
+    <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
+    const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor);
     return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
       <div><div class="nm">${icon} ${esc(t.donor)}</div><div class="miss2">${esc(t.note||'')}</div></div>
-      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span></div></div>`;
+      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
-  view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone'))return;openDonor(all[r.dataset.i].dref);});
-  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];if(t.id){await api('PUT','/api/task/'+t.id,{done:1});}t.done=1;const d=t.dref;const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;toast('בוצע ✓');render();});
+  document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
+  view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;openDonor(all[r.dataset.i].dref);});
+  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];if(t.id){await api('PUT','/api/task/'+t.id,{done:1});}t.done=1;const d=t.dref;const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;toast('בוצע ✓');render();checkReminders();});
 }
 
 /* ---------- מזדמנים ---------- */
