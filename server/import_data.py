@@ -207,7 +207,7 @@ def main():
             did = rec.get('donor_id')
             if not did: continue
             cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active) VALUES(?,?,?,?,?,1)",
-                (did, rec.get('avreich',''), rec.get('start',''), rec.get('amount',''), 'מקור: ' + rec.get('zevulun','')))
+                (did, rec.get('avreich',''), rec.get('start',''), rec.get('amount',''), rec.get('note','')))
             yzc += 1
         print(f'  יששכר־זבולון: {yzc} אברכים שויכו לתורמים')
 

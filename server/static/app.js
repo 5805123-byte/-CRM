@@ -412,7 +412,7 @@ function renderAvTable(izd){
   const rows=[];izd.forEach(d=>{const act=(d.partners||[]).filter(p=>p.active!=0);if(act.length)act.forEach(p=>rows.push({d,p}));else rows.push({d,p:null});});
   view.innerHTML=`<div class="avbar"><button class="back" id="avcards">→ חזרה לעריכה</button><b style="margin-inline-start:8px">טבלת יששכר־זבולון (${rows.length})</b><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
     <div style="overflow-x:auto"><table class="avtable"><thead><tr><th>תורם (זבולון)</th><th>אברך</th><th>תאריך התחלה</th><th>סכום</th><th>הערות</th></tr></thead>
-    <tbody>${rows.map(({d,p})=>{const nt=(p&&p.note&&p.note.indexOf('מקור:')!==0)?p.note:'';return `<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(nt)}</td></tr>`;}).join('')}</tbody></table></div>`;
+    <tbody>${rows.map(({d,p})=>`<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(p?(p.note||''):'')}</td></tr>`).join('')}</tbody></table></div>`;
   document.getElementById('avcards').onclick=()=>{avView='cards';render();};
 }
 function renderAvreich(){
