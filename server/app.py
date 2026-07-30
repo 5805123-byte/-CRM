@@ -21,11 +21,15 @@ def get_all():
         if r['donor_id'] in byid: byid[r['donor_id']]['pledges'].append(dict(r))
     for r in c.execute("SELECT * FROM parnes"):
         if r['donor_id'] in byid: byid[r['donor_id']]['parnes'].append(dict(r))
+    unlinked = []
     for r in c.execute("SELECT * FROM prayers"):
-        if r['donor_id'] in byid: byid[r['donor_id']]['prayers'].append({'id': r['id'], 'text': r['text'], 'tier': r['tier']})
+        if r['donor_id'] in byid:
+            byid[r['donor_id']]['prayers'].append({'id': r['id'], 'text': r['text'], 'tier': r['tier']})
+        else:
+            unlinked.append({'id': r['id'], 'name': r['name'], 'text': r['text'], 'tier': r['tier']})
     occ = [dict(r) for r in c.execute("SELECT * FROM occasional ORDER BY name")]
     con.close()
-    return donors, occ
+    return donors, occ, unlinked
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes'}
@@ -44,8 +48,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/api/data':
-            donors, occ = get_all()
-            return self._send(200, {'donors': donors, 'occasional': occ})
+            donors, occ, unlinked = get_all()
+            return self._send(200, {'donors': donors, 'occasional': occ, 'unlinked_prayers': unlinked})
         path = self.path.split('?')[0]
         if path == '/': path = '/index.html'
         fp = os.path.normpath(os.path.join(STATIC, path.lstrip('/')))

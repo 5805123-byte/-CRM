@@ -26,7 +26,7 @@ CREATE TABLE parnes(
   ord INTEGER, date_text TEXT, amount TEXT, dedication TEXT, nusach TEXT
 );
 CREATE TABLE prayers(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, text TEXT, tier TEXT
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, name TEXT, text TEXT, tier TEXT
 );
 DROP TABLE IF EXISTS occasional;
 CREATE TABLE occasional(
@@ -39,14 +39,25 @@ def norm(s): return re.sub(r'\s+',' ',re.sub(r'[\"\x27\`]','',NIK.sub('',str(s o
 
 def v(c): return '' if c.value is None else str(c.value).strip()
 
+def edist(a, b):
+    """מרחק עריכה — לזיהוי כינויים (יוסי/יוסף, זאב/זאבי)."""
+    if abs(len(a)-len(b)) > 2: return 9
+    dp = list(range(len(b)+1))
+    for i, ca in enumerate(a, 1):
+        prev = dp[0]; dp[0] = i
+        for j, cb in enumerate(b, 1):
+            cur = dp[j]; dp[j] = min(dp[j]+1, dp[j-1]+1, prev+(ca != cb)); prev = cur
+    return dp[-1]
+
 def main():
     wb = openpyxl.load_workbook(XLSX)
     con = sqlite3.connect(DB); con.executescript(SCHEMA); cur = con.cursor()
 
-    ws = wb['תורמים']; idx = {}
+    ws = wb['תורמים']; idx = {}; by_last = {}
     for r in range(2, ws.max_row+1):
         if not v(ws.cell(r,1)): continue
         did = r-1
+        by_last.setdefault(norm(v(ws.cell(r,2))), []).append((did, norm(v(ws.cell(r,3)))))
         cur.execute("""INSERT INTO donors(id,last,first,english,business,phone,email,addr,tier,
             category,amount,channel,pay_status,last_active,months,labels,aliases) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (did, v(ws.cell(r,2)),v(ws.cell(r,3)),v(ws.cell(r,4)),v(ws.cell(r,5)),v(ws.cell(r,6)),
@@ -69,13 +80,32 @@ def main():
                  v(ws.cell(r,1)), v(ws.cell(r,6)), v(ws.cell(r,7)), v(ws.cell(r,8))))
 
     # שמות לתפילה
+    def match_prayer(name):
+        """התאמת שם בקוויטל לכרטיס תורם — מדויק, ואם לא, לפי שם משפחה זהה + כינוי לשם פרטי."""
+        n = norm(name)
+        if n in idx: return idx[n]
+        toks = n.split()
+        for i in range(len(toks)):
+            ln = toks[i]
+            if ln in by_last:
+                rest = ' '.join(toks[:i] + toks[i+1:])
+                for cand_did, cand_first in by_last[ln]:
+                    if rest and cand_first and edist(rest, cand_first) <= 1:
+                        return cand_did
+        return None
+
     if 'שמות_לתפילה' in wb.sheetnames:
         ws = wb['שמות_לתפילה']
+        linked = loose = 0
         for r in range(2, ws.max_row+1):
             if not v(ws.cell(r,1)): continue
-            did = idx.get(norm(v(ws.cell(r,3))))
-            cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",
-                (did, v(ws.cell(r,4)), v(ws.cell(r,6))))
+            nm = v(ws.cell(r,3))
+            did = match_prayer(nm)
+            if did: linked += 1
+            else: loose += 1
+            cur.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,?,?,?)",
+                (did, nm, v(ws.cell(r,4)), v(ws.cell(r,6))))
+        print(f'  קוויטל: {linked} משויכים לכרטיס, {loose} עדיין לא משויכים')
 
     # מזדמנים
     if 'מזדמנים' in wb.sheetnames:

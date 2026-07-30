@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6;
+let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6;
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
@@ -17,7 +17,7 @@ function matchQ(s){return !q?true:norm(s).includes(norm(q));}
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; OCC = d.occasional || [];
+  DB = d.donors; OCC = d.occasional || []; UNLINKED = d.unlinked_prayers || [];
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
@@ -115,12 +115,13 @@ function renderKvittel(){
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   let all=[];
   DB.forEach(d=>(d.prayers||[]).forEach(p=>{const tier=p.tier||d.tier||'';all.push({ref:p,text:p.text,tier,donor:(d.last+' '+d.first).trim(),last:d.last});}));
+  UNLINKED.forEach(p=>{all.push({ref:p,text:p.text,tier:p.tier||'',donor:(p.name||'—'),last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
   all=all.filter(p=>(!flt||p.tier===flt)&&matchQ(p.donor+' '+p.text));
   all.sort((a,b)=>(order[a.tier]??9)-(order[b.tier]??9)||(a.last||'').localeCompare(b.last||'','he'));
   const title=flt&&TIERS[flt]?('קוויטל '+TIERS[flt][0]):'קוויטל — כל השמות';
   view.innerHTML=`<div class="kbar"><b>${title}</b><span class="cnt2">(${all.length})</span><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
     <div class="hintxt" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר לבד.</div>
-    ${all.map(p=>`<div class="kblock"><div class="who">${esc(p.donor)} · ${TIERS[p.tier]?TIERS[p.tier][0]:''}</div><div class="names" contenteditable="true" data-id="${p.ref.id}">${esc(p.text)}</div></div>`).join('')||'<div class="empty">אין שמות</div>'}`;
+    ${all.map(p=>`<div class="kblock"><div class="who">${esc(p.donor)} · ${TIERS[p.tier]?TIERS[p.tier][0]:''}${p.loose?' <span class="loose">· לא משויך לכרטיס</span>':''}</div><div class="names" contenteditable="true" data-id="${p.ref.id}">${esc(p.text)}</div></div>`).join('')||'<div class="empty">אין שמות</div>'}`;
   view.querySelectorAll('.names[contenteditable]').forEach(n=>{n.onblur=async()=>{const item=all.find(x=>x.ref.id==n.dataset.id);const nt=n.innerText.replace(/\s+$/,'');if(!item||item.ref.text===nt)return;item.ref.text=nt;item.text=nt;await api('PUT','/api/prayer/'+n.dataset.id,{text:nt});toast('נשמר ✓');};});
 }
 
