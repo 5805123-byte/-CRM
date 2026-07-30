@@ -61,9 +61,12 @@ function openDonor(d){
   const sel=CATS.map(c=>`<option ${c===d.category?'selected':''} value="${c}">${c||'— ללא —'}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
-    <h2>${esc(d.last)} ${esc(d.first)}</h2>
+    <h2 id="cardTitle">${esc(d.last)} ${esc(d.first)}</h2>
     <div>${catPill(d.category)} ${pill(d.tier)}</div>
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
+    <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
+      <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
+    <label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${['','יששכר_זבולון','קוויטל_101','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===d.tier?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'קוויטל 101','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('')}</select></label>
     <label class="fld"><span>קטגוריה</span><select id="f_category">${sel}</select></label>
     <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
     <div class="two"><label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label>
@@ -81,8 +84,10 @@ function openDonor(d){
       <div class="addrow"><input id="py_date" placeholder="תאריך (ג' אב)"><input id="py_ded" placeholder="הקדשה"><button class="btn sm" id="py_add">הוסף</button></div></div>`;
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
-  ['category','purpose','amount','phone','english','email','addr'].forEach(fld=>{
-    document.getElementById('f_'+fld).onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='category'&&tab==='donors')renderDonors();};
+  ['last','first','tier','category','purpose','amount','phone','english','email','addr'].forEach(fld=>{
+    document.getElementById('f_'+fld).onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');
+      if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}
+      if(['last','first','tier','category'].includes(fld)&&tab==='donors')renderDonors();};
   });
   renderPledges(d); renderParnesEdit(d); renderPrayers(d);
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
