@@ -32,6 +32,25 @@ DROP TABLE IF EXISTS occasional;
 CREATE TABLE occasional(
   id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, total TEXT, detail TEXT
 );
+DROP TABLE IF EXISTS donations;
+CREATE TABLE donations(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
+  amount TEXT, category TEXT, method TEXT, note TEXT
+);
+DROP TABLE IF EXISTS contacts_log;
+CREATE TABLE contacts_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
+  channel TEXT, summary TEXT, next_date TEXT
+);
+DROP TABLE IF EXISTS tasks;
+CREATE TABLE tasks(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, due_date TEXT,
+  kind TEXT, note TEXT, done INTEGER DEFAULT 0
+);
+DROP TABLE IF EXISTS partners;
+CREATE TABLE partners(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, note TEXT
+);
 """
 
 NIK = re.compile(r'[֑-ׇ]')

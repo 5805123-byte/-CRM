@@ -112,6 +112,20 @@
   .rowc .miss{font-size:.82rem;color:var(--no);font-weight:700;margin-top:3px}
   /* קמפיין */
   .campc .csub{font-size:.82rem;color:var(--muted)}
+  /* לשוניות בתוך כרטיס */
+  .cardsub{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .cardsub .ensm{color:var(--muted);font-size:.85rem}
+  .ctabs{display:flex;gap:5px;margin:6px 0 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .ctab{background:none;border:none;font-family:inherit;font-size:.92rem;font-weight:700;color:var(--muted);padding:8px 10px;border-radius:9px 9px 0 0;cursor:pointer;border-bottom:2px solid transparent}
+  .ctab.on{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-soft)}
+  .ctab .badge{background:var(--no);color:#fff;border-radius:99px;padding:0 6px;font-size:.72rem}
+  .logrow{display:flex;gap:8px;align-items:flex-start;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:6px}
+  .logrow .pi{flex:1;font-size:.9rem}.logrow .del{background:none;border:none;color:var(--muted);cursor:pointer}
+  /* משימות */
+  .taskrow .tdone{background:var(--yes-soft);color:var(--yes);border:1px solid var(--yes);width:30px;height:30px;border-radius:50%;font-weight:800;cursor:pointer;flex-shrink:0}
+  .taskrow .miss2{font-size:.85rem;color:var(--muted);margin-top:2px}
+  .tdate{font-weight:800;font-size:.85rem;color:var(--accent)}
+  .tdate.over{color:var(--no)}
   @media print{header.top,.chips,.pbar,.kbar .print,.print,.back{display:none!important}.app{max-width:none}.plaque{box-shadow:none}}
 </style>
 </head>
@@ -122,6 +136,7 @@
     <input class="search" id="q" placeholder="חיפוש שם / טלפון / עסק…">
     <div class="tabs">
       <button class="tab on" data-tab="donors">תורמים</button>
+      <button class="tab" data-tab="tasks">משימות</button>
       <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
       <button class="tab" data-tab="missed">לא עבר</button>

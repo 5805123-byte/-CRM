@@ -11,12 +11,24 @@ PORT = int(os.environ.get('PORT', 8000))
 def db():
     con = sqlite3.connect(DB); con.row_factory = sqlite3.Row; return con
 
+def ensure_schema():
+    """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
+    con = db()
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS donations(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, amount TEXT, category TEXT, method TEXT, note TEXT);
+    CREATE TABLE IF NOT EXISTS contacts_log(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, channel TEXT, summary TEXT, next_date TEXT);
+    CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, due_date TEXT, kind TEXT, note TEXT, done INTEGER DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS partners(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, note TEXT);
+    """)
+    con.commit(); con.close()
+
 def get_all():
     con = db(); c = con.cursor()
     donors = [dict(r) for r in c.execute("SELECT * FROM donors ORDER BY last,first")]
     byid = {d['id']: d for d in donors}
     for d in donors:
         d['pledges'] = []; d['parnes'] = []; d['prayers'] = []
+        d['donations'] = []; d['contacts'] = []; d['tasks'] = []; d['partners'] = []
     for r in c.execute("SELECT * FROM pledges"):
         if r['donor_id'] in byid: byid[r['donor_id']]['pledges'].append(dict(r))
     for r in c.execute("SELECT * FROM parnes"):
@@ -27,6 +39,14 @@ def get_all():
             byid[r['donor_id']]['prayers'].append({'id': r['id'], 'text': r['text'], 'tier': r['tier']})
         else:
             unlinked.append({'id': r['id'], 'name': r['name'], 'text': r['text'], 'tier': r['tier']})
+    for r in c.execute("SELECT * FROM donations ORDER BY date DESC"):
+        if r['donor_id'] in byid: byid[r['donor_id']]['donations'].append(dict(r))
+    for r in c.execute("SELECT * FROM contacts_log ORDER BY date DESC"):
+        if r['donor_id'] in byid: byid[r['donor_id']]['contacts'].append(dict(r))
+    for r in c.execute("SELECT * FROM tasks ORDER BY due_date"):
+        if r['donor_id'] in byid: byid[r['donor_id']]['tasks'].append(dict(r))
+    for r in c.execute("SELECT * FROM partners"):
+        if r['donor_id'] in byid: byid[r['donor_id']]['partners'].append(dict(r))
     occ = [dict(r) for r in c.execute("SELECT * FROM occasional ORDER BY name")]
     con.close()
     return donors, occ, unlinked
@@ -95,6 +115,33 @@ class H(BaseHTTPRequestHandler):
                 con.commit()
             con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/donation/(\d+)$', self.path)
+        if m:
+            b = self._body(); pid = int(m.group(1))
+            con = db()
+            con.execute("UPDATE donations SET date=?,amount=?,category=?,method=?,note=? WHERE id=?",
+                        (b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note',''), pid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/contact/(\d+)$', self.path)
+        if m:
+            b = self._body(); pid = int(m.group(1))
+            con = db()
+            con.execute("UPDATE contacts_log SET date=?,channel=?,summary=?,next_date=? WHERE id=?",
+                        (b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date',''), pid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/task/(\d+)$', self.path)
+        if m:
+            b = self._body(); pid = int(m.group(1))
+            con = db(); sets = []; vals = []
+            for k in ('due_date','kind','note','done'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            if sets:
+                con.execute("UPDATE tasks SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
+                con.commit()
+            con.close()
+            return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
@@ -117,10 +164,38 @@ class H(BaseHTTPRequestHandler):
                         (b['donor_id'], b.get('text',''), b.get('tier','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/donation':
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) VALUES(?,?,?,?,?,?)",
+                        (b['donor_id'], b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note','')))
+            con.commit(); pid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/contact':
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,?)",
+                        (b['donor_id'], b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date','')))
+            cid = cur.lastrowid
+            if b.get('next_date'):
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (b['donor_id'], b['next_date'], 'followup', b.get('summary','')[:80]))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': cid})
+        if self.path == '/api/task':
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                        (b['donor_id'], b.get('due_date',''), b.get('kind','prayer'), b.get('note','')))
+            con.commit(); pid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/partner':
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO partners(donor_id,avreich,note) VALUES(?,?,?)",
+                        (b['donor_id'], b.get('avreich',''), b.get('note','')))
+            con.commit(); pid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': pid})
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
-        m = re.match(r'/api/(pledge|parnes|prayer)/(\d+)$', self.path)
+        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner)/(\d+)$', self.path)
         if m:
             con = db(); con.execute(f"DELETE FROM {m.group(1)} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()
             return self._send(200, {'ok': True})
@@ -129,6 +204,7 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
 def serve():
+    ensure_schema()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 
