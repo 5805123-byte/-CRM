@@ -74,7 +74,10 @@ class H(BaseHTTPRequestHandler):
         if path == '/': path = '/index.html'
         fp = os.path.normpath(os.path.join(STATIC, path.lstrip('/')))
         if fp.startswith(STATIC) and os.path.isfile(fp):
-            ctype = 'text/html' if fp.endswith('.html') else 'application/javascript' if fp.endswith('.js') else 'text/plain'
+            ext = os.path.splitext(fp)[1]
+            ctype = {'.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json',
+                     '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css',
+                     '.webmanifest': 'application/manifest+json'}.get(ext, 'text/plain')
             return self._send(200, open(fp, 'rb').read(), ctype)
         return self._send(404, {'error': 'not found'})
 

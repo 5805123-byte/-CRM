@@ -2,8 +2,16 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>כולל חצות — מערכת תורמים</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2B2740">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="כולל חצות">
 <style>
   :root{--ground:#FBF8F2;--card:#FFFFFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--gold:#9C7A2E;--gold-soft:#F5ECD6;--klali:#5A7A8C;--klali-soft:#E6EEF2;--yes:#2F7A57;--yes-soft:#E4F1EA;--no:#C43A2B;--no-soft:#F6E7E1;--shadow:0 6px 24px rgba(40,36,64,.10)}
   @media(prefers-color-scheme:dark){:root{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--gold:#D8B25E;--gold-soft:#2C2740;--klali:#8FB2C4;--klali-soft:#22303A;--yes:#6FC79A;--yes-soft:#1E3329;--no:#E86B5D;--no-soft:#33231E;--shadow:0 8px 30px rgba(0,0,0,.4)}}
@@ -150,5 +158,6 @@
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 <script src="/app.js"></script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}</script>
 </body>
 </html>
