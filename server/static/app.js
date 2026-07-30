@@ -98,14 +98,31 @@ function cardDetails(d,body){
     <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d.tier)}</select></label>
       <label class="fld"><span>קטגוריה</span><select id="f_category">${sel}</select></label></div>
     <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
-    <div class="two"><label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label>
-      <label class="fld"><span>טלפון</span><input id="f_phone" value="${esc(d.phone)}" dir="ltr"></label></div>
+    <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label>
+    <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
     <label class="fld"><span>כתובת</span><input id="f_addr" value="${esc(d.addr)}"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
     ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}`;
-  wireFields(d,['last','first','english','tier','category','purpose','amount','phone','email','addr','business']);
+  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','business']);
+  renderPhones(d);
+}
+function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
+function renderPhones(d){
+  const el=document.getElementById('phones'); if(!el) return;
+  el.innerHTML='';
+  const save=async()=>{const nums=[...el.querySelectorAll('.phin')].map(x=>x.value.trim()).filter(Boolean);d.phone=nums.join(' / ');await api('PUT','/api/donor/'+d.id,{phone:d.phone});toast('נשמר ✓');if(tab==='donors')renderDonors();};
+  const addRow=(val)=>{const row=document.createElement('div');row.className='phrow';
+    row.innerHTML=`<input class="phin" dir="ltr" inputmode="tel" value="${esc(val||'')}" placeholder="+1 ..."><button class="del phdel" title="מחק">🗑</button>`;
+    row.querySelector('.phin').onchange=save;
+    row.querySelector('.phdel').onclick=()=>{row.remove();save();};
+    el.insertBefore(row, el.lastChild); return row;};
+  const addBtn=document.createElement('button');addBtn.className='btn sm phadd';addBtn.textContent='➕ טלפון נוסף';
+  addBtn.onclick=()=>{const r=addRow('');r.querySelector('.phin').focus();};
+  el.appendChild(addBtn);
+  const list=splitPhones(d.phone); if(!list.length) list.push('');
+  list.forEach(addRow);
 }
 function cardKvittel(d,body){
   body.innerHTML=`<div id="prayers"></div>
