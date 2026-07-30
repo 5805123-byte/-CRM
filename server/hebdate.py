@@ -39,6 +39,21 @@ def heb_to_greg(text, today=None):
             pass
     return None
 
+def greg_to_heb_monthyear(date_str):
+    """מקבל '2026-07' או '2026-07-20' ומחזיר חודש+שנה עברית, למשל 'אב תשפ״ו'."""
+    if not OK or not date_str:
+        return ''
+    m = re.match(r'(\d{4})-(\d{2})(?:-(\d{2}))?', str(date_str))
+    if not m:
+        return ''
+    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3) or 15)
+    try:
+        h = dates.GregorianDate(y, mo, d).to_heb()
+        year_str = h.hebrew_date_string().split()[-1]
+        return h.month_name(hebrew=True) + ' ' + year_str
+    except Exception:
+        return ''
+
 def week_before(text, today=None):
     """תאריך התזכורת — 7 ימים לפני הלילה. מחזיר 'YYYY-MM-DD' או None."""
     g = heb_to_greg(text, today)

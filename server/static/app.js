@@ -5,7 +5,7 @@ function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],t
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
-const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['קוויטל 101','k101'],'קוויטל_כללי':['כללי','klali']};
+const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_כללי':['כללי','klali']};
 const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה', 'מזדמן/חד-פעמי'];
 const MON = ['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
 const KIND = {charge:'💳 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 להתפלל',followup:'📞 לחזור',other:'🔔 תזכורת'};
@@ -50,7 +50,7 @@ async function load(){
   checkReminders();
 }
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;render();});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;kvSub=null;render();});
 document.getElementById('q').oninput=e=>{q=e.target.value.trim();render();};
 ov.onclick=e=>{if(e.target===ov)ov.classList.remove('show');};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
@@ -70,8 +70,8 @@ function render(){
 function amtNum(a){const n=parseFloat(String(a||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;}
 const DFILTERS={
   'iz':{label:'יששכר־זבולון', fn:d=>d.tier==='יששכר_זבולון'},
-  'k101':{label:'קוויטל 101', fn:d=>d.tier==='קוויטל_101'},
-  'reglow':{label:'קבועים פחות מ-101', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
+  'k101':{label:'כל לילה', fn:d=>d.tier==='קוויטל_101'},
+  'reglow':{label:'שבועי', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
   '':{label:'הכל', fn:d=>true}
@@ -96,7 +96,7 @@ function gaps(m){if(!m)return [];const f=m.indexOf('p');if(f<0)return[];const g=
 function monthGrid(m){if(!m)return '';const f=m.indexOf('p');return `<div class="mgrid">${MON.map((l,i)=>{let c;if(m[i]==='p')c='gp';else if(f>=0&&i>=f&&i<=GLAST)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
 
 let cardTab='details';
-function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'קוויטל 101','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
+function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category'].includes(fld)&&tab==='donors')renderDonors();};});}
 
 function openDonor(d){
@@ -256,22 +256,57 @@ function renderParnesEdit(d){
   el.querySelectorAll('.pyrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt,done:0});toast('תזכורת פרנס נקבעה ✓');});
 }
 
-/* ---------- קוויטל ---------- */
+/* ---------- קוויטל (5 סוגים) ---------- */
+const KVTYPES=[
+  ['iz','קוויטל יששכר־זבולון','שותפי יששכר־זבולון'],
+  ['101','קוויטל כל לילה','תורמי כל לילה (101)'],
+  ['weekly','קוויטל שבועי','קבועים פחות מ-101'],
+  ['occ','קוויטל מזדמן','לפי חודשים — נשמר לכל השנים'],
+  ['klali','קוויטל כללי','הכל יחד להדפסה (בלי מזדמן)']
+];
+let kvSub=null;
 function renderKvittel(){
-  const order={'יששכר_זבולון':0,'קוויטל_101':1,'קוויטל_כללי':2};
-  const opts=[['','הכל']].concat(Object.keys(TIERS).map(k=>[k,TIERS[k][0]]));
-  chips.innerHTML=opts.map(([k,l])=>`<button class="chip ${flt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
-  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
-  let all=[];
-  DB.forEach(d=>(d.prayers||[]).forEach(p=>{const tier=p.tier||d.tier||'';all.push({ref:p,text:p.text,tier,donor:(d.last+' '+d.first).trim(),last:d.last});}));
-  UNLINKED.forEach(p=>{all.push({ref:p,text:p.text,tier:p.tier||'',donor:(p.name||'—'),last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
-  all=all.filter(p=>(!flt||p.tier===flt)&&matchQ(p.donor+' '+p.text));
-  all.sort((a,b)=>(order[a.tier]??9)-(order[b.tier]??9)||(a.last||'').localeCompare(b.last||'','he'));
-  const title=flt&&TIERS[flt]?('קוויטל '+TIERS[flt][0]):'קוויטל — כל השמות';
-  view.innerHTML=`<div class="kbar"><b>${title}</b><span class="cnt2">(${all.length})</span><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
-    <div class="hintxt" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר לבד.</div>
-    ${all.map(p=>`<div class="kblock"><div class="who">${esc(p.donor)} · ${TIERS[p.tier]?TIERS[p.tier][0]:''}${p.loose?' <span class="loose">· לא משויך לכרטיס</span>':''}</div><div class="names" contenteditable="true" data-id="${p.ref.id}">${esc(p.text)}</div></div>`).join('')||'<div class="empty">אין שמות</div>'}`;
-  view.querySelectorAll('.names[contenteditable]').forEach(n=>{n.onblur=async()=>{const item=all.find(x=>x.ref.id==n.dataset.id);const nt=n.innerText.replace(/\s+$/,'');if(!item||item.ref.text===nt)return;item.ref.text=nt;item.text=nt;await api('PUT','/api/prayer/'+n.dataset.id,{text:nt});toast('נשמר ✓');};});
+  chips.innerHTML='';
+  if(!kvSub){
+    view.innerHTML=`<div class="cnt">בחר סוג קוויטל:</div><div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
+    view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvSub=b.dataset.k;render();});
+    return;
+  }
+  if(kvSub==='occ') return renderKvOcc();
+  renderKvList(kvSub);
+}
+function bindKvEdit(){
+  view.querySelectorAll('.names[contenteditable]').forEach(n=>{n.onblur=async()=>{const id=n.dataset.id,nt=n.innerText.replace(/\s+$/,'');let ref=null;DB.forEach(d=>(d.prayers||[]).forEach(p=>{if(p.id==id)ref=p;}));if(!ref)ref=UNLINKED.find(p=>p.id==id);if(!ref||ref.text===nt)return;ref.text=nt;await api('PUT','/api/prayer/'+id,{text:nt});toast('נשמר ✓ (גם בכרטיס)');};});
+}
+function renderKvList(type){
+  const pass=d=> type==='iz'?d.tier==='יששכר_זבולון'
+    : type==='101'?d.tier==='קוויטל_101'
+    : type==='weekly'?(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)
+    : /*klali*/ !(d.category==='מזדמן'&&!d.tier);
+  let entries=[];
+  DB.forEach(d=>{if(!pass(d))return;(d.prayers||[]).forEach(p=>entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last}));});
+  if(type==='iz'||type==='101'||type==='klali'){
+    const want=type==='iz'?'יששכר_זבולון':type==='101'?'קוויטל_101':null;
+    UNLINKED.forEach(p=>{if(type==='klali'||(want&&p.tier===want))entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
+  }
+  entries=entries.filter(e=>matchQ(e.donor+' '+e.text));
+  entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  const title=KVTYPES.find(x=>x[0]===type)[1];
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2">(${entries.length})</span><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div class="hintxt" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.</div>
+    ${entries.map(e=>`<div class="kblock"><div class="who">${esc(e.donor)}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div></div>`).join('')||'<div class="empty">אין שמות בקוויטל זה</div>'}`;
+  document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
+  bindKvEdit();
+}
+function renderKvOcc(){
+  const groups={},mdate={};
+  DB.forEach(d=>{if(!(d.category==='מזדמן'&&!d.tier))return;(d.donations||[]).forEach(dn=>{const hm=dn.hmonth||'ללא תאריך';groups[hm]=groups[hm]||{};const pid=(d.prayers&&d.prayers[0])?d.prayers[0].id:null;groups[hm][d.id]={d,pid,text:(d.prayers&&d.prayers[0])?d.prayers[0].text:''};if(!mdate[hm]||(dn.date||'')>mdate[hm])mdate[hm]=dn.date||'';});});
+  let months=Object.keys(groups).sort((a,b)=>(mdate[b]||'').localeCompare(mdate[a]||''));
+  months=months.filter(hm=>matchQ(hm)||Object.values(groups[hm]).some(x=>matchQ(x.d.last+' '+x.d.first+' '+x.text)));
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>קוויטל מזדמן — לפי חודשים</b><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    ${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3>🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock"><div class="who">${esc((x.d.last+' '+x.d.first).trim())}</div>${x.pid?`<div class="names" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}`;
+  document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
+  bindKvEdit();
 }
 
 /* ---------- פרנס יום + שלט ---------- */

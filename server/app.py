@@ -2,7 +2,7 @@
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
 import sqlite3, json, os, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before
+from hebdate import week_before, greg_to_heb_monthyear
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
@@ -45,7 +45,9 @@ def get_all():
         else:
             unlinked.append({'id': r['id'], 'name': r['name'], 'text': r['text'], 'tier': r['tier']})
     for r in c.execute("SELECT * FROM donations ORDER BY date DESC"):
-        if r['donor_id'] in byid: byid[r['donor_id']]['donations'].append(dict(r))
+        if r['donor_id'] in byid:
+            dn = dict(r); dn['hmonth'] = greg_to_heb_monthyear(r['date'])
+            byid[r['donor_id']]['donations'].append(dn)
     for r in c.execute("SELECT * FROM contacts_log ORDER BY date DESC"):
         if r['donor_id'] in byid: byid[r['donor_id']]['contacts'].append(dict(r))
     for r in c.execute("SELECT * FROM tasks ORDER BY due_date"):
