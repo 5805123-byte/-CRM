@@ -407,16 +407,27 @@ function renderMissed(){
 }
 
 /* ---------- אברכים (יששכר־זבולון) ---------- */
+let avView='cards';
+function renderAvTable(izd){
+  const rows=[];izd.forEach(d=>{const act=(d.partners||[]).filter(p=>p.active!=0);if(act.length)act.forEach(p=>rows.push({d,p}));else rows.push({d,p:null});});
+  view.innerHTML=`<div class="avbar"><button class="back" id="avcards">→ חזרה לעריכה</button><b style="margin-inline-start:8px">טבלת יששכר־זבולון (${rows.length})</b><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div style="overflow-x:auto"><table class="avtable"><thead><tr><th>תורם (זבולון)</th><th>אברך</th><th>תאריך התחלה</th><th>סכום</th><th>הערות</th></tr></thead>
+    <tbody>${rows.map(({d,p})=>{const nt=(p&&p.note&&p.note.indexOf('מקור:')!==0)?p.note:'';return `<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(nt)}</td></tr>`;}).join('')}</tbody></table></div>`;
+  document.getElementById('avcards').onclick=()=>{avView='cards';render();};
+}
 function renderAvreich(){
   chips.innerHTML='';
   let izd=DB.filter(d=>d.tier==='יששכר_זבולון').filter(d=>matchQ(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')));
   izd.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  if(avView==='table') return renderAvTable(izd);
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
-  view.innerHTML=`<div class="cnt">${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות</div>
+  view.innerHTML=`<div class="avbar"><button class="btn sm" id="avtablebtn">🖨️ טבלה מסודרת להדפסה</button></div>
+    <div class="cnt">${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות</div>
     <div class="avlist">${izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
       return `<div class="avrow"><div class="avtop"><b>${esc(d.last)} ${esc(d.first)}</b><span class="avsp"></span>${hist.length?`<button class="chip avhist" data-id="${d.id}">🕘 היסטוריה (${hist.length})</button>`:''}<button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
         <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
         <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button></div>`;}).join('')||'<div class="empty">אין תורמי יששכר־זבולון</div>'}</div>`;
+  document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
   view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
   view.querySelectorAll('.avadd').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id),today=todayStr();const r=await api('POST','/api/partner',{donor_id:d.id,avreich:'',start_date:today});d.partners=d.partners||[];d.partners.push({id:r.id,donor_id:d.id,avreich:'',start_date:today,amount:'',note:'',active:1});renderAvreich();});
@@ -425,7 +436,7 @@ function renderAvreich(){
 function avPartnerRow(p){
   return `<div class="avp" data-pid="${p.id}">
     <label class="fld"><span>שם האברך</span><input class="avf" data-k="avreich" value="${esc(p.avreich||'')}"></label>
-    <div class="two"><label class="fld"><span>תאריך התחלה</span><input class="avf" data-k="start_date" type="date" value="${esc(p.start_date||'')}"></label>
+    <div class="two"><label class="fld"><span>תאריך התחלה</span><input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ה"></label>
       <label class="fld"><span>סכום</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}"></label></div>
     <label class="fld"><span>הערות</span><input class="avf" data-k="note" value="${esc(p.note||'')}"></label>
     <button class="del avend">⏹ סיים (האברך עזב) — לשמור בהיסטוריה</button></div>`;

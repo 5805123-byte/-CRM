@@ -198,8 +198,21 @@ def main():
                     (did, YEAR, total, 'מזדמן')); don_c+=1
         print(f'  מזדמנים: {new_c} כרטיסים חדשים, {match_c} חוברו לקיימים, {don_c} תרומות')
 
+    # יששכר־זבולון — טעינת האברכים לכל תורם
+    YZ = os.path.join(HERE, '..', 'tools', 'yissachar_zevulun.json')
+    if os.path.exists(YZ):
+        import json as _json
+        yz = _json.load(open(YZ, encoding='utf-8')); yzc = 0
+        for rec in yz:
+            did = rec.get('donor_id')
+            if not did: continue
+            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active) VALUES(?,?,?,?,?,1)",
+                (did, rec.get('avreich',''), rec.get('start',''), rec.get('amount',''), 'מקור: ' + rec.get('zevulun','')))
+            yzc += 1
+        print(f'  יששכר־זבולון: {yzc} אברכים שויכו לתורמים')
+
     con.commit()
-    for t in ('donors','pledges','parnes','prayers','donations'):
+    for t in ('donors','pledges','parnes','prayers','donations','partners'):
         n = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         print(f'  {t}: {n}')
     con.close()
