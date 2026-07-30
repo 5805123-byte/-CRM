@@ -28,6 +28,10 @@ CREATE TABLE parnes(
 CREATE TABLE prayers(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, text TEXT, tier TEXT
 );
+DROP TABLE IF EXISTS occasional;
+CREATE TABLE occasional(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, total TEXT, detail TEXT
+);
 """
 
 NIK = re.compile(r'[֑-ׇ]')
@@ -73,8 +77,16 @@ def main():
             cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",
                 (did, v(ws.cell(r,4)), v(ws.cell(r,6))))
 
+    # מזדמנים
+    if 'מזדמנים' in wb.sheetnames:
+        ws = wb['מזדמנים']
+        for r in range(2, ws.max_row+1):
+            if not v(ws.cell(r,1)): continue
+            cur.execute("INSERT INTO occasional(name,total,detail) VALUES(?,?,?)",
+                (v(ws.cell(r,2)), v(ws.cell(r,3)), v(ws.cell(r,4))))
+
     con.commit()
-    for t in ('donors','pledges','parnes','prayers'):
+    for t in ('donors','pledges','parnes','prayers','occasional'):
         n = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         print(f'  {t}: {n}')
     con.close()

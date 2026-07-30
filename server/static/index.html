@@ -61,6 +61,53 @@
   .camprow.given{color:var(--yes)}.camprow.pending{color:var(--no)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--ground);padding:10px 18px;border-radius:99px;font-weight:700;opacity:0;transition:opacity .2s;z-index:99}
   .toast.show{opacity:1}
+  /* מטרה (עבור מה) */
+  .rowc .purp{font-size:.8rem;color:var(--gold);margin-top:3px;font-weight:600}
+  .purpose{background:var(--gold-soft);color:var(--gold);border-radius:10px;padding:8px 12px;font-weight:700;margin:10px 0}
+  /* שדות קריאה בכרטיס */
+  .rf{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+  .rf .k{font-size:.8rem;color:var(--muted);min-width:96px}
+  .rf .v{font-weight:600}
+  .two{display:flex;gap:8px}.two label.fld{flex:1}
+  .hintxt{color:var(--muted);font-size:.85rem;padding:4px 0}
+  /* מפת חודשים */
+  .mgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:6px}
+  .mc{aspect-ratio:1;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700}
+  .mc span{opacity:.85}
+  .mc.gp{background:var(--yes);color:#fff}
+  .mc.gx{background:var(--no);color:#fff}
+  .mc.gn{background:var(--line);color:var(--muted)}
+  /* שמות לתפילה בכרטיס */
+  .pr{background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin-bottom:5px;font-weight:600;white-space:pre-line}
+  /* קוויטל */
+  .kbar{display:flex;align-items:center;gap:10px;margin:12px 2px}
+  .kbar b{font-size:1.05rem}.cnt2{color:var(--muted);font-size:.85rem}
+  .print,.back{margin-inline-start:auto;background:var(--accent);color:#fff;border:none;border-radius:9px;padding:8px 14px;font-family:inherit;font-weight:700;cursor:pointer}
+  .back{margin-inline-start:0;background:var(--line);color:var(--ink)}
+  .kblock{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:7px}
+  .kblock .who{font-size:.78rem;color:var(--muted);margin-bottom:3px}
+  .kblock .names{font-weight:700;font-size:1.05rem;white-space:pre-line}
+  /* פרנס יום — רשימה */
+  .pyc{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:8px;cursor:pointer;align-items:center}
+  .pyc:hover{border-color:var(--gold)}
+  .pyc .pdate{background:var(--gold-soft);color:var(--gold);border-radius:9px;padding:8px 12px;font-weight:800;white-space:nowrap;min-width:70px;text-align:center}
+  .pyc .pbody .nm{font-weight:700}
+  .pyc .pbody .ded{font-size:.85rem;color:var(--muted);margin-top:2px}
+  .pyc .printhint{font-size:.75rem;color:var(--accent);margin-top:3px}
+  /* שלט פרנס יום */
+  .pbar{display:flex;gap:8px;margin:12px 2px}
+  .plaque{background:#fffdf6;color:#2a2412;border:3px double var(--gold);border-radius:14px;padding:30px 26px;text-align:center;box-shadow:var(--shadow);max-width:520px;margin:0 auto}
+  .plaque .bsd{font-size:.8rem;color:var(--gold);margin-bottom:14px}
+  .plaque .ptop{font-size:1rem;line-height:1.7;margin-bottom:16px}
+  .plaque .pdate2{font-size:1.5rem;font-weight:800;color:var(--gold);margin:12px 0}
+  .plaque .pyz{font-size:.95rem;margin-bottom:8px}
+  .plaque .pded2{font-size:1.35rem;font-weight:800;line-height:1.7;margin:8px 0 18px;white-space:pre-line}
+  .plaque .pfoot{font-size:.8rem;color:var(--muted);border-top:1px solid var(--gold-soft);padding-top:12px}
+  /* לא עבר */
+  .rowc .miss{font-size:.82rem;color:var(--no);font-weight:700;margin-top:3px}
+  /* קמפיין */
+  .campc .csub{font-size:.82rem;color:var(--muted)}
+  @media print{header.top,.chips,.pbar,.kbar .print,.print,.back{display:none!important}.app{max-width:none}.plaque{box-shadow:none}}
 </style>
 </head>
 <body>
@@ -70,8 +117,11 @@
     <input class="search" id="q" placeholder="חיפוש שם / טלפון / עסק…">
     <div class="tabs">
       <button class="tab on" data-tab="donors">תורמים</button>
-      <button class="tab" data-tab="camp">קמפיינים</button>
+      <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
+      <button class="tab" data-tab="missed">לא עבר</button>
+      <button class="tab" data-tab="camp">קמפיינים</button>
+      <button class="tab" data-tab="occ">מזדמנים</button>
     </div>
     <div class="chips" id="chips"></div>
   </header>

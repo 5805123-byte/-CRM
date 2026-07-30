@@ -22,9 +22,10 @@ def get_all():
     for r in c.execute("SELECT * FROM parnes"):
         if r['donor_id'] in byid: byid[r['donor_id']]['parnes'].append(dict(r))
     for r in c.execute("SELECT * FROM prayers"):
-        if r['donor_id'] in byid: byid[r['donor_id']]['prayers'].append(r['text'])
+        if r['donor_id'] in byid: byid[r['donor_id']]['prayers'].append({'text': r['text'], 'tier': r['tier']})
+    occ = [dict(r) for r in c.execute("SELECT * FROM occasional ORDER BY name")]
     con.close()
-    return donors
+    return donors, occ
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes'}
@@ -43,7 +44,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/api/data':
-            return self._send(200, {'donors': get_all()})
+            donors, occ = get_all()
+            return self._send(200, {'donors': donors, 'occasional': occ})
         path = self.path.split('?')[0]
         if path == '/': path = '/index.html'
         fp = os.path.normpath(os.path.join(STATIC, path.lstrip('/')))
