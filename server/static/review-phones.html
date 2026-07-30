@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>אימות טלפונים — כולל חצות</title>
+<style>
+  :root{--ground:#FBF8F2;--card:#FFF;--ink:#2A2740;--muted:#6E6A82;--line:#E7E0D2;--accent:#3B357A;--accent-soft:#EEEBFA;--yes:#2F7A57;--yes-soft:#E4F1EA;--no:#C43A2B;--no-soft:#F6E7E1;--warn:#9C7A2E;--warn-soft:#F5ECD6}
+  @media(prefers-color-scheme:dark){:root{--ground:#17151F;--card:#221F2E;--ink:#ECE7DA;--muted:#A29CB4;--line:#332F42;--accent:#A79EEA;--accent-soft:#2A2740;--yes:#6FC79A;--yes-soft:#1E3329;--no:#E86B5D;--no-soft:#33231E;--warn:#D8B25E;--warn-soft:#2C2740}}
+  *{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",system-ui,Arial,sans-serif;background:var(--ground);color:var(--ink);line-height:1.5}
+  .wrap{max-width:760px;margin:0 auto;padding:16px 14px 60px}
+  h1{font-size:1.3rem;margin:.2em 0}
+  .lead{color:var(--muted);font-size:.95rem;margin-bottom:6px}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;position:sticky;top:0;background:var(--ground);padding:8px 0;border-bottom:1px solid var(--line);z-index:5}
+  .bar .st{margin-inline-start:auto;font-weight:700}
+  .back{background:var(--accent);color:#fff;text-decoration:none;border-radius:9px;padding:8px 14px;font-weight:700}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px;margin-bottom:10px}
+  .card.done{opacity:.5}
+  .nm{font-weight:800;font-size:1.12rem}
+  .conf{font-size:.75rem;font-weight:700;padding:2px 9px;border-radius:99px;margin-inline-start:8px}
+  .c1{background:var(--yes-soft);color:var(--yes)}.c2{background:var(--warn-soft);color:var(--warn)}.c3{background:var(--no-soft);color:var(--no)}
+  .opt{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:8px}
+  .opt .info{flex:1}
+  .opt .ph{font-weight:800;direction:ltr;text-align:start}
+  .opt .src{font-size:.8rem;color:var(--muted)}
+  .yes,.no{border:none;border-radius:9px;padding:9px 13px;font-family:inherit;font-weight:800;cursor:pointer;font-size:.95rem}
+  .yes{background:var(--yes);color:#fff}.no{background:var(--line);color:var(--ink)}
+  .skip{background:none;border:none;color:var(--muted);cursor:pointer;font-weight:700;margin-top:8px;text-decoration:underline}
+  .empty{text-align:center;color:var(--muted);padding:40px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--ground);padding:10px 18px;border-radius:99px;font-weight:700;opacity:0;transition:.2s;z-index:99}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📞 אימות טלפונים מבני משפחה</h1>
+  <p class="lead">לכל תורם שאין לו טלפון משלו, מצאנו מספר של מישהו עם <b>אותו שם משפחה</b> באנשי הקשר.
+     זה <b>לא ודאי</b> — עבור על כל אחד: אם זה הוא/בן משפחה, לחץ ✓ לחבר. אם לא — ✗ דלג.</p>
+  <div class="bar">
+    <a class="back" href="/">→ חזרה למערכת</a>
+    <span class="st" id="st"></span>
+  </div>
+  <div id="list"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const toastEl=document.getElementById('toast');
+function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1200);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const DONE=JSON.parse(localStorage.getItem('phdone')||'{}');
+function markDone(id){DONE[id]=1;localStorage.setItem('phdone',JSON.stringify(DONE));}
+let SUG=[];
+async function load(){
+  SUG=await (await fetch('/phone_suggestions.json')).json();
+  render();
+}
+function confClass(n){return n===1?'c1':n<=2?'c2':'c3';}
+function confLabel(n){return n===1?'מקור אחד':n+' מקורות — ודא';}
+function render(){
+  const pend=SUG.filter(s=>!DONE[s.id]);
+  document.getElementById('st').textContent=`${pend.length} ממתינים · ${Object.keys(DONE).length} טופלו`;
+  const el=document.getElementById('list');
+  if(!pend.length){el.innerHTML='<div class="empty">הכל טופל! 🎉<br>אפשר לחזור למערכת.</div>';return;}
+  el.innerHTML=pend.map(s=>`
+    <div class="card" data-id="${s.id}">
+      <div><span class="nm">${esc(s.name)}</span><span class="conf ${confClass(s.nsrc)}">${confLabel(s.nsrc)}</span></div>
+      ${s.opts.map((o,i)=>`<div class="opt">
+        <div class="info"><div class="ph">${esc(o.phone)}</div><div class="src">מהרשומה: ${esc(o.who)}</div></div>
+        <button class="yes" data-id="${s.id}" data-ph="${esc(o.phone)}">✓ חבר</button>
+      </div>`).join('')}
+      <button class="skip" data-skip="${s.id}">✗ אף אחד לא מתאים — דלג</button>
+    </div>`).join('');
+  el.querySelectorAll('.yes').forEach(b=>b.onclick=async()=>{
+    await fetch('/api/donor/'+b.dataset.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:b.dataset.ph})});
+    markDone(b.dataset.id);toast('חובר ✓');render();
+  });
+  el.querySelectorAll('.skip').forEach(b=>b.onclick=()=>{markDone(b.dataset.skip);toast('דולג');render();});
+}
+load();
+</script>
+</body>
+</html>
