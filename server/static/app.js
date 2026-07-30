@@ -42,12 +42,11 @@ function render(){
 const DFILTERS={
   'iz':{label:'יששכר־זבולון', fn:d=>d.tier==='יששכר_זבולון'},
   'k101':{label:'קוויטל 101', fn:d=>d.tier==='קוויטל_101'},
-  'reg':{label:'קבועים', fn:d=>d.category==='קבוע'},
-  'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן'},
+  'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['iz','k101','reg','occ','klali',''];
+const DFORDER=['iz','k101','occ','klali',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
