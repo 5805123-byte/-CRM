@@ -22,10 +22,12 @@
   .brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}
   .brand h1{font-size:1.2rem;margin:0;font-weight:800}.brand .st{margin-inline-start:auto;font-size:.8rem;color:var(--muted)}
   .search{width:100%;font-size:1.05rem;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink)}
-  .tabs{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
-  .tab{flex:1;background:none;border:none;font-family:inherit;font-size:.92rem;font-weight:700;color:var(--muted);padding:9px;border-radius:9px;cursor:pointer;min-width:80px}
-  .tab.on{background:var(--accent-soft);color:var(--accent)}
-  .tab.danger{color:var(--no)}.tab.danger.on{background:var(--no-soft);color:var(--no)}
+  .tabs{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .tab{flex:1 1 auto;background:var(--card);border:1px solid var(--line);font-family:inherit;font-size:1.02rem;font-weight:800;color:var(--muted);padding:13px 14px;border-radius:12px;cursor:pointer;min-width:110px;white-space:nowrap}
+  .tab:hover{border-color:var(--accent)}
+  .tab.on{background:var(--accent);color:#fff;border-color:transparent;box-shadow:var(--shadow)}
+  .tab.danger{color:var(--no);border-color:var(--no-soft)}
+  .tab.danger.on{background:var(--no);color:#fff;border-color:transparent}
   .misshead{color:var(--no);font-weight:800;font-size:.95rem;margin:12px 2px 2px}
   .notpassed{background:var(--no-soft);color:var(--no);border:1px solid var(--no);border-radius:10px;padding:8px 12px;font-weight:800;margin-bottom:8px}
   /* לוח פרנס יום */
@@ -138,11 +140,11 @@
   .kblock{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:7px}
   .kblock .who{font-size:.78rem;color:var(--muted);margin-bottom:3px}
   .kblock .loose{color:var(--no);font-weight:700}
-  .kvmenu{display:flex;flex-direction:column;gap:10px;margin-top:12px}
-  .kvbtn{text-align:start;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px;font-family:inherit;cursor:pointer;color:var(--ink)}
+  .kvmenu{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+  .kvbtn{text-align:start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 18px;font-family:inherit;cursor:pointer;color:var(--ink);box-shadow:var(--shadow)}
   .kvbtn:hover{border-color:var(--accent)}
-  .kvbtn b{display:block;font-size:1.12rem;font-weight:800;color:var(--accent)}
-  .kvbtn small{color:var(--muted);font-size:.85rem}
+  .kvbtn b{display:block;font-size:1.28rem;font-weight:800;color:var(--accent);margin-bottom:3px}
+  .kvbtn small{color:var(--muted);font-size:.95rem}
   .kvmonth{margin-top:14px}
   .kvmonth h3{color:var(--gold);border-bottom:2px solid var(--gold-soft);padding-bottom:5px;margin:0 0 8px}
   .kblock .names{font-weight:700;font-size:1.05rem;white-space:pre-line;border-radius:8px;padding:4px 6px;margin:-4px -6px}
