@@ -437,7 +437,7 @@ function avPartnerRow(p){
   return `<div class="avp" data-pid="${p.id}">
     <div class="avmain"><input class="avf avname" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך">
       <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום"></div>
-      <button class="avend" title="האברך עזב — יישמר בהיסטוריה">עזב</button></div>
+      <button class="avend" title="סיום התקופה — יישמר בהיסטוריה">סיום</button></div>
     <div class="avsub"><input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="מתאריך (עברי)">
       <input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="הערות"></div></div>`;
 }
