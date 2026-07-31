@@ -211,6 +211,21 @@ def main():
             yzc += 1
         print(f'  יששכר־זבולון: {yzc} אברכים שויכו לתורמים')
 
+    # שטרי הסכם יששכר־זבולון (PDF) — טעינה לטבלת הקבצים
+    cur.execute("CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref_id INTEGER, name TEXT, mime TEXT, data BLOB, created TEXT)")
+    IZF = os.path.join(HERE, '..', 'tools', 'iz_files.json')
+    if os.path.exists(IZF):
+        import json as _json
+        recs = _json.load(open(IZF, encoding='utf-8')); izf = 0
+        for rec in recs:
+            fp = os.path.join(HERE, 'iz_files', rec.get('file', ''))
+            if not rec.get('donor_id') or not os.path.exists(fp): continue
+            with open(fp, 'rb') as fo: blob = fo.read()
+            cur.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) VALUES('iz',?,?,?,?,'')",
+                (rec['donor_id'], rec.get('name', 'שטר.pdf'), 'application/pdf', sqlite3.Binary(blob)))
+            izf += 1
+        print(f'  שטרי יש"ז: נטענו {izf} קבצים')
+
     con.commit()
     for t in ('donors','pledges','parnes','prayers','donations','partners'):
         n = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
