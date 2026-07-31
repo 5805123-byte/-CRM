@@ -213,6 +213,7 @@ def main():
 
     # שטרי הסכם יששכר־זבולון (PDF) — טעינה לטבלת הקבצים
     cur.execute("CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref_id INTEGER, name TEXT, mime TEXT, data BLOB, created TEXT)")
+    cur.execute("DELETE FROM files WHERE created='seed'")  # רק קבצים מהמאגר — לא מוחק העלאות של המשתמש
     IZF = os.path.join(HERE, '..', 'tools', 'iz_files.json')
     if os.path.exists(IZF):
         import json as _json
@@ -221,7 +222,7 @@ def main():
             fp = os.path.join(HERE, 'iz_files', rec.get('file', ''))
             if not rec.get('donor_id') or not os.path.exists(fp): continue
             with open(fp, 'rb') as fo: blob = fo.read()
-            cur.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) VALUES('iz',?,?,?,?,'')",
+            cur.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) VALUES('iz',?,?,?,?,'seed')",
                 (rec['donor_id'], rec.get('name', 'שטר.pdf'), 'application/pdf', sqlite3.Binary(blob)))
             izf += 1
         print(f'  שטרי יש"ז: נטענו {izf} קבצים')
