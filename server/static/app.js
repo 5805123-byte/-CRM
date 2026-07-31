@@ -145,9 +145,15 @@ function cardDetails(d,body){
     <label class="fld"><span>כתובת</span><input id="f_addr" value="${esc(d.addr)}"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
     ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}
-    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}`;
+    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
+    <div class="sec"><button class="btn" id="f_delete" style="background:var(--no);width:100%">🗑 מחק תורם זה לצמיתות</button></div>`;
   wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','business']);
   renderPhones(d);
+  document.getElementById('f_delete').onclick=async()=>{
+    if(!confirm('למחוק את "'+(d.last+' '+d.first).trim()+'" לצמיתות?\n\nיימחקו גם כל התרומות, הקוויטל, האברכים והשטרות שלו. אי אפשר לבטל.'))return;
+    if(!confirm('בטוח? זו פעולה שאי אפשר לבטל.'))return;
+    await api('DELETE','/api/donor/'+d.id);DB=DB.filter(x=>x.id!==d.id);ov.classList.remove('show');toast('התורם נמחק');render();
+  };
 }
 function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
 function renderPhones(d){

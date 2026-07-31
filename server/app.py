@@ -282,6 +282,17 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
+        m = re.match(r'/api/donor/(\d+)$', self.path)
+        if m:
+            did = int(m.group(1)); con = db()
+            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners'):
+                try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
+                except Exception: pass
+            try: con.execute("DELETE FROM files WHERE ref_id=? AND kind='iz'", (did,))
+            except Exception: pass
+            con.execute("DELETE FROM donors WHERE id=?", (did,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file)/(\d+)$', self.path)
         if m:
             table = 'files' if m.group(1) == 'file' else m.group(1)
