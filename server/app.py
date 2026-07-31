@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re
+import sqlite3, json, os, re, base64
+from urllib.parse import quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hebdate import week_before, greg_to_heb_monthyear
 
@@ -20,6 +21,7 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS contacts_log(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, channel TEXT, summary TEXT, next_date TEXT);
     CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, due_date TEXT, kind TEXT, note TEXT, done INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS partners(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, start_date TEXT, amount TEXT, note TEXT, active INTEGER DEFAULT 1, ended_date TEXT);
+    CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref_id INTEGER, name TEXT, mime TEXT, data BLOB, created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
@@ -56,6 +58,20 @@ def get_all():
         if r['donor_id'] in byid: byid[r['donor_id']]['tasks'].append(dict(r))
     for r in c.execute("SELECT * FROM partners"):
         if r['donor_id'] in byid: byid[r['donor_id']]['partners'].append(dict(r))
+    for d in donors: d['files'] = []
+    parnes_files = {}
+    try:
+        for r in c.execute("SELECT id,kind,ref_id,name,mime FROM files"):
+            meta = {'id': r['id'], 'name': r['name'], 'mime': r['mime']}
+            if r['kind'] == 'iz' and r['ref_id'] in byid:
+                byid[r['ref_id']]['files'].append(meta)
+            elif r['kind'] == 'parnes':
+                parnes_files.setdefault(r['ref_id'], []).append(meta)
+        for d in donors:
+            for p in d['parnes']:
+                p['files'] = parnes_files.get(p['id'], [])
+    except Exception:
+        pass
     con.close()
     return donors, unlinked
 
@@ -102,6 +118,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
+        m = re.match(r'/api/file/(\d+)$', self.path)
+        if m:
+            con = db(); r = con.execute("SELECT name,mime,data FROM files WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
+            if not r: return self._send(404, {'error': 'not found'})
+            self.send_response(200)
+            self.send_header('Content-Type', r['mime'] or 'application/octet-stream')
+            self.send_header('Content-Disposition', "inline; filename*=UTF-8''" + quote(r['name'] or 'file'))
+            self.send_header('Content-Length', str(len(r['data'])))
+            self.end_headers(); self.wfile.write(r['data']); return
         path = self.path.split('?')[0]
         if path == '/': path = '/index.html'
         fp = os.path.normpath(os.path.join(STATIC, path.lstrip('/')))
@@ -245,12 +270,22 @@ class H(BaseHTTPRequestHandler):
                         (b['donor_id'], b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/file':
+            try: raw = base64.b64decode(b.get('data', ''))
+            except Exception: return self._send(400, {'error': 'bad data'})
+            if len(raw) > 15 * 1024 * 1024: return self._send(413, {'error': 'too large'})
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) VALUES(?,?,?,?,?,?)",
+                        (b.get('kind',''), b.get('ref_id'), b.get('name',''), b.get('mime',''), raw, b.get('created','')))
+            con.commit(); fid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': fid})
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
-        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner)/(\d+)$', self.path)
+        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file)/(\d+)$', self.path)
         if m:
-            con = db(); con.execute(f"DELETE FROM {m.group(1)} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()
+            table = 'files' if m.group(1) == 'file' else m.group(1)
+            con = db(); con.execute(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()
             return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 

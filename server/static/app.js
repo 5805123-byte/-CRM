@@ -41,6 +41,8 @@ function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</s
 function matchQ(s){return !q?true:norm(s).includes(norm(q));}
 
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
+function fileChip(f){const ic=(f.mime||'').indexOf('pdf')>=0?'📄':((f.mime||'').indexOf('image')>=0?'🖼️':'📎');return `<span class="fchip"><a href="/api/file/${f.id}" target="_blank" rel="noopener">${ic} ${esc(f.name||'קובץ')}</a><button class="fdel" data-fid="${f.id}">🗑</button></span>`;}
+function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');return;}toast('מעלה…');const rd=new FileReader();rd.onload=async()=>{const data=rd.result.split(',')[1];await api('POST','/api/file',{kind,ref_id:refId,name:f.name,mime:f.type,data});toast('הועלה ✓');cb&&cb();};rd.readAsDataURL(f);}
 async function load(){
   const d = await api('GET','/api/data');
   DB = d.donors; UNLINKED = d.unlinked_prayers || [];
@@ -363,7 +365,10 @@ function renderDayPanel(taken){
   if(t){
     panel.innerHTML=`<div class="sec"><h3>🌙 ${esc(dtext)} — תפוס</h3>
       <div class="remitem"><div class="ri"><b>${esc(t.donor)}</b><br><small>${esc(t.dedication||'')} ${t.amount?('· $'+esc(t.amount)):''}</small></div></div>
+      <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
       <div class="addrow"><button class="btn sm" id="dpopen">פתח כרטיס</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק שיבוץ</button></div></div>`;
+    panel.querySelector('.pyupload').onchange=e=>uploadFile('parnes',t.id,e.target,load);
+    panel.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
     document.getElementById('dpopen').onclick=()=>openDonor(t.dref);
     document.getElementById('dpprint').onclick=()=>{plaque={...t,date_text:t.date_text||dtext};render();};
     document.getElementById('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);render();toast('נמחק');};
@@ -426,8 +431,11 @@ function renderAvreich(){
     <div class="avlist">${izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
       return `<div class="avrow"><div class="avtop"><b>${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
         <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
-        <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button></div>`;}).join('')||'<div class="empty">אין תורמי יששכר־זבולון</div>'}</div>`;
+        <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button>
+        <div class="avfiles">${(d.files||[]).map(fileChip).join('')}<label class="filebtn">📎 העלה שטר הסכם (PDF)<input type="file" accept="application/pdf,image/*" class="izupload" data-id="${d.id}" hidden></label></div></div>`;}).join('')||'<div class="empty">אין תורמי יששכר־זבולון</div>'}</div>`;
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
+  view.querySelectorAll('.izupload').forEach(inp=>inp.onchange=()=>uploadFile('iz',+inp.dataset.id,inp,load));
+  view.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
   view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   view.querySelectorAll('.avpay').forEach(b=>b.onclick=()=>showPayments(DB.find(x=>x.id==b.dataset.id)));
   view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
