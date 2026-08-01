@@ -8,86 +8,170 @@
 <style>
   :root{--bg:#141230;--card:#201d44;--soft:#2b2758;--ink:#F3EEDF;--muted:#B4AECB;--line:#3a3568;--gold:#E7C05A;--gold-d:#C9A23F;--accent:#8E86E6;--yes:#5FC08A}
   *{box-sizing:border-box}html,body{margin:0}
-  body{font-family:-apple-system,"Segoe UI",system-ui,Arial,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#2a2560 0%,var(--bg) 60%);color:var(--ink);line-height:1.55;min-height:100vh}
-  .wrap{max-width:520px;margin:0 auto;padding:26px 16px 60px}
+  body{font-family:-apple-system,"Segoe UI",system-ui,Arial,sans-serif;background:radial-gradient(1100px 560px at 50% -8%,#2a2560 0%,var(--bg) 60%);color:var(--ink);line-height:1.55;min-height:100vh}
+  .wrap{max-width:560px;margin:0 auto;padding:22px 16px 70px}
   .logo{text-align:center;margin-bottom:14px}
-  .logo .moon{font-size:2.6rem;display:block;filter:drop-shadow(0 3px 10px rgba(231,192,90,.4))}
-  .logo h1{font-size:1.5rem;margin:6px 0 2px;font-weight:800;letter-spacing:.5px}
-  .logo p{margin:0;color:var(--gold);font-size:.95rem;font-weight:600}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 18px;box-shadow:0 16px 50px rgba(0,0,0,.45)}
-  label.fld{display:block;margin:14px 0}
-  label.fld span{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px;font-weight:600}
-  input,select,textarea{width:100%;font-family:inherit;font-size:1.05rem;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--ink)}
-  input:focus,select,textarea:focus{outline:2px solid var(--accent)}
-  input[readonly]{opacity:.85}
-  .amts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-  .amt{flex:1 1 60px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 6px;font-family:inherit;font-weight:800;font-size:1.05rem;color:var(--ink);cursor:pointer}
-  .amt.on{background:var(--gold);color:#231f0a;border-color:var(--gold)}
-  .cur{position:relative}.cur input{padding-inline-start:30px}
-  .cur:before{content:"$";position:absolute;inset-inline-start:12px;top:12px;color:var(--gold);font-weight:800;font-size:1.1rem}
-  .go{width:100%;margin-top:20px;background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#231f0a;border:none;border-radius:14px;padding:16px;font-family:inherit;font-size:1.15rem;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(201,162,63,.35)}
-  .go:active{transform:translateY(1px)}
-  .sec-note{display:flex;align-items:center;gap:7px;justify-content:center;color:var(--muted);font-size:.82rem;margin-top:14px}
+  .logo .mark{width:150px;height:auto;margin:0 auto 4px;display:block;filter:drop-shadow(0 6px 16px rgba(0,0,0,.5))}
+  .logo h1{font-size:1.7rem;margin:2px 0 2px;font-weight:800;letter-spacing:.5px}
+  .logo p{margin:0;color:var(--muted);font-size:.9rem;font-weight:600}
+  .taxbadge{display:inline-block;margin-top:9px;background:rgba(95,192,138,.15);border:1px solid var(--yes);color:var(--yes);border-radius:999px;padding:5px 14px;font-size:.82rem;font-weight:700}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px 16px;box-shadow:0 16px 50px rgba(0,0,0,.45);margin-bottom:14px}
+  .card h2{font-size:1.05rem;margin:0 0 12px;color:var(--gold)}
+  label.fld{display:block;margin:12px 0}
+  label.fld>span{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px;font-weight:600}
+  input,select,textarea{width:100%;font-family:inherit;font-size:1.02rem;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent)}
+  .two{display:flex;gap:10px}.two>*{flex:1}
+  .hint{font-size:.82rem;color:var(--muted);margin-top:6px}
   .hidden{display:none!important}
-  .thanks{text-align:center;padding:20px 6px}
-  .thanks .big{font-size:3rem}
-  .thanks h2{margin:8px 0}
-  .thanks p{color:var(--muted)}
-  .foot{text-align:center;color:var(--muted);font-size:.78rem;margin-top:20px}
+  /* autocomplete */
+  .acwrap{position:relative}
+  .aclist{position:absolute;z-index:20;inset-inline:0;top:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-top:4px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+  .acitem{padding:11px 13px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .acitem:last-child{border-bottom:none}.acitem:hover{background:var(--soft)}
+  .acitem b{color:var(--gold)}
+  .known{background:#1f3a2b;border:1px solid #2f6a4a;color:var(--yes);border-radius:10px;padding:8px 12px;font-size:.88rem;margin-top:8px;display:none}
+  /* purpose cards */
+  .opts{display:flex;flex-direction:column;gap:9px}
+  .opt{text-align:start;background:var(--soft);border:1.5px solid var(--line);border-radius:14px;padding:13px 14px;cursor:pointer;font-family:inherit;color:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .opt:hover{border-color:var(--accent)}
+  .opt.on{border-color:var(--gold);background:linear-gradient(180deg,rgba(231,192,90,.16),var(--soft))}
+  .opt .ot{display:block;font-weight:800;font-size:1.02rem}
+  .opt .os{display:block;font-size:.82rem;color:var(--muted);margin-top:3px}
+  .opt .oa{font-weight:800;color:var(--gold);font-size:1.05rem;white-space:nowrap}
+  .opt .oa small{display:block;font-size:.68rem;color:var(--muted);font-weight:600;text-align:center}
+  .subttl{font-size:.85rem;color:var(--muted);font-weight:700;margin:14px 0 7px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{flex:1 1 62px;background:var(--soft);border:1.5px solid var(--line);border-radius:12px;padding:12px 4px;font-family:inherit;font-weight:800;font-size:1.02rem;color:var(--ink);cursor:pointer;text-align:center}
+  .chip.on{background:var(--gold);color:#231f0a;border-color:var(--gold)}
+  .cur{position:relative}.cur input{padding-inline-start:30px}
+  .cur:before{content:attr(data-sym);position:absolute;inset-inline-start:12px;top:12px;color:var(--gold);font-weight:800;font-size:1.05rem}
+  /* duration / installments */
+  .seg{display:flex;gap:8px;margin-top:8px}
+  .seg button{flex:1;background:var(--soft);border:1.5px solid var(--line);border-radius:12px;padding:11px 6px;font-family:inherit;font-weight:700;color:var(--ink);cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .curtog{display:flex;gap:8px;margin-bottom:10px}
+  .curtog button{flex:1;background:var(--soft);border:1.5px solid var(--line);border-radius:12px;padding:10px;font-family:inherit;font-weight:800;color:var(--ink);cursor:pointer}
+  .curtog button.on{background:var(--gold);color:#231f0a;border-color:var(--gold)}
+  /* prayers */
+  .pray{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px}
+  .pray .pn{font-size:.8rem;color:var(--gold);font-weight:700;margin-bottom:6px}
+  .pays{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+  .pay{background:var(--soft);border:1.5px solid var(--line);border-radius:14px;padding:14px 6px;text-align:center;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .pay:hover{border-color:var(--accent)}
+  .pay.on{border-color:var(--gold);background:linear-gradient(180deg,rgba(231,192,90,.16),var(--soft))}
+  .pay .pic{font-size:1.7rem;line-height:1}
+  .pay .pt{font-weight:800;font-size:.9rem;margin-top:5px}
+  .pay .ps{font-size:.72rem;color:var(--muted);margin-top:1px}
+  .go{width:100%;margin-top:6px;background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#231f0a;border:none;border-radius:14px;padding:16px;font-family:inherit;font-size:1.15rem;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(201,162,63,.35)}
+  .go:active{transform:translateY(1px)}
+  .sec-note{display:flex;align-items:center;gap:7px;justify-content:center;color:var(--muted);font-size:.82rem;margin-top:13px}
   .err{background:#4a1f1f;border:1px solid #7a3030;color:#ffb4a8;border-radius:10px;padding:10px 12px;margin-top:12px;font-size:.9rem;display:none}
+  .thanks{text-align:center;padding:16px 6px}
+  .thanks .big{font-size:2.6rem}
+  .thanks h2{margin:8px 0}.thanks p{color:var(--muted)}
+  .foot{text-align:center;color:var(--muted);font-size:.78rem;margin-top:8px}
+  .summ{background:var(--soft);border:1px dashed var(--gold);border-radius:12px;padding:12px 14px;margin-top:12px;display:none}
+  .summ b{color:var(--gold)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="logo">
-    <span class="moon">🌙</span>
+    <img class="mark" src="/logo.png" alt="כולל חצות">
     <h1>כולל חצות</h1>
-    <p>תרומה מקוונת · לומדים בחצות הלילה</p>
+    <p>נחלת יהושע (ברסלב-דויטש) · ביתר עילית</p>
+    <div class="taxbadge">✓ מוכר לצרכי מס — סעיף 46 · 501(c)(3)</div>
   </div>
 
-  <div class="card" id="formCard">
-    <label class="fld"><span>שם התורם</span><input id="f_name" placeholder="שם מלא"></label>
-
-    <label class="fld"><span>סכום התרומה</span>
-      <div class="cur"><input id="f_amt" inputmode="decimal" placeholder="0"></div>
-      <div class="amts" id="amts">
-        <button type="button" class="amt" data-a="180">180</button>
-        <button type="button" class="amt" data-a="360">360</button>
-        <button type="button" class="amt" data-a="500">500</button>
-        <button type="button" class="amt" data-a="1000">1000</button>
-        <button type="button" class="amt" data-a="1800">1800</button>
+  <div id="formArea">
+    <!-- פרטים אישיים -->
+    <div class="card">
+      <h2>פרטי התורם</h2>
+      <div class="two">
+        <label class="fld"><span>שם פרטי</span>
+          <div class="acwrap"><input id="f_first" autocomplete="off" placeholder="שם פרטי"><div class="aclist hidden" id="ac_first"></div></div>
+        </label>
+        <label class="fld"><span>שם משפחה</span>
+          <div class="acwrap"><input id="f_last" autocomplete="off" placeholder="שם משפחה"><div class="aclist hidden" id="ac_last"></div></div>
+        </label>
       </div>
-    </label>
+      <div class="known" id="known">✓ זוהית במערכת — התרומה תיכנס לכרטיס הקיים שלך</div>
+    </div>
 
-    <label class="fld"><span>עבור מה</span>
-      <select id="f_cat">
-        <option value="תרומה כללית">תרומה כללית</option>
-        <option value="פרנס לילה">🌙 פרנס לילה</option>
-        <option value="יששכר־זבולון">🤝 יששכר־זבולון (אחזקת אברך)</option>
-        <option value="חדר קפה">☕ חדר קפה / שתייה חמה</option>
-        <option value="ארוחת בוקר">🍳 ארוחת בוקר</option>
-        <option value="נר למאור">🕯️ נר למאור</option>
-        <option value="__camp">🎊 קמפיין / חג</option>
-      </select>
-    </label>
-    <label class="fld hidden" id="campWrap"><span>שם הקמפיין / החג</span><input id="f_camp" placeholder="למשל: קמפיין סוכות"></label>
+    <!-- מה לתרום -->
+    <div class="card">
+      <h2>מה ברצונך לתרום?</h2>
+      <div class="curtog" id="curtog">
+        <button type="button" data-c="$" class="on">💵 דולר ($)</button>
+        <button type="button" data-c="₪">🇮🇱 שקל (₪)</button>
+      </div>
+      <div class="opts" id="opts"></div>
 
-    <label class="fld"><span>🕯️ שם לתפילה (לא חובה)</span><textarea id="f_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
+      <div class="subttl">תרומה חד־פעמית בסכום קבוע</div>
+      <div class="chips" id="chips"></div>
 
-    <label class="fld"><span>טלפון (לא חובה)</span><input id="f_phone" inputmode="tel" dir="ltr" placeholder="+972..."></label>
-    <label class="fld"><span>אימייל (לא חובה)</span><input id="f_email" dir="ltr" placeholder="name@email.com"></label>
+      <label class="fld" style="margin-top:12px"><span>או סכום אחר</span>
+        <div class="cur" data-sym="$" id="curbox"><input id="f_amt" inputmode="decimal" placeholder="0"></div>
+      </label>
+
+      <!-- משך התחייבות (להתחייבות חודשית) -->
+      <div id="durBox" class="hidden">
+        <div class="subttl">משך ההתחייבות (הוראת קבע חודשית)</div>
+        <div class="seg" id="durSeg">
+          <button type="button" data-d="12" class="on">12 חודשים</button>
+          <button type="button" data-d="unlimited">ללא הגבלה (עד הודעה)</button>
+        </div>
+      </div>
+      <!-- מספר תשלומים (חד־פעמי) -->
+      <div id="instBox">
+        <label class="fld"><span>מספר תשלומים</span>
+          <select id="f_inst"><option value="1">תשלום אחד</option><option value="2">2 תשלומים</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="10">10</option><option value="12">12 תשלומים</option></select>
+        </label>
+      </div>
+      <div class="summ" id="summ"></div>
+    </div>
+
+    <!-- קבלה + קשר -->
+    <div class="card">
+      <h2>פרטים לקבלה וקשר</h2>
+      <label class="fld"><span>אימייל</span><input id="f_email" dir="ltr" placeholder="name@email.com"></label>
+      <div class="hint">📧 בהזנת אימייל תישלח אליך מיד <b>קבלה רשמית מוכרת לצורכי מס</b> — קבלה אמריקאית (501c3) בדולרים, או קבלה ישראלית לפי סעיף 46 בשקלים.</div>
+      <label class="fld"><span>טלפון</span><input id="f_phone" inputmode="tel" dir="ltr" placeholder="+972... / +1..."></label>
+      <label class="fld"><span>כתובת</span><input id="f_addr" placeholder="רחוב, עיר, מדינה"></label>
+    </div>
+
+    <!-- שמות לתפילה -->
+    <div class="card">
+      <h2>🕯️ שמות לתפילה (עד 4)</h2>
+      <div class="hint" style="margin-bottom:10px">האברכים יזכירו את השמות בתפילת חצות. מלא שם, שם האם, והבקשה.</div>
+      <div id="prays"></div>
+    </div>
+
+    <!-- הערות -->
+    <div class="card">
+      <h2>הערות</h2>
+      <label class="fld"><span>הערה חופשית (לא חובה)</span><textarea id="f_notes" rows="3" placeholder="כל דבר שתרצה להוסיף"></textarea></label>
+    </div>
+
+    <!-- אופן תשלום -->
+    <div class="card">
+      <h2>אופן התשלום</h2>
+      <div class="pays" id="pays"></div>
+      <div class="hint" style="margin-top:10px">🔒 המעבר לתשלום מתבצע במערכת המאובטחת של נדרים פלוס.</div>
+    </div>
 
     <div class="err" id="err"></div>
-    <button class="go" id="go">המשך לתשלום מאובטח »</button>
-    <div class="sec-note">🔒 התשלום מתבצע דרך חברת סליקה מאובטחת</div>
+    <button class="go" id="go">לתשלום מאובטח »</button>
+    <div class="sec-note">🔒 התשלום מתבצע דרך מערכת הסליקה המאובטחת נדרים פלוס</div>
   </div>
 
   <div class="card hidden" id="thanksCard">
     <div class="thanks">
-      <div class="big">🌙✨</div>
+      <div class="big">🕯️✨</div>
       <h2>תודה רבה!</h2>
-      <p id="thanksMsg">פנייתך נקלטה במערכת. נציג הכולל ישלים את החיוב המאובטח, ותקבל אישור.</p>
-      <p style="color:var(--gold);font-weight:700">"ומצדיקי הרבים ככוכבים לעולם ועד"</p>
+      <p id="thanksMsg"></p>
+      <p style="color:var(--gold);font-weight:700">"וּמַצְדִּיקֵי הָרַבִּים כַּכּוֹכָבִים לְעוֹלָם וָעֶד"</p>
     </div>
   </div>
 
@@ -96,63 +180,184 @@
 
 <script>
 const qs = new URLSearchParams(location.search);
-const donorId = qs.get('d') || '';
+let donorId = qs.get('d') || '';
 const $ = id => document.getElementById(id);
+let CUR = '$';               // מטבע
+let selPurpose = null;       // {label, amt, recurring, per}
 
-// prefill donor from a personal link
-if (donorId) {
-  fetch('/api/pubdonor/' + encodeURIComponent(donorId)).then(r => r.ok ? r.json() : null).then(d => {
-    if (!d) return;
-    const nm = ((d.last || '') + ' ' + (d.first || '')).trim();
-    if (nm) { $('f_name').value = nm; }
-    if (d.amount) { $('f_amt').value = String(d.amount).replace(/[^\d.]/g,''); }
-    if (d.purpose) {
-      // try match a category option
-      const opt = [...$('f_cat').options].find(o => d.purpose.indexOf(o.value) >= 0);
-      if (opt) $('f_cat').value = opt.value;
-    }
-  }).catch(()=>{});
+/* ---------- קטגוריות תרומה ---------- */
+const RECUR = [
+  {id:'iz',      t:'שותפות יששכר־זבולון לשנה', s:'אחזקת אברך מלאה — חודשי', amt:1000, per:'חודש'},
+  {id:'g3',      t:'ג׳ אברכים יתפללו עליך כל לילה בחצות', s:'שמך על שפתי לומדי תורה — חודשי', amt:180, per:'חודש'},
+  {id:'kvittel', t:'להיות רשום בקוויטל הכולל', s:'שמך בקוויטל התפילה הקבוע — חודשי', amt:101, per:'חודש'},
+];
+const SPECIAL = [
+  {id:'night', t:'לילה אחד לזכותך', s:'פרנס לילה שלם של לימוד תורה', amt:480},
+  {id:'ner',   t:'נר למאור', s:'הדלקת נר למאור בהיכל', amt:1200},
+];
+const ONETIME = [1800,1000,360,180,101,52,36,18];
+
+function renderOpts(){
+  const sym = CUR;
+  const card = o => `<button type="button" class="opt" data-id="${o.id}" data-amt="${o.amt}" data-rec="${o.per?1:0}" data-per="${o.per||''}">
+      <span><span class="ot">${o.t}</span><span class="os">${o.s}</span></span>
+      <span class="oa">${sym}${o.amt}${o.per?`<small>ל${o.per}</small>`:''}</span></button>`;
+  $('opts').innerHTML = RECUR.map(card).join('') + SPECIAL.map(card).join('');
+  $('chips').innerHTML = ONETIME.map(a=>`<button type="button" class="chip" data-a="${a}">${sym}${a}</button>`).join('');
+  $('curbox').setAttribute('data-sym', sym);
+}
+renderOpts();
+
+/* מטבע */
+$('curtog').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  CUR=b.dataset.c; [...$('curtog').children].forEach(x=>x.classList.toggle('on',x===b));
+  renderOpts(); clearSel(); updateSumm();
+});
+
+function clearSel(){
+  selPurpose=null;
+  document.querySelectorAll('.opt.on,.chip.on').forEach(x=>x.classList.remove('on'));
+  $('durBox').classList.add('hidden'); $('instBox').classList.remove('hidden');
+}
+function pickPurpose(el){
+  document.querySelectorAll('.opt.on,.chip.on').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  const rec = el.dataset.rec==='1';
+  selPurpose = {label: el.querySelector('.ot').textContent.trim(), amt:+el.dataset.amt, recurring:rec, per:el.dataset.per||''};
+  $('f_amt').value = el.dataset.amt;
+  $('durBox').classList.toggle('hidden', !rec);
+  $('instBox').classList.toggle('hidden', rec);
+  updateSumm();
+}
+$('opts').addEventListener('click', e=>{const el=e.target.closest('.opt'); if(el) pickPurpose(el);});
+$('chips').addEventListener('click', e=>{
+  const el=e.target.closest('.chip'); if(!el) return;
+  document.querySelectorAll('.opt.on,.chip.on').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  selPurpose = {label:'תרומה חד־פעמית', amt:+el.dataset.a, recurring:false, per:''};
+  $('f_amt').value = el.dataset.a;
+  $('durBox').classList.add('hidden'); $('instBox').classList.remove('hidden');
+  updateSumm();
+});
+$('f_amt').addEventListener('input', ()=>{
+  document.querySelectorAll('.chip.on').forEach(x=>x.classList.remove('on'));
+  if(selPurpose) selPurpose.amt = parseFloat($('f_amt').value)||0;
+  updateSumm();
+});
+
+/* משך / תשלומים */
+$('durSeg').addEventListener('click', e=>{const b=e.target.closest('button'); if(!b) return;[...$('durSeg').children].forEach(x=>x.classList.toggle('on',x===b));updateSumm();});
+$('f_inst').addEventListener('change', updateSumm);
+
+function durVal(){const b=$('durSeg').querySelector('button.on');return b?b.dataset.d:'12';}
+function updateSumm(){
+  const amt = parseFloat($('f_amt').value)||0;
+  const s=$('summ'); if(!amt){s.style.display='none';return;}
+  let txt='';
+  if(selPurpose && selPurpose.recurring){
+    const d=durVal();
+    txt = `הוראת קבע: <b>${CUR}${amt} לחודש</b> · ${d==='12'?'12 חודשים':'ללא הגבלה (עד הודעה)'}`;
+    if(d==='12') txt += ` · סה"כ <b>${CUR}${amt*12}</b>`;
+  } else {
+    const inst=+$('f_inst').value;
+    txt = `סכום: <b>${CUR}${amt}</b>` + (inst>1?` · ב־${inst} תשלומים של ${CUR}${(amt/inst).toFixed(0)}`:' · תשלום אחד');
+  }
+  s.innerHTML = txt; s.style.display='block';
 }
 
-$('amts').addEventListener('click', e => {
-  const b = e.target.closest('.amt'); if (!b) return;
-  $('f_amt').value = b.dataset.a;
-  [...document.querySelectorAll('.amt')].forEach(x => x.classList.toggle('on', x === b));
-});
-$('f_amt').addEventListener('input', () => [...document.querySelectorAll('.amt')].forEach(x => x.classList.remove('on')));
+/* ---------- אופן תשלום (בסגנון נדרים פלוס) ---------- */
+const PAYS=[
+  {id:'credit',   ic:'💳', t:'חיוב בודד / תשלומים', s:'באמצעות אשראי'},
+  {id:'hk_credit',ic:'🔁', t:'הו״ק אשראי', s:'ללא תפיסת מסגרת'},
+  {id:'hk_bank',  ic:'🏦', t:'הו״ק בנקאי', s:'מס״ב'},
+  {id:'transfer', ic:'🏛️', t:'העברה בנקאית', s:'בקליק'},
+  {id:'bit',      ic:'📱', t:'ביט', s:'BIT'},
+];
+const PAYLBL=Object.fromEntries(PAYS.map(p=>[p.id,p.t]));
+let selPay='credit';
+$('pays').innerHTML=PAYS.map(p=>`<button type="button" class="pay${p.id==='credit'?' on':''}" data-id="${p.id}"><div class="pic">${p.ic}</div><div class="pt">${p.t}</div><div class="ps">${p.s}</div></button>`).join('');
+$('pays').addEventListener('click',e=>{const b=e.target.closest('.pay');if(!b)return;selPay=b.dataset.id;[...$('pays').children].forEach(x=>x.classList.toggle('on',x===b));});
 
-$('f_cat').addEventListener('change', () => {
-  $('campWrap').classList.toggle('hidden', $('f_cat').value !== '__camp');
+/* ---------- שמות לתפילה ---------- */
+$('prays').innerHTML = [1,2,3,4].map(i=>`
+  <div class="pray"><div class="pn">שם ${i}</div>
+    <div class="two"><input class="pr_name" placeholder="שם"><input class="pr_mom" placeholder="שם האם"></div>
+    <input class="pr_req" maxlength="80" placeholder="הבקשה (עד כ־10 מילים)" style="margin-top:8px"></div>`).join('');
+
+/* ---------- זיהוי תורם קיים (איות) ---------- */
+function known(on){ $('known').style.display = on?'block':'none'; }
+if (donorId) {
+  fetch('/api/pubdonor/'+encodeURIComponent(donorId)).then(r=>r.ok?r.json():null).then(d=>{
+    if(!d) return;
+    if(d.first) $('f_first').value=d.first;
+    if(d.last) $('f_last').value=d.last;
+    known(true);
+    if(d.amount){const a=String(d.amount).replace(/[^\d.]/g,'');if(a){$('f_amt').value=a;updateSumm();}}
+  }).catch(()=>{});
+}
+let acTimer=null;
+function wireAC(inputId, listId){
+  const inp=$(inputId), list=$(listId);
+  inp.addEventListener('input', ()=>{
+    donorId=''; known(false);
+    const q=($('f_first').value+' '+$('f_last').value).trim();
+    clearTimeout(acTimer);
+    if(q.length<2){list.classList.add('hidden');return;}
+    acTimer=setTimeout(async()=>{
+      try{
+        const r=await fetch('/api/pubsearch?q='+encodeURIComponent(q));
+        const rows=await r.json();
+        if(!rows.length){list.classList.add('hidden');return;}
+        list.innerHTML=rows.map(x=>`<div class="acitem" data-id="${x.id}" data-f="${x.first||''}" data-l="${x.last||''}"><b>${x.last||''}</b> ${x.first||''}</div>`).join('');
+        list.classList.remove('hidden');
+      }catch(e){list.classList.add('hidden');}
+    },220);
+  });
+  inp.addEventListener('blur', ()=>setTimeout(()=>list.classList.add('hidden'),200));
+}
+wireAC('f_first','ac_first'); wireAC('f_last','ac_last');
+document.addEventListener('click', e=>{
+  const it=e.target.closest('.acitem'); if(!it) return;
+  donorId=it.dataset.id; $('f_first').value=it.dataset.f; $('f_last').value=it.dataset.l;
+  $('ac_first').classList.add('hidden'); $('ac_last').classList.add('hidden'); known(true);
 });
 
-$('go').onclick = async () => {
-  const err = $('err'); err.style.display = 'none';
-  const name = $('f_name').value.trim();
-  const amt = $('f_amt').value.trim().replace(/[^\d.]/g,'');
-  let cat = $('f_cat').value;
-  if (cat === '__camp') cat = ($('f_camp').value.trim() || 'קמפיין');
-  if (!name) { err.textContent = 'נא למלא שם'; err.style.display = 'block'; return; }
-  if (!amt || parseFloat(amt) <= 0) { err.textContent = 'נא למלא סכום תקין'; err.style.display = 'block'; return; }
-  $('go').disabled = true; $('go').textContent = 'שולח…';
-  try {
-    const r = await fetch('/api/online', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        donor_id: donorId ? Number(donorId) : null,
-        name, amount: amt, category: cat,
-        prayer: $('f_pray').value.trim(),
-        phone: $('f_phone').value.trim(),
-        email: $('f_email').value.trim()
-      })
-    });
-    if (!r.ok) throw new Error('bad');
-    $('formCard').classList.add('hidden');
+/* ---------- שליחה ---------- */
+$('go').onclick = async ()=>{
+  const err=$('err'); err.style.display='none';
+  const first=$('f_first').value.trim(), last=$('f_last').value.trim();
+  const amt=($('f_amt').value.trim()||'').replace(/[^\d.]/g,'');
+  if(!first && !last){err.textContent='נא למלא שם';err.style.display='block';return;}
+  if(!amt||parseFloat(amt)<=0){err.textContent='נא לבחור סכום תרומה';err.style.display='block';return;}
+  const prayers=[...document.querySelectorAll('.pray')].map(p=>({
+    name:p.querySelector('.pr_name').value.trim(),
+    mother:p.querySelector('.pr_mom').value.trim(),
+    request:p.querySelector('.pr_req').value.trim()
+  })).filter(x=>x.name);
+  const recurring = !!(selPurpose && selPurpose.recurring);
+  const payload={
+    donor_id: donorId?Number(donorId):null,
+    first, last, amount:amt, currency:CUR,
+    category: selPurpose?selPurpose.label:'תרומה חד־פעמית',
+    recurring, duration: recurring?durVal():'', installments: recurring?0:(+$('f_inst').value||1),
+    email:$('f_email').value.trim(), phone:$('f_phone').value.trim(), addr:$('f_addr').value.trim(),
+    prayers, notes:$('f_notes').value.trim(),
+    pay:selPay, pay_label:PAYLBL[selPay]||''
+  };
+  $('go').disabled=true; $('go').textContent='שולח…';
+  try{
+    const r=await fetch('/api/online',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok) throw new Error('bad');
+    $('formArea').classList.add('hidden');
     $('thanksCard').classList.remove('hidden');
-    $('thanksMsg').textContent = 'תרומתך על סך $' + amt + ' עבור "' + cat + '" נקלטה. נציג הכולל ישלים את החיוב המאובטח, ותקבל אישור.';
+    const per = recurring?(' לחודש ('+(payload.duration==='12'?'12 חודשים':'ללא הגבלה')+')'):'';
+    $('thanksMsg').innerHTML='תרומתך על סך <b>'+CUR+amt+per+'</b> עבור "'+payload.category+'" נקלטה.'+
+      ($('f_email').value.trim()?' קבלה רשמית תישלח לאימייל.':'')+' נציג הכולל ישלים את החיוב המאובטח.';
     window.scrollTo({top:0,behavior:'smooth'});
-  } catch (e) {
-    err.textContent = 'שגיאה בשליחה. נסה שוב.'; err.style.display = 'block';
-    $('go').disabled = false; $('go').textContent = 'המשך לתשלום מאובטח »';
+  }catch(e){
+    err.textContent='שגיאה בשליחה. נסה שוב.';err.style.display='block';
+    $('go').disabled=false; $('go').textContent='לתשלום מאובטח »';
   }
 };
 </script>

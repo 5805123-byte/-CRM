@@ -13,6 +13,14 @@ PORT = int(os.environ.get('PORT', 8000))
 def db():
     con = sqlite3.connect(DB); con.row_factory = sqlite3.Row; return con
 
+_NIKUD = re.compile(r'[֑-ׇ]')
+def _norm(s):
+    """נרמול עברי לחיפוש לפי איות — הסרת ניקוד, גרשיים ורווחים, איחוד אותיות סופיות."""
+    s = _NIKUD.sub('', str(s or ''))
+    s = re.sub(r'[^א-תa-zA-Z ]', '', s)
+    s = s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
+    return s.strip()
+
 def ensure_schema():
     """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
     con = db()
@@ -127,6 +135,20 @@ class H(BaseHTTPRequestHandler):
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
             if not r: return self._send(404, {'error': 'not found'})
             return self._send(200, {'last': r['last'], 'first': r['first'], 'purpose': r['purpose'], 'amount': r['amount']})
+        if self.path.split('?')[0] == '/api/pubsearch':
+            from urllib.parse import urlparse, parse_qs
+            q = (parse_qs(urlparse(self.path).query).get('q', ['']) [0]).strip()
+            nq = _norm(q)
+            if len(nq) < 2:
+                return self._send(200, [])
+            con = db(); rows = []
+            for r in con.execute("SELECT id,last,first FROM donors"):
+                full = _norm((r['last'] or '') + ' ' + (r['first'] or ''))
+                if nq in full or all(t in full for t in nq.split()):
+                    rows.append({'id': r['id'], 'last': r['last'], 'first': r['first']})
+                if len(rows) >= 8: break
+            con.close()
+            return self._send(200, rows)
         m = re.match(r'/api/file/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT name,mime,data FROM files WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -261,12 +283,20 @@ class H(BaseHTTPRequestHandler):
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/online':
-            name = (b.get('name') or '').strip()
+            first = (b.get('first') or '').strip()
+            last = (b.get('last') or '').strip()
+            name = (last + ' ' + first).strip() or (b.get('name') or '').strip()
             amt = (b.get('amount') or '').strip()
+            cur_sym = (b.get('currency') or '$').strip()
             cat = (b.get('category') or 'תרומה מקוונת').strip()
-            pray = (b.get('prayer') or '').strip()
+            recurring = bool(b.get('recurring'))
+            duration = (b.get('duration') or '').strip()
+            installments = int(b.get('installments') or 1)
+            prayers = b.get('prayers') or []
             phone = (b.get('phone') or '').strip()
             email = (b.get('email') or '').strip()
+            addr = (b.get('addr') or '').strip()
+            notes = (b.get('notes') or '').strip()
             did = b.get('donor_id')
             con = db(); cur = con.cursor()
             valid = False
@@ -275,17 +305,34 @@ class H(BaseHTTPRequestHandler):
             if valid:
                 did = int(did)
             else:
-                cur.execute("INSERT INTO donors(last,first,phone,email,category,channel,notes) VALUES(?,?,?,?,?,?,?)",
-                            (name, '', phone, email, 'מזדמן', 'אונליין', 'תרומה מקוונת'))
+                cur.execute("INSERT INTO donors(last,first,phone,email,addr,category,channel,notes) VALUES(?,?,?,?,?,?,?,?)",
+                            (last or name, first, phone, email, addr, 'מזדמן', 'אונליין', 'תרומה מקוונת'))
                 did = cur.lastrowid
-            note = 'תרומה מקוונת' + (' · טל ' + phone if phone else '') + (' · ' + email if email else '') + (' · לתפילה: ' + pray if pray else '')
+            # תיאור ההתחייבות
+            if recurring:
+                dtxt = '12 חודשים' if duration == '12' else 'ללא הגבלה'
+                terms = 'הוראת קבע ' + cur_sym + amt + '/חודש · ' + dtxt
+            else:
+                terms = cur_sym + amt + (' · ' + str(installments) + ' תשלומים' if installments > 1 else ' · תשלום אחד')
+            pay_label = (b.get('pay_label') or '').strip()
+            parts = [terms]
+            if pay_label: parts.append('אמצעי: ' + pay_label)
+            if email: parts.append('מייל ' + email)
+            if phone: parts.append('טל ' + phone)
+            if notes: parts.append('הערה: ' + notes)
+            note = 'תרומה מקוונת · ' + ' · '.join(parts)
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
                         (did, cat, amt, 'טרם', '', note))
             plid = cur.lastrowid
             cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                        (did, '', 'charge', 'גבייה מקוונת: $' + amt + ' · ' + cat + ('' if valid else ' · ' + name)))
-            if pray:
-                cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)", (did, pray, ''))
+                        (did, '', 'charge', 'גבייה מקוונת: ' + terms + ' · ' + cat + ('' if valid else ' · ' + name)))
+            for p in prayers[:4]:
+                nm = (p.get('name') or '').strip()
+                if not nm: continue
+                mom = (p.get('mother') or '').strip()
+                req = (p.get('request') or '').strip()
+                txt = nm + (' בן/בת ' + mom if mom else '') + (' — ' + req if req else '')
+                cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)", (did, txt, ''))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': plid, 'donor_id': did})
         if self.path == '/api/contact':
