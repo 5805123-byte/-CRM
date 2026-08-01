@@ -187,6 +187,10 @@ function cardDonations(d,body){
   const isIZ=d.tier==='יששכר_זבולון';
   const tot=donorTotals(d);
   body.innerHTML=`
+    <div class="sec onlinebox"><h3>💳 גבייה אונליין</h3>
+      <div class="hintxt">דף תרומה מאובטח — פתחו אותו מהמשרד למילוי פרטי אשראי, או שלחו לתורם קישור אישי.</div>
+      <div class="obtns"><button class="btn" id="on_open">🌐 פתח דף גבייה</button>
+        <button class="btn ghost" id="on_share">📤 שלח / העתק קישור אישי</button></div></div>
     ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
     <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
@@ -215,6 +219,13 @@ function cardDonations(d,body){
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderParnesEdit(d); renderPledges(d);
+  const dlink=location.origin+'/donate?d='+d.id;
+  document.getElementById('on_open').onclick=()=>window.open(dlink,'_blank');
+  document.getElementById('on_share').onclick=async()=>{
+    const nm=(d.last+' '+d.first).trim();const msg='תרומה לכולל חצות'+(nm?(' — '+nm):'')+':\n'+dlink;
+    try{if(navigator.share){await navigator.share({title:'תרומה לכולל חצות',text:msg,url:dlink});return;}}catch(e){}
+    try{await navigator.clipboard.writeText(dlink);toast('הקישור הועתק ✓');}catch(e){prompt('העתק את הקישור:',dlink);}
+  };
   const catSel=document.getElementById('dn_cat');
   catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=(catSel.value==='אחר'||catSel.value==='קמפיין')?'block':'none';};
   document.getElementById('dn_add').onclick=async()=>{

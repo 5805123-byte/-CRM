@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>כולל חצות — תרומה מקוונת</title>
+<meta name="theme-color" content="#18163A">
+<style>
+  :root{--bg:#141230;--card:#201d44;--soft:#2b2758;--ink:#F3EEDF;--muted:#B4AECB;--line:#3a3568;--gold:#E7C05A;--gold-d:#C9A23F;--accent:#8E86E6;--yes:#5FC08A}
+  *{box-sizing:border-box}html,body{margin:0}
+  body{font-family:-apple-system,"Segoe UI",system-ui,Arial,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#2a2560 0%,var(--bg) 60%);color:var(--ink);line-height:1.55;min-height:100vh}
+  .wrap{max-width:520px;margin:0 auto;padding:26px 16px 60px}
+  .logo{text-align:center;margin-bottom:14px}
+  .logo .moon{font-size:2.6rem;display:block;filter:drop-shadow(0 3px 10px rgba(231,192,90,.4))}
+  .logo h1{font-size:1.5rem;margin:6px 0 2px;font-weight:800;letter-spacing:.5px}
+  .logo p{margin:0;color:var(--gold);font-size:.95rem;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 18px;box-shadow:0 16px 50px rgba(0,0,0,.45)}
+  label.fld{display:block;margin:14px 0}
+  label.fld span{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px;font-weight:600}
+  input,select,textarea{width:100%;font-family:inherit;font-size:1.05rem;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--ink)}
+  input:focus,select,textarea:focus{outline:2px solid var(--accent)}
+  input[readonly]{opacity:.85}
+  .amts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .amt{flex:1 1 60px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 6px;font-family:inherit;font-weight:800;font-size:1.05rem;color:var(--ink);cursor:pointer}
+  .amt.on{background:var(--gold);color:#231f0a;border-color:var(--gold)}
+  .cur{position:relative}.cur input{padding-inline-start:30px}
+  .cur:before{content:"$";position:absolute;inset-inline-start:12px;top:12px;color:var(--gold);font-weight:800;font-size:1.1rem}
+  .go{width:100%;margin-top:20px;background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#231f0a;border:none;border-radius:14px;padding:16px;font-family:inherit;font-size:1.15rem;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(201,162,63,.35)}
+  .go:active{transform:translateY(1px)}
+  .sec-note{display:flex;align-items:center;gap:7px;justify-content:center;color:var(--muted);font-size:.82rem;margin-top:14px}
+  .hidden{display:none!important}
+  .thanks{text-align:center;padding:20px 6px}
+  .thanks .big{font-size:3rem}
+  .thanks h2{margin:8px 0}
+  .thanks p{color:var(--muted)}
+  .foot{text-align:center;color:var(--muted);font-size:.78rem;margin-top:20px}
+  .err{background:#4a1f1f;border:1px solid #7a3030;color:#ffb4a8;border-radius:10px;padding:10px 12px;margin-top:12px;font-size:.9rem;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <span class="moon">🌙</span>
+    <h1>כולל חצות</h1>
+    <p>תרומה מקוונת · לומדים בחצות הלילה</p>
+  </div>
+
+  <div class="card" id="formCard">
+    <label class="fld"><span>שם התורם</span><input id="f_name" placeholder="שם מלא"></label>
+
+    <label class="fld"><span>סכום התרומה</span>
+      <div class="cur"><input id="f_amt" inputmode="decimal" placeholder="0"></div>
+      <div class="amts" id="amts">
+        <button type="button" class="amt" data-a="180">180</button>
+        <button type="button" class="amt" data-a="360">360</button>
+        <button type="button" class="amt" data-a="500">500</button>
+        <button type="button" class="amt" data-a="1000">1000</button>
+        <button type="button" class="amt" data-a="1800">1800</button>
+      </div>
+    </label>
+
+    <label class="fld"><span>עבור מה</span>
+      <select id="f_cat">
+        <option value="תרומה כללית">תרומה כללית</option>
+        <option value="פרנס לילה">🌙 פרנס לילה</option>
+        <option value="יששכר־זבולון">🤝 יששכר־זבולון (אחזקת אברך)</option>
+        <option value="חדר קפה">☕ חדר קפה / שתייה חמה</option>
+        <option value="ארוחת בוקר">🍳 ארוחת בוקר</option>
+        <option value="נר למאור">🕯️ נר למאור</option>
+        <option value="__camp">🎊 קמפיין / חג</option>
+      </select>
+    </label>
+    <label class="fld hidden" id="campWrap"><span>שם הקמפיין / החג</span><input id="f_camp" placeholder="למשל: קמפיין סוכות"></label>
+
+    <label class="fld"><span>🕯️ שם לתפילה (לא חובה)</span><textarea id="f_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
+
+    <label class="fld"><span>טלפון (לא חובה)</span><input id="f_phone" inputmode="tel" dir="ltr" placeholder="+972..."></label>
+    <label class="fld"><span>אימייל (לא חובה)</span><input id="f_email" dir="ltr" placeholder="name@email.com"></label>
+
+    <div class="err" id="err"></div>
+    <button class="go" id="go">המשך לתשלום מאובטח »</button>
+    <div class="sec-note">🔒 התשלום מתבצע דרך חברת סליקה מאובטחת</div>
+  </div>
+
+  <div class="card hidden" id="thanksCard">
+    <div class="thanks">
+      <div class="big">🌙✨</div>
+      <h2>תודה רבה!</h2>
+      <p id="thanksMsg">פנייתך נקלטה במערכת. נציג הכולל ישלים את החיוב המאובטח, ותקבל אישור.</p>
+      <p style="color:var(--gold);font-weight:700">"ומצדיקי הרבים ככוכבים לעולם ועד"</p>
+    </div>
+  </div>
+
+  <div class="foot">כולל חצות · מוסדות התורה · תרומתך מזכה את הרבים</div>
+</div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const donorId = qs.get('d') || '';
+const $ = id => document.getElementById(id);
+
+// prefill donor from a personal link
+if (donorId) {
+  fetch('/api/pubdonor/' + encodeURIComponent(donorId)).then(r => r.ok ? r.json() : null).then(d => {
+    if (!d) return;
+    const nm = ((d.last || '') + ' ' + (d.first || '')).trim();
+    if (nm) { $('f_name').value = nm; }
+    if (d.amount) { $('f_amt').value = String(d.amount).replace(/[^\d.]/g,''); }
+    if (d.purpose) {
+      // try match a category option
+      const opt = [...$('f_cat').options].find(o => d.purpose.indexOf(o.value) >= 0);
+      if (opt) $('f_cat').value = opt.value;
+    }
+  }).catch(()=>{});
+}
+
+$('amts').addEventListener('click', e => {
+  const b = e.target.closest('.amt'); if (!b) return;
+  $('f_amt').value = b.dataset.a;
+  [...document.querySelectorAll('.amt')].forEach(x => x.classList.toggle('on', x === b));
+});
+$('f_amt').addEventListener('input', () => [...document.querySelectorAll('.amt')].forEach(x => x.classList.remove('on')));
+
+$('f_cat').addEventListener('change', () => {
+  $('campWrap').classList.toggle('hidden', $('f_cat').value !== '__camp');
+});
+
+$('go').onclick = async () => {
+  const err = $('err'); err.style.display = 'none';
+  const name = $('f_name').value.trim();
+  const amt = $('f_amt').value.trim().replace(/[^\d.]/g,'');
+  let cat = $('f_cat').value;
+  if (cat === '__camp') cat = ($('f_camp').value.trim() || 'קמפיין');
+  if (!name) { err.textContent = 'נא למלא שם'; err.style.display = 'block'; return; }
+  if (!amt || parseFloat(amt) <= 0) { err.textContent = 'נא למלא סכום תקין'; err.style.display = 'block'; return; }
+  $('go').disabled = true; $('go').textContent = 'שולח…';
+  try {
+    const r = await fetch('/api/online', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        donor_id: donorId ? Number(donorId) : null,
+        name, amount: amt, category: cat,
+        prayer: $('f_pray').value.trim(),
+        phone: $('f_phone').value.trim(),
+        email: $('f_email').value.trim()
+      })
+    });
+    if (!r.ok) throw new Error('bad');
+    $('formCard').classList.add('hidden');
+    $('thanksCard').classList.remove('hidden');
+    $('thanksMsg').textContent = 'תרומתך על סך $' + amt + ' עבור "' + cat + '" נקלטה. נציג הכולל ישלים את החיוב המאובטח, ותקבל אישור.';
+    window.scrollTo({top:0,behavior:'smooth'});
+  } catch (e) {
+    err.textContent = 'שגיאה בשליחה. נסה שוב.'; err.style.display = 'block';
+    $('go').disabled = false; $('go').textContent = 'המשך לתשלום מאובטח »';
+  }
+};
+</script>
+</body>
+</html>

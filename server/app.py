@@ -120,6 +120,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'heb_year': current_heb_year()})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
+        if self.path.split('?')[0] == '/donate':
+            return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
+        m = re.match(r'/api/pubdonor/(\d+)$', self.path)
+        if m:
+            con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
+            if not r: return self._send(404, {'error': 'not found'})
+            return self._send(200, {'last': r['last'], 'first': r['first'], 'purpose': r['purpose'], 'amount': r['amount']})
         m = re.match(r'/api/file/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT name,mime,data FROM files WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -253,6 +260,34 @@ class H(BaseHTTPRequestHandler):
                         (b['donor_id'], b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/online':
+            name = (b.get('name') or '').strip()
+            amt = (b.get('amount') or '').strip()
+            cat = (b.get('category') or 'תרומה מקוונת').strip()
+            pray = (b.get('prayer') or '').strip()
+            phone = (b.get('phone') or '').strip()
+            email = (b.get('email') or '').strip()
+            did = b.get('donor_id')
+            con = db(); cur = con.cursor()
+            valid = False
+            if did:
+                valid = bool(cur.execute("SELECT id FROM donors WHERE id=?", (int(did),)).fetchone())
+            if valid:
+                did = int(did)
+            else:
+                cur.execute("INSERT INTO donors(last,first,phone,email,category,channel,notes) VALUES(?,?,?,?,?,?,?)",
+                            (name, '', phone, email, 'מזדמן', 'אונליין', 'תרומה מקוונת'))
+                did = cur.lastrowid
+            note = 'תרומה מקוונת' + (' · טל ' + phone if phone else '') + (' · ' + email if email else '') + (' · לתפילה: ' + pray if pray else '')
+            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
+                        (did, cat, amt, 'טרם', '', note))
+            plid = cur.lastrowid
+            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                        (did, '', 'charge', 'גבייה מקוונת: $' + amt + ' · ' + cat + ('' if valid else ' · ' + name)))
+            if pray:
+                cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)", (did, pray, ''))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': plid, 'donor_id': did})
         if self.path == '/api/contact':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,?)",
