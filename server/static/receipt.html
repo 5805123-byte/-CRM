@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kollel Chatzos — Donation Receipt</title>
+<style>
+  :root{--ink:#2a2410;--soft:#6b6249;--gold:#9c7a2e;--gold-l:#c9a23f;--line:#d8cba6;--cream:#fbf7ec;--deep:#7a1f1f}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;background:#eae4d4;color:var(--ink);line-height:1.6}
+  .sheet{max-width:760px;margin:24px auto;background:#fff;border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.15);position:relative}
+  .frame{border:2px solid var(--gold);margin:10px;padding:34px 44px 40px;position:relative}
+  .frame:before{content:"";position:absolute;inset:5px;border:1px solid var(--line);pointer-events:none}
+  .hd{text-align:center;border-bottom:2px solid var(--gold);padding-bottom:18px;margin-bottom:6px}
+  .hd img{width:110px;height:auto;margin:0 auto 6px;display:block}
+  .hd h1{font-size:1.7rem;margin:2px 0 2px;letter-spacing:1px;color:var(--deep);font-weight:700}
+  .hd .sub{font-size:.95rem;color:var(--soft);letter-spacing:.5px}
+  .hd .tax{font-size:.8rem;color:var(--gold);margin-top:6px;letter-spacing:.5px}
+  .rc{display:flex;justify-content:space-between;font-size:.82rem;color:var(--soft);margin:16px 0 4px;letter-spacing:.3px}
+  .title{text-align:center;font-size:1.05rem;letter-spacing:3px;color:var(--gold);margin:6px 0 20px;text-transform:uppercase}
+  .greet{font-size:1.05rem;margin-bottom:2px}
+  .amountbox{text-align:center;margin:18px auto;padding:16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .amountbox .lbl{font-size:.8rem;letter-spacing:2px;color:var(--soft);text-transform:uppercase}
+  .amountbox .amt{font-size:2.6rem;font-weight:700;color:var(--deep);margin:4px 0}
+  .amountbox .for{font-size:1.05rem;color:var(--gold);font-style:italic}
+  .body p{margin:12px 0;font-size:1.02rem}
+  .heb{text-align:center;font-size:1.15rem;color:var(--deep);margin:16px 0 6px;font-family:"Frank Ruhl Libre","Times New Roman",serif}
+  .fine{font-size:.82rem;color:var(--soft);border-top:1px solid var(--line);padding-top:12px;margin-top:20px}
+  .sig{margin-top:30px;text-align:right}
+  .sig .bb{font-size:.95rem;color:var(--soft)}
+  .sig .nm{font-size:1.5rem;color:var(--deep);font-family:"Snell Roundhand","Segoe Script","Brush Script MT",cursive;margin:2px 0}
+  .sig .rl{font-size:.9rem;color:var(--soft);letter-spacing:.3px}
+  .sig .line{width:230px;border-top:1px solid var(--ink);margin:38px 0 4px auto}
+  .noprint{text-align:center;margin:16px}
+  .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer;margin:0 5px}
+  .noprint button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
+  @media print{
+    body{background:#fff}
+    .sheet{box-shadow:none;border:none;margin:0;max-width:100%}
+    .noprint{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="sheet"><div class="frame">
+  <div class="hd">
+    <img src="/logo.png" alt="Kollel Chatzos">
+    <h1>Kollel Chatzos · Eretz Yisrael</h1>
+    <div class="sub">Torah study in the sacred hours of Chatzos</div>
+    <div class="tax">Cong. Zikhron Avos · EIN&nbsp;20-0447034 · A 501(c)(3) Tax-Exempt Organization</div>
+  </div>
+
+  <div class="rc"><span>Receipt&nbsp;#: <b id="r_num"></b></span><span>Date: <b id="r_date"></b></span></div>
+  <div class="title">Official Donation Receipt</div>
+
+  <div class="greet">Dear <b id="r_name"></b>,</div>
+  <p>It is with heartfelt gratitude that we acknowledge your generous contribution:</p>
+
+  <div class="amountbox">
+    <div class="lbl">Donation Amount</div>
+    <div class="amt" id="r_amt"></div>
+    <div class="for" id="r_for"></div>
+  </div>
+
+  <div class="body">
+    <p>There is no greater z’chus than to be a partner in Torah — and above all, the Torah that ascends from our Kollel in the holy hours of <i>Chatzos</i>, when the gates of Heaven stand open, harsh judgments are sweetened, and it is an <i>eis ratzon</i>, a time of boundless Divine favor.</p>
+    <p>Through your <i>tzedakah</i> you have become a true partner in this sacred <i>avodah</i>, and all the <i>brachos</i> of those who rise at midnight to learn Torah are counted to your merit.</p>
+    <div class="heb">בזכות התורה הנלמדת בעת רצון הגדול של חצות הלילה — יהי רצון שתעמוד לך לשמירה, לברכה, לרפואה ולהצלחה, לך ולכל בני ביתך.</div>
+    <p>May this great z’chus be a shield of protection over you, and draw down upon you and your entire family abundant blessing, good health, <i>nachas</i>, and <i>hatzlacha</i> in all your endeavors — <i>b’gashmiyus uv’ruchniyus</i>.</p>
+  </div>
+
+  <div class="fine">No goods or services were provided in exchange for this tax-deductible contribution. Please retain this letter for your tax records.</div>
+
+  <div class="sig">
+    <div class="line"></div>
+    <div class="nm">Yehoshua Meir Deutsch</div>
+    <div class="bb">Rabbi Yehoshua Meir Deutsch</div>
+    <div class="rl">Rosh HaKollel · Kollel Chatzos — Eretz Yisrael</div>
+  </div>
+</div></div>
+
+<div class="noprint">
+  <button onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <button class="g" onclick="history.length>1?history.back():window.close()">← Back</button>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+// purpose → English wording
+const PMAP = [
+  [/יששכר|זבולון|zevulun|yissachar/i, 'Yissachar–Zevulun Partnership in Torah'],
+  [/פרנס.?לילה|לימוד.?לילה|night|חצות|לילה/i, 'Supporting the Limud Torah at Chatzos — nightly learning at midnight'],
+  [/נר|maor|ner/i, 'Ner LaMaor'],
+  [/קפה|coffee/i, 'Refreshments for the Lomdei Torah at Chatzos'],
+  [/בוקר|breakfast/i, 'Breakfast for the Lomdei Torah'],
+  [/קוויטל|101|kvittel/i, 'Kvittel — Tefillah at Chatzos'],
+];
+function purposeEn(p){ p=(p||'').trim(); for (const [re,en] of PMAP) if (re.test(p)) return en; return p || 'General Donation to Kollel Chatzos'; }
+function money(a){ const n = parseFloat(String(a||'').replace(/[^\d.]/g,'')); if(!n) return '$' + (a||'0'); return '$' + n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+function niceDate(s){ let d = s ? new Date(s) : new Date(); if (isNaN(d)) d = new Date(); return d.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
+
+$('r_name').textContent = q.get('n') || 'Friend';
+$('r_amt').textContent = money(q.get('a'));
+$('r_for').textContent = 'Designated for: ' + purposeEn(q.get('p'));
+$('r_date').textContent = niceDate(q.get('d'));
+$('r_num').textContent = q.get('r') || ('KC-' + niceDate(q.get('d')).replace(/[^\d]/g,''));
+document.title = 'Receipt — ' + ($('r_name').textContent) + ' — Kollel Chatzos';
+</script>
+</body>
+</html>

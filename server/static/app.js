@@ -280,9 +280,17 @@ function renderReminders(d){
 function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
   const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
-  el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(x=>`<div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
+  el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(x=>`<div class="plwrap"><div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div><div class="txctl"><button class="btn sm ghost dnrcpt" data-id="${x.id}">🧾 קבלה</button></div></div>`).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
+  el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/donation/'+b.dataset.del);d.donations=d.donations.filter(x=>x.id!=b.dataset.del);renderDonations(d);});
 }
+/* ---------- קבלה אמריקאית (501c3) ---------- */
+function openReceipt(d,x){
+  const name=(d.english&&d.english.trim())||((d.last||'')+' '+(d.first||'')).trim();
+  const p=new URLSearchParams({n:name,a:x.amount||'',p:x.category||'',d:x.date||todayStr(),r:'KC-'+(x.id||'')});
+  window.open('/receipt?'+p.toString(),'_blank');
+}
+
 /* ---------- חיובים ותשלומים ---------- */
 const TXST={pending:{t:'🕒 ממתין',c:'pending'},approved:{t:'✅ אושר',c:'given'},settled:{t:'💰 נגבה',c:'given'},declined:{t:'🔴 סורב',c:'pending'},refunded:{t:'↩️ זוכה',c:''}};
 const TXORDER=['pending','approved','settled','declined','refunded'];
@@ -306,11 +314,13 @@ function txRow(t){
     `<button class="del" data-del="${t.id}">🗑</button></div>`+
     `<div class="txctl"><select class="txst" data-id="${t.id}">${txStatusOpts(t.status)}</select>`+
     ((+t.inst_total!==1||+t.recurring)?`<button class="btn sm txpay" data-id="${t.id}">＋ תשלום שולם</button>`:'')+
+    `<button class="btn sm ghost txrcpt" data-id="${t.id}">🧾 קבלה</button>`+
     `</div></div>`;
 }
 function wireTx(el,d,after){
   el.querySelectorAll('.txst').forEach(s=>s.onchange=async()=>{const t=d.transactions.find(x=>x.id==s.dataset.id);t.status=s.value;await api('PUT','/api/transaction/'+t.id,{status:t.value});after();toast('עודכן ✓');});
   el.querySelectorAll('.txpay').forEach(b=>b.onclick=async()=>{const t=d.transactions.find(x=>x.id==b.dataset.id);t.inst_paid=(+t.inst_paid||0)+1;const upd={inst_paid:t.inst_paid};if(+t.inst_total>0&&t.inst_paid>=+t.inst_total){t.status='settled';upd.status='settled';}await api('PUT','/api/transaction/'+t.id,upd);after();toast('תשלום נרשם ✓');});
+  el.querySelectorAll('.txrcpt').forEach(b=>b.onclick=()=>{const t=d.transactions.find(x=>x.id==b.dataset.id);openReceipt(d,t);});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/transaction/'+b.dataset.del);d.transactions=d.transactions.filter(x=>x.id!=b.dataset.del);after();});
 }
 function renderTransactions(d){
