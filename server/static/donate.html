@@ -80,8 +80,8 @@
   <div class="logo">
     <img class="mark" src="/logo.png" alt="כולל חצות">
     <h1>כולל חצות</h1>
-    <p>נחלת יהושע (ברסלב-דויטש) · ביתר עילית</p>
-    <div class="taxbadge">✓ מוכר לצרכי מס — סעיף 46 · 501(c)(3)</div>
+    <p>Kollel Chatzos · לומדי תורה בחצות הלילה</p>
+    <div class="taxbadge">✓ Tax-Deductible · 501(c)(3) — קבלה אמריקאית מוכרת למס</div>
   </div>
 
   <div id="formArea">
@@ -101,11 +101,7 @@
 
     <!-- מה לתרום -->
     <div class="card">
-      <h2>מה ברצונך לתרום?</h2>
-      <div class="curtog" id="curtog">
-        <button type="button" data-c="$" class="on">💵 דולר ($)</button>
-        <button type="button" data-c="₪">🇮🇱 שקל (₪)</button>
-      </div>
+      <h2>מה ברצונך לתרום? <span style="color:var(--muted);font-weight:600;font-size:.85rem">(בדולרים 💵)</span></h2>
       <div class="opts" id="opts"></div>
 
       <div class="subttl">תרומה חד־פעמית בסכום קבוע</div>
@@ -136,7 +132,7 @@
     <div class="card">
       <h2>פרטים לקבלה וקשר</h2>
       <label class="fld"><span>אימייל</span><input id="f_email" dir="ltr" placeholder="name@email.com"></label>
-      <div class="hint">📧 בהזנת אימייל תישלח אליך מיד <b>קבלה רשמית מוכרת לצורכי מס</b> — קבלה אמריקאית (501c3) בדולרים, או קבלה ישראלית לפי סעיף 46 בשקלים.</div>
+      <div class="hint">📧 בהזנת אימייל תישלח אליך מיד <b>קבלה אמריקאית רשמית מוכרת למס</b> — 501(c)(3) tax-deductible receipt.</div>
       <label class="fld"><span>טלפון</span><input id="f_phone" inputmode="tel" dir="ltr" placeholder="+972... / +1..."></label>
       <label class="fld"><span>כתובת</span><input id="f_addr" placeholder="רחוב, עיר, מדינה"></label>
     </div>
@@ -158,12 +154,12 @@
     <div class="card">
       <h2>אופן התשלום</h2>
       <div class="pays" id="pays"></div>
-      <div class="hint" style="margin-top:10px">🔒 המעבר לתשלום מתבצע במערכת המאובטחת של נדרים פלוס.</div>
+      <div class="hint" style="margin-top:10px">🔒 Secure payment · processed in USD through our US merchant account (Authorize.Net · Bank of the West).</div>
     </div>
 
     <div class="err" id="err"></div>
     <button class="go" id="go">לתשלום מאובטח »</button>
-    <div class="sec-note">🔒 התשלום מתבצע דרך מערכת הסליקה המאובטחת נדרים פלוס</div>
+    <div class="sec-note">🔒 Secure USD payment · Authorize.Net (Bank of the West)</div>
   </div>
 
   <div class="card hidden" id="thanksCard">
@@ -182,7 +178,7 @@
 const qs = new URLSearchParams(location.search);
 let donorId = qs.get('d') || '';
 const $ = id => document.getElementById(id);
-let CUR = '$';               // מטבע
+const CUR = '$';             // ארה"ב בלבד — דולרים
 let selPurpose = null;       // {label, amt, recurring, per}
 
 /* ---------- קטגוריות תרומה ---------- */
@@ -207,13 +203,6 @@ function renderOpts(){
   $('curbox').setAttribute('data-sym', sym);
 }
 renderOpts();
-
-/* מטבע */
-$('curtog').addEventListener('click', e=>{
-  const b=e.target.closest('button'); if(!b) return;
-  CUR=b.dataset.c; [...$('curtog').children].forEach(x=>x.classList.toggle('on',x===b));
-  renderOpts(); clearSel(); updateSumm();
-});
 
 function clearSel(){
   selPurpose=null;
@@ -268,11 +257,9 @@ function updateSumm(){
 
 /* ---------- אופן תשלום (בסגנון נדרים פלוס) ---------- */
 const PAYS=[
-  {id:'credit',   ic:'💳', t:'חיוב בודד / תשלומים', s:'באמצעות אשראי'},
-  {id:'hk_credit',ic:'🔁', t:'הו״ק אשראי', s:'ללא תפיסת מסגרת'},
-  {id:'hk_bank',  ic:'🏦', t:'הו״ק בנקאי', s:'מס״ב'},
-  {id:'transfer', ic:'🏛️', t:'העברה בנקאית', s:'בקליק'},
-  {id:'bit',      ic:'📱', t:'ביט', s:'BIT'},
+  {id:'credit',   ic:'💳', t:'כרטיס אשראי', s:'חיוב בודד או תשלומים'},
+  {id:'hk_credit',ic:'🔁', t:'הוראת קבע באשראי', s:'חיוב חודשי קבוע'},
+  {id:'echeck',   ic:'🏦', t:'המחאה אלקטרונית', s:'eCheck / ACH מחשבון בנק'},
 ];
 const PAYLBL=Object.fromEntries(PAYS.map(p=>[p.id,p.t]));
 let selPay='credit';

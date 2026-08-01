@@ -30,6 +30,9 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, due_date TEXT, kind TEXT, note TEXT, done INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS partners(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, avreich TEXT, start_date TEXT, amount TEXT, note TEXT, active INTEGER DEFAULT 1, ended_date TEXT);
     CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref_id INTEGER, name TEXT, mime TEXT, data BLOB, created TEXT);
+    CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, amount TEXT,
+        category TEXT, method TEXT, status TEXT DEFAULT 'pending', trans_id TEXT, sub_id TEXT,
+        inst_total INTEGER DEFAULT 1, inst_paid INTEGER DEFAULT 0, recurring INTEGER DEFAULT 0, note TEXT, created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
@@ -47,7 +50,7 @@ def get_all():
     byid = {d['id']: d for d in donors}
     for d in donors:
         d['pledges'] = []; d['parnes'] = []; d['prayers'] = []
-        d['donations'] = []; d['contacts'] = []; d['tasks'] = []; d['partners'] = []
+        d['donations'] = []; d['contacts'] = []; d['tasks'] = []; d['partners'] = []; d['transactions'] = []
     for r in c.execute("SELECT * FROM pledges"):
         if r['donor_id'] in byid: byid[r['donor_id']]['pledges'].append(dict(r))
     for r in c.execute("SELECT * FROM parnes"):
@@ -68,6 +71,13 @@ def get_all():
         if r['donor_id'] in byid: byid[r['donor_id']]['tasks'].append(dict(r))
     for r in c.execute("SELECT * FROM partners"):
         if r['donor_id'] in byid: byid[r['donor_id']]['partners'].append(dict(r))
+    try:
+        for r in c.execute("SELECT * FROM transactions ORDER BY date DESC, id DESC"):
+            if r['donor_id'] in byid:
+                tr = dict(r); tr['hmonth'] = greg_to_heb_monthyear(r['date'])
+                byid[r['donor_id']]['transactions'].append(tr)
+    except Exception:
+        pass
     for d in donors: d['files'] = []
     parnes_files = {}
     try:
@@ -247,6 +257,17 @@ class H(BaseHTTPRequestHandler):
                 con.commit()
             con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/transaction/(\d+)$', self.path)
+        if m:
+            b = self._body(); tid = int(m.group(1))
+            con = db(); sets = []; vals = []
+            for k in ('date','amount','category','method','status','trans_id','sub_id','inst_total','inst_paid','recurring','note'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            if sets:
+                con.execute("UPDATE transactions SET " + ",".join(sets) + " WHERE id=?", vals + [tid])
+                con.commit()
+            con.close()
+            return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
@@ -287,7 +308,7 @@ class H(BaseHTTPRequestHandler):
             last = (b.get('last') or '').strip()
             name = (last + ' ' + first).strip() or (b.get('name') or '').strip()
             amt = (b.get('amount') or '').strip()
-            cur_sym = (b.get('currency') or '$').strip()
+            cur_sym = '$'  # ארה"ב בלבד — דולרים
             cat = (b.get('category') or 'תרומה מקוונת').strip()
             recurring = bool(b.get('recurring'))
             duration = (b.get('duration') or '').strip()
@@ -321,8 +342,10 @@ class H(BaseHTTPRequestHandler):
             if phone: parts.append('טל ' + phone)
             if notes: parts.append('הערה: ' + notes)
             note = 'תרומה מקוונת · ' + ' · '.join(parts)
-            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
-                        (did, cat, amt, 'טרם', '', note))
+            inst_total = (12 if duration == '12' else 0) if recurring else installments
+            cur.execute("""INSERT INTO transactions(donor_id,date,amount,category,method,status,inst_total,inst_paid,recurring,note,created)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (did, '', amt, cat, pay_label, 'pending', inst_total, 0, 1 if recurring else 0, note, 'online'))
             plid = cur.lastrowid
             cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
                         (did, '', 'charge', 'גבייה מקוונת: ' + terms + ' · ' + cat + ('' if valid else ' · ' + name)))
@@ -357,6 +380,16 @@ class H(BaseHTTPRequestHandler):
                         (b['donor_id'], b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/transaction':
+            con = db(); cur = con.cursor()
+            cur.execute("""INSERT INTO transactions(donor_id,date,amount,category,method,status,trans_id,sub_id,inst_total,inst_paid,recurring,note,created)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (b['donor_id'], b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''),
+                         b.get('status','pending'), b.get('trans_id',''), b.get('sub_id',''),
+                         int(b.get('inst_total',1) or 1), int(b.get('inst_paid',0) or 0), 1 if b.get('recurring') else 0,
+                         b.get('note',''), b.get('created','')))
+            con.commit(); tid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': tid})
         if self.path == '/api/file':
             try: raw = base64.b64decode(b.get('data', ''))
             except Exception: return self._send(400, {'error': 'bad data'})
@@ -372,7 +405,7 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/donor/(\d+)$', self.path)
         if m:
             did = int(m.group(1)); con = db()
-            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners'):
+            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
             try: con.execute("DELETE FROM files WHERE ref_id=? AND kind='iz'", (did,))
@@ -380,7 +413,7 @@ class H(BaseHTTPRequestHandler):
             con.execute("DELETE FROM donors WHERE id=?", (did,))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
-        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file)/(\d+)$', self.path)
+        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file|transaction)/(\d+)$', self.path)
         if m:
             table = 'files' if m.group(1) == 'file' else m.group(1)
             con = db(); con.execute(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()

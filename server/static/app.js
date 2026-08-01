@@ -69,6 +69,7 @@ function render(){
   if(tab==='tasks') return renderTasksTab();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return plaque?renderPlaque():renderParnes();
+  if(tab==='charges') return renderCharges();
   if(tab==='avreich') return renderAvreich();
   if(tab==='missed') return renderMissed();
   if(tab==='camp') return renderCamp();
@@ -191,6 +192,9 @@ function cardDonations(d,body){
       <div class="hintxt">דף תרומה מאובטח — פתחו אותו מהמשרד למילוי פרטי אשראי, או שלחו לתורם קישור אישי.</div>
       <div class="obtns"><button class="btn" id="on_open">🌐 פתח דף גבייה</button>
         <button class="btn ghost" id="on_share">📤 שלח / העתק קישור אישי</button></div></div>
+    <div class="sec"><h3>💳 חיובים ותשלומים</h3><div id="transactions"></div>
+      <div class="addrow"><input id="tx_amt" placeholder="סכום $" style="max-width:92px"><input id="tx_cat" placeholder="עבור מה"><button class="btn sm" id="tx_add">רשום חיוב</button></div>
+      <div class="hintxt">חיובים מהדף המקוון נכנסים כ"ממתין". עדכן סטטוס: אושר / סורב / נגבה, וסמן תשלומים ששולמו.</div></div>
     ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
     <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
@@ -218,7 +222,13 @@ function cardDonations(d,body){
     <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
-  renderDonations(d); renderParnesEdit(d); renderPledges(d);
+  renderDonations(d); renderTransactions(d); renderParnesEdit(d); renderPledges(d);
+  document.getElementById('tx_add').onclick=async()=>{
+    const amt=document.getElementById('tx_amt').value.trim(),cat=document.getElementById('tx_cat').value.trim();
+    if(!amt){toast('מלא סכום');return;}
+    const r=await api('POST','/api/transaction',{donor_id:d.id,amount:amt,category:cat,method:'ידני',status:'pending',date:todayStr()});
+    d.transactions=d.transactions||[];d.transactions.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method:'ידני',status:'pending',inst_total:1,inst_paid:0,recurring:0,date:todayStr()});
+    document.getElementById('tx_amt').value='';document.getElementById('tx_cat').value='';renderTransactions(d);toast('נרשם ✓');};
   const dlink=location.origin+'/donate?d='+d.id;
   document.getElementById('on_open').onclick=()=>window.open(dlink,'_blank');
   document.getElementById('on_share').onclick=async()=>{
@@ -272,6 +282,60 @@ function renderDonations(d){
   const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
   el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(x=>`<div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/donation/'+b.dataset.del);d.donations=d.donations.filter(x=>x.id!=b.dataset.del);renderDonations(d);});
+}
+/* ---------- חיובים ותשלומים ---------- */
+const TXST={pending:{t:'🕒 ממתין',c:'pending'},approved:{t:'✅ אושר',c:'given'},settled:{t:'💰 נגבה',c:'given'},declined:{t:'🔴 סורב',c:'pending'},refunded:{t:'↩️ זוכה',c:''}};
+const TXORDER=['pending','approved','settled','declined','refunded'];
+function txStatusOpts(cur){return TXORDER.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${TXST[s].t}</option>`).join('');}
+function txMoney(t){
+  const rec=+t.recurring, tot=+t.inst_total||1, paid=+t.inst_paid||0, amt=amtNum(t.amount);
+  const per = rec? amt : (tot>1? amt/tot : amt);
+  const remaining = tot>0? Math.max(0, per*(tot-paid)) : 0;
+  return {per, paid, tot, remaining, rec};
+}
+function txInst(t){
+  if(+t.inst_total===1 && !+t.recurring) return '';
+  const m=txMoney(t);
+  if(m.tot===0) return ` · הוראת קבע · שולמו ${m.paid} תשלומים`;
+  return ` · שולם ${m.paid}/${m.tot}${m.remaining>0?(' · נותרו $'+Math.round(m.remaining)):' · הושלם ✓'}`;
+}
+function txRow(t){
+  const st=TXST[t.status]||TXST.pending;
+  return `<div class="plwrap"><div class="pledge ${st.c}"><div class="pi"><b>$${esc(t.amount)}</b> ${t.category?('· '+esc(t.category)):''} <span class="txbadge">${st.t}</span>`+
+    `<br><small>${t.hmonth?esc(t.hmonth)+' · ':''}${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}${txInst(t)}</small></div>`+
+    `<button class="del" data-del="${t.id}">🗑</button></div>`+
+    `<div class="txctl"><select class="txst" data-id="${t.id}">${txStatusOpts(t.status)}</select>`+
+    ((+t.inst_total!==1||+t.recurring)?`<button class="btn sm txpay" data-id="${t.id}">＋ תשלום שולם</button>`:'')+
+    `</div></div>`;
+}
+function wireTx(el,d,after){
+  el.querySelectorAll('.txst').forEach(s=>s.onchange=async()=>{const t=d.transactions.find(x=>x.id==s.dataset.id);t.status=s.value;await api('PUT','/api/transaction/'+t.id,{status:t.value});after();toast('עודכן ✓');});
+  el.querySelectorAll('.txpay').forEach(b=>b.onclick=async()=>{const t=d.transactions.find(x=>x.id==b.dataset.id);t.inst_paid=(+t.inst_paid||0)+1;const upd={inst_paid:t.inst_paid};if(+t.inst_total>0&&t.inst_paid>=+t.inst_total){t.status='settled';upd.status='settled';}await api('PUT','/api/transaction/'+t.id,upd);after();toast('תשלום נרשם ✓');});
+  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/transaction/'+b.dataset.del);d.transactions=d.transactions.filter(x=>x.id!=b.dataset.del);after();});
+}
+function renderTransactions(d){
+  const el=document.getElementById('transactions');if(!el)return;
+  const list=(d.transactions||[]);
+  el.innerHTML=list.map(txRow).join('')||'<div class="hintxt">אין חיובים עדיין. תרומות מהדף המקוון וכל חיוב ידני יופיעו כאן.</div>';
+  wireTx(el,d,()=>renderTransactions(d));
+}
+let chFilter='';
+function renderCharges(){
+  const all=[];
+  DB.forEach(d=>(d.transactions||[]).forEach(t=>all.push({t,d})));
+  all.sort((a,b)=>String(b.t.date||'').localeCompare(String(a.t.date||''))||b.t.id-a.t.id);
+  const cnt=s=>all.filter(x=>x.t.status===s).length;
+  const CF=[['','הכל',all.length],['pending','🕒 ממתין',cnt('pending')],['approved','✅ אושרו',cnt('approved')],['settled','💰 נגבו',cnt('settled')],['declined','🔴 סורבו',cnt('declined')]];
+  chips.innerHTML=CF.map(([k,l,n])=>`<button class="chip ${chFilter===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
+  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{chFilter=c.dataset.k;renderCharges();});
+  let rows=chFilter?all.filter(x=>x.t.status===chFilter):all;
+  rows=rows.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.t.category||'')));
+  const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
+  const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
+  view.innerHTML=`<div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
+    `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
+    (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">$${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
+  view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
 }
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
