@@ -83,19 +83,22 @@ const DFILTERS={
   'reglow':{label:'שבועי', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
+  'new':{label:'🆕 נוספו', fn:d=>!!d.created},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['iz','k101','reglow','occ','klali',''];
+const DFORDER=['iz','k101','reglow','occ','klali','new',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
   let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english));
+  if(flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
   view.innerHTML=`<div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
     <div class="rowc" data-id="${d.id}">
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
-      ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}</div>
+      ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
+      ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
       <div class="meta">${d.parnes&&d.parnes.length?'<span class="pill py">🌙</span>':''}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
@@ -151,7 +154,7 @@ function cardDetails(d,body){
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
     <label class="fld"><span>כתובת</span><input id="f_addr" value="${esc(d.addr)}"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
-    ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}
+    ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
     <div class="sec"><button class="btn" id="f_delete" style="background:var(--no);width:100%">🗑 מחק תורם זה לצמיתות</button></div>`;
   wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','business']);
@@ -307,10 +310,17 @@ function txInst(t){
   if(m.tot===0) return ` · הוראת קבע · שולמו ${m.paid} תשלומים`;
   return ` · שולם ${m.paid}/${m.tot}${m.remaining>0?(' · נותרו $'+Math.round(m.remaining)):' · הושלם ✓'}`;
 }
+function txAddMonths(iso,n){const d=new Date(iso);if(isNaN(d))return null;d.setMonth(d.getMonth()+n);return d;}
+function txUntil(t){
+  if(!+t.recurring && +t.inst_total<=1) return '';
+  if(+t.inst_total===0) return ' · עד ביטול';
+  if(t.date){const e=txAddMonths(t.date,+t.inst_total);if(e)return ' · עד '+((e.getMonth()+1)+'/'+e.getFullYear());}
+  return '';
+}
 function txRow(t){
   const st=TXST[t.status]||TXST.pending;
   return `<div class="plwrap"><div class="pledge ${st.c}"><div class="pi"><b>$${esc(t.amount)}</b> ${t.category?('· '+esc(t.category)):''} <span class="txbadge">${st.t}</span>`+
-    `<br><small>${t.hmonth?esc(t.hmonth)+' · ':''}${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}${txInst(t)}</small></div>`+
+    `<br><small>${t.hmonth?esc(t.hmonth)+' · ':''}${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}${txInst(t)}${txUntil(t)}</small></div>`+
     `<button class="del" data-del="${t.id}">🗑</button></div>`+
     `<div class="txctl"><select class="txst" data-id="${t.id}">${txStatusOpts(t.status)}</select>`+
     ((+t.inst_total!==1||+t.recurring)?`<button class="btn sm txpay" data-id="${t.id}">＋ תשלום שולם</button>`:'')+
@@ -344,7 +354,7 @@ function renderCharges(){
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
     `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
-    (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">$${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
+    (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">$${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
 }
 function renderPartners(d){

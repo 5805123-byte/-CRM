@@ -15,7 +15,7 @@ CREATE TABLE donors(
   id INTEGER PRIMARY KEY, last TEXT, first TEXT, english TEXT, business TEXT,
   phone TEXT, email TEXT, addr TEXT, tier TEXT, category TEXT, purpose TEXT,
   amount TEXT, channel TEXT, pay_status TEXT, last_active TEXT, months TEXT,
-  labels TEXT, aliases TEXT, notes TEXT
+  labels TEXT, aliases TEXT, notes TEXT, created TEXT, source TEXT
 );
 CREATE TABLE pledges(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, category TEXT,

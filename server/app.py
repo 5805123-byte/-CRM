@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re, base64
+import sqlite3, json, os, re, base64, datetime
 from urllib.parse import quote
+
+def today_iso():
+    return datetime.date.today().isoformat()
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hebdate import week_before, greg_to_heb_monthyear, current_heb_year
 
@@ -42,6 +45,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN status TEXT DEFAULT 'confirmed'")
     except Exception: pass
+    for col in ('created', 'source'):
+        try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
+        except Exception: pass
     con.commit(); con.close()
 
 def get_all():
@@ -328,8 +334,8 @@ class H(BaseHTTPRequestHandler):
             if valid:
                 did = int(did)
             else:
-                cur.execute("INSERT INTO donors(last,first,phone,email,addr,category,channel,notes) VALUES(?,?,?,?,?,?,?,?)",
-                            (last or name, first, phone, email, addr, 'מזדמן', 'אונליין', 'תרומה מקוונת'))
+                cur.execute("INSERT INTO donors(last,first,phone,email,addr,category,channel,notes,created,source) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (last or name, first, phone, email, addr, 'מזדמן', 'אונליין', 'תרומה מקוונת', today_iso(), 'אונליין'))
                 did = cur.lastrowid
             # תיאור ההתחייבות
             if recurring:
