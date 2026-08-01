@@ -99,7 +99,9 @@ function niceDate(s){ let d = s ? new Date(s) : new Date(); if (isNaN(d)) d = ne
 
 $('r_name').textContent = q.get('n') || 'Friend';
 $('r_amt').textContent = money(q.get('a'));
-$('r_for').textContent = 'Designated for: ' + purposeEn(q.get('p'));
+const rawPurpose = (q.get('p') || '').trim();
+if (rawPurpose) { $('r_for').textContent = 'Designated for: ' + purposeEn(rawPurpose); }
+else { $('r_for').style.display = 'none'; }
 $('r_date').textContent = niceDate(q.get('d'));
 $('r_num').textContent = q.get('r') || ('KC-' + niceDate(q.get('d')).replace(/[^\d]/g,''));
 document.title = 'Receipt — ' + ($('r_name').textContent) + ' — Kollel Chatzos';
