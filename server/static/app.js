@@ -185,6 +185,7 @@ function cardKvittel(d,body){
 }
 function cardDonations(d,body){
   const isIZ=d.tier==='יששכר_זבולון';
+  const hasIZ=isIZ||(d.donations||[]).some(x=>String(x.category||'').indexOf('יששכר')>=0);
   const tot=donorTotals(d);
   body.innerHTML=`
     <div class="totals"><div class="tot"><span>סה"כ שנתרם עד היום</span><b>$${tot.all}</b></div><div class="tot year"><span>סה"כ השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>$${tot.year}</b></div></div>
@@ -208,12 +209,14 @@ function cardDonations(d,body){
       <button class="btn" id="dn_add">➕ רשום תרומה</button>
       ${d.channel?`<div class="hintxt">ערוץ קבוע בתיק: ${esc(d.channel)}</div>`:''}</div>
     <div class="sec"><h3>📜 היסטוריית תרומות</h3><div id="donations"></div></div>
+    ${hasIZ?`<div class="sec"><h3>🤝 היסטוריית יששכר־זבולון (חודשי)</h3><div id="izhist"></div>
+      <div class="hintxt">כל תרומה שתירשם למעלה בקטגוריית "יששכר־זבולון" תופיע כאן לפי חודש עברי — הכי טרי למעלה.</div></div>`:''}
     <div class="sec"><h3>🗓️ ימים משובצים (פרנס / קפה / בוקר)</h3><div id="parnes"></div>
       <div class="hintxt">שיבוץ ימים חדשים דרך "רישום תרומה" למעלה (בחר סוג עם יום), או בלוח פרנס יום.</div></div>
     <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
-  renderDonations(d); renderParnesEdit(d); renderPledges(d);
+  renderDonations(d); if(hasIZ)renderIZHistory(d); renderParnesEdit(d); renderPledges(d);
   const catSel=document.getElementById('dn_cat');
   catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=(catSel.value==='אחר'||catSel.value==='קמפיין')?'block':'none';};
   document.getElementById('dn_add').onclick=async()=>{
@@ -226,7 +229,7 @@ function cardDonations(d,body){
     if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,dtext=heDay(hd)+"' "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});}
     if(pray){const tr=tier||d.tier||'';const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:pray,tier:tr});}
     document.getElementById('dn_amt').value='';document.getElementById('dn_pray').value='';
-    renderDonations(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
+    renderDonations(d);if(document.getElementById('izhist'))renderIZHistory(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
   document.getElementById('pl_add').onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});d.pledges.push({id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'});document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
 }
 function cardContact(d,body){
@@ -259,7 +262,17 @@ function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
   const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
   el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(x=>`<div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
-  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/donation/'+b.dataset.del);d.donations=d.donations.filter(x=>x.id!=b.dataset.del);renderDonations(d);});
+  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/donation/'+b.dataset.del);d.donations=d.donations.filter(x=>x.id!=b.dataset.del);renderDonations(d);if(document.getElementById('izhist'))renderIZHistory(d);});
+}
+function renderIZHistory(d){
+  const el=document.getElementById('izhist');if(!el)return;
+  const list=(d.donations||[]).filter(x=>String(x.category||'').indexOf('יששכר')>=0)
+    .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} חודשים · $${tot}</div>`:'')+
+    (list.map(x=>`<div class="pledge given"><div class="pi"><b>🗓️ ${esc(x.hmonth||x.date||'—')}</b> · <b style="color:var(--yes)">$${esc(x.amount)}</b><br><small>${esc(x.date||'')}${x.method?(' · '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div>`).join('')
+      ||'<div class="hintxt">עדיין אין תשלומי יששכר־זבולון רשומים.</div>');
+  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/donation/'+b.dataset.del);d.donations=d.donations.filter(x=>x.id!=b.dataset.del);renderIZHistory(d);renderDonations(d);});
 }
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
