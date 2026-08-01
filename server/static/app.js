@@ -188,7 +188,6 @@ function cardDonations(d,body){
   const hasIZ=isIZ||(d.donations||[]).some(x=>String(x.category||'').indexOf('יששכר')>=0);
   const tot=donorTotals(d);
   body.innerHTML=`
-    <div class="totals"><div class="tot"><span>סה"כ שנתרם עד היום</span><b>$${tot.all}</b></div><div class="tot year"><span>סה"כ השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>$${tot.year}</b></div></div>
     ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
     <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
@@ -208,7 +207,9 @@ function cardDonations(d,body){
       <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="שבועי">שבועי</option><option value="קוויטל_כללי">כללי</option></select></label>
       <button class="btn" id="dn_add">➕ רשום תרומה</button>
       ${d.channel?`<div class="hintxt">ערוץ קבוע בתיק: ${esc(d.channel)}</div>`:''}</div>
-    <div class="sec"><h3>📜 היסטוריית תרומות</h3><div id="donations"></div></div>
+    <div class="sec"><h3>📜 היסטוריית תרומות</h3>
+      <div class="totals"><div class="tot"><span>סה"כ שנתרם עד היום</span><b>$${tot.all}</b></div><div class="tot year"><span>סה"כ השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>$${tot.year}</b></div></div>
+      <div id="donations"></div></div>
     ${hasIZ?`<div class="sec"><h3>🤝 היסטוריית יששכר־זבולון (חודשי)</h3><div id="izhist"></div>
       <div class="hintxt">כל תרומה שתירשם למעלה בקטגוריית "יששכר־זבולון" תופיע כאן לפי חודש עברי — הכי טרי למעלה.</div></div>`:''}
     <div class="sec"><h3>🗓️ ימים משובצים (פרנס / קפה / בוקר)</h3><div id="parnes"></div>
