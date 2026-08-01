@@ -54,6 +54,17 @@ def greg_to_heb_monthyear(date_str):
     except Exception:
         return ''
 
+def current_heb_year(today=None):
+    """שם השנה העברית הנוכחית, למשל 'תשפ״ו'."""
+    if not OK:
+        return ''
+    import datetime
+    t = today or datetime.date.today()
+    try:
+        return dates.GregorianDate(t.year, t.month, t.day).to_heb().hebrew_date_string().split()[-1]
+    except Exception:
+        return ''
+
 def week_before(text, today=None):
     """תאריך התזכורת — 7 ימים לפני הלילה. מחזיר 'YYYY-MM-DD' או None."""
     g = heb_to_greg(text, today)

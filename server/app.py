@@ -3,7 +3,7 @@
 import sqlite3, json, os, re, base64
 from urllib.parse import quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before, greg_to_heb_monthyear
+from hebdate import week_before, greg_to_heb_monthyear, current_heb_year
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
@@ -28,6 +28,8 @@ def ensure_schema():
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN kind TEXT DEFAULT 'parnes'")
+    except Exception: pass
+    try: con.execute("ALTER TABLE parnes ADD COLUMN status TEXT DEFAULT 'confirmed'")
     except Exception: pass
     con.commit(); con.close()
 
@@ -115,7 +117,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/api/data':
             donors, unlinked = get_all()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked})
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'heb_year': current_heb_year()})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         m = re.match(r'/api/file/(\d+)$', self.path)
@@ -160,8 +162,11 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db()
-            con.execute("UPDATE parnes SET day=?,month=?,date_text=?,amount=?,dedication=? WHERE id=?",
-                        (b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), pid))
+            sets=[];vals=[]
+            for k in ('day','month','date_text','amount','dedication','kind','status'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            if sets:
+                con.execute("UPDATE parnes SET "+",".join(sets)+" WHERE id=?", vals+[pid])
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/prayer/(\d+)$', self.path)
@@ -225,8 +230,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind) VALUES(?,?,?,?,?,?,?)",
-                        (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes')))
+            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status) VALUES(?,?,?,?,?,?,?,?)",
+                        (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed')))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
             tid = None

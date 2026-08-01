@@ -1,5 +1,11 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null;
+let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '';
+function donorTotals(d){
+  let all=0,year=0;
+  (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if(HEBYEAR&&(x.hmonth||'').indexOf(HEBYEAR)>=0)year+=a;});
+  (d.parnes||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;});
+  return {all,year};
+}
 const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];if(n===15)return 'טו';if(n===16)return 'טז';return (tens[Math.floor(n/10)]||'')+(ones[n%10]||'');}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
@@ -45,7 +51,7 @@ function fileChip(f){const ic=(f.mime||'').indexOf('pdf')>=0?'📄':((f.mime||''
 function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');return;}toast('מעלה…');const rd=new FileReader();rd.onload=async()=>{const data=rd.result.split(',')[1];await api('POST','/api/file',{kind,ref_id:refId,name:f.name,mime:f.type,data});toast('הועלה ✓');cb&&cb();};rd.readAsDataURL(f);}
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || [];
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; HEBYEAR = d.heb_year || '';
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
@@ -179,7 +185,9 @@ function cardKvittel(d,body){
 }
 function cardDonations(d,body){
   const isIZ=d.tier==='יששכר_זבולון';
+  const tot=donorTotals(d);
   body.innerHTML=`
+    <div class="totals"><div class="tot"><span>סה"כ שנתרם עד היום</span><b>$${tot.all}</b></div><div class="tot year"><span>סה"כ השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>$${tot.year}</b></div></div>
     ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
     <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
@@ -190,10 +198,10 @@ function cardDonations(d,body){
         <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
         <option value="חדר קפה" data-day="coffee">☕ חדר קפה / שתייה חמה (בחר יום)</option>
         <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option>
-        <option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label>
+        <option value="קמפיין">🎊 קמפיין (חג/מבצע)</option><option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label>
       <div id="dn_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div></div>
-      <label class="fld" id="dn_catfree_l" style="display:none"><span>קטגוריה חופשית — כתוב בעצמך</span><input id="dn_catfree" placeholder="למשל: הכנסת אורחים, שיפוץ המקווה…"></label>
+      <label class="fld" id="dn_catfree_l" style="display:none"><span>שם הקטגוריה / הקמפיין</span><input id="dn_catfree" placeholder="למשל: קמפיין סוכות ${esc(HEBYEAR||'תשפ״ז')}"></label>
       <label class="fld"><span>תאריך (לועזי)</span><input id="dn_date" type="date"></label>
       <label class="fld"><span>🕯️ שם לתפילה (לקוויטל)</span><textarea id="dn_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
       <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="שבועי">שבועי</option><option value="קוויטל_כללי">כללי</option></select></label>
@@ -207,9 +215,9 @@ function cardDonations(d,body){
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderParnesEdit(d); renderPledges(d);
   const catSel=document.getElementById('dn_cat');
-  catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=catSel.value==='אחר'?'block':'none';};
+  catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=(catSel.value==='אחר'||catSel.value==='קמפיין')?'block':'none';};
   document.getElementById('dn_add').onclick=async()=>{
-    let cat=catSel.value;if(cat==='אחר')cat=document.getElementById('dn_catfree').value.trim()||'אחר';
+    let cat=catSel.value;if(cat==='אחר'||cat==='קמפיין')cat=document.getElementById('dn_catfree').value.trim()||cat;
     const amt=document.getElementById('dn_amt').value.trim(),method=document.getElementById('dn_method').value,
       date=document.getElementById('dn_date').value,pray=document.getElementById('dn_pray').value.trim(),tier=document.getElementById('dn_tier').value,
       dayKind=catSel.options[catSel.selectedIndex].dataset.day;
@@ -281,7 +289,7 @@ function renderPrayers(d){
 const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
-  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge given"><div class="pi"><b>${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
+  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/parnes/'+b.dataset.del);d.parnes=d.parnes.filter(x=>x.id!=b.dataset.del);renderParnesEdit(d);});
   el.querySelectorAll('.pyrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt,done:0});toast('תזכורת פרנס נקבעה ✓');});
 }
@@ -358,7 +366,8 @@ function renderParnes(){
   }
   const days=[];for(let i=1;i<=30;i++)days.push(i);
   view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
-    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];return `<button class="daycell ${t?'full':'free'} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
+    <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
+    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];const cls=t?(t.status==='suggested'?'sugg':'full'):'free';return `<button class="daycell ${cls} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
@@ -369,10 +378,13 @@ function renderDayPanel(taken){
   const panel=document.getElementById('daypanel');if(!panel)return;
   const t=taken[pyMonth+'|'+pyDay],dtext=heDay(pyDay)+"' "+pyMonth;
   if(t){
-    panel.innerHTML=`<div class="sec"><h3>🌙 ${esc(dtext)} — תפוס</h3>
-      <div class="remitem"><div class="ri"><b>${esc(t.donor)}</b><br><small>${esc(t.dedication||'')} ${t.amount?('· $'+esc(t.amount)):''}</small></div></div>
+    const sugg=t.status==='suggested';
+    panel.innerHTML=`<div class="sec"><h3>${sugg?'🔵 הצעה':'🟢 מאושר'} · ${esc(dtext)}</h3>
+      <div class="remitem ${sugg?'':'given'}"><div class="ri"><b>${esc(t.donor)}</b><br><small>${esc(t.dedication||'')} ${t.amount?('· $'+esc(t.amount)):''}</small></div></div>
+      ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
-      <div class="addrow"><button class="btn sm" id="dpopen">פתח כרטיס</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק שיבוץ</button></div></div>`;
+      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">פתח כרטיס</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק</button></div></div>`;
+    if(sugg)document.getElementById('dpconfirm').onclick=async()=>{await api('PUT','/api/parnes/'+t.id,{status:'confirmed'});const p=(t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.status='confirmed';toast('אושר ✓ עבר למאושר');render();};
     panel.querySelector('.pyupload').onchange=e=>uploadFile('parnes',t.id,e.target,load);
     panel.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
     document.getElementById('dpopen').onclick=()=>openDonor(t.dref);
@@ -385,13 +397,14 @@ function renderDayPanel(taken){
       <div id="dp_form" style="display:none">
         <div class="chosen" id="dp_chosen"></div>
         <label class="fld"><span>בקשה ללימוד הלילה / הקדשה</span><textarea id="dp_ded" rows="2"></textarea></label>
-        <label class="fld"><span>סכום (רשות)</span><input id="dp_amt"></label>
+        <div class="two"><label class="fld"><span>סכום (רשות)</span><input id="dp_amt"></label>
+          <label class="fld"><span>סוג</span><select id="dp_status"><option value="confirmed">🟢 מאושר</option><option value="suggested">🔵 הצעה</option></select></label></div>
         <button class="btn" id="dp_save">שבץ ללילה זה</button></div></div>`;
     const qi=document.getElementById('dp_q'),res=document.getElementById('dp_res');let chosen=null;
     qi.oninput=()=>{const s=norm(qi.value);if(!s){res.innerHTML='';return;}const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english).includes(s)).slice(0,8);
       res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('');
       res.querySelectorAll('.dpr').forEach(x=>x.onclick=()=>{chosen=DB.find(y=>y.id==x.dataset.id);document.getElementById('dp_chosen').textContent='נבחר: '+chosen.last+' '+chosen.first;document.getElementById('dp_form').style.display='block';res.innerHTML='';qi.value=chosen.last+' '+chosen.first;});};
-    document.getElementById('dp_save').onclick=async()=>{if(!chosen){toast('בחר תורם');return;}const ded=document.getElementById('dp_ded').value.trim(),amt=document.getElementById('dp_amt').value.trim();const r=await api('POST','/api/parnes',{donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind});chosen.parnes=chosen.parnes||[];chosen.parnes.push({id:r.id,donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind});toast('שובץ ✓ (תזכורת שבוע לפני נקבעה)');render();};
+    document.getElementById('dp_save').onclick=async()=>{if(!chosen){toast('בחר תורם');return;}const ded=document.getElementById('dp_ded').value.trim(),amt=document.getElementById('dp_amt').value.trim(),status=document.getElementById('dp_status').value;const r=await api('POST','/api/parnes',{donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind,status});chosen.parnes=chosen.parnes||[];chosen.parnes.push({id:r.id,donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind,status});toast('שובץ ✓');render();};
   }
 }
 function renderPlaque(){

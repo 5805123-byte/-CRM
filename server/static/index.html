@@ -44,7 +44,14 @@
   .daycell .dplus{color:var(--muted);font-size:1.1rem}
   .daycell.full{background:var(--gold-soft);border-color:var(--gold)}
   .daycell.full .dnm{font-size:.62rem;color:var(--gold);font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .daycell.sugg{background:var(--accent-soft);border-color:var(--accent);border-style:dashed}
+  .daycell.sugg .dnm{font-size:.62rem;color:var(--accent);font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .daycell.sel{outline:3px solid var(--accent)}
+  .dlegend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin:2px 2px 8px}
+  .dlegend .lg{display:inline-block;width:13px;height:13px;border-radius:4px;vertical-align:-2px;margin-inline-end:4px;border:1px solid var(--line)}
+  .dlegend .lg.full{background:var(--gold-soft);border-color:var(--gold)}
+  .dlegend .lg.sugg{background:var(--accent-soft);border-color:var(--accent);border-style:dashed}
+  .dlegend .lg.free{background:var(--card)}
   .dpres{display:flex;flex-direction:column;gap:4px;margin:6px 0}
   .dpr{background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:600}
   .dpr:hover{border-color:var(--accent)}
@@ -102,6 +109,12 @@
   input,select,textarea{width:100%;font-family:inherit;font-size:1rem;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--ground);color:var(--ink)}
   .sec{border-top:2px solid var(--accent-soft);margin-top:16px;padding-top:12px}
   .sec h3{margin:0 0 8px;font-size:1rem;color:var(--accent)}
+  .totals{display:flex;gap:8px;margin:4px 0 12px}
+  .totals .tot{flex:1;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:11px 12px;text-align:center}
+  .totals .tot span{display:block;font-size:.76rem;color:var(--muted);margin-bottom:3px}
+  .totals .tot b{font-size:1.35rem;color:var(--accent);font-weight:800}
+  .totals .tot.year{background:var(--gold-soft);border-color:var(--gold)}
+  .totals .tot.year b{color:var(--gold)}
   .pledge{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;margin-bottom:6px;border:1px solid var(--line)}
   .pledge.given{background:var(--yes-soft);border-color:var(--yes)}
   .pledge.pending{background:var(--no-soft);border-color:var(--no)}
