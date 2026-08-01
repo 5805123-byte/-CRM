@@ -5,78 +5,75 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kollel Chatzos — Donation Receipt</title>
 <style>
-  :root{--ink:#2a2410;--soft:#6b6249;--gold:#9c7a2e;--gold-l:#c9a23f;--line:#d8cba6;--cream:#fbf7ec;--deep:#7a1f1f}
+  :root{--ink:#3a2f1a;--deep:#7a1f1f;--gold:#9c7a2e;--soft:#6b6249;--line:#cdbf98}
   *{box-sizing:border-box}
   html,body{margin:0}
-  body{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;background:#eae4d4;color:var(--ink);line-height:1.6}
-  .sheet{max-width:760px;margin:24px auto;background:#fff;border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.15);position:relative}
-  .frame{border:2px solid var(--gold);margin:10px;padding:34px 44px 40px;position:relative}
-  .frame:before{content:"";position:absolute;inset:5px;border:1px solid var(--line);pointer-events:none}
-  .hd{text-align:center;border-bottom:2px solid var(--gold);padding-bottom:18px;margin-bottom:6px}
-  .hd img{width:110px;height:auto;margin:0 auto 6px;display:block}
-  .hd h1{font-size:1.7rem;margin:2px 0 2px;letter-spacing:1px;color:var(--deep);font-weight:700}
-  .hd .sub{font-size:.95rem;color:var(--soft);letter-spacing:.5px}
-  .hd .tax{font-size:.8rem;color:var(--gold);margin-top:6px;letter-spacing:.5px}
-  .rc{display:flex;justify-content:space-between;font-size:.82rem;color:var(--soft);margin:16px 0 4px;letter-spacing:.3px}
-  .title{text-align:center;font-size:1.05rem;letter-spacing:3px;color:var(--gold);margin:6px 0 20px;text-transform:uppercase}
-  .greet{font-size:1.05rem;margin-bottom:2px}
-  .amountbox{text-align:center;margin:18px auto;padding:16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  .amountbox .lbl{font-size:.8rem;letter-spacing:2px;color:var(--soft);text-transform:uppercase}
-  .amountbox .amt{font-size:2.6rem;font-weight:700;color:var(--deep);margin:4px 0}
-  .amountbox .for{font-size:1.05rem;color:var(--gold);font-style:italic}
-  .body p{margin:12px 0;font-size:1.02rem}
-  .heb{text-align:center;font-size:1.15rem;color:var(--deep);margin:16px 0 6px;font-family:"Frank Ruhl Libre","Times New Roman",serif}
-  .fine{font-size:.82rem;color:var(--soft);border-top:1px solid var(--line);padding-top:12px;margin-top:20px}
-  .sig{margin-top:30px;text-align:right}
-  .sig .bb{font-size:.95rem;color:var(--soft)}
-  .sig .nm{font-size:1.5rem;color:var(--deep);font-family:"Snell Roundhand","Segoe Script","Brush Script MT",cursive;margin:2px 0}
-  .sig .rl{font-size:.9rem;color:var(--soft);letter-spacing:.3px}
-  .sig .line{width:230px;border-top:1px solid var(--ink);margin:38px 0 4px auto}
-  .noprint{text-align:center;margin:16px}
+  body{background:#d9d2c2;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;color:var(--ink)}
+  .scroller{overflow-x:auto;padding:16px}
+  .sheet{
+    position:relative;width:794px;max-width:none;aspect-ratio:2482/3509;margin:0 auto;
+    background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
+    box-shadow:0 10px 40px rgba(0,0,0,.25);
+    container-type:inline-size;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  /* אזור הכתיבה — הצד הימני הפתוח של הבלאנק (הסרגל השמאלי תפוס) */
+  .content{position:absolute;top:12.5%;left:27%;right:6.5%;bottom:8%;display:flex;flex-direction:column}
+  .rc{display:flex;justify-content:space-between;font-size:2cqw;color:var(--soft);margin-bottom:1.5cqw}
+  .title{text-align:center;font-size:3.1cqw;letter-spacing:.35cqw;color:var(--gold);text-transform:uppercase;margin:0 0 3cqw}
+  .greet{font-size:2.7cqw;margin-bottom:.5cqw}
+  .lead{font-size:2.3cqw;margin:0 0 2cqw}
+  .amountbox{text-align:center;border-top:.2cqw solid var(--line);border-bottom:.2cqw solid var(--line);padding:2cqw 0;margin:1cqw 0 2.5cqw}
+  .amountbox .lbl{font-size:1.8cqw;letter-spacing:.4cqw;color:var(--soft);text-transform:uppercase}
+  .amountbox .amt{font-size:7cqw;font-weight:700;color:var(--deep);line-height:1.1;margin:.4cqw 0}
+  .amountbox .for{font-size:2.5cqw;color:var(--gold);font-style:italic}
+  .body p{font-size:2.25cqw;line-height:1.5;margin:1.4cqw 0}
+  .heb{text-align:center;font-size:2.5cqw;color:var(--deep);margin:2cqw 0 1cqw;font-family:"Frank Ruhl Libre","Times New Roman",serif;direction:rtl}
+  .fine{font-size:1.7cqw;color:var(--soft);line-height:1.4;margin-top:1.5cqw}
+  .sig{margin-top:auto;padding-top:3cqw;text-align:right}
+  .sig .sigline{width:38%;border-top:.15cqw solid var(--ink);margin:0 0 1cqw auto}
+  .sig .nm{font-size:2.6cqw;color:var(--deep);font-weight:700}
+  .sig .role{font-size:2cqw;color:var(--soft)}
+  .noprint{text-align:center;margin:14px}
   .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer;margin:0 5px}
   .noprint button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
   @media print{
+    @page{size:A4;margin:0}
     body{background:#fff}
-    .sheet{box-shadow:none;border:none;margin:0;max-width:100%}
+    .scroller{overflow:visible;padding:0}
+    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
     .noprint{display:none}
   }
 </style>
 </head>
 <body>
-<div class="sheet"><div class="frame">
-  <div class="hd">
-    <img src="/logo.png" alt="Kollel Chatzos">
-    <h1>Kollel Chatzos · Eretz Yisrael</h1>
-    <div class="sub">Torah study in the sacred hours of Chatzos</div>
-    <div class="tax">Cong. Zikhron Avos · EIN&nbsp;20-0447034 · A 501(c)(3) Tax-Exempt Organization</div>
-  </div>
+<div class="scroller"><div class="sheet">
+  <div class="content">
+    <div class="rc"><span>Receipt&nbsp;#: <b id="r_num"></b></span><span>Date: <b id="r_date"></b></span></div>
+    <div class="title">Official Donation Receipt</div>
 
-  <div class="rc"><span>Receipt&nbsp;#: <b id="r_num"></b></span><span>Date: <b id="r_date"></b></span></div>
-  <div class="title">Official Donation Receipt</div>
+    <div class="greet">Dear <b id="r_name"></b>,</div>
+    <p class="lead">It is with heartfelt gratitude that we acknowledge your generous contribution:</p>
 
-  <div class="greet">Dear <b id="r_name"></b>,</div>
-  <p>It is with heartfelt gratitude that we acknowledge your generous contribution:</p>
+    <div class="amountbox">
+      <div class="lbl">Donation Amount</div>
+      <div class="amt" id="r_amt"></div>
+      <div class="for" id="r_for"></div>
+    </div>
 
-  <div class="amountbox">
-    <div class="lbl">Donation Amount</div>
-    <div class="amt" id="r_amt"></div>
-    <div class="for" id="r_for"></div>
-  </div>
+    <div class="body">
+      <p>There is no greater z’chus than to be a partner in Torah — and above all, the Torah that ascends from our Kollel in the holy hours of <i>Chatzos</i>, when the gates of Heaven stand open and it is an <i>eis ratzon</i>, a time of boundless Divine favor.</p>
+      <div class="heb">בזכות התורה הנלמדת בעת רצון הגדול של חצות הלילה — יהי רצון שתעמוד לך לשמירה, לברכה, לרפואה ולהצלחה, לך ולכל בני ביתך.</div>
+      <p>May this great z’chus be a shield of protection over you, drawing down abundant blessing, good health, <i>nachas</i> and <i>hatzlacha</i> upon you and your entire family — <i>b’gashmiyus uv’ruchniyus</i>.</p>
+    </div>
 
-  <div class="body">
-    <p>There is no greater z’chus than to be a partner in Torah — and above all, the Torah that ascends from our Kollel in the holy hours of <i>Chatzos</i>, when the gates of Heaven stand open, harsh judgments are sweetened, and it is an <i>eis ratzon</i>, a time of boundless Divine favor.</p>
-    <p>Through your <i>tzedakah</i> you have become a true partner in this sacred <i>avodah</i>, and all the <i>brachos</i> of those who rise at midnight to learn Torah are counted to your merit.</p>
-    <div class="heb">בזכות התורה הנלמדת בעת רצון הגדול של חצות הלילה — יהי רצון שתעמוד לך לשמירה, לברכה, לרפואה ולהצלחה, לך ולכל בני ביתך.</div>
-    <p>May this great z’chus be a shield of protection over you, and draw down upon you and your entire family abundant blessing, good health, <i>nachas</i>, and <i>hatzlacha</i> in all your endeavors — <i>b’gashmiyus uv’ruchniyus</i>.</p>
-  </div>
+    <div class="fine">Cong. Zikhron Avos · EIN&nbsp;20-0447034 · A 501(c)(3) tax-exempt organization. No goods or services were provided in exchange for this tax-deductible contribution. Please retain this letter for your tax records.</div>
 
-  <div class="fine">No goods or services were provided in exchange for this tax-deductible contribution. Please retain this letter for your tax records.</div>
-
-  <div class="sig">
-    <div class="line"></div>
-    <div class="nm">Yehoshua Meir Deutsch</div>
-    <div class="bb">Rabbi Yehoshua Meir Deutsch</div>
-    <div class="rl">Rosh HaKollel · Kollel Chatzos — Eretz Yisrael</div>
+    <div class="sig">
+      <div class="sigline"></div>
+      <div class="nm">Rabbi Yehoshua Meir Deutsch</div>
+      <div class="role">Rosh HaKollel</div>
+    </div>
   </div>
 </div></div>
 
@@ -88,7 +85,6 @@
 <script>
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
-// purpose → English wording
 const PMAP = [
   [/יששכר|זבולון|zevulun|yissachar/i, 'Yissachar–Zevulun Partnership in Torah'],
   [/פרנס.?לילה|לימוד.?לילה|night|חצות|לילה/i, 'Supporting the Limud Torah at Chatzos — nightly learning at midnight'],
