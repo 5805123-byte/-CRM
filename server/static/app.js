@@ -199,7 +199,7 @@ function cardDonations(d,body){
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
     <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
       <div class="two"><label class="fld"><span>סכום ($)</span><input id="dn_amt" placeholder="480"></label>
-        <label class="fld"><span>אמצעי</span><select id="dn_method"><option>אשראי</option><option>אונליין</option><option>המחאה</option><option>מזומן</option><option>העברה בנקאית</option><option>Authorize</option></select></label></div>
+        <label class="fld"><span>אמצעי</span><select id="dn_method"><option>אשראי</option><option>אונליין</option><option>המחאה</option><option>מזומן</option><option>העברה בנקאית</option><option>Banquest</option></select></label></div>
       <label class="fld"><span>סוג / עבור מה</span><select id="dn_cat">
         <option value="">— בחר —</option><option>קבוע</option><option>יששכר־זבולון</option>
         <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>

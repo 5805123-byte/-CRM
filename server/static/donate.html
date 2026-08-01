@@ -154,12 +154,12 @@
     <div class="card">
       <h2>אופן התשלום</h2>
       <div class="pays" id="pays"></div>
-      <div class="hint" style="margin-top:10px">🔒 Secure payment · processed in USD through our US merchant account (Authorize.Net · Bank of the West).</div>
+      <div class="hint" style="margin-top:10px">🔒 Secure payment · processed in USD through Banquest — our US merchant gateway.</div>
     </div>
 
     <div class="err" id="err"></div>
     <button class="go" id="go">לתשלום מאובטח »</button>
-    <div class="sec-note">🔒 Secure USD payment · Authorize.Net (Bank of the West)</div>
+    <div class="sec-note">🔒 Secure USD payment · Banquest</div>
   </div>
 
   <div class="card hidden" id="thanksCard">
@@ -255,7 +255,7 @@ function updateSumm(){
   s.innerHTML = txt; s.style.display='block';
 }
 
-/* ---------- אופן תשלום (בסגנון נדרים פלוס) ---------- */
+/* ---------- אופן תשלום ---------- */
 const PAYS=[
   {id:'credit',   ic:'💳', t:'כרטיס אשראי', s:'חיוב בודד או תשלומים'},
   {id:'hk_credit',ic:'🔁', t:'הוראת קבע באשראי', s:'חיוב חודשי קבוע'},
