@@ -72,6 +72,8 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
     except Exception: pass
+    try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
+    except Exception: pass
     # השלמת דרגת יששכר־זבולון לתורמים שהיו ברשימה אך לא סומנו (מקור אמת: iz_seed.json + כל מי שיש לו אברך)
     try:
         con.execute("""UPDATE donors SET tier='יששכר_זבולון'
@@ -286,7 +288,7 @@ def get_all():
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city'}
+                'region','country','zip','city','iz_note'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
