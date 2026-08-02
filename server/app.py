@@ -55,6 +55,11 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
     except Exception: pass
+    # תיקון מיקוד ארה"ב שאיבד את האפס המוביל (07666 שנשמר כ-7666). כל מיקוד אמריקאי בן 4 ספרות חסר אפס.
+    try:
+        con.execute("""UPDATE donors SET zip='0'||zip
+                       WHERE COALESCE(region,'')<>'il' AND zip GLOB '[0-9][0-9][0-9][0-9]'""")
+    except Exception: pass
     # ניקוי תזכורות פרנס יתומות — שהיום שלהן כבר נמחק מהלוח (מגרסה קודמת שלא מחקה את התזכורת)
     try:
         con.execute("""DELETE FROM tasks WHERE kind='parnes'
@@ -119,6 +124,13 @@ def get_all():
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
                 'region','country','zip','city'}
+
+def norm_zip(z, region):
+    """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
+    z = str(z or '').strip()
+    if region != 'il' and re.fullmatch(r'\d{4}', z):
+        return '0' + z
+    return z
 
 KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
            'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
@@ -214,6 +226,8 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); did = int(m.group(1))
             fields = {k: v for k, v in b.items() if k in DONOR_FIELDS}
+            if 'zip' in fields:
+                fields['zip'] = norm_zip(fields['zip'], fields.get('region', b.get('region', '')))
             if fields:
                 con = db()
                 con.execute("UPDATE donors SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",
@@ -311,7 +325,7 @@ class H(BaseHTTPRequestHandler):
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (b.get('last',''), b.get('first',''), b.get('english',''), b.get('business',''), b.get('phone',''),
                          b.get('email',''), b.get('addr',''), b.get('tier',''), b.get('category',''), b.get('purpose',''),
-                         b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), b.get('zip',''), b.get('city','')))
+                         b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
         if self.path == '/api/pledge':
