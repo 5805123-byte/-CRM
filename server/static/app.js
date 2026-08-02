@@ -437,7 +437,7 @@ function openParnesCert(d,p){
   if(!p)return;
   const date=(p.date_text||'')+(HEBYEAR?(' '+HEBYEAR):'');
   const names=(d.prayers&&d.prayers[0]?d.prayers[0].text:'');
-  const params=new URLSearchParams({date,names,req:p.dedication||''});
+  const params=new URLSearchParams({kind:p.kind||'parnes',date,names,req:p.dedication||''});
   window.open('/parnes-cert?'+params.toString(),'_blank');
 }
 function renderParnesEdit(d){

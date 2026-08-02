@@ -3,31 +3,34 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>כולל חצות — פרנס לילה</title>
+<title>כולל חצות — תעודת פרנס</title>
 <style>
   @font-face{font-family:'FrankRuhl';src:url('/frankruhl-regular.ttf') format('truetype');font-weight:400 600;font-display:swap}
   @font-face{font-family:'FrankRuhl';src:url('/frankruhl-bold.ttf') format('truetype');font-weight:700 900;font-display:swap}
   :root{--ink:#1c1710;--deep:#6a1414;--gold:#9c7a2e}
   *{box-sizing:border-box}html,body{margin:0}
-  /* גופן עברי מסורתי מוטמע (פרנק־רוהל) — נראה זהה בכל מכשיר ובהדפסה */
   body{background:#d9d2c2;color:var(--ink);font-family:'FrankRuhl',"Frank Ruhl Libre","Times New Roman",serif}
   .scroller{overflow-x:auto;padding:16px}
   .sheet{position:relative;width:794px;aspect-ratio:2482/3509;margin:0 auto;
-    background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
+    background:#fdf9ee top center/100% 100% no-repeat;
     box-shadow:0 10px 40px rgba(0,0,0,.25);
     -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  /* אזור הכתיבה — גדול, ממלא כמעט את כל הדף (מימין לסרגל, מעל הבניין/פוטר) */
-  .content{position:absolute;top:9.5%;left:25%;right:5%;bottom:11%;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden}
-  /* כל הגדלים יחסיים ל-font-size של .content, שנקבע אוטומטית ב-JS כדי למלא את הדף */
+  .content{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden}
+  /* גדלים יחסיים ל-font-size של .content שנקבע אוטומטית למילוי הדף */
   .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
-  .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;letter-spacing:.02em;width:100%}
+  .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;width:100%}
   .stand{font-size:1em;font-weight:600;margin-bottom:.15em;width:100%}
-  .pair{width:100%;margin:.15em 0 .35em}
+  .pair{width:100%;margin:.15em 0 .35em;position:relative}
   .names{font-size:2.3em;font-weight:800;line-height:1.14;color:#000;width:100%}
   .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
-  .pair .rm{display:none}
-  @media screen{.pair{position:relative}.pair .rm{display:block;position:absolute;inset-inline-start:-1.6em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.pair .rm:hover{opacity:1}}
+  /* חדר קפה */
+  .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
+  .ctitle{font-size:2.5em;font-weight:800;color:var(--deep);width:100%;margin:.1em 0 .25em}
+  .cdedic{font-size:1.05em;font-weight:700;width:100%;margin-bottom:.35em}
+  .cnames{font-size:2.35em;font-weight:800;line-height:1.28;color:#000;width:100%;margin:.15em 0 .4em}
+  .cclose{font-size:1em;line-height:1.4;font-weight:600;width:100%}
+  .rm{display:none}
+  @media screen{.rm{display:block;position:absolute;inset-inline-start:-1.5em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.rm:hover{opacity:1}}
   [contenteditable]{outline:none;border-radius:6px;transition:background .15s}
   [contenteditable]:focus{background:rgba(156,122,46,.14);box-shadow:0 0 0 2px var(--gold)}
   [contenteditable]:empty:before{content:attr(data-ph);color:#b3a884;font-weight:400}
@@ -46,58 +49,75 @@
 </style>
 </head>
 <body>
-<div class="scroller"><div class="sheet">
-  <div class="content" id="content">
-    <div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
-    <div class="date" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
-    <div class="stand">יהיו ויעמדו לזכות</div>
-    <div id="pairs"></div>
-  </div>
+<div class="scroller"><div class="sheet" id="sheet">
+  <div class="content" id="content"></div>
 </div></div>
 
 <div class="noprint">
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
-  <button class="g" id="addBtn">➕ הוסף שם ובקשה</button>
+  <button class="g" id="addBtn">➕ הוסף שם</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
-  <div class="tip">מלא תאריך, שם ובקשה. אפשר להוסיף כמה שמות — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
+  <div class="tip">מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
 </div>
 
 <script>
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
+const KIND = q.get('kind') || 'parnes';
 
-function addPair(name, req){
-  const wrap=document.createElement('div'); wrap.className='pair';
-  wrap.innerHTML='<button class="rm" title="הסר">✕</button>'+
-    '<div class="names" contenteditable="true" data-ph="השם"></div>'+
-    '<div class="req" contenteditable="true" data-ph="הבקשה"></div>';
-  if(name) wrap.querySelector('.names').textContent=name;
-  if(req) wrap.querySelector('.req').textContent=req;
-  wrap.querySelector('.rm').onclick=()=>{ wrap.remove(); fit(); };
-  wrap.querySelectorAll('[contenteditable]').forEach(e=>e.addEventListener('input', fit));
-  $('pairs').appendChild(wrap);
-  fit();
-}
+const CFG = {
+  parnes:    {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'11%'},
+  breakfast: {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'11%'},
+  coffee:    {bg:'/letterhead-coffee.jpg',  top:'24%',  left:'9%',  right:'9%', bottom:'21%'},
+};
+const cfg = CFG[KIND] || CFG.parnes;
+$('sheet').style.backgroundImage = `url("${cfg.bg}")`;
+Object.assign($('content').style, {top:cfg.top, left:cfg.left, right:cfg.right, bottom:cfg.bottom});
 
-if(q.get('date')) $('c_date').textContent=q.get('date');
-$('c_date').addEventListener('input', fit);
-// שם/בקשה ראשונים מהכרטיס; אפשר להוסיף עוד ידנית
-addPair(q.get('names')||'', q.get('req')||'');
-
-// התאמת גודל הגופן כדי למלא את כל אזור הכתיבה — לפי כמות הטקסט
 function fit(){
-  const c = $('content');
-  const avail = c.clientHeight;
-  if(!avail) return;
+  const c = $('content'); const avail = c.clientHeight; if(!avail) return;
   let lo=6, hi=380, best=6;
-  for(let i=0;i<22;i++){
-    const mid=(lo+hi)/2;
-    c.style.fontSize=mid+'px';
-    if(c.scrollHeight <= avail){ best=mid; lo=mid; } else { hi=mid; }
-  }
+  for(let i=0;i<22;i++){ const mid=(lo+hi)/2; c.style.fontSize=mid+'px';
+    if(c.scrollHeight <= avail){ best=mid; lo=mid; } else { hi=mid; } }
   c.style.fontSize=best+'px';
 }
-$('addBtn').onclick=()=>addPair('','');
+const wire = el => el.querySelectorAll('[contenteditable]').forEach(e=>e.addEventListener('input', fit));
+
+if(KIND==='coffee'){
+  // ----- תעודת חדר קפה -----
+  $('addBtn').style.display='none';
+  $('content').innerHTML =
+    `<div class="cdate" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
+     <div class="ctitle">פרנס יום</div>
+     <div class="cdedic" contenteditable="true" id="c_dedic">החלב והקפה נתרמו לזכות</div>
+     <div class="cnames" contenteditable="true" id="c_names" data-ph="השמות"></div>
+     <div class="cclose">ולזכות התורם ובנ"ב שיצליחו בכל מעשה ידיהם וירוו נחת דקדושה מכל יוצאי חלציהם</div>`;
+  if(q.get('date')) $('c_date').textContent=q.get('date');
+  if(q.get('names')) $('c_names').textContent=q.get('names');
+  wire($('content'));
+} else {
+  // ----- תעודת פרנס לילה -----
+  $('content').innerHTML =
+    `<div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
+     <div class="date" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
+     <div class="stand">יהיו ויעמדו לזכות</div>
+     <div id="pairs"></div>`;
+  if(q.get('date')) $('c_date').textContent=q.get('date');
+  $('c_date').addEventListener('input', fit);
+  window.addPair = function(name, req){
+    const wrap=document.createElement('div'); wrap.className='pair';
+    wrap.innerHTML='<button class="rm" title="הסר">✕</button>'+
+      '<div class="names" contenteditable="true" data-ph="השם"></div>'+
+      '<div class="req" contenteditable="true" data-ph="הבקשה"></div>';
+    if(name) wrap.querySelector('.names').textContent=name;
+    if(req) wrap.querySelector('.req').textContent=req;
+    wrap.querySelector('.rm').onclick=()=>{ wrap.remove(); fit(); };
+    wire(wrap); $('pairs').appendChild(wrap); fit();
+  };
+  addPair(q.get('names')||'', q.get('req')||'');
+  $('addBtn').onclick=()=>addPair('','');
+}
+
 window.addEventListener('resize', fit);
 fit();
 </script>
