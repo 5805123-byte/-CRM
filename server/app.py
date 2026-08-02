@@ -187,7 +187,7 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
         try: con.execute("ALTER TABLE recon ADD COLUMN status TEXT DEFAULT 'settled'")
         except Exception: pass
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v3'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v4'").fetchone():
             rp = os.path.join(HERE, 'recon_data.json')
             if os.path.exists(rp):
                 # רענון מלא — מוחק עסקאות שטרם טופלו ומעלה מחדש עם סטטוס (עברו/לא עברו)
@@ -199,7 +199,7 @@ def ensure_schema():
                                 (x['tid'], x['first'], x['last'], x['amount'], x['date'], x['addr'], x['city'], x['state'],
                                  x['zip'], x['phone'], x['email'], x['recurring'], x.get('donor_id'), x.get('category', ''), x.get('status', 'settled')))
                     nr += 1
-                con.execute("INSERT INTO seed_flags(name) VALUES('recon_jul2026_v3')")
+                con.execute("INSERT INTO seed_flags(name) VALUES('recon_jul2026_v4')")
                 print(f'  התאמת Authorize: נטענו {nr} עסקאות')
     except Exception as e:
         print('  שגיאת התאמת Authorize:', e)
