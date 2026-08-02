@@ -221,18 +221,21 @@ function openNewDonor(onCreate){
     DB.push(nd);
     const date=g('nd_date'); let anyDon=false;
     for(const row of purpBox.querySelectorAll('.purprow')){
-      const amt=row.querySelector('.p_amt').value.trim(); if(!amt)continue;
+      const amt=row.querySelector('.p_amt').value.trim();
       const cs=row.querySelector('.p_cat'); let cat=cs.value; if(cat==='אחר'||cat==='קמפיין')cat=row.querySelector('.p_catfree').value.trim()||cat;
       const dayKind=cs.options[cs.selectedIndex].dataset.day;
       if(dayKind){
+        // יום פרנס — נוצר גם בלי סכום (יש שתרמו באופן אחר). הסכום נשאר ריק למילוי ידני
         const hm=row.querySelector('.p_hm').value,hd=+row.querySelector('.p_hd').value,hy=row.querySelector('.p_hy').value,dtext=heDay(hd)+" "+hm;
         const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:'',amount:amt,kind:dayKind,hyear:hy});
         nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:'',amount:amt,kind:dayKind,hyear:hy});
-      }else{
+        anyDon=true;
+      }else if(amt||cat){
+        // תרומה רגילה — רק אם יש סכום או קטגוריה
         const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date});
         nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,hmonth:dr.hmonth});
+        anyDon=true;
       }
-      anyDon=true;
     }
     toast('נוצר כרטיס ✓');
     if(onCreate){ ov.classList.remove('show'); onCreate(nd); }
@@ -322,7 +325,7 @@ function cardDetails(d,body){
   (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||''}));
   (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.hmonth?(' · '+x.hmonth):(x.date?(' · '+x.date):'')),ded:''}));
   (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||''),ded:''}));
-  const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>`<div class="giverow"><span class="giveamt">${curd}${g.amt||0}</span><span class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''}</span></div>`).join('')}</div>`:'';
+  const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>`<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><span class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''}</span></div>`).join('')}</div>`:'';
   body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
