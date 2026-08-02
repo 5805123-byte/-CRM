@@ -38,6 +38,9 @@ def ensure_schema():
         inst_total INTEGER DEFAULT 1, inst_paid INTEGER DEFAULT 0, recurring INTEGER DEFAULT 0, note TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS building(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, object TEXT,
         amount TEXT, paid TEXT, note TEXT, date TEXT);
+    CREATE TABLE IF NOT EXISTS recon(tid TEXT PRIMARY KEY, first TEXT, last TEXT, amount TEXT, date TEXT,
+        addr TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, email TEXT, recurring INTEGER DEFAULT 0,
+        donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
@@ -160,6 +163,23 @@ def ensure_schema():
             print(f'  תיקון כתובות: {nf} דביקות, {ni} IL→US')
     except Exception as e:
         print('  שגיאת תיקון כתובות:', e)
+    # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026'").fetchone():
+            rp = os.path.join(HERE, 'recon_data.json')
+            if os.path.exists(rp):
+                nr = 0
+                for x in json.load(open(rp, encoding='utf-8')):
+                    con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,recurring,donor_id,category,processed,source)
+                                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Authorize 07-2026')""",
+                                (x['tid'], x['first'], x['last'], x['amount'], x['date'], x['addr'], x['city'], x['state'],
+                                 x['zip'], x['phone'], x['email'], x['recurring'], x.get('donor_id'), x.get('category', '')))
+                    nr += 1
+                con.execute("INSERT INTO seed_flags(name) VALUES('recon_jul2026')")
+                print(f'  התאמת Authorize: נטענו {nr} עסקאות')
+    except Exception as e:
+        print('  שגיאת התאמת Authorize:', e)
     # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -301,6 +321,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/parnes-cert':
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/reconcile':
+            return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/recon':
+            con = db(); out = []
+            for r in con.execute("SELECT * FROM recon ORDER BY processed, last, first"):
+                x = dict(r)
+                if r['donor_id']:
+                    d = con.execute("SELECT last,first,addr,category,tier FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+                    if d:
+                        x['match_name'] = (d['last'] + ' ' + (d['first'] or '')).strip()
+                        x['match_addr'] = d['addr'] or ''
+                        x['match_cat'] = d['category'] or ''
+                        x['match_tier'] = d['tier'] or ''
+                out.append(x)
+            con.close()
+            return self._send(200, out)
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -459,6 +495,40 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        m = re.match(r'/api/recon/([^/]+)$', self.path)
+        if m:
+            tid = m.group(1); con = db(); cur = con.cursor()
+            row = cur.execute("SELECT * FROM recon WHERE tid=?", (tid,)).fetchone()
+            if not row:
+                con.close(); return self._send(404, {'error': 'not found'})
+            if b.get('skip'):
+                cur.execute("UPDATE recon SET processed=1 WHERE tid=?", (tid,)); con.commit(); con.close()
+                return self._send(200, {'ok': True, 'skipped': True})
+            did = b.get('donor_id')
+            full_addr = ', '.join(p for p in [row['addr'], row['city'], row['state'], row['zip']] if p)
+            if b.get('new_donor'):
+                nd = b['new_donor']
+                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,category,created,source)
+                               VALUES(?,?,?,?,?,?,?,?, 'Authorize')""",
+                            (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
+                             row['phone'], row['email'], full_addr, b.get('category', ''), today_iso()))
+                did = cur.lastrowid
+            if not did:
+                con.close(); return self._send(400, {'error': 'donor required'})
+            if b.get('update_addr') and full_addr:
+                cur.execute("UPDATE donors SET addr=? WHERE id=?", (full_addr, did))
+            # תאריך: '01-Jul-2026' -> '2026-07'
+            MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
+            dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
+            diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}" if dm else ''
+            cat = b.get('category', '') or row['category'] or ''
+            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
+                        (did, diso, row['amount'], cat, 'Authorize', 'התאמת יולי 2026' + (' · הוראת קבע' if row['recurring'] else '')))
+            if row['recurring']:
+                cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
+            cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'donor_id': did})
         if self.path == '/api/merge':
             # מיזוג שני כרטיסים כפולים: keep=הכרטיס שנשאר, drop=הכרטיס שנמחק
             try:

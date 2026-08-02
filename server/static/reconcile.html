@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>כולל חצות — טיפול בתרומות Authorize</title>
+<style>
+  :root{--bg:#f4f1e8;--card:#fff;--ink:#221c12;--muted:#8a7f66;--line:#e5ddc9;--gold:#9c7a2e;--gold-soft:#f3ecd8;--accent:#3b2f5e;--yes:#1b7a3d;--no:#b5321f}
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Arial,sans-serif;padding:12px;max-width:820px;margin:0 auto}
+  h1{font-size:1.25rem;margin:6px 0}
+  .sub{color:var(--muted);font-size:.9rem;margin-bottom:10px}
+  .bar{position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:5;border-bottom:1px solid var(--line)}
+  .prog{height:10px;background:var(--line);border-radius:99px;overflow:hidden}
+  .prog>i{display:block;height:100%;background:var(--yes);width:0;transition:width .3s}
+  .filters{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+  .filters button{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:99px;padding:5px 12px;font-size:.82rem;font-weight:700;cursor:pointer}
+  .filters button.on{background:var(--accent);color:#fff;border-color:transparent}
+  .grp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;margin:11px 0;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .grp.done{opacity:.55}
+  .gname{font-weight:800;font-size:1.05rem;direction:ltr;text-align:right}
+  .gsum{color:var(--muted);font-size:.85rem;margin-top:2px}
+  .match{margin:8px 0;padding:8px 10px;border-radius:10px;font-size:.9rem}
+  .match.ok{background:#eaf6ee;border:1px solid #bfe3c9}
+  .match.no{background:#fdeee9;border:1px solid #f2c9bc}
+  .fld{display:block;margin:7px 0}
+  .fld span{display:block;font-size:.78rem;color:var(--muted);margin-bottom:3px;font-weight:700}
+  .fld input,.fld select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font-family:inherit;font-size:.92rem}
+  .two{display:flex;gap:8px}.two>*{flex:1}
+  .addrbox{background:var(--gold-soft);border:1px dashed var(--gold);border-radius:9px;padding:8px 10px;font-size:.84rem;margin:7px 0;direction:ltr;text-align:right}
+  .addrbox b{color:var(--gold)}
+  .chk{display:flex;align-items:center;gap:7px;font-size:.86rem;margin:6px 0;cursor:pointer}
+  .txn{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding:8px 0;flex-wrap:wrap}
+  .amt{font-weight:800;font-size:1rem;min-width:74px}
+  .date{color:var(--muted);font-size:.8rem}
+  .rec{background:#ede7fb;color:#5b3ea8;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800}
+  .py{background:#fff3e0;color:#b5641a;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800}
+  .txn select{flex:1;min-width:120px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:.85rem}
+  .btn{border:none;border-radius:10px;padding:10px 16px;font-weight:800;font-size:.92rem;cursor:pointer;font-family:inherit}
+  .btn.go{background:var(--accent);color:#fff;width:100%;margin-top:10px}
+  .btn.sm{padding:7px 12px;font-size:.82rem}
+  .btn.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  .res{border:1px solid var(--line);border-radius:9px;margin-top:5px;max-height:180px;overflow:auto}
+  .res div{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:.88rem}
+  .res div:hover{background:var(--gold-soft)}
+  .pick{background:#eaf6ee;border:1px solid #bfe3c9;border-radius:9px;padding:7px 10px;font-size:.88rem;margin-top:5px}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;font-weight:700;z-index:20}
+  .toast.show{opacity:1}
+  .done-msg{text-align:center;padding:30px;color:var(--yes);font-weight:800;font-size:1.1rem}
+</style>
+</head>
+<body>
+<h1>💳 טיפול בתרומות Authorize — יולי 2026</h1>
+<div class="sub">לכל תורם: אשר עבור מה תרם, השלם שם עברי / צור כרטיס, ובחר אם לעדכן כתובת. תרומת $480 = פרנס לילה. הוראות קבע מסומנות.</div>
+<div class="bar">
+  <div class="prog"><i id="pbar"></i></div>
+  <div class="sub" id="pcount" style="margin:5px 0 0"></div>
+  <div class="filters">
+    <button data-f="pending" class="on">🕒 לטיפול</button>
+    <button data-f="nomatch">❓ בלי כרטיס</button>
+    <button data-f="all">הכל</button>
+    <button data-f="done">✓ טופלו</button>
+  </div>
+</div>
+<div id="list"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let DATA = [], FILT = 'pending';
+const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','אחר'];
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1400);}
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function norm(s){return (s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+
+async function load(){ DATA = await api('GET','/api/recon'); render(); }
+
+function groupKey(x){ return norm(x.first+' '+x.last); }
+
+function render(){
+  const total = DATA.length, done = DATA.filter(x=>x.processed).length;
+  $('#pbar').style.width = total? (done/total*100)+'%':'0';
+  $('#pcount').textContent = `${done} / ${total} טופלו`;
+  // group by person
+  const groups = {};
+  DATA.forEach(x=>{ const k=groupKey(x); (groups[k]=groups[k]||[]).push(x); });
+  let entries = Object.entries(groups);
+  entries = entries.filter(([k,txs])=>{
+    const allDone = txs.every(t=>t.processed);
+    const matched = txs.some(t=>t.donor_id);
+    if(FILT==='pending') return !allDone;
+    if(FILT==='done') return allDone;
+    if(FILT==='nomatch') return !matched && !allDone;
+    return true;
+  });
+  entries.sort((a,b)=>a[0].localeCompare(b[0]));
+  const list = $('#list');
+  if(!entries.length){ list.innerHTML='<div class="done-msg">🎉 אין פריטים בקטגוריה הזו</div>'; return; }
+  list.innerHTML = entries.map(([k,txs])=>groupCard(k,txs)).join('');
+  entries.forEach(([k,txs])=>wireGroup(k,txs));
+}
+
+function groupCard(k,txs){
+  const t0=txs[0], allDone=txs.every(t=>t.processed);
+  const matched = txs.find(t=>t.donor_id);
+  const siteAddr = [t0.addr,t0.city,t0.state,t0.zip].filter(Boolean).join(', ');
+  const total = txs.reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  let head = `<div class="gname">${esc((t0.first+' '+t0.last).trim())}</div>
+    <div class="gsum">${txs.length} תרומות · סה"כ $${total.toFixed(2)}${t0.email?(' · '+esc(t0.email)):''}</div>`;
+  let matchHtml;
+  if(matched){
+    matchHtml=`<div class="match ok">✓ מותאם לכרטיס: <b>${esc(matched.match_name||'')}</b>${matched.match_tier?(' · '+esc(matched.match_tier)):''}
+      <button class="btn sm ghost changebtn" style="float:left;padding:3px 9px">🔄 שנה</button></div>`;
+  }else{
+    matchHtml=`<div class="match no">❓ לא נמצא כרטיס תואם — חפש קיים או צור חדש</div>`;
+  }
+  const assign=`<div class="assign" data-k="${esc(k)}" ${matched?'style="display:none"':''}>
+      <label class="fld"><span>חפש תורם קיים</span><input class="dsearch" placeholder="שם בעברית/אנגלית…" autocomplete="off"></label>
+      <div class="res" style="display:none"></div>
+      <div class="pick" style="display:none"></div>
+      <div style="text-align:center;color:var(--muted);font-size:.8rem;margin:6px 0">— או —</div>
+      <div class="two"><label class="fld"><span>שם משפחה (עברית) *</span><input class="nl" placeholder="שם משפחה"></label>
+        <label class="fld"><span>שם פרטי (עברית)</span><input class="nf" placeholder="שם פרטי"></label></div>
+      <div class="sub" style="font-size:.78rem">ייווצר כרטיס חדש עם השם האנגלי, הטלפון, האימייל והכתובת מהאתר.</div>
+    </div>`;
+  let addrHtml='';
+  if(siteAddr){
+    const stored = matched? (matched.match_addr||'') : '';
+    const diff = stored && norm(stored)!==norm(siteAddr);
+    addrHtml=`<div class="addrbox"><b>כתובת מהאתר:</b> ${esc(siteAddr)}${t0.phone?('<br><b>טלפון:</b> '+esc(t0.phone)):''}
+      ${stored?`<br><b>בכרטיס:</b> ${esc(stored)}`:''}</div>
+      ${(!stored||diff)?`<label class="chk"><input type="checkbox" class="upaddr" ${!stored?'checked':''}> עדכן/הוסף את הכתובת מהאתר לכרטיס</label>`:''}`;
+  }
+  const rows = txs.map(t=>{
+    const amt=parseFloat(t.amount||0), is480=amt===480;
+    const opts=CATS.map(c=>`<option value="${esc(c)}" ${c===(t.category||'')?'selected':''}>${c||'— עבור מה? —'}</option>`).join('');
+    return `<div class="txn" data-tid="${esc(t.tid)}">
+      <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
+      ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480?'<span class="py">פרנס לילה</span>':''}
+      ${t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select>`}
+    </div>`;
+  }).join('');
+  return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
+    ${head}${matchHtml}${assign}${addrHtml}${rows}
+    ${allDone?'':`<button class="btn go">✓ הכנס את כל התרומות של ${esc((t0.first+' '+t0.last).trim())}</button>`}
+  </div>`;
+}
+
+function wireGroup(k,txs){
+  const card=[...document.querySelectorAll('.grp')].find(el=>el.dataset.k===k);
+  if(!card) return;
+  const state={donorId:(txs.find(t=>t.donor_id)||{}).donor_id||null, createNew:false, nl:'', nf:''};
+  const chb=card.querySelector('.changebtn');
+  if(chb) chb.onclick=()=>{ const a=card.querySelector('.assign'); a.style.display = a.style.display==='none'?'block':'none'; };
+  const assign=card.querySelector('.assign');
+  if(assign){
+    const si=assign.querySelector('.dsearch'), res=assign.querySelector('.res'), pick=assign.querySelector('.pick');
+    let tmr;
+    si.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(async()=>{
+      const q=si.value.trim(); if(q.length<2){res.style.display='none';return;}
+      const r=await api('GET','/api/pubsearch?q='+encodeURIComponent(q));
+      res.style.display='block';
+      res.innerHTML=r.map(d=>`<div data-id="${d.id}">${esc(d.last)} ${esc(d.first||'')}</div>`).join('')||'<div style="color:var(--muted)">אין תוצאות — צור חדש למטה</div>';
+      res.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>{
+        state.donorId=+x.dataset.id; state.createNew=false;
+        pick.style.display='block'; pick.innerHTML='✓ נבחר: <b>'+x.textContent+'</b>';
+        res.style.display='none'; si.value=x.textContent;
+      });
+    },250);};
+    const nl=assign.querySelector('.nl'), nf=assign.querySelector('.nf');
+    [nl,nf].forEach(inp=>inp.oninput=()=>{ if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } });
+  }
+  const btn=card.querySelector('.btn.go'); if(!btn) return;
+  btn.onclick=async()=>{
+    if(!state.donorId && !state.createNew){ toast('בחר תורם קיים או מלא שם משפחה לכרטיס חדש'); return; }
+    let upaddr = card.querySelector('.upaddr'); upaddr = upaddr? upaddr.checked : false;
+    const catSels=[...card.querySelectorAll('.txn')];
+    btn.disabled=true; btn.textContent='מכניס…';
+    let donorId=state.donorId;
+    for(const txEl of catSels){
+      const tid=txEl.dataset.tid; const sel=txEl.querySelector('.cat'); if(!sel) continue;
+      const body={category:sel.value, update_addr:upaddr};
+      if(donorId) body.donor_id=donorId;
+      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf}; }
+      const r=await api('POST','/api/recon/'+tid, body);
+      if(r.donor_id){ donorId=r.donor_id; }
+      upaddr=false; // רק פעם אחת
+    }
+    toast('הוכנס ✓'); await load();
+  };
+}
+
+$('.filters').addEventListener('click', e=>{ if(e.target.dataset.f){ FILT=e.target.dataset.f; document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b===e.target)); render(); }});
+load();
+</script>
+</body>
+</html>
