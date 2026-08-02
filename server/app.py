@@ -173,6 +173,15 @@ def ensure_schema():
                            ('חדר קפה','פרנס קפה','ארוחת בוקר','פרנס לילה','פרנס יום','קפה','בוקר','לילה')""")
             con.execute("INSERT INTO seed_flags(name) VALUES('parnes_ded_clean')")
     except Exception: pass
+    # ניקוי קוויטלים שנוצרו בטעות מהקדשת פרנס (שם זהה להקדשת יום פרנס אצל אותו תורם)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='prayer_parnes_dedup'").fetchone():
+            con.execute("""DELETE FROM prayers WHERE EXISTS (
+                             SELECT 1 FROM parnes p WHERE p.donor_id=prayers.donor_id
+                             AND TRIM(COALESCE(p.dedication,''))=TRIM(COALESCE(prayers.text,''))
+                             AND TRIM(COALESCE(p.dedication,''))<>'')""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('prayer_parnes_dedup')")
+    except Exception: pass
     # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
