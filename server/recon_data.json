@@ -80,7 +80,7 @@
 "phone": "",
 "email": "",
 "recurring": 1,
-"donor_id": null,
+"donor_id": 558,
 "category": "קבוע",
 "status": "settled"
 },
@@ -1202,7 +1202,7 @@
 "phone": "",
 "email": "",
 "recurring": 1,
-"donor_id": null,
+"donor_id": 558,
 "category": "קבוע",
 "status": "settled"
 },
