@@ -226,8 +226,8 @@ function openNewDonor(onCreate){
       const dayKind=cs.options[cs.selectedIndex].dataset.day;
       if(dayKind){
         const hm=row.querySelector('.p_hm').value,hd=+row.querySelector('.p_hd').value,hy=row.querySelector('.p_hy').value,dtext=heDay(hd)+" "+hm;
-        const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind,hyear:hy});
-        nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind,hyear:hy});
+        const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:'',amount:amt,kind:dayKind,hyear:hy});
+        nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:'',amount:amt,kind:dayKind,hyear:hy});
       }else{
         const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date});
         nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,hmonth:dr.hmonth});
@@ -316,7 +316,9 @@ function cardDetails(d,body){
   const sel=CATS.map(c=>`<option ${c===d.category?'selected':''} value="${c}">${c||'— ללא —'}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
   const gc=gaps(d.months).length, pend=(d.pledges||[]).filter(p=>p.status!=='נתן').length;
-  body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
+  const dt=donorTotals(d), curd=curSym(d);
+  body.innerHTML=`${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>${curd}${dt.year}</b></div></div>`:''}
+    ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
@@ -337,6 +339,7 @@ function cardDetails(d,body){
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
+  const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
   wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region','channel']);
   renderPhones(d);
   document.getElementById('f_delete').onclick=async()=>{
@@ -430,7 +433,7 @@ function cardDonations(d,body){
       dayKind=catSel.options[catSel.selectedIndex].dataset.day;
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
     if(amt&&!dayKind){const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method,date,hmonth:r.hmonth});}
-    if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,hy=document.getElementById('dn_hy').value,dtext=heDay(hd)+" "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind,hyear:hy});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind,hyear:hy});}
+    if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,hy=document.getElementById('dn_hy').value,dtext=heDay(hd)+" "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||'',amount:amt,kind:dayKind,hyear:hy});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||'',amount:amt,kind:dayKind,hyear:hy});}
     if(pray){const tr=tier||d.tier||'';const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:pray,tier:tr});}
     document.getElementById('dn_amt').value='';document.getElementById('dn_pray').value='';
     renderDonations(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
@@ -603,15 +606,20 @@ function openParnesCert(d,p){
   const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
   const yr=p.hyear||HEBYEAR;
   const date=dtext+(yr?(' '+yr):'');
-  // השמות/הנוסח פעם אחת בגדול — עדיפות לשם התפילה, אחרת ההקדשה
-  const names=(d.prayers&&d.prayers[0]&&d.prayers[0].text)||p.dedication||'';
+  // השמות/הנוסח פעם אחת בגדול — עדיפות לשמות שנרשמו ליום זה, אחרת לשם התפילה בכרטיס
+  const names=(p.dedication&&p.dedication.trim())||(d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
   const params=new URLSearchParams({kind:p.kind||'parnes',date,names});
   window.open('/parnes-cert?'+params.toString(),'_blank');
 }
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
-  const tdy=todayStr();
-  el.innerHTML=(d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy;return `<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'שולם ✓':'לא שולם'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>';
+  const tdy=todayStr(), cur=curSym(d);
+  const ptot=(d.parnes||[]).reduce((s,p)=>s+amtNum(p.amount),0);
+  const head=(d.parnes&&d.parnes.length)?`<div class="dncount">${d.parnes.length} ימי פרנס · סה"כ ${cur}${ptot}</div>`:'';
+  el.innerHTML=head+((d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy;return `<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}${p.hyear?(' '+esc(p.hyear)):''}</b> ${p.amount?('· <b style="color:var(--yes)">'+cur+esc(p.amount)+'</b>'):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}</div><button class="del" data-del="${p.id}">🗑</button></div>
+    <label class="fld" style="margin:6px 0 4px"><span>🕯️ שמות ובקשות לתעודת הפרנס</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו והבקשות (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
+    <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'שולם ✓':'לא שולם'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
+  el.querySelectorAll('.pyded').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.parnes.find(x=>x.id==t.dataset.id);if(!p||(p.dedication||'')===t.value)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');};});
   el.querySelectorAll('.pypaid').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});renderParnesEdit(d);toast(+p.paid?'סומן כשולם ✓':'בוטל הסימון');});
   el.querySelectorAll('.pycert').forEach(b=>b.onclick=()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);openParnesCert(d,p);});
   el.querySelectorAll('.pypic').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.photo=p.photo==='sent'?'':'sent';await api('PUT','/api/parnes/'+p.id,{photo:p.photo});renderParnesEdit(d);toast(p.photo==='sent'?'סומן — תמונת הקדשה נשלחה ✓':'בוטל הסימון');});
