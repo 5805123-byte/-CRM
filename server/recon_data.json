@@ -114,7 +114,7 @@
 "phone": "7242639467",
 "email": "Marsula10@gmail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 359,
 "category": "פרנס לילה",
 "status": "settled"
 },
@@ -233,7 +233,7 @@
 "phone": "9175749470",
 "email": "abraham@eastteatrading.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 153,
 "category": "",
 "status": "declined"
 },
@@ -250,7 +250,7 @@
 "phone": "9175749470",
 "email": "avidwek28@gmail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 153,
 "category": "",
 "status": "declined"
 },
@@ -267,7 +267,7 @@
 "phone": "9175749470",
 "email": "avidwek28@gmail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 153,
 "category": "",
 "status": "settled"
 },
@@ -301,7 +301,7 @@
 "phone": "2035270485",
 "email": "Zev967@gmail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 371,
 "category": "",
 "status": "settled"
 },
@@ -352,7 +352,7 @@
 "phone": "7183774603",
 "email": "Estigberg@gmail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 69,
 "category": "",
 "status": "settled"
 },
@@ -420,7 +420,7 @@
 "phone": "0584227748",
 "email": "ylevinson@ymail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 291,
 "category": "",
 "status": "settled"
 },
@@ -709,7 +709,7 @@
 "phone": "718-261-3446",
 "email": "sestherm@yahoo.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 329,
 "category": "",
 "status": "settled"
 },
@@ -743,7 +743,7 @@
 "phone": "",
 "email": "ynussbaum25@gmail.com",
 "recurring": 1,
-"donor_id": null,
+"donor_id": 398,
 "category": "קבוע",
 "status": "settled"
 },
@@ -964,7 +964,7 @@
 "phone": "5162134885",
 "email": "Bsgoldgrab@aol.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 110,
 "category": "פרנס לילה",
 "status": "settled"
 },
@@ -1015,7 +1015,7 @@
 "phone": "0584227748",
 "email": "ylevinson@ymail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 291,
 "category": "",
 "status": "settled"
 },
@@ -1032,7 +1032,7 @@
 "phone": "0584227748",
 "email": "ylevinson@ymail.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 291,
 "category": "",
 "status": "settled"
 },
@@ -1083,7 +1083,7 @@
 "phone": "7184407254",
 "email": "melanie.leitman@yahoo.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 341,
 "category": "",
 "status": "settled"
 },
@@ -1117,7 +1117,7 @@
 "phone": "7184407254",
 "email": "melanie.leitman@yahoo.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 341,
 "category": "",
 "status": "declined"
 },
@@ -1134,7 +1134,7 @@
 "phone": "7184407254",
 "email": "melanie.leitman@yahoo.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 341,
 "category": "",
 "status": "settled"
 },
@@ -1219,7 +1219,7 @@
 "phone": "7183389023",
 "email": "y2smilow@yahoo.com",
 "recurring": 0,
-"donor_id": null,
+"donor_id": 386,
 "category": "",
 "status": "settled"
 }
