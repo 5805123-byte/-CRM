@@ -93,7 +93,7 @@ function renderDonors(){
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
   let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english));
   if(flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
-  view.innerHTML=`<div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
+  view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button><div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
     <div class="rowc" data-id="${d.id}">
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
@@ -102,6 +102,30 @@ function renderDonors(){
       <div class="meta">${d.parnes&&d.parnes.length?'<span class="pill py">🌙</span>':''}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  document.getElementById('newDonorBtn').onclick=openNewDonor;
+}
+function openNewDonor(){
+  cardTab='details';
+  sheet.innerHTML=`<button class="x" id="cx">✕</button>
+    <h2>➕ תורם חדש</h2>
+    <div class="two"><label class="fld"><span>שם משפחה *</span><input id="nd_last" placeholder="שם משפחה"></label>
+      <label class="fld"><span>שם פרטי</span><input id="nd_first" placeholder="שם פרטי"></label></div>
+    <label class="fld"><span>שם באנגלית</span><input id="nd_english" dir="ltr" placeholder="English name"></label>
+    <label class="fld"><span>טלפון</span><input id="nd_phone" dir="ltr" inputmode="tel" placeholder="+1 ..."></label>
+    <div class="two"><label class="fld"><span>קטגוריה</span><select id="nd_category">${CATS.map(c=>`<option value="${c}">${c||'— ללא —'}</option>`).join('')}</select></label>
+      <label class="fld"><span>סכום קבוע ($)</span><input id="nd_amount" placeholder="0"></label></div>
+    <div class="sec"><button class="btn" id="nd_save" style="width:100%">✔ צור כרטיס תורם</button></div>`;
+  ov.classList.add('show');
+  document.getElementById('cx').onclick=()=>ov.classList.remove('show');
+  const g=id=>document.getElementById(id).value.trim();
+  document.getElementById('nd_last').focus();
+  document.getElementById('nd_save').onclick=async()=>{
+    const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),category:document.getElementById('nd_category').value,amount:g('nd_amount')};
+    const r=await api('POST','/api/donor',body);
+    const nd={id:r.id,...body,created:todayStr(),source:'ידני',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[]};
+    DB.push(nd); toast('נוצר כרטיס ✓'); openDonor(nd);
+  };
 }
 
 function gaps(m){if(!m)return [];const f=m.indexOf('p');if(f<0)return[];const g=[];for(let i=f;i<=GLAST;i++)if(m[i]!=='p')g.push(i);return g;}

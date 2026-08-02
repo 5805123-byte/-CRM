@@ -294,6 +294,15 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         b = self._body()
+        if self.path == '/api/donor':
+            con = db(); cur = con.cursor()
+            cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (b.get('last',''), b.get('first',''), b.get('english',''), b.get('business',''), b.get('phone',''),
+                         b.get('email',''), b.get('addr',''), b.get('tier',''), b.get('category',''), b.get('purpose',''),
+                         b.get('amount',''), today_iso(), 'ידני'))
+            con.commit(); did = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': did})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
