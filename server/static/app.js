@@ -233,7 +233,7 @@ function cardDonations(d,body){
     d.transactions=d.transactions||[];d.transactions.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method:'ידני',status:'pending',inst_total:1,inst_paid:0,recurring:0,date:todayStr()});
     document.getElementById('tx_amt').value='';document.getElementById('tx_cat').value='';renderTransactions(d);toast('נרשם ✓');};
   const dlink=location.origin+'/donate?d='+d.id;
-  document.getElementById('on_open').onclick=()=>window.open(dlink,'_blank');
+  document.getElementById('on_open').onclick=()=>window.open(dlink+'&office=1','_blank');
   document.getElementById('on_share').onclick=async()=>{
     const nm=(d.last+' '+d.first).trim();const msg='תרומה לכולל חצות'+(nm?(' — '+nm):'')+':\n'+dlink;
     try{if(navigator.share){await navigator.share({title:'תרומה לכולל חצות',text:msg,url:dlink});return;}}catch(e){}

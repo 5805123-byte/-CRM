@@ -63,6 +63,8 @@
   .pay .pic{font-size:1.7rem;line-height:1}
   .pay .pt{font-weight:800;font-size:.9rem;margin-top:5px}
   .pay .ps{font-size:.72rem;color:var(--muted);margin-top:1px}
+  .payinfo{margin-top:12px;background:var(--soft);border:1px solid var(--gold);border-radius:12px;padding:12px 14px;font-size:.92rem;line-height:1.5;color:var(--ink)}
+  .payinfo b{color:var(--gold)}
   .go{width:100%;margin-top:6px;background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#231f0a;border:none;border-radius:14px;padding:16px;font-family:inherit;font-size:1.15rem;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(201,162,63,.35)}
   .go:active{transform:translateY(1px)}
   .sec-note{display:flex;align-items:center;gap:7px;justify-content:center;color:var(--muted);font-size:.82rem;margin-top:13px}
@@ -101,13 +103,29 @@
 
     <!-- מה לתרום -->
     <div class="card">
-      <h2>מה ברצונך לתרום? <span style="color:var(--muted);font-weight:600;font-size:.85rem">(בדולרים 💵)</span></h2>
-      <div class="opts" id="opts"></div>
+      <h2 id="giveTitle">מה ברצונך לתרום? <span style="color:var(--muted);font-weight:600;font-size:.85rem">(בדולרים 💵)</span></h2>
+      <div id="tierGroup">
+        <div class="opts" id="opts"></div>
+        <div class="subttl">תרומה חד־פעמית בסכום קבוע</div>
+        <div class="chips" id="chips"></div>
+      </div>
 
-      <div class="subttl">תרומה חד־פעמית בסכום קבוע</div>
-      <div class="chips" id="chips"></div>
+      <label class="fld hidden" id="offCatWrap"><span>עבור מה</span>
+        <select id="off_cat">
+          <option value="">— בחר —</option>
+          <option>תרומה כללית</option>
+          <option>שותפות יששכר־זבולון</option>
+          <option>פרנס לילה</option>
+          <option>נר למאור</option>
+          <option>חדר קפה</option>
+          <option>ארוחת בוקר</option>
+          <option>קוויטל</option>
+          <option value="__custom">אחר — הקלד עבור מה...</option>
+        </select>
+      </label>
+      <label class="fld hidden" id="offCustomWrap"><span>עבור מה (חופשי)</span><input id="off_custom" placeholder="הקלד עבור מה"></label>
 
-      <label class="fld" style="margin-top:12px"><span>או סכום אחר</span>
+      <label class="fld" style="margin-top:12px"><span id="amtLbl">או סכום אחר</span>
         <div class="cur" data-sym="$" id="curbox"><input id="f_amt" inputmode="decimal" placeholder="0"></div>
       </label>
 
@@ -138,14 +156,14 @@
     </div>
 
     <!-- שמות לתפילה -->
-    <div class="card">
+    <div class="card" id="prayCard">
       <h2>🕯️ שמות לתפילה (עד 4)</h2>
       <div class="hint" style="margin-bottom:10px">האברכים יזכירו את השמות בתפילת חצות. מלא שם, שם האם, והבקשה.</div>
       <div id="prays"></div>
     </div>
 
     <!-- הערות -->
-    <div class="card">
+    <div class="card" id="notesCard">
       <h2>הערות</h2>
       <label class="fld"><span>הערה חופשית (לא חובה)</span><textarea id="f_notes" rows="3" placeholder="כל דבר שתרצה להוסיף"></textarea></label>
     </div>
@@ -154,7 +172,8 @@
     <div class="card">
       <h2>אופן התשלום</h2>
       <div class="pays" id="pays"></div>
-      <div class="hint" style="margin-top:10px">🔒 Secure payment · processed in USD through Banquest — our US merchant gateway.</div>
+      <div class="payinfo hidden" id="payinfo"></div>
+      <div class="hint" id="payhint" style="margin-top:10px">🔒 Secure payment · processed in USD through Banquest — our US merchant gateway.</div>
     </div>
 
     <div class="err" id="err"></div>
@@ -177,6 +196,7 @@
 <script>
 const qs = new URLSearchParams(location.search);
 let donorId = qs.get('d') || '';
+const OFFICE = qs.get('office') === '1';   // מצב פנימי נקי (גבייה מהמשרד)
 const $ = id => document.getElementById(id);
 const CUR = '$';             // ארה"ב בלבד — דולרים
 let selPurpose = null;       // {label, amt, recurring, per}
@@ -259,12 +279,27 @@ function updateSumm(){
 const PAYS=[
   {id:'credit',   ic:'💳', t:'כרטיס אשראי', s:'חיוב בודד או תשלומים'},
   {id:'hk_credit',ic:'🔁', t:'הוראת קבע באשראי', s:'חיוב חודשי קבוע'},
-  {id:'echeck',   ic:'🏦', t:'המחאה אלקטרונית', s:'eCheck / ACH מחשבון בנק'},
+  {id:'echeck',   ic:'🏦', t:'המחאה אלקטרונית', s:'eCheck / ACH'},
+  {id:'check',    ic:'✉️', t:'צ׳ק בדואר', s:'שליחת המחאה'},
+  {id:'zelle',    ic:'📲', t:'Zelle', s:'העברה מהירה'},
+  {id:'dfund',    ic:'🏛️', t:'Donors Fund', s:'קרן תורמים / DAF'},
 ];
 const PAYLBL=Object.fromEntries(PAYS.map(p=>[p.id,p.t]));
+// שיטות "לא מיידיות" — מציגות הוראות ונרשמות כהתחייבות
+const PAYINFO={
+  check:'✉️ נא לכתוב את ההמחאה לפקודת <b>Cong. Zikhron Avos</b> ולשלוח אל:<br>Kollel Chatzos, c/o Friedman Family, 1540 40th Street, Brooklyn NY 11218',
+  zelle:'📲 שלח דרך <b>Zelle</b> אל:<br><b>kollelchatzos1@gmail.com</b>',
+  dfund:'🏛️ ניתן לתרום דרך <b>The Donors Fund</b> (או כל קרן ייעוץ תורמים / DAF) לטובת <b>Cong. Zikhron Avos · EIN 20-0447034</b>. סמן אפשרות זו ונציגנו ידריך אותך.',
+};
 let selPay='credit';
 $('pays').innerHTML=PAYS.map(p=>`<button type="button" class="pay${p.id==='credit'?' on':''}" data-id="${p.id}"><div class="pic">${p.ic}</div><div class="pt">${p.t}</div><div class="ps">${p.s}</div></button>`).join('');
-$('pays').addEventListener('click',e=>{const b=e.target.closest('.pay');if(!b)return;selPay=b.dataset.id;[...$('pays').children].forEach(x=>x.classList.toggle('on',x===b));});
+function applyPay(){
+  const info=PAYINFO[selPay];
+  $('payinfo').innerHTML=info||''; $('payinfo').classList.toggle('hidden',!info);
+  $('go').textContent = info ? 'רשום את התרומה »' : 'לתשלום מאובטח »';
+  $('payhint').classList.toggle('hidden',!!info);
+}
+$('pays').addEventListener('click',e=>{const b=e.target.closest('.pay');if(!b)return;selPay=b.dataset.id;[...$('pays').children].forEach(x=>x.classList.toggle('on',x===b));applyPay();});
 
 /* ---------- שמות לתפילה ---------- */
 $('prays').innerHTML = [1,2,3,4].map(i=>`
@@ -310,6 +345,18 @@ document.addEventListener('click', e=>{
   $('ac_first').classList.add('hidden'); $('ac_last').classList.add('hidden'); known(true);
 });
 
+/* ---------- מצב משרד נקי (?office=1) ---------- */
+$('off_cat').addEventListener('change', ()=>{ $('offCustomWrap').classList.toggle('hidden', $('off_cat').value!=='__custom'); });
+if(OFFICE){
+  $('tierGroup').classList.add('hidden');
+  $('offCatWrap').classList.remove('hidden');
+  $('amtLbl').textContent='סכום התרומה ($)';
+  $('prayCard').classList.add('hidden');
+  $('notesCard').classList.add('hidden');
+  $('giveTitle').innerHTML='פרטי התרומה <span style="color:var(--muted);font-weight:600;font-size:.85rem">(בדולרים 💵)</span>';
+  document.querySelector('.taxbadge')?.classList.add('hidden');
+}
+
 /* ---------- שליחה ---------- */
 $('go').onclick = async ()=>{
   const err=$('err'); err.style.display='none';
@@ -322,12 +369,19 @@ $('go').onclick = async ()=>{
     mother:p.querySelector('.pr_mom').value.trim(),
     request:p.querySelector('.pr_req').value.trim()
   })).filter(x=>x.name);
-  const recurring = !!(selPurpose && selPurpose.recurring);
+  let category, recurring, duration, installments;
+  if(OFFICE){
+    category = ($('off_cat').value==='__custom' ? $('off_custom').value.trim() : $('off_cat').value) || 'תרומה כללית';
+    recurring=false; duration=''; installments=+$('f_inst').value||1;
+  } else {
+    recurring = !!(selPurpose && selPurpose.recurring);
+    category = selPurpose?selPurpose.label:'תרומה חד־פעמית';
+    duration = recurring?durVal():''; installments = recurring?0:(+$('f_inst').value||1);
+  }
   const payload={
     donor_id: donorId?Number(donorId):null,
-    first, last, amount:amt, currency:CUR,
-    category: selPurpose?selPurpose.label:'תרומה חד־פעמית',
-    recurring, duration: recurring?durVal():'', installments: recurring?0:(+$('f_inst').value||1),
+    first, last, amount:amt, currency:CUR, category,
+    recurring, duration, installments,
     email:$('f_email').value.trim(), phone:$('f_phone').value.trim(), addr:$('f_addr').value.trim(),
     prayers, notes:$('f_notes').value.trim(),
     pay:selPay, pay_label:PAYLBL[selPay]||''
@@ -339,8 +393,10 @@ $('go').onclick = async ()=>{
     $('formArea').classList.add('hidden');
     $('thanksCard').classList.remove('hidden');
     const per = recurring?(' לחודש ('+(payload.duration==='12'?'12 חודשים':'ללא הגבלה')+')'):'';
-    $('thanksMsg').innerHTML='תרומתך על סך <b>'+CUR+amt+per+'</b> עבור "'+payload.category+'" נקלטה.'+
-      ($('f_email').value.trim()?' קבלה רשמית תישלח לאימייל.':'')+' נציג הכולל ישלים את החיוב המאובטח.';
+    const info=PAYINFO[selPay];
+    const closing = info ? (' '+info.replace(/<[^>]+>/g,'')) : ' נציג הכולל ישלים את החיוב המאובטח.';
+    $('thanksMsg').innerHTML='תרומתך על סך <b>'+CUR+amt+per+'</b>'+(payload.category?(' עבור "'+payload.category+'"'):'')+' נקלטה.'+
+      ($('f_email').value.trim()?' קבלה רשמית תישלח לאימייל.':'')+closing;
     window.scrollTo({top:0,behavior:'smooth'});
   }catch(e){
     err.textContent='שגיאה בשליחה. נסה שוב.';err.style.display='block';
