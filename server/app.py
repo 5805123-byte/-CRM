@@ -192,7 +192,8 @@ class H(BaseHTTPRequestHandler):
         if fp.startswith(STATIC) and os.path.isfile(fp):
             ext = os.path.splitext(fp)[1]
             ctype = {'.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json',
-                     '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css',
+                     '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.jpg': 'image/jpeg',
+                     '.jpeg': 'image/jpeg', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff2': 'font/woff2',
                      '.webmanifest': 'application/manifest+json'}.get(ext, 'text/plain')
             return self._send(200, open(fp, 'rb').read(), ctype)
         return self._send(404, {'error': 'not found'})
