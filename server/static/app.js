@@ -49,6 +49,21 @@ function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>!(p.n
 function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1300);}
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
+// ערוצי חיוב — תג צבעוני מובחן לכל ערוץ (בצבעי המותג)
+const CHANNELS={
+  'בנק_ווסט':{i:'🏦',l:'בנק ווסט',c:'#0b6e61'},
+  'אותורייז':{i:'💳',l:'Authorize',c:'#1a5fb4'},
+  'צק':{i:'🧾',l:"צ'ק",c:'#8a6d00'},
+  'Zelle':{i:'Ⓩ',l:'Zelle',c:'#6d1ed4'},
+  'העברה_בנקאית':{i:'🏦',l:'העברה בנקאית',c:'#4a5568'},
+  'דונורס_פאנד':{i:'💼',l:'Donors Fund',c:'#9a4a12'},
+  'נדרים':{i:'📱',l:'נדרים',c:'#c2410c'},
+  'OJC':{i:'🏛️',l:'OJC',c:'#3b4252'},
+  'Pledger':{i:'📲',l:'Pledger',c:'#3b4252'},
+};
+const CHAN_ORDER=['בנק_ווסט','אותורייז','צק','Zelle','העברה_בנקאית','דונורס_פאנד','נדרים','OJC','Pledger'];
+function channelBadge(d){const cfg=CHANNELS[(d.channel||'').trim()];if(!cfg)return '';return `<span class="chbadge" style="background:${cfg.c}" title="${esc(cfg.l)}">${cfg.i} ${esc(cfg.l)}</span>`;}
+function channelOpts(cur){cur=(cur||'').trim();let o='<option value="">— ללא —</option>';CHAN_ORDER.forEach(k=>{o+=`<option value="${k}" ${k===cur?'selected':''}>${CHANNELS[k].i} ${CHANNELS[k].l}</option>`;});if(cur&&!CHANNELS[cur])o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;return o;}
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 function fixedAmt(d){
   if(d.tier==='יששכר_זבולון'){const s=(d.partners||[]).filter(p=>p.active!=0).reduce((a,p)=>a+amtNum(p.amount),0);if(s)return curSym(d)+s;}
@@ -120,7 +135,7 @@ function renderDonors(){
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
       ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
+      <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
@@ -219,7 +234,7 @@ function monthGrid(m){if(!m)return '';const f=m.indexOf('p');return `<div class=
 
 let cardTab='details';
 function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
-function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region'].includes(fld)&&tab==='donors')renderDonors();};});}
+function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
 
 function openDonor(d,startTab){
   cardTab=startTab||'details';
@@ -268,10 +283,11 @@ function cardDetails(d,body){
       <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}"></label></div>
     <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
-    ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
+    <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label>
+    ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
-  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region']);
+  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region','channel']);
   renderPhones(d);
   document.getElementById('f_delete').onclick=async()=>{
     if(!confirm('למחוק את "'+(d.last+' '+d.first).trim()+'" לצמיתות?\n\nיימחקו גם כל התרומות, הקוויטל, האברכים והשטרות שלו. אי אפשר לבטל.'))return;
