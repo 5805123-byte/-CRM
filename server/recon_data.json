@@ -13,7 +13,8 @@
 "email": "mgelber@gelberlegal.com",
 "recurring": 1,
 "donor_id": 124,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121700548411",
@@ -29,7 +30,8 @@
 "email": "Toviosch@gmail.com",
 "recurring": 1,
 "donor_id": 20,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121700991300",
@@ -45,7 +47,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 447,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121701057465",
@@ -61,7 +64,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 67,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121701089561",
@@ -77,7 +81,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121701089739",
@@ -93,7 +98,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 295,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81678233844",
@@ -109,7 +115,8 @@
 "email": "Marsula10@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": "פרנס לילה"
+"category": "פרנס לילה",
+"status": "settled"
 },
 {
 "tid": "121703518738",
@@ -125,7 +132,8 @@
 "email": "risnaimark@gmail.com",
 "recurring": 1,
 "donor_id": 368,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121703520846",
@@ -141,7 +149,8 @@
 "email": "estherbaum0@hotmail.com",
 "recurring": 1,
 "donor_id": 42,
-"category": "קבוע"
+"category": "",
+"status": "declined"
 },
 {
 "tid": "81680174818",
@@ -157,7 +166,8 @@
 "email": "rachel7law@yahoo.com",
 "recurring": 0,
 "donor_id": 380,
-"category": "פרנס לילה"
+"category": "פרנס לילה",
+"status": "settled"
 },
 {
 "tid": "81680179412",
@@ -173,7 +183,8 @@
 "email": "rachel7law@yahoo.com",
 "recurring": 0,
 "donor_id": 380,
-"category": "פרנס לילה"
+"category": "פרנס לילה",
+"status": "settled"
 },
 {
 "tid": "121705407193",
@@ -189,7 +200,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "",
+"status": "declined"
 },
 {
 "tid": "121706861581",
@@ -205,7 +217,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 527,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121708773550",
@@ -221,7 +234,8 @@
 "email": "abraham@eastteatrading.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "declined"
 },
 {
 "tid": "121708780087",
@@ -237,7 +251,8 @@
 "email": "avidwek28@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "declined"
 },
 {
 "tid": "121708782683",
@@ -253,7 +268,8 @@
 "email": "avidwek28@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121709154194",
@@ -269,7 +285,8 @@
 "email": "yitz.fuchs@gmail.com",
 "recurring": 1,
 "donor_id": 408,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81687560249",
@@ -285,7 +302,8 @@
 "email": "Zev967@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121713848401",
@@ -301,7 +319,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 250,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121715539964",
@@ -317,7 +336,8 @@
 "email": "drtendler@pdofbrooklyn.com",
 "recurring": 1,
 "donor_id": 242,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81691544850",
@@ -333,7 +353,8 @@
 "email": "Estigberg@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121717077015",
@@ -349,7 +370,8 @@
 "email": "",
 "recurring": 0,
 "donor_id": 46,
-"category": ""
+"category": "",
+"status": "declined"
 },
 {
 "tid": "121717978628",
@@ -365,7 +387,8 @@
 "email": "jacknobel@aol.com",
 "recurring": 1,
 "donor_id": 362,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121718061165",
@@ -381,7 +404,8 @@
 "email": "Chatzot18@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "voided"
 },
 {
 "tid": "121718066095",
@@ -397,7 +421,8 @@
 "email": "CHAtzot18@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "voided"
 },
 {
 "tid": "81693907018",
@@ -413,7 +438,8 @@
 "email": "rachel7law@yahoo.com",
 "recurring": 0,
 "donor_id": 380,
-"category": "פרנס לילה"
+"category": "פרנס לילה",
+"status": "settled"
 },
 {
 "tid": "81694169740",
@@ -429,7 +455,8 @@
 "email": "ylevinson@ymail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121718883468",
@@ -445,7 +472,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 46,
-"category": "קבוע"
+"category": "",
+"status": "declined"
 },
 {
 "tid": "81695323876",
@@ -461,7 +489,8 @@
 "email": "aidominic@gmail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121720481279",
@@ -477,7 +506,8 @@
 "email": "eweingarden@gmail.com",
 "recurring": 1,
 "donor_id": 201,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121720520662",
@@ -493,7 +523,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 204,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81697287938",
@@ -509,7 +540,8 @@
 "email": "rachel7law@yahoo.com",
 "recurring": 0,
 "donor_id": 380,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121722250882",
@@ -525,7 +557,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 3,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121722252136",
@@ -541,7 +574,8 @@
 "email": "info@kurlanddental.com",
 "recurring": 1,
 "donor_id": 482,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121722268298",
@@ -557,7 +591,8 @@
 "email": "msilber@silberlawny.com",
 "recurring": 1,
 "donor_id": 230,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121722269968",
@@ -573,7 +608,8 @@
 "email": "yitzylowy@gmail.com",
 "recurring": 1,
 "donor_id": 278,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121722271357",
@@ -589,7 +625,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 261,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121722471022",
@@ -605,7 +642,8 @@
 "email": "afuchs21@gmail.com",
 "recurring": 1,
 "donor_id": 409,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121724253057",
@@ -621,7 +659,8 @@
 "email": "impressionsgift@yahoo.com",
 "recurring": 1,
 "donor_id": 428,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121724253497",
@@ -637,7 +676,8 @@
 "email": "eisenberger.nicole@gmail.com",
 "recurring": 1,
 "donor_id": 268,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121724293128",
@@ -653,7 +693,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 527,
-"category": "קבוע"
+"category": "",
+"status": "declined"
 },
 {
 "tid": "121724304111",
@@ -669,7 +710,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121724531595",
@@ -685,7 +727,8 @@
 "email": "bgoldburd@gmail.com",
 "recurring": 0,
 "donor_id": 100,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "81700385524",
@@ -701,7 +744,8 @@
 "email": "sestherm@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121725886323",
@@ -717,7 +761,8 @@
 "email": "abba@airsealis.com",
 "recurring": 1,
 "donor_id": 491,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121725886951",
@@ -733,7 +778,8 @@
 "email": "ynussbaum25@gmail.com",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121725928691",
@@ -749,7 +795,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 338,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121727631234",
@@ -765,7 +812,8 @@
 "email": "jacob@airsealis.com",
 "recurring": 1,
 "donor_id": 490,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121727688345",
@@ -781,7 +829,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "",
+"status": "declined"
 },
 {
 "tid": "121728603552",
@@ -797,7 +846,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 376,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729451745",
@@ -813,7 +863,8 @@
 "email": "Jay@goldburd.com",
 "recurring": 1,
 "donor_id": 102,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729451746",
@@ -829,7 +880,8 @@
 "email": "bgoldburd@gmail.com",
 "recurring": 1,
 "donor_id": 100,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729451747",
@@ -845,7 +897,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 86,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729452299",
@@ -861,7 +914,8 @@
 "email": "balabusta11@gmail.com",
 "recurring": 1,
 "donor_id": 535,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729454232",
@@ -877,7 +931,8 @@
 "email": "taub1800@aol.com",
 "recurring": 1,
 "donor_id": 239,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729463842",
@@ -893,7 +948,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 339,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121729476994",
@@ -909,7 +965,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 441,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81706010190",
@@ -925,7 +982,8 @@
 "email": "chaim.hochman@gmail.com",
 "recurring": 0,
 "donor_id": 167,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "81706514571",
@@ -941,7 +999,8 @@
 "email": "Bsgoldgrab@aol.com",
 "recurring": 0,
 "donor_id": null,
-"category": "פרנס לילה"
+"category": "פרנס לילה",
+"status": "settled"
 },
 {
 "tid": "121733018417",
@@ -957,7 +1016,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 84,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81710186858",
@@ -973,7 +1033,8 @@
 "email": "Deloco101@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "81710938822",
@@ -989,7 +1050,8 @@
 "email": "ylevinson@ymail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "81710951136",
@@ -1005,7 +1067,8 @@
 "email": "ylevinson@ymail.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121738003485",
@@ -1021,7 +1084,8 @@
 "email": "ericdjem123@gmail.com",
 "recurring": 1,
 "donor_id": 157,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121738072556",
@@ -1037,7 +1101,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81715455047",
@@ -1053,7 +1118,8 @@
 "email": "melanie.leitman@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121740705685",
@@ -1069,7 +1135,8 @@
 "email": "",
 "recurring": 0,
 "donor_id": 46,
-"category": ""
+"category": "",
+"status": "declined"
 },
 {
 "tid": "81716912332",
@@ -1085,7 +1152,8 @@
 "email": "melanie.leitman@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "declined"
 },
 {
 "tid": "81716923168",
@@ -1101,7 +1169,8 @@
 "email": "melanie.leitman@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121742278705",
@@ -1117,7 +1186,8 @@
 "email": "sggross54@gmail.com",
 "recurring": 1,
 "donor_id": 134,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121742326108",
@@ -1133,7 +1203,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 246,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81718167491",
@@ -1149,7 +1220,8 @@
 "email": "ylcom-12345@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121745777502",
@@ -1165,7 +1237,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "81722931647",
@@ -1181,7 +1254,8 @@
 "email": "y2smilow@yahoo.com",
 "recurring": 0,
 "donor_id": null,
-"category": ""
+"category": "",
+"status": "settled"
 },
 {
 "tid": "121749689418",
@@ -1197,7 +1271,8 @@
 "email": "mgelber@gelberlegal.com",
 "recurring": 1,
 "donor_id": 124,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121749747106",
@@ -1213,7 +1288,8 @@
 "email": "Toviosch@gmail.com",
 "recurring": 1,
 "donor_id": 20,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121750111926",
@@ -1229,7 +1305,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 447,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121750168780",
@@ -1245,7 +1322,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 67,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121750192597",
@@ -1261,7 +1339,8 @@
 "email": "",
 "recurring": 1,
 "donor_id": 295,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 },
 {
 "tid": "121750192625",
@@ -1277,6 +1356,7 @@
 "email": "",
 "recurring": 1,
 "donor_id": null,
-"category": "קבוע"
+"category": "קבוע",
+"status": "settled"
 }
 ]

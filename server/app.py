@@ -40,7 +40,7 @@ def ensure_schema():
         amount TEXT, paid TEXT, note TEXT, date TEXT);
     CREATE TABLE IF NOT EXISTS recon(tid TEXT PRIMARY KEY, first TEXT, last TEXT, amount TEXT, date TEXT,
         addr TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, email TEXT, recurring INTEGER DEFAULT 0,
-        donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT);
+        donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
@@ -185,17 +185,21 @@ def ensure_schema():
     # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026'").fetchone():
+        try: con.execute("ALTER TABLE recon ADD COLUMN status TEXT DEFAULT 'settled'")
+        except Exception: pass
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v2'").fetchone():
             rp = os.path.join(HERE, 'recon_data.json')
             if os.path.exists(rp):
+                # רענון מלא — מוחק עסקאות שטרם טופלו ומעלה מחדש עם סטטוס (עברו/לא עברו)
+                con.execute("DELETE FROM recon WHERE source='Authorize 07-2026' AND COALESCE(processed,0)=0")
                 nr = 0
                 for x in json.load(open(rp, encoding='utf-8')):
-                    con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,recurring,donor_id,category,processed,source)
-                                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Authorize 07-2026')""",
+                    con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,recurring,donor_id,category,processed,source,status)
+                                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Authorize 07-2026',?)""",
                                 (x['tid'], x['first'], x['last'], x['amount'], x['date'], x['addr'], x['city'], x['state'],
-                                 x['zip'], x['phone'], x['email'], x['recurring'], x.get('donor_id'), x.get('category', '')))
+                                 x['zip'], x['phone'], x['email'], x['recurring'], x.get('donor_id'), x.get('category', ''), x.get('status', 'settled')))
                     nr += 1
-                con.execute("INSERT INTO seed_flags(name) VALUES('recon_jul2026')")
+                con.execute("INSERT INTO seed_flags(name) VALUES('recon_jul2026_v2')")
                 print(f'  התאמת Authorize: נטענו {nr} עסקאות')
     except Exception as e:
         print('  שגיאת התאמת Authorize:', e)
@@ -524,7 +528,7 @@ class H(BaseHTTPRequestHandler):
             row = cur.execute("SELECT * FROM recon WHERE tid=?", (tid,)).fetchone()
             if not row:
                 con.close(); return self._send(404, {'error': 'not found'})
-            if b.get('skip'):
+            if b.get('skip') or (row['status'] and row['status'] != 'settled'):
                 cur.execute("UPDATE recon SET processed=1 WHERE tid=?", (tid,)); con.commit(); con.close()
                 return self._send(200, {'ok': True, 'skipped': True})
             did = b.get('donor_id')

@@ -34,6 +34,9 @@
   .amt{font-weight:800;font-size:1rem;min-width:74px}
   .date{color:var(--muted);font-size:.8rem}
   .rec{background:#ede7fb;color:#5b3ea8;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800}
+  .txn.failed{opacity:.75}
+  .txn.failed .amt{text-decoration:line-through;color:var(--muted)}
+  .failbadge{background:#fdeee9;color:var(--no);border:1px solid #f2c9bc;border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:800;white-space:nowrap}
   .py{background:#fff3e0;color:#b5641a;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800}
   .txn select{flex:1;min-width:120px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:.85rem}
   .btn{border:none;border-radius:10px;padding:10px 16px;font-weight:800;font-size:.92rem;cursor:pointer;font-family:inherit}
@@ -58,6 +61,7 @@
   <div class="filters">
     <button data-f="pending" class="on">🕒 לטיפול</button>
     <button data-f="nomatch">❓ בלי כרטיס</button>
+    <button data-f="failed">🔴 לא עברו</button>
     <button data-f="all">הכל</button>
     <button data-f="done">✓ טופלו</button>
   </div>
@@ -89,9 +93,12 @@ function render(){
   entries = entries.filter(([k,txs])=>{
     const allDone = txs.every(t=>t.processed);
     const matched = txs.some(t=>t.donor_id);
-    if(FILT==='pending') return !allDone;
+    const hasFailed = txs.some(t=>t.status && t.status!=='settled');
+    const hasSettled = txs.some(t=>!t.status || t.status==='settled');
+    if(FILT==='pending') return !allDone && hasSettled;   // רק מי שיש לו עסקה שעברה וטרם טופלה
     if(FILT==='done') return allDone;
-    if(FILT==='nomatch') return !matched && !allDone;
+    if(FILT==='nomatch') return !matched && !allDone && hasSettled;
+    if(FILT==='failed') return hasFailed;
     return true;
   });
   entries.sort((a,b)=>a[0].localeCompare(b[0]));
@@ -105,9 +112,11 @@ function groupCard(k,txs){
   const t0=txs[0], allDone=txs.every(t=>t.processed);
   const matched = txs.find(t=>t.donor_id);
   const siteAddr = [t0.addr,t0.city,t0.state,t0.zip].filter(Boolean).join(', ');
-  const total = txs.reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  const settled = txs.filter(t=>!t.status||t.status==='settled');
+  const failedN = txs.length - settled.length;
+  const total = settled.reduce((s,t)=>s+parseFloat(t.amount||0),0);
   let head = `<div class="gname">${esc((t0.first+' '+t0.last).trim())}</div>
-    <div class="gsum">${txs.length} תרומות · סה"כ $${total.toFixed(2)}${t0.email?(' · '+esc(t0.email)):''}</div>`;
+    <div class="gsum">${settled.length} עברו · סה"כ $${total.toFixed(2)}${failedN?(' · <span style="color:var(--no)">'+failedN+' לא עברו</span>'):''}${t0.email?(' · '+esc(t0.email)):''}</div>`;
   let matchHtml;
   if(matched){
     matchHtml=`<div class="match ok">✓ מותאם לכרטיס: <b>${esc(matched.match_name||'')}</b>${matched.match_tier?(' · '+esc(matched.match_tier)):''}
@@ -134,11 +143,13 @@ function groupCard(k,txs){
   }
   const rows = txs.map(t=>{
     const amt=parseFloat(t.amount||0), is480=amt===480;
+    const failed = t.status && t.status!=='settled';
     const opts=CATS.map(c=>`<option value="${esc(c)}" ${c===(t.category||'')?'selected':''}>${c||'— עבור מה? —'}</option>`).join('');
-    return `<div class="txn" data-tid="${esc(t.tid)}">
+    const stlbl = t.status==='declined'?'🔴 נדחה — לא עבר':(t.status==='voided'?'🔴 בוטל — לא עבר':'');
+    return `<div class="txn ${failed?'failed':''}" data-tid="${esc(t.tid)}">
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
-      ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480?'<span class="py">פרנס לילה</span>':''}
-      ${t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select>`}
+      ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
+      ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select>`)}
     </div>`;
   }).join('');
   return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
@@ -179,7 +190,9 @@ function wireGroup(k,txs){
     btn.disabled=true; btn.textContent='מכניס…';
     let donorId=state.donorId;
     for(const txEl of catSels){
-      const tid=txEl.dataset.tid; const sel=txEl.querySelector('.cat'); if(!sel) continue;
+      const tid=txEl.dataset.tid;
+      if(txEl.classList.contains('failed')){ await api('POST','/api/recon/'+tid,{skip:true}); continue; }  // לא עבר — לא מייבאים
+      const sel=txEl.querySelector('.cat'); if(!sel) continue;
       const body={category:sel.value, update_addr:upaddr};
       if(donorId) body.donor_id=donorId;
       else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf}; }
