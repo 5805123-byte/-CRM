@@ -542,6 +542,11 @@ class H(BaseHTTPRequestHandler):
                 did = cur.lastrowid
             if not did:
                 con.close(); return self._send(400, {'error': 'donor required'})
+            # מילוי אוטומטי של שם אנגלי אם חסר בכרטיס (מיזוג השם מ-Authorize)
+            if not b.get('new_donor'):
+                en = (row['first'] + ' ' + row['last']).strip()
+                if en:
+                    cur.execute("UPDATE donors SET english=? WHERE id=? AND COALESCE(TRIM(english),'')=''", (en, did))
             if b.get('update_addr') and full_addr:
                 cur.execute("UPDATE donors SET addr=? WHERE id=?", (full_addr, did))
             # תאריך: '01-Jul-2026' -> '2026-07'
@@ -553,6 +558,12 @@ class H(BaseHTTPRequestHandler):
                         (did, diso, row['amount'], cat, 'Authorize', 'התאמת יולי 2026' + (' · הוראת קבע' if row['recurring'] else '')))
             if row['recurring']:
                 cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
+            # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל
+            if cat == 'פרנס לילה' and diso >= '2026-08':
+                dn = cur.execute("SELECT last, first FROM donors WHERE id=?", (did,)).fetchone()
+                nm = ((dn['last'] + ' ' + (dn['first'] or '')).strip()) if dn else ''
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (did, today_iso(), 'parnes', '🌙 לעשות פרנס לילה — ' + nm))
             cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'donor_id': did})
