@@ -229,6 +229,14 @@ def ensure_schema():
             print(f'  ייבוא תרומות 2026: נוספו {n} תרומות')
     except Exception as e:
         print('  שגיאת ייבוא 2026:', e)
+    # מיטמן מאיר (#337): תשלומי $585 הם לרכב כולל חצות, לא יששכר־זבולון (רץ אחרי ייבוא התרומות)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_585_car'").fetchone():
+            con.execute("""UPDATE donations SET category='רכב כולל חצות'
+                           WHERE donor_id=337 AND CAST(amount AS REAL)=585""")
+            con.execute("""UPDATE donors SET iz_note=COALESCE(NULLIF(TRIM(iz_note),'')||' · ','')||'תרומה נפרדת: $585/חודש לרכב כולל חצות (לא יש"ז)' WHERE id=337""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('mittman_585_car')")
+    except Exception: pass
     con.commit(); con.close()
 
 def get_all():
