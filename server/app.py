@@ -240,6 +240,21 @@ def ensure_schema():
                            WHERE id=337 AND COALESCE(TRIM(iz_note),'')=''""")
             con.execute("INSERT INTO seed_flags(name) VALUES('mittman_585_car_v2')")
     except Exception: pass
+    # תיקוני יששכר־זבולון: שטטפלד (ברכה/יצחק) ולאקס — לפי מה שמסר המשתמש
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_lax_iz'").fetchone():
+            # ברכה שטטפלד #541 — מסומנת יש"ז, והאברך קלפר שייך לה (מועבר מיצחק #543)
+            con.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=541")
+            con.execute("UPDATE partners SET donor_id=541 WHERE donor_id=543 AND TRIM(avreich) LIKE 'קלפר%'")
+            # לאקס #283 — עוד $1000/חודש לשני אברכים בכולל יום
+            if not con.execute("SELECT 1 FROM partners WHERE donor_id=283 AND avreich LIKE '%כולל יום%'").fetchone():
+                con.execute("INSERT INTO partners(donor_id,avreich,amount,note,active) VALUES(283,'שני אברכים — כולל יום','1000','יש\"ז נוסף: $1000/חודש לשני אברכים בכולל יום',1)")
+            # יצחק+ברכה שטטפלד — עוד $1000 ליהושע מאיר דויטש לכולל יום (משותף)
+            if not con.execute("SELECT 1 FROM partners WHERE donor_id=543 AND avreich LIKE '%דויטש%כולל יום%'").fetchone():
+                con.execute("INSERT INTO partners(donor_id,avreich,amount,note,active) VALUES(543,'יהושע מאיר דויטש — כולל יום','1000','יש\"ז לכולל יום — משותף: יצחק וברכה שטטפלד',1)")
+            con.execute("INSERT INTO seed_flags(name) VALUES('statfeld_lax_iz')")
+    except Exception as e:
+        print('  שגיאת תיקון שטטפלד/לאקס:', e)
     con.commit(); con.close()
 
 def get_all():
