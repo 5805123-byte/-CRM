@@ -118,9 +118,19 @@ function openNewDonor(){
     <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="nd_addr" placeholder="רחוב ומספר"></label>
     <div class="two"><label class="fld"><span>עיר</span><input id="nd_city" placeholder="עיר"></label>
       <label class="fld"><span>מדינה</span><input id="nd_country" placeholder="מדינה"></label></div>
-    <div class="two"><label class="fld"><span>מיקוד</span><input id="nd_zip" dir="ltr" placeholder="מיקוד"></label>
-      <label class="fld"><span>קטגוריה</span><select id="nd_category">${CATS.map(c=>`<option value="${c}">${c||'— ללא —'}</option>`).join('')}</select></label></div>
-    <label class="fld"><span>סכום קבוע</span><input id="nd_amount" placeholder="0"></label>
+    <label class="fld"><span>מיקוד</span><input id="nd_zip" dir="ltr" placeholder="מיקוד"></label>
+    <div class="sec"><h3 style="color:var(--gold);font-size:1rem">💵 תרומה ראשונה (לא חובה)</h3>
+      <div class="two"><label class="fld"><span>סכום</span><input id="nd_amt" placeholder="0"></label>
+        <label class="fld"><span>עבור מה</span><select id="nd_cat">
+          <option value="">— בחר —</option><option>קבוע</option><option>יששכר־זבולון</option>
+          <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
+          <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
+          <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option>
+          <option value="קמפיין">🎊 קמפיין</option><option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label></div>
+      <div id="nd_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select id="nd_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>יום</span><select id="nd_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div></div>
+      <label class="fld" id="nd_catfree_l" style="display:none"><span>שם הקמפיין / הקטגוריה</span><input id="nd_catfree" placeholder="למשל: קמפיין סוכות"></label>
+      <label class="fld"><span>תאריך (לועזי)</span><input id="nd_date" type="date"></label></div>
     <div class="sec"><button class="btn" id="nd_save" style="width:100%">✔ צור כרטיס תורם</button></div>`;
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
@@ -134,13 +144,24 @@ function openNewDonor(){
       ph.placeholder='+972 ...'; zp.placeholder='מיקוד (7 ספרות)';
     }else{ ph.placeholder='+1 ...'; }
   };
+  const nc=document.getElementById('nd_cat');
+  nc.onchange=()=>{const day=nc.options[nc.selectedIndex].dataset.day;document.getElementById('nd_daybox').style.display=day?'block':'none';document.getElementById('nd_catfree_l').style.display=(nc.value==='אחר'||nc.value==='קמפיין')?'block':'none';};
   document.getElementById('nd_last').focus();
   document.getElementById('nd_save').onclick=async()=>{
     const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
-    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),category:document.getElementById('nd_category').value,region:document.getElementById('nd_region').value,amount:g('nd_amount')};
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),region:document.getElementById('nd_region').value};
     const r=await api('POST','/api/donor',body);
-    const nd={id:r.id,...body,created:todayStr(),source:'ידני',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[]};
-    DB.push(nd); toast('נוצר כרטיס ✓'); openDonor(nd);
+    const nd={id:r.id,...body,category:'',amount:'',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[],created:todayStr(),source:'ידני'};
+    DB.push(nd);
+    // תרומה ראשונה (רשות) — עם בחירת עבור מה, ואם יום פרנס גם היום
+    const amt=g('nd_amt'); let cat=nc.value; if(cat==='אחר'||cat==='קמפיין')cat=g('nd_catfree')||cat;
+    const dayKind=nc.options[nc.selectedIndex].dataset.day, date=g('nd_date');
+    if(amt){
+      const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date});
+      nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,hmonth:dr.hmonth});
+      if(dayKind){const hm=document.getElementById('nd_hm').value,hd=+document.getElementById('nd_hd').value,dtext=heDay(hd)+"' "+hm;const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});}
+    }
+    toast('נוצר כרטיס ✓'); openDonor(nd, amt?'donations':'details');
   };
 }
 
@@ -562,13 +583,13 @@ function renderDayPanel(taken){
       <div class="remitem ${sugg?'':'given'}"><div class="ri"><b>${esc(t.donor)}</b><br><small>${esc(t.dedication||'')} ${t.amount?('· $'+esc(t.amount)):''}</small></div></div>
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
-      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק</button></div></div>`;
+      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
     if(sugg)document.getElementById('dpconfirm').onclick=async()=>{await api('PUT','/api/parnes/'+t.id,{status:'confirmed'});const p=(t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.status='confirmed';toast('אושר ✓ עבר למאושר');render();};
     panel.querySelector('.pyupload').onchange=e=>uploadFile('parnes',t.id,e.target,load);
     panel.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
     document.getElementById('dpopen').onclick=()=>openDonor(t.dref);
     document.getElementById('dpkv').onclick=()=>openDonor(t.dref,'kvittel');
-    document.getElementById('dpprint').onclick=()=>{plaque={...t,date_text:t.date_text||dtext};render();};
+    document.getElementById('dpprint').onclick=()=>openParnesCert(t.dref,{...t,date_text:t.date_text||dtext});
     document.getElementById('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);render();toast('נמחק');};
   }else{
     panel.innerHTML=`<div class="sec"><h3>➕ שבץ ${PKINDS.find(k=>k[0]===pyKind)[1]} — ${esc(dtext)}</h3>
