@@ -126,16 +126,35 @@ def ensure_schema():
     # תיקון כתובות שבורות (רחוב+עיר דבוקים, וקוד מדינה IL שגוי על כתובת אמריקאית)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addrfix_v1'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addrfix_v2'").fetchone():
             afix = os.path.join(HERE, 'address_fix_seed.json')
+            nf = 0
             if os.path.exists(afix):
-                nf = 0
                 for rec in json.load(open(afix, encoding='utf-8')):
                     cur = con.execute("UPDATE donors SET addr=? WHERE id=? AND last=? AND addr=?",
                                       (rec['new'], rec['id'], rec.get('last', ''), rec['old']))
                     nf += cur.rowcount
-                con.execute("INSERT INTO seed_flags(name) VALUES('addrfix_v1')")
-                print(f'  תיקון כתובות: תוקנו {nf} כתובות')
+            # תיקון קוד מדינה IL→US לכל כתובת עם עיר אמריקאית ברורה (רץ אחרי תיקון הדביקות)
+            US_CITY = re.compile(r'\b(Brooklyn|Flushing|Monsey|Lakewood|Los Angeles|Cleveland|Aventura|'
+                                 r'Queens|Bronx|Manhattan|Far Rockaway|Valley Village|Teaneck|Great Neck|'
+                                 r'Woodmere|Cedarhurst|Passaic|Baltimore|Chicago|Miami|Pittsburgh|'
+                                 r'Spring Valley|Monroe|New York)\b', re.I)
+            ni = 0
+            for row in con.execute("SELECT id, addr FROM donors WHERE COALESCE(addr,'')<>''").fetchall():
+                a = row['addr']
+                if re.search(r'[א-ת]', a):
+                    continue
+                segs = a.split(' ::: '); changed = False; out = []
+                for s in segs:
+                    st = s.strip()
+                    if US_CITY.search(st) and re.search(r',?\s*IL\s*$', st):
+                        st = re.sub(r',?\s*IL\s*$', ', US', st); changed = True
+                    out.append(st)
+                if changed:
+                    con.execute("UPDATE donors SET addr=? WHERE id=?", (' ::: '.join(out), row['id']))
+                    ni += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('addrfix_v2')")
+            print(f'  תיקון כתובות: {nf} דביקות, {ni} IL→US')
     except Exception as e:
         print('  שגיאת תיקון כתובות:', e)
     # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
