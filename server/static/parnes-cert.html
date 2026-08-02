@@ -45,6 +45,8 @@
     .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
     .noprint{display:none}
     [contenteditable]:focus{background:none;box-shadow:none}
+    [contenteditable]:empty:before{content:''}
+    [contenteditable]:empty{display:none}
   }
 </style>
 </head>

@@ -8,7 +8,7 @@ function donorTotals(d){
   return {all,year};
 }
 const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
-function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];if(n===15)return 'טו';if(n===16)return 'טז';return (tens[Math.floor(n/10)]||'')+(ones[n%10]||'');}
+function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
@@ -69,7 +69,7 @@ function render(){
   if(tab==='donors') return renderDonors();
   if(tab==='tasks') return renderTasksTab();
   if(tab==='kvittel') return renderKvittel();
-  if(tab==='parnes') return plaque?renderPlaque():renderParnes();
+  if(tab==='parnes') return renderParnes();
   if(tab==='charges') return renderCharges();
   if(tab==='avreich') return renderAvreich();
   if(tab==='missed') return renderMissed();
@@ -159,7 +159,7 @@ function openNewDonor(){
     if(amt){
       const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date});
       nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,hmonth:dr.hmonth});
-      if(dayKind){const hm=document.getElementById('nd_hm').value,hd=+document.getElementById('nd_hd').value,dtext=heDay(hd)+"' "+hm;const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});}
+      if(dayKind){const hm=document.getElementById('nd_hm').value,hd=+document.getElementById('nd_hd').value,dtext=heDay(hd)+" "+hm;const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});}
     }
     toast('נוצר כרטיס ✓'); openDonor(nd, amt?'donations':'details');
   };
@@ -313,7 +313,7 @@ function cardDonations(d,body){
       dayKind=catSel.options[catSel.selectedIndex].dataset.day;
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
     if(amt&&!dayKind){const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method,date,hmonth:r.hmonth});}
-    if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,dtext=heDay(hd)+"' "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});}
+    if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,dtext=heDay(hd)+" "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});}
     if(pray){const tr=tier||d.tier||'';const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:pray,tier:tr});}
     document.getElementById('dn_amt').value='';document.getElementById('dn_pray').value='';
     renderDonations(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
@@ -479,8 +479,9 @@ const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוק
 function openParnesCert(d,p){
   if(!p)return;
   const date=(p.date_text||'')+(HEBYEAR?(' '+HEBYEAR):'');
-  const names=(d.prayers&&d.prayers[0]?d.prayers[0].text:'');
-  const params=new URLSearchParams({kind:p.kind||'parnes',date,names,req:p.dedication||''});
+  // השמות/הנוסח פעם אחת בגדול — עדיפות לשם התפילה, אחרת ההקדשה
+  const names=(d.prayers&&d.prayers[0]&&d.prayers[0].text)||p.dedication||'';
+  const params=new URLSearchParams({kind:p.kind||'parnes',date,names});
   window.open('/parnes-cert?'+params.toString(),'_blank');
 }
 function renderParnesEdit(d){
@@ -576,7 +577,7 @@ function renderParnes(){
 }
 function renderDayPanel(taken){
   const panel=document.getElementById('daypanel');if(!panel)return;
-  const t=taken[pyMonth+'|'+pyDay],dtext=heDay(pyDay)+"' "+pyMonth;
+  const t=taken[pyMonth+'|'+pyDay],dtext=heDay(pyDay)+" "+pyMonth;
   if(t){
     const sugg=t.status==='suggested';
     panel.innerHTML=`<div class="sec"><h3>${sugg?'🔵 הצעה':'🟢 מאושר'} · ${esc(dtext)}</h3>
