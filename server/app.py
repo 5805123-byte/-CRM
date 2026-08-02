@@ -165,6 +165,14 @@ def ensure_schema():
             print(f'  תיקון כתובות: {nf} דביקות, {ni} IL→US')
     except Exception as e:
         print('  שגיאת תיקון כתובות:', e)
+    # ניקוי הקדשות פרנס שקיבלו בטעות את שם הקטגוריה (במקום להישאר ריק לשמות התעודה)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_ded_clean'").fetchone():
+            con.execute("""UPDATE parnes SET dedication='' WHERE TRIM(dedication) IN
+                           ('חדר קפה','פרנס קפה','ארוחת בוקר','פרנס לילה','פרנס יום','קפה','בוקר','לילה')""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_ded_clean')")
+    except Exception: pass
     # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
