@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '';
+let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last';
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
 function donorTotals(d){
   let all=0,year=0;
@@ -42,9 +42,18 @@ function openRemPopup(){
 
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function norm(s){return (s||'').replace(/["'`]/g,'').replace(/\s+/g,' ').trim();}
+function dupKey(d){return norm((d.last||'')+' '+(d.first||'')).replace(/[-־]/g,'');}
+function findDupes(){const g={};DB.forEach(d=>{const k=dupKey(d);if(!k)return;(g[k]=g[k]||[]).push(d);});return Object.values(g).filter(a=>a.length>1);}
+// פרנס "פתוח" = הלילה עדיין לא עבר, או שעבר אך טרם שולם. הירח נעלם רק כשהלילה עבר וגם שולם.
+function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>!(p.night_date&&p.night_date<t&&+p.paid));}
 function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1300);}
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
+// הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
+function fixedAmt(d){
+  if(d.tier==='יששכר_זבולון'){const s=(d.partners||[]).filter(p=>p.active!=0).reduce((a,p)=>a+amtNum(p.amount),0);if(s)return curSym(d)+s;}
+  if(d.category==='קבוע'&&amtNum(d.amount))return curSym(d)+amtNum(d.amount);
+  return '';}
 function matchQ(s){return !q?true:norm(s).includes(norm(q));}
 
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
@@ -94,17 +103,55 @@ function renderDonors(){
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
   let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english));
-  if(flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
-  view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button><div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
+  if(donSort==='new'||flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
+  else if(donSort==='amt') list=list.slice().sort((a,b)=>donorTotals(b).all-donorTotals(a).all);
+  else list=list.slice().sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  const ndup=findDupes().length;
+  view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
+    ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
+    <div class="avbar"><select id="donsort" class="avsortsel">
+      <option value="last">מיון: שם (א-ב)</option>
+      <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
+      <option value="new">מיון: נוספו לאחרונה</option>
+    </select></div>
+    <div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
     <div class="rowc" data-id="${d.id}">
-      <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span></div>
+      <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span>${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}</div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
       ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${d.parnes&&d.parnes.length?'<span class="pill py">🌙</span>':''}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
+      <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
+  const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
+  const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
+}
+function openDupes(){
+  const paint=()=>{
+    const gs=findDupes();
+    const score=d=>((d.donations||[]).length*3+(d.partners||[]).length*3+(d.parnes||[]).length*2+(d.phone?1:0)+(d.email?1:0)+(amtNum(d.amount)?1:0)+(d.category?1:0)+(d.english?1:0));
+    sheet.innerHTML=`<button class="x" id="cx">✕</button>
+      <h2>🔀 מיזוג כרטיסים כפולים</h2>
+      <div class="hintxt">${gs.length?'בחר את הכרטיס להשאיר (מסומן אוטומטית המלא ביותר) — כל התרומות, הפרנס והאברכים יעברו אליו, והכפול יימחק.':'לא נמצאו כפולים 🎉'}</div>
+      <div id="dupwrap">${gs.map((grp,gi)=>{const best=grp.slice().sort((a,b)=>score(b)-score(a))[0];
+        return `<div class="dupgrp"><div class="dupname">${esc(grp[0].last+' '+grp[0].first)}</div>${grp.map(d=>{
+          const nd=(d.donations||[]).length,np=(d.partners||[]).length,npar=(d.parnes||[]).length;
+          return `<label class="dupcard"><input type="radio" name="keep${gi}" value="${d.id}" ${d.id===best.id?'checked':''}>
+            <div class="dupinfo"><b>כרטיס #${d.id}</b> ${catPill(d.category)} ${pill(d.tier)}${d.id===best.id?' <span class="dupkeep">מומלץ להשאיר</span>':''}
+            <div class="dupmeta">${d.phone?('📞 '+esc(d.phone)+' '):''}${d.email?('✉️ '+esc(d.email)+' '):''}${amtNum(d.amount)?('💵 '+esc(d.amount)+' '):''}${d.english?('· '+esc(d.english)):''}</div>
+            <div class="dupmeta">${nd} תרומות · ${npar} פרנס · ${np} אברכים</div></div></label>`;
+        }).join('')}<button class="btn sm dupmerge" data-gi="${gi}">מזג ✓</button></div>`;
+      }).join('')||'<div class="empty">אין כפולים</div>'}</div>`;
+    sheet.querySelectorAll('.dupmerge').forEach(b=>b.onclick=async()=>{
+      const gi=b.dataset.gi,grp=findDupes()[gi];if(!grp)return;
+      const sel=sheet.querySelector(`input[name="keep${gi}"]:checked`);if(!sel){toast('בחר כרטיס להשאיר');return;}
+      const keep=+sel.value,drops=grp.filter(d=>d.id!==keep);
+      for(const dr of drops){await api('POST','/api/merge',{keep,drop:dr.id});}
+      toast('מוזג ✓');await load();paint();});
+    document.getElementById('cx').onclick=()=>ov.classList.remove('show');
+  };
+  paint(); ov.classList.add('show');
 }
 function openNewDonor(onCreate){
   cardTab='details';
@@ -489,7 +536,9 @@ function openParnesCert(d,p){
 }
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
-  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><div class="txctl"><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
+  const tdy=todayStr();
+  el.innerHTML=(d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy;return `<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'שולם ✓':'לא שולם'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>';
+  el.querySelectorAll('.pypaid').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});renderParnesEdit(d);toast(+p.paid?'סומן כשולם ✓':'בוטל הסימון');});
   el.querySelectorAll('.pycert').forEach(b=>b.onclick=()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);openParnesCert(d,p);});
   el.querySelectorAll('.pypic').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.photo=p.photo==='sent'?'':'sent';await api('PUT','/api/parnes/'+p.id,{photo:p.photo});renderParnesEdit(d);toast(p.photo==='sent'?'סומן — תמונת הקדשה נשלחה ✓':'בוטל הסימון');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.del);await api('DELETE','/api/parnes/'+b.dataset.del);d.parnes=d.parnes.filter(x=>x.id!=b.dataset.del);if(p){const note='פרנס יום '+(p.date_text||'')+' — הכן הדפסה וצור קשר';d.tasks=(d.tasks||[]).filter(x=>!(x.kind==='parnes'&&x.note===note));}checkReminders();renderParnesEdit(d);});
@@ -643,35 +692,82 @@ function renderMissed(){
 }
 
 /* ---------- אברכים (יששכר־זבולון) ---------- */
-let avView='cards';
-function renderAvTable(izd){
-  const rows=[];izd.forEach(d=>{const act=(d.partners||[]).filter(p=>p.active!=0);if(act.length)act.forEach(p=>rows.push({d,p}));else rows.push({d,p:null});});
-  view.innerHTML=`<div class="avbar"><button class="back" id="avcards">→ חזרה לעריכה</button><b style="margin-inline-start:8px">טבלת יששכר־זבולון (${rows.length})</b><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
-    <div style="overflow-x:auto"><table class="avtable"><thead><tr><th>תורם (זבולון)</th><th>אברך</th><th>תאריך התחלה</th><th>סכום</th><th>הערות</th></tr></thead>
-    <tbody>${rows.map(({d,p})=>`<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(p?(p.note||''):'')}</td></tr>`).join('')}</tbody></table></div>`;
+let avView='cards', avSort='last', avSearch='';
+function avFirstAvreich(d){return ((d.partners||[]).filter(p=>p.active!=0)[0]||{}).avreich||'';}
+function avSumAmt(d){return (d.partners||[]).filter(p=>p.active!=0).reduce((s,p)=>s+amtNum(p.amount),0);}
+function sortIZ(list){const s=list.slice();
+  if(avSort==='av') s.sort((a,b)=>(avFirstAvreich(a)||'תתת').localeCompare(avFirstAvreich(b)||'תתת','he'));
+  else if(avSort==='amt') s.sort((a,b)=>avSumAmt(b)-avSumAmt(a));
+  else s.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  return s;}
+function filterIZ(){const nq=norm(avSearch);
+  return sortIZ(DB.filter(d=>d.tier==='יששכר_זבולון')
+    .filter(d=>matchQ(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')))
+    .filter(d=>!nq||norm(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')).includes(nq)));}
+function renderAvTable(){
+  view.innerHTML=`<div class="avbar noprint">
+      <button class="back" id="avcards">→ חזרה לעריכה</button>
+      <input id="avtsearch" class="avsearch" placeholder="🔍 חפש תורם או אברך…" value="${esc(avSearch)}" autocomplete="off">
+      <select id="avtsort" class="avsortsel">
+        <option value="last">מיון: תורם (א-ב)</option>
+        <option value="av">מיון: אברך (א-ב)</option>
+        <option value="amt">מיון: סכום (גבוה→נמוך)</option>
+      </select>
+      <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div class="avtabtitle"><b id="avttl"></b></div>
+    <div style="overflow-x:auto"><table class="avtable"><thead><tr>
+      <th class="avsort-th" data-s="last">תורם (זבולון)</th><th class="avsort-th" data-s="av">אברך</th>
+      <th>תאריך התחלה</th><th class="avsort-th" data-s="amt">סכום</th><th>הערות</th></tr></thead>
+    <tbody id="avtbody"></tbody></table></div>`;
+  const sortSel=document.getElementById('avtsort'); sortSel.value=avSort;
+  function paintRows(){
+    const izd=filterIZ();const rows=[];izd.forEach(d=>{const act=(d.partners||[]).filter(p=>p.active!=0);if(act.length)act.forEach(p=>rows.push({d,p}));else rows.push({d,p:null});});
+    document.getElementById('avttl').textContent=`טבלת יששכר־זבולון (${rows.length})`;
+    document.getElementById('avtbody').innerHTML=rows.map(({d,p})=>`<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(p?(p.note||''):'')}</td></tr>`).join('');
+    view.querySelectorAll('.avsort-th').forEach(th=>th.classList.toggle('on',th.dataset.s===avSort));
+  }
   document.getElementById('avcards').onclick=()=>{avView='cards';render();};
+  document.getElementById('avtsearch').oninput=e=>{avSearch=e.target.value;paintRows();};
+  sortSel.onchange=()=>{avSort=sortSel.value;paintRows();};
+  view.querySelectorAll('.avsort-th').forEach(th=>th.onclick=()=>{avSort=th.dataset.s;sortSel.value=avSort;paintRows();});
+  paintRows();
 }
 function renderAvreich(){
   chips.innerHTML='';
-  let izd=DB.filter(d=>d.tier==='יששכר_זבולון').filter(d=>matchQ(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')));
-  izd.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
-  if(avView==='table') return renderAvTable(izd);
+  if(avView==='table') return renderAvTable();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
-  view.innerHTML=`<div class="avbar"><button class="btn sm" id="avtablebtn">🖨️ טבלה מסודרת להדפסה</button></div>
-    <div class="cnt">${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות</div>
-    <div class="avlist">${izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
+  view.innerHTML=`<div class="avbar">
+      <input id="avsearch" class="avsearch" placeholder="🔍 חפש תורם או אברך…" value="${esc(avSearch)}" autocomplete="off">
+      <select id="avsort" class="avsortsel">
+        <option value="last">מיון: תורם (א-ב)</option>
+        <option value="av">מיון: אברך (א-ב)</option>
+        <option value="amt">מיון: סכום (גבוה→נמוך)</option>
+      </select>
+      <button class="btn sm" id="avtablebtn">🖨️ טבלה</button></div>
+    <div class="cnt" id="avcnt"></div>
+    <div class="avlist" id="avlistwrap"></div>`;
+  const sortSel=document.getElementById('avsort'); sortSel.value=avSort;
+  const searchEl=document.getElementById('avsearch');
+  function paintList(){
+    const izd=filterIZ();
+    document.getElementById('avcnt').innerHTML=`${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות`;
+    document.getElementById('avlistwrap').innerHTML=izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
       return `<div class="avrow"><div class="avtop"><b>${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
         <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
         <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button>
-        <div class="avfiles">${(d.files||[]).map(fileChip).join('')}<label class="filebtn">📎 העלה שטר הסכם (PDF)<input type="file" accept="application/pdf,image/*" class="izupload" data-id="${d.id}" hidden></label></div></div>`;}).join('')||'<div class="empty">אין תורמי יששכר־זבולון</div>'}</div>`;
+        <div class="avfiles">${(d.files||[]).map(fileChip).join('')}<label class="filebtn">📎 העלה שטר הסכם (PDF)<input type="file" accept="application/pdf,image/*" class="izupload" data-id="${d.id}" hidden></label></div></div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
+    view.querySelectorAll('.izupload').forEach(inp=>inp.onchange=()=>uploadFile('iz',+inp.dataset.id,inp,load));
+    view.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
+    view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+    view.querySelectorAll('.avpay').forEach(b=>b.onclick=()=>showPayments(DB.find(x=>x.id==b.dataset.id)));
+    view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
+    view.querySelectorAll('.avadd').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id),today=todayStr();const r=await api('POST','/api/partner',{donor_id:d.id,avreich:'',start_date:today});d.partners=d.partners||[];d.partners.push({id:r.id,donor_id:d.id,avreich:'',start_date:today,amount:'',note:'',active:1});renderAvreich();});
+    bindAvFields();
+  }
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
-  view.querySelectorAll('.izupload').forEach(inp=>inp.onchange=()=>uploadFile('iz',+inp.dataset.id,inp,load));
-  view.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
-  view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
-  view.querySelectorAll('.avpay').forEach(b=>b.onclick=()=>showPayments(DB.find(x=>x.id==b.dataset.id)));
-  view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
-  view.querySelectorAll('.avadd').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id),today=todayStr();const r=await api('POST','/api/partner',{donor_id:d.id,avreich:'',start_date:today});d.partners=d.partners||[];d.partners.push({id:r.id,donor_id:d.id,avreich:'',start_date:today,amount:'',note:'',active:1});renderAvreich();});
-  bindAvFields();
+  searchEl.oninput=()=>{avSearch=searchEl.value;paintList();};
+  sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
+  paintList();
 }
 function avPartnerRow(p){
   return `<div class="avp" data-pid="${p.id}">

@@ -6,7 +6,7 @@ from urllib.parse import quote
 def today_iso():
     return datetime.date.today().isoformat()
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before, greg_to_heb_monthyear, current_heb_year
+from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
@@ -47,6 +47,16 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN photo TEXT")
     except Exception: pass
+    try: con.execute("ALTER TABLE parnes ADD COLUMN paid INTEGER DEFAULT 0")
+    except Exception: pass
+    try: con.execute("ALTER TABLE parnes ADD COLUMN night_date TEXT")
+    except Exception: pass
+    # מילוי תאריך לועזי של הלילה (לצורך היעלמות סימון הירח אחרי שהלילה עבר ושולם)
+    try:
+        for row in con.execute("SELECT id,date_text FROM parnes WHERE COALESCE(night_date,'')=''").fetchall():
+            g = heb_to_greg(row['date_text'])
+            if g: con.execute("UPDATE parnes SET night_date=? WHERE id=?", (g.isoformat(), row['id']))
+    except Exception: pass
     for col in ('created', 'source', 'region', 'country', 'zip', 'city'):
         try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
         except Exception: pass
@@ -54,6 +64,19 @@ def ensure_schema():
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
+    except Exception: pass
+    # השלמת דרגת יששכר־זבולון לתורמים שהיו ברשימה אך לא סומנו (מקור אמת: iz_seed.json + כל מי שיש לו אברך)
+    try:
+        con.execute("""UPDATE donors SET tier='יששכר_זבולון'
+                       WHERE id IN (SELECT donor_id FROM partners)
+                       AND COALESCE(tier,'')<>'יששכר_זבולון'""")
+        seed_path = os.path.join(HERE, 'iz_seed.json')
+        if os.path.exists(seed_path):
+            for rec in json.load(open(seed_path, encoding='utf-8')):
+                # התאמה לפי מזהה + שם משפחה כדי לא לפגוע בכרטיס אחר אם המזהים שונים
+                con.execute("""UPDATE donors SET tier='יששכר_זבולון'
+                               WHERE id=? AND last=? AND COALESCE(tier,'')<>'יששכר_זבולון'""",
+                            (rec.get('id'), rec.get('last', '')))
     except Exception: pass
     # תיקון מיקוד ארה"ב שאיבד את האפס המוביל (07666 שנשמר כ-7666). כל מיקוד אמריקאי בן 4 ספרות חסר אפס.
     try:
@@ -246,7 +269,7 @@ class H(BaseHTTPRequestHandler):
             b = self._body(); pid = int(m.group(1))
             con = db()
             sets=[];vals=[]
-            for k in ('day','month','date_text','amount','dedication','kind','status','photo'):
+            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE parnes SET "+",".join(sets)+" WHERE id=?", vals+[pid])
@@ -328,6 +351,43 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/merge':
+            # מיזוג שני כרטיסים כפולים: keep=הכרטיס שנשאר, drop=הכרטיס שנמחק
+            try:
+                keep = int(b.get('keep')); drop = int(b.get('drop'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'keep/drop required'})
+            if keep == drop:
+                return self._send(400, {'error': 'same id'})
+            con = db(); cur = con.cursor()
+            k = cur.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
+            d = cur.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
+            if not k or not d:
+                con.close(); return self._send(404, {'error': 'donor not found'})
+            # העברת כל רשומות הבן מהכרטיס הנמחק לכרטיס שנשאר
+            for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks', 'partners', 'transactions'):
+                try: cur.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                except Exception: pass
+            try: cur.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
+            except Exception: pass
+            # השלמת שדות ריקים בכרטיס שנשאר מתוך הכרטיס הנמחק; מיזוג טלפונים ייחודיים
+            kd = dict(k); dd = dict(d); sets = []; vals = []
+            for col in ('first', 'english', 'business', 'email', 'addr', 'tier', 'category',
+                        'purpose', 'amount', 'region', 'country', 'zip', 'city'):
+                if col in kd and not (kd.get(col) or '').strip() and (dd.get(col) or '').strip():
+                    sets.append(f"{col}=?"); vals.append(dd[col])
+            kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
+            for p in re.split(r'[/,]', dd.get('phone') or ''):
+                p = p.strip()
+                if p and p not in kp: kp.append(p)
+            merged_phone = ' / '.join(kp)
+            if merged_phone != (kd.get('phone') or ''):
+                sets.append("phone=?"); vals.append(merged_phone)
+            if sets:
+                cur.execute("UPDATE donors SET " + ",".join(sets) + " WHERE id=?", vals + [keep])
+            cur.execute("DELETE FROM donors WHERE id=?", (drop,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'keep': keep, 'dropped': drop})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
@@ -336,8 +396,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status) VALUES(?,?,?,?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed')))
+            _ng = heb_to_greg(b.get('date_text', ''))
+            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else ''))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
             tid = None

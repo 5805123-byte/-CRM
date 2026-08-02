@@ -85,7 +85,23 @@
   .avtable th,.avtable td{border:1px solid var(--line);padding:8px 10px;text-align:start}
   .avtable th{background:var(--gold-soft);color:var(--gold);font-weight:800}
   .avtable tr:nth-child(even) td{background:var(--ground)}
+  .avsort-th{cursor:pointer;user-select:none}
+  .avsort-th:hover{background:var(--gold)}
+  .avsort-th.on::after{content:' ⬇';font-size:.8em}
+  .avtabtitle{margin:6px 0;font-size:1rem}
   @media print{.avbar{display:none!important}.avtable{font-size:11pt}}
+  .avsearch{flex:1;min-width:120px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-family:inherit;font-size:.9rem}
+  .avsortsel{padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-family:inherit;font-size:.85rem;font-weight:600}
+  .fixamt{display:inline-block;margin-inline-start:8px;background:#e8f5e9;color:#1b7a3d;border-radius:8px;padding:1px 8px;font-size:.78rem;font-weight:800;vertical-align:middle}
+  .dupbtn{background:#fff3e0;color:#b5641a;border:1px solid #e6b877;margin-top:8px;font-weight:800}
+  .dupgrp{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;background:var(--card)}
+  .dupname{font-weight:900;font-size:1.05rem;margin-bottom:8px}
+  .dupcard{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:var(--ground)}
+  .dupcard input{margin-top:4px}
+  .dupinfo{flex:1}
+  .dupmeta{color:var(--muted);font-size:.82rem;margin-top:3px;direction:ltr;text-align:start}
+  .dupkeep{background:#e8f5e9;color:#1b7a3d;border-radius:7px;padding:1px 7px;font-size:.72rem;font-weight:800}
+  .dupmerge{background:var(--accent);color:#fff;font-weight:800}
   .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
   .chip{background:var(--card);border:1px solid var(--line);color:var(--muted);font-size:.83rem;font-weight:600;padding:6px 12px;border-radius:99px;cursor:pointer}
   .chip.on{background:var(--accent);color:#fff;border-color:transparent}
