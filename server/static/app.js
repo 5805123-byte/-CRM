@@ -502,8 +502,12 @@ function renderCharges(){
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
   const act=(d.partners||[]).filter(p=>p.active!=0);
-  el.innerHTML=act.map(p=>`<div class="pledge"><div class="pi">👨‍🎓 <b>${esc(p.avreich||'—')}</b>${p.amount?(' · <b style="color:var(--yes)">$'+esc(p.amount)+'</b>'):''}${p.start_date?('<br><small>'+esc(p.start_date)+'</small>'):''}${p.note?('<br><small>'+esc(p.note)+'</small>'):''}</div><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין לא הוזן. ניהול מלא בלשונית "יששכר־זבולון".</div>';
+  const izfiles=(d.files||[]).filter(f=>f.kind==='iz'||!f.kind);
+  el.innerHTML=act.map(p=>`<div class="pledge"><div class="pi">👨‍🎓 <b>${esc(p.avreich||'—')}</b>${p.amount?(' · <b style="color:var(--yes)">'+curSym(d)+esc(p.amount)+'</b>'):''}${p.start_date?('<br><small>📅 מתאריך: '+esc(p.start_date)+'</small>'):''}${p.note?('<br><small>'+esc(p.note)+'</small>'):''}</div><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">עדיין לא הוזן. ניהול מלא בלשונית "יששכר־זבולון".</div>';
+  el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📄 שטר שותפות:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/partner/'+b.dataset.del);d.partners=d.partners.filter(x=>x.id!=b.dataset.del);renderPartners(d);});
+  el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);d.files=(d.files||[]).filter(x=>x.id!=b.dataset.fid);renderPartners(d);toast('נמחק');});
+  const up=el.querySelector('.pshtar');if(up)up.onchange=()=>uploadFile('iz',d.id,up,load);
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
@@ -717,13 +721,13 @@ function renderAvTable(){
     <div class="avtabtitle"><b id="avttl"></b></div>
     <div style="overflow-x:auto"><table class="avtable"><thead><tr>
       <th class="avsort-th" data-s="last">תורם (זבולון)</th><th class="avsort-th" data-s="av">אברך</th>
-      <th>תאריך התחלה</th><th class="avsort-th" data-s="amt">סכום</th><th>הערות</th></tr></thead>
+      <th>תאריך התחלה</th><th class="avsort-th" data-s="amt">סכום</th><th>שטר</th><th>הערות</th></tr></thead>
     <tbody id="avtbody"></tbody></table></div>`;
   const sortSel=document.getElementById('avtsort'); sortSel.value=avSort;
   function paintRows(){
     const izd=filterIZ();const rows=[];izd.forEach(d=>{const act=(d.partners||[]).filter(p=>p.active!=0);if(act.length)act.forEach(p=>rows.push({d,p}));else rows.push({d,p:null});});
     document.getElementById('avttl').textContent=`טבלת יששכר־זבולון (${rows.length})`;
-    document.getElementById('avtbody').innerHTML=rows.map(({d,p})=>`<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(p?(p.note||''):'')}</td></tr>`).join('');
+    document.getElementById('avtbody').innerHTML=rows.map(({d,p})=>{const izf=(d.files||[]).filter(f=>f.kind==='iz'||!f.kind);const shtar=izf.length?`<a href="/api/file/${izf[0].id}" target="_blank" rel="noopener">📄 צפה</a>`:'';return `<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${shtar}</td><td>${esc(p?(p.note||''):'')}</td></tr>`;}).join('');
     view.querySelectorAll('.avsort-th').forEach(th=>th.classList.toggle('on',th.dataset.s===avSort));
   }
   document.getElementById('avcards').onclick=()=>{avView='cards';render();};
