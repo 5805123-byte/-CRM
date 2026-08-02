@@ -16,6 +16,7 @@
     box-shadow:0 10px 40px rgba(0,0,0,.25);
     -webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .content{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden}
+  #cbody{width:100%;display:flow-root}
   /* גדלים יחסיים ל-font-size של .content שנקבע אוטומטית למילוי הדף */
   .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
   .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;width:100%}
@@ -77,10 +78,12 @@ $('sheet').style.backgroundImage = `url("${cfg.bg}")`;
 Object.assign($('content').style, {top:cfg.top, left:cfg.left, right:cfg.right, bottom:cfg.bottom});
 
 function fit(){
-  const c = $('content'); const avail = c.clientHeight; if(!avail) return;
+  const c = $('content'), body = document.getElementById('cbody');
+  const avail = c.clientHeight - 8; if(avail<=0 || !body) return;  // שוליים קטנים לקצוות
   let lo=6, hi=380, best=6;
-  for(let i=0;i<22;i++){ const mid=(lo+hi)/2; c.style.fontSize=mid+'px';
-    if(c.scrollHeight <= avail){ best=mid; lo=mid; } else { hi=mid; } }
+  for(let i=0;i<24;i++){ const mid=(lo+hi)/2; c.style.fontSize=mid+'px';
+    // מדידת גובה העוטף הפנימי — לא scrollHeight (שנחסם ע"י גובה המסגרת)
+    if(body.getBoundingClientRect().height <= avail){ best=mid; lo=mid; } else { hi=mid; } }
   c.style.fontSize=best+'px';
 }
 const wire = el => el.querySelectorAll('[contenteditable]').forEach(e=>e.addEventListener('input', fit));
@@ -90,21 +93,24 @@ if(KIND==='coffee' || KIND==='breakfast'){
   $('addBtn').style.display='none';
   const dedic = KIND==='breakfast' ? 'ארוחת בוקר היום נתרמה לזכות' : 'הקפה החלב שתיה חמה ועוגיות נתרמו לזכות';
   $('content').innerHTML =
-    `<div class="cdate" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
+    `<div id="cbody">
+     <div class="cdate" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
      <div class="ctitle">פרנס יום</div>
      <div class="cdedic" contenteditable="true" id="c_dedic">${dedic}</div>
      <div class="cnames" contenteditable="true" id="c_names" data-ph="השמות"></div>
-     <div class="cclose">ולזכות התורם ובנ"ב שיצליחו בכל מעשה ידיהם וירוו נחת דקדושה מכל יוצאי חלציהם</div>`;
+     </div>`;
   if(q.get('date')) $('c_date').textContent=q.get('date');
   if(q.get('names')) $('c_names').textContent=q.get('names');
   wire($('content'));
 } else {
   // ----- תעודת פרנס לילה -----
   $('content').innerHTML =
-    `<div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
+    `<div id="cbody">
+     <div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
      <div class="date" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
      <div class="stand">יהיו ויעמדו לזכות</div>
-     <div id="pairs"></div>`;
+     <div id="pairs"></div>
+     </div>`;
   if(q.get('date')) $('c_date').textContent=q.get('date');
   $('c_date').addEventListener('input', fit);
   window.addPair = function(name){
