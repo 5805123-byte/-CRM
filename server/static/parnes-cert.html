@@ -23,8 +23,11 @@
   .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
   .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;letter-spacing:.02em;width:100%}
   .stand{font-size:1em;font-weight:600;margin-bottom:.15em;width:100%}
-  .names{font-size:2.7em;font-weight:800;line-height:1.15;color:#000;margin:.15em 0 .4em;width:100%}
-  .req{font-size:1em;line-height:1.45;font-weight:600;width:100%}
+  .pair{width:100%;margin:.15em 0 .35em}
+  .names{font-size:2.3em;font-weight:800;line-height:1.14;color:#000;width:100%}
+  .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
+  .pair .rm{display:none}
+  @media screen{.pair{position:relative}.pair .rm{display:block;position:absolute;inset-inline-start:-1.6em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.pair .rm:hover{opacity:1}}
   [contenteditable]{outline:none;border-radius:6px;transition:background .15s}
   [contenteditable]:focus{background:rgba(156,122,46,.14);box-shadow:0 0 0 2px var(--gold)}
   [contenteditable]:empty:before{content:attr(data-ph);color:#b3a884;font-weight:400}
@@ -48,31 +51,45 @@
     <div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
     <div class="date" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
     <div class="stand">יהיו ויעמדו לזכות</div>
-    <div class="names" contenteditable="true" id="c_names" data-ph="השמות"></div>
-    <div class="req" contenteditable="true" id="c_req" data-ph="הבקשה"></div>
+    <div id="pairs"></div>
   </div>
 </div></div>
 
 <div class="noprint">
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
+  <button class="g" id="addBtn">➕ הוסף שם ובקשה</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
-  <div class="tip">מלא תאריך, שמות ובקשה — הגופן גדל אוטומטית וממלא את כל הדף. השמות ענקיים ומודגשים.</div>
+  <div class="tip">מלא תאריך, שם ובקשה. אפשר להוסיף כמה שמות — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
 </div>
 
 <script>
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
-const set=(id,v)=>{ if(v) $(id).textContent=v; };
-set('c_date', q.get('date'));
-set('c_names', q.get('names'));
-set('c_req', q.get('req'));
 
-// התאמת גודל הגופן כדי למלא את כל אזור הכתיבה — אותיות ענקיות ככל האפשר
+function addPair(name, req){
+  const wrap=document.createElement('div'); wrap.className='pair';
+  wrap.innerHTML='<button class="rm" title="הסר">✕</button>'+
+    '<div class="names" contenteditable="true" data-ph="השם"></div>'+
+    '<div class="req" contenteditable="true" data-ph="הבקשה"></div>';
+  if(name) wrap.querySelector('.names').textContent=name;
+  if(req) wrap.querySelector('.req').textContent=req;
+  wrap.querySelector('.rm').onclick=()=>{ wrap.remove(); fit(); };
+  wrap.querySelectorAll('[contenteditable]').forEach(e=>e.addEventListener('input', fit));
+  $('pairs').appendChild(wrap);
+  fit();
+}
+
+if(q.get('date')) $('c_date').textContent=q.get('date');
+$('c_date').addEventListener('input', fit);
+// שם/בקשה ראשונים מהכרטיס; אפשר להוסיף עוד ידנית
+addPair(q.get('names')||'', q.get('req')||'');
+
+// התאמת גודל הגופן כדי למלא את כל אזור הכתיבה — לפי כמות הטקסט
 function fit(){
   const c = $('content');
   const avail = c.clientHeight;
   if(!avail) return;
-  let lo=8, hi=380, best=8;
+  let lo=6, hi=380, best=6;
   for(let i=0;i<22;i++){
     const mid=(lo+hi)/2;
     c.style.fontSize=mid+'px';
@@ -80,9 +97,9 @@ function fit(){
   }
   c.style.fontSize=best+'px';
 }
-fit();
+$('addBtn').onclick=()=>addPair('','');
 window.addEventListener('resize', fit);
-['c_date','c_names','c_req'].forEach(id=>$(id).addEventListener('input', fit));
+fit();
 </script>
 </body>
 </html>
