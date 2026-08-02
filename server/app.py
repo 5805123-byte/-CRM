@@ -96,11 +96,15 @@ def ensure_schema():
     # השלמת אברכי יששכר־זבולון חסרים (חד-פעמי) — מרשימת האברכים המלאה ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
-        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v5'").fetchone()
+        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v6'").fetchone()
         pseed = os.path.join(HERE, 'partners_iz_seed.json')
         if not done and os.path.exists(pseed):
             # ניקוי איות הפוך "כהן ציון" מגרסאות קודמות (הקנוני הוא "ציון כהן")
             con.execute("DELETE FROM partners WHERE TRIM(avreich)='כהן ציון' AND donor_id IN (335,336,337)")
+            # עדכון הסכום המשותף של ציון כהן ל-$1400 (3 האחים מיטמן ביחד)
+            con.execute("""UPDATE partners SET amount='1400',
+                           note='מוחזק במשותף ע"י 3 האחים מיטמן (אפרים, מאיר, גבריאל) — סה"כ $1400'
+                           WHERE TRIM(avreich)='ציון כהן' AND donor_id IN (335,336,337)""")
             na = 0
             for rec in json.load(open(pseed, encoding='utf-8')):
                 did = rec.get('donor_id'); av = (rec.get('avreich') or '').strip()
@@ -115,7 +119,7 @@ def ensure_schema():
                 con.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active) VALUES(?,?,?,?,?,1)",
                             (did, av, rec.get('start', ''), rec.get('amount', ''), rec.get('note', '')))
                 na += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('partners_iz_v5')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('partners_iz_v6')")
             print(f'  השלמת אברכים: נוספו {na} אברכים')
     except Exception as e:
         print('  שגיאת השלמת אברכים:', e)
