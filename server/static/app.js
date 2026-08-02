@@ -217,13 +217,12 @@ function cardDonations(d,body){
       <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="שבועי">שבועי</option><option value="קוויטל_כללי">כללי</option></select></label>
       <button class="btn" id="dn_add">➕ רשום תרומה</button>
       ${d.channel?`<div class="hintxt">ערוץ קבוע בתיק: ${esc(d.channel)}</div>`:''}</div>
-    <div class="sec"><h3>📜 היסטוריית תרומות</h3>
-      <div class="totals"><div class="tot"><span>סה"כ שנתרם עד היום</span><b>$${tot.all}</b></div><div class="tot year"><span>סה"כ השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>$${tot.year}</b></div></div>
-      <div id="donations"></div></div>
     <div class="sec"><h3>🗓️ ימים משובצים (פרנס / קפה / בוקר)</h3><div id="parnes"></div>
       <div class="hintxt">שיבוץ ימים חדשים דרך "רישום תרומה" למעלה (בחר סוג עם יום), או בלוח פרנס יום.</div></div>
     <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
-      <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>`;
+      <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>
+    <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>$${tot.all}</b></span><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}: <b>$${tot.year}</b></span></div>
+      <div class="dnhead">📜 היסטוריית תרומות</div><div id="donations"></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderTransactions(d); renderParnesEdit(d); renderPledges(d);
   document.getElementById('tx_add').onclick=async()=>{
@@ -287,8 +286,8 @@ function fbChip(x){
   return `<span class="fbchip on">✓ פידבק · ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_date?(' · '+esc(x.fb_date)):''}${x.fb_followup?(' · 🔁 לחזור '+esc(x.fb_followup)):''}</span>`;
 }
 function dnRow(x){
-  return `<div class="plwrap"><div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div>`+
-    `<div class="txctl"><button class="btn sm ghost dnrcpt" data-id="${x.id}">🧾 קבלה</button><button class="btn sm ghost dnfb" data-id="${x.id}">${x.fb_channel?'✏️ פידבק':'＋ פידבק'}</button>${fbChip(x)}</div>`+
+  return `<div class="dncrow"><div class="dnci"><b>$${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')}${x.method?(' · '+esc(x.method)):''}</span>${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
+    `<div class="dncact"><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     `<div class="fbedit hidden" data-fb="${x.id}">
       <div class="fbrow"><select class="fb_ch">${FBOPTS.map(([v,l])=>`<option value="${v}" ${v===(x.fb_channel||'')?'selected':''}>${l}</option>`).join('')}</select><input type="date" class="fb_date" value="${esc(x.fb_date||'')}"></div>
       <input class="fb_note" placeholder="תוכן קצר (לא חובה)" value="${esc(x.fb_note||'')}">
@@ -299,7 +298,7 @@ function dnRow(x){
 function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
   const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
-  el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(dnRow).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
+  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · $${tot}</div>`:'')+(list.map(dnRow).join('')||'<div class="hintxt">עדיין אין תרומות.</div>');
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
   el.querySelectorAll('.dnfb').forEach(b=>b.onclick=()=>{el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.fb_save').forEach(b=>b.onclick=async()=>{
