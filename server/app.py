@@ -47,7 +47,7 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN photo TEXT")
     except Exception: pass
-    for col in ('created', 'source'):
+    for col in ('created', 'source', 'region'):
         try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
         except Exception: pass
     for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note'):
@@ -107,7 +107,7 @@ def get_all():
     return donors, unlinked
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
-                'category','purpose','amount','channel','pay_status','last_active','notes'}
+                'category','purpose','amount','channel','pay_status','last_active','notes','region'}
 
 KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
            'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
@@ -296,11 +296,11 @@ class H(BaseHTTPRequestHandler):
         b = self._body()
         if self.path == '/api/donor':
             con = db(); cur = con.cursor()
-            cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (b.get('last',''), b.get('first',''), b.get('english',''), b.get('business',''), b.get('phone',''),
                          b.get('email',''), b.get('addr',''), b.get('tier',''), b.get('category',''), b.get('purpose',''),
-                         b.get('amount',''), today_iso(), 'ידני'))
+                         b.get('amount',''), today_iso(), 'ידני', b.get('region','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
         if self.path == '/api/pledge':

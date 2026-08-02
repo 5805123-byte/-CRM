@@ -1,5 +1,6 @@
 'use strict';
 let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '';
+function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
 function donorTotals(d){
   let all=0,year=0;
   (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if(HEBYEAR&&(x.hmonth||'').indexOf(HEBYEAR)>=0)year+=a;});
@@ -83,10 +84,11 @@ const DFILTERS={
   'reglow':{label:'שבועי', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
+  'il':{label:'🇮🇱 ארץ ישראל', fn:d=>d.region==='il'},
   'new':{label:'🆕 נוספו', fn:d=>!!d.created},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['iz','k101','reglow','occ','klali','new',''];
+const DFORDER=['il','iz','k101','reglow','occ','klali','new',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
@@ -113,7 +115,8 @@ function openNewDonor(){
     <label class="fld"><span>שם באנגלית</span><input id="nd_english" dir="ltr" placeholder="English name"></label>
     <label class="fld"><span>טלפון</span><input id="nd_phone" dir="ltr" inputmode="tel" placeholder="+1 ..."></label>
     <div class="two"><label class="fld"><span>קטגוריה</span><select id="nd_category">${CATS.map(c=>`<option value="${c}">${c||'— ללא —'}</option>`).join('')}</select></label>
-      <label class="fld"><span>סכום קבוע ($)</span><input id="nd_amount" placeholder="0"></label></div>
+      <label class="fld"><span>אזור / מטבע</span><select id="nd_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il">🇮🇱 ארץ ישראל (₪)</option></select></label></div>
+    <label class="fld"><span>סכום קבוע</span><input id="nd_amount" placeholder="0"></label>
     <div class="sec"><button class="btn" id="nd_save" style="width:100%">✔ צור כרטיס תורם</button></div>`;
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
@@ -121,7 +124,7 @@ function openNewDonor(){
   document.getElementById('nd_last').focus();
   document.getElementById('nd_save').onclick=async()=>{
     const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
-    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),category:document.getElementById('nd_category').value,amount:g('nd_amount')};
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),category:document.getElementById('nd_category').value,region:document.getElementById('nd_region').value,amount:g('nd_amount')};
     const r=await api('POST','/api/donor',body);
     const nd={id:r.id,...body,created:todayStr(),source:'ידני',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[]};
     DB.push(nd); toast('נוצר כרטיס ✓'); openDonor(nd);
@@ -133,7 +136,7 @@ function monthGrid(m){if(!m)return '';const f=m.indexOf('p');return `<div class=
 
 let cardTab='details';
 function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
-function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category'].includes(fld)&&tab==='donors')renderDonors();};});}
+function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region'].includes(fld)&&tab==='donors')renderDonors();};});}
 
 function openDonor(d,startTab){
   cardTab=startTab||'details';
@@ -173,7 +176,8 @@ function cardDetails(d,body){
     <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d.tier)}</select></label>
       <label class="fld"><span>קטגוריה</span><select id="f_category">${sel}</select></label></div>
     <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
-    <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label>
+    <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
+      <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
     <label class="fld"><span>כתובת</span><input id="f_addr" value="${esc(d.addr)}"></label>
@@ -181,7 +185,7 @@ function cardDetails(d,body){
     ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
     <div class="sec"><button class="btn" id="f_delete" style="background:var(--no);width:100%">🗑 מחק תורם זה לצמיתות</button></div>`;
-  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','business']);
+  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','business','region']);
   renderPhones(d);
   document.getElementById('f_delete').onclick=async()=>{
     if(!confirm('למחוק את "'+(d.last+' '+d.first).trim()+'" לצמיתות?\n\nיימחקו גם כל התרומות, הקוויטל, האברכים והשטרות שלו. אי אפשר לבטל.'))return;
@@ -213,6 +217,7 @@ function cardKvittel(d,body){
 }
 function cardDonations(d,body){
   const isIZ=d.tier==='יששכר_זבולון';
+  const cur=curSym(d);
   const tot=donorTotals(d);
   body.innerHTML=`
     <div class="sec onlinebox"><h3>💳 גבייה אונליין</h3>
@@ -220,12 +225,12 @@ function cardDonations(d,body){
       <div class="obtns"><button class="btn" id="on_open">🌐 פתח דף גבייה</button>
         <button class="btn ghost" id="on_share">📤 שלח / העתק קישור אישי</button></div></div>
     <div class="sec"><h3>💳 חיובים ותשלומים</h3><div id="transactions"></div>
-      <div class="addrow"><input id="tx_amt" placeholder="סכום $" style="max-width:92px"><input id="tx_cat" placeholder="עבור מה"><button class="btn sm" id="tx_add">רשום חיוב</button></div>
+      <div class="addrow"><input id="tx_amt" placeholder="סכום ${cur}" style="max-width:92px"><input id="tx_cat" placeholder="עבור מה"><button class="btn sm" id="tx_add">רשום חיוב</button></div>
       <div class="hintxt">חיובים מהדף המקוון נכנסים כ"ממתין". עדכן סטטוס: אושר / סורב / נגבה, וסמן תשלומים ששולמו.</div></div>
     ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
     <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
-      <div class="two"><label class="fld"><span>סכום ($)</span><input id="dn_amt" placeholder="480"></label>
+      <div class="two"><label class="fld"><span>סכום (${cur})</span><input id="dn_amt" placeholder="480"></label>
         <label class="fld"><span>אמצעי</span><select id="dn_method"><option>אשראי</option><option>אונליין</option><option>המחאה</option><option>מזומן</option><option>העברה בנקאית</option><option>Banquest</option></select></label></div>
       <label class="fld"><span>סוג / עבור מה</span><select id="dn_cat">
         <option value="">— בחר —</option><option>קבוע</option><option>יששכר־זבולון</option>
@@ -245,7 +250,7 @@ function cardDonations(d,body){
       <div class="hintxt">שיבוץ ימים חדשים דרך "רישום תרומה" למעלה (בחר סוג עם יום), או בלוח פרנס יום.</div></div>
     <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>
-    <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>$${tot.all}</b></span><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}: <b>$${tot.year}</b></span></div>
+    <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>${cur}${tot.all}</b></span><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}: <b>${cur}${tot.year}</b></span></div>
       <div class="dnhead">📜 היסטוריית תרומות</div><div id="donations"></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderTransactions(d); renderParnesEdit(d); renderPledges(d);
@@ -309,8 +314,8 @@ function fbChip(x){
   if(!x.fb_channel) return '';
   return `<span class="fbchip on">✓ פידבק · ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_date?(' · '+esc(x.fb_date)):''}${x.fb_followup?(' · 🔁 לחזור '+esc(x.fb_followup)):''}</span>`;
 }
-function dnRow(x){
-  return `<div class="dncrow"><div class="dnci"><b>$${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')}${x.method?(' · '+esc(x.method)):''}</span>${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
+function dnRow(x,cur){cur=cur||'$';
+  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')}${x.method?(' · '+esc(x.method)):''}</span>${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
     `<div class="dncact"><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     `<div class="fbedit hidden" data-fb="${x.id}">
       <div class="fbrow"><select class="fb_ch">${FBOPTS.map(([v,l])=>`<option value="${v}" ${v===(x.fb_channel||'')?'selected':''}>${l}</option>`).join('')}</select><input type="date" class="fb_date" value="${esc(x.fb_date||'')}"></div>
@@ -320,9 +325,9 @@ function dnRow(x){
     </div>`;
 }
 function renderDonations(d){
-  const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
+  const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);const cur=curSym(d);
   const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
-  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · $${tot}</div>`:'')+(list.map(dnRow).join('')||'<div class="hintxt">עדיין אין תרומות.</div>');
+  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · ${cur}${tot}</div>`:'')+(list.map(x=>dnRow(x,cur)).join('')||'<div class="hintxt">עדיין אין תרומות.</div>');
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
   el.querySelectorAll('.dnfb').forEach(b=>b.onclick=()=>{el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.fb_save').forEach(b=>b.onclick=async()=>{
@@ -354,11 +359,11 @@ function txMoney(t){
   const remaining = tot>0? Math.max(0, per*(tot-paid)) : 0;
   return {per, paid, tot, remaining, rec};
 }
-function txInst(t){
+function txInst(t,cur){cur=cur||'$';
   if(+t.inst_total===1 && !+t.recurring) return '';
   const m=txMoney(t);
   if(m.tot===0) return ` · הוראת קבע · שולמו ${m.paid} תשלומים`;
-  return ` · שולם ${m.paid}/${m.tot}${m.remaining>0?(' · נותרו $'+Math.round(m.remaining)):' · הושלם ✓'}`;
+  return ` · שולם ${m.paid}/${m.tot}${m.remaining>0?(' · נותרו '+cur+Math.round(m.remaining)):' · הושלם ✓'}`;
 }
 function txAddMonths(iso,n){const d=new Date(iso);if(isNaN(d))return null;d.setMonth(d.getMonth()+n);return d;}
 function txUntil(t){
@@ -367,10 +372,10 @@ function txUntil(t){
   if(t.date){const e=txAddMonths(t.date,+t.inst_total);if(e)return ' · עד '+((e.getMonth()+1)+'/'+e.getFullYear());}
   return '';
 }
-function txRow(t){
+function txRow(t,cur){cur=cur||'$';
   const st=TXST[t.status]||TXST.pending;
-  return `<div class="plwrap"><div class="pledge ${st.c}"><div class="pi"><b>$${esc(t.amount)}</b> ${t.category?('· '+esc(t.category)):''} <span class="txbadge">${st.t}</span>`+
-    `<br><small>${t.hmonth?esc(t.hmonth)+' · ':''}${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}${txInst(t)}${txUntil(t)}</small></div>`+
+  return `<div class="plwrap"><div class="pledge ${st.c}"><div class="pi"><b>${cur}${esc(t.amount)}</b> ${t.category?('· '+esc(t.category)):''} <span class="txbadge">${st.t}</span>`+
+    `<br><small>${t.hmonth?esc(t.hmonth)+' · ':''}${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}${txInst(t,cur)}${txUntil(t)}</small></div>`+
     `<button class="del" data-del="${t.id}">🗑</button></div>`+
     `<div class="txctl"><select class="txst" data-id="${t.id}">${txStatusOpts(t.status)}</select>`+
     ((+t.inst_total!==1||+t.recurring)?`<button class="btn sm txpay" data-id="${t.id}">＋ תשלום שולם</button>`:'')+
@@ -385,8 +390,8 @@ function wireTx(el,d,after){
 }
 function renderTransactions(d){
   const el=document.getElementById('transactions');if(!el)return;
-  const list=(d.transactions||[]);
-  el.innerHTML=list.map(txRow).join('')||'<div class="hintxt">אין חיובים עדיין. תרומות מהדף המקוון וכל חיוב ידני יופיעו כאן.</div>';
+  const list=(d.transactions||[]);const cur=curSym(d);
+  el.innerHTML=list.map(t=>txRow(t,cur)).join('')||'<div class="hintxt">אין חיובים עדיין. תרומות מהדף המקוון וכל חיוב ידני יופיעו כאן.</div>';
   wireTx(el,d,()=>renderTransactions(d));
 }
 let chFilter='';
@@ -404,7 +409,7 @@ function renderCharges(){
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
     `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
-    (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">$${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
+    (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
 }
 function renderPartners(d){
