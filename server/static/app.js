@@ -106,7 +106,7 @@ function renderDonors(){
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
-function openNewDonor(){
+function openNewDonor(onCreate){
   cardTab='details';
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
     <h2>➕ תורם חדש</h2>
@@ -161,7 +161,9 @@ function openNewDonor(){
       nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,hmonth:dr.hmonth});
       if(dayKind){const hm=document.getElementById('nd_hm').value,hd=+document.getElementById('nd_hd').value,dtext=heDay(hd)+" "+hm;const pr=await api('POST','/api/parnes',{donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});nd.parnes.push({id:pr.id,donor_id:nd.id,day:hd,month:hm,date_text:dtext,dedication:cat,amount:amt,kind:dayKind});}
     }
-    toast('נוצר כרטיס ✓'); openDonor(nd, amt?'donations':'details');
+    toast('נוצר כרטיס ✓');
+    if(onCreate){ ov.classList.remove('show'); onCreate(nd); }
+    else openDonor(nd, amt?'donations':'details');
   };
 }
 
@@ -595,6 +597,7 @@ function renderDayPanel(taken){
   }else{
     panel.innerHTML=`<div class="sec"><h3>➕ שבץ ${PKINDS.find(k=>k[0]===pyKind)[1]} — ${esc(dtext)}</h3>
       <input id="dp_q" placeholder="חפש תורם לשיבוץ…" autocomplete="off">
+      <button class="btn sm ghost" id="dp_new" style="margin-top:6px">➕ תורם חדש (אם לא קיים)</button>
       <div id="dp_res" class="dpres"></div>
       <div id="dp_form" style="display:none">
         <div class="chosen" id="dp_chosen"></div>
@@ -605,6 +608,8 @@ function renderDayPanel(taken){
           <label class="fld"><span>סוג</span><select id="dp_status"><option value="confirmed">🟢 מאושר</option><option value="suggested">🔵 הצעה</option></select></label></div>
         <button class="btn" id="dp_save">שבץ ללילה זה</button></div></div>`;
     const qi=document.getElementById('dp_q'),res=document.getElementById('dp_res');let chosen=null;
+    const pickChosen=nd=>{chosen=nd;document.getElementById('dp_chosen').textContent='נבחר: '+(nd.last+' '+(nd.first||'')).trim();document.getElementById('dp_form').style.display='block';res.innerHTML='';qi.value=(nd.last+' '+(nd.first||'')).trim();};
+    document.getElementById('dp_new').onclick=()=>openNewDonor(nd=>pickChosen(nd));
     qi.oninput=()=>{const s=norm(qi.value);if(!s){res.innerHTML='';return;}const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english).includes(s)).slice(0,8);
       res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('');
       res.querySelectorAll('.dpr').forEach(x=>x.onclick=()=>{chosen=DB.find(y=>y.id==x.dataset.id);document.getElementById('dp_chosen').textContent='נבחר: '+chosen.last+' '+chosen.first;document.getElementById('dp_form').style.display='block';res.innerHTML='';qi.value=chosen.last+' '+chosen.first;});};
