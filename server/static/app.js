@@ -410,9 +410,17 @@ function renderPrayers(d){
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/prayer/'+b.dataset.del);d.prayers=d.prayers.filter(x=>x.id!=b.dataset.del);renderPrayers(d);toast('נמחק');});
 }
 const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
+function openParnesCert(d,p){
+  if(!p)return;
+  const date=(p.date_text||'')+(HEBYEAR?(' '+HEBYEAR):'');
+  const names=(d.prayers&&d.prayers[0]?d.prayers[0].text:'');
+  const params=new URLSearchParams({date,names,req:p.dedication||''});
+  window.open('/parnes-cert?'+params.toString(),'_blank');
+}
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
-  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
+  el.innerHTML=(d.parnes||[]).map(p=>`<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}</b> ${p.amount?('· $'+esc(p.amount)):''}<br><small>${esc(p.dedication)}</small></div><button class="del" data-del="${p.id}">🗑</button></div><div class="txctl"><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button></div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`).join('')||'<div class="hintxt">אין עדיין.</div>';
+  el.querySelectorAll('.pycert').forEach(b=>b.onclick=()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);openParnesCert(d,p);});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/parnes/'+b.dataset.del);d.parnes=d.parnes.filter(x=>x.id!=b.dataset.del);renderParnesEdit(d);});
   el.querySelectorAll('.pyrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt,done:0});toast('תזכורת פרנס נקבעה ✓');});
 }

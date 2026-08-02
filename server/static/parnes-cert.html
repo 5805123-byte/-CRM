@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>כולל חצות — פרנס לילה</title>
+<style>
+  :root{--ink:#2a2410;--deep:#6a1414;--gold:#9c7a2e;--line:#cdbf98}
+  *{box-sizing:border-box}html,body{margin:0}
+  /* גופן מכובד — ליוורנה אם מותקן, אחרת ברירת מחדל עברית יפה */
+  body{background:#d9d2c2;color:var(--ink);font-family:"Livorna","Frank Ruhl Libre","Narkisim","David Libre","Times New Roman",serif}
+  .scroller{overflow-x:auto;padding:16px}
+  .sheet{position:relative;width:794px;aspect-ratio:2482/3509;margin:0 auto;
+    background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
+    box-shadow:0 10px 40px rgba(0,0,0,.25);container-type:inline-size;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{position:absolute;top:13%;left:26%;right:6%;bottom:8%;display:flex;flex-direction:column;align-items:center;text-align:center}
+  .nusach{font-size:3cqw;line-height:1.7;width:100%}
+  .date{font-size:4cqw;font-weight:700;color:var(--deep);margin:4cqw 0 3cqw;letter-spacing:.3cqw}
+  .stand{font-size:3cqw;margin-bottom:1cqw}
+  .names{font-size:6.4cqw;font-weight:800;line-height:1.25;color:#111;margin:1cqw 0 3cqw;width:100%}
+  .req{font-size:3cqw;line-height:1.65;width:100%}
+  /* שדות עריכה — נראים חלק, מסגרת רק במיקוד */
+  [contenteditable]{outline:none;border-radius:8px;padding:2px 6px;transition:background .15s}
+  [contenteditable]:focus{background:rgba(156,122,46,.12);box-shadow:0 0 0 2px var(--gold)}
+  [contenteditable]:empty:before{content:attr(data-ph);color:#b3a884}
+  .noprint{text-align:center;margin:14px}
+  .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer;margin:0 5px}
+  .noprint button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
+  .noprint .tip{font-size:.85rem;color:#7a6f50;margin-top:8px}
+  @media print{
+    @page{size:A4;margin:0}
+    body{background:#fff}
+    .scroller{overflow:visible;padding:0}
+    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
+    .noprint{display:none}
+    [contenteditable]:focus{background:none;box-shadow:none}
+  }
+</style>
+</head>
+<body>
+<div class="scroller"><div class="sheet">
+  <div class="content">
+    <div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
+    <div class="date" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
+    <div class="stand">יהיו ויעמדו לזכות</div>
+    <div class="names" contenteditable="true" id="c_names" data-ph="שמות התורם / הנפטר"></div>
+    <div class="req" contenteditable="true" id="c_req" data-ph="הבקשה (לרפואה שלמה / להצלחה / לזכר נשמת ...)"></div>
+  </div>
+</div></div>
+
+<div class="noprint">
+  <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
+  <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
+  <div class="tip">מלא את התאריך, השמות והבקשה — ואז הדפס. השמות מודגשים וגדולים; הבקשה בגודל רגיל.</div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+const set=(id,v)=>{ if(v) document.getElementById(id).textContent=v; };
+set('c_date', q.get('date'));
+set('c_names', q.get('names'));
+set('c_req', q.get('req'));
+</script>
+</body>
+</html>

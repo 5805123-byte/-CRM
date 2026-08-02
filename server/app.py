@@ -154,6 +154,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/receipt':
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/parnes-cert':
+            return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
