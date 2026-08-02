@@ -96,7 +96,7 @@ def ensure_schema():
     # השלמת אברכי יששכר־זבולון חסרים (חד-פעמי) — מרשימת האברכים המלאה ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
-        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v2'").fetchone()
+        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v3'").fetchone()
         pseed = os.path.join(HERE, 'partners_iz_seed.json')
         if not done and os.path.exists(pseed):
             na = 0
@@ -113,7 +113,7 @@ def ensure_schema():
                 con.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active) VALUES(?,?,?,?,1)",
                             (did, av, rec.get('start', ''), rec.get('amount', '')))
                 na += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('partners_iz_v2')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('partners_iz_v3')")
             print(f'  השלמת אברכים: נוספו {na} אברכים')
     except Exception as e:
         print('  שגיאת השלמת אברכים:', e)
