@@ -323,9 +323,7 @@ function cardDetails(d,body){
   (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.hmonth?(' · '+x.hmonth):(x.date?(' · '+x.date):'')),ded:''}));
   (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||''),ded:''}));
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>`<div class="giverow"><span class="giveamt">${curd}${g.amt||0}</span><span class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''}</span></div>`).join('')}</div>`:'';
-  body.innerHTML=`${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>${curd}${dt.year}</b></div></div>`:''}
-    ${give}
-    ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
+  body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
@@ -345,6 +343,8 @@ function cardDetails(d,body){
     <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label>
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
+    ${give}
+    ${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>${curd}${dt.year}</b></div></div>`:''}
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
   wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region','channel']);
