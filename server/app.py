@@ -414,6 +414,10 @@ class H(BaseHTTPRequestHandler):
             sets=[];vals=[]
             for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            # אם התאריך העברי השתנה — חשב מחדש את תאריך הלילה הלועזי (לסימון הירח)
+            if 'date_text' in b and 'night_date' not in b:
+                _ng = heb_to_greg(b.get('date_text', ''))
+                sets.append('night_date=?'); vals.append(_ng.isoformat() if _ng else '')
             if sets:
                 con.execute("UPDATE parnes SET "+",".join(sets)+" WHERE id=?", vals+[pid])
             con.commit(); con.close()
