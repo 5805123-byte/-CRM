@@ -97,7 +97,7 @@ function renderDonors(){
   if(flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button><div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
     <div class="rowc" data-id="${d.id}">
-      <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div>
+      <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span></div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
       ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
@@ -113,18 +113,31 @@ function openNewDonor(){
     <div class="two"><label class="fld"><span>שם משפחה *</span><input id="nd_last" placeholder="שם משפחה"></label>
       <label class="fld"><span>שם פרטי</span><input id="nd_first" placeholder="שם פרטי"></label></div>
     <label class="fld"><span>שם באנגלית</span><input id="nd_english" dir="ltr" placeholder="English name"></label>
+    <label class="fld"><span>אזור / מטבע</span><select id="nd_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il">🇮🇱 ארץ ישראל (₪)</option></select></label>
     <label class="fld"><span>טלפון</span><input id="nd_phone" dir="ltr" inputmode="tel" placeholder="+1 ..."></label>
-    <div class="two"><label class="fld"><span>קטגוריה</span><select id="nd_category">${CATS.map(c=>`<option value="${c}">${c||'— ללא —'}</option>`).join('')}</select></label>
-      <label class="fld"><span>אזור / מטבע</span><select id="nd_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il">🇮🇱 ארץ ישראל (₪)</option></select></label></div>
+    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="nd_addr" placeholder="רחוב ומספר"></label>
+    <div class="two"><label class="fld"><span>עיר</span><input id="nd_city" placeholder="עיר"></label>
+      <label class="fld"><span>מדינה</span><input id="nd_country" placeholder="מדינה"></label></div>
+    <div class="two"><label class="fld"><span>מיקוד</span><input id="nd_zip" dir="ltr" placeholder="מיקוד"></label>
+      <label class="fld"><span>קטגוריה</span><select id="nd_category">${CATS.map(c=>`<option value="${c}">${c||'— ללא —'}</option>`).join('')}</select></label></div>
     <label class="fld"><span>סכום קבוע</span><input id="nd_amount" placeholder="0"></label>
     <div class="sec"><button class="btn" id="nd_save" style="width:100%">✔ צור כרטיס תורם</button></div>`;
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
   const g=id=>document.getElementById(id).value.trim();
+  // בחירת ארץ ישראל → מילוי אוטומטי: מדינה, קידומת +972, פלייסהולדר מיקוד
+  document.getElementById('nd_region').onchange=e=>{
+    const ph=document.getElementById('nd_phone'), co=document.getElementById('nd_country'), zp=document.getElementById('nd_zip');
+    if(e.target.value==='il'){
+      if(!co.value.trim())co.value='ישראל';
+      let v=ph.value.trim(); if(!v){ph.value='+972 ';} else if(v[0]==='0'){ph.value='+972 '+v.slice(1);}
+      ph.placeholder='+972 ...'; zp.placeholder='מיקוד (7 ספרות)';
+    }else{ ph.placeholder='+1 ...'; }
+  };
   document.getElementById('nd_last').focus();
   document.getElementById('nd_save').onclick=async()=>{
     const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
-    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),category:document.getElementById('nd_category').value,region:document.getElementById('nd_region').value,amount:g('nd_amount')};
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),category:document.getElementById('nd_category').value,region:document.getElementById('nd_region').value,amount:g('nd_amount')};
     const r=await api('POST','/api/donor',body);
     const nd={id:r.id,...body,created:todayStr(),source:'ידני',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[]};
     DB.push(nd); toast('נוצר כרטיס ✓'); openDonor(nd);
@@ -143,7 +156,7 @@ function openDonor(d,startTab){
   const nopen=(d.tasks||[]).filter(t=>!t.done||t.done==0).length;
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
     <h2 id="cardTitle">${esc(d.last)} ${esc(d.first)}</h2>
-    <div class="cardsub">${catPill(d.category)} ${pill(d.tier)} ${d.english?`<span class="ensm" dir="ltr">${esc(d.english)}</span>`:''}</div>
+    <div class="cardsub"><span class="cardnum">כרטיס #${d.id}</span> ${catPill(d.category)} ${pill(d.tier)} ${d.english?`<span class="ensm" dir="ltr">${esc(d.english)}</span>`:''}</div>
     <div class="ctabs">
       <button class="ctab" data-c="details">פרטים</button>
       <button class="ctab" data-c="kvittel">🕯️ קוויטל</button>
@@ -180,12 +193,15 @@ function cardDetails(d,body){
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
-    <label class="fld"><span>כתובת</span><input id="f_addr" value="${esc(d.addr)}"></label>
+    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}"></label>
+    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}"></label>
+      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}"></label></div>
+    <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
     ${f('ערוץ',d.channel)}${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
-    <div class="sec"><button class="btn" id="f_delete" style="background:var(--no);width:100%">🗑 מחק תורם זה לצמיתות</button></div>`;
-  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','business','region']);
+    <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
+  wireFields(d,['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region']);
   renderPhones(d);
   document.getElementById('f_delete').onclick=async()=>{
     if(!confirm('למחוק את "'+(d.last+' '+d.first).trim()+'" לצמיתות?\n\nיימחקו גם כל התרומות, הקוויטל, האברכים והשטרות שלו. אי אפשר לבטל.'))return;
@@ -316,7 +332,7 @@ function fbChip(x){
 }
 function dnRow(x,cur){cur=cur||'$';
   return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')}${x.method?(' · '+esc(x.method)):''}</span>${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
-    `<div class="dncact"><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
+    `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     `<div class="fbedit hidden" data-fb="${x.id}">
       <div class="fbrow"><select class="fb_ch">${FBOPTS.map(([v,l])=>`<option value="${v}" ${v===(x.fb_channel||'')?'selected':''}>${l}</option>`).join('')}</select><input type="date" class="fb_date" value="${esc(x.fb_date||'')}"></div>
       <input class="fb_note" placeholder="תוכן קצר (לא חובה)" value="${esc(x.fb_note||'')}">
@@ -328,6 +344,7 @@ function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);const cur=curSym(d);
   const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
   el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · ${cur}${tot}</div>`:'')+(list.map(x=>dnRow(x,cur)).join('')||'<div class="hintxt">עדיין אין תרומות.</div>');
+  el.querySelectorAll('.dnpaid').forEach(b=>b.onclick=async()=>{const x=d.donations.find(y=>y.id==b.dataset.paid);x.paid=+x.paid?0:1;await api('PUT','/api/donation/'+x.id,{paid:x.paid});renderDonations(d);});
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
   el.querySelectorAll('.dnfb').forEach(b=>b.onclick=()=>{el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.fb_save').forEach(b=>b.onclick=async()=>{

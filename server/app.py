@@ -47,12 +47,14 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN photo TEXT")
     except Exception: pass
-    for col in ('created', 'source', 'region'):
+    for col in ('created', 'source', 'region', 'country', 'zip', 'city'):
         try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
         except Exception: pass
     for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note'):
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
+    try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
+    except Exception: pass
     con.commit(); con.close()
 
 def get_all():
@@ -107,7 +109,8 @@ def get_all():
     return donors, unlinked
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
-                'category','purpose','amount','channel','pay_status','last_active','notes','region'}
+                'category','purpose','amount','channel','pay_status','last_active','notes',
+                'region','country','zip','city'}
 
 KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
            'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
@@ -242,7 +245,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note'):
+            for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note','paid'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE donations SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
@@ -296,11 +299,11 @@ class H(BaseHTTPRequestHandler):
         b = self._body()
         if self.path == '/api/donor':
             con = db(); cur = con.cursor()
-            cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (b.get('last',''), b.get('first',''), b.get('english',''), b.get('business',''), b.get('phone',''),
                          b.get('email',''), b.get('addr',''), b.get('tier',''), b.get('category',''), b.get('purpose',''),
-                         b.get('amount',''), today_iso(), 'ידני', b.get('region','')))
+                         b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), b.get('zip',''), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
         if self.path == '/api/pledge':

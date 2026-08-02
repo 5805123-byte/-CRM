@@ -15,7 +15,8 @@ CREATE TABLE donors(
   id INTEGER PRIMARY KEY, last TEXT, first TEXT, english TEXT, business TEXT,
   phone TEXT, email TEXT, addr TEXT, tier TEXT, category TEXT, purpose TEXT,
   amount TEXT, channel TEXT, pay_status TEXT, last_active TEXT, months TEXT,
-  labels TEXT, aliases TEXT, notes TEXT, created TEXT, source TEXT, region TEXT
+  labels TEXT, aliases TEXT, notes TEXT, created TEXT, source TEXT, region TEXT,
+  country TEXT, zip TEXT, city TEXT
 );
 CREATE TABLE pledges(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, category TEXT,
@@ -34,7 +35,7 @@ DROP TABLE IF EXISTS donations;
 CREATE TABLE donations(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
   amount TEXT, category TEXT, method TEXT, note TEXT,
-  fb_channel TEXT, fb_date TEXT, fb_followup TEXT, fb_note TEXT
+  fb_channel TEXT, fb_date TEXT, fb_followup TEXT, fb_note TEXT, paid INTEGER DEFAULT 0
 );
 DROP TABLE IF EXISTS contacts_log;
 CREATE TABLE contacts_log(
@@ -55,7 +56,7 @@ DROP TABLE IF EXISTS donations;
 CREATE TABLE donations(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
   amount TEXT, category TEXT, method TEXT, note TEXT,
-  fb_channel TEXT, fb_date TEXT, fb_followup TEXT, fb_note TEXT
+  fb_channel TEXT, fb_date TEXT, fb_followup TEXT, fb_note TEXT, paid INTEGER DEFAULT 0
 );
 DROP TABLE IF EXISTS contacts_log;
 CREATE TABLE contacts_log(
