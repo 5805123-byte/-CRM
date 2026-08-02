@@ -107,18 +107,16 @@ if(KIND==='coffee' || KIND==='breakfast'){
      <div id="pairs"></div>`;
   if(q.get('date')) $('c_date').textContent=q.get('date');
   $('c_date').addEventListener('input', fit);
-  window.addPair = function(name, req){
+  window.addPair = function(name){
     const wrap=document.createElement('div'); wrap.className='pair';
     wrap.innerHTML='<button class="rm" title="הסר">✕</button>'+
-      '<div class="names" contenteditable="true" data-ph="השם"></div>'+
-      '<div class="req" contenteditable="true" data-ph="הבקשה"></div>';
+      '<div class="names" contenteditable="true" data-ph="השם"></div>';
     if(name) wrap.querySelector('.names').textContent=name;
-    if(req) wrap.querySelector('.req').textContent=req;
     wrap.querySelector('.rm').onclick=()=>{ wrap.remove(); fit(); };
     wire(wrap); $('pairs').appendChild(wrap); fit();
   };
-  addPair(q.get('names')||'', q.get('req')||'');
-  $('addBtn').onclick=()=>addPair('','');
+  addPair(q.get('names')||'');
+  $('addBtn').onclick=()=>addPair('');
 }
 
 window.addEventListener('resize', fit);

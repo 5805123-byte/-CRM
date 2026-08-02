@@ -480,7 +480,8 @@ function renderPrayers(d){
 const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
 function openParnesCert(d,p){
   if(!p)return;
-  const date=(p.date_text||'')+(HEBYEAR?(' '+HEBYEAR):'');
+  const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
+  const date=dtext+(HEBYEAR?(' '+HEBYEAR):'');
   // השמות/הנוסח פעם אחת בגדול — עדיפות לשם התפילה, אחרת ההקדשה
   const names=(d.prayers&&d.prayers[0]&&d.prayers[0].text)||p.dedication||'';
   const params=new URLSearchParams({kind:p.kind||'parnes',date,names});
