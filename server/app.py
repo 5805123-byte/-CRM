@@ -55,6 +55,14 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
     except Exception: pass
+    # ניקוי תזכורות פרנס יתומות — שהיום שלהן כבר נמחק מהלוח (מגרסה קודמת שלא מחקה את התזכורת)
+    try:
+        con.execute("""DELETE FROM tasks WHERE kind='parnes'
+                       AND note LIKE 'פרנס יום %הכן הדפסה וצור קשר'
+                       AND NOT EXISTS (SELECT 1 FROM parnes p
+                         WHERE p.donor_id=tasks.donor_id
+                         AND ('פרנס יום '||COALESCE(p.date_text,'')||' — הכן הדפסה וצור קשר')=tasks.note)""")
+    except Exception: pass
     con.commit(); con.close()
 
 def get_all():
@@ -458,8 +466,18 @@ class H(BaseHTTPRequestHandler):
             DTBL = {'pledge': 'pledges', 'parnes': 'parnes', 'prayer': 'prayers', 'donation': 'donations',
                     'contact': 'contacts_log', 'task': 'tasks', 'partner': 'partners',
                     'transaction': 'transactions', 'file': 'files'}
-            table = DTBL[m.group(1)]
-            con = db(); con.execute(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()
+            table = DTBL[m.group(1)]; rid = int(m.group(2))
+            con = db()
+            if table == 'parnes':
+                # מחיקת תזכורת הפרנס שנוצרה אוטומטית יחד עם היום הזה
+                try:
+                    row = con.execute("SELECT donor_id, date_text FROM parnes WHERE id=?", (rid,)).fetchone()
+                    if row:
+                        note = 'פרנס יום ' + (row['date_text'] or '') + ' — הכן הדפסה וצור קשר'
+                        con.execute("DELETE FROM tasks WHERE donor_id=? AND kind='parnes' AND note=?",
+                                    (row['donor_id'], note))
+                except Exception: pass
+            con.execute(f"DELETE FROM {table} WHERE id=?", (rid,)); con.commit(); con.close()
             return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 
