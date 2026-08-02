@@ -36,6 +36,8 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT, amount TEXT,
         category TEXT, method TEXT, status TEXT DEFAULT 'pending', trans_id TEXT, sub_id TEXT,
         inst_total INTEGER DEFAULT 1, inst_paid INTEGER DEFAULT 0, recurring INTEGER DEFAULT 0, note TEXT, created TEXT);
+    CREATE TABLE IF NOT EXISTS building(id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, object TEXT,
+        amount TEXT, paid TEXT, note TEXT, date TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
@@ -99,7 +101,11 @@ def get_all():
     byid = {d['id']: d for d in donors}
     for d in donors:
         d['pledges'] = []; d['parnes'] = []; d['prayers'] = []
-        d['donations'] = []; d['contacts'] = []; d['tasks'] = []; d['partners'] = []; d['transactions'] = []
+        d['donations'] = []; d['contacts'] = []; d['tasks'] = []; d['partners'] = []; d['transactions'] = []; d['building'] = []
+    try:
+        for r in c.execute("SELECT * FROM building ORDER BY id"):
+            if r['donor_id'] in byid: byid[r['donor_id']]['building'].append(dict(r))
+    except Exception: pass
     for r in c.execute("SELECT * FROM pledges"):
         if r['donor_id'] in byid: byid[r['donor_id']]['pledges'].append(dict(r))
     for r in c.execute("SELECT * FROM parnes"):
@@ -327,6 +333,17 @@ class H(BaseHTTPRequestHandler):
                 con.commit()
             con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/building/(\d+)$', self.path)
+        if m:
+            b = self._body(); bid = int(m.group(1))
+            con = db(); sets = []; vals = []
+            for k in ('object','amount','paid','note','date'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            if sets:
+                con.execute("UPDATE building SET " + ",".join(sets) + " WHERE id=?", vals + [bid])
+                con.commit()
+            con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/transaction/(\d+)$', self.path)
         if m:
             b = self._body(); tid = int(m.group(1))
@@ -365,7 +382,7 @@ class H(BaseHTTPRequestHandler):
             if not k or not d:
                 con.close(); return self._send(404, {'error': 'donor not found'})
             # העברת כל רשומות הבן מהכרטיס הנמחק לכרטיס שנשאר
-            for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks', 'partners', 'transactions'):
+            for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks', 'partners', 'transactions', 'building'):
                 try: cur.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
                 except Exception: pass
             try: cur.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
@@ -388,6 +405,12 @@ class H(BaseHTTPRequestHandler):
             cur.execute("DELETE FROM donors WHERE id=?", (drop,))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'keep': keep, 'dropped': drop})
+        if self.path == '/api/building':
+            con = db(); cur = con.cursor()
+            cur.execute("INSERT INTO building(donor_id,object,amount,paid,note,date) VALUES(?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('object',''), b.get('amount',''), b.get('paid',''), b.get('note',''), b.get('date', today_iso())))
+            con.commit(); pid = cur.lastrowid; con.close()
+            return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
@@ -530,17 +553,17 @@ class H(BaseHTTPRequestHandler):
             except Exception: pass
             try: con.execute("DELETE FROM files WHERE kind='parnes' AND ref_id IN (SELECT id FROM parnes WHERE donor_id=?)", (did,))
             except Exception: pass
-            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions'):
+            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
             con.execute("DELETE FROM donors WHERE id=?", (did,))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
-        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file|transaction)/(\d+)$', self.path)
+        m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file|transaction|building)/(\d+)$', self.path)
         if m:
             DTBL = {'pledge': 'pledges', 'parnes': 'parnes', 'prayer': 'prayers', 'donation': 'donations',
                     'contact': 'contacts_log', 'task': 'tasks', 'partner': 'partners',
-                    'transaction': 'transactions', 'file': 'files'}
+                    'transaction': 'transactions', 'file': 'files', 'building': 'building'}
             table = DTBL[m.group(1)]; rid = int(m.group(2))
             con = db()
             if table == 'parnes':

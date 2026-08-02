@@ -109,15 +109,16 @@ const DFILTERS={
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
   'il':{label:'🇮🇱 ארץ ישראל', fn:d=>d.region==='il'},
+  'building':{label:'🏛️ בניין', fn:d=>(d.building||[]).length>0},
   'new':{label:'🆕 נוספו', fn:d=>!!d.created},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['il','iz','k101','reglow','occ','klali','new',''];
+const DFORDER=['il','iz','k101','building','reglow','occ','klali','new',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
-  let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english));
+  let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english+' '+(d.building||[]).map(x=>x.object).join(' ')));
   if(donSort==='new'||flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
   else if(donSort==='amt') list=list.slice().sort((a,b)=>donorTotals(b).all-donorTotals(a).all);
   else list=list.slice().sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
@@ -246,6 +247,7 @@ function openDonor(d,startTab){
       <button class="ctab" data-c="details">פרטים</button>
       <button class="ctab" data-c="kvittel">🕯️ קוויטל</button>
       <button class="ctab" data-c="donations">💳 תרומות</button>
+      <button class="ctab" data-c="building">🏛️ בניין${(d.building||[]).length?` <b class="badge">${(d.building||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="contact">📞 קשר${nopen?` <b class="badge">${nopen}</b>`:''}</button>
     </div>
     <div id="cardBody"></div>`;
@@ -260,7 +262,28 @@ function renderCard(d){
   if(cardTab==='details') return cardDetails(d,body);
   if(cardTab==='kvittel') return cardKvittel(d,body);
   if(cardTab==='donations') return cardDonations(d,body);
+  if(cardTab==='building') return cardBuilding(d,body);
   if(cardTab==='contact') return cardContact(d,body);
+}
+function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
+function cardBuilding(d,body){
+  const t=buildTotals(d),cur=curSym(d);
+  body.innerHTML=`<div class="totals"><div class="tot"><span>סה"כ הקדשות</span><b>${cur}${t.price}</b></div><div class="tot"><span>שולם</span><b>${cur}${t.paid}</b></div><div class="tot ${t.owed>0?'year':''}"><span>נשאר חייב</span><b>${cur}${t.owed}</b></div></div>
+    <div id="bldlist"></div>
+    <div class="sec"><h3>➕ הוסף הקדשה בבניין</h3>
+      <label class="fld"><span>מה ההקדשה (אובייקט)</span><input id="bl_obj" placeholder="למשל: עמוד, ספר תורה, חדר…"></label>
+      <div class="two"><label class="fld"><span>מחיר (בכמה קנה)</span><input id="bl_amt" placeholder="סכום"></label>
+        <label class="fld"><span>שולם עד כה</span><input id="bl_paid" placeholder="סכום"></label></div>
+      <button class="btn" id="bl_add">הוסף הקדשה</button></div>`;
+  renderBuilding(d);
+  document.getElementById('bl_add').onclick=async()=>{const obj=document.getElementById('bl_obj').value.trim(),amt=document.getElementById('bl_amt').value.trim(),paid=document.getElementById('bl_paid').value.trim();if(!obj&&!amt){toast('הכנס אובייקט וסכום');return;}const r=await api('POST','/api/building',{donor_id:d.id,object:obj,amount:amt,paid:paid});d.building=d.building||[];d.building.push({id:r.id,donor_id:d.id,object:obj,amount:amt,paid:paid,note:'',date:todayStr()});cardBuilding(d,body);toast('נוסף ✓');if(tab==='donors')renderDonors();};
+}
+function renderBuilding(d){
+  const el=document.getElementById('bldlist');if(!el)return;const cur=curSym(d);
+  el.innerHTML=(d.building||[]).map(x=>{const owed=amtNum(x.amount)-amtNum(x.paid);return `<div class="plwrap"><div class="pledge ${owed>0?'pending':'given'}"><div class="pi"><b>🏛️ ${esc(x.object||'—')}</b><br><small>מחיר: ${cur}${esc(String(amtNum(x.amount)))} · שולם: ${cur}${esc(String(amtNum(x.paid)))} · <b style="color:${owed>0?'var(--no)':'var(--yes)'}">${owed>0?('נשאר חייב '+cur+owed):'שולם במלואו ✓'}</b></small>${x.note?('<br><small>'+esc(x.note)+'</small>'):''}</div><button class="del" data-del="${x.id}">🗑</button></div>
+    <div class="bldedit"><input class="blf" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="אובייקט"><input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" placeholder="מחיר" inputmode="decimal"><input class="blf" data-k="paid" data-id="${x.id}" value="${esc(x.paid||'')}" placeholder="שולם" inputmode="decimal"></div></div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה, או שלח לי את אקסל הבניין ואמזג הכל.</div>';
+  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/building/'+b.dataset.del);d.building=d.building.filter(x=>x.id!=b.dataset.del);cardBuilding(d,document.getElementById('cardBody'));toast('נמחק');if(tab==='donors')renderDonors();});
+  el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;x[inp.dataset.k]=inp.value;await api('PUT','/api/building/'+x.id,{[inp.dataset.k]:inp.value});cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
 }
 function cardDetails(d,body){
   const sel=CATS.map(c=>`<option ${c===d.category?'selected':''} value="${c}">${c||'— ללא —'}</option>`).join('');
