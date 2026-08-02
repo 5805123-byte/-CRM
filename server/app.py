@@ -93,6 +93,30 @@ def ensure_schema():
                          WHERE p.donor_id=tasks.donor_id
                          AND ('פרנס יום '||COALESCE(p.date_text,'')||' — הכן הדפסה וצור קשר')=tasks.note)""")
     except Exception: pass
+    # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
+        done = con.execute("SELECT 1 FROM seed_flags WHERE name='donations2026'").fetchone()
+        seed2026 = os.path.join(HERE, 'donations_2026_seed.json')
+        if not done and os.path.exists(seed2026):
+            emap = {}
+            for row in con.execute("SELECT id, english FROM donors"):
+                if row['english']:
+                    emap[re.sub(r'\s+', ' ', row['english'].lower().strip())] = row['id']
+            n = 0
+            for rec in json.load(open(seed2026, encoding='utf-8')):
+                did = emap.get(re.sub(r'\s+', ' ', (rec.get('english') or '').lower().strip())) or rec.get('donor_id')
+                if not did:
+                    continue
+                for mo in rec.get('months', []):
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) VALUES(?,?,?,?,?,?)",
+                                (did, f"2026-{int(mo):02d}", str(rec.get('amount', '')), rec.get('category', 'קבוע'),
+                                 rec.get('method', ''), 'ייבוא 2026'))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('donations2026')")
+            print(f'  ייבוא תרומות 2026: נוספו {n} תרומות')
+    except Exception as e:
+        print('  שגיאת ייבוא 2026:', e)
     con.commit(); con.close()
 
 def get_all():
