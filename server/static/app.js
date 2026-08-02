@@ -280,11 +280,38 @@ function renderReminders(d){
   el.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const t=d.tasks.find(x=>x.id==b.dataset.done);if(t){t.done=1;await api('PUT','/api/task/'+t.id,{done:1});}renderReminders(d);toast('בוצע ✓');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/task/'+b.dataset.del);d.tasks=d.tasks.filter(x=>x.id!=b.dataset.del);renderReminders(d);});
 }
+const FBCH={'תודה':'🙏 תודה','הקדשה':'🖼️ הקדשה','אימייל':'📧 אימייל','וואטסאפ':'💬 וואטסאפ','טלפון':'📞 טלפון'};
+const FBOPTS=[['','— איך יצרנו קשר? —'],['תודה','🙏 אמרנו תודה'],['הקדשה','🖼️ שלחנו תמונת הקדשה'],['אימייל','📧 אימייל'],['וואטסאפ','💬 וואטסאפ'],['טלפון','📞 טלפון']];
+function fbChip(x){
+  if(!x.fb_channel) return '';
+  return `<span class="fbchip on">✓ פידבק · ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_date?(' · '+esc(x.fb_date)):''}${x.fb_followup?(' · 🔁 לחזור '+esc(x.fb_followup)):''}</span>`;
+}
+function dnRow(x){
+  return `<div class="plwrap"><div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div>`+
+    `<div class="txctl"><button class="btn sm ghost dnrcpt" data-id="${x.id}">🧾 קבלה</button><button class="btn sm ghost dnfb" data-id="${x.id}">${x.fb_channel?'✏️ פידבק':'＋ פידבק'}</button>${fbChip(x)}</div>`+
+    `<div class="fbedit hidden" data-fb="${x.id}">
+      <div class="fbrow"><select class="fb_ch">${FBOPTS.map(([v,l])=>`<option value="${v}" ${v===(x.fb_channel||'')?'selected':''}>${l}</option>`).join('')}</select><input type="date" class="fb_date" value="${esc(x.fb_date||'')}"></div>
+      <input class="fb_note" placeholder="תוכן קצר (לא חובה)" value="${esc(x.fb_note||'')}">
+      <label class="fbfollow">🔁 מתי לחזור אליו: <input type="date" class="fb_follow" value="${esc(x.fb_followup||'')}"></label>
+      <button class="btn sm fb_save" data-id="${x.id}">שמור פידבק</button>
+    </div>`;
+}
 function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
   const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
-  el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(x=>`<div class="plwrap"><div class="pledge given"><div class="pi"><b>$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')} ${x.method?('· '+esc(x.method)):''}</small></div><button class="del" data-del="${x.id}">🗑</button></div><div class="txctl"><button class="btn sm ghost dnrcpt" data-id="${x.id}">🧾 קבלה</button></div></div>`).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
+  el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(dnRow).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
+  el.querySelectorAll('.dnfb').forEach(b=>b.onclick=()=>{el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]').classList.toggle('hidden');});
+  el.querySelectorAll('.fb_save').forEach(b=>b.onclick=async()=>{
+    const box=el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]');
+    const ch=box.querySelector('.fb_ch').value, fd=box.querySelector('.fb_date').value, nt=box.querySelector('.fb_note').value.trim(), fu=box.querySelector('.fb_follow').value;
+    if(!ch){toast('בחר איך יצרנו קשר');return;}
+    const x=d.donations.find(y=>y.id==b.dataset.id);
+    x.fb_channel=ch; x.fb_date=fd||todayStr(); x.fb_note=nt; x.fb_followup=fu;
+    await api('PUT','/api/donation/'+x.id,{fb_channel:x.fb_channel,fb_date:x.fb_date,fb_note:x.fb_note,fb_followup:x.fb_followup});
+    if(fu){const note='פידבק — לחזור ל'+(d.last+' '+d.first).trim()+(x.category?(' ('+x.category+')'):'');const r=await api('POST','/api/task',{donor_id:d.id,due_date:fu,kind:'followup',note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:fu,kind:'followup',note,done:0});}
+    renderDonations(d);toast('פידבק נשמר ✓'+(fu?' + תזכורת לחזור':''));
+  });
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/donation/'+b.dataset.del);d.donations=d.donations.filter(x=>x.id!=b.dataset.del);renderDonations(d);});
 }
 /* ---------- קבלה אמריקאית (501c3) ---------- */

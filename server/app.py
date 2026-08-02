@@ -48,6 +48,9 @@ def ensure_schema():
     for col in ('created', 'source'):
         try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
         except Exception: pass
+    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note'):
+        try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
+        except Exception: pass
     con.commit(); con.close()
 
 def get_all():
@@ -230,10 +233,13 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/donation/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
-            con = db()
-            con.execute("UPDATE donations SET date=?,amount=?,category=?,method=?,note=? WHERE id=?",
-                        (b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note',''), pid))
-            con.commit(); con.close()
+            con = db(); sets = []; vals = []
+            for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            if sets:
+                con.execute("UPDATE donations SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
+                con.commit()
+            con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/contact/(\d+)$', self.path)
         if m:

@@ -33,7 +33,8 @@ DROP TABLE IF EXISTS occasional;
 DROP TABLE IF EXISTS donations;
 CREATE TABLE donations(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
-  amount TEXT, category TEXT, method TEXT, note TEXT
+  amount TEXT, category TEXT, method TEXT, note TEXT,
+  fb_channel TEXT, fb_date TEXT, fb_followup TEXT, fb_note TEXT
 );
 DROP TABLE IF EXISTS contacts_log;
 CREATE TABLE contacts_log(
@@ -53,7 +54,8 @@ CREATE TABLE partners(
 DROP TABLE IF EXISTS donations;
 CREATE TABLE donations(
   id INTEGER PRIMARY KEY AUTOINCREMENT, donor_id INTEGER, date TEXT,
-  amount TEXT, category TEXT, method TEXT, note TEXT
+  amount TEXT, category TEXT, method TEXT, note TEXT,
+  fb_channel TEXT, fb_date TEXT, fb_followup TEXT, fb_note TEXT
 );
 DROP TABLE IF EXISTS contacts_log;
 CREATE TABLE contacts_log(

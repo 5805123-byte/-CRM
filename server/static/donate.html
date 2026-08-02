@@ -169,7 +169,7 @@
     </div>
 
     <!-- אופן תשלום -->
-    <div class="card">
+    <div class="card" id="payCard">
       <h2>אופן התשלום</h2>
       <div class="pays" id="pays"></div>
       <div class="payinfo hidden" id="payinfo"></div>
@@ -353,8 +353,11 @@ if(OFFICE){
   $('amtLbl').textContent='סכום התרומה ($)';
   $('prayCard').classList.add('hidden');
   $('notesCard').classList.add('hidden');
+  $('payCard').classList.add('hidden');
   $('giveTitle').innerHTML='פרטי התרומה <span style="color:var(--muted);font-weight:600;font-size:.85rem">(בדולרים 💵)</span>';
   document.querySelector('.taxbadge')?.classList.add('hidden');
+  $('go').textContent='רשום תרומה »';
+  $('go').nextElementSibling && ($('go').nextElementSibling.style.display='none');
 }
 
 /* ---------- שליחה ---------- */
@@ -384,7 +387,7 @@ $('go').onclick = async ()=>{
     recurring, duration, installments,
     email:$('f_email').value.trim(), phone:$('f_phone').value.trim(), addr:$('f_addr').value.trim(),
     prayers, notes:$('f_notes').value.trim(),
-    pay:selPay, pay_label:PAYLBL[selPay]||''
+    pay: OFFICE?'':selPay, pay_label: OFFICE?'':(PAYLBL[selPay]||'')
   };
   $('go').disabled=true; $('go').textContent='שולח…';
   try{
