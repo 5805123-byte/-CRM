@@ -123,6 +123,21 @@ def ensure_schema():
             print(f'  השלמת אברכים: נוספו {na} אברכים')
     except Exception as e:
         print('  שגיאת השלמת אברכים:', e)
+    # תיקון כתובות שבורות (רחוב+עיר דבוקים, וקוד מדינה IL שגוי על כתובת אמריקאית)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addrfix_v1'").fetchone():
+            afix = os.path.join(HERE, 'address_fix_seed.json')
+            if os.path.exists(afix):
+                nf = 0
+                for rec in json.load(open(afix, encoding='utf-8')):
+                    cur = con.execute("UPDATE donors SET addr=? WHERE id=? AND last=? AND addr=?",
+                                      (rec['new'], rec['id'], rec.get('last', ''), rec['old']))
+                    nf += cur.rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('addrfix_v1')")
+                print(f'  תיקון כתובות: תוקנו {nf} כתובות')
+    except Exception as e:
+        print('  שגיאת תיקון כתובות:', e)
     # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
