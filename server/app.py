@@ -138,8 +138,11 @@ class H(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(data)
 
     def _body(self):
-        n = int(self.headers.get('Content-Length', 0) or 0)
-        return json.loads(self.rfile.read(n) or b'{}')
+        try:
+            n = int(self.headers.get('Content-Length', 0) or 0)
+            return json.loads(self.rfile.read(n) or b'{}')
+        except Exception:
+            return {}
 
     def do_GET(self):
         if self.path == '/api/data':
@@ -289,34 +292,34 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
-                        (b['donor_id'], b.get('category',''), b.get('amount',''), b.get('status','טרם'), b.get('date',''), b.get('note','')))
+                        (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'), b.get('date',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status) VALUES(?,?,?,?,?,?,?,?)",
-                        (b['donor_id'], b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed')))
+                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed')))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
             tid = None
             if due:
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                            (b['donor_id'], due, 'parnes', 'פרנס יום ' + b.get('date_text','') + ' — הכן הדפסה וצור קשר'))
+                            (b.get('donor_id'), due, 'parnes', 'פרנס יום ' + b.get('date_text','') + ' — הכן הדפסה וצור קשר'))
                 tid = cur.lastrowid
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due})
         if self.path == '/api/prayer':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",
-                        (b['donor_id'], b.get('text',''), b.get('tier','')))
+                        (b.get('donor_id'), b.get('text',''), b.get('tier','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/donation':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) VALUES(?,?,?,?,?,?)",
-                        (b['donor_id'], b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note','')))
+                        (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
-            return self._send(200, {'ok': True, 'id': pid})
+            return self._send(200, {'ok': True, 'id': pid, 'hmonth': greg_to_heb_monthyear(b.get('date',''))})
         if self.path == '/api/online':
             first = (b.get('first') or '').strip()
             last = (b.get('last') or '').strip()
@@ -326,17 +329,19 @@ class H(BaseHTTPRequestHandler):
             cat = (b.get('category') or 'תרומה מקוונת').strip()
             recurring = bool(b.get('recurring'))
             duration = (b.get('duration') or '').strip()
-            installments = int(b.get('installments') or 1)
-            prayers = b.get('prayers') or []
+            try: installments = int(b.get('installments') or 1)
+            except Exception: installments = 1
+            prayers = b.get('prayers') if isinstance(b.get('prayers'), list) else []
             phone = (b.get('phone') or '').strip()
             email = (b.get('email') or '').strip()
             addr = (b.get('addr') or '').strip()
             notes = (b.get('notes') or '').strip()
             did = b.get('donor_id')
+            did = int(did) if str(did).isdigit() else None
             con = db(); cur = con.cursor()
             valid = False
             if did:
-                valid = bool(cur.execute("SELECT id FROM donors WHERE id=?", (int(did),)).fetchone())
+                valid = bool(cur.execute("SELECT id FROM donors WHERE id=?", (did,)).fetchone())
             if valid:
                 did = int(did)
             else:
@@ -375,30 +380,31 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/contact':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,?)",
-                        (b['donor_id'], b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date','')))
-            cid = cur.lastrowid
+                        (b.get('donor_id'), b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date','')))
+            cid = cur.lastrowid; task_id = None
             if b.get('next_date'):
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                            (b['donor_id'], b['next_date'], 'followup', b.get('summary','')[:80]))
+                            (b.get('donor_id'), b['next_date'], 'followup', b.get('summary','')[:80]))
+                task_id = cur.lastrowid
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'id': cid})
+            return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})
         if self.path == '/api/task':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                        (b['donor_id'], b.get('due_date',''), b.get('kind','prayer'), b.get('note','')))
+                        (b.get('donor_id'), b.get('due_date',''), b.get('kind','prayer'), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active) VALUES(?,?,?,?,?,1)",
-                        (b['donor_id'], b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note','')))
+                        (b.get('donor_id'), b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/transaction':
             con = db(); cur = con.cursor()
             cur.execute("""INSERT INTO transactions(donor_id,date,amount,category,method,status,trans_id,sub_id,inst_total,inst_paid,recurring,note,created)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (b['donor_id'], b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''),
+                        (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''),
                          b.get('status','pending'), b.get('trans_id',''), b.get('sub_id',''),
                          int(b.get('inst_total',1) or 1), int(b.get('inst_paid',0) or 0), 1 if b.get('recurring') else 0,
                          b.get('note',''), b.get('created','')))
@@ -419,17 +425,23 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/donor/(\d+)$', self.path)
         if m:
             did = int(m.group(1)); con = db()
+            # קבצים תחילה (לפני מחיקת שורות parnes שהם מפנים אליהן)
+            try: con.execute("DELETE FROM files WHERE ref_id=? AND kind='iz'", (did,))
+            except Exception: pass
+            try: con.execute("DELETE FROM files WHERE kind='parnes' AND ref_id IN (SELECT id FROM parnes WHERE donor_id=?)", (did,))
+            except Exception: pass
             for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
-            try: con.execute("DELETE FROM files WHERE ref_id=? AND kind='iz'", (did,))
-            except Exception: pass
             con.execute("DELETE FROM donors WHERE id=?", (did,))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file|transaction)/(\d+)$', self.path)
         if m:
-            table = 'files' if m.group(1) == 'file' else m.group(1)
+            DTBL = {'pledge': 'pledges', 'parnes': 'parnes', 'prayer': 'prayers', 'donation': 'donations',
+                    'contact': 'contacts_log', 'task': 'tasks', 'partner': 'partners',
+                    'transaction': 'transactions', 'file': 'files'}
+            table = DTBL[m.group(1)]
             con = db(); con.execute(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),)); con.commit(); con.close()
             return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})

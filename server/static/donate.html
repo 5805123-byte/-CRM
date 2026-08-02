@@ -403,7 +403,7 @@ $('go').onclick = async ()=>{
     window.scrollTo({top:0,behavior:'smooth'});
   }catch(e){
     err.textContent='שגיאה בשליחה. נסה שוב.';err.style.display='block';
-    $('go').disabled=false; $('go').textContent='לתשלום מאובטח »';
+    $('go').disabled=false; $('go').textContent = OFFICE ? 'רשום תרומה »' : (PAYINFO[selPay] ? 'רשום את התרומה »' : 'לתשלום מאובטח »');
   }
 };
 </script>

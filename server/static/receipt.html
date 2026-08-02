@@ -87,11 +87,11 @@ const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const PMAP = [
   [/יששכר|זבולון|zevulun|yissachar/i, 'Yissachar–Zevulun Partnership in Torah'],
-  [/פרנס.?לילה|לימוד.?לילה|night|חצות|לילה/i, 'Supporting the Limud Torah at Chatzos — nightly learning at midnight'],
-  [/נר|maor|ner/i, 'Ner LaMaor'],
-  [/קפה|coffee/i, 'Refreshments for the Lomdei Torah at Chatzos'],
-  [/בוקר|breakfast/i, 'Breakfast for the Lomdei Torah'],
-  [/קוויטל|101|kvittel/i, 'Kvittel — Tefillah at Chatzos'],
+  [/פרנס.?לילה|לימוד.?לילה/i, 'Supporting the Limud Torah at Chatzos — nightly learning at midnight'],
+  [/נר.?למאור|ner\s?la?maor/i, 'Ner LaMaor'],
+  [/חדר.?קפה|coffee/i, 'Refreshments for the Lomdei Torah at Chatzos'],
+  [/ארוחת.?בוקר|breakfast/i, 'Breakfast for the Lomdei Torah'],
+  [/קוויטל|kvittel/i, 'Kvittel — Tefillah at Chatzos'],
 ];
 function purposeEn(p){ p=(p||'').trim(); for (const [re,en] of PMAP) if (re.test(p)) return en; return p || 'General Donation to Kollel Chatzos'; }
 function money(a){ const n = parseFloat(String(a||'').replace(/[^\d.]/g,'')); if(!n) return '$' + (a||'0'); return '$' + n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }

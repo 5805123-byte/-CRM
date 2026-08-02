@@ -247,12 +247,12 @@ function cardDonations(d,body){
       date=document.getElementById('dn_date').value,pray=document.getElementById('dn_pray').value.trim(),tier=document.getElementById('dn_tier').value,
       dayKind=catSel.options[catSel.selectedIndex].dataset.day;
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
-    if(amt){const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method,date});}
+    if(amt&&!dayKind){const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method,date,hmonth:r.hmonth});}
     if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,dtext=heDay(hd)+"' "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||cat,amount:amt,kind:dayKind});}
     if(pray){const tr=tier||d.tier||'';const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:pray,tier:tr});}
     document.getElementById('dn_amt').value='';document.getElementById('dn_pray').value='';
     renderDonations(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
-  document.getElementById('pl_add').onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});d.pledges.push({id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'});document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
+  document.getElementById('pl_add').onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});d.pledges=d.pledges||[];d.pledges.push({id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'});document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
 }
 function cardContact(d,body){
   body.innerHTML=`
@@ -266,7 +266,7 @@ function cardContact(d,body){
       <div class="addrow"><input id="tk_note" placeholder="פרטים (על מה)"><button class="btn sm" id="tk_add">➕ קבע תזכורת</button></div>
       <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></div>`;
   renderContacts(d); renderReminders(d);
-  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';renderContacts(d);renderReminders(d);toast('נשמר ✓');};
+  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';renderContacts(d);renderReminders(d);toast('נשמר ✓');};
   document.getElementById('tk_add').onclick=async()=>{const kind=document.getElementById('tk_kind').value,note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';renderReminders(d);toast('נקבעה תזכורת ✓');};
 }
 function renderReminders(d){
@@ -298,7 +298,7 @@ function dnRow(x){
 }
 function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);
-  const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
   el.innerHTML=(list.length?`<div class="hintxt">סה"כ ${list.length} תרומות · $${tot}</div>`:'')+(list.map(dnRow).join('')||'<div class="hintxt">עדיין אין תרומות. מתחילים להזין מתחילת 2026.</div>');
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
   el.querySelectorAll('.dnfb').forEach(b=>b.onclick=()=>{el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]').classList.toggle('hidden');});
@@ -601,7 +601,7 @@ function bindAvFields(){
 }
 function showPayments(d){
   const list=(d.donations||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const tot=list.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
   const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>💰 תשלומים — ${esc(d.last)} ${esc(d.first)}</h2>
     <div class="hintxt">סה"כ ${list.length} תשלומים · $${tot}</div>
@@ -619,7 +619,7 @@ function showAvHist(d){
 /* ---------- קמפיינים ---------- */
 function renderCamp(){
   const camps={};
-  DB.forEach(d=>(d.pledges||[]).forEach(p=>{const k=p.category||'ללא';camps[k]=camps[k]||{given:0,pending:0,gsum:0,psum:0,rows:[]};const a=parseFloat(p.amount)||0,g=p.status==='נתן';if(g){camps[k].given++;camps[k].gsum+=a;}else{camps[k].pending++;camps[k].psum+=a;}camps[k].rows.push({name:(d.last+' '+d.first).trim(),amt:p.amount,given:g});}));
+  DB.forEach(d=>(d.pledges||[]).forEach(p=>{const k=p.category||'ללא';camps[k]=camps[k]||{given:0,pending:0,gsum:0,psum:0,rows:[]};const a=amtNum(p.amount),g=p.status==='נתן';if(g){camps[k].given++;camps[k].gsum+=a;}else{camps[k].pending++;camps[k].psum+=a;}camps[k].rows.push({name:(d.last+' '+d.first).trim(),amt:p.amount,given:g});}));
   const keys=Object.keys(camps).filter(k=>matchQ(k));
   view.innerHTML=`<div class="cnt">${keys.length} קמפיינים</div>`+(keys.map(k=>{const c=camps[k],t=c.given+c.pending,pct=t?Math.round(100*c.given/t):0;return `<div class="campc"><h3>${esc(k)}</h3><div class="csub">נתנו ${c.given} · טרם ${c.pending} · התקבל $${c.gsum} · צפוי $${c.psum}</div><div class="campbar"><i style="width:${pct}%"></i></div>${c.rows.sort((a,b)=>a.given-b.given).map(r=>`<div class="camprow ${r.given?'given':'pending'}"><span>${esc(r.name)}</span><span>$${esc(r.amt)} · ${r.given?'נתן ✓':'טרם ✗'}</span></div>`).join('')}</div>`;}).join('')||'<div class="empty">אין עדיין קמפיינים. הוסף התחייבות בכרטיס תורם.</div>');
 }
