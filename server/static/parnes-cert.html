@@ -67,8 +67,8 @@ const KIND = q.get('kind') || 'parnes';
 
 const CFG = {
   parnes:    {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'11%'},
-  breakfast: {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'11%'},
   coffee:    {bg:'/letterhead-coffee.jpg',  top:'24%',  left:'9%',  right:'9%', bottom:'21%'},
+  breakfast: {bg:'/letterhead-coffee.jpg',  top:'24%',  left:'9%',  right:'9%', bottom:'21%'},
 };
 const cfg = CFG[KIND] || CFG.parnes;
 $('sheet').style.backgroundImage = `url("${cfg.bg}")`;
@@ -83,13 +83,14 @@ function fit(){
 }
 const wire = el => el.querySelectorAll('[contenteditable]').forEach(e=>e.addEventListener('input', fit));
 
-if(KIND==='coffee'){
-  // ----- תעודת חדר קפה -----
+if(KIND==='coffee' || KIND==='breakfast'){
+  // ----- תעודת חדר קפה / ארוחת בוקר (אותו בלאנק להשקות) -----
   $('addBtn').style.display='none';
+  const dedic = KIND==='breakfast' ? 'ארוחת בוקר היום נתרמה לזכות' : 'הקפה החלב שתיה חמה ועוגיות נתרמו לזכות';
   $('content').innerHTML =
     `<div class="cdate" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
      <div class="ctitle">פרנס יום</div>
-     <div class="cdedic" contenteditable="true" id="c_dedic">החלב והקפה נתרמו לזכות</div>
+     <div class="cdedic" contenteditable="true" id="c_dedic">${dedic}</div>
      <div class="cnames" contenteditable="true" id="c_names" data-ph="השמות"></div>
      <div class="cclose">ולזכות התורם ובנ"ב שיצליחו בכל מעשה ידיהם וירוו נחת דקדושה מכל יוצאי חלציהם</div>`;
   if(q.get('date')) $('c_date').textContent=q.get('date');
