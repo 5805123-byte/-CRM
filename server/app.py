@@ -93,6 +93,30 @@ def ensure_schema():
                          WHERE p.donor_id=tasks.donor_id
                          AND ('פרנס יום '||COALESCE(p.date_text,'')||' — הכן הדפסה וצור קשר')=tasks.note)""")
     except Exception: pass
+    # השלמת אברכי יששכר־זבולון חסרים (חד-פעמי) — מרשימת האברכים המלאה ששלח המשתמש
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
+        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v2'").fetchone()
+        pseed = os.path.join(HERE, 'partners_iz_seed.json')
+        if not done and os.path.exists(pseed):
+            na = 0
+            for rec in json.load(open(pseed, encoding='utf-8')):
+                did = rec.get('donor_id'); av = (rec.get('avreich') or '').strip()
+                if not did or not av:
+                    continue
+                d = con.execute("SELECT last FROM donors WHERE id=?", (did,)).fetchone()
+                if not d or (rec.get('last') and d['last'] != rec.get('last')):
+                    continue  # שמירה מפני מזהה שהשתנה
+                exists = con.execute("SELECT 1 FROM partners WHERE donor_id=? AND TRIM(avreich)=?", (did, av)).fetchone()
+                if exists:
+                    continue
+                con.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active) VALUES(?,?,?,?,1)",
+                            (did, av, rec.get('start', ''), rec.get('amount', '')))
+                na += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('partners_iz_v2')")
+            print(f'  השלמת אברכים: נוספו {na} אברכים')
+    except Exception as e:
+        print('  שגיאת השלמת אברכים:', e)
     # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
