@@ -5,25 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>כולל חצות — פרנס לילה</title>
 <style>
-  :root{--ink:#2a2410;--deep:#6a1414;--gold:#9c7a2e;--line:#cdbf98}
+  :root{--ink:#1c1710;--deep:#6a1414;--gold:#9c7a2e}
   *{box-sizing:border-box}html,body{margin:0}
-  /* גופן מכובד — ליוורנה אם מותקן, אחרת ברירת מחדל עברית יפה */
   body{background:#d9d2c2;color:var(--ink);font-family:"Livorna","Frank Ruhl Libre","Narkisim","David Libre","Times New Roman",serif}
   .scroller{overflow-x:auto;padding:16px}
   .sheet{position:relative;width:794px;aspect-ratio:2482/3509;margin:0 auto;
     background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
-    box-shadow:0 10px 40px rgba(0,0,0,.25);container-type:inline-size;
+    box-shadow:0 10px 40px rgba(0,0,0,.25);
     -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .content{position:absolute;top:13%;left:26%;right:6%;bottom:8%;display:flex;flex-direction:column;align-items:center;text-align:center}
-  .nusach{font-size:3cqw;line-height:1.7;width:100%}
-  .date{font-size:4cqw;font-weight:700;color:var(--deep);margin:4cqw 0 3cqw;letter-spacing:.3cqw}
-  .stand{font-size:3cqw;margin-bottom:1cqw}
-  .names{font-size:6.4cqw;font-weight:800;line-height:1.25;color:#111;margin:1cqw 0 3cqw;width:100%}
-  .req{font-size:3cqw;line-height:1.65;width:100%}
-  /* שדות עריכה — נראים חלק, מסגרת רק במיקוד */
-  [contenteditable]{outline:none;border-radius:8px;padding:2px 6px;transition:background .15s}
-  [contenteditable]:focus{background:rgba(156,122,46,.12);box-shadow:0 0 0 2px var(--gold)}
-  [contenteditable]:empty:before{content:attr(data-ph);color:#b3a884}
+  /* אזור הכתיבה — גדול, ממלא כמעט את כל הדף (מימין לסרגל, מעל הבניין/פוטר) */
+  .content{position:absolute;top:9.5%;left:25%;right:5%;bottom:11%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden}
+  /* כל הגדלים יחסיים ל-font-size של .content, שנקבע אוטומטית ב-JS כדי למלא את הדף */
+  .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
+  .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;letter-spacing:.02em;width:100%}
+  .stand{font-size:1em;font-weight:600;margin-bottom:.15em;width:100%}
+  .names{font-size:2.7em;font-weight:800;line-height:1.15;color:#000;margin:.15em 0 .4em;width:100%}
+  .req{font-size:1em;line-height:1.45;font-weight:600;width:100%}
+  [contenteditable]{outline:none;border-radius:6px;transition:background .15s}
+  [contenteditable]:focus{background:rgba(156,122,46,.14);box-shadow:0 0 0 2px var(--gold)}
+  [contenteditable]:empty:before{content:attr(data-ph);color:#b3a884;font-weight:400}
   .noprint{text-align:center;margin:14px}
   .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer;margin:0 5px}
   .noprint button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
@@ -40,27 +41,45 @@
 </head>
 <body>
 <div class="scroller"><div class="sheet">
-  <div class="content">
+  <div class="content" id="content">
     <div class="nusach">יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות בעת רצון הגדול של חצות הלילה עד הבוקר</div>
     <div class="date" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
     <div class="stand">יהיו ויעמדו לזכות</div>
-    <div class="names" contenteditable="true" id="c_names" data-ph="שמות התורם / הנפטר"></div>
-    <div class="req" contenteditable="true" id="c_req" data-ph="הבקשה (לרפואה שלמה / להצלחה / לזכר נשמת ...)"></div>
+    <div class="names" contenteditable="true" id="c_names" data-ph="השמות"></div>
+    <div class="req" contenteditable="true" id="c_req" data-ph="הבקשה"></div>
   </div>
 </div></div>
 
 <div class="noprint">
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
-  <div class="tip">מלא את התאריך, השמות והבקשה — ואז הדפס. השמות מודגשים וגדולים; הבקשה בגודל רגיל.</div>
+  <div class="tip">מלא תאריך, שמות ובקשה — הגופן גדל אוטומטית וממלא את כל הדף. השמות ענקיים ומודגשים.</div>
 </div>
 
 <script>
 const q = new URLSearchParams(location.search);
-const set=(id,v)=>{ if(v) document.getElementById(id).textContent=v; };
+const $ = id => document.getElementById(id);
+const set=(id,v)=>{ if(v) $(id).textContent=v; };
 set('c_date', q.get('date'));
 set('c_names', q.get('names'));
 set('c_req', q.get('req'));
+
+// התאמת גודל הגופן כדי למלא את כל אזור הכתיבה — אותיות ענקיות ככל האפשר
+function fit(){
+  const c = $('content');
+  const avail = c.clientHeight;
+  if(!avail) return;
+  let lo=8, hi=380, best=8;
+  for(let i=0;i<22;i++){
+    const mid=(lo+hi)/2;
+    c.style.fontSize=mid+'px';
+    if(c.scrollHeight <= avail){ best=mid; lo=mid; } else { hi=mid; }
+  }
+  c.style.fontSize=best+'px';
+}
+fit();
+window.addEventListener('resize', fit);
+['c_date','c_names','c_req'].forEach(id=>$(id).addEventListener('input', fit));
 </script>
 </body>
 </html>
