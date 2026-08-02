@@ -96,9 +96,11 @@ def ensure_schema():
     # השלמת אברכי יששכר־זבולון חסרים (חד-פעמי) — מרשימת האברכים המלאה ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
-        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v3'").fetchone()
+        done = con.execute("SELECT 1 FROM seed_flags WHERE name='partners_iz_v4'").fetchone()
         pseed = os.path.join(HERE, 'partners_iz_seed.json')
         if not done and os.path.exists(pseed):
+            # ניקוי שיוך שגוי מגרסה קודמת: "כהן ציון" שויך בטעות למיטמן אפרים (#335); שייך למיטמן מאיר (#337)
+            con.execute("DELETE FROM partners WHERE donor_id=335 AND TRIM(avreich)='כהן ציון'")
             na = 0
             for rec in json.load(open(pseed, encoding='utf-8')):
                 did = rec.get('donor_id'); av = (rec.get('avreich') or '').strip()
