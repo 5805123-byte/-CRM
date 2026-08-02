@@ -56,6 +56,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN night_date TEXT")
     except Exception: pass
+    try: con.execute("ALTER TABLE parnes ADD COLUMN hyear TEXT")
+    except Exception: pass
     # מילוי תאריך לועזי של הלילה (לצורך היעלמות סימון הירח אחרי שהלילה עבר ושולם)
     try:
         for row in con.execute("SELECT id,date_text FROM parnes WHERE COALESCE(night_date,'')=''").fetchall():
@@ -402,7 +404,7 @@ class H(BaseHTTPRequestHandler):
             b = self._body(); pid = int(m.group(1))
             con = db()
             sets=[];vals=[]
-            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date'):
+            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE parnes SET "+",".join(sets)+" WHERE id=?", vals+[pid])
@@ -581,8 +583,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
             _ng = heb_to_greg(b.get('date_text', ''))
-            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else ''))
+            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else '', b.get('hyear','')))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
             tid = None
