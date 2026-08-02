@@ -545,11 +545,12 @@ function renderDayPanel(taken){
       <div class="remitem ${sugg?'':'given'}"><div class="ri"><b>${esc(t.donor)}</b><br><small>${esc(t.dedication||'')} ${t.amount?('· $'+esc(t.amount)):''}</small></div></div>
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
-      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">פתח כרטיס</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק</button></div></div>`;
+      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ הדפס נוסח</button><button class="del" id="dpdel">מחק</button></div></div>`;
     if(sugg)document.getElementById('dpconfirm').onclick=async()=>{await api('PUT','/api/parnes/'+t.id,{status:'confirmed'});const p=(t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.status='confirmed';toast('אושר ✓ עבר למאושר');render();};
     panel.querySelector('.pyupload').onchange=e=>uploadFile('parnes',t.id,e.target,load);
     panel.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
     document.getElementById('dpopen').onclick=()=>openDonor(t.dref);
+    document.getElementById('dpkv').onclick=()=>openDonor(t.dref,'kvittel');
     document.getElementById('dpprint').onclick=()=>{plaque={...t,date_text:t.date_text||dtext};render();};
     document.getElementById('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);render();toast('נמחק');};
   }else{
@@ -558,6 +559,8 @@ function renderDayPanel(taken){
       <div id="dp_res" class="dpres"></div>
       <div id="dp_form" style="display:none">
         <div class="chosen" id="dp_chosen"></div>
+        <div class="addrow"><button type="button" class="btn sm ghost" id="dp_open">📋 פתח כרטיס</button><button type="button" class="btn sm ghost" id="dp_kv">🕯️ פתח קוויטל</button></div>
+        <div class="hintxt">כדאי לבדוק את שם הקוויטל שלו — בדרך כלל רוצים שיזכירו אותו באותו לילה.</div>
         <label class="fld"><span>בקשה ללימוד הלילה / הקדשה</span><textarea id="dp_ded" rows="2"></textarea></label>
         <div class="two"><label class="fld"><span>סכום (רשות)</span><input id="dp_amt"></label>
           <label class="fld"><span>סוג</span><select id="dp_status"><option value="confirmed">🟢 מאושר</option><option value="suggested">🔵 הצעה</option></select></label></div>
@@ -566,6 +569,8 @@ function renderDayPanel(taken){
     qi.oninput=()=>{const s=norm(qi.value);if(!s){res.innerHTML='';return;}const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english).includes(s)).slice(0,8);
       res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('');
       res.querySelectorAll('.dpr').forEach(x=>x.onclick=()=>{chosen=DB.find(y=>y.id==x.dataset.id);document.getElementById('dp_chosen').textContent='נבחר: '+chosen.last+' '+chosen.first;document.getElementById('dp_form').style.display='block';res.innerHTML='';qi.value=chosen.last+' '+chosen.first;});};
+    document.getElementById('dp_open').onclick=()=>{if(chosen)openDonor(chosen);};
+    document.getElementById('dp_kv').onclick=()=>{if(chosen)openDonor(chosen,'kvittel');};
     document.getElementById('dp_save').onclick=async()=>{if(!chosen){toast('בחר תורם');return;}const ded=document.getElementById('dp_ded').value.trim(),amt=document.getElementById('dp_amt').value.trim(),status=document.getElementById('dp_status').value;const r=await api('POST','/api/parnes',{donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind,status});chosen.parnes=chosen.parnes||[];chosen.parnes.push({id:r.id,donor_id:chosen.id,day:pyDay,month:pyMonth,date_text:dtext,dedication:ded,amount:amt,kind:pyKind,status});toast('שובץ ✓');render();};
   }
 }
