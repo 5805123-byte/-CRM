@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '';
+let DB = [], OCC = [], UNLINKED = [], GTASKS = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '';
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
@@ -115,7 +115,7 @@ function fileChip(f){const ic=(f.mime||'').indexOf('pdf')>=0?'📄':((f.mime||''
 function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');return;}toast('מעלה…');const rd=new FileReader();rd.onload=async()=>{const data=rd.result.split(',')[1];await api('POST','/api/file',{kind,ref_id:refId,name:f.name,mime:f.type,data});toast('הועלה ✓');cb&&cb();};rd.readAsDataURL(f);}
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; HEBYEAR = d.heb_year || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; HEBYEAR = d.heb_year || '';
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
@@ -1100,51 +1100,55 @@ function renderTasksTab(){
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   let all=[];
   DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(t.done&&t.done!=0)return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
+  GTASKS.forEach(t=>{if(t.done&&t.done!=0)return;all.push({...t,donor:'',dref:null});});   // משימות חופשיות בלי תורם
   if(flt) all=all.filter(t=>t.kind===flt);
   if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   // ספירת משימות פתוחות לכל אחד (מאיר=ריק, אהרן)
-  const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0))openAll.push(t);}));
+  const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0))openAll.push(t);}));GTASKS.forEach(t=>{if(!(t.done&&t.done!=0))openAll.push(t);});
   const cnt=w=>openAll.filter(t=>w===''?true:(w==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===w)).length;
   const WHO=[['','📋 הכל'],['מאיר','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
+  const inWho=taskWho==='אהרן'?'אהרן':(taskWho==='מאיר'?'מאיר':'');
   const ics=location.origin+'/calendar.ics';
   view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
-    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — עבור אהרן':''}</h3>
-      <input id="nt_q" placeholder="🔍 חפש תורם לפי שם / טלפון / עסק…" autocomplete="off">
+    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
+      <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
+      <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
       <div id="nt_res" class="dpres"></div>
       <div id="nt_chosen" class="pick" style="display:none"></div>
-      <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="other">🔔 אחר</option></select><input id="nt_date" type="date" value="${today}"></div>
-      <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="nt_who">${assigneeOpts(taskWho==='אהרן'?'אהרן':'')}</select></label><label class="fld"><span>&nbsp;</span><input id="nt_note" placeholder="פרטי המשימה (על מה)"></label></div>
-      <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה</button>
-      <div class="hintxt">בחר תורם, מי מבצע (אני / מאיר / אהרן), תאריך ומה לעשות. משימות של מזכיר נכנסות לחלון שלו.</div></div>
+      <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="other">🔔 כללי</option><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option></select><input id="nt_date" type="date" value="${today}"></div>
+      <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
+      <div class="hintxt">כתוב מה צריך לעשות. רוצה שאהרן יעשה — כתוב בחלון של אהרן; רוצה שאתה — בחלון שלך. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
     <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
-    const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor);
+    const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
-      <div><div class="nm">${icon} ${esc(t.donor)}</div><div class="miss2">${esc(t.note||'')}</div>${contactBtns(t.dref)}
-        <select class="twho" data-tid="${t.id}" onclick="event.stopPropagation()">${assigneeOpts(t.assignee)}</select></div>
+      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
-  view.querySelectorAll('.twho').forEach(s=>s.onchange=async()=>{const tid=s.dataset.tid;await api('PUT','/api/task/'+tid,{assignee:s.value});DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(t.id==tid)t.assignee=s.value;}));toast('הוקצה ✓');render();});
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
   // משימה חדשה — חיפוש ובחירת תורם
   let ntChosen=null;
   const ntq=document.getElementById('nt_q'),ntres=document.getElementById('nt_res'),ntch=document.getElementById('nt_chosen');
-  ntq.oninput=()=>{const s=norm(ntq.value);if(!s){ntres.innerHTML='';return;}
+  ntq.oninput=()=>{const s=norm(ntq.value);if(!s){ntres.innerHTML='';ntChosen=null;ntch.style.display='none';return;}
     const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business).includes(s)).slice(0,8);
     ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
   document.getElementById('nt_add').onclick=async()=>{
-    if(!ntChosen){toast('בחר תורם מהחיפוש');return;}
-    const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim(),who=document.getElementById('nt_who').value;
+    const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
+    const who=inWho;   // ההקצאה נקבעת לפי החלון
+    if(!note&&!ntChosen){toast('כתוב מה צריך לעשות');return;}
     if(!date){toast('בחר תאריך');return;}
-    const r=await api('POST','/api/task',{donor_id:ntChosen.id,due_date:date,kind:kind,note:note,assignee:who});
-    ntChosen.tasks=ntChosen.tasks||[];ntChosen.tasks.push({id:r.id,donor_id:ntChosen.id,due_date:date,kind:kind,note:note,assignee:who,done:0});
+    const body={due_date:date,kind:kind,note:note,assignee:who};
+    if(ntChosen)body.donor_id=ntChosen.id;
+    const r=await api('POST','/api/task',body);
+    const rec={id:r.id,donor_id:ntChosen?ntChosen.id:null,due_date:date,kind:kind,note:note,assignee:who,done:0};
+    if(ntChosen){ntChosen.tasks=ntChosen.tasks||[];ntChosen.tasks.push(rec);}else{GTASKS.push(rec);}
     toast('המשימה נוספה ✓'+(who?' — '+who:''));render();checkReminders();};
-  view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;openDonor(all[r.dataset.i].dref);});
-  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];if(t.id){await api('PUT','/api/task/'+t.id,{done:1});}t.done=1;const d=t.dref;const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;toast('בוצע ✓');render();checkReminders();});
+  view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;const t=all[r.dataset.i];if(t.dref)openDonor(t.dref);});
+  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];if(t.id){await api('PUT','/api/task/'+t.id,{done:1});}t.done=1;if(t.dref){const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;}else{const gt=GTASKS.find(x=>x.id===t.id);if(gt)gt.done=1;}toast('בוצע ✓');render();checkReminders();});
 }
 
 /* ---------- מזדמנים ---------- */

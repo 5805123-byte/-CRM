@@ -508,8 +508,10 @@ def get_all():
             byid[r['donor_id']]['donations'].append(dn)
     for r in c.execute("SELECT * FROM contacts_log ORDER BY date DESC"):
         if r['donor_id'] in byid: byid[r['donor_id']]['contacts'].append(dict(r))
+    general_tasks = []
     for r in c.execute("SELECT * FROM tasks ORDER BY due_date"):
         if r['donor_id'] in byid: byid[r['donor_id']]['tasks'].append(dict(r))
+        elif not r['donor_id']: general_tasks.append(dict(r))   # משימה חופשית בלי תורם
     for r in c.execute("SELECT * FROM partners"):
         if r['donor_id'] in byid: byid[r['donor_id']]['partners'].append(dict(r))
     try:
@@ -534,7 +536,7 @@ def get_all():
     except Exception:
         pass
     con.close()
-    return donors, unlinked
+    return donors, unlinked, general_tasks
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
@@ -586,8 +588,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/api/data':
-            donors, unlinked = get_all()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'heb_year': current_heb_year()})
+            donors, unlinked, general_tasks = get_all()
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'heb_year': current_heb_year()})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
