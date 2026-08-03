@@ -692,7 +692,10 @@ function renderPartners(d){
   const izn=el.querySelector('#iz_note');
   const iznSave=async()=>{d.iz_note=izn.value;await api('PUT','/api/donor/'+d.id,{iz_note:izn.value});toast('נשמר ✓');};
   if(izn){izn.onblur=()=>{if((d.iz_note||'')!==izn.value)iznSave();};el.querySelector('#iz_note_save').onclick=iznSave;}
-  el.querySelectorAll('.pfield').forEach(inp=>inp.onchange=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});toast('נשמר ✓');if(inp.dataset.k==='amount'&&tab==='donors')renderDonors();});
+  el.querySelectorAll('.pfield').forEach(inp=>{
+    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});toast('נשמר ✓');if(inp.dataset.k==='amount'&&tab==='donors')renderDonors();};
+    inp.onchange=save;let tmr;inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};
+  });
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/partner/'+b.dataset.del);d.partners=d.partners.filter(x=>x.id!=b.dataset.del);renderPartners(d);});
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);d.files=(d.files||[]).filter(x=>x.id!=b.dataset.fid);renderPartners(d);toast('נמחק');});
   const up=el.querySelector('.pshtar');if(up)up.onchange=()=>uploadFile('iz',d.id,up,load);
@@ -1051,7 +1054,7 @@ function renderAvreich(){
 function avPartnerRow(p){
   return `<div class="avp" data-pid="${p.id}">
     <div class="avmain"><input class="avf avname" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך">
-      <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום"></div>
+      <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום" inputmode="decimal"></div>
       <button class="avend" title="החלפת אברך — הקודם יישמר בהיסטוריה">🔄 החלפה</button></div>
     <div class="avsub"><select class="avf avmethod" data-k="method">${channelOpts(p.method)}</select>
       <input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="מתאריך (עברי)">
@@ -1059,7 +1062,11 @@ function avPartnerRow(p){
 }
 function bindAvFields(){
   view.querySelectorAll('.avp').forEach(row=>{const pid=row.dataset.pid;
-    row.querySelectorAll('.avf').forEach(inp=>inp.onchange=async()=>{const body={};body[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+pid,body);DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p[inp.dataset.k]=inp.value;}));toast('נשמר ✓');});
+    row.querySelectorAll('.avf').forEach(inp=>{
+      const save=async()=>{const body={};body[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+pid,body);DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p[inp.dataset.k]=inp.value;}));toast('נשמר ✓');};
+      inp.onchange=save;
+      let tmr; inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};   // שמירה גם תוך כדי הקלדה (טאבלט)
+    });
     row.querySelector('.avend').onclick=async()=>{const today=todayStr();await api('PUT','/api/partner/'+pid,{active:0,ended_date:today});DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid){p.active=0;p.ended_date=today;}}));renderAvreich();toast('הסתיים — עבר להיסטוריה');};});
 }
 function showPayments(d){

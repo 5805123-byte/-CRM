@@ -421,6 +421,15 @@ def ensure_schema():
             print(f'  קוויטל כללי: הותאמו {matched}, יובאו {imported} שמות, {unlinked} לא־משויכים')
     except Exception as e:
         print('  שגיאת קוויטל כללי:', e)
+    # טאובנפלד מרים — כל אברך שהיא מחזיקה הוא $1300 לחודש (תוקן מ-800)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='taubenfeld_1300_v1'").fetchone():
+            con.execute("""UPDATE partners SET amount='1300'
+                           WHERE active!=0 AND donor_id IN
+                           (SELECT id FROM donors WHERE last LIKE '%אובנפלד%' AND COALESCE(first,'') LIKE '%מרים%')""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('taubenfeld_1300_v1')")
+    except Exception as e:
+        print('  שגיאת טאובנפלד:', e)
     # תרומות היסטוריות שיובאו (2026) הן תשלומים שכבר עברו — לסמן כ"שולם"
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='donations_paid_v1'").fetchone():
