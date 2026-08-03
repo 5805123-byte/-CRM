@@ -281,6 +281,32 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('statfeld_merge')")
     except Exception as e:
         print('  שגיאת תיקון שטטפלד/לאקס:', e)
+    # בר חיים ברק (#67) — קוויטל כל לילה; ואיחוד ברינדא שוורץ הכפולה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='barchaim_schwartz'").fetchone():
+            con.execute("UPDATE donors SET tier='קוויטל_101' WHERE id=67")
+            keep, drop = 536, 535  # ברינדל חנה נשארת, אברהם(Brenda) ממוזג
+            k = con.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
+            d = con.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
+            if k and d:
+                for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
+                    try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                    except Exception: pass
+                try: con.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
+                except Exception: pass
+                kd, dd = dict(k), dict(d)
+                for col in ('english','email','addr','category','amount','region','country','zip','city'):
+                    if not (kd.get(col) or '').strip() and (dd.get(col) or '').strip():
+                        con.execute(f"UPDATE donors SET {col}=? WHERE id=?", (dd[col], keep))
+                kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
+                for p in re.split(r'[/,]', dd.get('phone') or ''):
+                    p = p.strip()
+                    if p and p not in kp: kp.append(p)
+                con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(kp), keep))
+                con.execute("DELETE FROM donors WHERE id=?", (drop,))
+            con.execute("INSERT INTO seed_flags(name) VALUES('barchaim_schwartz')")
+    except Exception as e:
+        print('  שגיאת בר חיים/שוורץ:', e)
     con.commit(); con.close()
 
 def get_all():
