@@ -43,7 +43,7 @@ def ensure_schema():
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN kind TEXT DEFAULT 'parnes'")
@@ -579,7 +579,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE partners SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
@@ -817,8 +817,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active) VALUES(?,?,?,?,?,1)",
-                        (b.get('donor_id'), b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note','')))
+            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active,method) VALUES(?,?,?,?,?,1,?)",
+                        (b.get('donor_id'), b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note',''), b.get('method','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/transaction':

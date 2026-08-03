@@ -66,7 +66,9 @@ const CHANNELS={
   'Pledger':{i:'📲',l:'Pledger',c:'#3b4252'},
 };
 const CHAN_ORDER=['בנק_ווסט','אותורייז','צק','Zelle','העברה_בנקאית','דונורס_פאנד','נדרים','OJC','Pledger'];
-function channelBadge(d){const cfg=CHANNELS[(d.channel||'').trim()];if(!cfg)return '';return `<span class="chbadge" style="background:${cfg.c}" title="${esc(cfg.l)}">${cfg.i} ${esc(cfg.l)}</span>`;}
+function chBadgeRaw(ch){const cfg=CHANNELS[(ch||'').trim()];if(!cfg)return '';return `<span class="chbadge" style="background:${cfg.c}" title="${esc(cfg.l)}">${cfg.i} ${esc(cfg.l)}</span>`;}
+function chLabel(ch){const cfg=CHANNELS[(ch||'').trim()];return cfg?cfg.l:(ch||'');}
+function channelBadge(d){return chBadgeRaw(d.channel);}
 function channelOpts(cur){cur=(cur||'').trim();let o='<option value="">— ללא —</option>';CHAN_ORDER.forEach(k=>{o+=`<option value="${k}" ${k===cur?'selected':''}>${CHANNELS[k].i} ${CHANNELS[k].l}</option>`;});if(cur&&!CHANNELS[cur])o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;return o;}
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 function fixedAmt(d){
@@ -85,6 +87,8 @@ async function load(){
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
   checkReminders();
+  // פתיחת כרטיס לפי פרמטר בכתובת (קישור מדף ההתאמה) — פעם אחת
+  try{const pd=new URLSearchParams(location.search).get('donor');if(pd){const dd=DB.find(x=>x.id==+pd);if(dd){openDonor(dd);}history.replaceState(null,'',location.pathname);}}catch(e){}
 }
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;render();});
@@ -329,7 +333,7 @@ function cardDetails(d,body){
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||''}));
   (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),ded:''}));
-  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||''),ded:''}));
+  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(p.method?(' · '+chLabel(p.method)):''),ded:''}));
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>`<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><span class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''}</span></div>`).join('')}</div>`:'';
   body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
@@ -604,8 +608,9 @@ function renderPartners(d){
     <div style="display:flex;justify-content:space-between;align-items:center"><b>👨‍🎓 אברך שהוא מחזיק</b><button class="del" data-del="${p.id}">🗑</button></div>
     <input class="pfield" data-id="${p.id}" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך" style="font-weight:700">
     <div class="two"><label class="fld"><span>סכום (${cur})</span><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></label>
-      <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label></div>
-    <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label>
+      <label class="fld"><span>איך משולם</span><select class="pfield" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
+    <div class="two"><label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label>
+      <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label></div>
   </div>`).join('')||'<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
   el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📝 מעקב חוב יששכר־זבולון</div>
       <textarea id="iz_note" rows="2" placeholder="למשל: השלים חוב עד חודש תמוז · חייב 3 חודשים · שילם $4500 ב-13/7">${esc(d.iz_note||'')}</textarea>
@@ -913,13 +918,14 @@ function renderAvTable(){
     <div class="avtabtitle"><b id="avttl"></b></div>
     <div style="overflow-x:auto"><table class="avtable"><thead><tr>
       <th class="avsort-th" data-s="last">תורם (זבולון)</th><th class="avsort-th" data-s="av">אברך</th>
-      <th>תאריך התחלה</th><th class="avsort-th" data-s="amt">סכום</th><th>שטר</th><th>הערות</th></tr></thead>
+      <th>תאריך התחלה</th><th class="avsort-th" data-s="amt">סכום</th><th>איך משולם</th><th>שטר</th><th>הערות</th></tr></thead>
     <tbody id="avtbody"></tbody></table></div>`;
   const sortSel=document.getElementById('avtsort'); sortSel.value=avSort;
   function paintRows(){
     const izd=filterIZ();const rows=[];izd.forEach(d=>{const act=(d.partners||[]).filter(p=>p.active!=0);if(act.length)act.forEach(p=>rows.push({d,p}));else rows.push({d,p:null});});
     document.getElementById('avttl').textContent=`טבלת יששכר־זבולון (${rows.length})`;
-    document.getElementById('avtbody').innerHTML=rows.map(({d,p})=>{const izf=(d.files||[]).filter(f=>f.kind==='iz'||!f.kind);const shtar=izf.length?`<a href="/api/file/${izf[0].id}" target="_blank" rel="noopener">📄 צפה</a>`:'';return `<tr><td>${esc(d.last+' '+d.first)}</td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${shtar}</td><td>${esc(p?(p.note||''):'')}</td></tr>`;}).join('');
+    document.getElementById('avtbody').innerHTML=rows.map(({d,p})=>{const izf=(d.files||[]).filter(f=>f.kind==='iz'||!f.kind);const shtar=izf.length?`<a href="/api/file/${izf[0].id}" target="_blank" rel="noopener">📄 צפה</a>`:'';return `<tr><td><span class="avnamelink" data-id="${d.id}">${esc(d.last+' '+d.first)}</span></td><td>${esc(p?p.avreich:'—')}</td><td>${esc(p?(p.start_date||''):'')}</td><td>${esc(p?(p.amount||''):'')}</td><td>${esc(p?chLabel(p.method):'')}</td><td>${shtar}</td><td>${esc(p?(p.note||''):'')}</td></tr>`;}).join('');
+    view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avsort-th').forEach(th=>th.classList.toggle('on',th.dataset.s===avSort));
   }
   document.getElementById('avcards').onclick=()=>{avView='cards';render();};
@@ -948,13 +954,14 @@ function renderAvreich(){
     const izd=filterIZ();
     document.getElementById('avcnt').innerHTML=`${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות`;
     document.getElementById('avlistwrap').innerHTML=izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
-      return `<div class="avrow"><div class="avtop"><b>${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
+      return `<div class="avrow"><div class="avtop"><b class="avnamelink" data-id="${d.id}" title="פתח כרטיס">${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
         <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
         <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button>
         <div class="avfiles">${(d.files||[]).map(fileChip).join('')}<label class="filebtn">📎 העלה שטר הסכם (PDF)<input type="file" accept="application/pdf,image/*" class="izupload" data-id="${d.id}" hidden></label></div></div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.izupload').forEach(inp=>inp.onchange=()=>uploadFile('iz',+inp.dataset.id,inp,load));
     view.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
     view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+    view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avpay').forEach(b=>b.onclick=()=>showPayments(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avadd').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id),today=todayStr();const r=await api('POST','/api/partner',{donor_id:d.id,avreich:'',start_date:today});d.partners=d.partners||[];d.partners.push({id:r.id,donor_id:d.id,avreich:'',start_date:today,amount:'',note:'',active:1});renderAvreich();});
@@ -970,7 +977,8 @@ function avPartnerRow(p){
     <div class="avmain"><input class="avf avname" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך">
       <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום"></div>
       <button class="avend" title="החלפת אברך — הקודם יישמר בהיסטוריה">🔄 החלפה</button></div>
-    <div class="avsub"><input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="מתאריך (עברי)">
+    <div class="avsub"><select class="avf avmethod" data-k="method">${channelOpts(p.method)}</select>
+      <input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="מתאריך (עברי)">
       <input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="הערות"></div></div>`;
 }
 function bindAvFields(){
