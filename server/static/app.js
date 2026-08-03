@@ -109,6 +109,7 @@ function amtNum(a){const n=parseFloat(String(a||'').replace(/[^0-9.]/g,''));retu
 const DFILTERS={
   'iz':{label:'יששכר־זבולון', fn:d=>d.tier==='יששכר_זבולון'},
   'k101':{label:'כל לילה', fn:d=>d.tier==='קוויטל_101'},
+  'reg':{label:'💵 קבוע', fn:d=>d.category==='קבוע'},
   'reglow':{label:'שבועי', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
   'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
@@ -117,7 +118,7 @@ const DFILTERS={
   'new':{label:'🆕 נוספו', fn:d=>!!d.created},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['il','iz','k101','building','reglow','occ','klali','new',''];
+const DFORDER=['il','iz','k101','reg','reglow','occ','klali','building','new',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
