@@ -371,6 +371,50 @@ def ensure_schema():
             print(f'  קוויטל 101: הותאמו {matched}, יובאו {imported} שמות, {unlinked} לא־משויכים')
     except Exception as e:
         print('  שגיאת קוויטל 101:', e)
+    # קוויטל כללי — כל המסומנים "קוויטל" בגוגל (לא רק 101), עם התאמה גמישה לאיות יידיש
+    try:
+        seedall = os.path.join(HERE, 'kvittel_all_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v1'").fetchone() and os.path.exists(seedall):
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _h(s):  # נירמול עברי — מתעלם מאותיות שווא/ניקוד ואיות כפול (וורצברגר≈ווערצבערגער)
+                s = re.sub(r'[^֐-׿]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
+            for d in donors: d['_l'] = _h(d['last']); d['_f'] = _h(d['first'])
+            matched = imported = unlinked = 0
+            for e in json.load(open(seedall, encoding='utf-8')):
+                emails = [x.lower() for x in (e.get('emails') or [])]
+                phones = [x for x in (e.get('phones') or []) if x]
+                el, ef = _h(e.get('last')), _h(e.get('first'))
+                hit = None
+                for d in donors:
+                    dphs = [_d7(p) for p in re.split(r'[/,]', d['phone'] or '') if _d7(p)]
+                    if phones and any(p in dphs for p in phones): hit = d; break
+                if not hit and emails:
+                    for d in donors:
+                        if (d['email'] or '').strip().lower() in emails and d['email']: hit = d; break
+                if not hit and el and ef:
+                    for d in donors:
+                        if d['_l'] == el and d['_f'][:len(ef)] == ef: hit = d; break
+                if not hit and el:
+                    same = [d for d in donors if d['_l'] == el]
+                    if len(same) == 1: hit = same[0]
+                notes = (e.get('notes') or '').strip()
+                newtier = 'קוויטל_101' if e.get('is101') else 'קוויטל_שבועי'  # "קוויטל" לבד = שבועי
+                if hit:
+                    matched += 1
+                    if (hit['tier'] or '') not in ('יששכר_זבולון', 'קוויטל_101'):
+                        con.execute("UPDATE donors SET tier=? WHERE id=?", (newtier, hit['id']))
+                    if notes and not con.execute("SELECT 1 FROM prayers WHERE donor_id=?", (hit['id'],)).fetchone():
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (hit['id'], notes, newtier))
+                        imported += 1
+                elif notes:
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(NULL,?,?,?)", ((e.get('last', '') + ' ' + e.get('first', '')).strip(), notes, newtier))
+                    unlinked += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_all_v1')")
+            print(f'  קוויטל כללי: הותאמו {matched}, יובאו {imported} שמות, {unlinked} לא־משויכים')
+    except Exception as e:
+        print('  שגיאת קוויטל כללי:', e)
     # תרומות היסטוריות שיובאו (2026) הן תשלומים שכבר עברו — לסמן כ"שולם"
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='donations_paid_v1'").fetchone():

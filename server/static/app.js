@@ -47,7 +47,7 @@ function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],t
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
-const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_כללי':['כללי','klali']};
+const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_שבועי':['שבועי','wkly'],'קוויטל_כללי':['כללי','klali']};
 const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה', 'מזדמן/חד-פעמי'];
 const MON = ['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
 const KIND = {charge:'💳 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 להתפלל',followup:'📞 לחזור',other:'🔔 תזכורת'};
@@ -177,7 +177,7 @@ function renderDonors(){
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span>${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}</div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
-      ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}${contactBtns(d)}</div>
+      ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
       <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
@@ -335,7 +335,7 @@ function gaps(m){if(!m)return [];const f=m.indexOf('p');if(f<0)return[];const g=
 function monthGrid(m){if(!m)return '';const f=m.indexOf('p');return `<div class="mgrid">${MON.map((l,i)=>{let c;if(m[i]==='p')c='gp';else if(f>=0&&i>=f&&i<=GLAST)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
 
 let cardTab='details';
-function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
+function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
 
 function openDonor(d,startTab){
@@ -397,7 +397,8 @@ function cardDetails(d,body){
   (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),ded:''}));
   (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(p.method?(' · '+chLabel(p.method)):''),ded:''}));
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>`<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><span class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''}</span></div>`).join('')}</div>`:'';
-  body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
+  body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
+    ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
@@ -533,6 +534,7 @@ function cardDonations(d,body){
 }
 function cardContact(d,body){
   body.innerHTML=`
+    ${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <div class="sec"><h3>📞 תיעוד קשר</h3><div id="clog"></div>
       <div class="addrow"><select id="cl_ch"><option>טלפון</option><option>אימייל</option><option>וואטסאפ</option><option>פגישה</option></select><input id="cl_date" type="date"></div>
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
@@ -761,12 +763,13 @@ function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שב
 function kvMemberType(d){
   if(d.tier==='יששכר_זבולון')return 'iz';
   if(d.tier==='קוויטל_101')return '101';
+  if(d.tier==='קוויטל_שבועי')return 'weekly';
   if(d.tier==='קוויטל_כללי')return 'klali';
   if(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)return 'weekly';
   return null;
 }
-// מסומן בקוויטל אך אין לו עדיין שם לתפילה, ולא סומן "לא צריך"
-function kvMissingList(){return DB.filter(d=>kvMemberType(d)&&!(d.prayers&&d.prayers.length)&&!(+d.kv_skip));}
+// כל תורם שאין לו שם לתפילה ולא סומן "לא צריך" — כדי להתריע על כולם
+function kvMissingList(){return DB.filter(d=>!(d.prayers&&d.prayers.length)&&!(+d.kv_skip));}
 // חיפוש שם על פני כל סוגי הקוויטל — בלי לבחור קטגוריה קודם
 function renderKvSearch(){
   let entries=[];
@@ -799,10 +802,11 @@ function renderKvittel(){
 }
 function renderKvMissing(){
   let list=kvMissingList().filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
-  list.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔴 חסרים שמות קוויטל</b><span class="cnt2">(${list.length})</span></div>
-    <div class="hintxt" style="margin:0 2px 8px">מסומנים בקוויטל אך אין להם עדיין שם לתפילה. הקלד שם לתפילה — או לחץ ✓ אם התורם לא ביקש קוויטל (יוסר מהרשימה).</div>
-    ${list.map(d=>`<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvTypeLabel(kvMemberType(d))}</span> <span class="opencard">↗ כרטיס</span></div>
+  const prio=d=>kvMemberType(d)?0:1;  // מסומני קוויטל קודם, אחר כך השאר
+  list.sort((a,b)=>prio(a)-prio(b)||(a.last||'').localeCompare(b.last||'','he'));
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔴 תורמים בלי שם לקוויטל</b><span class="cnt2">(${list.length})</span></div>
+    <div class="hintxt" style="margin:0 2px 8px">כל תורם שאין לו עדיין שם לתפילה. הקלד שם — או לחץ ✓ אם הוא לא ביקש קוויטל (יוסר מהרשימה). מסומני הקוויטל למעלה.</div>
+    ${list.map(d=>`<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvMemberType(d)?kvTypeLabel(kvMemberType(d)):'אין קוויטל'}</span> <span class="opencard">↗ כרטיס</span></div>
       ${contactBtns(d)}
       <div class="kvmissrow"><div class="names" contenteditable="true" data-newdid="${d.id}" data-ph="שם לתפילה — הקלד כאן"></div><button class="kvskip" data-skip="${d.id}" title="לא ביקש קוויטל">✓ לא ביקש</button></div></div>`).join('')||'<div class="empty">🎉 אין חסרים — לכל המסומנים בקוויטל יש שם</div>'}`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
@@ -824,7 +828,7 @@ function prayerKvType(pt,d){
   d=d||{};
   if(pt==='יששכר_זבולון'||(!pt&&d.tier==='יששכר_זבולון'))return 'iz';
   if(pt==='קוויטל_101'||(!pt&&d.tier==='קוויטל_101'))return '101';
-  if(pt==='שבועי'||(!pt&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101))return 'weekly';
+  if(pt==='שבועי'||pt==='קוויטל_שבועי'||(!pt&&d.tier==='קוויטל_שבועי')||(!pt&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101))return 'weekly';
   if(d.category==='מזדמן'&&!d.tier)return 'occ';
   return 'other';
 }
