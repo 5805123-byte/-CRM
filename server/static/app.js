@@ -1,7 +1,7 @@
 'use strict';
 let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '';
-// מזכירים — הקצאת משימות (ריק = אני)
-function assigneeOpts(cur){return [['','אני'],['מאיר','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
+// מאיר (אני, ריק) ואהרן — הקצאת משימות
+function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
 const GMON=['','ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 const GREGYEAR=String(new Date().getFullYear());
@@ -1101,21 +1101,21 @@ function renderTasksTab(){
   let all=[];
   DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(t.done&&t.done!=0)return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
   if(flt) all=all.filter(t=>t.kind===flt);
-  if(taskWho) all=all.filter(t=>taskWho==='אני'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
+  if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
-  // ספירת משימות פתוחות לכל מזכיר
+  // ספירת משימות פתוחות לכל אחד (מאיר=ריק, אהרן)
   const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0))openAll.push(t);}));
-  const cnt=w=>openAll.filter(t=>w==='אני'?!(t.assignee||'').trim():(w===''?true:(t.assignee||'')===w)).length;
-  const WHO=[['','📋 הכל'],['אני','🧔 שלי'],['מאיר','👤 מאיר'],['אהרן','👤 אהרן']];
+  const cnt=w=>openAll.filter(t=>w===''?true:(w==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===w)).length;
+  const WHO=[['','📋 הכל'],['מאיר','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
   const ics=location.origin+'/calendar.ics';
   view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
-    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho&&taskWho!=='אני'?(' — עבור '+esc(taskWho)):''}</h3>
+    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — עבור אהרן':''}</h3>
       <input id="nt_q" placeholder="🔍 חפש תורם לפי שם / טלפון / עסק…" autocomplete="off">
       <div id="nt_res" class="dpres"></div>
       <div id="nt_chosen" class="pick" style="display:none"></div>
       <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="other">🔔 אחר</option></select><input id="nt_date" type="date" value="${today}"></div>
-      <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="nt_who">${assigneeOpts(taskWho==='אני'?'':taskWho)}</select></label><label class="fld"><span>&nbsp;</span><input id="nt_note" placeholder="פרטי המשימה (על מה)"></label></div>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="nt_who">${assigneeOpts(taskWho==='אהרן'?'אהרן':'')}</select></label><label class="fld"><span>&nbsp;</span><input id="nt_note" placeholder="פרטי המשימה (על מה)"></label></div>
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה</button>
       <div class="hintxt">בחר תורם, מי מבצע (אני / מאיר / אהרן), תאריך ומה לעשות. משימות של מזכיר נכנסות לחלון שלו.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
