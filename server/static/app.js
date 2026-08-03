@@ -378,9 +378,9 @@ function cardDetails(d,body){
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
-    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="auto"></label>
-    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="auto"></label>
-      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="auto"></label></div>
+    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
+    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
+      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
     <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
     <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label>
