@@ -51,6 +51,10 @@ const view = document.getElementById('view'), chips = document.getElementById('c
       toastEl = document.getElementById('toast');
 const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_שבועי':['שבועי','wkly'],'קוויטל_כללי':['כללי','klali']};
 const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה', 'מזדמן/חד-פעמי'];
+// תדירות תרומה — לקבוע שאינו בהכרח חודשי
+const FREQ = [['','חודשי'],['x2m','פעמיים בחודש'],['2m','כל חודשיים'],['3m','כל 3 חודשים (רבעוני)'],['4m','כל 4 חודשים'],['6m','פעמיים בשנה'],['1y','פעם בשנה'],['חגים','לחגים בלבד'],['משתנה','משתנה / לפי הצורך']];
+function freqOpts(cur){return FREQ.map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
+function freqLabel(v){const f=FREQ.find(x=>x[0]===v);return f&&f[0]?f[1]:'';}
 const MON = ['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
 const KIND = {charge:'💳 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 להתפלל',followup:'📞 לחזור',other:'🔔 תזכורת'};
 function todayStr(){return new Date().toISOString().slice(0,10);}
@@ -180,7 +184,7 @@ function renderDonors(){
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
       ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
+      <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
@@ -410,6 +414,7 @@ function cardDetails(d,body){
     <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
     <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
+    <label class="fld"><span>תדירות (כל כמה זמן תורם)</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
     <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
@@ -426,7 +431,7 @@ function cardDetails(d,body){
     ${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div></div>`:''}
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
-  const FF=['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region','channel'];
+  const FF=['last','first','english','tier','category','purpose','amount','frequency','email','addr','city','country','zip','business','region','channel'];
   wireFields(d,FF);
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
   renderPhones(d);

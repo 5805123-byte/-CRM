@@ -83,6 +83,9 @@ def ensure_schema():
     # הקצאת משימה למזכיר (מאיר / אהרן / ריק=אני)
     try: con.execute("ALTER TABLE tasks ADD COLUMN assignee TEXT")
     except Exception: pass
+    # תדירות תרומה — קבוע אך לא בהכרח חודשי (רבעוני / שנתי / לחגים וכו')
+    try: con.execute("ALTER TABLE donors ADD COLUMN frequency TEXT")
+    except Exception: pass
     # השלמת דרגת יששכר־זבולון לתורמים שהיו ברשימה אך לא סומנו (מקור אמת: iz_seed.json + כל מי שיש לו אברך)
     try:
         con.execute("""UPDATE donors SET tier='יששכר_זבולון'
@@ -540,7 +543,7 @@ def get_all():
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','kv_skip','addr_ok'}
+                'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
