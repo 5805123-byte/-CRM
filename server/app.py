@@ -464,6 +464,18 @@ def ensure_schema():
             print(f'  קוויטל v2: הותאמו {matched}, יובאו {imported}')
     except Exception as e:
         print('  שגיאת קוויטל v2:', e)
+    # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
+            con.execute("UPDATE donors SET iz_note=? WHERE last LIKE '%שטטפלד%' AND COALESCE(first,'') LIKE '%בנימין%'",
+                        ('שותפות יש"ז עם אחיו יואל שטטפלד — נותנים ביחד מאותו עסק',))
+            con.execute("UPDATE donors SET iz_note=? WHERE last LIKE '%שטטפלד%' AND COALESCE(first,'') LIKE '%יואל%'",
+                        ('שותפות יש"ז עם אחיו בנימין שטטפלד — נותנים ביחד מאותו עסק (מחזיקים את האברך חבה יחזקאל)',))
+            con.execute("""UPDATE partners SET note='במשותף עם אחיו יואל שטטפלד — אותו עסק'
+                           WHERE active!=0 AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%שטטפלד%' AND COALESCE(first,'') LIKE '%בנימין%')""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('statfeld_bros_v1')")
+    except Exception as e:
+        print('  שגיאת שטטפלד אחים:', e)
     # טאובנפלד מרים — כל אברך שהיא מחזיקה הוא $1300 לחודש (תוקן מ-800)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='taubenfeld_1300_v1'").fetchone():
@@ -792,6 +804,7 @@ class H(BaseHTTPRequestHandler):
             con = db(); sets = []; vals = []
             if 'text' in b: sets.append('text=?'); vals.append(b['text'])
             if 'tier' in b: sets.append('tier=?'); vals.append(b['tier'])
+            if 'donor_id' in b: sets.append('donor_id=?'); vals.append(b['donor_id'])   # שיוך תפילה לא־משויכת לתורם
             if sets:
                 con.execute("UPDATE prayers SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
                 con.commit()

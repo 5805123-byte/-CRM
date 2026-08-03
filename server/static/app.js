@@ -356,7 +356,7 @@ function openDonor(d,startTab){
   const nopen=(d.tasks||[]).filter(t=>!t.done||t.done==0).length;
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
     <h2 id="cardTitle">${esc(d.last)} ${esc(d.first)}</h2>
-    <div class="cardsub"><span class="cardnum">כרטיס #${d.id}</span> ${catPill(d.category)} ${pill(d.tier)} ${d.english?`<span class="ensm" dir="ltr">${esc(d.english)}</span>`:''}</div>
+    <div class="cardsub"><span class="cardnum">כרטיס #${d.id}</span> ${catPill(d.category)} ${d.tier==='יששכר_זבולון'?`<span class="izchip" id="izHeadLink" title="לחץ לראות אברך ושותף">${pill(d.tier)} 👥</span>`:pill(d.tier)} ${d.english?`<span class="ensm" dir="ltr">${esc(d.english)}</span>`:''}</div>
     <div class="ctabs">
       <button class="ctab" data-c="details">פרטים</button>
       <button class="ctab" data-c="kvittel">🕯️ קוויטל</button>
@@ -368,6 +368,7 @@ function openDonor(d,startTab){
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
   sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{cardTab=b.dataset.c;renderCard(d);});
+  const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='donations';renderCard(d);};
   renderCard(d);
 }
 function renderCard(d){
@@ -827,17 +828,47 @@ function renderKvittel(){
   chips.innerHTML='';
   if(!kvSub){
     if(q) return renderKvSearch();   // יש חיפוש — הצג תוצאות מכל הסוגים ישירות
-    const miss=kvMissingList().length;
+    const miss=kvMissingList().length, unl=(UNLINKED||[]).length;
     view.innerHTML=`<div class="cnt">בחר סוג קוויטל <small style="color:var(--muted)">· או חפש שם למעלה כדי לדלג ישר לתוצאות</small></div>
       ${miss?`<button class="btn kvmissbtn" id="kvMissBtn">🔴 חסרים שמות קוויטל — ${miss} לטיפול</button>`:''}
+      ${unl?`<button class="btn kvunlbtn" id="kvUnlBtn">🔗 קוויטל לא־משויכים — ${unl} להחלטה</button>`:''}
       <div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
     view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvSub=b.dataset.k;render();});
     const mb=document.getElementById('kvMissBtn');if(mb)mb.onclick=()=>{kvSub='missing';render();};
+    const ub=document.getElementById('kvUnlBtn');if(ub)ub.onclick=()=>{kvSub='unlinked';render();};
     return;
   }
+  if(kvSub==='unlinked') return renderKvUnlinked();
   if(kvSub==='missing') return renderKvMissing();
   if(kvSub==='occ') return renderKvOcc();
   renderKvList(kvSub);
+}
+function renderKvUnlinked(){
+  const list=(UNLINKED||[]).filter(p=>matchQ((p.name||'')+' '+(p.text||'')));
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔗 קוויטל לא־משויכים</b><span class="cnt2">(${list.length})</span></div>
+    <div class="hintxt" style="margin:0 2px 8px">אלה שמות קוויטל מאנשי הקשר שלא נמצא להם כרטיס תורם תואם. לכל אחד: צור כרטיס חדש, שייך לתורם קיים, או מחק.</div>
+    ${list.map(p=>`<div class="kblock unlrow" data-id="${p.id}">
+      <div class="who"><b>${esc(p.name||'ללא שם')}</b> <span class="kvtag">${kvTypeLabel(prayerKvType(p.tier,null))}</span></div>
+      <div class="names" style="white-space:pre-line;margin:4px 0">${esc(p.text||'')}</div>
+      <div class="unlact"><button class="btn sm unlnew" data-id="${p.id}">➕ צור כרטיס</button><button class="btn sm ghost unllink" data-id="${p.id}">🔗 שייך לתורם קיים</button><button class="del unldel" data-id="${p.id}">🗑</button></div>
+      <div class="unlsearch hidden" data-id="${p.id}"><input class="unlq" placeholder="🔍 חפש תורם קיים…" autocomplete="off"><div class="dpres unlres"></div></div>
+    </div>`).join('')||'<div class="empty">🎉 אין לא־משויכים</div>'}`;
+  document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
+  view.querySelectorAll('.unldel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את השם הזה מהקוויטל?'))return;await api('DELETE','/api/prayer/'+b.dataset.id);UNLINKED=UNLINKED.filter(x=>x.id!=b.dataset.id);renderKvUnlinked();toast('נמחק');});
+  view.querySelectorAll('.unlnew').forEach(b=>b.onclick=async()=>{
+    const p=UNLINKED.find(x=>x.id==b.dataset.id);if(!p)return;
+    const parts=(p.name||'').trim().split(/\s+/);const last=parts[0]||p.name||'—',first=parts.slice(1).join(' ');
+    if(!confirm('ליצור כרטיס תורם חדש בשם "'+esc((last+' '+first).trim())+'" ולשייך אליו את השם?'))return;
+    const r=await api('POST','/api/donor',{last:last,first:first,tier:p.tier||'קוויטל_שבועי'});
+    await api('PUT','/api/prayer/'+p.id,{donor_id:r.id});
+    toast('נוצר כרטיס ושויך ✓');await load();kvSub='unlinked';render();});
+  view.querySelectorAll('.unllink').forEach(b=>b.onclick=()=>{const s=view.querySelector('.unlsearch[data-id="'+b.dataset.id+'"]');if(s)s.classList.toggle('hidden');});
+  view.querySelectorAll('.unlsearch').forEach(box=>{const pid=box.dataset.id,inp=box.querySelector('.unlq'),res=box.querySelector('.unlres');
+    inp.oninput=()=>{const s=norm(inp.value);if(!s){res.innerHTML='';return;}
+      const m=DB.filter(x=>norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,8);
+      res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{const dd=DB.find(x=>x.id==el.dataset.did);if(!dd)return;if(!confirm('לשייך את השם ל"'+(dd.last+' '+dd.first).trim()+'"?'))return;await api('PUT','/api/prayer/'+pid,{donor_id:dd.id});toast('שויך ✓');await load();kvSub='unlinked';render();});
+    };});
 }
 function renderKvMissing(){
   let list=kvMissingList().filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
