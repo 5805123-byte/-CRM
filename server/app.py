@@ -961,8 +961,14 @@ class H(BaseHTTPRequestHandler):
             dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
             diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}" if dm else ''
             cat = b.get('category', '') or row['category'] or ''
-            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
-                        (did, diso, row['amount'], cat, 'Authorize', 'התאמת יולי 2026' + (' · הוראת קבע' if row['recurring'] else '')))
+            PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
+            if cat in PKIND:
+                # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות; היום ישובץ בלוח פרנס
+                cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,method) VALUES(?,0,'','',?,?,?,'confirmed',1,?)",
+                            (did, row['amount'], b.get('dedication', ''), PKIND[cat], 'Authorize'))
+            else:
+                cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
+                            (did, diso, row['amount'], cat, 'Authorize', 'התאמת יולי 2026' + (' · הוראת קבע' if row['recurring'] else '')))
             if row['recurring']:
                 cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
             # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל

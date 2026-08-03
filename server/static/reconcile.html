@@ -58,7 +58,7 @@
 </head>
 <body>
 <h1>💳 טיפול בתרומות Authorize — יולי 2026</h1>
-<div class="sub">לכל תורם: אשר עבור מה תרם, השלם שם עברי / צור כרטיס, ובחר אם לעדכן כתובת. תרומת $480 = פרנס לילה. הוראות קבע מסומנות.</div>
+<div class="sub">לכל תורם: אשר עבור מה תרם, השלם שם עברי / צור כרטיס, ובחר אם לעדכן כתובת. תרומת $480 = פרנס לילה. הוראות קבע מסומנות.<br>בפרנס — אפשר לכתוב מיד את השמות; היום ישובץ ב<a href="/" target="_blank" rel="noopener" style="color:var(--accent);font-weight:800">🌙 לוח פרנס יום</a>.</div>
 <div class="bar">
   <div class="prog"><i id="pbar"></i></div>
   <div class="sub" id="pcount" style="margin:5px 0 0"></div>
@@ -163,6 +163,7 @@ function groupCard(k,txs){
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
       ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
       ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select>`)}
+      ${(!failed&&!t.processed)?`<input class="pyded" placeholder="🕯️ שמות/בקשות לפרנס (רשות)" style="display:${(is480||['פרנס לילה','חדר קפה','ארוחת בוקר'].includes(t.category||''))?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit">`:''}
     </div>`;
   }).join('');
   return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
@@ -200,6 +201,8 @@ function wireGroup(k,txs){
     const nl=assign.querySelector('.nl'), nf=assign.querySelector('.nf');
     [nl,nf].forEach(inp=>inp.oninput=()=>{ if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } });
   }
+  // הצגת שדה שמות פרנס כשבוחרים קטגוריית פרנס
+  card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded');if(sel&&ded)sel.addEventListener('change',()=>{ded.style.display=['פרנס לילה','חדר קפה','ארוחת בוקר'].includes(sel.value)?'block':'none';});});
   const btn=card.querySelector('.btn.go'); if(!btn) return;
   btn.onclick=async()=>{
     if(!state.donorId && !state.createNew){ toast('בחר תורם קיים או מלא שם משפחה לכרטיס חדש'); return; }
@@ -211,7 +214,8 @@ function wireGroup(k,txs){
       const tid=txEl.dataset.tid;
       if(txEl.classList.contains('failed')){ await api('POST','/api/recon/'+tid,{skip:true}); continue; }  // לא עבר — לא מייבאים
       const sel=txEl.querySelector('.cat'); if(!sel) continue;
-      const body={category:sel.value, update_addr:upaddr};
+      const dedEl=txEl.querySelector('.pyded');
+      const body={category:sel.value, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
       if(donorId) body.donor_id=donorId;
       else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf}; }
       const r=await api('POST','/api/recon/'+tid, body);
