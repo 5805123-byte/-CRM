@@ -80,6 +80,9 @@ def ensure_schema():
     # סימון "כתובת תקינה/טופלה" — להסיר מרשימת כתובות לתיקון
     try: con.execute("ALTER TABLE donors ADD COLUMN addr_ok INTEGER DEFAULT 0")
     except Exception: pass
+    # הקצאת משימה למזכיר (מאיר / אהרן / ריק=אני)
+    try: con.execute("ALTER TABLE tasks ADD COLUMN assignee TEXT")
+    except Exception: pass
     # השלמת דרגת יששכר־זבולון לתורמים שהיו ברשימה אך לא סומנו (מקור אמת: iz_seed.json + כל מי שיש לו אברך)
     try:
         con.execute("""UPDATE donors SET tier='יששכר_זבולון'
@@ -718,7 +721,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('due_date','kind','note','done'):
+            for k in ('due_date','kind','note','done','assignee'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE tasks SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
@@ -961,8 +964,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})
         if self.path == '/api/task':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                        (b.get('donor_id'), b.get('due_date',''), b.get('kind','prayer'), b.get('note','')))
+            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('due_date',''), b.get('kind','prayer'), b.get('note',''), b.get('assignee','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':
