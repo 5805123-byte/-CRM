@@ -23,6 +23,9 @@
   .match{margin:8px 0;padding:8px 10px;border-radius:10px;font-size:.9rem}
   .match.ok{background:#eaf6ee;border:1px solid #bfe3c9}
   .match.no{background:#fdeee9;border:1px solid #f2c9bc}
+  .match .inlineedit{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;clear:both}
+  .match .inlineedit label{font-size:.8rem;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:5px}
+  .match .inlineedit select{padding:6px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink);font-weight:700}
   .fld{display:block;margin:7px 0}
   .fld span{display:block;font-size:.78rem;color:var(--muted);margin-bottom:3px;font-weight:700}
   .fld input,.fld select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font-family:inherit;font-size:.92rem}
@@ -73,6 +76,11 @@
 const $ = s => document.querySelector(s);
 let DATA = [], FILT = 'pending';
 const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','אחר'];
+// שינוי קוויטל/קטגוריה של התורם ישירות מכאן — בלי להיכנס לכרטיס
+const TIEROPTS = [['','— בלי קוויטל —'],['יששכר_זבולון','יששכר־זבולון'],['קוויטל_101','כל לילה'],['קוויטל_כללי','כללי']];
+const DCATS = ['','קבוע','מזדמן','פרנס יום','בניין/הקדשה','חד-פעמי'];
+function tierOpts(sel){return TIEROPTS.map(([v,l])=>`<option value="${esc(v)}" ${v===(sel||'')?'selected':''}>${l}</option>`).join('');}
+function dcatOpts(sel){return DCATS.map(c=>`<option value="${esc(c)}" ${c===(sel||'')?'selected':''}>${c||'— קטגוריה —'}</option>`).join('');}
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1400);}
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -119,8 +127,12 @@ function groupCard(k,txs){
     <div class="gsum">${settled.length} עברו · סה"כ $${total.toFixed(2)}${failedN?(' · <span style="color:var(--no)">'+failedN+' לא עברו</span>'):''}${t0.email?(' · '+esc(t0.email)):''}</div>`;
   let matchHtml;
   if(matched){
-    matchHtml=`<div class="match ok">✓ מותאם לכרטיס: <b>${esc(matched.match_name||'')}</b>${matched.match_tier?(' · '+esc(matched.match_tier)):''}
-      <button class="btn sm ghost changebtn" style="float:left;padding:3px 9px">🔄 שנה</button></div>`;
+    matchHtml=`<div class="match ok" data-did="${matched.donor_id}">✓ מותאם לכרטיס: <b>${esc(matched.match_name||'')}</b>
+      <button class="btn sm ghost changebtn" style="float:left;padding:3px 9px">🔄 שנה תורם</button>
+      <div class="inlineedit">
+        <label>🕯️ קוויטל:<select class="mtier">${tierOpts(matched.match_tier||'')}</select></label>
+        <label>📋 קטגוריה:<select class="mcat">${dcatOpts(matched.match_cat||'')}</select></label>
+      </div></div>`;
   }else{
     matchHtml=`<div class="match no">❓ לא נמצא כרטיס תואם — חפש קיים או צור חדש</div>`;
   }
@@ -164,6 +176,11 @@ function wireGroup(k,txs){
   const state={donorId:(txs.find(t=>t.donor_id)||{}).donor_id||null, createNew:false, nl:'', nf:''};
   const chb=card.querySelector('.changebtn');
   if(chb) chb.onclick=()=>{ const a=card.querySelector('.assign'); a.style.display = a.style.display==='none'?'block':'none'; };
+  // שינוי קוויטל/קטגוריה של התורם ישירות בשורת ההתאמה
+  const did=(txs.find(t=>t.donor_id)||{}).donor_id;
+  const mt=card.querySelector('.mtier'), mc=card.querySelector('.mcat');
+  if(mt&&did) mt.onchange=async()=>{ await api('PUT','/api/donor/'+did,{tier:mt.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_tier=mt.value;}); toast('קוויטל עודכן בכרטיס ✓'); };
+  if(mc&&did) mc.onchange=async()=>{ await api('PUT','/api/donor/'+did,{category:mc.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_cat=mc.value;}); toast('קטגוריה עודכנה בכרטיס ✓'); };
   const assign=card.querySelector('.assign');
   if(assign){
     const si=assign.querySelector('.dsearch'), res=assign.querySelector('.res'), pick=assign.querySelector('.pick');
