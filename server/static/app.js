@@ -1105,6 +1105,12 @@ function contactBtns(d){
   if(em)h+=`<a class="cbtn mail" href="mailto:${esc(em)}" onclick="event.stopPropagation()" title="${esc(em)}">📧</a>`;
   return h?`<span class="cbtns">${h}</span>`:'';
 }
+// מציאת רשומת הפרנס שאליה שייכת משימת הפרנס (לפי הטקסט/תאריך)
+function taskParnes(t){
+  if(t.kind!=='parnes'||!t.dref)return null;
+  const ps=t.dref.parnes||[];
+  return ps.find(p=>p.date_text&&(t.note||'').includes(p.date_text))||ps[0]||null;
+}
 function renderTasksTab(){
   const today=todayStr();
   const opts=[['','הכל'],['charge','💳 לחייב'],['parnes','🌙 פרנס'],['prayer','🙏 תפילה'],['followup','📞 לחזור']];
@@ -1135,12 +1141,23 @@ function renderTasksTab(){
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
     <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
+    const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
-      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>`;
+      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span><button class="tedit" data-i="${i}" title="ערוך" onclick="event.stopPropagation()">✏️</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
+    <div class="teditpanel hidden" data-panel="${i}">
+      ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:6px">🌙 ערוך בלוח פרנס יום</button>`:''}
+      <textarea class="tnote" data-i="${i}" rows="2" placeholder="טקסט המשימה">${esc(t.note||'')}</textarea>
+      <div class="addrow" style="margin-top:6px"><input type="date" class="tdate2" data-i="${i}" value="${esc(t.due_date||'')}"><button class="btn sm tsave" data-i="${i}">💾 שמור</button><button class="del tdel" data-i="${i}">🗑 מחק</button></div>
+    </div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
+  // עריכת / מחיקת משימה
+  view.querySelectorAll('.tedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=view.querySelector('.teditpanel[data-panel="'+b.dataset.i+'"]');if(p)p.classList.toggle('hidden');});
+  view.querySelectorAll('.tsave').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];const note=view.querySelector('.tnote[data-i="'+b.dataset.i+'"]').value.trim(),date=view.querySelector('.tdate2[data-i="'+b.dataset.i+'"]').value;await api('PUT','/api/task/'+t.id,{note:note,due_date:date});t.note=note;t.due_date=date;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec){rec.note=note;rec.due_date=date;}toast('נשמר ✓');render();});
+  view.querySelectorAll('.tdel').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];if(!confirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+t.id);if(t.dref)t.dref.tasks=(t.dref.tasks||[]).filter(x=>x.id!==t.id);else GTASKS=GTASKS.filter(x=>x.id!==t.id);toast('נמחק');render();checkReminders();});
+  view.querySelectorAll('.tparnes').forEach(b=>b.onclick=()=>{const t=all[b.dataset.i],p=taskParnes(t);if(!p){toast('לא נמצא פרנס');return;}tab='parnes';pyKind=p.kind||'parnes';pyMonth=p.month;pyDay=+p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();});
   // משימה חדשה — חיפוש ובחירת תורם
   let ntChosen=null;
   const ntq=document.getElementById('nt_q'),ntres=document.getElementById('nt_res'),ntch=document.getElementById('nt_chosen');
