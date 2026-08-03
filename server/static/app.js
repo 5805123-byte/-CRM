@@ -1109,7 +1109,7 @@ function renderTasksTab(){
       <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="other">🔔 אחר</option></select><input id="nt_date" type="date" value="${today}"></div>
       <div class="addrow" style="margin-top:6px"><input id="nt_note" placeholder="פרטי המשימה (על מה)"><button class="btn sm" id="nt_add">➕ הוסף</button></div>
       <div class="hintxt">בחר תורם מהחיפוש, קבע תאריך ומה לעשות — המשימה תיכנס לרשימה וגם ליומן.</div></div>
-    <div class="icsbox"><b>📅 חיבור אוטומטי ליומן Google</b><br>הוסף פעם אחת את הכתובת (Google Calendar → יומנים אחרים → מכתובת URL), וכל התזכורות ייכנסו ליומן אוטומטית:<span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></div>
+    <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
     <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor);
     return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
