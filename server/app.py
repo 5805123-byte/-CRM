@@ -226,7 +226,7 @@ def ensure_schema():
                 if not did:
                     continue
                 for mo in rec.get('months', []):
-                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) VALUES(?,?,?,?,?,?)",
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
                                 (did, f"2026-{int(mo):02d}", str(rec.get('amount', '')), rec.get('category', 'קבוע'),
                                  rec.get('method', ''), 'ייבוא 2026'))
                     n += 1
@@ -368,6 +368,13 @@ def ensure_schema():
             print(f'  קוויטל 101: הותאמו {matched}, יובאו {imported} שמות, {unlinked} לא־משויכים')
     except Exception as e:
         print('  שגיאת קוויטל 101:', e)
+    # תרומות היסטוריות שיובאו (2026) הן תשלומים שכבר עברו — לסמן כ"שולם"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='donations_paid_v1'").fetchone():
+            con.execute("UPDATE donations SET paid=1 WHERE note='ייבוא 2026' AND COALESCE(paid,0)=0")
+            con.execute("INSERT INTO seed_flags(name) VALUES('donations_paid_v1')")
+    except Exception as e:
+        print('  שגיאת סימון שולם 2026:', e)
     con.commit(); con.close()
 
 def get_all():
