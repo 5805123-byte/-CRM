@@ -218,9 +218,9 @@ function openNewDonor(onCreate){
     <label class="fld"><span>שם באנגלית</span><input id="nd_english" dir="ltr" placeholder="English name"></label>
     <label class="fld"><span>אזור / מטבע</span><select id="nd_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il">🇮🇱 ארץ ישראל (₪)</option></select></label>
     <label class="fld"><span>טלפון</span><input id="nd_phone" dir="ltr" inputmode="tel" placeholder="+1 ..."></label>
-    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="nd_addr" placeholder="רחוב ומספר"></label>
-    <div class="two"><label class="fld"><span>עיר</span><input id="nd_city" placeholder="עיר"></label>
-      <label class="fld"><span>מדינה</span><input id="nd_country" placeholder="מדינה"></label></div>
+    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="nd_addr" dir="auto" placeholder="רחוב ומספר"></label>
+    <div class="two"><label class="fld"><span>עיר</span><input id="nd_city" dir="auto" placeholder="עיר"></label>
+      <label class="fld"><span>מדינה</span><input id="nd_country" dir="auto" placeholder="מדינה"></label></div>
     <label class="fld"><span>מיקוד</span><input id="nd_zip" dir="ltr" placeholder="מיקוד"></label>
     <div class="sec"><h3 style="color:var(--gold);font-size:1rem">💵 תרומה ראשונה (לא חובה)</h3>
       <label class="fld"><span>תאריך קבלת התרומה (לועזי)</span><input id="nd_date" type="date"></label>
@@ -378,9 +378,9 @@ function cardDetails(d,body){
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
-    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}"></label>
-    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}"></label>
-      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}"></label></div>
+    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="auto"></label>
+    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="auto"></label>
+      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="auto"></label></div>
     <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
     <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label>
