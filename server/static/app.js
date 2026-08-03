@@ -921,7 +921,7 @@ function renderParnes(){
   const days=[];for(let i=1;i<=30;i++)days.push(i);
   view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
     <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
-    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];const cls=t?(t.status==='suggested'?'sugg':'full'):'free';return `<button class="daycell ${cls} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
+    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=t&&t.amount&&!+t.paid;return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
@@ -935,13 +935,16 @@ function renderDayPanel(taken){
     const sugg=t.status==='suggested';
     const dpcur=curSym(t.dref||{});
     panel.innerHTML=`<div class="sec"><h3>${sugg?'🔵 הצעה':'🟢 מאושר'} · ${esc(dtext)}</h3>
-      <div class="remitem ${sugg?'':'given'}"><div class="ri"><b>${esc(t.donor)}</b>${t.amount?(' <b style="color:var(--yes)">· '+dpcur+esc(t.amount)+'</b>'):''}</div></div>
+      <div class="remitem ${sugg?'':'given'}"><div class="ri"><b>${esc(t.donor)}</b>${t.amount?(' <b style="color:'+(+t.paid?'var(--yes)':'var(--no)')+'">· '+dpcur+esc(t.amount)+(+t.paid?' ✓ נגבה':' 🔴 טרם נגבה'+(t.method?' · '+esc(chLabel(t.method)):''))+'</b>'):''}</div></div>
+      ${t.amount?`<button class="dnpaid ${+t.paid?'yes':'no'}" id="dppaid" style="margin:2px 0 6px">${+t.paid?'נגבה ✓ — בטל':'🔴 טרם נגבה — סמן כנגבה'}</button>`:''}
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea id="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
       <button class="btn sm" id="dp_ded_save" style="margin-bottom:6px">💾 שמור שמות</button>
       <div class="hintxt" style="font-size:.78rem">לשינוי היום — מחק כאן ושבץ ליום אחר.</div>
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
       <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
+    const dppaid=document.getElementById('dppaid');
+    if(dppaid)dppaid.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');render();};
     const dded=document.getElementById('dp_ded_edit');
     const ddedSave=async()=>{t.dedication=dded.value;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.dedication=dded.value;await api('PUT','/api/parnes/'+t.id,{dedication:dded.value});toast('נשמר ✓');};
     dded.onblur=()=>{if((t.dedication||'')!==dded.value)ddedSave();};
@@ -1174,10 +1177,10 @@ function renderTasksTab(){
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
-      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span><button class="tedit" data-i="${i}" title="ערוך" onclick="event.stopPropagation()">✏️</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
+      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span><button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
     <div class="teditpanel hidden" data-panel="${i}">
-      ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:6px">🌙 ערוך בלוח פרנס יום</button>`:''}
-      <textarea class="tnote" data-i="${i}" rows="2" placeholder="טקסט המשימה">${esc(t.note||'')}</textarea>
+      ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:8px">🌙 החלף/ערוך את הפרנס בלוח</button>`:''}
+      <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="tnote" data-i="${i}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
       <div class="addrow" style="margin-top:6px"><input type="date" class="tdate2" data-i="${i}" value="${esc(t.due_date||'')}"><button class="btn sm tsave" data-i="${i}">💾 שמור</button><button class="del tdel" data-i="${i}">🗑 מחק</button></div>
     </div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
