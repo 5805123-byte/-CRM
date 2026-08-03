@@ -307,6 +307,22 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('barchaim_schwartz')")
     except Exception as e:
         print('  שגיאת בר חיים/שוורץ:', e)
+    # שמות הקוויטל של ברק נחמן בר חיים (#67) — כל לילה — לפי מה שמסר המשתמש
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='barchaim_kvittel_v1'").fetchone():
+            if con.execute("SELECT 1 FROM donors WHERE id=67").fetchone():
+                con.execute("UPDATE donors SET first='ברק נחמן' WHERE id=67 AND TRIM(COALESCE(first,''))='ברק'")
+                con.execute("UPDATE donors SET tier='קוויטל_101' WHERE id=67")
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=67").fetchone():
+                    txt = ("נחמן בן אסתר זאלדע — לברכה והצלחה בכל הענינים\n"
+                           "עליזה בת מרים — לבריאות ופרנסה\n"
+                           "שירה בת עליזה — לבריאות ושידוך עם בן תורה אמיתי\n"
+                           "אריה בן עליזה — הצלחה בלימוד התורה ובשאר עסקיו")
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(67,'',?,?)",
+                                (txt, 'קוויטל_101'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('barchaim_kvittel_v1')")
+    except Exception as e:
+        print('  שגיאת קוויטל בר חיים:', e)
     con.commit(); con.close()
 
 def get_all():
