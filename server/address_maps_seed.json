@@ -8,7 +8,8 @@
   ],
   "phones": [
    "9841705"
-  ]
+  ],
+  "addr_old": "150 Lafayette Pl, Woodmere, NY 11598-2140, US"
  },
  {
   "addr": "6741 N Francisco Ave 4315, Chicago, IL 60645, US",
@@ -19,7 +20,8 @@
   ],
   "phones": [
    "5080086"
-  ]
+  ],
+  "addr_old": "6741 N Francisco Ave 4315, Chicago, IL 60645, US"
  },
  {
   "addr": "865 wintersweet rd., henderson, NV 89015, US",
@@ -30,7 +32,8 @@
   ],
   "phones": [
    "3341039"
-  ]
+  ],
+  "addr_old": "865 wintersweet rd., henderson, NV 89015, US"
  },
  {
   "addr": "819 Glen Dr, Woodmere, NY 11598, US",
@@ -42,7 +45,8 @@
   "phones": [
    "8216800",
    "3591866"
-  ]
+  ],
+  "addr_old": "819 Glen Dr, Woodmere, NY 11598, US"
  },
  {
   "addr": "3780 Bendemeer Rd, Cleveland Heights, OH 44118-1958, US",
@@ -53,7 +57,8 @@
   ],
   "phones": [
    "7524723"
-  ]
+  ],
+  "addr_old": "3780 Bendemeer Rd, Cleveland Heights, OH 44118-1958, US"
  },
  {
   "addr": "1912 Avenue NFLOOR 2 RIGHT DOOR, Brooklyn, NY 11230-6209, US",
@@ -62,7 +67,8 @@
   "emails": [
    "adahan123@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "1912 Avenue NFLOOR 2 RIGHT DOOR, Brooklyn, NY 11230-6209, US"
  },
  {
   "addr": "1465 E 15th St, Brooklyn, NY 11230-6601, US",
@@ -74,7 +80,8 @@
   ],
   "phones": [
    "5749470"
-  ]
+  ],
+  "addr_old": "1465 E 15th St, Brooklyn, NY 11230-6601, US"
  },
  {
   "addr": "956 47th St, Brooklyn, NY 11219-2812, US",
@@ -85,7 +92,8 @@
   ],
   "phones": [
    "8713701"
-  ]
+  ],
+  "addr_old": "956 47th St, Brooklyn, NY 11219-2812, US"
  },
  {
   "addr": "697 Saddle River Road, Monsey, NY 10952, US",
@@ -94,7 +102,8 @@
   "emails": [
    "rac1836@yahoo.com.br"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "697 Saddle River Road, Monsey, NY 10952, US"
  },
  {
   "addr": "7 Gilbert Rd, Great Neck, NY 11024, US",
@@ -105,14 +114,16 @@
   ],
   "phones": [
    "9932839"
-  ]
+  ],
+  "addr_old": "7 Gilbert Rd, Great Neck, NY 11024, US"
  },
  {
   "addr": "P.O.Box 73, Livingston, NJ 11024, US",
   "last": "קעס",
   "first": "אברהם יצחק",
   "emails": [],
-  "phones": []
+  "phones": [],
+  "addr_old": "P.O.Box 73, Livingston, NJ 11024, US"
  },
  {
   "addr": "Unit B 2846 W Touhy Ave, Chicago, IL 60645, US",
@@ -123,7 +134,8 @@
   ],
   "phones": [
    "7639786"
-  ]
+  ],
+  "addr_old": "Unit B 2846 W Touhy Ave, Chicago, IL 60645, US"
  },
  {
   "addr": "34 Sandy Hook Rd S, Siesta Key, FL 34242, US",
@@ -134,7 +146,8 @@
   ],
   "phones": [
    "7304495"
-  ]
+  ],
+  "addr_old": "34 Sandy Hook Rd S, Siesta Key, FL 34242, US"
  },
  {
   "addr": "16 Sienna Way, Lakewood, NJ 08701-2148, US",
@@ -146,7 +159,8 @@
   "phones": [
    "3009494",
    "3009494"
-  ]
+  ],
+  "addr_old": "16 Sienna Way, Lakewood, NJ 08701-2148, US"
  },
  {
   "addr": "1779 E 14 St, Brooklyn, NY 11229, US",
@@ -157,7 +171,8 @@
   ],
   "phones": [
    "9451187"
-  ]
+  ],
+  "addr_old": "1779 E 14 St, Brooklyn, NY 11229, US"
  },
  {
   "addr": "6 Dalewood Dr, Suffern, NY 10901-4303, US",
@@ -166,7 +181,8 @@
   "emails": [
    "abrahampadwa@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "6 Dalewood Dr, Suffern, NY 10901-4303, US"
  },
  {
   "addr": "664 barnard avenue, Woodmere, N.Y. 11598, US",
@@ -177,7 +193,8 @@
   ],
   "phones": [
    "4525572"
-  ]
+  ],
+  "addr_old": "664 barnard avenue, Woodmere, N.Y. 11598, US"
  },
  {
   "addr": "479 Clearstream Rd 2042, Jackson Township, NJ 08527, US",
@@ -188,7 +205,8 @@
   ],
   "phones": [
    "5257775"
-  ]
+  ],
+  "addr_old": "479 Clearstream Rd 2042, Jackson Township, NJ 08527, US"
  },
  {
   "addr": "3650 severn rd, Cleveland Heights, OH 44118, US",
@@ -199,7 +217,8 @@
   ],
   "phones": [
    "7884308"
-  ]
+  ],
+  "addr_old": "3650 severn rd, Cleveland Heights, OH 44118, US"
  },
  {
   "addr": "722 Park Ave, Lakewood, NJ 08701, US",
@@ -208,7 +227,8 @@
   "emails": [],
   "phones": [
    "9050587"
-  ]
+  ],
+  "addr_old": "722 Park Ave, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1633 East 29th Street, Brooklyn, N.Y. 11229, US",
@@ -219,10 +239,11 @@
   ],
   "phones": [
    "4170809"
-  ]
+  ],
+  "addr_old": "1633 East 29th Street, Brooklyn, N.Y. 11229, US"
  },
  {
-  "addr": "1425 47th St 2635 Brooklyn, NY 11219, US",
+  "addr": "1425 47th St 2635, Brooklyn, NY 11219, US",
   "last": "הרצוג",
   "first": "אהרן מרדכי",
   "emails": [
@@ -231,7 +252,8 @@
   "phones": [
    "8710724",
    "5024040"
-  ]
+  ],
+  "addr_old": "1425 47th St 2635 Brooklyn, NY 11219, US"
  },
  {
   "addr": "495 WEST END AVENUE APT 4N, NEW YORK CITY, NY 10024, US",
@@ -242,7 +264,8 @@
   ],
   "phones": [
    "4518056"
-  ]
+  ],
+  "addr_old": "495 WEST END AVENUE APT 4N, NEW YORK CITY, NY 10024, US"
  },
  {
   "addr": "Elm Ave, Eldersburg, MD 21784, US",
@@ -252,7 +275,8 @@
    "haveagr81@gmail.com",
    "haveagr81@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "Elm Ave, Eldersburg, MD 21784, US"
  },
  {
   "addr": "3750 Hudson Manor Terrace #2DE, The Bronx, NY 10463, US",
@@ -262,7 +286,8 @@
    "orackovsky@gmail.com",
    "orackovsky@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "3750 Hudson Manor Terrace #2DE, The Bronx, NY 10463, US"
  },
  {
   "addr": "727 Albert Ave, Lakewood, NJ 08701, US",
@@ -273,7 +298,8 @@
   ],
   "phones": [
    "2991575"
-  ]
+  ],
+  "addr_old": "727 Albert Ave, Lakewood, NJ 08701, US"
  },
  {
   "addr": "718 manhattan avenue, Brooklyn NY 11222, US",
@@ -282,10 +308,11 @@
   "emails": [],
   "phones": [
    "2749101"
-  ]
+  ],
+  "addr_old": "718 manhattan avenue, Brooklyn NY 11222, US"
  },
  {
-  "addr": "702 Avenue W 5549 Brooklyn, NY 11223, US",
+  "addr": "702 Avenue W 5549, Brooklyn, NY 11223, US",
   "last": "שבות",
   "first": "אייזיק",
   "emails": [
@@ -293,7 +320,8 @@
   ],
   "phones": [
    "6648508"
-  ]
+  ],
+  "addr_old": "702 Avenue W 5549 Brooklyn, NY 11223, US"
  },
  {
   "addr": "49 A Dunlop Road, Huntington, NY 11743, US",
@@ -304,7 +332,8 @@
   ],
   "phones": [
    "4466688"
-  ]
+  ],
+  "addr_old": "49 A Dunlop Road, Huntington, NY 11743, US"
  },
  {
   "addr": "1121 August Dr, Annapolis, MD 21403, US",
@@ -315,7 +344,8 @@
   ],
   "phones": [
    "9913695"
-  ]
+  ],
+  "addr_old": "1121 August Dr, Annapolis, MD 21403, US"
  },
  {
   "addr": "2614 E 63rd St, Brooklyn, NY 11234-6812, US",
@@ -326,7 +356,8 @@
   ],
   "phones": [
    "8408946"
-  ]
+  ],
+  "addr_old": "2614 E 63rd St, Brooklyn, NY 11234-6812, US"
  },
  {
   "addr": "1729 COLEMAN ST, BROOKLYN, NY 11234-4312, US",
@@ -337,7 +368,8 @@
   ],
   "phones": [
    "8135314"
-  ]
+  ],
+  "addr_old": "1729 COLEMAN ST, BROOKLYN, NY 11234-4312, US"
  },
  {
   "addr": "6412 Ruffin Rd, Chevy Chase, MD 20815-5323, US",
@@ -348,7 +380,8 @@
   ],
   "phones": [
    "4414838"
-  ]
+  ],
+  "addr_old": "6412 Ruffin Rd, Chevy Chase, MD 20815-5323, US"
  },
  {
   "addr": "15135 Arbor Hollow Dr., Odessa, FL 33556, US",
@@ -357,7 +390,8 @@
   "emails": [
    "ebya7@hotmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "15135 Arbor Hollow Dr., Odessa, FL 33556, US"
  },
  {
   "addr": "3541 Severn Rd, Cleveland hts, OH 44118, US",
@@ -369,7 +403,8 @@
   "phones": [
    "3374649",
    "3374649"
-  ]
+  ],
+  "addr_old": "3541 Severn Rd, Cleveland hts, OH 44118, US"
  },
  {
   "addr": "6530 N California Ave 4402, Chicago, IL 60645, US",
@@ -381,7 +416,8 @@
   ],
   "phones": [
    "2741934"
-  ]
+  ],
+  "addr_old": "6530 N California Ave 4402, Chicago, IL 60645, US"
  },
  {
   "addr": "42B 545 CENTRAL AVENUE, CEDARHURST, NY 11516, US",
@@ -393,10 +429,11 @@
   ],
   "phones": [
    "2167657"
-  ]
+  ],
+  "addr_old": "42B 545 CENTRAL AVENUE, CEDARHURST, NY 11516, US"
  },
  {
-  "addr": "542 E 3rd St 4506 Brooklyn, NY 11218, US",
+  "addr": "542 E 3rd St 4506, Brooklyn, NY 11218, US",
   "last": "ביים",
   "first": "אלי",
   "emails": [
@@ -404,7 +441,8 @@
   ],
   "phones": [
    "3500222"
-  ]
+  ],
+  "addr_old": "542 E 3rd St 4506 Brooklyn, NY 11218, US"
  },
  {
   "addr": "10845 Childs St, Silver Spring, MD 20901-4406, US",
@@ -415,7 +453,8 @@
   ],
   "phones": [
    "2445962"
-  ]
+  ],
+  "addr_old": "10845 Childs St, Silver Spring, MD 20901-4406, US"
  },
  {
   "addr": "1920 59th St, Brooklyn, NY 11204, US",
@@ -424,7 +463,8 @@
   "emails": [],
   "phones": [
    "5773284"
-  ]
+  ],
+  "addr_old": "1920 59th St, Brooklyn, NY 11204, US"
  },
  {
   "addr": "138 Pioneer St, Brooklyn, NY 11231, US",
@@ -433,10 +473,11 @@
   "emails": [
    "lee@bhldcapital.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "138 Pioneer St, Brooklyn, NY 11231, US"
  },
  {
-  "addr": "1706 E 27th St 2511 Brooklyn, NY 11229, US",
+  "addr": "1706 E 27th St 2511, Brooklyn, NY 11229, US",
   "last": "ביטש",
   "first": "אליהו",
   "emails": [
@@ -444,7 +485,8 @@
   ],
   "phones": [
    "4970682"
-  ]
+  ],
+  "addr_old": "1706 E 27th St 2511 Brooklyn, NY 11229, US"
  },
  {
   "addr": "1090 Ocean Ave, NJ 07740, US",
@@ -455,7 +497,8 @@
   ],
   "phones": [
    "8709663"
-  ]
+  ],
+  "addr_old": "1090 Ocean Ave, NJ 07740, US"
  },
  {
   "addr": "15 Woodlawn Ave, Great Neck, NY 11023-2310, US",
@@ -466,7 +509,8 @@
   ],
   "phones": [
    "6372916"
-  ]
+  ],
+  "addr_old": "15 Woodlawn Ave, Great Neck, NY 11023-2310, US"
  },
  {
   "addr": "1181 east 18th street, Brooklyn, NY 11210, US",
@@ -477,7 +521,8 @@
   ],
   "phones": [
    "7626766"
-  ]
+  ],
+  "addr_old": "1181 east 18th street, Brooklyn, NY 11210, US"
  },
  {
   "addr": "2362 Nostrand Ave, Brooklyn, NY 11210-3857, US",
@@ -486,7 +531,8 @@
   "emails": [],
   "phones": [
    "6231444"
-  ]
+  ],
+  "addr_old": "2362 Nostrand Ave, Brooklyn, NY 11210-3857, US"
  },
  {
   "addr": "2470 Bishop Rd, Wickliffe, OH 44092, US",
@@ -497,7 +543,8 @@
   ],
   "phones": [
    "9607393"
-  ]
+  ],
+  "addr_old": "2470 Bishop Rd, Wickliffe, OH 44092, US"
  },
  {
   "addr": "8-16 Roosevelt Ct, Far Rockaway, NY 11691, US",
@@ -509,7 +556,8 @@
   ],
   "phones": [
    "3271214"
-  ]
+  ],
+  "addr_old": "8-16 Roosevelt Ct, Far Rockaway, NY 11691, US"
  },
  {
   "addr": "172 N Formosa Ave, Los Angeles, CA 90036-2818, US",
@@ -520,7 +568,8 @@
   ],
   "phones": [
    "4140049"
-  ]
+  ],
+  "addr_old": "172 N Formosa Ave, Los Angeles, CA 90036-2818, US"
  },
  {
   "addr": "418 SW Crabapple Cv, Port St Lucie, FL 34986, US",
@@ -531,7 +580,8 @@
   ],
   "phones": [
    "5037605"
-  ]
+  ],
+  "addr_old": "418 SW Crabapple Cv, Port St Lucie, FL 34986, US"
  },
  {
   "addr": "2 Allen St, New York, NY 10002, US",
@@ -542,10 +592,11 @@
   ],
   "phones": [
    "9874888"
-  ]
+  ],
+  "addr_old": "2 Allen St, New York, NY 10002, US"
  },
  {
-  "addr": "2442 E 65th St 6718 Brooklyn, NY 11234, US",
+  "addr": "2442 E 65th St 6718, Brooklyn, NY 11234, US",
   "last": "אברמוב",
   "first": "אסתר",
   "emails": [
@@ -553,7 +604,8 @@
   ],
   "phones": [
    "2079323"
-  ]
+  ],
+  "addr_old": "2442 E 65th St 6718 Brooklyn, NY 11234, US"
  },
  {
   "addr": "1948 51ST ST, BROOKLYN, NY BROOKLYN, US",
@@ -565,7 +617,8 @@
   "phones": [
    "3774603",
    "9867975"
-  ]
+  ],
+  "addr_old": "1948 51ST ST, BROOKLYN, NY BROOKLYN, US"
  },
  {
   "addr": "17927 Burbank Blvd, Encino, CA 91316-1603, US",
@@ -576,7 +629,8 @@
   ],
   "phones": [
    "4015820"
-  ]
+  ],
+  "addr_old": "17927 Burbank Blvd, Encino, CA 91316-1603, US"
  },
  {
   "addr": "2 Dartmouth Drive, Jackson, NJ 08527, US",
@@ -587,7 +641,8 @@
   ],
   "phones": [
    "9437479"
-  ]
+  ],
+  "addr_old": "2 Dartmouth Drive, Jackson, NJ 08527, US"
  },
  {
   "addr": "5738 Solway St, Pittsburgh, PA 15217-1204, US",
@@ -598,10 +653,11 @@
   ],
   "phones": [
    "7097427"
-  ]
+  ],
+  "addr_old": "5738 Solway St, Pittsburgh, PA 15217-1204, US"
  },
  {
-  "addr": "504 E 2 Nd St, Brooklyn, NY 11218-4504, US",
+  "addr": "504 E 2, Nd St, Brooklyn, NY 11218-4504, US",
   "last": "זוסמן",
   "first": "אסתר",
   "emails": [
@@ -609,7 +665,8 @@
   ],
   "phones": [
    "9213689"
-  ]
+  ],
+  "addr_old": "504 E 2 Nd St, Brooklyn, NY 11218-4504, US"
  },
  {
   "addr": "141-19 70th Rd, Flushing, NY 11367, US",
@@ -621,7 +678,8 @@
   ],
   "phones": [
    "2613446"
-  ]
+  ],
+  "addr_old": "141-19 70th Rd, Flushing, NY 11367, US"
  },
  {
   "addr": "3 Whisper Lane, Suffern, NY 10901, US",
@@ -632,7 +690,8 @@
   ],
   "phones": [
    "2744715"
-  ]
+  ],
+  "addr_old": "3 Whisper Lane, Suffern, NY 10901, US"
  },
  {
   "addr": "17520 NE 7 CT, N Miami Beach, FL 33162, US",
@@ -643,7 +702,8 @@
   ],
   "phones": [
    "3875307"
-  ]
+  ],
+  "addr_old": "17520 NE 7 CT, N Miami Beach, FL 33162, US"
  },
  {
   "addr": "Apt 5c 220 Riverside Blvd, New York, NY 10069, US",
@@ -653,7 +713,8 @@
    "esti.karp@gmail.com",
    "estikarp@yahoo.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "Apt 5c 220 Riverside Blvd, New York, NY 10069, US"
  },
  {
   "addr": "10-43 Neilson St, Far Rockaway, NY 11691-5005, US",
@@ -664,7 +725,8 @@
   ],
   "phones": [
    "6141968"
-  ]
+  ],
+  "addr_old": "10-43 Neilson St, Far Rockaway, NY 11691-5005, US"
  },
  {
   "addr": "250 W 89th St #5M, New York, NY 10024, US",
@@ -675,7 +737,8 @@
   ],
   "phones": [
    "7242625"
-  ]
+  ],
+  "addr_old": "250 W 89th St #5M, New York, NY 10024, US"
  },
  {
   "addr": "1978 53rd St, Brooklyn, NY 11204-1743, US",
@@ -686,7 +749,8 @@
   ],
   "phones": [
    "6777481"
-  ]
+  ],
+  "addr_old": "1978 53rd St, Brooklyn, NY 11204-1743, US"
  },
  {
   "addr": "81-29 168 St, Jamaica, NY 11432, US",
@@ -697,7 +761,8 @@
   ],
   "phones": [
    "7076963"
-  ]
+  ],
+  "addr_old": "81-29 168 St, Jamaica, NY 11432, US"
  },
  {
   "addr": "274 Ashewood Ct, Toms River, NJ 08755-1104, US",
@@ -708,7 +773,8 @@
   ],
   "phones": [
    "5944717"
-  ]
+  ],
+  "addr_old": "274 Ashewood Ct, Toms River, NJ 08755-1104, US"
  },
  {
   "addr": "6 Heather Ln, Lawrence, NY 11559-1833, US",
@@ -719,7 +785,8 @@
   ],
   "phones": [
    "8160550"
-  ]
+  ],
+  "addr_old": "6 Heather Ln, Lawrence, NY 11559-1833, US"
  },
  {
   "addr": "12 Blueberry Hill Rd, Monsey, NY 10952-1949, US",
@@ -730,7 +797,8 @@
   ],
   "phones": [
    "4994734"
-  ]
+  ],
+  "addr_old": "12 Blueberry Hill Rd, Monsey, NY 10952-1949, US"
  },
  {
   "addr": "111 Clymer Street Apt#6-B, Brooklyn, NY 11249, US",
@@ -741,7 +809,8 @@
   ],
   "phones": [
    "4825177"
-  ]
+  ],
+  "addr_old": "111 Clymer Street Apt#6-B, Brooklyn, NY 11249, US"
  },
  {
   "addr": "96-09 67th Ave #3J, Flushing, NY 11374, US",
@@ -752,7 +821,8 @@
   ],
   "phones": [
    "5799290"
-  ]
+  ],
+  "addr_old": "96-09 67th Ave #3J, Flushing, NY 11374, US"
  },
  {
   "addr": "517 N. Citrus Ave, Los Angeles, CA 90036, US",
@@ -763,7 +833,8 @@
   ],
   "phones": [
    "2130862"
-  ]
+  ],
+  "addr_old": "517 N. Citrus Ave, Los Angeles, CA 90036, US"
  },
  {
   "addr": "61 Warwick Road, Great Neck, NY 11023, US",
@@ -772,7 +843,8 @@
   "emails": [],
   "phones": [
    "2668262"
-  ]
+  ],
+  "addr_old": "61 Warwick Road, Great Neck, NY 11023, US"
  },
  {
   "addr": "4 Easthampton A, West Plam Beach, FL 33417, US",
@@ -781,7 +853,8 @@
   "emails": [],
   "phones": [
    "2105815"
-  ]
+  ],
+  "addr_old": "4 Easthampton A, West Plam Beach, FL 33417, US"
  },
  {
   "addr": "8 Bridle Road, Spring Valley, NY 10977, US",
@@ -792,7 +865,8 @@
    "4196389",
    "4196389",
    "3626939"
-  ]
+  ],
+  "addr_old": "8 Bridle Road, Spring Valley, NY 10977, US"
  },
  {
   "addr": "692 New Hempstead RD, Spring Valley, NY 10977, US",
@@ -801,7 +875,8 @@
   "emails": [],
   "phones": [
    "3548858"
-  ]
+  ],
+  "addr_old": "692 New Hempstead RD, Spring Valley, NY 10977, US"
  },
  {
   "addr": "1522 E 32nd St, Brooklyn, NY 11234-3455, US",
@@ -813,7 +888,8 @@
   ],
   "phones": [
    "2561325"
-  ]
+  ],
+  "addr_old": "1522 E 32nd St, Brooklyn, NY 11234-3455, US"
  },
  {
   "addr": "8 Voyager Ct 1647, Monsey, NY 10952, US",
@@ -822,7 +898,8 @@
   "emails": [],
   "phones": [
    "3293949"
-  ]
+  ],
+  "addr_old": "8 Voyager Ct 1647, Monsey, NY 10952, US"
  },
  {
   "addr": "175 Davis Ave, Inwood, NY 11096-1125, US",
@@ -833,7 +910,8 @@
   ],
   "phones": [
    "7890846"
-  ]
+  ],
+  "addr_old": "175 Davis Ave, Inwood, NY 11096-1125, US"
  },
  {
   "addr": "815 ocean parkway, Brooklyn, NY 11230, US",
@@ -844,7 +922,8 @@
   ],
   "phones": [
    "9400866"
-  ]
+  ],
+  "addr_old": "815 ocean parkway, Brooklyn, NY 11230, US"
  },
  {
   "addr": "1455 49th St, Brooklyn, NY 11219, US",
@@ -855,7 +934,8 @@
   ],
   "phones": [
    "9723708"
-  ]
+  ],
+  "addr_old": "1455 49th St, Brooklyn, NY 11219, US"
  },
  {
   "addr": "5 Sanz Town Rd, Lakewood, NY 08701, US",
@@ -866,7 +946,8 @@
   ],
   "phones": [
    "5128900"
-  ]
+  ],
+  "addr_old": "5 Sanz Town Rd, Lakewood, NY 08701, US"
  },
  {
   "addr": "84-38 116th St, Jamaica, NY 11418, US",
@@ -877,7 +958,8 @@
   ],
   "phones": [
    "2104467"
-  ]
+  ],
+  "addr_old": "84-38 116th St, Jamaica, NY 11418, US"
  },
  {
   "addr": "6 Dalewood Dr, Suffern, NY 10901-4303, US",
@@ -888,7 +970,8 @@
   ],
   "phones": [
    "4203529"
-  ]
+  ],
+  "addr_old": "6 Dalewood Dr, Suffern, NY 10901-4303, US"
  },
  {
   "addr": "29 Woodmere Blvd, NY 115984, US",
@@ -899,7 +982,8 @@
   ],
   "phones": [
    "4113917"
-  ]
+  ],
+  "addr_old": "29 Woodmere Blvd, NY 115984, US"
  },
  {
   "addr": "3311 shelburne rd, baltimore, MD 21208, US",
@@ -908,7 +992,8 @@
   "emails": [],
   "phones": [
    "2749943"
-  ]
+  ],
+  "addr_old": "3311 shelburne rd, baltimore, MD 21208, US"
  },
  {
   "addr": "221 Benjamin St, Toms River, NJ 08755-1473, US",
@@ -919,7 +1004,8 @@
   ],
   "phones": [
    "6130102"
-  ]
+  ],
+  "addr_old": "221 Benjamin St, Toms River, NJ 08755-1473, US"
  },
  {
   "addr": "988 Benton St, Woodmere, NY 11598-1707, US",
@@ -931,10 +1017,11 @@
   "phones": [
    "7150794",
    "6130676"
-  ]
+  ],
+  "addr_old": "988 Benton St, Woodmere, NY 11598-1707, US"
  },
  {
-  "addr": "331 Brooklyn, N.Y. 11204, US",
+  "addr": "331, Brooklyn, N.Y. 11204, US",
   "last": "גוטמן",
   "first": "בצלאל",
   "emails": [
@@ -942,7 +1029,8 @@
   ],
   "phones": [
    "8122241"
-  ]
+  ],
+  "addr_old": "331 Brooklyn, N.Y. 11204, US"
  },
  {
   "addr": "36 Pleasant Ridge Rd 1625, Spring Valley, NY 10977, US",
@@ -953,7 +1041,8 @@
   ],
   "phones": [
    "3309971"
-  ]
+  ],
+  "addr_old": "36 Pleasant Ridge Rd 1625, Spring Valley, NY 10977, US"
  },
  {
   "addr": "1135 Rexford Dr, Los Angeles, CA 90035-1250, US",
@@ -964,7 +1053,8 @@
   ],
   "phones": [
    "4616173"
-  ]
+  ],
+  "addr_old": "1135 Rexford Dr, Los Angeles, CA 90035-1250, US"
  },
  {
   "addr": "1 Andover Lane, Lawrence, NY 11559, US",
@@ -973,7 +1063,8 @@
   "emails": [],
   "phones": [
    "4949005"
-  ]
+  ],
+  "addr_old": "1 Andover Lane, Lawrence, NY 11559, US"
  },
  {
   "addr": "1429 43st, Brooklyn, NY 11219, US",
@@ -984,7 +1075,8 @@
   ],
   "phones": [
    "6009720"
-  ]
+  ],
+  "addr_old": "1429 43st, Brooklyn, NY 11219, US"
  },
  {
   "addr": "1748 E 24th St, Brooklyn, NY 11229-2404, US",
@@ -996,7 +1088,8 @@
   "phones": [
    "4201910",
    "2079531"
-  ]
+  ],
+  "addr_old": "1748 E 24th St, Brooklyn, NY 11229-2404, US"
  },
  {
   "addr": "97 Skyline Drive, Lakewood Township, NJ 08701, US",
@@ -1007,7 +1100,8 @@
   ],
   "phones": [
    "7681680"
-  ]
+  ],
+  "addr_old": "97 Skyline Drive, Lakewood Township, NJ 08701, US"
  },
  {
   "addr": "919 East End Ave, Lakewood, NJ 08701, US",
@@ -1018,7 +1112,8 @@
   ],
   "phones": [
    "3631939"
-  ]
+  ],
+  "addr_old": "919 East End Ave, Lakewood, NJ 08701, US"
  },
  {
   "addr": "7497 Largo Way 4949, Boca Raton, FL 33433, US",
@@ -1029,7 +1124,8 @@
   ],
   "phones": [
    "3765837"
-  ]
+  ],
+  "addr_old": "7497 Largo Way 4949, Boca Raton, FL 33433, US"
  },
  {
   "addr": "2 Larch Dr 1908, Great Neck, NY 11021, US",
@@ -1041,7 +1137,8 @@
   ],
   "phones": [
    "4847014"
-  ]
+  ],
+  "addr_old": "2 Larch Dr 1908, Great Neck, NY 11021, US"
  },
  {
   "addr": "5 Duley Ave, Edison, NJ 08817, US",
@@ -1052,7 +1149,8 @@
   ],
   "phones": [
    "8470520"
-  ]
+  ],
+  "addr_old": "5 Duley Ave, Edison, NJ 08817, US"
  },
  {
   "addr": "22 Madeline Terr, Spring Valley, NY 10977, US",
@@ -1063,7 +1161,8 @@
   ],
   "phones": [
    "3322414"
-  ]
+  ],
+  "addr_old": "22 Madeline Terr, Spring Valley, NY 10977, US"
  },
  {
   "addr": "8 Old Tree Ln, Great Neck, NY 11024-1405, US",
@@ -1074,7 +1173,8 @@
   ],
   "phones": [
    "8515198"
-  ]
+  ],
+  "addr_old": "8 Old Tree Ln, Great Neck, NY 11024-1405, US"
  },
  {
   "addr": "20201 NE 16th Pl 2719, Miami, FL 33179, US",
@@ -1085,7 +1185,8 @@
   ],
   "phones": [
    "4098778"
-  ]
+  ],
+  "addr_old": "20201 NE 16th Pl 2719, Miami, FL 33179, US"
  },
  {
   "addr": "511 Dahill Rd, Brooklyn, NY 11218-5515, US",
@@ -1096,7 +1197,8 @@
   ],
   "phones": [
    "6665910"
-  ]
+  ],
+  "addr_old": "511 Dahill Rd, Brooklyn, NY 11218-5515, US"
  },
  {
   "addr": "3205 Avenue L, Brooklyn, NY 11210-5437, US",
@@ -1107,7 +1209,8 @@
   ],
   "phones": [
    "2583851"
-  ]
+  ],
+  "addr_old": "3205 Avenue L, Brooklyn, NY 11210-5437, US"
  },
  {
   "addr": "137 E 4th St, Lakewood, NJ 08701-3402, US",
@@ -1118,7 +1221,8 @@
   ],
   "phones": [
    "5035326"
-  ]
+  ],
+  "addr_old": "137 E 4th St, Lakewood, NJ 08701-3402, US"
  },
  {
   "addr": "211 S Poinsettia Pl, Los Angeles, CA 90036-2866, US",
@@ -1130,7 +1234,8 @@
   ],
   "phones": [
    "8420464"
-  ]
+  ],
+  "addr_old": "211 S Poinsettia Pl, Los Angeles, CA 90036-2866, US"
  },
  {
   "addr": "12 Van Winkle Rd 1332, Monsey, NY 10952, US",
@@ -1141,7 +1246,8 @@
   ],
   "phones": [
    "4207698"
-  ]
+  ],
+  "addr_old": "12 Van Winkle Rd 1332, Monsey, NY 10952, US"
  },
  {
   "addr": "Jarvis Ave, Far rockaway, NY 11691, US",
@@ -1152,7 +1258,8 @@
   ],
   "phones": [
    "8010908"
-  ]
+  ],
+  "addr_old": "Jarvis Ave, Far rockaway, NY 11691, US"
  },
  {
   "addr": "Chestnut St, Cedarhurst, NY 11516, US",
@@ -1161,7 +1268,8 @@
   "emails": [],
   "phones": [
    "3261011"
-  ]
+  ],
+  "addr_old": "Chestnut St, Cedarhurst, NY 11516, US"
  },
  {
   "addr": "16 Gefen Dr, Lakewood, NJ 08701, US",
@@ -1173,7 +1281,8 @@
   "phones": [
    "5528425",
    "8694361"
-  ]
+  ],
+  "addr_old": "16 Gefen Dr, Lakewood, NJ 08701, US"
  },
  {
   "addr": "2219 E 7th St, Brooklyn, NY 11223, US",
@@ -1184,7 +1293,8 @@
   ],
   "phones": [
    "3002672"
-  ]
+  ],
+  "addr_old": "2219 E 7th St, Brooklyn, NY 11223, US"
  },
  {
   "addr": "1368 E 26th St, Brooklyn, NY 11210-5241, US",
@@ -1195,7 +1305,8 @@
   ],
   "phones": [
    "8927865"
-  ]
+  ],
+  "addr_old": "1368 E 26th St, Brooklyn, NY 11210-5241, US"
  },
  {
   "addr": "627 Oakland Ave, Cedarhurst, NY 11516, US",
@@ -1206,7 +1317,8 @@
   ],
   "phones": [
    "3995315"
-  ]
+  ],
+  "addr_old": "627 Oakland Ave, Cedarhurst, NY 11516, US"
  },
  {
   "addr": "2086 New York Ave, Brooklyn, NY 11210, US",
@@ -1217,7 +1329,8 @@
   ],
   "phones": [
    "4406164"
-  ]
+  ],
+  "addr_old": "2086 New York Ave, Brooklyn, NY 11210, US"
  },
  {
   "addr": "PO Box 465\nBronx, NY, Bronx NY 10471, US",
@@ -1230,7 +1343,8 @@
    "5413163",
    "5413163",
    "3148421"
-  ]
+  ],
+  "addr_old": "PO Box 465\nBronx, NY, Bronx NY 10471, US"
  },
  {
   "addr": "1388 East 37 Street, none, none, none, Brooklyn, NY 11210, US",
@@ -1239,7 +1353,8 @@
   "emails": [],
   "phones": [
    "6452016"
-  ]
+  ],
+  "addr_old": "1388 East 37 Street, none, none, none, Brooklyn, NY 11210, US"
  },
  {
   "addr": "47 Highgate Terrace 3919, Bergenfield, NJ 07621, US",
@@ -1250,7 +1365,8 @@
   ],
   "phones": [
    "4508782"
-  ]
+  ],
+  "addr_old": "47 Highgate Terrace 3919, Bergenfield, NJ 07621, US"
  },
  {
   "addr": "1228 15th St, Santa Monica, CA 90404, US",
@@ -1262,7 +1378,8 @@
   ],
   "phones": [
    "3092441"
-  ]
+  ],
+  "addr_old": "1228 15th St, Santa Monica, CA 90404, US"
  },
  {
   "addr": "APT 2808 21055 NE 37th Ave, Aventura, FL 33180, US",
@@ -1275,7 +1392,8 @@
    "2417650",
    "7291421",
    "7170017"
-  ]
+  ],
+  "addr_old": "APT 2808 21055 NE 37th Ave, Aventura, FL 33180, US"
  },
  {
   "addr": "5 Oxbow Ct 3833, East Northport, NY 11731, US",
@@ -1286,7 +1404,8 @@
   ],
   "phones": [
    "3751634"
-  ]
+  ],
+  "addr_old": "5 Oxbow Ct 3833, East Northport, NY 11731, US"
  },
  {
   "addr": "1359 Coney Island Ave, Brooklyn, NY 11230, US",
@@ -1298,7 +1417,8 @@
   ],
   "phones": [
    "5601588"
-  ]
+  ],
+  "addr_old": "1359 Coney Island Ave, Brooklyn, NY 11230, US"
  },
  {
   "addr": "416 wandering oaks, Waco, TX 76712, US",
@@ -1309,7 +1429,8 @@
   ],
   "phones": [
    "7298151"
-  ]
+  ],
+  "addr_old": "416 wandering oaks, Waco, TX 76712, US"
  },
  {
   "addr": "129 Ridge Ave, Passaic, NJ 07055, US",
@@ -1321,7 +1442,8 @@
   "phones": [
    "8514335",
    "4713127"
-  ]
+  ],
+  "addr_old": "129 Ridge Ave, Passaic, NJ 07055, US"
  },
  {
   "addr": "1900 NE 206th Terrace 2257, Miami, FL 33179, US",
@@ -1332,7 +1454,8 @@
   ],
   "phones": [
    "5424518"
-  ]
+  ],
+  "addr_old": "1900 NE 206th Terrace 2257, Miami, FL 33179, US"
  },
  {
   "addr": "3 Hicks Ln, Great Neck, NY 11024, US",
@@ -1343,7 +1466,8 @@
   ],
   "phones": [
    "2636660"
-  ]
+  ],
+  "addr_old": "3 Hicks Ln, Great Neck, NY 11024, US"
  },
  {
   "addr": "526 Island Ave, Woodmere, NY 11598-2331, US",
@@ -1355,7 +1479,8 @@
   ],
   "phones": [
    "7913311"
-  ]
+  ],
+  "addr_old": "526 Island Ave, Woodmere, NY 11598-2331, US"
  },
  {
   "addr": "24 Hillside Blvd 2969, Lakewood, NJ 08701, US",
@@ -1366,7 +1491,8 @@
   ],
   "phones": [
    "2999772"
-  ]
+  ],
+  "addr_old": "24 Hillside Blvd 2969, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1543 S Crest Dr, Los Angeles, CA 90035-3313, US",
@@ -1377,7 +1503,8 @@
   ],
   "phones": [
    "6139491"
-  ]
+  ],
+  "addr_old": "1543 S Crest Dr, Los Angeles, CA 90035-3313, US"
  },
  {
   "addr": "2109 Shadyside Ln, Garnet Valley, PA 19060-2121, US",
@@ -1388,7 +1515,8 @@
   ],
   "phones": [
    "7165637"
-  ]
+  ],
+  "addr_old": "2109 Shadyside Ln, Garnet Valley, PA 19060-2121, US"
  },
  {
   "addr": "413 Quentin road, Brooklyn, NY 11223, US",
@@ -1399,7 +1527,8 @@
   ],
   "phones": [
    "3463742"
-  ]
+  ],
+  "addr_old": "413 Quentin road, Brooklyn, NY 11223, US"
  },
  {
   "addr": "57 Buchanan St, Lakewood, NJ 08701, US",
@@ -1410,7 +1539,8 @@
   ],
   "phones": [
    "7446663"
-  ]
+  ],
+  "addr_old": "57 Buchanan St, Lakewood, NJ 08701, US"
  },
  {
   "addr": "11 Locust Cove Ln, Kings Point, NY 11024-1117, US",
@@ -1421,7 +1551,8 @@
   ],
   "phones": [
    "4109398"
-  ]
+  ],
+  "addr_old": "11 Locust Cove Ln, Kings Point, NY 11024-1117, US"
  },
  {
   "addr": "1817 East 18th Street, BROOKLYN, NY 11229, US",
@@ -1432,7 +1563,8 @@
   ],
   "phones": [
    "7038612"
-  ]
+  ],
+  "addr_old": "1817 East 18th Street, BROOKLYN, NY 11229, US"
  },
  {
   "addr": "148 Glen Ave S, Lakewood, NJ 08701-2953, US",
@@ -1443,7 +1575,8 @@
   ],
   "phones": [
    "5394064"
-  ]
+  ],
+  "addr_old": "148 Glen Ave S, Lakewood, NJ 08701-2953, US"
  },
  {
   "addr": "1664 Coney Island Ave, Brooklyn, NY 11230-5808, US",
@@ -1456,7 +1589,8 @@
    "4996125",
    "3366866",
    "4996125"
-  ]
+  ],
+  "addr_old": "1664 Coney Island Ave, Brooklyn, NY 11230-5808, US"
  },
  {
   "addr": "1540 40th St, Brooklyn, NY 11218-4416, US",
@@ -1469,7 +1603,8 @@
    "7145476",
    "4382017",
    "9727169"
-  ]
+  ],
+  "addr_old": "1540 40th St, Brooklyn, NY 11218-4416, US"
  },
  {
   "addr": "25500 Karen St, Oak Park, MI 48237-1309, US",
@@ -1481,7 +1616,8 @@
   ],
   "phones": [
    "2233382"
-  ]
+  ],
+  "addr_old": "25500 Karen St, Oak Park, MI 48237-1309, US"
  },
  {
   "addr": "217 S CITRUS AVE, Los Angeles, CA 90036, US",
@@ -1492,7 +1628,8 @@
   ],
   "phones": [
    "9483079"
-  ]
+  ],
+  "addr_old": "217 S CITRUS AVE, Los Angeles, CA 90036, US"
  },
  {
   "addr": "1900 New Central Ave, Lakewood, NJ 08701, US",
@@ -1504,7 +1641,8 @@
   ],
   "phones": [
    "9017783"
-  ]
+  ],
+  "addr_old": "1900 New Central Ave, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1233 E 35 St, Brooklyn, N.Y. 11210, US",
@@ -1516,7 +1654,8 @@
   ],
   "phones": [
    "7017148"
-  ]
+  ],
+  "addr_old": "1233 E 35 St, Brooklyn, N.Y. 11210, US"
  },
  {
   "addr": "1668 E 28th St, Brooklyn, NY 11229-2508, US",
@@ -1528,10 +1667,11 @@
   ],
   "phones": [
    "9514252"
-  ]
+  ],
+  "addr_old": "1668 E 28th St, Brooklyn, NY 11229-2508, US"
  },
  {
-  "addr": "1979 New York Ave 4823 Brooklyn, NY 11210, US",
+  "addr": "1979 New York Ave 4823, Brooklyn, NY 11210, US",
   "last": "ביננשטוק",
   "first": "זאבי",
   "emails": [
@@ -1540,7 +1680,8 @@
   "phones": [
    "2538633",
    "6132965"
-  ]
+  ],
+  "addr_old": "1979 New York Ave 4823 Brooklyn, NY 11210, US"
  },
  {
   "addr": "3201 Avenue L, Brooklyn, NY 11210, US",
@@ -1551,10 +1692,11 @@
   ],
   "phones": [
    "4711626"
-  ]
+  ],
+  "addr_old": "3201 Avenue L, Brooklyn, NY 11210, US"
  },
  {
-  "addr": "1725 E 32nd St 4441 Brooklyn, NY 11234, US",
+  "addr": "1725 E 32nd St 4441, Brooklyn, NY 11234, US",
   "last": "שטרן",
   "first": "זאבי",
   "emails": [
@@ -1562,7 +1704,8 @@
   ],
   "phones": [
    "3644009"
-  ]
+  ],
+  "addr_old": "1725 E 32nd St 4441 Brooklyn, NY 11234, US"
  },
  {
   "addr": "A3 10 Montgomery Ave, Bala Cynwyd, PA 19004, US",
@@ -1573,7 +1716,8 @@
   ],
   "phones": [
    "6139853"
-  ]
+  ],
+  "addr_old": "A3 10 Montgomery Ave, Bala Cynwyd, PA 19004, US"
  },
  {
   "addr": "4101 Pine Tree Dr, Miami Beach, FL 33140, US",
@@ -1584,7 +1728,8 @@
   ],
   "phones": [
    "7174850"
-  ]
+  ],
+  "addr_old": "4101 Pine Tree Dr, Miami Beach, FL 33140, US"
  },
  {
   "addr": "1182 east 22nd street, Brooklyn, NY 11210, US",
@@ -1595,7 +1740,8 @@
   ],
   "phones": [
    "9217355"
-  ]
+  ],
+  "addr_old": "1182 east 22nd street, Brooklyn, NY 11210, US"
  },
  {
   "addr": "427 Fort Washington Ave., Apt. 4C, New York, NY 10033, US",
@@ -1606,7 +1752,8 @@
   ],
   "phones": [
    "4860248"
-  ]
+  ],
+  "addr_old": "427 Fort Washington Ave., Apt. 4C, New York, NY 10033, US"
  },
  {
   "addr": "194 Skillman St, 2L, Kings County, NY 11205, US",
@@ -1617,7 +1764,8 @@
   ],
   "phones": [
    "2028974"
-  ]
+  ],
+  "addr_old": "194 Skillman St, 2L, Kings County, NY 11205, US"
  },
  {
   "addr": "1231 e68th st, Brooklyn, NY 11234, US",
@@ -1628,7 +1776,8 @@
   ],
   "phones": [
    "3705978"
-  ]
+  ],
+  "addr_old": "1231 e68th st, Brooklyn, NY 11234, US"
  },
  {
   "addr": "731 E 9th St, Brooklyn, NY 11230-2201, US",
@@ -1639,7 +1788,8 @@
   ],
   "phones": [
    "8559214"
-  ]
+  ],
+  "addr_old": "731 E 9th St, Brooklyn, NY 11230-2201, US"
  },
  {
   "addr": "2513 E 21st St, Brooklyn, NY 11235-2903, US",
@@ -1651,7 +1801,8 @@
   "phones": [
    "3680181",
    "5209278"
-  ]
+  ],
+  "addr_old": "2513 E 21st St, Brooklyn, NY 11235-2903, US"
  },
  {
   "addr": "1343 E 10th St, Brooklyn, NY 11230, US",
@@ -1664,7 +1815,8 @@
   "phones": [
    "3758210",
    "7552333"
-  ]
+  ],
+  "addr_old": "1343 E 10th St, Brooklyn, NY 11230, US"
  },
  {
   "addr": "1264 E 35 St, Brooklyn, N.Y. 11210, US",
@@ -1673,7 +1825,8 @@
   "emails": [],
   "phones": [
    "4201999"
-  ]
+  ],
+  "addr_old": "1264 E 35 St, Brooklyn, N.Y. 11210, US"
  },
  {
   "addr": "102 Woodmere Blvd 2128, NY 11598, US",
@@ -1684,7 +1837,8 @@
   ],
   "phones": [
    "5386532"
-  ]
+  ],
+  "addr_old": "102 Woodmere Blvd 2128, NY 11598, US"
  },
  {
   "addr": "112 Middleton St, Brooklyn, NY 11206, US",
@@ -1698,7 +1852,8 @@
    "4098045",
    "7046906",
    "6244087"
-  ]
+  ],
+  "addr_old": "112 Middleton St, Brooklyn, NY 11206, US"
  },
  {
   "addr": "3306 Bayfield Blvd, Oceanside, NY 11572, US",
@@ -1710,7 +1865,8 @@
   "phones": [
    "6030404",
    "3958369"
-  ]
+  ],
+  "addr_old": "3306 Bayfield Blvd, Oceanside, NY 11572, US"
  },
  {
   "addr": "33 Bay 22nd St, Brooklyn, NY 11214-3805, US",
@@ -1719,7 +1875,8 @@
   "emails": [
    "hannahshoes18@optonline.net"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "33 Bay 22nd St, Brooklyn, NY 11214-3805, US"
  },
  {
   "addr": "1431 east 9th street, brooklyn, NY 11230, US",
@@ -1730,7 +1887,8 @@
   ],
   "phones": [
    "3278136"
-  ]
+  ],
+  "addr_old": "1431 east 9th street, brooklyn, NY 11230, US"
  },
  {
   "addr": "678 Park Ave., Lakewood, NJ 08701, US",
@@ -1741,10 +1899,11 @@
   ],
   "phones": [
    "3705241"
-  ]
+  ],
+  "addr_old": "678 Park Ave., Lakewood, NJ 08701, US"
  },
  {
-  "addr": "1077 E 31st St 4128 Brooklyn, NY 11210, US",
+  "addr": "1077 E 31st St 4128, Brooklyn, NY 11210, US",
   "last": "רוזנבלום",
   "first": "חנה",
   "emails": [
@@ -1752,7 +1911,8 @@
   ],
   "phones": [
    "6423447"
-  ]
+  ],
+  "addr_old": "1077 E 31st St 4128 Brooklyn, NY 11210, US"
  },
  {
   "addr": "1817 East 18th St, Brooklyn, NY 11229, US",
@@ -1763,7 +1923,8 @@
   ],
   "phones": [
    "7038712"
-  ]
+  ],
+  "addr_old": "1817 East 18th St, Brooklyn, NY 11229, US"
  },
  {
   "addr": "2 Kile Court, Airmont, NY 10952-4531, US",
@@ -1774,7 +1935,8 @@
   ],
   "phones": [
    "5820999"
-  ]
+  ],
+  "addr_old": "2 Kile Court, Airmont, NY 10952-4531, US"
  },
  {
   "addr": "110 Park Ln, Lewisville, TX 75077-8221, US",
@@ -1783,7 +1945,8 @@
   "emails": [
    "tannerlynam@me.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "110 Park Ln, Lewisville, TX 75077-8221, US"
  },
  {
   "addr": "1005 Lake Bluff Dr, Flower Mound, TX 75028-7225, US",
@@ -1794,7 +1957,8 @@
   ],
   "phones": [
    "8970147"
-  ]
+  ],
+  "addr_old": "1005 Lake Bluff Dr, Flower Mound, TX 75028-7225, US"
  },
  {
   "addr": "29 Noam Ln 2156, Lakewood, NJ 08701, US",
@@ -1805,7 +1969,8 @@
   ],
   "phones": [
    "3919146"
-  ]
+  ],
+  "addr_old": "29 Noam Ln 2156, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1401 Brickell Ave Suite 320, Miami, FL 33131, US",
@@ -1816,7 +1981,8 @@
   ],
   "phones": [
    "3105991"
-  ]
+  ],
+  "addr_old": "1401 Brickell Ave Suite 320, Miami, FL 33131, US"
  },
  {
   "addr": "799 Sherwood St, Valley Stream, NY 11581-3612, US",
@@ -1827,7 +1993,8 @@
   ],
   "phones": [
    "5101478"
-  ]
+  ],
+  "addr_old": "799 Sherwood St, Valley Stream, NY 11581-3612, US"
  },
  {
   "addr": "pennington ave, passaic, NJ 07055, US",
@@ -1838,7 +2005,8 @@
   ],
   "phones": [
    "8065826"
-  ]
+  ],
+  "addr_old": "pennington ave, passaic, NJ 07055, US"
  },
  {
   "addr": "54 Gudz Rd 2962, Lakewood, NJ 08701, US",
@@ -1849,10 +2017,11 @@
   ],
   "phones": [
    "6641000"
-  ]
+  ],
+  "addr_old": "54 Gudz Rd 2962, Lakewood, NJ 08701, US"
  },
  {
-  "addr": "1378 E 28th St 5311 Brooklyn, NY 11210, US",
+  "addr": "1378 E 28th St 5311, Brooklyn, NY 11210, US",
   "last": "פרנקל",
   "first": "יהושע",
   "emails": [
@@ -1860,7 +2029,8 @@
   ],
   "phones": [
    "9387353"
-  ]
+  ],
+  "addr_old": "1378 E 28th St 5311 Brooklyn, NY 11210, US"
  },
  {
   "addr": "1729 Coleman St #4312, Brooklyn, NY 11234-4312, US",
@@ -1871,7 +2041,8 @@
   ],
   "phones": [
    "5259882"
-  ]
+  ],
+  "addr_old": "1729 Coleman St #4312, Brooklyn, NY 11234-4312, US"
  },
  {
   "addr": "37 Wilson St, Brooklyn, NY 11249, US",
@@ -1880,7 +2051,8 @@
   "emails": [],
   "phones": [
    "6931795"
-  ]
+  ],
+  "addr_old": "37 Wilson St, Brooklyn, NY 11249, US"
  },
  {
   "addr": "262 West End Ave, Brooklyn, NY 11235-4904, US",
@@ -1892,7 +2064,8 @@
   ],
   "phones": [
    "6693659"
-  ]
+  ],
+  "addr_old": "262 West End Ave, Brooklyn, NY 11235-4904, US"
  },
  {
   "addr": "1472 46th Street, side #3, brooklyn, NY 11219, US",
@@ -1903,7 +2076,8 @@
   ],
   "phones": [
    "5411074"
-  ]
+  ],
+  "addr_old": "1472 46th Street, side #3, brooklyn, NY 11219, US"
  },
  {
   "addr": "26 forshayxroad, Monsey, NY 10952, US",
@@ -1914,7 +2088,8 @@
   ],
   "phones": [
    "5485514"
-  ]
+  ],
+  "addr_old": "26 forshayxroad, Monsey, NY 10952, US"
  },
  {
   "addr": "28849 Serenity Ln 2656, Wickliffe, OH 44092, US",
@@ -1926,7 +2101,8 @@
   ],
   "phones": [
    "9445752"
-  ]
+  ],
+  "addr_old": "28849 Serenity Ln 2656, Wickliffe, OH 44092, US"
  },
  {
   "addr": "42 Quince Ln 1528, Monsey, NY 10952, US",
@@ -1937,7 +2113,8 @@
   ],
   "phones": [
    "9540014"
-  ]
+  ],
+  "addr_old": "42 Quince Ln 1528, Monsey, NY 10952, US"
  },
  {
   "addr": "2072 61 stbrooklyn, NY 11204, US",
@@ -1948,10 +2125,11 @@
   ],
   "phones": [
    "6809514"
-  ]
+  ],
+  "addr_old": "2072 61 stbrooklyn, NY 11204, US"
  },
  {
-  "addr": "1032 E 27th St 3740 Brooklyn, NY 11210, US",
+  "addr": "1032 E 27th St 3740, Brooklyn, NY 11210, US",
   "last": "אוברמייסטר",
   "first": "יוסי",
   "emails": [
@@ -1960,7 +2138,8 @@
   ],
   "phones": [
    "6965109"
-  ]
+  ],
+  "addr_old": "1032 E 27th St 3740 Brooklyn, NY 11210, US"
  },
  {
   "addr": "1079 E 32nd St, Brooklyn, NY 11210-4130, US",
@@ -1971,10 +2150,11 @@
   ],
   "phones": [
    "2523502"
-  ]
+  ],
+  "addr_old": "1079 E 32nd St, Brooklyn, NY 11210-4130, US"
  },
  {
-  "addr": "1041 E 28th St 3741 Brooklyn, NY 11210, US",
+  "addr": "1041 E 28th St 3741, Brooklyn, NY 11210, US",
   "last": "גולדבורד",
   "first": "יוסי",
   "emails": [
@@ -1983,7 +2163,8 @@
   "phones": [
    "6136767",
    "6270558"
-  ]
+  ],
+  "addr_old": "1041 E 28th St 3741 Brooklyn, NY 11210, US"
  },
  {
   "addr": "2946 W Jarvis Ave 1208, Chicago, IL 60645, US",
@@ -1995,7 +2176,8 @@
   "phones": [
    "4257861",
    "9693227"
-  ]
+  ],
+  "addr_old": "2946 W Jarvis Ave 1208, Chicago, IL 60645, US"
  },
  {
   "addr": "164 Harborview North, Lawrence, NY 11559, US",
@@ -2006,7 +2188,8 @@
   ],
   "phones": [
    "3716118"
-  ]
+  ],
+  "addr_old": "164 Harborview North, Lawrence, NY 11559, US"
  },
  {
   "addr": "1005 E 29 St, Brooklyn, N.Y. 11210, US",
@@ -2017,7 +2200,8 @@
   ],
   "phones": [
    "4980128"
-  ]
+  ],
+  "addr_old": "1005 E 29 St, Brooklyn, N.Y. 11210, US"
  },
  {
   "addr": "180 west end Ave, New york, NY 10023, US",
@@ -2028,7 +2212,8 @@
   ],
   "phones": [
    "4287926"
-  ]
+  ],
+  "addr_old": "180 west end Ave, New york, NY 10023, US"
  },
  {
   "addr": "876 E 14th St, Brooklyn, NY 11230-2918, US",
@@ -2040,7 +2225,8 @@
   ],
   "phones": [
    "2586640"
-  ]
+  ],
+  "addr_old": "876 E 14th St, Brooklyn, NY 11230-2918, US"
  },
  {
   "addr": "3980 Bedford Ave, Brooklyn, NY 11229-2436, US",
@@ -2051,7 +2237,8 @@
   ],
   "phones": [
    "9036260"
-  ]
+  ],
+  "addr_old": "3980 Bedford Ave, Brooklyn, NY 11229-2436, US"
  },
  {
   "addr": "86 Gudz Rd, Lakewood, NJ 08701, US",
@@ -2062,7 +2249,8 @@
   ],
   "phones": [
    "3000303"
-  ]
+  ],
+  "addr_old": "86 Gudz Rd, Lakewood, NJ 08701, US"
  },
  {
   "addr": "65 Curtis Ln, Lakewood, NJ 08701, US",
@@ -2073,7 +2261,8 @@
   ],
   "phones": [
    "7795767"
-  ]
+  ],
+  "addr_old": "65 Curtis Ln, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1545 59th St, Brooklyn, NY 11219, US",
@@ -2084,7 +2273,8 @@
   ],
   "phones": [
    "4615168"
-  ]
+  ],
+  "addr_old": "1545 59th St, Brooklyn, NY 11219, US"
  },
  {
   "addr": "3600 Mystic Pointe Dr. Apt 1707, Aventura, FL 33180, US",
@@ -2095,7 +2285,8 @@
   ],
   "phones": [
    "7796120"
-  ]
+  ],
+  "addr_old": "3600 Mystic Pointe Dr. Apt 1707, Aventura, FL 33180, US"
  },
  {
   "addr": "6140 NE 7th Ave 3540, Fort Lauderdale, FL 33334, US",
@@ -2106,7 +2297,8 @@
   ],
   "phones": [
    "5607401"
-  ]
+  ],
+  "addr_old": "6140 NE 7th Ave 3540, Fort Lauderdale, FL 33334, US"
  },
  {
   "addr": "766 Sherwood St, Valley Stream, NY 11581-3611, US",
@@ -2117,7 +2309,8 @@
   ],
   "phones": [
    "7572523"
-  ]
+  ],
+  "addr_old": "766 Sherwood St, Valley Stream, NY 11581-3611, US"
  },
  {
   "addr": "24160 Greenlawn Ave, Beachwood, OH 44122-1439, US",
@@ -2128,7 +2321,8 @@
   ],
   "phones": [
    "4396482"
-  ]
+  ],
+  "addr_old": "24160 Greenlawn Ave, Beachwood, OH 44122-1439, US"
  },
  {
   "addr": "2907 Caroline St, South Bend, IN 46614, US",
@@ -2140,7 +2334,8 @@
   ],
   "phones": [
    "3830723"
-  ]
+  ],
+  "addr_old": "2907 Caroline St, South Bend, IN 46614, US"
  },
  {
   "addr": "615 Derby Ave 2714, Woodmere, NY 11598, US",
@@ -2151,7 +2346,8 @@
   ],
   "phones": [
    "3754464"
-  ]
+  ],
+  "addr_old": "615 Derby Ave 2714, Woodmere, NY 11598, US"
  },
  {
   "addr": "7650 Co9542892350urtyard Run W, Boca Raton, FL 33433, US",
@@ -2162,7 +2358,8 @@
   ],
   "phones": [
    "2892350"
-  ]
+  ],
+  "addr_old": "7650 Co9542892350urtyard Run W, Boca Raton, FL 33433, US"
  },
  {
   "addr": "511 Harbor Dr 1013, Cedarhurst, NY 11516, US",
@@ -2175,7 +2372,8 @@
    "6607728",
    "3740540",
    "9367835"
-  ]
+  ],
+  "addr_old": "511 Harbor Dr 1013, Cedarhurst, NY 11516, US"
  },
  {
   "addr": "208 Murray Street, Lakewood, NJ 08701, US",
@@ -2184,7 +2382,8 @@
   "emails": [],
   "phones": [
    "6096015"
-  ]
+  ],
+  "addr_old": "208 Murray Street, Lakewood, NJ 08701, US"
  },
  {
   "addr": "588 Seton Cir 1525, Lakewood, NJ 08701, US",
@@ -2195,10 +2394,11 @@
   ],
   "phones": [
    "8390423"
-  ]
+  ],
+  "addr_old": "588 Seton Cir 1525, Lakewood, NJ 08701, US"
  },
  {
-  "addr": "167 Sheraden Ave 4331 Staten Island, NY 10314, US",
+  "addr": "167 Sheraden Ave 4331, Staten Island, NY 10314, US",
   "last": "ברקוביץ",
   "first": "יעקב",
   "emails": [
@@ -2206,10 +2406,11 @@
   ],
   "phones": [
    "6312371"
-  ]
+  ],
+  "addr_old": "167 Sheraden Ave 4331 Staten Island, NY 10314, US"
  },
  {
-  "addr": "1241 E 28th St 4626 Brooklyn, NY 11210, US",
+  "addr": "1241 E 28th St 4626, Brooklyn, NY 11210, US",
   "last": "גולד",
   "first": "יעקב",
   "emails": [
@@ -2219,7 +2420,8 @@
   "phones": [
    "3090654",
    "6054140"
-  ]
+  ],
+  "addr_old": "1241 E 28th St 4626 Brooklyn, NY 11210, US"
  },
  {
   "addr": "1243 E 72nd St, Brooklyn, NY 11234-5816, US",
@@ -2230,7 +2432,8 @@
   ],
   "phones": [
    "8417950"
-  ]
+  ],
+  "addr_old": "1243 E 72nd St, Brooklyn, NY 11234-5816, US"
  },
  {
   "addr": "6305 LINCOLN AVE, BALTIMORE, MD 21209, US",
@@ -2242,7 +2445,8 @@
   "phones": [
    "6543500",
    "4146432"
-  ]
+  ],
+  "addr_old": "6305 LINCOLN AVE, BALTIMORE, MD 21209, US"
  },
  {
   "addr": "548 E 3rd St, Brooklyn, NY 11218, US",
@@ -2253,7 +2457,8 @@
   ],
   "phones": [
    "4724452"
-  ]
+  ],
+  "addr_old": "548 E 3rd St, Brooklyn, NY 11218, US"
  },
  {
   "addr": "1126 E 23rd St, Brooklyn, NY 11210-4519, US",
@@ -2264,7 +2469,8 @@
   ],
   "phones": [
    "3772262"
-  ]
+  ],
+  "addr_old": "1126 E 23rd St, Brooklyn, NY 11210-4519, US"
  },
  {
   "addr": "3 Sherry Lane, Wesley Hills, NY 10977, US",
@@ -2275,7 +2481,8 @@
   ],
   "phones": [
    "4143619"
-  ]
+  ],
+  "addr_old": "3 Sherry Lane, Wesley Hills, NY 10977, US"
  },
  {
   "addr": "1267 E 28th St, Brooklyn, NY 11210-4626, US",
@@ -2286,7 +2493,8 @@
   ],
   "phones": [
    "5682968"
-  ]
+  ],
+  "addr_old": "1267 E 28th St, Brooklyn, NY 11210-4626, US"
  },
  {
   "addr": "1664 East 3rd Street, Brooklyn, NY 11230, US",
@@ -2297,7 +2505,8 @@
   ],
   "phones": [
    "2965035"
-  ]
+  ],
+  "addr_old": "1664 East 3rd Street, Brooklyn, NY 11230, US"
  },
  {
   "addr": "8-02 Dorian Ct, Far Rockaway, NY 11691-5206, US",
@@ -2308,7 +2517,8 @@
   ],
   "phones": [
    "5763770"
-  ]
+  ],
+  "addr_old": "8-02 Dorian Ct, Far Rockaway, NY 11691-5206, US"
  },
  {
   "addr": "1115 E 31 St, Brooklyn, N.Y. 11210, US",
@@ -2320,7 +2530,8 @@
   "phones": [
    "8466162",
    "3097999"
-  ]
+  ],
+  "addr_old": "1115 E 31 St, Brooklyn, N.Y. 11210, US"
  },
  {
   "addr": "71-35 147th St, Apt 1A, Flushing, NY 11367, US",
@@ -2331,7 +2542,8 @@
   ],
   "phones": [
    "7508422"
-  ]
+  ],
+  "addr_old": "71-35 147th St, Apt 1A, Flushing, NY 11367, US"
  },
  {
   "addr": "6113 Cashio St 3709, Los Angeles, CA 90035, US",
@@ -2342,7 +2554,8 @@
   ],
   "phones": [
    "2912101"
-  ]
+  ],
+  "addr_old": "6113 Cashio St 3709, Los Angeles, CA 90035, US"
  },
  {
   "addr": "1926 New York Ave, Brooklyn, NY 11210, US",
@@ -2353,7 +2566,8 @@
   ],
   "phones": [
    "4402674"
-  ]
+  ],
+  "addr_old": "1926 New York Ave, Brooklyn, NY 11210, US"
  },
  {
   "addr": "2649 W Jarlath St, Chicago, IL 60645-1422, US",
@@ -2364,10 +2578,11 @@
   ],
   "phones": [
    "6782708"
-  ]
+  ],
+  "addr_old": "2649 W Jarlath St, Chicago, IL 60645-1422, US"
  },
  {
-  "addr": "929 E 28th St 3729 Brooklyn, NY 11210, US",
+  "addr": "929 E 28th St 3729, Brooklyn, NY 11210, US",
   "last": "בראון",
   "first": "יצחק",
   "emails": [
@@ -2376,7 +2591,8 @@
   "phones": [
    "6976540",
    "2587343"
-  ]
+  ],
+  "addr_old": "929 E 28th St 3729 Brooklyn, NY 11210, US"
  },
  {
   "addr": "3903 Avenue R, Brooklyn, NY 11234-4328, US",
@@ -2387,7 +2603,8 @@
   ],
   "phones": [
    "8046125"
-  ]
+  ],
+  "addr_old": "3903 Avenue R, Brooklyn, NY 11234-4328, US"
  },
  {
   "addr": "1138 E 24th St, Brooklyn, NY 11210-4507, US",
@@ -2396,10 +2613,11 @@
   "emails": [
    "itchmat@aol.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "1138 E 24th St, Brooklyn, NY 11210-4507, US"
  },
  {
-  "addr": "1061 E 27th St 3739 Brooklyn, NY 11210, US",
+  "addr": "1061 E 27th St 3739, Brooklyn, NY 11210, US",
   "last": "האס",
   "first": "יצחק מנחם",
   "emails": [
@@ -2408,14 +2626,16 @@
   ],
   "phones": [
    "8250998"
-  ]
+  ],
+  "addr_old": "1061 E 27th St 3739 Brooklyn, NY 11210, US"
  },
  {
   "addr": "1961 E 8th St, Brooklyn, NY 11223-3239, US",
   "last": "קטש",
   "first": "יצחק",
   "emails": [],
-  "phones": []
+  "phones": [],
+  "addr_old": "1961 E 8th St, Brooklyn, NY 11223-3239, US"
  },
  {
   "addr": "415 Madison Ave, West Hempstead, NY 11552-2352, US",
@@ -2426,7 +2646,8 @@
   ],
   "phones": [
    "5091544"
-  ]
+  ],
+  "addr_old": "415 Madison Ave, West Hempstead, NY 11552-2352, US"
  },
  {
   "addr": "1 devash court, Lakewood, NJ 08701, US",
@@ -2437,7 +2658,8 @@
   ],
   "phones": [
    "3632523"
-  ]
+  ],
+  "addr_old": "1 devash court, Lakewood, NJ 08701, US"
  },
  {
   "addr": "3411 Ave K, Brooklyn, NY 11210, US",
@@ -2448,7 +2670,8 @@
   ],
   "phones": [
    "7597505"
-  ]
+  ],
+  "addr_old": "3411 Ave K, Brooklyn, NY 11210, US"
  },
  {
   "addr": "3911 Avenue P, Brooklyn, NY 11234-3501, US",
@@ -2460,7 +2683,8 @@
   ],
   "phones": [
    "7546634"
-  ]
+  ],
+  "addr_old": "3911 Avenue P, Brooklyn, NY 11234-3501, US"
  },
  {
   "addr": "20 Kingsfield Dr, Lakewood, NJ 08701  848224 5504, US",
@@ -2472,7 +2696,8 @@
   ],
   "phones": [
    "2245504"
-  ]
+  ],
+  "addr_old": "20 Kingsfield Dr, Lakewood, NJ 08701  848224 5504, US"
  },
  {
   "addr": "1282 E 31st St, Brooklyn, NY 11210-4741, US",
@@ -2484,7 +2709,8 @@
   "phones": [
    "4191651",
    "3727254"
-  ]
+  ],
+  "addr_old": "1282 E 31st St, Brooklyn, NY 11210-4741, US"
  },
  {
   "addr": "211 Avenue A, New York, NY 10009, US",
@@ -2495,7 +2721,8 @@
   ],
   "phones": [
    "2497551"
-  ]
+  ],
+  "addr_old": "211 Avenue A, New York, NY 10009, US"
  },
  {
   "addr": "1705 Ocean Pkwy, Brooklyn, NY 11223, US",
@@ -2506,10 +2733,11 @@
   ],
   "phones": [
    "5235991"
-  ]
+  ],
+  "addr_old": "1705 Ocean Pkwy, Brooklyn, NY 11223, US"
  },
  {
-  "addr": "1264 E 35th St 4822 Brooklyn, NY 11210, US",
+  "addr": "1264 E 35th St 4822, Brooklyn, NY 11210, US",
   "last": "לאקס",
   "first": "לאה אסתר",
   "emails": [
@@ -2517,7 +2745,8 @@
   ],
   "phones": [
    "6130192"
-  ]
+  ],
+  "addr_old": "1264 E 35th St 4822 Brooklyn, NY 11210, US"
  },
  {
   "addr": "5 Cortland Rd, Monsey, NY 10952, US",
@@ -2528,7 +2757,8 @@
   ],
   "phones": [
    "4991523"
-  ]
+  ],
+  "addr_old": "5 Cortland Rd, Monsey, NY 10952, US"
  },
  {
   "addr": "Apt 6D 909 E 29th St, Brooklyn, NY 11210, US",
@@ -2540,7 +2770,8 @@
   ],
   "phones": [
    "7551949"
-  ]
+  ],
+  "addr_old": "Apt 6D 909 E 29th St, Brooklyn, NY 11210, US"
  },
  {
   "addr": "77 Crystal Avenue, West Orange, New Jersey 07052, US",
@@ -2549,7 +2780,8 @@
   "emails": [],
   "phones": [
    "2596747"
-  ]
+  ],
+  "addr_old": "77 Crystal Avenue, West Orange, New Jersey 07052, US"
  },
  {
   "addr": "70 E Sunrise Hwy, Valley Stream, NY 11581, US",
@@ -2560,7 +2792,8 @@
   ],
   "phones": [
    "8870730"
-  ]
+  ],
+  "addr_old": "70 E Sunrise Hwy, Valley Stream, NY 11581, US"
  },
  {
   "addr": "1282 East 27th Street, BROOKLYN, NY 11210, US",
@@ -2572,7 +2805,8 @@
   "phones": [
    "9511088",
    "9220029"
-  ]
+  ],
+  "addr_old": "1282 East 27th Street, BROOKLYN, NY 11210, US"
  },
  {
   "addr": "6709 Langton Court, Richmond, VT 23226, US",
@@ -2583,7 +2817,8 @@
   ],
   "phones": [
    "5743171"
-  ]
+  ],
+  "addr_old": "6709 Langton Court, Richmond, VT 23226, US"
  },
  {
   "addr": "12335 Sylvan St, North Hollywood, CA 91606-3108, US",
@@ -2595,7 +2830,8 @@
   ],
   "phones": [
    "6858231"
-  ]
+  ],
+  "addr_old": "12335 Sylvan St, North Hollywood, CA 91606-3108, US"
  },
  {
   "addr": "1321 Upland Dr, Houston, TX 77043, US",
@@ -2606,7 +2842,8 @@
   ],
   "phones": [
    "6337171"
-  ]
+  ],
+  "addr_old": "1321 Upland Dr, Houston, TX 77043, US"
  },
  {
   "addr": "137-35 70th Rd, Flushing, NY 11367, US",
@@ -2618,7 +2855,8 @@
   ],
   "phones": [
    "4407254"
-  ]
+  ],
+  "addr_old": "137-35 70th Rd, Flushing, NY 11367, US"
  },
  {
   "addr": "#307 5604 Rhodes Ave, Valley Village, CA 91607, US",
@@ -2629,7 +2867,8 @@
   ],
   "phones": [
    "6636309"
-  ]
+  ],
+  "addr_old": "#307 5604 Rhodes Ave, Valley Village, CA 91607, US"
  },
  {
   "addr": "#3D 42 W. 72nd St, New York, New York 10023, US",
@@ -2640,7 +2879,8 @@
   ],
   "phones": [
    "4897972"
-  ]
+  ],
+  "addr_old": "#3D 42 W. 72nd St, New York, New York 10023, US"
  },
  {
   "addr": "6-43 Oak Dr, Far Rockaway, NY 11691, US",
@@ -2651,7 +2891,8 @@
   ],
   "phones": [
    "7318557"
-  ]
+  ],
+  "addr_old": "6-43 Oak Dr, Far Rockaway, NY 11691, US"
  },
  {
   "addr": "2702 Willow Glen Dr, Baltimore, MD 21209, US",
@@ -2662,7 +2903,8 @@
   ],
   "phones": [
    "2709676"
-  ]
+  ],
+  "addr_old": "2702 Willow Glen Dr, Baltimore, MD 21209, US"
  },
  {
   "addr": "23 Rockaway Turnpike 1818, Lawrence, NY 11559, US",
@@ -2674,7 +2916,8 @@
   ],
   "phones": [
    "8072618"
-  ]
+  ],
+  "addr_old": "23 Rockaway Turnpike 1818, Lawrence, NY 11559, US"
  },
  {
   "addr": "Suite 802 2381 Nostrand Ave, Brooklyn, NY 11210, US",
@@ -2685,7 +2928,8 @@
   ],
   "phones": [
    "7281605"
-  ]
+  ],
+  "addr_old": "Suite 802 2381 Nostrand Ave, Brooklyn, NY 11210, US"
  },
  {
   "addr": "15 Rose Hill Rd 3203, Suffern, NY 10901, US",
@@ -2696,10 +2940,11 @@
   ],
   "phones": [
    "4224528"
-  ]
+  ],
+  "addr_old": "15 Rose Hill Rd 3203, Suffern, NY 10901, US"
  },
  {
-  "addr": "3620 Avenue L 5446 Brooklyn, NY 11210, US",
+  "addr": "3620 Avenue L 5446, Brooklyn, NY 11210, US",
   "last": "דונט",
   "first": "מוטי",
   "emails": [
@@ -2707,7 +2952,8 @@
   ],
   "phones": [
    "9232412"
-  ]
+  ],
+  "addr_old": "3620 Avenue L 5446 Brooklyn, NY 11210, US"
  },
  {
   "addr": "2083 New York Ave, Brooklyn, NY 11210, US",
@@ -2718,7 +2964,8 @@
   ],
   "phones": [
    "8469673"
-  ]
+  ],
+  "addr_old": "2083 New York Ave, Brooklyn, NY 11210, US"
  },
  {
   "addr": "1309 38th St, Brooklyn, NY 11218, US",
@@ -2727,7 +2974,8 @@
   "emails": [],
   "phones": [
    "7760967"
-  ]
+  ],
+  "addr_old": "1309 38th St, Brooklyn, NY 11218, US"
  },
  {
   "addr": "23rd St, Brooklyn, NY 11210, US",
@@ -2738,7 +2986,8 @@
   ],
   "phones": [
    "7031783"
-  ]
+  ],
+  "addr_old": "23rd St, Brooklyn, NY 11210, US"
  },
  {
   "addr": "573 Churchill Rd, Teaneck, NJ 07666, US",
@@ -2749,10 +2998,11 @@
   ],
   "phones": [
    "6142400"
-  ]
+  ],
+  "addr_old": "573 Churchill Rd, Teaneck, NJ 07666, US"
  },
  {
-  "addr": "13843 Sylvan St 2323 Van Nuys, CA 91401, US",
+  "addr": "13843 Sylvan St 2323, Van Nuys, CA 91401, US",
   "last": "דוראן",
   "first": "מיכאל",
   "emails": [
@@ -2760,7 +3010,8 @@
   ],
   "phones": [
    "7819668"
-  ]
+  ],
+  "addr_old": "13843 Sylvan St 2323 Van Nuys, CA 91401, US"
  },
  {
   "addr": "10 Slevin Court, Monsey, NY 10952, US",
@@ -2772,7 +3023,8 @@
   "phones": [
    "3681172",
    "7337014"
-  ]
+  ],
+  "addr_old": "10 Slevin Court, Monsey, NY 10952, US"
  },
  {
   "addr": "P.O. Box 48401, Los Angeles, CA 90048, US",
@@ -2783,7 +3035,8 @@
   ],
   "phones": [
    "7982409"
-  ]
+  ],
+  "addr_old": "P.O. Box 48401, Los Angeles, CA 90048, US"
  },
  {
   "addr": "930 E 7th St #3G Brooklyn NY 11230, US",
@@ -2794,7 +3047,8 @@
   ],
   "phones": [
    "5567343"
-  ]
+  ],
+  "addr_old": "930 E 7th St #3G Brooklyn NY 11230, US"
  },
  {
   "addr": "21 Par Rd, Suffern, NY 10901-3937, US",
@@ -2805,7 +3059,8 @@
   ],
   "phones": [
    "9860779"
-  ]
+  ],
+  "addr_old": "21 Par Rd, Suffern, NY 10901-3937, US"
  },
  {
   "addr": "#108 10527 Bastille Ln, Orlando, FL 32836, US",
@@ -2816,10 +3071,11 @@
   ],
   "phones": [
    "3628807"
-  ]
+  ],
+  "addr_old": "#108 10527 Bastille Ln, Orlando, FL 32836, US"
  },
  {
-  "addr": "1964 51st St 1338 Brooklyn, NY 11204, US",
+  "addr": "1964 51st St 1338, Brooklyn, NY 11204, US",
   "last": "דרייפוס",
   "first": "מלכה",
   "emails": [
@@ -2827,7 +3083,8 @@
   ],
   "phones": [
    "3740504"
-  ]
+  ],
+  "addr_old": "1964 51st St 1338 Brooklyn, NY 11204, US"
  },
  {
   "addr": "76 Carlton Ave S, Lakewood Township, NJ 08701, US",
@@ -2838,7 +3095,8 @@
   ],
   "phones": [
    "5691272"
-  ]
+  ],
+  "addr_old": "76 Carlton Ave S, Lakewood Township, NJ 08701, US"
  },
  {
   "addr": "1465 E 19th St, Brooklyn, NY 11230, US",
@@ -2850,7 +3108,8 @@
   ],
   "phones": [
    "3392468"
-  ]
+  ],
+  "addr_old": "1465 E 19th St, Brooklyn, NY 11230, US"
  },
  {
   "addr": "32nd Floor 225 Broadway, New York, NY 10007, US",
@@ -2859,7 +3118,8 @@
   "emails": [],
   "phones": [
    "9916600"
-  ]
+  ],
+  "addr_old": "32nd Floor 225 Broadway, New York, NY 10007, US"
  },
  {
   "addr": "140-11 68th Dr, Flushing, NY 11367-1634, US",
@@ -2870,7 +3130,8 @@
   ],
   "phones": [
    "7043814"
-  ]
+  ],
+  "addr_old": "140-11 68th Dr, Flushing, NY 11367-1634, US"
  },
  {
   "addr": "Red Rock Rd, New City, NY 10956, US",
@@ -2881,7 +3142,8 @@
   ],
   "phones": [
    "7885128"
-  ]
+  ],
+  "addr_old": "Red Rock Rd, New City, NY 10956, US"
  },
  {
   "addr": "221 Pine St 4832, Lakewood, NJ 08701, US",
@@ -2892,7 +3154,8 @@
   ],
   "phones": [
    "6800768"
-  ]
+  ],
+  "addr_old": "221 Pine St 4832, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1202 S La Jolla Ave, Los Angeles, CA 90035-2645, US",
@@ -2903,10 +3166,11 @@
   ],
   "phones": [
    "2346666"
-  ]
+  ],
+  "addr_old": "1202 S La Jolla Ave, Los Angeles, CA 90035-2645, US"
  },
  {
-  "addr": "1614 Avenue S 2921 Brooklyn, NY 11229, US",
+  "addr": "1614 Avenue S 2921, Brooklyn, NY 11229, US",
   "last": "גינצבורג",
   "first": "מרים",
   "emails": [
@@ -2914,7 +3178,8 @@
   ],
   "phones": [
    "9956888"
-  ]
+  ],
+  "addr_old": "1614 Avenue S 2921 Brooklyn, NY 11229, US"
  },
  {
   "addr": "6 East Pkwy, Clifton, NJ 07014, US",
@@ -2926,7 +3191,8 @@
   ],
   "phones": [
    "7129409"
-  ]
+  ],
+  "addr_old": "6 East Pkwy, Clifton, NJ 07014, US"
  },
  {
   "addr": "4 Mosier Ct, Monsey, NY 10952, US",
@@ -2937,7 +3203,8 @@
   ],
   "phones": [
    "6081266"
-  ]
+  ],
+  "addr_old": "4 Mosier Ct, Monsey, NY 10952, US"
  },
  {
   "addr": "536 Clubhouse Rd, Woodmere, NY 11598-1902, US",
@@ -2948,7 +3215,8 @@
   ],
   "phones": [
    "6572762"
-  ]
+  ],
+  "addr_old": "536 Clubhouse Rd, Woodmere, NY 11598-1902, US"
  },
  {
   "addr": "515 9th St, Lakewood, NJ 08701-2614, US",
@@ -2957,7 +3225,8 @@
   "emails": [],
   "phones": [
    "5133561"
-  ]
+  ],
+  "addr_old": "515 9th St, Lakewood, NJ 08701-2614, US"
  },
  {
   "addr": "22 Sienna Way 2148, Lakewood, NJ 08701, US",
@@ -2968,7 +3237,8 @@
   ],
   "phones": [
    "7834354"
-  ]
+  ],
+  "addr_old": "22 Sienna Way 2148, Lakewood, NJ 08701, US"
  },
  {
   "addr": "3 Bianchi Drive, Thiells, NY 10984, US",
@@ -2979,7 +3249,8 @@
   ],
   "phones": [
    "6328126"
-  ]
+  ],
+  "addr_old": "3 Bianchi Drive, Thiells, NY 10984, US"
  },
  {
   "addr": "795 Hampton Rd, Woodmere, NY 11598-2518, US",
@@ -2990,7 +3261,8 @@
   ],
   "phones": [
    "8652361"
-  ]
+  ],
+  "addr_old": "795 Hampton Rd, Woodmere, NY 11598-2518, US"
  },
  {
   "addr": "1955 51, Brooklyn, NY 11204, US",
@@ -3001,7 +3273,8 @@
   ],
   "phones": [
    "5604426"
-  ]
+  ],
+  "addr_old": "1955 51, Brooklyn, NY 11204, US"
  },
  {
   "addr": "3748 Shannon Rd.3748 Shannon Rd., Cleveland, OH 44118, US",
@@ -3012,7 +3285,8 @@
   ],
   "phones": [
    "6093622"
-  ]
+  ],
+  "addr_old": "3748 Shannon Rd.3748 Shannon Rd., Cleveland, OH 44118, US"
  },
  {
   "addr": "292 Old Whitesville Rd, Lakewood, NJ 08701-2915, US",
@@ -3024,7 +3298,8 @@
   ],
   "phones": [
    "3476759"
-  ]
+  ],
+  "addr_old": "292 Old Whitesville Rd, Lakewood, NJ 08701-2915, US"
  },
  {
   "addr": "1402 57 street, Brooklyn, NY 11219, US",
@@ -3035,7 +3310,8 @@
   ],
   "phones": [
    "2992819"
-  ]
+  ],
+  "addr_old": "1402 57 street, Brooklyn, NY 11219, US"
  },
  {
   "addr": "25 Westminster PL, Apt 3, PASSAIC, NJ 07055, US",
@@ -3046,10 +3322,11 @@
   ],
   "phones": [
    "2630923"
-  ]
+  ],
+  "addr_old": "25 Westminster PL, Apt 3, PASSAIC, NJ 07055, US"
  },
  {
-  "addr": "921 E 31st St 3831 Brooklyn, NY 11210, US",
+  "addr": "921 E 31st St 3831, Brooklyn, NY 11210, US",
   "last": "רודיטש",
   "first": "משה",
   "emails": [
@@ -3057,7 +3334,8 @@
   ],
   "phones": [
    "4922174"
-  ]
+  ],
+  "addr_old": "921 E 31st St 3831 Brooklyn, NY 11210, US"
  },
  {
   "addr": "7650 Courtyard Run W, Boca Raton, FL 33433, US",
@@ -3068,7 +3346,8 @@
   ],
   "phones": [
    "7179077"
-  ]
+  ],
+  "addr_old": "7650 Courtyard Run W, Boca Raton, FL 33433, US"
  },
  {
   "addr": "e. 14th st, brooklyn, NY 11230, US",
@@ -3079,7 +3358,8 @@
   ],
   "phones": [
    "2586640"
-  ]
+  ],
+  "addr_old": "e. 14th st, brooklyn, NY 11230, US"
  },
  {
   "addr": "7666 Austin street apt 6E, Forest hills, NY 11375, US",
@@ -3090,7 +3370,8 @@
   ],
   "phones": [
    "5764340"
-  ]
+  ],
+  "addr_old": "7666 Austin street apt 6E, Forest hills, NY 11375, US"
  },
  {
   "addr": "17 Ravine rd, Great Neck, N.Y. 11023, US",
@@ -3099,7 +3380,8 @@
   "emails": [],
   "phones": [
    "4826777"
-  ]
+  ],
+  "addr_old": "17 Ravine rd, Great Neck, N.Y. 11023, US"
  },
  {
   "addr": "110 Hillside Blvd, Lakewood, NJ 08701, US",
@@ -3108,7 +3390,8 @@
   "emails": [],
   "phones": [
    "6848990"
-  ]
+  ],
+  "addr_old": "110 Hillside Blvd, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1866 47th St, Brooklyn, NY 11204-1235, US",
@@ -3119,7 +3402,8 @@
   ],
   "phones": [
    "8139194"
-  ]
+  ],
+  "addr_old": "1866 47th St, Brooklyn, NY 11204-1235, US"
  },
  {
   "addr": "929 e 28 st, Brooklyn, NY 11210, US",
@@ -3130,7 +3414,8 @@
   ],
   "phones": [
    "2587343"
-  ]
+  ],
+  "addr_old": "929 e 28 st, Brooklyn, NY 11210, US"
  },
  {
   "addr": "22 Ossman Dr 2655, Pomona, NY 10970, US",
@@ -3142,7 +3427,8 @@
   ],
   "phones": [
    "2633294"
-  ]
+  ],
+  "addr_old": "22 Ossman Dr 2655, Pomona, NY 10970, US"
  },
  {
   "addr": "2408 E 63rd St, Brooklyn, NY 11234-6705, US",
@@ -3153,7 +3439,8 @@
   ],
   "phones": [
    "9153112"
-  ]
+  ],
+  "addr_old": "2408 E 63rd St, Brooklyn, NY 11234-6705, US"
  },
  {
   "addr": "43 Clover St, Lakewood, NJ 08701, US",
@@ -3164,7 +3451,8 @@
   ],
   "phones": [
    "9426343"
-  ]
+  ],
+  "addr_old": "43 Clover St, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1245 park ave, New York, NY 10128, US",
@@ -3175,7 +3463,8 @@
   ],
   "phones": [
    "2667998"
-  ]
+  ],
+  "addr_old": "1245 park ave, New York, NY 10128, US"
  },
  {
   "addr": "69 Sunset Avenue, Lynbrook, NY 11563, US",
@@ -3186,7 +3475,8 @@
   ],
   "phones": [
    "7618364"
-  ]
+  ],
+  "addr_old": "69 Sunset Avenue, Lynbrook, NY 11563, US"
  },
  {
   "addr": "1070 E 27th St, Brooklyn, NY 11210-3740, US",
@@ -3197,7 +3487,8 @@
   ],
   "phones": [
    "8656597"
-  ]
+  ],
+  "addr_old": "1070 E 27th St, Brooklyn, NY 11210-3740, US"
  },
  {
   "addr": "9341 Kedvale Ave, Skokie, IL 60076-1420, US",
@@ -3208,7 +3499,8 @@
   ],
   "phones": [
    "9732914"
-  ]
+  ],
+  "addr_old": "9341 Kedvale Ave, Skokie, IL 60076-1420, US"
  },
  {
   "addr": "12 Meadow Run Ct, Jackson Township, NJ 08527, US",
@@ -3220,7 +3512,8 @@
   ],
   "phones": [
    "6410892"
-  ]
+  ],
+  "addr_old": "12 Meadow Run Ct, Jackson Township, NJ 08527, US"
  },
  {
   "addr": "112 Steamboat Rd, Great Neck, NY 11024, US",
@@ -3231,7 +3524,8 @@
   ],
   "phones": [
    "4230575"
-  ]
+  ],
+  "addr_old": "112 Steamboat Rd, Great Neck, NY 11024, US"
  },
  {
   "addr": "1767 60 street, Brooklyn, NY 11204, US",
@@ -3242,7 +3536,8 @@
   ],
   "phones": [
    "2686413"
-  ]
+  ],
+  "addr_old": "1767 60 street, Brooklyn, NY 11204, US"
  },
  {
   "addr": "1383 East 16th Street, Brooklyn, NY 11230-6042, US",
@@ -3251,7 +3546,8 @@
   "emails": [],
   "phones": [
    "7714052"
-  ]
+  ],
+  "addr_old": "1383 East 16th Street, Brooklyn, NY 11230-6042, US"
  },
  {
   "addr": "1540 E 3rd Street, Brooklyn, NY 11230, US",
@@ -3262,7 +3558,8 @@
   ],
   "phones": [
    "4612725"
-  ]
+  ],
+  "addr_old": "1540 E 3rd Street, Brooklyn, NY 11230, US"
  },
  {
   "addr": "4201 NW 5th Ave 4658, Boca Raton, FL 33431, US",
@@ -3273,7 +3570,8 @@
   ],
   "phones": [
    "3769576"
-  ]
+  ],
+  "addr_old": "4201 NW 5th Ave 4658, Boca Raton, FL 33431, US"
  },
  {
   "addr": "522 Chauncey Ln, Lawrence, NY 11559, US",
@@ -3284,7 +3582,8 @@
   ],
   "phones": [
    "3064403"
-  ]
+  ],
+  "addr_old": "522 Chauncey Ln, Lawrence, NY 11559, US"
  },
  {
   "addr": "938 E 5th St #2B, BROOKLYN, NY 11230, US",
@@ -3295,7 +3594,8 @@
   ],
   "phones": [
    "8731443"
-  ]
+  ],
+  "addr_old": "938 E 5th St #2B, BROOKLYN, NY 11230, US"
  },
  {
   "addr": "120 Avenue J, Brooklyn, NY 11230-3311, US",
@@ -3306,7 +3606,8 @@
   ],
   "phones": [
    "6140307"
-  ]
+  ],
+  "addr_old": "120 Avenue J, Brooklyn, NY 11230-3311, US"
  },
  {
   "addr": "777 Arthur St, West Hempstead, NY 11552-3211, US",
@@ -3317,7 +3618,8 @@
   ],
   "phones": [
    "6105047"
-  ]
+  ],
+  "addr_old": "777 Arthur St, West Hempstead, NY 11552-3211, US"
  },
  {
   "addr": "1675 Broadway, New York, NY 10019, US",
@@ -3328,10 +3630,11 @@
   ],
   "phones": [
    "3808697"
-  ]
+  ],
+  "addr_old": "1675 Broadway, New York, NY 10019, US"
  },
  {
-  "addr": "464 Avenue U 4011 Brooklyn, NY 11223, US",
+  "addr": "464 Avenue U 4011, Brooklyn, NY 11223, US",
   "last": "שבות",
   "first": "עוזי",
   "emails": [
@@ -3339,7 +3642,8 @@
   ],
   "phones": [
    "2617569"
-  ]
+  ],
+  "addr_old": "464 Avenue U 4011 Brooklyn, NY 11223, US"
  },
  {
   "addr": "1301 Drier Place, Highland Park, NJ 08904, US",
@@ -3350,7 +3654,8 @@
   ],
   "phones": [
    "5527916"
-  ]
+  ],
+  "addr_old": "1301 Drier Place, Highland Park, NJ 08904, US"
  },
  {
   "addr": "871 east 27th street, Brooklyn, NY 11210, US",
@@ -3361,7 +3666,8 @@
   ],
   "phones": [
    "5013773"
-  ]
+  ],
+  "addr_old": "871 east 27th street, Brooklyn, NY 11210, US"
  },
  {
   "addr": "1048 e 31st st, Brooklyn, NY 11210, US",
@@ -3372,7 +3678,8 @@
   ],
   "phones": [
    "9027505"
-  ]
+  ],
+  "addr_old": "1048 e 31st st, Brooklyn, NY 11210, US"
  },
  {
   "addr": "20720 NE 32nd Pl 3650, Aventura, FL 33180, US",
@@ -3383,7 +3690,8 @@
   ],
   "phones": [
    "7339905"
-  ]
+  ],
+  "addr_old": "20720 NE 32nd Pl 3650, Aventura, FL 33180, US"
  },
  {
   "addr": "13865A JEWEL AVE, Flushing, NY 11367, US",
@@ -3394,7 +3702,8 @@
   ],
   "phones": [
    "6556145"
-  ]
+  ],
+  "addr_old": "13865A JEWEL AVE, Flushing, NY 11367, US"
  },
  {
   "addr": "1817 East 18th St, Brooklyn, NY 11229, US",
@@ -3405,7 +3714,8 @@
   ],
   "phones": [
    "7396836"
-  ]
+  ],
+  "addr_old": "1817 East 18th St, Brooklyn, NY 11229, US"
  },
  {
   "addr": "659 Arbuckle Ave, Woodmere, NY 11598, US",
@@ -3417,7 +3727,8 @@
   "phones": [
    "2953181",
    "6333548"
-  ]
+  ],
+  "addr_old": "659 Arbuckle Ave, Woodmere, NY 11598, US"
  },
  {
   "addr": "201 Amherst St, Highland park, NJ 08904, US",
@@ -3428,7 +3739,8 @@
   ],
   "phones": [
    "4732146"
-  ]
+  ],
+  "addr_old": "201 Amherst St, Highland park, NJ 08904, US"
  },
  {
   "addr": "14 Rosewood Ln, Suffern, N.Y. 10901, US",
@@ -3437,7 +3749,8 @@
   "emails": [],
   "phones": [
    "4721639"
-  ]
+  ],
+  "addr_old": "14 Rosewood Ln, Suffern, N.Y. 10901, US"
  },
  {
   "addr": "213 Salem St 4868, Egg Harbor Township, NJ 08234, US",
@@ -3449,7 +3762,8 @@
   ],
   "phones": [
    "2870283"
-  ]
+  ],
+  "addr_old": "213 Salem St 4868, Egg Harbor Township, NJ 08234, US"
  },
  {
   "addr": "121 Bennett Ave, New York, NY 10033, US",
@@ -3460,7 +3774,8 @@
   ],
   "phones": [
    "6554431"
-  ]
+  ],
+  "addr_old": "121 Bennett Ave, New York, NY 10033, US"
  },
  {
   "addr": "8425 124th street, Kew Gardens, NY 11415, US",
@@ -3469,7 +3784,8 @@
   "emails": [
    "pinchasgarf@aol.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "8425 124th street, Kew Gardens, NY 11415, US"
  },
  {
   "addr": "323 Kell Ave, Staten Island, NY 10314-4115, US",
@@ -3478,10 +3794,11 @@
   "emails": [
    "pinishaool@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "323 Kell Ave, Staten Island, NY 10314-4115, US"
  },
  {
-  "addr": "1641 Kimball St 4301 Brooklyn, NY 11234, US",
+  "addr": "1641 Kimball St 4301, Brooklyn, NY 11234, US",
   "last": "שטראה",
   "first": "פנחס",
   "emails": [
@@ -3489,7 +3806,8 @@
   ],
   "phones": [
    "7817272"
-  ]
+  ],
+  "addr_old": "1641 Kimball St 4301 Brooklyn, NY 11234, US"
  },
  {
   "addr": "1848 54th Street, Brooklyn, NY 11204, US",
@@ -3500,7 +3818,8 @@
   ],
   "phones": [
    "4077005"
-  ]
+  ],
+  "addr_old": "1848 54th Street, Brooklyn, NY 11204, US"
  },
  {
   "addr": "554 East 5th Street, Brooklyn, NY 11218, US",
@@ -3511,7 +3830,8 @@
   ],
   "phones": [
    "3875155"
-  ]
+  ],
+  "addr_old": "554 East 5th Street, Brooklyn, NY 11218, US"
  },
  {
   "addr": "6240 W 3rd St Apt 311, Los Angeles, CA 90036, US",
@@ -3522,7 +3842,8 @@
   ],
   "phones": [
    "8460730"
-  ]
+  ],
+  "addr_old": "6240 W 3rd St Apt 311, Los Angeles, CA 90036, US"
  },
  {
   "addr": "E 17th St, Brooklyn, NY 11230, US",
@@ -3533,10 +3854,11 @@
   ],
   "phones": [
    "5728674"
-  ]
+  ],
+  "addr_old": "E 17th St, Brooklyn, NY 11230, US"
  },
  {
-  "addr": "3210 Avenue L 5438 Brooklyn, NY 11210, US",
+  "addr": "3210 Avenue L 5438, Brooklyn, NY 11210, US",
   "last": "",
   "first": "פרכטר יעקב דוב",
   "emails": [
@@ -3545,10 +3867,11 @@
   "phones": [
    "3775304",
    "9292101"
-  ]
+  ],
+  "addr_old": "3210 Avenue L 5438 Brooklyn, NY 11210, US"
  },
  {
-  "addr": "2524 Avenue M 4545 Brooklyn, NY 11210, US",
+  "addr": "2524 Avenue M 4545, Brooklyn, NY 11210, US",
   "last": "געווערצמאן",
   "first": "פרץ",
   "emails": [
@@ -3557,7 +3880,8 @@
   "phones": [
    "9436381",
    "9436381"
-  ]
+  ],
+  "addr_old": "2524 Avenue M 4545 Brooklyn, NY 11210, US"
  },
  {
   "addr": "1448 14th street, Lakewood, NJ 08701, US",
@@ -3566,7 +3890,8 @@
   "emails": [],
   "phones": [
    "6002444"
-  ]
+  ],
+  "addr_old": "1448 14th street, Lakewood, NJ 08701, US"
  },
  {
   "addr": "966 Harbor View S, Hollywood, FL 33019-5058, US",
@@ -3577,7 +3902,8 @@
   ],
   "phones": [
    "6641708"
-  ]
+  ],
+  "addr_old": "966 Harbor View S, Hollywood, FL 33019-5058, US"
  },
  {
   "addr": "151 Mountainview Dr 5857, Lakewood, NJ 08701, US",
@@ -3588,7 +3914,8 @@
   ],
   "phones": [
    "9100368"
-  ]
+  ],
+  "addr_old": "151 Mountainview Dr 5857, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1340 Princeton Ave, Lakewood, NJ 08701-1973, US",
@@ -3599,7 +3926,8 @@
   ],
   "phones": [
    "7792760"
-  ]
+  ],
+  "addr_old": "1340 Princeton Ave, Lakewood, NJ 08701-1973, US"
  },
  {
   "addr": "1235 E San Martin Ave, CA 95046-9639, US",
@@ -3610,7 +3938,8 @@
   ],
   "phones": [
    "4555329"
-  ]
+  ],
+  "addr_old": "1235 E San Martin Ave, CA 95046-9639, US"
  },
  {
   "addr": "2117 E 65 St, Brooklyn, N.Y. 11234, US",
@@ -3622,7 +3951,8 @@
   "phones": [
    "7637274",
    "9680235"
-  ]
+  ],
+  "addr_old": "2117 E 65 St, Brooklyn, N.Y. 11234, US"
  },
  {
   "addr": "1585 E 36th St, Brooklyn, NY 11234-3415, US",
@@ -3633,7 +3963,8 @@
   ],
   "phones": [
    "9093592"
-  ]
+  ],
+  "addr_old": "1585 E 36th St, Brooklyn, NY 11234-3415, US"
  },
  {
   "addr": "2122 homecrest ave, brooklyn, NY 11229, US",
@@ -3645,7 +3976,8 @@
   ],
   "phones": [
    "2727910"
-  ]
+  ],
+  "addr_old": "2122 homecrest ave, brooklyn, NY 11229, US"
  },
  {
   "addr": "145 Albion St 2518, Passaic, NJ 07055, US",
@@ -3659,7 +3991,8 @@
   "phones": [
    "8504273",
    "5185353"
-  ]
+  ],
+  "addr_old": "145 Albion St 2518, Passaic, NJ 07055, US"
  },
  {
   "addr": "43rd St, Brooklyn, NY 11204, US",
@@ -3668,7 +4001,8 @@
   "emails": [
    "rivky1619@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "43rd St, Brooklyn, NY 11204, US"
  },
  {
   "addr": "14 Wallenberg circle, Monsey, NY 10952, US",
@@ -3680,7 +4014,8 @@
   "phones": [
    "7097174",
    "7097174"
-  ]
+  ],
+  "addr_old": "14 Wallenberg circle, Monsey, NY 10952, US"
  },
  {
   "addr": "6723 N Sacramento Ave, Chicago, IL 60645-4222, US",
@@ -3689,7 +4024,8 @@
   "emails": [
    "rlb6723@hotmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "6723 N Sacramento Ave, Chicago, IL 60645-4222, US"
  },
  {
   "addr": "1151 East 10th Street, Brooklyn, NY 11230, US",
@@ -3700,7 +4036,8 @@
   ],
   "phones": [
    "3564966"
-  ]
+  ],
+  "addr_old": "1151 East 10th Street, Brooklyn, NY 11230, US"
  },
  {
   "addr": "2805 ave n, Brooklyn, NY 11210, US",
@@ -3711,7 +4048,8 @@
   ],
   "phones": [
    "3595027"
-  ]
+  ],
+  "addr_old": "2805 ave n, Brooklyn, NY 11210, US"
  },
  {
   "addr": "218 Mott Ave 2115, Inwood, NY 11096, US",
@@ -3723,7 +4061,8 @@
   "phones": [
    "5282421",
    "2038382"
-  ]
+  ],
+  "addr_old": "218 Mott Ave 2115, Inwood, NY 11096, US"
  },
  {
   "addr": "164 Harborview N, Lawrence, NY 11559, US",
@@ -3734,7 +4073,8 @@
   ],
   "phones": [
    "3648844"
-  ]
+  ],
+  "addr_old": "164 Harborview N, Lawrence, NY 11559, US"
  },
  {
   "addr": "142 Brook Avenue, Passaic, NJ 07055, US",
@@ -3745,7 +4085,8 @@
   ],
   "phones": [
    "4708492"
-  ]
+  ],
+  "addr_old": "142 Brook Avenue, Passaic, NJ 07055, US"
  },
  {
   "addr": "728 Saint Albans Drive, Boca Raton, FL 33486, US",
@@ -3756,7 +4097,8 @@
   ],
   "phones": [
    "3026779"
-  ]
+  ],
+  "addr_old": "728 Saint Albans Drive, Boca Raton, FL 33486, US"
  },
  {
   "addr": "147-26 71st rd, Flushing, NY 11367, US",
@@ -3767,10 +4109,11 @@
   ],
   "phones": [
    "5819682"
-  ]
+  ],
+  "addr_old": "147-26 71st rd, Flushing, NY 11367, US"
  },
  {
-  "addr": "1177 E 19th St 4901 Brooklyn, NY 11230, US",
+  "addr": "1177 E 19th St 4901, Brooklyn, NY 11230, US",
   "last": "גרינבוים",
   "first": "רחל",
   "emails": [
@@ -3778,7 +4121,8 @@
   ],
   "phones": [
    "3606574"
-  ]
+  ],
+  "addr_old": "1177 E 19th St 4901 Brooklyn, NY 11230, US"
  },
  {
   "addr": "111 N 7th Ave, Highland Park, NJ 08904-2934, US",
@@ -3789,7 +4133,8 @@
   ],
   "phones": [
    "6160327"
-  ]
+  ],
+  "addr_old": "111 N 7th Ave, Highland Park, NJ 08904-2934, US"
  },
  {
   "addr": "2318 Ave R, Brooklyn, NY 11229, US",
@@ -3800,10 +4145,11 @@
   ],
   "phones": [
    "2752202"
-  ]
+  ],
+  "addr_old": "2318 Ave R, Brooklyn, NY 11229, US"
  },
  {
-  "addr": "6672 Avenue M 5702 Brooklyn, NY 11234, US",
+  "addr": "6672 Avenue M 5702, Brooklyn, NY 11234, US",
   "last": "סימס",
   "first": "רחל",
   "emails": [
@@ -3813,7 +4159,8 @@
    "7638769",
    "8012110",
    "8016400"
-  ]
+  ],
+  "addr_old": "6672 Avenue M 5702 Brooklyn, NY 11234, US"
  },
  {
   "addr": "12 melaney drive, Monsey, N.Y. 10952, US",
@@ -3824,7 +4171,8 @@
   ],
   "phones": [
    "5218126"
-  ]
+  ],
+  "addr_old": "12 melaney drive, Monsey, N.Y. 10952, US"
  },
  {
   "addr": "1032 E 23rd St, Brooklyn, NY 11210-3638, US",
@@ -3835,7 +4183,8 @@
   ],
   "phones": [
    "2034710"
-  ]
+  ],
+  "addr_old": "1032 E 23rd St, Brooklyn, NY 11210-3638, US"
  },
  {
   "addr": "67 20 147 St, Flushing, NY 11367, US",
@@ -3847,7 +4196,8 @@
   "phones": [
    "2635517",
    "7056936"
-  ]
+  ],
+  "addr_old": "67 20 147 St, Flushing, NY 11367, US"
  },
  {
   "addr": "38 Ellard Ave 2037, Great Neck, NY 11024, US",
@@ -3856,7 +4206,8 @@
   "emails": [],
   "phones": [
    "3171982"
-  ]
+  ],
+  "addr_old": "38 Ellard Ave 2037, Great Neck, NY 11024, US"
  },
  {
   "addr": "4142 Verona Road, South Euclid, OH 44121, US",
@@ -3867,7 +4218,8 @@
   ],
   "phones": [
    "2463289"
-  ]
+  ],
+  "addr_old": "4142 Verona Road, South Euclid, OH 44121, US"
  },
  {
   "addr": "1144 S Elm Dr 1122, Los Angeles, CA 90035, US",
@@ -3878,7 +4230,8 @@
   ],
   "phones": [
    "7537950"
-  ]
+  ],
+  "addr_old": "1144 S Elm Dr 1122, Los Angeles, CA 90035, US"
  },
  {
   "addr": "510 Dr Martin Luther King Dr, Lakewood, NJ 08701-4812, US",
@@ -3890,7 +4243,8 @@
   "phones": [
    "2402913",
    "2795635"
-  ]
+  ],
+  "addr_old": "510 Dr Martin Luther King Dr, Lakewood, NJ 08701-4812, US"
  },
  {
   "addr": "1521 Tanglewood Lane, Lakewood Township, NJ 08701, US",
@@ -3901,7 +4255,8 @@
   ],
   "phones": [
    "6776482"
-  ]
+  ],
+  "addr_old": "1521 Tanglewood Lane, Lakewood Township, NJ 08701, US"
  },
  {
   "addr": "1454 49th St, Brooklyn, NY 11219, US",
@@ -3912,7 +4267,8 @@
   ],
   "phones": [
    "6756263"
-  ]
+  ],
+  "addr_old": "1454 49th St, Brooklyn, NY 11219, US"
  },
  {
   "addr": "1216 58st, Brooklyn, NY 11219, US",
@@ -3923,7 +4279,8 @@
   ],
   "phones": [
    "9307037"
-  ]
+  ],
+  "addr_old": "1216 58st, Brooklyn, NY 11219, US"
  },
  {
   "addr": "2802 York Rd, South Bend, IN 46614, US",
@@ -3934,10 +4291,11 @@
   ],
   "phones": [
    "4831300"
-  ]
+  ],
+  "addr_old": "2802 York Rd, South Bend, IN 46614, US"
  },
  {
-  "addr": "1518 E 29th St 1898 Brooklyn, NY 11229, US",
+  "addr": "1518 E 29th St 1898, Brooklyn, NY 11229, US",
   "last": "דוד",
   "first": "שטיינברג",
   "emails": [
@@ -3946,7 +4304,8 @@
   ],
   "phones": [
    "3387178"
-  ]
+  ],
+  "addr_old": "1518 E 29th St 1898 Brooklyn, NY 11229, US"
  },
  {
   "addr": "335 Summit Ave, Cedarhurst, NY 11516, US",
@@ -3957,7 +4316,8 @@
   ],
   "phones": [
    "5691978"
-  ]
+  ],
+  "addr_old": "335 Summit Ave, Cedarhurst, NY 11516, US"
  },
  {
   "addr": "7 Price Dr, Edison, NJ 08817-3014, US",
@@ -3969,7 +4329,8 @@
   "phones": [
    "3172673",
    "2627186"
-  ]
+  ],
+  "addr_old": "7 Price Dr, Edison, NJ 08817-3014, US"
  },
  {
   "addr": "1675 61st St., Brooklyn, NY 11204, US",
@@ -3980,7 +4341,8 @@
   ],
   "phones": [
    "4365156"
-  ]
+  ],
+  "addr_old": "1675 61st St., Brooklyn, NY 11204, US"
  },
  {
   "addr": "7650 Courtyard Run W, Boca Raton, FL 33433, US",
@@ -3991,7 +4353,8 @@
   ],
   "phones": [
    "2891662"
-  ]
+  ],
+  "addr_old": "7650 Courtyard Run W, Boca Raton, FL 33433, US"
  },
  {
   "addr": "22030 las brisas circle, Boca Raton, FL 33433, US",
@@ -4002,7 +4365,8 @@
   ],
   "phones": [
    "8728828"
-  ]
+  ],
+  "addr_old": "22030 las brisas circle, Boca Raton, FL 33433, US"
  },
  {
   "addr": "1051 Highland Pl, Woodmere, NY 11598, US",
@@ -4013,7 +4377,8 @@
   ],
   "phones": [
    "6922872"
-  ]
+  ],
+  "addr_old": "1051 Highland Pl, Woodmere, NY 11598, US"
  },
  {
   "addr": "375 E Countyline RD, Lakewood, NJ 08701, US",
@@ -4023,10 +4388,11 @@
   "phones": [
    "6978037",
    "2670478"
-  ]
+  ],
+  "addr_old": "375 E Countyline RD, Lakewood, NJ 08701, US"
  },
  {
-  "addr": "1132 E 32nd St 4735 Brooklyn, NY 11210, US",
+  "addr": "1132 E 32nd St 4735, Brooklyn, NY 11210, US",
   "last": "ביסטריצקי",
   "first": "שלמה",
   "emails": [
@@ -4034,7 +4400,8 @@
   ],
   "phones": [
    "9020603"
-  ]
+  ],
+  "addr_old": "1132 E 32nd St 4735 Brooklyn, NY 11210, US"
  },
  {
   "addr": "34 Whispering Pines Ln 1474, Lakewood, NJ 08701, US",
@@ -4045,10 +4412,11 @@
   ],
   "phones": [
    "9619084"
-  ]
+  ],
+  "addr_old": "34 Whispering Pines Ln 1474, Lakewood, NJ 08701, US"
  },
  {
-  "addr": "1382 E 31st St 5415 Brooklyn, NY 11210, US",
+  "addr": "1382 E 31st St 5415, Brooklyn, NY 11210, US",
   "last": "גרין",
   "first": "שלמה",
   "emails": [
@@ -4057,7 +4425,8 @@
   ],
   "phones": [
    "6373464"
-  ]
+  ],
+  "addr_old": "1382 E 31st St 5415 Brooklyn, NY 11210, US"
  },
  {
   "addr": "7502 quail meadow dr, Houston, Texas 77071, US",
@@ -4068,7 +4437,8 @@
   ],
   "phones": [
    "6410562"
-  ]
+  ],
+  "addr_old": "7502 quail meadow dr, Houston, Texas 77071, US"
  },
  {
   "addr": "1341 E 5th St, Brooklyn, NY 11230-4625, US",
@@ -4080,10 +4450,11 @@
   ],
   "phones": [
    "3389023"
-  ]
+  ],
+  "addr_old": "1341 E 5th St, Brooklyn, NY 11230-4625, US"
  },
  {
-  "addr": "5105 Avenue U 5201 Brooklyn, NY 11234, US",
+  "addr": "5105 Avenue U 5201, Brooklyn, NY 11234, US",
   "last": "פלברבוים",
   "first": "שלמה",
   "emails": [
@@ -4091,7 +4462,8 @@
   ],
   "phones": [
    "8121975"
-  ]
+  ],
+  "addr_old": "5105 Avenue U 5201 Brooklyn, NY 11234, US"
  },
  {
   "addr": "2246 E 60th Pl, Brooklyn, NY 11234-6404, US",
@@ -4103,7 +4475,8 @@
   "phones": [
    "9688650",
    "6620381"
-  ]
+  ],
+  "addr_old": "2246 E 60th Pl, Brooklyn, NY 11234-6404, US"
  },
  {
   "addr": "1330 E 26 St, Brooklyn, N.Y. 11210, US",
@@ -4114,7 +4487,8 @@
   ],
   "phones": [
    "6135167"
-  ]
+  ],
+  "addr_old": "1330 E 26 St, Brooklyn, N.Y. 11210, US"
  },
  {
   "addr": "581 Flushing Ave, Brooklyn, NY 11206, US",
@@ -4125,7 +4499,8 @@
   ],
   "phones": [
    "6789851"
-  ]
+  ],
+  "addr_old": "581 Flushing Ave, Brooklyn, NY 11206, US"
  },
  {
   "addr": "1719 Burnett St, Brooklyn, NY 11229-2623, US",
@@ -4136,7 +4511,8 @@
   ],
   "phones": [
    "5891661"
-  ]
+  ],
+  "addr_old": "1719 Burnett St, Brooklyn, NY 11229-2623, US"
  },
  {
   "addr": "1614 Avenue S, Brooklyn, NY 11229, US",
@@ -4147,7 +4523,8 @@
   ],
   "phones": [
    "9956888"
-  ]
+  ],
+  "addr_old": "1614 Avenue S, Brooklyn, NY 11229, US"
  },
  {
   "addr": "6050 N Bernard St 3416, Chicago, IL 60659, US",
@@ -4158,7 +4535,8 @@
   ],
   "phones": [
    "8253197"
-  ]
+  ],
+  "addr_old": "6050 N Bernard St 3416, Chicago, IL 60659, US"
  },
  {
   "addr": "3508 Ave KBrooklyn, N.Y. 11210, US",
@@ -4167,7 +4545,8 @@
   "emails": [],
   "phones": [
    "6426861"
-  ]
+  ],
+  "addr_old": "3508 Ave KBrooklyn, N.Y. 11210, US"
  },
  {
   "addr": "62 Parker Blvd, Monsey, NY 10952, US",
@@ -4176,7 +4555,8 @@
   "emails": [],
   "phones": [
    "3793581"
-  ]
+  ],
+  "addr_old": "62 Parker Blvd, Monsey, NY 10952, US"
  },
  {
   "addr": "39 Buchanan St, Lakewood, NJ 08701, US",
@@ -4187,7 +4567,8 @@
   ],
   "phones": [
    "3309001"
-  ]
+  ],
+  "addr_old": "39 Buchanan St, Lakewood, NJ 08701, US"
  },
  {
   "addr": "1214 E 35th St, Brooklyn, NY 11210-4822, US",
@@ -4196,7 +4577,8 @@
   "emails": [
    "tphiinc@gmail.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "1214 E 35th St, Brooklyn, NY 11210-4822, US"
  },
  {
   "addr": "26190westgreenleaf ave, chicago, IL 60645, US",
@@ -4207,7 +4589,8 @@
   ],
   "phones": [
    "9711973"
-  ]
+  ],
+  "addr_old": "26190westgreenleaf ave, chicago, IL 60645, US"
  },
  {
   "addr": "1030 E 32nd St, Brooklyn, NY 11210-4131, US",
@@ -4218,7 +4601,8 @@
   ],
   "phones": [
    "3083664"
-  ]
+  ],
+  "addr_old": "1030 E 32nd St, Brooklyn, NY 11210-4131, US"
  },
  {
   "addr": "120-01 Guy R Brewer Boulevard, Queens, NY 11434, US",
@@ -4230,7 +4614,8 @@
   "phones": [
    "5518636",
    "5283809"
-  ]
+  ],
+  "addr_old": "120-01 Guy R Brewer Boulevard, Queens, NY 11434, US"
  },
  {
   "addr": "15 Chestney Rd, Lawrence, NY 11559-2500, US",
@@ -4241,7 +4626,8 @@
   ],
   "phones": [
    "7612375"
-  ]
+  ],
+  "addr_old": "15 Chestney Rd, Lawrence, NY 11559-2500, US"
  },
  {
   "addr": "5617 17th Ave, Brooklyn, NY 11204-1835, US",
@@ -4253,7 +4639,8 @@
   "phones": [
    "8254336",
    "3178430"
-  ]
+  ],
+  "addr_old": "5617 17th Ave, Brooklyn, NY 11204-1835, US"
  },
  {
   "addr": "22 Hershel Terrace, Monsey, NY 10952-2915, US",
@@ -4265,7 +4652,8 @@
   "phones": [
    "8064020",
    "3843717"
-  ]
+  ],
+  "addr_old": "22 Hershel Terrace, Monsey, NY 10952-2915, US"
  },
  {
   "addr": "1273 E 32nd St, Brooklyn, NY 11210-4742, US",
@@ -4276,7 +4664,8 @@
   ],
   "phones": [
    "5892813"
-  ]
+  ],
+  "addr_old": "1273 E 32nd St, Brooklyn, NY 11210-4742, US"
  },
  {
   "addr": "4-34 2nd St, Fair Lawn, NJ 07410-1030, US",
@@ -4287,7 +4676,8 @@
   ],
   "phones": [
    "5095466"
-  ]
+  ],
+  "addr_old": "4-34 2nd St, Fair Lawn, NJ 07410-1030, US"
  },
  {
   "addr": "6208 N Whipple St 1418, Chicago, IL 60659, US",
@@ -4298,7 +4688,8 @@
   ],
   "phones": [
    "3383468"
-  ]
+  ],
+  "addr_old": "6208 N Whipple St 1418, Chicago, IL 60659, US"
  },
  {
   "addr": "826 Princeton Ave, Lakewood, NJ 08701-2852, US",
@@ -4309,7 +4700,8 @@
   ],
   "phones": [
    "4334477"
-  ]
+  ],
+  "addr_old": "826 Princeton Ave, Lakewood, NJ 08701-2852, US"
  },
  {
   "addr": "105 Lorimer St. #4, Brooklyn, NY 11206, US",
@@ -4318,7 +4710,8 @@
   "emails": [
    "sbrody11211@yahoo.com"
   ],
-  "phones": []
+  "phones": [],
+  "addr_old": "105 Lorimer St. #4, Brooklyn, NY 11206, US"
  },
  {
   "addr": "2423 ave i, Brooklyn, NY 11210, US",
@@ -4329,7 +4722,8 @@
   ],
   "phones": [
    "8778505"
-  ]
+  ],
+  "addr_old": "2423 ave i, Brooklyn, NY 11210, US"
  },
  {
   "addr": "5 Kingston Dr, Spring Valley, NY 10977, US",
@@ -4340,7 +4734,8 @@
   ],
   "phones": [
    "2160355"
-  ]
+  ],
+  "addr_old": "5 Kingston Dr, Spring Valley, NY 10977, US"
  },
  {
   "addr": "3706 Avenue P, Brooklyn, NY 11234-3426, US",
@@ -4351,7 +4746,8 @@
   ],
   "phones": [
    "3390243"
-  ]
+  ],
+  "addr_old": "3706 Avenue P, Brooklyn, NY 11234-3426, US"
  },
  {
   "addr": "14 South Parker drive 1601, Monsey, N.Y. 10952, US",
@@ -4360,7 +4756,8 @@
   "emails": [],
   "phones": [
    "3106107"
-  ]
+  ],
+  "addr_old": "14 South Parker drive 1601, Monsey, N.Y. 10952, US"
  },
  {
   "addr": "39 Cromwell Hill Rd., MONROE, NY 10950, US",
@@ -4371,10 +4768,11 @@
   ],
   "phones": [
    "7833989"
-  ]
+  ],
+  "addr_old": "39 Cromwell Hill Rd., MONROE, NY 10950, US"
  },
  {
-  "addr": "1670 E 31st St 4211 Brooklyn, NY 11234, US",
+  "addr": "1670 E 31st St 4211, Brooklyn, NY 11234, US",
   "last": "",
   "first": "שריל קסטנר",
   "emails": [
@@ -4383,6 +4781,7 @@
   ],
   "phones": [
    "9982783"
-  ]
+  ],
+  "addr_old": "1670 E 31st St 4211 Brooklyn, NY 11234, US"
  }
 ]

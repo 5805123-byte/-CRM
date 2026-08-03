@@ -385,7 +385,7 @@ def ensure_schema():
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v1'").fetchone() and os.path.exists(seedall):
             def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
             def _h(s):  # נירמול עברי — מתעלם מאותיות שווא/ניקוד ואיות כפול (וורצברגר≈ווערצבערגער)
-                s = re.sub(r'[^֐-׿]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                s = re.sub(r'[^\u0590-\u05ff]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
                 return re.sub(r'(.)\1+', r'\1', s)
             donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
             for d in donors: d['_l'] = _h(d['last']); d['_f'] = _h(d['first'])
@@ -423,6 +423,47 @@ def ensure_schema():
             print(f'  קוויטל כללי: הותאמו {matched}, יובאו {imported} שמות, {unlinked} לא־משויכים')
     except Exception as e:
         print('  שגיאת קוויטל כללי:', e)
+    # קוויטל v2 — התאמה דו-כיוונית לשמות פרטיים (אליהו≈אלי) כדי לתפוס מי שלא הותאם
+    try:
+        seedall = os.path.join(HERE, 'kvittel_all_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v2'").fetchone() and os.path.exists(seedall):
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _h(s):
+                s = re.sub(r'[^\u0590-\u05ff]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
+            for d in donors: d['_l'] = _h(d['last']); d['_f'] = _h(d['first'])
+            matched = imported = 0
+            for e in json.load(open(seedall, encoding='utf-8')):
+                emails = [x.lower() for x in (e.get('emails') or [])]
+                phones = [x for x in (e.get('phones') or []) if x]
+                el, ef = _h(e.get('last')), _h(e.get('first'))
+                hit = None
+                for d in donors:
+                    dphs = [_d7(p) for p in re.split(r'[/,]', d['phone'] or '') if _d7(p)]
+                    if phones and any(p in dphs for p in phones): hit = d; break
+                if not hit and emails:
+                    for d in donors:
+                        if (d['email'] or '').strip().lower() in emails and d['email']: hit = d; break
+                if not hit and el and ef:  # התאמה דו-כיוונית: אחד תחילית של השני
+                    for d in donors:
+                        if d['_l'] == el and (d['_f'].startswith(ef) or ef.startswith(d['_f'])): hit = d; break
+                if not hit and el:
+                    same = [d for d in donors if d['_l'] == el]
+                    if len(same) == 1: hit = same[0]
+                notes = (e.get('notes') or '').strip()
+                newtier = 'קוויטל_101' if e.get('is101') else 'קוויטל_שבועי'
+                if hit:
+                    matched += 1
+                    if (hit['tier'] or '') not in ('יששכר_זבולון', 'קוויטל_101'):
+                        con.execute("UPDATE donors SET tier=? WHERE id=?", (newtier, hit['id']))
+                    if notes and not con.execute("SELECT 1 FROM prayers WHERE donor_id=?", (hit['id'],)).fetchone():
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (hit['id'], notes, newtier))
+                        imported += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_all_v2')")
+            print(f'  קוויטל v2: הותאמו {matched}, יובאו {imported}')
+    except Exception as e:
+        print('  שגיאת קוויטל v2:', e)
     # טאובנפלד מרים — כל אברך שהיא מחזיקה הוא $1300 לחודש (תוקן מ-800)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='taubenfeld_1300_v1'").fetchone():
@@ -475,7 +516,7 @@ def ensure_schema():
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='address_maps_v1'").fetchone() and os.path.exists(seedm):
             def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
             def _h(s):
-                s = re.sub(r'[^֐-׿]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                s = re.sub(r'[^\u0590-\u05ff]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
                 return re.sub(r'(.)\1+', r'\1', s)
             donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,region FROM donors")]
             for d in donors: d['_l'] = _h(d['last']); d['_f'] = _h(d['first'])
@@ -501,6 +542,40 @@ def ensure_schema():
             print(f'  כתובות ארה"ב בפורמט תקין: {fixed}')
     except Exception as e:
         print('  שגיאת כתובות מפות:', e)
+    # כתובות v2 — פסיק בין מספר דירה לעיר (4506 Brooklyn → 4506, Brooklyn); רק אם לא נערכה ידנית
+    try:
+        seedm = os.path.join(HERE, 'address_maps_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='address_maps_v2'").fetchone() and os.path.exists(seedm):
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _h(s):
+                s = re.sub(r'[^\u0590-\u05ff]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,addr FROM donors")]
+            for d in donors: d['_l'] = _h(d['last']); d['_f'] = _h(d['first'])
+            fixed = 0
+            for e in json.load(open(seedm, encoding='utf-8')):
+                old, new = e.get('addr_old'), e.get('addr')
+                if not old or not new or old == new: continue
+                emails = [x.lower() for x in (e.get('emails') or [])]
+                phones = [x for x in (e.get('phones') or []) if x]
+                el, ef = _h(e.get('last')), _h(e.get('first'))
+                hit = None
+                for d in donors:
+                    dphs = [_d7(p) for p in re.split(r'[/,]', d['phone'] or '') if _d7(p)]
+                    if phones and any(p in dphs for p in phones): hit = d; break
+                if not hit and emails:
+                    for d in donors:
+                        if (d['email'] or '').strip().lower() in emails and d['email']: hit = d; break
+                if not hit and el and ef:
+                    for d in donors:
+                        if d['_l'] == el and (d['_f'].startswith(ef) or ef.startswith(d['_f'])): hit = d; break
+                if hit and (hit['addr'] or '').strip() == old:   # רק אם לא נערכה ידנית מאז
+                    con.execute("UPDATE donors SET addr=? WHERE id=?", (new, hit['id']))
+                    fixed += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('address_maps_v2')")
+            print(f'  כתובות פסיק v2: תוקנו {fixed}')
+    except Exception as e:
+        print('  שגיאת כתובות v2:', e)
     con.commit(); con.close()
 
 def get_all():
