@@ -362,7 +362,8 @@ function openDonor(d,startTab){
       <button class="ctab" data-c="kvittel">🕯️ קוויטל</button>
       <button class="ctab" data-c="donations">💳 תרומות</button>
       <button class="ctab" data-c="building">🏛️ בניין${(d.building||[]).length?` <b class="badge">${(d.building||[]).length}</b>`:''}</button>
-      <button class="ctab" data-c="contact">📞 קשר${nopen?` <b class="badge">${nopen}</b>`:''}</button>
+      <button class="ctab" data-c="contact">📞 קשר</button>
+      <button class="ctab" data-c="tasks">📋 משימות${nopen?` <b class="badge">${nopen}</b>`:''}</button>
     </div>
     <div id="cardBody"></div>`;
   ov.classList.add('show');
@@ -379,6 +380,34 @@ function renderCard(d){
   if(cardTab==='donations') return cardDonations(d,body);
   if(cardTab==='building') return cardBuilding(d,body);
   if(cardTab==='contact') return cardContact(d,body);
+  if(cardTab==='tasks') return cardTasks(d,body);
+}
+function cardTasks(d,body){
+  body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
+    <div class="sec"><h3>➕ משימה חדשה</h3>
+      <input id="ct_note" placeholder="✍️ מה צריך לעשות (למשל: להתפלל עליו, לתקן פרטים, לחזור)…" autocomplete="off">
+      <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select id="ct_kind"><option value="other">🔔 כללי</option><option value="prayer">🙏 להתפלל עליו</option><option value="followup">📞 לחזור / להתקשר</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option></select></label>
+        <label class="fld"><span>תאריך</span><input id="ct_date" type="date" value="${todayStr()}"></label></div>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="ct_who">${assigneeOpts('')}</select></label><label class="fld"><span>&nbsp;</span><button class="btn" id="ct_add" style="width:100%">➕ הוסף משימה</button></label></div>
+      <div class="hintxt">כל משימה נכנסת גם ללשונית "משימות" הראשית וליומן Google.</div></div>
+    <div class="sec"><h3>📋 המשימות של ${esc((d.last+' '+d.first).trim())}</h3><div id="ct_list"></div></div>`;
+  renderCardTasks(d);
+  document.getElementById('ct_add').onclick=async()=>{
+    const note=document.getElementById('ct_note').value.trim(),kind=document.getElementById('ct_kind').value,date=document.getElementById('ct_date').value,who=document.getElementById('ct_who').value;
+    if(!note){toast('כתוב מה צריך לעשות');return;}if(!date){toast('בחר תאריך');return;}
+    const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who});
+    d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,done:0});
+    document.getElementById('ct_note').value='';renderCardTasks(d);toast('נוספה משימה ✓');checkReminders();};
+}
+function renderCardTasks(d){
+  const el=document.getElementById('ct_list');if(!el)return;const td=todayStr();
+  const open=(d.tasks||[]).filter(t=>!t.done||t.done==0).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
+  el.innerHTML=open.map(t=>{const over=t.due_date&&t.due_date<td,icon=(KIND[t.kind]||'🔔').split(' ')[0];
+    return `<div class="cttask" data-id="${t.id}"><button class="tdone ctdone" data-id="${t.id}">✓</button>
+      <div class="cti"><div>${icon} ${esc(t.note||'')}${t.assignee?` <span class="kvtag">${esc(t.assignee)}</span>`:''}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')}</div></div>
+      <button class="del ctdel" data-id="${t.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
+  el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await api('PUT','/api/task/'+t.id,{done:1});t.done=1;renderCardTasks(d);checkReminders();toastUndo('בוצע ✓',async()=>{await api('PUT','/api/task/'+t.id,{done:0});t.done=0;renderCardTasks(d);checkReminders();});});
+  el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
 }
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
 function cardBuilding(d,body){
