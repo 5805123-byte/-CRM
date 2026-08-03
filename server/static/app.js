@@ -1,9 +1,13 @@
 'use strict';
 let DB = [], OCC = [], UNLINKED = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last';
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
+const GMON=['','ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+const GREGYEAR=String(new Date().getFullYear());
+// תצוגת חודש לועזי לפי תאריך ("2026-07" → "יולי 2026") — התרומות הקבועות נגבות לפי חודש לועזי
+function gregLabel(dateStr){if(!dateStr)return '';const m=String(dateStr).match(/^(\d{4})-(\d{1,2})/);if(!m)return String(dateStr);return GMON[+m[2]]+' '+m[1];}
 function donorTotals(d){
   let all=0,year=0;
-  (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if(HEBYEAR&&(x.hmonth||'').indexOf(HEBYEAR)>=0)year+=a;});
+  (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if((x.date||'').slice(0,4)===GREGYEAR)year+=a;});
   (d.parnes||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;});
   return {all,year};
 }
@@ -323,7 +327,7 @@ function cardDetails(d,body){
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||''}));
-  (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.hmonth?(' · '+x.hmonth):(x.date?(' · '+x.date):'')),ded:''}));
+  (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),ded:''}));
   (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||''),ded:''}));
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>`<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><span class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''}</span></div>`).join('')}</div>`:'';
   body.innerHTML=`${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
@@ -348,7 +352,7 @@ function cardDetails(d,body){
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
     ${give}
-    ${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}</span><b>${curd}${dt.year}</b></div></div>`:''}
+    ${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div></div>`:''}
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
   const FF=['last','first','english','tier','category','purpose','amount','email','addr','city','country','zip','business','region','channel'];
@@ -377,9 +381,14 @@ function renderPhones(d){
   const list=splitPhones(d.phone); if(!list.length) list.push('');
   list.forEach(addRow);
 }
+const KVTIER={'קוויטל_101':'כל לילה','קוויטל_כללי':'כללי','יששכר_זבולון':'יששכר־זבולון'};
 function cardKvittel(d,body){
-  body.innerHTML=`<div id="prayers"></div>
-    <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)"><button class="btn sm" id="pr_add">הוסף</button></div>`;
+  const inKv=KVTIER[d.tier];
+  const empty=!(d.prayers&&d.prayers.length);
+  const sugg=(empty&&inKv)?((d.first||'')+' '+(d.last||'')).trim():'';
+  body.innerHTML=`${inKv?`<div class="hintxt">✡️ מסומן בקוויטל <b>${KVTIER[d.tier]}</b>.${empty?' עדיין לא הוזנו שמות לתפילה — הוסף למטה (בדרך כלל שם התורם: "פלוני בן אמו").':''}</div>`:''}
+    <div id="prayers"></div>
+    <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)" value="${esc(sugg)}"><button class="btn sm" id="pr_add">הוסף</button></div>`;
   renderPrayers(d);
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
 }
@@ -419,7 +428,7 @@ function cardDonations(d,body){
       <div class="hintxt">שיבוץ ימים חדשים דרך "רישום תרומה" למעלה (בחר סוג עם יום), או בלוח פרנס יום.</div></div>
     <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
       <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>
-    <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>${cur}${tot.all}</b></span><span>השנה${HEBYEAR?' ('+HEBYEAR+')':''}: <b>${cur}${tot.year}</b></span></div>
+    <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>${cur}${tot.all}</b></span><span>השנה (${GREGYEAR}): <b>${cur}${tot.year}</b></span></div>
       <div class="dnhead">📜 היסטוריית תרומות</div><div id="donations"></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
   renderDonations(d); renderTransactions(d); renderParnesEdit(d); renderPledges(d);
@@ -486,7 +495,7 @@ function fbChip(x){
   return `<span class="fbchip on">✓ פידבק · ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_date?(' · '+esc(x.fb_date)):''}${x.fb_followup?(' · 🔁 לחזור '+esc(x.fb_followup)):''}</span>`;
 }
 function dnRow(x,cur){cur=cur||'$';
-  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.hmonth?(esc(x.hmonth)+' · '):''}${esc(x.date||'')}${x.method?(' · '+esc(x.method)):''}</span>${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
+  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}${x.method?(' · '+esc(x.method)):''}</span>${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     `<div class="fbedit hidden" data-fb="${x.id}">
       <div class="fbrow"><select class="fb_ch">${FBOPTS.map(([v,l])=>`<option value="${v}" ${v===(x.fb_channel||'')?'selected':''}>${l}</option>`).join('')}</select><input type="date" class="fb_date" value="${esc(x.fb_date||'')}"></div>
@@ -547,7 +556,7 @@ function txUntil(t){
 function txRow(t,cur){cur=cur||'$';
   const st=TXST[t.status]||TXST.pending;
   return `<div class="plwrap"><div class="pledge ${st.c}"><div class="pi"><b>${cur}${esc(t.amount)}</b> ${t.category?('· '+esc(t.category)):''} <span class="txbadge">${st.t}</span>`+
-    `<br><small>${t.hmonth?esc(t.hmonth)+' · ':''}${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}${txInst(t,cur)}${txUntil(t)}</small></div>`+
+    `<br><small>${t.date?esc(gregLabel(t.date)):''}${t.method?(' · '+esc(t.method)):''}${txInst(t,cur)}${txUntil(t)}</small></div>`+
     `<button class="del" data-del="${t.id}">🗑</button></div>`+
     `<div class="txctl"><select class="txst" data-id="${t.id}">${txStatusOpts(t.status)}</select>`+
     ((+t.inst_total!==1||+t.recurring)?`<button class="btn sm txpay" data-id="${t.id}">＋ תשלום שולם</button>`:'')+
