@@ -11,6 +11,37 @@ function donorTotals(d){
   (d.parnes||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;});
   return {all,year};
 }
+// חישוב יששכר־זבולון: התחייבות חודשית (סך האברכים) מול מה ששולם בפועל בחודשים שכבר שילם = החוב
+function izSummary(d){
+  const parts=(d.partners||[]).filter(p=>p.active!=0);
+  const monthly=parts.reduce((s,p)=>s+amtNum(p.amount),0);
+  const izdon=(d.donations||[]).filter(x=>/יששכר|זבולון/.test(x.category||''));
+  const paid=izdon.reduce((s,x)=>s+amtNum(x.amount),0);
+  const codes=izdon.map(x=>{const m=(x.date||'').match(/^(\d{4})-(\d{2})/);return m?(+m[1])*12+(+m[2]):null;}).filter(v=>v!=null);
+  const hasPay=codes.length>0;
+  const span=hasPay?(Math.max(...codes)-Math.min(...codes)+1):0;
+  const expected=monthly*span;
+  const debt=expected-paid;
+  return {parts,monthly,paid,span,expected,debt,hasPay};
+}
+function izSummaryHTML(d){
+  const act=(d.partners||[]).filter(p=>p.active!=0);
+  if(d.tier!=='יששכר_זבולון'&&!act.length)return '';
+  const s=izSummary(d),cur=curSym(d);
+  const rows=s.parts.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  let debtLine;
+  if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב</div>';
+  else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
+  else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
+  else debtLine=`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`;
+  return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
+    ${rows}
+    <div class="izrow tot"><span>התחייבות חודשית</span><b>${cur}${s.monthly}</b></div>
+    ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${s.paid}</b></div>
+    <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${s.monthly})</span><b>${cur}${s.expected}</b></div>`:''}
+    ${debtLine}
+    ${d.iz_note?`<div class="iznote">📝 ${esc(d.iz_note)}</div>`:''}</div>`;
+}
 const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
@@ -356,6 +387,7 @@ function cardDetails(d,body){
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
+    ${izSummaryHTML(d)}
     ${give}
     ${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div></div>`:''}
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
@@ -402,6 +434,7 @@ function cardDonations(d,body){
   const cur=curSym(d);
   const tot=donorTotals(d);
   body.innerHTML=`
+    ${izSummaryHTML(d)}
     <div class="sec onlinebox"><h3>💳 גבייה אונליין</h3>
       <div class="hintxt">דף תרומה מאובטח — פתחו אותו מהמשרד למילוי פרטי אשראי, או שלחו לתורם קישור אישי.</div>
       <div class="obtns"><button class="btn" id="on_open">🌐 פתח דף גבייה</button>
