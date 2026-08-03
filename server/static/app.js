@@ -177,7 +177,7 @@ function renderDonors(){
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span>${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}</div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
-      ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
+      ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}${contactBtns(d)}</div>
       <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
@@ -1098,7 +1098,14 @@ function renderTasksTab(){
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   const ics=location.origin+'/calendar.ics';
-  view.innerHTML=`<div class="icsbox"><b>📅 חיבור אוטומטי ליומן Google</b><br>הוסף פעם אחת את הכתובת (Google Calendar → יומנים אחרים → מכתובת URL), וכל התזכורות ייכנסו ליומן אוטומטית:<span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></div>
+  view.innerHTML=`<div class="sec newtask"><h3>➕ משימה חדשה</h3>
+      <input id="nt_q" placeholder="🔍 חפש תורם לפי שם / טלפון / עסק…" autocomplete="off">
+      <div id="nt_res" class="dpres"></div>
+      <div id="nt_chosen" class="pick" style="display:none"></div>
+      <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="other">🔔 אחר</option></select><input id="nt_date" type="date" value="${today}"></div>
+      <div class="addrow" style="margin-top:6px"><input id="nt_note" placeholder="פרטי המשימה (על מה)"><button class="btn sm" id="nt_add">➕ הוסף</button></div>
+      <div class="hintxt">בחר תורם מהחיפוש, קבע תאריך ומה לעשות — המשימה תיכנס לרשימה וגם ליומן.</div></div>
+    <div class="icsbox"><b>📅 חיבור אוטומטי ליומן Google</b><br>הוסף פעם אחת את הכתובת (Google Calendar → יומנים אחרים → מכתובת URL), וכל התזכורות ייכנסו ליומן אוטומטית:<span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></div>
     <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor);
     return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
@@ -1106,6 +1113,20 @@ function renderTasksTab(){
       <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
+  // משימה חדשה — חיפוש ובחירת תורם
+  let ntChosen=null;
+  const ntq=document.getElementById('nt_q'),ntres=document.getElementById('nt_res'),ntch=document.getElementById('nt_chosen');
+  ntq.oninput=()=>{const s=norm(ntq.value);if(!s){ntres.innerHTML='';return;}
+    const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business).includes(s)).slice(0,8);
+    ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
+  document.getElementById('nt_add').onclick=async()=>{
+    if(!ntChosen){toast('בחר תורם מהחיפוש');return;}
+    const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
+    if(!date){toast('בחר תאריך');return;}
+    const r=await api('POST','/api/task',{donor_id:ntChosen.id,due_date:date,kind:kind,note:note});
+    ntChosen.tasks=ntChosen.tasks||[];ntChosen.tasks.push({id:r.id,donor_id:ntChosen.id,due_date:date,kind:kind,note:note,done:0});
+    toast('המשימה נוספה ✓');render();checkReminders();};
   view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;openDonor(all[r.dataset.i].dref);});
   view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];if(t.id){await api('PUT','/api/task/'+t.id,{done:1});}t.done=1;const d=t.dref;const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;toast('בוצע ✓');render();checkReminders();});
 }
