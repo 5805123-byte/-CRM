@@ -687,7 +687,17 @@ const KVTYPES=[
   ['klali','קוויטל כללי','הכל יחד להדפסה (בלי מזדמן)']
 ];
 let kvSub=null;
-function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',occ:'מזדמן'})[t]||'כללי';}
+function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',occ:'מזדמן',klali:'כללי'})[t]||'כללי';}
+// לאיזה קוויטל שייך התורם (לפי דרגה/קטגוריה) — למי שאמור להיות לו שם לתפילה
+function kvMemberType(d){
+  if(d.tier==='יששכר_זבולון')return 'iz';
+  if(d.tier==='קוויטל_101')return '101';
+  if(d.tier==='קוויטל_כללי')return 'klali';
+  if(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)return 'weekly';
+  return null;
+}
+// מסומן בקוויטל אך אין לו עדיין שם לתפילה, ולא סומן "לא צריך"
+function kvMissingList(){return DB.filter(d=>kvMemberType(d)&&!(d.prayers&&d.prayers.length)&&!(+d.kv_skip));}
 // חיפוש שם על פני כל סוגי הקוויטל — בלי לבחור קטגוריה קודם
 function renderKvSearch(){
   let entries=[];
@@ -706,12 +716,29 @@ function renderKvittel(){
   chips.innerHTML='';
   if(!kvSub){
     if(q) return renderKvSearch();   // יש חיפוש — הצג תוצאות מכל הסוגים ישירות
-    view.innerHTML=`<div class="cnt">בחר סוג קוויטל <small style="color:var(--muted)">· או חפש שם למעלה כדי לדלג ישר לתוצאות</small></div><div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
+    const miss=kvMissingList().length;
+    view.innerHTML=`<div class="cnt">בחר סוג קוויטל <small style="color:var(--muted)">· או חפש שם למעלה כדי לדלג ישר לתוצאות</small></div>
+      ${miss?`<button class="btn kvmissbtn" id="kvMissBtn">🔴 חסרים שמות קוויטל — ${miss} לטיפול</button>`:''}
+      <div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
     view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvSub=b.dataset.k;render();});
+    const mb=document.getElementById('kvMissBtn');if(mb)mb.onclick=()=>{kvSub='missing';render();};
     return;
   }
+  if(kvSub==='missing') return renderKvMissing();
   if(kvSub==='occ') return renderKvOcc();
   renderKvList(kvSub);
+}
+function renderKvMissing(){
+  let list=kvMissingList().filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
+  list.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔴 חסרים שמות קוויטל</b><span class="cnt2">(${list.length})</span></div>
+    <div class="hintxt" style="margin:0 2px 8px">מסומנים בקוויטל אך אין להם עדיין שם לתפילה. הקלד שם לתפילה — או לחץ ✓ אם התורם לא ביקש קוויטל (יוסר מהרשימה).</div>
+    ${list.map(d=>`<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvTypeLabel(kvMemberType(d))}</span> <span class="opencard">↗ כרטיס</span></div>
+      <div class="kvmissrow"><div class="names" contenteditable="true" data-newdid="${d.id}" data-ph="שם לתפילה — הקלד כאן"></div><button class="kvskip" data-skip="${d.id}" title="לא ביקש קוויטל">✓ לא ביקש</button></div></div>`).join('')||'<div class="empty">🎉 אין חסרים — לכל המסומנים בקוויטל יש שם</div>'}`;
+  document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
+  view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
+  view.querySelectorAll('.kvskip').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.skip);if(!d)return;d.kv_skip=1;await api('PUT','/api/donor/'+d.id,{kv_skip:1});toast('סומן — לא צריך קוויטל ✓');renderKvMissing();});
+  bindKvEdit();
 }
 function bindKvEdit(){
   view.querySelectorAll('.names[contenteditable]').forEach(n=>{n.onblur=async()=>{
@@ -719,7 +746,7 @@ function bindKvEdit(){
     if(id){
       let ref=null;DB.forEach(d=>(d.prayers||[]).forEach(p=>{if(p.id==id)ref=p;}));if(!ref)ref=UNLINKED.find(p=>p.id==id);if(!ref||ref.text===nt)return;ref.text=nt;await api('PUT','/api/prayer/'+id,{text:nt});toast('נשמר ✓ (גם בכרטיס)');
     }else if(newdid&&nt){
-      const d=DB.find(x=>x.id==newdid);if(!d)return;const r=await api('POST','/api/prayer',{donor_id:+newdid,text:nt,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:nt,tier:d.tier||''});n.dataset.id=r.id;delete n.dataset.newdid;toast('נוסף לקוויטל ✓ (גם בכרטיס)');
+      const d=DB.find(x=>x.id==newdid);if(!d)return;const r=await api('POST','/api/prayer',{donor_id:+newdid,text:nt,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:nt,tier:d.tier||''});n.dataset.id=r.id;delete n.dataset.newdid;toast('נוסף לקוויטל ✓ (גם בכרטיס)');if(kvSub==='missing')renderKvMissing();
     }
   };});
 }
@@ -736,8 +763,8 @@ function renderKvList(type){
   DB.forEach(d=>{
     const prs=(d.prayers||[]);
     prs.forEach(p=>{const t=prayerKvType(p.tier,d);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id});});
-    // מסומן בקוויטל לפי דרגה אך בלי שם עדיין — הצג עם שמו כדי שלא ייעלם מהרשימה
-    if(!prs.length){const t=prayerKvType(null,d);const real=(t==='iz'||t==='101'||t==='weekly');const inc=type==='klali'?real:(t===type&&real);if(inc)entries.push({id:null,newdid:d.id,text:'',donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,needname:true});}
+    // מסומן בקוויטל לפי דרגה אך בלי שם עדיין — הצג עם שמו כדי שלא ייעלם מהרשימה (אלא אם סומן "לא צריך")
+    if(!prs.length&&!(+d.kv_skip)){const t=kvMemberType(d);const inc=t&&(type==='klali'?true:(t===type));if(inc)entries.push({id:null,newdid:d.id,text:'',donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,needname:true});}
   });
   UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
   entries=entries.filter(e=>matchQ(e.donor+' '+e.text));
