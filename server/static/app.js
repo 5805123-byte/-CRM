@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], GTASKS = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '';
+let DB = [], OCC = [], UNLINKED = [], GTASKS = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
@@ -88,6 +88,13 @@ function findDupes(){const g={};DB.forEach(d=>{const k=dupKey(d);if(!k)return;(g
 // פרנס "פתוח" = הלילה עדיין לא עבר, או שעבר אך טרם שולם. הירח נעלם רק כשהלילה עבר וגם שולם.
 function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>!(p.night_date&&p.night_date<t&&+p.paid));}
 function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1300);}
+let _undoTimer;
+function toastUndo(msg,undoFn){
+  toastEl.innerHTML=esc(msg)+' <button class="undobtn">↩️ בטל</button>';
+  toastEl.classList.add('show');clearTimeout(_undoTimer);
+  const b=toastEl.querySelector('.undobtn');if(b)b.onclick=async()=>{clearTimeout(_undoTimer);toastEl.classList.remove('show');await undoFn();};
+  _undoTimer=setTimeout(()=>{toastEl.classList.remove('show');},6000);
+}
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
 // ערוצי חיוב — תג צבעוני מובחן לכל ערוץ (בצבעי המותג)
@@ -1139,8 +1146,9 @@ function renderTasksTab(){
   chips.innerHTML=opts.map(([k,l])=>`<button class="chip ${flt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   let all=[];
-  DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(t.done&&t.done!=0)return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
-  GTASKS.forEach(t=>{if(t.done&&t.done!=0)return;all.push({...t,donor:'',dref:null});});   // משימות חופשיות בלי תורם
+  const isDone=t=>!!(t.done&&t.done!=0);
+  DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(isDone(t)!==showDone)return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
+  GTASKS.forEach(t=>{if(isDone(t)!==showDone)return;all.push({...t,donor:'',dref:null});});   // משימות חופשיות בלי תורם
   if(flt) all=all.filter(t=>t.kind===flt);
   if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
@@ -1161,10 +1169,10 @@ function renderTasksTab(){
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
       <div class="hintxt">כתוב מה צריך לעשות. רוצה שאהרן יעשה — כתוב בחלון של אהרן; רוצה שאתה — בחלון שלך. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
-    <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
+    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
-    return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
+    return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span><button class="tedit" data-i="${i}" title="ערוך" onclick="event.stopPropagation()">✏️</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
     <div class="teditpanel hidden" data-panel="${i}">
@@ -1199,7 +1207,12 @@ function renderTasksTab(){
     if(ntChosen){ntChosen.tasks=ntChosen.tasks||[];ntChosen.tasks.push(rec);}else{GTASKS.push(rec);}
     toast('המשימה נוספה ✓'+(who?' — '+who:''));render();checkReminders();};
   view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;const t=all[r.dataset.i];if(t.dref)openDonor(t.dref);});
-  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];if(t.id){await api('PUT','/api/task/'+t.id,{done:1});}t.done=1;if(t.dref){const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;}else{const gt=GTASKS.find(x=>x.id===t.id);if(gt)gt.done=1;}toast('בוצע ✓');render();checkReminders();});
+  const setDone=async(t,v)=>{if(t.id)await api('PUT','/api/task/'+t.id,{done:v});t.done=v;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec)rec.done=v;};
+  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];
+    if(showDone){await setDone(t,0);toast('הוחזר לפתוחות ✓');render();checkReminders();}
+    else{await setDone(t,1);render();checkReminders();toastUndo('בוצע ✓',async()=>{await setDone(t,0);render();checkReminders();});}
+  });
+  const tgd=document.getElementById('toggledone');if(tgd)tgd.onclick=()=>{showDone=!showDone;render();};
 }
 
 /* ---------- מזדמנים ---------- */
