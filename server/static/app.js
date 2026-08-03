@@ -129,7 +129,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 
 function render(){
   chips.innerHTML='';
-  if(tab==='donors') return renderDonors();
+  if(tab==='donors') return flt==='addrfix'?renderAddrFix():renderDonors();
   if(tab==='tasks') return renderTasksTab();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
@@ -163,8 +163,10 @@ function renderDonors(){
   else if(donSort==='amt') list=list.slice().sort((a,b)=>donorTotals(b).all-donorTotals(a).all);
   else list=list.slice().sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   const ndup=findDupes().length;
+  const nafix=DB.filter(addrIssue).length;
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
     ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
+    ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
     <div class="avbar"><select id="donsort" class="avsortsel">
       <option value="last">מיון: שם (א-ב)</option>
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
@@ -180,8 +182,37 @@ function renderDonors(){
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
+  const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
+}
+// זיהוי כתובת בעייתית (מילים דבוקות / מספר דבוק / מדינה כפולה / כתובת ישראלית שמתחילה במספר)
+function addrIssue(d){
+  const a=(d.addr||'').trim(); if(!a||+d.addr_ok)return null;
+  if(/[a-z][A-Z]/.test(a)||/\d[A-Z][a-z]/.test(a))return 'מילים דבוקות';
+  if(/[\u0590-\u05FF]\d/.test(a))return 'מספר דבוק לרחוב';
+  if(/\b([A-Z]{2}),\s*\1\b/.test(a))return 'מדינה כפולה';
+  const street=(a.split(',')[0]||'');
+  if(d.region==='il'&&/^\s*[\d]/.test(a))return 'מתחיל במספר (אולי הפוך)';
+  if(d.region==='il'&&/\d[ ]*[\u0590-\u05FF]/.test(street))return 'מספר לפני שם הרחוב — לבדוק';
+  return null;
+}
+function renderAddrFix(){
+  chips.innerHTML='';
+  let list=DB.filter(d=>addrIssue(d)).filter(d=>matchQ(d.last+' '+d.first+' '+d.addr));
+  list.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  view.innerHTML=`<button class="back" id="afback">→ חזרה לתורמים</button>
+    <div class="cnt">🔴 כתובות לתיקון: ${list.length}</div>
+    <div class="hintxt">ערוך את הכתובת ולחץ 💾 שמור, או ✓ תקין אם הכתובת בסדר כמו שהיא (תוסר מהרשימה).</div>
+    <div class="list">${list.map(d=>`<div class="afrow" data-id="${d.id}">
+      <div class="afname"><b class="avnamelink" data-id="${d.id}">${esc((d.last+' '+d.first).trim())}</b> <span class="rownum">#${d.id}</span> <span class="kvtag">${esc(addrIssue(d))}</span></div>
+      <input class="afaddr" data-id="${d.id}" value="${esc(d.addr||'')}" dir="${d.region==='il'?'rtl':'ltr'}">
+      <div class="afact"><button class="btn sm afsave" data-id="${d.id}">💾 שמור</button><button class="kvskip afok" data-id="${d.id}">✓ תקין</button></div>
+    </div>`).join('')||'<div class="empty">🎉 אין כתובות לתיקון</div>'}</div>`;
+  document.getElementById('afback').onclick=()=>{flt='';render();};
+  view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+  view.querySelectorAll('.afsave').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id);const inp=view.querySelector('.afaddr[data-id="'+b.dataset.id+'"]');d.addr=inp.value;await api('PUT','/api/donor/'+d.id,{addr:inp.value});toast('נשמר ✓');renderAddrFix();});
+  view.querySelectorAll('.afok').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id);d.addr_ok=1;await api('PUT','/api/donor/'+d.id,{addr_ok:1});toast('סומן תקין ✓');renderAddrFix();});
 }
 function openDupes(){
   const paint=()=>{

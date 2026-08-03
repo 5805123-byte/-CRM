@@ -77,6 +77,9 @@ def ensure_schema():
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
     try: con.execute("ALTER TABLE donors ADD COLUMN kv_skip INTEGER DEFAULT 0")
     except Exception: pass
+    # סימון "כתובת תקינה/טופלה" — להסיר מרשימת כתובות לתיקון
+    try: con.execute("ALTER TABLE donors ADD COLUMN addr_ok INTEGER DEFAULT 0")
+    except Exception: pass
     # השלמת דרגת יששכר־זבולון לתורמים שהיו ברשימה אך לא סומנו (מקור אמת: iz_seed.json + כל מי שיש לו אברך)
     try:
         con.execute("""UPDATE donors SET tier='יששכר_זבולון'
@@ -434,7 +437,7 @@ def get_all():
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','kv_skip'}
+                'region','country','zip','city','iz_note','kv_skip','addr_ok'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
