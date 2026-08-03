@@ -686,10 +686,26 @@ const KVTYPES=[
   ['klali','קוויטל כללי','הכל יחד להדפסה (בלי מזדמן)']
 ];
 let kvSub=null;
+function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',occ:'מזדמן'})[t]||'כללי';}
+// חיפוש שם על פני כל סוגי הקוויטל — בלי לבחור קטגוריה קודם
+function renderKvSearch(){
+  let entries=[];
+  DB.forEach(d=>{(d.prayers||[]).forEach(p=>{entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,kt:prayerKvType(p.tier,d)});});});
+  UNLINKED.forEach(p=>{entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true,kt:prayerKvType(p.tier,null)});});
+  entries=entries.filter(e=>matchQ(e.donor+' '+e.text));
+  entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔎 חיפוש בכל הקוויטל</b><span class="cnt2">(${entries.length})</span></div>
+    <div class="hintxt" style="margin:0 2px 8px">מציג שמות מכל סוגי הקוויטל התואמים לחיפוש. לחץ על שם לעריכה — נשמר גם בכרטיס.</div>
+    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
+  const bk=document.getElementById('kvback');if(bk)bk.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';render();};
+  view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
+  bindKvEdit();
+}
 function renderKvittel(){
   chips.innerHTML='';
   if(!kvSub){
-    view.innerHTML=`<div class="cnt">בחר סוג קוויטל:</div><div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
+    if(q) return renderKvSearch();   // יש חיפוש — הצג תוצאות מכל הסוגים ישירות
+    view.innerHTML=`<div class="cnt">בחר סוג קוויטל <small style="color:var(--muted)">· או חפש שם למעלה כדי לדלג ישר לתוצאות</small></div><div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
     view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvSub=b.dataset.k;render();});
     return;
   }
