@@ -378,6 +378,28 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('donations_paid_v1')")
     except Exception as e:
         print('  שגיאת סימון שולם 2026:', e)
+    # ניקוי כתובות: הפרדת מילים דבוקות (StBrooklyn→St, Brooklyn), מספר דבוק, ומדינה כפולה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addr_cleanup_v1'").fetchone():
+            SUF = r'St|st|Ave|ave|Avenue|avenue|Rd|Road|Dr|Drive|Blvd|Ln|Lane|Ct|Court|Pl|Place|Way|Terrace|Parkway|Pkwy|Hwy|Highway|highway|Broadway|Street|street|Park'
+            def _clean(s):
+                s = re.sub(r'\b(' + SUF + r')([A-Z][a-z])', r'\1, \2', s)       # StBrooklyn -> St, Brooklyn
+                s = re.sub(r'(\d(?:st|nd|rd|th))([A-Z][a-z])', r'\1 \2', s)      # 27thBrooklyn -> 27th Brooklyn
+                s = re.sub(r'(\d)([A-Z][a-z])', r'\1 \2', s)                     # 3740Brooklyn -> 3740 Brooklyn
+                s = re.sub(r'([\u0590-\u05ff])(\d)', r'\1 \2', s)                # יחזקאל41 -> יחזקאל 41
+                s = re.sub(r'\b([A-Z]{2}),\s*\1\b', r'\1', s)                    # NY, NY -> NY
+                s = re.sub(r'\s{2,}', ' ', s).strip()
+                return s
+            n = 0
+            for row in con.execute("SELECT id, addr FROM donors WHERE COALESCE(addr,'')<>''").fetchall():
+                new = ' ::: '.join(_clean(p) for p in row['addr'].split(' ::: '))
+                if new != row['addr']:
+                    con.execute("UPDATE donors SET addr=? WHERE id=?", (new, row['id']))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('addr_cleanup_v1')")
+            print(f'  ניקוי כתובות: תוקנו {n}')
+    except Exception as e:
+        print('  שגיאת ניקוי כתובות:', e)
     con.commit(); con.close()
 
 def get_all():
