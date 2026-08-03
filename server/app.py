@@ -219,6 +219,48 @@ def ensure_schema():
                 print(f'  התאמת Authorize: נטענו {nr} עסקאות')
     except Exception as e:
         print('  שגיאת התאמת Authorize:', e)
+    # ייבוא Authorize ינואר–אוגוסט 2026 (חוץ מיולי) לדף ההתאמה — התאמה בזמן ריצה + מילוי שם אנגלי/כתובת
+    try:
+        ap = os.path.join(HERE, 'authorize_janaug_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_janaug2026_v1'").fetchone() and os.path.exists(ap):
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _ne(s): return re.sub(r'\s+', ' ', (s or '').lower().strip())
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,english,email,phone,addr FROM donors")]
+            dmap = {d['id']: d for d in donors}
+            bymail = {}; byphone = {}; byeng = {}
+            for d in donors:
+                if d['email']: bymail.setdefault(_ne(d['email']), d['id'])
+                for p in re.split(r'[/,]', d['phone'] or ''):
+                    if _d7(p): byphone.setdefault(_d7(p), d['id'])
+                if d['english']: byeng.setdefault(_ne(d['english']), d['id'])
+            con.execute("DELETE FROM recon WHERE source='Authorize 01-08-2026' AND COALESCE(processed,0)=0")
+            nr = matched = fen = fad = 0
+            for x in json.load(open(ap, encoding='utf-8')):
+                did = None
+                if x['email'] and _ne(x['email']) in bymail: did = bymail[_ne(x['email'])]
+                if not did and x['phone'] and _d7(x['phone']) in byphone: did = byphone[_d7(x['phone'])]
+                if not did:
+                    nm = _ne(x['first'] + ' ' + x['last'])
+                    if nm and nm in byeng: did = byeng[nm]
+                con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,recurring,donor_id,category,processed,source,status)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Authorize 01-08-2026','settled')""",
+                            (x['tid'], x['first'], x['last'], x['amount'], x['date'], x['addr'], x['city'], x['state'],
+                             x['zip'], x['phone'], x['email'], x['recurring'], did, x.get('category', '')))
+                nr += 1
+                if did:
+                    matched += 1
+                    d = dmap.get(did)
+                    if d and not (d['english'] or '').strip() and (x['first'] or x['last']):
+                        con.execute("UPDATE donors SET english=? WHERE id=? AND COALESCE(TRIM(english),'')=''", ((x['first'] + ' ' + x['last']).strip(), did))
+                        d['english'] = (x['first'] + ' ' + x['last']).strip(); fen += 1
+                    if d and not (d['addr'] or '').strip() and x['addr']:
+                        fulladdr = ', '.join([p for p in [x['addr'], x['city'], (x['state'] + ' ' + x['zip']).strip(), 'US'] if p])
+                        con.execute("UPDATE donors SET addr=? WHERE id=? AND COALESCE(TRIM(addr),'')=''", (fulladdr, did))
+                        d['addr'] = fulladdr; fad += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_janaug2026_v1')")
+            print(f'  Authorize ינו-אוג: נטענו {nr}, הותאמו {matched}, שם-אנגלי {fen}, כתובות {fad}')
+    except Exception as e:
+        print('  שגיאת Authorize ינו-אוג:', e)
     # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -763,6 +805,7 @@ class H(BaseHTTPRequestHandler):
                         x['match_addr'] = d['addr'] or ''
                         x['match_cat'] = d['category'] or ''
                         x['match_tier'] = d['tier'] or ''
+                        x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026'", (r['donor_id'],)).fetchone()[0]
                 out.append(x)
             con.close()
             return self._send(200, out)

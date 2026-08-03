@@ -24,6 +24,7 @@
   .match.ok{background:#eaf6ee;border:1px solid #bfe3c9}
   .match.no{background:#fdeee9;border:1px solid #f2c9bc}
   .match .cardlink{color:var(--accent);text-decoration:underline;font-weight:800}
+  .dupwarn{background:#fff4d6;border:1px solid #e6c65c;color:#8a6a00;border-radius:8px;padding:6px 9px;margin-top:8px;font-size:.82rem;font-weight:700;clear:both}
   .match .inlineedit{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;clear:both}
   .match .inlineedit label{font-size:.8rem;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:5px}
   .match .inlineedit select{padding:6px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink);font-weight:700}
@@ -58,7 +59,7 @@
 </style>
 </head>
 <body>
-<h1>💳 טיפול בתרומות Authorize — יולי 2026</h1>
+<h1>💳 טיפול בתרומות Authorize — ינואר–אוגוסט 2026</h1>
 <div class="sub">לכל תורם: אשר עבור מה תרם, השלם שם עברי / צור כרטיס, ובחר אם לעדכן כתובת. תרומת $480 = פרנס לילה. הוראות קבע מסומנות.<br>בפרנס — אפשר לכתוב מיד את השמות; היום ישובץ ב<a href="/" target="_blank" rel="noopener" style="color:var(--accent);font-weight:800">🌙 לוח פרנס יום</a>.</div>
 <div class="bar">
   <div class="prog"><i id="pbar"></i></div>
@@ -134,8 +135,10 @@ function groupCard(k,txs){
     <div class="gsum">${settled.length} עברו · סה"כ $${total.toFixed(2)}${failedN?(' · <span style="color:var(--no)">'+failedN+' לא עברו</span>'):''}${t0.email?(' · '+esc(t0.email)):''}</div>`;
   let matchHtml;
   if(matched){
+    const dupWarn = matched.match_summary>0 ? `<div class="dupwarn">⚠️ כבר יש ${matched.match_summary} תרומות מהסיכום 2026 בכרטיס — ייבוא זה יוסיף עליהן (כפילות אפשרית)</div>` : '';
     matchHtml=`<div class="match ok" data-did="${matched.donor_id}">✓ מותאם לכרטיס: <a class="cardlink" href="/?donor=${matched.donor_id}" target="_blank" rel="noopener"><b>${esc(matched.match_name||'')}</b> ↗</a>
       <button class="btn sm ghost changebtn" style="float:left;padding:3px 9px">🔄 שנה תורם</button>
+      ${dupWarn}
       <div class="inlineedit">
         <label>🕯️ קוויטל:<select class="mtier">${tierOpts(matched.match_tier||'')}</select></label>
         <label>📋 קטגוריה:<select class="mcat">${dcatOpts(matched.match_cat||'')}</select></label>
