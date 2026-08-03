@@ -54,6 +54,7 @@
   .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;font-weight:700;z-index:20}
   .toast.show{opacity:1}
   .done-msg{text-align:center;padding:30px;color:var(--yes);font-weight:800;font-size:1.1rem}
+  .pypick select{flex:1;padding:7px 8px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff}
 </style>
 </head>
 <body>
@@ -81,6 +82,11 @@ const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חד
 const TIEROPTS = [['','— בלי קוויטל —'],['יששכר_זבולון','יששכר־זבולון'],['קוויטל_101','כל לילה'],['קוויטל_כללי','כללי']];
 const DCATS = ['','קבוע','מזדמן','פרנס יום','בניין/הקדשה','חד-פעמי'];
 function tierOpts(sel){return TIEROPTS.map(([v,l])=>`<option value="${esc(v)}" ${v===(sel||'')?'selected':''}>${l}</option>`).join('');}
+// בורר פרנס — חודש/יום/שנה עבריים
+const HMORD=['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
+const HYEARS=['תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח'];
+function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
+const PARNES_CATS=['פרנס לילה','חדר קפה','ארוחת בוקר'];
 function dcatOpts(sel){return DCATS.map(c=>`<option value="${esc(c)}" ${c===(sel||'')?'selected':''}>${c||'— קטגוריה —'}</option>`).join('');}
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1400);}
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
@@ -163,7 +169,11 @@ function groupCard(k,txs){
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
       ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
       ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select>`)}
-      ${(!failed&&!t.processed)?`<input class="pyded" placeholder="🕯️ שמות/בקשות לפרנס (רשות)" style="display:${(is480||['פרנס לילה','חדר קפה','ארוחת בוקר'].includes(t.category||''))?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit">`:''}
+      ${(!failed&&!t.processed)?(()=>{const show=is480||PARNES_CATS.includes(t.category||'');return `<div class="pypick" style="display:${show?'flex':'none'};gap:6px;width:100%;margin-top:5px">
+        <select class="pymon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
+        <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
+        <select class="pyyr">${HYEARS.map(y=>`<option ${y==='תשפ"ו'?'selected':''}>${y}</option>`).join('')}</select></div>
+      <input class="pyded" placeholder="🕯️ שמות/בקשות לפרנס (רשות)" style="display:${show?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit">`;})():''}
     </div>`;
   }).join('');
   return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
@@ -202,7 +212,7 @@ function wireGroup(k,txs){
     [nl,nf].forEach(inp=>inp.oninput=()=>{ if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } });
   }
   // הצגת שדה שמות פרנס כשבוחרים קטגוריית פרנס
-  card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded');if(sel&&ded)sel.addEventListener('change',()=>{ded.style.display=['פרנס לילה','חדר קפה','ארוחת בוקר'].includes(sel.value)?'block':'none';});});
+  card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded'),pick=txEl.querySelector('.pypick');if(sel)sel.addEventListener('change',()=>{const on=PARNES_CATS.includes(sel.value);if(ded)ded.style.display=on?'block':'none';if(pick)pick.style.display=on?'flex':'none';});});
   const btn=card.querySelector('.btn.go'); if(!btn) return;
   btn.onclick=async()=>{
     if(!state.donorId && !state.createNew){ toast('בחר תורם קיים או מלא שם משפחה לכרטיס חדש'); return; }
@@ -216,6 +226,7 @@ function wireGroup(k,txs){
       const sel=txEl.querySelector('.cat'); if(!sel) continue;
       const dedEl=txEl.querySelector('.pyded');
       const body={category:sel.value, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
+      if(PARNES_CATS.includes(sel.value)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
       if(donorId) body.donor_id=donorId;
       else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf}; }
       const r=await api('POST','/api/recon/'+tid, body);

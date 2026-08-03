@@ -963,9 +963,12 @@ class H(BaseHTTPRequestHandler):
             cat = b.get('category', '') or row['category'] or ''
             PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
             if cat in PKIND:
-                # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות; היום ישובץ בלוח פרנס
-                cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,method) VALUES(?,0,'','',?,?,?,'confirmed',1,?)",
-                            (did, row['amount'], b.get('dedication', ''), PKIND[cat], 'Authorize'))
+                # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
+                dtext = b.get('date_text', '')
+                _ng = heb_to_greg(dtext) if dtext else None
+                cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'confirmed',1,?,?,?)",
+                            (did, b.get('day', 0), b.get('month', ''), dtext, row['amount'], b.get('dedication', ''), PKIND[cat],
+                             _ng.isoformat() if _ng else '', b.get('hyear', ''), 'Authorize'))
             else:
                 cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
                             (did, diso, row['amount'], cat, 'Authorize', 'התאמת יולי 2026' + (' · הוראת קבע' if row['recurring'] else '')))
