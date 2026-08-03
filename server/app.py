@@ -253,6 +253,32 @@ def ensure_schema():
             if not con.execute("SELECT 1 FROM partners WHERE donor_id=543 AND avreich LIKE '%דויטש%כולל יום%'").fetchone():
                 con.execute("INSERT INTO partners(donor_id,avreich,amount,note,active) VALUES(543,'יהושע מאיר דויטש — כולל יום','1000','יש\"ז לכולל יום — משותף: יצחק וברכה שטטפלד',1)")
             con.execute("INSERT INTO seed_flags(name) VALUES('statfeld_lax_iz')")
+        # איחוד יצחק (#543) וברכה (#541) שטטפלד — בעל ואשה, כרטיס אחד
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_merge'").fetchone():
+            keep, drop = 543, 541
+            k = con.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
+            d = con.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
+            if k and d:
+                for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
+                    try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                    except Exception: pass
+                try: con.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
+                except Exception: pass
+                # השלמת שדות ריקים ומיזוג טלפונים
+                kd, dd = dict(k), dict(d)
+                for col in ('english','email','addr','region','country','zip','city'):
+                    if not (kd.get(col) or '').strip() and (dd.get(col) or '').strip():
+                        con.execute(f"UPDATE donors SET {col}=? WHERE id=?", (dd[col], keep))
+                kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
+                for p in re.split(r'[/,]', dd.get('phone') or ''):
+                    p = p.strip()
+                    if p and p not in kp: kp.append(p)
+                con.execute("UPDATE donors SET phone=?, first='יצחק וברכה', tier='יששכר_זבולון' WHERE id=?", (' / '.join(kp), keep))
+                con.execute("DELETE FROM donors WHERE id=?", (drop,))
+            # סימון הכולל של כל התחייבות
+            con.execute("UPDATE partners SET note='יששכר־זבולון · כולל חצות' WHERE donor_id=543 AND avreich LIKE 'קלפר%'")
+            con.execute("UPDATE partners SET note='יששכר־זבולון · כולל יום' WHERE donor_id=543 AND avreich LIKE '%דויטש%כולל יום%'")
+            con.execute("INSERT INTO seed_flags(name) VALUES('statfeld_merge')")
     except Exception as e:
         print('  שגיאת תיקון שטטפלד/לאקס:', e)
     con.commit(); con.close()
