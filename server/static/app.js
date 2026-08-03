@@ -803,6 +803,7 @@ function renderKvMissing(){
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔴 חסרים שמות קוויטל</b><span class="cnt2">(${list.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">מסומנים בקוויטל אך אין להם עדיין שם לתפילה. הקלד שם לתפילה — או לחץ ✓ אם התורם לא ביקש קוויטל (יוסר מהרשימה).</div>
     ${list.map(d=>`<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvTypeLabel(kvMemberType(d))}</span> <span class="opencard">↗ כרטיס</span></div>
+      ${contactBtns(d)}
       <div class="kvmissrow"><div class="names" contenteditable="true" data-newdid="${d.id}" data-ph="שם לתפילה — הקלד כאן"></div><button class="kvskip" data-skip="${d.id}" title="לא ביקש קוויטל">✓ לא ביקש</button></div></div>`).join('')||'<div class="empty">🎉 אין חסרים — לכל המסומנים בקוויטל יש שם</div>'}`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
@@ -1076,6 +1077,16 @@ function renderCamp(){
 }
 
 /* ---------- משימות ---------- */
+// כפתורי קשר מהירים — התקשרות / וואטסאפ / אימייל ישירות מהמשימה
+function waNum(p){let n=(p||'').replace(/[^0-9]/g,'');if(n.length>=9&&n[0]==='0')n='972'+n.slice(1);return n;}
+function contactBtns(d){
+  const ph=splitPhones(d.phone)[0]||'', wa=waNum(ph), em=(d.email||'').trim();
+  let h='';
+  if(ph)h+=`<a class="cbtn call" href="tel:${esc(ph)}" onclick="event.stopPropagation()" title="התקשר ${esc(ph)}">📞</a>`;
+  if(wa)h+=`<a class="cbtn wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
+  if(em)h+=`<a class="cbtn mail" href="mailto:${esc(em)}" onclick="event.stopPropagation()" title="${esc(em)}">📧</a>`;
+  return h?`<span class="cbtns">${h}</span>`:'';
+}
 function renderTasksTab(){
   const today=todayStr();
   const opts=[['','הכל'],['charge','💳 לחייב'],['parnes','🌙 פרנס'],['prayer','🙏 תפילה'],['followup','📞 לחזור']];
@@ -1091,7 +1102,7 @@ function renderTasksTab(){
     <div class="cnt">${all.length} משימות · לפי תאריך קרוב</div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor);
     return `<div class="rowc taskrow" data-i="${i}"><button class="tdone" data-done="${i}" title="בוצע">✓</button>
-      <div><div class="nm">${icon} ${esc(t.donor)}</div><div class="miss2">${esc(t.note||'')}</div></div>
+      <div><div class="nm">${icon} ${esc(t.donor)}</div><div class="miss2">${esc(t.note||'')}</div>${contactBtns(t.dref)}</div>
       <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
