@@ -430,6 +430,14 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('taubenfeld_1300_v1')")
     except Exception as e:
         print('  שגיאת טאובנפלד:', e)
+    # תזכורות פרנס פתוחות עם תאריך שעבר (שבוע-לפני שכבר חלף) — לקבוע להיום, לא בעבר
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_reminder_today_v1'").fetchone():
+            con.execute("UPDATE tasks SET due_date=? WHERE kind='parnes' AND (done IS NULL OR done=0) AND COALESCE(due_date,'')<>'' AND due_date<?",
+                        (today_iso(), today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_reminder_today_v1')")
+    except Exception as e:
+        print('  שגיאת תזכורות פרנס:', e)
     # תרומות היסטוריות שיובאו (2026) הן תשלומים שכבר עברו — לסמן כ"שולם"
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='donations_paid_v1'").fetchone():
@@ -889,6 +897,7 @@ class H(BaseHTTPRequestHandler):
                         (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else '', b.get('hyear','')))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
+            if due and due < today_iso(): due = today_iso()   # שבוע-לפני כבר עבר — קבע להיום, לא בעבר
             tid = None
             if due:
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",

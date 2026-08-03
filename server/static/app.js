@@ -429,8 +429,23 @@ function cardDetails(d,body){
     ${izSummaryHTML(d)}
     ${give}
     ${(dt.all||dt.year)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>סה"כ שנתרם</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div></div>`:''}
+    <div class="sec"><button class="btn ghost" id="f_merge" style="width:100%">🔀 מזג עם כרטיס כפול (אותו אדם)</button>
+      <div id="mergebox" class="hidden" style="margin-top:8px">
+        <input id="mg_q" placeholder="🔍 חפש את הכרטיס הכפול למזג לכאן…" autocomplete="off">
+        <div id="mg_res" class="dpres"></div>
+        <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
     <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
+  document.getElementById('f_merge').onclick=()=>document.getElementById('mergebox').classList.toggle('hidden');
+  const mgq=document.getElementById('mg_q'),mgres=document.getElementById('mg_res');
+  mgq.oninput=()=>{const s=norm(mgq.value);if(!s){mgres.innerHTML='';return;}
+    const m=DB.filter(x=>x.id!==d.id&&norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,8);
+    mgres.innerHTML=m.map(x=>`<div class="dpr" data-id="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}${x.phone?(' · '+esc(splitPhones(x.phone)[0])):''}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    mgres.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
+      const other=DB.find(x=>x.id==el.dataset.id);if(!other)return;
+      if(!confirm('למזג את "'+(other.last+' '+other.first).trim()+'" (#'+other.id+') לתוך "'+(d.last+' '+d.first).trim()+'"?\nהכפול יימחק וכל הנתונים יעברו לכאן.'))return;
+      await api('POST','/api/merge',{keep:d.id,drop:other.id});toast('מוזג ✓');ov.classList.remove('show');await load();openDonor(DB.find(x=>x.id===d.id));});
+  };
   const FF=['last','first','english','tier','category','purpose','amount','frequency','email','addr','city','country','zip','business','region','channel'];
   wireFields(d,FF);
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
