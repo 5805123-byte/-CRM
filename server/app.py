@@ -444,6 +444,38 @@ def ensure_schema():
             print(f'  ניקוי כתובות: תוקנו {n}')
     except Exception as e:
         print('  שגיאת ניקוי כתובות:', e)
+    # כתובות ארה"ב בפורמט תקין מהשדות המובנים של גוגל (רחוב, עיר, מדינה, מיקוד) — מספר בהתחלה
+    try:
+        seedm = os.path.join(HERE, 'address_maps_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='address_maps_v1'").fetchone() and os.path.exists(seedm):
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _h(s):
+                s = re.sub(r'[^֐-׿]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,region FROM donors")]
+            for d in donors: d['_l'] = _h(d['last']); d['_f'] = _h(d['first'])
+            fixed = 0
+            for e in json.load(open(seedm, encoding='utf-8')):
+                emails = [x.lower() for x in (e.get('emails') or [])]
+                phones = [x for x in (e.get('phones') or []) if x]
+                el, ef = _h(e.get('last')), _h(e.get('first'))
+                hit = None
+                for d in donors:
+                    dphs = [_d7(p) for p in re.split(r'[/,]', d['phone'] or '') if _d7(p)]
+                    if phones and any(p in dphs for p in phones): hit = d; break
+                if not hit and emails:
+                    for d in donors:
+                        if (d['email'] or '').strip().lower() in emails and d['email']: hit = d; break
+                if not hit and el and ef:  # שם מלא בלבד (בלי fallback על שם משפחה יחיד — למנוע שיוך כתובת שגוי)
+                    for d in donors:
+                        if d['_l'] == el and d['_f'][:len(ef)] == ef: hit = d; break
+                if hit and (hit['region'] or '') != 'il':
+                    con.execute("UPDATE donors SET addr=?, addr_ok=1 WHERE id=?", (e['addr'], hit['id']))
+                    fixed += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('address_maps_v1')")
+            print(f'  כתובות ארה"ב בפורמט תקין: {fixed}')
+    except Exception as e:
+        print('  שגיאת כתובות מפות:', e)
     con.commit(); con.close()
 
 def get_all():
