@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], GTASKS = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
+let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
@@ -126,7 +126,7 @@ function fileChip(f){const ic=(f.mime||'').indexOf('pdf')>=0?'📄':((f.mime||''
 function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');return;}toast('מעלה…');const rd=new FileReader();rd.onload=async()=>{const data=rd.result.split(',')[1];await api('POST','/api/file',{kind,ref_id:refId,name:f.name,mime:f.type,data});toast('הועלה ✓');cb&&cb();};rd.readAsDataURL(f);}
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; HEBYEAR = d.heb_year || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; HEBYEAR = d.heb_year || '';
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
@@ -548,7 +548,8 @@ function cardDonations(d,body){
         <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
         <option value="חדר קפה" data-day="coffee">☕ חדר קפה / שתייה חמה (בחר יום)</option>
         <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option>
-        <option value="קמפיין">🎊 קמפיין (חג/מבצע)</option><option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label>
+        <option value="קמפיין">🎊 קמפיין חדש (חג/מבצע)</option><option>נר למאור</option><option>חד-פעמי</option><option>אחר</option>
+        ${CAMPAIGNS.length?('<optgroup label="🎯 מגביות/ייעודים שמורים">'+CAMPAIGNS.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):''}</select></label>
       <div id="dn_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
         <label class="fld"><span>שנה עברית</span><select id="dn_hy">${heYearOpts()}</select></label></div>
@@ -583,7 +584,8 @@ function cardDonations(d,body){
   const catSel=document.getElementById('dn_cat');
   catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=(catSel.value==='אחר'||catSel.value==='קמפיין')?'block':'none';};
   document.getElementById('dn_add').onclick=async()=>{
-    let cat=catSel.value;if(cat==='אחר'||cat==='קמפיין')cat=document.getElementById('dn_catfree').value.trim()||cat;
+    let cat=catSel.value;const wasCamp=cat==='קמפיין';if(cat==='אחר'||cat==='קמפיין')cat=document.getElementById('dn_catfree').value.trim()||cat;
+    if(wasCamp&&cat&&cat!=='קמפיין'&&!CAMPAIGNS.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
     const amt=document.getElementById('dn_amt').value.trim(),method=document.getElementById('dn_method').value,
       date=document.getElementById('dn_date').value,pray=document.getElementById('dn_pray').value.trim(),tier=document.getElementById('dn_tier').value,
       dayKind=catSel.options[catSel.selectedIndex].dataset.day;

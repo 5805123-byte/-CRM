@@ -41,6 +41,7 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS recon(tid TEXT PRIMARY KEY, first TEXT, last TEXT, amount TEXT, date TEXT,
         addr TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, email TEXT, recurring INTEGER DEFAULT 0,
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
+    CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT')]:
@@ -261,6 +262,15 @@ def ensure_schema():
             print(f'  Authorize ינו-אוג: נטענו {nr}, הותאמו {matched}, שם-אנגלי {fen}, כתובות {fad}')
     except Exception as e:
         print('  שגיאת Authorize ינו-אוג:', e)
+    # רשימת ייעודים/מגביות חופשית (עבור מה) — זריעת דוגמאות שהמשתמש הזכיר
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='campaigns_seed_v1'").fetchone():
+            for nm in ['מתנות לאביונים תשפ"ו', 'קמחא דפסחא תשפ"ו', 'סוכות תשפ"ו']:
+                con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('campaigns_seed_v1')")
+    except Exception as e:
+        print('  שגיאת מגביות:', e)
     # ייבוא היסטוריית התרומות של הקבועים 2026 (חד-פעמי) — מקובץ הסיכום ששלח המשתמש
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -783,7 +793,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/api/data':
             donors, unlinked, general_tasks = get_all()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'heb_year': current_heb_year()})
+            con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]; con.close()
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'heb_year': current_heb_year()})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
@@ -809,6 +820,11 @@ class H(BaseHTTPRequestHandler):
                 out.append(x)
             con.close()
             return self._send(200, out)
+        if self.path.split('?')[0] == '/api/campaigns':
+            con = db()
+            rows = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
+            con.close()
+            return self._send(200, rows)
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -963,6 +979,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         b = self._body()
+        if self.path == '/api/campaigns':
+            nm = (b.get('name') or '').strip()
+            if nm:
+                con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'name': nm})
         if self.path == '/api/donor':
             con = db(); cur = con.cursor()
             cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
@@ -1004,6 +1025,10 @@ class H(BaseHTTPRequestHandler):
             dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
             diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}" if dm else ''
             cat = b.get('category', '') or row['category'] or ''
+            # קטגוריה חופשית (עבור מה) — נשמרת לרשימה קבועה לשימוש חוזר
+            BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
+            if cat and cat not in BASE_CATS:
+                cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
             PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
             if cat in PKIND:
                 # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
