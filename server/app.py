@@ -1251,12 +1251,14 @@ class H(BaseHTTPRequestHandler):
                             (did, diso, row['amount'], cat, pay_method, 'ייבוא ' + pay_method + (' · הוראת קבע' if row['recurring'] else '')))
             if row['recurring']:
                 cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
-            # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל
+            # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל, שבוע לפני הלילה
             if cat == 'פרנס לילה' and diso >= '2026-08':
                 dn = cur.execute("SELECT last, first FROM donors WHERE id=?", (did,)).fetchone()
                 nm = ((dn['last'] + ' ' + (dn['first'] or '')).strip()) if dn else ''
+                _pdue = week_before(b.get('date_text', '')) or today_iso()
+                if _pdue < today_iso(): _pdue = today_iso()
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                            (did, today_iso(), 'parnes', '🌙 לעשות פרנס לילה — ' + nm))
+                            (did, _pdue, 'parnes', '🌙 לעשות פרנס לילה — ' + nm))
             cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'donor_id': did})

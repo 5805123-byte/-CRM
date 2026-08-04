@@ -1284,14 +1284,16 @@ function renderTasksTab(){
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   let all=[];
   const isDone=t=>!!(t.done&&t.done!=0);
-  DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(isDone(t)!==showDone)return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
-  GTASKS.forEach(t=>{if(isDone(t)!==showDone)return;all.push({...t,donor:'',dref:null});});   // משימות חופשיות בלי תורם
+  // פרנס יום מופיע במשימות רק כשמגיע שבוע לפני הלילה (תאריך התזכורת = שבוע לפני), לא חודשים מראש
+  const hideParnes=t=>t.kind==='parnes'&&!isDone(t)&&t.due_date&&t.due_date>today;
+  DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(isDone(t)!==showDone||hideParnes(t))return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
+  GTASKS.forEach(t=>{if(isDone(t)!==showDone||hideParnes(t))return;all.push({...t,donor:'',dref:null});});   // משימות חופשיות בלי תורם
   if(flt) all=all.filter(t=>t.kind===flt);
   if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   // ספירת משימות פתוחות לכל אחד (מאיר=ריק, אהרן)
-  const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0))openAll.push(t);}));GTASKS.forEach(t=>{if(!(t.done&&t.done!=0))openAll.push(t);});
+  const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);}));GTASKS.forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);});
   const cnt=w=>openAll.filter(t=>w===''?true:(w==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===w)).length;
   const WHO=[['','📋 הכל'],['מאיר','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
   const inWho=taskWho==='אהרן'?'אהרן':(taskWho==='מאיר'?'מאיר':'');
