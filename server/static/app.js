@@ -95,6 +95,18 @@ function toastUndo(msg,undoFn){
   const b=toastEl.querySelector('.undobtn');if(b)b.onclick=async()=>{clearTimeout(_undoTimer);toastEl.classList.remove('show');await undoFn();};
   _undoTimer=setTimeout(()=>{toastEl.classList.remove('show');},6000);
 }
+// אישור בתוך האפליקציה — confirm() של הדפדפן חסום לעיתים באפליקציה המותקנת (PWA)
+function uiConfirm(msg){
+  return new Promise(res=>{
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm">${esc(msg).replace(/\n/g,'<br>')}</div><div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">אישור</button></div></div>`;
+    document.body.appendChild(o);
+    const done=v=>{o.remove();res(v);};
+    o.querySelector('.cno').onclick=()=>done(false);
+    o.querySelector('.cyes').onclick=()=>done(true);
+    o.onclick=e=>{if(e.target===o)done(false);};
+  });
+}
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
 // ערוצי חיוב — תג צבעוני מובחן לכל ערוץ (בצבעי המותג)
@@ -410,7 +422,7 @@ function renderCardTasks(d){
       <div class="cti"><div>${icon} ${esc(t.note||'')}${t.assignee?` <span class="kvtag">${esc(t.assignee)}</span>`:''}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')}</div></div>
       <button class="del ctdel" data-id="${t.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
   el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await api('PUT','/api/task/'+t.id,{done:1});t.done=1;renderCardTasks(d);checkReminders();toastUndo('בוצע ✓',async()=>{await api('PUT','/api/task/'+t.id,{done:0});t.done=0;renderCardTasks(d);checkReminders();});});
-  el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
+  el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
 }
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
 function cardBuilding(d,body){
@@ -488,17 +500,23 @@ function cardDetails(d,body){
     mgres.innerHTML=m.map(x=>`<div class="dpr" data-id="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}${x.phone?(' · '+esc(splitPhones(x.phone)[0])):''}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     mgres.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
       const other=DB.find(x=>x.id==el.dataset.id);if(!other)return;
-      if(!confirm('למזג את "'+(other.last+' '+other.first).trim()+'" (#'+other.id+') לתוך "'+(d.last+' '+d.first).trim()+'"?\nהכפול יימחק וכל הנתונים יעברו לכאן.'))return;
+      if(!await uiConfirm('למזג את "'+(other.last+' '+other.first).trim()+'" (#'+other.id+') לתוך "'+(d.last+' '+d.first).trim()+'"?\nהכפול יימחק וכל הנתונים יעברו לכאן.'))return;
       await api('POST','/api/merge',{keep:d.id,drop:other.id});toast('מוזג ✓');ov.classList.remove('show');await load();openDonor(DB.find(x=>x.id===d.id));});
   };
   const FF=['last','first','english','tier','category','purpose','amount','frequency','email','addr','city','country','zip','business','region','channel'];
   wireFields(d,FF);
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
   renderPhones(d);
-  document.getElementById('f_delete').onclick=async()=>{
-    if(!confirm('למחוק את "'+(d.last+' '+d.first).trim()+'" לצמיתות?\n\nיימחקו גם כל התרומות, הקוויטל, האברכים והשטרות שלו. אי אפשר לבטל.'))return;
-    if(!confirm('בטוח? זו פעולה שאי אפשר לבטל.'))return;
-    await api('DELETE','/api/donor/'+d.id);DB=DB.filter(x=>x.id!==d.id);ov.classList.remove('show');toast('התורם נמחק');render();
+  // מחיקה בשתי לחיצות (confirm של הדפדפן חסום לפעמים באפליקציה המותקנת)
+  const delBtn=document.getElementById('f_delete'); let delArmed=false, delTimer=null;
+  delBtn.onclick=async()=>{
+    if(!delArmed){
+      delArmed=true; delBtn.textContent='⚠️ בטוח? לחץ שוב כדי למחוק לצמיתות'; delBtn.classList.add('armed');
+      delTimer=setTimeout(()=>{delArmed=false;delBtn.textContent='מחיקת תורם לצמיתות';delBtn.classList.remove('armed');},4000);
+      return;
+    }
+    clearTimeout(delTimer); delBtn.disabled=true; delBtn.textContent='מוחק…';
+    await api('DELETE','/api/donor/'+d.id); DB=DB.filter(x=>x.id!==d.id); ov.classList.remove('show'); toast('התורם נמחק ✓'); render();
   };
 }
 function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
@@ -916,11 +934,11 @@ function renderKvUnlinked(){
       <div class="unlsearch hidden" data-id="${p.id}"><input class="unlq" placeholder="🔍 חפש תורם קיים…" autocomplete="off"><div class="dpres unlres"></div></div>
     </div>`).join('')||'<div class="empty">🎉 אין לא־משויכים</div>'}`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
-  view.querySelectorAll('.unldel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את השם הזה מהקוויטל?'))return;await api('DELETE','/api/prayer/'+b.dataset.id);UNLINKED=UNLINKED.filter(x=>x.id!=b.dataset.id);renderKvUnlinked();toast('נמחק');});
+  view.querySelectorAll('.unldel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את השם הזה מהקוויטל?'))return;await api('DELETE','/api/prayer/'+b.dataset.id);UNLINKED=UNLINKED.filter(x=>x.id!=b.dataset.id);renderKvUnlinked();toast('נמחק');});
   view.querySelectorAll('.unlnew').forEach(b=>b.onclick=async()=>{
     const p=UNLINKED.find(x=>x.id==b.dataset.id);if(!p)return;
     const parts=(p.name||'').trim().split(/\s+/);const last=parts[0]||p.name||'—',first=parts.slice(1).join(' ');
-    if(!confirm('ליצור כרטיס תורם חדש בשם "'+esc((last+' '+first).trim())+'" ולשייך אליו את השם?'))return;
+    if(!await uiConfirm('ליצור כרטיס תורם חדש בשם "'+esc((last+' '+first).trim())+'" ולשייך אליו את השם?'))return;
     const r=await api('POST','/api/donor',{last:last,first:first,tier:p.tier||'קוויטל_שבועי'});
     await api('PUT','/api/prayer/'+p.id,{donor_id:r.id});
     toast('נוצר כרטיס ושויך ✓');await load();kvSub='unlinked';render();});
@@ -929,7 +947,7 @@ function renderKvUnlinked(){
     inp.oninput=()=>{const s=norm(inp.value);if(!s){res.innerHTML='';return;}
       const m=DB.filter(x=>norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,8);
       res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
-      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{const dd=DB.find(x=>x.id==el.dataset.did);if(!dd)return;if(!confirm('לשייך את השם ל"'+(dd.last+' '+dd.first).trim()+'"?'))return;await api('PUT','/api/prayer/'+pid,{donor_id:dd.id});toast('שויך ✓');await load();kvSub='unlinked';render();});
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{const dd=DB.find(x=>x.id==el.dataset.did);if(!dd)return;if(!await uiConfirm('לשייך את השם ל"'+(dd.last+' '+dd.first).trim()+'"?'))return;await api('PUT','/api/prayer/'+pid,{donor_id:dd.id});toast('שויך ✓');await load();kvSub='unlinked';render();});
     };});
 }
 function renderKvMissing(){
@@ -1325,7 +1343,7 @@ function renderTasksTab(){
   // עריכת / מחיקת משימה
   view.querySelectorAll('.tedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=view.querySelector('.teditpanel[data-panel="'+b.dataset.i+'"]');if(p)p.classList.toggle('hidden');});
   view.querySelectorAll('.tsave').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];const note=view.querySelector('.tnote[data-i="'+b.dataset.i+'"]').value.trim(),date=view.querySelector('.tdate2[data-i="'+b.dataset.i+'"]').value;await api('PUT','/api/task/'+t.id,{note:note,due_date:date});t.note=note;t.due_date=date;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec){rec.note=note;rec.due_date=date;}toast('נשמר ✓');render();});
-  view.querySelectorAll('.tdel').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];if(!confirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+t.id);if(t.dref)t.dref.tasks=(t.dref.tasks||[]).filter(x=>x.id!==t.id);else GTASKS=GTASKS.filter(x=>x.id!==t.id);toast('נמחק');render();checkReminders();});
+  view.querySelectorAll('.tdel').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+t.id);if(t.dref)t.dref.tasks=(t.dref.tasks||[]).filter(x=>x.id!==t.id);else GTASKS=GTASKS.filter(x=>x.id!==t.id);toast('נמחק');render();checkReminders();});
   view.querySelectorAll('.tparnes').forEach(b=>b.onclick=()=>{const t=all[b.dataset.i],p=taskParnes(t);if(!p){toast('לא נמצא פרנס');return;}tab='parnes';pyKind=p.kind||'parnes';pyMonth=p.month;pyDay=+p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();});
   // משימה חדשה — חיפוש ובחירת תורם
   let ntChosen=null;
