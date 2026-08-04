@@ -816,7 +816,9 @@ class H(BaseHTTPRequestHandler):
                         x['match_addr'] = d['addr'] or ''
                         x['match_cat'] = d['category'] or ''
                         x['match_tier'] = d['tier'] or ''
-                        x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026'", (r['donor_id'],)).fetchone()[0]
+                        # תרומות סיכום 2026 קיימות — לפי שיטה. Authorize יוחלף אוטומטית; אחר דורש בדיקה
+                        x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND method='Authorize'", (r['donor_id'],)).fetchone()[0]
+                        x['match_summary_other'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND COALESCE(method,'')<>'Authorize'", (r['donor_id'],)).fetchone()[0]
                 out.append(x)
             con.close()
             return self._send(200, out)
@@ -1029,6 +1031,10 @@ class H(BaseHTTPRequestHandler):
             BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
             if cat and cat not in BASE_CATS:
                 cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+            # מניעת כפילות מול קובץ הסיכום 2026: רשומת סיכום Authorize לאותו תורם+חודש
+            # מוחלפת ע"י העסקה המדויקת (אותו כסף בדיוק — Authorize↔Authorize)
+            if diso and did:
+                cur.execute("DELETE FROM donations WHERE donor_id=? AND date=? AND note='ייבוא 2026' AND method='Authorize'", (did, diso))
             PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
             if cat in PKIND:
                 # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
@@ -1039,7 +1045,7 @@ class H(BaseHTTPRequestHandler):
                              _ng.isoformat() if _ng else '', b.get('hyear', ''), 'Authorize'))
             else:
                 cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
-                            (did, diso, row['amount'], cat, 'Authorize', 'התאמת יולי 2026' + (' · הוראת קבע' if row['recurring'] else '')))
+                            (did, diso, row['amount'], cat, 'Authorize', 'ייבוא Authorize' + (' · הוראת קבע' if row['recurring'] else '')))
             if row['recurring']:
                 cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
             # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל
