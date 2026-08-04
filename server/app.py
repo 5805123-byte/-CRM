@@ -297,6 +297,26 @@ def ensure_schema():
             print(f'  ייבוא תרומות 2026: נוספו {n} תרומות')
     except Exception as e:
         print('  שגיאת ייבוא 2026:', e)
+    # תיקון כפילות: תרומת סיכום Authorize שכבר קיים לה חיוב אמיתי (אותו תורם+חודש) — נמחקת
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='authorize_dedup_v1'").fetchone():
+            cur = con.execute("""DELETE FROM donations WHERE note='ייבוא 2026' AND method='Authorize' AND id IN (
+                SELECT s.id FROM donations s WHERE s.note='ייבוא 2026' AND s.method='Authorize'
+                AND EXISTS(SELECT 1 FROM donations r WHERE r.donor_id=s.donor_id AND r.date=s.date
+                           AND r.note<>'ייבוא 2026' AND r.method='Authorize'))""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('authorize_dedup_v1')")
+            print(f'  ניקוי כפילות Authorize↔סיכום: נמחקו {cur.rowcount} תרומות')
+    except Exception as e:
+        print('  שגיאת dedup Authorize:', e)
+    # תיקון קטגוריה: תרומות סיכום שסומנו "יששכר־זבולון" אך התורם אינו יש"ז (tier) — לקבוע
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='summary_iz_fix_v1'").fetchone():
+            cur = con.execute("""UPDATE donations SET category='קבוע' WHERE note='ייבוא 2026' AND category='יששכר־זבולון'
+                AND donor_id IN (SELECT id FROM donors WHERE COALESCE(tier,'')<>'יששכר_זבולון')""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('summary_iz_fix_v1')")
+            print(f'  תיקון קטגוריה סיכום (יש"ז->קבוע ללא-יש"ז): {cur.rowcount} תרומות')
+    except Exception as e:
+        print('  שגיאת תיקון קטגוריה:', e)
     # מיטמן מאיר (#337): תשלומי $585 הם לרכב כולל חצות, לא יששכר־זבולון (רץ אחרי ייבוא התרומות)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_585_car_v2'").fetchone():
@@ -744,7 +764,7 @@ def get_all():
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency'}
+                'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency','months'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""

@@ -127,7 +127,7 @@ function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return
 async function load(){
   const d = await api('GET','/api/data');
   DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; HEBYEAR = d.heb_year || '';
-  GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&x.months[i]==='p').length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
+  GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   render();
   checkReminders();
@@ -344,8 +344,11 @@ function purpRowHTML(first){
   </div>`;
 }
 
-function gaps(m){if(!m)return [];const f=m.indexOf('p');if(f<0)return[];const g=[];for(let i=f;i<=GLAST;i++)if(m[i]!=='p')g.push(i);return g;}
-function monthGrid(m){if(!m)return '';const f=m.indexOf('p');return `<div class="mgrid">${MON.map((l,i)=>{let c;if(m[i]==='p')c='gp';else if(f>=0&&i>=f&&i<=GLAST)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
+// 'p'=עבר · 'c'=נגבה ידנית · 'h'=טופל/הוסר · '-'=חסר
+function _firstPaid(m){for(let i=0;i<m.length;i++)if(m[i]==='p'||m[i]==='c')return i;return -1;}
+function gaps(m){if(!m)return [];const f=_firstPaid(m);if(f<0)return[];const g=[];for(let i=f;i<=GLAST;i++)if(m[i]!=='p'&&m[i]!=='c'&&m[i]!=='h')g.push(i);return g;}
+function monthGrid(m){if(!m)return '';const f=_firstPaid(m);return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c='gp';else if(ch==='h')c='gh';else if(f>=0&&i>=f&&i<=GLAST)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
+function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('');a[i]=ch;return a.join('');}
 
 let cardTab='details';
 function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
@@ -1062,16 +1065,36 @@ function renderPlaque(){
 }
 
 /* ---------- לא עבר ---------- */
+const PKLBL={parnes:'🌙 פרנס לילה',coffee:'☕ חדר קפה',breakfast:'🍳 ארוחת בוקר'};
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
   const missed=q1.filter(d=>gaps(d.months).length>0).sort((a,b)=>gaps(b.months).length-gaps(a.months).length);
-  const debts=[];q1.forEach(d=>(d.pledges||[]).forEach(p=>{if(p.status!=='נתן')debts.push({d,p});}));
+  // חובות = התחייבויות (pledges) שטרם ניתנו + פרנס־יום שהתחייב וטרם נגבה (paid=0)
+  const debts=[];
+  q1.forEach(d=>{
+    (d.pledges||[]).forEach(p=>{if(p.status!=='נתן')debts.push({d,label:esc(p.category||'התחייבות'),amount:p.amount,method:'',kind:'pledge',id:p.id});});
+    (d.parnes||[]).forEach(p=>{if(!Number(p.paid)&&(p.status==='confirmed'||!p.status))debts.push({d,label:(PKLBL[p.kind]||'🕯️ פרנס')+(p.date_text?(' · '+esc(p.date_text)):''),amount:p.amount,method:p.method||'',kind:'parnes',id:p.id});});
+  });
   view.innerHTML=`
     <div class="misshead">🔴 חובות והתחייבויות שטרם שולמו (${debts.length})</div>
-    <div class="list">${debts.map(({d,p})=>`<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">${esc(p.category)} ${p.amount?('· $'+esc(p.amount)):''} — טרם שולם</div></div><div class="meta"><span class="pill" style="background:var(--no-soft);color:var(--no)">חוב</span></div></div>`).join('')||'<div class="hintxt">אין חובות פתוחים 🎉</div>'}</div>
+    <div class="list">${debts.map((x,ix)=>`<div class="rowc"><div class="rowmain" data-id="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${x.label} ${x.amount?('· $'+esc(x.amount)):''}${x.method?(' · <span class="pmeth">'+esc(x.method)+'</span>'):''} — <b style="color:var(--no)">טרם נגבה</b></div></div><div class="meta"><button class="btn sm collectbtn" data-ix="${ix}">✓ נגבה</button></div></div>`).join('')||'<div class="hintxt">אין חובות פתוחים 🎉</div>'}</div>
     <div class="misshead" style="margin-top:16px">🔴 חודשים שלא עברו (${missed.length})</div>
-    <div class="list">${missed.map(d=>{const g=gaps(d.months);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>MON[i]).join(', ')}</div></div><div class="meta">${monthGrid(d.months)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
-  view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+    <div class="submuted">לחץ על חודש כדי לסמן שנגבה · "הסר שורה" מסמן שטופל</div>
+    <div class="list">${missed.map(d=>{const g=gaps(d.months);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
+  view.querySelectorAll('.rowmain').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  // סימון חוב/התחייבות כנגבה
+  view.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async e=>{e.stopPropagation();const x=debts[+b.dataset.ix];
+    if(x.kind==='parnes'){const p=(x.d.parnes||[]).find(y=>y.id==x.id);await api('PUT','/api/parnes/'+x.id,{paid:1});if(p)p.paid=1;
+      toastUndo('נגבה ✓',async()=>{await api('PUT','/api/parnes/'+x.id,{paid:0});if(p)p.paid=0;renderMissed();});}
+    else{const p=(x.d.pledges||[]).find(y=>y.id==x.id);if(p){const prev=p.status;p.status='נתן';await api('PUT','/api/pledge/'+p.id,p);
+      toastUndo('נגבה ✓',async()=>{p.status=prev;await api('PUT','/api/pledge/'+p.id,p);renderMissed();});}}
+    renderMissed();});
+  // סימון חודש בודד כנגבה
+  view.querySelectorAll('.gchip').forEach(c=>c.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==c.dataset.id);const i=+c.dataset.m;const prev=d.months;d.months=setMonthChar(d.months,i,'c');await api('PUT','/api/donor/'+d.id,{months:d.months});
+    toastUndo(MON[i]+' — נגבה ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});renderMissed();});renderMissed();});
+  // הסרת שורה — סימון כל הפספוסים כ"טופל"
+  view.querySelectorAll('.missdismiss').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.id);const prev=d.months;let nm=d.months;gaps(nm).forEach(i=>nm=setMonthChar(nm,i,'h'));d.months=nm;await api('PUT','/api/donor/'+d.id,{months:nm});
+    toastUndo('הוסר ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});renderMissed();});renderMissed();});
 }
 
 /* ---------- אברכים (יששכר־זבולון) ---------- */
