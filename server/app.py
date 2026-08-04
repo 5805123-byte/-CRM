@@ -792,14 +792,16 @@ def ensure_schema():
         print('  שגיאת כתובות v2:', e)
     # פיצול כתובות ארה"ב מאוחדות למשבצות נפרדות: רחוב+מספר / עיר / מדינה / מיקוד
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addr_split_v2'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addr_split_v3'").fetchone():
             todo = con.execute("SELECT id,addr,city,country,zip,region FROM donors WHERE COALESCE(addr,'')<>''").fetchall()
             n = 0
             for d in todo:
                 addr = d['addr'] or ''
                 if (d['region'] or '') == 'il':
                     continue
-                if re.search(r'[\u0590-\u05ff]', d['addr'] or ''):   # כתובת עברית — לא נוגעים
+                if re.search(r',\s*IL\s*$', addr) or 'ישראל' in addr:   # ישראל בסוף (לא מבלבל עם אילינוי) — לא נוגעים
+                    continue
+                if re.search(r'[\u0590-\u05ff]', addr.split(':::')[0].split(',')[0]):   # רחוב בעברית
                     continue
                 if not re.search(r'\b\d{5}(?:-\d{4})?\b', addr):     # אין מיקוד — כנראה רחוב בלבד
                     continue
@@ -813,7 +815,7 @@ def ensure_schema():
                 if zp and not (d['zip'] or '').strip(): sets.append('zip=?'); vals.append(zp)
                 con.execute("UPDATE donors SET " + ",".join(sets) + " WHERE id=?", vals + [d['id']])
                 n += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('addr_split_v2')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('addr_split_v3')")
             print(f'  פיצול כתובות ארה"ב: {n}')
     except Exception as e:
         print('  שגיאת פיצול כתובות:', e)
@@ -886,12 +888,16 @@ RECON_GROUPS = [
     ('donorsfund','דונרס פאנד / OJC', '🎗️'),
 ]
 def split_us_addr(addr):
-    """מפרק כתובת ארה"ב מאוחדת ל(רחוב+מספר, עיר, מדינה, מיקוד, ארץ)."""
+    """מפרק כתובת ארה"ב מאוחדת ל(רחוב+מספר, עיר, מדינה, מיקוד, ארץ).
+    בכתובת כפולה (מופרדת ב-:::) בוחר את החלק המלא (עם מיקוד) ומתעלם מהכפילות."""
     segs = [s.strip() for s in (addr or '').split(':::') if s.strip()]
-    a = segs[0].strip().strip(',').strip() if segs else ''
+    if not segs:
+        return '', '', '', '', ''
+    a = next((s for s in segs if re.search(r'\b\d{5}\b', s)), segs[0]).strip().strip(',').strip()
     parts = [p.strip() for p in a.split(',') if p.strip()]
     country = state = zipc = city = ''
-    if parts and re.fullmatch(r'(US|U\.?S\.?A\.?|USA|IL|ISRAEL|CANADA|UK)', parts[-1].upper().replace(' ', '')):
+    if parts and (re.fullmatch(r'(US|U\.?S\.?A\.?|USA|IL|ISRAEL|CANADA|UK)', parts[-1].upper().replace(' ', ''))
+                  or parts[-1].strip() in ('ארצות הברית', 'ארה"ב', 'ארה״ב', 'ארהב', 'ישראל', 'קנדה')):
         country = parts.pop().upper().replace('.', '').replace(' ', '')
     if parts:
         if re.fullmatch(r'\d{5}(?:-\d{4})?', parts[-1]):
@@ -905,9 +911,6 @@ def split_us_addr(addr):
     if parts:
         city = parts.pop()
     street = ', '.join(parts)
-    tail = ' ::: '.join(segs[1:])
-    if tail:
-        street = (street + ' ::: ' + tail).strip(' :')
     if not street and city:
         street = city; city = ''
     return street, city, state, zipc, country
