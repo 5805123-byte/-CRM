@@ -790,6 +790,34 @@ def ensure_schema():
             print(f'  כתובות פסיק v2: תוקנו {fixed}')
     except Exception as e:
         print('  שגיאת כתובות v2:', e)
+    # פיצול כתובות ארה"ב מאוחדות למשבצות נפרדות: רחוב+מספר / עיר / מדינה / מיקוד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addr_split_v2'").fetchone():
+            todo = con.execute("SELECT id,addr,city,country,zip,region FROM donors WHERE COALESCE(addr,'')<>''").fetchall()
+            n = 0
+            for d in todo:
+                addr = d['addr'] or ''
+                if (d['region'] or '') == 'il':
+                    continue
+                if re.search(r'[\u0590-\u05ff]', d['addr'] or ''):   # כתובת עברית — לא נוגעים
+                    continue
+                if not re.search(r'\b\d{5}(?:-\d{4})?\b', addr):     # אין מיקוד — כנראה רחוב בלבד
+                    continue
+                st, ci, state, zp, co = split_us_addr(addr)
+                if not st:
+                    continue
+                mdina = state or (co if co and co not in ('US', 'USA') else '')
+                sets = ['addr=?']; vals = [st]                       # הרחוב תמיד מנוקה
+                if ci and not (d['city'] or '').strip(): sets.append('city=?'); vals.append(ci)
+                if mdina and not (d['country'] or '').strip(): sets.append('country=?'); vals.append(mdina)
+                if zp and not (d['zip'] or '').strip(): sets.append('zip=?'); vals.append(zp)
+                con.execute("UPDATE donors SET " + ",".join(sets) + " WHERE id=?", vals + [d['id']])
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('addr_split_v2')")
+            print(f'  פיצול כתובות ארה"ב: {n}')
+    except Exception as e:
+        print('  שגיאת פיצול כתובות:', e)
+
     con.commit(); con.close()
 
 def get_all():
@@ -857,6 +885,33 @@ RECON_GROUPS = [
     ('transfers', 'העברות בנקאיות וזל', '🔁'),
     ('donorsfund','דונרס פאנד / OJC', '🎗️'),
 ]
+def split_us_addr(addr):
+    """מפרק כתובת ארה"ב מאוחדת ל(רחוב+מספר, עיר, מדינה, מיקוד, ארץ)."""
+    segs = [s.strip() for s in (addr or '').split(':::') if s.strip()]
+    a = segs[0].strip().strip(',').strip() if segs else ''
+    parts = [p.strip() for p in a.split(',') if p.strip()]
+    country = state = zipc = city = ''
+    if parts and re.fullmatch(r'(US|U\.?S\.?A\.?|USA|IL|ISRAEL|CANADA|UK)', parts[-1].upper().replace(' ', '')):
+        country = parts.pop().upper().replace('.', '').replace(' ', '')
+    if parts:
+        if re.fullmatch(r'\d{5}(?:-\d{4})?', parts[-1]):
+            zipc = parts.pop()
+        else:
+            m = re.search(r'\s(\d{5}(?:-\d{4})?)$', parts[-1])
+            if m:
+                zipc = m.group(1); parts[-1] = parts[-1][:m.start()].strip()
+    if parts and re.fullmatch(r'[A-Za-z]{2}|N\.?Y\.?|[A-Za-z]\.[A-Za-z]\.?', parts[-1].strip()):
+        state = parts.pop().replace('.', '').upper()
+    if parts:
+        city = parts.pop()
+    street = ', '.join(parts)
+    tail = ' ::: '.join(segs[1:])
+    if tail:
+        street = (street + ' ::: ' + tail).strip(' :')
+    if not street and city:
+        street = city; city = ''
+    return street, city, state, zipc, country
+
 def recon_group(s):
     s = (s or '').lower()
     if 'authorize' in s: return 'authorize'
@@ -1145,23 +1200,26 @@ class H(BaseHTTPRequestHandler):
                 cur.execute("UPDATE recon SET processed=1 WHERE tid=?", (tid,)); con.commit(); con.close()
                 return self._send(200, {'ok': True, 'skipped': True})
             did = b.get('donor_id')
-            full_addr = ', '.join(p for p in [row['addr'], row['city'], row['state'], row['zip']] if p)
+            r_state = row['state'] or ''         # מדינה (NY וכו') נשמרת בשדה "מדינה"
+            r_src = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
             if b.get('new_donor'):
                 nd = b['new_donor']
-                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,category,created,source)
-                               VALUES(?,?,?,?,?,?,?,?, 'Authorize')""",
+                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
-                             row['phone'], row['email'], full_addr, b.get('category', ''), today_iso()))
+                             row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
+                             b.get('category', ''), today_iso(), r_src))
                 did = cur.lastrowid
             if not did:
                 con.close(); return self._send(400, {'error': 'donor required'})
-            # מילוי אוטומטי של שם אנגלי אם חסר בכרטיס (מיזוג השם מ-Authorize)
+            # מילוי אוטומטי של שם אנגלי אם חסר בכרטיס (מיזוג השם מהייבוא)
             if not b.get('new_donor'):
                 en = (row['first'] + ' ' + row['last']).strip()
                 if en:
                     cur.execute("UPDATE donors SET english=? WHERE id=? AND COALESCE(TRIM(english),'')=''", (en, did))
-            if b.get('update_addr') and full_addr:
-                cur.execute("UPDATE donors SET addr=? WHERE id=?", (full_addr, did))
+            if b.get('update_addr') and (row['addr'] or row['city'] or row['zip']):
+                cur.execute("UPDATE donors SET addr=?, city=?, country=?, zip=? WHERE id=?",
+                            (row['addr'] or '', row['city'] or '', r_state, row['zip'] or '', did))
             # תאריך: '01-Jul-2026' -> '2026-07'
             MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
             dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
