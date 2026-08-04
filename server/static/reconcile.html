@@ -116,7 +116,20 @@ function missingMonths(txs){
   return out;
 }
 
-async function load(){ [DATA, CAMPAIGNS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns')]); render(); }
+// סינון לפי מקור (משבצת נפרדת לכל שיטת תשלום)
+const SRC = new URLSearchParams(location.search).get('src') || '';
+function srcGroup(s){ s=(s||'').toLowerCase();
+  if(s.includes('authorize')) return 'authorize';
+  if(s.includes('banquest')||s.includes('ווסט')) return 'banquest';
+  if(s.includes('check')||s.includes('צ׳ק')||s.includes("צ'ק")) return 'checks';
+  if(s.includes('zelle')||s.includes('transfer')||s.includes('ach')||s.includes('העבר')||s.includes('זל')) return 'transfers';
+  if(s.includes('donors')||s.includes('ojc')) return 'donorsfund';
+  return 'other'; }
+const SRCLABEL={authorize:'אוטרייז',banquest:'בנק ווסט',checks:'צ׳קים',transfers:'העברות בנקאיות וזל',donorsfund:'דונרס פאנד / OJC'};
+
+async function load(){ [DATA, CAMPAIGNS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns')]);
+  if(SRC){ DATA=DATA.filter(x=>srcGroup(x.source)===SRC); const h=document.querySelector('h1'); if(h&&SRCLABEL[SRC]) h.textContent='💳 טיפול והתאמת תרומות — '+SRCLABEL[SRC]; }
+  render(); }
 
 function groupKey(x){ return norm(x.first+' '+x.last); }
 

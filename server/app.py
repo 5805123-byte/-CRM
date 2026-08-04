@@ -849,6 +849,23 @@ def get_all():
     con.close()
     return donors, unlinked, general_tasks
 
+# קיבוץ מקורות ההתאמה למשבצות נפרדות בדף החיובים
+RECON_GROUPS = [
+    ('authorize', 'אוטרייז', '💳'),
+    ('banquest',  'בנק ווסט', '🏦'),
+    ('checks',    'צ׳קים', '🧾'),
+    ('transfers', 'העברות בנקאיות וזל', '🔁'),
+    ('donorsfund','דונרס פאנד / OJC', '🎗️'),
+]
+def recon_group(s):
+    s = (s or '').lower()
+    if 'authorize' in s: return 'authorize'
+    if 'banquest' in s or 'ווסט' in s: return 'banquest'
+    if 'check' in s or 'צ׳ק' in s or "צ'ק" in s or 'צ״ק' in s: return 'checks'
+    if 'zelle' in s or 'transfer' in s or 'ach' in s or 'העבר' in s or 'זל' in s: return 'transfers'
+    if 'donors' in s or 'ojc' in s: return 'donorsfund'
+    return 'other'
+
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
                 'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency','months'}
@@ -930,6 +947,17 @@ class H(BaseHTTPRequestHandler):
                 out.append(x)
             con.close()
             return self._send(200, out)
+        if self.path.split('?')[0] == '/api/recon/summary':
+            con = db(); agg = {}
+            for r in con.execute("SELECT source, processed, status FROM recon"):
+                g = recon_group(r['source']); a = agg.setdefault(g, {'pending': 0, 'done': 0, 'total': 0})
+                a['total'] += 1
+                settled = (not r['status']) or r['status'] == 'settled'
+                if r['processed']: a['done'] += 1
+                elif settled: a['pending'] += 1
+            con.close()
+            groups = [{'key': k, 'label': l, 'icon': ic, **agg.get(k, {'pending': 0, 'done': 0, 'total': 0})} for k, l, ic in RECON_GROUPS]
+            return self._send(200, groups)
         if self.path.split('?')[0] == '/api/campaigns':
             con = db()
             rows = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]

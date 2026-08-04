@@ -748,11 +748,19 @@ function renderCharges(){
   rows=rows.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.t.category||'')));
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
-  view.innerHTML=`<a class="btn addbig" href="/reconcile" target="_blank" style="text-decoration:none;display:block;text-align:center">💳 טיפול והתאמת תרומות — אוטרייז ובנק ווסט (ינואר–אוגוסט 2026)</a>
+  view.innerHTML=`<div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
+    <div id="reconboxes" class="reconboxes"></div>
     <div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
     `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  // משבצת נפרדת לכל שיטת תשלום — נטענת מסיכום ההתאמה
+  api('GET','/api/recon/summary').then(gs=>{const box=document.getElementById('reconboxes');if(!box||!Array.isArray(gs))return;
+    box.innerHTML=gs.map(g=>{const active=g.total>0;
+      return `<a class="reconbox ${active?'act':'empty'}" ${active?`href="/reconcile?src=${g.key}" target="_blank" rel="noopener"`:''}>
+        <div class="rb-t">${g.icon} ${esc(g.label)}</div>
+        <div class="rb-s">${active?('<b>'+g.pending+'</b> לטיפול · '+g.done+' טופלו'):'יעלה כשתשלח את הקובץ'}</div></a>`;}).join('');
+  });
 }
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
