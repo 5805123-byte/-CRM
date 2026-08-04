@@ -22,13 +22,16 @@
   .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;width:100%}
   .stand{font-size:1em;font-weight:600;margin-bottom:.15em;width:100%}
   .pair{width:100%;margin:.15em 0 .35em;position:relative}
-  .names{font-size:2.3em;font-weight:800;line-height:1.14;color:#000;width:100%}
+  .names{font-size:2.3em;font-weight:800;line-height:1.14;color:#000;width:100%;white-space:pre-line}
   .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
+  /* השם ושם האם — גדולים; בן/בת, ז"ל/ע"ה, והבקשה — קטנים */
+  .names .nbig,.cnames .nbig{font-size:1em;font-weight:800}
+  .names .nsm,.cnames .nsm{font-size:.5em;font-weight:600}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
   .ctitle{font-size:2.5em;font-weight:800;color:var(--deep);width:100%;margin:.1em 0 .25em}
   .cdedic{font-size:1.42em;font-weight:800;color:var(--deep);width:100%;margin-bottom:.4em;letter-spacing:.005em}
-  .cnames{font-size:2.35em;font-weight:800;line-height:1.28;color:#000;width:100%;margin:.15em 0 .4em}
+  .cnames{font-size:2.35em;font-weight:800;line-height:1.28;color:#000;width:100%;margin:.15em 0 .4em;white-space:pre-line}
   .cclose{font-size:1em;line-height:1.4;font-weight:600;width:100%}
   .rm{display:none}
   @media screen{.rm{display:block;position:absolute;inset-inline-start:-1.5em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.rm:hover{opacity:1}}
@@ -68,6 +71,35 @@ const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
 
+// ----- הדגשת שם + שם האם (גדול) מול בן/בת, כינויים והבקשה (קטן) -----
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const HONOR=/^(ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|שליט["'״׳]א|נ["'״׳]י|שתחי['׳]|שיחי['׳]|תחי['׳]|הכהן|הלוי|הי["'״׳]ו)$/;
+const PREFIX=/^(לעילוי|לע["'״׳]נ|נשמת|לזכר|לזכרון|לרפואת|לרפואה|לזרע|האשה|האישה|האיש|החשוב|החשובה|היקר|היקרה|מרת|מר|הרב|הרה["'״׳]ח|רבי|ר['׳]|הבחור|הבחורה|הילד|הילדה|החתן|הכלה|כמר|מוה["'״׳]ר|מוהר["'״׳]ר|הר["'״׳]ר)$/;
+const REQWORD=/^(הצלחה|בריאות|פרנסה|רפואה|רפו["'״׳]ש|ישועה|ישועות|זיווג|זווג|דעת|שלום|זרע|אריכות|ברכה|עשירות|שידוך|שידוכים|הרווחה|נחת|בנים|חתונה|סייעתא|וזוג["'״׳]?|הכל)/;
+function isReqStart(w){ return HONOR.test(w) || REQWORD.test(w) || /^ל.+/.test(w); }
+function formatName(line){
+  const t=(line||'').trim(); if(!t) return '';
+  const toks=t.split(/\s+/);
+  const big=s=>`<span class="nbig">${esc(s)}</span>`, sm=s=>`<span class="nsm">${esc(s)}</span>`;
+  let ci=-1; for(let i=0;i<toks.length;i++){ if(toks[i]==='בן'||toks[i]==='בת'){ci=i;break;} }
+  if(ci<0) return big(t);                                   // אין בן/בת — כל השורה שם
+  const pre=toks.slice(0,ci); let p=0; while(p<pre.length && PREFIX.test(pre[p])) p++;
+  const prefix=pre.slice(0,p).join(' ');                    // "לעילוי נשמת האשה החשובה" — קטן
+  let name=pre.slice(p).join(' ') || pre[pre.length-1] || '';// השם עצמו — גדול
+  let mi=ci+1; const mom=[];                                // שם האם — עד 2 מילים, עצירה בבקשה/כינוי/פסיק
+  while(mi<toks.length && mom.length<2){ const w=toks[mi]; if(isReqStart(w)) break; mom.push(w); mi++; if(/[,־]$/.test(w)) break; }
+  const rest=toks.slice(mi).join(' ');                      // הבקשה + כינויים — קטן
+  let out=(prefix?sm(prefix)+' ':'')+(name?big(name)+' ':'')+sm(toks[ci]);
+  if(mom.length) out+=' '+big(mom.join(' '));
+  if(rest) out+=' '+sm(rest);
+  return out;
+}
+function formatLines(text){ return String(text||'').split('\n').map(formatName).join('\n'); }
+function wireFmt(el){
+  el.addEventListener('focus',()=>{ el.textContent=el.innerText; });      // עריכה בטקסט רגיל
+  el.addEventListener('blur',()=>{ el.innerHTML=formatLines(el.innerText); fit(); });
+}
+
 const CFG = {
   parnes:    {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'11%'},
   coffee:    {bg:'/letterhead-coffee.jpg',  top:'24%',  left:'9%',  right:'9%', bottom:'21%'},
@@ -100,7 +132,8 @@ if(KIND==='coffee' || KIND==='breakfast'){
      <div class="cnames" contenteditable="true" id="c_names" data-ph="השמות"></div>
      </div>`;
   if(q.get('date')) $('c_date').textContent=q.get('date');
-  if(q.get('names')) $('c_names').textContent=q.get('names');
+  if(q.get('names')) $('c_names').innerHTML=formatLines(q.get('names'));
+  wireFmt($('c_names'));
   wire($('content'));
 } else {
   // ----- תעודת פרנס לילה -----
@@ -117,7 +150,9 @@ if(KIND==='coffee' || KIND==='breakfast'){
     const wrap=document.createElement('div'); wrap.className='pair';
     wrap.innerHTML='<button class="rm" title="הסר">✕</button>'+
       '<div class="names" contenteditable="true" data-ph="השם"></div>';
-    if(name) wrap.querySelector('.names').textContent=name;
+    const nd=wrap.querySelector('.names');
+    if(name) nd.innerHTML=formatLines(name);
+    wireFmt(nd);
     wrap.querySelector('.rm').onclick=()=>{ wrap.remove(); fit(); };
     wire(wrap); $('pairs').appendChild(wrap); fit();
   };
