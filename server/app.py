@@ -611,7 +611,7 @@ def ensure_schema():
     # קוויטל v4 — סיד מלא (שמות מ-Notes וגם מ-Custom Field) + התאמה רופפת לוריאנטים באיות (גאלד≈גולד)
     try:
         seedall = os.path.join(HERE, 'kvittel_all_seed.json')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v4'").fetchone() and os.path.exists(seedall):
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v5'").fetchone() and os.path.exists(seedall):
             PRIO = {'יששכר_זבולון': 3, 'קוויטל_101': 2, 'קוויטל_שבועי': 1, 'קוויטל_כללי': 0, '': 0}
             FIN = str.maketrans('םןץףך', 'מנצפכ')
             def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
@@ -662,10 +662,10 @@ def ensure_schema():
                 elif notes:
                     con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(NULL,?,?,?)", (e.get('display') or (e.get('last', '') + ' ' + e.get('first', '')).strip(), notes, tt))
                     unlinked += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_all_v4')")
-            print(f'  קוויטל v4: הותאמו {matched} (רופף {loose}), שמות חדשים {imported}, דרגות {retier}, לא־משויכים {unlinked}')
+            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_all_v5')")
+            print(f'  קוויטל v5: הותאמו {matched} (רופף {loose}), שמות חדשים {imported}, דרגות {retier}, לא־משויכים {unlinked}')
     except Exception as e:
-        print('  שגיאת קוויטל v4:', e)
+        print('  שגיאת קוויטל v5:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
