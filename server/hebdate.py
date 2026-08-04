@@ -93,8 +93,19 @@ def heb_greg_year(date_text, hyear):
     except Exception:
         return None
 
-def future_parnes(date_text, hyear, n=3):
-    """אותו יום עברי (יום+חודש) בשנים הבאות. מחזיר [(שם-שנה-עברי, 'YYYY-MM-DD'), ...]."""
+def _cur_heb_year_num(today=None):
+    if not OK:
+        return 0
+    import datetime
+    t = today or datetime.date.today()
+    try:
+        return dates.GregorianDate(t.year, t.month, t.day).to_heb().year
+    except Exception:
+        return 0
+
+def future_parnes(date_text, hyear, n=3, today=None):
+    """אותו יום עברי (יום+חודש) בשנים הבאות — החל מהשנה שאחרי הנוכחית (לא לפני תשפ״ז).
+    מחזיר [(שם-שנה-עברי, 'YYYY-MM-DD'), ...]."""
     if not OK:
         return []
     txt = re.sub(r'[\"\']', '', str(date_text or '')).strip()
@@ -105,10 +116,12 @@ def future_parnes(date_text, hyear, n=3):
     base = heb_year_num(hyear)
     if not m or not (1 <= d <= 30) or not base:
         return []
+    cur = _cur_heb_year_num(today)
+    start = max(base, cur) + 1   # אף פעם לא השנה הנוכחית או קודמת — מתחיל מהשנה הבאה (תשפ״ז והלאה)
     out = []
-    for k in range(1, n + 1):
+    for yr in range(start, start + n):
         try:
-            hd = dates.HebrewDate(base + k, m, d)
+            hd = dates.HebrewDate(yr, m, d)
             ys = hd.hebrew_date_string().split()[-1]
             out.append((ys, hd.to_pydate().isoformat()))
         except Exception:
