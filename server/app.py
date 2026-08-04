@@ -223,7 +223,7 @@ def ensure_schema():
     # ייבוא Authorize ינואר–אוגוסט 2026 (חוץ מיולי) לדף ההתאמה — התאמה בזמן ריצה + מילוי שם אנגלי/כתובת
     try:
         ap = os.path.join(HERE, 'authorize_janaug_seed.json')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_janaug2026_v1'").fetchone() and os.path.exists(ap):
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_janaug2026_v2'").fetchone() and os.path.exists(ap):
             def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
             def _ne(s): return re.sub(r'\s+', ' ', (s or '').lower().strip())
             donors = [dict(r) for r in con.execute("SELECT id,last,first,english,email,phone,addr FROM donors")]
@@ -244,9 +244,9 @@ def ensure_schema():
                     nm = _ne(x['first'] + ' ' + x['last'])
                     if nm and nm in byeng: did = byeng[nm]
                 con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,recurring,donor_id,category,processed,source,status)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Authorize 01-08-2026','settled')""",
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Authorize 01-08-2026',?)""",
                             (x['tid'], x['first'], x['last'], x['amount'], x['date'], x['addr'], x['city'], x['state'],
-                             x['zip'], x['phone'], x['email'], x['recurring'], did, x.get('category', '')))
+                             x['zip'], x['phone'], x['email'], x['recurring'], did, x.get('category', ''), x.get('status', 'settled')))
                 nr += 1
                 if did:
                     matched += 1
@@ -258,7 +258,7 @@ def ensure_schema():
                         fulladdr = ', '.join([p for p in [x['addr'], x['city'], (x['state'] + ' ' + x['zip']).strip(), 'US'] if p])
                         con.execute("UPDATE donors SET addr=? WHERE id=? AND COALESCE(TRIM(addr),'')=''", (fulladdr, did))
                         d['addr'] = fulladdr; fad += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('recon_janaug2026_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_janaug2026_v2')")
             print(f'  Authorize ינו-אוג: נטענו {nr}, הותאמו {matched}, שם-אנגלי {fen}, כתובות {fad}')
     except Exception as e:
         print('  שגיאת Authorize ינו-אוג:', e)

@@ -196,7 +196,8 @@ function groupCard(k,txs){
     let opts=CATS.map(c=>`<option value="${esc(c)}" ${c===cur?'selected':''}>${c||'— עבור מה? —'}</option>`).join('');
     if(CAMPAIGNS.length) opts+='<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.map(c=>`<option value="${esc(c)}" ${c===cur?'selected':''}>${esc(c)}</option>`).join('')+'</optgroup>';
     opts+=`<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>`;
-    const stlbl = t.status==='declined'?'🔴 נדחה — לא עבר':(t.status==='voided'?'🔴 בוטל — לא עבר':'');
+    const STLBL={declined:'🔴 נדחה — לא עבר',error:'🔴 שגיאה — לא עבר',voided:'🔴 בוטל — לא עבר',refund:'↩️ הוחזר'};
+    const stlbl = STLBL[t.status]||'🔴 לא עבר';
     return `<div class="txn ${failed?'failed':''}" data-tid="${esc(t.tid)}">
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
       ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
