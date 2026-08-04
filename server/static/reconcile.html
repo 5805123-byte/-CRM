@@ -79,8 +79,9 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let DATA = [], FILT = 'pending', CAMPAIGNS = [];
-const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי'];
+let DATA = [], FILT = 'pending', CAMPAIGNS = [], BUILDING_ITEMS = [];
+const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','בניין'];
+const isBldg=c=>/בנין|בניין/.test(c||'');
 // שינוי קוויטל/קטגוריה של התורם ישירות מכאן — בלי להיכנס לכרטיס
 const TIEROPTS = [['','— בלי קוויטל —'],['יששכר_זבולון','יששכר־זבולון'],['קוויטל_101','כל לילה'],['קוויטל_כללי','כללי']];
 const DCATS = ['','קבוע','מזדמן','פרנס יום','בניין/הקדשה','חד-פעמי'];
@@ -127,7 +128,7 @@ function srcGroup(s){ s=(s||'').toLowerCase();
   return 'other'; }
 const SRCLABEL={authorize:'אוטרייז',banquest:'בנק ווסט',checks:'צ׳קים',transfers:'העברות בנקאיות וזל',donorsfund:'דונרס פאנד / OJC'};
 
-async function load(){ [DATA, CAMPAIGNS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns')]);
+async function load(){ [DATA, CAMPAIGNS, BUILDING_ITEMS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns'), api('GET','/api/building_items')]);
   if(SRC){ DATA=DATA.filter(x=>srcGroup(x.source)===SRC); const h=document.querySelector('h1'); if(h&&SRCLABEL[SRC]) h.textContent='💳 טיפול והתאמת תרומות — '+SRCLABEL[SRC]; }
   render(); }
 
@@ -155,7 +156,7 @@ function render(){
   entries.sort((a,b)=>a[0].localeCompare(b[0]));
   const list = $('#list');
   if(!entries.length){ list.innerHTML='<div class="done-msg">🎉 אין פריטים בקטגוריה הזו</div>'; return; }
-  list.innerHTML = entries.map(([k,txs])=>groupCard(k,txs)).join('');
+  list.innerHTML = entries.map(([k,txs])=>groupCard(k,txs)).join('') + `<datalist id="bldgdl">${BUILDING_ITEMS.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
   entries.forEach(([k,txs])=>wireGroup(k,txs));
 }
 
@@ -215,7 +216,7 @@ function groupCard(k,txs){
     return `<div class="txn ${failed?'failed':''}" data-tid="${esc(t.tid)}">
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
       ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
-      ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
+      ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit"><input class="bldgitem" list="bldgdl" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:${isBldg(cur)?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
       ${(!failed&&!t.processed)?(()=>{const show=is480||PARNES_CATS.includes(t.category||'');return `<div class="pypick" style="display:${show?'flex':'none'};gap:6px;width:100%;margin-top:5px">
         <select class="pymon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
         <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
@@ -259,7 +260,11 @@ function wireGroup(k,txs){
     [nl,nf].forEach(inp=>inp.oninput=()=>{ if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } });
   }
   // הצגת שדה שמות פרנס כשבוחרים קטגוריית פרנס
-  card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded'),pick=txEl.querySelector('.pypick'),nc=txEl.querySelector('.newcat');if(sel)sel.addEventListener('change',()=>{const isNew=sel.value==='__new__';if(nc){nc.style.display=isNew?'block':'none';if(isNew)nc.focus();}const on=PARNES_CATS.includes(sel.value);if(ded)ded.style.display=on?'block':'none';if(pick)pick.style.display=on?'flex':'none';});});
+  card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded'),pick=txEl.querySelector('.pypick'),nc=txEl.querySelector('.newcat'),bl=txEl.querySelector('.bldgitem');
+    const toggleBldg=v=>{if(bl)bl.style.display=isBldg(v)?'block':'none';};
+    if(sel)sel.addEventListener('change',()=>{const isNew=sel.value==='__new__';if(nc){nc.style.display=isNew?'block':'none';if(isNew)nc.focus();}const on=PARNES_CATS.includes(sel.value);if(ded)ded.style.display=on?'block':'none';if(pick)pick.style.display=on?'flex':'none';toggleBldg(isNew?(nc?nc.value:''):sel.value);});
+    if(nc)nc.addEventListener('input',()=>toggleBldg(nc.value));   // כשמקלידים קטגוריית בניין חופשית
+  });
   const btn=card.querySelector('.btn.go'); if(!btn) return;
   btn.onclick=async()=>{
     if(!state.donorId && !state.createNew){ toast('בחר תורם קיים או מלא שם משפחה לכרטיס חדש'); return; }
@@ -277,6 +282,7 @@ function wireGroup(k,txs){
         if(!catVal){ toast('כתוב עבור מה, או בחר קטגוריה'); btn.disabled=false; btn.textContent='✓ הכנס את כל התרומות'; return; }
         if(!CAMPAIGNS.includes(catVal)){ await api('POST','/api/campaigns',{name:catVal}); CAMPAIGNS.unshift(catVal); }
       }
+      if(isBldg(catVal)){const bl=txEl.querySelector('.bldgitem');const item=bl?bl.value.trim():'';if(item){if(!BUILDING_ITEMS.includes(item)){await api('POST','/api/building_items',{name:item});BUILDING_ITEMS.unshift(item);}catVal=catVal+' — '+item;}}
       const dedEl=txEl.querySelector('.pyded');
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
