@@ -79,7 +79,7 @@ Object.assign($('content').style, {top:cfg.top, left:cfg.left, right:cfg.right, 
 
 function fit(){
   const c = $('content'), body = document.getElementById('cbody');
-  const avail = c.clientHeight - 8; if(avail<=0 || !body) return;  // שוליים קטנים לקצוות
+  const avail = c.clientHeight - 14; if(avail<=0 || !body) return;  // שוליים קטנים לקצוות
   let lo=6, hi=380, best=6;
   for(let i=0;i<24;i++){ const mid=(lo+hi)/2; c.style.fontSize=mid+'px';
     // מדידת גובה העוטף הפנימי — לא scrollHeight (שנחסם ע"י גובה המסגרת)
@@ -126,6 +126,8 @@ if(KIND==='coffee' || KIND==='breakfast'){
 }
 
 window.addEventListener('resize', fit);
+window.addEventListener('load', fit);            // אחרי טעינת רקע הבלאנק
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(fit).then(()=>setTimeout(fit,60));  // אחרי טעינת הגופן (מונע חיתוך למעלה)
 fit();
 </script>
 </body>
