@@ -579,6 +579,64 @@ def ensure_schema():
             print(f'  קוויטל v3: הותאמו {matched}, דרגות {retier}, שמות {imported}')
     except Exception as e:
         print('  שגיאת קוויטל v3:', e)
+    # קוויטל v4 — סיד מלא (שמות מ-Notes וגם מ-Custom Field) + התאמה רופפת לוריאנטים באיות (גאלד≈גולד)
+    try:
+        seedall = os.path.join(HERE, 'kvittel_all_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v4'").fetchone() and os.path.exists(seedall):
+            PRIO = {'יששכר_זבולון': 3, 'קוויטל_101': 2, 'קוויטל_שבועי': 1, 'קוויטל_כללי': 0, '': 0}
+            FIN = str.maketrans('םןץףך', 'מנצפכ')
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _h(s):   # נירמול בסיסי — מתעלם מא/ה/ע ואיות כפול
+                s = re.sub(r'[^\u0590-\u05ff]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            def _h2(s):  # נירמול רופף — גם ו/י (אימות קריאה) וסופיות (גאלד↔גולד)
+                s = _h(s).translate(FIN).replace('ו', '').replace('י', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
+            for d in donors:
+                d['_l'] = _h(d['last']); d['_f'] = _h(d['first']); d['_l2'] = _h2(d['last']); d['_f2'] = _h2(d['first'])
+            entries = json.load(open(seedall, encoding='utf-8'))
+            # רענון רשימת הלא־משויכים מהסיד (מהייבוא בלבד) לפני הרצה מחדש
+            con.execute("DELETE FROM prayers WHERE donor_id IS NULL AND tier IN ('קוויטל_שבועי','קוויטל_101','יששכר_זבולון','קוויטל_כללי')")
+            matched = imported = retier = unlinked = loose = 0
+            for e in entries:
+                emails = [x.lower() for x in (e.get('emails') or [])]
+                phones = [x for x in (e.get('phones') or []) if x]
+                el, ef = _h(e.get('last')), _h(e.get('first'))
+                el2, ef2 = _h2(e.get('last')), _h2(e.get('first'))
+                hit = None; via = ''
+                for d in donors:
+                    dphs = [_d7(p) for p in re.split(r'[/,]', d['phone'] or '') if _d7(p)]
+                    if phones and any(p in dphs for p in phones): hit = d; via = 'phone'; break
+                if not hit and emails:
+                    for d in donors:
+                        if (d['email'] or '').strip().lower() in emails and d['email']: hit = d; via = 'email'; break
+                if not hit and el and ef:   # התאמה מדויקת שם משפחה + תחילת שם פרטי
+                    for d in donors:
+                        if d['_l'] == el and (d['_f'].startswith(ef) or ef.startswith(d['_f'])): hit = d; via = 'name'; break
+                if not hit and el2 and ef2:  # התאמה רופפת (וריאנט איות) — שם משפחה רופף + שם פרטי רופף
+                    cand = [d for d in donors if d['_l2'] == el2 and (d['_f2'].startswith(ef2) or ef2.startswith(d['_f2']))]
+                    if len(cand) == 1: hit = cand[0]; via = 'loose'; loose += 1
+                if not hit and el2:          # שם משפחה רופף ייחודי
+                    cand = [d for d in donors if d['_l2'] == el2]
+                    if len(cand) == 1: hit = cand[0]; via = 'loose-last'; loose += 1
+                tt = 'יששכר_זבולון' if e.get('isiz') else ('קוויטל_101' if e.get('is101') else 'קוויטל_שבועי')
+                notes = (e.get('notes') or '').strip()
+                if hit:
+                    matched += 1
+                    cur = hit['tier'] or ''
+                    if PRIO.get(tt, 1) > PRIO.get(cur, 0):
+                        con.execute("UPDATE donors SET tier=? WHERE id=?", (tt, hit['id'])); hit['tier'] = tt; retier += 1
+                    if notes and not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (hit['id'],)).fetchone():
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (hit['id'], notes, hit['tier'] or tt))
+                        imported += 1
+                elif notes:
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(NULL,?,?,?)", (e.get('display') or (e.get('last', '') + ' ' + e.get('first', '')).strip(), notes, tt))
+                    unlinked += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_all_v4')")
+            print(f'  קוויטל v4: הותאמו {matched} (רופף {loose}), שמות חדשים {imported}, דרגות {retier}, לא־משויכים {unlinked}')
+    except Exception as e:
+        print('  שגיאת קוויטל v4:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
