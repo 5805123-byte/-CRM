@@ -65,6 +65,56 @@ def current_heb_year(today=None):
     except Exception:
         return ''
 
+_GY = {'א':1,'ב':2,'ג':3,'ד':4,'ה':5,'ו':6,'ז':7,'ח':8,'ט':9,'י':10,'כ':20,'ך':20,
+       'ל':30,'מ':40,'ם':40,'נ':50,'ן':50,'ס':60,'ע':70,'פ':80,'ף':80,'צ':90,'ץ':90,
+       'ק':100,'ר':200,'ש':300,'ת':400}
+
+def heb_year_num(s):
+    """שם שנה עברי ('תשפ״ו') -> מספר (5786). מחזיר 0 אם לא ניתן."""
+    s = re.sub(r'[^א-ת]', '', s or '')
+    if not s:
+        return 0
+    n = sum(_GY.get(c, 0) for c in s)
+    return 5000 + n if n < 1000 else n
+
+def heb_greg_year(date_text, hyear):
+    """תאריך לועזי מדויק ליום עברי בשנה עברית נתונה (למשל 'ג׳ אב' + 'תשפ״ו'). None אם לא ניתן."""
+    if not OK:
+        return None
+    txt = re.sub(r'[\"\']', '', str(date_text or '')).strip()
+    parts = txt.split()
+    if len(parts) < 2:
+        return None
+    d = _day(parts[0]); mon = ' '.join(parts[1:]).strip(); m = HMONTHS.get(mon); yr = heb_year_num(hyear)
+    if not m or not (1 <= d <= 30) or not yr:
+        return None
+    try:
+        return dates.HebrewDate(yr, m, d).to_pydate()
+    except Exception:
+        return None
+
+def future_parnes(date_text, hyear, n=3):
+    """אותו יום עברי (יום+חודש) בשנים הבאות. מחזיר [(שם-שנה-עברי, 'YYYY-MM-DD'), ...]."""
+    if not OK:
+        return []
+    txt = re.sub(r'[\"\']', '', str(date_text or '')).strip()
+    parts = txt.split()
+    if len(parts) < 2:
+        return []
+    d = _day(parts[0]); mon = ' '.join(parts[1:]).strip(); m = HMONTHS.get(mon)
+    base = heb_year_num(hyear)
+    if not m or not (1 <= d <= 30) or not base:
+        return []
+    out = []
+    for k in range(1, n + 1):
+        try:
+            hd = dates.HebrewDate(base + k, m, d)
+            ys = hd.hebrew_date_string().split()[-1]
+            out.append((ys, hd.to_pydate().isoformat()))
+        except Exception:
+            pass
+    return out
+
 def week_before(text, today=None):
     """תאריך התזכורת — 7 ימים לפני הלילה. מחזיר 'YYYY-MM-DD' או None."""
     g = heb_to_greg(text, today)

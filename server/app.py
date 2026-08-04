@@ -6,7 +6,7 @@ from urllib.parse import quote
 def today_iso():
     return datetime.date.today().isoformat()
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg
+from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
@@ -1186,7 +1186,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
-            _ng = heb_to_greg(b.get('date_text', ''))
+            # תאריך לועזי מדויק לפי השנה העברית שנבחרה; נפילה לחישוב המופע הקרוב אם אין שנה
+            _ng = heb_greg_year(b.get('date_text', ''), b.get('hyear', '')) or heb_to_greg(b.get('date_text', ''))
             cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else '', b.get('hyear',''), b.get('method','')))
             pid = cur.lastrowid
@@ -1197,8 +1198,22 @@ class H(BaseHTTPRequestHandler):
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
                             (b.get('donor_id'), due, 'parnes', 'פרנס יום ' + b.get('date_text','') + ' — הכן הדפסה וצור קשר'))
                 tid = cur.lastrowid
+            # הצעות אוטומטיות לשנים הבאות — אותו יום עברי, כ"הצעה" שטרם נגבתה
+            suggestions = []
+            if b.get('status', 'confirmed') != 'suggested' and b.get('hyear'):
+                for ys, gd in future_parnes(b.get('date_text', ''), b.get('hyear', ''), 3):
+                    if cur.execute("SELECT 1 FROM parnes WHERE donor_id=? AND kind=? AND date_text=? AND hyear=?",
+                                   (b.get('donor_id'), b.get('kind', 'parnes'), b.get('date_text', ''), ys)).fetchone():
+                        continue
+                    cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'suggested',0,?,?,?)",
+                                (b.get('donor_id'), b.get('day', 0), b.get('month', ''), b.get('date_text', ''), b.get('amount', ''),
+                                 b.get('dedication', ''), b.get('kind', 'parnes'), gd, ys, b.get('method', '')))
+                    suggestions.append({'id': cur.lastrowid, 'donor_id': b.get('donor_id'), 'day': b.get('day', 0),
+                                        'month': b.get('month', ''), 'date_text': b.get('date_text', ''), 'amount': b.get('amount', ''),
+                                        'dedication': b.get('dedication', ''), 'kind': b.get('kind', 'parnes'), 'status': 'suggested',
+                                        'paid': 0, 'night_date': gd, 'hyear': ys, 'method': b.get('method', '')})
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due})
+            return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due, 'suggestions': suggestions})
         if self.path == '/api/prayer':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",
