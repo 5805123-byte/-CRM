@@ -262,6 +262,35 @@ def ensure_schema():
             print(f'  Authorize ינו-אוג: נטענו {nr}, הותאמו {matched}, שם-אנגלי {fen}, כתובות {fad}')
     except Exception as e:
         print('  שגיאת Authorize ינו-אוג:', e)
+    # ---- בנק ווסט (Banquest) ינואר–אוגוסט 2026: מיזוג "עברו"+"נדחו", התאמה לפי שם אנגלי ----
+    try:
+        bp = os.path.join(HERE, 'banquest_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_banquest_v1'").fetchone() and os.path.exists(bp):
+            def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+            donors = [dict(r) for r in con.execute("SELECT id,english FROM donors")]
+            byeng = {}; bylast = {}
+            for d in donors:
+                if d['english']:
+                    byeng.setdefault(_ne(d['english']), d['id'])
+                    toks = d['english'].split()
+                    if toks: bylast.setdefault(_ne(toks[-1]), []).append(d['id'])
+            con.execute("DELETE FROM recon WHERE source='Banquest 01-08-2026' AND COALESCE(processed,0)=0")
+            nr = matched = 0
+            for x in json.load(open(bp, encoding='utf-8')):
+                did = byeng.get(_ne(x['name']))
+                if not did:
+                    toks = x['name'].split()
+                    cand = bylast.get(_ne(toks[-1]), []) if toks else []
+                    if len(cand) == 1: did = cand[0]
+                con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,recurring,donor_id,category,processed,source,status)
+                               VALUES(?,?,?,?,?,'','','','','','',?,?,?,0,'Banquest 01-08-2026',?)""",
+                            (x['tid'], x['first'], x['last'], x['amount'], x['date'], x['recurring'], did, x.get('category', ''), x.get('status', 'settled')))
+                nr += 1
+                if did: matched += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_banquest_v1')")
+            print(f'  Banquest ינו-אוג: נטענו {nr}, הותאמו {matched}')
+    except Exception as e:
+        print('  שגיאת Banquest:', e)
     # רשימת ייעודים/מגביות חופשית (עבור מה) — זריעת דוגמאות שהמשתמש הזכיר
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -894,9 +923,10 @@ class H(BaseHTTPRequestHandler):
                         x['match_addr'] = d['addr'] or ''
                         x['match_cat'] = d['category'] or ''
                         x['match_tier'] = d['tier'] or ''
-                        # תרומות סיכום 2026 קיימות — לפי שיטה. Authorize יוחלף אוטומטית; אחר דורש בדיקה
-                        x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND method='Authorize'", (r['donor_id'],)).fetchone()[0]
-                        x['match_summary_other'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND COALESCE(method,'')<>'Authorize'", (r['donor_id'],)).fetchone()[0]
+                        # תרומות סיכום 2026 קיימות — לפי אמצעי ההתאמה. אותו אמצעי יוחלף אוטומטית; אחר דורש בדיקה
+                        _pm = 'Banquest' if 'Banquest' in (r['source'] or '') else 'Authorize'
+                        x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND method=?", (r['donor_id'], _pm)).fetchone()[0]
+                        x['match_summary_other'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND COALESCE(method,'')<>?", (r['donor_id'], _pm)).fetchone()[0]
                 out.append(x)
             con.close()
             return self._send(200, out)
@@ -1109,10 +1139,12 @@ class H(BaseHTTPRequestHandler):
             BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
             if cat and cat not in BASE_CATS:
                 cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
-            # מניעת כפילות מול קובץ הסיכום 2026: רשומת סיכום Authorize לאותו תורם+חודש
-            # מוחלפת ע"י העסקה המדויקת (אותו כסף בדיוק — Authorize↔Authorize)
+            # אמצעי התשלום לפי מקור ההתאמה (Authorize / Banquest / בנק ווסט)
+            pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
+            # מניעת כפילות מול קובץ הסיכום 2026: רשומת סיכום באותו אמצעי, לאותו תורם+חודש,
+            # מוחלפת ע"י העסקה המדויקת (אותו כסף בדיוק)
             if diso and did:
-                cur.execute("DELETE FROM donations WHERE donor_id=? AND date=? AND note='ייבוא 2026' AND method='Authorize'", (did, diso))
+                cur.execute("DELETE FROM donations WHERE donor_id=? AND date=? AND note='ייבוא 2026' AND method=?", (did, diso, pay_method))
             PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
             if cat in PKIND:
                 # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
@@ -1120,10 +1152,10 @@ class H(BaseHTTPRequestHandler):
                 _ng = heb_to_greg(dtext) if dtext else None
                 cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'confirmed',1,?,?,?)",
                             (did, b.get('day', 0), b.get('month', ''), dtext, row['amount'], b.get('dedication', ''), PKIND[cat],
-                             _ng.isoformat() if _ng else '', b.get('hyear', ''), 'Authorize'))
+                             _ng.isoformat() if _ng else '', b.get('hyear', ''), pay_method))
             else:
                 cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
-                            (did, diso, row['amount'], cat, 'Authorize', 'ייבוא Authorize' + (' · הוראת קבע' if row['recurring'] else '')))
+                            (did, diso, row['amount'], cat, pay_method, 'ייבוא ' + pay_method + (' · הוראת קבע' if row['recurring'] else '')))
             if row['recurring']:
                 cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
             # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל

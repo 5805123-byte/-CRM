@@ -159,9 +159,10 @@ function groupCard(k,txs){
   const missHtml=miss.length?('<div class="missbox">'+miss.map(x=>`🔴 הוראת קבע $${x.amt} — כנראה לא עברה בחודשים: <b>${x.miss.map(m=>HEMON[m]).join(', ')}</b>`).join('<br>')+'</div>'):'';
   let matchHtml;
   if(matched){
+    const srcM=/Banquest|ווסט/.test(txs[0].source||'')?'בנק ווסט':'Authorize';
     let dupWarn='';
-    if(matched.match_summary>0) dupWarn+=`<div class="dupok">✓ יש ${matched.match_summary} תרומות סיכום Authorize בכרטיס — יוחלפו אוטומטית בייבוא (ללא כפילות)</div>`;
-    if(matched.match_summary_other>0) dupWarn+=`<div class="dupwarn">⚠️ יש גם ${matched.match_summary_other} תרומות סיכום בשיטה אחרת (בנק/צ׳ק/זל) — נשמרות. ודא שאינן אותו כסף</div>`;
+    if(matched.match_summary>0) dupWarn+=`<div class="dupok">✓ יש ${matched.match_summary} תרומות סיכום ${srcM} בכרטיס — יוחלפו אוטומטית בייבוא (ללא כפילות)</div>`;
+    if(matched.match_summary_other>0) dupWarn+=`<div class="dupwarn">⚠️ יש גם ${matched.match_summary_other} תרומות סיכום בשיטה אחרת — נשמרות. ודא שאינן אותו כסף</div>`;
     matchHtml=`<div class="match ok" data-did="${matched.donor_id}">✓ מותאם לכרטיס: <a class="cardlink" href="/?donor=${matched.donor_id}" target="_blank" rel="noopener"><b>${esc(matched.match_name||'')}</b> ↗</a>
       <button class="btn sm ghost changebtn" style="float:left;padding:3px 9px">🔄 שנה תורם</button>
       ${dupWarn}
