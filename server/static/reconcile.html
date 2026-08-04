@@ -26,6 +26,7 @@
   .match .cardlink{color:var(--accent);text-decoration:underline;font-weight:800}
   .dupwarn{background:#fff4d6;border:1px solid #e6c65c;color:#8a6a00;border-radius:8px;padding:6px 9px;margin-top:8px;font-size:.82rem;font-weight:700;clear:both}
   .dupok{background:#eaf6ee;border:1px solid #bfe3c9;color:#1e6b3a;border-radius:8px;padding:6px 9px;margin-top:8px;font-size:.82rem;font-weight:700;clear:both}
+  .missbox{background:#fdeee9;border:1px solid #f2b8a6;color:#a3341a;border-radius:8px;padding:7px 10px;margin:8px 0;font-size:.85rem;font-weight:700}
   .match .inlineedit{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;clear:both}
   .match .inlineedit label{font-size:.8rem;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:5px}
   .match .inlineedit select{padding:6px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink);font-weight:700}
@@ -94,6 +95,26 @@ function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');se
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function norm(s){return (s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+const MONIDX={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+const HEMON=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+function txMonth(d){const m=/^(\d{2})-([A-Za-z]{3})-(\d{4})/.exec(d||'');return m?MONIDX[m[2]]:null;}
+// זיהוי חודשים חסרים בהוראת קבע — לכל סכום קבוע שחוזר, איתור פערים בין החודש הראשון לאחרון
+// נוכחות נספרת מכל חיוב באותו סכום (גם חד־פעמי) — כך שחודש ששולם בתאריך אחר לא נחשב חסר
+function missingMonths(txs){
+  const settled=txs.filter(t=>!t.status||t.status==='settled');
+  const recAmts={};
+  settled.filter(t=>t.recurring).forEach(t=>{const a=Math.round(parseFloat(t.amount||0));const mi=txMonth(t.date);if(mi==null||!a)return;(recAmts[a]=recAmts[a]||new Set()).add(mi);});
+  const out=[];
+  Object.keys(recAmts).forEach(amt=>{
+    if(recAmts[amt].size<2) return;
+    const present=new Set();
+    settled.forEach(t=>{if(Math.round(parseFloat(t.amount||0))==+amt){const mi=txMonth(t.date);if(mi!=null)present.add(mi);}});
+    const arr=[...recAmts[amt]].sort((a,b)=>a-b), lo=arr[0], hi=arr[arr.length-1], miss=[];
+    for(let m=lo;m<=hi;m++) if(!present.has(m)) miss.push(m);
+    if(miss.length) out.push({amt:+amt, miss});
+  });
+  return out;
+}
 
 async function load(){ [DATA, CAMPAIGNS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns')]); render(); }
 
@@ -134,6 +155,8 @@ function groupCard(k,txs){
   const total = settled.reduce((s,t)=>s+parseFloat(t.amount||0),0);
   let head = `<div class="gname">${esc((t0.first+' '+t0.last).trim())}</div>
     <div class="gsum">${settled.length} עברו · סה"כ $${total.toFixed(2)}${failedN?(' · <span style="color:var(--no)">'+failedN+' לא עברו</span>'):''}${t0.email?(' · '+esc(t0.email)):''}</div>`;
+  const miss=missingMonths(txs);
+  const missHtml=miss.length?('<div class="missbox">'+miss.map(x=>`🔴 הוראת קבע $${x.amt} — כנראה לא עברה בחודשים: <b>${x.miss.map(m=>HEMON[m]).join(', ')}</b>`).join('<br>')+'</div>'):'';
   let matchHtml;
   if(matched){
     let dupWarn='';
@@ -186,7 +209,7 @@ function groupCard(k,txs){
     </div>`;
   }).join('');
   return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
-    ${head}${matchHtml}${assign}${addrHtml}${rows}
+    ${head}${missHtml}${matchHtml}${assign}${addrHtml}${rows}
     ${allDone?'':`<button class="btn go">✓ הכנס את כל התרומות של ${esc((t0.first+' '+t0.last).trim())}</button>`}
   </div>`;
 }
