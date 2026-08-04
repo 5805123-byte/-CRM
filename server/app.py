@@ -819,6 +819,31 @@ def ensure_schema():
             print(f'  פיצול כתובות ארה"ב: {n}')
     except Exception as e:
         print('  שגיאת פיצול כתובות:', e)
+    # מילוי "ערוץ חיוב" אוטומטי לפי אמצעי התשלום בתרומות (Banquest→בנק ווסט, Authorize→אותורייז וכו')
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='autochannel_v1'").fetchone():
+            import collections
+            M2C = {'banquest': 'בנק_ווסט', 'בנק ווסט': 'בנק_ווסט', 'authorize': 'אותורייז',
+                   'checks': 'צק', 'check': 'צק', 'zelle': 'Zelle', 'ach': 'העברה_בנקאית',
+                   'bank transfer': 'העברה_בנקאית', 'העברה בנקאית': 'העברה_בנקאית',
+                   'donors fund': 'דונורס_פאנד', 'ojc': 'OJC', 'נדרים': 'נדרים', 'pledger': 'Pledger'}
+            methods = collections.defaultdict(collections.Counter)
+            for r in con.execute("SELECT donor_id, method FROM donations WHERE COALESCE(method,'')<>''"):
+                ch = M2C.get((r['method'] or '').strip().lower())
+                if ch and r['donor_id']:
+                    methods[r['donor_id']][ch] += 1
+            nch = npm = 0
+            for did, cnt in methods.items():
+                ch = cnt.most_common(1)[0][0]
+                dr = con.execute("SELECT channel FROM donors WHERE id=?", (did,)).fetchone()
+                if dr and not (dr['channel'] or '').strip():
+                    con.execute("UPDATE donors SET channel=? WHERE id=?", (ch, did)); nch += 1
+                cur2 = con.execute("UPDATE partners SET method=? WHERE donor_id=? AND active<>0 AND COALESCE(method,'')=''", (ch, did))
+                npm += cur2.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('autochannel_v1')")
+            print(f'  ערוץ חיוב אוטומטי: תורמים {nch}, אברכים {npm}')
+    except Exception as e:
+        print('  שגיאת ערוץ חיוב:', e)
 
     con.commit(); con.close()
 
@@ -1234,6 +1259,11 @@ class H(BaseHTTPRequestHandler):
                 cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
             # אמצעי התשלום לפי מקור ההתאמה (Authorize / Banquest / בנק ווסט)
             pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
+            # מילוי ערוץ החיוב בכרטיס (ובאברכים) לפי אמצעי התשלום — אוטומטית
+            _chan = {'Authorize': 'אותורייז', 'Banquest': 'בנק_ווסט'}.get(pay_method, '')
+            if _chan and did:
+                cur.execute("UPDATE donors SET channel=? WHERE id=? AND COALESCE(channel,'')=''", (_chan, did))
+                cur.execute("UPDATE partners SET method=? WHERE donor_id=? AND active<>0 AND COALESCE(method,'')=''", (_chan, did))
             # מניעת כפילות מול קובץ הסיכום 2026: רשומת סיכום באותו אמצעי, לאותו תורם+חודש,
             # מוחלפת ע"י העסקה המדויקת (אותו כסף בדיוק)
             if diso and did:
