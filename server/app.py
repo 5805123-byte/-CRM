@@ -42,6 +42,7 @@ def ensure_schema():
         addr TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, email TEXT, recurring INTEGER DEFAULT 0,
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT')]:
@@ -1000,8 +1001,9 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/api/data':
             donors, unlinked, general_tasks = get_all()
-            con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]; con.close()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'heb_year': current_heb_year()})
+            con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
+            bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]; con.close()
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'heb_year': current_heb_year()})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
@@ -1044,6 +1046,11 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/campaigns':
             con = db()
             rows = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
+            con.close()
+            return self._send(200, rows)
+        if self.path.split('?')[0] == '/api/building_items':
+            con = db()
+            rows = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
             con.close()
             return self._send(200, rows)
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
@@ -1208,6 +1215,11 @@ class H(BaseHTTPRequestHandler):
             nm = (b.get('name') or '').strip()
             if nm:
                 con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'name': nm})
+        if self.path == '/api/building_items':
+            nm = (b.get('name') or '').strip()
+            if nm:
+                con = db(); con.execute("INSERT OR IGNORE INTO building_items(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm})
         if self.path == '/api/donor':
             con = db(); cur = con.cursor()
