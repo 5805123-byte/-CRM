@@ -1002,9 +1002,13 @@ class H(BaseHTTPRequestHandler):
             sets=[];vals=[]
             for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
-            # אם התאריך העברי השתנה — חשב מחדש את תאריך הלילה הלועזי (לסימון הירח)
+            # אם התאריך העברי השתנה — חשב מחדש את תאריך הלילה הלועזי (לסימון הירח), לפי השנה העברית
             if 'date_text' in b and 'night_date' not in b:
-                _ng = heb_to_greg(b.get('date_text', ''))
+                hy = b.get('hyear')
+                if hy is None:
+                    r = con.execute("SELECT hyear FROM parnes WHERE id=?", (pid,)).fetchone()
+                    hy = r['hyear'] if r else ''
+                _ng = heb_greg_year(b.get('date_text', ''), hy) or heb_to_greg(b.get('date_text', ''))
                 sets.append('night_date=?'); vals.append(_ng.isoformat() if _ng else '')
             if sets:
                 con.execute("UPDATE parnes SET "+",".join(sets)+" WHERE id=?", vals+[pid])

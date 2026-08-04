@@ -24,8 +24,7 @@
   .pair{width:100%;margin:.15em 0 .35em;position:relative}
   .names{font-size:2.3em;font-weight:800;line-height:1.14;color:#000;width:100%;white-space:pre-line}
   .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
-  /* השם ושם האם — גדולים; בן/בת, ז"ל/ע"ה, והבקשה — קטנים */
-  .names .nbig,.cnames .nbig{font-size:1em;font-weight:800}
+  /* כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים */
   .names .nsm,.cnames .nsm{font-size:.5em;font-weight:600}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
@@ -71,28 +70,15 @@ const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
 
-// ----- הדגשת שם + שם האם (גדול) מול בן/בת, כינויים והבקשה (קטן) -----
+// ----- כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים (פשוט ואמין, בלי ניחוש שם מול בקשה) -----
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-const HONOR=/^(ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|שליט["'״׳]א|נ["'״׳]י|שתחי['׳]|שיחי['׳]|תחי['׳]|הכהן|הלוי|הי["'״׳]ו)$/;
-const PREFIX=/^(לעילוי|לע["'״׳]נ|נשמת|לזכר|לזכרון|לרפואת|לרפואה|לזרע|האשה|האישה|האיש|החשוב|החשובה|היקר|היקרה|מרת|מר|הרב|הרה["'״׳]ח|רבי|ר['׳]|הבחור|הבחורה|הילד|הילדה|החתן|הכלה|כמר|מוה["'״׳]ר|מוהר["'״׳]ר|הר["'״׳]ר)$/;
-const REQWORD=/^(הצלחה|בריאות|פרנסה|רפואה|רפו["'״׳]ש|ישועה|ישועות|זיווג|זווג|דעת|שלום|זרע|אריכות|ברכה|עשירות|שידוך|שידוכים|הרווחה|נחת|בנים|חתונה|סייעתא|וזוג["'״׳]?|הכל)/;
-function isReqStart(w){ return HONOR.test(w) || REQWORD.test(w) || /^ל.+/.test(w); }
+const SMALLWORD=/^(בן|בת|ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י)$/;
 function formatName(line){
   const t=(line||'').trim(); if(!t) return '';
-  const toks=t.split(/\s+/);
-  const big=s=>`<span class="nbig">${esc(s)}</span>`, sm=s=>`<span class="nsm">${esc(s)}</span>`;
-  let ci=-1; for(let i=0;i<toks.length;i++){ if(toks[i]==='בן'||toks[i]==='בת'){ci=i;break;} }
-  if(ci<0) return big(t);                                   // אין בן/בת — כל השורה שם
-  const pre=toks.slice(0,ci); let p=0; while(p<pre.length && PREFIX.test(pre[p])) p++;
-  const prefix=pre.slice(0,p).join(' ');                    // "לעילוי נשמת האשה החשובה" — קטן
-  let name=pre.slice(p).join(' ') || pre[pre.length-1] || '';// השם עצמו — גדול
-  let mi=ci+1; const mom=[];                                // שם האם — עד 2 מילים, עצירה בבקשה/כינוי/פסיק
-  while(mi<toks.length && mom.length<2){ const w=toks[mi]; if(isReqStart(w)) break; mom.push(w); mi++; if(/[,־]$/.test(w)) break; }
-  const rest=toks.slice(mi).join(' ');                      // הבקשה + כינויים — קטן
-  let out=(prefix?sm(prefix)+' ':'')+(name?big(name)+' ':'')+sm(toks[ci]);
-  if(mom.length) out+=' '+big(mom.join(' '));
-  if(rest) out+=' '+sm(rest);
-  return out;
+  return t.split(/(\s+)/).map(tok=>{
+    if(/^\s*$/.test(tok)) return tok;
+    return SMALLWORD.test(tok) ? `<span class="nsm">${esc(tok)}</span>` : esc(tok);
+  }).join('');
 }
 function formatLines(text){ return String(text||'').split('\n').map(formatName).join('\n'); }
 function wireFmt(el){

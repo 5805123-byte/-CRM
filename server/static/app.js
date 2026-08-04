@@ -1034,7 +1034,10 @@ function renderDayPanel(taken){
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea id="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
       <button class="btn sm" id="dp_ded_save" style="margin-bottom:6px">💾 שמור שמות</button>
-      <div class="hintxt" style="font-size:.78rem">לשינוי היום — מחק כאן ושבץ ליום אחר.</div>
+      <div class="movebox">🔀 העבר ליום אחר:
+        <select id="dpmvmon">${HMORD.map(m=>`<option ${m===pyMonth?'selected':''}>${m}</option>`).join('')}</select>
+        <select id="dpmvday">${[...Array(30)].map((_,i)=>`<option value="${i+1}" ${(i+1)===pyDay?'selected':''}>${heDay(i+1)}</option>`).join('')}</select>
+        <button class="btn sm" id="dpmove">העבר</button></div>
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
       <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
     const dppaid=document.getElementById('dppaid');
@@ -1043,6 +1046,15 @@ function renderDayPanel(taken){
     const ddedSave=async()=>{t.dedication=dded.value;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.dedication=dded.value;await api('PUT','/api/parnes/'+t.id,{dedication:dded.value});toast('נשמר ✓');};
     dded.onblur=()=>{if((t.dedication||'')!==dded.value)ddedSave();};
     document.getElementById('dp_ded_save').onclick=ddedSave;
+    document.getElementById('dpmove').onclick=async()=>{
+      const nm=document.getElementById('dpmvmon').value, nd=+document.getElementById('dpmvday').value;
+      if(nm===pyMonth && nd===pyDay){toast('בחר יום אחר');return;}
+      if(nm===pyMonth && taken[nm+'|'+nd]){toast('היום הזה כבר תפוס — בחר אחר');return;}
+      const ndtext=heDay(nd)+' '+nm, p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);
+      await api('PUT','/api/parnes/'+t.id,{day:nd,month:nm,date_text:ndtext,hyear:t.hyear||(p&&p.hyear)||''});
+      if(p){p.day=nd;p.month=nm;p.date_text=ndtext;}
+      pyMonth=nm;pyDay=nd;toast('הועבר ל־'+ndtext+' ✓');render();
+    };
     if(sugg)document.getElementById('dpconfirm').onclick=async()=>{await api('PUT','/api/parnes/'+t.id,{status:'confirmed'});const p=(t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.status='confirmed';toast('אושר ✓ עבר למאושר');render();};
     panel.querySelector('.pyupload').onchange=e=>uploadFile('parnes',t.id,e.target,load);
     panel.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
