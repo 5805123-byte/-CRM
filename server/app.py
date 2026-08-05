@@ -849,15 +849,17 @@ def ensure_schema():
     # תאריך תחילת שותפות יש"ז לכל אברך — מקובץ האקסל ששלח המשתמש
     try:
         izp = os.path.join(HERE, 'iz_startdate_seed.json')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_startdate_v1'").fetchone() and os.path.exists(izp):
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_startdate_v2'").fetchone() and os.path.exists(izp):
             def _hz(s):
                 s = re.sub(r'[^\u0590-\u05ff ]', '', s or '').replace('\u05e2', '').replace('\u05d0', '').replace('\u05d4', '')
                 return re.sub(r'(.)\1+', r'\1', s)
             def _tk(s): return set(t for t in (_hz(x) for x in (s or '').split()) if len(t) >= 2)
             def _tk2(s): return set(x for x in (re.sub(r'[\u05d5\u05d9]', '', t) for t in _tk(s)) if len(x) >= 2)
             donors = [dict(r) for r in con.execute("SELECT id,last,first FROM donors")]
+            lastcount = {}
             for d in donors:
                 d['_t'] = _tk(d['last'] + ' ' + (d['first'] or '')); d['_t2'] = _tk2(d['last'] + ' ' + (d['first'] or ''))
+                d['_lh'] = _hz(d['last']); lastcount[d['_lh']] = lastcount.get(d['_lh'], 0) + 1
             parts = {}
             for p in con.execute("SELECT id,donor_id,avreich,amount,start_date FROM partners WHERE active<>0"):
                 parts.setdefault(p['donor_id'], []).append(dict(p))
@@ -867,7 +869,11 @@ def ensure_schema():
                 for d in donors:
                     sc = max(len(zt & d['_t']), len(zt2 & d['_t2']))
                     if sc > bs: bs = sc; best = d
-                if bs < 2 or not best: continue
+                if bs < 2:
+                    cand = [d for d in donors if d['_lh'] and len(d['_lh']) >= 3 and d['_lh'] in zt and lastcount[d['_lh']] == 1]
+                    if len(cand) == 1: best = cand[0]
+                    else: continue
+                if not best: continue
                 pl = parts.get(best['id'], [])
                 if not pl: continue
                 at = _tk(e['av_last'] + ' ' + e['av_first']); chosen = None
@@ -885,7 +891,7 @@ def ensure_schema():
                 if chosen and not (chosen['start_date'] or '').strip():
                     con.execute("UPDATE partners SET start_date=? WHERE id=?", (e['start'], chosen['id']))
                     chosen['start_date'] = e['start']; nset += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('iz_startdate_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_startdate_v2')")
             print(f'  \u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05ea\u05d7\u05dc\u05ea \u05d9\u05e9"\u05d6: {nset}')
     except Exception as e:
         print('  iz start error:', e)
