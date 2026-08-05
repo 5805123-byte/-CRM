@@ -462,7 +462,10 @@ function cardDetails(d,body){
     const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''} ${st}${tog}</div></div>`;
   }).join('')}</div>`:'';
+  const pdebts=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
+  const pdebtsum=pdebts.reduce((s,p)=>s+amtNum(p.amount),0);
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
+    ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(curd+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
@@ -1329,7 +1332,12 @@ function renderTasksTab(){
   const WHO=[['','📋 הכל'],['מאיר','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
   const inWho=taskWho==='אהרן'?'אהרן':(taskWho==='מאיר'?'מאיר':'');
   const ics=location.origin+'/calendar.ics';
-  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
+  // חובות פרנס — כל פרנס שאושר וטרם נגבה, מופיע כאן לגבייה (וגם בכרטיס התורם)
+  const pdebts=[]; DB.forEach(d=>(d.parnes||[]).forEach(p=>{if(p.status!=='suggested'&&!+p.paid&&matchQ(d.last+' '+d.first+' '+(p.date_text||'')))pdebts.push({d,p});}));
+  pdebts.sort((a,b)=>(a.p.night_date||'').localeCompare(b.p.night_date||''));
+  const debtSec=pdebts.length?`<div class="misshead" style="margin-top:10px">🔴 חובות פרנס לגבייה (${pdebts.length})</div>
+    <div class="list">${pdebts.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${esc(DAYKIND[x.p.kind]||'🌙 פרנס')}${x.p.date_text?(' · '+esc(x.p.date_text)):''}${x.p.hyear?(' '+esc(x.p.hyear)):''}${x.p.amount?(' · '+curSym(x.d)+esc(x.p.amount)):''} — <b style="color:var(--no)">טרם נגבה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm pcollect" data-pid="${x.p.id}" data-did="${x.d.id}">✓ נגבה</button></div></div>`).join('')}</div>`:'';
+  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${debtSec}
     <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
       <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
@@ -1352,6 +1360,9 @@ function renderTasksTab(){
     </div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
+  // חובות פרנס — פתיחת כרטיס / סימון שנגבה
+  view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});
+  view.querySelectorAll('.pcollect').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==+b.dataset.did),p=(d&&d.parnes||[]).find(x=>x.id==+b.dataset.pid);if(p){p.paid=1;await api('PUT','/api/parnes/'+p.id,{paid:1});}toast('נגבה ✓');render();});
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
   // עריכת / מחיקת משימה
   view.querySelectorAll('.tedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=view.querySelector('.teditpanel[data-panel="'+b.dataset.i+'"]');if(p)p.classList.toggle('hidden');});
