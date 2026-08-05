@@ -684,8 +684,12 @@ function renderDonations(d){
   const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
   const dncats=['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'].concat(CAMPAIGNS||[]);
   const dmeths=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','בנק ווסט','Banquest','Authorize'];
-  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · ${cur}${tot}</div>`:'')+(list.map(x=>dnRow(x,cur)).join('')||'<div class="hintxt">עדיין אין תרומות.</div>')
+  // פרנס יום — מוצג גם כאן בתרומות, עם סטטוס גבייה (נגבה/חוב)
+  const pns=(d.parnes||[]).filter(p=>p.status!=='suggested');
+  const pnsHtml=pns.length?`<div class="dncount">🌙 פרנס יום (${pns.length})</div>`+pns.map(p=>{const pc=p.currency||'$',pd=+p.paid;return `<div class="dncrow"><div class="dnci"><b>${pc}${esc(p.amount||'—')}</b> · ${esc(DAYKIND[p.kind]||'🌙 פרנס')} ${esc(p.date_text||'')}${p.hyear?(' '+esc(p.hyear)):''} <span class="pstat ${pd?'yes':'no'}">${pd?'✓ נגבה':'🔴 טרם נגבה'}</span></div><div class="dncact"><button class="collectbtn ${pd?'yes':'no'} pnspaid" data-pid="${p.id}">${pd?'בטל':'✓ נגבה'}</button></div></div>`;}).join(''):'';
+  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · ${cur}${tot}</div>`:'')+(list.map(x=>dnRow(x,cur)).join('')||'<div class="hintxt">עדיין אין תרומות.</div>')+pnsHtml
     +`<datalist id="dncats">${dncats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><datalist id="dnmeths">${dmeths.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
+  el.querySelectorAll('.pnspaid').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});toast(+p.paid?'נגבה ✓':'סומן כחוב');renderDonations(d);});
   el.querySelectorAll('.dnpaid').forEach(b=>b.onclick=async()=>{const x=d.donations.find(y=>y.id==b.dataset.paid);x.paid=+x.paid?0:1;await api('PUT','/api/donation/'+x.id,{paid:x.paid});renderDonations(d);});
   el.querySelectorAll('.dnedbtn').forEach(b=>b.onclick=()=>{el.querySelector('.dnedit[data-de="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.de_save').forEach(b=>b.onclick=async()=>{
@@ -1065,11 +1069,14 @@ function renderDayPanel(taken){
   const t=taken[pyMonth+'|'+pyDay],dtext=heDay(pyDay)+" "+pyMonth;
   if(t){
     const sugg=t.status==='suggested';
-    const dpcur=curSym(t.dref||{});
+    const dpcur=t.currency||'$';                       // ברירת מחדל דולר; ניתן לבחור שקל
     const paid=+t.paid, amt=t.amount||'';
     panel.innerHTML=`<div class="sec"><h3>${sugg?'🔵 הצעה':(paid?'🟢 נגבה':'🔴 חוב — טרם נגבה')} · ${esc(dtext)}</h3>
       <div class="remitem ${sugg?'':(paid?'given':'')}"><div class="ri"><b>${esc(t.donor)}</b>${amt?(' · <b style="color:'+(paid?'var(--yes)':'var(--no)')+'">'+dpcur+esc(amt)+'</b>'):''}${t.method?(' · '+esc(chLabel(t.method))):''}</div></div>
-      <label class="fld" style="margin:6px 0"><span>💰 סכום (${dpcur}) — מלא ידני לכל פרנס</span><input id="dp_amt_edit" value="${esc(amt)}" inputmode="decimal" placeholder="כמה תרם"></label>
+      <div class="fld" style="margin:6px 0"><span>💰 סכום — מלא ידני לכל פרנס</span>
+        <div class="two" style="gap:6px;margin-top:3px"><input id="dp_amt_edit" value="${esc(amt)}" inputmode="decimal" placeholder="כמה תרם">
+          <select id="dp_cur_edit" style="max-width:110px"><option value="$" ${dpcur==='$'?'selected':''}>$ דולר</option><option value="₪" ${dpcur==='₪'?'selected':''}>₪ שקל</option></select></div>
+        <button class="btn sm" id="dp_amt_save" style="margin-top:6px;width:100%">💾 שמור סכום</button></div>
       ${sugg?'':`<button class="dnpaid ${paid?'yes':'no'}" id="dppaid" style="margin:2px 0 8px;width:100%">${paid?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>`}
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea id="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
@@ -1080,8 +1087,8 @@ function renderDayPanel(taken){
         <button class="btn sm" id="dpmove">העבר</button></div>
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
       <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
-    const damt=document.getElementById('dp_amt_edit');
-    if(damt)damt.onchange=async()=>{t.amount=damt.value.trim();const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.amount=t.amount;await api('PUT','/api/parnes/'+t.id,{amount:t.amount});toast('סכום נשמר ✓');render();};
+    const dpAmtSave=async()=>{const damt=document.getElementById('dp_amt_edit'),dcur=document.getElementById('dp_cur_edit');t.amount=damt.value.trim();t.currency=dcur.value;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p){p.amount=t.amount;p.currency=t.currency;}await api('PUT','/api/parnes/'+t.id,{amount:t.amount,currency:t.currency});toast('סכום נשמר ✓');render();};
+    const dpAmtBtn=document.getElementById('dp_amt_save'); if(dpAmtBtn)dpAmtBtn.onclick=dpAmtSave;
     const dppaid=document.getElementById('dppaid');
     if(dppaid)dppaid.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כחוב שטרם נגבה');render();};
     const dded=document.getElementById('dp_ded_edit');

@@ -62,6 +62,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN method TEXT")   # דרך מה תיגבה ההתחייבות
     except Exception: pass
+    try: con.execute("ALTER TABLE parnes ADD COLUMN currency TEXT")   # מטבע הסכום ($ / ₪)
+    except Exception: pass
     # מילוי תאריך לועזי של הלילה (לצורך היעלמות סימון הירח אחרי שהלילה עבר ושולם)
     try:
         for row in con.execute("SELECT id,date_text FROM parnes WHERE COALESCE(night_date,'')=''").fetchall():
@@ -1195,7 +1197,7 @@ class H(BaseHTTPRequestHandler):
             b = self._body(); pid = int(m.group(1))
             con = db()
             sets=[];vals=[]
-            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method'):
+            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method','currency'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # אם התאריך העברי השתנה — חשב מחדש את תאריך הלילה הלועזי (לסימון הירח), לפי השנה העברית
             if 'date_text' in b and 'night_date' not in b:
