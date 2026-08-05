@@ -141,15 +141,17 @@ async function load(){
   DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; HEBYEAR = d.heb_year || '';
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
+  // שחזור הלשונית שבה הייתי לפני הרענון
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));}}catch(e){}
   render();
   checkReminders();
-  // פתיחת כרטיס לפי פרמטר בכתובת (קישור מדף ההתאמה) — פעם אחת
-  try{const pd=new URLSearchParams(location.search).get('donor');if(pd){const dd=DB.find(x=>x.id==+pd);if(dd){openDonor(dd);}history.replaceState(null,'',location.pathname);}}catch(e){}
+  // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
+  try{let pd=new URLSearchParams(location.search).get('donor');if(!pd)pd=localStorage.getItem('kc_donor');if(pd){const dd=DB.find(x=>x.id==+pd);if(dd)openDonor(dd);}history.replaceState(null,'',location.pathname);}catch(e){}
 }
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;render();});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;try{localStorage.setItem('kc_tab',tab);localStorage.removeItem('kc_donor');}catch(e){}render();});
 document.getElementById('q').oninput=e=>{q=e.target.value.trim();render();};
-ov.onclick=e=>{if(e.target===ov)ov.classList.remove('show');};
+ov.onclick=e=>{if(e.target===ov){ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}}};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
 
 function render(){
@@ -382,7 +384,8 @@ function openDonor(d,startTab){
     </div>
     <div id="cardBody"></div>`;
   ov.classList.add('show');
-  document.getElementById('cx').onclick=()=>ov.classList.remove('show');
+  try{localStorage.setItem('kc_donor',d.id);}catch(e){}
+  document.getElementById('cx').onclick=()=>{ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}};
   sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{cardTab=b.dataset.c;renderCard(d);});
   const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='donations';renderCard(d);};
   renderCard(d);
