@@ -142,7 +142,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1031,12 +1031,14 @@ function renderKvOcc(){
 
 /* ---------- פרנס יום + שלט ---------- */
 let pyKind='parnes';
+function savePy(){try{localStorage.setItem('kc_py',JSON.stringify({kind:pyKind,month:pyMonth,day:pyDay}));}catch(e){}}
 const PKINDS=[['parnes','🌙 פרנס לילה'],['coffee','☕ חדר קפה'],['breakfast','🍳 ארוחת בוקר']];
 function parnesTaken(kind){const taken={};DB.forEach(d=>(d.parnes||[]).forEach(p=>{if((p.kind||'parnes')!==kind)return;if(p.month&&p.day)taken[p.month+'|'+p.day]={...p,donor:(d.last+' '+d.first).trim(),dref:d};}));return taken;}
 function kindToggle(){return `<div class="ktoggle">${PKINDS.map(([k,l])=>`<button class="ktog ${pyKind===k?'on':''}" data-k="${k}">${l}</button>`).join('')}</div>`;}
 function bindKindToggle(){view.querySelectorAll('.ktog').forEach(b=>b.onclick=()=>{pyKind=b.dataset.k;pyDay=null;render();});}
 function renderParnes(){
   chips.innerHTML='';
+  savePy();   // שמירת המקום (חודש/יום) לשחזור אחרי רענון
   const taken=parnesTaken(pyKind);
   if(!pyMonth){
     view.innerHTML=kindToggle()+`<div class="cnt">בחר חודש לראות ולשבץ את 30 הימים</div>
@@ -1048,7 +1050,7 @@ function renderParnes(){
   const days=[];for(let i=1;i<=30;i++)days.push(i);
   view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
     <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
-    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=t&&t.amount&&!+t.paid;return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
+    <div class="daygrid">${days.map(n=>{const t=taken[pyMonth+'|'+n];const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=t&&t.status!=='suggested'&&!+t.paid;return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
@@ -1061,9 +1063,11 @@ function renderDayPanel(taken){
   if(t){
     const sugg=t.status==='suggested';
     const dpcur=curSym(t.dref||{});
-    panel.innerHTML=`<div class="sec"><h3>${sugg?'🔵 הצעה':'🟢 מאושר'} · ${esc(dtext)}</h3>
-      <div class="remitem ${sugg?'':'given'}"><div class="ri"><b>${esc(t.donor)}</b>${t.amount?(' <b style="color:'+(+t.paid?'var(--yes)':'var(--no)')+'">· '+dpcur+esc(t.amount)+(+t.paid?' ✓ נגבה':' 🔴 טרם נגבה'+(t.method?' · '+esc(chLabel(t.method)):''))+'</b>'):''}</div></div>
-      ${t.amount?`<button class="dnpaid ${+t.paid?'yes':'no'}" id="dppaid" style="margin:2px 0 6px">${+t.paid?'נגבה ✓ — בטל':'🔴 טרם נגבה — סמן כנגבה'}</button>`:''}
+    const paid=+t.paid, amt=t.amount||'';
+    panel.innerHTML=`<div class="sec"><h3>${sugg?'🔵 הצעה':(paid?'🟢 נגבה':'🔴 חוב — טרם נגבה')} · ${esc(dtext)}</h3>
+      <div class="remitem ${sugg?'':(paid?'given':'')}"><div class="ri"><b>${esc(t.donor)}</b>${amt?(' · <b style="color:'+(paid?'var(--yes)':'var(--no)')+'">'+dpcur+esc(amt)+'</b>'):''}${t.method?(' · '+esc(chLabel(t.method))):''}</div></div>
+      <label class="fld" style="margin:6px 0"><span>💰 סכום (${dpcur}) — מלא ידני לכל פרנס</span><input id="dp_amt_edit" value="${esc(amt)}" inputmode="decimal" placeholder="כמה תרם"></label>
+      ${sugg?'':`<button class="dnpaid ${paid?'yes':'no'}" id="dppaid" style="margin:2px 0 8px;width:100%">${paid?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>`}
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea id="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
       <button class="btn sm" id="dp_ded_save" style="margin-bottom:6px">💾 שמור שמות</button>
@@ -1073,8 +1077,10 @@ function renderDayPanel(taken){
         <button class="btn sm" id="dpmove">העבר</button></div>
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
       <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
+    const damt=document.getElementById('dp_amt_edit');
+    if(damt)damt.onchange=async()=>{t.amount=damt.value.trim();const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.amount=t.amount;await api('PUT','/api/parnes/'+t.id,{amount:t.amount});toast('סכום נשמר ✓');render();};
     const dppaid=document.getElementById('dppaid');
-    if(dppaid)dppaid.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');render();};
+    if(dppaid)dppaid.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כחוב שטרם נגבה');render();};
     const dded=document.getElementById('dp_ded_edit');
     const ddedSave=async()=>{t.dedication=dded.value;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.dedication=dded.value;await api('PUT','/api/parnes/'+t.id,{dedication:dded.value});toast('נשמר ✓');};
     dded.onblur=()=>{if((t.dedication||'')!==dded.value)ddedSave();};
