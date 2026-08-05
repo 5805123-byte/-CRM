@@ -107,18 +107,20 @@ function uiConfirm(msg){
     o.onclick=e=>{if(e.target===o)done(false);};
   });
 }
-// בורר חודש עברי — למשל לשיוך תורם מזדמן לחודש מסוים בקוויטל המזדמנים
-function uiPickMonth(msg,cur){
+// בורר חודש+שנה עברית — לשיוך תורם מזדמן לחודש/שנה מסוימים בקוויטל המזדמנים
+function uiPickMonth(msg,curM,curY){
   return new Promise(res=>{
     const o=document.createElement('div');o.className='confirmov';
     o.innerHTML=`<div class="confirmbox"><div class="cm">${esc(msg)}</div>
-      <select class="pmsel" style="width:100%;margin:10px 0;padding:10px;font-size:1.05rem">${HMORD.map(m=>`<option ${m===cur?'selected':''}>${m}</option>`).join('')}</select>
+      <div class="two" style="margin:10px 0">
+        <select class="pmsel" style="padding:10px;font-size:1.05rem">${HMORD.map(m=>`<option ${m===curM?'selected':''}>${m}</option>`).join('')}</select>
+        <select class="pysel" style="padding:10px;font-size:1.05rem">${heYearOpts(curY||HEBYEAR)}</select></div>
       <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">אישור</button></div></div>`;
     document.body.appendChild(o);
-    const sel=o.querySelector('.pmsel');
+    const msel=o.querySelector('.pmsel'),ysel=o.querySelector('.pysel');
     const done=v=>{o.remove();res(v);};
     o.querySelector('.cno').onclick=()=>done(null);
-    o.querySelector('.cyes').onclick=()=>done(sel.value);
+    o.querySelector('.cyes').onclick=()=>done({month:msel.value,year:ysel.value});
     o.onclick=e=>{if(e.target===o)done(null);};
   });
 }
@@ -384,23 +386,24 @@ function tierOpts(d){
   const cur=(d&&d.tier)||'';
   const isOcc=!cur && d && d.category==='מזדמן';
   const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_כללי'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');
-  return base+`<option value="__occ" ${isOcc?'selected':''}>מזדמנים${(isOcc&&d.kv_month)?(' · '+d.kv_month):''}</option>`;
+  const occLbl=isOcc?('מזדמנים'+(d.kv_month?(' · '+d.kv_month+(d.kv_year?(' '+d.kv_year):'')):'')):'מזדמנים';
+  return base+`<option value="__occ" ${isOcc?'selected':''}>${occLbl}</option>`;
 }
-// שינוי דרגת קוויטל — כולל הבחירה המיוחדת "מזדמנים" ששואלת לאיזה חודש
-async function applyTierSelect(d){
-  const el=document.getElementById('f_tier');if(!el)return;const val=el.value;
+// שינוי דרגת קוויטל — כולל הבחירה המיוחדת "מזדמנים" ששואלת לאיזה חודש/שנה
+async function applyTierSelect(d,selId){
+  const el=document.getElementById(selId||'f_tier');if(!el)return;const val=el.value;
   if(val==='__occ'){
-    const mon=await uiPickMonth('לאיזה חודש עברי לשייך את הקוויטל של התורם המזדמן?',d.kv_month||'תשרי');
-    if(!mon){el.innerHTML=tierOpts(d);return;}   // בוטל — החזר לבחירה הקודמת
-    d.category='מזדמן';d.tier='';d.kv_month=mon;
-    await api('PUT','/api/donor/'+d.id,{category:'מזדמן',tier:'',kv_month:mon});
-    toast('שויך למזדמנים · '+mon+' ✓');
+    const pick=await uiPickMonth('לאיזה חודש ושנה עברית לשייך את הקוויטל של התורם המזדמן?',d.kv_month||'תשרי',d.kv_year||HEBYEAR);
+    if(!pick){el.innerHTML=tierOpts(d);return;}   // בוטל — החזר לבחירה הקודמת
+    d.category='מזדמן';d.tier='';d.kv_month=pick.month;d.kv_year=pick.year;
+    await api('PUT','/api/donor/'+d.id,{category:'מזדמן',tier:'',kv_month:pick.month,kv_year:pick.year});
+    toast('שויך למזדמנים · '+pick.month+' '+pick.year+' ✓');
   }else{
     d.tier=val;
     await api('PUT','/api/donor/'+d.id,{tier:val});
     toast('נשמר ✓');
   }
-  cardDetails(d,document.getElementById('cardBody'));
+  renderCard(d);
   if(tab==='donors')renderDonors();
 }
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
@@ -584,10 +587,21 @@ function cardKvittel(d,body){
   const inKv=KVTIER[d.tier];
   const empty=!(d.prayers&&d.prayers.length);
   const sugg=(empty&&inKv)?((d.first||'')+' '+(d.last||'')).trim():'';
-  body.innerHTML=`${inKv?`<div class="hintxt">✡️ מסומן בקוויטל <b>${KVTIER[d.tier]}</b>.${empty?' עדיין לא הוזנו שמות לתפילה — הוסף למטה (בדרך כלל שם התורם: "פלוני בן אמו").':''}</div>`:''}
+  const isOcc=d.category==='מזדמן'&&!d.tier;
+  body.innerHTML=`<div class="sec">
+      <label class="fld"><span>דרגת קוויטל (אפשר לשנות מכאן)</span><select id="kv_tier">${tierOpts(d)}</select></label>
+      ${isOcc?`<div class="two" style="margin-top:6px"><label class="fld"><span>🗓️ חודש עברי (מזדמנים)</span><select id="kv_mon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>שנה עברית</span><select id="kv_yr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>
+        <div class="hintxt">התורם יופיע בקוויטל מזדמן תחת <b>${esc((d.kv_month||'—')+' '+(d.kv_year||''))}</b>. שנה כאן בכל עת.</div>`:''}
+    </div>
+    ${inKv?`<div class="hintxt">✡️ מסומן בקוויטל <b>${KVTIER[d.tier]}</b>.${empty?' עדיין לא הוזנו שמות לתפילה — הוסף למטה (בדרך כלל שם התורם: "פלוני בן אמו").':''}</div>`:''}
     <div id="prayers"></div>
     <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)" value="${esc(sugg)}"><button class="btn sm" id="pr_add">הוסף</button></div>`;
   renderPrayers(d);
+  const kvt=document.getElementById('kv_tier'); if(kvt)kvt.onchange=()=>applyTierSelect(d,'kv_tier');
+  const kvm=document.getElementById('kv_mon'),kvy=document.getElementById('kv_yr');
+  const saveOcc=async()=>{d.kv_month=kvm.value;d.kv_year=kvy.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardKvittel(d,body);};
+  if(kvm)kvm.onchange=saveOcc; if(kvy)kvy.onchange=saveOcc;
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
 }
 function cardDonations(d,body){
@@ -1066,7 +1080,7 @@ function renderKvOcc(){
   const groups={},mdate={};
   const place=(d,hm,dt)=>{groups[hm]=groups[hm]||{};const pid=(d.prayers&&d.prayers[0])?d.prayers[0].id:null;groups[hm][d.id]={d,pid,text:(d.prayers&&d.prayers[0])?d.prayers[0].text:''};if(!mdate[hm]||(dt||'')>mdate[hm])mdate[hm]=dt||'';};
   DB.forEach(d=>{if(!(d.category==='מזדמן'&&!d.tier))return;
-    if(d.kv_month){const lastdt=(d.donations||[]).reduce((a,x)=>((x.date||'')>a?(x.date||''):a),'');place(d,d.kv_month,lastdt);return;}  // חודש שנקבע ידנית
+    if(d.kv_month){const lastdt=(d.donations||[]).reduce((a,x)=>((x.date||'')>a?(x.date||''):a),'');place(d,d.kv_month+(d.kv_year?(' '+d.kv_year):''),lastdt);return;}  // חודש/שנה שנקבעו ידנית
     const dons=(d.donations||[]);
     if(!dons.length){place(d,'ללא תאריך','');return;}
     dons.forEach(dn=>place(d,dn.hmonth||'ללא תאריך',dn.date||''));});

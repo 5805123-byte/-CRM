@@ -92,8 +92,10 @@ def ensure_schema():
     # תדירות תרומה — קבוע אך לא בהכרח חודשי (רבעוני / שנתי / לחגים וכו')
     try: con.execute("ALTER TABLE donors ADD COLUMN frequency TEXT")
     except Exception: pass
-    # חודש עברי לתורם מזדמן — משייך את הקוויטל שלו לחודש מסוים ברשימת המזדמנים
+    # חודש+שנה עברית לתורם מזדמן — משייך את הקוויטל שלו לחודש/שנה מסוימים ברשימת המזדמנים
     try: con.execute("ALTER TABLE donors ADD COLUMN kv_month TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE donors ADD COLUMN kv_year TEXT")
     except Exception: pass
     # השלמת דרגת יששכר־זבולון לתורמים שהיו ברשימה אך לא סומנו (מקור אמת: iz_seed.json + כל מי שיש לו אברך)
     try:
@@ -1034,7 +1036,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency','months','kv_month'}
+                'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
