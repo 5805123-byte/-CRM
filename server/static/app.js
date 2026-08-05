@@ -513,6 +513,8 @@ function cardDetails(d,body){
     <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
     <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
       <label class="fld"><span>קטגוריה</span><select id="f_category">${sel}</select></label></div>
+    ${(d.category==='מזדמן'&&!d.tier)?`<div class="two"><label class="fld"><span>🗓️ חודש (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
+      <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
     <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
     <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
@@ -552,6 +554,9 @@ function cardDetails(d,body){
   const FF=['last','first','english','category','purpose','amount','frequency','email','addr','city','country','zip','business','region','channel'];
   wireFields(d,FF);
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
+  const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
+  const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
+  if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
   renderPhones(d);
   // מחיקה בשתי לחיצות (confirm של הדפדפן חסום לפעמים באפליקציה המותקנת)
