@@ -83,12 +83,27 @@ let DATA = [], FILT = 'pending', CAMPAIGNS = [], BUILDING_ITEMS = [];
 const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','בניין'];
 const isBldg=c=>/בנין|בניין/.test(c||'');
 // שינוי קוויטל/קטגוריה של התורם ישירות מכאן — בלי להיכנס לכרטיס
-const TIEROPTS = [['','— בלי קוויטל —'],['יששכר_זבולון','יששכר־זבולון'],['קוויטל_101','כל לילה'],['קוויטל_כללי','כללי']];
+const TIEROPTS = [['','— בלי קוויטל —'],['יששכר_זבולון','יששכר־זבולון'],['קוויטל_101','כל לילה'],['קוויטל_שבועי','שבועי'],['קוויטל_כללי','כללי']];
 const DCATS = ['','קבוע','מזדמן','פרנס יום','בניין/הקדשה','חד-פעמי'];
-function tierOpts(sel){return TIEROPTS.map(([v,l])=>`<option value="${esc(v)}" ${v===(sel||'')?'selected':''}>${l}</option>`).join('');}
+// קוויטל — כולל "מזדמנים" (קטגוריה=מזדמן בלי דרגה). כשבוחרים אותו נשאל חודש/שנה
+function tierOpts(sel,cat){const isOcc=!(sel||'')&&cat==='מזדמן';return TIEROPTS.map(([v,l])=>`<option value="${esc(v)}" ${(v===(sel||'')&&!isOcc)?'selected':''}>${l}</option>`).join('')+`<option value="__occ" ${isOcc?'selected':''}>מזדמנים</option>`;}
 // בורר פרנס — חודש/יום/שנה עבריים
 const HMORD=['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
 const HYEARS=['תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח'];
+const HEBYEAR='תשפ"ו';
+// מודאל בחירת חודש+שנה עברית (לשיוך תורם מזדמן)
+function pickMonthYear(curM,curY){return new Promise(res=>{
+  const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+  o.innerHTML=`<div style="background:var(--card,#fff);padding:18px;border-radius:14px;max-width:340px;width:88%;box-shadow:0 10px 40px rgba(0,0,0,.3)"><div style="font-weight:700;margin-bottom:10px">לאיזה חודש ושנה עברית לשייך את הקוויטל של התורם המזדמן?</div>
+    <div style="display:flex;gap:8px"><select class="pmM" style="flex:1;padding:10px;font-size:1.05rem">${HMORD.map(m=>`<option ${m===curM?'selected':''}>${m}</option>`).join('')}</select>
+      <select class="pmY" style="flex:1;padding:10px;font-size:1.05rem">${HYEARS.map(y=>`<option ${y===(curY||HEBYEAR)?'selected':''}>${y}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="pmC" style="flex:1;padding:10px;border:1px solid var(--line,#ccc);border-radius:8px;background:#eee">ביטול</button><button class="pmOK" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--brand,#4a3f9e);color:#fff;font-weight:700">אישור</button></div></div>`;
+  document.body.appendChild(o);
+  const done=v=>{o.remove();res(v);};
+  o.querySelector('.pmC').onclick=()=>done(null);
+  o.querySelector('.pmOK').onclick=()=>done({month:o.querySelector('.pmM').value,year:o.querySelector('.pmY').value});
+  o.onclick=e=>{if(e.target===o)done(null);};
+});}
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
 const PARNES_CATS=['פרנס לילה','חדר קפה','ארוחת בוקר'];
 function dcatOpts(sel){return DCATS.map(c=>`<option value="${esc(c)}" ${c===(sel||'')?'selected':''}>${c||'— קטגוריה —'}</option>`).join('');}
@@ -181,7 +196,7 @@ function groupCard(k,txs){
       <button class="btn sm ghost changebtn" style="float:left;padding:3px 9px">🔄 שנה תורם</button>
       ${dupWarn}
       <div class="inlineedit">
-        <label>🕯️ קוויטל:<select class="mtier">${tierOpts(matched.match_tier||'')}</select></label>
+        <label>🕯️ קוויטל:<select class="mtier">${tierOpts(matched.match_tier||'',matched.match_cat||'')}</select></label>
         <label>📋 קטגוריה:<select class="mcat">${dcatOpts(matched.match_cat||'')}</select></label>
       </div></div>`;
   }else{
@@ -239,7 +254,17 @@ function wireGroup(k,txs){
   // שינוי קוויטל/קטגוריה של התורם ישירות בשורת ההתאמה
   const did=(txs.find(t=>t.donor_id)||{}).donor_id;
   const mt=card.querySelector('.mtier'), mc=card.querySelector('.mcat');
-  if(mt&&did) mt.onchange=async()=>{ await api('PUT','/api/donor/'+did,{tier:mt.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_tier=mt.value;}); toast('קוויטל עודכן בכרטיס ✓'); };
+  if(mt&&did) mt.onchange=async()=>{
+    if(mt.value==='__occ'){
+      const cur=DATA.find(x=>x.donor_id==did)||{};
+      const pick=await pickMonthYear(cur.match_kv_month||'תשרי',cur.match_kv_year||HEBYEAR);
+      if(!pick){ mt.value=cur.match_tier||''; return; }
+      await api('PUT','/api/donor/'+did,{category:'מזדמן',tier:'',kv_month:pick.month,kv_year:pick.year});
+      DATA.forEach(x=>{if(x.donor_id==did){x.match_cat='מזדמן';x.match_tier='';x.match_kv_month=pick.month;x.match_kv_year=pick.year;}});
+      if(mc)mc.value='מזדמן';
+      toast('שויך למזדמנים · '+pick.month+' '+pick.year+' ✓'); return;
+    }
+    await api('PUT','/api/donor/'+did,{tier:mt.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_tier=mt.value;}); toast('קוויטל עודכן בכרטיס ✓'); };
   if(mc&&did) mc.onchange=async()=>{ await api('PUT','/api/donor/'+did,{category:mc.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_cat=mc.value;}); toast('קטגוריה עודכנה בכרטיס ✓'); };
   const assign=card.querySelector('.assign');
   if(assign){

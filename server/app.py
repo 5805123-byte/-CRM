@@ -1103,12 +1103,14 @@ class H(BaseHTTPRequestHandler):
             for r in con.execute("SELECT * FROM recon ORDER BY processed, last, first"):
                 x = dict(r)
                 if r['donor_id']:
-                    d = con.execute("SELECT last,first,addr,category,tier FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+                    d = con.execute("SELECT last,first,addr,category,tier,kv_month,kv_year FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
                     if d:
                         x['match_name'] = (d['last'] + ' ' + (d['first'] or '')).strip()
                         x['match_addr'] = d['addr'] or ''
                         x['match_cat'] = d['category'] or ''
                         x['match_tier'] = d['tier'] or ''
+                        x['match_kv_month'] = d['kv_month'] or ''
+                        x['match_kv_year'] = d['kv_year'] or ''
                         # תרומות סיכום 2026 קיימות — לפי אמצעי ההתאמה. אותו אמצעי יוחלף אוטומטית; אחר דורש בדיקה
                         _pm = 'Banquest' if 'Banquest' in (r['source'] or '') else 'Authorize'
                         x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND method=?", (r['donor_id'], _pm)).fetchone()[0]
