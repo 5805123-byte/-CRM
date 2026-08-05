@@ -107,6 +107,21 @@ function uiConfirm(msg){
     o.onclick=e=>{if(e.target===o)done(false);};
   });
 }
+// בורר חודש עברי — למשל לשיוך תורם מזדמן לחודש מסוים בקוויטל המזדמנים
+function uiPickMonth(msg,cur){
+  return new Promise(res=>{
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm">${esc(msg)}</div>
+      <select class="pmsel" style="width:100%;margin:10px 0;padding:10px;font-size:1.05rem">${HMORD.map(m=>`<option ${m===cur?'selected':''}>${m}</option>`).join('')}</select>
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">אישור</button></div></div>`;
+    document.body.appendChild(o);
+    const sel=o.querySelector('.pmsel');
+    const done=v=>{o.remove();res(v);};
+    o.querySelector('.cno').onclick=()=>done(null);
+    o.querySelector('.cyes').onclick=()=>done(sel.value);
+    o.onclick=e=>{if(e.target===o)done(null);};
+  });
+}
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
 // ערוצי חיוב — תג צבעוני מובחן לכל ערוץ (בצבעי המותג)
@@ -365,7 +380,29 @@ function monthGrid(m){if(!m)return '';const f=_firstPaid(m);return `<div class="
 function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('');a[i]=ch;return a.join('');}
 
 let cardTab='details';
-function tierOpts(cur){return ['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_כללי'].map(t=>`<option value="${t}" ${t===cur?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');}
+function tierOpts(d){
+  const cur=(d&&d.tier)||'';
+  const isOcc=!cur && d && d.category==='מזדמן';
+  const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_כללי'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');
+  return base+`<option value="__occ" ${isOcc?'selected':''}>מזדמנים${(isOcc&&d.kv_month)?(' · '+d.kv_month):''}</option>`;
+}
+// שינוי דרגת קוויטל — כולל הבחירה המיוחדת "מזדמנים" ששואלת לאיזה חודש
+async function applyTierSelect(d){
+  const el=document.getElementById('f_tier');if(!el)return;const val=el.value;
+  if(val==='__occ'){
+    const mon=await uiPickMonth('לאיזה חודש עברי לשייך את הקוויטל של התורם המזדמן?',d.kv_month||'תשרי');
+    if(!mon){el.innerHTML=tierOpts(d);return;}   // בוטל — החזר לבחירה הקודמת
+    d.category='מזדמן';d.tier='';d.kv_month=mon;
+    await api('PUT','/api/donor/'+d.id,{category:'מזדמן',tier:'',kv_month:mon});
+    toast('שויך למזדמנים · '+mon+' ✓');
+  }else{
+    d.tier=val;
+    await api('PUT','/api/donor/'+d.id,{tier:val});
+    toast('נשמר ✓');
+  }
+  cardDetails(d,document.getElementById('cardBody'));
+  if(tab==='donors')renderDonors();
+}
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
 
 function openDonor(d,startTab){
@@ -471,7 +508,7 @@ function cardDetails(d,body){
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
-    <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d.tier)}</select></label>
+    <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
       <label class="fld"><span>קטגוריה</span><select id="f_category">${sel}</select></label></div>
     <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
     <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
@@ -509,8 +546,9 @@ function cardDetails(d,body){
       if(!await uiConfirm('למזג את "'+(other.last+' '+other.first).trim()+'" (#'+other.id+') לתוך "'+(d.last+' '+d.first).trim()+'"?\nהכפול יימחק וכל הנתונים יעברו לכאן.'))return;
       await api('POST','/api/merge',{keep:d.id,drop:other.id});toast('מוזג ✓');ov.classList.remove('show');await load();openDonor(DB.find(x=>x.id===d.id));});
   };
-  const FF=['last','first','english','tier','category','purpose','amount','frequency','email','addr','city','country','zip','business','region','channel'];
+  const FF=['last','first','english','category','purpose','amount','frequency','email','addr','city','country','zip','business','region','channel'];
   wireFields(d,FF);
+  const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
   renderPhones(d);
   // מחיקה בשתי לחיצות (confirm של הדפדפן חסום לפעמים באפליקציה המותקנת)
@@ -1026,7 +1064,12 @@ function renderKvList(type){
 }
 function renderKvOcc(){
   const groups={},mdate={};
-  DB.forEach(d=>{if(!(d.category==='מזדמן'&&!d.tier))return;(d.donations||[]).forEach(dn=>{const hm=dn.hmonth||'ללא תאריך';groups[hm]=groups[hm]||{};const pid=(d.prayers&&d.prayers[0])?d.prayers[0].id:null;groups[hm][d.id]={d,pid,text:(d.prayers&&d.prayers[0])?d.prayers[0].text:''};if(!mdate[hm]||(dn.date||'')>mdate[hm])mdate[hm]=dn.date||'';});});
+  const place=(d,hm,dt)=>{groups[hm]=groups[hm]||{};const pid=(d.prayers&&d.prayers[0])?d.prayers[0].id:null;groups[hm][d.id]={d,pid,text:(d.prayers&&d.prayers[0])?d.prayers[0].text:''};if(!mdate[hm]||(dt||'')>mdate[hm])mdate[hm]=dt||'';};
+  DB.forEach(d=>{if(!(d.category==='מזדמן'&&!d.tier))return;
+    if(d.kv_month){const lastdt=(d.donations||[]).reduce((a,x)=>((x.date||'')>a?(x.date||''):a),'');place(d,d.kv_month,lastdt);return;}  // חודש שנקבע ידנית
+    const dons=(d.donations||[]);
+    if(!dons.length){place(d,'ללא תאריך','');return;}
+    dons.forEach(dn=>place(d,dn.hmonth||'ללא תאריך',dn.date||''));});
   let months=Object.keys(groups).sort((a,b)=>(mdate[b]||'').localeCompare(mdate[a]||''));
   months=months.filter(hm=>matchQ(hm)||Object.values(groups[hm]).some(x=>matchQ(x.d.last+' '+x.d.first+' '+x.text)));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>קוויטל מזדמן — לפי חודשים</b><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
