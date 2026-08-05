@@ -896,6 +896,33 @@ def ensure_schema():
     except Exception as e:
         print('  iz start error:', e)
 
+    # \u05d0\u05d9\u05d7\u05d5\u05d3 \u05d0\u05d1\u05e8\u05db\u05d9\u05dd \u05db\u05e4\u05d5\u05dc\u05d9\u05dd (\u05d0\u05d5\u05ea\u05d5 \u05e9\u05dd \u05d1\u05e1\u05d3\u05e8 \u05de\u05d9\u05dc\u05d9\u05dd \u05e9\u05d5\u05e0\u05d4 \u05d0\u05e6\u05dc \u05d0\u05d5\u05ea\u05d5 \u05ea\u05d5\u05e8\u05dd)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='partner_dedup_v1'").fetchone():
+            import collections as _co
+            def _pn(s):
+                s = re.sub(r'[^\u0590-\u05ff ]', '', s or '')
+                return ' '.join(sorted(w for w in s.split() if len(w) >= 2))
+            byd = _co.defaultdict(list)
+            for p in con.execute("SELECT id,donor_id,avreich,amount,method,start_date FROM partners WHERE active<>0"):
+                byd[p['donor_id']].append(dict(p))
+            ndel = 0
+            def _sc(p): return (1 if (p['amount'] or '').strip() else 0) + (1 if (p['start_date'] or '').strip() else 0) + (1 if (p['method'] or '').strip() else 0)
+            for did, pl in byd.items():
+                g = _co.defaultdict(list)
+                for p in pl:
+                    n = _pn(p['avreich'])
+                    if n: g[n].append(p)
+                for n, grp in g.items():
+                    if len(grp) <= 1: continue
+                    grp.sort(key=lambda p: (-_sc(p), p['id']))
+                    for p in grp[1:]:
+                        con.execute("DELETE FROM partners WHERE id=?", (p['id'],)); ndel += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('partner_dedup_v1')")
+            print(f'  dedup avreichim: {ndel}')
+    except Exception as e:
+        print('  partner dedup error:', e)
+
     con.commit(); con.close()
 
 def get_all():
