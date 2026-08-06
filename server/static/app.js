@@ -28,8 +28,8 @@ function izSummary(d){
 }
 // פירוק רשימת שותפים (תומך בכמה שותפים מופרדים בפסיק)
 function pwList(p){const names=(p.partner_with||'').split(',').map(s=>s.trim()).filter(Boolean);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim());return names.map((nm,i)=>({name:nm,id:ids[i]||''}));}
-// HTML של שמות השותפים — כל אחד לחיץ אם מקושר לכרטיס
-function coHolderNamesHtml(p){const l=pwList(p);if(!l.length)return '';return ' <small class="cosp">🤝 יחד עם '+l.map(x=>x.id?`<span class="cosp2" data-did="${x.id}">${esc(x.name)} ↗</span>`:esc(x.name)).join(', ')+'</small>';}
+// HTML של שמות השותפים — זיהוי אוטומטי (אותו אברך) + קישור ידני. כל אחד לחיץ אם מקושר לכרטיס
+function coHolderNamesHtml(p){const l=avCoHolders(p);if(!l.length)return '';return ' <small class="cosp">🤝 בשותפות עם '+l.map(x=>x.id?`<span class="cosp2" data-did="${x.id}">${esc(x.name)} ↗</span>`:esc(x.name)).join(', ')+'</small>';}
 // סכום כולל לאברך — חלקו של התורם + חלקי כל השותפים המקושרים (לפי אותו אברך בכרטיסים שלהם)
 function coHolderTotal(p){let total=amtNum(p.amount);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim()).filter(Boolean);const av=norm(p.avreich||'');ids.forEach(id=>{const o=(DB||[]).find(x=>x.id==id);if(!o)return;const op=(o.partners||[]).find(q=>norm(q.avreich||'')===av);if(op)total+=amtNum(op.amount);});return total;}
 // שותפויות הפוכות — כרטיסים אחרים שרשמו את התורם הזה כשותף מחזיק (לפי קישור או לפי שם שהוקלד)
@@ -517,7 +517,7 @@ function cardDetails(d,body){
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),ded:'',rm:x.method||''}));
-  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(p.partner_with?(' · יחד עם '+pwList(p).map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''}));
+  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const co=avCoHolders(p);gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(co.length?(' · בשותפות עם '+co.map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''});});
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>{
     const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
@@ -1477,8 +1477,8 @@ function renderAvreich(){
 // שותפים לאותו אברך — מקישור ידני (partner_with) וגם זיהוי אוטומטי של תורמים אחרים שמחזיקים אותו אברך
 function avCoHolders(p){
   const av=norm(p.avreich||'');const set=new Map();
-  pwList(p).forEach(x=>{if(x.name)set.set(norm(x.name),{name:x.name,id:x.id});});
   if(av)(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av){const nm=(o.last+' '+o.first).trim();const k=norm(nm);if(!set.has(k))set.set(k,{name:nm,id:o.id});}});});
+  pwList(p).forEach(x=>{if(x.name){const k=norm(x.name);if(!set.has(k))set.set(k,{name:x.name,id:x.id});}});
   return [...set.values()];
 }
 function avPartnerRow(p){
