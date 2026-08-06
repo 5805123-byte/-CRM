@@ -894,10 +894,21 @@ function renderPledges(d){
   el.querySelectorAll('.plrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const note='חייב: '+x.dataset.cat+(x.dataset.amt?(' $'+x.dataset.amt):'');const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'charge',note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'charge',note,done:0});toast('תזכורת לחיוב נקבעה ✓');});
 }
 function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight+6)+'px';}
+// העתקה ללוח — עם נפילה חלופה לאפליקציה מותקנת (execCommand)
+async function copyToClip(txt,okMsg){
+  txt=(txt||'').trim();if(!txt){toast('אין מה להעתיק');return;}
+  try{await navigator.clipboard.writeText(txt);toast(okMsg||'הועתק ✓');return;}catch(e){}
+  try{const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');ta.remove();toast(okMsg||'הועתק ✓');}
+  catch(e){prompt('העתק ידנית:',txt);}
+}
 function renderPrayers(d){
   const el=document.getElementById('prayers');
-  el.innerHTML=(d.prayers||[]).map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}">${esc(p.text)}</textarea><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>';
+  const prs=(d.prayers||[]);
+  const allBtn=prs.length>1?`<button class="btn sm ghost" id="prcopyall" style="width:100%;margin-bottom:6px">📋 העתק את כל השמות</button>`:'';
+  el.innerHTML=allBtn+(prs.map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}">${esc(p.text)}</textarea><button class="prcopy" data-id="${p.id}" title="העתק שם">📋</button><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>');
   el.querySelectorAll('.prtx').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.prayers.find(x=>x.id==t.dataset.id);if(!p||p.text===t.value)return;p.text=t.value;await api('PUT','/api/prayer/'+p.id,{text:t.value});toast('נשמר ✓');};});
+  el.querySelectorAll('.prcopy').forEach(b=>b.onclick=()=>{const t=el.querySelector('.prtx[data-id="'+b.dataset.id+'"]');copyToClip(t?t.value:'','השם הועתק ✓');});
+  const ca=document.getElementById('prcopyall');if(ca)ca.onclick=()=>{const txt=[...el.querySelectorAll('.prtx')].map(t=>t.value.trim()).filter(Boolean).join('\n');copyToClip(txt,'כל השמות הועתקו ✓');};
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/prayer/'+b.dataset.del);d.prayers=d.prayers.filter(x=>x.id!=b.dataset.del);renderPrayers(d);toast('נמחק');});
 }
 const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
