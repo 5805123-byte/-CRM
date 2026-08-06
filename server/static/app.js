@@ -1059,6 +1059,13 @@ function bindKvEdit(){
       const d=DB.find(x=>x.id==newdid);if(!d)return;const r=await api('POST','/api/prayer',{donor_id:+newdid,text:nt,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:nt,tier:d.tier||''});n.dataset.id=r.id;delete n.dataset.newdid;toast('נוסף לקוויטל ✓ (גם בכרטיס)');if(kvSub==='missing')renderKvMissing();
     }
   };});
+  // כפתור העתקה ליד כל שם ברשימות הקוויטל
+  view.querySelectorAll('.kblock').forEach(bl=>{
+    const nm=bl.querySelector('.names');if(!nm||bl.querySelector('.kvcopy'))return;
+    const b=document.createElement('button');b.className='kvcopy';b.textContent='📋';b.title='העתק שם';
+    b.onclick=e=>{e.stopPropagation();copyToClip(nm.innerText,'השם הועתק ✓');};
+    const who=bl.querySelector('.who');(who||bl).appendChild(b);
+  });
 }
 // ===== בקשות תפילה מהאתר (מיילים) — עיון, בדיקה אם כבר בקוויטל, וצירוף =====
 let INTAKE=null, INTAKE_CFG=false;
