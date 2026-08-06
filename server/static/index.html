@@ -101,7 +101,10 @@
   .avamt input{width:64px;border:none;background:none;font-weight:800;color:var(--yes);text-align:center;padding:6px 2px}
   .avend{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:7px 9px;font-family:inherit;font-weight:600;cursor:pointer;font-size:.76rem;white-space:nowrap;opacity:.75}
   .avend:hover{opacity:1;border-color:var(--accent);color:var(--accent)}
-  .avsub{display:flex;gap:6px;margin-top:6px}.avsub input{flex:1;font-size:.85rem;padding:7px 9px}
+  .avsub{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.avsub input{font-size:.85rem;padding:7px 9px}
+  .avfld{display:flex;flex-direction:column;gap:2px;flex:1;min-width:120px}
+  .avfld>span{font-size:.68rem;color:var(--muted);font-weight:700}
+  .avfld input,.avfld select{width:100%;box-sizing:border-box}
   .avfiles{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
   .fchip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-soft);border-radius:8px;padding:4px 8px;font-size:.82rem;font-weight:600}
   .fchip a{color:var(--accent);text-decoration:none;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
