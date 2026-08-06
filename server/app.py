@@ -747,23 +747,23 @@ def ensure_schema():
             print(f'  מיזוג כללי->שבועי: תורמים {n1}, שמות {n2}')
     except Exception as e:
         print('  שגיאת כללי->שבועי:', e)
-    # הדגמה חד‑פעמית — שמות הקוויטל שאסתר ברג שלחה מהאתר (11/7/2026), לצפייה מיד לפני חיבור המייל
+    # הדגמה חד‑פעמית — שמות הקוויטל שאסתר ברג שלחה מהאתר (11/7/2026), בעברית מלאה
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berg_demo_kvittel_v1'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berg_demo_kvittel_he_v1'").fetchone():
             row = con.execute("SELECT id FROM donors WHERE lower(COALESCE(email,''))='estigberg@gmail.com'").fetchone()
             if not row:
                 cand = con.execute("SELECT id FROM donors WHERE last LIKE '%ברג%' AND first LIKE '%אסתר%'").fetchall()
                 if len(cand) == 1: row = cand[0]
             if row:
                 bid = row['id']
-                has = con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (bid,)).fetchone()[0]
-                if not has:
-                    txt = 'Rivka בת Esther Tema לזיווג הגון\nCherna Zelda בת Esther Tema לזיווג הגון\nAzriel בן Esther Tema לזיווג הגון'
+                con.execute("DELETE FROM prayers WHERE donor_id=? AND text LIKE '%Esther Tema%'", (bid,))  # הסרת הגרסה באנגלית אם נכנסה
+                txt = 'רבקה בת אסתר טעמא לזיווג הגון\nטשערנא זעלדא בת אסתר טעמא לזיווג הגון\nעזריאל בן אסתר טעמא לזיווג הגון'
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND text=?", (bid, txt)).fetchone():
                     con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')", (bid, txt))
-                    yr = 'תשפ"ו'
-                    con.execute("UPDATE donors SET kv_month=COALESCE(NULLIF(kv_month,''),?), kv_year=COALESCE(NULLIF(kv_year,''),?) WHERE id=?", ('תמוז', yr, bid))
-                    print('  קוויטל אסתר ברג (הדגמה): נוסף')
-            con.execute("INSERT INTO seed_flags(name) VALUES('berg_demo_kvittel_v1')")
+                yr = 'תשפ"ו'
+                con.execute("UPDATE donors SET kv_month=COALESCE(NULLIF(kv_month,''),?), kv_year=COALESCE(NULLIF(kv_year,''),?) WHERE id=?", ('תמוז', yr, bid))
+                print('  קוויטל אסתר ברג (עברית): עודכן')
+            con.execute("INSERT INTO seed_flags(name) VALUES('berg_demo_kvittel_he_v1')")
     except Exception as e:
         print('  שגיאת קוויטל ברג:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)

@@ -111,11 +111,64 @@ _FEMALE = {'rivka', 'rivkah', 'sarah', 'sara', 'esther', 'ester', 'estie', 'chan
            'blima', 'bluma', 'pessy', 'pesha', 'rifka', 'shprintza', 'yita', 'itta', 'necha', 'roiza'}
 
 
+# תעתיק אנגלית→עברית לשמות נפוצים. מה שלא במילון נשאר באנגלית (המזכיר משלים בדף הבקשות).
+_NAME_HE = {
+    # גברים
+    'avraham': 'אברהם', 'avrohom': 'אברהם', 'abraham': 'אברהם', 'avrum': 'אברהם',
+    'yitzchok': 'יצחק', 'yitzchak': 'יצחק', 'isaac': 'יצחק', 'itzik': 'יצחק',
+    'yaakov': 'יעקב', 'yakov': 'יעקב', 'jacob': 'יעקב', 'yankel': 'יעקב',
+    'moshe': 'משה', 'moishe': 'משה', 'moses': 'משה', 'dovid': 'דוד', 'david': 'דוד',
+    'shlomo': 'שלמה', 'shloime': 'שלמה', 'solomon': 'שלמה', 'chaim': 'חיים', 'chaym': 'חיים',
+    'yosef': 'יוסף', 'yossef': 'יוסף', 'joseph': 'יוסף', 'yossi': 'יוסף',
+    'aharon': 'אהרן', 'aron': 'אהרן', 'aaron': 'אהרן', 'azriel': 'עזריאל',
+    'menachem': 'מנחם', 'mendel': 'מענדל', 'shmuel': 'שמואל', 'samuel': 'שמואל',
+    'yisroel': 'ישראל', 'yisrael': 'ישראל', 'israel': 'ישראל', 'srul': 'ישראל',
+    'mordechai': 'מרדכי', 'mordche': 'מרדכי', 'motel': 'מרדכי', 'boruch': 'ברוך', 'baruch': 'ברוך',
+    'shimon': 'שמעון', 'simon': 'שמעון', 'naftali': 'נפתלי', 'naftoli': 'נפתלי',
+    'yehuda': 'יהודה', 'yehudah': 'יהודה', 'judah': 'יהודה', 'leib': 'לייב', 'leibel': 'לייבל',
+    'binyomin': 'בנימין', 'binyamin': 'בנימין', 'benjamin': 'בנימין',
+    'eliezer': 'אליעזר', 'elazar': 'אלעזר', 'lazer': 'אליעזר', 'ephraim': 'אפרים', 'efraim': 'אפרים',
+    'gershon': 'גרשון', 'zev': 'זאב', 'wolf': 'זאב', 'velvel': 'זאב', 'dov': 'דוב', 'ber': 'בער',
+    'tzvi': 'צבי', 'hirsch': 'צבי', 'herschel': 'הערשל', 'hershel': 'הערשל',
+    'yechiel': 'יחיאל', 'michoel': 'מיכאל', 'michael': 'מיכאל', 'pinchas': 'פנחס',
+    'raphael': 'רפאל', 'refoel': 'רפאל', 'nosson': 'נתן', 'nathan': 'נתן', 'noson': 'נתן',
+    'asher': 'אשר', 'usher': 'אשר', 'zalman': 'זלמן', 'feivel': 'פייבל', 'fishel': 'פישל',
+    'yoel': 'יואל', 'joel': 'יואל', 'elimelech': 'אלימלך', 'kalman': 'קלמן', 'zusha': 'זושא', 'zisha': 'זישא',
+    'meir': 'מאיר', 'meyer': 'מאיר', 'simcha': 'שמחה', 'sholom': 'שלום', 'shalom': 'שלום',
+    'anshel': 'אנשל', 'sender': 'סענדער', 'gedalya': 'גדליה', 'gedaliah': 'גדליה', 'shraga': 'שרגא',
+    # נשים
+    'rivka': 'רבקה', 'rivkah': 'רבקה', 'rifka': 'רבקה', 'rebecca': 'רבקה',
+    'sara': 'שרה', 'sarah': 'שרה', 'esther': 'אסתר', 'ester': 'אסתר', 'estie': 'אסתי',
+    'chana': 'חנה', 'chanah': 'חנה', 'hannah': 'חנה', 'leah': 'לאה', 'lea': 'לאה',
+    'rochel': 'רחל', 'rachel': 'רחל', 'miriam': 'מרים', 'devora': 'דבורה', 'devorah': 'דבורה',
+    'gitel': 'גיטל', 'gittel': 'גיטל', 'feiga': 'פייגא', 'faiga': 'פייגא', 'bracha': 'ברכה', 'brocha': 'ברכה',
+    'malka': 'מלכה', 'malky': 'מלכי', 'chaya': 'חיה', 'chaia': 'חיה', 'baila': 'ביילא', 'bayla': 'ביילא',
+    'yocheved': 'יוכבד', 'nechama': 'נחמה', 'ruchama': 'רוחמה', 'golda': 'גאלדא', 'tova': 'טובה', 'toba': 'טובה',
+    'tzipora': 'ציפורה', 'tzipporah': 'ציפורה', 'raizel': 'רייזל', 'rayzel': 'רייזל', 'perl': 'פערל', 'perel': 'פערל',
+    'shaindel': 'שיינדל', 'shaindl': 'שיינדל', 'frieda': 'פרידא', 'freida': 'פרידא', 'fraida': 'פרידא',
+    'hinda': 'הינדא', 'henya': 'העניא', 'breindel': 'ברײנדל', 'blima': 'בלימא', 'bluma': 'בלומא',
+    'elka': 'עלקא', 'cherna': 'טשערנא', 'zelda': 'זעלדא', 'tema': 'טעמא', 'temma': 'טעמא',
+    'yenta': 'יענטא', 'yente': 'יענטא', 'sima': 'סימא', 'shprintza': 'שפרינצא', 'pesha': 'פעשא',
+    'fruma': 'פרומא', 'raizy': 'רייזי', 'suri': 'סורי', 'surie': 'סורי', 'yehudis': 'יהודית', 'yidis': 'יהודית',
+}
+
+
+def _he_name(s):
+    parts = re.split(r'(\s+)', (s or '').strip())
+    out = []
+    for w in parts:
+        if w.strip():
+            out.append(_NAME_HE.get(w.lower().strip(' ,.'), w))
+        else:
+            out.append(w)
+    return ''.join(out)
+
+
 def _fmt_one(name, mother, father, request):
-    s = name.strip()
-    first = re.split(r'\s+', s)[0].lower() if s else ''
-    rel = 'בת' if first in _FEMALE else 'בן'
-    parent = (mother or father).strip()
+    eng_first = re.split(r'\s+', name.strip())[0].lower() if name.strip() else ''
+    rel = 'בת' if eng_first in _FEMALE else 'בן'
+    s = _he_name(name)
+    parent = _he_name((mother or father).strip())
     if parent:
         s += ' ' + rel + ' ' + parent
     req = request.strip()
