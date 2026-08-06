@@ -143,6 +143,16 @@ function srcGroup(s){ s=(s||'').toLowerCase();
   return 'other'; }
 const SRCLABEL={authorize:'אוטרייז',banquest:'בנק ווסט',checks:'צ׳קים',transfers:'העברות בנקאיות וזל',donorsfund:'דונרס פאנד / OJC'};
 
+// שמירת מיקום העבודה — כדי לחזור לאותה נקודה אחרי כניסה לכרטיס תורם וחזרה
+const PKEY='recpos_'+(SRC||'all'), FKEY='recfilt_'+(SRC||'all');
+try{const sf=sessionStorage.getItem(FKEY); if(sf)FILT=sf;}catch(e){}
+let didRestore=false;
+function savePos(k){try{sessionStorage.setItem(PKEY,JSON.stringify({y:window.scrollY,k:k||null}));}catch(e){}}
+window.addEventListener('scroll',()=>{clearTimeout(savePos._t);savePos._t=setTimeout(()=>savePos(null),200);},{passive:true});
+function restorePos(){try{const raw=sessionStorage.getItem(PKEY);if(!raw)return;const p=JSON.parse(raw);
+  if(p.k){const g=document.querySelector('.grp[data-k="'+(window.CSS&&CSS.escape?CSS.escape(p.k):p.k)+'"]');if(g){g.scrollIntoView({block:'center'});return;}}
+  if(p.y)window.scrollTo(0,p.y);}catch(e){}}
+
 async function load(){ [DATA, CAMPAIGNS, BUILDING_ITEMS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns'), api('GET','/api/building_items')]);
   if(SRC){ DATA=DATA.filter(x=>srcGroup(x.source)===SRC); const h=document.querySelector('h1'); if(h&&SRCLABEL[SRC]) h.textContent='💳 טיפול והתאמת תרומות — '+SRCLABEL[SRC]; }
   render(); }
@@ -169,10 +179,12 @@ function render(){
     return true;
   });
   entries.sort((a,b)=>a[0].localeCompare(b[0]));
+  document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b.dataset.f===FILT));
   const list = $('#list');
   if(!entries.length){ list.innerHTML='<div class="done-msg">🎉 אין פריטים בקטגוריה הזו</div>'; return; }
   list.innerHTML = entries.map(([k,txs])=>groupCard(k,txs)).join('') + `<datalist id="bldgdl">${BUILDING_ITEMS.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
   entries.forEach(([k,txs])=>wireGroup(k,txs));
+  if(!didRestore){ didRestore=true; requestAnimationFrame(restorePos); }
 }
 
 function groupCard(k,txs){
@@ -251,6 +263,8 @@ function wireGroup(k,txs){
   const state={donorId:(txs.find(t=>t.donor_id)||{}).donor_id||null, createNew:false, nl:'', nf:''};
   const chb=card.querySelector('.changebtn');
   if(chb) chb.onclick=()=>{ const a=card.querySelector('.assign'); a.style.display = a.style.display==='none'?'block':'none'; };
+  // בכניסה לכרטיס תורם — שמור את המיקום הנוכחי כדי לחזור לאותה נקודה
+  const clink=card.querySelector('.cardlink'); if(clink) clink.addEventListener('click',()=>savePos(k));
   // שינוי קוויטל/קטגוריה של התורם ישירות בשורת ההתאמה
   const did=(txs.find(t=>t.donor_id)||{}).donor_id;
   const mt=card.querySelector('.mtier'), mc=card.querySelector('.mcat');
@@ -321,7 +335,7 @@ function wireGroup(k,txs){
   };
 }
 
-$('.filters').addEventListener('click', e=>{ if(e.target.dataset.f){ FILT=e.target.dataset.f; document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b===e.target)); render(); }});
+$('.filters').addEventListener('click', e=>{ if(e.target.dataset.f){ FILT=e.target.dataset.f; try{sessionStorage.setItem(FKEY,FILT);}catch(err){} document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b===e.target)); window.scrollTo(0,0); render(); }});
 load();
 </script>
 </body>
