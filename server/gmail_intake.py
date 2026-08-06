@@ -76,28 +76,53 @@ def _payload(part):
             return ''
 
 
-# תוויות שדה נפוצות בטופס — כדי לחלץ את שורות השמות מתוך גוף המייל
-_NAME_LABELS = ('שם לתפילה', 'שמות לתפילה', 'שם', 'name for prayer', 'prayer name', 'names', 'name')
-_SKIP_LABELS = ('email', 'e-mail', 'אימייל', 'מייל', 'phone', 'טלפון', 'address', 'כתובת',
-                'amount', 'סכום', 'date', 'תאריך', 'subject', 'נושא', 'ip', 'reply',
-                'שולח', 'sender', 'from:', 'מאת')
+# מיפוי תוויות השדות בטופס האתר לשדות מובנים
+_LABEL_MAP = [
+    (('name to daven for', 'name for prayer', 'prayer name', 'שם לתפילה', 'שם המתפלל'), 'name'),
+    (("mother's name", 'mothers name', 'mother name', 'שם האם', 'שם אם', 'שם האמא'), 'mother'),
+    (("father's name", 'fathers name', 'father name', 'שם האב', 'שם אב'), 'father'),
+    (('request', 'בקשה', 'ישועה'), 'request'),
+]
+_EMAIL_RE = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
+
+
+def _submitter_email(body):
+    m = _EMAIL_RE.search(body or '')
+    return m.group(0).lower() if m else ''
 
 
 def _parse_names(body):
-    """חילוץ שמות לתפילה — best-effort. שומרים גם את הגוף המלא בנפרד, אז אין אובדן מידע."""
+    """בונה שם קוויטל מתוך הטופס: 'Name בן Mother — Request'. שומרים את הגוף המלא בנפרד."""
     if not body:
         return ''
-    picked = []
+    fields = {}
+    generic = []
     for ln in body.split('\n'):
-        low = ln.lower()
-        if any(s in low for s in _SKIP_LABELS):
-            continue
-        m = re.match(r'^\s*([^:：]{1,40})[:：]\s*(.+)$', ln)
-        if m and any(lbl in m.group(1).lower() for lbl in _NAME_LABELS):
-            picked.append(m.group(2).strip())
-        elif re.search(r'[֐-׿]', ln) and re.search(r'\b(בן|בת)\b', ln):
-            picked.append(ln.strip())
-    return '\n'.join(dict.fromkeys([p for p in picked if p]))
+        m = re.match(r'^\s*([^:：]{1,40})[:：]\s*(.*)$', ln)
+        if m:
+            key = m.group(1).strip().lower()
+            val = m.group(2).strip()
+            matched = False
+            for labels, fld in _LABEL_MAP:
+                if any(lbl in key for lbl in labels):
+                    if val:
+                        fields[fld] = val
+                    matched = True
+                    break
+            if matched:
+                continue
+        # שורות עבריות עם בן/בת — שם מוכן לתפילה
+        if re.search(r'[֐-׿]', ln) and re.search(r'\b(בן|בת)\b', ln):
+            generic.append(ln.strip())
+    if fields.get('name'):
+        s = fields['name']
+        parent = fields.get('mother') or fields.get('father')
+        if parent:
+            s += ' בן ' + parent
+        if fields.get('request'):
+            s += ' — ' + fields['request']
+        return s
+    return '\n'.join(dict.fromkeys([g for g in generic if g]))
 
 
 def _imap_since(default='01-Jan-2026'):

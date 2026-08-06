@@ -1215,28 +1215,37 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/intake':
             con = db(); out = []
             donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
+            def _kvn(s):  # נרמול להשוואת שמות — עברית+אנגלית, אותיות בלבד
+                s = re.sub(r'[^א-תa-zA-Z ]', ' ', str(s or '').lower())
+                s = s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
+                return re.sub(r'\s+', ' ', s).strip()
+            _STOP = {'בן', 'בת', 'ben', 'bas', 'bat', 'ver', 'reb'}
+            allpray = [_kvn(p['text']) for p in con.execute("SELECT text FROM prayers WHERE COALESCE(TRIM(text),'')<>''")]
+            def _in_kvittel(names):
+                head = _kvn((names or '').split('—')[0].split(' - ')[0])
+                toks = [t for t in head.split() if len(t) >= 2 and t not in _STOP]
+                if len(toks) < 2:
+                    return False
+                for pt in allpray:
+                    if all(t in pt for t in toks):
+                        return True
+                return False
             for r in con.execute("SELECT * FROM intake ORDER BY (status='handled'), received DESC, id DESC"):
-                x = dict(r); x['match'] = None; x['in_kvittel'] = False
+                x = dict(r); x['match'] = None
+                x['in_kvittel'] = _in_kvittel(r['names'])
                 hit = None
                 fem = (r['from_email'] or '').strip().lower()
                 if fem:
                     for d in donors:
                         if (d['email'] or '').strip().lower() == fem and d['email']:
                             hit = d; break
-                if not hit:  # התאמה לפי שמות בגוף (שם משפחה בעברית)
-                    nm = _norm(r['names'] or r['from_name'] or '')
-                    toks = [t for t in nm.split() if len(t) >= 2]
-                    if toks:
-                        for d in donors:
-                            full = _norm((d['last'] or '') + ' ' + (d['first'] or ''))
-                            if d['last'] and _norm(d['last']) in toks and any(t in full for t in toks):
-                                hit = d; break
                 if r['donor_id']:
                     hit = next((d for d in donors if d['id'] == r['donor_id']), hit)
                 if hit:
                     x['match'] = {'id': hit['id'], 'name': (hit['last'] + ' ' + (hit['first'] or '')).strip(), 'tier': hit['tier'] or ''}
-                    ip = con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (hit['id'],)).fetchone()[0]
-                    x['in_kvittel'] = ip > 0
+                    if not x['in_kvittel']:
+                        ip = con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (hit['id'],)).fetchone()[0]
+                        x['in_kvittel'] = ip > 0
                 out.append(x)
             con.close()
             return self._send(200, {'configured': _intake_configured(), 'items': out})
@@ -1423,12 +1432,15 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(404, {'error': 'not found'})
             did = b.get('donor_id') or r['donor_id']
             text = (b.get('names') or r['names'] or r['body'] or '').strip()
-            if not did:
-                con.close(); return self._send(400, {'error': 'no_donor'})
-            tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
-            tval = (tier['tier'] if tier else '') or 'קוויטל_שבועי'
-            con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, text, tval))
-            con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
+            if did:  # שיוך לכרטיס תורם קיים
+                tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
+                tval = (tier['tier'] if tier else '') or 'קוויטל_שבועי'
+                con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, text, tval))
+                con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
+            else:     # הוספה לקוויטל בלי שיוך לתורם (שם לא־משויך)
+                dispname = (r['from_name'] or r['from_email'] or (text.split('בן')[0].strip()) or 'מהאתר').strip()
+                con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(NULL,?,?,?)", (dispname, text, 'קוויטל_שבועי'))
+                con.execute("UPDATE intake SET status='handled' WHERE id=?", (iid,))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         if self.path == '/api/campaigns':

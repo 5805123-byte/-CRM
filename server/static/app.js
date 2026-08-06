@@ -1085,6 +1085,7 @@ function paintIntake(){
         <div class="intres dpres"></div>
         <div class="intbtns">
           ${mt?`<button class="btn sm intattach" data-id="${x.id}" data-did="${mt.id}">➕ צרף ל${esc(mt.name)}</button>`:''}
+          <button class="btn sm intaddkv" data-id="${x.id}">🕯️ הוסף לקוויטל (בלי תורם)</button>
           <button class="btn sm ghost intsave" data-id="${x.id}">💾 שמור שמות</button>
           <button class="btn sm ${handled?'':'ghost'} inthandle" data-id="${x.id}">${handled?'↩︁ החזר לטיפול':'✓ סמן טופל'}</button>
         </div>
@@ -1102,6 +1103,13 @@ function paintIntake(){
     const dd=DB.find(x=>x.id==+b.dataset.did);if(dd){dd.prayers=dd.prayers||[];dd.prayers.push({text:names,tier:dd.tier||'קוויטל_שבועי'});}
     const it=INTAKE.find(x=>x.id==b.dataset.id);if(it){it.status='handled';it.in_kvittel=true;}
     toast('צורף לקוויטל ✓');paintIntake();
+  });
+  list.querySelectorAll('.intaddkv').forEach(b=>b.onclick=async()=>{
+    const names=getNames(b.dataset.id);if(!names){toast('אין שמות להוספה');return;}
+    await api('POST','/api/intake/'+b.dataset.id+'/attach',{names:names});   // בלי donor_id → שם לא־משויך
+    const it=INTAKE.find(x=>x.id==b.dataset.id);if(it){it.status='handled';it.in_kvittel=true;}
+    await load();   // רענן כדי שהשם הלא־משויך ייכנס לרשימת הקוויטל
+    toast('נוסף לקוויטל (לא־משויך) ✓');kvSub='intake';INTAKE=null;await loadIntake();paintIntake();
   });
   // חיפוש תורם לצירוף ידני
   list.querySelectorAll('.intcard').forEach(card=>{
