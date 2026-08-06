@@ -674,6 +674,60 @@ def ensure_schema():
             print(f'  קוויטל v5: הותאמו {matched} (רופף {loose}), שמות חדשים {imported}, דרגות {retier}, לא־משויכים {unlinked}')
     except Exception as e:
         print('  שגיאת קוויטל v5:', e)
+    # קוויטל v6 — סנכרון חוזר לכל אנשי הקשר עם תווית "קוויטל": משייך גם תורמים שנוצרו אחרי הייבואים
+    try:
+        seedall = os.path.join(HERE, 'kvittel_all_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_all_v6'").fetchone() and os.path.exists(seedall):
+            PRIO = {'יששכר_זבולון': 3, 'קוויטל_101': 2, 'קוויטל_שבועי': 1, 'קוויטל_כללי': 1, '': 0}
+            FIN = str.maketrans('םןץףך', 'מנצפכ')
+            def _d7(s): return re.sub(r'[^0-9]', '', s or '')[-7:]
+            def _h(s):
+                s = re.sub(r'[^\u0590-\u05ff]', '', s or '').replace('ע', '').replace('א', '').replace('ה', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            def _h2(s):
+                s = _h(s).translate(FIN).replace('ו', '').replace('י', '')
+                return re.sub(r'(.)\1+', r'\1', s)
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
+            for d in donors:
+                d['_l'] = _h(d['last']); d['_f'] = _h(d['first']); d['_l2'] = _h2(d['last']); d['_f2'] = _h2(d['first'])
+                d['_dph'] = [_d7(p) for p in re.split(r'[/,]', d['phone'] or '') if _d7(p)]
+            entries = json.load(open(seedall, encoding='utf-8'))
+            newtier = imported = dupfix = 0
+            for e in entries:
+                emails = [x.lower() for x in (e.get('emails') or [])]
+                phones = [x for x in (e.get('phones') or []) if x]
+                el, ef = _h(e.get('last')), _h(e.get('first'))
+                el2, ef2 = _h2(e.get('last')), _h2(e.get('first'))
+                hits = []
+                for d in donors:
+                    if phones and any(p in d['_dph'] for p in phones): hits.append(d); continue
+                    if emails and (d['email'] or '').strip().lower() in emails and d['email']: hits.append(d); continue
+                    if el and ef and d['_l'] == el and (d['_f'].startswith(ef) or ef.startswith(d['_f'])): hits.append(d); continue
+                if not hits and el2 and ef2:
+                    cand = [d for d in donors if d['_l2'] == el2 and (d['_f2'].startswith(ef2) or ef2.startswith(d['_f2']))]
+                    if len(cand) == 1: hits = cand
+                if not hits and el2:
+                    cand = [d for d in donors if d['_l2'] == el2]
+                    if len(cand) == 1: hits = cand
+                if not hits: continue
+                tt = 'יששכר_זבולון' if e.get('isiz') else ('קוויטל_101' if e.get('is101') else 'קוויטל_כללי')
+                notes = (e.get('notes') or '').strip()
+                for hit in hits:
+                    cur = hit['tier'] or ''
+                    if PRIO.get(tt, 1) > PRIO.get(cur, 0):
+                        con.execute("UPDATE donors SET tier=? WHERE id=?", (tt, hit['id']))
+                        if not cur: newtier += 1
+                        else: dupfix += 1
+                        hit['tier'] = tt
+                    elif not cur:
+                        con.execute("UPDATE donors SET tier=? WHERE id=?", (tt, hit['id'])); hit['tier'] = tt; newtier += 1
+                    if notes and not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (hit['id'],)).fetchone():
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (hit['id'], notes, hit['tier'] or tt))
+                        imported += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_all_v6')")
+            print(f'  \u05e7\u05d5\u05d5\u05d9\u05d8\u05dc v6: \u05d3\u05e8\u05d2\u05d5\u05ea \u05d7\u05d3\u05e9\u05d5\u05ea {newtier}, \u05db\u05e4\u05d5\u05dc\u05d9\u05dd {dupfix}, \u05e9\u05de\u05d5\u05ea {imported}')
+    except Exception as e:
+        print('  \u05e9\u05d2\u05d9\u05d0\u05ea \u05e7\u05d5\u05d5\u05d9\u05d8\u05dc v6:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
