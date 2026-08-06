@@ -710,7 +710,7 @@ def ensure_schema():
                     cand = [d for d in donors if d['_l2'] == el2]
                     if len(cand) == 1: hits = cand
                 if not hits: continue
-                tt = 'יששכר_זבולון' if e.get('isiz') else ('קוויטל_101' if e.get('is101') else 'קוויטל_כללי')
+                tt = 'יששכר_זבולון' if e.get('isiz') else ('קוויטל_101' if e.get('is101') else 'קוויטל_שבועי')
                 notes = (e.get('notes') or '').strip()
                 for hit in hits:
                     cur = hit['tier'] or ''
@@ -728,6 +728,15 @@ def ensure_schema():
             print(f'  \u05e7\u05d5\u05d5\u05d9\u05d8\u05dc v6: \u05d3\u05e8\u05d2\u05d5\u05ea \u05d7\u05d3\u05e9\u05d5\u05ea {newtier}, \u05db\u05e4\u05d5\u05dc\u05d9\u05dd {dupfix}, \u05e9\u05de\u05d5\u05ea {imported}')
     except Exception as e:
         print('  \u05e9\u05d2\u05d9\u05d0\u05ea \u05e7\u05d5\u05d5\u05d9\u05d8\u05dc v6:', e)
+    # v7 — כללי אינו דרגת תורם אלא רק תצוגת הדפסה — כל קוויטל_כללי הופך לשבועי
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='klali_to_weekly_v1'").fetchone():
+            n1 = con.execute("UPDATE donors SET tier='קוויטל_שבועי' WHERE tier='קוויטל_כללי'").rowcount
+            n2 = con.execute("UPDATE prayers SET tier='קוויטל_שבועי' WHERE tier='קוויטל_כללי'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('klali_to_weekly_v1')")
+            print(f'  מיזוג כללי->שבועי: תורמים {n1}, שמות {n2}')
+    except Exception as e:
+        print('  שגיאת כללי->שבועי:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():

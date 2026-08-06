@@ -191,13 +191,12 @@ const DFILTERS={
   'reg':{label:'💵 קבוע', fn:d=>d.category==='קבוע'},
   'reglow':{label:'שבועי', fn:d=>d.category==='קבוע' && amtNum(d.amount)>0 && amtNum(d.amount)<101},
   'occ':{label:'מזדמנים', fn:d=>d.category==='מזדמן' && !d.tier},
-  'klali':{label:'כללי', fn:d=>d.tier==='קוויטל_כללי'},
   'il':{label:'🇮🇱 ארץ ישראל', fn:d=>d.region==='il'},
   'building':{label:'🏛️ בניין', fn:d=>(d.building||[]).length>0},
   'new':{label:'🆕 נוספו', fn:d=>!!d.created},
   '':{label:'הכל', fn:d=>true}
 };
-const DFORDER=['il','iz','k101','reg','reglow','occ','klali','building','new',''];
+const DFORDER=['il','iz','k101','reg','reglow','occ','building','new',''];
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
@@ -385,7 +384,7 @@ let cardTab='details';
 function tierOpts(d){
   const cur=(d&&d.tier)||'';
   const isOcc=!cur && d && d.category==='מזדמן';
-  const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_כללי'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_כללי':'כללי'}[t]):'— ללא —'}</option>`).join('');
+  const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי'}[t]):'— ללא —'}</option>`).join('');
   const occLbl=isOcc?('מזדמנים'+(d.kv_month?(' · '+d.kv_month+(d.kv_year?(' '+d.kv_year):'')):'')):'מזדמנים';
   return base+`<option value="__occ" ${isOcc?'selected':''}>${occLbl}</option>`;
 }
@@ -642,7 +641,7 @@ function cardDonations(d,body){
       <label class="fld" id="dn_catfree_l" style="display:none"><span>שם הקטגוריה / הקמפיין</span><input id="dn_catfree" placeholder="למשל: קמפיין סוכות ${esc(HEBYEAR||'תשפ״ז')}"></label>
       <label class="fld"><span>תאריך (לועזי)</span><input id="dn_date" type="date"></label>
       <label class="fld"><span>🕯️ שם לתפילה (לקוויטל)</span><textarea id="dn_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
-      <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="שבועי">שבועי</option><option value="קוויטל_כללי">כללי</option></select></label>
+      <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="קוויטל_שבועי">שבועי</option></select></label>
       <button class="btn" id="dn_add">➕ רשום תרומה</button>
       ${d.channel?`<div class="hintxt">ערוץ קבוע בתיק: ${esc(d.channel)}</div>`:''}</div>
     <div class="sec"><h3>🗓️ ימים משובצים (פרנס / קפה / בוקר)</h3><div id="parnes"></div>
@@ -954,8 +953,7 @@ function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שב
 function kvMemberType(d){
   if(d.tier==='יששכר_זבולון')return 'iz';
   if(d.tier==='קוויטל_101')return '101';
-  if(d.tier==='קוויטל_שבועי')return 'weekly';
-  if(d.tier==='קוויטל_כללי')return 'klali';
+  if(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי')return 'weekly';
   if(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)return 'weekly';
   return null;
 }
@@ -1049,7 +1047,7 @@ function prayerKvType(pt,d){
   d=d||{};
   if(pt==='יששכר_זבולון'||(!pt&&d.tier==='יששכר_זבולון'))return 'iz';
   if(pt==='קוויטל_101'||(!pt&&d.tier==='קוויטל_101'))return '101';
-  if(pt==='שבועי'||pt==='קוויטל_שבועי'||(!pt&&d.tier==='קוויטל_שבועי')||(!pt&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101))return 'weekly';
+  if(pt==='שבועי'||pt==='קוויטל_שבועי'||pt==='קוויטל_כללי'||(!pt&&(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי'))||(!pt&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101))return 'weekly';
   if(d.category==='מזדמן'&&!d.tier)return 'occ';
   return 'other';
 }
