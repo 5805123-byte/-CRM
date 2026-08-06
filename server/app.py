@@ -55,7 +55,7 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN kind TEXT DEFAULT 'parnes'")
@@ -766,6 +766,20 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('berg_demo_kvittel_he_v1')")
     except Exception as e:
         print('  שגיאת קוויטל ברג:', e)
+    # תיקון פרטי קשר — יצחק (איצי) ברגר, לכרטיס הנכון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berger_itzik_contact_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE lower(COALESCE(email,''))='mark4realty@verizon.net'").fetchone()
+            if not r:
+                cand = con.execute("SELECT id FROM donors WHERE last LIKE '%ברגר%' AND first LIKE '%איצי%'").fetchall()
+                if len(cand) == 1: r = cand[0]
+            if r:
+                con.execute("UPDATE donors SET email=?, phone=?, addr=?, city=?, country=?, zip=?, addr_ok=1 WHERE id=?",
+                            ('mark4realty@verizon.net', '+1 917-803-1478', 'P.O. Box 33104', 'Brooklyn', 'US', '11204', r['id']))
+                print('  פרטי יצחק ברגר: עודכנו')
+            con.execute("INSERT INTO seed_flags(name) VALUES('berger_itzik_contact_v1')")
+    except Exception as e:
+        print('  שגיאת פרטי ברגר:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
@@ -1403,8 +1417,8 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with'):
-                if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id'):
+                if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             if sets:
                 con.execute("UPDATE partners SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
                 con.commit()
