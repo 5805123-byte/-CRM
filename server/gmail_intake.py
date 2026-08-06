@@ -91,38 +91,73 @@ def _submitter_email(body):
     return m.group(0).lower() if m else ''
 
 
+# תרגום הבקשה (מגיעה באנגלית מהטופס) לנוסח קוויטל בעברית
+_REQ_MAP = {
+    'zivug': 'לזיווג הגון', 'shidduch': 'לזיווג הגון', 'zivug hagun': 'לזיווג הגון',
+    'refuah': 'לרפואה שלמה', 'refuah shleima': 'לרפואה שלמה', 'refua': 'לרפואה שלמה',
+    'leilui neshomo': 'לעילוי נשמה', 'leilui nishmas': 'לעילוי נשמה', 'leilei neshomo': 'לעילוי נשמה',
+    'parnasa': 'לפרנסה טובה', 'parnossa': 'לפרנסה בריווח', 'parnassah': 'לפרנסה טובה',
+    'hatzlacha': 'להצלחה', 'hatzlocha': 'להצלחה', 'success': 'להצלחה',
+    'banim': 'לזרע של קיימא', 'zera shel kayama': 'לזרע של קיימא', 'children': 'לזרע של קיימא',
+    'yeshua': 'לישועה', 'yeshuah': 'לישועה', 'nachas': 'לנחת', 'shalom bayis': 'לשלום בית',
+}
+# שמות נשיים נפוצים — לקביעת "בת" (ברירת מחדל: בן)
+_FEMALE = {'rivka', 'rivkah', 'sarah', 'sara', 'esther', 'ester', 'estie', 'chana', 'chanah', 'hana',
+           'leah', 'lea', 'rachel', 'rochel', 'zelda', 'cherna', 'miriam', 'devora', 'devorah', 'deborah',
+           'gitel', 'gittel', 'feiga', 'faiga', 'bracha', 'brocha', 'hinda', 'henya', 'malka', 'malky',
+           'shaindel', 'shaindl', 'yenta', 'yente', 'frieda', 'fraida', 'freida', 'breindel', 'toba', 'tova',
+           'tzipora', 'tzipporah', 'chaya', 'chaia', 'baila', 'bayla', 'raizel', 'rayzel', 'sima', 'simcha',
+           'perl', 'perel', 'yocheved', 'nechama', 'ruchama', 'elka', 'etel', 'ettel', 'golda', 'tema', 'temma',
+           'blima', 'bluma', 'pessy', 'pesha', 'rifka', 'shprintza', 'yita', 'itta', 'necha', 'roiza'}
+
+
+def _fmt_one(name, mother, father, request):
+    s = name.strip()
+    first = re.split(r'\s+', s)[0].lower() if s else ''
+    rel = 'בת' if first in _FEMALE else 'בן'
+    parent = (mother or father).strip()
+    if parent:
+        s += ' ' + rel + ' ' + parent
+    req = request.strip()
+    if req:
+        s += ' ' + _REQ_MAP.get(req.lower(), req)
+    return s
+
+
 def _parse_names(body):
-    """בונה שם קוויטל מתוך הטופס: 'Name בן Mother — Request'. שומרים את הגוף המלא בנפרד."""
+    """בונה שם/שמות קוויטל מתוך הטופס — תומך בכמה שמות במייל אחד: 'Name בן/בת Mother נוסח'."""
     if not body:
         return ''
-    fields = {}
+    records = []
+    cur = {}
+
+    def flush():
+        if cur.get('name'):
+            records.append(_fmt_one(cur.get('name', ''), cur.get('mother', ''), cur.get('father', ''), cur.get('request', '')))
+        cur.clear()
+
     generic = []
     for ln in body.split('\n'):
         m = re.match(r'^\s*([^:：]{1,40})[:：]\s*(.*)$', ln)
         if m:
             key = m.group(1).strip().lower()
             val = m.group(2).strip()
-            matched = False
-            for labels, fld in _LABEL_MAP:
+            fld = None
+            for labels, f in _LABEL_MAP:
                 if any(lbl in key for lbl in labels):
-                    if val:
-                        fields[fld] = val
-                    matched = True
+                    fld = f
                     break
-            if matched:
+            if fld:
+                if fld == 'name' and cur.get('name'):
+                    flush()   # התחלת בלוק שם חדש — סגור את הקודם
+                if val:
+                    cur[fld] = val
                 continue
-        # שורות עבריות עם בן/בת — שם מוכן לתפילה
         if re.search(r'[֐-׿]', ln) and re.search(r'\b(בן|בת)\b', ln):
             generic.append(ln.strip())
-    if fields.get('name'):
-        s = fields['name']
-        parent = fields.get('mother') or fields.get('father')
-        if parent:
-            s += ' בן ' + parent
-        if fields.get('request'):
-            s += ' — ' + fields['request']
-        return s
-    return '\n'.join(dict.fromkeys([g for g in generic if g]))
+    flush()
+    out = records + [g for g in generic if g]
+    return '\n'.join(dict.fromkeys([o for o in out if o]))
 
 
 def _imap_since(default='01-Jan-2026'):
