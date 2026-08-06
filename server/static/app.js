@@ -1463,6 +1463,7 @@ function renderAvreich(){
     view.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
     view.querySelectorAll('.avopen').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+    view.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>openDonor(DB.find(y=>y.id==x.dataset.did)));
     view.querySelectorAll('.avpay').forEach(b=>b.onclick=()=>showPayments(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avhist').forEach(b=>b.onclick=()=>showAvHist(DB.find(x=>x.id==b.dataset.id)));
     view.querySelectorAll('.avadd').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id),today=todayStr();const r=await api('POST','/api/partner',{donor_id:d.id,avreich:'',start_date:today});d.partners=d.partners||[];d.partners.push({id:r.id,donor_id:d.id,avreich:'',start_date:today,amount:'',note:'',active:1});renderAvreich();});
@@ -1473,14 +1474,24 @@ function renderAvreich(){
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();
 }
+// שותפים לאותו אברך — מקישור ידני (partner_with) וגם זיהוי אוטומטי של תורמים אחרים שמחזיקים אותו אברך
+function avCoHolders(p){
+  const av=norm(p.avreich||'');const set=new Map();
+  pwList(p).forEach(x=>{if(x.name)set.set(norm(x.name),{name:x.name,id:x.id});});
+  if(av)(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av){const nm=(o.last+' '+o.first).trim();const k=norm(nm);if(!set.has(k))set.set(k,{name:nm,id:o.id});}});});
+  return [...set.values()];
+}
 function avPartnerRow(p){
+  const co=avCoHolders(p);
+  const coHtml=co.length?`<div class="avco">🤝 מוחזק במשותף עם: ${co.map(x=>x.id?`<span class="cosp2" data-did="${x.id}">${esc(x.name)} ↗</span>`:esc(x.name)).join(', ')}</div>`:'';
   return `<div class="avp" data-pid="${p.id}">
     <div class="avmain"><input class="avf avname" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך">
       <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום" inputmode="decimal"></div>
       <button class="avend" title="החלפת אברך — הקודם יישמר בהיסטוריה">🔄 החלפה</button></div>
     <div class="avsub"><select class="avf avmethod" data-k="method">${channelOpts(p.method)}</select>
       <input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="מתאריך (עברי)">
-      <input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="הערות"></div></div>`;
+      <input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="הערות"></div>
+    ${coHtml}</div>`;
 }
 function bindAvFields(){
   view.querySelectorAll('.avp').forEach(row=>{const pid=row.dataset.pid;
