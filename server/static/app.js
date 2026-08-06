@@ -981,15 +981,18 @@ function renderKvittel(){
     view.innerHTML=`<div class="cnt">בחר סוג קוויטל <small style="color:var(--muted)">· או חפש שם למעלה כדי לדלג ישר לתוצאות</small></div>
       ${miss?`<button class="btn kvmissbtn" id="kvMissBtn">🔴 חסרים שמות קוויטל — ${miss} לטיפול</button>`:''}
       ${unl?`<button class="btn kvunlbtn" id="kvUnlBtn">🔗 קוויטל לא־משויכים — ${unl} להחלטה</button>`:''}
+      <button class="btn kvintakebtn" id="kvIntakeBtn">📨 בקשות תפילה מהאתר (מהמייל)…</button>
       <div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
     view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvListQ='';kvSub=b.dataset.k;render();});
     const mb=document.getElementById('kvMissBtn');if(mb)mb.onclick=()=>{kvSub='missing';render();};
     const ub=document.getElementById('kvUnlBtn');if(ub)ub.onclick=()=>{kvSub='unlinked';render();};
+    const ib=document.getElementById('kvIntakeBtn');if(ib)ib.onclick=()=>{kvSub='intake';render();};
     return;
   }
   if(kvSub==='unlinked') return renderKvUnlinked();
   if(kvSub==='missing') return renderKvMissing();
   if(kvSub==='occ') return renderKvOcc();
+  if(kvSub==='intake') return renderKvIntake();
   renderKvList(kvSub);
 }
 function renderKvUnlinked(){
@@ -1042,6 +1045,77 @@ function bindKvEdit(){
       const d=DB.find(x=>x.id==newdid);if(!d)return;const r=await api('POST','/api/prayer',{donor_id:+newdid,text:nt,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:nt,tier:d.tier||''});n.dataset.id=r.id;delete n.dataset.newdid;toast('נוסף לקוויטל ✓ (גם בכרטיס)');if(kvSub==='missing')renderKvMissing();
     }
   };});
+}
+// ===== בקשות תפילה מהאתר (מיילים) — עיון, בדיקה אם כבר בקוויטל, וצירוף =====
+let INTAKE=null, INTAKE_CFG=false;
+async function loadIntake(){const r=await api('GET','/api/intake');INTAKE=r.items||[];INTAKE_CFG=!!r.configured;}
+async function renderKvIntake(){
+  chips.innerHTML='';
+  view.innerHTML='<div class="cnt">📨 טוען בקשות…</div>';
+  if(INTAKE===null) await loadIntake();
+  paintIntake();
+}
+function paintIntake(){
+  const items=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
+  const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 בקשות תפילה מהאתר</b><span class="cnt2">(${nNew} לטיפול)</span>
+      <button class="btn sm" id="intSync">🔄 משוך מהמייל</button></div>
+    ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
+    <div class="hintxt" style="margin:2px 2px 8px">כל בקשה שהגיעה במייל מהאתר. ✅ = השמות כבר צורפו לקוויטל אצל התורם · 🔴 = עדיין לא. אפשר לערוך את השמות, לצרף לתורם, או לסמן שטופל.</div>
+    <div id="intlist"></div>`;
+  document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
+  document.getElementById('intSync').onclick=async()=>{
+    const btn=document.getElementById('intSync');btn.disabled=true;btn.textContent='מושך…';
+    const r=await api('POST','/api/intake/sync',{});
+    if(!r.ok){toast(r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאת משיכה: '+(r.detail||r.error||''));btn.disabled=false;btn.textContent='🔄 משוך מהמייל';return;}
+    toast('נמשכו '+(r.new||0)+' בקשות חדשות ✓');INTAKE=null;await loadIntake();paintIntake();
+  };
+  const list=document.getElementById('intlist');
+  list.innerHTML=items.map(x=>{
+    const mt=x.match;const badge=x.in_kvittel?'<span class="pstat yes">✅ כבר בקוויטל</span>':'<span class="pstat no">🔴 עדיין לא בקוויטל</span>';
+    const handled=x.status==='handled';
+    return `<div class="intcard ${handled?'given':''}" data-id="${x.id}">
+      <div class="inthd"><b>${esc(x.from_name||x.from_email||'—')}</b> ${x.from_email?`<span class="ensm" dir="ltr">${esc(x.from_email)}</span>`:''} <span style="color:var(--muted);font-size:.8rem">${esc(x.received||'')}</span></div>
+      ${mt?`<div class="intmatch">🔗 מותאם לכרטיס: <a class="wholink" data-did="${mt.id}"><b>${esc(mt.name)}</b> ↗</a> ${badge} ${mt.tier?('· '+esc(({'יששכר_זבולון':'יש"ז','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי'})[mt.tier]||mt.tier)):''}</div>`:`<div class="intmatch">❓ לא נמצא כרטיס תואם — חפש וצרף למטה</div>`}
+      <textarea class="intnames" rows="3" placeholder="שמות לתפילה">${esc(x.names||x.body||'')}</textarea>
+      <div class="intact">
+        <input class="intq" placeholder="🔍 חפש תורם לצרף אליו…" autocomplete="off" value="">
+        <div class="intres dpres"></div>
+        <div class="intbtns">
+          ${mt?`<button class="btn sm intattach" data-id="${x.id}" data-did="${mt.id}">➕ צרף ל${esc(mt.name)}</button>`:''}
+          <button class="btn sm ghost intsave" data-id="${x.id}">💾 שמור שמות</button>
+          <button class="btn sm ${handled?'':'ghost'} inthandle" data-id="${x.id}">${handled?'↩︁ החזר לטיפול':'✓ סמן טופל'}</button>
+        </div>
+      </div>
+      <details class="intraw"><summary style="cursor:pointer;color:var(--muted);font-size:.8rem">הצג את המייל המלא</summary><pre style="white-space:pre-wrap;font-size:.82rem">${esc(x.body||'')}</pre></details>
+    </div>`;
+  }).join('')||'<div class="empty">אין בקשות. לחץ "משוך מהמייל".</div>';
+  list.querySelectorAll('.wholink[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(d=>d.id==w.dataset.did),'kvittel'));
+  const getNames=id=>{const c=list.querySelector('.intcard[data-id="'+id+'"]');return c?c.querySelector('.intnames').value.trim():'';};
+  list.querySelectorAll('.intsave').forEach(b=>b.onclick=async()=>{await api('PUT','/api/intake/'+b.dataset.id,{names:getNames(b.dataset.id)});const it=INTAKE.find(x=>x.id==b.dataset.id);if(it)it.names=getNames(b.dataset.id);toast('נשמר ✓');});
+  list.querySelectorAll('.inthandle').forEach(b=>b.onclick=async()=>{const it=INTAKE.find(x=>x.id==b.dataset.id);const ns=it&&it.status==='handled'?'new':'handled';await api('PUT','/api/intake/'+b.dataset.id,{status:ns});if(it)it.status=ns;paintIntake();});
+  list.querySelectorAll('.intattach').forEach(b=>b.onclick=async()=>{
+    const names=getNames(b.dataset.id);if(!names){toast('אין שמות לצירוף');return;}
+    await api('POST','/api/intake/'+b.dataset.id+'/attach',{donor_id:+b.dataset.did,names:names});
+    const dd=DB.find(x=>x.id==+b.dataset.did);if(dd){dd.prayers=dd.prayers||[];dd.prayers.push({text:names,tier:dd.tier||'קוויטל_שבועי'});}
+    const it=INTAKE.find(x=>x.id==b.dataset.id);if(it){it.status='handled';it.in_kvittel=true;}
+    toast('צורף לקוויטל ✓');paintIntake();
+  });
+  // חיפוש תורם לצירוף ידני
+  list.querySelectorAll('.intcard').forEach(card=>{
+    const id=card.dataset.id,inp=card.querySelector('.intq'),res=card.querySelector('.intres');
+    inp.oninput=()=>{const s=norm(inp.value);if(!s){res.innerHTML='';return;}
+      const m=DB.filter(x=>norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,6);
+      res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{
+        const names=getNames(id);if(!names){toast('אין שמות לצירוף');return;}
+        await api('POST','/api/intake/'+id+'/attach',{donor_id:+el.dataset.did,names:names});
+        const dd=DB.find(x=>x.id==+el.dataset.did);if(dd){dd.prayers=dd.prayers||[];dd.prayers.push({text:names,tier:dd.tier||'קוויטל_שבועי'});}
+        const it=INTAKE.find(x=>x.id==id);if(it){it.status='handled';it.in_kvittel=true;it.match={id:+el.dataset.did,name:(dd.last+' '+dd.first).trim(),tier:dd.tier||''};}
+        toast('צורף לקוויטל ✓');paintIntake();
+      });
+    };
+  });
 }
 function prayerKvType(pt,d){
   d=d||{};

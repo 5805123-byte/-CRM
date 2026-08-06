@@ -24,6 +24,13 @@ def _norm(s):
     s = s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
     return s.strip()
 
+def _intake_configured():
+    try:
+        import gmail_intake
+        return gmail_intake.configured()
+    except Exception:
+        return False
+
 def ensure_schema():
     """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
     con = db()
@@ -43,6 +50,9 @@ def ensure_schema():
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
+        from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
+        donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT')]:
@@ -1202,6 +1212,34 @@ class H(BaseHTTPRequestHandler):
             rows = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
             con.close()
             return self._send(200, rows)
+        if self.path.split('?')[0] == '/api/intake':
+            con = db(); out = []
+            donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,tier FROM donors")]
+            for r in con.execute("SELECT * FROM intake ORDER BY (status='handled'), received DESC, id DESC"):
+                x = dict(r); x['match'] = None; x['in_kvittel'] = False
+                hit = None
+                fem = (r['from_email'] or '').strip().lower()
+                if fem:
+                    for d in donors:
+                        if (d['email'] or '').strip().lower() == fem and d['email']:
+                            hit = d; break
+                if not hit:  # התאמה לפי שמות בגוף (שם משפחה בעברית)
+                    nm = _norm(r['names'] or r['from_name'] or '')
+                    toks = [t for t in nm.split() if len(t) >= 2]
+                    if toks:
+                        for d in donors:
+                            full = _norm((d['last'] or '') + ' ' + (d['first'] or ''))
+                            if d['last'] and _norm(d['last']) in toks and any(t in full for t in toks):
+                                hit = d; break
+                if r['donor_id']:
+                    hit = next((d for d in donors if d['id'] == r['donor_id']), hit)
+                if hit:
+                    x['match'] = {'id': hit['id'], 'name': (hit['last'] + ' ' + (hit['first'] or '')).strip(), 'tier': hit['tier'] or ''}
+                    ip = con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (hit['id'],)).fetchone()[0]
+                    x['in_kvittel'] = ip > 0
+                out.append(x)
+            con.close()
+            return self._send(200, {'configured': _intake_configured(), 'items': out})
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -1243,6 +1281,16 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_PUT(self):
+        m = re.match(r'/api/intake/(\d+)$', self.path)
+        if m:
+            b = self._body()
+            fields = {k: b[k] for k in ('names', 'status', 'donor_id') if k in b}
+            if fields:
+                con = db()
+                con.execute("UPDATE intake SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",
+                            tuple(fields.values()) + (int(m.group(1)),))
+                con.commit(); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/donor/(\d+)$', self.path)
         if m:
             b = self._body(); did = int(m.group(1))
@@ -1360,6 +1408,29 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         b = self._body()
+        if self.path == '/api/intake/sync':
+            try:
+                import gmail_intake
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            con = db(); res = gmail_intake.sync(con); con.close()
+            return self._send(200, res)
+        m = re.match(r'/api/intake/(\d+)/attach$', self.path)
+        if m:
+            iid = int(m.group(1))
+            con = db(); r = con.execute("SELECT * FROM intake WHERE id=?", (iid,)).fetchone()
+            if not r:
+                con.close(); return self._send(404, {'error': 'not found'})
+            did = b.get('donor_id') or r['donor_id']
+            text = (b.get('names') or r['names'] or r['body'] or '').strip()
+            if not did:
+                con.close(); return self._send(400, {'error': 'no_donor'})
+            tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
+            tval = (tier['tier'] if tier else '') or 'קוויטל_שבועי'
+            con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, text, tval))
+            con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm:
