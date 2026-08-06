@@ -6,7 +6,18 @@ from urllib.parse import quote
 def today_iso():
     return datetime.date.today().isoformat()
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year
+from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, HMONTHS
+
+def heb_anniv(start_date):
+    """המופע הבא (>= היום) של יום+חודש עברי מתוך תאריך תחילת שותפות — מתעלם משנת ההסכם."""
+    txt = re.sub(r'[\"\']', '', str(start_date or '')).strip()
+    toks = txt.split()
+    if not toks:
+        return None
+    mon = next((t for t in toks[1:] if t in HMONTHS), None)
+    if not mon:
+        return None
+    return heb_to_greg(toks[0] + ' ' + mon)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
@@ -55,9 +66,16 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
+    # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
+    try:
+        for r in con.execute("SELECT id, start_date FROM partners WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(start_date),'')<>''").fetchall():
+            g = heb_anniv(r['start_date'])
+            con.execute("UPDATE partners SET renew_date=? WHERE id=?", (g.isoformat() if g else None, r['id']))
+    except Exception as e:
+        print('  שגיאת תאריך חידוש יש"ז:', e)
     try: con.execute("ALTER TABLE parnes ADD COLUMN kind TEXT DEFAULT 'parnes'")
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN status TEXT DEFAULT 'confirmed'")
@@ -1459,8 +1477,11 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','renew_date'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
+            if 'start_date' in b:   # חישוב מחדש של תאריך החידוש כשמשנים את תחילת ההסכם
+                g = heb_anniv(b.get('start_date') or '')
+                sets.append('renew_date=?'); vals.append(g.isoformat() if g else None)
             if sets:
                 con.execute("UPDATE partners SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
                 con.commit()

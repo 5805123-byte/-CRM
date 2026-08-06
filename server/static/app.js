@@ -42,13 +42,26 @@ function coHeldWith(d){
     if(linked||byname)out.push({name:(o.last+' '+o.first).trim(),did:o.id,avreich:p.avreich,amount:p.amount,method:p.method});});});
   return out;
 }
+// חידוש שותפות יש"ז — מחזיר את החידוש הקרוב ביותר (בטווח התרעה) מבין האברכים הפעילים
+function renewInfo(d){
+  const today=new Date();today.setHours(0,0,0,0);let best=null;
+  (d.partners||[]).filter(p=>p.active!=0&&p.renew_date).forEach(p=>{
+    const rd=new Date(p.renew_date+'T00:00:00');const days=Math.round((rd-today)/86400000);
+    if(days<=45){if(!best||days<best.days)best={days,date:p.renew_date,avreich:p.avreich};}});
+  return best;
+}
+function fmtGreg(iso){if(!iso)return '';const p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+function renewBanner(d){const r=renewInfo(d);if(!r)return '';
+  const txt=r.days<0?`עברה שנה מתחילת השותפות (${fmtGreg(r.date)}) — לחדש וליצור תעודה חדשה`:`מתקרב סיום שנת שותפות (${fmtGreg(r.date)}${r.days>=0?' · בעוד '+r.days+' ימים':''}) — ליצור קשר לחידוש + תעודה`;
+  return `<div class="renewbanner">🔴 חידוש יש"ז: ${esc(txt)}${r.avreich?(' · '+esc(r.avreich)):''}</div>`;
+}
 function izSummaryHTML(d){
   const act=(d.partners||[]).filter(p=>p.active!=0);
   const recip=coHeldWith(d);
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
-  const rows=s.parts.map(p=>{const tot=pwList(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${totHtml}</span><b>${cur}${amtNum(p.amount)}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  const rows=s.parts.map(p=>{const tot=pwList(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
   if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב</div>';
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
@@ -60,6 +73,7 @@ function izSummaryHTML(d){
     <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${s.monthly})</span><b>${cur}${s.expected}</b></div>`:''}
     ${debtLine}`:'';
   return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
+    ${renewBanner(d)}
     ${mainHtml}
     ${recipHtml}
     ${d.iz_note?`<div class="iznote">📝 ${esc(d.iz_note)}</div>`:''}</div>`;
@@ -889,6 +903,7 @@ function renderPartners(d){
     <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
       <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
+    <label class="fld"><span>💰 עדכון תשלום ידני (למשל: "שילם הכל מראש 13/7")</span><input class="pfield" data-id="${p.id}" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום — נשמר ומוצג בסיכום"></label>
     <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label>
     <button class="btn sm psave" data-id="${p.id}" style="width:100%;margin-top:4px">💾 שמור אברך</button>
   </div>`).join('')||'<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
@@ -1455,7 +1470,9 @@ function renderAvreich(){
     const izd=filterIZ();
     document.getElementById('avcnt').innerHTML=`${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות`;
     document.getElementById('avlistwrap').innerHTML=izd.map(d=>{const act=(d.partners||[]).filter(p=>p.active!=0),hist=(d.partners||[]).filter(p=>p.active==0);
-      return `<div class="avrow"><div class="avtop"><b class="avnamelink" data-id="${d.id}" title="פתח כרטיס">${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
+      const s=izSummary(d),cs=curSym(d);
+      return `<div class="avrow"><div class="avtop"><b class="avnamelink" data-id="${d.id}" title="פתח כרטיס">${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avpaidchip">💰 שולם ${GREGYEAR}: ${cs}${s.paid}${s.hasPay&&s.debt>0.5?(' · <b style="color:var(--no)">חוב '+cs+Math.round(s.debt)+'</b>'):''}</span><span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
+        ${renewBanner(d)}
         <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
         <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button>
         <div class="avfiles">${(d.files||[]).map(fileChip).join('')}<label class="filebtn">📎 העלה שטר הסכם (PDF)<input type="file" accept="application/pdf,image/*" class="izupload" data-id="${d.id}" hidden></label></div></div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
@@ -1492,6 +1509,7 @@ function avPartnerRow(p){
       <label class="avfld"><span>💳 אמצעי</span><select class="avf avmethod" data-k="method">${channelOpts(p.method)}</select></label>
       <label class="avfld"><span>📅 מתאריך ההסכם</span><input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="למשל א' אייר תשפ״ה"></label>
       <label class="avfld"><span>📝 הערות</span><input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="—"></label></div>
+    <label class="avfld" style="margin-top:6px"><span>💰 עדכון תשלום ידני (למשל: שילם הכל מראש)</span><input class="avf" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום"></label>
     ${coHtml}</div>`;
 }
 function bindAvFields(){
@@ -1571,7 +1589,11 @@ function renderTasksTab(){
   pdebts.sort((a,b)=>(a.p.night_date||'').localeCompare(b.p.night_date||''));
   const debtSec=pdebts.length?`<div class="misshead" style="margin-top:10px">🔴 חובות פרנס לגבייה (${pdebts.length})</div>
     <div class="list">${pdebts.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${esc(DAYKIND[x.p.kind]||'🌙 פרנס')}${x.p.date_text?(' · '+esc(x.p.date_text)):''}${x.p.hyear?(' '+esc(x.p.hyear)):''}${x.p.amount?(' · '+curSym(x.d)+esc(x.p.amount)):''} — <b style="color:var(--no)">טרם נגבה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm pcollect" data-pid="${x.p.id}" data-did="${x.d.id}">✓ נגבה</button></div></div>`).join('')}</div>`:'';
-  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${debtSec}
+  const renews=[]; DB.forEach(d=>{const r=renewInfo(d);if(r&&matchQ(d.last+' '+d.first))renews.push({d,r});});
+  renews.sort((a,b)=>(a.r.date||'').localeCompare(b.r.date||''));
+  const renewSec=renews.length?`<div class="misshead" style="margin-top:10px">🔴 חידוש שותפות יש"ז מתקרב (${renews.length})</div>
+    <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
+  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${renewSec}${debtSec}
     <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
       <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
@@ -1597,6 +1619,7 @@ function renderTasksTab(){
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
   // חובות פרנס — פתיחת כרטיס / סימון שנגבה
   view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});
+  view.querySelectorAll('.avopen2').forEach(b=>b.onclick=e=>{e.stopPropagation();openDonor(DB.find(x=>x.id==b.dataset.did));});
   view.querySelectorAll('.pcollect').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==+b.dataset.did),p=(d&&d.parnes||[]).find(x=>x.id==+b.dataset.pid);if(p){p.paid=1;await api('PUT','/api/parnes/'+p.id,{paid:1});}toast('נגבה ✓');render();});
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
   // עריכת / מחיקת משימה
