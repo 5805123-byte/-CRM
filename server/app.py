@@ -780,6 +780,48 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('berger_itzik_contact_v1')")
     except Exception as e:
         print('  שגיאת פרטי ברגר:', e)
+    # איחוד כרטיסי יצחק (איצי) ברגר + סכומים $500 + שותפות עם גוטמן
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berger_merge_v2'").fetchone():
+            cands = con.execute("SELECT id FROM donors WHERE (last LIKE 'ברג%' OR last LIKE 'בערג%') AND (first LIKE '%יצחק%' OR first LIKE '%איצי%')").fetchall()
+            ids = [r['id'] for r in cands]
+            keep = None
+            if len(ids) == 2:
+                withp = [i for i in ids if con.execute('SELECT 1 FROM partners WHERE donor_id=?', (i,)).fetchone()]
+                keep = withp[0] if withp else ids[0]
+                drop = [i for i in ids if i != keep][0]
+                k = con.execute('SELECT * FROM donors WHERE id=?', (keep,)).fetchone()
+                d = con.execute('SELECT * FROM donors WHERE id=?', (drop,)).fetchone()
+                if k and d:
+                    for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
+                        try: con.execute(f'UPDATE {t} SET donor_id=? WHERE donor_id=?', (keep, drop))
+                        except Exception: pass
+                    try: con.execute('UPDATE files SET ref_id=? WHERE ref_id=?', (keep, drop))
+                    except Exception: pass
+                    kp = [p.strip() for p in re.split(r'[/,]', dict(k).get('phone') or '') if p.strip()]
+                    for p in re.split(r'[/,]', dict(d).get('phone') or ''):
+                        p = p.strip()
+                        if p and p not in kp: kp.append(p)
+                    con.execute('UPDATE donors SET phone=? WHERE id=?', (' / '.join(kp), keep))
+                    con.execute('DELETE FROM donors WHERE id=?', (drop,))
+            elif len(ids) == 1:
+                keep = ids[0]
+            if keep:
+                con.execute("UPDATE donors SET email=?, addr=?, city=?, country=?, zip=?, addr_ok=1, tier=? WHERE id=?",
+                            ('mark4realty@verizon.net', 'P.O. Box 33104', 'Brooklyn', 'NY', '11204', 'יששכר_זבולון', keep))
+                g = con.execute("SELECT id FROM donors WHERE lower(COALESCE(email,''))='sam4gutman@yahoo.com'").fetchone()
+                if not g:
+                    gc = con.execute("SELECT id FROM donors WHERE last LIKE '%גוטמן%' AND first LIKE '%בצלאל%'").fetchall()
+                    if len(gc) == 1: g = gc[0]
+                gid = g['id'] if g else None
+                con.execute("UPDATE partners SET amount='500' WHERE donor_id=? AND avreich LIKE '%ירבלום%'", (keep,))
+                if gid:
+                    con.execute("UPDATE partners SET amount='500', partner_with=?, partner_with_id=? WHERE donor_id=? AND avreich LIKE '%ירבלום%'", ('ברגר יצחק (איצי)', keep, gid))
+                    con.execute("UPDATE partners SET partner_with=?, partner_with_id=? WHERE donor_id=? AND avreich LIKE '%ירבלום%'", ('גוטמן בצלאל', gid, keep))
+                print('  איחוד ברגר: בוצע (keep=%s)' % keep)
+            con.execute("INSERT INTO seed_flags(name) VALUES('berger_merge_v2')")
+    except Exception as e:
+        print('  שגיאת איחוד ברגר:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
