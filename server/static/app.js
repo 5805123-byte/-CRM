@@ -1074,12 +1074,14 @@ function renderKvMissing(){
   list.sort((a,b)=>prio(a)-prio(b)||(a.last||'').localeCompare(b.last||'','he'));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔴 תורמים בלי שם לקוויטל</b><span class="cnt2">(${list.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">כל תורם שאין לו עדיין שם לתפילה. הקלד שם — או לחץ ✓ אם הוא לא ביקש קוויטל (יוסר מהרשימה). מסומני הקוויטל למעלה.</div>
-    ${list.map(d=>`<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvMemberType(d)?kvTypeLabel(kvMemberType(d)):'אין קוויטל'}</span> <span class="opencard">↗ כרטיס</span></div>
+    ${list.map(d=>{const yr=donorTotals(d).year,cs=curSym(d);return `<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvMemberType(d)?kvTypeLabel(kvMemberType(d)):'אין קוויטל'}</span> <span class="kvyear">💵 השנה: ${cs}${yr}</span> <span class="opencard">↗ כרטיס</span></div>
       ${contactBtns(d)}
-      <div class="kvmissrow"><div class="names" contenteditable="true" data-newdid="${d.id}" data-ph="שם לתפילה — הקלד כאן"></div><button class="kvskip" data-skip="${d.id}" title="לא ביקש קוויטל">✓ לא ביקש</button></div></div>`).join('')||'<div class="empty">🎉 אין חסרים — לכל המסומנים בקוויטל יש שם</div>'}`;
+      <div class="kvmissrow"><div class="names" contenteditable="true" data-newdid="${d.id}" data-ph="שם לתפילה — הקלד כאן"></div><button class="kvskip" data-skip="${d.id}" title="לא ביקש קוויטל">✓ לא ביקש</button></div>
+      <div style="text-align:left;margin-top:4px"><button class="tinydel kvdeldonor" data-del="${d.id}">🗑 מחק תורם לגמרי</button></div></div>`;}).join('')||'<div class="empty">🎉 אין חסרים — לכל המסומנים בקוויטל יש שם</div>'}`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
   view.querySelectorAll('.kvskip').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.skip);if(!d)return;d.kv_skip=1;await api('PUT','/api/donor/'+d.id,{kv_skip:1});toast('סומן — לא צריך קוויטל ✓');renderKvMissing();});
+  view.querySelectorAll('.kvdeldonor').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.del);if(!d)return;if(!await uiConfirm('למחוק לצמיתות את "'+(d.last+' '+d.first).trim()+'"?\nכל הכרטיס יימחק — פעולה בלתי הפיכה.'))return;await api('DELETE','/api/donor/'+b.dataset.del);DB=DB.filter(x=>x.id!=b.dataset.del);toast('התורם נמחק ✓');renderKvMissing();});
   bindKvEdit();
 }
 function bindKvEdit(){
