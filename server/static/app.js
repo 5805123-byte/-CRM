@@ -26,12 +26,17 @@ function izSummary(d){
   const debt=expected-paid;
   return {parts,monthly,paid,span,expected,debt,hasPay};
 }
+// פירוק רשימת שותפים (תומך בכמה שותפים מופרדים בפסיק)
+function pwList(p){const names=(p.partner_with||'').split(',').map(s=>s.trim()).filter(Boolean);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim());return names.map((nm,i)=>({name:nm,id:ids[i]||''}));}
+// HTML של שמות השותפים — כל אחד לחיץ אם מקושר לכרטיס
+function coHolderNamesHtml(p){const l=pwList(p);if(!l.length)return '';return ' <small class="cosp">🤝 יחד עם '+l.map(x=>x.id?`<span class="cosp2" data-did="${x.id}">${esc(x.name)} ↗</span>`:esc(x.name)).join(', ')+'</small>';}
 // שותפויות הפוכות — כרטיסים אחרים שרשמו את התורם הזה כשותף מחזיק (לפי קישור או לפי שם שהוקלד)
 function coHeldWith(d){
   const out=[];const dn=norm((d.last||'')+' '+(d.first||''));const dt=dn.split(' ').filter(t=>t.length>=2);
   (DB||[]).forEach(o=>{if(o.id===d.id)return;(o.partners||[]).forEach(p=>{if(p.active==0)return;
-    const linked=p.partner_with_id&&p.partner_with_id==d.id;
-    const byname=!p.partner_with_id&&p.partner_with&&dt.length&&dt.every(t=>norm(p.partner_with).includes(t));
+    const idlist=(String(p.partner_with_id||'')).split(',').map(s=>s.trim()).filter(Boolean);
+    const linked=idlist.includes(String(d.id));
+    const byname=!idlist.length&&p.partner_with&&dt.length&&dt.every(t=>norm(p.partner_with).includes(t));
     if(linked||byname)out.push({name:(o.last+' '+o.first).trim(),did:o.id,avreich:p.avreich,amount:p.amount,method:p.method});});});
   return out;
 }
@@ -41,7 +46,7 @@ function izSummaryHTML(d){
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
-  const rows=s.parts.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${p.partner_with?(p.partner_with_id?(' <small class="cosp2" data-did="'+p.partner_with_id+'">🤝 יחד עם '+esc(p.partner_with)+' ↗</small>'):(' <small class="cosp">🤝 יחד עם '+esc(p.partner_with)+'</small>')):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  const rows=s.parts.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}</span><b>${cur}${amtNum(p.amount)}</b></div>`).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
   if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב</div>';
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
@@ -510,7 +515,7 @@ function cardDetails(d,body){
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),ded:'',rm:x.method||''}));
-  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(p.partner_with?(' · יחד עם '+p.partner_with):''),ded:'',rm:p.method||''}));
+  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(p.partner_with?(' · יחד עם '+pwList(p).map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''}));
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>{
     const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
@@ -878,8 +883,10 @@ function renderPartners(d){
     <input class="pfield" data-id="${p.id}" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך" style="font-weight:700">
     <div class="two"><label class="fld"><span>סכום (${cur})</span><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></label>
       <label class="fld"><span>איך משולם</span><select class="pfield" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
-    <div class="two"><label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label>
-      <label class="fld"><span>🤝 מחזיק יחד עם (חפש תורם שותף)</span><input class="pwsearch" data-id="${p.id}" data-pwid="${p.partner_with_id||''}" value="${esc(p.partner_with||'')}" placeholder="חפש שם שותף…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></label></div>
+    <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label>
+    <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
+      <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
+      <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
     <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label>
     <button class="btn sm psave" data-id="${p.id}" style="width:100%;margin-top:4px">💾 שמור אברך</button>
   </div>`).join('')||'<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
@@ -897,19 +904,22 @@ function renderPartners(d){
   el.querySelectorAll('.psave').forEach(btn=>btn.onclick=async()=>{
     const p=(d.partners||[]).find(x=>x.id==btn.dataset.id);if(!p)return;
     const body={};el.querySelectorAll('.pfield[data-id="'+btn.dataset.id+'"]').forEach(inp=>{p[inp.dataset.k]=inp.value;body[inp.dataset.k]=inp.value;});
-    const pw=el.querySelector('.pwsearch[data-id="'+btn.dataset.id+'"]');if(pw){p.partner_with=pw.value;p.partner_with_id=pw.dataset.pwid||'';body.partner_with=pw.value;body.partner_with_id=pw.dataset.pwid||'';}
     await api('PUT','/api/partner/'+p.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();
   });
-  // שדה שותף = חיפוש תורם. בחירה משייכת (partner_with_id) כך שהשותפות תופיע גם בכרטיס השותף
-  el.querySelectorAll('.pwsearch').forEach(inp=>{
+  // שדה שותפים — מספר שותפים (צ'יפים). בחירה מרשימה מקשרת לכרטיס (מופיע גם אצלו); Enter מוסיף כטקסט
+  const savePw=async(p)=>{p.partner_with=pwList(p).map(x=>x.name).join(', ');p.partner_with_id=pwList(p).map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
+  const addPw=async(pid,name,did)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.push({name:name,id:did?String(did):''});p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});toast('שותף נוסף ✓');renderPartners(d);if(tab==='donors')renderDonors();};
+  const rmPw=async(pid,idx)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.splice(idx,1);p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
+  el.querySelectorAll('.pwx').forEach(b=>b.onclick=()=>rmPw(b.dataset.id,+b.dataset.idx));
+  el.querySelectorAll('.pwadd').forEach(inp=>{
     const pid=inp.dataset.id,res=el.querySelector('.pwres[data-id="'+pid+'"]');
-    const saveIt=async()=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;p.partner_with=inp.value;p.partner_with_id=inp.dataset.pwid||'';await api('PUT','/api/partner/'+pid,{partner_with:inp.value,partner_with_id:inp.dataset.pwid||''});};
-    inp.oninput=()=>{inp.dataset.pwid='';const s=norm(inp.value);if(!s){res.innerHTML='';return;}
+    inp.oninput=()=>{const s=norm(inp.value);if(!s){res.innerHTML='';return;}
       const m=DB.filter(x=>x.id!==d.id&&norm(x.last+' '+x.first+' '+x.english+' '+x.business).includes(s)).slice(0,6);
-      res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}" data-nm="${esc((x.last+' '+x.first).trim())}">${esc(x.last)} ${esc(x.first)}${x.tier==='יששכר_זבולון'?' · יש"ז':''} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות — יישמר כטקסט</div>';
-      res.querySelectorAll('.dpr[data-did]').forEach(r=>r.onmousedown=e=>{e.preventDefault();inp.value=r.dataset.nm;inp.dataset.pwid=r.dataset.did;res.innerHTML='';saveIt();toast('שותף שויך ✓ (יופיע גם אצלו)');renderPartners(d);});
+      res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}" data-nm="${esc((x.last+' '+x.first).trim())}">${esc(x.last)} ${esc(x.first)}${x.tier==='יששכר_זבולון'?' · יש"ז':''} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות — Enter להוסיף כטקסט</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(r=>r.onmousedown=e=>{e.preventDefault();addPw(pid,r.dataset.nm,r.dataset.did);});
     };
-    inp.onblur=()=>{setTimeout(()=>{if(res)res.innerHTML='';},200);saveIt();};
+    inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const v=inp.value.trim();if(v)addPw(pid,v,'');}};
+    inp.onblur=()=>{setTimeout(()=>{if(res)res.innerHTML='';},200);};
   });
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/partner/'+b.dataset.del);d.partners=d.partners.filter(x=>x.id!=b.dataset.del);renderPartners(d);});
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);d.files=(d.files||[]).filter(x=>x.id!=b.dataset.fid);renderPartners(d);toast('נמחק');});
