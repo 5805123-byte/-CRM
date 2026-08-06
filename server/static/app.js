@@ -128,6 +128,8 @@ function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class=
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
 // ערוצי חיוב — תג צבעוני מובחן לכל ערוץ (בצבעי המותג)
 const CHANNELS={
+  'אשראי':{i:'💳',l:'אשראי',c:'#1a5fb4'},
+  'מזומן':{i:'💵',l:'מזומן',c:'#2f7a3e'},
   'בנק_ווסט':{i:'🏦',l:'בנק ווסט',c:'#0b6e61'},
   'אותורייז':{i:'💳',l:'Authorize',c:'#1a5fb4'},
   'צק':{i:'🧾',l:"צ'ק",c:'#8a6d00'},
@@ -138,7 +140,7 @@ const CHANNELS={
   'OJC':{i:'🏛️',l:'OJC',c:'#3b4252'},
   'Pledger':{i:'📲',l:'Pledger',c:'#3b4252'},
 };
-const CHAN_ORDER=['בנק_ווסט','אותורייז','צק','Zelle','העברה_בנקאית','דונורס_פאנד','נדרים','OJC','Pledger'];
+const CHAN_ORDER=['אשראי','מזומן','צק','Zelle','העברה_בנקאית','בנק_ווסט','אותורייז','דונורס_פאנד','נדרים','OJC','Pledger'];
 function chBadgeRaw(ch){const cfg=CHANNELS[(ch||'').trim()];if(!cfg)return '';return `<span class="chbadge" style="background:${cfg.c}" title="${esc(cfg.l)}">${cfg.i} ${esc(cfg.l)}</span>`;}
 function chLabel(ch){const cfg=CHANNELS[(ch||'').trim()];return cfg?cfg.l:(ch||'');}
 function channelBadge(d){return chBadgeRaw(d.channel);}
@@ -1211,6 +1213,7 @@ function renderDayPanel(taken){
         <div class="two" style="gap:6px;margin-top:3px"><input id="dp_amt_edit" value="${esc(amt)}" inputmode="decimal" placeholder="כמה תרם">
           <select id="dp_cur_edit" style="max-width:110px"><option value="$" ${dpcur==='$'?'selected':''}>$ דולר</option><option value="₪" ${dpcur==='₪'?'selected':''}>₪ שקל</option></select></div>
         <button class="btn sm" id="dp_amt_save" style="margin-top:6px;width:100%">💾 שמור סכום</button></div>
+      <label class="fld" style="margin:6px 0"><span>💳 איך נגבה (אמצעי תשלום)</span><select id="dp_method">${channelOpts(t.method)}</select></label>
       ${sugg?'':`<button class="dnpaid ${paid?'yes':'no'}" id="dppaid" style="margin:2px 0 8px;width:100%">${paid?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>`}
       ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
       <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea id="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
@@ -1221,10 +1224,13 @@ function renderDayPanel(taken){
         <button class="btn sm" id="dpmove">העבר</button></div>
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
       <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
-    const dpAmtSave=async()=>{const damt=document.getElementById('dp_amt_edit'),dcur=document.getElementById('dp_cur_edit');t.amount=damt.value.trim();t.currency=dcur.value;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p){p.amount=t.amount;p.currency=t.currency;}await api('PUT','/api/parnes/'+t.id,{amount:t.amount,currency:t.currency});toast('סכום נשמר ✓');render();};
+    const dpMethSel=document.getElementById('dp_method');
+    const setPMeth=v=>{t.method=v;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.method=v;};
+    const dpAmtSave=async()=>{const damt=document.getElementById('dp_amt_edit'),dcur=document.getElementById('dp_cur_edit');t.amount=damt.value.trim();t.currency=dcur.value;const mv=dpMethSel?dpMethSel.value:t.method;setPMeth(mv);const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p){p.amount=t.amount;p.currency=t.currency;}await api('PUT','/api/parnes/'+t.id,{amount:t.amount,currency:t.currency,method:mv});toast('נשמר ✓');render();};
     const dpAmtBtn=document.getElementById('dp_amt_save'); if(dpAmtBtn)dpAmtBtn.onclick=dpAmtSave;
+    if(dpMethSel)dpMethSel.onchange=async()=>{setPMeth(dpMethSel.value);await api('PUT','/api/parnes/'+t.id,{method:dpMethSel.value});toast('אמצעי נשמר ✓');render();};
     const dppaid=document.getElementById('dppaid');
-    if(dppaid)dppaid.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כחוב שטרם נגבה');render();};
+    if(dppaid)dppaid.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const mv=dpMethSel?dpMethSel.value:t.method;setPMeth(mv);const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np,method:mv});toast(np?'סומן כנגבה ✓':'סומן כחוב שטרם נגבה');render();};
     const dded=document.getElementById('dp_ded_edit');
     const ddedSave=async()=>{t.dedication=dded.value;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.dedication=dded.value;await api('PUT','/api/parnes/'+t.id,{dedication:dded.value});toast('נשמר ✓');};
     dded.onblur=()=>{if((t.dedication||'')!==dded.value)ddedSave();};
