@@ -747,6 +747,25 @@ def ensure_schema():
             print(f'  מיזוג כללי->שבועי: תורמים {n1}, שמות {n2}')
     except Exception as e:
         print('  שגיאת כללי->שבועי:', e)
+    # הדגמה חד‑פעמית — שמות הקוויטל שאסתר ברג שלחה מהאתר (11/7/2026), לצפייה מיד לפני חיבור המייל
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berg_demo_kvittel_v1'").fetchone():
+            row = con.execute("SELECT id FROM donors WHERE lower(COALESCE(email,''))='estigberg@gmail.com'").fetchone()
+            if not row:
+                cand = con.execute("SELECT id FROM donors WHERE last LIKE '%ברג%' AND first LIKE '%אסתר%'").fetchall()
+                if len(cand) == 1: row = cand[0]
+            if row:
+                bid = row['id']
+                has = con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (bid,)).fetchone()[0]
+                if not has:
+                    txt = 'Rivka בת Esther Tema לזיווג הגון\nCherna Zelda בת Esther Tema לזיווג הגון\nAzriel בן Esther Tema לזיווג הגון'
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')", (bid, txt))
+                    yr = 'תשפ"ו'
+                    con.execute("UPDATE donors SET kv_month=COALESCE(NULLIF(kv_month,''),?), kv_year=COALESCE(NULLIF(kv_year,''),?) WHERE id=?", ('תמוז', yr, bid))
+                    print('  קוויטל אסתר ברג (הדגמה): נוסף')
+            con.execute("INSERT INTO seed_flags(name) VALUES('berg_demo_kvittel_v1')")
+    except Exception as e:
+        print('  שגיאת קוויטל ברג:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
@@ -1432,9 +1451,9 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(404, {'error': 'not found'})
             did = b.get('donor_id') or r['donor_id']
             text = (b.get('names') or r['names'] or r['body'] or '').strip()
-            if did:  # שיוך לכרטיס תורם קיים
+            if did:  # שיוך לכרטיס תורם קיים — דרגת השם לפי דרגת התורם (ריק=לפי הקטגוריה, למשל מזדמן)
                 tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
-                tval = (tier['tier'] if tier else '') or 'קוויטל_שבועי'
+                tval = (tier['tier'] if tier else '') or ''
                 con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, text, tval))
                 con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
             else:     # הוספה לקוויטל בלי שיוך לתורם (שם לא־משויך)
