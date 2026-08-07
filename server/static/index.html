@@ -423,6 +423,15 @@
   .icsmini summary{cursor:pointer;color:var(--accent);font-weight:700}
   .icsmini .u{direction:ltr;display:block;background:var(--card);border:1px solid var(--line);padding:7px;border-radius:8px;margin-top:6px;font-family:monospace;font-size:.78rem;word-break:break-all}
   @media print{header.top,.chips,.pbar,.kbar .print,.print,.back,.noprint{display:none!important}.app{max-width:none}.plaque{box-shadow:none}}
+  /* הדפסת קוויטל נקייה — רק שם תורם ושמות התפילה, בלי תזכורת/כרטיס/אייקונים */
+  @media print{
+    #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
+    .kblock.kvempty{display:none!important}
+    #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;margin-bottom:14px}
+    #kvlistwrap .kblock .who{font-size:1.25rem;font-weight:800}
+    #kvlistwrap .kblock .who .opencard,#kvlistwrap .kblock .who .kvtag,#kvlistwrap .kblock .who .loose{display:none!important}
+    #kvlistwrap .kblock .names{font-size:1.15rem;line-height:1.5;border:none!important;padding:2px 0 0!important;background:none!important}
+  }
 </style>
 </head>
 <body>

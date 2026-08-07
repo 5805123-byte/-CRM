@@ -1279,7 +1279,7 @@ function renderKvList(type){
     if(nq)entries=entries.filter(e=>norm(e.donor+' '+e.text).includes(nq));
     entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
     document.getElementById('kvcnt').textContent='('+entries.length+')';
-    document.getElementById('kvlistwrap').innerHTML=entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)}${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div></div>`).join('')||'<div class="empty">אין תוצאות</div>';
+    document.getElementById('kvlistwrap').innerHTML=entries.map(e=>`<div class="kblock${(e.text||'').trim()?'':' kvempty'}"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)}${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div></div>`).join('')||'<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
     bindKvEdit();
   }

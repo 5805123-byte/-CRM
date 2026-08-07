@@ -297,6 +297,19 @@ def _imap_since(default='01-Jan-2026'):
     return os.environ.get('INTAKE_SINCE', default)
 
 
+def _q(v):
+    """מחרוזת IMAP מצוטטת — הכרחי כשהערך מכיל רווח (למשל נושא 'Name Submission')."""
+    return '"' + str(v).replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def _ascii(v):
+    try:
+        str(v).encode('ascii')
+        return True
+    except Exception:
+        return False
+
+
 def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
@@ -317,17 +330,26 @@ def sync(con):
         M.select(mailbox)
         crit = ['SINCE', _imap_since()]
         if subj:
-            crit += ['SUBJECT', subj]
-        # אם הוגדרו כמה שולחנים — נחפש לכל אחד בנפרד ונאחד
+            crit += ['SUBJECT', _q(subj)]   # ציטוט חובה כשהנושא מכיל רווח
+        # נדרש CHARSET UTF-8 אם יש תווים לא־אנגליים (עברית) בקריטריונים
+        charset = None if all(_ascii(c) for c in crit + froms) else 'UTF-8'
+
+        def _search(*extra):
+            args = crit + list(extra)
+            if charset:
+                return M.search(charset, *[a.encode('utf-8') if not _ascii(a) else a for a in args])
+            return M.search(None, *args)
+
+        # אם הוגדרו כמה שולחים — נחפש לכל אחד בנפרד ונאחד
         id_sets = []
         if froms:
             for f in froms:
-                typ, data = M.search(None, *(crit + ['FROM', f]))
+                typ, data = _search('FROM', _q(f))
                 if typ == 'OK':
                     id_sets.append(set(data[0].split()))
             ids = set().union(*id_sets) if id_sets else set()
         else:
-            typ, data = M.search(None, *crit)
+            typ, data = _search()
             ids = set(data[0].split()) if typ == 'OK' else set()
         for i in sorted(ids, key=lambda x: int(x)):
             typ, md = M.fetch(i, '(RFC822)')
