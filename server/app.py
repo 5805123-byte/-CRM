@@ -1895,6 +1895,10 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
+        m = re.match(r'/api/intake/(\d+)$', self.path)
+        if m:
+            con = db(); con.execute("DELETE FROM intake WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/donor/(\d+)$', self.path)
         if m:
             did = int(m.group(1)); con = db()

@@ -310,8 +310,26 @@ def _req_he(request):
     return ' ו'.join(parts)
 
 
+# ביטויים שאינם שם אמיתי — לא נכנסים לקוויטל (למשל "thank you")
+_JUNK = {'thankyou', 'thanks', 'thank', 'thanku', 'thx', 'ty', 'none', 'na', 'nan', 'test',
+         'nothing', 'no', 'nil', 'null', 'xxx', 'abc', 'asdf', 'ty', 'amen', 'omein'}
+
+
+def _is_junk_name(name):
+    low = re.sub(r'[^a-z ]', '', (name or '').lower()).strip()
+    if not low:
+        return True
+    if re.search(r'[֐-׿]', name or ''):   # עברית — לא ג'אנק
+        return False
+    if low.split()[0] in {'thank', 'thanks', 'thankyou', 'thx'}:
+        return True
+    return re.sub(r'[^a-z]', '', low) in _JUNK
+
+
 def _fmt_one(name, mother, father, request):
     name = (name or '').strip()
+    if _is_junk_name(name):    # "thank you" וכד' — מדלגים
+        return ''
     m = re.search(r'\b(ben|bas|bat|בן|בת)\s*$', name, re.I)  # שם שכבר מסתיים ב-ben/bas
     rel = None
     if m:
@@ -401,6 +419,21 @@ def sync(con):
     subj = (os.environ.get('INTAKE_SUBJECT') or '').strip()
     mailbox = os.environ.get('INTAKE_MAILBOX', 'INBOX')
     new = 0
+    attached = 0
+
+    def _match_donor(femail):
+        """מזהה תורם לפי כתובת המייל שלו במערכת — לצירוף אוטומטי לקוויטל."""
+        femail = (femail or '').strip().lower()
+        if not femail:
+            return None
+        return con.execute(
+            "SELECT id,tier FROM donors WHERE lower(TRIM(email))=? AND TRIM(COALESCE(email,''))<>'' LIMIT 1",
+            (femail,)).fetchone()
+
+    def _autoattach(donor, names):
+        """מכניס את השמות לקוויטל של התורם (דרגה לפי דרגת התורם)."""
+        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)",
+                    (donor['id'], names, (donor['tier'] or '')))
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com')
         M.login(user, pw)
@@ -448,18 +481,25 @@ def sync(con):
             names = _parse_names(body)
             if not names.strip():     # אין שמות לתפילה (למשל רק "thank you") — לא מכניסים לרשימה
                 continue
+            donor = _match_donor(femail)   # זיהוי תורם לפי האימייל
             if existing:              # רענון פריט שעדיין לא טופל — מתקן פענוח עברית/תעתיק ישן
+                iid = existing['id']
                 con.execute("UPDATE intake SET from_name=?, from_email=?, subject=?, received=?, body=?, names=? WHERE id=?",
-                            (fname, femail.lower(), subject, received, body, names, existing['id']))
-                continue
-            con.execute("""INSERT OR IGNORE INTO intake(message_id,from_name,from_email,subject,received,body,names,status,created)
-                           VALUES(?,?,?,?,?,?,?, 'new', ?)""",
-                        (mid, fname, femail.lower(), subject, received, body, names,
-                         datetime.date.today().isoformat()))
-            new += 1
+                            (fname, femail.lower(), subject, received, body, names, iid))
+            else:
+                cur = con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,status,created)
+                               VALUES(?,?,?,?,?,?,?, 'new', ?)""",
+                            (mid, fname, femail.lower(), subject, received, body, names,
+                             datetime.date.today().isoformat()))
+                iid = cur.lastrowid
+                new += 1
+            if donor:                 # זוהה תורם לפי מייל — צירוף אוטומטי לקוויטל שלו, נגמר הסיפור
+                _autoattach(donor, names)
+                con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (donor['id'], iid))
+                attached += 1
         M.logout()
         con.commit()
-        return {'ok': True, 'new': new}
+        return {'ok': True, 'new': new, 'attached': attached}
     except imaplib.IMAP4.error as e:
         return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
     except Exception as e:

@@ -1193,7 +1193,7 @@ function paintIntake(){
     const btn=document.getElementById('intSync');btn.disabled=true;btn.textContent='מושך…';
     const r=await api('POST','/api/intake/sync',{});
     if(!r.ok){toast(r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאת משיכה: '+(r.detail||r.error||''));btn.disabled=false;btn.textContent='🔄 משוך מהמייל';return;}
-    toast('נמשכו '+(r.new||0)+' בקשות חדשות ✓');INTAKE=null;await loadIntake();paintIntake();
+    toast('נמשכו '+(r.new||0)+' בקשות'+(r.attached?' · '+r.attached+' צורפו אוטומטית לקוויטל לפי המייל':'')+' ✓');INTAKE=null;await loadIntake();paintIntake();
   };
   const list=document.getElementById('intlist');
   list.innerHTML=items.map(x=>{
@@ -1211,6 +1211,7 @@ function paintIntake(){
           <button class="btn sm intaddkv" data-id="${x.id}">🕯️ הוסף לקוויטל (בלי תורם)</button>
           <button class="btn sm ghost intsave" data-id="${x.id}">💾 שמור שמות</button>
           <button class="btn sm ${handled?'':'ghost'} inthandle" data-id="${x.id}">${handled?'↩︁ החזר לטיפול':'✓ סמן טופל'}</button>
+          <button class="btn sm danger intdel" data-id="${x.id}">🗑️ מחק</button>
         </div>
       </div>
       <details class="intraw"><summary style="cursor:pointer;color:var(--muted);font-size:.8rem">הצג את המייל המלא</summary><pre style="white-space:pre-wrap;font-size:.82rem">${esc(x.body||'')}</pre></details>
@@ -1220,6 +1221,7 @@ function paintIntake(){
   const getNames=id=>{const c=list.querySelector('.intcard[data-id="'+id+'"]');return c?c.querySelector('.intnames').value.trim():'';};
   list.querySelectorAll('.intsave').forEach(b=>b.onclick=async()=>{await api('PUT','/api/intake/'+b.dataset.id,{names:getNames(b.dataset.id)});const it=INTAKE.find(x=>x.id==b.dataset.id);if(it)it.names=getNames(b.dataset.id);toast('נשמר ✓');});
   list.querySelectorAll('.inthandle').forEach(b=>b.onclick=async()=>{const it=INTAKE.find(x=>x.id==b.dataset.id);const ns=it&&it.status==='handled'?'new':'handled';await api('PUT','/api/intake/'+b.dataset.id,{status:ns});if(it)it.status=ns;paintIntake();});
+  list.querySelectorAll('.intdel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את הבקשה הזו לגמרי?'))return;await api('DELETE','/api/intake/'+b.dataset.id);INTAKE=(INTAKE||[]).filter(x=>x.id!=b.dataset.id);paintIntake();toast('נמחק ✓');});
   list.querySelectorAll('.intattach').forEach(b=>b.onclick=async()=>{
     const names=getNames(b.dataset.id);if(!names){toast('אין שמות לצירוף');return;}
     await api('POST','/api/intake/'+b.dataset.id+'/attach',{donor_id:+b.dataset.did,names:names});
