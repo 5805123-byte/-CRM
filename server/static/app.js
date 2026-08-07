@@ -1003,12 +1003,11 @@ async function imgToPngBlob(blob){
 // העתקת תמונת ההקדשה ללוח — כדי להדביק אותה ישירות בוואטסאפ ווב / במייל במחשב
 async function copyImageToClip(img){
   if(!img||(img.mime||'').indexOf('image')<0)return false;
-  try{
-    if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write))return false;
-    const png=await imgToPngBlob(await (await fetch('/api/file/'+img.id)).blob());
-    await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
-    return true;
-  }catch(e){return false;}
+  if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write))return false;
+  const getPng=async()=>await imgToPngBlob(await (await fetch('/api/file/'+img.id)).blob());
+  // צורת ה-Promise נדרשת בספארי/אייפד כדי לשמור על אישור המשתמש
+  try{await navigator.clipboard.write([new ClipboardItem({'image/png':getPng()})]);return true;}catch(e){}
+  try{await navigator.clipboard.write([new ClipboardItem({'image/png':await getPng()})]);return true;}catch(e){return false;}
 }
 // שליחת התמונה עצמה: בטלפון — שיתוף קובץ אמיתי; במחשב — העתקה ללוח להדבקה בוואטסאפ ווב
 async function sharePhotoFile(img,msg){
@@ -1034,7 +1033,8 @@ function shareParnesMenu(t,d){
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:8px">📤 שליחת תעודה${donor?(' ל'+esc(donor)):''}</div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${img?`<button class="btn" id="shsend" style="background:var(--yes);border-color:var(--yes)">📧 שלח עכשיו לתורם במייל (התמונה מצורפת)</button>
-      <button class="btn" id="shph" style="background:#25D366;border-color:#25D366">📲 שלח את התמונה בוואטסאפ</button>
+      ${ph?`<button class="btn" id="shwadir" style="background:#25D366;border-color:#25D366">📲 פתח וואטסאפ ישירות ל${esc(donor||'תורם')}</button>`:''}
+      <button class="btn ghost" id="shph">📤 שתף את התמונה (בחירת אפליקציה)</button>
       <button class="btn ghost" id="shdl">📥 הורד / פתח את התמונה</button>`:'<div class="hintxt" style="color:var(--no)">אין תמונת הקדשה מצורפת — העלה תמונה קודם.</div>'}
       <div class="hintxt" style="margin:2px 0">— או שליחת התעודה המעוצבת —</div>
       <button class="btn ghost" id="shwa">📲 שלח קישור לתעודה בוואטסאפ</button>
@@ -1065,6 +1065,14 @@ function shareParnesMenu(t,d){
     if(r&&r.ok){toast('נשלח ל'+to+' ✓');done();return;}
     const why={not_configured:'המייל לא מוגדר בשרת',no_files:'אין תמונה מצורפת',no_recipient:'אין כתובת מייל',login_failed:'התחברות לג׳ימייל נכשלה'}[r&&r.error]||((r&&(r.detail||r.error))||'שגיאה');
     toast('לא נשלח: '+why);shs.disabled=false;shs.textContent='📧 שלח עכשיו לתורם במייל (התמונה מצורפת)';
+  };
+  // וואטסאפ ישיר לשיחה של התורם — בלי חלון בחירת אפליקציה. התמונה מועתקת ללוח להדבקה בשיחה.
+  const shwd=o.querySelector('#shwadir');if(shwd)shwd.onclick=async()=>{
+    shwd.disabled=true;shwd.textContent='מכין את התמונה…';
+    const ok=await copyImageToClip(img);
+    toast(ok?'התמונה בלוח — בשיחה: לחיצה ארוכה ← הדבק ← שלח 📋':'נפתחת השיחה — צרף את התמונה מהגלריה');
+    location.href='https://wa.me/'+ph;
+    setTimeout(done,600);
   };
   const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{     // שולח את קובץ התמונה עצמו
     const res=await sharePhotoFile(img,cap);
