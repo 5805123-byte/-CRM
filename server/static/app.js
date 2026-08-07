@@ -1207,7 +1207,7 @@ function paintIntake(){
         <input class="intq" placeholder="🔍 חפש תורם לצרף אליו…" autocomplete="off" value="">
         <div class="intres dpres"></div>
         <div class="intbtns">
-          ${mt?`<button class="btn sm intattach" data-id="${x.id}" data-did="${mt.id}">➕ צרף ל${esc(mt.name)}</button>`:''}
+          ${mt?`<button class="btn sm intattach" data-id="${x.id}" data-did="${mt.id}">➕ צרף ל${esc(mt.name)}</button>`:`<button class="btn sm intnew" data-id="${x.id}">🆕 תורם חדש</button>`}
           <button class="btn sm intaddkv" data-id="${x.id}">🕯️ הוסף לקוויטל (בלי תורם)</button>
           <button class="btn sm ghost intsave" data-id="${x.id}">💾 שמור שמות</button>
           <button class="btn sm ${handled?'':'ghost'} inthandle" data-id="${x.id}">${handled?'↩︁ החזר לטיפול':'✓ סמן טופל'}</button>
@@ -1222,6 +1222,13 @@ function paintIntake(){
   list.querySelectorAll('.intsave').forEach(b=>b.onclick=async()=>{await api('PUT','/api/intake/'+b.dataset.id,{names:getNames(b.dataset.id)});const it=INTAKE.find(x=>x.id==b.dataset.id);if(it)it.names=getNames(b.dataset.id);toast('נשמר ✓');});
   list.querySelectorAll('.inthandle').forEach(b=>b.onclick=async()=>{const it=INTAKE.find(x=>x.id==b.dataset.id);const ns=it&&it.status==='handled'?'new':'handled';await api('PUT','/api/intake/'+b.dataset.id,{status:ns});if(it)it.status=ns;paintIntake();});
   list.querySelectorAll('.intdel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את הבקשה הזו לגמרי?'))return;await api('DELETE','/api/intake/'+b.dataset.id);INTAKE=(INTAKE||[]).filter(x=>x.id!=b.dataset.id);paintIntake();toast('נמחק ✓');});
+  list.querySelectorAll('.intnew').forEach(b=>b.onclick=async()=>{
+    const it=INTAKE.find(x=>x.id==b.dataset.id);
+    const r=await api('POST','/api/intake/'+b.dataset.id+'/newdonor',{names:getNames(b.dataset.id),email:it?it.from_email:'',last:it?(it.from_name||''):''});
+    if(!r||!r.id){toast('שגיאה ביצירת תורם');return;}
+    toast(r.from_recon?'נפתח כרטיס — נמצאה כתובת מחיובי האשראי ✓':'נפתח כרטיס תורם חדש ✓');
+    await load();const dd=DB.find(x=>x.id==r.id);if(dd)openDonor(dd,'details');
+  });
   list.querySelectorAll('.intattach').forEach(b=>b.onclick=async()=>{
     const names=getNames(b.dataset.id);if(!names){toast('אין שמות לצירוף');return;}
     await api('POST','/api/intake/'+b.dataset.id+'/attach',{donor_id:+b.dataset.did,names:names});

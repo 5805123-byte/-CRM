@@ -1622,6 +1622,57 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE intake SET status='handled' WHERE id=?", (iid,))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/intake/(\d+)/newdonor$', self.path)
+        if m:   # פתיחת כרטיס תורם חדש מתוך בקשת האתר
+            iid = int(m.group(1))
+            con = db(); r = con.execute("SELECT * FROM intake WHERE id=?", (iid,)).fetchone()
+            if not r:
+                con.close(); return self._send(404, {'error': 'not found'})
+            reparsed = ''
+            try:
+                import gmail_intake as _gi3
+                reparsed = _gi3._parse_names(r['body'] or '')
+            except Exception:
+                reparsed = ''
+            text = (b.get('names') or reparsed or r['names'] or '').strip()
+            last = (b.get('last') or '').strip()
+            first = (b.get('first') or '').strip()
+            email = (b.get('email') or r['from_email'] or '').strip().lower()
+            # הצלבה מול חיובי האשראי (Authorize / Bank West) לפי אימייל — משיכת כתובת/טלפון/שם
+            rec = None
+            if email:
+                rec = con.execute("""SELECT * FROM recon WHERE lower(TRIM(email))=? AND TRIM(COALESCE(email,''))<>''
+                                     ORDER BY date DESC LIMIT 1""", (email,)).fetchone()
+            english = phone = addr = city = region = country = zipc = ''
+            if rec:
+                first = first or (rec['first'] or '')
+                last = last or (rec['last'] or '')
+                english = (((rec['first'] or '') + ' ' + (rec['last'] or '')).strip())
+                phone = rec['phone'] or ''
+                addr = rec['addr'] or ''
+                city = rec['city'] or ''
+                region = rec['state'] or ''
+                zipc = rec['zip'] or ''
+                country = 'US'
+            if not last:
+                last = (r['from_name'] or '').strip()
+            if not (last or first):   # אין שם — ניקח את השם הראשון מהקוויטל (לפני בן/בת)
+                head = re.split(r'\bבן\b|\bבת\b', text)[0].strip() if text else ''
+                last = head or 'תורם חדש'
+            cur = con.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (last, first, english, '', phone, email, addr, '', 'מזדמן', '', '', today_iso(),
+                         ('אתר+אשראי' if rec else 'אתר'), region, country, zipc, city))
+            did = cur.lastrowid
+            if text:
+                con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')", (did, text))
+            # קישור חיובי האשראי שטרם שויכו לתורם הזה (לפי אימייל) — כדי שההיסטוריה תיראה בכרטיס
+            if email:
+                con.execute("""UPDATE recon SET donor_id=? WHERE lower(TRIM(email))=? AND TRIM(COALESCE(email,''))<>''
+                               AND (donor_id IS NULL OR donor_id='' OR donor_id=0)""", (did, email))
+            con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': did, 'from_recon': bool(rec)})
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm:
