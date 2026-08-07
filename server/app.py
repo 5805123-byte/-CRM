@@ -1674,6 +1674,38 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             dname = (last + ' ' + first).strip() or english or 'תורם חדש'
             return self._send(200, {'ok': True, 'id': did, 'from_recon': bool(rec), 'name': dname})
+        m = re.match(r'/api/parnes/(\d+)/sendmail$', self.path)
+        if m:   # שליחת תמונת ההקדשה/התעודה ישירות לתורם במייל — עם הקובץ מצורף
+            pid = int(m.group(1))
+            con = db()
+            p = con.execute("SELECT * FROM parnes WHERE id=?", (pid,)).fetchone()
+            if not p:
+                con.close(); return self._send(404, {'error': 'not found'})
+            d = con.execute("SELECT last,first,email FROM donors WHERE id=?", (p['donor_id'],)).fetchone()
+            to = (b.get('to') or (d['email'] if d else '') or '').strip()
+            atts = []
+            for f in con.execute("SELECT name,mime,data FROM files WHERE kind='parnes' AND ref_id=?", (pid,)):
+                atts.append((f['name'] or 'hakdasha.jpg', f['mime'] or 'image/jpeg', f['data']))
+            con.close()
+            if not to:
+                return self._send(200, {'ok': False, 'error': 'no_recipient'})
+            if not atts:
+                return self._send(200, {'ok': False, 'error': 'no_files'})
+            donor = ((d['last'] or '') + ' ' + (d['first'] or '')).strip() if d else ''
+            dtext = (p['date_text'] or '') + ((' ' + p['hyear']) if p['hyear'] else '')
+            subject = b.get('subject') or ('תעודת פרנס — כולל חצות' + ((' · ' + dtext) if dtext else ''))
+            body = b.get('body') or (
+                ('לכבוד ' + donor + ',\n\n' if donor else '') +
+                'מצורפת תמונת ההקדשה' + ((' עבור ' + dtext) if dtext else '') + '.\n\n'
+                'תזכו למצוות!\nכולל חצות')
+            try:
+                import mailer
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            res = mailer.send(to, subject, body, atts)
+            res['to'] = to
+            res['count'] = len(atts)
+            return self._send(200, res)
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm:

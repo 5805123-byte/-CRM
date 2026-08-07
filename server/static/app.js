@@ -1033,11 +1033,12 @@ function shareParnesMenu(t,d){
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:8px">📤 שליחת תעודה${donor?(' ל'+esc(donor)):''}</div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      ${img?`<button class="btn" id="shph" style="background:#25D366;border-color:#25D366">📷 שלח את התמונה (וואטסאפ / שיתוף)</button>
-      <button class="btn ghost" id="shdl">📥 הורד / פתח את התמונה לשליחה ידנית</button>`:'<div class="hintxt" style="color:var(--no)">אין תמונת הקדשה מצורפת — העלה תמונה קודם.</div>'}
+      ${img?`<button class="btn" id="shsend" style="background:var(--yes);border-color:var(--yes)">📧 שלח עכשיו לתורם במייל (התמונה מצורפת)</button>
+      <button class="btn" id="shph" style="background:#25D366;border-color:#25D366">📲 שלח את התמונה בוואטסאפ</button>
+      <button class="btn ghost" id="shdl">📥 הורד / פתח את התמונה</button>`:'<div class="hintxt" style="color:var(--no)">אין תמונת הקדשה מצורפת — העלה תמונה קודם.</div>'}
       <div class="hintxt" style="margin:2px 0">— או שליחת התעודה המעוצבת —</div>
       <button class="btn ghost" id="shwa">📲 שלח קישור לתעודה בוואטסאפ</button>
-      <button class="btn ghost" id="shml">📧 שלח במייל</button>
+      <button class="btn ghost" id="shml">📧 מייל דרך תוכנת הדואר</button>
       <button class="btn ghost" id="shcert">👁️ פתח / הדפס תעודה</button></div>
     <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
   document.body.appendChild(o);const done=()=>o.remove();
@@ -1054,6 +1055,16 @@ function shareParnesMenu(t,d){
     o.querySelector('.cno2').onclick=done;
     o.querySelector('#shwaweb').onclick=()=>{window.open(wurl,'_blank');done();};
     o.querySelector('#shgml').onclick=()=>{window.open('https://mail.google.com/mail/?view=cm&to='+encodeURIComponent((d.email||'').trim())+'&su='+encodeURIComponent('תעודת פרנס — כולל חצות')+'&body='+encodeURIComponent(cap),'_blank');done();};
+  };
+  // שליחה ישירה מהשרת — התמונה מגיעה לתורם מצורפת למייל, בלי העתק/הדבק
+  const shs=o.querySelector('#shsend');if(shs)shs.onclick=async()=>{
+    const to=(d.email||'').trim();
+    if(!to){toast('אין כתובת מייל בכרטיס התורם');return;}
+    shs.disabled=true;shs.textContent='שולח…';
+    const r=await api('POST','/api/parnes/'+t.id+'/sendmail',{to});
+    if(r&&r.ok){toast('נשלח ל'+to+' ✓');done();return;}
+    const why={not_configured:'המייל לא מוגדר בשרת',no_files:'אין תמונה מצורפת',no_recipient:'אין כתובת מייל',login_failed:'התחברות לג׳ימייל נכשלה'}[r&&r.error]||((r&&(r.detail||r.error))||'שגיאה');
+    toast('לא נשלח: '+why);shs.disabled=false;shs.textContent='📧 שלח עכשיו לתורם במייל (התמונה מצורפת)';
   };
   const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{     // שולח את קובץ התמונה עצמו
     const res=await sharePhotoFile(img,cap);
