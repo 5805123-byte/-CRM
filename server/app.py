@@ -1189,7 +1189,7 @@ def get_all():
     except Exception:
         pass
     for d in donors: d['files'] = []
-    parnes_files = {}
+    parnes_files, contact_files, task_files = {}, {}, {}
     try:
         for r in c.execute("SELECT id,kind,ref_id,name,mime FROM files"):
             meta = {'id': r['id'], 'name': r['name'], 'mime': r['mime']}
@@ -1197,9 +1197,19 @@ def get_all():
                 byid[r['ref_id']]['files'].append(meta)
             elif r['kind'] == 'parnes':
                 parnes_files.setdefault(r['ref_id'], []).append(meta)
+            elif r['kind'] == 'contact':      # אסמכתאות ליומן הקשר (צילומי מסך, הודעות קוליות)
+                contact_files.setdefault(r['ref_id'], []).append(meta)
+            elif r['kind'] == 'task':         # אסמכתאות למשימה
+                task_files.setdefault(r['ref_id'], []).append(meta)
         for d in donors:
             for p in d['parnes']:
                 p['files'] = parnes_files.get(p['id'], [])
+            for cl in d['contacts']:
+                cl['files'] = contact_files.get(cl['id'], [])
+            for tk in d['tasks']:
+                tk['files'] = task_files.get(tk['id'], [])
+        for tk in general_tasks:
+            tk['files'] = task_files.get(tk['id'], [])
     except Exception:
         pass
     con.close()
@@ -2004,6 +2014,10 @@ class H(BaseHTTPRequestHandler):
             except Exception: pass
             try: con.execute("DELETE FROM files WHERE kind='parnes' AND ref_id IN (SELECT id FROM parnes WHERE donor_id=?)", (did,))
             except Exception: pass
+            try: con.execute("DELETE FROM files WHERE kind='contact' AND ref_id IN (SELECT id FROM contacts_log WHERE donor_id=?)", (did,))
+            except Exception: pass
+            try: con.execute("DELETE FROM files WHERE kind='task' AND ref_id IN (SELECT id FROM tasks WHERE donor_id=?)", (did,))
+            except Exception: pass
             for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
@@ -2025,6 +2039,10 @@ class H(BaseHTTPRequestHandler):
                         note = 'פרנס יום ' + (row['date_text'] or '') + ' — הכן הדפסה וצור קשר'
                         con.execute("DELETE FROM tasks WHERE donor_id=? AND kind='parnes' AND note=?",
                                     (row['donor_id'], note))
+                except Exception: pass
+            if table in ('contacts_log', 'tasks', 'parnes'):   # מחיקת האסמכתאות המצורפות יחד עם השורה
+                fk = {'contacts_log': 'contact', 'tasks': 'task', 'parnes': 'parnes'}[table]
+                try: con.execute("DELETE FROM files WHERE kind=? AND ref_id=?", (fk, rid))
                 except Exception: pass
             con.execute(f"DELETE FROM {table} WHERE id=?", (rid,)); con.commit(); con.close()
             return self._send(200, {'ok': True})
