@@ -1391,11 +1391,24 @@ class H(BaseHTTPRequestHandler):
                     continue   # אין שמות לתפילה — לא מציגים ברשימה
                 x['in_kvittel'] = _in_kvittel(x['names'])
                 hit = None
+                # מייל לזיהוי: קודם from_email, ואם לא — המייל שבתוך גוף המייל (המיילים מועברים דרך כתובת אחת)
+                cand_emails = []
                 fem = (r['from_email'] or '').strip().lower()
                 if fem:
+                    cand_emails.append(fem)
+                if _gi:
+                    try:
+                        be = _gi._submitter_email(r['body'] or '')
+                        if be and be.lower() not in cand_emails:
+                            cand_emails.append(be.lower())
+                    except Exception:
+                        pass
+                for ce in cand_emails:
                     for d in donors:
-                        if (d['email'] or '').strip().lower() == fem and d['email']:
+                        if (d['email'] or '').strip().lower() == ce and d['email']:
                             hit = d; break
+                    if hit:
+                        break
                 if r['donor_id']:
                     hit = next((d for d in donors if d['id'] == r['donor_id']), hit)
                 if hit:

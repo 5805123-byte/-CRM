@@ -481,15 +481,17 @@ def sync(con):
             names = _parse_names(body)
             if not names.strip():     # אין שמות לתפילה (למשל רק "thank you") — לא מכניסים לרשימה
                 continue
-            donor = _match_donor(femail)   # זיהוי תורם לפי האימייל
+            # המייל האמיתי של התורם נמצא בגוף המייל (המיילים מועברים דרך כתובת אחת) — מזהים לפיו
+            real_email = (_submitter_email(body) or femail or '').lower()
+            donor = _match_donor(real_email)   # זיהוי תורם לפי האימייל האמיתי
             if existing:              # רענון פריט שעדיין לא טופל — מתקן פענוח עברית/תעתיק ישן
                 iid = existing['id']
                 con.execute("UPDATE intake SET from_name=?, from_email=?, subject=?, received=?, body=?, names=? WHERE id=?",
-                            (fname, femail.lower(), subject, received, body, names, iid))
+                            (fname, real_email, subject, received, body, names, iid))
             else:
                 cur = con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,status,created)
                                VALUES(?,?,?,?,?,?,?, 'new', ?)""",
-                            (mid, fname, femail.lower(), subject, received, body, names,
+                            (mid, fname, real_email, subject, received, body, names,
                              datetime.date.today().isoformat()))
                 iid = cur.lastrowid
                 new += 1
