@@ -1224,10 +1224,12 @@ function paintIntake(){
   list.querySelectorAll('.intdel').forEach(b=>b.onclick=async()=>{if(!confirm('למחוק את הבקשה הזו לגמרי?'))return;await api('DELETE','/api/intake/'+b.dataset.id);INTAKE=(INTAKE||[]).filter(x=>x.id!=b.dataset.id);paintIntake();toast('נמחק ✓');});
   list.querySelectorAll('.intnew').forEach(b=>b.onclick=async()=>{
     const it=INTAKE.find(x=>x.id==b.dataset.id);
+    b.disabled=true;
     const r=await api('POST','/api/intake/'+b.dataset.id+'/newdonor',{names:getNames(b.dataset.id),email:it?it.from_email:'',last:it?(it.from_name||''):''});
-    if(!r||!r.id){toast('שגיאה ביצירת תורם');return;}
-    toast(r.from_recon?'נפתח כרטיס — נמצאה כתובת מחיובי האשראי ✓':'נפתח כרטיס תורם חדש ✓');
-    await load();const dd=DB.find(x=>x.id==r.id);if(dd)openDonor(dd,'details');
+    if(!r||!r.id){toast('שגיאה ביצירת תורם');b.disabled=false;return;}
+    toast(r.from_recon?('נוצר כרטיס ל'+(r.name||'')+' — כולל כתובת מחיובי האשראי ✓'):('נוצר כרטיס ל'+(r.name||'תורם החדש')+' ✓'));
+    // נשארים בדף הבקשות — הפריט יתעדכן ויראה קישור "פתח כרטיס ↗" (בלי לקפוץ ולאבד את המקום)
+    await load();INTAKE=null;await loadIntake();paintIntake();
   });
   list.querySelectorAll('.intattach').forEach(b=>b.onclick=async()=>{
     const names=getNames(b.dataset.id);if(!names){toast('אין שמות לצירוף');return;}

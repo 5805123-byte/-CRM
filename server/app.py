@@ -1672,7 +1672,8 @@ class H(BaseHTTPRequestHandler):
                                AND (donor_id IS NULL OR donor_id='' OR donor_id=0)""", (did, email))
             con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'id': did, 'from_recon': bool(rec)})
+            dname = (last + ' ' + first).strip() or english or 'תורם חדש'
+            return self._send(200, {'ok': True, 'id': did, 'from_recon': bool(rec), 'name': dname})
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm:
