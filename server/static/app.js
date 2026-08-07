@@ -992,13 +992,33 @@ function parnesCertUrl(d,p){
 }
 function openParnesCert(d,p){if(!p)return;window.open(parnesCertUrl(d,p),'_blank');}
 // שיתוף תמונה כקובץ אמיתי (מצרף בוואטסאפ/מייל דרך תפריט המכשיר), עם נפילה לפתיחת התמונה
+// המרת תמונה ל-PNG — לוח ההעתקה של הדפדפן תומך רק בפורמט הזה
+async function imgToPngBlob(blob){
+  if((blob.type||'')==='image/png')return blob;
+  const bmp=await createImageBitmap(blob);
+  const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
+  c.getContext('2d').drawImage(bmp,0,0);
+  return await new Promise(res=>c.toBlob(res,'image/png'));
+}
+// העתקת תמונת ההקדשה ללוח — כדי להדביק אותה ישירות בוואטסאפ ווב / במייל במחשב
+async function copyImageToClip(img){
+  if(!img||(img.mime||'').indexOf('image')<0)return false;
+  try{
+    if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write))return false;
+    const png=await imgToPngBlob(await (await fetch('/api/file/'+img.id)).blob());
+    await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
+    return true;
+  }catch(e){return false;}
+}
+// שליחת התמונה עצמה: בטלפון — שיתוף קובץ אמיתי; במחשב — העתקה ללוח להדבקה בוואטסאפ ווב
 async function sharePhotoFile(img,msg){
-  if(!img){toast('אין תמונה מצורפת');return;}
+  if(!img){toast('אין תמונה מצורפת');return 'none';}
   try{const r=await fetch('/api/file/'+img.id);const blob=await r.blob();const file=new File([blob],img.name||'hakdasha.jpg',{type:blob.type||'image/jpeg'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text:msg||''});return;}}catch(e){if(e&&e.name==='AbortError')return;}
-  // מחשב (בלי שיתוף קבצים): פותחים את התמונה כדי לשמור/לגרור לוואטסאפ
-  window.open(location.origin+'/api/file/'+img.id,'_blank');
-  toast('התמונה נפתחה — שמור אותה ושלח בוואטסאפ/מייל 📷');
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text:msg||''});return 'shared';}}
+  catch(e){if(e&&e.name==='AbortError')return 'cancel';}
+  if(await copyImageToClip(img))return 'copied';
+  window.open(location.origin+'/api/file/'+img.id,'_blank');   // גיבוי אחרון
+  return 'opened';
 }
 // תפריט שליחת תעודת פרנס לתורם — וואטסאפ / מייל / שיתוף מכשיר / התמונה
 function shareParnesMenu(t,d){
@@ -1022,7 +1042,25 @@ function shareParnesMenu(t,d){
     <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
   document.body.appendChild(o);const done=()=>o.remove();
   o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
-  const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{await sharePhotoFile(img,cap);done();};   // שולח את קובץ התמונה עצמו
+  // שלב 2 במחשב: התמונה כבר בלוח — נותר לפתוח וואטסאפ ווב ולהדביק
+  const pasteStep=()=>{
+    const wurl=ph?('https://web.whatsapp.com/send?phone='+ph):'https://web.whatsapp.com';
+    o.querySelector('.confirmbox').innerHTML=`<div class="cm" style="font-weight:800;margin-bottom:8px">✅ התמונה הועתקה</div>
+      <div class="hintxt" style="margin-bottom:10px;line-height:1.6">עכשיו פתח את וואטסאפ ווב והדבק אותה בשיחה עם <b>Ctrl+V</b> (במק: <b>⌘+V</b>) ואז Enter.<br>אפשר גם להדביק ככה במייל.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn" id="shwaweb" style="background:#25D366;border-color:#25D366">📲 פתח וואטסאפ ווב${donor?(' — '+esc(donor)):''}</button>
+        <button class="btn ghost" id="shgml">📧 פתח גימייל לכתיבת מייל</button></div>
+      <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno2">סגור</button></div>`;
+    o.querySelector('.cno2').onclick=done;
+    o.querySelector('#shwaweb').onclick=()=>{window.open(wurl,'_blank');done();};
+    o.querySelector('#shgml').onclick=()=>{window.open('https://mail.google.com/mail/?view=cm&to='+encodeURIComponent((d.email||'').trim())+'&su='+encodeURIComponent('תעודת פרנס — כולל חצות')+'&body='+encodeURIComponent(cap),'_blank');done();};
+  };
+  const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{     // שולח את קובץ התמונה עצמו
+    const res=await sharePhotoFile(img,cap);
+    if(res==='copied'){pasteStep();return;}
+    if(res==='opened')toast('שמור את התמונה ושלח אותה בוואטסאפ 📷');
+    done();
+  };
   const shdl=o.querySelector('#shdl');if(shdl)shdl.onclick=()=>{window.open(location.origin+'/api/file/'+img.id,'_blank');done();};
   o.querySelector('#shwa').onclick=()=>{window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msgLink),'_blank');done();};
   o.querySelector('#shml').onclick=()=>{window.location.href='mailto:'+encodeURIComponent((d.email||'').trim())+'?subject='+encodeURIComponent('תעודת פרנס — כולל חצות')+'&body='+encodeURIComponent(msgLink);done();};
