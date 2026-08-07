@@ -1363,6 +1363,10 @@ class H(BaseHTTPRequestHandler):
                 s = s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
                 return re.sub(r'\s+', ' ', s).strip()
             _STOP = {'בן', 'בת', 'ben', 'bas', 'bat', 'ver', 'reb'}
+            try:
+                import gmail_intake as _gi
+            except Exception:
+                _gi = None
             allpray = [_kvn(p['text']) for p in con.execute("SELECT text FROM prayers WHERE COALESCE(TRIM(text),'')<>''")]
             def _in_kvittel(names):
                 head = _kvn((names or '').split('—')[0].split(' - ')[0])
@@ -1375,7 +1379,17 @@ class H(BaseHTTPRequestHandler):
                 return False
             for r in con.execute("SELECT * FROM intake ORDER BY (status='handled'), received DESC, id DESC"):
                 x = dict(r); x['match'] = None
-                x['in_kvittel'] = _in_kvittel(r['names'])
+                # תעתיק־מחדש מתוך גוף המייל בכל טעינה — כדי שהשיפורים בעברית יחולו גם על בקשות ישנות
+                if _gi and r['status'] != 'handled':
+                    try:
+                        rp = _gi._parse_names(r['body'] or '')
+                        if rp.strip():
+                            x['names'] = rp
+                    except Exception:
+                        pass
+                if r['status'] != 'handled' and not (x['names'] or '').strip():
+                    continue   # אין שמות לתפילה — לא מציגים ברשימה
+                x['in_kvittel'] = _in_kvittel(x['names'])
                 hit = None
                 fem = (r['from_email'] or '').strip().lower()
                 if fem:
@@ -1577,7 +1591,13 @@ class H(BaseHTTPRequestHandler):
             if not r:
                 con.close(); return self._send(404, {'error': 'not found'})
             did = b.get('donor_id') or r['donor_id']
-            text = (b.get('names') or r['names'] or r['body'] or '').strip()
+            reparsed = ''
+            try:
+                import gmail_intake as _gi2
+                reparsed = _gi2._parse_names(r['body'] or '')
+            except Exception:
+                reparsed = ''
+            text = (b.get('names') or reparsed or r['names'] or r['body'] or '').strip()
             if did:  # שיוך לכרטיס תורם קיים — דרגת השם לפי דרגת התורם (ריק=לפי הקטגוריה, למשל מזדמן)
                 tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
                 tval = (tier['tier'] if tier else '') or ''

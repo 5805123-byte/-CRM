@@ -63,17 +63,41 @@ def _extract_text(msg):
     return '\n'.join(out).strip()
 
 
+def _heb_score(txt):
+    """ניקוד לזיהוי הפענוח הנכון: הרבה אותיות עבריות = טוב, תווי־שגיאה = רע."""
+    heb = sum(1 for c in txt if '֐' <= c <= '׿')
+    bad = txt.count('�')
+    return heb - 50 * bad
+
+
 def _payload(part):
+    """מפענח גוף מייל בעברית גם אם הקידוד שגוי (utf-8 / windows-1255 / iso-8859-8 וכו')."""
     try:
         raw = part.get_payload(decode=True)
-        if raw is None:
-            return ''
-        return raw.decode(part.get_content_charset() or 'utf-8', 'replace')
     except Exception:
+        raw = None
+    if raw is None:
         try:
             return str(part.get_payload())
         except Exception:
             return ''
+    if isinstance(raw, str):
+        return raw
+    declared = (part.get_content_charset() or '').lower()
+    cands, seen = [], set()
+    for cs in [declared, 'utf-8', 'windows-1255', 'iso-8859-8', 'cp1252']:
+        if cs and cs not in seen:
+            seen.add(cs); cands.append(cs)
+    best, best_score = None, None
+    for cs in cands:
+        try:
+            txt = raw.decode(cs)
+        except Exception:
+            continue
+        sc = _heb_score(txt)
+        if best_score is None or sc > best_score:
+            best, best_score = txt, sc
+    return best if best is not None else raw.decode('utf-8', 'replace')
 
 
 # מיפוי תוויות השדות בטופס האתר לשדות מובנים
@@ -103,15 +127,23 @@ _REQ_MAP = {
 }
 # מילות מפתח לבקשות מורכבות (מספר בקשות בשורה) — התאמה חלקית, לפי סדר
 _REQ_KW = [
-    ('refu', 'לרפואה שלמה'), ('refua', 'לרפואה שלמה'),
+    ('refu', 'לרפואה שלמה'), ('refua', 'לרפואה שלמה'), ('heal', 'לרפואה שלמה'), ('recover', 'לרפואה שלמה'),
     ('good health', 'לבריאות איתנה'), ('health', 'לבריאות איתנה'),
-    ('parnas', 'לפרנסה טובה'), ('parnos', 'לפרנסה טובה'),
-    ('shidduch', 'לזיווג הגון'), ('zivug', 'לזיווג הגון'),
+    ('engag', 'לזיווג הגון'), ('marry', 'לזיווג הגון'), ('married', 'לזיווג הגון'), ('marriage', 'לזיווג הגון'),
+    ('shidduch', 'לזיווג הגון'), ('zivug', 'לזיווג הגון'), ('spouse', 'לזיווג הגון'),
+    ('earn', 'לפרנסה טובה'), ('income', 'לפרנסה טובה'), ('money', 'לפרנסה טובה'), ('job', 'לפרנסה טובה'),
+    ('parnas', 'לפרנסה טובה'), ('parnos', 'לפרנסה טובה'), ('livelihood', 'לפרנסה טובה'),
+    ('business', 'להצלחה בעסקים'), ('deal', 'להצלחה בעסקים'),
     ('nachas', 'לנחת מהילדים'), ('nachos', 'לנחת מהילדים'),
-    ('kids', 'לזרע של קיימא'), ('children', 'לזרע של קיימא'), ('bracha', 'לברכה'),
-    ('hatzlach', 'להצלחה'), ('success', 'להצלחה'), ('yeshua', 'לישועה'),
-    ('leilui', 'לעילוי נשמה'), ('simcha', 'לשמחה'), ('brachot', 'לכל הברכות'), ('brochos', 'לכל הברכות'),
-    ('apartment', 'למצוא דירה'), ('shalom bayis', 'לשלום בית'),
+    ('kids', 'לזרע של קיימא'), ('children', 'לזרע של קיימא'), ('baby', 'לזרע של קיימא'),
+    ('conceive', 'לזרע של קיימא'), ('pregnan', 'לזרע של קיימא'), ('fertil', 'לזרע של קיימא'),
+    ('bracha', 'לברכה'), ('blessing', 'לכל הברכות'),
+    ('hatzlach', 'להצלחה'), ('success', 'להצלחה'), ('succeed', 'להצלחה'), ('yeshua', 'לישועה'), ('salvation', 'לישועה'),
+    ('leilui', 'לעילוי נשמה'), ('neshoma', 'לעילוי נשמה'), ('soul', 'לעילוי נשמה'),
+    ('simcha', 'לשמחה'), ('joy', 'לשמחה'), ('happ', 'לשמחה'),
+    ('brachot', 'לכל הברכות'), ('brochos', 'לכל הברכות'),
+    ('apartment', 'למצוא דירה'), ('home', 'למצוא דירה'), ('house', 'למצוא דירה'),
+    ('shalom bayis', 'לשלום בית'), ('peace at home', 'לשלום בית'), ('protect', 'לשמירה'), ('safe', 'לשמירה'),
 ]
 # שמות נשיים נפוצים — לקביעת "בת" (ברירת מחדל: בן)
 _FEMALE = {
@@ -128,6 +160,9 @@ _FEMALE = {
     'necha', 'nechie', 'roiza', 'roizy', 'fruma', 'frumy', 'frumie', 'yehudis', 'yides', 'sheva', 'shevy', 'kaila', 'kayla',
     'dina', 'diny', 'chava', 'chavy', 'basya', 'basy', 'basha', 'alta', 'yittel', 'machla', 'machy', 'krayndel', 'kreindel',
     'libby', 'liba', 'libe', 'tzirel', 'tzirl', 'chaviva', 'gitla',
+    'tamar', 'yael', 'yaeli', 'yosefa', 'yoseefa', 'shulamit', 'shulamis', 'noa', 'noya', 'shira', 'shani',
+    'michal', 'meital', 'sylvana', 'sylvia', 'louris', 'racheli', 'orly', 'orit', 'sivan', 'moriah', 'moria',
+    'aviva', 'ayelet', 'hadas', 'hadasa', 'hadassah', 'liora', 'liat', 'gila', 'galit', 'irit', 'dalia', 'daliya',
 }
 
 
@@ -135,7 +170,8 @@ _FEMALE = {
 _NAME_HE = {
     # ===== גברים =====
     'avraham': 'אברהם', 'avrohom': 'אברהם', 'abraham': 'אברהם', 'avrum': 'אברהם', 'avrumi': 'אברהם', 'avremel': 'אברהם',
-    'yitzchok': 'יצחק', 'yitzchak': 'יצחק', 'isaac': 'יצחק', 'itzik': 'יצחק', 'itche': 'יצחק', 'itchie': 'יצחק',
+    'yitzchok': 'יצחק', 'yitzchak': 'יצחק', 'yitzhak': 'יצחק', 'yitzchack': 'יצחק', 'isaac': 'יצחק', 'itzik': 'יצחק', 'itche': 'יצחק', 'itchie': 'יצחק',
+    'hayim': 'חיים', 'haim': 'חיים', 'chayim': 'חיים', 'shulamit': 'שולמית', 'shulamis': 'שולמית', 'sylvana': 'סילבנה', 'sylvia': 'סילביה', 'louris': 'לוריס',
     'yaakov': 'יעקב', 'yakov': 'יעקב', 'jacob': 'יעקב', 'yankel': 'יאנקל', 'yankev': 'יעקב', 'koppel': 'קאפל',
     'moshe': 'משה', 'moishe': 'משה', 'moses': 'משה', 'moshy': 'משה',
     'menachem': 'מנחם', 'mendel': 'מענדל', 'mendy': 'מענדל', 'mendil': 'מענדל',
@@ -206,14 +242,52 @@ _NAME_HE = {
 }
 
 
+# ===== תעתיק פונטי לגיבוי: כל מילה אנגלית שאינה במילון הופכת לאותיות עבריות (לעולם לא נשאר אנגלית) =====
+_TR3 = {'tch': 'טש', 'sch': 'ש'}
+_TR2 = {'ch': 'ח', 'sh': 'ש', 'ph': 'פ', 'th': 'ת', 'tz': 'צ', 'ts': 'צ', 'ck': 'ק',
+        'kh': 'ח', 'gh': 'ג', 'oo': 'ו', 'ou': 'ו', 'ei': 'יי', 'ai': 'יי', 'ay': 'יי',
+        'ee': 'י', 'ea': 'י', 'ie': 'י', 'aw': 'ו', 'ah': 'ה', 'ya': 'יא', 'yo': 'יו'}
+_TR1 = {'a': 'א', 'b': 'ב', 'c': 'ק', 'd': 'ד', 'e': '', 'f': 'פ', 'g': 'ג', 'h': 'ה',
+        'i': 'י', 'j': "ג'", 'k': 'ק', 'l': 'ל', 'm': 'מ', 'n': 'נ', 'o': 'ו', 'p': 'פ',
+        'q': 'ק', 'r': 'ר', 's': 'ס', 't': 'ט', 'u': 'ו', 'v': 'ב', 'w': 'וו', 'x': 'קס',
+        'y': 'י', 'z': 'ז'}
+_SOFIT = {'מ': 'ם', 'נ': 'ן', 'כ': 'ך', 'פ': 'ף', 'צ': 'ץ'}
+
+
+def _translit(w):
+    s = re.sub(r'[^a-z]', '', (w or '').lower())
+    if not s:
+        return w
+    res, i, first = [], 0, True
+    while i < len(s):
+        if s[i:i + 3] in _TR3:
+            res.append(_TR3[s[i:i + 3]]); i += 3
+        elif s[i:i + 2] in _TR2:
+            res.append(_TR2[s[i:i + 2]]); i += 2
+        else:
+            c = s[i]
+            res.append('א' if (c == 'e' and first) else _TR1.get(c, ''))
+            i += 1
+        first = False
+    heb = ''.join(res)
+    if heb and heb[-1] in _SOFIT:      # אות סופית
+        heb = heb[:-1] + _SOFIT[heb[-1]]
+    return heb or w
+
+
 def _he_name(s):
     parts = re.split(r'(\s+)', (s or '').strip())
     out = []
     for w in parts:
-        if w.strip():
-            out.append(_NAME_HE.get(w.lower().strip(' ,.'), w))
-        else:
+        if not w.strip():
+            out.append(w); continue
+        key = w.lower().strip(' ,.')
+        if key in _NAME_HE:
+            out.append(_NAME_HE[key])
+        elif re.search(r'[֐-׿]', w):   # כבר עברית — משאירים כמו שהוא
             out.append(w)
+        else:
+            out.append(_translit(w))             # תעתיק פונטי — בלי אנגלית
     return ''.join(out)
 
 
@@ -222,6 +296,8 @@ def _req_he(request):
     req = (request or '').strip()
     if not req:
         return ''
+    if re.search(r'[֐-׿]', req):    # כבר עברית — משאירים כמו שהוא
+        return req
     low = req.lower()
     if low in _REQ_MAP:
         return _REQ_MAP[low]
@@ -230,7 +306,8 @@ def _req_he(request):
         if kw in low:
             if he not in parts:
                 parts.append(he)
-    return ' '.join(parts) if parts else req
+    # לא נשאיר אנגלית: אם לא זוהתה בקשה — לא מוסיפים טקסט (רק השם יופיע)
+    return ' ו'.join(parts)
 
 
 def _fmt_one(name, mother, father, request):
@@ -357,8 +434,9 @@ def sync(con):
                 continue
             msg = email.message_from_bytes(md[0][1])
             mid = (msg.get('Message-ID') or '').strip() or f'{user}:{i.decode()}'
-            if con.execute("SELECT 1 FROM intake WHERE message_id=?", (mid,)).fetchone():
-                continue
+            existing = con.execute("SELECT id,status FROM intake WHERE message_id=?", (mid,)).fetchone()
+            if existing and existing['status'] == 'handled':
+                continue   # כבר טופל — לא נוגעים
             fname, femail = parseaddr(_dec(msg.get('From')))
             subject = _dec(msg.get('Subject'))
             try:
@@ -368,6 +446,12 @@ def sync(con):
                 received = ''
             body = _extract_text(msg)
             names = _parse_names(body)
+            if not names.strip():     # אין שמות לתפילה (למשל רק "thank you") — לא מכניסים לרשימה
+                continue
+            if existing:              # רענון פריט שעדיין לא טופל — מתקן פענוח עברית/תעתיק ישן
+                con.execute("UPDATE intake SET from_name=?, from_email=?, subject=?, received=?, body=?, names=? WHERE id=?",
+                            (fname, femail.lower(), subject, received, body, names, existing['id']))
+                continue
             con.execute("""INSERT OR IGNORE INTO intake(message_id,from_name,from_email,subject,received,body,names,status,created)
                            VALUES(?,?,?,?,?,?,?, 'new', ?)""",
                         (mid, fname, femail.lower(), subject, received, body, names,
