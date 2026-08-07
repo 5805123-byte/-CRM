@@ -1692,6 +1692,27 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             dname = (last + ' ' + first).strip() or english or 'תורם חדש'
             return self._send(200, {'ok': True, 'id': did, 'from_recon': bool(rec), 'name': dname})
+        m = re.match(r'/api/contact/(\d+)/remind$', self.path)
+        if m:   # יצירת תזכורת מתוך תיעוד קשר — כולל העתקת האסמכתאות (צילום אשראי, הקלטה)
+            cid = int(m.group(1))
+            con = db()
+            c = con.execute("SELECT * FROM contacts_log WHERE id=?", (cid,)).fetchone()
+            if not c:
+                con.close(); return self._send(404, {'error': 'not found'})
+            due = (b.get('due_date') or '').strip() or today_iso()
+            kind = (b.get('kind') or 'charge').strip()
+            note = (b.get('note') or c['summary'] or '').strip()
+            cur = con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
+                              (c['donor_id'], due, kind, note, (b.get('assignee') or '')))
+            tid = cur.lastrowid
+            n = 0
+            if b.get('copy_files', True):   # אותם קבצים עוברים גם לתזכורת
+                for f in con.execute("SELECT name,mime,data FROM files WHERE kind='contact' AND ref_id=?", (cid,)):
+                    con.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) VALUES('task',?,?,?,?,?)",
+                                (tid, f['name'], f['mime'], f['data'], today_iso()))
+                    n += 1
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': tid, 'files': n, 'donor_id': c['donor_id']})
         m = re.match(r'/api/parnes/(\d+)/sendmail$', self.path)
         if m:   # שליחת תמונת ההקדשה/התעודה ישירות לתורם במייל — עם הקובץ מצורף
             pid = int(m.group(1))

@@ -1004,9 +1004,28 @@ function renderPartners(d){
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
   el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}
-    <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label></div></div><button class="del" data-del="${c.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
+    <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
+      <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button></div>
+    <div class="teditpanel hidden" data-rem="${c.id}">
+      <div class="fbrow"><label class="fld"><span>סוג</span><select class="cr_kind"><option value="charge">💳 לחייב</option><option value="followup">📞 לחזור</option><option value="prayer">🙏 לבקש שמות</option><option value="other">🔔 אחר</option></select></label>
+        <label class="fld"><span>מתי להזכיר</span><input type="date" class="cr_date" value="${esc(todayStr())}"></label></div>
+      <label class="fld"><span>פרטים</span><input class="cr_note" value="${esc(c.summary||'')}"></label>
+      <button class="btn sm cr_save" data-id="${c.id}" style="margin-top:6px">➕ צור תזכורת</button>
+    </div></div><button class="del" data-del="${c.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/contact/'+b.dataset.del);d.contacts=d.contacts.filter(x=>x.id!=b.dataset.del);renderContacts(d);});
   el.querySelectorAll('.clup').forEach(inp=>inp.onchange=()=>uploadFile('contact',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;}renderContacts(d);}));
+  el.querySelectorAll('.clrem').forEach(b=>b.onclick=()=>{el.querySelector('.teditpanel[data-rem="'+b.dataset.id+'"]').classList.toggle('hidden');});
+  el.querySelectorAll('.cr_save').forEach(b=>b.onclick=async()=>{
+    const box=el.querySelector('.teditpanel[data-rem="'+b.dataset.id+'"]');
+    const due=box.querySelector('.cr_date').value;if(!due){toast('בחר תאריך');return;}
+    b.disabled=true;
+    const r=await api('POST','/api/contact/'+b.dataset.id+'/remind',
+      {due_date:due,kind:box.querySelector('.cr_kind').value,note:box.querySelector('.cr_note').value.trim()});
+    if(!r||!r.ok){toast('שגיאה ביצירת תזכורת');b.disabled=false;return;}
+    await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;d.tasks=dd.tasks;}
+    renderContacts(d);renderReminders(d);checkReminders();
+    toast('נקבעה תזכורת ✓'+(r.files?' · '+r.files+' אסמכתאות הועתקו':''));
+  });
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.contacts||[]).forEach(c=>{c.files=(c.files||[]).filter(f=>f.id!=b.dataset.fid);});renderContacts(d);toast('נמחק');});
 }
 function renderPledges(d){
