@@ -127,7 +127,7 @@ _REQ_MAP = {
 }
 # מילות מפתח לבקשות מורכבות (מספר בקשות בשורה) — התאמה חלקית, לפי סדר
 _REQ_KW = [
-    ('refu', 'לרפואה שלמה'), ('refua', 'לרפואה שלמה'), ('heal', 'לרפואה שלמה'), ('recover', 'לרפואה שלמה'),
+    ('refu', 'לרפואה שלמה'), ('refua', 'לרפואה שלמה'), ('recover', 'לרפואה שלמה'),
     ('good health', 'לבריאות איתנה'), ('health', 'לבריאות איתנה'),
     ('engag', 'לזיווג הגון'), ('marry', 'לזיווג הגון'), ('married', 'לזיווג הגון'), ('marriage', 'לזיווג הגון'),
     ('shidduch', 'לזיווג הגון'), ('zivug', 'לזיווג הגון'), ('spouse', 'לזיווג הגון'),
@@ -241,6 +241,75 @@ _NAME_HE = {
     'tzirel': 'צירל', 'tzirl': 'צירל',
 }
 
+# ===== תוספת שמות נפוצים (כולל ספרדים/ישראליים) — עדיף מילון על פני תעתיק פונטי =====
+_NAME_HE.update({
+    # גברים
+    'elchanan': 'אלחנן', 'elhanan': 'אלחנן', 'elchonon': 'אלחנן', 'yisrael': 'ישראל', 'ari': 'ארי', 'arye': 'אריה',
+    'aryeh': 'אריה', 'ariel': 'אריאל', 'amram': 'עמרם', 'amos': 'עמוס', 'aviel': 'אביאל', 'avi': 'אבי',
+    'aviad': 'אביעד', 'avidan': 'אבידן', 'amichai': 'עמיחי', 'assaf': 'אסף', 'asaf': 'אסף', 'barak': 'ברק',
+    'ben': 'בן', 'benzion': 'בן ציון', 'betzalel': 'בצלאל', 'bezalel': 'בצלאל', 'chananya': 'חנניה',
+    'chagai': 'חגי', 'chagag': 'חגג', 'dan': 'דן', 'daniel': 'דניאל', 'doron': 'דורון', 'eran': 'ערן',
+    'eyal': 'אייל', 'eitan': 'איתן', 'eldad': 'אלדד', 'eli': 'אלי', 'elon': 'אלון', 'gad': 'גד',
+    'gavriel': 'גבריאל', 'gabriel': 'גבריאל', 'gidon': 'גדעון', 'gideon': 'גדעון', 'guy': 'גיא',
+    'hanan': 'חנן', 'harel': 'הראל', 'ido': 'עידו', 'idan': 'עידן', 'itai': 'איתי', 'itamar': 'איתמר',
+    'kobi': 'קובי', 'lior': 'ליאור', 'liran': 'לירן', 'matan': 'מתן', 'maor': 'מאור', 'nadav': 'נדב',
+    'nir': 'ניר', 'nissim': 'נסים', 'noam': 'נעם', 'omer': 'עומר', 'omri': 'עומרי', 'oren': 'אורן',
+    'ovadia': 'עובדיה', 'ovadya': 'עובדיה', 'ronen': 'רונן', 'roi': 'רועי', 'roee': 'רועי', 'ron': 'רון',
+    'shai': 'שי', 'shlomi': 'שלומי', 'tal': 'טל', 'tomer': 'תומר', 'uri': 'אורי', 'uriel': 'אוריאל',
+    'yair': 'יאיר', 'yaniv': 'יניב', 'yehonatan': 'יהונתן', 'yonatan': 'יונתן', 'yoni': 'יוני',
+    'yaron': 'ירון', 'yotam': 'יותם', 'ziv': 'זיו', 'zohar': 'זוהר', 'shimshon': 'שמשון', 'samson': 'שמשון',
+    'yehiel': 'יחיאל', 'menashe': 'מנשה', 'ezra': 'עזרא', 'chananel': 'חננאל', 'yishai': 'ישי',
+    # נשים
+    'pnina': 'פנינה', 'penina': 'פנינה', 'shifra': 'שפרה', 'shifrah': 'שפרה', 'shprintza': 'שפרינצא',
+    'adina': 'עדינה', 'adva': 'אדוה', 'ahuva': 'אהובה', 'anat': 'ענת', 'aviva': 'אביבה', 'avigail': 'אביגיל',
+    'ayala': 'איילה', 'ayelet': 'איילת', 'batya': 'בתיה', 'bat sheva': 'בת שבע', 'carmel': 'כרמל',
+    'dalia': 'דליה', 'dalya': 'דליה', 'dana': 'דנה', 'daniela': 'דניאלה', 'dvora': 'דבורה', 'efrat': 'אפרת',
+    'einat': 'עינת', 'elisheva': 'אלישבע', 'ella': 'אלה', 'gali': 'גלי', 'galit': 'גלית', 'gila': 'גילה',
+    'hadar': 'הדר', 'hadas': 'הדס', 'hadassa': 'הדסה', 'hila': 'הילה', 'ilana': 'אילנה', 'inbal': 'ענבל',
+    'irit': 'אירית', 'keren': 'קרן', 'liat': 'ליאת', 'liora': 'ליאורה', 'maayan': 'מעיין', 'meirav': 'מירב',
+    'merav': 'מירב', 'michal': 'מיכל', 'moria': 'מוריה', 'moriah': 'מוריה', 'naama': 'נעמה', 'naomi': 'נעמי',
+    'noa': 'נועה', 'noya': 'נויה', 'nurit': 'נורית', 'ofra': 'עפרה', 'orit': 'אורית', 'orly': 'אורלי',
+    'osnat': 'אסנת', 'racheli': 'רחלי', 'reut': 'רעות', 'rina': 'רינה', 'ronit': 'רונית', 'shani': 'שני',
+    'shira': 'שירה', 'shlomit': 'שלומית', 'shulamit': 'שולמית', 'sigal': 'סיגל', 'sivan': 'סיון',
+    'tal': 'טל', 'talia': 'טליה', 'tamar': 'תמר', 'tehila': 'תהילה', 'tikva': 'תקוה', 'tzofia': 'צופיה',
+    'yael': 'יעל', 'yaffa': 'יפה', 'yardena': 'ירדנה', 'yasmin': 'יסמין', 'yehudit': 'יהודית',
+    'yifat': 'יפעת', 'yona': 'יונה', 'zahava': 'זהבה', 'ziva': 'זיוה',
+})
+
+# שמות נשיים נוספים לזיהוי "בת" (ברירת מחדל: בן)
+_FEMALE |= {
+    'pnina', 'penina', 'shifra', 'shifrah', 'adina', 'ahuva', 'anat', 'aviva', 'avigail', 'ayala', 'ayelet',
+    'batya', 'dalia', 'dalya', 'dana', 'daniela', 'efrat', 'einat', 'elisheva', 'ella', 'gali', 'galit', 'gila',
+    'hadar', 'hadas', 'hadassa', 'hila', 'ilana', 'inbal', 'irit', 'keren', 'liat', 'liora', 'maayan',
+    'meirav', 'merav', 'michal', 'moria', 'moriah', 'naama', 'naomi', 'noa', 'noya', 'nurit', 'ofra', 'orit',
+    'orly', 'osnat', 'racheli', 'reut', 'rina', 'ronit', 'shani', 'shira', 'shlomit', 'sigal', 'sivan',
+    'talia', 'tehila', 'tikva', 'tzofia', 'yaffa', 'yardena', 'yasmin', 'yehudit', 'yifat', 'zahava', 'ziva',
+}
+
+
+def _he_norm_g(s):
+    """נרמול שם עברי להשוואת מין — אותיות סופיות לרגילות, בלי ניקוד/רווחים."""
+    s = re.sub(r'[^֐-׿]', '', str(s or ''))
+    return s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
+
+
+# שמות נשיים בעברית — כדי לקבוע "בת" גם כשהשם מגיע כבר בעברית (ולא באנגלית)
+_FEMALE_HE = {_he_norm_g(_NAME_HE[_e]) for _e in _FEMALE if _e in _NAME_HE}
+_FEMALE_HE |= {_he_norm_g(x) for x in [
+    'אלישבע', 'דבורה', 'דבורא', 'חדוה', 'ענת', 'ברוניא', 'ברוניה', 'אסתר', 'שרה', 'רבקה', 'רחל', 'לאה',
+    'חנה', 'מרים', 'פנינה', 'פנינא', 'שפרה', 'שפרא', 'חוה', 'חיה', 'יונה', 'נעמי', 'נעמה', 'תמר', 'יעל',
+    'מיכל', 'אביגיל', 'בתיה', 'יהודית', 'שולמית', 'שלומית', 'שירה', 'הדס', 'הדסה', 'אילנה', 'גיטל', 'גיטלא',
+    'פייגא', 'פייגע', 'מלכה', 'מלכי', 'ברכה', 'ציפורה', 'רייזל', 'רייזי', 'פערל', 'שיינדל', 'פרידא', 'הינדא',
+    'בריינדל', 'בלימא', 'בלומא', 'טובה', 'טויבא', 'גאלדא', 'יוכבד', 'נחמה', 'רוחמה', 'סימא', 'פרומא', 'אלטא',
+    'באשא', 'זעלדא', 'טשארנא', 'טשערנא', 'עלקא', 'עלקע', 'יענטא', 'יענטל', 'שפרינצא', 'פעשא', 'פעסי', 'נעכא',
+    'רויזא', 'שבע', 'קיילא', 'דינה', 'עדינה', 'אהובה', 'אביבה', 'איילה', 'איילת', 'דליה', 'דנה', 'אפרת',
+    'עינת', 'אלה', 'גלית', 'גילה', 'הדר', 'הילה', 'ענבל', 'אירית', 'קרן', 'ליאת', 'ליאורה', 'מעיין', 'מירב',
+    'מוריה', 'נויה', 'נורית', 'עפרה', 'אורית', 'אורלי', 'אסנת', 'רחלי', 'רעות', 'רינה', 'רונית', 'שני',
+    'סיגל', 'סיון', 'טליה', 'תהילה', 'תקוה', 'צופיה', 'יפה', 'ירדנה', 'יסמין', 'יפעת', 'זהבה', 'זיוה',
+    'סורי', 'אסתי', 'מינדל', 'מירל',
+]}
+_FEMALE_HE.discard('')
+
 
 # ===== תעתיק פונטי לגיבוי: כל מילה אנגלית שאינה במילון הופכת לאותיות עבריות (לעולם לא נשאר אנגלית) =====
 _TR3 = {'tch': 'טש', 'sch': 'ש'}
@@ -258,17 +327,19 @@ def _translit(w):
     s = re.sub(r'[^a-z]', '', (w or '').lower())
     if not s:
         return w
-    res, i, first = [], 0, True
-    while i < len(s):
+    res, i, n = [], 0, len(s)
+    while i < n:
         if s[i:i + 3] in _TR3:
-            res.append(_TR3[s[i:i + 3]]); i += 3
-        elif s[i:i + 2] in _TR2:
-            res.append(_TR2[s[i:i + 2]]); i += 2
+            res.append(_TR3[s[i:i + 3]]); i += 3; continue
+        if s[i:i + 2] in _TR2:
+            res.append(_TR2[s[i:i + 2]]); i += 2; continue
+        c = s[i]; first = (i == 0); last = (i == n - 1)
+        if c in ('a', 'e'):
+            # תנועה פתוחה: בתחילת מילה א', בסוף ה', באמצע לא נכתבת (כמו בעברית) — מונע ריבוי אלפים
+            res.append('א' if first else ('ה' if last else ''))
         else:
-            c = s[i]
-            res.append('א' if (c == 'e' and first) else _TR1.get(c, ''))
-            i += 1
-        first = False
+            res.append(_TR1.get(c, ''))
+        i += 1
     heb = ''.join(res)
     if heb and heb[-1] in _SOFIT:      # אות סופית
         heb = heb[:-1] + _SOFIT[heb[-1]]
@@ -316,11 +387,11 @@ _JUNK = {'thankyou', 'thanks', 'thank', 'thanku', 'thx', 'ty', 'none', 'na', 'na
 
 
 def _is_junk_name(name):
+    if re.search(r'[֐-׿]', name or ''):   # עברית — לא ג'אנק
+        return False
     low = re.sub(r'[^a-z ]', '', (name or '').lower()).strip()
     if not low:
         return True
-    if re.search(r'[֐-׿]', name or ''):   # עברית — לא ג'אנק
-        return False
     if low.split()[0] in {'thank', 'thanks', 'thankyou', 'thx'}:
         return True
     return re.sub(r'[^a-z]', '', low) in _JUNK
@@ -336,9 +407,12 @@ def _fmt_one(name, mother, father, request):
         w = m.group(1).lower()
         rel = 'בת' if w in ('bas', 'bat', 'בת') else 'בן'
         name = name[:m.start()].strip()
-    eng_first = re.split(r'\s+', name)[0].lower() if name else ''
+    first_word = re.split(r'\s+', name)[0] if name else ''
     if rel is None:
-        rel = 'בת' if eng_first in _FEMALE else 'בן'
+        if re.search(r'[֐-׿]', first_word):        # השם כבר בעברית — משווים לרשימת שמות נשיים בעברית
+            rel = 'בת' if _he_norm_g(first_word) in _FEMALE_HE else 'בן'
+        else:                                       # שם באנגלית — לפי הרשימה האנגלית
+            rel = 'בת' if first_word.lower() in _FEMALE else 'בן'
     s = _he_name(name)
     par_raw = (mother or father).strip()
     # "ומשפחתו" / "and family" — לא שם אם, מצרפים בלי בן/בת
