@@ -857,6 +857,39 @@ def ensure_schema():
             print('  טפלר/גולד משותף: בוצע')
     except Exception as e:
         print('  שגיאת טפלר/גולד:', e)
+    # הדגמה — קוויטל שבועי של אלון קאהן (loxmejr@aol.com) בעברית מסודר
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='elon_kahn_kvittel_v1'").fetchone():
+            r = con.execute("SELECT id, tier FROM donors WHERE lower(COALESCE(email,''))='loxmejr@aol.com'").fetchone()
+            if not r:
+                cand = con.execute("SELECT id, tier FROM donors WHERE last LIKE '%קאהן%' AND first LIKE '%אלון%'").fetchall()
+                if len(cand) == 1: r = cand[0]
+            if r:
+                kid = r['id']
+                if not (r['tier'] or '').strip():
+                    con.execute("UPDATE donors SET tier='קוויטל_שבועי' WHERE id=?", (kid,))
+                txt = 'שמעון יואל חיים בן פעסי — לברכת ילדים ולפרנסה טובה\nתמר ברכה בת מלכה — לזרע של קיימא, לפרנסה טובה ולרפואה שלמה\nמלכה בת הענא — לפרנסה טובה, לבריאות איתנה ולנחת מהילדים\nשמואל אהרן בן פרימעט — לבריאות איתנה'
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND text=?", (kid, txt)).fetchone():
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'קוויטל_שבועי')", (kid, txt))
+                print('  קוויטל אלון קאהן: נוסף')
+            con.execute("INSERT INTO seed_flags(name) VALUES('elon_kahn_kvittel_v1')")
+    except Exception as e:
+        print('  שגיאת קוויטל אלון:', e)
+    # הדגמה — קוויטל שבועי של דניאל הדר בעברית מסודר
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='daniel_hadar_kvittel_v1'").fetchone():
+            cand = con.execute("SELECT id, tier FROM donors WHERE last LIKE '%הדר%' AND first LIKE '%דניאל%'").fetchall()
+            if len(cand) == 1:
+                kid = cand[0]['id']
+                if not (cand[0]['tier'] or '').strip():
+                    con.execute("UPDATE donors SET tier='קוויטל_שבועי' WHERE id=?", (kid,))
+                txt = 'ירון חגג ומשפחתו — לכל הברכות\nדניאל בן יעל — למצוא דירה בחריש\nטובה רבקה בת הינדא יוסיפא — לשמחה\nגאלדא בת חיה רחל — לזיווג הגון'
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND text=?", (kid, txt)).fetchone():
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'קוויטל_שבועי')", (kid, txt))
+                print('  קוויטל דניאל הדר: נוסף')
+            con.execute("INSERT INTO seed_flags(name) VALUES('daniel_hadar_kvittel_v1')")
+    except Exception as e:
+        print('  שגיאת קוויטל דניאל:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():

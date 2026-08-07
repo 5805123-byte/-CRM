@@ -101,6 +101,18 @@ _REQ_MAP = {
     'banim': 'לזרע של קיימא', 'zera shel kayama': 'לזרע של קיימא', 'children': 'לזרע של קיימא',
     'yeshua': 'לישועה', 'yeshuah': 'לישועה', 'nachas': 'לנחת', 'shalom bayis': 'לשלום בית',
 }
+# מילות מפתח לבקשות מורכבות (מספר בקשות בשורה) — התאמה חלקית, לפי סדר
+_REQ_KW = [
+    ('refu', 'לרפואה שלמה'), ('refua', 'לרפואה שלמה'),
+    ('good health', 'לבריאות איתנה'), ('health', 'לבריאות איתנה'),
+    ('parnas', 'לפרנסה טובה'), ('parnos', 'לפרנסה טובה'),
+    ('shidduch', 'לזיווג הגון'), ('zivug', 'לזיווג הגון'),
+    ('nachas', 'לנחת מהילדים'), ('nachos', 'לנחת מהילדים'),
+    ('kids', 'לזרע של קיימא'), ('children', 'לזרע של קיימא'), ('bracha', 'לברכה'),
+    ('hatzlach', 'להצלחה'), ('success', 'להצלחה'), ('yeshua', 'לישועה'),
+    ('leilui', 'לעילוי נשמה'), ('simcha', 'לשמחה'), ('brachot', 'לכל הברכות'), ('brochos', 'לכל הברכות'),
+    ('apartment', 'למצוא דירה'), ('shalom bayis', 'לשלום בית'),
+]
 # שמות נשיים נפוצים — לקביעת "בת" (ברירת מחדל: בן)
 _FEMALE = {
     'rivka', 'rivkah', 'rifka', 'rifky', 'rivky', 'rebecca', 'sara', 'sarah', 'suri', 'surie', 'sury', 'surele',
@@ -132,7 +144,7 @@ _NAME_HE = {
     'chaim': 'חיים', 'chaym': 'חיים', 'chaimke': 'חיים',
     'yosef': 'יוסף', 'yossef': 'יוסף', 'joseph': 'יוסף', 'yossi': 'יוסף', 'yossel': 'יאסל', 'yosef': 'יוסף',
     'aharon': 'אהרן', 'aron': 'אהרן', 'aaron': 'אהרן', 'arele': 'אהרן', 'azriel': 'עזריאל',
-    'shmuel': 'שמואל', 'samuel': 'שמואל', 'shmiel': 'שמואל', 'shmil': 'שמואל',
+    'shmuel': 'שמואל', 'samuel': 'שמואל', 'shmiel': 'שמואל', 'shmil': 'שמואל', 'shumel': 'שמואל',
     'yisroel': 'ישראל', 'yisrael': 'ישראל', 'israel': 'ישראל', 'srul': 'ישראל', 'srulik': 'ישראל',
     'mordechai': 'מרדכי', 'mordche': 'מרדכי', 'motel': 'מרדכי', 'mottel': 'מרדכי', 'motti': 'מרדכי', 'motty': 'מרדכי',
     'boruch': 'ברוך', 'baruch': 'ברוך', 'berel': 'בערל', 'berish': 'בעריש', 'ber': 'בער', 'bere': 'בערע',
@@ -186,6 +198,8 @@ _NAME_HE = {
     'yehudis': 'יהודית', 'yides': 'יהודית', 'necha': 'נעכא', 'roiza': 'רויזא', 'roizy': 'רויזא',
     'sheva': 'שבע', 'shevy': 'שבע', 'kaila': 'קיילא', 'kayla': 'קיילא', 'dina': 'דינה', 'diny': 'דינה',
     'chava': 'חוה', 'chavy': 'חוה', 'basya': 'בתיה', 'basy': 'בתיה', 'basha': 'באשא', 'alta': 'אלטא',
+    'tamar': 'תמר', 'brach': 'ברכה', 'brocha': 'ברכה', 'henna': 'הענא', 'hena': 'הענא', 'frimet': 'פרימעט', 'frumet': 'פרומעט', 'frima': 'פרימא',
+    'daniel': 'דניאל', 'yael': 'יעל', 'yaron': 'ירון', 'yoseefa': 'יוסיפא', 'yosefa': 'יוסיפא', 'chagag': 'חגג',
     'yittel': 'יטל', 'yitta': 'איטא', 'itta': 'איטא', 'ita': 'איטא', 'machla': 'מחלה', 'machy': 'מחלה',
     'krayndel': 'קריינדל', 'kreindel': 'קריינדל', 'libby': 'ליבא', 'liba': 'ליבא', 'libe': 'ליבא',
     'tzirel': 'צירל', 'tzirl': 'צירל',
@@ -203,16 +217,43 @@ def _he_name(s):
     return ''.join(out)
 
 
+def _req_he(request):
+    """נוסח בקשה בעברית — מיפוי מלא, אחרת מיפוי חלקי למילות מפתח, אחרת הטקסט כמו שהוא."""
+    req = (request or '').strip()
+    if not req:
+        return ''
+    low = req.lower()
+    if low in _REQ_MAP:
+        return _REQ_MAP[low]
+    parts = []
+    for kw, he in _REQ_KW:
+        if kw in low:
+            if he not in parts:
+                parts.append(he)
+    return ' '.join(parts) if parts else req
+
+
 def _fmt_one(name, mother, father, request):
-    eng_first = re.split(r'\s+', name.strip())[0].lower() if name.strip() else ''
-    rel = 'בת' if eng_first in _FEMALE else 'בן'
+    name = (name or '').strip()
+    m = re.search(r'\b(ben|bas|bat|בן|בת)\s*$', name, re.I)  # שם שכבר מסתיים ב-ben/bas
+    rel = None
+    if m:
+        w = m.group(1).lower()
+        rel = 'בת' if w in ('bas', 'bat', 'בת') else 'בן'
+        name = name[:m.start()].strip()
+    eng_first = re.split(r'\s+', name)[0].lower() if name else ''
+    if rel is None:
+        rel = 'בת' if eng_first in _FEMALE else 'בן'
     s = _he_name(name)
-    parent = _he_name((mother or father).strip())
-    if parent:
-        s += ' ' + rel + ' ' + parent
-    req = request.strip()
-    if req:
-        s += ' ' + _REQ_MAP.get(req.lower(), req)
+    par_raw = (mother or father).strip()
+    # "ומשפחתו" / "and family" — לא שם אם, מצרפים בלי בן/בת
+    if re.match(r'^(u?mishpach|and family|family)', par_raw, re.I) or 'משפח' in par_raw:
+        s += ' ומשפחתו'
+    elif par_raw:
+        s += ' ' + rel + ' ' + _he_name(par_raw)
+    r = _req_he(request)
+    if r:
+        s += ' ' + r
     return s
 
 
