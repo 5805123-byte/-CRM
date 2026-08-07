@@ -214,6 +214,68 @@ function uploadBlob(kind,refId,f){return new Promise(res=>{
   rd.onerror=()=>res(false);
   rd.readAsDataURL(f);});}
 function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;toast('מעלה…');uploadBlob(kind,refId,f).then(ok=>{if(ok)toast('הועלה ✓');inputEl.value='';cb&&cb();});}
+// ===== קבצים שהגיעו דרך "שיתוף" מוואטסאפ/גלריה (Web Share Target) =====
+async function takeSharedFiles(){
+  try{
+    const c=await caches.open('kc-shared');const keys=await c.keys();
+    const files=[];let text='';
+    for(const k of keys){
+      const res=await c.match(k);if(!res)continue;
+      if(new URL(k.url).pathname==='/__shared_text__'){text=await res.text();continue;}
+      const blob=await res.blob();
+      const nm=decodeURIComponent(new URL(k.url).pathname.split('/').pop()||'file');
+      files.push(new File([blob],nm,{type:blob.type||'application/octet-stream'}));
+    }
+    return {files,text,clear:async()=>{for(const k of await c.keys())await c.delete(k);}};
+  }catch(e){return {files:[],text:'',clear:async()=>{}};}
+}
+async function shareInbox(){
+  const {files,text,clear}=await takeSharedFiles();
+  if(!files.length)return;
+  let chosen=null;
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="max-width:520px;text-align:right">
+    <div class="cm" style="font-weight:800;margin-bottom:6px">📥 התקבלו ${files.length} קבצים משיתוף</div>
+    <div class="avfiles dnfiles" id="sh_list"></div>
+    <label class="fld" style="margin-top:8px"><span>🔍 לאיזה תורם לצרף?</span><input id="sh_q" placeholder="שם / טלפון / עסק…" autocomplete="off"></label>
+    <div id="sh_res" class="dpres"></div><div id="sh_pick" class="pick" style="display:none"></div>
+    <label class="fld" style="margin-top:6px"><span>✍️ הערה</span><input id="sh_note" value="${esc(text||'התקבל בוואטסאפ')}"></label>
+    <label class="fld" style="margin-top:6px"><span>🗓️ תאריך תזכורת (רק אם בוחרים משימה)</span><input id="sh_date" type="date" value="${esc(todayStr())}"></label>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <button class="btn" id="sh_contact">📞 צרף לתיעוד קשר</button>
+      <button class="btn" id="sh_task">🔔 צרף כמשימה (להזכיר לחייב)</button></div>
+    <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">בטל</button></div></div>`;
+  document.body.appendChild(o);
+  const done=async(wipe)=>{if(wipe)await clear();o.remove();};
+  o.querySelector('#sh_list').innerHTML=files.map(f=>`<span class="fchip">${(f.type||'').indexOf('audio')>=0?'🎙️':((f.type||'').indexOf('image')>=0?'🖼️':'📎')} ${esc(f.name)}</span>`).join('');
+  o.querySelector('.cno').onclick=()=>done(true);
+  const q=o.querySelector('#sh_q'),res=o.querySelector('#sh_res'),pick=o.querySelector('#sh_pick');
+  q.oninput=()=>{const s=norm(q.value);if(!s){res.innerHTML='';return;}
+    const m=DB.filter(x=>norm(x.last+' '+x.first+' '+(x.english||'')+' '+(x.phone||'')).includes(s)).slice(0,6);
+    res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>{chosen=DB.find(x=>x.id==el.dataset.did);res.innerHTML='';q.value='';
+      pick.style.display='';pick.textContent='✓ '+(chosen.last+' '+chosen.first).trim();});};
+  const attach=async(mode)=>{
+    if(!chosen){toast('בחר תורם קודם');return;}
+    const note=o.querySelector('#sh_note').value.trim()||'התקבל בוואטסאפ';
+    const btns=o.querySelectorAll('button');btns.forEach(b=>b.disabled=true);
+    toast('מעלה…');
+    let refId,kind;
+    if(mode==='contact'){
+      const r=await api('POST','/api/contact',{donor_id:chosen.id,channel:'וואטסאפ',date:todayStr(),summary:note});
+      refId=r.id;kind='contact';
+    }else{
+      const r=await api('POST','/api/task',{donor_id:chosen.id,due_date:o.querySelector('#sh_date').value||todayStr(),kind:'charge',note});
+      refId=r.id;kind='task';
+    }
+    for(const f of files)await uploadBlob(kind,refId,f);
+    await done(true);await load();
+    const dd=DB.find(x=>x.id===chosen.id);if(dd)openDonor(dd,mode==='contact'?'contact':'contact');
+    toast('צורף ל'+(chosen.last+' '+chosen.first).trim()+' ✓');
+  };
+  o.querySelector('#sh_contact').onclick=()=>attach('contact');
+  o.querySelector('#sh_task').onclick=()=>attach('task');
+}
 // בורר קבצים לטופס חדש — אוסף קבצים לפני השמירה, ומעלה אותם מיד אחריה
 function pendFiles(boxId,inputId){
   const arr=[],box=document.getElementById(boxId),inp=document.getElementById(inputId);
@@ -238,7 +300,9 @@ async function load(){
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
-  try{let pd=new URLSearchParams(location.search).get('donor');if(!pd)pd=localStorage.getItem('kc_donor');if(pd){const dd=DB.find(x=>x.id==+pd);if(dd)openDonor(dd);}history.replaceState(null,'',location.pathname);}catch(e){}
+  const wasShare=(()=>{try{return new URLSearchParams(location.search).get('share')==='1';}catch(e){return false;}})();
+  try{let pd=new URLSearchParams(location.search).get('donor');if(!pd&&!wasShare)pd=localStorage.getItem('kc_donor');if(pd){const dd=DB.find(x=>x.id==+pd);if(dd)openDonor(dd);}history.replaceState(null,'',location.pathname);}catch(e){}
+  if(wasShare)shareInbox();       // קבצים שהגיעו משיתוף — פתח מסך שיוך לתורם
 }
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;try{localStorage.setItem('kc_tab',tab);localStorage.removeItem('kc_donor');}catch(e){}render();});
