@@ -973,15 +973,45 @@ function renderPrayers(d){
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/prayer/'+b.dataset.del);d.prayers=d.prayers.filter(x=>x.id!=b.dataset.del);renderPrayers(d);toast('נמחק');});
 }
 const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
-function openParnesCert(d,p){
-  if(!p)return;
+function parnesCertUrl(d,p){
   const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
-  const yr=p.hyear||HEBYEAR;
-  const date=dtext+(yr?(' '+yr):'');
-  // השמות/הנוסח פעם אחת בגדול — עדיפות לשמות שנרשמו ליום זה, אחרת לשם התפילה בכרטיס
-  const names=(p.dedication&&p.dedication.trim())||(d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
-  const params=new URLSearchParams({kind:p.kind||'parnes',date,names});
-  window.open('/parnes-cert?'+params.toString(),'_blank');
+  const yr=p.hyear||HEBYEAR;const date=dtext+(yr?(' '+yr):'');
+  const names=(p.dedication&&p.dedication.trim())||(d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
+  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
+}
+function openParnesCert(d,p){if(!p)return;window.open(parnesCertUrl(d,p),'_blank');}
+// שיתוף תמונה כקובץ אמיתי (מצרף בוואטסאפ/מייל דרך תפריט המכשיר), עם נפילה לפתיחת התמונה
+async function sharePhotoFile(img,msg){
+  try{const r=await fetch('/api/file/'+img.id);const blob=await r.blob();const file=new File([blob],img.name||'hakdasha.jpg',{type:blob.type||'image/jpeg'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text:msg||''});return;}}catch(e){}
+  window.open(location.origin+'/api/file/'+img.id,'_blank');
+}
+// תפריט שליחת תעודת פרנס לתורם — וואטסאפ / מייל / שיתוף מכשיר / התמונה
+function shareParnesMenu(t,d){
+  d=d||{};
+  const certUrl=parnesCertUrl(d,t);
+  const img=(t.files||[]).find(f=>(f.mime||'').indexOf('image')>=0)||(t.files||[])[0];
+  const photoUrl=img?(location.origin+'/api/file/'+img.id):'';
+  const donor=((d.last||'')+' '+(d.first||'')).trim()||t.donor||'';
+  const dtext=(t.day&&t.month)?(heDay(+t.day)+' '+t.month):(t.date_text||'');
+  const msg=`תעודת פרנס — כולל חצות 🕯️\nעבור ${donor}${dtext?(' · '+dtext):''}\n\nהתעודה: ${certUrl}${photoUrl?('\n\nתמונת ההקדשה: '+photoUrl):''}`;
+  const ph=(splitPhones(d.phone)[0]||'').replace(/[^0-9]/g,'');
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:8px">📤 שליחת תעודה${donor?(' ל'+esc(donor)):''}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn" id="shwa" style="background:#25D366;border-color:#25D366">📲 שלח בוואטסאפ</button>
+      <button class="btn" id="shml">📧 שלח במייל</button>
+      ${img?'<button class="btn ghost" id="shph">📷 שתף את תמונת ההקדשה (קובץ)</button>':''}
+      <button class="btn ghost" id="shnat">📤 שתף (תפריט המכשיר)</button>
+      <button class="btn ghost" id="shcert">👁️ פתח / הדפס תעודה</button></div>
+    <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
+  document.body.appendChild(o);const done=()=>o.remove();
+  o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
+  o.querySelector('#shwa').onclick=()=>{window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank');done();};
+  o.querySelector('#shml').onclick=()=>{window.location.href='mailto:'+encodeURIComponent((d.email||'').trim())+'?subject='+encodeURIComponent('תעודת פרנס — כולל חצות')+'&body='+encodeURIComponent(msg);done();};
+  o.querySelector('#shcert').onclick=()=>{openParnesCert(d,t);done();};
+  o.querySelector('#shnat').onclick=async()=>{try{if(navigator.share)await navigator.share({title:'תעודת פרנס',text:msg});}catch(e){}done();};
+  const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{await sharePhotoFile(img,msg);done();};
 }
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
@@ -1313,7 +1343,7 @@ function renderDayPanel(taken){
         <select id="dpmvday">${[...Array(30)].map((_,i)=>`<option value="${i+1}" ${(i+1)===pyDay?'selected':''}>${heDay(i+1)}</option>`).join('')}</select>
         <button class="btn sm" id="dpmove">העבר</button></div>
       <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
-      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
+      <div class="addrow">${sugg?'<button class="btn sm" id="dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm" id="dpsend" style="background:#25D366;border-color:#25D366">📤 שלח לתורם</button><button class="btn sm" id="dpopen">📋 כרטיס</button><button class="btn sm ghost" id="dpkv">🕯️ קוויטל</button><button class="btn sm" id="dpprint">🖨️ תעודה</button><button class="del" id="dpdel">מחק</button></div></div>`;
     const dpMethSel=document.getElementById('dp_method');
     const setPMeth=v=>{t.method=v;const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p)p.method=v;};
     const dpAmtSave=async()=>{const damt=document.getElementById('dp_amt_edit'),dcur=document.getElementById('dp_cur_edit');t.amount=damt.value.trim();t.currency=dcur.value;const mv=dpMethSel?dpMethSel.value:t.method;setPMeth(mv);const p=(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);if(p){p.amount=t.amount;p.currency=t.currency;}await api('PUT','/api/parnes/'+t.id,{amount:t.amount,currency:t.currency,method:mv});toast('נשמר ✓');render();};
@@ -1340,6 +1370,7 @@ function renderDayPanel(taken){
     document.getElementById('dpopen').onclick=()=>openDonor(t.dref);
     document.getElementById('dpkv').onclick=()=>openDonor(t.dref,'kvittel');
     document.getElementById('dpprint').onclick=()=>openParnesCert(t.dref,{...t,date_text:t.date_text||dtext});
+    const dpsend=document.getElementById('dpsend'); if(dpsend)dpsend.onclick=()=>shareParnesMenu({...t,date_text:t.date_text||dtext},t.dref);
     document.getElementById('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);const note='פרנס יום '+(t.date_text||dtext)+' — הכן הדפסה וצור קשר';t.dref.tasks=(t.dref.tasks||[]).filter(x=>!(x.kind==='parnes'&&x.note===note));checkReminders();render();toast('נמחק');};
   }else{
     panel.innerHTML=`<div class="sec"><h3>➕ שבץ ${PKINDS.find(k=>k[0]===pyKind)[1]} — ${esc(dtext)}</h3>
