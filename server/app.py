@@ -66,7 +66,7 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
@@ -849,6 +849,14 @@ def ensure_schema():
             print('  חלוקת בליסקו/הרצוג: בוצע')
     except Exception as e:
         print('  שגיאת חלוקת בליסקו/הרצוג:', e)
+    # טפלר + גולד יעקב — נותנים ביחד מאותו עסק סכום אחד (joint), לא לחבר
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tepler_gold_joint_v1'").fetchone():
+            con.execute("UPDATE partners SET joint=1 WHERE COALESCE(active,1)<>0 AND avreich LIKE '%שפירא%' AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%טפלר%' OR (last LIKE '%גולד%' AND first LIKE '%יעקב%'))")
+            con.execute("INSERT INTO seed_flags(name) VALUES('tepler_gold_joint_v1')")
+            print('  טפלר/גולד משותף: בוצע')
+    except Exception as e:
+        print('  שגיאת טפלר/גולד:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():
@@ -1486,7 +1494,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','renew_date'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','renew_date','joint'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             if 'start_date' in b:   # חישוב מחדש של תאריך החידוש כשמשנים את תחילת ההסכם
                 g = heb_anniv(b.get('start_date') or '')
