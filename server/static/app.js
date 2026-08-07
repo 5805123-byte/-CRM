@@ -993,36 +993,40 @@ function parnesCertUrl(d,p){
 function openParnesCert(d,p){if(!p)return;window.open(parnesCertUrl(d,p),'_blank');}
 // שיתוף תמונה כקובץ אמיתי (מצרף בוואטסאפ/מייל דרך תפריט המכשיר), עם נפילה לפתיחת התמונה
 async function sharePhotoFile(img,msg){
+  if(!img){toast('אין תמונה מצורפת');return;}
   try{const r=await fetch('/api/file/'+img.id);const blob=await r.blob();const file=new File([blob],img.name||'hakdasha.jpg',{type:blob.type||'image/jpeg'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text:msg||''});return;}}catch(e){}
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text:msg||''});return;}}catch(e){if(e&&e.name==='AbortError')return;}
+  // מחשב (בלי שיתוף קבצים): פותחים את התמונה כדי לשמור/לגרור לוואטסאפ
   window.open(location.origin+'/api/file/'+img.id,'_blank');
+  toast('התמונה נפתחה — שמור אותה ושלח בוואטסאפ/מייל 📷');
 }
 // תפריט שליחת תעודת פרנס לתורם — וואטסאפ / מייל / שיתוף מכשיר / התמונה
 function shareParnesMenu(t,d){
   d=d||{};
   const certUrl=parnesCertUrl(d,t);
   const img=(t.files||[]).find(f=>(f.mime||'').indexOf('image')>=0)||(t.files||[])[0];
-  const photoUrl=img?(location.origin+'/api/file/'+img.id):'';
   const donor=((d.last||'')+' '+(d.first||'')).trim()||t.donor||'';
   const dtext=(t.day&&t.month)?(heDay(+t.day)+' '+t.month):(t.date_text||'');
-  const msg=`תעודת פרנס — כולל חצות 🕯️\nעבור ${donor}${dtext?(' · '+dtext):''}\n\nהתעודה: ${certUrl}${photoUrl?('\n\nתמונת ההקדשה: '+photoUrl):''}`;
+  const cap=`תעודת פרנס — כולל חצות 🕯️  עבור ${donor}${dtext?(' · '+dtext):''}`;   // כיתוב קצר לתמונה — בלי קישור למערכת
+  const msgLink=`${cap}\n\nלצפייה/הדפסה: ${certUrl}`;                                   // רק לאפשרות "קישור טקסט"
   const ph=(splitPhones(d.phone)[0]||'').replace(/[^0-9]/g,'');
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:8px">📤 שליחת תעודה${donor?(' ל'+esc(donor)):''}</div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn" id="shwa" style="background:#25D366;border-color:#25D366">📲 שלח בוואטסאפ</button>
-      <button class="btn" id="shml">📧 שלח במייל</button>
-      ${img?'<button class="btn ghost" id="shph">📷 שתף את תמונת ההקדשה (קובץ)</button>':''}
-      <button class="btn ghost" id="shnat">📤 שתף (תפריט המכשיר)</button>
+      ${img?`<button class="btn" id="shph" style="background:#25D366;border-color:#25D366">📷 שלח את התמונה (וואטסאפ / שיתוף)</button>
+      <button class="btn ghost" id="shdl">📥 הורד / פתח את התמונה לשליחה ידנית</button>`:'<div class="hintxt" style="color:var(--no)">אין תמונת הקדשה מצורפת — העלה תמונה קודם.</div>'}
+      <div class="hintxt" style="margin:2px 0">— או שליחת התעודה המעוצבת —</div>
+      <button class="btn ghost" id="shwa">📲 שלח קישור לתעודה בוואטסאפ</button>
+      <button class="btn ghost" id="shml">📧 שלח במייל</button>
       <button class="btn ghost" id="shcert">👁️ פתח / הדפס תעודה</button></div>
     <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
   document.body.appendChild(o);const done=()=>o.remove();
   o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
-  o.querySelector('#shwa').onclick=()=>{window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msg),'_blank');done();};
-  o.querySelector('#shml').onclick=()=>{window.location.href='mailto:'+encodeURIComponent((d.email||'').trim())+'?subject='+encodeURIComponent('תעודת פרנס — כולל חצות')+'&body='+encodeURIComponent(msg);done();};
+  const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{await sharePhotoFile(img,cap);done();};   // שולח את קובץ התמונה עצמו
+  const shdl=o.querySelector('#shdl');if(shdl)shdl.onclick=()=>{window.open(location.origin+'/api/file/'+img.id,'_blank');done();};
+  o.querySelector('#shwa').onclick=()=>{window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(msgLink),'_blank');done();};
+  o.querySelector('#shml').onclick=()=>{window.location.href='mailto:'+encodeURIComponent((d.email||'').trim())+'?subject='+encodeURIComponent('תעודת פרנס — כולל חצות')+'&body='+encodeURIComponent(msgLink);done();};
   o.querySelector('#shcert').onclick=()=>{openParnesCert(d,t);done();};
-  o.querySelector('#shnat').onclick=async()=>{try{if(navigator.share)await navigator.share({title:'תעודת פרנס',text:msg});}catch(e){}done();};
-  const shph=o.querySelector('#shph');if(shph)shph.onclick=async()=>{await sharePhotoFile(img,msg);done();};
 }
 function renderParnesEdit(d){
   const el=document.getElementById('parnes');
