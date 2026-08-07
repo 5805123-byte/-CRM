@@ -840,6 +840,15 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('berger_merge_v2')")
     except Exception as e:
         print('  שגיאת איחוד ברגר:', e)
+    # חלוקת סכומים בין שותפים לאותו אברך — בליסקו $500 / הרצוג $450 על חנון יהודה (הוקלד הסכום הכולל בטעות)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='blisko_herzog_split_v1'").fetchone():
+            con.execute("UPDATE partners SET amount='500' WHERE COALESCE(active,1)<>0 AND avreich LIKE '%חנון%' AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%בליסק%')")
+            con.execute("UPDATE partners SET amount='450' WHERE COALESCE(active,1)<>0 AND avreich LIKE '%חנון%' AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%הרצוג%' AND first LIKE '%אהרן%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('blisko_herzog_split_v1')")
+            print('  חלוקת בליסקו/הרצוג: בוצע')
+    except Exception as e:
+        print('  שגיאת חלוקת בליסקו/הרצוג:', e)
     # שטטפלד בנימין ויואל — אחים בשותפות יש"ז מאותו עסק (לציין בשני הכרטיסים)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='statfeld_bros_v1'").fetchone():

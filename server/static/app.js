@@ -30,8 +30,8 @@ function izSummary(d){
 function pwList(p){const names=(p.partner_with||'').split(',').map(s=>s.trim()).filter(Boolean);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim());return names.map((nm,i)=>({name:nm,id:ids[i]||''}));}
 // HTML של שמות השותפים — זיהוי אוטומטי (אותו אברך) + קישור ידני. כל אחד לחיץ אם מקושר לכרטיס
 function coHolderNamesHtml(p){const l=avCoHolders(p);if(!l.length)return '';return ' <small class="cosp">🤝 בשותפות עם '+l.map(x=>x.id?`<span class="cosp2" data-did="${x.id}">${esc(x.name)} ↗</span>`:esc(x.name)).join(', ')+'</small>';}
-// סכום כולל לאברך — חלקו של התורם + חלקי כל השותפים המקושרים (לפי אותו אברך בכרטיסים שלהם)
-function coHolderTotal(p){let total=amtNum(p.amount);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim()).filter(Boolean);const av=norm(p.avreich||'');ids.forEach(id=>{const o=(DB||[]).find(x=>x.id==id);if(!o)return;const op=(o.partners||[]).find(q=>norm(q.avreich||'')===av);if(op)total+=amtNum(op.amount);});return total;}
+// סכום כולל לאברך — חלקו של התורם + חלקי כל שאר התורמים שמחזיקים את אותו אברך (זיהוי אוטומטי)
+function coHolderTotal(p){const av=norm(p.avreich||'');let total=amtNum(p.amount);(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av)total+=amtNum(q.amount);});});return total;}
 // שותפויות הפוכות — כרטיסים אחרים שרשמו את התורם הזה כשותף מחזיק (לפי קישור או לפי שם שהוקלד)
 function coHeldWith(d){
   const out=[];const dn=norm((d.last||'')+' '+(d.first||''));const dt=dn.split(' ').filter(t=>t.length>=2);
@@ -61,7 +61,7 @@ function izSummaryHTML(d){
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
-  const rows=s.parts.map(p=>{const tot=pwList(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
   if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב</div>';
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
