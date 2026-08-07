@@ -1474,6 +1474,8 @@ class H(BaseHTTPRequestHandler):
                      '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.jpg': 'image/jpeg',
                      '.jpeg': 'image/jpeg', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff2': 'font/woff2',
                      '.webmanifest': 'application/manifest+json'}.get(ext, 'text/plain')
+            if path == '/manifest.json':
+                ctype = 'application/manifest+json'   # נדרש כדי שאנדרואיד ירשום את יעד השיתוף
             return self._send(200, open(fp, 'rb').read(), ctype)
         return self._send(404, {'error': 'not found'})
 
@@ -1607,6 +1609,19 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
+        # יעד שיתוף (וואטסאפ/גלריה): בדרך כלל ה-Service Worker קולט זאת ושומר את הקבצים.
+        # אם הוא עדיין לא פעיל — לפחות נפתח את האפליקציה במקום שגיאה.
+        if self.path.split('?')[0] == '/share-target':
+            try:
+                ln = int(self.headers.get('Content-Length') or 0)
+                if ln > 0:
+                    self.rfile.read(ln)      # ריקון הגוף כדי לא לתקוע את החיבור
+            except Exception:
+                pass
+            self.send_response(303)
+            self.send_header('Location', '/?share=1')
+            self.end_headers()
+            return
         b = self._body()
         if self.path == '/api/intake/sync':
             try:
