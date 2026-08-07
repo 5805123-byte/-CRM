@@ -307,8 +307,19 @@ _FEMALE_HE |= {_he_norm_g(x) for x in [
     'מוריה', 'נויה', 'נורית', 'עפרה', 'אורית', 'אורלי', 'אסנת', 'רחלי', 'רעות', 'רינה', 'רונית', 'שני',
     'סיגל', 'סיון', 'טליה', 'תהילה', 'תקוה', 'צופיה', 'יפה', 'ירדנה', 'יסמין', 'יפעת', 'זהבה', 'זיוה',
     'סורי', 'אסתי', 'מינדל', 'מירל',
+    # תוספת שמות נשיים
+    'מנוחה', 'תינוקת', 'שרה רבקה', 'רייזל', 'פעסל', 'פראדל', 'הענדל', 'יוטא', 'יוטע', 'פייגי', 'מירי',
+    'נעכי', 'גיטי', 'הודל', 'הענא', 'הענדי', 'סעסל', 'סאשא', 'פראדא', 'רבקי', 'ריזל', 'ריקל', 'רויזי',
+    'שולמית', 'שיפרה', 'שפרינצל', 'בלומי', 'ברכי', 'דבורה לאה', 'חוה', 'חיה שרה', 'חיה מושקא', 'מושקא',
+    'מושקי', 'נחמי', 'סימי', 'פערי', 'פעסי', 'פרומט', 'פרימט', 'פרימא', 'קילא', 'רוזא', 'שרי', 'שרהלה',
+    'תרצה', 'תמרה', 'עטרה', 'עטיא', 'עטל', 'זיסל', 'זיסי', 'טויבי', 'טעמי', 'יאכט', 'יאכעט', 'לאני',
+    'ליבי', 'מלכי', 'מלכה', 'מרים', 'נעמי', 'עדי', 'עדן', 'רוני', 'שקד', 'שלי', 'סתיו', 'רוית', 'ליטל',
 ]}
 _FEMALE_HE.discard('')
+
+# מילים שאינן שם אך קובעות מין (תינוקת=בת, תינוק=בן)
+_FEM_WORDS_HE = {'תינוקת', 'ילדה', 'בתי', 'בת'}
+_MALE_WORDS_HE = {'תינוק', 'ילד', 'בני', 'בן'}
 
 
 # ===== תעתיק פונטי לגיבוי: כל מילה אנגלית שאינה במילון הופכת לאותיות עבריות (לעולם לא נשאר אנגלית) =====
@@ -409,11 +420,28 @@ def _fmt_one(name, mother, father, request):
         name = name[:m.start()].strip()
     first_word = re.split(r'\s+', name)[0] if name else ''
     if rel is None:
+        low_name = name.lower()
+        fw_he = _he_norm_g(first_word)
         if re.search(r'[֐-׿]', first_word):        # השם כבר בעברית — משווים לרשימת שמות נשיים בעברית
-            rel = 'בת' if _he_norm_g(first_word) in _FEMALE_HE else 'בן'
+            if fw_he in _FEM_WORDS_HE:
+                rel = 'בת'
+            elif fw_he in _MALE_WORDS_HE:
+                rel = 'בן'
+            else:
+                rel = 'בת' if fw_he in _FEMALE_HE else 'בן'
+        elif re.search(r'\bgirl\b', low_name) or 'daughter' in low_name:
+            rel = 'בת'
+        elif re.search(r'\bboy\b', low_name) or 'son' in low_name:
+            rel = 'בן'
         else:                                       # שם באנגלית — לפי הרשימה האנגלית
             rel = 'בת' if first_word.lower() in _FEMALE else 'בן'
-    s = _he_name(name)
+    low_name = name.lower()
+    if re.search(r'\bgirl\b', low_name):            # "baby girl" → תינוקת (לא תעתיק)
+        s = 'תינוקת'
+    elif re.search(r'\bboy\b', low_name) or re.fullmatch(r'\s*baby\s*', low_name):
+        s = 'תינוק'
+    else:
+        s = _he_name(name)
     par_raw = (mother or father).strip()
     # "ומשפחתו" / "and family" — לא שם אם, מצרפים בלי בן/בת
     if re.match(r'^(u?mishpach|and family|family)', par_raw, re.I) or 'משפח' in par_raw:
