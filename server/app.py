@@ -1911,8 +1911,30 @@ class H(BaseHTTPRequestHandler):
 
     def log_message(self, *a): pass
 
+def _intake_daily_loop():
+    """משיכת קוויטלים מהמייל — פעם ביום (וגם פעם עם עליית השרת). רץ רק אם ה-Gmail מוגדר."""
+    import time
+    try:
+        import gmail_intake
+    except Exception:
+        return
+    first = True
+    while True:
+        try:
+            if gmail_intake.configured():
+                if first:
+                    time.sleep(20)   # להמתין שהשרת יתייצב לפני המשיכה הראשונה
+                con = db(); res = gmail_intake.sync(con); con.close()
+                print('  משיכת קוויטלים אוטומטית:', res)
+        except Exception as e:
+            print('  שגיאת משיכה אוטומטית:', e)
+        first = False
+        time.sleep(24 * 3600)   # שוב מחר
+
 def serve():
     ensure_schema()
+    import threading
+    threading.Thread(target=_intake_daily_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 
