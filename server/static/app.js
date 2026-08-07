@@ -206,7 +206,28 @@ function fileChip(f){const m=(f.mime||'');
     return `<span class="fchip img"><a href="/api/file/${f.id}" target="_blank" rel="noopener"><img src="/api/file/${f.id}" alt="${esc(f.name||'')}" loading="lazy"></a><button class="fdel" data-fid="${f.id}" title="מחק">🗑</button></span>`;
   const ic=m.indexOf('pdf')>=0?'📄':'📎';
   return `<span class="fchip"><a href="/api/file/${f.id}" target="_blank" rel="noopener">${ic} ${esc(f.name||'קובץ')}</a><button class="fdel" data-fid="${f.id}">🗑</button></span>`;}
-function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');return;}toast('מעלה…');const rd=new FileReader();rd.onload=async()=>{const data=rd.result.split(',')[1];await api('POST','/api/file',{kind,ref_id:refId,name:f.name,mime:f.type,data});toast('הועלה ✓');cb&&cb();};rd.readAsDataURL(f);}
+function uploadBlob(kind,refId,f){return new Promise(res=>{
+  if(!f){res(false);return;}
+  if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');res(false);return;}
+  const rd=new FileReader();
+  rd.onload=async()=>{try{await api('POST','/api/file',{kind,ref_id:refId,name:f.name,mime:f.type,data:rd.result.split(',')[1]});res(true);}catch(e){res(false);}};
+  rd.onerror=()=>res(false);
+  rd.readAsDataURL(f);});}
+function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;toast('מעלה…');uploadBlob(kind,refId,f).then(ok=>{if(ok)toast('הועלה ✓');inputEl.value='';cb&&cb();});}
+// בורר קבצים לטופס חדש — אוסף קבצים לפני השמירה, ומעלה אותם מיד אחריה
+function pendFiles(boxId,inputId){
+  const arr=[],box=document.getElementById(boxId),inp=document.getElementById(inputId);
+  if(!box||!inp)return {arr,reset(){}};
+  const paint=()=>{
+    box.querySelectorAll('.pchip').forEach(x=>x.remove());
+    arr.forEach((f,i)=>{const s=document.createElement('span');s.className='fchip pchip';
+      s.innerHTML=`${(f.type||'').indexOf('audio')>=0?'🎙️':((f.type||'').indexOf('image')>=0?'🖼️':'📎')} ${esc(f.name)} <button class="fdel">✕</button>`;
+      s.querySelector('.fdel').onclick=()=>{arr.splice(i,1);paint();};
+      box.insertBefore(s,box.firstChild);});
+  };
+  inp.onchange=()=>{[...inp.files].forEach(f=>arr.push(f));inp.value='';paint();};
+  return {arr,reset(){arr.length=0;paint();}};
+}
 async function load(){
   const d = await api('GET','/api/data');
   DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; HEBYEAR = d.heb_year || '';
@@ -748,15 +769,23 @@ function cardContact(d,body){
     <div class="sec"><h3>📞 תיעוד קשר</h3><div id="clog"></div>
       <div class="addrow"><select id="cl_ch"><option>טלפון</option><option>אימייל</option><option>וואטסאפ</option><option>פגישה</option></select><input id="cl_date" type="date" value="${todayStr()}"></div>
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
+      <div class="avfiles dnfiles" id="cl_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="cl_file" hidden></label></div>
       <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
       <div class="hintxt">התאריך התחתון = מתי לחזור אליו (נכנס ל"משימות")</div></div>
     <div class="sec"><h3>🔔 תזכורות</h3><div id="tlist"></div>
       <div class="addrow"><select id="tk_kind"><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="prayer">🙏 להתפלל</option><option value="followup">📞 לחזור</option><option value="other">🔔 אחר</option></select><input id="tk_date" type="date"></div>
       <div class="addrow"><input id="tk_note" placeholder="פרטים (על מה)"><button class="btn sm" id="tk_add">➕ קבע תזכורת</button></div>
+      <div class="avfiles dnfiles" id="tk_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="tk_file" hidden></label></div>
       <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></div>`;
   renderContacts(d); renderReminders(d);
-  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';renderContacts(d);renderReminders(d);toast('נשמר ✓');};
-  document.getElementById('tk_add').onclick=async()=>{const kind=document.getElementById('tk_kind').value,note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';renderReminders(d);toast('נקבעה תזכורת ✓');};
+  const clF=pendFiles('cl_files','cl_file'), tkF=pendFiles('tk_files','tk_file');
+  const refresh=async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;d.tasks=dd.tasks;}renderContacts(d);renderReminders(d);};
+  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
+    if(clF.arr.length){toast('מעלה קבצים…');for(const f of clF.arr)await uploadBlob('contact',r.id,f);clF.reset();await refresh();toast('נשמר עם האסמכתאות ✓');return;}
+    renderContacts(d);renderReminders(d);toast('נשמר ✓');};
+  document.getElementById('tk_add').onclick=async()=>{const kind=document.getElementById('tk_kind').value,note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
+    if(tkF.arr.length){toast('מעלה קבצים…');for(const f of tkF.arr)await uploadBlob('task',r.id,f);tkF.reset();await refresh();toast('נקבעה תזכורת עם האסמכתאות ✓');return;}
+    renderReminders(d);toast('נקבעה תזכורת ✓');};
 }
 function renderReminders(d){
   const el=document.getElementById('tlist');if(!el)return;
@@ -1740,6 +1769,7 @@ function renderTasksTab(){
       <div id="nt_res" class="dpres"></div>
       <div id="nt_chosen" class="pick" style="display:none"></div>
       <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="other">🔔 כללי</option><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option></select><input id="nt_date" type="date" value="${today}"></div>
+      <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
       <div class="hintxt">כתוב מה צריך לעשות. רוצה שאהרן יעשה — כתוב בחלון של אהרן; רוצה שאתה — בחלון שלך. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
@@ -1775,6 +1805,7 @@ function renderTasksTab(){
     const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business).includes(s)).slice(0,8);
     ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
+  const ntF=pendFiles('nt_files','nt_file');
   document.getElementById('nt_add').onclick=async()=>{
     const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
     const who=inWho;   // ההקצאה נקבעת לפי החלון
@@ -1785,6 +1816,7 @@ function renderTasksTab(){
     const r=await api('POST','/api/task',body);
     const rec={id:r.id,donor_id:ntChosen?ntChosen.id:null,due_date:date,kind:kind,note:note,assignee:who,done:0};
     if(ntChosen){ntChosen.tasks=ntChosen.tasks||[];ntChosen.tasks.push(rec);}else{GTASKS.push(rec);}
+    if(ntF.arr.length){toast('מעלה קבצים…');for(const f of ntF.arr)await uploadBlob('task',r.id,f);ntF.reset();await load();}
     toast('המשימה נוספה ✓'+(who?' — '+who:''));render();checkReminders();};
   view.querySelectorAll('.ttup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,load));
   view.querySelectorAll('.teditpanel .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
