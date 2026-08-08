@@ -1527,13 +1527,18 @@ class H(BaseHTTPRequestHandler):
                 if len(rows) >= 8: break
             con.close()
             return self._send(200, rows)
-        m = re.match(r'/api/file/(\d+)$', self.path)
+        m = re.match(r'/api/file/(\d+)$', self.path.split('?')[0])
         if m:
             con = db(); r = con.execute("SELECT name,mime,data FROM files WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
             if not r: return self._send(404, {'error': 'not found'})
+            from urllib.parse import urlparse as _up, parse_qs as _pq
+            dl = _pq(_up(self.path).query).get('dl', ['0'])[0] == '1'   # הורדה למכשיר במקום פתיחה בדפדפן
+            fname = (r['name'] or 'file').replace('"', '')
+            ascii_name = re.sub(r'[^A-Za-z0-9._ -]+', '_', fname).strip() or 'file'   # גיבוי לדפדפנים ישנים
             self.send_response(200)
-            self.send_header('Content-Type', r['mime'] or 'application/octet-stream')
-            self.send_header('Content-Disposition', "inline; filename*=UTF-8''" + quote(r['name'] or 'file'))
+            self.send_header('Content-Type', 'application/octet-stream' if dl else (r['mime'] or 'application/octet-stream'))
+            self.send_header('Content-Disposition',
+                             ('attachment' if dl else 'inline') + '; filename="' + ascii_name + "\"; filename*=UTF-8''" + quote(fname))
             self.send_header('Content-Length', str(len(r['data'])))
             self.end_headers(); self.wfile.write(r['data']); return
         path = self.path.split('?')[0]

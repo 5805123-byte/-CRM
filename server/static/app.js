@@ -198,14 +198,15 @@ function matchQ(s){return !q?true:norm(s).includes(norm(q));}
 
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 function fileChip(f){const m=(f.mime||'');
+  const dl=`<a class="fdl" href="/api/file/${f.id}?dl=1" download="${esc(f.name||'file')}" title="הורד למכשיר">⬇️</a>`;
   // הודעה קולית מוואטסאפ — נגן ישירות בכרטיס
   if(m.indexOf('audio')>=0||/\.(ogg|opus|m4a|mp3|wav|aac|amr)$/i.test(f.name||''))
-    return `<span class="fchip audio"><audio controls preload="none" src="/api/file/${f.id}"></audio><button class="fdel" data-fid="${f.id}" title="מחק">🗑</button></span>`;
+    return `<span class="fchip audio"><audio controls preload="none" src="/api/file/${f.id}"></audio>${dl}<button class="fdel" data-fid="${f.id}" title="מחק">🗑</button></span>`;
   // תמונה — תצוגה מקדימה קטנה שנפתחת בלחיצה
   if(m.indexOf('image')>=0)
-    return `<span class="fchip img"><a href="/api/file/${f.id}" target="_blank" rel="noopener"><img src="/api/file/${f.id}" alt="${esc(f.name||'')}" loading="lazy"></a><button class="fdel" data-fid="${f.id}" title="מחק">🗑</button></span>`;
+    return `<span class="fchip img"><a href="/api/file/${f.id}" target="_blank" rel="noopener"><img src="/api/file/${f.id}" alt="${esc(f.name||'')}" loading="lazy"></a>${dl}<button class="fdel" data-fid="${f.id}" title="מחק">🗑</button></span>`;
   const ic=m.indexOf('pdf')>=0?'📄':'📎';
-  return `<span class="fchip"><a href="/api/file/${f.id}" target="_blank" rel="noopener">${ic} ${esc(f.name||'קובץ')}</a><button class="fdel" data-fid="${f.id}">🗑</button></span>`;}
+  return `<span class="fchip"><a href="/api/file/${f.id}" target="_blank" rel="noopener">${ic} ${esc(f.name||'קובץ')}</a>${dl}<button class="fdel" data-fid="${f.id}">🗑</button></span>`;}
 function uploadBlob(kind,refId,f){return new Promise(res=>{
   if(!f){res(false);return;}
   if(f.size>15*1024*1024){toast('קובץ גדול מדי (מקס 15MB)');res(false);return;}
