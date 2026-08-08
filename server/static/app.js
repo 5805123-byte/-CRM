@@ -1027,11 +1027,21 @@ function renderCharges(){
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
     <div id="reconboxes" class="reconboxes"></div>
     <div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
     `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  const cms=document.getElementById('ch_mailsync');
+  if(cms)cms.onclick=async()=>{
+    cms.disabled=true;cms.textContent='מושך מיילים…';
+    const r=await api('POST','/api/mail/contacts_sync',{});
+    cms.disabled=false;cms.textContent='📥 משוך מיילים מהתיבה ותייק אצל התורמים';
+    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
+    if(r.new)await load();
+    toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
+  };
   // משבצת נפרדת לכל שיטת תשלום — נטענת מסיכום ההתאמה
   api('GET','/api/recon/summary').then(gs=>{const box=document.getElementById('reconboxes');if(!box||!Array.isArray(gs))return;
     box.innerHTML=gs.map(g=>{const active=g.total>0;
@@ -1876,7 +1886,7 @@ function renderTasksTab(){
   const renewSec=renews.length?`<div class="misshead" style="margin-top:10px">🔴 חידוש שותפות יש"ז מתקרב (${renews.length})</div>
     <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
   view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>${renewSec}${debtSec}
+    ${renewSec}${debtSec}
     <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
       <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
@@ -1919,16 +1929,6 @@ function renderTasksTab(){
     const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business).includes(s)).slice(0,8);
     ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
-  const tms=document.getElementById('tk_mailsync');
-  if(tms)tms.onclick=async()=>{
-    tms.disabled=true;tms.textContent='מושך מיילים…';
-    const r=await api('POST','/api/mail/contacts_sync',{});
-    tms.disabled=false;tms.textContent='📥 משוך מיילים מהתיבה ותייק אצל התורמים';
-    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
-    if(r.new)await load();
-    toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
-    render();
-  };
   const ntF=pendFiles('nt_files','nt_file');
   document.getElementById('nt_add').onclick=async()=>{
     const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();

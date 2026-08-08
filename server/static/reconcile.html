@@ -65,6 +65,7 @@
 <body>
 <h1>💳 טיפול והתאמת תרומות — אוטרייז ובנק ווסט (ינואר–אוגוסט 2026)</h1>
 <div class="sub">לכל תורם: אשר עבור מה תרם, השלם שם עברי / צור כרטיס, ובחר אם לעדכן כתובת. תרומת $480 = פרנס לילה. הוראות קבע מסומנות.<br>בפרנס — אפשר לכתוב מיד את השמות; היום ישובץ ב<a href="/" target="_blank" rel="noopener" style="color:var(--accent);font-weight:800">🌙 לוח פרנס יום</a>.</div>
+<div style="margin:0 0 10px"><button id="mailsync" style="width:100%;padding:10px;border:1px dashed var(--accent);background:#fff;color:var(--accent);border-radius:10px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
 <div class="bar">
   <div class="prog"><i id="pbar"></i></div>
   <div class="sub" id="pcount" style="margin:5px 0 0"></div>
@@ -354,6 +355,14 @@ function wireGroup(k,txs){
 }
 
 $('.filters').addEventListener('click', e=>{ if(e.target.dataset.f){ FILT=e.target.dataset.f; try{sessionStorage.setItem(FKEY,FILT);}catch(err){} document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b===e.target)); window.scrollTo(0,0); render(); }});
+const _ms=document.getElementById('mailsync');
+if(_ms)_ms.onclick=async()=>{
+  _ms.disabled=true;const t0=_ms.textContent;_ms.textContent='מושך מיילים…';
+  const r=await api('POST','/api/mail/contacts_sync',{});
+  _ms.disabled=false;_ms.textContent=t0;
+  if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
+  toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
+};
 load();
 </script>
 </body>
