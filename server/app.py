@@ -106,6 +106,8 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
     except Exception: pass
+    try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
@@ -1340,8 +1342,23 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/api/recon':
             con = db(); out = []
+            try:
+                import gmail_intake as _tr
+            except Exception:
+                _tr = None
+            def _he_sugg(s):
+                """הצעת איות עברי לשם האנגלי — כדי למלא מראש את שדות השם בכרטיס חדש."""
+                if not _tr or not s:
+                    return ''
+                try:
+                    return _tr._he_name(str(s).strip())
+                except Exception:
+                    return ''
             for r in con.execute("SELECT * FROM recon ORDER BY processed, last, first"):
                 x = dict(r)
+                if not r['donor_id']:
+                    x['sugg_last'] = _he_sugg(r['last'])
+                    x['sugg_first'] = _he_sugg(r['first'])
                 if r['donor_id']:
                     d = con.execute("SELECT last,first,addr,category,tier,kv_month,kv_year FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
                     if d:
@@ -1550,7 +1567,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note','paid'):
+            for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE donations SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
@@ -1812,6 +1829,9 @@ class H(BaseHTTPRequestHandler):
                              row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
                              b.get('category', ''), today_iso(), r_src, nd.get('notes', '')))
                 did = cur.lastrowid
+                if (nd.get('task') or '').strip():     # משימה שנקבעה יחד עם פתיחת הכרטיס
+                    cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                                (did, (nd.get('task_date') or today_iso()), 'followup', nd['task'].strip()))
             if not did:
                 con.close(); return self._send(400, {'error': 'donor required'})
             # מילוי אוטומטי של שם אנגלי אם חסר בכרטיס (מיזוג השם מהייבוא)

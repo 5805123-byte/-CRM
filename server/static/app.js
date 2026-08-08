@@ -361,7 +361,7 @@ function renderDonors(){
       ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
       ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
       ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
+      <div class="meta">${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
@@ -647,6 +647,7 @@ function cardDetails(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(curd+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
+    ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות שעדיין לא הודית עליהן — לחץ לסימון</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
@@ -697,6 +698,7 @@ function cardDetails(d,body){
   const FF=['last','first','english','category','purpose','amount','frequency','email','addr','city','country','zip','business','notes','region','channel'];
   wireFields(d,FF);
   // חיפוש מהיר של כל מי שיש לו הערה דומה (למשל כל מי שהגיע דרך אותו תורם)
+  const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='donations';renderCard(d);};
   const nlk=body.querySelector('.notelink');
   if(nlk)nlk.onclick=e=>{e.preventDefault();const t=(d.notes||'').trim();if(!t)return;
     q=t.length>28?t.slice(0,28):t;document.getElementById('q').value=q;
@@ -890,9 +892,14 @@ function fbChip(x){
   if(!x.fb_channel) return '';
   return `<span class="fbchip on">✓ פידבק · ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_date?(' · '+esc(x.fb_date)):''}${x.fb_followup?(' · 🔁 לחזור '+esc(x.fb_followup)):''}</span>`;
 }
+// מעקב "הודינו?" — על תרומות מאוגוסט 2026 ואילך (וכל תרומה חדשה מכאן)
+const THANKS_FROM='2026-08-01';
+function needThanks(x){const d=(x.date||'').slice(0,10);return !d||d>=THANKS_FROM;}
+function unthankedCount(d){return (d.donations||[]).filter(x=>needThanks(x)&&!+x.thanked).length;}
 function dnRow(x,cur){cur=cur||'$';
   return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
+    (needThanks(x)?`<div class="thxrow ${+x.thanked?'on':''}"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו על התרומה':'🙏 האם הודית לו על התרומה?'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
     `<div class="dnedit hidden" data-de="${x.id}">
       <div class="fbrow"><label class="fld"><span>סכום (${cur})</span><input class="de_amt" value="${esc(x.amount)}"></label>
@@ -930,6 +937,10 @@ function renderDonations(d){
     if(x.category&&!(CAMPAIGNS||[]).includes(x.category)&&!['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'].includes(x.category)){api('POST','/api/campaigns',{name:x.category});CAMPAIGNS.unshift(x.category);}
     renderDonations(d);toast('עודכן ✓');
   });
+  el.querySelectorAll('.thxbtn').forEach(b=>b.onclick=async()=>{
+    const x=d.donations.find(y=>y.id==b.dataset.thx);if(!x)return;
+    x.thanked=+x.thanked?0:1;await api('PUT','/api/donation/'+x.id,{thanked:x.thanked});
+    renderDonations(d);if(tab==='donors')renderDonors();toast(x.thanked?'סומן: הודינו ✓':'סומן: עדיין לא הודינו');});
   el.querySelectorAll('.dnup').forEach(inp=>inp.onchange=()=>uploadFile('donation',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(y=>y.id===d.id);if(dd)d.donations=dd.donations;renderDonations(d);}));
   el.querySelectorAll('.dnfiles .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.donations||[]).forEach(x=>{x.files=(x.files||[]).filter(f=>f.id!=b.dataset.fid);});renderDonations(d);toast('נמחק');});
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});

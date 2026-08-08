@@ -351,10 +351,25 @@ _TR1 = {'a': 'א', 'b': 'ב', 'c': 'ק', 'd': 'ד', 'e': '', 'f': 'פ', 'g': 'ג
 _SOFIT = {'מ': 'ם', 'נ': 'ן', 'כ': 'ך', 'פ': 'ף', 'צ': 'ץ'}
 
 
-def _translit(w):
+# סיומות נפוצות בשמות משפחה — עדיף כלל קבוע על פני תעתיק אות־אות
+_SUFFIX = sorted([
+    ('stein', 'שטיין'), ('shtein', 'שטיין'), ('berger', 'ברגר'), ('berg', 'ברג'),
+    ('sky', 'סקי'), ('ski', 'סקי'), ('ske', 'סקי'), ('sque', 'סקי'),
+    ('witz', 'ביץ'), ('wicz', 'ביץ'), ('vitz', 'ביץ'), ('vich', 'ביץ'), ('wich', 'ביץ'), ('owitz', 'וביץ'),
+    ('baum', 'בוים'), ('feld', 'פלד'), ('thal', 'טל'), ('mann', 'מן'),
+    ('sohn', 'סון'), ('son', 'סון'), ('ovsky', 'ובסקי'), ('ovski', 'ובסקי'),
+], key=lambda x: -len(x[0]))
+_DOUBLE = re.compile(r'([bcdfglmnprstz])\1')
+
+
+def _translit(w, final=True):
     s = re.sub(r'[^a-z]', '', (w or '').lower())
     if not s:
         return w
+    s = _DOUBLE.sub(r'\1', s)              # אותיות כפולות באנגלית — אחת בעברית (Weiss→וייס)
+    for suf, he in _SUFFIX:                # סיומת מוכרת — מתרגמים אותה ככלל
+        if len(s) > len(suf) and s.endswith(suf):
+            return _translit(s[:-len(suf)], final=False) + he   # בלי אות סופית באמצע המילה
     res, i, n = [], 0, len(s)
     while i < n:
         if s[i:i + 3] in _TR3:
@@ -365,11 +380,13 @@ def _translit(w):
         if c in ('a', 'e'):
             # תנועה פתוחה: בתחילת מילה א', בסוף ה', באמצע לא נכתבת (כמו בעברית) — מונע ריבוי אלפים
             res.append('א' if first else ('ה' if last else ''))
+        elif c == 'w':
+            res.append('וו' if first else 'ו')   # באמצע מילה ו' אחת (Rabinowitz→רבינוביץ)
         else:
             res.append(_TR1.get(c, ''))
         i += 1
-    heb = ''.join(res)
-    if heb and heb[-1] in _SOFIT:      # אות סופית
+    heb = re.sub(r'ווו+', 'וו', ''.join(res))     # לא יותר משתי ו' רצופות
+    if final and heb and heb[-1] in _SOFIT:       # אות סופית — רק בסוף השם ממש
         heb = heb[:-1] + _SOFIT[heb[-1]]
     return heb or w
 

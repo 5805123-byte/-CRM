@@ -110,6 +110,7 @@ function dcatOpts(sel){return DCATS.map(c=>`<option value="${esc(c)}" ${c===(sel
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1400);}
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+const TODAY=new Date().toISOString().slice(0,10);
 function norm(s){return (s||'').toLowerCase().replace(/\s+/g,' ').trim();}
 const MONIDX={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
 const HEMON=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -219,9 +220,12 @@ function groupCard(k,txs){
       <div class="res" style="display:none"></div>
       <div class="pick" style="display:none"></div>
       <div style="text-align:center;color:var(--muted);font-size:.8rem;margin:6px 0">— או —</div>
-      <div class="two"><label class="fld"><span>שם משפחה (עברית) *</span><input class="nl" placeholder="שם משפחה"></label>
-        <label class="fld"><span>שם פרטי (עברית)</span><input class="nf" placeholder="שם פרטי"></label></div>
+      <div class="two"><label class="fld"><span>שם משפחה (עברית) *</span><input class="nl" placeholder="שם משפחה" value="${esc(t0.sugg_last||'')}"></label>
+        <label class="fld"><span>שם פרטי (עברית)</span><input class="nf" placeholder="שם פרטי" value="${esc(t0.sugg_first||'')}"></label></div>
+      ${(t0.sugg_last||t0.sugg_first)?`<div class="sub" style="font-size:.75rem;color:var(--gold)">✍️ הצעת איות אוטומטית — בדוק ותקן אם צריך</div>`:''}
       <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><input class="nn" placeholder="דרך מי הגיע / כל הערה שתרצה למצוא אחר כך"></label>
+      <div class="two"><label class="fld"><span>✅ משימה (למשל: לחזור להגיד תודה)</span><input class="nt" placeholder="מה צריך לעשות"></label>
+        <label class="fld"><span>מתי</span><input type="date" class="ntd" value="${esc(TODAY)}"></label></div>
       <div class="sub" style="font-size:.78rem">ייווצר כרטיס חדש עם השם האנגלי, הטלפון, האימייל והכתובת מהאתר.</div>
     </div>`;
   let addrHtml='';
@@ -297,7 +301,12 @@ function wireGroup(k,txs){
       });
     },250);};
     const nl=assign.querySelector('.nl'), nf=assign.querySelector('.nf'), nn=assign.querySelector('.nn');
-    [nl,nf,nn].forEach(inp=>inp&&(inp.oninput=()=>{ state.nn=nn?nn.value.trim():''; if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } }));
+    const nt=assign.querySelector('.nt'), ntd=assign.querySelector('.ntd');
+    if(nl.value.trim()){ state.nl=nl.value.trim(); state.nf=nf.value.trim(); }   // הצעת האיות מוכנה מראש
+    const grab=()=>{ state.nn=nn?nn.value.trim():''; state.nt=nt?nt.value.trim():''; state.ntd=ntd?ntd.value:'';
+      if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } };
+    [nl,nf,nn,nt,ntd].forEach(inp=>inp&&(inp.oninput=grab));
+    if(ntd)ntd.onchange=grab;
   }
   // הצגת שדה שמות פרנס כשבוחרים קטגוריית פרנס
   card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded'),pick=txEl.querySelector('.pypick'),nc=txEl.querySelector('.newcat'),bl=txEl.querySelector('.bldgitem');
@@ -327,7 +336,7 @@ function wireGroup(k,txs){
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
       if(donorId) body.donor_id=donorId;
-      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||''}; }
+      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||'',task:state.nt||'',task_date:state.ntd||''}; }
       const r=await api('POST','/api/recon/'+tid, body);
       if(r.donor_id){ donorId=r.donor_id; }
       upaddr=false; // רק פעם אחת
