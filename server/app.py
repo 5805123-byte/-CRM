@@ -1158,20 +1158,27 @@ def ensure_schema():
 
     # מיילים שכבר תויקו לפני שהיה תמצות — מקצרים לשורה אחת ומורידים את השרשור שלנו
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v1'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v2'").fetchone():
             import gmail_intake as _gi
             nfix = 0
-            for r in con.execute("""SELECT id,summary FROM contacts_log
-                                    WHERE channel='אימייל' AND COALESCE(summary,'') LIKE '%' || char(10) || '%'"""):
+            for r in con.execute("SELECT id,summary,body FROM contacts_log WHERE channel='אימייל'"):
                 s = r['summary'] or ''
-                head, _, rest = s.partition('\n')
-                subj = head[2:].strip() if head.startswith('📧') else head.strip()
-                gist = _gi._one_line(rest)
-                new_s = '📧 ' + subj + ((' — ' + gist) if gist else '')
-                con.execute("UPDATE contacts_log SET summary=?, body=COALESCE(NULLIF(body,''),?) WHERE id=?",
-                            (new_s, _gi._strip_quoted(rest), r['id']))
+                head = s[1:].strip() if s.startswith('📧') else s
+                if '\n' in head:
+                    subj, rest = head.split('\n', 1)
+                elif ' — ' in head:
+                    subj, rest = head.split(' — ', 1)
+                else:
+                    subj, rest = head, ''
+                src = (r['body'] or '').strip() or rest       # הטקסט המלא ששמור, אחרת מה שבתקציר
+                if not src.strip():
+                    continue
+                gist = _gi._one_line(src)
+                new_s = '📧 ' + subj.strip() + ((' — ' + gist) if gist else '')
+                con.execute("UPDATE contacts_log SET summary=?, body=? WHERE id=?",
+                            (new_s, _gi._strip_quoted(src), r['id']))
                 nfix += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('maillog_gist_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('maillog_gist_v2')")
             print(f'  תמצות מיילים קיימים: {nfix}')
     except Exception as e:
         print('  mail gist error:', e)

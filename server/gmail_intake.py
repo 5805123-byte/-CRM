@@ -585,11 +585,30 @@ _SIGNOFF = re.compile(r'^\s*(?:בברכה|בכבוד רב|תודה רבה|תוד
                       r'thanks|thank you|thx|best regards|regards|sincerely|kind regards|warmly)\b[\s,!.-]*$', re.I)
 
 
+# אותם סימנים כשהם באמצע שורה (קורה כשה-HTML נדחס לשורה אחת)
+_QUOTE_INLINE = re.compile(
+    r'(?:'
+    r'On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s|'          # On Thu, Feb 26, 2026 at 10:17 AM
+    r'On\s+\w{3,9}\s+\d{1,2},?\s+\d{4}\s+at\s|'
+    r'On\s.{5,120}?\bwrote:|'
+    r'ב(?:יום|תאריך)\s.{0,80}?(?:כתב|כתבה|כתבו)\s*:|'
+    r'-{2,}\s*Original Message|'
+    r'-{3,}\s*Forwarded message|'
+    r'_{5,}'
+    r')', re.I)
+
+
 def _strip_quoted(text):
     """משאיר רק את מה שהתורם עצמו כתב — חותך את השרשור המצוטט שמתחתיו."""
     out = []
     for ln in (text or '').split('\n'):
         if _QUOTE_START.match(ln):
+            break
+        m = _QUOTE_INLINE.search(ln)      # הציטוט מתחיל באמצע השורה
+        if m:
+            head = ln[:m.start()].strip()
+            if head:
+                out.append(head)
             break
         out.append(ln)
     return '\n'.join(out).strip()
@@ -613,6 +632,7 @@ def _one_line(body, n=150):
     if not lines:
         return ''
     s = ' '.join(lines)
+    s = re.sub(r'\*[^*]{2,40}\*\s*$', '', s).strip()      # חתימה מודגשת בסוף (*שם השולח*)
     # המשפט הראשון, ואם הוא קצר מדי — גם השני
     parts = re.split(r'(?<=[.!?۔])\s+|\n', s)
     gist = parts[0].strip() if parts else s
