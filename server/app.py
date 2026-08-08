@@ -2211,9 +2211,18 @@ class H(BaseHTTPRequestHandler):
             for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
-            con.execute("DELETE FROM donors WHERE id=?", (did,))
-            con.commit(); con.close()
-            return self._send(200, {'ok': True})
+            # ניתוק שיוכים שנשארו במקומות אחרים, כדי שהתורם לא יופיע יותר בשום מסך
+            for tbl in ('recon', 'intake'):
+                try: con.execute(f"UPDATE {tbl} SET donor_id=NULL WHERE donor_id=?", (did,))
+                except Exception: pass
+            try:
+                con.execute("DELETE FROM donors WHERE id=?", (did,))
+                con.commit()
+            except Exception as e:
+                con.close(); return self._send(200, {'ok': False, 'error': 'delete_failed', 'detail': str(e)})
+            gone = con.execute("SELECT COUNT(*) FROM donors WHERE id=?", (did,)).fetchone()[0] == 0
+            con.close()
+            return self._send(200, {'ok': gone} if gone else {'ok': False, 'error': 'still_exists'})
         m = re.match(r'/api/(pledge|parnes|prayer|donation|contact|task|partner|file|transaction|building)/(\d+)$', self.path)
         if m:
             DTBL = {'pledge': 'pledges', 'parnes': 'parnes', 'prayer': 'prayers', 'donation': 'donations',

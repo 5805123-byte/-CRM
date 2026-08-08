@@ -743,11 +743,19 @@ function cardDetails(d,body){
   delBtn.onclick=async()=>{
     if(!delArmed){
       delArmed=true; delBtn.textContent='⚠️ בטוח? לחץ שוב כדי למחוק לצמיתות'; delBtn.classList.add('armed');
-      delTimer=setTimeout(()=>{delArmed=false;delBtn.textContent='מחיקת תורם לצמיתות';delBtn.classList.remove('armed');},4000);
+      delTimer=setTimeout(()=>{delArmed=false;delBtn.textContent='מחיקת תורם לצמיתות';delBtn.classList.remove('armed');},20000);
       return;
     }
     clearTimeout(delTimer); delBtn.disabled=true; delBtn.textContent='מוחק…';
-    await api('DELETE','/api/donor/'+d.id); DB=DB.filter(x=>x.id!==d.id); ov.classList.remove('show'); toast('התורם נמחק ✓'); render();
+    let r=null; try{r=await api('DELETE','/api/donor/'+d.id);}catch(e){r=null;}
+    if(!r||!r.ok){   // המחיקה נכשלה — מחזירים את הכפתור ומדווחים במקום להיראות כאילו הצליח
+      delBtn.disabled=false; delArmed=false; delBtn.textContent='מחיקת תורם לצמיתות'; delBtn.classList.remove('armed');
+      toast('המחיקה נכשלה'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):' — נסה שוב'));
+      return;
+    }
+    DB=DB.filter(x=>x.id!==d.id); ov.classList.remove('show');
+    try{localStorage.removeItem('kc_donor');}catch(e){}
+    toast('התורם נמחק ✓'); render();
   };
 }
 function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
