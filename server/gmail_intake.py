@@ -12,7 +12,7 @@
     INTAKE_SINCE        (רשות) תאריך התחלה בפורמט IMAP, ברירת מחדל 01-Jan-2026
     INTAKE_MAILBOX      (רשות) תיבה, ברירת מחדל INBOX
 """
-import os, re, imaplib, email, datetime
+import os, re, imaplib, email, datetime, sqlite3
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
@@ -545,6 +545,38 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
+def _attachments(msg, max_bytes=10 * 1024 * 1024):
+    """קבצים שצורפו למייל (מסמכים/תמונות). מדלג על לוגואים זעירים של חתימה."""
+    out = []
+    try:
+        for part in msg.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+            disp = str(part.get('Content-Disposition') or '')
+            fname = part.get_filename()
+            if fname:
+                try:
+                    fname = str(make_header(decode_header(fname)))
+                except Exception:
+                    pass
+            is_att = 'attachment' in disp.lower() or bool(fname)
+            ctype = (part.get_content_type() or '').lower()
+            if not is_att and not (ctype.startswith('image/') and 'inline' in disp.lower()):
+                continue
+            try:
+                data = part.get_payload(decode=True)
+            except Exception:
+                data = None
+            if not data or len(data) > max_bytes:
+                continue
+            if ctype.startswith('image/') and len(data) < 8000 and 'attachment' not in disp.lower():
+                continue                      # לוגו/תמונת חתימה — לא מצרפים
+            out.append((fname or ('קובץ.' + (ctype.split('/')[-1] or 'bin')), ctype, data))
+    except Exception:
+        pass
+    return out[:10]
+
+
 def _donor_email_map(con):
     """מפה: כתובת מייל → מזהה תורם. רק התאמה מדויקת לכתובת — בלי ניחוש לפי שם."""
     emap = {}
@@ -624,14 +656,17 @@ _INTENT = [
     (r'\b(change|increase|raise|lower|reduce|update)\b.{0,30}\b(amount|donation|monthly|charge)\b', 'שינוי סכום התרומה'),
     (r'\b(new|updated|expired|different)\b.{0,20}\b(card|credit card)\b', 'עדכון כרטיס אשראי'),
     (r'\b(new address|moved|change.{0,15}address|update.{0,15}address)\b', 'עדכון כתובת'),
+    (r'\b(tefil\w+|teffil\w+|davening)\b.{0,25}\b(list|names)\b|'
+     r'\b(list|names)\b.{0,25}\b(tefil\w+|teffil\w+|davening)\b', 'רשימת שמות לתפילה'),
     (r'\b(name to daven|daven for|kvittel|refuah|refua|cholim)\b', 'שמות לקוויטל'),
+    (r'\b(see attached|attached|enclosed|attachment)\b', 'צירף קובץ'),
     (r'\b(i sent|i already sent|payment sent|i donated|mailed a check|sent a check|sent \$?\d)', 'הודעה על תרומה שנשלחה'),
     (r'\b(call me|give me a call|please call|reach me)\b', 'בקשה שניצור קשר'),
     (r'\b(remove me|take me off|stop emails)\b', 'בקשה להסרה מרשימת התפוצה'),
     (r'\b(when|how do i|can you|could you|question|wondering)\b', 'שאלה'),
     (r'\b(thank|thanks|freilichin|gut yom tov|good yom tov|mazel tov|hatzlacha)\b', 'תודה וברכה'),
 ]
-_GENERIC = {'שאלה', 'תודה וברכה'}   # מוצג רק כשאין סיווג מדויק יותר
+_GENERIC = {'שאלה', 'תודה וברכה', 'צירף קובץ'}   # מוצג רק כשאין סיווג מדויק יותר
 _AMT = re.compile(r'\$\s?\d[\d,]*(?:\.\d{2})?')
 
 
@@ -770,7 +805,7 @@ def sync_contacts(con, status=None):
         st['total'] = len(ids)
         heads = _batch_headers(M, ids)          # שלב 1: כותרות בלבד, בקבוצות
         st['scanned'] = len(heads)
-        todo = []
+        todo, backfill = [], []
         for seq, raw in heads:                  # שלב 2: מסננים רק מיילים של תורמים מזוהים
             try:
                 hmsg = email.message_from_bytes(raw)
@@ -784,8 +819,11 @@ def sync_contacts(con, status=None):
             if not did:
                 continue
             mid = (hmsg.get('Message-ID') or '').strip() or f'{user}:{seq.decode()}'
-            if con.execute("SELECT 1 FROM contacts_log WHERE msg_id=?", (mid,)).fetchone():
-                continue                        # כבר תויק
+            ex = con.execute("SELECT id, COALESCE(att_checked,0) AS ac FROM contacts_log WHERE msg_id=?", (mid,)).fetchone()
+            if ex:
+                if not ex['ac']:                # תויק לפני שהיו קבצים מצורפים — נשלים אותם
+                    backfill.append((seq, ex['id']))
+                continue
             subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
             try:
                 dstr = parsedate_to_datetime(hmsg.get('Date')).date().isoformat()
@@ -794,26 +832,71 @@ def sync_contacts(con, status=None):
             todo.append((seq, did, mid, subject, dstr))
         st['total'] = len(todo)
         for n, (seq, did, mid, subject, dstr) in enumerate(todo, 1):   # שלב 3: גוף רק למה שנכנס
-            body = ''
+            body, atts = '', []
             try:
                 typ, md = M.fetch(seq.decode(), '(RFC822)')
                 if typ == 'OK' and md and md[0]:
-                    body = _extract_text(email.message_from_bytes(md[0][1]))
+                    full_msg = email.message_from_bytes(md[0][1])
+                    body = _extract_text(full_msg)
+                    atts = _attachments(full_msg)        # קבצים שצורפו למייל
             except Exception:
-                body = ''
+                body, atts = body, []
             gist = _gist_he(subject, body)
-            summary = '📧 ' + subject + ((' — ' + gist) if gist else '')
+            kvn = _parse_names(body)            # שמות לקוויטל שנכתבו בגוף המייל
+            extra = ''
+            if atts:
+                extra += ' · 📎 ' + str(len(atts)) + ' קבצים מצורפים'
+            if kvn.strip():
+                extra += ' · 🕯️ שמות לקוויטל במייל'
+            summary = '📧 ' + subject + ((' — ' + gist) if gist else '') + extra
             full = _strip_quoted(body)          # רק מה שהתורם כתב, בלי השרשור שלנו
             try:
-                con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body)
-                               VALUES(?,?,?,?,'',?,?)""",
+                cur = con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked)
+                               VALUES(?,?,?,?,'',?,?,1)""",
                             (did, dstr, 'אימייל', summary, mid, full))
+                cid = cur.lastrowid
                 new += 1
+                for (fn, mt, data) in atts:     # שמירת הקבצים אצל אותו רישום קשר
+                    try:
+                        con.execute("""INSERT INTO files(kind,ref_id,name,mime,data,created)
+                                       VALUES('contact',?,?,?,?,?)""",
+                                    (cid, fn, mt, sqlite3.Binary(data), datetime.date.today().isoformat()))
+                    except Exception:
+                        pass
             except Exception:
                 pass                            # כפילות — מדלגים
             st['new'] = new
             if n % 20 == 0:
                 con.commit()
+        # השלמת קבצים מצורפים למיילים שכבר תויקו קודם
+        for seq, cid in backfill:
+            atts, bd, subj = [], '', ''
+            try:
+                typ, md = M.fetch(seq.decode(), '(RFC822)')
+                if typ == 'OK' and md and md[0]:
+                    fm = email.message_from_bytes(md[0][1])
+                    atts = _attachments(fm)
+                    bd = _extract_text(fm)
+                    subj = _dec(fm.get('Subject')) or '(ללא נושא)'
+            except Exception:
+                pass
+            for (fn, mt, data) in atts:
+                try:
+                    con.execute("""INSERT INTO files(kind,ref_id,name,mime,data,created)
+                                   VALUES('contact',?,?,?,?,?)""",
+                                (cid, fn, mt, sqlite3.Binary(data), datetime.date.today().isoformat()))
+                except Exception:
+                    pass
+            if bd:      # מרעננים גם את התקציר והטקסט המלא — עכשיו יש לנו את המייל המקורי
+                gist = _gist_he(subj, bd)
+                kvn = _parse_names(bd)
+                extra = (' · 📎 ' + str(len(atts)) + ' קבצים מצורפים') if atts else ''
+                if kvn.strip():
+                    extra += ' · 🕯️ שמות לקוויטל במייל'
+                con.execute("UPDATE contacts_log SET summary=?, body=? WHERE id=?",
+                            ('📧 ' + subj + ((' — ' + gist) if gist else '') + extra, _strip_quoted(bd), cid))
+            con.execute("UPDATE contacts_log SET att_checked=1 WHERE id=?", (cid,))
+        con.commit()
         try: M.logout()
         except Exception: pass
         con.commit()

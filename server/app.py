@@ -116,6 +116,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN body TEXT")     # גוף המייל (רק מה שהתורם כתב)
     except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN att_checked INTEGER DEFAULT 0")  # נבדקו קבצים מצורפים
+    except Exception: pass
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
