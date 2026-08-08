@@ -584,8 +584,8 @@ function openDonor(d,startTab){
     <div class="cardsub"><span class="cardnum">כרטיס #${d.id}</span> ${catPill(d.category)} ${d.tier==='יששכר_זבולון'?`<span class="izchip" id="izHeadLink" title="לחץ לראות אברך ושותף">${pill(d.tier)} 👥</span>`:pill(d.tier)} ${d.english?`<span class="ensm" dir="ltr">${esc(d.english)}</span>`:''}</div>
     <div class="ctabs">
       <button class="ctab" data-c="details">פרטים</button>
-      <button class="ctab" data-c="kvittel">🕯️ קוויטל</button>
-      <button class="ctab" data-c="donations">💳 תרומות${(d.recon_pending||[]).length?` <b class="badge">${(d.recon_pending||[]).length}</b>`:''}</button>
+      <button class="ctab" data-c="kvittel">🕯️ קוויטל${(d.intake_pending||[]).length?` <b class="badge">${(d.intake_pending||[]).length}</b>`:''}</button>
+      <button class="ctab" data-c="donations">💳 תרומות${pendCount(d)?` <b class="badge">${pendCount(d)}</b>`:''}</button>
       <button class="ctab" data-c="building">🏛️ בניין${(d.building||[]).length?` <b class="badge">${(d.building||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="contact">📞 קשר</button>
       <button class="ctab" data-c="tasks">📋 משימות${nopen?` <b class="badge">${nopen}</b>`:''}</button>
@@ -781,7 +781,8 @@ function cardKvittel(d,body){
   const empty=!(d.prayers&&d.prayers.length);
   const sugg=(empty&&inKv)?((d.first||'')+' '+(d.last||'')).trim():'';
   const isOcc=d.category==='מזדמן'&&!d.tier;
-  body.innerHTML=`<div class="sec">
+  body.innerHTML=`${(d.intake_pending||[]).length?reconPendHTML({intake_pending:d.intake_pending,recon_pending:[]}):''}
+    <div class="sec">
       <label class="fld"><span>דרגת קוויטל (אפשר לשנות מכאן)</span><select id="kv_tier">${tierOpts(d)}</select></label>
       ${isOcc?`<div class="two" style="margin-top:6px"><label class="fld"><span>🗓️ חודש עברי (מזדמנים)</span><select id="kv_mon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>שנה עברית</span><select id="kv_yr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>
@@ -791,6 +792,22 @@ function cardKvittel(d,body){
     <div id="prayers"></div>
     <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)" value="${esc(sugg)}"><button class="btn sm" id="pr_add">הוסף</button></div>`;
   renderPrayers(d);
+  // בקשות קוויטל מהאתר — אישור ישירות מכאן (מרענן לתוך לשונית הקוויטל)
+  body.querySelectorAll('.kvpend').forEach(el=>{
+    const ta=el.querySelector('.ipnames');
+    const done=async()=>{await load();const x=DB.find(y=>y.id===d.id);
+      if(x){d.intake_pending=x.intake_pending;d.prayers=x.prayers;}cardKvittel(d,body);};
+    el.querySelector('.ipok').onclick=async()=>{
+      const names=ta.value.trim(); if(!names){toast('אין שמות');return;}
+      const b=el.querySelector('.ipok');b.disabled=true;b.textContent='מוסיף…';
+      const r=await api('POST','/api/intake/'+el.dataset.iid+'/attach',{donor_id:d.id,names});
+      if(!r||!r.ok){b.disabled=false;b.textContent='➕ הוסף לקוויטל';toast('לא נוסף');return;}
+      await done();toast('נוסף לקוויטל ✓');
+    };
+    el.querySelector('.ipskip').onclick=async()=>{
+      await api('PUT','/api/intake/'+el.dataset.iid,{status:'handled'});await done();toast('סומן כטופל');
+    };
+  });
   const kvt=document.getElementById('kv_tier'); if(kvt)kvt.onchange=()=>applyTierSelect(d,'kv_tier');
   const kvm=document.getElementById('kv_mon'),kvy=document.getElementById('kv_yr');
   const saveOcc=async()=>{d.kv_month=kvm.value;d.kv_year=kvy.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardKvittel(d,body);};
@@ -800,12 +817,19 @@ function cardKvittel(d,body){
 /* חיובים מאוטרייז/בנק ווסט שטרם אושרו — אישור ישירות מכרטיס התורם */
 const RCATS=['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','בניין'];
 const RPARNES=['פרנס לילה','חדר קפה','ארוחת בוקר'];
+function pendCount(d){return (d.recon_pending||[]).length+(d.intake_pending||[]).length;}
 function reconPendHTML(d){
-  const rp=(d.recon_pending||[]); if(!rp.length)return '';
+  const rp=(d.recon_pending||[]), ip=(d.intake_pending||[]);
+  if(!rp.length&&!ip.length)return '';
   const opts=c=>RCATS.concat(CAMPAIGNS||[]).filter((v,i,a)=>a.indexOf(v)===i)
       .map(x=>`<option value="${esc(x)}" ${x===(c||'')?'selected':''}>${x||'— עבור מה? —'}</option>`).join('');
-  return `<div class="sec rpsec"><h3>🕒 חיובים שממתינים לאישור (${rp.length})</h3>
-    <div class="hintxt">נכנסו מהאשראי וטרם אושרו. בחר עבור מה ולחץ "הכנס" — ייכנס כתרומה בכרטיס.</div>
+  const kv=ip.length?`<div class="hintxt" style="margin-top:8px"><b>🕯️ שמות לקוויטל שהגיעו מהאתר</b> — ערוך אם צריך ולחץ "הוסף לקוויטל".</div>
+    ${ip.map(x=>`<div class="rpitem kvpend" data-iid="${x.id}">
+      <div class="rphd">🕯️ בקשה מהאתר${x.received?(' · '+esc(x.received)):''}${x.subject?(' · <span class="ensm">'+esc(x.subject)+'</span>'):''}</div>
+      <textarea class="ipnames" rows="3">${esc(x.names||'')}</textarea>
+      <div class="intbtns"><button class="btn sm ipok">➕ הוסף לקוויטל</button><button class="btn sm ghost ipskip">דלג</button></div>
+    </div>`).join('')}`:'';
+  const ch=rp.length?`<div class="hintxt" style="margin-top:8px"><b>💳 חיובים מהאשראי</b> — בחר עבור מה ולחץ "הכנס".</div>
     ${rp.map(r=>`<div class="rpitem" data-tid="${esc(r.tid)}">
       <div class="rphd"><b>$${esc(r.amount||'')}</b> · ${esc(r.date||'')} <span class="givemeth">${esc(r.source||'')}</span>${+r.recurring?' <span class="fbchip on">🔁 הוראת קבע</span>':''}</div>
       <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category)}</select></label>
@@ -814,10 +838,29 @@ function reconPendHTML(d){
         <label class="fld"><span>יום</span><select class="rpdd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
         <label class="fld"><span>שנה עברית</span><select class="rpyr">${heYearOpts()}</select></label>
         <label class="fld"><span>🕯️ שמות לתעודת הפרנס</span><input class="rpded" placeholder="שמות ובקשות"></label></div>
-    </div>`).join('')}</div>`;
+    </div>`).join('')}`:'';
+  return `<div class="sec rpsec"><h3>🕒 ממתין לטיפול (${rp.length+ip.length})</h3>${kv}${ch}</div>`;
 }
 function wireReconPend(d,body){
-  body.querySelectorAll('.rpitem').forEach(el=>{
+  const refresh=async()=>{await load();const x=DB.find(y=>y.id===d.id);
+    if(x){d.recon_pending=x.recon_pending;d.intake_pending=x.intake_pending;d.donations=x.donations;d.prayers=x.prayers;d.parnes=x.parnes;d.transactions=x.transactions;}
+    cardDonations(d,body);if(tab==='donors')renderDonors();};
+  // בקשות קוויטל מהאתר
+  body.querySelectorAll('.kvpend').forEach(el=>{
+    const ta=el.querySelector('.ipnames');
+    el.querySelector('.ipok').onclick=async()=>{
+      const names=ta.value.trim(); if(!names){toast('אין שמות');return;}
+      const b=el.querySelector('.ipok'); b.disabled=true; b.textContent='מוסיף…';
+      const r=await api('POST','/api/intake/'+el.dataset.iid+'/attach',{donor_id:d.id,names});
+      if(!r||!r.ok){b.disabled=false;b.textContent='➕ הוסף לקוויטל';toast('לא נוסף');return;}
+      await refresh(); toast('נוסף לקוויטל ✓');
+    };
+    el.querySelector('.ipskip').onclick=async()=>{
+      await api('PUT','/api/intake/'+el.dataset.iid,{status:'handled'});
+      await refresh(); toast('סומן כטופל');
+    };
+  });
+  body.querySelectorAll('.rpitem[data-tid]').forEach(el=>{
     const sel=el.querySelector('.rpcat'),day=el.querySelector('.rpday');
     const upd=()=>{day.classList.toggle('hidden',!RPARNES.includes(sel.value));};
     sel.onchange=upd; upd();
@@ -832,9 +875,7 @@ function wireReconPend(d,body){
       }
       const r=await api('POST','/api/recon/'+encodeURIComponent(el.dataset.tid),payload);
       if(!r||!r.ok){b.disabled=false;b.textContent='✓ הכנס לכרטיס';toast('לא נכנס'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):''));return;}
-      await load(); const dd2=DB.find(x=>x.id===d.id);
-      if(dd2){d.recon_pending=dd2.recon_pending;d.donations=dd2.donations;d.parnes=dd2.parnes;d.transactions=dd2.transactions;}
-      toast('נכנס לכרטיס ✓'); cardDonations(d,body); if(tab==='donors')renderDonors();
+      await refresh(); toast('נכנס לכרטיס ✓');
     };
   });
 }

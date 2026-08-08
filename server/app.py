@@ -1239,6 +1239,26 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
+    # בקשות קוויטל מהאתר שטרם צורפו — לאישור ישירות מכרטיס התורם
+    for d in donors: d['intake_pending'] = []
+    try:
+        emap = {}
+        for d in donors:
+            for e in re.split(r'[;,\s]+', (d['email'] or '').lower()):
+                e = e.strip()
+                if '@' not in e:
+                    continue
+                if e in emap and emap[e] != d['id']:
+                    emap[e] = None          # כתובת אצל שני תורמים — לא משייכים לבד
+                elif e not in emap:
+                    emap[e] = d['id']
+        for r in c.execute("""SELECT id,from_name,from_email,subject,received,names,donor_id FROM intake
+                              WHERE COALESCE(status,'')<>'handled' AND COALESCE(TRIM(names),'')<>''"""):
+            did = r['donor_id'] or emap.get((r['from_email'] or '').strip().lower())
+            if did and did in byid:
+                byid[did]['intake_pending'].append(dict(r))
+    except Exception:
+        pass
     for d in donors: d['files'] = []
     parnes_files, contact_files, task_files, don_files, tx_files = {}, {}, {}, {}, {}
     try:
