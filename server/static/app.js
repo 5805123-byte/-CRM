@@ -1875,7 +1875,8 @@ function renderTasksTab(){
   renews.sort((a,b)=>(a.r.date||'').localeCompare(b.r.date||''));
   const renewSec=renews.length?`<div class="misshead" style="margin-top:10px">🔴 חידוש שותפות יש"ז מתקרב (${renews.length})</div>
     <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
-  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${renewSec}${debtSec}
+  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>${renewSec}${debtSec}
     <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
       <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
@@ -1918,6 +1919,16 @@ function renderTasksTab(){
     const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business).includes(s)).slice(0,8);
     ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
+  const tms=document.getElementById('tk_mailsync');
+  if(tms)tms.onclick=async()=>{
+    tms.disabled=true;tms.textContent='מושך מיילים…';
+    const r=await api('POST','/api/mail/contacts_sync',{});
+    tms.disabled=false;tms.textContent='📥 משוך מיילים מהתיבה ותייק אצל התורמים';
+    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
+    if(r.new)await load();
+    toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
+    render();
+  };
   const ntF=pendFiles('nt_files','nt_file');
   document.getElementById('nt_add').onclick=async()=>{
     const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();

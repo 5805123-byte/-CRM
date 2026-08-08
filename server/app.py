@@ -1359,6 +1359,17 @@ class H(BaseHTTPRequestHandler):
                 if not r['donor_id']:
                     x['sugg_last'] = _he_sugg(r['last'])
                     x['sugg_first'] = _he_sugg(r['first'])
+                # שמות קוויטל שהתורם שלח מהאתר — לפי אותה כתובת מייל
+                x['kv_names'] = ''
+                em = (r['email'] or '').strip().lower()
+                if em:
+                    try:
+                        nm = [q['names'] for q in con.execute(
+                            """SELECT names FROM intake WHERE lower(TRIM(from_email))=?
+                               AND COALESCE(TRIM(names),'')<>'' ORDER BY id DESC LIMIT 3""", (em,))]
+                        x['kv_names'] = '\n'.join(dict.fromkeys('\n'.join(nm).split('\n'))).strip()
+                    except Exception:
+                        pass
                 if r['donor_id']:
                     d = con.execute("SELECT last,first,addr,category,tier,kv_month,kv_year FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
                     if d:
@@ -1842,6 +1853,19 @@ class H(BaseHTTPRequestHandler):
             if b.get('update_addr') and (row['addr'] or row['city'] or row['zip']):
                 cur.execute("UPDATE donors SET addr=?, city=?, country=?, zip=? WHERE id=?",
                             (row['addr'] or '', row['city'] or '', r_state, row['zip'] or '', did))
+            # שמות הקוויטל שהתורם שלח מהאתר — צירוף לכרטיס שלו
+            kvt = (b.get('kv_text') or '').strip()
+            if b.get('attach_kv') and kvt:
+                dt = cur.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
+                have = {(p['text'] or '').strip() for p in
+                        cur.execute("SELECT text FROM prayers WHERE donor_id=?", (did,))}
+                for ln in [l.strip() for l in kvt.split('\n') if l.strip()]:
+                    if ln not in have:      # בלי כפילויות
+                        cur.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)",
+                                    (did, ln, (dt['tier'] if dt else '') or ''))
+                        have.add(ln)
+                cur.execute("UPDATE intake SET donor_id=?, status='handled' WHERE lower(TRIM(from_email))=? AND COALESCE(donor_id,0)=0",
+                            (did, (row['email'] or '').strip().lower()))
             # תאריך: '01-Jul-2026' -> '2026-07'
             MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
             dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')

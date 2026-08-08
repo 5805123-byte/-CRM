@@ -35,6 +35,8 @@
   .fld input,.fld select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font-family:inherit;font-size:.92rem}
   .two{display:flex;gap:8px}.two>*{flex:1}
   .addrbox{background:var(--gold-soft);border:1px dashed var(--gold);border-radius:9px;padding:8px 10px;font-size:.84rem;margin:7px 0;direction:ltr;text-align:right}
+  .kvbox{background:#f4f1ff;border:1px solid #b9a9f0;border-radius:9px;padding:9px 11px;font-size:.86rem;margin:7px 0}
+  .kvbox textarea{width:100%;margin-top:6px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:.88rem;background:#fff;color:var(--ink);line-height:1.5}
   .addrbox b{color:var(--gold)}
   .chk{display:flex;align-items:center;gap:7px;font-size:.86rem;margin:6px 0;cursor:pointer}
   .txn{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding:8px 0;flex-wrap:wrap}
@@ -228,6 +230,9 @@ function groupCard(k,txs){
         <label class="fld"><span>מתי</span><input type="date" class="ntd" value="${esc(TODAY)}"></label></div>
       <div class="sub" style="font-size:.78rem">ייווצר כרטיס חדש עם השם האנגלי, הטלפון, האימייל והכתובת מהאתר.</div>
     </div>`;
+  const kvHtml = t0.kv_names ? `<div class="kvbox">🕯️ <b>שמות לקוויטל שנשלחו מהאתר:</b>
+      <textarea class="kvtext" rows="${Math.min(6,t0.kv_names.split('\n').length+1)}">${esc(t0.kv_names)}</textarea>
+      <label class="chk"><input type="checkbox" class="kvadd" checked> צרף את השמות לקוויטל של התורם</label></div>` : '';
   let addrHtml='';
   if(siteAddr){
     const stored = matched? (matched.match_addr||'') : '';
@@ -257,7 +262,7 @@ function groupCard(k,txs){
     </div>`;
   }).join('');
   return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
-    ${head}${missHtml}${matchHtml}${assign}${addrHtml}${rows}
+    ${head}${missHtml}${matchHtml}${assign}${kvHtml}${addrHtml}${rows}
     ${allDone?'':`<button class="btn go">✓ הכנס את כל התרומות של ${esc((t0.first+' '+t0.last).trim())}</button>`}
   </div>`;
 }
@@ -318,6 +323,8 @@ function wireGroup(k,txs){
   btn.onclick=async()=>{
     if(!state.donorId && !state.createNew){ toast('בחר תורם קיים או מלא שם משפחה לכרטיס חדש'); return; }
     let upaddr = card.querySelector('.upaddr'); upaddr = upaddr? upaddr.checked : false;
+    const kvText = card.querySelector('.kvtext'); const kvChk = card.querySelector('.kvadd');
+    let kvAdd = kvChk ? kvChk.checked : false;
     const catSels=[...card.querySelectorAll('.txn')];
     btn.disabled=true; btn.textContent='מכניס…';
     let donorId=state.donorId;
@@ -334,12 +341,13 @@ function wireGroup(k,txs){
       if(isBldg(catVal)){const bl=txEl.querySelector('.bldgitem');const item=bl?bl.value.trim():'';if(item){if(!BUILDING_ITEMS.includes(item)){await api('POST','/api/building_items',{name:item});BUILDING_ITEMS.unshift(item);}catVal=catVal+' — '+item;}}
       const dedEl=txEl.querySelector('.pyded');
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
+      if(kvAdd&&kvText&&kvText.value.trim()){ body.attach_kv=true; body.kv_text=kvText.value.trim(); }
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
       if(donorId) body.donor_id=donorId;
       else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||'',task:state.nt||'',task_date:state.ntd||''}; }
       const r=await api('POST','/api/recon/'+tid, body);
       if(r.donor_id){ donorId=r.donor_id; }
-      upaddr=false; // רק פעם אחת
+      upaddr=false; kvAdd=false; // רק פעם אחת
     }
     toast('הוכנס ✓'); await load();
   };
