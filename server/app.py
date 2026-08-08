@@ -1229,6 +1229,16 @@ def get_all():
                 byid[r['donor_id']]['transactions'].append(tr)
     except Exception:
         pass
+    # חיובים מאוטרייז/בנק ווסט שטרם אושרו — כדי לאשר אותם ישר מכרטיס התורם
+    for d in donors: d['recon_pending'] = []
+    try:
+        for r in c.execute("""SELECT tid,first,last,amount,date,source,category,recurring,donor_id FROM recon
+                              WHERE COALESCE(processed,0)=0 AND donor_id IS NOT NULL
+                                AND (status IS NULL OR status='settled')"""):
+            if r['donor_id'] in byid:
+                byid[r['donor_id']]['recon_pending'].append(dict(r))
+    except Exception:
+        pass
     for d in donors: d['files'] = []
     parnes_files, contact_files, task_files, don_files, tx_files = {}, {}, {}, {}, {}
     try:

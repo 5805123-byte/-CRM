@@ -585,7 +585,7 @@ function openDonor(d,startTab){
     <div class="ctabs">
       <button class="ctab" data-c="details">פרטים</button>
       <button class="ctab" data-c="kvittel">🕯️ קוויטל</button>
-      <button class="ctab" data-c="donations">💳 תרומות</button>
+      <button class="ctab" data-c="donations">💳 תרומות${(d.recon_pending||[]).length?` <b class="badge">${(d.recon_pending||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="building">🏛️ בניין${(d.building||[]).length?` <b class="badge">${(d.building||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="contact">📞 קשר</button>
       <button class="ctab" data-c="tasks">📋 משימות${nopen?` <b class="badge">${nopen}</b>`:''}</button>
@@ -797,12 +797,54 @@ function cardKvittel(d,body){
   if(kvm)kvm.onchange=saveOcc; if(kvy)kvy.onchange=saveOcc;
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
 }
+/* חיובים מאוטרייז/בנק ווסט שטרם אושרו — אישור ישירות מכרטיס התורם */
+const RCATS=['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','בניין'];
+const RPARNES=['פרנס לילה','חדר קפה','ארוחת בוקר'];
+function reconPendHTML(d){
+  const rp=(d.recon_pending||[]); if(!rp.length)return '';
+  const opts=c=>RCATS.concat(CAMPAIGNS||[]).filter((v,i,a)=>a.indexOf(v)===i)
+      .map(x=>`<option value="${esc(x)}" ${x===(c||'')?'selected':''}>${x||'— עבור מה? —'}</option>`).join('');
+  return `<div class="sec rpsec"><h3>🕒 חיובים שממתינים לאישור (${rp.length})</h3>
+    <div class="hintxt">נכנסו מהאשראי וטרם אושרו. בחר עבור מה ולחץ "הכנס" — ייכנס כתרומה בכרטיס.</div>
+    ${rp.map(r=>`<div class="rpitem" data-tid="${esc(r.tid)}">
+      <div class="rphd"><b>$${esc(r.amount||'')}</b> · ${esc(r.date||'')} <span class="givemeth">${esc(r.source||'')}</span>${+r.recurring?' <span class="fbchip on">🔁 הוראת קבע</span>':''}</div>
+      <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category)}</select></label>
+        <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
+      <div class="rpday hidden"><div class="two"><label class="fld"><span>חודש עברי</span><select class="rpmon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>יום</span><select class="rpdd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
+        <label class="fld"><span>שנה עברית</span><select class="rpyr">${heYearOpts()}</select></label>
+        <label class="fld"><span>🕯️ שמות לתעודת הפרנס</span><input class="rpded" placeholder="שמות ובקשות"></label></div>
+    </div>`).join('')}</div>`;
+}
+function wireReconPend(d,body){
+  body.querySelectorAll('.rpitem').forEach(el=>{
+    const sel=el.querySelector('.rpcat'),day=el.querySelector('.rpday');
+    const upd=()=>{day.classList.toggle('hidden',!RPARNES.includes(sel.value));};
+    sel.onchange=upd; upd();
+    el.querySelector('.rpok').onclick=async()=>{
+      if(!sel.value){toast('בחר עבור מה');return;}
+      const b=el.querySelector('.rpok'); b.disabled=true; b.textContent='מכניס…';
+      const payload={donor_id:d.id,category:sel.value};
+      if(RPARNES.includes(sel.value)){
+        const mo=el.querySelector('.rpmon').value,dd=+el.querySelector('.rpdd').value;
+        payload.month=mo; payload.day=dd; payload.hyear=el.querySelector('.rpyr').value;
+        payload.date_text=heDay(dd)+' '+mo; payload.dedication=el.querySelector('.rpded').value.trim();
+      }
+      const r=await api('POST','/api/recon/'+encodeURIComponent(el.dataset.tid),payload);
+      if(!r||!r.ok){b.disabled=false;b.textContent='✓ הכנס לכרטיס';toast('לא נכנס'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):''));return;}
+      await load(); const dd2=DB.find(x=>x.id===d.id);
+      if(dd2){d.recon_pending=dd2.recon_pending;d.donations=dd2.donations;d.parnes=dd2.parnes;d.transactions=dd2.transactions;}
+      toast('נכנס לכרטיס ✓'); cardDonations(d,body); if(tab==='donors')renderDonors();
+    };
+  });
+}
 function cardDonations(d,body){
   const isIZ=d.tier==='יששכר_זבולון';
   const cur=curSym(d);
   const tot=donorTotals(d);
   body.innerHTML=`
     ${izSummaryHTML(d)}
+    ${reconPendHTML(d)}
     <div class="sec onlinebox"><h3>💳 גבייה אונליין</h3>
       <div class="hintxt">דף תרומה מאובטח — פתחו אותו מהמשרד למילוי פרטי אשראי, או שלחו לתורם קישור אישי.</div>
       <div class="obtns"><button class="btn" id="on_open">🌐 פתח דף גבייה</button>
@@ -840,6 +882,7 @@ function cardDonations(d,body){
     <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>${cur}${tot.all}</b></span><span>השנה (${GREGYEAR}): <b>${cur}${tot.year}</b></span></div>
       <div class="dnhead">📜 היסטוריית תרומות</div><div id="donations"></div></div>`;
   if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
+  wireReconPend(d,body);
   renderDonations(d); renderTransactions(d); renderParnesEdit(d); renderPledges(d);
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   document.getElementById('dn_date').value=todayStr();  // ברירת מחדל: היום
