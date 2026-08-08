@@ -563,6 +563,65 @@ def _snippet(body, n=600):
     return t[:n] + ('…' if len(t) > n else '')
 
 
+# שורות שמסמנות תחילת ציטוט/שרשור — כל מה שאחריהן זה מה *שאנחנו* כתבנו, לא התורם
+_QUOTE_START = re.compile(
+    r'^\s*(?:'
+    r'>|'
+    r'-{2,}\s*Original Message|'
+    r'-{3,}\s*Forwarded message|'
+    r'_{5,}|'
+    r'On\s.{5,120}?\bwrote:|'
+    r'ב.{0,60}?(?:כתב|כתבה|כתבו)\s*:|'
+    r'(?:From|Sent|To|Subject)\s*:\s|'
+    r'(?:מאת|נשלח|אל|נושא)\s*:\s|'
+    r'בתאריך\s|'
+    r'Sent from my |נשלח מה?[־\s]'
+    r')', re.I)
+# פתיחים וסיומים שאינם תוכן
+_GREET = re.compile(r'^\s*(?:בס["״]?ד|ב["״]?ה|שלום וברכה|שלום(?:\s+רב)?|היי|הי|לכבוד|'
+                    r'hi|hello|dear|good\s+(?:morning|afternoon|evening))\b[\s,!:.-]*'
+                    r'(?:[\wא-ת\'"׳״]+(?:\s+[\wא-ת\'"׳״]+){0,2}\s*[,:])?\s*', re.I)   # גם השם שאחרי הפתיח
+_SIGNOFF = re.compile(r'^\s*(?:בברכה|בכבוד רב|תודה רבה|תודה מראש|תודה|כל טוב|בהצלחה|יישר כוח|'
+                      r'thanks|thank you|thx|best regards|regards|sincerely|kind regards|warmly)\b[\s,!.-]*$', re.I)
+
+
+def _strip_quoted(text):
+    """משאיר רק את מה שהתורם עצמו כתב — חותך את השרשור המצוטט שמתחתיו."""
+    out = []
+    for ln in (text or '').split('\n'):
+        if _QUOTE_START.match(ln):
+            break
+        out.append(ln)
+    return '\n'.join(out).strip()
+
+
+def _one_line(body, n=150):
+    """תמצית של שורה אחת ממה שהתורם כתב — בלי ברכות פתיחה, חתימות וציטוטים."""
+    txt = _strip_quoted(body)
+    lines = []
+    for ln in txt.split('\n'):
+        ln = re.sub(r'\s+', ' ', ln).strip()
+        if not ln or _SIGNOFF.match(ln):
+            continue
+        if re.match(r'^[-=_*·•\s]+$', ln):        # קווי הפרדה
+            continue
+        if _EMAIL_RE.fullmatch(ln) or re.fullmatch(r'[\d\s()+-]{7,}', ln):   # מייל/טלפון בלבד
+            continue
+        ln = _GREET.sub('', ln).strip()
+        if ln:
+            lines.append(ln)
+    if not lines:
+        return ''
+    s = ' '.join(lines)
+    # המשפט הראשון, ואם הוא קצר מדי — גם השני
+    parts = re.split(r'(?<=[.!?۔])\s+|\n', s)
+    gist = parts[0].strip() if parts else s
+    if len(gist) < 40 and len(parts) > 1:
+        gist = (gist + ' ' + parts[1].strip()).strip()
+    gist = re.sub(r'\s+', ' ', gist).strip(' .,-')
+    return gist[:n] + ('…' if len(gist) > n else '')
+
+
 _SEQ_RE = re.compile(rb'^\s*(\d+)\s+\(')
 
 
@@ -618,7 +677,10 @@ def sync_contacts(con, status=None):
             except Exception:
                 continue
             _, femail = parseaddr(_dec(hmsg.get('From')))
-            did = emap.get((femail or '').strip().lower())
+            femail = (femail or '').strip().lower()
+            if femail == (user or '').strip().lower():
+                continue                        # מייל ששלחנו אנחנו — לא מתייקים
+            did = emap.get(femail)
             if not did:
                 continue
             mid = (hmsg.get('Message-ID') or '').strip() or f'{user}:{seq.decode()}'
@@ -639,10 +701,13 @@ def sync_contacts(con, status=None):
                     body = _extract_text(email.message_from_bytes(md[0][1]))
             except Exception:
                 body = ''
-            summary = '📧 ' + subject + (('\n' + _snippet(body)) if body else '')
+            gist = _one_line(body)
+            summary = '📧 ' + subject + ((' — ' + gist) if gist else '')
+            full = _strip_quoted(body)          # רק מה שהתורם כתב, בלי השרשור שלנו
             try:
-                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id) VALUES(?,?,?,?,'',?)",
-                            (did, dstr, 'אימייל', summary, mid))
+                con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body)
+                               VALUES(?,?,?,?,'',?,?)""",
+                            (did, dstr, 'אימייל', summary, mid, full))
                 new += 1
             except Exception:
                 pass                            # כפילות — מדלגים

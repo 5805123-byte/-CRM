@@ -1122,7 +1122,7 @@ function renderPartners(d){
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}
+  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא</summary><pre>${esc(c.body)}</pre></details>`:''}
     <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
       <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button></div>
     <div class="teditpanel hidden" data-rem="${c.id}">

@@ -114,6 +114,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
     except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN body TEXT")     # גוף המייל (רק מה שהתורם כתב)
+    except Exception: pass
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
@@ -1153,6 +1155,26 @@ def ensure_schema():
             print(f'  dedup avreichim: {ndel}')
     except Exception as e:
         print('  partner dedup error:', e)
+
+    # מיילים שכבר תויקו לפני שהיה תמצות — מקצרים לשורה אחת ומורידים את השרשור שלנו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v1'").fetchone():
+            import gmail_intake as _gi
+            nfix = 0
+            for r in con.execute("""SELECT id,summary FROM contacts_log
+                                    WHERE channel='אימייל' AND COALESCE(summary,'') LIKE '%' || char(10) || '%'"""):
+                s = r['summary'] or ''
+                head, _, rest = s.partition('\n')
+                subj = head[2:].strip() if head.startswith('📧') else head.strip()
+                gist = _gi._one_line(rest)
+                new_s = '📧 ' + subj + ((' — ' + gist) if gist else '')
+                con.execute("UPDATE contacts_log SET summary=?, body=COALESCE(NULLIF(body,''),?) WHERE id=?",
+                            (new_s, _gi._strip_quoted(rest), r['id']))
+                nfix += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('maillog_gist_v1')")
+            print(f'  תמצות מיילים קיימים: {nfix}')
+    except Exception as e:
+        print('  mail gist error:', e)
 
     con.commit(); con.close()
 
