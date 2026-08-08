@@ -1471,6 +1471,12 @@ class H(BaseHTTPRequestHandler):
                 out.append(x)
             con.close()
             return self._send(200, {'configured': _intake_configured(), 'items': out})
+        if self.path == '/api/mail/contacts_sync/status':
+            try:
+                import gmail_intake
+                return self._send(200, dict(gmail_intake.MAIL_STATUS))
+            except Exception as e:
+                return self._send(200, {'running': False, 'done': True, 'error': str(e)})
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -1664,13 +1670,33 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             con = db(); res = gmail_intake.sync(con); con.close()
             return self._send(200, res)
-        if self.path == '/api/mail/contacts_sync':   # תיוק מיילים מתורמים ליומן הקשר שלהם
+        if self.path == '/api/mail/contacts_sync':   # תיוק מיילים מתורמים — רץ ברקע כדי לא ליפול בטיימאאוט
             try:
-                import gmail_intake
+                import gmail_intake, threading
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
-            con = db(); res = gmail_intake.sync_contacts(con); con.close()
-            return self._send(200, res)
+            if not gmail_intake.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured'})
+            stt = gmail_intake.MAIL_STATUS
+            if stt.get('running'):
+                return self._send(200, {'ok': True, 'started': False, 'already': True, 'status': stt})
+            stt.update({'running': True, 'new': 0, 'scanned': 0, 'total': 0, 'done': False, 'error': ''})
+            def _run():
+                c = db()
+                try:
+                    r = gmail_intake.sync_contacts(c, stt)
+                    if not r.get('ok'):
+                        stt['error'] = r.get('detail') or r.get('error') or 'שגיאה'
+                    else:
+                        stt['new'] = r.get('new', stt.get('new', 0))
+                except Exception as e:
+                    stt['error'] = '%s: %s' % (type(e).__name__, e)
+                finally:
+                    try: c.close()
+                    except Exception: pass
+                    stt['running'] = False; stt['done'] = True
+            threading.Thread(target=_run, daemon=True).start()
+            return self._send(200, {'ok': True, 'started': True})
         m = re.match(r'/api/intake/(\d+)/attach$', self.path)
         if m:
             iid = int(m.group(1))

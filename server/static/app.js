@@ -214,6 +214,33 @@ function uploadBlob(kind,refId,f){return new Promise(res=>{
   rd.onerror=()=>res(false);
   rd.readAsDataURL(f);});}
 function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;toast('מעלה…');uploadBlob(kind,refId,f).then(ok=>{if(ok)toast('הועלה ✓');inputEl.value='';cb&&cb();});}
+// ===== משיכת מיילים ותיוקם אצל התורמים — רצה ברקע בשרת, כאן עוקבים אחרי ההתקדמות =====
+async function runMailSync(btn){
+  const label=btn?btn.textContent:'';
+  const set=t=>{if(btn)btn.textContent=t;};
+  if(btn)btn.disabled=true; set('מתחיל…');
+  const r=await api('POST','/api/mail/contacts_sync',{});
+  if(!r||!r.ok){
+    if(btn){btn.disabled=false;set(label);}
+    toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת (GMAIL_USER / GMAIL_APP_PASSWORD)':'שגיאה: '+((r&&(r.detail||r.error))||''));
+    return;
+  }
+  let last=0;
+  for(let i=0;i<900;i++){                       // עד ~30 דקות, בדיקה כל 2 שניות
+    await new Promise(res=>setTimeout(res,2000));
+    let s;try{s=await api('GET','/api/mail/contacts_sync/status');}catch(e){continue;}
+    if(!s)continue;
+    last=s.new||0;
+    if(s.running){set(s.total?('מתייק… '+last+'/'+s.total):('סורק… '+(s.scanned||0)+' מיילים'));continue;}
+    if(btn){btn.disabled=false;set(label);}
+    if(s.error){toast('שגיאת משיכה: '+s.error);return;}
+    if(last)await load();
+    toast(last?('תויקו '+last+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
+    render();return;
+  }
+  if(btn){btn.disabled=false;set(label);}
+  toast('המשיכה עדיין רצה ברקע — בדוק שוב בעוד כמה דקות');
+}
 // ===== קבצים שהגיעו דרך "שיתוף" מוואטסאפ/גלריה (Web Share Target) =====
 async function takeSharedFiles(){
   try{
@@ -858,12 +885,7 @@ function cardContact(d,body){
   const msb=document.getElementById('cl_mailsync');
   if(msb)msb.onclick=async()=>{
     if(!(d.email||'').trim()){toast('אין כתובת מייל בכרטיס — הוסף אותה כדי לתייק מיילים');return;}
-    msb.disabled=true;msb.textContent='מושך…';
-    const r=await api('POST','/api/mail/contacts_sync',{});
-    msb.disabled=false;msb.textContent='📥 משוך מיילים';
-    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
-    await refresh();
-    toast(r.new?('תויקו '+r.new+' מיילים חדשים ✓'):'אין מיילים חדשים לתיוק');
+    await runMailSync(msb); await refresh();
   };
   document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
     if(clF.arr.length){toast('מעלה קבצים…');for(const f of clF.arr)await uploadBlob('contact',r.id,f);clF.reset();await refresh();toast('נשמר עם האסמכתאות ✓');return;}
@@ -1034,14 +1056,7 @@ function renderCharges(){
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   const cms=document.getElementById('ch_mailsync');
-  if(cms)cms.onclick=async()=>{
-    cms.disabled=true;cms.textContent='מושך מיילים…';
-    const r=await api('POST','/api/mail/contacts_sync',{});
-    cms.disabled=false;cms.textContent='📥 משוך מיילים מהתיבה ותייק אצל התורמים';
-    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
-    if(r.new)await load();
-    toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
-  };
+  if(cms)cms.onclick=()=>runMailSync(cms);
   // משבצת נפרדת לכל שיטת תשלום — נטענת מסיכום ההתאמה
   api('GET','/api/recon/summary').then(gs=>{const box=document.getElementById('reconboxes');if(!box||!Array.isArray(gs))return;
     box.innerHTML=gs.map(g=>{const active=g.total>0;
@@ -1930,14 +1945,7 @@ function renderTasksTab(){
     ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
   const tms=document.getElementById('tk_mailsync');
-  if(tms)tms.onclick=async()=>{
-    tms.disabled=true;tms.textContent='מושך מיילים…';
-    const r=await api('POST','/api/mail/contacts_sync',{});
-    tms.disabled=false;tms.textContent='📥 משוך מיילים מהתיבה ותייק אצל התורמים';
-    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
-    if(r.new)await load();
-    toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
-  };
+  if(tms)tms.onclick=()=>runMailSync(tms);
   const ntF=pendFiles('nt_files','nt_file');
   document.getElementById('nt_add').onclick=async()=>{
     const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();

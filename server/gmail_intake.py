@@ -563,8 +563,35 @@ def _snippet(body, n=600):
     return t[:n] + ('…' if len(t) > n else '')
 
 
-def sync_contacts(con):
+_SEQ_RE = re.compile(rb'^\s*(\d+)\s+\(')
+
+
+def _batch_headers(M, ids, chunk=300):
+    """מוריד כותרות בקבוצות — הרבה יותר מהיר ממייל־אחר־מייל."""
+    out = []
+    for i in range(0, len(ids), chunk):
+        part = b','.join(ids[i:i + chunk]).decode()
+        try:
+            typ, data = M.fetch(part, '(BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT MESSAGE-ID)])')
+        except Exception:
+            continue
+        if typ != 'OK' or not data:
+            continue
+        for item in data:
+            if isinstance(item, tuple) and len(item) >= 2 and item[1]:
+                m = _SEQ_RE.match(item[0] or b'')
+                if m:
+                    out.append((m.group(1), item[1]))
+    return out
+
+
+# מצב המשיכה — כדי שהממשק יוכל להציג התקדמות בלי להמתין לבקשה ארוכה
+MAIL_STATUS = {'running': False, 'new': 0, 'scanned': 0, 'total': 0, 'done': False, 'error': ''}
+
+
+def sync_contacts(con, status=None):
     """מתייק את כל המיילים שהתקבלו מתורמים (לפי כתובת המייל בלבד) ליומן הקשר שלהם."""
+    st = status if status is not None else {}
     user = os.environ.get('GMAIL_USER')
     pw = os.environ.get('GMAIL_APP_PASSWORD')
     if not (user and pw):
@@ -581,42 +608,55 @@ def sync_contacts(con):
         M.select(mailbox)
         typ, data = M.search(None, 'SINCE', since)
         ids = data[0].split() if typ == 'OK' else []
-        for i in ids:
-            # תחילה רק הכותרות — כדי לא להוריד מיילים שאינם של תורמים
-            typ, hd = M.fetch(i, '(BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT MESSAGE-ID)])')
-            if typ != 'OK' or not hd or not hd[0]:
+        st['total'] = len(ids)
+        heads = _batch_headers(M, ids)          # שלב 1: כותרות בלבד, בקבוצות
+        st['scanned'] = len(heads)
+        todo = []
+        for seq, raw in heads:                  # שלב 2: מסננים רק מיילים של תורמים מזוהים
+            try:
+                hmsg = email.message_from_bytes(raw)
+            except Exception:
                 continue
-            hmsg = email.message_from_bytes(hd[0][1])
             _, femail = parseaddr(_dec(hmsg.get('From')))
-            femail = (femail or '').strip().lower()
-            did = emap.get(femail)
+            did = emap.get((femail or '').strip().lower())
             if not did:
-                continue                      # לא זוהה תורם בוודאות — מדלגים
-            mid = (hmsg.get('Message-ID') or '').strip() or f'{user}:{i.decode()}'
+                continue
+            mid = (hmsg.get('Message-ID') or '').strip() or f'{user}:{seq.decode()}'
             if con.execute("SELECT 1 FROM contacts_log WHERE msg_id=?", (mid,)).fetchone():
-                continue                      # כבר תויק
+                continue                        # כבר תויק
             subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
             try:
-                dt = parsedate_to_datetime(hmsg.get('Date'))
-                dstr = dt.date().isoformat()
+                dstr = parsedate_to_datetime(hmsg.get('Date')).date().isoformat()
             except Exception:
                 dstr = datetime.date.today().isoformat()
-            typ, md = M.fetch(i, '(RFC822)')
+            todo.append((seq, did, mid, subject, dstr))
+        st['total'] = len(todo)
+        for n, (seq, did, mid, subject, dstr) in enumerate(todo, 1):   # שלב 3: גוף רק למה שנכנס
             body = ''
-            if typ == 'OK' and md and md[0]:
-                try: body = _extract_text(email.message_from_bytes(md[0][1]))
-                except Exception: body = ''
+            try:
+                typ, md = M.fetch(seq.decode(), '(RFC822)')
+                if typ == 'OK' and md and md[0]:
+                    body = _extract_text(email.message_from_bytes(md[0][1]))
+            except Exception:
+                body = ''
             summary = '📧 ' + subject + (('\n' + _snippet(body)) if body else '')
-            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id) VALUES(?,?,?,?,'',?)",
-                        (did, dstr, 'אימייל', summary, mid))
-            new += 1
-        M.logout()
+            try:
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id) VALUES(?,?,?,?,'',?)",
+                            (did, dstr, 'אימייל', summary, mid))
+                new += 1
+            except Exception:
+                pass                            # כפילות — מדלגים
+            st['new'] = new
+            if n % 20 == 0:
+                con.commit()
+        try: M.logout()
+        except Exception: pass
         con.commit()
         return {'ok': True, 'new': new}
     except imaplib.IMAP4.error as e:
         return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
     except Exception as e:
-        return {'ok': False, 'error': 'sync_failed', 'detail': str(e)}
+        return {'ok': False, 'error': 'sync_failed', 'detail': '%s: %s' % (type(e).__name__, e)}
 
 
 def sync(con):
