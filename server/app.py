@@ -1829,7 +1829,7 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 con.close(); return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             if not he:
-                con.close(); return self._send(200, {'ok': False, 'error': 'no_key', 'text': src})
+                con.close(); return self._send(200, {'ok': False, 'error': 'שירות התרגום לא זמין כרגע'})
             con.execute("UPDATE contacts_log SET body_he=? WHERE id=?", (he, cid))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'he': he})

@@ -1152,11 +1152,7 @@ function renderContacts(d){
     const r=await api('POST','/api/contact/'+b.dataset.cid+'/translate',{});
     if(r&&r.ok&&r.he){c.body_he=r.he;renderContacts(d);toast('תורגם ✓');return;}
     b.disabled=false;b.textContent='🌐 תרגם לעברית';
-    if(r&&r.error==='no_key'){        // אין מפתח AI — פותחים מתרגם חינמי עם הטקסט מוכן
-      window.open('https://translate.google.com/?sl=auto&tl=iw&op=translate&text='+encodeURIComponent((c.body||'').slice(0,4500)),'_blank');
-      return;
-    }
-    toast('לא הצלחתי לתרגם'+((r&&r.detail)?': '+r.detail:''));
+    toast('לא הצלחתי לתרגם'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):' — נסה שוב'));
   });
   el.querySelectorAll('.clrem').forEach(b=>b.onclick=()=>{el.querySelector('.teditpanel[data-rem="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.cr_save').forEach(b=>b.onclick=async()=>{

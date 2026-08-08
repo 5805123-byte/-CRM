@@ -717,12 +717,59 @@ def _gist_he_ai(subject, txt):
         return ''
 
 
+def _split_chunks(text, size=1500):
+    """חלוקה לקטעים לפי פסקאות — לשמירה על מגבלת האורך של שירות התרגום."""
+    out, cur = [], ''
+    for para in re.split(r'(\n+)', text or ''):
+        if len(cur) + len(para) > size and cur:
+            out.append(cur); cur = ''
+        cur += para
+        while len(cur) > size:                    # פסקה ארוכה מאוד — חותכים
+            out.append(cur[:size]); cur = cur[size:]
+    if cur.strip():
+        out.append(cur)
+    return out
+
+
+def _translate_free(text, tl='iw'):
+    """תרגום ללא מפתח — דרך שירות התרגום הציבורי של גוגל, ואם נכשל דרך MyMemory."""
+    import json as _json, urllib.request as _u, urllib.parse as _p
+    parts = []
+    for chunk in _split_chunks(text, 1500):
+        if not chunk.strip():
+            parts.append(chunk); continue
+        got = ''
+        try:
+            url = ('https://translate.googleapis.com/translate_a/single'
+                   '?client=gtx&sl=auto&tl=%s&dt=t&q=%s' % (tl, _p.quote(chunk)))
+            req = _u.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with _u.urlopen(req, timeout=25) as r:
+                data = _json.loads(r.read().decode('utf-8', 'replace'))
+            got = ''.join(seg[0] for seg in (data[0] or []) if seg and seg[0])
+        except Exception:
+            got = ''
+        if not got:
+            try:
+                url = ('https://api.mymemory.translated.net/get?langpair=en|he&q=' + _p.quote(chunk[:500]))
+                with _u.urlopen(_u.Request(url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=25) as r:
+                    data = _json.loads(r.read().decode('utf-8', 'replace'))
+                got = ((data.get('responseData') or {}).get('translatedText') or '')
+            except Exception:
+                got = ''
+        if not got:
+            return ''                             # לא הצלחנו — עדיף להודיע מאשר להחזיר חלקי
+        parts.append(got)
+    return '\n'.join(p for p in parts if p is not None).strip()
+
+
 def translate_he(text):
-    """תרגום מלא לעברית דרך Claude — רק אם הוגדר ANTHROPIC_API_KEY."""
+    """תרגום מלא לעברית — Claude אם יש מפתח, אחרת שירות תרגום חינמי."""
     key = os.environ.get('ANTHROPIC_API_KEY')
     txt = (text or '').strip()
-    if not key or not txt:
+    if not txt:
         return ''
+    if not key:
+        return _translate_free(txt)
     import json as _json, urllib.request as _u
     prompt = ('תרגם את המייל הבא לעברית טבעית וברורה. שמור על מבנה הפסקאות. '
               'שמות אנשים ומקומות — תעתק לעברית. החזר רק את התרגום, בלי הקדמות.\n\n' + txt[:12000])
