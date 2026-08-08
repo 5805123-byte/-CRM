@@ -118,6 +118,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN att_checked INTEGER DEFAULT 0")  # נבדקו קבצים מצורפים
     except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN body_he TEXT")   # תרגום המייל לעברית
+    except Exception: pass
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
@@ -1810,6 +1812,27 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             dname = (last + ' ' + first).strip() or english or 'תורם חדש'
             return self._send(200, {'ok': True, 'id': did, 'from_recon': bool(rec), 'name': dname})
+        m = re.match(r'/api/contact/(\d+)/translate$', self.path)
+        if m:   # תרגום המייל לעברית ושמירתו — פעם אחת לכל מייל
+            cid = int(m.group(1))
+            con = db(); r = con.execute("SELECT body, body_he FROM contacts_log WHERE id=?", (cid,)).fetchone()
+            if not r:
+                con.close(); return self._send(404, {'error': 'not found'})
+            if (r['body_he'] or '').strip():
+                con.close(); return self._send(200, {'ok': True, 'he': r['body_he'], 'cached': True})
+            src = (b.get('text') or r['body'] or '').strip()
+            if not src:
+                con.close(); return self._send(200, {'ok': False, 'error': 'empty'})
+            try:
+                import gmail_intake as _gi
+                he = _gi.translate_he(src)
+            except Exception as e:
+                con.close(); return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            if not he:
+                con.close(); return self._send(200, {'ok': False, 'error': 'no_key', 'text': src})
+            con.execute("UPDATE contacts_log SET body_he=? WHERE id=?", (he, cid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'he': he})
         m = re.match(r'/api/contact/(\d+)/remind$', self.path)
         if m:   # יצירת תזכורת מתוך תיעוד קשר — כולל העתקת האסמכתאות (צילום אשראי, הקלטה)
             cid = int(m.group(1))

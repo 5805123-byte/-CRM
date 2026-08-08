@@ -717,6 +717,30 @@ def _gist_he_ai(subject, txt):
         return ''
 
 
+def translate_he(text):
+    """תרגום מלא לעברית דרך Claude — רק אם הוגדר ANTHROPIC_API_KEY."""
+    key = os.environ.get('ANTHROPIC_API_KEY')
+    txt = (text or '').strip()
+    if not key or not txt:
+        return ''
+    import json as _json, urllib.request as _u
+    prompt = ('תרגם את המייל הבא לעברית טבעית וברורה. שמור על מבנה הפסקאות. '
+              'שמות אנשים ומקומות — תעתק לעברית. החזר רק את התרגום, בלי הקדמות.\n\n' + txt[:12000])
+    body = _json.dumps({'model': os.environ.get('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
+                        'max_tokens': 2000,
+                        'messages': [{'role': 'user', 'content': prompt}]}).encode('utf-8')
+    req = _u.Request('https://api.anthropic.com/v1/messages', data=body,
+                     headers={'content-type': 'application/json', 'x-api-key': key,
+                              'anthropic-version': '2023-06-01'})
+    try:
+        with _u.urlopen(req, timeout=60) as r:
+            data = _json.loads(r.read())
+        parts = [c.get('text', '') for c in data.get('content', []) if c.get('type') == 'text']
+        return ' '.join(parts).strip()
+    except Exception:
+        return ''
+
+
 def _gist_he(subject, body):
     """תמצית בעברית: עברית נשארת כמו שהיא; אנגלית — AI אם מוגדר, אחרת זיהוי סוג הפנייה."""
     clean = _strip_quoted(body)

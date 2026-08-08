@@ -1123,7 +1123,11 @@ function renderPartners(d){
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא</summary><pre>${esc(c.body)}</pre></details>`:''}
+  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא</summary>
+      ${(c.body_he||'').trim()?`<pre class="mhe" data-cid="${c.id}">${esc(c.body_he)}</pre>
+        <details class="morig"><summary>הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
+      :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
+    </details>`:''}
     <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
       <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button></div>
     <div class="teditpanel hidden" data-rem="${c.id}">
@@ -1134,6 +1138,18 @@ function renderContacts(d){
     </div></div><button class="del" data-del="${c.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/contact/'+b.dataset.del);d.contacts=d.contacts.filter(x=>x.id!=b.dataset.del);renderContacts(d);});
   el.querySelectorAll('.clup').forEach(inp=>inp.onchange=()=>uploadFile('contact',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;}renderContacts(d);}));
+  el.querySelectorAll('.mtr').forEach(b=>b.onclick=async()=>{
+    const c=(d.contacts||[]).find(x=>x.id==b.dataset.cid);if(!c)return;
+    b.disabled=true;b.textContent='מתרגם…';
+    const r=await api('POST','/api/contact/'+b.dataset.cid+'/translate',{});
+    if(r&&r.ok&&r.he){c.body_he=r.he;renderContacts(d);toast('תורגם ✓');return;}
+    b.disabled=false;b.textContent='🌐 תרגם לעברית';
+    if(r&&r.error==='no_key'){        // אין מפתח AI — פותחים מתרגם חינמי עם הטקסט מוכן
+      window.open('https://translate.google.com/?sl=auto&tl=iw&op=translate&text='+encodeURIComponent((c.body||'').slice(0,4500)),'_blank');
+      return;
+    }
+    toast('לא הצלחתי לתרגם'+((r&&r.detail)?': '+r.detail:''));
+  });
   el.querySelectorAll('.clrem').forEach(b=>b.onclick=()=>{el.querySelector('.teditpanel[data-rem="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.cr_save').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.teditpanel[data-rem="'+b.dataset.id+'"]');
