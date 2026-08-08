@@ -108,6 +108,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
     except Exception: pass
+    try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
+    except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
     try: con.execute("ALTER TABLE donors ADD COLUMN kv_skip INTEGER DEFAULT 0")
     except Exception: pass
@@ -1793,11 +1795,11 @@ class H(BaseHTTPRequestHandler):
             r_src = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
             if b.get('new_donor'):
                 nd = b['new_donor']
-                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source,notes)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
                              row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
-                             b.get('category', ''), today_iso(), r_src))
+                             b.get('category', ''), today_iso(), r_src, nd.get('notes', '')))
                 did = cur.lastrowid
             if not did:
                 con.close(); return self._send(400, {'error': 'donor required'})

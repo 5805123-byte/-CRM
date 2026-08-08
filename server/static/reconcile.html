@@ -221,6 +221,7 @@ function groupCard(k,txs){
       <div style="text-align:center;color:var(--muted);font-size:.8rem;margin:6px 0">— או —</div>
       <div class="two"><label class="fld"><span>שם משפחה (עברית) *</span><input class="nl" placeholder="שם משפחה"></label>
         <label class="fld"><span>שם פרטי (עברית)</span><input class="nf" placeholder="שם פרטי"></label></div>
+      <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><input class="nn" placeholder="דרך מי הגיע / כל הערה שתרצה למצוא אחר כך"></label>
       <div class="sub" style="font-size:.78rem">ייווצר כרטיס חדש עם השם האנגלי, הטלפון, האימייל והכתובת מהאתר.</div>
     </div>`;
   let addrHtml='';
@@ -295,8 +296,8 @@ function wireGroup(k,txs){
         res.style.display='none'; si.value=x.textContent;
       });
     },250);};
-    const nl=assign.querySelector('.nl'), nf=assign.querySelector('.nf');
-    [nl,nf].forEach(inp=>inp.oninput=()=>{ if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } });
+    const nl=assign.querySelector('.nl'), nf=assign.querySelector('.nf'), nn=assign.querySelector('.nn');
+    [nl,nf,nn].forEach(inp=>inp&&(inp.oninput=()=>{ state.nn=nn?nn.value.trim():''; if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } }));
   }
   // הצגת שדה שמות פרנס כשבוחרים קטגוריית פרנס
   card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded'),pick=txEl.querySelector('.pypick'),nc=txEl.querySelector('.newcat'),bl=txEl.querySelector('.bldgitem');
@@ -326,7 +327,7 @@ function wireGroup(k,txs){
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
       if(donorId) body.donor_id=donorId;
-      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf}; }
+      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||''}; }
       const r=await api('POST','/api/recon/'+tid, body);
       if(r.donor_id){ donorId=r.donor_id; }
       upaddr=false; // רק פעם אחת
