@@ -262,6 +262,12 @@
   .thxrow{margin:2px 0 6px}
   .thxbtn{border:1px dashed var(--gold);background:var(--gold-soft);color:var(--gold);border-radius:9px;padding:5px 10px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
   .thxbtn.yes{border-style:solid;border-color:var(--yes);background:var(--yes-soft,#e8f5e9);color:var(--yes)}
+  /* דף כל המיילים */
+  .mailrow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--shadow)}
+  .mailhd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px}
+  .mailhd .mlwho{font-weight:800;color:var(--accent);cursor:pointer;font-size:.95rem}
+  .mailhd .mldate{font-size:.8rem;color:var(--muted);white-space:nowrap}
+  .mailrow .mlsum{font-size:.9rem;line-height:1.45}
   .mailfull{margin-top:5px;font-size:.82rem}
   .mailfull summary{cursor:pointer;color:var(--accent);font-weight:700}
   .mailfull pre{white-space:pre-wrap;word-break:break-word;background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:5px;font-family:inherit;font-size:.83rem;line-height:1.55;max-height:260px;overflow:auto}
@@ -471,6 +477,7 @@
       <button class="tab" data-tab="charges">💳 חיובים</button>
       <button class="tab" data-tab="avreich">🤝 יששכר־זבולון</button>
       <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
+      <button class="tab" data-tab="mails">📧 מיילים</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
     </div>
     <div class="chips" id="chips"></div>

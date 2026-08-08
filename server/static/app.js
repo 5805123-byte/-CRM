@@ -324,7 +324,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -347,6 +347,7 @@ function render(){
   if(tab==='charges') return renderCharges();
   if(tab==='avreich') return renderAvreich();
   if(tab==='missed') return renderMissed();
+  if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
 }
 
@@ -1878,6 +1879,37 @@ function showAvHist(d){
 }
 
 /* ---------- קמפיינים ---------- */
+/* ---------- 📧 כל המיילים שנמשכו — במקום אחד ---------- */
+let mailFlt='';
+function renderMails(){
+  const all=[];
+  DB.forEach(d=>(d.contacts||[]).forEach(c=>{ if(c.channel==='אימייל') all.push({c,d}); }));
+  all.sort((a,b)=>String(b.c.date||'').localeCompare(String(a.c.date||''))||b.c.id-a.c.id);
+  const withFiles=all.filter(x=>(x.c.files||[]).length).length;
+  const F=[['','הכל',all.length],['files','📎 עם קבצים',withFiles],
+           ['kv','🕯️ שמות לקוויטל',all.filter(x=>(x.c.summary||'').includes('🕯️')).length]];
+  chips.innerHTML=F.map(([k,l,n])=>`<button class="chip ${mailFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
+  chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{mailFlt=b.dataset.k;render();});
+  let list=all;
+  if(mailFlt==='files')list=list.filter(x=>(x.c.files||[]).length);
+  if(mailFlt==='kv')list=list.filter(x=>(x.c.summary||'').includes('🕯️'));
+  list=list.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.c.summary||'')+' '+(x.c.body||'')+' '+(x.c.body_he||'')));
+  view.innerHTML=`<div class="rbtitle">📧 כל המיילים מהתורמים — לפי תאריך</div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_sync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
+    <div class="cnt">${list.length} מיילים</div>
+    <div class="list">${list.map(({c,d},i)=>`<div class="mailrow">
+      <div class="mailhd"><span class="mlwho" data-did="${d.id}">${esc((d.last||'')+' '+(d.first||''))} ↗</span>
+        <span class="mldate">${esc(c.date||'')}</span></div>
+      <div class="mlsum">${esc(c.summary||'')}</div>
+      ${(c.body_he||c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+        ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre><details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`:`<pre>${esc(c.body)}</pre>`}
+      </details>`:''}
+      ${(c.files||[]).length?`<div class="avfiles dnfiles">${(c.files||[]).map(fileChip).join('')}</div>`:''}
+    </div>`).join('')||'<div class="empty">אין מיילים. לחץ "משוך מיילים".</div>'}</div>`;
+  view.querySelectorAll('.mlwho').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'contact'));
+  view.querySelectorAll('.mailrow .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);await load();render();toast('נמחק');});
+  const ms=document.getElementById('ml_sync'); if(ms)ms.onclick=()=>runMailSync(ms);
+}
 function renderCamp(){
   const camps={};
   DB.forEach(d=>(d.pledges||[]).forEach(p=>{const k=p.category||'ללא';camps[k]=camps[k]||{given:0,pending:0,gsum:0,psum:0,rows:[]};const a=amtNum(p.amount),g=p.status==='נתן';if(g){camps[k].given++;camps[k].gsum+=a;}else{camps[k].pending++;camps[k].psum+=a;}camps[k].rows.push({name:(d.last+' '+d.first).trim(),amt:p.amount,given:g});}));
