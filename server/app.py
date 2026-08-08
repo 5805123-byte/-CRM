@@ -1158,7 +1158,7 @@ def ensure_schema():
 
     # מיילים שכבר תויקו לפני שהיה תמצות — מקצרים לשורה אחת ומורידים את השרשור שלנו
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v2'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v3'").fetchone():
             import gmail_intake as _gi
             nfix = 0
             for r in con.execute("SELECT id,summary,body FROM contacts_log WHERE channel='אימייל'"):
@@ -1173,12 +1173,12 @@ def ensure_schema():
                 src = (r['body'] or '').strip() or rest       # הטקסט המלא ששמור, אחרת מה שבתקציר
                 if not src.strip():
                     continue
-                gist = _gi._one_line(src)
+                gist = _gi._gist_he(subj, src)
                 new_s = '📧 ' + subj.strip() + ((' — ' + gist) if gist else '')
                 con.execute("UPDATE contacts_log SET summary=?, body=? WHERE id=?",
                             (new_s, _gi._strip_quoted(src), r['id']))
                 nfix += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('maillog_gist_v2')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('maillog_gist_v3')")
             print(f'  תמצות מיילים קיימים: {nfix}')
     except Exception as e:
         print('  mail gist error:', e)

@@ -614,6 +614,86 @@ def _strip_quoted(text):
     return '\n'.join(out).strip()
 
 
+# ===== תמצות בעברית =====
+# זיהוי סוג הפנייה לפי מילות מפתח — ניסוח בלשון ניטרלית (בלי זכר/נקבה)
+_INTENT = [
+    (r'\b(charged? twice|double charge|two charges|duplicate|billed twice)\b', 'טעות בחיוב — חיוב כפול'),
+    (r'\b(instead of|by mistake|wrong amount|incorrect|error|mistake)\b', 'טעות בחיוב'),
+    (r'\b(cancel|stop the|discontinue|unsubscribe|pause|hold off)\b', 'בקשה לביטול/עצירת החיוב'),
+    (r'\b(receipt|tax letter|tax deduction|acknowledg)\w*\b', 'בקשה לקבלה'),
+    (r'\b(change|increase|raise|lower|reduce|update)\b.{0,30}\b(amount|donation|monthly|charge)\b', 'שינוי סכום התרומה'),
+    (r'\b(new|updated|expired|different)\b.{0,20}\b(card|credit card)\b', 'עדכון כרטיס אשראי'),
+    (r'\b(new address|moved|change.{0,15}address|update.{0,15}address)\b', 'עדכון כתובת'),
+    (r'\b(name to daven|daven for|kvittel|refuah|refua|cholim)\b', 'שמות לקוויטל'),
+    (r'\b(i sent|i already sent|payment sent|i donated|mailed a check|sent a check|sent \$?\d)', 'הודעה על תרומה שנשלחה'),
+    (r'\b(call me|give me a call|please call|reach me)\b', 'בקשה שניצור קשר'),
+    (r'\b(remove me|take me off|stop emails)\b', 'בקשה להסרה מרשימת התפוצה'),
+    (r'\b(when|how do i|can you|could you|question|wondering)\b', 'שאלה'),
+    (r'\b(thank|thanks|freilichin|gut yom tov|good yom tov|mazel tov|hatzlacha)\b', 'תודה וברכה'),
+]
+_GENERIC = {'שאלה', 'תודה וברכה'}   # מוצג רק כשאין סיווג מדויק יותר
+_AMT = re.compile(r'\$\s?\d[\d,]*(?:\.\d{2})?')
+
+
+def _is_hebrew(t):
+    heb = len(re.findall(r'[֐-׿]', t or ''))
+    lat = len(re.findall(r'[A-Za-z]', t or ''))
+    return heb >= max(3, lat)
+
+
+def _gist_he_rules(txt, n=150):
+    """תמצית עברית לפי זיהוי סוג הפנייה — עובד בלי חיבור חיצוני."""
+    low = ' ' + re.sub(r'\s+', ' ', (txt or '').lower()) + ' '
+    hits = []
+    for pat, he in _INTENT:
+        if re.search(pat, low, re.I) and he not in hits:
+            hits.append(he)
+    spec = [h for h in hits if h not in _GENERIC]
+    hits = (spec or hits)[:2]              # סיווג כללי מוצג רק כשאין מדויק
+    amts = _AMT.findall(txt or '')
+    out = ' · '.join(hits) if hits else 'פנייה במייל'
+    if amts:
+        uniq = list(dict.fromkeys(a.replace(' ', '') for a in amts))[:2]
+        out += ' (' + ' / '.join(uniq) + ')'
+    return out[:n]
+
+
+def _gist_he_ai(subject, txt):
+    """תרגום ותמצות אמיתיים דרך Claude — רק אם הוגדר ANTHROPIC_API_KEY."""
+    key = os.environ.get('ANTHROPIC_API_KEY')
+    if not key or not (txt or '').strip():
+        return ''
+    import json as _json, urllib.request as _u
+    prompt = ('סכם את המייל הבא של תורם למשפט אחד קצר בעברית (עד 15 מילים). '
+              'רק העובדה המרכזית/הבקשה, בלי ברכות ובלי הקדמה. החזר רק את המשפט.\n\n'
+              'נושא: %s\n\nגוף:\n%s' % (subject or '', (txt or '')[:4000]))
+    body = _json.dumps({'model': os.environ.get('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
+                        'max_tokens': 100,
+                        'messages': [{'role': 'user', 'content': prompt}]}).encode('utf-8')
+    req = _u.Request('https://api.anthropic.com/v1/messages', data=body,
+                     headers={'content-type': 'application/json', 'x-api-key': key,
+                              'anthropic-version': '2023-06-01'})
+    try:
+        with _u.urlopen(req, timeout=25) as r:
+            data = _json.loads(r.read())
+        parts = [c.get('text', '') for c in data.get('content', []) if c.get('type') == 'text']
+        return re.sub(r'\s+', ' ', ' '.join(parts)).strip().strip('"')[:180]
+    except Exception:
+        return ''
+
+
+def _gist_he(subject, body):
+    """תמצית בעברית: עברית נשארת כמו שהיא; אנגלית — AI אם מוגדר, אחרת זיהוי סוג הפנייה."""
+    clean = _strip_quoted(body)
+    plain = _one_line(clean)                 # תמצית מילולית (בשפת המקור)
+    if _is_hebrew(plain or clean):
+        return plain                          # כבר עברית — משאירים את מילות התורם
+    ai = _gist_he_ai(subject, clean)
+    if ai:
+        return ai
+    return _gist_he_rules((subject or '') + ' ' + clean)
+
+
 def _one_line(body, n=150):
     """תמצית של שורה אחת ממה שהתורם כתב — בלי ברכות פתיחה, חתימות וציטוטים."""
     txt = _strip_quoted(body)
@@ -721,7 +801,7 @@ def sync_contacts(con, status=None):
                     body = _extract_text(email.message_from_bytes(md[0][1]))
             except Exception:
                 body = ''
-            gist = _one_line(body)
+            gist = _gist_he(subject, body)
             summary = '📧 ' + subject + ((' — ' + gist) if gist else '')
             full = _strip_quoted(body)          # רק מה שהתורם כתב, בלי השרשור שלנו
             try:
