@@ -615,6 +615,8 @@ _GREET = re.compile(r'^\s*(?:בס["״]?ד|ב["״]?ה|שלום וברכה|שלו�
                     r'(?:[\wא-ת\'"׳״]+(?:\s+[\wא-ת\'"׳״]+){0,2}\s*[,:])?\s*', re.I)   # גם השם שאחרי הפתיח
 _SIGNOFF = re.compile(r'^\s*(?:בברכה|בכבוד רב|תודה רבה|תודה מראש|תודה|כל טוב|בהצלחה|יישר כוח|'
                       r'thanks|thank you|thx|best regards|regards|sincerely|kind regards|warmly)\b[\s,!.-]*$', re.I)
+# שורת פנייה כמו "הרב דויטש היקר," / "לכבוד הרב היקר:" — פתיח, לא תוכן
+_GREETLINE = re.compile(r'^\s*(?:לכבוד\s+)?[^,:]{0,40}?היקר(?:ה|ים)?\s*[,:]?\s*$')
 
 
 # אותם סימנים כשהם באמצע שורה (קורה כשה-HTML נדחס לשורה אחת)
@@ -806,7 +808,7 @@ def _one_line(body, n=150):
     lines = []
     for ln in txt.split('\n'):
         ln = re.sub(r'\s+', ' ', ln).strip()
-        if not ln or _SIGNOFF.match(ln):
+        if not ln or _SIGNOFF.match(ln) or _GREETLINE.match(ln):
             continue
         if re.match(r'^[-=_*·•\s]+$', ln):        # קווי הפרדה
             continue
@@ -912,7 +914,13 @@ def sync_contacts(con, status=None):
                     atts = _attachments(full_msg)        # קבצים שצורפו למייל
             except Exception:
                 body, atts = body, []
-            gist = _gist_he(subject, body)
+            full0 = _strip_quoted(body)
+            he0 = ''
+            if full0.strip() and not _is_hebrew(full0):
+                try: he0 = translate_he(full0)
+                except Exception: he0 = ''
+            # תקציר מתוך התרגום העברי אם יש — משפט אמיתי במקום סיווג כללי
+            gist = _one_line(he0) if he0 else _gist_he(subject, body)
             kvn = _parse_names(body)            # שמות לקוויטל שנכתבו בגוף המייל
             extra = ''
             if atts:
@@ -920,11 +928,11 @@ def sync_contacts(con, status=None):
             if kvn.strip():
                 extra += ' · 🕯️ שמות לקוויטל במייל'
             summary = '📧 ' + subject + ((' — ' + gist) if gist else '') + extra
-            full = _strip_quoted(body)          # רק מה שהתורם כתב, בלי השרשור שלנו
+            full, he = full0, he0               # רק מה שהתורם כתב, בלי השרשור שלנו
             try:
-                cur = con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked)
-                               VALUES(?,?,?,?,'',?,?,1)""",
-                            (did, dstr, 'אימייל', summary, mid, full))
+                cur = con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,body_he,att_checked)
+                               VALUES(?,?,?,?,'',?,?,?,1)""",
+                            (did, dstr, 'אימייל', summary, mid, full, he))
                 cid = cur.lastrowid
                 new += 1
                 for (fn, mt, data) in atts:     # שמירת הקבצים אצל אותו רישום קשר
@@ -970,6 +978,33 @@ def sync_contacts(con, status=None):
         con.commit()
         try: M.logout()
         except Exception: pass
+        # תרגום לעברית לכל מייל שעדיין לא תורגם (כולל כאלה שתויקו בעבר)
+        pend = con.execute("""SELECT id, body, summary FROM contacts_log
+                              WHERE channel='אימייל' AND COALESCE(TRIM(body),'')<>''
+                                AND COALESCE(TRIM(body_he),'')='' LIMIT 400""").fetchall()
+        todo_tr = [r for r in pend if not _is_hebrew(r['body'])]
+        if todo_tr:
+            st['total'] = len(todo_tr); st['scanned'] = 0
+        for i, r in enumerate(todo_tr, 1):
+            he = ''
+            try: he = translate_he(r['body'])
+            except Exception: he = ''
+            if he:
+                g = _one_line(he)              # תקציר עברי אמיתי מתוך התרגום
+                s = r['summary'] or ''
+                if g and s.startswith('📧'):
+                    headp = s[1:].strip()
+                    subj = headp.split(' — ')[0].split('\n')[0].strip()
+                    tail = ''
+                    for mark in (' · 📎', ' · 🕯️'):
+                        p = s.find(mark)
+                        if p >= 0:
+                            tail = s[p:]; break
+                    s = '📧 ' + subj + ' — ' + g + tail
+                con.execute("UPDATE contacts_log SET body_he=?, summary=? WHERE id=?", (he, s, r['id']))
+            st['scanned'] = i
+            if i % 10 == 0:
+                con.commit()
         con.commit()
         return {'ok': True, 'new': new}
     except imaplib.IMAP4.error as e:

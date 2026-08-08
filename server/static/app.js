@@ -1131,9 +1131,9 @@ function renderPartners(d){
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא</summary>
-      ${(c.body_he||'').trim()?`<pre class="mhe" data-cid="${c.id}">${esc(c.body_he)}</pre>
-        <details class="morig"><summary>הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
+  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+      ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre>
+        <details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
     </details>`:''}
     <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
@@ -1150,7 +1150,20 @@ function renderContacts(d){
     const c=(d.contacts||[]).find(x=>x.id==b.dataset.cid);if(!c)return;
     b.disabled=true;b.textContent='מתרגם…';
     const r=await api('POST','/api/contact/'+b.dataset.cid+'/translate',{});
-    if(r&&r.ok&&r.he){c.body_he=r.he;renderContacts(d);toast('תורגם ✓');return;}
+    if(r&&r.ok&&r.he){
+      c.body_he=r.he;
+      // החלפה במקום — כדי שהמייל הפתוח לא ייסגר
+      const pre=b.parentElement?b.parentElement.querySelector('pre'):null;
+      if(pre){
+        const orig=pre.textContent;
+        pre.className='mhe'; pre.textContent=r.he;
+        const dd=document.createElement('details'); dd.className='morig';
+        dd.innerHTML='<summary>🔤 הצג את המקור באנגלית</summary><pre></pre>';
+        dd.querySelector('pre').textContent=orig;
+        b.replaceWith(dd);
+      }else{renderContacts(d);}
+      toast('תורגם ✓');return;
+    }
     b.disabled=false;b.textContent='🌐 תרגם לעברית';
     toast('לא הצלחתי לתרגם'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):' — נסה שוב'));
   });
