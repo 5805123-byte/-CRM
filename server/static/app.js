@@ -839,7 +839,7 @@ function cardDonations(d,body){
 function cardContact(d,body){
   body.innerHTML=`
     ${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
-    <div class="sec"><h3>📞 תיעוד קשר</h3><div id="clog"></div>
+    <div class="sec"><h3>📞 תיעוד קשר <button class="btn sm ghost" id="cl_mailsync" style="float:left">📥 משוך מיילים</button></h3><div id="clog"></div>
       <div class="addrow"><select id="cl_ch"><option>טלפון</option><option>אימייל</option><option>וואטסאפ</option><option>פגישה</option></select><input id="cl_date" type="date" value="${todayStr()}"></div>
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
       <div class="avfiles dnfiles" id="cl_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="cl_file" hidden></label></div>
@@ -853,6 +853,16 @@ function cardContact(d,body){
   renderContacts(d); renderReminders(d);
   const clF=pendFiles('cl_files','cl_file'), tkF=pendFiles('tk_files','tk_file');
   const refresh=async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;d.tasks=dd.tasks;}renderContacts(d);renderReminders(d);};
+  const msb=document.getElementById('cl_mailsync');
+  if(msb)msb.onclick=async()=>{
+    if(!(d.email||'').trim()){toast('אין כתובת מייל בכרטיס — הוסף אותה כדי לתייק מיילים');return;}
+    msb.disabled=true;msb.textContent='מושך…';
+    const r=await api('POST','/api/mail/contacts_sync',{});
+    msb.disabled=false;msb.textContent='📥 משוך מיילים';
+    if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
+    await refresh();
+    toast(r.new?('תויקו '+r.new+' מיילים חדשים ✓'):'אין מיילים חדשים לתיוק');
+  };
   document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
     if(clF.arr.length){toast('מעלה קבצים…');for(const f of clF.arr)await uploadBlob('contact',r.id,f);clF.reset();await refresh();toast('נשמר עם האסמכתאות ✓');return;}
     renderContacts(d);renderReminders(d);toast('נשמר ✓');};

@@ -17,13 +17,30 @@ from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
 
+def _fix8bit(t):
+    """כותרת שנשלחה כ-UTF-8 גולמי מגיעה עם בייטים משומרים — משחזרים לעברית תקינה."""
+    try:
+        if any('\udc80' <= c <= '\udcff' for c in t):
+            return t.encode('utf-8', 'surrogateescape').decode('utf-8', 'replace')
+    except Exception:
+        pass
+    return t
+
+
 def _dec(s):
     if not s:
         return ''
+    chunks = getattr(s, '_chunks', None)      # כותרת לא־מקודדת (unknown-8bit)
+    if chunks:
+        try:
+            return ''.join(_fix8bit(t) for t, _cs in chunks)
+        except Exception:
+            pass
     try:
-        return str(make_header(decode_header(s)))
+        out = str(make_header(decode_header(s)))
     except Exception:
-        return str(s)
+        out = str(s)
+    return _fix8bit(out)
 
 
 def _html_to_text(html):
@@ -509,6 +526,80 @@ def _ascii(v):
 
 def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
+
+
+def _donor_email_map(con):
+    """מפה: כתובת מייל → מזהה תורם. רק התאמה מדויקת לכתובת — בלי ניחוש לפי שם."""
+    emap = {}
+    for r in con.execute("SELECT id,email FROM donors WHERE TRIM(COALESCE(email,''))<>''"):
+        for e in re.split(r'[;,\s]+', (r['email'] or '').lower()):
+            e = e.strip().strip('<>')
+            if '@' in e and e not in emap:      # כתובת שמופיעה אצל שני תורמים — לא נשייך, כדי לא לטעות
+                emap[e] = r['id']
+            elif e in emap and emap[e] != r['id']:
+                emap[e] = None                  # כפילות — מסמנים כלא־ודאי
+    return {k: v for k, v in emap.items() if v}
+
+
+def _snippet(body, n=600):
+    t = re.sub(r'\n{3,}', '\n\n', (body or '').strip())
+    return t[:n] + ('…' if len(t) > n else '')
+
+
+def sync_contacts(con):
+    """מתייק את כל המיילים שהתקבלו מתורמים (לפי כתובת המייל בלבד) ליומן הקשר שלהם."""
+    user = os.environ.get('GMAIL_USER')
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    emap = _donor_email_map(con)
+    if not emap:
+        return {'ok': True, 'new': 0, 'note': 'no_donor_emails'}
+    since = os.environ.get('MAILLOG_SINCE') or _imap_since()
+    mailbox = os.environ.get('INTAKE_MAILBOX', 'INBOX')
+    new = 0
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com')
+        M.login(user, pw)
+        M.select(mailbox)
+        typ, data = M.search(None, 'SINCE', since)
+        ids = data[0].split() if typ == 'OK' else []
+        for i in ids:
+            # תחילה רק הכותרות — כדי לא להוריד מיילים שאינם של תורמים
+            typ, hd = M.fetch(i, '(BODY.PEEK[HEADER.FIELDS (FROM DATE SUBJECT MESSAGE-ID)])')
+            if typ != 'OK' or not hd or not hd[0]:
+                continue
+            hmsg = email.message_from_bytes(hd[0][1])
+            _, femail = parseaddr(_dec(hmsg.get('From')))
+            femail = (femail or '').strip().lower()
+            did = emap.get(femail)
+            if not did:
+                continue                      # לא זוהה תורם בוודאות — מדלגים
+            mid = (hmsg.get('Message-ID') or '').strip() or f'{user}:{i.decode()}'
+            if con.execute("SELECT 1 FROM contacts_log WHERE msg_id=?", (mid,)).fetchone():
+                continue                      # כבר תויק
+            subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
+            try:
+                dt = parsedate_to_datetime(hmsg.get('Date'))
+                dstr = dt.date().isoformat()
+            except Exception:
+                dstr = datetime.date.today().isoformat()
+            typ, md = M.fetch(i, '(RFC822)')
+            body = ''
+            if typ == 'OK' and md and md[0]:
+                try: body = _extract_text(email.message_from_bytes(md[0][1]))
+                except Exception: body = ''
+            summary = '📧 ' + subject + (('\n' + _snippet(body)) if body else '')
+            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id) VALUES(?,?,?,?,'',?)",
+                        (did, dstr, 'אימייל', summary, mid))
+            new += 1
+        M.logout()
+        con.commit()
+        return {'ok': True, 'new': new}
+    except imaplib.IMAP4.error as e:
+        return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
+    except Exception as e:
+        return {'ok': False, 'error': 'sync_failed', 'detail': str(e)}
 
 
 def sync(con):

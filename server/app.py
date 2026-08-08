@@ -110,6 +110,10 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
+    except Exception: pass
+    try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
+    except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
     try: con.execute("ALTER TABLE donors ADD COLUMN kv_skip INTEGER DEFAULT 0")
     except Exception: pass
@@ -1632,6 +1636,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             con = db(); res = gmail_intake.sync(con); con.close()
             return self._send(200, res)
+        if self.path == '/api/mail/contacts_sync':   # תיוק מיילים מתורמים ליומן הקשר שלהם
+            try:
+                import gmail_intake
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            con = db(); res = gmail_intake.sync_contacts(con); con.close()
+            return self._send(200, res)
         m = re.match(r'/api/intake/(\d+)/attach$', self.path)
         if m:
             iid = int(m.group(1))
@@ -2116,6 +2127,8 @@ def _intake_daily_loop():
                     time.sleep(20)   # להמתין שהשרת יתייצב לפני המשיכה הראשונה
                 con = db(); res = gmail_intake.sync(con); con.close()
                 print('  משיכת קוויטלים אוטומטית:', res)
+                con = db(); res2 = gmail_intake.sync_contacts(con); con.close()
+                print('  תיוק מיילים ליומן הקשר:', res2)
         except Exception as e:
             print('  שגיאת משיכה אוטומטית:', e)
         first = False
