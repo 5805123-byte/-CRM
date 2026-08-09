@@ -2593,6 +2593,15 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db(); con.execute("DELETE FROM intake WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/recon/(.+)$', self.path)
+        if m:
+            # מחיקת שורת חיוב מדף החיובים — למשל ניסיון תרומה. לא נוגע בתרומות שכבר הוכנסו לכרטיס
+            tid = urllib.parse.unquote(m.group(1))
+            con = db()
+            n = con.execute("SELECT COUNT(*) FROM recon WHERE tid=?", (tid,)).fetchone()[0]
+            con.execute("DELETE FROM recon WHERE tid=?", (tid,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': n > 0, 'deleted': n})
         m = re.match(r'/api/donor/(\d+)$', self.path)
         if m:
             did = int(m.group(1)); con = db()

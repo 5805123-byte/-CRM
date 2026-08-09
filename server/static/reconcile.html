@@ -42,6 +42,12 @@
   .addrbox b{color:var(--gold)}
   .chk{display:flex;align-items:center;gap:7px;font-size:.86rem;margin:6px 0;cursor:pointer}
   .txn{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding:8px 0;flex-wrap:wrap}
+  .rowdel{background:none;border:none;color:#c9b8b8;font-size:1rem;cursor:pointer;padding:2px 6px;line-height:1}
+  .rowdel:hover,.rowdel.armed{color:var(--no)}
+  .rowdel.armed{font-size:.78rem;font-weight:700}
+  .grpdel{display:block;width:100%;margin-top:8px;background:none;border:1px dashed var(--line);color:var(--muted);
+    border-radius:9px;padding:8px;font-family:inherit;font-size:.8rem;cursor:pointer}
+  .grpdel.armed{border-color:var(--no);color:var(--no);font-weight:700}
   .amt{font-weight:800;font-size:1rem;min-width:74px}
   .date{color:var(--muted);font-size:.8rem}
   .rec{background:#ede7fb;color:#5b3ea8;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800}
@@ -280,11 +286,13 @@ function groupCard(k,txs){
         <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
         <select class="pyyr">${HYEARS.map(y=>`<option ${y==='תשפ"ו'?'selected':''}>${y}</option>`).join('')}</select></div>
       <input class="pyded" placeholder="🕯️ שמות/בקשות לפרנס (רשות)" style="display:${show?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit">`;})():''}
+      <button class="rowdel" title="מחק את השורה הזו מדף החיובים">🗑</button>
     </div>`;
   }).join('');
   return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
     ${head}${missHtml}${matchHtml}${assign}${kvHtml}${addrHtml}${noteHtml}${rows}
     ${allDone?'':`<button class="btn go">✓ הכנס את כל התרומות של ${esc((t0.first+' '+t0.last).trim())}</button>`}
+    <button class="grpdel">🗑 מחק את ${esc((t0.first+' '+t0.last).trim())} מדף החיובים (ניסיון תרומה / כפילות)</button>
   </div>`;
 }
 
@@ -292,6 +300,25 @@ function wireGroup(k,txs){
   const card=[...document.querySelectorAll('.grp')].find(el=>el.dataset.k===k);
   if(!card) return;
   const state={donorId:(txs.find(t=>t.donor_id)||{}).donor_id||null, createNew:false, nl:'', nf:''};
+  // מחיקת שורת חיוב / כל השורות של אותו שם — לניסיונות תרומה וכפילויות. שתי לחיצות לאישור
+  const arm=(btn,label,run)=>{let ok=false,tm=null;const back=btn.innerHTML;
+    btn.onclick=async()=>{
+      if(!ok){ok=true;btn.classList.add('armed');btn.innerHTML=label;
+        tm=setTimeout(()=>{ok=false;btn.classList.remove('armed');btn.innerHTML=back;},12000);return;}
+      clearTimeout(tm);btn.disabled=true;await run();};};
+  card.querySelectorAll('.txn').forEach(row=>{
+    const b=row.querySelector('.rowdel'); if(!b) return;
+    arm(b,'בטוח? לחץ שוב',async()=>{
+      const tid=row.dataset.tid;
+      const r=await api('DELETE','/api/recon/'+encodeURIComponent(tid));
+      if(!r||!r.ok){b.disabled=false;b.classList.remove('armed');b.innerHTML='🗑';toast('המחיקה נכשלה');return;}
+      DATA=DATA.filter(x=>x.tid!==tid); toast('השורה נמחקה ✓'); render();});
+  });
+  const gd=card.querySelector('.grpdel');
+  if(gd) arm(gd,'⚠️ בטוח? לחץ שוב כדי למחוק '+txs.length+' שורות',async()=>{
+    for(const t of txs) await api('DELETE','/api/recon/'+encodeURIComponent(t.tid));
+    const gone=new Set(txs.map(t=>t.tid));
+    DATA=DATA.filter(x=>!gone.has(x.tid)); toast('נמחק מדף החיובים ✓'); render();});
   const chb=card.querySelector('.changebtn');
   if(chb) chb.onclick=()=>{ const a=card.querySelector('.assign'); a.style.display = a.style.display==='none'?'block':'none'; };
   // בכניסה לכרטיס תורם — שמור את המיקום הנוכחי כדי לחזור לאותה נקודה
