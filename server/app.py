@@ -2040,7 +2040,7 @@ class H(BaseHTTPRequestHandler):
                              row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
                              b.get('category', ''), today_iso(), r_src, nd.get('notes', '')))
                 did = cur.lastrowid
-                if (nd.get('task') or '').strip():     # משימה שנקבעה יחד עם פתיחת הכרטיס
+                if (nd.get('task') or '').strip() and not (b.get('task') or '').strip():
                     cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
                                 (did, (nd.get('task_date') or today_iso()), 'followup', nd['task'].strip()))
             if not did:
@@ -2053,6 +2053,12 @@ class H(BaseHTTPRequestHandler):
             if b.get('update_addr') and (row['addr'] or row['city'] or row['zip']):
                 cur.execute("UPDATE donors SET addr=?, city=?, country=?, zip=? WHERE id=?",
                             (row['addr'] or '', row['city'] or '', r_state, row['zip'] or '', did))
+            # משימה שנכתבה בדף החיובים / בכרטיס — נכנסת ללשונית המשימות
+            _tk = (b.get('task') or '').strip()
+            if _tk:
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
+                            (did, (b.get('task_date') or today_iso()), (b.get('task_kind') or 'followup'),
+                             _tk, (b.get('task_who') or '')))
             # הערה שנכתבה בדף החיובים — נשמרת גם בהערות התורם (ניתן לחיפוש)
             unote = (b.get('note') or '').strip()
             if unote and b.get('note_to_donor'):

@@ -835,6 +835,8 @@ function reconPendHTML(d){
       <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category)}</select></label>
         <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
       <label class="fld"><span>📝 הערה לתרומה (רשות) — תישמר גם בהערות התורם</span><input class="rpnote" placeholder="למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת"></label>
+      <div class="two"><label class="fld"><span>✅ משימה (רשות)</span><input class="rptask" placeholder="למשל: לבדוק מתי צריכה לשלם בפעם הבאה"></label>
+        <label class="fld"><span>מתי להזכיר</span><input type="date" class="rptaskd" value="${esc(todayStr())}"></label></div>
       <div class="rpday hidden"><div class="two"><label class="fld"><span>חודש עברי</span><select class="rpmon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select class="rpdd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
         <label class="fld"><span>שנה עברית</span><select class="rpyr">${heYearOpts()}</select></label>
@@ -870,6 +872,7 @@ function wireReconPend(d,body){
       const b=el.querySelector('.rpok'); b.disabled=true; b.textContent='מכניס…';
       const payload={donor_id:d.id,category:sel.value};
       const nt=el.querySelector('.rpnote'); if(nt&&nt.value.trim()){payload.note=nt.value.trim();payload.note_to_donor=true;}
+      const tk=el.querySelector('.rptask'); if(tk&&tk.value.trim()){payload.task=tk.value.trim();payload.task_date=el.querySelector('.rptaskd').value||todayStr();}
       if(RPARNES.includes(sel.value)){
         const mo=el.querySelector('.rpmon').value,dd=+el.querySelector('.rpdd').value;
         payload.month=mo; payload.day=dd; payload.hyear=el.querySelector('.rpyr').value;

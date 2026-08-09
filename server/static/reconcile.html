@@ -238,7 +238,10 @@ function groupCard(k,txs){
       <label class="chk"><input type="checkbox" class="kvadd" checked> צרף את השמות לקוויטל של התורם</label></div>` : '';
   const noteHtml=`<div class="notebox"><label class="fld"><span>📝 הערה לתרומה הזו (למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת)</span>
       <input class="rnote" placeholder="מה מיוחד בתרומה הזו — יישמר אצל התורם"></label>
-      <label class="chk"><input type="checkbox" class="rnotedon" checked> שמור גם בהערות התורם (כדי שאפשר יהיה לחפש)</label></div>`;
+      <label class="chk"><input type="checkbox" class="rnotedon" checked> שמור גם בהערות התורם (כדי שאפשר יהיה לחפש)</label>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>✅ משימה (למשל: לבדוק מתי היא צריכה לשלם בפעם הבאה)</span><input class="rtask" placeholder="מה צריך לעשות — ייכנס ללשונית משימות"></label>
+        <label class="fld"><span>מתי להזכיר</span><input type="date" class="rtaskd" value="${TODAY}"></label></div>
+      <label class="fld"><span>סוג המשימה</span><select class="rtaskk"><option value="followup">📞 לחזור / לבדוק</option><option value="charge">💳 לחייב</option><option value="prayer">🙏 לבקש שמות</option><option value="other">🔔 אחר</option></select></label></div>`;
   let addrHtml='';
   if(siteAddr){
     const stored = matched? (matched.match_addr||'') : '';
@@ -332,6 +335,8 @@ function wireGroup(k,txs){
     const kvText = card.querySelector('.kvtext'); const kvChk = card.querySelector('.kvadd');
     let kvAdd = kvChk ? kvChk.checked : false;
     const rnote = card.querySelector('.rnote'), rnoteDon = card.querySelector('.rnotedon');
+    const rtask = card.querySelector('.rtask'), rtaskd = card.querySelector('.rtaskd'), rtaskk = card.querySelector('.rtaskk');
+    let taskDone = false;
     const catSels=[...card.querySelectorAll('.txn')];
     btn.disabled=true; btn.textContent='מכניס…';
     let donorId=state.donorId;
@@ -349,6 +354,7 @@ function wireGroup(k,txs){
       const dedEl=txEl.querySelector('.pyded');
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
       if(rnote&&rnote.value.trim()){ body.note=rnote.value.trim(); body.note_to_donor=rnoteDon?rnoteDon.checked:true; }
+      if(!taskDone && rtask && rtask.value.trim()){ body.task=rtask.value.trim(); body.task_date=rtaskd?rtaskd.value:''; body.task_kind=rtaskk?rtaskk.value:'followup'; taskDone=true; }
       if(kvAdd&&kvText&&kvText.value.trim()){ body.attach_kv=true; body.kv_text=kvText.value.trim(); }
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
       if(donorId) body.donor_id=donorId;
