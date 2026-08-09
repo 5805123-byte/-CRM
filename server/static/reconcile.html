@@ -222,6 +222,7 @@ function groupCard(k,txs){
       <div class="inlineedit">
         <label>🕯️ קוויטל:<select class="mtier">${tierOpts(matched.match_tier||'',matched.match_cat||'')}</select></label>
         <label>📋 קטגוריה:<select class="mcat">${dcatOpts(matched.match_cat||'')}</select></label>
+        ${(!(matched.match_tier||'')&&(matched.match_cat||'')==='מזדמן')?`<label>🗓️ חודש:<button type="button" class="btn sm ghost kvmy" style="padding:5px 10px">${esc((matched.match_kv_month||'— בחר —')+' '+(matched.match_kv_year||''))}</button></label>`:''}
       </div></div>`;
   }else{
     matchHtml=`<div class="match no">❓ לא נמצא כרטיס תואם — חפש קיים או צור חדש</div>`;
@@ -300,7 +301,7 @@ function wireGroup(k,txs){
   if(mt&&did) mt.onchange=async()=>{
     if(mt.value==='__occ'){
       const cur=DATA.find(x=>x.donor_id==did)||{};
-      const pick=await pickMonthYear(cur.match_kv_month||'תשרי',cur.match_kv_year||HEBYEAR);
+      const pick=await pickMonthYear(cur.match_kv_month||KVDEF[0]||'תשרי',cur.match_kv_year||KVDEF[1]||HEBYEAR);
       if(!pick){ mt.value=cur.match_tier||''; return; }
       await api('PUT','/api/donor/'+did,{category:'מזדמן',tier:'',kv_month:pick.month,kv_year:pick.year});
       DATA.forEach(x=>{if(x.donor_id==did){x.match_cat='מזדמן';x.match_tier='';x.match_kv_month=pick.month;x.match_kv_year=pick.year;}});
@@ -308,6 +309,16 @@ function wireGroup(k,txs){
       toast('שויך למזדמנים · '+pick.month+' '+pick.year+' ✓'); return;
     }
     await api('PUT','/api/donor/'+did,{tier:mt.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_tier=mt.value;}); toast('קוויטל עודכן בכרטיס ✓'); };
+  const kvbtn=card.querySelector('.kvmy');
+  if(kvbtn&&did) kvbtn.onclick=async()=>{
+    const cur=DATA.find(x=>x.donor_id==did)||{};
+    const pick=await pickMonthYear(cur.match_kv_month||KVDEF[0]||'תשרי',cur.match_kv_year||KVDEF[1]||HEBYEAR);
+    if(!pick)return;
+    await api('PUT','/api/donor/'+did,{category:'מזדמן',tier:'',kv_month:pick.month,kv_year:pick.year});
+    DATA.forEach(x=>{if(x.donor_id==did){x.match_kv_month=pick.month;x.match_kv_year=pick.year;}});
+    kvbtn.textContent=pick.month+' '+pick.year;
+    toast('קוויטל מזדמנים · '+pick.month+' '+pick.year+' ✓');
+  };
   if(mc&&did) mc.onchange=async()=>{ await api('PUT','/api/donor/'+did,{category:mc.value}); DATA.forEach(x=>{if(x.donor_id==did)x.match_cat=mc.value;}); toast('קטגוריה עודכנה בכרטיס ✓'); };
   const assign=card.querySelector('.assign');
   if(assign){

@@ -2047,6 +2047,11 @@ class H(BaseHTTPRequestHandler):
                              _dcat, today_iso(), r_src, nd.get('notes', ''),
                              ('' if _occ else (nd.get('tier') or '')), _kvm, _kvy))
                 did = cur.lastrowid
+                # שאר החיובים של אותו אדם (אותו מייל) — משויכים מיד לכרטיס החדש
+                _em = (row['email'] or '').strip().lower()
+                if _em:
+                    cur.execute("""UPDATE recon SET donor_id=? WHERE lower(TRIM(email))=?
+                                   AND TRIM(COALESCE(email,''))<>'' AND donor_id IS NULL""", (did, _em))
                 if (nd.get('task') or '').strip() and not (b.get('task') or '').strip():
                     cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
                                 (did, (nd.get('task_date') or today_iso()), 'followup', nd['task'].strip()))
