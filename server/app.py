@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re, base64, datetime
+import sqlite3, json, os, re, base64, datetime, csv, io, urllib.parse
 from urllib.parse import quote
 
 def today_iso():
@@ -1493,6 +1493,33 @@ class H(BaseHTTPRequestHandler):
             con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]; con.close()
             return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
+        if self.path.split('?')[0] == '/api/donors.csv':
+            # רשימת תפוצה לדיוור — שורה לכל כתובת מייל, כדי שכל תורם יקבל מייל אישי בשמו
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cat = (qs.get('cat', [''])[0] or '').strip()
+            con = db()
+            rows = con.execute("SELECT id,last,first,english,email,phone,category,tier,city,country FROM donors "
+                               "ORDER BY last, first").fetchall()
+            con.close()
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(['email', 'name', 'last', 'first', 'english', 'category', 'tier', 'phone', 'city', 'country', 'donor_id'])
+            n = 0
+            for r in rows:
+                if cat and (r['category'] or '').strip() != cat:
+                    continue
+                for e in emails_of(r['email']):
+                    w.writerow([e, ((r['last'] or '') + ' ' + (r['first'] or '')).strip(), r['last'] or '', r['first'] or '',
+                                r['english'] or '', r['category'] or '', r['tier'] or '', r['phone'] or '',
+                                r['city'] or '', r['country'] or '', r['id']])
+                    n += 1
+            data = ('﻿' + buf.getvalue()).encode('utf-8')   # BOM — כדי שאקסל יציג עברית נכון
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/csv; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="donors-mailing-list.csv"')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':

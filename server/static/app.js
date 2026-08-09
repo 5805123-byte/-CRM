@@ -2056,6 +2056,9 @@ function renderMails(){
   list=list.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.c.summary||'')+' '+(x.c.body||'')+' '+(x.c.body_he||'')));
   view.innerHTML=`<div class="rbtitle">📧 כל המיילים מהתורמים — לפי תאריך</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_sync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
+    <div class="addrow" style="margin:0 2px 8px"><select id="ml_cat" style="flex:1">${['— כל התורמים —',...[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'))].map(c=>`<option>${esc(c)}</option>`).join('')}</select>
+      <a class="btn sm ghost" id="ml_csv" href="#" style="flex:1;text-align:center;text-decoration:none">📤 ייצוא רשימת תפוצה (CSV)</a></div>
+    <div class="hintxt" style="margin:-4px 2px 10px">שורה לכל כתובת מייל — כולל תורמים עם כמה כתובות. מתאים לייבוא ל-Brevo / MailerLite לדיוור אישי עם שם התורם.</div>
     <div class="cnt">${list.length} מיילים</div>
     <div class="list">${list.map(({c,d},i)=>`<div class="mailrow">
       <div class="mailhd"><span class="mlwho" data-did="${d.id}">${esc((d.last||'')+' '+(d.first||''))} ↗</span>
@@ -2069,6 +2072,10 @@ function renderMails(){
   view.querySelectorAll('.mlwho').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'contact'));
   view.querySelectorAll('.mailrow .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);await load();render();toast('נמחק');});
   const ms=document.getElementById('ml_sync'); if(ms)ms.onclick=()=>runMailSync(ms);
+  const mc=document.getElementById('ml_cat'),mx=document.getElementById('ml_csv');
+  if(mx){const setu=()=>{const c=mc.selectedIndex>0?mc.value:'';
+      mx.href='/api/donors.csv'+(c?('?cat='+encodeURIComponent(c)):'');mx.setAttribute('download','');};
+    mc.onchange=setu; setu();}
 }
 function renderCamp(){
   const camps={};
