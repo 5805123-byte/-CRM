@@ -237,6 +237,7 @@ function groupCard(k,txs){
       ${(t0.sugg_last||t0.sugg_first)?`<div class="sub" style="font-size:.75rem;color:var(--gold)">✍️ הצעת איות אוטומטית — בדוק ותקן אם צריך</div>`:''}
       <div class="two"><label class="fld"><span>📋 סוג התורם</span><select class="ncat">${DCATS.map(c=>`<option value="${esc(c)}" ${c==='מזדמן'?'selected':''}>${c||'— בחר —'}</option>`).join('')}</select></label>
         <label class="fld"><span>🕯️ דרגת קוויטל</span><select class="ntier">${TIEROPTS.map(([v,l])=>`<option value="${esc(v)}">${l}</option>`).join('')}<option value="__occ" selected>מזדמנים</option></select></label></div>
+      <div class="tierhint" style="display:none;color:var(--no);font-size:.78rem;font-weight:700;margin:-2px 0 4px">↑ בחר איזו דרגה קבועה: יששכר־זבולון / כל לילה / שבועי</div>
       <div class="two nkvmy"><label class="fld"><span>🗓️ חודש (מזדמנים)</span><select class="nkvm">${HMORD.map(m=>`<option ${m===KVDEF[0]?'selected':''}>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>שנה עברית</span><select class="nkvy">${heYearOpts(KVDEF[1])}</select></label></div>
       <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><input class="nn" placeholder="דרך מי הגיע / כל הערה שתרצה למצוא אחר כך"></label>
@@ -341,8 +342,18 @@ function wireGroup(k,txs){
     if(nl.value.trim()){ state.nl=nl.value.trim(); state.nf=nf.value.trim(); }   // הצעת האיות מוכנה מראש
     // מזדמן -> הקוויטל מזדמן אוטומטית, לחודש הנוכחי (ומכ' בחודש — לחודש הבא)
     const syncKv=()=>{
-      if(ncat && ncat.value==='מזדמן' && ntier && ntier.value!=='__occ') ntier.value='__occ';
-      if(nkvmy) nkvmy.style.display=(ntier && ntier.value==='__occ')?'flex':'none';
+      const cat=ncat?ncat.value:'';
+      if(ntier){
+        if(cat==='מזדמן' && ntier.value!=='__occ') ntier.value='__occ';          // מזדמן → קוויטל מזדמנים
+        else if(cat==='קבוע' && ntier.value==='__occ') ntier.value='';           // קבוע → בחר דרגה קבועה
+      }
+      const occ = ntier && ntier.value==='__occ';
+      if(nkvmy) nkvmy.style.display=occ?'flex':'none';
+      // קבוע בלי דרגה — מדגישים שצריך לבחור איזו דרגה קבועה
+      const need = (cat==='קבוע' && ntier && !ntier.value);
+      if(ntier) ntier.style.borderColor = need ? 'var(--no)' : '';
+      const hint=assign.querySelector('.tierhint');
+      if(hint) hint.style.display = need ? 'block' : 'none';
       grab();
     };
     const grab=()=>{ state.nn=nn?nn.value.trim():'';

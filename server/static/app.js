@@ -679,7 +679,7 @@ function cardDetails(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(curd+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
-    ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות שעדיין לא הודית עליהן — לחץ לסימון</div>`:''}
+    ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
@@ -1022,8 +1022,8 @@ function fbChip(x){
   return `<span class="fbchip on">✓ פידבק · ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_date?(' · '+esc(x.fb_date)):''}${x.fb_followup?(' · 🔁 לחזור '+esc(x.fb_followup)):''}</span>`;
 }
 // מעקב "הודינו?" — על תרומות מאוגוסט 2026 ואילך (וכל תרומה חדשה מכאן)
-const THANKS_FROM='2026-08-01';
-function needThanks(x){const d=(x.date||'').slice(0,10);return !d||d>=THANKS_FROM;}
+const THANKS_FROM='2026-07-01';   // כל תרומה מ-1 ביולי ואילך — מעקב "הודינו?"
+function needThanks(x){let d=(x.date||'').slice(0,10);if(!d)return true;if(d.length===7)d+='-01';return d>=THANKS_FROM;}
 function unthankedCount(d){return (d.donations||[]).filter(x=>needThanks(x)&&!+x.thanked).length;}
 // הערה חופשית שנרשמה לתרומה (בלי סימוני הייבוא הטכניים)
 function dnNote(x){
@@ -1034,7 +1034,7 @@ function dnNote(x){
 function dnRow(x,cur){cur=cur||'$';
   return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${dnNote(x)}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
-    (needThanks(x)?`<div class="thxrow ${+x.thanked?'on':''}"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו על התרומה':'🙏 האם הודית לו על התרומה?'}</button></div>`:'')+
+    (needThanks(x)?`<div class="thxrow"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו':'🙏 להודות'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
     `<div class="dnedit hidden" data-de="${x.id}">
       <div class="fbrow"><label class="fld"><span>סכום (${cur})</span><input class="de_amt" value="${esc(x.amount)}"></label>
