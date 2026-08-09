@@ -6,7 +6,10 @@ function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
 const GMON=['','ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 const GREGYEAR=String(new Date().getFullYear());
 // תצוגת חודש לועזי לפי תאריך ("2026-07" → "יולי 2026") — התרומות הקבועות נגבות לפי חודש לועזי
-function gregLabel(dateStr){if(!dateStr)return '';const m=String(dateStr).match(/^(\d{4})-(\d{1,2})/);if(!m)return String(dateStr);return GMON[+m[2]]+' '+m[1];}
+// תאריך לתצוגה: יום מדויק אם יש ("16 ביוני 2026"), אחרת חודש בלבד
+function gregLabel(dateStr){if(!dateStr)return '';const m=String(dateStr).match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+  if(!m)return String(dateStr);
+  return (m[3]?(+m[3]+' ב'):'')+GMON[+m[2]]+' '+m[1];}
 function donorTotals(d){
   let all=0,year=0,pending=0;
   (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if((x.date||'').slice(0,4)===GREGYEAR)year+=a;});

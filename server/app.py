@@ -1160,6 +1160,36 @@ def ensure_schema():
     except Exception as e:
         print('  partner dedup error:', e)
 
+    # תאריך מדויק לתרומות שנוצרו מחיובי אשראי — היו שמורות עם חודש בלבד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='exact_dates_v1'").fetchone():
+            MONX = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
+                    'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
+            # מפה: (תורם, חודש, סכום) -> יום מדויק מהחיוב. רק כשיש התאמה יחידה
+            cand = {}
+            for r in con.execute("SELECT donor_id,date,amount FROM recon WHERE donor_id IS NOT NULL"):
+                m = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', r['date'] or '')
+                if not m:
+                    continue
+                key = (r['donor_id'], f"{m.group(3)}-{MONX.get(m.group(2),'01')}", round(float(r['amount'] or 0), 2))
+                cand.setdefault(key, set()).add(m.group(1))
+            nfix = 0
+            for r in con.execute("""SELECT id,donor_id,date,amount FROM donations
+                                    WHERE length(COALESCE(date,''))=7 AND method IN ('Authorize','Banquest')"""):
+                try:
+                    key = (r['donor_id'], r['date'], round(float(r['amount'] or 0), 2))
+                except Exception:
+                    continue
+                days = cand.get(key)
+                if days and len(days) == 1:      # יום אחד ברור — לא מנחשים
+                    con.execute("UPDATE donations SET date=? WHERE id=?",
+                                (r['date'] + '-' + list(days)[0], r['id']))
+                    nfix += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('exact_dates_v1')")
+            print(f'  תאריך מדויק לתרומות אשראי: {nfix}')
+    except Exception as e:
+        print('  exact dates error:', e)
+
     # אוולין וולסי־פיינגולד: כרטיס כפול + תרומות אקסל שגויות. החיובים בפועל הם המקור הנכון.
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='finegold_fix_v1'").fetchone():
@@ -2095,7 +2125,8 @@ class H(BaseHTTPRequestHandler):
             # תאריך: '01-Jul-2026' -> '2026-07'
             MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
             dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
-            diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}" if dm else ''
+            # תאריך מלא (יום-חודש-שנה) ולא רק חודש — כדי שיוצג מתי בדיוק נגבה
+            diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}-{dm.group(1)}" if dm else ''
             cat = b.get('category', '') or row['category'] or ''
             # קטגוריה חופשית (עבור מה) — נשמרת לרשימה קבועה לשימוש חוזר
             BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
