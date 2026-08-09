@@ -27,6 +27,11 @@ PORT = int(os.environ.get('PORT', 8000))
 def db():
     con = sqlite3.connect(DB); con.row_factory = sqlite3.Row; return con
 
+def emails_of(s):
+    """כל כתובות המייל של תורם. לתורם יכולות להיות כמה כתובות בשדה אחד,
+    מופרדות בפסיק / נקודה-פסיק / קו נטוי / רווח — כולן משמשות לזיהוי ולשליחה."""
+    return [e for e in re.split(r'[;,/\s]+', (s or '').strip().lower()) if '@' in e]
+
 _NIKUD = re.compile(r'[֑-ׇ]')
 def _norm(s):
     """נרמול עברי לחיפוש לפי איות — הסרת ניקוד, גרשיים ורווחים, איחוד אותיות סופיות."""
@@ -1256,6 +1261,35 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # שחזור שיוכים שנותקו במיזוג כרטיסים ישן — שורות חיוב ובקשות מהאתר שהצביעו לכרטיס שנמחק.
+    # מחזירים אותן לכרטיס הנכון לפי אימייל; אם אין התאמה ודאית — משחררים לרשימת הלא-משויכים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='merge_orphans_v1'").fetchone():
+            emap = {}
+            for d in con.execute("SELECT id,email FROM donors"):
+                for e in emails_of(d['email']):
+                    if e in emap and emap[e] != d['id']:
+                        emap[e] = None
+                    elif e not in emap:
+                        emap[e] = d['id']
+            relinked = freed = 0
+            for tbl, col in (('recon', 'email'), ('intake', 'from_email')):
+                try:
+                    rows = list(con.execute(
+                        f"SELECT rowid AS rid, {col} AS em FROM {tbl} "
+                        "WHERE donor_id IS NOT NULL AND donor_id NOT IN (SELECT id FROM donors)"))
+                except Exception:
+                    continue
+                for r in rows:
+                    nid = next((emap[e] for e in emails_of(r['em']) if emap.get(e)), None)
+                    con.execute(f"UPDATE {tbl} SET donor_id=? WHERE rowid=?", (nid, r['rid']))
+                    if nid: relinked += 1
+                    else: freed += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('merge_orphans_v1')")
+            print(f'  שחזור שיוכים אחרי מיזוג: הוחזרו {relinked}, שוחררו {freed}')
+    except Exception as e:
+        print('  merge orphans error:', e)
+
     con.commit(); con.close()
 
 def get_all():
@@ -1313,10 +1347,7 @@ def get_all():
     try:
         emap = {}
         for d in donors:
-            for e in re.split(r'[;,\s]+', (d['email'] or '').lower()):
-                e = e.strip()
-                if '@' not in e:
-                    continue
+            for e in emails_of(d['email']):
                 if e in emap and emap[e] != d['id']:
                     emap[e] = None          # כתובת אצל שני תורמים — לא משייכים לבד
                 elif e not in emap:
@@ -1493,12 +1524,17 @@ class H(BaseHTTPRequestHandler):
                     x['sugg_first'] = _he_sugg(r['first'])
                 # שמות קוויטל שהתורם שלח מהאתר — לפי אותה כתובת מייל
                 x['kv_names'] = ''
-                em = (r['email'] or '').strip().lower()
-                if em:
+                ems = emails_of(r['email'])
+                if r['donor_id']:                       # גם שאר כתובות המייל של אותו תורם
+                    _dr = con.execute("SELECT email FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+                    for _e in (emails_of(_dr['email']) if _dr else []):
+                        if _e not in ems: ems.append(_e)
+                if ems:
                     try:
                         nm = [q['names'] for q in con.execute(
-                            """SELECT names FROM intake WHERE lower(TRIM(from_email))=?
-                               AND COALESCE(TRIM(names),'')<>'' ORDER BY id DESC LIMIT 3""", (em,))]
+                            """SELECT names FROM intake WHERE lower(TRIM(from_email)) IN (%s)
+                               AND COALESCE(TRIM(names),'')<>'' ORDER BY id DESC LIMIT 3"""
+                            % ','.join('?' * len(ems)), ems)]
                         x['kv_names'] = '\n'.join(dict.fromkeys('\n'.join(nm).split('\n'))).strip()
                     except Exception:
                         pass
@@ -1635,7 +1671,7 @@ class H(BaseHTTPRequestHandler):
                         pass
                 for ce in cand_emails:
                     for d in donors:
-                        if (d['email'] or '').strip().lower() == ce and d['email']:
+                        if ce in emails_of(d['email']):      # כל אחת מכתובות המייל של התורם
                             hit = d; break
                     if hit:
                         break
@@ -2120,8 +2156,12 @@ class H(BaseHTTPRequestHandler):
                         cur.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)",
                                     (did, ln, (dt['tier'] if dt else '') or ''))
                         have.add(ln)
-                cur.execute("UPDATE intake SET donor_id=?, status='handled' WHERE lower(TRIM(from_email))=? AND COALESCE(donor_id,0)=0",
-                            (did, (row['email'] or '').strip().lower()))
+                _dr = cur.execute("SELECT email FROM donors WHERE id=?", (did,)).fetchone()
+                _ems = emails_of(row['email']) + [e for e in emails_of(_dr['email'] if _dr else '')]
+                _ems = list(dict.fromkeys(_ems))
+                if _ems:
+                    cur.execute("UPDATE intake SET donor_id=?, status='handled' WHERE lower(TRIM(from_email)) IN (%s) AND COALESCE(donor_id,0)=0"
+                                % ','.join('?' * len(_ems)), [did] + _ems)
             # תאריך: '01-Jul-2026' -> '2026-07'
             MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
             dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
@@ -2184,16 +2224,22 @@ class H(BaseHTTPRequestHandler):
             d = cur.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
             if not k or not d:
                 con.close(); return self._send(404, {'error': 'donor not found'})
-            # העברת כל רשומות הבן מהכרטיס הנמחק לכרטיס שנשאר
-            for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks', 'partners', 'transactions', 'building'):
-                try: cur.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+            # העברת כל רשומות הבן מהכרטיס הנמחק לכרטיס שנשאר — כולל ספירה, כדי לדווח בדיוק מה עבר
+            moved = {}
+            for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
+                      'partners', 'transactions', 'building', 'recon', 'intake'):
+                try:
+                    n = cur.execute(f"SELECT COUNT(*) FROM {t} WHERE donor_id=?", (drop,)).fetchone()[0]
+                    cur.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                    if n: moved[t] = n
                 except Exception: pass
             try: cur.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
             except Exception: pass
-            # השלמת שדות ריקים בכרטיס שנשאר מתוך הכרטיס הנמחק; מיזוג טלפונים ייחודיים
+            # השלמת שדות ריקים בכרטיס שנשאר מתוך הכרטיס הנמחק; מיזוג טלפונים ואימיילים ייחודיים
             kd = dict(k); dd = dict(d); sets = []; vals = []
-            for col in ('first', 'english', 'business', 'email', 'addr', 'tier', 'category',
-                        'purpose', 'amount', 'region', 'country', 'zip', 'city'):
+            for col in ('first', 'english', 'business', 'addr', 'tier', 'category', 'purpose',
+                        'amount', 'region', 'country', 'zip', 'city', 'channel', 'pay_status',
+                        'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'months', 'last_active'):
                 if col in kd and not (kd.get(col) or '').strip() and (dd.get(col) or '').strip():
                     sets.append(f"{col}=?"); vals.append(dd[col])
             kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
@@ -2203,11 +2249,34 @@ class H(BaseHTTPRequestHandler):
             merged_phone = ' / '.join(kp)
             if merged_phone != (kd.get('phone') or ''):
                 sets.append("phone=?"); vals.append(merged_phone)
+            # אימיילים — איחוד ולא דריסה: לתורם אחד יכולות להיות כמה כתובות
+            ke = emails_of(kd.get('email'))
+            for e in emails_of(dd.get('email')):
+                if e not in ke: ke.append(e)
+            merged_mail = ', '.join(ke)
+            if merged_mail != (kd.get('email') or '').strip():
+                sets.append("email=?"); vals.append(merged_mail)
+            # הערות — מחברים, לא מאבדים
+            kn = (kd.get('notes') or '').strip(); dn = (dd.get('notes') or '').strip()
+            if dn and dn not in kn:
+                sets.append("notes=?"); vals.append((kn + ' · ' + dn).strip(' ·') if kn else dn)
             if sets:
                 cur.execute("UPDATE donors SET " + ",".join(sets) + " WHERE id=?", vals + [keep])
+            # רישום המיזוג ביומן הקשר — כדי שתמיד יהיה ברור מה עבר ומאיפה
+            HEB = {'donations': 'תרומות', 'prayers': 'שמות קוויטל', 'parnes': 'פרנס יום',
+                   'tasks': 'משימות', 'contacts_log': 'רישומי קשר', 'partners': 'אברכים',
+                   'transactions': 'חיובים', 'pledges': 'התחייבויות', 'recon': 'שורות חיוב',
+                   'building': 'בניין', 'intake': 'בקשות מהאתר'}
+            det = ', '.join(f"{v} {HEB.get(kk, kk)}" for kk, v in moved.items()) or 'ללא רשומות'
+            try:
+                cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (keep, today_iso(), 'מערכת',
+                             f"🔀 מוזג לכאן הכרטיס הכפול #{drop} {(dd.get('last') or '') + ' ' + (dd.get('first') or '')}".strip()
+                             + ' — ' + det))
+            except Exception: pass
             cur.execute("DELETE FROM donors WHERE id=?", (drop,))
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'keep': keep, 'dropped': drop})
+            return self._send(200, {'ok': True, 'keep': keep, 'dropped': drop, 'moved': moved})
         if self.path == '/api/building':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO building(donor_id,object,amount,paid,note,date) VALUES(?,?,?,?,?,?)",

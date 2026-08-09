@@ -452,8 +452,10 @@ function openDupes(){
       const gi=b.dataset.gi,grp=findDupes()[gi];if(!grp)return;
       const sel=sheet.querySelector(`input[name="keep${gi}"]:checked`);if(!sel){toast('בחר כרטיס להשאיר');return;}
       const keep=+sel.value,drops=grp.filter(d=>d.id!==keep);
-      for(const dr of drops){await api('POST','/api/merge',{keep,drop:dr.id});}
-      toast('מוזג ✓');await load();paint();});
+      const tot={};
+      for(const dr of drops){const r=await api('POST','/api/merge',{keep,drop:dr.id});
+        Object.entries((r&&r.moved)||{}).forEach(([k,v])=>tot[k]=(tot[k]||0)+v);}
+      toast('מוזג ✓ '+movedTxt(tot));await load();paint();});
     document.getElementById('cx').onclick=()=>ov.classList.remove('show');
   };
   paint(); ov.classList.add('show');
@@ -696,7 +698,7 @@ function cardDetails(d,body){
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
     <label class="fld"><span>תדירות (כל כמה זמן תורם)</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
-    <label class="fld"><span>אימייל</span><input id="f_email" value="${esc(d.email)}" dir="ltr"></label>
+    <div class="fld"><span>אימיילים</span><div id="emails" class="phones"></div></div>
     <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
     <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
       <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
@@ -728,9 +730,10 @@ function cardDetails(d,body){
     mgres.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
       const other=DB.find(x=>x.id==el.dataset.id);if(!other)return;
       if(!await uiConfirm('למזג את "'+(other.last+' '+other.first).trim()+'" (#'+other.id+') לתוך "'+(d.last+' '+d.first).trim()+'"?\nהכפול יימחק וכל הנתונים יעברו לכאן.'))return;
-      await api('POST','/api/merge',{keep:d.id,drop:other.id});toast('מוזג ✓');ov.classList.remove('show');await load();openDonor(DB.find(x=>x.id===d.id));});
+      const r=await api('POST','/api/merge',{keep:d.id,drop:other.id});
+      toast('מוזג ✓ '+movedTxt((r&&r.moved)||{}));ov.classList.remove('show');await load();openDonor(DB.find(x=>x.id===d.id));});
   };
-  const FF=['last','first','english','category','purpose','amount','frequency','email','addr','city','country','zip','business','notes','region','channel'];
+  const FF=['last','first','english','category','purpose','amount','frequency','addr','city','country','zip','business','notes','region','channel'];
   wireFields(d,FF);
   // חיפוש מהיר של כל מי שיש לו הערה דומה (למשל כל מי שהגיע דרך אותו תורם)
   const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='donations';renderCard(d);};
@@ -744,7 +747,7 @@ function cardDetails(d,body){
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
-  renderPhones(d);
+  renderPhones(d); renderEmails(d);
   // מחיקה בשתי לחיצות (confirm של הדפדפן חסום לפעמים באפליקציה המותקנת)
   const delBtn=document.getElementById('f_delete'); let delArmed=false, delTimer=null;
   delBtn.onclick=async()=>{
@@ -765,7 +768,31 @@ function cardDetails(d,body){
     toast('התורם נמחק ✓'); render();
   };
 }
+// מה בדיוק עבר במיזוג — כדי שלעולם לא יהיה ספק לאן נעלמו הנתונים
+const MOVEDHE={donations:'תרומות',prayers:'שמות קוויטל',parnes:'פרנס יום',tasks:'משימות',
+  contacts_log:'רישומי קשר',partners:'אברכים',transactions:'חיובים',pledges:'התחייבויות',
+  recon:'שורות חיוב',building:'בניין',intake:'בקשות מהאתר'};
+function movedTxt(m){const p=Object.entries(m||{}).map(([k,v])=>v+' '+(MOVEDHE[k]||k));
+  return p.length?('· עברו: '+p.join(', ')):'· לא היו רשומות בכרטיס הכפול';}
 function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
+// כמה אימיילים לאותו תורם — מופרדים בפסיק / קו נטוי / רווח
+function splitEmails(s){return String(s||'').split(/[,;/\s]+/).map(x=>x.trim()).filter(x=>x.includes('@'));}
+function renderEmails(d){
+  const el=document.getElementById('emails'); if(!el) return;
+  el.innerHTML='';
+  const save=async()=>{const list=[...el.querySelectorAll('.emin')].map(x=>x.value.trim()).filter(Boolean);
+    d.email=list.join(', ');await api('PUT','/api/donor/'+d.id,{email:d.email});toast('נשמר ✓');};
+  const addRow=(val)=>{const row=document.createElement('div');row.className='phrow';
+    row.innerHTML=`<input class="emin" dir="ltr" inputmode="email" value="${esc(val||'')}" placeholder="name@example.com"><button class="del emdel" title="מחק">🗑</button>`;
+    row.querySelector('.emin').onchange=save;
+    row.querySelector('.emdel').onclick=()=>{row.remove();save();};
+    el.insertBefore(row, el.lastChild); return row;};
+  const addBtn=document.createElement('button');addBtn.className='btn sm phadd';addBtn.textContent='➕ אימייל נוסף';
+  addBtn.onclick=()=>{const r=addRow('');r.querySelector('.emin').focus();};
+  el.appendChild(addBtn);
+  const list=splitEmails(d.email); if(!list.length) list.push('');
+  list.forEach(addRow);
+}
 function renderPhones(d){
   const el=document.getElementById('phones'); if(!el) return;
   el.innerHTML='';
