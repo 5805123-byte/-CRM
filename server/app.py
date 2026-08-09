@@ -1234,6 +1234,91 @@ def ensure_schema():
     except Exception as e:
         print('  finegold fix error:', e)
 
+    # פיצול קירזנר: יוסי (הרטשטיין) וישראל/שארפ (וייל) — שני מנויים נפרדים שנרשמו על כרטיס אחד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kirzner_split_v1'").fetchone():
+            y = con.execute("""SELECT * FROM donors WHERE last LIKE '%קירזנר%'
+                               AND id IN (SELECT donor_id FROM partners WHERE avreich LIKE '%הרטשטיין%')""").fetchone()
+            s = con.execute("""SELECT * FROM donors WHERE last LIKE '%קירזנר%'
+                               AND (last LIKE '%harp%' OR last LIKE '%שארפ%' OR LOWER(COALESCE(business,'')) LIKE '%harp%')
+                               ORDER BY id LIMIT 1""").fetchone()
+            if not y:
+                print('  קירזנר: לא נמצא כרטיס עם הרטשטיין — מדלג')
+            else:
+                yid = y['id']
+                # פרטי הקשר שיושבים על כרטיס "שארפ" הם של יוסי (yossikirzner@gmail.com) — מעבירים אליו
+                if s:
+                    sid = s['id']
+                    for col in ('email', 'phone', 'addr', 'city', 'country', 'zip'):
+                        if (s[col] or '').strip() and not (y[col] or '').strip():
+                            con.execute(f"UPDATE donors SET {col}=? WHERE id=?", (s[col], yid))
+                else:
+                    con.execute("INSERT INTO donors(last,first,created,source) VALUES('קירזנר','ישראל',?,'פיצול קירזנר')",
+                                (today_iso(),))
+                    sid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                # כרטיס ישראל — פרטי החברה מתוך חיובי האוטורייז של Sharp Managment
+                con.execute("""UPDATE donors SET last='קירזנר', first='ישראל', english='Izzy Kirzner',
+                               business='Sharp Managment', email='ikirzner@sharpmgmt.com', phone='+1 917-209-5919',
+                               addr='2365 Nostrand Ave, 2nd Floor', city='Brooklyn', country='NY', zip='11210',
+                               category=?, tier=?, channel=?, amount='1000', months=?, pay_status=?, region=?
+                               WHERE id=?""",
+                            (y['category'] or 'קבוע', y['tier'] or 'יששכר_זבולון', y['channel'] or 'בנק_ווסט',
+                             y['months'] or '', y['pay_status'] or '', y['region'] or '', sid))
+                con.execute("UPDATE donors SET amount='1000' WHERE id=?", (yid,))
+                # האברך של ישראל — וייל; הרטשטיין נשאר אצל יוסי
+                con.execute("UPDATE partners SET donor_id=? WHERE donor_id=? AND avreich LIKE '%וייל%'", (sid, yid))
+                # הקוויטל של יוסי הועתק בעבר גם לכרטיס "שארפ" — מקור הבלבול. מוחקים את הכפילות מכרטיס ישראל
+                con.execute("""DELETE FROM prayers WHERE donor_id=? AND TRIM(COALESCE(text,'')) IN
+                               (SELECT TRIM(COALESCE(text,'')) FROM prayers WHERE donor_id=?)""", (sid, yid))
+                # מפת ימי החיוב האמיתיים בבנק ווסט: מנוי "Yossi Kirzner" ב-15, מנוי "Kirzner" (החברה) ב-20
+                MONB = {'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05', 'Jun': '06',
+                        'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'}
+                dy, ds = {}, {}
+                for r in con.execute("""SELECT first,last,amount,date FROM recon
+                                        WHERE source LIKE 'Banquest%' AND last LIKE '%irzner%'"""):
+                    mm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', r['date'] or '')
+                    if not mm or round(float(r['amount'] or 0), 2) != 1000.0:
+                        continue
+                    key = f"{mm.group(3)}-{MONB.get(mm.group(2), '01')}"
+                    (dy if (r['first'] or '').strip().lower() == 'yossi' else ds)[key] = mm.group(1)
+                # חלוקת התרומות הכפולות — אחת לכל אח, עם היום המדויק של המנוי שלו
+                moved = fixed = flagged = 0
+                bym = {}
+                for r in con.execute("""SELECT id,date FROM donations WHERE donor_id=? AND note LIKE 'ייבוא 2026%'
+                                        AND method='Banquest' AND ROUND(CAST(amount AS REAL),2)=1000.0
+                                        ORDER BY date, id""", (yid,)):
+                    bym.setdefault((r['date'] or '')[:7], []).append(r['id'])
+                for mon, ids in bym.items():
+                    if len(ids) >= 2:                      # השורה השנייה שייכת לישראל
+                        con.execute("UPDATE donations SET donor_id=? WHERE id=?", (sid, ids[1]))
+                        moved += 1
+                        if ds.get(mon):
+                            con.execute("UPDATE donations SET date=? WHERE id=?", (mon + '-' + ds[mon], ids[1])); fixed += 1
+                    if dy.get(mon):                        # ליוסי — היום של המנוי שלו
+                        con.execute("UPDATE donations SET date=? WHERE id=?", (mon + '-' + dy[mon], ids[0])); fixed += 1
+                    else:                                  # אין חיוב תואם בבנק ווסט — מסמנים לבדיקה
+                        con.execute("UPDATE donations SET note='ייבוא 2026 · לבדוק — אין חיוב תואם' WHERE id=?", (ids[0],))
+                        flagged += 1
+                # שיוך שורות החיוב לאח הנכון, כדי שהאישור בדף חיובים ייפול למקום
+                con.execute("""UPDATE recon SET donor_id=? WHERE source LIKE 'Banquest%' AND last LIKE '%irzner%'
+                               AND LOWER(TRIM(first))='kirzner' AND COALESCE(processed,0)=0""", (sid,))
+                con.execute("""UPDATE recon SET donor_id=? WHERE source LIKE 'Banquest%' AND last LIKE '%irzner%'
+                               AND LOWER(TRIM(first))='yossi' AND COALESCE(processed,0)=0""", (yid,))
+                con.execute("""UPDATE recon SET donor_id=? WHERE LOWER(TRIM(email))='ikirzner@sharpmgmt.com'
+                               AND LOWER(TRIM(first))='izzy' AND COALESCE(processed,0)=0""", (sid,))
+                con.execute("""UPDATE recon SET donor_id=? WHERE LOWER(TRIM(email))='yaelkirzner@gmail.com'
+                               AND COALESCE(processed,0)=0""", (yid,))
+                for did, note in ((sid, 'קירזנר ישראל (שארפ) — לאמת אימייל וכתובת, ולקבל שמות לקוויטל'),
+                                  (sid, 'מרטין קירזנר $5,000 (24/3) חויב מאותו כרטיס של שארפ — לברר אם שייך לישראל או לכרטיס נפרד'),
+                                  (yid, 'קירזנר יוסי — ינואר ופברואר רשומים $1,000 בלי חיוב תואם; ב-26/2 נגבו $4,000+$1,800 שטרם אושרו. להשוות')):
+                    if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
+                        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'check',?)",
+                                    (did, today_iso(), note))
+                con.execute("INSERT INTO seed_flags(name) VALUES('kirzner_split_v1')")
+                print(f'  פיצול קירזנר: יוסי #{yid} / ישראל #{sid} — הועברו {moved} תרומות, תאריך מדויק {fixed}, לבדיקה {flagged}')
+    except Exception as e:
+        print('  kirzner split error:', e)
+
     # מיילים שכבר תויקו לפני שהיה תמצות — מקצרים לשורה אחת ומורידים את השרשור שלנו
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v3'").fetchone():
