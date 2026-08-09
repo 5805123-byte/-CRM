@@ -834,6 +834,7 @@ function reconPendHTML(d){
       <div class="rphd"><b>$${esc(r.amount||'')}</b> · ${esc(r.date||'')} <span class="givemeth">${esc(r.source||'')}</span>${+r.recurring?' <span class="fbchip on">🔁 הוראת קבע</span>':''}</div>
       <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category)}</select></label>
         <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
+      <label class="fld"><span>📝 הערה לתרומה (רשות) — תישמר גם בהערות התורם</span><input class="rpnote" placeholder="למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת"></label>
       <div class="rpday hidden"><div class="two"><label class="fld"><span>חודש עברי</span><select class="rpmon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select class="rpdd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
         <label class="fld"><span>שנה עברית</span><select class="rpyr">${heYearOpts()}</select></label>
@@ -868,6 +869,7 @@ function wireReconPend(d,body){
       if(!sel.value){toast('בחר עבור מה');return;}
       const b=el.querySelector('.rpok'); b.disabled=true; b.textContent='מכניס…';
       const payload={donor_id:d.id,category:sel.value};
+      const nt=el.querySelector('.rpnote'); if(nt&&nt.value.trim()){payload.note=nt.value.trim();payload.note_to_donor=true;}
       if(RPARNES.includes(sel.value)){
         const mo=el.querySelector('.rpmon').value,dd=+el.querySelector('.rpdd').value;
         payload.month=mo; payload.day=dd; payload.hyear=el.querySelector('.rpyr').value;
@@ -1012,8 +1014,14 @@ function fbChip(x){
 const THANKS_FROM='2026-08-01';
 function needThanks(x){const d=(x.date||'').slice(0,10);return !d||d>=THANKS_FROM;}
 function unthankedCount(d){return (d.donations||[]).filter(x=>needThanks(x)&&!+x.thanked).length;}
+// הערה חופשית שנרשמה לתרומה (בלי סימוני הייבוא הטכניים)
+function dnNote(x){
+  let t=String(x.note||'');
+  t=t.replace(/^ייבוא[^·]*(·\s*הוראת קבע)?\s*·?\s*/,'').replace(/^ייבוא\s*2026\s*$/,'').trim();
+  return t?`<div class="dnnote">📝 ${esc(t)}</div>`:'';
+}
 function dnRow(x,cur){cur=cur||'$';
-  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}</div>`+
+  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${dnNote(x)}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     (needThanks(x)?`<div class="thxrow ${+x.thanked?'on':''}"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו על התרומה':'🙏 האם הודית לו על התרומה?'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+

@@ -1968,6 +1968,14 @@ class H(BaseHTTPRequestHandler):
             if b.get('update_addr') and (row['addr'] or row['city'] or row['zip']):
                 cur.execute("UPDATE donors SET addr=?, city=?, country=?, zip=? WHERE id=?",
                             (row['addr'] or '', row['city'] or '', r_state, row['zip'] or '', did))
+            # הערה שנכתבה בדף החיובים — נשמרת גם בהערות התורם (ניתן לחיפוש)
+            unote = (b.get('note') or '').strip()
+            if unote and b.get('note_to_donor'):
+                cur2 = cur.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()
+                old = (cur2['notes'] if cur2 else '') or ''
+                if unote not in old:
+                    cur.execute("UPDATE donors SET notes=? WHERE id=?",
+                                ((old + ' · ' + unote).strip(' ·') if old.strip() else unote, did))
             # שמות הקוויטל שהתורם שלח מהאתר — צירוף לכרטיס שלו
             kvt = (b.get('kv_text') or '').strip()
             if b.get('attach_kv') and kvt:
@@ -2010,8 +2018,12 @@ class H(BaseHTTPRequestHandler):
                             (did, b.get('day', 0), b.get('month', ''), dtext, row['amount'], b.get('dedication', ''), PKIND[cat],
                              _ng.isoformat() if _ng else '', b.get('hyear', ''), pay_method))
             else:
+                _nt = 'ייבוא ' + pay_method + (' · הוראת קבע' if row['recurring'] else '')
+                _un = (b.get('note') or '').strip()      # הערה שנכתבה בדף החיובים
+                if _un:
+                    _nt += ' · ' + _un
                 cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
-                            (did, diso, row['amount'], cat, pay_method, 'ייבוא ' + pay_method + (' · הוראת קבע' if row['recurring'] else '')))
+                            (did, diso, row['amount'], cat, pay_method, _nt))
             if row['recurring']:
                 cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
             # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל, שבוע לפני הלילה
