@@ -1044,6 +1044,7 @@ function dnRow(x,cur){cur=cur||'$';
         <label class="fld"><span>עבור מה / קטגוריה</span><input class="de_cat" list="dncats" value="${esc(x.category||'')}" placeholder="למשל: פרנס לילה"></label></div>
       <div class="fbrow"><label class="fld"><span>אמצעי</span><input class="de_method" list="dnmeths" value="${esc(x.method||'')}"></label>
         <label class="fld"><span>סטטוס</span><select class="de_paid"><option value="1" ${+x.paid?'selected':''}>✓ שולם</option><option value="0" ${+x.paid?'':'selected'}>לא שולם</option></select></label></div>
+      <label class="fld"><span>📅 תאריך מדויק${(x.date||'').length===7?' — חסר יום, אפשר להשלים':''}</span><input type="date" class="de_date" value="${esc((x.date||'').length===10?x.date:'')}"></label>
       <button class="btn sm de_save" data-id="${x.id}">שמור שינויים</button>
     </div>`+
     `<div class="fbedit hidden" data-fb="${x.id}">
@@ -1071,7 +1072,8 @@ function renderDonations(d){
     const x=d.donations.find(y=>y.id==b.dataset.id); if(!x)return;
     x.amount=box.querySelector('.de_amt').value.trim(); x.category=box.querySelector('.de_cat').value.trim();
     x.method=box.querySelector('.de_method').value.trim(); x.paid=+box.querySelector('.de_paid').value;
-    await api('PUT','/api/donation/'+x.id,{amount:x.amount,category:x.category,method:x.method,paid:x.paid});
+    const nd=box.querySelector('.de_date').value; if(nd)x.date=nd;
+    await api('PUT','/api/donation/'+x.id,{amount:x.amount,category:x.category,method:x.method,paid:x.paid,date:x.date});
     if(x.category&&!(CAMPAIGNS||[]).includes(x.category)&&!['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'].includes(x.category)){api('POST','/api/campaigns',{name:x.category});CAMPAIGNS.unshift(x.category);}
     renderDonations(d);toast('עודכן ✓');
   });
