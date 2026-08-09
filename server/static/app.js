@@ -839,6 +839,7 @@ function reconPendHTML(d){
         <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
       <label class="fld"><span>📝 הערה לתרומה (רשות) — תישמר גם בהערות התורם</span><input class="rpnote" placeholder="למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת"></label>
       <div class="two"><label class="fld"><span>✅ משימה (רשות)</span><select class="rptaskk">${taskKindOpts()}</select></label>
+        <label class="fld"><span>👤 מי מטפל</span><select class="rptaskw">${assigneeOpts('')}</select></label>
         <label class="fld"><span>מתי להזכיר</span><input type="date" class="rptaskd" value="${esc(todayStr())}"></label></div>
       <input class="rptask" placeholder="פרטי המשימה — למשל: לבדוק מתי צריכה לשלם בפעם הבאה" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;background:var(--card);color:var(--ink)">
       <div class="rpday hidden"><div class="two"><label class="fld"><span>חודש עברי</span><select class="rpmon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
@@ -878,7 +879,8 @@ function wireReconPend(d,body){
       const nt=el.querySelector('.rpnote'); if(nt&&nt.value.trim()){payload.note=nt.value.trim();payload.note_to_donor=true;}
       const tk=el.querySelector('.rptask');
       if(tk&&tk.value.trim()){payload.task=tk.value.trim();payload.task_date=el.querySelector('.rptaskd').value||todayStr();
-        payload.task_kind=el.querySelector('.rptaskk').value;}
+        payload.task_kind=el.querySelector('.rptaskk').value;
+        payload.task_who=el.querySelector('.rptaskw').value;}
       if(RPARNES.includes(sel.value)){
         const mo=el.querySelector('.rpmon').value,dd=+el.querySelector('.rpdd').value;
         payload.month=mo; payload.day=dd; payload.hyear=el.querySelector('.rpyr').value;
