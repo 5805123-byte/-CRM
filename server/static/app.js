@@ -1152,6 +1152,8 @@ function renderCharges(){
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_audit" style="width:100%">🔍 בדיקת סתירות — אקסל מול חיובים בפועל</button></div>
+    <div id="auditbox"></div>
     <div id="reconboxes" class="reconboxes"></div>
     <div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
     `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
@@ -1159,6 +1161,29 @@ function renderCharges(){
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   const cms=document.getElementById('ch_mailsync');
   if(cms)cms.onclick=()=>runMailSync(cms);
+  const cau=document.getElementById('ch_audit');
+  if(cau)cau.onclick=async()=>{
+    const box=document.getElementById('auditbox');
+    if(box.innerHTML){box.innerHTML='';return;}
+    cau.disabled=true;cau.textContent='בודק…';
+    const r=await api('GET','/api/audit/excel');
+    cau.disabled=false;cau.textContent='🔍 בדיקת סתירות — אקסל מול חיובים בפועל';
+    const it=(r&&r.items)||[];
+    const over=it.filter(x=>x.diff<0), under=it.filter(x=>x.diff>0);
+    const sum=a=>a.reduce((s,x)=>s+Math.abs(x.diff),0);
+    const row=x=>`<div class="rowc auditrow" data-id="${x.id}"><div>
+        <div class="nm">${esc(x.name)} <span class="rownum">#${x.id}</span></div>
+        <div class="miss2">${esc(x.method)} · אקסל: ${x.xl_n} = $${Math.round(x.xl_sum).toLocaleString()} · בפועל: ${x.rc_n} = $${Math.round(x.rc_sum).toLocaleString()}</div></div>
+      <div class="meta"><b style="color:${x.diff<0?'var(--no)':'var(--yes)'}">${x.diff<0?'−':'+'}$${Math.round(Math.abs(x.diff)).toLocaleString()}</b></div></div>`;
+    box.innerHTML=`<div class="hintxt" style="margin:2px">השוואה לתקופה ${esc(r.from||'')} – ${esc(r.to||'')} (מה שהאקסל מכסה). החיובים בפועל הם המקור הנכון.</div>
+      <div class="misshead">🔴 רשום אצלנו יותר ממה שנגבה (${over.length}) — סה"כ $${Math.round(sum(over)).toLocaleString()}</div>
+      <div class="hintxt" style="margin:0 2px 4px">כסף שרשום בכרטיס אבל אין לו חיוב מקביל — כאן כדאי לבדוק.</div>
+      <div class="list">${over.map(row).join('')||'<div class="hintxt">אין 🎉</div>'}</div>
+      <div class="misshead" style="color:var(--yes)">🟢 נגבה ועדיין לא הוכנס לכרטיס (${under.length}) — סה"כ $${Math.round(sum(under)).toLocaleString()}</div>
+      <div class="hintxt" style="margin:0 2px 4px">ברובו פשוט חיובים שעוד לא אישרת בדף החיובים.</div>
+      <div class="list">${under.map(row).join('')}</div>`;
+    box.querySelectorAll('.auditrow').forEach(el=>el.onclick=()=>openDonor(DB.find(x=>x.id==el.dataset.id),'donations'));
+  };
   // משבצת נפרדת לכל שיטת תשלום — נטענת מסיכום ההתאמה
   api('GET','/api/recon/summary').then(gs=>{const box=document.getElementById('reconboxes');if(!box||!Array.isArray(gs))return;
     box.innerHTML=gs.map(g=>{const active=g.total>0;

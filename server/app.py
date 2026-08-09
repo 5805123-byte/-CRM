@@ -1160,6 +1160,45 @@ def ensure_schema():
     except Exception as e:
         print('  partner dedup error:', e)
 
+    # אוולין וולסי־פיינגולד: כרטיס כפול + תרומות אקסל שגויות. החיובים בפועל הם המקור הנכון.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='finegold_fix_v1'").fetchone():
+            k = con.execute("""SELECT id FROM donors WHERE last LIKE '%וולסי%' AND last LIKE '%פיינגולד%'
+                               ORDER BY id LIMIT 1""").fetchone()
+            o = con.execute("""SELECT id FROM donors WHERE last LIKE 'פיינגולד%' AND last NOT LIKE '%וולסי%'
+                               AND COALESCE(first,'') LIKE '%וולסין%' ORDER BY id LIMIT 1""").fetchone()
+            if k:
+                keep = k['id']
+                if o and o['id'] != keep:
+                    drop = o['id']
+                    for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log',
+                              'tasks', 'partners', 'transactions', 'building'):
+                        try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                        except Exception: pass
+                    for t in ('recon', 'intake'):
+                        try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                        except Exception: pass
+                    # שדות שחסרים בכרטיס שנשאר — משלימים מהכרטיס שנמחק
+                    for f in ('english', 'amount', 'category', 'tier', 'channel', 'phone', 'email'):
+                        try:
+                            con.execute(f"""UPDATE donors SET {f}=(SELECT {f} FROM donors WHERE id=?)
+                                            WHERE id=? AND COALESCE(TRIM({f}),'')=''""", (drop, keep))
+                        except Exception: pass
+                    con.execute("DELETE FROM donors WHERE id=?", (drop,))
+                # תרומות סיכום מהאקסל של $100 — לא נגבו בפועל, מוחקים
+                ndel = con.execute("""DELETE FROM donations WHERE donor_id=? AND note='ייבוא 2026'
+                                      AND method='Authorize' AND CAST(amount AS REAL)=100""", (keep,)).rowcount
+                # כל חיובי האשראי שלה (שני האיותים) משויכים לכרטיס הזה
+                con.execute("""UPDATE recon SET donor_id=? WHERE lower(last) LIKE '%finegold%'
+                               AND (donor_id IS NULL OR donor_id<>?)""", (keep, keep))
+                # כתובת עדכנית — אוהיו
+                con.execute("""UPDATE donors SET addr=?, city=?, region=?, zip=?, country=? WHERE id=?""",
+                            ('22626 Calverton Road', 'Beachwood', 'OH', '44122', 'US', keep))
+                con.execute("INSERT INTO seed_flags(name) VALUES('finegold_fix_v1')")
+                print(f'  פיינגולד: אוחדו כרטיסים, נמחקו {ndel} תרומות $100 שגויות, החיובים שויכו')
+    except Exception as e:
+        print('  finegold fix error:', e)
+
     # מיילים שכבר תויקו לפני שהיה תמצות — מקצרים לשורה אחת ומורידים את השרשור שלנו
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v3'").fetchone():
@@ -1449,6 +1488,52 @@ class H(BaseHTTPRequestHandler):
                 out.append(x)
             con.close()
             return self._send(200, out)
+        if self.path.split('?')[0] == '/api/audit/excel':
+            # השוואה: תרומות שיובאו מהאקסל מול החיובים שנגבו בפועל (רק בתקופה שהאקסל מכסה)
+            con = db()
+            MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07',
+                   'Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
+            def _iso(d):
+                m = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', d or '')
+                return f"{m.group(3)}-{MON.get(m.group(2),'01')}" if m else ''
+            rng = con.execute("""SELECT MIN(substr(date,1,7)) a, MAX(substr(date,1,7)) b FROM donations
+                                 WHERE note='ייבוא 2026' AND method IN ('Authorize','Banquest')""").fetchone()
+            lo, hi = (rng['a'] or '0000-00'), (rng['b'] or '9999-99')
+            xl = {}
+            for r in con.execute("""SELECT donor_id,method,date,amount FROM donations
+                                    WHERE note='ייבוא 2026' AND method IN ('Authorize','Banquest')"""):
+                m7 = (r['date'] or '')[:7]
+                if lo <= m7 <= hi:
+                    d = xl.setdefault(r['donor_id'], {}).setdefault(r['method'], {'n': 0, 's': 0.0})
+                    d['n'] += 1; d['s'] += float(r['amount'] or 0)
+            rc = {}
+            for r in con.execute("SELECT donor_id,source,date,amount,status FROM recon WHERE donor_id IS NOT NULL"):
+                if (r['status'] or 'settled') != 'settled':
+                    continue
+                m7 = _iso(r['date'])
+                if not (lo <= m7 <= hi):
+                    continue
+                m = 'Banquest' if 'Banquest' in (r['source'] or '') else 'Authorize'
+                d = rc.setdefault(r['donor_id'], {}).setdefault(m, {'n': 0, 's': 0.0})
+                d['n'] += 1; d['s'] += float(r['amount'] or 0)
+            names = {r['id']: (r['last'] + ' ' + (r['first'] or '')).strip()
+                     for r in con.execute("SELECT id,last,first FROM donors")}
+            out = []
+            for did in set(list(xl) + list(rc)):
+                if did not in names:
+                    continue
+                for m in ('Authorize', 'Banquest'):
+                    a = xl.get(did, {}).get(m, {'n': 0, 's': 0.0})
+                    b2 = rc.get(did, {}).get(m, {'n': 0, 's': 0.0})
+                    diff = round(b2['s'] - a['s'], 2)
+                    if abs(diff) < 1:
+                        continue
+                    out.append({'id': did, 'name': names[did], 'method': m,
+                                'xl_n': a['n'], 'xl_sum': round(a['s'], 2),
+                                'rc_n': b2['n'], 'rc_sum': round(b2['s'], 2), 'diff': diff})
+            out.sort(key=lambda x: -abs(x['diff']))
+            con.close()
+            return self._send(200, {'from': lo, 'to': hi, 'items': out})
         if self.path.split('?')[0] == '/api/recon/summary':
             con = db(); agg = {}
             for r in con.execute("SELECT source, processed, status FROM recon"):
