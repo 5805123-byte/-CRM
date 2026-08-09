@@ -54,6 +54,20 @@ def greg_to_heb_monthyear(date_str):
     except Exception:
         return ''
 
+def kvittel_default_month(today=None):
+    """חודש/שנה עבריים לקוויטל מזדמן: החודש הנוכחי, ומכ' בחודש ואילך — החודש הבא."""
+    if not OK:
+        return ('', '')
+    try:
+        d = today or datetime.date.today()
+        h = dates.GregorianDate(d.year, d.month, d.day).to_heb()
+        if h.day >= 20:                       # מכ' לחודש כבר מכינים לחודש הבא
+            h = h.add(months=1)
+        return (h.month_name(hebrew=True), h.hebrew_date_string().split()[-1])
+    except Exception:
+        return ('', '')
+
+
 def current_heb_year(today=None):
     """שם השנה העברית הנוכחית, למשל 'תשפ״ו'."""
     if not OK:

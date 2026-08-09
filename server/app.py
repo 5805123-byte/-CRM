@@ -6,7 +6,7 @@ from urllib.parse import quote
 def today_iso():
     return datetime.date.today().isoformat()
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, HMONTHS
+from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, kvittel_default_month, HMONTHS
 
 def heb_anniv(start_date):
     """המופע הבא (>= היום) של יום+חודש עברי מתוך תאריך תחילת שותפות — מתעלם משנת ההסכם."""
@@ -1431,7 +1431,7 @@ class H(BaseHTTPRequestHandler):
             donors, unlinked, general_tasks = get_all()
             con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]; con.close()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'heb_year': current_heb_year()})
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
         if self.path.split('?')[0] == '/calendar.ics':
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
@@ -2034,11 +2034,18 @@ class H(BaseHTTPRequestHandler):
             r_src = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
             if b.get('new_donor'):
                 nd = b['new_donor']
-                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source,notes)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                # מזדמן → הקוויטל מזדמן, עם חודש/שנה (ברירת מחדל: החודש הנוכחי, ומכ' בחודש — הבא)
+                _occ = bool(nd.get('occasional'))
+                _dcat = (nd.get('category') or '').strip() or ('מזדמן' if _occ else b.get('category', ''))
+                _kvm, _kvy = ((nd.get('kv_month') or ''), (nd.get('kv_year') or '')) if _occ else ('', '')
+                if _occ and not _kvm:
+                    _kvm, _kvy = kvittel_default_month()
+                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source,notes,tier,kv_month,kv_year)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
                              row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
-                             b.get('category', ''), today_iso(), r_src, nd.get('notes', '')))
+                             _dcat, today_iso(), r_src, nd.get('notes', ''),
+                             ('' if _occ else (nd.get('tier') or '')), _kvm, _kvy))
                 did = cur.lastrowid
                 if (nd.get('task') or '').strip() and not (b.get('task') or '').strip():
                     cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",

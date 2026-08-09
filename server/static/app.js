@@ -99,7 +99,10 @@ const FREQ = [['','חודשי'],['x2m','פעמיים בחודש'],['2m','כל ח
 function freqOpts(cur){return FREQ.map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function freqLabel(v){const f=FREQ.find(x=>x[0]===v);return f&&f[0]?f[1]:'';}
 const MON = ['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
-const KIND = {charge:'💳 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 להתפלל',followup:'📞 לחזור',other:'🔔 תזכורת'};
+const KIND = {charge:'🧾 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 לבקש שמות',followup:'📞 להתקשר',email:'📧 אימייל/וואטסאפ',verify:'💰 לבדוק שנגבה',card:'💳 לבדוק כרטיס',other:'🔔 אחר'};
+// רשימת סוגי המשימה — משמשת בכל מקום שבו קובעים משימה
+const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['prayer','🙏 לבקש שמות לקוויטל'],['parnes','🌙 פרנס יום'],['other','🔔 אחר']];
+const taskKindOpts=sel=>TASKKINDS.map(([v,l])=>`<option value="${v}" ${v===sel?'selected':''}>${l}</option>`).join('');
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function inDaysStr(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.toISOString().slice(0,10);}
 function addDay(ymd8){const y=+ymd8.slice(0,4),m=+ymd8.slice(4,6)-1,d=+ymd8.slice(6,8);return new Date(Date.UTC(y,m,d+1)).toISOString().slice(0,10).replace(/-/g,'');}
@@ -835,8 +838,9 @@ function reconPendHTML(d){
       <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category)}</select></label>
         <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
       <label class="fld"><span>📝 הערה לתרומה (רשות) — תישמר גם בהערות התורם</span><input class="rpnote" placeholder="למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת"></label>
-      <div class="two"><label class="fld"><span>✅ משימה (רשות)</span><input class="rptask" placeholder="למשל: לבדוק מתי צריכה לשלם בפעם הבאה"></label>
+      <div class="two"><label class="fld"><span>✅ משימה (רשות)</span><select class="rptaskk">${taskKindOpts()}</select></label>
         <label class="fld"><span>מתי להזכיר</span><input type="date" class="rptaskd" value="${esc(todayStr())}"></label></div>
+      <input class="rptask" placeholder="פרטי המשימה — למשל: לבדוק מתי צריכה לשלם בפעם הבאה" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;background:var(--card);color:var(--ink)">
       <div class="rpday hidden"><div class="two"><label class="fld"><span>חודש עברי</span><select class="rpmon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select class="rpdd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
         <label class="fld"><span>שנה עברית</span><select class="rpyr">${heYearOpts()}</select></label>
@@ -872,7 +876,9 @@ function wireReconPend(d,body){
       const b=el.querySelector('.rpok'); b.disabled=true; b.textContent='מכניס…';
       const payload={donor_id:d.id,category:sel.value};
       const nt=el.querySelector('.rpnote'); if(nt&&nt.value.trim()){payload.note=nt.value.trim();payload.note_to_donor=true;}
-      const tk=el.querySelector('.rptask'); if(tk&&tk.value.trim()){payload.task=tk.value.trim();payload.task_date=el.querySelector('.rptaskd').value||todayStr();}
+      const tk=el.querySelector('.rptask');
+      if(tk&&tk.value.trim()){payload.task=tk.value.trim();payload.task_date=el.querySelector('.rptaskd').value||todayStr();
+        payload.task_kind=el.querySelector('.rptaskk').value;}
       if(RPARNES.includes(sel.value)){
         const mo=el.querySelector('.rpmon').value,dd=+el.querySelector('.rpdd').value;
         payload.month=mo; payload.day=dd; payload.hyear=el.querySelector('.rpyr').value;
@@ -974,7 +980,7 @@ function cardContact(d,body){
       <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
       <div class="hintxt">התאריך התחתון = מתי לחזור אליו (נכנס ל"משימות")</div></div>
     <div class="sec"><h3>🔔 תזכורות</h3><div id="tlist"></div>
-      <div class="addrow"><select id="tk_kind"><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option><option value="prayer">🙏 להתפלל</option><option value="followup">📞 לחזור</option><option value="other">🔔 אחר</option></select><input id="tk_date" type="date"></div>
+      <div class="addrow"><select id="tk_kind">${taskKindOpts()}</select><input id="tk_date" type="date"></div>
       <div class="addrow"><input id="tk_note" placeholder="פרטים (על מה)"><button class="btn sm" id="tk_add">➕ קבע תזכורת</button></div>
       <div class="avfiles dnfiles" id="tk_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="tk_file" hidden></label></div>
       <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></div>`;
@@ -1260,7 +1266,7 @@ function renderContacts(d){
     <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
       <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button></div>
     <div class="teditpanel hidden" data-rem="${c.id}">
-      <div class="fbrow"><label class="fld"><span>סוג</span><select class="cr_kind"><option value="charge">💳 לחייב</option><option value="followup">📞 לחזור</option><option value="prayer">🙏 לבקש שמות</option><option value="other">🔔 אחר</option></select></label>
+      <div class="fbrow"><label class="fld"><span>סוג</span><select class="cr_kind">${taskKindOpts()}</select></label>
         <label class="fld"><span>מתי להזכיר</span><input type="date" class="cr_date" value="${esc(todayStr())}"></label></div>
       <label class="fld"><span>פרטים</span><input class="cr_note" value="${esc(c.summary||'')}"></label>
       <button class="btn sm cr_save" data-id="${c.id}" style="margin-top:6px">➕ צור תזכורת</button>
@@ -2093,7 +2099,7 @@ function renderTasksTab(){
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
       <div id="nt_res" class="dpres"></div>
       <div id="nt_chosen" class="pick" style="display:none"></div>
-      <div class="two" style="margin-top:6px"><select id="nt_kind"><option value="other">🔔 כללי</option><option value="followup">📞 לחזור / להתקשר</option><option value="prayer">🙏 לבקש שמות לקוויטל</option><option value="charge">💳 לחייב</option><option value="parnes">🌙 פרנס יום</option></select><input id="nt_date" type="date" value="${today}"></div>
+      <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
       <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
       <div class="hintxt">כתוב מה צריך לעשות. רוצה שאהרן יעשה — כתוב בחלון של אהרן; רוצה שאתה — בחלון שלך. אפשר גם לשייך לתורם.</div></div>

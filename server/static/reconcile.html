@@ -94,6 +94,9 @@ const DCATS = ['','קבוע','מזדמן','פרנס יום','בניין/הקדש
 function tierOpts(sel,cat){const isOcc=!(sel||'')&&cat==='מזדמן';return TIEROPTS.map(([v,l])=>`<option value="${esc(v)}" ${(v===(sel||'')&&!isOcc)?'selected':''}>${l}</option>`).join('')+`<option value="__occ" ${isOcc?'selected':''}>מזדמנים</option>`;}
 // בורר פרנס — חודש/יום/שנה עבריים
 const HMORD=['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
+function heYearOpts(sel){let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
+// סוגי משימה — אותה רשימה גם בכרטיס התורם
+const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['other','🔔 אחר']];
 const HYEARS=['תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח'];
 const HEBYEAR='תשפ"ו';
 // מודאל בחירת חודש+שנה עברית (לשיוך תורם מזדמן)
@@ -159,7 +162,9 @@ function restorePos(){try{const raw=sessionStorage.getItem(PKEY);if(!raw)return;
   if(p.k){const g=document.querySelector('.grp[data-k="'+(window.CSS&&CSS.escape?CSS.escape(p.k):p.k)+'"]');if(g){g.scrollIntoView({block:'center'});return;}}
   if(p.y)window.scrollTo(0,p.y);}catch(e){}}
 
+let KVDEF=['',''];
 async function load(){ [DATA, CAMPAIGNS, BUILDING_ITEMS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns'), api('GET','/api/building_items')]);
+  try{const meta=await api('GET','/api/data'); KVDEF=meta.kv_default||['','']; }catch(e){}
   if(SRC){ DATA=DATA.filter(x=>srcGroup(x.source)===SRC); const h=document.querySelector('h1'); if(h&&SRCLABEL[SRC]) h.textContent='💳 טיפול והתאמת תרומות — '+SRCLABEL[SRC]; }
   render(); }
 
@@ -228,9 +233,14 @@ function groupCard(k,txs){
       <div class="two"><label class="fld"><span>שם משפחה (עברית) *</span><input class="nl" placeholder="שם משפחה" value="${esc(t0.sugg_last||'')}"></label>
         <label class="fld"><span>שם פרטי (עברית)</span><input class="nf" placeholder="שם פרטי" value="${esc(t0.sugg_first||'')}"></label></div>
       ${(t0.sugg_last||t0.sugg_first)?`<div class="sub" style="font-size:.75rem;color:var(--gold)">✍️ הצעת איות אוטומטית — בדוק ותקן אם צריך</div>`:''}
+      <div class="two"><label class="fld"><span>📋 סוג התורם</span><select class="ncat">${DCATS.map(c=>`<option value="${esc(c)}" ${c==='מזדמן'?'selected':''}>${c||'— בחר —'}</option>`).join('')}</select></label>
+        <label class="fld"><span>🕯️ דרגת קוויטל</span><select class="ntier">${TIEROPTS.map(([v,l])=>`<option value="${esc(v)}">${l}</option>`).join('')}<option value="__occ" selected>מזדמנים</option></select></label></div>
+      <div class="two nkvmy"><label class="fld"><span>🗓️ חודש (מזדמנים)</span><select class="nkvm">${HMORD.map(m=>`<option ${m===KVDEF[0]?'selected':''}>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>שנה עברית</span><select class="nkvy">${heYearOpts(KVDEF[1])}</select></label></div>
       <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><input class="nn" placeholder="דרך מי הגיע / כל הערה שתרצה למצוא אחר כך"></label>
-      <div class="two"><label class="fld"><span>✅ משימה (למשל: לחזור להגיד תודה)</span><input class="nt" placeholder="מה צריך לעשות"></label>
+      <div class="two"><label class="fld"><span>✅ משימה</span><select class="ntk">${TASKKINDS.map(([v,l])=>`<option value="${esc(v)}">${l}</option>`).join('')}</select></label>
         <label class="fld"><span>מתי</span><input type="date" class="ntd" value="${esc(TODAY)}"></label></div>
+      <input class="nt fld" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit" placeholder="פרטי המשימה (רשות)">
       <div class="sub" style="font-size:.78rem">ייווצר כרטיס חדש עם השם האנגלי, הטלפון, האימייל והכתובת מהאתר.</div>
     </div>`;
   const kvHtml = t0.kv_names ? `<div class="kvbox">🕯️ <b>שמות לקוויטל שנשלחו מהאתר:</b>
@@ -315,12 +325,25 @@ function wireGroup(k,txs){
       });
     },250);};
     const nl=assign.querySelector('.nl'), nf=assign.querySelector('.nf'), nn=assign.querySelector('.nn');
-    const nt=assign.querySelector('.nt'), ntd=assign.querySelector('.ntd');
+    const nt=assign.querySelector('.nt'), ntd=assign.querySelector('.ntd'), ntk=assign.querySelector('.ntk');
+    const ncat=assign.querySelector('.ncat'), ntier=assign.querySelector('.ntier');
+    const nkvm=assign.querySelector('.nkvm'), nkvy=assign.querySelector('.nkvy'), nkvmy=assign.querySelector('.nkvmy');
     if(nl.value.trim()){ state.nl=nl.value.trim(); state.nf=nf.value.trim(); }   // הצעת האיות מוכנה מראש
+    // מזדמן -> הקוויטל מזדמן אוטומטית, לחודש הנוכחי (ומכ' בחודש — לחודש הבא)
+    const syncKv=()=>{
+      if(ncat && ncat.value==='מזדמן' && ntier && ntier.value!=='__occ') ntier.value='__occ';
+      if(nkvmy) nkvmy.style.display=(ntier && ntier.value==='__occ')?'flex':'none';
+      grab();
+    };
     const grab=()=>{ state.nn=nn?nn.value.trim():''; state.nt=nt?nt.value.trim():''; state.ntd=ntd?ntd.value:'';
+      state.ntk=ntk?ntk.value:'followup';
+      state.ncat=ncat?ncat.value:''; state.ntier=ntier?ntier.value:'';
+      state.nkvm=nkvm?nkvm.value:''; state.nkvy=nkvy?nkvy.value:'';
       if(nl.value.trim()){ state.createNew=true; state.donorId=null; state.nl=nl.value.trim(); state.nf=nf.value.trim(); pick.style.display='none'; } };
     [nl,nf,nn,nt,ntd].forEach(inp=>inp&&(inp.oninput=grab));
-    if(ntd)ntd.onchange=grab;
+    [ntd,ntk,nkvm,nkvy].forEach(el=>el&&(el.onchange=grab));
+    if(ncat)ncat.onchange=syncKv; if(ntier)ntier.onchange=syncKv;
+    syncKv();
   }
   // הצגת שדה שמות פרנס כשבוחרים קטגוריית פרנס
   card.querySelectorAll('.txn').forEach(txEl=>{const sel=txEl.querySelector('.cat'),ded=txEl.querySelector('.pyded'),pick=txEl.querySelector('.pypick'),nc=txEl.querySelector('.newcat'),bl=txEl.querySelector('.bldgitem');
@@ -355,10 +378,14 @@ function wireGroup(k,txs){
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
       if(rnote&&rnote.value.trim()){ body.note=rnote.value.trim(); body.note_to_donor=rnoteDon?rnoteDon.checked:true; }
       if(!taskDone && rtask && rtask.value.trim()){ body.task=rtask.value.trim(); body.task_date=rtaskd?rtaskd.value:''; body.task_kind=rtaskk?rtaskk.value:'followup'; taskDone=true; }
+      if(!taskDone && state.createNew && state.nt){ body.task=state.nt; body.task_date=state.ntd||''; body.task_kind=state.ntk||'followup'; taskDone=true; }
       if(kvAdd&&kvText&&kvText.value.trim()){ body.attach_kv=true; body.kv_text=kvText.value.trim(); }
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
       if(donorId) body.donor_id=donorId;
-      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||'',task:state.nt||'',task_date:state.ntd||''}; }
+      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||'',
+        category:(state.ncat||''), tier:(state.ntier==='__occ'?'':(state.ntier||'')),
+        kv_month:(state.ntier==='__occ'?(state.nkvm||''):''), kv_year:(state.ntier==='__occ'?(state.nkvy||''):''),
+        occasional:(state.ntier==='__occ')}; }
       const r=await api('POST','/api/recon/'+tid, body);
       if(r.donor_id){ donorId=r.donor_id; }
       upaddr=false; kvAdd=false; // רק פעם אחת
