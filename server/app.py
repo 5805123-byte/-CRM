@@ -1319,6 +1319,50 @@ def ensure_schema():
     except Exception as e:
         print('  kirzner split error:', e)
 
+    # קירזנר — השלמות מהמשרד: שני חיובי קמחא דפסחא של ישראל, ויעל (הכלה) בכרטיס נפרד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kirzner_split_v2'").fetchone():
+            yr = con.execute("""SELECT id FROM donors WHERE last LIKE '%קירזנר%'
+                                AND id IN (SELECT donor_id FROM partners WHERE avreich LIKE '%הרטשטיין%')""").fetchone()
+            sr = con.execute("""SELECT id FROM donors WHERE last LIKE '%קירזנר%'
+                                AND (LOWER(COALESCE(business,'')) LIKE '%harp%' OR LOWER(COALESCE(email,'')) LIKE '%sharpmgmt%')
+                                ORDER BY id LIMIT 1""").fetchone()
+            if not sr:
+                print('  קירזנר v2: לא נמצא כרטיס שארפ — מדלג')
+            else:
+                sid = sr['id']
+                # שני החיובים של 24/3 שייכים לישראל — הוא נתן, והבת נתנה בשמו. קמחא דפסחא תשפ"ו
+                con.execute("""UPDATE recon SET donor_id=?, category='קמחא דפסחא תשפ"ו'
+                               WHERE LOWER(TRIM(email))='ikirzner@sharpmgmt.com' AND COALESCE(processed,0)=0""", (sid,))
+                nt = 'מרטין קירזנר — הבת של ישראל; נתנה $5,000 קמחא דפסחא תשפ"ו בשמו (בנוסף ל-$5,000 שלו)'
+                old = (con.execute("SELECT notes FROM donors WHERE id=?", (sid,)).fetchone()['notes'] or '').strip()
+                if nt not in old:
+                    con.execute("UPDATE donors SET notes=? WHERE id=?", ((old + ' · ' + nt).strip(' ·') if old else nt, sid))
+                con.execute("DELETE FROM tasks WHERE donor_id=? AND note LIKE 'מרטין קירזנר $5,000%'", (sid,))
+                try: con.execute("""INSERT OR IGNORE INTO campaigns(name,created) VALUES('קמחא דפסחא תשפ"ו',?)""", (today_iso(),))
+                except Exception: pass
+                # יעל — הכלה. כרטיס נפרד לגמרי, ולא אצל יוסי
+                yl = con.execute("""SELECT id FROM donors WHERE last LIKE '%קירזנר%'
+                                    AND (first LIKE '%יעל%' OR LOWER(COALESCE(email,'')) LIKE '%yaelkirzner%')
+                                    ORDER BY id LIMIT 1""").fetchone()
+                if yl:
+                    lid = yl['id']
+                else:
+                    con.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,
+                                                      category,region,created,source)
+                                   VALUES('קירזנר','יעל','Yael Kirzner','+1 718-640-8361','yaelkirzner@gmail.com',
+                                          '766 Sherwood St','Valley Stream','NY','11581','מזדמן','us',?,'פיצול קירזנר')""",
+                                (today_iso(),))
+                    lid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.execute("""UPDATE recon SET donor_id=? WHERE LOWER(TRIM(email))='yaelkirzner@gmail.com'
+                               AND COALESCE(processed,0)=0""", (lid,))
+                if yr:
+                    con.execute("UPDATE tasks SET note=REPLACE(note,'; ב-26/2',' · ב-26/2') WHERE donor_id=?", (yr['id'],))
+                con.execute("INSERT INTO seed_flags(name) VALUES('kirzner_split_v2')")
+                print(f'  קירזנר v2: קמחא דפסחא לישראל #{sid}, יעל בכרטיס נפרד #{lid}')
+    except Exception as e:
+        print('  kirzner v2 error:', e)
+
     # מיילים שכבר תויקו לפני שהיה תמצות — מקצרים לשורה אחת ומורידים את השרשור שלנו
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='maillog_gist_v3'").fetchone():
