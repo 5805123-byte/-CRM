@@ -1761,6 +1761,14 @@ def ensure_schema():
     except Exception as e:
         print('  heb quote error:', e)
 
+    # כלל קבוע לתורם: סכום מסוים אצלו תמיד שייך לאותו ייעוד (למשל $3,500 = מעקות · בניין)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS donor_rules(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "donor_id INTEGER, amount REAL, category TEXT, note TEXT, created TEXT)")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_donor ON donor_rules(donor_id,amount)")
+    except Exception:
+        pass
+
     # אינדקסים — בלעדיהם כל שאילתה לפי תורם סורקת את כל הטבלה, וזה מה שמאט את דף החיובים
     for _ix, _tb, _cl in (('idx_don_donor', 'donations', 'donor_id'), ('idx_prayers_donor', 'prayers', 'donor_id'),
                           ('idx_tasks_donor', 'tasks', 'donor_id'), ('idx_clog_donor', 'contacts_log', 'donor_id'),
@@ -1853,6 +1861,14 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
+    for d in donors: d['rules'] = []
+    try:
+        for r in c.execute("SELECT id,donor_id,amount,category,note FROM donor_rules ORDER BY amount DESC"):
+            if r['donor_id'] in byid:
+                byid[r['donor_id']]['rules'].append(dict(r))
+    except Exception:
+        pass
+
     # בקשות קוויטל מהאתר שטרם צורפו — לאישור ישירות מכרטיס התורם
     for d in donors: d['intake_pending'] = []
     try:
@@ -2196,6 +2212,11 @@ def recon_apply(cur, tid, b):
     # תאריך מלא (יום-חודש-שנה) ולא רק חודש — כדי שיוצג מתי בדיוק נגבה
     diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}-{dm.group(1)}" if dm else ''
     cat = b.get('category', '') or row['category'] or ''
+    if not cat and did:                       # אין בחירה — אולי יש כלל קבוע לסכום הזה אצל התורם
+        _rr = cur.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
+                          (did, round(float(row['amount'] or 0), 2))).fetchone()
+        if _rr:
+            cat = _rr['category'] or ''
     # קטגוריה חופשית (עבור מה) — נשמרת לרשימה קבועה לשימוש חוזר
     BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
     if cat and cat not in BASE_CATS:
@@ -2254,6 +2275,19 @@ def recon_apply(cur, tid, b):
                                (did, _note)).fetchone():
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
                             (did, today_iso(), 'parnes', _note))
+    # כלל קבוע: "כל $X של התורם הזה = הייעוד הזה" — נשמר, ומוחל גם על מה שכבר נרשם
+    _rl = b.get('rule') or {}
+    if _rl.get('apply') and did:
+        _amt = round(float(row['amount'] or 0), 2)
+        cur.execute("INSERT OR REPLACE INTO donor_rules(donor_id,amount,category,note,created) "
+                    "VALUES(?,?,?,?,?)", (did, _amt, cat, (_rl.get('note') or '').strip(), today_iso()))
+        _rn = (_rl.get('note') or '').strip()
+        cur.execute("UPDATE donations SET category=? WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=?",
+                    (cat, did, _amt))
+        if _rn:
+            cur.execute("UPDATE donations SET note=COALESCE(note,'')||' · '||? "
+                        "WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(note,'') NOT LIKE ?",
+                        (_rn, did, _amt, '%' + _rn + '%'))
     cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
     return (200, {'ok': True, 'donor_id': did})
 
@@ -2471,6 +2505,16 @@ class H(BaseHTTPRequestHandler):
                     x['sugg_last'] = _he_sugg(r['last'])
                     x['sugg_first'] = _he_sugg(r['first'])
                 # שמות קוויטל שהתורם שלח מהאתר — לפי אותה כתובת מייל
+                x['rule_cat'] = x['rule_note'] = ''
+                if r['donor_id']:
+                    try:
+                        _rr = con.execute("SELECT category,note FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
+                                          (r['donor_id'], round(float(r['amount'] or 0), 2))).fetchone()
+                        if _rr:
+                            x['rule_cat'] = _rr['category'] or ''
+                            x['rule_note'] = _rr['note'] or ''
+                    except Exception:
+                        pass
                 x['kv_names'] = ''
                 ems = emails_of(r['email'])
                 if r['donor_id']:                       # גם שאר כתובות המייל של אותו תורם
@@ -3082,6 +3126,35 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/rule':
+            # כלל קבוע: כל סכום X אצל התורם הזה = הייעוד הזה. מוחל גם על מה שכבר נרשם
+            try:
+                did = int(b.get('donor_id')); amt = round(float(b.get('amount')), 2)
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id/amount required'})
+            cat = (b.get('category') or '').strip()
+            note = (b.get('note') or '').strip()
+            con = db(); cur = con.cursor()
+            if b.get('delete'):
+                cur.execute("DELETE FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?", (did, amt))
+                con.commit(); con.close()
+                return self._send(200, {'ok': True, 'deleted': True})
+            if not cat:
+                con.close(); return self._send(400, {'error': 'category required'})
+            BASE = {'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור',
+                    'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר', 'בניין'}
+            if cat not in BASE:
+                cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+            cur.execute("INSERT OR REPLACE INTO donor_rules(donor_id,amount,category,note,created) "
+                        "VALUES(?,?,?,?,?)", (did, amt, cat, note, today_iso()))
+            n = cur.execute("UPDATE donations SET category=? WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=?",
+                            (cat, did, amt)).rowcount
+            if note:
+                cur.execute("UPDATE donations SET note=TRIM(COALESCE(note,'')||' · '||?,' ·') "
+                            "WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(note,'') NOT LIKE ?",
+                            (note, did, amt, '%' + note + '%'))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'updated': n})
         if self.path == '/api/classify':
             # מענה על משימת "עבור מה" — מעדכן את התרומות בכרטיס התורם וסוגר את המשימה
             try:

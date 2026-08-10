@@ -73,6 +73,11 @@
     font-family:inherit;font-size:.9rem;background:#fff;color:var(--ink);font-weight:700}
   .autowhy{font-size:.78rem;color:var(--muted);margin-top:5px}
   .autowhy b{color:var(--accent)}
+  .rulebox{width:100%;margin-top:6px;background:#f6f3ff;border:1px solid #cfc3f0;border-radius:9px;padding:7px 9px}
+  .rulebox .rulenote{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;
+    font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink)}
+  .rulechk{display:flex;align-items:center;gap:7px;font-size:.79rem;font-weight:700;color:var(--accent);
+    margin-top:6px;cursor:pointer}
   .pypick select{flex:1;padding:7px 8px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff}
 </style>
 </head>
@@ -231,6 +236,8 @@ function render(){
 function autoCat(txs,matched){
   const ok=txs.filter(t=>(!t.status||t.status==='settled')&&!t.processed);
   if(!ok.length) return {cat:'',why:''};
+  const rl=ok.find(t=>t.rule_cat);
+  if(rl) return {cat:rl.rule_cat,why:'כלל קבוע: $'+(+rl.amount).toFixed(0)+(rl.rule_note?(' — '+rl.rule_note):'')};
   const amts=ok.map(t=>parseFloat(t.amount||0));
   const tier=(matched&&matched.match_tier)||'', dcat=(matched&&matched.match_cat)||'';
   if(/יששכר|יש.?ז/.test(tier)) return {cat:'יששכר־זבולון',why:'הכרטיס מוגדר יששכר־זבולון'};
@@ -324,6 +331,10 @@ function groupCard(k,txs){
         <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
         <select class="pyyr">${yearOpts(HEBYEAR)}</select></div>
       <input class="pyded" placeholder="🕯️ שמות/בקשות לפרנס (רשות)" style="display:${show?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit">`;})():''}
+      ${(!failed&&!t.processed)?`<div class="rulebox">
+        <input class="rulenote" placeholder="✍️ עבור מה בדיוק? (למשל: מעקות וכיסוי רדיאטורים)" value="${esc(t.rule_note||'')}">
+        <label class="rulechk"><input type="checkbox" class="ruleall" ${t.rule_cat?'checked':''}>
+          🔁 זכור: כל $${amt.toFixed(0)} של התורם הזה = זה (גם אחורה וגם בעתיד)</label></div>`:''}
       <button class="rowdel" title="מחק את השורה הזו מדף החיובים">🗑</button>
     </div>`;
   }).join('');
@@ -477,6 +488,8 @@ function wireGroup(k,txs){
       if(isBldg(catVal)){const bl=txEl.querySelector('.bldgitem');const item=bl?bl.value.trim():'';if(item){if(!BUILDING_ITEMS.includes(item)){await api('POST','/api/building_items',{name:item});BUILDING_ITEMS.unshift(item);}catVal=catVal+' — '+item;}}
       const dedEl=txEl.querySelector('.pyded');
       const body={category:catVal, update_addr:upaddr, dedication:dedEl?dedEl.value.trim():''};
+      const rn=txEl.querySelector('.rulenote'), ra=txEl.querySelector('.ruleall');
+      if(ra&&ra.checked) body.rule={apply:true, note:rn?rn.value.trim():''};
       if(rnote&&rnote.value.trim()){ body.note=rnote.value.trim(); body.note_to_donor=rnoteDon?rnoteDon.checked:true; }
       if(!taskDone && rtask && rtask.value.trim()){ body.task=rtask.value.trim(); body.task_date=rtaskd?rtaskd.value:''; body.task_kind=rtaskk?rtaskk.value:'followup'; body.task_who=rtaskw?rtaskw.value:''; taskDone=true; }
       if(kvAdd&&kvText&&kvText.value.trim()){ body.attach_kv=true; body.kv_text=kvText.value.trim(); }

@@ -395,6 +395,12 @@
   /* בהדפסה הכל נקרא כרשימה אחת רצופה תחת שם התורם — משבצת אחת */
   @media print{.kblock.kvmulti .names+.names{border-top:none;margin-top:0;padding-top:0}
     .kblock .names{margin:0;padding:0}}
+  .rulerow{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);
+    border-radius:9px;margin-bottom:5px;background:var(--card);font-size:.88rem}
+  .rulerow b{color:var(--accent);min-width:64px}
+  .rulerow .rulecat{background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:2px 9px;font-weight:800;font-size:.78rem}
+  .rulerow .rulenote2{color:var(--muted);font-size:.8rem;flex:1}
+  .rulerow .ruledel{margin-inline-start:auto}
   .unclbox{background:#fff7e8;border:1px solid #e8c79a;border-radius:10px;padding:9px 11px;margin-bottom:9px}
   .unclbox .k{font-size:.8rem;color:#8a6a00;font-weight:800;margin-bottom:6px}
   .unclbox select{flex:1;min-width:140px}

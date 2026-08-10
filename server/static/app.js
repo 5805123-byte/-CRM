@@ -718,6 +718,19 @@ function cardDetails(d,body){
     ${izSummaryHTML(d)}
     ${give}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 התחייב · טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
+    <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
+      <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
+      <div id="rules">${(d.rules||[]).map(r=>`<div class="rulerow" data-amt="${r.amount}">
+        <b>$${(+r.amount).toLocaleString('en-US',{maximumFractionDigits:2})}</b>
+        <span class="rulecat">${esc(r.category||'')}</span>
+        ${r.note?`<span class="rulenote2">${esc(r.note)}</span>`:''}
+        <button class="del ruledel" data-amt="${r.amount}" title="מחק כלל">🗑</button></div>`).join('')}</div>
+      <div class="addrow" style="margin-top:6px">
+        <input id="rl_amt" type="number" step="0.01" placeholder="סכום" style="max-width:110px">
+        <select id="rl_cat">${RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}">${esc(c)||'— עבור מה —'}</option>`).join('')}</select></div>
+      <div class="addrow" style="margin-top:6px">
+        <input id="rl_note" placeholder="פירוט (למשל: מעקות וכיסוי רדיאטורים)">
+        <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></div>
     <div class="sec"><button class="btn ghost" id="f_merge" style="width:100%">🔀 מזג עם כרטיס כפול (אותו אדם)</button>
       <div id="mergebox" class="hidden" style="margin-top:8px">
         <input id="mg_q" placeholder="🔍 חפש את הכרטיס הכפול למזג לכאן…" autocomplete="off">
@@ -727,6 +740,21 @@ function cardDetails(d,body){
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
+  const rlAdd=document.getElementById('rl_add');
+  if(rlAdd)rlAdd.onclick=async()=>{
+    const amt=parseFloat(document.getElementById('rl_amt').value);
+    const cat=document.getElementById('rl_cat').value.trim();
+    const note=document.getElementById('rl_note').value.trim();
+    if(!amt||!cat){toast('מלא סכום ועבור מה');return;}
+    rlAdd.disabled=true;
+    const r=await api('POST','/api/rule',{donor_id:d.id,amount:amt,category:cat,note});
+    rlAdd.disabled=false;
+    if(!r||!r.ok){toast('השמירה נכשלה');return;}
+    toast('נשמר · עודכנו '+r.updated+' תרומות ✓');
+    await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
+  body.querySelectorAll('.ruledel').forEach(b=>b.onclick=async()=>{
+    await api('POST','/api/rule',{donor_id:d.id,amount:+b.dataset.amt,delete:true});
+    toast('הכלל נמחק'); await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   document.getElementById('f_merge').onclick=()=>document.getElementById('mergebox').classList.toggle('hidden');
   const mgq=document.getElementById('mg_q'),mgres=document.getElementById('mg_res');
   mgq.oninput=()=>{const s=norm(mgq.value);if(!s){mgres.innerHTML='';return;}
