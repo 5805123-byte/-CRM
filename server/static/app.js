@@ -1595,6 +1595,7 @@ function shareParnesMenu(t,d){
       <button class="btn ghost" id="shdl">📥 הורד / פתח את התמונה</button>`:'<div class="hintxt" style="color:var(--no)">אין תמונת הקדשה מצורפת — העלה תמונה קודם.</div>'}
       <div class="hintxt" style="margin:2px 0">— התעודה המעוצבת —</div>
       <button class="btn" id="shcimg" style="background:var(--accent);border-color:var(--accent)">🖼️ שלח את התעודה כתמונה</button>
+      <button class="btn ghost" id="shccopy">📋 העתק את התעודה כתמונה</button>
       <button class="btn ghost" id="shcdl">📥 הורד את התעודה כתמונה</button>
       <button class="btn ghost" id="shwa">📲 שלח קישור לתעודה בוואטסאפ</button>
       <button class="btn ghost" id="shml">📧 מייל דרך תוכנת הדואר</button>
@@ -1610,6 +1611,16 @@ function shareParnesMenu(t,d){
     if(r==='shared'){toast('נשלח ✓');done();}
     else if(r==='copied'){toast('התמונה הועתקה — הדבק בוואטסאפ ווב');pasteStep();}
     else if(r==='downloaded'){toast('התמונה ירדה למכשיר ✓');}};
+  const cc=o.querySelector('#shccopy');
+  if(cc)cc.onclick=async()=>{
+    if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write)){toast('הדפדפן לא תומך בהעתקת תמונה');return;}
+    cc.disabled=true;cc.textContent='מעתיק…';
+    const getPng=async()=>await (await fetch(pngUrl)).blob();
+    let ok=false;
+    try{await navigator.clipboard.write([new ClipboardItem({'image/png':getPng()})]);ok=true;}catch(e){}
+    if(!ok){try{await navigator.clipboard.write([new ClipboardItem({'image/png':await getPng()})]);ok=true;}catch(e){}}
+    cc.disabled=false;cc.textContent='📋 העתק את התעודה כתמונה';
+    if(ok){toast('הועתק ✓');pasteStep();}else{toast('ההעתקה נכשלה');}};
   const cd=o.querySelector('#shcdl');
   if(cd)cd.onclick=async()=>{const a=document.createElement('a');a.href=pngUrl;a.download=pngName;a.click();toast('מוריד…');};
   // שלב 2 במחשב: התמונה כבר בלוח — נותר לפתוח וואטסאפ ווב ולהדביק

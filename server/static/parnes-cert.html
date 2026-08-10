@@ -59,11 +59,12 @@
 </div></div>
 
 <div class="noprint">
+  <button id="copyBtn" style="background:#3b2f5e">📋 העתק תמונה</button>
   <button id="sendBtn" style="background:#25D366">📤 שלח לתורם (תמונה)</button>
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
   <button class="g" id="addBtn">➕ הוסף שם</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
-  <div class="tip">"📤 שלח לתורם" שולח את התעודה כתמונה — בטלפון ישר לוואטסאפ, במחשב מועתקת להדבקה.<br>מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
+  <div class="tip">"📋 העתק תמונה" — ואז מדביקים בוואטסאפ או במייל. "📤 שלח לתורם" שולח את התעודה כתמונה — בטלפון ישר לוואטסאפ, במחשב מועתקת להדבקה.<br>מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
 </div>
 
 <script>
@@ -155,12 +156,34 @@ function certText(){
   else { nm=[...document.querySelectorAll('#pairs .names')].map(e=>e.innerText.trim()).filter(Boolean).join('\n'); }
   return {date:dt, names:nm};
 }
+// כתובת התמונה לפי מה שכתוב עכשיו על המסך
+function certPngUrl(){
+  const {date,names}=certText();
+  return '/cert.png?'+new URLSearchParams({kind:KIND,date,names}).toString();
+}
+// העתקה ללוח — הדרך הכי מהירה: מעתיקים ומדביקים בוואטסאפ/מייל
+$('copyBtn').onclick=async()=>{
+  const b=$('copyBtn'), t0=b.textContent;
+  const {names}=certText();
+  if(!names.trim()){ alert('אין שמות בתעודה'); return; }
+  const url=certPngUrl();
+  if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write)){
+    alert('הדפדפן הזה לא תומך בהעתקת תמונה — השתמש ב"שלח לתורם"'); return; }
+  b.textContent='מעתיק…';
+  const getPng=async()=>await (await fetch(url)).blob();
+  try{ await navigator.clipboard.write([new ClipboardItem({'image/png':getPng()})]);  // צורת ה-Promise — נדרשת בספארי
+       b.textContent='✅ הועתק — הדבק בוואטסאפ'; setTimeout(()=>b.textContent=t0,2500); return; }catch(e){}
+  try{ await navigator.clipboard.write([new ClipboardItem({'image/png':await getPng()})]);
+       b.textContent='✅ הועתק — הדבק בוואטסאפ'; setTimeout(()=>b.textContent=t0,2500); return; }catch(e){}
+  b.textContent=t0; alert('ההעתקה נכשלה — נסה "שלח לתורם"');
+};
+
 $('sendBtn').onclick=async()=>{
   const b=$('sendBtn'), t0=b.textContent;
   const {date,names}=certText();
   if(!names.trim()){ alert('אין שמות בתעודה'); return; }
   b.disabled=true; b.textContent='מכין את התמונה…';
-  const url='/cert.png?'+new URLSearchParams({kind:KIND,date,names}).toString();
+  const url=certPngUrl();
   let blob=null;
   try{ blob=await (await fetch(url)).blob(); }
   catch(e){ b.disabled=false; b.textContent=t0; window.open(url,'_blank'); return; }
