@@ -2394,6 +2394,131 @@ def dedupe_prayers(con):
     return removed, merged, len(donors)
 
 
+_CERT_CFG = {
+    'parnes':    {'bg': 'letterhead.jpg',        'box': (0.25, 0.095, 0.95, 0.89)},
+    'coffee':    {'bg': 'letterhead-coffee.jpg', 'box': (0.09, 0.24, 0.91, 0.79)},
+    'breakfast': {'bg': 'letterhead-coffee.jpg', 'box': (0.09, 0.24, 0.91, 0.79)},
+}
+_CERT_SMALL = re.compile(r'^(בן|בת|ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|נ["\'״׳]י)$')
+_DEEP = (0x6a, 0x14, 0x14)
+_BLACK = (0, 0, 0)
+_INK = (0x1c, 0x17, 0x10)
+
+
+def _bidi(s):
+    try:
+        from bidi.algorithm import get_display
+        return get_display(s)
+    except Exception:
+        return s
+
+
+def cert_png(kind='parnes', date='', names='', dedic='', width=1000):
+    """מצייר את תעודת הפרנס כתמונה — אותו בלאנק, אותו סידור, גופן שמתאים את עצמו לדף."""
+    from PIL import Image, ImageDraw, ImageFont
+    cfg = _CERT_CFG.get(kind) or _CERT_CFG['parnes']
+    im = Image.open(os.path.join(STATIC, cfg['bg'])).convert('RGB')
+    if im.width != width:
+        im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
+    W, H = im.size
+    x0, y0 = int(cfg['box'][0] * W), int(cfg['box'][1] * H)
+    x1, y1 = int(cfg['box'][2] * W), int(cfg['box'][3] * H)
+    bw, bh = x1 - x0, y1 - y0
+    reg = os.path.join(STATIC, 'frankruhl-regular.ttf')
+    bold = os.path.join(STATIC, 'frankruhl-bold.ttf')
+    cache = {}
+
+    def font(px, heavy):
+        k = (int(px), heavy)
+        if k not in cache:
+            cache[k] = ImageFont.truetype(bold if heavy else reg, max(6, int(px)))
+        return cache[k]
+
+    # כל בלוק: (טקסט, יחס-גודל, מודגש, צבע, רווח-לפני, רווח-אחרי, גובה-שורה)
+    if kind in ('coffee', 'breakfast'):
+        ded = dedic or ('ארוחת בוקר היום נתרמה לזכות' if kind == 'breakfast'
+                        else 'הקפה החלב שתיה חמה ועוגיות נתרמו לזכות')
+        blocks = [(date, 1.05, True, _DEEP, 0, .35, 1.35),
+                  ('פרנס יום', 2.5, True, _DEEP, .1, .25, 1.2),
+                  (ded, 1.42, True, _DEEP, 0, .4, 1.3),
+                  (names, 2.35, True, _BLACK, .15, .4, 1.28)]
+    else:
+        blocks = [('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות '
+                   'בעת רצון הגדול של חצות הלילה עד הבוקר', 1.0, False, _INK, 0, 0, 1.45),
+                  (date, 1.55, True, _DEEP, .5, .35, 1.3),
+                  ('יהיו ויעמדו לזכות', 1.0, False, _INK, 0, .15, 1.35),
+                  (names, 2.3, True, _BLACK, .15, .35, 1.14)]
+    blocks = [b for b in blocks if (b[0] or '').strip()]
+
+    def runs(line, px, heavy):
+        """מפצל שורה למקטעים — בן/בת/ז״ל קטנים יותר, כמו בתעודה במסך."""
+        out = []
+        for tok in re.split(r'(\s+)', line):
+            if not tok:
+                continue
+            if tok.isspace():
+                out.append((tok, px, heavy)); continue
+            small = bool(_CERT_SMALL.match(tok))
+            out.append((tok, px * .5 if small else px, False if small else heavy))
+        return out
+
+    def wrap(text, px, heavy, dr):
+        """שבירת שורות לרוחב התיבה, תוך שמירה על שורות שנכתבו במפורש."""
+        lines = []
+        for raw in str(text).split('\n'):
+            words = raw.split()
+            if not words:
+                lines.append([]); continue
+            cur = []
+            for w in words:
+                trial = cur + [w]
+                wpx = sum(dr.textlength(t, font=font(s, h)) for t, s, h in
+                          runs(' '.join(trial), px, heavy))
+                if wpx <= bw or not cur:
+                    cur = trial
+                else:
+                    lines.append(runs(' '.join(cur), px, heavy)); cur = [w]
+            if cur:
+                lines.append(runs(' '.join(cur), px, heavy))
+        return lines
+
+    dr = ImageDraw.Draw(im)
+
+    def layout(base):
+        total, out = 0.0, []
+        for i, (txt, mult, heavy, col, mt, mb, lh) in enumerate(blocks):
+            px = base * mult
+            total += mt * base
+            ls = wrap(txt, px, heavy, dr)
+            for ln in ls:
+                out.append((ln, px * lh, col, total))
+                total += px * lh
+            total += mb * base
+        return total, out
+
+    lo, hi, best = 4.0, 220.0, 4.0
+    for _ in range(26):                      # חיפוש בינארי לגודל שממלא את הדף
+        mid = (lo + hi) / 2
+        if layout(mid)[0] <= bh:
+            best, lo = mid, mid
+        else:
+            hi = mid
+    total, items = layout(best)
+    top = y0 + max(0, (bh - total) / 2)      # ממורכז אנכית בתיבה
+    for ln, lheight, col, off in items:
+        wpx = sum(dr.textlength(t, font=font(s, h)) for t, s, h in ln)
+        x = x0 + (bw - wpx) / 2
+        base_y = top + off + lheight * .78
+        # PIL מסדר עברית מימין לשמאל בעצמו; לכן רק סדר המקטעים מתהפך — הראשון נכתב הכי ימינה
+        for t, s, h in reversed(ln):
+            f = font(s, h)
+            dr.text((x, base_y), t, font=f, fill=col, anchor='ls')
+            x += dr.textlength(t, font=f)
+    buf = io.BytesIO()
+    im.save(buf, 'PNG', compress_level=6)
+    return buf.getvalue()
+
+
 def build_ics():
     """פיד יומן לכל התזכורות הפתוחות — לחיבור אוטומטי ליומן Google."""
     con = db(); c = con.cursor()
@@ -2481,12 +2606,36 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/cert.png':
+            # התעודה כתמונה — לשליחה ישירה לתורם בוואטסאפ, בלי PDF
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            g = lambda k: (qs.get(k, [''])[0] or '')
+            try:
+                data = cert_png(g('kind') or 'parnes', g('date'), g('names'), g('dedic'),
+                                int(g('w') or 1000))
+            except Exception as e:
+                return self._send(500, {'error': 'cert', 'detail': str(e)})
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', 'inline; filename="parnes-cert.png"')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/avreichim':
+            # רשימת האברכים המוכרת, ומי מחזיק כל אחד — כדי שלא ייכנסו שמות חופשיים
             con = db()
-            rows = [r['a'] for r in con.execute(
-                "SELECT DISTINCT TRIM(avreich) a FROM partners WHERE COALESCE(TRIM(avreich),'')<>'' ORDER BY a")]
+            out = {}
+            for r in con.execute(
+                    "SELECT TRIM(p.avreich) a, p.active, d.id did, d.last, d.first FROM partners p "
+                    "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(TRIM(p.avreich),'')<>''"):
+                g = out.setdefault(r['a'], {'name': r['a'], 'holders': [], 'taken': False})
+                if r['active'] is None or r['active'] != 0:
+                    nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                    if nm and nm not in [h['name'] for h in g['holders']]:
+                        g['holders'].append({'id': r['did'], 'name': nm})
+                    g['taken'] = True
             con.close()
-            return self._send(200, rows)
+            return self._send(200, sorted(out.values(), key=lambda x: x['name']))
         if self.path.split('?')[0] == '/api/unclassified':
             # תורמים שיש להם חיובים שנכנסו בלי לדעת עבור מה — לשאלה בדף החיובים
             con = db()
@@ -3272,6 +3421,18 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'removed': rm, 'merged': mg, 'donors': dn})
+        if self.path == '/api/avreich/new':
+            # הוספת אברך חדש לרשימה — רק דרך הפעולה הזו, לא בהקלדה חופשית
+            nm = (b.get('name') or '').strip()
+            if len(nm) < 2:
+                return self._send(400, {'error': 'name required'})
+            con = db()
+            ex = con.execute("SELECT 1 FROM partners WHERE TRIM(avreich)=?", (nm,)).fetchone()
+            if not ex:      # שורת שיוך ריקה שמחזיקה את השם ברשימה עד שישויך לתורם
+                con.execute("INSERT INTO partners(donor_id,avreich,start_date,active,note) "
+                            "VALUES(NULL,?,?,0,'נוסף לרשימת האברכים')", (nm, today_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'name': nm, 'existed': bool(ex)})
         if self.path == '/api/rule':
             # כלל קבוע: כל סכום X אצל התורם הזה = הייעוד הזה. מוחל גם על מה שכבר נרשם
             try:
@@ -3327,6 +3488,12 @@ class H(BaseHTTPRequestHandler):
                 q += " AND method=?"; args.append(meth)
             n = cur.execute(q, args).rowcount
             av = (b.get('avreich') or '').strip()
+            if av:
+                known = cur.execute("SELECT 1 FROM partners WHERE TRIM(avreich)=?", (av,)).fetchone()
+                if not known:
+                    con.close()
+                    return self._send(400, {'error': 'unknown_avreich',
+                                            'detail': 'האברך "%s" לא ברשימה — הוסף אותו קודם' % av})
             if av:
                 # יששכר־זבולון — רושמים את האברך גם בשורת התרומה וגם ברשימת האברכים של התורם
                 cur.execute("UPDATE donations SET note=TRIM(COALESCE(note,'')||' · '||?,' ·') "

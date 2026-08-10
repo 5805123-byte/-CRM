@@ -728,14 +728,16 @@ function cardDetails(d,body){
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
         +'<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>';
-      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><datalist id="avlist">${allAvreichim().map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
+      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
       ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
         <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
-        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><input class="uav1" list="avlist" placeholder="🤝 איזה אברך? (חפש או כתוב חדש)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><select class="uav1" style="display:none">${avOpts()}</select><input class="uavnew1" placeholder="שם האברך החדש" style="display:none"><button class="btn sm uavadd1" style="display:none">➕ הוסף</button><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${d.unclassified.length>1?`<div class="addrow uall"><select id="ucl_cat">${uo}</select>
         <input id="ucl_new" placeholder="שם הייעוד החדש…" style="display:none">
         <input id="ucl_bldg" list="bldgitems" placeholder="🏗️ מה תרם בבניין?" style="display:none">
-        <input id="ucl_av" list="avlist" placeholder="🤝 איזה אברך?" style="display:none">
+        <select id="ucl_av" style="display:none">${avOpts()}</select>
+        <input id="ucl_avnew" placeholder="שם האברך החדש" style="display:none">
+        <button class="btn sm" id="ucl_avadd" style="display:none">➕ הוסף</button>
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
     <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
@@ -775,11 +777,13 @@ function cardDetails(d,body){
   body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
     const b=ln.querySelector('.ugo1'), sx=ln.querySelector('.ucat1'), nx=ln.querySelector('.unew1'), bx=ln.querySelector('.ubldg1');
     const isB=c=>/בנין|בניין/.test(c||'');
-    const ax=ln.querySelector('.uav1');
+    const ax=ln.querySelector('.uav1'), axn=ln.querySelector('.uavnew1'), axa=ln.querySelector('.uavadd1');
+    wireAvNew(ax,axn,axa);
     if(sx&&nx&&bx){ const shw=()=>{const isNew=sx.value==='__new__';nx.style.display=isNew?'block':'none';
         const c=isNew?nx.value:sx.value;
         bx.style.display=isB(c)?'block':'none';
-        if(ax) ax.style.display=isIZcat(c)?'block':'none';};
+        const iz=isIZcat(c); if(ax) ax.style.display=iz?'block':'none';
+        if(!iz&&axn){axn.style.display='none';axa.style.display='none';}};
       sx.onchange=()=>{shw();if(sx.value==='__new__')nx.focus();}; nx.oninput=shw; }
     b.onclick=async()=>{
       const s1=ln.querySelector('.ucat1'), n1=ln.querySelector('.unew1');
@@ -794,7 +798,7 @@ function cardDetails(d,body){
         cat=cat+' — '+it; }
       let avv='';
       if(isIZcat(cat)){ avv=(ax?ax.value:'').trim();
-        if(!avv){toast('בחר אברך או כתוב חדש');if(ax)ax.focus();return;} }
+        if(!avv||avv==='__new__'){toast('בחר אברך מהרשימה');if(ax)ax.focus();return;} }
       b.disabled=true;b.textContent='…';
       const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid],avreich:avv});
       if(!r||!r.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
@@ -804,10 +808,14 @@ function cardDetails(d,body){
   const uclSel=document.getElementById('ucl_cat'), uclNew=document.getElementById('ucl_new');
   const uclBd=document.getElementById('ucl_bldg');
   const uclAv=document.getElementById('ucl_av');
+  wireAvNew(uclAv,document.getElementById('ucl_avnew'),document.getElementById('ucl_avadd'));
+  if(uclAv&&!AVLIST.length) loadAvList().then(()=>{document.querySelectorAll('select.uav1,#ucl_av').forEach(s2=>{s2.innerHTML=avOpts(s2.value);});});
   if(uclSel&&uclNew&&uclBd){ const shwA=()=>{const isNew=uclSel.value==='__new__';uclNew.style.display=isNew?'block':'none';
       const c=isNew?uclNew.value:uclSel.value;
       uclBd.style.display=/בנין|בניין/.test(c)?'block':'none';
-      if(uclAv) uclAv.style.display=isIZcat(c)?'block':'none';};
+      const izA=isIZcat(c); if(uclAv) uclAv.style.display=izA?'block':'none';
+      const un=document.getElementById('ucl_avnew'),ua=document.getElementById('ucl_avadd');
+      if(!izA&&un){un.style.display='none';ua.style.display='none';}};
     uclSel.onchange=()=>{shwA();if(uclSel.value==='__new__')uclNew.focus();}; uclNew.oninput=shwA; }
   if(uclSave)uclSave.onclick=async()=>{
     const sa=document.getElementById('ucl_cat'), na=document.getElementById('ucl_new');
@@ -822,7 +830,7 @@ function cardDetails(d,body){
       cat=cat+' — '+it; }
     let avv2='';
     if(isIZcat(cat)){ avv2=(uclAv?uclAv.value:'').trim();
-      if(!avv2){toast('בחר אברך או כתוב חדש');if(uclAv)uclAv.focus();return;} }
+      if(!avv2||avv2==='__new__'){toast('בחר אברך מהרשימה');if(uclAv)uclAv.focus();return;} }
     uclSave.disabled=true;uclSave.textContent='שומר…';
     const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,avreich:avv2});
     if(!r||!r.ok){uclSave.disabled=false;uclSave.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}
@@ -1177,6 +1185,30 @@ function unthankedCount(d){return (d.donations||[]).filter(x=>needThanks(x)&&!+x
 function allAvreichim(){const s=new Set();DB.forEach(d=>(d.partners||[]).forEach(p=>{const a=(p.avreich||'').trim();if(a)s.add(a);}));
   return [...s].sort((a,b)=>a.localeCompare(b,'he'));}
 const isIZcat=c=>/יששכר|יש"?ז/.test(c||'');
+let AVLIST=[];
+function avOpts(sel){
+  const src=AVLIST.length?AVLIST:allAvreichim().map(n=>({name:n,taken:true,holders:[]}));
+  return '<option value="">— בחר אברך מהרשימה —</option>'
+    +src.map(a=>{const t=a.taken?(' — אצל '+((a.holders&&a.holders[0])?a.holders[0].name:'תורם')):' — פנוי';
+      return `<option value="${esc(a.name)}" ${a.name===sel?'selected':''}>${esc(a.name)}${esc(t)}</option>`;}).join('')
+    +'<option value="__new__">➕ אברך חדש — הוסף לרשימה…</option>';
+}
+async function loadAvList(){ try{AVLIST=await api('GET','/api/avreichim');}catch(e){} }
+function wireAvNew(sel,inp,btn){
+  if(!sel||!inp||!btn) return;
+  sel.addEventListener('change',()=>{const on=sel.value==='__new__';
+    inp.style.display=on?'block':'none';btn.style.display=on?'block':'none';if(on)inp.focus();});
+  btn.onclick=async()=>{
+    const nm=inp.value.trim(); if(nm.length<2){toast('כתוב את שם האברך');inp.focus();return;}
+    btn.disabled=true;
+    const r=await api('POST','/api/avreich/new',{name:nm});
+    btn.disabled=false;
+    if(!r||!r.ok){toast('ההוספה נכשלה');return;}
+    await loadAvList();
+    document.querySelectorAll('select.uav1,#ucl_av').forEach(s2=>{s2.innerHTML=avOpts(s2===sel?nm:s2.value);});
+    inp.value='';inp.style.display='none';btn.style.display='none';
+    toast(r.existed?'האברך כבר היה ברשימה ✓':'האברך נוסף לרשימה ✓');};
+}
 function dnNote(x){
   let t=String(x.note||'');
   t=t.replace(/^ייבוא[^·]*(·\s*הוראת קבע)?\s*·?\s*/,'').replace(/^ייבוא\s*2026\s*$/,'').trim();
@@ -1496,6 +1528,26 @@ function parnesCertUrl(d,p){
   return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
 }
 function openParnesCert(d,p){if(!p)return;window.open(parnesCertUrl(d,p),'_blank');}
+// אותה תעודה — כתמונה (PNG) לשליחה ישירה, בלי PDF
+function parnesCertPng(d,p){
+  const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
+  const yr=p.hyear||HEBYEAR;const date=dtext+(yr?(' '+yr):'');
+  const names=(p.dedication&&p.dedication.trim())||(d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
+  return '/cert.png?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
+}
+// שיתוף תמונה מכתובת — קובץ אמיתי בטלפון, העתקה ללוח במחשב
+async function sharePngUrl(url,fname,msg){
+  let blob=null;
+  try{ blob=await (await fetch(url)).blob(); }catch(e){ window.open(url,'_blank'); return 'opened'; }
+  try{ const file=new File([blob],fname||'certificate.png',{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text:msg||''}); return 'shared'; }
+  }catch(e){ if(e&&e.name==='AbortError') return 'cancel'; }
+  try{ if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
+    await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); return 'copied'; } }catch(e){}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname||'certificate.png';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  return 'downloaded';
+}
 // שיתוף תמונה כקובץ אמיתי (מצרף בוואטסאפ/מייל דרך תפריט המכשיר), עם נפילה לפתיחת התמונה
 // המרת תמונה ל-PNG — לוח ההעתקה של הדפדפן תומך רק בפורמט הזה
 async function imgToPngBlob(blob){
@@ -1541,13 +1593,25 @@ function shareParnesMenu(t,d){
       ${ph?`<button class="btn" id="shwadir" style="background:#25D366;border-color:#25D366">📲 פתח וואטסאפ ישירות ל${esc(donor||'תורם')}</button>`:''}
       <button class="btn ghost" id="shph">📤 שתף את התמונה (בחירת אפליקציה)</button>
       <button class="btn ghost" id="shdl">📥 הורד / פתח את התמונה</button>`:'<div class="hintxt" style="color:var(--no)">אין תמונת הקדשה מצורפת — העלה תמונה קודם.</div>'}
-      <div class="hintxt" style="margin:2px 0">— או שליחת התעודה המעוצבת —</div>
+      <div class="hintxt" style="margin:2px 0">— התעודה המעוצבת —</div>
+      <button class="btn" id="shcimg" style="background:var(--accent);border-color:var(--accent)">🖼️ שלח את התעודה כתמונה</button>
+      <button class="btn ghost" id="shcdl">📥 הורד את התעודה כתמונה</button>
       <button class="btn ghost" id="shwa">📲 שלח קישור לתעודה בוואטסאפ</button>
       <button class="btn ghost" id="shml">📧 מייל דרך תוכנת הדואר</button>
       <button class="btn ghost" id="shcert">👁️ פתח / הדפס תעודה</button></div>
     <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
   document.body.appendChild(o);const done=()=>o.remove();
   o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
+  const pngUrl=parnesCertPng(d,t), pngName='תעודת פרנס — '+(donor||'')+'.png';
+  const ci=o.querySelector('#shcimg');
+  if(ci)ci.onclick=async()=>{ci.disabled=true;ci.textContent='מכין את התמונה…';
+    const r=await sharePngUrl(pngUrl,pngName,cap);
+    ci.disabled=false;ci.textContent='🖼️ שלח את התעודה כתמונה';
+    if(r==='shared'){toast('נשלח ✓');done();}
+    else if(r==='copied'){toast('התמונה הועתקה — הדבק בוואטסאפ ווב');pasteStep();}
+    else if(r==='downloaded'){toast('התמונה ירדה למכשיר ✓');}};
+  const cd=o.querySelector('#shcdl');
+  if(cd)cd.onclick=async()=>{const a=document.createElement('a');a.href=pngUrl;a.download=pngName;a.click();toast('מוריד…');};
   // שלב 2 במחשב: התמונה כבר בלוח — נותר לפתוח וואטסאפ ווב ולהדביק
   const pasteStep=()=>{
     const wurl=ph?('https://web.whatsapp.com/send?phone='+ph):'https://web.whatsapp.com';
