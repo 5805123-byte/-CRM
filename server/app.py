@@ -1390,6 +1390,38 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # פרנס־יום שאושר מדף החיובים ולא נוצרה לו תזכורת (התזכורת הותנתה בתאריך החיוב במקום בתאריך הלילה)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_task_v1'").fetchone():
+            nadd = 0
+            q = ("SELECT p.id,p.donor_id,p.date_text,p.hyear,p.night_date,d.last,d.first "
+                 "FROM parnes p JOIN donors d ON d.id=p.donor_id "
+                 "WHERE COALESCE(p.status,'confirmed')<>'suggested'")
+            for r in list(con.execute(q)):
+                nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                note = '🌙 לעשות פרנס לילה — ' + nm
+                if con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND note=?",
+                               (r['donor_id'], note)).fetchone():
+                    continue
+                nd = r['night_date'] or ''
+                if not nd:
+                    g = heb_greg_year(r['date_text'] or '', r['hyear'] or '') or heb_to_greg(r['date_text'] or '')
+                    nd = g.isoformat() if g else ''
+                    if nd:
+                        con.execute("UPDATE parnes SET night_date=? WHERE id=?", (nd, r['id']))
+                if not nd or nd < today_iso():
+                    continue                      # לילה שכבר עבר — בלי תזכורת חדשה
+                due = (datetime.date.fromisoformat(nd) - datetime.timedelta(days=7)).isoformat()
+                if due < today_iso():
+                    due = today_iso()
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (r['donor_id'], due, 'parnes', note))
+                nadd += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_task_v1')")
+            print('  תזכורות פרנס שהושלמו: %d' % nadd)
+    except Exception as e:
+        print('  parnes task error:', e)
+
     # איות שמות מקובל — גם בקוויטל שכבר נשמר (אדינא -> עדינה וכו')
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='he_spell_v1'").fetchone():
@@ -1879,7 +1911,8 @@ def recon_apply(cur, tid, b):
     if cat in PKIND:
         # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
         dtext = b.get('date_text', '')
-        _ng = heb_to_greg(dtext) if dtext else None
+        # התאריך הלועזי לפי השנה העברית שנבחרה; רק אם אין שנה — המופע הקרוב
+        _ng = (heb_greg_year(dtext, b.get('hyear', '')) or heb_to_greg(dtext)) if dtext else None
         cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'confirmed',1,?,?,?)",
                     (did, b.get('day', 0), b.get('month', ''), dtext, row['amount'], b.get('dedication', ''), PKIND[cat],
                      _ng.isoformat() if _ng else '', b.get('hyear', ''), pay_method))
@@ -1892,14 +1925,31 @@ def recon_apply(cur, tid, b):
                     (did, diso, row['amount'], cat, pay_method, _nt))
     if row['recurring']:
         cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
-    # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל, שבוע לפני הלילה
-    if cat == 'פרנס לילה' and diso >= '2026-08':
+    # תזכורת לעשות את הלילה בפועל — נקבעת לפי תאריך הלילה עצמו, לא לפי מתי שולם.
+    # (קודם היא נוצרה רק אם החיוב היה מאוגוסט ואילך, ולכן לילה שנקנה מראש נעלם)
+    if cat in PKIND:
         dn = cur.execute("SELECT last, first FROM donors WHERE id=?", (did,)).fetchone()
         nm = ((dn['last'] + ' ' + (dn['first'] or '')).strip()) if dn else ''
-        _pdue = week_before(b.get('date_text', '')) or today_iso()
-        if _pdue < today_iso(): _pdue = today_iso()
-        cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                    (did, _pdue, 'parnes', '🌙 לעשות פרנס לילה — ' + nm))
+        _dtext = b.get('date_text', '')
+        if _dtext:
+            _pdue = None
+            _ngd = heb_greg_year(_dtext, b.get('hyear', '')) or heb_to_greg(_dtext)
+            if _ngd:
+                _pdue = (_ngd - datetime.timedelta(days=7)).isoformat()
+            _pdue = _pdue or week_before(_dtext) or today_iso()
+            if _pdue < today_iso(): _pdue = today_iso()
+            _note = '🌙 לעשות פרנס לילה — ' + nm
+            if not cur.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND note=? AND COALESCE(done,0)=0",
+                               (did, _note)).fetchone():
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (did, _pdue, 'parnes', _note))
+        else:
+            # אושר בלי לבחור יום — שלא ייעלם בלי שנדע
+            _note = '🌙 לקבוע יום לפרנס — ' + nm
+            if not cur.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND note=? AND COALESCE(done,0)=0",
+                               (did, _note)).fetchone():
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (did, today_iso(), 'parnes', _note))
     cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
     return (200, {'ok': True, 'donor_id': did})
 
