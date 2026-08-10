@@ -161,21 +161,41 @@ function certPngUrl(ext){
   const {date,names}=certText();
   return '/cert.'+(ext||'png')+'?'+new URLSearchParams({kind:KIND,date,names}).toString();
 }
+// התמונה מוכנה מראש ברקע — כדי שההעתקה ללוח תקרה מיד בלחיצה (כרום דורש זאת)
+let PNGREADY=null, PNGKEY='';
+async function preparePng(){
+  const k=certPngUrl('png');
+  if(PNGKEY===k && PNGREADY) return PNGREADY;
+  PNGKEY=k; PNGREADY=null;
+  try{ const r=await fetch(k); const b=await r.blob();
+    if(b && b.size>5000 && (b.type||'').indexOf('image')>=0){ PNGREADY=b; } }catch(e){}
+  return PNGREADY;
+}
 // העתקה ללוח — הדרך הכי מהירה: מעתיקים ומדביקים בוואטסאפ/מייל
 $('copyBtn').onclick=async()=>{
   const b=$('copyBtn'), t0=b.textContent;
   const {names}=certText();
   if(!names.trim()){ alert('אין שמות בתעודה'); return; }
-  const url=certPngUrl();
   if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write)){
     alert('הדפדפן הזה לא תומך בהעתקת תמונה — השתמש ב"שלח לתורם"'); return; }
+  const ok=()=>{ b.textContent='✅ הועתק — הדבק בוואטסאפ'; setTimeout(()=>{b.textContent=t0;},2500); };
+  let err='';
+  // 1) התמונה כבר בזיכרון — הדרך שעובדת בכרום
+  if(PNGREADY && PNGKEY===certPngUrl('png')){
+    try{ await navigator.clipboard.write([new ClipboardItem({'image/png':PNGREADY})]); ok(); return; }
+    catch(e){ err=e&&e.message||String(e); }
+  }
+  // 2) ספארי: צורת ה-Promise שומרת על אישור המשתמש
+  try{ await navigator.clipboard.write([new ClipboardItem({'image/png':preparePng().then(x=>x||Promise.reject())})]); ok(); return; }
+  catch(e){ err=err||(e&&e.message||String(e)); }
+  // 3) הבאה ואז כתיבה
   b.textContent='מעתיק…';
-  const getPng=async()=>await (await fetch(url)).blob();
-  try{ await navigator.clipboard.write([new ClipboardItem({'image/png':getPng()})]);  // צורת ה-Promise — נדרשת בספארי
-       b.textContent='✅ הועתק — הדבק בוואטסאפ'; setTimeout(()=>b.textContent=t0,2500); return; }catch(e){}
-  try{ await navigator.clipboard.write([new ClipboardItem({'image/png':await getPng()})]);
-       b.textContent='✅ הועתק — הדבק בוואטסאפ'; setTimeout(()=>b.textContent=t0,2500); return; }catch(e){}
-  b.textContent=t0; alert('ההעתקה נכשלה — נסה "שלח לתורם"');
+  try{ const blob=await preparePng();
+    if(blob){ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); ok(); return; } }
+  catch(e){ err=err||(e&&e.message||String(e)); }
+  b.textContent=t0;
+  alert('ההעתקה נכשלה'+(err?(': '+err):'')+'\nנסה "שלח לתורם", או לחץ שוב — התמונה כבר מוכנה עכשיו.');
+  preparePng();
 };
 
 $('sendBtn').onclick=async()=>{
@@ -201,6 +221,12 @@ $('sendBtn').onclick=async()=>{
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 };
+
+let _prep=null;
+function schedulePrep(){ clearTimeout(_prep); _prep=setTimeout(preparePng,600); }
+document.addEventListener('input', schedulePrep, true);
+document.addEventListener('blur', schedulePrep, true);
+window.addEventListener('load', ()=>setTimeout(preparePng,400));
 
 window.addEventListener('resize', fit);
 window.addEventListener('load', fit);            // אחרי טעינת רקע הבלאנק

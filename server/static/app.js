@@ -1545,7 +1545,8 @@ async function sharePngUrl(url,fname,msg){
     if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text:msg||''}); return 'shared'; }
   }catch(e){ if(e&&e.name==='AbortError') return 'cancel'; }
   try{ if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
-    await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); return 'copied'; } }catch(e){}
+    const png=await imgToPngBlob(blob);   // הלוח מקבל רק PNG — JPEG נדחה
+    await navigator.clipboard.write([new ClipboardItem({'image/png':png})]); return 'copied'; } }catch(e){}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname||'certificate.png';a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
   return 'downloaded';
@@ -1606,6 +1607,15 @@ function shareParnesMenu(t,d){
   document.body.appendChild(o);const done=()=>o.remove();
   o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
   const certImg=parnesCertPng(d,t), pngName='תעודת פרנס — '+(donor||'')+'.jpg';
+  // מכינים את התמונה כבר עכשיו ברקע — כרום מסרב להעתיק ללוח תמונה שעדיין נטענת
+  let certBlob=null;
+  const prepPng=async()=>{
+    if(certBlob)return certBlob;
+    try{const b=await (await fetch(certImg.png)).blob();
+      if(b&&b.size>5000&&(b.type||'').indexOf('image')>=0)certBlob=b;}catch(e){}
+    return certBlob;
+  };
+  prepPng();
   const ci=o.querySelector('#shcimg');
   if(ci)ci.onclick=async()=>{ci.disabled=true;ci.textContent='מכין את התמונה…';
     const r=await sharePngUrl(certImg.jpg,pngName,cap);
@@ -1617,12 +1627,15 @@ function shareParnesMenu(t,d){
   if(cc)cc.onclick=async()=>{
     if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write)){toast('הדפדפן לא תומך בהעתקת תמונה');return;}
     cc.disabled=true;cc.textContent='מעתיק…';
-    const getPng=async()=>await (await fetch(certImg.png)).blob();
     let ok=false;
-    try{await navigator.clipboard.write([new ClipboardItem({'image/png':getPng()})]);ok=true;}catch(e){}
-    if(!ok){try{await navigator.clipboard.write([new ClipboardItem({'image/png':await getPng()})]);ok=true;}catch(e){}}
+    // 1) התמונה כבר בזיכרון מההכנה מראש — זו הדרך שעובדת בכרום
+    if(certBlob){try{await navigator.clipboard.write([new ClipboardItem({'image/png':certBlob})]);ok=true;}catch(e){}}
+    // 2) ספארי/אייפד — צורת ה-Promise שומרת על אישור המשתמש
+    if(!ok){try{await navigator.clipboard.write([new ClipboardItem({'image/png':prepPng().then(x=>x||Promise.reject())})]);ok=true;}catch(e){}}
+    // 3) להביא ואז לכתוב
+    if(!ok){const b=await prepPng();if(b){try{await navigator.clipboard.write([new ClipboardItem({'image/png':b})]);ok=true;}catch(e){}}}
     cc.disabled=false;cc.textContent='📋 העתק את התעודה כתמונה';
-    if(ok){toast('הועתק ✓');pasteStep();}else{toast('ההעתקה נכשלה');}};
+    if(ok){toast('הועתק ✓');pasteStep();}else{prepPng();toast('ההעתקה נכשלה — לחץ שוב, התמונה כבר מוכנה');}};
   const cd=o.querySelector('#shcdl');
   if(cd)cd.onclick=async()=>{const a=document.createElement('a');a.href=certImg.jpg;a.download=pngName;a.click();toast('מוריד…');};
   // שלב 2 במחשב: התמונה כבר בלוח — נותר לפתוח וואטסאפ ווב ולהדביק
