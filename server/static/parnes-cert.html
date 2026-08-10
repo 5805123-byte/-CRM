@@ -157,9 +157,9 @@ function certText(){
   return {date:dt, names:nm};
 }
 // כתובת התמונה לפי מה שכתוב עכשיו על המסך
-function certPngUrl(){
+function certPngUrl(ext){
   const {date,names}=certText();
-  return '/cert.png?'+new URLSearchParams({kind:KIND,date,names}).toString();
+  return '/cert.'+(ext||'png')+'?'+new URLSearchParams({kind:KIND,date,names}).toString();
 }
 // העתקה ללוח — הדרך הכי מהירה: מעתיקים ומדביקים בוואטסאפ/מייל
 $('copyBtn').onclick=async()=>{
@@ -183,14 +183,16 @@ $('sendBtn').onclick=async()=>{
   const {date,names}=certText();
   if(!names.trim()){ alert('אין שמות בתעודה'); return; }
   b.disabled=true; b.textContent='מכין את התמונה…';
-  const url=certPngUrl();
+  const url=certPngUrl('jpg');
   let blob=null;
-  try{ blob=await (await fetch(url)).blob(); }
+  try{ const rs=await fetch(url); blob=await rs.blob(); }
   catch(e){ b.disabled=false; b.textContent=t0; window.open(url,'_blank'); return; }
-  const fname='תעודת פרנס'+(date?(' — '+date):'')+'.png';
+  if(!blob||blob.size<5000||(blob.type||'').indexOf('image')<0){   // לא לשלוח קובץ פגום
+    b.disabled=false; b.textContent=t0; alert('התמונה לא נוצרה כראוי — נסה שוב'); return; }
+  const fname='תעודת פרנס'+(date?(' — '+date):'')+'.jpg';
   const cap='תעודת פרנס — כולל חצות 🕯️'+(date?('  ·  '+date):'');
   b.disabled=false; b.textContent=t0;
-  try{ const file=new File([blob],fname,{type:'image/png'});
+  try{ const file=new File([blob],fname,{type:'image/jpeg'});
     if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text:cap}); return; } }
   catch(e){ if(e&&e.name==='AbortError') return; }
   try{ if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){

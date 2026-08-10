@@ -2413,7 +2413,7 @@ def _bidi(s):
         return s
 
 
-def cert_png(kind='parnes', date='', names='', dedic='', width=1000):
+def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     """מצייר את תעודת הפרנס כתמונה — אותו בלאנק, אותו סידור, גופן שמתאים את עצמו לדף."""
     from PIL import Image, ImageDraw, ImageFont
     cfg = _CERT_CFG.get(kind) or _CERT_CFG['parnes']
@@ -2515,7 +2515,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000):
             dr.text((x, base_y), t, font=f, fill=col, anchor='ls')
             x += dr.textlength(t, font=f)
     buf = io.BytesIO()
-    im.save(buf, 'PNG', compress_level=6)
+    if fmt == 'jpg':
+        im.save(buf, 'JPEG', quality=88, optimize=True, progressive=True)
+    else:
+        im.save(buf, 'PNG', compress_level=6)
     return buf.getvalue()
 
 
@@ -2606,19 +2609,20 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
-        if self.path.split('?')[0] == '/cert.png':
-            # התעודה כתמונה — לשליחה ישירה לתורם בוואטסאפ, בלי PDF
+        if self.path.split('?')[0] in ('/cert.png', '/cert.jpg'):
+            # התעודה כתמונה — JPEG נשלח בוואטסאפ כתמונה פתוחה, PNG משמש להעתקה ללוח
+            fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             g = lambda k: (qs.get(k, [''])[0] or '')
             try:
                 data = cert_png(g('kind') or 'parnes', g('date'), g('names'), g('dedic'),
-                                int(g('w') or 1000))
+                                int(g('w') or 1000), fmt)
             except Exception as e:
                 return self._send(500, {'error': 'cert', 'detail': str(e)})
             self.send_response(200)
-            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Type', 'image/jpeg' if fmt == 'jpg' else 'image/png')
             self.send_header('Content-Length', str(len(data)))
-            self.send_header('Content-Disposition', 'inline; filename="parnes-cert.png"')
+            self.send_header('Content-Disposition', 'inline; filename="parnes-cert.%s"' % fmt)
             self.end_headers(); self.wfile.write(data)
             return
         if self.path.split('?')[0] == '/api/avreichim':

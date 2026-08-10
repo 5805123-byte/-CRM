@@ -1533,13 +1533,15 @@ function parnesCertPng(d,p){
   const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
   const yr=p.hyear||HEBYEAR;const date=dtext+(yr?(' '+yr):'');
   const names=(p.dedication&&p.dedication.trim())||(d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
-  return '/cert.png?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
+  return {png:'/cert.png?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString(),
+          jpg:'/cert.jpg?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString()};
 }
 // שיתוף תמונה מכתובת — קובץ אמיתי בטלפון, העתקה ללוח במחשב
 async function sharePngUrl(url,fname,msg){
   let blob=null;
   try{ blob=await (await fetch(url)).blob(); }catch(e){ window.open(url,'_blank'); return 'opened'; }
-  try{ const file=new File([blob],fname||'certificate.png',{type:'image/png'});
+  if(!blob||blob.size<5000||(blob.type||'').indexOf('image')<0){ toast('התמונה לא נוצרה כראוי'); return 'bad'; }
+  try{ const file=new File([blob],fname||'certificate.jpg',{type:blob.type||'image/jpeg'});
     if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text:msg||''}); return 'shared'; }
   }catch(e){ if(e&&e.name==='AbortError') return 'cancel'; }
   try{ if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
@@ -1603,10 +1605,10 @@ function shareParnesMenu(t,d){
     <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
   document.body.appendChild(o);const done=()=>o.remove();
   o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
-  const pngUrl=parnesCertPng(d,t), pngName='תעודת פרנס — '+(donor||'')+'.png';
+  const certImg=parnesCertPng(d,t), pngName='תעודת פרנס — '+(donor||'')+'.jpg';
   const ci=o.querySelector('#shcimg');
   if(ci)ci.onclick=async()=>{ci.disabled=true;ci.textContent='מכין את התמונה…';
-    const r=await sharePngUrl(pngUrl,pngName,cap);
+    const r=await sharePngUrl(certImg.jpg,pngName,cap);
     ci.disabled=false;ci.textContent='🖼️ שלח את התעודה כתמונה';
     if(r==='shared'){toast('נשלח ✓');done();}
     else if(r==='copied'){toast('התמונה הועתקה — הדבק בוואטסאפ ווב');pasteStep();}
@@ -1615,14 +1617,14 @@ function shareParnesMenu(t,d){
   if(cc)cc.onclick=async()=>{
     if(!(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write)){toast('הדפדפן לא תומך בהעתקת תמונה');return;}
     cc.disabled=true;cc.textContent='מעתיק…';
-    const getPng=async()=>await (await fetch(pngUrl)).blob();
+    const getPng=async()=>await (await fetch(certImg.png)).blob();
     let ok=false;
     try{await navigator.clipboard.write([new ClipboardItem({'image/png':getPng()})]);ok=true;}catch(e){}
     if(!ok){try{await navigator.clipboard.write([new ClipboardItem({'image/png':await getPng()})]);ok=true;}catch(e){}}
     cc.disabled=false;cc.textContent='📋 העתק את התעודה כתמונה';
     if(ok){toast('הועתק ✓');pasteStep();}else{toast('ההעתקה נכשלה');}};
   const cd=o.querySelector('#shcdl');
-  if(cd)cd.onclick=async()=>{const a=document.createElement('a');a.href=pngUrl;a.download=pngName;a.click();toast('מוריד…');};
+  if(cd)cd.onclick=async()=>{const a=document.createElement('a');a.href=certImg.jpg;a.download=pngName;a.click();toast('מוריד…');};
   // שלב 2 במחשב: התמונה כבר בלוח — נותר לפתוח וואטסאפ ווב ולהדביק
   const pasteStep=()=>{
     const wurl=ph?('https://web.whatsapp.com/send?phone='+ph):'https://web.whatsapp.com';
