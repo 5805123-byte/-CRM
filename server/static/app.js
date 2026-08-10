@@ -242,7 +242,7 @@ async function runMailSync(btn){
     if(btn){btn.disabled=false;set(label);}
     if(s.error){toast('שגיאת משיכה: '+s.error);return;}
     if(last)await load();
-    toast(last?('תויקו '+last+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
+    toast(last?('תויקו '+last+' מיילים אצל התורמים ✓'):'הכל מסונכרן — אין מיילים חדשים');
     render();return;
   }
   if(btn){btn.disabled=false;set(label);}
@@ -1347,7 +1347,7 @@ function renderCharges(){
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_audit" style="width:100%">🔍 בדיקת סתירות — אקסל מול חיובים בפועל</button></div>
     <div id="auditbox"></div>
     <div id="reconboxes" class="reconboxes"></div>
@@ -1445,7 +1445,7 @@ function renderPartners(d){
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow"><div class="pi"><b>${esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow${c.direction==='out'?' outmail':''}"><div class="pi"><b>${c.direction==='out'?'📤 שלחנו':esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
       ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre>
         <details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
@@ -2276,23 +2276,27 @@ function renderMails(){
   DB.forEach(d=>(d.contacts||[]).forEach(c=>{ if(c.channel==='אימייל') all.push({c,d}); }));
   all.sort((a,b)=>String(b.c.date||'').localeCompare(String(a.c.date||''))||b.c.id-a.c.id);
   const withFiles=all.filter(x=>(x.c.files||[]).length).length;
-  const F=[['','הכל',all.length],['files','📎 עם קבצים',withFiles],
+  const F=[['','הכל',all.length],['in','📥 מהתורם',all.filter(x=>x.c.direction!=='out').length],
+           ['out','📤 ששלחנו',all.filter(x=>x.c.direction==='out').length],
+           ['files','📎 עם קבצים',withFiles],
            ['kv','🕯️ שמות לקוויטל',all.filter(x=>(x.c.summary||'').includes('🕯️')).length]];
   chips.innerHTML=F.map(([k,l,n])=>`<button class="chip ${mailFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
   chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{mailFlt=b.dataset.k;render();});
   let list=all;
+  if(mailFlt==='in')list=list.filter(x=>x.c.direction!=='out');
+  if(mailFlt==='out')list=list.filter(x=>x.c.direction==='out');
   if(mailFlt==='files')list=list.filter(x=>(x.c.files||[]).length);
   if(mailFlt==='kv')list=list.filter(x=>(x.c.summary||'').includes('🕯️'));
   list=list.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.c.summary||'')+' '+(x.c.body||'')+' '+(x.c.body_he||'')));
-  view.innerHTML=`<div class="rbtitle">📧 כל המיילים מהתורמים — לפי תאריך</div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_sync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
+  view.innerHTML=`<div class="rbtitle">📧 כל המיילים עם התורמים — נכנסים וששלחנו, לפי תאריך</div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_sync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><select id="ml_cat" style="flex:1">${['— כל התורמים —',...[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'))].map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <a class="btn sm ghost" id="ml_csv" href="#" style="flex:1;text-align:center;text-decoration:none">📤 ייצוא רשימת תפוצה (CSV)</a></div>
     <div class="hintxt" style="margin:-4px 2px 10px">שורה לכל כתובת מייל — כולל תורמים עם כמה כתובות. מתאים לייבוא ל-Brevo / MailerLite לדיוור אישי עם שם התורם.</div>
     <div class="cnt">${list.length} מיילים</div>
     <div class="list">${list.map(({c,d},i)=>`<div class="mailrow">
       <div class="mailhd"><span class="mlwho" data-did="${d.id}">${esc((d.last||'')+' '+(d.first||''))} ↗</span>
-        <span class="mldate">${esc(c.date||'')}</span></div>
+        <span class="mldate">${c.direction==='out'?'📤 שלחנו · ':'📥 קיבלנו · '}${esc(c.date||'')}</span></div>
       <div class="mlsum">${esc(c.summary||'')}</div>
       ${(c.body_he||c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
         ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre><details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`:`<pre>${esc(c.body)}</pre>`}
@@ -2364,7 +2368,7 @@ function renderTasksTab(){
   const renewSec=renews.length?`<div class="misshead" style="margin-top:10px">🔴 חידוש שותפות יש"ז מתקרב (${renews.length})</div>
     <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
   view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>${renewSec}${debtSec}
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>${renewSec}${debtSec}
     <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
       <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">

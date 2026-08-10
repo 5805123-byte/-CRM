@@ -125,6 +125,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN body_he TEXT")   # תרגום המייל לעברית
     except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN direction TEXT DEFAULT ''")  # 'out' = מייל ששלחנו לתורם
+    except Exception: pass
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
@@ -2416,6 +2418,11 @@ def _bidi(s):
 def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     """מצייר את תעודת הפרנס כתמונה — אותו בלאנק, אותו סידור, גופן שמתאים את עצמו לדף."""
     from PIL import Image, ImageDraw, ImageFont
+    try:
+        from PIL import features as _pf
+        raqm = bool(_pf.check('raqm'))     # מנוע הכתיבה שמסדר עברית מימין לשמאל בעצמו
+    except Exception:
+        raqm = False
     cfg = _CERT_CFG.get(kind) or _CERT_CFG['parnes']
     im = Image.open(os.path.join(STATIC, cfg['bg'])).convert('RGB')
     if im.width != width:
@@ -2512,7 +2519,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         # PIL מסדר עברית מימין לשמאל בעצמו; לכן רק סדר המקטעים מתהפך — הראשון נכתב הכי ימינה
         for t, s, h in reversed(ln):
             f = font(s, h)
-            dr.text((x, base_y), t, font=f, fill=col, anchor='ls')
+            dr.text((x, base_y), t if raqm else t[::-1], font=f, fill=col, anchor='ls')
             x += dr.textlength(t, font=f)
     buf = io.BytesIO()
     if fmt == 'jpg':
@@ -2520,6 +2527,23 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     else:
         im.save(buf, 'PNG', compress_level=6)
     return buf.getvalue()
+
+
+def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):
+    """מתייק ביומן הקשר כל מייל שהמערכת שלחה לתורם — מיד, בלי להמתין למשיכה.
+    המפתח זהה לזה של סריקת תיבת הנשלחים, כך שלא ייווצר רישום כפול."""
+    if not donor_id:
+        return
+    key = 'out:%s|%s' % ((msg_id or '').strip(), donor_id)
+    summary = '📤 שלחנו: ' + (subject or 'מייל') + ((' · 📎 %d קבצים מצורפים' % natt) if natt else '')
+    try:
+        con = db()
+        con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction)
+                       VALUES(?,?,?,?,'',?,?,1,'out')""",
+                    (donor_id, today_iso(), 'אימייל', summary, key, (body or '').strip()))
+        con.commit(); con.close()
+    except Exception:
+        pass
 
 
 def build_ics():
@@ -3396,6 +3420,8 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             res = mailer.send(to, subject, body, atts)
+            if res.get('ok'):
+                log_sent_mail(p['donor_id'], to, subject, body, res.get('msg_id'), len(atts))
             res['to'] = to
             res['count'] = len(atts)
             return self._send(200, res)
@@ -3897,26 +3923,30 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
 def _intake_daily_loop():
-    """משיכת קוויטלים מהמייל — פעם ביום (וגם פעם עם עליית השרת). רץ רק אם ה-Gmail מוגדר."""
+    """תיוק המיילים — נכנסים ויוצאים — כל שעתיים, ומשיכת קוויטלים פעם ביום.
+    כך כל התכתבות עם תורם יושבת בכרטיס שלו מעצמה. רץ רק אם ה-Gmail מוגדר."""
     import time
     try:
         import gmail_intake
     except Exception:
         return
-    first = True
+    every = max(600, int(os.environ.get('MAILSYNC_SECONDS') or 2 * 3600))
+    first, last_kv = True, 0.0
     while True:
         try:
             if gmail_intake.configured():
                 if first:
                     time.sleep(20)   # להמתין שהשרת יתייצב לפני המשיכה הראשונה
-                con = db(); res = gmail_intake.sync(con); con.close()
-                print('  משיכת קוויטלים אוטומטית:', res)
+                if time.time() - last_kv > 23 * 3600:      # קוויטלים — פעם ביום
+                    con = db(); res = gmail_intake.sync(con); con.close()
+                    print('  משיכת קוויטלים אוטומטית:', res)
+                    last_kv = time.time()
                 con = db(); res2 = gmail_intake.sync_contacts(con); con.close()
                 print('  תיוק מיילים ליומן הקשר:', res2)
         except Exception as e:
             print('  שגיאת משיכה אוטומטית:', e)
         first = False
-        time.sleep(24 * 3600)   # שוב מחר
+        time.sleep(every)
 
 def serve():
     ensure_schema()

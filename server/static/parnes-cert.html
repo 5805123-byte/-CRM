@@ -162,13 +162,15 @@ function certPngUrl(ext){
   return '/cert.'+(ext||'png')+'?'+new URLSearchParams({kind:KIND,date,names}).toString();
 }
 // התמונה מוכנה מראש ברקע — כדי שההעתקה ללוח תקרה מיד בלחיצה (כרום דורש זאת)
-let PNGREADY=null, PNGKEY='';
+let PNGREADY=null, PNGKEY='', PNGERR='';
 async function preparePng(){
   const k=certPngUrl('png');
   if(PNGKEY===k && PNGREADY) return PNGREADY;
-  PNGKEY=k; PNGREADY=null;
+  PNGKEY=k; PNGREADY=null; PNGERR='';
   try{ const r=await fetch(k); const b=await r.blob();
-    if(b && b.size>5000 && (b.type||'').indexOf('image')>=0){ PNGREADY=b; } }catch(e){}
+    if(b && b.size>5000 && (b.type||'').indexOf('image')>=0){ PNGREADY=b; }
+    else{ PNGERR=await b.text().catch(()=>'')||('שגיאת שרת '+r.status); } }
+  catch(e){ PNGERR='אין חיבור לשרת'; }
   return PNGREADY;
 }
 // העתקה ללוח — הדרך הכי מהירה: מעתיקים ומדביקים בוואטסאפ/מייל
@@ -194,7 +196,9 @@ $('copyBtn').onclick=async()=>{
     if(blob){ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); ok(); return; } }
   catch(e){ err=err||(e&&e.message||String(e)); }
   b.textContent=t0;
-  alert('ההעתקה נכשלה'+(err?(': '+err):'')+'\nנסה "שלח לתורם", או לחץ שוב — התמונה כבר מוכנה עכשיו.');
+  const why=PNGERR||err;
+  alert(PNGERR ? ('התמונה לא נוצרה בשרת:\n'+PNGERR)
+              : ('ההעתקה נכשלה'+(why?(': '+why):'')+'\nנסה "שלח לתורם", או לחץ שוב — התמונה כבר מוכנה עכשיו.'));
   preparePng();
 };
 

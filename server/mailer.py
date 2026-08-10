@@ -4,6 +4,7 @@
 """
 import os, smtplib
 from email.message import EmailMessage
+from email.utils import make_msgid
 
 
 def configured():
@@ -20,6 +21,8 @@ def send(to, subject, body, attachments=None, reply_to=None):
     if not to:
         return {'ok': False, 'error': 'no_recipient'}
     msg = EmailMessage()
+    mid = make_msgid(domain=(user.split('@')[-1] or 'gmail.com'))   # מזהה משלנו — כדי לתייק בלי כפילות
+    msg['Message-ID'] = mid
     msg['From'] = 'כולל חצות <%s>' % user
     msg['To'] = to
     msg['Subject'] = subject or 'כולל חצות'
@@ -37,7 +40,7 @@ def send(to, subject, body, attachments=None, reply_to=None):
             s.starttls()
             s.login(user, pw)
             s.send_message(msg)
-        return {'ok': True}
+        return {'ok': True, 'msg_id': mid}
     except smtplib.SMTPAuthenticationError as e:
         return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
     except Exception as e:
