@@ -55,6 +55,7 @@
   <label class="f"><span>הרשימה — עמודה של שם ועמודה של סכום (העתק־הדבק ישר מאקסל)</span>
     <textarea id="data" placeholder="Shlomo Smilow	180&#10;Yossi Kirzner	1000&#10;..."></textarea></label>
   <div class="hint">מזהה גם פסיקים וגם טאבים. אפשר להשאיר כותרות — הן מזוהות ומדולגות. עמודה שלישית, אם יש, נשמרת כהערה.</div>
+  <div id="ready"></div>
   <button class="btn ghost" id="check">🔍 בדוק התאמות (בלי להכניס כלום)</button>
 </div>
 
@@ -79,11 +80,13 @@ function parseRows(txt){
     for(let i=cells.length-1;i>=0;i--){ if(/^[$₪]?\s*[\d,]+(\.\d+)?$/.test(cells[i])&&cells[i]!==''){ai=i;break;} }
     if(ai<0) continue;                                   // שורת כותרת או שורה בלי סכום
     const amount=cells[ai].replace(/[^0-9.]/g,'');
-    const name=cells.slice(0,ai).filter(Boolean).find(c=>/[A-Za-zא-ת]/.test(c))||'';
-    if(!name) continue;
+    const words=cells.slice(0,ai).filter(c=>/[A-Za-zא-ת]/.test(c));
+    if(!words.length) continue;
+    const last=words[0], first=words.length>1?words[1]:'';
+    const name=(last+' '+first).trim();
     const note=cells.slice(ai+1).filter(Boolean).join(' ');
     const email=(cells.find(c=>c.includes('@'))||'');
-    out.push({name,amount,note,email});
+    out.push({name,last,first,amount,note,email});
   }
   return out;
 }
@@ -140,6 +143,18 @@ async function commit(onlyCharged){
 (async()=>{
   try{const d=await api('GET','/api/data');
     $('#catdl').innerHTML=(d.campaigns||[]).map(c=>`<option value="${esc(c)}">`).join('');
+  }catch(e){}
+  try{const L=await api('GET','/api/import/lists');
+    if((L.lists||[]).length){
+      $('#ready').innerHTML='<div class="hint" style="margin:10px 0 2px">רשימות שכבר נטענו למערכת — לחיצה ממלאת הכל:</div>'
+        +L.lists.map((x,i)=>`<button class="btn ghost" style="margin-top:6px" data-i="${i}">📋 ${esc(x.label)} — ${x.rows.length} שורות</button>`).join('');
+      $('#ready').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+        const x=L.lists[+b.dataset.i];
+        $('#cat').value=x.category; $('#from').value=x.from; $('#to').value=x.to;
+        $('#data').value=x.rows.map(r=>[r.last||'',r.first||'',r.amount,r.method||''].join('\t')).join('\n');
+        toast('נטענו '+x.rows.length+' שורות — לחץ בדוק');
+      });
+    }
   }catch(e){}
 })();
 </script>

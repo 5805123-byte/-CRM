@@ -1672,11 +1672,20 @@ def _d7(s):
     return re.sub(r'[^0-9]', '', s or '')[-7:]
 
 
+def _same_first(a, b):
+    """שם פרטי זהה, או שאחד מהם קיצור/הרחבה של השני (משה = משה אלטר אפרים)."""
+    if not a or not b:
+        return False
+    if a == b or a.startswith(b + ' ') or b.startswith(a + ' '):
+        return True
+    return a.split()[0] == b.split()[0] and min(len(a.split()[0]), len(b.split()[0])) >= 3
+
+
 def campaign_match(con, rows, dfrom='', dto=''):
     """מתאים כל שורה מרשימת מגבית לתורם קיים ולחיוב אשראי שטרם אושר.
     לא כותב כלום — רק מחזיר מה נמצא, כדי שאפשר יהיה לראות לפני שמכניסים."""
     donors = [dict(r) for r in con.execute("SELECT id,last,first,english,email,phone FROM donors")]
-    by_mail, by_ph, by_name, by_last = {}, {}, {}, {}
+    by_mail, by_ph, by_name, by_last, by_lf = {}, {}, {}, {}, {}
 
     def put(d, key, val):
         if not key:
@@ -1698,6 +1707,13 @@ def campaign_match(con, rows, dfrom='', dto=''):
                 put(by_name, ' '.join(reversed(nm.split())), d['id'])
         for k in {_lat(d['last']), _norm(d['last'])}:
             put(by_last, k, d['id'])
+        # שם משפחה -> כל התורמים בשם הזה, עם שמות פרטיים מנוקים מסוגריים
+        fr = (d['first'] or '')
+        alias = {_norm(re.sub(r'\(.*?\)', ' ', fr))}
+        alias |= {_norm(x) for x in re.findall(r'\((.*?)\)', fr)}
+        for lk in {_norm(d['last']), _lat(d['last'])}:
+            if lk:
+                by_lf.setdefault(lk, []).append((d['id'], {a for a in alias if a}))
     charges = {}
     for r in con.execute("""SELECT tid,donor_id,amount,date,source FROM recon
                             WHERE donor_id IS NOT NULL AND COALESCE(processed,0)=0"""):
@@ -1725,6 +1741,18 @@ def campaign_match(con, rows, dfrom='', dto=''):
                              (' '.join(reversed(_lat(name).split())), 'שם באנגלית (הפוך)')):
                 if key and by_name.get(key):
                     did, how = by_name[key], lbl; break
+        if not did:
+            # שם משפחה + שם פרטי, כולל שם מקוצר/מורחב: "ברגר יצחק" = "ברגר יצחק (איצי)"
+            nw = _norm(name).split()
+            rl = _norm(r.get('last') or '') or (nw[0] if nw else '')
+            rf = _norm(r.get('first') or '') or ' '.join(nw[1:])
+            cands = by_lf.get(rl) or by_lf.get(_lat(r.get('last') or '')) or []
+            if rl and rf and cands:
+                hit = [c for c in cands if any(_same_first(a, rf) for a in c[1])]
+                if len(hit) == 1:
+                    did, how = hit[0][0], 'שם משפחה + שם פרטי'
+            if not did and rl and not rf and len(cands) == 1:
+                did, how = cands[0][0], 'שם משפחה בלבד'
         if not did:
             w = _lat(name).split() or _norm(name).split()
             for k in ([w[-1], w[0]] if w else []):
@@ -1960,6 +1988,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/import/lists':
+            # הרשימות שכבר הוזנו למערכת (פורים/פסח תשפ״ו) — לטעינה בלחיצה בדף הייבוא
+            try:
+                with open(os.path.join(HERE, 'campaign_lists.json'), encoding='utf-8') as f:
+                    return self._send(200, json.load(f))
+            except Exception:
+                return self._send(200, {'lists': []})
         if self.path.split('?')[0] in ('/import', '/import.html'):
             return self._send(200, open(os.path.join(STATIC, 'import.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/api/recon':
