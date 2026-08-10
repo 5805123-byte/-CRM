@@ -1241,3 +1241,148 @@ def sync(con):
         return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
     except Exception as e:
         return {'ok': False, 'error': 'sync_failed', 'detail': str(e)}
+
+
+# ---------- תשלומי PayPal שמגיעים כהודעה למייל (כולל תיקיית ספאם) ----------
+PP_STATUS = {'running': False, 'new': 0, 'scanned': 0, 'total': 0, 'done': False, 'error': '', 'unparsed': []}
+
+_PP_AMT = re.compile(r'\$\s*([\d,]+\.\d{2})')
+_PP_AMT2 = re.compile(r'([\d,]+\.\d{2})\s*USD')
+_PP_TID = re.compile(r'(?:transaction\s*id|מספר\s*עסקה|receipt\s*(?:id|number))\s*[:#]?\s*([A-Z0-9\-]{8,25})', re.I)
+_PP_MAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
+# "נשלח אליך תשלום" — רק כסף שנכנס, לא תשלומים שאנחנו שילמנו
+_PP_IN = re.compile(r'(you(?:\'ve| have)?\s+(?:got|received)|received\s+a\s+(?:payment|donation)|'
+                    r'sent\s+you|payment\s+received|donation\s+received|הועבר\s+אליך|קיבלת\s+תשלום)', re.I)
+_PP_OUT = re.compile(r'(you\s+sent|your\s+payment\s+to|receipt\s+for\s+your\s+payment|refund|'
+                     r'you\s+paid|invoice\s+from|authorization)', re.I)
+_PP_NAMES = [
+    re.compile(r'(?:payment|donation)\s+of\s+\$?[\d,.]+\s*(?:USD)?\s+from\s+([A-Za-z][A-Za-z\'\-. ]{1,50})', re.I),
+    re.compile(r'(?:received|got)\s+\$?[\d,.]+\s*(?:USD)?\s+from\s+([A-Za-z][A-Za-z\'\-. ]{1,50})', re.I),
+    re.compile(r'^\s*([A-Za-z][A-Za-z\'\-. ]{1,50}?)\s+sent\s+you\s+\$', re.I | re.M),
+    re.compile(r'(?:payment|money|donation)\s+received\s+from\s+([A-Za-z][A-Za-z\'\-. ]{1,50})', re.I),
+    re.compile(r'\bfrom\s+([A-Za-z][A-Za-z\'\-. ]{1,50}?)\s*\([\w.+-]+@', re.I),
+]
+
+
+def _pp_parse(subject, body, when):
+    """מפרק הודעת PayPal לתרומה: סכום, שם המשלם, המייל שלו ומזהה העסקה.
+    מחזיר None אם זו לא הודעה על כסף שנכנס."""
+    txt = ((subject or '') + '\n' + (body or '')).replace(' ', ' ')
+    flat = re.sub(r'\s+', ' ', txt)
+    if _PP_OUT.search(subject or '') or not _PP_IN.search(flat):
+        return None
+    m = _PP_AMT.search(flat) or _PP_AMT2.search(flat)
+    if not m:
+        return None
+    amount = m.group(1).replace(',', '')
+    try:
+        if float(amount) <= 0:
+            return None
+    except ValueError:
+        return None
+    name = ''
+    for rx in _PP_NAMES:
+        mm = rx.search(subject or '') or rx.search(flat)
+        if mm:
+            name = re.sub(r'\s+', ' ', mm.group(1)).strip(' .-')
+            break
+    payer = ''
+    for e in _PP_MAIL.findall(txt):
+        el = e.lower()
+        if 'paypal' in el or el.endswith(('.png', '.jpg', '.gif')):
+            continue
+        payer = el
+        break
+    if name and payer:                      # "Michael Jacobsen mjacobsen" — לחתוך את שם המשתמש של המייל
+        loc = payer.split('@')[0].lower()
+        name = ' '.join(w for w in name.split() if w.lower() != loc)
+    name = ' '.join(name.split()[:4])       # שם, לא פסקה
+    tid = ''
+    mt = _PP_TID.search(txt)
+    if mt:
+        tid = mt.group(1).strip()
+    parts = name.split()
+    return {'first': parts[0] if parts else '', 'last': ' '.join(parts[1:]) if len(parts) > 1 else '',
+            'name': name, 'amount': amount, 'email': payer, 'tid': tid, 'date': when}
+
+
+def sync_paypal(con, status=None):
+    """מושך את כל הודעות התשלום של PayPal מהתיבה ומהספאם ומכניס אותן לדף החיובים."""
+    st = status if status is not None else {}
+    user = os.environ.get('GMAIL_USER')
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    since = os.environ.get('PAYPAL_SINCE') or _imap_since()
+    emap = _donor_email_map(con)
+    boxes = ['INBOX', '[Gmail]/Spam', '[Gmail]/All Mail']
+    new = dup = 0
+    unparsed = []
+    seen = set()
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com')
+        M.login(user, pw)
+        for box in boxes:
+            try:
+                typ, _ = M.select(_q(box) if ' ' in box else box, readonly=True)
+                if typ != 'OK':
+                    continue
+                typ, data = M.search(None, 'SINCE', since, 'FROM', _q('paypal'))
+                ids = data[0].split() if typ == 'OK' else []
+            except Exception:
+                continue
+            st['total'] = st.get('total', 0) + len(ids)
+            for i in range(0, len(ids), 40):
+                chunk = b','.join(ids[i:i + 40])
+                try:
+                    typ, msgs = M.fetch(chunk, '(RFC822)')
+                except Exception:
+                    continue
+                for part in msgs or []:
+                    if not (isinstance(part, tuple) and part[1]):
+                        continue
+                    try:
+                        msg = email.message_from_bytes(part[1])
+                    except Exception:
+                        continue
+                    mid = (msg.get('Message-ID') or '').strip()
+                    if mid and mid in seen:
+                        continue
+                    if mid:
+                        seen.add(mid)
+                    st['scanned'] = st.get('scanned', 0) + 1
+                    subject = _dec(msg.get('Subject'))
+                    body = _extract_text(msg)
+                    when = ''
+                    try:
+                        dt = parsedate_to_datetime(msg.get('Date'))
+                        when = dt.strftime('%d-%b-%Y')
+                    except Exception:
+                        pass
+                    rec = _pp_parse(subject, body, when)
+                    if not rec:
+                        if 'paypal' in (msg.get('From') or '').lower() and len(unparsed) < 25:
+                            unparsed.append(subject[:120])
+                        continue
+                    tid = 'PP' + (rec['tid'] or re.sub(r'[^A-Za-z0-9]', '', mid)[-16:] or str(len(seen)))
+                    if con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone():
+                        dup += 1
+                        continue
+                    did = emap.get(rec['email']) if rec['email'] else None
+                    con.execute(
+                        "INSERT INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,"
+                        "recurring,donor_id,category,processed,source,status) "
+                        "VALUES(?,?,?,?,?,'','','','','',?,0,?,'',0,'PayPal','settled')",
+                        (tid, rec['first'], rec['last'], rec['amount'], rec['date'], rec['email'], did))
+                    new += 1
+                    st['new'] = new
+        con.commit()
+        try:
+            M.logout()
+        except Exception:
+            pass
+    except Exception as e:
+        st['error'] = str(e)
+        return {'ok': False, 'error': 'imap', 'detail': str(e)}
+    st['unparsed'] = unparsed
+    return {'ok': True, 'new': new, 'dup': dup, 'scanned': st.get('scanned', 0), 'unparsed': unparsed}

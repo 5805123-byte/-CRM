@@ -81,6 +81,7 @@
 <div class="sub">לכל תורם: אשר עבור מה תרם, השלם שם עברי / צור כרטיס, ובחר אם לעדכן כתובת. תרומת $480 = פרנס לילה. הוראות קבע מסומנות.<br>בפרנס — אפשר לכתוב מיד את השמות; היום ישובץ ב<a href="/" target="_blank" rel="noopener" style="color:var(--accent);font-weight:800">🌙 לוח פרנס יום</a>.</div>
 <div style="margin:0 0 8px"><a href="/audit" style="display:block;text-align:center;padding:10px;border:1px dashed var(--accent);background:#fff;color:var(--accent);border-radius:10px;font-weight:800;font-size:.9rem;text-decoration:none">🔎 אימות כל החיובים מול דוח הקבועים ורשימות החגים</a></div>
 <div style="margin:0 0 8px"><a href="/import" style="display:block;text-align:center;padding:10px;border:1px dashed var(--gold);background:#fff;color:var(--gold);border-radius:10px;font-weight:800;font-size:.9rem;text-decoration:none">📥 ייבוא רשימת מגבית שלמה (קמחא דפסחא / מתנות לאביונים / צ׳קים)</a></div>
+<div style="margin:0 0 8px"><button id="ppsync" style="width:100%;padding:10px;border:1px dashed #0070ba;background:#fff;color:#0070ba;border-radius:10px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer">💳 משוך תשלומי PayPal מהמייל (כולל ספאם) — מתחילת 2026</button><div id="ppout" class="sub" style="margin:5px 2px 0"></div></div>
 <div style="margin:0 0 10px"><button id="mailsync" style="width:100%;padding:10px;border:1px dashed var(--accent);background:#fff;color:var(--accent);border-radius:10px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer">📥 משוך מיילים מהתיבה ותייק אצל התורמים</button></div>
 <div class="bar">
   <div class="prog"><i id="pbar"></i></div>
@@ -496,6 +497,27 @@ function wireGroup(k,txs){
 }
 
 $('.filters').addEventListener('click', e=>{ if(e.target.dataset.f){ FILT=e.target.dataset.f; try{sessionStorage.setItem(FKEY,FILT);}catch(err){} document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b===e.target)); window.scrollTo(0,0); render(); }});
+const _pp=document.getElementById('ppsync');
+if(_pp)_pp.onclick=async()=>{
+  _pp.disabled=true; const t0=_pp.textContent; _pp.textContent='מחפש תשלומי PayPal…';
+  const out=document.getElementById('ppout');
+  const r=await api('POST','/api/mail/paypal_sync',{});
+  if(!r||!r.ok){_pp.disabled=false;_pp.textContent=t0;
+    toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
+  const poll=setInterval(async()=>{
+    const st=await api('GET','/api/mail/paypal_sync/status');
+    out.textContent='נסרקו '+(st.scanned||0)+' מיילים · נמצאו '+(st.new||0)+' תשלומים';
+    if(st.done||!st.running){
+      clearInterval(poll); _pp.disabled=false; _pp.textContent=t0;
+      if(st.error){toast('שגיאה: '+st.error);return;}
+      out.innerHTML='✅ נוספו <b>'+(st.new||0)+'</b> תשלומי PayPal לדף החיובים'
+        +((st.dup||0)?(' · '+st.dup+' כבר היו'):'')
+        +((st.unparsed||[]).length?('<br>⚠️ '+st.unparsed.length+' הודעות PayPal שלא הצלחתי לפענח — שלח לי דוגמה:<br><small>'
+          +st.unparsed.slice(0,5).map(esc).join('<br>')+'</small>'):'');
+      if(st.new){toast('נוספו '+st.new+' תשלומים — רענן את הדף');}
+    }
+  },1500);
+};
 const _ms=document.getElementById('mailsync');
 if(_ms)_ms.onclick=async()=>{
   _ms.disabled=true;const t0=_ms.textContent;_ms.textContent='מושך מיילים…';

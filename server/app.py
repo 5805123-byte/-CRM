@@ -2272,6 +2272,12 @@ class H(BaseHTTPRequestHandler):
                 out.append(x)
             con.close()
             return self._send(200, {'configured': _intake_configured(), 'items': out})
+        if self.path == '/api/mail/paypal_sync/status':
+            try:
+                import gmail_intake
+                return self._send(200, dict(gmail_intake.PP_STATUS))
+            except Exception as e:
+                return self._send(200, {'running': False, 'done': True, 'error': str(e)})
         if self.path == '/api/mail/contacts_sync/status':
             try:
                 import gmail_intake
@@ -2490,6 +2496,34 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             con = db(); res = gmail_intake.sync(con); con.close()
             return self._send(200, res)
+        if self.path == '/api/mail/paypal_sync':     # משיכת תשלומי PayPal מהמייל ומהספאם — ברקע
+            try:
+                import gmail_intake, threading
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            if not gmail_intake.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured'})
+            stt = gmail_intake.PP_STATUS
+            if stt.get('running'):
+                return self._send(200, {'ok': True, 'started': False, 'already': True, 'status': stt})
+            stt.update({'running': True, 'new': 0, 'scanned': 0, 'total': 0, 'done': False,
+                        'error': '', 'unparsed': []})
+            def _runpp():
+                c = db()
+                try:
+                    r = gmail_intake.sync_paypal(c, stt)
+                    if not r.get('ok'):
+                        stt['error'] = r.get('detail') or r.get('error') or 'שגיאה'
+                    else:
+                        stt['new'] = r.get('new', 0); stt['dup'] = r.get('dup', 0)
+                except Exception as e:
+                    stt['error'] = '%s: %s' % (type(e).__name__, e)
+                finally:
+                    try: c.close()
+                    except Exception: pass
+                    stt['running'] = False; stt['done'] = True
+            threading.Thread(target=_runpp, daemon=True).start()
+            return self._send(200, {'ok': True, 'started': True})
         if self.path == '/api/mail/contacts_sync':   # תיוק מיילים מתורמים — רץ ברקע כדי לא ליפול בטיימאאוט
             try:
                 import gmail_intake, threading
