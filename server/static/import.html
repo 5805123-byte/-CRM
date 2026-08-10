@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>כולל חצות — ייבוא רשימת מגבית</title>
+<style>
+  :root{--bg:#f4f1e8;--card:#fff;--ink:#221c12;--muted:#8a7f66;--line:#e5ddc9;--gold:#9c7a2e;--accent:#3b2f5e;--yes:#1b7a3d;--no:#b5321f;--warn:#b5641a}
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Arial,sans-serif;padding:12px;max-width:940px;margin:0 auto}
+  h1{font-size:1.25rem;margin:6px 0}
+  .sub{color:var(--muted);font-size:.9rem;margin-bottom:12px;line-height:1.6}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:11px 0}
+  label.f{display:block;margin:9px 0}
+  label.f span{display:block;font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:4px}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+    background:#fff;color:var(--ink);font-family:inherit;font-size:.92rem}
+  textarea{min-height:190px;line-height:1.5;direction:ltr;text-align:left;white-space:pre;overflow-x:auto}
+  .two{display:flex;gap:9px;flex-wrap:wrap}.two>*{flex:1;min-width:150px}
+  .btn{border:none;border-radius:10px;padding:11px 16px;font-weight:800;font-size:.95rem;cursor:pointer;
+    font-family:inherit;background:var(--accent);color:#fff;width:100%;margin-top:9px}
+  .btn.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  .btn:disabled{opacity:.5}
+  .counts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .cnt{border-radius:10px;padding:8px 12px;font-size:.85rem;font-weight:800;border:1px solid var(--line);background:#fff}
+  .cnt.ok{background:#eaf6ee;border-color:#bfe3c9;color:#1e6b3a}
+  .cnt.warn{background:#fff3e0;border-color:#e8c79a;color:var(--warn)}
+  .cnt.no{background:#fdeee9;border-color:#f2c9bc;color:var(--no)}
+  table{width:100%;border-collapse:collapse;font-size:.84rem}
+  th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}
+  th{color:var(--muted);font-size:.76rem;position:sticky;top:0;background:var(--card)}
+  tr.new{background:#fdf4f1}tr.nocharge{background:#fffaf0}
+  .who{font-weight:700}.how{color:var(--muted);font-size:.76rem}
+  .wrap{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  .lat{direction:ltr;text-align:left}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;font-weight:700;z-index:20}
+  .toast.show{opacity:1}
+  .hint{font-size:.79rem;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<h1>📥 ייבוא רשימת מגבית</h1>
+<div class="sub">מדביקים כאן את הרשימה מהאקסל (שם + סכום), המערכת מתאימה כל שורה לתורם הקיים ולחיוב שטרם אושר —
+ומכניסה את התרומה עם התאריך ואמצעי התשלום האמיתיים מהחיוב.
+<b>קודם בודקים, אחר כך מכניסים.</b> מי שלא זוהה נשאר לך לטיפול ידני.</div>
+
+<div class="box">
+  <div class="two">
+    <label class="f"><span>עבור מה (קטגוריה)</span><input id="cat" list="catdl" placeholder="למשל: קמחא דפסחא תשפ״ו">
+      <datalist id="catdl"></datalist></label>
+    <label class="f"><span>חיובים מתאריך</span><input id="from" type="date"></label>
+    <label class="f"><span>עד תאריך</span><input id="to" type="date"></label>
+  </div>
+  <label class="f"><span>הרשימה — עמודה של שם ועמודה של סכום (העתק־הדבק ישר מאקסל)</span>
+    <textarea id="data" placeholder="Shlomo Smilow	180&#10;Yossi Kirzner	1000&#10;..."></textarea></label>
+  <div class="hint">מזהה גם פסיקים וגם טאבים. אפשר להשאיר כותרות — הן מזוהות ומדולגות. עמודה שלישית, אם יש, נשמרת כהערה.</div>
+  <button class="btn ghost" id="check">🔍 בדוק התאמות (בלי להכניס כלום)</button>
+</div>
+
+<div id="out"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+let ROWS=[], RES=[];
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2200);}
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},
+  body:b?JSON.stringify(b):undefined});return r.json();}
+
+// שורה של אקסל: טאב, או פסיק כשאין טאב. הסכום הוא התא האחרון שנראה כמו מספר
+function parseRows(txt){
+  const out=[];
+  for(const raw of String(txt||'').split('\n')){
+    const ln=raw.trim(); if(!ln) continue;
+    const cells=(ln.includes('\t')?ln.split('\t'):ln.split(',')).map(c=>c.trim().replace(/^"|"$/g,''));
+    let ai=-1;
+    for(let i=cells.length-1;i>=0;i--){ if(/^[$₪]?\s*[\d,]+(\.\d+)?$/.test(cells[i])&&cells[i]!==''){ai=i;break;} }
+    if(ai<0) continue;                                   // שורת כותרת או שורה בלי סכום
+    const amount=cells[ai].replace(/[^0-9.]/g,'');
+    const name=cells.slice(0,ai).filter(Boolean).find(c=>/[A-Za-zא-ת]/.test(c))||'';
+    if(!name) continue;
+    const note=cells.slice(ai+1).filter(Boolean).join(' ');
+    const email=(cells.find(c=>c.includes('@'))||'');
+    out.push({name,amount,note,email});
+  }
+  return out;
+}
+
+$('#check').onclick=async()=>{
+  ROWS=parseRows($('#data').value);
+  if(!ROWS.length){toast('לא זוהתה אף שורה עם סכום');return;}
+  $('#check').disabled=true;$('#check').textContent='בודק…';
+  const r=await api('POST','/api/import/campaign',{rows:ROWS,dry:true,from:$('#from').value,to:$('#to').value});
+  $('#check').disabled=false;$('#check').textContent='🔍 בדוק התאמות (בלי להכניס כלום)';
+  if(!r||!r.ok){toast('שגיאה בבדיקה');return;}
+  RES=r.rows; paint();
+};
+
+function paint(){
+  const ch=RES.filter(x=>x.status==='charged'), nc=RES.filter(x=>x.status==='nocharge'), nw=RES.filter(x=>x.status==='new');
+  const sum=a=>a.reduce((s,x)=>s+(+x.amount||0),0).toFixed(2);
+  $('#out').innerHTML=`<div class="box">
+    <div class="counts">
+      <div class="cnt ok">✓ זוהה תורם + חיוב תואם: <b>${ch.length}</b> · $${sum(ch)}</div>
+      <div class="cnt warn">⚠️ תורם זוהה, בלי חיוב תואם: <b>${nc.length}</b> · $${sum(nc)}</div>
+      <div class="cnt no">❓ לא זוהה תורם: <b>${nw.length}</b> · $${sum(nw)}</div>
+    </div>
+    <div class="wrap"><table>
+      <thead><tr><th>שם ברשימה</th><th>סכום</th><th>כרטיס במערכת</th><th>חיוב שנמצא</th></tr></thead>
+      <tbody>${RES.map(x=>`<tr class="${x.status}">
+        <td class="lat">${esc(x.name)}</td>
+        <td>$${(+x.amount).toFixed(2)}</td>
+        <td>${x.donor_id?`<span class="who">${esc(x.donor_name)}</span> <a href="/?donor=${x.donor_id}" target="_blank" rel="noopener">↗</a><div class="how">לפי ${esc(x.how||'')}</div>`:'<span style="color:var(--no);font-weight:700">— לא נמצא —</span>'}</td>
+        <td>${x.charge?`${esc(x.charge.date)} · $${x.charge.amount.toFixed(2)}<div class="how">${esc(x.charge.source)}</div>`:'<span style="color:var(--warn)">אין חיוב תואם</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <button class="btn" id="go1" ${ch.length?'':'disabled'}>✅ הכנס רק את ${ch.length} שיש להם חיוב תואם</button>
+    <button class="btn ghost" id="go2" ${(ch.length+nc.length)?'':'disabled'}>➕ הכנס את כל ${ch.length+nc.length} מי שזוהה (גם בלי חיוב תואם)</button>
+    <div class="hint">מי שלא זוהה (${nw.length}) לא נכנס בשום מקרה — הוא נשאר לך לפתיחת כרטיס או מיזוג.
+      שורה שכבר רשומה אצל התורם באותה קטגוריה ובאותו סכום מדולגת, כדי שלא ייווצרו כפילויות.</div>
+  </div>`;
+  $('#go1').onclick=()=>commit(true);
+  $('#go2').onclick=()=>commit(false);
+}
+
+async function commit(onlyCharged){
+  const cat=$('#cat').value.trim();
+  if(!cat){toast('כתוב עבור מה — הקטגוריה חובה');$('#cat').focus();return;}
+  const btn=onlyCharged?$('#go1'):$('#go2'); const t0=btn.textContent;
+  btn.disabled=true;btn.textContent='מכניס…';
+  const r=await api('POST','/api/import/campaign',{rows:ROWS,dry:false,category:cat,
+    from:$('#from').value,to:$('#to').value,only_charged:onlyCharged,default_date:$('#to').value||undefined});
+  btn.textContent=t0;
+  if(!r||!r.ok){btn.disabled=false;toast('ההכנסה נכשלה');return;}
+  toast('הוכנסו '+r.inserted+' תרומות · דולגו '+r.skipped);
+  RES=r.rows; paint();
+}
+
+(async()=>{
+  try{const d=await api('GET','/api/data');
+    $('#catdl').innerHTML=(d.campaigns||[]).map(c=>`<option value="${esc(c)}">`).join('');
+  }catch(e){}
+})();
+</script>
+</body>
+</html>

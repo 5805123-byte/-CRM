@@ -1645,6 +1645,109 @@ def norm_zip(z, region):
 KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
            'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
 
+_MONI = {'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
+         'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'}
+
+
+def _recon_iso(d):
+    """'24-Mar-2026' -> '2026-03-24'."""
+    m = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', d or '')
+    return f"{m.group(3)}-{_MONI.get(m.group(2).lower(), '01')}-{m.group(1)}" if m else ''
+
+
+def _days(iso):
+    """'2026-03-24' -> מספר ימים, להשוואת קרבה בין תאריכים."""
+    try:
+        y, mo, d = (iso or '')[:10].split('-')
+        return datetime.date(int(y), int(mo), int(d)).toordinal()
+    except Exception:
+        return 0
+
+
+def _lat(s):
+    return re.sub(r'\s+', ' ', re.sub(r'[^a-z ]', ' ', (s or '').lower())).strip()
+
+
+def _d7(s):
+    return re.sub(r'[^0-9]', '', s or '')[-7:]
+
+
+def campaign_match(con, rows, dfrom='', dto=''):
+    """מתאים כל שורה מרשימת מגבית לתורם קיים ולחיוב אשראי שטרם אושר.
+    לא כותב כלום — רק מחזיר מה נמצא, כדי שאפשר יהיה לראות לפני שמכניסים."""
+    donors = [dict(r) for r in con.execute("SELECT id,last,first,english,email,phone FROM donors")]
+    by_mail, by_ph, by_name, by_last = {}, {}, {}, {}
+
+    def put(d, key, val):
+        if not key:
+            return
+        d[key] = None if (key in d and d[key] != val) else d.get(key, val)   # מפתח כפול — לא משייכים לבד
+
+    for d in donors:
+        for e in emails_of(d['email']):
+            put(by_mail, e, d['id'])
+        for p in re.split(r'[/,]', d['phone'] or ''):
+            if _d7(p):
+                put(by_ph, _d7(p), d['id'])
+        heb = _norm((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+        put(by_name, heb, d['id'])
+        for nm in {_lat(d['english']), _lat((d['first'] or '') + ' ' + (d['last'] or '')),
+                   _lat((d['last'] or '') + ' ' + (d['first'] or ''))}:
+            if nm and ' ' in nm:
+                put(by_name, nm, d['id'])
+                put(by_name, ' '.join(reversed(nm.split())), d['id'])
+        for k in {_lat(d['last']), _norm(d['last'])}:
+            put(by_last, k, d['id'])
+    charges = {}
+    for r in con.execute("""SELECT tid,donor_id,amount,date,source FROM recon
+                            WHERE donor_id IS NOT NULL AND COALESCE(processed,0)=0"""):
+        iso = _recon_iso(r['date'])
+        if (dfrom and iso and iso < dfrom) or (dto and iso and iso > dto):
+            continue
+        charges.setdefault(r['donor_id'], []).append(
+            {'tid': r['tid'], 'amount': round(float(r['amount'] or 0), 2), 'date': iso, 'source': r['source'] or ''})
+    used = set()
+    out = []
+    for r in rows:
+        name = (r.get('name') or '').strip()
+        try:
+            amt = round(float(re.sub(r'[^0-9.\-]', '', str(r.get('amount') or '0')) or 0), 2)
+        except ValueError:
+            amt = 0.0
+        did = how = None
+        for e in emails_of(r.get('email')):
+            if by_mail.get(e):
+                did, how = by_mail[e], 'אימייל'; break
+        if not did and _d7(r.get('phone')) and by_ph.get(_d7(r.get('phone'))):
+            did, how = by_ph[_d7(r.get('phone'))], 'טלפון'
+        if not did:
+            for key, lbl in ((_lat(name), 'שם באנגלית'), (_norm(name), 'שם בעברית'),
+                             (' '.join(reversed(_lat(name).split())), 'שם באנגלית (הפוך)')):
+                if key and by_name.get(key):
+                    did, how = by_name[key], lbl; break
+        if not did:
+            w = _lat(name).split() or _norm(name).split()
+            for k in ([w[-1], w[0]] if w else []):
+                if by_last.get(k):
+                    did, how = by_last[k], 'שם משפחה בלבד'; break
+        ch = None
+        if did and amt:
+            # מבין החיובים באותו סכום — הקרוב ביותר לתאריך המגבית
+            cand = [c for c in charges.get(did, []) if c['tid'] not in used and abs(c['amount'] - amt) < 0.01]
+            if cand:
+                tgt = dto or dfrom
+                cand.sort(key=lambda c: (abs(_days(c['date']) - _days(tgt)) if (tgt and c['date']) else 0,
+                                         c['date']), reverse=not tgt)
+                ch = cand[0]; used.add(ch['tid'])
+        dn = next((d for d in donors if d['id'] == did), None)
+        out.append({'name': name, 'amount': amt, 'note': (r.get('note') or '').strip(),
+                    'donor_id': did, 'how': how,
+                    'donor_name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() if dn else '',
+                    'charge': ch,
+                    'status': ('new' if not did else ('charged' if ch else 'nocharge'))})
+    return out
+
+
 def recon_apply(cur, tid, b):
     """אישור שורת חיוב אחת: יצירת/עדכון התורם, התרומה, המשימה והקוויטל.
     לא פותח ולא סוגר חיבור — כדי שאפשר יהיה לאשר קבוצה שלמה בבקשה אחת."""
@@ -1857,6 +1960,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] in ('/import', '/import.html'):
+            return self._send(200, open(os.path.join(STATIC, 'import.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/api/recon':
             con = db(); out = []
             try:
@@ -2440,6 +2545,43 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/import/campaign':
+            # ייבוא רשימת מגבית שלמה: התאמה לתורם, לחיוב שטרם אושר, והכנסת התרומה במקומה
+            rows = b.get('rows') or []
+            cat = (b.get('category') or '').strip()
+            dfrom, dto = (b.get('from') or '').strip(), (b.get('to') or '').strip()
+            con = db(); cur = con.cursor()
+            res = campaign_match(con, rows, dfrom, dto)
+            if b.get('dry', True):
+                con.close()
+                return self._send(200, {'ok': True, 'rows': res})
+            if not cat:
+                con.close(); return self._send(400, {'error': 'category required'})
+            BASE = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר',
+                    'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
+            if cat not in BASE:
+                cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+            ins = skipped = 0
+            for x in res:
+                if not x['donor_id'] or (b.get('only_charged') and not x['charge']):
+                    skipped += 1; continue
+                ch = x['charge'] or {}
+                dt = ch.get('date') or (b.get('default_date') or today_iso())
+                meth = ('Banquest' if 'Banquest' in (ch.get('source') or '') else
+                        ('Authorize' if ch.get('source') else (b.get('method') or '')))
+                if cur.execute("""SELECT 1 FROM donations WHERE donor_id=? AND category=?
+                                  AND ROUND(CAST(amount AS REAL),2)=?""",
+                               (x['donor_id'], cat, x['amount'])).fetchone():
+                    skipped += 1; continue          # כבר נרשמה — בלי כפילות
+                note = cat + (' · ' + x['note'] if x['note'] else '')
+                cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
+                            (x['donor_id'], dt, f"{x['amount']:.2f}", cat, meth, note))
+                if ch.get('tid'):
+                    cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?",
+                                (x['donor_id'], cat, ch['tid']))
+                ins += 1
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'inserted': ins, 'skipped': skipped, 'rows': res})
         if self.path == '/api/recon/batch':
             # אישור כל שורות התורם בבקשה אחת — במקום סבב רשת נפרד לכל שורה
             con = db(); cur = con.cursor(); did = b.get('donor_id'); out = []
