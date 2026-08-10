@@ -534,7 +534,11 @@ function openNewDonor(onCreate){
   };
 }
 function hq(s){return String(s||'').replace(/\u05f4/g,'"').replace(/\u05f3/g,"'");}
-function heYearOpts(sel){sel=hq(sel)||HEBYEAR;let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
+// ברירת המחדל היא תמיד השנה העברית הנוכחית (מהשרת) — שנה שעברה לא נבחרת לבד אף פעם
+function heYearOpts(sel){sel=hq(sel)||HEBYEAR;let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];
+  if(sel&&!ys.includes(sel))ys.unshift(sel);
+  if(!ys.includes(sel))sel=HEBYEAR;
+  return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
 function purpRowHTML(first){
   return `<div class="purprow" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px;position:relative">
     ${first?'':'<button type="button" class="rmpurp" style="position:absolute;left:0;top:6px;background:none;border:none;color:var(--no);font-size:1.05rem;cursor:pointer">✕</button>'}

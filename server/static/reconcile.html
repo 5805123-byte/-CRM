@@ -101,18 +101,24 @@ function tierOpts(sel,cat){const isOcc=!(sel||'')&&cat==='מזדמן';return TIE
 // בורר פרנס — חודש/יום/שנה עבריים
 const HMORD=['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
 function hq(s){return String(s||'').replace(/\u05f4/g,'"').replace(/\u05f3/g,"'");}
-function heYearOpts(sel){sel=hq(sel);let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
+// השנה העברית הנוכחית מגיעה מהשרת בטעינה — כדי שברירת המחדל תתגלגל לבד בראש השנה
+let HEBYEAR='תשפ"ו';
+const HYEARLIST=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];
+function hyears(){const i=HYEARLIST.indexOf(HEBYEAR);return i<0?HYEARLIST:HYEARLIST.slice(Math.max(0,i-1),i+3);}
+// ברירת מחדל תמיד השנה הנוכחית — שנה שעברה לא נבחרת לבד אף פעם
+function yearOpts(sel,list){const ys=list||hyears();sel=hq(sel);if(!ys.includes(sel))sel=HEBYEAR;
+  return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
+function heYearOpts(sel){sel=hq(sel);const ys=HYEARLIST.slice();if(sel&&!ys.includes(sel))ys.unshift(sel);
+  if(!ys.includes(sel))sel=HEBYEAR;return yearOpts(sel,ys);}
 // סוגי משימה — אותה רשימה גם בכרטיס התורם
 const WHOOPTS=[['','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
 const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['other','🔔 אחר']];
-const HYEARS=['תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח'];
-const HEBYEAR='תשפ"ו';
 // מודאל בחירת חודש+שנה עברית (לשיוך תורם מזדמן)
 function pickMonthYear(curM,curY){return new Promise(res=>{
   const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
   o.innerHTML=`<div style="background:var(--card,#fff);padding:18px;border-radius:14px;max-width:340px;width:88%;box-shadow:0 10px 40px rgba(0,0,0,.3)"><div style="font-weight:700;margin-bottom:10px">לאיזה חודש ושנה עברית לשייך את הקוויטל של התורם המזדמן?</div>
     <div style="display:flex;gap:8px"><select class="pmM" style="flex:1;padding:10px;font-size:1.05rem">${HMORD.map(m=>`<option ${m===curM?'selected':''}>${m}</option>`).join('')}</select>
-      <select class="pmY" style="flex:1;padding:10px;font-size:1.05rem">${HYEARS.map(y=>`<option ${y===(hq(curY)||HEBYEAR)?'selected':''}>${y}</option>`).join('')}</select></div>
+      <select class="pmY" style="flex:1;padding:10px;font-size:1.05rem">${yearOpts(curY)}</select></div>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="pmC" style="flex:1;padding:10px;border:1px solid var(--line,#ccc);border-radius:8px;background:#eee">ביטול</button><button class="pmOK" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--brand,#4a3f9e);color:#fff;font-weight:700">אישור</button></div></div>`;
   document.body.appendChild(o);
   const done=v=>{o.remove();res(v);};
@@ -172,7 +178,8 @@ function restorePos(){try{const raw=sessionStorage.getItem(PKEY);if(!raw)return;
 
 let KVDEF=['',''];
 async function load(){ [DATA, CAMPAIGNS, BUILDING_ITEMS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns'), api('GET','/api/building_items')]);
-  try{const meta=await api('GET','/api/data'); KVDEF=(meta.kv_default||['','']).map(hq); }catch(e){}
+  try{const meta=await api('GET','/api/data'); KVDEF=(meta.kv_default||['','']).map(hq);
+    if(meta.heb_year) HEBYEAR=hq(meta.heb_year); if(!KVDEF[1]) KVDEF[1]=HEBYEAR; }catch(e){}
   if(SRC){ DATA=DATA.filter(x=>srcGroup(x.source)===SRC); const h=document.querySelector('h1'); if(h&&SRCLABEL[SRC]) h.textContent='💳 טיפול והתאמת תרומות — '+SRCLABEL[SRC]; }
   render(); }
 
@@ -285,7 +292,7 @@ function groupCard(k,txs){
       ${(!failed&&!t.processed)?(()=>{const show=is480||PARNES_CATS.includes(t.category||'');return `<div class="pypick" style="display:${show?'flex':'none'};gap:6px;width:100%;margin-top:5px">
         <select class="pymon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
         <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
-        <select class="pyyr">${HYEARS.map(y=>`<option ${y==='תשפ"ו'?'selected':''}>${y}</option>`).join('')}</select></div>
+        <select class="pyyr">${yearOpts(HEBYEAR)}</select></div>
       <input class="pyded" placeholder="🕯️ שמות/בקשות לפרנס (רשות)" style="display:${show?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit">`;})():''}
       <button class="rowdel" title="מחק את השורה הזו מדף החיובים">🗑</button>
     </div>`;
