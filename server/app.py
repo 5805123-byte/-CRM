@@ -2486,7 +2486,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             src = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('src', [''])[0] or '').strip()
             meth = {'banquest': 'Banquest', 'authorize': 'Authorize'}.get(src, '')
-            q = ("SELECT n.donor_id, d.last, d.first, n.date, n.amount, n.method FROM donations n "
+            q = ("SELECT n.id, n.donor_id, d.last, d.first, n.date, n.amount, n.method FROM donations n "
                  "JOIN donors d ON d.id=n.donor_id WHERE COALESCE(n.note,'') LIKE '%לא סווג%'")
             args = []
             if meth:
@@ -2497,7 +2497,9 @@ class H(BaseHTTPRequestHandler):
                 g = grp.setdefault(r['donor_id'], {'donor_id': r['donor_id'],
                                                    'name': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
                                                    'items': [], 'total': 0.0, 'methods': set()})
-                g['items'].append({'date': r['date'], 'amount': round(float(r['amount'] or 0), 2)})
+                g['items'].append({'id': r['id'], 'date': r['date'],
+                                   'amount': round(float(r['amount'] or 0), 2),
+                                   'method': 'בנק ווסט' if r['method'] == 'Banquest' else 'אוטרייז'})
                 g['total'] += float(r['amount'] or 0)
                 g['methods'].add('בנק ווסט' if r['method'] == 'Banquest' else 'אוטרייז')
             out = []
@@ -3303,6 +3305,7 @@ class H(BaseHTTPRequestHandler):
             if not cat:
                 return self._send(400, {'error': 'category required'})
             meth = (b.get('method') or '').strip()
+            ids = [int(x) for x in (b.get('ids') or []) if str(x).isdigit()]
             con = db(); cur = con.cursor()
             BASE = {'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר',
                     'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר', 'בניין'}
@@ -3312,6 +3315,8 @@ class H(BaseHTTPRequestHandler):
             q = ("UPDATE donations SET category=?, "
                  "note=REPLACE(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה',''),' · לא סווג','') "
                  "WHERE donor_id=? AND COALESCE(note,'') LIKE '%לא סווג%'")
+            if ids:                                  # סיווג של חיובים מסוימים בלבד
+                q += " AND id IN (%s)" % ','.join('?' * len(ids)); args += ids
             if meth:
                 q += " AND method=?"; args.append(meth)
             n = cur.execute(q, args).rowcount

@@ -725,10 +725,13 @@ function cardDetails(d,body){
     ${izSummaryHTML(d)}
     ${give}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 התחייב · טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
-    ${(d.unclassified||[]).length?`<div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
-      <div class="unclist">${d.unclassified.map(x=>`<span class="unci">$${(+x.amount).toLocaleString('en-US',{maximumFractionDigits:0})} · ${esc(gregLabel(x.date)||x.date)}</span>`).join('')}</div>
-      <div class="addrow" style="margin-top:7px"><select id="ucl_cat">${RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')}</select>
-        <button class="btn sm" id="ucl_save">💾 שמור לכולם</button></div></div>`:''}
+    ${(d.unclassified||[]).length?(()=>{const uo=RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('');
+      return `<div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
+      ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
+        <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
+        <select class="ucat1">${uo}</select><button class="btn sm ugo1">💾</button></div>`).join('')}
+      ${d.unclassified.length>1?`<div class="addrow uall"><select id="ucl_cat">${uo}</select>
+        <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
     <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
       <div id="rules">${(d.rules||[]).map(r=>`<div class="rulerow" data-amt="${r.amount}">
@@ -764,6 +767,16 @@ function cardDetails(d,body){
     else { await api('PUT','/api/donation/'+b.dataset.did,{category:cat,note:note?(String(dn.note||'').split(' · ')[0]+' · '+note):dn.note}); }
     toast(rule?'נשמר לכל הסכום הזה ✓':'נשמר ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
+  body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
+    const b=ln.querySelector('.ugo1');
+    b.onclick=async()=>{
+      const cat=ln.querySelector('.ucat1').value.trim();
+      if(!cat){toast('בחר עבור מה');return;}
+      b.disabled=true;b.textContent='…';
+      const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid]});
+      if(!r||!r.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
+      toast('נשמר ✓'); await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
+  });
   const uclSave=document.getElementById('ucl_save');
   if(uclSave)uclSave.onclick=async()=>{
     const cat=document.getElementById('ucl_cat').value.trim();
