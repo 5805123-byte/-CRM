@@ -100,7 +100,8 @@ const DCATS = ['','קבוע','מזדמן','פרנס יום','בניין/הקדש
 function tierOpts(sel,cat){const isOcc=!(sel||'')&&cat==='מזדמן';return TIEROPTS.map(([v,l])=>`<option value="${esc(v)}" ${(v===(sel||'')&&!isOcc)?'selected':''}>${l}</option>`).join('')+`<option value="__occ" ${isOcc?'selected':''}>מזדמנים</option>`;}
 // בורר פרנס — חודש/יום/שנה עבריים
 const HMORD=['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
-function heYearOpts(sel){let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
+function hq(s){return String(s||'').replace(/\u05f4/g,'"').replace(/\u05f3/g,"'");}
+function heYearOpts(sel){sel=hq(sel);let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
 // סוגי משימה — אותה רשימה גם בכרטיס התורם
 const WHOOPTS=[['','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
 const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['other','🔔 אחר']];
@@ -111,7 +112,7 @@ function pickMonthYear(curM,curY){return new Promise(res=>{
   const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
   o.innerHTML=`<div style="background:var(--card,#fff);padding:18px;border-radius:14px;max-width:340px;width:88%;box-shadow:0 10px 40px rgba(0,0,0,.3)"><div style="font-weight:700;margin-bottom:10px">לאיזה חודש ושנה עברית לשייך את הקוויטל של התורם המזדמן?</div>
     <div style="display:flex;gap:8px"><select class="pmM" style="flex:1;padding:10px;font-size:1.05rem">${HMORD.map(m=>`<option ${m===curM?'selected':''}>${m}</option>`).join('')}</select>
-      <select class="pmY" style="flex:1;padding:10px;font-size:1.05rem">${HYEARS.map(y=>`<option ${y===(curY||HEBYEAR)?'selected':''}>${y}</option>`).join('')}</select></div>
+      <select class="pmY" style="flex:1;padding:10px;font-size:1.05rem">${HYEARS.map(y=>`<option ${y===(hq(curY)||HEBYEAR)?'selected':''}>${y}</option>`).join('')}</select></div>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="pmC" style="flex:1;padding:10px;border:1px solid var(--line,#ccc);border-radius:8px;background:#eee">ביטול</button><button class="pmOK" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--brand,#4a3f9e);color:#fff;font-weight:700">אישור</button></div></div>`;
   document.body.appendChild(o);
   const done=v=>{o.remove();res(v);};
@@ -171,7 +172,7 @@ function restorePos(){try{const raw=sessionStorage.getItem(PKEY);if(!raw)return;
 
 let KVDEF=['',''];
 async function load(){ [DATA, CAMPAIGNS, BUILDING_ITEMS] = await Promise.all([api('GET','/api/recon'), api('GET','/api/campaigns'), api('GET','/api/building_items')]);
-  try{const meta=await api('GET','/api/data'); KVDEF=meta.kv_default||['','']; }catch(e){}
+  try{const meta=await api('GET','/api/data'); KVDEF=(meta.kv_default||['','']).map(hq); }catch(e){}
   if(SRC){ DATA=DATA.filter(x=>srcGroup(x.source)===SRC); const h=document.querySelector('h1'); if(h&&SRCLABEL[SRC]) h.textContent='💳 טיפול והתאמת תרומות — '+SRCLABEL[SRC]; }
   render(); }
 

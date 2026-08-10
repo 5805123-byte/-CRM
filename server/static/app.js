@@ -326,7 +326,7 @@ function pendFiles(boxId,inputId){
 }
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; HEBYEAR = d.heb_year || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; HEBYEAR = hq(d.heb_year) || '';
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
@@ -533,7 +533,8 @@ function openNewDonor(onCreate){
     else openDonor(nd, anyDon?'donations':'details');
   };
 }
-function heYearOpts(sel){sel=sel||HEBYEAR;let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
+function hq(s){return String(s||'').replace(/\u05f4/g,'"').replace(/\u05f3/g,"'");}
+function heYearOpts(sel){sel=hq(sel)||HEBYEAR;let ys=['תשפ"ד','תשפ"ה','תשפ"ו','תשפ"ז','תשפ"ח','תשפ"ט','תש"צ'];if(sel&&!ys.includes(sel))ys.unshift(sel);return ys.map(y=>`<option ${y===sel?'selected':''}>${y}</option>`).join('');}
 function purpRowHTML(first){
   return `<div class="purprow" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px;position:relative">
     ${first?'':'<button type="button" class="rmpurp" style="position:absolute;left:0;top:6px;background:none;border:none;color:var(--no);font-size:1.05rem;cursor:pointer">✕</button>'}

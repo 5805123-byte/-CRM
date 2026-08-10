@@ -1390,6 +1390,21 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # שנים עבריות שנשמרו עם גרשיים עבריים (תשפ״ו) — מיישרים ל-" כמו בכל הרשימות במסך,
+    # אחרת הבורר לא מזהה את השנה שנשמרה וקופץ לשנה הראשונה ברשימה (תשפ"ה)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='heb_quote_v1'").fetchone():
+            nq = 0
+            for tb, cl in (('donors', 'kv_year'), ('parnes', 'hyear')):
+                try:
+                    nq += con.execute(f"SELECT COUNT(*) FROM {tb} WHERE {cl} LIKE '%״%'").fetchone()[0]
+                    con.execute(f"UPDATE {tb} SET {cl}=REPLACE({cl},'״','\"') WHERE {cl} LIKE '%״%'")
+                except Exception: pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('heb_quote_v1')")
+            print(f'  יישור גרשיים בשנים עבריות: {nq}')
+    except Exception as e:
+        print('  heb quote error:', e)
+
     # אינדקסים — בלעדיהם כל שאילתה לפי תורם סורקת את כל הטבלה, וזה מה שמאט את דף החיובים
     for _ix, _tb, _cl in (('idx_don_donor', 'donations', 'donor_id'), ('idx_prayers_donor', 'prayers', 'donor_id'),
                           ('idx_tasks_donor', 'tasks', 'donor_id'), ('idx_clog_donor', 'contacts_log', 'donor_id'),

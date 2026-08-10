@@ -12,6 +12,11 @@ HMONTHS = {'ניסן':1,'אייר':2,'סיון':3,'סיוון':3,'תמוז':4,'�
            'אדר':12,'אדר א':12,'אדר ב':13,'אדר א׳':12,'אדר ב׳':13}
 GEM = {'א':1,'ב':2,'ג':3,'ד':4,'ה':5,'ו':6,'ז':7,'ח':8,'ט':9,'י':10,'כ':20,'ל':30}
 
+def hq(s):
+    """אחידות בסימני הגרשיים — pyluach מחזיר גרשיים עבריים (״) והרשימות במסך משתמשות ב-".
+    בלי הנרמול הזה 'תשפ״ו' ו-'תשפ"ו' נחשבות שתי שנים שונות והבורר קופץ לשנה הלא נכונה."""
+    return (s or '').replace('״', '"').replace('׳', "'")
+
 def _day(s):
     s = re.sub(r'[\"\'׳״־]', '', s).strip()
     return sum(GEM.get(c, 0) for c in s)
@@ -49,7 +54,7 @@ def greg_to_heb_monthyear(date_str):
     y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3) or 15)
     try:
         h = dates.GregorianDate(y, mo, d).to_heb()
-        year_str = h.hebrew_date_string().split()[-1]
+        year_str = hq(h.hebrew_date_string().split()[-1])
         return h.month_name(hebrew=True) + ' ' + year_str
     except Exception:
         return ''
@@ -63,7 +68,7 @@ def kvittel_default_month(today=None):
         h = dates.GregorianDate(d.year, d.month, d.day).to_heb()
         if h.day >= 20:                       # מכ' לחודש כבר מכינים לחודש הבא
             h = h.add(months=1)
-        return (h.month_name(hebrew=True), h.hebrew_date_string().split()[-1])
+        return (h.month_name(hebrew=True), hq(h.hebrew_date_string().split()[-1]))
     except Exception:
         return ('', '')
 
@@ -75,7 +80,7 @@ def current_heb_year(today=None):
     import datetime
     t = today or datetime.date.today()
     try:
-        return dates.GregorianDate(t.year, t.month, t.day).to_heb().hebrew_date_string().split()[-1]
+        return hq(dates.GregorianDate(t.year, t.month, t.day).to_heb().hebrew_date_string().split()[-1])
     except Exception:
         return ''
 
@@ -136,7 +141,7 @@ def future_parnes(date_text, hyear, n=3, today=None):
     for yr in range(start, start + n):
         try:
             hd = dates.HebrewDate(yr, m, d)
-            ys = hd.hebrew_date_string().split()[-1]
+            ys = hq(hd.hebrew_date_string().split()[-1])
             out.append((ys, hd.to_pydate().isoformat()))
         except Exception:
             pass
