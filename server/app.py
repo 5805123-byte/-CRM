@@ -1990,6 +1990,45 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/audit/charges':
+            # הצלבה של כל החיובים שטרם אושרו מול דוח הקבועים, רשימות החגים והוראות הקבע
+            con = db()
+            camp, subs = {}, {}
+            try:
+                with open(os.path.join(HERE, 'campaign_lists.json'), encoding='utf-8') as f:
+                    for L in json.load(f).get('lists', []):
+                        for x in campaign_match(con, L['rows'], L.get('from', ''), L.get('to', '')):
+                            if x['donor_id']:
+                                camp.setdefault(x['donor_id'], []).append((x['amount'], L['label']))
+            except Exception:
+                pass
+            try:
+                with open(os.path.join(HERE, 'donations_2026_seed.json'), encoding='utf-8') as f:
+                    for r in json.load(f):
+                        subs.setdefault(r['donor_id'], set()).add(round(float(r['amount']), 2))
+            except Exception:
+                pass
+            names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                     for r in con.execute("SELECT id,last,first FROM donors")}
+            out = []
+            for r in con.execute("""SELECT tid,donor_id,first,last,amount,date,source,recurring FROM recon
+                                    WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled'
+                                    ORDER BY donor_id IS NOT NULL, last, first"""):
+                a = round(float(r['amount'] or 0), 2)
+                src = 'בנק ווסט' if 'Banquest' in (r['source'] or '') else 'אוטרייז'
+                why = ''
+                if r['donor_id']:
+                    why = next((c for amt, c in camp.get(r['donor_id'], []) if abs(amt - a) < 0.01), '')
+                    if not why and r['recurring']:
+                        why = 'הוראת קבע'
+                    if not why and any(abs(x - a) < 0.01 for x in subs.get(r['donor_id'], ())):
+                        why = 'דוח הקבועים'
+                out.append({'tid': r['tid'], 'name': ((r['first'] or '') + ' ' + (r['last'] or '')).strip(),
+                            'amount': a, 'date': r['date'], 'src': src, 'donor_id': r['donor_id'],
+                            'donor_name': names.get(r['donor_id'], ''), 'why': why,
+                            'bucket': ('nocard' if not r['donor_id'] else ('ok' if why else 'check'))})
+            con.close()
+            return self._send(200, {'ok': True, 'rows': out})
         if self.path.split('?')[0] == '/api/import/lists':
             # הרשימות שכבר הוזנו למערכת (פורים/פסח תשפ״ו) — לטעינה בלחיצה בדף הייבוא
             try:
@@ -1997,6 +2036,8 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.load(f))
             except Exception:
                 return self._send(200, {'lists': []})
+        if self.path.split('?')[0] in ('/audit', '/audit.html'):
+            return self._send(200, open(os.path.join(STATIC, 'audit.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] in ('/import', '/import.html'):
             return self._send(200, open(os.path.join(STATIC, 'import.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/api/recon':
@@ -2235,6 +2276,20 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_PUT(self):
+        m = re.match(r'/api/recon/(.+)/donor$', self.path)
+        if m:
+            # שיוך שורת חיוב לכרטיס תורם קיים — מדף האימות
+            b = self._body(); tid = urllib.parse.unquote(m.group(1))
+            try:
+                did = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id required'})
+            con = db()
+            if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                con.close(); return self._send(404, {'error': 'donor not found'})
+            con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, tid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'donor_id': did})
         m = re.match(r'/api/intake/(\d+)$', self.path)
         if m:
             b = self._body()

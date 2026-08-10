@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>כולל חצות — אימות חיובים מול הרשימות</title>
+<style>
+  :root{--bg:#f4f1e8;--card:#fff;--ink:#221c12;--muted:#8a7f66;--line:#e5ddc9;--gold:#9c7a2e;--accent:#3b2f5e;--yes:#1b7a3d;--no:#b5321f;--warn:#b5641a}
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Arial,sans-serif;padding:12px;max-width:940px;margin:0 auto}
+  h1{font-size:1.25rem;margin:6px 0}
+  .sub{color:var(--muted);font-size:.88rem;margin-bottom:12px;line-height:1.6}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:11px 0}
+  .counts{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+  .cnt{border-radius:11px;padding:10px 13px;font-size:.85rem;font-weight:800;border:1px solid var(--line);
+    background:#fff;cursor:pointer;text-align:center;flex:1;min-width:150px}
+  .cnt small{display:block;font-weight:600;font-size:.74rem;color:var(--muted);margin-top:3px}
+  .cnt.on{outline:2px solid var(--accent)}
+  .cnt.ok{background:#eaf6ee;border-color:#bfe3c9;color:#1e6b3a}
+  .cnt.check{background:#fff3e0;border-color:#e8c79a;color:var(--warn)}
+  .cnt.nocard{background:#fdeee9;border-color:#f2c9bc;color:var(--no)}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th,td{padding:7px;border-bottom:1px solid var(--line);text-align:right;vertical-align:middle}
+  th{color:var(--muted);font-size:.76rem;position:sticky;top:0;background:var(--card);z-index:1}
+  .wrap{max-height:64vh;overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .lat{direction:ltr;text-align:left;font-weight:700}
+  .why{background:#eef3ee;color:#2c6b40;border-radius:99px;padding:2px 9px;font-size:.74rem;font-weight:800;white-space:nowrap}
+  .src{color:var(--muted);font-size:.75rem}
+  .act{display:flex;gap:5px;justify-content:flex-start}
+  .b{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 9px;font-size:.78rem;
+    font-weight:700;cursor:pointer;font-family:inherit;color:var(--accent);white-space:nowrap}
+  .b.del{color:var(--no)}.b.del.armed{background:var(--no);color:#fff}
+  .srch{margin-top:6px}
+  .srch input{width:100%;padding:7px 9px;border:1px solid var(--accent);border-radius:8px;font-family:inherit;font-size:.85rem}
+  .res{border:1px solid var(--line);border-radius:8px;margin-top:4px;max-height:150px;overflow:auto}
+  .res div{padding:6px 9px;border-bottom:1px solid var(--line);cursor:pointer;font-size:.84rem}
+  .res div:hover{background:#f3ecd8}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;font-weight:700;z-index:20}
+  .toast.show{opacity:1}
+  .hint{font-size:.79rem;color:var(--muted);margin-top:8px}
+  a.lnk{color:var(--accent);font-weight:700}
+</style>
+</head>
+<body>
+<h1>🔎 אימות חיובים מול כל הרשימות</h1>
+<div class="sub">כל חיוב בבנק ווסט ובאוטרייז שטרם אושר, מוצלב מול <b>דוח הקבועים</b>, <b>רשימות פורים ופסח תשפ״ו</b>
+והוראות הקבע. מה שלא מוסבר — כאן לבדיקה.</div>
+<div id="head"></div>
+<div id="out"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+let ROWS=[], BUCKET='check';
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2200);}
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},
+  body:b?JSON.stringify(b):undefined});return r.json();}
+const sum=a=>a.reduce((s,x)=>s+(+x.amount||0),0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function paint(){
+  const B={ok:ROWS.filter(x=>x.bucket==='ok'),check:ROWS.filter(x=>x.bucket==='check'),nocard:ROWS.filter(x=>x.bucket==='nocard')};
+  $('#head').innerHTML=`<div class="counts">
+    <div class="cnt ok ${BUCKET==='ok'?'on':''}" data-b="ok">✓ מוסבר — ${B.ok.length}<small>$${sum(B.ok)} · הוראת קבע / דוח הקבועים / פורים / פסח</small></div>
+    <div class="cnt check ${BUCKET==='check'?'on':''}" data-b="check">⚠️ לבדיקה — ${B.check.length}<small>$${sum(B.check)} · יש כרטיס, אין הסבר לחיוב</small></div>
+    <div class="cnt nocard ${BUCKET==='nocard'?'on':''}" data-b="nocard">❓ אין כרטיס — ${B.nocard.length}<small>$${sum(B.nocard)} · לשייך לתורם או לפתוח כרטיס</small></div>
+  </div>`;
+  $('#head').querySelectorAll('.cnt').forEach(c=>c.onclick=()=>{BUCKET=c.dataset.b;paint();});
+  const list=B[BUCKET]||[];
+  $('#out').innerHTML=`<div class="box">
+    <div class="wrap"><table><thead><tr>
+      <th>שם בחיוב</th><th>סכום</th><th>תאריך</th><th>כרטיס</th><th>${BUCKET==='ok'?'ההסבר':'פעולה'}</th>
+    </tr></thead><tbody>${list.map(x=>`<tr data-tid="${esc(x.tid)}">
+      <td class="lat">${esc(x.name)}<div class="src">${esc(x.src)}</div></td>
+      <td>$${x.amount.toFixed(2)}</td><td class="src">${esc(x.date)}</td>
+      <td>${x.donor_id?`<a class="lnk" href="/?donor=${x.donor_id}" target="_blank" rel="noopener">${esc(x.donor_name)} ↗</a>`:'<span style="color:var(--no)">—</span>'}</td>
+      <td>${x.why?`<span class="why">${esc(x.why)}</span>`:`<div class="act">
+        <button class="b go">↗ לדף חיובים</button>
+        ${x.donor_id?'':'<button class="b link">🔗 שייך לתורם</button>'}
+        <button class="b del">🗑</button></div>
+        <div class="srch" style="display:none"><input placeholder="🔍 חפש תורם קיים…"><div class="res"></div></div>`}</td>
+    </tr>`).join('')||'<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">אין פריטים בקבוצה הזו 🎉</td></tr>'}</tbody></table></div>
+    <div class="hint">"לדף חיובים" פותח את המסך שבו מאשרים את התרומה עם קטגוריה, קוויטל ומשימה.
+      "שייך לתורם" מקשר את החיוב לכרטיס קיים כדי שיופיע אצלו לאישור. "🗑" מוחק את שורת החיוב (לניסיונות תרומה).</div>
+  </div>`;
+  wire();
+}
+
+function wire(){
+  document.querySelectorAll('tr[data-tid]').forEach(tr=>{
+    const tid=tr.dataset.tid, row=ROWS.find(x=>x.tid===tid);
+    const go=tr.querySelector('.go'); if(go)go.onclick=()=>window.open('/reconcile','_blank');
+    const del=tr.querySelector('.del');
+    if(del){let armed=false,tm=null;
+      del.onclick=async()=>{
+        if(!armed){armed=true;del.classList.add('armed');del.textContent='בטוח?';
+          tm=setTimeout(()=>{armed=false;del.classList.remove('armed');del.textContent='🗑';},10000);return;}
+        clearTimeout(tm);
+        const r=await api('DELETE','/api/recon/'+encodeURIComponent(tid));
+        if(!r||!r.ok){toast('המחיקה נכשלה');return;}
+        ROWS=ROWS.filter(x=>x.tid!==tid); toast('נמחק ✓'); paint();};}
+    const lk=tr.querySelector('.link'), box=tr.querySelector('.srch');
+    if(lk&&box){
+      lk.onclick=()=>{box.style.display=box.style.display==='none'?'block':'none';
+        if(box.style.display==='block'){const i=box.querySelector('input');i.value=row.name;i.focus();i.oninput();}};
+      const inp=box.querySelector('input'), res=box.querySelector('.res');
+      let t;
+      inp.oninput=()=>{clearTimeout(t);t=setTimeout(async()=>{
+        const q=inp.value.trim(); if(q.length<2){res.innerHTML='';return;}
+        const d=await api('GET','/api/pubsearch?q='+encodeURIComponent(q));
+        res.innerHTML=(d||[]).map(x=>`<div data-id="${x.id}">${esc(x.last)} ${esc(x.first||'')}</div>`).join('')
+          ||'<div style="color:var(--muted)">אין תוצאות — פתח כרטיס חדש מדף החיובים</div>';
+        res.querySelectorAll('[data-id]').forEach(el=>el.onclick=async()=>{
+          const r=await api('PUT','/api/recon/'+encodeURIComponent(tid)+'/donor',{donor_id:+el.dataset.id});
+          if(!r||!r.ok){toast('השיוך נכשל');return;}
+          row.donor_id=+el.dataset.id; row.donor_name=el.textContent.trim(); row.bucket='check';
+          toast('שויך ל'+el.textContent.trim()+' ✓'); paint();});
+      },250);};
+    }
+  });
+}
+
+(async()=>{
+  $('#out').innerHTML='<div class="box" style="text-align:center;color:var(--muted)">בודק את כל החיובים מול הרשימות…</div>';
+  const r=await api('GET','/api/audit/charges');
+  ROWS=(r&&r.rows)||[]; paint();
+})();
+</script>
+</body>
+</html>
