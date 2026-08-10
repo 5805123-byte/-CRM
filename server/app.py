@@ -128,6 +128,14 @@ def ensure_schema():
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
+    # כלל קבוע לתורם: סכום מסוים אצלו תמיד שייך לאותו ייעוד (למשל $3,500 = מעקות · בניין)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS donor_rules(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "donor_id INTEGER, amount REAL, category TEXT, note TEXT, created TEXT)")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_donor ON donor_rules(donor_id,amount)")
+    except Exception:
+        pass
+
     try: con.execute("ALTER TABLE donors ADD COLUMN kv_skip INTEGER DEFAULT 0")
     except Exception: pass
     # סימון "כתובת תקינה/טופלה" — להסיר מרשימת כתובות לתיקון
@@ -1776,14 +1784,6 @@ def ensure_schema():
             print(f'  יישור גרשיים בשנים עבריות: {nq}')
     except Exception as e:
         print('  heb quote error:', e)
-
-    # כלל קבוע לתורם: סכום מסוים אצלו תמיד שייך לאותו ייעוד (למשל $3,500 = מעקות · בניין)
-    try:
-        con.execute("CREATE TABLE IF NOT EXISTS donor_rules(id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                    "donor_id INTEGER, amount REAL, category TEXT, note TEXT, created TEXT)")
-        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_donor ON donor_rules(donor_id,amount)")
-    except Exception:
-        pass
 
     # אינדקסים — בלעדיהם כל שאילתה לפי תורם סורקת את כל הטבלה, וזה מה שמאט את דף החיובים
     for _ix, _tb, _cl in (('idx_don_donor', 'donations', 'donor_id'), ('idx_prayers_donor', 'prayers', 'donor_id'),
