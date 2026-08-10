@@ -115,6 +115,7 @@
     <button data-f="done">✓ טופלו</button>
   </div>
 </div>
+<datalist id="bldgdl2"></datalist>
 <div id="uncl"></div>
 <div id="list"></div>
 <div class="toast" id="toast"></div>
@@ -560,6 +561,9 @@ if(_ms)_ms.onclick=async()=>{
 async function loadUncl(){
   const el=document.getElementById('uncl'); if(!el) return;
   if(!CAMPAIGNS.length){ try{ CAMPAIGNS=await api('GET','/api/campaigns'); }catch(e){} }   // כל המגביות, לא רק הבסיס
+  if(!BUILDING_ITEMS.length){ try{ BUILDING_ITEMS=await api('GET','/api/building_items'); }catch(e){} }
+  const dl=document.getElementById('bldgdl2');
+  if(dl) dl.innerHTML=(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('');
   let r; try{ r=await api('GET','/api/unclassified'+(SRC?('?src='+SRC):'')); }catch(e){ return; }
   const ds=(r&&r.donors)||[]; if(!ds.length){ el.innerHTML=''; return; }
   const opts=CATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
@@ -573,36 +577,49 @@ async function loadUncl(){
         <a class="btn sm ghost" href="/?donor=${g.donor_id}" target="_blank" rel="noopener" style="text-decoration:none;float:left">↗ כרטיס</a></div>
       ${g.items.map(x=>`<div class="uline" data-id="${x.id}">
         <span class="unci">$${x.amount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(x.date)} · ${esc(x.method)}</span>
-        <select class="ucat1">${opts}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${opts}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgdl2" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${g.items.length>1?`<div class="addrow2 uall"><span class="date">אותו דבר לכל ${g.items.length} החיובים:</span>
-        <select class="uclcat">${opts}</select><input class="unewall" placeholder="שם הייעוד החדש…" style="display:none"><button class="btn sm uclgo">💾 שמור לכולם</button></div>`:''}
+        <select class="uclcat">${opts}</select><input class="unewall" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldgall" list="bldgdl2" placeholder="🏗️ מה תרם בבניין?" style="display:none"><button class="btn sm uclgo">💾 שמור לכולם</button></div>`:''}
     </div>`).join('')}</div>`;
   el.querySelectorAll('.uclrow').forEach(row=>{
     const g=ds[+row.dataset.i];
     row.querySelectorAll('.uline').forEach(ln=>{
       const b=ln.querySelector('.ugo1');
-      const sel1=ln.querySelector('.ucat1'), nw1=ln.querySelector('.unew1');
-      sel1.onchange=()=>{const on=sel1.value==='__new__';nw1.style.display=on?'block':'none';if(on)nw1.focus();};
+      const sel1=ln.querySelector('.ucat1'), nw1=ln.querySelector('.unew1'), bd1=ln.querySelector('.ubldg1');
+      const show1=()=>{const isNew=sel1.value==='__new__';nw1.style.display=isNew?'block':'none';
+        bd1.style.display=isBldg(isNew?nw1.value:sel1.value)?'block':'none';};
+      sel1.onchange=()=>{show1();if(sel1.value==='__new__')nw1.focus();};
+      nw1.oninput=show1;
       b.onclick=async()=>{
         let cat=sel1.value.trim();
         if(cat==='__new__'){ cat=nw1.value.trim();
           if(!cat){toast('כתוב את שם הייעוד');nw1.focus();return;}
           if(!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
         if(!cat){toast('בחר עבור מה');return;}
+        if(isBldg(cat)){ const it=bd1.value.trim();
+          if(!it){toast('כתוב מה הוא תרם בבניין');bd1.focus();return;}
+          if(!BUILDING_ITEMS.includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
+          cat=cat+' — '+it; }
         b.disabled=true;b.textContent='…';
         const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat,ids:[+ln.dataset.id]});
         if(!res||!res.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
         toast('נשמר ✓'); loadUncl();};
     });
     const b=row.querySelector('.uclgo');
-    const selA=row.querySelector('.uclcat'), nwA=row.querySelector('.unewall');
-    if(selA&&nwA) selA.onchange=()=>{const on=selA.value==='__new__';nwA.style.display=on?'block':'none';if(on)nwA.focus();};
+    const selA=row.querySelector('.uclcat'), nwA=row.querySelector('.unewall'), bdA=row.querySelector('.ubldgall');
+    if(selA&&nwA&&bdA){ const showA=()=>{const isNew=selA.value==='__new__';nwA.style.display=isNew?'block':'none';
+        bdA.style.display=isBldg(isNew?nwA.value:selA.value)?'block':'none';};
+      selA.onchange=()=>{showA();if(selA.value==='__new__')nwA.focus();}; nwA.oninput=showA; }
     if(b) b.onclick=async()=>{
       let cat=selA.value.trim();
       if(cat==='__new__'){ cat=nwA.value.trim();
         if(!cat){toast('כתוב את שם הייעוד');nwA.focus();return;}
         if(!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
       if(!cat){toast('בחר עבור מה');return;}
+      if(isBldg(cat)){ const it=bdA.value.trim();
+        if(!it){toast('כתוב מה הוא תרם בבניין');bdA.focus();return;}
+        if(!BUILDING_ITEMS.includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
+        cat=cat+' — '+it; }
       b.disabled=true;b.textContent='שומר…';
       const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat});
       if(!res||!res.ok){b.disabled=false;b.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}

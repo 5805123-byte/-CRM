@@ -728,12 +728,13 @@ function cardDetails(d,body){
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
         +'<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>';
-      return `<div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
+      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
       ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
         <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
-        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${d.unclassified.length>1?`<div class="addrow uall"><select id="ucl_cat">${uo}</select>
         <input id="ucl_new" placeholder="שם הייעוד החדש…" style="display:none">
+        <input id="ucl_bldg" list="bldgitems" placeholder="🏗️ מה תרם בבניין?" style="display:none">
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
     <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
@@ -771,8 +772,11 @@ function cardDetails(d,body){
     toast(rule?'נשמר לכל הסכום הזה ✓':'נשמר ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
-    const b=ln.querySelector('.ugo1'), sx=ln.querySelector('.ucat1'), nx=ln.querySelector('.unew1');
-    if(sx&&nx) sx.onchange=()=>{const on=sx.value==='__new__';nx.style.display=on?'block':'none';if(on)nx.focus();};
+    const b=ln.querySelector('.ugo1'), sx=ln.querySelector('.ucat1'), nx=ln.querySelector('.unew1'), bx=ln.querySelector('.ubldg1');
+    const isB=c=>/בנין|בניין/.test(c||'');
+    if(sx&&nx&&bx){ const shw=()=>{const isNew=sx.value==='__new__';nx.style.display=isNew?'block':'none';
+        bx.style.display=isB(isNew?nx.value:sx.value)?'block':'none';};
+      sx.onchange=()=>{shw();if(sx.value==='__new__')nx.focus();}; nx.oninput=shw; }
     b.onclick=async()=>{
       const s1=ln.querySelector('.ucat1'), n1=ln.querySelector('.unew1');
       let cat=s1.value.trim();
@@ -780,6 +784,10 @@ function cardDetails(d,body){
         if(!cat){toast('כתוב את שם הייעוד');n1.focus();return;}
         if(!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
       if(!cat){toast('בחר עבור מה');return;}
+      if(/בנין|בניין/.test(cat)){ const it=ln.querySelector('.ubldg1').value.trim();
+        if(!it){toast('כתוב מה הוא תרם בבניין');return;}
+        if(!(BUILDING_ITEMS||[]).includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
+        cat=cat+' — '+it; }
       b.disabled=true;b.textContent='…';
       const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid]});
       if(!r||!r.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
@@ -787,7 +795,10 @@ function cardDetails(d,body){
   });
   const uclSave=document.getElementById('ucl_save');
   const uclSel=document.getElementById('ucl_cat'), uclNew=document.getElementById('ucl_new');
-  if(uclSel&&uclNew) uclSel.onchange=()=>{const on=uclSel.value==='__new__';uclNew.style.display=on?'block':'none';if(on)uclNew.focus();};
+  const uclBd=document.getElementById('ucl_bldg');
+  if(uclSel&&uclNew&&uclBd){ const shwA=()=>{const isNew=uclSel.value==='__new__';uclNew.style.display=isNew?'block':'none';
+      uclBd.style.display=/בנין|בניין/.test(isNew?uclNew.value:uclSel.value)?'block':'none';};
+    uclSel.onchange=()=>{shwA();if(uclSel.value==='__new__')uclNew.focus();}; uclNew.oninput=shwA; }
   if(uclSave)uclSave.onclick=async()=>{
     const sa=document.getElementById('ucl_cat'), na=document.getElementById('ucl_new');
     let cat=sa.value.trim();
@@ -795,6 +806,10 @@ function cardDetails(d,body){
       if(!cat){toast('כתוב את שם הייעוד');na.focus();return;}
       if(!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
     if(!cat){toast('בחר עבור מה');return;}
+    if(/בנין|בניין/.test(cat)){ const it=(uclBd?uclBd.value:'').trim();
+      if(!it){toast('כתוב מה הוא תרם בבניין');return;}
+      if(!(BUILDING_ITEMS||[]).includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
+      cat=cat+' — '+it; }
     uclSave.disabled=true;uclSave.textContent='שומר…';
     const r=await api('POST','/api/classify',{donor_id:d.id,category:cat});
     if(!r||!r.ok){uclSave.disabled=false;uclSave.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}
