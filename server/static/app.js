@@ -1608,11 +1608,19 @@ function renderKvittel(){
       ${miss?`<button class="btn kvmissbtn" id="kvMissBtn">🔴 חסרים שמות קוויטל — ${miss} לטיפול</button>`:''}
       ${unl?`<button class="btn kvunlbtn" id="kvUnlBtn">🔗 קוויטל לא־משויכים — ${unl} להחלטה</button>`:''}
       <button class="btn kvintakebtn" id="kvIntakeBtn">📨 בקשות תפילה מהאתר (מהמייל)…</button>
+      <button class="btn ghost" id="kvDedupBtn" style="width:100%;margin-top:6px">🧹 נקה שמות כפולים בקוויטל של כולם</button>
       <div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
     view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvListQ='';kvSub=b.dataset.k;render();});
     const mb=document.getElementById('kvMissBtn');if(mb)mb.onclick=()=>{kvSub='missing';render();};
     const ub=document.getElementById('kvUnlBtn');if(ub)ub.onclick=()=>{kvSub='unlinked';render();};
     const ib=document.getElementById('kvIntakeBtn');if(ib)ib.onclick=()=>{kvSub='intake';render();};
+    const db2=document.getElementById('kvDedupBtn');
+    if(db2)db2.onclick=async()=>{db2.disabled=true;const t0=db2.textContent;db2.textContent='בודק את כל הקוויטלים…';
+      const r=await api('POST','/api/kvittel/dedup',{});
+      db2.disabled=false;db2.textContent=t0;
+      if(!r||!r.ok){toast('הניקוי נכשל');return;}
+      toast(r.removed||r.merged?('נוקו כפילויות אצל '+r.donors+' תורמים ✓'):'לא נמצאו כפילויות 🎉');
+      if(r.removed||r.merged){await load();render();}};
     return;
   }
   if(kvSub==='unlinked') return renderKvUnlinked();

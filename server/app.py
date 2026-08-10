@@ -1693,6 +1693,15 @@ def ensure_schema():
     except Exception as e:
         print('  marmurstein error:', e)
 
+    # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
+            _rm, _mg, _d = dedupe_prayers(con)
+            con.execute("INSERT INTO seed_flags(name) VALUES('kvittel_dedup_v1')")
+            print('  ניקוי כפילויות קוויטל: %d בלוקים כפולים נמחקו, %d אוחדו, אצל %d תורמים' % (_rm, _mg, _d))
+    except Exception as e:
+        print('  kvittel dedup error:', e)
+
     # משימות "עבור מה" יורדות מרשימת המשימות — השאלות מוצגות בדף החיובים ובכרטיס התורם עצמו
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_uncl_tasks_v1'").fetchone():
@@ -2218,10 +2227,13 @@ def recon_apply(cur, tid, b):
     kvt = (b.get('kv_text') or '').strip()
     if b.get('attach_kv') and kvt:
         dt = cur.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
-        have = {(p['text'] or '').strip() for p in
-                cur.execute("SELECT text FROM prayers WHERE donor_id=?", (did,))}
+        have = set()
+        for p in cur.execute("SELECT text FROM prayers WHERE donor_id=?", (did,)):
+            for _l in (p['text'] or '').split('\n'):
+                if kv_key(_l):
+                    have.add(kv_key(_l))
         for ln in [l.strip() for l in kvt.split('\n') if l.strip()]:
-            if ln not in have:      # בלי כפילויות
+            if kv_key(ln) not in have:      # בלי כפילויות — השוואה בלי פיסוק ומקפים
                 cur.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)",
                             (did, ln, (dt['tier'] if dt else '') or ''))
                 have.add(ln)
@@ -2315,6 +2327,72 @@ def recon_apply(cur, tid, b):
                         (_rn, did, _amt, '%' + _rn + '%'))
     cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
     return (200, {'ok': True, 'donor_id': did})
+
+_KV_STRIP = str.maketrans('ךםןףץ', 'כמנפצ')
+
+
+def kv_key(t):
+    """מפתח השוואה לשם קוויטל — בלי פיסוק, מקפים, גרשיים ורווחים כפולים.
+    כך 'בן נעמי - בראות' ו'בן נעמי בראות' נחשבים לאותו שם."""
+    t = re.sub(r'[^֐-׿\s]', ' ', t or '')
+    return re.sub(r'\s+', ' ', t.translate(_KV_STRIP)).strip()
+
+
+def kv_words(line):
+    """מילות השורה, בלי פיסוק — להשוואת דמיון בין שתי שורות קוויטל."""
+    return [w for w in kv_key(line).split() if len(w) > 1]
+
+
+def kv_same(a, b):
+    """האם שתי שורות קוויטל מדברות על אותו אדם ואותה בקשה — גם אם הניסוח שונה קצת
+    (מקפים, פסיקים, מילה חסרה, בן/בת שהוקלד הפוך)."""
+    wa, wb = kv_words(a), kv_words(b)
+    if not wa or not wb:
+        return False
+    if wa[0] != wb[0]:
+        return False          # שם פרטי שונה — אנשים שונים, גם אם שאר השורה דומה
+    sa, sb = set(wa), set(wb)
+    shared = len(sa & sb)
+    return shared >= 0.7 * min(len(sa), len(sb)) and shared >= 3
+
+
+def dedupe_prayers(con):
+    """מאחד את שמות הקוויטל של כל תורם למשבצת אחת (לכל דרגה) בלי שמות כפולים.
+    כששם מופיע פעמיים — נשמר הנוסח המפורט יותר. מחזיר (בלוקים שנמחקו, בלוקים שאוחדו, תורמים)."""
+    removed = merged = 0
+    donors = set()
+    rows = [dict(r) for r in con.execute(
+        "SELECT id,donor_id,tier,text FROM prayers WHERE COALESCE(TRIM(text),'')<>'' ORDER BY id")]
+    grp = {}
+    for r in rows:
+        grp.setdefault((r['donor_id'], (r['tier'] or '')), []).append(r)
+    for (did, _tier), rs in grp.items():
+        kept = []
+        for r in rs:
+            for ln in (r['text'] or '').split('\n'):
+                ln = ln.rstrip()
+                if not kv_key(ln):
+                    continue
+                hit = next((i for i, x in enumerate(kept) if kv_same(x, ln)), None)
+                if hit is None:
+                    kept.append(ln)
+                elif len(kv_key(ln)) > len(kv_key(kept[hit])):
+                    kept[hit] = ln        # אותו אדם — שומרים את הנוסח המפורט יותר
+        text = '\n'.join(kept).strip()
+        if not text:
+            continue
+        head, rest = rs[0], rs[1:]
+        changed = text != (head['text'] or '').strip()
+        if changed:
+            con.execute("UPDATE prayers SET text=? WHERE id=?", (text, head['id']))
+        for r in rest:
+            con.execute("DELETE FROM prayers WHERE id=?", (r['id'],))
+            removed += 1
+        if changed or rest:
+            donors.add(did)
+            merged += 1
+    return removed, merged, len(donors)
+
 
 def build_ics():
     """פיד יומן לכל התזכורות הפתוחות — לחיבור אוטומטי ליומן Google."""
@@ -3179,6 +3257,13 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/kvittel/dedup':
+            con = db()
+            try:
+                rm, mg, dn = dedupe_prayers(con); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'removed': rm, 'merged': mg, 'donors': dn})
         if self.path == '/api/rule':
             # כלל קבוע: כל סכום X אצל התורם הזה = הייעוד הזה. מוחל גם על מה שכבר נרשם
             try:
