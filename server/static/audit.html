@@ -56,8 +56,11 @@
 </head>
 <body>
 <h1>🔎 אימות חיובים מול כל הרשימות</h1>
-<div class="sub">כל חיוב בבנק ווסט ובאוטרייז שטרם אושר, מוצלב מול <b>דוח הקבועים</b>, <b>רשימות פורים ופסח תשפ״ו</b>
-והוראות הקבע. מה שלא מוסבר — כאן לבדיקה.</div>
+<div class="sub">כל חיוב שטרם אושר, מוצלב מול <b>דוח הקבועים</b>, <b>רשימות פורים ופסח תשפ״ו</b> והוראות הקבע.
+מה שלא מוסבר — כאן לבדיקה.<br>
+דפי החיובים: <a class="lnk" href="/reconcile?src=banquest">💳 בנק ווסט</a> ·
+<a class="lnk" href="/reconcile?src=authorize">💳 אוטרייז</a> ·
+<a class="lnk" href="/reconcile">💳 הכל ביחד</a></div>
 <div class="tabs"><button class="tb on" data-t="charges">🔎 אימות חיובים</button><button class="tb" data-t="unknown">❓ תורמים שלא מוכרים לנו</button></div>
 <div id="head"></div>
 <div id="out"></div>
@@ -135,13 +138,22 @@ function wire(){
 }
 
 let TAB='charges', UNK=[];
+let USRC='';
 function paintUnknown(){
-  $('#head').innerHTML='';
-  const tot=UNK.reduce((s,g)=>s+g.total,0);
+  const F=g=>!USRC||(g.src||'').includes(USRC);
+  const SRCS=['בנק ווסט','אוטרייז','PayPal'];
+  const LIST=UNK.filter(F);
+  $('#head').innerHTML=`<div class="counts">
+    <div class="cnt ${USRC===''?'on':''}" data-s="">הכל<small>${UNK.length} אנשים</small></div>
+    ${SRCS.map(sx=>{const n=UNK.filter(g=>(g.src||'').includes(sx));
+      return `<div class="cnt ${USRC===sx?'on':''}" data-s="${esc(sx)}">${esc(sx)}<small>${n.length} אנשים · $${n.reduce((a,g)=>a+g.total,0).toLocaleString('en-US',{maximumFractionDigits:0})}</small></div>`;}).join('')}
+  </div>`;
+  $('#head').querySelectorAll('.cnt').forEach(c=>c.onclick=()=>{USRC=c.dataset.s;paintUnknown();});
+  const tot=LIST.reduce((s,g)=>s+g.total,0);
   $('#out').innerHTML=`<div class="box">
-    <div class="counts"><div class="cnt nocard">❓ ${UNK.length} אנשים · ${UNK.reduce((s,g)=>s+g.n,0)} חיובים
+    <div class="counts"><div class="cnt nocard">❓ ${LIST.length} אנשים · ${LIST.reduce((s,g)=>s+g.n,0)} חיובים
       <small>$${tot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · אין להם כרטיס תורם</small></div></div>
-    ${UNK.map((g,i)=>`<div class="ug" data-i="${i}">
+    ${LIST.map((g)=>{const i=UNK.indexOf(g);return `<div class="ug" data-i="${i}">
       <span class="amt">$${g.total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       <div class="nm">${esc(g.name||'— בלי שם —')}</div>
       <div class="mt">${g.n} חיובים · ${esc(g.src)}${g.dates.length?(' · '+esc(g.dates[0])+(g.dates.length>1?(' – '+esc(g.dates[g.dates.length-1])):'')):''}</div>
@@ -155,7 +167,7 @@ function paintUnknown(){
           <button class="b" style="background:var(--accent);color:#fff;border-color:transparent" >💾 צור ושייך ${g.n} חיובים</button></div>
       </div>
       <div class="srch" style="display:none"><input placeholder="🔍 חפש תורם קיים…"><div class="res"></div></div>
-    </div>`).join('')||'<div style="text-align:center;padding:24px;color:var(--muted)">🎉 לכל החיובים יש כרטיס</div>'}
+    </div>`;}).join('')||'<div style="text-align:center;padding:24px;color:var(--muted)">🎉 לכל החיובים יש כרטיס</div>'}
   </div>`;
   document.querySelectorAll('.ug').forEach(el=>{
     const g=UNK[+el.dataset.i], frm=el.querySelector('.frm'), box=el.querySelector('.srch');
