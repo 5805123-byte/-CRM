@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re, base64, datetime, csv, io, urllib.parse
+import sqlite3, json, os, re, base64, datetime, csv, io, gzip, urllib.parse
 from urllib.parse import quote
 
 def today_iso():
@@ -1390,6 +1390,17 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # אינדקסים — בלעדיהם כל שאילתה לפי תורם סורקת את כל הטבלה, וזה מה שמאט את דף החיובים
+    for _ix, _tb, _cl in (('idx_don_donor', 'donations', 'donor_id'), ('idx_prayers_donor', 'prayers', 'donor_id'),
+                          ('idx_tasks_donor', 'tasks', 'donor_id'), ('idx_clog_donor', 'contacts_log', 'donor_id'),
+                          ('idx_parnes_donor', 'parnes', 'donor_id'), ('idx_partners_donor', 'partners', 'donor_id'),
+                          ('idx_trans_donor', 'transactions', 'donor_id'), ('idx_pledges_donor', 'pledges', 'donor_id'),
+                          ('idx_building_donor', 'building', 'donor_id'), ('idx_recon_donor', 'recon', 'donor_id'),
+                          ('idx_recon_email', 'recon', 'email'), ('idx_intake_donor', 'intake', 'donor_id'),
+                          ('idx_intake_from', 'intake', 'from_email'), ('idx_files_ref', 'files', 'ref_id')):
+        try: con.execute(f"CREATE INDEX IF NOT EXISTS {_ix} ON {_tb}({_cl})")
+        except Exception: pass
+
     # שחזור שיוכים שנותקו במיזוג כרטיסים ישן — שורות חיוב ובקשות מהאתר שהצביעו לכרטיס שנמחק.
     # מחזירים אותן לכרטיס הנכון לפי אימייל; אם אין התאמה ודאית — משחררים לרשימת הלא-משויכים.
     try:
@@ -1582,6 +1593,131 @@ def norm_zip(z, region):
 KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
            'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
 
+def recon_apply(cur, tid, b):
+    """אישור שורת חיוב אחת: יצירת/עדכון התורם, התרומה, המשימה והקוויטל.
+    לא פותח ולא סוגר חיבור — כדי שאפשר יהיה לאשר קבוצה שלמה בבקשה אחת."""
+    row = cur.execute("SELECT * FROM recon WHERE tid=?", (tid,)).fetchone()
+    if not row:
+        return (404, {'error': 'not found'})
+    if b.get('skip') or (row['status'] and row['status'] != 'settled'):
+        cur.execute("UPDATE recon SET processed=1 WHERE tid=?", (tid,))
+        return (200, {'ok': True, 'skipped': True})
+    did = b.get('donor_id')
+    r_state = row['state'] or ''         # מדינה (NY וכו') נשמרת בשדה "מדינה"
+    r_src = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
+    if b.get('new_donor'):
+        nd = b['new_donor']
+        # מזדמן → הקוויטל מזדמן, עם חודש/שנה (ברירת מחדל: החודש הנוכחי, ומכ' בחודש — הבא)
+        _occ = bool(nd.get('occasional'))
+        _dcat = (nd.get('category') or '').strip() or ('מזדמן' if _occ else b.get('category', ''))
+        _kvm, _kvy = ((nd.get('kv_month') or ''), (nd.get('kv_year') or '')) if _occ else ('', '')
+        if _occ and not _kvm:
+            _kvm, _kvy = kvittel_default_month()
+        cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source,notes,tier,kv_month,kv_year)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
+                     row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
+                     _dcat, today_iso(), r_src, nd.get('notes', ''),
+                     ('' if _occ else (nd.get('tier') or '')), _kvm, _kvy))
+        did = cur.lastrowid
+        # שאר החיובים של אותו אדם (אותו מייל) — משויכים מיד לכרטיס החדש
+        _em = (row['email'] or '').strip().lower()
+        if _em:
+            cur.execute("""UPDATE recon SET donor_id=? WHERE lower(TRIM(email))=?
+                           AND TRIM(COALESCE(email,''))<>'' AND donor_id IS NULL""", (did, _em))
+        if (nd.get('task') or '').strip() and not (b.get('task') or '').strip():
+            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                        (did, (nd.get('task_date') or today_iso()), 'followup', nd['task'].strip()))
+    if not did:
+        return (400, {'error': 'donor required'})
+    # מילוי אוטומטי של שם אנגלי אם חסר בכרטיס (מיזוג השם מהייבוא)
+    if not b.get('new_donor'):
+        en = (row['first'] + ' ' + row['last']).strip()
+        if en:
+            cur.execute("UPDATE donors SET english=? WHERE id=? AND COALESCE(TRIM(english),'')=''", (en, did))
+    if b.get('update_addr') and (row['addr'] or row['city'] or row['zip']):
+        cur.execute("UPDATE donors SET addr=?, city=?, country=?, zip=? WHERE id=?",
+                    (row['addr'] or '', row['city'] or '', r_state, row['zip'] or '', did))
+    # משימה שנכתבה בדף החיובים / בכרטיס — נכנסת ללשונית המשימות
+    _tk = (b.get('task') or '').strip()
+    if _tk:
+        cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
+                    (did, (b.get('task_date') or today_iso()), (b.get('task_kind') or 'followup'),
+                     _tk, (b.get('task_who') or '')))
+    # הערה שנכתבה בדף החיובים — נשמרת גם בהערות התורם (ניתן לחיפוש)
+    unote = (b.get('note') or '').strip()
+    if unote and b.get('note_to_donor'):
+        cur2 = cur.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()
+        old = (cur2['notes'] if cur2 else '') or ''
+        if unote not in old:
+            cur.execute("UPDATE donors SET notes=? WHERE id=?",
+                        ((old + ' · ' + unote).strip(' ·') if old.strip() else unote, did))
+    # שמות הקוויטל שהתורם שלח מהאתר — צירוף לכרטיס שלו
+    kvt = (b.get('kv_text') or '').strip()
+    if b.get('attach_kv') and kvt:
+        dt = cur.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
+        have = {(p['text'] or '').strip() for p in
+                cur.execute("SELECT text FROM prayers WHERE donor_id=?", (did,))}
+        for ln in [l.strip() for l in kvt.split('\n') if l.strip()]:
+            if ln not in have:      # בלי כפילויות
+                cur.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)",
+                            (did, ln, (dt['tier'] if dt else '') or ''))
+                have.add(ln)
+        _dr = cur.execute("SELECT email FROM donors WHERE id=?", (did,)).fetchone()
+        _ems = emails_of(row['email']) + [e for e in emails_of(_dr['email'] if _dr else '')]
+        _ems = list(dict.fromkeys(_ems))
+        if _ems:
+            cur.execute("UPDATE intake SET donor_id=?, status='handled' WHERE lower(TRIM(from_email)) IN (%s) AND COALESCE(donor_id,0)=0"
+                        % ','.join('?' * len(_ems)), [did] + _ems)
+    # תאריך: '01-Jul-2026' -> '2026-07'
+    MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
+    dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
+    # תאריך מלא (יום-חודש-שנה) ולא רק חודש — כדי שיוצג מתי בדיוק נגבה
+    diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}-{dm.group(1)}" if dm else ''
+    cat = b.get('category', '') or row['category'] or ''
+    # קטגוריה חופשית (עבור מה) — נשמרת לרשימה קבועה לשימוש חוזר
+    BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
+    if cat and cat not in BASE_CATS:
+        cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+    # אמצעי התשלום לפי מקור ההתאמה (Authorize / Banquest / בנק ווסט)
+    pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
+    # מילוי ערוץ החיוב בכרטיס (ובאברכים) לפי אמצעי התשלום — אוטומטית
+    _chan = {'Authorize': 'אותורייז', 'Banquest': 'בנק_ווסט'}.get(pay_method, '')
+    if _chan and did:
+        cur.execute("UPDATE donors SET channel=? WHERE id=? AND COALESCE(channel,'')=''", (_chan, did))
+        cur.execute("UPDATE partners SET method=? WHERE donor_id=? AND active<>0 AND COALESCE(method,'')=''", (_chan, did))
+    # מניעת כפילות מול קובץ הסיכום 2026: רשומת סיכום באותו אמצעי, לאותו תורם+חודש,
+    # מוחלפת ע"י העסקה המדויקת (אותו כסף בדיוק)
+    if diso and did:
+        cur.execute("DELETE FROM donations WHERE donor_id=? AND date=? AND note='ייבוא 2026' AND method=?", (did, diso, pay_method))
+    PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
+    if cat in PKIND:
+        # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
+        dtext = b.get('date_text', '')
+        _ng = heb_to_greg(dtext) if dtext else None
+        cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'confirmed',1,?,?,?)",
+                    (did, b.get('day', 0), b.get('month', ''), dtext, row['amount'], b.get('dedication', ''), PKIND[cat],
+                     _ng.isoformat() if _ng else '', b.get('hyear', ''), pay_method))
+    else:
+        _nt = 'ייבוא ' + pay_method + (' · הוראת קבע' if row['recurring'] else '')
+        _un = (b.get('note') or '').strip()      # הערה שנכתבה בדף החיובים
+        if _un:
+            _nt += ' · ' + _un
+        cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
+                    (did, diso, row['amount'], cat, pay_method, _nt))
+    if row['recurring']:
+        cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
+    # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל, שבוע לפני הלילה
+    if cat == 'פרנס לילה' and diso >= '2026-08':
+        dn = cur.execute("SELECT last, first FROM donors WHERE id=?", (did,)).fetchone()
+        nm = ((dn['last'] + ' ' + (dn['first'] or '')).strip()) if dn else ''
+        _pdue = week_before(b.get('date_text', '')) or today_iso()
+        if _pdue < today_iso(): _pdue = today_iso()
+        cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                    (did, _pdue, 'parnes', '🌙 לעשות פרנס לילה — ' + nm))
+    cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
+    return (200, {'ok': True, 'donor_id': did})
+
 def build_ics():
     """פיד יומן לכל התזכורות הפתוחות — לחיבור אוטומטי ליומן Google."""
     con = db(); c = con.cursor()
@@ -1606,6 +1742,16 @@ class H(BaseHTTPRequestHandler):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode('utf-8')
         self.send_response(code)
         self.send_header('Content-Type', ctype + ('; charset=utf-8' if 'json' in ctype or 'html' in ctype or 'calendar' in ctype else ''))
+        # דחיסה — הנתונים עוברים בערך פי עשרה יותר מהר בסלולרי
+        enc = None
+        _zip = any(t in ctype for t in ('json', 'html', 'text', 'javascript', 'css', 'svg', 'calendar'))
+        if _zip and len(data) > 1024 and 'gzip' in (self.headers.get('Accept-Encoding') or ''):
+            try:
+                data = gzip.compress(data, 6); enc = 'gzip'
+            except Exception:
+                enc = None
+        if enc:
+            self.send_header('Content-Encoding', enc)
         self.send_header('Content-Length', str(len(data)))
         self.end_headers(); self.wfile.write(data)
 
@@ -2242,131 +2388,23 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/recon/batch':
+            # אישור כל שורות התורם בבקשה אחת — במקום סבב רשת נפרד לכל שורה
+            con = db(); cur = con.cursor(); did = b.get('donor_id'); out = []
+            for it in (b.get('items') or []):
+                ib = dict(it.get('body') or {})
+                if did: ib['donor_id'] = did
+                code, res = recon_apply(cur, it.get('tid'), ib)
+                out.append(dict(res, tid=it.get('tid'), code=code))
+                if res.get('donor_id'): did = res['donor_id']
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'donor_id': did, 'results': out})
         m = re.match(r'/api/recon/([^/]+)$', self.path)
         if m:
-            tid = m.group(1); con = db(); cur = con.cursor()
-            row = cur.execute("SELECT * FROM recon WHERE tid=?", (tid,)).fetchone()
-            if not row:
-                con.close(); return self._send(404, {'error': 'not found'})
-            if b.get('skip') or (row['status'] and row['status'] != 'settled'):
-                cur.execute("UPDATE recon SET processed=1 WHERE tid=?", (tid,)); con.commit(); con.close()
-                return self._send(200, {'ok': True, 'skipped': True})
-            did = b.get('donor_id')
-            r_state = row['state'] or ''         # מדינה (NY וכו') נשמרת בשדה "מדינה"
-            r_src = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
-            if b.get('new_donor'):
-                nd = b['new_donor']
-                # מזדמן → הקוויטל מזדמן, עם חודש/שנה (ברירת מחדל: החודש הנוכחי, ומכ' בחודש — הבא)
-                _occ = bool(nd.get('occasional'))
-                _dcat = (nd.get('category') or '').strip() or ('מזדמן' if _occ else b.get('category', ''))
-                _kvm, _kvy = ((nd.get('kv_month') or ''), (nd.get('kv_year') or '')) if _occ else ('', '')
-                if _occ and not _kvm:
-                    _kvm, _kvy = kvittel_default_month()
-                cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source,notes,tier,kv_month,kv_year)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
-                             row['phone'], row['email'], row['addr'] or '', row['city'] or '', r_state, row['zip'] or '',
-                             _dcat, today_iso(), r_src, nd.get('notes', ''),
-                             ('' if _occ else (nd.get('tier') or '')), _kvm, _kvy))
-                did = cur.lastrowid
-                # שאר החיובים של אותו אדם (אותו מייל) — משויכים מיד לכרטיס החדש
-                _em = (row['email'] or '').strip().lower()
-                if _em:
-                    cur.execute("""UPDATE recon SET donor_id=? WHERE lower(TRIM(email))=?
-                                   AND TRIM(COALESCE(email,''))<>'' AND donor_id IS NULL""", (did, _em))
-                if (nd.get('task') or '').strip() and not (b.get('task') or '').strip():
-                    cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                                (did, (nd.get('task_date') or today_iso()), 'followup', nd['task'].strip()))
-            if not did:
-                con.close(); return self._send(400, {'error': 'donor required'})
-            # מילוי אוטומטי של שם אנגלי אם חסר בכרטיס (מיזוג השם מהייבוא)
-            if not b.get('new_donor'):
-                en = (row['first'] + ' ' + row['last']).strip()
-                if en:
-                    cur.execute("UPDATE donors SET english=? WHERE id=? AND COALESCE(TRIM(english),'')=''", (en, did))
-            if b.get('update_addr') and (row['addr'] or row['city'] or row['zip']):
-                cur.execute("UPDATE donors SET addr=?, city=?, country=?, zip=? WHERE id=?",
-                            (row['addr'] or '', row['city'] or '', r_state, row['zip'] or '', did))
-            # משימה שנכתבה בדף החיובים / בכרטיס — נכנסת ללשונית המשימות
-            _tk = (b.get('task') or '').strip()
-            if _tk:
-                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
-                            (did, (b.get('task_date') or today_iso()), (b.get('task_kind') or 'followup'),
-                             _tk, (b.get('task_who') or '')))
-            # הערה שנכתבה בדף החיובים — נשמרת גם בהערות התורם (ניתן לחיפוש)
-            unote = (b.get('note') or '').strip()
-            if unote and b.get('note_to_donor'):
-                cur2 = cur.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()
-                old = (cur2['notes'] if cur2 else '') or ''
-                if unote not in old:
-                    cur.execute("UPDATE donors SET notes=? WHERE id=?",
-                                ((old + ' · ' + unote).strip(' ·') if old.strip() else unote, did))
-            # שמות הקוויטל שהתורם שלח מהאתר — צירוף לכרטיס שלו
-            kvt = (b.get('kv_text') or '').strip()
-            if b.get('attach_kv') and kvt:
-                dt = cur.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
-                have = {(p['text'] or '').strip() for p in
-                        cur.execute("SELECT text FROM prayers WHERE donor_id=?", (did,))}
-                for ln in [l.strip() for l in kvt.split('\n') if l.strip()]:
-                    if ln not in have:      # בלי כפילויות
-                        cur.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)",
-                                    (did, ln, (dt['tier'] if dt else '') or ''))
-                        have.add(ln)
-                _dr = cur.execute("SELECT email FROM donors WHERE id=?", (did,)).fetchone()
-                _ems = emails_of(row['email']) + [e for e in emails_of(_dr['email'] if _dr else '')]
-                _ems = list(dict.fromkeys(_ems))
-                if _ems:
-                    cur.execute("UPDATE intake SET donor_id=?, status='handled' WHERE lower(TRIM(from_email)) IN (%s) AND COALESCE(donor_id,0)=0"
-                                % ','.join('?' * len(_ems)), [did] + _ems)
-            # תאריך: '01-Jul-2026' -> '2026-07'
-            MON = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
-            dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
-            # תאריך מלא (יום-חודש-שנה) ולא רק חודש — כדי שיוצג מתי בדיוק נגבה
-            diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}-{dm.group(1)}" if dm else ''
-            cat = b.get('category', '') or row['category'] or ''
-            # קטגוריה חופשית (עבור מה) — נשמרת לרשימה קבועה לשימוש חוזר
-            BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
-            if cat and cat not in BASE_CATS:
-                cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
-            # אמצעי התשלום לפי מקור ההתאמה (Authorize / Banquest / בנק ווסט)
-            pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
-            # מילוי ערוץ החיוב בכרטיס (ובאברכים) לפי אמצעי התשלום — אוטומטית
-            _chan = {'Authorize': 'אותורייז', 'Banquest': 'בנק_ווסט'}.get(pay_method, '')
-            if _chan and did:
-                cur.execute("UPDATE donors SET channel=? WHERE id=? AND COALESCE(channel,'')=''", (_chan, did))
-                cur.execute("UPDATE partners SET method=? WHERE donor_id=? AND active<>0 AND COALESCE(method,'')=''", (_chan, did))
-            # מניעת כפילות מול קובץ הסיכום 2026: רשומת סיכום באותו אמצעי, לאותו תורם+חודש,
-            # מוחלפת ע"י העסקה המדויקת (אותו כסף בדיוק)
-            if diso and did:
-                cur.execute("DELETE FROM donations WHERE donor_id=? AND date=? AND note='ייבוא 2026' AND method=?", (did, diso, pay_method))
-            PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
-            if cat in PKIND:
-                # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
-                dtext = b.get('date_text', '')
-                _ng = heb_to_greg(dtext) if dtext else None
-                cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'confirmed',1,?,?,?)",
-                            (did, b.get('day', 0), b.get('month', ''), dtext, row['amount'], b.get('dedication', ''), PKIND[cat],
-                             _ng.isoformat() if _ng else '', b.get('hyear', ''), pay_method))
-            else:
-                _nt = 'ייבוא ' + pay_method + (' · הוראת קבע' if row['recurring'] else '')
-                _un = (b.get('note') or '').strip()      # הערה שנכתבה בדף החיובים
-                if _un:
-                    _nt += ' · ' + _un
-                cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
-                            (did, diso, row['amount'], cat, pay_method, _nt))
-            if row['recurring']:
-                cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
-            # פרנס לילה מאוגוסט ואילך — תזכורת לעשות לו את הלילה בפועל, שבוע לפני הלילה
-            if cat == 'פרנס לילה' and diso >= '2026-08':
-                dn = cur.execute("SELECT last, first FROM donors WHERE id=?", (did,)).fetchone()
-                nm = ((dn['last'] + ' ' + (dn['first'] or '')).strip()) if dn else ''
-                _pdue = week_before(b.get('date_text', '')) or today_iso()
-                if _pdue < today_iso(): _pdue = today_iso()
-                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                            (did, _pdue, 'parnes', '🌙 לעשות פרנס לילה — ' + nm))
-            cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
+            con = db(); cur = con.cursor()
+            code, res = recon_apply(cur, m.group(1), b)
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'donor_id': did})
+            return self._send(code, res)
         if self.path == '/api/merge':
             # מיזוג שני כרטיסים כפולים: keep=הכרטיס שנשאר, drop=הכרטיס שנמחק
             try:

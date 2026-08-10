@@ -410,9 +410,10 @@ function wireGroup(k,txs){
     const catSels=[...card.querySelectorAll('.txn')];
     btn.disabled=true; btn.textContent='מכניס…';
     let donorId=state.donorId;
+    const items=[];                     // אוספים הכל ושולחים בבקשה אחת — במקום סבב רשת לכל שורה
     for(const txEl of catSels){
       const tid=txEl.dataset.tid;
-      if(txEl.classList.contains('failed')){ await api('POST','/api/recon/'+tid,{skip:true}); continue; }  // לא עבר — לא מייבאים
+      if(txEl.classList.contains('failed')){ items.push({tid,body:{skip:true}}); continue; }  // לא עבר — לא מייבאים
       const sel=txEl.querySelector('.cat'); if(!sel) continue;
       let catVal=sel.value;
       if(catVal==='__new__'){
@@ -427,16 +428,23 @@ function wireGroup(k,txs){
       if(!taskDone && rtask && rtask.value.trim()){ body.task=rtask.value.trim(); body.task_date=rtaskd?rtaskd.value:''; body.task_kind=rtaskk?rtaskk.value:'followup'; body.task_who=rtaskw?rtaskw.value:''; taskDone=true; }
       if(kvAdd&&kvText&&kvText.value.trim()){ body.attach_kv=true; body.kv_text=kvText.value.trim(); }
       if(PARNES_CATS.includes(catVal)){const mon=txEl.querySelector('.pymon'),day=txEl.querySelector('.pyday'),yr=txEl.querySelector('.pyyr');if(mon&&day){body.month=mon.value;body.day=+day.value;body.hyear=yr?yr.value:'';body.date_text=heDay(+day.value)+' '+mon.value;}}
-      if(donorId) body.donor_id=donorId;
-      else if(state.createNew){ body.new_donor={last:state.nl,first:state.nf,notes:state.nn||'',
-        category:(state.ncat||''), tier:(state.ntier==='__occ'?'':(state.ntier||'')),
-        kv_month:(state.ntier==='__occ'?(state.nkvm||''):''), kv_year:(state.ntier==='__occ'?(state.nkvy||''):''),
-        occasional:(state.ntier==='__occ')}; }
-      const r=await api('POST','/api/recon/'+tid, body);
-      if(r.donor_id){ donorId=r.donor_id; }
+      if(!donorId && state.createNew && !items.some(x=>x.body.new_donor)){
+        body.new_donor={last:state.nl,first:state.nf,notes:state.nn||'',
+          category:(state.ncat||''), tier:(state.ntier==='__occ'?'':(state.ntier||'')),
+          kv_month:(state.ntier==='__occ'?(state.nkvm||''):''), kv_year:(state.ntier==='__occ'?(state.nkvy||''):''),
+          occasional:(state.ntier==='__occ')};
+      }
+      items.push({tid,body});
       upaddr=false; kvAdd=false; // רק פעם אחת
     }
-    toast('הוכנס ✓'); await load();
+    const r=await api('POST','/api/recon/batch',{donor_id:donorId||null, items});
+    if(!r||!r.ok){ btn.disabled=false; btn.textContent='✓ הכנס את כל התרומות'; toast('ההכנסה נכשלה — נסה שוב'); return; }
+    donorId=r.donor_id||donorId;
+    // מעדכנים את המסך מקומית במקום למשוך מחדש את כל הנתונים — זה מה שהיה איטי
+    const done=new Set(items.map(x=>x.tid));
+    DATA.forEach(x=>{ if(done.has(x.tid)){ x.processed=1; if(donorId){ x.donor_id=donorId;
+      if(!x.match_name) x.match_name=((state.nl||'')+' '+(state.nf||'')).trim(); } } });
+    toast('הוכנס ✓'); render();
   };
 }
 
