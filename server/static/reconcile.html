@@ -73,6 +73,11 @@
     font-family:inherit;font-size:.9rem;background:#fff;color:var(--ink);font-weight:700}
   .autowhy{font-size:.78rem;color:var(--muted);margin-top:5px}
   .autowhy b{color:var(--accent)}
+  .uclrow{border-top:1px solid var(--line);padding:9px 0}
+  .uclitems{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0}
+  .unci{background:#fff7e8;border:1px solid #e8c79a;border-radius:99px;padding:2px 9px;font-size:.76rem;font-weight:700;color:#8a6a00}
+  .addrow2{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .addrow2 select{flex:1;min-width:140px;padding:7px 9px;border:1px solid var(--accent);border-radius:8px;font-family:inherit;font-size:.85rem}
   .rulebox{width:100%;margin-top:6px;background:#f6f3ff;border:1px solid #cfc3f0;border-radius:9px;padding:7px 9px}
   .rulebox .rulenote{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;
     font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink)}
@@ -104,6 +109,7 @@
     <button data-f="done">✓ טופלו</button>
   </div>
 </div>
+<div id="uncl"></div>
 <div id="list"></div>
 <div class="toast" id="toast"></div>
 
@@ -544,7 +550,33 @@ if(_ms)_ms.onclick=async()=>{
   if(!r||!r.ok){toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאה: '+((r&&(r.detail||r.error))||''));return;}
   toast(r.new?('תויקו '+r.new+' מיילים אצל התורמים ✓'):'אין מיילים חדשים לתיוק');
 };
-load();
+// שאלות "עבור מה" — כאן, לא במשימות
+async function loadUncl(){
+  const el=document.getElementById('uncl'); if(!el) return;
+  let r; try{ r=await api('GET','/api/unclassified'+(SRC?('?src='+SRC):'')); }catch(e){ return; }
+  const ds=(r&&r.donors)||[]; if(!ds.length){ el.innerHTML=''; return; }
+  const opts=CATS.concat(CAMPAIGNS||[]).filter((v,i,a)=>a.indexOf(v)===i)
+    .map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('');
+  el.innerHTML=`<div class="grp"><div class="gname" style="direction:rtl;text-align:right">❓ ${ds.length} תורמים — לא ידוע עבור מה נגבה</div>
+    <div class="gsum">סה"כ $${r.total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · נכנס לכרטיס, רק חסרה התווית</div>
+    ${ds.map((g,i)=>`<div class="uclrow" data-i="${i}">
+      <div><b>${esc(g.name)}</b> <span class="date">${g.items.length} חיובים · $${g.total.toLocaleString('en-US',{maximumFractionDigits:0})} · ${esc(g.methods)}</span></div>
+      <div class="uclitems">${g.items.slice(0,8).map(x=>`<span class="unci">$${x.amount.toLocaleString('en-US',{maximumFractionDigits:0})} · ${esc(x.date)}</span>`).join('')}${g.items.length>8?`<span class="unci">ועוד ${g.items.length-8}</span>`:''}</div>
+      <div class="addrow2"><select class="uclcat">${opts}</select><button class="btn sm uclgo">💾 שמור</button>
+        <a class="btn sm ghost" href="/?donor=${g.donor_id}" target="_blank" rel="noopener" style="text-decoration:none">↗ כרטיס</a></div>
+    </div>`).join('')}</div>`;
+  el.querySelectorAll('.uclrow').forEach(row=>{
+    const g=ds[+row.dataset.i], b=row.querySelector('.uclgo');
+    b.onclick=async()=>{
+      const cat=row.querySelector('.uclcat').value.trim();
+      if(!cat){toast('בחר עבור מה');return;}
+      b.disabled=true;b.textContent='שומר…';
+      const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat});
+      if(!res||!res.ok){b.disabled=false;b.textContent='💾 שמור';toast('השמירה נכשלה');return;}
+      toast('עודכנו '+res.updated+' תרומות אצל '+g.name+' ✓'); loadUncl();};
+  });
+}
+load(); loadUncl();
 </script>
 </body>
 </html>

@@ -1496,16 +1496,7 @@ def ensure_schema():
                 con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                 ins += 1
                 perdonor[did] = perdonor.get(did, 0) + 1
-            for did, n in perdonor.items():
-                _d = list(con.execute("SELECT date,amount FROM donations WHERE donor_id=? AND method=? "
-                                     "AND COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date", (did, 'Banquest')))
-                _it = ' · '.join('$%g ב-%s' % (float(x['amount'] or 0), _hedate(x['date'])) for x in _d[:6])
-                note = ('❓ עבור מה נגבו %d חיובי בנק ווסט · סה"כ $%g — %s%s'
-                        % (len(_d) or n, sum(float(x['amount'] or 0) for x in _d), _it,
-                           '' if len(_d) <= 6 else ' ועוד %d' % (len(_d) - 6)))
-                if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
-                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'verify',?)",
-                                (did, today_iso(), note))
+            # ללא משימות — השאלות מוצגות בדף החיובים ובכרטיס התורם
             con.execute("INSERT INTO seed_flags(name) VALUES('bankwest_merge_v2')")
             print('  בנק ווסט סבב שני: נכנסו %d חיובים אצל %d תורמים (מסומנים לבדיקה)' % (ins, len(perdonor)))
     except Exception as e:
@@ -1582,16 +1573,7 @@ def ensure_schema():
                 con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                 ins += 1
                 by[why] = by.get(why, 0) + 1
-            for did, n in perdonor.items():
-                _d = list(con.execute("SELECT date,amount FROM donations WHERE donor_id=? AND method=? "
-                                     "AND COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date", (did, 'Authorize')))
-                _it = ' · '.join('$%g ב-%s' % (float(x['amount'] or 0), _hedate(x['date'])) for x in _d[:6])
-                note = ('❓ עבור מה נגבו %d חיובי אוטרייז · סה"כ $%g — %s%s'
-                        % (len(_d) or n, sum(float(x['amount'] or 0) for x in _d), _it,
-                           '' if len(_d) <= 6 else ' ועוד %d' % (len(_d) - 6)))
-                if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
-                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'verify',?)",
-                                (did, today_iso(), note))
+            # ללא משימות — השאלות מוצגות בדף החיובים ובכרטיס התורם
             con.execute("INSERT INTO seed_flags(name) VALUES('authorize_merge_v1')")
             print('  מיזוג אוטורייז: נכנסו %d, הוחלפו %d שורות סיכום, פרנס שנשאר לאישור %d' % (ins, repl, skip_py))
             for k, v in sorted(by.items(), key=lambda x: -x[1]):
@@ -1678,6 +1660,16 @@ def ensure_schema():
             print('  פרנס v2: תוקנו %d תאריכי לילה, נוספו %d תזכורות' % (nfix, nadd))
     except Exception as e:
         print('  parnes v2 error:', e)
+
+    # משימות "עבור מה" יורדות מרשימת המשימות — השאלות מוצגות בדף החיובים ובכרטיס התורם עצמו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_uncl_tasks_v1'").fetchone():
+            n = con.execute("DELETE FROM tasks WHERE note LIKE '❓ עבור מה נגבו%' "
+                            "OR note LIKE 'לבדוק עבור מה נגבו%'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('drop_uncl_tasks_v1')")
+            print('  משימות "עבור מה" שהוסרו מרשימת המשימות: %d' % n)
+    except Exception as e:
+        print('  drop uncl tasks error:', e)
 
     # משימות "לבדוק עבור מה" — לכתוב בהן את הסכומים והתאריכים המדויקים, אחרת אי אפשר לענות עליהן
     try:
@@ -1861,6 +1853,15 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
+    for d in donors: d['unclassified'] = []
+    try:
+        for r in c.execute("SELECT id,donor_id,date,amount,method FROM donations "
+                           "WHERE COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date"):
+            if r['donor_id'] in byid:
+                byid[r['donor_id']]['unclassified'].append(dict(r))
+    except Exception:
+        pass
+
     for d in donors: d['rules'] = []
     try:
         for r in c.execute("SELECT id,donor_id,amount,category,note FROM donor_rules ORDER BY amount DESC"):
@@ -2378,6 +2379,34 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/unclassified':
+            # תורמים שיש להם חיובים שנכנסו בלי לדעת עבור מה — לשאלה בדף החיובים
+            con = db()
+            src = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('src', [''])[0] or '').strip()
+            meth = {'banquest': 'Banquest', 'authorize': 'Authorize'}.get(src, '')
+            q = ("SELECT n.donor_id, d.last, d.first, n.date, n.amount, n.method FROM donations n "
+                 "JOIN donors d ON d.id=n.donor_id WHERE COALESCE(n.note,'') LIKE '%לא סווג%'")
+            args = []
+            if meth:
+                q += " AND n.method=?"; args.append(meth)
+            q += " ORDER BY d.last, n.date"
+            grp = {}
+            for r in con.execute(q, args):
+                g = grp.setdefault(r['donor_id'], {'donor_id': r['donor_id'],
+                                                   'name': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                                                   'items': [], 'total': 0.0, 'methods': set()})
+                g['items'].append({'date': r['date'], 'amount': round(float(r['amount'] or 0), 2)})
+                g['total'] += float(r['amount'] or 0)
+                g['methods'].add('בנק ווסט' if r['method'] == 'Banquest' else 'אוטרייז')
+            out = []
+            for g in grp.values():
+                g['methods'] = ' · '.join(sorted(g['methods']))
+                g['total'] = round(g['total'], 2)
+                out.append(g)
+            out.sort(key=lambda x: -x['total'])
+            con.close()
+            return self._send(200, {'ok': True, 'donors': out,
+                                    'total': round(sum(x['total'] for x in out), 2)})
         if self.path.split('?')[0] == '/api/audit/unknown':
             # תורמים שמופיעים בחיובים ואין להם כרטיס — מקובצים לפי אדם, לא לפי חיוב
             con = db()
