@@ -1739,8 +1739,19 @@ function renderKvList(type){
     const nq=norm(kvListQ);
     if(nq)entries=entries.filter(e=>norm(e.donor+' '+e.text).includes(nq));
     entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
-    document.getElementById('kvcnt').textContent='('+entries.length+')';
-    document.getElementById('kvlistwrap').innerHTML=entries.map(e=>`<div class="kblock${(e.text||'').trim()?'':' kvempty'}"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)}${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div></div>`).join('')||'<div class="empty">אין תוצאות</div>';
+    // תורם אחד = משבצת אחת. כמה שמות שנוספו לו לאורך הזמן יושבים יחד תחת שמו,
+    // כל אחד עדיין ניתן לעריכה בנפרד; בהדפסה הם נקראים כרשימה אחת רצופה
+    const groups=[],gmap={};
+    entries.forEach(e=>{const k=e.did?('d'+e.did):('l'+e.id);
+      if(!gmap[k]){gmap[k]={key:k,donor:e.donor,last:e.last,did:e.did,loose:e.loose,items:[]};groups.push(gmap[k]);}
+      gmap[k].items.push(e);});
+    document.getElementById('kvcnt').textContent='('+groups.length+(groups.length!==entries.length?(' · '+entries.length+' רשומות'):'')+')';
+    document.getElementById('kvlistwrap').innerHTML=groups.map(g=>{
+      const empty=!g.items.some(e=>(e.text||'').trim());
+      const needname=g.items.some(e=>e.needname);
+      return `<div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(g.donor)}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
+        + g.items.map(e=>`<div class="names" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`).join('')
+        + `</div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
     bindKvEdit();
   }

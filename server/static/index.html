@@ -390,6 +390,11 @@
   .kvmonth h3{color:var(--gold);border-bottom:2px solid var(--gold-soft);padding-bottom:5px;margin:0 0 8px}
   .kblock .names{font-weight:700;font-size:1.05rem;white-space:pre-line;border-radius:8px;padding:4px 6px;margin:-4px -6px}
   .kblock .names[contenteditable]:focus{outline:none;background:var(--accent-soft);box-shadow:0 0 0 2px var(--accent)}
+  /* תורם עם כמה רשומות — על המסך כל אחת בתיבה נפרדת לעריכה */
+  .kblock.kvmulti .names+.names{margin-top:5px;border-top:1px dashed var(--line);padding-top:7px}
+  /* בהדפסה הכל נקרא כרשימה אחת רצופה תחת שם התורם — משבצת אחת */
+  @media print{.kblock.kvmulti .names+.names{border-top:none;margin-top:0;padding-top:0}
+    .kblock .names{margin:0;padding:0}}
   .prow{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px}
   .prow textarea{flex:1;resize:none;overflow:hidden;font-weight:600;line-height:1.6;font-size:1.02rem;min-height:2.6em}
   .prow .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:6px 2px}
