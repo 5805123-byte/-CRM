@@ -1802,6 +1802,30 @@ def ensure_schema():
     except Exception as e:
         print('  checks/ojc 2026 error:', e)
 
+    # קלמן לאקס — תורם חדש (לא חיים לאקס). נפתח לו כרטיס, ושלוש תרומות הדונרס שלו נכנסות אליו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kalman_lax_v1'").fetchone():
+            row = con.execute("SELECT id FROM donors WHERE last='לאקס' AND first='קלמן'").fetchone()
+            did = row['id'] if row else con.execute(
+                "INSERT INTO donors(last,first,english,category,created,source) "
+                "VALUES('לאקס','קלמן','Kalman Lax','מזדמן',?,'דונרס פאנד 2026')",
+                (today_iso(),)).lastrowid
+            n = 0
+            for r in list(con.execute("SELECT tid,amount,date FROM recon WHERE tid LIKE 'chk26-%' "
+                                      "AND last='Lax' AND first='Kalman'")):
+                a = round(float(r['amount'] or 0), 2)
+                if not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='דונרס' "
+                                   "AND ROUND(CAST(amount AS REAL),2)=?", (did, r['date'], a)).fetchone():
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,?,'מזדמן','דונרס','ייבוא Donors Fund 2026 · לא סווג — לבדוק עבור מה',1)",
+                                (did, r['date'], a))
+                    n += 1
+                con.execute("UPDATE recon SET donor_id=?, processed=1 WHERE tid=?", (did, r['tid']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('kalman_lax_v1')")
+            print('  קלמן לאקס: כרטיס #%d, נכנסו %d תרומות' % (did, n))
+    except Exception as e:
+        print('  kalman lax error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
