@@ -437,8 +437,7 @@ def ensure_schema():
             k = con.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
             d = con.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
             if k and d:
-                for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners',
-                      'transactions','building','donor_rules'):
+                for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
                     try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
                     except Exception: pass
                 try: con.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
@@ -3654,7 +3653,8 @@ class H(BaseHTTPRequestHandler):
             except Exception: pass
             try: con.execute("DELETE FROM files WHERE kind='transaction' AND ref_id IN (SELECT id FROM transactions WHERE donor_id=?)", (did,))
             except Exception: pass
-            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
+            for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners',
+                      'transactions','building','donor_rules'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
             # ניתוק שיוכים שנשארו במקומות אחרים, כדי שהתורם לא יופיע יותר בשום מסך
