@@ -2164,17 +2164,31 @@ function renderTasksTab(){
     <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
+    const isUncl=/^❓ עבור מה נגבו/.test(t.note||'')&&t.dref;   // משימת "עבור מה" — עונים עליה בלחיצה
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span><button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
     <div class="teditpanel hidden" data-panel="${i}">
       ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:8px">🌙 החלף/ערוך את הפרנס בלוח</button>`:''}
+      ${isUncl?`<div class="unclbox"><div class="k">בחר עבור מה, וזה ייכנס ישר לכרטיס של ${esc(t.donor)}:</div>
+        <div class="addrow"><select class="uclcat" data-i="${i}">${RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')}</select>
+        <button class="btn sm uclsave" data-i="${i}">💾 שמור לכרטיס</button></div></div>`:''}
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="tnote" data-i="${i}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
       <label class="fld" style="margin-top:6px"><span>👤 מי מטפל (אפשר להעביר לאהרן)</span><select class="twho" data-i="${i}">${assigneeOpts(t.assignee)}</select></label>
       <div class="addrow" style="margin-top:6px"><input type="date" class="tdate2" data-i="${i}" value="${esc(t.due_date||'')}"><button class="btn sm tsave" data-i="${i}">💾 שמור</button><button class="del tdel" data-i="${i}">🗑 מחק</button></div>
       <div class="avfiles" style="margin-top:6px">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה / אסמכתא<input type="file" accept="image/*,audio/*,application/pdf" class="ttup" data-id="${t.id}" hidden></label></div>
     </div>`;
   }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
+  view.querySelectorAll('.uclsave').forEach(b=>b.onclick=async()=>{
+    const t=all[+b.dataset.i]; if(!t||!t.dref)return;
+    const sel=view.querySelector('.uclcat[data-i="'+b.dataset.i+'"]');
+    const cat=sel?sel.value.trim():''; if(!cat){toast('בחר עבור מה');return;}
+    const meth=/בנק ווסט/.test(t.note||'')?'Banquest':(/אוטרייז/.test(t.note||'')?'Authorize':'');
+    b.disabled=true;b.textContent='שומר…';
+    const r=await api('POST','/api/classify',{donor_id:t.dref.id,category:cat,method:meth,task_id:t.id});
+    if(!r||!r.ok){b.disabled=false;b.textContent='💾 שמור לכרטיס';toast('השמירה נכשלה');return;}
+    toast('עודכנו '+r.updated+' תרומות אצל '+t.donor+' ✓');
+    await load(); render();});
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
   // חובות פרנס — פתיחת כרטיס / סימון שנגבה
   view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});

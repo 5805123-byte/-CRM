@@ -1497,7 +1497,12 @@ def ensure_schema():
                 ins += 1
                 perdonor[did] = perdonor.get(did, 0) + 1
             for did, n in perdonor.items():
-                note = 'לבדוק עבור מה נגבו %d חיובי בנק ווסט — %s' % (n, dinfo.get(did, ('', ''))[1])
+                _d = list(con.execute("SELECT date,amount FROM donations WHERE donor_id=? AND method=? "
+                                     "AND COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date", (did, 'Banquest')))
+                _it = ' · '.join('$%g ב-%s' % (float(x['amount'] or 0), _hedate(x['date'])) for x in _d[:6])
+                note = ('❓ עבור מה נגבו %d חיובי בנק ווסט · סה"כ $%g — %s%s'
+                        % (len(_d) or n, sum(float(x['amount'] or 0) for x in _d), _it,
+                           '' if len(_d) <= 6 else ' ועוד %d' % (len(_d) - 6)))
                 if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
                     con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'verify',?)",
                                 (did, today_iso(), note))
@@ -1578,7 +1583,12 @@ def ensure_schema():
                 ins += 1
                 by[why] = by.get(why, 0) + 1
             for did, n in perdonor.items():
-                note = 'לבדוק עבור מה נגבו %d חיובי אוטורייז — %s' % (n, dinfo.get(did, ('', '', ''))[2])
+                _d = list(con.execute("SELECT date,amount FROM donations WHERE donor_id=? AND method=? "
+                                     "AND COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date", (did, 'Authorize')))
+                _it = ' · '.join('$%g ב-%s' % (float(x['amount'] or 0), _hedate(x['date'])) for x in _d[:6])
+                note = ('❓ עבור מה נגבו %d חיובי אוטרייז · סה"כ $%g — %s%s'
+                        % (len(_d) or n, sum(float(x['amount'] or 0) for x in _d), _it,
+                           '' if len(_d) <= 6 else ' ועוד %d' % (len(_d) - 6)))
                 if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
                     con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'verify',?)",
                                 (did, today_iso(), note))
@@ -1668,6 +1678,36 @@ def ensure_schema():
             print('  פרנס v2: תוקנו %d תאריכי לילה, נוספו %d תזכורות' % (nfix, nadd))
     except Exception as e:
         print('  parnes v2 error:', e)
+
+    # משימות "לבדוק עבור מה" — לכתוב בהן את הסכומים והתאריכים המדויקים, אחרת אי אפשר לענות עליהן
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='unclassified_task_v2'").fetchone():
+            nre = 0
+            rows = list(con.execute("SELECT id,donor_id,note FROM tasks WHERE note LIKE 'לבדוק עבור מה נגבו%' "
+                                    "AND COALESCE(done,0)=0"))
+            for t in rows:
+                meth = 'Banquest' if 'בנק ווסט' in (t['note'] or '') else 'Authorize'
+                lbl = 'בנק ווסט' if meth == 'Banquest' else 'אוטרייז'
+                dons = list(con.execute(
+                    "SELECT date,amount FROM donations WHERE donor_id=? AND method=? "
+                    "AND COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date", (t['donor_id'], meth)))
+                if not dons:
+                    continue
+                def _he(d):
+                    m = re.match(r'(\d{4})-(\d{2})-(\d{2})', d or '')
+                    return '%s/%s/%s' % (m.group(3), m.group(2), m.group(1)) if m else (d or '')
+                items = ' · '.join('$%s ב-%s' % (
+                    ('%g' % float(x['amount'] or 0)), _he(x['date'])) for x in dons[:6])
+                more = '' if len(dons) <= 6 else ' ועוד %d' % (len(dons) - 6)
+                tot = sum(float(x['amount'] or 0) for x in dons)
+                note = ('❓ עבור מה נגבו %d חיובי %s · סה"כ $%s — %s%s'
+                        % (len(dons), lbl, ('%g' % tot), items, more))
+                con.execute("UPDATE tasks SET note=?, kind='verify' WHERE id=?", (note, t['id']))
+                nre += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('unclassified_task_v2')")
+            print('  משימות "עבור מה" עם סכומים ותאריכים: %d' % nre)
+    except Exception as e:
+        print('  unclassified task error:', e)
 
     # איות שמות מקובל — גם בקוויטל שכבר נשמר (אדינא -> עדינה וכו')
     try:
@@ -1926,6 +1966,12 @@ KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'praye
 
 _MONI = {'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
          'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'}
+
+
+def _hedate(d):
+    """'2026-03-14' -> '14/03/2026' — כדי שהתאריך יהיה קריא בתוך טקסט המשימה."""
+    m = re.match(r'(\d{4})-(\d{2})-(\d{2})', d or '')
+    return '%s/%s/%s' % (m.group(3), m.group(2), m.group(1)) if m else (d or '')
 
 
 def _recon_iso(d):
@@ -3036,6 +3082,33 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/classify':
+            # מענה על משימת "עבור מה" — מעדכן את התרומות בכרטיס התורם וסוגר את המשימה
+            try:
+                did = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id required'})
+            cat = (b.get('category') or '').strip()
+            if not cat:
+                return self._send(400, {'error': 'category required'})
+            meth = (b.get('method') or '').strip()
+            con = db(); cur = con.cursor()
+            BASE = {'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר',
+                    'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר', 'בניין'}
+            if cat not in BASE:
+                cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+            args = [cat, did]
+            q = ("UPDATE donations SET category=?, "
+                 "note=REPLACE(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה',''),' · לא סווג','') "
+                 "WHERE donor_id=? AND COALESCE(note,'') LIKE '%לא סווג%'")
+            if meth:
+                q += " AND method=?"; args.append(meth)
+            n = cur.execute(q, args).rowcount
+            tid = b.get('task_id')
+            if tid:
+                cur.execute("UPDATE tasks SET done=1 WHERE id=?", (int(tid),))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'updated': n})
         if self.path == '/api/audit/newdonor':
             # פתיחת כרטיס תורם מתוך חיובים שאין להם כרטיס, ושיוך כל החיובים שלו אליו
             tids = b.get('tids') or []
