@@ -731,8 +731,9 @@ function cardDetails(d,body){
       return `<div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
       ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
         <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
-        <select class="ucat1">${uo}</select><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${d.unclassified.length>1?`<div class="addrow uall"><select id="ucl_cat">${uo}</select>
+        <input id="ucl_new" placeholder="שם הייעוד החדש…" style="display:none">
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
     <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
@@ -770,11 +771,14 @@ function cardDetails(d,body){
     toast(rule?'נשמר לכל הסכום הזה ✓':'נשמר ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
-    const b=ln.querySelector('.ugo1');
+    const b=ln.querySelector('.ugo1'), sx=ln.querySelector('.ucat1'), nx=ln.querySelector('.unew1');
+    if(sx&&nx) sx.onchange=()=>{const on=sx.value==='__new__';nx.style.display=on?'block':'none';if(on)nx.focus();};
     b.onclick=async()=>{
-      let cat=ln.querySelector('.ucat1').value.trim();
-      if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
-        if(cat&&!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
+      const s1=ln.querySelector('.ucat1'), n1=ln.querySelector('.unew1');
+      let cat=s1.value.trim();
+      if(cat==='__new__'){ cat=n1.value.trim();
+        if(!cat){toast('כתוב את שם הייעוד');n1.focus();return;}
+        if(!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
       if(!cat){toast('בחר עבור מה');return;}
       b.disabled=true;b.textContent='…';
       const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid]});
@@ -782,10 +786,14 @@ function cardDetails(d,body){
       toast('נשמר ✓'); await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
   });
   const uclSave=document.getElementById('ucl_save');
+  const uclSel=document.getElementById('ucl_cat'), uclNew=document.getElementById('ucl_new');
+  if(uclSel&&uclNew) uclSel.onchange=()=>{const on=uclSel.value==='__new__';uclNew.style.display=on?'block':'none';if(on)uclNew.focus();};
   if(uclSave)uclSave.onclick=async()=>{
-    let cat=document.getElementById('ucl_cat').value.trim();
-    if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
-      if(cat&&!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
+    const sa=document.getElementById('ucl_cat'), na=document.getElementById('ucl_new');
+    let cat=sa.value.trim();
+    if(cat==='__new__'){ cat=na.value.trim();
+      if(!cat){toast('כתוב את שם הייעוד');na.focus();return;}
+      if(!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
     if(!cat){toast('בחר עבור מה');return;}
     uclSave.disabled=true;uclSave.textContent='שומר…';
     const r=await api('POST','/api/classify',{donor_id:d.id,category:cat});

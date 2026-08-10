@@ -78,9 +78,11 @@
   .unci{background:#fff7e8;border:1px solid #e8c79a;border-radius:99px;padding:2px 9px;font-size:.76rem;font-weight:700;color:#8a6a00}
   .uline{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0}
   .uline .unci{min-width:190px}
+  .uline input{flex:1;min-width:150px;padding:6px 8px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.83rem}
   .uline select{flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--accent);border-radius:8px;font-family:inherit;font-size:.83rem}
   .uall{border-top:1px dashed var(--line);padding-top:7px;margin-top:7px}
   .addrow2{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .addrow2 input{flex:1;min-width:150px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;font-size:.85rem}
   .addrow2 select{flex:1;min-width:140px;padding:7px 9px;border:1px solid var(--accent);border-radius:8px;font-family:inherit;font-size:.85rem}
   .rulebox{width:100%;margin-top:6px;background:#f6f3ff;border:1px solid #cfc3f0;border-radius:9px;padding:7px 9px}
   .rulebox .rulenote{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;
@@ -571,18 +573,21 @@ async function loadUncl(){
         <a class="btn sm ghost" href="/?donor=${g.donor_id}" target="_blank" rel="noopener" style="text-decoration:none;float:left">↗ כרטיס</a></div>
       ${g.items.map(x=>`<div class="uline" data-id="${x.id}">
         <span class="unci">$${x.amount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(x.date)} · ${esc(x.method)}</span>
-        <select class="ucat1">${opts}</select><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${opts}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${g.items.length>1?`<div class="addrow2 uall"><span class="date">אותו דבר לכל ${g.items.length} החיובים:</span>
-        <select class="uclcat">${opts}</select><button class="btn sm uclgo">💾 שמור לכולם</button></div>`:''}
+        <select class="uclcat">${opts}</select><input class="unewall" placeholder="שם הייעוד החדש…" style="display:none"><button class="btn sm uclgo">💾 שמור לכולם</button></div>`:''}
     </div>`).join('')}</div>`;
   el.querySelectorAll('.uclrow').forEach(row=>{
     const g=ds[+row.dataset.i];
     row.querySelectorAll('.uline').forEach(ln=>{
       const b=ln.querySelector('.ugo1');
+      const sel1=ln.querySelector('.ucat1'), nw1=ln.querySelector('.unew1');
+      sel1.onchange=()=>{const on=sel1.value==='__new__';nw1.style.display=on?'block':'none';if(on)nw1.focus();};
       b.onclick=async()=>{
-        let cat=ln.querySelector('.ucat1').value.trim();
-        if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
-          if(cat&&!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
+        let cat=sel1.value.trim();
+        if(cat==='__new__'){ cat=nw1.value.trim();
+          if(!cat){toast('כתוב את שם הייעוד');nw1.focus();return;}
+          if(!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
         if(!cat){toast('בחר עבור מה');return;}
         b.disabled=true;b.textContent='…';
         const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat,ids:[+ln.dataset.id]});
@@ -590,10 +595,13 @@ async function loadUncl(){
         toast('נשמר ✓'); loadUncl();};
     });
     const b=row.querySelector('.uclgo');
+    const selA=row.querySelector('.uclcat'), nwA=row.querySelector('.unewall');
+    if(selA&&nwA) selA.onchange=()=>{const on=selA.value==='__new__';nwA.style.display=on?'block':'none';if(on)nwA.focus();};
     if(b) b.onclick=async()=>{
-      let cat=row.querySelector('.uclcat').value.trim();
-      if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
-        if(cat&&!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
+      let cat=selA.value.trim();
+      if(cat==='__new__'){ cat=nwA.value.trim();
+        if(!cat){toast('כתוב את שם הייעוד');nwA.focus();return;}
+        if(!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
       if(!cat){toast('בחר עבור מה');return;}
       b.disabled=true;b.textContent='שומר…';
       const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat});
