@@ -2481,6 +2481,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/avreichim':
+            con = db()
+            rows = [r['a'] for r in con.execute(
+                "SELECT DISTINCT TRIM(avreich) a FROM partners WHERE COALESCE(TRIM(avreich),'')<>'' ORDER BY a")]
+            con.close()
+            return self._send(200, rows)
         if self.path.split('?')[0] == '/api/unclassified':
             # תורמים שיש להם חיובים שנכנסו בלי לדעת עבור מה — לשאלה בדף החיובים
             con = db()
@@ -3320,6 +3326,24 @@ class H(BaseHTTPRequestHandler):
             if meth:
                 q += " AND method=?"; args.append(meth)
             n = cur.execute(q, args).rowcount
+            av = (b.get('avreich') or '').strip()
+            if av:
+                # יששכר־זבולון — רושמים את האברך גם בשורת התרומה וגם ברשימת האברכים של התורם
+                cur.execute("UPDATE donations SET note=TRIM(COALESCE(note,'')||' · '||?,' ·') "
+                            "WHERE donor_id=? AND COALESCE(note,'') NOT LIKE ?" +
+                            (" AND id IN (%s)" % ','.join('?' * len(ids)) if ids else ''),
+                            [av, did, '%' + av + '%'] + ids)
+                ex = cur.execute("SELECT id FROM partners WHERE donor_id=? AND TRIM(avreich)=? "
+                                 "AND COALESCE(active,1)<>0", (did, av)).fetchone()
+                if not ex:
+                    amt = ''
+                    r1 = cur.execute("SELECT amount FROM donations WHERE donor_id=? %s ORDER BY date DESC LIMIT 1"
+                                     % ("AND id IN (%s)" % ','.join('?' * len(ids)) if ids else ''),
+                                     [did] + ids).fetchone()
+                    if r1:
+                        amt = r1['amount'] or ''
+                    cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active) VALUES(?,?,?,?,1)",
+                                (did, av, today_iso(), amt))
             tid = b.get('task_id')
             if tid:
                 cur.execute("UPDATE tasks SET done=1 WHERE id=?", (int(tid),))

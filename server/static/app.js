@@ -728,13 +728,14 @@ function cardDetails(d,body){
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
         +'<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>';
-      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
+      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><datalist id="avlist">${allAvreichim().map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
       ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
         <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
-        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><input class="uav1" list="avlist" placeholder="🤝 איזה אברך? (חפש או כתוב חדש)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${d.unclassified.length>1?`<div class="addrow uall"><select id="ucl_cat">${uo}</select>
         <input id="ucl_new" placeholder="שם הייעוד החדש…" style="display:none">
         <input id="ucl_bldg" list="bldgitems" placeholder="🏗️ מה תרם בבניין?" style="display:none">
+        <input id="ucl_av" list="avlist" placeholder="🤝 איזה אברך?" style="display:none">
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
     <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
@@ -774,8 +775,11 @@ function cardDetails(d,body){
   body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
     const b=ln.querySelector('.ugo1'), sx=ln.querySelector('.ucat1'), nx=ln.querySelector('.unew1'), bx=ln.querySelector('.ubldg1');
     const isB=c=>/בנין|בניין/.test(c||'');
+    const ax=ln.querySelector('.uav1');
     if(sx&&nx&&bx){ const shw=()=>{const isNew=sx.value==='__new__';nx.style.display=isNew?'block':'none';
-        bx.style.display=isB(isNew?nx.value:sx.value)?'block':'none';};
+        const c=isNew?nx.value:sx.value;
+        bx.style.display=isB(c)?'block':'none';
+        if(ax) ax.style.display=isIZcat(c)?'block':'none';};
       sx.onchange=()=>{shw();if(sx.value==='__new__')nx.focus();}; nx.oninput=shw; }
     b.onclick=async()=>{
       const s1=ln.querySelector('.ucat1'), n1=ln.querySelector('.unew1');
@@ -788,16 +792,22 @@ function cardDetails(d,body){
         if(!it){toast('כתוב מה הוא תרם בבניין');return;}
         if(!(BUILDING_ITEMS||[]).includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
         cat=cat+' — '+it; }
+      let avv='';
+      if(isIZcat(cat)){ avv=(ax?ax.value:'').trim();
+        if(!avv){toast('בחר אברך או כתוב חדש');if(ax)ax.focus();return;} }
       b.disabled=true;b.textContent='…';
-      const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid]});
+      const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid],avreich:avv});
       if(!r||!r.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
       toast('נשמר ✓'); await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
   });
   const uclSave=document.getElementById('ucl_save');
   const uclSel=document.getElementById('ucl_cat'), uclNew=document.getElementById('ucl_new');
   const uclBd=document.getElementById('ucl_bldg');
+  const uclAv=document.getElementById('ucl_av');
   if(uclSel&&uclNew&&uclBd){ const shwA=()=>{const isNew=uclSel.value==='__new__';uclNew.style.display=isNew?'block':'none';
-      uclBd.style.display=/בנין|בניין/.test(isNew?uclNew.value:uclSel.value)?'block':'none';};
+      const c=isNew?uclNew.value:uclSel.value;
+      uclBd.style.display=/בנין|בניין/.test(c)?'block':'none';
+      if(uclAv) uclAv.style.display=isIZcat(c)?'block':'none';};
     uclSel.onchange=()=>{shwA();if(uclSel.value==='__new__')uclNew.focus();}; uclNew.oninput=shwA; }
   if(uclSave)uclSave.onclick=async()=>{
     const sa=document.getElementById('ucl_cat'), na=document.getElementById('ucl_new');
@@ -810,8 +820,11 @@ function cardDetails(d,body){
       if(!it){toast('כתוב מה הוא תרם בבניין');return;}
       if(!(BUILDING_ITEMS||[]).includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
       cat=cat+' — '+it; }
+    let avv2='';
+    if(isIZcat(cat)){ avv2=(uclAv?uclAv.value:'').trim();
+      if(!avv2){toast('בחר אברך או כתוב חדש');if(uclAv)uclAv.focus();return;} }
     uclSave.disabled=true;uclSave.textContent='שומר…';
-    const r=await api('POST','/api/classify',{donor_id:d.id,category:cat});
+    const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,avreich:avv2});
     if(!r||!r.ok){uclSave.disabled=false;uclSave.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}
     toast('עודכנו '+r.updated+' תרומות ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
@@ -1160,6 +1173,10 @@ const THANKS_FROM='2026-07-01';   // כל תרומה מ-1 ביולי ואילך 
 function needThanks(x){let d=(x.date||'').slice(0,10);if(!d)return true;if(d.length===7)d+='-01';return d>=THANKS_FROM;}
 function unthankedCount(d){return (d.donations||[]).filter(x=>needThanks(x)&&!+x.thanked).length;}
 // הערה חופשית שנרשמה לתרומה (בלי סימוני הייבוא הטכניים)
+// כל האברכים במערכת — לבחירה כשמסווגים יששכר־זבולון
+function allAvreichim(){const s=new Set();DB.forEach(d=>(d.partners||[]).forEach(p=>{const a=(p.avreich||'').trim();if(a)s.add(a);}));
+  return [...s].sort((a,b)=>a.localeCompare(b,'he'));}
+const isIZcat=c=>/יששכר|יש"?ז/.test(c||'');
 function dnNote(x){
   let t=String(x.note||'');
   t=t.replace(/^ייבוא[^·]*(·\s*הוראת קבע)?\s*·?\s*/,'').replace(/^ייבוא\s*2026\s*$/,'').trim();

@@ -116,13 +116,15 @@
   </div>
 </div>
 <datalist id="bldgdl2"></datalist>
+<datalist id="avdl"></datalist>
 <div id="uncl"></div>
 <div id="list"></div>
 <div class="toast" id="toast"></div>
 
 <script>
 const $ = s => document.querySelector(s);
-let DATA = [], FILT = 'pending', CAMPAIGNS = [], BUILDING_ITEMS = [];
+let DATA = [], FILT = 'pending', CAMPAIGNS = [], BUILDING_ITEMS = [], AVREICHIM = [];
+const isIZ=c=>/יששכר|יש"?ז/.test(c||'');
 const CATS = ['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','בניין'];
 const isBldg=c=>/בנין|בניין/.test(c||'');
 // שינוי קוויטל/קטגוריה של התורם ישירות מכאן — בלי להיכנס לכרטיס
@@ -564,6 +566,9 @@ async function loadUncl(){
   if(!BUILDING_ITEMS.length){ try{ BUILDING_ITEMS=await api('GET','/api/building_items'); }catch(e){} }
   const dl=document.getElementById('bldgdl2');
   if(dl) dl.innerHTML=(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('');
+  if(!AVREICHIM.length){ try{ AVREICHIM=await api('GET','/api/avreichim'); }catch(e){} }
+  const adl=document.getElementById('avdl');
+  if(adl) adl.innerHTML=(AVREICHIM||[]).map(x=>`<option value="${esc(x)}">`).join('');
   let r; try{ r=await api('GET','/api/unclassified'+(SRC?('?src='+SRC):'')); }catch(e){ return; }
   const ds=(r&&r.donors)||[]; if(!ds.length){ el.innerHTML=''; return; }
   const opts=CATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
@@ -577,17 +582,20 @@ async function loadUncl(){
         <a class="btn sm ghost" href="/?donor=${g.donor_id}" target="_blank" rel="noopener" style="text-decoration:none;float:left">↗ כרטיס</a></div>
       ${g.items.map(x=>`<div class="uline" data-id="${x.id}">
         <span class="unci">$${x.amount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(x.date)} · ${esc(x.method)}</span>
-        <select class="ucat1">${opts}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgdl2" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
+        <select class="ucat1">${opts}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgdl2" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><input class="uav1" list="avdl" placeholder="🤝 איזה אברך? (חפש או כתוב חדש)" style="display:none"><button class="btn sm ugo1">💾</button></div>`).join('')}
       ${g.items.length>1?`<div class="addrow2 uall"><span class="date">אותו דבר לכל ${g.items.length} החיובים:</span>
-        <select class="uclcat">${opts}</select><input class="unewall" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldgall" list="bldgdl2" placeholder="🏗️ מה תרם בבניין?" style="display:none"><button class="btn sm uclgo">💾 שמור לכולם</button></div>`:''}
+        <select class="uclcat">${opts}</select><input class="unewall" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldgall" list="bldgdl2" placeholder="🏗️ מה תרם בבניין?" style="display:none"><input class="uavall" list="avdl" placeholder="🤝 איזה אברך?" style="display:none"><button class="btn sm uclgo">💾 שמור לכולם</button></div>`:''}
     </div>`).join('')}</div>`;
   el.querySelectorAll('.uclrow').forEach(row=>{
     const g=ds[+row.dataset.i];
     row.querySelectorAll('.uline').forEach(ln=>{
       const b=ln.querySelector('.ugo1');
       const sel1=ln.querySelector('.ucat1'), nw1=ln.querySelector('.unew1'), bd1=ln.querySelector('.ubldg1');
+      const av1=ln.querySelector('.uav1');
       const show1=()=>{const isNew=sel1.value==='__new__';nw1.style.display=isNew?'block':'none';
-        bd1.style.display=isBldg(isNew?nw1.value:sel1.value)?'block':'none';};
+        const c=isNew?nw1.value:sel1.value;
+        bd1.style.display=isBldg(c)?'block':'none';
+        av1.style.display=isIZ(c)?'block':'none';};
       sel1.onchange=()=>{show1();if(sel1.value==='__new__')nw1.focus();};
       nw1.oninput=show1;
       b.onclick=async()=>{
@@ -600,15 +608,22 @@ async function loadUncl(){
           if(!it){toast('כתוב מה הוא תרם בבניין');bd1.focus();return;}
           if(!BUILDING_ITEMS.includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
           cat=cat+' — '+it; }
+        let avv='';
+        if(isIZ(cat)){ avv=av1.value.trim();
+          if(!avv){toast('בחר אברך או כתוב חדש');av1.focus();return;}
+          if(!AVREICHIM.includes(avv)) AVREICHIM.unshift(avv); }
         b.disabled=true;b.textContent='…';
-        const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat,ids:[+ln.dataset.id]});
+        const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat,ids:[+ln.dataset.id],avreich:avv});
         if(!res||!res.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
         toast('נשמר ✓'); loadUncl();};
     });
     const b=row.querySelector('.uclgo');
     const selA=row.querySelector('.uclcat'), nwA=row.querySelector('.unewall'), bdA=row.querySelector('.ubldgall');
+    const avA=row.querySelector('.uavall');
     if(selA&&nwA&&bdA){ const showA=()=>{const isNew=selA.value==='__new__';nwA.style.display=isNew?'block':'none';
-        bdA.style.display=isBldg(isNew?nwA.value:selA.value)?'block':'none';};
+        const c=isNew?nwA.value:selA.value;
+        bdA.style.display=isBldg(c)?'block':'none';
+        if(avA) avA.style.display=isIZ(c)?'block':'none';};
       selA.onchange=()=>{showA();if(selA.value==='__new__')nwA.focus();}; nwA.oninput=showA; }
     if(b) b.onclick=async()=>{
       let cat=selA.value.trim();
@@ -620,8 +635,12 @@ async function loadUncl(){
         if(!it){toast('כתוב מה הוא תרם בבניין');bdA.focus();return;}
         if(!BUILDING_ITEMS.includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
         cat=cat+' — '+it; }
+      let avv2='';
+      if(isIZ(cat)){ avv2=(avA?avA.value:'').trim();
+        if(!avv2){toast('בחר אברך או כתוב חדש');if(avA)avA.focus();return;}
+        if(!AVREICHIM.includes(avv2)) AVREICHIM.unshift(avv2); }
       b.disabled=true;b.textContent='שומר…';
-      const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat});
+      const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat,avreich:avv2});
       if(!res||!res.ok){b.disabled=false;b.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}
       toast('עודכנו '+res.updated+' תרומות אצל '+g.name+' ✓'); loadUncl();};
   });
