@@ -146,7 +146,8 @@ function paintUnknown(){
       <div class="nm">${esc(g.name||'— בלי שם —')}</div>
       <div class="mt">${g.n} חיובים · ${esc(g.src)}${g.dates.length?(' · '+esc(g.dates[0])+(g.dates.length>1?(' – '+esc(g.dates[g.dates.length-1])):'')):''}</div>
       <div class="mt">${g.email?('✉️ '+esc(g.email)+' '):''}${g.phone?('📞 '+esc(g.phone)+' '):''}${g.addr?('📍 '+esc(g.addr)+(g.city?(', '+esc(g.city)):'')):''}</div>
-      <div class="act" style="margin-top:8px"><button class="b open">➕ פתח כרטיס</button><button class="b lnk2">🔗 שייך לתורם קיים</button></div>
+      ${(g.suggest||[]).length?`<div class="mt" style="margin-top:7px">💡 אולי זה: ${(g.suggest||[]).map(sg=>`<button class="b sg" data-sid="${sg.id}">${esc(sg.name)}</button>`).join(' ')}</div>`:''}
+      <div class="act" style="margin-top:8px"><button class="b open">➕ פתח כרטיס</button><button class="b lnk2">🔗 חפש תורם אחר</button></div>
       <div class="frm">
         <div class="row"><input class="ul" placeholder="שם משפחה (עברית)" value="${esc(g.he_last||'')}">
           <input class="uf" placeholder="שם פרטי (עברית)" value="${esc(g.he_first||'')}"></div>
@@ -159,6 +160,10 @@ function paintUnknown(){
   document.querySelectorAll('.ug').forEach(el=>{
     const g=UNK[+el.dataset.i], frm=el.querySelector('.frm'), box=el.querySelector('.srch');
     el.querySelector('.open').onclick=()=>{frm.style.display=frm.style.display==='block'?'none':'block';};
+    el.querySelectorAll('.sg').forEach(sb=>sb.onclick=async()=>{
+      sb.disabled=true; sb.textContent='משייך…';
+      for(const tid of g.tids) await api('PUT','/api/recon/'+encodeURIComponent(tid)+'/donor',{donor_id:+sb.dataset.sid});
+      toast('שויכו '+g.tids.length+' חיובים ✓'); UNK=UNK.filter(x=>x!==g); paintUnknown();});
     el.querySelector('.lnk2').onclick=()=>{box.style.display=box.style.display==='none'?'block':'none';
       if(box.style.display==='block'){const i=box.querySelector('input');i.value=g.name;i.focus();i.oninput();}};
     frm.querySelector('.b').onclick=async()=>{

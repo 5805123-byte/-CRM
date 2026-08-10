@@ -1465,6 +1465,47 @@ def ensure_schema():
     except Exception as e:
         print('  bankwest merge error:', e)
 
+    # סבב שני: כל שאר חיובי בנק ווסט שיש להם כרטיס ולא סווגו — נכנסים לפי הקטגוריה של הכרטיס,
+    # מסומנים "לא סווג", ולכל תורם נפתחת משימה אחת לבדוק עבור מה. הכסף נכנס, הבדיקה נשארת פתוחה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bankwest_merge_v2'").fetchone():
+            dinfo = {r['id']: ((r['category'] or ''), ((r['last'] or '') + ' ' + (r['first'] or '')).strip())
+                     for r in con.execute("SELECT id,category,last,first FROM donors")}
+            q = ("SELECT tid,donor_id,amount,date FROM recon "
+                 "WHERE source LIKE 'Banquest%' AND COALESCE(processed,0)=0 "
+                 "AND COALESCE(status,'settled')='settled' AND donor_id IS NOT NULL")
+            ins = 0
+            perdonor = {}
+            for r in list(con.execute(q)):
+                did = r['donor_id']
+                a = round(float(r['amount'] or 0), 2)
+                diso = _recon_iso(r['date'])
+                if not diso:
+                    continue
+                cat = (dinfo.get(did, ('', ''))[0]) or 'מזדמן'
+                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='Banquest' "
+                               "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, a)).fetchone():
+                    con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                    continue
+                con.execute("DELETE FROM donations WHERE donor_id=? AND substr(COALESCE(date,''),1,7)=? "
+                            "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND method='Banquest' "
+                            "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a))
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                            "VALUES(?,?,?,?,'Banquest','ייבוא בנק ווסט · לא סווג — לבדוק עבור מה',1)",
+                            (did, diso, r['amount'], cat))
+                con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                ins += 1
+                perdonor[did] = perdonor.get(did, 0) + 1
+            for did, n in perdonor.items():
+                note = 'לבדוק עבור מה נגבו %d חיובי בנק ווסט — %s' % (n, dinfo.get(did, ('', ''))[1])
+                if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'verify',?)",
+                                (did, today_iso(), note))
+            con.execute("INSERT INTO seed_flags(name) VALUES('bankwest_merge_v2')")
+            print('  בנק ווסט סבב שני: נכנסו %d חיובים אצל %d תורמים (מסומנים לבדיקה)' % (ins, len(perdonor)))
+    except Exception as e:
+        print('  bankwest v2 error:', e)
+
     # פרנס־יום שאושר מדף החיובים ולא נוצרה לו תזכורת (התזכורת הותנתה בתאריך החיוב במקום בתאריך הלילה)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_task_v1'").fetchone():
@@ -1769,6 +1810,17 @@ def _days(iso):
         return datetime.date(int(y), int(mo), int(d)).toordinal()
     except Exception:
         return 0
+
+
+_FZTAB = str.maketrans('ךםןףץשזצתכ', 'כמנפצססטטק')
+
+
+def _fz(s):
+    """מפתח דמיון לשמות עבריים — בלי אמות קריאה, ועם איחוד אותיות שנשמעות דומה
+    (שטטפלד/סטטפלד, רוזנפלד/רוסנפלד). לאיתור כרטיס קיים למרות איות שונה."""
+    s = re.sub(r'[^א-ת]', '', s or '').translate(_FZTAB)
+    s = re.sub(r'[אהעוי]', '', s)
+    return re.sub(r'(.)\1+', r'\1', s)
 
 
 def _lat(s):
@@ -2143,6 +2195,7 @@ class H(BaseHTTPRequestHandler):
                     if not g[f] and r[f]:
                         g[f] = r[f]
             out = []
+            dall = [dict(r) for r in con.execute("SELECT id,last,first FROM donors")]
             for g in grp.values():
                 g['src'] = ' · '.join(sorted(g['src']))
                 g['total'] = round(g['total'], 2)
@@ -2155,6 +2208,17 @@ class H(BaseHTTPRequestHandler):
                         g['he_last'] = g['he_first'] = ''
                 else:
                     g['he_last'] = g['he_first'] = ''
+                # הצעות: כרטיסים קיימים עם שם משפחה דומה — קליק אחד לשיוך במקום חיפוש
+                g['suggest'] = []
+                hk = _fz(g.get('he_last') or '')
+                if len(hk) >= 3:
+                    for d in dall:
+                        dk = _fz(d['last'])
+                        if len(dk) >= 3 and (dk == hk or dk in hk or hk in dk):
+                            g['suggest'].append({'id': d['id'],
+                                                 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip()})
+                        if len(g['suggest']) >= 4:
+                            break
                 out.append(g)
             out.sort(key=lambda x: -x['total'])
             con.close()
