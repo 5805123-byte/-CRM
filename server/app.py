@@ -1621,6 +1621,54 @@ def ensure_schema():
     except Exception as e:
         print('  parnes task error:', e)
 
+    # תיקון פרנס v2 — שני דברים:
+    # א) לילות שנשמרו עם תאריך לועזי מהשנה הלא נכונה (חושב לפי "המופע הבא" ולא לפי השנה שנבחרה)
+    # ב) לילה שכבר עבר ולא סומן כבוצע — צריך תזכורת דווקא עכשיו, לא לדלג עליו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_task_v2'").fetchone():
+            nfix = nadd = 0
+            q = ("SELECT p.id,p.donor_id,p.date_text,p.hyear,p.night_date,p.paid,p.kind,d.last,d.first "
+                 "FROM parnes p JOIN donors d ON d.id=p.donor_id "
+                 "WHERE COALESCE(p.status,'confirmed')<>'suggested'")
+            today = today_iso()
+            floor = (datetime.date.fromisoformat(today) - datetime.timedelta(days=60)).isoformat()
+            for r in list(con.execute(q)):
+                nd = r['night_date'] or ''
+                if r['hyear']:
+                    g = heb_greg_year(r['date_text'] or '', r['hyear'])
+                    if g and g.isoformat() != nd:      # התאריך לא תואם לשנה שנבחרה — מתקנים
+                        nd = g.isoformat()
+                        con.execute("UPDATE parnes SET night_date=? WHERE id=?", (nd, r['id']))
+                        nfix += 1
+                if not nd:
+                    continue
+                nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                note = '🌙 לעשות פרנס לילה — ' + nm
+                ex = con.execute("SELECT id,due_date FROM tasks WHERE donor_id=? AND kind='parnes' "
+                                 "AND note LIKE ? AND COALESCE(done,0)=0",
+                                 (r['donor_id'], note + '%')).fetchone()
+                if nd >= today:
+                    due = (datetime.date.fromisoformat(nd) - datetime.timedelta(days=7)).isoformat()
+                    if due < today:
+                        due = today
+                elif nd >= floor:
+                    due = today                        # הלילה כבר עבר ולא סומן — מזכירים היום
+                else:
+                    continue                           # לילה ישן — לא מציפים את הרשימה
+                full = note + ('' if nd >= today else ' (הלילה היה ב-' + nd + ')')
+                if ex:
+                    if ex['due_date'] != due:     # התזכורת נקבעה לפי תאריך שגוי — מיישרים
+                        con.execute("UPDATE tasks SET due_date=?, note=? WHERE id=?", (due, full, ex['id']))
+                        nfix += 1
+                    continue
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (r['donor_id'], due, 'parnes', full))
+                nadd += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_task_v2')")
+            print('  פרנס v2: תוקנו %d תאריכי לילה, נוספו %d תזכורות' % (nfix, nadd))
+    except Exception as e:
+        print('  parnes v2 error:', e)
+
     # איות שמות מקובל — גם בקוויטל שכבר נשמר (אדינא -> עדינה וכו')
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='he_spell_v1'").fetchone():
@@ -2147,7 +2195,7 @@ def recon_apply(cur, tid, b):
             if _ngd:
                 _pdue = (_ngd - datetime.timedelta(days=7)).isoformat()
             _pdue = _pdue or week_before(_dtext) or today_iso()
-            if _pdue < today_iso(): _pdue = today_iso()
+            if _pdue < today_iso(): _pdue = today_iso()   # שבוע-לפני כבר עבר (או שהלילה עצמו עבר) — להיום
             _note = '🌙 לעשות פרנס לילה — ' + nm
             if not cur.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND note=? AND COALESCE(done,0)=0",
                                (did, _note)).fetchone():
