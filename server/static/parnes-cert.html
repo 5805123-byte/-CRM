@@ -59,10 +59,11 @@
 </div></div>
 
 <div class="noprint">
+  <button id="sendBtn" style="background:#25D366">📤 שלח לתורם (תמונה)</button>
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
   <button class="g" id="addBtn">➕ הוסף שם</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
-  <div class="tip">מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
+  <div class="tip">"📤 שלח לתורם" שולח את התעודה כתמונה — בטלפון ישר לוואטסאפ, במחשב מועתקת להדבקה.<br>מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
 </div>
 
 <script>
@@ -145,6 +146,36 @@ if(KIND==='coffee' || KIND==='breakfast'){
   addPair(q.get('names')||'');
   $('addBtn').onclick=()=>addPair('');
 }
+
+// ----- שליחת התעודה לתורם כתמונה (מהתוכן שעל המסך, כולל עריכות) -----
+function certText(){
+  const dt=($('c_date')?$('c_date').innerText:'').trim();
+  let nm='';
+  if(KIND==='coffee'||KIND==='breakfast'){ nm=($('c_names')?$('c_names').innerText:'').trim(); }
+  else { nm=[...document.querySelectorAll('#pairs .names')].map(e=>e.innerText.trim()).filter(Boolean).join('\n'); }
+  return {date:dt, names:nm};
+}
+$('sendBtn').onclick=async()=>{
+  const b=$('sendBtn'), t0=b.textContent;
+  const {date,names}=certText();
+  if(!names.trim()){ alert('אין שמות בתעודה'); return; }
+  b.disabled=true; b.textContent='מכין את התמונה…';
+  const url='/cert.png?'+new URLSearchParams({kind:KIND,date,names}).toString();
+  let blob=null;
+  try{ blob=await (await fetch(url)).blob(); }
+  catch(e){ b.disabled=false; b.textContent=t0; window.open(url,'_blank'); return; }
+  const fname='תעודת פרנס'+(date?(' — '+date):'')+'.png';
+  const cap='תעודת פרנס — כולל חצות 🕯️'+(date?('  ·  '+date):'');
+  b.disabled=false; b.textContent=t0;
+  try{ const file=new File([blob],fname,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text:cap}); return; } }
+  catch(e){ if(e&&e.name==='AbortError') return; }
+  try{ if(window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+      alert('התמונה הועתקה — פתח וואטסאפ ווב או מייל והדבק (Ctrl+V)'); return; } }catch(e){}
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+};
 
 window.addEventListener('resize', fit);
 window.addEventListener('load', fit);            // אחרי טעינת רקע הבלאנק
