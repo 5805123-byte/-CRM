@@ -557,10 +557,13 @@ if(_ms)_ms.onclick=async()=>{
 // שאלות "עבור מה" — כאן, לא במשימות
 async function loadUncl(){
   const el=document.getElementById('uncl'); if(!el) return;
+  if(!CAMPAIGNS.length){ try{ CAMPAIGNS=await api('GET','/api/campaigns'); }catch(e){} }   // כל המגביות, לא רק הבסיס
   let r; try{ r=await api('GET','/api/unclassified'+(SRC?('?src='+SRC):'')); }catch(e){ return; }
   const ds=(r&&r.donors)||[]; if(!ds.length){ el.innerHTML=''; return; }
-  const opts=CATS.concat(CAMPAIGNS||[]).filter((v,i,a)=>a.indexOf(v)===i)
-    .map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('');
+  const opts=CATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
+    +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'
+      +CAMPAIGNS.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
+    +'<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>';
   el.innerHTML=`<div class="grp"><div class="gname" style="direction:rtl;text-align:right">❓ ${ds.length} תורמים — לא ידוע עבור מה נגבה</div>
     <div class="gsum">סה"כ $${r.total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · נכנס לכרטיס, רק חסרה התווית</div>
     ${ds.map((g,i)=>`<div class="uclrow" data-i="${i}">
@@ -577,7 +580,9 @@ async function loadUncl(){
     row.querySelectorAll('.uline').forEach(ln=>{
       const b=ln.querySelector('.ugo1');
       b.onclick=async()=>{
-        const cat=ln.querySelector('.ucat1').value.trim();
+        let cat=ln.querySelector('.ucat1').value.trim();
+        if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
+          if(cat&&!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
         if(!cat){toast('בחר עבור מה');return;}
         b.disabled=true;b.textContent='…';
         const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat,ids:[+ln.dataset.id]});
@@ -586,7 +591,9 @@ async function loadUncl(){
     });
     const b=row.querySelector('.uclgo');
     if(b) b.onclick=async()=>{
-      const cat=row.querySelector('.uclcat').value.trim();
+      let cat=row.querySelector('.uclcat').value.trim();
+      if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
+        if(cat&&!CAMPAIGNS.includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
       if(!cat){toast('בחר עבור מה');return;}
       b.disabled=true;b.textContent='שומר…';
       const res=await api('POST','/api/classify',{donor_id:g.donor_id,category:cat});
@@ -594,7 +601,7 @@ async function loadUncl(){
       toast('עודכנו '+res.updated+' תרומות אצל '+g.name+' ✓'); loadUncl();};
   });
 }
-load(); loadUncl();
+load().then(loadUncl);
 </script>
 </body>
 </html>

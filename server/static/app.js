@@ -685,7 +685,7 @@ function cardDetails(d,body){
     const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
     const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
-      <div class="addrow"><select class="gvcat">${RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}" ${c===g.cat?'selected':''}>${esc(c)||'— עבור מה —'}</option>`).join('')}</select></div>
+      <div class="addrow"><select class="gvcat">${RCATS.map(c=>`<option value="${esc(c)}" ${c===g.cat?'selected':''}>${esc(c)||'— עבור מה —'}</option>`).join('')+((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}" ${c===g.cat?'selected':''}>${esc(c)}</option>`).join('')+'</optgroup>'):'')}</select></div>
       <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: שלושה אברכים ביחד)" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
       <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label></div>`:'';
@@ -725,7 +725,9 @@ function cardDetails(d,body){
     ${izSummaryHTML(d)}
     ${give}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 התחייב · טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
-    ${(d.unclassified||[]).length?(()=>{const uo=RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('');
+    ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
+        +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
+        +'<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>';
       return `<div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
       ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
         <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
@@ -741,7 +743,7 @@ function cardDetails(d,body){
         <button class="del ruledel" data-amt="${r.amount}" title="מחק כלל">🗑</button></div>`).join('')}</div>
       <div class="addrow" style="margin-top:6px">
         <input id="rl_amt" type="number" step="0.01" placeholder="סכום" style="max-width:110px">
-        <select id="rl_cat">${RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}">${esc(c)||'— עבור מה —'}</option>`).join('')}</select></div>
+        <select id="rl_cat">${RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— עבור מה —'}</option>`).join('')+((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')}</select></div>
       <div class="addrow" style="margin-top:6px">
         <input id="rl_note" placeholder="פירוט (למשל: מעקות וכיסוי רדיאטורים)">
         <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></div>
@@ -770,7 +772,9 @@ function cardDetails(d,body){
   body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
     const b=ln.querySelector('.ugo1');
     b.onclick=async()=>{
-      const cat=ln.querySelector('.ucat1').value.trim();
+      let cat=ln.querySelector('.ucat1').value.trim();
+      if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
+        if(cat&&!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
       if(!cat){toast('בחר עבור מה');return;}
       b.disabled=true;b.textContent='…';
       const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid]});
@@ -779,7 +783,9 @@ function cardDetails(d,body){
   });
   const uclSave=document.getElementById('ucl_save');
   if(uclSave)uclSave.onclick=async()=>{
-    const cat=document.getElementById('ucl_cat').value.trim();
+    let cat=document.getElementById('ucl_cat').value.trim();
+    if(cat==='__new__'){ cat=(prompt('עבור מה? (טקסט חופשי)')||'').trim();
+      if(cat&&!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
     if(!cat){toast('בחר עבור מה');return;}
     uclSave.disabled=true;uclSave.textContent='שומר…';
     const r=await api('POST','/api/classify',{donor_id:d.id,category:cat});
