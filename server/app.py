@@ -1390,6 +1390,81 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # מיזוג בנק ווסט: כל חיוב שטרם אושר, מסווג לפי כל הנתונים שיש — רשימות החגים,
+    # דרגת יששכר־זבולון, דוח הקבועים והוראות הקבע. מה שלא מזוהה בוודאות נשאר לאישור ידני.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bankwest_merge_v1'").fetchone():
+            camp = {}
+            try:
+                with open(os.path.join(HERE, 'campaign_lists.json'), encoding='utf-8') as f:
+                    for L in json.load(f).get('lists', []):
+                        for x in campaign_match(con, L['rows'], L.get('from', ''), L.get('to', '')):
+                            if x['donor_id']:
+                                camp.setdefault(x['donor_id'], []).append((x['amount'], L['label']))
+            except Exception as e:
+                print('  bankwest: אין רשימות חגים —', e)
+            subs = {}
+            try:
+                with open(os.path.join(HERE, 'donations_2026_seed.json'), encoding='utf-8') as f:
+                    for r in json.load(f):
+                        subs.setdefault(r['donor_id'], []).append(
+                            (round(float(r['amount']), 2), r.get('category') or 'קבוע'))
+            except Exception:
+                pass
+            dinfo = {r['id']: (r['tier'] or '', r['category'] or '')
+                     for r in con.execute("SELECT id,tier,category FROM donors")}
+            q = ("SELECT tid,donor_id,amount,date,recurring FROM recon "
+                 "WHERE source LIKE 'Banquest%' AND COALESCE(processed,0)=0 "
+                 "AND COALESCE(status,'settled')='settled' AND donor_id IS NOT NULL")
+            ins = repl = left = 0
+            by = {}
+            for r in list(con.execute(q)):
+                did = r['donor_id']
+                a = round(float(r['amount'] or 0), 2)
+                diso = _recon_iso(r['date'])
+                if not diso:
+                    left += 1
+                    continue
+                tier, dcat = dinfo.get(did, ('', ''))
+                cat = why = ''
+                for amt, lbl in camp.get(did, []):
+                    if abs(amt - a) < 0.01:
+                        cat, why = lbl, lbl
+                        break
+                if not cat:
+                    for amt, c in subs.get(did, []):
+                        if abs(amt - a) < 0.01:
+                            cat, why = c, 'דוח הקבועים'
+                            break
+                if not cat and r['recurring'] and 'יששכר' in tier:
+                    cat, why = 'יששכר־זבולון', 'דרגת יששכר־זבולון'
+                if not cat and r['recurring']:
+                    cat, why = (dcat or 'קבוע'), 'הוראת קבע'
+                if not cat:
+                    left += 1
+                    continue
+                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='Banquest' "
+                               "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, a)).fetchone():
+                    con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                    continue                      # כבר רשומה — רק סוגרים את השורה בתור
+                # שורת הסיכום החודשית מדוח הקבועים מוחלפת בחיוב האמיתי — אותו כסף, תאריך מדויק
+                n = con.execute("DELETE FROM donations WHERE donor_id=? AND substr(COALESCE(date,''),1,7)=? "
+                                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND method='Banquest' "
+                                "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).rowcount
+                repl += max(0, n)
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                            "VALUES(?,?,?,?,'Banquest',?,1)",
+                            (did, diso, r['amount'], cat, 'ייבוא בנק ווסט · ' + why))
+                con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                ins += 1
+                by[why] = by.get(why, 0) + 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('bankwest_merge_v1')")
+            print('  מיזוג בנק ווסט: נכנסו %d, הוחלפו %d שורות סיכום, נשארו לאישור %d' % (ins, repl, left))
+            for k, v in sorted(by.items(), key=lambda x: -x[1]):
+                print('      %-24s %d' % (k, v))
+    except Exception as e:
+        print('  bankwest merge error:', e)
+
     # פרנס־יום שאושר מדף החיובים ולא נוצרה לו תזכורת (התזכורת הותנתה בתאריך החיוב במקום בתאריך הלילה)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_task_v1'").fetchone():
@@ -2040,6 +2115,51 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/audit/unknown':
+            # תורמים שמופיעים בחיובים ואין להם כרטיס — מקובצים לפי אדם, לא לפי חיוב
+            con = db()
+            try:
+                import gmail_intake as _giu
+            except Exception:
+                _giu = None
+            grp = {}
+            for r in con.execute("SELECT tid,first,last,amount,date,email,phone,addr,city,state,zip,source "
+                                 "FROM recon WHERE donor_id IS NULL AND COALESCE(processed,0)=0 "
+                                 "AND COALESCE(status,'settled')='settled'"):
+                em = (emails_of(r['email']) or [''])[0]
+                key = em or _lat((r['first'] or '') + ' ' + (r['last'] or '')) or r['tid']
+                g = grp.setdefault(key, {'name': ((r['first'] or '') + ' ' + (r['last'] or '')).strip(),
+                                         'email': em, 'phone': r['phone'] or '', 'addr': r['addr'] or '',
+                                         'city': r['city'] or '', 'state': r['state'] or '', 'zip': r['zip'] or '',
+                                         'first': r['first'] or '', 'last': r['last'] or '',
+                                         'n': 0, 'total': 0.0, 'src': set(), 'tids': [], 'dates': []})
+                g['n'] += 1
+                g['total'] += float(r['amount'] or 0)
+                g['src'].add('בנק ווסט' if 'Banquest' in (r['source'] or '')
+                             else ('PayPal' if 'PayPal' in (r['source'] or '') else 'אוטרייז'))
+                g['tids'].append(r['tid'])
+                g['dates'].append(_recon_iso(r['date']) or r['date'])
+                for f in ('phone', 'addr', 'city', 'zip'):
+                    if not g[f] and r[f]:
+                        g[f] = r[f]
+            out = []
+            for g in grp.values():
+                g['src'] = ' · '.join(sorted(g['src']))
+                g['total'] = round(g['total'], 2)
+                g['dates'] = sorted(d for d in g['dates'] if d)
+                if _giu:
+                    try:
+                        g['he_last'] = _giu._he_name(g['last'])
+                        g['he_first'] = _giu._he_name(g['first'])
+                    except Exception:
+                        g['he_last'] = g['he_first'] = ''
+                else:
+                    g['he_last'] = g['he_first'] = ''
+                out.append(g)
+            out.sort(key=lambda x: -x['total'])
+            con.close()
+            return self._send(200, {'ok': True, 'groups': out,
+                                    'total': round(sum(x['total'] for x in out), 2)})
         if self.path.split('?')[0] == '/api/audit/charges':
             # הצלבה של כל החיובים שטרם אושרו מול דוח הקבועים, רשימות החגים והוראות הקבע
             con = db()
@@ -2721,6 +2841,32 @@ class H(BaseHTTPRequestHandler):
                          b.get('amount',''), today_iso(), 'ידני', b.get('region',''), b.get('country',''), norm_zip(b.get('zip',''), b.get('region','')), b.get('city','')))
             con.commit(); did = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': did})
+        if self.path == '/api/audit/newdonor':
+            # פתיחת כרטיס תורם מתוך חיובים שאין להם כרטיס, ושיוך כל החיובים שלו אליו
+            tids = b.get('tids') or []
+            last = (b.get('last') or '').strip()
+            if not last:
+                return self._send(400, {'error': 'last required'})
+            con = db(); cur = con.cursor()
+            cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,
+                                              category,created,source,notes)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,'חיובים לא מזוהים',?)""",
+                        (last, (b.get('first') or '').strip(), (b.get('english') or '').strip(),
+                         (b.get('phone') or ''), (b.get('email') or '').strip().lower(),
+                         (b.get('addr') or ''), (b.get('city') or ''), (b.get('state') or ''),
+                         (b.get('zip') or ''), (b.get('category') or 'מזדמן'), today_iso(),
+                         (b.get('notes') or '')))
+            did = cur.lastrowid
+            n = 0
+            for t in tids:
+                n += cur.execute("UPDATE recon SET donor_id=? WHERE tid=? AND donor_id IS NULL",
+                                 (did, t)).rowcount
+            em = (b.get('email') or '').strip().lower()
+            if em:
+                n += cur.execute("""UPDATE recon SET donor_id=? WHERE lower(TRIM(email))=?
+                                    AND TRIM(COALESCE(email,''))<>'' AND donor_id IS NULL""", (did, em)).rowcount
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'donor_id': did, 'linked': n})
         if self.path == '/api/import/campaign':
             # ייבוא רשימת מגבית שלמה: התאמה לתורם, לחיוב שטרם אושר, והכנסת התרומה במקומה
             rows = b.get('rows') or []

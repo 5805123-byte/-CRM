@@ -40,12 +40,25 @@
   .toast.show{opacity:1}
   .hint{font-size:.79rem;color:var(--muted);margin-top:8px}
   a.lnk{color:var(--accent);font-weight:700}
+  .tabs{display:flex;gap:7px;margin:4px 0 12px}
+  .tb{flex:1;border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:99px;
+    padding:9px 12px;font-size:.87rem;font-weight:800;cursor:pointer;font-family:inherit}
+  .tb.on{background:var(--accent);color:#fff;border-color:transparent}
+  .ug{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;background:#fff}
+  .ug .nm{font-weight:800;font-size:1rem;direction:ltr;text-align:right}
+  .ug .mt{color:var(--muted);font-size:.79rem;margin-top:3px}
+  .ug .amt{float:left;font-weight:800;color:var(--accent);font-size:1.05rem}
+  .frm{display:none;margin-top:9px;border-top:1px dashed var(--line);padding-top:9px}
+  .frm .row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px}
+  .frm input,.frm select{flex:1;min-width:120px;padding:7px 9px;border:1px solid var(--line);
+    border-radius:8px;font-family:inherit;font-size:.86rem}
 </style>
 </head>
 <body>
 <h1>🔎 אימות חיובים מול כל הרשימות</h1>
 <div class="sub">כל חיוב בבנק ווסט ובאוטרייז שטרם אושר, מוצלב מול <b>דוח הקבועים</b>, <b>רשימות פורים ופסח תשפ״ו</b>
 והוראות הקבע. מה שלא מוסבר — כאן לבדיקה.</div>
+<div class="tabs"><button class="tb on" data-t="charges">🔎 אימות חיובים</button><button class="tb" data-t="unknown">❓ תורמים שלא מוכרים לנו</button></div>
 <div id="head"></div>
 <div id="out"></div>
 <div class="toast" id="toast"></div>
@@ -121,11 +134,62 @@ function wire(){
   });
 }
 
-(async()=>{
-  $('#out').innerHTML='<div class="box" style="text-align:center;color:var(--muted)">בודק את כל החיובים מול הרשימות…</div>';
-  const r=await api('GET','/api/audit/charges');
-  ROWS=(r&&r.rows)||[]; paint();
-})();
+let TAB='charges', UNK=[];
+function paintUnknown(){
+  $('#head').innerHTML='';
+  const tot=UNK.reduce((s,g)=>s+g.total,0);
+  $('#out').innerHTML=`<div class="box">
+    <div class="counts"><div class="cnt nocard">❓ ${UNK.length} אנשים · ${UNK.reduce((s,g)=>s+g.n,0)} חיובים
+      <small>$${tot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · אין להם כרטיס תורם</small></div></div>
+    ${UNK.map((g,i)=>`<div class="ug" data-i="${i}">
+      <span class="amt">$${g.total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      <div class="nm">${esc(g.name||'— בלי שם —')}</div>
+      <div class="mt">${g.n} חיובים · ${esc(g.src)}${g.dates.length?(' · '+esc(g.dates[0])+(g.dates.length>1?(' – '+esc(g.dates[g.dates.length-1])):'')):''}</div>
+      <div class="mt">${g.email?('✉️ '+esc(g.email)+' '):''}${g.phone?('📞 '+esc(g.phone)+' '):''}${g.addr?('📍 '+esc(g.addr)+(g.city?(', '+esc(g.city)):'')):''}</div>
+      <div class="act" style="margin-top:8px"><button class="b open">➕ פתח כרטיס</button><button class="b lnk2">🔗 שייך לתורם קיים</button></div>
+      <div class="frm">
+        <div class="row"><input class="ul" placeholder="שם משפחה (עברית)" value="${esc(g.he_last||'')}">
+          <input class="uf" placeholder="שם פרטי (עברית)" value="${esc(g.he_first||'')}"></div>
+        <div class="row"><select class="uc"><option>מזדמן</option><option>קבוע</option><option>חד-פעמי</option></select>
+          <button class="b" style="background:var(--accent);color:#fff;border-color:transparent" >💾 צור ושייך ${g.n} חיובים</button></div>
+      </div>
+      <div class="srch" style="display:none"><input placeholder="🔍 חפש תורם קיים…"><div class="res"></div></div>
+    </div>`).join('')||'<div style="text-align:center;padding:24px;color:var(--muted)">🎉 לכל החיובים יש כרטיס</div>'}
+  </div>`;
+  document.querySelectorAll('.ug').forEach(el=>{
+    const g=UNK[+el.dataset.i], frm=el.querySelector('.frm'), box=el.querySelector('.srch');
+    el.querySelector('.open').onclick=()=>{frm.style.display=frm.style.display==='block'?'none':'block';};
+    el.querySelector('.lnk2').onclick=()=>{box.style.display=box.style.display==='none'?'block':'none';
+      if(box.style.display==='block'){const i=box.querySelector('input');i.value=g.name;i.focus();i.oninput();}};
+    frm.querySelector('.b').onclick=async()=>{
+      const last=frm.querySelector('.ul').value.trim();
+      if(!last){toast('חובה שם משפחה');return;}
+      const r=await api('POST','/api/audit/newdonor',{last,first:frm.querySelector('.uf').value.trim(),
+        english:g.name,email:g.email,phone:g.phone,addr:g.addr,city:g.city,state:g.state,zip:g.zip,
+        category:frm.querySelector('.uc').value,tids:g.tids,notes:'נפתח מחיובים לא מזוהים'});
+      if(!r||!r.ok){toast('היצירה נכשלה');return;}
+      toast('נוצר כרטיס · שויכו '+r.linked+' חיובים ✓');
+      UNK=UNK.filter(x=>x!==g); paintUnknown();};
+    const inp=box.querySelector('input'), res=box.querySelector('.res'); let t;
+    inp.oninput=()=>{clearTimeout(t);t=setTimeout(async()=>{
+      const q=inp.value.trim(); if(q.length<2){res.innerHTML='';return;}
+      const d=await api('GET','/api/pubsearch?q='+encodeURIComponent(q));
+      res.innerHTML=(d||[]).map(x=>`<div data-id="${x.id}">${esc(x.last)} ${esc(x.first||'')}</div>`).join('')||'<div style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('[data-id]').forEach(a=>a.onclick=async()=>{
+        for(const tid of g.tids) await api('PUT','/api/recon/'+encodeURIComponent(tid)+'/donor',{donor_id:+a.dataset.id});
+        toast('שויכו '+g.tids.length+' חיובים ל'+a.textContent.trim()+' ✓');
+        UNK=UNK.filter(x=>x!==g); paintUnknown();});
+    },250);};
+  });
+}
+async function loadTab(){
+  $('#out').innerHTML='<div class="box" style="text-align:center;color:var(--muted)">טוען…</div>';
+  if(TAB==='charges'){ const r=await api('GET','/api/audit/charges'); ROWS=(r&&r.rows)||[]; paint(); }
+  else { const r=await api('GET','/api/audit/unknown'); UNK=(r&&r.groups)||[]; paintUnknown(); }
+}
+document.querySelectorAll('.tb').forEach(b=>b.onclick=()=>{
+  TAB=b.dataset.t; document.querySelectorAll('.tb').forEach(x=>x.classList.toggle('on',x===b)); loadTab();});
+loadTab();
 </script>
 </body>
 </html>
