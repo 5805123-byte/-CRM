@@ -437,7 +437,8 @@ def ensure_schema():
             k = con.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
             d = con.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
             if k and d:
-                for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
+                for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners',
+                      'transactions','building','donor_rules'):
                     try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
                     except Exception: pass
                 try: con.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))

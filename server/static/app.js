@@ -747,7 +747,8 @@ function cardDetails(d,body){
         <input id="mg_q" placeholder="🔍 חפש את הכרטיס הכפול למזג לכאן…" autocomplete="off">
         <div id="mg_res" class="dpres"></div>
         <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
-    <div class="sec" style="text-align:center"><button class="tinydel" id="f_delete">מחיקת תורם לצמיתות</button></div>`;
+    <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
+  wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
@@ -813,18 +814,20 @@ function cardDetails(d,body){
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
   document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
   renderPhones(d); renderEmails(d);
-  // מחיקה בשתי לחיצות (confirm של הדפדפן חסום לפעמים באפליקציה המותקנת)
-  const delBtn=document.getElementById('f_delete'); let delArmed=false, delTimer=null;
+}
+
+// מחיקת תורם — חלון אישור ברור, ודיווח אמיתי אם נכשל
+async function wireDelete(d, body){
+  const delBtn=document.getElementById('f_delete'); if(!delBtn) return;
   delBtn.onclick=async()=>{
-    if(!delArmed){
-      delArmed=true; delBtn.textContent='⚠️ בטוח? לחץ שוב כדי למחוק לצמיתות'; delBtn.classList.add('armed');
-      delTimer=setTimeout(()=>{delArmed=false;delBtn.textContent='מחיקת תורם לצמיתות';delBtn.classList.remove('armed');},20000);
-      return;
-    }
-    clearTimeout(delTimer); delBtn.disabled=true; delBtn.textContent='מוחק…';
-    let r=null; try{r=await api('DELETE','/api/donor/'+d.id);}catch(e){r=null;}
-    if(!r||!r.ok){   // המחיקה נכשלה — מחזירים את הכפתור ומדווחים במקום להיראות כאילו הצליח
-      delBtn.disabled=false; delArmed=false; delBtn.textContent='מחיקת תורם לצמיתות'; delBtn.classList.remove('armed');
+    const nm=((d.last||'')+' '+(d.first||'')).trim();
+    const n=(d.donations||[]).length, p=(d.parnes||[]).length, av=(d.partners||[]).length;
+    const det=[n?n+' תרומות':'',p?p+' פרנס':'',av?av+' אברכים':''].filter(Boolean).join(' · ');
+    if(!await uiConfirm('למחוק לצמיתות את "'+nm+'"?\n'+(det?('יימחקו גם: '+det+'\n'):'')+'אי אפשר לבטל את זה.')) return;
+    delBtn.disabled=true; delBtn.textContent='מוחק…';
+    let r=null; try{ r=await api('DELETE','/api/donor/'+d.id); }catch(e){ r={ok:false,detail:String(e)}; }
+    if(!r||!r.ok){
+      delBtn.disabled=false; delBtn.textContent='🗑 מחיקת התורם לצמיתות';
       toast('המחיקה נכשלה'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):' — נסה שוב'));
       return;
     }
@@ -833,12 +836,6 @@ function cardDetails(d,body){
     toast('התורם נמחק ✓'); render();
   };
 }
-// מה בדיוק עבר במיזוג — כדי שלעולם לא יהיה ספק לאן נעלמו הנתונים
-const MOVEDHE={donations:'תרומות',prayers:'שמות קוויטל',parnes:'פרנס יום',tasks:'משימות',
-  contacts_log:'רישומי קשר',partners:'אברכים',transactions:'חיובים',pledges:'התחייבויות',
-  recon:'שורות חיוב',building:'בניין',intake:'בקשות מהאתר'};
-function movedTxt(m){const p=Object.entries(m||{}).map(([k,v])=>v+' '+(MOVEDHE[k]||k));
-  return p.length?('· עברו: '+p.join(', ')):'· לא היו רשומות בכרטיס הכפול';}
 function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
 // כמה אימיילים לאותו תורם — מופרדים בפסיק / קו נטוי / רווח
 function splitEmails(s){return String(s||'').split(/[,;/\s]+/).map(x=>x.trim()).filter(x=>x.includes('@'));}
