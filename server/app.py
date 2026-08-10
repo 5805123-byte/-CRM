@@ -1390,6 +1390,26 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # בקשות קוויטל שנשמרו עם אנגלית בתוכן — פענוח מחדש, כדי שלא תישאר מילה אחת באנגלית
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='intake_he_v1'").fetchone():
+            import gmail_intake as _gih
+            nfix = 0
+            rows = list(con.execute("""SELECT id,body,names FROM intake
+                                       WHERE names GLOB '*[A-Za-z]*' AND COALESCE(body,'')<>''"""))
+            for r in rows:
+                try:
+                    ne = _gih._parse_names(r['body'] or '')
+                except Exception:
+                    continue
+                if ne.strip() and ne.strip() != (r['names'] or '').strip():
+                    con.execute("UPDATE intake SET names=? WHERE id=?", (ne.strip(), r['id']))
+                    nfix += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('intake_he_v1')")
+            print(f'  בקשות קוויטל שתורגמו לעברית: {nfix} מתוך {len(rows)}')
+    except Exception as e:
+        print('  intake he error:', e)
+
     # שנים עבריות שנשמרו עם גרשיים עבריים (תשפ״ו) — מיישרים ל-" כמו בכל הרשימות במסך,
     # אחרת הבורר לא מזהה את השנה שנשמרה וקופץ לשנה הראשונה ברשימה (תשפ"ה)
     try:

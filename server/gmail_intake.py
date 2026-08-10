@@ -407,8 +407,16 @@ def _he_name(s):
     return ''.join(out)
 
 
+# בקשות שגוברות על מילת מפתח כללית — "להציל את הנישואין" זה שלום בית, לא זיווג
+_REQ_OVERRIDE = [
+    (re.compile(r"divorce|shalom\s*bay|peace\s+(at|in)\s+(the\s+)?home|"
+                r"save\s+(my|our|the|his|her)\s+marriage|marriage.{0,20}brink", re.I),
+     'לשלום בית', {'לזיווג הגון'}),
+]
+
+
 def _req_he(request):
-    """נוסח בקשה בעברית — מיפוי מלא, אחרת מיפוי חלקי למילות מפתח, אחרת הטקסט כמו שהוא."""
+    """נוסח בקשה בעברית — מיפוי מלא, אחרת מיפוי חלקי למילות מפתח, אחרת ריק (בלי אנגלית)."""
     req = (request or '').strip()
     if not req:
         return ''
@@ -422,8 +430,106 @@ def _req_he(request):
         if kw in low:
             if he not in parts:
                 parts.append(he)
+    for rx, he, drop in _REQ_OVERRIDE:
+        if rx.search(req):
+            parts = [p for p in parts if p not in drop]
+            if he not in parts:
+                parts.insert(0, he)
+    # נוסח מפורט בולע את הכללי — "להצלחה בעסקים" כבר כולל "להצלחה"
+    for wide, narrow in (('לנחת מהילדים', 'לזרע של קיימא'), ('להצלחה בעסקים', 'להצלחה'),
+                         ('לבריאות איתנה', 'לרפואה שלמה'), ('לכל הברכות', 'לברכה')):
+        if wide in parts and narrow in parts:
+            parts.remove(narrow)
     # לא נשאיר אנגלית: אם לא זוהתה בקשה — לא מוסיפים טקסט (רק השם יופיע)
     return ' ו'.join(parts)
+
+
+# "husband's name: Eliyahu Aryeh ben Bracha" — קרוב משפחה ששמו נכתב בתוך הבקשה
+_REL_HE = {'husband': 'בעלה', 'wife': 'אשתו', 'son': 'בנה', 'daughter': 'בתה',
+           'father': 'אביה', 'mother': 'אמה', 'brother': 'אחיה', 'sister': 'אחותה'}
+_RELNAME = re.compile(r"\b(husband|wife|son|daughter|father|mother|brother|sister)\s*[’'`]?s?\s*"
+                      r"(?:name)?\s*[:\-]\s*([A-Za-z][A-Za-z'’\- ]{1,60})", re.I)
+
+
+def _he_person(s):
+    """שם אדם באנגלית -> עברית, כולל ben/bas באמצע."""
+    s = re.sub(r'\bben\b', 'בן', s or '', flags=re.I)
+    s = re.sub(r'\b(bas|bat)\b', 'בת', s, flags=re.I)
+    return re.sub(r'\s+', ' ', _he_name(s)).strip(" ,.()'-")
+
+
+# רצפים שנוצרים כשגרש/מקף "חכם" נקרא בקידוד שגוי. מחליפים נקודתית — סיבוב קידוד מלא
+# היה מוחק את כל האותיות העבריות בשורה
+_MOJI = [('\u00e2\u20ac\u2122', "'"), ('\u00e2\u20ac\u02dc', "'"),
+         ('\u00e2\u20ac\u009d', '"'), ('\u00e2\u20ac\u009c', '"'),
+         ('\u00e2\u20ac\u201d', '\u2014'), ('\u00e2\u20ac\u201c', '\u2013'),
+         ('\u00e2\u20ac\u00a6', '...'), ('\u00c2\u00a0', ' ')]
+
+
+def _fixmoji(t):
+    """תיקון גרשיים/מקפים שהגיעו משובשים (â€™ במקום ')."""
+    t = t or ''
+    for bad, good in _MOJI:
+        if bad in t:
+            t = t.replace(bad, good)
+    t = re.sub(r'\u00e2\u20ac.?', "'", t)      # שאריות שלא כוסו למעלה
+    return t.replace('\u2019', "'").replace('\u2018', "'").replace('\u201c', '"').replace('\u201d', '"')
+
+
+_STOP = {'to', 'for', 'should', 'who', 'that', 'he', 'she', 'needs', 'need', 'please', 'and', 'in', 'on',
+         'a', 'the', 'my', 'our', 'his', 'her', 'is', 'be', 'of', 'it', 'they', 'we', 'with', 'have',
+         'has', 'get', 'also', 'asap', 'so', 'but', 'from', 'at', 'by'}
+
+
+def _lat_name(eng):
+    """מוציא 'Name ben/bas Mother' מתוך טקסט אנגלי חופשי. מחזיר (שם בעברית, שאר הטקסט)."""
+    w = eng.split()
+    idx = next((i for i, x in enumerate(w) if x.lower().strip(",.") in ('ben', 'bas', 'bat')), -1)
+    if idx <= 0:
+        return ('', eng)
+    i = idx - 1
+    while i - 1 >= 0 and w[i - 1].lower() not in _STOP:
+        i -= 1
+    j, k = idx + 1, 0
+    while j < len(w) and k < 3 and w[j].lower() not in _STOP:
+        j += 1; k += 1
+    if j == idx + 1:
+        return ('', eng)
+    return (_he_person(' '.join(w[i:j])), ' '.join(w[:i] + w[j:]))
+
+
+def _he_mixed(ln, translate=False):
+    """שורת קוויטל מעורבת עברית/אנגלית — מוציאה את כל האנגלית:
+    שמות בתעתיק, קרובי משפחה בשמם, והבקשה בנוסח קוויטל עברי."""
+    ln = _fixmoji(ln or '').strip()
+    if not re.search(r'[A-Za-z]', ln):
+        return ln
+    extra = []
+
+    def _rel(m):
+        nm = _he_person(m.group(2))
+        if nm:
+            extra.append((_REL_HE.get(m.group(1).lower(), '') + ' ' + nm).strip())
+        return ' '
+    txt = _RELNAME.sub(_rel, ln)
+    words = [w for w in txt.split() if re.search(r'[֐-׿A-Za-z0-9]', w)]   # בלי סימני פיסוק יתומים
+    heb = re.sub(r'\s+', ' ', ' '.join(w for w in words if not re.search(r'[A-Za-z]', w)))
+    heb = re.sub(r'^[\s,.\-()·]+|[\s,.\-()·]+$', '', heb)
+    eng = ' '.join(w for w in words if re.search(r'[A-Za-z]', w))
+    eng = re.sub(r"[^A-Za-z\s'-]", ' ', eng).strip()
+    lat, eng = _lat_name(eng)            # שם באנגלית בתוך השורה — לתעתיק, לא לתרגום
+    if lat:
+        heb = (heb + ' ' + lat).strip() if heb else lat
+    req = _req_he(eng) if eng else ''
+    if not req and translate and len(eng) > 12:
+        try:
+            req = re.sub(r'\s+', ' ', (translate_he(eng) or '')).strip()
+        except Exception:
+            req = ''
+    out = ' '.join(x for x in ([heb, req]) if x)
+    if extra:
+        out = (out + ' · ' + ', '.join(extra)).strip(' ·')
+    return out.strip()
 
 
 # ביטויים שאינם שם אמיתי — לא נכנסים לקוויטל (למשל "thank you")
@@ -488,10 +594,11 @@ def _fmt_one(name, mother, father, request):
     return s
 
 
-def _parse_names(body):
+def _parse_names(body, translate=False):
     """בונה שם/שמות קוויטל מתוך הטופס — תומך בכמה שמות במייל אחד: 'Name בן/בת Mother נוסח'."""
     if not body:
         return ''
+    body = _fixmoji(body)
     records = []
     cur = {}
 
@@ -518,8 +625,16 @@ def _parse_names(body):
                     cur[fld] = val
                 continue
         if re.search(r'[֐-׿]', ln) and re.search(r'\b(בן|בת)\b', ln):
-            generic.append(ln.strip())
+            # שורה שנכתבה חופשי — לעיתים עברית ואנגלית מעורבבות. מוציאים את האנגלית
+            generic.append(_he_mixed(ln, translate))
     flush()
+    if not records and not generic:
+        # שורה חופשית באנגלית בלבד בצורת "Name ben/bas Mother" — אחרון, רק אם לא נמצא כלום
+        for ln in body.split('\n'):
+            if re.search(r"[A-Za-z']{2,}\s+(ben|bas|bat)\s+[A-Za-z']{2,}", ln, re.I):
+                he = _he_mixed(ln, translate)
+                if he and not _is_junk_name(he):
+                    generic.append(he)
     out = records + [g for g in generic if g]
     return '\n'.join(dict.fromkeys([o for o in out if o]))
 
@@ -1082,7 +1197,7 @@ def sync(con):
             except Exception:
                 received = ''
             body = _extract_text(msg)
-            names = _parse_names(body)
+            names = _parse_names(body, translate=True)
             if not names.strip():     # אין שמות לתפילה (למשל רק "thank you") — לא מכניסים לרשימה
                 continue
             # המייל האמיתי של התורם נמצא בגוף המייל (המיילים מועברים דרך כתובת אחת) — מזהים לפיו
