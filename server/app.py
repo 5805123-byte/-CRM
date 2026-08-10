@@ -1506,6 +1506,89 @@ def ensure_schema():
     except Exception as e:
         print('  bankwest v2 error:', e)
 
+    # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
+    # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='authorize_merge_v1'").fetchone():
+            camp = {}
+            try:
+                with open(os.path.join(HERE, 'campaign_lists.json'), encoding='utf-8') as f:
+                    for L in json.load(f).get('lists', []):
+                        for x in campaign_match(con, L['rows'], L.get('from', ''), L.get('to', '')):
+                            if x['donor_id']:
+                                camp.setdefault(x['donor_id'], []).append((x['amount'], L['label']))
+            except Exception:
+                pass
+            subs = {}
+            try:
+                with open(os.path.join(HERE, 'donations_2026_seed.json'), encoding='utf-8') as f:
+                    for r in json.load(f):
+                        subs.setdefault(r['donor_id'], []).append(
+                            (round(float(r['amount']), 2), r.get('category') or 'קבוע'))
+            except Exception:
+                pass
+            dinfo = {r['id']: ((r['tier'] or ''), (r['category'] or ''),
+                               ((r['last'] or '') + ' ' + (r['first'] or '')).strip())
+                     for r in con.execute("SELECT id,tier,category,last,first FROM donors")}
+            PARNES_AMT = {480.0}
+            q = ("SELECT tid,donor_id,amount,date,recurring,category FROM recon "
+                 "WHERE source NOT LIKE 'Banquest%' AND COALESCE(processed,0)=0 "
+                 "AND COALESCE(status,'settled')='settled' AND donor_id IS NOT NULL")
+            ins = repl = skip_py = 0
+            by, perdonor = {}, {}
+            for r in list(con.execute(q)):
+                did = r['donor_id']
+                a = round(float(r['amount'] or 0), 2)
+                diso = _recon_iso(r['date'])
+                if not diso:
+                    continue
+                if a in PARNES_AMT or (r['category'] or '') in ('פרנס לילה', 'חדר קפה', 'ארוחת בוקר'):
+                    skip_py += 1
+                    continue                      # פרנס — צריך לבחור יום, נשאר לאישור ידני
+                tier, dcat, _nm = dinfo.get(did, ('', '', ''))
+                cat = why = ''
+                for amt, lbl in camp.get(did, []):
+                    if abs(amt - a) < 0.01:
+                        cat, why = lbl, lbl
+                        break
+                if not cat:
+                    for amt, c in subs.get(did, []):
+                        if abs(amt - a) < 0.01:
+                            cat, why = c, 'דוח הקבועים'
+                            break
+                if not cat and r['recurring'] and 'יששכר' in tier:
+                    cat, why = 'יששכר־זבולון', 'דרגת יששכר־זבולון'
+                if not cat and r['recurring']:
+                    cat, why = (dcat or 'קבוע'), 'הוראת קבע'
+                if not cat:
+                    cat, why = (dcat or 'מזדמן'), 'לא סווג'
+                    perdonor[did] = perdonor.get(did, 0) + 1
+                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='Authorize' "
+                               "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, a)).fetchone():
+                    con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                    continue
+                n = con.execute("DELETE FROM donations WHERE donor_id=? AND substr(COALESCE(date,''),1,7)=? "
+                                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND method='Authorize' "
+                                "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).rowcount
+                repl += max(0, n)
+                note = 'ייבוא אוטורייז · ' + (why if why != 'לא סווג' else 'לא סווג — לבדוק עבור מה')
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                            "VALUES(?,?,?,?,'Authorize',?,1)", (did, diso, r['amount'], cat, note))
+                con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                ins += 1
+                by[why] = by.get(why, 0) + 1
+            for did, n in perdonor.items():
+                note = 'לבדוק עבור מה נגבו %d חיובי אוטורייז — %s' % (n, dinfo.get(did, ('', '', ''))[2])
+                if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'verify',?)",
+                                (did, today_iso(), note))
+            con.execute("INSERT INTO seed_flags(name) VALUES('authorize_merge_v1')")
+            print('  מיזוג אוטורייז: נכנסו %d, הוחלפו %d שורות סיכום, פרנס שנשאר לאישור %d' % (ins, repl, skip_py))
+            for k, v in sorted(by.items(), key=lambda x: -x[1]):
+                print('      %-24s %d' % (k, v))
+    except Exception as e:
+        print('  authorize merge error:', e)
+
     # פרנס־יום שאושר מדף החיובים ולא נוצרה לו תזכורת (התזכורת הותנתה בתאריך החיוב במקום בתאריך הלילה)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_task_v1'").fetchone():
