@@ -1390,6 +1390,23 @@ def ensure_schema():
     except Exception as e:
         print('  mail gist error:', e)
 
+    # איות שמות מקובל — גם בקוויטל שכבר נשמר (אדינא -> עדינה וכו')
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='he_spell_v1'").fetchone():
+            import gmail_intake as _gis
+            nsp = 0
+            for tb, cl in (('prayers', 'text'), ('prayers', 'name'), ('intake', 'names'), ('donors', 'first'), ('donors', 'last')):
+                try:
+                    for r in con.execute(f"SELECT rowid AS rid, {cl} AS v FROM {tb} WHERE COALESCE({cl},'')<>''"):
+                        nv = _gis._he_spell(r['v'])
+                        if nv != r['v']:
+                            con.execute(f"UPDATE {tb} SET {cl}=? WHERE rowid=?", (nv, r['rid'])); nsp += 1
+                except Exception: pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('he_spell_v1')")
+            print(f'  יישור איות שמות בעברית: {nsp}')
+    except Exception as e:
+        print('  he spell error:', e)
+
     # בקשות קוויטל שנשמרו עם אנגלית בתוכן — פענוח מחדש, כדי שלא תישאר מילה אחת באנגלית
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='intake_he_v1'").fetchone():

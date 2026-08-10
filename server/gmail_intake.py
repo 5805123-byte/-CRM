@@ -310,6 +310,22 @@ def _he_norm_g(s):
     return s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
 
 
+# האיות המקובל אצלנו לשמות שנכתבים בכמה צורות — חל גם על מה שהתורם הקליד בעצמו בעברית
+_HE_SPELL = {
+    'אדינא': 'עדינה', 'אדינה': 'עדינה', 'עדינא': 'עדינה',
+    'שיפרא': 'שפרה', 'שפרא': 'שפרה', 'שיפרה': 'שפרה',
+    'פנינא': 'פנינה', 'אלהאנאן': 'אלחנן', 'אלחנון': 'אלחנן',
+}
+# מותר גם עם אות שימוש בהתחלה (ואדינא -> ועדינה)
+_HE_SPELL_RX = re.compile(r'(?<![א-ת])([ובלמשהכ]?)('
+                          + '|'.join(sorted(_HE_SPELL, key=len, reverse=True)) + r')(?![א-ת])')
+
+
+def _he_spell(t):
+    """מיישר איות שמות לצורה המקובלת (אדינא -> עדינה)."""
+    return _HE_SPELL_RX.sub(lambda m: m.group(1) + _HE_SPELL[m.group(2)], t or '')
+
+
 # שמות נשיים בעברית — כדי לקבוע "בת" גם כשהשם מגיע כבר בעברית (ולא באנגלית)
 _FEMALE_HE = {_he_norm_g(_NAME_HE[_e]) for _e in _FEMALE if _e in _NAME_HE}
 _FEMALE_HE |= {_he_norm_g(x) for x in [
@@ -635,7 +651,7 @@ def _parse_names(body, translate=False):
                 he = _he_mixed(ln, translate)
                 if he and not _is_junk_name(he):
                     generic.append(he)
-    out = records + [g for g in generic if g]
+    out = [_he_spell(o) for o in (records + [g for g in generic if g])]
     return '\n'.join(dict.fromkeys([o for o in out if o]))
 
 
