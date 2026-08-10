@@ -1661,6 +1661,30 @@ def ensure_schema():
     except Exception as e:
         print('  parnes v2 error:', e)
 
+    # מרמרשטיין: השם העברי בכרטיס הוא "משה" בעוד שבאנגלית רשום Zev — מיישרים לזאב,
+    # וקובעים את הכללים שהמשרד מסר: $2,700 = יששכר־זבולון (שלושה אברכים), $1,100 = קמחא דפסחא תשפ"ו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='marmurstein_v1'").fetchone():
+            r = con.execute("SELECT id,first FROM donors WHERE last LIKE '%מרמרשטיין%' "
+                            "AND LOWER(COALESCE(english,'')) LIKE '%zev%'").fetchone()
+            if r:
+                if (r['first'] or '').strip() != 'זאב':
+                    con.execute("UPDATE donors SET first='זאב' WHERE id=?", (r['id'],))
+                for amt, cat, note in ((2700.0, 'יששכר־זבולון', 'שלושה אברכים ביחד'),
+                                       (1100.0, 'קמחא דפסחא תשפ"ו', '')):
+                    con.execute("INSERT OR REPLACE INTO donor_rules(donor_id,amount,category,note,created) "
+                                "VALUES(?,?,?,?,?)", (r['id'], amt, cat, note, today_iso()))
+                    con.execute("UPDATE donations SET category=? WHERE donor_id=? "
+                                "AND ROUND(CAST(amount AS REAL),2)=?", (cat, r['id'], amt))
+                    if note:
+                        con.execute("UPDATE donations SET note=TRIM(COALESCE(note,'')||' · '||?,' ·') "
+                                    "WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
+                                    "AND COALESCE(note,'') NOT LIKE ?", (note, r['id'], amt, '%' + note + '%'))
+                print('  מרמרשטיין זאב: השם והכללים עודכנו (#%d)' % r['id'])
+            con.execute("INSERT INTO seed_flags(name) VALUES('marmurstein_v1')")
+    except Exception as e:
+        print('  marmurstein error:', e)
+
     # משימות "עבור מה" יורדות מרשימת המשימות — השאלות מוצגות בדף החיובים ובכרטיס התורם עצמו
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_uncl_tasks_v1'").fetchone():

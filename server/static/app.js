@@ -676,13 +676,20 @@ function cardDetails(d,body){
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
-  (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),ded:'',rm:x.method||''}));
+  (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:(x.category||'תרומה')+(x.date?(' · '+gregLabel(x.date)):''),
+    ded:dnNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||''}));
   (d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const co=avCoHolders(p);gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(co.length?(' · בשותפות עם '+co.map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''});});
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>{
     const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
     const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
-    return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''} ${methChip(g.rm)} ${st}${tog}</div></div>`;
+    const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
+    const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
+      <div class="addrow"><select class="gvcat">${RCATS.concat(CAMPAIGNS||[]).filter((v,j,a)=>a.indexOf(v)===j).map(c=>`<option value="${esc(c)}" ${c===g.cat?'selected':''}>${esc(c)||'— עבור מה —'}</option>`).join('')}</select></div>
+      <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: שלושה אברכים ביחד)" value="${esc(g.ded)}">
+        <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
+      <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label></div>`:'';
+    return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${esc(g.what)}${g.ded?`<small> · ${esc(g.ded)}</small>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${pan}</div></div>`;
   }).join('')}</div>`:'';
   const pdebts=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
   const pdebtsum=pdebts.reduce((s,p)=>s+amtNum(p.amount),0);
@@ -744,6 +751,18 @@ function cardDetails(d,body){
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
+  body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
+    const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(p)p.classList.toggle('hidden');});
+  body.querySelectorAll('.gvsave').forEach(b=>b.onclick=async()=>{
+    const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(!p)return;
+    const cat=p.querySelector('.gvcat').value.trim(), note=p.querySelector('.gvnote').value.trim();
+    const rule=p.querySelector('.gvrule').checked;
+    const dn=(d.donations||[]).find(x=>x.id==b.dataset.did); if(!dn)return;
+    b.disabled=true;
+    if(rule){ await api('POST','/api/rule',{donor_id:d.id,amount:parseFloat(dn.amount),category:cat,note}); }
+    else { await api('PUT','/api/donation/'+b.dataset.did,{category:cat,note:note?(String(dn.note||'').split(' · ')[0]+' · '+note):dn.note}); }
+    toast(rule?'נשמר לכל הסכום הזה ✓':'נשמר ✓');
+    await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   const uclSave=document.getElementById('ucl_save');
   if(uclSave)uclSave.onclick=async()=>{
     const cat=document.getElementById('ucl_cat').value.trim();
