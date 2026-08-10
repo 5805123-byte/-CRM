@@ -1,0 +1,1147 @@
+{
+ "label": "צ׳קים · דונרס פאנד · OJC — 2026",
+ "people": {
+  "Adlin": {
+   "he": "אדלין יצחק",
+   "en": "Itzi Adlin"
+  },
+  "Brody, Yisroel": {
+   "he": "ברודי ישראל",
+   "en": "Israel Brody"
+  },
+  "Core Compliance - Statfeld": {
+   "he": "בנימין שטטפלד",
+   "en": "Benjamin & Joel Statfeld"
+  },
+  "David J.Pack Foundation": {
+   "he": "פק דוד",
+   "en": "David Pack"
+  },
+  "Dworkin, Meir": {},
+  "Frankel": {
+   "he": "פרנקל יהושע",
+   "en": "Yehoshua Frankel"
+  },
+  "Ginsberg, Aron": {
+   "he": "גינסברג אהרן"
+  },
+  "Halberstam, Mark": {
+   "he": "הלברשטם מארק",
+   "en": "Mark Halberstam"
+  },
+  "Hamui, Isaac": {
+   "he": "חמוי יצחק"
+  },
+  "Hochman, Chaim": {
+   "he": "הוכמן חיים",
+   "en": "Chaim Hochman"
+  },
+  "Khezrie, Gabe": {
+   "he": "קייזרי גבריאל",
+   "en": "Gabe Khezrie"
+  },
+  "Lamm, Steven": {
+   "he": "לאם אסתר",
+   "en": "steven Lamm"
+  },
+  "Lax, Kalman": {},
+  "Levin, Rosalyn": {
+   "he": "לוין רוזלין",
+   "en": "Rosalyn Levin"
+  },
+  "Lorbert, Adam": {
+   "he": "לורברט אדם",
+   "en": "Adam Lorbert"
+  },
+  "Malcolm Y. Azaroh": {},
+  "Max,, Yaakov": {},
+  "Mendelsohn, Alfred": {
+   "he": "מנדלסון לאה",
+   "en": "Alferd Mendelson"
+  },
+  "Pinter, Samson": {
+   "he": "פינטער שמשון",
+   "en": "Samson Pinter"
+  },
+  "R.Z.H. Foundation (Elbogen)": {
+   "he": "עלבויגן RZH FOUNDATION"
+  },
+  "Rosenfeld, David": {},
+  "Rosenfeld, Jerry - Tova": {
+   "he": "רוזנפלד ישראל אבא",
+   "en": "Jerry Rosenfeld"
+  },
+  "Schachter, Barry": {
+   "he": "שכטר בערי",
+   "en": "Barry Schacter"
+  },
+  "Taubenfeld, Gabe & Miriam": {
+   "he": "טאובנפלד מרים",
+   "en": "Miriam Taubenfeld"
+  },
+  "Tepfer , Jerry": {
+   "he": "טעפפר יהושע",
+   "en": "Jerry Teppfer"
+  },
+  "Werzberger, Rebbeca": {},
+  "E. Max": {
+   "he": "מקס ברכה",
+   "en": "Ezra Max"
+  },
+  "Vago": {
+   "he": "ואגו מיכאל",
+   "en": "Micahel Vago"
+  },
+  "A. Goldberger (Klock)": {}
+ },
+ "rows": [
+  {
+   "who": "Adlin",
+   "date": "2026-01-06",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "260418",
+   "num": "10278"
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-02-06",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "423746",
+   "num": "10292"
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-03-06",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "269225",
+   "num": "10310"
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-04-06",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "131672",
+   "num": "10328"
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-05-06",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "200347",
+   "num": "10351"
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-06-05",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "109194",
+   "num": "10366"
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-07-06",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "8014929",
+   "num": "10379"
+  },
+  {
+   "who": "Brody, Yisroel",
+   "date": "2026-04-20",
+   "amount": 4000.0,
+   "method": "דונרס",
+   "ref": "D86698-46",
+   "num": "10340"
+  },
+  {
+   "who": "Brody, Yisroel",
+   "date": "2026-05-26",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "127666346",
+   "num": "10358"
+  },
+  {
+   "who": "Brody, Yisroel",
+   "date": "2026-06-20",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "Donors'",
+   "num": "10374"
+  },
+  {
+   "who": "Brody, Yisroel",
+   "date": "2026-07-20",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "Donors'",
+   "num": "10383"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-02-02",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "124487189",
+   "num": "10290"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-03-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "125119239",
+   "num": "10299"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-03-03",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "1251144982",
+   "num": "10309"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-04-13",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "126411009",
+   "num": "10331"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-05-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "D121631",
+   "num": "10341"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-07-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "Donors'",
+   "num": "10375"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-08-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "Donors'",
+   "num": "10392"
+  },
+  {
+   "who": "David J.Pack Foundation",
+   "date": "2026-04-23",
+   "amount": 2200.0,
+   "method": "צ'ק",
+   "ref": "53339",
+   "num": "10343"
+  },
+  {
+   "who": "David J.Pack Foundation",
+   "date": "2026-05-20",
+   "amount": 2000.0,
+   "method": "צ'ק",
+   "ref": "53442",
+   "num": "10357"
+  },
+  {
+   "who": "David J.Pack Foundation",
+   "date": "2026-07-16",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "53597",
+   "num": "10381"
+  },
+  {
+   "who": "Dworkin, Meir",
+   "date": "2026-03-26",
+   "amount": 5000.0,
+   "method": "דונרס",
+   "ref": "Donors 59",
+   "num": "10327"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-01-14",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "8836",
+   "num": "10281"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-02-08",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "8874",
+   "num": "10293"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-03-01",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "8928",
+   "num": "10305"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-04-13",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "8998",
+   "num": "10332"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-05-03",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "9040",
+   "num": "10347"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-06-01",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "9082",
+   "num": "10362"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-07-10",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "9127",
+   "num": "10380"
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-08-03",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "9165",
+   "num": "10391"
+  },
+  {
+   "who": "Ginsberg, Aron",
+   "date": "2026-01-15",
+   "amount": 5000.0,
+   "method": "צ'ק",
+   "ref": "392",
+   "num": "10284"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-02-02",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "11470",
+   "num": "10296"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-02-27",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "11509",
+   "num": "10304"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-03-27",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "11562",
+   "num": "10323"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-04-24",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "11597",
+   "num": "10345"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-05-29",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "1017",
+   "num": "10360"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-07-01",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "1050",
+   "num": "10376"
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-07-31",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "ref": "1078",
+   "num": "10389"
+  },
+  {
+   "who": "Hamui, Isaac",
+   "date": "2026-07-16",
+   "amount": 2000.0,
+   "method": "צ'ק",
+   "ref": "1562876",
+   "num": "10382"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-01-06",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "571717",
+   "num": "10279"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-02-10",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "693465",
+   "num": "10294"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-03-11",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "609222",
+   "num": "10313"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-04-10",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "611371",
+   "num": "10329"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-05-11",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "522472",
+   "num": "10352"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-06-11",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "640505",
+   "num": "10367"
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-07-10",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "491668",
+   "num": "10384"
+  },
+  {
+   "who": "Khezrie, Gabe",
+   "date": "2026-01-01",
+   "amount": 2400.0,
+   "method": "צ'ק",
+   "ref": "46759",
+   "num": "10276"
+  },
+  {
+   "who": "Khezrie, Gabe",
+   "date": "2026-02-01",
+   "amount": 2400.0,
+   "method": "צ'ק",
+   "ref": "47299",
+   "num": "10301"
+  },
+  {
+   "who": "Khezrie, Gabe",
+   "date": "2026-03-01",
+   "amount": 2400.0,
+   "method": "צ'ק",
+   "ref": "47738",
+   "num": "10306"
+  },
+  {
+   "who": "Khezrie, Gabe",
+   "date": "2026-04-01",
+   "amount": 2400.0,
+   "method": "צ'ק",
+   "ref": "48295",
+   "num": "10342"
+  },
+  {
+   "who": "Lamm, Steven",
+   "date": "2026-02-10",
+   "amount": 1500.0,
+   "method": "צ'ק",
+   "ref": "124644294",
+   "num": "10298"
+  },
+  {
+   "who": "Lamm, Steven",
+   "date": "2026-03-04",
+   "amount": 360.0,
+   "method": "דונרס",
+   "ref": "Donors'",
+   "num": "10300"
+  },
+  {
+   "who": "Lamm, Steven",
+   "date": "2026-03-26",
+   "amount": 1100.0,
+   "method": "צ'ק",
+   "ref": "126080623",
+   "num": "10326"
+  },
+  {
+   "who": "Lamm, Steven",
+   "date": "2026-06-11",
+   "amount": 1800.0,
+   "method": "דונרס",
+   "ref": "Donors'",
+   "num": "10373"
+  },
+  {
+   "who": "Lax, Kalman",
+   "date": "2026-03-23",
+   "amount": 500.0,
+   "method": "דונרס",
+   "ref": "125991056",
+   "num": "10315"
+  },
+  {
+   "who": "Lax, Kalman",
+   "date": "2026-03-25",
+   "amount": 720.0,
+   "method": "דונרס",
+   "ref": "D224577",
+   "num": "10339"
+  },
+  {
+   "who": "Levin, Rosalyn",
+   "date": "2026-02-02",
+   "amount": 36.0,
+   "method": "צ'ק",
+   "ref": "3737",
+   "num": "10289"
+  },
+  {
+   "who": "Levin, Rosalyn",
+   "date": "2026-03-08",
+   "amount": 36.0,
+   "method": "צ'ק",
+   "ref": "3829",
+   "num": "10312"
+  },
+  {
+   "who": "Levin, Rosalyn",
+   "date": "2026-03-29",
+   "amount": 36.0,
+   "method": "צ'ק",
+   "ref": "3931",
+   "num": "10324"
+  },
+  {
+   "who": "Levin, Rosalyn",
+   "date": "2026-04-26",
+   "amount": 36.0,
+   "method": "צ'ק",
+   "ref": "4001",
+   "num": "10346"
+  },
+  {
+   "who": "Levin, Rosalyn",
+   "date": "2026-06-01",
+   "amount": 36.0,
+   "method": "צ'ק",
+   "ref": "4086",
+   "num": "10361"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-01-23",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16314296",
+   "num": "10288"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-02-23",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16375905",
+   "num": "10303"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-03-23",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16440495",
+   "num": "10317"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-04-23",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16509348",
+   "num": "10344"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-05-26",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16574576",
+   "num": "10359"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-06-23",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16631524",
+   "num": "10371"
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-07-23",
+   "amount": 218.0,
+   "method": "צ'ק",
+   "ref": "16685709",
+   "num": "10390"
+  },
+  {
+   "who": "Malcolm Y. Azaroh",
+   "date": "2026-06-04",
+   "amount": 36.0,
+   "method": "צ'ק",
+   "ref": "485041834",
+   "num": "10365"
+  },
+  {
+   "who": "Max,, Yaakov",
+   "date": "2026-02-26",
+   "amount": 500.0,
+   "method": "צ'ק",
+   "ref": "16384943",
+   "num": "10335"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-01-15",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16297714",
+   "num": "10287"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-02-17",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16368690",
+   "num": "10302"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-03-16",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16426197",
+   "num": "10320"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-04-15",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16494708",
+   "num": "10338"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-05-15",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16558415",
+   "num": "10354"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-06-15",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16619434",
+   "num": "10370"
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-07-15",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16672163",
+   "num": "10386"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-03-10",
+   "amount": 3400.0,
+   "method": "צ'ק",
+   "ref": "16415154",
+   "num": "10319"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-03-23",
+   "amount": 12000.0,
+   "method": "צ'ק",
+   "ref": "16439472",
+   "num": "10316"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-04-10",
+   "amount": 4877.0,
+   "method": "צ'ק",
+   "ref": "16484809",
+   "num": "10330"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-05-06",
+   "amount": 5968.0,
+   "method": "צ'ק",
+   "ref": "16541755",
+   "num": "10350"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-06-15",
+   "amount": 5984.0,
+   "method": "צ'ק",
+   "ref": "16615788",
+   "num": "10368"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-07-16",
+   "amount": 5878.0,
+   "method": "צ'ק",
+   "ref": "16675712",
+   "num": "10387"
+  },
+  {
+   "who": "R.Z.H. Foundation (Elbogen)",
+   "date": "2026-01-13",
+   "amount": 500.0,
+   "method": "צ'ק",
+   "ref": "58597",
+   "num": "10280"
+  },
+  {
+   "who": "Rosenfeld, David",
+   "date": "2026-04-13",
+   "amount": 500.0,
+   "method": "דונרס",
+   "ref": "Donors34202",
+   "num": "10336"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-01-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "156863120",
+   "num": "10282"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-02-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "157145049",
+   "num": "10295"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-03-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "157408549",
+   "num": "10311"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-04-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "157691958",
+   "num": "10333"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-05-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "157970966",
+   "num": "10353"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-06-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "158246251",
+   "num": "10369"
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-07-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "ref": "158524481",
+   "num": "10385"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-01-05",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16275321",
+   "num": "10277"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-02-03",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16341332",
+   "num": "10291"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-03-02",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16396221",
+   "num": "10307"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-03-03",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16401921",
+   "num": "10308"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-03-23",
+   "amount": 1100.0,
+   "method": "צ'ק",
+   "ref": "16439482",
+   "num": "10318"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-04-06",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16467342",
+   "num": "10325"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-05-04",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16533908",
+   "num": "10348"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-06-03",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16598537",
+   "num": "10364"
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-07-06",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16653587",
+   "num": "10378"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-01-14",
+   "amount": 400.0,
+   "method": "צ'ק",
+   "ref": "16294199",
+   "num": "10286"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-03-27",
+   "amount": 3300.0,
+   "method": "צ'ק",
+   "ref": "16448109",
+   "num": "10321"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-03-27",
+   "amount": 4800.0,
+   "method": "צ'ק",
+   "ref": "16447196",
+   "num": "10322"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-05-04",
+   "amount": 2300.0,
+   "method": "צ'ק",
+   "ref": "16536410",
+   "num": "10349"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-05-18",
+   "amount": 360.0,
+   "method": "צ'ק",
+   "ref": "16562393",
+   "num": "10356"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-06-02",
+   "amount": 2300.0,
+   "method": "צ'ק",
+   "ref": "16595410",
+   "num": "10363"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-07-02",
+   "amount": 2300.0,
+   "method": "צ'ק",
+   "ref": "16652783",
+   "num": "10377"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-01-15",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "189624",
+   "num": "10283"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-02-18",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "61602206",
+   "num": "10297"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-03-18",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "66818186",
+   "num": "10314"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-04-17",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "72346922",
+   "num": "10334"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-05-18",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "77725112",
+   "num": "10355"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-06-18",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "83480722",
+   "num": "10372"
+  },
+  {
+   "who": "Tepfer , Jerry",
+   "date": "2026-07-17",
+   "amount": 180.0,
+   "method": "צ'ק",
+   "ref": "88901459",
+   "num": "10388"
+  },
+  {
+   "who": "Werzberger, Rebbeca",
+   "date": "2026-04-13",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "Donors34202",
+   "num": "10337"
+  },
+  {
+   "who": "Lamm, Steven",
+   "date": "2026-01-07",
+   "amount": 12000.0,
+   "method": "דונרס",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Lax, Kalman",
+   "date": "2026-03-02",
+   "amount": 720.0,
+   "method": "דונרס",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-06-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-01-02",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-02-01",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "E. Max",
+   "date": "2026-02-02",
+   "amount": 2600.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-03-02",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "E. Max",
+   "date": "2026-03-22",
+   "amount": 1500.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "A. Goldberger (Klock)",
+   "date": "2026-03-25",
+   "amount": 1000.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-04-05",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-05-01",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "E. Max",
+   "date": "2026-05-21",
+   "amount": 3600.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-06-01",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-07-01",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  },
+  {
+   "who": "Vago",
+   "date": "2026-08-01",
+   "amount": 900.0,
+   "method": "OJC",
+   "ref": "",
+   "num": ""
+  }
+ ]
+}

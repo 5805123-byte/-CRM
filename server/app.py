@@ -1695,6 +1695,113 @@ def ensure_schema():
     except Exception as e:
         print('  marmurstein error:', e)
 
+    # צ׳קים 2026 + דונרס פאנד + OJC — הכל מאותה רשימה, בלי כפילויות.
+    # מי שזוהה נכנס ישר לכרטיס; מי שלא — נשאר לבדיקה בדף החיובים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='checks_ojc_2026_v1'").fetchone():
+            with open(os.path.join(HERE, 'checks_2026.json'), encoding='utf-8') as f:
+                book = json.load(f)
+            byhe, byen = {}, {}
+            for r in con.execute("SELECT id,last,first,english,business,aliases FROM donors"):
+                byhe.setdefault(((r['last'] or '') + ' ' + (r['first'] or '')).strip(), []).append(r['id'])
+                for fld in (r['english'], r['business'], r['aliases']):
+                    t = (fld or '').strip().lower()
+                    if t:
+                        byen.setdefault(t, []).append(r['id'])
+
+            def whois(hint):
+                """כרטיס התורם לפי השם העברי המדויק, ואם אין — לפי השם הלועזי. רק התאמה יחידה."""
+                he = (hint.get('he') or '').strip()
+                if len(byhe.get(he, [])) == 1:
+                    return byhe[he][0]
+                en = (hint.get('en') or '').strip().lower()
+                if len(byen.get(en, [])) == 1:
+                    return byen[en][0]
+                if en:
+                    hit = [i for k, v in byen.items() if en in k or k in en for i in v]
+                    if len(set(hit)) == 1:
+                        return hit[0]
+                return None
+
+            rules = {}
+            try:
+                for r in con.execute("SELECT donor_id,amount,category FROM donor_rules"):
+                    rules[(r['donor_id'], round(float(r['amount'] or 0), 2))] = r['category']
+            except Exception:
+                pass
+            dcat = {r['id']: (r['category'] or '') for r in con.execute("SELECT id,category FROM donors")}
+            SRCNAME = {"צ'ק": "צ׳קים 2026", 'דונרס': 'Donors Fund 2026', 'OJC': 'OJC 2026'}
+            SUMMETH = {"צ'ק": 'Checks', 'דונרס': 'Donors Fund', 'OJC': 'OJC'}   # שם השיטה בשורות הסיכום
+            people = book.get('people', {})
+            found = {w: (whois(h) if h else None) for w, h in people.items()}
+            ins = dup = wait = repl = 0
+            for i, r in enumerate(book.get('rows', [])):
+                did = found.get(r['who'])
+                a = round(float(r['amount'] or 0), 2)
+                meth = r['method']
+                if did:
+                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method=? "
+                                   "AND ROUND(CAST(amount AS REAL),2)=?", (did, r['date'], meth, a)).fetchone():
+                        dup += 1
+                        continue
+                    # שורת הסיכום החודשית מדוח הקבועים מוחלפת בתשלום האמיתי — אותו כסף, תאריך מדויק
+                    old = con.execute(
+                        "SELECT id,category FROM donations WHERE donor_id=? AND date=? AND method=? "
+                        "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND ROUND(CAST(amount AS REAL),2)=?",
+                        (did, r['date'][:7], SUMMETH[meth], a)).fetchone()
+                    cat = rules.get((did, a)) or (old['category'] if old else '') or ''
+                    note = 'ייבוא ' + SRCNAME[meth] + (('  · אסמכתא ' + r['ref']) if r.get('ref') else '')
+                    if old:
+                        con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
+                        repl += 1
+                    if not cat:
+                        cat = dcat.get(did) or 'מזדמן'
+                        note += ' · לא סווג — לבדוק עבור מה'
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,?,?,?,?,1)", (did, r['date'], a, cat, meth, note))
+                    ins += 1
+                else:                       # אין כרטיס ודאי — נשאר לאישור ידני בדף החיובים
+                    nm = re.sub(r'\s*\([^)]*\)', '', r['who'].replace(',,', ',')).strip()
+                    if ',' in nm:
+                        last, _, first = nm.partition(',')          # "Rosenfeld, David"
+                    else:
+                        first, _, last = nm.rpartition(' ')          # "Malcolm Y. Azaroh"
+                    tid = 'chk26-%03d' % i
+                    con.execute("INSERT OR IGNORE INTO recon(tid,first,last,amount,date,recurring,"
+                                "donor_id,processed,source,status) VALUES(?,?,?,?,?,0,NULL,0,?,'settled')",
+                                (tid, first.strip(), last.strip(), '%.2f' % a, r['date'], SRCNAME[meth]))
+                    wait += 1
+            # הדוח הוא הרישום האמיתי לינואר–אוגוסט 2026. לכן אצל מי שמופיע בו, ההערכות
+            # החודשיות מדוח הקבועים באותם ערוצים ובאותם חודשים כבר מיותרות — אחרת הכסף נספר פעמיים.
+            hit = sorted({d0 for d0 in found.values() if d0})
+            gone = 0
+            for did in hit:
+                gone += con.execute(
+                    "DELETE FROM donations WHERE donor_id=? AND length(COALESCE(date,''))=7 "
+                    "AND date BETWEEN '2026-01' AND '2026-08' AND COALESCE(note,'') LIKE 'ייבוא 2026%' "
+                    "AND method IN ('Checks','Donors Fund','OJC')", (did,)).rowcount
+                # תשלום שנתי ששולם בבת אחת — 12 שורות ההערכה שוות בדיוק לתשלום אחד בדוח
+                yr = con.execute("SELECT COUNT(*) k, ROUND(SUM(CAST(amount AS REAL)),2) s FROM donations "
+                                 "WHERE donor_id=? AND length(COALESCE(date,''))=7 AND date LIKE '2026%' "
+                                 "AND method='Annualy' AND COALESCE(note,'') LIKE 'ייבוא 2026%'",
+                                 (did,)).fetchone()
+                if yr and yr['k'] and con.execute(
+                        "SELECT 1 FROM donations WHERE donor_id=? AND date LIKE '2026-%' AND length(date)=10 "
+                        "AND method IN (?,?,?) AND ROUND(CAST(amount AS REAL),2)=?",
+                        (did, "צ'ק", 'דונרס', 'OJC', yr['s'])).fetchone():
+                    gone += con.execute(
+                        "DELETE FROM donations WHERE donor_id=? AND length(COALESCE(date,''))=7 "
+                        "AND date LIKE '2026%' AND method='Annualy' AND COALESCE(note,'') LIKE 'ייבוא 2026%'",
+                        (did,)).rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('checks_ojc_2026_v1')")
+            print('  צ׳קים/דונרס/OJC 2026: נכנסו %d, החליפו %d שורות סיכום, נמחקו עוד %d הערכות, '
+                  'כבר היו %d, לבדיקה %d' % (ins, repl, gone, dup, wait))
+            for w, d0 in sorted(found.items()):
+                if not d0:
+                    print('      לא זוהה כרטיס: %s' % w)
+    except Exception as e:
+        print('  checks/ojc 2026 error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
@@ -2668,23 +2775,25 @@ class H(BaseHTTPRequestHandler):
             # תורמים שיש להם חיובים שנכנסו בלי לדעת עבור מה — לשאלה בדף החיובים
             con = db()
             src = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('src', [''])[0] or '').strip()
-            meth = {'banquest': 'Banquest', 'authorize': 'Authorize'}.get(src, '')
+            meth = {'banquest': ['Banquest'], 'authorize': ['Authorize'],
+                    'checks': ["צ'ק"], 'donorsfund': ['דונרס', 'OJC']}.get(src, [])
+            MLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז'}   # שאר השיטות מוצגות כשמן
             q = ("SELECT n.id, n.donor_id, d.last, d.first, n.date, n.amount, n.method FROM donations n "
                  "JOIN donors d ON d.id=n.donor_id WHERE COALESCE(n.note,'') LIKE '%לא סווג%'")
             args = []
             if meth:
-                q += " AND n.method=?"; args.append(meth)
+                q += " AND n.method IN (%s)" % ','.join('?' * len(meth)); args += meth
             q += " ORDER BY d.last, n.date"
             grp = {}
             for r in con.execute(q, args):
                 g = grp.setdefault(r['donor_id'], {'donor_id': r['donor_id'],
                                                    'name': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
                                                    'items': [], 'total': 0.0, 'methods': set()})
+                lbl = MLBL.get(r['method'] or '', (r['method'] or 'אחר'))
                 g['items'].append({'id': r['id'], 'date': r['date'],
-                                   'amount': round(float(r['amount'] or 0), 2),
-                                   'method': 'בנק ווסט' if r['method'] == 'Banquest' else 'אוטרייז'})
+                                   'amount': round(float(r['amount'] or 0), 2), 'method': lbl})
                 g['total'] += float(r['amount'] or 0)
-                g['methods'].add('בנק ווסט' if r['method'] == 'Banquest' else 'אוטרייז')
+                g['methods'].add(lbl)
             out = []
             for g in grp.values():
                 g['methods'] = ' · '.join(sorted(g['methods']))
@@ -2714,8 +2823,10 @@ class H(BaseHTTPRequestHandler):
                                          'n': 0, 'total': 0.0, 'src': set(), 'tids': [], 'dates': []})
                 g['n'] += 1
                 g['total'] += float(r['amount'] or 0)
-                g['src'].add('בנק ווסט' if 'Banquest' in (r['source'] or '')
-                             else ('PayPal' if 'PayPal' in (r['source'] or '') else 'אוטרייז'))
+                s0 = r['source'] or ''
+                g['src'].add('בנק ווסט' if 'Banquest' in s0 else
+                             'PayPal' if 'PayPal' in s0 else
+                             s0 if not s0.startswith('Authorize') else 'אוטרייז')
                 g['tids'].append(r['tid'])
                 g['dates'].append(_recon_iso(r['date']) or r['date'])
                 for f in ('phone', 'addr', 'city', 'zip'):
@@ -2776,7 +2887,9 @@ class H(BaseHTTPRequestHandler):
                                     WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled'
                                     ORDER BY donor_id IS NOT NULL, last, first"""):
                 a = round(float(r['amount'] or 0), 2)
-                src = 'בנק ווסט' if 'Banquest' in (r['source'] or '') else 'אוטרייז'
+                s0 = r['source'] or ''
+                src = ('בנק ווסט' if 'Banquest' in s0 else
+                       s0 if not s0.startswith('Authorize') else 'אוטרייז')
                 why = ''
                 if r['donor_id']:
                     why = next((c for amt, c in camp.get(r['donor_id'], []) if abs(amt - a) < 0.01), '')
