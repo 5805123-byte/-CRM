@@ -1768,11 +1768,13 @@ def campaign_match(con, rows, dfrom='', dto=''):
                                          c['date']), reverse=not tgt)
                 ch = cand[0]; used.add(ch['tid'])
         dn = next((d for d in donors if d['id'] == did), None)
+        meth = (r.get('method') or '').strip()
+        st = ('skip' if meth in ('Decline', 'טרם נגבה') else
+              ('new' if not did else ('charged' if ch else 'nocharge')))
         out.append({'name': name, 'amount': amt, 'note': (r.get('note') or '').strip(),
-                    'donor_id': did, 'how': how,
+                    'donor_id': did, 'how': how, 'method': meth,
                     'donor_name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() if dn else '',
-                    'charge': ch,
-                    'status': ('new' if not did else ('charged' if ch else 'nocharge'))})
+                    'charge': ch, 'status': st})
     return out
 
 
@@ -2598,17 +2600,19 @@ class H(BaseHTTPRequestHandler):
                 cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
             ins = skipped = 0
             for x in res:
-                if not x['donor_id'] or (b.get('only_charged') and not x['charge']):
+                if (not x['donor_id'] or x['status'] == 'skip'
+                        or (b.get('only_charged') and not x['charge'])):
                     skipped += 1; continue
                 ch = x['charge'] or {}
                 dt = ch.get('date') or (b.get('default_date') or today_iso())
+                # אמצעי התשלום: מהחיוב האמיתי אם נמצא, אחרת הצבע שסומן בגיליון
                 meth = ('Banquest' if 'Banquest' in (ch.get('source') or '') else
-                        ('Authorize' if ch.get('source') else (b.get('method') or '')))
+                        ('Authorize' if ch.get('source') else (x.get('method') or b.get('method') or '')))
                 if cur.execute("""SELECT 1 FROM donations WHERE donor_id=? AND category=?
                                   AND ROUND(CAST(amount AS REAL),2)=?""",
                                (x['donor_id'], cat, x['amount'])).fetchone():
                     skipped += 1; continue          # כבר נרשמה — בלי כפילות
-                note = cat + (' · ' + x['note'] if x['note'] else '')
+                note = cat + (' · ' + x['method'] if (x['method'] and not ch) else '') + (' · ' + x['note'] if x['note'] else '')
                 cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
                             (x['donor_id'], dt, f"{x['amount']:.2f}", cat, meth, note))
                 if ch.get('tid'):
