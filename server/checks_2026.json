@@ -63,9 +63,6 @@
    "he": "פינטער שמשון",
    "en": "Samson Pinter"
   },
-  "R.Z.H. Foundation (Elbogen)": {
-   "he": "עלבויגן RZH FOUNDATION"
-  },
   "Rosenfeld, David": {},
   "Rosenfeld, Jerry - Tova": {
    "he": "רוזנפלד ישראל אבא",
@@ -758,14 +755,6 @@
    "method": "צ'ק",
    "ref": "16675712",
    "num": "10387"
-  },
-  {
-   "who": "R.Z.H. Foundation (Elbogen)",
-   "date": "2026-01-13",
-   "amount": 500.0,
-   "method": "צ'ק",
-   "ref": "58597",
-   "num": "10280"
   },
   {
    "who": "Rosenfeld, David",

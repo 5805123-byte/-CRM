@@ -1945,6 +1945,34 @@ def ensure_schema():
     except Exception as e:
         print('  dupsum error:', e)
 
+    # RZH (עלבויגן) — התרומה לא שייכת לנו, רק עשינו טובה. הכרטיס יורד לגמרי.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='elbogen_rzh_drop_v1'").fetchone():
+            row = con.execute("SELECT id FROM donors WHERE last='עלבויגן' AND first='RZH FOUNDATION'").fetchone()
+            if row:
+                did = row['id']
+                for kind, tbl in (('parnes', 'parnes'), ('contact', 'contacts_log'), ('task', 'tasks'),
+                                  ('donation', 'donations'), ('transaction', 'transactions')):
+                    try:
+                        con.execute("DELETE FROM files WHERE kind=? AND ref_id IN "
+                                    "(SELECT id FROM %s WHERE donor_id=?)" % tbl, (kind, did))
+                    except Exception:
+                        pass
+                try: con.execute("DELETE FROM files WHERE kind='iz' AND ref_id=?", (did,))
+                except Exception: pass
+                for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
+                          'partners', 'transactions', 'building', 'donor_rules'):
+                    try: con.execute("DELETE FROM %s WHERE donor_id=?" % t, (did,))
+                    except Exception: pass
+                for t in ('recon', 'intake'):
+                    try: con.execute("UPDATE %s SET donor_id=NULL WHERE donor_id=?" % t, (did,))
+                    except Exception: pass
+                con.execute("DELETE FROM donors WHERE id=?", (did,))
+                print('  עלבויגן RZH: הכרטיס נמחק (#%d)' % did)
+            con.execute("INSERT INTO seed_flags(name) VALUES('elbogen_rzh_drop_v1')")
+    except Exception as e:
+        print('  elbogen drop error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
@@ -2085,6 +2113,28 @@ def ensure_schema():
             print(f'  שחזור שיוכים אחרי מיזוג: הוחזרו {relinked}, שוחררו {freed}')
     except Exception as e:
         print('  merge orphans error:', e)
+
+    # שורות שנשארו תלויות בכרטיס שנמחק — כסף רפאים שנספר בסיכומים בלי שאף אחד רואה אותו.
+    # רץ בכל עליית שרת, כי מיזוג או מחיקה יכולים ליצור אותן מחדש.
+    try:
+        gone = 0
+        for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
+                  'partners', 'transactions', 'building', 'donor_rules'):
+            try:
+                gone += con.execute("DELETE FROM %s WHERE donor_id IS NOT NULL "
+                                    "AND donor_id NOT IN (SELECT id FROM donors)" % t).rowcount
+            except Exception:
+                pass
+        for t in ('recon', 'intake'):
+            try:
+                con.execute("UPDATE %s SET donor_id=NULL WHERE donor_id IS NOT NULL "
+                            "AND donor_id NOT IN (SELECT id FROM donors)" % t)
+            except Exception:
+                pass
+        if gone:
+            print('  שורות יתומות שנוקו: %d' % gone)
+    except Exception as e:
+        print('  orphan cleanup error:', e)
 
     con.commit(); con.close()
 
