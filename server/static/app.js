@@ -1029,6 +1029,15 @@ function renderBuilding(d){
   el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;x[inp.dataset.k]=inp.value;await api('PUT','/api/building/'+x.id,{[inp.dataset.k]:inp.value});cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
 }
 // סיכום לפי ייעוד — כמה נתרם לכל דבר, השנה ובסך הכל
+// "עבור מה" שמוצג בראש הכרטיס — הייעוד שנקבע לתורם, ואם לא נקבע אז לפי התרומות בפועל
+function purposeText(d){
+  if(String(d.purpose||'').trim())return String(d.purpose).trim();
+  const m={};
+  (d.donations||[]).forEach(x=>{const c=String(x.category||'').trim();if(c)m[c]=(m[c]||0)+amtNum(x.amount);});
+  (d.parnes||[]).filter(p=>p.status!=='suggested').forEach(p=>{const c=DAYKIND[p.kind]||'🌙 פרנס יום';m[c]=(m[c]||0)+amtNum(p.amount);});
+  const l=Object.keys(m).sort((a,b)=>m[b]-m[a]);
+  return l.length?(l.slice(0,3).join(' · ')+(l.length>3?' ועוד':'')):'';
+}
 function catTotalsHTML(d){
   const cur=curSym(d), m={};
   const add=(c,amt,dt)=>{
@@ -1095,14 +1104,16 @@ function cardDetails(d,body){
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(curd+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
-    ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
+    ${purposeText(d)?`<div class="purpose">🎯 עבור: ${esc(purposeText(d))}${String(d.purpose||'').trim()?'':' <small>(לפי התרומות)</small>'}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}" inputmode="decimal"></label></div>
     <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
       <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>
-    ${(d.category==='מזדמן'&&!d.tier)?`<div class="two"><label class="fld"><span>🗓️ חודש (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
+    <label class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה)</span><select id="f_purpose">${dnCatOpts(d.purpose||'')}</select></label>
+    <div class="addrow hidden" id="f_purpnew"><input id="f_purpfree" placeholder="שם הייעוד החדש"></div>
+    ${(d.category==='מזדמן'&&!d.tier&&((d.prayers||[]).length||d.kv_month))?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
     ${izSummaryHTML(d)}
@@ -1394,7 +1405,15 @@ function cardDetails(d,body){
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
-  document.getElementById('f_saveall').onclick=async()=>{const b2={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){b2[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,b2);toast('נשמר ✓');if(tab==='donors')renderDonors();};
+  const psel=document.getElementById('f_purpose'),pnew=document.getElementById('f_purpnew');
+  if(psel)psel.onchange=()=>{pnew.classList.toggle('hidden',psel.value!=='__new__');if(psel.value==='__new__')document.getElementById('f_purpfree').focus();};
+  document.getElementById('f_saveall').onclick=async()=>{const b2={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){b2[k]=el.value;d[k]=el.value;}});
+    if(psel){let pv=psel.value;
+      if(pv==='__new__'){pv=document.getElementById('f_purpfree').value.trim();
+        if(!pv){toast('כתוב את שם הייעוד החדש');document.getElementById('f_purpfree').focus();return;}
+        if(!(CAMPAIGNS||[]).includes(pv)){await api('POST','/api/campaigns',{name:pv});CAMPAIGNS.unshift(pv);}}
+      b2.purpose=pv;d.purpose=pv;}
+    await api('PUT','/api/donor/'+d.id,b2);cardDetails(d,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
 }
 
 // מחיקת תורם — חלון אישור ברור, ודיווח אמיתי אם נכשל
