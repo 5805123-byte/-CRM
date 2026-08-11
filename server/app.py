@@ -2423,7 +2423,7 @@ def ensure_schema():
     # מאיר קבע: חיים ולאה אסתר לאקס הם בעל ואישה בכרטיס אחד; מוסקוביץ העני
     # ואסתר הם שני תורמים נפרדים ואין למזג אותם לעולם
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lax_moskowitz_v1'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lax_moskowitz_v2'").fetchone():
             h = con.execute("SELECT id FROM donors WHERE last LIKE '%לאקס%' AND first LIKE '%חיים%'").fetchone()
             w = con.execute("SELECT id FROM donors WHERE last LIKE '%לאקס%' AND first LIKE '%לאה%'").fetchone()
             if h and w and h['id'] != w['id']:
@@ -2433,14 +2433,21 @@ def ensure_schema():
                             (h['id'],))
                 print('  לאקס: הכרטיס נושא את חיים ולאה אסתר')
             n2 = 0
+            # ישראל ברודי ושרה ברודי אינם קשורים
+            bs = [r['id'] for r in con.execute("SELECT id FROM donors WHERE last LIKE '%ברודי%'")]
+            for i in range(len(bs)):
+                for j in range(i + 1, len(bs)):
+                    con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)",
+                                (min(bs[i], bs[j]), max(bs[i], bs[j]), today_iso()))
+                    n2 += 1
             ms = [r['id'] for r in con.execute("SELECT id FROM donors WHERE last LIKE '%מוסקוביץ%'")]
             for i in range(len(ms)):
                 for j in range(i + 1, len(ms)):
                     con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)",
                                 (min(ms[i], ms[j]), max(ms[i], ms[j]), today_iso()))
                     n2 += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('lax_moskowitz_v1')")
-            print('  מוסקוביץ: %d זוגות סומנו כתורמים נפרדים' % n2)
+            con.execute("INSERT INTO seed_flags(name) VALUES('lax_moskowitz_v2')")
+            print('  מוסקוביץ / ברודי: %d זוגות סומנו כתורמים נפרדים' % n2)
     except Exception as e:
         print('  lax/moskowitz error:', e)
 
