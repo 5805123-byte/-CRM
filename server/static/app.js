@@ -117,7 +117,12 @@ const view = document.getElementById('view'), chips = document.getElementById('c
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
 const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_שבועי':['שבועי','wkly'],'קוויטל_כללי':['כללי','klali']};
-const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה', 'מזדמן/חד-פעמי'];
+const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה'];
+// התווית שמוצגת לכל סוג התחייבות. הערך עצמו נשאר כפי שהוא בבסיס הנתונים
+const CATLBL = {'':'— ללא —','מזדמן':'מזדמן / חד־פעמי'};
+const catLabel=c=>CATLBL[c]||c;
+// תדירות רלוונטית רק למי שיש לו התחייבות קבועה
+const hasFreq=d=>!!(d&&['קבוע','פרנס יום','בניין/הקדשה'].includes(d.category||''));
 // תדירות תרומה — לקבוע שאינו בהכרח חודשי
 const FREQ = [['','חודשי'],['x2m','פעמיים בחודש'],['2m','כל חודשיים'],['3m','כל 3 חודשים (רבעוני)'],['4m','כל 4 חודשים'],['6m','פעמיים בשנה'],['1y','פעם בשנה'],['חגים','לחגים בלבד'],['משתנה','משתנה / לפי הצורך']];
 function freqOpts(cur){return FREQ.map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
@@ -1082,7 +1087,8 @@ function catTotalsHTML(d){
     <div class="catrow tot"><span>סה"כ</span><b>${f(tY)}</b><b>${f(tA)}</b></div></div>`;
 }
 function cardDetails(d,body){
-  const sel=CATS.map(c=>`<option ${c===d.category?'selected':''} value="${c}">${c||'— ללא —'}</option>`).join('');
+  const cl=CATS.includes(d.category||'')?CATS:CATS.concat([d.category]);
+  const sel=cl.map(c=>`<option ${c===(d.category||'')?'selected':''} value="${esc(c)}">${esc(catLabel(c))}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
   const gc=gaps(d.months).length, pend=(d.pledges||[]).filter(p=>p.status!=='נתן').length;
   const dt=donorTotals(d), curd=curSym(d);
@@ -1132,8 +1138,9 @@ function cardDetails(d,body){
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
       <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}" inputmode="decimal"></label></div>
-    <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
-      <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>
+    ${hasFreq(d)?`<div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
+      <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>`
+    :`<label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>`}
     <label class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה)</span><select id="f_purpose">${dnCatOpts(d.purpose||'')}</select></label>
     <div class="addrow hidden" id="f_purpnew"><input id="f_purpfree" placeholder="שם הייעוד החדש"></div>
     ${hasOccKv(d)?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
@@ -1425,6 +1432,9 @@ function cardDetails(d,body){
   const FF=['last','first','category','amount','frequency'];
   wireFields(d,FF);
   wireNotes(d,body);
+  // שינוי ההתחייבות מחליף גם את מה שרלוונטי להציג (תדירות רק לקבועים)
+  const catSel=document.getElementById('f_category');
+  if(catSel)catSel.addEventListener('change',()=>setTimeout(()=>cardDetails(d,body),150));
   const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='details';renderCard(d);};
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
