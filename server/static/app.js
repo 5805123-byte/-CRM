@@ -2780,9 +2780,10 @@ function renderTasksTab(){
       <div id="nt_res" class="dpres"></div>
       <div id="nt_chosen" class="pick" style="display:none"></div>
       <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
+      <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select id="nt_who">${assigneeOpts(inWho)}</select></label>
       <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
-      <div class="hintxt">כתוב מה צריך לעשות. רוצה שאהרן יעשה — כתוב בחלון של אהרן; רוצה שאתה — בחלון שלך. אפשר גם לשייך לתורם.</div></div>
+      <div class="hintxt">בחר מי מבצע — מאיר או אהרן. ברירת המחדל היא החלון שאתה נמצא בו. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
     <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div><div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=(KIND[t.kind]||'🔔').split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
@@ -2821,7 +2822,8 @@ function renderTasksTab(){
   const ntF=pendFiles('nt_files','nt_file');
   document.getElementById('nt_add').onclick=async()=>{
     const kind=document.getElementById('nt_kind').value,date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
-    const who=inWho;   // ההקצאה נקבעת לפי החלון
+    const whoEl=document.getElementById('nt_who');
+    const who=whoEl?whoEl.value:inWho;   // ברירת המחדל לפי החלון, וניתן לשנות כאן
     if(!note&&!ntChosen){toast('כתוב מה צריך לעשות');return;}
     if(!date){toast('בחר תאריך');return;}
     const body={due_date:date,kind:kind,note:note,assignee:who};
