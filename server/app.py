@@ -2364,6 +2364,86 @@ def ensure_schema():
     except Exception as e:
         print('  ner lemaor error:', e)
 
+    # כרטיסים כפולים של אותו אדם שנוצרו בייבוא: אותו שם משפחה לפי צליל ושם פרטי
+    # שמתיישב (עטרה / "עטרה (קטי)", דוד / "משה דוד", בריינה / "בנדל בריינא").
+    # בני זוג נחסמים כי שמותיהם הפרטיים שונים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='dupe_name_merge_v1'").fetchone():
+            def _fnames(s0):
+                return [t for t in re.sub(r'[^\u05d0-\u05ea ]', ' ', s0 or '').split() if len(t) >= 2]
+
+            def _firsts_ok(a0, b0):
+                ta, tb = _fnames(a0), _fnames(b0)
+                if not ta or not tb:
+                    return False
+                short, long = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+                return all(any(_firstok(x, y, strict=True) for y in long) for x in short)
+            rows = [dict(r) for r in con.execute(
+                "SELECT id,last,first,phone,email,addr,english FROM donors")]
+            nd = set()
+            try:
+                for r in con.execute("SELECT a,b FROM not_dupes"):
+                    nd.add((r['a'], r['b']))
+            except Exception:
+                pass
+            bylast = {}
+            for r in rows:
+                k = _fz(r['last'] or '')
+                if len(k) >= 3:
+                    bylast.setdefault(k, []).append(r)
+
+            def _rich(r):
+                return sum(1 for k in ('phone', 'email', 'addr', 'english') if str(r.get(k) or '').strip())
+            nmg2, merged = 0, []
+            for k, grp in bylast.items():
+                if len(grp) < 2:
+                    continue
+                for i in range(len(grp)):
+                    for j in range(i + 1, len(grp)):
+                        a1, b1 = grp[i], grp[j]
+                        pair = (min(a1['id'], b1['id']), max(a1['id'], b1['id']))
+                        if pair in nd or not _firsts_ok(a1['first'], b1['first']):
+                            continue
+                        # שניהם עם טלפונים שונים לגמרי — כנראה שני אנשים
+                        p1 = {_ph10(x) for x in re.split(r'[;,/]+', a1['phone'] or '') if _ph10(x)}
+                        p2 = {_ph10(x) for x in re.split(r'[;,/]+', b1['phone'] or '') if _ph10(x)}
+                        if p1 and p2 and not (p1 & p2):
+                            continue
+                        kp, dp = (a1, b1) if _rich(a1) >= _rich(b1) else (b1, a1)
+                        if merge_into(con, kp['id'], dp['id']):
+                            nmg2 += 1
+                            merged.append('%s %s ← %s' % (kp['last'], kp['first'] or '', dp['first'] or ''))
+                            dp['id'] = kp['id']
+            con.execute("INSERT INTO seed_flags(name) VALUES('dupe_name_merge_v1')")
+            print('  כרטיסים כפולים שאוחדו לפי שם: %d%s'
+                  % (nmg2, (' — ' + ' · '.join(merged[:8])) if merged else ''))
+    except Exception as e:
+        print('  dupe name merge error:', e)
+
+    # מאיר קבע: חיים ולאה אסתר לאקס הם בעל ואישה בכרטיס אחד; מוסקוביץ העני
+    # ואסתר הם שני תורמים נפרדים ואין למזג אותם לעולם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lax_moskowitz_v1'").fetchone():
+            h = con.execute("SELECT id FROM donors WHERE last LIKE '%לאקס%' AND first LIKE '%חיים%'").fetchone()
+            w = con.execute("SELECT id FROM donors WHERE last LIKE '%לאקס%' AND first LIKE '%לאה%'").fetchone()
+            if h and w and h['id'] != w['id']:
+                merge_into(con, h['id'], w['id'])
+            if h:   # הכרטיס נושא את שניהם, גם אם האיחוד כבר קרה קודם
+                con.execute("UPDATE donors SET first='חיים ולאה אסתר' WHERE id=? AND first NOT LIKE '%לאה%'",
+                            (h['id'],))
+                print('  לאקס: הכרטיס נושא את חיים ולאה אסתר')
+            n2 = 0
+            ms = [r['id'] for r in con.execute("SELECT id FROM donors WHERE last LIKE '%מוסקוביץ%'")]
+            for i in range(len(ms)):
+                for j in range(i + 1, len(ms)):
+                    con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)",
+                                (min(ms[i], ms[j]), max(ms[i], ms[j]), today_iso()))
+                    n2 += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('lax_moskowitz_v1')")
+            print('  מוסקוביץ: %d זוגות סומנו כתורמים נפרדים' % n2)
+    except Exception as e:
+        print('  lax/moskowitz error:', e)
+
     # תרגומים שנשמרו זהים למקור — התרגום לא באמת קרה. מנקים כדי שירוצו מחדש
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='retranslate_v1'").fetchone():
@@ -2606,6 +2686,26 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('goldstar_biz_v1')")
     except Exception as e:
         print('  goldstar biz error:', e)
+
+    # מנדלסון יוסף מרדכי = מוטי = Mark. הכינויים נשמרים בכרטיס וגם משמשים
+    # להתאמת אנשי קשר, ולכן "מנדלסון מוטי" מהטלפון יימצא מעכשיו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mendelson_moti_v1'").fetchone():
+            r = con.execute("SELECT id,aliases FROM donors WHERE last LIKE '%מנדלסון%' "
+                            "AND first LIKE '%מרדכי%'").fetchone()
+            if r:
+                al = [x.strip() for x in re.split(r'[,;/]', r['aliases'] or '') if x.strip()]
+                for x in ('מוטי', 'Mark', 'Marc'):
+                    if x not in al:
+                        al.append(x)
+                con.execute("UPDATE donors SET aliases=? WHERE id=?", (', '.join(al), r['id']))
+                # המספר מאיש הקשר "מנדלסון מוטי" — אינו בייצוא אנשי הקשר שנשלח
+                con.execute("UPDATE donors SET phone='+1 917-816-8129' "
+                            "WHERE id=? AND COALESCE(TRIM(phone),'')=''", (r['id'],))
+                print('  מנדלסון: נוספו הכינויים מוטי / Mark והטלפון')
+            con.execute("INSERT INTO seed_flags(name) VALUES('mendelson_moti_v1')")
+    except Exception as e:
+        print('  mendelson alias error:', e)
 
     # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
@@ -3648,11 +3748,47 @@ def _tok_he(s):
     return [t for t in re.sub(r'[^\u05d0-\u05ea ]', ' ', s or '').split() if len(t) >= 2]
 
 
-def _firstok(a, b):
-    """שמות פרטיים של אותו אדם — זהים, קיצור, או כינוי. לפי צליל, ומשני הכיוונים:
-    גבי/גבריאל (תחילית) וגם תולי/נפתלי (סיומת)."""
-    x, y = _fz(a), _fz(b)
-    if len(x) < 2 or len(y) < 2:
+# כינויים נפוצים שאין דרך לגזור אותם מהצליל — מוטי אינו נשמע כמו מרדכי
+_NICK = {
+    'מוטי': 'מרדכי', 'מוטל': 'מרדכי', 'מארק': 'מרדכי', 'מרק': 'מרדכי', 'מוטה': 'מרדכי',
+    'מוישי': 'משה', 'מושי': 'משה', 'מוישה': 'משה',
+    'שיא': 'יהושע', 'שייע': 'יהושע', 'שיע': 'יהושע', 'שעיה': 'ישעיה',
+    'יידל': 'יהודה', 'יודל': 'יהודה', 'יידי': 'יהודה', 'לייבי': 'יהודה',
+    'תולי': 'נפתלי', 'טולי': 'נפתלי', 'טוליע': 'נפתלי',
+    'גבי': 'גבריאל', 'אבי': 'אברהם', 'אברומי': 'אברהם', 'אברימי': 'אברהם',
+    'זלמן': 'שניאור', 'סנדר': 'אלכסנדר', 'בערי': 'דוב', 'בעריש': 'דוב', 'בערל': 'דוב',
+    'איצי': 'יצחק', 'איציק': 'יצחק', 'איציקל': 'יצחק',
+    'שמילי': 'שמואל', 'שמולי': 'שמואל', 'מולי': 'שמואל',
+    'מנדי': 'מנחם', 'מענדי': 'מנחם', 'מנדל': 'מנחם', 'מענדל': 'מנחם',
+    'לייזר': 'אליעזר', 'לוזר': 'אליעזר',
+    'יאנקי': 'יעקב', 'ינקי': 'יעקב', 'יענקל': 'יעקב', 'קופל': 'יעקב',
+    'הרשי': 'צבי', 'הירש': 'צבי', 'העניך': 'חנוך',
+    'פייבי': 'שרגא', 'פיבי': 'שרגא', 'נחי': 'נחמן', 'נתי': 'נתן',
+}
+
+
+def _nick(s):
+    s = (s or '').strip()
+    return _NICK.get(s, s)
+
+
+def _firstok(a, b, strict=False):
+    """שמות פרטיים של אותו אדם — זהים, כינוי מוכר, או אותו צליל.
+    strict=True למיזוג כרטיסים: קיצור לפי תחילית/סיומת מתקבל רק כששני
+    הצלילים ארוכים דיים, אחרת שמות קצרים ושונים (שרה מול ישראל) היו
+    נראים תואמים. בהשלמת פרטים מאנשי קשר די בסף נמוך יותר."""
+    a, b = (a or '').strip(), (b or '').strip()
+    if not a or not b:
+        return False
+    if a == b or _nick(a) == _nick(b):
+        return True
+    x, y = _fz(_nick(a)), _fz(_nick(b))
+    if not x or not y:
+        return False
+    if x == y and len(x) >= 2:
+        return True
+    mn = 3 if strict else 2
+    if len(x) < mn or len(y) < mn:
         return False
     return x.startswith(y) or y.startswith(x) or x.endswith(y) or y.endswith(x)
 
@@ -3663,7 +3799,7 @@ def contacts_fill(con, cards, status=None):
     st = status if status is not None else {}
     people = cluster_contacts(cards)
     donors = [dict(r) for r in con.execute(
-        "SELECT id,last,first,english,business,addr,phone,email FROM donors")]
+        "SELECT id,last,first,english,business,addr,phone,email,aliases FROM donors")]
     by_email, by_phone, by_he, by_lat, by_last = {}, {}, {}, {}, {}
 
     def put(d, k, v):
@@ -3715,7 +3851,8 @@ def contacts_fill(con, cards, status=None):
                 for cand in by_last.get(_fz(t), []) or []:
                     rest = [u for j, u in enumerate(toks) if j != i]
                     cf = (cand['first'] or '').strip()
-                    if not cf or any(_firstok(u, cf) for u in rest):
+                    alts = [cf] + [x.strip() for x in re.split(r'[,;/]', cand.get('aliases') or '') if x.strip()]
+                    if not cf or any(_firstok(u, v) for u in rest for v in alts if v):
                         cands.append(cand)
             d = pick(cands)
             strong = bool(d)
