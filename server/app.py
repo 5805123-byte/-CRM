@@ -1973,6 +1973,27 @@ def ensure_schema():
     except Exception as e:
         print('  elbogen drop error:', e)
 
+    # ניקול אייזנברגר — הכרטיס הנפרד מתמזג לכרטיס שמחזיק את אותו מייל (יערט)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='eisenberger_merge_v1'").fetchone():
+            MAIL = 'eisenberger.nicole@gmail.com'
+            cand = [dict(r) for r in con.execute(
+                "SELECT id,last,first,email FROM donors WHERE lower(COALESCE(email,'')) LIKE ?",
+                ('%' + MAIL + '%',))]
+            if len(cand) > 1:
+                cnt = {}
+                for r in con.execute("SELECT donor_id, COUNT(*) n FROM donations GROUP BY donor_id"):
+                    cnt[r['donor_id']] = r['n']
+                # נשאר הכרטיס של יערט/ירט; אם אין — זה עם הכי הרבה תרומות
+                cand.sort(key=lambda x: (0 if re.search(r'ירט|ערט', x['last'] or '') else 1, -cnt.get(x['id'], 0)))
+                keep = cand[0]['id']
+                for x in cand[1:]:
+                    mv = merge_into(con, keep, x['id'])
+                    print('  אייזנברגר: #%d מוזג לתוך #%d (%s)' % (x['id'], keep, mv))
+            con.execute("INSERT INTO seed_flags(name) VALUES('eisenberger_merge_v1')")
+    except Exception as e:
+        print('  eisenberger merge error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
@@ -2827,6 +2848,70 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     else:
         im.save(buf, 'PNG', compress_level=6)
     return buf.getvalue()
+
+
+MERGE_HEB = {'donations': 'תרומות', 'prayers': 'שמות קוויטל', 'parnes': 'פרנס יום',
+             'tasks': 'משימות', 'contacts_log': 'רישומי קשר', 'partners': 'אברכים',
+             'transactions': 'חיובים', 'pledges': 'התחייבויות', 'recon': 'שורות חיוב',
+             'building': 'בניין', 'intake': 'בקשות מהאתר'}
+
+
+def merge_into(con, keep, drop):
+    """מיזוג כרטיס כפול לתוך הכרטיס שנשאר. מחזיר מה עבר, או None אם אחד מהם לא קיים.
+    לא דורס דבר: שדות ריקים מושלמים, טלפונים ואימיילים מתאחדים, הערות מתחברות."""
+    if keep == drop:
+        return None
+    cur = con.cursor()
+    k = cur.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
+    d = cur.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
+    if not k or not d:
+        return None
+    moved = {}
+    for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
+              'partners', 'transactions', 'building', 'recon', 'intake'):
+        try:
+            n = cur.execute("SELECT COUNT(*) FROM %s WHERE donor_id=?" % t, (drop,)).fetchone()[0]
+            cur.execute("UPDATE %s SET donor_id=? WHERE donor_id=?" % t, (keep, drop))
+            if n:
+                moved[t] = n
+        except Exception:
+            pass
+    try: cur.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
+    except Exception: pass
+    kd = dict(k); dd = dict(d); sets = []; vals = []
+    for col in ('first', 'english', 'business', 'addr', 'tier', 'category', 'purpose',
+                'amount', 'region', 'country', 'zip', 'city', 'channel', 'pay_status',
+                'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'months', 'last_active'):
+        if col in kd and not str(kd.get(col) or '').strip() and str(dd.get(col) or '').strip():
+            sets.append("%s=?" % col); vals.append(dd[col])
+    kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
+    for p in re.split(r'[/,]', dd.get('phone') or ''):
+        p = p.strip()
+        if p and p not in kp:
+            kp.append(p)
+    if ' / '.join(kp) != (kd.get('phone') or ''):
+        sets.append("phone=?"); vals.append(' / '.join(kp))
+    ke = emails_of(kd.get('email'))
+    for e in emails_of(dd.get('email')):
+        if e not in ke:
+            ke.append(e)
+    if ', '.join(ke) != (kd.get('email') or '').strip():
+        sets.append("email=?"); vals.append(', '.join(ke))
+    kn = (kd.get('notes') or '').strip(); dn = (dd.get('notes') or '').strip()
+    if dn and dn not in kn:
+        sets.append("notes=?"); vals.append((kn + ' · ' + dn).strip(' ·') if kn else dn)
+    if sets:
+        cur.execute("UPDATE donors SET " + ",".join(sets) + " WHERE id=?", vals + [keep])
+    det = ', '.join('%d %s' % (v, MERGE_HEB.get(kk, kk)) for kk, v in moved.items()) or 'ללא רשומות'
+    try:
+        cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                    (keep, today_iso(), 'מערכת',
+                     ('🔀 מוזג לכאן הכרטיס הכפול #%d %s' % (drop, ((dd.get('last') or '') + ' ' +
+                      (dd.get('first') or '')).strip())) + ' — ' + det))
+    except Exception:
+        pass
+    cur.execute("DELETE FROM donors WHERE id=?", (drop,))
+    return moved
 
 
 def _ph10(s):
@@ -4149,62 +4234,10 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {'error': 'keep/drop required'})
             if keep == drop:
                 return self._send(400, {'error': 'same id'})
-            con = db(); cur = con.cursor()
-            k = cur.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone()
-            d = cur.execute("SELECT * FROM donors WHERE id=?", (drop,)).fetchone()
-            if not k or not d:
+            con = db()
+            moved = merge_into(con, keep, drop)
+            if moved is None:
                 con.close(); return self._send(404, {'error': 'donor not found'})
-            # העברת כל רשומות הבן מהכרטיס הנמחק לכרטיס שנשאר — כולל ספירה, כדי לדווח בדיוק מה עבר
-            moved = {}
-            for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
-                      'partners', 'transactions', 'building', 'recon', 'intake'):
-                try:
-                    n = cur.execute(f"SELECT COUNT(*) FROM {t} WHERE donor_id=?", (drop,)).fetchone()[0]
-                    cur.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
-                    if n: moved[t] = n
-                except Exception: pass
-            try: cur.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
-            except Exception: pass
-            # השלמת שדות ריקים בכרטיס שנשאר מתוך הכרטיס הנמחק; מיזוג טלפונים ואימיילים ייחודיים
-            kd = dict(k); dd = dict(d); sets = []; vals = []
-            for col in ('first', 'english', 'business', 'addr', 'tier', 'category', 'purpose',
-                        'amount', 'region', 'country', 'zip', 'city', 'channel', 'pay_status',
-                        'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'months', 'last_active'):
-                if col in kd and not (kd.get(col) or '').strip() and (dd.get(col) or '').strip():
-                    sets.append(f"{col}=?"); vals.append(dd[col])
-            kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
-            for p in re.split(r'[/,]', dd.get('phone') or ''):
-                p = p.strip()
-                if p and p not in kp: kp.append(p)
-            merged_phone = ' / '.join(kp)
-            if merged_phone != (kd.get('phone') or ''):
-                sets.append("phone=?"); vals.append(merged_phone)
-            # אימיילים — איחוד ולא דריסה: לתורם אחד יכולות להיות כמה כתובות
-            ke = emails_of(kd.get('email'))
-            for e in emails_of(dd.get('email')):
-                if e not in ke: ke.append(e)
-            merged_mail = ', '.join(ke)
-            if merged_mail != (kd.get('email') or '').strip():
-                sets.append("email=?"); vals.append(merged_mail)
-            # הערות — מחברים, לא מאבדים
-            kn = (kd.get('notes') or '').strip(); dn = (dd.get('notes') or '').strip()
-            if dn and dn not in kn:
-                sets.append("notes=?"); vals.append((kn + ' · ' + dn).strip(' ·') if kn else dn)
-            if sets:
-                cur.execute("UPDATE donors SET " + ",".join(sets) + " WHERE id=?", vals + [keep])
-            # רישום המיזוג ביומן הקשר — כדי שתמיד יהיה ברור מה עבר ומאיפה
-            HEB = {'donations': 'תרומות', 'prayers': 'שמות קוויטל', 'parnes': 'פרנס יום',
-                   'tasks': 'משימות', 'contacts_log': 'רישומי קשר', 'partners': 'אברכים',
-                   'transactions': 'חיובים', 'pledges': 'התחייבויות', 'recon': 'שורות חיוב',
-                   'building': 'בניין', 'intake': 'בקשות מהאתר'}
-            det = ', '.join(f"{v} {HEB.get(kk, kk)}" for kk, v in moved.items()) or 'ללא רשומות'
-            try:
-                cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
-                            (keep, today_iso(), 'מערכת',
-                             f"🔀 מוזג לכאן הכרטיס הכפול #{drop} {(dd.get('last') or '') + ' ' + (dd.get('first') or '')}".strip()
-                             + ' — ' + det))
-            except Exception: pass
-            cur.execute("DELETE FROM donors WHERE id=?", (drop,))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'keep': keep, 'dropped': drop, 'moved': moved})
         if self.path == '/api/building':
