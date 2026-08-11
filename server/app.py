@@ -2191,6 +2191,9 @@ def ensure_schema():
         ('card_name_link_v2', {
             'beth statfeld':            ('שטטפלד', 'יצחק וברכה'),
         }),
+        ('card_name_link_v3', {
+            'gold star restoration':    ('דונט', 'מוטי'),
+        }),
     ):
         try:
             if con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
@@ -2200,6 +2203,17 @@ def ensure_schema():
             print('  חיובים ששויכו לפי שם על האשראי (%s): %d' % (_flag[-2:], n))
         except Exception as e:
             print('  card name link error:', e)
+
+    # מוטי דונט — החיובים מגיעים על שם העסק Gold Star Restoration
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='goldstar_biz_v1'").fetchone():
+            r = con.execute("SELECT id,business FROM donors WHERE last='דונט' AND first='מוטי'").fetchone()
+            if r and not (r['business'] or '').strip():
+                con.execute("UPDATE donors SET business='Gold Star Restoration' WHERE id=?", (r['id'],))
+                print('  מוטי דונט: נרשם העסק Gold Star Restoration')
+            con.execute("INSERT INTO seed_flags(name) VALUES('goldstar_biz_v1')")
+    except Exception as e:
+        print('  goldstar biz error:', e)
 
     # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
