@@ -240,6 +240,53 @@ function fixNames(txt){
   }).join(' ');
   return {text:out,hits:hits.slice(0,3)};
 }
+// ===== פנקס ההכתבה — להכתיב הוראות ותיקונים ולהעתיק אותם במכה אחת =====
+const DICTKEY='kc_dict_hist';
+function dictHist(){try{return JSON.parse(localStorage.getItem(DICTKEY)||'[]');}catch(e){return [];}}
+function dictSave(t){
+  t=String(t||'').trim(); if(!t)return;
+  const l=dictHist().filter(x=>x.t!==t); l.unshift({t:t,d:new Date().toLocaleString('he-IL')});
+  try{localStorage.setItem(DICTKEY,JSON.stringify(l.slice(0,12)));}catch(e){}
+}
+async function copyTxt(t){
+  try{await navigator.clipboard.writeText(t);toast('הועתק ✓ — הדבק לי בצ׳אט');return true;}
+  catch(e){const ta=document.getElementById('dictpad');
+    if(ta){ta.select();ta.setSelectionRange(0,99999);try{document.execCommand('copy');toast('הועתק ✓');return true;}catch(e2){}}
+    toast('לא הצלחתי להעתיק — סמן ידנית');return false;}
+}
+function openDictPad(){
+  const ov=document.getElementById('dictov'), sh=document.getElementById('dictsheet');
+  const h=dictHist();
+  sh.innerHTML=`<button class="x" id="dictx">✕</button><h2>🎤 הכתבה</h2>
+    <div class="hintxt">לחץ "התחל להקליט", דבר בעברית, ואז "העתק" — והדבק לי בצ׳אט.</div>
+    <textarea id="dictpad" class="dictpad" placeholder="כאן ייכתב מה שתאמר…"></textarea>
+    <button class="btn dictbig" id="dictgo">🎤 התחל להקליט</button>
+    <div class="dictbar">
+      <button class="btn sm" id="dictcopy">📋 העתק</button>
+      <button class="btn sm ghost" id="dictadd">➕ המשך להוסיף</button>
+      <button class="btn sm ghost" id="dictclr">🗑 נקה</button></div>
+    ${h.length?`<div class="dicthist"><div class="hintxt">הכתבות אחרונות — לחץ להעתיק שוב</div>
+      ${h.map((x,i)=>`<div class="dh"><span>${esc(x.t.slice(0,220))}${x.t.length>220?'…':''}</span>
+        <button class="btn sm dhcopy" data-i="${i}">📋</button><button class="del dhdel" data-i="${i}">🗑</button></div>`).join('')}</div>`:''}`;
+  ov.classList.add('show');
+  const pad=document.getElementById('dictpad'), go=document.getElementById('dictgo');
+  document.getElementById('dictx').onclick=()=>{stopDictation();ov.classList.remove('show');};
+  go.onclick=()=>startDictation(go,pad);
+  const obs=()=>{const on=go.classList.contains('rec');
+    go.textContent=on?'⏹ סיים הקלטה':'🎤 התחל להקליט';
+    go.classList.toggle('dictbig',true);
+    document.getElementById('dictfab').classList.toggle('rec',on);};
+  new MutationObserver(obs).observe(go,{attributes:true,attributeFilter:['class']});
+  document.getElementById('dictcopy').onclick=async()=>{
+    const t=pad.value.trim(); if(!t){toast('אין מה להעתיק');return;}
+    if(await copyTxt(t))dictSave(t);};
+  document.getElementById('dictadd').onclick=()=>{if(pad.value.trim())pad.value=pad.value.trim()+'\n';pad.focus();};
+  document.getElementById('dictclr').onclick=()=>{if(pad.value.trim())dictSave(pad.value.trim());pad.value='';pad.focus();};
+  sh.querySelectorAll('.dhcopy').forEach(b=>b.onclick=()=>copyTxt(dictHist()[+b.dataset.i].t));
+  sh.querySelectorAll('.dhdel').forEach(b=>b.onclick=()=>{
+    const l=dictHist(); l.splice(+b.dataset.i,1);
+    try{localStorage.setItem(DICTKEY,JSON.stringify(l));}catch(e){} openDictPad();});
+}
 // מצמיד כפתור מיקרופון לשדה טקסט. נשאר בפינה ולא משנה את הפריסה
 function addMic(el){
   if(!SPR||!el||el._micd)return; el._micd=1;
@@ -3124,4 +3171,8 @@ function renderOcc(){
   view.innerHTML=`<div class="cnt">${list.length} מזדמנים</div><div class="list">${list.map(o=>`<div class="rowc" style="cursor:default"><div><div class="nm">${esc(o.name)}</div><div class="en">${esc(o.detail)}</div></div><div class="meta"><span class="ph">${o.total?('$'+esc(o.total)):''}</span></div></div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
 }
 
+// כפתור ההכתבה הצף — זמין בכל מסך. אם הדפדפן לא תומך בהכתבה, מסתירים אותו
+(function(){const f=document.getElementById('dictfab');if(!f)return;
+  if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){f.style.display='none';return;}
+  f.onclick=()=>openDictPad();})();
 load();
