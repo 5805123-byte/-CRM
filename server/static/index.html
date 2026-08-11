@@ -138,6 +138,17 @@
   .chbadge{display:inline-block;color:#fff;border-radius:7px;padding:2px 8px;font-size:.72rem;font-weight:800;white-space:nowrap}
   /* סיכום לפי ייעוד */
   /* מי מטפל במשימה — חיווי והחלפה מהירה מהשורה */
+  /* הכתבה קולית — כפתור מיקרופון צמוד לשדה */
+  .micwrap{position:relative;display:block;min-width:0}
+  .addrow>.micwrap,.noterow>.micwrap,.two>.micwrap{flex:1;min-width:0}
+  .micwrap>input,.micwrap>textarea{padding-left:42px}
+  .micbtn{position:absolute;left:5px;top:50%;transform:translateY(-50%);width:32px;height:32px;
+    min-width:0;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--card);
+    font-size:1rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .micwrap>textarea+.micbtn{top:auto;bottom:6px;transform:none}
+  .micbtn:active{background:var(--ground)}
+  .micbtn.rec{background:var(--no);border-color:var(--no);color:#fff;animation:micpulse 1s infinite}
+  @keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(200,40,40,.55)}50%{box-shadow:0 0 0 7px rgba(200,40,40,0)}}
   .notesbox{background:var(--ground);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin:8px 2px}
   .notesbox-t{font-size:.78rem;font-weight:800;color:var(--muted);margin-bottom:6px}
   .noterow{display:flex;gap:6px;align-items:center;margin-bottom:5px}

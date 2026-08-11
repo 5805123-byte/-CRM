@@ -175,6 +175,86 @@ async function kindValue(sel){
   refreshKindSels(); sel.value='c:'+nm; if(sel._kshw)sel._kshw();
   return 'c:'+nm;
 }
+// ===== הכתבה קולית בעברית =====
+// משתמש במנוע הדיבור של הדפדפן (Chrome/Android, Safari) — בלי שרת חיצוני ובלי עלות.
+const SPR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const SRERR = {'not-allowed':'לא ניתנה הרשאה למיקרופון — אשר אותה בהגדרות הדפדפן',
+  'service-not-allowed':'הדפדפן חסם את שירות ההכתבה','no-speech':'לא נשמע דיבור','audio-capture':'לא נמצא מיקרופון',
+  'network':'אין חיבור לרשת להכתבה','aborted':''};
+let SRACT=null;
+function stopDictation(){if(SRACT){try{SRACT.stop();}catch(e){}}}
+function startDictation(btn,el){
+  const C=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+  if(!C){toast('הדפדפן הזה לא תומך בהכתבה קולית — נסה בכרום');return;}
+  if(SRACT){stopDictation();return;}                       // לחיצה שנייה עוצרת
+  const r=new C(); r.lang='he-IL'; r.continuous=true; r.interimResults=true;
+  const base=(el.value||'').trim()?((el.value||'').trim()+' '):''; let fin='';
+  const setv=v=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
+  r.onstart=()=>{SRACT=r;btn.classList.add('rec');btn.textContent='⏹';toast('🎤 מקליט — דבר בעברית. לחץ שוב לסיום');};
+  r.onresult=ev=>{let interim='';
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      const t=ev.results[i][0].transcript;
+      if(ev.results[i].isFinal)fin+=t.trim()+' '; else interim+=t;}
+    setv((base+fin+interim).replace(/\s+/g,' '));};
+  r.onerror=ev=>{const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);};
+  r.onend=()=>{SRACT=null;btn.classList.remove('rec');btn.textContent='🎤';
+    const fixed=fixNames((base+fin).replace(/\s+/g,' ').trim());
+    setv(fixed.text);
+    if(fixed.hits.length)toast('תוקנו שמות: '+fixed.hits.join(', '));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    try{el.focus();}catch(e){}};
+  try{r.start();}catch(e){toast('לא הצלחתי להפעיל את המיקרופון');}
+}
+// מנוע הדיבור לא מכיר שמות משפחה של תורמים. אחרי ההכתבה מתקנים כל מילה
+// שנשמעת בדיוק כמו שם משפחה שקיים אצלנו (אותו מפתח דמיון), ומדווחים מה תוקן.
+let _NMIDX=null;
+function nameIndex(){
+  if(_NMIDX)return _NMIDX;
+  const cnt={};
+  (DB||[]).forEach(d=>['last','first'].forEach(k=>{
+    const w=String(d[k]||'').trim();
+    if(w.length<4||/\s/.test(w))return;
+    const key=fzHe(w); if(key.length<3)return;
+    (cnt[key]=cnt[key]||{})[w]=(cnt[key][w]||0)+1;
+  }));
+  const m={};
+  Object.keys(cnt).forEach(key=>{                       // כמה איותים לאותו צליל — בוחרים את הנפוץ
+    const l=Object.keys(cnt[key]).sort((a,b)=>cnt[key][b]-cnt[key][a]);
+    if(l.length===1||cnt[key][l[0]]>cnt[key][l[1]])m[key]=l[0];
+  });
+  _NMIDX=m; return m;
+}
+const _HPFX=/^[ולבכמשה]/;                                 // אותיות שימוש: לאברמוביץ, ושטטפלד…
+function fixNames(txt){
+  const hits=[];
+  if(!txt||!(DB||[]).length)return {text:txt,hits:hits};
+  const idx=nameIndex();
+  const out=String(txt).split(' ').map(w=>{
+    const bare=w.replace(/[^\u05d0-\u05ea]/g,'');
+    if(bare.length<4)return w;
+    let pre='', body=bare, cand=idx[fzHe(bare)];
+    if(!cand&&bare.length>=5&&_HPFX.test(bare)){pre=bare[0];body=bare.slice(1);cand=idx[fzHe(body)];}
+    if(!cand||cand===body)return w;
+    hits.push(bare+' → '+pre+cand);
+    return w.replace(bare,pre+cand);
+  }).join(' ');
+  return {text:out,hits:hits.slice(0,3)};
+}
+// מצמיד כפתור מיקרופון לשדה טקסט. נשאר בפינה ולא משנה את הפריסה
+function addMic(el){
+  if(!SPR||!el||el._micd)return; el._micd=1;
+  const w=document.createElement('div'); w.className='micwrap';
+  el.parentNode.insertBefore(w,el); w.appendChild(el);
+  const b=document.createElement('button'); b.type='button'; b.className='micbtn';
+  b.textContent='🎤'; b.title='הקלטה קולית — דבר בעברית';
+  b.onclick=e=>{e.preventDefault();e.stopPropagation();startDictation(b,el);};
+  w.appendChild(b);
+}
+// מצמיד מיקרופון לכל השדות שנבחרו בתוך אזור מסוים
+function addMics(root,sels){
+  if(!SPR||!root)return;
+  sels.forEach(sl=>root.querySelectorAll(sl).forEach(addMic));
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function inDaysStr(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.toISOString().slice(0,10);}
 function addDay(ymd8){const y=+ymd8.slice(0,4),m=+ymd8.slice(4,6)-1,d=+ymd8.slice(6,8);return new Date(Date.UTC(y,m,d+1)).toISOString().slice(0,10).replace(/-/g,'');}
@@ -456,7 +536,7 @@ function pendFiles(boxId,inputId){
 }
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; HEBYEAR = hq(d.heb_year) || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
@@ -978,6 +1058,7 @@ function cardTasks(d,body){
       <div class="hintxt">כל משימה נכנסת גם ללשונית "משימות" הראשית וליומן Google.</div></div>
     <div class="sec"><h3>📋 המשימות של ${esc((d.last+' '+d.first).trim())}</h3><div id="ct_list"></div></div>`;
   renderCardTasks(d);
+  addMic(document.getElementById('ct_note'));
   wireKindSel(document.getElementById('ct_kind'));
   document.getElementById('ct_add').onclick=async()=>{
     const note=document.getElementById('ct_note').value.trim(),kind=await kindValue(document.getElementById('ct_kind')),date=document.getElementById('ct_date').value,who=document.getElementById('ct_who').value;
@@ -1001,6 +1082,7 @@ function renderCardTasks(d){
       <button class="btn sm ctsave" data-id="${t.id}" style="width:100%;margin-top:8px">💾 שמור שינויים</button>
     </div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
   el.querySelectorAll('.ctk').forEach(wireKindSel);
+  addMics(el,['.ctn']);
   el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p)p.classList.toggle('hidden');});
   el.querySelectorAll('.ctsave').forEach(b=>b.onclick=async()=>{
     const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;
@@ -1062,6 +1144,7 @@ function wireNotes(d,root){
   box.querySelectorAll('.nbtxt').forEach(inp=>inp.onchange=()=>{const l=noteList(d);
     const v=inp.value.trim(); if(v)l[+inp.dataset.i]=v; else l.splice(+inp.dataset.i,1); save(l);toast('נשמר ✓');});
   box.querySelectorAll('.nbdel').forEach(b2=>b2.onclick=async()=>{const l=noteList(d);l.splice(+b2.dataset.i,1);await save(l);toast('נמחק');});
+  addMics(box,['.nbtxt','.nbnew']);
   const ni=box.querySelector('.nbnew'),na=box.querySelector('.nbadd');
   const add=async()=>{const v=ni.value.trim();if(!v){ni.focus();return;}await save(noteList(d).concat([v]));toast('נוספה הערה ✓');};
   na.onclick=add; ni.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
@@ -1440,6 +1523,7 @@ function cardDetails(d,body){
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
+  addMic(document.getElementById('dn_note'));
   const psel=document.getElementById('f_purpose'),pnew=document.getElementById('f_purpnew');
   if(psel)psel.onchange=()=>{pnew.classList.toggle('hidden',psel.value!=='__new__');if(psel.value==='__new__')document.getElementById('f_purpfree').focus();};
   document.getElementById('f_saveall').onclick=async()=>{const b2={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){b2[k]=el.value;d[k]=el.value;}});
@@ -1684,6 +1768,7 @@ function cardContact(d,body){
     if(clF.arr.length){toast('מעלה קבצים…');for(const f of clF.arr)await uploadBlob('contact',r.id,f);clF.reset();await refresh();toast('נשמר עם האסמכתאות ✓');return;}
     renderContacts(d);renderReminders(d);toast('נשמר ✓');};
   wireKindSel(document.getElementById('tk_kind'));
+  addMic(document.getElementById('cl_sum')); addMic(document.getElementById('tk_note'));
   document.getElementById('tk_add').onclick=async()=>{const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
     if(tkF.arr.length){toast('מעלה קבצים…');for(const f of tkF.arr)await uploadBlob('task',r.id,f);tkF.reset();await refresh();toast('נקבעה תזכורת עם האסמכתאות ✓');return;}
     renderReminders(d);toast('נקבעה תזכורת ✓');};
@@ -3006,6 +3091,8 @@ function renderTasksTab(){
   if(tms)tms.onclick=()=>runMailSync(tms);
   const ntF=pendFiles('nt_files','nt_file');
   wireKindSel(document.getElementById('nt_kind'));
+  addMic(document.getElementById('nt_note'));
+  addMics(view,['.tnote']);
   document.getElementById('nt_add').onclick=async()=>{
     const kind=await kindValue(document.getElementById('nt_kind'));if(!kind)return;
     const date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
