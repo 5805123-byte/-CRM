@@ -2135,6 +2135,24 @@ def ensure_schema():
     except Exception as e:
         print('  merge orphans error:', e)
 
+    # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
+    # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
+    try:
+        seedc = os.path.join(HERE, 'contacts_seed.csv')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seed_v1'").fetchone() \
+                and os.path.exists(seedc):
+            import gcontacts as _gc
+            with open(seedc, encoding='utf-8-sig') as f:
+                _cards = _gc.parse_csv(f.read())
+            _r = contacts_fill(con, _cards)
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seed_v1')")
+            print('  אנשי קשר מגוגל: %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים, '
+                  '%d קוויטל, %d הערות (לא שויכו %d)'
+                  % (_r['donors'], _r['filled']['addr'], _r['filled']['phone'],
+                     _r['filled']['email'], _r['kvittel'], _r['notes'], _r['unmatched_total']))
+    except Exception as e:
+        print('  contacts seed error:', e)
+
     # שורות שנשארו תלויות בכרטיס שנמחק — כסף רפאים שנספר בסיכומים בלי שאף אחד רואה אותו.
     # רץ בכל עליית שרת, כי מיזוג או מחיקה יכולים ליצור אותן מחדש.
     try:
@@ -2920,18 +2938,70 @@ def _ph10(s):
     return d[-10:] if len(d) >= 10 else ''
 
 
+def cluster_contacts(cards):
+    """אדם אחד מפוזר לעיתים על כמה כרטיסי אנשי קשר (אחד עם הכתובת, אחד עם המייל,
+    אחד עם 'קוויטל' בשם). מאחדים לפי טלפון או מייל משותף לפני ההשוואה לתורמים."""
+    par = list(range(len(cards)))
+
+    def find(x):
+        while par[x] != x:
+            par[x] = par[par[x]]; x = par[x]
+        return x
+
+    seen = {}
+    for i, c in enumerate(cards):
+        for k in ['@' + e for e in c['emails']] + ['#' + _ph10(p) for p in c['phones'] if _ph10(p)]:
+            j = seen.setdefault(k, i)
+            a, b = find(i), find(j)
+            if a != b:
+                par[a] = b
+    groups = {}
+    for i in range(len(cards)):
+        groups.setdefault(find(i), []).append(i)
+    out = []
+    for idxs in groups.values():
+        o = {'name': '', 'first': '', 'last': '', 'org': '', 'note': '',
+             'emails': [], 'phones': [], 'addrs': [], 'labels': [], 'names': []}
+        for i in idxs:
+            c = cards[i]
+            for k in ('emails', 'phones', 'addrs', 'labels'):
+                for v in c.get(k) or []:
+                    if v not in o[k]:
+                        o[k].append(v)
+            for k in ('name', 'first', 'last', 'org'):
+                if not o[k] and c.get(k):
+                    o[k] = c[k]
+            nm = (_fz(c.get('last') or ''), _fz(c.get('first') or ''))
+            if nm != ('', '') and nm not in o['names']:
+                o['names'].append(nm)
+            nt = (c.get('note') or '').strip()
+            if nt and nt not in o['note']:
+                o['note'] = (o['note'] + '\n' + nt).strip()
+        out.append(o)
+    return out
+
+
+# הערה שנראית כמו שמות לקוויטל: 'בן/בת פלונית', או בקשה מפורשת
+_IS_KVITTEL = re.compile(r'(?:^|\s)(?:בן|בת)\s|לרפוא|לזיווג|להצלח|לפרנס|לישוע|לזרע|לבנים|לתשוב|רפואה שלמ')
+
+
+def _fitfirst(a, b):
+    """שמות פרטיים תואמים — זהים, או שאחד קיצור/וריאציה של השני (יידי / יידל)."""
+    return not a or not b or a.startswith(b) or b.startswith(a)
+
+
 def contacts_fill(con, cards, status=None):
     """משייך אנשי קשר מגוגל לכרטיסי התורמים וממלא רק שדות ריקים — כתובת, טלפון, מייל.
     לא דורס שום נתון קיים. מחזיר סיכום למסך."""
     st = status if status is not None else {}
+    people = cluster_contacts(cards)
     donors = [dict(r) for r in con.execute(
         "SELECT id,last,first,english,business,addr,phone,email FROM donors")]
     by_email, by_phone, by_he, by_lat, by_last = {}, {}, {}, {}, {}
 
     def put(d, k, v):
-        if not k:
-            return
-        d.setdefault(k, []).append(v)
+        if k:
+            d.setdefault(k, []).append(v)
     for d in donors:
         for e in emails_of(d['email']):
             put(by_email, e.lower(), d)
@@ -2949,48 +3019,84 @@ def contacts_fill(con, cards, status=None):
         return list(u.values())[0] if len(u) == 1 else None
 
     filled = {'addr': 0, 'phone': 0, 'email': 0}
-    touched, unmatched = set(), []
-    for c in cards:
+    touched, unmatched, notes = set(), [], {}
+    for c in people:
         st['scanned'] = st.get('scanned', 0) + 1
+        names = c['names'] or [(_fz(c['last']), _fz(c['first']))]
         d = None
         for e in c['emails']:
             d = d or pick(by_email.get(e))
         for p in c['phones']:
             d = d or pick(by_phone.get(_ph10(p)))
+        strong = bool(d)
         if not d:
-            d = pick(by_he.get((_fz(c['last']), _fz(c['first']))))
-        if not d:      # לפעמים שם המשפחה והפרטי הפוכים באנשי הקשר
-            d = pick(by_he.get((_fz(c['first']), _fz(c['last']))))
+            for (l, f) in names:
+                d = d or pick(by_he.get((l, f))) or pick(by_he.get((f, l)))
+            strong = bool(d)
         if not d:
             t = re.sub(r'[^a-z ]', '', (c['name'] or '').lower()).strip()
             if t:
                 d = pick(by_lat.get(' '.join(sorted(t.split()))))
-        onlyaddr = False
-        if not d and c['addrs']:
-            # שם משפחה יחיד במערכת — מספיק כדי למלא כתובת (בני בית חולקים כתובת), לא טלפון
-            d = pick(by_last.get(_fz(c['last']))) or pick(by_last.get(_fz(c['first'])))
-            onlyaddr = bool(d)
+                strong = bool(d)
         if not d:
             if c['addrs']:
-                unmatched.append({'name': c['name'], 'addr': c['addrs'][0],
+                unmatched.append({'name': c['name'] or c['org'], 'addr': c['addrs'][0],
                                   'phone': ', '.join(c['phones'][:2]),
                                   'email': ', '.join(c['emails'][:1])})
             continue
         sets, vals = [], []
         if c['addrs'] and not (d['addr'] or '').strip():
             sets.append('addr=?'); vals.append(c['addrs'][0]); filled['addr'] += 1
-        if not onlyaddr and c['phones'] and not (d['phone'] or '').strip():
+        if strong and c['phones'] and not (d['phone'] or '').strip():
             sets.append('phone=?'); vals.append(' / '.join(c['phones'][:3])); filled['phone'] += 1
-        if not onlyaddr and c['emails'] and not (d['email'] or '').strip():
+        if strong and c['emails'] and not (d['email'] or '').strip():
             sets.append('email=?'); vals.append(c['emails'][0]); filled['email'] += 1
         if sets:
             con.execute("UPDATE donors SET " + ','.join(sets) + " WHERE id=?", vals + [d['id']])
             touched.add(d['id'])
             st['filled'] = len(touched)
+        if strong and (c['note'] or '').strip():
+            notes.setdefault(d['id'], c['note'].strip())
+    # מי שנשאר בלי כתובת — מחפשים לפי שם משפחה ושם פרטי תואם, ולוקחים רק אם
+    # כל אנשי הקשר המתאימים מצביעים על אותה כתובת אחת. אחרת זו ניחוש ולא נכתוב.
+    byname = {}
+    for c in people:
+        if not c['addrs']:
+            continue
+        for (l, f) in (c['names'] or [(_fz(c['last']), _fz(c['first']))]):
+            byname.setdefault(l, []).append((f, c))
+    for d in donors:
+        if (d['addr'] or '').strip() or d['id'] in touched:
+            continue
+        f = _fz(d['first'] or '')
+        hits = [c for (cf, c) in byname.get(_fz(d['last'] or ''), []) if _fitfirst(cf, f)]
+        addrs = {c['addrs'][0] for c in hits}
+        if len(addrs) == 1:
+            con.execute("UPDATE donors SET addr=? WHERE id=?", (addrs.pop(), d['id']))
+            touched.add(d['id']); filled['addr'] += 1
+    con.commit()
+    # שמות לתפילה שרשומים בהערה של איש הקשר — נכנסים רק למי שאין לו קוויטל בכלל,
+    # כדי שלא ייווצרו כפילויות אצל מי שכבר יש לו שמות.
+    kv = nt = 0
+    haskv = {r['donor_id'] for r in con.execute(
+        "SELECT DISTINCT donor_id FROM prayers WHERE COALESCE(TRIM(text),'')<>''")}
+    hasnote = {r['id'] for r in con.execute("SELECT id FROM donors WHERE TRIM(COALESCE(notes,''))<>''")}
+    for did, note in notes.items():
+        note = note.strip()
+        if len(re.sub(r'[^א-ת]', '', note)) < 8:
+            continue
+        if _IS_KVITTEL.search(note):                 # שמות לתפילה — רק למי שאין לו קוויטל בכלל
+            if did in haskv:
+                continue
+            con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')", (did, note))
+            haskv.add(did); kv += 1
+        elif did not in hasnote:                     # הערה רגילה — לשדה ההערות, אם הוא ריק
+            con.execute("UPDATE donors SET notes=? WHERE id=?", (note, did))
+            hasnote.add(did); nt += 1
     con.commit()
     unmatched.sort(key=lambda x: x['name'])
-    return {'ok': True, 'cards': len(cards), 'donors': len(touched), 'filled': filled,
-            'unmatched': unmatched[:400], 'unmatched_total': len(unmatched)}
+    return {'ok': True, 'cards': len(cards), 'people': len(people), 'donors': len(touched), 'kvittel': kv, 'notes': nt,
+            'filled': filled, 'unmatched': unmatched[:400], 'unmatched_total': len(unmatched)}
 
 
 def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):

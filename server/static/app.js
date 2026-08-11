@@ -560,9 +560,9 @@ async function uploadContactsCsv(inp){
     return;
   }
   const fl=r.filled||{};
-  say(`✅ נקראו ${r.cards||0} אנשי קשר · עודכנו ${r.donors||0} כרטיסים —
-    ${fl.addr||0} כתובות, ${fl.phone||0} טלפונים, ${fl.email||0} מיילים.
-    ${r.unmatched_total?('<br>⚠️ '+r.unmatched_total+' אנשי קשר עם כתובת שלא שויכו לתורם.'):''}`);
+  say(`✅ נקראו ${r.cards||0} אנשי קשר (${r.people||0} אנשים) · עודכנו ${r.donors||0} כרטיסים —
+    ${fl.addr||0} כתובות, ${fl.phone||0} טלפונים, ${fl.email||0} מיילים${r.kvittel?(', '+r.kvittel+' קוויטל'):''}${r.notes?(', '+r.notes+' הערות'):''}.
+    ${r.unmatched_total?('<br>⚠️ '+r.unmatched_total+' אנשי קשר עם כתובת שלא שויכו לתורם (רובם לא תורמים).'):''}`);
   NOADDR=null; await load(); render();
 }
 // מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס

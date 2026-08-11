@@ -118,7 +118,10 @@ def parse_csv(text):
         name = g(r, 'Name') or (first + ' ' + last).strip()
         c = {'name': name, 'first': first, 'last': last,
              'org': g(r, 'Organization 1 - Name') or g(r, 'Organization Name'),
-             'note': g(r, 'Notes'), 'emails': [], 'phones': [], 'addrs': []}
+             'note': g(r, 'Notes'), 'emails': [], 'phones': [], 'addrs': [],
+             'labels': [x.strip() for x in re.split(r':::', g(r, 'Labels') or '') if x.strip()]}
+        if not c['name']:
+            c['name'] = c['org']
         for col in mail_c:
             for v in re.split(r'\s*:::\s*', g(r, col)):
                 v = v.strip().lower()
