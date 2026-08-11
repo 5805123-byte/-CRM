@@ -2364,7 +2364,19 @@ def ensure_schema():
     except Exception as e:
         print('  ner lemaor error:', e)
 
-    # ציון כהן מוחזק ביחד בידי שלושת האחים מיטמן — $1,400 לכולם יחד, לא לכל אחד
+    # ציון כהן — $1,000 לשלושת המיטמנים ביחד (מאיר אישר), לא $1,400
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_1000_v1'").fetchone():
+            cur3 = con.execute(
+                "UPDATE partners SET amount='1000' WHERE COALESCE(active,1)<>0 "
+                "AND (avreich LIKE '%ציון%כהן%' OR avreich LIKE '%כהן%ציון%') "
+                "AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מיטמן%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_cohen_1000_v1')")
+            print('  ציון כהן: הסכום המשותף עודכן ל-$1,000 (%d שורות)' % cur3.rowcount)
+    except Exception as e:
+        print('  zion cohen amount error:', e)
+
+    # ציון כהן מוחזק ביחד בידי שלושת המיטמנים — הסכום שייך לכולם יחד, לא לכל אחד
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_joint_v1'").fetchone():
             cur2 = con.execute(
@@ -2372,7 +2384,7 @@ def ensure_schema():
                 "AND (REPLACE(avreich,'  ',' ') LIKE '%ציון%כהן%' OR REPLACE(avreich,'  ',' ') LIKE '%כהן%ציון%') "
                 "AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מיטמן%')")
             con.execute("INSERT INTO seed_flags(name) VALUES('zion_cohen_joint_v1')")
-            print('  ציון כהן: סומן כמוחזק ביחד אצל %d אחים מיטמן' % cur2.rowcount)
+            print('  ציון כהן: סומן כמוחזק ביחד אצל %d מהמיטמנים' % cur2.rowcount)
     except Exception as e:
         print('  zion cohen joint error:', e)
 
