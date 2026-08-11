@@ -4740,7 +4740,7 @@ class H(BaseHTTPRequestHandler):
             if len(txt) < 20:
                 return self._send(200, {'ok': False, 'error': 'empty'})
             try:
-                cards = gcontacts.parse_csv(txt)
+                cards = gcontacts.parse_any(txt)      # Google CSV או VCF מהטלפון
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': 'parse', 'detail': str(e)})
             if not cards:

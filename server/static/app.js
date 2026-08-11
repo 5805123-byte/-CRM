@@ -869,7 +869,7 @@ async function uploadContactsCsv(inp){
   if(!r||!r.ok){
     const why={empty:'הקובץ ריק',no_contacts:'לא נמצאו אנשי קשר בקובץ',
                parse:'לא הצלחתי לפרק את הקובץ'}[r&&r.error]||((r&&(r.detail||r.error))||'שגיאה');
-    say('❌ '+esc(why)+'<br>ודא שייצאת מ-contacts.google.com בפורמט <b>Google CSV</b>.');
+    say('❌ '+esc(why)+'<br>אפשר להעלות <b>Google CSV</b> מ-contacts.google.com, או קובץ <b>VCF</b> שייצאת מהטלפון (הגדרות אנשי קשר ← ייבוא/ייצוא).');
     return;
   }
   const fl=r.filled||{};
@@ -901,8 +901,8 @@ async function renderNoAddr(){
   view.innerHTML=`<button class="btn ghost" id="nback" style="width:100%;margin-bottom:8px">⬅ חזרה לרשימת התורמים</button>
     <div class="rbtitle">🏠 תורמים בלי כתובת — ${NOADDR.count||0}</div>
     <button class="btn" id="gcpull" style="width:100%;background:#1a73e8;border-color:#1a73e8;margin-bottom:6px">📇 משוך אנשי קשר מגוגל והשלם כתובות</button>
-    <label class="btn" id="gccsvbtn" style="width:100%;background:var(--yes);border-color:var(--yes);margin-bottom:6px;display:block;text-align:center;cursor:pointer">📄 העלה קובץ אנשי קשר (Google CSV)
-      <input type="file" id="gccsv" accept=".csv,text/csv" hidden></label>
+    <label class="btn" id="gccsvbtn" style="width:100%;background:var(--yes);border-color:var(--yes);margin-bottom:6px;display:block;text-align:center;cursor:pointer">📄 העלה אנשי קשר — CSV מגוגל או VCF מהטלפון
+      <input type="file" id="gccsv" accept=".csv,.vcf,.vcard,text/csv,text/vcard,text/x-vcard" hidden></label>
     <div id="gcout" class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש לי הצעה מוכנה מייצוא אנשי הקשר או מכתובת החיוב. לשאר אין כתובת באף קובץ שקיבלתי — לחץ על הכפתור כדי למשוך ישירות מאנשי הקשר בגוגל.</div>
     ${withS.length?`<div class="misshead">💡 יש הצעה — ${withS.length}</div>${withS.map(card).join('')}`:''}
     ${without.length?`<div class="misshead">אין שום נתון — ${without.length}</div>${without.map(card).join('')}`:''}`;

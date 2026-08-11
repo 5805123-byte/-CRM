@@ -146,6 +146,59 @@ def parse_csv(text):
     return out
 
 
+def parse_vcf(text):
+    """מפרק קובץ VCF שיוצא מהטלפון — כולל אנשי קשר מקומיים שאינם בחשבון גוגל.
+    תומך גם בקידוד QUOTED-PRINTABLE שאנדרואיד משתמש בו לשמות בעברית."""
+    text = (text or '').replace('\r\n', '\n').replace('\r', '\n')
+    out = []
+    for blk in re.split(r'(?i)BEGIN:VCARD', text):
+        blk = blk.strip()
+        if not blk:
+            continue
+        blk = re.split(r'(?i)END:VCARD', blk)[0]
+        blk = _unqp(blk)
+        c = parse_vcard(blk)
+        c['labels'] = re.findall(r'(?im)^CATEGORIES[^:]*:(.+)$', blk)
+        c['labels'] = [x.strip() for v in c['labels'] for x in v.split(',') if x.strip()]
+        if c['name'] or c['emails'] or c['phones']:
+            out.append(c)
+    return out
+
+
+def _unqp(block):
+    """שורות QUOTED-PRINTABLE (למשל FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=D7=90…)"""
+    if 'QUOTED-PRINTABLE' not in block.upper():
+        return block
+    import quopri
+    lines, out = block.split('\n'), []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if 'QUOTED-PRINTABLE' in ln.upper() and ':' in ln:
+            head, _, val = ln.partition(':')
+            while val.endswith('='):            # שורה שנמשכת לשורה הבאה
+                i += 1
+                val = val[:-1] + (lines[i] if i < len(lines) else '')
+            try:
+                val = quopri.decodestring(val.encode('utf-8', 'replace')).decode('utf-8', 'replace')
+            except Exception:
+                pass
+            head = re.sub(r'(?i);ENCODING=QUOTED-PRINTABLE', '', head)
+            out.append(head + ':' + val)
+        else:
+            out.append(ln)
+        i += 1
+    return '\n'.join(out)
+
+
+def parse_any(text):
+    """מזהה לבד אם זה Google CSV או VCF מהטלפון."""
+    t = (text or '').lstrip('\ufeff')
+    if re.search(r'(?i)^\s*BEGIN:VCARD', t) or 'BEGIN:VCARD' in t[:4000].upper():
+        return parse_vcf(t)
+    return parse_csv(t)
+
+
 def fetch(status=None):
     """מחזיר את כל אנשי הקשר בחשבון. מרים חריגה עם הסבר בעברית אם ההתחברות נכשלה."""
     st = status if status is not None else {}
