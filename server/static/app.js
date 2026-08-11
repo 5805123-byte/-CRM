@@ -670,6 +670,7 @@ function render(){
   if(tab==='parnes') return renderParnes();
   if(tab==='charges') return renderCharges();
   if(tab==='avreich') return renderAvreich();
+  if(tab==='debts') return renderDebts();
   if(tab==='missed') return renderMissed();
   if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
@@ -2870,6 +2871,76 @@ function renderPlaque(){
 
 /* ---------- לא עבר ---------- */
 const PKLBL={parnes:'🌙 פרנס לילה',coffee:'☕ חדר קפה',breakfast:'🍳 ארוחת בוקר'};
+/* ---------- כל החובות במקום אחד ---------- */
+// אוסף לכל תורם את כל מה שנשאר חייב, מכל המקורות, עם פירוט "עבור מה"
+function donorDebts(d){
+  const out=[];
+  (d.pledges||[]).forEach(p=>{ if(p.status==='נתן')return;
+    out.push({what:(p.category||'התחייבות'),amt:amtNum(p.amount),kind:'pledge',id:p.id,when:''}); });
+  (d.parnes||[]).forEach(p=>{ if(p.status==='suggested'||+p.paid)return;
+    out.push({what:(PKLBL[p.kind]||'🌙 פרנס יום'),amt:amtNum(p.amount),kind:'parnes',id:p.id,
+              when:[p.date_text,p.hyear].filter(Boolean).join(' ')}); });
+  (d.donations||[]).forEach(x=>{ if(+x.paid)return;
+    out.push({what:(x.category||'תרומה'),amt:amtNum(x.amount),kind:'donation',id:x.id,
+              when:gregLabel(x.date)||x.date||''}); });
+  (d.building||[]).forEach(x=>{ const owed=amtNum(x.amount)-amtNum(x.paid);
+    if(owed>0.5)out.push({what:'🏛️ בניין'+(x.object?(' · '+x.object):''),amt:owed,kind:'building',id:x.id,when:''}); });
+  // יששכר־זבולון — חוב ידני, או לפי "שולם עד", או לפי החישוב מהתשלומים
+  try{
+    const s=izSummary(d);
+    let izd=0, note='';
+    if(s.manual!=null){izd=s.manual;note='עודכן ידנית';}
+    else if(s.thru&&s.thru.length){izd=s.thruDebt;
+      note=s.thru.filter(t=>t.months).map(t=>t.av+' — שולם עד '+fmtMonth(t.thru)).join(' · ');}
+    else if(s.hasPay)   {izd=s.debt;note=s.span+' חודשים';}
+    if(izd>0.5)out.push({what:'🤝 יששכר־זבולון',amt:izd,kind:'iz',id:0,when:note});
+  }catch(e){}
+  return out;
+}
+function renderDebts(){
+  const rows=[];
+  DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english+' '+d.business)).forEach(d=>{
+    const l=donorDebts(d); if(!l.length)return;
+    rows.push({d,list:l,sum:l.reduce((s,x)=>s+x.amt,0)});
+  });
+  rows.sort((a,b)=>b.sum-a.sum);
+  const tot=rows.reduce((s,r)=>s+r.sum,0);
+  // סיכום לפי "עבור מה" — כדי לראות במה מרוכז החוב
+  const byWhat={}, wlbl={};
+  const wkey=w=>String(w||'').replace(/[^\u0590-\u05ffA-Za-z0-9 ]/g,'').replace(/\s+/g,' ').trim()||'אחר';
+  rows.forEach(r=>r.list.forEach(x=>{const k=wkey(x.what);
+    byWhat[k]=(byWhat[k]||0)+x.amt; if(!wlbl[k]||x.what.length>wlbl[k].length)wlbl[k]=x.what;}));
+  const whats=Object.keys(byWhat).sort((a,b)=>byWhat[b]-byWhat[a]);
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  view.innerHTML=`
+    <div class="totals"><div class="tot pend"><span>🔴 סה"כ חוב פתוח</span><b>${f(tot)}</b></div>
+      <div class="tot"><span>תורמים שחייבים</span><b>${rows.length}</b></div></div>
+    ${whats.length?`<div class="cattot"><div class="cattot-t">🎯 החוב לפי ייעוד</div>
+      ${whats.map(w=>`<div class="catrow"><span>${esc(wlbl[w]||w)}</span><b>${f(byWhat[w])}</b></div>`).join('')}</div>`:''}
+    <div class="cnt">${rows.length} תורמים · לפי גובה החוב</div>
+    <div class="list">${rows.map((r,i)=>`<div class="rowc debtrow"><div class="rowmain" data-did="${r.d.id}">
+      <div class="nm">${esc(r.d.last)} <small>${esc(r.d.first)}</small></div>
+      ${r.list.map((x,j)=>`<div class="miss"><span class="dbw">${esc(x.what)}</span>${x.when?(' <small>'+esc(x.when)+'</small>'):''}
+        — <b style="color:var(--no)">${x.amt?f(x.amt):'ללא סכום'}</b>${x.kind!=='iz'?`<button class="btn sm dbpaid" data-i="${i}" data-j="${j}" onclick="event.stopPropagation()">✓ נגבה</button>`:''}</div>`).join('')}
+      ${contactBtns(r.d)}</div>
+      <div class="meta"><b class="debtsum">${f(r.sum)}</b></div></div>`).join('')
+      ||'<div class="empty">אין חובות פתוחים 🎉</div>'}</div>`;
+  view.querySelectorAll('.rowmain').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.did);if(d)openDonor(d);});
+  view.querySelectorAll('.dbpaid').forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    const r=rows[+b.dataset.i], x=r.list[+b.dataset.j]; if(!r||!x)return;
+    b.disabled=true;
+    if(x.kind==='parnes'){await api('PUT','/api/parnes/'+x.id,{paid:1});
+      const p=(r.d.parnes||[]).find(y=>y.id==x.id); if(p)p.paid=1;}
+    else if(x.kind==='donation'){await api('PUT','/api/donation/'+x.id,{paid:1});
+      const p=(r.d.donations||[]).find(y=>y.id==x.id); if(p)p.paid=1;}
+    else if(x.kind==='pledge'){const p=(r.d.pledges||[]).find(y=>y.id==x.id);
+      if(p){p.status='נתן';await api('PUT','/api/pledge/'+p.id,p);}}
+    else if(x.kind==='building'){const p=(r.d.building||[]).find(y=>y.id==x.id);
+      if(p){p.paid=String(amtNum(p.amount));await api('PUT','/api/building/'+p.id,p);}}
+    toast('נגבה ✓'); renderDebts();
+  });
+}
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
   const missed=q1.filter(d=>gaps(d.months).length>0).sort((a,b)=>gaps(b.months).length-gaps(a.months).length);

@@ -138,6 +138,10 @@
   .chbadge{display:inline-block;color:#fff;border-radius:7px;padding:2px 8px;font-size:.72rem;font-weight:800;white-space:nowrap}
   /* סיכום לפי ייעוד */
   /* מי מטפל במשימה — חיווי והחלפה מהירה מהשורה */
+  .debtrow .miss{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:3px}
+  .debtrow .dbw{font-weight:700}
+  .debtrow .dbpaid{width:auto;flex:0 0 auto;padding:2px 9px;font-size:.72rem}
+  .debtsum{color:var(--no);font-size:1.02rem;white-space:nowrap}
   .healthbtn{background:none;border:none;font-size:1.1rem;cursor:pointer;padding:2px 4px;width:auto;opacity:.75}
   .hrow{display:flex;gap:9px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--line)}
   .hrow:last-child{border-bottom:none}
@@ -631,6 +635,7 @@
       <button class="tab" data-tab="parnes">פרנס יום</button>
       <button class="tab" data-tab="charges">💳 חיובים</button>
       <button class="tab" data-tab="avreich">🤝 יששכר־זבולון</button>
+      <button class="tab danger" data-tab="debts">💰 חובות</button>
       <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
       <button class="tab" data-tab="mails">📧 מיילים</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
