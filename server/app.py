@@ -2364,6 +2364,23 @@ def ensure_schema():
     except Exception as e:
         print('  ner lemaor error:', e)
 
+    # ה-$1,200 של נר למאור אינו מופיע באף חודש בדוח בנק ווסט — פותחים משימה לבדיקה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='ner_lemaor_check_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last LIKE '%מיטמן%' AND first LIKE '%אפרים%'").fetchone()
+            if r:
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,done,assignee) "
+                            "VALUES(?,?,'verify',?,0,'מאיר')",
+                            (r['id'], today_iso(),
+                             'לבדוק בבנק ווסט את ההוראת קבע של $1,200 נר למאור — היא לא מופיעה '
+                             'באף חודש בדוח (ינואר–אוגוסט). אפרים מחויב $1,000 ב-1 לחודש עד יוני '
+                             'ו-$1,650 מיולי, שורה אחת בלבד בכל חודש. לבדוק אם יש חשבון סוחר שני, '
+                             'או שההוראה לא רצה בכלל.'))
+                print('  נר למאור: נפתחה משימת בדיקה אצל מיטמן אפרים')
+            con.execute("INSERT INTO seed_flags(name) VALUES('ner_lemaor_check_v1')")
+    except Exception as e:
+        print('  ner lemaor check error:', e)
+
     # שניאור זלמן מיטמן אינו קשור לשאר המיטמנים — שלא יוצע מיזוג ביניהם
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_sz_notdupe_v1'").fetchone():
