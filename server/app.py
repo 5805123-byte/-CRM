@@ -2241,6 +2241,35 @@ def ensure_schema():
     except Exception as e:
         print('  frankel samet error:', e)
 
+    # אלחנן אברמוביץ — האברך שלו נשאר בלי סכום ובלי אמצעי, ולכן הסיכום הראה התחייבות $0.
+    # הוא משלם 600+750 בבנק ווסט בכל 15 לחודש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='abramowitz_iz_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='אברמוביץ' AND first='אלחנן'").fetchone()
+            if r:
+                did = r['id']
+                rows = [dict(x) for x in con.execute(
+                    "SELECT * FROM partners WHERE donor_id=? AND COALESCE(active,1)!=0", (did,))]
+                if not rows:
+                    con.execute("INSERT INTO partners(donor_id,avreich,amount,method,active) "
+                                "VALUES(?,'רוזנבלט אהרן','1350','בנק_ווסט',1)", (did,))
+                    print('  אברמוביץ: נוסף אברך רוזנבלט אהרן — $1,350 בבנק ווסט')
+                elif len(rows) == 1:
+                    con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'1350'), "
+                                "avreich=COALESCE(NULLIF(TRIM(avreich),''),'רוזנבלט אהרן'), "
+                                "method=COALESCE(NULLIF(TRIM(method),''),'בנק_ווסט') WHERE id=?",
+                                (rows[0]['id'],))
+                    print('  אברמוביץ: הושלם סכום 1350 ואמצעי בנק ווסט לאברך')
+                else:
+                    for x, amt in zip(rows, ('750', '600')):
+                        con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),?), "
+                                    "method=COALESCE(NULLIF(TRIM(method),''),'בנק_ווסט') WHERE id=?",
+                                    (amt, x['id']))
+                    print('  אברמוביץ: הושלמו סכומי האברכים (750 / 600)')
+            con.execute("INSERT INTO seed_flags(name) VALUES('abramowitz_iz_v1')")
+    except Exception as e:
+        print('  abramowitz iz error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
