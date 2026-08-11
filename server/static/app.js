@@ -182,6 +182,24 @@ const SRERR = {'not-allowed':'לא ניתנה הרשאה למיקרופון — 
   'service-not-allowed':'הדפדפן חסם את שירות ההכתבה','no-speech':'לא נשמע דיבור','audio-capture':'לא נמצא מיקרופון',
   'network':'אין חיבור לרשת להכתבה','aborted':''};
 let SRACT=null;
+// מאחד קטעי תמלול: קטע שהוא המשך (או קיצור) של הקטע שלפניו מחליף אותו
+// במקום להתווסף אליו. כך "עכשיו" + "עכשיו קיבלת" נשארים "עכשיו קיבלת".
+function joinSegs(list){
+  const out=[];
+  (list||[]).forEach(x=>{
+    const t=String(x||'').replace(/\s+/g,' ').trim(); if(!t)return;
+    const last=out.length?out[out.length-1]:'';
+    if(last&&(t.indexOf(last)===0||last.indexOf(t)===0)){out[out.length-1]=t.length>=last.length?t:last;return;}
+    out.push(t);
+  });
+  // רשת ביטחון: אם בכל זאת נשאר קטע שחוזר על עצמו פעמיים ברצף — מוחקים אותו
+  let t=out.join(' ');
+  for(let k=0;k<6;k++){
+    const n=t.replace(/(\S+(?:\s+\S+){1,14})\s+\1(?=\s|$)/g,'$1');
+    if(n===t)break; t=n;
+  }
+  return t;
+}
 function stopDictation(){if(SRACT){try{SRACT.stop();}catch(e){}}}
 function startDictation(btn,el){
   const C=window.SpeechRecognition||window.webkitSpeechRecognition||null;
@@ -191,14 +209,14 @@ function startDictation(btn,el){
   const base=(el.value||'').trim()?((el.value||'').trim()+' '):''; let fin='';
   const setv=v=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
   r.onstart=()=>{SRACT=r;btn.classList.add('rec');btn.textContent='⏹';toast('🎤 מקליט — דבר בעברית. לחץ שוב לסיום');};
-  // בונים את הטקסט מחדש מכל התוצאות בכל פעם. אם נצבור רק את החדשות,
-  // אנדרואיד ששולח את אותה תוצאה שוב גורם לכפילות של מילים שלמות.
-  r.onresult=ev=>{let f='',interim='';
-    for(let i=0;i<ev.results.length;i++){
-      const t=ev.results[i][0].transcript;
-      if(ev.results[i].isFinal)f+=t.trim()+' '; else interim+=t;}
-    fin=f;
-    setv((base+f+interim).replace(/\s+/g,' '));};
+  // אנדרואיד מחזיר כל שלב של המשפט כתוצאה נפרדת ו"סופית":
+  // "עכשיו" · "עכשיו קיבלת" · "עכשיו קיבלת את"… חיבור פשוט שלהן יוצר את
+  // הכפילות. לכן שומרים כל תוצאה לפי מקומה, ומאחדים קטע שהוא המשך של קודמו.
+  const seg=[];
+  r.onresult=ev=>{
+    for(let i=0;i<ev.results.length;i++)seg[i]=ev.results[i][0].transcript;
+    fin=joinSegs(seg);
+    setv((base+fin).replace(/\s+/g,' ').trim());};
   r.onerror=ev=>{const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);};
   r.onend=()=>{SRACT=null;btn.classList.remove('rec');btn.textContent='🎤';
     const fixed=fixNames((base+fin).replace(/\s+/g,' ').trim());
