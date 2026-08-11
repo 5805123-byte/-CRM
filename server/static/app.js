@@ -2891,19 +2891,23 @@ function donorDebts(d){
   (d.parnes||[]).forEach(p=>{ if(p.status==='suggested'||+p.paid)return;
     out.push({what:(PKLBL[p.kind]||'🌙 פרנס יום'),amt:amtNum(p.amount),kind:'parnes',id:p.id,
               when:[p.date_text,p.hyear].filter(Boolean).join(' ')}); });
+  // תרומה שלא סומנה כשולמה = חוב, אבל רק אם יש לה תאריך מלא. שורות עם
+  // חודש בלבד הן רישומי עבר מייבוא ולא התחייבות שממתינה לגבייה.
   (d.donations||[]).forEach(x=>{ if(+x.paid)return;
+    if(String(x.date||'').length<=7)return;
     out.push({what:(x.category||'תרומה'),amt:amtNum(x.amount),kind:'donation',id:x.id,
               when:gregLabel(x.date)||x.date||''}); });
   (d.building||[]).forEach(x=>{ const owed=amtNum(x.amount)-amtNum(x.paid);
     if(owed>0.5)out.push({what:'🏛️ בניין'+(x.object?(' · '+x.object):''),amt:owed,kind:'building',id:x.id,when:''}); });
-  // יששכר־זבולון — חוב ידני, או לפי "שולם עד", או לפי החישוב מהתשלומים
+  // יששכר־זבולון — רק חוב שנקבע במפורש: עדכון ידני, או "שולם עד חודש".
+  // חוב שמחושב מ"צפוי פחות שולם" לא נכנס לכאן — אברך שמוחזק אצל כמה
+  // תורמים רשום אצל כל אחד בסכום המלא, וזה מנפח את ההתחייבות החודשית.
   try{
     const s=izSummary(d);
     let izd=0, note='';
     if(s.manual!=null){izd=s.manual;note='עודכן ידנית';}
     else if(s.thru&&s.thru.length){izd=s.thruDebt;
       note=s.thru.filter(t=>t.months).map(t=>t.av+' — שולם עד '+fmtMonth(t.thru)).join(' · ');}
-    else if(s.hasPay)   {izd=s.debt;note=s.span+' חודשים';}
     if(izd>0.5)out.push({what:'🤝 יששכר־זבולון',amt:izd,kind:'iz',id:0,when:note});
   }catch(e){}
   return out;
@@ -2929,6 +2933,7 @@ function renderDebts(){
     ${whats.length?`<div class="cattot"><div class="cattot-t">🎯 החוב לפי ייעוד</div>
       ${whats.map(w=>`<div class="catrow"><span>${esc(wlbl[w]||w)}</span><b>${f(byWhat[w])}</b></div>`).join('')}</div>`:''}
     <div class="cnt">${rows.length} תורמים · לפי גובה החוב</div>
+    <div class="hintxt" style="margin:0 2px 8px">נכנס לכאן: התחייבות שטרם ניתנה · פרנס שטרם נגבה · תרומה עם תאריך מלא שלא סומנה כשולמה · יתרה בבניין · חוב יש"ז שנקבע במפורש (ידני או "שולם עד חודש").</div>
     <div class="list">${rows.map((r,i)=>`<div class="rowc debtrow"><div class="rowmain" data-did="${r.d.id}">
       <div class="nm">${esc(r.d.last)} <small>${esc(r.d.first)}</small></div>
       ${r.list.map((x,j)=>`<div class="miss"><span class="dbw">${esc(x.what)}</span>${x.when?(' <small>'+esc(x.when)+'</small>'):''}
