@@ -2176,6 +2176,65 @@ def ensure_schema():
     except Exception as e:
         print('  klock capital1 error:', e)
 
+    # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
+    # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Danial במקום Daniel).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='card_name_link_v1'").fetchone():
+            LINK = {                              # השם על החיוב → השם בכרטיס
+                'marc mendelson':        ('מנדלסון', 'יוסף מרדכי'),
+                'schia rosenfed':        ('רוזנפלד', 'יהושע'),
+                'daniel jacobson':       ('יעקובסון', 'דניאל'),
+                'danial jacobson':       ('יעקובסון', 'דניאל'),
+                'brachca statfeld':      ('שטטפלד', 'יצחק וברכה'),
+                'ilana rosenfeld':       ('רוזנפלד', 'אילנה'),
+                'zev marmurstein schwadel': ('מרמרשטיין', 'זאב'),
+            }
+            ids = {}
+            for k, (hl, hf) in LINK.items():
+                r = con.execute("SELECT id FROM donors WHERE last=? AND first=?", (hl, hf)).fetchone()
+                if r:
+                    ids[k] = r['id']
+            dinfo = {r['id']: (r['category'] or '', r['tier'] or '')
+                     for r in con.execute("SELECT id,category,tier FROM donors")}
+            rules = {}
+            try:
+                for r in con.execute("SELECT donor_id,amount,category FROM donor_rules"):
+                    rules[(r['donor_id'], round(float(r['amount'] or 0), 2))] = r['category']
+            except Exception:
+                pass
+            ins = 0
+            for r in list(con.execute(
+                    "SELECT tid,first,last,amount,date,source FROM recon "
+                    "WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled' "
+                    "AND donor_id IS NULL")):
+                key = ((r['first'] or '') + ' ' + (r['last'] or '')).strip().lower()
+                did = ids.get(key)
+                if not did:
+                    continue
+                a = round(float(str(r['amount']).replace(',', '') or 0), 2)
+                diso = _recon_iso(r['date'])
+                meth = 'Banquest' if 'Banquest' in (r['source'] or '') else 'Authorize'
+                con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
+                if not diso or con.execute(
+                        "SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method=? "
+                        "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, meth, a)).fetchone():
+                    con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+                    continue
+                cat, tier = dinfo.get(did, ('', ''))
+                cat = rules.get((did, a)) or ('יששכר־זבולון' if 'יששכר' in tier else (cat or 'מזדמן'))
+                note = ('ייבוא ' + ('בנק ווסט' if meth == 'Banquest' else 'אוטורייז')
+                        + ' · על שם ' + ((r['first'] or '') + ' ' + (r['last'] or '')).strip())
+                if not rules.get((did, a)):
+                    note += ' · לא סווג — לבדוק עבור מה'
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                            "VALUES(?,?,?,?,?,?,1)", (did, diso, a, cat, meth, note))
+                con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+                ins += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('card_name_link_v1')")
+            print('  חיובים ששויכו לפי שם על האשראי: %d' % ins)
+    except Exception as e:
+        print('  card name link error:', e)
+
     # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
     try:
