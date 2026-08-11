@@ -1826,6 +1826,40 @@ def ensure_schema():
     except Exception as e:
         print('  kalman lax error:', e)
 
+    # יעקב מקס — "מקס יעקב" ו"מקס יעקב שלום" הם אותו אדם. הכרטיס הכפול מתמזג לכרטיס הוותיק,
+    # וה-$500 מהצ׳קים מחליף את שורת ההערכה החודשית שכבר הייתה שם. לא נפתח כרטיס חדש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='yaakov_max_v1'").fetchone():
+            keep = con.execute("SELECT id FROM donors WHERE last='מקס' AND first='יעקב שלום'").fetchone()
+            dupe = con.execute("SELECT id FROM donors WHERE last='מקס' AND first='יעקב'").fetchone()
+            if keep:
+                kid = keep['id']
+                if dupe and dupe['id'] != kid:
+                    for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
+                              'partners', 'transactions', 'building', 'recon', 'intake'):
+                        try:
+                            con.execute("UPDATE %s SET donor_id=? WHERE donor_id=?" % t, (kid, dupe['id']))
+                        except Exception:
+                            pass
+                    con.execute("DELETE FROM donors WHERE id=?", (dupe['id'],))
+                for r in list(con.execute("SELECT tid,amount,date FROM recon WHERE tid LIKE 'chk26-%' "
+                                          "AND last='Max' AND first='Yaakov'")):
+                    a = round(float(r['amount'] or 0), 2)
+                    con.execute("DELETE FROM donations WHERE donor_id=? AND date=? "
+                                "AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(method,'')=''",
+                                (kid, r['date'][:7], a))          # שורת ההערכה החודשית — אותו כסף
+                    if not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method=? "
+                                       "AND ROUND(CAST(amount AS REAL),2)=?",
+                                       (kid, r['date'], "צ'ק", a)).fetchone():
+                        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                    "VALUES(?,?,?,'מזדמן',?,'ייבוא צ׳קים 2026  · אסמכתא 16384943 · "
+                                    "לא סווג — לבדוק עבור מה',1)", (kid, r['date'], a, "צ'ק"))
+                    con.execute("UPDATE recon SET donor_id=?, processed=1 WHERE tid=?", (kid, r['tid']))
+                con.execute("INSERT INTO seed_flags(name) VALUES('yaakov_max_v1')")
+                print('  יעקב מקס: אוחד לכרטיס #%d' % kid)
+    except Exception as e:
+        print('  yaakov max error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
