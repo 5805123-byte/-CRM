@@ -2757,6 +2757,85 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     return buf.getvalue()
 
 
+def _ph10(s):
+    """עשר הספרות האחרונות של מספר טלפון — להשוואה בלי תלות בקידומת ובסימנים."""
+    d = re.sub(r'\D', '', s or '')
+    return d[-10:] if len(d) >= 10 else ''
+
+
+def contacts_fill(con, cards, status=None):
+    """משייך אנשי קשר מגוגל לכרטיסי התורמים וממלא רק שדות ריקים — כתובת, טלפון, מייל.
+    לא דורס שום נתון קיים. מחזיר סיכום למסך."""
+    st = status if status is not None else {}
+    donors = [dict(r) for r in con.execute(
+        "SELECT id,last,first,english,business,addr,phone,email FROM donors")]
+    by_email, by_phone, by_he, by_lat, by_last = {}, {}, {}, {}, {}
+
+    def put(d, k, v):
+        if not k:
+            return
+        d.setdefault(k, []).append(v)
+    for d in donors:
+        for e in emails_of(d['email']):
+            put(by_email, e.lower(), d)
+        for p in re.split(r'[;,/]+', d['phone'] or ''):
+            put(by_phone, _ph10(p), d)
+        put(by_he, (_fz(d['last'] or ''), _fz(d['first'] or '')), d)
+        put(by_last, _fz(d['last'] or ''), d)
+        for src in (d['english'], d['business']):
+            t = re.sub(r'[^a-z ]', '', (src or '').lower()).strip()
+            if t:
+                put(by_lat, ' '.join(sorted(t.split())), d)
+
+    def pick(lst):
+        u = {x['id']: x for x in (lst or [])}
+        return list(u.values())[0] if len(u) == 1 else None
+
+    filled = {'addr': 0, 'phone': 0, 'email': 0}
+    touched, unmatched = set(), []
+    for c in cards:
+        st['scanned'] = st.get('scanned', 0) + 1
+        d = None
+        for e in c['emails']:
+            d = d or pick(by_email.get(e))
+        for p in c['phones']:
+            d = d or pick(by_phone.get(_ph10(p)))
+        if not d:
+            d = pick(by_he.get((_fz(c['last']), _fz(c['first']))))
+        if not d:      # לפעמים שם המשפחה והפרטי הפוכים באנשי הקשר
+            d = pick(by_he.get((_fz(c['first']), _fz(c['last']))))
+        if not d:
+            t = re.sub(r'[^a-z ]', '', (c['name'] or '').lower()).strip()
+            if t:
+                d = pick(by_lat.get(' '.join(sorted(t.split()))))
+        onlyaddr = False
+        if not d and c['addrs']:
+            # שם משפחה יחיד במערכת — מספיק כדי למלא כתובת (בני בית חולקים כתובת), לא טלפון
+            d = pick(by_last.get(_fz(c['last']))) or pick(by_last.get(_fz(c['first'])))
+            onlyaddr = bool(d)
+        if not d:
+            if c['addrs']:
+                unmatched.append({'name': c['name'], 'addr': c['addrs'][0],
+                                  'phone': ', '.join(c['phones'][:2]),
+                                  'email': ', '.join(c['emails'][:1])})
+            continue
+        sets, vals = [], []
+        if c['addrs'] and not (d['addr'] or '').strip():
+            sets.append('addr=?'); vals.append(c['addrs'][0]); filled['addr'] += 1
+        if not onlyaddr and c['phones'] and not (d['phone'] or '').strip():
+            sets.append('phone=?'); vals.append(' / '.join(c['phones'][:3])); filled['phone'] += 1
+        if not onlyaddr and c['emails'] and not (d['email'] or '').strip():
+            sets.append('email=?'); vals.append(c['emails'][0]); filled['email'] += 1
+        if sets:
+            con.execute("UPDATE donors SET " + ','.join(sets) + " WHERE id=?", vals + [d['id']])
+            touched.add(d['id'])
+            st['filled'] = len(touched)
+    con.commit()
+    unmatched.sort(key=lambda x: x['name'])
+    return {'ok': True, 'cards': len(cards), 'donors': len(touched), 'filled': filled,
+            'unmatched': unmatched[:400], 'unmatched_total': len(unmatched)}
+
+
 def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):
     """מתייק ביומן הקשר כל מייל שהמערכת שלחה לתורם — מיד, בלי להמתין למשיכה.
     המפתח זהה לזה של סריקת תיבת הנשלחים, כך שלא ייווצר רישום כפול."""
@@ -3278,6 +3357,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, dict(gmail_intake.PP_STATUS))
             except Exception as e:
                 return self._send(200, {'running': False, 'done': True, 'error': str(e)})
+        if self.path == '/api/contacts/pull/status':
+            try:
+                import gcontacts
+                return self._send(200, dict(gcontacts.STATUS))
+            except Exception as e:
+                return self._send(200, {'running': False, 'done': True, 'error': str(e)})
         if self.path == '/api/mail/contacts_sync/status':
             try:
                 import gmail_intake
@@ -3523,6 +3608,32 @@ class H(BaseHTTPRequestHandler):
                     except Exception: pass
                     stt['running'] = False; stt['done'] = True
             threading.Thread(target=_runpp, daemon=True).start()
+            return self._send(200, {'ok': True, 'started': True})
+        if self.path == '/api/contacts/pull':   # משיכת אנשי הקשר מגוגל והשלמת כתובות — ברקע
+            try:
+                import gcontacts, threading
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            if not gcontacts.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured'})
+            stt = gcontacts.STATUS
+            if stt.get('running'):
+                return self._send(200, {'ok': True, 'started': False, 'already': True})
+            stt.update({'running': True, 'done': False, 'error': '',
+                        'found': 0, 'filled': 0, 'scanned': 0, 'result': None})
+
+            def _runc():
+                c = db()
+                try:
+                    cards = gcontacts.fetch(stt)
+                    stt['result'] = contacts_fill(c, cards, stt)
+                except Exception as e:
+                    stt['error'] = str(e)
+                finally:
+                    try: c.close()
+                    except Exception: pass
+                    stt['running'] = False; stt['done'] = True
+            threading.Thread(target=_runc, daemon=True).start()
             return self._send(200, {'ok': True, 'started': True})
         if self.path == '/api/mail/contacts_sync':   # תיוק מיילים מתורמים — רץ ברקע כדי לא ליפול בטיימאאוט
             try:

@@ -134,7 +134,34 @@ function openRemPopup(){
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function norm(s){return (s||'').replace(/["'`]/g,'').replace(/\s+/g,' ').trim();}
 function dupKey(d){return norm((d.last||'')+' '+(d.first||'')).replace(/[-־]/g,'');}
-function findDupes(){const g={};DB.forEach(d=>{const k=dupKey(d);if(!k)return;(g[k]=g[k]||[]).push(d);});return Object.values(g).filter(a=>a.length>1);}
+// מפתח דמיון לשם עברי — בלי אמות קריאה ועם איחוד אותיות דומות, כדי לתפוס גם איות שונה
+// (וורצברגר / ווערצבערגער, שטטפלד / סטטפלד). אותו היגיון כמו בשרת.
+const FZMAP={'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ','ש':'ס','ז':'ס','צ':'ס','ת':'ט','כ':'ק'};
+function fzHe(s){
+  s=String(s||'').replace(/[^א-ת]/g,'').replace(/[ךםןףץשזצתכ]/g,c=>FZMAP[c]);
+  return s.replace(/[אהעוי]/g,'').replace(/(.)\1+/g,'$1');
+}
+function fzKey(d){const k=fzHe(d.last)+'|'+fzHe(d.first);return k==='|'?'':k;}
+function findDupes(){
+  const g={};DB.forEach(d=>{const k=dupKey(d);if(!k)return;(g[k]=g[k]||[]).push(d);});
+  const out=Object.values(g).filter(a=>a.length>1);
+  const seen=new Set();out.forEach(a=>a.forEach(d=>seen.add(d.id)));
+  const f={};DB.forEach(d=>{const k=fzKey(d);if(!k)return;(f[k]=f[k]||[]).push(d);});
+  Object.values(f).forEach(a=>{                 // כפילויות באיות שונה — רק כאלה שלא נתפסו כבר
+    if(a.length<2||a.every(d=>seen.has(d.id)))return;
+    a.forEach(d=>seen.add(d.id)); a.fuzzy=true; out.push(a);
+  });
+  // אותו שם משפחה, ולאחד מהם אין שם פרטי או שהוא קיצור של השני (יידי / יידל)
+  const L={};DB.forEach(d=>{const k=fzHe(d.last);if(k)(L[k]=L[k]||[]).push(d);});
+  Object.values(L).forEach(a=>{
+    if(a.length<2||a.length>4)return;
+    const fs=a.map(d=>fzHe(d.first));
+    const ok=fs.every((x,i)=>fs.every((y,j)=>i===j||!x||!y||x.startsWith(y)||y.startsWith(x)));
+    if(!ok||a.every(d=>seen.has(d.id)))return;
+    a.forEach(d=>seen.add(d.id)); a.fuzzy=true; out.push(a);
+  });
+  return out;
+}
 // פרנס "פתוח" = הלילה עדיין לא עבר, או שעבר אך טרם שולם. הירח נעלם רק כשהלילה עבר וגם שולם.
 function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>!(p.night_date&&p.night_date<t&&+p.paid));}
 function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1300);}
@@ -471,6 +498,34 @@ function addrIssue(d){
   if(d.region==='il'&&/\d[ ]*[\u0590-\u05FF]/.test(street))return 'מספר לפני שם הרחוב — לבדוק';
   return null;
 }
+// משיכת אנשי הקשר מגוגל — ממלאת רק שדות ריקים, אף פעם לא דורסת מה שכבר יש
+async function pullGContacts(btn){
+  const out=document.getElementById('gcout'), lbl=btn.textContent;
+  const say=h=>{if(out)out.innerHTML=h;};
+  btn.disabled=true;btn.textContent='מתחבר לגוגל…';
+  const r=await api('POST','/api/contacts/pull',{});
+  if(!r||!r.ok){
+    btn.disabled=false;btn.textContent=lbl;
+    say(r&&r.error==='not_configured'?'❌ המייל לא מוגדר בשרת.':'❌ שגיאה: '+((r&&(r.detail||r.error))||''));
+    return;
+  }
+  for(let i=0;i<450;i++){
+    await new Promise(res=>setTimeout(res,2000));
+    let s;try{s=await api('GET','/api/contacts/pull/status');}catch(e){continue;}
+    if(!s)continue;
+    if(s.running){btn.textContent=s.found?('משלים… '+(s.scanned||0)+'/'+s.found):'מוריד אנשי קשר…';continue;}
+    btn.disabled=false;btn.textContent=lbl;
+    if(s.error){say('❌ '+esc(s.error)+'<br>אם גוגל חוסמת — שלח לי ייצוא CSV של אנשי הקשר ואמלא ממנו.');return;}
+    const z=s.result||{};const f=z.filled||{};
+    say(`✅ נמצאו ${z.cards||0} אנשי קשר · עודכנו ${z.donors||0} כרטיסים —
+      ${f.addr||0} כתובות, ${f.phone||0} טלפונים, ${f.email||0} מיילים.
+      ${z.unmatched_total?('<br>⚠️ '+z.unmatched_total+' אנשי קשר עם כתובת שלא הצלחתי לשייך לתורם.'):''}`);
+    NOADDR=null; await load(); render();
+    return;
+  }
+  btn.disabled=false;btn.textContent=lbl;
+  say('המשיכה עדיין רצה ברקע — בדוק שוב בעוד רגע.');
+}
 // מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס
 let NOADDR=null;
 async function renderNoAddr(){
@@ -492,10 +547,12 @@ async function renderNoAddr(){
   </div>`;
   view.innerHTML=`<button class="btn ghost" id="nback" style="width:100%;margin-bottom:8px">⬅ חזרה לרשימת התורמים</button>
     <div class="rbtitle">🏠 תורמים בלי כתובת — ${NOADDR.count||0}</div>
-    <div class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש לי הצעה מוכנה מייצוא אנשי הקשר או מכתובת החיוב. לשאר פשוט אין כתובת באף אחד מהקבצים שקיבלתי — צריך ייצוא חדש של אנשי הקשר שכולל כתובות.</div>
+    <button class="btn" id="gcpull" style="width:100%;background:#1a73e8;border-color:#1a73e8;margin-bottom:6px">📇 משוך אנשי קשר מגוגל והשלם כתובות</button>
+    <div id="gcout" class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש לי הצעה מוכנה מייצוא אנשי הקשר או מכתובת החיוב. לשאר אין כתובת באף קובץ שקיבלתי — לחץ על הכפתור כדי למשוך ישירות מאנשי הקשר בגוגל.</div>
     ${withS.length?`<div class="misshead">💡 יש הצעה — ${withS.length}</div>${withS.map(card).join('')}`:''}
     ${without.length?`<div class="misshead">אין שום נתון — ${without.length}</div>${without.map(card).join('')}`:''}`;
   document.getElementById('nback').onclick=()=>{flt='';render();};
+  const gp=document.getElementById('gcpull'); if(gp)gp.onclick=()=>pullGContacts(gp);
   view.querySelectorAll('.nago').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.id);if(d)openDonor(d);});
   view.querySelectorAll('.nause').forEach(b=>b.onclick=async()=>{
     const p=(NOADDR.people||[]).find(x=>x.id==b.dataset.id); if(!p)return;
@@ -535,7 +592,7 @@ function openDupes(){
       <h2>🔀 מיזוג כרטיסים כפולים</h2>
       <div class="hintxt">${gs.length?'בחר את הכרטיס להשאיר (מסומן אוטומטית המלא ביותר) — כל התרומות, הפרנס והאברכים יעברו אליו, והכפול יימחק.':'לא נמצאו כפולים 🎉'}</div>
       <div id="dupwrap">${gs.map((grp,gi)=>{const best=grp.slice().sort((a,b)=>score(b)-score(a))[0];
-        return `<div class="dupgrp"><div class="dupname">${esc(grp[0].last+' '+grp[0].first)}</div>${grp.map(d=>{
+        return `<div class="dupgrp"><div class="dupname">${esc(grp[0].last+' '+grp[0].first)}${grp.fuzzy?' <span class="dupfz">איות שונה — בדוק שזה באמת אותו אדם</span>':''}</div>${grp.map(d=>{
           const nd=(d.donations||[]).length,np=(d.partners||[]).length,npar=(d.parnes||[]).length;
           return `<label class="dupcard"><input type="radio" name="keep${gi}" value="${d.id}" ${d.id===best.id?'checked':''}>
             <div class="dupinfo"><b>כרטיס #${d.id}</b> ${catPill(d.category)} ${pill(d.tier)}${d.id===best.id?' <span class="dupkeep">מומלץ להשאיר</span>':''}
