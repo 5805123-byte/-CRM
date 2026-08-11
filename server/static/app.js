@@ -904,11 +904,14 @@ function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('
 let cardTab='details';
 function tierOpts(d){
   const cur=(d&&d.tier)||'';
-  const isOcc=!cur && d && d.category==='מזדמן';
+  const isOcc=!cur && hasOccKv(d);
   const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי'}[t]):'— ללא —'}</option>`).join('');
   const occLbl=isOcc?('מזדמנים'+(d.kv_month?(' · '+d.kv_month+(d.kv_year?(' '+d.kv_year):'')):'')):'מזדמנים';
   return base+`<option value="__occ" ${isOcc?'selected':''}>${occLbl}</option>`;
 }
+// "מזדמנים" בדרגת הקוויטל שייך רק למי שבאמת יש לו קוויטל — שמות לתפילה או חודש שנקבע.
+// תורם מזדמן בלי קוויטל נשאר "— ללא —", ובלי שורת חודש/שנה.
+function hasOccKv(d){return !!(d&&d.category==='מזדמן'&&!d.tier&&((d.prayers||[]).length||String(d.kv_month||'').trim()));}
 // שינוי דרגת קוויטל — כולל הבחירה המיוחדת "מזדמנים" ששואלת לאיזה חודש/שנה
 async function applyTierSelect(d,selId){
   const el=document.getElementById(selId||'f_tier');if(!el)return;const val=el.value;
@@ -1038,6 +1041,26 @@ function purposeText(d){
   const l=Object.keys(m).sort((a,b)=>m[b]-m[a]);
   return l.length?(l.slice(0,3).join(' · ')+(l.length>3?' ועוד':'')):'';
 }
+// הערות חופשיות — שורה לכל הערה, אפשר להוסיף כמה שרוצים. נשמר בשדה ההערות של התורם
+function noteList(d){return String(d.notes||'').split('\n').map(x=>x.trim()).filter(Boolean);}
+function notesHTML(d){
+  const l=noteList(d);
+  return `<div class="notesbox"><div class="notesbox-t">📝 הערות</div>
+    ${l.map((n,i)=>`<div class="noterow"><input class="nbtxt" data-i="${i}" value="${esc(n)}"><button class="del nbdel" data-i="${i}" title="מחק הערה">🗑</button></div>`).join('')}
+    <div class="addrow"><input class="nbnew" placeholder="הוסף הערה — למשל: התחיל קדיש מא' תמוז תשפ״ו"><button class="btn sm nbadd">➕ הוסף</button></div></div>`;
+}
+function wireNotes(d,root){
+  const box=root.querySelector('.notesbox'); if(!box)return;
+  const save=async(l)=>{d.notes=l.join('\n');await api('PUT','/api/donor/'+d.id,{notes:d.notes});
+    const w=document.createElement('div');w.innerHTML=notesHTML(d);box.replaceWith(w.firstElementChild);
+    wireNotes(d,root);if(tab==='donors')renderDonors();};
+  box.querySelectorAll('.nbtxt').forEach(inp=>inp.onchange=()=>{const l=noteList(d);
+    const v=inp.value.trim(); if(v)l[+inp.dataset.i]=v; else l.splice(+inp.dataset.i,1); save(l);toast('נשמר ✓');});
+  box.querySelectorAll('.nbdel').forEach(b2=>b2.onclick=async()=>{const l=noteList(d);l.splice(+b2.dataset.i,1);await save(l);toast('נמחק');});
+  const ni=box.querySelector('.nbnew'),na=box.querySelector('.nbadd');
+  const add=async()=>{const v=ni.value.trim();if(!v){ni.focus();return;}await save(noteList(d).concat([v]));toast('נוספה הערה ✓');};
+  na.onclick=add; ni.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
+}
 function catTotalsHTML(d){
   const cur=curSym(d), m={};
   const add=(c,amt,dt)=>{
@@ -1113,9 +1136,10 @@ function cardDetails(d,body){
       <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>
     <label class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה)</span><select id="f_purpose">${dnCatOpts(d.purpose||'')}</select></label>
     <div class="addrow hidden" id="f_purpnew"><input id="f_purpfree" placeholder="שם הייעוד החדש"></div>
-    ${(d.category==='מזדמן'&&!d.tier&&((d.prayers||[]).length||d.kv_month))?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
+    ${hasOccKv(d)?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
+    ${notesHTML(d)}
     ${izSummaryHTML(d)}
     ${reconPendHTML(d)}
     ${catTotalsHTML(d)}
@@ -1400,6 +1424,7 @@ function cardDetails(d,body){
   };
   const FF=['last','first','category','amount','frequency'];
   wireFields(d,FF);
+  wireNotes(d,body);
   const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='details';renderCard(d);};
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
@@ -1475,7 +1500,7 @@ function cardKvittel(d,body){
   const inKv=KVTIER[d.tier];
   const empty=!(d.prayers&&d.prayers.length);
   const sugg=(empty&&inKv)?((d.first||'')+' '+(d.last||'')).trim():'';
-  const isOcc=d.category==='מזדמן'&&!d.tier;
+  const isOcc=hasOccKv(d)||(d.category==='מזדמן'&&!d.tier);   // בלשונית הקוויטל תמיד אפשר לקבוע חודש
   body.innerHTML=`${(d.intake_pending||[]).length?reconPendHTML({intake_pending:d.intake_pending,recon_pending:[]}):''}
     <div class="sec">
       <label class="fld"><span>דרגת קוויטל (אפשר לשנות מכאן)</span><select id="kv_tier">${tierOpts(d)}</select></label>
