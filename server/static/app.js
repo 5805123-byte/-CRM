@@ -584,6 +584,35 @@ function renderAddrFix(){
   view.querySelectorAll('.afsave').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id);const inp=view.querySelector('.afaddr[data-id="'+b.dataset.id+'"]');d.addr=inp.value;await api('PUT','/api/donor/'+d.id,{addr:inp.value});toast('נשמר ✓');renderAddrFix();});
   view.querySelectorAll('.afok').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id);d.addr_ok=1;await api('PUT','/api/donor/'+d.id,{addr_ok:1});toast('סומן תקין ✓');renderAddrFix();});
 }
+// סיכום קצר בעברית של מה עבר במיזוג — "7 תרומות · 2 שמות קוויטל"
+const MOVEDHE={donations:'תרומות',prayers:'שמות קוויטל',parnes:'פרנס יום',tasks:'משימות',
+  contacts_log:'רישומי קשר',partners:'אברכים',transactions:'חיובים',pledges:'התחייבויות',
+  building:'בניין',recon:'שורות חיוב',intake:'בקשות מהאתר'};
+function movedTxt(moved){
+  const p=Object.entries(moved||{}).filter(([,v])=>v).map(([k,v])=>v+' '+(MOVEDHE[k]||k));
+  return p.length?('— '+p.join(' · ')):'';
+}
+// מיזוג מקומי — מעביר את הרשומות על המסך מיד, באותו היגיון של השרת, כדי שלא נחכה לרענון
+const MERGE_TABLES=['donations','prayers','parnes','tasks','contacts','partners','transactions','pledges','building'];
+function mergeLocal(keepId,dropId,tot){
+  const k=DB.find(x=>x.id===keepId), d=DB.find(x=>x.id===dropId);
+  if(!k||!d)return;
+  MERGE_TABLES.forEach(t=>{
+    const src=d[t]||[]; if(!src.length)return;
+    k[t]=(k[t]||[]).concat(src);
+    if(tot)tot[t==='contacts'?'contacts_log':t]=(tot[t==='contacts'?'contacts_log':t]||0)+src.length;
+  });
+  ['first','english','business','addr','tier','category','purpose','amount','region','country',
+   'zip','city','channel','pay_status','labels','aliases','iz_note','months','last_active']
+    .forEach(c=>{ if(!String(k[c]||'').trim()&&String(d[c]||'').trim())k[c]=d[c]; });
+  const ph=[...new Set(splitPhones(k.phone).concat(splitPhones(d.phone)))].filter(Boolean);
+  if(ph.length)k.phone=ph.join(' / ');
+  const em=[...new Set(splitEmails(k.email).concat(splitEmails(d.email)))].filter(Boolean);
+  if(em.length)k.email=em.join(', ');
+  const dn=String(d.notes||'').trim();
+  if(dn&&!String(k.notes||'').includes(dn))k.notes=(String(k.notes||'').trim()+' · '+dn).replace(/^ · /,'');
+  DB=DB.filter(x=>x.id!==dropId);
+}
 function openDupes(){
   const paint=()=>{
     const gs=findDupes();
@@ -598,16 +627,30 @@ function openDupes(){
             <div class="dupinfo"><b>כרטיס #${d.id}</b> ${catPill(d.category)} ${pill(d.tier)}${d.id===best.id?' <span class="dupkeep">מומלץ להשאיר</span>':''}
             <div class="dupmeta">${d.phone?('📞 '+esc(d.phone)+' '):''}${d.email?('✉️ '+esc(d.email)+' '):''}${amtNum(d.amount)?('💵 '+esc(d.amount)+' '):''}${d.english?('· '+esc(d.english)):''}</div>
             <div class="dupmeta">${nd} תרומות · ${npar} פרנס · ${np} אברכים</div></div></label>`;
-        }).join('')}<button class="btn sm dupmerge" data-gi="${gi}">מזג ✓</button></div>`;
+        }).join('')}<button class="btn sm dupmerge" data-gi="${gi}" data-ids="${grp.map(d=>d.id).join(',')}">מזג ✓</button></div>`;
       }).join('')||'<div class="empty">אין כפולים</div>'}</div>`;
     sheet.querySelectorAll('.dupmerge').forEach(b=>b.onclick=async()=>{
-      const gi=b.dataset.gi,grp=findDupes()[gi];if(!grp)return;
-      const sel=sheet.querySelector(`input[name="keep${gi}"]:checked`);if(!sel){toast('בחר כרטיס להשאיר');return;}
-      const keep=+sel.value,drops=grp.filter(d=>d.id!==keep);
+      const gi=b.dataset.gi;
+      const ids=(b.dataset.ids||'').split(',').map(Number).filter(Boolean);
+      const sel=sheet.querySelector(`input[name="keep${gi}"]:checked`);
+      if(!sel){toast('בחר כרטיס להשאיר');return;}
+      const keep=+sel.value, drops=ids.filter(id=>id!==keep);
+      if(!drops.length){toast('אין מה למזג');return;}
+      b.disabled=true;
       const tot={};
-      for(const dr of drops){const r=await api('POST','/api/merge',{keep,drop:dr.id});
-        Object.entries((r&&r.moved)||{}).forEach(([k,v])=>tot[k]=(tot[k]||0)+v);}
-      toast('מוזג ✓ '+movedTxt(tot));await load();paint();});
+      drops.forEach(id=>mergeLocal(keep,id,tot));   // מיזוג מיידי על המסך — השרת מתעדכן ברקע
+      paint(); toast('מוזג ✓ '+movedTxt(tot));
+      try{
+        for(const id of drops){
+          const r=await api('POST','/api/merge',{keep,drop:id});
+          if(!r||!r.ok)throw new Error((r&&(r.detail||r.error))||'השרת סירב');
+        }
+      }catch(e){
+        toast('❌ המיזוג לא נשמר: '+(e&&e.message||e));
+        await load(); paint(); return;
+      }
+      load().then(paint);                            // רענון שקט, בלי להשהות את המסך
+    });
     document.getElementById('cx').onclick=()=>ov.classList.remove('show');
   };
   paint(); ov.classList.add('show');
@@ -1069,8 +1112,14 @@ function cardDetails(d,body){
     mgres.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
       const other=DB.find(x=>x.id==el.dataset.id);if(!other)return;
       if(!await uiConfirm('למזג את "'+(other.last+' '+other.first).trim()+'" (#'+other.id+') לתוך "'+(d.last+' '+d.first).trim()+'"?\nהכפול יימחק וכל הנתונים יעברו לכאן.'))return;
-      const r=await api('POST','/api/merge',{keep:d.id,drop:other.id});
-      toast('מוזג ✓ '+movedTxt((r&&r.moved)||{}));ov.classList.remove('show');await load();openDonor(DB.find(x=>x.id===d.id));});
+      const tot={};
+      mergeLocal(d.id,other.id,tot);              // מיד על המסך; השרת מתעדכן ברקע
+      toast('מוזג ✓ '+movedTxt(tot)); ov.classList.remove('show'); openDonor(d,'details');
+      try{
+        const r=await api('POST','/api/merge',{keep:d.id,drop:other.id});
+        if(!r||!r.ok)throw new Error((r&&(r.detail||r.error))||'השרת סירב');
+      }catch(e){ toast('❌ המיזוג לא נשמר: '+(e&&e.message||e)); }
+      load().then(()=>{const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});});
   };
   const FF=['last','first','english','category','purpose','amount','frequency','addr','city','country','zip','business','notes','region','channel'];
   wireFields(d,FF);
