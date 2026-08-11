@@ -66,6 +66,7 @@ def ensure_schema():
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
@@ -2332,6 +2333,32 @@ def ensure_schema():
     except Exception as e:
         print('  stern iz error:', e)
 
+    # אנשין יעקב יוסף — הזבולון שלו נכתב בקובץ כ"דוד א" בלבד; מאיר אישר: דוד אהרוני
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='anshin_aharoni_v1'").fetchone():
+            d = con.execute("SELECT id FROM donors WHERE last LIKE '%אהרוני%' AND first LIKE '%דוד%'").fetchone()
+            if d:
+                ex = con.execute("SELECT id FROM partners WHERE donor_id=? AND avreich LIKE '%אנשין%' "
+                                 "AND avreich LIKE '%יוסף%'", (d['id'],)).fetchone()
+                if ex:
+                    con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'600'), "
+                                "start_date=COALESCE(NULLIF(TRIM(start_date),''),?), active=1 WHERE id=?",
+                                ('א\' אלול תשפ"ה', ex['id']))
+                else:
+                    # אם הוא רשום בטעות אצל תורם אחר — מעבירים, אחרת יוצרים שורה חדשה
+                    mv = con.execute("SELECT id FROM partners WHERE avreich LIKE '%אנשין%' AND avreich LIKE '%יוסף%'").fetchone()
+                    if mv:
+                        con.execute("UPDATE partners SET donor_id=?, amount=COALESCE(NULLIF(TRIM(amount),''),'600'), "
+                                    "start_date=COALESCE(NULLIF(TRIM(start_date),''),?), active=1 WHERE id=?",
+                                    (d['id'], 'א\' אלול תשפ"ה', mv['id']))
+                    else:
+                        con.execute("INSERT INTO partners(donor_id,avreich,amount,start_date,active) VALUES(?,?,?,?,1)",
+                                    (d['id'], 'אנשין יעקב יוסף', '600', 'א\' אלול תשפ"ה'))
+                print('  דוד אהרוני: אנשין יעקב יוסף — $600 מא\' אלול תשפ"ה')
+            con.execute("INSERT INTO seed_flags(name) VALUES('anshin_aharoni_v1')")
+    except Exception as e:
+        print('  anshin aharoni error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
@@ -3601,8 +3628,10 @@ class H(BaseHTTPRequestHandler):
             bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
             try: nd = [[r['a'], r['b']] for r in con.execute("SELECT a,b FROM not_dupes")]
             except Exception: nd = []
+            try: tkinds = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
+            except Exception: tkinds = []
             con.close()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
         if self.path.split('?')[0] == '/api/donors.csv':
             # רשימת תפוצה לדיוור — שורה לכל כתובת מייל, כדי שכל תורם יקבל מייל אישי בשמו
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -4561,6 +4590,17 @@ class H(BaseHTTPRequestHandler):
             if nm:
                 con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm})
+        if self.path == '/api/taskkinds':
+            # סוגי משימה שהמשתמש מגדיר בעצמו — למשל "לבדוק יששכר זבולון שלו"
+            nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:60]
+            con = db()
+            if nm and b.get('delete'):
+                con.execute("DELETE FROM task_kinds WHERE name=?", (nm,))
+            elif nm:
+                con.execute("INSERT OR IGNORE INTO task_kinds(name,created) VALUES(?,?)", (nm, today_iso()))
+            names = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'name': nm, 'kinds': names})
         if self.path == '/api/building_items':
             nm = (b.get('name') or '').strip()
             if nm:
