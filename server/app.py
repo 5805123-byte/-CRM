@@ -2541,6 +2541,34 @@ def ensure_schema():
     except Exception as e:
         print('  namefix error:', e)
 
+    # טלפונים שמאיר אישר אחד־אחד מול אנשי הקשר. מספר בפורמט חיוג בינלאומי
+    # ישראלי (012 + 1 + מספר אמריקאי) נשמר גם בצורתו הרגילה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='phones_confirmed_v1'").fetchone():
+            CONF = [
+                ('ווינשניידר', 'חיים פסח', '+1 312-315-3707', 'evaweinschneider@gmail.com'),
+                ('סחייאק',     'אדי',      '+1 347-831-8883', ''),
+                ('זייגלבוים',  'לוי',      '+1 917-776-1097', ''),
+                ('הלברשטם',    'מארק',     '+1 718-377-7337', ''),
+                ('טשרנס',      'אהרן',     '+1 347-321-5816', ''),
+                ('פרלמוטר',    'יצחק',     '+1 410-358-4380', ''),
+                ('אברמוביץ',   'אלחנן',    '+1 718-377-0930', ''),
+            ]
+            npf = 0
+            for last, first, ph, em in CONF:
+                r = con.execute("SELECT id,phone,email FROM donors WHERE last LIKE ? AND first LIKE ?",
+                                ('%' + last + '%', '%' + first + '%')).fetchone()
+                if not r:
+                    continue
+                if not (r['phone'] or '').strip():
+                    con.execute("UPDATE donors SET phone=? WHERE id=?", (ph, r['id'])); npf += 1
+                if em and not (r['email'] or '').strip():
+                    con.execute("UPDATE donors SET email=? WHERE id=?", (em, r['id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('phones_confirmed_v1')")
+            print('  טלפונים שאושרו ידנית: %d' % npf)
+    except Exception as e:
+        print('  confirmed phones error:', e)
+
     # סורוס פאונדיישן — מאיר ביקש למחוק לגמרי מהמערכת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='soros_delete_v1'").fetchone():
