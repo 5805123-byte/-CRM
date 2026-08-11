@@ -2364,6 +2364,21 @@ def ensure_schema():
     except Exception as e:
         print('  ner lemaor error:', e)
 
+    # שניאור זלמן מיטמן אינו קשור לשאר המיטמנים — שלא יוצע מיזוג ביניהם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_sz_notdupe_v1'").fetchone():
+            sz = con.execute("SELECT id FROM donors WHERE last LIKE '%מיטמן%' AND first LIKE '%שניאור%'").fetchone()
+            n = 0
+            if sz:
+                for r in con.execute("SELECT id FROM donors WHERE last LIKE '%מיטמן%' AND id<>?", (sz['id'],)):
+                    a1, b1 = min(sz['id'], r['id']), max(sz['id'], r['id'])
+                    con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)", (a1, b1, today_iso()))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('mittman_sz_notdupe_v1')")
+            print('  שניאור זלמן מיטמן: סומן כלא־קשור ל-%d מיטמנים' % n)
+    except Exception as e:
+        print('  mittman sz error:', e)
+
     # ציון כהן — $1,000 לשלושת המיטמנים ביחד (מאיר אישר), לא $1,400
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_1000_v1'").fetchone():
