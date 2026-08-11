@@ -2364,6 +2364,18 @@ def ensure_schema():
     except Exception as e:
         print('  ner lemaor error:', e)
 
+    # תרגומים שנשמרו זהים למקור — התרגום לא באמת קרה. מנקים כדי שירוצו מחדש
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='retranslate_v1'").fetchone():
+            cur5 = con.execute(
+                "UPDATE contacts_log SET body_he=NULL WHERE COALESCE(TRIM(body_he),'')<>'' "
+                "AND REPLACE(REPLACE(TRIM(body_he),' ',''),CHAR(10),'')"
+                "  = REPLACE(REPLACE(TRIM(body),' ',''),CHAR(10),'')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('retranslate_v1')")
+            print('  תרגומים שנוקו לתרגום מחדש: %d' % cur5.rowcount)
+    except Exception as e:
+        print('  retranslate error:', e)
+
     # תיקוני איות ושמות עבריים שמאיר מסר, ואיחוד כרטיסים כפולים שנוצרו בגללם
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='namefix_aug11_v1'").fetchone():
@@ -2599,13 +2611,14 @@ def ensure_schema():
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
     try:
         seedc = os.path.join(HERE, 'contacts_seed.csv')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seed_v1'").fetchone() \
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seed_v2'").fetchone() \
                 and os.path.exists(seedc):
             import gcontacts as _gc
             with open(seedc, encoding='utf-8-sig') as f:
                 _cards = _gc.parse_csv(f.read())
             _r = contacts_fill(con, _cards)
-            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seed_v1')")
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('contacts_seed_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seed_v2')")
             print('  אנשי קשר מגוגל: %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים, '
                   '%d קוויטל, %d הערות (לא שויכו %d)'
                   % (_r['donors'], _r['filled']['addr'], _r['filled']['phone'],
@@ -3630,6 +3643,20 @@ def _fitfirst(a, b):
     return not a or not b or a.startswith(b) or b.startswith(a)
 
 
+def _tok_he(s):
+    """מילים עבריות משם איש קשר — בלי ראשי תיבות וסימני פיסוק ("ב.בוכינגר תולי")."""
+    return [t for t in re.sub(r'[^\u05d0-\u05ea ]', ' ', s or '').split() if len(t) >= 2]
+
+
+def _firstok(a, b):
+    """שמות פרטיים של אותו אדם — זהים, קיצור, או כינוי. לפי צליל, ומשני הכיוונים:
+    גבי/גבריאל (תחילית) וגם תולי/נפתלי (סיומת)."""
+    x, y = _fz(a), _fz(b)
+    if len(x) < 2 or len(y) < 2:
+        return False
+    return x.startswith(y) or y.startswith(x) or x.endswith(y) or y.endswith(x)
+
+
 def contacts_fill(con, cards, status=None):
     """משייך אנשי קשר מגוגל לכרטיסי התורמים וממלא רק שדות ריקים — כתובת, טלפון, מייל.
     לא דורס שום נתון קיים. מחזיר סיכום למסך."""
@@ -3679,6 +3706,20 @@ def contacts_fill(con, cards, status=None):
                 d = pick(by_lat.get(' '.join(sorted(t.split()))))
                 strong = bool(d)
         if not d:
+            # שם משפחה לפי צליל + שם פרטי שמתיישב איתו, בכל סדר שהוא ובלי תלות
+            # בראשי תיבות. תופס "ב.בוכינגר תולי" מול בוכינגר נפתלי, ו"קייזרי גבי"
+            # מול קייזרי גבריאל.
+            toks = _tok_he(' '.join(x for x in (c['name'], c['first'], c['last'], c['org']) if x))
+            cands = []
+            for i, t in enumerate(toks):
+                for cand in by_last.get(_fz(t), []) or []:
+                    rest = [u for j, u in enumerate(toks) if j != i]
+                    cf = (cand['first'] or '').strip()
+                    if not cf or any(_firstok(u, cf) for u in rest):
+                        cands.append(cand)
+            d = pick(cands)
+            strong = bool(d)
+        if not d:
             if c['addrs']:
                 unmatched.append({'name': c['name'] or c['org'], 'addr': c['addrs'][0],
                                   'phone': ', '.join(c['phones'][:2]),
@@ -3688,7 +3729,14 @@ def contacts_fill(con, cards, status=None):
         if c['addrs'] and not (d['addr'] or '').strip():
             sets.append('addr=?'); vals.append(c['addrs'][0]); filled['addr'] += 1
         if strong and c['phones'] and not (d['phone'] or '').strip():
-            sets.append('phone=?'); vals.append(' / '.join(c['phones'][:3])); filled['phone'] += 1
+            # אותו מספר מופיע לעיתים בכמה עיצובים — שומרים אותו פעם אחת
+            uph, seenp = [], set()
+            for ph in c['phones']:
+                k = _ph10(ph) or re.sub(r'\D', '', ph)
+                if k and k not in seenp:
+                    seenp.add(k); uph.append(ph.strip())
+            if uph:
+                sets.append('phone=?'); vals.append(' / '.join(uph[:3])); filled['phone'] += 1
         if strong and c['emails'] and not (d['email'] or '').strip():
             sets.append('email=?'); vals.append(c['emails'][0]); filled['email'] += 1
         if sets:
@@ -5313,6 +5361,9 @@ def health_report():
             add('סנכרון אחרון', 'ok', '%s · %s' % (SYNCSTAT['last_ok'], SYNCSTAT.get('result') or ''))
         else:
             add('סנכרון אחרון', 'warn', 'עדיין לא רץ מאז ההפעלה')
+        add('תרגום מיילים לעברית', 'ok' if os.environ.get('ANTHROPIC_API_KEY') else 'warn',
+            'תרגום איכותי מופעל' if os.environ.get('ANTHROPIC_API_KEY')
+            else 'ללא ANTHROPIC_API_KEY — תרגום חינמי, איכות נמוכה יותר')
         add('שליחת מיילים', 'ok' if (os.environ.get('BREVO_API_KEY') or os.environ.get('SMTP_HOST'))
             else 'warn', 'Brevo מוגדר' if os.environ.get('BREVO_API_KEY') else 'לא מוגדר מפתח שליחה')
         # חיובים שלא שויכו

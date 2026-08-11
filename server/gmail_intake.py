@@ -864,23 +864,35 @@ def _split_chunks(text, size=1500):
     return out
 
 
+def _same_text(a, b):
+    """שתי גרסאות שהן למעשה אותו טקסט — סימן שהתרגום לא באמת קרה."""
+    n = lambda s: re.sub(r'\s+', ' ', (s or '')).strip().lower()
+    return n(a) == n(b)
+
+
 def _translate_free(text, tl='iw'):
-    """תרגום ללא מפתח — דרך שירות התרגום הציבורי של גוגל, ואם נכשל דרך MyMemory."""
+    """תרגום ללא מפתח — דרך שירות התרגום הציבורי של גוגל, ואם נכשל דרך MyMemory.
+    מייל של תורם הוא לרוב אנגלית עם כמה מילים בעברית (אומן, ראש השנה). כש-sl=auto
+    גוגל מזהה את הטקסט כעברית ומחזיר אותו כמו שהוא, ולכן מבקשים במפורש אנגלית."""
     import json as _json, urllib.request as _u, urllib.parse as _p
     parts = []
     for chunk in _split_chunks(text, 1500):
         if not chunk.strip():
             parts.append(chunk); continue
         got = ''
-        try:
-            url = ('https://translate.googleapis.com/translate_a/single'
-                   '?client=gtx&sl=auto&tl=%s&dt=t&q=%s' % (tl, _p.quote(chunk)))
-            req = _u.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with _u.urlopen(req, timeout=25) as r:
-                data = _json.loads(r.read().decode('utf-8', 'replace'))
-            got = ''.join(seg[0] for seg in (data[0] or []) if seg and seg[0])
-        except Exception:
-            got = ''
+        for sl in ('en', 'auto'):
+            try:
+                url = ('https://translate.googleapis.com/translate_a/single'
+                       '?client=gtx&sl=%s&tl=%s&dt=t&q=%s' % (sl, tl, _p.quote(chunk)))
+                req = _u.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with _u.urlopen(req, timeout=25) as r:
+                    data = _json.loads(r.read().decode('utf-8', 'replace'))
+                got = ''.join(seg[0] for seg in (data[0] or []) if seg and seg[0])
+            except Exception:
+                got = ''
+            if got and not _same_text(got, chunk):
+                break
+            got = got if got else ''
         if not got:
             try:
                 url = ('https://api.mymemory.translated.net/get?langpair=en|he&q=' + _p.quote(chunk[:500]))
