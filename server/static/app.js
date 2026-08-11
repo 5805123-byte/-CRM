@@ -248,6 +248,14 @@ function dictSave(t){
   const l=dictHist().filter(x=>x.t!==t); l.unshift({t:t,d:new Date().toLocaleString('he-IL')});
   try{localStorage.setItem(DICTKEY,JSON.stringify(l.slice(0,12)));}catch(e){}
 }
+// שליחה ישירה — פותח את חלון השיתוף של אנדרואיד; בוחרים את קלוד והטקסט נכנס לצ׳אט
+async function shareTxt(t){
+  if(navigator.share){
+    try{await navigator.share({text:t});dictSave(t);toast('נשלח ✓');return 'sent';}
+    catch(e){if(e&&e.name==='AbortError')return 'cancel';}
+  }
+  return (await copyTxt(t))?'copied':'fail';
+}
 async function copyTxt(t){
   try{await navigator.clipboard.writeText(t);toast('הועתק ✓ — הדבק לי בצ׳אט');return true;}
   catch(e){const ta=document.getElementById('dictpad');
@@ -256,33 +264,48 @@ async function copyTxt(t){
 }
 function openDictPad(){
   const ov=document.getElementById('dictov'), sh=document.getElementById('dictsheet');
-  const h=dictHist();
+  const h=dictHist(), auto=localStorage.getItem('kc_dict_noauto')!=='1';
   sh.innerHTML=`<button class="x" id="dictx">✕</button><h2>🎤 הכתבה</h2>
-    <div class="hintxt">לחץ "התחל להקליט", דבר בעברית, ואז "העתק" — והדבק לי בצ׳אט.</div>
+    <div class="hintxt">לחץ "התחל להקליט", דבר בעברית, ובסיום זה נשלח ישירות — בוחרים את קלוד ברשימה.</div>
     <textarea id="dictpad" class="dictpad" placeholder="כאן ייכתב מה שתאמר…"></textarea>
     <button class="btn dictbig" id="dictgo">🎤 התחל להקליט</button>
+    <button class="btn dictbig" id="dictsend" style="background:var(--yes)">📤 שלח לקלוד</button>
+    <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="dictauto" ${auto?'checked':''}> לשלוח אוטומטית ברגע שמסיימים להקליט</label>
     <div class="dictbar">
-      <button class="btn sm" id="dictcopy">📋 העתק</button>
-      <button class="btn sm ghost" id="dictadd">➕ המשך להוסיף</button>
+      <button class="btn sm ghost" id="dictcopy">📋 העתק בלבד</button>
+      <button class="btn sm ghost" id="dictadd">➕ שורה חדשה</button>
       <button class="btn sm ghost" id="dictclr">🗑 נקה</button></div>
-    ${h.length?`<div class="dicthist"><div class="hintxt">הכתבות אחרונות — לחץ להעתיק שוב</div>
+    ${h.length?`<div class="dicthist"><div class="hintxt">הכתבות אחרונות — לחץ לשלוח שוב</div>
       ${h.map((x,i)=>`<div class="dh"><span>${esc(x.t.slice(0,220))}${x.t.length>220?'…':''}</span>
-        <button class="btn sm dhcopy" data-i="${i}">📋</button><button class="del dhdel" data-i="${i}">🗑</button></div>`).join('')}</div>`:''}`;
+        <button class="btn sm dhsend" data-i="${i}">📤</button><button class="del dhdel" data-i="${i}">🗑</button></div>`).join('')}</div>`:''}`;
   ov.classList.add('show');
-  const pad=document.getElementById('dictpad'), go=document.getElementById('dictgo');
+  const pad=document.getElementById('dictpad'), go=document.getElementById('dictgo'),
+        snd=document.getElementById('dictsend'), au=document.getElementById('dictauto');
   document.getElementById('dictx').onclick=()=>{stopDictation();ov.classList.remove('show');};
-  go.onclick=()=>startDictation(go,pad);
-  const obs=()=>{const on=go.classList.contains('rec');
-    go.textContent=on?'⏹ סיים הקלטה':'🎤 התחל להקליט';
-    go.classList.toggle('dictbig',true);
-    document.getElementById('dictfab').classList.toggle('rec',on);};
-  new MutationObserver(obs).observe(go,{attributes:true,attributeFilter:['class']});
+  au.onchange=()=>{try{localStorage.setItem('kc_dict_noauto',au.checked?'0':'1');}catch(e){}};
+  const send=async()=>{const t=pad.value.trim(); if(!t){toast('אין מה לשלוח');return;}
+    const r=await shareTxt(t);
+    if(r==='sent'){pad.value='';ov.classList.remove('show');}
+    else if(r==='copied')toast('המכשיר לא תומך בשליחה — הטקסט הועתק, הדבק בצ׳אט');};
+  snd.onclick=send;
+  go.onclick=()=>{
+    const wasRec=go.classList.contains('rec');
+    startDictation(go,pad);
+    if(!wasRec)go._wantSend=au.checked;               // בסיום ההקלטה נשלח מיד
+    else go._wantSend=false;
+  };
+  // מעקב אחרי מצב ההקלטה — משנה כיתוב ומדליק את הכפתור הצף
+  new MutationObserver(()=>{const on=go.classList.contains('rec');
+    go.textContent=on?'⏹ סיים ושלח':'🎤 התחל להקליט';
+    document.getElementById('dictfab').classList.toggle('rec',on);
+    if(!on&&go._wantSend){go._wantSend=false;setTimeout(()=>{if(pad.value.trim())send();},250);}
+  }).observe(go,{attributes:true,attributeFilter:['class']});
   document.getElementById('dictcopy').onclick=async()=>{
     const t=pad.value.trim(); if(!t){toast('אין מה להעתיק');return;}
     if(await copyTxt(t))dictSave(t);};
   document.getElementById('dictadd').onclick=()=>{if(pad.value.trim())pad.value=pad.value.trim()+'\n';pad.focus();};
   document.getElementById('dictclr').onclick=()=>{if(pad.value.trim())dictSave(pad.value.trim());pad.value='';pad.focus();};
-  sh.querySelectorAll('.dhcopy').forEach(b=>b.onclick=()=>copyTxt(dictHist()[+b.dataset.i].t));
+  sh.querySelectorAll('.dhsend').forEach(b=>b.onclick=()=>shareTxt(dictHist()[+b.dataset.i].t));
   sh.querySelectorAll('.dhdel').forEach(b=>b.onclick=()=>{
     const l=dictHist(); l.splice(+b.dataset.i,1);
     try{localStorage.setItem(DICTKEY,JSON.stringify(l));}catch(e){} openDictPad();});
