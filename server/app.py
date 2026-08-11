@@ -2221,6 +2221,26 @@ def ensure_schema():
     except Exception as e:
         print('  klock kd donors error:', e)
 
+    # The Four Thirty Ownes = יהושע פרנקל (שם העסק), קמחא דפסחא. סאמט־הרמן אינו שלנו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='frankel_samet_v1'").fetchone():
+            KD = 'קמחא דפסחא תשפ"ו'
+            r = con.execute("SELECT id,business FROM donors WHERE last='פרנקל' AND first='יהושע'").fetchone()
+            if r:
+                if not (r['business'] or '').strip():
+                    con.execute("UPDATE donors SET business='The Four Thirty Owners' WHERE id=?", (r['id'],))
+                try:
+                    con.execute("INSERT OR IGNORE INTO donor_rules(donor_id,amount,category,note,created) "
+                                "VALUES(?,1100,?,'',?)", (r['id'], KD, today_iso()))
+                except Exception:
+                    pass
+            n = con.execute("DELETE FROM recon WHERE COALESCE(processed,0)=0 AND donor_id IS NULL "
+                            "AND lower(TRIM(first))='samet'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('frankel_samet_v1')")
+            print('  פרנקל/סאמט: העסק נרשם, %d שורות סאמט נמחקו' % n)
+    except Exception as e:
+        print('  frankel samet error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
@@ -2250,6 +2270,10 @@ def ensure_schema():
         ('card_name_link_v6', {
             'joel berkowitz':           ('ברקוביץ', 'יואל'),
             'david profesorske':        ('פורסבסקי', 'דוד'),
+        }),
+        ('card_name_link_v7', {
+            'the four thirty ownes':    ('פרנקל', 'יהושע'),
+            'sm berger':                ('ברגר', 'שמואל'),
         }),
     ):
         try:
@@ -3090,6 +3114,15 @@ def merge_into(con, keep, drop):
     return moved
 
 
+def _he_alt(gi, s, j_as_yud=False):
+    """תעתיק שם לועזי לעברית. באפשרות השנייה J בתחילת שם נכתב כ־י׳ ולא כ־ג׳ —
+    כך Jacobsen מגיע ל'יעקבסון' ולא ל'ג׳קובסן'."""
+    s = (s or '').strip()
+    if j_as_yud and s[:1] in ('J', 'j'):
+        s = 'Y' + s[1:]
+    return gi._he_name(s)
+
+
 def link_by_identity(con):
     """משייך חיובים שנשארו בלי כרטיס — לפי מייל, לפי טלפון, ולבסוף לפי תעתיק השם
     הלועזי לעברית. רק התאמה יחידה וברורה מתקבלת; כל השאר נשאר לאישור ידני."""
@@ -3097,28 +3130,52 @@ def link_by_identity(con):
         import gmail_intake as _gi
     except Exception:
         _gi = None
-    donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone FROM donors")]
-    bye, byp, byfz = {}, {}, {}
+    donors = [dict(r) for r in con.execute(
+        "SELECT id,last,first,english,business,email,phone FROM donors")]
+    bye, byp, byfz, bylat, byloc = {}, {}, {}, {}, {}
+
+    def words(s):
+        return ' '.join(sorted(re.sub(r'[^a-z ]', ' ', (s or '').lower()).split()))
     for d in donors:
         for e in emails_of(d['email']):
-            bye.setdefault(e.lower(), set()).add(d['id'])
+            e = e.lower()
+            bye.setdefault(e, set()).add(d['id'])
+            loc = e.split('@')[0]
+            if len(loc) >= 6:
+                byloc.setdefault(loc, set()).add(d['id'])
         for ph in re.split(r'[;,/]+', d['phone'] or ''):
             k = _ph10(ph)
             if k:
                 byp.setdefault(k, set()).add(d['id'])
         byfz.setdefault((_fz(d['last'] or ''), _fz(d['first'] or '')), set()).add(d['id'])
+        for src in (d['english'], d['business']):
+            w = words(src)
+            if len(w) >= 6:
+                bylat.setdefault(w, set()).add(d['id'])
     found = {}
     for r in con.execute("SELECT tid,first,last,email,phone FROM recon "
                          "WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled' "
                          "AND donor_id IS NULL"):
-        ids = bye.get((r['email'] or '').strip().lower())
-        if not ids or len(ids) != 1:
-            ids = byp.get(_ph10(r['phone']))
-        if (not ids or len(ids) != 1) and _gi:
-            ln, fn = (r['last'] or '').strip(), (r['first'] or '').strip()
-            if len(re.sub(r'[^A-Za-z]', '', ln)) >= 4 and len(re.sub(r'[^A-Za-z]', '', fn)) >= 2:
-                ids = byfz.get((_fz(_gi._he_name(ln)), _fz(_gi._he_name(fn))))
-        if ids and len(ids) == 1:
+        em = (r['email'] or '').strip().lower()
+        ln, fn = (r['last'] or '').strip(), (r['first'] or '').strip()
+
+        def one(s):
+            return s if (s and len(s) == 1) else None
+        ids = one(bye.get(em))
+        if not ids:
+            ids = one(byp.get(_ph10(r['phone'])))
+        if not ids:                       # אותו שם משתמש במייל, דומיין אחר (עבודה מול פרטי)
+            ids = one(byloc.get(em.split('@')[0])) if '@' in em else None
+        if not ids:                       # השם הלועזי כפי שהוא בכרטיס, בלי תלות בסדר המילים
+            ids = one(bylat.get(words(fn + ' ' + ln)))
+        if not ids and _gi and len(re.sub(r'[^A-Za-z]', '', ln)) >= 4 \
+                and len(re.sub(r'[^A-Za-z]', '', fn)) >= 2:
+            # תעתיק לעברית — גם בסדר הפוך, וגם עם J בתחילת שם כ־י (Jacobsen = יעקבסון)
+            for a, b in ((ln, fn), (fn, ln)):
+                for jy in (False, True):
+                    ha = _he_alt(_gi, a, jy); hb = _he_alt(_gi, b, jy)
+                    ids = ids or one(byfz.get((_fz(ha), _fz(hb))))
+        if ids:
             found[r['tid']] = list(ids)[0]
     if not found:
         return 0
