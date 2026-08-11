@@ -72,7 +72,7 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
@@ -115,6 +115,9 @@ def ensure_schema():
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
+    except Exception: pass
+    # חוב יש"ז שמאיר מעדכן ידנית — גובר על החישוב האוטומטי מהתרומות
+    try: con.execute("ALTER TABLE donors ADD COLUMN iz_debt TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
@@ -2643,7 +2646,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
+                'region','country','zip','city','iz_note','iz_debt','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
@@ -3199,7 +3202,7 @@ def merge_into(con, keep, drop):
     kd = dict(k); dd = dict(d); sets = []; vals = []
     for col in ('first', 'english', 'business', 'addr', 'tier', 'category', 'purpose',
                 'amount', 'region', 'country', 'zip', 'city', 'channel', 'pay_status',
-                'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'months', 'last_active'):
+                'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'iz_debt', 'months', 'last_active'):
         if col in kd and not str(kd.get(col) or '').strip() and str(dd.get(col) or '').strip():
             sets.append("%s=?" % col); vals.append(dd[col])
     kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
@@ -4261,7 +4264,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','renew_date','joint'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             if 'start_date' in b:   # חישוב מחדש של תאריך החידוש כשמשנים את תחילת ההסכם
                 g = heb_anniv(b.get('start_date') or '')

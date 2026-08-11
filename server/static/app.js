@@ -34,8 +34,18 @@ function izSummary(d){
   const span=hasPay?(Math.max(...codes)-Math.min(...codes)+1):0;
   const expected=monthly*span;
   const debt=expected-paid;
-  return {parts,monthly,paid,span,expected,debt,hasPay,fromCard};
+  // תשלומים שלא עוברים במערכת (מזומן / צ'ק ביד): מסמנים "שילם עד חודש X"
+  // והחוב מחושב מאותו חודש ועד היום, לפי הסכום החודשי של אותו אברך.
+  const nw=new Date(), nowCode=nw.getFullYear()*12+(nw.getMonth()+1);
+  const thru=[]; let thruDebt=0;
+  parts.forEach(p=>{const m=String(p.paid_thru||'').match(/^(\d{4})-(\d{2})/); if(!m)return;
+    const months=Math.max(0,nowCode-((+m[1])*12+(+m[2]))), amt=amtNum(p.amount);
+    thruDebt+=months*amt; thru.push({av:p.avreich||'אברך',thru:p.paid_thru,months:months,amt:amt,owe:months*amt});});
+  const manual=String(d.iz_debt||'').trim()?amtNum(d.iz_debt):null;
+  return {parts,monthly,paid,span,expected,debt,hasPay,fromCard,thru,thruDebt,manual};
 }
+const MONFULL=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+function fmtMonth(ym){const m=String(ym||'').match(/^(\d{4})-(\d{2})/);return m?(MONFULL[+m[2]-1]+' '+m[1]):'';}
 // פירוק רשימת שותפים (תומך בכמה שותפים מופרדים בפסיק)
 function pwList(p){const names=(p.partner_with||'').split(',').map(s=>s.trim()).filter(Boolean);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim());return names.map((nm,i)=>({name:nm,id:ids[i]||''}));}
 // HTML של שמות השותפים — זיהוי אוטומטי (אותו אברך) + קישור ידני. כל אחד לחיץ אם מקושר לכרטיס
@@ -78,7 +88,14 @@ function izSummaryHTML(d){
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
   const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
-  if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב</div>';
+  const thruHtml=s.thru.length?s.thru.map(t=>`<div class="izrow"><span>💵 ${esc(t.av)} — שולם עד ${esc(fmtMonth(t.thru))}${t.months?(' · חייב '+t.months+' '+(t.months===1?'חודש':'חודשים')):' · מעודכן'}</span><b>${t.owe?(cur+t.owe):'—'}</b></div>`).join(''):'';
+  if(s.manual!=null) debtLine=(s.manual>0.5
+      ?`<div class="izdebt owe">🔴 חוב שעודכן ידנית: ${cur}${Math.round(s.manual)}</div>`
+      :`<div class="izdebt ok">🟢 עודכן ידנית — אין חוב</div>`);
+  else if(s.thru.length) debtLine=(s.thruDebt>0.5
+      ?`<div class="izdebt owe">🔴 חוב לפי "שולם עד": ${cur}${Math.round(s.thruDebt)}</div>`
+      :`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`);
+  else if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב. אם הוא משלם במזומן — עדכן "שולם עד חודש" אצל האברך</div>';
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
   else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
   else debtLine=`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`;
@@ -86,6 +103,7 @@ function izSummaryHTML(d){
     <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${s.monthly}</b></div>
     ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${s.paid}</b></div>
     <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${s.monthly})</span><b>${cur}${s.expected}</b></div>`:''}
+    ${thruHtml}
     ${debtLine}`:'';
   return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
     ${renewBanner(d)}
@@ -966,7 +984,26 @@ function renderCardTasks(d){
   el.innerHTML=open.map(t=>{const over=t.due_date&&t.due_date<td,icon=kindLabel(t.kind).split(' ')[0];
     return `<div class="cttask" data-id="${t.id}"><button class="tdone ctdone" data-id="${t.id}">✓</button>
       <div class="cti"><div>${icon} ${esc(t.note||'')}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div></div>
-      <button class="del ctdel" data-id="${t.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
+      <button class="tedit ctedit" data-id="${t.id}" title="ערוך משימה">✏️ ערוך</button><button class="del ctdel" data-id="${t.id}">🗑</button></div>
+    <div class="teditpanel hidden" data-ctp="${t.id}">
+      <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="ctn" data-id="${t.id}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select class="ctk" data-id="${t.id}">${taskKindOpts(t.kind)}</select></label>
+        <label class="fld"><span>תאריך</span><input type="date" class="ctd" data-id="${t.id}" value="${esc(t.due_date||'')}"></label></div>
+      <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select class="ctw" data-id="${t.id}">${assigneeOpts(t.assignee)}</select></label>
+      <button class="btn sm ctsave" data-id="${t.id}" style="width:100%;margin-top:8px">💾 שמור שינויים</button>
+    </div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
+  el.querySelectorAll('.ctk').forEach(wireKindSel);
+  el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p)p.classList.toggle('hidden');});
+  el.querySelectorAll('.ctsave').forEach(b=>b.onclick=async()=>{
+    const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;
+    const kind=await kindValue(el.querySelector('.ctk[data-id="'+b.dataset.id+'"]'));if(!kind)return;
+    const note=el.querySelector('.ctn[data-id="'+b.dataset.id+'"]').value.trim();
+    const date=el.querySelector('.ctd[data-id="'+b.dataset.id+'"]').value;
+    const who=el.querySelector('.ctw[data-id="'+b.dataset.id+'"]').value;
+    b.disabled=true;
+    await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});
+    t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;
+    renderCardTasks(d);renderReminders(d);checkReminders();toast('נשמר ✓');});
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderCardTasks(d);});
   el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await api('PUT','/api/task/'+t.id,{done:1});t.done=1;renderCardTasks(d);checkReminders();toastUndo('בוצע ✓',async()=>{await api('PUT','/api/task/'+t.id,{done:0});t.done=0;renderCardTasks(d);checkReminders();});});
   el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
@@ -1856,6 +1893,14 @@ function renderCharges(){
         <div class="rb-s">${active?('<b>'+g.pending+'</b> לטיפול · '+g.done+' טופלו'):'יעלה כשתשלח את הקובץ'}</div></a>`;}).join('');
   });
 }
+// רענון בלוק הסיכום של יש"ז בלבד (בלי לרנדר מחדש את כל הכרטיס ולסגור חלוניות)
+function refreshIzSum(d){
+  const box=document.querySelector('.izsum'); if(!box)return;
+  const w=document.createElement('div'); w.innerHTML=izSummaryHTML(d);
+  const nb=w.firstElementChild; if(!nb)return;
+  box.replaceWith(nb);
+  nb.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
+}
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
   const act=(d.partners||[]).filter(p=>p.active!=0);
@@ -1871,25 +1916,30 @@ function renderPartners(d){
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
       <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
     <label class="jointchk"><input type="checkbox" class="pjoint" data-id="${p.id}" ${+p.joint?'checked':''}> 🤝 נותנים <b>ביחד</b> סכום אחד משותף (למשל מאותו עסק) — לא לחבר, ולאחד תשלומים</label>
+    <label class="fld"><span>💵 שילם עד סוף חודש (מזומן / צ'ק ביד — תשלום שלא נרשם במערכת)</span><input type="month" class="pfield" data-id="${p.id}" data-k="paid_thru" value="${esc(p.paid_thru||'')}"></label>
     <label class="fld"><span>💰 עדכון תשלום ידני (למשל: "שילם הכל מראש 13/7")</span><input class="pfield" data-id="${p.id}" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום — נשמר ומוצג בסיכום"></label>
     <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label>
     <button class="btn sm psave" data-id="${p.id}" style="width:100%;margin-top:4px">💾 שמור אברך</button>
   </div>`).join('')||'<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
   el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📝 מעקב חוב יששכר־זבולון</div>
+      <label class="fld"><span>🔴 כמה הוא חייב עכשיו (${cur}) — עדכון ידני שגובר על החישוב</span><input id="iz_debt" inputmode="decimal" value="${esc(d.iz_debt||'')}" placeholder="השאר ריק כדי לחשב אוטומטית"></label>
       <textarea id="iz_note" rows="2" placeholder="למשל: השלים חוב עד חודש תמוז · חייב 3 חודשים · שילם $4500 ב-13/7">${esc(d.iz_note||'')}</textarea>
-      <button class="btn sm" id="iz_note_save" style="margin-top:4px">💾 שמור הערת חוב</button></div>
+      <button class="btn sm" id="iz_note_save" style="margin-top:4px">💾 שמור חוב והערה</button></div>
     <div class="izshtar"><div class="izshtar-t">📄 שטר שותפות:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
-  const izn=el.querySelector('#iz_note');
-  const iznSave=async()=>{d.iz_note=izn.value;await api('PUT','/api/donor/'+d.id,{iz_note:izn.value});toast('נשמר ✓');};
+  const izn=el.querySelector('#iz_note'),izd=el.querySelector('#iz_debt');
+  const iznSave=async()=>{d.iz_note=izn.value;d.iz_debt=izd?izd.value.trim():(d.iz_debt||'');
+    await api('PUT','/api/donor/'+d.id,{iz_note:izn.value,iz_debt:d.iz_debt});
+    refreshIzSum(d);toast('נשמר ✓');};
   if(izn){izn.onblur=()=>{if((d.iz_note||'')!==izn.value)iznSave();};el.querySelector('#iz_note_save').onclick=iznSave;}
+  if(izd)izd.onblur=()=>{if((d.iz_debt||'')!==izd.value.trim())iznSave();};
   el.querySelectorAll('.pfield').forEach(inp=>{
-    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});if(inp.dataset.k==='amount'&&tab==='donors')renderDonors();};
+    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);if(inp.dataset.k==='amount'&&tab==='donors')renderDonors();};
     inp.onchange=save;let tmr;inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};
   });
   el.querySelectorAll('.psave').forEach(btn=>btn.onclick=async()=>{
     const p=(d.partners||[]).find(x=>x.id==btn.dataset.id);if(!p)return;
     const body={};el.querySelectorAll('.pfield[data-id="'+btn.dataset.id+'"]').forEach(inp=>{p[inp.dataset.k]=inp.value;body[inp.dataset.k]=inp.value;});
-    await api('PUT','/api/partner/'+p.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();
+    await api('PUT','/api/partner/'+p.id,body);refreshIzSum(d);toast('נשמר ✓');if(tab==='donors')renderDonors();
   });
   // שדה שותפים — מספר שותפים (צ'יפים). בחירה מרשימה מקשרת לכרטיס (מופיע גם אצלו); Enter מוסיף כטקסט
   const savePw=async(p)=>{p.partner_with=pwList(p).map(x=>x.name).join(', ');p.partner_with_id=pwList(p).map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
@@ -2860,7 +2910,8 @@ function renderTasksTab(){
     <div class="teditpanel hidden" data-panel="${i}">
       ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:8px">🌙 החלף/ערוך את הפרנס בלוח</button>`:''}
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="tnote" data-i="${i}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
-      <label class="fld" style="margin-top:6px"><span>👤 מי מטפל (אפשר להעביר לאהרן)</span><select class="twho" data-i="${i}">${assigneeOpts(t.assignee)}</select></label>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select class="tkindsel" data-i="${i}">${taskKindOpts(t.kind)}</select></label>
+        <label class="fld"><span>👤 מי מטפל (אפשר להעביר לאהרן)</span><select class="twho" data-i="${i}">${assigneeOpts(t.assignee)}</select></label></div>
       <div class="addrow" style="margin-top:6px"><input type="date" class="tdate2" data-i="${i}" value="${esc(t.due_date||'')}"><button class="btn sm tsave" data-i="${i}">💾 שמור</button><button class="del tdel" data-i="${i}">🗑 מחק</button></div>
       <div class="avfiles" style="margin-top:6px">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה / אסמכתא<input type="file" accept="image/*,audio/*,application/pdf" class="ttup" data-id="${t.id}" hidden></label></div>
     </div>`;
@@ -2885,8 +2936,9 @@ function renderTasksTab(){
     toast(who==='אהרן'?'הועבר לאהרן ✓':'הועבר למאיר ✓');
     render();
   });
+  view.querySelectorAll('.tkindsel').forEach(wireKindSel);
   view.querySelectorAll('.tedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=view.querySelector('.teditpanel[data-panel="'+b.dataset.i+'"]');if(p)p.classList.toggle('hidden');});
-  view.querySelectorAll('.tsave').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];const note=view.querySelector('.tnote[data-i="'+b.dataset.i+'"]').value.trim(),date=view.querySelector('.tdate2[data-i="'+b.dataset.i+'"]').value;const whoEl=view.querySelector('.twho[data-i="'+b.dataset.i+'"]');const who=whoEl?whoEl.value:(t.assignee||'');await api('PUT','/api/task/'+t.id,{note:note,due_date:date,assignee:who});t.note=note;t.due_date=date;t.assignee=who;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec){rec.note=note;rec.due_date=date;rec.assignee=who;}toast(who==='אהרן'?'הועבר לאהרן ✓':'נשמר ✓');render();});
+  view.querySelectorAll('.tsave').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];const note=view.querySelector('.tnote[data-i="'+b.dataset.i+'"]').value.trim(),date=view.querySelector('.tdate2[data-i="'+b.dataset.i+'"]').value;const whoEl=view.querySelector('.twho[data-i="'+b.dataset.i+'"]');const who=whoEl?whoEl.value:(t.assignee||'');const kEl=view.querySelector('.tkindsel[data-i="'+b.dataset.i+'"]');const kind=kEl?(await kindValue(kEl)):(t.kind||'other');if(!kind)return;await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec){rec.note=note;rec.kind=kind;rec.due_date=date;rec.assignee=who;}toast(who==='אהרן'?'הועבר לאהרן ✓':'נשמר ✓');render();});
   view.querySelectorAll('.tdel').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+t.id);if(t.dref)t.dref.tasks=(t.dref.tasks||[]).filter(x=>x.id!==t.id);else GTASKS=GTASKS.filter(x=>x.id!==t.id);toast('נמחק');render();checkReminders();});
   view.querySelectorAll('.tparnes').forEach(b=>b.onclick=()=>{const t=all[b.dataset.i],p=taskParnes(t);if(!p){toast('לא נמצא פרנס');return;}tab='parnes';pyKind=p.kind||'parnes';pyMonth=p.month;pyDay=+p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();});
   // משימה חדשה — חיפוש ובחירת תורם
