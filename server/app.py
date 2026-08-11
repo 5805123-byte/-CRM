@@ -2339,6 +2339,18 @@ def ensure_schema():
     except Exception as e:
         print('  stern iz error:', e)
 
+    # ציון כהן מוחזק ביחד בידי שלושת האחים מיטמן — $1,400 לכולם יחד, לא לכל אחד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_joint_v1'").fetchone():
+            cur2 = con.execute(
+                "UPDATE partners SET joint=1 WHERE COALESCE(active,1)<>0 "
+                "AND (REPLACE(avreich,'  ',' ') LIKE '%ציון%כהן%' OR REPLACE(avreich,'  ',' ') LIKE '%כהן%ציון%') "
+                "AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מיטמן%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_cohen_joint_v1')")
+            print('  ציון כהן: סומן כמוחזק ביחד אצל %d אחים מיטמן' % cur2.rowcount)
+    except Exception as e:
+        print('  zion cohen joint error:', e)
+
     # אנשין יעקב יוסף — הזבולון שלו נכתב בקובץ כ"דוד א" בלבד; מאיר אישר: דוד אהרוני
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='anshin_aharoni_v1'").fetchone():

@@ -17,17 +17,24 @@ function donorTotals(d){
   return {all,year,pending};
 }
 // חישוב יששכר־זבולון: התחייבות חודשית (סך האברכים) מול מה ששולם בפועל בחודשים שכבר שילם = החוב
+// אברך שמוחזק "ביחד" — הסכום הרשום הוא הסכום המשותף לכל המחזיקים.
+// חלקו של תורם אחד הוא הסכום חלקי מספר המחזיקים.
+function jointHolders(p){
+  const av=norm(p.avreich||''); if(!av)return 1; let c=0;
+  (DB||[]).forEach(o=>(o.partners||[]).forEach(q=>{
+    if(q.active!=0&&+q.joint&&norm(q.avreich||'')===av)c++;}));
+  return Math.max(1,c);
+}
+function partnerMonthly(p){return +p.joint?(amtNum(p.amount)/jointHolders(p)):amtNum(p.amount);}
 function izSummary(d){
   const parts=(d.partners||[]).filter(p=>p.active!=0);
   // ההתחייבות החודשית = סכום האברכים. אם לא הוזן סכום לאברך — הסכום הקבוע שבכרטיס.
-  const byav=parts.reduce((s,p)=>s+amtNum(p.amount),0);
+  const byav=parts.reduce((s,p)=>s+partnerMonthly(p),0);
   const fromCard=!byav&&d.tier==='יששכר_זבולון'&&amtNum(d.amount)>0;
   const monthly=byav||(fromCard?amtNum(d.amount):0);
-  let izdon=(d.donations||[]).filter(x=>/יששכר|זבולון/.test(x.category||''));
-  // שותפות "ביחד" (joint) — צרף גם את תשלומי השותפים לאותו אברך, לחישוב חוב משותף
-  const seen=new Set([d.id]);
-  parts.filter(p=>+p.joint).forEach(p=>{const av=norm(p.avreich||'');
-    (DB||[]).forEach(o=>{if(seen.has(o.id))return;(o.partners||[]).forEach(q=>{if(q.active!=0&&norm(q.avreich||'')===av){seen.add(o.id);izdon=izdon.concat((o.donations||[]).filter(x=>/יששכר|זבולון/.test(x.category||'')));}});});});
+  // אברך משותף: לכל מחזיק נספר חלקו בהתחייבות (ראה partnerMonthly), ולכן
+  // גם התשלומים נספרים לכל אחד בנפרד — בלי לצרף את תשלומי השותפים.
+  const izdon=(d.donations||[]).filter(x=>/יששכר|זבולון/.test(x.category||''));
   const paid=izdon.reduce((s,x)=>s+amtNum(x.amount),0);
   const codes=izdon.map(x=>{const m=(x.date||'').match(/^(\d{4})-(\d{2})/);return m?(+m[1])*12+(+m[2]):null;}).filter(v=>v!=null);
   const hasPay=codes.length>0;
@@ -86,7 +93,7 @@ function izSummaryHTML(d){
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
-  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}</span><b>${cur}${amtNum(p.amount)}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
   const thruHtml=s.thru.length?s.thru.map(t=>`<div class="izrow"><span>💵 ${esc(t.av)} — שולם עד ${esc(fmtMonth(t.thru))}${t.months?(' · חייב '+t.months+' '+(t.months===1?'חודש':'חודשים')):' · מעודכן'}</span><b>${t.owe?(cur+t.owe):'—'}</b></div>`).join(''):'';
   if(s.manual!=null) debtLine=(s.manual>0.5
@@ -100,9 +107,9 @@ function izSummaryHTML(d){
   else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
   else debtLine=`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`;
   const mainHtml=(act.length||s.monthly)?`${rows}
-    <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${s.monthly}</b></div>
-    ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${s.paid}</b></div>
-    <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${s.monthly})</span><b>${cur}${s.expected}</b></div>`:''}
+    <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${Math.round(s.monthly)}</b></div>
+    ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${Math.round(s.paid)}</b></div>
+    <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${Math.round(s.monthly)})</span><b>${cur}${Math.round(s.expected)}</b></div>`:''}
     ${thruHtml}
     ${debtLine}`:'';
   return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
