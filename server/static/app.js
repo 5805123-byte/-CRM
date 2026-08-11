@@ -1214,8 +1214,24 @@ function dnNote(x){
   t=t.replace(/^ייבוא[^·]*(·\s*הוראת קבע)?\s*·?\s*/,'').replace(/^ייבוא\s*2026\s*$/,'').trim();
   return t?`<div class="dnnote">📝 ${esc(t)}</div>`:'';
 }
+// רשימת הייעודים לבחירה — הקבועים שלנו + כל המגביות, ואפשרות להוסיף חדש בלי לצאת מהשורה
+const DNBASE=['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'];
+function dnCatList(){return DNBASE.concat((CAMPAIGNS||[]).filter(c=>c&&!DNBASE.includes(c)));}
+function dnCatOpts(cur){
+  const L=dnCatList();
+  return `<option value="">— עבור מה? —</option>`
+    +(cur&&!L.includes(cur)?`<option value="${esc(cur)}" selected>${esc(cur)}</option>`:'')
+    +L.map(c=>`<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)}</option>`).join('')
+    +`<option value="__new__">➕ ייעוד חדש…</option>`;
+}
+function dnCatRow(x){
+  return `<div class="dncatrow${x.category?'':' need'}"><span class="dncatlbl">עבור מה:</span>
+    <select class="dncatsel" data-id="${x.id}">${dnCatOpts(x.category||'')}</select>
+    <input class="dncatnew hidden" data-id="${x.id}" placeholder="שם הייעוד החדש">
+    <button class="btn sm dncatok hidden" data-id="${x.id}">הוסף</button></div>`;
+}
 function dnRow(x,cur){cur=cur||'$';
-  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${dnNote(x)}</div>`+
+  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b> <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${dnNote(x)}${dnCatRow(x)}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     (needThanks(x)?`<div class="thxrow"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו':'🙏 להודות'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
@@ -1246,6 +1262,35 @@ function renderDonations(d){
     +`<datalist id="dncats">${dncats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><datalist id="dnmeths">${dmeths.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
   el.querySelectorAll('.pnspaid').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});toast(+p.paid?'נגבה ✓':'סומן כחוב');renderDonations(d);});
   el.querySelectorAll('.dnpaid').forEach(b=>b.onclick=async()=>{const x=d.donations.find(y=>y.id==b.dataset.paid);x.paid=+x.paid?0:1;await api('PUT','/api/donation/'+x.id,{paid:x.paid});renderDonations(d);});
+  // בחירת ייעוד ישירות על השורה — נשמר מיד, וגם מוריד את הסימון "לא סווג"
+  const setCat=async(id,cat)=>{
+    const x=(d.donations||[]).find(y=>y.id==id); if(!x)return;
+    const body={category:cat};
+    const nn=String(x.note||'').replace(/\s*·?\s*לא סווג[^·]*/,'').trim();
+    if(nn!==String(x.note||'')){body.note=nn;x.note=nn;}
+    x.category=cat;
+    await api('PUT','/api/donation/'+id,body);
+    renderDonations(d); toast(cat?('נרשם: '+cat+' ✓'):'הייעוד נוקה');
+  };
+  el.querySelectorAll('.dncatsel').forEach(s=>s.onchange=()=>{
+    const row=s.closest('.dncatrow');
+    if(s.value==='__new__'){
+      const inp=row.querySelector('.dncatnew');
+      inp.classList.remove('hidden'); row.querySelector('.dncatok').classList.remove('hidden'); inp.focus();
+      return;
+    }
+    setCat(s.dataset.id,s.value);
+  });
+  el.querySelectorAll('.dncatok').forEach(b=>b.onclick=async()=>{
+    const row=b.closest('.dncatrow'), inp=row.querySelector('.dncatnew'), nm=inp.value.trim();
+    if(nm.length<2){toast('כתוב את שם הייעוד');inp.focus();return;}
+    b.disabled=true;
+    await api('POST','/api/campaigns',{name:nm});
+    if(!(CAMPAIGNS||[]).includes(nm))CAMPAIGNS.unshift(nm);
+    await setCat(b.dataset.id,nm);
+  });
+  el.querySelectorAll('.dncatnew').forEach(i=>i.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();i.closest('.dncatrow').querySelector('.dncatok').click();}});
   el.querySelectorAll('.dnedbtn').forEach(b=>b.onclick=()=>{el.querySelector('.dnedit[data-de="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.de_save').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.dnedit[data-de="'+b.dataset.id+'"]');

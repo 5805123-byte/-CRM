@@ -263,6 +263,14 @@
   .thxbtn{border:1px dashed var(--gold);background:var(--gold-soft);color:var(--gold);border-radius:9px;padding:5px 10px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
   .thxbtn.yes{border-style:solid;border-color:var(--yes);background:var(--yes-soft,#e8f5e9);color:var(--yes)}
   .dncrow .dnnote{font-size:.79rem;color:var(--accent);font-weight:600;margin-top:2px}
+  /* בוחר הייעוד — יושב על כל תרומה בכרטיס, ליד הסכום והתאריך */
+  .dncatrow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:3px}
+  .dncatrow .dncatlbl{color:var(--muted);font-size:.72rem;font-weight:700}
+  .dncatrow select,.dncatrow input{font-family:inherit;font-size:.78rem;padding:3px 5px;
+    border:1px solid var(--line);border-radius:7px;background:#fff;max-width:100%}
+  .dncatrow select{font-weight:700;color:var(--accent);flex:1;min-width:110px}
+  .dncatrow.need select{border-color:var(--no);color:var(--no);background:#fff8f8}
+  .dncatrow input{flex:1;min-width:110px}
   /* חיובים שממתינים לאישור — בתוך כרטיס התורם */
   .rpsec{border:1px solid var(--gold)!important;background:var(--gold-soft)}
   .rpsec h3{color:var(--gold)}

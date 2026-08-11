@@ -1860,6 +1860,28 @@ def ensure_schema():
     except Exception as e:
         print('  yaakov max error:', e)
 
+    # רבקה וורצברגר היא בתו של יידל — התרומה נרשמת בכרטיס שלו, ושמה מצוין לידה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='werzberger_rivka_v1'").fetchone():
+            dad = con.execute("SELECT id FROM donors WHERE last='וורצברגר' AND first='יידל'").fetchone() \
+                or con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,''))='yiddl werzberger'").fetchone()
+            if dad:
+                did = dad['id']
+                for r in list(con.execute("SELECT tid,amount,date FROM recon WHERE tid LIKE 'chk26-%' "
+                                          "AND last='Werzberger' AND first='Rebbeca'")):
+                    a = round(float(r['amount'] or 0), 2)
+                    if not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='דונרס' "
+                                       "AND ROUND(CAST(amount AS REAL),2)=?", (did, r['date'], a)).fetchone():
+                        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                    "VALUES(?,?,?,'מזדמן','דונרס',?,1)",
+                                    (did, r['date'], a, 'רבקה וורצברגר (הבת) · אסמכתא Donors34202 '
+                                                        '· לא סווג — לבדוק עבור מה'))
+                    con.execute("UPDATE recon SET donor_id=?, processed=1 WHERE tid=?", (did, r['tid']))
+                con.execute("INSERT INTO seed_flags(name) VALUES('werzberger_rivka_v1')")
+                print('  רבקה וורצברגר: נרשמה בכרטיס של יידל #%d' % did)
+    except Exception as e:
+        print('  werzberger error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
