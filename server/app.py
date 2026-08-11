@@ -2270,6 +2270,20 @@ def ensure_schema():
     except Exception as e:
         print('  abramowitz iz error:', e)
 
+    # אברך שמופיע ברשימת יש"ז אך חסר בכרטיס — יהודה בולמן אצל דניאל יעקובסון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_bulman_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='יעקובסון' AND first='דניאל'").fetchone()
+            if r and not con.execute("SELECT 1 FROM partners WHERE donor_id=? AND avreich LIKE '%בולמן%'",
+                                     (r['id'],)).fetchone():
+                con.execute("INSERT INTO partners(donor_id,avreich,amount,start_date,method,active) "
+                            "VALUES(?,?,'1000',?,'בנק_ווסט',1)",
+                            (r['id'], 'בולמן יהודה', 'א\' כסליו תשפ"ו'))
+                print('  יעקובסון דניאל: נוסף האברך בולמן יהודה — $1,000')
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_bulman_v1')")
+    except Exception as e:
+        print('  iz bulman error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
