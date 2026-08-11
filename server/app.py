@@ -2924,6 +2924,51 @@ class H(BaseHTTPRequestHandler):
             con.close()
             return self._send(200, {'ok': True, 'donors': out,
                                     'total': round(sum(x['total'] for x in out), 2)})
+        if self.path.split('?')[0] == '/api/audit/noaddr':
+            # מי אין לו כתובת בכרטיס, ומה אפשר להציע לו — מייצוא אנשי הקשר או מכתובת החיוב
+            con = db()
+            rows = [dict(r) for r in con.execute(
+                "SELECT id,last,first,english,phone,email FROM donors "
+                "WHERE TRIM(COALESCE(addr,''))='' ORDER BY last,first")]
+            ids = {r['id'] for r in rows}
+            tot = {}
+            for r in con.execute("SELECT donor_id, SUM(CAST(REPLACE(REPLACE(COALESCE(amount,'0'),',',''),'$','') "
+                                 "AS REAL)) s FROM donations GROUP BY donor_id"):
+                tot[r['donor_id']] = round(r['s'] or 0, 2)
+            bill = {}
+            for r in con.execute("SELECT donor_id,addr,city,state,zip FROM recon "
+                                 "WHERE donor_id IS NOT NULL AND TRIM(COALESCE(addr,''))<>''"):
+                if r['donor_id'] in ids:
+                    full = ', '.join([x for x in (r['addr'], r['city'], r['state'], r['zip']) if (x or '').strip()])
+                    bill.setdefault(r['donor_id'], set()).add(full)
+            con.close()
+            book = []
+            try:
+                with open(os.path.join(HERE, 'address_maps_seed.json'), encoding='utf-8') as f:
+                    book = json.load(f)
+            except Exception:
+                book = []
+            out = []
+            for d in rows:
+                sug = []
+                if (d['first'] or '').strip():
+                    cand = [x for x in book
+                            if _fz(x.get('last') or '') == _fz(d['last'] or '')
+                            and _same_first(x.get('first') or '', d['first'] or '')]
+                    for x in cand[:3]:
+                        sug.append({'addr': (x.get('addr') or '').replace('\n', ' ').strip(),
+                                    'phone': ', '.join(x.get('phones') or []),
+                                    'who': ((x.get('last') or '') + ' ' + (x.get('first') or '')).strip(),
+                                    'src': 'אנשי קשר'})
+                for a in sorted(bill.get(d['id'], []))[:3]:
+                    sug.append({'addr': a, 'phone': '', 'who': '', 'src': 'כתובת חיוב'})
+                out.append({'id': d['id'],
+                            'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                            'english': d['english'] or '', 'phone': d['phone'] or '',
+                            'email': d['email'] or '', 'total': tot.get(d['id'], 0), 'suggest': sug})
+            out.sort(key=lambda x: (-len(x['suggest']), -x['total']))
+            return self._send(200, {'ok': True, 'count': len(out),
+                                    'with_suggest': sum(1 for x in out if x['suggest']), 'people': out})
         if self.path.split('?')[0] == '/api/audit/unknown':
             # תורמים שמופיעים בחיובים ואין להם כרטיס — מקובצים לפי אדם, לא לפי חיוב
             con = db()

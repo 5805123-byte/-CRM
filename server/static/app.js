@@ -353,7 +353,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 
 function render(){
   chips.innerHTML='';
-  if(tab==='donors') return flt==='addrfix'?renderAddrFix():renderDonors();
+  if(tab==='donors') return flt==='addrfix'?renderAddrFix():(flt==='noaddr'?renderNoAddr():renderDonors());
   if(tab==='tasks') return renderTasksTab();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
@@ -427,9 +427,11 @@ function renderDonors(){
   else list=list.slice().sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   const ndup=findDupes().length;
   const nafix=DB.filter(addrIssue).length;
+  const nanone=DB.filter(d=>!(d.addr||'').trim()).length;
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
     ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
     ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
+    ${nanone?`<button class="btn kvmissbtn" id="noAddrBtn">🏠 בלי כתובת בכלל — ${nanone}</button>`:''}
     <div class="avbar"><select id="donsort" class="avsortsel">
       <option value="last">מיון: שם (א-ב)</option>
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
@@ -454,6 +456,7 @@ function renderDonors(){
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
+  const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
@@ -467,6 +470,45 @@ function addrIssue(d){
   if(d.region==='il'&&/^\s*[\d]/.test(a))return 'מתחיל במספר (אולי הפוך)';
   if(d.region==='il'&&/\d[ ]*[\u0590-\u05FF]/.test(street))return 'מספר לפני שם הרחוב — לבדוק';
   return null;
+}
+// מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס
+let NOADDR=null;
+async function renderNoAddr(){
+  chips.innerHTML='';
+  if(!NOADDR){
+    view.innerHTML='<div class="hintxt">בודק מי חסר כתובת…</div>';
+    try{NOADDR=await api('GET','/api/audit/noaddr');}catch(e){NOADDR={people:[],count:0,with_suggest:0};}
+  }
+  const all=(NOADDR.people||[]).filter(p=>matchQ(p.name+' '+p.english+' '+p.phone));
+  const withS=all.filter(p=>(p.suggest||[]).length), without=all.filter(p=>!(p.suggest||[]).length);
+  const card=p=>`<div class="narow" data-id="${p.id}">
+    <div class="nahd"><b class="nago" data-id="${p.id}">${esc(p.name)} ↗</b>
+      <span class="namoney">${p.total?('$'+p.total.toLocaleString('en-US')):''}</span></div>
+    <div class="nasub">${p.phone?('📞 '+esc(p.phone)):'<span style="color:var(--no)">בלי טלפון</span>'}${p.email?(' · ✉️ '+esc(p.email)):''}</div>
+    ${(p.suggest||[]).map((s,i)=>`<div class="nasug">
+      <div class="nasugt">💡 ${esc(s.src)}${s.who?(' · '+esc(s.who)):''}${s.phone?(' · 📞 '+esc(s.phone)):''}</div>
+      <div class="nasuga">${esc(s.addr)}</div>
+      <button class="btn sm nause" data-id="${p.id}" data-i="${i}">✔️ קבע כתובת זו</button></div>`).join('')}
+  </div>`;
+  view.innerHTML=`<button class="btn ghost" id="nback" style="width:100%;margin-bottom:8px">⬅ חזרה לרשימת התורמים</button>
+    <div class="rbtitle">🏠 תורמים בלי כתובת — ${NOADDR.count||0}</div>
+    <div class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש לי הצעה מוכנה מייצוא אנשי הקשר או מכתובת החיוב. לשאר פשוט אין כתובת באף אחד מהקבצים שקיבלתי — צריך ייצוא חדש של אנשי הקשר שכולל כתובות.</div>
+    ${withS.length?`<div class="misshead">💡 יש הצעה — ${withS.length}</div>${withS.map(card).join('')}`:''}
+    ${without.length?`<div class="misshead">אין שום נתון — ${without.length}</div>${without.map(card).join('')}`:''}`;
+  document.getElementById('nback').onclick=()=>{flt='';render();};
+  view.querySelectorAll('.nago').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.id);if(d)openDonor(d);});
+  view.querySelectorAll('.nause').forEach(b=>b.onclick=async()=>{
+    const p=(NOADDR.people||[]).find(x=>x.id==b.dataset.id); if(!p)return;
+    const s=p.suggest[+b.dataset.i]; if(!s)return;
+    b.disabled=true;b.textContent='שומר…';
+    const body={addr:s.addr};
+    const d=DB.find(x=>x.id==p.id);
+    if(s.phone&&!(d&&(d.phone||'').trim()))body.phone=s.phone;
+    await api('PUT','/api/donor/'+p.id,body);
+    NOADDR.people=NOADDR.people.filter(x=>x.id!=p.id); NOADDR.count--; NOADDR.with_suggest--;
+    toast('הכתובת נשמרה ✓');
+    await load(); render();
+  });
 }
 function renderAddrFix(){
   chips.innerHTML='';
