@@ -147,6 +147,16 @@
     padding:3px 6px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--accent);
     flex:0 1 auto;width:auto;max-width:47%;min-width:104px}
   .givewhat select.gvcatsel.need{border-color:var(--no);color:var(--no);background:#fff8f8}
+  /* הייעוד מוצג כטקסט; הבורר נפתח רק בלחיצה עליו */
+  .gvcatbtn{font-family:inherit;font-size:.83rem;font-weight:800;color:var(--accent);background:none;
+    border:none;border-bottom:1px dashed var(--line);padding:1px 2px;cursor:pointer;text-align:right}
+  .gvcatbtn.need{color:var(--no);border-bottom-color:var(--no)}
+  .gvcatbox{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+  .catmgrlist{max-height:52vh;overflow:auto}
+  .catmgrrow{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line)}
+  .catmgrgo{flex:1;text-align:right;font-family:inherit;font-size:.88rem;font-weight:800;color:var(--accent);
+    background:none;border:none;cursor:pointer;min-width:0}
+  .catmgrn{color:var(--muted);font-size:.76rem;white-space:nowrap}
   .givewhat input.gvcatnew{color:var(--ink);font-weight:500}
   .givedate{color:var(--muted);font-size:.8rem;white-space:nowrap}
   .givesub{flex-basis:100%;color:var(--muted);font-size:.78rem;margin-top:1px}

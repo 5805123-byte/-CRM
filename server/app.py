@@ -3661,6 +3661,20 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, res)
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
+            if nm and b.get('delete'):        # מחיקת ייעוד מהרשימה. תרומות שכבר סווגו לא נוגעים בהן
+                con = db()
+                used = con.execute("SELECT COUNT(*) FROM donations WHERE TRIM(COALESCE(category,''))=?",
+                                   (nm,)).fetchone()[0]
+                if used and not b.get('force'):
+                    con.close()
+                    return self._send(200, {'ok': False, 'error': 'in_use', 'used': used})
+                if b.get('force') and used:    # משחררים את התרומות לסיווג מחדש
+                    con.execute("UPDATE donations SET category='' WHERE TRIM(COALESCE(category,''))=?", (nm,))
+                con.execute("DELETE FROM campaigns WHERE name=?", (nm,))
+                try: con.execute("DELETE FROM donor_rules WHERE TRIM(COALESCE(category,''))=?", (nm,))
+                except Exception: pass
+                con.commit(); con.close()
+                return self._send(200, {'ok': True, 'deleted': nm, 'freed': used})
             if nm:
                 con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm})

@@ -378,11 +378,50 @@ const DFILTERS={
   '':{label:'הכל', fn:d=>true}
 };
 const DFORDER=['il','iz','k101','reg','reglow','occ','building','new',''];
+// כל הייעודים שבשימוש בפועל + כמה תרומות וכמה כסף בכל אחד — לחיפוש ולניהול
+let catFlt='';
+function catUsage(){
+  const m={};
+  DB.forEach(d=>(d.donations||[]).forEach(x=>{
+    const c=String(x.category||'').trim(); if(!c)return;
+    if(!m[c])m[c]=[c,0,0];
+    m[c][1]++; m[c][2]+=amtNum(x.amount);
+  }));
+  (CAMPAIGNS||[]).forEach(c=>{c=String(c||'').trim(); if(c&&!m[c])m[c]=[c,0,0];});
+  return Object.values(m).sort((a,b)=>b[2]-a[2]||a[0].localeCompare(b[0],'he'));
+}
+function openCatManager(){
+  const rows=catUsage();
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:4px">🎯 ניהול ייעודים</div>
+    <div class="hintxt" style="margin-bottom:8px">לחיצה על ייעוד מציגה את התורמים שלו. 🗑 מוחק אותו מרשימת הבחירה.</div>
+    <div class="catmgrlist">${rows.map(([c,n,s])=>`<div class="catmgrrow" data-c="${esc(c)}">
+      <button class="catmgrgo" data-c="${esc(c)}">${esc(c)}</button>
+      <span class="catmgrn">${n?(n+' · $'+s.toLocaleString('en-US')):'לא בשימוש'}</span>
+      <button class="del catmgrdel" data-c="${esc(c)}" data-n="${n}" title="מחק ייעוד">🗑</button></div>`).join('')
+      ||'<div class="hintxt">אין עדיין ייעודים.</div>'}</div>
+    <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
+  document.body.appendChild(o);const done=()=>o.remove();
+  o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
+  o.querySelectorAll('.catmgrgo').forEach(b=>b.onclick=()=>{catFlt=b.dataset.c;done();tab='donors';render();});
+  o.querySelectorAll('.catmgrdel').forEach(b=>b.onclick=async()=>{
+    const c=b.dataset.c, n=+b.dataset.n;
+    if(n&&!confirm('הייעוד "'+c+'" מסומן על '+n+' תרומות.\nלמחוק אותו? התרומות יישארו, אבל יחזרו להיות בלי ייעוד.'))return;
+    b.disabled=true;
+    const r=await api('POST','/api/campaigns',{name:c,delete:true,force:true});
+    if(!r||!r.ok){b.disabled=false;toast('המחיקה נכשלה');return;}
+    CAMPAIGNS=(CAMPAIGNS||[]).filter(x=>x!==c);
+    if(catFlt===c)catFlt='';
+    toast(r.freed?('נמחק · '+r.freed+' תרומות חזרו לבלי ייעוד'):'הייעוד נמחק ✓');
+    done(); await load(); render();
+  });
+}
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
   let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english+' '+(d.notes||'')+' '+(d.building||[]).map(x=>x.object).join(' ')));
+  if(catFlt)list=list.filter(d=>(d.donations||[]).some(x=>String(x.category||'').trim()===catFlt));
   if(donSort==='new'||flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
   else if(donSort==='amt') list=list.slice().sort((a,b)=>donorTotals(b).all-donorTotals(a).all);
   else list=list.slice().sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
@@ -396,6 +435,11 @@ function renderDonors(){
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
       <option value="new">מיון: נוספו לאחרונה</option>
     </select></div>
+    <div class="avbar"><select id="doncat" class="avsortsel">
+      <option value="">🎯 חיפוש לפי ייעוד — הכל</option>
+      ${catUsage().map(([c,n,s])=>`<option value="${esc(c)}"${c===catFlt?' selected':''}>${esc(c)} — ${n} תרומות · $${s.toLocaleString('en-US')}</option>`).join('')}
+    </select><button class="btn sm ghost" id="catmgr" style="white-space:nowrap">🗑 ניהול ייעודים</button></div>
+    ${catFlt?`<div class="cnt" style="color:var(--accent)">🎯 ${esc(catFlt)} — ${(()=>{const u=catUsage().find(x=>x[0]===catFlt);return u?(u[1]+' תרומות · $'+u[2].toLocaleString('en-US')):'';})()}</div>`:''}
     <div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
     <div class="rowc" data-id="${d.id}">
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span>${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}</div>
@@ -406,6 +450,8 @@ function renderDonors(){
       <div class="meta">${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
+  const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;render();};
+  const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
@@ -695,11 +741,13 @@ function cardDetails(d,body){
       <div class="addrow"><input class="gvnote" placeholder="פירוט (למשל: שלושה אברכים ביחד)" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
       <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label></div>`:'';
-    // בכל תרומה: סכום · עבור מה (לבחירה) · תאריך · דרך מה נתרם. שום דבר מעבר לזה.
+    // בכל תרומה: סכום · עבור מה · תאריך · דרך מה נתרם. הבורר נפתח רק בלחיצה על הייעוד.
     const what=g.don
-      ? `<select class="gvcatsel${g.cat?'':' need'}" data-did="${g.did}">${dnCatOpts(g.cat)}</select>
-         <input class="gvcatnew hidden" data-did="${g.did}" placeholder="שם הייעוד החדש">
-         <button class="btn sm gvcatok hidden" data-did="${g.did}">הוסף</button>`
+      ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>
+         <span class="gvcatbox hidden" data-box="${g.did}">
+           <select class="gvcatsel" data-did="${g.did}">${dnCatOpts(g.cat)}</select>
+           <input class="gvcatnew hidden" data-did="${g.did}" placeholder="שם הייעוד החדש">
+           <button class="btn sm gvcatok hidden" data-did="${g.did}">הוסף</button></span>`
       : esc(g.what);
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}`
@@ -762,7 +810,9 @@ function cardDetails(d,body){
         <button class="del ruledel" data-amt="${r.amount}" title="מחק כלל">🗑</button></div>`).join('')}</div>
       <div class="addrow" style="margin-top:6px">
         <input id="rl_amt" type="number" step="0.01" placeholder="סכום" style="max-width:110px">
-        <select id="rl_cat">${RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— עבור מה —'}</option>`).join('')+((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')}</select></div>
+        <select id="rl_cat">${dnCatOpts('')}</select></div>
+      <div class="addrow hidden" id="rl_newrow" style="margin-top:6px">
+        <input id="rl_new" placeholder="שם הייעוד החדש"></div>
       <div class="addrow" style="margin-top:6px">
         <input id="rl_note" placeholder="פירוט (למשל: מעקות וכיסוי רדיאטורים)">
         <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></div>
@@ -789,6 +839,11 @@ function cardDetails(d,body){
     cardDetails(d,body); if(tab==='donors')renderDonors();
     toast(cat?('נרשם: '+cat+' ✓'):'הייעוד נוקה');
   };
+  body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>{
+    const box=body.querySelector('.gvcatbox[data-box="'+b.dataset.did+'"]');
+    if(!box)return; box.classList.remove('hidden'); b.classList.add('hidden');
+    const s=box.querySelector('select'); if(s&&s.showPicker)try{s.showPicker();}catch(e){}
+  });
   body.querySelectorAll('.gvcatsel').forEach(s=>s.onchange=()=>{
     const row=s.closest('.givewhat');
     if(s.value==='__new__'){
@@ -881,11 +936,23 @@ function cardDetails(d,body){
     if(!r||!r.ok){uclSave.disabled=false;uclSave.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}
     toast('עודכנו '+r.updated+' תרומות ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
+  const rlCat=document.getElementById('rl_cat'), rlNewRow=document.getElementById('rl_newrow');
+  if(rlCat&&rlNewRow)rlCat.onchange=()=>{
+    const on=rlCat.value==='__new__';
+    rlNewRow.classList.toggle('hidden',!on);
+    if(on)document.getElementById('rl_new').focus();
+  };
   const rlAdd=document.getElementById('rl_add');
   if(rlAdd)rlAdd.onclick=async()=>{
     const amt=parseFloat(document.getElementById('rl_amt').value);
-    const cat=document.getElementById('rl_cat').value.trim();
+    let cat=document.getElementById('rl_cat').value.trim();
     const note=document.getElementById('rl_note').value.trim();
+    if(cat==='__new__'){                       // ייעוד חדש שנכתב כאן — נוסף לרשימה ואז נשמר
+      cat=(document.getElementById('rl_new').value||'').trim();
+      if(cat.length<2){toast('כתוב את שם הייעוד');document.getElementById('rl_new').focus();return;}
+      await api('POST','/api/campaigns',{name:cat});
+      if(!(CAMPAIGNS||[]).includes(cat))CAMPAIGNS.unshift(cat);
+    }
     if(!amt||!cat){toast('מלא סכום ועבור מה');return;}
     rlAdd.disabled=true;
     const r=await api('POST','/api/rule',{donor_id:d.id,amount:amt,category:cat,note});
