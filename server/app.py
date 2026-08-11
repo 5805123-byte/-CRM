@@ -2714,6 +2714,22 @@ def ensure_schema():
     except Exception as e:
         print('  mendelson alias error:', e)
 
+    # ייצוא VCF מהטלפון — כולל את החשבון השני ואת אנשי הקשר ששמורים במכשיר
+    try:
+        seedv = os.path.join(HERE, 'contacts_seed2.vcf')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_vcf_v1'").fetchone() \
+                and os.path.exists(seedv):
+            import gcontacts as _gc2
+            with open(seedv, encoding='utf-8', errors='replace') as f:
+                _cards2 = _gc2.parse_any(f.read())
+            _r2 = contacts_fill(con, _cards2)
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_vcf_v1')")
+            print('  אנשי קשר מהטלפון (VCF): %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים'
+                  % (_r2['donors'], _r2['filled']['addr'], _r2['filled']['phone'],
+                     _r2['filled']['email']))
+    except Exception as e:
+        print('  vcf seed error:', e)
+
     # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
     try:
