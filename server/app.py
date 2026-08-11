@@ -2364,6 +2364,98 @@ def ensure_schema():
     except Exception as e:
         print('  ner lemaor error:', e)
 
+    # תיקוני איות ושמות עבריים שמאיר מסר, ואיחוד כרטיסים כפולים שנוצרו בגללם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='namefix_aug11_v1'").fetchone():
+            def _one(last, first=None):
+                if first:
+                    r = con.execute("SELECT id FROM donors WHERE last LIKE ? AND COALESCE(first,'') LIKE ?",
+                                    ('%' + last + '%', '%' + first + '%')).fetchone()
+                else:
+                    r = con.execute("SELECT id FROM donors WHERE last LIKE ?", ('%' + last + '%',)).fetchone()
+                return r['id'] if r else None
+            nfix = 0
+            # איות נכון של שמות משפחה בעברית
+            for old, new in (('פק', 'פאק'), ('אמסעל', 'אמזל')):
+                cur4 = con.execute("UPDATE donors SET last=? WHERE TRIM(last)=?", (new, old))
+                nfix += cur4.rowcount
+            # לאוניד גרוסמן = אליעזר גרוסמן (השם העברי)
+            con.execute("UPDATE donors SET first='אליעזר' WHERE TRIM(last)='גרוסמן' AND TRIM(first)='לאוניד'")
+            # שם ומשפחה שהוזנו הפוך — בנימין שטטפלד
+            con.execute("UPDATE donors SET last='שטטפלד', first='בנימין' "
+                        "WHERE TRIM(last)='בנימין' AND TRIM(first)='שטטפלד'")
+            # כרטיסי שטטפלד/סטטפלד של ברכה — מתאחדים לכרטיס של יצחק וברכה
+            keep = _one('שטטפלד', 'יצחק וברכה')
+            nmg = 0
+            if keep:
+                for r in con.execute("SELECT id,last,first,english FROM donors WHERE id<>?", (keep,)):
+                    if _fz(r['last']) != _fz('שטטפלד'):
+                        continue
+                    nm = ((r['first'] or '') + ' ' + (r['english'] or '')).lower()
+                    if re.search(r'(?:^|\s)(?:ברכ|בט)|beth|brach', nm):
+                        if merge_into(con, keep, r['id']):
+                            nmg += 1
+            # כרטיסים כפולים של אותו אדם — אותו טלפון ואותו שם משפחה לפי צליל
+            rows = [dict(r) for r in con.execute("SELECT id,last,first,phone,email,addr FROM donors")]
+            nd = set()
+            try:
+                for r in con.execute("SELECT a,b FROM not_dupes"):
+                    nd.add((r['a'], r['b']))
+            except Exception:
+                pass
+            byph = {}
+            for r in rows:
+                for ph in re.split(r'[/,]', r['phone'] or ''):
+                    p10 = _ph10(ph)
+                    if p10:
+                        byph.setdefault(p10, []).append(r)
+            def _score(r):
+                return sum(1 for k in ('phone', 'email', 'addr') if str(r.get(k) or '').strip())
+            done = set()
+            for p10, grp in byph.items():
+                if len(grp) < 2:
+                    continue
+                for i in range(len(grp)):
+                    for j in range(i + 1, len(grp)):
+                        a1, b1 = grp[i], grp[j]
+                        if a1['id'] == b1['id'] or _fz(a1['last']) != _fz(b1['last']):
+                            continue
+                        # אותו טלפון ואותו שם משפחה זה גם המצב של בני זוג. ממזגים
+                        # רק כששמות פרטיים מתיישבים — זהים, קיצור, או איות שונה.
+                        f1, f2 = (a1['first'] or '').strip(), (b1['first'] or '').strip()
+                        z1, z2 = _fz(f1), _fz(f2)
+                        if f1 and f2:
+                            if min(len(z1), len(z2)) >= 2:
+                                if not (z1.startswith(z2) or z2.startswith(z1)):
+                                    continue
+                            elif not _fitfirst(f1, f2):
+                                continue
+                        pair = (min(a1['id'], b1['id']), max(a1['id'], b1['id']))
+                        if pair in nd or pair in done:
+                            continue
+                        done.add(pair)
+                        kp, dp = (a1, b1) if _score(a1) >= _score(b1) else (b1, a1)
+                        if merge_into(con, kp['id'], dp['id']):
+                            nmg += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('namefix_aug11_v1')")
+            print('  תיקוני איות: %d · כרטיסים שאוחדו לפי טלפון+שם: %d' % (nfix, nmg))
+    except Exception as e:
+        print('  namefix error:', e)
+
+    # סורוס פאונדיישן — התרומה הגיעה בהעברה בנקאית וכבר התקבלה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='soros_wire_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last LIKE '%סורוס%'").fetchone()
+            if r:
+                con.execute("UPDATE donations SET paid=1, method='העברה_בנקאית' "
+                            "WHERE donor_id=? AND COALESCE(paid,0)=0", (r['id'],))
+                con.execute("UPDATE donors SET channel=COALESCE(NULLIF(TRIM(channel),''),'העברה_בנקאית') "
+                            "WHERE id=?", (r['id'],))
+                print('  סורוס: התרומה סומנה כהתקבלה בהעברה בנקאית')
+            con.execute("INSERT INTO seed_flags(name) VALUES('soros_wire_v1')")
+    except Exception as e:
+        print('  soros error:', e)
+
     # ה-$1,200 של נר למאור אינו מופיע באף חודש בדוח בנק ווסט — פותחים משימה לבדיקה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='ner_lemaor_check_v1'").fetchone():
