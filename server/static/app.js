@@ -182,25 +182,36 @@ const SRERR = {'not-allowed':'לא ניתנה הרשאה למיקרופון — 
   'service-not-allowed':'הדפדפן חסם את שירות ההכתבה','no-speech':'לא נשמע דיבור','audio-capture':'לא נמצא מיקרופון',
   'network':'אין חיבור לרשת להכתבה','aborted':''};
 let SRACT=null;
-// מאחד קטעי תמלול: קטע שהוא המשך (או קיצור) של הקטע שלפניו מחליף אותו
-// במקום להתווסף אליו. כך "עכשיו" + "עכשיו קיבלת" נשארים "עכשיו קיבלת".
+// מאחד קטעי תמלול. אנדרואיד מחזיר את אותו משפט כמה פעמים — פעם כשלבים
+// גדלים ("עכשיו" · "עכשיו קיבלת"), ופעם כניסוח מתוקן של אותו משפט עצמו.
+// שני המקרים נראים כמו קטעים "סופיים" נפרדים, ולכן משווים ומחליפים במקום לחבר.
+function _wrds(t){return String(t||'').toLowerCase().replace(/[^\u0590-\u05ffa-z0-9 ]/g,' ').split(/\s+/).filter(Boolean);}
+function segSim(a,b){                      // כמה מהמילים משותפות — 0 עד 1
+  const A=_wrds(a),B=_wrds(b); if(!A.length||!B.length)return 0;
+  const bag={}; B.forEach(w=>bag[w]=(bag[w]||0)+1);
+  let hit=0; A.forEach(w=>{if(bag[w]){bag[w]--;hit++;}});
+  return hit/Math.max(A.length,B.length);
+}
 function joinSegs(list){
   const out=[];
   (list||[]).forEach(x=>{
     const t=String(x||'').replace(/\s+/g,' ').trim(); if(!t)return;
     const last=out.length?out[out.length-1]:'';
-    if(last&&(t.indexOf(last)===0||last.indexOf(t)===0)){out[out.length-1]=t.length>=last.length?t:last;return;}
+    if(last){
+      const pref=t.indexOf(last)===0||last.indexOf(t)===0;          // שלב גדל של אותו משפט
+      const same=_wrds(t).length>=4&&segSim(t,last)>=0.7;           // ניסוח חוזר של אותו משפט
+      if(pref||same){out[out.length-1]=t.length>=last.length?t:last;return;}
+    }
     out.push(t);
   });
-  // רשת ביטחון: אם בכל זאת נשאר קטע שחוזר על עצמו פעמיים ברצף — מוחקים אותו
+  // רשת ביטחון: קטע ארוך שחוזר על עצמו ברצף — נמחק
   let t=out.join(' ');
-  for(let k=0;k<6;k++){
-    const n=t.replace(/(\S+(?:\s+\S+){1,14})\s+\1(?=\s|$)/g,'$1');
+  for(let k=0;k<8;k++){
+    const n=t.replace(/(\S+(?:\s+\S+){1,60})\s+\1(?=\s|$)/g,'$1');
     if(n===t)break; t=n;
   }
   return t;
 }
-function stopDictation(){if(SRACT){try{SRACT.stop();}catch(e){}}}
 function startDictation(btn,el){
   const C=window.SpeechRecognition||window.webkitSpeechRecognition||null;
   if(!C){toast('הדפדפן הזה לא תומך בהכתבה קולית — נסה בכרום');return;}
