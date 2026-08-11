@@ -75,7 +75,7 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
@@ -4280,8 +4280,20 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/partner/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
+            if 'joint_payer' in b:      # מי שמשלם בפועל — שייך לקבוצה כולה
+                try:
+                    con0 = db()
+                    row = con0.execute("SELECT avreich FROM partners WHERE id=?", (pid,)).fetchone()
+                    if row:
+                        con0.execute("UPDATE partners SET joint_payer=? WHERE COALESCE(active,1)<>0 "
+                                     "AND COALESCE(joint,0)<>0 AND TRIM(avreich)=TRIM(?)",
+                                     (b.get('joint_payer') or None, row['avreich']))
+                        con0.commit()
+                    con0.close()
+                except Exception as e:
+                    print('  joint payer error:', e)
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             if 'start_date' in b:   # חישוב מחדש של תאריך החידוש כשמשנים את תחילת ההסכם
                 g = heb_anniv(b.get('start_date') or '')

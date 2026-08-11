@@ -19,13 +19,26 @@ function donorTotals(d){
 // חישוב יששכר־זבולון: התחייבות חודשית (סך האברכים) מול מה ששולם בפועל בחודשים שכבר שילם = החוב
 // אברך שמוחזק "ביחד" — הסכום הרשום הוא הסכום המשותף לכל המחזיקים.
 // חלקו של תורם אחד הוא הסכום חלקי מספר המחזיקים.
-function jointHolders(p){
-  const av=norm(p.avreich||''); if(!av)return 1; let c=0;
+// כל המחזיקים של אותו אברך משותף
+function jointGroup(p){
+  const av=norm(p.avreich||''); const out=[]; if(!av)return out;
   (DB||[]).forEach(o=>(o.partners||[]).forEach(q=>{
-    if(q.active!=0&&+q.joint&&norm(q.avreich||'')===av)c++;}));
-  return Math.max(1,c);
+    if(q.active!=0&&+q.joint&&norm(q.avreich||'')===av)out.push({d:o,p:q});}));
+  return out;
 }
-function partnerMonthly(p){return +p.joint?(amtNum(p.amount)/jointHolders(p)):amtNum(p.amount);}
+function jointHolders(p){return Math.max(1,jointGroup(p).length);}
+// חלקו של תורם באברך משותף:
+// אם נקבע מי משלם בפועל (עסק אחד / כרטיס אחד) — כל הסכום נזקף למשלם, ולשאר 0.
+// אם לא נקבע — כל אחד נושא חלק שווה.
+function jointPayerId(p){const v=+(p.joint_payer||0);return v>0?v:0;}
+function partnerMonthly(p){
+  if(!+p.joint)return amtNum(p.amount);
+  const pay=jointPayerId(p);
+  if(pay)return (+p.donor_id===pay)?amtNum(p.amount):0;
+  return amtNum(p.amount)/jointHolders(p);
+}
+function jointPayerName(p){const id=jointPayerId(p);const o=(DB||[]).find(x=>x.id===id);
+  return o?((o.business||'').trim()||((o.last||'')+' '+(o.first||'')).trim()):'';}
 function izSummary(d){
   const parts=(d.partners||[]).filter(p=>p.active!=0);
   // ההתחייבות החודשית = סכום האברכים. אם לא הוזן סכום לאברך — הסכום הקבוע שבכרטיס.
@@ -93,7 +106,7 @@ function izSummaryHTML(d){
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
-  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(jointPayerId(p)?(jointPayerId(p)===d.id?('💳 אתה משלם את כל ה'+cur+amtNum(p.amount)):('💳 משלם: '+esc(jointPayerName(p)))):('חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים'))+'</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
   const thruHtml=s.thru.length?s.thru.map(t=>`<div class="izrow"><span>💵 ${esc(t.av)} — שולם עד ${esc(fmtMonth(t.thru))}${t.months?(' · חייב '+t.months+' '+(t.months===1?'חודש':'חודשים')):' · מעודכן'}</span><b>${t.owe?(cur+t.owe):'—'}</b></div>`).join(''):'';
   if(s.manual!=null) debtLine=(s.manual>0.5
@@ -1871,17 +1884,19 @@ function cardInfo(d,body){
 function cardContact(d,body){
   body.innerHTML=`
     ${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
-    <div class="sec"><h3>📞 תיעוד קשר <button class="btn sm ghost" id="cl_mailsync" style="float:left">📥 משוך מיילים</button></h3><div id="clog"></div>
+    <div class="sec"><h3>➕ רישום קשר חדש <button class="btn sm ghost" id="cl_mailsync" style="float:left">📥 משוך מיילים</button></h3>
       <div class="addrow"><select id="cl_ch"><option>טלפון</option><option>אימייל</option><option>וואטסאפ</option><option>פגישה</option></select><input id="cl_date" type="date" value="${todayStr()}"></div>
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
       <div class="avfiles dnfiles" id="cl_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="cl_file" hidden></label></div>
       <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
       <div class="hintxt">התאריך התחתון = מתי לחזור אליו (נכנס ל"משימות")</div></div>
-    <div class="sec"><h3>🔔 תזכורות</h3><div id="tlist"></div>
+    <details class="dsec"><summary>🔔 קביעת תזכורת</summary>
       <div class="addrow"><select id="tk_kind">${taskKindOpts()}</select><input id="tk_date" type="date"></div>
       <div class="addrow"><input id="tk_note" placeholder="פרטים (על מה)"><button class="btn sm" id="tk_add">➕ קבע תזכורת</button></div>
       <div class="avfiles dnfiles" id="tk_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="tk_file" hidden></label></div>
-      <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></div>`;
+      <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></details>
+    <div class="sec"><h3>🔔 תזכורות פתוחות</h3><div id="tlist"></div></div>
+    <div class="sec"><h3>📞 תיעוד קשר</h3><div id="clog"></div></div>`;
   renderContacts(d); renderReminders(d);
   const clF=pendFiles('cl_files','cl_file'), tkF=pendFiles('tk_files','tk_file');
   const refresh=async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;d.tasks=dd.tasks;}renderContacts(d);renderReminders(d);};
@@ -2180,7 +2195,12 @@ function renderPartners(d){
     <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
       <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
-    <label class="jointchk"><input type="checkbox" class="pjoint" data-id="${p.id}" ${+p.joint?'checked':''}> 🤝 נותנים <b>ביחד</b> סכום אחד משותף (למשל מאותו עסק) — לא לחבר, ולאחד תשלומים</label>
+    <label class="jointchk"><input type="checkbox" class="pjoint" data-id="${p.id}" ${+p.joint?'checked':''}> 🤝 מחזיקים אותו <b>ביחד</b> — הסכום למעלה הוא הסכום המשותף לכולם</label>
+    ${+p.joint&&jointHolders(p)>1?`<label class="fld"><span>💳 מי משלם בפועל</span><select class="ppayer" data-id="${p.id}">
+      <option value="">כל אחד את חלקו (${curSym(d)}${Math.round(amtNum(p.amount)/jointHolders(p))} לכל אחד)</option>
+      ${jointGroup(p).map(g=>`<option value="${g.d.id}" ${jointPayerId(p)===g.d.id?'selected':''}>${esc(((g.d.business||'').trim()||((g.d.last||'')+' '+(g.d.first||'')).trim()))} — משלם את כל ${curSym(d)}${amtNum(p.amount)}</option>`).join('')}
+    </select></label>
+    <div class="hintxt" style="margin:-6px 2px 6px">כשעסק אחד או כרטיס אחד משלם על כולם — בחר אותו כאן, והסכום ייזקף רק אליו. ההגדרה חלה על כל המחזיקים.</div>`:''}
     <label class="fld"><span>💵 שילם עד סוף חודש (מזומן / צ'ק ביד — תשלום שלא נרשם במערכת)</span><input type="month" class="pfield" data-id="${p.id}" data-k="paid_thru" value="${esc(p.paid_thru||'')}"></label>
     <label class="fld"><span>💰 עדכון תשלום ידני (למשל: "שילם הכל מראש 13/7")</span><input class="pfield" data-id="${p.id}" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום — נשמר ומוצג בסיכום"></label>
     <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label>
@@ -2210,6 +2230,13 @@ function renderPartners(d){
   const savePw=async(p)=>{p.partner_with=pwList(p).map(x=>x.name).join(', ');p.partner_with_id=pwList(p).map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
   const addPw=async(pid,name,did)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.push({name:name,id:did?String(did):''});p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});toast('שותף נוסף ✓');renderPartners(d);if(tab==='donors')renderDonors();};
   const rmPw=async(pid,idx)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.splice(idx,1);p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
+  el.querySelectorAll('.ppayer').forEach(sel=>sel.onchange=async()=>{
+    const p=(d.partners||[]).find(x=>x.id==sel.dataset.id); if(!p)return;
+    const v=sel.value?+sel.value:null;
+    await api('PUT','/api/partner/'+p.id,{joint_payer:v});
+    jointGroup(p).forEach(g=>{g.p.joint_payer=v;});      // חל על כל הקבוצה גם על המסך
+    toast(v?'נשמר — משלם אחד ✓':'נשמר — כל אחד את חלקו ✓');
+    renderPartners(d); refreshIzSum(d); if(tab==='donors')renderDonors();});
   el.querySelectorAll('.pjoint').forEach(cb=>cb.onchange=async()=>{const p=(d.partners||[]).find(x=>x.id==cb.dataset.id);if(!p)return;p.joint=cb.checked?1:0;await api('PUT','/api/partner/'+p.id,{joint:p.joint});toast(cb.checked?'סומן כמשותף ✓':'בוטל');renderPartners(d);if(tab==='donors')renderDonors();});
   el.querySelectorAll('.pwx').forEach(b=>b.onclick=()=>rmPw(b.dataset.id,+b.dataset.idx));
   el.querySelectorAll('.pwadd').forEach(inp=>{
