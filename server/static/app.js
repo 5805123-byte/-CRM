@@ -145,32 +145,35 @@ function fzKey(d){const k=fzHe(d.last)+'|'+fzHe(d.first);return k==='|'?'':k;}
 // זוגות שסומנו "לא אותו אדם" — נשמרים בשרת ולא חוזרים לרשימה
 let NOTDUPE=new Set();
 const ndKey=(a,b)=>Math.min(a,b)+'-'+Math.max(a,b);
+// עשר הספרות האחרונות של מספר טלפון — השוואה בלי תלות בקידומת ובסימנים
+function ph10(s){const d=String(s||'').replace(/\D/g,'');return d.length>=10?d.slice(-10):'';}
 function ndClean(a){                       // מסיר מהקבוצה מי שסומן "לא אותו אדם" מול כל השאר
   const keep=a.filter(d=>a.some(x=>x.id!==d.id&&!NOTDUPE.has(ndKey(d.id,x.id))));
   return keep.length>1?keep:null;
 }
 function findDupes(){
-  const g={};DB.forEach(d=>{const k=dupKey(d);if(!k)return;(g[k]=g[k]||[]).push(d);});
-  const out=Object.values(g).filter(a=>a.length>1).map(ndClean).filter(Boolean);
-  const seen=new Set();out.forEach(a=>a.forEach(d=>seen.add(d.id)));
-  const f={};DB.forEach(d=>{const k=fzKey(d);if(!k)return;(f[k]=f[k]||[]).push(d);});
-  Object.values(f).forEach(a=>{                 // כפילויות באיות שונה — רק כאלה שלא נתפסו כבר
+  const out=[], seen=new Set();
+  const add=(a,why)=>{                       // קבוצה נכנסת פעם אחת, לפי הסימן החזק ביותר שמצאנו
     if(a.length<2||a.every(d=>seen.has(d.id)))return;
     const c=ndClean(a); if(!c)return;
-    c.forEach(d=>seen.add(d.id)); c.fuzzy=true; out.push(c);
-  });
+    c.forEach(d=>seen.add(d.id)); c.why=why; out.push(c);
+  };
+  const bucket=fn=>{const m={};DB.forEach(d=>{(fn(d)||[]).forEach(k=>{if(k)(m[k]=m[k]||[]).push(d);});});
+    return Object.values(m).map(a=>[...new Map(a.map(d=>[d.id,d])).values()]).filter(a=>a.length>1);};
+  bucket(d=>[dupKey(d)]).forEach(a=>add(a,''));                                  // אותו שם בדיוק
+  bucket(d=>splitEmails(d.email).map(e=>'@'+e.toLowerCase())).forEach(a=>add(a,'📧 אותו מייל'));
+  bucket(d=>splitPhones(d.phone).map(ph10)).forEach(a=>add(a,'📞 אותו טלפון — אולי בני זוג, בדוק'));
+  bucket(d=>[fzKey(d)]).forEach(a=>add(a,'איות שונה — בדוק שזה באמת אותו אדם'));  // איות שונה
   // אותו שם משפחה, ולאחד מהם אין שם פרטי או שהוא קיצור של השני (יידי / יידל)
-  const L={};DB.forEach(d=>{const k=fzHe(d.last);if(k)(L[k]=L[k]||[]).push(d);});
-  Object.values(L).forEach(a=>{
-    if(a.length<2||a.length>4)return;
+  bucket(d=>[fzHe(d.last)]).forEach(a=>{
+    if(a.length>4)return;
     const fs=a.map(d=>fzHe(d.first));
-    const ok=fs.every((x,i)=>fs.every((y,j)=>i===j||!x||!y||x.startsWith(y)||y.startsWith(x)));
-    if(!ok||a.every(d=>seen.has(d.id)))return;
-    const c=ndClean(a); if(!c)return;
-    c.forEach(d=>seen.add(d.id)); c.fuzzy=true; out.push(c);
+    if(!fs.every((x,i)=>fs.every((y,j)=>i===j||!x||!y||x.startsWith(y)||y.startsWith(x))))return;
+    add(a,'איות שונה — בדוק שזה באמת אותו אדם');
   });
   return out;
 }
+
 // פרנס "פתוח" = הלילה עדיין לא עבר, או שעבר אך טרם שולם. הירח נעלם רק כשהלילה עבר וגם שולם.
 function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>!(p.night_date&&p.night_date<t&&+p.paid));}
 function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1300);}
@@ -641,7 +644,7 @@ function openDupes(){
       <h2>🔀 מיזוג כרטיסים כפולים</h2>
       <div class="hintxt">${gs.length?'בחר את הכרטיס להשאיר (מסומן אוטומטית המלא ביותר) — כל התרומות, הפרנס והאברכים יעברו אליו, והכפול יימחק.':'לא נמצאו כפולים 🎉'}</div>
       <div id="dupwrap">${gs.map((grp,gi)=>{const best=grp.slice().sort((a,b)=>score(b)-score(a))[0];
-        return `<div class="dupgrp"><div class="dupname">${esc(grp[0].last+' '+grp[0].first)}${grp.fuzzy?' <span class="dupfz">איות שונה — בדוק שזה באמת אותו אדם</span>':''}</div>${grp.map(d=>{
+        return `<div class="dupgrp"><div class="dupname">${esc(grp[0].last+' '+grp[0].first)}${grp.why?(' <span class="dupfz'+(grp.why[0]==='📧'?' strong':'')+'">'+esc(grp.why)+'</span>'):''}</div>${grp.map(d=>{
           const nd=(d.donations||[]).length,np=(d.partners||[]).length,npar=(d.parnes||[]).length;
           return `<label class="dupcard"><input type="radio" name="keep${gi}" value="${d.id}" ${d.id===best.id?'checked':''}>
             <div class="dupinfo">
