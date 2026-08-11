@@ -2284,6 +2284,38 @@ def ensure_schema():
     except Exception as e:
         print('  iz bulman error:', e)
 
+    # אשר מויאל — אותו סכום ואותו תאריך כמו האברך השני של גדליה פנסטר.
+    # ובאופן כללי: מי שמחזיק כמה אברכים — התאריך זהה לכולם, אלא אם נרשם אחרת במפורש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_same_date_v1'").fetchone():
+            r = con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id "
+                            "WHERE d.last='פנסטר' AND p.avreich LIKE '%מויאל%'").fetchone()
+            if r:
+                con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'800') "
+                            "WHERE id=?", (r['id'],))
+            rows = [dict(x) for x in con.execute(
+                "SELECT p.id,p.donor_id,p.start_date,d.last FROM partners p "
+                "JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.active,1)!=0")]
+            byd = {}
+            for x in rows:
+                byd.setdefault(x['donor_id'], []).append(x)
+            n = 0
+            for v in byd.values():
+                if len(v) < 2 or v[0]['last'] == 'טאובנפלד':      # טאובנפלד — תאריכים שונים במכוון
+                    continue
+                dates = {(x['start_date'] or '').strip() for x in v if (x['start_date'] or '').strip()}
+                if len(dates) != 1:
+                    continue
+                dt = dates.pop()
+                for x in v:
+                    if not (x['start_date'] or '').strip():
+                        con.execute("UPDATE partners SET start_date=? WHERE id=?", (dt, x['id']))
+                        n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_same_date_v1')")
+            print('  תאריכי יש"ז שהושלמו מאברך אחר של אותו תורם: %d' % n)
+    except Exception as e:
+        print('  iz same date error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
