@@ -19,7 +19,10 @@ function donorTotals(d){
 // חישוב יששכר־זבולון: התחייבות חודשית (סך האברכים) מול מה ששולם בפועל בחודשים שכבר שילם = החוב
 function izSummary(d){
   const parts=(d.partners||[]).filter(p=>p.active!=0);
-  const monthly=parts.reduce((s,p)=>s+amtNum(p.amount),0);
+  // ההתחייבות החודשית = סכום האברכים. אם לא הוזן סכום לאברך — הסכום הקבוע שבכרטיס.
+  const byav=parts.reduce((s,p)=>s+amtNum(p.amount),0);
+  const fromCard=!byav&&d.tier==='יששכר_זבולון'&&amtNum(d.amount)>0;
+  const monthly=byav||(fromCard?amtNum(d.amount):0);
   let izdon=(d.donations||[]).filter(x=>/יששכר|זבולון/.test(x.category||''));
   // שותפות "ביחד" (joint) — צרף גם את תשלומי השותפים לאותו אברך, לחישוב חוב משותף
   const seen=new Set([d.id]);
@@ -31,7 +34,7 @@ function izSummary(d){
   const span=hasPay?(Math.max(...codes)-Math.min(...codes)+1):0;
   const expected=monthly*span;
   const debt=expected-paid;
-  return {parts,monthly,paid,span,expected,debt,hasPay};
+  return {parts,monthly,paid,span,expected,debt,hasPay,fromCard};
 }
 // פירוק רשימת שותפים (תומך בכמה שותפים מופרדים בפסיק)
 function pwList(p){const names=(p.partner_with||'').split(',').map(s=>s.trim()).filter(Boolean);const ids=(String(p.partner_with_id||'')).split(',').map(s=>s.trim());return names.map((nm,i)=>({name:nm,id:ids[i]||''}));}
@@ -79,8 +82,8 @@ function izSummaryHTML(d){
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
   else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
   else debtLine=`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`;
-  const mainHtml=act.length?`${rows}
-    <div class="izrow tot"><span>התחייבות חודשית</span><b>${cur}${s.monthly}</b></div>
+  const mainHtml=(act.length||s.monthly)?`${rows}
+    <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${s.monthly}</b></div>
     ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${s.paid}</b></div>
     <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${s.monthly})</span><b>${cur}${s.expected}</b></div>`:''}
     ${debtLine}`:'';
@@ -928,6 +931,27 @@ function renderBuilding(d){
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/building/'+b.dataset.del);d.building=d.building.filter(x=>x.id!=b.dataset.del);cardBuilding(d,document.getElementById('cardBody'));toast('נמחק');if(tab==='donors')renderDonors();});
   el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;x[inp.dataset.k]=inp.value;await api('PUT','/api/building/'+x.id,{[inp.dataset.k]:inp.value});cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
 }
+// סיכום לפי ייעוד — כמה נתרם לכל דבר, השנה ובסך הכל
+function catTotalsHTML(d){
+  const cur=curSym(d), m={};
+  const add=(c,amt,dt)=>{
+    c=String(c||'').trim()||'ללא ייעוד';
+    if(!m[c])m[c]={c,all:0,year:0};
+    m[c].all+=amt;
+    if(String(dt||'').slice(0,4)===String(GREGYEAR))m[c].year+=amt;
+  };
+  (d.donations||[]).forEach(x=>add(x.category,amtNum(x.amount),x.date));
+  (d.parnes||[]).filter(p=>p.status!=='suggested'&&+p.paid).forEach(p=>
+    add(DAYKIND[p.kind]||'🌙 פרנס יום',amtNum(p.amount),p.night_date));
+  const rows=Object.values(m).filter(x=>x.all).sort((a,b)=>b.all-a.all);
+  if(!rows.length)return '';
+  const tA=rows.reduce((s,x)=>s+x.all,0), tY=rows.reduce((s,x)=>s+x.year,0);
+  const f=n=>cur+Math.round(n).toLocaleString('en-US');
+  return `<div class="cattot"><div class="cattot-t">🎯 כמה נתרם לכל ייעוד</div>
+    <div class="catrow head"><span>ייעוד</span><b>${GREGYEAR}</b><b>הכל</b></div>
+    ${rows.map(x=>`<div class="catrow"><span>${esc(x.c)}</span><b>${x.year?f(x.year):'—'}</b><b>${f(x.all)}</b></div>`).join('')}
+    <div class="catrow tot"><span>סה"כ</span><b>${f(tY)}</b><b>${f(tA)}</b></div></div>`;
+}
 function cardDetails(d,body){
   const sel=CATS.map(c=>`<option ${c===d.category?'selected':''} value="${c}">${c||'— ללא —'}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
@@ -986,6 +1010,7 @@ function cardDetails(d,body){
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
     ${izSummaryHTML(d)}
     ${reconPendHTML(d)}
+    ${catTotalsHTML(d)}
     ${give}
     <details class="dsec" id="dnbox"><summary>➕ רישום תרומה חדשה</summary>
       <div class="two"><label class="fld"><span>סכום (${curd})</span><input id="dn_amt" inputmode="decimal" placeholder="480"></label>
