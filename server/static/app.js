@@ -553,7 +553,8 @@ async function renderNoAddr(){
     ${(p.suggest||[]).map((s,i)=>`<div class="nasug">
       <div class="nasugt">💡 ${esc(s.src)}${s.who?(' · '+esc(s.who)):''}${s.phone?(' · 📞 '+esc(s.phone)):''}</div>
       <div class="nasuga">${esc(s.addr)}</div>
-      <button class="btn sm nause" data-id="${p.id}" data-i="${i}">✔️ קבע כתובת זו</button></div>`).join('')}
+      <div class="dupacts"><button class="btn sm nause" data-id="${p.id}" data-i="${i}">✔️ קבע כתובת זו</button>
+        <button class="btn sm ghost nanot dupnot" data-id="${p.id}" data-i="${i}">✕ לא מתאים</button></div></div>`).join('')}
   </div>`;
   view.innerHTML=`<button class="btn ghost" id="nback" style="width:100%;margin-bottom:8px">⬅ חזרה לרשימת התורמים</button>
     <div class="rbtitle">🏠 תורמים בלי כתובת — ${NOADDR.count||0}</div>
@@ -564,6 +565,15 @@ async function renderNoAddr(){
   document.getElementById('nback').onclick=()=>{flt='';render();};
   const gp=document.getElementById('gcpull'); if(gp)gp.onclick=()=>pullGContacts(gp);
   view.querySelectorAll('.nago').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.id);if(d)openDonor(d);});
+  view.querySelectorAll('.nanot').forEach(b=>b.onclick=async()=>{
+    const p=(NOADDR.people||[]).find(x=>x.id==b.dataset.id); if(!p)return;
+    const s=p.suggest[+b.dataset.i]; if(!s)return;
+    b.disabled=true;
+    p.suggest.splice(+b.dataset.i,1);
+    if(!p.suggest.length)NOADDR.with_suggest=Math.max(0,(NOADDR.with_suggest||1)-1);
+    renderNoAddr(); toast('ההצעה נדחתה — לא תוצע שוב');
+    try{ await api('POST','/api/addr/reject',{donor_id:p.id,addr:s.addr}); }catch(e){}
+  });
   view.querySelectorAll('.nause').forEach(b=>b.onclick=async()=>{
     const p=(NOADDR.people||[]).find(x=>x.id==b.dataset.id); if(!p)return;
     const s=p.suggest[+b.dataset.i]; if(!s)return;

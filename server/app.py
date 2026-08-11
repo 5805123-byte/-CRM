@@ -130,6 +130,9 @@ def ensure_schema():
     # זוגות שנבדקו וסומנו "לא אותו אדם" — לא יופיעו שוב ברשימת המיזוג
     try: con.execute("CREATE TABLE IF NOT EXISTS not_dupes(a INTEGER, b INTEGER, created TEXT, PRIMARY KEY(a,b))")
     except Exception: pass
+    # הצעות כתובת שנדחו — לא יוצעו שוב לאותו תורם
+    try: con.execute("CREATE TABLE IF NOT EXISTS addr_reject(donor_id INTEGER, addr TEXT, created TEXT, PRIMARY KEY(donor_id,addr))")
+    except Exception: pass
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
@@ -1926,6 +1929,22 @@ def ensure_schema():
     except Exception as e:
         print('  new kd donors error:', e)
 
+    # שורת סיכום חודשית ישנה (בלי אמצעי תשלום ובלי הערה) שנשארה לצד התשלום האמיתי מהדוח —
+    # אותו תורם, אותו חודש, אותו סכום. אלה כפילויות ודאיות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='checks_dupsum_v1'").fetchone():
+            n = con.execute("""DELETE FROM donations WHERE id IN (
+                SELECT s.id FROM donations s JOIN donations r ON r.donor_id=s.donor_id
+                   AND length(r.date)=10 AND substr(r.date,1,7)=s.date
+                   AND ROUND(CAST(r.amount AS REAL),2)=ROUND(CAST(s.amount AS REAL),2)
+                   AND r.method IN ('צ''ק','דונרס','OJC')
+                WHERE length(s.date)=7 AND s.date LIKE '2026%'
+                  AND COALESCE(s.method,'')='' AND COALESCE(s.note,'')='')""").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('checks_dupsum_v1')")
+            print('  שורות סיכום כפולות שנמחקו: %d' % n)
+    except Exception as e:
+        print('  dupsum error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
@@ -3026,6 +3045,12 @@ class H(BaseHTTPRequestHandler):
                 if r['donor_id'] in ids:
                     full = ', '.join([x for x in (r['addr'], r['city'], r['state'], r['zip']) if (x or '').strip()])
                     bill.setdefault(r['donor_id'], set()).add(full)
+            rej = set()
+            try:
+                for r in con.execute("SELECT donor_id,addr FROM addr_reject"):
+                    rej.add((r['donor_id'], (r['addr'] or '').strip()))
+            except Exception:
+                pass
             con.close()
             book = []
             try:
@@ -3047,6 +3072,7 @@ class H(BaseHTTPRequestHandler):
                                     'src': 'אנשי קשר'})
                 for a in sorted(bill.get(d['id'], []))[:3]:
                     sug.append({'addr': a, 'phone': '', 'who': '', 'src': 'כתובת חיוב'})
+                sug = [s for s in sug if s['addr'] and (d['id'], s['addr']) not in rej]
                 out.append({'id': d['id'],
                             'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
                             'english': d['english'] or '', 'phone': d['phone'] or '',
@@ -4038,6 +4064,16 @@ class H(BaseHTTPRequestHandler):
             code, res = recon_apply(cur, m.group(1), b)
             con.commit(); con.close()
             return self._send(code, res)
+        if self.path == '/api/addr/reject':
+            # "לא מתאים" — ההצעה הזו לא תוצע שוב לתורם הזה
+            did = b.get('donor_id'); addr = (b.get('addr') or '').strip()
+            if not did or not addr:
+                return self._send(400, {'error': 'donor_id/addr required'})
+            con = db()
+            con.execute("INSERT OR IGNORE INTO addr_reject(donor_id,addr,created) VALUES(?,?,?)",
+                        (int(did), addr, today_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/notdupe':
             # "לא אותו אדם" — כל הזוגות בקבוצה נשמרים כדי שלא תחזור לרשימת המיזוג
             ids = sorted({int(x) for x in (b.get('ids') or []) if str(x).isdigit()})
