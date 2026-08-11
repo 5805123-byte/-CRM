@@ -2541,19 +2541,27 @@ def ensure_schema():
     except Exception as e:
         print('  namefix error:', e)
 
-    # סורוס פאונדיישן — התרומה הגיעה בהעברה בנקאית וכבר התקבלה
+    # סורוס פאונדיישן — מאיר ביקש למחוק לגמרי מהמערכת
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='soros_wire_v1'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='soros_delete_v1'").fetchone():
             r = con.execute("SELECT id FROM donors WHERE last LIKE '%סורוס%'").fetchone()
             if r:
-                con.execute("UPDATE donations SET paid=1, method='העברה_בנקאית' "
-                            "WHERE donor_id=? AND COALESCE(paid,0)=0", (r['id'],))
-                con.execute("UPDATE donors SET channel=COALESCE(NULLIF(TRIM(channel),''),'העברה_בנקאית') "
-                            "WHERE id=?", (r['id'],))
-                print('  סורוס: התרומה סומנה כהתקבלה בהעברה בנקאית')
-            con.execute("INSERT INTO seed_flags(name) VALUES('soros_wire_v1')")
+                did = r['id']
+                for t in ('donations', 'recon', 'tasks', 'contacts_log', 'pledges', 'parnes',
+                          'partners', 'prayers', 'transactions', 'building'):
+                    try:
+                        con.execute("DELETE FROM %s WHERE donor_id=?" % t, (did,))
+                    except Exception:
+                        pass
+                try:
+                    con.execute("DELETE FROM files WHERE kind='donor' AND ref_id=?", (did,))
+                except Exception:
+                    pass
+                con.execute("DELETE FROM donors WHERE id=?", (did,))
+                print('  סורוס פאונדיישן: הכרטיס נמחק לגמרי (#%d)' % did)
+            con.execute("INSERT INTO seed_flags(name) VALUES('soros_delete_v1')")
     except Exception as e:
-        print('  soros error:', e)
+        print('  soros delete error:', e)
 
     # ה-$1,200 של נר למאור אינו מופיע באף חודש בדוח בנק ווסט — פותחים משימה לבדיקה
     try:
