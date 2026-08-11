@@ -2194,6 +2194,33 @@ def ensure_schema():
     except Exception as e:
         print('  lacombe card error:', e)
 
+    # יואל ברקוביץ ודוד פורסבסקי — תורמים חדשים שהגיעו דרך אבא קלוק לקמחא דפסחא תשפ"ו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='klock_kd_donors_v1'").fetchone():
+            KD = 'קמחא דפסחא תשפ"ו'
+            con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (KD, today_iso()))
+            for hl, hf, en in (('ברקוביץ', 'יואל', 'Joel Berkowitz'),
+                               ('פורסבסקי', 'דוד', 'David Profesorske')):
+                have = [r['id'] for r in con.execute("SELECT id,last,first FROM donors")
+                        if _fz(r['last'] or '') == _fz(hl) and _fz(r['first'] or '') == _fz(hf)]
+                if not have:
+                    did = con.execute(
+                        "INSERT INTO donors(last,first,english,category,notes,created,source) "
+                        "VALUES(?,?,?,'מזדמן','הגיע דרך אבא קלוק',?,?)",
+                        (hl, hf, en, today_iso(), KD)).lastrowid
+                    print('  %s %s: נפתח כרטיס' % (hf, hl))
+                else:
+                    did = have[0]
+                # כך החיוב שייכנס אליהם יסווג מיד לקמחא דפסחא ולא יישאר "לא סווג"
+                try:
+                    con.execute("INSERT OR IGNORE INTO donor_rules(donor_id,amount,category,note,created) "
+                                "VALUES(?,1100,?,'הגיע דרך אבא קלוק',?)", (did, KD, today_iso()))
+                except Exception:
+                    pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('klock_kd_donors_v1')")
+    except Exception as e:
+        print('  klock kd donors error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
@@ -2219,6 +2246,10 @@ def ensure_schema():
             'fransis frechter':         ('פרכטר', 'פייגא לאה'),
             'y.y levi':                 ('לעווי', 'יוסף יהושע'),
             'cassandra lacombe':        ('לקומב', 'קאסנדרה'),
+        }),
+        ('card_name_link_v6', {
+            'joel berkowitz':           ('ברקוביץ', 'יואל'),
+            'david profesorske':        ('פורסבסקי', 'דוד'),
         }),
     ):
         try:
