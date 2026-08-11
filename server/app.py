@@ -2316,6 +2316,22 @@ def ensure_schema():
     except Exception as e:
         print('  iz same date error:', e)
 
+    # זאב שטרן — דב בער רובינפלד, $800 מא' שבט תשפ"ו. מאומת מול חיובי בנק ווסט
+    # של William Stern: $800 ב-10 לחודש מינואר 2026.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stern_iz_v1'").fetchone():
+            r = con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id "
+                            "WHERE d.last='שטרן' AND d.first='זאב' AND p.avreich LIKE '%רובינפלד%'").fetchone()
+            if r:
+                con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'800'), "
+                            "start_date=COALESCE(NULLIF(TRIM(start_date),''),?), "
+                            "method=COALESCE(NULLIF(TRIM(method),''),'בנק_ווסט') WHERE id=?",
+                            ('א\' שבט תשפ"ו', r['id']))
+                print('  שטרן זאב: רובינפלד דב בער — $800 מא\' שבט תשפ"ו')
+            con.execute("INSERT INTO seed_flags(name) VALUES('stern_iz_v1')")
+    except Exception as e:
+        print('  stern iz error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
