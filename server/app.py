@@ -2135,6 +2135,47 @@ def ensure_schema():
     except Exception as e:
         print('  merge orphans error:', e)
 
+    # שורות ההערכה מאקסל הקבועים יורדות — הן חסרות תאריך מדויק וכופלות את החיובים
+    # האמיתיים שכבר נכנסו מדוחות האשראי והצ׳קים. נשארים רק תשלומים עם תאריך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_recurring_est_v1'").fetchone():
+            n = con.execute("DELETE FROM donations WHERE length(COALESCE(date,''))=7 "
+                            "AND COALESCE(note,'') LIKE 'ייבוא 2026%'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('drop_recurring_est_v1')")
+            print('  שורות אקסל הקבועים שנמחקו: %d' % n)
+    except Exception as e:
+        print('  drop recurring est error:', e)
+
+    # יעקב יוסף קלוק — הוראת קבע של $700 לחודש דרך קפיטל 1, ליששכר־זבולון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='klock_capital1_v1'").fetchone():
+            row = None
+            for r in con.execute("SELECT id,last,first FROM donors WHERE last IN ('קלוק','קלאק','קלעק')"):
+                if 'יעקב' in (r['first'] or ''):
+                    row = r; break
+            if True:
+                # אבא קלוק הוא אדם אחר — אם אין כרטיס ליעקב יוסף, נפתח לו כרטיס משלו
+                did = row['id'] if row else con.execute(
+                    "INSERT INTO donors(last,first,english,category,tier,channel,created,source) "
+                    "VALUES('קלוק','יעקב יוסף','Yaakov Yosef Klock','קבוע','יששכר_זבולון','קפיטל 1',?,'ידני')",
+                    (today_iso(),)).lastrowid
+                added = 0
+                for mm in range(1, 9):                     # ינואר–אוגוסט 2026
+                    dt = '2026-%02d-01' % mm
+                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
+                                   "AND ROUND(CAST(amount AS REAL),2)=700.0", (did, dt)).fetchone():
+                        continue
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,'700.00','יששכר־זבולון','קפיטל 1','הוראת קבע חודשית',1)",
+                                (did, dt))
+                    added += 1
+                con.execute("UPDATE donors SET channel=COALESCE(NULLIF(TRIM(channel),''),'קפיטל 1') WHERE id=?",
+                            (did,))
+                print('  קלוק קפיטל 1: נוספו %d חיובים חודשיים של $700 (#%d)' % (added, did))
+            con.execute("INSERT INTO seed_flags(name) VALUES('klock_capital1_v1')")
+    except Exception as e:
+        print('  klock capital1 error:', e)
+
     # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
     try:

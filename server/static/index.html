@@ -137,6 +137,19 @@
   .fixamt{display:inline-block;margin-inline-start:8px;background:#e8f5e9;color:#1b7a3d;border-radius:8px;padding:1px 8px;font-size:.78rem;font-weight:800;vertical-align:middle}
   .chbadge{display:inline-block;color:#fff;border-radius:7px;padding:2px 8px;font-size:.72rem;font-weight:800;white-space:nowrap}
   .givelist{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0}
+  .givehd .givecnt{background:var(--line);color:var(--muted);border-radius:99px;padding:0 8px;font-size:.74rem;font-weight:700}
+  .gvmore>summary{cursor:pointer;color:var(--accent);font-weight:800;font-size:.84rem;padding:7px 2px;list-style:none}
+  .gvmore>summary::-webkit-details-marker{display:none}
+  .gvmore>summary::before{content:'▾ '}
+  /* מקטעים מתקפלים בדף הראשי — פחות גלילה, הכל בהישג לחיצה */
+  .dsec{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:8px 0;overflow:hidden}
+  .dsec>summary{cursor:pointer;font-weight:800;font-size:.92rem;color:var(--accent);padding:11px 13px;list-style:none}
+  .dsec>summary::-webkit-details-marker{display:none}
+  .dsec>summary::before{content:'▸ ';font-weight:900}
+  .dsec[open]>summary::before{content:'▾ '}
+  .dsec[open]>summary{border-bottom:1px solid var(--line)}
+  .dsec>*:not(summary){padding:0 13px}
+  .dsec>*:last-child{padding-bottom:12px}
   .givehd{font-weight:800;color:var(--gold);font-size:.9rem;margin-bottom:6px}
   .giverow{display:flex;gap:10px;align-items:baseline;padding:4px 0;border-top:1px solid var(--line)}
   .giverow:first-of-type{border-top:none}

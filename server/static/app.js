@@ -790,7 +790,7 @@ function openNewDonor(onCreate){
     }
     toast('נוצר כרטיס ✓');
     if(onCreate){ ov.classList.remove('show'); onCreate(nd); }
-    else openDonor(nd, anyDon?'donations':'details');
+    else openDonor(nd,'details');
   };
 }
 function hq(s){return String(s||'').replace(/\u05f4/g,'"').replace(/\u05f3/g,"'");}
@@ -856,9 +856,9 @@ function openDonor(d,startTab){
     <h2 id="cardTitle">${esc(d.last)} ${esc(d.first)}</h2>
     <div class="cardsub"><span class="cardnum">כרטיס #${d.id}</span> ${catPill(d.category)} ${d.tier==='יששכר_זבולון'?`<span class="izchip" id="izHeadLink" title="לחץ לראות אברך ושותף">${pill(d.tier)} 👥</span>`:pill(d.tier)} ${d.english?`<span class="ensm" dir="ltr">${esc(d.english)}</span>`:''}</div>
     <div class="ctabs">
-      <button class="ctab" data-c="details">פרטים</button>
+      <button class="ctab" data-c="details">🏠 ראשי${pendCount(d)?` <b class="badge">${pendCount(d)}</b>`:''}</button>
+      <button class="ctab" data-c="info">📇 פרטים</button>
       <button class="ctab" data-c="kvittel">🕯️ קוויטל${(d.intake_pending||[]).length?` <b class="badge">${(d.intake_pending||[]).length}</b>`:''}</button>
-      <button class="ctab" data-c="donations">💳 תרומות${pendCount(d)?` <b class="badge">${pendCount(d)}</b>`:''}</button>
       <button class="ctab" data-c="building">🏛️ בניין${(d.building||[]).length?` <b class="badge">${(d.building||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="contact">📞 קשר</button>
       <button class="ctab" data-c="tasks">📋 משימות${nopen?` <b class="badge">${nopen}</b>`:''}</button>
@@ -868,15 +868,15 @@ function openDonor(d,startTab){
   try{localStorage.setItem('kc_donor',d.id);}catch(e){}
   document.getElementById('cx').onclick=()=>{ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}};
   sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{cardTab=b.dataset.c;renderCard(d);});
-  const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='donations';renderCard(d);};
+  const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='details';renderCard(d);};
   renderCard(d);
 }
 function renderCard(d){
   sheet.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on',b.dataset.c===cardTab));
   const body=document.getElementById('cardBody');
   if(cardTab==='details') return cardDetails(d,body);
+  if(cardTab==='info') return cardInfo(d,body);
   if(cardTab==='kvittel') return cardKvittel(d,body);
-  if(cardTab==='donations') return cardDonations(d,body);
   if(cardTab==='building') return cardBuilding(d,body);
   if(cardTab==='contact') return cardContact(d,body);
   if(cardTab==='tasks') return cardTasks(d,body);
@@ -935,12 +935,14 @@ function cardDetails(d,body){
   const dt=donorTotals(d), curd=curSym(d);
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
-  (d.parnes||[]).forEach(p=>gitems.push({amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
-  (d.donations||[]).forEach(x=>gitems.push({amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
+  (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
+  (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||''}));
-  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const co=avCoHolders(p);gitems.push({amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(co.length?(' · בשותפות עם '+co.map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''});});
+  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const co=avCoHolders(p);gitems.push({k:'',amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(co.length?(' · בשותפות עם '+co.map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''});});
+  gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
-  const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>{
+  const GVSHOW=8;                       // מציגים את האחרונות; השאר נפתחות בלחיצה — פחות גלילה
+  const gvrow=g=>{
     const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
     const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
     const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
@@ -961,7 +963,11 @@ function cardDetails(d,body){
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}`
       + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}</div></div>`;
-  }).join('')}</div>`:'';
+  };
+  const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>`
+    + gitems.slice(0,GVSHOW).map(gvrow).join('')
+    + (gitems.length>GVSHOW?`<details class="gvmore"><summary>הצג עוד ${gitems.length-GVSHOW}</summary>${gitems.slice(GVSHOW).map(gvrow).join('')}</details>`:'')
+    + `</div>`:'';
   const pdebts=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
   const pdebtsum=pdebts.reduce((s,p)=>s+amtNum(p.amount),0);
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
@@ -971,30 +977,40 @@ function cardDetails(d,body){
     ${d.purpose?`<div class="purpose">🎯 עבור: ${esc(d.purpose)}</div>`:''}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
-    <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
+    <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
+      <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}" inputmode="decimal"></label></div>
     <div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
-      <label class="fld"><span>קטגוריה</span><select id="f_category">${sel}</select></label></div>
+      <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>
     ${(d.category==='מזדמן'&&!d.tier)?`<div class="two"><label class="fld"><span>🗓️ חודש (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
-    <label class="fld"><span>עבור מה (מטרה)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
-    <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
-      <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}"></label></div>
-    <label class="fld"><span>תדירות (כל כמה זמן תורם)</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label>
-    <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
-    <div class="fld"><span>אימיילים</span><div id="emails" class="phones"></div></div>
-    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
-    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
-      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
-    <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
-    <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
-    <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><textarea id="f_notes" rows="2" placeholder="כתוב כאן כל דבר שתרצה למצוא אחר כך בחיפוש">${esc(d.notes||'')}</textarea></label>
-    ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
-    <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label>
-    <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
-    ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
-    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}
+    <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
     ${izSummaryHTML(d)}
+    ${reconPendHTML(d)}
     ${give}
+    <details class="dsec" id="dnbox"><summary>➕ רישום תרומה חדשה</summary>
+      <div class="two"><label class="fld"><span>סכום (${curd})</span><input id="dn_amt" inputmode="decimal" placeholder="480"></label>
+        <label class="fld"><span>איך נתרם</span><select id="dn_method">${DNMETH.map(x=>`<option${x===(d.channel||'')?' selected':''}>${x}</option>`).join('')}</select></label></div>
+      <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
+        <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
+        <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
+        <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option></select></label>
+      <div class="addrow hidden" id="dn_newrow"><input id="dn_catfree" placeholder="שם הייעוד החדש"></div>
+      <label class="fld hidden" id="dn_bldg_l"><span>🏗️ מה תרם בבניין?</span><input id="dn_bldg" list="bldgitems2" placeholder="שולחן / עמוד / מטר…"><datalist id="bldgitems2">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+      <div class="hidden" id="dn_daybox"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
+        <label class="fld"><span>שנה עברית</span><select id="dn_hy">${heYearOpts()}</select></label></div>
+      <div class="two hidden" id="dn_ccbox"><label class="fld"><span>4 ספרות אחרונות</span><input id="dn_cc4" inputmode="numeric" maxlength="4" placeholder="1234"></label>
+        <label class="fld"><span>תוקף</span><input id="dn_ccexp" placeholder="12/28" style="direction:ltr"></label></div>
+      <div class="two"><label class="fld"><span>תאריך</span><input id="dn_date" type="date"></label>
+        <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label></div>
+      <label class="fld"><span>🕯️ שם לתפילה (לא חובה)</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label>
+      <button class="btn" id="dn_add" style="width:100%">➕ רשום תרומה</button></details>
+    ${(d.parnes||[]).filter(p=>p.status!=='suggested').length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)</summary><div id="parnes"></div></details>`:''}
+    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
+      <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></details>`:''}
+    <details class="dsec"><summary>🎯 התחייבויות / קמפיינים${(d.pledges||[]).length?(' ('+(d.pledges||[]).length+')'):''}</summary><div id="pledges"></div>
+      <div class="addrow"><input id="pl_cat" placeholder="קטגוריה"><input id="pl_amt" placeholder="סכום" style="max-width:82px"><button class="btn sm" id="pl_add">הוסף</button></div></details>
+    ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 התחייב · טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
@@ -1032,7 +1048,7 @@ function cardDetails(d,body){
         <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
-  const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='donations';renderCard(d);};
+  const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
   body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
@@ -1142,6 +1158,69 @@ function cardDetails(d,body){
     if(!r||!r.ok){uclSave.disabled=false;uclSave.textContent='💾 שמור לכולם';toast('השמירה נכשלה');return;}
     toast('עודכנו '+r.updated+' תרומות ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
+  // ---- רישום תרומה חדשה, ישירות מהדף הראשי ----
+  renderParnesEdit(d); renderPledges(d); renderTransactions(d);
+  if(d.tier==='יששכר_זבולון'){
+    renderPartners(d);
+    const pab=document.getElementById('pa_add');
+    if(pab)pab.onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;
+      const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});
+      d.partners=(d.partners||[]).concat([{id:r.id,avreich:n}]);
+      document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};
+  }
+  const plAdd=document.getElementById('pl_add');
+  if(plAdd)plAdd.onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();
+    if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});
+    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'}]);
+    document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
+  const dnDate=document.getElementById('dn_date'); if(dnDate)dnDate.value=todayStr();
+  const dnCat=document.getElementById('dn_cat'), dnMeth=document.getElementById('dn_method');
+  const isBldg=c=>/בנין|בניין/.test(c||'');
+  const dnShow=()=>{
+    const o=dnCat.options[dnCat.selectedIndex], day=o?o.dataset.day:'';
+    document.getElementById('dn_daybox').classList.toggle('hidden',!day);
+    document.getElementById('dn_newrow').classList.toggle('hidden',dnCat.value!=='__new__');
+    document.getElementById('dn_bldg_l').classList.toggle('hidden',!isBldg(dnCat.value));
+    document.getElementById('dn_ccbox').classList.toggle('hidden',!/אשראי|אונליין/.test(dnMeth.value));
+  };
+  if(dnCat){dnCat.onchange=dnShow;dnMeth.onchange=dnShow;dnShow();}
+  const dnAdd=document.getElementById('dn_add');
+  if(dnAdd)dnAdd.onclick=async()=>{
+    let cat=dnCat.value;
+    const o=dnCat.options[dnCat.selectedIndex], dayKind=o?o.dataset.day:'';
+    if(cat==='__new__'){
+      cat=document.getElementById('dn_catfree').value.trim();
+      if(cat.length<2){toast('כתוב את שם הייעוד');return;}
+      if(!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
+    }
+    if(isBldg(cat)){const it=document.getElementById('dn_bldg').value.trim();
+      if(it){if(!(BUILDING_ITEMS||[]).includes(it)){await api('POST','/api/building_items',{name:it});BUILDING_ITEMS.unshift(it);}cat=cat+' — '+it;}}
+    const amt=document.getElementById('dn_amt').value.trim(), method=dnMeth.value,
+          date=dnDate.value, pray=document.getElementById('dn_pray').value.trim();
+    let note=document.getElementById('dn_note').value.trim();
+    const c4=(document.getElementById('dn_cc4')||{}).value||'', cx=(document.getElementById('dn_ccexp')||{}).value||'';
+    if(c4.trim()||cx.trim())note=(note?note+' · ':'')+'כרטיס ****'+c4.trim()+(cx.trim()?(' תוקף '+cx.trim()):'');
+    if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
+    dnAdd.disabled=true;
+    if(amt&&!dayKind){
+      const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date,note});
+      d.donations=(d.donations||[]).concat([{id:r.id,donor_id:d.id,amount:amt,category:cat,method,date,note,paid:1}]);
+    }
+    if(dayKind){
+      const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,
+            hy=document.getElementById('dn_hy').value,dtext=heDay(hd)+' '+hm;
+      const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||'',amount:amt,kind:dayKind,hyear:hy});
+      d.parnes=(d.parnes||[]).concat([{id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||'',amount:amt,kind:dayKind,hyear:hy}]);
+    }
+    if(pray&&!dayKind){
+      const tr=d.tier||'';
+      const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});
+      d.prayers=(d.prayers||[]).concat([{id:r.id,text:pray,tier:tr}]);
+    }
+    dnAdd.disabled=false;
+    toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));
+    cardDetails(d,body); if(tab==='donors')renderDonors();
+  };
   const rlCat=document.getElementById('rl_cat'), rlNewRow=document.getElementById('rl_newrow');
   if(rlCat&&rlNewRow)rlCat.onchange=()=>{
     const on=rlCat.value==='__new__';
@@ -1186,21 +1265,14 @@ function cardDetails(d,body){
       }catch(e){ toast('❌ המיזוג לא נשמר: '+(e&&e.message||e)); }
       load().then(()=>{const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});});
   };
-  const FF=['last','first','english','category','purpose','amount','frequency','addr','city','country','zip','business','notes','region','channel'];
+  const FF=['last','first','category','amount','frequency'];
   wireFields(d,FF);
-  // חיפוש מהיר של כל מי שיש לו הערה דומה (למשל כל מי שהגיע דרך אותו תורם)
-  const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='donations';renderCard(d);};
-  const nlk=body.querySelector('.notelink');
-  if(nlk)nlk.onclick=e=>{e.preventDefault();const t=(d.notes||'').trim();if(!t)return;
-    q=t.length>28?t.slice(0,28):t;document.getElementById('q').value=q;
-    ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(err){}
-    tab='donors';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='donors'));flt='';render();};
+  const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='details';renderCard(d);};
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
-  document.getElementById('f_saveall').onclick=async()=>{const body={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){body[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
-  renderPhones(d); renderEmails(d);
+  document.getElementById('f_saveall').onclick=async()=>{const b2={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){b2[k]=el.value;d[k]=el.value;}});await api('PUT','/api/donor/'+d.id,b2);toast('נשמר ✓');if(tab==='donors')renderDonors();};
 }
 
 // מחיקת תורם — חלון אישור ברור, ודיווח אמיתי אם נכשל
@@ -1371,85 +1443,43 @@ function wireReconPend(d,body){
     };
   });
 }
-function cardDonations(d,body){
-  const isIZ=d.tier==='יששכר_זבולון';
-  const cur=curSym(d);
-  const tot=donorTotals(d);
-  body.innerHTML=`
-    ${izSummaryHTML(d)}
-    ${reconPendHTML(d)}
-    <div class="sec onlinebox"><h3>💳 גבייה אונליין</h3>
-      <div class="hintxt">דף תרומה מאובטח — פתחו אותו מהמשרד למילוי פרטי אשראי, או שלחו לתורם קישור אישי.</div>
-      <div class="obtns"><button class="btn" id="on_open">🌐 פתח דף גבייה</button>
-        <button class="btn ghost" id="on_share">📤 שלח / העתק קישור אישי</button></div></div>
-    <div class="sec"><h3>💳 חיובים ותשלומים</h3><div id="transactions"></div>
-      <div class="addrow"><input id="tx_amt" placeholder="סכום ${cur}" style="max-width:92px"><input id="tx_cat" placeholder="עבור מה"><button class="btn sm" id="tx_add">רשום חיוב</button></div>
-      <div class="hintxt">חיובים מהדף המקוון נכנסים כ"ממתין". עדכן סטטוס: אושר / סורב / נגבה, וסמן תשלומים ששולמו.</div></div>
-    ${isIZ?`<div class="sec"><h3>🤝 יששכר־זבולון — האברך שהוא מחזיק</h3><div id="partners"></div>
-      <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></div>`:''}
-    <div class="sec"><h3>💵 רישום תרומה חדשה</h3>
-      <div class="two"><label class="fld"><span>סכום (${cur})</span><input id="dn_amt" placeholder="480"></label>
-        <label class="fld"><span>אמצעי</span><select id="dn_method"><option>אשראי</option><option>אונליין</option><option>המחאה</option><option>מזומן</option><option>העברה בנקאית</option><option>Banquest</option></select></label></div>
-      <label class="fld"><span>סוג / עבור מה</span><select id="dn_cat">
-        <option value="">— בחר —</option><option>קבוע</option><option>יששכר־זבולון</option>
-        <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
-        <option value="חדר קפה" data-day="coffee">☕ חדר קפה / שתייה חמה (בחר יום)</option>
-        <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option>
-        <option value="בניין">🏗️ בניין / הקדשה</option>
-        <option value="קמפיין">🎊 קמפיין חדש (חג/מבצע)</option><option>נר למאור</option><option>חד-פעמי</option><option>אחר</option>
-        ${CAMPAIGNS.length?('<optgroup label="🎯 מגביות/ייעודים שמורים">'+CAMPAIGNS.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):''}</select></label>
-      <label class="fld" id="dn_bldg_l" style="display:none"><span>🏗️ מה תרם בבניין? (שולחן / מטר / עמוד…)</span><input id="dn_bldg" list="bldgitems" placeholder="כתוב חופשי — יישמר לתורמים הבאים"><datalist id="bldgitems">${BUILDING_ITEMS.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
-      <div id="dn_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
-        <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
-        <label class="fld"><span>שנה עברית</span><select id="dn_hy">${heYearOpts()}</select></label></div>
-      <label class="fld" id="dn_catfree_l" style="display:none"><span>שם הקטגוריה / הקמפיין</span><input id="dn_catfree" placeholder="למשל: קמפיין סוכות ${esc(HEBYEAR||'תשפ״ז')}"></label>
-      <label class="fld"><span>תאריך (לועזי)</span><input id="dn_date" type="date"></label>
-      <label class="fld"><span>🕯️ שם לתפילה (לקוויטל)</span><textarea id="dn_pray" rows="2" placeholder="למשל: יעקב בן שרה לרפואה שלמה"></textarea></label>
-      <label class="fld"><span>שייך לקוויטל</span><select id="dn_tier"><option value="">— לפי הכרטיס —</option><option value="יששכר_זבולון">יששכר־זבולון</option><option value="קוויטל_101">כל לילה</option><option value="קוויטל_שבועי">שבועי</option></select></label>
-      <button class="btn" id="dn_add">➕ רשום תרומה</button>
-      ${d.channel?`<div class="hintxt">ערוץ קבוע בתיק: ${esc(d.channel)}</div>`:''}</div>
-    <div class="sec"><h3>🗓️ ימים משובצים (פרנס / קפה / בוקר)</h3><div id="parnes"></div>
-      <div class="hintxt">שיבוץ ימים חדשים דרך "רישום תרומה" למעלה (בחר סוג עם יום), או בלוח פרנס יום.</div></div>
-    <div class="sec"><h3>🎯 התחייבויות / קמפיינים</h3><div id="pledges"></div>
-      <div class="addrow"><input id="pl_cat" placeholder="קטגוריה (למשל חגי סוכות)"><input id="pl_amt" placeholder="סכום" style="max-width:80px"><button class="btn sm" id="pl_add">הוסף</button></div></div>
-    <div class="sec dnhist"><div class="dntot"><span>סה"כ שנתרם: <b>${cur}${tot.all}</b></span><span>השנה (${GREGYEAR}): <b>${cur}${tot.year}</b></span></div>
-      <div class="dnhead">📜 היסטוריית תרומות</div><div id="donations"></div></div>`;
-  if(isIZ){renderPartners(d);document.getElementById('pa_add').onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});d.partners=d.partners||[];d.partners.push({id:r.id,avreich:n});document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};}
-  wireReconPend(d,body);
-  renderDonations(d); renderTransactions(d); renderParnesEdit(d); renderPledges(d);
-  body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
-  document.getElementById('dn_date').value=todayStr();  // ברירת מחדל: היום
-  document.getElementById('tx_add').onclick=async()=>{
-    const amt=document.getElementById('tx_amt').value.trim(),cat=document.getElementById('tx_cat').value.trim();
-    if(!amt){toast('מלא סכום');return;}
-    const r=await api('POST','/api/transaction',{donor_id:d.id,amount:amt,category:cat,method:'ידני',status:'pending',date:todayStr()});
-    d.transactions=d.transactions||[];d.transactions.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method:'ידני',status:'pending',inst_total:1,inst_paid:0,recurring:0,date:todayStr()});
-    document.getElementById('tx_amt').value='';document.getElementById('tx_cat').value='';renderTransactions(d);toast('נרשם ✓');};
-  const dlink=location.origin+'/donate?d='+d.id;
-  document.getElementById('on_open').onclick=()=>window.open(dlink+'&office=1','_blank');
-  document.getElementById('on_share').onclick=async()=>{
-    const nm=(d.last+' '+d.first).trim();const msg='תרומה לכולל חצות'+(nm?(' — '+nm):'')+':\n'+dlink;
-    try{if(navigator.share){await navigator.share({title:'תרומה לכולל חצות',text:msg,url:dlink});return;}}catch(e){}
-    try{await navigator.clipboard.writeText(dlink);toast('הקישור הועתק ✓');}catch(e){prompt('העתק את הקישור:',dlink);}
+function cardInfo(d,body){
+  // כל פרטי הקשר של התורם במקום אחד — כתובת, טלפונים, מיילים, שם לועזי והערות
+  const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
+  body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
+    <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
+    <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
+    <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
+    <div class="fld"><span>אימיילים</span><div id="emails" class="phones"></div></div>
+    <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
+      <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label></div>
+    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
+    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
+      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
+    <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
+    <label class="fld"><span>עבור מה (מטרה כללית)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
+    <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><textarea id="f_notes" rows="3" placeholder="כתוב כאן כל דבר שתרצה למצוא אחר כך בחיפוש">${esc(d.notes||'')}</textarea></label>
+    ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
+    <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
+    ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
+    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}`;
+  renderPhones(d); renderEmails(d);
+  const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes'];
+  wireFields(d,INF);
+  const sv=document.getElementById('f_saveall');
+  if(sv)sv.onclick=async()=>{
+    const body2={};
+    INF.forEach(k=>{const el=document.getElementById('f_'+k); if(el)body2[k]=el.value;});
+    await api('PUT','/api/donor/'+d.id,body2);
+    Object.assign(d,body2); toast('נשמר ✓'); if(tab==='donors')renderDonors();
   };
-  const catSel=document.getElementById('dn_cat');
-  const isBldg=c=>/בנין|בניין/.test(c||'');
-  catSel.onchange=()=>{const day=catSel.options[catSel.selectedIndex].dataset.day;document.getElementById('dn_daybox').style.display=day?'block':'none';document.getElementById('dn_catfree_l').style.display=(catSel.value==='אחר'||catSel.value==='קמפיין')?'block':'none';document.getElementById('dn_bldg_l').style.display=isBldg(catSel.value)?'block':'none';};
-  document.getElementById('dn_add').onclick=async()=>{
-    let cat=catSel.value;const wasCamp=cat==='קמפיין';if(cat==='אחר'||cat==='קמפיין')cat=document.getElementById('dn_catfree').value.trim()||cat;
-    if(wasCamp&&cat&&cat!=='קמפיין'&&!CAMPAIGNS.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
-    if(isBldg(cat)){const item=document.getElementById('dn_bldg').value.trim();if(item){if(!BUILDING_ITEMS.includes(item)){api('POST','/api/building_items',{name:item});BUILDING_ITEMS.unshift(item);}cat=cat+' — '+item;}}
-    const amt=document.getElementById('dn_amt').value.trim(),method=document.getElementById('dn_method').value,
-      date=document.getElementById('dn_date').value,pray=document.getElementById('dn_pray').value.trim(),tier=document.getElementById('dn_tier').value,
-      dayKind=catSel.options[catSel.selectedIndex].dataset.day;
-    if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
-    if(amt&&!dayKind){const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date});d.donations=d.donations||[];d.donations.unshift({id:r.id,donor_id:d.id,amount:amt,category:cat,method,date,hmonth:r.hmonth});}
-    if(dayKind){const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,hy=document.getElementById('dn_hy').value,dtext=heDay(hd)+" "+hm;const r=await api('POST','/api/parnes',{donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||'',amount:amt,kind:dayKind,hyear:hy});d.parnes=d.parnes||[];d.parnes.push({id:r.id,donor_id:d.id,day:hd,month:hm,date_text:dtext,dedication:pray||'',amount:amt,kind:dayKind,hyear:hy});if(r.suggestions&&r.suggestions.length){d.parnes.push(...r.suggestions);toast('נוספו '+r.suggestions.length+' הצעות לשנים הבאות 🔵');}}
-    // שם לתפילה יוצר קוויטל רק כשזו תרומה רגילה (לא יום פרנס) — בפרנס השם נשמר בהקדשת התעודה בלבד
-    if(pray&&!dayKind){const tr=tier||d.tier||'';const r=await api('POST','/api/prayer',{donor_id:d.id,text:pray,tier:tr});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:pray,tier:tr});}
-    document.getElementById('dn_amt').value='';document.getElementById('dn_pray').value='';const _bl=document.getElementById('dn_bldg');if(_bl)_bl.value='';
-    renderDonations(d);renderParnesEdit(d);toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));};
-  document.getElementById('pl_add').onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();if(!cat)return;const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם'});d.pledges=d.pledges||[];d.pledges.push({id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם'});document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';renderPledges(d);toast('נוסף ✓');};
+  const nl=body.querySelector('.notelink');
+  if(nl)nl.onclick=e=>{e.preventDefault();ov.classList.remove('show');
+    q=(String(d.notes||'').split(/[·\n]/)[0]||'').trim().slice(0,30);
+    const si=document.getElementById('q'); if(si)si.value=q;
+    try{localStorage.removeItem('kc_donor');}catch(err){}
+    tab='donors';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='donors'));
+    flt=''; render();};
 }
 function cardContact(d,body){
   body.innerHTML=`
@@ -1554,6 +1584,7 @@ function giveNote(x){
   return GVNOISE.test(t)?'':t;
 }
 // רשימת הייעודים לבחירה — הקבועים שלנו + כל המגביות, ואפשרות להוסיף חדש בלי לצאת מהשורה
+const DNMETH=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','זל','קפיטל 1','בנק ווסט','אוטורייז','דונרס פאנד','OJC','נדרים'];
 const DNBASE=['קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','בניין','מזדמן','חד-פעמי'];
 function dnCatList(){return DNBASE.concat((CAMPAIGNS||[]).filter(c=>c&&!DNBASE.includes(c)));}
 function dnCatOpts(cur){
@@ -1727,7 +1758,7 @@ function renderCharges(){
       <div class="misshead" style="color:var(--yes)">🟢 נגבה ועדיין לא הוכנס לכרטיס (${under.length}) — סה"כ $${Math.round(sum(under)).toLocaleString()}</div>
       <div class="hintxt" style="margin:0 2px 4px">ברובו פשוט חיובים שעוד לא אישרת בדף החיובים.</div>
       <div class="list">${under.map(row).join('')}</div>`;
-    box.querySelectorAll('.auditrow').forEach(el=>el.onclick=()=>openDonor(DB.find(x=>x.id==el.dataset.id),'donations'));
+    box.querySelectorAll('.auditrow').forEach(el=>el.onclick=()=>openDonor(DB.find(x=>x.id==el.dataset.id),'details'));
   };
   // משבצת נפרדת לכל שיטת תשלום — נטענת מסיכום ההתאמה
   api('GET','/api/recon/summary').then(gs=>{const box=document.getElementById('reconboxes');if(!box||!Array.isArray(gs))return;
