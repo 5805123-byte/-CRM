@@ -141,7 +141,15 @@
   .giverow{display:flex;gap:10px;align-items:baseline;padding:4px 0;border-top:1px solid var(--line)}
   .giverow:first-of-type{border-top:none}
   .giveamt{font-weight:800;color:var(--yes);min-width:64px}
-  .givewhat{flex:1}.givewhat small{color:var(--muted)}
+  .givewhat{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:5px}.givewhat small{color:var(--muted)}
+  /* שורת תרומה: סכום · עבור מה (בחירה) · תאריך · דרך מה נתרם */
+  .givewhat select.gvcatsel,.givewhat input.gvcatnew{font-family:inherit;font-size:.82rem;font-weight:700;
+    padding:3px 6px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--accent);
+    flex:0 1 auto;width:auto;max-width:47%;min-width:104px}
+  .givewhat select.gvcatsel.need{border-color:var(--no);color:var(--no);background:#fff8f8}
+  .givewhat input.gvcatnew{color:var(--ink);font-weight:500}
+  .givedate{color:var(--muted);font-size:.8rem;white-space:nowrap}
+  .givesub{flex-basis:100%;color:var(--muted);font-size:.78rem;margin-top:1px}
   .pstat{display:inline-block;font-size:.72rem;font-weight:800;border-radius:7px;padding:1px 7px;white-space:nowrap}
   .pstat.no{background:#fdeee9;color:var(--no)}.pstat.yes{background:#eaf6ee;color:var(--yes)}
   .collectbtn{display:inline-block;margin-inline-start:6px;font-size:.72rem;font-weight:800;border-radius:7px;padding:3px 9px;border:1px solid;cursor:pointer;font-family:inherit}
