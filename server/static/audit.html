@@ -61,6 +61,7 @@
 דפי החיובים: <a class="lnk" href="/reconcile?src=banquest">💳 בנק ווסט</a> ·
 <a class="lnk" href="/reconcile?src=authorize">💳 אוטרייז</a> ·
 <a class="lnk" href="/reconcile">💳 הכל ביחד</a></div>
+<div style="margin:0 0 10px"><button id="autolink" style="width:100%;padding:11px;border:1px dashed var(--yes);background:#fff;color:var(--yes);border-radius:10px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer">🔗 שייך אוטומטית — לפי מייל, טלפון ותעתיק השם לעברית</button><div id="alout" class="sub" style="margin:5px 2px 0"></div></div>
 <div class="tabs"><button class="tb on" data-t="charges">🔎 אימות חיובים</button><button class="tb" data-t="unknown">❓ תורמים שלא מוכרים לנו</button></div>
 <div id="head"></div>
 <div id="out"></div>
@@ -207,6 +208,21 @@ async function loadTab(){
 document.querySelectorAll('.tb').forEach(b=>b.onclick=()=>{
   TAB=b.dataset.t; document.querySelectorAll('.tb').forEach(x=>x.classList.toggle('on',x===b)); loadTab();});
 loadTab();
+
+// שיוך אוטומטי של חיובים שנשארו בלי כרטיס — אותו היגיון שרץ בעליית השרת
+(function(){
+  const b=document.getElementById('autolink'), o=document.getElementById('alout');
+  if(!b)return;
+  b.onclick=async()=>{
+    b.disabled=true; const t0=b.textContent; b.textContent='משייך…';
+    let r=null; try{ r=await api('POST','/api/audit/autolink',{}); }catch(e){}
+    b.disabled=false; b.textContent=t0;
+    if(!r||!r.ok){ o.textContent='❌ ' + ((r&&(r.detail||r.error))||'שגיאה'); return; }
+    o.innerHTML = r.linked ? ('✅ שויכו '+r.linked+' חיובים · נשארו '+r.left+' לבדיקה ידנית')
+                           : ('אין מה לשייך אוטומטית — נשארו '+r.left+' לבדיקה ידנית');
+    if(r.linked) load();
+  };
+})();
 </script>
 </body>
 </html>

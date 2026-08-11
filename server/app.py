@@ -2176,6 +2176,24 @@ def ensure_schema():
     except Exception as e:
         print('  klock capital1 error:', e)
 
+    # קאסנדרה לקומב — תורמת אמיתית שאין לה עדיין כרטיס. נפתח כדי שהחיובים ייכנסו אליה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lacombe_card_v1'").fetchone():
+            have = [r['id'] for r in con.execute("SELECT id,last,english FROM donors")
+                    if _fz(r['last'] or '') == _fz('לקומב')
+                    or 'lacombe' in (r['english'] or '').lower()]
+            if not have:
+                con.execute("INSERT INTO donors(last,first,english,category,created,source) "
+                            "VALUES('לאקומב','קאסנדרה','Cassandra Lacombe','מזדמן',?,'אוטורייז')",
+                            (today_iso(),))
+                print('  קאסנדרה לקומב: נפתח כרטיס')
+            elif len(have) == 1:      # קיים כרטיס — נשלים לו את השם הלועזי לזיהוי החיובים
+                con.execute("UPDATE donors SET english='Cassandra Lacombe' WHERE id=? "
+                            "AND TRIM(COALESCE(english,''))=''", (have[0],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('lacombe_card_v1')")
+    except Exception as e:
+        print('  lacombe card error:', e)
+
     # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
     # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
     for _flag, _link in (
@@ -2196,6 +2214,11 @@ def ensure_schema():
         }),
         ('card_name_link_v4', {
             'bespoke mittman':          ('מיטמן', 'מאיר'),
+        }),
+        ('card_name_link_v5', {
+            'fransis frechter':         ('פרכטר', 'פייגא לאה'),
+            'y.y levi':                 ('לעווי', 'יוסף יהושע'),
+            'cassandra lacombe':        ('לקומב', 'קאסנדרה'),
         }),
     ):
         try:
@@ -2237,6 +2260,25 @@ def ensure_schema():
                      _r['filled']['email'], _r['kvittel'], _r['notes'], _r['unmatched_total']))
     except Exception as e:
         print('  contacts seed error:', e)
+
+    # שיוך אוטומטי של חיובים שנשארו בלי כרטיס — מייל, טלפון, ותעתיק השם לעברית
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_autolink_v1'").fetchone():
+            n = link_by_identity(con)
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_autolink_v1')")
+            print('  חיובים ששויכו לפי מייל/טלפון/תעתיק: %d' % n)
+    except Exception as e:
+        print('  recon autolink error:', e)
+
+    # שורה שנרשמה בעבר עם חודש בלבד, ולצידה אותו סכום עם תאריך מדויק — אותו כסף פעמיים.
+    # שומרים את זו שיש לה תאריך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='month_only_dedup_v1'").fetchone():
+            n = con.execute("DELETE FROM donations WHERE id IN (SELECT s.id FROM donations s JOIN donations r ON r.donor_id=s.donor_id AND length(r.date)=10 AND substr(r.date,1,7)=s.date AND ROUND(CAST(r.amount AS REAL),2)=ROUND(CAST(s.amount AS REAL),2) WHERE length(COALESCE(s.date,''))=7)").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('month_only_dedup_v1')")
+            print('  שורות חודש-בלבד שהוחלפו בתאריך מדויק: %d' % n)
+    except Exception as e:
+        print('  month only dedup error:', e)
 
     # שורות שנשארו תלויות בכרטיס שנמחק — כסף רפאים שנספר בסיכומים בלי שאף אחד רואה אותו.
     # רץ בכל עליית שרת, כי מיזוג או מחיקה יכולים ליצור אותן מחדש.
@@ -3017,14 +3059,87 @@ def merge_into(con, keep, drop):
     return moved
 
 
+def link_by_identity(con):
+    """משייך חיובים שנשארו בלי כרטיס — לפי מייל, לפי טלפון, ולבסוף לפי תעתיק השם
+    הלועזי לעברית. רק התאמה יחידה וברורה מתקבלת; כל השאר נשאר לאישור ידני."""
+    try:
+        import gmail_intake as _gi
+    except Exception:
+        _gi = None
+    donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone FROM donors")]
+    bye, byp, byfz = {}, {}, {}
+    for d in donors:
+        for e in emails_of(d['email']):
+            bye.setdefault(e.lower(), set()).add(d['id'])
+        for ph in re.split(r'[;,/]+', d['phone'] or ''):
+            k = _ph10(ph)
+            if k:
+                byp.setdefault(k, set()).add(d['id'])
+        byfz.setdefault((_fz(d['last'] or ''), _fz(d['first'] or '')), set()).add(d['id'])
+    found = {}
+    for r in con.execute("SELECT tid,first,last,email,phone FROM recon "
+                         "WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled' "
+                         "AND donor_id IS NULL"):
+        ids = bye.get((r['email'] or '').strip().lower())
+        if not ids or len(ids) != 1:
+            ids = byp.get(_ph10(r['phone']))
+        if (not ids or len(ids) != 1) and _gi:
+            ln, fn = (r['last'] or '').strip(), (r['first'] or '').strip()
+            if len(re.sub(r'[^A-Za-z]', '', ln)) >= 4 and len(re.sub(r'[^A-Za-z]', '', fn)) >= 2:
+                ids = byfz.get((_fz(_gi._he_name(ln)), _fz(_gi._he_name(fn))))
+        if ids and len(ids) == 1:
+            found[r['tid']] = list(ids)[0]
+    if not found:
+        return 0
+    dinfo = {r['id']: ((r['category'] or ''), (r['tier'] or ''))
+             for r in con.execute("SELECT id,category,tier FROM donors")}
+    ins = 0
+    for r in list(con.execute("SELECT tid,first,last,amount,date,source FROM recon "
+                              "WHERE COALESCE(processed,0)=0 AND donor_id IS NULL")):
+        did = found.get(r['tid'])
+        if not did:
+            continue
+        a = round(float(str(r['amount']).replace(',', '') or 0), 2)
+        diso = _recon_iso(r['date'])
+        meth = 'Banquest' if 'Banquest' in (r['source'] or '') else 'Authorize'
+        con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
+        if not diso or con.execute(
+                "SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method=? "
+                "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, meth, a)).fetchone():
+            con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+            continue
+        old = con.execute("SELECT id,category FROM donations WHERE donor_id=? AND date=? "
+                          "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).fetchone()
+        cat, tier = dinfo.get(did, ('', ''))
+        if old:
+            con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
+        cat = (old['category'] if old and old['category'] else '') \
+            or ('יששכר־זבולון' if 'יששכר' in tier else (cat or 'מזדמן'))
+        note = ('ייבוא ' + ('בנק ווסט' if meth == 'Banquest' else 'אוטורייז')
+                + ' · על שם ' + ((r['first'] or '') + ' ' + (r['last'] or '')).strip())
+        if not (old and old['category']):
+            note += ' · לא סווג — לבדוק עבור מה'
+        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                    "VALUES(?,?,?,?,?,?,1)", (did, diso, a, cat, meth, note))
+        con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
+        ins += 1
+    return ins
+
+
 def link_card_names(con, link):
     """משייך חיובים שנשארו בלי כרטיס, לפי טבלת 'השם על האשראי → השם בכרטיס'.
     מכניס את התשלום עם התאריך האמיתי, ומסמן את שורת החיוב כטופלה."""
+    donors = [dict(r) for r in con.execute("SELECT id,last,first,english FROM donors")]
     ids = {}
     for k, (hl, hf) in link.items():
-        r = con.execute("SELECT id FROM donors WHERE last=? AND first=?", (hl, hf)).fetchone()
-        if r:
-            ids[k] = r['id']
+        hit = [d for d in donors if d['last'] == hl and (d['first'] or '') == hf]
+        if not hit:      # איות שונה בעברית (לקומב / לאקומב) — השוואה לפי צליל
+            hit = [d for d in donors if _fz(d['last'] or '') == _fz(hl)
+                   and _fz(d['first'] or '') == _fz(hf)]
+        if not hit:      # ואם עדיין לא — לפי השם הלועזי כפי שהוא על החיוב
+            hit = [d for d in donors if (d['english'] or '').strip().lower() == k]
+        if len({d['id'] for d in hit}) == 1:
+            ids[k] = hit[0]['id']
     if not ids:
         return 0
     dinfo = {r['id']: ((r['category'] or ''), (r['tier'] or ''))
@@ -3052,11 +3167,18 @@ def link_card_names(con, link):
                 "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, meth, a)).fetchone():
             con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
             continue
+        # שורה שנרשמה בעבר עם חודש בלבד — מוחלפת בתשלום עם התאריך המדויק
+        old = con.execute("SELECT id,category FROM donations WHERE donor_id=? AND date=? "
+                          "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).fetchone()
         cat, tier = dinfo.get(did, ('', ''))
-        cat = rules.get((did, a)) or ('יששכר־זבולון' if 'יששכר' in tier else (cat or 'מזדמן'))
+        if old:
+            con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
+            cat = old['category'] or cat
+        cat = rules.get((did, a)) or (old['category'] if old and old['category'] else '') \
+            or ('יששכר־זבולון' if 'יששכר' in tier else (cat or 'מזדמן'))
         note = ('ייבוא ' + ('בנק ווסט' if meth == 'Banquest' else 'אוטורייז')
                 + ' · על שם ' + ((r['first'] or '') + ' ' + (r['last'] or '')).strip())
-        if not rules.get((did, a)):
+        if not rules.get((did, a)) and not (old and old['category']):
             note += ' · לא סווג — לבדוק עבור מה'
         con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
                     "VALUES(?,?,?,?,?,?,1)", (did, diso, a, cat, meth, note))
@@ -4458,6 +4580,18 @@ class H(BaseHTTPRequestHandler):
             code, res = recon_apply(cur, m.group(1), b)
             con.commit(); con.close()
             return self._send(code, res)
+        if self.path == '/api/audit/autolink':
+            # שיוך אוטומטי של חיובים שנשארו בלי כרטיס — אפשר להריץ שוב אחרי כל ייבוא חדש
+            con = db()
+            try:
+                n = link_by_identity(con)
+                con.commit()
+                left = con.execute("SELECT COUNT(*) FROM recon WHERE COALESCE(processed,0)=0 "
+                                   "AND COALESCE(status,'settled')='settled' "
+                                   "AND donor_id IS NULL").fetchone()[0]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'linked': n, 'left': left})
         if self.path == '/api/addr/reject':
             # "לא מתאים" — ההצעה הזו לא תוצע שוב לתורם הזה
             did = b.get('donor_id'); addr = (b.get('addr') or '').strip()
