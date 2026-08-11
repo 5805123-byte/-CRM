@@ -3776,6 +3776,26 @@ class H(BaseHTTPRequestHandler):
                     stt['running'] = False; stt['done'] = True
             threading.Thread(target=_runpp, daemon=True).start()
             return self._send(200, {'ok': True, 'started': True})
+        if self.path == '/api/contacts/csv':   # קובץ אנשי קשר של גוגל — השלמת כתובות ממנו
+            try:
+                import gcontacts
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            txt = b.get('text') or ''
+            if len(txt) < 20:
+                return self._send(200, {'ok': False, 'error': 'empty'})
+            try:
+                cards = gcontacts.parse_csv(txt)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'parse', 'detail': str(e)})
+            if not cards:
+                return self._send(200, {'ok': False, 'error': 'no_contacts'})
+            con = db()
+            try:
+                res = contacts_fill(con, cards)
+            finally:
+                con.close()
+            return self._send(200, res)
         if self.path == '/api/contacts/pull':   # משיכת אנשי הקשר מגוגל והשלמת כתובות — ברקע
             try:
                 import gcontacts, threading

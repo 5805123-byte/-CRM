@@ -539,6 +539,32 @@ async function pullGContacts(btn){
   btn.disabled=false;btn.textContent=lbl;
   say('המשיכה עדיין רצה ברקע — בדוק שוב בעוד רגע.');
 }
+// קובץ אנשי קשר של גוגל — נקרא כאן ונשלח לשרת להשלמת שדות ריקים בלבד
+async function uploadContactsCsv(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return;
+  const out=document.getElementById('gcout'), lbl=document.getElementById('gccsvbtn');
+  const say=h=>{if(out)out.innerHTML=h;};
+  const t0=lbl?lbl.firstChild.nodeValue:'';
+  if(lbl)lbl.firstChild.nodeValue='קורא את הקובץ…';
+  let text='';
+  try{ text=await f.text(); }catch(e){ say('❌ לא הצלחתי לקרוא את הקובץ'); if(lbl)lbl.firstChild.nodeValue=t0; return; }
+  inp.value='';
+  if(lbl)lbl.firstChild.nodeValue='משלים כתובות…';
+  let r=null;
+  try{ r=await api('POST','/api/contacts/csv',{text}); }catch(e){ r=null; }
+  if(lbl)lbl.firstChild.nodeValue=t0;
+  if(!r||!r.ok){
+    const why={empty:'הקובץ ריק',no_contacts:'לא נמצאו אנשי קשר בקובץ',
+               parse:'לא הצלחתי לפרק את הקובץ'}[r&&r.error]||((r&&(r.detail||r.error))||'שגיאה');
+    say('❌ '+esc(why)+'<br>ודא שייצאת מ-contacts.google.com בפורמט <b>Google CSV</b>.');
+    return;
+  }
+  const fl=r.filled||{};
+  say(`✅ נקראו ${r.cards||0} אנשי קשר · עודכנו ${r.donors||0} כרטיסים —
+    ${fl.addr||0} כתובות, ${fl.phone||0} טלפונים, ${fl.email||0} מיילים.
+    ${r.unmatched_total?('<br>⚠️ '+r.unmatched_total+' אנשי קשר עם כתובת שלא שויכו לתורם.'):''}`);
+  NOADDR=null; await load(); render();
+}
 // מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס
 let NOADDR=null;
 async function renderNoAddr(){
@@ -562,11 +588,14 @@ async function renderNoAddr(){
   view.innerHTML=`<button class="btn ghost" id="nback" style="width:100%;margin-bottom:8px">⬅ חזרה לרשימת התורמים</button>
     <div class="rbtitle">🏠 תורמים בלי כתובת — ${NOADDR.count||0}</div>
     <button class="btn" id="gcpull" style="width:100%;background:#1a73e8;border-color:#1a73e8;margin-bottom:6px">📇 משוך אנשי קשר מגוגל והשלם כתובות</button>
+    <label class="btn" id="gccsvbtn" style="width:100%;background:var(--yes);border-color:var(--yes);margin-bottom:6px;display:block;text-align:center;cursor:pointer">📄 העלה קובץ אנשי קשר (Google CSV)
+      <input type="file" id="gccsv" accept=".csv,text/csv" hidden></label>
     <div id="gcout" class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש לי הצעה מוכנה מייצוא אנשי הקשר או מכתובת החיוב. לשאר אין כתובת באף קובץ שקיבלתי — לחץ על הכפתור כדי למשוך ישירות מאנשי הקשר בגוגל.</div>
     ${withS.length?`<div class="misshead">💡 יש הצעה — ${withS.length}</div>${withS.map(card).join('')}`:''}
     ${without.length?`<div class="misshead">אין שום נתון — ${without.length}</div>${without.map(card).join('')}`:''}`;
   document.getElementById('nback').onclick=()=>{flt='';render();};
   const gp=document.getElementById('gcpull'); if(gp)gp.onclick=()=>pullGContacts(gp);
+  const gc=document.getElementById('gccsv'); if(gc)gc.onchange=()=>uploadContactsCsv(gc);
   view.querySelectorAll('.nago').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.id);if(d)openDonor(d);});
   view.querySelectorAll('.nanot').forEach(b=>b.onclick=async()=>{
     const p=(NOADDR.people||[]).find(x=>x.id==b.dataset.id); if(!p)return;

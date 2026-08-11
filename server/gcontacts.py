@@ -88,6 +88,61 @@ def parse_vcard(text):
     return out
 
 
+_ADDR_ORDER = ['Street', 'Extended Address', 'PO Box', 'City', 'Region', 'Postal Code', 'Country']
+
+
+def parse_csv(text):
+    """מפרק קובץ אנשי קשר של גוגל (Google CSV). תומך גם בייצוא הישן וגם בחדש —
+    שמות העמודות מזוהים לפי דפוס, לא לפי מיקום."""
+    import csv, io as _io
+    text = (text or '').lstrip('﻿')
+    rows = list(csv.DictReader(_io.StringIO(text)))
+    if not rows:
+        return []
+    cols = [c for c in (rows[0].keys() or []) if c]
+    mail_c = sorted(c for c in cols if re.match(r'^E-?mail \d+ - Value$', c, re.I))
+    ph_c = sorted(c for c in cols if re.match(r'^Phone \d+ - Value$', c, re.I))
+    fmt_c = sorted(c for c in cols if re.match(r'^Address \d+ - Formatted$', c, re.I))
+    parts = {}
+    for c in cols:
+        m = re.match(r'^Address (\d+) - (.+)$', c, re.I)
+        if m and m.group(2).strip().lower() not in ('formatted', 'type', 'label'):
+            parts.setdefault(m.group(1), {})[m.group(2).strip()] = c
+
+    def g(r, c):
+        return (r.get(c) or '').strip() if c else ''
+    out = []
+    for r in rows:
+        first = g(r, 'Given Name') or g(r, 'First Name')
+        last = g(r, 'Family Name') or g(r, 'Last Name')
+        name = g(r, 'Name') or (first + ' ' + last).strip()
+        c = {'name': name, 'first': first, 'last': last,
+             'org': g(r, 'Organization 1 - Name') or g(r, 'Organization Name'),
+             'note': g(r, 'Notes'), 'emails': [], 'phones': [], 'addrs': []}
+        for col in mail_c:
+            for v in re.split(r'\s*:::\s*', g(r, col)):
+                v = v.strip().lower()
+                if '@' in v and v not in c['emails']:
+                    c['emails'].append(v)
+        for col in ph_c:
+            for v in re.split(r'\s*:::\s*', g(r, col)):
+                v = v.strip()
+                if v and v not in c['phones']:
+                    c['phones'].append(v)
+        for col in fmt_c:
+            v = re.sub(r'\s*\n\s*', ', ', g(r, col)).strip(' ,')
+            if v and v not in c['addrs']:
+                c['addrs'].append(v)
+        for idx in sorted(parts):
+            vals = [g(r, parts[idx].get(k)) for k in _ADDR_ORDER if parts[idx].get(k)]
+            v = re.sub(r'\s{2,}', ' ', ', '.join(x for x in vals if x)).strip(' ,')
+            if v and v not in c['addrs']:
+                c['addrs'].append(v)
+        if c['name'] or c['emails'] or c['phones']:
+            out.append(c)
+    return out
+
+
 def fetch(status=None):
     """מחזיר את כל אנשי הקשר בחשבון. מרים חריגה עם הסבר בעברית אם ההתחברות נכשלה."""
     st = status if status is not None else {}
@@ -96,13 +151,15 @@ def fetch(status=None):
         raise RuntimeError('המייל לא מוגדר בשרת')
     path = BASE % urllib.parse.quote(user)
     code, data = _req('REPORT', path, _QUERY)
-    if code in (401, 403):
-        raise RuntimeError('גוגל דחתה את ההתחברות לאנשי הקשר (%d). '
-                           'סיסמת האפליקציה תקפה למייל אבל לא לאנשי הקשר.' % code)
-    if code == 404:
-        raise RuntimeError('לא נמצא פנקס אנשי קשר בחשבון %s' % user)
     if code >= 300:
-        raise RuntimeError('גוגל החזירה שגיאה %d' % code)
+        why = re.sub(r'<[^>]+>|\s+', ' ', (data or b'').decode('utf-8', 'replace'))[:160].strip()
+        if code in (400, 401, 403):
+            raise RuntimeError('גוגל לא מאפשרת גישה לאנשי הקשר עם סיסמת אפליקציה (%d). '
+                               'העלה קובץ CSV מאנשי הקשר ואמלא ממנו.%s'
+                               % (code, (' [' + why + ']') if why else ''))
+        if code == 404:
+            raise RuntimeError('לא נמצא פנקס אנשי קשר בחשבון %s' % user)
+        raise RuntimeError('גוגל החזירה שגיאה %d %s' % (code, why))
     try:
         root = ET.fromstring(data)
     except Exception as e:
