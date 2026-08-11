@@ -736,18 +736,20 @@ function cardDetails(d,body){
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה</div>${gitems.map(g=>{
     const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
     const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
-    const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="פירוט / כלל קבוע">✏️</button>`:'';
+    const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
+    // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
-      <div class="addrow"><input class="gvnote" placeholder="פירוט (למשל: שלושה אברכים ביחד)" value="${esc(g.ded)}">
+      <div class="gvlbl">עבור מה ${curd}${g.amt} האלה?</div>
+      <div class="addrow"><select class="gvcatsel" data-did="${g.did}">${dnCatOpts(g.cat)}</select></div>
+      <div class="addrow gvnewrow hidden" style="margin-top:5px">
+        <input class="gvcatnew" data-did="${g.did}" placeholder="שם הייעוד החדש">
+        <button class="btn sm gvcatok" data-did="${g.did}">➕ הוסף</button></div>
+      <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: סעודת ראש חודש)" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
       <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label></div>`:'';
-    // בכל תרומה: סכום · עבור מה · תאריך · דרך מה נתרם. הבורר נפתח רק בלחיצה על הייעוד.
+    // בכל תרומה: סכום · עבור מה · תאריך · דרך מה נתרם. לחיצה על הייעוד פותחת את החלון.
     const what=g.don
-      ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>
-         <span class="gvcatbox hidden" data-box="${g.did}">
-           <select class="gvcatsel" data-did="${g.did}">${dnCatOpts(g.cat)}</select>
-           <input class="gvcatnew hidden" data-did="${g.did}" placeholder="שם הייעוד החדש">
-           <button class="btn sm gvcatok hidden" data-did="${g.did}">הוסף</button></span>`
+      ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
       : esc(g.what);
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}`
@@ -839,22 +841,19 @@ function cardDetails(d,body){
     cardDetails(d,body); if(tab==='donors')renderDonors();
     toast(cat?('נרשם: '+cat+' ✓'):'הייעוד נוקה');
   };
-  body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>{
-    const box=body.querySelector('.gvcatbox[data-box="'+b.dataset.did+'"]');
-    if(!box)return; box.classList.remove('hidden'); b.classList.add('hidden');
-    const s=box.querySelector('select'); if(s&&s.showPicker)try{s.showPicker();}catch(e){}
-  });
+  const gvOpen=did=>{const p=body.querySelector('.gvpanel[data-pan="'+did+'"]');if(p)p.classList.toggle('hidden');};
+  body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>gvOpen(b.dataset.did));
   body.querySelectorAll('.gvcatsel').forEach(s=>s.onchange=()=>{
-    const row=s.closest('.givewhat');
+    const pan=s.closest('.gvpanel');
     if(s.value==='__new__'){
-      const inp=row.querySelector('.gvcatnew');
-      inp.classList.remove('hidden'); row.querySelector('.gvcatok').classList.remove('hidden'); inp.focus();
+      pan.querySelector('.gvnewrow').classList.remove('hidden');
+      pan.querySelector('.gvcatnew').focus();
       return;
     }
     saveGvCat(s.dataset.did,s.value);
   });
   body.querySelectorAll('.gvcatok').forEach(b=>b.onclick=async()=>{
-    const row=b.closest('.givewhat'), inp=row.querySelector('.gvcatnew'), nm=inp.value.trim();
+    const pan=b.closest('.gvpanel'), inp=pan.querySelector('.gvcatnew'), nm=inp.value.trim();
     if(nm.length<2){toast('כתוב את שם הייעוד');inp.focus();return;}
     b.disabled=true;
     await api('POST','/api/campaigns',{name:nm});
@@ -862,7 +861,7 @@ function cardDetails(d,body){
     await saveGvCat(b.dataset.did,nm);
   });
   body.querySelectorAll('.gvcatnew').forEach(i=>i.onkeydown=e=>{
-    if(e.key==='Enter'){e.preventDefault();i.closest('.givewhat').querySelector('.gvcatok').click();}});
+    if(e.key==='Enter'){e.preventDefault();i.closest('.gvpanel').querySelector('.gvcatok').click();}});
   body.querySelectorAll('.gvsave').forEach(b=>b.onclick=async()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(!p)return;
     const sel=body.querySelector('.gvcatsel[data-did="'+b.dataset.did+'"]');
@@ -1334,8 +1333,9 @@ function dnNote(x){
 }
 // במסך הראשי משאירים רק הערה אמיתית (מי תרם בשמו, דרך מי) — לא מספרי אסמכתא ולא שמות דוחות
 const GVNOISE=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|קבוע|מזדמן)$/;
+const GVDROP=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|אסמכתא .*)$/;
 function giveNote(x){
-  let t=dnNoteText(x).replace(/\s*·?\s*אסמכתא\s+\S+/g,'');
+  let t=dnNoteText(x).split('·').map(s=>s.trim()).filter(s=>s&&!GVDROP.test(s)).join(' · ');
   t=t.replace(/^[\s·]+|[\s·]+$/g,'').trim();
   if(t===String(x.category||'').trim())return '';   // חוזר על הייעוד שכבר מוצג בבורר
   return GVNOISE.test(t)?'':t;

@@ -151,7 +151,7 @@
   .gvcatbtn{font-family:inherit;font-size:.83rem;font-weight:800;color:var(--accent);background:none;
     border:none;border-bottom:1px dashed var(--line);padding:1px 2px;cursor:pointer;text-align:right}
   .gvcatbtn.need{color:var(--no);border-bottom-color:var(--no)}
-  .gvcatbox{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+  .gvlbl{font-weight:800;font-size:.82rem;color:var(--accent);margin-bottom:5px}
   .catmgrlist{max-height:52vh;overflow:auto}
   .catmgrrow{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line)}
   .catmgrgo{flex:1;text-align:right;font-family:inherit;font-size:.88rem;font-weight:800;color:var(--accent);
@@ -434,8 +434,9 @@
   .gvedit:hover{color:var(--accent)}
   .gvpanel{width:100%;margin-top:6px;background:#f6f3ff;border:1px solid #cfc3f0;border-radius:9px;padding:8px}
   .gvpanel.hidden{display:none}
-  .gvpanel .gvcat,.gvpanel .gvnote{flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;
-    font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink)}
+  .gvpanel .gvcatsel,.gvpanel .gvnote,.gvpanel .gvcatnew{flex:1;padding:7px 9px;border:1px solid var(--line);
+    border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink);min-width:0;max-width:none}
+  .gvpanel .gvcatsel{font-weight:800;color:var(--accent)}
   .gvall{display:flex;align-items:center;gap:6px;font-size:.76rem;font-weight:700;color:var(--accent);margin-top:6px;cursor:pointer}
   .unclbox .uline{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0}
   .unclbox .uline .unci{min-width:170px}
