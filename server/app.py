@@ -1882,6 +1882,47 @@ def ensure_schema():
     except Exception as e:
         print('  werzberger error:', e)
 
+    # שלושה תורמים חדשים מרשימת קמחא דפסחא תשפ"ו, ומחיקת השורה שאיש לא מזהה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='newdonors_kd_v1'").fetchone():
+            KD = 'קמחא דפסחא תשפ"ו'
+            NEW = {   # שם בדוח → (שם משפחה, שם פרטי, לועזי, הערה)
+                'Dworkin': ('דבורקין', 'מאיר', 'Meir Dworkin', 'הגיע דרך יצחק שטטפלד'),
+                'Goldberger': ('גולדברגר', '', 'A. Goldberger', 'הגיע דרך אבא קלוק'),
+                'Rosenfeld': ('רוזנפלד', 'דוד', 'David Rosenfeld', 'חתן של חיים ולאה אסתר לאקס'),
+            }
+            con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (KD, today_iso()))
+            made = 0
+            for r in list(con.execute("SELECT tid,first,last,amount,date,source FROM recon "
+                                      "WHERE tid LIKE 'chk26-%' AND COALESCE(processed,0)=0")):
+                key = (r['last'] or '').strip()
+                if key == 'Azaroh':          # לא מזוהה, ולפי בקשת מאיר לא נכנס לשום רשימה
+                    con.execute("DELETE FROM recon WHERE tid=?", (r['tid'],))
+                    continue
+                if key not in NEW:
+                    continue
+                he_last, he_first, en, note = NEW[key]
+                row = con.execute("SELECT id FROM donors WHERE last=? AND COALESCE(first,'')=?",
+                                  (he_last, he_first)).fetchone()
+                did = row['id'] if row else con.execute(
+                    "INSERT INTO donors(last,first,english,category,notes,created,source) "
+                    "VALUES(?,?,?,'מזדמן',?,?,?)",
+                    (he_last, he_first, en, note, today_iso(), 'קמחא דפסחא תשפ"ו')).lastrowid
+                if not row:
+                    made += 1
+                meth = 'OJC' if 'OJC' in (r['source'] or '') else 'דונרס'
+                a = round(float(r['amount'] or 0), 2)
+                if not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method=? "
+                                   "AND ROUND(CAST(amount AS REAL),2)=?", (did, r['date'], meth, a)).fetchone():
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,?,?,?,?,1)", (did, r['date'], a, KD, meth, note))
+                con.execute("UPDATE recon SET donor_id=?, processed=1, category=? WHERE tid=?",
+                            (did, KD, r['tid']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('newdonors_kd_v1')")
+            print('  תורמי קמחא דפסחא חדשים: נפתחו %d כרטיסים' % made)
+    except Exception as e:
+        print('  new kd donors error:', e)
+
     # ניקוי כפילויות בקוויטל — שמות שנוספו פעמיים כשצורפו שמות מהאתר יותר מפעם אחת
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='kvittel_dedup_v1'").fetchone():
