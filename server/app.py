@@ -122,6 +122,9 @@ def ensure_schema():
     # חוב יש"ז שמאיר מעדכן ידנית — גובר על החישוב האוטומטי מהתרומות
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_debt TEXT")
     except Exception: pass
+    # התחייבות חוזרת מדי חודש (למשל נר למאור) — להבדיל מהתחייבות חד־פעמית
+    try: con.execute("ALTER TABLE pledges ADD COLUMN monthly INTEGER DEFAULT 0")
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
@@ -2339,6 +2342,28 @@ def ensure_schema():
     except Exception as e:
         print('  stern iz error:', e)
 
+    # התחייבות חודשית של $1,200 לנר למאור — מיטמן אפרים, מילר שמחה, פערל שלמה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='ner_lemaor_1200_v1'").fetchone():
+            n = 0
+            for last, first in (('מיטמן', 'אפרים'), ('מילר', 'שמחה'), ('פערל', 'שלמה')):
+                r = con.execute("SELECT id FROM donors WHERE last LIKE ? AND first LIKE ?",
+                                ('%' + last + '%', '%' + first + '%')).fetchone()
+                if not r:
+                    continue
+                ex = con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND TRIM(category)='נר למאור'",
+                                 (r['id'],)).fetchone()
+                if ex:
+                    continue
+                con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly) "
+                            "VALUES(?,'נר למאור','1200','נתן',?,'התחייבות חודשית — בנק ווסט',1)",
+                            (r['id'], today_iso()))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('ner_lemaor_1200_v1')")
+            print('  נר למאור $1,200 לחודש: נוספה התחייבות ל-%d תורמים' % n)
+    except Exception as e:
+        print('  ner lemaor error:', e)
+
     # ציון כהן מוחזק ביחד בידי שלושת האחים מיטמן — $1,400 לכולם יחד, לא לכל אחד
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_joint_v1'").fetchone():
@@ -4212,8 +4237,9 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db()
-            con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=? WHERE id=?",
-                        (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''), pid))
+            con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=? WHERE id=?",
+                        (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
+                         1 if b.get('monthly') else 0, pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -4892,8 +4918,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note) VALUES(?,?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'), b.get('date',''), b.get('note','')))
+            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly) VALUES(?,?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
+                         b.get('date',''), b.get('note',''), 1 if b.get('monthly') else 0))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
