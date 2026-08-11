@@ -181,8 +181,14 @@
   .dupname{font-weight:900;font-size:1.05rem;margin-bottom:8px}
   .dupfz{background:var(--no-soft);color:var(--no);border-radius:99px;padding:1px 8px;font-size:.7rem;font-weight:700}
   .dupcard{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:var(--ground)}
-  .dupcard input{margin-top:4px}
-  .dupinfo{flex:1}
+  /* כפתור הבחירה נשאר בגודלו — כלל ה-input הגלובלי מתח אותו על כל השורה ומחץ את הפרטים */
+  .dupcard input[type=radio]{flex:0 0 auto;width:18px;height:18px;min-width:0;padding:0;margin-top:4px}
+  .dupinfo{flex:1;min-width:0}
+  .dupwho{font-weight:900;font-size:1.02rem;line-height:1.3}
+  .dupwho span{font-weight:700;color:var(--muted)}
+  .dupmeta2{color:var(--muted);font-size:.78rem;margin-top:2px}
+  .dupacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  .dupacts .dupnot{color:var(--no);border-color:var(--no)}
   .dupmeta{color:var(--muted);font-size:.82rem;margin-top:3px;direction:ltr;text-align:start}
   .dupkeep{background:#e8f5e9;color:#1b7a3d;border-radius:7px;padding:1px 7px;font-size:.72rem;font-weight:800}
   .dupmerge{background:var(--accent);color:#fff;font-weight:800}

@@ -127,6 +127,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN direction TEXT DEFAULT ''")  # 'out' = מייל ששלחנו לתורם
     except Exception: pass
+    # זוגות שנבדקו וסומנו "לא אותו אדם" — לא יופיעו שוב ברשימת המיזוג
+    try: con.execute("CREATE TABLE IF NOT EXISTS not_dupes(a INTEGER, b INTEGER, created TEXT, PRIMARY KEY(a,b))")
+    except Exception: pass
     try: con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clog_msg ON contacts_log(msg_id) WHERE msg_id IS NOT NULL AND msg_id<>''")
     except Exception: pass
     # סימון "לא צריך קוויטל" (וי אדום) — כדי להסיר מרשימת חסרי־שמות בלי לשנות דרגה
@@ -2901,8 +2904,11 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/data':
             donors, unlinked, general_tasks = get_all()
             con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
-            bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]; con.close()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
+            bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
+            try: nd = [[r['a'], r['b']] for r in con.execute("SELECT a,b FROM not_dupes")]
+            except Exception: nd = []
+            con.close()
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
         if self.path.split('?')[0] == '/api/donors.csv':
             # רשימת תפוצה לדיוור — שורה לכל כתובת מייל, כדי שכל תורם יקבל מייל אישי בשמו
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -4032,6 +4038,23 @@ class H(BaseHTTPRequestHandler):
             code, res = recon_apply(cur, m.group(1), b)
             con.commit(); con.close()
             return self._send(code, res)
+        if self.path == '/api/notdupe':
+            # "לא אותו אדם" — כל הזוגות בקבוצה נשמרים כדי שלא תחזור לרשימת המיזוג
+            ids = sorted({int(x) for x in (b.get('ids') or []) if str(x).isdigit()})
+            if len(ids) < 2:
+                return self._send(400, {'error': 'ids required'})
+            con = db()
+            n = 0
+            for i, a in enumerate(ids):
+                for c in ids[i + 1:]:
+                    try:
+                        con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)",
+                                    (a, c, today_iso()))
+                        n += 1
+                    except Exception:
+                        pass
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'pairs': n})
         if self.path == '/api/merge':
             # מיזוג שני כרטיסים כפולים: keep=הכרטיס שנשאר, drop=הכרטיס שנמחק
             try:

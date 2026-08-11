@@ -142,14 +142,22 @@ function fzHe(s){
   return s.replace(/[אהעוי]/g,'').replace(/(.)\1+/g,'$1');
 }
 function fzKey(d){const k=fzHe(d.last)+'|'+fzHe(d.first);return k==='|'?'':k;}
+// זוגות שסומנו "לא אותו אדם" — נשמרים בשרת ולא חוזרים לרשימה
+let NOTDUPE=new Set();
+const ndKey=(a,b)=>Math.min(a,b)+'-'+Math.max(a,b);
+function ndClean(a){                       // מסיר מהקבוצה מי שסומן "לא אותו אדם" מול כל השאר
+  const keep=a.filter(d=>a.some(x=>x.id!==d.id&&!NOTDUPE.has(ndKey(d.id,x.id))));
+  return keep.length>1?keep:null;
+}
 function findDupes(){
   const g={};DB.forEach(d=>{const k=dupKey(d);if(!k)return;(g[k]=g[k]||[]).push(d);});
-  const out=Object.values(g).filter(a=>a.length>1);
+  const out=Object.values(g).filter(a=>a.length>1).map(ndClean).filter(Boolean);
   const seen=new Set();out.forEach(a=>a.forEach(d=>seen.add(d.id)));
   const f={};DB.forEach(d=>{const k=fzKey(d);if(!k)return;(f[k]=f[k]||[]).push(d);});
   Object.values(f).forEach(a=>{                 // כפילויות באיות שונה — רק כאלה שלא נתפסו כבר
     if(a.length<2||a.every(d=>seen.has(d.id)))return;
-    a.forEach(d=>seen.add(d.id)); a.fuzzy=true; out.push(a);
+    const c=ndClean(a); if(!c)return;
+    c.forEach(d=>seen.add(d.id)); c.fuzzy=true; out.push(c);
   });
   // אותו שם משפחה, ולאחד מהם אין שם פרטי או שהוא קיצור של השני (יידי / יידל)
   const L={};DB.forEach(d=>{const k=fzHe(d.last);if(k)(L[k]=L[k]||[]).push(d);});
@@ -158,7 +166,8 @@ function findDupes(){
     const fs=a.map(d=>fzHe(d.first));
     const ok=fs.every((x,i)=>fs.every((y,j)=>i===j||!x||!y||x.startsWith(y)||y.startsWith(x)));
     if(!ok||a.every(d=>seen.has(d.id)))return;
-    a.forEach(d=>seen.add(d.id)); a.fuzzy=true; out.push(a);
+    const c=ndClean(a); if(!c)return;
+    c.forEach(d=>seen.add(d.id)); c.fuzzy=true; out.push(c);
   });
   return out;
 }
@@ -361,6 +370,7 @@ function pendFiles(boxId,inputId){
 async function load(){
   const d = await api('GET','/api/data');
   DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; HEBYEAR = hq(d.heb_year) || '';
+  NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
@@ -624,10 +634,14 @@ function openDupes(){
         return `<div class="dupgrp"><div class="dupname">${esc(grp[0].last+' '+grp[0].first)}${grp.fuzzy?' <span class="dupfz">איות שונה — בדוק שזה באמת אותו אדם</span>':''}</div>${grp.map(d=>{
           const nd=(d.donations||[]).length,np=(d.partners||[]).length,npar=(d.parnes||[]).length;
           return `<label class="dupcard"><input type="radio" name="keep${gi}" value="${d.id}" ${d.id===best.id?'checked':''}>
-            <div class="dupinfo"><b>כרטיס #${d.id}</b> ${catPill(d.category)} ${pill(d.tier)}${d.id===best.id?' <span class="dupkeep">מומלץ להשאיר</span>':''}
-            <div class="dupmeta">${d.phone?('📞 '+esc(d.phone)+' '):''}${d.email?('✉️ '+esc(d.email)+' '):''}${amtNum(d.amount)?('💵 '+esc(d.amount)+' '):''}${d.english?('· '+esc(d.english)):''}</div>
-            <div class="dupmeta">${nd} תרומות · ${npar} פרנס · ${np} אברכים</div></div></label>`;
-        }).join('')}<button class="btn sm dupmerge" data-gi="${gi}" data-ids="${grp.map(d=>d.id).join(',')}">מזג ✓</button></div>`;
+            <div class="dupinfo">
+            <div class="dupwho">${esc(d.last||'')} <span>${esc(d.first||'')}</span>${d.id===best.id?' <span class="dupkeep">מומלץ להשאיר</span>':''}</div>
+            <div class="dupmeta2">כרטיס #${d.id} ${catPill(d.category)} ${pill(d.tier)}${d.english?(' · <span dir="ltr">'+esc(d.english)+'</span>'):''}</div>
+            <div class="dupmeta">${d.phone?('📞 '+esc(d.phone)+' '):''}${d.email?('✉️ '+esc(d.email)+' '):''}${amtNum(d.amount)?('💵 '+esc(d.amount)+' '):''}</div>
+            ${d.addr?`<div class="dupmeta">🏠 ${esc(d.addr)}</div>`:''}
+            <div class="dupmeta2">${nd} תרומות · ${npar} פרנס · ${np} אברכים</div></div></label>`;
+        }).join('')}<div class="dupacts"><button class="btn sm dupmerge" data-gi="${gi}" data-ids="${grp.map(d=>d.id).join(',')}">מזג ✓</button>
+          <button class="btn sm ghost dupnot" data-ids="${grp.map(d=>d.id).join(',')}">✕ לא אותו אדם</button></div></div>`;
       }).join('')||'<div class="empty">אין כפולים</div>'}</div>`;
     sheet.querySelectorAll('.dupmerge').forEach(b=>b.onclick=async()=>{
       const gi=b.dataset.gi;
@@ -650,6 +664,15 @@ function openDupes(){
         await load(); paint(); return;
       }
       load().then(paint);                            // רענון שקט, בלי להשהות את המסך
+    });
+    sheet.querySelectorAll('.dupnot').forEach(b=>b.onclick=async()=>{
+      const ids=(b.dataset.ids||'').split(',').map(Number).filter(Boolean);
+      if(ids.length<2)return;
+      b.disabled=true;
+      for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++)NOTDUPE.add(ndKey(ids[i],ids[j]));
+      paint(); toast('סומן: לא אותו אדם ✓');
+      try{ await api('POST','/api/notdupe',{ids}); }
+      catch(e){ toast('❌ לא נשמר: '+(e&&e.message||e)); }
     });
     document.getElementById('cx').onclick=()=>ov.classList.remove('show');
   };
