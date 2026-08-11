@@ -191,11 +191,14 @@ function startDictation(btn,el){
   const base=(el.value||'').trim()?((el.value||'').trim()+' '):''; let fin='';
   const setv=v=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
   r.onstart=()=>{SRACT=r;btn.classList.add('rec');btn.textContent='⏹';toast('🎤 מקליט — דבר בעברית. לחץ שוב לסיום');};
-  r.onresult=ev=>{let interim='';
-    for(let i=ev.resultIndex;i<ev.results.length;i++){
+  // בונים את הטקסט מחדש מכל התוצאות בכל פעם. אם נצבור רק את החדשות,
+  // אנדרואיד ששולח את אותה תוצאה שוב גורם לכפילות של מילים שלמות.
+  r.onresult=ev=>{let f='',interim='';
+    for(let i=0;i<ev.results.length;i++){
       const t=ev.results[i][0].transcript;
-      if(ev.results[i].isFinal)fin+=t.trim()+' '; else interim+=t;}
-    setv((base+fin+interim).replace(/\s+/g,' '));};
+      if(ev.results[i].isFinal)f+=t.trim()+' '; else interim+=t;}
+    fin=f;
+    setv((base+f+interim).replace(/\s+/g,' '));};
   r.onerror=ev=>{const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);};
   r.onend=()=>{SRACT=null;btn.classList.remove('rec');btn.textContent='🎤';
     const fixed=fixNames((base+fin).replace(/\s+/g,' ').trim());
@@ -240,6 +243,24 @@ function fixNames(txt){
   }).join(' ');
   return {text:out,hits:hits.slice(0,3)};
 }
+// ===== בדיקת מערכת — מה עובד, מה חסר, ומה דורש טיפול =====
+async function openHealth(){
+  const ov=document.getElementById('dictov'), sh=document.getElementById('dictsheet');
+  sh.innerHTML='<button class="x" id="hx">✕</button><h2>🩺 בדיקת מערכת</h2><div class="hintxt">בודק…</div>';
+  ov.classList.add('show');
+  document.getElementById('hx').onclick=()=>ov.classList.remove('show');
+  const h=await api('GET','/api/health');
+  if(!h||!h.rows){sh.innerHTML='<button class="x" id="hx2">✕</button><h2>🩺 בדיקת מערכת</h2><div class="hintxt">השרת לא החזיר תשובה</div>';
+    document.getElementById('hx2').onclick=()=>ov.classList.remove('show');return;}
+  const ic={ok:'✅',warn:'⚠️',bad:'❌'};
+  sh.innerHTML=`<button class="x" id="hx3">✕</button><h2>🩺 בדיקת מערכת</h2>
+    <div class="hintxt">${esc(h.when)} · ${h.bad?('❌ '+h.bad+' תקלות'):'✅ אין תקלות'}${h.warn?(' · ⚠️ '+h.warn+' לתשומת לב'):''}</div>
+    ${h.rows.map(r=>`<div class="hrow ${r.state}"><span class="hi">${ic[r.state]||''}</span>
+      <span class="hn"><b>${esc(r.name)}</b><small>${esc(r.detail)}</small></span></div>`).join('')}
+    <button class="btn" id="hagain" style="width:100%;margin-top:10px">🔄 בדוק שוב</button>`;
+  document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
+  document.getElementById('hagain').onclick=openHealth;
+}
 // ===== פנקס ההכתבה — להכתיב הוראות ותיקונים ולהעתיק אותם במכה אחת =====
 const DICTKEY='kc_dict_hist';
 function dictHist(){try{return JSON.parse(localStorage.getItem(DICTKEY)||'[]');}catch(e){return [];}}
@@ -266,28 +287,29 @@ function openDictPad(){
   const ov=document.getElementById('dictov'), sh=document.getElementById('dictsheet');
   const h=dictHist(), auto=localStorage.getItem('kc_dict_noauto')!=='1';
   sh.innerHTML=`<button class="x" id="dictx">✕</button><h2>🎤 הכתבה</h2>
-    <div class="hintxt">לחץ "התחל להקליט", דבר בעברית, ובסיום זה נשלח ישירות — בוחרים את קלוד ברשימה.</div>
+    <div class="hintxt">לחץ "התחל להקליט" ודבר בעברית. בסיום הטקסט מועתק לבד — עבור לצ׳אט והדבק (לחיצה ארוכה → הדבק).</div>
     <textarea id="dictpad" class="dictpad" placeholder="כאן ייכתב מה שתאמר…"></textarea>
     <button class="btn dictbig" id="dictgo">🎤 התחל להקליט</button>
-    <button class="btn dictbig" id="dictsend" style="background:var(--yes)">📤 שלח לקלוד</button>
-    <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="dictauto" ${auto?'checked':''}> לשלוח אוטומטית ברגע שמסיימים להקליט</label>
+    <button class="btn dictbig" id="dictsend" style="background:var(--yes)">📋 העתק להדבקה בצ׳אט</button>
+    <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="dictauto" ${auto?'checked':''}> להעתיק אוטומטית ברגע שמסיימים להקליט</label>
     <div class="dictbar">
-      <button class="btn sm ghost" id="dictcopy">📋 העתק בלבד</button>
+      <button class="btn sm ghost" id="dictshare">📤 שיתוף לאפליקציה אחרת</button>
       <button class="btn sm ghost" id="dictadd">➕ שורה חדשה</button>
       <button class="btn sm ghost" id="dictclr">🗑 נקה</button></div>
     ${h.length?`<div class="dicthist"><div class="hintxt">הכתבות אחרונות — לחץ לשלוח שוב</div>
       ${h.map((x,i)=>`<div class="dh"><span>${esc(x.t.slice(0,220))}${x.t.length>220?'…':''}</span>
-        <button class="btn sm dhsend" data-i="${i}">📤</button><button class="del dhdel" data-i="${i}">🗑</button></div>`).join('')}</div>`:''}`;
+        <button class="btn sm dhsend" data-i="${i}">📋</button><button class="del dhdel" data-i="${i}">🗑</button></div>`).join('')}</div>`:''}`;
   ov.classList.add('show');
   const pad=document.getElementById('dictpad'), go=document.getElementById('dictgo'),
         snd=document.getElementById('dictsend'), au=document.getElementById('dictauto');
   document.getElementById('dictx').onclick=()=>{stopDictation();ov.classList.remove('show');};
   au.onchange=()=>{try{localStorage.setItem('kc_dict_noauto',au.checked?'0':'1');}catch(e){}};
-  const send=async()=>{const t=pad.value.trim(); if(!t){toast('אין מה לשלוח');return;}
-    const r=await shareTxt(t);
-    if(r==='sent'){pad.value='';ov.classList.remove('show');}
-    else if(r==='copied')toast('המכשיר לא תומך בשליחה — הטקסט הועתק, הדבק בצ׳אט');};
+  // ההעתקה היא הדרך האמינה — שיתוף פותח שיחה חדשה ולא בהכרח את השיחה הנכונה
+  const send=async()=>{const t=pad.value.trim(); if(!t){toast('אין מה להעתיק');return;}
+    if(await copyTxt(t)){dictSave(t);toast('הועתק ✓ — עבור לצ׳אט והדבק');}};
   snd.onclick=send;
+  document.getElementById('dictshare').onclick=async()=>{const t=pad.value.trim();
+    if(!t){toast('אין מה לשלוח');return;} await shareTxt(t);};
   go.onclick=()=>{
     const wasRec=go.classList.contains('rec');
     startDictation(go,pad);
@@ -300,12 +322,9 @@ function openDictPad(){
     document.getElementById('dictfab').classList.toggle('rec',on);
     if(!on&&go._wantSend){go._wantSend=false;setTimeout(()=>{if(pad.value.trim())send();},250);}
   }).observe(go,{attributes:true,attributeFilter:['class']});
-  document.getElementById('dictcopy').onclick=async()=>{
-    const t=pad.value.trim(); if(!t){toast('אין מה להעתיק');return;}
-    if(await copyTxt(t))dictSave(t);};
   document.getElementById('dictadd').onclick=()=>{if(pad.value.trim())pad.value=pad.value.trim()+'\n';pad.focus();};
   document.getElementById('dictclr').onclick=()=>{if(pad.value.trim())dictSave(pad.value.trim());pad.value='';pad.focus();};
-  sh.querySelectorAll('.dhsend').forEach(b=>b.onclick=()=>shareTxt(dictHist()[+b.dataset.i].t));
+  sh.querySelectorAll('.dhsend').forEach(b=>b.onclick=()=>copyTxt(dictHist()[+b.dataset.i].t));
   sh.querySelectorAll('.dhdel').forEach(b=>b.onclick=()=>{
     const l=dictHist(); l.splice(+b.dataset.i,1);
     try{localStorage.setItem(DICTKEY,JSON.stringify(l));}catch(e){} openDictPad();});
@@ -3195,6 +3214,7 @@ function renderOcc(){
 }
 
 // כפתור ההכתבה הצף — זמין בכל מסך. אם הדפדפן לא תומך בהכתבה, מסתירים אותו
+(function(){const h=document.getElementById('healthbtn');if(h)h.onclick=()=>openHealth();})();
 (function(){const f=document.getElementById('dictfab');if(!f)return;
   if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){f.style.display='none';return;}
   f.onclick=()=>openDictPad();})();

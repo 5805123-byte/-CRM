@@ -5,6 +5,9 @@ from urllib.parse import quote
 
 def today_iso():
     return datetime.date.today().isoformat()
+
+def now_iso():
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, kvittel_default_month, HMONTHS
 
@@ -3635,6 +3638,8 @@ class H(BaseHTTPRequestHandler):
             except Exception: tkinds = []
             con.close()
             return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
+        if self.path == '/api/health':
+            return self._send(200, health_report())
         if self.path.split('?')[0] == '/api/donors.csv':
             # רשימת תפוצה לדיוור — שורה לכל כתובת מייל, כדי שכל תורם יקבל מייל אישי בשמו
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -5083,6 +5088,85 @@ class H(BaseHTTPRequestHandler):
 
     def log_message(self, *a): pass
 
+SYNCSTAT = {'last': '', 'last_ok': '', 'result': '', 'error': '', 'runs': 0}
+
+def health_report():
+    """בדיקת מערכת — מה עובד, מה חסר, ומה דורש טיפול. ok / warn / bad לכל שורה."""
+    rows = []
+    def add(name, state, detail=''):
+        rows.append({'name': name, 'state': state, 'detail': str(detail)})
+    con = None
+    try:
+        con = db()
+        n = lambda q, *a: (con.execute(q, a).fetchone() or [0])[0]
+        donors = n("SELECT COUNT(*) FROM donors")
+        add('בסיס הנתונים', 'ok', '%d תורמים · %d תרומות · %d חיובים'
+            % (donors, n("SELECT COUNT(*) FROM donations"), n("SELECT COUNT(*) FROM recon")))
+        try:
+            sz = os.path.getsize(DB) / 1048576.0
+            add('גודל הקובץ', 'ok' if sz < 400 else 'warn', '%.1f MB' % sz)
+        except Exception:
+            pass
+        # תעודות פרנס — נכשלו בעבר כי Pillow לא הותקן
+        try:
+            import PIL
+            from PIL import Image, ImageDraw, ImageFont      # noqa: F401
+            add('תעודות פרנס (תמונה)', 'ok', 'Pillow %s מותקן' % getattr(PIL, '__version__', ''))
+        except Exception as e:
+            add('תעודות פרנס (תמונה)', 'bad', 'Pillow חסר — התעודה לא תיווצר (%s)' % e)
+        # דואר
+        gu = (os.environ.get('GMAIL_USER') or '').strip()
+        if gu and (os.environ.get('GMAIL_APP_PASSWORD') or '').strip():
+            add('משיכת מיילים', 'ok', gu)
+        else:
+            add('משיכת מיילים', 'bad', 'GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים בשרת')
+        if SYNCSTAT.get('error'):
+            add('סנכרון אחרון', 'bad', '%s — %s' % (SYNCSTAT.get('last') or '', SYNCSTAT['error']))
+        elif SYNCSTAT.get('last_ok'):
+            add('סנכרון אחרון', 'ok', '%s · %s' % (SYNCSTAT['last_ok'], SYNCSTAT.get('result') or ''))
+        else:
+            add('סנכרון אחרון', 'warn', 'עדיין לא רץ מאז ההפעלה')
+        add('שליחת מיילים', 'ok' if (os.environ.get('BREVO_API_KEY') or os.environ.get('SMTP_HOST'))
+            else 'warn', 'Brevo מוגדר' if os.environ.get('BREVO_API_KEY') else 'לא מוגדר מפתח שליחה')
+        # חיובים שלא שויכו
+        try:
+            r = con.execute("SELECT COUNT(*), COALESCE(SUM(CAST(amount AS REAL)),0) FROM recon "
+                            "WHERE donor_id IS NULL").fetchone()
+            add('חיובים ללא כרטיס', 'ok' if not r[0] else 'warn', '%d חיובים · $%s'
+                % (r[0], format(int(r[1] or 0), ',')))
+        except Exception as e:
+            add('חיובים ללא כרטיס', 'warn', e)
+        # תרומות יתומות
+        orph = n("SELECT COUNT(*) FROM donations WHERE donor_id NOT IN (SELECT id FROM donors)")
+        add('תרומות בלי כרטיס', 'ok' if not orph else 'bad', '%d שורות' % orph)
+        # פרטי קשר חסרים
+        noaddr = n("SELECT COUNT(*) FROM donors WHERE COALESCE(TRIM(addr),'')=''")
+        noph = n("SELECT COUNT(*) FROM donors WHERE COALESCE(TRIM(phone),'')='' AND COALESCE(TRIM(email),'')=''")
+        add('תורמים בלי כתובת', 'ok' if noaddr < donors * 0.4 else 'warn', '%d מתוך %d' % (noaddr, donors))
+        add('תורמים בלי טלפון ובלי מייל', 'ok' if noph < donors * 0.4 else 'warn', '%d מתוך %d' % (noph, donors))
+        # אברכי יש"ז בלי סכום
+        try:
+            noamt = n("SELECT COUNT(*) FROM partners WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(amount),'')=''")
+            add('אברכי יש"ז בלי סכום', 'ok' if not noamt else 'warn', '%d אברכים' % noamt)
+        except Exception:
+            pass
+        # משימות שעבר זמנן
+        over = n("SELECT COUNT(*) FROM tasks WHERE COALESCE(done,0)=0 AND COALESCE(due_date,'')<>'' AND due_date<?",
+                 today_iso())
+        add('משימות שעבר זמנן', 'ok' if not over else 'warn', '%d משימות' % over)
+        # מיגרציות
+        add('עדכוני מבנה שרצו', 'ok', '%d' % n("SELECT COUNT(*) FROM seed_flags"))
+    except Exception as e:
+        add('בסיס הנתונים', 'bad', e)
+    finally:
+        try:
+            if con: con.close()
+        except Exception:
+            pass
+    bad = sum(1 for r in rows if r['state'] == 'bad')
+    warn = sum(1 for r in rows if r['state'] == 'warn')
+    return {'ok': not bad, 'bad': bad, 'warn': warn, 'when': now_iso(), 'rows': rows}
+
 def _intake_daily_loop():
     """תיוק המיילים — נכנסים ויוצאים — כל שעתיים, ומשיכת קוויטלים פעם ביום.
     כך כל התכתבות עם תורם יושבת בכרטיס שלו מעצמה. רץ רק אם ה-Gmail מוגדר."""
@@ -5104,8 +5188,11 @@ def _intake_daily_loop():
                     last_kv = time.time()
                 con = db(); res2 = gmail_intake.sync_contacts(con); con.close()
                 print('  תיוק מיילים ליומן הקשר:', res2)
+                SYNCSTAT.update(last=now_iso(), last_ok=now_iso(), result=str(res2), error='',
+                                runs=SYNCSTAT['runs'] + 1)
         except Exception as e:
             print('  שגיאת משיכה אוטומטית:', e)
+            SYNCSTAT.update(last=now_iso(), error=str(e)[:200])
         first = False
         time.sleep(every)
 

@@ -138,6 +138,13 @@
   .chbadge{display:inline-block;color:#fff;border-radius:7px;padding:2px 8px;font-size:.72rem;font-weight:800;white-space:nowrap}
   /* סיכום לפי ייעוד */
   /* מי מטפל במשימה — חיווי והחלפה מהירה מהשורה */
+  .healthbtn{background:none;border:none;font-size:1.1rem;cursor:pointer;padding:2px 4px;width:auto;opacity:.75}
+  .hrow{display:flex;gap:9px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--line)}
+  .hrow:last-child{border-bottom:none}
+  .hrow .hi{flex:0 0 auto;font-size:1rem}
+  .hrow .hn{flex:1;min-width:0}.hrow .hn b{display:block;font-size:.92rem}
+  .hrow .hn small{color:var(--muted);word-break:break-word}
+  .hrow.bad .hn b{color:var(--no)}.hrow.warn .hn b{color:var(--gold)}
   /* פנקס ההכתבה — כפתור צף שנמצא בכל מסך */
   .dictfab{position:fixed;left:14px;bottom:16px;width:54px;height:54px;border-radius:50%;
     border:none;background:var(--ink);color:#fff;font-size:1.5rem;line-height:1;cursor:pointer;
@@ -615,7 +622,7 @@
 <div id="rembanner" class="rembanner"></div>
 <div class="app">
   <header class="top">
-    <div class="brand"><img src="/logo.png" alt="" style="width:38px;height:auto"><h1>כולל חצות — תורמים</h1><span class="st" id="stat"></span></div>
+    <div class="brand"><img src="/logo.png" alt="" style="width:38px;height:auto"><h1>כולל חצות — תורמים</h1><span class="st" id="stat"></span><button id="healthbtn" class="healthbtn" title="בדיקת מערכת">🩺</button></div>
     <input class="search" id="q" placeholder="חיפוש שם / טלפון / עסק…">
     <div class="tabs">
       <button class="tab on" data-tab="donors">תורמים</button>
