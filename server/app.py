@@ -138,6 +138,13 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN direction TEXT DEFAULT ''")  # 'out' = מייל ששלחנו לתורם
     except Exception: pass
+    # תיעוד ביצוע משימה — מתי בוצעה ובידי מי, ורישום הקשר שנוצר ממנה
+    try: con.execute("ALTER TABLE tasks ADD COLUMN done_date TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE tasks ADD COLUMN done_by TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN task_id INTEGER")
+    except Exception: pass
     # זוגות שנבדקו וסומנו "לא אותו אדם" — לא יופיעו שוב ברשימת המיזוג
     try: con.execute("CREATE TABLE IF NOT EXISTS not_dupes(a INTEGER, b INTEGER, created TEXT, PRIMARY KEY(a,b))")
     except Exception: pass
@@ -2885,6 +2892,31 @@ def ensure_schema():
     except Exception as e:
         print('  month only dedup error:', e)
 
+    # משימות שכבר סומנו כבוצעו לפני שהתיעוד הזה נכנס — נרשמות רטרואקטיבית בדף
+    # הקשר של התורם. תאריך הביצוע לא נשמר אז, ולכן נרשם תאריך היעד ומצוין שכך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_done_log_v1'").fetchone():
+            n = 0
+            for t in con.execute("SELECT * FROM tasks WHERE COALESCE(done,0)<>0 "
+                                 "AND donor_id IS NOT NULL "
+                                 "AND id NOT IN (SELECT COALESCE(task_id,-1) FROM contacts_log)"):
+                day = (t['done_date'] or '').strip() or (t['due_date'] or '').strip()
+                if not day:
+                    continue
+                who = (t['done_by'] or '').strip() or (t['assignee'] or '').strip() or 'מאיר'
+                txt = task_text(t['kind'], t['note'])
+                sfx = '' if (t['done_date'] or '').strip() else ' (לפי תאריך היעד)'
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,task_id) "
+                            "VALUES(?,?,'משימה',?,'',?)",
+                            (t['donor_id'], day, '✓ בוצע: %s · ע"י %s%s' % (txt, who, sfx), t['id']))
+                con.execute("UPDATE tasks SET done_date=COALESCE(NULLIF(done_date,''),?), "
+                            "done_by=COALESCE(NULLIF(done_by,''),?) WHERE id=?", (day, who, t['id']))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_done_log_v1')")
+            print('  משימות שבוצעו ונרשמו בדף הקשר: %d' % n)
+    except Exception as e:
+        print('  task done log error:', e)
+
     # שורות שנשארו תלויות בכרטיס שנמחק — כסף רפאים שנספר בסיכומים בלי שאף אחד רואה אותו.
     # רץ בכל עליית שרת, כי מיזוג או מחיקה יכולים ליצור אותן מחדש.
     try:
@@ -3671,6 +3703,56 @@ def _he_alt(gi, s, j_as_yud=False):
     if j_as_yud and s[:1] in ('J', 'j'):
         s = 'Y' + s[1:]
     return gi._he_name(s)
+
+
+TASK_HE = {'charge': 'לחייב', 'parnes': 'פרנס יום', 'prayer': 'לבקש שמות לקוויטל',
+           'followup': 'להתקשר', 'email': 'אימייל / וואטסאפ', 'verify': 'לבדוק שנגבה',
+           'card': 'לבדוק כרטיס', 'other': 'משימה'}
+
+
+def task_kind_he(kind):
+    """שם המשימה בעברית. סוג שמאיר הגדיר בעצמו נשמר כ־'c:שם הסוג'."""
+    k = (kind or '').strip()
+    if k[:2] == 'c:':
+        return k[2:].strip() or 'משימה'
+    return TASK_HE.get(k, 'משימה')
+
+
+def task_text(kind, note):
+    """תיאור המשימה לתיעוד — סוג המשימה, ולצידו מה שנכתב בה. אם הטקסט כבר
+    כולל את שם הסוג ('להתקשר על הקוויטל') לא חוזרים עליו פעמיים."""
+    txt = task_kind_he(kind)
+    note = (note or '').strip()
+    if not note:
+        return txt
+    return note if txt in note else (txt + ' — ' + note)
+
+
+def task_done_log(cur, tid, done=True, by='', when=''):
+    """סימון משימה כבוצעה — ושורת תיעוד בדף הקשר של התורם: מה נעשה, מתי, ובידי מי.
+    ביטול הווי מוחק את אותה שורה, כדי שלא יישאר תיעוד על משהו שלא קרה."""
+    try:
+        t = cur.execute("SELECT * FROM tasks WHERE id=?", (int(tid),)).fetchone()
+    except Exception:
+        return None
+    if not t:
+        return None
+    if not done:
+        cur.execute("UPDATE tasks SET done=0, done_date='', done_by='' WHERE id=?", (t['id'],))
+        cur.execute("DELETE FROM contacts_log WHERE task_id=?", (t['id'],))
+        return None
+    day = (when or '').strip() or today_iso()
+    who = (by or '').strip() or (t['assignee'] or '').strip() or 'מאיר'
+    cur.execute("UPDATE tasks SET done=1, done_date=?, done_by=? WHERE id=?", (day, who, t['id']))
+    if not t['donor_id']:
+        return None
+    if cur.execute("SELECT 1 FROM contacts_log WHERE task_id=?", (t['id'],)).fetchone():
+        return None
+    summary = '✓ בוצע: %s · ע"י %s' % (task_text(t['kind'], t['note']), who)
+    cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,task_id) "
+                "VALUES(?,?,'משימה',?,'',?)", (t['donor_id'], day, summary, t['id']))
+    return {'id': cur.lastrowid, 'donor_id': t['donor_id'], 'date': day, 'channel': 'משימה',
+            'summary': summary, 'next_date': '', 'task_id': t['id']}
 
 
 def link_by_identity(con):
@@ -4922,14 +5004,17 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/task/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
-            con = db(); sets = []; vals = []
-            for k in ('due_date','kind','note','done','assignee'):
+            con = db(); cur = con.cursor(); sets = []; vals = []
+            for k in ('due_date','kind','note','assignee'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
-                con.execute("UPDATE tasks SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
-                con.commit()
-            con.close()
-            return self._send(200, {'ok': True})
+                cur.execute("UPDATE tasks SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
+            clog = None
+            if 'done' in b:   # הווי נרשם גם בדף הקשר של התורם — מה נעשה, מתי, ובידי מי
+                clog = task_done_log(cur, pid, done=bool(int(b.get('done') or 0)),
+                                     by=b.get('done_by', ''), when=b.get('done_date', ''))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'contact': clog})
         m = re.match(r'/api/partner/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
@@ -5459,7 +5544,7 @@ class H(BaseHTTPRequestHandler):
                                 (did, av, today_iso(), amt))
             tid = b.get('task_id')
             if tid:
-                cur.execute("UPDATE tasks SET done=1 WHERE id=?", (int(tid),))
+                task_done_log(cur, tid, done=True)
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'updated': n})
         if self.path == '/api/audit/newdonor':

@@ -432,6 +432,25 @@ async function flipWho(id){
   toast(who==='אהרן'?'הועבר לאהרן ✓':'הועבר למאיר ✓');
   return who;
 }
+// סימון וי על משימה. השרת רושם את זה גם בדף הקשר של התורם — מה נעשה, באיזה
+// תאריך, ובידי מי. ביטול הווי מוחק את אותה שורה. כל מקום שבו יש וי עובר כאן,
+// כדי שהתיעוד ייווצר בין אם סימנו מהתזכורות, מהכרטיס, או מרשימת המשימות.
+async function setTaskDone(t,v,dref){
+  const on=v?1:0;
+  let r=null;
+  if(t.id)r=await api('PUT','/api/task/'+t.id,{done:on,done_by:whoName(t)});
+  t.done=on;
+  const g=GTASKS.find(x=>x.id===t.id);if(g)g.done=on;
+  const d=dref||t.dref||DB.find(x=>x.id===t.donor_id);
+  if(d){
+    const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt){lt.done=on;lt.done_by=on?whoName(t):'';}
+    d.contacts=d.contacts||[];
+    if(on&&r&&r.contact)d.contacts.unshift(r.contact);
+    if(!on)d.contacts=d.contacts.filter(c=>c.task_id!=t.id);
+    if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
+  }
+  return r;
+}
 function checkReminders(){
   const due=dueTasks(),ban=document.getElementById('rembanner');
   if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
@@ -449,7 +468,7 @@ function openRemPopup(){
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);openRemPopup();render();});
-  rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i];if(t.id)await api('PUT','/api/task/'+t.id,{done:1});const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.done=1;checkReminders();openRemPopup();render();toast('בוצע ✓');});
+  rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i];await setTaskDone(t,1,t.dref);checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
   rs.querySelectorAll('.rsnooze').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i],nd=addDay(todayStr().replace(/-/g,'')),nds=nd.slice(0,4)+'-'+nd.slice(4,6)+'-'+nd.slice(6,8);if(t.id)await api('PUT','/api/task/'+t.id,{due_date:nds});const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.due_date=nds;checkReminders();openRemPopup();render();toast('נדחה למחר');});
 }
 
@@ -1226,6 +1245,7 @@ function monthGrid(m,d){if(!m)return '';const f=_firstPaid(m);const last=d?lastM
 function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('');a[i]=ch;return a.join('');}
 
 let cardTab='details';
+let CURD=null;          // התורם שכרטיסו פתוח כרגע
 function tierOpts(d){
   const cur=(d&&d.tier)||'';
   const isOcc=!cur && hasOccKv(d);
@@ -1256,7 +1276,7 @@ async function applyTierSelect(d,selId){
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
 
 function openDonor(d,startTab){
-  cardTab=startTab||'details';
+  cardTab=startTab||'details';CURD=d;
   const nopen=(d.tasks||[]).filter(t=>!t.done||t.done==0).length;
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
     <h2 id="cardTitle">${esc(d.last)} ${esc(d.first)}</h2>
@@ -1334,7 +1354,7 @@ function renderCardTasks(d){
     t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;
     renderCardTasks(d);renderReminders(d);checkReminders();toast('נשמר ✓');});
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderCardTasks(d);});
-  el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await api('PUT','/api/task/'+t.id,{done:1});t.done=1;renderCardTasks(d);checkReminders();toastUndo('בוצע ✓',async()=>{await api('PUT','/api/task/'+t.id,{done:0});t.done=0;renderCardTasks(d);checkReminders();});});
+  el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await setTaskDone(t,1,d);renderCardTasks(d);checkReminders();toastUndo('בוצע ✓ · נרשם בקשר',async()=>{await setTaskDone(t,0,d);renderCardTasks(d);checkReminders();});});
   el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
 }
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
@@ -2106,7 +2126,7 @@ function renderReminders(d){
       ${whoChipHTML(t,'data-rwho="'+t.id+'"')}${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener">➕ ליומן</a>`:''}
       <button class="stbtn" style="background:var(--yes);color:#fff" data-done="${t.id}">✓</button><button class="del" data-del="${t.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין תזכורות. הוסף למטה.</div>';
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderReminders(d);});
-  el.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const t=d.tasks.find(x=>x.id==b.dataset.done);if(t){t.done=1;await api('PUT','/api/task/'+t.id,{done:1});}renderReminders(d);toast('בוצע ✓');});
+  el.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const t=d.tasks.find(x=>x.id==b.dataset.done);if(t)await setTaskDone(t,1,d);renderReminders(d);checkReminders();toast('בוצע ✓ · נרשם בקשר');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/task/'+b.dataset.del);d.tasks=d.tasks.filter(x=>x.id!=b.dataset.del);renderReminders(d);});
   el.querySelectorAll('.tkup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;renderReminders(d);}));
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.tasks||[]).forEach(t=>{t.files=(t.files||[]).filter(f=>f.id!=b.dataset.fid);});renderReminders(d);toast('נמחק');});
@@ -2446,7 +2466,9 @@ function renderPartners(d){
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow${c.direction==='out'?' outmail':''}"><div class="pi"><b>${c.direction==='out'?'📤 שלחנו':esc(c.channel)}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(c.summary||'')}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+  // בשורה של משימה שבוצעה הכותרת כבר אומרת "משימה שבוצעה" — אין צורך לחזור על "בוצע:"
+  const csum=c=>c.task_id?String(c.summary||'').replace(/^✓ בוצע:\s*/,''):(c.summary||'');
+  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}"><div class="pi"><b>${c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel))}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
       ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre>
         <details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
@@ -3474,7 +3496,7 @@ function renderTasksTab(){
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
-      <div class="meta"><span class="tdate ${over?'over':''}">${esc(t.due_date||'—')}</span>
+      <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
         <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
         <button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
     <div class="teditpanel hidden" data-panel="${i}">
@@ -3541,10 +3563,10 @@ function renderTasksTab(){
   view.querySelectorAll('.ttup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,load));
   view.querySelectorAll('.teditpanel .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
   view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;const t=all[r.dataset.i];if(t.dref)openDonor(t.dref);});
-  const setDone=async(t,v)=>{if(t.id)await api('PUT','/api/task/'+t.id,{done:v});t.done=v;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec)rec.done=v;};
+  const setDone=(t,v)=>setTaskDone(t,v,t.dref);
   view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];
     if(showDone){await setDone(t,0);toast('הוחזר לפתוחות ✓');render();checkReminders();}
-    else{await setDone(t,1);render();checkReminders();toastUndo('בוצע ✓',async()=>{await setDone(t,0);render();checkReminders();});}
+    else{await setDone(t,1);render();checkReminders();toastUndo('בוצע ✓ · נרשם בכרטיס',async()=>{await setDone(t,0);render();checkReminders();});}
   });
   const tgd=document.getElementById('toggledone');if(tgd)tgd.onclick=()=>{showDone=!showDone;render();};
 }
