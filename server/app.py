@@ -2783,6 +2783,23 @@ def ensure_schema():
     except Exception as e:
         print('  mendelson alias error:', e)
 
+    # ייצוא אנשי קשר אחרי שגוגל מיזגה את הכפילויות — כרטיסים שלמים,
+    # עם השם, הטלפון והכתובת יחד. רץ ראשון כי זה המקור האיכותי ביותר.
+    try:
+        seed3 = os.path.join(HERE, 'contacts_seed3.csv')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_merged_v1'").fetchone() \
+                and os.path.exists(seed3):
+            import gcontacts as _gc3
+            with open(seed3, encoding='utf-8-sig', errors='replace') as f:
+                _cards3 = _gc3.parse_csv(f.read())
+            _r3 = contacts_fill(con, _cards3)
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_merged_v1')")
+            print('  אנשי קשר אחרי מיזוג בגוגל: %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים'
+                  % (_r3['donors'], _r3['filled']['addr'], _r3['filled']['phone'],
+                     _r3['filled']['email']))
+    except Exception as e:
+        print('  merged contacts error:', e)
+
     # ייצוא VCF מהטלפון — כולל את החשבון השני ואת אנשי הקשר ששמורים במכשיר
     try:
         seedv = os.path.join(HERE, 'contacts_seed2.vcf')
