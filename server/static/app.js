@@ -1458,6 +1458,16 @@ function monthlyHTML(d){
     ${rows.map(r=>`<div class="catrow"><span>${esc(r[0])}</span><b>${f(r[1])}</b></div>`).join('')}
     ${rows.length>1?`<div class="catrow tot"><span>סה"כ לחודש</span><b>${f(tot)}</b></div>`:''}</div>`;
 }
+// "קבוע" לבד לא אומר על מה — על מה בדיוק הוא קבוע: יששכר־זבולון,
+// קוויטל כל לילה, קוויטל שבועי, או ההתחייבות החודשית שרשומה אצלו.
+function steadyFor(d){
+  const parts=[], put=s=>{s=String(s||'').trim();if(s&&parts.indexOf(s)<0)parts.push(s);};
+  try{const s=izSummary(d); if(s.monthly>0)put('יששכר־זבולון');}catch(e){}
+  (d.pledges||[]).filter(p=>+p.monthly).forEach(p=>put(p.category));
+  const t=TIERS[d.tier];
+  if(t)put(d.tier==='יששכר_זבולון'?t[0]:('קוויטל '+t[0]));
+  return parts.join(' · ');
+}
 function catTotalsHTML(d){
   const cur=curSym(d), m={};
   const add=(c,amt,dt)=>{
@@ -1473,9 +1483,11 @@ function catTotalsHTML(d){
   if(!rows.length)return '';
   const tA=rows.reduce((s,x)=>s+x.all,0), tY=rows.reduce((s,x)=>s+x.year,0);
   const f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const sf=steadyFor(d);
+  const lbl=c=>(sf&&/^(קבוע|הוראת קבע)$/.test(c))?(esc(c)+' <small class="csub">· '+esc(sf)+'</small>'):esc(c);
   return `<div class="cattot"><div class="cattot-t">🎯 כמה נתרם לכל ייעוד</div>
     <div class="catrow head"><span>ייעוד</span><b>${GREGYEAR}</b><b>הכל</b></div>
-    ${rows.map(x=>`<div class="catrow"><span>${esc(x.c)}</span><b>${x.year?f(x.year):'—'}</b><b>${f(x.all)}</b></div>`).join('')}
+    ${rows.map(x=>`<div class="catrow"><span>${lbl(x.c)}</span><b>${x.year?f(x.year):'—'}</b><b>${f(x.all)}</b></div>`).join('')}
     <div class="catrow tot"><span>סה"כ</span><b>${f(tY)}</b><b>${f(tA)}</b></div></div>`;
 }
 function cardDetails(d,body){
