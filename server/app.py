@@ -4141,6 +4141,61 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
         if self.path == '/api/health':
             return self._send(200, health_report())
+        if self.path.split('?')[0] == '/api/donors.vcf':
+            # ייצוא כל התורמים כאיש קשר אחד ומסודר לכל תורם — לייבוא חזרה לאנשי הקשר
+            con = db()
+            rows = [dict(r) for r in con.execute(
+                "SELECT id,last,first,english,business,phone,email,addr,city,region,zip,country,"
+                "tier,category,notes FROM donors ORDER BY last,first")]
+            con.close()
+            def esc_v(x):
+                return re.sub(r'[\r\n]+', ' ', str(x or '')).replace('\\', '\\\\').replace(';', '\\;').replace(',', '\\,')
+            out = []
+            for d in rows:
+                he = ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+                if not he and not (d['english'] or '').strip():
+                    continue
+                fn = he or d['english']
+                out.append('BEGIN:VCARD')
+                out.append('VERSION:3.0')
+                out.append('N:%s;%s;;;' % (esc_v(d['last']), esc_v(d['first'])))
+                out.append('FN:%s' % esc_v(fn))
+                if (d['english'] or '').strip():
+                    out.append('NICKNAME:%s' % esc_v(d['english']))
+                if (d['business'] or '').strip():
+                    out.append('ORG:%s' % esc_v(d['business']))
+                for ph in re.split(r'[;,/]+', d['phone'] or ''):
+                    ph = ph.strip()
+                    if ph:
+                        out.append('TEL;TYPE=CELL:%s' % ph)
+                for em in re.split(r'[;,/ ]+', d['email'] or ''):
+                    em = em.strip()
+                    if '@' in em:
+                        out.append('EMAIL;TYPE=INTERNET:%s' % em)
+                if (d['addr'] or '').strip():
+                    # בבסיס הנתונים עמודת country מחזיקה בפועל את המדינה בארה"ב (NY/NJ/FL)
+                    st = (d['region'] or d['country'] or '').strip()
+                    cty = 'Israel' if st.upper() == 'IL' else ('USA' if len(st) == 2 else '')
+                    if st.upper() == 'IL':
+                        st = ''
+                    out.append('ADR;TYPE=HOME:;;%s;%s;%s;%s;%s' % (
+                        esc_v(d['addr']), esc_v(d['city']), esc_v(st),
+                        esc_v(d['zip']), esc_v(cty)))
+                cats = ['תורמים']
+                if (d['tier'] or '').strip():
+                    cats.append('קוויטל')
+                out.append('CATEGORIES:%s' % ','.join(cats))
+                out.append('NOTE:%s' % esc_v('כרטיס #%d במערכת כולל חצות%s' % (
+                    d['id'], (' · ' + d['notes'].replace('\n', ' · ')) if (d['notes'] or '').strip() else '')))
+                out.append('END:VCARD')
+            body = ('\r\n'.join(out) + '\r\n').encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/vcard; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="kollel-donors.vcf"')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.split('?')[0] == '/api/donors.csv':
             # רשימת תפוצה לדיוור — שורה לכל כתובת מייל, כדי שכל תורם יקבל מייל אישי בשמו
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
