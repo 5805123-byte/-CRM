@@ -2786,13 +2786,13 @@ def ensure_schema():
     # ייצוא VCF מהטלפון — כולל את החשבון השני ואת אנשי הקשר ששמורים במכשיר
     try:
         seedv = os.path.join(HERE, 'contacts_seed2.vcf')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_vcf_v1'").fetchone() \
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_vcf_v2'").fetchone() \
                 and os.path.exists(seedv):
             import gcontacts as _gc2
             with open(seedv, encoding='utf-8', errors='replace') as f:
                 _cards2 = _gc2.parse_any(f.read())
             _r2 = contacts_fill(con, _cards2)
-            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_vcf_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_vcf_v2')")
             print('  אנשי קשר מהטלפון (VCF): %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים'
                   % (_r2['donors'], _r2['filled']['addr'], _r2['filled']['phone'],
                      _r2['filled']['email']))
@@ -2803,14 +2803,14 @@ def ensure_schema():
     # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
     try:
         seedc = os.path.join(HERE, 'contacts_seed.csv')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seed_v2'").fetchone() \
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seed_v3'").fetchone() \
                 and os.path.exists(seedc):
             import gcontacts as _gc
             with open(seedc, encoding='utf-8-sig') as f:
                 _cards = _gc.parse_csv(f.read())
             _r = contacts_fill(con, _cards)
             con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('contacts_seed_v1')")
-            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seed_v2')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seed_v3')")
             print('  אנשי קשר מגוגל: %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים, '
                   '%d קוויטל, %d הערות (לא שויכו %d)'
                   % (_r['donors'], _r['filled']['addr'], _r['filled']['phone'],
@@ -3783,6 +3783,17 @@ def _ph10(s):
     return d[-10:] if len(d) >= 10 else ''
 
 
+def _surkey(c):
+    """שם המשפחה של איש קשר, בלי הרעשים שמאיר משתמש בהם: קידומת "ב." או "א.ת.",
+    ספרה בסוף, ותוספת כמו "- קוויטל". מחזיר מפתח לפי צליל."""
+    s = (c.get('last') or c.get('name') or '') if isinstance(c, dict) else (c or '')
+    s = re.split(r'\s[-–]\s', s)[0]                 # "לוי זייגלבוים - קוויטל"
+    s = re.sub(r'(?:(?<=^)|(?<=\s))[\u05d0-\u05ea]\.', ' ', s)   # "ב." / "א.ת."
+    s = re.sub(r'[0-9]+', ' ', s)
+    w = [x for x in re.sub(r'[^\u05d0-\u05ea ]', ' ', s).split() if len(x) >= 3]
+    return _fz(w[-1]) if w else ''
+
+
 def cluster_contacts(cards):
     """אדם אחד מפוזר לעיתים על כמה כרטיסי אנשי קשר (אחד עם הכתובת, אחד עם המייל,
     אחד עם 'קוויטל' בשם). מאחדים לפי טלפון או מייל משותף לפני ההשוואה לתורמים."""
@@ -3800,6 +3811,25 @@ def cluster_contacts(cards):
             a, b = find(i), find(j)
             if a != b:
                 par[a] = b
+    # כרטיס שיש בו רק שם (בלי טלפון ובלי מייל) מצטרף לכרטיס עם אותו שם משפחה
+    # לפי צליל — כך "לוי זייגלבוים - קוויטל" מתחבר לכרטיס שנושא את הטלפון.
+    bysur = {}
+    for i, c in enumerate(cards):
+        if c['phones'] or c['emails']:
+            k = _surkey(c)
+            if len(k) >= 4:
+                bysur.setdefault(k, set()).add(find(i))
+    for i, c in enumerate(cards):
+        if c['phones'] or c['emails']:
+            continue
+        k = _surkey(c)
+        if len(k) < 4:
+            continue
+        tgt = bysur.get(k)
+        if tgt and len(tgt) == 1:          # רק כשאין ספק לאיזה אדם זה שייך
+            a2, b2 = find(i), find(list(tgt)[0])
+            if a2 != b2:
+                par[a2] = b2
     groups = {}
     for i in range(len(cards)):
         groups.setdefault(find(i), []).append(i)
