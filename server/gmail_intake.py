@@ -995,6 +995,77 @@ def _batch_headers(M, ids, chunk=300, fields='FROM DATE SUBJECT MESSAGE-ID'):
     return out
 
 
+_MIDS_RE = re.compile(r'<[^<>\s]+>')
+
+
+def _mail_when(hmsg):
+    """מתי המייל נשלח, לפי השעון של המשרד — ('YYYY-MM-DD', 'YYYY-MM-DD HH:MM').
+    כותרת המייל נושאת את אזור הזמן של השולח, ולכן ממירים לשעון המקומי."""
+    try:
+        dt = parsedate_to_datetime(hmsg.get('Date'))
+    except Exception:
+        dt = None
+    if dt is None:
+        d = datetime.date.today().isoformat()
+        return d, ''
+    try:
+        from zoneinfo import ZoneInfo
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(ZoneInfo(os.environ.get('TZ_NAME', 'America/New_York')))
+    except Exception:
+        pass
+    return dt.date().isoformat(), dt.strftime('%Y-%m-%d %H:%M')
+
+
+def _thread_parents(hmsg):
+    """מזהי המיילים שהמייל הזה עונה עליהם — In-Reply-To ואחריו References,
+    מהאחרון לראשון. כך תשובה שנכתבה בג'ימייל יודעת על מה היא עונה."""
+    out = []
+    for h in ('In-Reply-To', 'References'):
+        v = (hmsg.get(h) or '').strip()
+        if not v:
+            continue
+        for m in reversed(_MIDS_RE.findall(v)):
+            if m not in out:
+                out.append(m)
+    return out
+
+
+def _norm_subj(s):
+    """נושא בלי קידומות תשובה/העברה, להשוואה בין מייל לתשובה עליו."""
+    s = (s or '').strip()
+    while True:
+        m = re.match(r'^\s*(re|fw|fwd|תשובה|הועבר)\s*(\[\d+\])?\s*:\s*', s, re.I)
+        if not m:
+            break
+        s = s[m.end():]
+    return ' '.join(s.split()).lower()
+
+
+def _parent_row(con, did, parents, subject, dstr):
+    """שורת היומן שעליה נכתבה התשובה. קודם לפי מזהה המייל — זו התאמה ודאית;
+    ואם ג'ימייל לא שמר מזהה, לפי נושא זהה אצל אותו תורם מלפני התאריך."""
+    for mid in (parents or []):
+        r = con.execute("SELECT id,reply_to FROM contacts_log WHERE msg_id=? AND donor_id=?",
+                        (mid, did)).fetchone()
+        if r:
+            return r['reply_to'] or r['id']
+    ns = _norm_subj(subject)
+    if not ns:
+        return None
+    for r in con.execute("SELECT id,summary,reply_to FROM contacts_log WHERE donor_id=? "
+                         "AND channel='אימייל' AND COALESCE(direction,'')<>'out' "
+                         "AND COALESCE(date,'')<=? ORDER BY date DESC, id DESC LIMIT 40",
+                         (did, dstr)):
+        s = (r['summary'] or '')
+        if s.startswith('📧 '):
+            s = s[2:]
+        s = s.split(' — ')[0].split(' · 📎')[0].split(' · 🕯️')[0]
+        if _norm_subj(s) == ns:
+            return r['reply_to'] or r['id']
+    return None
+
+
 # מצב המשיכה — כדי שהממשק יוכל להציג התקדמות בלי להמתין לבקשה ארוכה
 MAIL_STATUS = {'running': False, 'new': 0, 'scanned': 0, 'total': 0, 'done': False, 'error': ''}
 
@@ -1035,19 +1106,19 @@ def sync_contacts(con, status=None):
             if not did:
                 continue
             mid = (hmsg.get('Message-ID') or '').strip() or f'{user}:{seq.decode()}'
-            ex = con.execute("SELECT id, COALESCE(att_checked,0) AS ac FROM contacts_log WHERE msg_id=?", (mid,)).fetchone()
+            ex = con.execute("SELECT id, COALESCE(att_checked,0) AS ac, COALESCE(at,'') AS at "
+                             "FROM contacts_log WHERE msg_id=?", (mid,)).fetchone()
             if ex:
                 if not ex['ac']:                # תויק לפני שהיו קבצים מצורפים — נשלים אותם
                     backfill.append((seq, ex['id']))
+                if not ex['at']:                # תויק לפני שנשמרה שעה — הכותרת כבר בידינו
+                    con.execute("UPDATE contacts_log SET at=? WHERE id=?", (_mail_when(hmsg)[1], ex['id']))
                 continue
             subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
-            try:
-                dstr = parsedate_to_datetime(hmsg.get('Date')).date().isoformat()
-            except Exception:
-                dstr = datetime.date.today().isoformat()
-            todo.append((seq, did, mid, subject, dstr))
+            dstr, at = _mail_when(hmsg)
+            todo.append((seq, did, mid, subject, dstr, at))
         st['total'] = len(todo)
-        for n, (seq, did, mid, subject, dstr) in enumerate(todo, 1):   # שלב 3: גוף רק למה שנכנס
+        for n, (seq, did, mid, subject, dstr, at) in enumerate(todo, 1):   # שלב 3: גוף רק למה שנכנס
             body, atts = '', []
             try:
                 typ, md = M.fetch(seq.decode(), '(RFC822)')
@@ -1073,9 +1144,9 @@ def sync_contacts(con, status=None):
             summary = '📧 ' + subject + ((' — ' + gist) if gist else '') + extra
             full, he = full0, he0               # רק מה שהתורם כתב, בלי השרשור שלנו
             try:
-                cur = con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,body_he,att_checked)
-                               VALUES(?,?,?,?,'',?,?,?,1)""",
-                            (did, dstr, 'אימייל', summary, mid, full, he))
+                cur = con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,body_he,att_checked,at)
+                               VALUES(?,?,?,?,'',?,?,?,1,?)""",
+                            (did, dstr, 'אימייל', summary, mid, full, he, at))
                 cid = cur.lastrowid
                 new += 1
                 for (fn, mt, data) in atts:     # שמירת הקבצים אצל אותו רישום קשר
@@ -1204,7 +1275,8 @@ def sync_sent(con, status=None):
             return {'ok': True, 'new': 0, 'note': 'no_sent_box'}
         typ, data = M.search(None, 'SINCE', since)
         ids = data[0].split() if typ == 'OK' else []
-        heads = _batch_headers(M, ids, fields='TO CC BCC DATE SUBJECT MESSAGE-ID')
+        heads = _batch_headers(M, ids,
+                               fields='TO CC BCC DATE SUBJECT MESSAGE-ID IN-REPLY-TO REFERENCES')
         todo = []
         for seq, raw in heads:
             try:
@@ -1213,21 +1285,23 @@ def sync_sent(con, status=None):
                 continue
             mid = (hmsg.get('Message-ID') or '').strip() or ('sent:' + seq.decode())
             subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
-            try:
-                dstr = parsedate_to_datetime(hmsg.get('Date')).date().isoformat()
-            except Exception:
-                dstr = datetime.date.today().isoformat()
+            parents = _thread_parents(hmsg)   # על איזה מייל מאיר ענה בג'ימייל
+            dstr, at = _mail_when(hmsg)
             for ad in _addrs(hmsg, 'To', 'Cc', 'Bcc'):
                 did = emap.get(ad)
                 if not did or ad == user.lower():
                     continue
                 key = 'out:%s|%s' % (mid, did)      # אותו מייל לכמה תורמים — רישום נפרד לכל אחד
-                if con.execute("SELECT 1 FROM contacts_log WHERE msg_id=?", (key,)).fetchone():
+                ex = con.execute("SELECT id, COALESCE(at,'') AS at FROM contacts_log WHERE msg_id=?",
+                                 (key,)).fetchone()
+                if ex:
+                    if not ex['at']:               # תויק לפני שנשמרה שעה
+                        con.execute("UPDATE contacts_log SET at=? WHERE id=?", (at, ex['id']))
                     continue
-                todo.append((seq, did, key, subject, dstr, ad))
+                todo.append((seq, did, key, subject, dstr, ad, parents, at))
         st['total'] = st.get('total', 0) + len(todo)
         bodies = {}
-        for seq, did, key, subject, dstr, ad in todo:
+        for seq, did, key, subject, dstr, ad, parents, at in todo:
             if seq not in bodies:
                 body = ''
                 try:
@@ -1239,11 +1313,13 @@ def sync_sent(con, status=None):
                 bodies[seq] = _strip_quoted(body)
             full = bodies[seq]
             gist = _one_line(full) if (full.strip() and _is_hebrew(full)) else _gist_he(subject, full)
-            summary = '📤 שלחנו: ' + subject + ((' — ' + gist) if gist else '')
+            # תשובה שנכתבה בג'ימייל נתלית מתחת למייל שהתורם שלח, ולא כרישום נפרד
+            rto = _parent_row(con, did, parents, subject, dstr)
+            summary = ('📤 עניתי: ' if rto else '📤 שלחנו: ') + subject + ((' — ' + gist) if gist else '')
             try:
-                con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction)
-                               VALUES(?,?,?,?,'',?,?,1,'out')""",
-                            (did, dstr, 'אימייל', summary, key, full))
+                con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction,reply_to,at)
+                               VALUES(?,?,?,?,'',?,?,1,'out',?,?)""",
+                            (did, dstr, 'אימייל', summary, key, full, rto, at))
                 new += 1
                 st['new'] = st.get('new', 0) + 1
             except Exception:

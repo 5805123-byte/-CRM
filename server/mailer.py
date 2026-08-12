@@ -11,10 +11,8 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
-def send(to, subject, body, attachments=None, reply_to=None, in_reply_to=None):
-    """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה.
-    in_reply_to = ה-Message-ID של המייל שעליו עונים, כדי שהתשובה תישב
-    באותו שרשור אצל התורם ולא כמייל חדש."""
+def send(to, subject, body, attachments=None, reply_to=None):
+    """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה."""
     user = os.environ.get('GMAIL_USER')
     pw = os.environ.get('GMAIL_APP_PASSWORD')
     if not (user and pw):
@@ -30,10 +28,6 @@ def send(to, subject, body, attachments=None, reply_to=None, in_reply_to=None):
     msg['Subject'] = subject or 'כולל חצות'
     if reply_to:
         msg['Reply-To'] = reply_to
-    irt = (in_reply_to or '').strip()
-    if irt.startswith('<'):        # רק Message-ID אמיתי; מפתח פנימי שלנו לא מתאים כאן
-        msg['In-Reply-To'] = irt
-        msg['References'] = irt
     msg.set_content(body or '')
     for (name, mime, data) in (attachments or []):
         if not data:

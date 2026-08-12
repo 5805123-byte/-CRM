@@ -2493,15 +2493,10 @@ function renderPartners(d){
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);d.files=(d.files||[]).filter(x=>x.id!=b.dataset.fid);renderPartners(d);toast('נמחק');});
   const up=el.querySelector('.pshtar');if(up)up.onchange=()=>uploadFile('iz',d.id,up,load);
 }
-// למה השליחה נכשלה — בעברית, עם מה שצריך לעשות כדי לתקן
-const RPERR={no_email:'אין כתובת מייל בכרטיס התורם',empty_text:'כתוב קודם מה לשלוח',
-  not_configured:"שליחת מיילים לא מוגדרת — צריך להגדיר ברנדר GMAIL_USER ו-GMAIL_APP_PASSWORD",
-  login_failed:"ג'ימייל לא קיבל את הסיסמה — צריך סיסמת אפליקציה חדשה",
-  send_failed:'השליחה נכשלה — בדוק חיבור ונסה שוב', module:'רכיב השליחה חסר בשרת'};
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
-  // בשורה של משימה שבוצעה הכותרת כבר אומרת "משימה שבוצעה" — אין צורך לחזור על "בוצע:"
-  const csum=c=>c.task_id?String(c.summary||'').replace(/^✓ בוצע:\s*/,''):(c.summary||'');
+  // הכותרת כבר אומרת מה זה — אין צורך לחזור על "בוצע:" או "שלחנו:" גם בגוף
+  const csum=c=>String(c.summary||'').replace(/^✓ בוצע:\s*/,'').replace(/^📤 (עניתי|שלחנו|נשלח):\s*/,'');
   const isRep=c=>!!c.reply_to;
   // כותרת השורה: פנייה שהגיעה מהתורם, מייל ששלחנו, תשובה שמאיר ענה, או משימה
   const head=c=>isRep(c)?'📤 עניתי לו':(c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel)));
@@ -2514,10 +2509,8 @@ function renderContacts(d){
       <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button>${(c.direction!=='out'&&!c.task_id)?`<button class="btn sm ghost creply" data-id="${c.id}">↩️ עניתי לו</button>`:''}${c.task_id?`<button class="btn sm ghost tundo" data-tid="${c.task_id}">↩️ החזר את המשימה לפתוחות</button>`:''}</div>
     <div class="teditpanel hidden" data-rep="${c.id}">
       <label class="fld"><span>✍️ מה עניתי לו</span><textarea class="rp_txt" data-id="${c.id}" rows="3" placeholder="הדבק כאן את מה שכתבת לו — או כתוב בקצרה. אפשר גם להשאיר ריק ורק לסמן שענית."></textarea></label>
-      <div class="addrow" style="margin-top:6px"><input type="date" class="rp_date" data-id="${c.id}" value="${esc(todayStr())}"><button class="btn sm ghost rp_save" data-id="${c.id}">💾 רק לרשום</button>${(c.channel==='אימייל'&&(d.email||'').trim())?`<button class="btn sm rp_send" data-id="${c.id}">📧 שלח לו בג'ימייל</button>`:''}</div>
-      ${c.channel==='אימייל'?((d.email||'').trim()
-        ?`<div class="hintxt">"שלח לו בג'ימייל" שולח את הטקסט הזה מהמייל של המשרד אל ${esc(d.email)}, כתשובה על אותו מייל, ורושם אותו כאן.</div>`
-        :'<div class="hintxt">אין כתובת מייל בכרטיס — אפשר רק לרשום מה ענית.</div>'):''}
+      <div class="addrow" style="margin-top:6px"><input type="date" class="rp_date" data-id="${c.id}" value="${esc(todayStr())}"><button class="btn sm rp_save" data-id="${c.id}">💾 שמור את התשובה</button></div>
+      ${c.channel==='אימייל'?'<div class="hintxt">אם ענית לו בג\'ימייל עצמו — התשובה נמשכת לכאן לבד ונתלית מתחת למייל הזה. כאן כותבים רק כשעונים מחוץ למייל.</div>':''}
     </div>
     <div class="teditpanel hidden" data-rem="${c.id}">
       <div class="fbrow"><label class="fld"><span>סוג</span><select class="cr_kind">${taskKindOpts()}</select></label>
@@ -2537,21 +2530,12 @@ function renderContacts(d){
     const p=el.querySelector('.teditpanel[data-rep="'+b.dataset.id+'"]'); if(!p)return;
     p.classList.toggle('hidden');
     const ta=p.querySelector('.rp_txt'); if(!p.classList.contains('hidden')&&ta)ta.focus();});
-  const doReply=async(b,send)=>{
+  el.querySelectorAll('.rp_save').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.id, ta=el.querySelector('.rp_txt[data-id="'+id+'"]'), dt=el.querySelector('.rp_date[data-id="'+id+'"]');
-    const txt=ta?ta.value.trim():'';
-    if(send&&!txt){toast('כתוב קודם מה לשלוח');return;}
-    b.disabled=true; if(send)b.textContent='שולח…';
-    const r=await api('POST','/api/contact/'+id+'/reply',{text:txt,date:dt?dt.value:'',at:nowStamp(),send:send?1:0});
-    if(r&&r.ok&&r.contact){
-      d.contacts=d.contacts||[]; d.contacts.unshift(r.contact); renderContacts(d);
-      toast(r.sent?('נשלח ל'+(r.to||'תורם')+' ✓'):'נרשם שענית ✓');
-    }else{
-      b.disabled=false; if(send)b.textContent="📧 שלח לו בג'ימייל";
-      toast(RPERR[(r&&r.error)||'']||'לא נשלח — נסה שוב');
-    }};
-  el.querySelectorAll('.rp_save').forEach(b=>b.onclick=()=>doReply(b,false));
-  el.querySelectorAll('.rp_send').forEach(b=>b.onclick=()=>doReply(b,true));
+    b.disabled=true;
+    const r=await api('POST','/api/contact/'+id+'/reply',{text:ta?ta.value.trim():'',date:dt?dt.value:'',at:nowStamp()});
+    if(r&&r.ok&&r.contact){d.contacts=d.contacts||[];d.contacts.unshift(r.contact);renderContacts(d);toast('נרשם שענית ✓');}
+    else{b.disabled=false;toast('לא נשמר — נסה שוב');}});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/contact/'+b.dataset.del);d.contacts=d.contacts.filter(x=>x.id!=b.dataset.del);renderContacts(d);});
   // ביטול הווי ישירות מהרישום — המשימה חוזרת לרשימה והשורה כאן נמחקת
   el.querySelectorAll('.tundo').forEach(b=>b.onclick=async()=>{

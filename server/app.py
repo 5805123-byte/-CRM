@@ -2925,6 +2925,14 @@ def ensure_schema():
     except Exception as e:
         print('  task done log error:', e)
 
+    # מיילים שמאיר ענה בג'ימייל ועדיין לא חוברו למייל שעליו ענו
+    try:
+        n = link_mail_replies(con)
+        if n:
+            print('  תשובות מייל שחוברו למייל המקורי: %d' % n)
+    except Exception as e:
+        print('  mail reply link error:', e)
+
     # שורות שנשארו תלויות בכרטיס שנמחק — כסף רפאים שנספר בסיכומים בלי שאף אחד רואה אותו.
     # רץ בכל עליית שרת, כי מיזוג או מחיקה יכולים ליצור אותן מחדש.
     try:
@@ -4242,28 +4250,28 @@ def mail_subject_of(summary):
     return s.strip()
 
 
-def send_reply_mail(con, par, txt):
-    """שולח את התשובה של מאיר לתורם מהג'ימייל של המשרד, בתוך שרשור המייל
-    המקורי. מחזיר dict עם ok/‏error — כל כשל מוסבר בעברית בצד הלקוח."""
-    if not txt:
-        return {'ok': False, 'error': 'empty_text'}
-    d = con.execute("SELECT email,last,first FROM donors WHERE id=?", (par['donor_id'],)).fetchone()
-    to = ((d['email'] if d else '') or '').strip()
-    if not to:
-        return {'ok': False, 'error': 'no_email'}
-    try:
-        import mailer
-    except Exception as e:
-        return {'ok': False, 'error': 'module', 'detail': str(e)}
-    if not mailer.configured():
-        return {'ok': False, 'error': 'not_configured'}
-    subj = mail_subject_of(par['summary'])
-    if subj and not subj.lower().startswith('re:'):
-        subj = 'Re: ' + subj
-    mid = (par['msg_id'] or '').strip()
-    res = mailer.send(to, subj or 'כולל חצות', txt, in_reply_to=mid)
-    res['to'] = to
-    return res
+def link_mail_replies(con):
+    """מייל שמאיר שלח מג'ימייל ונושאו זהה למייל שהתורם שלח לפניו — נתלה מתחתיו
+    כתשובה. משלים את הקישור לפי Message-ID שנעשה כבר בזמן המשיכה, ומטפל גם
+    בהיסטוריה ובמקרה שהתשובה נמשכה לפני המייל שעליו היא עונה. מוסיף קישורים
+    בלבד, ולכן בטוח להרצה חוזרת."""
+    import gmail_intake as _gi
+    n = 0
+    rows = con.execute("SELECT id,donor_id,summary,date FROM contacts_log "
+                       "WHERE direction='out' AND channel='אימייל' "
+                       "AND reply_to IS NULL AND donor_id IS NOT NULL").fetchall()
+    for r in rows:
+        par = _gi._parent_row(con, r['donor_id'], [], mail_subject_of(r['summary']),
+                              r['date'] or '9999')
+        if not par or par == r['id']:
+            continue
+        con.execute("UPDATE contacts_log SET reply_to=?, "
+                    "summary=REPLACE(summary,'📤 שלחנו: ','📤 עניתי: ') WHERE id=?",
+                    (par, r['id']))
+        n += 1
+    if n:
+        con.commit()
+    return n
 
 
 def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):
@@ -4275,9 +4283,9 @@ def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):
     summary = '📤 שלחנו: ' + (subject or 'מייל') + ((' · 📎 %d קבצים מצורפים' % natt) if natt else '')
     try:
         con = db()
-        con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction)
-                       VALUES(?,?,?,?,'',?,?,1,'out')""",
-                    (donor_id, today_iso(), 'אימייל', summary, key, (body or '').strip()))
+        con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction,at)
+                       VALUES(?,?,?,?,'',?,?,1,'out',?)""",
+                    (donor_id, today_iso(), 'אימייל', summary, key, (body or '').strip(), now_iso()))
         con.commit(); con.close()
     except Exception:
         pass
@@ -5252,6 +5260,9 @@ class H(BaseHTTPRequestHandler):
                         stt['error'] = r.get('detail') or r.get('error') or 'שגיאה'
                     else:
                         stt['new'] = r.get('new', stt.get('new', 0))
+                    # תשובה שנמשכה לפני המייל שעליו ענו — מחוברת עכשיו
+                    try: link_mail_replies(c)
+                    except Exception: pass
                 except Exception as e:
                     stt['error'] = '%s: %s' % (type(e).__name__, e)
                 finally:
@@ -5369,27 +5380,16 @@ class H(BaseHTTPRequestHandler):
             txt = (b.get('text') or '').strip()
             at = (b.get('at') or '').strip() or now_iso()
             day = (b.get('date') or '').strip() or at[:10]
-            sent = None
-            if b.get('send'):   # שליחה בפועל מהג'ימייל של המשרד, בתוך אותו שרשור
-                sent = send_reply_mail(con, par, txt)
-                if not sent.get('ok'):
-                    con.close(); return self._send(200, dict(sent, ok=False))
             summary = txt or 'עניתי לו'
-            if sent:
-                summary = '📤 נשלח: ' + summary
             cur.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,
-                                                    direction,reply_to,at,msg_id,body)
-                           VALUES(?,?,?,?,'','out',?,?,?,?)""",
-                        (par['donor_id'], day, par['channel'] or 'אימייל', summary, root, at,
-                         ('out:%s|%s' % (sent.get('msg_id') or '', par['donor_id'])) if sent else '',
-                         txt if sent else ''))
+                                                    direction,reply_to,at)
+                           VALUES(?,?,?,?,'','out',?,?)""",
+                        (par['donor_id'], day, par['channel'] or 'אימייל', summary, root, at))
             rid = cur.lastrowid
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'sent': bool(sent), 'to': (sent or {}).get('to', ''),
-                                    'contact': {
+            return self._send(200, {'ok': True, 'contact': {
                 'id': rid, 'donor_id': par['donor_id'], 'date': day, 'channel': par['channel'] or 'אימייל',
-                'summary': summary, 'next_date': '', 'direction': 'out', 'reply_to': root, 'at': at,
-                'body': txt if sent else ''}})
+                'summary': summary, 'next_date': '', 'direction': 'out', 'reply_to': root, 'at': at}})
         m = re.match(r'/api/contact/(\d+)/remind$', self.path)
         if m:   # יצירת תזכורת מתוך תיעוד קשר — כולל העתקת האסמכתאות (צילום אשראי, הקלטה)
             cid = int(m.group(1))
