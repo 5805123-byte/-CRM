@@ -176,6 +176,15 @@
   .micbtn:active{background:var(--ground)}
   .micbtn.rec{background:var(--no);border-color:var(--no);color:#fff;animation:micpulse 1s infinite}
   @keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(200,40,40,.55)}50%{box-shadow:0 0 0 7px rgba(200,40,40,0)}}
+  .npcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:11px 13px;margin-bottom:9px}
+  .npcard .nm{font-weight:800;font-size:1rem;cursor:pointer}
+  .npcard .miss2{font-size:.8rem;color:var(--muted);margin-top:2px}
+  .npcand{display:flex;gap:7px;align-items:center;background:var(--ground);border:1px solid var(--line);
+    border-radius:10px;padding:6px 8px;margin-top:5px}
+  .npcand .npi{flex:1;min-width:0;font-size:.85rem;line-height:1.35}
+  .npcand .btn,.npcand .del{flex:0 0 auto;width:auto;padding:4px 11px}
+  .npcand .npyes{background:var(--yes);border-color:var(--yes);color:#fff;font-size:1rem}
   .notesbox{background:var(--ground);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin:8px 2px}
   .notesbox-t{font-size:.78rem;font-weight:800;color:var(--muted);margin-bottom:6px}
   .noterow{display:flex;gap:6px;align-items:center;margin-bottom:5px}

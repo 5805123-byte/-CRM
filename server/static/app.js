@@ -705,7 +705,12 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 
 function render(){
   chips.innerHTML='';
-  if(tab==='donors') return flt==='addrfix'?renderAddrFix():(flt==='noaddr'?renderNoAddr():renderDonors());
+  if(tab==='donors'){
+    if(flt==='addrfix')return renderAddrFix();
+    if(flt==='noaddr')return renderNoAddr();
+    if(flt==='nophone')return renderNoPhone();
+    return renderDonors();
+  }
   if(tab==='tasks') return renderTasksTab();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
@@ -785,6 +790,7 @@ function renderDonors(){
     ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
     ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
     ${nanone?`<button class="btn kvmissbtn" id="noAddrBtn">🏠 בלי כתובת בכלל — ${nanone}</button>`:''}
+    ${DB.filter(d=>!(d.phone||'').trim()).length?`<button class="btn kvmissbtn" id="noPhoneBtn" style="background:var(--yes);border-color:var(--yes)">📞 השלמת טלפונים — ${DB.filter(d=>!(d.phone||'').trim()).length} בלי טלפון</button>`:''}
     <div class="avbar"><select id="donsort" class="avsortsel">
       <option value="last">מיון: שם (א-ב)</option>
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
@@ -810,6 +816,7 @@ function renderDonors(){
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
+  const npb=document.getElementById('noPhoneBtn'); if(npb)npb.onclick=()=>{flt='nophone';NOPHONE=null;NPLIM=15;render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
@@ -880,6 +887,50 @@ async function uploadContactsCsv(inp){
 }
 // מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס
 let NOADDR=null;
+let NOPHONE=null, NPLIM=15;
+// מסך השלמת טלפונים — לכל תורם בלי טלפון מוצעים אנשי הקשר עם אותו שם משפחה,
+// ובלחיצה אחת מאשרים או דוחים. במקום לענות על שאלות בצ׳אט.
+async function renderNoPhone(){
+  view.innerHTML='<div class="cnt">טוען הצעות…</div>';
+  if(!NOPHONE){ try{ NOPHONE=await api('GET','/api/audit/phones'); }catch(e){ NOPHONE={ok:false}; } }
+  const R=NOPHONE||{};
+  if(!R.ok){view.innerHTML=`<div class="misshead">📞 השלמת טלפונים</div><div class="empty">לא הצלחתי לטעון${R.error?(' — '+esc(R.error)):''}</div><button class="btn" id="npback" style="margin:10px 2px">→ חזרה</button>`;
+    document.getElementById('npback').onclick=()=>{flt='';render();};return;}
+  const all=(R.rows||[]).filter(r=>matchQ(r.name));
+  const rows=all.slice(0,NPLIM);        // מציגים מנה קטנה בכל פעם — קל יותר לעבור על זה בטלפון
+  view.innerHTML=`<div class="misshead">📞 השלמת טלפונים</div>
+    <div class="submuted">לכל תורם מוצעים אנשי קשר עם אותו שם משפחה. ✓ = זה הוא · ✕ = לא הוא.<br>
+      ${R.total||0} תורמים בלי טלפון, מתוכם ${all.length} עם הצעה.</div>
+    <button class="btn ghost" id="npback" style="margin:8px 2px">→ חזרה לתורמים</button>
+    <div class="list">${rows.map(r=>`<div class="npcard" data-did="${r.id}">
+      <div class="nm">${esc(r.name)}${r.tot?` <small style="color:var(--yes)">$${(+r.tot).toLocaleString('en-US')}</small>`:''}${r.tier==='יששכר_זבולון'?' <small>יש"ז</small>':''}</div>
+      ${r.email?`<div class="miss2">${esc(r.email)}</div>`:''}
+      ${r.cands.map(c=>`<div class="npcand">
+        <button class="btn sm npyes" data-did="${r.id}" data-ph="${esc(c.phone)}" data-em="${esc(c.email||'')}">✓</button>
+        <button class="del npno" data-did="${r.id}" data-ph="${esc(c.phone)}">✕</button>
+        <span class="npi"><b dir="ltr">${esc(c.phone)}</b><br><small>${esc(c.name)}${c.sure?' · <b style="color:var(--yes)">שם פרטי תואם</b>':''}</small></span>
+      </div>`).join('')}
+      <button class="btn sm ghost npskip" data-did="${r.id}" style="margin-top:5px">🚫 אף אחד מהם</button>
+    </div>`).join('')||'<div class="empty">אין הצעות פתוחות 🎉</div>'}</div>
+    ${all.length>rows.length?`<button class="btn ghost" id="npmore" style="width:100%;margin:8px 2px">↓ עוד ${Math.min(15,all.length-rows.length)} (נשארו ${all.length-rows.length})</button>`:''}`;
+  const nm2=document.getElementById('npmore'); if(nm2)nm2.onclick=()=>{NPLIM+=15;renderNoPhone();};
+  document.getElementById('npback').onclick=()=>{flt='';render();};
+  const drop=(did,ph)=>{const r=(NOPHONE.rows||[]).find(x=>x.id==did); if(!r)return;
+    if(ph===null){NOPHONE.rows=NOPHONE.rows.filter(x=>x.id!=did);}
+    else{r.cands=r.cands.filter(c=>c.phone!==ph); if(!r.cands.length)NOPHONE.rows=NOPHONE.rows.filter(x=>x.id!=did);}
+    renderNoPhone();};
+  view.querySelectorAll('.npyes').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;
+    await api('POST','/api/audit/phones',{donor_id:+b.dataset.did,phone:b.dataset.ph,email:b.dataset.em||''});
+    const d=DB.find(x=>x.id==b.dataset.did); if(d){d.phone=b.dataset.ph; if(!d.email&&b.dataset.em)d.email=b.dataset.em;}
+    toast('נשמר ✓'); drop(+b.dataset.did,null);});
+  view.querySelectorAll('.npno').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;
+    await api('POST','/api/audit/phones',{donor_id:+b.dataset.did,phone:b.dataset.ph,reject:1});
+    drop(+b.dataset.did,b.dataset.ph);});
+  view.querySelectorAll('.npskip').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;
+    await api('POST','/api/audit/phones',{donor_id:+b.dataset.did,skip:1});
+    drop(+b.dataset.did,null);});
+  view.querySelectorAll('.npcard .nm').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.closest('.npcard').dataset.did);if(d)openDonor(d);});
+}
 async function renderNoAddr(){
   chips.innerHTML='';
   if(!NOADDR){

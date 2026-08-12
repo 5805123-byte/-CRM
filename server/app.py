@@ -70,6 +70,7 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
@@ -2564,6 +2565,16 @@ def ensure_schema():
                     con.execute("UPDATE donors SET phone=? WHERE id=?", (ph, r['id'])); npf += 1
                 if em and not (r['email'] or '').strip():
                     con.execute("UPDATE donors SET email=? WHERE id=?", (em, r['id']))
+            # הצעות שמאיר כבר דחה — שלא יחזרו במסך ההשלמה
+            for last, first, ph in (('גינסברג', 'אהרן', '+1 (718) 440-6276'),
+                                    ('ברקוביץ', 'יואל', '1-718-619-5635'),
+                                    ('אברמוביץ', 'לאה', '1-718-377-0930'),
+                                    ('פוקס', 'שמשון', '+972 52-715-4167')):
+                r = con.execute("SELECT id FROM donors WHERE last LIKE ? AND first LIKE ?",
+                                ('%' + last + '%', '%' + first + '%')).fetchone()
+                if r:
+                    con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) "
+                                "VALUES(?,'phone',?,?)", (r['id'], ph, today_iso()))
             con.execute("INSERT INTO seed_flags(name) VALUES('phones_confirmed_v1')")
             print('  טלפונים שאושרו ידנית: %d' % npf)
     except Exception as e:
@@ -3802,6 +3813,27 @@ def _fitfirst(a, b):
     return not a or not b or a.startswith(b) or b.startswith(a)
 
 
+_CCACHE = {'cards': None}
+
+
+def _contact_cards():
+    """כל אנשי הקשר מהקבצים שהועלו — נקראים פעם אחת ונשמרים בזיכרון."""
+    if _CCACHE['cards'] is not None:
+        return _CCACHE['cards']
+    import gcontacts as _g
+    out = []
+    for fn, fx in (('contacts_seed2.vcf', _g.parse_any), ('contacts_seed.csv', _g.parse_csv)):
+        p = os.path.join(HERE, fn)
+        if os.path.exists(p):
+            try:
+                with open(p, encoding='utf-8', errors='replace') as f:
+                    out += fx(f.read())
+            except Exception as e:
+                print('  contact cache error %s: %s' % (fn, e))
+    _CCACHE['cards'] = cluster_contacts(out)
+    return _CCACHE['cards']
+
+
 def _tok_he(s):
     """מילים עבריות משם איש קשר — בלי ראשי תיבות וסימני פיסוק ("ב.בוכינגר תולי")."""
     return [t for t in re.sub(r'[^\u05d0-\u05ea ]', ' ', s or '').split() if len(t) >= 2]
@@ -4157,6 +4189,66 @@ class H(BaseHTTPRequestHandler):
             con.close()
             return self._send(200, {'ok': True, 'donors': out,
                                     'total': round(sum(x['total'] for x in out), 2)})
+        if self.path.split('?')[0] == '/api/audit/phones':
+            # הצעות טלפון לתורמים שאין להם — מתוך קבצי אנשי הקשר שהועלו
+            try:
+                cards = _contact_cards()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e), 'rows': []})
+            con = db()
+            donors = [dict(r) for r in con.execute(
+                "SELECT id,last,first,english,email,tier FROM donors "
+                "WHERE TRIM(COALESCE(phone,''))=''")]
+            tot = {}
+            for r in con.execute("SELECT donor_id, SUM(CAST(REPLACE(REPLACE(COALESCE(amount,'0'),',',''),"
+                                 "'$','') AS REAL)) s FROM donations GROUP BY donor_id"):
+                tot[r['donor_id']] = round(r['s'] or 0)
+            used = set()
+            for r in con.execute("SELECT phone FROM donors WHERE TRIM(COALESCE(phone,''))<>''"):
+                for x in re.split(r'[;,/]+', r['phone'] or ''):
+                    if _ph10(x):
+                        used.add(_ph10(x))
+            rej = set()
+            try:
+                for r in con.execute("SELECT donor_id,val FROM sugg_reject WHERE kind='phone'"):
+                    rej.add((r['donor_id'], (r['val'] or '').strip()))
+                    if (r['val'] or '').strip() == '*':
+                        rej.add((r['donor_id'], '*'))
+            except Exception:
+                pass
+            con.close()
+            idx = {}
+            for c in cards:
+                if not c['phones']:
+                    continue
+                for t in _tok_he(' '.join(x for x in (c.get('name'), c.get('first'),
+                                                     c.get('last'), c.get('org')) if x)):
+                    idx.setdefault(_fz(t), []).append(c)
+            out = []
+            for d in donors:
+                k = _fz(d['last'] or '')
+                if len(k) < 3 or (d['id'], '*') in rej:
+                    continue
+                seen, cands = set(), []
+                for c in idx.get(k, []):
+                    for ph in c['phones'][:2]:
+                        p10 = _ph10(ph)
+                        key = p10 or ph
+                        if not key or key in seen or p10 in used:
+                            continue
+                        if (d['id'], ph.strip()) in rej:
+                            continue
+                        seen.add(key)
+                        cands.append({'name': (c.get('name') or '').strip(), 'phone': ph.strip(),
+                                      'email': (c['emails'][0] if c['emails'] else ''),
+                                      'sure': bool(_firstok((c.get('first') or ''), d['first'] or ''))})
+                if cands:
+                    cands.sort(key=lambda x: (not x['sure'],))
+                    out.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                                'tier': d['tier'] or '', 'email': d['email'] or '',
+                                'tot': tot.get(d['id'], 0), 'cands': cands[:4]})
+            out.sort(key=lambda x: (-x['tot'], x['name']))
+            return self._send(200, {'ok': True, 'rows': out, 'total': len(donors)})
         if self.path.split('?')[0] == '/api/audit/noaddr':
             # מי אין לו כתובת בכרטיס, ומה אפשר להציע לו — מייצוא אנשי הקשר או מכתובת החיוב
             con = db()
@@ -5028,6 +5120,25 @@ class H(BaseHTTPRequestHandler):
             if nm:
                 con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm})
+        if self.path == '/api/audit/phones':
+            did = int(b.get('donor_id') or 0)
+            ph = (b.get('phone') or '').strip()
+            con = db()
+            if did and b.get('reject') and ph:
+                con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) VALUES(?,'phone',?,?)",
+                            (did, ph, today_iso()))
+            elif did and b.get('skip'):        # לא לשאול יותר על התורם הזה
+                con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) VALUES(?,'phone','*',?)",
+                            (did, today_iso()))
+                for r in con.execute("SELECT val FROM sugg_reject WHERE donor_id=? AND kind='phone'", (did,)):
+                    pass
+            elif did and ph:
+                con.execute("UPDATE donors SET phone=? WHERE id=? AND TRIM(COALESCE(phone,''))=''", (ph, did))
+                if b.get('email'):
+                    con.execute("UPDATE donors SET email=? WHERE id=? AND TRIM(COALESCE(email,''))=''",
+                                (b['email'], did))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/taskkinds':
             # סוגי משימה שהמשתמש מגדיר בעצמו — למשל "לבדוק יששכר זבולון שלו"
             nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:60]
