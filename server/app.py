@@ -3763,6 +3763,28 @@ def task_done_log(cur, tid, done=True, by='', when=''):
             'summary': summary, 'next_date': '', 'task_id': t['id'], 'at': at}
 
 
+def task_log_sync(cur, tid):
+    """משימה שכבר בוצעה ומאיר תיקן בה את הטקסט, הסוג או האחראי — הרישום בכרטיס
+    התורם מתעדכן יחד איתה, כדי שלא יישאר שם נוסח ישן."""
+    try:
+        t = cur.execute("SELECT * FROM tasks WHERE id=?", (int(tid),)).fetchone()
+    except Exception:
+        return None
+    if not t or not t['done'] or not t['donor_id']:
+        return None
+    c = cur.execute("SELECT * FROM contacts_log WHERE task_id=?", (t['id'],)).fetchone()
+    if not c:
+        return None
+    who = (t['done_by'] or '').strip() or (t['assignee'] or '').strip() or 'מאיר'
+    old = c['summary'] or ''
+    sfx = ' (לפי תאריך היעד)' if old.endswith('(לפי תאריך היעד)') else ''
+    summary = '✓ בוצע: %s · ע"י %s%s' % (task_text(t['kind'], t['note']), who, sfx)
+    cur.execute("UPDATE contacts_log SET summary=? WHERE id=?", (summary, c['id']))
+    return {'id': c['id'], 'donor_id': t['donor_id'], 'date': c['date'], 'channel': 'משימה',
+            'summary': summary, 'next_date': c['next_date'] or '', 'task_id': t['id'],
+            'at': c['at'] or ''}
+
+
 def link_by_identity(con):
     """משייך חיובים שנשארו בלי כרטיס — לפי מייל, לפי טלפון, ולבסוף לפי תעתיק השם
     הלועזי לעברית. רק התאמה יחידה וברורה מתקבלת; כל השאר נשאר לאישור ידני."""
@@ -5020,7 +5042,10 @@ class H(BaseHTTPRequestHandler):
             clog = None
             if 'done' in b:   # הווי נרשם גם בדף הקשר של התורם — מה נעשה, מתי, ובידי מי
                 clog = task_done_log(cur, pid, done=bool(int(b.get('done') or 0)),
-                                     by=b.get('done_by', ''), when=b.get('done_date', ''))
+                                     by=b.get('done_by', ''),
+                                     when=b.get('done_at', '') or b.get('done_date', ''))
+            elif sets:        # עריכת משימה שכבר בוצעה — גם הרישום בכרטיס מתעדכן
+                clog = task_log_sync(cur, pid)
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'contact': clog})
         m = re.match(r'/api/partner/(\d+)$', self.path)

@@ -603,10 +603,13 @@
   .logrow.taskdone .pi b{color:var(--yes)}
   /* משימות */
   .taskrow .tdone{background:var(--yes-soft);color:var(--yes);border:1px solid var(--yes);width:30px;height:30px;border-radius:50%;font-weight:800;cursor:pointer;flex-shrink:0}
-  .taskrow .tdone.restore{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
-  .taskrow.donerow{opacity:.65}
+  /* בתצוגת "בוצעו" הכפתור נושא טקסט מלא — עיגול עם חץ לבדו לא הובן */
+  .taskrow .tdone.restore{background:var(--accent-soft);color:var(--accent);border-color:var(--accent);
+    width:auto;height:auto;border-radius:9px;padding:7px 10px;font-size:.8rem;white-space:nowrap;line-height:1.2}
+  .taskrow.donerow{opacity:.72}
+  .taskrow.donerow:hover{opacity:1}
   .taskrow .miss2{font-size:.85rem;color:var(--muted);margin-top:2px}
-  .tdate{font-weight:800;font-size:.85rem;color:var(--accent)}
+  .tdate{font-weight:800;font-size:.85rem;color:var(--accent);white-space:nowrap}
   .tdate.over{color:var(--no)}
   /* פס תזכורות מפריע */
   .rembanner{display:none;background:var(--no);color:#fff;padding:11px 16px;font-weight:800;text-align:center;cursor:pointer;position:sticky;top:0;z-index:60;box-shadow:0 3px 12px rgba(0,0,0,.25)}

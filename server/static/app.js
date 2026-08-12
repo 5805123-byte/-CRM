@@ -451,11 +451,19 @@ async function setTaskDone(t,v,dref){
   if(d){
     const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt)stamp(lt);
     d.contacts=d.contacts||[];
-    if(on&&r&&r.contact)d.contacts.unshift(r.contact);
     if(!on)d.contacts=d.contacts.filter(c=>c.task_id!=t.id);
+    if(on&&r&&r.contact)d.contacts.unshift(r.contact);
     if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
   }
   return r;
+}
+// עריכת משימה שכבר בוצעה — השרת מחזיר את הרישום המעודכן, ומחליפים אותו במקום
+function putLog(d,c){
+  if(!d||!c)return;
+  d.contacts=d.contacts||[];
+  const ix=d.contacts.findIndex(x=>x.id===c.id);
+  if(ix>=0)d.contacts[ix]=c; else d.contacts.unshift(c);
+  if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
 }
 function checkReminders(){
   const due=dueTasks(),ban=document.getElementById('rembanner');
@@ -1370,8 +1378,9 @@ function renderCardTasks(d){
     const date=el.querySelector('.ctd[data-id="'+b.dataset.id+'"]').value;
     const who=el.querySelector('.ctw[data-id="'+b.dataset.id+'"]').value;
     b.disabled=true;
-    await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});
+    const rsp=await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});
     t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;
+    if(rsp&&rsp.contact)putLog(d,rsp.contact);
     renderCardTasks(d);renderReminders(d);checkReminders();toast('נשמר ✓');});
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderCardTasks(d);});
   el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await setTaskDone(t,1,d);renderCardTasks(d);checkReminders();toastUndo('בוצע ✓ · נרשם בקשר',async()=>{await setTaskDone(t,0,d);renderCardTasks(d);checkReminders();});});
@@ -2494,7 +2503,7 @@ function renderContacts(d){
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
     </details>`:''}
     <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
-      <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button></div>
+      <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button>${c.task_id?`<button class="btn sm ghost tundo" data-tid="${c.task_id}">↩️ החזר את המשימה לפתוחות</button>`:''}</div>
     <div class="teditpanel hidden" data-rem="${c.id}">
       <div class="fbrow"><label class="fld"><span>סוג</span><select class="cr_kind">${taskKindOpts()}</select></label>
         <label class="fld"><span>מתי להזכיר</span><input type="date" class="cr_date" value="${esc(todayStr())}"></label></div>
@@ -2502,6 +2511,13 @@ function renderContacts(d){
       <button class="btn sm cr_save" data-id="${c.id}" style="margin-top:6px">➕ צור תזכורת</button>
     </div></div><button class="del" data-del="${c.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/contact/'+b.dataset.del);d.contacts=d.contacts.filter(x=>x.id!=b.dataset.del);renderContacts(d);});
+  // ביטול הווי ישירות מהרישום — המשימה חוזרת לרשימה והשורה כאן נמחקת
+  el.querySelectorAll('.tundo').forEach(b=>b.onclick=async()=>{
+    const t=(d.tasks||[]).find(x=>x.id==b.dataset.tid);
+    if(!t){toast('המשימה נמחקה — אפשר למחוק את השורה');return;}
+    b.disabled=true; await setTaskDone(t,0,d);
+    renderContacts(d);renderCardTasks(d);renderReminders(d);checkReminders();
+    toast('חזרה לפתוחות ✓');});
   el.querySelectorAll('.clup').forEach(inp=>inp.onchange=()=>uploadFile('contact',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd){d.contacts=dd.contacts;}renderContacts(d);}));
   el.querySelectorAll('.mtr').forEach(b=>b.onclick=async()=>{
     const c=(d.contacts||[]).find(x=>x.id==b.dataset.cid);if(!c)return;
@@ -3515,10 +3531,11 @@ function renderTasksTab(){
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
       <div class="hintxt">בחר מי מבצע — מאיר או אהרן. ברירת המחדל היא החלון שאתה נמצא בו. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
-    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div><div class="list">${all.map((t,i)=>{
+    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div>
+    ${showDone?'<div class="submuted">"↩️ החזר לפתוחות" מבטל את הווי והמשימה חוזרת לרשימה — גם הרישום בכרטיס התורם נמחק. "✏️ ערוך" משנה את הטקסט בלי לבטל את הביצוע.</div>':''}<div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
-    return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️':'✓'}</button>
+    return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+(hhmm(t.done_at)?(' '+hhmm(t.done_at)):'')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
         <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
@@ -3531,7 +3548,7 @@ function renderTasksTab(){
       <div class="addrow" style="margin-top:6px"><input type="date" class="tdate2" data-i="${i}" value="${esc(t.due_date||'')}"><button class="btn sm tsave" data-i="${i}">💾 שמור</button><button class="del tdel" data-i="${i}">🗑 מחק</button></div>
       <div class="avfiles" style="margin-top:6px">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה / אסמכתא<input type="file" accept="image/*,audio/*,application/pdf" class="ttup" data-id="${t.id}" hidden></label></div>
     </div>`;
-  }).join('')||'<div class="empty">אין משימות פתוחות 🎉</div>'}</div>`;
+  }).join('')||`<div class="empty">${showDone?'עדיין לא סומנה אף משימה כבוצעה':'אין משימות פתוחות 🎉'}</div>`}</div>`;
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
   // חובות פרנס — פתיחת כרטיס / סימון שנגבה
   view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});
@@ -3554,7 +3571,7 @@ function renderTasksTab(){
   });
   view.querySelectorAll('.tkindsel').forEach(wireKindSel);
   view.querySelectorAll('.tedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=view.querySelector('.teditpanel[data-panel="'+b.dataset.i+'"]');if(p)p.classList.toggle('hidden');});
-  view.querySelectorAll('.tsave').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];const note=view.querySelector('.tnote[data-i="'+b.dataset.i+'"]').value.trim(),date=view.querySelector('.tdate2[data-i="'+b.dataset.i+'"]').value;const whoEl=view.querySelector('.twho[data-i="'+b.dataset.i+'"]');const who=whoEl?whoEl.value:(t.assignee||'');const kEl=view.querySelector('.tkindsel[data-i="'+b.dataset.i+'"]');const kind=kEl?(await kindValue(kEl)):(t.kind||'other');if(!kind)return;await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec){rec.note=note;rec.kind=kind;rec.due_date=date;rec.assignee=who;}toast(who==='אהרן'?'הועבר לאהרן ✓':'נשמר ✓');render();});
+  view.querySelectorAll('.tsave').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];const note=view.querySelector('.tnote[data-i="'+b.dataset.i+'"]').value.trim(),date=view.querySelector('.tdate2[data-i="'+b.dataset.i+'"]').value;const whoEl=view.querySelector('.twho[data-i="'+b.dataset.i+'"]');const who=whoEl?whoEl.value:(t.assignee||'');const kEl=view.querySelector('.tkindsel[data-i="'+b.dataset.i+'"]');const kind=kEl?(await kindValue(kEl)):(t.kind||'other');if(!kind)return;const rsp=await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;const rec=t.dref?(t.dref.tasks||[]).find(x=>x.id===t.id):GTASKS.find(x=>x.id===t.id);if(rec){rec.note=note;rec.kind=kind;rec.due_date=date;rec.assignee=who;}if(rsp&&rsp.contact)putLog(t.dref,rsp.contact);toast(who==='אהרן'?'הועבר לאהרן ✓':'נשמר ✓');render();});
   view.querySelectorAll('.tdel').forEach(b=>b.onclick=async()=>{const t=all[b.dataset.i];if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+t.id);if(t.dref)t.dref.tasks=(t.dref.tasks||[]).filter(x=>x.id!==t.id);else GTASKS=GTASKS.filter(x=>x.id!==t.id);toast('נמחק');render();checkReminders();});
   view.querySelectorAll('.tparnes').forEach(b=>b.onclick=()=>{const t=all[b.dataset.i],p=taskParnes(t);if(!p){toast('לא נמצא פרנס');return;}tab='parnes';pyKind=p.kind||'parnes';pyMonth=p.month;pyDay=+p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();});
   // משימה חדשה — חיפוש ובחירת תורם
