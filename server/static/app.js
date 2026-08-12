@@ -32,6 +32,9 @@ function jointHolders(p){return Math.max(1,jointGroup(p).length);}
 // אם לא נקבע — כל אחד נושא חלק שווה.
 function jointPayerId(p){const v=+(p.joint_payer||0);return v>0?v:0;}
 function partnerMonthly(p){
+  // חלוקה לא שווה: אצל כל מחזיק נרשם כמה הוא בעצמו משלם מהכרטיס שלו.
+  // זה גובר על כל חישוב אחר — כולל 0 למי שמחזיק אך אינו משלם.
+  if(String(p.share||'').trim()!=='')return amtNum(p.share);
   if(!+p.joint)return amtNum(p.amount);
   const pay=jointPayerId(p);
   if(pay)return (+p.donor_id===pay)?amtNum(p.amount):0;
@@ -106,7 +109,11 @@ function izSummaryHTML(d){
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
   const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
-  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(jointPayerId(p)?(jointPayerId(p)===d.id?('💳 אתה משלם את כל ה'+cur+amtNum(p.amount)):('💳 משלם: '+esc(jointPayerName(p)))):('חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים'))+'</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
+  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(
+  String(p.share||'').trim()!==''?('💳 חלקו מתוך '+cur+amtNum(p.amount)+' — לפי החלוקה שנקבעה'
+    +(amtNum(p.share)?'':', אינו משלם'))
+  :jointPayerId(p)?(jointPayerId(p)===d.id?('💳 אתה משלם את כל ה'+cur+amtNum(p.amount)):('💳 משלם: '+esc(jointPayerName(p))))
+  :('חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים'))+'</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
   const thruHtml=s.thru.length?s.thru.map(t=>`<div class="izrow"><span>💵 ${esc(t.av)} — שולם עד ${esc(fmtMonth(t.thru))}${t.months?(' · חייב '+t.months+' '+(t.months===1?'חודש':'חודשים')):' · מעודכן'}</span><b>${t.owe?(cur+t.owe):'—'}</b></div>`).join(''):'';
   if(s.manual!=null) debtLine=(s.manual>0.5
@@ -1415,8 +1422,7 @@ function purposeText(d){
   try{const s=izSummary(d); if(s.monthly>0)parts.push('יששכר־זבולון');}catch(e){}
   (d.pledges||[]).filter(p=>+p.monthly).forEach(p=>{
     const c=String(p.category||'').trim(); if(c&&parts.indexOf(c)<0)parts.push(c);});
-  const own=String(d.purpose||'').trim();
-  if(own&&parts.indexOf(own)<0)parts.push(own);
+  purposeList(d).forEach(c=>{if(parts.indexOf(c)<0)parts.push(c);});
   if(parts.length)return parts.join(' · ');
   const m={};
   (d.donations||[]).forEach(x=>{const c=String(x.category||'').trim();if(c)m[c]=(m[c]||0)+amtNum(x.amount);});
@@ -1464,6 +1470,7 @@ function steadyFor(d){
   const parts=[], put=s=>{s=String(s||'').trim();if(s&&parts.indexOf(s)<0)parts.push(s);};
   try{const s=izSummary(d); if(s.monthly>0)put('יששכר־זבולון');}catch(e){}
   (d.pledges||[]).filter(p=>+p.monthly).forEach(p=>put(p.category));
+  purposeList(d).forEach(put);
   const t=TIERS[d.tier];
   if(t)put(d.tier==='יששכר_זבולון'?t[0]:('קוויטל '+t[0]));
   return parts.join(' · ');
@@ -1556,8 +1563,10 @@ function cardDetails(d,body){
     ${hasFreq(d)?`<div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
       <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>`
     :`<label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>`}
-    <label class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה)</span><select id="f_purpose">${dnCatOpts(d.purpose||'')}</select></label>
-    <div class="addrow hidden" id="f_purpnew"><input id="f_purpfree" placeholder="שם הייעוד החדש"></div>
+    <div class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה). אפשר לבחור כמה</span>
+      <div class="purpbox"><div class="purpchips" id="f_purpchips">${purpChips(purposeList(d))}</div>
+        <select id="f_purpose">${dnCatOpts('')}</select></div></div>
+    <div class="addrow hidden" id="f_purpnew"><input id="f_purpfree" placeholder="שם הייעוד החדש"><button class="btn sm" id="f_purpadd">➕ הוסף</button></div>
     ${hasOccKv(d)?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
@@ -1906,14 +1915,29 @@ function cardDetails(d,body){
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
   addMic(document.getElementById('dn_note'));
-  const psel=document.getElementById('f_purpose'),pnew=document.getElementById('f_purpnew');
-  if(psel)psel.onchange=()=>{pnew.classList.toggle('hidden',psel.value!=='__new__');if(psel.value==='__new__')document.getElementById('f_purpfree').focus();};
+  // ייעודים — בחירה מהרשימה מוסיפה עוד אחד, ה-✕ מסיר. נשמרים יחד בשמירה.
+  const psel=document.getElementById('f_purpose'),pnew=document.getElementById('f_purpnew'),
+        pchips=document.getElementById('f_purpchips');
+  let plist=purposeList(d);
+  const drawP=()=>{if(!pchips)return;pchips.innerHTML=purpChips(plist);
+    pchips.querySelectorAll('.purpx').forEach(b2=>b2.onclick=e=>{
+      e.preventDefault();e.stopPropagation();plist.splice(+b2.dataset.i,1);drawP();});};
+  const addP=v=>{v=String(v||'').trim();if(!v)return;if(plist.indexOf(v)<0)plist.push(v);drawP();};
+  if(psel){
+    drawP();
+    psel.onchange=()=>{
+      if(psel.value==='__new__'){pnew.classList.remove('hidden');document.getElementById('f_purpfree').focus();return;}
+      pnew.classList.add('hidden'); addP(psel.value); psel.value='';};
+    const pfree=document.getElementById('f_purpfree'), padd=document.getElementById('f_purpadd');
+    const newP=async()=>{const v=pfree.value.trim();
+      if(!v){toast('כתוב את שם הייעוד החדש');pfree.focus();return;}
+      if(!(CAMPAIGNS||[]).includes(v)){await api('POST','/api/campaigns',{name:v});CAMPAIGNS.unshift(v);}
+      addP(v);pfree.value='';pnew.classList.add('hidden');psel.innerHTML=dnCatOpts('');psel.value='';};
+    if(padd)padd.onclick=newP;
+    if(pfree)pfree.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();newP();}};
+  }
   document.getElementById('f_saveall').onclick=async()=>{const b2={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){b2[k]=el.value;d[k]=el.value;}});
-    if(psel){let pv=psel.value;
-      if(pv==='__new__'){pv=document.getElementById('f_purpfree').value.trim();
-        if(!pv){toast('כתוב את שם הייעוד החדש');document.getElementById('f_purpfree').focus();return;}
-        if(!(CAMPAIGNS||[]).includes(pv)){await api('POST','/api/campaigns',{name:pv});CAMPAIGNS.unshift(pv);}}
-      b2.purpose=pv;d.purpose=pv;}
+    if(psel){b2.purpose=plist.join(' · ');d.purpose=b2.purpose;}
     await api('PUT','/api/donor/'+d.id,b2);cardDetails(d,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
 }
 
@@ -2235,6 +2259,13 @@ function giveNote(x){
 const DNMETH=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','זל','קפיטל 1','בנק ווסט','אוטורייז','דונרס פאנד','OJC','נדרים'];
 const DNBASE=['קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','בניין','מזדמן','חד-פעמי'];
 function dnCatList(){return DNBASE.concat((CAMPAIGNS||[]).filter(c=>c&&!DNBASE.includes(c)));}
+// ייעוד התורם יכול להיות כמה דברים יחד — למשל יששכר־זבולון וגם נר למאור.
+// נשמר בשדה אחד מופרד ב־" · ", כמו שזה גם מוצג בראש הכרטיס.
+function purposeList(d){return String((d&&d.purpose)||'').split('·').map(x=>x.trim()).filter(Boolean);}
+function purpChips(l){
+  return l.map((c,i)=>`<span class="purpchip">${esc(c)}<button type="button" class="purpx" data-i="${i}" title="הסר">✕</button></span>`).join('')
+    ||'<span class="hintxt">עוד לא נבחר ייעוד</span>';
+}
 function dnCatOpts(cur){
   const L=dnCatList();
   return `<option value="">— עבור מה? —</option>`
@@ -2452,7 +2483,10 @@ function renderPartners(d){
       <option value="">כל אחד את חלקו (${curSym(d)}${Math.round(amtNum(p.amount)/jointHolders(p))} לכל אחד)</option>
       ${jointGroup(p).map(g=>`<option value="${g.d.id}" ${jointPayerId(p)===g.d.id?'selected':''}>${esc(((g.d.business||'').trim()||((g.d.last||'')+' '+(g.d.first||'')).trim()))} — משלם את כל ${curSym(d)}${amtNum(p.amount)}</option>`).join('')}
     </select></label>
-    <div class="hintxt" style="margin:-6px 2px 6px">כשעסק אחד או כרטיס אחד משלם על כולם — בחר אותו כאן, והסכום ייזקף רק אליו. ההגדרה חלה על כל המחזיקים.</div>`:''}
+    <div class="hintxt" style="margin:-6px 2px 6px">כשעסק אחד או כרטיס אחד משלם על כולם — בחר אותו כאן, והסכום ייזקף רק אליו. ההגדרה חלה על כל המחזיקים.</div>
+    <label class="fld"><span>💳 או: כמה <b>${esc((d.last+' '+(d.first||'')).trim())}</b> משלם בפועל מהכרטיס שלו</span>
+      <input class="pfield" data-id="${p.id}" data-k="share" value="${esc(p.share||'')}" inputmode="decimal" placeholder="השאר ריק לחלוקה שווה"></label>
+    <div class="hintxt" style="margin:-6px 2px 6px">כשהחלוקה אינה שווה — רשום כאן אצל כל מחזיק את הסכום שלו (0 למי שמחזיק ואינו משלם). זה גובר על החלוקה השווה.</div>`:''}
     <label class="fld"><span>💵 שילם עד סוף חודש (מזומן / צ'ק ביד — תשלום שלא נרשם במערכת)</span><input type="month" class="pfield" data-id="${p.id}" data-k="paid_thru" value="${esc(p.paid_thru||'')}"></label>
     <label class="fld"><span>💰 עדכון תשלום ידני (למשל: "שילם הכל מראש 13/7")</span><input class="pfield" data-id="${p.id}" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום — נשמר ומוצג בסיכום"></label>
     <label class="fld"><span>הערות</span><input class="pfield" data-id="${p.id}" data-k="note" value="${esc(p.note||'')}" placeholder="הערה (רשות)"></label>

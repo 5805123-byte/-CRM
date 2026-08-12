@@ -76,7 +76,7 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
@@ -2925,6 +2925,34 @@ def ensure_schema():
     except Exception as e:
         print('  task done log error:', e)
 
+    # ציון כהן — שלושת המיטמנים מחזיקים אותו יחד ב-$1,400 לחודש, אבל הכסף יוצא
+    # משני כרטיסים בלבד: אפרים $650 וגבריאל $750. מאיר מחזיק ואינו משלם.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_split_v1'").fetchone():
+            n = 0
+            for first, share in (('אפרים', '650'), ('גבריאל', '750'), ('מאיר', '0')):
+                r = con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                "WHERE d.last='מיטמן' AND d.first=? AND p.avreich LIKE '%ציון%'",
+                                (first,)).fetchone()
+                if r:
+                    con.execute("UPDATE partners SET share=?, amount='1400', joint=1 WHERE id=?",
+                                (share, r['id'])); n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_split_v1')")
+            print('  שותפות ציון כהן — חלוקה לפי הכרטיסים: %d מחזיקים' % n)
+    except Exception as e:
+        print('  zion split error:', e)
+
+    # אפרים מיטמן — הקבוע שלו הוא גם יששכר־זבולון וגם נר למאור
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='purpose_multi_v1'").fetchone():
+            r = con.execute("SELECT id,purpose FROM donors WHERE last='מיטמן' AND first='אפרים'").fetchone()
+            if r and 'יששכר' not in (r['purpose'] or ''):
+                p = ' · '.join([x for x in ['יששכר־זבולון'] + [(r['purpose'] or '').strip()] if x])
+                con.execute("UPDATE donors SET purpose=? WHERE id=?", (p, r['id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('purpose_multi_v1')")
+    except Exception as e:
+        print('  purpose multi error:', e)
+
     # מיילים שמאיר ענה בג'ימייל ועדיין לא חוברו למייל שעליו ענו
     try:
         n = link_mail_replies(con)
@@ -5111,7 +5139,7 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     print('  joint payer error:', e)
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             if 'start_date' in b:   # חישוב מחדש של תאריך החידוש כשמשנים את תחילת ההסכם
                 g = heb_anniv(b.get('start_date') or '')
