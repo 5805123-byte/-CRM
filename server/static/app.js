@@ -1443,7 +1443,9 @@ function cardDetails(d,body){
   const pdebtsum=pdebts.reduce((s,p)=>s+amtNum(p.amount),0);
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(curd+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
-    ${(gc||pend)?`<div class="notpassed">🔴 לא עבר: ${gc?gc+' חודשים':''}${gc&&pend?' · ':''}${pend?pend+' התחייבויות':''}</div>`:''}
+    ${(gc||pend)?`<div class="notpassed">🔴 לא עבר${gc?(' · '+gc+' '+(gc===1?'חודש':'חודשים')):''}${pend?(' · '+pend+' התחייבויות'):''}
+      ${gc?`<div class="npmonths">${gaps(d.months).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
+      <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';
       const known=String(d.purpose||'').trim()||(d.pledges||[]).some(p=>+p.monthly)||izSummary(d).monthly>0;
@@ -1793,6 +1795,13 @@ function cardDetails(d,body){
   const catSel=document.getElementById('f_category');
   if(catSel)catSel.addEventListener('change',()=>setTimeout(()=>cardDetails(d,body),150));
   const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='details';renderCard(d);};
+  // סימון חודש שלא עבר — ישירות מהכרטיס
+  body.querySelectorAll('.cgchip').forEach(b3=>b3.onclick=async e=>{
+    e.stopPropagation(); const i=+b3.dataset.m, prev=d.months;
+    d.months=setMonthChar(d.months,i,'c');
+    await api('PUT','/api/donor/'+d.id,{months:d.months});
+    toastUndo(MON[i]+' — נגבה ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});cardDetails(d,body);});
+    cardDetails(d,body); if(tab==='donors')renderDonors();});
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
