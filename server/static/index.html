@@ -601,6 +601,11 @@
   .logrow.outmail{border-right:3px solid var(--accent)}   /* מייל ששלחנו לתורם — נבדל מאחד שהתקבל */
   .logrow.taskdone{border-right:3px solid var(--yes);background:rgba(34,160,90,.06)}  /* משימה שסומנה כבוצעה */
   .logrow.taskdone .pi b{color:var(--yes)}
+  /* התשובה שמאיר ענה — מוזחת מתחת לפנייה עצמה, כדי שיהיה ברור מה ממנו ומה ענינו */
+  .thread{margin-bottom:6px}
+  .thread .logrow{margin-bottom:4px}
+  .logrow.replyrow{margin-right:22px;background:var(--accent-soft);border-color:var(--accent)}
+  .logrow.replyrow .pi b{color:var(--accent)}
   /* משימות */
   .taskrow .tdone{background:var(--yes-soft);color:var(--yes);border:1px solid var(--yes);width:30px;height:30px;border-radius:50%;font-weight:800;cursor:pointer;flex-shrink:0}
   /* בתצוגת "בוצעו" הכפתור נושא טקסט מלא — עיגול עם חץ לבדו לא הובן */

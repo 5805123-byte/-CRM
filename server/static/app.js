@@ -2497,19 +2497,44 @@ function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
   // בשורה של משימה שבוצעה הכותרת כבר אומרת "משימה שבוצעה" — אין צורך לחזור על "בוצע:"
   const csum=c=>c.task_id?String(c.summary||'').replace(/^✓ בוצע:\s*/,''):(c.summary||'');
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}"><div class="pi"><b>${c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel))}</b> <small>${esc(c.date||'')}${hhmm(c.at)?(' · '+hhmm(c.at)):''}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+  const isRep=c=>!!c.reply_to;
+  // כותרת השורה: פנייה שהגיעה מהתורם, מייל ששלחנו, תשובה שמאיר ענה, או משימה
+  const head=c=>isRep(c)?'📤 עניתי לו':(c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel)));
+  const rowHTML=c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}${isRep(c)?' replyrow':''}"><div class="pi"><b>${head(c)}</b> <small>${esc(c.date||'')}${hhmm(c.at)?(' · '+hhmm(c.at)):''}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
       ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre>
         <details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
     </details>`:''}
     <div class="avfiles">${(c.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה<input type="file" accept="image/*,audio/*,application/pdf" class="clup" data-id="${c.id}" hidden></label>
-      <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button>${c.task_id?`<button class="btn sm ghost tundo" data-tid="${c.task_id}">↩️ החזר את המשימה לפתוחות</button>`:''}</div>
+      <button class="btn sm ghost clrem" data-id="${c.id}">🔔 קבע תזכורת${(c.files||[]).length?' + האסמכתאות':''}</button>${(c.direction!=='out'&&!c.task_id)?`<button class="btn sm ghost creply" data-id="${c.id}">↩️ עניתי לו</button>`:''}${c.task_id?`<button class="btn sm ghost tundo" data-tid="${c.task_id}">↩️ החזר את המשימה לפתוחות</button>`:''}</div>
+    <div class="teditpanel hidden" data-rep="${c.id}">
+      <label class="fld"><span>✍️ מה עניתי לו</span><textarea class="rp_txt" data-id="${c.id}" rows="3" placeholder="הדבק כאן את מה שכתבת לו — או כתוב בקצרה. אפשר גם להשאיר ריק ורק לסמן שענית."></textarea></label>
+      <div class="addrow" style="margin-top:6px"><input type="date" class="rp_date" data-id="${c.id}" value="${esc(todayStr())}"><button class="btn sm rp_save" data-id="${c.id}">💾 שמור את התשובה</button></div>
+    </div>
     <div class="teditpanel hidden" data-rem="${c.id}">
       <div class="fbrow"><label class="fld"><span>סוג</span><select class="cr_kind">${taskKindOpts()}</select></label>
         <label class="fld"><span>מתי להזכיר</span><input type="date" class="cr_date" value="${esc(todayStr())}"></label></div>
       <label class="fld"><span>פרטים</span><input class="cr_note" value="${esc(c.summary||'')}"></label>
       <button class="btn sm cr_save" data-id="${c.id}" style="margin-top:6px">➕ צור תזכורת</button>
-    </div></div><button class="del" data-del="${c.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
+    </div></div><button class="del" data-del="${c.id}">🗑</button></div>`;
+  // תשובה נתלית מתחת לפנייה שעליה ענו, כדי שיהיה ברור מה הגיע ממנו ומה ענינו
+  const all=d.contacts||[], kids={};
+  all.forEach(c=>{if(c.reply_to)(kids[c.reply_to]=kids[c.reply_to]||[]).push(c);});
+  Object.values(kids).forEach(a=>a.sort((x,y)=>String(x.at||x.date||'').localeCompare(String(y.at||y.date||''))));
+  el.innerHTML=all.filter(c=>!c.reply_to)
+    .map(c=>`<div class="thread">${rowHTML(c)}${(kids[c.id]||[]).map(rowHTML).join('')}</div>`)
+    .join('')||'<div class="hintxt">אין עדיין תיעוד.</div>';
+  addMics(el,['.rp_txt']);
+  el.querySelectorAll('.creply').forEach(b=>b.onclick=()=>{
+    const p=el.querySelector('.teditpanel[data-rep="'+b.dataset.id+'"]'); if(!p)return;
+    p.classList.toggle('hidden');
+    const ta=p.querySelector('.rp_txt'); if(!p.classList.contains('hidden')&&ta)ta.focus();});
+  el.querySelectorAll('.rp_save').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.id, ta=el.querySelector('.rp_txt[data-id="'+id+'"]'), dt=el.querySelector('.rp_date[data-id="'+id+'"]');
+    b.disabled=true;
+    const r=await api('POST','/api/contact/'+id+'/reply',{text:ta?ta.value.trim():'',date:dt?dt.value:'',at:nowStamp()});
+    if(r&&r.contact){d.contacts=d.contacts||[];d.contacts.unshift(r.contact);renderContacts(d);toast('נרשם שענית ✓');}
+    else{b.disabled=false;toast('לא נשמר');}});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/contact/'+b.dataset.del);d.contacts=d.contacts.filter(x=>x.id!=b.dataset.del);renderContacts(d);});
   // ביטול הווי ישירות מהרישום — המשימה חוזרת לרשימה והשורה כאן נמחקת
   el.querySelectorAll('.tundo').forEach(b=>b.onclick=async()=>{

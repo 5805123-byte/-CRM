@@ -150,6 +150,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN at TEXT")
     except Exception: pass
+    # תשובה שמאיר ענה על פנייה — נתלית מתחת לפנייה עצמה ולא כרישום נפרד
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN reply_to INTEGER")
+    except Exception: pass
     # זוגות שנבדקו וסומנו "לא אותו אדם" — לא יופיעו שוב ברשימת המיזוג
     try: con.execute("CREATE TABLE IF NOT EXISTS not_dupes(a INTEGER, b INTEGER, created TEXT, PRIMARY KEY(a,b))")
     except Exception: pass
@@ -5319,6 +5322,27 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE contacts_log SET body_he=? WHERE id=?", (he, cid))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'he': he})
+        m = re.match(r'/api/contact/(\d+)/reply$', self.path)
+        if m:   # "עניתי לו" — התשובה נשמרת תלויה בפנייה עצמה, ולא כרישום נפרד
+            cid = int(m.group(1))
+            con = db(); cur = con.cursor()
+            par = cur.execute("SELECT * FROM contacts_log WHERE id=?", (cid,)).fetchone()
+            if not par:
+                con.close(); return self._send(404, {'error': 'not found'})
+            root = par['reply_to'] or cid       # תשובה על תשובה נתלית באותה פנייה מקורית
+            txt = (b.get('text') or '').strip()
+            at = (b.get('at') or '').strip() or now_iso()
+            day = (b.get('date') or '').strip() or at[:10]
+            summary = txt or 'עניתי לו'
+            cur.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,
+                                                    direction,reply_to,at)
+                           VALUES(?,?,?,?,'','out',?,?)""",
+                        (par['donor_id'], day, par['channel'] or 'אימייל', summary, root, at))
+            rid = cur.lastrowid
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'contact': {
+                'id': rid, 'donor_id': par['donor_id'], 'date': day, 'channel': par['channel'] or 'אימייל',
+                'summary': summary, 'next_date': '', 'direction': 'out', 'reply_to': root, 'at': at}})
         m = re.match(r'/api/contact/(\d+)/remind$', self.path)
         if m:   # יצירת תזכורת מתוך תיעוד קשר — כולל העתקת האסמכתאות (צילום אשראי, הקלטה)
             cid = int(m.group(1))
