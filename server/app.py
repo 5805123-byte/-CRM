@@ -2542,6 +2542,28 @@ def ensure_schema():
     except Exception as e:
         print('  namefix error:', e)
 
+    # שורות סיכום עם חודש בלבד שנשארו מרשימת הקבועים — נמחקות כשכבר יש
+    # באותו חודש חיובים אמיתיים עם תאריך מדויק, כלומר הן כפילות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='month_only_cleanup_v1'").fetchone():
+            ndel2, nkeep = 0, 0
+            for r in con.execute("SELECT id,donor_id,amount,date FROM donations "
+                                 "WHERE LENGTH(COALESCE(date,''))<=7").fetchall():
+                if not r['donor_id'] or not (r['date'] or '').strip():
+                    continue
+                n = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND LENGTH(date)>7 "
+                                "AND SUBSTR(date,1,7)=?", (r['donor_id'], r['date'][:7])).fetchone()[0]
+                if n:
+                    con.execute("DELETE FROM donations WHERE id=?", (r['id'],)); ndel2 += 1
+                else:
+                    con.execute("UPDATE donations SET note=COALESCE(NULLIF(TRIM(note),''),?) WHERE id=?",
+                                ('שורת סיכום מרשימת הקבועים — אין חיוב מדויק לחודש הזה', r['id']))
+                    nkeep += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('month_only_cleanup_v1')")
+            print('  שורות חודש-בלבד: נמחקו %d כפילויות, נשארו %d ללא חיוב מקביל' % (ndel2, nkeep))
+    except Exception as e:
+        print('  month only cleanup error:', e)
+
     # טלפונים שמאיר אישר אחד־אחד מול אנשי הקשר. מספר בפורמט חיוג בינלאומי
     # ישראלי (012 + 1 + מספר אמריקאי) נשמר גם בצורתו הרגילה.
     try:
