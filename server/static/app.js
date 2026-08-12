@@ -202,6 +202,13 @@ const SRERR = {'not-allowed':'לא ניתנה הרשאה למיקרופון — 
   'service-not-allowed':'הדפדפן חסם את שירות ההכתבה','no-speech':'לא נשמע דיבור','audio-capture':'לא נמצא מיקרופון',
   'network':'אין חיבור לרשת להכתבה','aborted':''};
 let SRACT=null;
+// עצירה בטוחה: גם אם המנוע לא מדווח שהוא נגמר, המצב מתאפס אחרי רגע
+// אחרת הכפתור נשאר "מקליט" לנצח ואי אפשר להתחיל הקלטה חדשה.
+function stopDictation(){
+  const r=SRACT; if(!r)return;
+  try{r.stop();}catch(e){}
+  setTimeout(()=>{ if(SRACT===r){ try{r.abort&&r.abort();}catch(e){} if(r._fin)r._fin(); } },1200);
+}
 // מאחד קטעי תמלול. אנדרואיד מחזיר את אותו משפט כמה פעמים — פעם כשלבים
 // גדלים ("עכשיו" · "עכשיו קיבלת"), ופעם כניסוח מתוקן של אותו משפט עצמו.
 // שני המקרים נראים כמו קטעים "סופיים" נפרדים, ולכן משווים ומחליפים במקום לחבר.
@@ -248,14 +255,23 @@ function startDictation(btn,el){
     for(let i=0;i<ev.results.length;i++)seg[i]=ev.results[i][0].transcript;
     fin=joinSegs(seg);
     setv((base+fin).replace(/\s+/g,' ').trim());};
-  r.onerror=ev=>{const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);};
-  r.onend=()=>{SRACT=null;btn.classList.remove('rec');btn.textContent='🎤';
+  // סיום — רץ פעם אחת בלבד, גם אם המנוע דיווח גם שגיאה וגם סיום
+  r._fin=()=>{
+    if(r._done)return; r._done=1;
+    if(SRACT===r)SRACT=null;
+    btn.classList.remove('rec'); btn.textContent='🎤';
     const fixed=fixNames((base+fin).replace(/\s+/g,' ').trim());
     setv(fixed.text);
     if(fixed.hits.length)toast('תוקנו שמות: '+fixed.hits.join(', '));
     el.dispatchEvent(new Event('change',{bubbles:true}));
-    try{el.focus();}catch(e){}};
-  try{r.start();}catch(e){toast('לא הצלחתי להפעיל את המיקרופון');}
+    try{el.focus();}catch(e){}
+  };
+  r.onerror=ev=>{const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);
+    r._fin();};
+  r.onend=r._fin;
+  // חשוב לסמן שהמנוע פועל כבר עכשיו: אם start נכשל בלי לדווח, המצב לא נתקע
+  try{r.start(); SRACT=r; btn.classList.add('rec'); btn.textContent='⏹';}
+  catch(e){SRACT=null; try{r.abort&&r.abort();}catch(e2){} toast('לא הצלחתי להפעיל את המיקרופון — נסה שוב');}
 }
 // מנוע הדיבור לא מכיר שמות משפחה של תורמים. אחרי ההכתבה מתקנים כל מילה
 // שנשמעת בדיוק כמו שם משפחה שקיים אצלנו (אותו מפתח דמיון), ומדווחים מה תוקן.
@@ -351,7 +367,11 @@ function openDictPad(){
   ov.classList.add('show');
   const pad=document.getElementById('dictpad'), go=document.getElementById('dictgo'),
         snd=document.getElementById('dictsend'), au=document.getElementById('dictauto');
-  document.getElementById('dictx').onclick=()=>{stopDictation();ov.classList.remove('show');};
+  const closePad=()=>{try{stopDictation();}catch(e){}
+    SRACT=null; ov.classList.remove('show');
+    const f=document.getElementById('dictfab'); if(f)f.classList.remove('rec');};
+  document.getElementById('dictx').onclick=closePad;
+  ov.onclick=e=>{if(e.target===ov)closePad();};      // לחיצה מחוץ לחלון סוגרת
   au.onchange=()=>{try{localStorage.setItem('kc_dict_noauto',au.checked?'0':'1');}catch(e){}};
   // ההעתקה היא הדרך האמינה — שיתוף פותח שיחה חדשה ולא בהכרח את השיחה הנכונה
   const send=async()=>{const t=pad.value.trim(); if(!t){toast('אין מה להעתיק');return;}
@@ -3539,5 +3559,5 @@ function renderOcc(){
 (function(){const h=document.getElementById('healthbtn');if(h)h.onclick=()=>openHealth();})();
 (function(){const f=document.getElementById('dictfab');if(!f)return;
   if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){f.style.display='none';return;}
-  f.onclick=()=>openDictPad();})();
+  f.onclick=()=>{if(SRACT){try{stopDictation();}catch(e){}SRACT=null;f.classList.remove('rec');}openDictPad();};})();
 load();
