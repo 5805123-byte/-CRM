@@ -1419,7 +1419,14 @@ function cardDetails(d,body){
         <button class="btn sm gvcatok" data-did="${g.did}">➕ הוסף</button></div>
       <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: סעודת ראש חודש)" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
-      <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label></div>`:'';
+      <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label>
+      <button class="btn sm ghost gvsplit" data-did="${g.did}" style="width:100%;margin-top:6px">✂️ לחלק את ${curd}${g.amt} לכמה ייעודים</button>
+      <div class="gvsplitbox hidden" data-sp="${g.did}">
+        <div class="gvlbl" style="margin-top:8px">✂️ חלוקת ${curd}${g.amt}</div>
+        <div class="sprows"></div>
+        <div class="addrow"><button class="btn sm ghost spadd">➕ עוד ייעוד</button>
+          <button class="btn sm spok" data-did="${g.did}" data-tot="${g.amt}">💾 שמור חלוקה</button></div>
+        <div class="hintxt spmsg">הסכומים חייבים להסתכם ל-${curd}${g.amt}</div></div></div>`:'';
     // בכל תרומה: סכום · עבור מה · תאריך · דרך מה נתרם. לחיצה על הייעוד פותחת את החלון.
     const what=g.don
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
@@ -1539,6 +1546,43 @@ function cardDetails(d,body){
   };
   const gvOpen=did=>{const p=body.querySelector('.gvpanel[data-pan="'+did+'"]');if(p)p.classList.toggle('hidden');};
   body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>gvOpen(b.dataset.did));
+  // ---- חלוקת תרומה אחת לכמה ייעודים ----
+  const spRow=(amt,cat)=>`<div class="addrow sprow" style="margin-top:5px">
+    <input class="spamt" inputmode="decimal" placeholder="סכום" value="${esc(amt||'')}" style="max-width:96px">
+    <select class="spcat">${dnCatOpts(cat||'')}</select>
+    <button class="del sprm" title="הסר">✕</button></div>`;
+  const spSum=box=>[...box.querySelectorAll('.spamt')].reduce((s,i)=>s+amtNum(i.value),0);
+  const spWire=box=>{
+    box.querySelectorAll('.sprm').forEach(x=>x.onclick=()=>{if(box.querySelectorAll('.sprow').length>2)x.closest('.sprow').remove();spUpd(box);});
+    box.querySelectorAll('.spamt').forEach(x=>x.oninput=()=>spUpd(box));};
+  const spUpd=box=>{const tot=amtNum(box.querySelector('.spok').dataset.tot),s=spSum(box);
+    const m=box.querySelector('.spmsg');
+    m.innerHTML=Math.abs(s-tot)<0.5?'<b style="color:var(--yes)">✓ מסתכם בדיוק</b>'
+      :`נותרו לחלק: <b style="color:var(--no)">${curd}${Math.round((tot-s)*100)/100}</b>`;};
+  body.querySelectorAll('.gvsplit').forEach(b=>b.onclick=()=>{
+    const box=body.querySelector('.gvsplitbox[data-sp="'+b.dataset.did+'"]');
+    const open=box.classList.toggle('hidden')===false;
+    if(open&&!box.querySelector('.sprow')){
+      const g=(d.donations||[]).find(x=>x.id==b.dataset.did)||{};
+      box.querySelector('.sprows').innerHTML=spRow('',g.category||'')+spRow('','');
+      spWire(box); spUpd(box);}
+  });
+  body.querySelectorAll('.spadd').forEach(b=>b.onclick=()=>{const box=b.closest('.gvsplitbox');
+    box.querySelector('.sprows').insertAdjacentHTML('beforeend',spRow('',''));spWire(box);spUpd(box);});
+  body.querySelectorAll('.spok').forEach(b=>b.onclick=async()=>{
+    const box=b.closest('.gvsplitbox');
+    const parts=[...box.querySelectorAll('.sprow')].map(r=>({
+      amount:r.querySelector('.spamt').value.trim(), category:r.querySelector('.spcat').value.trim()}))
+      .filter(x=>amtNum(x.amount)>0);
+    if(parts.length<2){toast('צריך לפחות שני חלקים');return;}
+    if(parts.some(x=>!x.category||x.category==='__new__')){toast('בחר עבור מה לכל חלק');return;}
+    b.disabled=true;
+    const r=await api('POST','/api/donation/'+b.dataset.did+'/split',{parts});
+    b.disabled=false;
+    if(!r||!r.ok){toast(r&&r.error?r.error:'החלוקה נכשלה');return;}
+    parts.forEach(x=>{if(!(CAMPAIGNS||[]).includes(x.category))CAMPAIGNS.unshift(x.category);});
+    toast('חולק ל-'+parts.length+' ייעודים ✓');
+    await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   body.querySelectorAll('.gvcatsel').forEach(s=>s.onchange=()=>{
     const pan=s.closest('.gvpanel');
     if(s.value==='__new__'){

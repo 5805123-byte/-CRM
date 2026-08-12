@@ -5227,6 +5227,47 @@ class H(BaseHTTPRequestHandler):
             if nm:
                 con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm})
+        m = re.match(r'/api/donation/(\d+)/split$', self.path)
+        if m:      # פיצול תרומה אחת לכמה ייעודים — הסכומים חייבים להסתכם במקורי
+            did = int(m.group(1))
+            parts = [p for p in (b.get('parts') or []) if str(p.get('amount') or '').strip()]
+            con = db()
+            row = con.execute("SELECT * FROM donations WHERE id=?", (did,)).fetchone()
+            if not row:
+                con.close(); return self._send(404, {'error': 'not found'})
+            def _n(x):
+                try:
+                    return round(float(re.sub(r'[^0-9.]', '', str(x or '0')) or 0), 2)
+                except Exception:
+                    return 0.0
+            tot = _n(row['amount'])
+            ssum = round(sum(_n(p['amount']) for p in parts), 2)
+            if len(parts) < 2:
+                con.close(); return self._send(200, {'ok': False, 'error': 'צריך לפחות שני חלקים'})
+            if abs(ssum - tot) > 0.5:
+                con.close()
+                return self._send(200, {'ok': False,
+                                        'error': 'הסכומים לא מסתכמים לסכום המקורי (%s במקום %s)'
+                                                 % (ssum, tot)})
+            base = dict(row)
+            # מעתיקים כל עמודה שקיימת בפועל בטבלה, חוץ ממה שמשתנה בפיצול
+            cols = [c[1] for c in con.execute("PRAGMA table_info(donations)")
+                    if c[1] not in ('id', 'amount', 'category', 'note')]
+            newids = []
+            for p in parts:
+                cat = (p.get('category') or '').strip()
+                if cat:
+                    con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+                note = (base.get('note') or '').strip()
+                note = (note + ' · ' if note else '') + 'פוצל מתרומה של $%s' % base['amount']
+                names = cols + ['amount', 'category', 'note']
+                vals = [base.get(c) for c in cols] + [str(_n(p['amount'])), cat, note[:400]]
+                cur2 = con.execute("INSERT INTO donations(%s) VALUES(%s)"
+                                   % (','.join(names), ','.join('?' * len(names))), vals)
+                newids.append(cur2.lastrowid)
+            con.execute("DELETE FROM donations WHERE id=?", (did,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'ids': newids})
         if self.path == '/api/audit/phones':
             did = int(b.get('donor_id') or 0)
             ph = (b.get('phone') or '').strip()
