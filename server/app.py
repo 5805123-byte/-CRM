@@ -2542,6 +2542,37 @@ def ensure_schema():
     except Exception as e:
         print('  namefix error:', e)
 
+    # מפת החודשים של התורם התעדכנה ידנית, ולכן חודשים שכבר שולמו בפועל
+    # (יש להם תרומה עם תאריך) נשארו מסומנים כלא־עברו. משלימים מהתרומות.
+    # רץ בכל הפעלה, בלי דגל, כדי שיישאר מעודכן גם אחרי ייבוא חדש.
+    try:
+        yr = str(datetime.date.today().year)
+        marks = {}
+        for r in con.execute("SELECT donor_id, SUBSTR(date,6,2) mo FROM donations "
+                             "WHERE LENGTH(COALESCE(date,''))>=7 AND SUBSTR(date,1,4)=?", (yr,)):
+            try:
+                i = int(r['mo']) - 1
+            except Exception:
+                continue
+            if 0 <= i < 12 and r['donor_id']:
+                marks.setdefault(r['donor_id'], set()).add(i)
+        nmk = 0
+        for did, mos in marks.items():
+            row = con.execute("SELECT months FROM donors WHERE id=?", (did,)).fetchone()
+            if not row:
+                continue
+            cur3 = list((row['months'] or '').ljust(12, '-')[:12])
+            ch = False
+            for i in mos:
+                if cur3[i] not in ('p', 'c', 'h'):
+                    cur3[i] = 'p'; ch = True
+            if ch:
+                con.execute("UPDATE donors SET months=? WHERE id=?", (''.join(cur3), did)); nmk += 1
+        if nmk:
+            print('  מפת חודשים שהושלמה מהתרומות: %d תורמים' % nmk)
+    except Exception as e:
+        print('  months sync error:', e)
+
     # שורות סיכום עם חודש בלבד שנשארו מרשימת הקבועים — נמחקות כשכבר יש
     # באותו חודש חיובים אמיתיים עם תאריך מדויק, כלומר הן כפילות.
     try:

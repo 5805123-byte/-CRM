@@ -1182,8 +1182,27 @@ function purpRowHTML(first){
 
 // 'p'=עבר · 'c'=נגבה ידנית · 'h'=טופל/הוסר · '-'=חסר
 function _firstPaid(m){for(let i=0;i<m.length;i++)if(m[i]==='p'||m[i]==='c')return i;return -1;}
-function gaps(m){if(!m)return [];const f=_firstPaid(m);if(f<0)return[];const g=[];for(let i=f;i<=GLAST;i++)if(m[i]!=='p'&&m[i]!=='c'&&m[i]!=='h')g.push(i);return g;}
-function monthGrid(m){if(!m)return '';const f=_firstPaid(m);return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c='gp';else if(ch==='h')c='gh';else if(f>=0&&i>=f&&i<=GLAST)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
+// היום בחודש שבו התורם משלם בדרך כלל — חציון הימים מההיסטוריה שלו
+function payDay(d){
+  const ds=((d&&d.donations)||[]).map(x=>{const m=/^\d{4}-\d{2}-(\d{2})$/.exec(x.date||'');return m?+m[1]:0;}).filter(Boolean);
+  if(!ds.length)return 0;
+  ds.sort((a,b)=>a-b); return ds[Math.floor(ds.length/2)];
+}
+// עד איזה חודש בודקים. החודש הנוכחי נספר רק אחרי שעבר יום החיוב הרגיל של
+// התורם (עם שלושה ימי חסד), כדי לא לצבוע באדום מישהו שעוד לא הגיע זמנו.
+function lastMonthToCheck(d){
+  const now=new Date(), cm=now.getMonth(), pd=payDay(d)||28;
+  return now.getDate()>pd+3?cm:cm-1;
+}
+function gaps(m,d){
+  if(!m)return [];
+  const f=_firstPaid(m); if(f<0)return [];
+  const last=d?lastMonthToCheck(d):GLAST;
+  const g=[]; for(let i=f;i<=last;i++)if(m[i]!=='p'&&m[i]!=='c'&&m[i]!=='h')g.push(i);
+  return g;
+}
+function monthGrid(m,d){if(!m)return '';const f=_firstPaid(m);const last=d?lastMonthToCheck(d):GLAST;
+  return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c='gp';else if(ch==='h')c='gh';else if(f>=0&&i>=f&&i<=last)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
 function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('');a[i]=ch;return a.join('');}
 
 let cardTab='details';
@@ -1394,7 +1413,7 @@ function cardDetails(d,body){
   const cl=CATS.includes(d.category||'')?CATS:CATS.concat([d.category]);
   const sel=cl.map(c=>`<option ${c===(d.category||'')?'selected':''} value="${esc(c)}">${esc(catLabel(c))}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
-  const gc=gaps(d.months).length, pend=(d.pledges||[]).filter(p=>p.status!=='נתן').length;
+  const gc=gaps(d.months,d).length, pend=(d.pledges||[]).filter(p=>p.status!=='נתן').length;
   const dt=donorTotals(d), curd=curSym(d);
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
@@ -1443,7 +1462,7 @@ function cardDetails(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(curd+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${(gc||pend)?`<div class="notpassed">🔴 לא עבר${gc?(' · '+gc+' '+(gc===1?'חודש':'חודשים')):''}${pend?(' · '+pend+' התחייבויות'):''}
-      ${gc?`<div class="npmonths">${gaps(d.months).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
+      ${gc?`<div class="npmonths">${gaps(d.months,d).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
       <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';
@@ -2005,7 +2024,7 @@ function cardInfo(d,body){
     ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
-    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months).length?' · <b style="color:var(--no)">'+gaps(d.months).length+' לא עברו</b>':''}</div>${monthGrid(d.months)}</div>`:''}`;
+    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months,d).length?' · <b style="color:var(--no)">'+gaps(d.months,d).length+' לא עברו</b>':''}</div>${monthGrid(d.months,d)}</div>`:''}`;
   renderPhones(d); renderEmails(d);
   const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes'];
   wireFields(d,INF);
@@ -3157,7 +3176,7 @@ function renderDebts(){
 }
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
-  const missed=q1.filter(d=>gaps(d.months).length>0).sort((a,b)=>gaps(b.months).length-gaps(a.months).length);
+  const missed=q1.filter(d=>gaps(d.months,d).length>0).sort((a,b)=>gaps(b.months,b).length-gaps(a.months,a).length);
   // חובות = התחייבויות (pledges) שטרם ניתנו + פרנס־יום שהתחייב וטרם נגבה (paid=0)
   const debts=[];
   q1.forEach(d=>{
@@ -3169,7 +3188,7 @@ function renderMissed(){
     <div class="list">${debts.map((x,ix)=>`<div class="rowc"><div class="rowmain" data-id="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${x.label} ${x.amount?('· $'+esc(x.amount)):''}${x.method?(' · <span class="pmeth">'+esc(x.method)+'</span>'):''} — <b style="color:var(--no)">טרם נגבה</b></div></div><div class="meta"><button class="btn sm collectbtn" data-ix="${ix}">✓ נגבה</button></div></div>`).join('')||'<div class="hintxt">אין חובות פתוחים 🎉</div>'}</div>
     <div class="misshead" style="margin-top:16px">🔴 חודשים שלא עברו (${missed.length})</div>
     <div class="submuted">לחץ על חודש כדי לסמן שנגבה · "הסר שורה" מסמן שטופל</div>
-    <div class="list">${missed.map(d=>{const g=gaps(d.months);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
+    <div class="list">${missed.map(d=>{const g=gaps(d.months,d);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months,d)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowmain').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   // סימון חוב/התחייבות כנגבה
   view.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async e=>{e.stopPropagation();const x=debts[+b.dataset.ix];
@@ -3182,7 +3201,7 @@ function renderMissed(){
   view.querySelectorAll('.gchip').forEach(c=>c.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==c.dataset.id);const i=+c.dataset.m;const prev=d.months;d.months=setMonthChar(d.months,i,'c');await api('PUT','/api/donor/'+d.id,{months:d.months});
     toastUndo(MON[i]+' — נגבה ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});renderMissed();});renderMissed();});
   // הסרת שורה — סימון כל הפספוסים כ"טופל"
-  view.querySelectorAll('.missdismiss').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.id);const prev=d.months;let nm=d.months;gaps(nm).forEach(i=>nm=setMonthChar(nm,i,'h'));d.months=nm;await api('PUT','/api/donor/'+d.id,{months:nm});
+  view.querySelectorAll('.missdismiss').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.id);const prev=d.months;let nm=d.months;gaps(nm,d).forEach(i=>nm=setMonthChar(nm,i,'h'));d.months=nm;await api('PUT','/api/donor/'+d.id,{months:nm});
     toastUndo('הוסר ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});renderMissed();});renderMissed();});
 }
 
