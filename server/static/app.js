@@ -414,6 +414,11 @@ function addMics(root,sels){
   sels.forEach(sl=>root.querySelectorAll(sl).forEach(addMic));
 }
 function todayStr(){return new Date().toISOString().slice(0,10);}
+// חותמת זמן לפי השעון של המכשיר — 'YYYY-MM-DD HH:MM'. השרת רץ בשעון אחר,
+// ולכן שעת הביצוע נקבעת כאן ונשלחת אליו.
+function nowStamp(){const d=new Date(),z=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+' '+z(d.getHours())+':'+z(d.getMinutes());}
+const hhmm=s=>{const m=/\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(s||'');return m?m[1]:'';};
 function inDaysStr(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.toISOString().slice(0,10);}
 function addDay(ymd8){const y=+ymd8.slice(0,4),m=+ymd8.slice(4,6)-1,d=+ymd8.slice(6,8);return new Date(Date.UTC(y,m,d+1)).toISOString().slice(0,10).replace(/-/g,'');}
 function gcalLink(t,donor){const d=(t.due_date||'').replace(/-/g,'');if(d.length!==8)return '';const title=encodeURIComponent((kindLabel(t.kind)||'תזכורת')+' — '+donor+(t.note?': '+t.note:''));return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}/${addDay(d)}`;}
@@ -436,14 +441,15 @@ async function flipWho(id){
 // תאריך, ובידי מי. ביטול הווי מוחק את אותה שורה. כל מקום שבו יש וי עובר כאן,
 // כדי שהתיעוד ייווצר בין אם סימנו מהתזכורות, מהכרטיס, או מרשימת המשימות.
 async function setTaskDone(t,v,dref){
-  const on=v?1:0;
+  const on=v?1:0, at=nowStamp();
   let r=null;
-  if(t.id)r=await api('PUT','/api/task/'+t.id,{done:on,done_by:whoName(t)});
-  t.done=on;
-  const g=GTASKS.find(x=>x.id===t.id);if(g)g.done=on;
+  if(t.id)r=await api('PUT','/api/task/'+t.id,{done:on,done_by:whoName(t),done_at:at});
+  const stamp=x=>{x.done=on;x.done_by=on?whoName(t):'';x.done_at=on?at:'';x.done_date=on?at.slice(0,10):'';};
+  stamp(t);
+  const g=GTASKS.find(x=>x.id===t.id);if(g)stamp(g);
   const d=dref||t.dref||DB.find(x=>x.id===t.donor_id);
   if(d){
-    const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt){lt.done=on;lt.done_by=on?whoName(t):'';}
+    const lt=(d.tasks||[]).find(x=>x.id===t.id);if(lt)stamp(lt);
     d.contacts=d.contacts||[];
     if(on&&r&&r.contact)d.contacts.unshift(r.contact);
     if(!on)d.contacts=d.contacts.filter(c=>c.task_id!=t.id);
@@ -2482,7 +2488,7 @@ function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
   // בשורה של משימה שבוצעה הכותרת כבר אומרת "משימה שבוצעה" — אין צורך לחזור על "בוצע:"
   const csum=c=>c.task_id?String(c.summary||'').replace(/^✓ בוצע:\s*/,''):(c.summary||'');
-  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}"><div class="pi"><b>${c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel))}</b> <small>${esc(c.date||'')}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+  el.innerHTML=(d.contacts||[]).map(c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}"><div class="pi"><b>${c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel))}</b> <small>${esc(c.date||'')}${hhmm(c.at)?(' · '+hhmm(c.at)):''}</small>${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
       ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre>
         <details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
@@ -3477,7 +3483,7 @@ function renderTasksTab(){
   if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   // פתוחות — לפי תאריך היעד הקרוב. שבוצעו — האחרונות שנעשו למעלה.
-  if(showDone)all.sort((a,b)=>(b.done_date||b.due_date||'').localeCompare(a.done_date||a.due_date||''));
+  if(showDone)all.sort((a,b)=>(b.done_at||b.done_date||b.due_date||'').localeCompare(a.done_at||a.done_date||a.due_date||''));
   else all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   // ספירת משימות פתוחות לכל אחד (מאיר=ריק, אהרן)
   const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);}));GTASKS.forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);});
@@ -3514,7 +3520,7 @@ function renderTasksTab(){
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
-      <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
+      <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+(hhmm(t.done_at)?(' '+hhmm(t.done_at)):'')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
         <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
         <button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
     <div class="teditpanel hidden" data-panel="${i}">

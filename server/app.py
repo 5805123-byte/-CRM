@@ -143,7 +143,12 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE tasks ADD COLUMN done_by TEXT")
     except Exception: pass
+    # שעת הביצוע לפי השעון של מאיר (הדפדפן שולח אותה) — השרת רץ בשעון אחר
+    try: con.execute("ALTER TABLE tasks ADD COLUMN done_at TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN task_id INTEGER")
+    except Exception: pass
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN at TEXT")
     except Exception: pass
     # זוגות שנבדקו וסומנו "לא אותו אדם" — לא יופיעו שוב ברשימת המיזוג
     try: con.execute("CREATE TABLE IF NOT EXISTS not_dupes(a INTEGER, b INTEGER, created TEXT, PRIMARY KEY(a,b))")
@@ -3738,21 +3743,24 @@ def task_done_log(cur, tid, done=True, by='', when=''):
     if not t:
         return None
     if not done:
-        cur.execute("UPDATE tasks SET done=0, done_date='', done_by='' WHERE id=?", (t['id'],))
+        cur.execute("UPDATE tasks SET done=0, done_date='', done_by='', done_at='' WHERE id=?", (t['id'],))
         cur.execute("DELETE FROM contacts_log WHERE task_id=?", (t['id'],))
         return None
-    day = (when or '').strip() or today_iso()
+    # 'when' מגיע מהדפדפן בפורמט 'YYYY-MM-DD HH:MM' — השעה של מאיר, לא של השרת
+    at = (when or '').strip() or now_iso()
+    day = at[:10]
     who = (by or '').strip() or (t['assignee'] or '').strip() or 'מאיר'
-    cur.execute("UPDATE tasks SET done=1, done_date=?, done_by=? WHERE id=?", (day, who, t['id']))
+    cur.execute("UPDATE tasks SET done=1, done_date=?, done_by=?, done_at=? WHERE id=?",
+                (day, who, at, t['id']))
     if not t['donor_id']:
         return None
     if cur.execute("SELECT 1 FROM contacts_log WHERE task_id=?", (t['id'],)).fetchone():
         return None
     summary = '✓ בוצע: %s · ע"י %s' % (task_text(t['kind'], t['note']), who)
-    cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,task_id) "
-                "VALUES(?,?,'משימה',?,'',?)", (t['donor_id'], day, summary, t['id']))
+    cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,task_id,at) "
+                "VALUES(?,?,'משימה',?,'',?,?)", (t['donor_id'], day, summary, t['id'], at))
     return {'id': cur.lastrowid, 'donor_id': t['donor_id'], 'date': day, 'channel': 'משימה',
-            'summary': summary, 'next_date': '', 'task_id': t['id']}
+            'summary': summary, 'next_date': '', 'task_id': t['id'], 'at': at}
 
 
 def link_by_identity(con):
