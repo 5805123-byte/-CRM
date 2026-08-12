@@ -2096,7 +2096,8 @@ function dnRow(x,cur){cur=cur||'$';
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
     `<div class="dnedit hidden" data-de="${x.id}">
       <div class="fbrow"><label class="fld"><span>סכום (${cur})</span><input class="de_amt" value="${esc(x.amount)}"></label>
-        <label class="fld"><span>עבור מה / קטגוריה</span><input class="de_cat" list="dncats" value="${esc(x.category||'')}" placeholder="למשל: פרנס לילה"></label></div>
+        <label class="fld"><span>🎯 עבור מה</span><select class="de_cat" data-id="${x.id}">${dnCatOpts(x.category||'')}</select></label></div>
+      <div class="addrow hidden" data-denew="${x.id}"><input class="de_catnew" placeholder="שם הייעוד החדש…"></div>
       <div class="fbrow"><label class="fld"><span>אמצעי</span><input class="de_method" list="dnmeths" value="${esc(x.method||'')}"></label>
         <label class="fld"><span>סטטוס</span><select class="de_paid"><option value="1" ${+x.paid?'selected':''}>✓ שולם</option><option value="0" ${+x.paid?'':'selected'}>לא שולם</option></select></label></div>
       <label class="fld"><span>📅 תאריך מדויק${(x.date||'').length===7?' — חסר יום, אפשר להשלים':''}</span><input type="date" class="de_date" value="${esc((x.date||'').length===10?x.date:'')}"></label>
@@ -2122,10 +2123,18 @@ function renderDonations(d){
   el.querySelectorAll('.pnspaid').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});toast(+p.paid?'נגבה ✓':'סומן כחוב');renderDonations(d);});
   el.querySelectorAll('.dnpaid').forEach(b=>b.onclick=async()=>{const x=d.donations.find(y=>y.id==b.dataset.paid);x.paid=+x.paid?0:1;await api('PUT','/api/donation/'+x.id,{paid:x.paid});renderDonations(d);});
   el.querySelectorAll('.dnedbtn').forEach(b=>b.onclick=()=>{el.querySelector('.dnedit[data-de="'+b.dataset.id+'"]').classList.toggle('hidden');});
+  // "ייעוד חדש" בבורר פותח שדה טקסט לשם החדש
+  el.querySelectorAll('.de_cat').forEach(sel=>sel.onchange=()=>{
+    const nb=el.querySelector('[data-denew="'+sel.dataset.id+'"]');
+    if(nb){nb.classList.toggle('hidden',sel.value!=='__new__'); if(sel.value==='__new__')nb.querySelector('.de_catnew').focus();}});
   el.querySelectorAll('.de_save').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.dnedit[data-de="'+b.dataset.id+'"]');
     const x=d.donations.find(y=>y.id==b.dataset.id); if(!x)return;
-    x.amount=box.querySelector('.de_amt').value.trim(); x.category=box.querySelector('.de_cat').value.trim();
+    x.amount=box.querySelector('.de_amt').value.trim();
+    let cat=box.querySelector('.de_cat').value.trim();
+    if(cat==='__new__'){cat=(box.querySelector('.de_catnew')||{value:''}).value.trim();
+      if(!cat){toast('כתוב את שם הייעוד החדש');return;}}
+    x.category=cat;
     x.method=box.querySelector('.de_method').value.trim(); x.paid=+box.querySelector('.de_paid').value;
     const nd=box.querySelector('.de_date').value; if(nd)x.date=nd;
     await api('PUT','/api/donation/'+x.id,{amount:x.amount,category:x.category,method:x.method,paid:x.paid,date:x.date});
