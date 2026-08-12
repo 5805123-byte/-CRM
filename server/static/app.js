@@ -1233,15 +1233,29 @@ function lastMonthToCheck(d){
   const now=new Date(), cm=now.getMonth(), pd=payDay(d)||28;
   return now.getDate()>pd+3?cm:cm-1;
 }
+// שלושה חודשים רצופים ששולמו — התנהגות של הוראת קבע, גם בלי שסומן כך בכרטיס
+function _run3(m){let r=0;for(let i=0;i<(m||'').length;i++){r=(m[i]==='p'||m[i]==='c')?r+1:0;if(r>=3)return true;}return false;}
+// האם מצפים מהתורם לתשלום כל חודש. רק אצלו יש טעם לדבר על "חודש שלא עבר":
+// מי שתרם פעם אחת אינו חייב כלום בחודש שאחרי, ואסור לצבוע אותו באדום.
+function isMonthly(d){
+  if(!d)return false;
+  const cat=(d.category||'').trim();
+  if(cat==='מזדמן')return false;                              // סומן במפורש כתרומה חד־פעמית
+  if(cat==='קבוע')return true;                                // סומן כקבוע חודשי
+  if((d.pledges||[]).some(p=>+p.monthly===1))return true;      // התחייבות חודשית מפורשת
+  return _run3(d.months||'');
+}
 function gaps(m,d){
   if(!m)return [];
+  if(d&&!isMonthly(d))return [];
   const f=_firstPaid(m); if(f<0)return [];
   const last=d?lastMonthToCheck(d):GLAST;
   const g=[]; for(let i=f;i<=last;i++)if(m[i]!=='p'&&m[i]!=='c'&&m[i]!=='h')g.push(i);
   return g;
 }
 function monthGrid(m,d){if(!m)return '';const f=_firstPaid(m);const last=d?lastMonthToCheck(d):GLAST;
-  return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c='gp';else if(ch==='h')c='gh';else if(f>=0&&i>=f&&i<=last)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
+  const mo=d?isMonthly(d):true;   // אצל מזדמן אין "חודש חסר" — החודשים שלא שילם בהם אפורים
+  return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c='gp';else if(ch==='h')c='gh';else if(mo&&f>=0&&i>=f&&i<=last)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
 function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('');a[i]=ch;return a.join('');}
 
 let cardTab='details';
@@ -3229,7 +3243,9 @@ function renderMissed(){
     <div class="misshead">🔴 חובות והתחייבויות שטרם שולמו (${debts.length})</div>
     <div class="list">${debts.map((x,ix)=>`<div class="rowc"><div class="rowmain" data-id="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${x.label} ${x.amount?('· $'+esc(x.amount)):''}${x.method?(' · <span class="pmeth">'+esc(x.method)+'</span>'):''} — <b style="color:var(--no)">טרם נגבה</b></div></div><div class="meta"><button class="btn sm collectbtn" data-ix="${ix}">✓ נגבה</button></div></div>`).join('')||'<div class="hintxt">אין חובות פתוחים 🎉</div>'}</div>
     <div class="misshead" style="margin-top:16px">🔴 חודשים שלא עברו (${missed.length})</div>
-    <div class="submuted">לחץ על חודש כדי לסמן שנגבה · "הסר שורה" מסמן שטופל</div>
+    <div class="submuted">רק תורמים קבועים נבדקים כאן — מי שמסומן "קבוע", מי שיש לו התחייבות חודשית,
+      או מי ששילם שלושה חודשים רצופים. מזדמן שתרם פעם אחת לא נספר כמפספס.<br>
+      לחץ על חודש כדי לסמן שנגבה · "הסר שורה" מסמן שטופל</div>
     <div class="list">${missed.map(d=>{const g=gaps(d.months,d);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months,d)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowmain').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   // סימון חוב/התחייבות כנגבה
@@ -3460,7 +3476,9 @@ function renderTasksTab(){
   if(flt) all=all.filter(t=>t.kind===flt);
   if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
-  all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
+  // פתוחות — לפי תאריך היעד הקרוב. שבוצעו — האחרונות שנעשו למעלה.
+  if(showDone)all.sort((a,b)=>(b.done_date||b.due_date||'').localeCompare(a.done_date||a.due_date||''));
+  else all.sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   // ספירת משימות פתוחות לכל אחד (מאיר=ריק, אהרן)
   const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);}));GTASKS.forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);});
   const cnt=w=>openAll.filter(t=>w===''?true:(w==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===w)).length;
