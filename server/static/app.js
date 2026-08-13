@@ -3506,7 +3506,7 @@ function filterIZ(){const nq=norm(avSearch);
     .filter(d=>!nq||norm(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')).includes(nq)));}
 // רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.
 // מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
-let avOpenId=null;
+let avOpenId=null, avSwapId=null;
 async function renderAvByAv(){
   chips.innerHTML='';
   view.innerHTML='<div class="cnt">טוען את רשימת האברכים…</div>';
@@ -3520,8 +3520,7 @@ async function renderAvByAv(){
       <button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
-    <div class="avthead"><span class="c1">האברך</span><span class="c2">הזבולון</span><span class="c3">מתאריך</span><span class="c4">סכום</span></div>
-    <div class="avtlist">${rows.map(a=>avRowHTML(a)).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
+    <div class="avtlist">${rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
   const se=document.getElementById('avsearch');
   se.oninput=()=>{avSearch=se.value;clearTimeout(se._t);se._t=setTimeout(()=>{
     const p=se.selectionStart;paintByAv();const s2=document.getElementById('avsearch');
@@ -3533,25 +3532,26 @@ function paintByAv(){
   const q2=norm(avSearch).toLowerCase();
   const rows=AVLIST.filter(a=>!q2||norm(a.name+' '+a.holders.map(h=>h.name).join(' ')).toLowerCase().includes(q2));
   const el=view.querySelector('.avtlist'); if(!el)return;
-  el.innerHTML=rows.map(a=>avRowHTML(a)).join('')||'<div class="empty">אין תוצאות</div>';
+  el.innerHTML=rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>';
   wireByAv();
 }
-function avRowHTML(a){
-  const h=a.holders||[], open=avOpenId===a.name;
-  const who=h.length
-    ? h.map(x=>`<a class="avhold" data-did="${x.id}">${esc(x.name)}</a>`).join(' · ')
-    : '<span class="avfree">— פנוי —</span>';
-  const st=h.length?(h[0].start_date||a.started||''):(a.started||'');
-  const amt=h.length?(h[0].share!==''&&h[0].share!=null&&h[0].share!==undefined?h[0].share:(h[0].amount||'')):'';
+function avRowHTML(a,ix){
+  const h=a.holders||[], open=avOpenId===a.name, sw=avSwapId;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
-    <div class="avtmain">
-      <span class="c1"><b>${esc(a.last)}</b> ${esc(a.first)}</span>
-      <span class="c2">${who}</span>
-      <span class="c3">${esc(st||'—')}</span>
-      <span class="c4">${amt?('$'+esc(amt)):'—'}</span>
-    </div>
-    <div class="avtnote"><input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">
-      <button class="btn sm ghost avassign" data-av="${esc(a.name)}">${h.length?'➕ עוד שותף':'🤝 שבץ שותף'}</button></div>
+    <div class="avtname"><span class="avnum">${ix+1}</span>
+      <input class="avname" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.name)}" title="שם האברך — ניתן לשינוי">
+      <button class="btn sm ghost avassign" data-av="${esc(a.name)}">${h.length?'➕ עוד':'🤝 שבץ'}</button></div>
+    ${h.length?h.map(x=>`<div class="avhrow" data-pid="${x.pid}">
+      <a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>
+      <input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">
+      <input class="avh_amt" data-pid="${x.pid}" value="${esc(x.share!==''&&x.share!=null?x.share:(x.amount||''))}" inputmode="decimal" placeholder="סכום">
+      <button class="btn sm ghost avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button>
+      <button class="del avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>
+      ${sw===x.pid?`<div class="avswapbox">
+        <input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off">
+        <div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}
+    </div>`).join(''):'<div class="avhrow nofree"><span class="avfree">— אין שותף —</span></div>'}
+    <div class="avtnote"><input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…"></div>
     ${open?`<div class="avassignbox">
       <input class="av_q" data-av="${esc(a.name)}" placeholder="חפש תורם…" autocomplete="off">
       <div class="dpres av_res" data-av="${esc(a.name)}"></div>
@@ -3567,14 +3567,41 @@ function wireByAv(){
     const addAv=async()=>{const nm=(ni.value||'').trim(); if(!nm){ni.focus();return;}
       nb.disabled=true; const r=await api('POST','/api/avreich',{name:nm}); nb.disabled=false;
       if(r&&r.error==='exists'){toast('האברך כבר ברשימה');return;}
-      ni.value=''; toast('נוסף לרשימה ✓'); avView='byav'; renderAvByAv();};
+      ni.value=''; toast('נוסף לרשימה ✓'); renderAvByAv();};
     nb.onclick=addAv; ni.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addAv();}};}
+  const reload=async()=>{await load();await renderAvByAv();};
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
+  // שם האברך — שינוי כאן מחליף את השם גם אצל כל המחזיקים שלו
+  view.querySelectorAll('.avname').forEach(inp=>inp.onchange=async()=>{
+    const a=AVLIST.find(x=>x.name===inp.dataset.av), nm=inp.value.trim();
+    if(!a||!nm||nm===a.name){inp.value=a?a.name:inp.value;return;}
+    await api('POST','/api/avreich',{id:a.aid,name:nm}); toast('שם האברך עודכן ✓'); reload();});
   view.querySelectorAll('.avnote').forEach(inp=>inp.onchange=async()=>{
     const a=AVLIST.find(x=>x.name===inp.dataset.av); if(!a)return;
     a.note=inp.value; await api('POST','/api/avreich',{id:a.aid,name:a.name,note:inp.value}); toast('ההערה נשמרה ✓');});
+  // תאריך וסכום — נשמרים אצל התורם ברגע היציאה מהשדה
+  const saveH=async(pid,body)=>{const r=await api('POST','/api/avreich/holder',{pid:+pid,at:nowStamp(),...body});
+    if(r&&r.error==='already'){toast('האברך כבר משובץ אצל התורם הזה');return false;}
+    if(!r||!r.ok){toast('לא נשמר');return false;} return true;};
+  view.querySelectorAll('.avh_dt').forEach(inp=>inp.onchange=async()=>{
+    if(await saveH(inp.dataset.pid,{start_date:inp.value.trim()})){toast('התאריך עודכן ✓');reload();}});
+  view.querySelectorAll('.avh_amt').forEach(inp=>inp.onchange=async()=>{
+    if(await saveH(inp.dataset.pid,{amount:inp.value.trim()})){toast('הסכום עודכן אצל התורם ✓');reload();}});
+  view.querySelectorAll('.avh_rm').forEach(b=>b.onclick=async()=>{
+    if(!await uiConfirm('להסיר את השותפות הזו?\nהאברך יישאר ברשימה, בלי שותף.'))return;
+    if(await saveH(b.dataset.pid,{remove:1})){toast('הוסר ✓');reload();}});
+  view.querySelectorAll('.avh_swap').forEach(b=>b.onclick=()=>{
+    avSwapId=(avSwapId===+b.dataset.pid)?null:+b.dataset.pid; paintByAv();});
+  view.querySelectorAll('.sw_q').forEach(qi=>{
+    const pid=qi.dataset.pid, res=view.querySelector('.sw_res[data-pid="'+pid+'"]');
+    qi.focus();
+    qi.oninput=()=>{const s2=norm(qi.value);if(!s2){res.innerHTML='';return;}
+      const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.business).includes(s2)).slice(0,8);
+      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=async()=>{
+        if(await saveH(pid,{donor_id:+x.dataset.id})){avSwapId=null;toast('הועבר לתורם החדש ✓');reload();}});};});
   view.querySelectorAll('.avassign').forEach(b=>b.onclick=()=>{
-    avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; paintByAv();});
+    avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; avSwapId=null; paintByAv();});
   view.querySelectorAll('.av_q').forEach(qi=>{
     const av=qi.dataset.av, res=view.querySelector('.av_res[data-av="'+CSS.escape(av)+'"]'),
           ch=view.querySelector('.av_ch[data-av="'+CSS.escape(av)+'"]');
@@ -3597,8 +3624,7 @@ function wireByAv(){
     b.disabled=false;
     if(r&&r.error==='already'){toast('כבר משובץ אצל התורם הזה');return;}
     if(!r||!r.ok){toast('לא נשמר');return;}
-    avOpenId=null; toast('שובץ אצל '+r.donor+' ✓');
-    await load(); await renderAvByAv();});
+    avOpenId=null; toast('שובץ אצל '+r.donor+' ✓'); reload();});
 }
 function renderAvTable(){
   view.innerHTML=`<div class="avbar noprint">

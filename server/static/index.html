@@ -130,20 +130,31 @@
   .avnewbox{margin-bottom:8px}
   .avnewbox input{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:9px;
     font-family:inherit;background:var(--card);color:var(--ink)}
-  .avthead{display:flex;gap:8px;padding:4px 11px;color:var(--muted);font-size:.72rem;font-weight:700}
-  .avtrow{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:5px}
+  .avtrow{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:6px}
   .avtrow.isfree{border-inline-start:3px solid var(--no);background:var(--no-soft)}
-  .avtmain{display:flex;gap:8px;align-items:baseline;font-size:.88rem}
-  .avthead .c1,.avtmain .c1{flex:1.4;min-width:0}
-  .avthead .c2,.avtmain .c2{flex:1.6;min-width:0}
-  .avthead .c3,.avtmain .c3{flex:1;min-width:0;color:var(--muted);font-size:.8rem}
-  .avthead .c4,.avtmain .c4{flex:.6;min-width:0;text-align:left;font-weight:800;color:var(--yes)}
-  .avtmain .avhold{color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline}
-  .avtmain .avfree{color:var(--no);font-weight:800}
-  .avtnote{display:flex;gap:6px;align-items:center;margin-top:5px}
+  /* שם האברך ראשון בשורה — בעברית זה הצד הימני, בדיוק כמו בטבלה של מאיר */
+  .avtname{display:flex;gap:6px;align-items:center}
+  .avnum{flex:0 0 auto;min-width:26px;text-align:center;background:var(--ground);border:1px solid var(--line);
+    border-radius:7px;font-size:.72rem;font-weight:800;color:var(--muted);padding:2px 4px}
+  .avtname .avname{flex:1;min-width:0;font-weight:800;font-size:.95rem;padding:5px 8px;border:1px solid transparent;
+    border-radius:8px;background:transparent;color:var(--ink);font-family:inherit}
+  .avtname .avname:focus{border-color:var(--accent);background:var(--card);outline:none}
+  .avtname .btn{flex:0 0 auto;width:auto;white-space:nowrap}
+  .avhrow{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:5px;padding-inline-start:32px}
+  .avhrow .avhold{flex:1.3;min-width:90px;color:var(--accent);font-weight:700;cursor:pointer;
+    text-decoration:underline;font-size:.85rem}
+  .avhrow .avh_dt,.avhrow .avh_amt{min-width:0;padding:4px 7px;border:1px solid var(--line);border-radius:7px;
+    font-family:inherit;font-size:.78rem;background:var(--ground);color:var(--ink)}
+  .avhrow .avh_dt{flex:1.2} .avhrow .avh_amt{flex:.7;font-weight:800;color:var(--yes)}
+  .avhrow .btn,.avhrow .del{flex:0 0 auto;width:auto;padding:3px 8px}
+  .avhrow.nofree{padding-inline-start:32px}
+  .avhrow .avfree{color:var(--no);font-weight:800;font-size:.85rem}
+  .avswapbox{flex:1 0 100%;margin-top:5px}
+  .avswapbox .sw_q{width:100%;padding:7px 9px;border:1px solid var(--accent);border-radius:8px;
+    font-family:inherit;font-size:.85rem;background:var(--card);color:var(--ink)}
+  .avtnote{display:flex;gap:6px;align-items:center;margin-top:5px;padding-inline-start:32px}
   .avtnote .avnote{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--line);border-radius:8px;
     font-family:inherit;font-size:.8rem;background:var(--ground);color:var(--ink)}
-  .avtnote .btn{flex:0 0 auto;width:auto;white-space:nowrap}
   .avassignbox{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
   .avassignbox .av_q{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;
     font-family:inherit;background:var(--card);color:var(--ink)}

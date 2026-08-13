@@ -5727,6 +5727,56 @@ class H(BaseHTTPRequestHandler):
                 aid = cur.lastrowid
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': aid, 'name': nm})
+        if self.path == '/api/avreich/holder':
+            # עריכה מיידית של שורת אברך אצל תורם: תאריך, סכום, או העברה
+            # לתורם אחר. כל שינוי נרשם אצל התורם, ומופיע מיד בשתי הרשימות.
+            pid = int(b.get('pid') or 0)
+            con = db(); cur = con.cursor()
+            p = cur.execute("SELECT * FROM partners WHERE id=?", (pid,)).fetchone()
+            if not p:
+                con.close(); return self._send(404, {'ok': False, 'error': 'not_found'})
+            dn = lambda i: (lambda r: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() if r else '')(
+                cur.execute("SELECT last,first FROM donors WHERE id=?", (i,)).fetchone())
+            at = (b.get('at') or '').strip() or now_iso()
+            logs = []
+            sets, vals = [], []
+            if 'start_date' in b and (b['start_date'] or '') != (p['start_date'] or ''):
+                sets.append('start_date=?'); vals.append(b['start_date'])
+                g = heb_anniv(b['start_date'] or '')
+                sets.append('renew_date=?'); vals.append(g.isoformat() if g else None)
+                logs.append((p['donor_id'], '📅 %s — תאריך ההתחלה שונה ל%s' % (p['avreich'], b['start_date'] or '—')))
+            if 'amount' in b and str(b['amount'] or '') != str(p['amount'] or ''):
+                sets.append('amount=?'); vals.append(b['amount'])
+                logs.append((p['donor_id'], '💰 %s — הסכום שונה מ-%s ל-%s' % (
+                    p['avreich'], (p['amount'] or '—'), (b['amount'] or '—'))))
+            if 'share' in b:
+                sets.append('share=?'); vals.append(b['share'])
+            if 'avreich' in b:
+                nm2 = re.sub(r'\s+', ' ', (b['avreich'] or '')).strip()
+                if nm2 and nm2 != (p['avreich'] or ''):
+                    sets.append('avreich=?'); vals.append(nm2)
+                    logs.append((p['donor_id'], '🔀 האברך %s הוחלף ל%s' % (p['avreich'], nm2)))
+            nd = int(b.get('donor_id') or 0)
+            if nd and nd != p['donor_id']:
+                if not cur.execute("SELECT 1 FROM donors WHERE id=?", (nd,)).fetchone():
+                    con.close(); return self._send(400, {'ok': False, 'error': 'no_donor'})
+                if cur.execute("SELECT 1 FROM partners WHERE donor_id=? AND TRIM(avreich)=? AND id<>? "
+                               "AND COALESCE(active,1)<>0", (nd, p['avreich'], pid)).fetchone():
+                    con.close(); return self._send(200, {'ok': False, 'error': 'already'})
+                sets.append('donor_id=?'); vals.append(nd)
+                logs.append((p['donor_id'], '↩️ האברך %s הועבר ל%s' % (p['avreich'], dn(nd))))
+                logs.append((nd, '🤝 האברך %s הועבר לכאן מ%s' % (p['avreich'], dn(p['donor_id']))))
+                cur.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=? AND COALESCE(tier,'')<>'יששכר_זבולון'", (nd,))
+            if b.get('remove'):
+                cur.execute("UPDATE partners SET active=0, ended_date=? WHERE id=?", (today_iso(), pid))
+                logs.append((p['donor_id'], '❌ האברך %s הוסר' % p['avreich']))
+            elif sets:
+                cur.execute("UPDATE partners SET " + ','.join(sets) + " WHERE id=?", vals + [pid])
+            for did2, txt in logs:
+                cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,at) "
+                            "VALUES(?,?,'יששכר־זבולון',?,'',?)", (did2, at[:10], txt, at))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'changes': len(logs)})
         if self.path == '/api/avreich/assign':
             # שיוך אברך לתורם מתוך רשימת האברכים — נרשם אצל שניהם, עם תאריך
             aid = b.get('avreich_id'); did = int(b.get('donor_id') or 0)
