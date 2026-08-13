@@ -76,6 +76,8 @@ def ensure_schema():
         last TEXT, first TEXT, note TEXT, started TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS avreich_log(id INTEGER PRIMARY KEY AUTOINCREMENT, avreich TEXT,
         donor_id INTEGER, date TEXT, hdate TEXT, text TEXT, at TEXT);
+    CREATE TABLE IF NOT EXISTS deleted_donors(key TEXT PRIMARY KEY, last TEXT, first TEXT,
+        english TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
@@ -3051,6 +3053,14 @@ def ensure_schema():
     except Exception as e:
         print('  meir car error:', e)
 
+    # תורם שנמחק ונוצר מחדש באחת המיגרציות — נמחק שוב
+    try:
+        n = purge_deleted(con)
+        if n:
+            print('  כרטיסים שנמחקו וחזרו — נמחקו שוב: %d' % n)
+    except Exception as e:
+        print('  purge deleted error:', e)
+
     # מיילים שמאיר ענה בג'ימייל ועדיין לא חוברו למייל שעליו ענו
     try:
         n = link_mail_replies(con)
@@ -3920,6 +3930,42 @@ def task_log_sync(cur, tid):
     return {'id': c['id'], 'donor_id': t['donor_id'], 'date': c['date'], 'channel': 'משימה',
             'summary': summary, 'next_date': c['next_date'] or '', 'task_id': t['id'],
             'at': c['at'] or ''}
+
+
+def _dkey(last, first):
+    """מפתח זהות של תורם למעקב אחרי מחיקות — בלי גרשיים ורווחים."""
+    return (_fz(last or '') + '|' + _fz(first or '')).strip('|')
+
+
+def purge_deleted(con):
+    """תורם שמאיר מחק נשאר מחוק. אחת המיגרציות או ייבוא חוזר עלולים ליצור
+    אותו מחדש בעליית השרת, ואז נראה כאילו המחיקה לא עבדה. הסריקה הזו מוחקת
+    שוב כל כרטיס שנוצר בשם שכבר נמחק."""
+    n = 0
+    try:
+        keys = {r['key'] for r in con.execute("SELECT key FROM deleted_donors")}
+    except Exception:
+        return 0
+    if not keys:
+        return 0
+    for r in con.execute("SELECT id,last,first FROM donors").fetchall():
+        if _dkey(r['last'], r['first']) not in keys:
+            continue
+        for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
+                  'partners', 'transactions', 'building', 'donor_rules', 'avreich_log',
+                  'sugg_reject', 'addr_reject'):
+            try: con.execute("DELETE FROM %s WHERE donor_id=?" % t, (r['id'],))
+            except Exception: pass
+        for t in ('recon', 'intake'):
+            try: con.execute("UPDATE %s SET donor_id=NULL WHERE donor_id=?" % t, (r['id'],))
+            except Exception: pass
+        try:
+            con.execute("DELETE FROM donors WHERE id=?", (r['id'],)); n += 1
+        except Exception:
+            pass
+    if n:
+        con.commit()
+    return n
 
 
 def iz_log(cur, avreich, donor_id, text, at='', hd=''):
@@ -5525,6 +5571,9 @@ class H(BaseHTTPRequestHandler):
             if not (last or first):   # אין שם — ניקח את השם הראשון מהקוויטל (לפני בן/בת)
                 head = re.split(r'\bבן\b|\bבת\b', text)[0].strip() if text else ''
                 last = head or 'תורם חדש'
+            try: con.execute("DELETE FROM deleted_donors WHERE key=?",
+                             (_dkey(b.get('last',''), b.get('first','')),))
+            except Exception: pass
             cur = con.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (last, first, english, '', phone, email, addr, '', 'מזדמן', '', '', today_iso(),
@@ -5869,6 +5918,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'name': nm})
         if self.path == '/api/donor':
             con = db(); cur = con.cursor()
+            # נפתח מחדש כרטיס בשם שנמחק — הוא כבר לא נחשב "מחוק"
+            try: cur.execute("DELETE FROM deleted_donors WHERE key=?",
+                             (_dkey(b.get('last', ''), b.get('first', '')),))
+            except Exception: pass
             cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (b.get('last',''), b.get('first',''), b.get('english',''), b.get('business',''), b.get('phone',''),
@@ -6310,8 +6363,16 @@ class H(BaseHTTPRequestHandler):
             except Exception: pass
             try: con.execute("DELETE FROM files WHERE kind='transaction' AND ref_id IN (SELECT id FROM transactions WHERE donor_id=?)", (did,))
             except Exception: pass
+            try:
+                _d = con.execute("SELECT last,first,english FROM donors WHERE id=?", (did,)).fetchone()
+                if _d:
+                    con.execute("INSERT OR REPLACE INTO deleted_donors(key,last,first,english,created) "
+                                "VALUES(?,?,?,?,?)",
+                                (_dkey(_d['last'], _d['first']), _d['last'], _d['first'],
+                                 _d['english'] or '', today_iso()))
+            except Exception: pass
             for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners',
-                      'transactions','building','donor_rules'):
+                      'transactions','building','donor_rules','avreich_log','sugg_reject','addr_reject'):
                 try: con.execute(f"DELETE FROM {t} WHERE donor_id=?", (did,))
                 except Exception: pass
             # ניתוק שיוכים שנשארו במקומות אחרים, כדי שהתורם לא יופיע יותר בשום מסך
