@@ -2186,16 +2186,874 @@ def ensure_schema():
         print('  drop recurring est error:', e)
 
     # מאיר: "תיצמד רק לנתונים אמיתיים שקיבלת". שורות דוח הקבועים הן הערכה
-    # חודשית בלי תאריך חיוב, והן ניפחו סכומים — אצל עזרא מקס הן הוסיפו
-    # $6,000 מעל התשלומים האמיתיים שנכנסו מ-OJC. כולן יורדות.
+    # חודשית בלי יום חיוב, והן ניפחו סכומים — אצל עזרא מקס הוסיפו כ-$8,000
+    # מעל התשלומים שנכנסו בפועל מ-OJC. כל שורה בלי יום בחודש יורדת.
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_recurring_est_v3'").fetchone():
-            # כל שורה בלי יום בחודש היא הערכה מהאקסל, ולא חיוב שנרשם בפועל
             n = con.execute("DELETE FROM donations WHERE length(COALESCE(date,''))=7").rowcount
             con.execute("INSERT INTO seed_flags(name) VALUES('drop_recurring_est_v3')")
             print('  שורות הערכה מדוח הקבועים שנמחקו: %d' % n)
     except Exception as e:
         print('  drop est v3 error:', e)
+
+    # יעקב יוסף קלוק — הוראת קבע של $700 לחודש דרך קפיטל 1, ליששכר־זבולון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='klock_capital1_v1'").fetchone():
+            row = None
+            for r in con.execute("SELECT id,last,first FROM donors WHERE last IN ('קלוק','קלאק','קלעק')"):
+                if 'יעקב' in (r['first'] or ''):
+                    row = r; break
+            if True:
+                # אבא קלוק הוא אדם אחר — אם אין כרטיס ליעקב יוסף, נפתח לו כרטיס משלו
+                did = row['id'] if row else con.execute(
+                    "INSERT INTO donors(last,first,english,category,tier,channel,created,source) "
+                    "VALUES('קלוק','יעקב יוסף','Yaakov Yosef Klock','קבוע','יששכר_זבולון','קפיטל 1',?,'ידני')",
+                    (today_iso(),)).lastrowid
+                added = 0
+                for mm in range(1, 9):                     # ינואר–אוגוסט 2026
+                    dt = '2026-%02d-01' % mm
+                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
+                                   "AND ROUND(CAST(amount AS REAL),2)=700.0", (did, dt)).fetchone():
+                        continue
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,'700.00','יששכר־זבולון','קפיטל 1','הוראת קבע חודשית',1)",
+                                (did, dt))
+                    added += 1
+                con.execute("UPDATE donors SET channel=COALESCE(NULLIF(TRIM(channel),''),'קפיטל 1') WHERE id=?",
+                            (did,))
+                print('  קלוק קפיטל 1: נוספו %d חיובים חודשיים של $700 (#%d)' % (added, did))
+            con.execute("INSERT INTO seed_flags(name) VALUES('klock_capital1_v1')")
+    except Exception as e:
+        print('  klock capital1 error:', e)
+
+    # קאסנדרה לקומב — תורמת אמיתית שאין לה עדיין כרטיס. נפתח כדי שהחיובים ייכנסו אליה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lacombe_card_v1'").fetchone():
+            have = [r['id'] for r in con.execute("SELECT id,last,english FROM donors")
+                    if _fz(r['last'] or '') == _fz('לקומב')
+                    or 'lacombe' in (r['english'] or '').lower()]
+            if not have:
+                con.execute("INSERT INTO donors(last,first,english,category,created,source) "
+                            "VALUES('לאקומב','קאסנדרה','Cassandra Lacombe','מזדמן',?,'אוטורייז')",
+                            (today_iso(),))
+                print('  קאסנדרה לקומב: נפתח כרטיס')
+            elif len(have) == 1:      # קיים כרטיס — נשלים לו את השם הלועזי לזיהוי החיובים
+                con.execute("UPDATE donors SET english='Cassandra Lacombe' WHERE id=? "
+                            "AND TRIM(COALESCE(english,''))=''", (have[0],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('lacombe_card_v1')")
+    except Exception as e:
+        print('  lacombe card error:', e)
+
+    # יואל ברקוביץ ודוד פורסבסקי — תורמים חדשים שהגיעו דרך אבא קלוק לקמחא דפסחא תשפ"ו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='klock_kd_donors_v1'").fetchone():
+            KD = 'קמחא דפסחא תשפ"ו'
+            con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (KD, today_iso()))
+            for hl, hf, en in (('ברקוביץ', 'יואל', 'Joel Berkowitz'),
+                               ('פורסבסקי', 'דוד', 'David Profesorske')):
+                have = [r['id'] for r in con.execute("SELECT id,last,first FROM donors")
+                        if _fz(r['last'] or '') == _fz(hl) and _fz(r['first'] or '') == _fz(hf)]
+                if not have:
+                    did = con.execute(
+                        "INSERT INTO donors(last,first,english,category,notes,created,source) "
+                        "VALUES(?,?,?,'מזדמן','הגיע דרך אבא קלוק',?,?)",
+                        (hl, hf, en, today_iso(), KD)).lastrowid
+                    print('  %s %s: נפתח כרטיס' % (hf, hl))
+                else:
+                    did = have[0]
+                # כך החיוב שייכנס אליהם יסווג מיד לקמחא דפסחא ולא יישאר "לא סווג"
+                try:
+                    con.execute("INSERT OR IGNORE INTO donor_rules(donor_id,amount,category,note,created) "
+                                "VALUES(?,1100,?,'הגיע דרך אבא קלוק',?)", (did, KD, today_iso()))
+                except Exception:
+                    pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('klock_kd_donors_v1')")
+    except Exception as e:
+        print('  klock kd donors error:', e)
+
+    # The Four Thirty Ownes = יהושע פרנקל (שם העסק), קמחא דפסחא. סאמט־הרמן אינו שלנו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='frankel_samet_v1'").fetchone():
+            KD = 'קמחא דפסחא תשפ"ו'
+            r = con.execute("SELECT id,business FROM donors WHERE last='פרנקל' AND first='יהושע'").fetchone()
+            if r:
+                if not (r['business'] or '').strip():
+                    con.execute("UPDATE donors SET business='The Four Thirty Owners' WHERE id=?", (r['id'],))
+                try:
+                    con.execute("INSERT OR IGNORE INTO donor_rules(donor_id,amount,category,note,created) "
+                                "VALUES(?,1100,?,'',?)", (r['id'], KD, today_iso()))
+                except Exception:
+                    pass
+            n = con.execute("DELETE FROM recon WHERE COALESCE(processed,0)=0 AND donor_id IS NULL "
+                            "AND lower(TRIM(first))='samet'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('frankel_samet_v1')")
+            print('  פרנקל/סאמט: העסק נרשם, %d שורות סאמט נמחקו' % n)
+    except Exception as e:
+        print('  frankel samet error:', e)
+
+    # אלחנן אברמוביץ — האברך שלו נשאר בלי סכום ובלי אמצעי, ולכן הסיכום הראה התחייבות $0.
+    # הוא משלם 600+750 בבנק ווסט בכל 15 לחודש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='abramowitz_iz_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='אברמוביץ' AND first='אלחנן'").fetchone()
+            if r:
+                did = r['id']
+                rows = [dict(x) for x in con.execute(
+                    "SELECT * FROM partners WHERE donor_id=? AND COALESCE(active,1)!=0", (did,))]
+                if not rows:
+                    con.execute("INSERT INTO partners(donor_id,avreich,amount,method,active) "
+                                "VALUES(?,'רוזנבלט אהרן','1350','בנק_ווסט',1)", (did,))
+                    print('  אברמוביץ: נוסף אברך רוזנבלט אהרן — $1,350 בבנק ווסט')
+                elif len(rows) == 1:
+                    con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'1350'), "
+                                "avreich=COALESCE(NULLIF(TRIM(avreich),''),'רוזנבלט אהרן'), "
+                                "method=COALESCE(NULLIF(TRIM(method),''),'בנק_ווסט') WHERE id=?",
+                                (rows[0]['id'],))
+                    print('  אברמוביץ: הושלם סכום 1350 ואמצעי בנק ווסט לאברך')
+                else:
+                    for x, amt in zip(rows, ('750', '600')):
+                        con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),?), "
+                                    "method=COALESCE(NULLIF(TRIM(method),''),'בנק_ווסט') WHERE id=?",
+                                    (amt, x['id']))
+                    print('  אברמוביץ: הושלמו סכומי האברכים (750 / 600)')
+            con.execute("INSERT INTO seed_flags(name) VALUES('abramowitz_iz_v1')")
+    except Exception as e:
+        print('  abramowitz iz error:', e)
+
+    # אברך שמופיע ברשימת יש"ז אך חסר בכרטיס — יהודה בולמן אצל דניאל יעקובסון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_bulman_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='יעקובסון' AND first='דניאל'").fetchone()
+            if r and not con.execute("SELECT 1 FROM partners WHERE donor_id=? AND avreich LIKE '%בולמן%'",
+                                     (r['id'],)).fetchone():
+                con.execute("INSERT INTO partners(donor_id,avreich,amount,start_date,method,active) "
+                            "VALUES(?,?,'1000',?,'בנק_ווסט',1)",
+                            (r['id'], 'בולמן יהודה', 'א\' כסליו תשפ"ו'))
+                print('  יעקובסון דניאל: נוסף האברך בולמן יהודה — $1,000')
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_bulman_v1')")
+    except Exception as e:
+        print('  iz bulman error:', e)
+
+    # אשר מויאל — אותו סכום ואותו תאריך כמו האברך השני של גדליה פנסטר.
+    # ובאופן כללי: מי שמחזיק כמה אברכים — התאריך זהה לכולם, אלא אם נרשם אחרת במפורש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_same_date_v1'").fetchone():
+            r = con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id "
+                            "WHERE d.last='פנסטר' AND p.avreich LIKE '%מויאל%'").fetchone()
+            if r:
+                con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'800') "
+                            "WHERE id=?", (r['id'],))
+            rows = [dict(x) for x in con.execute(
+                "SELECT p.id,p.donor_id,p.start_date,d.last FROM partners p "
+                "JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.active,1)!=0")]
+            byd = {}
+            for x in rows:
+                byd.setdefault(x['donor_id'], []).append(x)
+            n = 0
+            for v in byd.values():
+                if len(v) < 2 or v[0]['last'] == 'טאובנפלד':      # טאובנפלד — תאריכים שונים במכוון
+                    continue
+                dates = {(x['start_date'] or '').strip() for x in v if (x['start_date'] or '').strip()}
+                if len(dates) != 1:
+                    continue
+                dt = dates.pop()
+                for x in v:
+                    if not (x['start_date'] or '').strip():
+                        con.execute("UPDATE partners SET start_date=? WHERE id=?", (dt, x['id']))
+                        n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_same_date_v1')")
+            print('  תאריכי יש"ז שהושלמו מאברך אחר של אותו תורם: %d' % n)
+    except Exception as e:
+        print('  iz same date error:', e)
+
+    # זאב שטרן — דב בער רובינפלד, $800 מא' שבט תשפ"ו. מאומת מול חיובי בנק ווסט
+    # של William Stern: $800 ב-10 לחודש מינואר 2026.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stern_iz_v1'").fetchone():
+            r = con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id "
+                            "WHERE d.last='שטרן' AND d.first='זאב' AND p.avreich LIKE '%רובינפלד%'").fetchone()
+            if r:
+                con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'800'), "
+                            "start_date=COALESCE(NULLIF(TRIM(start_date),''),?), "
+                            "method=COALESCE(NULLIF(TRIM(method),''),'בנק_ווסט') WHERE id=?",
+                            ('א\' שבט תשפ"ו', r['id']))
+                print('  שטרן זאב: רובינפלד דב בער — $800 מא\' שבט תשפ"ו')
+            con.execute("INSERT INTO seed_flags(name) VALUES('stern_iz_v1')")
+    except Exception as e:
+        print('  stern iz error:', e)
+
+    # התחייבות חודשית של $1,200 לנר למאור — מיטמן אפרים, מילר שמחה, פערל שלמה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='ner_lemaor_1200_v1'").fetchone():
+            n = 0
+            for last, first in (('מיטמן', 'אפרים'), ('מילר', 'שמחה'), ('פערל', 'שלמה')):
+                r = con.execute("SELECT id FROM donors WHERE last LIKE ? AND first LIKE ?",
+                                ('%' + last + '%', '%' + first + '%')).fetchone()
+                if not r:
+                    continue
+                ex = con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND TRIM(category)='נר למאור'",
+                                 (r['id'],)).fetchone()
+                if ex:
+                    continue
+                con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly) "
+                            "VALUES(?,'נר למאור','1200','נתן',?,'התחייבות חודשית — בנק ווסט',1)",
+                            (r['id'], today_iso()))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('ner_lemaor_1200_v1')")
+            print('  נר למאור $1,200 לחודש: נוספה התחייבות ל-%d תורמים' % n)
+    except Exception as e:
+        print('  ner lemaor error:', e)
+
+    # כרטיסים כפולים של אותו אדם שנוצרו בייבוא: אותו שם משפחה לפי צליל ושם פרטי
+    # שמתיישב (עטרה / "עטרה (קטי)", דוד / "משה דוד", בריינה / "בנדל בריינא").
+    # בני זוג נחסמים כי שמותיהם הפרטיים שונים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='dupe_name_merge_v1'").fetchone():
+            def _fnames(s0):
+                return [t for t in re.sub(r'[^\u05d0-\u05ea ]', ' ', s0 or '').split() if len(t) >= 2]
+
+            def _firsts_ok(a0, b0):
+                ta, tb = _fnames(a0), _fnames(b0)
+                if not ta or not tb:
+                    return False
+                short, long = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+                return all(any(_firstok(x, y, strict=True) for y in long) for x in short)
+            rows = [dict(r) for r in con.execute(
+                "SELECT id,last,first,phone,email,addr,english FROM donors")]
+            nd = set()
+            try:
+                for r in con.execute("SELECT a,b FROM not_dupes"):
+                    nd.add((r['a'], r['b']))
+            except Exception:
+                pass
+            bylast = {}
+            for r in rows:
+                k = _fz(r['last'] or '')
+                if len(k) >= 3:
+                    bylast.setdefault(k, []).append(r)
+
+            def _rich(r):
+                return sum(1 for k in ('phone', 'email', 'addr', 'english') if str(r.get(k) or '').strip())
+            nmg2, merged = 0, []
+            for k, grp in bylast.items():
+                if len(grp) < 2:
+                    continue
+                for i in range(len(grp)):
+                    for j in range(i + 1, len(grp)):
+                        a1, b1 = grp[i], grp[j]
+                        pair = (min(a1['id'], b1['id']), max(a1['id'], b1['id']))
+                        if pair in nd or not _firsts_ok(a1['first'], b1['first']):
+                            continue
+                        # שניהם עם טלפונים שונים לגמרי — כנראה שני אנשים
+                        p1 = {_ph10(x) for x in re.split(r'[;,/]+', a1['phone'] or '') if _ph10(x)}
+                        p2 = {_ph10(x) for x in re.split(r'[;,/]+', b1['phone'] or '') if _ph10(x)}
+                        if p1 and p2 and not (p1 & p2):
+                            continue
+                        kp, dp = (a1, b1) if _rich(a1) >= _rich(b1) else (b1, a1)
+                        if merge_into(con, kp['id'], dp['id']):
+                            nmg2 += 1
+                            merged.append('%s %s ← %s' % (kp['last'], kp['first'] or '', dp['first'] or ''))
+                            dp['id'] = kp['id']
+            con.execute("INSERT INTO seed_flags(name) VALUES('dupe_name_merge_v1')")
+            print('  כרטיסים כפולים שאוחדו לפי שם: %d%s'
+                  % (nmg2, (' — ' + ' · '.join(merged[:8])) if merged else ''))
+    except Exception as e:
+        print('  dupe name merge error:', e)
+
+    # מאיר קבע: חיים ולאה אסתר לאקס הם בעל ואישה בכרטיס אחד; מוסקוביץ העני
+    # ואסתר הם שני תורמים נפרדים ואין למזג אותם לעולם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lax_moskowitz_v2'").fetchone():
+            h = con.execute("SELECT id FROM donors WHERE last LIKE '%לאקס%' AND first LIKE '%חיים%'").fetchone()
+            w = con.execute("SELECT id FROM donors WHERE last LIKE '%לאקס%' AND first LIKE '%לאה%'").fetchone()
+            if h and w and h['id'] != w['id']:
+                merge_into(con, h['id'], w['id'])
+            if h:   # הכרטיס נושא את שניהם, גם אם האיחוד כבר קרה קודם
+                con.execute("UPDATE donors SET first='חיים ולאה אסתר' WHERE id=? AND first NOT LIKE '%לאה%'",
+                            (h['id'],))
+                print('  לאקס: הכרטיס נושא את חיים ולאה אסתר')
+            n2 = 0
+            # ישראל ברודי ושרה ברודי אינם קשורים
+            bs = [r['id'] for r in con.execute("SELECT id FROM donors WHERE last LIKE '%ברודי%'")]
+            for i in range(len(bs)):
+                for j in range(i + 1, len(bs)):
+                    con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)",
+                                (min(bs[i], bs[j]), max(bs[i], bs[j]), today_iso()))
+                    n2 += 1
+            ms = [r['id'] for r in con.execute("SELECT id FROM donors WHERE last LIKE '%מוסקוביץ%'")]
+            for i in range(len(ms)):
+                for j in range(i + 1, len(ms)):
+                    con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)",
+                                (min(ms[i], ms[j]), max(ms[i], ms[j]), today_iso()))
+                    n2 += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('lax_moskowitz_v2')")
+            print('  מוסקוביץ / ברודי: %d זוגות סומנו כתורמים נפרדים' % n2)
+    except Exception as e:
+        print('  lax/moskowitz error:', e)
+
+    # תרגומים שנשמרו זהים למקור — התרגום לא באמת קרה. מנקים כדי שירוצו מחדש
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='retranslate_v1'").fetchone():
+            cur5 = con.execute(
+                "UPDATE contacts_log SET body_he=NULL WHERE COALESCE(TRIM(body_he),'')<>'' "
+                "AND REPLACE(REPLACE(TRIM(body_he),' ',''),CHAR(10),'')"
+                "  = REPLACE(REPLACE(TRIM(body),' ',''),CHAR(10),'')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('retranslate_v1')")
+            print('  תרגומים שנוקו לתרגום מחדש: %d' % cur5.rowcount)
+    except Exception as e:
+        print('  retranslate error:', e)
+
+    # תיקוני איות ושמות עבריים שמאיר מסר, ואיחוד כרטיסים כפולים שנוצרו בגללם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='namefix_aug11_v1'").fetchone():
+            def _one(last, first=None):
+                if first:
+                    r = con.execute("SELECT id FROM donors WHERE last LIKE ? AND COALESCE(first,'') LIKE ?",
+                                    ('%' + last + '%', '%' + first + '%')).fetchone()
+                else:
+                    r = con.execute("SELECT id FROM donors WHERE last LIKE ?", ('%' + last + '%',)).fetchone()
+                return r['id'] if r else None
+            nfix = 0
+            # איות נכון של שמות משפחה בעברית
+            for old, new in (('פק', 'פאק'), ('אמסעל', 'אמזל')):
+                cur4 = con.execute("UPDATE donors SET last=? WHERE TRIM(last)=?", (new, old))
+                nfix += cur4.rowcount
+            # לאוניד גרוסמן = אליעזר גרוסמן (השם העברי)
+            con.execute("UPDATE donors SET first='אליעזר' WHERE TRIM(last)='גרוסמן' AND TRIM(first)='לאוניד'")
+            # שם ומשפחה שהוזנו הפוך — בנימין שטטפלד
+            con.execute("UPDATE donors SET last='שטטפלד', first='בנימין' "
+                        "WHERE TRIM(last)='בנימין' AND TRIM(first)='שטטפלד'")
+            # כרטיסי שטטפלד/סטטפלד של ברכה — מתאחדים לכרטיס של יצחק וברכה
+            keep = _one('שטטפלד', 'יצחק וברכה')
+            nmg = 0
+            if keep:
+                for r in con.execute("SELECT id,last,first,english FROM donors WHERE id<>?", (keep,)):
+                    if _fz(r['last']) != _fz('שטטפלד'):
+                        continue
+                    nm = ((r['first'] or '') + ' ' + (r['english'] or '')).lower()
+                    if re.search(r'(?:^|\s)(?:ברכ|בט)|beth|brach', nm):
+                        if merge_into(con, keep, r['id']):
+                            nmg += 1
+            # כרטיסים כפולים של אותו אדם — אותו טלפון ואותו שם משפחה לפי צליל
+            rows = [dict(r) for r in con.execute("SELECT id,last,first,phone,email,addr FROM donors")]
+            nd = set()
+            try:
+                for r in con.execute("SELECT a,b FROM not_dupes"):
+                    nd.add((r['a'], r['b']))
+            except Exception:
+                pass
+            byph = {}
+            for r in rows:
+                for ph in re.split(r'[/,]', r['phone'] or ''):
+                    p10 = _ph10(ph)
+                    if p10:
+                        byph.setdefault(p10, []).append(r)
+            def _score(r):
+                return sum(1 for k in ('phone', 'email', 'addr') if str(r.get(k) or '').strip())
+            done = set()
+            for p10, grp in byph.items():
+                if len(grp) < 2:
+                    continue
+                for i in range(len(grp)):
+                    for j in range(i + 1, len(grp)):
+                        a1, b1 = grp[i], grp[j]
+                        if a1['id'] == b1['id'] or _fz(a1['last']) != _fz(b1['last']):
+                            continue
+                        # אותו טלפון ואותו שם משפחה זה גם המצב של בני זוג. ממזגים
+                        # רק כששמות פרטיים מתיישבים — זהים, קיצור, או איות שונה.
+                        f1, f2 = (a1['first'] or '').strip(), (b1['first'] or '').strip()
+                        z1, z2 = _fz(f1), _fz(f2)
+                        if f1 and f2:
+                            if min(len(z1), len(z2)) >= 2:
+                                if not (z1.startswith(z2) or z2.startswith(z1)):
+                                    continue
+                            elif not _fitfirst(f1, f2):
+                                continue
+                        pair = (min(a1['id'], b1['id']), max(a1['id'], b1['id']))
+                        if pair in nd or pair in done:
+                            continue
+                        done.add(pair)
+                        kp, dp = (a1, b1) if _score(a1) >= _score(b1) else (b1, a1)
+                        if merge_into(con, kp['id'], dp['id']):
+                            nmg += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('namefix_aug11_v1')")
+            print('  תיקוני איות: %d · כרטיסים שאוחדו לפי טלפון+שם: %d' % (nfix, nmg))
+    except Exception as e:
+        print('  namefix error:', e)
+
+    # מפת החודשים של התורם התעדכנה ידנית, ולכן חודשים שכבר שולמו בפועל
+    # (יש להם תרומה עם תאריך) נשארו מסומנים כלא־עברו. משלימים מהתרומות.
+    # רץ בכל הפעלה, בלי דגל, כדי שיישאר מעודכן גם אחרי ייבוא חדש.
+    try:
+        yr = str(datetime.date.today().year)
+        marks = {}
+        for r in con.execute("SELECT donor_id, SUBSTR(date,6,2) mo FROM donations "
+                             "WHERE LENGTH(COALESCE(date,''))>=7 AND SUBSTR(date,1,4)=?", (yr,)):
+            try:
+                i = int(r['mo']) - 1
+            except Exception:
+                continue
+            if 0 <= i < 12 and r['donor_id']:
+                marks.setdefault(r['donor_id'], set()).add(i)
+        nmk = 0
+        for did, mos in marks.items():
+            row = con.execute("SELECT months FROM donors WHERE id=?", (did,)).fetchone()
+            if not row:
+                continue
+            cur3 = list((row['months'] or '').ljust(12, '-')[:12])
+            ch = False
+            for i in mos:
+                if cur3[i] not in ('p', 'c', 'h'):
+                    cur3[i] = 'p'; ch = True
+            if ch:
+                con.execute("UPDATE donors SET months=? WHERE id=?", (''.join(cur3), did)); nmk += 1
+        if nmk:
+            print('  מפת חודשים שהושלמה מהתרומות: %d תורמים' % nmk)
+    except Exception as e:
+        print('  months sync error:', e)
+
+    # שורות סיכום עם חודש בלבד שנשארו מרשימת הקבועים — נמחקות כשכבר יש
+    # באותו חודש חיובים אמיתיים עם תאריך מדויק, כלומר הן כפילות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='month_only_cleanup_v1'").fetchone():
+            ndel2, nkeep = 0, 0
+            for r in con.execute("SELECT id,donor_id,amount,date FROM donations "
+                                 "WHERE LENGTH(COALESCE(date,''))<=7").fetchall():
+                if not r['donor_id'] or not (r['date'] or '').strip():
+                    continue
+                n = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND LENGTH(date)>7 "
+                                "AND SUBSTR(date,1,7)=?", (r['donor_id'], r['date'][:7])).fetchone()[0]
+                if n:
+                    con.execute("DELETE FROM donations WHERE id=?", (r['id'],)); ndel2 += 1
+                else:
+                    con.execute("UPDATE donations SET note=COALESCE(NULLIF(TRIM(note),''),?) WHERE id=?",
+                                ('שורת סיכום מרשימת הקבועים — אין חיוב מדויק לחודש הזה', r['id']))
+                    nkeep += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('month_only_cleanup_v1')")
+            print('  שורות חודש-בלבד: נמחקו %d כפילויות, נשארו %d ללא חיוב מקביל' % (ndel2, nkeep))
+    except Exception as e:
+        print('  month only cleanup error:', e)
+
+    # טלפונים שמאיר אישר אחד־אחד מול אנשי הקשר. מספר בפורמט חיוג בינלאומי
+    # ישראלי (012 + 1 + מספר אמריקאי) נשמר גם בצורתו הרגילה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='phones_confirmed_v1'").fetchone():
+            CONF = [
+                ('ווינשניידר', 'חיים פסח', '+1 312-315-3707', 'evaweinschneider@gmail.com'),
+                ('סחייאק',     'אדי',      '+1 347-831-8883', ''),
+                ('זייגלבוים',  'לוי',      '+1 917-776-1097', ''),
+                ('הלברשטם',    'מארק',     '+1 718-377-7337', ''),
+                ('טשרנס',      'אהרן',     '+1 347-321-5816', ''),
+                ('פרלמוטר',    'יצחק',     '+1 410-358-4380', ''),
+                ('אברמוביץ',   'אלחנן',    '+1 718-377-0930', ''),
+            ]
+            npf = 0
+            for last, first, ph, em in CONF:
+                r = con.execute("SELECT id,phone,email FROM donors WHERE last LIKE ? AND first LIKE ?",
+                                ('%' + last + '%', '%' + first + '%')).fetchone()
+                if not r:
+                    continue
+                if not (r['phone'] or '').strip():
+                    con.execute("UPDATE donors SET phone=? WHERE id=?", (ph, r['id'])); npf += 1
+                if em and not (r['email'] or '').strip():
+                    con.execute("UPDATE donors SET email=? WHERE id=?", (em, r['id']))
+            # הצעות שמאיר כבר דחה — שלא יחזרו במסך ההשלמה
+            for last, first, ph in (('גינסברג', 'אהרן', '+1 (718) 440-6276'),
+                                    ('ברקוביץ', 'יואל', '1-718-619-5635'),
+                                    ('אברמוביץ', 'לאה', '1-718-377-0930'),
+                                    ('פוקס', 'שמשון', '+972 52-715-4167')):
+                r = con.execute("SELECT id FROM donors WHERE last LIKE ? AND first LIKE ?",
+                                ('%' + last + '%', '%' + first + '%')).fetchone()
+                if r:
+                    con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) "
+                                "VALUES(?,'phone',?,?)", (r['id'], ph, today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('phones_confirmed_v1')")
+            print('  טלפונים שאושרו ידנית: %d' % npf)
+    except Exception as e:
+        print('  confirmed phones error:', e)
+
+    # סורוס פאונדיישן — מאיר ביקש למחוק לגמרי מהמערכת
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='soros_delete_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last LIKE '%סורוס%'").fetchone()
+            if r:
+                did = r['id']
+                for t in ('donations', 'recon', 'tasks', 'contacts_log', 'pledges', 'parnes',
+                          'partners', 'prayers', 'transactions', 'building'):
+                    try:
+                        con.execute("DELETE FROM %s WHERE donor_id=?" % t, (did,))
+                    except Exception:
+                        pass
+                try:
+                    con.execute("DELETE FROM files WHERE kind='donor' AND ref_id=?", (did,))
+                except Exception:
+                    pass
+                con.execute("DELETE FROM donors WHERE id=?", (did,))
+                print('  סורוס פאונדיישן: הכרטיס נמחק לגמרי (#%d)' % did)
+            con.execute("INSERT INTO seed_flags(name) VALUES('soros_delete_v1')")
+    except Exception as e:
+        print('  soros delete error:', e)
+
+    # ה-$1,200 של נר למאור אינו מופיע באף חודש בדוח בנק ווסט — פותחים משימה לבדיקה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='ner_lemaor_check_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last LIKE '%מיטמן%' AND first LIKE '%אפרים%'").fetchone()
+            if r:
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,done,assignee) "
+                            "VALUES(?,?,'verify',?,0,'מאיר')",
+                            (r['id'], today_iso(),
+                             'לבדוק בבנק ווסט את ההוראת קבע של $1,200 נר למאור — היא לא מופיעה '
+                             'באף חודש בדוח (ינואר–אוגוסט). אפרים מחויב $1,000 ב-1 לחודש עד יוני '
+                             'ו-$1,650 מיולי, שורה אחת בלבד בכל חודש. לבדוק אם יש חשבון סוחר שני, '
+                             'או שההוראה לא רצה בכלל.'))
+                print('  נר למאור: נפתחה משימת בדיקה אצל מיטמן אפרים')
+            con.execute("INSERT INTO seed_flags(name) VALUES('ner_lemaor_check_v1')")
+    except Exception as e:
+        print('  ner lemaor check error:', e)
+
+    # שניאור זלמן מיטמן אינו קשור לשאר המיטמנים — שלא יוצע מיזוג ביניהם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_sz_notdupe_v1'").fetchone():
+            sz = con.execute("SELECT id FROM donors WHERE last LIKE '%מיטמן%' AND first LIKE '%שניאור%'").fetchone()
+            n = 0
+            if sz:
+                for r in con.execute("SELECT id FROM donors WHERE last LIKE '%מיטמן%' AND id<>?", (sz['id'],)):
+                    a1, b1 = min(sz['id'], r['id']), max(sz['id'], r['id'])
+                    con.execute("INSERT OR IGNORE INTO not_dupes(a,b,created) VALUES(?,?,?)", (a1, b1, today_iso()))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('mittman_sz_notdupe_v1')")
+            print('  שניאור זלמן מיטמן: סומן כלא־קשור ל-%d מיטמנים' % n)
+    except Exception as e:
+        print('  mittman sz error:', e)
+
+    # ציון כהן — $1,000 לשלושת המיטמנים ביחד (מאיר אישר), לא $1,400
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_1000_v1'").fetchone():
+            cur3 = con.execute(
+                "UPDATE partners SET amount='1000' WHERE COALESCE(active,1)<>0 "
+                "AND (avreich LIKE '%ציון%כהן%' OR avreich LIKE '%כהן%ציון%') "
+                "AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מיטמן%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_cohen_1000_v1')")
+            print('  ציון כהן: הסכום המשותף עודכן ל-$1,000 (%d שורות)' % cur3.rowcount)
+    except Exception as e:
+        print('  zion cohen amount error:', e)
+
+    # ציון כהן מוחזק ביחד בידי שלושת המיטמנים — הסכום שייך לכולם יחד, לא לכל אחד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_cohen_joint_v1'").fetchone():
+            cur2 = con.execute(
+                "UPDATE partners SET joint=1 WHERE COALESCE(active,1)<>0 "
+                "AND (REPLACE(avreich,'  ',' ') LIKE '%ציון%כהן%' OR REPLACE(avreich,'  ',' ') LIKE '%כהן%ציון%') "
+                "AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מיטמן%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_cohen_joint_v1')")
+            print('  ציון כהן: סומן כמוחזק ביחד אצל %d מהמיטמנים' % cur2.rowcount)
+    except Exception as e:
+        print('  zion cohen joint error:', e)
+
+    # אנשין יעקב יוסף — הזבולון שלו נכתב בקובץ כ"דוד א" בלבד; מאיר אישר: דוד אהרוני
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='anshin_aharoni_v1'").fetchone():
+            d = con.execute("SELECT id FROM donors WHERE last LIKE '%אהרוני%' AND first LIKE '%דוד%'").fetchone()
+            if d:
+                ex = con.execute("SELECT id FROM partners WHERE donor_id=? AND avreich LIKE '%אנשין%' "
+                                 "AND avreich LIKE '%יוסף%'", (d['id'],)).fetchone()
+                if ex:
+                    con.execute("UPDATE partners SET amount=COALESCE(NULLIF(TRIM(amount),''),'600'), "
+                                "start_date=COALESCE(NULLIF(TRIM(start_date),''),?), active=1 WHERE id=?",
+                                ('א\' אלול תשפ"ה', ex['id']))
+                else:
+                    # אם הוא רשום בטעות אצל תורם אחר — מעבירים, אחרת יוצרים שורה חדשה
+                    mv = con.execute("SELECT id FROM partners WHERE avreich LIKE '%אנשין%' AND avreich LIKE '%יוסף%'").fetchone()
+                    if mv:
+                        con.execute("UPDATE partners SET donor_id=?, amount=COALESCE(NULLIF(TRIM(amount),''),'600'), "
+                                    "start_date=COALESCE(NULLIF(TRIM(start_date),''),?), active=1 WHERE id=?",
+                                    (d['id'], 'א\' אלול תשפ"ה', mv['id']))
+                    else:
+                        con.execute("INSERT INTO partners(donor_id,avreich,amount,start_date,active) VALUES(?,?,?,?,1)",
+                                    (d['id'], 'אנשין יעקב יוסף', '600', 'א\' אלול תשפ"ה'))
+                print('  דוד אהרוני: אנשין יעקב יוסף — $600 מא\' אלול תשפ"ה')
+            con.execute("INSERT INTO seed_flags(name) VALUES('anshin_aharoni_v1')")
+    except Exception as e:
+        print('  anshin aharoni error:', e)
+
+    # חיובים שנשארו ללא כרטיס כי השם על האשראי שונה מהשם בכרטיס
+    # (Marc Mendelson = מוטי מנדלסון, Schia Rosenfed בלי ל׳, Beth = ברכה שטטפלד).
+    for _flag, _link in (
+        ('card_name_link_v1', {
+            'marc mendelson':           ('מנדלסון', 'יוסף מרדכי'),
+            'schia rosenfed':           ('רוזנפלד', 'יהושע'),
+            'daniel jacobson':          ('יעקובסון', 'דניאל'),
+            'danial jacobson':          ('יעקובסון', 'דניאל'),
+            'brachca statfeld':         ('שטטפלד', 'יצחק וברכה'),
+            'ilana rosenfeld':          ('רוזנפלד', 'אילנה'),
+            'zev marmurstein schwadel': ('מרמרשטיין', 'זאב'),
+        }),
+        ('card_name_link_v2', {
+            'beth statfeld':            ('שטטפלד', 'יצחק וברכה'),
+        }),
+        ('card_name_link_v3', {
+            'gold star restoration':    ('דונט', 'מוטי'),
+        }),
+        ('card_name_link_v4', {
+            'bespoke mittman':          ('מיטמן', 'מאיר'),
+        }),
+        ('card_name_link_v5', {
+            'fransis frechter':         ('פרכטר', 'פייגא לאה'),
+            'y.y levi':                 ('לעווי', 'יוסף יהושע'),
+            'cassandra lacombe':        ('לקומב', 'קאסנדרה'),
+        }),
+        ('card_name_link_v6', {
+            'joel berkowitz':           ('ברקוביץ', 'יואל'),
+            'david profesorske':        ('פורסבסקי', 'דוד'),
+        }),
+        ('card_name_link_v7', {
+            'the four thirty ownes':    ('פרנקל', 'יהושע'),
+            'sm berger':                ('ברגר', 'שמואל'),
+        }),
+    ):
+        try:
+            if con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
+                continue
+            n = link_card_names(con, _link)
+            con.execute("INSERT INTO seed_flags(name) VALUES(?)", (_flag,))
+            print('  חיובים ששויכו לפי שם על האשראי (%s): %d' % (_flag[-2:], n))
+        except Exception as e:
+            print('  card name link error:', e)
+
+    # מוטי דונט — החיובים מגיעים על שם העסק Gold Star Restoration
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='goldstar_biz_v1'").fetchone():
+            for hl, hf, biz in (('דונט', 'מוטי', 'Gold Star Restoration'),
+                                ('מיטמן', 'מאיר', 'Bespoke')):
+                r = con.execute("SELECT id,business FROM donors WHERE last=? AND first=?", (hl, hf)).fetchone()
+                if r and not (r['business'] or '').strip():
+                    con.execute("UPDATE donors SET business=? WHERE id=?", (biz, r['id']))
+                    print('  %s %s: נרשם העסק %s' % (hf, hl, biz))
+            con.execute("INSERT INTO seed_flags(name) VALUES('goldstar_biz_v1')")
+    except Exception as e:
+        print('  goldstar biz error:', e)
+
+    # מנדלסון יוסף מרדכי = מוטי = Mark. הכינויים נשמרים בכרטיס וגם משמשים
+    # להתאמת אנשי קשר, ולכן "מנדלסון מוטי" מהטלפון יימצא מעכשיו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mendelson_moti_v1'").fetchone():
+            r = con.execute("SELECT id,aliases FROM donors WHERE last LIKE '%מנדלסון%' "
+                            "AND first LIKE '%מרדכי%'").fetchone()
+            if r:
+                al = [x.strip() for x in re.split(r'[,;/]', r['aliases'] or '') if x.strip()]
+                for x in ('מוטי', 'Mark', 'Marc'):
+                    if x not in al:
+                        al.append(x)
+                con.execute("UPDATE donors SET aliases=? WHERE id=?", (', '.join(al), r['id']))
+                # המספר מאיש הקשר "מנדלסון מוטי" — אינו בייצוא אנשי הקשר שנשלח
+                con.execute("UPDATE donors SET phone='+1 917-816-8129' "
+                            "WHERE id=? AND COALESCE(TRIM(phone),'')=''", (r['id'],))
+                print('  מנדלסון: נוספו הכינויים מוטי / Mark והטלפון')
+            con.execute("INSERT INTO seed_flags(name) VALUES('mendelson_moti_v1')")
+    except Exception as e:
+        print('  mendelson alias error:', e)
+
+    # ייצוא אנשי קשר אחרי שגוגל מיזגה את הכפילויות — כרטיסים שלמים,
+    # עם השם, הטלפון והכתובת יחד. רץ ראשון כי זה המקור האיכותי ביותר.
+    try:
+        seed3 = os.path.join(HERE, 'contacts_seed3.csv')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_merged_v1'").fetchone() \
+                and os.path.exists(seed3):
+            import gcontacts as _gc3
+            with open(seed3, encoding='utf-8-sig', errors='replace') as f:
+                _cards3 = _gc3.parse_csv(f.read())
+            _r3 = contacts_fill(con, _cards3)
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_merged_v1')")
+            print('  אנשי קשר אחרי מיזוג בגוגל: %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים'
+                  % (_r3['donors'], _r3['filled']['addr'], _r3['filled']['phone'],
+                     _r3['filled']['email']))
+    except Exception as e:
+        print('  merged contacts error:', e)
+
+    # ייצוא VCF מהטלפון — כולל את החשבון השני ואת אנשי הקשר ששמורים במכשיר
+    try:
+        seedv = os.path.join(HERE, 'contacts_seed2.vcf')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_vcf_v2'").fetchone() \
+                and os.path.exists(seedv):
+            import gcontacts as _gc2
+            with open(seedv, encoding='utf-8', errors='replace') as f:
+                _cards2 = _gc2.parse_any(f.read())
+            _r2 = contacts_fill(con, _cards2)
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_vcf_v2')")
+            print('  אנשי קשר מהטלפון (VCF): %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים'
+                  % (_r2['donors'], _r2['filled']['addr'], _r2['filled']['phone'],
+                     _r2['filled']['email']))
+    except Exception as e:
+        print('  vcf seed error:', e)
+
+    # השלמת כתובות, טלפונים, מיילים ושמות לקוויטל מייצוא אנשי הקשר של גוגל.
+    # ממלא רק שדות ריקים, ולכן בטוח להריץ פעם אחת על הנתונים החיים.
+    try:
+        seedc = os.path.join(HERE, 'contacts_seed.csv')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seed_v3'").fetchone() \
+                and os.path.exists(seedc):
+            import gcontacts as _gc
+            with open(seedc, encoding='utf-8-sig') as f:
+                _cards = _gc.parse_csv(f.read())
+            _r = contacts_fill(con, _cards)
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('contacts_seed_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seed_v3')")
+            print('  אנשי קשר מגוגל: %d כרטיסים · %d כתובות, %d טלפונים, %d מיילים, '
+                  '%d קוויטל, %d הערות (לא שויכו %d)'
+                  % (_r['donors'], _r['filled']['addr'], _r['filled']['phone'],
+                     _r['filled']['email'], _r['kvittel'], _r['notes'], _r['unmatched_total']))
+    except Exception as e:
+        print('  contacts seed error:', e)
+
+    # שיוך אוטומטי של חיובים שנשארו בלי כרטיס — מייל, טלפון, ותעתיק השם לעברית
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_autolink_v1'").fetchone():
+            n = link_by_identity(con)
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_autolink_v1')")
+            print('  חיובים ששויכו לפי מייל/טלפון/תעתיק: %d' % n)
+    except Exception as e:
+        print('  recon autolink error:', e)
+
+    # שורה שנרשמה בעבר עם חודש בלבד, ולצידה אותו סכום עם תאריך מדויק — אותו כסף פעמיים.
+    # שומרים את זו שיש לה תאריך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='month_only_dedup_v1'").fetchone():
+            n = con.execute("DELETE FROM donations WHERE id IN (SELECT s.id FROM donations s JOIN donations r ON r.donor_id=s.donor_id AND length(r.date)=10 AND substr(r.date,1,7)=s.date AND ROUND(CAST(r.amount AS REAL),2)=ROUND(CAST(s.amount AS REAL),2) WHERE length(COALESCE(s.date,''))=7)").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('month_only_dedup_v1')")
+            print('  שורות חודש-בלבד שהוחלפו בתאריך מדויק: %d' % n)
+    except Exception as e:
+        print('  month only dedup error:', e)
+
+    # משימות שכבר סומנו כבוצעו לפני שהתיעוד הזה נכנס — נרשמות רטרואקטיבית בדף
+    # הקשר של התורם. תאריך הביצוע לא נשמר אז, ולכן נרשם תאריך היעד ומצוין שכך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_done_log_v1'").fetchone():
+            n = 0
+            for t in con.execute("SELECT * FROM tasks WHERE COALESCE(done,0)<>0 "
+                                 "AND donor_id IS NOT NULL "
+                                 "AND id NOT IN (SELECT COALESCE(task_id,-1) FROM contacts_log)"):
+                day = (t['done_date'] or '').strip() or (t['due_date'] or '').strip()
+                if not day:
+                    continue
+                who = (t['done_by'] or '').strip() or (t['assignee'] or '').strip() or 'מאיר'
+                txt = task_text(t['kind'], t['note'])
+                sfx = '' if (t['done_date'] or '').strip() else ' (לפי תאריך היעד)'
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,task_id) "
+                            "VALUES(?,?,'משימה',?,'',?)",
+                            (t['donor_id'], day, '✓ בוצע: %s · ע"י %s%s' % (txt, who, sfx), t['id']))
+                con.execute("UPDATE tasks SET done_date=COALESCE(NULLIF(done_date,''),?), "
+                            "done_by=COALESCE(NULLIF(done_by,''),?) WHERE id=?", (day, who, t['id']))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_done_log_v1')")
+            print('  משימות שבוצעו ונרשמו בדף הקשר: %d' % n)
+    except Exception as e:
+        print('  task done log error:', e)
+
+    # ציון כהן — שלושת המיטמנים מחזיקים אותו יחד ב-$1,400 לחודש, אבל הכסף יוצא
+    # משני כרטיסים בלבד: אפרים $650 וגבריאל $750. מאיר מחזיק ואינו משלם.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_split_v1'").fetchone():
+            n = 0
+            for first, share in (('אפרים', '650'), ('גבריאל', '750'), ('מאיר', '0')):
+                r = con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                "WHERE d.last='מיטמן' AND d.first=? AND p.avreich LIKE '%ציון%'",
+                                (first,)).fetchone()
+                if r:
+                    con.execute("UPDATE partners SET share=?, amount='1400', joint=1 WHERE id=?",
+                                (share, r['id'])); n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_split_v1')")
+            print('  שותפות ציון כהן — חלוקה לפי הכרטיסים: %d מחזיקים' % n)
+    except Exception as e:
+        print('  zion split error:', e)
+
+    # אפרים מיטמן — הקבוע שלו הוא גם יששכר־זבולון וגם נר למאור
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='purpose_multi_v1'").fetchone():
+            r = con.execute("SELECT id,purpose FROM donors WHERE last='מיטמן' AND first='אפרים'").fetchone()
+            if r and 'יששכר' not in (r['purpose'] or ''):
+                p = ' · '.join([x for x in ['יששכר־זבולון'] + [(r['purpose'] or '').strip()] if x])
+                con.execute("UPDATE donors SET purpose=? WHERE id=?", (p, r['id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('purpose_multi_v1')")
+    except Exception as e:
+        print('  purpose multi error:', e)
+
+    # משימות שנוצרו פעמיים מלחיצה כפולה על "הוסף משימה" — נשארת הראשונה.
+    # רץ בכל עלייה, כי כפילות יכולה להיווצר שוב עד שכל המכשירים יתעדכנו.
+    try:
+        n = con.execute("""DELETE FROM tasks WHERE id IN (
+            SELECT t.id FROM tasks t WHERE COALESCE(t.done,0)=0 AND t.id > (
+              SELECT MIN(s.id) FROM tasks s WHERE COALESCE(s.done,0)=0
+              AND COALESCE(s.donor_id,0)=COALESCE(t.donor_id,0)
+              AND COALESCE(s.due_date,'')=COALESCE(t.due_date,'')
+              AND COALESCE(s.kind,'')=COALESCE(t.kind,'')
+              AND COALESCE(s.note,'')=COALESCE(t.note,'')))""").rowcount
+        if n:
+            print('  משימות כפולות שנמחקו: %d' % n)
+    except Exception as e:
+        print('  dupe tasks error:', e)
+
+    # רשימת האברכים של הכולל — נבנית מהשמות שכבר מופיעים אצל התורמים, וממשיכה
+    # להתעדכן בכל עלייה כדי שאברך שנוסף דרך כרטיס תורם ייכנס גם לרשימה.
+    try:
+        n = 0
+        for r in con.execute("SELECT DISTINCT TRIM(avreich) a FROM partners "
+                             "WHERE COALESCE(TRIM(avreich),'')<>''"):
+            if not _is_avreich(r['a']):      # "כולל יום" אינו אברך — לא נכנס לרשימה
+                continue
+            if con.execute("SELECT 1 FROM avreichim WHERE name=?", (r['a'],)).fetchone():
+                continue
+            l, f = _split_av(r['a'])
+            st = con.execute("SELECT start_date FROM partners WHERE TRIM(avreich)=? "
+                             "AND COALESCE(start_date,'')<>'' ORDER BY id LIMIT 1", (r['a'],)).fetchone()
+            con.execute("INSERT INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,'',?,?)",
+                        (r['a'], l, f, (st['start_date'] if st else ''), today_iso()))
+            n += 1
+        if n:
+            print('  אברכים שנוספו לרשימת הכולל: %d' % n)
+    except Exception as e:
+        print('  avreichim seed error:', e)
+
+    # שמות אברכים שנרשמו בסדר הפוך — שם משפחה תמיד ראשון, כמו בשאר הרשימה.
+    # ושורות "כולל יום" יורדות מרשימת האברכים (השותפות אצל התורם נשארת).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='avreich_names_v1'").fetchone():
+            for bad, good in (('דוד ישי', 'ישי דוד'), ('יצחק שטרנברג', 'שטרנברג יצחק')):
+                if con.execute("SELECT 1 FROM avreichim WHERE name=?", (good,)).fetchone():
+                    con.execute("DELETE FROM avreichim WHERE name=?", (bad,))
+                else:
+                    l, f = _split_av(good)
+                    con.execute("UPDATE avreichim SET name=?, last=?, first=? WHERE name=?",
+                                (good, l, f, bad))
+                con.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (good, bad))
+            n = con.execute("DELETE FROM avreichim WHERE name LIKE '%כולל יום%'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('avreich_names_v1')")
+            print('  שמות אברכים סודרו · שורות כולל־יום שהוסרו מהרשימה: %d' % n)
+    except Exception as e:
+        print('  avreich names error:', e)
+
+    # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
+    # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='meir_car_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='מיטמן' AND first='מאיר'").fetchone()
+            if r:
+                if not con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND category='רכב כולל חצות'",
+                                   (r['id'],)).fetchone():
+                    con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,monthly) "
+                                "VALUES(?,'רכב כולל חצות','585','נתן',?,1)", (r['id'], today_iso()))
+                con.execute("UPDATE donors SET purpose='יששכר־זבולון · רכב כולל חצות' WHERE id=?", (r['id'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('meir_car_v1')")
+            print('  מאיר מיטמן: נרשם רכב כולל חצות $585 לחודש')
+    except Exception as e:
+        print('  meir car error:', e)
+
+    # תורם שנמחק ונוצר מחדש באחת המיגרציות — נמחק שוב
+    try:
+        n = purge_deleted(con)
+        if n:
+            print('  כרטיסים שנמחקו וחזרו — נמחקו שוב: %d' % n)
+    except Exception as e:
+        print('  purge deleted error:', e)
 
     # מיילים שמאיר ענה בג'ימייל ועדיין לא חוברו למייל שעליו ענו
     try:
@@ -3125,6 +3983,12 @@ def iz_log(cur, avreich, donor_id, text, at='', hd=''):
         pass
 
 
+def _is_avreich(name):
+    """שורות כמו "כולל יום" אינן אברך של יששכר־זבולון ולא שייכות לרשימה."""
+    n = (name or '').strip()
+    return bool(n) and 'כולל יום' not in n
+
+
 def _split_av(name):
     """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
     p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
@@ -3815,6 +4679,8 @@ class H(BaseHTTPRequestHandler):
                     "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(TRIM(p.avreich),'')<>''"):
                 g = out.get(r['a'])
                 if g is None:
+                    if not _is_avreich(r['a']):
+                        continue
                     l, f = _split_av(r['a'])
                     g = out[r['a']] = {'aid': None, 'name': r['a'], 'last': l, 'first': f,
                                        'note': '', 'started': '', 'holders': [], 'taken': False}
