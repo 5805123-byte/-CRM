@@ -3528,7 +3528,7 @@ async function renderAvByAv(){
   const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
-      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
     <div class="avwrap"><div class="avinner">
@@ -3541,6 +3541,7 @@ async function renderAvByAv(){
     if(s2){s2.focus();try{s2.setSelectionRange(p,p);}catch(e){}}},250);};
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
+  document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
@@ -3570,19 +3571,21 @@ function avRowHTML(a,ix){
     const n=amtNum(v); return n?String(Math.round(n)):String(v||'');};
   const line=(x,first)=>`<div class="avg" ${x?`data-pid="${x.pid}"`:''}>
     <span class="g1">${first?`<span class="avnum">${ix+1}</span>`:''}</span>
-    <span class="g2">${first?`<input class="avname" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.name)}" title="שם האברך — ניתן לשינוי">`:''}</span>
+    <span class="g2">${first?`<a class="avname" data-av="${esc(a.name)}" title="לחץ לפרטים של האברך">${esc(a.name)}</a>`:''}</span>
     <span class="g3">${x?`<a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>`:'<span class="avfree">— אין שותף —</span>'}</span>
     <span class="g4">${x?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:''}</span>
     <span class="g5">${x?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
     <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
-    <span class="g7">${x?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button><button class="ib avinfo" data-av="${esc(a.name)}" title="פרטי האברך">📇</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
+    <span class="g7">${x?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
   </div>${sw&&x&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
     ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
     ${avInfoId===a.name?`<div class="avinfobox">
-      <div class="two"><label class="fld"><span>📞 טלפון</span><input class="avf" data-k="phone" data-av="${esc(a.name)}" dir="ltr" value="${esc(a.phone||'')}"></label>
+      <label class="fld"><span>👨‍🎓 שם האברך (שם משפחה ואז שם פרטי)</span><input class="avname2" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.name)}"></label>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>📞 טלפון</span><input class="avf" data-k="phone" data-av="${esc(a.name)}" dir="ltr" value="${esc(a.phone||'')}"></label>
         <label class="fld"><span>📧 אימייל</span><input class="avf" data-k="email" data-av="${esc(a.name)}" dir="ltr" value="${esc(a.email||'')}"></label></div>
-      <label class="fld" style="margin-top:6px"><span>🏠 כתובת</span><input class="avf" data-k="addr" data-av="${esc(a.name)}" value="${esc(a.addr||'')}"></label></div>`:''}
+      <label class="fld" style="margin-top:6px"><span>🏠 כתובת</span><input class="avf" data-k="addr" data-av="${esc(a.name)}" value="${esc(a.addr||'')}"></label>
+      ${a.started?`<div class="hintxt">התחיל: ${esc(a.started)}</div>`:''}</div>`:''}
     ${avHistId===a.name?`<div class="avhistbox">${(a.log||[]).map(L=>
       `<div class="avhline"><b>${esc(L.hdate||'')}</b> <small>${esc(L.date||'')}</small>${L.donor?(' · '+esc(L.donor)):''}<br>${esc(L.text||'')}</div>`).join('')||'<div class="hintxt">אין עדיין היסטוריה</div>'}</div>`:''}
     ${open?`<div class="avassignbox">
@@ -3605,10 +3608,15 @@ function wireByAv(){
   const reload=async()=>{await load();await renderAvByAv();};
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
   // שם האברך — שינוי כאן מחליף את השם גם אצל כל המחזיקים שלו
-  view.querySelectorAll('.avname').forEach(inp=>inp.onchange=async()=>{
+  view.querySelectorAll('.avname').forEach(a2=>a2.onclick=()=>{
+    avInfoId=(avInfoId===a2.dataset.av)?null:a2.dataset.av; paintByAv();});
+  view.querySelectorAll('.avname2').forEach(inp=>inp.onchange=async()=>{
     const a=AVLIST.find(x=>x.name===inp.dataset.av), nm=inp.value.trim();
     if(!a||!nm||nm===a.name){inp.value=a?a.name:inp.value;return;}
-    await api('POST','/api/avreich',{id:a.aid,name:nm}); toast('שם האברך עודכן ✓'); reload();});
+    await api('POST','/api/avreich',{id:a.aid,name:nm});
+    if(avInfoId===a.name)avInfoId=nm;      // הכרטיס נשאר פתוח על השם החדש
+    if(avHistId===a.name)avHistId=nm;
+    toast('שם האברך עודכן ✓'); reload();});
   view.querySelectorAll('.avnote').forEach(inp=>inp.onchange=async()=>{
     const a=AVLIST.find(x=>x.name===inp.dataset.av); if(!a)return;
     a.note=inp.value; await api('POST','/api/avreich',{id:a.aid,name:a.name,note:inp.value}); toast('ההערה נשמרה ✓');});
@@ -3637,8 +3645,7 @@ function wireByAv(){
     avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; avSwapId=null; paintByAv();});
   view.querySelectorAll('.avhist2').forEach(b=>b.onclick=()=>{
     avHistId=(avHistId===b.dataset.av)?null:b.dataset.av; paintByAv();});
-  view.querySelectorAll('.avinfo').forEach(b=>b.onclick=()=>{
-    avInfoId=(avInfoId===b.dataset.av)?null:b.dataset.av; paintByAv();});
+
   view.querySelectorAll('.avf').forEach(inp=>inp.onchange=async()=>{
     const a=AVLIST.find(x=>x.name===inp.dataset.av); if(!a)return;
     a[inp.dataset.k]=inp.value;
@@ -3680,6 +3687,34 @@ function wireByAv(){
     if(!r||!r.ok){toast('לא נשמר');return;}
     avOpenId=null; toast('שובץ אצל '+r.donor+' ✓'); reload();});
 }
+// גיליון להדפסה של רשימת האברכים — בלי כפתורים, כל הטורים על הדף
+async function renderAvPrint(){
+  chips.innerHTML='';
+  view.innerHTML='<div class="cnt">מכין להדפסה…</div>';
+  await loadAvList();
+  const rows=avFiltered(), free=rows.filter(a=>!a.holders.length).length;
+  const today=new Date(), z=n=>String(n).padStart(2,'0');
+  const dstr=z(today.getDate())+'/'+z(today.getMonth()+1)+'/'+today.getFullYear();
+  const line=[];
+  rows.forEach((a,i)=>{
+    const h=a.holders||[];
+    if(!h.length)line.push({i:i+1,nm:a.name,who:'— אין שותף —',dt:a.started||'',amt:'',note:a.note||'',free:1});
+    else h.forEach((x,k)=>{const v=(x.share!==''&&x.share!=null)?x.share:(x.amount||''),n=amtNum(v);
+      line.push({i:k?'':i+1,nm:k?'':a.name,who:x.name,dt:x.start_date||'',
+        amt:n?String(Math.round(n)):String(v||''),note:k?'':(a.note||''),free:0});});
+  });
+  view.innerHTML=`<div class="avbar noprint">
+      <button class="back" id="avpback">→ חזרה לרשימה</button>
+      <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div class="avtabtitle"><b>רשימת אברכי הכולל — יששכר־זבולון</b>
+      <div class="prsub">${rows.length} אברכים · ${free} בלי שותף · הופק ${dstr}</div></div>
+    <table class="avtable prtable"><thead><tr>
+      <th style="width:34px">#</th><th>האברך</th><th>הזבולון</th><th>מתאריך</th><th>סכום</th><th>הערות</th></tr></thead>
+    <tbody>${line.map(r=>`<tr class="${r.free?'prfree':''}"><td>${r.i}</td><td><b>${esc(r.nm)}</b></td>
+      <td>${esc(r.who)}</td><td>${esc(r.dt)}</td><td>${r.amt?('$'+esc(r.amt)):''}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody>
+    </table>`;
+  document.getElementById('avpback').onclick=()=>{avView='byav';render();};
+}
 function renderAvTable(){
   view.innerHTML=`<div class="avbar noprint">
       <button class="back" id="avcards">→ חזרה לעריכה</button>
@@ -3713,6 +3748,7 @@ function renderAvreich(){
   chips.innerHTML='';
   if(avView==='table') return renderAvTable();
   if(avView==='byav') return renderAvByAv();
+  if(avView==='avprint') return renderAvPrint();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
   view.innerHTML=`<div class="avbar">
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש תורם או אברך…" value="${esc(avSearch)}" autocomplete="off">
