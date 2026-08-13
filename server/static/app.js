@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], BUILDING_ITEMS = [], TASKKINDS_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
+let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], BUILDING_ITEMS = [], TASKKINDS_C = [], CHAN_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
@@ -603,11 +603,47 @@ const CHALIAS={'Banquest':'בנק_ווסט','banquest':'בנק_ווסט','בנק
   'Donors Fund':'דונורס_פאנד','דונרס':'דונורס_פאנד','Donors':'דונורס_פאנד',
   'ACH':'העברה_בנקאית','העברה בנקאית':'העברה_בנקאית','Wire':'העברה_בנקאית','אונליין':'אשראי'};
 const CHEXTRA={'Annualy':{i:'📅',l:'תשלום שנתי',c:'#4a5568'},'Pledger':{i:'📲',l:'פלדג׳ר',c:'#3b4252'}};
-function chCfg(ch){ch=(ch||'').trim();return CHANNELS[ch]||CHANNELS[CHALIAS[ch]]||CHEXTRA[ch]||null;}
+// דרך תשלום שמאיר הוסיף בעצמו — מקבלת עיצוב אחיד ומוצגת ככל השאר
+function chCfg(ch){ch=(ch||'').trim();
+  return CHANNELS[ch]||CHANNELS[CHALIAS[ch]]||CHEXTRA[ch]
+    ||((CHAN_C||[]).includes(ch)?{i:'💰',l:ch,c:'#5b5470'}:null);}
 function chBadgeRaw(ch){const cfg=chCfg(ch);if(!cfg)return '';return `<span class="chbadge" style="background:${cfg.c}" title="${esc(cfg.l)}">${cfg.i} ${esc(cfg.l)}</span>`;}
 function chLabel(ch){const cfg=chCfg(ch);return cfg?cfg.l:(ch||'');}
 function channelBadge(d){return chBadgeRaw(d.channel);}
-function channelOpts(cur){cur=(cur||'').trim();let o='<option value="">— ללא —</option>';CHAN_ORDER.forEach(k=>{o+=`<option value="${k}" ${k===cur?'selected':''}>${CHANNELS[k].i} ${CHANNELS[k].l}</option>`;});if(cur&&!CHANNELS[cur])o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;return o;}
+function channelOpts(cur){cur=(cur||'').trim();let o='<option value="">— ללא —</option>';
+  CHAN_ORDER.forEach(k=>{o+=`<option value="${k}" ${k===cur?'selected':''}>${CHANNELS[k].i} ${CHANNELS[k].l}</option>`;});
+  (CHAN_C||[]).forEach(k=>{o+=`<option value="${esc(k)}" ${k===cur?'selected':''}>💰 ${esc(k)}</option>`;});
+  if(cur&&!CHANNELS[cur]&&!(CHAN_C||[]).includes(cur))o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
+  return o+'<option value="__new__">➕ דרך תשלום חדשה…</option>';}
+// הוספת דרך תשלום מתוך תיבת הבחירה עצמה — נשמרת ומופיעה מכאן והלאה בכל מקום
+function wireChanSel(sel){
+  if(!sel||sel._cbox)return;
+  const box=document.createElement('div'); box.className='chanbox';
+  box.innerHTML='<input class="channew" placeholder="שם דרך התשלום (למשל: קופת גמ&quot;ח)" style="display:none">'
+    +'<button type="button" class="btn sm chandel" title="מחק דרך זו" style="display:none">🗑</button>';
+  (sel.closest('.fld')||sel).parentNode.insertBefore(box,(sel.closest('.fld')||sel).nextSibling);
+  sel._cbox=box;
+  const inp=box.querySelector('.channew'), del=box.querySelector('.chandel');
+  const refresh=()=>{const v=sel.value;document.querySelectorAll('select#f_channel,select.chansel')
+    .forEach(s=>{const c=s===sel?v:s.value;s.innerHTML=channelOpts(c);});};
+  const showDel=()=>{del.style.display=(CHAN_C||[]).includes(sel.value)?'':'none';};
+  sel.addEventListener('change',()=>{
+    if(sel.value==='__new__'){inp.style.display='';inp.focus();del.style.display='none';return;}
+    inp.style.display='none';showDel();});
+  const add=async()=>{const nm=inp.value.trim(); if(!nm){inp.focus();return;}
+    if(!(CHAN_C||[]).includes(nm)){const r=await api('POST','/api/paychannels',{name:nm});CHAN_C=(r&&r.channels)||CHAN_C.concat([nm]);}
+    inp.value='';inp.style.display='none';sel.value=nm;refresh();sel.value=nm;showDel();toast('נוספה דרך תשלום ✓');};
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
+  // יציאה מהשדה: שם שנכתב נשמר, שדה ריק פשוט נסגר. אחרי הוספה מוצלחת
+  // השדה כבר מוסתר — ואסור שהיציאה ממנו תאפס את הבחירה החדשה.
+  inp.onblur=()=>{if(inp.style.display==='none')return;
+    if(inp.value.trim())add(); else{inp.style.display='none'; if(sel.value==='__new__')sel.value='';}};
+  del.onclick=async()=>{const nm=sel.value; if(!nm||!(CHAN_C||[]).includes(nm))return;
+    if(!await uiConfirm('למחוק את דרך התשלום "'+nm+'" מהרשימה?\nתורמים שכבר סומנו בה יישארו כפי שהם.'))return;
+    const r=await api('POST','/api/paychannels',{name:nm,delete:1});CHAN_C=(r&&r.channels)||CHAN_C.filter(x=>x!==nm);
+    sel.value='';refresh();showDel();toast('נמחקה');};
+  showDel();
+}
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 function fixedAmt(d){
   if(d.tier==='יששכר_זבולון'){const s=(d.partners||[]).filter(p=>p.active!=0).reduce((a,p)=>a+amtNum(p.amount),0);if(s)return curSym(d)+s;}
@@ -749,7 +785,7 @@ function pendFiles(boxId,inputId){
 }
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
@@ -2151,10 +2187,12 @@ function cardInfo(d,body){
   renderPhones(d); renderEmails(d);
   const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes'];
   wireFields(d,INF);
+  wireChanSel(document.getElementById('f_channel'));
   const sv=document.getElementById('f_saveall');
   if(sv)sv.onclick=async()=>{
     const body2={};
     INF.forEach(k=>{const el=document.getElementById('f_'+k); if(el)body2[k]=el.value;});
+    if(body2.channel==='__new__')body2.channel=d.channel||'';   // לא נשמר לפני שהוזן שם
     await api('PUT','/api/donor/'+d.id,body2);
     Object.assign(d,body2); toast('נשמר ✓'); if(tab==='donors')renderDonors();
   };
