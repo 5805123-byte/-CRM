@@ -963,9 +963,10 @@ async function renderNoPhone(){
     document.getElementById('npback').onclick=()=>{flt='';render();};return;}
   const all=(R.rows||[]).filter(r=>matchQ(r.name));
   const rows=all.slice(0,NPLIM);        // מציגים מנה קטנה בכל פעם — קל יותר לעבור על זה בטלפון
+  const nc=all.filter(r=>r.cands.length).length;
   view.innerHTML=`<div class="misshead">📞 השלמת טלפונים</div>
-    <div class="submuted">לכל תורם מוצעים אנשי קשר עם אותו שם משפחה. ✓ = זה הוא · ✕ = לא הוא.<br>
-      ${R.total||0} תורמים בלי טלפון, מתוכם ${all.length} עם הצעה.</div>
+    <div class="submuted">${R.total||0} תורמים בלי טלפון${nc?(', מתוכם '+nc+' עם הצעה מאנשי הקשר'):''}.<br>
+      ✓ = זה הוא · ✕ = לא הוא. למי שאין הצעה — אפשר להקליד את המספר ישירות.</div>
     <button class="btn ghost" id="npback" style="margin:8px 2px">→ חזרה לתורמים</button>
     <div class="list">${rows.map(r=>`<div class="npcard" data-did="${r.id}">
       <div class="nm">${esc(r.name)}${r.tot?` <small style="color:var(--yes)">$${(+r.tot).toLocaleString('en-US')}</small>`:''}${r.tier==='יששכר_זבולון'?' <small>יש"ז</small>':''}</div>
@@ -975,8 +976,10 @@ async function renderNoPhone(){
         <button class="del npno" data-did="${r.id}" data-ph="${esc(c.phone)}">✕</button>
         <span class="npi"><b dir="ltr">${esc(c.phone)}</b><br><small>${esc(c.name)}${c.sure?' · <b style="color:var(--yes)">שם פרטי תואם</b>':''}</small></span>
       </div>`).join('')}
-      <button class="btn sm ghost npskip" data-did="${r.id}" style="margin-top:5px">🚫 אף אחד מהם</button>
-    </div>`).join('')||'<div class="empty">אין הצעות פתוחות 🎉</div>'}</div>
+      <div class="npman"><input class="npph" data-did="${r.id}" dir="ltr" inputmode="tel" placeholder="${r.cands.length?'או הקלד מספר אחר…':'הקלד את המספר שלו…'}">
+        <button class="btn sm npsave" data-did="${r.id}">💾 שמור</button></div>
+      <button class="btn sm ghost npskip" data-did="${r.id}" style="margin-top:5px">🚫 ${r.cands.length?'אף אחד מהם':'אין לו טלפון'}</button>
+    </div>`).join('')||'<div class="empty">כל התורמים עם טלפון 🎉</div>'}</div>
     ${all.length>rows.length?`<button class="btn ghost" id="npmore" style="width:100%;margin:8px 2px">↓ עוד ${Math.min(15,all.length-rows.length)} (נשארו ${all.length-rows.length})</button>`:''}`;
   const nm2=document.getElementById('npmore'); if(nm2)nm2.onclick=()=>{NPLIM+=15;renderNoPhone();};
   document.getElementById('npback').onclick=()=>{flt='';render();};
@@ -994,6 +997,16 @@ async function renderNoPhone(){
   view.querySelectorAll('.npskip').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;
     await api('POST','/api/audit/phones',{donor_id:+b.dataset.did,skip:1});
     drop(+b.dataset.did,null);});
+  // הקלדה ידנית — למי שאין לו הצעה מאנשי הקשר, או כשמאיר יודע מספר אחר
+  const saveMan=async b=>{const did=+b.dataset.did,inp=view.querySelector('.npph[data-did="'+did+'"]');
+    const ph=(inp?inp.value:'').trim(); if(!ph){if(inp)inp.focus();return;}
+    b.disabled=true;
+    await api('POST','/api/audit/phones',{donor_id:did,phone:ph});
+    const d=DB.find(x=>x.id===did); if(d)d.phone=ph;
+    toast('נשמר ✓'); drop(did,null);};
+  view.querySelectorAll('.npsave').forEach(b=>b.onclick=e=>{e.stopPropagation();saveMan(b);});
+  view.querySelectorAll('.npph').forEach(inp=>inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();
+    saveMan(view.querySelector('.npsave[data-did="'+inp.dataset.did+'"]'));}});
   view.querySelectorAll('.npcard .nm').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.closest('.npcard').dataset.did);if(d)openDonor(d);});
 }
 async function renderNoAddr(){

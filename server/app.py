@@ -4585,10 +4585,11 @@ class H(BaseHTTPRequestHandler):
             out = []
             for d in donors:
                 k = _fz(d['last'] or '')
-                if len(k) < 3 or (d['id'], '*') in rej:
+                if (d['id'], '*') in rej:      # מאיר כבר אמר "אף אחד מהם" — לא לשאול שוב
                     continue
                 seen, cands = set(), []
-                for c in idx.get(k, []):
+                # שם משפחה קצר מדי מכדי לחפש לפיו — התורם עדיין ברשימה, בלי הצעות
+                for c in (idx.get(k, []) if len(k) >= 3 else []):
                     for ph in c['phones'][:2]:
                         p10 = _ph10(ph)
                         key = p10 or ph
@@ -4600,13 +4601,16 @@ class H(BaseHTTPRequestHandler):
                         cands.append({'name': (c.get('name') or '').strip(), 'phone': ph.strip(),
                                       'email': (c['emails'][0] if c['emails'] else ''),
                                       'sure': bool(_firstok((c.get('first') or ''), d['first'] or ''))})
-                if cands:
-                    cands.sort(key=lambda x: (not x['sure'],))
-                    out.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
-                                'tier': d['tier'] or '', 'email': d['email'] or '',
-                                'tot': tot.get(d['id'], 0), 'cands': cands[:4]})
-            out.sort(key=lambda x: (-x['tot'], x['name']))
-            return self._send(200, {'ok': True, 'rows': out, 'total': len(donors)})
+                cands.sort(key=lambda x: (not x['sure'],))
+                # כל מי שאין לו טלפון נכנס לרשימה, גם כשלא נמצאה לו הצעה —
+                # אחרת המסך מציג "אין הצעות" בזמן שעדיין חסרים עשרות טלפונים.
+                out.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                            'tier': d['tier'] or '', 'email': d['email'] or '',
+                            'tot': tot.get(d['id'], 0), 'cands': cands[:4]})
+            # קודם מי שיש לו הצעה מוכנה, ואז לפי גובה התרומות
+            out.sort(key=lambda x: (not x['cands'], -x['tot'], x['name']))
+            return self._send(200, {'ok': True, 'rows': out, 'total': len(donors),
+                                    'withcands': sum(1 for x in out if x['cands'])})
         if self.path.split('?')[0] == '/api/audit/noaddr':
             # מי אין לו כתובת בכרטיס, ומה אפשר להציע לו — מייצוא אנשי הקשר או מכתובת החיוב
             con = db()
