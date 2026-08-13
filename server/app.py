@@ -431,6 +431,41 @@ def ensure_schema():
             print(f"  צ'ייס ינו-אוג: נטענו {nr}, הותאמו {matched}")
     except Exception as e:
         print("  שגיאת צ'ייס:", e)
+    # יום פרנס שנרשם כמה פעמים לאותו תורם — יום אחד ולא חמישה. שומרים את
+    # השורה הראשונה, ומעבירים אליה גבייה/סכום/הקדשה שנרשמו על הכפולות.
+    try:
+        seen, dead = {}, []
+        for r in con.execute("SELECT id,donor_id,kind,date_text,hyear,amount,dedication,paid,"
+                             "method,currency FROM parnes WHERE COALESCE(status,'')<>'suggested' "
+                             "ORDER BY id"):
+            k = (r['donor_id'], r['kind'] or '', r['date_text'] or '', r['hyear'] or '')
+            if k not in seen:
+                seen[k] = dict(r); continue
+            keep = seen[k]
+            for c in ('amount', 'dedication', 'method', 'currency'):
+                if not str(keep.get(c) or '').strip() and str(r[c] or '').strip():
+                    con.execute("UPDATE parnes SET %s=? WHERE id=?" % c, (r[c], keep['id']))
+                    keep[c] = r[c]
+            if int(r['paid'] or 0) and not int(keep.get('paid') or 0):
+                con.execute("UPDATE parnes SET paid=1 WHERE id=?", (keep['id'],))
+                keep['paid'] = 1
+            dead.append(r['id'])
+        for i in dead:
+            con.execute("DELETE FROM parnes WHERE id=?", (i,))
+        if dead:
+            print('  ימי פרנס כפולים שאוחדו: %d' % len(dead))
+    except Exception as e:
+        print('  parnes dedup error:', e)
+    # מטבע ליום פרנס — תורם בארץ ב-₪, כל השאר ב-$
+    try:
+        n = con.execute("""UPDATE parnes SET currency=(
+                             SELECT CASE WHEN COALESCE(d.region,'')='il' THEN '₪' ELSE '$' END
+                             FROM donors d WHERE d.id=parnes.donor_id)
+                           WHERE COALESCE(TRIM(currency),'')=''""").rowcount
+        if n:
+            print('  מטבע שהושלם לימי פרנס: %d' % n)
+    except Exception as e:
+        print('  parnes currency error:', e)
     # יצחק אדלין ואלירן דהאן שולחים לבנק העברה אחת ומתחלקים בה חצי־חצי.
     # הכסף מגיע על שם אדלין, ולכן כל סכום שלו נחתך לשניים בין שני הכרטיסים.
     try:
@@ -6540,10 +6575,25 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
+            # מטבע: אם לא נבחר, נקבע לפי האזור של התורם — תורם בארץ ב-₪
+            ccy = (b.get('currency') or '').strip()
+            if not ccy:
+                dr = cur.execute("SELECT region FROM donors WHERE id=?", (b.get('donor_id'),)).fetchone()
+                ccy = '₪' if (dr and (dr['region'] or '') == 'il') else '$'
+            # אותו יום, אותו תורם, אותו סוג — יום אחד ולא חמישה. לחיצה חוזרת
+            # או שליחה כפולה מחזירה את השורה הקיימת במקום לפתוח עוד אחת.
+            ex = cur.execute("SELECT id FROM parnes WHERE donor_id=? AND COALESCE(kind,'')=? "
+                             "AND COALESCE(date_text,'')=? AND COALESCE(hyear,'')=? "
+                             "AND COALESCE(status,'')<>'suggested'",
+                             (b.get('donor_id'), b.get('kind', 'parnes'),
+                              b.get('date_text', ''), b.get('hyear', ''))).fetchone()
+            if ex and b.get('status', 'confirmed') != 'suggested':
+                con.close()
+                return self._send(200, {'ok': True, 'id': ex['id'], 'existing': True})
             # תאריך לועזי מדויק לפי השנה העברית שנבחרה; נפילה לחישוב המופע הקרוב אם אין שנה
             _ng = heb_greg_year(b.get('date_text', ''), b.get('hyear', '')) or heb_to_greg(b.get('date_text', ''))
-            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else '', b.get('hyear',''), b.get('method','')))
+            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method,currency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('day',0), b.get('month',''), b.get('date_text',''), b.get('amount',''), b.get('dedication',''), b.get('kind','parnes'), b.get('status','confirmed'), _ng.isoformat() if _ng else '', b.get('hyear',''), b.get('method',''), ccy))
             pid = cur.lastrowid
             due = week_before(b.get('date_text',''))
             if due and due < today_iso(): due = today_iso()   # שבוע-לפני כבר עבר — קבע להיום, לא בעבר
