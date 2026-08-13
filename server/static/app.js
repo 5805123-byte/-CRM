@@ -812,6 +812,7 @@ function render(){
     if(flt==='addrfix')return renderAddrFix();
     if(flt==='noaddr')return renderNoAddr();
     if(flt==='nophone')return renderNoPhone();
+    if(flt==='deposits')return renderDeposits();
     return renderDonors();
   }
   if(tab==='tasks') return renderTasksTab();
@@ -894,6 +895,7 @@ function renderDonors(){
     ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
     ${nanone?`<button class="btn kvmissbtn" id="noAddrBtn">🏠 בלי כתובת בכלל — ${nanone}</button>`:''}
     ${DB.filter(d=>!(d.phone||'').trim()).length?`<button class="btn kvmissbtn" id="noPhoneBtn" style="background:var(--yes);border-color:var(--yes)">📞 השלמת טלפונים — ${DB.filter(d=>!(d.phone||'').trim()).length} בלי טלפון</button>`:''}
+    <button class="btn kvmissbtn" id="depBtn" style="background:var(--gold);border-color:var(--gold)">💵 הפקדות שלא זוהו — צ'ייס / זל</button>
     <div class="avbar"><select id="donsort" class="avsortsel">
       <option value="last">מיון: שם (א-ב)</option>
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
@@ -920,6 +922,7 @@ function renderDonors(){
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
   const npb=document.getElementById('noPhoneBtn'); if(npb)npb.onclick=()=>{flt='nophone';NOPHONE=null;NPLIM=15;render();};
+  const dpb=document.getElementById('depBtn'); if(dpb)dpb.onclick=()=>{flt='deposits';DEPS=null;depOpen=null;render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
@@ -1200,8 +1203,8 @@ function openDupes(){
   };
   paint(); ov.classList.add('show');
 }
-function openNewDonor(onCreate){
-  cardTab='details';
+function openNewDonor(onCreate,pre){
+  cardTab='details'; pre=pre||{};
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
     <h2>➕ תורם חדש</h2>
     <div class="two"><label class="fld"><span>שם משפחה *</span><input id="nd_last" placeholder="שם משפחה"></label>
@@ -1221,6 +1224,8 @@ function openNewDonor(onCreate){
     <div class="sec"><button class="btn" id="nd_save" style="width:100%">✔ צור כרטיס תורם</button></div>`;
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
+  ['english','phone','email','addr','city','country','zip','last','first'].forEach(k=>{
+    const el=document.getElementById('nd_'+k); if(el&&pre[k])el.value=pre[k];});
   const g=id=>document.getElementById(id).value.trim();
   // בחירת ארץ ישראל → מילוי אוטומטי: מדינה, קידומת +972, פלייסהולדר מיקוד
   document.getElementById('nd_region').onchange=e=>{
@@ -4033,6 +4038,67 @@ function renderTasksTab(){
     else{await setDone(t,1);render();checkReminders();toastUndo('בוצע ✓ · נרשם בכרטיס',async()=>{await setDone(t,0);render();checkReminders();});}
   });
   const tgd=document.getElementById('toggledone');if(tgd)tgd.onclick=()=>{showDone=!showDone;render();};
+}
+
+/* ---------- הפקדות שלא זוהו (צ'ייס / זל) ---------- */
+// כל שם מפקיד מופיע פעם אחת עם כל ההפקדות שלו. משייכים לתורם — וכל השורות
+// שלו נסגרות יחד, וגם כל מה שיגיע בעתיד באותו שם.
+let DEPS=null, depOpen=null;
+async function renderDeposits(){
+  chips.innerHTML='';
+  view.innerHTML='<div class="cnt">טוען הפקדות…</div>';
+  try{ DEPS=await api('GET','/api/deposits'); }catch(e){ DEPS={rows:[]}; }
+  const all=(DEPS&&DEPS.rows)||[];
+  const rows=all.filter(x=>matchQ(x.name));
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  view.innerHTML=`<div class="misshead">💵 הפקדות שלא זוהו — צ'ייס / זל</div>
+    <div class="submuted">כל שם מפקיד מופיע פעם אחת. שייך אותו לתורם — וכל ההפקדות שלו ייכנסו לכרטיס,
+      וגם כל מה שיגיע בעתיד באותו שם. מה שלא רלוונטי — "לא רלוונטי", ולא תישאל עליו שוב.</div>
+    <div class="avstat">💵 <b>${DEPS.names||0}</b> שמות · <b>${DEPS.deposits||0}</b> הפקדות · <b>${f(DEPS.total||0)}</b>${rows.length!==all.length?` · מוצגים ${rows.length}`:''}</div>
+    <button class="btn ghost" id="depback" style="margin:8px 2px">→ חזרה לתורמים</button>
+    <div class="list">${rows.map(x=>`<div class="depcard" data-k="${esc(x.key)}">
+      <div class="depnm" dir="ltr">${esc(x.name)}</div>
+      <div class="depmeta">${x.n} ${x.n===1?'הפקדה':'הפקדות'} · <b>${f(x.total)}</b>${x.dates.length?(' · '+esc(x.dates[0])+(x.dates.length>1?(' – '+esc(x.dates[x.dates.length-1])):'')):''}${x.src?(' · '+esc(x.src)):''}</div>
+      ${x.email||x.phone?`<div class="depmeta">${esc(x.email||'')}${x.email&&x.phone?' · ':''}${esc(x.phone||'')}</div>`:''}
+      <div class="deprow"><button class="btn sm depmatch" data-k="${esc(x.key)}">🔗 שייך לתורם</button>
+        <button class="btn sm ghost depnew" data-k="${esc(x.key)}">➕ תורם חדש</button>
+        <button class="del depign" data-k="${esc(x.key)}">🗑 לא רלוונטי</button></div>
+      ${depOpen===x.key?`<div class="depbox">
+        <input class="dep_q" data-k="${esc(x.key)}" placeholder="חפש תורם קיים…" autocomplete="off">
+        <div class="dpres dep_res" data-k="${esc(x.key)}"></div></div>`:''}
+    </div>`).join('')||'<div class="empty">אין הפקדות שממתינות לזיהוי 🎉</div>'}</div>`;
+  document.getElementById('depback').onclick=()=>{flt='';render();};
+  const rec=k=>all.find(x=>x.key===k);
+  view.querySelectorAll('.depmatch').forEach(b=>b.onclick=()=>{
+    depOpen=(depOpen===b.dataset.k)?null:b.dataset.k; renderDeposits();});
+  view.querySelectorAll('.dep_q').forEach(qi=>{
+    const k=qi.dataset.k, res=view.querySelector('.dep_res[data-k="'+CSS.escape(k)+'"]');
+    qi.focus();
+    // הצעה ראשונית לפי תעתיק השם מאנגלית
+    const seed=norm((rec(k)||{}).name||'').split(' ').filter(w=>w.length>2)[0]||'';
+    const run=s2=>{ if(!s2){res.innerHTML='';return;}
+      const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.business).toLowerCase()
+        .includes(s2.toLowerCase())).slice(0,10);
+      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.business?(' · '+esc(d.business)):''}${d.english?(' · <span dir="ltr">'+esc(d.english)+'</span>'):''}</div>`).join('')
+        ||'<div class="dpr" style="color:var(--muted)">אין תוצאות — נסה שם אחר או "תורם חדש"</div>';
+      res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=async()=>{
+        const r=await api('POST','/api/deposits/map',{name:(rec(k)||{}).name,donor_id:+x.dataset.id});
+        if(!r||!r.ok){toast('לא שויך');return;}
+        depOpen=null; toast('שויך ✓ '+(r.linked||0)+' הפקדות נכנסו לכרטיס');
+        await load(); renderDeposits();});};
+    if(seed)run(seed);
+    qi.oninput=()=>run(norm(qi.value));});
+  view.querySelectorAll('.depnew').forEach(b=>b.onclick=()=>{
+    const x=rec(b.dataset.k); if(!x)return;
+    openNewDonor(async nd=>{
+      const r=await api('POST','/api/deposits/map',{name:x.name,donor_id:nd.id});
+      toast('נפתח כרטיס ושויך ✓'+(r&&r.linked?(' — '+r.linked+' הפקדות'):''));
+      await load(); renderDeposits();}, {english:x.name, email:x.email||'', phone:x.phone||''});});
+  view.querySelectorAll('.depign').forEach(b=>b.onclick=async()=>{
+    const x=rec(b.dataset.k); if(!x)return;
+    if(!await uiConfirm('לסמן את "'+x.name+'" כלא רלוונטי?\n'+x.n+' הפקדות יורדו מהרשימה ולא תישאל עליהן שוב.'))return;
+    await api('POST','/api/deposits/map',{name:x.name,ignore:1,tids:x.tids});
+    toast('הוסר ✓'); renderDeposits();});
 }
 
 /* ---------- מזדמנים ---------- */

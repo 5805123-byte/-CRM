@@ -78,6 +78,8 @@ def ensure_schema():
         donor_id INTEGER, date TEXT, hdate TEXT, text TEXT, at TEXT);
     CREATE TABLE IF NOT EXISTS deleted_donors(key TEXT PRIMARY KEY, last TEXT, first TEXT,
         english TEXT, created TEXT);
+    CREATE TABLE IF NOT EXISTS name_map(src TEXT PRIMARY KEY, donor_id INTEGER,
+        ignored INTEGER DEFAULT 0, created TEXT);
     CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
@@ -3953,6 +3955,32 @@ def task_log_sync(cur, tid):
             'at': c['at'] or ''}
 
 
+def _nkey(s):
+    """שם מפקיד כפי שהוא מגיע מהבנק — לנרמול להשוואה."""
+    return re.sub(r'[^a-z0-9\u0590-\u05ff ]+', ' ', (s or '').lower()).strip()
+    
+
+def apply_name_map(con):
+    """שם מפקיד שמאיר כבר שייך פעם אחת — כל השורות שלו נקשרות לבד, גם
+    בייבוא הבא. שם שסומן 'לא רלוונטי' נשאר בצד ולא נשאל שוב."""
+    n = 0
+    try:
+        rows = list(con.execute("SELECT src,donor_id,ignored FROM name_map"))
+    except Exception:
+        return 0
+    for m in rows:
+        if m['ignored'] or not m['donor_id']:
+            continue
+        for r in con.execute("SELECT tid,last,first FROM recon WHERE donor_id IS NULL"):
+            nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['last'] or '')
+            if _nkey(nm) == m['src']:
+                con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (m['donor_id'], r['tid']))
+                n += 1
+    if n:
+        con.commit()
+    return n
+
+
 def _dkey(last, first):
     """מפתח זהות של תורם למעקב אחרי מחיקות — בלי גרשיים ורווחים."""
     return (_fz(last or '') + '|' + _fz(first or '')).strip('|')
@@ -4743,6 +4771,36 @@ class H(BaseHTTPRequestHandler):
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
                                     'free': sum(1 for x in rows if not x['holders'])})
+        if self.path.split('?')[0] == '/api/deposits':
+            # שמות מפקידים שלא זוהו — מקובצים לפי השם, כדי לשייך שם אחד ולסגור
+            # את כל השורות שלו בבת אחת
+            con = db()
+            ign = {r['src'] for r in con.execute("SELECT src FROM name_map WHERE ignored=1")}
+            g = {}
+            for r in con.execute("SELECT tid,first,last,amount,date,source,email,phone FROM recon "
+                                 "WHERE donor_id IS NULL"):
+                nm = ' '.join(x for x in ((r['first'] or '').strip(), (r['last'] or '').strip()) if x)
+                k = _nkey(nm)
+                if not k or k in ign:
+                    continue
+                e = g.setdefault(k, {'key': k, 'name': nm, 'n': 0, 'total': 0.0, 'dates': [],
+                                     'src': r['source'] or '', 'email': r['email'] or '',
+                                     'phone': r['phone'] or '', 'tids': []})
+                e['n'] += 1
+                try: e['total'] += float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
+                except Exception: pass
+                if r['date']: e['dates'].append(r['date'])
+                e['tids'].append(r['tid'])
+                if not e['email'] and r['email']: e['email'] = r['email']
+            con.close()
+            out = sorted(g.values(), key=lambda x: -x['total'])
+            for e in out:
+                e['dates'] = sorted(set(e['dates']))
+                e['total'] = round(e['total'], 2)
+                e['tids'] = e['tids'][:200]
+            return self._send(200, {'rows': out, 'names': len(out),
+                                    'deposits': sum(x['n'] for x in out),
+                                    'total': round(sum(x['total'] for x in out), 2)})
         if self.path.split('?')[0] == '/api/izhistory':
             # יומן כללי — כל השינויים ביששכר־זבולון, מהחדש לישן
             con = db()
@@ -5825,6 +5883,27 @@ class H(BaseHTTPRequestHandler):
             names = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm, 'kinds': names})
+        if self.path == '/api/deposits/map':
+            # שיוך שם מפקיד לתורם — כל השורות שלו, וגם כל מה שיגיע בעתיד
+            key = _nkey(b.get('name') or '')
+            did = int(b.get('donor_id') or 0)
+            if not key:
+                return self._send(400, {'ok': False, 'error': 'no_name'})
+            con = db(); cur = con.cursor()
+            if b.get('ignore'):
+                cur.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) "
+                            "VALUES(?,NULL,1,?)", (key, today_iso()))
+                cur.execute("DELETE FROM recon WHERE donor_id IS NULL AND tid IN (%s)"
+                            % ','.join('?' * len(b.get('tids') or [])), (b.get('tids') or []))
+                con.commit(); con.close()
+                return self._send(200, {'ok': True, 'ignored': True})
+            if not cur.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                con.close(); return self._send(400, {'ok': False, 'error': 'no_donor'})
+            cur.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) "
+                        "VALUES(?,?,0,?)", (key, did, today_iso()))
+            n = apply_name_map(con)
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'linked': n})
         if self.path == '/api/avreich':
             # הוספה/עריכה/מחיקה של אברך ברשימת הכולל
             nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:60]
