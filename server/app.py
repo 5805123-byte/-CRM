@@ -437,7 +437,7 @@ def ensure_schema():
     try:
         mp = os.path.join(HERE, 'iz_certs_map.json')
         pdfp = os.path.join(HERE, 'iz_certs.pdf')
-        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v3'").fetchone()
+        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v5'").fetchone()
                 and os.path.exists(mp) and os.path.exists(pdfp)):
             try:
                 from pypdf import PdfReader, PdfWriter
@@ -469,7 +469,7 @@ def ensure_schema():
                                 "VALUES('iz',?,?,'application/pdf',?,?)",
                                 (ids[0], fname, buf.getvalue(), today_iso()))
                     nadd += 1
-                con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v3')")
+                con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v5')")
                 print('  תעודות יששכר־זבולון: צורפו %d · לא זוהה כרטיס ל-%d' % (nadd, nmiss))
     except Exception as e:
         print('  שגיאת תעודות יששכר־זבולון:', e)

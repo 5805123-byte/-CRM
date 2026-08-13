@@ -105,6 +105,16 @@ function renewBanner(d){const r=renewInfo(d);if(!r)return '';
   const txt=r.days<0?`עברה שנה מתחילת השותפות (${fmtGreg(r.date)}) — לחדש וליצור תעודה חדשה`:`מתקרב סיום שנת שותפות (${fmtGreg(r.date)}${r.days>=0?' · בעוד '+r.days+' ימים':''}) — ליצור קשר לחידוש + תעודה`;
   return `<div class="renewbanner">🔴 חידוש יש"ז: ${esc(txt)}${r.avreich?(' · '+esc(r.avreich)):''}</div>`;
 }
+// תשלומים שנכנסו לכרטיס בלי לציין עבור מה. אצל תורם שכל ההתחייבות שלו היא
+// יששכר־זבולון, כמעט תמיד זה בדיוק זה — אבל לא מניחים, שואלים.
+function unclassifiedIz(d){
+  const rows=(d.donations||[]).filter(x=>{
+    const c=String(x.category||'').trim();
+    return !/יששכר|זבולון/.test(c) &&
+      (!c || c==='קבוע' || /לא סווג/.test(String(x.note||'')));
+  });
+  return {n:rows.length, sum:rows.reduce((s2,x)=>s2+amtNum(x.amount),0), rows};
+}
 function izSummaryHTML(d){
   const act=(d.partners||[]).filter(p=>p.active!=0);
   const recip=coHeldWith(d);
@@ -124,7 +134,17 @@ function izSummaryHTML(d){
   else if(s.thru.length) debtLine=(s.thruDebt>0.5
       ?`<div class="izdebt owe">🔴 חוב לפי "שולם עד": ${cur}${Math.round(s.thruDebt)}</div>`
       :`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`);
-  else if(!s.hasPay) debtLine='<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב. אם הוא משלם במזומן — עדכן "שולם עד חודש" אצל האברך</div>';
+  else if(!s.hasPay){
+    // הכסף נכנס, אבל לא נרשם עבור מה — ולכן הסיכום לא מוצא תשלומים.
+    // מראים בדיוק כמה נכנס ומציעים לסמן בלחיצה אחת.
+    const un=unclassifiedIz(d);
+    debtLine=un.n
+      ? `<div class="izunc"><div class="izunc-t">💰 נכנסו ${cur}${Math.round(un.sum)} ב-${un.n} ${un.n===1?'תשלום':'תשלומים'} שעדיין לא נרשם עבור מה</div>
+          <div class="izunc-l">${un.rows.slice(0,6).map(x=>`${esc(gregLabel(x.date))} · ${cur}${Math.round(amtNum(x.amount))}${x.method?(' · '+esc(chLabel(x.method))):''}`).join('<br>')}${un.n>6?('<br>ועוד '+(un.n-6)):''}</div>
+          <button class="btn sm" id="izclaim">🤝 כן — לסמן הכל כיששכר־זבולון</button>
+          <div class="hintxt">אחרי הסימון החוב יחושב לבד.</div></div>`
+      : '<div class="hintxt">אין עדיין תשלומי יש"ז רשומים לחישוב חוב. אם הוא משלם במזומן — עדכן "שולם עד חודש" אצל האברך</div>';
+  }
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
   else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
   else debtLine=`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`;
@@ -1805,6 +1825,7 @@ function cardDetails(d,body){
         <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
+  wireIzSum(body.querySelector('.izsum'), d);
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
@@ -2702,7 +2723,27 @@ function refreshIzSum(d){
   const w=document.createElement('div'); w.innerHTML=izSummaryHTML(d);
   const nb=w.firstElementChild; if(!nb)return;
   box.replaceWith(nb);
-  nb.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
+  wireIzSum(nb,d);
+}
+// חיווט הסיכום: מעבר לשותף, וסימון התשלומים שלא סווגו
+function wireIzSum(box,d){
+  if(!box)return;
+  box.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
+  const b2=box.querySelector('#izclaim');
+  if(b2)b2.onclick=async()=>{
+    const un=unclassifiedIz(d); if(!un.n)return;
+    b2.disabled=true; b2.textContent='מסמן…';
+    const CAT='יששכר־זבולון';
+    for(const x of un.rows){
+      const note=String(x.note||'').replace(/\s*·?\s*לא סווג[^·]*/,'').trim();
+      x.category=CAT; x.note=note;
+      await api('PUT','/api/donation/'+x.id,{category:CAT,note});
+    }
+    toast('סומנו '+un.n+' תשלומים ✓');
+    await load();
+    const nd=DB.find(y=>y.id===d.id)||d;
+    Object.assign(d,nd);
+    refreshIzSum(d); if(tab==='donors')renderDonors();};
 }
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
