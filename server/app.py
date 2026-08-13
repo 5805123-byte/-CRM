@@ -2953,6 +2953,22 @@ def ensure_schema():
     except Exception as e:
         print('  purpose multi error:', e)
 
+    # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
+    # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='meir_car_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='מיטמן' AND first='מאיר'").fetchone()
+            if r:
+                if not con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND category='רכב כולל חצות'",
+                                   (r['id'],)).fetchone():
+                    con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,monthly) "
+                                "VALUES(?,'רכב כולל חצות','585','נתן',?,1)", (r['id'], today_iso()))
+                con.execute("UPDATE donors SET purpose='יששכר־זבולון · רכב כולל חצות' WHERE id=?", (r['id'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('meir_car_v1')")
+            print('  מאיר מיטמן: נרשם רכב כולל חצות $585 לחודש')
+    except Exception as e:
+        print('  meir car error:', e)
+
     # מיילים שמאיר ענה בג'ימייל ועדיין לא חוברו למייל שעליו ענו
     try:
         n = link_mail_replies(con)

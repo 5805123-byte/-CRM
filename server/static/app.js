@@ -484,10 +484,15 @@ function openRemPopup(){
   if(!due.length){remov.classList.remove('show');return;}
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔔 תזכורות שהגיע זמנן (${due.length})</h2>
     <div class="hintxt">סמן בוצע, או דחה למחר.</div>
-    ${due.map((t,i)=>`<div class="remitem over"><div class="ri"><b>${esc(kindLabel(t.kind))} ${esc(t.donor)}</b><br><small>${esc(t.due_date)} ${esc(t.note||'')}</small><br>${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
+    <div class="hintxt">לחיצה על שם התורם פותחת את הכרטיס שלו.</div>
+    ${due.map((t,i)=>`<div class="remitem over"><div class="ri"><b>${esc(kindLabel(t.kind))} ${t.dref?`<a class="remname" data-i="${i}">${esc(t.donor)} ↗</a>`:esc(t.donor)}</b><br><small>${esc(t.due_date)} ${esc(t.note||'')}</small><br>${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
       <button class="btn sm rdone" data-i="${i}">בוצע ✓</button><button class="no rsnooze" data-i="${i}">דחה מחר</button></div>`).join('')}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  // שם התורם פותח את הכרטיס שלו — כדי לטפל בתזכורת מול כל המידע שלפניך
+  rs.querySelectorAll('.remname').forEach(a=>a.onclick=e=>{e.stopPropagation();
+    const t=due[a.dataset.i]; if(!t.dref)return;
+    remov.classList.remove('show'); openDonor(t.dref);});
   rs.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);openRemPopup();render();});
   rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i];await setTaskDone(t,1,t.dref);checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
   rs.querySelectorAll('.rsnooze').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i],nd=addDay(todayStr().replace(/-/g,'')),nds=nd.slice(0,4)+'-'+nd.slice(4,6)+'-'+nd.slice(6,8);if(t.id)await api('PUT','/api/task/'+t.id,{due_date:nds});const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.due_date=nds;checkReminders();openRemPopup();render();toast('נדחה למחר');});
