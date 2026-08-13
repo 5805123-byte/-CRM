@@ -2161,16 +2161,58 @@ def ensure_schema():
     except Exception as e:
         print('  merge orphans error:', e)
 
-    # שורות ההערכה מאקסל הקבועים יורדות — הן חסרות תאריך מדויק וכופלות את החיובים
-    # האמיתיים שכבר נכנסו מדוחות האשראי והצ׳קים. נשארים רק תשלומים עם תאריך.
+    # שורה מאקסל הקבועים יורדת רק כשיש לצידה חיוב אמיתי עם תאריך מדויק, באותו
+    # חודש ובאותו סכום. תורם שמשלם ב-ACH או בהעברה בנקאית אינו מופיע בדוחות
+    # האשראי והצ׳קים, ומחיקה גורפת מוחקת אצלו את כל היסטוריית התשלומים.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_recurring_est_v1'").fetchone():
-            n = con.execute("DELETE FROM donations WHERE length(COALESCE(date,''))=7 "
-                            "AND COALESCE(note,'') LIKE 'ייבוא 2026%'").rowcount
-            con.execute("INSERT INTO seed_flags(name) VALUES('drop_recurring_est_v1')")
-            print('  שורות אקסל הקבועים שנמחקו: %d' % n)
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='drop_recurring_est_v2'").fetchone():
+            n = con.execute(
+                "DELETE FROM donations WHERE length(COALESCE(date,''))=7 "
+                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND EXISTS("
+                "  SELECT 1 FROM donations r WHERE r.donor_id=donations.donor_id "
+                "  AND length(COALESCE(r.date,''))=10 AND substr(r.date,1,7)=donations.date "
+                "  AND ROUND(CAST(r.amount AS REAL),2)=ROUND(CAST(donations.amount AS REAL),2))").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('drop_recurring_est_v2')")
+            print('  שורות אקסל הקבועים שנמחקו (כפולות בלבד): %d' % n)
     except Exception as e:
         print('  drop recurring est error:', e)
+
+    # שחזור התשלומים שנמחקו במחיקה הגורפת הקודמת. חוזרים לקובץ המקור ומחזירים
+    # רק שורה שאין לה חיוב מקביל עם תאריך מדויק — כדי לא ליצור כפילות מחדש.
+    try:
+        seed26 = os.path.join(HERE, 'donations_2026_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='restore_recurring_v1'").fetchone() \
+                and os.path.exists(seed26):
+            emap = {}
+            for row in con.execute("SELECT id, english FROM donors"):
+                if row['english']:
+                    emap[re.sub(r'\s+', ' ', row['english'].lower().strip())] = row['id']
+            live = {r['id'] for r in con.execute("SELECT id FROM donors")}
+            n = 0
+            for rec in json.load(open(seed26, encoding='utf-8')):
+                did = emap.get(re.sub(r'\s+', ' ', (rec.get('english') or '').lower().strip())) \
+                    or rec.get('donor_id')
+                if not did or did not in live:
+                    continue
+                amt = str(rec.get('amount', ''))
+                for mo in rec.get('months', []):
+                    dt = '2026-%02d' % int(mo)
+                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
+                                   "AND ROUND(CAST(amount AS REAL),2)=ROUND(CAST(? AS REAL),2)",
+                                   (did, dt, amt)).fetchone():
+                        continue          # השורה כבר קיימת — לא לשכפל
+                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND length(COALESCE(date,''))=10 "
+                                   "AND substr(date,1,7)=? AND ROUND(CAST(amount AS REAL),2)=ROUND(CAST(? AS REAL),2)",
+                                   (did, dt, amt)).fetchone():
+                        continue          # יש חיוב אמיתי עם תאריך מדויק — הוא הקובע
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,?,?,?,'ייבוא 2026',1)",
+                                (did, dt, amt, rec.get('category', 'קבוע'), rec.get('method', '')))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('restore_recurring_v1')")
+            print('  תשלומים שהוחזרו מדוח הקבועים: %d' % n)
+    except Exception as e:
+        print('  restore recurring error:', e)
 
     # יעקב יוסף קלוק — הוראת קבע של $700 לחודש דרך קפיטל 1, ליששכר־זבולון
     try:
