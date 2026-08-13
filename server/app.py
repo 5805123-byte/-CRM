@@ -84,6 +84,9 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
+    for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT')]:
+        try: con.execute('ALTER TABLE avreichim ADD COLUMN %s %s' % (col, ddl))
+        except Exception: pass
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
@@ -4693,21 +4696,30 @@ class H(BaseHTTPRequestHandler):
             # אברך בלי שותף מופיע גם הוא — הרשימה היא של הכולל, לא של התורמים.
             con = db()
             out = {}
-            for r in con.execute("SELECT id,name,last,first,note,started FROM avreichim"):
+            showall = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                       .get('all', [''])[0] == '1')
+            gone = set()
+            for r in con.execute("SELECT * FROM avreichim"):
+                if (r['ended'] or '').strip() and not showall:
+                    gone.add(r['name'])            # יצא מהכולל — לא ברשימה השוטפת
+                    continue
                 out[r['name']] = {'aid': r['id'], 'name': r['name'], 'last': r['last'] or '',
                                   'first': r['first'] or '', 'note': r['note'] or '',
-                                  'started': r['started'] or '', 'holders': [], 'taken': False}
+                                  'started': r['started'] or '', 'ended': r['ended'] or '',
+                                  'phone': r['phone'] or '', 'email': r['email'] or '',
+                                  'addr': r['addr'] or '', 'holders': [], 'taken': False}
             for r in con.execute(
                     "SELECT TRIM(p.avreich) a, p.id pid, p.active, p.start_date, p.amount, p.share, "
                     "p.joint, d.id did, d.last, d.first FROM partners p "
                     "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(TRIM(p.avreich),'')<>''"):
                 g = out.get(r['a'])
                 if g is None:
-                    if not _is_avreich(r['a']):
-                        continue
+                    if r['a'] in gone or not _is_avreich(r['a']):
+                        continue      # שותפות ישנה של אברך שיצא — לא מחזירה אותו לרשימה
                     l, f = _split_av(r['a'])
                     g = out[r['a']] = {'aid': None, 'name': r['a'], 'last': l, 'first': f,
-                                       'note': '', 'started': '', 'holders': [], 'taken': False}
+                                       'note': '', 'started': '', 'ended': '', 'phone': '',
+                                       'email': '', 'addr': '', 'holders': [], 'taken': False}
                 if r['active'] is None or r['active'] != 0:
                     nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
                     if nm and nm not in [h['name'] for h in g['holders']]:
@@ -4731,6 +4743,17 @@ class H(BaseHTTPRequestHandler):
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
                                     'free': sum(1 for x in rows if not x['holders'])})
+        if self.path.split('?')[0] == '/api/izhistory':
+            # יומן כללי — כל השינויים ביששכר־זבולון, מהחדש לישן
+            con = db()
+            names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                     for r in con.execute("SELECT id,last,first FROM donors")}
+            rows = [{'avreich': r['avreich'] or '', 'donor': names.get(r['donor_id'], ''),
+                     'donor_id': r['donor_id'], 'date': r['date'] or '', 'hdate': r['hdate'] or '',
+                     'text': r['text'] or '', 'at': r['at'] or ''}
+                    for r in con.execute("SELECT * FROM avreich_log ORDER BY id DESC LIMIT 400")]
+            con.close()
+            return self._send(200, {'rows': rows})
         if self.path.split('?')[0] == '/api/unclassified':
             # תורמים שיש להם חיובים שנכנסו בלי לדעת עבור מה — לשאלה בדף החיובים
             con = db()
@@ -5809,15 +5832,26 @@ class H(BaseHTTPRequestHandler):
             con = db(); cur = con.cursor()
             if b.get('delete') and aid:
                 r = cur.execute("SELECT name FROM avreichim WHERE id=?", (aid,)).fetchone()
-                held = cur.execute("SELECT COUNT(*) c FROM partners WHERE TRIM(avreich)=? "
-                                   "AND COALESCE(active,1)<>0", (r['name'] if r else '',)).fetchone()['c']
-                if held:
+                anm = r['name'] if r else ''
+                held = [x for x in cur.execute(
+                    "SELECT p.id,p.donor_id,d.last,d.first FROM partners p LEFT JOIN donors d ON d.id=p.donor_id "
+                    "WHERE TRIM(p.avreich)=? AND COALESCE(p.active,1)<>0", (anm,))]
+                if held and not b.get('force'):
                     con.close()
-                    return self._send(200, {'ok': False, 'error': 'held', 'count': held})
-                cur.execute("DELETE FROM avreichim WHERE id=?", (aid,))
+                    return self._send(200, {'ok': False, 'error': 'held', 'count': len(held),
+                                            'who': [((x['last'] or '') + ' ' + (x['first'] or '')).strip()
+                                                    for x in held]})
+                at = (b.get('at') or '').strip() or now_iso()
+                for x in held:      # השותפויות מסתיימות, וכל תורם מקבל שורה בדף הקשר
+                    cur.execute("UPDATE partners SET active=0, ended_date=? WHERE id=?", (at[:10], x['id']))
+                    iz_log(cur, anm, x['donor_id'],
+                           '🚪 האברך %s יצא מהכולל — השותפות הסתיימה' % anm, at)
+                if not held:
+                    iz_log(cur, anm, None, '🚪 האברך %s יצא מהכולל' % anm, at)
+                cur.execute("UPDATE avreichim SET ended=? WHERE id=?", (at[:10], aid))
             elif aid:
                 sets, vals = [], []
-                for k in ('note', 'started'):
+                for k in ('note', 'started', 'phone', 'email', 'addr', 'ended'):
                     if k in b: sets.append(k + '=?'); vals.append(b[k])
                 if nm:
                     l, f = _split_av(nm)
