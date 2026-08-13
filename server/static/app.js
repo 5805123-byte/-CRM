@@ -1390,8 +1390,9 @@ function openDonor(d,startTab){
     <div id="cardBody"></div>`;
   ov.classList.add('show');
   try{localStorage.setItem('kc_donor',d.id);}catch(e){}
-  document.getElementById('cx').onclick=()=>{ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}};
-  sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{cardTab=b.dataset.c;renderCard(d);});
+  document.getElementById('cx').onclick=async()=>{await flushPrayers();
+    ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}};
+  sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=async()=>{await flushPrayers();cardTab=b.dataset.c;renderCard(d);});
   const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='details';renderCard(d);};
   renderCard(d);
 }
@@ -1718,7 +1719,7 @@ function cardDetails(d,body){
       <div class="two"><label class="fld"><span>תאריך</span><input id="dn_date" type="date"></label>
         <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label></div>
       <label class="fld"><span>🕯️ שם לתפילה (לא חובה)</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label>
-      <button class="btn" id="dn_add" style="width:100%">➕ רשום תרומה</button></details>
+      <button class="btn" id="dn_add" style="width:100%">💾 שמור תרומה</button></details>
     ${(d.parnes||[]).filter(p=>p.status!=='suggested').length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)</summary><div id="parnes"></div></details>`:''}
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></details>`:''}
@@ -1939,6 +1940,8 @@ function cardDetails(d,body){
     document.getElementById('dn_newrow').classList.toggle('hidden',dnCat.value!=='__new__');
     document.getElementById('dn_bldg_l').classList.toggle('hidden',!isBldg(dnCat.value));
     document.getElementById('dn_ccbox').classList.toggle('hidden',!/אשראי|אונליין/.test(dnMeth.value));
+    const ab=document.getElementById('dn_add');       // הכפתור אומר בדיוק מה יישמר
+    if(ab)ab.textContent=day?('💾 שמור '+(DAYSAVE[day]||'יום פרנס')):'💾 שמור תרומה';
   };
   if(dnCat){dnCat.onchange=dnShow;dnMeth.onchange=dnShow;dnShow();}
   const dnAdd=document.getElementById('dn_add');
@@ -2138,7 +2141,7 @@ function cardKvittel(d,body){
     </div>
     ${inKv?`<div class="hintxt">✡️ מסומן בקוויטל <b>${KVTIER[d.tier]}</b>.${empty?' עדיין לא הוזנו שמות לתפילה — הוסף למטה (בדרך כלל שם התורם: "פלוני בן אמו").':''}</div>`:''}
     <div id="prayers"></div>
-    <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)" value="${esc(sugg)}"><button class="btn sm" id="pr_add">הוסף</button></div>`;
+    <div class="addrow"><input id="pr_new" placeholder="שם לתפילה (למשל: יעקב בן שרה לרפואה שלמה)" value="${esc(sugg)}"><button class="btn sm" id="pr_add">💾 שמור שם</button></div>`;
   renderPrayers(d);
   // בקשות קוויטל מהאתר — אישור ישירות מכאן (מרענן לתוך לשונית הקוויטל)
   body.querySelectorAll('.kvpend').forEach(el=>{
@@ -2820,17 +2823,35 @@ async function copyToClip(txt,okMsg){
   try{const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');ta.remove();toast(okMsg||'הועתק ✓');}
   catch(e){prompt('העתק ידנית:',txt);}
 }
+let PRSAVE=null;
+// טקסט שנכתב בשמות הקוויטל ולא נשמר — נשמר לפני יציאה, כדי שלא ייעלם
+async function flushPrayers(){ const f=PRSAVE; PRSAVE=null;
+  if(!f)return; try{ if(document.querySelector('.prtx')) await f(); }catch(e){} }
 function renderPrayers(d){
   const el=document.getElementById('prayers');
   const prs=(d.prayers||[]);
   const allBtn=prs.length>1?`<button class="btn sm ghost" id="prcopyall" style="width:100%;margin-bottom:6px">📋 העתק את כל השמות</button>`:'';
-  el.innerHTML=allBtn+(prs.map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}">${esc(p.text)}</textarea><button class="prcopy" data-id="${p.id}" title="העתק שם">📋</button><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>');
-  el.querySelectorAll('.prtx').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.prayers.find(x=>x.id==t.dataset.id);if(!p||p.text===t.value)return;p.text=t.value;await api('PUT','/api/prayer/'+p.id,{text:t.value});toast('נשמר ✓');};});
+  el.innerHTML=allBtn+(prs.map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}">${esc(p.text)}</textarea><button class="prcopy" data-id="${p.id}" title="העתק שם">📋</button><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>')
+    +(prs.length?`<button class="btn sm prsaveall" id="prsaveall" style="width:100%;margin-top:4px">💾 שמור שמות</button>
+       <div class="hintxt dirtyhint hidden" id="prdirty">✏️ יש שינוי שעדיין לא נשמר — לחץ "💾 שמור שמות"</div>`:'');
+  const prMark=()=>{const dirty=[...el.querySelectorAll('.prtx')].some(t=>{const p=prs.find(x=>x.id==t.dataset.id);return p&&p.text!==t.value;});
+    const h=el.querySelector('#prdirty'),b2=el.querySelector('#prsaveall');
+    if(h)h.classList.toggle('hidden',!dirty); if(b2)b2.classList.toggle('warn',dirty);};
+  const prSaveAll=async()=>{let n=0;
+    for(const t of el.querySelectorAll('.prtx')){const p=d.prayers.find(x=>x.id==t.dataset.id);
+      if(!p||p.text===t.value)continue; p.text=t.value; await api('PUT','/api/prayer/'+p.id,{text:t.value}); n++;}
+    prMark(); if(n)toast('נשמר ✓ '+n+' '+(n===1?'שם':'שמות')); else toast('אין מה לשמור');};
+  el.querySelectorAll('.prtx').forEach(t=>{autoGrow(t);
+    t.addEventListener('input',()=>{autoGrow(t);prMark();});
+    t.onblur=async()=>{const p=d.prayers.find(x=>x.id==t.dataset.id);if(!p||p.text===t.value)return;p.text=t.value;await api('PUT','/api/prayer/'+p.id,{text:t.value});prMark();toast('נשמר ✓');};});
+  const sa=el.querySelector('#prsaveall'); if(sa)sa.onclick=prSaveAll;
+  PRSAVE=prSaveAll;   // כדי שסגירת הכרטיס לא תאבד טקסט שנכתב ולא נשמר
   el.querySelectorAll('.prcopy').forEach(b=>b.onclick=()=>{const t=el.querySelector('.prtx[data-id="'+b.dataset.id+'"]');copyToClip(t?t.value:'','השם הועתק ✓');});
   const ca=document.getElementById('prcopyall');if(ca)ca.onclick=()=>{const txt=[...el.querySelectorAll('.prtx')].map(t=>t.value.trim()).filter(Boolean).join('\n');copyToClip(txt,'כל השמות הועתקו ✓');};
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/prayer/'+b.dataset.del);d.prayers=d.prayers.filter(x=>x.id!=b.dataset.del);renderPrayers(d);toast('נמחק');});
 }
 const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוקר'};
+const DAYSAVE={parnes:'🌙 יום פרנס',coffee:'☕ חדר קפה',breakfast:'🍳 ארוחת בוקר'};
 function parnesCertUrl(d,p){
   const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
   const yr=p.hyear||HEBYEAR;const date=dtext+(yr?(' '+yr):'');
@@ -3324,14 +3345,40 @@ function renderParnes(){
     return;
   }
   const days=[];for(let i=1;i<=30;i++)days.push(i);
-  view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
+  view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button>
+      <div class="monthnav"><button class="mnav" id="pmprev" title="החודש הקודם">▶</button>
+        <b>חודש ${pyMonth}</b>
+        <button class="mnav" id="pmnext" title="החודש הבא">◀</button></div></div>
+    <div class="hintxt swipehint">👉 החלק באצבע על הלוח — שמאלה לחודש הבא, ימינה לחודש הקודם</div>
     <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
     <div class="daygrid">${days.map(n=>{const l=taken[pyMonth+'|'+n]||[];const t=pyMain(l);const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=l.some(x=>x.status!=='suggested'&&!+x.paid);return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
   view.querySelectorAll('.daycell').forEach(b=>b.onclick=()=>{pyDay=+b.dataset.d;render();});
+  document.getElementById('pmprev').onclick=()=>pyHop(-1);
+  document.getElementById('pmnext').onclick=()=>pyHop(1);
+  swipeMonth(view.querySelector('.daygrid'));
   if(pyDay)renderDayPanel(taken);
+}
+// מעבר חודש: החלקה באצבע שמאלה = החודש הבא, ימינה = החודש הקודם.
+// אחרי אלול חוזרים לתשרי, ולפני תשרי — אלול.
+function pyHop(step){
+  const i=HMORD.indexOf(pyMonth); if(i<0)return;
+  pyMonth=HMORD[(i+step+HMORD.length)%HMORD.length]; pyDay=null; render();
+}
+function swipeMonth(el){
+  if(!el)return;
+  let x0=null,y0=null,t0=0;
+  el.addEventListener('touchstart',e=>{const t=e.touches[0];x0=t.clientX;y0=t.clientY;t0=Date.now();},{passive:true});
+  el.addEventListener('touchend',e=>{
+    if(x0===null)return;
+    const t=e.changedTouches[0], dx=t.clientX-x0, dy=t.clientY-y0;
+    x0=null;
+    if(Date.now()-t0>700)return;              // גרירה איטית — כנראה גלילה
+    if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.6)return;   // תנועה אנכית — גלילה
+    pyHop(dx<0?1:-1);                          // שמאלה = הבא, ימינה = הקודם
+  },{passive:true});
 }
 function renderDayPanel(taken){
   const panel=document.getElementById('daypanel');if(!panel)return;
