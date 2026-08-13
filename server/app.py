@@ -428,6 +428,14 @@ def ensure_schema():
             print(f"  צ'ייס ינו-אוג: נטענו {nr}, הותאמו {matched}")
     except Exception as e:
         print("  שגיאת צ'ייס:", e)
+    # שם שנכתב בבנק עם שגיאת הקלדה של אות אחת — Rosenfed במקום Rosenfeld וכדומה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_nearnames_v1'").fetchone():
+            n = link_near_names(con)
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_nearnames_v1')")
+            print('  חיובים ששויכו למרות שגיאת כתיב בשם: %d' % n)
+    except Exception as e:
+        print('  near names error:', e)
     # TOSFOSYOMTOV02 בצ'ייס = משה דויטש. שתיים משלוש השורות כתוב בהן במפורש
     # "zichron avos from moishe deutsch", והשלישית באה מאותו ORIG ID.
     try:
@@ -4093,6 +4101,50 @@ def _split_av(name):
 def _srt(s):
     """מיון עברי פשוט — בלי גרשיים ורווחים מיותרים."""
     return re.sub(r'["\u05f3\u05f4\'`]', '', (s or '').strip())
+
+
+def _lev1(a, b):
+    """האם שתי מחרוזות רחוקות זו מזו באות אחת לכל היותר (שגיאת הקלדה)."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = 0
+    while i < la and a[i] == b[i]:
+        i += 1
+    j = 0
+    while j < la - i and a[la - 1 - j] == b[lb - 1 - j]:
+        j += 1
+    return i + j >= la
+
+
+def link_near_names(con):
+    """שם מפקיד שנכתב בבנק עם שגיאת הקלדה של אות אחת — למשל Rosenfed במקום
+    Rosenfeld — נשאר ברשימת "לא זוהו" למרות שהכרטיס קיים. הסריקה הזו מחברת
+    אותו, אבל רק כשיש מועמד יחיד ורק כשהשם הפרטי זהה, כדי לא לטעות."""
+    def _ne(s): return re.sub(r'[^a-z0-9 ]', '', (s or '').lower()).strip()
+    cands = []
+    for d in con.execute("SELECT id,english,business FROM donors"):
+        for v in (d['english'], d['business']):
+            k = _ne(v)
+            if len(k) >= 6:
+                cands.append((k, d['id']))
+    n = 0
+    for r in con.execute("SELECT tid,first,last FROM recon WHERE donor_id IS NULL"):
+        nm = _ne(((r['first'] or '') + ' ' + (r['last'] or '')).strip())
+        if len(nm) < 6:
+            continue
+        hit = {did for k, did in cands
+               if _lev1(k, nm) and k.split(' ')[0] == nm.split(' ')[0]}
+        if len(hit) == 1:
+            con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (hit.pop(), r['tid']))
+            n += 1
+    if n:
+        con.commit()
+    return n
 
 
 def link_by_identity(con):
