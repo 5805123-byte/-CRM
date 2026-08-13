@@ -2289,7 +2289,8 @@ function avOpts(sel){
       return `<option value="${esc(a.name)}" ${a.name===sel?'selected':''}>${esc(a.name)}${esc(t)}</option>`;}).join('')
     +'<option value="__new__">➕ אברך חדש — הוסף לרשימה…</option>';
 }
-async function loadAvList(){ try{AVLIST=await api('GET','/api/avreichim');}catch(e){} }
+async function loadAvList(){ try{const r=await api('GET','/api/avreichim');
+  AVLIST=(r&&r.rows)||r||[]; AVSTAT=(r&&r.rows)?r:null;}catch(e){} }
 function wireAvNew(sel,inp,btn){
   if(!sel||!inp||!btn) return;
   sel.addEventListener('change',()=>{const on=sel.value==='__new__';
@@ -3261,7 +3262,7 @@ function renderParnes(){
   const days=[];for(let i=1;i<=30;i++)days.push(i);
   view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button><b style="margin-inline-start:10px;font-size:1.15rem">חודש ${pyMonth}</b></div>
     <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
-    <div class="daygrid">${days.map(n=>{const l=taken[pyMonth+'|'+n]||[];const t=pyMain(l);const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=l.some(x=>x.status!=='suggested'&&!+x.paid);return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${esc(t.donor.split(' ')[0])}${l.length>1?` <b class="dmore">+${l.length-1}</b>`:''}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
+    <div class="daygrid">${days.map(n=>{const l=taken[pyMonth+'|'+n]||[];const t=pyMain(l);const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=l.some(x=>x.status!=='suggested'&&!+x.paid);return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
@@ -3491,7 +3492,7 @@ function renderMissed(){
 }
 
 /* ---------- אברכים (יששכר־זבולון) ---------- */
-let avView='cards', avSort='last', avSearch='';
+let avView='cards', avSort='last', avSearch='', AVSTAT=null;
 function avFirstAvreich(d){return ((d.partners||[]).filter(p=>p.active!=0)[0]||{}).avreich||'';}
 function avSumAmt(d){return (d.partners||[]).filter(p=>p.active!=0).reduce((s,p)=>s+amtNum(p.amount),0);}
 function sortIZ(list){const s=list.slice();
@@ -3503,6 +3504,102 @@ function filterIZ(){const nq=norm(avSearch);
   return sortIZ(DB.filter(d=>d.tier==='יששכר_זבולון')
     .filter(d=>matchQ(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')))
     .filter(d=>!nq||norm(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')).includes(nq)));}
+// רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.
+// מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
+let avOpenId=null;
+async function renderAvByAv(){
+  chips.innerHTML='';
+  view.innerHTML='<div class="cnt">טוען את רשימת האברכים…</div>';
+  await loadAvList();
+  const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
+  const q2=norm(avSearch).toLowerCase();
+  const rows=AVLIST.filter(a=>!q2||norm(a.name+' '+a.holders.map(h=>h.name).join(' ')).toLowerCase().includes(q2));
+  const free=rows.filter(a=>!a.holders.length).length;
+  view.innerHTML=`<div class="avbar">
+      <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
+      <button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
+    <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
+    <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
+    <div class="avthead"><span class="c1">האברך</span><span class="c2">הזבולון</span><span class="c3">מתאריך</span><span class="c4">סכום</span></div>
+    <div class="avtlist">${rows.map(a=>avRowHTML(a)).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
+  const se=document.getElementById('avsearch');
+  se.oninput=()=>{avSearch=se.value;clearTimeout(se._t);se._t=setTimeout(()=>{
+    const p=se.selectionStart;paintByAv();const s2=document.getElementById('avsearch');
+    if(s2){s2.focus();try{s2.setSelectionRange(p,p);}catch(e){}}},250);};
+  document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
+  wireByAv();
+}
+function paintByAv(){
+  const q2=norm(avSearch).toLowerCase();
+  const rows=AVLIST.filter(a=>!q2||norm(a.name+' '+a.holders.map(h=>h.name).join(' ')).toLowerCase().includes(q2));
+  const el=view.querySelector('.avtlist'); if(!el)return;
+  el.innerHTML=rows.map(a=>avRowHTML(a)).join('')||'<div class="empty">אין תוצאות</div>';
+  wireByAv();
+}
+function avRowHTML(a){
+  const h=a.holders||[], open=avOpenId===a.name;
+  const who=h.length
+    ? h.map(x=>`<a class="avhold" data-did="${x.id}">${esc(x.name)}</a>`).join(' · ')
+    : '<span class="avfree">— פנוי —</span>';
+  const st=h.length?(h[0].start_date||a.started||''):(a.started||'');
+  const amt=h.length?(h[0].share!==''&&h[0].share!=null&&h[0].share!==undefined?h[0].share:(h[0].amount||'')):'';
+  return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
+    <div class="avtmain">
+      <span class="c1"><b>${esc(a.last)}</b> ${esc(a.first)}</span>
+      <span class="c2">${who}</span>
+      <span class="c3">${esc(st||'—')}</span>
+      <span class="c4">${amt?('$'+esc(amt)):'—'}</span>
+    </div>
+    <div class="avtnote"><input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">
+      <button class="btn sm ghost avassign" data-av="${esc(a.name)}">${h.length?'➕ עוד שותף':'🤝 שבץ שותף'}</button></div>
+    ${open?`<div class="avassignbox">
+      <input class="av_q" data-av="${esc(a.name)}" placeholder="חפש תורם…" autocomplete="off">
+      <div class="dpres av_res" data-av="${esc(a.name)}"></div>
+      <div class="chosen av_ch" data-av="${esc(a.name)}"></div>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>מתאריך (עברי)</span><input class="av_dt" data-av="${esc(a.name)}" value="${esc(a.started||'')}" placeholder="א' אייר תשפ&quot;ו"></label>
+        <label class="fld"><span>סכום לחודש</span><input class="av_amt" data-av="${esc(a.name)}" inputmode="decimal" placeholder="850"></label></div>
+      <button class="btn sm av_save" data-av="${esc(a.name)}" style="width:100%;margin-top:6px">💾 שבץ ועדכן אצל התורם</button></div>`:''}
+  </div>`;
+}
+function wireByAv(){
+  const nb=document.getElementById('av_newbtn'), ni=document.getElementById('av_new');
+  if(nb&&!nb._w){nb._w=1;
+    const addAv=async()=>{const nm=(ni.value||'').trim(); if(!nm){ni.focus();return;}
+      nb.disabled=true; const r=await api('POST','/api/avreich',{name:nm}); nb.disabled=false;
+      if(r&&r.error==='exists'){toast('האברך כבר ברשימה');return;}
+      ni.value=''; toast('נוסף לרשימה ✓'); avView='byav'; renderAvByAv();};
+    nb.onclick=addAv; ni.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addAv();}};}
+  view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
+  view.querySelectorAll('.avnote').forEach(inp=>inp.onchange=async()=>{
+    const a=AVLIST.find(x=>x.name===inp.dataset.av); if(!a)return;
+    a.note=inp.value; await api('POST','/api/avreich',{id:a.aid,name:a.name,note:inp.value}); toast('ההערה נשמרה ✓');});
+  view.querySelectorAll('.avassign').forEach(b=>b.onclick=()=>{
+    avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; paintByAv();});
+  view.querySelectorAll('.av_q').forEach(qi=>{
+    const av=qi.dataset.av, res=view.querySelector('.av_res[data-av="'+CSS.escape(av)+'"]'),
+          ch=view.querySelector('.av_ch[data-av="'+CSS.escape(av)+'"]');
+    qi.focus();
+    qi.oninput=()=>{const s2=norm(qi.value);if(!s2){res.innerHTML='';return;}
+      const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.business).includes(s2)).slice(0,8);
+      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{
+        const d=DB.find(y=>y.id==x.dataset.id);
+        ch.textContent='נבחר: '+(d.last+' '+(d.first||'')).trim(); ch.dataset.did=d.id;
+        res.innerHTML=''; qi.value=(d.last+' '+(d.first||'')).trim();});};});
+  view.querySelectorAll('.av_save').forEach(b=>b.onclick=async()=>{
+    const av=b.dataset.av, sel=v=>view.querySelector('.'+v+'[data-av="'+CSS.escape(av)+'"]');
+    const ch=sel('av_ch'), did=ch&&ch.dataset.did;
+    if(!did){toast('בחר תורם');return;}
+    const a=AVLIST.find(x=>x.name===av);
+    b.disabled=true;
+    const r=await api('POST','/api/avreich/assign',{avreich_id:a&&a.aid,name:av,donor_id:+did,
+      start_date:(sel('av_dt').value||'').trim(),amount:(sel('av_amt').value||'').trim(),at:nowStamp()});
+    b.disabled=false;
+    if(r&&r.error==='already'){toast('כבר משובץ אצל התורם הזה');return;}
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    avOpenId=null; toast('שובץ אצל '+r.donor+' ✓');
+    await load(); await renderAvByAv();});
+}
 function renderAvTable(){
   view.innerHTML=`<div class="avbar noprint">
       <button class="back" id="avcards">→ חזרה לעריכה</button>
@@ -3535,6 +3632,7 @@ function renderAvTable(){
 function renderAvreich(){
   chips.innerHTML='';
   if(avView==='table') return renderAvTable();
+  if(avView==='byav') return renderAvByAv();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
   view.innerHTML=`<div class="avbar">
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש תורם או אברך…" value="${esc(avSearch)}" autocomplete="off">
@@ -3543,7 +3641,7 @@ function renderAvreich(){
         <option value="av">מיון: אברך (א-ב)</option>
         <option value="amt">מיון: סכום (גבוה→נמוך)</option>
       </select>
-      <button class="btn sm" id="avtablebtn">🖨️ טבלה</button></div>
+      <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button></div>
     <div class="cnt" id="avcnt"></div>
     <div class="avlist" id="avlistwrap"></div>`;
   const sortSel=document.getElementById('avsort'); sortSel.value=avSort;
@@ -3569,6 +3667,7 @@ function renderAvreich(){
     bindAvFields();
   }
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
+  document.getElementById('avbyavbtn').onclick=()=>{avView='byav';render();};
   searchEl.oninput=()=>{avSearch=searchEl.value;paintList();};
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();

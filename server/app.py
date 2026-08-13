@@ -72,6 +72,8 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS pay_channels(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS avreichim(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE,
+        last TEXT, first TEXT, note TEXT, started TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
@@ -3012,6 +3014,25 @@ def ensure_schema():
     except Exception as e:
         print('  dupe tasks error:', e)
 
+    # רשימת האברכים של הכולל — נבנית מהשמות שכבר מופיעים אצל התורמים, וממשיכה
+    # להתעדכן בכל עלייה כדי שאברך שנוסף דרך כרטיס תורם ייכנס גם לרשימה.
+    try:
+        n = 0
+        for r in con.execute("SELECT DISTINCT TRIM(avreich) a FROM partners "
+                             "WHERE COALESCE(TRIM(avreich),'')<>''"):
+            if con.execute("SELECT 1 FROM avreichim WHERE name=?", (r['a'],)).fetchone():
+                continue
+            l, f = _split_av(r['a'])
+            st = con.execute("SELECT start_date FROM partners WHERE TRIM(avreich)=? "
+                             "AND COALESCE(start_date,'')<>'' ORDER BY id LIMIT 1", (r['a'],)).fetchone()
+            con.execute("INSERT INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,'',?,?)",
+                        (r['a'], l, f, (st['start_date'] if st else ''), today_iso()))
+            n += 1
+        if n:
+            print('  אברכים שנוספו לרשימת הכולל: %d' % n)
+    except Exception as e:
+        print('  avreichim seed error:', e)
+
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
     try:
@@ -3899,6 +3920,17 @@ def task_log_sync(cur, tid):
             'at': c['at'] or ''}
 
 
+def _split_av(name):
+    """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
+    p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
+    return (p[0] if p else ''), (' '.join(p[1:]) if len(p) > 1 else '')
+
+
+def _srt(s):
+    """מיון עברי פשוט — בלי גרשיים ורווחים מיותרים."""
+    return re.sub(r'["\u05f3\u05f4\'`]', '', (s or '').strip())
+
+
 def link_by_identity(con):
     """משייך חיובים שנשארו בלי כרטיס — לפי מייל, לפי טלפון, ולבסוף לפי תעתיק השם
     הלועזי לעברית. רק התאמה יחידה וברורה מתקבלת; כל השאר נשאר לאישור ידני."""
@@ -4564,20 +4596,35 @@ class H(BaseHTTPRequestHandler):
             self.end_headers(); self.wfile.write(data)
             return
         if self.path.split('?')[0] == '/api/avreichim':
-            # רשימת האברכים המוכרת, ומי מחזיק כל אחד — כדי שלא ייכנסו שמות חופשיים
+            # רשימת האברכים לפי שם משפחה, ולצד כל אחד מי מחזיק אותו, ממתי ובכמה.
+            # אברך בלי שותף מופיע גם הוא — הרשימה היא של הכולל, לא של התורמים.
             con = db()
             out = {}
+            for r in con.execute("SELECT id,name,last,first,note,started FROM avreichim"):
+                out[r['name']] = {'aid': r['id'], 'name': r['name'], 'last': r['last'] or '',
+                                  'first': r['first'] or '', 'note': r['note'] or '',
+                                  'started': r['started'] or '', 'holders': [], 'taken': False}
             for r in con.execute(
-                    "SELECT TRIM(p.avreich) a, p.active, d.id did, d.last, d.first FROM partners p "
+                    "SELECT TRIM(p.avreich) a, p.id pid, p.active, p.start_date, p.amount, p.share, "
+                    "p.joint, d.id did, d.last, d.first FROM partners p "
                     "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(TRIM(p.avreich),'')<>''"):
-                g = out.setdefault(r['a'], {'name': r['a'], 'holders': [], 'taken': False})
+                g = out.get(r['a'])
+                if g is None:
+                    l, f = _split_av(r['a'])
+                    g = out[r['a']] = {'aid': None, 'name': r['a'], 'last': l, 'first': f,
+                                       'note': '', 'started': '', 'holders': [], 'taken': False}
                 if r['active'] is None or r['active'] != 0:
                     nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
                     if nm and nm not in [h['name'] for h in g['holders']]:
-                        g['holders'].append({'id': r['did'], 'name': nm})
+                        g['holders'].append({'id': r['did'], 'name': nm, 'pid': r['pid'],
+                                             'start_date': r['start_date'] or '',
+                                             'amount': r['amount'] or '', 'share': r['share'] or '',
+                                             'joint': r['joint'] or 0})
                     g['taken'] = True
             con.close()
-            return self._send(200, sorted(out.values(), key=lambda x: x['name']))
+            rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
+            return self._send(200, {'rows': rows, 'total': len(rows),
+                                    'free': sum(1 for x in rows if not x['holders'])})
         if self.path.split('?')[0] == '/api/unclassified':
             # תורמים שיש להם חיובים שנכנסו בלי לדעת עבור מה — לשאלה בדף החיובים
             con = db()
@@ -5646,6 +5693,71 @@ class H(BaseHTTPRequestHandler):
             names = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm, 'kinds': names})
+        if self.path == '/api/avreich':
+            # הוספה/עריכה/מחיקה של אברך ברשימת הכולל
+            nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:60]
+            aid = b.get('id')
+            con = db(); cur = con.cursor()
+            if b.get('delete') and aid:
+                r = cur.execute("SELECT name FROM avreichim WHERE id=?", (aid,)).fetchone()
+                held = cur.execute("SELECT COUNT(*) c FROM partners WHERE TRIM(avreich)=? "
+                                   "AND COALESCE(active,1)<>0", (r['name'] if r else '',)).fetchone()['c']
+                if held:
+                    con.close()
+                    return self._send(200, {'ok': False, 'error': 'held', 'count': held})
+                cur.execute("DELETE FROM avreichim WHERE id=?", (aid,))
+            elif aid:
+                sets, vals = [], []
+                for k in ('note', 'started'):
+                    if k in b: sets.append(k + '=?'); vals.append(b[k])
+                if nm:
+                    l, f = _split_av(nm)
+                    old = cur.execute("SELECT name FROM avreichim WHERE id=?", (aid,)).fetchone()
+                    sets += ['name=?', 'last=?', 'first=?']; vals += [nm, l, f]
+                    if old and old['name'] != nm:      # שינוי שם — גם אצל כל המחזיקים
+                        cur.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (nm, old['name']))
+                if sets:
+                    cur.execute("UPDATE avreichim SET " + ','.join(sets) + " WHERE id=?", vals + [aid])
+            elif nm:
+                if cur.execute("SELECT 1 FROM avreichim WHERE name=?", (nm,)).fetchone():
+                    con.close(); return self._send(200, {'ok': False, 'error': 'exists'})
+                l, f = _split_av(nm)
+                cur.execute("INSERT INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,?,?,?)",
+                            (nm, l, f, (b.get('note') or ''), (b.get('started') or ''), today_iso()))
+                aid = cur.lastrowid
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': aid, 'name': nm})
+        if self.path == '/api/avreich/assign':
+            # שיוך אברך לתורם מתוך רשימת האברכים — נרשם אצל שניהם, עם תאריך
+            aid = b.get('avreich_id'); did = int(b.get('donor_id') or 0)
+            con = db(); cur = con.cursor()
+            r = cur.execute("SELECT name,started FROM avreichim WHERE id=?", (aid,)).fetchone() if aid else None
+            nm = (r['name'] if r else (b.get('name') or '')).strip()
+            d = cur.execute("SELECT last,first,tier FROM donors WHERE id=?", (did,)).fetchone()
+            if not nm or not d:
+                con.close(); return self._send(400, {'ok': False, 'error': 'bad_input'})
+            if cur.execute("SELECT 1 FROM partners WHERE donor_id=? AND TRIM(avreich)=? "
+                           "AND COALESCE(active,1)<>0", (did, nm)).fetchone():
+                con.close(); return self._send(200, {'ok': False, 'error': 'already'})
+            start = (b.get('start_date') or '').strip()
+            amt = (b.get('amount') or '').strip()
+            g = heb_anniv(start) if start else None
+            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active,renew_date) "
+                        "VALUES(?,?,?,?,1,?)", (did, nm, start, amt, g.isoformat() if g else None))
+            pid = cur.lastrowid
+            if (d['tier'] or '') != 'יששכר_זבולון':      # שיוך אברך הופך אותו ליששכר־זבולון
+                cur.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=?", (did,))
+            if r and not (r['started'] or '').strip() and start:
+                cur.execute("UPDATE avreichim SET started=? WHERE id=?", (start, aid))
+            # היסטוריה: אצל התורם נרשם מתי נוסף לו האברך
+            dn = ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+            at = (b.get('at') or '').strip() or now_iso()
+            cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,at) "
+                        "VALUES(?,?,'יששכר־זבולון',?,'',?)",
+                        (did, at[:10], '🤝 נוסף האברך %s%s%s' % (
+                            nm, (' · מ' + start) if start else '', (' · $' + amt) if amt else ''), at))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'pid': pid, 'donor': dn, 'name': nm})
         if self.path == '/api/contactkinds':
             # סוגי קשר שמאיר מוסיף בעצמו — למשל "פגישה בבית" או "הודעה בפקס"
             nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:40]
