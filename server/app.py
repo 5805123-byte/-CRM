@@ -5771,6 +5771,27 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         bump_data()
+        # Authorize.net מודיע ברגע שחיוב עבר. מאמתים חתימה, מושכים את העסקה,
+        # ורושמים אותה. חייב להיות לפני קריאת הגוף כ-JSON — החתימה על הגוף הגולמי.
+        if self.path.split('?')[0] == '/api/authorize/webhook':
+            try:
+                import authorize_sync as anet
+                raw = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+                if not anet.verify(raw, self.headers.get('X-ANET-Signature')):
+                    return self._send(401, {'ok': False, 'error': 'bad_signature'})
+                ev = json.loads(raw or b'{}')
+                tid = anet.webhook_tid(ev)
+                con = db()
+                res = anet.sync(con, link=link_by_identity, only_tid=tid) if tid else {}
+                con.close()
+                ANETSTAT.update(last=now_iso(), last_ok=now_iso(), hooks=ANETSTAT['hooks'] + 1,
+                                result=str(res), error='')
+                print('  Authorize webhook:', ev.get('eventType', ''), tid, res)
+                return self._send(200, {'ok': True, 'result': res})
+            except Exception as e:
+                ANETSTAT.update(last=now_iso(), error=str(e)[:200])
+                print('  שגיאת webhook של Authorize:', e)
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
         # יעד שיתוף (וואטסאפ/גלריה): בדרך כלל ה-Service Worker קולט זאת ושומר את הקבצים.
         # אם הוא עדיין לא פעיל — לפחות נפתח את האפליקציה במקום שגיאה.
         if self.path.split('?')[0] == '/share-target':
@@ -6185,6 +6206,24 @@ class H(BaseHTTPRequestHandler):
             sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        if self.path == '/api/authorize/sync':
+            # "משוך עכשיו" מהמסך — סורק את הימים האחרונים ומכניס מה שחסר
+            try:
+                import authorize_sync as anet
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'המודול לא נטען: %s' % e})
+            if not anet.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured'})
+            try:
+                con = db()
+                res = anet.sync(con, days=int(b.get('days') or 10), link=link_by_identity)
+                con.close()
+                ANETSTAT.update(last=now_iso(), last_ok=now_iso(), result=str(res), error='',
+                                runs=ANETSTAT['runs'] + 1)
+                return self._send(200, {'ok': True, 'result': res})
+            except Exception as e:
+                ANETSTAT.update(last=now_iso(), error=str(e)[:200])
+                return self._send(200, {'ok': False, 'error': str(e)[:250]})
         if self.path == '/api/paysplit':
             # שני תורמים ששולחים לבנק סכום אחד ומתחלקים בו
             con = db(); cur = con.cursor()
@@ -6872,6 +6911,7 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
 SYNCSTAT = {'last': '', 'last_ok': '', 'result': '', 'error': '', 'runs': 0}
+ANETSTAT = {'last': '', 'last_ok': '', 'result': '', 'error': '', 'runs': 0, 'hooks': 0}
 
 def health_report():
     """בדיקת מערכת — מה עובד, מה חסר, ומה דורש טיפול. ok / warn / bad לכל שורה."""
@@ -6914,6 +6954,28 @@ def health_report():
             else 'ללא ANTHROPIC_API_KEY — תרגום חינמי, איכות נמוכה יותר')
         add('שליחת מיילים', 'ok' if (os.environ.get('BREVO_API_KEY') or os.environ.get('SMTP_HOST'))
             else 'warn', 'Brevo מוגדר' if os.environ.get('BREVO_API_KEY') else 'לא מוגדר מפתח שליחה')
+        # החיבור החי ל-Authorize.net
+        try:
+            import authorize_sync as _an
+            if not _an.configured():
+                add('חיבור ל-Authorize.net', 'warn',
+                    'לא מוגדר — חסרים AUTHNET_LOGIN_ID ו-AUTHNET_TRANSACTION_KEY')
+            else:
+                sb = 'בדיקות (sandbox)' if 'apitest' in _an.endpoint() else 'חשבון אמיתי'
+                add('חיבור ל-Authorize.net', 'ok', 'מחובר · %s' % sb)
+                add('הודעה מיידית (Webhook)', 'ok' if _an._sig_key() else 'warn',
+                    ('פעילה · התקבלו %d הודעות' % ANETSTAT['hooks']) if _an._sig_key()
+                    else 'חסר AUTHNET_SIGNATURE_KEY — עובד רק במשיכה כל שעה')
+                if ANETSTAT.get('error'):
+                    add('משיכה אחרונה מ-Authorize', 'bad',
+                        '%s — %s' % (ANETSTAT.get('last') or '', ANETSTAT['error']))
+                elif ANETSTAT.get('last_ok'):
+                    add('משיכה אחרונה מ-Authorize', 'ok',
+                        '%s · %s' % (ANETSTAT['last_ok'], ANETSTAT.get('result') or ''))
+                else:
+                    add('משיכה אחרונה מ-Authorize', 'warn', 'עדיין לא רצה מאז ההפעלה')
+        except Exception as e:
+            add('חיבור ל-Authorize.net', 'warn', e)
         # חיובים שלא שויכו
         try:
             r = con.execute("SELECT COUNT(*), COALESCE(SUM(CAST(amount AS REAL)),0) FROM recon "
@@ -6982,10 +7044,43 @@ def _intake_daily_loop():
         first = False
         time.sleep(every)
 
+def _authnet_loop():
+    """רשת הביטחון של החיבור ל-Authorize.net. ה-Webhook מביא כל חיוב תוך שניות,
+    והסריקה הזו רצה כל שעה ואוספת כל מה שאולי לא הגיע — הודעה שאבדה, שרת
+    שהיה למטה, או חיוב קבוע שנגבה בלילה. חיוב שכבר נרשם לא נרשם פעמיים."""
+    import time
+    try:
+        import authorize_sync as anet
+    except Exception:
+        return
+    every = max(600, int(os.environ.get('AUTHNET_SECONDS') or 3600))
+    first = True
+    while True:
+        try:
+            if anet.configured():
+                if first:
+                    time.sleep(25)
+                con = db()
+                res = anet.sync(con, days=int(os.environ.get('AUTHNET_DAYS') or 10),
+                                link=link_by_identity)
+                con.close()
+                bump_data()
+                ANETSTAT.update(last=now_iso(), last_ok=now_iso(), result=str(res), error='',
+                                runs=ANETSTAT['runs'] + 1)
+                if (res or {}).get('נוספו'):
+                    print('  Authorize.net — חיובים חדשים:', res)
+        except Exception as e:
+            print('  שגיאת משיכה מ-Authorize.net:', e)
+            ANETSTAT.update(last=now_iso(), error=str(e)[:200])
+        first = False
+        time.sleep(every)
+
+
 def serve():
     ensure_schema()
     import threading
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
+    threading.Thread(target=_authnet_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 
