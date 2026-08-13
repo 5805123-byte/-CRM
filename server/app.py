@@ -9,7 +9,7 @@ def today_iso():
 def now_iso():
     return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from hebdate import week_before, greg_to_heb_monthyear, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, kvittel_default_month, HMONTHS
+from hebdate import week_before, greg_to_heb_monthyear, greg_to_heb_full, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, kvittel_default_month, HMONTHS
 
 def heb_anniv(start_date):
     """המופע הבא (>= היום) של יום+חודש עברי מתוך תאריך תחילת שותפות — מתעלם משנת ההסכם."""
@@ -74,6 +74,8 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS avreichim(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE,
         last TEXT, first TEXT, note TEXT, started TEXT, created TEXT);
+    CREATE TABLE IF NOT EXISTS avreich_log(id INTEGER PRIMARY KEY AUTOINCREMENT, avreich TEXT,
+        donor_id INTEGER, date TEXT, hdate TEXT, text TEXT, at TEXT);
     CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
@@ -3920,6 +3922,27 @@ def task_log_sync(cur, tid):
             'at': c['at'] or ''}
 
 
+def iz_log(cur, avreich, donor_id, text, at='', hd=''):
+    """כל שינוי ביששכר־זבולון נרשם פעמיים: בדף הקשר של התורם, וביומן של
+    האברך. בשתי הרשומות מופיעים גם התאריך הלועזי וגם העברי."""
+    at = (at or '').strip() or now_iso()
+    day = at[:10]
+    hd = (hd or '').strip() or greg_to_heb_full(day)
+    # אם התאריך העברי כבר מופיע בטקסט (למשל 'מא\' אלול תשפ"ו') לא כופלים אותו
+    line = text if (hd and hd in text) else ('%s%s' % (text, (' · ' + hd) if hd else ''))
+    if donor_id:
+        try:
+            cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,at) "
+                        "VALUES(?,?,'יששכר־זבולון',?,'',?)", (donor_id, day, line, at))
+        except Exception:
+            pass
+    try:
+        cur.execute("INSERT INTO avreich_log(avreich,donor_id,date,hdate,text,at) "
+                    "VALUES(?,?,?,?,?,?)", (avreich, donor_id, day, hd, text, at))
+    except Exception:
+        pass
+
+
 def _split_av(name):
     """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
     p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
@@ -4621,6 +4644,17 @@ class H(BaseHTTPRequestHandler):
                                              'amount': r['amount'] or '', 'share': r['share'] or '',
                                              'joint': r['joint'] or 0})
                     g['taken'] = True
+            names = {}
+            for r in con.execute("SELECT id,last,first FROM donors"):
+                names[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+            for r in con.execute("SELECT avreich,donor_id,date,hdate,text FROM avreich_log "
+                                 "ORDER BY id DESC"):
+                g = out.get(r['avreich'])
+                if g is None:
+                    continue
+                g.setdefault('log', []).append({'date': r['date'] or '', 'hdate': r['hdate'] or '',
+                                                'text': r['text'] or '',
+                                                'donor': names.get(r['donor_id'], '')})
             con.close()
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
@@ -5768,13 +5802,12 @@ class H(BaseHTTPRequestHandler):
                 logs.append((nd, '🤝 האברך %s הועבר לכאן מ%s' % (p['avreich'], dn(p['donor_id']))))
                 cur.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=? AND COALESCE(tier,'')<>'יששכר_זבולון'", (nd,))
             if b.get('remove'):
-                cur.execute("UPDATE partners SET active=0, ended_date=? WHERE id=?", (today_iso(), pid))
-                logs.append((p['donor_id'], '❌ האברך %s הוסר' % p['avreich']))
+                cur.execute("UPDATE partners SET active=0, ended_date=? WHERE id=?", (at[:10], pid))
+                logs.append((p['donor_id'], '❌ הפסיק את יששכר־זבולון עם האברך %s' % p['avreich']))
             elif sets:
                 cur.execute("UPDATE partners SET " + ','.join(sets) + " WHERE id=?", vals + [pid])
             for did2, txt in logs:
-                cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,at) "
-                            "VALUES(?,?,'יששכר־זבולון',?,'',?)", (did2, at[:10], txt, at))
+                iz_log(cur, p['avreich'], did2, txt, at)
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'changes': len(logs)})
         if self.path == '/api/avreich/assign':
@@ -5789,7 +5822,9 @@ class H(BaseHTTPRequestHandler):
             if cur.execute("SELECT 1 FROM partners WHERE donor_id=? AND TRIM(avreich)=? "
                            "AND COALESCE(active,1)<>0", (did, nm)).fetchone():
                 con.close(); return self._send(200, {'ok': False, 'error': 'already'})
-            start = (b.get('start_date') or '').strip()
+            at = (b.get('at') or '').strip() or now_iso()
+            # לא הוקלד תאריך התחלה — נרשם היום, בתאריך העברי
+            start = (b.get('start_date') or '').strip() or greg_to_heb_full(at[:10])
             amt = (b.get('amount') or '').strip()
             g = heb_anniv(start) if start else None
             cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active,renew_date) "
@@ -5799,15 +5834,12 @@ class H(BaseHTTPRequestHandler):
                 cur.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=?", (did,))
             if r and not (r['started'] or '').strip() and start:
                 cur.execute("UPDATE avreichim SET started=? WHERE id=?", (start, aid))
-            # היסטוריה: אצל התורם נרשם מתי נוסף לו האברך
             dn = ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
-            at = (b.get('at') or '').strip() or now_iso()
-            cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,at) "
-                        "VALUES(?,?,'יששכר־זבולון',?,'',?)",
-                        (did, at[:10], '🤝 נוסף האברך %s%s%s' % (
-                            nm, (' · מ' + start) if start else '', (' · $' + amt) if amt else ''), at))
+            iz_log(cur, nm, did, '🤝 התחיל יששכר־זבולון עם האברך %s%s%s' % (
+                nm, (' · מ' + start) if start else '', (' · $' + amt) if amt else ''), at)
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'pid': pid, 'donor': dn, 'name': nm})
+            return self._send(200, {'ok': True, 'pid': pid, 'donor': dn, 'name': nm,
+                                    'start_date': start})
         if self.path == '/api/contactkinds':
             # סוגי קשר שמאיר מוסיף בעצמו — למשל "פגישה בבית" או "הודעה בפקס"
             nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:40]

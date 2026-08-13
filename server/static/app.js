@@ -3513,7 +3513,7 @@ function filterIZ(){const nq=norm(avSearch);
     .filter(d=>!nq||norm(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')).includes(nq)));}
 // רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.
 // מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
-let avOpenId=null, avSwapId=null;
+let avOpenId=null, avSwapId=null, avHistId=null;
 // חיפוש אברך לפי שם משפחה, שם פרטי, או שם השותף — בכל סדר ובאיות קרוב
 function avFiltered(){
   const s2=avSearch.trim(); if(!s2)return AVLIST;
@@ -3559,10 +3559,12 @@ function avRowHTML(a,ix){
     <span class="g4">${x?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:''}</span>
     <span class="g5">${x?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
     <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
-    <span class="g7">${x?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>`:''}</span>
+    <span class="g7">${x?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}`:''}</span>
   </div>${sw&&x&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
     ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
+    ${avHistId===a.name?`<div class="avhistbox">${(a.log||[]).map(L=>
+      `<div class="avhline"><b>${esc(L.hdate||'')}</b> <small>${esc(L.date||'')}</small>${L.donor?(' · '+esc(L.donor)):''}<br>${esc(L.text||'')}</div>`).join('')||'<div class="hintxt">אין עדיין היסטוריה</div>'}</div>`:''}
     ${open?`<div class="avassignbox">
       <input class="av_q" data-av="${esc(a.name)}" placeholder="חפש תורם…" autocomplete="off">
       <div class="dpres av_res" data-av="${esc(a.name)}"></div>
@@ -3613,6 +3615,8 @@ function wireByAv(){
         if(await saveH(pid,{donor_id:+x.dataset.id})){avSwapId=null;toast('הועבר לתורם החדש ✓');reload();}});};});
   view.querySelectorAll('.avassign').forEach(b=>b.onclick=()=>{
     avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; avSwapId=null; paintByAv();});
+  view.querySelectorAll('.avhist2').forEach(b=>b.onclick=()=>{
+    avHistId=(avHistId===b.dataset.av)?null:b.dataset.av; paintByAv();});
   view.querySelectorAll('.av_q').forEach(qi=>{
     const av=qi.dataset.av, res=view.querySelector('.av_res[data-av="'+CSS.escape(av)+'"]'),
           ch=view.querySelector('.av_ch[data-av="'+CSS.escape(av)+'"]');

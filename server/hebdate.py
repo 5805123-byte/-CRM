@@ -59,6 +59,26 @@ def greg_to_heb_monthyear(date_str):
     except Exception:
         return ''
 
+def greg_to_heb_full(date_str=None):
+    """תאריך לועזי מלא -> תאריך עברי מלא, למשל 'כ"ג אב תשפ"ו'.
+    בלי פרמטר — היום. משמש לרישום היסטוריה שקריאה בשני הלוחות."""
+    if not OK:
+        return ''
+    try:
+        if date_str:
+            m = re.match(r'(\d{4})-(\d{2})-(\d{2})', str(date_str))
+            if not m:
+                return ''
+            g = dates.GregorianDate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        else:
+            g = dates.GregorianDate.today()
+        h = g.to_heb()
+        parts = h.hebrew_date_string().split()
+        return hq(' '.join(parts))
+    except Exception:
+        return ''
+
+
 def kvittel_default_month(today=None):
     """חודש/שנה עבריים לקוויטל מזדמן: החודש הנוכחי, ומכ' בחודש ואילך — החודש הבא."""
     if not OK:
