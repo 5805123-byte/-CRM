@@ -3270,6 +3270,17 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
+    # חיובים שלא עברו (סורבו / נכשלו) — כדי שיראו את זה בכרטיס התורם עצמו
+    for d in donors: d['declined'] = []
+    try:
+        for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id FROM recon "
+                           "WHERE donor_id IS NOT NULL "
+                           "AND COALESCE(status,'settled') NOT IN ('settled','') "
+                           "ORDER BY date DESC"):
+            if r['donor_id'] in byid:
+                byid[r['donor_id']]['declined'].append(dict(r))
+    except Exception:
+        pass
     # תורמים ששולחים לבנק סכום אחד ומתחלקים בו — מוצג בשני הכרטיסים
     for d in donors: d['paysplit'] = []
     try:
@@ -5032,6 +5043,56 @@ class H(BaseHTTPRequestHandler):
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
                                     'free': sum(1 for x in rows if not x['holders'])})
+        if self.path.split('?')[0] == '/api/ledger':
+            # ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד, וגם מה שלא עבר.
+            # הנתונים מגיעים מטבלת ההתאמות — שם יושב כל חיוב אמיתי עם המקור שלו.
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            since = (qs.get('since', ['2026-01-01'])[0] or '2026-01-01')[:10]
+            want = (qs.get('src', [''])[0] or '').strip()
+            fail = qs.get('failed', [''])[0] == '1'
+            con = db()
+            names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                     for r in con.execute("SELECT id,last,first FROM donors")}
+            groups, rows = {}, []
+            for r in con.execute("SELECT tid,first,last,amount,date,source,status,donor_id,category "
+                                 "FROM recon"):
+                iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+                if iso < since:
+                    continue
+                try:
+                    amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
+                except Exception:
+                    amt = 0.0
+                src = r['source'] or 'אחר'
+                bad = (r['status'] or 'settled') not in ('settled', '')
+                g = groups.setdefault(src, {'src': src, 'n': 0, 'total': 0.0,
+                                            'bad_n': 0, 'bad_total': 0.0, 'first': '', 'last': ''})
+                if bad:
+                    g['bad_n'] += 1; g['bad_total'] += amt
+                else:
+                    g['n'] += 1; g['total'] += amt
+                    if iso:
+                        g['first'] = min(g['first'] or iso, iso); g['last'] = max(g['last'], iso)
+                if (want and src != want) or (fail and not bad) or (not fail and want and bad):
+                    continue
+                if want or fail:
+                    rows.append({'tid': r['tid'], 'name': names.get(r['donor_id'], ''),
+                                 'donor_id': r['donor_id'],
+                                 'bank': ' '.join(x for x in ((r['first'] or '').strip(),
+                                                              (r['last'] or '').strip()) if x),
+                                 'amount': round(amt, 2), 'date': iso, 'src': src,
+                                 'status': r['status'] or 'settled', 'note': r['category'] or ''})
+            con.close()
+            for g in groups.values():
+                g['total'] = round(g['total'], 2); g['bad_total'] = round(g['bad_total'], 2)
+            out = sorted(groups.values(), key=lambda x: -x['total'])
+            rows.sort(key=lambda x: x['date'], reverse=True)
+            return self._send(200, {'groups': out, 'rows': rows[:600], 'more': max(0, len(rows) - 600),
+                                    'since': since,
+                                    'total': round(sum(g['total'] for g in out), 2),
+                                    'n': sum(g['n'] for g in out),
+                                    'bad_total': round(sum(g['bad_total'] for g in out), 2),
+                                    'bad_n': sum(g['bad_n'] for g in out)})
         if self.path.split('?')[0] == '/api/deposits':
             # שמות מפקידים שלא זוהו — מקובצים לפי השם, כדי לשייך שם אחד ולסגור
             # את כל השורות שלו בבת אחת

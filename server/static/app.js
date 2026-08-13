@@ -1578,6 +1578,22 @@ function steadyFor(d){
 }
 /* ---------- שניים ששולחים לבנק סכום אחד ומתחלקים בו ---------- */
 // הכסף מגיע על שם אחד מהם. המערכת זוכרת, וכל סכום שנכנס נחתך מיד לשני הכרטיסים.
+/* ---------- חיובים שלא עברו אצל התורם הזה ---------- */
+// כרטיס שנדחה, חיוב שנכשל — הכי חשוב לראות את זה דווקא בכרטיס שלו,
+// כדי לדעת למי להתקשר ולבקש כרטיס חדש.
+function declinedHTML(d){
+  const rows=(d.declined||[]); if(!rows.length)return '';
+  const f=n=>curSym(d)+Math.round(amtNum(n)).toLocaleString('en-US');
+  const sum=rows.reduce((s2,x)=>s2+amtNum(x.amount),0);
+  const SH=8, shown=rows.slice(0,SH);
+  return `<div class="decbox"><div class="decttl">🔴 ${rows.length} ${rows.length===1?'חיוב שלא עבר':'חיובים שלא עברו'} · ${f(sum)}</div>
+    ${shown.map(x=>`<div class="decrow"><span class="decamt">${f(x.amount)}</span>
+      <span class="decd">${esc(x.date||'')}</span>
+      <span class="decst">${esc(STLBL[x.status]||x.status||'')}</span>
+      <span class="decsrc">${esc(srcLabel(x.source||''))}</span></div>`).join('')}
+    ${rows.length>SH?`<div class="hintxt">ועוד ${rows.length-SH} — הרשימה המלאה בלשונית 💳 חיובים</div>`:''}
+    <div class="hintxt">הכרטיס נדחה. שווה להתקשר ולבקש כרטיס מעודכן.</div></div>`;
+}
 function splitHTML(d){
   const rows=(d.paysplit||[]);
   const body=rows.map(s=>{
@@ -1702,6 +1718,7 @@ function cardDetails(d,body){
       ${gc?`<div class="npmonths">${gaps(d.months,d).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
       <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
+    ${declinedHTML(d)}
     ${splitHTML(d)}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';
       const known=String(d.purpose||'').trim()||(d.pledges||[]).some(p=>+p.monthly)||izSummary(d).monthly>0;
@@ -2564,13 +2581,61 @@ function renderTransactions(d){
   wireTx(el,d,()=>renderTransactions(d));
 }
 let chFilter='';
+/* ---------- ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד ---------- */
+let LEDGER=null, ledSrc=null, ledFail=false;
+// שמות קריאים למקורות, בלי לאחד ביניהם — הוא ביקש לראות כל אחד לחוד
+const SRCLBL={'Banquest 01-08-2026':'💳 בנק ווסט','Authorize 01-08-2026':'💳 אוטרייז',
+  'Authorize 07-2026':'💳 אוטרייז (יולי)','Authorize אונליין':'💳 אוטרייז — מהאתר (חי)',
+  'Donors Fund 2026':'🏦 דונרס פאנד','OJC 2026':'🏦 OJC','צ׳קים 2026':"🧾 צ'קים"};
+const srcLabel=s2=>SRCLBL[s2]||s2;
+async function renderLedger(){
+  const box=document.getElementById('ledgerbox'); if(!box)return;
+  if(!LEDGER){ try{ LEDGER=await api('GET','/api/ledger?since=2026-01-01'); }catch(e){ LEDGER={groups:[]}; } }
+  const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+  const L=LEDGER;
+  box.innerHTML=`<div class="ledtot">
+      <div class="ledbig"><span>💰 נכנס מאז ינואר</span><b>${f(L.total)}</b><small>${L.n} חיובים</small></div>
+      <button class="ledbig bad" id="ledfail"><span>🔴 לא עבר</span><b>${f(L.bad_total)}</b><small>${L.bad_n} חיובים — לחץ לראות</small></button>
+    </div>
+    <div class="ledlist">${(L.groups||[]).map(g=>`<button class="ledrow ${ledSrc===g.src?'on':''}" data-s="${esc(g.src)}">
+      <div class="ledn">${esc(srcLabel(g.src))}</div>
+      <div class="ledm">${g.n} חיובים${g.first?(' · '+esc(g.first.slice(5))+' – '+esc(g.last.slice(5))):''}</div>
+      ${g.bad_n?`<div class="ledbad">🔴 ${g.bad_n} לא עברו · ${f(g.bad_total)}</div>`:''}
+      <b>${f(g.total)}</b></button>`).join('')}</div>
+    <div id="leddet"></div>`;
+  box.querySelectorAll('.ledrow').forEach(b=>b.onclick=()=>{
+    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledDetail();});
+  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledDetail();};
+  ledDetail();
+}
+async function ledDetail(){
+  const el=document.getElementById('leddet'); if(!el)return;
+  if(!ledSrc&&!ledFail){ el.innerHTML=''; document.querySelectorAll('.ledrow').forEach(b=>b.classList.remove('on')); return; }
+  document.querySelectorAll('.ledrow').forEach(b=>b.classList.toggle('on',b.dataset.s===ledSrc));
+  el.innerHTML='<div class="cnt">טוען…</div>';
+  const u='/api/ledger?since=2026-01-01'+(ledFail?'&failed=1':('&src='+encodeURIComponent(ledSrc)));
+  let r; try{ r=await api('GET',u); }catch(e){ r={rows:[]}; }
+  const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+  const rows=(r.rows||[]).filter(x=>matchQ(x.name+' '+x.bank));
+  el.innerHTML=`<div class="cnt">${ledFail?'🔴 חיובים שלא עברו':esc(srcLabel(ledSrc))} — ${rows.length} שורות${r.more?(' (מוצגות הראשונות)'):''}</div>
+    <div class="list">${rows.map(x=>`<div class="rowc ${x.status!=='settled'?'failrow':''}" data-id="${x.donor_id||''}">
+      <div><div class="nm">${esc(x.name||x.bank||'—')}${x.name&&x.bank?` <small dir="ltr">${esc(x.bank)}</small>`:''}</div>
+        <div class="purp">${esc(x.date)}${x.note?(' · '+esc(x.note)):''}${ledFail?(' · '+esc(srcLabel(x.src))):''}</div></div>
+      <div class="meta"><b>${f(x.amount)}</b>${x.status!=='settled'?`<span class="txbadge no">${esc(STLBL[x.status]||x.status)}</span>`:''}</div>
+    </div>`).join('')||'<div class="empty">אין שורות</div>'}</div>`;
+  el.querySelectorAll('.rowc[data-id]').forEach(r2=>r2.onclick=()=>{
+    const d=DB.find(x=>x.id==r2.dataset.id); if(d)openDonor(d); else toast('החיוב עדיין לא שויך לתורם');});
+}
+const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל',refund:'הוחזר',
+  held:'מעוכב',pending:'🕒 ממתין'};
 function renderCharges(){
   const all=[];
   DB.forEach(d=>(d.transactions||[]).forEach(t=>all.push({t,d})));
   all.sort((a,b)=>String(b.t.date||'').localeCompare(String(a.t.date||''))||b.t.id-a.t.id);
   const cnt=s=>all.filter(x=>x.t.status===s).length;
   const CF=[['','הכל',all.length],['pending','🕒 ממתין',cnt('pending')],['approved','✅ אושרו',cnt('approved')],['settled','💰 נגבו',cnt('settled')],['declined','🔴 סורבו',cnt('declined')]];
-  chips.innerHTML=CF.map(([k,l,n])=>`<button class="chip ${chFilter===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
+  // סרגל הסינון הישן נשען על טבלת העסקאות הידניות. אם היא ריקה — אין מה להציג
+  chips.innerHTML=all.length?CF.map(([k,l,n])=>`<button class="chip ${chFilter===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join(''):'';
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{chFilter=c.dataset.k;renderCharges();});
   let rows=chFilter?all.filter(x=>x.t.status===chFilter):all;
   rows=rows.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.t.category||'')));
@@ -2578,13 +2643,26 @@ function renderCharges(){
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_anet" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_audit" style="width:100%">🔍 בדיקת סתירות — אקסל מול חיובים בפועל</button></div>
     <div id="auditbox"></div>
-    <div id="reconboxes" class="reconboxes"></div>
-    <div class="totals"><div class="tot"><span>נגבה / אושר</span><b>$${Math.round(paid)}</b></div><div class="tot year"><span>ממתין לגבייה</span><b>$${Math.round(pend)}</b></div></div>`+
-    `<div class="cnt">${rows.length} חיובים</div><div class="list">`+
+    <div id="ledgerbox">טוען…</div>
+    <div id="reconboxes" class="reconboxes"></div>`+
+    (rows.length?`<div class="cnt">${rows.length} חיובים</div><div class="list">`:'<div class="list hidden">')+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  renderLedger();
+  const can=document.getElementById('ch_anet');
+  if(can)can.onclick=async()=>{
+    can.disabled=true; const o=can.textContent; can.textContent='מושך מאוטרייז…';
+    const r=await api('POST','/api/authorize/sync',{days:10});
+    can.disabled=false; can.textContent=o;
+    if(r&&r.ok){const x=r.result||{};
+      toast('נבדקו '+(x['נבדקו']||0)+' · נוספו '+(x['נוספו']||0)+' · שויכו '+(x['שויכו']||0));
+      LEDGER=null; await load(); render();}
+    else if(r&&r.error==='not_configured')
+      toast('החיבור לאוטרייז עדיין לא הוגדר — צריך להזין את המפתחות ב-Render');
+    else toast('לא הצליח: '+((r&&r.error)||'שגיאה'));};
   const cms=document.getElementById('ch_mailsync');
   if(cms)cms.onclick=()=>runMailSync(cms);
   const cau=document.getElementById('ch_audit');
