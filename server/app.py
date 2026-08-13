@@ -2996,6 +2996,21 @@ def ensure_schema():
     except Exception as e:
         print('  purpose multi error:', e)
 
+    # משימות שנוצרו פעמיים מלחיצה כפולה על "הוסף משימה" — נשארת הראשונה.
+    # רץ בכל עלייה, כי כפילות יכולה להיווצר שוב עד שכל המכשירים יתעדכנו.
+    try:
+        n = con.execute("""DELETE FROM tasks WHERE id IN (
+            SELECT t.id FROM tasks t WHERE COALESCE(t.done,0)=0 AND t.id > (
+              SELECT MIN(s.id) FROM tasks s WHERE COALESCE(s.done,0)=0
+              AND COALESCE(s.donor_id,0)=COALESCE(t.donor_id,0)
+              AND COALESCE(s.due_date,'')=COALESCE(t.due_date,'')
+              AND COALESCE(s.kind,'')=COALESCE(t.kind,'')
+              AND COALESCE(s.note,'')=COALESCE(t.note,'')))""").rowcount
+        if n:
+            print('  משימות כפולות שנמחקו: %d' % n)
+    except Exception as e:
+        print('  dupe tasks error:', e)
+
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
     try:
@@ -6015,8 +6030,19 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})
         if self.path == '/api/task':
             con = db(); cur = con.cursor()
+            did = b.get('donor_id'); due = b.get('due_date', '')
+            kind = b.get('kind', 'prayer'); note = b.get('note', ''); who = b.get('assignee', '')
+            # לחיצה כפולה על "הוסף משימה" יצרה שתי משימות זהות. משימה פתוחה
+            # זהה לגמרי כבר קיימת — מחזירים אותה במקום לפתוח עוד אחת.
+            ex = cur.execute("SELECT id FROM tasks WHERE COALESCE(done,0)=0 "
+                             "AND COALESCE(donor_id,0)=COALESCE(?,0) AND COALESCE(due_date,'')=? "
+                             "AND COALESCE(kind,'')=? AND COALESCE(note,'')=?",
+                             (did, due, kind, note)).fetchone()
+            if ex:
+                con.close()
+                return self._send(200, {'ok': True, 'id': ex['id'], 'existing': True})
             cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('due_date',''), b.get('kind','prayer'), b.get('note',''), b.get('assignee','')))
+                        (did, due, kind, note, who))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':

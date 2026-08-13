@@ -1408,10 +1408,14 @@ function cardTasks(d,body){
   renderCardTasks(d);
   addMic(document.getElementById('ct_note'));
   wireKindSel(document.getElementById('ct_kind'));
-  document.getElementById('ct_add').onclick=async()=>{
+  document.getElementById('ct_add').onclick=async ev=>{
+    const btn=ev.currentTarget; if(btn.disabled)return;
     const note=document.getElementById('ct_note').value.trim(),kind=await kindValue(document.getElementById('ct_kind')),date=document.getElementById('ct_date').value,who=document.getElementById('ct_who').value;
     if(!kind){return;}if(!note){toast('כתוב מה צריך לעשות');return;}if(!date){toast('בחר תאריך');return;}
+    btn.disabled=true;                 // הגנה מלחיצה כפולה — אחרת נוצרות שתי משימות
     const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who});
+    btn.disabled=false;
+    if(r&&r.existing){toast('המשימה כבר קיימת');return;}
     d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,done:0});
     document.getElementById('ct_note').value='';renderCardTasks(d);toast('נוספה משימה ✓');checkReminders();};
 }
@@ -2233,7 +2237,7 @@ function cardContact(d,body){
     renderContacts(d);renderReminders(d);toast('נשמר ✓');};
   wireKindSel(document.getElementById('tk_kind'));
   addMic(document.getElementById('cl_sum')); addMic(document.getElementById('tk_note'));
-  document.getElementById('tk_add').onclick=async()=>{const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
+  document.getElementById('tk_add').onclick=async ev=>{const btn=ev.currentTarget;if(btn.disabled)return;const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}btn.disabled=true;const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});btn.disabled=false;if(r&&r.existing){toast('התזכורת כבר קיימת');return;}d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
     if(tkF.arr.length){toast('מעלה קבצים…');for(const f of tkF.arr)await uploadBlob('task',r.id,f);tkF.reset();await refresh();toast('נקבעה תזכורת עם האסמכתאות ✓');return;}
     renderReminders(d);toast('נקבעה תזכורת ✓');};
 }
@@ -3715,16 +3719,19 @@ function renderTasksTab(){
   wireKindSel(document.getElementById('nt_kind'));
   addMic(document.getElementById('nt_note'));
   addMics(view,['.tnote']);
-  document.getElementById('nt_add').onclick=async()=>{
+  document.getElementById('nt_add').onclick=async ev=>{
+    const btn=ev.currentTarget; if(btn.disabled)return;
     const kind=await kindValue(document.getElementById('nt_kind'));if(!kind)return;
     const date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
     const whoEl=document.getElementById('nt_who');
     const who=whoEl?whoEl.value:inWho;   // ברירת המחדל לפי החלון, וניתן לשנות כאן
     if(!note&&!ntChosen){toast('כתוב מה צריך לעשות');return;}
     if(!date){toast('בחר תאריך');return;}
+    btn.disabled=true;                   // לחיצה כפולה יצרה שתי משימות זהות
     const body={due_date:date,kind:kind,note:note,assignee:who};
     if(ntChosen)body.donor_id=ntChosen.id;
     const r=await api('POST','/api/task',body);
+    if(r&&r.existing){btn.disabled=false;toast('המשימה כבר קיימת');render();return;}
     const rec={id:r.id,donor_id:ntChosen?ntChosen.id:null,due_date:date,kind:kind,note:note,assignee:who,done:0};
     if(ntChosen){ntChosen.tasks=ntChosen.tasks||[];ntChosen.tasks.push(rec);}else{GTASKS.push(rec);}
     if(ntF.arr.length){toast('מעלה קבצים…');for(const f of ntF.arr)await uploadBlob('task',r.id,f);ntF.reset();await load();}
