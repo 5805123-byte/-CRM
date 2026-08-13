@@ -431,6 +431,44 @@ def ensure_schema():
             print(f"  צ'ייס ינו-אוג: נטענו {nr}, הותאמו {matched}")
     except Exception as e:
         print("  שגיאת צ'ייס:", e)
+    # תעודות יששכר־זבולון: מאיר פיצל אותן לעמוד לכל תורם, ואנחנו תולים כל
+    # תעודה בכרטיס שכתוב עליה. השיוך נעשה לפי השם ולא לפי מספר כרטיס, כדי
+    # שיתאים גם לכרטיסים שנוספו מאז. תעודה שכבר תלויה לא נתלית פעמיים.
+    try:
+        mp = os.path.join(HERE, 'iz_certs_map.json')
+        pdfp = os.path.join(HERE, 'iz_certs.pdf')
+        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v1'").fetchone()
+                and os.path.exists(mp) and os.path.exists(pdfp)):
+            try:
+                from pypdf import PdfReader, PdfWriter
+            except Exception:
+                PdfReader = None
+                print('  תעודות יששכר־זבולון: pypdf לא מותקן — מדלגים')
+            if PdfReader:
+                mm = json.load(open(mp, encoding='utf-8'))
+                rd = PdfReader(pdfp)
+                by = {}
+                for r in con.execute("SELECT id,last,first FROM donors"):
+                    by.setdefault((_fz(r['last']), _fz(r['first'])), []).append(r['id'])
+                nadd = nmiss = 0
+                for x in mm.get('map', []):
+                    ids = by.get((_fz(x['last']), _fz(x['first'])), [])
+                    if len(ids) != 1:
+                        nmiss += 1; continue
+                    fname = 'תעודת יששכר־זבולון %02d.pdf' % x['page']
+                    if con.execute("SELECT 1 FROM files WHERE kind='iz' AND ref_id=? AND name=?",
+                                   (ids[0], fname)).fetchone():
+                        continue
+                    w = PdfWriter(); w.add_page(rd.pages[x['page'] - 1])
+                    buf = io.BytesIO(); w.write(buf)
+                    con.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) "
+                                "VALUES('iz',?,?,'application/pdf',?,?)",
+                                (ids[0], fname, buf.getvalue(), today_iso()))
+                    nadd += 1
+                con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v1')")
+                print('  תעודות יששכר־זבולון: צורפו %d · לא זוהה כרטיס ל-%d' % (nadd, nmiss))
+    except Exception as e:
+        print('  שגיאת תעודות יששכר־זבולון:', e)
     # יום פרנס שנרשם כמה פעמים לאותו תורם — יום אחד ולא חמישה. שומרים את
     # השורה הראשונה, ומעבירים אליה גבייה/סכום/הקדשה שנרשמו על הכפולות.
     try:
