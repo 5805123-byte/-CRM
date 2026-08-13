@@ -652,14 +652,16 @@ function fixedAmt(d){
 // חיפוש חופשי: כל מילה בשאילתה חייבת להופיע — בלי תלות בסדר,
 // כך ש"אפרים מיטמן" ו"מיטמן אפרים" מוצאים אותו דבר. אם לא נמצא,
 // מנסים שוב לפי צליל בעברית, כדי לתפוס איות שונה.
-function matchQ(s){
-  if(!q)return true;
-  const h=norm(s).toLowerCase(), toks=norm(q).toLowerCase().split(' ').filter(Boolean);
+// חיפוש חופשי: כל סדר של מילים, וגם איות קרוב. משמש גם בתורמים וגם באברכים
+function matchStr(s,query){
+  if(!query)return true;
+  const h=norm(s).toLowerCase(), toks=norm(query).toLowerCase().split(' ').filter(Boolean);
   if(!toks.length)return true;
   if(toks.every(t=>h.indexOf(t)>=0))return true;
   const hf=fzHe(h);
   return hf&&toks.every(t=>{const f=fzHe(t);return f.length>=3&&hf.indexOf(f)>=0;});
 }
+function matchQ(s){return matchStr(s,q);}
 
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 function fileChip(f){const m=(f.mime||'');
@@ -3507,20 +3509,27 @@ function filterIZ(){const nq=norm(avSearch);
 // רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.
 // מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
 let avOpenId=null, avSwapId=null;
+// חיפוש אברך לפי שם משפחה, שם פרטי, או שם השותף — בכל סדר ובאיות קרוב
+function avFiltered(){
+  const s2=avSearch.trim(); if(!s2)return AVLIST;
+  return AVLIST.filter(a=>matchStr(a.name+' '+(a.note||'')+' '+(a.holders||[]).map(h=>h.name).join(' '),s2));
+}
 async function renderAvByAv(){
   chips.innerHTML='';
   view.innerHTML='<div class="cnt">טוען את רשימת האברכים…</div>';
   await loadAvList();
   const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
-  const q2=norm(avSearch).toLowerCase();
-  const rows=AVLIST.filter(a=>!q2||norm(a.name+' '+a.holders.map(h=>h.name).join(' ')).toLowerCase().includes(q2));
-  const free=rows.filter(a=>!a.holders.length).length;
+  const q2=avSearch.trim();
+  const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
       <button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
-    <div class="avtlist">${rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
+    <div class="avwrap"><div class="avinner">
+      <div class="avghead"><span class="g1">#</span><span class="g2">האברך</span><span class="g3">הזבולון</span><span class="g4">מתאריך</span><span class="g5">סכום</span><span class="g6">הערות</span><span class="g7"></span></div>
+      <div class="avtlist">${rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>'}</div>
+    </div></div>`;
   const se=document.getElementById('avsearch');
   se.oninput=()=>{avSearch=se.value;clearTimeout(se._t);se._t=setTimeout(()=>{
     const p=se.selectionStart;paintByAv();const s2=document.getElementById('avsearch');
@@ -3529,29 +3538,26 @@ async function renderAvByAv(){
   wireByAv();
 }
 function paintByAv(){
-  const q2=norm(avSearch).toLowerCase();
-  const rows=AVLIST.filter(a=>!q2||norm(a.name+' '+a.holders.map(h=>h.name).join(' ')).toLowerCase().includes(q2));
+  const rows=avFiltered();
   const el=view.querySelector('.avtlist'); if(!el)return;
   el.innerHTML=rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>';
   wireByAv();
 }
 function avRowHTML(a,ix){
   const h=a.holders||[], open=avOpenId===a.name, sw=avSwapId;
+  const amtOf=x=>{const v=(x.share!==''&&x.share!=null)?x.share:(x.amount||'');
+    const n=amtNum(v); return n?String(Math.round(n)):String(v||'');};
+  const line=(x,first)=>`<div class="avg" ${x?`data-pid="${x.pid}"`:''}>
+    <span class="g1">${first?`<span class="avnum">${ix+1}</span>`:''}</span>
+    <span class="g2">${first?`<input class="avname" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.name)}" title="שם האברך — ניתן לשינוי">`:''}</span>
+    <span class="g3">${x?`<a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>`:'<span class="avfree">— אין שותף —</span>'}</span>
+    <span class="g4">${x?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:''}</span>
+    <span class="g5">${x?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
+    <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
+    <span class="g7">${x?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>`:''}</span>
+  </div>${sw&&x&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
-    <div class="avtname"><span class="avnum">${ix+1}</span>
-      <input class="avname" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.name)}" title="שם האברך — ניתן לשינוי">
-      <button class="btn sm ghost avassign" data-av="${esc(a.name)}">${h.length?'➕ עוד':'🤝 שבץ'}</button></div>
-    ${h.length?h.map(x=>`<div class="avhrow" data-pid="${x.pid}">
-      <a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>
-      <input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">
-      <input class="avh_amt" data-pid="${x.pid}" value="${esc(x.share!==''&&x.share!=null?x.share:(x.amount||''))}" inputmode="decimal" placeholder="סכום">
-      <button class="btn sm ghost avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button>
-      <button class="del avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>
-      ${sw===x.pid?`<div class="avswapbox">
-        <input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off">
-        <div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}
-    </div>`).join(''):'<div class="avhrow nofree"><span class="avfree">— אין שותף —</span></div>'}
-    <div class="avtnote"><input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…"></div>
+    ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
     ${open?`<div class="avassignbox">
       <input class="av_q" data-av="${esc(a.name)}" placeholder="חפש תורם…" autocomplete="off">
       <div class="dpres av_res" data-av="${esc(a.name)}"></div>
