@@ -1,5 +1,5 @@
 'use strict';
-let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], BUILDING_ITEMS = [], TASKKINDS_C = [], CHAN_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
+let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], BUILDING_ITEMS = [], TASKKINDS_C = [], CHAN_C = [], CLK_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
@@ -785,7 +785,7 @@ function pendFiles(boxId,inputId){
 }
 async function load(){
   const d = await api('GET','/api/data');
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
@@ -1403,11 +1403,13 @@ function cardTasks(d,body){
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select id="ct_kind">${taskKindOpts('other')}</select></label>
         <label class="fld"><span>תאריך</span><input id="ct_date" type="date" value="${todayStr()}"></label></div>
       <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="ct_who">${assigneeOpts('')}</select></label><label class="fld"><span>&nbsp;</span><button class="btn" id="ct_add" style="width:100%">➕ הוסף משימה</button></label></div>
+      <div class="avfiles dnfiles" id="ct_files"><label class="filebtn sm">📎 צרף תמונה / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="ct_file" hidden></label></div>
       <div class="hintxt">כל משימה נכנסת גם ללשונית "משימות" הראשית וליומן Google.</div></div>
     <div class="sec"><h3>📋 המשימות של ${esc((d.last+' '+d.first).trim())}</h3><div id="ct_list"></div></div>`;
   renderCardTasks(d);
   addMic(document.getElementById('ct_note'));
   wireKindSel(document.getElementById('ct_kind'));
+  const ctF=pendFiles('ct_files','ct_file');
   document.getElementById('ct_add').onclick=async ev=>{
     const btn=ev.currentTarget; if(btn.disabled)return;
     const note=document.getElementById('ct_note').value.trim(),kind=await kindValue(document.getElementById('ct_kind')),date=document.getElementById('ct_date').value,who=document.getElementById('ct_who').value;
@@ -1417,14 +1419,19 @@ function cardTasks(d,body){
     btn.disabled=false;
     if(r&&r.existing){toast('המשימה כבר קיימת');return;}
     d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,done:0});
-    document.getElementById('ct_note').value='';renderCardTasks(d);toast('נוספה משימה ✓');checkReminders();};
+    document.getElementById('ct_note').value='';
+    if(ctF.arr.length){toast('מעלה קבצים…');for(const f of ctF.arr)await uploadBlob('task',r.id,f);ctF.reset();
+      await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;
+      renderCardTasks(d);toast('נוספה משימה עם האסמכתאות ✓');checkReminders();return;}
+    renderCardTasks(d);toast('נוספה משימה ✓');checkReminders();};
 }
 function renderCardTasks(d){
   const el=document.getElementById('ct_list');if(!el)return;const td=todayStr();
   const open=(d.tasks||[]).filter(t=>!t.done||t.done==0).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   el.innerHTML=open.map(t=>{const over=t.due_date&&t.due_date<td,icon=kindLabel(t.kind).split(' ')[0];
     return `<div class="cttask" data-id="${t.id}"><button class="tdone ctdone" data-id="${t.id}">✓</button>
-      <div class="cti"><div>${icon} ${esc(t.note||'')}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div></div>
+      <div class="cti"><div>${icon} ${esc(t.note||'')}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
+        <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 צרף<input type="file" accept="image/*,audio/*,application/pdf" class="ctup" data-id="${t.id}" hidden></label></div></div>
       <button class="tedit ctedit" data-id="${t.id}" title="ערוך משימה">✏️ ערוך</button><button class="del ctdel" data-id="${t.id}">🗑</button></div>
     <div class="teditpanel hidden" data-ctp="${t.id}">
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="ctn" data-id="${t.id}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
@@ -1435,6 +1442,8 @@ function renderCardTasks(d){
     </div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
   el.querySelectorAll('.ctk').forEach(wireKindSel);
   addMics(el,['.ctn']);
+  el.querySelectorAll('.ctup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,async()=>{
+    await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;renderCardTasks(d);}));
   el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p)p.classList.toggle('hidden');});
   el.querySelectorAll('.ctsave').forEach(b=>b.onclick=async()=>{
     const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;
@@ -2212,7 +2221,7 @@ function cardContact(d,body){
   body.innerHTML=`
     ${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <div class="sec"><h3>➕ רישום קשר חדש <button class="btn sm ghost" id="cl_mailsync" style="float:left">📥 משוך מיילים</button></h3>
-      <div class="addrow"><select id="cl_ch"><option>טלפון</option><option>אימייל</option><option>וואטסאפ</option><option>פגישה</option></select><input id="cl_date" type="date" value="${todayStr()}"></div>
+      <div class="addrow"><select id="cl_ch">${clkOpts('')}</select><input id="cl_date" type="date" value="${todayStr()}"></div>
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
       <div class="avfiles dnfiles" id="cl_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="cl_file" hidden></label></div>
       <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
@@ -2232,10 +2241,11 @@ function cardContact(d,body){
     if(!(d.email||'').trim()){toast('אין כתובת מייל בכרטיס — הוסף אותה כדי לתייק מיילים');return;}
     await runMailSync(msb); await refresh();
   };
-  document.getElementById('cl_add').onclick=async()=>{const ch=document.getElementById('cl_ch').value,date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
+  document.getElementById('cl_add').onclick=async()=>{let ch=document.getElementById('cl_ch').value;if(ch==='__new__'){toast('כתוב את שם סוג הקשר');return;}const date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
     if(clF.arr.length){toast('מעלה קבצים…');for(const f of clF.arr)await uploadBlob('contact',r.id,f);clF.reset();await refresh();toast('נשמר עם האסמכתאות ✓');return;}
     renderContacts(d);renderReminders(d);toast('נשמר ✓');};
   wireKindSel(document.getElementById('tk_kind'));
+  wireClkSel(document.getElementById('cl_ch'));
   addMic(document.getElementById('cl_sum')); addMic(document.getElementById('tk_note'));
   document.getElementById('tk_add').onclick=async ev=>{const btn=ev.currentTarget;if(btn.disabled)return;const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}btn.disabled=true;const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});btn.disabled=false;if(r&&r.existing){toast('התזכורת כבר קיימת');return;}d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
     if(tkF.arr.length){toast('מעלה קבצים…');for(const f of tkF.arr)await uploadBlob('task',r.id,f);tkF.reset();await refresh();toast('נקבעה תזכורת עם האסמכתאות ✓');return;}
@@ -2598,6 +2608,37 @@ function renderPartners(d){
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/partner/'+b.dataset.del);d.partners=d.partners.filter(x=>x.id!=b.dataset.del);renderPartners(d);});
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);d.files=(d.files||[]).filter(x=>x.id!=b.dataset.fid);renderPartners(d);toast('נמחק');});
   const up=el.querySelector('.pshtar');if(up)up.onchange=()=>uploadFile('iz',d.id,up,load);
+}
+// סוגי הקשר — הקבועים, ואחריהם כל סוג שמאיר הוסיף בעצמו
+const CLKINDS=['טלפון','אימייל','וואטסאפ','פגישה'];
+function clkOpts(cur){cur=(cur||'').trim();
+  const l=CLKINDS.concat((CLK_C||[]).filter(x=>CLKINDS.indexOf(x)<0));
+  return l.map(k=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(k)}</option>`).join('')
+    +(cur&&l.indexOf(cur)<0?`<option value="${esc(cur)}" selected>${esc(cur)}</option>`:'')
+    +'<option value="__new__">➕ סוג קשר חדש…</option>';}
+// הוספת סוג קשר מתוך התיבה עצמה — נשמר ומופיע מכאן והלאה
+function wireClkSel(sel){
+  if(!sel||sel._kbox2)return;
+  const box=document.createElement('div'); box.className='chanbox';
+  box.innerHTML='<input class="channew" placeholder="שם סוג הקשר (למשל: פגישה בבית)" style="display:none">'
+    +'<button type="button" class="btn sm chandel" title="מחק סוג זה" style="display:none">🗑</button>';
+  sel.parentNode.insertBefore(box,sel.nextSibling); sel._kbox2=box;
+  const inp=box.querySelector('.channew'), del=box.querySelector('.chandel');
+  const showDel=()=>{del.style.display=(CLK_C||[]).includes(sel.value)?'':'none';};
+  sel.addEventListener('change',()=>{
+    if(sel.value==='__new__'){inp.style.display='';inp.focus();del.style.display='none';return;}
+    inp.style.display='none';showDel();});
+  const add=async()=>{const nm=inp.value.trim(); if(!nm){inp.focus();return;}
+    if(!(CLK_C||[]).includes(nm)){const r=await api('POST','/api/contactkinds',{name:nm});CLK_C=(r&&r.kinds)||CLK_C.concat([nm]);}
+    inp.value='';inp.style.display='none';sel.innerHTML=clkOpts(nm);sel.value=nm;showDel();toast('נוסף סוג קשר ✓');};
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
+  inp.onblur=()=>{if(inp.style.display==='none')return;
+    if(inp.value.trim())add(); else{inp.style.display='none'; if(sel.value==='__new__')sel.value=CLKINDS[0];}};
+  del.onclick=async()=>{const nm=sel.value; if(!nm||!(CLK_C||[]).includes(nm))return;
+    if(!await uiConfirm('למחוק את סוג הקשר "'+nm+'" מהרשימה?\nרישומים קיימים יישארו כפי שהם.'))return;
+    const r=await api('POST','/api/contactkinds',{name:nm,delete:1});CLK_C=(r&&r.kinds)||CLK_C.filter(x=>x!==nm);
+    sel.innerHTML=clkOpts('');sel.value=CLKINDS[0];showDel();toast('נמחק');};
+  showDel();
 }
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;

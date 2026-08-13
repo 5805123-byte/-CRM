@@ -71,6 +71,7 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS pay_channels(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
@@ -4444,12 +4445,14 @@ class H(BaseHTTPRequestHandler):
             bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
             try: nd = [[r['a'], r['b']] for r in con.execute("SELECT a,b FROM not_dupes")]
             except Exception: nd = []
+            try: ckinds = [r['name'] for r in con.execute("SELECT name FROM contact_kinds ORDER BY created, name")]
+            except Exception: ckinds = []
             try: pchans = [r['name'] for r in con.execute("SELECT name FROM pay_channels ORDER BY created, name")]
             except Exception: pchans = []
             try: tkinds = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
             except Exception: tkinds = []
             con.close()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
+            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
         if self.path == '/api/health':
             return self._send(200, health_report())
         if self.path.split('?')[0] == '/api/donors.vcf':
@@ -5641,6 +5644,17 @@ class H(BaseHTTPRequestHandler):
             elif nm:
                 con.execute("INSERT OR IGNORE INTO task_kinds(name,created) VALUES(?,?)", (nm, today_iso()))
             names = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'name': nm, 'kinds': names})
+        if self.path == '/api/contactkinds':
+            # סוגי קשר שמאיר מוסיף בעצמו — למשל "פגישה בבית" או "הודעה בפקס"
+            nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:40]
+            con = db()
+            if nm and b.get('delete'):
+                con.execute("DELETE FROM contact_kinds WHERE name=?", (nm,))
+            elif nm:
+                con.execute("INSERT OR IGNORE INTO contact_kinds(name,created) VALUES(?,?)", (nm, today_iso()))
+            names = [r['name'] for r in con.execute("SELECT name FROM contact_kinds ORDER BY created, name")]
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm, 'kinds': names})
         if self.path == '/api/paychannels':
