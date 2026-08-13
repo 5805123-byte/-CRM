@@ -3346,10 +3346,10 @@ function renderParnes(){
   }
   const days=[];for(let i=1;i<=30;i++)days.push(i);
   view.innerHTML=kindToggle()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button>
-      <div class="monthnav"><button class="mnav" id="pmprev" title="החודש הקודם">▶</button>
+      <div class="monthnav"><button class="mnav" id="pmprev">${esc(hMonHop(-1))}</button>
         <b>חודש ${pyMonth}</b>
-        <button class="mnav" id="pmnext" title="החודש הבא">◀</button></div></div>
-    <div class="hintxt swipehint">👉 החלק באצבע על הלוח — שמאלה לחודש הבא, ימינה לחודש הקודם</div>
+        <button class="mnav" id="pmnext">${esc(hMonHop(1))}</button></div></div>
+    <div class="hintxt swipehint">👉 החלק באצבע על הלוח כדי להחליף חודש · או לחץ על שם החודש שאתה רוצה</div>
     <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
     <div class="daygrid">${days.map(n=>{const l=taken[pyMonth+'|'+n]||[];const t=pyMain(l);const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=l.some(x=>x.status!=='suggested'&&!+x.paid);return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
@@ -3363,6 +3363,10 @@ function renderParnes(){
 }
 // מעבר חודש: החלקה באצבע שמאלה = החודש הבא, ימינה = החודש הקודם.
 // אחרי אלול חוזרים לתשרי, ולפני תשרי — אלול.
+function hMonHop(step){
+  const i=HMORD.indexOf(pyMonth);
+  return i<0?'':HMORD[(i+step+HMORD.length)%HMORD.length];
+}
 function pyHop(step){
   const i=HMORD.indexOf(pyMonth); if(i<0)return;
   pyMonth=HMORD[(i+step+HMORD.length)%HMORD.length]; pyDay=null; render();
@@ -3377,7 +3381,7 @@ function swipeMonth(el){
     x0=null;
     if(Date.now()-t0>700)return;              // גרירה איטית — כנראה גלילה
     if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.6)return;   // תנועה אנכית — גלילה
-    pyHop(dx<0?1:-1);                          // שמאלה = הבא, ימינה = הקודם
+    pyHop(dx<0?-1:1);                          // שמאלה = הבא (הגלילה זזה עם האצבע)
   },{passive:true});
 }
 function renderDayPanel(taken){
