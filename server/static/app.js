@@ -787,8 +787,18 @@ function pendFiles(boxId,inputId){
   inp.onchange=()=>{[...inp.files].forEach(f=>arr.push(f));inp.value='';paint();};
   return {arr,reset(){arr.length=0;paint();}};
 }
+// חתימת הנתונים האחרונים. אם השרת עונה "לא השתנה כלום" — לא מורידים שוב
+// מגה של נתונים ולא מפענחים אותם מחדש, וזה חוסך את רוב זמן ההמתנה.
+let _ETAG='', _LASTDATA=null;
 async function load(){
-  const d = await api('GET','/api/data');
+  let d;
+  try{
+    const h={};
+    if(_ETAG&&_LASTDATA)h['If-None-Match']=_ETAG;
+    const r=await fetch('/api/data',{headers:h});
+    if(r.status===304&&_LASTDATA){ d=_LASTDATA; }
+    else { d=await r.json(); _LASTDATA=d; _ETAG=r.headers.get('ETag')||''; }
+  }catch(e){ d = await api('GET','/api/data'); }
   DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
@@ -803,8 +813,8 @@ async function load(){
   if(wasShare)shareInbox();       // קבצים שהגיעו משיתוף — פתח מסך שיוך לתורם
 }
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;try{localStorage.setItem('kc_tab',tab);localStorage.removeItem('kc_donor');}catch(e){}render();});
-document.getElementById('q').oninput=e=>{q=e.target.value.trim();render();};
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;DLIM=60;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;try{localStorage.setItem('kc_tab',tab);localStorage.removeItem('kc_donor');}catch(e){}render();});
+document.getElementById('q').oninput=e=>{q=e.target.value.trim();DLIM=60;render();};
 ov.onclick=e=>{if(e.target===ov){ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}}};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
 
@@ -880,9 +890,21 @@ function openCatManager(){
     done(); await load(); render();
   });
 }
+let DLIM = 60;      // כמה שורות תורמים מוצגות עכשיו; גדל מאליו בגלילה
+// כשמגיעים לתחתית הרשימה מוסיפים עוד חבילה, בלי כפתור ובלי המתנה
+function wireMoreDonors(list){
+  const el=document.getElementById('moredon'); if(!el)return;
+  const grow=()=>{DLIM+=60;renderDonors();};
+  try{
+    const io2=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)){io2.disconnect();grow();}},
+      {rootMargin:'400px'});
+    io2.observe(el);
+  }catch(e){ el.onclick=grow; }
+  el.onclick=grow;
+}
 function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
-  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;render();});
+  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;DLIM=60;render();});
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
   let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english+' '+(d.notes||'')+' '+(d.building||[]).map(x=>x.object).join(' ')));
   if(catFlt)list=list.filter(d=>(d.donations||[]).some(x=>String(x.category||'').trim()===catFlt));
@@ -908,7 +930,7 @@ function renderDonors(){
       ${catUsage().map(([c,n,s])=>`<option value="${esc(c)}"${c===catFlt?' selected':''}>${esc(c)} — ${n} תרומות · $${s.toLocaleString('en-US')}</option>`).join('')}
     </select><button class="btn sm ghost" id="catmgr" style="white-space:nowrap">🗑 ניהול ייעודים</button></div>
     ${catFlt?`<div class="cnt" style="color:var(--accent)">🎯 ${esc(catFlt)} — ${(()=>{const u=catUsage().find(x=>x[0]===catFlt);return u?(u[1]+' תרומות · $'+u[2].toLocaleString('en-US')):'';})()}</div>`:''}
-    <div class="cnt">${list.length} תורמים</div><div class="list">${list.map(d=>`
+    <div class="cnt">${list.length} תורמים</div><div class="list" id="donlist">${list.slice(0,DLIM).map(d=>`
     <div class="rowc" data-id="${d.id}">
       <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span>${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}</div>
       ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
@@ -916,9 +938,11 @@ function renderDonors(){
       ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
       ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
       <div class="meta">${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
-    </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>`;
-  const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;render();};}
-  const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;render();};
+    </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>
+    ${list.length>DLIM?`<div class="moredon" id="moredon">מציג ${DLIM} מתוך ${list.length} — גלול להמשך…</div>`:''}`;
+  wireMoreDonors(list);
+  const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;DLIM=60;render();};}
+  const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;DLIM=60;render();};
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};

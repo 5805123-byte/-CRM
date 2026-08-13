@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re, base64, datetime, csv, io, gzip, urllib.parse
+import sqlite3, json, os, re, base64, datetime, csv, io, gzip, time, hashlib, urllib.parse
 from urllib.parse import quote
 
 def today_iso():
@@ -4785,7 +4785,40 @@ def build_ics():
     con.close()
     return '\r\n'.join(out)
 
+# כל הנתונים נבנים מחדש מהמסד בכל בקשה, וזה הדבר הכבד ביותר בשרת. מחזיקים
+# את התשובה המוכנה (גם דחוסה) ובונים אותה מחדש רק אחרי שינוי אמיתי.
+_DATA_VER = 0
+_DATA_TTL = 20          # גם בלי בקשת כתיבה — רענון תקופתי, למקרה של עדכון ברקע
+_DATA_CACHE = {'ver': -1, 'at': 0.0, 'raw': b'', 'gz': b'', 'etag': ''}
+
+
+def bump_data():
+    """נקרא בכל בקשה שמשנה נתונים — התשובה השמורה כבר לא תקפה."""
+    global _DATA_VER
+    _DATA_VER += 1
+
+
 class H(BaseHTTPRequestHandler):
+    def _send_cached(self, c):
+        """תשובה שכבר מוכנה במטמון. אם ללקוח יש בדיוק אותה גרסה — 304 בלי גוף."""
+        if (self.headers.get('If-None-Match') or '') == c['etag']:
+            self.send_response(304)
+            self.send_header('ETag', c['etag'])
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            return
+        gz = c['gz'] and 'gzip' in (self.headers.get('Accept-Encoding') or '')
+        data = c['gz'] if gz else c['raw']
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        if gz:
+            self.send_header('Content-Encoding', 'gzip')
+        self.send_header('ETag', c['etag'])
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _send(self, code, body, ctype='application/json'):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode('utf-8')
         self.send_response(code)
@@ -4812,6 +4845,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/api/data':
+            global _DATA_CACHE
+            if (_DATA_CACHE['raw'] and _DATA_CACHE['ver'] == _DATA_VER
+                    and time.time() - _DATA_CACHE['at'] < _DATA_TTL):
+                return self._send_cached(_DATA_CACHE)
+            _ver = _DATA_VER
             donors, unlinked, general_tasks = get_all()
             con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
@@ -4824,7 +4862,14 @@ class H(BaseHTTPRequestHandler):
             try: tkinds = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
             except Exception: tkinds = []
             con.close()
-            return self._send(200, {'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())})
+            _raw = json.dumps({'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
+            try: _gz = gzip.compress(_raw, 6)
+            except Exception: _gz = b''
+            # החתימה לפי התוכן עצמו: בנייה מחדש שיצא ממנה אותו מידע משאירה את
+            # אותה חתימה, והדפדפן מקבל 304 בלי להוריד שוב מאומה
+            _DATA_CACHE = {'ver': _ver, 'at': time.time(), 'raw': _raw, 'gz': _gz,
+                           'etag': '"d%s"' % hashlib.md5(_raw).hexdigest()[:16]}
+            return self._send_cached(_DATA_CACHE)
         if self.path == '/api/health':
             return self._send(200, health_report())
         if self.path.split('?')[0] == '/api/donors.vcf':
@@ -5562,6 +5607,7 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_PUT(self):
+        bump_data()
         m = re.match(r'/api/recon/(.+)/donor$', self.path)
         if m:
             # שיוך שורת חיוב לכרטיס תורם קיים — מדף האימות
@@ -5724,6 +5770,7 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
+        bump_data()
         # יעד שיתוף (וואטסאפ/גלריה): בדרך כלל ה-Service Worker קולט זאת ושומר את הקבצים.
         # אם הוא עדיין לא פעיל — לפחות נפתח את האפליקציה במקום שגיאה.
         if self.path.split('?')[0] == '/share-target':
@@ -6743,6 +6790,7 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
+        bump_data()
         m = re.match(r'/api/intake/(\d+)$', self.path)
         if m:
             con = db(); con.execute("DELETE FROM intake WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
