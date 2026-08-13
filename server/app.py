@@ -3031,6 +3031,30 @@ def ensure_schema():
     except Exception as e:
         print('  avreich names error:', e)
 
+    # "ציון כהן" נרשם בסדר הפוך — כהן הוא שם המשפחה. ולגבריאל מיטמן חסר
+    # תאריך התחלה בשותפות הזאת; שני אחיו רשומים א' שבט תשפ"ה על אותו אברך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zion_name_v1'").fetchone():
+            for bad, good in (('ציון כהן', 'כהן ציון'),):
+                l, f = _split_av(good)
+                if con.execute("SELECT 1 FROM avreichim WHERE name=?", (good,)).fetchone():
+                    con.execute("DELETE FROM avreichim WHERE name=?", (bad,))
+                else:
+                    con.execute("UPDATE avreichim SET name=?, last=?, first=? WHERE name=?",
+                                (good, l, f, bad))
+                con.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (good, bad))
+                # תאריך שחסר אצל מחזיק אחד — נלקח מהמחזיקים האחרים של אותו אברך
+                st = con.execute("SELECT start_date FROM partners WHERE TRIM(avreich)=? "
+                                 "AND COALESCE(TRIM(start_date),'')<>'' ORDER BY id LIMIT 1",
+                                 (good,)).fetchone()
+                if st:
+                    con.execute("UPDATE partners SET start_date=? WHERE TRIM(avreich)=? "
+                                "AND COALESCE(TRIM(start_date),'')=''", (st['start_date'], good))
+            con.execute("INSERT INTO seed_flags(name) VALUES('zion_name_v1')")
+            print('  כהן ציון: השם סודר והתאריך הושלם לכל המחזיקים')
+    except Exception as e:
+        print('  zion name error:', e)
+
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
     try:
