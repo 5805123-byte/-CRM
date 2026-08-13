@@ -2012,8 +2012,9 @@ function cardDetails(d,body){
 
 // מחיקת תורם — חלון אישור ברור, ודיווח אמיתי אם נכשל
 async function wireDelete(d, body){
-  const delBtn=document.getElementById('f_delete'); if(!delBtn) return;
-  delBtn.onclick=async()=>{
+  const btns=[...(body||document).querySelectorAll('#f_delete,.delcard')];
+  if(!btns.length) return;
+  const run=async delBtn=>{
     const nm=((d.last||'')+' '+(d.first||'')).trim();
     const n=(d.donations||[]).length, p=(d.parnes||[]).length, av=(d.partners||[]).length;
     const det=[n?n+' תרומות':'',p?p+' פרנס':'',av?av+' אברכים':''].filter(Boolean).join(' · ');
@@ -2029,6 +2030,7 @@ async function wireDelete(d, body){
     try{localStorage.removeItem('kc_donor');}catch(e){}
     toast('התורם נמחק ✓'); render();
   };
+  btns.forEach(b=>b.onclick=()=>run(b));
 }
 function splitPhones(s){return (s||'').split('/').map(x=>x.trim()).filter(Boolean);}
 // כמה אימיילים לאותו תורם — מופרדים בפסיק / קו נטוי / רווח
@@ -2200,6 +2202,9 @@ function cardInfo(d,body){
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months,d).length?' · <b style="color:var(--no)">'+gaps(d.months,d).length+' לא עברו</b>':''}</div>${monthGrid(d.months,d)}</div>`:''}`;
   renderPhones(d); renderEmails(d);
+  body.insertAdjacentHTML('beforeend',
+    '<div class="sec" style="text-align:center"><button class="btn ghost delbig delcard" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>');
+  wireDelete(d,body);
   const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes'];
   wireFields(d,INF);
   wireChanSel(document.getElementById('f_channel'));
