@@ -401,6 +401,46 @@ def ensure_schema():
             print(f'  Banquest ינו-אוג: נטענו {nr}, הותאמו {matched}')
     except Exception as e:
         print('  שגיאת Banquest:', e)
+    # ---- צ'ייס ינואר–7 באוגוסט 2026: רק כסף שנכנס (זל, ACH, העברות בנקאיות) ----
+    # הדוח שמאיר שלח מסונן ל"All credit transactions" — אין בו שום חיוב שיצא.
+    try:
+        cp = os.path.join(HERE, 'chase_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_chase_v1'").fetchone() and os.path.exists(cp):
+            def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+            byeng = {}
+            for d in con.execute("SELECT id,english,business FROM donors"):
+                for v in (d['english'], d['business']):
+                    if (v or '').strip():
+                        byeng.setdefault(_ne(v), d['id'])
+            con.execute("DELETE FROM recon WHERE source LIKE \"צ'ייס%\" AND COALESCE(processed,0)=0")
+            nr = matched = 0
+            for x in json.load(open(cp, encoding='utf-8')):
+                did = byeng.get(_ne(x['name']))
+                con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,
+                                   phone,email,recurring,donor_id,category,processed,source,status)
+                               VALUES(?,?,?,?,?,'','','','','','',0,?,?,0,?,'settled')""",
+                            (x['tid'], x['first'], x['last'], x['amount'], x['date'], did,
+                             x.get('note', ''), "צ'ייס " + x['method']))
+                nr += 1
+                if did: matched += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_chase_v1')")
+            matched += apply_name_map(con)      # שמות שמאיר כבר שייך פעם אחת
+            print(f"  צ'ייס ינו-אוג: נטענו {nr}, הותאמו {matched}")
+    except Exception as e:
+        print("  שגיאת צ'ייס:", e)
+    # TOSFOSYOMTOV02 בצ'ייס = משה דויטש. שתיים משלוש השורות כתוב בהן במפורש
+    # "zichron avos from moishe deutsch", והשלישית באה מאותו ORIG ID.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='chase_deutsch_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchone()
+            if r:
+                con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) "
+                            "VALUES('tosfosyomtov02',?,0,?)", (r['id'], today_iso()))
+                n = apply_name_map(con)
+                print('  משה דויטש: %d העברות ACH מצ\'ייס שויכו לכרטיס' % n)
+            con.execute("INSERT INTO seed_flags(name) VALUES('chase_deutsch_v1')")
+    except Exception as e:
+        print('  chase deutsch error:', e)
     # רשימת ייעודים/מגביות חופשית (עבור מה) — זריעת דוגמאות שהמשתמש הזכיר
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -4777,16 +4817,24 @@ class H(BaseHTTPRequestHandler):
             con = db()
             ign = {r['src'] for r in con.execute("SELECT src FROM name_map WHERE ignored=1")}
             g = {}
-            for r in con.execute("SELECT tid,first,last,amount,date,source,email,phone FROM recon "
+            for r in con.execute("SELECT tid,first,last,amount,date,source,email,phone,category FROM recon "
                                  "WHERE donor_id IS NULL"):
+                try:                       # רק כסף שנכנס — משיכה או עמלה אינה תרומה
+                    amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
+                except Exception:
+                    amt = 0.0
+                if amt <= 0:
+                    continue
                 nm = ' '.join(x for x in ((r['first'] or '').strip(), (r['last'] or '').strip()) if x)
                 k = _nkey(nm)
                 if not k or k in ign:
                     continue
                 e = g.setdefault(k, {'key': k, 'name': nm, 'n': 0, 'total': 0.0, 'dates': [],
                                      'src': r['source'] or '', 'email': r['email'] or '',
-                                     'phone': r['phone'] or '', 'tids': []})
+                                     'phone': r['phone'] or '', 'note': '', 'tids': []})
                 e['n'] += 1
+                if not e['note'] and (r['category'] or '').strip():
+                    e['note'] = r['category'].strip()
                 try: e['total'] += float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
                 except Exception: pass
                 if r['date']: e['dates'].append(r['date'])

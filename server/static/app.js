@@ -4059,6 +4059,7 @@ async function renderDeposits(){
     <div class="list">${rows.map(x=>`<div class="depcard" data-k="${esc(x.key)}">
       <div class="depnm" dir="ltr">${esc(x.name)}</div>
       <div class="depmeta">${x.n} ${x.n===1?'הפקדה':'הפקדות'} · <b>${f(x.total)}</b>${x.dates.length?(' · '+esc(x.dates[0])+(x.dates.length>1?(' – '+esc(x.dates[x.dates.length-1])):'')):''}${x.src?(' · '+esc(x.src)):''}</div>
+      ${x.note?`<div class="depnote" dir="ltr">${esc(x.note)}</div>`:''}
       ${x.email||x.phone?`<div class="depmeta">${esc(x.email||'')}${x.email&&x.phone?' · ':''}${esc(x.phone||'')}</div>`:''}
       <div class="deprow"><button class="btn sm depmatch" data-k="${esc(x.key)}">🔗 שייך לתורם</button>
         <button class="btn sm ghost depnew" data-k="${esc(x.key)}">➕ תורם חדש</button>

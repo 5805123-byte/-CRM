@@ -1,0 +1,1702 @@
+[
+ {
+  "tid": "chase26-001",
+  "first": "",
+  "last": "ONLINE TRANSFER FROM CHK ...4323",
+  "name": "ONLINE TRANSFER FROM CHK ...4323",
+  "amount": "1000.00",
+  "date": "2026-08-10",
+  "method": "העברה פנימית",
+  "note": "ממתין · transaction# 30347566199"
+ },
+ {
+  "tid": "chase26-002",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "101.00",
+  "date": "2026-08-10",
+  "method": "זל",
+  "note": "ממתין · BBT413592550"
+ },
+ {
+  "tid": "chase26-003",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "5.00",
+  "date": "2026-08-07",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-004",
+  "first": "ARKADY",
+  "last": "BABAKHANOV",
+  "name": "ARKADY BABAKHANOV",
+  "amount": "500.00",
+  "date": "2026-08-06",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-005",
+  "first": "",
+  "last": "COMMUNITY ASSISTANCE RESOURCES",
+  "name": "COMMUNITY ASSISTANCE RESOURCES",
+  "amount": "7850.00",
+  "date": "2026-08-05",
+  "method": "העברה בנקאית",
+  "note": "TD BANK · RFB=MEZUZAHS"
+ },
+ {
+  "tid": "chase26-006",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-08-04",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-007",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-07-31",
+  "method": "ACH",
+  "note": "DVS-JUL 2026"
+ },
+ {
+  "tid": "chase26-008",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "2500.00",
+  "date": "2026-07-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-009",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-07-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-010",
+  "first": "",
+  "last": "THRIVEWAY FUNDIN",
+  "name": "THRIVEWAY FUNDIN",
+  "amount": "2000.00",
+  "date": "2026-07-28",
+  "method": "ACH",
+  "note": "charity"
+ },
+ {
+  "tid": "chase26-011",
+  "first": "",
+  "last": "ONLINE TRANSFER FROM CHK ...4323",
+  "name": "ONLINE TRANSFER FROM CHK ...4323",
+  "amount": "1000.00",
+  "date": "2026-07-21",
+  "method": "העברה פנימית",
+  "note": "transaction# 30097067647"
+ },
+ {
+  "tid": "chase26-012",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-07-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-013",
+  "first": "AVRAHAM MENACHEM",
+  "last": "GOLDSTEIN",
+  "name": "AVRAHAM MENACHEM GOLDSTEIN",
+  "amount": "100.00",
+  "date": "2026-07-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-014",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-07-16",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-015",
+  "first": "",
+  "last": "ONLINE TRANSFER FROM CHK ...4323",
+  "name": "ONLINE TRANSFER FROM CHK ...4323",
+  "amount": "4800.00",
+  "date": "2026-07-15",
+  "method": "העברה פנימית",
+  "note": "transaction# 30016244736"
+ },
+ {
+  "tid": "chase26-016",
+  "first": "",
+  "last": "THRIVEWAY FUNDIN",
+  "name": "THRIVEWAY FUNDIN",
+  "amount": "2000.00",
+  "date": "2026-07-15",
+  "method": "ACH",
+  "note": "charity"
+ },
+ {
+  "tid": "chase26-017",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "1200.00",
+  "date": "2026-07-15",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-018",
+  "first": "",
+  "last": "SHYMO, CORP.",
+  "name": "SHYMO, CORP.",
+  "amount": "4200.00",
+  "date": "2026-07-13",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-019",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "180.00",
+  "date": "2026-07-13",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-020",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "101.00",
+  "date": "2026-07-10",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-021",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-07-02",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-022",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-06-30",
+  "method": "ACH",
+  "note": "DVS-JUN 2026"
+ },
+ {
+  "tid": "chase26-023",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-06-29",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-024",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-06-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-025",
+  "first": "AVRAHAM MENACHEM",
+  "last": "GOLDSTEIN",
+  "name": "AVRAHAM MENACHEM GOLDSTEIN",
+  "amount": "100.00",
+  "date": "2026-06-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-026",
+  "first": "",
+  "last": "CARMONA DESIGN LLC",
+  "name": "CARMONA DESIGN LLC",
+  "amount": "360.00",
+  "date": "2026-06-11",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-027",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "101.00",
+  "date": "2026-06-11",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-028",
+  "first": "",
+  "last": "MGM ELECTRICAL CORP",
+  "name": "MGM ELECTRICAL CORP",
+  "amount": "3000.00",
+  "date": "2026-06-08",
+  "method": "העברה בנקאית",
+  "note": "TD BANK · Lawrence NY"
+ },
+ {
+  "tid": "chase26-029",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-06-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-030",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-06-03",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-031",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-06-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-032",
+  "first": "",
+  "last": "TOSFOSYOMTOV02",
+  "name": "TOSFOSYOMTOV02",
+  "amount": "3000.00",
+  "date": "2026-06-01",
+  "method": "ACH",
+  "note": "IND NAME: zichron avos"
+ },
+ {
+  "tid": "chase26-033",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2000.00",
+  "date": "2026-05-29",
+  "method": "ACH",
+  "note": "CHARITY"
+ },
+ {
+  "tid": "chase26-034",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-05-29",
+  "method": "ACH",
+  "note": "DVS-MAY 2026"
+ },
+ {
+  "tid": "chase26-035",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "3600.00",
+  "date": "2026-05-26",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-036",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "208.00",
+  "date": "2026-05-21",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-037",
+  "first": "",
+  "last": "YSW GROUP LLC",
+  "name": "YSW GROUP LLC",
+  "amount": "104.00",
+  "date": "2026-05-21",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-038",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "1.00",
+  "date": "2026-05-21",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-039",
+  "first": "",
+  "last": "B & C LEAD CONSULTANTS LLC",
+  "name": "B & C LEAD CONSULTANTS LLC",
+  "amount": "501.00",
+  "date": "2026-05-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-040",
+  "first": "DAVID",
+  "last": "FRIEDLANDER",
+  "name": "DAVID FRIEDLANDER",
+  "amount": "180.00",
+  "date": "2026-05-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-041",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "100.00",
+  "date": "2026-05-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-042",
+  "first": "",
+  "last": "MGM ELECTRICAL CORP",
+  "name": "MGM ELECTRICAL CORP",
+  "amount": "1500.00",
+  "date": "2026-05-19",
+  "method": "העברה בנקאית",
+  "note": "TD BANK · Lawrence NY"
+ },
+ {
+  "tid": "chase26-043",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "100.00",
+  "date": "2026-05-19",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-044",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-05-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-045",
+  "first": "AVRAHAM MENACHEM",
+  "last": "GOLDSTEIN",
+  "name": "AVRAHAM MENACHEM GOLDSTEIN",
+  "amount": "100.00",
+  "date": "2026-05-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-046",
+  "first": "ZEV",
+  "last": "SAFTLAS",
+  "name": "ZEV SAFTLAS",
+  "amount": "125.00",
+  "date": "2026-05-15",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-047",
+  "first": "",
+  "last": "THE ROSENFELD FAMILY FOUNDATION",
+  "name": "THE ROSENFELD FAMILY FOUNDATION",
+  "amount": "33300.00",
+  "date": "2026-05-14",
+  "method": "העברה בנקאית",
+  "note": "BOOK TRANSFER · Monsey NY"
+ },
+ {
+  "tid": "chase26-048",
+  "first": "",
+  "last": "TOSFOSYOMTOV02",
+  "name": "TOSFOSYOMTOV02",
+  "amount": "1500.00",
+  "date": "2026-05-14",
+  "method": "ACH",
+  "note": "IND NAME: zichron avos from m deutsch"
+ },
+ {
+  "tid": "chase26-049",
+  "first": "",
+  "last": "LEAH YOSEF INTERNATIONAL, INC.",
+  "name": "LEAH YOSEF INTERNATIONAL, INC.",
+  "amount": "1000.00",
+  "date": "2026-05-14",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-050",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-05-13",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-051",
+  "first": "SARAH B",
+  "last": "SCHILLER",
+  "name": "SARAH B SCHILLER",
+  "amount": "100.00",
+  "date": "2026-05-13",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-052",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "101.00",
+  "date": "2026-05-12",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-053",
+  "first": "",
+  "last": "SHYMO, CORP.",
+  "name": "SHYMO, CORP.",
+  "amount": "2100.00",
+  "date": "2026-05-08",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-054",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-05-08",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-055",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-05-05",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-056",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "300.00",
+  "date": "2026-05-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-057",
+  "first": "JERRY",
+  "last": "TEPFER",
+  "name": "JERRY TEPFER",
+  "amount": "180.00",
+  "date": "2026-05-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-058",
+  "first": "CHARLES",
+  "last": "SEIDE",
+  "name": "CHARLES SEIDE",
+  "amount": "180.00",
+  "date": "2026-05-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-059",
+  "first": "RACHEL",
+  "last": "SIMS",
+  "name": "RACHEL SIMS",
+  "amount": "180.00",
+  "date": "2026-05-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-060",
+  "first": "BARUCH",
+  "last": "GUTWEIN",
+  "name": "BARUCH GUTWEIN",
+  "amount": "100.00",
+  "date": "2026-05-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-061",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "60.00",
+  "date": "2026-05-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-062",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2000.00",
+  "date": "2026-04-30",
+  "method": "ACH",
+  "note": "CHARITY · YISS ZEV"
+ },
+ {
+  "tid": "chase26-063",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-04-30",
+  "method": "ACH",
+  "note": "DVS-APR 2026"
+ },
+ {
+  "tid": "chase26-064",
+  "first": "",
+  "last": "TOSFOSYOMTOV02",
+  "name": "TOSFOSYOMTOV02",
+  "amount": "3000.00",
+  "date": "2026-04-24",
+  "method": "ACH",
+  "note": "IND NAME: zichron avos from moishe deutsch"
+ },
+ {
+  "tid": "chase26-065",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-04-24",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-066",
+  "first": "MICHAEL",
+  "last": "LOVEMAN",
+  "name": "MICHAEL LOVEMAN",
+  "amount": "101.00",
+  "date": "2026-04-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-067",
+  "first": "",
+  "last": "YSW GROUP LLC",
+  "name": "YSW GROUP LLC",
+  "amount": "420.00",
+  "date": "2026-04-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-068",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-04-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-069",
+  "first": "AMY",
+  "last": "PERLOW",
+  "name": "AMY PERLOW",
+  "amount": "72.00",
+  "date": "2026-04-16",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-070",
+  "first": "ABRAHAM",
+  "last": "NAKACH",
+  "name": "ABRAHAM NAKACH",
+  "amount": "18.00",
+  "date": "2026-04-15",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-071",
+  "first": "",
+  "last": "SERVICE FEE REVERSAL",
+  "name": "SERVICE FEE REVERSAL",
+  "amount": "15.00",
+  "date": "2026-04-14",
+  "method": "זיכוי בנק",
+  "note": "החזר עמלה — לא תרומה"
+ },
+ {
+  "tid": "chase26-072",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "101.00",
+  "date": "2026-04-14",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-073",
+  "first": "AVRAHAM MENACHEM",
+  "last": "GOLDSTEIN",
+  "name": "AVRAHAM MENACHEM GOLDSTEIN",
+  "amount": "100.00",
+  "date": "2026-04-14",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-074",
+  "first": "",
+  "last": "SHYMO, CORP.",
+  "name": "SHYMO, CORP.",
+  "amount": "2100.00",
+  "date": "2026-04-13",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-075",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-04-10",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-076",
+  "first": "ZEV",
+  "last": "SAFTLAS",
+  "name": "ZEV SAFTLAS",
+  "amount": "125.00",
+  "date": "2026-04-10",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-077",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-04-06",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-078",
+  "first": "",
+  "last": "CYBERGRANTS-CAFA",
+  "name": "CYBERGRANTS-CAFA",
+  "amount": "34800.00",
+  "date": "2026-04-03",
+  "method": "ACH",
+  "note": "CYBERGRANTS.COM CGDS"
+ },
+ {
+  "tid": "chase26-079",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2000.00",
+  "date": "2026-04-02",
+  "method": "ACH",
+  "note": "CHARITY · YISS ZEV"
+ },
+ {
+  "tid": "chase26-080",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-03-31",
+  "method": "ACH",
+  "note": "DVS-MAR 2026"
+ },
+ {
+  "tid": "chase26-081",
+  "first": "",
+  "last": "B & C LEAD CONSULTANTS LLC",
+  "name": "B & C LEAD CONSULTANTS LLC",
+  "amount": "501.00",
+  "date": "2026-03-31",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-082",
+  "first": "",
+  "last": "YSW GROUP LLC",
+  "name": "YSW GROUP LLC",
+  "amount": "324.00",
+  "date": "2026-03-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-083",
+  "first": "YOCHAI",
+  "last": "SHELY",
+  "name": "YOCHAI SHELY",
+  "amount": "75.00",
+  "date": "2026-03-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-084",
+  "first": "AMY",
+  "last": "PERLOW",
+  "name": "AMY PERLOW",
+  "amount": "72.00",
+  "date": "2026-03-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-085",
+  "first": "ABRAHAM",
+  "last": "DWEK",
+  "name": "ABRAHAM DWEK",
+  "amount": "14.00",
+  "date": "2026-03-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-086",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "1.00",
+  "date": "2026-03-30",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-087",
+  "first": "ARKADY",
+  "last": "BABAKHANOV",
+  "name": "ARKADY BABAKHANOV",
+  "amount": "613.00",
+  "date": "2026-03-27",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-088",
+  "first": "OSHER",
+  "last": "BIER",
+  "name": "OSHER BIER",
+  "amount": "1000.00",
+  "date": "2026-03-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-089",
+  "first": "",
+  "last": "ES BUILDERS GROUP LLC",
+  "name": "ES BUILDERS GROUP LLC",
+  "amount": "480.00",
+  "date": "2026-03-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-090",
+  "first": "NACHUM",
+  "last": "WEISSFISH",
+  "name": "NACHUM WEISSFISH",
+  "amount": "125.00",
+  "date": "2026-03-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-091",
+  "first": "BETZALEL",
+  "last": "COHEN",
+  "name": "BETZALEL COHEN",
+  "amount": "320.00",
+  "date": "2026-03-25",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-092",
+  "first": "TODD",
+  "last": "HOFFMAN",
+  "name": "TODD HOFFMAN",
+  "amount": "180.00",
+  "date": "2026-03-25",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-093",
+  "first": "",
+  "last": "CNC COATINGS CORP.",
+  "name": "CNC COATINGS CORP.",
+  "amount": "15000.00",
+  "date": "2026-03-24",
+  "method": "העברה בנקאית",
+  "note": "DIME COMMUNITY BANK · Brooklyn NY"
+ },
+ {
+  "tid": "chase26-094",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2200.00",
+  "date": "2026-03-24",
+  "method": "ACH",
+  "note": "CHARITY · KIMCHA D'PISKA"
+ },
+ {
+  "tid": "chase26-095",
+  "first": "JERRY",
+  "last": "TEPFER",
+  "name": "JERRY TEPFER",
+  "amount": "1200.00",
+  "date": "2026-03-24",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-096",
+  "first": "ZEV",
+  "last": "SAFTLAS",
+  "name": "ZEV SAFTLAS",
+  "amount": "125.00",
+  "date": "2026-03-24",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-097",
+  "first": "",
+  "last": "MGM ELECTRICAL CORP",
+  "name": "MGM ELECTRICAL CORP",
+  "amount": "15000.00",
+  "date": "2026-03-23",
+  "method": "העברה בנקאית",
+  "note": "TD BANK · Lawrence NY"
+ },
+ {
+  "tid": "chase26-098",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "1500.00",
+  "date": "2026-03-23",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-099",
+  "first": "RACHEL",
+  "last": "SIMS",
+  "name": "RACHEL SIMS",
+  "amount": "1100.00",
+  "date": "2026-03-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-100",
+  "first": "MEYER",
+  "last": "SILBER",
+  "name": "MEYER SILBER",
+  "amount": "250.00",
+  "date": "2026-03-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-101",
+  "first": "",
+  "last": "CLASSIC 55 LLC",
+  "name": "CLASSIC 55 LLC",
+  "amount": "180.00",
+  "date": "2026-03-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-102",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-03-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-103",
+  "first": "ABRAHAM",
+  "last": "SIEGAL",
+  "name": "ABRAHAM SIEGAL",
+  "amount": "100.00",
+  "date": "2026-03-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-104",
+  "first": "DESMOND",
+  "last": "ROTHENBERG",
+  "name": "DESMOND ROTHENBERG",
+  "amount": "360.00",
+  "date": "2026-03-19",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-105",
+  "first": "",
+  "last": "YSW GROUP LLC",
+  "name": "YSW GROUP LLC",
+  "amount": "250.00",
+  "date": "2026-03-19",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-106",
+  "first": "AMY",
+  "last": "PERLOW",
+  "name": "AMY PERLOW",
+  "amount": "72.00",
+  "date": "2026-03-19",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-107",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-03-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-108",
+  "first": "AVRAHAM MENACHEM",
+  "last": "GOLDSTEIN",
+  "name": "AVRAHAM MENACHEM GOLDSTEIN",
+  "amount": "100.00",
+  "date": "2026-03-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-109",
+  "first": "BRYNA",
+  "last": "BENDEL",
+  "name": "BRYNA BENDEL",
+  "amount": "100.00",
+  "date": "2026-03-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-110",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "1100.00",
+  "date": "2026-03-16",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-111",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "101.00",
+  "date": "2026-03-13",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-112",
+  "first": "",
+  "last": "SHYMO, CORP.",
+  "name": "SHYMO, CORP.",
+  "amount": "2100.00",
+  "date": "2026-03-12",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-113",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-03-12",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-114",
+  "first": "",
+  "last": "B & C LEAD CONSULTANTS LLC",
+  "name": "B & C LEAD CONSULTANTS LLC",
+  "amount": "250.00",
+  "date": "2026-03-10",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-115",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-03-06",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-116",
+  "first": "",
+  "last": "DEPOSIT ID NUMBER 904086",
+  "name": "DEPOSIT ID NUMBER 904086",
+  "amount": "7500.00",
+  "date": "2026-03-05",
+  "method": "הפקדה בסניף",
+  "note": "הפקדה בלי שם מפקיד"
+ },
+ {
+  "tid": "chase26-117",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2000.00",
+  "date": "2026-03-03",
+  "method": "ACH",
+  "note": "CHARITY · YISS ZEV"
+ },
+ {
+  "tid": "chase26-118",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "1800.00",
+  "date": "2026-03-03",
+  "method": "ACH",
+  "note": "CHARITY · MATANOT LE'EVYONIM"
+ },
+ {
+  "tid": "chase26-119",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-03-03",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-120",
+  "first": "ZECHARYA",
+  "last": "FELDMAN",
+  "name": "ZECHARYA FELDMAN",
+  "amount": "500.00",
+  "date": "2026-03-03",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-121",
+  "first": "",
+  "last": "LEAH YOSEF INTERNATIONAL, INC.",
+  "name": "LEAH YOSEF INTERNATIONAL, INC.",
+  "amount": "750.00",
+  "date": "2026-03-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-122",
+  "first": "ZEV",
+  "last": "SAFTLAS",
+  "name": "ZEV SAFTLAS",
+  "amount": "360.00",
+  "date": "2026-03-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-123",
+  "first": "RUBEN",
+  "last": "HALIMA",
+  "name": "RUBEN HALIMA",
+  "amount": "360.00",
+  "date": "2026-03-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-124",
+  "first": "MEYER",
+  "last": "SILBER",
+  "name": "MEYER SILBER",
+  "amount": "250.00",
+  "date": "2026-03-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-125",
+  "first": "JERRY",
+  "last": "BRAUN",
+  "name": "JERRY BRAUN",
+  "amount": "180.00",
+  "date": "2026-03-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-126",
+  "first": "AMY",
+  "last": "PERLOW",
+  "name": "AMY PERLOW",
+  "amount": "36.00",
+  "date": "2026-03-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-127",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-02-27",
+  "method": "ACH",
+  "note": "DVS-FEB 2026"
+ },
+ {
+  "tid": "chase26-128",
+  "first": "CHARLES",
+  "last": "SEIDE",
+  "name": "CHARLES SEIDE",
+  "amount": "100.00",
+  "date": "2026-02-27",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-129",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "360.00",
+  "date": "2026-02-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-130",
+  "first": "",
+  "last": "EMES EMPIRE LLC DBA KEYS NYC",
+  "name": "EMES EMPIRE LLC DBA KEYS NYC",
+  "amount": "360.00",
+  "date": "2026-02-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-131",
+  "first": "JERRY",
+  "last": "TEPFER",
+  "name": "JERRY TEPFER",
+  "amount": "360.00",
+  "date": "2026-02-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-132",
+  "first": "",
+  "last": "YSW GROUP LLC",
+  "name": "YSW GROUP LLC",
+  "amount": "324.00",
+  "date": "2026-02-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-133",
+  "first": "BRYNA",
+  "last": "BENDEL",
+  "name": "BRYNA BENDEL",
+  "amount": "180.00",
+  "date": "2026-02-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-134",
+  "first": "YISROEL",
+  "last": "PLAUT",
+  "name": "YISROEL PLAUT",
+  "amount": "180.00",
+  "date": "2026-02-26",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-135",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "54.00",
+  "date": "2026-02-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-136",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-02-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-137",
+  "first": "ZEV",
+  "last": "SAFTLAS",
+  "name": "ZEV SAFTLAS",
+  "amount": "250.00",
+  "date": "2026-02-17",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-138",
+  "first": "",
+  "last": "CYBERGRANTS-CAFA",
+  "name": "CYBERGRANTS-CAFA",
+  "amount": "15300.00",
+  "date": "2026-02-13",
+  "method": "ACH",
+  "note": "CYBERGRANTS.COM CGDS"
+ },
+ {
+  "tid": "chase26-139",
+  "first": "",
+  "last": "SHYMO, CORP.",
+  "name": "SHYMO, CORP.",
+  "amount": "2100.00",
+  "date": "2026-02-11",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-140",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "150.00",
+  "date": "2026-02-10",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-141",
+  "first": "",
+  "last": "MGM ELECTRIC CORP",
+  "name": "MGM ELECTRIC CORP",
+  "amount": "5000.00",
+  "date": "2026-02-09",
+  "method": "העברה בנקאית",
+  "note": "TD BANK · Lawrence NY"
+ },
+ {
+  "tid": "chase26-142",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-02-09",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-143",
+  "first": "CHARLES",
+  "last": "SEIDE",
+  "name": "CHARLES SEIDE",
+  "amount": "360.00",
+  "date": "2026-02-06",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-144",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-02-06",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-145",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "2600.00",
+  "date": "2026-02-04",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-146",
+  "first": "",
+  "last": "EMES EMPIRE LLC DBA KEYS NYC",
+  "name": "EMES EMPIRE LLC DBA KEYS NYC",
+  "amount": "650.00",
+  "date": "2026-02-04",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-147",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-02-03",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-148",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "100.00",
+  "date": "2026-02-03",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-149",
+  "first": "",
+  "last": "EMES EMPIRE LLC DBA KEYS NYC",
+  "name": "EMES EMPIRE LLC DBA KEYS NYC",
+  "amount": "1000.00",
+  "date": "2026-02-02",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-150",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2026-01-30",
+  "method": "ACH",
+  "note": "DVS-JAN 2026"
+ },
+ {
+  "tid": "chase26-151",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2000.00",
+  "date": "2026-01-29",
+  "method": "ACH",
+  "note": "CHARITY · YISS ZEV"
+ },
+ {
+  "tid": "chase26-152",
+  "first": "",
+  "last": "EMES EMPIRE LLC DBA KEYS NYC",
+  "name": "EMES EMPIRE LLC DBA KEYS NYC",
+  "amount": "600.00",
+  "date": "2026-01-28",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-153",
+  "first": "",
+  "last": "LEAH YOSEF INTERNATIONAL, INC.",
+  "name": "LEAH YOSEF INTERNATIONAL, INC.",
+  "amount": "101.00",
+  "date": "2026-01-27",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-154",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2026-01-20",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-155",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2026-01-12",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-156",
+  "first": "JAKOB T",
+  "last": "GOLDSTEIN",
+  "name": "JAKOB T GOLDSTEIN",
+  "amount": "162.00",
+  "date": "2026-01-12",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-157",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2026-01-09",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-158",
+  "first": "",
+  "last": "EMES EMPIRE LLC DBA KEYS NYC",
+  "name": "EMES EMPIRE LLC DBA KEYS NYC",
+  "amount": "400.00",
+  "date": "2026-01-07",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-159",
+  "first": "ZECHARYA",
+  "last": "FELDMAN",
+  "name": "ZECHARYA FELDMAN",
+  "amount": "300.00",
+  "date": "2026-01-07",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-160",
+  "first": "",
+  "last": "SHYMO, CORP.",
+  "name": "SHYMO, CORP.",
+  "amount": "2100.00",
+  "date": "2026-01-05",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-161",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "900.00",
+  "date": "2026-01-05",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-162",
+  "first": "",
+  "last": "THRIVEWAY 1636",
+  "name": "THRIVEWAY 1636",
+  "amount": "2000.00",
+  "date": "2026-01-02",
+  "method": "ACH",
+  "note": "charity · yiss zev"
+ },
+ {
+  "tid": "chase26-163",
+  "first": "",
+  "last": "THE OJC FUND",
+  "name": "THE OJC FUND",
+  "amount": "3600.00",
+  "date": "2025-12-31",
+  "method": "ACH",
+  "note": "DONATION · Kollel Chatzos"
+ },
+ {
+  "tid": "chase26-164",
+  "first": "",
+  "last": "DISABLED VETERAN",
+  "name": "DISABLED VETERAN",
+  "amount": "1800.00",
+  "date": "2025-12-30",
+  "method": "ACH",
+  "note": "DVS-DEC 2025"
+ },
+ {
+  "tid": "chase26-165",
+  "first": "ISAAC",
+  "last": "SHVUT",
+  "name": "ISAAC SHVUT",
+  "amount": "501.00",
+  "date": "2025-12-23",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-166",
+  "first": "",
+  "last": "EMES EMPIRE LLC DBA KEYS NYC",
+  "name": "EMES EMPIRE LLC DBA KEYS NYC",
+  "amount": "1000.00",
+  "date": "2025-12-22",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-167",
+  "first": "AMY",
+  "last": "PERLOW",
+  "name": "AMY PERLOW",
+  "amount": "36.00",
+  "date": "2025-12-22",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-168",
+  "first": "CHAIM",
+  "last": "HOCHMAN",
+  "name": "CHAIM HOCHMAN",
+  "amount": "260.00",
+  "date": "2025-12-18",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-169",
+  "first": "PHYLLIS",
+  "last": "GEVERTZMAN",
+  "name": "PHYLLIS GEVERTZMAN",
+  "amount": "800.00",
+  "date": "2025-12-12",
+  "method": "זל",
+  "note": ""
+ },
+ {
+  "tid": "chase26-170",
+  "first": "SHMUEL",
+  "last": "COHEN",
+  "name": "SHMUEL COHEN",
+  "amount": "101.00",
+  "date": "2025-12-12",
+  "method": "זל",
+  "note": ""
+ }
+]
