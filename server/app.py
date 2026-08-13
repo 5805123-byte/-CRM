@@ -437,7 +437,7 @@ def ensure_schema():
     try:
         mp = os.path.join(HERE, 'iz_certs_map.json')
         pdfp = os.path.join(HERE, 'iz_certs.pdf')
-        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v2'").fetchone()
+        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v3'").fetchone()
                 and os.path.exists(mp) and os.path.exists(pdfp)):
             try:
                 from pypdf import PdfReader, PdfWriter
@@ -447,6 +447,10 @@ def ensure_schema():
             if PdfReader:
                 mm = json.load(open(mp, encoding='utf-8'))
                 rd = PdfReader(pdfp)
+                # תעודות שמאיר ביקש שלא ייכנסו — גם אם נתלו בהרצה קודמת
+                for dp in mm.get('dropped', []):
+                    con.execute("DELETE FROM files WHERE kind='iz' AND name=?",
+                                ('תעודת יששכר־זבולון %02d.pdf' % dp,))
                 by = {}
                 for r in con.execute("SELECT id,last,first FROM donors"):
                     by.setdefault((_fz(r['last']), _fz(r['first'])), []).append(r['id'])
@@ -465,7 +469,7 @@ def ensure_schema():
                                 "VALUES('iz',?,?,'application/pdf',?,?)",
                                 (ids[0], fname, buf.getvalue(), today_iso()))
                     nadd += 1
-                con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v2')")
+                con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v3')")
                 print('  תעודות יששכר־זבולון: צורפו %d · לא זוהה כרטיס ל-%d' % (nadd, nmiss))
     except Exception as e:
         print('  שגיאת תעודות יששכר־זבולון:', e)
