@@ -1549,6 +1549,53 @@ function steadyFor(d){
   if(t)put(d.tier==='יששכר_זבולון'?t[0]:('קוויטל '+t[0]));
   return parts.join(' · ');
 }
+/* ---------- שניים ששולחים לבנק סכום אחד ומתחלקים בו ---------- */
+// הכסף מגיע על שם אחד מהם. המערכת זוכרת, וכל סכום שנכנס נחתך מיד לשני הכרטיסים.
+function splitHTML(d){
+  const rows=(d.paysplit||[]);
+  const body=rows.map(s=>{
+    const pct=Math.round(s.pct), mine=100-pct;
+    const t=s.role==='payer'
+      ? `הכסף מגיע לבנק על שמו, ומתחלק עם <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${mine}% אצלו, ${pct}% אצל השותף.`
+      : `הכסף שלו מגיע דרך <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${pct}% מכל סכום שנכנס על שמו נרשם כאן.`;
+    return `<div class="splrow">🤝 ${t}
+      <button class="del splx" data-id="${s.id}" title="בטל את החלוקה">🗑</button></div>`;}).join('');
+  return `<div class="splbox">${body}
+    <div class="splitadd ${rows.length?'hidden':''}">
+      <button class="btn sm ghost splnew">🤝 משלם ביחד עם תורם אחר…</button></div>
+    <div class="splform hidden">
+      <div class="hintxt">מי עוד מתחלק בסכום שמגיע לבנק על שם <b>${esc(d.last+' '+d.first)}</b>?</div>
+      <input class="spl_q" placeholder="חפש תורם…" autocomplete="off">
+      <div class="dpres spl_res"></div>
+      <label class="fld"><span>כמה אחוז שייך לשותף</span>
+        <input class="spl_pct" value="50" inputmode="decimal"></label>
+      <button class="btn sm splcancel ghost">ביטול</button></div></div>`;
+}
+function wireSplit(d,body,redraw){
+  body.querySelectorAll('.splgo').forEach(b=>b.onclick=()=>{
+    const x=DB.find(y=>y.id==b.dataset.id); if(x)openDonor(x);});
+  const form=body.querySelector('.splform'), add=body.querySelector('.splitadd');
+  body.querySelectorAll('.splnew').forEach(b=>b.onclick=()=>{
+    form.classList.remove('hidden'); add.classList.add('hidden');
+    const q=form.querySelector('.spl_q'); q.focus();});
+  body.querySelectorAll('.splcancel').forEach(b=>b.onclick=()=>{
+    form.classList.add('hidden'); add.classList.remove('hidden');});
+  const q=body.querySelector('.spl_q'), res=body.querySelector('.spl_res');
+  if(q)q.oninput=()=>{
+    const s=norm(q.value); if(!s){res.innerHTML='';return;}
+    res.innerHTML=DB.filter(x=>x.id!==d.id&&matchStr(x.last+' '+x.first+' '+(x.english||''),s))
+      .slice(0,8).map(x=>`<div class="dpr" data-id="${x.id}">${esc(x.last)} ${esc(x.first)}</div>`).join('')
+      ||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    res.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
+      const pct=parseFloat(body.querySelector('.spl_pct').value)||50;
+      const r=await api('POST','/api/paysplit',{payer_id:d.id,donor_id:+el.dataset.id,pct});
+      if(!r||!r.ok){toast('לא נשמר');return;}
+      toast('נרשם ✓'+(r.split?(' — '+r.split+' סכומים נחתכו'):'')); await load(); redraw();});};
+  body.querySelectorAll('.splx').forEach(b=>b.onclick=async()=>{
+    if(!await uiConfirm('לבטל את החלוקה? סכומים שכבר נחתכו יישארו כפי שהם.'))return;
+    await api('POST','/api/paysplit',{delete:1,id:+b.dataset.id});
+    toast('בוטל ✓'); await load(); redraw();});
+}
 function catTotalsHTML(d){
   const cur=curSym(d), m={};
   const add=(c,amt,dt)=>{
@@ -1627,6 +1674,7 @@ function cardDetails(d,body){
       ${gc?`<div class="npmonths">${gaps(d.months,d).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
       <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
+    ${splitHTML(d)}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';
       const known=String(d.purpose||'').trim()||(d.pledges||[]).some(p=>+p.monthly)||izSummary(d).monthly>0;
       return `<div class="purpose">🎯 עבור: ${esc(pt)}${known?'':' <small>(לפי התרומות)</small>'}</div>`;})()}
@@ -1712,6 +1760,7 @@ function cardDetails(d,body){
         <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
+  wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
@@ -4043,18 +4092,23 @@ function renderTasksTab(){
 /* ---------- הפקדות שלא זוהו (צ'ייס / זל) ---------- */
 // כל שם מפקיד מופיע פעם אחת עם כל ההפקדות שלו. משייכים לתורם — וכל השורות
 // שלו נסגרות יחד, וגם כל מה שיגיע בעתיד באותו שם.
-let DEPS=null, depOpen=null;
+let DEPS=null, depOpen=null, depKind='bank';
 async function renderDeposits(){
   chips.innerHTML='';
   view.innerHTML='<div class="cnt">טוען הפקדות…</div>';
   try{ DEPS=await api('GET','/api/deposits'); }catch(e){ DEPS={rows:[]}; }
   const all=(DEPS&&DEPS.rows)||[];
-  const rows=all.filter(x=>matchQ(x.name));
+  const kind=all.filter(x=>(x.kind||'bank')===depKind);
+  const rows=kind.filter(x=>matchQ(x.name));
   const f=n=>'$'+Math.round(n).toLocaleString('en-US');
-  view.innerHTML=`<div class="misshead">💵 הפקדות שלא זוהו — צ'ייס / זל</div>
-    <div class="submuted">כל שם מפקיד מופיע פעם אחת. שייך אותו לתורם — וכל ההפקדות שלו ייכנסו לכרטיס,
+  const isBank=depKind==='bank';
+  view.innerHTML=`<div class="misshead">💵 ${isBank?"הפקדות שלא זוהו — צ'ייס / זל":'חיובי אשראי שלא זוהו — אוטרייז / בנק ווסט'}</div>
+    <div class="submuted">כל שם מופיע פעם אחת. שייך אותו לתורם — וכל השורות שלו ייכנסו לכרטיס,
       וגם כל מה שיגיע בעתיד באותו שם. מה שלא רלוונטי — "לא רלוונטי", ולא תישאל עליו שוב.</div>
-    <div class="avstat">💵 <b>${DEPS.names||0}</b> שמות · <b>${DEPS.deposits||0}</b> הפקדות · <b>${f(DEPS.total||0)}</b>${rows.length!==all.length?` · מוצגים ${rows.length}`:''}</div>
+    <div class="deptabs">
+      <button class="dtab ${isBank?'on':''}" data-kind="bank">🏦 בנק — צ'ייס / זל <b>${DEPS.names||0}</b></button>
+      <button class="dtab ${isBank?'':'on'}" data-kind="card">💳 אשראי <b>${DEPS.cards||0}</b></button></div>
+    <div class="avstat">💵 <b>${kind.length}</b> שמות · <b>${kind.reduce((s,x)=>s+x.n,0)}</b> ${isBank?'הפקדות':'חיובים'} · <b>${f(kind.reduce((s,x)=>s+x.total,0))}</b>${rows.length!==kind.length?` · מוצגים ${rows.length}`:''}</div>
     <button class="btn ghost" id="depback" style="margin:8px 2px">→ חזרה לתורמים</button>
     <div class="list">${rows.map(x=>`<div class="depcard" data-k="${esc(x.key)}">
       <div class="depnm" dir="ltr">${esc(x.name)}</div>
@@ -4069,6 +4123,8 @@ async function renderDeposits(){
         <div class="dpres dep_res" data-k="${esc(x.key)}"></div></div>`:''}
     </div>`).join('')||'<div class="empty">אין הפקדות שממתינות לזיהוי 🎉</div>'}</div>`;
   document.getElementById('depback').onclick=()=>{flt='';render();};
+  view.querySelectorAll('.dtab').forEach(b=>b.onclick=()=>{
+    depKind=b.dataset.kind; depOpen=null; renderDeposits();});
   const rec=k=>all.find(x=>x.key===k);
   view.querySelectorAll('.depmatch').forEach(b=>b.onclick=()=>{
     depOpen=(depOpen===b.dataset.k)?null:b.dataset.k; renderDeposits();});

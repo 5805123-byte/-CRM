@@ -262,6 +262,19 @@
   /* הפקדות שלא זוהו — כרטיס לכל שם מפקיד */
   .depcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px}
   .depnm{font-weight:800;font-size:1.02rem;word-break:break-word}
+  .deptabs{display:flex;gap:6px;margin:8px 0 2px}
+  .dtab{flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 6px;
+    font-size:.84rem;font-weight:700;color:var(--muted);cursor:pointer}
+  .dtab b{background:#eef0f5;border-radius:20px;padding:1px 7px;margin-inline-start:4px;font-size:.8rem}
+  .dtab.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .dtab.on b{background:rgba(255,255,255,.22)}
+  .splbox{margin:8px 0}
+  .splrow{background:#eef6ff;border:1px solid #cfe2f7;border-radius:10px;padding:8px 10px;
+    font-size:.86rem;line-height:1.5;display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .splrow b{cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .splrow .del{margin-inline-start:auto;flex:0 0 auto}
+  .splform{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:9px;margin-top:6px}
+  .splform input{width:100%}
   .depmeta{color:var(--muted);font-size:.82rem;margin-top:3px}
   .depnote{margin-top:4px;font-size:.78rem;color:#6b5b2e;background:#fdf6e0;border:1px solid #f0e3b8;
     border-radius:7px;padding:3px 7px;display:inline-block;max-width:100%;word-break:break-word}

@@ -80,6 +80,9 @@ def ensure_schema():
         english TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS name_map(src TEXT PRIMARY KEY, donor_id INTEGER,
         ignored INTEGER DEFAULT 0, created TEXT);
+    CREATE TABLE IF NOT EXISTS pay_split(id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payer_id INTEGER, donor_id INTEGER, pct REAL DEFAULT 50, note TEXT, created TEXT,
+        UNIQUE(payer_id, donor_id));
     CREATE TABLE IF NOT EXISTS sugg_reject(donor_id INTEGER, kind TEXT, val TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
@@ -428,6 +431,24 @@ def ensure_schema():
             print(f"  צ'ייס ינו-אוג: נטענו {nr}, הותאמו {matched}")
     except Exception as e:
         print("  שגיאת צ'ייס:", e)
+    # יצחק אדלין ואלירן דהאן שולחים לבנק העברה אחת ומתחלקים בה חצי־חצי.
+    # הכסף מגיע על שם אדלין, ולכן כל סכום שלו נחתך לשניים בין שני הכרטיסים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='paysplit_adlin_v1'").fetchone():
+            a = con.execute("SELECT id FROM donors WHERE last='אדלין' AND first='יצחק'").fetchone()
+            e = con.execute("SELECT id FROM donors WHERE last LIKE 'דה%ן' AND first='אלירן'").fetchone()
+            if a and e:
+                con.execute("INSERT OR IGNORE INTO pay_split(payer_id,donor_id,pct,note,created) "
+                            "VALUES(?,?,50,'ההעברה מגיעה על שם אדלין — חצי־חצי',?)",
+                            (a['id'], e['id'], today_iso()))
+                print('  אדלין/דהאן: נרשמה חלוקה חצי־חצי')
+            con.execute("INSERT INTO seed_flags(name) VALUES('paysplit_adlin_v1')")
+        # רץ בכל עלייה — סכום שאושר לתורם אחרי שנקבעה החלוקה נחתך גם הוא
+        n = apply_pay_split(con)
+        if n:
+            print('  סכומים שנחתכו בין שותפים לתשלום: %d' % n)
+    except Exception as e:
+        print('  paysplit error:', e)
     # שם שנכתב בבנק עם שגיאת הקלדה של אות אחת — Rosenfed במקום Rosenfeld וכדומה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_nearnames_v1'").fetchone():
@@ -3214,6 +3235,23 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
+    # תורמים ששולחים לבנק סכום אחד ומתחלקים בו — מוצג בשני הכרטיסים
+    for d in donors: d['paysplit'] = []
+    try:
+        nm = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+              for r in c.execute("SELECT id,last,first FROM donors")}
+        for r in c.execute("SELECT id,payer_id,donor_id,pct,note FROM pay_split"):
+            pct = float(r['pct'] or 50)
+            if r['payer_id'] in byid:
+                byid[r['payer_id']]['paysplit'].append(
+                    {'id': r['id'], 'role': 'payer', 'with_id': r['donor_id'],
+                     'with': nm.get(r['donor_id'], ''), 'pct': pct, 'note': r['note'] or ''})
+            if r['donor_id'] in byid:
+                byid[r['donor_id']]['paysplit'].append(
+                    {'id': r['id'], 'role': 'partner', 'with_id': r['payer_id'],
+                     'with': nm.get(r['payer_id'], ''), 'pct': pct, 'note': r['note'] or ''})
+    except Exception:
+        pass
     for d in donors: d['unclassified'] = []
     try:
         for r in c.execute("SELECT id,donor_id,date,amount,method FROM donations "
@@ -4020,8 +4058,12 @@ def apply_name_map(con):
         if m['ignored'] or not m['donor_id']:
             continue
         for r in con.execute("SELECT tid,last,first FROM recon WHERE donor_id IS NULL"):
-            nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['last'] or '')
-            if _nkey(nm) == m['src']:
+            # אותו סדר בדיוק כמו במסך ההפקדות (שם פרטי ואז משפחה), ולמען
+            # מפתחות שנשמרו בעבר בסדר ההפוך — מקבלים גם אותו
+            f, l = (r['first'] or '').strip(), (r['last'] or '').strip()
+            keys = {_nkey(' '.join(x for x in (f, l) if x)),
+                    _nkey(' '.join(x for x in (l, f) if x))}
+            if m['src'] in keys:
                 con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (m['donor_id'], r['tid']))
                 n += 1
     if n:
@@ -4101,6 +4143,53 @@ def _split_av(name):
 def _srt(s):
     """מיון עברי פשוט — בלי גרשיים ורווחים מיותרים."""
     return re.sub(r'["\u05f3\u05f4\'`]', '', (s or '').strip())
+
+
+def apply_pay_split(con):
+    """שני תורמים ששולחים לבנק סכום אחד ומתחלקים בו — למשל יצחק אדלין ואלירן
+    דהאן, חצי־חצי. הכסף מגיע על שם אחד מהם, ולכן כל שורה שלו שטרם אושרה
+    נחתכת לשתיים: חלקו נשאר אצלו, וחלקו עובר לכרטיס של השותף. שורה שכבר
+    אושרה לא נוגעים בה, ושורה שכבר נחתכה (הסיומת #a/#b) לא נחתכת שוב."""
+    try:
+        splits = list(con.execute("SELECT payer_id,donor_id,pct FROM pay_split"))
+    except Exception:
+        return 0
+    n = 0
+    for s in splits:
+        pct = float(s['pct'] or 50)
+        if not (0 < pct < 100):
+            continue
+        rows = list(con.execute(
+            "SELECT * FROM recon WHERE donor_id=? AND COALESCE(processed,0)=0 "
+            "AND tid NOT LIKE '%#a' AND tid NOT LIKE '%#b'", (s['payer_id'],)))
+        for r in rows:
+            try:
+                amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
+            except Exception:
+                continue
+            if amt <= 0:
+                continue
+            other = round(amt * pct / 100.0, 2)
+            mine = round(amt - other, 2)
+            cols = [k for k in r.keys() if k != 'tid']
+            for suf, did, val in (('#a', r['donor_id'], mine), ('#b', s['donor_id'], other)):
+                vals = []
+                for k in cols:
+                    if k == 'donor_id':
+                        vals.append(did)
+                    elif k == 'amount':
+                        vals.append('%.2f' % val)
+                    elif k == 'category':
+                        vals.append(((r['category'] or '') + ' · חצי מהעברה משותפת').strip(' ·'))
+                    else:
+                        vals.append(r[k])
+                con.execute("INSERT OR IGNORE INTO recon(tid,%s) VALUES(?%s)"
+                            % (','.join(cols), ',?' * len(cols)), [r['tid'] + suf] + vals)
+            con.execute("DELETE FROM recon WHERE tid=?", (r['tid'],))
+            n += 1
+    if n:
+        con.commit()
+    return n
 
 
 def _lev1(a, b):
@@ -4881,8 +4970,12 @@ class H(BaseHTTPRequestHandler):
                 k = _nkey(nm)
                 if not k or k in ign:
                     continue
+                src = r['source'] or ''
+                # המסך הזה הוא על כסף שנכנס לבנק. חיובי אשראי (אוטרייז / בנק
+                # ווסט) הם עולם אחר, ולכן מסומנים ומוצגים בלשונית נפרדת.
+                kind = 'card' if re.match(r'(Authorize|Banquest)', src) else 'bank'
                 e = g.setdefault(k, {'key': k, 'name': nm, 'n': 0, 'total': 0.0, 'dates': [],
-                                     'src': r['source'] or '', 'email': r['email'] or '',
+                                     'src': src, 'kind': kind, 'email': r['email'] or '',
                                      'phone': r['phone'] or '', 'note': '', 'tids': []})
                 e['n'] += 1
                 if not e['note'] and (r['category'] or '').strip():
@@ -4895,12 +4988,17 @@ class H(BaseHTTPRequestHandler):
             con.close()
             out = sorted(g.values(), key=lambda x: -x['total'])
             for e in out:
-                e['dates'] = sorted(set(e['dates']))
+                # תאריכי אשראי מגיעים כ-'26-Mar-2026' — ממיינים לפי התאריך האמיתי
+                e['dates'] = sorted(set(e['dates']), key=lambda d: _recon_iso(d) or d)
                 e['total'] = round(e['total'], 2)
                 e['tids'] = e['tids'][:200]
-            return self._send(200, {'rows': out, 'names': len(out),
-                                    'deposits': sum(x['n'] for x in out),
-                                    'total': round(sum(x['total'] for x in out), 2)})
+            bank = [x for x in out if x['kind'] == 'bank']
+            return self._send(200, {'rows': out, 'names': len(bank),
+                                    'deposits': sum(x['n'] for x in bank),
+                                    'total': round(sum(x['total'] for x in bank), 2),
+                                    'cards': len(out) - len(bank),
+                                    'cards_total': round(sum(x['total'] for x in out
+                                                             if x['kind'] == 'card'), 2)})
         if self.path.split('?')[0] == '/api/izhistory':
             # יומן כללי — כל השינויים ביששכר־זבולון, מהחדש לישן
             con = db()
@@ -6002,8 +6100,30 @@ class H(BaseHTTPRequestHandler):
             cur.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) "
                         "VALUES(?,?,0,?)", (key, did, today_iso()))
             n = apply_name_map(con)
+            sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'linked': n})
+            return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        if self.path == '/api/paysplit':
+            # שני תורמים ששולחים לבנק סכום אחד ומתחלקים בו
+            con = db(); cur = con.cursor()
+            if b.get('delete'):
+                cur.execute("DELETE FROM pay_split WHERE id=?", (int(b.get('id') or 0),))
+                con.commit(); con.close()
+                return self._send(200, {'ok': True, 'deleted': True})
+            pid, did = int(b.get('payer_id') or 0), int(b.get('donor_id') or 0)
+            try: pct = float(b.get('pct') or 50)
+            except Exception: pct = 50.0
+            if not pid or not did or pid == did or not (0 < pct < 100):
+                con.close(); return self._send(400, {'ok': False, 'error': 'bad_args'})
+            for x in (pid, did):
+                if not cur.execute("SELECT 1 FROM donors WHERE id=?", (x,)).fetchone():
+                    con.close(); return self._send(400, {'ok': False, 'error': 'no_donor'})
+            cur.execute("INSERT OR REPLACE INTO pay_split(payer_id,donor_id,pct,note,created) "
+                        "VALUES(?,?,?,?,?)", (pid, did, pct, (b.get('note') or '').strip()[:120],
+                                              today_iso()))
+            n = apply_pay_split(con)
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'split': n})
         if self.path == '/api/avreich':
             # הוספה/עריכה/מחיקה של אברך ברשימת הכולל
             nm = re.sub(r'\s+', ' ', (b.get('name') or '')).strip()[:60]
