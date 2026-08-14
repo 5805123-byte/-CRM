@@ -912,7 +912,6 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 function render(){
   chips.innerHTML='';
   if(tab==='donors'){
-    if(flt==='whatfor')return renderWhatFor();
     if(flt==='addrfix')return renderAddrFix();
     if(flt==='noaddr')return renderNoAddr();
     if(flt==='nophone')return renderNoPhone();
@@ -1006,14 +1005,11 @@ function renderDonors(){
   const ndup=findDupes().length;
   const nafix=DB.filter(addrIssue).length;
   const nanone=DB.filter(d=>!(d.addr||'').trim()).length;
-  const nwf=noCatList().length;
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
     ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
-    ${nwf?`<button class="btn kvmissbtn" id="whatForBtn" style="background:var(--accent);border-color:var(--accent)">🎯 תרומות בלי ייעוד — ${nwf}</button>`:''}
     ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
     ${nanone?`<button class="btn kvmissbtn" id="noAddrBtn">🏠 בלי כתובת בכלל — ${nanone}</button>`:''}
     ${DB.filter(d=>!(d.phone||'').trim()).length?`<button class="btn kvmissbtn" id="noPhoneBtn" style="background:var(--yes);border-color:var(--yes)">📞 השלמת טלפונים — ${DB.filter(d=>!(d.phone||'').trim()).length} בלי טלפון</button>`:''}
-    <button class="btn kvmissbtn" id="depBtn" style="background:var(--gold);border-color:var(--gold)">💵 הפקדות שלא זוהו — צ'ייס / זל</button>
     <div class="avbar"><select id="donsort" class="avsortsel">
       <option value="last">מיון: שם (א-ב)</option>
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
@@ -1039,11 +1035,9 @@ function renderDonors(){
   const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;DLIM=60;render();};
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
-  const wfb=document.getElementById('whatForBtn'); if(wfb)wfb.onclick=()=>{flt='whatfor';WFLIM=40;render();};
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
   const npb=document.getElementById('noPhoneBtn'); if(npb)npb.onclick=()=>{flt='nophone';NOPHONE=null;NPLIM=15;render();};
-  const dpb=document.getElementById('depBtn'); if(dpb)dpb.onclick=()=>{flt='deposits';DEPS=null;depOpen=null;render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
@@ -1246,13 +1240,12 @@ function noCatList(){
   out.sort((a,b)=>String(b.x.date||'').localeCompare(String(a.x.date||'')));
   return out;
 }
-function renderWhatFor(){
-  chips.innerHTML='';
+// נפתח מתוך מסך החיובים (כפתור "🎯 בלי ייעוד") — לא חלון נפרד.
+function whatForBox(el){
   let list=noCatList().filter(o=>matchQ(o.d.last+' '+o.d.first+' '+(o.d.english||'')+' '+(o.x.amount||'')));
   const tot=list.reduce((s,o)=>s+amtNum(o.x.amount),0);
-  view.innerHTML=`<button class="back" id="wfback">→ חזרה לתורמים</button>
-    <div class="cnt">🎯 בלי ייעוד: ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}</div>
-    <div class="hintxt">הכסף כבר רשום אצל התורם. כאן רק בוחרים עבור מה, ולוחצים 💾 שמור.</div>
+  el.innerHTML=`<div class="cnt">🎯 בלי ייעוד — ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}</div>
+    <div class="hintxt" style="margin:0 2px 6px">הכסף כבר רשום אצל התורם. כאן רק בוחרים עבור מה, ולוחצים 💾 שמור.</div>
     <div class="list">${list.slice(0,WFLIM).map(o=>`<div class="wfrow" data-id="${o.x.id}">
       <div class="wfhead"><b class="avnamelink" data-id="${o.d.id}">${esc((o.d.last+' '+o.d.first).trim())}</b>
         <span class="wfamt">${curSym(o.d)}${esc(o.x.amount)}</span>
@@ -1262,14 +1255,13 @@ function renderWhatFor(){
       <div class="addrow hidden" data-wfnew="${o.x.id}"><input class="wfnew" placeholder="שם הייעוד החדש…"></div>
     </div>`).join('')||'<div class="empty">🎉 לכל התרומות יש ייעוד</div>'}</div>
     ${list.length>WFLIM?`<button class="btn ghost" id="wfmore" style="width:100%;margin:8px 2px">עוד — מציג ${WFLIM} מתוך ${list.length}</button>`:''}`;
-  document.getElementById('wfback').onclick=()=>{flt='';render();};
-  const mb=document.getElementById('wfmore'); if(mb)mb.onclick=()=>{WFLIM+=40;renderWhatFor();};
-  view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
-  view.querySelectorAll('.wfcat').forEach(s=>s.onchange=()=>{
-    const nb=view.querySelector('[data-wfnew="'+s.dataset.id+'"]');
+  const mb=document.getElementById('wfmore'); if(mb)mb.onclick=()=>{WFLIM+=40;whatForBox(el);};
+  el.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+  el.querySelectorAll('.wfcat').forEach(s=>s.onchange=()=>{
+    const nb=el.querySelector('[data-wfnew="'+s.dataset.id+'"]');
     if(nb){nb.classList.toggle('hidden',s.value!=='__new__'); if(s.value==='__new__')nb.querySelector('.wfnew').focus();}});
-  view.querySelectorAll('.wfsave').forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.id, row=view.querySelector('.wfrow[data-id="'+id+'"]');
+  el.querySelectorAll('.wfsave').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.id, row=el.querySelector('.wfrow[data-id="'+id+'"]');
     let cat=row.querySelector('.wfcat').value.trim();
     if(cat==='__new__')cat=(row.querySelector('.wfnew')||{value:''}).value.trim();
     if(!cat){toast('בחר עבור מה');return;}
@@ -1277,7 +1269,7 @@ function renderWhatFor(){
     o.x.category=cat;
     await api('PUT','/api/donation/'+id,{category:cat});
     if(!(CAMPAIGNS||[]).includes(cat)&&!DNBASE.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
-    toast('נשמר ✓ '+cat); renderWhatFor();});
+    toast('נשמר ✓ '+cat); renderLedger();});
 }
 function renderAddrFix(){
   chips.innerHTML='';
@@ -2847,7 +2839,7 @@ function renderTransactions(d){
 }
 let chFilter='';
 /* ---------- ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד ---------- */
-let LEDGER=null, ledSrc=null, ledFail=false, ledMon=null;
+let LEDGER=null, ledSrc=null, ledFail=false, ledNoCat=false, ledMon=null;
 // שמות קריאים למקורות, בלי לאחד ביניהם — הוא ביקש לראות כל אחד לחוד
 const SRCLBL={'Banquest 01-08-2026':'💳 בנק ווסט','Authorize 01-08-2026':'💳 אוטרייז',
   'Authorize 07-2026':'💳 אוטרייז (יולי)','Authorize אונליין':'💳 אוטרייז — מהאתר (חי)',
@@ -2858,9 +2850,12 @@ async function renderLedger(){
   if(!LEDGER){ try{ LEDGER=await api('GET','/api/ledger?since=2026-01-01'); }catch(e){ LEDGER={groups:[]}; } }
   const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
   const L=LEDGER;
+  const nc=noCatList(), ncs=nc.reduce((s,o)=>s+amtNum(o.x.amount),0);
   box.innerHTML=`<div class="ledtot">
       <div class="ledbig"><span>💰 נכנס מאז ינואר</span><b>${f(L.total)}</b><small>${L.n} חיובים</small></div>
-      <button class="ledbig bad" id="ledfail"><span>🔴 לא עבר</span><b>${f(L.bad_total)}</b><small>${L.bad_n} חיובים — לחץ לראות</small></button>
+      <button class="ledbig bad ${ledFail?'on':''}" id="ledfail"><span>🔴 לא עבר</span><b>${f(L.bad_total)}</b><small>${L.bad_n} חיובים — לחץ לראות</small></button>
+      <button class="ledbig what ${ledNoCat?'on':''}" id="lednocat"><span>🎯 בלי ייעוד</span><b>${f(ncs)}</b><small>${nc.length} תרומות — להשלים עבור מה</small></button>
+      <button class="ledbig nocard" id="lednocard"><span>💵 בלי כרטיס</span><b id="depcnt">…</b><small>מפקידים לשייך או לפתוח כרטיס</small></button>
     </div>
     <div class="ledlist">${(L.groups||[]).map(g=>`<button class="ledrow ${ledSrc===g.src?'on':''}" data-s="${esc(g.src)}">
       <div class="ledn">${esc(srcLabel(g.src))}</div>
@@ -2869,12 +2864,18 @@ async function renderLedger(){
       <b>${f(g.total)}</b></button>`).join('')}</div>
     <div id="leddet"></div>`;
   box.querySelectorAll('.ledrow').forEach(b=>b.onclick=()=>{
-    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledMon=null; ledDetail();});
-  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledMon=null; ledDetail();};
+    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledNoCat=false; ledMon=null; renderLedger();});
+  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledNoCat=false; ledMon=null; renderLedger();};
+  document.getElementById('lednocat').onclick=()=>{ledNoCat=!ledNoCat; ledSrc=null; ledFail=false; ledMon=null; WFLIM=40; renderLedger();};
+  document.getElementById('lednocard').onclick=()=>{flt='deposits'; DEPS=null; depOpen=null; tab='donors'; render();};
+  // מספר המפקידים שאין להם כרטיס — נטען ברקע כדי לא לעכב את המסך
+  api('GET','/api/deposits').then(r=>{const e=document.getElementById('depcnt');
+    if(e&&r)e.textContent=((r.names||0)+(r.cards||0));}).catch(()=>{});
   ledDetail();
 }
 async function ledDetail(){
   const el=document.getElementById('leddet'); if(!el)return;
+  if(ledNoCat){ whatForBox(el); return; }
   if(!ledSrc&&!ledFail){ el.innerHTML=''; document.querySelectorAll('.ledrow').forEach(b=>b.classList.remove('on')); return; }
   document.querySelectorAll('.ledrow').forEach(b=>b.classList.toggle('on',b.dataset.s===ledSrc));
   el.innerHTML='<div class="cnt">טוען…</div>';
@@ -4592,7 +4593,7 @@ async function renderDeposits(){
       <button class="dtab ${isBank?'on':''}" data-kind="bank">🏦 בנק — צ'ייס / זל <b>${DEPS.names||0}</b></button>
       <button class="dtab ${isBank?'':'on'}" data-kind="card">💳 אשראי <b>${DEPS.cards||0}</b></button></div>
     <div class="avstat">💵 <b>${kind.length}</b> שמות · <b>${kind.reduce((s,x)=>s+x.n,0)}</b> ${isBank?'הפקדות':'חיובים'} · <b>${f(kind.reduce((s,x)=>s+x.total,0))}</b>${rows.length!==kind.length?` · מוצגים ${rows.length}`:''}</div>
-    <button class="btn ghost" id="depback" style="margin:8px 2px">→ חזרה לתורמים</button>
+    <button class="btn ghost" id="depback" style="margin:8px 2px">→ חזרה לחיובים</button>
     <div class="list">${rows.map(x=>`<div class="depcard" data-k="${esc(x.key)}">
       <div class="depnm" dir="ltr">${esc(x.name)}</div>
       <div class="depmeta">${x.n} ${x.n===1?'הפקדה':'הפקדות'} · <b>${f(x.total)}</b>${x.dates.length?(' · '+esc(x.dates[0])+(x.dates.length>1?(' – '+esc(x.dates[x.dates.length-1])):'')):''}${x.src?(' · '+esc(x.src)):''}</div>
@@ -4605,7 +4606,7 @@ async function renderDeposits(){
         <input class="dep_q" data-k="${esc(x.key)}" placeholder="חפש תורם קיים…" autocomplete="off">
         <div class="dpres dep_res" data-k="${esc(x.key)}"></div></div>`:''}
     </div>`).join('')||'<div class="empty">אין הפקדות שממתינות לזיהוי 🎉</div>'}</div>`;
-  document.getElementById('depback').onclick=()=>{flt='';render();};
+  document.getElementById('depback').onclick=()=>{flt='';tab='charges';render();};
   view.querySelectorAll('.dtab').forEach(b=>b.onclick=()=>{
     depKind=b.dataset.kind; depOpen=null; renderDeposits();});
   const rec=k=>all.find(x=>x.key===k);

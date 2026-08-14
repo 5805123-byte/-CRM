@@ -3218,106 +3218,28 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
-    # מפקיד פרטי שהכסף שלו נכנס בפועל ואין לו כרטיס בכלל — נפתח לו כרטיס,
-    # אחרת הכסף נשאר תלוי במסך ההפקדות ולא נספר אצל אף אחד (כמו בריינה בנדל).
-    # רק שמות של אנשים; עסקים, קרנות ושורות בנק טכניות נשארים לשיוך ידני.
+    # כרטיס נפתח רק באישור של מאיר, לא לבד. הכרטיסים שנפתחו אוטומטית
+    # למפקידים בלי כרטיס נסגרים, וההפקדות חוזרות לרשימה "הפקדות שלא זוהו"
+    # שם מאיר משייך לתורם קיים או מאשר לפתוח כרטיס חדש.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='opencard_pending_v1'").fetchone():
-            apply_name_map(con)              # קודם כל מה שמאיר כבר שייך בעצמו
-            try:
-                import gmail_intake as _gi
-            except Exception:
-                _gi = None
-            BIZ = ('llc', 'inc', 'corp', 'corporation', 'fund', 'foundation', 'company',
-                   'ltd', 'trust', 'group', 'associates', 'holdings', 'enterprises',
-                   'deposit', 'transfer', 'online', 'chk', 'account', 'dba', 'charity',
-                   'charities', 'org', 'organization', 'services', 'realty', 'capital')
-
-            def _lat(s):
-                return [w for w in re.split(r"[^A-Za-z']+", s or '') if len(w) > 1]
-
-            def _wset(*parts):
-                """מפתח שם בלי תלות בסדר המילים — 'בן שמואל יעקב' = 'יעקב בן שמואל'."""
-                out = set()
-                for p in parts:
-                    for w in re.split(r'[\s\-׳\'"]+', str(p or '')):
-                        k = _fz(w)
-                        if k:
-                            out.add(k)
-                return frozenset(out)
-            byw, byen = {}, {}
-            for d in con.execute("SELECT id,last,first,english,business FROM donors"):
-                k = _wset(d['last'], d['first'])
-                if k:
-                    byw.setdefault(k, set()).add(d['id'])
-                for s in (d['english'], d['business']):
-                    e = ' '.join(sorted(w.lower() for w in _lat(s)))
-                    if len(e) >= 6:
-                        byen.setdefault(e, set()).add(d['id'])
-            try:
-                ign = {r['src'] for r in con.execute(
-                    "SELECT src FROM name_map WHERE ignored=1")}
-            except Exception:
-                ign = set()
-            try:
-                gone = {r['key'] for r in con.execute("SELECT key FROM deleted_donors")}
-            except Exception:
-                gone = set()
-            grp = {}
-            for r in con.execute("SELECT tid,first,last,phone,email,addr,city,state,zip "
-                                 "FROM recon WHERE COALESCE(processed,0)=0 "
-                                 "AND donor_id IS NULL AND status='settled'"):
-                f, l = (r['first'] or '').strip(), (r['last'] or '').strip()
-                if not f or not l or not _lat(f) or not _lat(l):
-                    continue
-                low = (f + ' ' + l).lower()
-                if any(w in BIZ for w in re.split(r"[^a-z]+", low)):
-                    continue
-                if {_nkey(f + ' ' + l), _nkey(l + ' ' + f)} & ign:
-                    continue
-                grp.setdefault((f.title(), l.title()), []).append(r)
-            made = tied = 0
-            for (f, l), rs in grp.items():
-                did = None
-                en = ' '.join(sorted(w.lower() for w in _lat(f + ' ' + l)))
-                hit = byen.get(en)
-                if hit and len(hit) == 1:
-                    did = list(hit)[0]
-                hl = hf = ''
-                if _gi:
-                    for jy in (False, True):
-                        hl, hf = _he_alt(_gi, l, jy), _he_alt(_gi, f, jy)
-                        h = byw.get(_wset(hl, hf))
-                        if h and len(h) == 1 and not did:
-                            did = list(h)[0]
-                        if did:
-                            break
-                if not did:
-                    if not hl:
-                        continue                 # בלי תעתיק אין שם עברי לכרטיס
-                    if _dkey(hl, hf) in gone:
-                        continue                 # כרטיס שמאיר מחק — לא נפתח שוב
-                    src = rs[0]
-                    cur = con.execute(
-                        "INSERT INTO donors(last,first,english,phone,email,addr,city,"
-                        "region,zip,created,source,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (hl, hf, (f + ' ' + l).strip(), src['phone'] or '', src['email'] or '',
-                         src['addr'] or '', src['city'] or '', src['state'] or '',
-                         src['zip'] or '', datetime.date.today().isoformat(),
-                         'הפקדה בלי כרטיס',
-                         'נפתח אוטומטית מהפקדה שנכנסה — כדאי לוודא את השם והפרטים'))
-                    did = cur.lastrowid
-                    byw.setdefault(_wset(hl, hf), set()).add(did)
-                    made += 1
-                for r in rs:
-                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
-                    tied += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('opencard_pending_v1')")
-            if made or tied:
-                print('  מפקידים בלי כרטיס: נפתחו %d כרטיסים · שויכו %d הפקדות'
-                      % (made, tied))
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='opencard_undo_v1'").fetchone():
+            ids = [r['id'] for r in con.execute(
+                "SELECT id FROM donors WHERE source='הפקדה בלי כרטיס'")]
+            for did in ids:
+                con.execute("UPDATE recon SET donor_id=NULL, processed=0 WHERE donor_id=?", (did,))
+                for t in ('donations', 'pledges', 'parnes', 'prayers', 'contacts_log',
+                          'tasks', 'partners', 'transactions', 'building', 'donor_rules',
+                          'avreich_log', 'sugg_reject', 'addr_reject'):
+                    try:
+                        con.execute("DELETE FROM %s WHERE donor_id=?" % t, (did,))
+                    except Exception:
+                        pass
+                con.execute("DELETE FROM donors WHERE id=?", (did,))
+            con.execute("INSERT INTO seed_flags(name) VALUES('opencard_undo_v1')")
+            if ids:
+                print('  כרטיסים שנפתחו אוטומטית ונסגרו: %d' % len(ids))
     except Exception as ex:
-        print('  open card error:', ex)
+        print('  open card undo error:', ex)
 
     # כסף שנכנס חייב להופיע בכרטיס התורם — גם אם עדיין לא ידוע עבור מה.
     # עד היום חיוב כזה חיכה ב"ממתין לטיפול" ולא נספר בכלל, ומאיר צדק שזה
