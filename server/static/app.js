@@ -1792,7 +1792,7 @@ function cardDetails(d,body){
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
-      <label class="fld"><span>סכום קבוע</span><input id="f_amount" value="${esc(d.amount)}" inputmode="decimal"></label></div>
+      <label class="fld"><span>סכום קבוע <button class="curbtn" id="f_cur" type="button" title="לחץ להחלפת מטבע">${d.region==='il'?'🇮🇱 ₪':'🇺🇸 $'}</button></span><input id="f_amount" value="${esc(d.amount)}" inputmode="decimal"></label></div>
     ${hasFreq(d)?`<div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
       <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>`
     :`<label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>`}
@@ -1875,6 +1875,12 @@ function cardDetails(d,body){
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
   wireIzSum(body.querySelector('.izsum'), d);
+  const fcur=document.getElementById('f_cur');
+  if(fcur)fcur.onclick=async e=>{ e.preventDefault();
+    d.region=(d.region==='il')?'':'il';
+    await api('PUT','/api/donor/'+d.id,{region:d.region});
+    toast(d.region==='il'?'שקלים ₪ ✓':'דולרים $ ✓');
+    cardDetails(d,body); if(tab==='donors')renderDonors();};
   const dgo=document.getElementById('debtgo'), ddt=document.getElementById('debtdet');
   if(dgo)dgo.onclick=()=>{DEBTOPEN=!DEBTOPEN; ddt.classList.toggle('hidden',!DEBTOPEN);
     document.querySelector('#debtline .debtcue').textContent=DEBTOPEN?'▲':'▼ ממה?';};
