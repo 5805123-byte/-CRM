@@ -912,6 +912,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 function render(){
   chips.innerHTML='';
   if(tab==='donors'){
+    if(flt==='whatfor')return renderWhatFor();
     if(flt==='addrfix')return renderAddrFix();
     if(flt==='noaddr')return renderNoAddr();
     if(flt==='nophone')return renderNoPhone();
@@ -1005,8 +1006,10 @@ function renderDonors(){
   const ndup=findDupes().length;
   const nafix=DB.filter(addrIssue).length;
   const nanone=DB.filter(d=>!(d.addr||'').trim()).length;
+  const nwf=noCatList().length;
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
     ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
+    ${nwf?`<button class="btn kvmissbtn" id="whatForBtn" style="background:var(--accent);border-color:var(--accent)">🎯 תרומות בלי ייעוד — ${nwf}</button>`:''}
     ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
     ${nanone?`<button class="btn kvmissbtn" id="noAddrBtn">🏠 בלי כתובת בכלל — ${nanone}</button>`:''}
     ${DB.filter(d=>!(d.phone||'').trim()).length?`<button class="btn kvmissbtn" id="noPhoneBtn" style="background:var(--yes);border-color:var(--yes)">📞 השלמת טלפונים — ${DB.filter(d=>!(d.phone||'').trim()).length} בלי טלפון</button>`:''}
@@ -1036,6 +1039,7 @@ function renderDonors(){
   const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;DLIM=60;render();};
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
+  const wfb=document.getElementById('whatForBtn'); if(wfb)wfb.onclick=()=>{flt='whatfor';WFLIM=40;render();};
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
   const npb=document.getElementById('noPhoneBtn'); if(npb)npb.onclick=()=>{flt='nophone';NOPHONE=null;NPLIM=15;render();};
@@ -1231,6 +1235,49 @@ async function renderNoAddr(){
     toast('הכתובת נשמרה ✓');
     await load(); render();
   });
+}
+/* ---------- 🎯 טיפול: תרומות שנכנסו בלי "עבור מה" ---------- */
+// הכסף כבר בכרטיס התורם; כאן רק משלימים את הייעוד, במקום אחד מרוכז.
+let WFLIM=40;
+function noCatList(){
+  const out=[];
+  DB.forEach(d=>(d.donations||[]).forEach(x=>{
+    if(!String(x.category||'').trim())out.push({d,x});}));
+  out.sort((a,b)=>String(b.x.date||'').localeCompare(String(a.x.date||'')));
+  return out;
+}
+function renderWhatFor(){
+  chips.innerHTML='';
+  let list=noCatList().filter(o=>matchQ(o.d.last+' '+o.d.first+' '+(o.d.english||'')+' '+(o.x.amount||'')));
+  const tot=list.reduce((s,o)=>s+amtNum(o.x.amount),0);
+  view.innerHTML=`<button class="back" id="wfback">→ חזרה לתורמים</button>
+    <div class="cnt">🎯 בלי ייעוד: ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}</div>
+    <div class="hintxt">הכסף כבר רשום אצל התורם. כאן רק בוחרים עבור מה, ולוחצים 💾 שמור.</div>
+    <div class="list">${list.slice(0,WFLIM).map(o=>`<div class="wfrow" data-id="${o.x.id}">
+      <div class="wfhead"><b class="avnamelink" data-id="${o.d.id}">${esc((o.d.last+' '+o.d.first).trim())}</b>
+        <span class="wfamt">${curSym(o.d)}${esc(o.x.amount)}</span>
+        <span class="dnmeta">${o.x.date?esc(gregLabel(o.x.date)):''}${o.x.method?(' · '+esc(chLabel(o.x.method))):''}</span></div>
+      <div class="wfact"><select class="wfcat" data-id="${o.x.id}">${dnCatOpts('')}</select>
+        <button class="btn sm wfsave" data-id="${o.x.id}">💾 שמור</button></div>
+      <div class="addrow hidden" data-wfnew="${o.x.id}"><input class="wfnew" placeholder="שם הייעוד החדש…"></div>
+    </div>`).join('')||'<div class="empty">🎉 לכל התרומות יש ייעוד</div>'}</div>
+    ${list.length>WFLIM?`<button class="btn ghost" id="wfmore" style="width:100%;margin:8px 2px">עוד — מציג ${WFLIM} מתוך ${list.length}</button>`:''}`;
+  document.getElementById('wfback').onclick=()=>{flt='';render();};
+  const mb=document.getElementById('wfmore'); if(mb)mb.onclick=()=>{WFLIM+=40;renderWhatFor();};
+  view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+  view.querySelectorAll('.wfcat').forEach(s=>s.onchange=()=>{
+    const nb=view.querySelector('[data-wfnew="'+s.dataset.id+'"]');
+    if(nb){nb.classList.toggle('hidden',s.value!=='__new__'); if(s.value==='__new__')nb.querySelector('.wfnew').focus();}});
+  view.querySelectorAll('.wfsave').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.id, row=view.querySelector('.wfrow[data-id="'+id+'"]');
+    let cat=row.querySelector('.wfcat').value.trim();
+    if(cat==='__new__')cat=(row.querySelector('.wfnew')||{value:''}).value.trim();
+    if(!cat){toast('בחר עבור מה');return;}
+    const o=noCatList().find(z=>String(z.x.id)===String(id)); if(!o)return;
+    o.x.category=cat;
+    await api('PUT','/api/donation/'+id,{category:cat});
+    if(!(CAMPAIGNS||[]).includes(cat)&&!DNBASE.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
+    toast('נשמר ✓ '+cat); renderWhatFor();});
 }
 function renderAddrFix(){
   chips.innerHTML='';

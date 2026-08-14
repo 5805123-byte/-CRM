@@ -3218,6 +3218,146 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # מפקיד פרטי שהכסף שלו נכנס בפועל ואין לו כרטיס בכלל — נפתח לו כרטיס,
+    # אחרת הכסף נשאר תלוי במסך ההפקדות ולא נספר אצל אף אחד (כמו בריינה בנדל).
+    # רק שמות של אנשים; עסקים, קרנות ושורות בנק טכניות נשארים לשיוך ידני.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='opencard_pending_v1'").fetchone():
+            apply_name_map(con)              # קודם כל מה שמאיר כבר שייך בעצמו
+            try:
+                import gmail_intake as _gi
+            except Exception:
+                _gi = None
+            BIZ = ('llc', 'inc', 'corp', 'corporation', 'fund', 'foundation', 'company',
+                   'ltd', 'trust', 'group', 'associates', 'holdings', 'enterprises',
+                   'deposit', 'transfer', 'online', 'chk', 'account', 'dba', 'charity',
+                   'charities', 'org', 'organization', 'services', 'realty', 'capital')
+
+            def _lat(s):
+                return [w for w in re.split(r"[^A-Za-z']+", s or '') if len(w) > 1]
+
+            def _wset(*parts):
+                """מפתח שם בלי תלות בסדר המילים — 'בן שמואל יעקב' = 'יעקב בן שמואל'."""
+                out = set()
+                for p in parts:
+                    for w in re.split(r'[\s\-׳\'"]+', str(p or '')):
+                        k = _fz(w)
+                        if k:
+                            out.add(k)
+                return frozenset(out)
+            byw, byen = {}, {}
+            for d in con.execute("SELECT id,last,first,english,business FROM donors"):
+                k = _wset(d['last'], d['first'])
+                if k:
+                    byw.setdefault(k, set()).add(d['id'])
+                for s in (d['english'], d['business']):
+                    e = ' '.join(sorted(w.lower() for w in _lat(s)))
+                    if len(e) >= 6:
+                        byen.setdefault(e, set()).add(d['id'])
+            try:
+                ign = {r['src'] for r in con.execute(
+                    "SELECT src FROM name_map WHERE ignored=1")}
+            except Exception:
+                ign = set()
+            try:
+                gone = {r['key'] for r in con.execute("SELECT key FROM deleted_donors")}
+            except Exception:
+                gone = set()
+            grp = {}
+            for r in con.execute("SELECT tid,first,last,phone,email,addr,city,state,zip "
+                                 "FROM recon WHERE COALESCE(processed,0)=0 "
+                                 "AND donor_id IS NULL AND status='settled'"):
+                f, l = (r['first'] or '').strip(), (r['last'] or '').strip()
+                if not f or not l or not _lat(f) or not _lat(l):
+                    continue
+                low = (f + ' ' + l).lower()
+                if any(w in BIZ for w in re.split(r"[^a-z]+", low)):
+                    continue
+                if {_nkey(f + ' ' + l), _nkey(l + ' ' + f)} & ign:
+                    continue
+                grp.setdefault((f.title(), l.title()), []).append(r)
+            made = tied = 0
+            for (f, l), rs in grp.items():
+                did = None
+                en = ' '.join(sorted(w.lower() for w in _lat(f + ' ' + l)))
+                hit = byen.get(en)
+                if hit and len(hit) == 1:
+                    did = list(hit)[0]
+                hl = hf = ''
+                if _gi:
+                    for jy in (False, True):
+                        hl, hf = _he_alt(_gi, l, jy), _he_alt(_gi, f, jy)
+                        h = byw.get(_wset(hl, hf))
+                        if h and len(h) == 1 and not did:
+                            did = list(h)[0]
+                        if did:
+                            break
+                if not did:
+                    if not hl:
+                        continue                 # בלי תעתיק אין שם עברי לכרטיס
+                    if _dkey(hl, hf) in gone:
+                        continue                 # כרטיס שמאיר מחק — לא נפתח שוב
+                    src = rs[0]
+                    cur = con.execute(
+                        "INSERT INTO donors(last,first,english,phone,email,addr,city,"
+                        "region,zip,created,source,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (hl, hf, (f + ' ' + l).strip(), src['phone'] or '', src['email'] or '',
+                         src['addr'] or '', src['city'] or '', src['state'] or '',
+                         src['zip'] or '', datetime.date.today().isoformat(),
+                         'הפקדה בלי כרטיס',
+                         'נפתח אוטומטית מהפקדה שנכנסה — כדאי לוודא את השם והפרטים'))
+                    did = cur.lastrowid
+                    byw.setdefault(_wset(hl, hf), set()).add(did)
+                    made += 1
+                for r in rs:
+                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
+                    tied += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('opencard_pending_v1')")
+            if made or tied:
+                print('  מפקידים בלי כרטיס: נפתחו %d כרטיסים · שויכו %d הפקדות'
+                      % (made, tied))
+    except Exception as ex:
+        print('  open card error:', ex)
+
+    # כסף שנכנס חייב להופיע בכרטיס התורם — גם אם עדיין לא ידוע עבור מה.
+    # עד היום חיוב כזה חיכה ב"ממתין לטיפול" ולא נספר בכלל, ומאיר צדק שזה
+    # הפוך: קודם רואים את הכסף, והייעוד הוא סימון משני שאפשר להשלים אחר כך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='post_pending_v1'").fetchone():
+            SRCLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז'}
+            n = 0
+            for r in con.execute("SELECT tid,donor_id,amount,date,source,category,recurring "
+                                 "FROM recon WHERE donor_id IS NOT NULL AND COALESCE(processed,0)=0 "
+                                 "AND (status IS NULL OR status='settled')"):
+                iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+                if not iso:
+                    continue
+                try:
+                    amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
+                except Exception:
+                    continue
+                if amt <= 0:
+                    continue
+                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
+                               "AND CAST(amount AS REAL)=?", (r['donor_id'], iso, amt)).fetchone():
+                    con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+                    continue
+                src = r['source'] or ''
+                meth = next((v for k, v in SRCLBL.items() if src.startswith(k)), src)
+                cat = (r['category'] or '').strip()
+                note = 'נכנס מ' + (meth or 'ייבוא')
+                if not cat:
+                    note += ' · לא סווג — לבדוק עבור מה'
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) "
+                            "VALUES(?,?,?,?,?,?)",
+                            (r['donor_id'], iso, '%.2f' % amt, cat, meth, note))
+                con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('post_pending_v1')")
+            if n:
+                print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
+    except Exception as ex:
+        print('  post pending error:', ex)
     # זאב לאם הוא Steven Lamm — כך הוא רשום באנשי הקשר, עם אותו טלפון
     # (917-701-7148) שבכרטיס. אסתר לאם היא אדם אחר לגמרי, והשם האנגלי שלו
     # נדבק לכרטיס שלה בטעות בייבוא. חמשת התשלומים בקובץ הצ׳קים/דונרס נרשמו
