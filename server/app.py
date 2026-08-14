@@ -3218,6 +3218,47 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # זאב לאם הוא Steven Lamm — כך הוא רשום באנשי הקשר, עם אותו טלפון
+    # (917-701-7148) שבכרטיס. אסתר לאם היא אדם אחר לגמרי, והשם האנגלי שלו
+    # נדבק לכרטיס שלה בטעות בייבוא. חמשת התשלומים בקובץ הצ׳קים/דונרס נרשמו
+    # על "Lamm, Steven" ולכן מעולם לא הגיעו לכרטיס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lamm_steven_v1'").fetchone():
+            z = con.execute("SELECT id FROM donors WHERE last='לאם' AND first='זאב'").fetchone()
+            e2 = con.execute("SELECT id FROM donors WHERE last='לאם' AND first='אסתר'").fetchone()
+            if z:
+                con.execute("UPDATE donors SET english='Steven Lamm' WHERE id=? "
+                            "AND COALESCE(TRIM(english),'')=''", (z['id'],))
+                con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''",
+                            ('stevenlamm@yahoo.com / slamm@goldentree.com / stevenlamm1@gmail.com',
+                             z['id']))
+                con.execute("UPDATE donors SET addr='1233 E 35 St', city='Brooklyn' "
+                            "WHERE id=? AND COALESCE(TRIM(addr),'')=''", (z['id'],))
+                PAY = [('2026-01-07', '12000', 'דונרס', ''),
+                       ('2026-02-10', '1500', "צ'ק", 'הכנסת כלה — הרב קוריץ'),
+                       ('2026-03-04', '360', 'דונרס', ''),
+                       ('2026-03-26', '1100', "צ'ק", ''),
+                       ('2026-06-11', '1800', 'דונרס', 'הכנסת כלה')]
+                n = 0
+                for dt, amt, meth, cat in PAY:
+                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
+                                   "AND CAST(amount AS REAL)=?",
+                                   (z['id'], dt, float(amt))).fetchone():
+                        continue
+                    note = 'Lamm, Steven — מקובץ הצ׳קים/דונרס'
+                    if not cat:
+                        note += ' · לא סווג — לבדוק עבור מה'
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) "
+                                "VALUES(?,?,?,?,?,?)", (z['id'], dt, amt, cat, meth, note))
+                    n += 1
+                if n:
+                    print('  זאב לאם = Steven Lamm: נוספו %d תשלומים' % n)
+            if e2:      # השם האנגלי של זאב שנדבק לכרטיס של אסתר
+                con.execute("UPDATE donors SET english='' WHERE id=? "
+                            "AND lower(TRIM(english))='steven lamm'", (e2['id'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('lamm_steven_v1')")
+    except Exception as ex:
+        print('  lamm steven error:', ex)
     # כתובת שנגמרת במספר תלוש ("1241 E 28th St 4626") — הכלל הזה חדש, ולכן
     # כתובות שאושרו קודם כ"תקין" נבדקות שוב פעם אחת. אי אפשר לשלוח לשם דואר.
     try:
