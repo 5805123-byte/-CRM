@@ -3224,7 +3224,7 @@ def ensure_schema():
     try:
         mp = os.path.join(HERE, 'iz_certs_map.json')
         pdfp = os.path.join(HERE, 'iz_certs.pdf')
-        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v6'").fetchone()
+        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v8'").fetchone()
                 and os.path.exists(mp) and os.path.exists(pdfp)):
             try:
                 from pypdf import PdfReader, PdfWriter
@@ -3259,8 +3259,19 @@ def ensure_schema():
                 # אם נשארה תעודה שלא מצאה כרטיס (למשל שני כרטיסים באותו שם) —
                 # לא נועלים, כדי שתיתלה לבד אחרי שהכרטיסים יאוחדו
                 if not nmiss:
-                    con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v6')")
+                    con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v8')")
                 print('  תעודות יששכר־זבולון: צורפו %d · לא זוהה כרטיס ל-%d' % (nadd, nmiss))
+                # תזכורת ממוקדת — רק אצל מי שמאיר ביקש, לא אצל כולם
+                for x in mm.get('reminders', []):
+                    ids = by.get((_fz(x['last']), _fz(x['first'])), [])
+                    if len(ids) != 1:
+                        continue
+                    if con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='cert'",
+                                   (ids[0],)).fetchone():
+                        continue
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) "
+                                "VALUES(?,?,'cert',?,'')",
+                                (ids[0], today_iso(), x.get('note') or 'לבדוק אם קיבל את התעודה'))
     except Exception as e:
         print('  שגיאת תעודות יששכר־זבולון:', e)
     con.commit(); con.close()
