@@ -1661,6 +1661,44 @@ function wireSplit(d,body,redraw){
     await api('POST','/api/paysplit',{delete:1,id:+b.dataset.id});
     toast('בוטל ✓'); await load(); redraw();});
 }
+/* ---------- כמה התורם חייב — סיכום אחד, מפורט ---------- */
+// כל מקור חוב בשורה נפרדת, כדי שיהיה ברור מאיפה הסכום מגיע ואפשר לבדוק אותו.
+function debtSummary(d){
+  const cur=curSym(d), rows=[];
+  const iz=izSummary(d);
+  const izDebt=(iz.manual!=null)?iz.manual:(iz.thru.length?iz.thruDebt:(iz.hasPay?iz.debt:0));
+  if(izDebt>0.5)rows.push({t:'🤝 יששכר־זבולון',v:izDebt,
+    s:iz.manual!=null?'עודכן ידנית':(iz.thru.length?'לפי "שולם עד חודש"':
+      (iz.span+' חודשים × '+cur+Math.round(iz.monthly)+' פחות ששולם'))});
+  // חודשים שלא נגבו אצל תורם קבוע
+  const gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
+  if(gc.length&&fx>0)rows.push({t:'🔴 חודשים שלא עברו',v:gc.length*fx,
+    s:gc.length+' חודשים × '+cur+Math.round(fx)+' · '+gc.map(i=>MON[i]).join(', ')});
+  // ימי פרנס שטרם נגבו
+  const pn=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
+  const pnSum=pn.reduce((s2,p)=>s2+amtNum(p.amount),0);
+  if(pnSum>0.5)rows.push({t:'🌙 ימי פרנס שטרם נגבו',v:pnSum,
+    s:pn.map(p=>(DAYKIND[p.kind]||'')+' '+(p.date_text||'')).join(' · ')});
+  // חיובים שנדחו ולא נגבו עד היום
+  const dec=(d.declined||[]).filter(x=>!+x.covered);
+  const decSum=dec.reduce((s2,x)=>s2+amtNum(x.amount),0);
+  if(decSum>0.5)rows.push({t:'💳 חיובים שלא נגבו',v:decSum,s:dec.length+' חיובים שנדחו ולא חזרו'});
+  // התחייבויות פתוחות
+  const pl=(d.pledges||[]).filter(p=>p.status!=='נתן'&&!+p.monthly&&amtNum(p.amount)>0);
+  const plSum=pl.reduce((s2,p)=>s2+amtNum(p.amount),0);
+  if(plSum>0.5)rows.push({t:'📝 התחייבויות שטרם ניתנו',v:plSum,
+    s:pl.map(p=>p.category||'התחייבות').join(' · ')});
+  return {rows,total:rows.reduce((s2,r)=>s2+r.v,0),cur};
+}
+function debtHTML(d){
+  const x=debtSummary(d);
+  const f=n=>x.cur+Math.round(n).toLocaleString('en-US');
+  if(!x.rows.length)return `<div class="debtsum ok"><div class="debtsum-t">💰 כמה הוא חייב</div>
+    <div class="debtnone">🟢 אין חוב פתוח</div></div>`;
+  return `<div class="debtsum"><div class="debtsum-t">💰 כמה הוא חייב</div>
+    ${x.rows.map(r=>`<div class="dsrow"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+    <div class="dsrow tot"><span>סה"כ חייב</span><b>${f(x.total)}</b></div></div>`;
+}
 function catTotalsHTML(d){
   const cur=curSym(d), m={};
   const add=(c,amt,dt)=>{
@@ -1740,6 +1778,7 @@ function cardDetails(d,body){
       ${gc?`<div class="npmonths">${gaps(d.months,d).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
       <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
+    ${debtHTML(d)}
     ${declinedHTML(d)}
     ${splitHTML(d)}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';

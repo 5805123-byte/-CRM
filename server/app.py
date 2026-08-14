@@ -3949,6 +3949,12 @@ _CERT_CFG = {
     'breakfast': {'bg': 'letterhead-coffee.jpg', 'box': (0.09, 0.24, 0.91, 0.79)},
 }
 _CERT_SMALL = re.compile(r'^(בן|בת|ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|נ["\'״׳]י)$')
+# היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
+# ושם האם יקבלו את הדגש החזק ביותר בתעודה.
+_CERT_REQ = re.compile(
+    r'^(ו?ל)(רפוא\w*|הצלח\w*|זיווג\w*|זרע\w*|פרנס\w*|ישוע\w*|ברכ\w*|נחת|חיים|בני\w*|'
+    r'שלום|עילוי|זכר|כל|אריכ\w*|בריא\w*|שנה|כפרת|הרחב\w*|מזל|שידוך|בן|בת)$'
+    r'|^(לע["\'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$')
 _DEEP = (0x6a, 0x14, 0x14)
 _BLACK = (0, 0, 0)
 _INK = (0x1c, 0x17, 0x10)
@@ -4004,36 +4010,49 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                   (names, 2.3, True, _BLACK, .15, .35, 1.14)]
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
-    def runs(line, px, heavy):
-        """מפצל שורה למקטעים — בן/בת/ז״ל קטנים יותר, כמו בתעודה במסך."""
+    def _join(items):
+        """מוסיף רווחים בין המילים, בגודל של המילה שלפניהם."""
         out = []
-        for tok in re.split(r'(\s+)', line):
-            if not tok:
-                continue
-            if tok.isspace():
-                out.append((tok, px, heavy)); continue
-            small = bool(_CERT_SMALL.match(tok))
-            out.append((tok, px * .5 if small else px, False if small else heavy))
+        for i, it in enumerate(items):
+            if i:
+                out.append((' ', items[i - 1][1], items[i - 1][2]))
+            out.append(it)
+        return out
+
+    def sized(raw, px, heavy):
+        """כל מילה בשורה עם הגודל שלה: השם בגדול, בן/בת קטנים, והבקשה —
+        מהמילה שבה היא מתחילה ועד סוף המשפט — קטנה יותר. הקביעה נעשית פעם
+        אחת על השורה השלמה, כדי שהבקשה תישאר קטנה גם אחרי שבירת שורה."""
+        out, inreq = [], False
+        for w in raw.split():
+            if not inreq and _CERT_REQ.match(w):
+                inreq = True
+            if inreq:
+                out.append((w, px * .45, heavy))
+            elif _CERT_SMALL.match(w):
+                out.append((w, px * .5, False))
+            else:
+                out.append((w, px, heavy))
         return out
 
     def wrap(text, px, heavy, dr):
         """שבירת שורות לרוחב התיבה, תוך שמירה על שורות שנכתבו במפורש."""
         lines = []
         for raw in str(text).split('\n'):
-            words = raw.split()
-            if not words:
+            ws = sized(raw, px, heavy)
+            if not ws:
                 lines.append([]); continue
             cur = []
-            for w in words:
-                trial = cur + [w]
-                wpx = sum(dr.textlength(t, font=font(s, h)) for t, s, h in
-                          runs(' '.join(trial), px, heavy))
+            for it in ws:
+                trial = cur + [it]
+                wpx = sum(dr.textlength(t, font=font(sz, h)) for t, sz, h in trial)
+                wpx += dr.textlength(' ', font=font(px, heavy)) * (len(trial) - 1)
                 if wpx <= bw or not cur:
                     cur = trial
                 else:
-                    lines.append(runs(' '.join(cur), px, heavy)); cur = [w]
+                    lines.append(_join(cur)); cur = [it]
             if cur:
-                lines.append(runs(' '.join(cur), px, heavy))
+                lines.append(_join(cur))
         return lines
 
     dr = ImageDraw.Draw(im)

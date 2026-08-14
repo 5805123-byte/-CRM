@@ -26,6 +26,8 @@
   .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
   /* כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים */
   .names .nsm,.cnames .nsm{font-size:.5em;font-weight:600}
+  /* הבקשה — קטנה יותר מהשם, כדי שהשמות יבלטו הכי חזק */
+  .names .nreq,.cnames .nreq{font-size:.45em;font-weight:700}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
   .ctitle{font-size:2.5em;font-weight:800;color:var(--deep);width:100%;margin:.1em 0 .25em}
@@ -75,10 +77,16 @@ const KIND = q.get('kind') || 'parnes';
 // ----- כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים (פשוט ואמין, בלי ניחוש שם מול בקשה) -----
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 const SMALLWORD=/^(בן|בת|ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י)$/;
+// מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
+// ושם האם יקבלו את הדגש החזק ביותר
+const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
 function formatName(line){
   const t=(line||'').trim(); if(!t) return '';
+  let req=false;
   return t.split(/(\s+)/).map(tok=>{
     if(/^\s*$/.test(tok)) return tok;
+    if(!req && REQSTART.test(tok)) req=true;
+    if(req) return `<span class="nreq">${esc(tok)}</span>`;
     return SMALLWORD.test(tok) ? `<span class="nsm">${esc(tok)}</span>` : esc(tok);
   }).join('');
 }
