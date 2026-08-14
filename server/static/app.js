@@ -272,6 +272,33 @@ function joinSegs(list){
   }
   return t;
 }
+// הבדיקה מוצגת בתוך החלון ונשארת שם — לא הודעה חולפת שאי אפשר לקרוא
+async function runMicDiag(){
+  const box=document.getElementById('dictdiagbox'); if(!box)return;
+  const g=micDiag();
+  box.innerHTML='<div class="dgbox"><div class="hintxt">בודק…</div></div>';
+  let perm='לא ידוע';
+  try{ const st=await navigator.permissions.query({name:'microphone'});
+    perm={granted:'✅ מאושר',denied:'❌ נחסם',prompt:'❓ עדיין לא נשאלת'}[st.state]||st.state; }catch(e){}
+  let mic='לא נבדק';
+  try{ const st=await navigator.mediaDevices.getUserMedia({audio:true});
+    st.getTracks().forEach(t=>t.stop()); mic='✅ המיקרופון נפתח'; }
+  catch(e){ mic='❌ '+((e&&e.name)||'נכשל'); }
+  const line=(k,v)=>`<div class="dgrow"><span>${k}</span><b>${v}</b></div>`;
+  const advice = !g.api ? 'הדפדפן הזה לא כולל מנוע הכתבה. פתח בכרום.'
+    : mic.indexOf('❌')===0||perm==='❌ נחסם' ? 'המיקרופון חסום לאתר. פתח את הגדרות האתר בדפדפן ואשר מיקרופון.'
+    : g.pwa ? 'זו האפליקציה שהתקנת למסך הבית — באנדרואיד ההכתבה שלה לרוב חסומה. פתח את המערכת בכרום רגיל.'
+    : 'הכל נראה תקין מהצד שלנו. ייתכן שאין חיבור לשרת ההכתבה של גוגל, או שאפליקציה אחרת תופסת את המיקרופון.';
+  box.innerHTML=`<div class="dgbox">
+    ${line('מנוע ההכתבה בדפדפן', g.api?'✅ קיים':'❌ חסר')}
+    ${line('חיבור מאובטח', g.secure?'✅':'❌')}
+    ${line('הרשאת מיקרופון', perm)}
+    ${line('פתיחת מיקרופון בפועל', mic)}
+    ${line('מכשיר', g.ua)}
+    ${line('אפליקציה מותקנת', g.pwa?'⚠️ כן':'לא (דפדפן רגיל)')}
+    <div class="hintxt" style="margin-top:6px"><b>${advice}</b></div>
+    <div class="hintxt">בכל מקרה — הקש על תיבת הטקסט ואז על 🎤 שבמקלדת. זה עובד תמיד.</div></div>`;
+}
 function micDiag(){
   const C=window.SpeechRecognition||window.webkitSpeechRecognition||null;
   const pwa=window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches;
@@ -298,10 +325,8 @@ function startDictation(btn,el){
     setv(fixed.text);
     if(fixed.hits.length)toast('תוקנו שמות: '+fixed.hits.join(', '));
     if(!gotAny){
-      const g=micDiag();
-      toast(!g.secure?'הכתבה עובדת רק בחיבור מאובטח (https)'
-        :(g.pwa?'ההכתבה לא נתמכת באפליקציה המותקנת — פתח את המערכת בדפדפן כרום, או השתמש במיקרופון של המקלדת'
-              :'לא נקלט דיבור — בדוק שהמיקרופון מורשה ושאין אפליקציה אחרת שמשתמשת בו'), 6000);
+      toast('לא נקלט דיבור — הנה מה שנמצא',5000);
+      try{ runMicDiag(); }catch(e){}      // ההסבר נשאר על המסך, לא חולף
     }
     el.dispatchEvent(new Event('change',{bubbles:true}));
     try{el.focus();}catch(e){}
@@ -423,6 +448,7 @@ function openDictPad(){
   const h=dictHist(), auto=localStorage.getItem('kc_dict_noauto')!=='1';
   sh.innerHTML=`<button class="x" id="dictx">✕</button><h2>🎤 הכתבה</h2>
     <div class="hintxt">לחץ "התחל להקליט" ודבר בעברית. בסיום הטקסט מועתק לבד — עבור לצ׳אט והדבק (לחיצה ארוכה → הדבק).</div>
+    <div class="micalt">🎤 <b>לא עובד?</b> הקש על תיבת הטקסט ואז על המיקרופון שבמקלדת — זה עובד תמיד, בכל מכשיר.</div>
     <textarea id="dictpad" class="dictpad" placeholder="כאן ייכתב מה שתאמר…"></textarea>
     <button class="btn dictbig" id="dictgo">🎤 התחל להקליט</button>
     <button class="btn dictbig" id="dictsend" style="background:var(--yes)">📋 העתק להדבקה בצ׳אט</button>
@@ -465,25 +491,7 @@ function openDictPad(){
   }).observe(go,{attributes:true,attributeFilter:['class']});
   document.getElementById('dictadd').onclick=()=>{if(pad.value.trim())pad.value=pad.value.trim()+'\n';pad.focus();};
   // בדיקה שמראה בדיוק מה חוסם את ההכתבה, במקום לנחש
-  document.getElementById('dictdiag').onclick=async()=>{
-    const g=micDiag(); const box=document.getElementById('dictdiagbox');
-    let perm='לא ידוע';
-    try{ const st=await navigator.permissions.query({name:'microphone'});
-      perm={granted:'✅ מאושר',denied:'❌ נחסם',prompt:'❓ עדיין לא נשאלת'}[st.state]||st.state; }catch(e){}
-    let mic='לא נבדק';
-    try{ const st=await navigator.mediaDevices.getUserMedia({audio:true});
-      st.getTracks().forEach(t=>t.stop()); mic='✅ המיקרופון נפתח'; }
-    catch(e){ mic='❌ '+(e&&e.name||'נכשל'); }
-    const line=(k,v)=>`<div class="dgrow"><span>${k}</span><b>${v}</b></div>`;
-    box.innerHTML=`<div class="dgbox">
-      ${line('מנוע ההכתבה בדפדפן', g.api?'✅ קיים':'❌ חסר')}
-      ${line('חיבור מאובטח', g.secure?'✅':'❌')}
-      ${line('הרשאת מיקרופון', perm)}
-      ${line('פתיחת מיקרופון בפועל', mic)}
-      ${line('מכשיר', g.ua)}
-      ${line('אפליקציה מותקנת', g.pwa?'⚠️ כן — כאן ההכתבה לרוב לא עובדת':'לא (דפדפן רגיל)')}
-      <div class="hintxt">${g.pwa?'פתח את המערכת בכרום רגיל, או השתמש בכפתור המיקרופון של המקלדת — הוא עובד בכל מקום.':'צלם את החלון הזה ושלח לי אם ההכתבה עדיין לא עובדת.'}</div>
-    </div>`;};
+  document.getElementById('dictdiag').onclick=()=>runMicDiag();
   document.getElementById('dictclr').onclick=()=>{if(pad.value.trim())dictSave(pad.value.trim());pad.value='';pad.focus();};
   sh.querySelectorAll('.dhsend').forEach(b=>b.onclick=()=>copyTxt(dictHist()[+b.dataset.i].t));
   sh.querySelectorAll('.dhdel').forEach(b=>b.onclick=()=>{
