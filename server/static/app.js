@@ -1672,8 +1672,9 @@ function debtSummary(d){
       (iz.span+' חודשים × '+cur+Math.round(iz.monthly)))});
   // חודשים שלא נגבו אצל תורם קבוע
   const gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
-  if(gc.length&&fx>0)rows.push({t:'עדיין לא שלח',v:gc.length*fx,
-    s:gc.length+' חודשים × '+cur+Math.round(fx)});
+  if(gc.length&&fx>0)rows.push({t:'חודשים שלא נגבו',v:gc.length*fx,
+    s:gc.length+' × '+cur+Math.round(fx),
+    chips:gc.map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')});
   // ימי פרנס שטרם נגבו
   const pn=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
   const pnSum=pn.reduce((s2,p)=>s2+amtNum(p.amount),0);
@@ -1681,10 +1682,12 @@ function debtSummary(d){
   // חיובים שנדחו ולא נגבו עד היום
   const dec=(d.declined||[]).filter(x=>!+x.covered);
   const decSum=dec.reduce((s2,x)=>s2+amtNum(x.amount),0);
-  if(decSum>0.5)rows.push({t:'הכרטיס לא עבר',v:decSum,
-    s:dec.slice(0,4).map(x=>gregLabel(x.date_iso||x.date)+' · '+cur+Math.round(amtNum(x.amount))).join(' · ')
-      +(dec.length>4?(' · ועוד '+(dec.length-4)):''),
-    tip:'שווה להתקשר ולבקש כרטיס מעודכן'});
+  if(decSum>0.5){
+    const dts=dec.map(x=>x.date_iso||x.date).filter(Boolean).sort();
+    rows.push({t:'הכרטיס לא עבר',v:decSum,
+      s:dec.length+' '+(dec.length===1?'חיוב':'חיובים')
+        +(dts.length?(' · '+gregLabel(dts[0])+(dts.length>1?(' – '+gregLabel(dts[dts.length-1])):'')):''),
+      tip:'שווה להתקשר ולבקש כרטיס מעודכן'});}
   // התחייבויות פתוחות
   const pl=(d.pledges||[]).filter(p=>p.status!=='נתן'&&!+p.monthly&&amtNum(p.amount)>0);
   const plSum=pl.reduce((s2,p)=>s2+amtNum(p.amount),0);
@@ -1702,7 +1705,7 @@ function debtHTML(d){
       <button class="debtamt" id="debtgo">${f(x.total)}</button>
       <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span></div>
     <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
-      ${x.rows.map(r=>`<div class="dsrow"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+      ${x.rows.map(r=>`<div class="dsrow"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
     </div>`;
 }
 function catTotalsHTML(d){
@@ -1731,7 +1734,7 @@ function cardDetails(d,body){
   const cl=CATS.includes(d.category||'')?CATS:CATS.concat([d.category]);
   const sel=cl.map(c=>`<option ${c===(d.category||'')?'selected':''} value="${esc(c)}">${esc(catLabel(c))}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
-  const gc=gaps(d.months,d).length, pend=(d.pledges||[]).filter(p=>p.status!=='נתן').length;
+  const gc=gaps(d.months,d).length;
   const dt=donorTotals(d), curd=curSym(d);
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
@@ -1780,9 +1783,6 @@ function cardDetails(d,body){
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
-    ${(gc||pend)?`<div class="notpassed">🔴 לא עבר${gc?(' · '+gc+' '+(gc===1?'חודש':'חודשים')):''}${pend?(' · '+pend+' התחייבויות'):''}
-      ${gc?`<div class="npmonths">${gaps(d.months,d).map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')}</div>
-      <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
     ${debtHTML(d)}
     ${splitHTML(d)}
