@@ -3334,7 +3334,7 @@ def ensure_schema():
     try:
         mp = os.path.join(HERE, 'iz_certs_map.json')
         pdfp = os.path.join(HERE, 'iz_certs.pdf')
-        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v8'").fetchone()
+        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_certs_v10'").fetchone()
                 and os.path.exists(mp) and os.path.exists(pdfp)):
             try:
                 from pypdf import PdfReader, PdfWriter
@@ -3344,6 +3344,35 @@ def ensure_schema():
             if PdfReader:
                 mm = json.load(open(mp, encoding='utf-8'))
                 rd = PdfReader(pdfp)
+                bylast = {}
+                for r in con.execute("SELECT id,last,first FROM donors"):
+                    bylast.setdefault(_fz(r['last']), []).append((r['id'], r['first'] or ''))
+
+                def _find(lastn, firstn):
+                    """התאמה סלחנית: מאיר משנה שמות פרטיים בכרטיסים (משה אלטר
+                    אפרים ← משה, מוטי ← מרדכי), ולכן אחרי התאמה מדויקת מנסים
+                    מילה משותפת בשם הפרטי, ולבסוף שם משפחה יחיד במערכת."""
+                    ex = by.get((_fz(lastn), _fz(firstn)), [])
+                    if len(ex) == 1:
+                        return ex[0]
+                    # מפתח הדמיון מוריד אמות קריאה, ולכן שמות קצרים מתנגשים
+                    # ("הורן" ו"אירני" הופכים שניהם ל"רנ"). בשמות כאלה לא
+                    # מסתמכים על הדמיון בלבד — עדיף תעודה שממתינה מאשר תעודה
+                    # שנתלית אצל האדם הלא נכון.
+                    lk = _fz(lastn)
+                    if len(lk) < 3:
+                        return None
+                    cand = bylast.get(lk, [])
+                    if not cand:
+                        return None
+                    want = {_fz(w) for w in (firstn or '').split() if len(w) > 1}
+                    ov = [i for i, f in cand
+                          if want & {_fz(w) for w in f.split() if len(w) > 1}]
+                    if len(ov) == 1:
+                        return ov[0]
+                    if len(cand) == 1:
+                        return cand[0][0]
+                    return None
                 # תעודות שמאיר ביקש שלא ייכנסו — גם אם נתלו בהרצה קודמת
                 for dp in mm.get('dropped', []):
                     con.execute("DELETE FROM files WHERE kind='iz' AND name=?",
@@ -3353,9 +3382,10 @@ def ensure_schema():
                     by.setdefault((_fz(r['last']), _fz(r['first'])), []).append(r['id'])
                 nadd = nmiss = 0
                 for x in mm.get('map', []):
-                    ids = by.get((_fz(x['last']), _fz(x['first'])), [])
-                    if len(ids) != 1:
+                    did = _find(x['last'], x['first'])
+                    if not did:
                         nmiss += 1; continue
+                    ids = [did]
                     fname = 'תעודת יששכר־זבולון %02d.pdf' % x['page']
                     if con.execute("SELECT 1 FROM files WHERE kind='iz' AND ref_id=? AND name=?",
                                    (ids[0], fname)).fetchone():
@@ -3369,13 +3399,14 @@ def ensure_schema():
                 # אם נשארה תעודה שלא מצאה כרטיס (למשל שני כרטיסים באותו שם) —
                 # לא נועלים, כדי שתיתלה לבד אחרי שהכרטיסים יאוחדו
                 if not nmiss:
-                    con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v8')")
+                    con.execute("INSERT INTO seed_flags(name) VALUES('iz_certs_v10')")
                 print('  תעודות יששכר־זבולון: צורפו %d · לא זוהה כרטיס ל-%d' % (nadd, nmiss))
                 # תזכורת ממוקדת — רק אצל מי שמאיר ביקש, לא אצל כולם
                 for x in mm.get('reminders', []):
-                    ids = by.get((_fz(x['last']), _fz(x['first'])), [])
-                    if len(ids) != 1:
+                    did2 = _find(x['last'], x['first'])
+                    if not did2:
                         continue
+                    ids = [did2]
                     if con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='cert'",
                                    (ids[0],)).fetchone():
                         continue
