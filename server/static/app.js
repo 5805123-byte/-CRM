@@ -159,7 +159,8 @@ function izSummaryHTML(d){
     ${renewBanner(d)}
     ${mainHtml}
     ${recipHtml}
-    ${d.iz_note?`<div class="iznote">📝 ${esc(d.iz_note)}</div>`:''}</div>`;
+    ${d.iz_note?`<div class="iznote">📝 ${esc(d.iz_note)}</div>`:''}
+    ${splitHTML(d)}</div>`;
 }
 const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
@@ -1687,6 +1688,8 @@ function declinedHTML(d){
 }
 function splitHTML(d){
   const rows=(d.paysplit||[]);
+  const hasIz=(d.partners||[]).some(p=>p.active!=0)||d.tier==='יששכר_זבולון';
+  if(!rows.length&&!hasIz)return '';       // בלי יששכר־זבולון — לא מציקים עם זה
   const body=rows.map(s=>{
     const pct=Math.round(s.pct), mine=100-pct;
     const t=s.role==='payer'
@@ -1696,7 +1699,7 @@ function splitHTML(d){
       <button class="del splx" data-id="${s.id}" title="בטל את החלוקה">🗑</button></div>`;}).join('');
   return `<div class="splbox">${body}
     <div class="splitadd ${rows.length?'hidden':''}">
-      <button class="btn sm ghost splnew">🤝 משלם ביחד עם תורם אחר…</button></div>
+      <button class="splmini splnew">🤝 יש שותף בתשלום?</button></div>
     <div class="splform hidden">
       <div class="hintxt">מי עוד מתחלק בסכום שמגיע לבנק על שם <b>${esc(d.last+' '+d.first)}</b>?</div>
       <input class="spl_q" placeholder="חפש תורם…" autocomplete="off">
@@ -1809,7 +1812,8 @@ function cardDetails(d,body){
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
-    ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||''}));
+    ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
+    needthx:needThanks(x),thanked:+x.thanked}));
   gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const GVSHOW=8;                       // מציגים את האחרונות; השאר נפתחות בלחיצה — פחות גלילה
@@ -1817,6 +1821,8 @@ function cardDetails(d,body){
     const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
     const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
     const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
+    const fb=(g.don&&g.needthx)
+      ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
     // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
       <div class="gvlbl">עבור מה ${curd}${g.amt} האלה?</div>
@@ -1839,7 +1845,7 @@ function cardDetails(d,body){
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
       : esc(g.what);
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
-      + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}`
+      + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
       + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}</div></div>`;
   };
   const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>`
@@ -1851,9 +1857,7 @@ function cardDetails(d,body){
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
-    ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
     ${debtHTML(d)}
-    ${splitHTML(d)}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';
       const known=String(d.purpose||'').trim()||(d.pledges||[]).some(p=>+p.monthly)||izSummary(d).monthly>0;
       return `<div class="purpose">🎯 עבור: ${esc(pt)}${known?'':' <small>(לפי התרומות)</small>'}</div>`;})()}
@@ -2231,7 +2235,14 @@ function cardDetails(d,body){
   // שינוי ההתחייבות מחליף גם את מה שרלוונטי להציג (תדירות רק לקבועים)
   const catSel=document.getElementById('f_category');
   if(catSel)catSel.addEventListener('change',()=>setTimeout(()=>cardDetails(d,body),150));
-  const thg=document.getElementById('thxgo');if(thg)thg.onclick=()=>{cardTab='details';renderCard(d);};
+  // כפתור הפידבק על שורת התרומה — אדום עד שקיבל, ירוק אחרי
+  body.querySelectorAll('.fbbtn[data-fb]').forEach(b2=>b2.onclick=async e=>{
+    e.stopPropagation();
+    const x=(d.donations||[]).find(y=>y.id==b2.dataset.fb); if(!x)return;
+    x.thanked=+x.thanked?0:1;
+    await api('PUT','/api/donation/'+x.id,{thanked:x.thanked});
+    toast(x.thanked?'סומן: קיבל פידבק ✓':'סומן: עדיין לא קיבל פידבק');
+    cardDetails(d,body); if(tab==='donors')renderDonors();});
   // סימון חודש שלא עבר — ישירות מהכרטיס
   body.querySelectorAll('.cgchip').forEach(b3=>b3.onclick=async e=>{
     e.stopPropagation(); const i=+b3.dataset.m, prev=d.months;
