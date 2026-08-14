@@ -1667,37 +1667,43 @@ function debtSummary(d){
   const cur=curSym(d), rows=[];
   const iz=izSummary(d);
   const izDebt=(iz.manual!=null)?iz.manual:(iz.thru.length?iz.thruDebt:(iz.hasPay?iz.debt:0));
-  if(izDebt>0.5)rows.push({t:'🤝 יששכר־זבולון',v:izDebt,
+  if(izDebt>0.5)rows.push({t:'יששכר־זבולון',v:izDebt,
     s:iz.manual!=null?'עודכן ידנית':(iz.thru.length?'לפי "שולם עד חודש"':
-      (iz.span+' חודשים × '+cur+Math.round(iz.monthly)+' פחות ששולם'))});
+      (iz.span+' חודשים × '+cur+Math.round(iz.monthly)))});
   // חודשים שלא נגבו אצל תורם קבוע
   const gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
-  if(gc.length&&fx>0)rows.push({t:'🔴 חודשים שלא עברו',v:gc.length*fx,
-    s:gc.length+' חודשים × '+cur+Math.round(fx)+' · '+gc.map(i=>MON[i]).join(', ')});
+  if(gc.length&&fx>0)rows.push({t:'עדיין לא שלח',v:gc.length*fx,
+    s:gc.length+' חודשים × '+cur+Math.round(fx)});
   // ימי פרנס שטרם נגבו
   const pn=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
   const pnSum=pn.reduce((s2,p)=>s2+amtNum(p.amount),0);
-  if(pnSum>0.5)rows.push({t:'🌙 ימי פרנס שטרם נגבו',v:pnSum,
-    s:pn.map(p=>(DAYKIND[p.kind]||'')+' '+(p.date_text||'')).join(' · ')});
+  if(pnSum>0.5)rows.push({t:'ימי פרנס שטרם נגבו',v:pnSum,s:pn.length+' ימים'});
   // חיובים שנדחו ולא נגבו עד היום
   const dec=(d.declined||[]).filter(x=>!+x.covered);
   const decSum=dec.reduce((s2,x)=>s2+amtNum(x.amount),0);
-  if(decSum>0.5)rows.push({t:'💳 חיובים שלא נגבו',v:decSum,s:dec.length+' חיובים שנדחו ולא חזרו'});
+  if(decSum>0.5)rows.push({t:'הכרטיס לא עבר',v:decSum,
+    s:dec.slice(0,4).map(x=>gregLabel(x.date_iso||x.date)+' · '+cur+Math.round(amtNum(x.amount))).join(' · ')
+      +(dec.length>4?(' · ועוד '+(dec.length-4)):''),
+    tip:'שווה להתקשר ולבקש כרטיס מעודכן'});
   // התחייבויות פתוחות
   const pl=(d.pledges||[]).filter(p=>p.status!=='נתן'&&!+p.monthly&&amtNum(p.amount)>0);
   const plSum=pl.reduce((s2,p)=>s2+amtNum(p.amount),0);
-  if(plSum>0.5)rows.push({t:'📝 התחייבויות שטרם ניתנו',v:plSum,
-    s:pl.map(p=>p.category||'התחייבות').join(' · ')});
+  if(plSum>0.5)rows.push({t:'התחייבות שטרם ניתנה',v:plSum,s:pl.length+' התחייבויות'});
   return {rows,total:rows.reduce((s2,r)=>s2+r.v,0),cur};
 }
+// שורה אחת בלבד. הסכום עצמו הוא הקישור — לחיצה פותחת את הפירוט
+// ורואים בדיוק ממה הוא מורכב: מה לא עבר ומה עוד לא נשלח.
+let DEBTOPEN=false;
 function debtHTML(d){
   const x=debtSummary(d);
   const f=n=>x.cur+Math.round(n).toLocaleString('en-US');
-  if(!x.rows.length)return `<div class="debtsum ok"><div class="debtsum-t">💰 כמה הוא חייב</div>
-    <div class="debtnone">🟢 אין חוב פתוח</div></div>`;
-  return `<div class="debtsum"><div class="debtsum-t">💰 כמה הוא חייב</div>
-    ${x.rows.map(r=>`<div class="dsrow"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
-    <div class="dsrow tot"><span>סה"כ חייב</span><b>${f(x.total)}</b></div></div>`;
+  if(!x.rows.length)return `<div class="debtline ok">💰 אין חוב פתוח</div>`;
+  return `<div class="debtline" id="debtline">💰 חייב
+      <button class="debtamt" id="debtgo">${f(x.total)}</button>
+      <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span></div>
+    <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
+      ${x.rows.map(r=>`<div class="dsrow"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+    </div>`;
 }
 function catTotalsHTML(d){
   const cur=curSym(d), m={};
@@ -1779,7 +1785,6 @@ function cardDetails(d,body){
       <div class="npnote">לחץ על חודש כדי לסמן שנגבה</div>`:''}</div>`:''}
     ${unthankedCount(d)?`<div class="thxbanner" id="thxgo">🙏 <b>${unthankedCount(d)}</b> תרומות בלי תודה — לחץ לסמן</div>`:''}
     ${debtHTML(d)}
-    ${declinedHTML(d)}
     ${splitHTML(d)}
     ${(()=>{const pt=purposeText(d); if(!pt)return '';
       const known=String(d.purpose||'').trim()||(d.pledges||[]).some(p=>+p.monthly)||izSummary(d).monthly>0;
@@ -1870,6 +1875,9 @@ function cardDetails(d,body){
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
   wireIzSum(body.querySelector('.izsum'), d);
+  const dgo=document.getElementById('debtgo'), ddt=document.getElementById('debtdet');
+  if(dgo)dgo.onclick=()=>{DEBTOPEN=!DEBTOPEN; ddt.classList.toggle('hidden',!DEBTOPEN);
+    document.querySelector('#debtline .debtcue').textContent=DEBTOPEN?'▲':'▼ ממה?';};
   // מסמכים בכרטיס הראשי — העלאה ומחיקה
   const dfi=document.getElementById('df_file');
   if(dfi)dfi.onchange=async()=>{

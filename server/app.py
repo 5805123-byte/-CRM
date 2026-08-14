@@ -3951,6 +3951,8 @@ _CERT_CFG = {
 _CERT_SMALL = re.compile(r'^(בן|בת|ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|נ["\'״׳]י)$')
 # היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
+_REQ_R = .60        # גודל הבקשה ביחס לשם
+_SPACE_R = .92      # רוחב הרווח בין המילים
 _CERT_REQ = re.compile(
     r'^(ו?ל)(רפוא\w*|הצלח\w*|זיווג\w*|זרע\w*|פרנס\w*|ישוע\w*|ברכ\w*|נחת|חיים|בני\w*|'
     r'שלום|עילוי|זכר|כל|אריכ\w*|בריא\w*|שנה|כפרת|הרחב\w*|מזל|שידוך|בן|בת)$'
@@ -4011,11 +4013,11 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
     def _join(items):
-        """מוסיף רווחים בין המילים, בגודל של המילה שלפניהם."""
+        """רווח בין מילים — צר בכוונה, כדי שהמילים לא ייראו מרוחקות זו מזו."""
         out = []
         for i, it in enumerate(items):
             if i:
-                out.append((' ', items[i - 1][1], items[i - 1][2]))
+                out.append((' ', min(items[i - 1][1], it[1]) * _SPACE_R, items[i - 1][2]))
             out.append(it)
         return out
 
@@ -4028,7 +4030,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             if not inreq and _CERT_REQ.match(w):
                 inreq = True
             if inreq:
-                out.append((w, px * .45, heavy))
+                out.append((w, px * _REQ_R, True))     # הבקשה — מודגשת, קטנה מהשם
             elif _CERT_SMALL.match(w):
                 out.append((w, px * .5, False))
             else:
