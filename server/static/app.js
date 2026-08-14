@@ -236,6 +236,7 @@ let SRACT=null;
 // אחרת הכפתור נשאר "מקליט" לנצח ואי אפשר להתחיל הקלטה חדשה.
 function stopDictation(){
   const r=SRACT; if(!r)return;
+  if(r._userStop)r._userStop();        // עצירה יזומה — לא מנסים להפעיל שוב
   try{r.stop();}catch(e){}
   setTimeout(()=>{ if(SRACT===r){ try{r.abort&&r.abort();}catch(e){} if(r._fin)r._fin(); } },1200);
 }
@@ -276,7 +277,18 @@ function startDictation(btn,el){
   const r=new C(); r.lang='he-IL'; r.continuous=true; r.interimResults=true;
   const base=(el.value||'').trim()?((el.value||'').trim()+' '):''; let fin='';
   const setv=v=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
+  let heard=false, tries=0, userStop=false;
   r.onstart=()=>{SRACT=r;btn.classList.add('rec');btn.textContent='⏹';toast('🎤 מקליט — דבר בעברית. לחץ שוב לסיום');};
+  // אנדרואיד מפסיק להאזין אחרי כמה שניות של שקט, וגם כשהמנוע לא הצליח
+  // להתחבר. אם לא נקלט כלום — מנסים שוב לבד ומודיעים מה קורה.
+  r.onaudiostart=()=>{ if(!heard)toast('🔴 המיקרופון פתוח — דבר עכשיו'); };
+  r.onspeechstart=()=>{ heard=true; };
+  r._retry=()=>{
+    if(userStop||heard||tries>=2)return false;
+    tries++;
+    try{ r.start(); toast('לא נקלט כלום — מנסה שוב ('+tries+')'); return true; }
+    catch(e){ return false; }
+  };
   // אנדרואיד מחזיר כל שלב של המשפט כתוצאה נפרדת ו"סופית":
   // "עכשיו" · "עכשיו קיבלת" · "עכשיו קיבלת את"… חיבור פשוט שלהן יוצר את
   // הכפילות. לכן שומרים כל תוצאה לפי מקומה, ומאחדים קטע שהוא המשך של קודמו.
@@ -296,9 +308,16 @@ function startDictation(btn,el){
     el.dispatchEvent(new Event('change',{bubbles:true}));
     try{el.focus();}catch(e){}
   };
-  r.onerror=ev=>{const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);
+  r.onerror=ev=>{
+    if(ev.error==='no-speech'&&r._retry())return;      // שקט קצר — לא סוף ההקלטה
+    const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);
     r._fin();};
-  r.onend=r._fin;
+  r.onend=()=>{
+    if(r._retry())return;                              // נסגר לבד בלי כלום — מפעילים שוב
+    if(!heard&&!fin&&!userStop)
+      toast('לא נקלט דיבור. בדוק שהמיקרופון מורשה לאתר ושאין אפליקציה אחרת שמשתמשת בו');
+    r._fin();};
+  r._userStop=()=>{userStop=true;};
   // חשוב לסמן שהמנוע פועל כבר עכשיו: אם start נכשל בלי לדווח, המצב לא נתקע
   try{r.start(); SRACT=r; btn.classList.add('rec'); btn.textContent='⏹';}
   catch(e){SRACT=null; try{r.abort&&r.abort();}catch(e2){} toast('לא הצלחתי להפעיל את המיקרופון — נסה שוב');}
