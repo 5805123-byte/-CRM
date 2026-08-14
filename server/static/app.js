@@ -120,7 +120,7 @@ function izSummaryHTML(d){
   const recip=coHeldWith(d);
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
-  const recipHtml=recip.length?('<div class="izrow-h">🤝 שותף ביש"ז (מחזיק יחד עם):</div>'+recip.map(r=>`<div class="izrow"><span class="cosp2" data-did="${r.did}">👥 ${esc(r.name)} — ${esc(r.avreich||'אברך')}</span><b>${cur}${amtNum(r.amount)}</b></div>`).join('')):'';
+  const recipHtml='';   // מי מחזיק יחד איתו כבר מופיע בשורת האברך עצמה
   const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(
   String(p.share||'').trim()!==''?('💳 חלקו מתוך '+cur+amtNum(p.amount)+' — לפי החלוקה שנקבעה'
     +(amtNum(p.share)?'':', אינו משלם'))
@@ -134,7 +134,7 @@ function izSummaryHTML(d){
   else if(s.thru.length) debtLine=(s.thruDebt>0.5
       ?`<div class="izdebt owe">🔴 חוב לפי "שולם עד": ${cur}${Math.round(s.thruDebt)}</div>`
       :`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`);
-  else if(!s.hasPay){
+  else if(false){
     // הכסף נכנס, אבל לא נרשם עבור מה — ולכן הסיכום לא מוצא תשלומים.
     // מראים בדיוק כמה נכנס ומציעים לסמן בלחיצה אחת.
     const un=unclassifiedIz(d);
@@ -147,7 +147,8 @@ function izSummaryHTML(d){
   }
   else if(s.debt>0.5) debtLine=`<div class="izdebt owe">🔴 חוב מוערך: ${cur}${Math.round(s.debt)}</div>`;
   else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
-  else debtLine=`<div class="izdebt ok">🟢 מעודכן — אין חוב</div>`;
+  else debtLine='';
+  if(s.debt<=0.5&&s.manual==null&&!s.thru.length)debtLine='';   // חוב מוצג רק בחלון החוב
   const mainHtml=(act.length||s.monthly)?`${rows}
     <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${Math.round(s.monthly)}</b></div>
     ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${Math.round(s.paid)}</b></div>
@@ -1578,7 +1579,7 @@ function monthlyHTML(d){
   try{const s=izSummary(d); if(s.monthly>0)rows.push(['🤝 יששכר־זבולון',Math.round(s.monthly)]);}catch(e){}
   (d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0)
     .forEach(p=>rows.push(['🕯️ '+(p.category||'התחייבות'),amtNum(p.amount)]));
-  if(!rows.length)return '';
+  if(rows.length<2)return '';        // שורה אחת בלבד — כבר כתובה בסיכום שמעל
   const tot=rows.reduce((s,r)=>s+r[1],0);
   const f=n=>cur+Math.round(n).toLocaleString('en-US');
   return `<div class="cattot"><div class="cattot-t">🔁 התחייבות חודשית קבועה</div>
@@ -1725,10 +1726,10 @@ function catTotalsHTML(d){
   const f=n=>cur+Math.round(n).toLocaleString('en-US');
   const sf=steadyFor(d);
   const lbl=c=>(sf&&/^(קבוע|הוראת קבע)$/.test(c))?(esc(c)+' <small class="csub">· '+esc(sf)+'</small>'):esc(c);
-  return `<div class="cattot"><div class="cattot-t">🎯 כמה נתרם לכל ייעוד</div>
+  return `<details class="dsec cattot"><summary>🎯 כמה נתרם לכל ייעוד</summary>
     <div class="catrow head"><span>ייעוד</span><b>${GREGYEAR}</b><b>הכל</b></div>
     ${rows.map(x=>`<div class="catrow"><span>${lbl(x.c)}</span><b>${x.year?f(x.year):'—'}</b><b>${f(x.all)}</b></div>`).join('')}
-    <div class="catrow tot"><span>סה"כ</span><b>${f(tY)}</b><b>${f(tA)}</b></div></div>`;
+    <div class="catrow tot"><span>סה"כ</span><b>${f(tY)}</b><b>${f(tA)}</b></div></details>`;
 }
 function cardDetails(d,body){
   const cl=CATS.includes(d.category||'')?CATS:CATS.concat([d.category]);
@@ -1741,7 +1742,6 @@ function cardDetails(d,body){
   (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||''}));
-  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const co=avCoHolders(p);gitems.push({k:'',amt:amtNum(p.amount),what:'🤝 יש"ז — '+(p.avreich||'')+(co.length?(' · בשותפות עם '+co.map(x=>x.name).join(', ')):''),ded:'',rm:p.method||''});});
   gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const GVSHOW=8;                       // מציגים את האחרונות; השאר נפתחות בלחיצה — פחות גלילה
@@ -1849,7 +1849,7 @@ function cardDetails(d,body){
         <input id="ucl_avnew" placeholder="שם האברך החדש" style="display:none">
         <button class="btn sm" id="ucl_avadd" style="display:none">➕ הוסף</button>
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
-    <div class="sec"><div class="k" style="margin-bottom:6px">📌 עבור מה כל סכום — כללים קבועים</div>
+    <details class="dsec"><summary>📌 כללים קבועים — איזה סכום שייך לאיזה ייעוד${(d.rules||[]).length?(' ('+(d.rules||[]).length+')'):''}</summary>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
       <div id="rules">${(d.rules||[]).map(r=>`<div class="rulerow" data-amt="${r.amount}">
         <b>$${(+r.amount).toLocaleString('en-US',{maximumFractionDigits:2})}</b>
@@ -1863,7 +1863,7 @@ function cardDetails(d,body){
         <input id="rl_new" placeholder="שם הייעוד החדש"></div>
       <div class="addrow" style="margin-top:6px">
         <input id="rl_note" placeholder="פירוט (למשל: מעקות וכיסוי רדיאטורים)">
-        <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></div>
+        <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></details>
     <div class="sec"><h3>📄 מסמכים ותעודות</h3>
       <div class="avfiles dnfiles" id="dfiles">${(d.files||[]).filter(f=>f.kind==='donor').map(fileChip).join('')}<label class="filebtn sm">📎 צרף מסמך / תעודה<input type="file" multiple accept="application/pdf,image/*" id="df_file" hidden></label></div>
       <div class="hintxt">מה שמצורף כאן מופיע בכרטיס הראשי. שטרי יששכר־זבולון נמצאים בלשונית 🤝.</div></div>
