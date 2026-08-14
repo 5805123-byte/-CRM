@@ -1602,7 +1602,9 @@ function steadyFor(d){
 // כרטיס שנדחה, חיוב שנכשל — הכי חשוב לראות את זה דווקא בכרטיס שלו,
 // כדי לדעת למי להתקשר ולבקש כרטיס חדש.
 function declinedHTML(d){
-  const rows=(d.declined||[]); if(!rows.length)return '';
+  // כרטיס שנדחה וחויב שוב בהצלחה אינו חוב — לא מציגים אותו בכלל.
+  // רק מה שלא נגבה בסוף מופיע כאן, ורק אז יש על מה להתקשר.
+  const rows=(d.declined||[]).filter(x=>!+x.covered); if(!rows.length)return '';
   const f=n=>curSym(d)+Math.round(amtNum(n)).toLocaleString('en-US');
   const sum=rows.reduce((s2,x)=>s2+amtNum(x.amount),0);
   const SH=8, shown=rows.slice(0,SH);
@@ -1612,7 +1614,7 @@ function declinedHTML(d){
       <span class="decst">${esc(STLBL[x.status]||x.status||'')}</span>
       <span class="decsrc">${esc(srcLabel(x.source||''))}</span></div>`).join('')}
     ${rows.length>SH?`<div class="hintxt">ועוד ${rows.length-SH} — הרשימה המלאה בלשונית 💳 חיובים</div>`:''}
-    <div class="hintxt">הכרטיס נדחה. שווה להתקשר ולבקש כרטיס מעודכן.</div></div>`;
+    <div class="hintxt">הכסף הזה לא נגבה עד היום. שווה להתקשר ולבקש כרטיס מעודכן.</div></div>`;
 }
 function splitHTML(d){
   const rows=(d.paysplit||[]);
@@ -2618,7 +2620,7 @@ function renderTransactions(d){
 }
 let chFilter='';
 /* ---------- ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד ---------- */
-let LEDGER=null, ledSrc=null, ledFail=false;
+let LEDGER=null, ledSrc=null, ledFail=false, ledMon=null;
 // שמות קריאים למקורות, בלי לאחד ביניהם — הוא ביקש לראות כל אחד לחוד
 const SRCLBL={'Banquest 01-08-2026':'💳 בנק ווסט','Authorize 01-08-2026':'💳 אוטרייז',
   'Authorize 07-2026':'💳 אוטרייז (יולי)','Authorize אונליין':'💳 אוטרייז — מהאתר (חי)',
@@ -2640,8 +2642,8 @@ async function renderLedger(){
       <b>${f(g.total)}</b></button>`).join('')}</div>
     <div id="leddet"></div>`;
   box.querySelectorAll('.ledrow').forEach(b=>b.onclick=()=>{
-    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledDetail();});
-  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledDetail();};
+    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledMon=null; ledDetail();});
+  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledMon=null; ledDetail();};
   ledDetail();
 }
 async function ledDetail(){
@@ -2649,12 +2651,26 @@ async function ledDetail(){
   if(!ledSrc&&!ledFail){ el.innerHTML=''; document.querySelectorAll('.ledrow').forEach(b=>b.classList.remove('on')); return; }
   document.querySelectorAll('.ledrow').forEach(b=>b.classList.toggle('on',b.dataset.s===ledSrc));
   el.innerHTML='<div class="cnt">טוען…</div>';
+  // פירוט חודשי של המקור שנבחר — כמה נכנס בכל חודש וכמה לא עבר
+  const grp=(LEDGER&&(LEDGER.groups||[]).find(g=>g.src===ledSrc))||null;
+  const f0=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+  const monHtml=(!ledFail&&grp&&(grp.mon||[]).length)?`<div class="monbox">
+      <div class="mon-t">📅 ${esc(srcLabel(grp.src))} — לפי חודשים</div>
+      <div class="monhead"><span>חודש</span><b>נכנס</b><b>לא עבר</b></div>
+      ${grp.mon.map(m2=>`<button class="monrow ${ledMon===m2.ym?'on':''}" data-m="${m2.ym}">
+        <span>${esc(fmtMonth(m2.ym+'-01')||m2.ym)}</span>
+        <b>${m2.n?f0(m2.total):'—'}<small>${m2.n?(' · '+m2.n):''}</small></b>
+        <b class="${m2.bad_n?'badm':''}">${m2.bad_n?f0(m2.bad_total):'—'}<small>${m2.bad_n?(' · '+m2.bad_n):''}</small></b>
+      </button>`).join('')}
+      <div class="monrow tot"><span>סה"כ</span><b>${f0(grp.total)}</b><b class="${grp.bad_n?'badm':''}">${grp.bad_n?f0(grp.bad_total):'—'}</b></div>
+    </div>`:'';
   const u='/api/ledger?since=2026-01-01'+(ledFail?'&failed=1':('&src='+encodeURIComponent(ledSrc)));
   let r; try{ r=await api('GET',u); }catch(e){ r={rows:[]}; }
   const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
   const rows=(r.rows||[]).filter(x=>matchQ(x.name+' '+x.bank));
-  el.innerHTML=`<div class="cnt">${ledFail?'🔴 חיובים שלא עברו':esc(srcLabel(ledSrc))} — ${rows.length} שורות${r.more?(' (מוצגות הראשונות)'):''}</div>
-    <div class="list">${rows.map(x=>`<div class="rowc ${x.status!=='settled'?'failrow':''}" data-id="${x.donor_id||''}">
+  const rows2=ledMon?rows.filter(x=>String(x.date||'').slice(0,7)===ledMon):rows;
+  el.innerHTML=monHtml+`<div class="cnt">${ledFail?'🔴 חיובים שלא עברו':esc(srcLabel(ledSrc))}${ledMon?(' · '+esc(fmtMonth(ledMon+'-01')||ledMon)):''} — ${rows2.length} שורות${r.more?(' (מוצגות הראשונות)'):''}${ledMon?' <button class="btn sm ghost" id="monall">כל החודשים</button>':''}</div>
+    <div class="list">${rows2.map(x=>`<div class="rowc ${x.status!=='settled'?'failrow':''}" data-id="${x.donor_id||''}">
       <div><div class="nm">${esc(x.name||x.bank||'—')}${x.name&&x.bank?` <small dir="ltr">${esc(x.bank)}</small>`:''}</div>
         <div class="purp">${esc(x.date)}${x.note?(' · '+esc(x.note)):''}${ledFail?(' · '+esc(srcLabel(x.src))):''}</div></div>
       <div class="meta"><b>${f(x.amount)}</b>${x.status!=='settled'?`<span class="txbadge no">${esc(STLBL[x.status]||x.status)}</span>`:''}</div>

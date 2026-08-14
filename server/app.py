@@ -3378,15 +3378,35 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
-    # חיובים שלא עברו (סורבו / נכשלו) — כדי שיראו את זה בכרטיס התורם עצמו
-    for d in donors: d['declined'] = []
+    # חיובים שלא עברו. אבל כרטיס שנדחה ואז חויב שוב בהצלחה אינו חוב — זה
+    # ניסיון חוזר שהצליח, ואין טעם להבהיל בגללו. לכן כל דחייה נבדקת מול
+    # חיוב מוצלח באותו סכום בימים שאחריה, ורק מה שלא כוסה נחשב חוב.
+    for d in donors:
+        d['declined'] = []
+        d['declined_open'] = 0
     try:
+        ok = {}
+        for r in c.execute("SELECT donor_id,amount,date FROM recon "
+                           "WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
+            iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+            if iso:
+                ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
         for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id FROM recon "
                            "WHERE donor_id IS NOT NULL "
                            "AND COALESCE(status,'settled') NOT IN ('settled','') "
                            "ORDER BY date DESC"):
-            if r['donor_id'] in byid:
-                byid[r['donor_id']]['declined'].append(dict(r))
+            if r['donor_id'] not in byid:
+                continue
+            iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+            dd = _days(iso)
+            hit = [x for x in ok.get((r['donor_id'], _amt2(r['amount'])), [])
+                   if dd and -3 <= x - dd <= 14]
+            row = dict(r)
+            row['date_iso'] = iso
+            row['covered'] = 1 if hit else 0
+            byid[r['donor_id']]['declined'].append(row)
+            if not hit:
+                byid[r['donor_id']]['declined_open'] += 1
     except Exception:
         pass
     # תורמים ששולחים לבנק סכום אחד ומתחלקים בו — מוצג בשני הכרטיסים
@@ -3549,6 +3569,14 @@ def _recon_iso(d):
     """'24-Mar-2026' -> '2026-03-24'."""
     m = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', d or '')
     return f"{m.group(3)}-{_MONI.get(m.group(2).lower(), '01')}-{m.group(1)}" if m else ''
+
+
+def _amt2(a):
+    """סכום כמספר עגול לשתי ספרות — להשוואה בין חיוב שנדחה לחיוב שעבר."""
+    try:
+        return round(float(str(a or 0).replace(',', '').replace('$', '')), 2)
+    except Exception:
+        return 0.0
 
 
 def _days(iso):
@@ -5195,12 +5223,17 @@ class H(BaseHTTPRequestHandler):
                     amt = 0.0
                 src = r['source'] or 'אחר'
                 bad = (r['status'] or 'settled') not in ('settled', '')
-                g = groups.setdefault(src, {'src': src, 'n': 0, 'total': 0.0,
-                                            'bad_n': 0, 'bad_total': 0.0, 'first': '', 'last': ''})
+                g = groups.setdefault(src, {'src': src, 'n': 0, 'total': 0.0, 'bad_n': 0,
+                                            'bad_total': 0.0, 'first': '', 'last': '', 'mon': {}})
+                ym = iso[:7]
+                mo = g['mon'].setdefault(ym, {'ym': ym, 'n': 0, 'total': 0.0,
+                                              'bad_n': 0, 'bad_total': 0.0})
                 if bad:
                     g['bad_n'] += 1; g['bad_total'] += amt
+                    mo['bad_n'] += 1; mo['bad_total'] += amt
                 else:
                     g['n'] += 1; g['total'] += amt
+                    mo['n'] += 1; mo['total'] += amt
                     if iso:
                         g['first'] = min(g['first'] or iso, iso); g['last'] = max(g['last'], iso)
                 if (want and src != want) or (fail and not bad) or (not fail and want and bad):
@@ -5215,6 +5248,9 @@ class H(BaseHTTPRequestHandler):
             con.close()
             for g in groups.values():
                 g['total'] = round(g['total'], 2); g['bad_total'] = round(g['bad_total'], 2)
+                for mo in g['mon'].values():
+                    mo['total'] = round(mo['total'], 2); mo['bad_total'] = round(mo['bad_total'], 2)
+                g['mon'] = sorted(g['mon'].values(), key=lambda x: x['ym'], reverse=True)
             out = sorted(groups.values(), key=lambda x: -x['total'])
             rows.sort(key=lambda x: x['date'], reverse=True)
             return self._send(200, {'groups': out, 'rows': rows[:600], 'more': max(0, len(rows) - 600),
