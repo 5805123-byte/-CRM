@@ -4269,14 +4269,28 @@ function avPartnerRow(p){
       <label class="avfld"><span>📝 הערות</span><input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="—"></label></div>
     <label class="avfld" style="margin-top:6px"><span>💰 עדכון תשלום ידני (למשל: שילם הכל מראש)</span><input class="avf" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום"></label>
     <label class="jointchk" style="margin-top:6px"><input type="checkbox" class="avjoint" data-pid="${p.id}" ${+p.joint?'checked':''}> 🤝 נותנים ביחד סכום אחד משותף (לא לחבר)</label>
+    <button class="btn sm avsave" data-pid="${p.id}" style="width:100%;margin-top:6px">💾 שמור</button>
+    <div class="hintxt avdirty hidden">✏️ יש שינוי שעדיין לא נשמר</div>
     ${coHtml}</div>`;
 }
 function bindAvFields(){
   view.querySelectorAll('.avp').forEach(row=>{const pid=row.dataset.pid;
+    const dirty=row.querySelector('.avdirty'), sbtn=row.querySelector('.avsave');
+    const mark=on=>{ if(dirty)dirty.classList.toggle('hidden',!on);
+      if(sbtn)sbtn.classList.toggle('warn',on); };
+    const saveAll=async(quiet)=>{
+      const body={};
+      row.querySelectorAll('.avf').forEach(i=>{body[i.dataset.k]=i.value;});
+      await api('PUT','/api/partner/'+pid,body);
+      DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)Object.assign(p,body);}));
+      mark(false); if(!quiet)toast('נשמר ✓');
+    };
+    row._saveAll=saveAll;
+    if(sbtn)sbtn.onclick=()=>saveAll();
     row.querySelectorAll('.avf').forEach(inp=>{
-      const save=async()=>{const body={};body[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+pid,body);DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p[inp.dataset.k]=inp.value;}));toast('נשמר ✓');};
-      inp.onchange=save;
-      let tmr; inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};   // שמירה גם תוך כדי הקלדה (טאבלט)
+      const save=async()=>{const body={};body[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+pid,body);DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p[inp.dataset.k]=inp.value;}));mark(false);toast('נשמר ✓');};
+      inp.oninput=()=>mark(true);          // מסמנים שיש שינוי — השמירה בלחיצה
+      inp.onchange=save;                   // יציאה מהשדה שומרת גם היא, כרשת ביטחון
     });
     row.querySelector('.avend').onclick=async()=>{const today=todayStr();await api('PUT','/api/partner/'+pid,{active:0,ended_date:today});DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid){p.active=0;p.ended_date=today;}}));renderAvreich();toast('הסתיים — עבר להיסטוריה');};
     const jc=row.querySelector('.avjoint');if(jc)jc.onchange=async()=>{const v=jc.checked?1:0;await api('PUT','/api/partner/'+pid,{joint:v});DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p.joint=v;}));renderAvreich();toast(jc.checked?'סומן כמשותף ✓':'בוטל');};});
