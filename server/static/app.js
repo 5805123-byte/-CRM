@@ -1036,6 +1036,15 @@ function renderDonors(){
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
 // זיהוי כתובת בעייתית (מילים דבוקות / מספר דבוק / מדינה כפולה / כתובת ישראלית שמתחילה במספר)
+// המספר התלוש בסוף הרחוב, אם יש — "1241 E 28th St 4626" → "4626"
+const TAILRX=/^(.*?(?:st|ave|avenue|rd|road|blvd|dr|drive|ln|lane|ct|court|pl|place|way|ter|terrace|pkwy|hwy)\.?)\s+(\d{3,})\s*$/i;
+function tailNum(a){const m=TAILRX.exec(String(a||'').split(',')[0].trim());return m?m[2]:'';}
+function stripTail(a){
+  const parts=String(a||'').split(',');
+  const m=TAILRX.exec((parts[0]||'').trim());
+  if(m)parts[0]=m[1];
+  return parts.join(',').trim();
+}
 function addrIssue(d){
   const a=(d.addr||'').trim(); if(!a||+d.addr_ok)return null;
   if(/[a-z][A-Z]/.test(a)||/\d[A-Z][a-z]/.test(a))return 'מילים דבוקות';
@@ -1222,14 +1231,30 @@ function renderAddrFix(){
   view.innerHTML=`<button class="back" id="afback">→ חזרה לתורמים</button>
     <div class="cnt">🔴 כתובות לתיקון: ${list.length}</div>
     <div class="hintxt">ערוך את הכתובת ולחץ 💾 שמור, או ✓ תקין אם הכתובת בסדר כמו שהיא (תוסר מהרשימה).</div>
+    ${list.filter(d=>tailNum(d.addr)).length>1?`<button class="btn" id="afstripall" style="width:100%;margin:6px 2px">✂️ הסר את כל המספרים התלושים (${list.filter(d=>tailNum(d.addr)).length})</button>
+      <div class="hintxt">מספר בן 4 ספרות שנדבק בסוף הרחוב בייבוא. בדוק שורה־שתיים לפני שאתה מאשר לכולם.</div>`:''}
     <div class="list">${list.map(d=>`<div class="afrow" data-id="${d.id}">
       <div class="afname"><b class="avnamelink" data-id="${d.id}">${esc((d.last+' '+d.first).trim())}</b> <span class="rownum">#${d.id}</span> <span class="kvtag">${esc(addrIssue(d))}</span></div>
       <input class="afaddr" data-id="${d.id}" value="${esc(d.addr||'')}" dir="${d.region==='il'?'rtl':'ltr'}">
-      <div class="afact"><button class="btn sm afsave" data-id="${d.id}">💾 שמור</button><button class="kvskip afok" data-id="${d.id}">✓ תקין</button></div>
+      <div class="afact"><button class="btn sm afsave" data-id="${d.id}">💾 שמור</button>${tailNum(d.addr)?`<button class="btn sm ghost afstrip" data-id="${d.id}">✂️ הסר ${esc(tailNum(d.addr))}</button>`:''}<button class="kvskip afok" data-id="${d.id}">✓ תקין</button></div>
     </div>`).join('')||'<div class="empty">🎉 אין כתובות לתיקון</div>'}</div>`;
   document.getElementById('afback').onclick=()=>{flt='';render();};
+  const asa=document.getElementById('afstripall');
+  if(asa)asa.onclick=async()=>{
+    const hits=list.filter(d=>tailNum(d.addr));
+    if(!await uiConfirm('להסיר את המספר התלוש מ-'+hits.length+' כתובות?\nלמשל: "1241 E 28th St 4626" ← "1241 E 28th St"'))return;
+    asa.disabled=true; asa.textContent='מנקה…';
+    for(const d of hits){ const nw=stripTail(d.addr); d.addr=nw; d.addr_ok=1;
+      await api('PUT','/api/donor/'+d.id,{addr:nw,addr_ok:1}); }
+    toast('נוקו '+hits.length+' כתובות ✓'); renderAddrFix();};
   view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   view.querySelectorAll('.afsave').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id);const inp=view.querySelector('.afaddr[data-id="'+b.dataset.id+'"]');d.addr=inp.value;await api('PUT','/api/donor/'+d.id,{addr:inp.value});toast('נשמר ✓');renderAddrFix();});
+  // ניקוי המספר התלוש בלחיצה — 38 כתובות נפגעו מאותו ייבוא
+  view.querySelectorAll('.afstrip').forEach(b=>b.onclick=async()=>{
+    const d=DB.find(x=>x.id==b.dataset.id); if(!d)return;
+    const nw=stripTail(d.addr); d.addr=nw; d.addr_ok=1;
+    await api('PUT','/api/donor/'+d.id,{addr:nw,addr_ok:1});
+    toast('נוקה ✓ '+nw); renderAddrFix();});
   view.querySelectorAll('.afok').forEach(b=>b.onclick=async()=>{const d=DB.find(x=>x.id==b.dataset.id);d.addr_ok=1;await api('PUT','/api/donor/'+d.id,{addr_ok:1});toast('סומן תקין ✓');renderAddrFix();});
 }
 // סיכום קצר בעברית של מה עבר במיזוג — "7 תרומות · 2 שמות קוויטל"

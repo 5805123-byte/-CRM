@@ -3218,6 +3218,22 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # כתובת שנגמרת במספר תלוש ("1241 E 28th St 4626") — הכלל הזה חדש, ולכן
+    # כתובות שאושרו קודם כ"תקין" נבדקות שוב פעם אחת. אי אפשר לשלוח לשם דואר.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='addr_tail_num_v1'").fetchone():
+            rx = re.compile(r'(st|ave|avenue|rd|road|blvd|dr|drive|ln|lane|ct|court|pl|'
+                            r'place|way|ter|terrace|pkwy|hwy)\.?\s+\d{3,}\s*$', re.I)
+            n = 0
+            for r in con.execute("SELECT id,addr FROM donors WHERE COALESCE(addr_ok,0)=1"):
+                if rx.search((r['addr'] or '').split(',')[0].strip()):
+                    con.execute("UPDATE donors SET addr_ok=0 WHERE id=?", (r['id'],))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('addr_tail_num_v1')")
+            if n:
+                print('  כתובות עם מספר תלוש שהוחזרו לתיקון: %d' % n)
+    except Exception as e:
+        print('  addr tail error:', e)
     # "דוב / פרכטר יעקב" — השם נחתך במקום הלא נכון בייבוא. שם המשפחה הוא
     # פרכטר והפרטי יעקב דוב, בדיוק כמו בכרטיס השני שלו.
     try:
