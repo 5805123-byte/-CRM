@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re, base64, datetime, csv, io, gzip, time, hashlib, urllib.parse
+import sqlite3, json, os, re, base64, datetime, csv, io, gzip, time, hashlib, threading, urllib.parse
 from urllib.parse import quote
 
 def today_iso():
@@ -4843,6 +4843,10 @@ def build_ics():
 _DATA_VER = 0
 _DATA_TTL = 20          # גם בלי בקשת כתיבה — רענון תקופתי, למקרה של עדכון ברקע
 _DATA_CACHE = {'ver': -1, 'at': 0.0, 'raw': b'', 'gz': b'', 'etag': ''}
+# בניית התשובה עולה כ-14MB זיכרון. בלי המנעול הזה, עשר בקשות שמגיעות יחד
+# בונות עשר פעמים במקביל — 140MB בבת אחת, וזה מה שהפיל את השרת.
+# עם המנעול: אחד בונה, כל השאר ממתינים לו ומקבלים את אותה תשובה.
+_DATA_LOCK = threading.Lock()
 
 
 def bump_data():
@@ -4899,9 +4903,24 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/api/data':
             global _DATA_CACHE
-            if (_DATA_CACHE['raw'] and _DATA_CACHE['ver'] == _DATA_VER
-                    and time.time() - _DATA_CACHE['at'] < _DATA_TTL):
+
+            def _fresh():
+                c = _DATA_CACHE
+                return (c['raw'] and c['ver'] == _DATA_VER
+                        and time.time() - c['at'] < _DATA_TTL)
+            if _fresh():
                 return self._send_cached(_DATA_CACHE)
+            with _DATA_LOCK:
+                if _fresh():             # מישהו אחר כבר בנה בזמן שהמתנו
+                    return self._send_cached(_DATA_CACHE)
+                return self._build_data()
+
+        if self.path == '/api/health':
+            return self._send(200, health_report())
+        return self._get2()
+
+    def _build_data(self):
+            global _DATA_CACHE
             _ver = _DATA_VER
             donors, unlinked, general_tasks = get_all()
             con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
@@ -4923,8 +4942,10 @@ class H(BaseHTTPRequestHandler):
             _DATA_CACHE = {'ver': _ver, 'at': time.time(), 'raw': _raw, 'gz': _gz,
                            'etag': '"d%s"' % hashlib.md5(_raw).hexdigest()[:16]}
             return self._send_cached(_DATA_CACHE)
-        if self.path == '/api/health':
-            return self._send(200, health_report())
+
+    def _get2(self):
+        if False:
+            pass
         if self.path.split('?')[0] == '/api/donors.vcf':
             # ייצוא כל התורמים כאיש קשר אחד ומסודר לכל תורם — לייבוא חזרה לאנשי הקשר
             con = db()
@@ -7057,6 +7078,18 @@ def health_report():
             else 'ללא ANTHROPIC_API_KEY — תרגום חינמי, איכות נמוכה יותר')
         add('שליחת מיילים', 'ok' if (os.environ.get('BREVO_API_KEY') or os.environ.get('SMTP_HOST'))
             else 'warn', 'Brevo מוגדר' if os.environ.get('BREVO_API_KEY') else 'לא מוגדר מפתח שליחה')
+        # זיכרון — כדי לראות מבעוד מועד אם השרת מתקרב לגבול
+        try:
+            rss = 0
+            with open('/proc/self/status') as fh:
+                for ln in fh:
+                    if ln.startswith('VmRSS:'):
+                        rss = int(ln.split()[1]) / 1024; break
+            lim = 512
+            add('זיכרון בשרת', 'ok' if rss < lim * 0.7 else ('warn' if rss < lim * 0.9 else 'bad'),
+                '%d MB מתוך %d' % (rss, lim))
+        except Exception:
+            pass
         # החיבור החי ל-Authorize.net
         try:
             import authorize_sync as _an
