@@ -5055,17 +5055,27 @@ class H(BaseHTTPRequestHandler):
             # קובץ שלם ותקין גם בזמן שהמערכת עובדת. משמש גם לגיבוי אצל מאיר
             # וגם כדי לשלוח לי את הנתונים העדכניים כשצריך.
             try:
+                light = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query).get('light', [''])[0] == '1'
                 tmp = os.path.join(HERE, '_backup_tmp.db')
                 src = sqlite3.connect(DB)
                 dst = sqlite3.connect(tmp)
                 with dst:
                     src.backup(dst)
-                dst.close(); src.close()
+                src.close()
+                if light:
+                    # גיבוי קל לשליחה: כל הנתונים, בלי גוף הקבצים המצורפים
+                    # (תעודות וצילומים). השמות נשארים, רק התוכן הכבד יורד.
+                    dst.execute("UPDATE files SET data=x''")
+                    dst.commit()
+                    dst.isolation_level = None      # VACUUM לא רץ בתוך טרנזקציה
+                    dst.execute("VACUUM")
+                dst.close()
                 raw = open(tmp, 'rb').read()
                 try: os.remove(tmp)
                 except Exception: pass
                 blob = gzip.compress(raw, 6)
-                name = 'kollel-crm-%s.db.gz' % today_iso()
+                name = 'kollel-crm-%s%s.db.gz' % (today_iso(), '-light' if light else '')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/gzip')
                 self.send_header('Content-Disposition', 'attachment; filename="%s"' % name)

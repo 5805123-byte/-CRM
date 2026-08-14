@@ -385,12 +385,16 @@ async function openHealth(){
     ${h.rows.map(r=>`<div class="hrow ${r.state}"><span class="hi">${ic[r.state]||''}</span>
       <span class="hn"><b>${esc(r.name)}</b><small>${esc(r.detail)}</small></span></div>`).join('')}
     <button class="btn" id="hagain" style="width:100%;margin-top:10px">🔄 בדוק שוב</button>
-    <a class="btn" id="hbackup" href="/api/backup" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none">💾 הורד גיבוי של כל המערכת</a>
-    <div class="hintxt">קובץ אחד עם כל הנתונים. שמור אותו אצלך מדי פעם — וגם שלח אותו אליי כשאתה רוצה שאראה את המצב העדכני.</div>`;
+    <a class="btn" id="hbackup" href="/api/backup" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none">💾 גיבוי מלא — לשמור אצלך</a>
+    <div class="hintxt">כל הנתונים כולל התעודות והקבצים (כ-34MB). שמור אותו מדי פעם — זה הביטוח שלך.</div>
+    <a class="btn" id="hbacklite" href="/api/backup?light=1" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none;background:var(--yes)">📤 קובץ קטן — לשלוח לקלוד</a>
+    <div class="hintxt">אותם נתונים בדיוק בלי גוף הקבצים — כ-200KB בלבד, נשלח בקלות בצ׳אט.</div>`;
   document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
   document.getElementById('hagain').onclick=openHealth;
   const hb=document.getElementById('hbackup');
-  if(hb)hb.onclick=()=>toast('מכין גיבוי… ההורדה תתחיל בעוד רגע');
+  if(hb)hb.onclick=()=>toast('מכין גיבוי מלא… ההורדה תתחיל בעוד רגע');
+  const hl=document.getElementById('hbacklite');
+  if(hl)hl.onclick=()=>toast('מכין קובץ קטן לשליחה…');
 }
 // ===== פנקס ההכתבה — להכתיב הוראות ותיקונים ולהעתיק אותם במכה אחת =====
 const DICTKEY='kc_dict_hist';
