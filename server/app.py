@@ -3218,6 +3218,37 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # תעודות מעודכנות שמאיר שלח: מיטמן (שלושת האחים שרשומים עליה), האסט,
+    # וטאובנפלד. נתלות לצד התעודה הישנה — לא מוחקות אותה.
+    try:
+        NEW = [('cert_mittman.pdf', "מיטמן — תעודה מעודכנת",
+                ["SELECT id FROM donors WHERE last LIKE 'מיטמן%' AND first IN "
+                 "('אפרים','מאיר','גבריאל')"]),
+               ('cert_host.pdf', "האסט — תעודה מעודכנת",
+                ["SELECT id FROM donors WHERE last LIKE 'האסט%' OR last LIKE 'הסט%'"]),
+               ('cert_taubenfeld.pdf', "טאובנפלד — תעודה מעודכנת",
+                ["SELECT id FROM donors WHERE last LIKE 'טאובנפלד%'"])]
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='certs_new_v1'").fetchone():
+            tot = 0
+            for fn, nm, qs in NEW:
+                fp = os.path.join(HERE, fn)
+                if not os.path.exists(fp):
+                    continue
+                data = open(fp, 'rb').read()
+                name = 'תעודת יששכר־זבולון — %s.pdf' % nm
+                for q in qs:
+                    for r in list(con.execute(q)):
+                        if con.execute("SELECT 1 FROM files WHERE kind='iz' AND ref_id=? AND name=?",
+                                       (r['id'], name)).fetchone():
+                            continue
+                        con.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) "
+                                    "VALUES('iz',?,?,'application/pdf',?,?)",
+                                    (r['id'], name, data, today_iso()))
+                        tot += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('certs_new_v1')")
+            print('  תעודות מעודכנות שנתלו: %d' % tot)
+    except Exception as e:
+        print('  שגיאת תעודות מעודכנות:', e)
     # תעודת "כולל הוראה" של שמשון פינטער — 24 אברכים, $500 לכל אחד. זו
     # שותפות נפרדת מהיששכר־זבולון שלו בכולל חצות, ולכן היא נתלית פעמיים:
     # בדף התורם הראשי ובדף היששכר־זבולון שלו.
