@@ -1036,6 +1036,10 @@ function addrIssue(d){
   const street=(a.split(',')[0]||'');
   if(d.region==='il'&&/^\s*[\d]/.test(a))return 'מתחיל במספר (אולי הפוך)';
   if(d.region==='il'&&/\d[ ]*[\u0590-\u05FF]/.test(street))return 'מספר לפני שם הרחוב — לבדוק';
+  // "1241 E 28th St 4626" — מספר תלוש בסוף הרחוב. בדרך כלל דירה או מיקוד
+  // שנדבק בטעות בייבוא, ואי אפשר לשלוח לשם דואר.
+  if(/(st|ave|avenue|rd|road|blvd|dr|drive|ln|lane|ct|court|pl|place|way|ter|terrace|pkwy|hwy)\.?\s+\d{3,}\s*$/i.test(street.trim()))
+    return 'מספר מיותר בסוף — דירה? מיקוד?';
   return null;
 }
 // משיכת אנשי הקשר מגוגל — ממלאת רק שדות ריקים, אף פעם לא דורסת מה שכבר יש
