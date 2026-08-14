@@ -1787,9 +1787,12 @@ function debtSummary(d){
   if(izDebt>0.5)rows.push({t:'יששכר־זבולון',v:izDebt,
     s:iz.manual!=null?'עודכן ידנית':(iz.thru.length?'לפי "שולם עד חודש"':
       (iz.span+' חודשים × '+cur+Math.round(iz.monthly)))});
-  // חודשים שלא נגבו אצל תורם קבוע
+  // חודשים שלא נגבו אצל תורם קבוע. אם ההתחייבות היא יששכר־זבולון והוא
+  // שילם מראש (או שהחוב עודכן ידנית) — אין חוב, ואסור לספור את אותו כסף שוב.
   const gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
-  if(gc.length&&fx>0)rows.push({t:'חודשים שלא נגבו',v:gc.length*fx,
+  const izCovered=iz.monthly>0&&iz.monthly>=fx-0.5&&
+    ((iz.manual!=null&&iz.manual<=0.5)||(iz.thru.length&&iz.thruDebt<=0.5));
+  if(gc.length&&fx>0&&!izCovered)rows.push({t:'חודשים שלא נגבו',v:gc.length*fx,
     s:gc.length+' × '+cur+Math.round(fx),
     chips:gc.map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')});
   // ימי פרנס שטרם נגבו

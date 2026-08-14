@@ -3223,7 +3223,7 @@ def ensure_schema():
     # נדבק לכרטיס שלה בטעות בייבוא. חמשת התשלומים בקובץ הצ׳קים/דונרס נרשמו
     # על "Lamm, Steven" ולכן מעולם לא הגיעו לכרטיס.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lamm_steven_v2'").fetchone():
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lamm_steven_v3'").fetchone():
             z = con.execute("SELECT id FROM donors WHERE last='לאם' AND first='זאב'").fetchone()
             e2 = con.execute("SELECT id FROM donors WHERE last='לאם' AND first='אסתר'").fetchone()
             if z:
@@ -3234,11 +3234,12 @@ def ensure_schema():
                              z['id']))
                 con.execute("UPDATE donors SET addr='1233 E 35 St', city='Brooklyn' "
                             "WHERE id=? AND COALESCE(TRIM(addr),'')=''", (z['id'],))
-                PAY = [('2026-01-07', '12000', 'דונרס', ''),
+                # הייעודים לפי מה שמאיר מסר
+                PAY = [('2026-01-07', '12000', 'דונרס', 'יששכר־זבולון — שנה מראש'),
                        ('2026-02-10', '1500', "צ'ק", 'הכנסת כלה — הרב קוריץ'),
-                       ('2026-03-04', '360', 'דונרס', ''),
-                       ('2026-03-26', '1100', "צ'ק", ''),
-                       ('2026-06-11', '1800', 'דונרס', 'הכנסת כלה')]
+                       ('2026-03-04', '360', 'דונרס', 'מתנות לאביונים תשפ"ו'),
+                       ('2026-03-26', '1100', "צ'ק", 'קמחא דפסחא תשפ"ו'),
+                       ('2026-06-11', '1800', 'דונרס', 'הכנסת כלה — רובינפלד')]
                 n = mv = 0
                 for dt, amt, meth, cat in PAY:
                     if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
@@ -3264,10 +3265,22 @@ def ensure_schema():
                     n += 1
                 if n or mv:
                     print('  זאב לאם = Steven Lamm: הועברו %d תשלומים, נוספו %d' % (mv, n))
+            if z:
+                # ה-$12,000 הם יששכר־זבולון לשנה מראש מינואר 2026, ולכן אין
+                # לו חוב חודשי עד סוף השנה. מסמנים "שולם עד" אצל האברך.
+                con.execute("UPDATE partners SET paid_thru='2026-12', paid_note=? "
+                            "WHERE donor_id=? AND COALESCE(active,1)<>0 "
+                            "AND COALESCE(TRIM(paid_thru),'')=''",
+                            ('שילם שנה מראש — $12,000 בדונרס, 7 בינואר 2026', z['id']))
+                # הייעודים האלה נכנסים לרשימת הייעודים כדי שיהיו זמינים לכולם
+                for cnm in ('יששכר־זבולון — שנה מראש', 'הכנסת כלה', 'מתנות לאביונים תשפ"ו',
+                            'קמחא דפסחא תשפ"ו'):
+                    con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)",
+                                (cnm, today_iso()))
             if e2:      # השם האנגלי של זאב שנדבק לכרטיס של אסתר
                 con.execute("UPDATE donors SET english='' WHERE id=? "
                             "AND lower(TRIM(english))='steven lamm'", (e2['id'],))
-            con.execute("INSERT INTO seed_flags(name) VALUES('lamm_steven_v2')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('lamm_steven_v3')")
     except Exception as ex:
         print('  lamm steven error:', ex)
     # כתובת שנגמרת במספר תלוש ("1241 E 28th St 4626") — הכלל הזה חדש, ולכן
