@@ -1818,6 +1818,9 @@ function cardDetails(d,body){
       <div class="addrow" style="margin-top:6px">
         <input id="rl_note" placeholder="פירוט (למשל: מעקות וכיסוי רדיאטורים)">
         <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></div>
+    <div class="sec"><h3>📄 מסמכים ותעודות</h3>
+      <div class="avfiles dnfiles" id="dfiles">${(d.files||[]).filter(f=>f.kind==='donor').map(fileChip).join('')}<label class="filebtn sm">📎 צרף מסמך / תעודה<input type="file" multiple accept="application/pdf,image/*" id="df_file" hidden></label></div>
+      <div class="hintxt">מה שמצורף כאן מופיע בכרטיס הראשי. שטרי יששכר־זבולון נמצאים בלשונית 🤝.</div></div>
     <div class="sec"><button class="btn ghost" id="f_merge" style="width:100%">🔀 מזג עם כרטיס כפול (אותו אדם)</button>
       <div id="mergebox" class="hidden" style="margin-top:8px">
         <input id="mg_q" placeholder="🔍 חפש את הכרטיס הכפול למזג לכאן…" autocomplete="off">
@@ -1826,6 +1829,18 @@ function cardDetails(d,body){
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
   wireIzSum(body.querySelector('.izsum'), d);
+  // מסמכים בכרטיס הראשי — העלאה ומחיקה
+  const dfi=document.getElementById('df_file');
+  if(dfi)dfi.onchange=async()=>{
+    for(const f of dfi.files){ const r=await uploadBlob('donor',d.id,f);
+      if(r&&r.id)(d.files=d.files||[]).push({id:r.id,kind:'donor',name:f.name,mime:f.type}); }
+    dfi.value=''; toast('צורף ✓'); cardDetails(d,body);};
+  const dfb=document.getElementById('dfiles');
+  if(dfb)dfb.querySelectorAll('.fdel').forEach(b2=>b2.onclick=async()=>{
+    if(!await uiConfirm('למחוק את הקובץ?'))return;
+    await api('DELETE','/api/file/'+b2.dataset.fid);
+    d.files=(d.files||[]).filter(x=>x.id!=b2.dataset.fid);
+    toast('נמחק'); cardDetails(d,body);});
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});

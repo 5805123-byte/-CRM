@@ -3218,6 +3218,27 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # תעודת "כולל הוראה" של שמשון פינטער — 24 אברכים, $500 לכל אחד. זו
+    # שותפות נפרדת מהיששכר־זבולון שלו בכולל חצות, ולכן היא נתלית פעמיים:
+    # בדף התורם הראשי ובדף היששכר־זבולון שלו.
+    try:
+        pf = os.path.join(HERE, 'pinter_horaa.pdf')
+        if (not con.execute("SELECT 1 FROM seed_flags WHERE name='pinter_horaa_v1'").fetchone()
+                and os.path.exists(pf)):
+            r = con.execute("SELECT id FROM donors WHERE last LIKE 'פינט%' AND first='שמשון'").fetchone()
+            if r:
+                data = open(pf, 'rb').read()
+                nm = 'תעודת יששכר־זבולון — כולל הוראה.pdf'
+                for k in ('donor', 'iz'):
+                    if not con.execute("SELECT 1 FROM files WHERE kind=? AND ref_id=? AND name=?",
+                                       (k, r['id'], nm)).fetchone():
+                        con.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) "
+                                    "VALUES(?,?,?,'application/pdf',?,?)",
+                                    (k, r['id'], nm, data, today_iso()))
+                print('  שמשון פינטער: תעודת כולל הוראה נתלתה בכרטיס וביששכר־זבולון')
+            con.execute("INSERT INTO seed_flags(name) VALUES('pinter_horaa_v1')")
+    except Exception as e:
+        print('  שגיאת תעודת פינטער:', e)
     # תעודות יששכר־זבולון: מאיר פיצל אותן לעמוד לכל תורם, ואנחנו תולים כל
     # תעודה בכרטיס שכתוב עליה. השיוך נעשה לפי השם ולא לפי מספר כרטיס, כדי
     # שיתאים גם לכרטיסים שנוספו מאז. תעודה שכבר תלויה לא נתלית פעמיים.
@@ -3392,8 +3413,9 @@ def get_all():
     parnes_files, contact_files, task_files, don_files, tx_files = {}, {}, {}, {}, {}
     try:
         for r in c.execute("SELECT id,kind,ref_id,name,mime FROM files"):
-            meta = {'id': r['id'], 'name': r['name'], 'mime': r['mime']}
-            if r['kind'] == 'iz' and r['ref_id'] in byid:
+            meta = {'id': r['id'], 'name': r['name'], 'mime': r['mime'], 'kind': r['kind'] or ''}
+            # 'iz' — שטרי יששכר־זבולון · 'donor' — מסמכים בכרטיס הראשי
+            if r['kind'] in ('iz', 'donor') and r['ref_id'] in byid:
                 byid[r['ref_id']]['files'].append(meta)
             elif r['kind'] == 'parnes':
                 parnes_files.setdefault(r['ref_id'], []).append(meta)
