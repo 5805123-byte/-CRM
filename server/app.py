@@ -3218,33 +3218,17 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
-    # תורם מארץ ישראל — כדי שהסכומים שלו יוצגו בשקלים ולא בדולרים.
-    # הכתובת קובעת קודם: יש תורמים בברוקלין עם טלפון ישראלי, ולהפך.
-    # לא נוגעים בתורם שכבר סומן ידנית.
+    # מאיר ביקש לא לקבוע מטבע לתורמים קיימים: יש מי שגר בארץ ותורם בדולרים,
+    # ויש מספר ישראלי אצל תורם מברוקלין. הזיהוי האוטומטי חל רק על כרטיס חדש,
+    # ובכל כרטיס אפשר להחליף מטבע בלחיצה. כאן מבטלים את הסימון שנעשה קודם.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='region_il_v1'").fetchone():
-            IL_TXT = ('ירושלים', 'ביתר', 'בית שמש', 'בני ברק', 'אלעד', 'מודיעין', 'אשדוד',
-                      'צפת', 'טבריה', 'נתיבות', 'רכסים', 'חיפה', 'תל אביב', 'פתח תקו',
-                      'רחובות', 'עמנואל', 'ישראל', 'israel', 'jerusalem', 'bnei brak',
-                      'beitar', 'ashdod', 'tel aviv', 'haifa', 'ramat beit', 'modiin', 'tzfat')
-            US_TXT = ('brooklyn', 'monsey', 'lakewood', 'new york', ' ny', ' nj', 'monroe',
-                      'spring valley', 'passaic', 'baltimore', 'chicago', 'miami',
-                      'ברוקלין', 'מונסי', 'לייקווד')
-            n = 0
-            for r in con.execute("SELECT id,phone,addr,city,country,region FROM donors"):
-                if (r['region'] or '').strip():
-                    continue
-                txt = ' '.join(str(r[k] or '') for k in ('addr', 'city', 'country')).lower()
-                if any(x in txt for x in US_TXT):        # כתובת אמריקאית — גוברת
-                    continue
-                ph = re.split(r'[/,]', str(r['phone'] or ''))[0].replace(' ', '')
-                if any(x in txt for x in IL_TXT) or ph.startswith('+972') or ph.startswith('972'):
-                    con.execute("UPDATE donors SET region='il' WHERE id=?", (r['id'],))
-                    n += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('region_il_v1')")
-            print('  תורמים שסומנו כארץ ישראל (₪): %d' % n)
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='region_il_undo_v1'").fetchone():
+            n = con.execute("UPDATE donors SET region='' WHERE region='il'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('region_il_undo_v1')")
+            if n:
+                print('  סימון ארץ ישראל בוטל אצל %d תורמים (חוזרים לדולרים)' % n)
     except Exception as e:
-        print('  region il error:', e)
+        print('  region undo error:', e)
     # תעודות מעודכנות שמאיר שלח: מיטמן (שלושת האחים שרשומים עליה), האסט,
     # וטאובנפלד. נתלות לצד התעודה הישנה — לא מוחקות אותה.
     try:

@@ -234,11 +234,12 @@ const SRERR = {'not-allowed':'לא ניתנה הרשאה למיקרופון — 
 let SRACT=null;
 // עצירה בטוחה: גם אם המנוע לא מדווח שהוא נגמר, המצב מתאפס אחרי רגע
 // אחרת הכפתור נשאר "מקליט" לנצח ואי אפשר להתחיל הקלטה חדשה.
+let SRSTOP=null;
 function stopDictation(){
+  if(SRSTOP){const f=SRSTOP; SRSTOP=null; f(); return;}
   const r=SRACT; if(!r)return;
-  if(r._userStop)r._userStop();        // עצירה יזומה — לא מנסים להפעיל שוב
   try{r.stop();}catch(e){}
-  setTimeout(()=>{ if(SRACT===r){ try{r.abort&&r.abort();}catch(e){} if(r._fin)r._fin(); } },1200);
+  setTimeout(()=>{ if(SRACT===r){ try{r.abort&&r.abort();}catch(e){} SRACT=null; } },1200);
 }
 // מאחד קטעי תמלול. אנדרואיד מחזיר את אותו משפט כמה פעמים — פעם כשלבים
 // גדלים ("עכשיו" · "עכשיו קיבלת"), ופעם כניסוח מתוקן של אותו משפט עצמו.
@@ -270,57 +271,68 @@ function joinSegs(list){
   }
   return t;
 }
+function micDiag(){
+  const C=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+  const pwa=window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches;
+  return {api:!!C, pwa:!!pwa, secure:window.isSecureContext!==false,
+          md:!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia),
+          ua:/Android/i.test(navigator.userAgent)?'Android':(/iPhone|iPad/i.test(navigator.userAgent)?'iOS':'מחשב')};
+}
+// באנדרואיד המנוע לא באמת תומך בהאזנה רציפה: הוא נסגר אחרי כל משפט, ואם
+// מבקשים ממנו continuous הוא לפעמים לא מחזיר כלום בכלל. לכן שם עובדים
+// במקטעים — כל משפט בנפרד, והמערכת מפעילה אותו שוב מיד, עד שלוחצים עצור.
 function startDictation(btn,el){
   const C=window.SpeechRecognition||window.webkitSpeechRecognition||null;
   if(!C){toast('הדפדפן הזה לא תומך בהכתבה קולית — נסה בכרום');return;}
   if(SRACT){stopDictation();return;}                       // לחיצה שנייה עוצרת
-  const r=new C(); r.lang='he-IL'; r.continuous=true; r.interimResults=true;
-  const base=(el.value||'').trim()?((el.value||'').trim()+' '):''; let fin='';
+  const ANDROID=/Android/i.test(navigator.userAgent);
   const setv=v=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
-  let heard=false, tries=0, userStop=false;
-  r.onstart=()=>{SRACT=r;btn.classList.add('rec');btn.textContent='⏹';toast('🎤 מקליט — דבר בעברית. לחץ שוב לסיום');};
-  // אנדרואיד מפסיק להאזין אחרי כמה שניות של שקט, וגם כשהמנוע לא הצליח
-  // להתחבר. אם לא נקלט כלום — מנסים שוב לבד ומודיעים מה קורה.
-  r.onaudiostart=()=>{ if(!heard)toast('🔴 המיקרופון פתוח — דבר עכשיו'); };
-  r.onspeechstart=()=>{ heard=true; };
-  r._retry=()=>{
-    if(userStop||heard||tries>=2)return false;
-    tries++;
-    try{ r.start(); toast('לא נקלט כלום — מנסה שוב ('+tries+')'); return true; }
-    catch(e){ return false; }
-  };
-  // אנדרואיד מחזיר כל שלב של המשפט כתוצאה נפרדת ו"סופית":
-  // "עכשיו" · "עכשיו קיבלת" · "עכשיו קיבלת את"… חיבור פשוט שלהן יוצר את
-  // הכפילות. לכן שומרים כל תוצאה לפי מקומה, ומאחדים קטע שהוא המשך של קודמו.
-  const seg=[];
-  r.onresult=ev=>{
-    for(let i=0;i<ev.results.length;i++)seg[i]=ev.results[i][0].transcript;
-    fin=joinSegs(seg);
-    setv((base+fin).replace(/\s+/g,' ').trim());};
-  // סיום — רץ פעם אחת בלבד, גם אם המנוע דיווח גם שגיאה וגם סיום
-  r._fin=()=>{
-    if(r._done)return; r._done=1;
-    if(SRACT===r)SRACT=null;
-    btn.classList.remove('rec'); btn.textContent='🎤';
-    const fixed=fixNames((base+fin).replace(/\s+/g,' ').trim());
+  const base=(el.value||'').trim()?((el.value||'').trim()+' '):'';
+  let done='', userStop=false, gotAny=false, rounds=0, cur=null;
+  const paint=live=>setv((base+joinSegs([done,live||''])).replace(/\s+/g,' ').trim());
+  const finish=()=>{
+    if(finish._d)return; finish._d=1;
+    SRACT=null; btn.classList.remove('rec'); btn.textContent='🎤';
+    const fixed=fixNames((base+done).replace(/\s+/g,' ').trim());
     setv(fixed.text);
     if(fixed.hits.length)toast('תוקנו שמות: '+fixed.hits.join(', '));
+    if(!gotAny){
+      const g=micDiag();
+      toast(!g.secure?'הכתבה עובדת רק בחיבור מאובטח (https)'
+        :(g.pwa?'ההכתבה לא נתמכת באפליקציה המותקנת — פתח את המערכת בדפדפן כרום, או השתמש במיקרופון של המקלדת'
+              :'לא נקלט דיבור — בדוק שהמיקרופון מורשה ושאין אפליקציה אחרת שמשתמשת בו'), 6000);
+    }
     el.dispatchEvent(new Event('change',{bubbles:true}));
     try{el.focus();}catch(e){}
   };
-  r.onerror=ev=>{
-    if(ev.error==='no-speech'&&r._retry())return;      // שקט קצר — לא סוף ההקלטה
-    const m=SRERR[ev.error]; if(m)toast(m); else if(ev.error)toast('הכתבה נכשלה: '+ev.error);
-    r._fin();};
-  r.onend=()=>{
-    if(r._retry())return;                              // נסגר לבד בלי כלום — מפעילים שוב
-    if(!heard&&!fin&&!userStop)
-      toast('לא נקלט דיבור. בדוק שהמיקרופון מורשה לאתר ושאין אפליקציה אחרת שמשתמשת בו');
-    r._fin();};
-  r._userStop=()=>{userStop=true;};
-  // חשוב לסמן שהמנוע פועל כבר עכשיו: אם start נכשל בלי לדווח, המצב לא נתקע
-  try{r.start(); SRACT=r; btn.classList.add('rec'); btn.textContent='⏹';}
-  catch(e){SRACT=null; try{r.abort&&r.abort();}catch(e2){} toast('לא הצלחתי להפעיל את המיקרופון — נסה שוב');}
+  const round=()=>{
+    if(userStop){finish();return;}
+    if(++rounds>60){finish();return;}
+    const r=new C(); cur=r; SRACT=r;
+    r.lang='he-IL'; r.interimResults=true; r.continuous=!ANDROID;
+    let seg=[];
+    r.onstart=()=>{btn.classList.add('rec');btn.textContent='⏹';
+      if(rounds===1)toast('🎤 מקליט — דבר בעברית. לחץ שוב לסיום');};
+    r.onspeechstart=()=>{gotAny=true;};
+    r.onresult=ev=>{ gotAny=true;
+      for(let i=0;i<ev.results.length;i++)seg[i]=ev.results[i][0].transcript;
+      paint(joinSegs(seg)); };
+    r.onerror=ev=>{
+      if(ev.error==='no-speech'||ev.error==='aborted')return;      // רגיל — נמשיך בסבב הבא
+      const m=SRERR[ev.error];
+      if(m||ev.error){toast(m||('הכתבה נכשלה: '+ev.error)); userStop=true;}
+    };
+    r.onend=()=>{
+      const t=joinSegs(seg);
+      if(t)done=joinSegs([done,t]);
+      paint('');
+      if(userStop)finish(); else setTimeout(round,120);           // מפעילים שוב מיד
+    };
+    try{ r.start(); }
+    catch(e){ setTimeout(()=>{try{r.start();}catch(e2){userStop=true;finish();}},250); }
+  };
+  round();
+  SRSTOP=()=>{ userStop=true; try{cur&&cur.stop();}catch(e){} setTimeout(finish,900); };
 }
 // מנוע הדיבור לא מכיר שמות משפחה של תורמים. אחרי ההכתבה מתקנים כל מילה
 // שנשמעת בדיוק כמו שם משפחה שקיים אצלנו (אותו מפתח דמיון), ומדווחים מה תוקן.
@@ -409,7 +421,9 @@ function openDictPad(){
     <div class="dictbar">
       <button class="btn sm ghost" id="dictshare">📤 שיתוף לאפליקציה אחרת</button>
       <button class="btn sm ghost" id="dictadd">➕ שורה חדשה</button>
-      <button class="btn sm ghost" id="dictclr">🗑 נקה</button></div>
+      <button class="btn sm ghost" id="dictclr">🗑 נקה</button>
+      <button class="btn sm ghost" id="dictdiag">🩺 בדיקת מיקרופון</button></div>
+    <div id="dictdiagbox"></div>
     ${h.length?`<div class="dicthist"><div class="hintxt">הכתבות אחרונות — לחץ לשלוח שוב</div>
       ${h.map((x,i)=>`<div class="dh"><span>${esc(x.t.slice(0,220))}${x.t.length>220?'…':''}</span>
         <button class="btn sm dhsend" data-i="${i}">📋</button><button class="del dhdel" data-i="${i}">🗑</button></div>`).join('')}</div>`:''}`;
@@ -441,6 +455,26 @@ function openDictPad(){
     if(!on&&go._wantSend){go._wantSend=false;setTimeout(()=>{if(pad.value.trim())send();},250);}
   }).observe(go,{attributes:true,attributeFilter:['class']});
   document.getElementById('dictadd').onclick=()=>{if(pad.value.trim())pad.value=pad.value.trim()+'\n';pad.focus();};
+  // בדיקה שמראה בדיוק מה חוסם את ההכתבה, במקום לנחש
+  document.getElementById('dictdiag').onclick=async()=>{
+    const g=micDiag(); const box=document.getElementById('dictdiagbox');
+    let perm='לא ידוע';
+    try{ const st=await navigator.permissions.query({name:'microphone'});
+      perm={granted:'✅ מאושר',denied:'❌ נחסם',prompt:'❓ עדיין לא נשאלת'}[st.state]||st.state; }catch(e){}
+    let mic='לא נבדק';
+    try{ const st=await navigator.mediaDevices.getUserMedia({audio:true});
+      st.getTracks().forEach(t=>t.stop()); mic='✅ המיקרופון נפתח'; }
+    catch(e){ mic='❌ '+(e&&e.name||'נכשל'); }
+    const line=(k,v)=>`<div class="dgrow"><span>${k}</span><b>${v}</b></div>`;
+    box.innerHTML=`<div class="dgbox">
+      ${line('מנוע ההכתבה בדפדפן', g.api?'✅ קיים':'❌ חסר')}
+      ${line('חיבור מאובטח', g.secure?'✅':'❌')}
+      ${line('הרשאת מיקרופון', perm)}
+      ${line('פתיחת מיקרופון בפועל', mic)}
+      ${line('מכשיר', g.ua)}
+      ${line('אפליקציה מותקנת', g.pwa?'⚠️ כן — כאן ההכתבה לרוב לא עובדת':'לא (דפדפן רגיל)')}
+      <div class="hintxt">${g.pwa?'פתח את המערכת בכרום רגיל, או השתמש בכפתור המיקרופון של המקלדת — הוא עובד בכל מקום.':'צלם את החלון הזה ושלח לי אם ההכתבה עדיין לא עובדת.'}</div>
+    </div>`;};
   document.getElementById('dictclr').onclick=()=>{if(pad.value.trim())dictSave(pad.value.trim());pad.value='';pad.focus();};
   sh.querySelectorAll('.dhsend').forEach(b=>b.onclick=()=>copyTxt(dictHist()[+b.dataset.i].t));
   sh.querySelectorAll('.dhdel').forEach(b=>b.onclick=()=>{
@@ -1294,6 +1328,21 @@ function openNewDonor(onCreate,pre){
     const el=document.getElementById('nd_'+k); if(el&&pre[k])el.value=pre[k];});
   const g=id=>document.getElementById(id).value.trim();
   // בחירת ארץ ישראל → מילוי אוטומטי: מדינה, קידומת +972, פלייסהולדר מיקוד
+  // בכרטיס חדש בלבד: טלפון או כתובת ישראליים בוחרים ₪ מראש — ותמיד אפשר לשנות
+  (()=>{
+    const rg=document.getElementById('nd_region'), ph=document.getElementById('nd_phone'),
+          ad=document.getElementById('nd_addr'), ct=document.getElementById('nd_city');
+    if(!rg||!ph)return;
+    const IL=/ירושלים|ביתר|בית שמש|בני ברק|אלעד|מודיעין|אשדוד|צפת|טבריה|רכסים|חיפה|ישראל|israel|jerusalem|bnei ?brak|beitar|ashdod/i;
+    const sniff=()=>{
+      if(rg._touched)return;                       // מרגע שבחרת ידנית — לא נוגעים
+      const p2=String(ph.value||'').replace(/[^\d+]/g,'');
+      const t=[ad&&ad.value,ct&&ct.value].join(' ');
+      rg.value=(p2.startsWith('+972')||p2.startsWith('972')||IL.test(t))?'il':'';
+    };
+    [ph,ad,ct].forEach(x=>x&&x.addEventListener('input',sniff));
+    rg.addEventListener('change',()=>{rg._touched=1;});
+  })();
   document.getElementById('nd_region').onchange=e=>{
     const ph=document.getElementById('nd_phone'), co=document.getElementById('nd_country'), zp=document.getElementById('nd_zip');
     if(e.target.value==='il'){
