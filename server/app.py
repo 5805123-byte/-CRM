@@ -3218,6 +3218,37 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # "דוב / פרכטר יעקב" — השם נחתך במקום הלא נכון בייבוא. שם המשפחה הוא
+    # פרכטר והפרטי יעקב דוב, בדיוק כמו בכרטיס השני שלו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='frechter_name_v1'").fetchone():
+            n = con.execute("UPDATE donors SET last='פרכטר', first='יעקב דוב' "
+                            "WHERE last='דוב' AND first LIKE 'פרכטר%'").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('frechter_name_v1')")
+            if n:
+                print('  פרכטר יעקב דוב: השם סודר (%d)' % n)
+    except Exception as e:
+        print('  frechter name error:', e)
+    # שורות שנכנסו לקוויטל מתוך הערה טכנית ("כרטיס #452 במערכת כולל חצות") —
+    # אלה לא שמות לתפילה, ואסור שיודפסו בקוויטל.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='prayer_sysline_v1'").fetchone():
+            n = 0
+            for r in con.execute("SELECT id,text FROM prayers WHERE text LIKE '%במערכת כולל חצות%'"):
+                keep = [l for l in (r['text'] or '').split('\n')
+                        if not re.match(r'^\s*כרטיס\s*#?\d+\s*במערכת', l)]
+                new = '\n'.join(x for x in keep if x.strip()).strip()
+                if new != (r['text'] or ''):
+                    if new:
+                        con.execute("UPDATE prayers SET text=? WHERE id=?", (new, r['id']))
+                    else:
+                        con.execute("DELETE FROM prayers WHERE id=?", (r['id'],))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('prayer_sysline_v1')")
+            if n:
+                print('  שורות טכניות שהוסרו מהקוויטל: %d' % n)
+    except Exception as e:
+        print('  prayer sysline error:', e)
     # מאיר ביקש לא לקבוע מטבע לתורמים קיימים: יש מי שגר בארץ ותורם בדולרים,
     # ויש מספר ישראלי אצל תורם מברוקלין. הזיהוי האוטומטי חל רק על כרטיס חדש,
     # ובכל כרטיס אפשר להחליף מטבע בלחיצה. כאן מבטלים את הסימון שנעשה קודם.
