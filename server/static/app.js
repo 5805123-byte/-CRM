@@ -384,9 +384,13 @@ async function openHealth(){
     <div class="hintxt">${esc(h.when)} · ${h.bad?('❌ '+h.bad+' תקלות'):'✅ אין תקלות'}${h.warn?(' · ⚠️ '+h.warn+' לתשומת לב'):''}</div>
     ${h.rows.map(r=>`<div class="hrow ${r.state}"><span class="hi">${ic[r.state]||''}</span>
       <span class="hn"><b>${esc(r.name)}</b><small>${esc(r.detail)}</small></span></div>`).join('')}
-    <button class="btn" id="hagain" style="width:100%;margin-top:10px">🔄 בדוק שוב</button>`;
+    <button class="btn" id="hagain" style="width:100%;margin-top:10px">🔄 בדוק שוב</button>
+    <a class="btn" id="hbackup" href="/api/backup" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none">💾 הורד גיבוי של כל המערכת</a>
+    <div class="hintxt">קובץ אחד עם כל הנתונים. שמור אותו אצלך מדי פעם — וגם שלח אותו אליי כשאתה רוצה שאראה את המצב העדכני.</div>`;
   document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
   document.getElementById('hagain').onclick=openHealth;
+  const hb=document.getElementById('hbackup');
+  if(hb)hb.onclick=()=>toast('מכין גיבוי… ההורדה תתחיל בעוד רגע');
 }
 // ===== פנקס ההכתבה — להכתיב הוראות ותיקונים ולהעתיק אותם במכה אחת =====
 const DICTKEY='kc_dict_hist';

@@ -5050,6 +5050,32 @@ class H(BaseHTTPRequestHandler):
                     return self._send_cached(_DATA_CACHE)
                 return self._build_data()
 
+        if self.path.split('?')[0] == '/api/backup':
+            # גיבוי מלא של המסד. נעשה דרך מנגנון הגיבוי של SQLite כדי לקבל
+            # קובץ שלם ותקין גם בזמן שהמערכת עובדת. משמש גם לגיבוי אצל מאיר
+            # וגם כדי לשלוח לי את הנתונים העדכניים כשצריך.
+            try:
+                tmp = os.path.join(HERE, '_backup_tmp.db')
+                src = sqlite3.connect(DB)
+                dst = sqlite3.connect(tmp)
+                with dst:
+                    src.backup(dst)
+                dst.close(); src.close()
+                raw = open(tmp, 'rb').read()
+                try: os.remove(tmp)
+                except Exception: pass
+                blob = gzip.compress(raw, 6)
+                name = 'kollel-crm-%s.db.gz' % today_iso()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/gzip')
+                self.send_header('Content-Disposition', 'attachment; filename="%s"' % name)
+                self.send_header('Content-Length', str(len(blob)))
+                self.end_headers()
+                self.wfile.write(blob)
+                print('  גיבוי הורד: %.1f MB (דחוס %.1f MB)' % (len(raw) / 1048576, len(blob) / 1048576))
+                return
+            except Exception as e:
+                return self._send(500, {'error': 'backup', 'detail': str(e)[:200]})
         if self.path == '/api/health':
             return self._send(200, health_report())
         return self._get2()
