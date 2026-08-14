@@ -3953,6 +3953,10 @@ _CERT_SMALL = re.compile(r'^(בן|בת|ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
 _REQ_R = .60        # גודל הבקשה ביחס לשם
 _SPACE_R = .92      # רוחב הרווח בין המילים
+# פתיח שבא לפני השם ("לעילוי נשמת אסתר בת יהושע") — רק הפתיח קטן, והשמות
+# שאחריו גדולים. שונה מברכה שבאה אחרי השם ונמשכת עד הסוף.
+_CERT_LEAD = re.compile(r'^(לעילוי|נשמת|לע["\'״׳]?נ|לזכר|לזכות|לרפואת|לרפו["\'״׳]?ש|'
+                        r'להצלחת|לישועת|לפרנסת|לזרע|לברכת|לכבוד|לרגל)$')
 _CERT_REQ = re.compile(
     r'^(ו?ל)(רפוא\w*|הצלח\w*|זיווג\w*|זרע\w*|פרנס\w*|ישוע\w*|ברכ\w*|נחת|חיים|בני\w*|'
     r'שלום|עילוי|זכר|כל|אריכ\w*|בריא\w*|שנה|כפרת|הרחב\w*|מזל|שידוך|בן|בת)$'
@@ -4025,12 +4029,16 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         """כל מילה בשורה עם הגודל שלה: השם בגדול, בן/בת קטנים, והבקשה —
         מהמילה שבה היא מתחילה ועד סוף המשפט — קטנה יותר. הקביעה נעשית פעם
         אחת על השורה השלמה, כדי שהבקשה תישאר קטנה גם אחרי שבירת שורה."""
-        out, inreq = [], False
-        for w in raw.split():
-            if not inreq and _CERT_REQ.match(w):
+        ws = raw.split()
+        i, out = 0, []
+        while i < len(ws) and _CERT_LEAD.match(ws[i]):     # פתיח לפני השם
+            out.append((ws[i], px * _REQ_R, True)); i += 1
+        inreq = False
+        for w in ws[i:]:
+            if not inreq and _CERT_REQ.match(w):           # ברכה אחרי השם
                 inreq = True
             if inreq:
-                out.append((w, px * _REQ_R, True))     # הבקשה — מודגשת, קטנה מהשם
+                out.append((w, px * _REQ_R, True))
             elif _CERT_SMALL.match(w):
                 out.append((w, px * .5, False))
             else:

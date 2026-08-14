@@ -80,15 +80,20 @@ const SMALLWORD=/^(בן|בת|ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
 const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
+// פתיח שבא לפני השם — רק הוא קטן, והשמות שאחריו נשארים גדולים
+const LEADWORD=/^(לעילוי|נשמת|לע["'״׳]?נ|לזכר|לזכות|לרפואת|לרפו["'״׳]?ש|להצלחת|לישועת|לפרנסת|לזרע|לברכת|לכבוד|לרגל)$/;
 function formatName(line){
   const t=(line||'').trim(); if(!t) return '';
+  const ws=t.split(/\s+/); let i=0, out=[];
+  while(i<ws.length && LEADWORD.test(ws[i])){ out.push(`<span class="nreq">${esc(ws[i])}</span>`); i++; }
   let req=false;
-  return t.split(/(\s+)/).map(tok=>{
-    if(/^\s*$/.test(tok)) return tok;
-    if(!req && REQSTART.test(tok)) req=true;
-    if(req) return `<span class="nreq">${esc(tok)}</span>`;
-    return SMALLWORD.test(tok) ? `<span class="nsm">${esc(tok)}</span>` : esc(tok);
-  }).join('');
+  for(; i<ws.length; i++){
+    const w=ws[i];
+    if(!req && REQSTART.test(w)) req=true;
+    out.push(req ? `<span class="nreq">${esc(w)}</span>`
+      : (SMALLWORD.test(w) ? `<span class="nsm">${esc(w)}</span>` : esc(w)));
+  }
+  return out.join(' ');
 }
 function formatLines(text){ return String(text||'').split('\n').map(formatName).join('\n'); }
 function wireFmt(el){
