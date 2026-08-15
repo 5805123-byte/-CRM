@@ -1380,17 +1380,25 @@ def sync(con):
                 return M.search(charset, *[a.encode('utf-8') if not _ascii(a) else a for a in args])
             return M.search(None, *args)
 
-        # אם הוגדרו כמה שולחים — נחפש לכל אחד בנפרד ונאחד
+        # אם הוגדרו כמה שולחים — נחפש לכל אחד בנפרד ונאחד. בקשה מהאתר
+        # שנשלחה פעם אחת מכתובת אחרת (למשל הועברה ידנית) הייתה נופלת מהסינון,
+        # ולכן מוסיפים אליה גם את כל מה שנושאו נושא הטופס.
         id_sets = []
         if froms:
             for f in froms:
                 typ, data = _search('FROM', _q(f))
                 if typ == 'OK':
                     id_sets.append(set(data[0].split()))
+            if subj:
+                typ, data = _search()          # crit כבר כולל SUBJECT
+                if typ == 'OK':
+                    id_sets.append(set(data[0].split()))
             ids = set().union(*id_sets) if id_sets else set()
         else:
             typ, data = _search()
             ids = set(data[0].split()) if typ == 'OK' else set()
+        scanned = len(ids)
+        skipped = []
         for i in sorted(ids, key=lambda x: int(x)):
             typ, md = M.fetch(i, '(RFC822)')
             if typ != 'OK' or not md or not md[0]:
@@ -1410,6 +1418,9 @@ def sync(con):
             body = _extract_text(msg)
             names = _parse_names(body, translate=True)
             if not names.strip():     # אין שמות לתפילה (למשל רק "thank you") — לא מכניסים לרשימה
+                if len(skipped) < 12:
+                    skipped.append({'from': femail, 'subject': _dec(msg.get('Subject')),
+                                    'date': (msg.get('Date') or '')[:31]})
                 continue
             # המייל האמיתי של התורם נמצא בגוף המייל (המיילים מועברים דרך כתובת אחת) — מזהים לפיו
             real_email = (_submitter_email(body) or femail or '').lower()
@@ -1431,7 +1442,9 @@ def sync(con):
                 attached += 1
         M.logout()
         con.commit()
-        return {'ok': True, 'new': new, 'attached': attached}
+        return {'ok': True, 'new': new, 'attached': attached, 'scanned': scanned,
+                'skipped': skipped, 'mailbox': mailbox, 'since': _imap_since(),
+                'subject': subj, 'from': froms}
     except imaplib.IMAP4.error as e:
         return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
     except Exception as e:

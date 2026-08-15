@@ -3660,6 +3660,16 @@ async function renderKvIntake(){
   if(INTAKE===null) await loadIntake();
   paintIntake();
 }
+// מה בדיוק נסרק ומה נדחה — כדי לדעת למה בקשה לא נכנסה
+function intDiag(r){
+  const box=document.getElementById('intdiag'); if(!box||!r)return;
+  const sk=r.skipped||[];
+  box.innerHTML=`<div class="hintxt" style="margin:0 2px 6px">🔎 נסרקו <b>${r.scanned||0}</b> מיילים
+    (${esc(r.mailbox||'INBOX')} · מ־${esc(r.since||'')}${r.subject?(' · נושא "'+esc(r.subject)+'"'):''}${(r['from']||[]).length?(' · שולחים: '+esc((r['from']||[]).join(', '))):''})
+    · נכנסו <b>${r.new||0}</b>${sk.length?(' · דילגתי על '+sk.length+' בלי שמות לתפילה'):''}</div>`
+    +(sk.length?`<details class="dsec"><summary>מיילים שדילגתי עליהם (${sk.length})</summary>
+      ${sk.map(x=>`<div class="miss2" dir="ltr">${esc(x.date||'')} · ${esc(x.from||'')} · ${esc(x.subject||'')}</div>`).join('')}</details>`:'');
+}
 function paintIntake(){
   const items=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
   const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
@@ -3667,13 +3677,15 @@ function paintIntake(){
       <button class="btn sm" id="intSync">🔄 משוך מהמייל</button></div>
     ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
     <div class="hintxt" style="margin:2px 2px 8px">כל בקשה שהגיעה במייל מהאתר. ✅ = השמות כבר צורפו לקוויטל אצל התורם · 🔴 = עדיין לא. אפשר לערוך את השמות, לצרף לתורם, או לסמן שטופל.</div>
+    <div id="intdiag"></div>
     <div id="intlist"></div>`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
   document.getElementById('intSync').onclick=async()=>{
     const btn=document.getElementById('intSync');btn.disabled=true;btn.textContent='מושך…';
     const r=await api('POST','/api/intake/sync',{});
     if(!r.ok){toast(r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאת משיכה: '+(r.detail||r.error||''));btn.disabled=false;btn.textContent='🔄 משוך מהמייל';return;}
-    toast('נמשכו '+(r.new||0)+' בקשות'+(r.attached?' · '+r.attached+' צורפו אוטומטית לקוויטל לפי המייל':'')+' ✓');INTAKE=null;await loadIntake();paintIntake();
+    toast('נמשכו '+(r.new||0)+' בקשות'+(r.attached?' · '+r.attached+' צורפו אוטומטית לקוויטל לפי המייל':'')+' ✓');
+    INTAKE=null;await loadIntake();paintIntake();intDiag(r);
   };
   const list=document.getElementById('intlist');
   list.innerHTML=items.map(x=>{

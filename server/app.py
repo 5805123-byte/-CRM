@@ -3231,7 +3231,10 @@ def ensure_schema():
                 con.execute("UPDATE donors SET phone=? WHERE id=?", (keep, r['id']))
                 con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) "
                             "VALUES(?,'phone',?,?)", (r['id'], BAD, today_iso()))
-                print('  משה דויטש: הטלפון של מזכיר מבט דייטש הוסר מהכרטיס')
+                # המספר הנכון, לפי איש הקשר "משה דויטש" שמאיר הראה
+                con.execute("UPDATE donors SET phone='+1 814-440-8103' WHERE id=? "
+                            "AND TRIM(COALESCE(phone,''))=''", (r['id'],))
+                print('  משה דויטש: הטלפון תוקן ל+1 814-440-8103')
             con.execute("INSERT INTO seed_flags(name) VALUES('deutch_phone_v1')")
     except Exception as ex:
         print('  deutch phone error:', ex)
