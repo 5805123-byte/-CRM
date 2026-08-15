@@ -3644,8 +3644,11 @@ def get_all():
         pass
     for d in donors: d['unclassified'] = []
     try:
+        # רק מה שבאמת עוד בלי ייעוד. קודם נבדקה ההערה בלבד, ולכן חיוב
+        # שכבר סווג המשיך להופיע בחלון "בלי ייעוד" בכרטיס.
         for r in c.execute("SELECT id,donor_id,date,amount,method FROM donations "
-                           "WHERE COALESCE(note,'') LIKE '%לא סווג%' ORDER BY date"):
+                           "WHERE COALESCE(note,'') LIKE '%לא סווג%' "
+                           "AND COALESCE(TRIM(category),'')='' ORDER BY date"):
             if r['donor_id'] in byid:
                 byid[r['donor_id']]['unclassified'].append(dict(r))
     except Exception:
@@ -6197,6 +6200,9 @@ class H(BaseHTTPRequestHandler):
             con = db(); sets = []; vals = []
             for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
+            # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
+            if (b.get('category') or '').strip() and 'note' not in b:
+                sets.append("note=TRIM(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה',''))")
             if sets:
                 con.execute("UPDATE donations SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
                 con.commit()

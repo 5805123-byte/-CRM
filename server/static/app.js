@@ -2042,17 +2042,14 @@ function cardDetails(d,body){
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
         +'<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>';
-      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים שלא ידוע עבור מה — סה"כ $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})}</div>
-      ${d.unclassified.map(x=>`<div class="uline" data-uid="${x.id}">
-        <span class="unci">$${(+x.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${esc(gregLabel(x.date)||x.date)}</span>
-        <select class="ucat1">${uo}</select><input class="unew1" placeholder="שם הייעוד החדש…" style="display:none"><input class="ubldg1" list="bldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:none"><select class="uav1" style="display:none">${avOpts()}</select><input class="uavnew1" placeholder="שם האברך החדש" style="display:none"><button class="btn sm uavadd1" style="display:none">➕ הוסף</button><button class="btn sm ugo1">💾</button></div>`).join('')}
-      ${d.unclassified.length>1?`<div class="addrow uall"><select id="ucl_cat">${uo}</select>
+      return `<datalist id="bldgitems">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist><div class="unclbox"><div class="k">❓ ${d.unclassified.length} חיובים בלי ייעוד · $${(d.unclassified.reduce((s,x)=>s+(+x.amount||0),0)).toLocaleString('en-US',{maximumFractionDigits:2})} — כל סכום נקבע ברשימה למטה, וכאן רק אם הכל לאותו ייעוד</div>
+      <div class="addrow uall"><select id="ucl_cat">${uo}</select>
         <input id="ucl_new" placeholder="שם הייעוד החדש…" style="display:none">
         <input id="ucl_bldg" list="bldgitems" placeholder="🏗️ מה תרם בבניין?" style="display:none">
         <select id="ucl_av" style="display:none">${avOpts()}</select>
         <input id="ucl_avnew" placeholder="שם האברך החדש" style="display:none">
         <button class="btn sm" id="ucl_avadd" style="display:none">➕ הוסף</button>
-        <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div>`:''}</div>`;})():''}
+        <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div></div>`;})():''}
     <details class="dsec"><summary>📌 כללים קבועים — איזה סכום שייך לאיזה ייעוד${(d.rules||[]).length?(' ('+(d.rules||[]).length+')'):''}</summary>
       <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
       <div id="rules">${(d.rules||[]).map(r=>`<div class="rulerow" data-amt="${r.amount}">
@@ -2186,36 +2183,6 @@ function cardDetails(d,body){
     else { await api('PUT','/api/donation/'+b.dataset.did,{category:cat,note:note?(String(dn.note||'').split(' · ')[0]+' · '+note):dn.note}); }
     toast(rule?'נשמר לכל הסכום הזה ✓':'נשמר ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
-  body.querySelectorAll('.uline[data-uid]').forEach(ln=>{
-    const b=ln.querySelector('.ugo1'), sx=ln.querySelector('.ucat1'), nx=ln.querySelector('.unew1'), bx=ln.querySelector('.ubldg1');
-    const isB=c=>/בנין|בניין/.test(c||'');
-    const ax=ln.querySelector('.uav1'), axn=ln.querySelector('.uavnew1'), axa=ln.querySelector('.uavadd1');
-    wireAvNew(ax,axn,axa);
-    if(sx&&nx&&bx){ const shw=()=>{const isNew=sx.value==='__new__';nx.style.display=isNew?'block':'none';
-        const c=isNew?nx.value:sx.value;
-        bx.style.display=isB(c)?'block':'none';
-        const iz=isIZcat(c); if(ax) ax.style.display=iz?'block':'none';
-        if(!iz&&axn){axn.style.display='none';axa.style.display='none';}};
-      sx.onchange=()=>{shw();if(sx.value==='__new__')nx.focus();}; nx.oninput=shw; }
-    b.onclick=async()=>{
-      const s1=ln.querySelector('.ucat1'), n1=ln.querySelector('.unew1');
-      let cat=s1.value.trim();
-      if(cat==='__new__'){ cat=n1.value.trim();
-        if(!cat){toast('כתוב את שם הייעוד');n1.focus();return;}
-        if(!(CAMPAIGNS||[]).includes(cat)){ await api('POST','/api/campaigns',{name:cat}); CAMPAIGNS.unshift(cat); } }
-      if(!cat){toast('בחר עבור מה');return;}
-      if(/בנין|בניין/.test(cat)){ const it=ln.querySelector('.ubldg1').value.trim();
-        if(!it){toast('כתוב מה הוא תרם בבניין');return;}
-        if(!(BUILDING_ITEMS||[]).includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
-        cat=cat+' — '+it; }
-      let avv='';
-      if(isIZcat(cat)){ avv=(ax?ax.value:'').trim();
-        if(!avv||avv==='__new__'){toast('בחר אברך מהרשימה');if(ax)ax.focus();return;} }
-      b.disabled=true;b.textContent='…';
-      const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,ids:[+ln.dataset.uid],avreich:avv});
-      if(!r||!r.ok){b.disabled=false;b.textContent='💾';toast('השמירה נכשלה');return;}
-      toast('נשמר ✓'); await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
-  });
   const uclSave=document.getElementById('ucl_save');
   const uclSel=document.getElementById('ucl_cat'), uclNew=document.getElementById('ucl_new');
   const uclBd=document.getElementById('ucl_bldg');
