@@ -1248,7 +1248,7 @@ function wfYear(x){const m=/(ת[שק]["׳']?[א-ת]{0,3})\s*$/.exec(String((x&&x
 function whatForBox(el){
   let list=noCatList().filter(o=>matchQ(o.d.last+' '+o.d.first+' '+(o.d.english||'')+' '+(o.x.amount||'')));
   const tot=list.reduce((s,o)=>s+amtNum(o.x.amount),0);
-  el.innerHTML=`<div class="cnt">🎯 בלי ייעוד — ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}
+  el.innerHTML=`<div class="cnt"><span id="wfcnt">🎯 בלי ייעוד — ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}</span>
       <button class="btn sm ghost" id="wfclose">✕ סגור</button></div>
     <div class="hintxt" style="margin:0 2px 6px">הכסף כבר רשום אצל התורם. כאן רק בוחרים עבור מה, ולוחצים 💾 שמור.</div>
     <div class="list">${list.slice(0,WFLIM).map(o=>`<div class="wfrow" data-id="${o.x.id}">
@@ -1301,7 +1301,20 @@ function whatForBox(el){
     o.x.category=cat;
     await api('PUT','/api/donation/'+id,{category:cat});
     if(!(CAMPAIGNS||[]).includes(cat)&&!DNBASE.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
-    toast('נשמר ✓ '+cat+(kind?' · היום נתפס':'')); renderLedger();});
+    // מסירים רק את השורה הזו. רענון של כל הרשימה מזיז את הכפתורים מתחת
+    // לאצבע, ואז לחיצה שנייה נופלת על תורם אחר
+    toast('✓ '+(o.d.last+' '+o.d.first).trim()+' '+curSym(o.d)+o.x.amount+' → '+cat+(kind?' · היום נתפס':''));
+    row.remove(); wfCount();});
+}
+// עדכון המונים בלי לרנדר מחדש את הרשימה
+function wfCount(){
+  const nc=noCatList(), s2=nc.reduce((a,o)=>a+amtNum(o.x.amount),0);
+  const t='$'+Math.round(s2).toLocaleString('en-US');
+  const c=document.getElementById('wfcnt');
+  if(c)c.textContent='🎯 בלי ייעוד — '+nc.length+' תרומות · '+t;
+  const b=document.querySelector('#lednocat b'), sm=document.querySelector('#lednocat small');
+  if(b)b.textContent=t;
+  if(sm)sm.textContent=nc.length+' תרומות — להשלים עבור מה';
 }
 function renderAddrFix(){
   chips.innerHTML='';
