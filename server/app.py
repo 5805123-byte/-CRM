@@ -3218,6 +3218,27 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # "כרטיס #273 במערכת כולל חצות" — הערה טכנית שנכתבה בייצוא לאנשי הקשר
+    # וחזרה פנימה בייבוא. היא רק חוזרת על מספר הכרטיס שכבר מופיע בראש
+    # הכרטיס, ולכן יורדת. הערות אמיתיות באותה שורה נשמרות.
+    # רץ בכל עלייה ולא פעם אחת: ההערה נכתבת על ידינו בייצוא לאנשי הקשר,
+    # ולכן היא חוזרת בכל ייבוא חוזר. השאר בשורה נשמר כמו שהוא.
+    try:
+        rx = re.compile(r'^\s*כרטיס\s*#\d+\s*במערכת כולל חצות\s*$')
+        n = 0
+        for r in con.execute("SELECT id,notes FROM donors "
+                             "WHERE notes LIKE '%במערכת כולל חצות%'").fetchall():
+            parts = [x.strip() for x in re.split(r'\s+·\s+|\n', r['notes'] or '')]
+            keep = ' · '.join(x for x in parts if x and not rx.match(x))
+            if keep != (r['notes'] or ''):
+                con.execute("UPDATE donors SET notes=? WHERE id=?", (keep, r['id']))
+                n += 1
+        if n:
+            con.commit()
+            print('  הערת "כרטיס # במערכת" שהוסרה מהכרטיסים: %d' % n)
+    except Exception as ex:
+        print('  card note cleanup error:', ex)
+
     # כרטיס נפתח רק באישור של מאיר, לא לבד. הכרטיסים שנפתחו אוטומטית
     # למפקידים בלי כרטיס נסגרים, וההפקדות חוזרות לרשימה "הפקדות שלא זוהו"
     # שם מאיר משייך לתורם קיים או מאשר לפתוח כרטיס חדש.
