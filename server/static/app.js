@@ -1241,6 +1241,10 @@ function noCatList(){
   return out;
 }
 // נפתח מתוך מסך החיובים (כפתור "🎯 בלי ייעוד") — לא חלון נפרד.
+// ייעוד שהוא יום (פרנס לילה / חדר קפה / ארוחת בוקר) לא מסתפק בשם הייעוד —
+// צריך לדעת איזה יום נתפס, אחרת הכסף מסווג אבל הלילה לא משובץ לאף אחד.
+const WFDAY={'פרנס לילה':'parnes','חדר קפה':'coffee','ארוחת בוקר':'breakfast'};
+function wfYear(x){const m=/(ת[שק]["׳']?[א-ת]{0,3})\s*$/.exec(String((x&&x.hmonth)||''));return m?m[1]:'';}
 function whatForBox(el){
   let list=noCatList().filter(o=>matchQ(o.d.last+' '+o.d.first+' '+(o.d.english||'')+' '+(o.x.amount||'')));
   const tot=list.reduce((s,o)=>s+amtNum(o.x.amount),0);
@@ -1254,6 +1258,13 @@ function whatForBox(el){
       <div class="wfact"><select class="wfcat" data-id="${o.x.id}">${dnCatOpts('')}</select>
         <button class="btn sm wfsave" data-id="${o.x.id}">💾 שמור</button></div>
       <div class="addrow hidden" data-wfnew="${o.x.id}"><input class="wfnew" placeholder="שם הייעוד החדש…"></div>
+      <div class="wfday hidden" data-wfday="${o.x.id}">
+        <div class="hintxt">🗓️ איזה יום נתפס? בלי זה הלילה לא משובץ לאף אחד.</div>
+        <div class="wfdrow"><select class="wf_kind"><option value="">— איזה פרנס —</option>${PKINDS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+          <select class="wf_hm"><option value="">— חודש —</option>${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
+          <select class="wf_hd"><option value="">— יום —</option>${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
+          <select class="wf_hy">${heYearOpts(wfYear(o.x))}</select></div>
+      </div>
     </div>`).join('')||'<div class="empty">🎉 לכל התרומות יש ייעוד</div>'}</div>
     ${list.length>WFLIM?`<button class="btn ghost" id="wfmore" style="width:100%;margin:8px 2px">עוד — מציג ${WFLIM} מתוך ${list.length}</button>`:''}`;
   const mb=document.getElementById('wfmore'); if(mb)mb.onclick=()=>{WFLIM+=40;whatForBox(el);};
@@ -1261,17 +1272,36 @@ function whatForBox(el){
   el.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   el.querySelectorAll('.wfcat').forEach(s=>s.onchange=()=>{
     const nb=el.querySelector('[data-wfnew="'+s.dataset.id+'"]');
-    if(nb){nb.classList.toggle('hidden',s.value!=='__new__'); if(s.value==='__new__')nb.querySelector('.wfnew').focus();}});
+    if(nb){nb.classList.toggle('hidden',s.value!=='__new__'); if(s.value==='__new__')nb.querySelector('.wfnew').focus();}
+    const db2=el.querySelector('[data-wfday="'+s.dataset.id+'"]');
+    if(db2){const k=WFDAY[s.value]||''; db2.classList.toggle('hidden',!k);
+      if(k)db2.querySelector('.wf_kind').value=k;}});
   el.querySelectorAll('.wfsave').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.id, row=el.querySelector('.wfrow[data-id="'+id+'"]');
     let cat=row.querySelector('.wfcat').value.trim();
     if(cat==='__new__')cat=(row.querySelector('.wfnew')||{value:''}).value.trim();
     if(!cat){toast('בחר עבור מה');return;}
     const o=noCatList().find(z=>String(z.x.id)===String(id)); if(!o)return;
+    // ייעוד של יום — קודם משבצים את היום, ורק אחריו מסמנים את הייעוד
+    let kind='';
+    if(WFDAY[cat]){
+      const box=row.querySelector('.wfday');
+      kind=box.querySelector('.wf_kind').value||WFDAY[cat];
+      const hm=box.querySelector('.wf_hm').value, hd=+box.querySelector('.wf_hd').value,
+            hy=box.querySelector('.wf_hy').value;
+      if(!hm||!hd){toast('בחר חודש ויום עבריים');return;}
+      cat=(PKINDS.find(k=>k[0]===kind)||['',''])[1].replace(/^\S+\s/,'')||cat;
+      const dtext=heDay(hd)+' '+hm;
+      const r=await api('POST','/api/parnes',{donor_id:o.d.id,day:hd,month:hm,date_text:dtext,
+        dedication:'',amount:o.x.amount,kind,hyear:hy,method:o.x.method||'',currency:curSym(o.d)});
+      if(r&&r.id){ await api('PUT','/api/parnes/'+r.id,{paid:1});   // הכסף כבר נכנס
+        o.d.parnes=(o.d.parnes||[]).concat([{id:r.id,donor_id:o.d.id,day:hd,month:hm,
+          date_text:dtext,dedication:'',amount:o.x.amount,kind,hyear:hy,paid:1}]); }
+    }
     o.x.category=cat;
     await api('PUT','/api/donation/'+id,{category:cat});
     if(!(CAMPAIGNS||[]).includes(cat)&&!DNBASE.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
-    toast('נשמר ✓ '+cat); renderLedger();});
+    toast('נשמר ✓ '+cat+(kind?' · היום נתפס':'')); renderLedger();});
 }
 function renderAddrFix(){
   chips.innerHTML='';
