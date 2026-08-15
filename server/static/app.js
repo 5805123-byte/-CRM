@@ -1244,6 +1244,13 @@ function noCatList(){
 // ייעוד שהוא יום (פרנס לילה / חדר קפה / ארוחת בוקר) לא מסתפק בשם הייעוד —
 // צריך לדעת איזה יום נתפס, אחרת הכסף מסווג אבל הלילה לא משובץ לאף אחד.
 const WFDAY={'פרנס לילה':'parnes','חדר קפה':'coffee','ארוחת בוקר':'breakfast'};
+// "בניין" לבד לא אומר כלום — צריך לדעת מה נתרם בו. בכל מקום שבוחרים
+// בניין נפתח שדה חופשי, והייעוד נשמר כ"בניין — שולחן"
+function isBldgCat(c){return /בנין|בניין/.test(String(c||''));}
+function bldgList(id){return `<datalist id="${id}">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;}
+async function bldgRemember(it){
+  if(it&&!(BUILDING_ITEMS||[]).includes(it)){await api('POST','/api/building_items',{name:it});BUILDING_ITEMS.unshift(it);}
+}
 // תרומה שממתינה לשיבוץ בלוח. כל עוד היא פתוחה — הלוח מציג פס עליון,
 // והיום שנבחר נרשם על התורם הזה, מסומן כנגבה, והייעוד נכנס לתרומה
 let PYPICK=null;
@@ -1279,6 +1286,7 @@ function whatForBox(el){
   el.innerHTML=`<div class="cnt"><span id="wfcnt">🎯 בלי ייעוד — ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}</span>
       <button class="btn sm ghost" id="wfclose">✕ סגור</button></div>
     <div class="hintxt" style="margin:0 2px 6px">הכסף כבר רשום אצל התורם. כאן רק בוחרים עבור מה, ולוחצים 💾 שמור.</div>
+    ${bldgList('wfbldgitems')}
     <div class="list">${list.slice(0,WFLIM).map(o=>`<div class="wfrow" data-id="${o.x.id}">
       <div class="wfhead"><b class="avnamelink" data-id="${o.d.id}">${esc((o.d.last+' '+o.d.first).trim())}</b>
         <span class="wfamt">${curSym(o.d)}${esc(o.x.amount)}</span>
@@ -1286,6 +1294,7 @@ function whatForBox(el){
       <div class="wfact"><select class="wfcat" data-id="${o.x.id}">${dnCatOpts('')}</select>
         <button class="btn sm wfsave" data-id="${o.x.id}">💾 שמור</button></div>
       <div class="addrow hidden" data-wfnew="${o.x.id}"><input class="wfnew" placeholder="שם הייעוד החדש…"></div>
+      <div class="addrow hidden" data-wfbldg="${o.x.id}"><input class="wfbldg" list="wfbldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן / עמוד / מטר…)"></div>
       <div class="wfday hidden" data-wfday="${o.x.id}">
         <div class="hintxt">🗓️ איזה לילה הוא תפס? בלוח רואים מה פנוי, מי כבר לקח, ומה עוד לא נגבה.</div>
         <button class="btn sm wfopen" data-id="${o.x.id}">🗓️ פתח את הלוח ובחר יום</button>
@@ -1299,8 +1308,10 @@ function whatForBox(el){
     const nb=el.querySelector('[data-wfnew="'+s.dataset.id+'"]');
     if(nb){nb.classList.toggle('hidden',s.value!=='__new__'); if(s.value==='__new__')nb.querySelector('.wfnew').focus();}
     const db2=el.querySelector('[data-wfday="'+s.dataset.id+'"]');
-    if(db2){const k=WFDAY[s.value]||''; db2.classList.toggle('hidden',!k);
-      if(k)db2.querySelector('.wf_kind').value=k;}});
+    if(db2)db2.classList.toggle('hidden',!WFDAY[s.value]);
+    const bb=el.querySelector('[data-wfbldg="'+s.dataset.id+'"]');
+    if(bb){bb.classList.toggle('hidden',!isBldgCat(s.value));
+      if(isBldgCat(s.value))bb.querySelector('.wfbldg').focus();}});
   el.querySelectorAll('.wfopen').forEach(b=>b.onclick=()=>{
     const row=el.querySelector('.wfrow[data-id="'+b.dataset.id+'"]');
     const cat=row.querySelector('.wfcat').value.trim();
@@ -1314,6 +1325,11 @@ function whatForBox(el){
     const o=noCatList().find(z=>String(z.x.id)===String(id)); if(!o)return;
     // ייעוד של יום נסגר בלוח עצמו — שם רואים מה תפוס ומי כבר לקח
     if(WFDAY[cat]){ openParnesPick(o,cat); return; }
+    if(isBldgCat(cat)){
+      const it=(row.querySelector('.wfbldg')||{value:''}).value.trim();
+      if(!it){toast('כתוב מה הוא תרם בבניין');return;}
+      await bldgRemember(it); cat=cat+' — '+it;
+    }
     const kind='';
     o.x.category=cat;
     await api('PUT','/api/donation/'+id,{category:cat});
@@ -1979,6 +1995,9 @@ function cardDetails(d,body){
       <div class="addrow gvnewrow hidden" style="margin-top:5px">
         <input class="gvcatnew" data-did="${g.did}" placeholder="שם הייעוד החדש">
         <button class="btn sm gvcatok" data-did="${g.did}">➕ הוסף</button></div>
+      <div class="addrow gvbldgrow hidden" style="margin-top:5px">
+        <input class="gvbldg" data-did="${g.did}" list="bldgitems3" placeholder="🏗️ מה תרם בבניין? (שולחן / עמוד / מטר…)">
+        <button class="btn sm gvbldgok" data-did="${g.did}">➕ הוסף</button></div>
       <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: סעודת ראש חודש)" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
       <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label>
@@ -1997,7 +2016,7 @@ function cardDetails(d,body){
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
       + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}</div></div>`;
   };
-  const give=gitems.length?`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>`
+  const give=gitems.length?bldgList('bldgitems3')+`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>`
     + gitems.slice(0,GVSHOW).map(gvrow).join('')
     + (gitems.length>GVSHOW?`<details class="gvmore"><summary>הצג עוד ${gitems.length-GVSHOW}</summary>${gitems.slice(GVSHOW).map(gvrow).join('')}</details>`:'')
     + `</div>`:'';
@@ -2172,13 +2191,30 @@ function cardDetails(d,body){
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   body.querySelectorAll('.gvcatsel').forEach(s=>s.onchange=()=>{
     const pan=s.closest('.gvpanel');
+    pan.querySelector('.gvbldgrow').classList.add('hidden');
     if(s.value==='__new__'){
       pan.querySelector('.gvnewrow').classList.remove('hidden');
       pan.querySelector('.gvcatnew').focus();
       return;
     }
+    // בניין — קודם מפרטים מה נתרם, ורק אז נשמר
+    if(isBldgCat(s.value)){
+      pan.querySelector('.gvnewrow').classList.add('hidden');
+      pan.querySelector('.gvbldgrow').classList.remove('hidden');
+      pan.querySelector('.gvbldg').focus();
+      return;
+    }
     saveGvCat(s.dataset.did,s.value);
   });
+  body.querySelectorAll('.gvbldgok').forEach(b=>b.onclick=async()=>{
+    const pan=b.closest('.gvpanel'), inp=pan.querySelector('.gvbldg'), it=inp.value.trim();
+    if(it.length<2){toast('כתוב מה הוא תרם בבניין');inp.focus();return;}
+    const sel=pan.querySelector('.gvcatsel');
+    b.disabled=true; await bldgRemember(it);
+    await saveGvCat(b.dataset.did,(sel.value||'בניין')+' — '+it);
+  });
+  body.querySelectorAll('.gvbldg').forEach(i=>i.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();i.closest('.gvpanel').querySelector('.gvbldgok').click();}});
   body.querySelectorAll('.gvcatok').forEach(b=>b.onclick=async()=>{
     const pan=b.closest('.gvpanel'), inp=pan.querySelector('.gvcatnew'), nm=inp.value.trim();
     if(nm.length<2){toast('כתוב את שם הייעוד');inp.focus();return;}
