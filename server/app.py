@@ -3218,6 +3218,24 @@ def ensure_schema():
     except Exception as e:
         print('  orphan cleanup error:', e)
 
+    # 058-453-0710 יושב באנשי הקשר גם על "מזכיר מבט דייטש" וגם על משה דויטש,
+    # וכך הוא נדבק לכרטיס התורם. הוא יורד משם ונרשם כנדחה כדי שלא יחזור.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutch_phone_v1'").fetchone():
+            BAD = '058-453-0710'
+            r = con.execute("SELECT id,phone FROM donors WHERE last='דויטש' "
+                            "AND first LIKE 'משה%'").fetchone()
+            if r:
+                keep = ' / '.join(x.strip() for x in re.split(r'[;,/]+', r['phone'] or '')
+                                  if x.strip() and _ph10(x) != _ph10(BAD))
+                con.execute("UPDATE donors SET phone=? WHERE id=?", (keep, r['id']))
+                con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) "
+                            "VALUES(?,'phone',?,?)", (r['id'], BAD, today_iso()))
+                print('  משה דויטש: הטלפון של מזכיר מבט דייטש הוסר מהכרטיס')
+            con.execute("INSERT INTO seed_flags(name) VALUES('deutch_phone_v1')")
+    except Exception as ex:
+        print('  deutch phone error:', ex)
+
     # "כרטיס #273 במערכת כולל חצות" — הערה טכנית שנכתבה בייצוא לאנשי הקשר
     # וחזרה פנימה בייבוא. היא רק חוזרת על מספר הכרטיס שכבר מופיע בראש
     # הכרטיס, ולכן יורדת. הערות אמיתיות באותה שורה נשמרות.
@@ -5072,10 +5090,19 @@ def contacts_fill(con, cards, status=None):
         if c['addrs'] and not (d['addr'] or '').strip():
             sets.append('addr=?'); vals.append(c['addrs'][0]); filled['addr'] += 1
         if strong and c['phones'] and not (d['phone'] or '').strip():
+            # מספר שמאיר כבר דחה אצל התורם הזה לא חוזר בייבוא הבא
+            try:
+                bad = {_ph10(r['val']) or re.sub(r'\D', '', r['val'] or '')
+                       for r in con.execute("SELECT val FROM sugg_reject "
+                                            "WHERE donor_id=? AND kind='phone'", (d['id'],))}
+            except Exception:
+                bad = set()
             # אותו מספר מופיע לעיתים בכמה עיצובים — שומרים אותו פעם אחת
             uph, seenp = [], set()
             for ph in c['phones']:
                 k = _ph10(ph) or re.sub(r'\D', '', ph)
+                if k and k in bad:
+                    continue
                 if k and k not in seenp:
                     seenp.add(k); uph.append(ph.strip())
             if uph:
