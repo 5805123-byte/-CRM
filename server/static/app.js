@@ -1244,7 +1244,8 @@ function noCatList(){
 function whatForBox(el){
   let list=noCatList().filter(o=>matchQ(o.d.last+' '+o.d.first+' '+(o.d.english||'')+' '+(o.x.amount||'')));
   const tot=list.reduce((s,o)=>s+amtNum(o.x.amount),0);
-  el.innerHTML=`<div class="cnt">🎯 בלי ייעוד — ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}</div>
+  el.innerHTML=`<div class="cnt">🎯 בלי ייעוד — ${list.length} תרומות · $${Math.round(tot).toLocaleString('en-US')}
+      <button class="btn sm ghost" id="wfclose">✕ סגור</button></div>
     <div class="hintxt" style="margin:0 2px 6px">הכסף כבר רשום אצל התורם. כאן רק בוחרים עבור מה, ולוחצים 💾 שמור.</div>
     <div class="list">${list.slice(0,WFLIM).map(o=>`<div class="wfrow" data-id="${o.x.id}">
       <div class="wfhead"><b class="avnamelink" data-id="${o.d.id}">${esc((o.d.last+' '+o.d.first).trim())}</b>
@@ -1256,6 +1257,7 @@ function whatForBox(el){
     </div>`).join('')||'<div class="empty">🎉 לכל התרומות יש ייעוד</div>'}</div>
     ${list.length>WFLIM?`<button class="btn ghost" id="wfmore" style="width:100%;margin:8px 2px">עוד — מציג ${WFLIM} מתוך ${list.length}</button>`:''}`;
   const mb=document.getElementById('wfmore'); if(mb)mb.onclick=()=>{WFLIM+=40;whatForBox(el);};
+  const cb=document.getElementById('wfclose'); if(cb)cb.onclick=()=>{ledNoCat=false;renderLedger();};
   el.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   el.querySelectorAll('.wfcat').forEach(s=>s.onchange=()=>{
     const nb=el.querySelector('[data-wfnew="'+s.dataset.id+'"]');
@@ -2845,7 +2847,7 @@ const SRCLBL={'Banquest 01-08-2026':'💳 בנק ווסט','Authorize 01-08-2026
   'Authorize 07-2026':'💳 אוטרייז (יולי)','Authorize אונליין':'💳 אוטרייז — מהאתר (חי)',
   'Donors Fund 2026':'🏦 דונרס פאנד','OJC 2026':'🏦 OJC','צ׳קים 2026':"🧾 צ'קים"};
 const srcLabel=s2=>SRCLBL[s2]||s2;
-async function renderLedger(){
+async function renderLedger(scroll){
   const box=document.getElementById('ledgerbox'); if(!box)return;
   if(!LEDGER){ try{ LEDGER=await api('GET','/api/ledger?since=2026-01-01'); }catch(e){ LEDGER={groups:[]}; } }
   const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
@@ -2857,25 +2859,26 @@ async function renderLedger(){
       <button class="ledbig what ${ledNoCat?'on':''}" id="lednocat"><span>🎯 בלי ייעוד</span><b>${f(ncs)}</b><small>${nc.length} תרומות — להשלים עבור מה</small></button>
       <button class="ledbig nocard" id="lednocard"><span>💵 בלי כרטיס</span><b id="depcnt">…</b><small>מפקידים לשייך או לפתוח כרטיס</small></button>
     </div>
+    <div id="leddet"></div>
     <div class="ledlist">${(L.groups||[]).map(g=>`<button class="ledrow ${ledSrc===g.src?'on':''}" data-s="${esc(g.src)}">
       <div class="ledn">${esc(srcLabel(g.src))}</div>
       <div class="ledm">${g.n} חיובים${g.first?(' · '+esc(g.first.slice(5))+' – '+esc(g.last.slice(5))):''}</div>
       ${g.bad_n?`<div class="ledbad">🔴 ${g.bad_n} לא עברו · ${f(g.bad_total)}</div>`:''}
-      <b>${f(g.total)}</b></button>`).join('')}</div>
-    <div id="leddet"></div>`;
+      <b>${f(g.total)}</b></button>`).join('')}</div>`;
   box.querySelectorAll('.ledrow').forEach(b=>b.onclick=()=>{
-    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledNoCat=false; ledMon=null; renderLedger();});
-  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledNoCat=false; ledMon=null; renderLedger();};
-  document.getElementById('lednocat').onclick=()=>{ledNoCat=!ledNoCat; ledSrc=null; ledFail=false; ledMon=null; WFLIM=40; renderLedger();};
+    ledSrc=(ledSrc===b.dataset.s&&!ledFail)?null:b.dataset.s; ledFail=false; ledNoCat=false; ledMon=null; renderLedger(1);});
+  document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledNoCat=false; ledMon=null; renderLedger(1);};
+  document.getElementById('lednocat').onclick=()=>{ledNoCat=!ledNoCat; ledSrc=null; ledFail=false; ledMon=null; WFLIM=40; renderLedger(1);};
   document.getElementById('lednocard').onclick=()=>{flt='deposits'; DEPS=null; depOpen=null; tab='donors'; render();};
   // מספר המפקידים שאין להם כרטיס — נטען ברקע כדי לא לעכב את המסך
   api('GET','/api/deposits').then(r=>{const e=document.getElementById('depcnt');
     if(e&&r)e.textContent=((r.names||0)+(r.cards||0));}).catch(()=>{});
-  ledDetail();
+  ledDetail(scroll);
 }
-async function ledDetail(){
+// scroll=1 — לגלול לפירוט שנפתח, כדי שלא ייפתח מתחת למסך ויראה כאילו לא נלחץ
+async function ledDetail(scroll){
   const el=document.getElementById('leddet'); if(!el)return;
-  if(ledNoCat){ whatForBox(el); return; }
+  if(ledNoCat){ whatForBox(el); if(scroll)ledScroll(el); return; }
   if(!ledSrc&&!ledFail){ el.innerHTML=''; document.querySelectorAll('.ledrow').forEach(b=>b.classList.remove('on')); return; }
   document.querySelectorAll('.ledrow').forEach(b=>b.classList.toggle('on',b.dataset.s===ledSrc));
   el.innerHTML='<div class="cnt">טוען…</div>';
@@ -2905,7 +2908,10 @@ async function ledDetail(){
     </div>`).join('')||'<div class="empty">אין שורות</div>'}</div>`;
   el.querySelectorAll('.rowc[data-id]').forEach(r2=>r2.onclick=()=>{
     const d=DB.find(x=>x.id==r2.dataset.id); if(d)openDonor(d); else toast('החיוב עדיין לא שויך לתורם');});
+  if(scroll)ledScroll(el);
 }
+// גלילה אל הפירוט שנפתח — בלי זה הוא נפתח מתחת לגובה המסך ונראה כאילו לא נלחץ
+function ledScroll(el){ if(el&&el.innerHTML)setTimeout(()=>el.scrollIntoView({block:'start',behavior:'smooth'}),40); }
 const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל',refund:'הוחזר',
   held:'מעוכב',pending:'🕒 ממתין'};
 function renderCharges(){
