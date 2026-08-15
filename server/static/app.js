@@ -1254,9 +1254,10 @@ async function bldgRemember(it){
 // תרומה שממתינה לשיבוץ בלוח. כל עוד היא פתוחה — הלוח מציג פס עליון,
 // והיום שנבחר נרשם על התורם הזה, מסומן כנגבה, והייעוד נכנס לתרומה
 let PYPICK=null;
-function openParnesPick(o,cat){
+function openParnesPick(o,cat,note){
   PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
-          amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat]};
+          amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
+          note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
   pyKind=PYPICK.kind; pyMonth=null; pyDay=null; flt=''; plaque=null; tab='parnes';
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));
   try{localStorage.setItem('kc_tab','parnes');}catch(e){}
@@ -1275,11 +1276,22 @@ function wirePyPick(){
 async function pyPickDone(pid){
   const P=PYPICK; if(!P)return;
   if(pid)await api('PUT','/api/parnes/'+pid,{paid:1});
-  await api('PUT','/api/donation/'+P.id,{category:P.cat});
+  await api('PUT','/api/donation/'+P.id,{category:P.cat,note:P.note});
   PYPICK=null;
   await load(); toast('✓ '+P.name+' — הלילה נתפס ונרשם כנגבה');
 }
 function wfYear(x){const m=/(ת[שק]["׳']?[א-ת]{0,3})\s*$/.exec(String((x&&x.hmonth)||''));return m?m[1]:'';}
+// ההערה החופשית בלבד. החלק הראשון ("נכנס מצ'ייס זל") נכתב על ידינו
+// ונשמר כמו שהוא; מה שמאיר מוסיף נשמר אחריו
+function wfNote(x){
+  const p=String(x.note||'').split(' · ').slice(1)
+    .filter(t=>t&&!/^לא סווג/.test(t));
+  return p.join(' · ');
+}
+function wfNoteBody(x,txt){
+  const head=String(x.note||'').split(' · ')[0];
+  return txt?(head?head+' · '+txt:txt):head;
+}
 function whatForBox(el){
   let list=noCatList().filter(o=>matchQ(o.d.last+' '+o.d.first+' '+(o.d.english||'')+' '+(o.x.amount||'')));
   const tot=list.reduce((s,o)=>s+amtNum(o.x.amount),0);
@@ -1293,6 +1305,7 @@ function whatForBox(el){
         <span class="dnmeta">${o.x.date?esc(gregLabel(o.x.date)):''}${o.x.method?(' · '+esc(chLabel(o.x.method))):''}</span></div>
       <div class="wfact"><select class="wfcat" data-id="${o.x.id}">${dnCatOpts('')}</select>
         <button class="btn sm wfsave" data-id="${o.x.id}">💾 שמור</button></div>
+      <div class="addrow"><input class="wfnote" data-id="${o.x.id}" placeholder="📝 הערה (למשל: עבור חודשיים יששכר־זבולון)" value="${esc(wfNote(o.x))}"></div>
       <div class="addrow hidden" data-wfnew="${o.x.id}"><input class="wfnew" placeholder="שם הייעוד החדש…"></div>
       <div class="addrow hidden" data-wfbldg="${o.x.id}"><input class="wfbldg" list="wfbldgitems" placeholder="🏗️ מה תרם בבניין? (שולחן / עמוד / מטר…)"></div>
       <div class="wfday hidden" data-wfday="${o.x.id}">
@@ -1316,7 +1329,7 @@ function whatForBox(el){
     const row=el.querySelector('.wfrow[data-id="'+b.dataset.id+'"]');
     const cat=row.querySelector('.wfcat').value.trim();
     const o=noCatList().find(z=>String(z.x.id)===String(b.dataset.id)); if(!o)return;
-    openParnesPick(o,cat);});
+    openParnesPick(o,cat,(row.querySelector('.wfnote')||{value:''}).value.trim());});
   el.querySelectorAll('.wfsave').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.id, row=el.querySelector('.wfrow[data-id="'+id+'"]');
     let cat=row.querySelector('.wfcat').value.trim();
@@ -1324,19 +1337,20 @@ function whatForBox(el){
     if(!cat){toast('בחר עבור מה');return;}
     const o=noCatList().find(z=>String(z.x.id)===String(id)); if(!o)return;
     // ייעוד של יום נסגר בלוח עצמו — שם רואים מה תפוס ומי כבר לקח
-    if(WFDAY[cat]){ openParnesPick(o,cat); return; }
+    if(WFDAY[cat]){ openParnesPick(o,cat,(row.querySelector('.wfnote')||{value:''}).value.trim()); return; }
     if(isBldgCat(cat)){
       const it=(row.querySelector('.wfbldg')||{value:''}).value.trim();
       if(!it){toast('כתוב מה הוא תרם בבניין');return;}
       await bldgRemember(it); cat=cat+' — '+it;
     }
-    const kind='';
     o.x.category=cat;
-    await api('PUT','/api/donation/'+id,{category:cat});
+    const nt=(row.querySelector('.wfnote')||{value:''}).value.trim();
+    const body={category:cat}; body.note=wfNoteBody(o.x,nt); o.x.note=body.note;
+    await api('PUT','/api/donation/'+id,body);
     if(!(CAMPAIGNS||[]).includes(cat)&&!DNBASE.includes(cat)){api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
     // מסירים רק את השורה הזו. רענון של כל הרשימה מזיז את הכפתורים מתחת
     // לאצבע, ואז לחיצה שנייה נופלת על תורם אחר
-    toast('✓ '+(o.d.last+' '+o.d.first).trim()+' '+curSym(o.d)+o.x.amount+' → '+cat+(kind?' · היום נתפס':''));
+    toast('✓ '+(o.d.last+' '+o.d.first).trim()+' '+curSym(o.d)+o.x.amount+' → '+cat);
     row.remove(); wfCount();});
 }
 // עדכון המונים בלי לרנדר מחדש את הרשימה
@@ -3886,7 +3900,7 @@ function renderDayPanel(taken){
          <button class="btn" id="pyp_mark">✓ ${PYPICK.cur}${esc(PYPICK.amount)} — נגבה על הלילה הזה</button>`
       : `<h3>🎯 לשבץ את ${esc(PYPICK.name)} ל־${esc(dtext)}</h3>
          <div class="hintxt">${list.length?('הלילה כבר מוחזק בידי '+list.map(x=>esc(x.donor)).join(', ')+' — אפשר לצרף אותו כשותף.'):'הלילה פנוי.'}</div>
-         <label class="fld"><span>בקשה ללימוד הלילה / הקדשה (רשות)</span><textarea id="pyp_ded" rows="2"></textarea></label>
+         <label class="fld"><span>בקשה ללימוד הלילה / הקדשה (רשות)</span><textarea id="pyp_ded" rows="2">${esc(PYPICK.ded||'')}</textarea></label>
          <button class="btn" id="pyp_take">🌙 שבץ ${PYPICK.cur}${esc(PYPICK.amount)} ללילה הזה</button>`;
     panel.prepend(box);
     const mk=document.getElementById('pyp_mark');
