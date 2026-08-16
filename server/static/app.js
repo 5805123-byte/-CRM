@@ -405,7 +405,17 @@ async function openHealth(){
   if(!h||!h.rows){sh.innerHTML='<button class="x" id="hx2">✕</button><h2>🩺 בדיקת מערכת</h2><div class="hintxt">השרת לא החזיר תשובה</div>';
     document.getElementById('hx2').onclick=()=>ov.classList.remove('show');return;}
   const ic={ok:'✅',warn:'⚠️',bad:'❌'};
+  // גרסת הקבצים שהדפדפן באמת מחזיק — כדי לדעת אם הרענון תפס
+  const showVer=()=>{const e=document.getElementById('appver'); if(!e)return;
+    fetch('/sw.js',{cache:'no-store'}).then(r=>r.text()).then(t=>{
+      const m=/kc-crm-(v\d+)/.exec(t)||[]; const live=m[1]||'?';
+      caches.keys().then(ks=>{
+        const mine=(ks.find(k=>/kc-crm-v\d+/.test(k))||'').replace('kc-crm-','')||'?';
+        e.textContent=mine+(live&&mine!==live?(' · בשרת כבר '+live+' — סגור ופתח את האפליקציה'):' ✓ מעודכן');
+      }).catch(()=>{e.textContent='בשרת: '+live;});
+    }).catch(()=>{e.textContent='לא זמין';});};
   sh.innerHTML=`<button class="x" id="hx3">✕</button><h2>🩺 בדיקת מערכת</h2>
+    <div class="hintxt">📱 גרסת האפליקציה אצלך: <b id="appver">בודק…</b></div>
     <div class="hintxt">${esc(h.when)} · ${h.bad?('❌ '+h.bad+' תקלות'):'✅ אין תקלות'}${h.warn?(' · ⚠️ '+h.warn+' לתשומת לב'):''}</div>
     ${h.rows.map(r=>`<div class="hrow ${r.state}"><span class="hi">${ic[r.state]||''}</span>
       <span class="hn"><b>${esc(r.name)}</b><small>${esc(r.detail)}</small></span></div>`).join('')}
@@ -415,6 +425,7 @@ async function openHealth(){
     <a class="btn" id="hbacklite" href="/api/backup?light=1" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none;background:var(--yes)">📤 קובץ קטן — לשלוח לקלוד</a>
     <div class="hintxt">אותם נתונים בדיוק בלי גוף הקבצים — כ-200KB בלבד, נשלח בקלות בצ׳אט.</div>`;
   document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
+  showVer();
   document.getElementById('hagain').onclick=openHealth;
   const hb=document.getElementById('hbackup');
   if(hb)hb.onclick=()=>toast('מכין גיבוי מלא… ההורדה תתחיל בעוד רגע');
