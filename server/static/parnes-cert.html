@@ -26,6 +26,9 @@
   .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
   /* כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים */
   .names .nsm,.cnames .nsm{font-size:.5em;font-weight:600}
+  /* שם התורם — קטן מהשמות שמתפללים עליהם */
+  .names .ndon,.cnames .ndon{font-size:.56em;font-weight:700}
+  .names .ndon .nsm,.cnames .ndon .nsm,.names .ndon .nreq,.cnames .ndon .nreq{font-size:.8em}
   /* הבקשה — קטנה יותר מהשם, כדי שהשמות יבלטו הכי חזק */
   .names .nreq,.cnames .nreq{font-size:.6em;font-weight:800;letter-spacing:-.01em;word-spacing:-.04em}
   /* חדר קפה */
@@ -76,15 +79,14 @@ const KIND = q.get('kind') || 'parnes';
 
 // ----- כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים (פשוט ואמין, בלי ניחוש שם מול בקשה) -----
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-const SMALLWORD=/^(בן|בת|ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י)$/;
+const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצ]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
 const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
 // פתיח שבא לפני השם — רק הוא קטן, והשמות שאחריו נשארים גדולים
 const LEADWORD=/^(לעילוי|נשמת|לע["'״׳]?נ|לזכר|לזכות|לרפואת|לרפו["'״׳]?ש|להצלחת|לישועת|לפרנסת|לזרע|לברכת|לכבוד|לרגל)$/;
-function formatName(line){
-  const t=(line||'').trim(); if(!t) return '';
-  const ws=t.split(/\s+/); let i=0, out=[];
+function fmtWords(ws){
+  let i=0, out=[];
   while(i<ws.length && LEADWORD.test(ws[i])){ out.push(`<span class="nreq">${esc(ws[i])}</span>`); i++; }
   let req=false;
   for(; i<ws.length; i++){
@@ -95,7 +97,23 @@ function formatName(line){
   }
   return out.join(' ');
 }
-function formatLines(text){ return String(text||'').split('\n').map(formatName).join('\n'); }
+// שם התורם קטן מהשמות שמתפללים עליהם — בין אם הוא בשורה משלו ובין אם
+// הוא באותה שורה, לפני "לע\"נ" / "לרפואת"
+function formatName(line, donorLine){
+  const t=(line||'').trim(); if(!t) return '';
+  const ws=t.split(/\s+/);
+  let ded=-1;
+  for(let k=1;k<ws.length;k++){ if(LEADWORD.test(ws[k])){ ded=k; break; } }
+  if(ded>0) return `<span class="ndon">${fmtWords(ws.slice(0,ded))}</span> `+fmtWords(ws.slice(ded));
+  const body=fmtWords(ws);
+  return donorLine ? `<span class="ndon">${body}</span>` : body;
+}
+function formatLines(text){
+  const ls=String(text||'').split('\n');
+  // שורה ראשונה היא שם התורם רק אם אחריה יש שורת הקדשה/בקשה
+  const hasLead=ls.some((l,i)=>i>0 && LEADWORD.test((l.trim().split(/\s+/)[0]||'')));
+  return ls.map((l,i)=>formatName(l, i===0 && hasLead)).join('\n');
+}
 function wireFmt(el){
   el.addEventListener('focus',()=>{ el.textContent=el.innerText; });      // עריכה בטקסט רגיל
   el.addEventListener('blur',()=>{ el.innerHTML=formatLines(el.innerText); fit(); });
