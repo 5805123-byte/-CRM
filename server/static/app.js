@@ -4219,9 +4219,16 @@ function donorDebts(d){
     const iz0=izSummary(d), gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
     const izCov=iz0.monthly>0&&iz0.monthly>=fx-0.5&&
       ((iz0.manual!=null&&iz0.manual<=0.5)||(iz0.thru.length&&iz0.thruDebt<=0.5));
-    if(gc.length&&fx>0&&!izCov)
-      out.push({what:'📅 חודשים שלא נגבו',amt:gc.length*fx,kind:'months',id:0,
-                when:gc.map(i=>MON[i]).join(' · ')});
+    if(gc.length&&fx>0&&!izCov){
+      // אצל תורם יששכר־זבולון החישוב מדויק רק כשמוגדר "שולם עד חודש"
+      // לכל אברך. בלי זה נשענים על החודשים שסומנו בכרטיס, וזה עלול
+      // להחמיץ חודשים ישנים — ולכן אומרים את זה במפורש.
+      const nothru=iz0.parts.length&&!iz0.thru.length&&iz0.manual==null;
+      out.push({what:'📅 חודשים שלא נגבו'+(iz0.parts.length?(' · '+iz0.parts.length+' אברכים'):''),
+                amt:gc.length*fx,kind:'months',id:0,
+                when:gc.map(i=>MON[i]).join(' · ')
+                  +(nothru?' — לא הוגדר "שולם עד חודש" לאברכים, החישוב לפי החודשים שסומנו בכרטיס':'')});
+    }
   }catch(e){}
   (d.building||[]).forEach(x=>{ const owed=amtNum(x.amount)-amtNum(x.paid);
     if(owed>0.5)out.push({what:'🏛️ בניין'+(x.object?(' · '+x.object):''),amt:owed,kind:'building',id:x.id,when:''}); });
