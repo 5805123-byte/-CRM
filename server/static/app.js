@@ -2132,14 +2132,9 @@ function cardDetails(d,body){
     <label class="fld"><span>סכום קבוע <button class="curbtn" id="f_cur" type="button" title="לחץ להחלפת מטבע">${d.region==='il'?'🇮🇱 ₪':'🇺🇸 $'}</button></span>
       <div class="fixlist" id="f_fixlist">${fixRowsHTML(d)}</div>
       <button class="fxadd" id="f_fixadd" type="button" title="עוד סכום קבוע">＋</button></label>
-    <div class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה). אפשר לבחור כמה</span>
-      <div class="purpbox"><div class="purpchips" id="f_purpchips">${purpChips(purposeList(d))}</div>
-        <select id="f_purpose">${dnCatOpts('')}</select></div></div>
-    <div class="addrow hidden" id="f_purpnew"><input id="f_purpfree" placeholder="שם הייעוד החדש"><button class="btn sm" id="f_purpadd">➕ הוסף</button></div>
     ${hasOccKv(d)?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
-    ${notesHTML(d)}
     ${izSummaryHTML(d)}
     ${reconPendHTML(d)}
     ${monthlyHTML(d)}
@@ -2205,6 +2200,7 @@ function cardDetails(d,body){
         <input id="mg_q" placeholder="🔍 חפש את הכרטיס הכפול למזג לכאן…" autocomplete="off">
         <div id="mg_res" class="dpres"></div>
         <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
+    ${notesHTML(d)}
     <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
   wireIzSum(body.querySelector('.izsum'), d);
@@ -2567,29 +2563,8 @@ function cardDetails(d,body){
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
   if(kvmon)kvmon.onchange=saveKvMY; if(kvyr)kvyr.onchange=saveKvMY;
   addMic(document.getElementById('dn_note'));
-  // ייעודים — בחירה מהרשימה מוסיפה עוד אחד, ה-✕ מסיר. נשמרים יחד בשמירה.
-  const psel=document.getElementById('f_purpose'),pnew=document.getElementById('f_purpnew'),
-        pchips=document.getElementById('f_purpchips');
-  let plist=purposeList(d);
-  const drawP=()=>{if(!pchips)return;pchips.innerHTML=purpChips(plist);
-    pchips.querySelectorAll('.purpx').forEach(b2=>b2.onclick=e=>{
-      e.preventDefault();e.stopPropagation();plist.splice(+b2.dataset.i,1);drawP();});};
-  const addP=v=>{v=String(v||'').trim();if(!v)return;if(plist.indexOf(v)<0)plist.push(v);drawP();};
-  if(psel){
-    drawP();
-    psel.onchange=()=>{
-      if(psel.value==='__new__'){pnew.classList.remove('hidden');document.getElementById('f_purpfree').focus();return;}
-      pnew.classList.add('hidden'); addP(psel.value); psel.value='';};
-    const pfree=document.getElementById('f_purpfree'), padd=document.getElementById('f_purpadd');
-    const newP=async()=>{const v=pfree.value.trim();
-      if(!v){toast('כתוב את שם הייעוד החדש');pfree.focus();return;}
-      if(!(CAMPAIGNS||[]).includes(v)){await api('POST','/api/campaigns',{name:v});CAMPAIGNS.unshift(v);}
-      addP(v);pfree.value='';pnew.classList.add('hidden');psel.innerHTML=dnCatOpts('');psel.value='';};
-    if(padd)padd.onclick=newP;
-    if(pfree)pfree.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();newP();}};
-  }
+  // הייעודים נקבעים בשורות "סכום קבוע" עצמן — אין יותר טור ייעודים נפרד
   document.getElementById('f_saveall').onclick=async()=>{const b2={};FF.forEach(k=>{const el=document.getElementById('f_'+k);if(el){b2[k]=el.value;d[k]=el.value;}});
-    if(psel){b2.purpose=plist.join(' · ');d.purpose=b2.purpose;}
     await api('PUT','/api/donor/'+d.id,b2);cardDetails(d,body);toast('נשמר ✓');if(tab==='donors')renderDonors();};
 }
 
