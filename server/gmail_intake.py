@@ -1404,13 +1404,18 @@ def sync(con):
     attached = 0
 
     def _match_donor(femail):
-        """מזהה תורם לפי כתובת המייל שלו במערכת — לצירוף אוטומטי לקוויטל."""
+        """מזהה תורם לפי כתובת המייל שלו במערכת — לצירוף אוטומטי לקוויטל.
+        לתורם יכולות להיות כמה כתובות בשדה אחד, ולכן לא משווים את השדה כולו:
+        השוואה מלאה החמיצה כל תורם עם יותר מכתובת אחת."""
         femail = (femail or '').strip().lower()
-        if not femail:
+        if '@' not in femail:
             return None
-        return con.execute(
-            "SELECT id,tier FROM donors WHERE lower(TRIM(email))=? AND TRIM(COALESCE(email,''))<>'' LIMIT 1",
-            (femail,)).fetchone()
+        for r in con.execute("SELECT id,tier,email FROM donors "
+                             "WHERE TRIM(COALESCE(email,''))<>''"):
+            for e in re.split(r'[;,/\s]+', (r['email'] or '').lower()):
+                if e.strip().strip('<>') == femail:
+                    return r
+        return None
 
     def _autoattach(donor, names):
         """מכניס את השמות לקוויטל של התורם (דרגה לפי דרגת התורם)."""

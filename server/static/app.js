@@ -2918,7 +2918,7 @@ function renderTransactions(d){
 }
 let chFilter='';
 /* ---------- ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד ---------- */
-let LEDGER=null, ledSrc=null, ledFail=false, ledNoCat=false, ledMon=null;
+let LEDGER=null, ledSrc=null, ledFail=false, ledNoCat=false, ledAll=false, ledMon=null;
 // שמות קריאים למקורות, בלי לאחד ביניהם — הוא ביקש לראות כל אחד לחוד
 const SRCLBL={'Banquest 01-08-2026':'💳 בנק ווסט','Authorize 01-08-2026':'💳 אוטרייז',
   'Authorize 07-2026':'💳 אוטרייז (יולי)','Authorize אונליין':'💳 אוטרייז — מהאתר (חי)',
@@ -2936,6 +2936,7 @@ async function renderLedger(scroll){
       <button class="ledbig what ${ledNoCat?'on':''}" id="lednocat"><span>🎯 בלי ייעוד</span><b>${f(ncs)}</b><small>${nc.length} תרומות — להשלים עבור מה</small></button>
       <button class="ledbig nocard" id="lednocard"><span>💵 בלי כרטיס</span><b id="depcnt">…</b><small>מפקידים לשייך או לפתוח כרטיס</small></button>
     </div>
+    <button class="btn ghost ${ledAll?'on':''}" id="ledall" style="width:100%;margin:0 2px 8px">📅 הכל לפי חודשים — מקורות וייעודים</button>
     <div id="leddet"></div>
     <div class="ledlist">${(L.groups||[]).map(g=>`<button class="ledrow ${ledSrc===g.src?'on':''}" data-s="${esc(g.src)}">
       <div class="ledn">${esc(srcLabel(g.src))}</div>
@@ -2947,6 +2948,7 @@ async function renderLedger(scroll){
   document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledNoCat=false; ledMon=null; renderLedger(1);};
   document.getElementById('lednocat').onclick=()=>{ledNoCat=!ledNoCat; ledSrc=null; ledFail=false; ledMon=null; WFLIM=40; renderLedger(1);};
   document.getElementById('lednocard').onclick=()=>{flt='deposits'; DEPS=null; depOpen=null; tab='donors'; render();};
+  document.getElementById('ledall').onclick=()=>{ledAll=!ledAll; ledSrc=null; ledFail=false; ledNoCat=false; ledMon=null; renderLedger(1);};
   // מספר המפקידים שאין להם כרטיס — נטען ברקע כדי לא לעכב את המסך
   api('GET','/api/deposits').then(r=>{const e=document.getElementById('depcnt');
     if(e&&r)e.textContent=((r.names||0)+(r.cards||0));}).catch(()=>{});
@@ -2956,6 +2958,7 @@ async function renderLedger(scroll){
 async function ledDetail(scroll){
   const el=document.getElementById('leddet'); if(!el)return;
   if(ledNoCat){ whatForBox(el); if(scroll)ledScroll(el); return; }
+  if(ledAll){ monthsBox(el); if(scroll)ledScroll(el); return; }
   if(!ledSrc&&!ledFail){ el.innerHTML=''; document.querySelectorAll('.ledrow').forEach(b=>b.classList.remove('on')); return; }
   document.querySelectorAll('.ledrow').forEach(b=>b.classList.toggle('on',b.dataset.s===ledSrc));
   el.innerHTML='<div class="cnt">טוען…</div>';
@@ -2986,6 +2989,36 @@ async function ledDetail(scroll){
   el.querySelectorAll('.rowc[data-id]').forEach(r2=>r2.onclick=()=>{
     const d=DB.find(x=>x.id==r2.dataset.id); if(d)openDonor(d); else toast('החיוב עדיין לא שויך לתורם');});
   if(scroll)ledScroll(el);
+}
+// כל החודשים מהחדש לישן: בכל חודש כמה נכנס, דרך איזה מקור, ולאיזה ייעוד
+function monthsBox(el){
+  const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+  const M={};
+  ((LEDGER&&LEDGER.groups)||[]).forEach(g=>(g.mon||[]).forEach(m=>{
+    const b=M[m.ym]=M[m.ym]||{ym:m.ym,total:0,n:0,bad:0,bad_n:0,src:{},cat:{}};
+    b.total+=m.total||0; b.n+=m.n||0; b.bad+=m.bad_total||0; b.bad_n+=m.bad_n||0;
+    if(m.total||m.bad_total)b.src[g.src]={t:m.total||0,n:m.n||0,bt:m.bad_total||0,bn:m.bad_n||0};}));
+  // הייעודים מגיעים מהתרומות עצמן — שם יושב "עבור מה"
+  DB.forEach(d=>(d.donations||[]).forEach(x=>{
+    const ym=String(x.date||'').slice(0,7); if(ym.length!==7)return;
+    const b=M[ym]=M[ym]||{ym,total:0,n:0,bad:0,bad_n:0,src:{},cat:{}};
+    const c=String(x.category||'').trim()||'— בלי ייעוד —';
+    const e=b.cat[c]=b.cat[c]||{t:0,n:0}; e.t+=amtNum(x.amount); e.n++;}));
+  const list=Object.values(M).sort((a,b)=>b.ym.localeCompare(a.ym));
+  el.innerHTML=`<div class="cnt">📅 הכל לפי חודשים — מהחדש לישן
+      <button class="btn sm ghost" id="mballx">✕ סגור</button></div>
+    ${list.map(b=>`<details class="monbox2"${b.ym===list[0].ym?' open':''}>
+      <summary><b>${esc(fmtMonth(b.ym+'-01')||b.ym)}</b>
+        <span class="m2t">${f(b.total)}</span>
+        <small>${b.n} חיובים${b.bad_n?(' · 🔴 '+b.bad_n+' לא עברו '+f(b.bad)):''}</small></summary>
+      <div class="m2sec">💳 דרך איפה עבר</div>
+      ${Object.entries(b.src).sort((x,y)=>y[1].t-x[1].t).map(([k,v])=>`<div class="m2row">
+        <span>${esc(srcLabel(k))}</span><b>${f(v.t)}</b><small>${v.n}${v.bn?(' · 🔴 '+v.bn):''}</small></div>`).join('')||'<div class="hintxt">—</div>'}
+      <div class="m2sec">🎯 עבור מה</div>
+      ${Object.entries(b.cat).sort((x,y)=>y[1].t-x[1].t).map(([k,v])=>`<div class="m2row">
+        <span>${esc(k)}</span><b>${f(v.t)}</b><small>${v.n}</small></div>`).join('')||'<div class="hintxt">—</div>'}
+    </details>`).join('')||'<div class="empty">אין נתונים</div>'}`;
+  const c=document.getElementById('mballx'); if(c)c.onclick=()=>{ledAll=false;renderLedger();};
 }
 // גלילה אל הפירוט שנפתח — בלי זה הוא נפתח מתחת לגובה המסך ונראה כאילו לא נלחץ
 function ledScroll(el){ if(el&&el.innerHTML)setTimeout(()=>el.scrollIntoView({block:'start',behavior:'smooth'}),40); }
@@ -3737,7 +3770,8 @@ function paintIntake(){
     b.disabled=true;
     const r=await api('POST','/api/intake/'+b.dataset.id+'/newdonor',{names:getNames(b.dataset.id),email:it?it.from_email:'',last:it?(it.from_name||''):''});
     if(!r||!r.id){toast('שגיאה ביצירת תורם');b.disabled=false;return;}
-    toast(r.from_recon?('נוצר כרטיס ל'+(r.name||'')+' — כולל כתובת מחיובי האשראי ✓'):('נוצר כרטיס ל'+(r.name||'תורם החדש')+' ✓'));
+    toast(r.existing?('הכתובת כבר קיימת אצל '+(r.name||'')+' — צורף אליו ✓')
+      :(r.from_recon?('נוצר כרטיס ל'+(r.name||'')+' — כולל כתובת מחיובי האשראי ✓'):('נוצר כרטיס ל'+(r.name||'תורם החדש')+' ✓')));
     // נשארים בדף הבקשות — הפריט יתעדכן ויראה קישור "פתח כרטיס ↗" (בלי לקפוץ ולאבד את המקום)
     await load();INTAKE=null;await loadIntake();paintIntake();
   });

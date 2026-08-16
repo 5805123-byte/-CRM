@@ -6529,6 +6529,20 @@ class H(BaseHTTPRequestHandler):
             last = (b.get('last') or '').strip()
             first = (b.get('first') or '').strip()
             email = (b.get('email') or r['from_email'] or '').strip().lower()
+            # אם הכתובת כבר קיימת אצל תורם — מצרפים אליו במקום לפתוח כרטיס כפול
+            if '@' in email:
+                for d0 in con.execute("SELECT id,last,first,email FROM donors "
+                                      "WHERE TRIM(COALESCE(email,''))<>''"):
+                    if email in emails_of(d0['email']):
+                        if text:
+                            con.execute("INSERT INTO prayers(donor_id,name,text,tier) "
+                                        "VALUES(?,'',?,'')", (d0['id'], text))
+                        con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?",
+                                    (d0['id'], iid))
+                        con.commit(); con.close()
+                        nm = (d0['last'] + ' ' + (d0['first'] or '')).strip()
+                        return self._send(200, {'ok': True, 'id': d0['id'], 'existing': True,
+                                                'name': nm})
             # הצלבה מול חיובי האשראי (Authorize / Bank West) לפי אימייל — משיכת כתובת/טלפון/שם
             rec = None
             if email:
