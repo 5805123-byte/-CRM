@@ -3334,6 +3334,7 @@ def ensure_schema():
                 con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
                 n += 1
             if n:
+                con.commit()
                 print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
     except Exception as ex:
         print('  post pending error:', ex)
