@@ -3377,6 +3377,54 @@ function parnesCertUrl(d,p){
   return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
 }
 function openParnesCert(d,p){if(!p)return;window.open(parnesCertUrl(d,p),'_blank');}
+// כמה ימים בתעודה אחת — "ב'–ג' אלול תשפ\"ו" כשהם רצופים, אחרת "ב' ו־ה'"
+function pyKey(p){return (HMORD.indexOf(p.month||'')*100)+(+p.day||0);}
+function parnesDateLabel(list){
+  const ok=list.filter(p=>p.month&&p.day).slice().sort((a,b)=>pyKey(a)-pyKey(b));
+  if(!ok.length)return (list[0]&&list[0].date_text)||'';
+  const yr=ok[0].hyear||HEBYEAR;
+  const oneMonth=ok.every(p=>p.month===ok[0].month&&(p.hyear||HEBYEAR)===yr);
+  if(!oneMonth)
+    return ok.map(p=>heDay(+p.day)+' '+p.month+((p.hyear||HEBYEAR)?(' '+(p.hyear||HEBYEAR)):'')).join(' · ');
+  const days=ok.map(p=>+p.day);
+  const seq=days.every((n,i)=>i===0||n===days[i-1]+1);
+  const body=(days.length>1&&seq)?(heDay(days[0])+'–'+heDay(days[days.length-1]))
+    :days.map(heDay).join(' ו־');
+  return body+' '+ok[0].month+(yr?(' '+yr):'');
+}
+function parnesCertUrlMulti(d,list){
+  if(!list.length)return '';
+  const date=parnesDateLabel(list);
+  const dd=[...new Set(list.map(p=>(p.dedication||'').trim()).filter(Boolean))];
+  const names=dd.join('\n')||((d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'');
+  return location.origin+'/parnes-cert?'+new URLSearchParams(
+    {kind:list[0].kind||'parnes',date,names}).toString();
+}
+// בוחרים אילו ימים ייכנסו לאותה תעודה. מוצגים רק ימים מאותו סוג פרנס
+function openMultiCert(d,p){
+  const all=(d.parnes||[]).filter(x=>(x.kind||'parnes')===(p.kind||'parnes')
+    && x.status!=='suggested' && x.month && x.day).sort((a,b)=>pyKey(a)-pyKey(b));
+  if(all.length<2){openParnesCert(d,p);return;}
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm">🖨️ אילו ימים ייכנסו לאותה תעודה?</div>
+    <div class="mcdays">${all.map(x=>`<label class="mcday"><input type="checkbox" value="${x.id}"
+      ${x.id===p.id?'checked':''}> ${esc(heDay(+x.day)+' '+x.month+(x.hyear?(' '+x.hyear):''))}
+      ${+x.paid?'<span class="pstat yes">נגבה</span>':'<span class="pstat no">טרם נגבה</span>'}</label>`).join('')}</div>
+    <div class="mcprev"></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">🖨️ פתח תעודה</button></div></div>`;
+  document.body.appendChild(o);
+  const picked=()=>[...o.querySelectorAll('.mcday input:checked')]
+    .map(i=>all.find(x=>String(x.id)===i.value)).filter(Boolean);
+  const prev=()=>{const l=picked();
+    o.querySelector('.mcprev').textContent=l.length?('בתעודה יופיע: '+parnesDateLabel(l)):'לא נבחר יום';};
+  o.querySelectorAll('.mcday input').forEach(i=>i.onchange=prev); prev();
+  const done=()=>o.remove();
+  o.querySelector('.cno').onclick=done;
+  o.onclick=e=>{if(e.target===o)done();};
+  o.querySelector('.cyes').onclick=()=>{const l=picked();
+    if(!l.length){toast('בחר לפחות יום אחד');return;}
+    window.open(parnesCertUrlMulti(d,l),'_blank'); done();};
+}
 // אותה תעודה — כתמונה (PNG) לשליחה ישירה, בלי PDF
 function parnesCertPng(d,p){
   const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
@@ -3543,7 +3591,7 @@ function renderParnesEdit(d){
     <label class="fld"><span>💳 דרך מה ייגבה</span><select class="pymethod" data-id="${p.id}">${channelOpts(p.method)}</select></label>
     <label class="fld" style="margin:4px 0"><span>🕯️ שמות ובקשות לתעודת הפרנס</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו והבקשות (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
     <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px">💾 שמור שמות</button>
-    <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
+    <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pycertm" data-id="${p.id}">🗓️ תעודה לכמה ימים</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
   el.querySelectorAll('.pyded').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.parnes.find(x=>x.id==t.dataset.id);if(!p||(p.dedication||'')===t.value)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');};});
   el.querySelectorAll('.pydsave').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);const t=el.querySelector('.pyded[data-id="'+b.dataset.id+'"]');if(!p||!t)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');});
   el.querySelectorAll('.pyamt').forEach(inp=>inp.onchange=async()=>{const p=d.parnes.find(x=>x.id==inp.dataset.id);if(!p)return;p.amount=inp.value.trim();await api('PUT','/api/parnes/'+p.id,{amount:p.amount});renderParnesEdit(d);toast('סכום עודכן ✓');});
@@ -3555,6 +3603,7 @@ function renderParnesEdit(d){
   el.querySelectorAll('.pyyr').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.hyear=sel.value;await api('PUT','/api/parnes/'+p.id,{hyear:p.hyear});renderParnesEdit(d);toast('שנה עודכנה ✓');});
   el.querySelectorAll('.pypaid').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});renderParnesEdit(d);toast(+p.paid?'סומן כשולם ✓':'בוטל הסימון');});
   el.querySelectorAll('.pycert').forEach(b=>b.onclick=()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);openParnesCert(d,p);});
+  el.querySelectorAll('.pycertm').forEach(b=>b.onclick=()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);openMultiCert(d,p);});
   el.querySelectorAll('.pypic').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.photo=p.photo==='sent'?'':'sent';await api('PUT','/api/parnes/'+p.id,{photo:p.photo});renderParnesEdit(d);toast(p.photo==='sent'?'סומן — תמונת הקדשה נשלחה ✓':'בוטל הסימון');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.del);await api('DELETE','/api/parnes/'+b.dataset.del);d.parnes=d.parnes.filter(x=>x.id!=b.dataset.del);if(p){const note='פרנס יום '+(p.date_text||'')+' — הכן הדפסה וצור קשר';d.tasks=(d.tasks||[]).filter(x=>!(x.kind==='parnes'&&x.note===note));}checkReminders();renderParnesEdit(d);});
   el.querySelectorAll('.pyrem').forEach(x=>x.onchange=async()=>{if(!x.value)return;const r=await api('POST','/api/task',{donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt});d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:x.value,kind:'parnes',note:x.dataset.txt,done:0});toast('תזכורת פרנס נקבעה ✓');});
@@ -4025,7 +4074,7 @@ function pySlotHTML(t,dtext){
       <select class="dpmvday">${[...Array(30)].map((_,i)=>`<option value="${i+1}" ${(i+1)===pyDay?'selected':''}>${heDay(i+1)}</option>`).join('')}</select>
       <button class="btn sm dpmove">העבר</button></div>
     <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📷 העלה תמונת הקדשה<input type="file" accept="image/*,application/pdf" class="pyupload" hidden></label></div>
-    <div class="addrow">${sugg?'<button class="btn sm dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm dpsend" style="background:#25D366;border-color:#25D366">📤 שלח לתורם</button><button class="btn sm dpopen">📋 כרטיס</button><button class="btn sm ghost dpkv">🕯️ קוויטל</button><button class="btn sm dpprint">🖨️ תעודה</button><button class="del dpdel">מחק</button></div></div>`;
+    <div class="addrow">${sugg?'<button class="btn sm dpconfirm" style="background:var(--yes)">✅ אישר — עבור למאושר</button>':''}<button class="btn sm dpsend" style="background:#25D366;border-color:#25D366">📤 שלח לתורם</button><button class="btn sm dpopen">📋 כרטיס</button><button class="btn sm ghost dpkv">🕯️ קוויטל</button><button class="btn sm dpprint">🖨️ תעודה</button><button class="btn sm ghost dpprintm">🗓️ כמה ימים</button><button class="del dpdel">מחק</button></div></div>`;
 }
 function pyWireSlot(t,dtext,taken){
   const box=document.querySelector('.pyslot[data-pid="'+t.id+'"]'); if(!box)return;
@@ -4061,6 +4110,7 @@ function pyWireSlot(t,dtext,taken){
   q('dpopen').onclick=()=>openDonor(t.dref);
   q('dpkv').onclick=()=>openDonor(t.dref,'kvittel');
   q('dpprint').onclick=()=>openParnesCert(t.dref,{...t,date_text:t.date_text||dtext});
+  if(q('dpprintm'))q('dpprintm').onclick=()=>openMultiCert(t.dref,t);
   const sb=q('dpsend'); if(sb)sb.onclick=()=>shareParnesMenu({...t,date_text:t.date_text||dtext},t.dref);
   q('dpdel').onclick=async()=>{await api('DELETE','/api/parnes/'+t.id);
     t.dref.parnes=(t.dref.parnes||[]).filter(x=>x.id!=t.id);
