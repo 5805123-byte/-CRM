@@ -1646,8 +1646,9 @@ function payDay(d){
 // עד איזה חודש בודקים. החודש הנוכחי נספר רק אחרי שעבר יום החיוב הרגיל של
 // התורם (עם שלושה ימי חסד), כדי לא לצבוע באדום מישהו שעוד לא הגיע זמנו.
 function lastMonthToCheck(d){
-  const now=new Date(), cm=now.getMonth(), pd=payDay(d)||28;
-  return now.getDate()>pd+3?cm:cm-1;
+  // החודש הנוכחי אינו חוב. גם אם יום החיוב עבר, ייתכן שהכסף עוד בדרך —
+  // חוב נספר רק על חודשים שכבר הסתיימו.
+  return new Date().getMonth() - 1;
 }
 // שלושה חודשים רצופים ששולמו — התנהגות של הוראת קבע, גם בלי שסומן כך בכרטיס
 function _run3(m){let r=0;for(let i=0;i<(m||'').length;i++){r=(m[i]==='p'||m[i]==='c')?r+1:0;if(r>=3)return true;}return false;}
@@ -1953,6 +1954,10 @@ function wireSplit(d,body,redraw){
 }
 /* ---------- כמה התורם חייב — סיכום אחד, מפורט ---------- */
 // כל מקור חוב בשורה נפרדת, כדי שיהיה ברור מאיפה הסכום מגיע ואפשר לבדוק אותו.
+// מצב גבייה של יום פרנס: 0 טרם נגבה · 1 נגבה · 2 סודר (הכסף הגיע בתרומה
+// נפרדת, מאיר עשה את החשבון — לא חוב ולא גבייה נפרדת)
+function pPaidLbl(v){return +v===2?'✓ סודר':(+v===1?'✓ נגבה':'🔴 טרם נגבה');}
+function pPaidCls(v){return +v===2?'setl':(+v===1?'yes':'no');}
 function debtSummary(d){
   const cur=curSym(d), rows=[];
   const iz=izSummary(d);
@@ -1972,20 +1977,22 @@ function debtSummary(d){
   const pn=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
   const pnSum=pn.reduce((s2,p)=>s2+amtNum(p.amount),0);
   if(pnSum>0.5)rows.push({t:'ימי פרנס שטרם נגבו',v:pnSum,s:pn.length+' ימים'});
-  // חיובים שנדחו ולא נגבו עד היום
+  // חיוב שנדחה אינו חוב. אם ניסינו לחייב אותו שבע פעמים באותו חודש —
+  // זה עדיין חודש אחד שלא שולם, וכבר נספר ב"חודשים שלא נגבו". לכן
+  // הרשימה הזו מוצגת כמידע לטיפול בלבד ואינה נכנסת לסכום החוב.
   const dec=(d.declined||[]).filter(x=>!+x.covered);
   const decSum=dec.reduce((s2,x)=>s2+amtNum(x.amount),0);
   if(decSum>0.5){
     const dts=dec.map(x=>x.date_iso||x.date).filter(Boolean).sort();
-    rows.push({t:'הכרטיס לא עבר',v:decSum,
-      s:dec.length+' '+(dec.length===1?'חיוב':'חיובים')
+    rows.push({t:'🔴 הכרטיס לא עבר',v:decSum,info:1,
+      s:dec.length+' '+(dec.length===1?'ניסיון חיוב':'ניסיונות חיוב')
         +(dts.length?(' · '+gregLabel(dts[0])+(dts.length>1?(' – '+gregLabel(dts[dts.length-1])):'')):''),
-      tip:'שווה להתקשר ולבקש כרטיס מעודכן'});}
+      tip:'לא נספר בחוב — שווה להתקשר ולבקש כרטיס מעודכן'});}
   // התחייבויות פתוחות
   const pl=(d.pledges||[]).filter(p=>p.status!=='נתן'&&!+p.monthly&&amtNum(p.amount)>0);
   const plSum=pl.reduce((s2,p)=>s2+amtNum(p.amount),0);
   if(plSum>0.5)rows.push({t:'התחייבות שטרם ניתנה',v:plSum,s:pl.length+' התחייבויות'});
-  return {rows,total:rows.reduce((s2,r)=>s2+r.v,0),cur};
+  return {rows,total:rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0),cur};
 }
 // שורה אחת בלבד. הסכום עצמו הוא הקישור — לחיצה פותחת את הפירוט
 // ורואים בדיוק ממה הוא מורכב: מה לא עבר ומה עוד לא נשלח.
@@ -1993,12 +2000,14 @@ let DEBTOPEN=false;
 function debtHTML(d){
   const x=debtSummary(d);
   const f=n=>x.cur+Math.round(n).toLocaleString('en-US');
-  if(!x.rows.length)return `<div class="debtline ok">💰 אין חוב פתוח</div>`;
+  if(!x.rows.length||x.total<=0.5)
+    return `<div class="debtline ok">💰 אין חוב פתוח</div>`
+      +(x.rows.filter(r=>r.info).map(r=>`<div class="dsrow info"><span>${r.t}<small>${esc(r.s||'')}</small>${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join(''));
   return `<div class="debtline" id="debtline">💰 חייב
       <button class="debtamt" id="debtgo">${f(x.total)}</button>
       <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span></div>
     <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
-      ${x.rows.map(r=>`<div class="dsrow"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
     </div>`;
 }
 function catTotalsHTML(d){
@@ -2039,8 +2048,9 @@ function cardDetails(d,body){
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const GVSHOW=8;                       // מציגים את האחרונות; השאר נפתחות בלחיצה — פחות גלילה
   const gvrow=g=>{
-    const st=g.parnes?(g.paid?'<span class="pstat yes">✓ נגבה</span>':'<span class="pstat no">🔴 טרם נגבה</span>'):'';
-    const tog=g.parnes?`<button class="collectbtn ${g.paid?'yes':'no'}" data-pid="${g.pid}">${g.paid?'בטל גבייה':'✓ סמן נגבה'}</button>`:'';
+    const st=g.parnes?`<span class="pstat ${pPaidCls(g.paid)}">${pPaidLbl(g.paid)}</span>`:'';
+    const tog=g.parnes?`<button class="collectbtn ${+g.paid===1?'yes':'no'}" data-pid="${g.pid}">${+g.paid===1?'בטל גבייה':'✓ סמן נגבה'}</button>`
+      +`<button class="collectbtn setl setlbtn ${+g.paid===2?'on':''}" data-pid="${g.pid}" title="הכסף הגיע בתרומה נפרדת — אין מה לגבות">${+g.paid===2?'בטל סודר':'סודר'}</button>`:'';
     const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
     const fb=(g.don&&g.needthx)
       ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
@@ -2192,7 +2202,8 @@ function cardDetails(d,body){
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
-  body.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
+  body.querySelectorAll('.collectbtn:not(.setlbtn)').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===1?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
+  body.querySelectorAll('.setlbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===2?0:2;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np===2?'סומן כסודר ✓ — לא ייספר כחוב':'הסימון בוטל');cardDetails(d,body);if(tab==='donors')renderDonors();});
   body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(p)p.classList.toggle('hidden');});
   // בחירת "עבור מה" ישירות על שורת התרומה — נשמר מיד
@@ -4137,7 +4148,8 @@ function pySlotHTML(t,dtext){
         <select class="dp_cur_edit" style="max-width:110px"><option value="$" ${dpcur==='$'?'selected':''}>$ דולר</option><option value="₪" ${dpcur==='₪'?'selected':''}>₪ שקל</option></select></div>
       <button class="btn sm dp_amt_save" style="margin-top:6px;width:100%">💾 שמור סכום</button></div>
     <label class="fld" style="margin:6px 0"><span>💳 איך נגבה (אמצעי תשלום)</span><select class="dp_method">${channelOpts(t.method)}</select></label>
-    ${sugg?'':`<button class="dnpaid ${paid?'yes':'no'} dppaid" style="margin:2px 0 8px;width:100%">${paid?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>`}
+    ${sugg?'':`<button class="dnpaid ${+paid===1?'yes':'no'} dppaid" style="margin:2px 0 8px;width:100%">${+paid===1?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>
+      <button class="dnpaid setl dpsetl ${+paid===2?'on':''}" style="margin:0 0 8px;width:100%">${+paid===2?'✓ סודר — לחץ לביטול':'סודר — הכסף הגיע בתרומה נפרדת'}</button>`}
     ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
     <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea class="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
     <button class="btn sm dp_ded_save" style="margin-bottom:6px">💾 שמור שמות</button>
@@ -4160,9 +4172,13 @@ function pyWireSlot(t,dtext,taken){
   const ab=q('dp_amt_save'); if(ab)ab.onclick=amtSave;
   if(methSel)methSel.onchange=async()=>{setPMeth(methSel.value);await api('PUT','/api/parnes/'+t.id,{method:methSel.value});toast('אמצעי נשמר ✓');render();};
   const pb=q('dppaid');
-  if(pb)pb.onclick=async()=>{const np=+t.paid?0:1;t.paid=np;const mv=methSel?methSel.value:t.method;setPMeth(mv);
+  if(pb)pb.onclick=async()=>{const np=+t.paid===1?0:1;t.paid=np;const mv=methSel?methSel.value:t.method;setPMeth(mv);
     const p=rec();if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np,method:mv});
     toast(np?'סומן כנגבה ✓':'סומן כחוב שטרם נגבה');render();};
+  const ps=q('dpsetl');
+  if(ps)ps.onclick=async()=>{const np=+t.paid===2?0:2;t.paid=np;
+    const p=rec();if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np});
+    toast(np===2?'סומן כסודר ✓ — לא ייספר כחוב':'הסימון בוטל');render();};
   const dded=q('dp_ded_edit');
   const ddedSave=async()=>{t.dedication=dded.value;const p=rec();if(p)p.dedication=dded.value;
     await api('PUT','/api/parnes/'+t.id,{dedication:dded.value});toast('נשמר ✓');};
