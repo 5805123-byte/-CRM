@@ -3440,7 +3440,28 @@ function parnesCertUrl(d,p){
   const names=(p.dedication&&p.dedication.trim())||(d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
   return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
 }
-function openParnesCert(d,p){if(!p)return;window.open(parnesCertUrl(d,p),'_blank');}
+// למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
+function runWhyNot(d,p){
+  if(!d||!p||!p.day||!p.month)return '';
+  const kl=k=>((PKINDS.find(x=>x[0]===(k||'parnes'))||['',''])[1]||k||'');
+  const near=(d.parnes||[]).filter(x=>x.month===p.month&&Math.abs((+x.day||0)-(+p.day))===1);
+  if(!near.length)return 'אין לו יום צמוד ב'+p.month+' — תעודה ליום אחד';
+  const x=near[0], dd=heDay(+x.day)+' '+p.month;
+  if((x.kind||'parnes')!==(p.kind||'parnes'))
+    return dd+' רשום כ'+kl(x.kind)+' ולא כ'+kl(p.kind)+' — לכן תעודה נפרדת';
+  if(x.status==='suggested')
+    return dd+' עדיין הצעה ולא מאושר — לכן לא נכנס לתעודה';
+  if((x.hyear||'')&&(p.hyear||'')&&x.hyear!==p.hyear)
+    return dd+' רשום בשנת '+x.hyear+' ולא '+p.hyear+' — לכן לא נכנס';
+  return '';
+}
+function openParnesCert(d,p){
+  if(!p)return;
+  const run=parnesRun(d,p);
+  if(run.length>1)toast('תעודה משותפת: '+parnesDateLabel(run));
+  else{const w=runWhyNot(d,p); if(w)toast(w);}
+  window.open(parnesCertUrl(d,p),'_blank');
+}
 // כמה ימים בתעודה אחת — "ב'–ג' אלול תשפ\"ו" כשהם רצופים, אחרת "ב' ו־ה'"
 function pyKey(p){return (HMORD.indexOf(p.month||'')*100)+(+p.day||0);}
 function parnesDateLabel(list){
