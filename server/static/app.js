@@ -3414,17 +3414,33 @@ const DAYKIND={parnes:'🌙 פרנס',coffee:'☕ קפה',breakfast:'🍳 בוק
 const DAYSAVE={parnes:'🌙 יום פרנס',coffee:'☕ חדר קפה',breakfast:'🍳 ארוחת בוקר'};
 // תורם שתפס ימים רצופים — רצף הימים שמכיל את היום שנבחר. תעודה אחת
 // לכל הרצף, בלי לשאול: אם לקח ד' וה' אלול תיווצר תעודה של ד'–ה'
+// היום והחודש של שורת פרנס. חלק מהשורות נשמרו בלי day/month ורק עם
+// התאריך הכתוב ("ה' אלול"), ואז השוואה לפי השדות בלבד פספסה אותן
+function pyClean(t){return String(t||'').replace(/["'\u05f3\u05f4]/g,'').trim();}
+function pyDM(x){
+  let dn=+((x&&x.day)||0), mo=(x&&x.month)||'';
+  const t=String((x&&x.date_text)||'');
+  if(!mo) mo=HMORD.find(m=>t.indexOf(m)>=0)||'';
+  if(!dn){
+    const head=pyClean(t.split(/\s+/)[0]);
+    for(let n=1;n<=30;n++){ if(pyClean(heDay(n))===head){dn=n;break;} }
+  }
+  return {d:dn, m:mo};
+}
 function parnesRun(d,p){
-  if(!d||!p||!p.day||!p.month)return [p];
+  if(!d||!p)return [p];
+  const me=pyDM(p);
+  if(!me.d||!me.m)return [p];
   // אותו תורם, אותו חודש, ימים צמודים — תעודה אחת. בלי תנאים נוספים:
   // סוג הפרנס, סטטוס ושנה עברית לא נבדקים, כי בפועל הם נשמרים לא אחיד
   // ואז שני ימים שהתורם באמת לקח נשארו שתי תעודות
   const by={};
   (d.parnes||[]).forEach(x=>{
-    if(x.month!==p.month||!x.day)return;
-    if(!by[+x.day]||+x.id===+p.id)by[+x.day]=x;
+    const k=pyDM(x);
+    if(!k.d||k.m!==me.m)return;
+    if(!by[k.d]||(x.id&&p.id&&+x.id===+p.id))by[k.d]={...x, day:k.d, month:k.m};
   });
-  let lo=+p.day, hi=+p.day;
+  let lo=me.d, hi=me.d;
   while(by[lo-1])lo--;
   while(by[hi+1])hi++;
   const out=[]; for(let n=lo;n<=hi;n++)out.push(by[n]);
@@ -3440,9 +3456,11 @@ function parnesCertUrl(d,p){
 }
 // למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
 function runWhyNot(d,p){
-  if(!d||!p||!p.day||!p.month)return '';
-  const near=(d.parnes||[]).filter(x=>x.month===p.month&&Math.abs((+x.day||0)-(+p.day))===1);
-  if(!near.length)return 'אין לו יום צמוד ב'+p.month+' — תעודה ליום אחד';
+  if(!d||!p)return '';
+  const me=pyDM(p);
+  const near=(d.parnes||[]).filter(x=>{const k=pyDM(x);
+    return k.m===me.m && Math.abs(k.d-me.d)===1;});
+  if(!near.length)return 'אין לו יום צמוד ב'+(me.m||'חודש הזה')+' — תעודה ליום אחד';
   return '';
 }
 function openParnesCert(d,p){
