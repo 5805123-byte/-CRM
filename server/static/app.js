@@ -2004,9 +2004,9 @@ function debtHTML(d){
   if(String(d.debt_ok||'').trim())
     return `<div class="debtok">✓ החוב סודר${d.debt_note?(' · '+esc(d.debt_note)):''}`
       +`<button class="debtundo" id="debtundo" title="החזר לחוב פתוח">↺</button></div>`;
-  if(!x.rows.length||x.total<=0.5)
-    return `<div class="debtline ok">💰 אין חוב פתוח</div>`
-      +(x.rows.filter(r=>r.info).map(r=>`<div class="dsrow info"><span>${r.t}<small>${esc(r.s||'')}</small>${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join(''));
+  // אין חוב — אין חלון. גם לא שורת "אין חוב פתוח" וגם לא ניסיונות
+  // חיוב שנדחו: הם נמצאים בלשונית "🔴 לא עבר" ואין להם מה לתפוס מקום כאן.
+  if(!x.rows.length||x.total<=0.5)return '';
   return `<div class="debtline" id="debtline">💰 חייב
       <button class="debtamt" id="debtgo">${f(x.total)}</button>
       <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span>
