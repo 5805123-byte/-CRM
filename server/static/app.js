@@ -3674,7 +3674,8 @@ function paintIntake(){
   const items=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
   const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 בקשות תפילה מהאתר</b><span class="cnt2">(${nNew} לטיפול)</span>
-      <button class="btn sm" id="intSync">🔄 משוך מהמייל</button></div>
+      <button class="btn sm" id="intSync">🔄 משוך מהמייל</button>
+      <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div>
     ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
     <div class="hintxt" style="margin:2px 2px 8px">כל בקשה שהגיעה במייל מהאתר. ✅ = השמות כבר צורפו לקוויטל אצל התורם · 🔴 = עדיין לא. אפשר לערוך את השמות, לצרף לתורם, או לסמן שטופל.</div>
     <div id="intdiag"></div>
@@ -3686,6 +3687,23 @@ function paintIntake(){
     if(!r.ok){toast(r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאת משיכה: '+(r.detail||r.error||''));btn.disabled=false;btn.textContent='🔄 משוך מהמייל';return;}
     toast('נמשכו '+(r.new||0)+' בקשות'+(r.attached?' · '+r.attached+' צורפו אוטומטית לקוויטל לפי המייל':'')+' ✓');
     INTAKE=null;await loadIntake();paintIntake();intDiag(r);
+  };
+  const dgb=document.getElementById('intDiagBtn');
+  if(dgb)dgb.onclick=async()=>{
+    dgb.disabled=true; const o=dgb.textContent; dgb.textContent='בודק…';
+    const r=await api('POST','/api/intake/diag',{});
+    dgb.disabled=false; dgb.textContent=o;
+    const box=document.getElementById('intdiag'); if(!box)return;
+    if(!r||!r.ok){box.innerHTML='<div class="hintxt">שגיאה: '+esc((r&&(r.detail||r.error))||'')+'</div>';return;}
+    box.innerHTML=`<div class="hintxt" style="margin:0 2px 6px">🩺 בתיבה <b>${esc(r.mailbox||'')}</b> מ־${esc(r.since||'')}:
+      <b>${r.total||0}</b> מיילים. סינון פעיל: ${r.subject?('נושא "'+esc(r.subject)+'"'):'בלי נושא'} ·
+      ${(r['from']||[]).length?('שולחים: '+esc((r['from']||[]).join(', '))):'בלי סינון שולח'}</div>
+      ${(r.rows||[]).map(x=>`<div class="intdrow ${x.names?'ok':(x.subj_ok?'warn':'')}">
+        <div dir="ltr" class="miss2">${esc(x.date||'')} · ${esc(x.from||'')}</div>
+        <div dir="ltr"><b>${esc(x.subject||'(בלי נושא)')}</b></div>
+        <div class="miss2">${x.from_ok?'✅ שולח':'⛔ שולח'} · ${x.subj_ok?'✅ נושא':'⛔ נושא'}${x.names!==undefined?(x.names?(' · ✅ שמות: '+esc(x.names)):' · 🔴 לא זוהו שמות'):''}</div>
+        ${x.body?`<div class="miss2" dir="ltr" style="white-space:pre-wrap">${esc(x.body)}</div>`:''}
+      </div>`).join('')||'<div class="hintxt">אין מיילים בתקופה הזו</div>'}`;
   };
   const list=document.getElementById('intlist');
   list.innerHTML=items.map(x=>{

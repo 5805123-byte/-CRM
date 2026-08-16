@@ -6371,6 +6371,12 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             return
         b = self._body()
+        if self.path == '/api/intake/diag':
+            try:
+                import gmail_intake
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            return self._send(200, gmail_intake.diag(21))
         if self.path == '/api/intake/sync':
             try:
                 import gmail_intake

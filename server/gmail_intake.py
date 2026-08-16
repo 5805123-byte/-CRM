@@ -1339,6 +1339,58 @@ def sync_sent(con, status=None):
             pass
 
 
+def diag(days=21):
+    """בדיקה: מה בכלל יושב בתיבה בימים האחרונים, בלי שום סינון — ומה מהם
+    היה נכנס. משמש כשבקשה קיימת במייל אבל לא הופיעה ברשימה."""
+    user = os.environ.get('GMAIL_USER')
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    mailbox = os.environ.get('INTAKE_MAILBOX', 'INBOX')
+    froms = [x.strip().lower() for x in (os.environ.get('INTAKE_FROM') or '').split(',') if x.strip()]
+    subj = (os.environ.get('INTAKE_SUBJECT') or '').strip()
+    MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    d0 = datetime.date.today() - datetime.timedelta(days=int(days))
+    since = '%02d-%s-%d' % (d0.day, MON[d0.month - 1], d0.year)
+    out = []
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com')
+        M.login(user, pw)
+        M.select(mailbox)
+        typ, data = M.search(None, 'SINCE', since)
+        ids = data[0].split() if typ == 'OK' else []
+        ids = sorted(ids, key=lambda x: int(x))[-40:]
+        for i in reversed(ids):
+            typ, md = M.fetch(i, '(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])')
+            if typ != 'OK' or not md or not md[0]:
+                continue
+            h = email.message_from_bytes(md[0][1])
+            fname, femail = parseaddr(_dec(h.get('From')))
+            sj = _dec(h.get('Subject'))
+            row = {'from': femail, 'subject': sj, 'date': (h.get('Date') or '')[:31]}
+            row['from_ok'] = (not froms) or any(f in (femail or '').lower() for f in froms)
+            row['subj_ok'] = (not subj) or (subj.lower() in (sj or '').lower())
+            # רק על מה שנראה כמו בקשה נבדוק גם את הגוף — שליפה מלאה יקרה
+            if row['subj_ok'] and len(out) < 25:
+                t2, m2 = M.fetch(i, '(RFC822)')
+                if t2 == 'OK' and m2 and m2[0]:
+                    msg = email.message_from_bytes(m2[0][1])
+                    body = _extract_text(msg)
+                    nm = _parse_names(body, translate=True)
+                    row['names'] = nm.replace('\n', ' · ')[:120]
+                    row['body'] = _snippet(body, 160)
+            out.append(row)
+            if len(out) >= 25:
+                break
+        M.logout()
+        return {'ok': True, 'mailbox': mailbox, 'since': since, 'subject': subj,
+                'from': froms, 'total': len(ids), 'rows': out}
+    except imaplib.IMAP4.error as e:
+        return {'ok': False, 'error': 'login_failed', 'detail': str(e)}
+    except Exception as e:
+        return {'ok': False, 'error': 'diag_failed', 'detail': str(e)}
+
+
 def sync(con):
     """מושך מיילים חדשים לתוך טבלת intake. מחזיר dict עם התוצאה."""
     user = os.environ.get('GMAIL_USER')
