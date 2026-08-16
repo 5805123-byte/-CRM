@@ -781,6 +781,9 @@ function wireChanSel(sel){
 }
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 function fixedAmt(d){
+  // פיצול הקבוע לייעודים גובר על הכל — שם רשום מה הוא באמת נותן בחודש
+  const fx=(d.pledges||[]).filter(p=>+p.monthly).reduce((a,p)=>a+amtNum(p.amount),0);
+  if(fx)return curSym(d)+fx;
   if(d.tier==='יששכר_זבולון'){const s=(d.partners||[]).filter(p=>p.active!=0).reduce((a,p)=>a+amtNum(p.amount),0);if(s)return curSym(d)+s;}
   if(d.category==='קבוע'&&amtNum(d.amount))return curSym(d)+amtNum(d.amount);
   return '';}
@@ -1958,6 +1961,21 @@ function wireSplit(d,body,redraw){
 // נפרדת, מאיר עשה את החשבון — לא חוב ולא גבייה נפרדת)
 function pPaidLbl(v){return +v===2?'✓ סודר':(+v===1?'✓ נגבה':'🔴 טרם נגבה');}
 function pPaidCls(v){return +v===2?'setl':(+v===1?'yes':'no');}
+// הקבוע החודשי מפוצל לייעודים: קופסה לכל אחד (1500 יששכר־זבולון,
+// 4500 כולל יום). נשמר כהתחייבות חודשית, והסכום הקבוע הוא הסך הכל.
+function monthlyPledges(d){return (d.pledges||[]).filter(p=>+p.monthly);}
+function fixRowsHTML(d){
+  const cur=curSym(d);
+  return monthlyPledges(d).map(p=>`<div class="fixrow" data-pid="${p.id}">
+      <input class="fx_amt" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="סכום">
+      <span class="fxcur">${cur}</span>
+      <select class="fx_cat">${dnCatOpts(p.category||'')}</select>
+      <button class="del fx_del" title="הסר">✕</button>
+    </div>
+    <div class="addrow hidden fxnew"><input class="fx_new" placeholder="שם הייעוד החדש…"></div>`).join('')
+    ||'<div class="hintxt">אין פיצול — הסכום הקבוע כולו לייעוד אחד.</div>';
+}
+function fixTotal(d){return monthlyPledges(d).reduce((s,p)=>s+amtNum(p.amount),0);}
 function debtSummary(d){
   const cur=curSym(d), rows=[];
   const iz=izSummary(d);
@@ -2110,6 +2128,10 @@ function cardDetails(d,body){
     ${hasFreq(d)?`<div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
       <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>`
     :`<label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>`}
+    <div class="fld"><span>💵 הקבוע החודשי — סכום לכל ייעוד</span>
+      <div class="fixlist" id="f_fixlist">${fixRowsHTML(d)}</div>
+      <button class="btn sm ghost" id="f_fixadd" style="width:100%;margin-top:5px">➕ עוד סכום קבוע</button>
+      <small class="hintxt">תורם שנותן על כמה דברים — קופסה לכל אחד. הסכום הקבוע למעלה מתעדכן לסך הכל.</small></div>
     <div class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה). אפשר לבחור כמה</span>
       <div class="purpbox"><div class="purpchips" id="f_purpchips">${purpChips(purposeList(d))}</div>
         <select id="f_purpose">${dnCatOpts('')}</select></div></div>
@@ -2192,6 +2214,41 @@ function cardDetails(d,body){
     await api('PUT','/api/donor/'+d.id,{region:d.region});
     toast(d.region==='il'?'שקלים ₪ ✓':'דולרים $ ✓');
     cardDetails(d,body); if(tab==='donors')renderDonors();};
+  // ----- הקבוע החודשי מפוצל לייעודים -----
+  const fxWire=()=>{
+    const box=document.getElementById('f_fixlist'); if(!box)return;
+    const save=async(row)=>{
+      const pid=row.dataset.pid, p=(d.pledges||[]).find(x=>x.id==pid); if(!p)return;
+      let cat=row.querySelector('.fx_cat').value.trim();
+      if(cat==='__new__'){cat=(row.nextElementSibling&&row.nextElementSibling.querySelector('.fx_new')||{value:''}).value.trim();
+        if(!cat){toast('כתוב את שם הייעוד');return;}
+        if(!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}}
+      p.amount=row.querySelector('.fx_amt').value.trim(); p.category=cat;
+      await api('PUT','/api/pledge/'+pid,{category:cat,amount:p.amount,status:p.status||'',note:p.note||'',monthly:1});
+      d.amount=String(fixTotal(d)||''); await api('PUT','/api/donor/'+d.id,{amount:d.amount});
+      cardDetails(d,body); if(tab==='donors')renderDonors(); toast('נשמר ✓');
+    };
+    box.querySelectorAll('.fixrow').forEach(row=>{
+      const sel=row.querySelector('.fx_cat'), nb=row.nextElementSibling;
+      sel.onchange=()=>{ if(sel.value==='__new__'){ if(nb){nb.classList.remove('hidden');nb.querySelector('.fx_new').focus();} return; }
+        if(nb)nb.classList.add('hidden'); save(row); };
+      const nf=nb&&nb.querySelector('.fx_new');
+      if(nf)nf.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();save(row);}};
+      row.querySelector('.fx_amt').onblur=()=>save(row);
+      row.querySelector('.fx_del').onclick=async()=>{
+        await api('DELETE','/api/pledge/'+row.dataset.pid);
+        d.pledges=(d.pledges||[]).filter(x=>String(x.id)!==String(row.dataset.pid));
+        d.amount=String(fixTotal(d)||''); await api('PUT','/api/donor/'+d.id,{amount:d.amount});
+        cardDetails(d,body); if(tab==='donors')renderDonors(); toast('הוסר');};
+    });
+  };
+  fxWire();
+  const fxa=document.getElementById('f_fixadd');
+  if(fxa)fxa.onclick=async()=>{
+    const r=await api('POST','/api/pledge',{donor_id:d.id,category:'',amount:'',status:'',monthly:1});
+    if(!r||!r.id){toast('לא נוסף');return;}
+    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:'',amount:'',status:'',monthly:1}]);
+    cardDetails(d,body);};
   const dgo=document.getElementById('debtgo'), ddt=document.getElementById('debtdet');
   if(dgo)dgo.onclick=()=>{DEBTOPEN=!DEBTOPEN; ddt.classList.toggle('hidden',!DEBTOPEN);
     document.querySelector('#debtline .debtcue').textContent=DEBTOPEN?'▲':'▼ ממה?';};
