@@ -3416,14 +3416,12 @@ const DAYSAVE={parnes:'🌙 יום פרנס',coffee:'☕ חדר קפה',breakfas
 // לכל הרצף, בלי לשאול: אם לקח ד' וה' אלול תיווצר תעודה של ד'–ה'
 function parnesRun(d,p){
   if(!d||!p||!p.day||!p.month)return [p];
-  const kind=p.kind||'parnes', yr=p.hyear||'';
-  // שנה עברית לא תמיד נרשמת בכל שורה. שורה בלי שנה נחשבת מתאימה,
-  // אחרת יומיים רצופים לא היו מתאחדים רק בגלל שדה ריק
-  const sameYear=x=>!yr||!(x.hyear||'')||x.hyear===yr;
+  // אותו תורם, אותו חודש, ימים צמודים — תעודה אחת. בלי תנאים נוספים:
+  // סוג הפרנס, סטטוס ושנה עברית לא נבדקים, כי בפועל הם נשמרים לא אחיד
+  // ואז שני ימים שהתורם באמת לקח נשארו שתי תעודות
   const by={};
   (d.parnes||[]).forEach(x=>{
-    if((x.kind||'parnes')!==kind||x.status==='suggested')return;
-    if(x.month!==p.month||!sameYear(x)||!x.day)return;
+    if(x.month!==p.month||!x.day)return;
     if(!by[+x.day]||+x.id===+p.id)by[+x.day]=x;
   });
   let lo=+p.day, hi=+p.day;
@@ -3443,16 +3441,8 @@ function parnesCertUrl(d,p){
 // למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
 function runWhyNot(d,p){
   if(!d||!p||!p.day||!p.month)return '';
-  const kl=k=>((PKINDS.find(x=>x[0]===(k||'parnes'))||['',''])[1]||k||'');
   const near=(d.parnes||[]).filter(x=>x.month===p.month&&Math.abs((+x.day||0)-(+p.day))===1);
   if(!near.length)return 'אין לו יום צמוד ב'+p.month+' — תעודה ליום אחד';
-  const x=near[0], dd=heDay(+x.day)+' '+p.month;
-  if((x.kind||'parnes')!==(p.kind||'parnes'))
-    return dd+' רשום כ'+kl(x.kind)+' ולא כ'+kl(p.kind)+' — לכן תעודה נפרדת';
-  if(x.status==='suggested')
-    return dd+' עדיין הצעה ולא מאושר — לכן לא נכנס לתעודה';
-  if((x.hyear||'')&&(p.hyear||'')&&x.hyear!==p.hyear)
-    return dd+' רשום בשנת '+x.hyear+' ולא '+p.hyear+' — לכן לא נכנס';
   return '';
 }
 function openParnesCert(d,p){
