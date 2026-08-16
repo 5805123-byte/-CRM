@@ -4209,10 +4209,22 @@ _CERT_CFG = {
     'coffee':    {'bg': 'letterhead-coffee.jpg', 'box': (0.09, 0.24, 0.91, 0.79)},
     'breakfast': {'bg': 'letterhead-coffee.jpg', 'box': (0.09, 0.24, 0.91, 0.79)},
 }
-_CERT_SMALL = re.compile(r'^(בן|בת|ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|נ["\'״׳]י)$')
+_CERT_SMALL = re.compile(
+    r'^(בן|בת|בר|ב["\'״׳]ר|ובן|ובת|ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|'
+    r'נ["\'״׳]י|שליט["\'״׳]א|שיחי["\'״׳]?|שיחיו|תחי["\'״׳]?|ותחי["\'״׳]?|'
+    r'הר["\'״׳]ר|הרר|הרב|רבי|ר["\'״׳]|מוה["\'״׳]ר|הרה["\'״׳][גחצ]|הגה["\'״׳]צ|מרן|'
+    r'מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|'
+    r'אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|'
+    r'חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$')
+# מילת קרבה שנצמדת לפתיח — "לע\"נ אביו" יורד לשורה משלו
+_CERT_REL = re.compile(
+    r'^(אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|'
+    r'חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו|הוריו|הוריה)$')
+_DON_R = .56        # שם התורם ביחס לשם שמתפללים עליו
+_SML_R = .42        # תארים, קרבה ומילות קישור
 # היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
-_REQ_R = .60        # גודל הבקשה ביחס לשם
+_REQ_R = .42        # גודל הבקשה ביחס לשם
 _SPACE_R = .92      # רוחב הרווח בין המילים
 # פתיח שבא לפני השם ("לעילוי נשמת אסתר בת יהושע") — רק הפתיח קטן, והשמות
 # שאחריו גדולים. שונה מברכה שבאה אחרי השם ונמשכת עד הסוף.
@@ -4222,6 +4234,41 @@ _CERT_REQ = re.compile(
     r'^(ו?ל)(רפוא\w*|הצלח\w*|זיווג\w*|זרע\w*|פרנס\w*|ישוע\w*|ברכ\w*|נחת|חיים|בני\w*|'
     r'שלום|עילוי|זכר|כל|אריכ\w*|בריא\w*|שנה|כפרת|הרחב\w*|מזל|שידוך|בן|בת)$'
     r'|^(לע["\'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$')
+def _cert_lines(text):
+    """פיצול לשורות כמו בתצוגה שבמסך: שם התורם בשורה משלו, "לע\"נ אביו"
+    בשורה משלו, והשמות שמתפללים עליהם בשורה האחרונה."""
+    raws = str(text or '').split('\n')
+    later_lead = any(i > 0 and (r.split() or [''])[0] and _CERT_LEAD.match(r.split()[0])
+                     for i, r in enumerate(raws))
+    out = []
+    for idx, raw in enumerate(raws):
+        ws = raw.split()
+        if not ws:
+            out.append(('', 'names')); continue
+        ded = -1
+        for k in range(1, len(ws)):
+            if _CERT_LEAD.match(ws[k]):
+                ded = k; break
+        if ded > 0:                       # "הר\"ר רפאל לע\"נ אביו יוסף"
+            out.append((' '.join(ws[:ded]), 'donor'))
+            ws = ws[ded:]
+        elif idx == 0 and later_lead and not _CERT_LEAD.match(ws[0]):
+            out.append((' '.join(ws), 'donor')); continue
+        if _CERT_LEAD.match(ws[0]):
+            i = 0
+            while i < len(ws) and _CERT_LEAD.match(ws[i]):
+                i += 1
+            j = i
+            while j < len(ws) and _CERT_REL.match(ws[j]):
+                j += 1
+            if j > i and j < len(ws):
+                out.append((' '.join(ws[:j]), 'lead'))
+                out.append((' '.join(ws[j:]), 'names'))
+                continue
+        out.append((' '.join(ws), 'names'))
+    return out
+
+
 _DEEP = (0x6a, 0x14, 0x14)
 _BLACK = (0, 0, 0)
 _INK = (0x1c, 0x17, 0x10)
@@ -4286,14 +4333,18 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             out.append(it)
         return out
 
-    def sized(raw, px, heavy):
-        """כל מילה בשורה עם הגודל שלה: השם בגדול, בן/בת קטנים, והבקשה —
-        מהמילה שבה היא מתחילה ועד סוף המשפט — קטנה יותר. הקביעה נעשית פעם
-        אחת על השורה השלמה, כדי שהבקשה תישאר קטנה גם אחרי שבירת שורה."""
+    def sized(raw, px, heavy, role='names'):
+        """כל מילה בשורה עם הגודל שלה: השם שמתפללים עליו הכי גדול, שם
+        התורם קטן ממנו, ותארים/קרבה/בקשה הכי קטנים. הקביעה נעשית פעם אחת
+        על השורה השלמה, כדי שהיא תישמר גם אחרי שבירת שורה."""
         ws = raw.split()
+        if role == 'lead':                                  # "לע\"נ אביו"
+            return [(w, px * _SML_R, True) for w in ws]
+        if role == 'donor':                                 # שם התורם
+            return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         i, out = 0, []
         while i < len(ws) and _CERT_LEAD.match(ws[i]):     # פתיח לפני השם
-            out.append((ws[i], px * _REQ_R, True)); i += 1
+            out.append((ws[i], px * _SML_R, True)); i += 1
         inreq = False
         for w in ws[i:]:
             if not inreq and _CERT_REQ.match(w):           # ברכה אחרי השם
@@ -4301,7 +4352,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             if inreq:
                 out.append((w, px * _REQ_R, True))
             elif _CERT_SMALL.match(w):
-                out.append((w, px * .5, False))
+                out.append((w, px * _SML_R, False))
             else:
                 out.append((w, px, heavy))
         return out
@@ -4309,8 +4360,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     def wrap(text, px, heavy, dr):
         """שבירת שורות לרוחב התיבה, תוך שמירה על שורות שנכתבו במפורש."""
         lines = []
-        for raw in str(text).split('\n'):
-            ws = sized(raw, px, heavy)
+        for raw, role in _cert_lines(text):
+            ws = sized(raw, px, heavy, role)
             if not ws:
                 lines.append([]); continue
             cur = []
