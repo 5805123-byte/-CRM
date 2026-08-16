@@ -4210,12 +4210,19 @@ function donorDebts(d){
   (d.parnes||[]).forEach(p=>{ if(p.status==='suggested'||+p.paid)return;
     out.push({what:(PKLBL[p.kind]||'🌙 פרנס יום'),amt:amtNum(p.amount),kind:'parnes',id:p.id,
               when:[p.date_text,p.hyear].filter(Boolean).join(' ')}); });
-  // תרומה שלא סומנה כשולמה = חוב, אבל רק אם יש לה תאריך מלא. שורות עם
-  // חודש בלבד הן רישומי עבר מייבוא ולא התחייבות שממתינה לגבייה.
-  (d.donations||[]).forEach(x=>{ if(+x.paid)return;
-    if(String(x.date||'').length<=7)return;
-    out.push({what:(x.category||'תרומה'),amt:amtNum(x.amount),kind:'donation',id:x.id,
-              when:gregLabel(x.date)||x.date||''}); });
+  // תרומה *לא* נחשבת חוב. שורת תרומה היא רישום של כסף, לא התחייבות —
+  // ולכן כסף שנכנס הופיע כאן כאילו התורם חייב אותו. חוב הוא רק מה
+  // שהתורם התחייב ועדיין לא נתן.
+  // תורם קבוע שלא נגבה ממנו חודשים — בדיוק כמו בחלון החוב שבכרטיס,
+  // ובלי לספור פעמיים כשהחוב של יששכר־זבולון כבר מכסה את אותם חודשים
+  try{
+    const iz0=izSummary(d), gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
+    const izCov=iz0.monthly>0&&iz0.monthly>=fx-0.5&&
+      ((iz0.manual!=null&&iz0.manual<=0.5)||(iz0.thru.length&&iz0.thruDebt<=0.5));
+    if(gc.length&&fx>0&&!izCov)
+      out.push({what:'📅 חודשים שלא נגבו',amt:gc.length*fx,kind:'months',id:0,
+                when:gc.map(i=>MON[i]).join(' · ')});
+  }catch(e){}
   (d.building||[]).forEach(x=>{ const owed=amtNum(x.amount)-amtNum(x.paid);
     if(owed>0.5)out.push({what:'🏛️ בניין'+(x.object?(' · '+x.object):''),amt:owed,kind:'building',id:x.id,when:''}); });
   // יששכר־זבולון — רק חוב שנקבע במפורש: עדכון ידני, או "שולם עד חודש".
@@ -4252,11 +4259,11 @@ function renderDebts(){
     ${whats.length?`<div class="cattot"><div class="cattot-t">🎯 החוב לפי ייעוד</div>
       ${whats.map(w=>`<div class="catrow"><span>${esc(wlbl[w]||w)}</span><b>${f(byWhat[w])}</b></div>`).join('')}</div>`:''}
     <div class="cnt">${rows.length} תורמים · לפי גובה החוב</div>
-    <div class="hintxt" style="margin:0 2px 8px">נכנס לכאן: התחייבות שטרם ניתנה · פרנס שטרם נגבה · תרומה עם תאריך מלא שלא סומנה כשולמה · יתרה בבניין · חוב יש"ז שנקבע במפורש (ידני או "שולם עד חודש").</div>
+    <div class="hintxt" style="margin:0 2px 8px">חוב = מה שהתורם התחייב ועדיין לא נתן. נכנס לכאן: 🤝 יששכר־זבולון שלא שולם (לפי "שולם עד חודש" או עדכון ידני) · 🎯 התחייבות/קמפיין שטרם ניתן · 🌙 פרנס יום שנתפס ולא נגבה · 🏛️ יתרה בבניין.<br>תרומות שנכנסו בפועל אינן חוב ואינן נספרות כאן.</div>
     <div class="list">${rows.map((r,i)=>`<div class="rowc debtrow"><div class="rowmain" data-did="${r.d.id}">
       <div class="nm">${esc(r.d.last)} <small>${esc(r.d.first)}</small></div>
       ${r.list.map((x,j)=>`<div class="miss"><span class="dbw">${esc(x.what)}</span>${x.when?(' <small>'+esc(x.when)+'</small>'):''}
-        — <b style="color:var(--no)">${x.amt?f(x.amt):'ללא סכום'}</b>${x.kind!=='iz'?`<button class="btn sm dbpaid" data-i="${i}" data-j="${j}" onclick="event.stopPropagation()">✓ נגבה</button>`:''}</div>`).join('')}
+        — <b style="color:var(--no)">${x.amt?f(x.amt):'ללא סכום'}</b>${(x.kind!=='iz'&&x.kind!=='months')?`<button class="btn sm dbpaid" data-i="${i}" data-j="${j}" onclick="event.stopPropagation()">✓ נגבה</button>`:''}</div>`).join('')}
       ${contactBtns(r.d)}</div>
       <div class="meta"><b class="debtsum">${f(r.sum)}</b></div></div>`).join('')
       ||'<div class="empty">אין חובות פתוחים 🎉</div>'}</div>`;
