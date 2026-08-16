@@ -328,6 +328,11 @@ def ensure_schema():
         # חיוב שנדחה אבל סודר בדרך אחרת — יורד מהחוב בלחיצה אחת
         try: con.execute("ALTER TABLE recon ADD COLUMN no_debt INTEGER DEFAULT 0")
         except Exception: pass
+        # חיוב שנדחה שמאיר סימן במפורש כחוב אמיתי. חיוב שנדחה אינו חוב
+        # מעצמו — ברוב המקרים ניסו לחייב שוב וזה עבר, או שהתורם שילם באותו
+        # חודש בדרך אחרת. רק סימון ידני מכניס אותו לסכום החוב.
+        try: con.execute("ALTER TABLE recon ADD COLUMN is_debt INTEGER DEFAULT 0")
+        except Exception: pass
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v6'").fetchone():
             rp = os.path.join(HERE, 'recon_data.json')
             if os.path.exists(rp):
@@ -3740,7 +3745,7 @@ def get_all():
                 if len(iso) == 10:
                     ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
         for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id,"
-                           "COALESCE(no_debt,0) no_debt FROM recon "
+                           "COALESCE(no_debt,0) no_debt, COALESCE(is_debt,0) is_debt FROM recon "
                            "WHERE donor_id IS NOT NULL "
                            "AND COALESCE(status,'settled') NOT IN ('settled','') "
                            "ORDER BY date DESC"):
@@ -6827,15 +6832,17 @@ class H(BaseHTTPRequestHandler):
             res['to'] = to
             res['count'] = len(atts)
             return self._send(200, res)
-        # חיוב שנדחה אבל סודר בדרך אחרת (העברה בנקאית, צ׳ק) — יורד מהחוב
-        if self.path == '/api/recon/nodebt':
+        # סימון ידני של חיוב שנדחה כחוב אמיתי (או ביטול הסימון). חיוב שנדחה
+        # לא נספר בחוב מעצמו — רק מה שמאיר סימן כאן.
+        if self.path in ('/api/recon/debt', '/api/recon/nodebt'):
             tids = b.get('tids') or ([b['tid']] if b.get('tid') else [])
             on = 0 if b.get('undo') else 1
+            col = 'no_debt' if self.path.endswith('nodebt') else 'is_debt'
             if not tids:
                 return self._send(400, {'error': 'no tid'})
             con = db()
             for t in tids:
-                con.execute("UPDATE recon SET no_debt=? WHERE tid=?", (on, str(t)))
+                con.execute("UPDATE recon SET %s=? WHERE tid=?" % col, (on, str(t)))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'n': len(tids)})
         if self.path == '/api/campaigns':
