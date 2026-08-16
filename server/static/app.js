@@ -396,6 +396,37 @@ function fixNames(txt){
   return {text:out,hits:hits.slice(0,3)};
 }
 // ===== בדיקת מערכת — מה עובד, מה חסר, ומה דורש טיפול =====
+// ----- עדכון גרסה: אפליקציה שנשארת פתוחה ברקע לא טוענת מחדש את הקוד,
+// ולכן תיקון שעלה לשרת לא מגיע עד שסוגרים ופותחים. כאן בודקים את הגרסה
+// בכל חזרה למסך, ומרעננים לבד כשאין מה לאבד -----
+let _VER=null;
+async function liveVer(){
+  try{
+    const t=await (await fetch('/sw.js',{cache:'no-store'})).text();
+    const m=/kc-crm-(v\d+)/.exec(t); return m?m[1]:null;
+  }catch(e){ return null; }
+}
+function verBanner(v){
+  if(document.getElementById('verbar'))return;
+  const b=document.createElement('button');
+  b.id='verbar'; b.textContent='🔄 יש גרסה חדשה ('+v+') — לחץ לעדכון';
+  b.onclick=()=>location.reload();
+  document.body.appendChild(b);
+}
+async function verCheck(){
+  const v=await liveVer(); if(!v)return;
+  if(!_VER){_VER=v;return;}
+  if(v===_VER)return;
+  const busy=document.querySelector('.ov.show,.confirmov')
+    ||/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'')
+    ||(document.activeElement&&document.activeElement.isContentEditable);
+  if(busy){ verBanner(v); return; }
+  _VER=v; location.reload();
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden)verCheck(); });
+setInterval(verCheck, 4*60*1000);
+verCheck();
+
 async function openHealth(){
   const ov=document.getElementById('dictov'), sh=document.getElementById('dictsheet');
   sh.innerHTML='<button class="x" id="hx">✕</button><h2>🩺 בדיקת מערכת</h2><div class="hintxt">בודק…</div>';
