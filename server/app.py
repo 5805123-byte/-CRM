@@ -3338,6 +3338,20 @@ def ensure_schema():
                 print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
     except Exception as ex:
         print('  post pending error:', ex)
+    # יצחק רוזנפלד: נעימי מרדכי מוחזק בשותפות עם יהושע רוזנפלד — חלקו 500
+    # ולא 1000. אבלסון מאיר נשאר 1000. סך יששכר־זבולון שלו: 1500 לחודש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='yrosenfeld_share_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE last='רוזנפלד' AND first='יצחק'").fetchone()
+            if r:
+                n = con.execute("UPDATE partners SET amount='500' WHERE donor_id=? "
+                                "AND avreich LIKE '%נעימי%'", (r['id'],)).rowcount
+                if n:
+                    print('  יצחק רוזנפלד: נעימי מרדכי — 500 (שותפות עם יהושע רוזנפלד)')
+            con.execute("INSERT INTO seed_flags(name) VALUES('yrosenfeld_share_v1')")
+    except Exception as ex:
+        print('  rosenfeld share error:', ex)
+
     # בערי גולדגראב: ההתחייבות נרשמה כסכום כל החודשים יחד (7 × 480),
     # ולכן החוב יצא פי שבעה. ההתחייבות היא 480 לחודש.
     try:

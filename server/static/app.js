@@ -1964,16 +1964,19 @@ function pPaidCls(v){return +v===2?'setl':(+v===1?'yes':'no');}
 // הקבוע החודשי מפוצל לייעודים: קופסה לכל אחד (1500 יששכר־זבולון,
 // 4500 כולל יום). נשמר כהתחייבות חודשית, והסכום הקבוע הוא הסך הכל.
 function monthlyPledges(d){return (d.pledges||[]).filter(p=>+p.monthly);}
-function fixRowsHTML(d){
-  const cur=curSym(d);
-  return monthlyPledges(d).map(p=>`<div class="fixrow" data-pid="${p.id}">
-      <input class="fx_amt" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="סכום">
-      <span class="fxcur">${cur}</span>
-      <select class="fx_cat">${dnCatOpts(p.category||'')}</select>
-      <button class="del fx_del" title="הסר">✕</button>
+function fixRowHTML(pid,amt,cat,del){
+  return `<div class="fixrow" data-pid="${pid}">
+      <input class="fx_amt" value="${esc(amt||'')}" inputmode="decimal" placeholder="סכום">
+      <select class="fx_cat">${dnCatOpts(cat||'')}</select>
+      ${del?'<button class="del fx_del" title="הסר">✕</button>':'<span class="fxpad"></span>'}
     </div>
-    <div class="addrow hidden fxnew"><input class="fx_new" placeholder="שם הייעוד החדש…"></div>`).join('')
-    ||'<div class="hintxt">אין פיצול — הסכום הקבוע כולו לייעוד אחד.</div>';
+    <div class="addrow hidden fxnew"><input class="fx_new" placeholder="שם הייעוד החדש…"></div>`;
+}
+function fixRowsHTML(d){
+  const l=monthlyPledges(d);
+  // אין עדיין פיצול — שורה אחת עם הסכום שכבר רשום בכרטיס
+  if(!l.length)return fixRowHTML('new',d.amount,(purposeList(d)[0]||''),false);
+  return l.map((p,i)=>fixRowHTML(p.id,p.amount,p.category,l.length>1||i>0)).join('');
 }
 function fixTotal(d){return monthlyPledges(d).reduce((s,p)=>s+amtNum(p.amount),0);}
 function debtSummary(d){
@@ -2124,14 +2127,11 @@ function cardDetails(d,body){
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
-      <label class="fld"><span>סכום קבוע <button class="curbtn" id="f_cur" type="button" title="לחץ להחלפת מטבע">${d.region==='il'?'🇮🇱 ₪':'🇺🇸 $'}</button></span><input id="f_amount" value="${esc(d.amount)}" inputmode="decimal"></label></div>
-    ${hasFreq(d)?`<div class="two"><label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>
-      <label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label></div>`
-    :`<label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label>`}
-    <div class="fld"><span>💵 הקבוע החודשי — סכום לכל ייעוד</span>
+      <label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label></div>
+    ${hasFreq(d)?`<label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label>`:''}
+    <label class="fld"><span>סכום קבוע <button class="curbtn" id="f_cur" type="button" title="לחץ להחלפת מטבע">${d.region==='il'?'🇮🇱 ₪':'🇺🇸 $'}</button></span>
       <div class="fixlist" id="f_fixlist">${fixRowsHTML(d)}</div>
-      <button class="btn sm ghost" id="f_fixadd" style="width:100%;margin-top:5px">➕ עוד סכום קבוע</button>
-      <small class="hintxt">תורם שנותן על כמה דברים — קופסה לכל אחד. הסכום הקבוע למעלה מתעדכן לסך הכל.</small></div>
+      <button class="fxadd" id="f_fixadd" type="button" title="עוד סכום קבוע">＋</button></label>
     <div class="fld"><span>🎯 עבור מה (הייעוד שלו — מוצג למעלה). אפשר לבחור כמה</span>
       <div class="purpbox"><div class="purpchips" id="f_purpchips">${purpChips(purposeList(d))}</div>
         <select id="f_purpose">${dnCatOpts('')}</select></div></div>
@@ -2218,13 +2218,23 @@ function cardDetails(d,body){
   const fxWire=()=>{
     const box=document.getElementById('f_fixlist'); if(!box)return;
     const save=async(row)=>{
-      const pid=row.dataset.pid, p=(d.pledges||[]).find(x=>x.id==pid); if(!p)return;
+      const pid=row.dataset.pid;
+      let p=(d.pledges||[]).find(x=>String(x.id)===String(pid));
       let cat=row.querySelector('.fx_cat').value.trim();
       if(cat==='__new__'){cat=(row.nextElementSibling&&row.nextElementSibling.querySelector('.fx_new')||{value:''}).value.trim();
         if(!cat){toast('כתוב את שם הייעוד');return;}
         if(!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}}
-      p.amount=row.querySelector('.fx_amt').value.trim(); p.category=cat;
-      await api('PUT','/api/pledge/'+pid,{category:cat,amount:p.amount,status:p.status||'',note:p.note||'',monthly:1});
+      const amt=row.querySelector('.fx_amt').value.trim();
+      if(!p){    // השורה הראשונה — נוצרת ברגע שממלאים אותה
+        if(!amt&&!cat)return;
+        const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'',monthly:1});
+        if(!r||!r.id){toast('לא נשמר');return;}
+        p={id:r.id,donor_id:d.id,category:cat,amount:amt,status:'',monthly:1};
+        d.pledges=(d.pledges||[]).concat([p]);
+      }else{
+        p.amount=amt; p.category=cat;
+        await api('PUT','/api/pledge/'+p.id,{category:cat,amount:amt,status:p.status||'',note:p.note||'',monthly:1});
+      }
       d.amount=String(fixTotal(d)||''); await api('PUT','/api/donor/'+d.id,{amount:d.amount});
       cardDetails(d,body); if(tab==='donors')renderDonors(); toast('נשמר ✓');
     };
@@ -2235,7 +2245,9 @@ function cardDetails(d,body){
       const nf=nb&&nb.querySelector('.fx_new');
       if(nf)nf.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();save(row);}};
       row.querySelector('.fx_amt').onblur=()=>save(row);
-      row.querySelector('.fx_del').onclick=async()=>{
+      const delb=row.querySelector('.fx_del');
+      if(delb)delb.onclick=async()=>{
+        if(row.dataset.pid==='new'){const nb2=row.nextElementSibling;row.remove();if(nb2&&nb2.classList.contains('fxnew'))nb2.remove();return;}
         await api('DELETE','/api/pledge/'+row.dataset.pid);
         d.pledges=(d.pledges||[]).filter(x=>String(x.id)!==String(row.dataset.pid));
         d.amount=String(fixTotal(d)||''); await api('PUT','/api/donor/'+d.id,{amount:d.amount});
@@ -2244,11 +2256,12 @@ function cardDetails(d,body){
   };
   fxWire();
   const fxa=document.getElementById('f_fixadd');
-  if(fxa)fxa.onclick=async()=>{
-    const r=await api('POST','/api/pledge',{donor_id:d.id,category:'',amount:'',status:'',monthly:1});
-    if(!r||!r.id){toast('לא נוסף');return;}
-    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:'',amount:'',status:'',monthly:1}]);
-    cardDetails(d,body);};
+  if(fxa)fxa.onclick=()=>{
+    const box=document.getElementById('f_fixlist'); if(!box)return;
+    box.insertAdjacentHTML('beforeend', fixRowHTML('new','','',true));
+    fxWire();
+    const rows=box.querySelectorAll('.fixrow');
+    rows[rows.length-1].querySelector('.fx_amt').focus();};
   const dgo=document.getElementById('debtgo'), ddt=document.getElementById('debtdet');
   if(dgo)dgo.onclick=()=>{DEBTOPEN=!DEBTOPEN; ddt.classList.toggle('hidden',!DEBTOPEN);
     document.querySelector('#debtline .debtcue').textContent=DEBTOPEN?'▲':'▼ ממה?';};
@@ -2528,7 +2541,7 @@ function cardDetails(d,body){
       }catch(e){ toast('❌ המיזוג לא נשמר: '+(e&&e.message||e)); }
       load().then(()=>{const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});});
   };
-  const FF=['last','first','category','amount','frequency'];
+  const FF=['last','first','category','frequency'];   // הסכום נשמר מהשורות עצמן
   wireFields(d,FF);
   wireNotes(d,body);
   // שינוי ההתחייבות מחליף גם את מה שרלוונטי להציג (תדירות רק לקבועים)
