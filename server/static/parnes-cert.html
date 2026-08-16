@@ -105,7 +105,10 @@ function dedPart(ws){
   while(k<ws.length && LEADWORD.test(ws[k])) k++;
   let r=k;
   while(r<ws.length && RELWORD.test(ws[r])) r++;
-  if(r>k && r<ws.length) return fmtWords(ws.slice(0,r))+'\n'+fmtWords(ws.slice(r));
+  // כל שורת הפתיח באותו גודל — "לע\"נ" ו"אביו" זהים
+  if(r>k && r<ws.length)
+    return ws.slice(0,r).map(w=>`<span class="nreq">${esc(w)}</span>`).join(' ')
+      + '\n' + fmtWords(ws.slice(r));
   return fmtWords(ws);
 }
 // שם התורם קטן מהשמות שמתפללים עליהם — בין אם הוא בשורה משלו ובין אם
