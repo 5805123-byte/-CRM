@@ -290,6 +290,13 @@
   .dschips .gchip{flex:0 0 auto;width:auto;margin:0}
   .dschips small{width:100%;color:var(--muted);font-size:.72rem;font-weight:400}
   .dstip{color:var(--no)!important;font-weight:600!important}
+  /* ממה בדיוק מורכב החוב — שורה זעירה לכל חיוב שנדחה */
+  .dsrow span.dslist{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  .dslist small{color:var(--no);font-weight:600;font-size:.73rem;
+    display:flex;align-items:center;gap:6px}
+  .dsok{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:7px;
+    font:inherit;font-size:.66rem;font-weight:600;padding:0 5px;line-height:1.5;cursor:pointer}
+  .dsok:hover{color:var(--yes);border-color:var(--yes)}
   .debtdet{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 11px;margin:-4px 0 8px}
   .dsrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
     padding:5px 0;border-bottom:1px solid #f2f2f5}

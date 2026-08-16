@@ -325,6 +325,9 @@ def ensure_schema():
         # חיוב שמאיר דחה במפורש ("דלג") — לא חוזר לכרטיס גם בשחזור אוטומטי
         try: con.execute("ALTER TABLE recon ADD COLUMN skipped INTEGER DEFAULT 0")
         except Exception: pass
+        # חיוב שנדחה אבל סודר בדרך אחרת — יורד מהחוב בלחיצה אחת
+        try: con.execute("ALTER TABLE recon ADD COLUMN no_debt INTEGER DEFAULT 0")
+        except Exception: pass
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v6'").fetchone():
             rp = os.path.join(HERE, 'recon_data.json')
             if os.path.exists(rp):
@@ -3714,20 +3717,30 @@ def get_all():
                 byid[r['donor_id']]['recon_pending'].append(dict(r))
     except Exception:
         pass
-    # חיובים שלא עברו. אבל כרטיס שנדחה ואז חויב שוב בהצלחה אינו חוב — זה
-    # ניסיון חוזר שהצליח, ואין טעם להבהיל בגללו. לכן כל דחייה נבדקת מול
-    # חיוב מוצלח באותו סכום בימים שאחריה, ורק מה שלא כוסה נחשב חוב.
+    # חיובים שלא עברו. כרטיס שנדחה ואז נגבה בהצלחה אינו חוב — זה ניסיון
+    # חוזר שהצליח. לכן כל דחייה נבדקת מול כסף שנכנס באותו סכום: בתוך
+    # שבועיים ממנה, או בכל מקום באותו חודש לועזי (גם צ׳ק או זל, לא רק
+    # חיוב חוזר בכרטיס). מה שלא כוסה — זה חוב אמיתי.
     for d in donors:
         d['declined'] = []
         d['declined_open'] = 0
     try:
-        ok = {}
+        ok, okmon = {}, set()
         for r in c.execute("SELECT donor_id,amount,date FROM recon "
                            "WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
             iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
             if iso:
                 ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
-        for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id FROM recon "
+                okmon.add((r['donor_id'], _amt2(r['amount']), iso[:7]))
+        for r in c.execute("SELECT donor_id,amount,date FROM donations "
+                           "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
+            iso = (r['date'] or '')[:10]
+            if len(iso) >= 7:
+                okmon.add((r['donor_id'], _amt2(r['amount']), iso[:7]))
+                if len(iso) == 10:
+                    ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
+        for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id,"
+                           "COALESCE(no_debt,0) no_debt FROM recon "
                            "WHERE donor_id IS NOT NULL "
                            "AND COALESCE(status,'settled') NOT IN ('settled','') "
                            "ORDER BY date DESC"):
@@ -3735,13 +3748,15 @@ def get_all():
                 continue
             iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
             dd = _days(iso)
-            hit = [x for x in ok.get((r['donor_id'], _amt2(r['amount'])), [])
-                   if dd and -3 <= x - dd <= 14]
+            amt = _amt2(r['amount'])
+            hit = [x for x in ok.get((r['donor_id'], amt), []) if dd and -3 <= x - dd <= 14]
+            if not hit and iso and (r['donor_id'], amt, iso[:7]) in okmon:
+                hit = [1]
             row = dict(r)
             row['date_iso'] = iso
-            row['covered'] = 1 if hit else 0
+            row['covered'] = 1 if (hit or r['no_debt']) else 0
             byid[r['donor_id']]['declined'].append(row)
-            if not hit:
+            if not row['covered']:
                 byid[r['donor_id']]['declined_open'] += 1
     except Exception:
         pass
@@ -6812,6 +6827,17 @@ class H(BaseHTTPRequestHandler):
             res['to'] = to
             res['count'] = len(atts)
             return self._send(200, res)
+        # חיוב שנדחה אבל סודר בדרך אחרת (העברה בנקאית, צ׳ק) — יורד מהחוב
+        if self.path == '/api/recon/nodebt':
+            tids = b.get('tids') or ([b['tid']] if b.get('tid') else [])
+            on = 0 if b.get('undo') else 1
+            if not tids:
+                return self._send(400, {'error': 'no tid'})
+            con = db()
+            for t in tids:
+                con.execute("UPDATE recon SET no_debt=? WHERE tid=?", (on, str(t)))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'n': len(tids)})
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm and b.get('delete'):        # מחיקת ייעוד מהרשימה. תרומות שכבר סווגו לא נוגעים בהן

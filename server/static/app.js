@@ -1991,24 +1991,44 @@ function debtSummary(d){
   const gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
   const izCovered=iz.monthly>0&&iz.monthly>=fx-0.5&&
     ((iz.manual!=null&&iz.manual<=0.5)||(iz.thru.length&&iz.thruDebt<=0.5));
-  if(gc.length&&fx>0&&!izCovered)rows.push({t:'חודשים שלא נגבו',v:gc.length*fx,
+  const gcRow=gc.length&&fx>0&&!izCovered;
+  if(gcRow)rows.push({t:'חודשים שלא נגבו',v:gc.length*fx,
     s:gc.length+' × '+cur+Math.round(fx),
     chips:gc.map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')});
   // ימי פרנס שטרם נגבו
   const pn=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
   const pnSum=pn.reduce((s2,p)=>s2+amtNum(p.amount),0);
   if(pnSum>0.5)rows.push({t:'ימי פרנס שטרם נגבו',v:pnSum,s:pn.length+' ימים'});
-  // חיוב שנדחה אינו חוב. אם ניסינו לחייב אותו שבע פעמים באותו חודש —
-  // זה עדיין חודש אחד שלא שולם, וכבר נספר ב"חודשים שלא נגבו". לכן
-  // הרשימה הזו מוצגת כמידע לטיפול בלבד ואינה נכנסת לסכום החוב.
-  const dec=(d.declined||[]).filter(x=>!+x.covered);
-  const decSum=dec.reduce((s2,x)=>s2+amtNum(x.amount),0);
-  if(decSum>0.5){
-    const dts=dec.map(x=>x.date_iso||x.date).filter(Boolean).sort();
-    rows.push({t:'🔴 הכרטיס לא עבר',v:decSum,info:1,
-      s:dec.length+' '+(dec.length===1?'ניסיון חיוב':'ניסיונות חיוב')
-        +(dts.length?(' · '+gregLabel(dts[0])+(dts.length>1?(' – '+gregLabel(dts[dts.length-1])):'')):''),
-      tip:'לא נספר בחוב — שווה להתקשר ולבקש כרטיס מעודכן'});}
+  // חיוב שנדחה ולא נגבה אחר כך הוא חוב אמיתי. אבל שבעה ניסיונות באותו
+  // חודש ובאותו סכום הם חודש אחד שלא שולם — נספרים פעם אחת בלבד. וחודש
+  // שכבר נספר ב"חודשים שלא נגבו" לא נספר כאן שוב.
+  const decSeen={}, decAll=[];
+  (d.declined||[]).filter(x=>!+x.covered).forEach(x=>{
+    const iso=String(x.date_iso||x.date||''), a=amtNum(x.amount);
+    if(a<=0.5||iso.length<7)return;
+    const k=iso.slice(0,7)+'|'+a.toFixed(2), h=decSeen[k];
+    if(h){h.tries++; h.tids.push(x.tid); if(iso<h.iso)h.iso=iso; return;}
+    decSeen[k]={iso,a,tries:1,tids:[x.tid]}; decAll.push(decSeen[k]);
+  });
+  const decOpen=decAll.filter(r=>!(gcRow&&gc.includes(+r.iso.slice(5,7)-1)));
+  // סכום שנדחה וגדול פי כמה מכל מה שהתורם אי פעם שילם הוא כמעט תמיד
+  // תקלה בדוח (למשל $62,026 אצל יעקב גולד). מוצג לבדיקה, לא נספר בחוב.
+  const maxOk=Math.max(fx,...(d.donations||[]).map(x=>amtNum(x.amount)),0);
+  const odd=maxOk>0?decOpen.filter(r=>r.a>4*maxOk):[];
+  const dec=decOpen.filter(r=>odd.indexOf(r)<0);
+  const oddSum=odd.reduce((s2,r)=>s2+r.a,0);
+  if(oddSum>0.5)
+    rows.push({t:'⚠️ סכום חריג בדוח — לבדוק',v:oddSum,info:1,
+      s:'גדול פי כמה מכל תשלום שלו — לא נספר בחוב',
+      list:odd.map(r=>({txt:gregLabel(r.iso)+' · '+cur+Math.round(r.a),tids:r.tids}))});
+  const decSum=dec.reduce((s2,r)=>s2+r.a,0);
+  if(decSum>0.5)
+    rows.push({t:'🔴 חיובים שנדחו ולא נגבו',v:decSum,
+      s:dec.length+' '+(dec.length===1?'חיוב':'חיובים'),
+      list:dec.sort((a2,b2)=>a2.iso<b2.iso?-1:1).map(r=>({
+        txt:gregLabel(r.iso)+' · '+cur+Math.round(r.a)+(r.tries>1?(' · '+r.tries+' ניסיונות'):''),
+        tids:r.tids})),
+      tip:'הכרטיס לא עבר וגם לא נגבה אחר כך — שווה להתקשר ולבקש כרטיס מעודכן'});
   // התחייבויות פתוחות
   const pl=(d.pledges||[]).filter(p=>p.status!=='נתן'&&!+p.monthly&&amtNum(p.amount)>0);
   const plSum=pl.reduce((s2,p)=>s2+amtNum(p.amount),0);
@@ -2036,7 +2056,7 @@ function debtHTML(d){
       <input id="debtokwhy" placeholder="איך סודר? (למשל: ישלים בצ׳ק בראש חודש)">
       <button class="btn sm" id="debtokgo">💾 סודר</button></div>
     <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
-      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.list?`<span class="dslist">${r.list.map(t=>`<small>${esc(t.txt)}<button class="dsok" data-tids="${esc((t.tids||[]).join(','))}" title="סודר בדרך אחרת — הורד מהחוב">סודר</button></small>`).join('')}</span>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
     </div>`;
 }
 function catTotalsHTML(d){
@@ -2558,6 +2578,16 @@ function cardDetails(d,body){
     await api('PUT','/api/donor/'+d.id,{months:d.months});
     toastUndo(MON[i]+' — נגבה ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});cardDetails(d,body);});
     cardDetails(d,body); if(tab==='donors')renderDonors();});
+  // חיוב שנדחה אבל סודר בדרך אחרת (העברה בנקאית, צ׳ק) — יורד מהחוב
+  body.querySelectorAll('.dsok').forEach(b3=>b3.onclick=async e=>{
+    e.stopPropagation();
+    const tids=String(b3.dataset.tids||'').split(',').filter(Boolean); if(!tids.length)return;
+    await api('POST','/api/recon/nodebt',{tids});
+    (d.declined||[]).forEach(x=>{if(tids.indexOf(String(x.tid))>=0)x.covered=1;});
+    DEBTOPEN=true; cardDetails(d,body); if(tab==='donors')renderDonors();
+    toastUndo('סודר — ירד מהחוב',async()=>{await api('POST','/api/recon/nodebt',{tids,undo:1});
+      (d.declined||[]).forEach(x=>{if(tids.indexOf(String(x.tid))>=0)x.covered=0;});
+      cardDetails(d,body);});});
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
