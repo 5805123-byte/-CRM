@@ -322,6 +322,9 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
         try: con.execute("ALTER TABLE recon ADD COLUMN status TEXT DEFAULT 'settled'")
         except Exception: pass
+        # חיוב שמאיר דחה במפורש ("דלג") — לא חוזר לכרטיס גם בשחזור אוטומטי
+        try: con.execute("ALTER TABLE recon ADD COLUMN skipped INTEGER DEFAULT 0")
+        except Exception: pass
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v6'").fetchone():
             rp = os.path.join(HERE, 'recon_data.json')
             if os.path.exists(rp):
@@ -3302,40 +3305,72 @@ def ensure_schema():
     # כסף שנכנס חייב להופיע בכרטיס התורם — גם אם עדיין לא ידוע עבור מה.
     # עד היום חיוב כזה חיכה ב"ממתין לטיפול" ולא נספר בכלל, ומאיר צדק שזה
     # הפוך: קודם רואים את הכסף, והייעוד הוא סימון משני שאפשר להשלים אחר כך.
+    #
+    # רץ בכל עלייה, ולא רק על מה שעדיין "ממתין": היו מסלולים שסימנו חיוב
+    # כ"טופל" בלי לרשום תרומה (למשל כשלא הצליחו לפענח את התאריך), והכסף
+    # נעלם מהכרטיס. בערי גולדגראב חויב 480 בכל חודש מפברואר ובכרטיס הופיעו
+    # שלוש שורות בלבד. לכן הבדיקה היא מול התרומות עצמן, לא מול הסימון.
+    # ההשוואה היא לפי תורם + חודש + מסלול תשלום, ולפי סכום כולל ולא שורה מול
+    # שורה: תרומה שמאיר פיצל לכמה ייעודים משנה סכומים אבל לא את הסך, וכך היא
+    # לא נספרת בטעות כחסרה. הפילוח למסלול נחוץ כי אותו תורם שולח באותו חודש
+    # גם צ׳ק וגם זל וגם חיוב אשראי — כסף נפרד לגמרי. חסר בחודש מושלם
+    # מהחיובים הגדולים לקטנים.
     try:
-        if True:      # רץ בכל עלייה: חיוב שקיבל כרטיס אחרי הפעם הראשונה נשאר בחוץ
-            SRCLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז'}
-            n = 0
-            for r in con.execute("SELECT tid,donor_id,amount,date,source,category,recurring "
-                                 "FROM recon WHERE donor_id IS NOT NULL AND COALESCE(processed,0)=0 "
-                                 "AND (status IS NULL OR status='settled')"):
-                iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
-                if not iso:
-                    continue
-                try:
-                    amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
-                except Exception:
-                    continue
-                if amt <= 0:
-                    continue
-                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
-                               "AND CAST(amount AS REAL)=?", (r['donor_id'], iso, amt)).fetchone():
+        SRCLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז'}
+
+        def _fam(s):
+            s = (s or '').strip().lower()
+            if 'banquest' in s or 'בנק ווסט' in s: return 'bq'
+            if 'authorize' in s or 'אוטרייז' in s or 'אוטורייז' in s: return 'az'
+            if 'chase' in s or "צ'ייס" in s or 'צייס' in s: return 'ch'
+            return s
+
+        pend = {}
+        for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed FROM recon "
+                             "WHERE donor_id IS NOT NULL AND COALESCE(skipped,0)=0 "
+                             "AND (status IS NULL OR status='settled') ORDER BY date,tid"):
+            iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+            if not iso or len(iso) < 7:
+                continue
+            try:
+                amt = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
+            except Exception:
+                continue
+            if amt > 0:
+                pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((dict(r), iso, amt))
+        paid_by = {}
+        # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
+        # נראה חסר וכל עלייה מוסיפה בו עוד שורה
+        for r in con.execute("SELECT donor_id, SUBSTR(COALESCE(date,''),1,7) mo, method, "
+                             "ROUND(CAST(amount AS REAL),2) a FROM donations "
+                             "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
+            k = (r['donor_id'], r['mo'], _fam(r['method']))
+            paid_by[k] = round(paid_by.get(k, 0) + (r['a'] or 0), 2)
+        n = 0
+        for key, lst in pend.items():
+            gap = round(sum(a for _, _, a in lst) - paid_by.get(key, 0), 2)
+            for r, iso, amt in sorted(lst, key=lambda x: -x[2]):
+                # אותו תורם, אותו יום, אותו סכום — נחשב לאותו כסף. בדוחות יש
+                # חיובים תאומים (אותו סכום, שניות הפרש) ואסור שיוכפלו בכרטיס.
+                same = con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
+                                   "AND ROUND(CAST(amount AS REAL),2)=?",
+                                   (r['donor_id'], iso, amt)).fetchone()
+                if not same and gap >= amt - 0.01:
+                    src = r['source'] or ''
+                    meth = next((v for pre, v in SRCLBL.items() if src.startswith(pre)), src)
+                    cat = (r['category'] or '').strip()
+                    note = 'נכנס מ' + (meth or 'ייבוא')
+                    if not cat:
+                        note += ' · לא סווג — לבדוק עבור מה'
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,?,?,?,?,1)",
+                                (r['donor_id'], iso, '%.2f' % amt, cat, meth, note))
+                    gap = round(gap - amt, 2); n += 1
+                if not r.get('processed'):
                     con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
-                    continue
-                src = r['source'] or ''
-                meth = next((v for k, v in SRCLBL.items() if src.startswith(k)), src)
-                cat = (r['category'] or '').strip()
-                note = 'נכנס מ' + (meth or 'ייבוא')
-                if not cat:
-                    note += ' · לא סווג — לבדוק עבור מה'
-                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
-                            "VALUES(?,?,?,?,?,?,1)",
-                            (r['donor_id'], iso, '%.2f' % amt, cat, meth, note))
-                con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
-                n += 1
-            if n:
-                con.commit()
-                print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
+        if n:
+            con.commit()
+            print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
     except Exception as ex:
         print('  post pending error:', ex)
     # יצחק רוזנפלד: נעימי מרדכי מוחזק בשותפות עם יהושע רוזנפלד — חלקו 500
@@ -4024,7 +4059,7 @@ def recon_apply(cur, tid, b):
     if not row:
         return (404, {'error': 'not found'})
     if b.get('skip') or (row['status'] and row['status'] != 'settled'):
-        cur.execute("UPDATE recon SET processed=1 WHERE tid=?", (tid,))
+        cur.execute("UPDATE recon SET processed=1, skipped=1 WHERE tid=?", (tid,))
         return (200, {'ok': True, 'skipped': True})
     did = b.get('donor_id')
     r_state = row['state'] or ''         # מדינה (NY וכו') נשמרת בשדה "מדינה"
@@ -7581,6 +7616,21 @@ class H(BaseHTTPRequestHandler):
                         note = 'פרנס יום ' + (row['date_text'] or '') + ' — הכן הדפסה וצור קשר'
                         con.execute("DELETE FROM tasks WHERE donor_id=? AND kind='parnes' AND note=?",
                                     (row['donor_id'], note))
+                except Exception: pass
+            if table == 'donations':
+                # תרומה שנמחקה ביד לא חוזרת בשחזור האוטומטי של החיובים
+                try:
+                    d0 = con.execute("SELECT donor_id,date,amount FROM donations WHERE id=?", (rid,)).fetchone()
+                    if d0 and d0['donor_id'] and (d0['date'] or ''):
+                        a0 = round(float(str(d0['amount'] or 0).replace(',', '')), 2)
+                        for rr in con.execute("SELECT tid,date,amount FROM recon WHERE donor_id=?",
+                                              (d0['donor_id'],)):
+                            ri = _recon_iso(rr['date']) or (rr['date'] or '')[:10]
+                            if not ri or ri[:7] != (d0['date'] or '')[:7]:
+                                continue
+                            if abs(round(float(str(rr['amount'] or 0).replace(',', '')), 2) - a0) < .01:
+                                con.execute("UPDATE recon SET skipped=1 WHERE tid=?", (rr['tid'],))
+                                break
                 except Exception: pass
             if table in ('contacts_log', 'tasks', 'parnes', 'donations', 'transactions'):   # מחיקת האסמכתאות יחד עם השורה
                 fk = {'contacts_log': 'contact', 'tasks': 'task', 'parnes': 'parnes',
