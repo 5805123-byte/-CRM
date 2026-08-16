@@ -3298,7 +3298,7 @@ def ensure_schema():
     # עד היום חיוב כזה חיכה ב"ממתין לטיפול" ולא נספר בכלל, ומאיר צדק שזה
     # הפוך: קודם רואים את הכסף, והייעוד הוא סימון משני שאפשר להשלים אחר כך.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='post_pending_v1'").fetchone():
+        if True:      # רץ בכל עלייה: חיוב שקיבל כרטיס אחרי הפעם הראשונה נשאר בחוץ
             SRCLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז'}
             n = 0
             for r in con.execute("SELECT tid,donor_id,amount,date,source,category,recurring "
@@ -3328,11 +3328,23 @@ def ensure_schema():
                             (r['donor_id'], iso, '%.2f' % amt, cat, meth, note))
                 con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
                 n += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('post_pending_v1')")
             if n:
                 print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
     except Exception as ex:
         print('  post pending error:', ex)
+    # בערי גולדגראב: ההתחייבות נרשמה כסכום כל החודשים יחד (7 × 480),
+    # ולכן החוב יצא פי שבעה. ההתחייבות היא 480 לחודש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='goldgrab_amt_v1'").fetchone():
+            r = con.execute("SELECT id,amount FROM donors WHERE last='גולדגראב' "
+                            "AND first='בערי'").fetchone()
+            if r and str(r['amount']).strip() == '3360':
+                con.execute("UPDATE donors SET amount='480' WHERE id=?", (r['id'],))
+                print('  בערי גולדגראב: הסכום הקבוע תוקן מ-3360 ל-480 לחודש')
+            con.execute("INSERT INTO seed_flags(name) VALUES('goldgrab_amt_v1')")
+    except Exception as ex:
+        print('  goldgrab amount error:', ex)
+
     # זאב לאם הוא Steven Lamm — כך הוא רשום באנשי הקשר, עם אותו טלפון
     # (917-701-7148) שבכרטיס. אסתר לאם היא אדם אחר לגמרי, והשם האנגלי שלו
     # נדבק לכרטיס שלה בטעות בייבוא. חמשת התשלומים בקובץ הצ׳קים/דונרס נרשמו
@@ -4091,7 +4103,10 @@ def recon_apply(cur, tid, b):
     if diso and did:
         cur.execute("DELETE FROM donations WHERE donor_id=? AND date=? AND note='ייבוא 2026' AND method=?", (did, diso, pay_method))
     PKIND = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
-    if cat in PKIND:
+    # יום פרנס נתפס רק כשנבחר יום בפועל. בלי בחירה מפורשת הכסף נרשם
+    # כתרומה רגילה, ומאיר ישבץ את הלילה בעצמו בלוח — המערכת לא ממציאה
+    # תאריך ולא "מתאמת" לילה מראש.
+    if cat in PKIND and (b.get('date_text') or b.get('month')):
         # פרנס־יום (במקום תרומה רגילה) — נגבה, עם השמות והיום שנבחר בבורר
         dtext = b.get('date_text', '')
         # התאריך הלועזי לפי השנה העברית שנבחרה; רק אם אין שנה — המופע הקרוב
