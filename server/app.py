@@ -3239,6 +3239,17 @@ def ensure_schema():
     except Exception as ex:
         print('  deutch phone error:', ex)
 
+    # תרומה שנוצרה מחיוב שנגבה בפועל היא כסף שכבר בקופה, ולכן חייבת להיות
+    # מסומנת כשולמה. בלי זה היא נספרה כחוב פתוח והציפה את מסך החובות.
+    try:
+        n = con.execute("UPDATE donations SET paid=1 WHERE COALESCE(paid,0)=0 "
+                        "AND (note LIKE 'נכנס מ%' OR note LIKE 'ייבוא %')").rowcount
+        if n:
+            con.commit()
+            print('  תרומות שנגבו בפועל וסומנו כשולמו: %d' % n)
+    except Exception as ex:
+        print('  paid fix error:', ex)
+
     # "כרטיס #273 במערכת כולל חצות" — הערה טכנית שנכתבה בייצוא לאנשי הקשר
     # וחזרה פנימה בייבוא. היא רק חוזרת על מספר הכרטיס שכבר מופיע בראש
     # הכרטיס, ולכן יורדת. הערות אמיתיות באותה שורה נשמרות.
@@ -3312,8 +3323,8 @@ def ensure_schema():
                 note = 'נכנס מ' + (meth or 'ייבוא')
                 if not cat:
                     note += ' · לא סווג — לבדוק עבור מה'
-                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) "
-                            "VALUES(?,?,?,?,?,?)",
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                            "VALUES(?,?,?,?,?,?,1)",
                             (r['donor_id'], iso, '%.2f' % amt, cat, meth, note))
                 con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
                 n += 1
@@ -3364,8 +3375,8 @@ def ensure_schema():
                     note = 'Lamm, Steven — מקובץ הצ׳קים/דונרס'
                     if not cat:
                         note += ' · לא סווג — לבדוק עבור מה'
-                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) "
-                                "VALUES(?,?,?,?,?,?)", (z['id'], dt, amt, cat, meth, note))
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
+                                "VALUES(?,?,?,?,?,?,1)", (z['id'], dt, amt, cat, meth, note))
                     n += 1
                 if n or mv:
                     print('  זאב לאם = Steven Lamm: הועברו %d תשלומים, נוספו %d' % (mv, n))
