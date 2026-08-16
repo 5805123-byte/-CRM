@@ -2000,12 +2000,20 @@ let DEBTOPEN=false;
 function debtHTML(d){
   const x=debtSummary(d);
   const f=n=>x.cur+Math.round(n).toLocaleString('en-US');
+  // חוב שסודר — שורה זעירה אחת בלבד, עם ההסבר שנכתב בזמן הסידור
+  if(String(d.debt_ok||'').trim())
+    return `<div class="debtok">✓ החוב סודר${d.debt_note?(' · '+esc(d.debt_note)):''}`
+      +`<button class="debtundo" id="debtundo" title="החזר לחוב פתוח">↺</button></div>`;
   if(!x.rows.length||x.total<=0.5)
     return `<div class="debtline ok">💰 אין חוב פתוח</div>`
       +(x.rows.filter(r=>r.info).map(r=>`<div class="dsrow info"><span>${r.t}<small>${esc(r.s||'')}</small>${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}</span><b>${f(r.v)}</b></div>`).join(''));
   return `<div class="debtline" id="debtline">💰 חייב
       <button class="debtamt" id="debtgo">${f(x.total)}</button>
-      <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span></div>
+      <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span>
+      <button class="debtsetl" id="debtsetl" title="סוכם עם התורם בדרך אחרת">סודר</button></div>
+    <div class="debtokform hidden" id="debtokform">
+      <input id="debtokwhy" placeholder="איך סודר? (למשל: ישלים בצ׳ק בראש חודש)">
+      <button class="btn sm" id="debtokgo">💾 סודר</button></div>
     <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
       ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
     </div>`;
@@ -2187,6 +2195,21 @@ function cardDetails(d,body){
   const dgo=document.getElementById('debtgo'), ddt=document.getElementById('debtdet');
   if(dgo)dgo.onclick=()=>{DEBTOPEN=!DEBTOPEN; ddt.classList.toggle('hidden',!DEBTOPEN);
     document.querySelector('#debtline .debtcue').textContent=DEBTOPEN?'▲':'▼ ממה?';};
+  // "סודר" — סוכם עם התורם בדרך אחרת. נשמר עם ההסבר, והחלון מתכווץ לשורה
+  const dsb=document.getElementById('debtsetl'), dform=document.getElementById('debtokform');
+  if(dsb&&dform)dsb.onclick=()=>{dform.classList.toggle('hidden');
+    if(!dform.classList.contains('hidden'))document.getElementById('debtokwhy').focus();};
+  const dokgo=document.getElementById('debtokgo');
+  if(dokgo)dokgo.onclick=async()=>{
+    const why=(document.getElementById('debtokwhy')||{value:''}).value.trim();
+    d.debt_ok=todayStr(); d.debt_note=why;
+    await api('PUT','/api/donor/'+d.id,{debt_ok:d.debt_ok,debt_note:why});
+    toast('סומן כסודר ✓'); cardDetails(d,body); if(tab==='donors')renderDonors();};
+  const dundo=document.getElementById('debtundo');
+  if(dundo)dundo.onclick=async()=>{
+    d.debt_ok=''; d.debt_note='';
+    await api('PUT','/api/donor/'+d.id,{debt_ok:'',debt_note:''});
+    toast('חזר לחוב פתוח'); cardDetails(d,body); if(tab==='donors')renderDonors();};
   // מסמכים בכרטיס הראשי — העלאה ומחיקה
   const dfi=document.getElementById('df_file');
   if(dfi)dfi.onchange=async()=>{
@@ -4220,6 +4243,7 @@ const PKLBL={parnes:'🌙 פרנס לילה',coffee:'☕ חדר קפה',breakfas
 /* ---------- כל החובות במקום אחד ---------- */
 // אוסף לכל תורם את כל מה שנשאר חייב, מכל המקורות, עם פירוט "עבור מה"
 function donorDebts(d){
+  if(String(d&&d.debt_ok||'').trim())return [];   // סודר עם התורם — לא חוב פתוח
   const out=[];
   (d.pledges||[]).forEach(p=>{ if(p.status==='נתן'||+p.monthly)return;   // חודשית = שוטפת, לא חוב
     out.push({what:(p.category||'התחייבות'),amt:amtNum(p.amount),kind:'pledge',id:p.id,when:''}); });

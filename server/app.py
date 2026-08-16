@@ -139,6 +139,11 @@ def ensure_schema():
     # חוב יש"ז שמאיר מעדכן ידנית — גובר על החישוב האוטומטי מהתרומות
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_debt TEXT")
     except Exception: pass
+    # "החוב סודר" — מאיר סיכם עם התורם דרך אחרת. תאריך הסידור וההסבר.
+    try: con.execute("ALTER TABLE donors ADD COLUMN debt_ok TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE donors ADD COLUMN debt_note TEXT")
+    except Exception: pass
     # התחייבות חוזרת מדי חודש (למשל נר למאור) — להבדיל מהתחייבות חד־פעמית
     try: con.execute("ALTER TABLE pledges ADD COLUMN monthly INTEGER DEFAULT 0")
     except Exception: pass
@@ -3827,7 +3832,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
@@ -4474,7 +4479,8 @@ def merge_into(con, keep, drop):
     kd = dict(k); dd = dict(d); sets = []; vals = []
     for col in ('first', 'english', 'business', 'addr', 'tier', 'category', 'purpose',
                 'amount', 'region', 'country', 'zip', 'city', 'channel', 'pay_status',
-                'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'iz_debt', 'months', 'last_active'):
+                'kv_month', 'kv_year', 'labels', 'aliases', 'iz_note', 'iz_debt',
+                'debt_ok', 'debt_note', 'months', 'last_active'):
         if col in kd and not str(kd.get(col) or '').strip() and str(dd.get(col) or '').strip():
             sets.append("%s=?" % col); vals.append(dd[col])
     kp = [p.strip() for p in re.split(r'[/,]', kd.get('phone') or '') if p.strip()]
