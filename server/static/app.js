@@ -1913,8 +1913,9 @@ function declinedHTML(d){
   return `<details class="decbox"><summary>🔴 ${g.length} ${g.length===1?'חיוב שלא עבר':'חיובים שלא עברו'} · ${f(g.reduce((s2,r)=>s2+r.a,0))}</summary>
     ${g.map(r=>`<div class="decrow"><span class="decamt">${f(r.a)}</span>
       <span class="decd">${esc(gregLabel(r.iso))}${r.tries>1?(' · '+r.tries+' ניסיונות'):''}</span>
-      <button class="dsok decdebt" data-tids="${esc(r.tids.join(','))}" data-undo="0">זה חוב</button></div>`).join('')}
-    <div class="hintxt">לא נספר בחוב. סמן "זה חוב" רק אם הכסף הזה באמת חסר — חיוב שנוסה שוב ועבר, או שהתורם שילם באותו חודש בדרך אחרת, אינו חוב.</div></details>`;
+      <button class="dsok decdebt" data-tids="${esc(r.tids.join(','))}" data-undo="0">זה חוב</button>
+      <button class="dechide" data-tids="${esc(r.tids.join(','))}" title="לא רלוונטי — הסתר">✕</button></div>`).join('')}
+    <div class="hintxt">לא נספר בחוב. סמן "זה חוב" רק אם הכסף הזה באמת חסר — חיוב שנוסה שוב ועבר, או שהתורם שילם באותו חודש בדרך אחרת, אינו חוב. ✕ מסתיר שורה שאינה רלוונטית.</div></details>`;
 }
 function splitHTML(d){
   const rows=(d.paysplit||[]);
@@ -2582,6 +2583,15 @@ function cardDetails(d,body){
     toastUndo(off?'ירד מהחוב':'נוסף לחוב',async()=>{
       await api('POST','/api/recon/debt',off?{tids}:{tids,undo:1});
       set(off?1:0); cardDetails(d,body); if(tab==='donors')renderDonors();});});
+  // ✕ — חיוב שנדחה ואינו רלוונטי כלל (תקלה בדוח, ניסיון כפול): יורד מהרשימה
+  body.querySelectorAll('.dechide').forEach(b3=>b3.onclick=async e=>{
+    e.stopPropagation();
+    const tids=String(b3.dataset.tids||'').split(',').filter(Boolean); if(!tids.length)return;
+    const set=v=>(d.declined||[]).forEach(x=>{if(tids.indexOf(String(x.tid))>=0)x.covered=v;});
+    await api('POST','/api/recon/nodebt',{tids}); set(1);
+    cardDetails(d,body); if(tab==='donors')renderDonors();
+    toastUndo('הוסתר',async()=>{await api('POST','/api/recon/nodebt',{tids,undo:1});set(0);
+      cardDetails(d,body); if(tab==='donors')renderDonors();});});
   const tierSel=document.getElementById('f_tier'); if(tierSel)tierSel.onchange=()=>applyTierSelect(d);
   const kvmon=document.getElementById('f_kvmon'),kvyr=document.getElementById('f_kvyr');
   const saveKvMY=async()=>{d.kv_month=kvmon.value;d.kv_year=kvyr.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardDetails(d,body);};
