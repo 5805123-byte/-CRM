@@ -3375,11 +3375,14 @@ const DAYSAVE={parnes:'🌙 יום פרנס',coffee:'☕ חדר קפה',breakfas
 function parnesRun(d,p){
   if(!d||!p||!p.day||!p.month)return [p];
   const kind=p.kind||'parnes', yr=p.hyear||'';
+  // שנה עברית לא תמיד נרשמת בכל שורה. שורה בלי שנה נחשבת מתאימה,
+  // אחרת יומיים רצופים לא היו מתאחדים רק בגלל שדה ריק
+  const sameYear=x=>!yr||!(x.hyear||'')||x.hyear===yr;
   const by={};
   (d.parnes||[]).forEach(x=>{
     if((x.kind||'parnes')!==kind||x.status==='suggested')return;
-    if(x.month!==p.month||(x.hyear||'')!==yr||!x.day)return;
-    if(!by[+x.day])by[+x.day]=x;
+    if(x.month!==p.month||!sameYear(x)||!x.day)return;
+    if(!by[+x.day]||+x.id===+p.id)by[+x.day]=x;
   });
   let lo=+p.day, hi=+p.day;
   while(by[lo-1])lo--;
