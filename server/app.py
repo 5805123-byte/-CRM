@@ -3615,6 +3615,75 @@ def ensure_schema():
     except Exception as ex:
         print('  new-method cleanup error:', ex)
 
+    # ארבע ספרות תלושות בסוף הרחוב ("542 E 3rd St 4506") הן ספרות התוספת
+    # של המיקוד (ZIP+4) שנדבקו לשורת הרחוב בייצוא מגוגל. בדיקה בקובץ אנשי
+    # הקשר: בכל 82 המקרים המיקוד עצמו בן חמש ספרות והמספר הוא ההמשך שלו —
+    # 11218-4506, 08701-2148, 33433-4949. לכן במקום למחוק את הספרות מעבירים
+    # אותן למיקוד, וכך הכתובת נעשית מדויקת יותר ולא פחות.
+    try:
+        TAIL = re.compile(r'^(.*[A-Za-z].*?)[\s,]+(\d{4})\s*$')
+        APT = re.compile(r'(apt|apartment|unit|ste|suite|#|fl|floor|rm|room|bsmt)\b[^,]*\d{4}\s*$', re.I)
+        POB = re.compile(r'\b(po\s*box|p\.o\.)\b', re.I)
+        n = 0
+        # בלי תנאי על addr_ok: העברת ספרות המיקוד נכונה גם בכתובת שכבר
+        # אושרה, והפעולה חוזרת על עצמה בלי נזק
+        cand = con.execute("SELECT id,addr,zip FROM donors "
+                           "WHERE COALESCE(TRIM(addr),'')<>''").fetchall()
+        for r in cand:
+            a = (r['addr'] or '').strip()
+            z = (r['zip'] or '').strip()
+            if not re.fullmatch(r'\d{5}', z):
+                continue                       # בלי מיקוד בן 5 ספרות אין למה לצרף
+            parts = a.split(',')
+            street = parts[0].strip()
+            if APT.search(street) or POB.search(street):
+                continue                       # מספר דירה אמיתי — לא נוגעים
+            m = TAIL.match(street)
+            if not m:
+                continue
+            parts[0] = m.group(1).strip()
+            con.execute("UPDATE donors SET addr=?, zip=?, addr_ok=1 WHERE id=?",
+                        (','.join(parts).strip(), z + '-' + m.group(2), r['id']))
+            n += 1
+        # כתובת שנשמרה כמחרוזת אחת ("8 Voyager Ct 1647, Monsey, NY 10952, US")
+        # ובלי עמודת מיקוד — מוצאים בתוכה את המיקוד ומצרפים אליו את הספרות.
+        # כאן נכללת גם העיר שנדבקה לספרות ("...St 2511Brooklyn").
+        GLUE = re.compile(r'^(.*[A-Za-z].*?)\s*(\d{4})([A-Z][a-zA-Z]+)\s*$')
+        ZIP5 = re.compile(r'(?<!\d)(\d{5})(?!\d)')
+        n2 = 0
+        for r in cand:
+            a = (r['addr'] or '').strip()
+            if (r['zip'] or '').strip():
+                continue
+            parts = a.split(',')
+            street = parts[0].strip()
+            if APT.search(street) or POB.search(street) or len(parts) < 2:
+                continue
+            g = GLUE.match(street)
+            m = g or TAIL.match(street)
+            if not m:
+                continue
+            rest = ','.join(parts[1:])
+            zm = list(ZIP5.finditer(rest))
+            if not zm:
+                continue
+            tail = m.group(2)
+            zz = zm[-1]
+            if rest[zz.end():zz.end() + 1] == '-':
+                continue                      # כבר יש שם ZIP+4
+            parts[0] = m.group(1).strip() + (', ' + g.group(3) if g else '')
+            rest = rest[:zz.end()] + '-' + tail + rest[zz.end():]
+            rest = re.sub(r'\b([A-Z]{2}),\s*\1\b', r'\1', rest)   # "NY, NY" כפול
+            con.execute("UPDATE donors SET addr=?, addr_ok=1 WHERE id=?",
+                        ((parts[0] + ',' + rest).strip(), r['id']))
+            n2 += 1
+        n += n2
+        if n:
+            con.commit()
+            print('  ספרות מיקוד שהועברו מהרחוב למיקוד: %d כתובות' % n)
+    except Exception as ex:
+        print('  zip4 fix error:', ex)
+
     # אותו שם שנרשם פעמיים בקוויטל של אותו תורם — פעם עם מקף לפני הבקשה
     # ופעם בלי. רץ בכל עלייה, כך שגם בקשות שנכנסות מחר לא יוצרות כפילות.
     try:
