@@ -1651,3 +1651,72 @@ def sync_paypal(con, status=None):
         return {'ok': False, 'error': 'imap', 'detail': str(e)}
     st['unparsed'] = unparsed
     return {'ok': True, 'new': new, 'dup': dup, 'scanned': st.get('scanned', 0), 'unparsed': unparsed}
+
+
+def check_donor_mail(con, since='01-Jan-2024', status=None, ids=None):
+    """מחקר לתורמים ישנים: מחפש בתיבה כל אזכור של התורם — לפי כתובת האימייל
+    שלו ולפי שמו האנגלי — ומחזיר את תאריך ההודעה האחרונה. כך רואים מי כן
+    תרם בדרך אחרת (קבלה, אישור תשלום) ומי באמת שקט מאז 2024."""
+    st = status if status is not None else {}
+    user = os.environ.get('GMAIL_USER')
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    rows = [dict(r) for r in con.execute(
+        "SELECT id,last,first,english,email FROM donors "
+        "WHERE COALESCE(keep_old,0)=0" + (" AND id IN (%s)" % ','.join(
+            str(int(i)) for i in ids) if ids else ""))]
+    st['total'] = len(rows); st['done'] = 0; st['hit'] = 0
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com')
+        M.login(user, pw)
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        for d in rows:
+            if not st.get('running', True):
+                break
+            terms = []
+            for e in re.split(r'[\s,/;]+', d['email'] or ''):
+                e = e.strip()
+                if '@' in e:
+                    terms.append(('TEXT', e))
+            nm = (d['english'] or '').strip()
+            if len(nm) > 5:
+                terms.append(('TEXT', nm))
+            best = ''
+            for _, t in terms:
+                try:
+                    typ, data = M.search(None, 'SINCE', since, 'TEXT', _q(t))
+                except Exception:
+                    continue
+                ids2 = data[0].split() if typ == 'OK' else []
+                if not ids2:
+                    continue
+                try:
+                    typ, msgs = M.fetch(ids2[-1], '(BODY[HEADER.FIELDS (DATE)])')
+                except Exception:
+                    continue
+                for part in msgs or []:
+                    if isinstance(part, tuple) and part[1]:
+                        try:
+                            dt = parsedate_to_datetime(
+                                part[1].decode('utf-8', 'ignore').split(':', 1)[1].strip())
+                            iso = dt.strftime('%Y-%m-%d')
+                        except Exception:
+                            iso = ''
+                        if iso > best:
+                            best = iso
+                if best:
+                    break
+            con.execute("UPDATE donors SET mail_seen=? WHERE id=?", (best or 'none', d['id']))
+            st['done'] = st.get('done', 0) + 1
+            if best:
+                st['hit'] = st.get('hit', 0) + 1
+        con.commit()
+        try:
+            M.logout()
+        except Exception:
+            pass
+    except Exception as e:
+        st['error'] = str(e)
+        return {'ok': False, 'error': str(e)}
+    return {'ok': True, 'checked': st.get('done', 0), 'hit': st.get('hit', 0)}

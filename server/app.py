@@ -23,6 +23,8 @@ def heb_anniv(start_date):
     return heb_to_greg(toks[0] + ' ' + mon)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# מצב בדיקת המייל לתורמים ישנים — רצה ברקע, והדף עוקב אחרי ההתקדמות
+MAILCHK = {'running': False, 'done': 0, 'total': 0, 'hit': 0, 'error': ''}
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
 STATIC = os.path.join(HERE, 'static')
 PORT = int(os.environ.get('PORT', 8000))
@@ -247,6 +249,12 @@ def ensure_schema():
     try: con.execute("ALTER TABLE donors ADD COLUMN debt_open TEXT DEFAULT ''")
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN debt_open_note TEXT DEFAULT ''")
+    except Exception: pass
+    # ניקוי תורמים ישנים: "להשאיר" מסמן שהכרטיס נבדק ואינו למחיקה,
+    # ו-mail_seen שומר את תוצאת החיפוש במייל (תאריך אחרון או 'none')
+    try: con.execute("ALTER TABLE donors ADD COLUMN keep_old INTEGER DEFAULT 0")
+    except Exception: pass
+    try: con.execute("ALTER TABLE donors ADD COLUMN mail_seen TEXT DEFAULT ''")
     except Exception: pass
     # התחייבות חוזרת מדי חודש (למשל נר למאור) — להבדיל מהתחייבות חד־פעמית
     try: con.execute("ALTER TABLE pledges ADD COLUMN monthly INTEGER DEFAULT 0")
@@ -4214,7 +4222,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
@@ -6109,6 +6117,43 @@ class H(BaseHTTPRequestHandler):
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
                                     'free': sum(1 for x in rows if not x['holders'])})
+        # ----- תורמים ישנים: מי שלא נכנס ממנו כסף מאז תאריך מסוים -----
+        if self.path.split('?')[0] == '/api/inactive':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            since = (qs.get('since', ['2024-01-01'])[0] or '2024-01-01')[:10]
+            con = db()
+            out = []
+            for d in con.execute("SELECT * FROM donors WHERE COALESCE(keep_old,0)=0 ORDER BY last, first"):
+                money = con.execute(
+                    "SELECT MAX(x) FROM (SELECT MAX(COALESCE(date,'')) x FROM donations WHERE donor_id=? "
+                    "UNION ALL SELECT MAX(COALESCE(night_date,'')) FROM parnes WHERE donor_id=? "
+                    "AND COALESCE(status,'')<>'suggested')", (d['id'], d['id'])).fetchone()[0] or ''
+                if money and money[:10] >= since:
+                    continue
+                # חיוב כלשהו בדוחות, גם אם לא נרשם כתרומה
+                rc = con.execute("SELECT COUNT(*) FROM recon WHERE donor_id=?", (d['id'],)).fetchone()[0]
+                if rc:
+                    continue
+                out.append({
+                    'id': d['id'],
+                    'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                    'english': d['english'] or '', 'email': d['email'] or '',
+                    'phone': d['phone'] or '', 'city': d['city'] or '',
+                    'tier': d['tier'] or '', 'category': d['category'] or '',
+                    'amount': d['amount'] or '', 'created': d['created'] or '',
+                    'source': d['source'] or '', 'last_money': money,
+                    'mail_seen': d['mail_seen'] or '',
+                    'kv': con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? "
+                                      "AND length(TRIM(COALESCE(text,'')))>3", (d['id'],)).fetchone()[0],
+                    'av': con.execute("SELECT COUNT(*) FROM partners WHERE donor_id=?", (d['id'],)).fetchone()[0],
+                    'pl': con.execute("SELECT COUNT(*) FROM pledges WHERE donor_id=?", (d['id'],)).fetchone()[0],
+                    'files': con.execute("SELECT COUNT(*) FROM files WHERE kind='donor' AND ref_id=?",
+                                         (d['id'],)).fetchone()[0],
+                })
+            con.close()
+            return self._send(200, {'since': since, 'donors': out})
+        if self.path == '/api/inactive/mailcheck/status':
+            return self._send(200, dict(MAILCHK))
         if self.path.split('?')[0] == '/api/ledger':
             # ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד, וגם מה שלא עבר.
             # הנתונים מגיעים מטבלת ההתאמות — שם יושב כל חיוב אמיתי עם המקור שלו.
@@ -6957,6 +7002,33 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             con = db(); res = gmail_intake.sync(con); con.close()
             return self._send(200, res)
+        # ----- מחקר במייל לתורמים ישנים — רץ ברקע -----
+        if self.path == '/api/inactive/mailcheck':
+            if MAILCHK.get('running'):
+                return self._send(200, {'ok': True, 'already': True})
+            since = (b.get('since') or '2024-01-01')[:10]
+            try:
+                dt = datetime.datetime.strptime(since, '%Y-%m-%d')
+                imap_since = dt.strftime('%d-%b-%Y')
+            except Exception:
+                imap_since = '01-Jan-2024'
+            MAILCHK.update({'running': True, 'done': 0, 'total': 0, 'hit': 0, 'error': ''})
+
+            def _run():
+                c = db()
+                try:
+                    import gmail_intake
+                    r = gmail_intake.check_donor_mail(c, imap_since, MAILCHK)
+                    if not r.get('ok'):
+                        MAILCHK['error'] = r.get('error', '')
+                except Exception as e:
+                    MAILCHK['error'] = '%s: %s' % (type(e).__name__, e)
+                finally:
+                    try: c.close()
+                    except Exception: pass
+                    MAILCHK['running'] = False
+            threading.Thread(target=_run, daemon=True).start()
+            return self._send(200, {'ok': True, 'started': True})
         if self.path == '/api/mail/paypal_sync':     # משיכת תשלומי PayPal מהמייל ומהספאם — ברקע
             try:
                 import gmail_intake, threading
