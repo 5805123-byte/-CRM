@@ -781,9 +781,10 @@ function wireChanSel(sel){
 }
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 function fixedAmt(d){
-  // פיצול הקבוע לייעודים גובר על הכל — שם רשום מה הוא באמת נותן בחודש
-  const fx=(d.pledges||[]).filter(p=>+p.monthly).reduce((a,p)=>a+amtNum(p.amount),0);
-  if(fx)return curSym(d)+fx;
+  // הסכום החודשי האמיתי: הקבוע המפוצל לייעודים ואברכי יששכר־זבולון,
+  // כשייעוד יששכר־זבולון נספר פעם אחת ולא פעמיים
+  const fx=monthlyTotal(d);
+  if(fx)return curSym(d)+Math.round(fx);
   if(d.tier==='יששכר_זבולון'){const s=(d.partners||[]).filter(p=>p.active!=0).reduce((a,p)=>a+amtNum(p.amount),0);if(s)return curSym(d)+s;}
   if(d.category==='קבוע'&&amtNum(d.amount))return curSym(d)+amtNum(d.amount);
   return '';}
@@ -1880,11 +1881,22 @@ function wireNotes(d,root){
   na.onclick=add; ni.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
 }
 // כל ההתחייבויות החוזרות של התורם — הקבוע שבכרטיס, אברכי יש"ז והתחייבויות חודשיות
-function monthlyHTML(d){
-  const rows=[], cur=curSym(d);
-  try{const s=izSummary(d); if(s.monthly>0)rows.push(['🤝 יששכר־זבולון',Math.round(s.monthly)]);}catch(e){}
-  (d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0)
+function monthlyRows(d){
+  const rows=[];
+  let izm=0; try{izm=izSummary(d).monthly||0;}catch(e){}
+  const pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
+  // סכום קבוע שהייעוד שלו יששכר־זבולון הוא אותו כסף של האברכים — נספר
+  // פעם אחת בלבד. אחרת 1350 של אברמוביץ הופיע פעמיים והסתכם ב-2700.
+  const izPl=pl.filter(p=>/יששכר/.test(String(p.category||'')));
+  const izSum=izPl.reduce((s,p)=>s+amtNum(p.amount),0);
+  if(izm>0||izSum>0)rows.push(['🤝 יששכר־זבולון',Math.round(izSum>0?izSum:izm)]);
+  pl.filter(p=>izPl.indexOf(p)<0)
     .forEach(p=>rows.push(['🕯️ '+(p.category||'התחייבות'),amtNum(p.amount)]));
+  return rows;
+}
+function monthlyTotal(d){return monthlyRows(d).reduce((s,r)=>s+r[1],0);}
+function monthlyHTML(d){
+  const cur=curSym(d), rows=monthlyRows(d);
   if(rows.length<2)return '';        // שורה אחת בלבד — כבר כתובה בסיכום שמעל
   const tot=rows.reduce((s,r)=>s+r[1],0);
   const f=n=>cur+Math.round(n).toLocaleString('en-US');
