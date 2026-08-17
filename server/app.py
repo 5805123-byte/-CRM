@@ -3571,6 +3571,25 @@ def ensure_schema():
     except Exception as ex:
         print('  kvittel contact fill error:', ex)
 
+    # מאיר: "דבורה רוזנטל זו דבורה פריינד". איש הקשר "דבורה רוזנטאל - קוויטל"
+    # נשא ארבעה שמות שלא הגיעו לשום כרטיס, כי אין כרטיס בשם הזה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='rosenthal_kv_v1'").fetchone():
+            r = con.execute("SELECT id FROM donors WHERE (last='דבורה' AND first='פריינד') "
+                            "OR (last='פריינד' AND first='דבורה')").fetchone()
+            if r and not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND "
+                                     "length(TRIM(COALESCE(text,'')))>12", (r['id'],)).fetchone():
+                con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')",
+                            (r['id'],
+                             'דבורה פעסא בת גולדא חנה לרפואה שלמה והצלחה בכל העניינים\n'
+                             'דוד שמחה בן מרים לבריאות איתנה והצלחה בכל העניינים\n'
+                             'שמואל בן דבורה לרפואת הנפש והגוף\n'
+                             'יצחק אליעזר בן שיינדל לזיווג הגון בקרוב'))
+                print('  דבורה פריינד: הקוויטל מאיש הקשר "דבורה רוזנטאל" צורף')
+            con.execute("INSERT INTO seed_flags(name) VALUES('rosenthal_kv_v1')")
+    except Exception as ex:
+        print('  rosenthal kvittel error:', ex)
+
     # אותו שם שנרשם פעמיים בקוויטל של אותו תורם — פעם עם מקף לפני הבקשה
     # ופעם בלי. רץ בכל עלייה, כך שגם בקשות שנכנסות מחר לא יוצרות כפילות.
     try:
