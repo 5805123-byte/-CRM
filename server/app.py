@@ -50,6 +50,104 @@ def _intake_configured():
     except Exception:
         return False
 
+_PRAY_STRIP = re.compile(r'["\'״׳`•*]|[—–\-־]+|[,.;:!?()\[\]]')
+
+
+def _pray_key(line):
+    """מפתח השוואה לשם בקוויטל — בלי מקפים, גרשיים, פיסוק וכפילות רווחים,
+    כדי ש\"פלוני — לברכה\" ו\"פלוני לברכה\" ייחשבו לאותו שם."""
+    s = _PRAY_STRIP.sub(' ', str(line or ''))
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+_PRAY_REQ = re.compile(r'^(ו?ל)(רפוא\w*|ברכ\w*|הצלח\w*|זיווג\w*|שמח\w*|פרנס\w*|ישוע\w*|'
+                       r'זרע\w*|בריאות|כל|מצוא|חיים|נחת|זכות|עילוי|קבל\w*|שנה|'
+                       r'הריון|לידה|שידוך|שלום|ביאת)$|^(לע["\'״׳]?נ|וסייעתא|ולזכות)$')
+
+
+def _pray_split(line):
+    """שם והבקשה שלו בנפרד. כך אפשר לזהות שאותו אדם נרשם פעמיים עם ניסוח
+    שונה של אותה בקשה, בלי לאחד בטעות שני אנשים בעלי שם דומה."""
+    ws = _pray_key(line).split()
+    for i, w in enumerate(ws):
+        if _PRAY_REQ.match(w):
+            return ' '.join(ws[:i]), ' '.join(ws[i:])
+    return ' '.join(ws), ''
+
+
+def _pray_rank(line):
+    """הניסוח הברור יותר נשאר: זה שמפריד את הבקשה במקף, ואחריו הארוך יותר."""
+    t = str(line or '')
+    return (1 if re.search(r'[—–]', t) else 0, len(t))
+
+
+def dedup_prayers(con, donor_id=None):
+    """אותו שם בקוויטל של אותו תורם, גם כשהניסוח שונה מעט — נשאר פעם אחת,
+    בגרסה הברורה ביותר. ההשוואה היא לפי שם ובקשה בנפרד, כדי שלא יאוחדו
+    בטעות שני אנשים בעלי שם דומה. מחזיר כמה שורות הוסרו."""
+    q = "SELECT id,donor_id,name,text FROM prayers"
+    a = ()
+    if donor_id:
+        q += " WHERE donor_id=?"; a = (donor_id,)
+    rows = con.execute(q + " ORDER BY COALESCE(donor_id,0), id", a).fetchall()
+    groups = {}
+    for r in rows:
+        who = ('d', r['donor_id']) if r['donor_id'] else ('n', (r['name'] or '').strip())
+        if who[1]:
+            groups.setdefault(who, []).append(r)
+    ndrop = 0
+    for rs in groups.values():
+        # אותו שם ואותה בקשה, גם כשאחת מנוסחת קצר יותר ("למצוא דירה" מול
+        # "למצוא דירה בחריש") — הניסוח המלא הוא זה שנשאר
+        keys = {}
+        for r in rs:
+            for ln in str(r['text'] or '').split('\n'):
+                if _pray_key(ln):
+                    keys[_pray_split(ln)] = 1
+        alias, ks = {}, sorted(keys, key=lambda x: len(x[1]))
+        for i, k in enumerate(ks):
+            for k2 in ks[i + 1:]:
+                if k[0] == k2[0] and (not k[1] or k2[1].startswith(k[1])):
+                    alias[k] = k2; break
+
+        def canon(k, _a=alias):
+            seen2 = set()
+            while k in _a and k not in seen2:
+                seen2.add(k); k = _a[k]
+            return k
+
+        best = {}
+        for r in rs:
+            for ln in str(r['text'] or '').split('\n'):
+                if not _pray_key(ln):
+                    continue
+                k = canon(_pray_split(ln))
+                cur = best.get(k)
+                if cur is None or _pray_rank(ln.strip()) > _pray_rank(cur):
+                    best[k] = ln.strip()
+        seen = set()
+        for r in rs:
+            out, changed = [], False
+            for ln in str(r['text'] or '').split('\n'):
+                if not _pray_key(ln):
+                    out.append(ln.strip()); continue
+                k = canon(_pray_split(ln))
+                if k in seen:
+                    changed = True; ndrop += 1; continue
+                seen.add(k)
+                pick = best.get(k, ln.strip())
+                changed = changed or pick != ln.strip()
+                out.append(pick)
+            if not changed:
+                continue
+            txt = re.sub(r'\n{3,}', '\n\n', '\n'.join(out)).strip()
+            if txt:
+                con.execute("UPDATE prayers SET text=? WHERE id=?", (txt, r['id']))
+            else:
+                con.execute("DELETE FROM prayers WHERE id=?", (r['id'],))
+    return ndrop
+
+
 def ensure_schema():
     """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
     con = db()
@@ -3381,6 +3479,16 @@ def ensure_schema():
             print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
     except Exception as ex:
         print('  post pending error:', ex)
+
+    # אותו שם שנרשם פעמיים בקוויטל של אותו תורם — פעם עם מקף לפני הבקשה
+    # ופעם בלי. רץ בכל עלייה, כך שגם בקשות שנכנסות מחר לא יוצרות כפילות.
+    try:
+        n = dedup_prayers(con)
+        if n:
+            con.commit()
+            print('  שמות כפולים בקוויטל שהוסרו: %d' % n)
+    except Exception as ex:
+        print('  kvittel dedup error:', ex)
     # יצחק רוזנפלד: נעימי מרדכי מוחזק בשותפות עם יהושע רוזנפלד — חלקו 500
     # ולא 1000. אבלסון מאיר נשאר 1000. סך יששכר־זבולון שלו: 1500 לחודש.
     try:
@@ -5409,6 +5517,8 @@ def contacts_fill(con, cards, status=None):
             if did in haskv:
                 continue
             con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')", (did, note))
+            try: dedup_prayers(con, did)
+            except Exception: pass
             haskv.add(did); kv += 1
         elif did not in hasnote:                     # הערה רגילה — לשדה ההערות, אם הוא ריק
             con.execute("UPDATE donors SET notes=? WHERE id=?", (note, did))
@@ -6765,6 +6875,8 @@ class H(BaseHTTPRequestHandler):
                 tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
                 tval = (tier['tier'] if tier else '') or ''
                 con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, text, tval))
+                try: dedup_prayers(con, did)      # אותו שם לא נרשם פעמיים
+                except Exception: pass
                 con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (did, iid))
             else:     # הוספה לקוויטל בלי שיוך לתורם (שם לא־משויך)
                 dispname = (r['from_name'] or r['from_email'] or (text.split('בן')[0].strip()) or 'מהאתר').strip()
@@ -6833,6 +6945,8 @@ class H(BaseHTTPRequestHandler):
             did = cur.lastrowid
             if text:
                 con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,'')", (did, text))
+                try: dedup_prayers(con, did)
+                except Exception: pass
             # קישור חיובי האשראי שטרם שויכו לתורם הזה (לפי אימייל) — כדי שההיסטוריה תיראה בכרטיס
             if email:
                 con.execute("""UPDATE recon SET donor_id=? WHERE lower(TRIM(email))=? AND TRIM(COALESCE(email,''))<>''

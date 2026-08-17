@@ -2135,9 +2135,6 @@ function cardDetails(d,body){
     ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
     ${declinedHTML(d)}
-    ${(()=>{const pt=purposeText(d); if(!pt)return '';
-      const known=String(d.purpose||'').trim()||(d.pledges||[]).some(p=>+p.monthly)||izSummary(d).monthly>0;
-      return `<div class="purpose">🎯 עבור: ${esc(pt)}${known?'':' <small>(לפי התרומות)</small>'}</div>`;})()}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
