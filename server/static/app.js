@@ -1673,9 +1673,24 @@ function gaps(m,d){
   const g=[]; for(let i=f;i<=last;i++)if(m[i]!=='p'&&m[i]!=='c'&&m[i]!=='h')g.push(i);
   return g;
 }
+// כמה כסף נכנס בפועל בכל חודש — לפי התרומות עצמן, לא לפי הסימון במפה
+function monthPaid(d){const s={};(d&&d.donations||[]).forEach(x=>{
+  const k=String(x.date||'').slice(0,7); if(k.length===7&&amtNum(x.amount)>0)s[k]=(s[k]||0)+amtNum(x.amount);});
+  return s;}
+// חודש שמסומן "נגבה" אבל אין לו שום תשלום רשום — לא הופכים אותו לחוב לבד,
+// רק מסמנים אותו כדי שאפשר יהיה לבדוק. אצל ברוך אמזל זה אפריל.
+function monthUnbacked(d){
+  if(!d||!d.months||!isMonthly(d)||amtNum(fixedAmt(d))<=0)return [];
+  const s=monthPaid(d), last=lastMonthToCheck(d), out=[];
+  for(let i=0;i<12&&i<=last;i++)
+    if(d.months[i]==='p'&&!s[GREGYEAR+'-'+String(i+1).padStart(2,'0')])out.push(i);
+  return out;
+}
 function monthGrid(m,d){if(!m)return '';const f=_firstPaid(m);const last=d?lastMonthToCheck(d):GLAST;
   const mo=d?isMonthly(d):true;   // אצל מזדמן אין "חודש חסר" — החודשים שלא שילם בהם אפורים
-  return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c='gp';else if(ch==='h')c='gh';else if(mo&&f>=0&&i>=f&&i<=last)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`;}
+  const q=d?monthUnbacked(d):[];
+  return `<div class="mgrid">${MON.map((l,i)=>{let c;const ch=m[i];if(ch==='p'||ch==='c')c=q.includes(i)?'gq':'gp';else if(ch==='h')c='gh';else if(mo&&f>=0&&i>=f&&i<=last)c='gx';else c='gn';return `<div class="mc ${c}"><span>${l}</span></div>`;}).join('')}</div>`
+    + (q.length?`<div class="hintxt munb">❓ ${q.map(i=>MON[i]).join(', ')} — מסומן שנגבה, אבל אין תשלום רשום בחודש הזה. שווה לבדוק בדוח.</div>`:'');}
 function setMonthChar(m,i,ch){const a=(m||'------------').padEnd(12,'-').split('');a[i]=ch;return a.join('');}
 
 let cardTab='details';
