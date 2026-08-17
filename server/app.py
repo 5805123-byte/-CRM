@@ -4315,6 +4315,7 @@ _CERT_SMALL = re.compile(
     r'נ["\'״׳]י|שליט["\'״׳]א|שיחי["\'״׳]?|שיחיו|תחי["\'״׳]?|ותחי["\'״׳]?|'
     r'הר["\'״׳]ר|הרר|הרב|רבי|ר["\'״׳]|מוה["\'״׳]ר|הרה["\'״׳][גחצ]|הגה["\'״׳]צ|מרן|'
     r'מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|'
+    r'ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["\'״׳]?ג|'
     r'אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|'
     r'חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$')
 # מילת קרבה שנצמדת לפתיח — "לע\"נ אביו" יורד לשורה משלו
@@ -4326,6 +4327,7 @@ _SML_R = .42        # תארים, קרבה ומילות קישור
 # היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
 _REQ_R = .42        # גודל הבקשה ביחס לשם
+_FIT_MIN = .5       # עד כמה מותר להקטין שורת שמות כדי שתישאר שורה אחת
 _SPACE_R = .92      # רוחב הרווח בין המילים
 # פתיח שבא לפני השם ("לעילוי נשמת אסתר בת יהושע") — רק הפתיח קטן, והשמות
 # שאחריו גדולים. שונה מברכה שבאה אחרי השם ונמשכת עד הסוף.
@@ -4351,6 +4353,39 @@ _CERT_REQ = re.compile(
     r'^(ו?ל)(רפוא\w*|הצלח\w*|זיווג\w*|זרע\w*|פרנס\w*|ישוע\w*|ברכ\w*|נחת|חיים|בני\w*|'
     r'שלום|עילוי|זכר|כל|אריכ\w*|בריא\w*|שנה|כפרת|הרחב\w*|מזל|שידוך|בן|בת)$'
     r'|^(לע["\'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$')
+# תואר שפותח שם — "החתן", "הכלה", "הבחור". אם אחריו בא שם, כאן מתחילים השמות.
+_CERT_MARK = re.compile(r'^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|'
+                        r'הנער|הנערה|האשה|מרת|הרב|רבי)$')
+# מילות מילוי לפני השם — נשארות בשורת הפתיח
+_CERT_FILL = re.compile(r'^(הנישאים|הנישאין|הנישאת|היום|שיחיו|יחיו|תחיו|'
+                        r'עב["\'״׳]?ג|עם|ואשתו|ורעייתו|ורעיתו)$')
+# תחילת הברכה שאחרי השמות. רק מילים חד-משמעיות, כדי ש"טובה" או "נחת"
+# כשם פרטי לא יחתכו את השם באמצע.
+_CERT_TAIL = re.compile(r'^שה|^(ה?חופה|יהיה|יהא|תהיה|שיהיה|שתהיה|בשעה|ו?מוצלחת|'
+                        r'עדי|קיימא|דורות|ישרים|מבורכים|אמן|במהרה|בקרוב|'
+                        r'לתורה|ולחופה|ולמעש[יי]ם|בזש["\'״׳]?ט)$')
+
+
+def _cert_split(ws):
+    """גבולות השמות בתוך השורה: (התחלה, סוף). לפניהם תארים ומילות פתיחה,
+    ואחריהם הברכה — שניהם באותיות קטנות, והשמות עצמם גדולים."""
+    n = len(ws)
+    i = 0
+    while i < n:
+        w = ws[i]
+        if _CERT_MARK.match(w):
+            nxt = ws[i + 1] if i + 1 < n else ''
+            if nxt and not (_CERT_MARK.match(nxt) or _CERT_FILL.match(nxt)
+                            or _CERT_TAIL.match(nxt)):
+                break                     # אחרי התואר בא שם — כאן מתחילים השמות
+            i += 1; continue
+        if _CERT_FILL.match(w):
+            i += 1; continue
+        break
+    j = i
+    while j < n and not _CERT_TAIL.match(ws[j]):
+        j += 1
+    return i, j
 def _cert_lines(text):
     """פיצול לשורות כמו בתצוגה שבמסך: שם התורם בשורה משלו, "לע\"נ אביו"
     בשורה משלו, והשמות שמתפללים עליהם בשורה האחרונה."""
@@ -4381,11 +4416,31 @@ def _cert_lines(text):
                 j += 1
             # כל הפתיח בשורה משלו ובקטן — גם "לעילוי נשמת" בלי מילת קרבה
             if i > 0 and j < len(ws):
-                out.append((' '.join(ws[:j]), 'lead'))
-                out.append((' '.join(ws[j:]), 'names'))
+                out.extend(_cert_body(ws[:j], ws[j:]))
                 continue
-        out.append((' '.join(ws), 'names'))
+        out.extend(_cert_body([], ws))
     return out
+
+
+def _cert_body(lead, ws):
+    """שורת הפתיח, אחריה השמות בגדול, ואחריה הברכה בקטן — כל אחת בשורה שלה."""
+    a, b = _cert_split(ws)
+    out = []
+    head = list(lead) + ws[:a]
+    if head:
+        out.append((' '.join(head), 'lead'))
+    # כל שם בשורה משלו — "החתן ... בן ..." בשורה אחת ו"והכלה ..." בשורה אחת,
+    # כדי שלא ייחתך שם באמצע
+    cur = []
+    for k in range(a, b):
+        if cur and _CERT_MARK.match(ws[k]):
+            out.append((' '.join(cur), 'names')); cur = []
+        cur.append(ws[k])
+    if cur:
+        out.append((' '.join(cur), 'names'))
+    if ws[b:]:
+        out.append((' '.join(ws[b:]), 'req'))
+    return out or [(' '.join(lead), 'lead')]
 
 
 _DEEP = (0x6a, 0x14, 0x14)
@@ -4457,7 +4512,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         התורם קטן ממנו, ותארים/קרבה/בקשה הכי קטנים. הקביעה נעשית פעם אחת
         על השורה השלמה, כדי שהיא תישמר גם אחרי שבירת שורה."""
         ws = raw.split()
-        if role == 'lead':                                  # "לע\"נ אביו"
+        if role in ('lead', 'req'):        # "לע\"נ אביו" / הברכה שאחרי השמות
             return [(w, px * _SML_R, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
@@ -4488,6 +4543,17 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                   else [(w, px, heavy) for w in raw.split()])
             if not ws:
                 lines.append([]); continue
+            # מאיר: "את השם של החתן והכלה תכתוב בגדול ממש בשורה אחת".
+            # לכן שורת השמות מתכווצת כדי להיכנס, במקום להישבר לשתיים.
+            if role == 'names':
+                full = _join(ws)
+                wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
+                if wpx > bw:
+                    f = bw / wpx
+                    if f >= _FIT_MIN:
+                        lines.append([(t, z * f, h) for t, z, h in full]); continue
+                else:
+                    lines.append(full); continue
             cur = []
             for it in ws:
                 trial = cur + [it]
@@ -4508,10 +4574,12 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         for i, (txt, mult, heavy, col, mt, mb, lh, isnm) in enumerate(blocks):
             px = base * mult
             total += mt * base
-            ls = wrap(txt, px, heavy, dr, isnm)
-            for ln in ls:
-                out.append((ln, px * lh, col, total))
-                total += px * lh
+            for ln in wrap(txt, px, heavy, dr, isnm):
+                # גובה השורה נגזר מהגופן שבה בפועל — אחרת שורות הברכה
+                # הקטנות מקבלות ריווח ענק לפי גודל השמות
+                lpx = max([z for _, z, _ in ln], default=px)
+                out.append((ln, lpx * lh, col, total))
+                total += lpx * lh
             total += mb * base
         return total, out
 
