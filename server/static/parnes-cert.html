@@ -20,9 +20,9 @@
   /* גדלים יחסיים ל-font-size של .content שנקבע אוטומטית למילוי הדף */
   .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
   .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;width:100%}
-  .stand{font-size:1em;font-weight:600;margin-bottom:.15em;width:100%}
+  .stand{font-size:1.3em;font-weight:600;margin-bottom:.15em;width:100%}
   .pair{width:100%;margin:.15em 0 .35em;position:relative}
-  .names{font-size:2.3em;font-weight:800;line-height:1.14;color:#000;width:100%;white-space:pre-line}
+  .names{font-size:2.45em;font-weight:800;line-height:1.14;color:#000;width:100%;white-space:pre-line}
   .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
   /* כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים */
   .names .nsm,.cnames .nsm{font-size:.42em;font-weight:600}
@@ -30,14 +30,15 @@
   .names .ndon,.cnames .ndon{font-size:.85em;font-weight:700;display:inline-block;margin-bottom:.12em}
   .names .ndon .nsm,.cnames .ndon .nsm,.names .ndon .nreq,.cnames .ndon .nreq{font-size:.8em}
   /* הבקשה — קטנה יותר מהשם, כדי שהשמות יבלטו הכי חזק */
-  .names .nreq,.cnames .nreq{font-size:.42em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
+  .names .nreq,.cnames .nreq{font-size:.6em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
   /* שם שלם בשורה אחת — אם הוא ארוך מדי הוא מוקטן ולא נשבר באמצע */
   .nline{display:block;white-space:nowrap}
+  .nrow{display:block}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
   .ctitle{font-size:2.15em;font-weight:800;color:var(--deep);width:100%;margin:.06em 0 .18em}
   .cdedic{font-size:1.18em;font-weight:800;color:var(--deep);width:100%;margin-bottom:.28em;letter-spacing:.005em}
-  .cnames{font-size:2.35em;font-weight:800;line-height:1.18;color:#000;width:100%;margin:.1em 0 .25em;white-space:pre-line}
+  .cnames{font-size:2.5em;font-weight:800;line-height:1.18;color:#000;width:100%;margin:.1em 0 .25em;white-space:pre-line}
   .cclose{font-size:1em;line-height:1.4;font-weight:600;width:100%}
   .rm{display:none}
   @media screen{.rm{display:block;position:absolute;inset-inline-start:-1.5em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.rm:hover{opacity:1}}
@@ -143,19 +144,27 @@ function dedPart(ws){
   return bodyPart(ws);
 }
 // שורת הפתיח (כולל התארים שלפני השם) אחת, אחריה כל שם בשורה משלו, ואז הברכה
+// תואר שנכתב תמיד מעל השם — "החתן", "הכלה", "הרב"
+const TITLEW=/^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|האשה|מרת|מר|הרב|רבי|הר["'״׳]ר|הרר|מוה["'״׳]ר|הרה["'״׳][גחצ]|הגה["'״׳]צ|מרן)$/;
 function bodyPart(ws, lead){
-  const [a,b]=nameSpan(ws), sm=w=>`<span class="nreq">${esc(w)}</span>`, out=[];
+  const [a,b]=nameSpan(ws), out=[];
+  const sm=l=>`<span class="nrow nreq">${l.map(w=>esc(w)).join(' ')}</span>`;
+  const nl=w=>`<span class="nline">${w}</span>`;      // שם שלם בשורה אחת, מתכווץ אם צריך
   const head=(lead||[]).concat(ws.slice(0,a));
-  if(head.length) out.push(head.map(sm).join(' '));
+  if(head.length) out.push(sm(head));
+  const emit=seg=>{
+    let t=0; while(t<seg.length-1 && TITLEW.test(seg[t])) t++;
+    if(t) out.push(sm(seg.slice(0,t)));
+    out.push(nl(fmtWords(seg.slice(t))));
+  };
   let cur=[];
-  const nl=w=>`<span class="nline">${w}</span>`;      // כדי שאפשר יהיה להקטין שורת שם שגולשת
   for(let k=a;k<b;k++){
-    if(cur.length && MARKW.test(ws[k])){ out.push(nl(fmtWords(cur))); cur=[]; }
+    if(cur.length && MARKW.test(ws[k])){ emit(cur); cur=[]; }
     cur.push(ws[k]);
   }
-  if(cur.length) out.push(nl(fmtWords(cur)));
-  if(b<ws.length) out.push(ws.slice(b).map(sm).join(' '));
-  return out.join('\n');
+  if(cur.length) emit(cur);
+  if(b<ws.length) out.push(sm(ws.slice(b)));
+  return out.join('');
 }
 // שם התורם קטן מהשמות שמתפללים עליהם — בין אם הוא בשורה משלו ובין אם
 // הוא באותה שורה, לפני "לע\"נ" / "לרפואת"
@@ -168,7 +177,7 @@ function formatName(line, donorLine){
   if(!LEADWORD.test(ws[0]))
     for(let k=1;k<ws.length;k++){ if(LEADWORD.test(ws[k])){ ded=k; break; } }
   // מי תורם ועבור מה הוא תורם — תמיד בשתי שורות נפרדות
-  if(ded>0) return `<span class="ndon">${fmtWords(ws.slice(0,ded))}</span>\n`+dedPart(ws.slice(ded));
+  if(ded>0) return `<span class="nrow ndon">${fmtWords(ws.slice(0,ded))}</span>`+dedPart(ws.slice(ded));
   if(LEADWORD.test(ws[0])) return dedPart(ws);
   const body=bodyPart(ws);
   return donorLine ? `<span class="ndon">${body}</span>` : body;

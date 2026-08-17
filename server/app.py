@@ -4327,6 +4327,7 @@ _SML_R = .42        # תארים, קרבה ומילות קישור
 # היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
 _REQ_R = .42        # גודל הבקשה ביחס לשם
+_LEAD_R = .6        # שורות הפתיח והברכה — מאיר ביקש אותן גדולות יותר
 _FIT_MIN = .5       # עד כמה מותר להקטין שורת שמות כדי שתישאר שורה אחת
 _SPACE_R = .92      # רוחב הרווח בין המילים
 # פתיח שבא לפני השם ("לעילוי נשמת אסתר בת יהושע") — רק הפתיח קטן, והשמות
@@ -4422,6 +4423,11 @@ def _cert_lines(text):
     return out
 
 
+_CERT_TITLE = re.compile(r'^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|'
+                         r'האשה|מרת|מר|הרב|רבי|הר["\'״׳]ר|הרר|מוה["\'״׳]ר|'
+                         r'הרה["\'״׳][גחצ]|הגה["\'״׳]צ|מרן)$')
+
+
 def _cert_body(lead, ws):
     """שורת הפתיח, אחריה השמות בגדול, ואחריה הברכה בקטן — כל אחת בשורה שלה."""
     a, b = _cert_split(ws)
@@ -4431,13 +4437,22 @@ def _cert_body(lead, ws):
         out.append((' '.join(head), 'lead'))
     # כל שם בשורה משלו — "החתן ... בן ..." בשורה אחת ו"והכלה ..." בשורה אחת,
     # כדי שלא ייחתך שם באמצע
+    def emit(seg):
+        # מאיר: "המילה החתן והמילה כלה תמיד מעל השם" — וכך גם הרב/מרת
+        t = 0
+        while t < len(seg) - 1 and _CERT_TITLE.match(seg[t]):
+            t += 1
+        if t:
+            out.append((' '.join(seg[:t]), 'lead'))
+        out.append((' '.join(seg[t:]), 'names'))
+
     cur = []
     for k in range(a, b):
         if cur and _CERT_MARK.match(ws[k]):
-            out.append((' '.join(cur), 'names')); cur = []
+            emit(cur); cur = []
         cur.append(ws[k])
     if cur:
-        out.append((' '.join(cur), 'names'))
+        emit(cur)
     if ws[b:]:
         out.append((' '.join(ws[b:]), 'req'))
     return out or [(' '.join(lead), 'lead')]
@@ -4489,13 +4504,13 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         blocks = [(date, 1.05, True, _DEEP, 0, .3, 1.35, 0),
                   ('פרנס יום', 2.15, True, _DEEP, .06, .18, 1.2, 0),
                   (ded, 1.18, True, _DEEP, 0, .28, 1.3, 0),
-                  (names, 2.35, True, _BLACK, .1, .25, 1.18, 1)]
+                  (names, 2.5, True, _BLACK, .1, .25, 1.18, 1)]
     else:
         blocks = [('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות '
                    'בעת רצון הגדול של חצות הלילה עד הבוקר', 1.0, False, _INK, 0, 0, 1.45, 0),
                   (date, 1.55, True, _DEEP, .5, .35, 1.3, 0),
-                  ('יהיו ויעמדו לזכות', 1.0, False, _INK, 0, .15, 1.35, 0),
-                  (names, 2.3, True, _BLACK, .15, .35, 1.14, 1)]
+                  ('יהיו ויעמדו לזכות', 1.3, False, _INK, 0, .15, 1.35, 0),
+                  (names, 2.45, True, _BLACK, .15, .3, 1.14, 1)]
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
     def _join(items):
@@ -4513,7 +4528,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         על השורה השלמה, כדי שהיא תישמר גם אחרי שבירת שורה."""
         ws = raw.split()
         if role in ('lead', 'req'):        # "לע\"נ אביו" / הברכה שאחרי השמות
-            return [(w, px * _SML_R, True) for w in ws]
+            return [(w, px * _LEAD_R, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         n, out = _lead_len(ws), []
