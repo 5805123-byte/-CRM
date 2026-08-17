@@ -3526,17 +3526,45 @@ def ensure_schema():
                             cand = [d['id'] for d in cards if d['t'] and (tt <= d['t'] or d['t'] <= tt)]
                             if len(cand) == 1:      # רק כשאין ספק לאיזה כרטיס
                                 did = cand[0]
-                    if not did or did in rich:
+                    if not did:
                         continue
-                    ph = con.execute("SELECT id FROM prayers WHERE donor_id=? AND "
-                                     "TRIM(COALESCE(text,'')) IN ('קוויטל','קויטל','')",
-                                     (did,)).fetchone()
-                    if ph:
-                        con.execute("UPDATE prayers SET text=? WHERE id=?", (notes, ph['id']))
-                    else:
-                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) "
-                                    "VALUES(?,'',?,'')", (did, notes))
-                    rich.add(did); nadd += 1
+                    if did not in rich:
+                        ph = con.execute("SELECT id FROM prayers WHERE donor_id=? AND "
+                                         "TRIM(COALESCE(text,'')) IN ('קוויטל','קויטל','')",
+                                         (did,)).fetchone()
+                        if ph:
+                            con.execute("UPDATE prayers SET text=? WHERE id=?", (notes, ph['id']))
+                        else:
+                            con.execute("INSERT INTO prayers(donor_id,name,text,tier) "
+                                        "VALUES(?,'',?,'')", (did, notes))
+                        rich.add(did); nadd += 1
+                        continue
+                    # לכרטיס שכבר יש בו קוויטל מוסיפים רק שם שאינו קיים בו —
+                    # לא שם באיות שונה ולא אותו אדם עם בקשה אחרת, אחרת זה
+                    # ייראה ככפילות
+                    cur = [l for r2 in con.execute(
+                        "SELECT text FROM prayers WHERE donor_id=?", (did,))
+                        for l in str(r2['text'] or '').split('\n') if _pray_key(l)]
+                    names = set(_pray_split(l)[0] for l in cur)
+                    tsets = [set(_pray_key(l).split()) for l in cur]
+                    fresh = []
+                    for ln in notes.split('\n'):
+                        ln = ln.strip()
+                        if not _pray_key(ln) or not re.search(r'(^|\s)(בן|בת|בר)\s', ln):
+                            continue
+                        if _pray_split(ln)[0] in names:
+                            continue
+                        t = set(_pray_key(ln).split())
+                        if any(e and t and len(t & e) / min(len(t), len(e)) >= .4 for e in tsets):
+                            continue
+                        fresh.append(ln); names.add(_pray_split(ln)[0]); tsets.append(t)
+                    if fresh:
+                        row0 = con.execute("SELECT id,text FROM prayers WHERE donor_id=? "
+                                           "ORDER BY id LIMIT 1", (did,)).fetchone()
+                        con.execute("UPDATE prayers SET text=? WHERE id=?",
+                                    ((str(row0['text'] or '').rstrip() + '\n'
+                                      + '\n'.join(fresh)).strip(), row0['id']))
+                        nadd += len(fresh)
         if nadd:
             con.commit()
             print('  קוויטל מאיש קשר נפרד שהושלם לכרטיס: %d' % nadd)
