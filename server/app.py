@@ -4329,8 +4329,24 @@ _REQ_R = .42        # גודל הבקשה ביחס לשם
 _SPACE_R = .92      # רוחב הרווח בין המילים
 # פתיח שבא לפני השם ("לעילוי נשמת אסתר בת יהושע") — רק הפתיח קטן, והשמות
 # שאחריו גדולים. שונה מברכה שבאה אחרי השם ונמשכת עד הסוף.
-_CERT_LEAD = re.compile(r'^(לעילוי|נשמת|לע["\'״׳]?נ|לזכר|לזכות|לרפואת|לרפו["\'״׳]?ש|'
-                        r'להצלחת|לישועת|לפרנסת|לזרע|לברכת|לכבוד|לרגל)$')
+_CERT_LEAD = re.compile(r'^(לעילוי|נשמת|לע["\'״׳]?נ|לזכר|לזכות|לרפואת|לרפואה|לרפו["\'״׳]?ש|'
+                        r'להצלחת|להצלחה|לישועת|לישועה|לפרנסת|לפרנסה|לזרע|לזיווג|'
+                        r'לברכת|לברכה|לכבוד|לרגל)$')
+# המשך הפתיח — מילה שנחשבת חלק מהבקשה רק כשהיא באה מיד אחרי המילה שלפניה.
+# כך "שלמה" ב"לרפואה שלמה" קטן, אבל "שלמה" כשם פרטי נשאר גדול.
+_CERT_LEAD2 = {'לרפואה': ('שלמה', 'שלימה'), 'לברכה': ('והצלחה',), 'להצלחה': ('וברכה',),
+               'לזיווג': ('הגון',), 'לפרנסה': ('טובה',), 'לזרע': ('של', 'קודש'),
+               'של': ('קיימא',), 'לישועה': ('שלמה',)}
+
+
+def _lead_len(ws):
+    """כמה מילים בתחילת השורה הן פתיח הבקשה ולא חלק מהשם."""
+    i = 0
+    while i < len(ws) and _CERT_LEAD.match(ws[i]):
+        i += 1
+        while i < len(ws) and ws[i] in _CERT_LEAD2.get(ws[i - 1], ()):
+            i += 1
+    return i
 _CERT_REQ = re.compile(
     r'^(ו?ל)(רפוא\w*|הצלח\w*|זיווג\w*|זרע\w*|פרנס\w*|ישוע\w*|ברכ\w*|נחת|חיים|בני\w*|'
     r'שלום|עילוי|זכר|כל|אריכ\w*|בריא\w*|שנה|כפרת|הרחב\w*|מזל|שידוך|בן|בת)$'
@@ -4347,22 +4363,24 @@ def _cert_lines(text):
         if not ws:
             out.append(('', 'names')); continue
         ded = -1
-        for k in range(1, len(ws)):
-            if _CERT_LEAD.match(ws[k]):
-                ded = k; break
+        # שורה שמתחילה בפתיח ("לעילוי נשמת…") היא כולה הקדשה — אין בה שם תורם,
+        # ואסור שהמילה הראשונה תיחשב לשם התורם רק כי אחריה בא עוד פתיח
+        if not _CERT_LEAD.match(ws[0]):
+            for k in range(1, len(ws)):
+                if _CERT_LEAD.match(ws[k]):
+                    ded = k; break
         if ded > 0:                       # "הר\"ר רפאל לע\"נ אביו יוסף"
             out.append((' '.join(ws[:ded]), 'donor'))
             ws = ws[ded:]
         elif idx == 0 and later_lead and not _CERT_LEAD.match(ws[0]):
             out.append((' '.join(ws), 'donor')); continue
         if _CERT_LEAD.match(ws[0]):
-            i = 0
-            while i < len(ws) and _CERT_LEAD.match(ws[i]):
-                i += 1
+            i = _lead_len(ws)
             j = i
             while j < len(ws) and _CERT_REL.match(ws[j]):
                 j += 1
-            if j > i and j < len(ws):
+            # כל הפתיח בשורה משלו ובקטן — גם "לעילוי נשמת" בלי מילת קרבה
+            if i > 0 and j < len(ws):
                 out.append((' '.join(ws[:j]), 'lead'))
                 out.append((' '.join(ws[j:]), 'names'))
                 continue
@@ -4413,16 +4431,16 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     if kind in ('coffee', 'breakfast'):
         ded = dedic or ('ארוחת בוקר היום נתרמה לזכות' if kind == 'breakfast'
                         else 'הקפה החלב שתיה חמה ועוגיות נתרמו לזכות')
-        blocks = [(date, 1.05, True, _DEEP, 0, .3, 1.35),
-                  ('פרנס יום', 2.15, True, _DEEP, .06, .18, 1.2),
-                  (ded, 1.18, True, _DEEP, 0, .28, 1.3),
-                  (names, 2.35, True, _BLACK, .1, .25, 1.18)]
+        blocks = [(date, 1.05, True, _DEEP, 0, .3, 1.35, 0),
+                  ('פרנס יום', 2.15, True, _DEEP, .06, .18, 1.2, 0),
+                  (ded, 1.18, True, _DEEP, 0, .28, 1.3, 0),
+                  (names, 2.35, True, _BLACK, .1, .25, 1.18, 1)]
     else:
         blocks = [('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות '
-                   'בעת רצון הגדול של חצות הלילה עד הבוקר', 1.0, False, _INK, 0, 0, 1.45),
-                  (date, 1.55, True, _DEEP, .5, .35, 1.3),
-                  ('יהיו ויעמדו לזכות', 1.0, False, _INK, 0, .15, 1.35),
-                  (names, 2.3, True, _BLACK, .15, .35, 1.14)]
+                   'בעת רצון הגדול של חצות הלילה עד הבוקר', 1.0, False, _INK, 0, 0, 1.45, 0),
+                  (date, 1.55, True, _DEEP, .5, .35, 1.3, 0),
+                  ('יהיו ויעמדו לזכות', 1.0, False, _INK, 0, .15, 1.35, 0),
+                  (names, 2.3, True, _BLACK, .15, .35, 1.14, 1)]
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
     def _join(items):
@@ -4443,9 +4461,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             return [(w, px * _SML_R, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
-        i, out = 0, []
-        while i < len(ws) and _CERT_LEAD.match(ws[i]):     # פתיח לפני השם
-            out.append((ws[i], px * _SML_R, True)); i += 1
+        n, out = _lead_len(ws), []
+        for i in range(n):                                  # פתיח לפני השם
+            out.append((ws[i], px * _SML_R, True))
+        i = n
         inreq = False
         for w in ws[i:]:
             if not inreq and _CERT_REQ.match(w):           # ברכה אחרי השם
@@ -4458,11 +4477,15 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                 out.append((w, px, heavy))
         return out
 
-    def wrap(text, px, heavy, dr):
-        """שבירת שורות לרוחב התיבה, תוך שמירה על שורות שנכתבו במפורש."""
+    def wrap(text, px, heavy, dr, is_name=1):
+        """שבירת שורות לרוחב התיבה, תוך שמירה על שורות שנכתבו במפורש.
+        פיצול התפקידים (שם תורם / פתיח / שם) נעשה רק בבלוק השמות — הנוסח
+        הקבוע והתאריך נכתבים כלשונם, אחרת "יהיו ויעמדו לזכות" נשבר ומוקטן."""
         lines = []
-        for raw, role in _cert_lines(text):
-            ws = sized(raw, px, heavy, role)
+        src = _cert_lines(text) if is_name else [(l, '') for l in str(text or '').split('\n')]
+        for raw, role in src:
+            ws = (sized(raw, px, heavy, role) if is_name
+                  else [(w, px, heavy) for w in raw.split()])
             if not ws:
                 lines.append([]); continue
             cur = []
@@ -4482,10 +4505,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
 
     def layout(base):
         total, out = 0.0, []
-        for i, (txt, mult, heavy, col, mt, mb, lh) in enumerate(blocks):
+        for i, (txt, mult, heavy, col, mt, mb, lh, isnm) in enumerate(blocks):
             px = base * mult
             total += mt * base
-            ls = wrap(txt, px, heavy, dr)
+            ls = wrap(txt, px, heavy, dr, isnm)
             for ln in ls:
                 out.append((ln, px * lh, col, total))
                 total += px * lh

@@ -84,10 +84,21 @@ const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'�
 // ושם האם יקבלו את הדגש החזק ביותר
 const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
 // פתיח שבא לפני השם — רק הוא קטן, והשמות שאחריו נשארים גדולים
-const LEADWORD=/^(לעילוי|נשמת|לע["'״׳]?נ|לזכר|לזכות|לרפואת|לרפו["'״׳]?ש|להצלחת|לישועת|לפרנסת|לזרע|לברכת|לכבוד|לרגל)$/;
+const LEADWORD=/^(לעילוי|נשמת|לע["'״׳]?נ|לזכר|לזכות|לרפואת|לרפואה|לרפו["'״׳]?ש|להצלחת|להצלחה|לישועת|לישועה|לפרנסת|לפרנסה|לזרע|לזיווג|לברכת|לברכה|לכבוד|לרגל)$/;
+// המשך הפתיח — מילה שנחשבת חלק מהבקשה רק מיד אחרי המילה שלפניה, כך
+// ש"שלמה" ב"לרפואה שלמה" קטן אבל "שלמה" כשם פרטי נשאר גדול
+const LEAD2={'לרפואה':['שלמה','שלימה'],'לברכה':['והצלחה'],'להצלחה':['וברכה'],
+  'לזיווג':['הגון'],'לפרנסה':['טובה'],'לזרע':['של','קודש'],'של':['קיימא'],'לישועה':['שלמה']};
+function leadLen(ws){
+  let i=0;
+  while(i<ws.length && LEADWORD.test(ws[i])){ i++;
+    while(i<ws.length && (LEAD2[ws[i-1]]||[]).indexOf(ws[i])>=0) i++; }
+  return i;
+}
 function fmtWords(ws){
-  let i=0, out=[];
-  while(i<ws.length && LEADWORD.test(ws[i])){ out.push(`<span class="nreq">${esc(ws[i])}</span>`); i++; }
+  const n=leadLen(ws); let out=[];
+  for(let k=0;k<n;k++) out.push(`<span class="nreq">${esc(ws[k])}</span>`);
+  let i=n;
   let req=false;
   for(; i<ws.length; i++){
     const w=ws[i];
@@ -101,12 +112,11 @@ function fmtWords(ws){
 const RELWORD=/^(אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו|הוריו|הוריה)$/;
 // "לע\"נ אביו" בשורה משלו והשמות מתחתיו — כך העין נופלת על השמות
 function dedPart(ws){
-  let k=0;
-  while(k<ws.length && LEADWORD.test(ws[k])) k++;
+  const k=leadLen(ws);
   let r=k;
   while(r<ws.length && RELWORD.test(ws[r])) r++;
-  // כל שורת הפתיח באותו גודל — "לע\"נ" ו"אביו" זהים
-  if(r>k && r<ws.length)
+  // כל שורת הפתיח באותו גודל ובשורה משלה — "לע\"נ אביו" וגם "לעילוי נשמת"
+  if(k>0 && r<ws.length)
     return ws.slice(0,r).map(w=>`<span class="nreq">${esc(w)}</span>`).join(' ')
       + '\n' + fmtWords(ws.slice(r));
   return fmtWords(ws);
@@ -117,7 +127,10 @@ function formatName(line, donorLine){
   const t=(line||'').trim(); if(!t) return '';
   const ws=t.split(/\s+/);
   let ded=-1;
-  for(let k=1;k<ws.length;k++){ if(LEADWORD.test(ws[k])){ ded=k; break; } }
+  // שורה שמתחילה בפתיח היא כולה הקדשה — אין בה שם תורם, ואסור שהמילה
+  // הראשונה תיחשב לשם התורם רק כי אחריה בא עוד פתיח ("לעילוי" ואז "נשמת")
+  if(!LEADWORD.test(ws[0]))
+    for(let k=1;k<ws.length;k++){ if(LEADWORD.test(ws[k])){ ded=k; break; } }
   // מי תורם ועבור מה הוא תורם — תמיד בשתי שורות נפרדות
   if(ded>0) return `<span class="ndon">${fmtWords(ws.slice(0,ded))}</span>\n`+dedPart(ws.slice(ded));
   if(LEADWORD.test(ws[0])) return dedPart(ws);
