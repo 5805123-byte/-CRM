@@ -3480,6 +3480,69 @@ def ensure_schema():
     except Exception as ex:
         print('  post pending error:', ex)
 
+    # קוויטל ששמור באיש קשר נפרד בגוגל ("שמחה מילר - קוויטל"): השמות עצמם
+    # יושבים בשדה ההערות, ובייבוא נלקח בטעות שדה מותאם-אישית שערכו המילה
+    # "קוויטל" בלבד. רץ בכל עלייה ורק משלים לכרטיס שאין בו קוויטל אמיתי.
+    try:
+        import csv as _csv
+        KVEND = re.compile(r'קו[וי]{1,2}יטל\s*$')
+
+        def _nn(s):
+            return re.sub(r'\s+', ' ', re.sub(r'["\'״׳\-–—]', ' ', str(s or ''))).strip()
+
+        cards, exact = [], {}
+        for r in con.execute("SELECT id,last,first FROM donors"):
+            d = {'id': r['id'],
+                 't': set(t for t in _nn((r['last'] or '') + ' ' + (r['first'] or '')).split()
+                          if len(t) > 1)}
+            cards.append(d)
+            for a in (_nn((r['first'] or '') + ' ' + (r['last'] or '')),
+                      _nn((r['last'] or '') + ' ' + (r['first'] or ''))):
+                if a:
+                    exact.setdefault(a, r['id'])
+        rich = set(x[0] for x in con.execute(
+            "SELECT DISTINCT donor_id FROM prayers WHERE donor_id IS NOT NULL "
+            "AND length(TRIM(COALESCE(text,'')))>12"))
+        nadd = 0
+        for fn in ('contacts_seed.csv', 'contacts_seed3.csv'):
+            fp = os.path.join(HERE, fn)
+            if not os.path.exists(fp):
+                continue
+            with open(fp, encoding='utf-8') as fh:
+                for row in _csv.DictReader(fh):
+                    full = _nn((row.get('First Name') or '') + ' ' + (row.get('Last Name') or ''))
+                    if not KVEND.search(full):
+                        continue
+                    notes = (row.get('Notes') or '').strip()
+                    # רק הערות שנראות כמו שמות לתפילה: חייב להופיע "בן"/"בת".
+                    # כך לא נכנסות הערות פנימיות ("שינה ל-18 דולר", "כרטיס #478").
+                    if len(notes) <= 12 or not re.search(r'(^|\s)(בן|בת|בר|ב["\'״׳]ר)\s', notes):
+                        continue
+                    nm = KVEND.sub('', full).strip()
+                    did = exact.get(nm)
+                    if not did:
+                        tt = set(t for t in nm.split() if len(t) > 1)
+                        if len(tt) >= 2:
+                            cand = [d['id'] for d in cards if d['t'] and (tt <= d['t'] or d['t'] <= tt)]
+                            if len(cand) == 1:      # רק כשאין ספק לאיזה כרטיס
+                                did = cand[0]
+                    if not did or did in rich:
+                        continue
+                    ph = con.execute("SELECT id FROM prayers WHERE donor_id=? AND "
+                                     "TRIM(COALESCE(text,'')) IN ('קוויטל','קויטל','')",
+                                     (did,)).fetchone()
+                    if ph:
+                        con.execute("UPDATE prayers SET text=? WHERE id=?", (notes, ph['id']))
+                    else:
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) "
+                                    "VALUES(?,'',?,'')", (did, notes))
+                    rich.add(did); nadd += 1
+        if nadd:
+            con.commit()
+            print('  קוויטל מאיש קשר נפרד שהושלם לכרטיס: %d' % nadd)
+    except Exception as ex:
+        print('  kvittel contact fill error:', ex)
+
     # אותו שם שנרשם פעמיים בקוויטל של אותו תורם — פעם עם מקף לפני הבקשה
     # ופעם בלי. רץ בכל עלייה, כך שגם בקשות שנכנסות מחר לא יוצרות כפילות.
     try:
