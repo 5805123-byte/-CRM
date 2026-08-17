@@ -242,6 +242,12 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN debt_note TEXT")
     except Exception: pass
+    # יתרת פתיחה: החוב שנצבר לפני ינואר 2026. הנתונים במערכת מתחילים
+    # מינואר 2026, ולכן מאיר ממלא כאן את המאזן הישן והחוב מחושב עליו.
+    try: con.execute("ALTER TABLE donors ADD COLUMN debt_open TEXT DEFAULT ''")
+    except Exception: pass
+    try: con.execute("ALTER TABLE donors ADD COLUMN debt_open_note TEXT DEFAULT ''")
+    except Exception: pass
     # התחייבות חוזרת מדי חודש (למשל נר למאור) — להבדיל מהתחייבות חד־פעמית
     try: con.execute("ALTER TABLE pledges ADD COLUMN monthly INTEGER DEFAULT 0")
     except Exception: pass
@@ -4123,7 +4129,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""

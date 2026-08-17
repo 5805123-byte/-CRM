@@ -977,6 +977,9 @@ function render(){
 
 /* ---------- תורמים ---------- */
 function amtNum(a){const n=parseFloat(String(a||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;}
+// כמו amtNum אבל שומר על מינוס — ליתרת פתיחה של תורם ששילם מראש
+function amtSigned(a){const t=String(a==null?'':a).trim();
+  return /^[-–—−]/.test(t)?-amtNum(t):amtNum(t);}
 const DFILTERS={
   'iz':{label:'יששכר־זבולון', fn:d=>d.tier==='יששכר_זבולון'},
   'k101':{label:'כל לילה', fn:d=>d.tier==='קוויטל_101'},
@@ -2017,6 +2020,12 @@ function fixRowsHTML(d){
 function fixTotal(d){return monthlyPledges(d).reduce((s,p)=>s+amtNum(p.amount),0);}
 function debtSummary(d){
   const cur=curSym(d), rows=[];
+  // יתרת פתיחה מלפני 2026 — המערכת מכירה רק מינואר 2026, ומה שהיה לפני
+  // כן נרשם ידנית בלשונית "פרטים" ונכנס לחשבון כמו שהוא
+  const op=amtSigned(d.debt_open);
+  if(Math.abs(op)>0.5)
+    rows.push({t:(op>0?'חוב מלפני 2026':'שילם מראש (לפני 2026)'),v:op,
+      s:String(d.debt_open_note||'').trim()||'יתרת פתיחה שנרשמה ידנית'});
   const iz=izSummary(d);
   const izDebt=(iz.manual!=null)?iz.manual:(iz.thru.length?iz.thruDebt:(iz.hasPay?iz.debt:0));
   if(izDebt>0.5)rows.push({t:'יששכר־זבולון',v:izDebt,
@@ -2064,7 +2073,7 @@ function debtSummary(d){
 let DEBTOPEN=false;
 function debtHTML(d){
   const x=debtSummary(d);
-  const f=n=>x.cur+Math.round(n).toLocaleString('en-US');
+  const f=n=>(n<0?'-':'')+x.cur+Math.abs(Math.round(n)).toLocaleString('en-US');
   // חוב שסודר — שורה זעירה אחת בלבד, עם ההסבר שנכתב בזמן הסידור
   if(String(d.debt_ok||'').trim())
     return `<div class="debtok">✓ החוב סודר${d.debt_note?(' · '+esc(d.debt_note)):''}`
@@ -2836,6 +2845,9 @@ function cardInfo(d,body){
       <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
     <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
     <label class="fld"><span>עבור מה (מטרה כללית)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
+    <label class="fld"><span>💰 חוב מלפני 2026 (יתרת פתיחה) — התרומות במערכת מתחילות מינואר 2026</span>
+      <div class="two"><input id="f_debt_open" value="${esc(d.debt_open||'')}" inputmode="decimal" placeholder="0 · אפשר גם מינוס אם שילם מראש">
+        <input id="f_debt_open_note" value="${esc(d.debt_open_note||'')}" placeholder="הערה (למשל: יתרה מ-2025)"></div></label>
     <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><textarea id="f_notes" rows="3" placeholder="כתוב כאן כל דבר שתרצה למצוא אחר כך בחיפוש">${esc(d.notes||'')}</textarea></label>
     ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
@@ -2845,7 +2857,7 @@ function cardInfo(d,body){
   body.insertAdjacentHTML('beforeend',
     '<div class="sec" style="text-align:center"><button class="btn ghost delbig delcard" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>');
   wireDelete(d,body);
-  const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes'];
+  const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes','debt_open','debt_open_note'];
   wireFields(d,INF);
   wireChanSel(document.getElementById('f_channel'));
   const sv=document.getElementById('f_saveall');
