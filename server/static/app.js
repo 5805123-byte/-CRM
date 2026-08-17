@@ -822,6 +822,31 @@ function uploadBlob(kind,refId,f){return new Promise(res=>{
   rd.readAsDataURL(f);});}
 function uploadFile(kind,refId,inputEl,cb){const f=inputEl.files[0];if(!f)return;toast('מעלה…');uploadBlob(kind,refId,f).then(ok=>{if(ok)toast('הועלה ✓');inputEl.value='';cb&&cb();});}
 // ===== משיכת מיילים ותיוקם אצל התורמים — רצה ברקע בשרת, כאן עוקבים אחרי ההתקדמות =====
+// משיכת תשלומי PayPal מהמייל — הודעות "קיבלת תשלום", כולל תיקיית הספאם
+async function runPaypalSync(btn){
+  const label=btn?btn.textContent:'';
+  const set=t=>{if(btn)btn.textContent=t;};
+  if(btn)btn.disabled=true; set('מתחיל…');
+  const r=await api('POST','/api/mail/paypal_sync',{});
+  if(!r||!r.ok){
+    if(btn){btn.disabled=false;set(label);}
+    toast(r&&r.error==='not_configured'?'המייל לא מוגדר בשרת (GMAIL_USER / GMAIL_APP_PASSWORD)':'שגיאה: '+((r&&(r.detail||r.error))||''));
+    return;
+  }
+  for(let i=0;i<900;i++){
+    await new Promise(res=>setTimeout(res,2000));
+    let st;try{st=await api('GET','/api/mail/paypal_sync/status');}catch(e){continue;}
+    if(!st)continue;
+    if(st.running){set(st.total?('קורא… '+(st.new||0)+'/'+st.total):'סורק את המייל…');continue;}
+    if(btn){btn.disabled=false;set(label);}
+    if(st.error){toast('שגיאת משיכה: '+st.error);return;}
+    LEDGER=null; await load();
+    toast(st.new?('נמצאו '+st.new+' תשלומי PayPal ✓'+(st.dup?(' · '+st.dup+' כבר היו'):'')):'אין תשלומי PayPal חדשים');
+    render();return;
+  }
+  if(btn){btn.disabled=false;set(label);}
+  toast('המשיכה עדיין רצה ברקע — בדוק שוב בעוד כמה דקות');
+}
 async function runMailSync(btn){
   const label=btn?btn.textContent:'';
   const set=t=>{if(btn)btn.textContent=t;};
@@ -3157,6 +3182,7 @@ async function renderLedger(scroll){
       <button class="ledbig nocard" id="lednocard"><span>💵 בלי כרטיס</span><b id="depcnt">…</b><small>מפקידים לשייך או לפתוח כרטיס</small></button>
     </div>
     <button class="btn ghost ${ledAll?'on':''}" id="ledall" style="width:100%;margin:0 2px 8px">📅 הכל לפי חודשים — מקורות וייעודים</button>
+    <button class="btn ghost" id="ppsync" style="width:100%;margin:0 2px 8px">📧 משוך תשלומי PayPal מהמייל</button>
     <div id="leddet"></div>
     <div class="ledlist">${(L.groups||[]).map(g=>`<button class="ledrow ${ledSrc===g.src?'on':''}" data-s="${esc(g.src)}">
       <div class="ledn">${esc(srcLabel(g.src))}</div>
@@ -3169,6 +3195,7 @@ async function renderLedger(scroll){
   document.getElementById('lednocat').onclick=()=>{ledNoCat=!ledNoCat; ledSrc=null; ledFail=false; ledMon=null; WFLIM=40; renderLedger(1);};
   document.getElementById('lednocard').onclick=()=>{flt='deposits'; DEPS=null; depOpen=null; tab='donors'; render();};
   document.getElementById('ledall').onclick=()=>{ledAll=!ledAll; ledSrc=null; ledFail=false; ledNoCat=false; ledMon=null; renderLedger(1);};
+  const pps=document.getElementById('ppsync'); if(pps)pps.onclick=()=>runPaypalSync(pps);
   // מספר המפקידים שאין להם כרטיס — נטען ברקע כדי לא לעכב את המסך
   api('GET','/api/deposits').then(r=>{const e=document.getElementById('depcnt');
     if(e&&r)e.textContent=((r.names||0)+(r.cards||0));}).catch(()=>{});
@@ -4347,14 +4374,20 @@ function pyWireSlot(t,dtext,taken){
   const q=c=>box.querySelector('.'+c);
   const rec=()=>(t.dref&&t.dref.parnes||[]).find(x=>x.id==t.id);
   const methSel=q('dp_method');
-  const setPMeth=v=>{t.method=v;const p=rec();if(p)p.method=v;};
+  wireChanSel(methSel);            // "➕ דרך תשלום חדשה" — שדה להקלדת השם
+  // "__new__" הוא סימן לפתוח שדה, לא אמצעי תשלום. אסור לשמור אותו.
+  const mVal=()=>{const v=methSel?methSel.value:t.method;return v==='__new__'?(t.method||''):v;};
+  const setPMeth=v=>{if(v==='__new__')return;t.method=v;const p=rec();if(p)p.method=v;};
   const amtSave=async()=>{const damt=q('dp_amt_edit'),dcur=q('dp_cur_edit');t.amount=damt.value.trim();t.currency=dcur.value;
-    const mv=methSel?methSel.value:t.method;setPMeth(mv);const p=rec();if(p){p.amount=t.amount;p.currency=t.currency;}
+    const mv=mVal();setPMeth(mv);const p=rec();if(p){p.amount=t.amount;p.currency=t.currency;}
     await api('PUT','/api/parnes/'+t.id,{amount:t.amount,currency:t.currency,method:mv});toast('נשמר ✓');render();};
   const ab=q('dp_amt_save'); if(ab)ab.onclick=amtSave;
-  if(methSel)methSel.onchange=async()=>{setPMeth(methSel.value);await api('PUT','/api/parnes/'+t.id,{method:methSel.value});toast('אמצעי נשמר ✓');render();};
+  if(methSel)methSel.addEventListener('change',async()=>{
+    if(methSel.value==='__new__')return;        // רק פותח את שדה ההקלדה
+    setPMeth(methSel.value);
+    await api('PUT','/api/parnes/'+t.id,{method:methSel.value});toast('אמצעי נשמר ✓');});
   const pb=q('dppaid');
-  if(pb)pb.onclick=async()=>{const np=+t.paid===1?0:1;t.paid=np;const mv=methSel?methSel.value:t.method;setPMeth(mv);
+  if(pb)pb.onclick=async()=>{const np=+t.paid===1?0:1;t.paid=np;const mv=mVal();setPMeth(mv);
     const p=rec();if(p)p.paid=np;await api('PUT','/api/parnes/'+t.id,{paid:np,method:mv});
     toast(np?'סומן כנגבה ✓':'סומן כחוב שטרם נגבה');render();};
   const ps=q('dpsetl');

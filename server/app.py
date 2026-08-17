@@ -3599,6 +3599,22 @@ def ensure_schema():
     except Exception as ex:
         print('  rosenthal kvittel error:', ex)
 
+    # "__new__" הוא הערך של האפשרות "➕ דרך תשלום חדשה" בתיבת הבחירה, ולא
+    # אמצעי תשלום. בתיבה של יום פרנס הוא נשמר בטעות כאמצעי — מנקים.
+    try:
+        n = 0
+        for tbl, col in (('parnes', 'method'), ('donations', 'method'), ('donors', 'channel')):
+            try:
+                n += con.execute("UPDATE %s SET %s='' WHERE TRIM(COALESCE(%s,''))='__new__'"
+                                 % (tbl, col, col)).rowcount
+            except Exception:
+                pass
+        if n:
+            con.commit()
+            print('  "__new__" שנשמר בטעות כאמצעי תשלום — נוקה: %d' % n)
+    except Exception as ex:
+        print('  new-method cleanup error:', ex)
+
     # אותו שם שנרשם פעמיים בקוויטל של אותו תורם — פעם עם מקף לפני הבקשה
     # ופעם בלי. רץ בכל עלייה, כך שגם בקשות שנכנסות מחר לא יוצרות כפילות.
     try:
