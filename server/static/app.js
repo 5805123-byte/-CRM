@@ -2845,14 +2845,19 @@ function cardInfo(d,body){
       <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
     <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
     <label class="fld"><span>עבור מה (מטרה כללית)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
-    <label class="fld"><span>💰 חוב מלפני 2026 (יתרת פתיחה) — התרומות במערכת מתחילות מינואר 2026</span>
-      <div class="two"><input id="f_debt_open" value="${esc(d.debt_open||'')}" inputmode="decimal" placeholder="0 · אפשר גם מינוס אם שילם מראש">
-        <input id="f_debt_open_note" value="${esc(d.debt_open_note||'')}" placeholder="הערה (למשל: יתרה מ-2025)"></div></label>
     <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><textarea id="f_notes" rows="3" placeholder="כתוב כאן כל דבר שתרצה למצוא אחר כך בחיפוש">${esc(d.notes||'')}</textarea></label>
     ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
-    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months,d).length?' · <b style="color:var(--no)">'+gaps(d.months,d).length+' לא עברו</b>':''}</div>${monthGrid(d.months,d)}</div>`:''}`;
+    ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months,d).length?' · <b style="color:var(--no)">'+gaps(d.months,d).length+' לא עברו</b>':''}</div>${monthGrid(d.months,d)}</div>`:''}
+    <div class="opnwrap"><button type="button" class="opnlink" id="f_opn">יתרת פתיחה${amtSigned(d.debt_open)?(' · '+curSym(d)+Math.round(amtSigned(d.debt_open))):''}</button>
+      <div class="opnbox hidden" id="f_opnbox">
+        <div class="hintxt" style="margin:0 0 5px">התרומות במערכת מתחילות מינואר 2026. כאן רושמים את החוב שנצבר לפני כן — או מינוס, אם שילם מראש.</div>
+        <div class="two"><input id="f_debt_open" value="${esc(d.debt_open||'')}" inputmode="decimal" placeholder="0">
+          <input id="f_debt_open_note" value="${esc(d.debt_open_note||'')}" placeholder="הערה (יתרה מ-2025)"></div></div></div>`;
+  const opnb=document.getElementById('f_opn');
+  if(opnb)opnb.onclick=()=>{const bx=document.getElementById('f_opnbox');
+    bx.classList.toggle('hidden'); if(!bx.classList.contains('hidden'))bx.querySelector('input').focus();};
   renderPhones(d); renderEmails(d);
   body.insertAdjacentHTML('beforeend',
     '<div class="sec" style="text-align:center"><button class="btn ghost delbig delcard" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>');
