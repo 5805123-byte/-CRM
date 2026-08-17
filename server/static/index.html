@@ -632,6 +632,13 @@
   .pledge.given{background:var(--yes-soft);border-color:var(--yes)}
   .pledge.pending{background:var(--no-soft);border-color:var(--no)}
   .pledge .pi{flex:1}.pledge .pi b{font-size:1rem}.pledge .pi small{color:var(--muted)}
+  /* כמה כבר שולם מתוך ההתחייבות, והיתרה שמתחשבנת לבד */
+  .plpay{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:.83rem;color:var(--muted)}
+  .plpay .plpaid{width:5.5rem;padding:4px 7px;border:1px solid var(--line);border-radius:8px;
+    font-family:inherit;font-size:.85rem;background:var(--card);color:var(--ink)}
+  .plleft{font-size:.85rem}
+  .plleft.no{color:var(--no)}
+  .plleft.ok{color:var(--yes)}
   .pledge .stbtn{border:none;border-radius:8px;padding:6px 10px;font-family:inherit;font-weight:700;cursor:pointer;font-size:.8rem}
   .pledge.given .stbtn{background:var(--yes);color:#fff}.pledge.pending .stbtn{background:var(--no);color:#fff}
   .pledge .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem}

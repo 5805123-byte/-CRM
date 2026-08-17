@@ -245,6 +245,9 @@ def ensure_schema():
     # התחייבות חוזרת מדי חודש (למשל נר למאור) — להבדיל מהתחייבות חד־פעמית
     try: con.execute("ALTER TABLE pledges ADD COLUMN monthly INTEGER DEFAULT 0")
     except Exception: pass
+    # כמה כבר שולם מתוך ההתחייבות — מאיר ממלא ידנית, והמערכת מחשבת את היתרה
+    try: con.execute("ALTER TABLE pledges ADD COLUMN paid TEXT DEFAULT ''")
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
@@ -6688,9 +6691,9 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db()
-            con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=? WHERE id=?",
+            con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=? WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
-                         1 if b.get('monthly') else 0, pid))
+                         1 if b.get('monthly') else 0, str(b.get('paid') or ''), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -7735,9 +7738,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly) VALUES(?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
-                         b.get('date',''), b.get('note',''), 1 if b.get('monthly') else 0))
+                         b.get('date',''), b.get('note',''), 1 if b.get('monthly') else 0,
+                         str(b.get('paid') or '')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':

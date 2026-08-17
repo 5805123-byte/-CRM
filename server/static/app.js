@@ -2049,10 +2049,14 @@ function debtSummary(d){
       s:dec.length+' '+(dec.length===1?'חיוב':'חיובים'),
       list:dec.map(r=>({txt:gregLabel(r.iso)+' · '+cur+Math.round(r.a)
         +(r.tries>1?(' · '+r.tries+' ניסיונות'):''),tids:r.tids,undo:1}))});
-  // התחייבויות פתוחות
-  const pl=(d.pledges||[]).filter(p=>p.status!=='נתן'&&!+p.monthly&&amtNum(p.amount)>0);
-  const plSum=pl.reduce((s2,p)=>s2+amtNum(p.amount),0);
-  if(plSum>0.5)rows.push({t:'התחייבות שטרם ניתנה',v:plSum,s:pl.length+' התחייבויות'});
+  // התחייבויות פתוחות — נספרת רק היתרה, אחרי מה שכבר שולם על החשבון
+  const pl=(d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.amount)>0&&plLeft(p)>0.5);
+  const plSum=pl.reduce((s2,p)=>s2+plLeft(p),0);
+  if(plSum>0.5)
+    rows.push({t:'התחייבות שטרם ניתנה',v:plSum,
+      s:pl.length+' '+(pl.length===1?'התחייבות':'התחייבויות'),
+      list:pl.map(p=>({txt:p.category+' · '+cur+Math.round(plLeft(p))
+        +(amtNum(p.paid)?(' (מתוך '+cur+Math.round(amtNum(p.amount))+', שולם '+cur+Math.round(amtNum(p.paid))+')'):'')}))});
   return {rows,total:rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0),cur};
 }
 // שורה אחת בלבד. הסכום עצמו הוא הקישור — לחיצה פותחת את הפירוט
@@ -2076,7 +2080,7 @@ function debtHTML(d){
       <input id="debtokwhy" placeholder="איך סודר? (למשל: ישלים בצ׳ק בראש חודש)">
       <button class="btn sm" id="debtokgo">💾 סודר</button></div>
     <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
-      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.list?`<span class="dslist">${r.list.map(t=>`<small>${esc(t.txt)}<button class="dsok${t.undo?' on':''}" data-tids="${esc((t.tids||[]).join(','))}" data-undo="${t.undo?1:0}" title="${t.undo?'לא חוב — הורד מהסכום':'הכסף הזה באמת חסר — הוסף לחוב'}">${t.undo?'✓ חוב':'זה חוב'}</button></small>`).join('')}</span>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.list?`<span class="dslist">${r.list.map(t=>`<small>${esc(t.txt)}${(t.tids||[]).length?`<button class="dsok${t.undo?' on':''}" data-tids="${esc(t.tids.join(','))}" data-undo="${t.undo?1:0}" title="${t.undo?'לא חוב — הורד מהסכום':'הכסף הזה באמת חסר — הוסף לחוב'}">${t.undo?'✓ חוב':'זה חוב'}</button>`:''}</small>`).join('')}</span>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
     </div>`;
 }
 function catTotalsHTML(d){
@@ -2200,7 +2204,12 @@ function cardDetails(d,body){
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></details>`:''}
     <details class="dsec"><summary>🎯 התחייבויות / קמפיינים${(d.pledges||[]).length?(' ('+(d.pledges||[]).length+')'):''}</summary><div id="pledges"></div>
-      <div class="addrow"><input id="pl_cat" placeholder="עבור מה (למשל: נר למאור)"><input id="pl_amt" placeholder="סכום" style="max-width:82px"><button class="btn sm" id="pl_add">הוסף</button></div>
+      <div class="addrow"><select id="pl_cat">${dnCatOpts('')}</select></div>
+      <div class="addrow hidden" id="pl_newrow" style="margin-top:5px"><input id="pl_catnew" placeholder="שם הייעוד החדש…"></div>
+      <div class="addrow" style="margin-top:5px">
+        <input id="pl_amt" placeholder="כמה התחייב" inputmode="decimal">
+        <input id="pl_paid" placeholder="כמה כבר שילם" inputmode="decimal">
+        <button class="btn sm" id="pl_add">הוסף</button></div>
       <label class="jointchk"><input type="checkbox" id="pl_monthly"> 🔁 התחייבות שחוזרת <b>כל חודש</b> (לא חוב חד־פעמי)</label></details>
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 התחייב · טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
@@ -2463,7 +2472,7 @@ function cardDetails(d,body){
     toast('עודכנו '+r.updated+' תרומות ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
   // ---- רישום תרומה חדשה, ישירות מהדף הראשי ----
-  renderParnesEdit(d); renderPledges(d); renderTransactions(d);
+  renderParnesEdit(d); renderPledges(d, body); renderTransactions(d);
   if(d.tier==='יששכר_זבולון'){
     renderPartners(d);
     const pab=document.getElementById('pa_add');
@@ -2472,15 +2481,30 @@ function cardDetails(d,body){
       d.partners=(d.partners||[]).concat([{id:r.id,avreich:n}]);
       document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};
   }
+  const plSel=document.getElementById('pl_cat'), plNew=document.getElementById('pl_newrow');
+  if(plSel)plSel.onchange=()=>{
+    if(plSel.value==='__new__'){plNew.classList.remove('hidden');document.getElementById('pl_catnew').focus();}
+    else plNew.classList.add('hidden');};
   const plAdd=document.getElementById('pl_add');
-  if(plAdd)plAdd.onclick=async()=>{const cat=document.getElementById('pl_cat').value.trim(),amt=document.getElementById('pl_amt').value.trim();
+  if(plAdd)plAdd.onclick=async()=>{
+    let cat=plSel.value.trim();
+    if(cat==='__new__'){cat=document.getElementById('pl_catnew').value.trim();
+      if(!cat){toast('כתוב את שם הייעוד');return;}
+      if(!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}}
+    if(!cat){toast('בחר עבור מה');return;}
+    const amt=document.getElementById('pl_amt').value.trim();
+    const paid=document.getElementById('pl_paid').value.trim();
     const mo=document.getElementById('pl_monthly')&&document.getElementById('pl_monthly').checked?1:0;
-    if(!cat)return;const st=mo?'נתן':'טרם';
-    const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:st,monthly:mo});
-    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:amt,status:st,monthly:mo}]);
-    document.getElementById('pl_cat').value='';document.getElementById('pl_amt').value='';
+    // שילם את הכל — כבר לא חוב
+    const st=(mo||(amtNum(amt)&&amtNum(paid)>=amtNum(amt)))?'נתן':'טרם';
+    const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,paid,status:st,monthly:mo});
+    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:amt,paid,status:st,monthly:mo}]);
+    plSel.innerHTML=dnCatOpts(''); plSel.value=''; plNew.classList.add('hidden');
+    document.getElementById('pl_catnew').value='';
+    document.getElementById('pl_amt').value='';document.getElementById('pl_paid').value='';
     if(document.getElementById('pl_monthly'))document.getElementById('pl_monthly').checked=false;
-    renderPledges(d);refreshIzSum(d);toast(mo?'נוספה התחייבות חודשית ✓':'נוסף ✓');};
+    cardDetails(d,body); refreshIzSum(d);
+    toast(mo?'נוספה התחייבות חודשית ✓':'נוספה התחייבות ✓');};
   const dnDate=document.getElementById('dn_date'); if(dnDate)dnDate.value=todayStr();
   const dnCat=document.getElementById('dn_cat'), dnMeth=document.getElementById('dn_method');
   const isBldg=c=>/בנין|בניין/.test(c||'');
@@ -3493,16 +3517,31 @@ function renderContacts(d){
   });
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.contacts||[]).forEach(c=>{c.files=(c.files||[]).filter(f=>f.id!=b.dataset.fid);});renderContacts(d);toast('נמחק');});
 }
-function renderPledges(d){
+// כמה נשאר לשלם מהתחייבות חד־פעמית: מה שהתחייב פחות מה שכבר שילם
+function plLeft(p){return Math.max(0, amtNum(p.amount)-amtNum(p.paid));}
+function renderPledges(d, body){
   const el=document.getElementById('pledges');if(!el)return;
+  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   el.innerHTML=(d.pledges||[]).map(p=>{const g=p.status==='נתן',mo=+p.monthly;
-    return `<div class="plwrap"><div class="pledge ${mo?'given':(g?'given':'pending')}"><div class="pi">
-      <b>${esc(p.category)}</b> ${p.amount?('· $'+esc(p.amount)+(mo?' לחודש':'')):''}
-      <br><small>${mo?'🔁 התחייבות חודשית קבועה':(g?'נתן ✓':'טרם נתן')}</small>${p.note?('<br><small>'+esc(p.note)+'</small>'):''}</div>
+    const left=plLeft(p), pd=amtNum(p.paid);
+    return `<div class="plwrap"><div class="pledge ${mo?'given':(g||!left?'given':'pending')}"><div class="pi">
+      <b>${esc(p.category)}</b> ${p.amount?('· '+f(amtNum(p.amount))+(mo?' לחודש':'')):''}
+      ${mo?'':`<div class="plpay">שילם <input class="plpaid" data-id="${p.id}" inputmode="decimal" value="${esc(p.paid||'')}" placeholder="0">
+        ${amtNum(p.amount)?`<b class="plleft ${left?'no':'ok'}">${left?('נשאר '+f(left)):'שולם במלואו ✓'}</b>`:''}</div>`}
+      <br><small>${mo?'🔁 התחייבות חודשית קבועה':(pd&&left?('שולם '+f(pd)+' מתוך '+f(amtNum(p.amount))):(g||!left?'נתן ✓':'טרם נתן'))}</small>${p.note?('<br><small>'+esc(p.note)+'</small>'):''}</div>
       <label class="jointchk plmo" title="התחייבות שחוזרת כל חודש"><input type="checkbox" class="plmonthly" data-id="${p.id}" ${mo?'checked':''}> 🔁 חודשי</label>
       ${mo?'':`<button class="stbtn" data-id="${p.id}">${g?'נתן':'טרם'}</button>`}
       <button class="del" data-del="${p.id}">🗑</button></div>
       ${mo?'':`<label class="remset">🔔 תזכורת לחיוב: <input type="date" class="plrem" data-cat="${esc(p.category)}" data-amt="${esc(p.amount)}"></label>`}</div>`;}).join('')||'<div class="hintxt">אין עדיין. הוסף למטה.</div>';
+  // כמה כבר שולם מתוך ההתחייבות — נשמר ידנית, והיתרה מתעדכנת לבד
+  el.querySelectorAll('.plpaid').forEach(inp=>inp.onchange=async()=>{
+    const p=(d.pledges||[]).find(x=>x.id==inp.dataset.id); if(!p)return;
+    p.paid=inp.value.trim();
+    if(amtNum(p.amount)&&!plLeft(p))p.status='נתן';
+    await api('PUT','/api/pledge/'+p.id,p);
+    // שורת החוב שמעל מתעדכנת מיד עם היתרה החדשה
+    if(body)cardDetails(d,body); else renderPledges(d,body);
+    toast('עודכן ✓');});
   el.querySelectorAll('.plmonthly').forEach(cb=>cb.onchange=async()=>{
     const p=(d.pledges||[]).find(x=>x.id==cb.dataset.id); if(!p)return;
     p.monthly=cb.checked?1:0; if(p.monthly)p.status='נתן';
