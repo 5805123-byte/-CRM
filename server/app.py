@@ -4738,9 +4738,16 @@ _DON_R = .85        # שם התורם ביחס לשם שמתפללים עליו
 _SML_R = .42        # תארים, קרבה ומילות קישור
 # היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
-_REQ_R = .41        # הבקשה חוזרת לגודל של "יהי רצון" (1.0 מתוך 2.45)
+_REQ_R = .25        # הבקשה חוזרת לגודל של "יהי רצון" (1.0 מתוך 4.0)
 _LEAD_R = .5        # "לעילוי נשמת" — חצי מהשם כפי שהוא נדפס בפועל
-_FIT_MIN = .5       # עד כמה מותר להקטין שורת שמות כדי שתישאר שורה אחת
+# מאיר: "המילים יהי רצון תמיד בגודל אחיד, בשלוש שורות בלבד למעלה".
+# הגודל נקבע לפי הרוחב כדי שהנוסח יתפרס תמיד על שלוש שורות, וכל השאר
+# נגזר ממנו — תאריך פי שניים, השמות פי שניים מהתאריך.
+_NUSACH = ('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות '
+           'בעת רצון הגדול של חצות הלילה עד הבוקר')
+_NUS_LINES = 3
+_FIT_MIN = .30      # עד כמה מותר להקטין שורת שמות כדי שתישאר שורה אחת.
+                    # 4.0 הוא הגודל המלא; שם ארוך מתכווץ ולא נשבר לשתיים
 # מאיר: "איפה שכתוב לעילוי נשמת — תוריד את המילים יהיו ויעמדו לזכות"
 _NESHAMA = re.compile(r'לעילוי|לע["\'\u05f4\u05f3]?נ(\s|$)|נשמת')
 _SPACE_R = .92      # רוחב הרווח בין המילים
@@ -4817,7 +4824,10 @@ def _cert_lines(text):
         # ואסור שהמילה הראשונה תיחשב לשם התורם רק כי אחריה בא עוד פתיח
         if not _CERT_LEAD.match(ws[0]):
             for k in range(1, len(ws)):
-                if _CERT_LEAD.match(ws[k]):
+                # "הר\"ר רפאל לע\"נ אביו יוסף" — שם התורם ואז ההקדשה.
+                # אבל "יעקב בן שרה לרפואה שלמה" הוא שם ואחריו בקשה, ולא
+                # תורם: אחרי מילת הפתיח אין שם אלא רק המשך הבקשה.
+                if _CERT_LEAD.match(ws[k]) and _lead_len(ws[k:]) < len(ws[k:]):
                     ded = k; break
         if ded > 0:                       # "הר\"ר רפאל לע\"נ אביו יוסף"
             out.append((' '.join(ws[:ded]), 'donor'))
@@ -4925,12 +4935,11 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                   (ded, 1.18, True, _DEEP, 0, .28, 1.3, 0),
                   (names, 2.5, True, _BLACK, .1, .25, 1.18, 1)]
     else:
-        blocks = [('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות '
-                   'בעת רצון הגדול של חצות הלילה עד הבוקר', 1.0, False, _INK, 0, 0, 1.45, 0),
-                  (date, 1.0, True, _DEEP, .5, .35, 1.3, 0),
+        blocks = [(_NUSACH, 1.0, False, _INK, 0, 0, 1.45, 0),
+                  (date, 2.0, True, _DEEP, .35, .25, 1.3, 0),
                   ('' if _NESHAMA.search(names or '') else 'יהיו ויעמדו לזכות',
-                   .65, False, _INK, 0, .15, 1.35, 0),
-                  (names, 2.45, True, _BLACK, .15, .3, 1.14, 1)]
+                   2.0, False, _INK, 0, .12, 1.35, 0),
+                  (names, 4.0, True, _BLACK, .12, .2, 1.14, 1)]
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
     def _join(items):
@@ -4976,6 +4985,15 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         lines = []
         src = _cert_lines(text) if is_name else [(l, '') for l in str(text or '').split('\n')]
 
+        def _fitline(ln, dr):
+            """רשת ביטחון: שורה שיצאה רחבה מהתיבה מוקטנת בדיוק כדי להיכנס,
+            כדי שהמילה האחרונה (למשל ע\"ה) לא תיחתך בקצה."""
+            wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in ln)
+            if wpx <= bw or wpx <= 0:
+                return ln
+            f = bw / wpx
+            return [(t, z * f, h) for t, z, h in ln]
+
         def _fit(raw):
             """כמה שורת השמות צריכה להתכווץ כדי להיכנס לרוחב התיבה."""
             full = _join(sized(raw, px, heavy, 'names'))
@@ -4997,13 +5015,14 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                 ws = [(t, z * leadf, h) for t, z, h in ws]
             # מאיר: "את השם של החתן והכלה תכתוב בגדול ממש בשורה אחת".
             # לכן שורת השמות מתכווצת כדי להיכנס, במקום להישבר לשתיים.
-            if role == 'names':
+            if role in ('names', 'donor'):
                 full = _join(ws)
                 wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
                 if wpx > bw:
                     f = bw / wpx
                     if f >= _FIT_MIN:
-                        lines.append([(t, z * f, h) for t, z, h in full]); continue
+                        lines.append(_fitline([(t, z * f, h) for t, z, h in full], dr)); continue
+                    # רחב מדי גם אחרי הכיווץ המותר — נשבר לשורות, ולא נחתך
                 else:
                     lines.append(full); continue
             cur = []
@@ -5014,17 +5033,18 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                 if wpx <= bw or not cur:
                     cur = trial
                 else:
-                    lines.append(_join(cur)); cur = [it]
+                    lines.append(_fitline(_join(cur), dr)); cur = [it]
             if cur:
-                lines.append(_join(cur))
+                lines.append(_fitline(_join(cur), dr))
         return lines
 
     dr = ImageDraw.Draw(im)
 
-    def layout(base):
+    def layout(base, gap=1.0):
         total, out = 0.0, []
         for i, (txt, mult, heavy, col, mt, mb, lh, isnm) in enumerate(blocks):
             px = base * mult
+            mt, mb = mt * gap, mb * gap
             total += mt * base
             for ln in wrap(txt, px, heavy, dr, isnm):
                 # גובה השורה נגזר מהגופן שבה בפועל — אחרת שורות הברכה
@@ -5035,14 +5055,41 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             total += mb * base
         return total, out
 
-    lo, hi, best = 4.0, 220.0, 4.0
-    for _ in range(26):                      # חיפוש בינארי לגודל שממלא את הדף
-        mid = (lo + hi) / 2
-        if layout(mid)[0] <= bh:
-            best, lo = mid, mid
-        else:
-            hi = mid
-    total, items = layout(best)
+    # הגודל נקבע מהרוחב: הנוסח חייב לצאת בדיוק בשלוש שורות, תמיד באותו
+    # גודל. רק אם הכל יחד גבוה מהתיבה — מקטינים הכל יחד ושומרים על היחסים.
+    if kind in ('coffee', 'breakfast'):
+        lo, hi, best = 4.0, 220.0, 4.0
+        for _ in range(26):
+            mid = (lo + hi) / 2
+            if layout(mid)[0] <= bh:
+                best, lo = mid, mid
+            else:
+                hi = mid
+    else:
+        w1 = sum(dr.textlength(w + ' ', font=font(100, False)) for w in _NUSACH.split()) / 100.0
+        best = (_NUS_LINES * bw * .97) / max(1.0, w1)
+        if layout(best)[0] > bh:
+            lo, hi = 4.0, best
+            for _ in range(24):
+                mid = (lo + hi) / 2
+                if layout(mid)[0] <= bh:
+                    lo = mid
+                else:
+                    hi = mid
+            best = lo
+    # הגדלים קבועים, ולכן את השטח שנשאר מפזרים ברווחים בין הבלוקים
+    # במקום להשאיר חלל גדול בתחתית התעודה
+    gap = 1.0
+    if layout(best)[0] < bh * .9:
+        lo2, hi2 = 1.0, 2.6           # ריווח נדיב, אבל הבלוק נשאר מלוכד
+        for _ in range(18):
+            mid = (lo2 + hi2) / 2
+            if layout(best, mid)[0] <= bh * .9:
+                lo2 = mid
+            else:
+                hi2 = mid
+        gap = lo2
+    total, items = layout(best, gap)
     top = y0 + max(0, (bh - total) / 2)      # ממורכז אנכית בתיבה
     for ln, lheight, col, off in items:
         wpx = sum(dr.textlength(t, font=font(s, h)) for t, s, h in ln)

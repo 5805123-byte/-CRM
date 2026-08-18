@@ -1939,6 +1939,15 @@ function instPerMonth(d){
   return (d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.permo)>0
       &&plLeft(d,p)>0.5).reduce((a,p)=>a+amtNum(p.permo),0);
 }
+// להשוואה מול הגבייה של יששכר־זבולון סופרים רק התחייבויות שהכסף שלהן
+// עדיין יושב בתוך אותו זרם. התחייבות שהתשלומים שלה כבר משויכים אליה
+// (כמו הבניין אצל אברמוביץ) נגבית בנפרד ואין להוסיף אותה שוב.
+function izStreamOther(d){
+  return (d.pledges||[]).filter(p=>!/יששכר/.test(String(p.category||''))
+      &&plCollected(d,p)<=0.5)
+    .reduce((a,p)=>a+(+p.monthly?amtNum(p.amount)
+      :(amtNum(p.permo)>0&&plLeft(d,p)>0.5?amtNum(p.permo):0)),0);
+}
 function izRowAmt(d){
   let s; try{s=izSummary(d);}catch(e){return 0;}
   const pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
@@ -1962,7 +1971,7 @@ function izRowAmt(d){
 // אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
 function izGapNote(d){
   const real=izRealMonthly(d); if(real<=0.5)return '';
-  const shown=izRowAmt(d)+izOther(d)+instPerMonth(d);
+  const shown=izRowAmt(d)+izStreamOther(d);
   if(Math.abs(real-shown)<1.5)return '';
   const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   return `<div class="cmgap">⚠️ בפועל נגבה <b>${f(real)}</b> כל חודש, וכאן רשום ${f(shown)}`
@@ -2028,11 +2037,17 @@ function commitHTML(d){
       : `<b class="cmfix">${r.amt?f(r.amt):'—'}</b>`;
     const tag=r.mo?'קבוע':(r.inst?'בתשלומים':'חד־פעמי');
     // התחייבות בתשלומים מתעדכנת לבד לפי מה שנגבה בייעוד הזה
+    const pn=r.plan||{};
     const prog=r.inst
-      ? `<div class="cminst">📆 ${f(r.plan.per)} לחודש · שולם ${f(r.amt-r.left)} מתוך ${f(r.amt)}`
-        +(r.left>0.5?` · <b class="cmleft no">נשאר ${f(r.left)}</b> · עוד ${r.plan.n} ${r.plan.n===1?'תשלום':'תשלומים'}`
+      ? `<div class="cminst">📆 ${f(pn.per)} לחודש${pn.from?(' · החל מ'+esc(monthPlus(pn.from,0))):''}`
+        +` · שולם ${f(r.amt-r.left)} מתוך ${f(r.amt)}`
+        +(r.left>0.5?` · <b class="cmleft no">נשאר ${f(r.left)}</b> · עוד ${pn.n} ${pn.n===1?'תשלום':'תשלומים'}`
+                    +(pn.end?` (עד ${esc(pn.end)})`:'')
                    :' · <b class="cmleft ok">הושלם ✓</b>')
-        +(r.got>0.5?`<small> · מתוכם ${f(r.got)} נגבו במערכת</small>`:'')+`</div>`
+        +(r.got>0.5?`<small> · מתוכם ${f(r.got)} נגבו במערכת</small>`:'')
+        +`</div>`
+        +`<span class="cmpaid">שולם עד היום <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
+        +`<small>${pn.done?(pn.done+' מתוך '+pn.all+' תשלומים'):'עדיין לא שולם'}</small></span>`
       : '';
     // תשלום אחד: ירוק כשנגבה, אדום עם "לא נגבה" כשעדיין לא
     const done=r.amt>0.5&&r.left<=0.5;
@@ -2081,6 +2096,12 @@ function commitHTML(d){
           <option value="one">🎯 חד־פעמי</option></select>
         <input class="cm_n hidden" inputmode="numeric" placeholder="לכמה תשלומים?">
         <button class="btn sm cm_add">➕ הוסף</button></div>
+      <div class="cmstart hidden">
+        <label class="cmlbl">התחייבות שכבר רצה? מלא מאיזה חודש התחילה וכמה תשלומים כבר עברו</label>
+        <div class="cmthree"><input type="month" class="cm_from">
+          <input class="cm_done" inputmode="numeric" placeholder="כמה תשלומים כבר שולמו"></div>
+        <label class="cmmerge hidden"><input type="checkbox" class="cm_merge" checked>
+          <span class="cm_mergetxt"></span></label></div>
       <div class="hintxt cm_calc"></div></div>`;
   return `<div class="cmbox"><div class="cmbox-t">📋 ההתחייבויות שלו
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
@@ -2180,7 +2201,11 @@ function wireCommit(d,body){
         det=box.querySelector('.cm_det'), avbox=box.querySelector('.cm_avbox'),
         avsel=box.querySelector('.cm_av'), nightbox=box.querySelector('.cm_nightbox'),
         amt=box.querySelector('.cm_amt'), plan=box.querySelector('.cm_plan'),
-        nfld=box.querySelector('.cm_n'), calc=box.querySelector('.cm_calc');
+        nfld=box.querySelector('.cm_n'), calc=box.querySelector('.cm_calc'),
+        startb=box.querySelector('.cmstart'), fromf=box.querySelector('.cm_from'),
+        donef=box.querySelector('.cm_done'), mergeL=box.querySelector('.cmmerge'),
+        mergec=box.querySelector('.cm_merge');
+  let MATCH=[];
   const curS=curSym(d);
   const catNow=()=>sel.value==='__new__'
     ? (nrow.querySelector('.cm_new').value.trim()) : sel.value.trim();
@@ -2194,14 +2219,35 @@ function wireCommit(d,body){
       : (/כולל/.test(c)?'איזה כולל? — למשל: כולל הוראה (נשאר אצלו בלבד)'
         :'פירוט אצל התורם הזה בלבד (לא נשמר ברשימת הייעודים)');
     nfld.classList.toggle('hidden', plan.value!=='inst');
+    startb.classList.toggle('hidden', plan.value!=='inst');
     const a=amtNum(amt.value), n=parseInt(nfld.value,10)||0;
-    calc.textContent=(plan.value==='inst'&&a>0&&n>0)
-      ? ('כל תשלום '+curS+Math.round(a/n).toLocaleString('en-US')+' — '+n+' תשלומים')
-      : (isIZcat(c)?'בחירת אברך כאן תיצור לו שורת אברך בלשונית יששכר־זבולון'
-        :(isNightCat(c)?'בחירת לילה כאן תשריין את היום אצל התורם':''));
+    const done=Math.min(n, parseInt(donef.value,10)||0);
+    if(plan.value==='inst'&&a>0&&n>0){
+      const per=Math.round(a/n);
+      const f=x=>curS+Math.round(x).toLocaleString('en-US');
+      // תשלומים שכבר רשומים בכרטיס — מציעים לצרף אותם במקום להקליד שוב
+      MATCH=instMatches(d,a/n,fromf.value,c).slice(0,n);
+      const useM=MATCH.length&&mergec.checked;
+      mergeL.classList.toggle('hidden', !MATCH.length);
+      if(MATCH.length)
+        box.querySelector('.cm_mergetxt').textContent=
+          '🔗 צרף '+MATCH.length+' תשלומים של '+f(per)+' שכבר רשומים בכרטיס'
+          +(MATCH[0].date?(' מ'+monthPlus(String(MATCH[0].date).slice(0,7),0)):'')
+          +' — במקום לרשום אותם שוב';
+      const dn=useM?MATCH.length:done;
+      const left=Math.max(0,a-per*dn);
+      calc.textContent='כל תשלום '+f(per)+' — '+n+' תשלומים'
+        +(dn?(' · כבר שולמו '+dn+' ('+f(per*dn)+') · נשאר '+f(left)
+                +' ב-'+(n-dn)+' תשלומים'):'')
+        +(fromf.value?(' · '+(dn?'התשלום האחרון ':'עד ')
+                +monthPlus(fromf.value,n-1)):'');
+    } else { MATCH=[]; mergeL.classList.add('hidden');
+      calc.textContent=(isIZcat(c)?'בחירת אברך כאן תיצור לו שורת אברך בלשונית יששכר־זבולון'
+        :(isNightCat(c)?'בחירת לילה כאן תשריין את היום אצל התורם':'')); }
   };
   [sel,plan].forEach(e=>e.addEventListener('change',show));
-  [amt,nfld].forEach(e=>e.addEventListener('input',show));
+  [amt,nfld,donef].forEach(e=>e.addEventListener('input',show));
+  [fromf,mergec].forEach(e=>e.addEventListener('change',show));
   if(sel.value==='__new__')nrow.querySelector('.cm_new').addEventListener('input',show);
   show();
   if(!AVLIST.length)loadAvList().then(()=>{avsel.innerHTML=avOpts('');});
@@ -2216,11 +2262,20 @@ function wireCommit(d,body){
     if(!cat){toast('בחר עבור מה');return;}
     const total=amt.value.trim(), a=amtNum(total);
     const mode=plan.value;
-    let permo='';
+    let permo='', already='', from='';
     if(mode==='inst'){
       const n=parseInt(nfld.value,10)||0;
       if(!a||!n){toast('מלא סכום ומספר תשלומים');return;}
       permo=String(Math.round(a/n*100)/100);
+      // התחייבות שכבר רצה: מה ששולם עד היום נרשם כסכום, וחודש ההתחלה
+      // קובע מתי היא נגמרת — כדי שזה ייראה עדכון ולא התחייבות חדשה.
+      // אם יש תשלומים שכבר רשומים בכרטיס, מצרפים אותם עצמם ולא רושמים
+      // סכום ידני — אחרת אותו כסף היה נספר פעמיים.
+      const useM=MATCH.length&&mergec.checked;
+      const dn=useM?MATCH.length:Math.min(n, parseInt(donef.value,10)||0);
+      if(dn&&!useM)already=String(Math.round(a/n*dn*100)/100);
+      from=fromf.value?(fromf.value+'-01'):
+        (useM&&MATCH[0].date?(String(MATCH[0].date).slice(0,7)+'-01'):'');
     }
     const mo=mode==='mo'?1:0;
     // הפירוט נשמר על השורה של התורם בלבד — לא נכנס לרשימת הייעודים
@@ -2228,11 +2283,20 @@ function wireCommit(d,body){
     const avn=(!avbox.classList.contains('hidden')&&avsel.value&&avsel.value!=='__new__')
       ? avsel.value : '';
     const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:total,
-      status:mo?'נתן':'טרם',monthly:mo,paid:'',detail,permo,avreich:avn});
+      status:mo?'נתן':'טרם',monthly:mo,paid:already,detail,permo,avreich:avn,date:from});
     if(!r||!r.id){toast('לא נשמר');return;}
     d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:total,
-      status:mo?'נתן':'טרם',monthly:mo,paid:'',note:'',detail,permo,avreich:avn,
-      date:todayStr()}]);
+      status:mo?'נתן':'טרם',monthly:mo,paid:already,note:'',detail,permo,avreich:avn,
+      date:from||todayStr()}]);
+    // צירוף התשלומים הקיימים: הייעוד שלהם משתנה לייעוד ההתחייבות, וכך
+    // המערכת מזהה אותם לבד כתשלומים על החשבון — בלי כפילות
+    if(mode==='inst'&&MATCH.length&&mergec.checked){
+      for(const x of MATCH){
+        x.category=cat;
+        await api('PUT','/api/donation/'+x.id,{category:cat});
+      }
+      toast('צורפו '+MATCH.length+' תשלומים קיימים ✓');
+    }
     // אברך יששכר־זבולון — נפתחת לו שורת אברך אמיתית, כדי שהכל מחובר
     if(avn&&!(d.partners||[]).some(x=>x.active!=0&&(x.avreich||'').trim()===avn)){
       const pr=await api('POST','/api/partner',{donor_id:d.id,avreich:avn,amount:total});
@@ -3779,23 +3843,56 @@ function renderContacts(d){
 // מתעדכנת לבד — מאיר לא צריך למלא כל חודש כמה שולם.
 function plCollected(d,p){
   const cat=String(p.category||'').trim(); if(!d||!cat)return 0;
+  // שתי התחייבויות לאותו ייעוד — אי אפשר לדעת לאיזו שייך הכסף, ולכן
+  // לא מייחסים אותו לאף אחת מהן ולא סופרים אותו פעמיים
+  if((d.pledges||[]).filter(x=>String(x.category||'').trim()===cat).length>1)return 0;
   const from=String(p.date||'').slice(0,10);
   return (d.donations||[]).filter(x=>{
     if(String(x.category||'').trim()!==cat)return false;
     const dt=String(x.date||'').slice(0,10);
     return !from||!dt||dt>=from;}).reduce((a,x)=>a+amtNum(x.amount),0);
 }
-function plPaid(d,p){return amtNum(p.paid)+plCollected(d,p);}
+// מה ששולם ידנית ומה שנגבה במערכת. תקרה בסכום ההתחייבות, כדי שסיווג
+// מאוחר של תרומות ישנות לא ייצור "שולם" גדול מההתחייבות עצמה.
+function plPaid(d,p){
+  const tot=amtNum(p.amount), v=amtNum(p.paid)+plCollected(d,p);
+  return tot>0.5?Math.min(tot,v):v;
+}
 function plLeft(d,p){
   if(p===undefined){p=d;d=null;}            // תאימות לקריאות ישנות
   return Math.max(0, amtNum(p.amount)-plPaid(d,p));
 }
-// כמה בכל תשלום, וכמה תשלומים נשארו
+// תשלומים שכבר רשומים בכרטיס ומתאימים להתחייבות שנרשמת עכשיו — אותו סכום,
+// מחודש ההתחלה והלאה. מאיר: "שלא יהיה פה כפילויות, שאוכל למזג את זה".
+function instMatches(d,per,fromYM,cat){
+  if(!(per>0.5))return [];
+  const from=String(fromYM||'').slice(0,7);
+  const tol=Math.max(1, per*0.02);
+  return (d.donations||[]).filter(x=>{
+    if(Math.abs(amtNum(x.amount)-per)>tol)return false;
+    const m=String(x.date||'').slice(0,7);
+    if(from&&m&&m<from)return false;
+    return String(x.category||'').trim()!==String(cat||'').trim();
+  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+    .filter((x,i,l)=>{      // תשלום אחד לכל חודש — תוכנית תשלומים היא חודשית
+      const m=String(x.date||'').slice(0,7);
+      return !m||l.findIndex(y=>String(y.date||'').slice(0,7)===m)===i;});
+}
+// כמה בכל תשלום, כמה נשארו, ומתי התשלום האחרון
 function plPlan(d,p){
   const per=amtNum(p.permo); if(per<=0.5)return null;
-  const left=plLeft(d,p);
+  const left=plLeft(d,p), tot=amtNum(p.amount);
   // 2,200 ל-12 תשלומים = 183.33 — בלי סובלנות קטנה זה היה מציג 13 תשלומים
-  return {per, left, n:Math.max(1, Math.ceil(left/per - 0.02))};
+  const n=Math.max(0, Math.ceil(left/per - 0.02));
+  const all=tot>0.5?Math.max(n, Math.ceil(tot/per - 0.02)):n;
+  return {per, left, n, all, done:Math.max(0,all-n),
+          from:String(p.date||'').slice(0,7), end:monthPlus(String(p.date||'').slice(0,7), all-1)};
+}
+// חודש + N חודשים, בעברית פשוטה ("נובמבר 2026")
+function monthPlus(ym,n){
+  const m=String(ym||'').match(/^(\d{4})-(\d{2})/); if(!m||n<0)return '';
+  let y=+m[1], mo=+m[2]-1+n; y+=Math.floor(mo/12); mo=((mo%12)+12)%12;
+  return MONFULL[mo]+' '+y;
 }
 function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight+6)+'px';}
 // העתקה ללוח — עם נפילה חלופה לאפליקציה מותקנת (execCommand)
