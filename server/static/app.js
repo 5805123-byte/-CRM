@@ -4587,17 +4587,19 @@ function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שב
 // הוא הקובע. אין ניחוש לפי סכומים, ומזדמן גובר על דרגת קוויטל ישנה
 // שנשארה מהייבוא, כדי שהוא לא יופיע בקוויטל הכללי.
 const isOccDonor=d=>String((d&&d.category)||'').trim()==='מזדמן';
+// מאיר: "כל מי שיש לו קוויטל ללא הוא בתוך הכללי, את זה בוודאי צריך
+// להוציא לגמרי מכל הקוויטלים". דרגה ריקה = "— ללא —" = מחוץ לכל הרשימות.
 function kvMemberType(d){
   if(isOccDonor(d))return 'occ';
   if(d.tier==='יששכר_זבולון')return 'iz';
   if(d.tier==='קוויטל_101')return '101';
   if(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי')return 'weekly';
-  // הכלל הישן נשאר: מי שאין לו דרגה אבל נותן קבוע פחות מ-101 ממשיך
-  // להופיע בשבועי ובכללי, כמו עד היום. מאיר: "אני כבר תיקנתי כל מי שלא
-  // שייך לכללי" — ביטול הכלל היה מוריד אותם מהרשימה ויוצר לו עבודה מחדש.
-  if(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)return 'weekly';
   return null;
 }
+// הכלל הישן של "קבוע פחות מ-101" לא נמחק — הוא רק עבר למקום הנכון:
+// הוא מקפיץ למעלה במסך "חסרים שמות קוויטל" את מי שכנראה מגיע לו קוויטל,
+// במקום להכניס אותו לרשימת ההדפסה אחרי שמאיר סימן לו "ללא".
+const kvSmallFixed=d=>!!(d&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101);
 // כל תורם שאין לו שם לתפילה ולא סומן "לא צריך" — כדי להתריע על כולם
 function kvMissingList(){return DB.filter(d=>!(d.prayers&&d.prayers.length)&&!(+d.kv_skip));}
 // חיפוש שם על פני כל סוגי הקוויטל — בלי לבחור קטגוריה קודם
@@ -4673,11 +4675,13 @@ function renderKvUnlinked(){
 }
 function renderKvMissing(){
   let list=kvMissingList().filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
-  const prio=d=>kvMemberType(d)?0:1;  // מסומני קוויטל קודם, אחר כך השאר
+  // מסומני קוויטל קודם; אחריהם — לפי הכלל הישן — מי שנותן קבוע פחות
+  // מ-101 ואין לו דרגה, כי כנראה מגיע לו קוויטל ורק לא נקבע לו עדיין
+  const prio=d=>kvMemberType(d)?0:(kvSmallFixed(d)?1:2);
   list.sort((a,b)=>prio(a)-prio(b)||(a.last||'').localeCompare(b.last||'','he'));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔴 תורמים בלי שם לקוויטל</b><span class="cnt2">(${list.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">כל תורם שאין לו עדיין שם לתפילה. הקלד שם — או לחץ ✓ אם הוא לא ביקש קוויטל (יוסר מהרשימה). מסומני הקוויטל למעלה.</div>
-    ${list.map(d=>{const yr=donorTotals(d).year,cs=curSym(d);return `<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvMemberType(d)?kvTypeLabel(kvMemberType(d)):'אין קוויטל'}</span> <span class="kvyear ${yr>0?'':'zero'}">💵 השנה: ${cs}${yr}</span> <span class="opencard">↗ כרטיס</span></div>
+    ${list.map(d=>{const yr=donorTotals(d).year,cs=curSym(d);return `<div class="kblock kvmiss" data-id="${d.id}"><div class="who wholink" data-did="${d.id}">${esc((d.last+' '+d.first).trim())} <span class="kvtag">${kvMemberType(d)?kvTypeLabel(kvMemberType(d)):(kvSmallFixed(d)?'ללא — קבוע '+curSym(d)+Math.round(amtNum(d.amount)):'אין קוויטל')}</span> <span class="kvyear ${yr>0?'':'zero'}">💵 השנה: ${cs}${yr}</span> <span class="opencard">↗ כרטיס</span></div>
       ${contactBtns(d)}
       <div class="kvmissrow"><div class="names" contenteditable="true" data-newdid="${d.id}" data-ph="שם לתפילה — הקלד כאן"></div><button class="kvskip" data-skip="${d.id}" title="לא ביקש קוויטל">✓ לא ביקש</button></div>
       <div style="text-align:left;margin-top:4px"><button class="tinydel kvdeldonor" data-del="${d.id}">🗑 מחק תורם לגמרי</button></div></div>`;}).join('')||'<div class="empty">🎉 אין חסרים — לכל המסומנים בקוויטל יש שם</div>'}`;
@@ -4831,10 +4835,14 @@ function prayerKvType(pt,d){
   d=d||{};
   if(isOccDonor(d))return 'occ';
   if(d.tier)return kvMemberType(d)||'other';
+  // לתורם מזוהה שאין לו דרגה — "ללא" — התווית הישנה על שורת השם אינה
+  // מחזירה אותו פנימה. רק שם לא־משויך, שאין לו כרטיס להישען עליו,
+  // נקבע לפי התווית שעליו.
+  if(d.id)return 'other';
   if(pt==='יששכר_זבולון')return 'iz';
   if(pt==='קוויטל_101')return '101';
   if(pt==='שבועי'||pt==='קוויטל_שבועי'||pt==='קוויטל_כללי')return 'weekly';
-  return kvMemberType(d)||'other';   // אין תווית ואין דרגה — לפי הכלל הישן
+  return 'other';
 }
 let kvListQ='';
 function renderKvList(type){
@@ -4842,22 +4850,27 @@ function renderKvList(type){
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2" id="kvcnt"></span><button class="print noprint" onclick="window.print()">הדפס 🖨️</button></div>
     <input class="avsearch noprint" id="kvsearch" placeholder="🔍 חפש שם תורם או שם שמוזכר בקוויטל…" value="${esc(kvListQ)}" autocomplete="off">
     <div class="hintxt noprint" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.</div>
+    <div class="hintxt noprint" id="kvout" style="margin:0 2px 8px"></div>
     <div id="kvlistwrap"></div>`;
   document.getElementById('kvback').onclick=()=>{kvListQ='';kvSub=null;render();};
   const si=document.getElementById('kvsearch');
+  // הכללי מאגד את שלוש הדרגות האמיתיות בלבד. "מזדמן" ו"ללא" אינם דרגה
+  // ואינם נכנסים אליו — מאיר: "כל מי שיש לו קוויטל ללא צריך לצאת לגמרי".
+  const KVREAL=['iz','101','weekly'];
+  const inType=t=>type==='klali'?KVREAL.includes(t):(t===type);
   function paint(){
-    let entries=[]; let nOcc=0;
+    let entries=[]; let nOcc=0, nNone=0;
     DB.forEach(d=>{
       const prs=(d.prayers||[]);
-      prs.forEach(p=>{const t=prayerKvType(p.tier,d);const inc=type==='klali'?(t!=='occ'):(t===type);
-        if(inc)entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id});
-        else if(type==='klali'&&t==='occ')nOcc++;});
-      // מי שאין לו עדיין שם — גם כאן מזדמן אינו נכנס לכללי
+      prs.forEach(p=>{const t=prayerKvType(p.tier,d);
+        if(inType(t))entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id});
+        else if(type==='klali'){ if(t==='occ')nOcc++; else nNone++; }});
+      // מי שאין לו עדיין שם — נכנס לפי אותו כלל בדיוק
       if(!prs.length&&!(+d.kv_skip)){const t=kvMemberType(d);
-        const inc=t&&(type==='klali'?(t!=='occ'):(t===type));
-        if(inc)entries.push({id:null,newdid:d.id,text:'',donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,needname:true});}
+        if(t&&inType(t))entries.push({id:null,newdid:d.id,text:'',donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,needname:true});}
     });
-    UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
+    UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);
+      if(inType(t))entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
     const nq=norm(kvListQ);
     if(nq)entries=entries.filter(e=>norm(e.donor+' '+e.text).includes(nq));
     entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
@@ -4868,6 +4881,12 @@ function renderKvList(type){
       if(!gmap[k]){gmap[k]={key:k,donor:e.donor,last:e.last,did:e.did,loose:e.loose,items:[]};groups.push(gmap[k]);}
       gmap[k].items.push(e);});
     document.getElementById('kvcnt').textContent='('+groups.length+(groups.length!==entries.length?(' · '+entries.length+' רשומות'):'')+')';
+    // מי לא נכנס ולמה — שלא ייעלם מישהו בשקט
+    const outEl=document.getElementById('kvout');
+    if(outEl)outEl.innerHTML=(type==='klali'&&(nOcc||nNone))
+      ? 'לא נכללים כאן: '+[nOcc?(nOcc+' מזדמנים'):'',nNone?(nNone+' בדרגה "ללא"'):'']
+          .filter(Boolean).join(' · ')+'. כדי לצרף מישהו — קבע לו דרגת קוויטל בכרטיס.'
+      : '';
     document.getElementById('kvlistwrap').innerHTML=groups.map(g=>{
       const empty=!g.items.some(e=>(e.text||'').trim());
       const needname=g.items.some(e=>e.needname);
