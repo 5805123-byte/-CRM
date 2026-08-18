@@ -2191,7 +2191,8 @@ function wireCommit(d,body){
     nightbox.classList.toggle('hidden', !isNightCat(c));
     det.placeholder=isBldgCat(c)
       ? 'מה בדיוק תרם בבניין? — למשל: כיסוי רדיאטורים ומעקות'
-      : 'פירוט אצל התורם הזה בלבד (לא נשמר ברשימת הייעודים)';
+      : (/כולל/.test(c)?'איזה כולל? — למשל: כולל הוראה (נשאר אצלו בלבד)'
+        :'פירוט אצל התורם הזה בלבד (לא נשמר ברשימת הייעודים)');
     nfld.classList.toggle('hidden', plan.value!=='inst');
     const a=amtNum(amt.value), n=parseInt(nfld.value,10)||0;
     calc.textContent=(plan.value==='inst'&&a>0&&n>0)
@@ -3003,7 +3004,7 @@ function cardKvittel(d,body){
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
 }
 /* חיובים מאוטרייז/בנק ווסט שטרם אושרו — אישור ישירות מכרטיס התורם */
-const RCATS=['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','הבניין הקדוש'];
+const RCATS=['','קבוע','יששכר־זבולון','כולל יום','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','הבניין הקדוש'];
 const RPARNES=['פרנס לילה','חדר קפה','ארוחת בוקר'];
 function pendCount(d){return (d.recon_pending||[]).length+(d.intake_pending||[]).length;}
 function reconPendHTML(d){
@@ -3232,7 +3233,7 @@ function giveNote(x){
 }
 // רשימת הייעודים לבחירה — הקבועים שלנו + כל המגביות, ואפשרות להוסיף חדש בלי לצאת מהשורה
 const DNMETH=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','זל','קפיטל 1','בנק ווסט','אוטורייז','דונרס פאנד','OJC','נדרים'];
-const DNBASE=['קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','הבניין הקדוש','מזדמן','חד-פעמי'];
+const DNBASE=['קבוע','יששכר־זבולון','כולל יום','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','הבניין הקדוש','מזדמן','חד-פעמי'];
 function dnCatList(){return DNBASE.concat((CAMPAIGNS||[]).filter(c=>c&&!DNBASE.includes(c)));}
 // ייעוד התורם יכול להיות כמה דברים יחד — למשל יששכר־זבולון וגם נר למאור.
 // נשמר בשדה אחד מופרד ב־" · ", כמו שזה גם מוצג בראש הכרטיס.

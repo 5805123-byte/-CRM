@@ -19,7 +19,7 @@
   #cbody{width:100%;display:flow-root}
   /* גדלים יחסיים ל-font-size של .content שנקבע אוטומטית למילוי הדף */
   .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
-  .date{font-size:1.55em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;width:100%}
+  .date{font-size:1em;font-weight:800;color:var(--deep);margin:.5em 0 .35em;width:100%}
   .stand{font-size:.65em;font-weight:600;margin-bottom:.15em;width:100%}
   .stand.off{display:none}
   .pair{width:100%;margin:.15em 0 .35em;position:relative}
@@ -31,7 +31,9 @@
   .names .ndon,.cnames .ndon{font-size:.85em;font-weight:700;display:inline-block;margin-bottom:.12em}
   .names .ndon .nsm,.cnames .ndon .nsm,.names .ndon .nreq,.cnames .ndon .nreq{font-size:.8em}
   /* הבקשה — קטנה יותר מהשם, כדי שהשמות יבלטו הכי חזק */
-  .names .nreq,.cnames .nreq{font-size:.5em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
+  .names .nreq,.cnames .nreq{font-size:.41em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
+  /* "לעילוי נשמת" — חצי מהשם, ומתכווץ יחד איתו כשהוא מוקטן כדי להיכנס */
+  .names .nlead,.cnames .nlead{font-size:.5em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
   /* שם שלם בשורה אחת — אם הוא ארוך מדי הוא מוקטן ולא נשבר באמצע */
   .nline{display:block;white-space:nowrap}
   .nrow{display:block}
@@ -118,7 +120,7 @@ const RELWORD=/^(אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|א�
 const MARKW=/^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|האשה|מרת|הרב|רבי)$/;
 const FILLW=/^(הנישאים|הנישאין|הנישאת|היום|שיחיו|יחיו|תחיו|עב["'״׳]?ג|עם|ואשתו|ורעייתו|ורעיתו)$/;
 // תחילת הברכה שאחרי השמות — רק מילים חד-משמעיות, כדי ש"טובה" כשם פרטי לא תחתוך שם
-const TAILW=/^שה|^(ה?חופה|יהיה|יהא|תהיה|שיהיה|שתהיה|בשעה|ו?מוצלחת|עדי|קיימא|דורות|ישרים|מבורכים|אמן|במהרה|בקרוב|לתורה|ולחופה|ולמעש[יי]ם|בזש["'״׳]?ט)$/;
+const TAILW=/^שה|^(שיזכו|שיזכה|שתזכה|ה?חופה|יהיה|יהא|תהיה|שיהיה|שתהיה|בשעה|ו?מוצלחת|עדי|קיימא|דורות|ישרים|מבורכים|אמן|במהרה|בקרוב|לתורה|ולחופה|ולמעש[יי]ם|בזש["'״׳]?ט)$/;
 // גבולות השמות: לפניהם תארים, אחריהם הברכה — שניהם בקטן, השמות בגדול
 function nameSpan(ws){
   const n=ws.length; let i=0;
@@ -136,11 +138,14 @@ function nameSpan(ws){
   return [i,j];
 }
 // "לע\"נ אביו" בשורה משלו, כל שם בשורה משלו, והברכה בשורה קטנה מתחת
-function dedPart(ws){
+function dedPart(ws, trailing){
   const k=leadLen(ws);
   let r=k;
   while(r<ws.length && RELWORD.test(ws[r])) r++;
-  const sm=w=>`<span class="nreq">${esc(w)}</span>`;
+  // שורה שכולה פתיח ואין אחריה שם: אם היא באה אחרי השם היא הבקשה
+  // ("לרפואה שלמה") ובגודל הנוסח, ואם היא פותחת — היא הפתיח, חצי מהשם
+  if(k>0 && r>=ws.length)
+    return `<span class="nrow ${trailing?'nreq':'nlead'}">${ws.map(w=>esc(w)).join(' ')}</span>`;
   if(k>0 && r<ws.length) return bodyPart(ws.slice(r), ws.slice(0,r));
   return bodyPart(ws);
 }
@@ -150,12 +155,13 @@ const TITLEW=/^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|ה�
 function bodyPart(ws, lead){
   const [a,b]=nameSpan(ws), out=[];
   const sm=l=>`<span class="nrow nreq">${l.map(w=>esc(w)).join(' ')}</span>`;
+  const smL=l=>`<span class="nrow nlead">${l.map(w=>esc(w)).join(' ')}</span>`;
   const nl=w=>`<span class="nline">${w}</span>`;      // שם שלם בשורה אחת, מתכווץ אם צריך
   const head=(lead||[]).concat(ws.slice(0,a));
-  if(head.length) out.push(sm(head));
+  if(head.length) out.push(smL(head));
   const emit=seg=>{
     let t=0; while(t<seg.length-1 && TITLEW.test(seg[t])) t++;
-    if(t) out.push(sm(seg.slice(0,t)));
+    if(t) out.push(smL(seg.slice(0,t)));
     out.push(nl(fmtWords(seg.slice(t))));
   };
   let cur=[];
@@ -178,7 +184,7 @@ function formatName(line, donorLine){
   if(!LEADWORD.test(ws[0]))
     for(let k=1;k<ws.length;k++){ if(LEADWORD.test(ws[k])){ ded=k; break; } }
   // מי תורם ועבור מה הוא תורם — תמיד בשתי שורות נפרדות
-  if(ded>0) return `<span class="nrow ndon">${fmtWords(ws.slice(0,ded))}</span>`+dedPart(ws.slice(ded));
+  if(ded>0) return `<span class="nrow ndon">${fmtWords(ws.slice(0,ded))}</span>`+dedPart(ws.slice(ded),1);
   if(LEADWORD.test(ws[0])) return dedPart(ws);
   const body=bodyPart(ws);
   return donorLine ? `<span class="ndon">${body}</span>` : body;
@@ -223,13 +229,22 @@ function fit(){
 }
 // שם ארוך מתכווץ כדי להישאר בשורה אחת, במקום להישבר באמצע
 function fitNames(c){
+  c.querySelectorAll('.nlead').forEach(el=>{el.style.fontSize='';});
+  const fac=new Map();
   c.querySelectorAll('.nline').forEach(el=>{
     el.style.fontSize='';
     const box=el.parentElement, avail=box?box.clientWidth:0;
     if(!avail) return;
     const w=el.scrollWidth;
-    if(w>avail) el.style.fontSize=Math.max(.5, avail/w).toFixed(3)+'em';
+    if(w>avail){
+      const f=Math.max(.5, avail/w);
+      el.style.fontSize=f.toFixed(3)+'em';
+      const k=box; fac.set(k, Math.min(fac.get(k)||1, f));
+    }
   });
+  // "לעילוי נשמת" חייב להישאר חצי מהשם — גם אחרי שהשם הוקטן כדי להיכנס
+  fac.forEach((f,box)=>box.querySelectorAll('.nlead')
+    .forEach(el=>{el.style.fontSize=(.5*f).toFixed(3)+'em';}));
 }
 const wire = el => el.querySelectorAll('[contenteditable]').forEach(e=>e.addEventListener('input', fit));
 

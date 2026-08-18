@@ -4738,8 +4738,8 @@ _DON_R = .85        # שם התורם ביחס לשם שמתפללים עליו
 _SML_R = .42        # תארים, קרבה ומילות קישור
 # היכן נגמר השם ומתחילה הבקשה. מכאן והלאה האותיות קטנות יותר, כדי שהשם
 # ושם האם יקבלו את הדגש החזק ביותר בתעודה.
-_REQ_R = .42        # גודל הבקשה ביחס לשם
-_LEAD_R = .5        # הפתיח ("לעילוי נשמת") והברכה — תמיד קטנים מהשם עצמו
+_REQ_R = .41        # הבקשה חוזרת לגודל של "יהי רצון" (1.0 מתוך 2.45)
+_LEAD_R = .5        # "לעילוי נשמת" — חצי מהשם כפי שהוא נדפס בפועל
 _FIT_MIN = .5       # עד כמה מותר להקטין שורת שמות כדי שתישאר שורה אחת
 # מאיר: "איפה שכתוב לעילוי נשמת — תוריד את המילים יהיו ויעמדו לזכות"
 _NESHAMA = re.compile(r'לעילוי|לע["\'\u05f4\u05f3]?נ(\s|$)|נשמת')
@@ -4776,7 +4776,7 @@ _CERT_FILL = re.compile(r'^(הנישאים|הנישאין|הנישאת|היום|
                         r'עב["\'״׳]?ג|עם|ואשתו|ורעייתו|ורעיתו)$')
 # תחילת הברכה שאחרי השמות. רק מילים חד-משמעיות, כדי ש"טובה" או "נחת"
 # כשם פרטי לא יחתכו את השם באמצע.
-_CERT_TAIL = re.compile(r'^שה|^(ה?חופה|יהיה|יהא|תהיה|שיהיה|שתהיה|בשעה|ו?מוצלחת|'
+_CERT_TAIL = re.compile(r'^שה|^(שיזכו|שיזכה|שתזכה|ה?חופה|יהיה|יהא|תהיה|שיהיה|שתהיה|בשעה|ו?מוצלחת|'
                         r'עדי|קיימא|דורות|ישרים|מבורכים|אמן|במהרה|בקרוב|'
                         r'לתורה|ולחופה|ולמעש[יי]ם|בזש["\'״׳]?ט)$')
 
@@ -4829,6 +4829,11 @@ def _cert_lines(text):
             j = i
             while j < len(ws) and _CERT_REL.match(ws[j]):
                 j += 1
+            # שורה שכולה פתיח ואין אחריה שם: אחרי שם התורם זו הבקשה
+            # ("לרפואה שלמה") בגודל הנוסח, ובתחילת הבלוק זה הפתיח — חצי מהשם
+            if i > 0 and j >= len(ws):
+                out.append((' '.join(ws), 'req' if ded > 0 else 'lead'))
+                continue
             # כל הפתיח בשורה משלו ובקטן — גם "לעילוי נשמת" בלי מילת קרבה
             if i > 0 and j < len(ws):
                 out.extend(_cert_body(ws[:j], ws[j:]))
@@ -4922,7 +4927,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     else:
         blocks = [('יהי רצון שזכות הלימודים והתפילות הנעשים כאן בכולל חצות '
                    'בעת רצון הגדול של חצות הלילה עד הבוקר', 1.0, False, _INK, 0, 0, 1.45, 0),
-                  (date, 1.55, True, _DEEP, .5, .35, 1.3, 0),
+                  (date, 1.0, True, _DEEP, .5, .35, 1.3, 0),
                   ('' if _NESHAMA.search(names or '') else 'יהיו ויעמדו לזכות',
                    .65, False, _INK, 0, .15, 1.35, 0),
                   (names, 2.45, True, _BLACK, .15, .3, 1.14, 1)]
@@ -4942,8 +4947,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         התורם קטן ממנו, ותארים/קרבה/בקשה הכי קטנים. הקביעה נעשית פעם אחת
         על השורה השלמה, כדי שהיא תישמר גם אחרי שבירת שורה."""
         ws = raw.split()
-        if role in ('lead', 'req'):        # "לע\"נ אביו" / הברכה שאחרי השמות
+        if role == 'lead':                 # "לעילוי נשמת" / "לע\"נ אביו"
             return [(w, px * _LEAD_R, True) for w in ws]
+        if role == 'req':                  # הבקשה שאחרי השמות
+            return [(w, px * _REQ_R, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         n, out = _lead_len(ws), []
@@ -4968,11 +4975,26 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         הקבוע והתאריך נכתבים כלשונם, אחרת "יהיו ויעמדו לזכות" נשבר ומוקטן."""
         lines = []
         src = _cert_lines(text) if is_name else [(l, '') for l in str(text or '').split('\n')]
+
+        def _fit(raw):
+            """כמה שורת השמות צריכה להתכווץ כדי להיכנס לרוחב התיבה."""
+            full = _join(sized(raw, px, heavy, 'names'))
+            wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
+            f = (bw / wpx) if wpx > bw else 1.0
+            return f if f >= _FIT_MIN else 1.0
+
+        # מאיר: "לעילוי נשמת בחצי מהגודל של השם". השם מתכווץ כדי להיכנס
+        # בשורה אחת, ולכן גם הפתיח שמעליו מתכווץ באותה מידה — אחרת הוא
+        # יוצא גדול כמעט כמו השם עצמו.
+        leadf = min([_fit(r) for r, ro in src if ro == 'names'] or [1.0])
+
         for raw, role in src:
             ws = (sized(raw, px, heavy, role) if is_name
                   else [(w, px, heavy) for w in raw.split()])
             if not ws:
                 lines.append([]); continue
+            if role == 'lead' and leadf < 1.0:
+                ws = [(t, z * leadf, h) for t, z, h in ws]
             # מאיר: "את השם של החתן והכלה תכתוב בגדול ממש בשורה אחת".
             # לכן שורת השמות מתכווצת כדי להיכנס, במקום להישבר לשתיים.
             if role == 'names':
