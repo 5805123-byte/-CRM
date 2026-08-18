@@ -1997,6 +1997,7 @@ function commitRows(d){
   if(iza>0.5||izPl.length)
     rows.push({iz:1,what:'יששכר־זבולון',icon:'🤝',mo:1,amt:iza,
       pid:(izPl.length===1?izPl[0].id:''),
+      guess:!izPl.length,
       praw:'',note:String(d.iz_note||'')});
   pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>{
     const plan=plPlan(d,p);
@@ -2019,8 +2020,11 @@ function commitHTML(d){
   const mo=rows.filter(r=>r.mo).reduce((s,r)=>s+r.amt,0);
   const inst=rows.filter(r=>r.inst).reduce((s,r)=>s+r.plan.per,0);
   const line=r=>{
-    const amt=r.pid
-      ? `<input class="cmamt" data-pid="${r.pid}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
+    // גם שורת יששכר־זבולון ניתנת לתיקון ידני. מאיר על פינטער: "הוא התחייב
+    // 12,000 לכולל הוראה ועוד 800 ליששכר־זבולון עם המלי" — הסכום שהמערכת
+    // הסיקה מהגבייה הוא הצעה בלבד, ומה שנכתב כאן גובר עליו.
+    const amt=(r.pid||r.iz)
+      ? `<input class="cmamt" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
       : `<b class="cmfix">${r.amt?f(r.amt):'—'}</b>`;
     const tag=r.mo?'קבוע':(r.inst?'בתשלומים':'חד־פעמי');
     // התחייבות בתשלומים מתעדכנת לבד לפי מה שנגבה בייעוד הזה
@@ -2047,6 +2051,7 @@ function commitHTML(d){
       <div class="cmhead"><span class="cmwhat">${r.icon} ${esc(r.what)}</span>
         ${amt}<span class="cmtag ${r.mo?'mo':(r.inst?'inst':'one')}">${tag}</span>
         ${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
+      ${r.guess?'<div class="cmguess">הסכום הזה הוסק מהגבייה בפועל — אפשר לתקן אותו כאן</div>':''}
       ${r.avreich?`<div class="cmav">👨‍🎓 ${esc(r.avreich)}</div>`:''}
       ${prog}${paid}
       ${note}
@@ -2124,9 +2129,34 @@ function wireCommit(d,body){
       detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||''});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
   box.querySelectorAll('.cmamt').forEach(inp=>inp.onchange=async()=>{
-    const p=pOf(inp.dataset.pid); if(!p)return;
-    await putPl(p,{amount:inp.value.trim()}); await syncAmt();
-    toast('נשמר ✓'); redraw();});
+    if(inp.dataset.busy)return; inp.dataset.busy='1';
+    try{ await saveAmt(inp); } finally{ delete inp.dataset.busy; }});
+  const saveAmt=async inp=>{
+    const v=inp.value.trim();
+    let p=pOf(inp.dataset.pid);
+    // תיקון שורת יששכר־זבולון שאין לה עדיין שורה משלה — נפתחת אחת,
+    // ומאותו רגע הסכום שנכתב הוא הקובע ולא ההערכה מהגבייה.
+    // אם כבר יש שורת יש"ז — מעדכנים אותה, ולא פותחים עוד אחת.
+    if(!p&&inp.dataset.iz)
+      p=(d.pledges||[]).find(x=>+x.monthly&&isIZcat(x.category));
+    if(!p&&inp.dataset.iz){
+      const r=await api('POST','/api/pledge',{donor_id:d.id,category:'יששכר־זבולון',
+        amount:v,status:'נתן',monthly:1,paid:''});
+      if(!r||!r.id){toast('לא נשמר');return;}
+      p={id:r.id,donor_id:d.id,category:'יששכר־זבולון',amount:v,status:'נתן',
+         monthly:1,paid:'',note:'',detail:'',permo:'',avreich:'',date:todayStr()};
+      d.pledges=(d.pledges||[]).concat([p]);
+    }
+    if(!p)return;
+    await putPl(p,{amount:v});
+    // אברך יחיד — הסכום שלו הולך יחד עם ההתחייבות, שלא יישארו שני מספרים
+    if(inp.dataset.iz!==undefined||isIZcat(p.category)){
+      const act=(d.partners||[]).filter(x=>x.active!=0);
+      if(act.length===1&&amtNum(act[0].amount)!==amtNum(v)){
+        act[0].amount=v; await api('PUT','/api/partner/'+act[0].id,{amount:v});
+      }
+    }
+    await syncAmt(); toast('נשמר ✓'); redraw();};
   box.querySelectorAll('.cmpd').forEach(inp=>inp.onchange=async()=>{
     const p=pOf(inp.dataset.pid); if(!p)return;
     const paid=inp.value.trim();
