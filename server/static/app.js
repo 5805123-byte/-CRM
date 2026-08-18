@@ -1937,20 +1937,20 @@ function izRealMonthly(d){
   return (bn>=2&&bn*2>ks.length)?best:0;
 }
 function izOther(d){
-  return (d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0
+  return (d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0&&plReal(p)
       &&!/יששכר/.test(String(p.category||''))).reduce((a,p)=>a+amtNum(p.amount),0);
 }
 // מה שיוצא מהתורם כל חודש בפועל: הקבועים + התשלום החודשי של התחייבות
 // בתשלומים. אחרי שמאיר רושם את התשלומים, האזהרה נסגרת מעצמה.
 function instPerMonth(d){
-  return (d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.permo)>0
+  return (d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.permo)>0&&plReal(p)
       &&plLeft(d,p)>0.5).reduce((a,p)=>a+amtNum(p.permo),0);
 }
 // להשוואה מול הגבייה של יששכר־זבולון סופרים רק התחייבויות שהכסף שלהן
 // עדיין יושב בתוך אותו זרם. התחייבות שהתשלומים שלה כבר משויכים אליה
 // (כמו הבניין אצל אברמוביץ) נגבית בנפרד ואין להוסיף אותה שוב.
 function izStreamOther(d){
-  return (d.pledges||[]).filter(p=>!/יששכר/.test(String(p.category||''))
+  return (d.pledges||[]).filter(p=>!/יששכר/.test(String(p.category||''))&&plReal(p)
       &&plCollected(d,p)<=0.5)
     .reduce((a,p)=>a+(+p.monthly?amtNum(p.amount)
       :(amtNum(p.permo)>0&&plLeft(d,p)>0.5?amtNum(p.permo):0)),0);
@@ -2015,7 +2015,9 @@ function monthsTo(fromYM,toYM){
    הכסף מחולק בין ההתחייבויות לפי החלוקה שנרשמה, כי בבנק הוא נכנס
    בחיוב אחד בלי פירוט. */
 function purposeAlloc(d){
-  const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5);
+  // רק התחייבות שמאיר רשם ושעדיין בתוקף נכנסת לחשבון. סכום שהמערכת הסיקה
+  // מהגבייה אינו התחייבות, ואסור שייצור חוב.
+  const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5&&r.conf>0&&!r.ended);
   if(!rows.length)return null;
   const thru=dataThru(), yr=thru.slice(0,4);
   // תחילת הספירה: החודש הראשון שנכנס בו כסף השנה, ולא לפני תחילת השנה
@@ -2102,7 +2104,7 @@ function izGapNote(d){
     +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')+`</div>`;
 }
 function monthlyRows(d){
-  const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
+  const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0&&plReal(p));
   const izPl=pl.filter(p=>/יששכר/.test(String(p.category||'')));
   const iza=izRowAmt(d);
   if(iza>0)rows.push(['🤝 יששכר־זבולון',iza]);
@@ -2121,28 +2123,58 @@ function plWhat(p){
   const c=String(p.category||'').trim()||'התחייבות', t=String(p.detail||'').trim();
   return t?(c+' — '+t):c;
 }
+/* ---------- מה מאיר רשם, ומה המערכת רק ראתה ----------
+   מאיר: "אל תכתוב לי סתם סכומים בקבוע שהוא התחייב כזה סכום כי לעולם הוא
+   לא התחייב כזה סכום". השדה הקבוע שבכרטיס הגיע מהייבוא — אצל חלק הוא
+   החיוב החודשי ואצל חלק סך התרומות — ולכן שום סכום שלא נרשם ביד אינו
+   התחייבות ואינו יוצר חוב. שלושה מצבים לשורה:
+     1  — מאיר רשם. זו התחייבות, ורק היא נכנסת לחשבון.
+     0  — המערכת הסיקה מהגבייה. הצעה שממתינה לאישור.
+    -1  — נקבע שאין סכום התחייבות (תורם שמכניס מדי פעם לאתר).           */
+const plConf=p=>(p&&p.confirmed!=null)?+p.confirmed:1;
+const plEnded=p=>String((p&&p.status)||'')==='הסתיים';
+// רק שורה שנרשמה ביד ועדיין בתוקף נחשבת התחייבות לכל חישוב
+const plReal=p=>plConf(p)>0&&!plEnded(p);
+function monthlyPledgesReal(d){return (d.pledges||[]).filter(p=>+p.monthly&&plReal(p));}
+// מה שנכנס מהתורם בשנה הנוכחית — המספר שמוצג במקום סכום שהומצא
+function obsYear(d){
+  const by={};
+  (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
+    if(m.length===7&&m.slice(0,4)===GREGYEAR)by[m]=(by[m]||0)+amtNum(x.amount);});
+  const ms=Object.keys(by).sort(), sum=ms.reduce((a,m)=>a+by[m],0);
+  return {sum, n:ms.length, first:ms[0]||'', last:ms[ms.length-1]||'',
+          per:ms.length?sum/ms.length:0};
+}
 const isNightCat=c=>/פרנס|חדר קפה|ארוחת בוקר/.test(String(c||''));
 function commitRows(d){
   const rows=[], pl=(d.pledges||[]);
   const izPl=pl.filter(p=>+p.monthly&&/יששכר/.test(String(p.category||'')));
   // יששכר־זבולון הוא אותו כסף של האברכים — שורה אחת בלבד, לא פעמיים
   const iza=izRowAmt(d);
-  if(iza>0.5||izPl.length)
+  if(iza>0.5||izPl.length){
+    // יששכר־זבולון נחשב רשום כשיש לו שורה מפורשת או אברכים עם סכום —
+    // ואם הסכום רק הוסק מהגבייה, זו הצעה ולא התחייבות.
+    let byav=0; try{byav=izSummary(d).monthly*( (d.partners||[]).some(p=>p.active!=0)?1:0 );}catch(e){}
+    const izReal=izPl.some(p=>plConf(p)>0)||byav>0.5;
     rows.push({iz:1,what:'יששכר־זבולון',icon:'🤝',mo:1,amt:iza,
       pid:(izPl.length===1?izPl[0].id:''),
+      conf:izReal?1:0, ended:izPl.length===1&&plEnded(izPl[0]),
       guess:!izPl.length,
       praw:'',note:String(d.iz_note||'')});
+  }
   pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>{
     const plan=plPlan(d,p);
     rows.push({pid:p.id,what:plWhat(p),
-      icon:+p.monthly?'🔁':(plan?'📆':'🎯'),
+      icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
+      conf:plConf(p), ended:plEnded(p),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
       avreich:String(p.avreich||''), note:String(p.note||'')});});
-  // סכום קבוע שנשאר בשדה הישן בלי שורה משלו — שיראו אותו, ולא ייעלם
+  // סכום קבוע שנשאר בשדה הישן בלי שורה משלו — מוצג כהצעה בלבד, כי גם
+  // הוא הגיע מהייבוא ולא ממאיר
   if(!rows.length&&amtNum(d.amount)>0)
-    rows.push({legacy:1,what:(purposeList(d)[0]||'קבוע'),icon:'🔁',mo:1,
+    rows.push({legacy:1,what:(purposeList(d)[0]||'קבוע'),icon:'🔁',mo:1,conf:0,
       amt:amtNum(d.amount),praw:'',note:''});
   return rows;
 }
@@ -2150,19 +2182,38 @@ function commitHTML(d){
   const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   const rows=commitRows(d), av=(d.partners||[]).filter(p=>p.active!=0);
   const tier=TIERS[d.tier]?(d.tier==='יששכר_זבולון'?'יששכר־זבולון':('קוויטל '+TIERS[d.tier][0])):'';
-  const mo=rows.filter(r=>r.mo).reduce((s,r)=>s+r.amt,0);
-  const inst=rows.filter(r=>r.inst).reduce((s,r)=>s+r.plan.per,0);
+  // בסיכום למעלה נספר רק מה שנרשם ביד ועדיין בתוקף
+  const real=rows.filter(r=>r.conf>0&&!r.ended);
+  const mo=real.filter(r=>r.mo).reduce((s,r)=>s+r.amt,0);
+  const inst=real.filter(r=>r.inst).reduce((s,r)=>s+r.plan.per,0);
+  const ob=obsYear(d);
+  // שורה שהסכום שלה הוסק מהגבייה, או שנקבע שאין בה סכום — אין ממנה חוב,
+  // ורואים בה רק מה שבאמת נכנס. מכאן מאיר מאשר או מבטל בלחיצה אחת.
+  const askLine=r=>{
+    const btns=`<div class="cmask-b noprint">`
+      +(r.amt>0.5?`<button class="btn sm cmyes" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>✓ כן — ${f(r.amt)} לחודש</button>`:'')
+      +`<button class="btn sm ghost cmno" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>✕ לא התחייב סכום</button></div>`;
+    if(r.conf<0)
+      return `<div class="cmask off">🔁 נותן מדי פעם, בלי סכום קבוע — אין כאן חוב.`
+        +(ob.sum>0.5?` נכנס ממנו השנה <b>${f(ob.sum)}</b> ב-${ob.n} ${ob.n===1?'חודש':'חודשים'}.`:'')
+        +`<div class="cmask-b noprint"><button class="btn sm ghost cmset" data-pid="${r.pid||''}">✎ בעצם כן התחייב סכום</button></div></div>`;
+    return `<div class="cmask">❔ לא רשום שהוא התחייב סכום. ${r.legacy?'הסכום':'הסכום שכאן'} הגיע מהייבוא, לא ממך.`
+      +(ob.sum>0.5?` בפועל נכנס ממנו השנה <b>${f(ob.sum)}</b> ב-${ob.n} ${ob.n===1?'חודש':'חודשים'} — ${f(ob.per)} בממוצע לחודש.`:' ולא נכנס ממנו כסף השנה.')
+      +` אפשר לאשר, לתקן את הסכום למעלה, או לקבוע שאין התחייבות.${btns}</div>`;
+  };
   const line=r=>{
     // גם שורת יששכר־זבולון ניתנת לתיקון ידני. מאיר על פינטער: "הוא התחייב
     // 12,000 לכולל הוראה ועוד 800 ליששכר־זבולון עם המלי" — הסכום שהמערכת
     // הסיקה מהגבייה הוא הצעה בלבד, ומה שנכתב כאן גובר עליו.
+    const ask=r.conf<=0;                       // סכום שלא נרשם ביד — לא חוב
     const amt=(r.pid||r.iz)
       ? `<input class="cmamt" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
       : `<b class="cmfix">${r.amt?f(r.amt):'—'}</b>`;
-    const tag=r.mo?'קבוע':(r.inst?'בתשלומים':'חד־פעמי');
+    const tag=r.ended?'הסתיים':(ask?(r.conf<0?'בלי סכום':'לא אושר')
+                                   :(r.mo?'קבוע':(r.inst?'בתשלומים':'חד־פעמי')));
     // התחייבות בתשלומים מתעדכנת לבד לפי מה שנגבה בייעוד הזה
     const pn=r.plan||{};
-    const prog=r.inst
+    const prog=(r.inst&&!ask&&!r.ended)
       ? `<div class="cminst">📆 ${f(pn.per)} לחודש${pn.from?(' · החל מ'+esc(monthPlus(pn.from,0))):''}`
         +` · שולם ${f(r.amt-r.left)} מתוך ${f(r.amt)}`
         +(r.left>0.5?` · <b class="cmleft no">נשאר ${f(r.left)}</b> · עוד ${pn.n} ${pn.n===1?'תשלום':'תשלומים'}`
@@ -2179,7 +2230,7 @@ function commitHTML(d){
       : '';
     // תשלום אחד: ירוק כשנגבה, אדום עם "לא נגבה" כשעדיין לא
     const done=r.amt>0.5&&r.left<=0.5;
-    const paid=(!r.mo&&!r.inst&&r.pid)
+    const paid=(!r.mo&&!r.inst&&r.pid&&!ask&&!r.ended)
       ? `<span class="cmpaid ${r.amt?(done?'ok':'no'):''}">שילם <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
         +(r.amt?(done?'<b class="cmleft ok">✓ נגבה במלואו</b>'
                      :`<b class="cmleft no">נשאר ${f(r.left)}</b><small class="cmnog">לא נגבה</small>`):'')
@@ -2189,16 +2240,24 @@ function commitHTML(d){
       ? `<input class="cmnote" ${r.iz?'data-iz="1"':`data-pid="${r.pid}"`} value="${esc(r.note)}"`
         +` placeholder="${r.iz?('הערה: שילם מראש '+cur+'4,500, מכסה עד אלול'):'הערה'}">`
       : '<div class="hintxt">בחר עבור מה למטה כדי לקבוע לו שורה משלו</div>';
-    const st=(!r.mo&&r.amt>0.5)?(r.left<=0.5?' done':' owe'):'';
+    const st=r.ended?' ended':(ask?' ask'
+             :((!r.mo&&r.amt>0.5)?(r.left<=0.5?' done':' owe'):''));
+    // מאיר על קייזרי: "הוא התחייב בהתחלה את הסכומים שהוא נתן וזה נגמר לו,
+    // זה לא אומר שכל חודש עכשיו הוא צריך לשלוח" — התחייבות שהסתיימה
+    // נשארת לתיעוד, מסומנת, ואינה נכנסת לשום חשבון.
+    const endBtn=(r.pid&&!ask)
+      ? `<button class="cmendb noprint" data-pid="${r.pid}" data-on="${r.ended?1:0}"
+           title="${r.ended?'החזר לפעילה':'סמן שההתחייבות הסתיימה'}">${r.ended?'↩':'🏁'}</button>` : '';
     return `<div class="cmrow${st}">
       <div class="cmhead"><span class="cmwhat">${r.icon} ${esc(r.what)}</span>
-        ${amt}<span class="cmtag ${r.mo?'mo':(r.inst?'inst':'one')}">${tag}</span>
-        ${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
-      ${r.guess?'<div class="cmguess">הסכום הזה הוסק מהגבייה בפועל — אפשר לתקן אותו כאן</div>':''}
+        ${amt}<span class="cmtag ${r.ended?'end':(ask?'ask':(r.mo?'mo':(r.inst?'inst':'one')))}">${tag}</span>
+        ${endBtn}${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
+      ${ask?askLine(r):''}
+      ${r.ended?'<div class="cmask off">🏁 ההתחייבות הזו הסתיימה — היא לא נספרת יותר ואין ממנה חוב.</div>':''}
       ${r.avreich?`<div class="cmav">👨‍🎓 ${esc(r.avreich)}</div>`:''}
       ${prog}${paid}
       ${note}
-      ${r.iz?izGapNote(d):''}
+      ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav">👨‍🎓 ${esc(p.avreich||'—')}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
     </div>`;
   };
@@ -2276,7 +2335,8 @@ function wireCommit(d,body){
   const putPl=async(p,fields)=>{Object.assign(p,fields);
     await api('PUT','/api/pledge/'+p.id,{category:p.category||'',amount:p.amount||'',
       status:p.status||'',note:p.note||'',monthly:+p.monthly?1:0,paid:p.paid||'',
-      detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||''});};
+      detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||'',
+      confirmed:(p.confirmed!=null?+p.confirmed:1)});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
   // סכום ידני שנשאר לצד תשלומים שנקלטו במערכת יוצר שני מספרים סותרים
   // על אותה שורה. מה שנקלט הוא הקובע, ולכן הידני נמחק פעם אחת.
@@ -2307,7 +2367,8 @@ function wireCommit(d,body){
       d.pledges=(d.pledges||[]).concat([p]);
     }
     if(!p)return;
-    await putPl(p,{amount:v});
+    // סכום שנכתב כאן ביד הוא התחייבות מאושרת — מאותו רגע זו האמת ולא הצעה
+    await putPl(p,{amount:v,confirmed:1});
     // אברך יחיד — הסכום שלו הולך יחד עם ההתחייבות, שלא יישארו שני מספרים
     if(inp.dataset.iz!==undefined||isIZcat(p.category)){
       const act=(d.partners||[]).filter(x=>x.active!=0);
@@ -2327,6 +2388,48 @@ function wireCommit(d,body){
       await api('PUT','/api/donor/'+d.id,{iz_note:d.iz_note});toast('נשמר ✓');return;}
     const p=pOf(inp.dataset.pid); if(!p)return;
     await putPl(p,{note:inp.value.trim()}); toast('נשמר ✓');});
+  // ----- אישור סכום שהמערכת הסיקה, או קביעה שאין התחייבות בכלל -----
+  // שורה שאין לה עדיין רשומה משלה (יששכר־זבולון מוסק, או הסכום הישן
+  // שבכרטיס) נפתחת כאן פעם אחת, כדי שההחלטה תישמר ולא תחזור בכל טעינה.
+  const rowPledge=async b=>{
+    let p=pOf(b.dataset.pid);
+    if(p)return p;
+    const iz=!!b.dataset.iz;
+    const cat=iz?'יששכר־זבולון':((purposeList(d)[0]||'קבוע'));
+    if(iz)p=(d.pledges||[]).find(x=>+x.monthly&&isIZcat(x.category));
+    if(p)return p;
+    const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,
+      amount:'',status:'נתן',monthly:1,paid:'',confirmed:0});
+    if(!r||!r.id){toast('לא נשמר');return null;}
+    p={id:r.id,donor_id:d.id,category:cat,amount:'',status:'נתן',monthly:1,
+       paid:'',note:'',detail:'',permo:'',avreich:'',confirmed:0,date:todayStr()};
+    d.pledges=(d.pledges||[]).concat([p]);
+    return p;};
+  box.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.busy)return; b.dataset.busy='1';
+    try{
+      const p=await rowPledge(b); if(!p)return;
+      const row=b.closest('.cmrow'), inp=row&&row.querySelector('.cmamt');
+      const v=(inp&&inp.value.trim())||p.amount||'';
+      await putPl(p,{amount:v,confirmed:1});
+      await syncAmt(); toast('נרשם כהתחייבות ✓'); redraw();
+    } finally{ delete b.dataset.busy; }});
+  box.querySelectorAll('.cmno').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.busy)return; b.dataset.busy='1';
+    try{
+      const p=await rowPledge(b); if(!p)return;
+      await putPl(p,{amount:'',confirmed:-1});
+      await syncAmt(); toast('נקבע: אין סכום התחייבות'); redraw();
+    } finally{ delete b.dataset.busy; }});
+  box.querySelectorAll('.cmset').forEach(b=>b.onclick=async()=>{
+    const p=pOf(b.dataset.pid); if(!p)return;
+    await putPl(p,{confirmed:0}); toast('אפשר לכתוב את הסכום למעלה'); redraw();});
+  // התחייבות שנגמרה — נשארת לתיעוד ולא נספרת יותר
+  box.querySelectorAll('.cmendb').forEach(b=>b.onclick=async()=>{
+    const p=pOf(b.dataset.pid); if(!p)return;
+    const on=b.dataset.on==='1';
+    await putPl(p,{status:on?'נתן':'הסתיים'});
+    await syncAmt(); toast(on?'חזרה לפעילה':'סומן כהסתיים'); redraw();});
   box.querySelectorAll('.cmdel').forEach(b=>b.onclick=async()=>{
     const p=pOf(b.dataset.pid); if(!p)return;
     if(!await uiConfirm('למחוק את השורה "'+plWhat(p)+'"?'))return;
@@ -2566,7 +2669,8 @@ function pPaidCls(v){return +v===2?'setl':(+v===1?'yes':'no');}
 // הקבוע החודשי מפוצל לייעודים: קופסה לכל אחד (1500 יששכר־זבולון,
 // 4500 כולל יום). נשמר כהתחייבות חודשית, והסכום הקבוע הוא הסך הכל.
 function monthlyPledges(d){return (d.pledges||[]).filter(p=>+p.monthly);}
-function fixTotal(d){return monthlyPledges(d).reduce((s,p)=>s+amtNum(p.amount),0);}
+// הסכום הקבוע שבכרטיס נבנה רק ממה שנרשם ביד — לא מהצעות ולא ממה שהסתיים
+function fixTotal(d){return monthlyPledgesReal(d).reduce((s,p)=>s+amtNum(p.amount),0);}
 function debtSummary(d){
   const cur=curSym(d), rows=[];
   // יתרת פתיחה מלפני 2026 — המערכת מכירה רק מינואר 2026, ומה שהיה לפני
@@ -5343,11 +5447,31 @@ let OLD=null, oldSince='2024-01-01';
    ועם מקום להערה. מה שסומן "טופל" או "בסדר" יורד מהרשימה הפתוחה. */
 const RVST=[['ok','בסדר'],['check','צריך בדיקה'],['debt','חוב אמיתי'],['done','טופל']];
 let RVSTAT=null, RVSHOW='open';
+// תורמים שהסכום שלהם הגיע מהייבוא אבל הכסף ממשיך להיכנס כרגיל — אין שם
+// שום שאלה פתוחה, ואין סיבה להטריח את מאיר לעבור עליהם אחד־אחד
+let RVASKALL=false, RVQUIET=0;
 function reviewList(){
-  const out=[];
+  const out=[]; RVQUIET=0;
   (DB||[]).forEach(d=>{
     let a=null; try{a=purposeAlloc(d);}catch(e){}
-    if(!a||a.exp<=0.5)return;
+    // אין התחייבות רשומה, אבל יש סכום שהמערכת הסיקה מהייבוא. זו לא שאלה
+    // של חוב אלא של רישום: האם הוא בכלל התחייבות. מאיר עובר על אלה
+    // ומחליט אחד־אחד — וזו בדיוק הרשימה להדפסה.
+    if(!a||a.exp<=0.5){
+      let rows=[]; try{rows=commitRows(d);}catch(e){}
+      const ask=rows.filter(r=>r.conf===0&&r.amt>0.5);
+      if(!ask.length)return;
+      const ob=obsYear(d), cur=curSym(d);
+      // ממשיך לתת עד החודש האחרון שיש עליו נתונים — אין מה לשאול עליו
+      if(ob.sum>0.5&&ob.last>=dataThru()&&!RVASKALL){RVQUIET++;return;}
+      out.push({d, kind:'ask', gap:0, exp:0, got:ob.sum, per:Math.round(ob.per),
+        thru:'', rows:ask.map(r=>({what:r.what, per:r.amt})),
+        why:'לא רשום שהוא התחייב סכום. בכרטיס הופיע '+cur+Math.round(ask[0].amt)
+            +' מהייבוא, ובפועל נכנס ממנו השנה '+cur+Math.round(ob.sum)
+            +(ob.n?(' ב-'+ob.n+' '+(ob.n===1?'חודש':'חודשים')+' — '+cur+Math.round(ob.per)+' בממוצע'):'')
+            +'. לאשר, לתקן, או לקבוע שאין התחייבות.'});
+      return;
+    }
     const gap=a.exp-a.got;
     let kind='', why='';
     if(a.got<=0.5){kind='none'; why='לא נכנס ממנו כסף כלל בתקופה';}
@@ -5360,11 +5484,17 @@ function reviewList(){
     out.push({d, kind, why, gap:Math.round(gap), exp:a.exp, got:a.got,
       per:Math.round(a.per), thru:a.thru, rows:a.rows});
   });
-  const ord={short:0, amount:1, none:2};
-  out.sort((x,y)=>(ord[x.kind]-ord[y.kind])||(y.gap-x.gap));
+  const ord={short:0, amount:1, none:2, ask:3};
+  out.sort((x,y)=>(ord[x.kind]-ord[y.kind])||(y.gap-x.gap)||(y.got-x.got));
   return out;
 }
-const RVKIND={short:['🔴','חוסר אמיתי'],amount:['💡','הסכום בכרטיס'],none:['❓','לא נגבה כלום']};
+const RVKIND={short:['🔴','חוסר אמיתי'],amount:['💡','הסכום בכרטיס'],none:['❓','לא נגבה כלום'],
+              ask:['❔','לא רשום שהתחייב — צריך להחליט']};
+const RVKINDSUB={
+  short:'התחייבות שאתה רשמת, והכסף שנכנס בפועל קטן ממנה.',
+  amount:'משלם באותו סכום בכל חודש, אבל בכרטיס רשום סכום אחר.',
+  none:'רשומה התחייבות ולא נכנס ממנו כלום בתקופה.',
+  ask:'הסכום כאן הגיע מהייבוא ולא ממך, ולכן הוא לא נחשב חוב. אשר אותו, תקן אותו, או קבע שאין התחייבות — ואז הוא לא יופיע יותר.'};
 async function renderReview(){
   view.innerHTML='<div class="empty">טוען…</div>';
   if(!RVSTAT){ try{RVSTAT=(await api('GET','/api/review')).rows||{};}catch(e){RVSTAT={};} }
@@ -5375,25 +5505,29 @@ async function renderReview(){
   const by=k=>l.filter(x=>x.kind===k);
   const sec=k=>{const g=by(k); if(!g.length)return '';
     return `<div class="rvsec"><div class="rvsec-t">${RVKIND[k][0]} ${RVKIND[k][1]} — ${g.length}</div>
+      <div class="rvsub">${RVKINDSUB[k]||''}</div>
       ${g.map(rvRow).join('')}</div>`;};
   view.innerHTML=`<div class="rvbar noprint">
       <span class="cnt">${l.length} לבדיקה${nDone?(' · '+nDone+' סומנו'):''}</span>
       <button class="btn sm ghost" id="rvall">${RVSHOW==='all'?'הצג רק פתוחים':'הצג גם מה שסומן'}</button>
+      ${(RVQUIET||RVASKALL)?`<button class="btn sm ghost" id="rvask">${RVASKALL?'הסתר את מי שנותן כרגיל':('❔ עוד '+RVQUIET+' עם סכום מהייבוא שנותנים כרגיל')}</button>`:''}
       <button class="btn sm" id="rvprint">🖨️ הדפס</button></div>
     <div class="hintxt noprint" style="margin:0 2px 10px">כל שורה: השם, המספרים והשאלה. קבע סטטוס, כתוב הערה אם צריך, ולחץ על השם כדי לפתוח את הכרטיס ולתקן את ההתחייבות בתחתיתו.</div>
-    <div id="rvlist">${['short','amount','none'].map(sec).join('')||'<div class="empty">אין מה לבדוק 🎉</div>'}</div>`;
+    <div id="rvlist">${['short','amount','none','ask'].map(sec).join('')||'<div class="empty">אין מה לבדוק 🎉</div>'}</div>`;
   document.getElementById('rvall').onclick=()=>{RVSHOW=RVSHOW==='all'?'open':'all';renderReview();};
+  const ab=document.getElementById('rvask');
+  if(ab)ab.onclick=()=>{RVASKALL=!RVASKALL;renderReview();};
   document.getElementById('rvprint').onclick=()=>window.print();
   wireReview();
 }
 function rvRow(x){
   const st=(RVSTAT[x.d.id]||{}), cur=curSym(x.d);
   const f=n=>cur+Math.round(n).toLocaleString('en-US');
-  return `<div class="rvrow ${st.status||''}" data-id="${x.d.id}">
+  return `<div class="rvrow ${st.status||''} ${x.kind}" data-id="${x.d.id}">
     <div class="rvhead"><span class="rvnm">${esc((x.d.last+' '+x.d.first).trim())}</span>
-      <span class="rvnum">${f(x.got)} מתוך ${f(x.exp)}</span></div>
+      <span class="rvnum">${x.kind==='ask'?('נכנס '+f(x.got)):(f(x.got)+' מתוך '+f(x.exp))}</span></div>
     <div class="rvwhy">${esc(x.why)}</div>
-    <div class="rvdet">${x.rows.map(r=>esc(r.what)+' · '+f(r.per)+' לחודש').join(' | ')}</div>
+    <div class="rvdet">${x.rows.map(r=>esc(r.what)+' · '+f(r.per)+(x.kind==='ask'?'':' לחודש')).join(' | ')}</div>
     <div class="rvbtns noprint">${RVST.map(([k,t])=>
       `<button class="rvb ${st.status===k?'on '+k:''}" data-st="${k}">${t}</button>`).join('')}</div>
     <input class="rvnote" value="${esc(st.note||'')}" placeholder="הערה — מה סוכם">

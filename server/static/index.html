@@ -354,6 +354,17 @@
   .cmrow.done{border-inline-start:3px solid var(--yes);padding-inline-start:7px}
   .cmrow.owe{border-inline-start:3px solid var(--no);padding-inline-start:7px}
   .cmtag.inst{background:#eef2ff;color:#3b2f5e}
+  /* שורה שהסכום שלה לא נרשם ביד — לא צבע של חוב, אלא שאלה פתוחה */
+  .cmtag.ask{background:#fff4e0;color:#8a5a00}
+  .cmtag.end{background:var(--line);color:var(--muted)}
+  .cmrow.ask{border-inline-start:3px solid #e8b45a;padding-inline-start:7px}
+  .cmrow.ended{opacity:.6}
+  .cmask{margin-top:5px;font-size:.78rem;color:#7a5200;background:#fffaf0;
+    border:1px solid #f0dfc0;border-radius:9px;padding:6px 9px;line-height:1.55}
+  .cmask.off{color:var(--muted);background:var(--bg-soft);border-color:var(--line)}
+  .cmask-b{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .cmendb{background:none;border:none;cursor:pointer;font-size:.9rem;padding:0 2px;opacity:.65}
+  .cmendb:hover{opacity:1}
   .cmtot.inst{color:#3b2f5e;font-weight:700;margin-inline-start:8px}
   .cminst{margin-top:5px;font-size:.79rem;color:var(--muted)}
   .cminst small{font-size:.72rem}
@@ -365,6 +376,8 @@
   .rvsec{margin-bottom:14px}
   .rvsec-t{font-weight:800;color:var(--gold);font-size:.9rem;margin:0 2px 7px;
     border-bottom:1px solid var(--line);padding-bottom:4px}
+  .rvsub{font-size:.76rem;color:var(--muted);margin:0 2px 8px;line-height:1.5}
+  .rvrow.ask{border-inline-start:3px solid #e8b45a}
   .rvrow{background:var(--card);border:1px solid var(--line);border-radius:12px;
     padding:9px 11px;margin-bottom:8px}
   .rvrow.ok,.rvrow.done{opacity:.55}

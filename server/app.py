@@ -302,6 +302,13 @@ def ensure_schema():
     # שורת יששכר־זבולון מחוברת לאברך עצמו — אותו שם שברשימת האברכים
     try: con.execute("ALTER TABLE pledges ADD COLUMN avreich TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "אל תכתוב לי סתם סכומים בקבוע שהוא התחייב כזה סכום כי לעולם
+    # הוא לא התחייב כזה סכום". ולכן לכל שורה יש מקור ברור:
+    #    1  — מאיר רשם את ההתחייבות בעצמו. רק כזו נחשבת התחייבות.
+    #    0  — סכום שהמערכת הסיקה מהגבייה. הצעה בלבד, לעולם לא חוב.
+    #   -1  — מאיר קבע שאין התחייבות בסכום (תורם שנותן מדי פעם).
+    try: con.execute("ALTER TABLE pledges ADD COLUMN confirmed INTEGER DEFAULT 1")
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
@@ -3504,6 +3511,15 @@ def ensure_schema():
             "SELECT tid FROM donations WHERE COALESCE(tid,'')<>''")}
         for k, lst in pend.items():
             pend[k] = [x for x in lst if x[0]['tid'] not in done_tids]
+        # שורות ותיקות שנרשמו לפני שהיה שדה מזהה עסקה. כל שורה כזו מכסה
+        # חיוב אחד בלבד, ולכן היא "נצרכת" ברגע שהותאמה — אחרת חיוב תאום
+        # אמיתי נחסם על ידה. מאיר על פערל: "אמנם זה לא עבר שלושה חודשים
+        # אבל אחר כך זה כן עבר שלוש פעמים" — שני החיובים של 22 ביולי הם
+        # השלמה על אפריל ועל מאי, שני תשלומים נפרדים באותו יום.
+        legacy = {}
+        for r in con.execute("SELECT id,donor_id,date,ROUND(CAST(amount AS REAL),2) a "
+                             "FROM donations WHERE COALESCE(tid,'')='' AND donor_id IS NOT NULL"):
+            legacy.setdefault((r['donor_id'], r['date'], r['a']), []).append(r['id'])
         paid_by = {}
         # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
         # נראה חסר וכל עלייה מוסיפה בו עוד שורה
@@ -3516,12 +3532,13 @@ def ensure_schema():
         for key, lst in pend.items():
             gap = round(sum(a for _, _, a in lst) - paid_by.get(key, 0), 2)
             for r, iso, amt in sorted(lst, key=lambda x: -x[2]):
-                # אותו תורם, אותו יום, אותו סכום — נחשב לאותו כסף. בדוחות יש
-                # חיובים תאומים (אותו סכום, שניות הפרש) ואסור שיוכפלו בכרטיס.
-                same = con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? "
-                                   "AND ROUND(CAST(amount AS REAL),2)=?",
-                                   (r['donor_id'], iso, amt)).fetchone()
-                if not same and gap >= amt - 0.01:
+                # זהות החיוב היא מזהה העסקה, ולא "אותו יום ואותו סכום". חיוב
+                # שכבר נרשם סוּנן קודם לפי המזהה שלו, ולכן כאן נשאר רק לוודא
+                # שאין שורה ותיקה בלי מזהה שמכסה בדיוק את החיוב הזה.
+                lk = (r['donor_id'], iso, amt)
+                if legacy.get(lk):
+                    legacy[lk].pop()          # השורה הוותיקה היא החיוב הזה
+                elif gap >= amt - 0.01:
                     src = r['source'] or ''
                     meth = next((v for pre, v in SRCLBL.items() if src.startswith(pre)), src)
                     cat = (r['category'] or '').strip()
@@ -4079,8 +4096,10 @@ def ensure_schema():
                                (r['id'],)).fetchone():
                     continue
                 cat = (r['purp'].split('·')[0]).strip() or 'קבוע'
-                con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid) "
-                            "VALUES(?,?,?,'נתן','','',1,'')", (r['id'], cat, r['amt']))
+                # confirmed=0: הסכום הזה בא מהייבוא ולא ממאיר. עד שהוא יאשר
+                # אותו זו הצעה בלבד ולא התחייבות, ואין ממנה חוב.
+                con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,confirmed) "
+                            "VALUES(?,?,?,'נתן','','',1,'',0)", (r['id'], cat, r['amt']))
                 n += 1
             con.execute("INSERT INTO seed_flags(name) VALUES('fixed_amount_to_pledge_v1')")
             con.commit()
@@ -4088,6 +4107,49 @@ def ensure_schema():
                 print('  סכום קבוע הועבר לשורת התחייבות עם ייעוד: %d תורמים' % n)
     except Exception as ex:
         print('  fixed amount to pledge error:', ex)
+
+    # מאיר, על יואל לוינסון ואסתר ברג: "הוא לא התחייב סכום, כתבתי קבוע כי
+    # הוא מדי פעם מכניס לאתר כסף אבל לא כתבתי כמה הוא התחייב... לעולם הוא
+    # לא התחייב כזה סכום".
+    # השדה amount שבכרטיס הגיע מהייבוא ואינו התחייבות: אצל חלק הוא החיוב
+    # החודשי, ואצל חלק הוא פשוט הסכום שנכנס מהם עד היום. השורות שנוצרו
+    # ממנו מסומנות כאן כלא־מאושרות, ומאיר מאשר אחת־אחת בדף התורם.
+    #   amount == סך התרומות  ->  זה סכום מצטבר, לא חודשי: מוחקים את הסכום
+    #   אחרת                  ->  הצעה שממתינה לאישור
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='unguess_pledges_v1'").fetchone():
+            tot = {r['donor_id']: (r['s'] or 0) for r in con.execute(
+                "SELECT donor_id, SUM(CAST(REPLACE(REPLACE(COALESCE(amount,'0'),',',''),'$','') "
+                "AS REAL)) s FROM donations GROUP BY donor_id")}
+            n0 = nx = 0
+            for r in con.execute(
+                    "SELECT p.id pid, p.donor_id did, p.amount amt, d.amount damt FROM pledges p "
+                    "JOIN donors d ON d.id=p.donor_id "
+                    "WHERE COALESCE(p.monthly,0)=1 AND COALESCE(p.date,'')='' "
+                    "AND COALESCE(p.note,'')='' AND COALESCE(p.paid,'')='' "
+                    "AND COALESCE(p.detail,'')='' AND COALESCE(p.permo,'')='' "
+                    "AND COALESCE(p.status,'')='נתן'").fetchall():
+                try:
+                    val = float(str(r['amt']).replace(',', '').replace('$', '').replace('₪', '').strip())
+                    dv = float(str(r['damt'] or '').replace(',', '').replace('$', '').replace('₪', '').strip())
+                except Exception:
+                    continue
+                if val <= 0 or abs(val - dv) > 0.5:      # לא השורה שנוצרה מהייבוא
+                    continue
+                if abs(val - (tot.get(r['did']) or 0)) < 1:
+                    # הסכום שבכרטיס הוא בדיוק כל מה שנכנס ממנו — סך מצטבר,
+                    # ולא סכום חודשי. אין כאן שום התחייבות.
+                    con.execute("UPDATE pledges SET confirmed=-1, amount='' WHERE id=?", (r['pid'],))
+                    nx += 1
+                else:
+                    con.execute("UPDATE pledges SET confirmed=0 WHERE id=?", (r['pid'],))
+                    n0 += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('unguess_pledges_v1')")
+            con.commit()
+            if n0 or nx:
+                print('  סכומים שלא מאיר רשם סומנו כהצעה: %d, ובוטלו כסך מצטבר: %d' % (n0, nx))
+    except Exception as ex:
+        print('  unguess pledges error:', ex)
 
     # מאיר: הייעוד נקרא "הבניין הקדוש", והפירוט עצמו ("כיסוי רדיאטורים
     # ומעקות") נכתב אצל התורם בלבד ואינו נכנס לרשימת הייעודים.
@@ -7243,11 +7305,15 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db()
+            # confirmed: ‎1 רשום ע"י מאיר · 0 הצעה מהגבייה · ‎-1 אין סכום התחייבות.
+            # כל עדכון ידני של שורה הופך אותה למאושרת, אלא אם נשלח אחרת במפורש.
+            cf = b.get('confirmed')
+            cf = 1 if cf is None else int(cf)
             con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
-                        "detail=?,permo=?,avreich=? WHERE id=?",
+                        "detail=?,permo=?,avreich=?,confirmed=? WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
                          1 if b.get('monthly') else 0, str(b.get('paid') or ''),
-                         b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), pid))
+                         b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf, pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -8361,12 +8427,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
+            # שורה שנפתחת מהמסך היא התחייבות שמאיר רשם — מאושרת מלכתחילה.
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
-                        "detail,permo,avreich) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        "detail,permo,avreich,confirmed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
                          b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
                          str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
-                         b.get('avreich','')))
+                         b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed'))))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
