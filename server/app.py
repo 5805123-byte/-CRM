@@ -3626,6 +3626,29 @@ def ensure_schema():
     except Exception as ex:
         print('  new-method cleanup error:', ex)
 
+    # מאיר: "יש ביששכר זבולון יותר מידי הערות". לאברך היו שני שדות הערה
+    # נפרדים — note ו-paid_note. משאירים אחד: מה שהיה ב-note נדחף לתוך
+    # paid_note (זה שמוצג בסיכום), ותיבת ההערה הכפולה הוסרה מהמסך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='partner_note_merge_v1'").fetchone():
+            n = 0
+            for r in con.execute("SELECT id, COALESCE(note,'') n, COALESCE(paid_note,'') p "
+                                 "FROM partners WHERE TRIM(COALESCE(note,''))<>''").fetchall():
+                nt, pn = r['n'].strip(), r['p'].strip()
+                if nt and nt not in pn:
+                    con.execute("UPDATE partners SET paid_note=?, note='' WHERE id=?",
+                                ((pn + ' · ' + nt) if pn else nt, r['id']))
+                    n += 1
+                elif nt:
+                    con.execute("UPDATE partners SET note='' WHERE id=?", (r['id'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('partner_note_merge_v1')")
+            con.commit()
+            if n:
+                print('  הערות אברך אוחדו לשדה אחד: %d' % n)
+    except Exception as ex:
+        print('  partner note merge error:', ex)
+
+
     # ארבע ספרות תלושות בסוף הרחוב ("542 E 3rd St 4506") הן ספרות התוספת
     # של המיקוד (ZIP+4) שנדבקו לשורת הרחוב בייצוא מגוגל. בדיקה בקובץ אנשי
     # הקשר: בכל 82 המקרים המיקוד עצמו בן חמש ספרות והמספר הוא ההמשך שלו —
@@ -3993,6 +4016,39 @@ def ensure_schema():
                                 (ids[0], today_iso(), x.get('note') or 'לבדוק אם קיבל את התעודה'))
     except Exception as e:
         print('  שגיאת תעודות יששכר־זבולון:', e)
+
+    # הסכום הקבוע עבר מהשדה החופשי בכרטיס לשורת התחייבות עם ייעוד, כדי
+    # שהכל ייקרא בבלוק אחד בסוף דף התורם. מי שכבר יש לו שורה חודשית או
+    # אברכי יששכר־זבולון — לא נוגעים בו, אחרת אותו כסף ייספר פעמיים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='fixed_amount_to_pledge_v1'").fetchone():
+            n = 0
+            for r in con.execute(
+                    "SELECT id, COALESCE(amount,'') amt, COALESCE(purpose,'') purp FROM donors "
+                    "WHERE TRIM(COALESCE(amount,''))<>''").fetchall():
+                try:
+                    val = float(str(r['amt']).replace(',', '').replace('$', '').replace('₪', '').strip())
+                except Exception:
+                    continue
+                if val <= 0:
+                    continue
+                if con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1",
+                               (r['id'],)).fetchone():
+                    continue
+                if con.execute("SELECT 1 FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0",
+                               (r['id'],)).fetchone():
+                    continue
+                cat = (r['purp'].split('·')[0]).strip() or 'קבוע'
+                con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid) "
+                            "VALUES(?,?,?,'נתן','','',1,'')", (r['id'], cat, r['amt']))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('fixed_amount_to_pledge_v1')")
+            con.commit()
+            if n:
+                print('  סכום קבוע הועבר לשורת התחייבות עם ייעוד: %d תורמים' % n)
+    except Exception as ex:
+        print('  fixed amount to pledge error:', ex)
+
     con.commit(); con.close()
 
 def get_all():
