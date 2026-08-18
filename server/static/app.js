@@ -2046,6 +2046,9 @@ function commitHTML(d){
                    :' · <b class="cmleft ok">הושלם ✓</b>')
         +(r.got>0.5?`<small> · מתוכם ${f(r.got)} נגבו במערכת</small>`:'')
         +`</div>`
+        +(pn.from&&pn.due>pn.done
+          ? `<div class="cmdue">📅 לפי הלוח כבר אמורים לעבור ${pn.due} תשלומים, ורשומים ${pn.done}`
+            +` — כנראה עדיין לא נקלט קובץ הבנק האחרון</div>` : '')
         +`<span class="cmpaid">שולם עד היום <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
         +`<small>${pn.done?(pn.done+' מתוך '+pn.all+' תשלומים'):'עדיין לא שולם'}</small></span>`
       : '';
@@ -3885,8 +3888,17 @@ function plPlan(d,p){
   // 2,200 ל-12 תשלומים = 183.33 — בלי סובלנות קטנה זה היה מציג 13 תשלומים
   const n=Math.max(0, Math.ceil(left/per - 0.02));
   const all=tot>0.5?Math.max(n, Math.ceil(tot/per - 0.02)):n;
-  return {per, left, n, all, done:Math.max(0,all-n),
-          from:String(p.date||'').slice(0,7), end:monthPlus(String(p.date||'').slice(0,7), all-1)};
+  const from=String(p.date||'').slice(0,7);
+  // כמה תשלומים אמורים לעבור עד היום לפי הלוח. כשקובץ הבנק עדיין לא
+  // נקלט, זה מסביר לבד למה נרשמו פחות — במקום שהמספר ייראה שגוי.
+  const due=Math.min(all, Math.max(0, monthsBetween(from, todayStr().slice(0,7))+1));
+  return {per, left, n, all, done:Math.max(0,all-n), due,
+          from, end:monthPlus(from, all-1)};
+}
+function monthsBetween(a,b){
+  const x=String(a||'').match(/^(\d{4})-(\d{2})/), y=String(b||'').match(/^(\d{4})-(\d{2})/);
+  if(!x||!y)return -1;
+  return (+y[1]*12 + +y[2]) - (+x[1]*12 + +x[2]);
 }
 // חודש + N חודשים, בעברית פשוטה ("נובמבר 2026")
 function monthPlus(ym,n){

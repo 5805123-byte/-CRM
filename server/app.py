@@ -4936,9 +4936,9 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                   (names, 2.5, True, _BLACK, .1, .25, 1.18, 1)]
     else:
         blocks = [(_NUSACH, 1.0, False, _INK, 0, 0, 1.45, 0),
-                  (date, 2.0, True, _DEEP, .35, .25, 1.3, 0),
+                  (date, 1.4, True, _DEEP, .35, .25, 1.3, 0),
                   ('' if _NESHAMA.search(names or '') else 'יהיו ויעמדו לזכות',
-                   2.0, False, _INK, 0, .12, 1.35, 0),
+                   1.4, False, _INK, 0, .12, 1.35, 0),
                   (names, 4.0, True, _BLACK, .12, .2, 1.14, 1)]
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
