@@ -30,8 +30,11 @@
   /* כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים */
   .names .nsm,.cnames .nsm{font-size:.42em;font-weight:600}
   /* שם התורם — קטן מהשמות שמתפללים עליהם */
-  .names .ndon,.cnames .ndon{font-size:.85em;font-weight:700;display:inline-block;margin-bottom:.12em}
-  .names .ndon .nsm,.cnames .ndon .nsm,.names .ndon .nreq,.cnames .ndon .nreq{font-size:.8em}
+  /* שורת התורם היא block — אחרת אין לה רוחב אמיתי, וההקטנה שמכניסה שם
+     ארוך לשורה אחת לא מצליחה לחשב והשם נחתך בקצה */
+  .names .ndon,.cnames .ndon{font-size:.85em;font-weight:700;display:block;margin-bottom:.12em}
+  /* "ע\"י", "הר\"ר", "שיחי'" — מילות לוואי, קטנות בבירור מול שם התורם */
+  .names .ndon .nsm,.cnames .ndon .nsm,.names .ndon .nreq,.cnames .ndon .nreq{font-size:.5em}
   /* הבקשה — קטנה יותר מהשם, כדי שהשמות יבלטו הכי חזק */
   .names .nreq,.cnames .nreq{font-size:.25em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
   /* "לעילוי נשמת" — חצי מהשם, ומתכווץ יחד איתו כשהוא מוקטן כדי להיכנס */
@@ -87,7 +90,7 @@ const KIND = q.get('kind') || 'parnes';
 
 // ----- כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים (פשוט ואמין, בלי ניחוש שם מול בקשה) -----
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצ]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
+const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצ]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
 const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
@@ -140,7 +143,12 @@ function nameSpan(ws){
   return [i,j];
 }
 // "לע\"נ אביו" בשורה משלו, כל שם בשורה משלו, והברכה בשורה קטנה מתחת
+// מאיר: "חסר המילה לעילוי" — כשנכתב רק "נשמת", התעודה אומרת "לעילוי נשמת"
+function addLeilui(ws){
+  return ws[0]==='נשמת' ? ['לעילוי'].concat(ws) : ws;
+}
 function dedPart(ws, trailing){
+  ws=addLeilui(ws);
   const k=leadLen(ws);
   let r=k;
   while(r<ws.length && RELWORD.test(ws[r])) r++;
@@ -215,11 +223,29 @@ $('sheet').style.backgroundImage = `url("${cfg.bg}")`;
 Object.assign($('content').style, {top:cfg.top, left:cfg.left, right:cfg.right, bottom:cfg.bottom});
 
 // מאיר: "איפה שכתוב לעילוי נשמת — תוריד את המילים יהיו ויעמדו לזכות"
-const NESHAMA=/לעילוי|לע["'\u05f4\u05f3]?נ(\s|$)|נשמת/;
+// מאיר: "אם יש לעילוי נשמת או לרפואת אז מורידים את המילה לזכות" — גם
+// "יהיו ויעמדו לזכות" בפרנס לילה, וגם ה"לזכות" שבסוף נוסח הקפה והבוקר.
+const NESHAMA=/לעילוי|לע["'\u05f4\u05f3]?נ(\s|$)|נשמת|לרפוא/;
+function certNames(){
+  const pairs=[...document.querySelectorAll('.pair .names')];
+  if(pairs.length) return pairs.map(e=>e.innerText).join(' ');
+  const n=document.getElementById('c_names');
+  return n?n.innerText:'';
+}
 function standToggle(){
-  const st=document.querySelector('.stand'); if(!st)return;
-  const txt=[...document.querySelectorAll('.pair .names')].map(e=>e.innerText).join(' ');
-  st.classList.toggle('off', NESHAMA.test(txt));
+  const st=document.querySelector('.stand');
+  if(st) st.classList.toggle('off', NESHAMA.test(certNames()));
+  dedicToggle();
+}
+// נוסח הקפה/הבוקר נגמר ב"לזכות", ובהקדשה לעילוי נשמת המילה הזו יורדת.
+// אם מאיר ערך את הנוסח בעצמו — לא נוגעים במה שכתב.
+let DEDIC_FULL='', DEDIC_BARE='';
+function dedicToggle(){
+  const el=document.getElementById('c_dedic'); if(!el||!DEDIC_FULL)return;
+  const cur=el.textContent.trim();
+  if(cur!==DEDIC_FULL && cur!==DEDIC_BARE) return;
+  const want=NESHAMA.test(certNames())?DEDIC_BARE:DEDIC_FULL;
+  if(cur!==want) el.textContent=want;
 }
 // מאיר: "המילים יהי רצון תמיד בגודל אחיד, בשלוש שורות בלבד". הגודל נקבע
 // מהרוחב — הנוסח חייב לצאת בשלוש שורות — וכל השאר נגזר ממנו לפי היחסים.
@@ -274,6 +300,7 @@ if(KIND==='coffee' || KIND==='breakfast'){
   // ----- תעודת חדר קפה / ארוחת בוקר (אותו בלאנק להשקות) -----
   $('addBtn').style.display='none';
   const dedic = KIND==='breakfast' ? 'ארוחת בוקר היום נתרמה לזכות' : 'הקפה החלב שתיה חמה ועוגיות נתרמו לזכות';
+  DEDIC_FULL = dedic; DEDIC_BARE = dedic.replace(/\s*לזכות$/,'');
   $('content').innerHTML =
     `<div id="cbody">
      <div class="cdate" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
