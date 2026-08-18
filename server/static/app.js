@@ -5262,17 +5262,23 @@ let OLD=null, oldSince='2024-01-01';
    הייבוא רשם בעבר את אותו תשלום פעמיים כשהוא דווח משני מקורות עם תאריך
    רישום שונה. הבאג תוקן, וכאן רואים מה כבר נרשם כפול ומוחקים שורה אחת. */
 let DUPS=null;
+let DUPALL=false;
 async function renderDups(){
   view.innerHTML='<div class="empty">טוען…</div>';
-  if(!DUPS){ try{ DUPS=await api('GET','/api/dups'); }catch(e){ DUPS={groups:[]}; } }
+  if(!DUPS){ try{ DUPS=await api('GET','/api/dups'+(DUPALL?'?all=1':'')); }catch(e){ DUPS={groups:[]}; } }
   const g=DUPS.groups||[];
   const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const ap=DUPS.approved||0;
   view.innerHTML=`<div class="cnt">${g.length} מקרים של אותו תורם, אותו חודש ואותו סכום —
       סה"כ ${f(DUPS.extra||0)} שנספרו פעמיים</div>
     <div class="hintxt" style="margin:0 2px 10px">אותו תשלום דווח לפעמים בשני קבצים — פעם מהבנק ופעם מחברת הסליקה, עם תאריך רישום שונה — ולכן נרשם פעמיים.
-      הבאג תוקן ומעכשיו זה לא יקרה, אבל מה שכבר נרשם נשאר כאן להחלטה שלך.
-      <b>אם התורם באמת שילם פעמיים באותו חודש — אל תמחק.</b> לחיצה על 🗑 מוחקת שורה אחת בלבד.</div>
+      הבאג תוקן ומעכשיו זה לא יקרה, אבל מה שכבר נרשם נשאר כאן להחלטה שלך.<br>
+      <b>אם התורם באמת שילם פעמיים באותו חודש</b> — לחץ <b>✓ תקין</b> והשורה תרד מהרשימה ולא תחזור.
+      🗑 מוחק שורה אחת בלבד.
+      ${ap?`<br><button class="btn sm ghost" id="dupshow">${DUPALL?'הסתר את המאושרים':('הצג גם '+ap+' שאושרו')}</button>`:''}</div>
     <div id="duplist">${g.map(dupGroup).join('')||'<div class="empty">אין כפילויות 🎉</div>'}</div>`;
+  const sb=document.getElementById('dupshow');
+  if(sb)sb.onclick=()=>{DUPALL=!DUPALL;DUPS=null;renderDups();};
   wireDups();
 }
 function dupGroup(x){
@@ -5281,6 +5287,7 @@ function dupGroup(x){
     <div class="dupg-t"><span class="dupopen" style="cursor:pointer;text-decoration:underline dotted">${esc(x.name)}</span>
       <span class="dupamt">${f(x.amount)} × ${x.rows.length}</span>
       <span class="dupmo">${esc(fmtMonth(x.month+'-01')||x.month)}</span></div>
+    <div class="dupok-bar"><button class="dupok${x.ok?' on':''}" data-mo="${esc(x.month)}" data-amt="${x.amount}">${x.ok?'✓ אושר — לחץ לביטול':'✓ תקין, שילם פעמיים'}</button></div>
     ${x.rows.map(r=>`<div class="duprow" data-rid="${r.id}">
       <span class="dupd">${esc(gregLabel(r.date)||r.date)}</span>
       <span class="dupsrc">${esc(r.method||'')}${r.method&&r.note?' · ':''}${esc(String(r.note||'').slice(0,60))}</span>
@@ -5289,6 +5296,15 @@ function dupGroup(x){
 function wireDups(){
   view.querySelectorAll('.dupopen').forEach(b=>b.onclick=()=>{
     const d=DB.find(x=>x.id==b.closest('.dupg').dataset.did); if(d)openDonor(d);});
+  // "בדקתי, זה תקין" — הקבוצה יורדת מהרשימה ולא חוזרת
+  view.querySelectorAll('.dupok').forEach(b=>b.onclick=async()=>{
+    const g=b.closest('.dupg'); const on=b.classList.contains('on');
+    b.disabled=true;
+    const r=await api('POST','/api/dups/ok',{donor_id:+g.dataset.did,
+      month:b.dataset.mo, amount:+b.dataset.amt, undo:on?1:0});
+    if(!r||!r.ok){b.disabled=false;toast('לא נשמר');return;}
+    toast(on?'האישור בוטל':'אושר ✓ — ירד מהרשימה');
+    DUPS=null; renderDups();});
   view.querySelectorAll('.duprow').forEach(row=>{
     const b=row.querySelector('.dupdel');
     b.onclick=async()=>{

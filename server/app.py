@@ -266,6 +266,10 @@ def ensure_schema():
     except Exception: pass
     # ניקוי תורמים ישנים: "להשאיר" מסמן שהכרטיס נבדק ואינו למחיקה,
     # ו-mail_seen שומר את תוצאת החיפוש במייל (תאריך אחרון או 'none')
+    # קבוצת תשלומים כפולים שמאיר עבר עליה ואישר שהיא תקינה — לא תופיע שוב
+    con.execute("""CREATE TABLE IF NOT EXISTS dup_ok(
+        donor_id INTEGER, mo TEXT, amount REAL, created TEXT,
+        PRIMARY KEY(donor_id, mo, amount));""")
     try: con.execute("ALTER TABLE donors ADD COLUMN keep_old INTEGER DEFAULT 0")
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN mail_seen TEXT DEFAULT ''")
@@ -6332,7 +6336,11 @@ class H(BaseHTTPRequestHandler):
         # תאריך רישום שונה. הבאג תוקן, וכאן רואים את מה שכבר נרשם כפול
         # ומחליטים על כל שורה בנפרד.
         if self.path.split('?')[0] == '/api/dups':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            show_ok = qs.get('all', ['0'])[0] == '1'
             con = db()
+            okset = {(r['donor_id'], r['mo'], round(float(r['amount'] or 0), 2))
+                     for r in con.execute("SELECT donor_id,mo,amount FROM dup_ok")}
             names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
                      for r in con.execute("SELECT id,last,first FROM donors")}
             groups = {}
@@ -6350,14 +6358,18 @@ class H(BaseHTTPRequestHandler):
             for (did, mo, a), rows in groups.items():
                 if len(rows) < 2:
                     continue
+                if (did, mo, a) in okset and not show_ok:
+                    continue
                 out.append({'donor_id': did, 'name': names.get(did, ''), 'month': mo, 'amount': a,
+                            'ok': 1 if (did, mo, a) in okset else 0,
                             'rows': [{'id': x['id'], 'date': x['date'], 'method': x['method'] or '',
                                       'category': x['category'] or '', 'note': x['note'] or ''}
                                      for x in rows]})
             con.close()
             out.sort(key=lambda x: (-x['amount'], x['name'], x['month']))
-            return self._send(200, {'groups': out, 'total': len(out),
-                                    'extra': round(sum(x['amount'] * (len(x['rows']) - 1) for x in out), 2)})
+            return self._send(200, {'groups': out, 'total': len(out), 'approved': len(okset),
+                                    'extra': round(sum(x['amount'] * (len(x['rows']) - 1)
+                                                       for x in out if not x.get('ok')), 2)})
         # ----- תורמים ישנים: מי שלא נכנס ממנו כסף מאז תאריך מסוים -----
         if self.path.split('?')[0] == '/api/inactive':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -7654,6 +7666,24 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE recon SET %s=? WHERE tid=?" % col, (on, str(t)))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'n': len(tids)})
+        # אישור קבוצת תשלומים כפולים — "בדקתי, זה תקין". יורדת מהרשימה.
+        if self.path == '/api/dups/ok':
+            try:
+                did = int(b.get('donor_id')); a = round(float(b.get('amount')), 2)
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id/amount required'})
+            mo = (b.get('month') or '')[:7]
+            if not mo:
+                return self._send(400, {'error': 'month required'})
+            con = db()
+            if b.get('undo'):
+                con.execute("DELETE FROM dup_ok WHERE donor_id=? AND mo=? AND ROUND(amount,2)=?",
+                            (did, mo, a))
+            else:
+                con.execute("INSERT OR REPLACE INTO dup_ok(donor_id,mo,amount,created) VALUES(?,?,?,?)",
+                            (did, mo, a, today_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm and b.get('delete'):        # מחיקת ייעוד מהרשימה. תרומות שכבר סווגו לא נוגעים בהן
