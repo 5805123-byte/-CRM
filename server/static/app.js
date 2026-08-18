@@ -151,8 +151,13 @@ function izSummaryHTML(d){
   if(s.debt<=0.5&&s.manual==null&&!s.thru.length)debtLine='';   // חוב מוצג רק בחלון החוב
   const mainHtml=(act.length||s.monthly)?`${rows}
     <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${Math.round(s.monthly)}</b></div>
-    ${s.hasPay?`<div class="izrow"><span>שולם ב-2026 (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${Math.round(s.paid)}</b></div>
-    <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${Math.round(s.monthly)})</span><b>${cur}${Math.round(s.expected)}</b></div>`:''}
+    ${s.hasPay?(()=>{
+      // רק החלק של יששכר־זבולון. אצל פינטער נכנסים 12,800 בחודש והם
+      // מסומנים כולם יששכר־זבולון, בעוד שההתחייבות ליש"ז היא 800 בלבד.
+      const al=purposeAlloc(d), izr=al&&al.rows.find(r=>/יששכר/.test(r.what));
+      const pd=izr?izr.got:Math.round(s.paid), ex=izr?izr.exp:Math.round(s.expected);
+      return `<div class="izrow"><span>שולם ליששכר־זבולון ב-${GREGYEAR} (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${pd}</b></div>
+        <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${Math.round(s.monthly)})</span><b>${cur}${ex}</b></div>`;})():''}
     ${thruHtml}
     ${debtLine}`:'';
   return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
@@ -1968,6 +1973,45 @@ function izRowAmt(d){
   // "לפי הסכום הקבוע בכרטיס" — מה שנשאר מהסכום אחרי שאר השורות הקבועות
   return Math.max(0,Math.round((s.monthly||0)-other));
 }
+/* ---------- 📊 סיכום לפי ייעוד ----------
+   מאיר על פינטער: "בסיכום של יששכר־זבולון מופיע עדיין הסכום של כולל יום
+   ביחד עם היששכר־זבולון". הכסף נכנס מהבנק בשני חיובים (9,000 ו-3,800)
+   וכולם מסומנים יששכר־זבולון, ולכן אי אפשר לפצל אותם לפי הסימון עצמו.
+   הפיצול נעשה לפי החלוקה שמאיר רשם: כל ייעוד מקבל עד מה שהוא אמור היה
+   לקבל בתקופה, לפי הסדר, ומה שנשאר מעבר לזה מוצג בשורה משלו. */
+function purposeAlloc(d){
+  const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5);
+  if(!rows.length)return null;
+  // התקופה: מהחודש הראשון שנכנס בו כסף השנה ועד האחרון
+  const codes=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===GREGYEAR)
+    .map(x=>{const m=String(x.date||'').match(/^(\d{4})-(\d{2})/);return m?(+m[1])*12+(+m[2]):null;})
+    .filter(v=>v!=null);
+  if(!codes.length)return null;
+  const span=Math.max(...codes)-Math.min(...codes)+1;
+  let pool=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===GREGYEAR)
+    .reduce((a,x)=>a+amtNum(x.amount),0);
+  (d.parnes||[]).forEach(p=>{ if(+p.paid&&String(p.night_date||'').slice(0,4)===GREGYEAR)
+    pool+=amtNum(p.amount); });
+  const out=rows.map(r=>{
+    const per=r.inst?r.plan.per:r.amt;
+    let exp=per*span;
+    if(r.inst)exp=Math.min(exp, r.amt);          // תשלומים — לא מעבר לסכום הכולל
+    const got=Math.min(exp, Math.max(0,pool));
+    pool-=got;
+    return {what:r.what, icon:r.icon, per, exp:Math.round(exp), got:Math.round(got)};
+  });
+  return {span, rows:out, extra:Math.round(Math.max(0,pool))};
+}
+function purposeAllocHTML(d){
+  const a=purposeAlloc(d); if(!a||a.rows.length<1)return '';
+  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const tot=a.rows.reduce((s,r)=>s+r.got,0)+a.extra;
+  return `<div class="pasum"><div class="pasum-t">📊 מה נגבה לכל ייעוד — ${a.span} ${a.span===1?'חודש':'חודשים'} ב-${GREGYEAR}</div>
+    ${a.rows.map(r=>`<div class="parow"><span>${r.icon} ${esc(r.what)} <small>${f(r.per)} לחודש</small></span>
+      <b class="pagot">${f(r.got)}</b><small class="paexp">מתוך ${f(r.exp)}</small></div>`).join('')}
+    ${a.extra>0.5?`<div class="parow ex"><span>➕ נתרם מעבר להתחייבות</span><b class="pagot">${f(a.extra)}</b><small class="paexp"></small></div>`:''}
+    <div class="parow tot"><span>סה"כ נגבה השנה</span><b class="pagot">${f(tot)}</b><small class="paexp"></small></div></div>`;
+}
 // אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
 function izGapNote(d){
   const real=izRealMonthly(d); if(real<=0.5)return '';
@@ -2111,6 +2155,7 @@ function commitHTML(d){
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
       ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
     ${rows.map(line).join('')||'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>'}
+    ${purposeAllocHTML(d)}
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
