@@ -4592,6 +4592,10 @@ function kvMemberType(d){
   if(d.tier==='יששכר_זבולון')return 'iz';
   if(d.tier==='קוויטל_101')return '101';
   if(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי')return 'weekly';
+  // הכלל הישן נשאר: מי שאין לו דרגה אבל נותן קבוע פחות מ-101 ממשיך
+  // להופיע בשבועי ובכללי, כמו עד היום. מאיר: "אני כבר תיקנתי כל מי שלא
+  // שייך לכללי" — ביטול הכלל היה מוריד אותם מהרשימה ויוצר לו עבודה מחדש.
+  if(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)return 'weekly';
   return null;
 }
 // כל תורם שאין לו שם לתפילה ולא סומן "לא צריך" — כדי להתריע על כולם
@@ -4830,7 +4834,7 @@ function prayerKvType(pt,d){
   if(pt==='יששכר_זבולון')return 'iz';
   if(pt==='קוויטל_101')return '101';
   if(pt==='שבועי'||pt==='קוויטל_שבועי'||pt==='קוויטל_כללי')return 'weekly';
-  return 'other';
+  return kvMemberType(d)||'other';   // אין תווית ואין דרגה — לפי הכלל הישן
 }
 let kvListQ='';
 function renderKvList(type){
