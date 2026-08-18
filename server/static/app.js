@@ -4917,8 +4917,8 @@ async function renderOld(){
   if(!OLD){ try{ OLD=await api('GET','/api/inactive?since='+encodeURIComponent(oldSince)); }
             catch(e){ OLD={donors:[]}; } }
   const l=OLD.donors||[];
-  const seen=l.filter(d=>d.mail_seen&&d.mail_seen!=='none').length;
-  const chk=l.filter(d=>d.mail_seen).length;
+  const seen=l.filter(d=>(d.mail_seen&&d.mail_seen!=='none')||(d.mail_from&&d.mail_from!=='none')).length;
+  const chk=l.filter(d=>d.mail_seen||d.mail_from).length;
   view.innerHTML=`<div class="oldbar">
       <span>לא נכנס כסף מאז</span>
       <input type="date" id="oldsince" value="${esc(oldSince)}">
@@ -4926,7 +4926,9 @@ async function renderOld(){
       <span class="hintxt" id="oldstat">${chk?(chk+' נבדקו · '+seen+' נמצאו במייל'):''}</span>
     </div>
     <div class="cnt">${l.length} תורמים בלי שום כסף מאז ${esc(oldSince)}</div>
-    <div class="hintxt" style="margin:0 2px 9px">🔎 מחפש בתיבת המייל את כתובת האימייל של התורם ואת שמו באנגלית. "נמצא במייל" = יש התכתבות או קבלה — כנראה כן תרם בדרך אחרת, אל תמחק לפני בדיקה.</div>
+    <div class="hintxt" style="margin:0 2px 9px">התרומות במערכת מתחילות מינואר 2026, ולכן הבדיקה במייל היא הראיה לשנים שלפני.
+      🔎 החיפוש עובר על <b>הקבלות מספקי הסליקה</b> (אוטרייז, פייפאל, בנק ווסט, נדרים ועוד) ושולף מכל קבלה את המייל של המשלם — 🧾 קבלה = הוא באמת תרם.
+      בנוסף נבדק מייל ש<b>הוא שלח אלינו</b> בלבד; מייל ששלחנו אליו אינו נספר.</div>
     <div id="oldlist">${l.map(oldRow).join('')||'<div class="empty">אין תורמים כאלה 🎉</div>'}</div>`;
   document.getElementById('oldsince').onchange=e=>{oldSince=e.target.value||'2024-01-01';OLD=null;renderOld();};
   const mb=document.getElementById('oldmail'); if(mb)mb.onclick=()=>runMailCheck(mb);
@@ -4940,8 +4942,10 @@ function oldRow(d){
   if(d.files)t.push('<span class="oldtag">📄 מסמכים</span>');
   if(d.amount)t.push('<span class="oldtag">קבוע '+esc(d.amount)+'</span>');
   if(d.last_money)t.push('<span class="oldtag">כסף אחרון '+esc(String(d.last_money).slice(0,7))+'</span>');
-  if(d.mail_seen==='none')t.push('<span class="oldtag warn">📭 לא נמצא במייל</span>');
-  else if(d.mail_seen)t.push('<span class="oldtag ok">📬 במייל עד '+esc(d.mail_seen)+'</span>');
+  const rc=d.mail_seen&&d.mail_seen!=='none', fr=d.mail_from&&d.mail_from!=='none';
+  if(rc)t.push('<span class="oldtag ok">🧾 קבלה '+esc(d.mail_seen)+' — תרם!</span>');
+  if(fr)t.push('<span class="oldtag ok">✉️ כתב אלינו '+esc(d.mail_from)+'</span>');
+  if(!rc&&!fr&&(d.mail_seen||d.mail_from))t.push('<span class="oldtag warn">📭 שקט לגמרי במייל</span>');
   return `<div class="oldrow" data-id="${d.id}">
     <div class="oldmain"><div class="oldnm oldopen">${esc(d.name)} ${d.english?('<small>'+esc(d.english)+'</small>'):''}</div>
       <div class="oldsub">${esc(d.email||'')}${d.email&&d.phone?' · ':''}${esc(d.phone||'')}</div>

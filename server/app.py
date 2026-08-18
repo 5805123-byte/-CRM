@@ -256,6 +256,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN mail_seen TEXT DEFAULT ''")
     except Exception: pass
+    # תאריך המייל האחרון שהתורם שלח אלינו (לא מה ששלחנו אליו)
+    try: con.execute("ALTER TABLE donors ADD COLUMN mail_from TEXT DEFAULT ''")
+    except Exception: pass
     # התחייבות חוזרת מדי חודש (למשל נר למאור) — להבדיל מהתחייבות חד־פעמית
     try: con.execute("ALTER TABLE pledges ADD COLUMN monthly INTEGER DEFAULT 0")
     except Exception: pass
@@ -4222,7 +4225,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
@@ -6123,17 +6126,31 @@ class H(BaseHTTPRequestHandler):
             since = (qs.get('since', ['2024-01-01'])[0] or '2024-01-01')[:10]
             con = db()
             out = []
+            # כל מקום שבו יכול לשבת כסף של תורם. שורה בלי תאריך נחשבת
+            # "לא ידוע מתי" ומוציאה אותו מהרשימה — עדיף להשאיר כרטיס
+            # מיותר מאשר להציע למחוק תורם שכן תרם.
+            MONEY = (('donations', 'date'), ('parnes', 'night_date'),
+                     ('transactions', 'date'), ('building', 'date'),
+                     ('pledges', 'date'), ('recon', 'date'))
             for d in con.execute("SELECT * FROM donors WHERE COALESCE(keep_old,0)=0 ORDER BY last, first"):
-                money = con.execute(
-                    "SELECT MAX(x) FROM (SELECT MAX(COALESCE(date,'')) x FROM donations WHERE donor_id=? "
-                    "UNION ALL SELECT MAX(COALESCE(night_date,'')) FROM parnes WHERE donor_id=? "
-                    "AND COALESCE(status,'')<>'suggested')", (d['id'], d['id'])).fetchone()[0] or ''
-                if money and money[:10] >= since:
-                    continue
-                # חיוב כלשהו בדוחות, גם אם לא נרשם כתרומה
-                rc = con.execute("SELECT COUNT(*) FROM recon WHERE donor_id=?", (d['id'],)).fetchone()[0]
-                if rc:
-                    continue
+                last, undated, rows = '', 0, 0
+                for tbl, col in MONEY:
+                    try:
+                        q = con.execute("SELECT COALESCE(%s,'') c FROM %s WHERE donor_id=?" % (col, tbl),
+                                        (d['id'],)).fetchall()
+                    except Exception:
+                        continue
+                    for x in q:
+                        rows += 1
+                        v = str(x['c'] or '').strip()
+                        iso = _recon_iso(v) or v if v else ''
+                        if not iso:
+                            undated += 1
+                        elif iso[:10] > last:
+                            last = iso[:10]
+                if undated or (last and last >= since):
+                    continue                    # יש לו כסף, או כסף בלי תאריך
+                money = last
                 out.append({
                     'id': d['id'],
                     'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
@@ -6141,8 +6158,8 @@ class H(BaseHTTPRequestHandler):
                     'phone': d['phone'] or '', 'city': d['city'] or '',
                     'tier': d['tier'] or '', 'category': d['category'] or '',
                     'amount': d['amount'] or '', 'created': d['created'] or '',
-                    'source': d['source'] or '', 'last_money': money,
-                    'mail_seen': d['mail_seen'] or '',
+                    'source': d['source'] or '', 'last_money': money, 'rows': rows,
+                    'mail_seen': d['mail_seen'] or '', 'mail_from': d['mail_from'] or '',
                     'kv': con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? "
                                       "AND length(TRIM(COALESCE(text,'')))>3", (d['id'],)).fetchone()[0],
                     'av': con.execute("SELECT COUNT(*) FROM partners WHERE donor_id=?", (d['id'],)).fetchone()[0],
