@@ -5287,7 +5287,8 @@ function dupGroup(x){
     <div class="dupg-t"><span class="dupopen" style="cursor:pointer;text-decoration:underline dotted">${esc(x.name)}</span>
       <span class="dupamt">${f(x.amount)} × ${x.rows.length}</span>
       <span class="dupmo">${esc(fmtMonth(x.month+'-01')||x.month)}</span></div>
-    <div class="dupok-bar"><button class="dupok${x.ok?' on':''}" data-mo="${esc(x.month)}" data-amt="${x.amount}">${x.ok?'✓ אושר — לחץ לביטול':'✓ תקין, שילם פעמיים'}</button></div>
+    ${(x.missed||[]).length?`<div class="dupmiss">↩️ אותו סכום לא נגבה ב-${x.missed.map(m=>esc(fmtMonth(m+'-01')||m)).join(', ')} — ייתכן שזו השלמה ולא כפילות</div>`:''}
+    <div class="dupok-bar"><button class="dupok${x.ok?' on':''}" data-mo="${esc(x.month)}" data-amt="${x.amount}">${x.ok?'✓ אושר — לחץ לביטול':(x.missed&&x.missed.length?'✓ תקין, זו השלמה':'✓ תקין, שילם פעמיים')}</button></div>
     ${x.rows.map(r=>`<div class="duprow" data-rid="${r.id}">
       <span class="dupd">${esc(gregLabel(r.date)||r.date)}</span>
       <span class="dupsrc">${esc(r.method||'')}${r.method&&r.note?' · ':''}${esc(String(r.note||'').slice(0,60))}</span>

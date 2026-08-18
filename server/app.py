@@ -266,6 +266,12 @@ def ensure_schema():
     except Exception: pass
     # ניקוי תורמים ישנים: "להשאיר" מסמן שהכרטיס נבדק ואינו למחיקה,
     # ו-mail_seen שומר את תוצאת החיפוש במייל (תאריך אחרון או 'none')
+    # מזהה העסקה שממנה נוצרה התרומה. בלעדיו אי אפשר היה לדעת אם חיוב כבר
+    # נרשם, וכל דיווח חוזר של אותו תשלום יצר שורה נוספת.
+    try: con.execute("ALTER TABLE donations ADD COLUMN tid TEXT")
+    except Exception: pass
+    try: con.execute("CREATE INDEX IF NOT EXISTS idx_don_tid ON donations(tid)")
+    except Exception: pass
     # קבוצת תשלומים כפולים שמאיר עבר עליה ואישר שהיא תקינה — לא תופיע שוב
     con.execute("""CREATE TABLE IF NOT EXISTS dup_ok(
         donor_id INTEGER, mo TEXT, amount REAL, created TEXT,
@@ -3488,18 +3494,13 @@ def ensure_schema():
                 continue
             if amt > 0:
                 pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((dict(r), iso, amt))
-        # אותו סכום שמופיע כמה פעמים באותו חודש ובאותו מסלול הוא תשלום אחד.
-        # הדוחות מכילים חיוב שנדחה וחזר, ואותו תשלום שדווח גם מהבנק וגם
-        # מהסולק עם מזהה אחר — ובלי הכיווץ הזה כל דיווח נספר ככסף נוסף.
+        # חיוב שכבר נרשם — מזוהה לפי מזהה העסקה עצמו ולא לפי ניחוש. כך
+        # חיוב השלמה על חודש שלא נגבה (פערל שילם שלוש פעמים ביולי על
+        # אפריל-מאי-יוני) נספר, ואילו אותו חיוב שדווח פעמיים אינו נספר.
+        done_tids = {r['tid'] for r in con.execute(
+            "SELECT tid FROM donations WHERE COALESCE(tid,'')<>''")}
         for k, lst in pend.items():
-            seen, uniq = set(), []
-            for r, iso, amt in lst:
-                if amt in seen:
-                    if not r.get('processed'):
-                        con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
-                    continue
-                seen.add(amt); uniq.append((r, iso, amt))
-            pend[k] = uniq
+            pend[k] = [x for x in lst if x[0]['tid'] not in done_tids]
         paid_by = {}
         # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
         # נראה חסר וכל עלייה מוסיפה בו עוד שורה
@@ -3524,9 +3525,9 @@ def ensure_schema():
                     note = 'נכנס מ' + (meth or 'ייבוא')
                     if not cat:
                         note += ' · לא סווג — לבדוק עבור מה'
-                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
-                                "VALUES(?,?,?,?,?,?,1)",
-                                (r['donor_id'], iso, '%.2f' % amt, cat, meth, note))
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
+                                "VALUES(?,?,?,?,?,?,1,?)",
+                                (r['donor_id'], iso, '%.2f' % amt, cat, meth, note, r['tid']))
                     gap = round(gap - amt, 2); n += 1
                 if not r.get('processed'):
                     con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
@@ -4107,6 +4108,41 @@ def ensure_schema():
                 print('  "בניין" שונה ל"הבניין הקדוש": %d' % n)
     except Exception as ex:
         print('  building rename error:', ex)
+
+    # השלמת מזהה עסקה לתרומות ותיקות שנרשמו לפני שהיה שדה כזה. ההתאמה היא
+    # תורם + תאריך + סכום, ורק כשהיא חד-משמעית משני הכיוונים — אחרת
+    # משאירים ריק ולא מנחשים.
+    try:
+        have = {r['tid'] for r in con.execute(
+            "SELECT tid FROM donations WHERE COALESCE(tid,'')<>''")}
+        cand = {}
+        for r in con.execute("SELECT tid,donor_id,date,amount FROM recon "
+                             "WHERE donor_id IS NOT NULL AND COALESCE(tid,'')<>''"):
+            if r['tid'] in have:
+                continue
+            iso = _recon_iso(r['date'])
+            if not iso:
+                continue
+            try:
+                a = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
+            except Exception:
+                continue
+            cand.setdefault((r['donor_id'], iso, a), []).append(r['tid'])
+        n = 0
+        for (did, iso, a), tids in cand.items():
+            if len(tids) != 1:
+                continue
+            rows = con.execute("SELECT id FROM donations WHERE donor_id=? AND date=? "
+                               "AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(tid,'')=''",
+                               (did, iso, a)).fetchall()
+            if len(rows) == 1:
+                con.execute("UPDATE donations SET tid=? WHERE id=?", (tids[0], rows[0]['id']))
+                n += 1
+        if n:
+            con.commit()
+            print('  תרומות שקושרו למזהה החיוב שלהן: %d' % n)
+    except Exception as ex:
+        print('  tid backfill error:', ex)
 
     # מאיר: "אמרתי לך לא להתייחס לדוח ששלחתי בהתחלה, רק לנתונים אמיתיים".
     # הכסף בשורות האלה אמיתי ומגובה בחיוב בבנק — הדוח שימש רק לקביעת
@@ -6382,8 +6418,17 @@ class H(BaseHTTPRequestHandler):
                     continue
                 if (did, mo, a) in okset and not show_ok:
                     continue
+                # חודשים באותה שנה שבהם אותו סכום לא נגבה כלל. פערל שילם
+                # שלוש פעמים ביולי מפני שאפריל, מאי ויוני לא עברו — זו
+                # השלמה ולא כפילות, וצריך לראות את זה מיד.
+                yr = mo[:4]
+                paid_mo = {k[1] for k in groups if k[0] == did and k[2] == a and k[1][:4] == yr}
+                first = min(paid_mo) if paid_mo else mo
+                miss = [m for m in ('%s-%02d' % (yr, x) for x in range(1, 13))
+                        if first <= m <= mo and m not in paid_mo]
                 out.append({'donor_id': did, 'name': names.get(did, ''), 'month': mo, 'amount': a,
                             'ok': 1 if (did, mo, a) in okset else 0,
+                            'missed': miss[-6:],
                             'rows': [{'id': x['id'], 'date': x['date'], 'method': x['method'] or '',
                                       'category': x['category'] or '', 'note': x['note'] or ''}
                                      for x in rows]})
