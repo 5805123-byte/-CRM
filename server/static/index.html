@@ -1127,7 +1127,10 @@
   .icsmini{margin:6px 2px;font-size:.82rem;color:var(--muted)}
   .icsmini summary{cursor:pointer;color:var(--accent);font-weight:700}
   .icsmini .u{direction:ltr;display:block;background:var(--card);border:1px solid var(--line);padding:7px;border-radius:8px;margin-top:6px;font-family:monospace;font-size:.78rem;word-break:break-all}
-  @media print{header.top,.chips,.pbar,.kbar .print,.print,.back,.noprint{display:none!important}.app{max-width:none}.plaque{box-shadow:none}}
+  /* כפתור ההכתבה הצף לא שייך לנייר — בשום מסך */
+  @media print{header.top,.chips,.pbar,.kbar .print,.print,.back,.noprint,
+    .dictfab,#dictfab,.micbtn,.micwrap .micbtn{display:none!important}
+    .app{max-width:none}.plaque{box-shadow:none}}
   /* הדפסת קוויטל נקייה — רק שם תורם ושמות התפילה, בלי תזכורת/כרטיס/אייקונים */
   @media print{
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
