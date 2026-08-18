@@ -4942,6 +4942,8 @@ function oldRow(d){
   if(d.files)t.push('<span class="oldtag">📄 מסמכים</span>');
   if(d.amount)t.push('<span class="oldtag">קבוע '+esc(d.amount)+'</span>');
   if(d.last_money)t.push('<span class="oldtag">כסף אחרון '+esc(String(d.last_money).slice(0,7))+'</span>');
+  if(!d.rows)t.push('<span class="oldtag">אין שום שורת כסף בכרטיס</span>');
+  if(d.twin)t.push('<span class="oldtag ok">🔀 כרטיס כפול? '+esc(d.twin.name)+' — כסף עד '+esc(d.twin.last)+'</span>');
   const rc=d.mail_seen&&d.mail_seen!=='none', fr=d.mail_from&&d.mail_from!=='none';
   if(rc)t.push('<span class="oldtag ok">🧾 קבלה '+esc(d.mail_seen)+' — תרם!</span>');
   if(fr)t.push('<span class="oldtag ok">✉️ כתב אלינו '+esc(d.mail_from)+'</span>');

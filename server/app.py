@@ -6132,6 +6132,36 @@ class H(BaseHTTPRequestHandler):
             MONEY = (('donations', 'date'), ('parnes', 'night_date'),
                      ('transactions', 'date'), ('building', 'date'),
                      ('pledges', 'date'), ('recon', 'date'))
+
+            def _d7(v):
+                return re.sub(r'[^0-9]', '', v or '')[-7:]
+            # מי מהתורמים כן קיבל כסף — כדי לזהות שהכסף יושב על כרטיס כפול
+            rich = {}
+            for x in con.execute(
+                    "SELECT d.id, d.last, d.first, d.english, d.phone, d.email, "
+                    "MAX(COALESCE(n.date,'')) mx FROM donors d JOIN donations n ON n.donor_id=d.id "
+                    "GROUP BY d.id HAVING mx<>''"):
+                rich[x['id']] = dict(x)
+            byph, byem, byen = {}, {}, {}
+            for x in rich.values():
+                for ph in re.split(r'[\s,/;]+', x['phone'] or ''):
+                    if len(_d7(ph)) == 7:
+                        byph.setdefault(_d7(ph), x)
+                for em in re.split(r'[\s,/;]+', (x['email'] or '').lower()):
+                    if '@' in em:
+                        byem.setdefault(em.strip(), x)
+                if (x['english'] or '').strip():
+                    byen.setdefault(re.sub(r'\s+', ' ', x['english'].strip().lower()), x)
+
+            def _twin(d):
+                for ph in re.split(r'[\s,/;]+', d['phone'] or ''):
+                    if len(_d7(ph)) == 7 and _d7(ph) in byph:
+                        return byph[_d7(ph)]
+                for em in re.split(r'[\s,/;]+', (d['email'] or '').lower()):
+                    if '@' in em and em.strip() in byem:
+                        return byem[em.strip()]
+                k = re.sub(r'\s+', ' ', (d['english'] or '').strip().lower())
+                return byen.get(k) if k else None
             for d in con.execute("SELECT * FROM donors WHERE COALESCE(keep_old,0)=0 ORDER BY last, first"):
                 last, undated, rows = '', 0, 0
                 for tbl, col in MONEY:
@@ -6159,6 +6189,9 @@ class H(BaseHTTPRequestHandler):
                     'tier': d['tier'] or '', 'category': d['category'] or '',
                     'amount': d['amount'] or '', 'created': d['created'] or '',
                     'source': d['source'] or '', 'last_money': money, 'rows': rows,
+                    'twin': (lambda t: {'id': t['id'],
+                                        'name': ((t['last'] or '') + ' ' + (t['first'] or '')).strip(),
+                                        'last': t['mx'][:10]} if t and t['id'] != d['id'] else None)(_twin(d)),
                     'mail_seen': d['mail_seen'] or '', 'mail_from': d['mail_from'] or '',
                     'kv': con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=? "
                                       "AND length(TRIM(COALESCE(text,'')))>3", (d['id'],)).fetchone()[0],
