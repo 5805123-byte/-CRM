@@ -5079,8 +5079,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             best = lo
     # הגדלים קבועים, ולכן את השטח שנשאר מפזרים ברווחים בין הבלוקים
     # במקום להשאיר חלל גדול בתחתית התעודה
+    # בתעודת הפרנס לא מרחיבים את הרווחים: הנוסח נצמד למעלה והשאר נשאר
+    # צמוד אליו, כדי שיישאר כמה שיותר מקום להקדשות ולתפילות מתחת
     gap = 1.0
-    if layout(best)[0] < bh * .9:
+    if kind in ('coffee', 'breakfast') and layout(best)[0] < bh * .9:
         lo2, hi2 = 1.0, 2.6           # ריווח נדיב, אבל הבלוק נשאר מלוכד
         for _ in range(18):
             mid = (lo2 + hi2) / 2
@@ -5090,7 +5092,11 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
                 hi2 = mid
         gap = lo2
     total, items = layout(best, gap)
-    top = y0 + max(0, (bh - total) / 2)      # ממורכז אנכית בתיבה
+    # מאיר: "המילים יהי רצון הכי למעלה שאפשר, שתמיד יהיה מקום להקדשות
+    # ולתפילות". לכן בתעודת הפרנס הנוסח נצמד לראש התיבה, והשטח שנשאר
+    # נופל למטה. בתעודות הקפה והבוקר נשאר המרכוז כמו שהיה.
+    top = (y0 if kind not in ('coffee', 'breakfast')
+           else y0 + max(0, (bh - total) / 2))
     for ln, lheight, col, off in items:
         wpx = sum(dr.textlength(t, font=font(s, h)) for t, s, h in ln)
         x = x0 + (bw - wpx) / 2
