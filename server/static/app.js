@@ -1003,6 +1003,7 @@ function render(){
   if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
   if(tab==='old') return renderOld();
+  if(tab==='dups') return renderDups();
 }
 
 /* ---------- תורמים ---------- */
@@ -5257,6 +5258,50 @@ function showAvHist(d){
 
 /* ---------- תורמים ישנים: מי שלא נכנס ממנו כסף מאז תאריך מסוים ---------- */
 let OLD=null, oldSince='2024-01-01';
+/* ---------- 🧾 תשלומים כפולים ----------
+   הייבוא רשם בעבר את אותו תשלום פעמיים כשהוא דווח משני מקורות עם תאריך
+   רישום שונה. הבאג תוקן, וכאן רואים מה כבר נרשם כפול ומוחקים שורה אחת. */
+let DUPS=null;
+async function renderDups(){
+  view.innerHTML='<div class="empty">טוען…</div>';
+  if(!DUPS){ try{ DUPS=await api('GET','/api/dups'); }catch(e){ DUPS={groups:[]}; } }
+  const g=DUPS.groups||[];
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  view.innerHTML=`<div class="cnt">${g.length} מקרים של אותו תורם, אותו חודש ואותו סכום —
+      סה"כ ${f(DUPS.extra||0)} שנספרו פעמיים</div>
+    <div class="hintxt" style="margin:0 2px 10px">אותו תשלום דווח לפעמים בשני קבצים — פעם מהבנק ופעם מחברת הסליקה, עם תאריך רישום שונה — ולכן נרשם פעמיים.
+      הבאג תוקן ומעכשיו זה לא יקרה, אבל מה שכבר נרשם נשאר כאן להחלטה שלך.
+      <b>אם התורם באמת שילם פעמיים באותו חודש — אל תמחק.</b> לחיצה על 🗑 מוחקת שורה אחת בלבד.</div>
+    <div id="duplist">${g.map(dupGroup).join('')||'<div class="empty">אין כפילויות 🎉</div>'}</div>`;
+  wireDups();
+}
+function dupGroup(x){
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  return `<div class="dupg" data-did="${x.donor_id}">
+    <div class="dupg-t"><span class="dupopen" style="cursor:pointer;text-decoration:underline dotted">${esc(x.name)}</span>
+      <span class="dupamt">${f(x.amount)} × ${x.rows.length}</span>
+      <span class="dupmo">${esc(fmtMonth(x.month+'-01')||x.month)}</span></div>
+    ${x.rows.map(r=>`<div class="duprow" data-rid="${r.id}">
+      <span class="dupd">${esc(gregLabel(r.date)||r.date)}</span>
+      <span class="dupsrc">${esc(r.method||'')}${r.method&&r.note?' · ':''}${esc(String(r.note||'').slice(0,60))}</span>
+      <button class="dupdel">🗑 מחק שורה</button></div>`).join('')}</div>`;
+}
+function wireDups(){
+  view.querySelectorAll('.dupopen').forEach(b=>b.onclick=()=>{
+    const d=DB.find(x=>x.id==b.closest('.dupg').dataset.did); if(d)openDonor(d);});
+  view.querySelectorAll('.duprow').forEach(row=>{
+    const b=row.querySelector('.dupdel');
+    b.onclick=async()=>{
+      const left=[...row.parentElement.querySelectorAll('.duprow:not(.gone)')].length;
+      if(left<2){toast('נשארה שורה אחת — אין מה למחוק');return;}
+      if(!await uiConfirm('למחוק את שורת התשלום הזו?'))return;
+      b.disabled=true;
+      const r=await api('DELETE','/api/donation/'+row.dataset.rid);
+      if(!r||!r.ok){b.disabled=false;toast('המחיקה נכשלה');return;}
+      row.classList.add('gone'); b.textContent='נמחק ✓';
+      toast('נמחק ✓'); DUPS=null; await load(); renderDups();};
+  });
+}
 async function renderOld(){
   view.innerHTML='<div class="empty">טוען…</div>';
   if(!OLD){ try{ OLD=await api('GET','/api/inactive?since='+encodeURIComponent(oldSince)); }

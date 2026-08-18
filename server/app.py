@@ -6327,6 +6327,37 @@ class H(BaseHTTPRequestHandler):
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
                                     'free': sum(1 for x in rows if not x['holders'])})
+        # ----- תשלומים כפולים: אותו תורם, אותו חודש, אותו סכום -----
+        # הייבוא רשם בעבר את אותו תשלום פעמיים כשהוא דווח משני מקורות עם
+        # תאריך רישום שונה. הבאג תוקן, וכאן רואים את מה שכבר נרשם כפול
+        # ומחליטים על כל שורה בנפרד.
+        if self.path.split('?')[0] == '/api/dups':
+            con = db()
+            names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                     for r in con.execute("SELECT id,last,first FROM donors")}
+            groups = {}
+            for r in con.execute("SELECT id,donor_id,date,amount,category,method,note FROM donations "
+                                 "WHERE donor_id IS NOT NULL AND LENGTH(COALESCE(date,''))>=7 "
+                                 "ORDER BY date"):
+                try:
+                    a = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
+                except Exception:
+                    continue
+                if a <= 0:
+                    continue
+                groups.setdefault((r['donor_id'], (r['date'] or '')[:7], a), []).append(dict(r))
+            out = []
+            for (did, mo, a), rows in groups.items():
+                if len(rows) < 2:
+                    continue
+                out.append({'donor_id': did, 'name': names.get(did, ''), 'month': mo, 'amount': a,
+                            'rows': [{'id': x['id'], 'date': x['date'], 'method': x['method'] or '',
+                                      'category': x['category'] or '', 'note': x['note'] or ''}
+                                     for x in rows]})
+            con.close()
+            out.sort(key=lambda x: (-x['amount'], x['name'], x['month']))
+            return self._send(200, {'groups': out, 'total': len(out),
+                                    'extra': round(sum(x['amount'] * (len(x['rows']) - 1) for x in out), 2)})
         # ----- תורמים ישנים: מי שלא נכנס ממנו כסף מאז תאריך מסוים -----
         if self.path.split('?')[0] == '/api/inactive':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)

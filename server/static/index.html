@@ -358,6 +358,20 @@
   .cminst{margin-top:5px;font-size:.79rem;color:var(--muted)}
   .cminst small{font-size:.72rem}
   .cmdue{margin-top:4px;font-size:.74rem;color:var(--gold)}
+  /* 🧾 תשלומים כפולים */
+  .dupg{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;margin-bottom:9px}
+  .dupg-t{display:flex;align-items:baseline;gap:8px;font-weight:800;font-size:.9rem}
+  .dupg-t .dupamt{color:var(--no)}
+  .dupg-t .dupmo{margin-inline-start:auto;font-size:.78rem;color:var(--muted);font-weight:600}
+  .duprow{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);
+    font-size:.82rem}
+  .duprow .dupd{font-weight:700;min-width:88px}
+  .duprow .dupsrc{flex:1;min-width:0;color:var(--muted);font-size:.76rem}
+  .duprow .dupdel{background:none;border:1px solid var(--no);color:var(--no);border-radius:8px;
+    padding:3px 9px;font-family:inherit;font-size:.76rem;cursor:pointer}
+  .duprow.gone{opacity:.45}
+  .duprow.gone .dupdel{border-color:var(--line);color:var(--muted)}
   /* 📊 סיכום לפי ייעוד — כמה נגבה לכל התחייבות */
   .pasum{margin-top:10px;border-top:1px solid var(--line);padding-top:9px}
   .pasum-t{font-size:.8rem;font-weight:800;color:var(--muted);margin-bottom:6px}
@@ -1068,6 +1082,7 @@
       <button class="tab" data-tab="mails">📧 מיילים</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
       <button class="tab" data-tab="old">🧹 תורמים ישנים</button>
+      <button class="tab danger" data-tab="dups">🧾 תשלומים כפולים</button>
     </div>
     <div class="chips" id="chips"></div>
   </header>
