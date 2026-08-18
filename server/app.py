@@ -6399,6 +6399,24 @@ class H(BaseHTTPRequestHandler):
             con = db()
             okset = {(r['donor_id'], r['mo'], round(float(r['amount'] or 0), 2))
                      for r in con.execute("SELECT donor_id,mo,amount FROM dup_ok")}
+            # ההתחייבויות החודשיות של כל תורם — רק סכום שמופיע בהן ייחשב
+            # "חודש שלא נגבה"
+            monthly_of = {}
+
+            def _num(v):
+                try:
+                    return round(float(str(v or 0).replace(',', '').replace('$', '')), 2)
+                except Exception:
+                    return 0.0
+            for r in con.execute("SELECT donor_id,amount FROM pledges WHERE COALESCE(monthly,0)=1"):
+                if _num(r['amount']) > 0:
+                    monthly_of.setdefault(r['donor_id'], set()).add(_num(r['amount']))
+            for r in con.execute("SELECT donor_id,amount FROM partners WHERE COALESCE(active,1)<>0"):
+                if _num(r['amount']) > 0:
+                    monthly_of.setdefault(r['donor_id'], set()).add(_num(r['amount']))
+            for r in con.execute("SELECT id,amount FROM donors WHERE TRIM(COALESCE(amount,''))<>''"):
+                if _num(r['amount']) > 0:
+                    monthly_of.setdefault(r['id'], set()).add(_num(r['amount']))
             names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
                      for r in con.execute("SELECT id,last,first FROM donors")}
             groups = {}
@@ -6421,11 +6439,16 @@ class H(BaseHTTPRequestHandler):
                 # חודשים באותה שנה שבהם אותו סכום לא נגבה כלל. פערל שילם
                 # שלוש פעמים ביולי מפני שאפריל, מאי ויוני לא עברו — זו
                 # השלמה ולא כפילות, וצריך לראות את זה מיד.
-                yr = mo[:4]
-                paid_mo = {k[1] for k in groups if k[0] == did and k[2] == a and k[1][:4] == yr}
-                first = min(paid_mo) if paid_mo else mo
-                miss = [m for m in ('%s-%02d' % (yr, x) for x in range(1, 13))
-                        if first <= m <= mo and m not in paid_mo]
+                # נבדק רק כשהסכום הוא באמת התחייבות חודשית של התורם.
+                # אצל רחל סימס 480 הוא פרנס לילה, שאינו חודשי, ובלי
+                # התנאי הזה היא נראתה כאילו חסרים לה חמישה חודשים.
+                miss = []
+                if any(abs(x - a) <= max(1.0, a * 0.02) for x in monthly_of.get(did, ())):
+                    yr = mo[:4]
+                    paid_mo = {k[1] for k in groups if k[0] == did and k[2] == a and k[1][:4] == yr}
+                    first = min(paid_mo) if paid_mo else mo
+                    miss = [m for m in ('%s-%02d' % (yr, x) for x in range(1, 13))
+                            if first <= m <= mo and m not in paid_mo]
                 out.append({'donor_id': did, 'name': names.get(did, ''), 'month': mo, 'amount': a,
                             'ok': 1 if (did, mo, a) in okset else 0,
                             'missed': miss[-6:],

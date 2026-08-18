@@ -1985,11 +1985,22 @@ function izRowAmt(d){
 let DATATHRU=null;
 function dataThru(){
   if(DATATHRU)return DATATHRU;
-  let mx='';
+  // כמה תרומות יש בכל חודש. חודש שהקובץ שלו רק התחיל להיקלט מכיל חלק
+  // קטן מהרגיל, ואם סופרים אותו כמעט כל תורם נראה כאילו חסר לו חודש.
+  const cnt={};
   (DB||[]).forEach(d=>(d.donations||[]).forEach(x=>{
     const m=String(x.date||'').slice(0,7);
-    if(m.length===7&&m>mx)mx=m;}));
-  DATATHRU=mx||todayStr().slice(0,7);
+    if(m.length===7)cnt[m]=(cnt[m]||0)+1;}));
+  const ms=Object.keys(cnt).sort();
+  if(!ms.length){DATATHRU=todayStr().slice(0,7);return DATATHRU;}
+  let i=ms.length-1;
+  while(i>0){
+    const prev=ms.slice(Math.max(0,i-3),i).map(m=>cnt[m]).sort((a,b)=>a-b);
+    const med=prev.length?prev[Math.floor(prev.length/2)]:0;
+    if(med&&cnt[ms[i]]<med*0.5){i--; continue;}   // חודש חלקי — לא נספר
+    break;
+  }
+  DATATHRU=ms[i];
   return DATATHRU;
 }
 function monthsTo(fromYM,toYM){
@@ -2034,16 +2045,35 @@ function purposeAlloc(d){
     return {what:r.what, icon:r.icon, per:r.per, n:r.n, exp:Math.round(r.exp),
             got:Math.round(got), gap:Math.round(r.exp-got)};
   });
-  return {thru, first, rows:out, extra:Math.round(Math.max(0,pool)),
+  // תורם שמשלם בקביעות בכל חודש, רק פחות ממה שרשום בכרטיס — זה לא חוב
+  // אלא סכום שגוי אצלנו. אצל אדלין יצחק נכנסים 100 בכל חודש והכרטיס
+  // אומר 1,000.
+  const by={};
+  (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
+    if(m>=first&&m<=thru)by[m]=(by[m]||0)+amtNum(x.amount);});
+  const need=[];
+  for(let i=1;i<=12;i++){const m=yr+'-'+String(i).padStart(2,'0');
+    if(m>=first&&m<=thru)need.push(m);}
+  let steady=0;
+  if(need.length>1&&need.every(m=>by[m]>0.5)){
+    const cnt={};need.forEach(m=>{const v=Math.round(by[m]);cnt[v]=(cnt[v]||0)+1;});
+    let best=0,bn=0;Object.keys(cnt).forEach(v=>{if(cnt[v]>bn){best=+v;bn=cnt[v];}});
+    const per=base.reduce((a,r)=>a+r.per,0);
+    if(bn>=need.length*0.6&&best<per-0.5)steady=best;
+  }
+  return {thru, first, rows:out, extra:Math.round(Math.max(0,pool)), steady,
+          per:base.reduce((a,r)=>a+r.per,0),
           exp:out.reduce((a,r)=>a+r.exp,0), got:out.reduce((a,r)=>a+r.got,0)};
 }
 function purposeAllocHTML(d){
   const a=purposeAlloc(d); if(!a||!a.rows.length)return '';
   const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   const gap=a.exp-a.got, ahead=a.extra;
-  const head=gap>0.5
-    ? `<span class="pabad">חסר ${f(gap)}</span>`
-    : `<span class="pagood">עומד בהתחייבות ✓</span>`;
+  const none=a.got<=0.5&&a.exp>0.5;      // לא נגבה ממנו כלום בכל התקופה
+  const head=none
+    ? `<span class="pabad">לא נגבה כלום</span>`
+    : (gap>0.5 ? `<span class="pabad">חסר ${f(gap)}</span>`
+               : `<span class="pagood">עומד בהתחייבות ✓</span>`);
   const line=r=>{
     const st=r.gap>0.5
       ? `<span class="pabad">חסר ${f(r.gap)}${r.per>0?(' · '+(Math.round(r.gap/r.per*10)/10)+' חודשים'):''}</span>`
@@ -2053,6 +2083,8 @@ function purposeAllocHTML(d){
       <div class="panum"><b>${f(r.got)}</b> <small>מתוך ${f(r.exp)}</small> ${st}</div></div>`;
   };
   return `<div class="pasum"><div class="pasum-t">📊 האם הגיע לסכום שהתחייב<small>עד ${esc(fmtMonth(a.thru+'-01')||a.thru)}</small>${head}</div>
+    ${a.steady>0.5?`<div class="pafix">💡 נכנסים ממנו <b>${f(a.steady)}</b> בכל חודש בלי לפספס, וכאן רשום ${f(a.per)}. סביר שהסכום הרשום אינו נכון ולא שהוא חייב — כדאי לתקן אותו למעלה.</div>`:''}
+    ${none?'<div class="panone">לא נכנס ממנו כסף כלל בתקופה הזו. ייתכן שההתחייבות כבר אינה בתוקף, שהסכום שרשום כאן אינו נכון, או שפשוט לא חייבו אותו — כדאי לבדוק לפני שסופרים את זה כחוב.</div>':''}
     ${a.rows.map(line).join('')}
     ${ahead>0.5?`<div class="parow"><div class="pawhat">➕ נתרם מעבר להתחייבות</div>
       <div class="panum"><b class="paex">${f(ahead)}</b></div></div>`:''}
