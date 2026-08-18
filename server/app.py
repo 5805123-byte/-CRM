@@ -272,6 +272,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("CREATE INDEX IF NOT EXISTS idx_don_tid ON donations(tid)")
     except Exception: pass
+    # מסך הבדיקה: לכל תורם שיש לגביו שאלה — הסטטוס שמאיר קבע והערה שכתב
+    con.execute("""CREATE TABLE IF NOT EXISTS review(
+        donor_id INTEGER PRIMARY KEY, status TEXT, note TEXT, updated TEXT);""")
     # קבוצת תשלומים כפולים שמאיר עבר עליה ואישר שהיא תקינה — לא תופיע שוב
     con.execute("""CREATE TABLE IF NOT EXISTS dup_ok(
         donor_id INTEGER, mo TEXT, amount REAL, created TEXT,
@@ -6389,6 +6392,14 @@ class H(BaseHTTPRequestHandler):
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             return self._send(200, {'rows': rows, 'total': len(rows),
                                     'free': sum(1 for x in rows if not x['holders'])})
+        # ----- מסך הבדיקה: הסטטוס שנקבע לכל תורם -----
+        if self.path.split('?')[0] == '/api/review':
+            con = db()
+            rows = {r['donor_id']: {'status': r['status'] or '', 'note': r['note'] or '',
+                                    'updated': r['updated'] or ''}
+                    for r in con.execute("SELECT donor_id,status,note,updated FROM review")}
+            con.close()
+            return self._send(200, {'rows': rows})
         # ----- תשלומים כפולים: אותו תורם, אותו חודש, אותו סכום -----
         # הייבוא רשם בעבר את אותו תשלום פעמיים כשהוא דווח משני מקורות עם
         # תאריך רישום שונה. הבאג תוקן, וכאן רואים את מה שכבר נרשם כפול
@@ -7756,6 +7767,22 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE recon SET %s=? WHERE tid=?" % col, (on, str(t)))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'n': len(tids)})
+        # קביעת סטטוס במסך הבדיקה
+        if self.path == '/api/review':
+            try:
+                did = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id required'})
+            st = (b.get('status') or '').strip()
+            nt = (b.get('note') or '').strip()
+            con = db()
+            if not st and not nt:
+                con.execute("DELETE FROM review WHERE donor_id=?", (did,))
+            else:
+                con.execute("INSERT OR REPLACE INTO review(donor_id,status,note,updated) "
+                            "VALUES(?,?,?,?)", (did, st, nt, today_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         # אישור קבוצת תשלומים כפולים — "בדקתי, זה תקין". יורדת מהרשימה.
         if self.path == '/api/dups/ok':
             try:

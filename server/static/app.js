@@ -1004,6 +1004,7 @@ function render(){
   if(tab==='camp') return renderCamp();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
+  if(tab==='review') return renderReview();
 }
 
 /* ---------- תורמים ---------- */
@@ -5336,6 +5337,85 @@ function showAvHist(d){
 
 /* ---------- תורמים ישנים: מי שלא נכנס ממנו כסף מאז תאריך מסוים ---------- */
 let OLD=null, oldSince='2024-01-01';
+/* ---------- 📋 לבדיקה — כל השאלות במקום אחד ----------
+   מאיר: "חשוב לי שזה יהיה מרוכז במקום אחד, שאדפיס ואעדכן אחד אחד".
+   כל תורם שיש לגביו שאלה מופיע כאן עם המספרים, עם סטטוס שאפשר לקבוע
+   ועם מקום להערה. מה שסומן "טופל" או "בסדר" יורד מהרשימה הפתוחה. */
+const RVST=[['ok','בסדר'],['check','צריך בדיקה'],['debt','חוב אמיתי'],['done','טופל']];
+let RVSTAT=null, RVSHOW='open';
+function reviewList(){
+  const out=[];
+  (DB||[]).forEach(d=>{
+    let a=null; try{a=purposeAlloc(d);}catch(e){}
+    if(!a||a.exp<=0.5)return;
+    const gap=a.exp-a.got;
+    let kind='', why='';
+    if(a.got<=0.5){kind='none'; why='לא נכנס ממנו כסף כלל בתקופה';}
+    else if(a.steady>0.5){kind='amount';
+      why='משלם '+curSym(d)+Math.round(a.steady)+' בכל חודש בלי לפספס, וכאן רשום '
+          +curSym(d)+Math.round(a.per)+' — או שהסכום שגוי, או שיש לו עוד התחייבות נפרדת';}
+    else if(gap>0.5){kind='short';
+      why='חסרים '+curSym(d)+Math.round(gap)+' — חודשים שלא נגבו';}
+    else return;
+    out.push({d, kind, why, gap:Math.round(gap), exp:a.exp, got:a.got,
+      per:Math.round(a.per), thru:a.thru, rows:a.rows});
+  });
+  const ord={short:0, amount:1, none:2};
+  out.sort((x,y)=>(ord[x.kind]-ord[y.kind])||(y.gap-x.gap));
+  return out;
+}
+const RVKIND={short:['🔴','חוסר אמיתי'],amount:['💡','הסכום בכרטיס'],none:['❓','לא נגבה כלום']};
+async function renderReview(){
+  view.innerHTML='<div class="empty">טוען…</div>';
+  if(!RVSTAT){ try{RVSTAT=(await api('GET','/api/review')).rows||{};}catch(e){RVSTAT={};} }
+  const all=reviewList();
+  const closed=x=>['ok','done'].includes((RVSTAT[x.d.id]||{}).status);
+  const l=RVSHOW==='all'?all:all.filter(x=>!closed(x));
+  const nDone=all.filter(closed).length;
+  const by=k=>l.filter(x=>x.kind===k);
+  const sec=k=>{const g=by(k); if(!g.length)return '';
+    return `<div class="rvsec"><div class="rvsec-t">${RVKIND[k][0]} ${RVKIND[k][1]} — ${g.length}</div>
+      ${g.map(rvRow).join('')}</div>`;};
+  view.innerHTML=`<div class="rvbar noprint">
+      <span class="cnt">${l.length} לבדיקה${nDone?(' · '+nDone+' סומנו'):''}</span>
+      <button class="btn sm ghost" id="rvall">${RVSHOW==='all'?'הצג רק פתוחים':'הצג גם מה שסומן'}</button>
+      <button class="btn sm" id="rvprint">🖨️ הדפס</button></div>
+    <div class="hintxt noprint" style="margin:0 2px 10px">כל שורה: השם, המספרים והשאלה. קבע סטטוס, כתוב הערה אם צריך, ולחץ על השם כדי לפתוח את הכרטיס ולתקן את ההתחייבות בתחתיתו.</div>
+    <div id="rvlist">${['short','amount','none'].map(sec).join('')||'<div class="empty">אין מה לבדוק 🎉</div>'}</div>`;
+  document.getElementById('rvall').onclick=()=>{RVSHOW=RVSHOW==='all'?'open':'all';renderReview();};
+  document.getElementById('rvprint').onclick=()=>window.print();
+  wireReview();
+}
+function rvRow(x){
+  const st=(RVSTAT[x.d.id]||{}), cur=curSym(x.d);
+  const f=n=>cur+Math.round(n).toLocaleString('en-US');
+  return `<div class="rvrow ${st.status||''}" data-id="${x.d.id}">
+    <div class="rvhead"><span class="rvnm">${esc((x.d.last+' '+x.d.first).trim())}</span>
+      <span class="rvnum">${f(x.got)} מתוך ${f(x.exp)}</span></div>
+    <div class="rvwhy">${esc(x.why)}</div>
+    <div class="rvdet">${x.rows.map(r=>esc(r.what)+' · '+f(r.per)+' לחודש').join(' | ')}</div>
+    <div class="rvbtns noprint">${RVST.map(([k,t])=>
+      `<button class="rvb ${st.status===k?'on '+k:''}" data-st="${k}">${t}</button>`).join('')}</div>
+    <input class="rvnote" value="${esc(st.note||'')}" placeholder="הערה — מה סוכם">
+    <div class="rvline"></div></div>`;
+}
+function wireReview(){
+  view.querySelectorAll('.rvnm').forEach(b=>b.onclick=()=>{
+    const d=DB.find(x=>x.id==b.closest('.rvrow').dataset.id); if(d)openDonor(d);});
+  const save=async(id,st,nt)=>{
+    RVSTAT[id]=Object.assign({},RVSTAT[id],{status:st,note:nt});
+    await api('POST','/api/review',{donor_id:+id,status:st,note:nt});};
+  view.querySelectorAll('.rvb').forEach(b=>b.onclick=async()=>{
+    const row=b.closest('.rvrow'), id=row.dataset.id;
+    const cur=(RVSTAT[id]||{}).status, st=(cur===b.dataset.st)?'':b.dataset.st;
+    await save(id, st, (RVSTAT[id]||{}).note||'');
+    toast(st?('סומן: '+(RVST.find(x=>x[0]===st)||['',''])[1]):'הסימון בוטל');
+    renderReview();});
+  view.querySelectorAll('.rvnote').forEach(inp=>inp.onchange=async()=>{
+    const id=inp.closest('.rvrow').dataset.id;
+    await save(id,(RVSTAT[id]||{}).status||'',inp.value.trim()); toast('נשמר ✓');});
+  addMics(view,['.rvnote']);
+}
 /* ---------- 🧾 תשלומים כפולים ----------
    הייבוא רשם בעבר את אותו תשלום פעמיים כשהוא דווח משני מקורות עם תאריך
    רישום שונה. הבאג תוקן, וכאן רואים מה כבר נרשם כפול ומוחקים שורה אחת. */

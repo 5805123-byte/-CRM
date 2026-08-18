@@ -359,6 +359,39 @@
   .cminst small{font-size:.72rem}
   .cmdue{margin-top:4px;font-size:.74rem;color:var(--gold)}
   /* 🧾 תשלומים כפולים */
+  /* 📋 מסך הבדיקה */
+  .rvbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .rvbar .cnt{margin:0}
+  .rvsec{margin-bottom:14px}
+  .rvsec-t{font-weight:800;color:var(--gold);font-size:.9rem;margin:0 2px 7px;
+    border-bottom:1px solid var(--line);padding-bottom:4px}
+  .rvrow{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:9px 11px;margin-bottom:8px}
+  .rvrow.ok,.rvrow.done{opacity:.55}
+  .rvrow.debt{border-color:var(--no)}
+  .rvrow.check{border-color:var(--gold)}
+  .rvhead{display:flex;align-items:baseline;gap:8px}
+  .rvnm{font-weight:800;font-size:.92rem;cursor:pointer;text-decoration:underline dotted}
+  .rvnum{margin-inline-start:auto;font-weight:800;color:var(--yes);font-size:.84rem}
+  .rvwhy{margin-top:3px;font-size:.8rem}
+  .rvdet{margin-top:2px;font-size:.74rem;color:var(--muted)}
+  .rvbtns{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+  .rvb{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;
+    padding:3px 10px;font-family:inherit;font-size:.76rem;cursor:pointer}
+  .rvb.on{color:#fff;border-color:transparent;font-weight:800}
+  .rvb.on.ok{background:var(--yes)} .rvb.on.done{background:var(--yes)}
+  .rvb.on.check{background:var(--gold)} .rvb.on.debt{background:var(--no)}
+  .rvnote{width:100%;margin-top:6px;padding:5px 8px;border:1px dashed var(--line);
+    border-radius:8px;font-family:inherit;font-size:.78rem}
+  .rvline{display:none}
+  @media print{
+    .noprint,.tabs,.topbar,#chips,.searchwrap,header,.rvnote,.micbtn,.micwrap{display:none !important}
+    body{background:#fff}
+    .rvrow{break-inside:avoid;border:1px solid #999;margin-bottom:6px}
+    .rvline{display:block;border-bottom:1px dotted #999;height:20px;margin-top:8px}
+    .rvline::before{content:'סוכם: ';font-size:.7rem;color:#666}
+    .rvsec-t{page-break-after:avoid}
+  }
   .dupg{background:var(--card);border:1px solid var(--line);border-radius:12px;
     padding:10px 12px;margin-bottom:9px}
   .dupg-t{display:flex;align-items:baseline;gap:8px;font-weight:800;font-size:.9rem}
@@ -1100,6 +1133,7 @@
       <button class="tab" data-tab="mails">📧 מיילים</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
       <button class="tab" data-tab="old">🧹 תורמים ישנים</button>
+      <button class="tab danger" data-tab="review">📋 לבדיקה</button>
       <button class="tab danger" data-tab="dups">🧾 תשלומים כפולים</button>
     </div>
     <div class="chips" id="chips"></div>
