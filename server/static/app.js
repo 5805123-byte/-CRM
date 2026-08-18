@@ -1980,38 +1980,84 @@ function izRowAmt(d){
    וכולם מסומנים יששכר־זבולון, ולכן אי אפשר לפצל אותם לפי הסימון עצמו.
    הפיצול נעשה לפי החלוקה שמאיר רשם: כל ייעוד מקבל עד מה שהוא אמור היה
    לקבל בתקופה, לפי הסדר, ומה שנשאר מעבר לזה מוצג בשורה משלו. */
+// עד איזה חודש הנתונים במערכת מלאים. חודש שהקובץ שלו טרם נקלט אינו
+// נחשב חוב — אחרת כל תורם ייראה חסר עד שיגיע הקובץ הבא.
+let DATATHRU=null;
+function dataThru(){
+  if(DATATHRU)return DATATHRU;
+  let mx='';
+  (DB||[]).forEach(d=>(d.donations||[]).forEach(x=>{
+    const m=String(x.date||'').slice(0,7);
+    if(m.length===7&&m>mx)mx=m;}));
+  DATATHRU=mx||todayStr().slice(0,7);
+  return DATATHRU;
+}
+function monthsTo(fromYM,toYM){
+  const a=String(fromYM||'').match(/^(\d{4})-(\d{2})/), b=String(toYM||'').match(/^(\d{4})-(\d{2})/);
+  if(!a||!b)return 0;
+  return Math.max(0, ((+b[1])*12+(+b[2])) - ((+a[1])*12+(+a[2])) + 1);
+}
+/* ---------- 📊 האם הגיע לסכום שהתחייב ----------
+   מאיר: "תכל'ס אתה צריך שזה יעשה חשבון אם הוא הגיע לסכום שהתחייב או לא".
+   לכל התחייבות: כמה הוא היה אמור לתת עד היום, כמה נגבה בפועל, ומה ההפרש.
+   הכסף מחולק בין ההתחייבויות לפי החלוקה שנרשמה, כי בבנק הוא נכנס
+   בחיוב אחד בלי פירוט. */
 function purposeAlloc(d){
   const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5);
   if(!rows.length)return null;
-  // התקופה: מהחודש הראשון שנכנס בו כסף השנה ועד האחרון
-  const codes=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===GREGYEAR)
-    .map(x=>{const m=String(x.date||'').match(/^(\d{4})-(\d{2})/);return m?(+m[1])*12+(+m[2]):null;})
-    .filter(v=>v!=null);
-  if(!codes.length)return null;
-  const span=Math.max(...codes)-Math.min(...codes)+1;
-  let pool=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===GREGYEAR)
+  const thru=dataThru(), yr=thru.slice(0,4);
+  // תחילת הספירה: החודש הראשון שנכנס בו כסף השנה, ולא לפני תחילת השנה
+  let first='';
+  (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
+    if(m.length===7&&m.slice(0,4)===yr&&(!first||m<first))first=m;});
+  if(!first)first=yr+'-01';
+  let pool=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===yr)
     .reduce((a,x)=>a+amtNum(x.amount),0);
-  (d.parnes||[]).forEach(p=>{ if(+p.paid&&String(p.night_date||'').slice(0,4)===GREGYEAR)
+  (d.parnes||[]).forEach(p=>{ if(+p.paid&&String(p.night_date||'').slice(0,4)===yr)
     pool+=amtNum(p.amount); });
-  const out=rows.map(r=>{
+  const base=rows.map(r=>{
     const per=r.inst?r.plan.per:r.amt;
-    let exp=per*span;
+    const start=(r.inst&&r.plan.from)?(r.plan.from>first?r.plan.from:first):first;
+    const n=monthsTo(start, thru);
+    let exp=per*n;
     if(r.inst)exp=Math.min(exp, r.amt);          // תשלומים — לא מעבר לסכום הכולל
-    const got=Math.min(exp, Math.max(0,pool));
-    pool-=got;
-    return {what:r.what, icon:r.icon, per, exp:Math.round(exp), got:Math.round(got)};
+    return {what:r.what, icon:r.icon, per, n, exp};
   });
-  return {span, rows:out, extra:Math.round(Math.max(0,pool))};
+  // החלוקה יחסית ולא לפי הסדר: כשחסר כסף, החוסר מתחלק בין ההתחייבויות
+  // ולא נופל כולו על האחרונה. אחרת ייעוד אחד היה נראה "מלא ✓" בזמן
+  // שהתורם בכלל לא הגיע לסכום.
+  const sumExp=base.reduce((a,r)=>a+r.exp,0);
+  const share=sumExp>0.5?Math.min(1, Math.max(0,pool)/sumExp):0;
+  const out=base.map(r=>{
+    const got=Math.min(r.exp, r.exp*share);
+    pool-=got;
+    return {what:r.what, icon:r.icon, per:r.per, n:r.n, exp:Math.round(r.exp),
+            got:Math.round(got), gap:Math.round(r.exp-got)};
+  });
+  return {thru, first, rows:out, extra:Math.round(Math.max(0,pool)),
+          exp:out.reduce((a,r)=>a+r.exp,0), got:out.reduce((a,r)=>a+r.got,0)};
 }
 function purposeAllocHTML(d){
-  const a=purposeAlloc(d); if(!a||a.rows.length<1)return '';
+  const a=purposeAlloc(d); if(!a||!a.rows.length)return '';
   const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
-  const tot=a.rows.reduce((s,r)=>s+r.got,0)+a.extra;
-  return `<div class="pasum"><div class="pasum-t">📊 מה נגבה לכל ייעוד — ${a.span} ${a.span===1?'חודש':'חודשים'} ב-${GREGYEAR}</div>
-    ${a.rows.map(r=>`<div class="parow"><span>${r.icon} ${esc(r.what)} <small>${f(r.per)} לחודש</small></span>
-      <b class="pagot">${f(r.got)}</b><small class="paexp">מתוך ${f(r.exp)}</small></div>`).join('')}
-    ${a.extra>0.5?`<div class="parow ex"><span>➕ נתרם מעבר להתחייבות</span><b class="pagot">${f(a.extra)}</b><small class="paexp"></small></div>`:''}
-    <div class="parow tot"><span>סה"כ נגבה השנה</span><b class="pagot">${f(tot)}</b><small class="paexp"></small></div></div>`;
+  const gap=a.exp-a.got, ahead=a.extra;
+  const head=gap>0.5
+    ? `<span class="pabad">חסר ${f(gap)}</span>`
+    : `<span class="pagood">עומד בהתחייבות ✓</span>`;
+  const line=r=>{
+    const st=r.gap>0.5
+      ? `<span class="pabad">חסר ${f(r.gap)}${r.per>0?(' · '+(Math.round(r.gap/r.per*10)/10)+' חודשים'):''}</span>`
+      : '<span class="pagood">מלא ✓</span>';
+    return `<div class="parow"><div class="pawhat">${r.icon} ${esc(r.what)}
+        <small>${f(r.per)} × ${r.n} ${r.n===1?'חודש':'חודשים'}</small></div>
+      <div class="panum"><b>${f(r.got)}</b> <small>מתוך ${f(r.exp)}</small> ${st}</div></div>`;
+  };
+  return `<div class="pasum"><div class="pasum-t">📊 האם הגיע לסכום שהתחייב<small>עד ${esc(fmtMonth(a.thru+'-01')||a.thru)}</small>${head}</div>
+    ${a.rows.map(line).join('')}
+    ${ahead>0.5?`<div class="parow"><div class="pawhat">➕ נתרם מעבר להתחייבות</div>
+      <div class="panum"><b class="paex">${f(ahead)}</b></div></div>`:''}
+    <div class="parow tot"><div class="pawhat">סה"כ</div>
+      <div class="panum"><b>${f(a.got+ahead)}</b> <small>מתוך ${f(a.exp)}</small></div></div></div>`;
 }
 // אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
 function izGapNote(d){
