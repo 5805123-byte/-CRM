@@ -2044,13 +2044,14 @@ function commitHTML(d){
         +(r.left>0.5?` · <b class="cmleft no">נשאר ${f(r.left)}</b> · עוד ${pn.n} ${pn.n===1?'תשלום':'תשלומים'}`
                     +(pn.end?` (עד ${esc(pn.end)})`:'')
                    :' · <b class="cmleft ok">הושלם ✓</b>')
-        +(r.got>0.5?`<small> · מתוכם ${f(r.got)} נגבו במערכת</small>`:'')
         +`</div>`
         +(pn.from&&pn.due>pn.done
           ? `<div class="cmdue">📅 לפי הלוח כבר אמורים לעבור ${pn.due} תשלומים, ורשומים ${pn.done}`
             +` — כנראה עדיין לא נקלט קובץ הבנק האחרון</div>` : '')
-        +`<span class="cmpaid">שולם עד היום <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
-        +`<small>${pn.done?(pn.done+' מתוך '+pn.all+' תשלומים'):'עדיין לא שולם'}</small></span>`
+        +(r.got>0.5
+          ? `<span class="cmpaid"><small>המספרים כאן לפי מה שנקלט במערכת — כשייכנס קובץ הבנק הבא זה יתעדכן לבד</small></span>`
+          : `<span class="cmpaid">שולם עד היום <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
+            +`<small>${pn.done?(pn.done+' מתוך '+pn.all+' תשלומים'):'עדיין לא שולם'}</small></span>`)
       : '';
     // תשלום אחד: ירוק כשנגבה, אדום עם "לא נגבה" כשעדיין לא
     const done=r.amt>0.5&&r.left<=0.5;
@@ -2152,6 +2153,15 @@ function wireCommit(d,body){
       status:p.status||'',note:p.note||'',monthly:+p.monthly?1:0,paid:p.paid||'',
       detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||''});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
+  // סכום ידני שנשאר לצד תשלומים שנקלטו במערכת יוצר שני מספרים סותרים
+  // על אותה שורה. מה שנקלט הוא הקובע, ולכן הידני נמחק פעם אחת.
+  (d.pledges||[]).forEach(p=>{
+    if(amtNum(p.paid)>0.5&&plCollected(d,p)>0.5){
+      p.paid=''; api('PUT','/api/pledge/'+p.id,{category:p.category||'',
+        amount:p.amount||'',status:p.status||'',note:p.note||'',
+        monthly:+p.monthly?1:0,paid:'',detail:p.detail||'',
+        permo:p.permo||'',avreich:p.avreich||''});
+    }});
   box.querySelectorAll('.cmamt').forEach(inp=>inp.onchange=async()=>{
     if(inp.dataset.busy)return; inp.dataset.busy='1';
     try{ await saveAmt(inp); } finally{ delete inp.dataset.busy; }});
@@ -2236,7 +2246,7 @@ function wireCommit(d,body){
         box.querySelector('.cm_mergetxt').textContent=
           '🔗 צרף '+MATCH.length+' תשלומים של '+f(per)+' שכבר רשומים בכרטיס'
           +(MATCH[0].date?(' מ'+monthPlus(String(MATCH[0].date).slice(0,7),0)):'')
-          +' — במקום לרשום אותם שוב';
+          +' — וגם כל תשלום כזה שייכנס בעתיד ייזקף לכאן לבד';
       const dn=useM?MATCH.length:done;
       const left=Math.max(0,a-per*dn);
       calc.textContent='כל תשלום '+f(per)+' — '+n+' תשלומים'
@@ -2298,6 +2308,14 @@ function wireCommit(d,body){
         x.category=cat;
         await api('PUT','/api/donation/'+x.id,{category:cat});
       }
+      // וכדי שגם התשלומים הבאים ייכנסו לבד כשיגיע קובץ הבנק — כלל קבוע
+      // לסכום הזה אצל התורם. נוצר רק אם אין תשלום באותו סכום מלפני
+      // תחילת ההתחייבות, שלא נשייך אליה כסף ישן.
+      const per2=amtNum(permo), tol2=Math.max(1, per2*0.02);
+      const older=(d.donations||[]).filter(x=>Math.abs(amtNum(x.amount)-per2)<=tol2
+        && String(x.date||'').slice(0,7) < String(from).slice(0,7));
+      if(per2>0.5&&!older.length&&!(d.rules||[]).some(r=>Math.abs(amtNum(r.amount)-per2)<=0.5))
+        await api('POST','/api/rule',{donor_id:d.id,amount:per2,category:cat,note:detail});
       toast('צורפו '+MATCH.length+' תשלומים קיימים ✓');
     }
     // אברך יששכר־זבולון — נפתחת לו שורת אברך אמיתית, כדי שהכל מחובר
@@ -3857,8 +3875,12 @@ function plCollected(d,p){
 }
 // מה ששולם ידנית ומה שנגבה במערכת. תקרה בסכום ההתחייבות, כדי שסיווג
 // מאוחר של תרומות ישנות לא ייצור "שולם" גדול מההתחייבות עצמה.
+// מאיר: "תלך רק מה שמעודכן אצלך". כשיש תשלומים שנקלטו במערכת הם הקובעים,
+// והסכום הידני אינו מתווסף עליהם — אחרת אותו כסף נספר פעמיים והמספרים
+// סותרים זה את זה. הסכום הידני משמש רק כשעדיין לא נקלט כלום.
 function plPaid(d,p){
-  const tot=amtNum(p.amount), v=amtNum(p.paid)+plCollected(d,p);
+  const tot=amtNum(p.amount), got=plCollected(d,p);
+  const v=got>0.5?got:amtNum(p.paid);
   return tot>0.5?Math.min(tot,v):v;
 }
 function plLeft(d,p){
@@ -3876,10 +3898,7 @@ function instMatches(d,per,fromYM,cat){
     const m=String(x.date||'').slice(0,7);
     if(from&&m&&m<from)return false;
     return String(x.category||'').trim()!==String(cat||'').trim();
-  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
-    .filter((x,i,l)=>{      // תשלום אחד לכל חודש — תוכנית תשלומים היא חודשית
-      const m=String(x.date||'').slice(0,7);
-      return !m||l.findIndex(y=>String(y.date||'').slice(0,7)===m)===i;});
+  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
 }
 // כמה בכל תשלום, כמה נשארו, ומתי התשלום האחרון
 function plPlan(d,p){
