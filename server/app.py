@@ -4241,6 +4241,27 @@ def ensure_schema():
     except Exception as ex:
         print('  note rename error:', ex)
 
+    # מאיר על גיטל הרליץ: "בקוויטל כתוב עליה שבועי אבל היא באמת מזדמן אלול,
+    # יש פה סתירה רצינית". התווית יושבת על שורת השם מהייבוא, ומאיר מסדר את
+    # הדרגה בכרטיס — ולכן הכרטיס הוא הקובע והשורה מיושרת אליו. רץ בכל
+    # עלייה, כדי שהתיקונים שמאיר עושה לא יידרסו על ידי תווית ישנה.
+    try:
+        n = 0
+        n += con.execute(
+            "UPDATE prayers SET tier='' WHERE COALESCE(tier,'')<>'' AND donor_id IN "
+            "(SELECT id FROM donors WHERE TRIM(COALESCE(category,''))='מזדמן')").rowcount
+        n += con.execute(
+            "UPDATE prayers SET tier=(SELECT tier FROM donors WHERE id=prayers.donor_id) "
+            "WHERE donor_id IN (SELECT id FROM donors WHERE TRIM(COALESCE(tier,''))<>'' "
+            "AND TRIM(COALESCE(category,''))<>'מזדמן') "
+            "AND COALESCE(tier,'')<>(SELECT COALESCE(tier,'') FROM donors WHERE id=prayers.donor_id)"
+        ).rowcount
+        if n:
+            con.commit()
+            print('  שורות קוויטל שיושרו לדרגה שבכרטיס: %d' % n)
+    except Exception as ex:
+        print('  kvittel tier align error:', ex)
+
     con.commit(); con.close()
 
 def get_all():

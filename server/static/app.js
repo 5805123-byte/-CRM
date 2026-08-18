@@ -981,7 +981,8 @@ async function load(){
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;DLIM=60;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;try{localStorage.setItem('kc_tab',tab);localStorage.removeItem('kc_donor');}catch(e){}render();});
 document.getElementById('q').oninput=e=>{q=e.target.value.trim();DLIM=60;render();};
-ov.onclick=e=>{if(e.target===ov){ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}}};
+ov.onclick=e=>{if(e.target===ov){ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}
+  if(typeof restoreScroll==='function')restoreScroll();}};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
 
 function render(){
@@ -1760,7 +1761,18 @@ async function applyTierSelect(d,selId){
 }
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
 
+// מאיר: "כשאני לוחץ על שם תורם בקוויטל נפתח הכרטיס, ואז אני רוצה לחזור
+// לקוויטל איפה שאני אוחז וזה לא מחזיר אותי לאותו מקום". שומרים את מיקום
+// הגלילה ברגע שהכרטיס נפתח, ומחזירים אותו כשהוא נסגר.
+let SCROLLBACK=null;
+function keepScroll(){SCROLLBACK=window.scrollY||document.documentElement.scrollTop||0;}
+function restoreScroll(){
+  if(SCROLLBACK==null)return; const y=SCROLLBACK; SCROLLBACK=null;
+  // אחרי הסגירה הרשימה מצוירת מחדש — מחזירים אחרי שהציור הסתיים
+  requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo(0,y)));
+}
 function openDonor(d,startTab){
+  keepScroll();
   cardTab=startTab||'details';CURD=d;
   const nopen=(d.tasks||[]).filter(t=>!t.done||t.done==0).length;
   sheet.innerHTML=`<button class="x" id="cx">✕</button>
@@ -1778,7 +1790,8 @@ function openDonor(d,startTab){
   ov.classList.add('show');
   try{localStorage.setItem('kc_donor',d.id);}catch(e){}
   document.getElementById('cx').onclick=async()=>{await flushPrayers();
-    ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}};
+    ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}
+    restoreScroll();};
   sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=async()=>{await flushPrayers();cardTab=b.dataset.c;renderCard(d);});
   const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='details';renderCard(d);};
   renderCard(d);
@@ -4570,11 +4583,15 @@ const KVTYPES=[
 let kvSub=null;
 function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',occ:'מזדמן',klali:'כללי'})[t]||'כללי';}
 // לאיזה קוויטל שייך התורם (לפי דרגה/קטגוריה) — למי שאמור להיות לו שם לתפילה
+// מאיר: "אני עברתי על הכל וסידרתי מי שבוע ומי מזדמן" — מה שרשום בכרטיס
+// הוא הקובע. אין ניחוש לפי סכומים, ומזדמן גובר על דרגת קוויטל ישנה
+// שנשארה מהייבוא, כדי שהוא לא יופיע בקוויטל הכללי.
+const isOccDonor=d=>String((d&&d.category)||'').trim()==='מזדמן';
 function kvMemberType(d){
+  if(isOccDonor(d))return 'occ';
   if(d.tier==='יששכר_זבולון')return 'iz';
   if(d.tier==='קוויטל_101')return '101';
   if(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי')return 'weekly';
-  if(d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101)return 'weekly';
   return null;
 }
 // כל תורם שאין לו שם לתפילה ולא סומן "לא צריך" — כדי להתריע על כולם
@@ -4804,12 +4821,15 @@ function paintIntake(){
     };
   });
 }
+// שורת שם בקוויטל שומרת דרגה משלה מהייבוא. מה שרשום היום בכרטיס גובר
+// עליה — אחרת תורם שמאיר העביר למזדמן ממשיך להופיע בכללי לפי דרגה ישנה.
 function prayerKvType(pt,d){
   d=d||{};
-  if(pt==='יששכר_זבולון'||(!pt&&d.tier==='יששכר_זבולון'))return 'iz';
-  if(pt==='קוויטל_101'||(!pt&&d.tier==='קוויטל_101'))return '101';
-  if(pt==='שבועי'||pt==='קוויטל_שבועי'||pt==='קוויטל_כללי'||(!pt&&(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי'))||(!pt&&d.category==='קבוע'&&amtNum(d.amount)>0&&amtNum(d.amount)<101))return 'weekly';
-  if(d.category==='מזדמן'&&!d.tier)return 'occ';
+  if(isOccDonor(d))return 'occ';
+  if(d.tier)return kvMemberType(d)||'other';
+  if(pt==='יששכר_זבולון')return 'iz';
+  if(pt==='קוויטל_101')return '101';
+  if(pt==='שבועי'||pt==='קוויטל_שבועי'||pt==='קוויטל_כללי')return 'weekly';
   return 'other';
 }
 let kvListQ='';
@@ -4822,11 +4842,16 @@ function renderKvList(type){
   document.getElementById('kvback').onclick=()=>{kvListQ='';kvSub=null;render();};
   const si=document.getElementById('kvsearch');
   function paint(){
-    let entries=[];
+    let entries=[]; let nOcc=0;
     DB.forEach(d=>{
       const prs=(d.prayers||[]);
-      prs.forEach(p=>{const t=prayerKvType(p.tier,d);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id});});
-      if(!prs.length&&!(+d.kv_skip)){const t=kvMemberType(d);const inc=t&&(type==='klali'?true:(t===type));if(inc)entries.push({id:null,newdid:d.id,text:'',donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,needname:true});}
+      prs.forEach(p=>{const t=prayerKvType(p.tier,d);const inc=type==='klali'?(t!=='occ'):(t===type);
+        if(inc)entries.push({id:p.id,text:p.text,donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id});
+        else if(type==='klali'&&t==='occ')nOcc++;});
+      // מי שאין לו עדיין שם — גם כאן מזדמן אינו נכנס לכללי
+      if(!prs.length&&!(+d.kv_skip)){const t=kvMemberType(d);
+        const inc=t&&(type==='klali'?(t!=='occ'):(t===type));
+        if(inc)entries.push({id:null,newdid:d.id,text:'',donor:(d.last+' '+d.first).trim(),last:d.last,did:d.id,needname:true});}
     });
     UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);const inc=type==='klali'?(t!=='occ'):(t===type);if(inc)entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
     const nq=norm(kvListQ);
@@ -4854,7 +4879,9 @@ function renderKvList(type){
 function renderKvOcc(){
   const groups={},mdate={};
   const place=(d,hm,dt)=>{groups[hm]=groups[hm]||{};const pid=(d.prayers&&d.prayers[0])?d.prayers[0].id:null;groups[hm][d.id]={d,pid,text:(d.prayers&&d.prayers[0])?d.prayers[0].text:''};if(!mdate[hm]||(dt||'')>mdate[hm])mdate[hm]=dt||'';};
-  DB.forEach(d=>{if(!(d.category==='מזדמן'&&!d.tier))return;
+  // כל מי שרשום מזדמן — גם אם נשארה עליו דרגת קוויטל ישנה מהייבוא,
+  // אחרת הוא נופל בין הכיסאות ולא מופיע באף רשימה
+  DB.forEach(d=>{if(!isOccDonor(d))return;
     if(d.kv_month){const lastdt=(d.donations||[]).reduce((a,x)=>((x.date||'')>a?(x.date||''):a),'');place(d,d.kv_month+(d.kv_year?(' '+d.kv_year):''),lastdt);return;}  // חודש/שנה שנקבעו ידנית
     const dons=(d.donations||[]);
     if(!dons.length){place(d,'ללא תאריך','');return;}
