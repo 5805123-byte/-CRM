@@ -4576,10 +4576,26 @@ function renderParnesEdit(d){
 const KVTYPES=[
   ['iz','קוויטל יששכר־זבולון','שותפי יששכר־זבולון'],
   ['101','קוויטל כל לילה','תורמי כל לילה (101)'],
-  ['weekly','קוויטל שבועי','קבועים פחות מ-101'],
+  ['weekly','קוויטל שבועי','מי שסומן שבועי בכרטיס'],
   ['occ','קוויטל מזדמן','לפי חודשים — נשמר לכל השנים'],
-  ['klali','קוויטל כללי','הכל יחד להדפסה (בלי מזדמן)']
+  ['klali','קוויטל כללי','הכל יחד להדפסה (בלי מזדמן ובלי "ללא")']
 ];
+// הכללי מאגד את שלוש הדרגות האמיתיות בלבד
+const KVREAL=['iz','101','weekly'];
+const kvInType=(t,type)=>type==='klali'?KVREAL.includes(t):(t===type);
+// מי נכנס לכל רשימה — חישוב אחד שגם התפריט וגם הרשימה עצמה נשענים עליו,
+// כדי שהמספר שמאיר רואה בתפריט יהיה בדיוק מה שייפתח לו בפנים
+function kvMembers(type){
+  const seen=new Set();
+  if(type==='occ'){ (DB||[]).forEach(d=>{if(isOccDonor(d))seen.add('d'+d.id);}); return seen; }
+  (DB||[]).forEach(d=>{
+    const prs=(d.prayers||[]);
+    if(prs.length){ if(prs.some(p=>kvInType(prayerKvType(p.tier,d),type)))seen.add('d'+d.id); }
+    else if(!(+d.kv_skip)){ const t=kvMemberType(d); if(t&&kvInType(t,type))seen.add('d'+d.id); }
+  });
+  (UNLINKED||[]).forEach(p=>{ if(kvInType(prayerKvType(p.tier,null),type))seen.add('l'+p.id); });
+  return seen;
+}
 let kvSub=null;
 function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',occ:'מזדמן',klali:'כללי'})[t]||'כללי';}
 // לאיזה קוויטל שייך התורם (לפי דרגה/קטגוריה) — למי שאמור להיות לו שם לתפילה
@@ -4626,7 +4642,8 @@ function renderKvittel(){
       ${unl?`<button class="btn kvunlbtn" id="kvUnlBtn">🔗 קוויטל לא־משויכים — ${unl} להחלטה</button>`:''}
       <button class="btn kvintakebtn" id="kvIntakeBtn">📨 בקשות תפילה מהאתר (מהמייל)…</button>
       <button class="btn ghost" id="kvDedupBtn" style="width:100%;margin-top:6px">🧹 נקה שמות כפולים בקוויטל של כולם</button>
-      <div class="kvmenu">${KVTYPES.map(([k,t,s])=>`<button class="kvbtn" data-k="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
+      <div class="kvmenu">${KVTYPES.map(([k,t,s])=>{const n=kvMembers(k).size;
+        return `<button class="kvbtn" data-k="${k}"><b>${t}</b><span class="kvn">${n} ${n===1?'תורם':'תורמים'}</span><small>${s}</small></button>`;}).join('')}</div>`;
     view.querySelectorAll('.kvbtn').forEach(b=>b.onclick=()=>{kvListQ='';kvSub=b.dataset.k;render();});
     const mb=document.getElementById('kvMissBtn');if(mb)mb.onclick=()=>{kvSub='missing';render();};
     const ub=document.getElementById('kvUnlBtn');if(ub)ub.onclick=()=>{kvSub='unlinked';render();};
@@ -4856,8 +4873,7 @@ function renderKvList(type){
   const si=document.getElementById('kvsearch');
   // הכללי מאגד את שלוש הדרגות האמיתיות בלבד. "מזדמן" ו"ללא" אינם דרגה
   // ואינם נכנסים אליו — מאיר: "כל מי שיש לו קוויטל ללא צריך לצאת לגמרי".
-  const KVREAL=['iz','101','weekly'];
-  const inType=t=>type==='klali'?KVREAL.includes(t):(t===type);
+  const inType=t=>kvInType(t,type);
   function paint(){
     let entries=[]; let nOcc=0, nNone=0;
     DB.forEach(d=>{
