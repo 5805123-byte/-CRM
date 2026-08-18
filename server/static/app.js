@@ -1933,6 +1933,12 @@ function izOther(d){
   return (d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0
       &&!/יששכר/.test(String(p.category||''))).reduce((a,p)=>a+amtNum(p.amount),0);
 }
+// מה שיוצא מהתורם כל חודש בפועל: הקבועים + התשלום החודשי של התחייבות
+// בתשלומים. אחרי שמאיר רושם את התשלומים, האזהרה נסגרת מעצמה.
+function instPerMonth(d){
+  return (d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.permo)>0
+      &&plLeft(d,p)>0.5).reduce((a,p)=>a+amtNum(p.permo),0);
+}
 function izRowAmt(d){
   let s; try{s=izSummary(d);}catch(e){return 0;}
   const pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
@@ -1942,8 +1948,12 @@ function izRowAmt(d){
   const other=izOther(d);
   // הסכום שבכרטיס והגבייה בפועל מסכימים ביניהם — זו האמת, גם אם ברשימת
   // האברכים נרשמו פחות. אצל פינטער נגבים 12,800 בחודש ורשום אברך אחד.
-  const real=izRealMonthly(d), card=amtNum(d.amount);
-  if(real>0.5&&card>0.5&&Math.abs(real-card)<1&&real-other>Math.round(s.monthly||0))
+  // מאיר על ג'ייקובס: "יש לו קבוע 1700, והשאר זה תשלומים על קמחא דפסחא".
+  // לכן מעלים רק כשהפער גדול וברור — תוספת קטנה היא לרוב משהו אחר,
+  // ובמקרה כזה רק מציגים אזהרה ומאיר רושם לה שורה משלה.
+  const real=izRealMonthly(d), card=amtNum(d.amount), byav=Math.round(s.monthly||0);
+  if(real>0.5&&card>0.5&&Math.abs(real-card)<1&&real-other>byav
+     &&real-other-byav>=500&&real-other>=byav*1.5)
     return Math.max(0,Math.round(real-other));
   if(!s.fromCard)return Math.round(s.monthly||0);   // לפי האברכים עצמם
   // "לפי הסכום הקבוע בכרטיס" — מה שנשאר מהסכום אחרי שאר השורות הקבועות
@@ -1952,8 +1962,8 @@ function izRowAmt(d){
 // אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
 function izGapNote(d){
   const real=izRealMonthly(d); if(real<=0.5)return '';
-  const shown=izRowAmt(d)+izOther(d);
-  if(Math.abs(real-shown)<1)return '';
+  const shown=izRowAmt(d)+izOther(d)+instPerMonth(d);
+  if(Math.abs(real-shown)<1.5)return '';
   const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   return `<div class="cmgap">⚠️ בפועל נגבה <b>${f(real)}</b> כל חודש, וכאן רשום ${f(shown)}`
     +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')+`</div>`;
@@ -1973,6 +1983,12 @@ function monthlyTotal(d){return monthlyRows(d).reduce((s,r)=>s+r[1],0);}
    כמה · קבוע או חד־פעמי — ולידה שורת הערה ידנית קצרה ("שילם מראש 4,500
    ב-13/7, מכסה עד אלול"). כאן גם האברכים שהוא מחזיק ודרגת הקוויטל,
    כדי שהכל ייקרא במקום אחד. */
+// הכותרת של שורת התחייבות: הייעוד מהרשימה, ואחריו הפירוט של התורם עצמו
+function plWhat(p){
+  const c=String(p.category||'').trim()||'התחייבות', t=String(p.detail||'').trim();
+  return t?(c+' — '+t):c;
+}
+const isNightCat=c=>/פרנס|חדר קפה|ארוחת בוקר/.test(String(c||''));
 function commitRows(d){
   const rows=[], pl=(d.pledges||[]);
   const izPl=pl.filter(p=>+p.monthly&&/יששכר/.test(String(p.category||'')));
@@ -1982,10 +1998,14 @@ function commitRows(d){
     rows.push({iz:1,what:'יששכר־זבולון',icon:'🤝',mo:1,amt:iza,
       pid:(izPl.length===1?izPl[0].id:''),
       praw:'',note:String(d.iz_note||'')});
-  pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>rows.push({
-    pid:p.id,what:p.category||'התחייבות',icon:+p.monthly?'🔁':'🎯',
-    mo:+p.monthly?1:0,amt:amtNum(p.amount),praw:String(p.paid||''),
-    left:plLeft(p),note:String(p.note||'')}));
+  pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>{
+    const plan=plPlan(d,p);
+    rows.push({pid:p.id,what:plWhat(p),
+      icon:+p.monthly?'🔁':(plan?'📆':'🎯'),
+      mo:+p.monthly?1:0, inst:plan?1:0, plan,
+      amt:amtNum(p.amount),praw:String(p.paid||''),
+      got:plCollected(d,p), left:plLeft(d,p),
+      avreich:String(p.avreich||''), note:String(p.note||'')});});
   // סכום קבוע שנשאר בשדה הישן בלי שורה משלו — שיראו אותו, ולא ייעלם
   if(!rows.length&&amtNum(d.amount)>0)
     rows.push({legacy:1,what:(purposeList(d)[0]||'קבוע'),icon:'🔁',mo:1,
@@ -1997,36 +2017,71 @@ function commitHTML(d){
   const rows=commitRows(d), av=(d.partners||[]).filter(p=>p.active!=0);
   const tier=TIERS[d.tier]?(d.tier==='יששכר_זבולון'?'יששכר־זבולון':('קוויטל '+TIERS[d.tier][0])):'';
   const mo=rows.filter(r=>r.mo).reduce((s,r)=>s+r.amt,0);
+  const inst=rows.filter(r=>r.inst).reduce((s,r)=>s+r.plan.per,0);
   const line=r=>{
     const amt=r.pid
       ? `<input class="cmamt" data-pid="${r.pid}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
       : `<b class="cmfix">${r.amt?f(r.amt):'—'}</b>`;
-    const paid=(!r.mo&&r.pid)
-      ? `<span class="cmpaid">שילם <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
-        +(r.amt?`<b class="cmleft ${r.left?'no':'ok'}">${r.left?('נשאר '+f(r.left)):'שולם ✓'}</b>`:'')+`</span>`
+    const tag=r.mo?'קבוע':(r.inst?'בתשלומים':'חד־פעמי');
+    // התחייבות בתשלומים מתעדכנת לבד לפי מה שנגבה בייעוד הזה
+    const prog=r.inst
+      ? `<div class="cminst">📆 ${f(r.plan.per)} לחודש · שולם ${f(r.amt-r.left)} מתוך ${f(r.amt)}`
+        +(r.left>0.5?` · <b class="cmleft no">נשאר ${f(r.left)}</b> · עוד ${r.plan.n} ${r.plan.n===1?'תשלום':'תשלומים'}`
+                   :' · <b class="cmleft ok">הושלם ✓</b>')
+        +(r.got>0.5?`<small> · מתוכם ${f(r.got)} נגבו במערכת</small>`:'')+`</div>`
+      : '';
+    // תשלום אחד: ירוק כשנגבה, אדום עם "לא נגבה" כשעדיין לא
+    const done=r.amt>0.5&&r.left<=0.5;
+    const paid=(!r.mo&&!r.inst&&r.pid)
+      ? `<span class="cmpaid ${r.amt?(done?'ok':'no'):''}">שילם <input class="cmpd" data-pid="${r.pid}" value="${esc(r.praw)}" inputmode="decimal" placeholder="0">`
+        +(r.amt?(done?'<b class="cmleft ok">✓ נגבה במלואו</b>'
+                     :`<b class="cmleft no">נשאר ${f(r.left)}</b><small class="cmnog">לא נגבה</small>`):'')
+        +(r.got>0.5?`<small>נגבו ${f(r.got)} במערכת</small>`:'')+`</span>`
       : '';
     const note=(r.iz||r.pid)
       ? `<input class="cmnote" ${r.iz?'data-iz="1"':`data-pid="${r.pid}"`} value="${esc(r.note)}"`
         +` placeholder="הערה: שילם מראש ${cur}4,500, מכסה עד אלול">`
       : '<div class="hintxt">בחר עבור מה למטה כדי לקבוע לו שורה משלו</div>';
-    return `<div class="cmrow">
+    const st=(!r.mo&&r.amt>0.5)?(r.left<=0.5?' done':' owe'):'';
+    return `<div class="cmrow${st}">
       <div class="cmhead"><span class="cmwhat">${r.icon} ${esc(r.what)}</span>
-        ${amt}<span class="cmtag ${r.mo?'mo':'one'}">${r.mo?'קבוע':'חד־פעמי'}</span>
+        ${amt}<span class="cmtag ${r.mo?'mo':(r.inst?'inst':'one')}">${tag}</span>
         ${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
-      ${paid}
+      ${r.avreich?`<div class="cmav">👨‍🎓 ${esc(r.avreich)}</div>`:''}
+      ${prog}${paid}
       ${note}
       ${r.iz?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav">👨‍🎓 ${esc(p.avreich||'—')}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
     </div>`;
   };
+  // טופס ההוספה: ייעוד מהרשימה, פירוט חופשי שנשאר אצל התורם בלבד,
+  // ולפי הייעוד — בחירת לילה או בחירת אברך.
+  const add=`<div class="cmadd">
+      <select class="cm_cat">${dnCatOpts('')}</select>
+      <div class="addrow hidden cm_newrow"><input class="cm_new" placeholder="שם הייעוד החדש…"></div>
+      <input class="cm_det" placeholder="פירוט אצל התורם הזה בלבד — למשל: כיסוי רדיאטורים ומעקות">
+      <div class="cmpick hidden cm_avbox"><label class="cmlbl">👨‍🎓 איזה אברך?</label>
+        <select class="cm_av">${avOpts('')}</select>
+        <div class="addrow hidden cm_avnewrow"><input class="cm_avnew" placeholder="שם האברך החדש">
+          <button class="btn sm cm_avadd">➕ הוסף</button></div></div>
+      <div class="cmpick hidden cm_nightbox"><label class="cmlbl">🌙 איזה לילה?</label>
+        <div class="cmthree"><select class="cm_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
+          <select class="cm_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
+          <select class="cm_hy">${heYearOpts()}</select></div></div>
+      <div class="cmrow2">
+        <input class="cm_amt" inputmode="decimal" placeholder="כמה">
+        <select class="cm_plan">
+          <option value="mo">🔁 קבוע כל חודש</option>
+          <option value="inst">📆 בתשלומים</option>
+          <option value="one">🎯 חד־פעמי</option></select>
+        <input class="cm_n hidden" inputmode="numeric" placeholder="לכמה תשלומים?">
+        <button class="btn sm cm_add">➕ הוסף</button></div>
+      <div class="hintxt cm_calc"></div></div>`;
   return `<div class="cmbox"><div class="cmbox-t">📋 ההתחייבויות שלו
-      ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}</div>
+      ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
+      ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
     ${rows.map(line).join('')||'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>'}
-    <div class="cmadd"><select class="cm_cat">${dnCatOpts('')}</select>
-      <input class="cm_amt" inputmode="decimal" placeholder="כמה">
-      <label class="cmchk"><input type="checkbox" class="cm_mo" checked> קבוע כל חודש</label>
-      <button class="btn sm cm_add">➕ הוסף</button></div>
-    <div class="addrow hidden cm_newrow"><input class="cm_new" placeholder="שם הייעוד החדש…"></div>
+    ${add}
     ${tier?`<div class="cmtier">✡️ דרגת קוויטל: <b>${esc(tier)}</b>${hasOccKv(d)&&d.kv_month?(' · '+esc(d.kv_month+' '+(d.kv_year||''))):''}</div>`:''}</div>`;
 }
 function wireCommit(d,body){
@@ -2037,7 +2092,8 @@ function wireCommit(d,body){
     await api('PUT','/api/donor/'+d.id,{amount:d.amount});};
   const putPl=async(p,fields)=>{Object.assign(p,fields);
     await api('PUT','/api/pledge/'+p.id,{category:p.category||'',amount:p.amount||'',
-      status:p.status||'',note:p.note||'',monthly:+p.monthly?1:0,paid:p.paid||''});};
+      status:p.status||'',note:p.note||'',monthly:+p.monthly?1:0,paid:p.paid||'',
+      detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||''});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
   box.querySelectorAll('.cmamt').forEach(inp=>inp.onchange=async()=>{
     const p=pOf(inp.dataset.pid); if(!p)return;
@@ -2056,28 +2112,90 @@ function wireCommit(d,body){
     await putPl(p,{note:inp.value.trim()}); toast('נשמר ✓');});
   box.querySelectorAll('.cmdel').forEach(b=>b.onclick=async()=>{
     const p=pOf(b.dataset.pid); if(!p)return;
-    if(!await uiConfirm('למחוק את השורה "'+((p.category||'').trim()||'התחייבות')+'"?'))return;
+    if(!await uiConfirm('למחוק את השורה "'+plWhat(p)+'"?'))return;
     await api('DELETE','/api/pledge/'+p.id);
     d.pledges=(d.pledges||[]).filter(x=>String(x.id)!==String(p.id));
     await syncAmt(); toast('נמחק'); redraw();});
-  const sel=box.querySelector('.cm_cat'), nrow=box.querySelector('.cm_newrow');
-  sel.onchange=()=>{if(sel.value==='__new__'){nrow.classList.remove('hidden');nrow.querySelector('.cm_new').focus();}
-    else nrow.classList.add('hidden');};
+
+  // ----- טופס ההוספה -----
+  const sel=box.querySelector('.cm_cat'), nrow=box.querySelector('.cm_newrow'),
+        det=box.querySelector('.cm_det'), avbox=box.querySelector('.cm_avbox'),
+        avsel=box.querySelector('.cm_av'), nightbox=box.querySelector('.cm_nightbox'),
+        amt=box.querySelector('.cm_amt'), plan=box.querySelector('.cm_plan'),
+        nfld=box.querySelector('.cm_n'), calc=box.querySelector('.cm_calc');
+  const curS=curSym(d);
+  const catNow=()=>sel.value==='__new__'
+    ? (nrow.querySelector('.cm_new').value.trim()) : sel.value.trim();
+  const show=()=>{
+    const c=catNow();
+    nrow.classList.toggle('hidden', sel.value!=='__new__');
+    avbox.classList.toggle('hidden', !isIZcat(c));
+    nightbox.classList.toggle('hidden', !isNightCat(c));
+    det.placeholder=isBldgCat(c)
+      ? 'מה בדיוק תרם בבניין? — למשל: כיסוי רדיאטורים ומעקות'
+      : 'פירוט אצל התורם הזה בלבד (לא נשמר ברשימת הייעודים)';
+    nfld.classList.toggle('hidden', plan.value!=='inst');
+    const a=amtNum(amt.value), n=parseInt(nfld.value,10)||0;
+    calc.textContent=(plan.value==='inst'&&a>0&&n>0)
+      ? ('כל תשלום '+curS+Math.round(a/n).toLocaleString('en-US')+' — '+n+' תשלומים')
+      : (isIZcat(c)?'בחירת אברך כאן תיצור לו שורת אברך בלשונית יששכר־זבולון'
+        :(isNightCat(c)?'בחירת לילה כאן תשריין את היום אצל התורם':''));
+  };
+  [sel,plan].forEach(e=>e.addEventListener('change',show));
+  [amt,nfld].forEach(e=>e.addEventListener('input',show));
+  if(sel.value==='__new__')nrow.querySelector('.cm_new').addEventListener('input',show);
+  show();
+  if(!AVLIST.length)loadAvList().then(()=>{avsel.innerHTML=avOpts('');});
+  wireAvNew(avsel, box.querySelector('.cm_avnew'), box.querySelector('.cm_avadd'));
+  addMics(box,['.cmnote','.cm_det']);
+
   box.querySelector('.cm_add').onclick=async()=>{
     let cat=sel.value.trim();
     if(cat==='__new__'){cat=nrow.querySelector('.cm_new').value.trim();
       if(!cat){toast('כתוב את שם הייעוד');return;}
       if(!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}}
     if(!cat){toast('בחר עבור מה');return;}
-    const amt=box.querySelector('.cm_amt').value.trim();
-    const m=box.querySelector('.cm_mo').checked?1:0;
-    const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,
-      status:m?'נתן':'טרם',monthly:m,paid:''});
+    const total=amt.value.trim(), a=amtNum(total);
+    const mode=plan.value;
+    let permo='';
+    if(mode==='inst'){
+      const n=parseInt(nfld.value,10)||0;
+      if(!a||!n){toast('מלא סכום ומספר תשלומים');return;}
+      permo=String(Math.round(a/n*100)/100);
+    }
+    const mo=mode==='mo'?1:0;
+    // הפירוט נשמר על השורה של התורם בלבד — לא נכנס לרשימת הייעודים
+    const detail=det.value.trim();
+    const avn=(!avbox.classList.contains('hidden')&&avsel.value&&avsel.value!=='__new__')
+      ? avsel.value : '';
+    const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:total,
+      status:mo?'נתן':'טרם',monthly:mo,paid:'',detail,permo,avreich:avn});
     if(!r||!r.id){toast('לא נשמר');return;}
-    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:amt,
-      status:m?'נתן':'טרם',monthly:m,paid:'',note:''}]);
-    await syncAmt(); toast(m?'נוסף קבוע ✓':'נוספה התחייבות ✓'); redraw();};
-  addMics(box,['.cmnote']);
+    d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:total,
+      status:mo?'נתן':'טרם',monthly:mo,paid:'',note:'',detail,permo,avreich:avn,
+      date:todayStr()}]);
+    // אברך יששכר־זבולון — נפתחת לו שורת אברך אמיתית, כדי שהכל מחובר
+    if(avn&&!(d.partners||[]).some(x=>x.active!=0&&(x.avreich||'').trim()===avn)){
+      const pr=await api('POST','/api/partner',{donor_id:d.id,avreich:avn,amount:total});
+      if(pr&&pr.id)d.partners=(d.partners||[]).concat([{id:pr.id,donor_id:d.id,avreich:avn,
+        amount:total,active:1}]);
+      if(d.tier!=='יששכר_זבולון'){d.tier='יששכר_זבולון';
+        await api('PUT','/api/donor/'+d.id,{tier:d.tier});}
+    }
+    // לילה שנבחר — נרשם כיום משובץ אצל התורם
+    if(!nightbox.classList.contains('hidden')){
+      const hm=box.querySelector('.cm_hm').value, hd=+box.querySelector('.cm_hd').value,
+            hy=box.querySelector('.cm_hy').value;
+      const kind=/קפה/.test(cat)?'coffee':(/בוקר/.test(cat)?'breakfast':'parnes');
+      const pr=await api('POST','/api/parnes',{donor_id:d.id,kind,day:hd,month:hm,
+        date_text:heDay(hd)+' '+hm,hyear:hy,amount:total,dedication:detail});
+      if(pr&&pr.id)d.parnes=(d.parnes||[]).concat([{id:pr.id,donor_id:d.id,kind,day:hd,
+        month:hm,date_text:heDay(hd)+' '+hm,hyear:hy,amount:total,dedication:detail,
+        status:'confirmed',paid:0}]);
+    }
+    await syncAmt();
+    toast(mo?'נוסף קבוע ✓':(mode==='inst'?'נוספה התחייבות בתשלומים ✓':'נוספה התחייבות ✓'));
+    redraw();};
   box.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{
     const dd=DB.find(y=>y.id==x.dataset.did); if(dd)openDonor(dd);});
 }
@@ -2219,12 +2337,12 @@ function debtSummary(d){
       list:dec.map(r=>({txt:gregLabel(r.iso)+' · '+cur+Math.round(r.a)
         +(r.tries>1?(' · '+r.tries+' ניסיונות'):''),tids:r.tids,undo:1}))});
   // התחייבויות פתוחות — נספרת רק היתרה, אחרי מה שכבר שולם על החשבון
-  const pl=(d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.amount)>0&&plLeft(p)>0.5);
-  const plSum=pl.reduce((s2,p)=>s2+plLeft(p),0);
+  const pl=(d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.amount)>0&&plLeft(d,p)>0.5);
+  const plSum=pl.reduce((s2,p)=>s2+plLeft(d,p),0);
   if(plSum>0.5)
     rows.push({t:'התחייבות שטרם ניתנה',v:plSum,
       s:pl.length+' '+(pl.length===1?'התחייבות':'התחייבויות'),
-      list:pl.map(p=>({txt:p.category+' · '+cur+Math.round(plLeft(p))
+      list:pl.map(p=>({txt:plWhat(p)+' · '+cur+Math.round(plLeft(d,p))
         +(amtNum(p.paid)?(' (מתוך '+cur+Math.round(amtNum(p.amount))+', שולם '+cur+Math.round(amtNum(p.paid))+')'):'')}))});
   return {rows,total:rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0),cur};
 }
@@ -2527,7 +2645,7 @@ function cardDetails(d,body){
     if(it.length<2){toast('כתוב מה הוא תרם בבניין');inp.focus();return;}
     const sel=pan.querySelector('.gvcatsel');
     b.disabled=true; await bldgRemember(it);
-    await saveGvCat(b.dataset.did,(sel.value||'בניין')+' — '+it);
+    await saveGvCat(b.dataset.did,(sel.value||'הבניין הקדוש')+' — '+it);
   });
   body.querySelectorAll('.gvbldg').forEach(i=>i.onkeydown=e=>{
     if(e.key==='Enter'){e.preventDefault();i.closest('.gvpanel').querySelector('.gvbldgok').click();}});
@@ -2835,7 +2953,7 @@ function cardKvittel(d,body){
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
 }
 /* חיובים מאוטרייז/בנק ווסט שטרם אושרו — אישור ישירות מכרטיס התורם */
-const RCATS=['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','בניין'];
+const RCATS=['','קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','הבניין הקדוש'];
 const RPARNES=['פרנס לילה','חדר קפה','ארוחת בוקר'];
 function pendCount(d){return (d.recon_pending||[]).length+(d.intake_pending||[]).length;}
 function reconPendHTML(d){
@@ -3072,7 +3190,7 @@ function giveNote(x){
 }
 // רשימת הייעודים לבחירה — הקבועים שלנו + כל המגביות, ואפשרות להוסיף חדש בלי לצאת מהשורה
 const DNMETH=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','זל','קפיטל 1','בנק ווסט','אוטורייז','דונרס פאנד','OJC','נדרים'];
-const DNBASE=['קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','בניין','מזדמן','חד-פעמי'];
+const DNBASE=['קבוע','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','הבניין הקדוש','מזדמן','חד-פעמי'];
 function dnCatList(){return DNBASE.concat((CAMPAIGNS||[]).filter(c=>c&&!DNBASE.includes(c)));}
 // ייעוד התורם יכול להיות כמה דברים יחד — למשל יששכר־זבולון וגם נר למאור.
 // נשמר בשדה אחד מופרד ב־" · ", כמו שזה גם מוצג בראש הכרטיס.
@@ -3614,7 +3732,28 @@ function renderContacts(d){
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.contacts||[]).forEach(c=>{c.files=(c.files||[]).filter(f=>f.id!=b.dataset.fid);});renderContacts(d);toast('נמחק');});
 }
 // כמה נשאר לשלם מהתחייבות חד־פעמית: מה שהתחייב פחות מה שכבר שילם
-function plLeft(p){return Math.max(0, amtNum(p.amount)-amtNum(p.paid));}
+// כמה נגבה בפועל לייעוד הזה מאז שנרשמה ההתחייבות. כך התחייבות בתשלומים
+// מתעדכנת לבד — מאיר לא צריך למלא כל חודש כמה שולם.
+function plCollected(d,p){
+  const cat=String(p.category||'').trim(); if(!d||!cat)return 0;
+  const from=String(p.date||'').slice(0,10);
+  return (d.donations||[]).filter(x=>{
+    if(String(x.category||'').trim()!==cat)return false;
+    const dt=String(x.date||'').slice(0,10);
+    return !from||!dt||dt>=from;}).reduce((a,x)=>a+amtNum(x.amount),0);
+}
+function plPaid(d,p){return amtNum(p.paid)+plCollected(d,p);}
+function plLeft(d,p){
+  if(p===undefined){p=d;d=null;}            // תאימות לקריאות ישנות
+  return Math.max(0, amtNum(p.amount)-plPaid(d,p));
+}
+// כמה בכל תשלום, וכמה תשלומים נשארו
+function plPlan(d,p){
+  const per=amtNum(p.permo); if(per<=0.5)return null;
+  const left=plLeft(d,p);
+  // 2,200 ל-12 תשלומים = 183.33 — בלי סובלנות קטנה זה היה מציג 13 תשלומים
+  return {per, left, n:Math.max(1, Math.ceil(left/per - 0.02))};
+}
 function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight+6)+'px';}
 // העתקה ללוח — עם נפילה חלופה לאפליקציה מותקנת (execCommand)
 async function copyToClip(txt,okMsg){

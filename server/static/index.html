@@ -350,6 +350,29 @@
   .cmav{margin:4px 0 0 0;font-size:.78rem;color:var(--muted);padding-inline-start:6px}
   .cmgap{margin-top:5px;font-size:.76rem;color:var(--no);background:#fff5f5;
     border:1px solid #f0d0d0;border-radius:8px;padding:5px 8px}
+  /* התחייבות שנגבה — ירוק; שעדיין לא — אדום, שיהיה נראה במבט */
+  .cmrow.done{border-inline-start:3px solid var(--yes);padding-inline-start:7px}
+  .cmrow.owe{border-inline-start:3px solid var(--no);padding-inline-start:7px}
+  .cmtag.inst{background:#eef2ff;color:#3b2f5e}
+  .cmtot.inst{color:#3b2f5e;font-weight:700;margin-inline-start:8px}
+  .cminst{margin-top:5px;font-size:.79rem;color:var(--muted)}
+  .cminst small{font-size:.72rem}
+  .cmnog{color:var(--no);font-weight:700;font-size:.7rem}
+  .cmpaid small{font-size:.7rem;color:var(--muted)}
+  .cmadd .cm_det{flex:1 1 100%;min-width:0;margin-top:6px;padding:7px 9px;
+    border:1px dashed var(--gold);border-radius:9px;font-family:inherit;font-size:.82rem}
+  .cmpick{flex:1 1 100%;margin-top:6px}
+  .cmlbl{display:block;font-size:.75rem;color:var(--muted);margin-bottom:3px}
+  .cmpick select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:9px;
+    font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink)}
+  .cmthree{display:flex;gap:5px}
+  .cmthree select{flex:1;min-width:0}
+  .cmrow2{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1 1 100%;margin-top:6px}
+  .cmrow2 .cm_plan{flex:1;min-width:120px;padding:7px 9px;border:1px solid var(--line);
+    border-radius:9px;font-family:inherit;font-size:.85rem;background:#fff;color:var(--ink)}
+  .cmrow2 .cm_n{width:110px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;
+    font-family:inherit;font-size:.85rem;text-align:center}
+  .cm_calc{flex:1 1 100%;margin-top:4px}
   .cmadd{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;
     border-top:1px solid var(--line);padding-top:9px}
   .cmadd .cm_cat{flex:1 1 100%;min-width:0;padding:7px 9px;border:1px solid var(--line);
@@ -357,7 +380,7 @@
   .cmadd .cm_amt{width:80px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;
     font-family:inherit;font-size:.85rem;text-align:center}
   .cmchk{display:flex;align-items:center;gap:4px;font-size:.76rem;color:var(--muted);white-space:nowrap}
-  .cmadd .cm_add{margin-inline-start:auto}
+  .cmrow2 .cm_add{margin-inline-start:auto}
   .cm_newrow .cm_new{width:100%;margin-top:6px;padding:7px 9px;border:1px solid var(--gold);
     border-radius:9px;font-family:inherit;font-size:.85rem}
   .cmtier{margin-top:8px;font-size:.8rem;color:var(--muted)}

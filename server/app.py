@@ -265,6 +265,16 @@ def ensure_schema():
     # כמה כבר שולם מתוך ההתחייבות — מאיר ממלא ידנית, והמערכת מחשבת את היתרה
     try: con.execute("ALTER TABLE pledges ADD COLUMN paid TEXT DEFAULT ''")
     except Exception: pass
+    # פירוט חופשי לאותו תורם בלבד ("כיסוי רדיאטורים ומעקות"). מאיר ביקש
+    # במפורש שזה לא ייכנס לרשימת הייעודים ולא יופיע אצל תורמים אחרים.
+    try: con.execute("ALTER TABLE pledges ADD COLUMN detail TEXT DEFAULT ''")
+    except Exception: pass
+    # התחייבות בתשלומים: הסכום הכולל ב-amount, וכמה משלמים כל חודש כאן
+    try: con.execute("ALTER TABLE pledges ADD COLUMN permo TEXT DEFAULT ''")
+    except Exception: pass
+    # שורת יששכר־זבולון מחוברת לאברך עצמו — אותו שם שברשימת האברכים
+    try: con.execute("ALTER TABLE pledges ADD COLUMN avreich TEXT DEFAULT ''")
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
@@ -4049,6 +4059,29 @@ def ensure_schema():
     except Exception as ex:
         print('  fixed amount to pledge error:', ex)
 
+    # מאיר: הייעוד נקרא "הבניין הקדוש", והפירוט עצמו ("כיסוי רדיאטורים
+    # ומעקות") נכתב אצל התורם בלבד ואינו נכנס לרשימת הייעודים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bldg_rename_v1'").fetchone():
+            n = 0
+            for tbl in ('donations', 'pledges', 'recon'):
+                try:
+                    n += con.execute("UPDATE %s SET category='הבניין הקדוש' "
+                                     "WHERE TRIM(COALESCE(category,'')) IN ('בניין','בנין')" % tbl).rowcount
+                except Exception:
+                    pass
+            try:
+                con.execute("UPDATE donors SET purpose=REPLACE(purpose,'בניין','הבניין הקדוש') "
+                            "WHERE purpose LIKE '%בניין%' AND purpose NOT LIKE '%הבניין הקדוש%'")
+            except Exception:
+                pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('bldg_rename_v1')")
+            con.commit()
+            if n:
+                print('  "בניין" שונה ל"הבניין הקדוש": %d' % n)
+    except Exception as ex:
+        print('  building rename error:', ex)
+
     con.commit(); con.close()
 
 def get_all():
@@ -6951,9 +6984,11 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db()
-            con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=? WHERE id=?",
+            con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
+                        "detail=?,permo=?,avreich=? WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
-                         1 if b.get('monthly') else 0, str(b.get('paid') or ''), pid))
+                         1 if b.get('monthly') else 0, str(b.get('paid') or ''),
+                         b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -8033,11 +8068,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid) "
-                        "VALUES(?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
+                        "detail,permo,avreich) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
-                         b.get('date',''), b.get('note',''), 1 if b.get('monthly') else 0,
-                         str(b.get('paid') or '')))
+                         b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
+                         str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
+                         b.get('avreich','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
