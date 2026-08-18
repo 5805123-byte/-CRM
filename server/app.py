@@ -150,6 +150,20 @@ def dedup_prayers(con, donor_id=None):
     return ndrop
 
 
+def _already_posted(con, did, diso, meth, a):
+    """האם אותו תשלום כבר רשום. אותו חיוב מדווח לפעמים בשני קבצים עם תאריך
+    רישום שונה (14 מול 15 במאי), ולכן ההשוואה היא לפי חודש ולא לפי יום.
+    שורת הערכה חודשית ("ייבוא 2026") אינה נחשבת — היא נועדה להיות מוחלפת."""
+    r = con.execute("SELECT date, COALESCE(note,'') n FROM donations WHERE donor_id=? "
+                    "AND SUBSTR(COALESCE(date,''),1,7)=? AND COALESCE(method,'')=? "
+                    "AND ROUND(CAST(amount AS REAL),2)=?",
+                    (did, str(diso)[:7], meth, a)).fetchall()
+    for x in r:
+        if len(str(x['date'] or '')) > 7 and not str(x['n']).startswith('ייבוא 2026'):
+            return True
+    return False
+
+
 def ensure_schema():
     """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
     con = db()
@@ -1746,13 +1760,12 @@ def ensure_schema():
                 if not cat:
                     left += 1
                     continue
-                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='Banquest' "
-                               "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, a)).fetchone():
+                if _already_posted(con, did, diso, 'Banquest', a):
                     con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                     continue                      # כבר רשומה — רק סוגרים את השורה בתור
                 # שורת הסיכום החודשית מדוח הקבועים מוחלפת בחיוב האמיתי — אותו כסף, תאריך מדויק
                 n = con.execute("DELETE FROM donations WHERE donor_id=? AND substr(COALESCE(date,''),1,7)=? "
-                                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND method='Banquest' "
+                                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' "
                                 "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).rowcount
                 repl += max(0, n)
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
@@ -1786,12 +1799,11 @@ def ensure_schema():
                 if not diso:
                     continue
                 cat = (dinfo.get(did, ('', ''))[0]) or 'מזדמן'
-                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='Banquest' "
-                               "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, a)).fetchone():
+                if _already_posted(con, did, diso, 'Banquest', a):
                     con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                     continue
                 con.execute("DELETE FROM donations WHERE donor_id=? AND substr(COALESCE(date,''),1,7)=? "
-                            "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND method='Banquest' "
+                            "AND COALESCE(note,'') LIKE 'ייבוא 2026%' "
                             "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a))
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
                             "VALUES(?,?,?,?,'Banquest','ייבוא בנק ווסט · לא סווג — לבדוק עבור מה',1)",
@@ -1862,12 +1874,11 @@ def ensure_schema():
                 if not cat:
                     cat, why = (dcat or 'מזדמן'), 'לא סווג'
                     perdonor[did] = perdonor.get(did, 0) + 1
-                if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method='Authorize' "
-                               "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, a)).fetchone():
+                if _already_posted(con, did, diso, 'Authorize', a):
                     con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                     continue
                 n = con.execute("DELETE FROM donations WHERE donor_id=? AND substr(COALESCE(date,''),1,7)=? "
-                                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND method='Authorize' "
+                                "AND COALESCE(note,'') LIKE 'ייבוא 2026%' "
                                 "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).rowcount
                 repl += max(0, n)
                 note = 'ייבוא אוטורייז · ' + (why if why != 'לא סווג' else 'לא סווג — לבדוק עבור מה')
@@ -2033,8 +2044,7 @@ def ensure_schema():
                 a = round(float(r['amount'] or 0), 2)
                 meth = r['method']
                 if did:
-                    if con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND method=? "
-                                   "AND ROUND(CAST(amount AS REAL),2)=?", (did, r['date'], meth, a)).fetchone():
+                    if _already_posted(con, did, r['date'], meth, a):
                         dup += 1
                         continue
                     # שורת הסיכום החודשית מדוח הקבועים מוחלפת בתשלום האמיתי — אותו כסף, תאריך מדויק
@@ -3474,6 +3484,18 @@ def ensure_schema():
                 continue
             if amt > 0:
                 pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((dict(r), iso, amt))
+        # אותו סכום שמופיע כמה פעמים באותו חודש ובאותו מסלול הוא תשלום אחד.
+        # הדוחות מכילים חיוב שנדחה וחזר, ואותו תשלום שדווח גם מהבנק וגם
+        # מהסולק עם מזהה אחר — ובלי הכיווץ הזה כל דיווח נספר ככסף נוסף.
+        for k, lst in pend.items():
+            seen, uniq = set(), []
+            for r, iso, amt in lst:
+                if amt in seen:
+                    if not r.get('processed'):
+                        con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+                    continue
+                seen.add(amt); uniq.append((r, iso, amt))
+            pend[k] = uniq
         paid_by = {}
         # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
         # נראה חסר וכל עלייה מוסיפה בו עוד שורה
@@ -5531,8 +5553,17 @@ def link_by_identity(con):
                 "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso, meth, a)).fetchone():
             con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
             continue
-        old = con.execute("SELECT id,category FROM donations WHERE donor_id=? AND date=? "
-                          "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).fetchone()
+        # אותו תשלום שדווח בשני קבצים עם תאריך רישום שונה (14 מול 15 במאי)
+        # הוא תשלום אחד. ההשוואה כאן היא לפי חודש — קודם היא השוותה
+        # 'YYYY-MM' לתאריך מלא ולכן מעולם לא תפסה, ונוצרה שורה כפולה.
+        old = con.execute("SELECT id,category,date FROM donations WHERE donor_id=? "
+                          "AND SUBSTR(COALESCE(date,''),1,7)=? AND COALESCE(method,'')=? "
+                          "AND ROUND(CAST(amount AS REAL),2)=?",
+                          (did, diso[:7], meth, a)).fetchone()
+        if old and len(str(old['date'] or '')) > 7:
+            # כבר רשום עם תאריך מלא — לא כותבים את אותו כסף פעם שנייה
+            con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+            continue
         cat, tier = dinfo.get(did, ('', ''))
         if old:
             con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
@@ -5591,8 +5622,17 @@ def link_card_names(con, link):
             con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
             continue
         # שורה שנרשמה בעבר עם חודש בלבד — מוחלפת בתשלום עם התאריך המדויק
-        old = con.execute("SELECT id,category FROM donations WHERE donor_id=? AND date=? "
-                          "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).fetchone()
+        # אותו תשלום שדווח בשני קבצים עם תאריך רישום שונה (14 מול 15 במאי)
+        # הוא תשלום אחד. ההשוואה כאן היא לפי חודש — קודם היא השוותה
+        # 'YYYY-MM' לתאריך מלא ולכן מעולם לא תפסה, ונוצרה שורה כפולה.
+        old = con.execute("SELECT id,category,date FROM donations WHERE donor_id=? "
+                          "AND SUBSTR(COALESCE(date,''),1,7)=? AND COALESCE(method,'')=? "
+                          "AND ROUND(CAST(amount AS REAL),2)=?",
+                          (did, diso[:7], meth, a)).fetchone()
+        if old and len(str(old['date'] or '')) > 7:
+            # כבר רשום עם תאריך מלא — לא כותבים את אותו כסף פעם שנייה
+            con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+            continue
         cat, tier = dinfo.get(did, ('', ''))
         if old:
             con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
