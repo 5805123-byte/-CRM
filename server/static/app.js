@@ -1911,16 +1911,52 @@ function wireNotes(d,root){
 // כל ההתחייבויות החוזרות של התורם — הקבוע שבכרטיס, אברכי יש"ז והתחייבויות חודשיות
 // כמה מההתחייבות החודשית שייך ליששכר־זבולון, בלי לספור את אותו כסף פעמיים.
 // אצל אברמוביץ 1350 הופיע פעם אחת כאברך ופעם כסכום קבוע — והסתכם ב-2700.
+// כמה באמת נגבה כל חודש עבור יששכר־זבולון — לפי החודשים האחרונים בפועל.
+// זו הראיה החזקה ביותר: הסכום שחוזר על עצמו בבנק. פחות משני חודשים זהים
+// זו לא הוראת קבע ולכן לא נחשב.
+function izRealMonthly(d){
+  const mm={};
+  (d.donations||[]).forEach(x=>{
+    if(!/יששכר|זבולון/.test(String(x.category||'')))return;
+    const m=String(x.date||'').slice(0,7);
+    if(m.length<7||m.slice(0,4)!==GREGYEAR)return;
+    mm[m]=(mm[m]||0)+amtNum(x.amount);});
+  const ks=Object.keys(mm).sort().slice(-4);
+  if(ks.length<2)return 0;
+  const cnt={}; ks.forEach(k=>{const v=Math.round(mm[k]);cnt[v]=(cnt[v]||0)+1;});
+  let best=0,bn=0;
+  Object.keys(cnt).forEach(v=>{if(cnt[v]>bn){best=+v;bn=cnt[v];}});
+  // רוב ברור בלבד. סכומים משתנים אינם הוראת קבע, ועדיף לשתוק מלטעות
+  return (bn>=2&&bn*2>ks.length)?best:0;
+}
+function izOther(d){
+  return (d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0
+      &&!/יששכר/.test(String(p.category||''))).reduce((a,p)=>a+amtNum(p.amount),0);
+}
 function izRowAmt(d){
   let s; try{s=izSummary(d);}catch(e){return 0;}
   const pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
   const izPl=pl.filter(p=>/יששכר/.test(String(p.category||'')));
   const izSum=izPl.reduce((a,p)=>a+amtNum(p.amount),0);
   if(izSum>0.5)return Math.round(izSum);            // הייעוד נרשם במפורש
+  const other=izOther(d);
+  // הסכום שבכרטיס והגבייה בפועל מסכימים ביניהם — זו האמת, גם אם ברשימת
+  // האברכים נרשמו פחות. אצל פינטער נגבים 12,800 בחודש ורשום אברך אחד.
+  const real=izRealMonthly(d), card=amtNum(d.amount);
+  if(real>0.5&&card>0.5&&Math.abs(real-card)<1&&real-other>Math.round(s.monthly||0))
+    return Math.max(0,Math.round(real-other));
   if(!s.fromCard)return Math.round(s.monthly||0);   // לפי האברכים עצמם
   // "לפי הסכום הקבוע בכרטיס" — מה שנשאר מהסכום אחרי שאר השורות הקבועות
-  const other=pl.filter(p=>izPl.indexOf(p)<0).reduce((a,p)=>a+amtNum(p.amount),0);
   return Math.max(0,Math.round((s.monthly||0)-other));
+}
+// אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
+function izGapNote(d){
+  const real=izRealMonthly(d); if(real<=0.5)return '';
+  const shown=izRowAmt(d)+izOther(d);
+  if(Math.abs(real-shown)<1)return '';
+  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  return `<div class="cmgap">⚠️ בפועל נגבה <b>${f(real)}</b> כל חודש, וכאן רשום ${f(shown)}`
+    +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')+`</div>`;
 }
 function monthlyRows(d){
   const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
@@ -1979,6 +2015,7 @@ function commitHTML(d){
         ${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
       ${paid}
       ${note}
+      ${r.iz?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav">👨‍🎓 ${esc(p.avreich||'—')}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
     </div>`;
   };
