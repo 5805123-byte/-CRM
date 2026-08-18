@@ -127,7 +127,7 @@ function izSummaryHTML(d){
   :jointPayerId(p)?(jointPayerId(p)===d.id?('💳 אתה משלם את כל ה'+cur+amtNum(p.amount)):('💳 משלם: '+esc(jointPayerName(p))))
   :('חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים'))+'</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
   let debtLine;
-  const thruHtml=s.thru.length?s.thru.map(t=>`<div class="izrow"><span>💵 ${esc(t.av)} — שולם עד ${esc(fmtMonth(t.thru))}${t.months?(' · חייב '+t.months+' '+(t.months===1?'חודש':'חודשים')):' · מעודכן'}</span><b>${t.owe?(cur+t.owe):'—'}</b></div>`).join(''):'';
+  const thruHtml=s.thru.length?s.thru.map(t=>`<div class="izrow"><span>💵 ${esc(t.av)} — שולם עד ${esc(fmtMonth(t.thru))}${t.months?(' · חסרים '+t.months+' '+(t.months===1?'חודש':'חודשים')):' · מעודכן'}</span><b>${t.owe?(cur+t.owe):'—'}</b></div>`).join(''):'';
   if(s.manual!=null) debtLine=(s.manual>0.5
       ?`<div class="izdebt owe">🔴 חוב שעודכן ידנית: ${cur}${Math.round(s.manual)}</div>`
       :`<div class="izdebt ok">🟢 עודכן ידנית — אין חוב</div>`);
@@ -1853,7 +1853,7 @@ function renderCardTasks(d){
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
 function cardBuilding(d,body){
   const t=buildTotals(d),cur=curSym(d);
-  body.innerHTML=`<div class="totals"><div class="tot"><span>סה"כ הקדשות</span><b>${cur}${t.price}</b></div><div class="tot"><span>שולם</span><b>${cur}${t.paid}</b></div><div class="tot ${t.owed>0?'year':''}"><span>נשאר חייב</span><b>${cur}${t.owed}</b></div></div>
+  body.innerHTML=`<div class="totals"><div class="tot"><span>סה"כ הקדשות</span><b>${cur}${t.price}</b></div><div class="tot"><span>שולם</span><b>${cur}${t.paid}</b></div><div class="tot ${t.owed>0?'year':''}"><span>נשאר לתשלום</span><b>${cur}${t.owed}</b></div></div>
     <div id="bldlist"></div>
     <div class="sec"><h3>➕ הוסף הקדשה בבניין</h3>
       <label class="fld"><span>מה ההקדשה (אובייקט)</span><input id="bl_obj" placeholder="למשל: עמוד, ספר תורה, חדר…"></label>
@@ -1865,7 +1865,7 @@ function cardBuilding(d,body){
 }
 function renderBuilding(d){
   const el=document.getElementById('bldlist');if(!el)return;const cur=curSym(d);
-  el.innerHTML=(d.building||[]).map(x=>{const owed=amtNum(x.amount)-amtNum(x.paid);return `<div class="plwrap"><div class="pledge ${owed>0?'pending':'given'}"><div class="pi"><b>🏛️ ${esc(x.object||'—')}</b><br><small>מחיר: ${cur}${esc(String(amtNum(x.amount)))} · שולם: ${cur}${esc(String(amtNum(x.paid)))} · <b style="color:${owed>0?'var(--no)':'var(--yes)'}">${owed>0?('נשאר חייב '+cur+owed):'שולם במלואו ✓'}</b></small>${x.note?('<br><small>'+esc(x.note)+'</small>'):''}</div><button class="del" data-del="${x.id}">🗑</button></div>
+  el.innerHTML=(d.building||[]).map(x=>{const owed=amtNum(x.amount)-amtNum(x.paid);return `<div class="plwrap"><div class="pledge ${owed>0?'pending':'given'}"><div class="pi"><b>🏛️ ${esc(x.object||'—')}</b><br><small>מחיר: ${cur}${esc(String(amtNum(x.amount)))} · שולם: ${cur}${esc(String(amtNum(x.paid)))} · <b style="color:${owed>0?'var(--no)':'var(--yes)'}">${owed>0?('נשאר לתשלום '+cur+owed):'שולם במלואו ✓'}</b></small>${x.note?('<br><small>'+esc(x.note)+'</small>'):''}</div><button class="del" data-del="${x.id}">🗑</button></div>
     <div class="bldedit"><input class="blf" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="אובייקט"><input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" placeholder="מחיר" inputmode="decimal"><input class="blf" data-k="paid" data-id="${x.id}" value="${esc(x.paid||'')}" placeholder="שולם" inputmode="decimal"></div></div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה, או שלח לי את אקסל הבניין ואמזג הכל.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/building/'+b.dataset.del);d.building=d.building.filter(x=>x.id!=b.dataset.del);cardBuilding(d,document.getElementById('cardBody'));toast('נמחק');if(tab==='donors')renderDonors();});
   el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;x[inp.dataset.k]=inp.value;await api('PUT','/api/building/'+x.id,{[inp.dataset.k]:inp.value});cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
@@ -2246,7 +2246,7 @@ function wireCommit(d,body){
         box.querySelector('.cm_mergetxt').textContent=
           '🔗 צרף '+MATCH.length+' תשלומים של '+f(per)+' שכבר רשומים בכרטיס'
           +(MATCH[0].date?(' מ'+monthPlus(String(MATCH[0].date).slice(0,7),0)):'')
-          +' — וגם כל תשלום כזה שייכנס בעתיד ייזקף לכאן לבד';
+          +' — במקום לרשום אותם שוב';
       const dn=useM?MATCH.length:done;
       const left=Math.max(0,a-per*dn);
       calc.textContent='כל תשלום '+f(per)+' — '+n+' תשלומים'
@@ -2308,14 +2308,6 @@ function wireCommit(d,body){
         x.category=cat;
         await api('PUT','/api/donation/'+x.id,{category:cat});
       }
-      // וכדי שגם התשלומים הבאים ייכנסו לבד כשיגיע קובץ הבנק — כלל קבוע
-      // לסכום הזה אצל התורם. נוצר רק אם אין תשלום באותו סכום מלפני
-      // תחילת ההתחייבות, שלא נשייך אליה כסף ישן.
-      const per2=amtNum(permo), tol2=Math.max(1, per2*0.02);
-      const older=(d.donations||[]).filter(x=>Math.abs(amtNum(x.amount)-per2)<=tol2
-        && String(x.date||'').slice(0,7) < String(from).slice(0,7));
-      if(per2>0.5&&!older.length&&!(d.rules||[]).some(r=>Math.abs(amtNum(r.amount)-per2)<=0.5))
-        await api('POST','/api/rule',{donor_id:d.id,amount:per2,category:cat,note:detail});
       toast('צורפו '+MATCH.length+' תשלומים קיימים ✓');
     }
     // אברך יששכר־זבולון — נפתחת לו שורת אברך אמיתית, כדי שהכל מחובר
@@ -2490,14 +2482,23 @@ function debtSummary(d){
       s:dec.length+' '+(dec.length===1?'חיוב':'חיובים'),
       list:dec.map(r=>({txt:gregLabel(r.iso)+' · '+cur+Math.round(r.a)
         +(r.tries>1?(' · '+r.tries+' ניסיונות'):''),tids:r.tids,undo:1}))});
-  // התחייבויות פתוחות — נספרת רק היתרה, אחרי מה שכבר שולם על החשבון
-  const pl=(d.pledges||[]).filter(p=>!+p.monthly&&amtNum(p.amount)>0&&plLeft(d,p)>0.5);
-  const plSum=pl.reduce((s2,p)=>s2+plLeft(d,p),0);
+  // מאיר: "התחייבות בתשלומים אינה חוב כל זמן שלא הגיע מועד הגבייה".
+  // לכן מהתחייבות בתשלומים נספר רק מה שכבר היה אמור להיגבות ולא נגבה,
+  // ועם חודש חסד אחד — כדי שקובץ בנק שטרם נקלט לא ייראה כמו חוב.
+  const plOpen=p=>{
+    const left=plLeft(d,p); if(left<=0.5)return 0;
+    const plan=plPlan(d,p);
+    if(!plan)return left;                       // התחייבות רגילה — כל היתרה
+    const late=Math.max(0, plan.due - plan.done - 1);
+    return Math.min(left, late*plan.per);
+  };
+  const pl=(d.pledges||[]).filter(p=>!+p.monthly&&plOpen(p)>0.5);
+  const plSum=pl.reduce((s2,p)=>s2+plOpen(p),0);
   if(plSum>0.5)
     rows.push({t:'התחייבות שטרם ניתנה',v:plSum,
       s:pl.length+' '+(pl.length===1?'התחייבות':'התחייבויות'),
-      list:pl.map(p=>({txt:plWhat(p)+' · '+cur+Math.round(plLeft(d,p))
-        +(amtNum(p.paid)?(' (מתוך '+cur+Math.round(amtNum(p.amount))+', שולם '+cur+Math.round(amtNum(p.paid))+')'):'')}))});
+      list:pl.map(p=>({txt:plWhat(p)+' · '+cur+Math.round(plOpen(p))
+        +(plPlan(d,p)?' (תשלומים שאיחרו)':(amtNum(p.paid)?(' (מתוך '+cur+Math.round(amtNum(p.amount))+', שולם '+cur+Math.round(amtNum(p.paid))+')'):''))}))});
   return {rows,total:rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0),cur};
 }
 // שורה אחת בלבד. הסכום עצמו הוא הקישור — לחיצה פותחת את הפירוט
@@ -2513,7 +2514,7 @@ function debtHTML(d){
   // אין חוב — אין חלון. גם לא שורת "אין חוב פתוח" וגם לא ניסיונות
   // חיוב שנדחו: הם נמצאים בלשונית "🔴 לא עבר" ואין להם מה לתפוס מקום כאן.
   if(!x.rows.length||x.total<=0.5)return '';
-  return `<div class="debtline" id="debtline">💰 חייב
+  return `<div class="debtline" id="debtline">💰 יתרה פתוחה
       <button class="debtamt" id="debtgo">${f(x.total)}</button>
       <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span>
       <button class="debtsetl" id="debtsetl" title="סוכם עם התורם בדרך אחרת">סודר</button></div>
@@ -2604,7 +2605,7 @@ function cardDetails(d,body){
   const pdebtsum=pdebts.reduce((s,p)=>s+amtNum(p.amount),0);
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
-    ${pdebts.length?`<div class="debtbanner">🔴 חוב פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
+    ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
     ${declinedHTML(d)}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
@@ -2625,7 +2626,7 @@ function cardDetails(d,body){
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
-    ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 התחייב · טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
+    ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
@@ -2638,21 +2639,6 @@ function cardDetails(d,body){
         <input id="ucl_avnew" placeholder="שם האברך החדש" style="display:none">
         <button class="btn sm" id="ucl_avadd" style="display:none">➕ הוסף</button>
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div></div>`;})():''}
-    <details class="dsec"><summary>📌 כללים קבועים — איזה סכום שייך לאיזה ייעוד${(d.rules||[]).length?(' ('+(d.rules||[]).length+')'):''}</summary>
-      <div class="hintxt" style="margin:0 2px 7px">כל חיוב בסכום הזה אצל התורם ייכנס אוטומטית לייעוד הזה — גם אחורה וגם בעתיד.</div>
-      <div id="rules">${(d.rules||[]).map(r=>`<div class="rulerow" data-amt="${r.amount}">
-        <b>$${(+r.amount).toLocaleString('en-US',{maximumFractionDigits:2})}</b>
-        <span class="rulecat">${esc(r.category||'')}</span>
-        ${r.note?`<span class="rulenote2">${esc(r.note)}</span>`:''}
-        <button class="del ruledel" data-amt="${r.amount}" title="מחק כלל">🗑</button></div>`).join('')}</div>
-      <div class="addrow" style="margin-top:6px">
-        <input id="rl_amt" type="number" step="0.01" placeholder="סכום" style="max-width:110px">
-        <select id="rl_cat">${dnCatOpts('')}</select></div>
-      <div class="addrow hidden" id="rl_newrow" style="margin-top:6px">
-        <input id="rl_new" placeholder="שם הייעוד החדש"></div>
-      <div class="addrow" style="margin-top:6px">
-        <input id="rl_note" placeholder="פירוט (למשל: מעקות וכיסוי רדיאטורים)">
-        <button class="btn sm" id="rl_add">➕ הוסף כלל</button></div></details>
     <div class="sec"><h3>📄 מסמכים ותעודות</h3>
       <div class="avfiles dnfiles" id="dfiles">${(d.files||[]).filter(f=>f.kind==='donor').map(fileChip).join('')}<label class="filebtn sm">📎 צרף מסמך / תעודה<input type="file" multiple accept="application/pdf,image/*" id="df_file" hidden></label></div>
       <div class="hintxt">מה שמצורף כאן מופיע בכרטיס הראשי. שטרי יששכר־זבולון נמצאים בלשונית 🤝.</div></div>
@@ -2898,33 +2884,6 @@ function cardDetails(d,body){
     toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));
     cardDetails(d,body); if(tab==='donors')renderDonors();
   };
-  const rlCat=document.getElementById('rl_cat'), rlNewRow=document.getElementById('rl_newrow');
-  if(rlCat&&rlNewRow)rlCat.onchange=()=>{
-    const on=rlCat.value==='__new__';
-    rlNewRow.classList.toggle('hidden',!on);
-    if(on)document.getElementById('rl_new').focus();
-  };
-  const rlAdd=document.getElementById('rl_add');
-  if(rlAdd)rlAdd.onclick=async()=>{
-    const amt=parseFloat(document.getElementById('rl_amt').value);
-    let cat=document.getElementById('rl_cat').value.trim();
-    const note=document.getElementById('rl_note').value.trim();
-    if(cat==='__new__'){                       // ייעוד חדש שנכתב כאן — נוסף לרשימה ואז נשמר
-      cat=(document.getElementById('rl_new').value||'').trim();
-      if(cat.length<2){toast('כתוב את שם הייעוד');document.getElementById('rl_new').focus();return;}
-      await api('POST','/api/campaigns',{name:cat});
-      if(!(CAMPAIGNS||[]).includes(cat))CAMPAIGNS.unshift(cat);
-    }
-    if(!amt||!cat){toast('מלא סכום ועבור מה');return;}
-    rlAdd.disabled=true;
-    const r=await api('POST','/api/rule',{donor_id:d.id,amount:amt,category:cat,note});
-    rlAdd.disabled=false;
-    if(!r||!r.ok){toast('השמירה נכשלה');return;}
-    toast('נשמר · עודכנו '+r.updated+' תרומות ✓');
-    await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
-  body.querySelectorAll('.ruledel').forEach(b=>b.onclick=async()=>{
-    await api('POST','/api/rule',{donor_id:d.id,amount:+b.dataset.amt,delete:true});
-    toast('הכלל נמחק'); await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   document.getElementById('f_merge').onclick=()=>document.getElementById('mergebox').classList.toggle('hidden');
   const mgq=document.getElementById('mg_q'),mgres=document.getElementById('mg_res');
   mgq.oninput=()=>{const s=norm(mgq.value);if(!s){mgres.innerHTML='';return;}
@@ -3868,10 +3827,19 @@ function plCollected(d,p){
   // לא מייחסים אותו לאף אחת מהן ולא סופרים אותו פעמיים
   if((d.pledges||[]).filter(x=>String(x.category||'').trim()===cat).length>1)return 0;
   const from=String(p.date||'').slice(0,10);
-  return (d.donations||[]).filter(x=>{
+  const rows=(d.donations||[]).filter(x=>{
     if(String(x.category||'').trim()!==cat)return false;
     const dt=String(x.date||'').slice(0,10);
-    return !from||!dt||dt>=from;}).reduce((a,x)=>a+amtNum(x.amount),0);
+    return !from||!dt||dt>=from;});
+  const per=amtNum(p.permo);
+  if(per<=0.5)return rows.reduce((a,x)=>a+amtNum(x.amount),0);
+  // תוכנית תשלומים היא חודשית: חודש אחד = תשלום אחד לכל היותר. אצל
+  // אברמוביץ יש בכמה חודשים שני חיובים זהים מהייבוא, ובלי התקרה הזו
+  // הם נספרו כשני תשלומים והמניין יצא גבוה מהאמת.
+  const by={};
+  rows.forEach(x=>{const m=String(x.date||'').slice(0,7)||'?';
+    by[m]=(by[m]||0)+amtNum(x.amount);});
+  return Object.keys(by).reduce((a,m)=>a+Math.min(per, by[m]), 0);
 }
 // מה ששולם ידנית ומה שנגבה במערכת. תקרה בסכום ההתחייבות, כדי שסיווג
 // מאוחר של תרומות ישנות לא ייצור "שולם" גדול מההתחייבות עצמה.
@@ -3898,7 +3866,10 @@ function instMatches(d,per,fromYM,cat){
     const m=String(x.date||'').slice(0,7);
     if(from&&m&&m<from)return false;
     return String(x.category||'').trim()!==String(cat||'').trim();
-  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+    .filter((x,i,l)=>{      // חודש אחד = תשלום אחד, כמו בספירה עצמה
+      const m=String(x.date||'').slice(0,7);
+      return !m||l.findIndex(y=>String(y.date||'').slice(0,7)===m)===i;});
 }
 // כמה בכל תשלום, כמה נשארו, ומתי התשלום האחרון
 function plPlan(d,p){
