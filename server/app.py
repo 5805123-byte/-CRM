@@ -1774,7 +1774,7 @@ def ensure_schema():
                 repl += max(0, n)
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
                             "VALUES(?,?,?,?,'Banquest',?,1)",
-                            (did, diso, r['amount'], cat, 'ייבוא בנק ווסט · ' + why))
+                            (did, diso, r['amount'], cat, 'נגבה בבנק ווסט'))
                 con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                 ins += 1
                 by[why] = by.get(why, 0) + 1
@@ -1810,7 +1810,7 @@ def ensure_schema():
                             "AND COALESCE(note,'') LIKE 'ייבוא 2026%' "
                             "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a))
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
-                            "VALUES(?,?,?,?,'Banquest','ייבוא בנק ווסט · לא סווג — לבדוק עבור מה',1)",
+                            "VALUES(?,?,?,?,'Banquest','נגבה בבנק ווסט · לא סווג — לבדוק עבור מה',1)",
                             (did, diso, r['amount'], cat))
                 con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
                 ins += 1
@@ -1885,7 +1885,7 @@ def ensure_schema():
                                 "AND COALESCE(note,'') LIKE 'ייבוא 2026%' "
                                 "AND ROUND(CAST(amount AS REAL),2)=?", (did, diso[:7], a)).rowcount
                 repl += max(0, n)
-                note = 'ייבוא אוטורייז · ' + (why if why != 'לא סווג' else 'לא סווג — לבדוק עבור מה')
+                note = 'נגבה באוטורייז' + (' · לא סווג — לבדוק עבור מה' if why == 'לא סווג' else '')
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) "
                             "VALUES(?,?,?,?,'Authorize',?,1)", (did, diso, r['amount'], cat, note))
                 con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, r['tid']))
@@ -4107,6 +4107,28 @@ def ensure_schema():
                 print('  "בניין" שונה ל"הבניין הקדוש": %d' % n)
     except Exception as ex:
         print('  building rename error:', ex)
+
+    # מאיר: "אמרתי לך לא להתייחס לדוח ששלחתי בהתחלה, רק לנתונים אמיתיים".
+    # הכסף בשורות האלה אמיתי ומגובה בחיוב בבנק — הדוח שימש רק לקביעת
+    # הייעוד. ההערה נוסחה כאילו השורה הגיעה מהדוח, וזה מטעה. משנים טקסט
+    # בלבד, בלי לגעת בסכומים.
+    try:
+        n = 0
+        for a, b in (('ייבוא בנק ווסט · דוח הקבועים', 'נגבה בבנק ווסט'),
+                     ('ייבוא בנק ווסט · הוראת קבע', 'נגבה בבנק ווסט'),
+                     ('ייבוא בנק ווסט · לא סווג', 'נגבה בבנק ווסט · לא סווג'),
+                     ('ייבוא בנק ווסט', 'נגבה בבנק ווסט'),
+                     ('ייבוא אוטורייז · דוח הקבועים', 'נגבה באוטורייז'),
+                     ('ייבוא אוטורייז · הוראת קבע', 'נגבה באוטורייז'),
+                     ('ייבוא אוטורייז · לא סווג', 'נגבה באוטורייז · לא סווג'),
+                     ('ייבוא אוטורייז', 'נגבה באוטורייז')):
+            n += con.execute("UPDATE donations SET note=REPLACE(note,?,?) WHERE note LIKE ?",
+                             (a, b, '%' + a + '%')).rowcount
+        if n:
+            con.commit()
+            print('  הערות ייבוא שנוסחו כאילו הגיעו מדוח הקבועים — תוקנו: %d' % n)
+    except Exception as ex:
+        print('  note rename error:', ex)
 
     con.commit(); con.close()
 
