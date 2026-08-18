@@ -365,6 +365,14 @@
   .cmask-b{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .cmendb{background:none;border:none;cursor:pointer;font-size:.9rem;padding:0 2px;opacity:.65}
   .cmendb:hover{opacity:1}
+  /* 🤝 שותפות תשלום — הכסף נכנס בכרטיס של תורם אחר */
+  .cmviab{background:none;border:none;cursor:pointer;font-size:.9rem;padding:0 2px;opacity:.65}
+  .cmviab:hover{opacity:1}
+  .cmvia,.cmviain{margin-top:5px;font-size:.78rem;color:var(--muted)}
+  .cmviain{background:var(--bg-soft);border-radius:9px;padding:6px 9px;margin-bottom:8px}
+  .cmviaed{margin-top:6px;padding:8px 9px;border:1px dashed var(--line);border-radius:9px;background:#fff}
+  .cmviaed input{width:100%;margin-bottom:6px;padding:6px 9px;border:1px solid var(--line);
+    border-radius:8px;font-family:inherit;font-size:.82rem;box-sizing:border-box}
   .cmtot.inst{color:#3b2f5e;font-weight:700;margin-inline-start:8px}
   .cminst{margin-top:5px;font-size:.79rem;color:var(--muted)}
   .cminst small{font-size:.72rem}
@@ -1159,6 +1167,10 @@
 <div class="ov" id="remov"><div class="sheet" id="remsheet"></div></div>
 <div class="toast" id="toast"></div>
 <script src="/app.js"></script>
-<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+  // גרסה חדשה עלתה — מרעננים לבד, כדי שלא יישאר מסך ישן שמראה מספרים שכבר תוקנו
+  let _swReloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(_swReloaded)return; _swReloaded=true; location.reload();});}</script>
 </body>
 </html>

@@ -309,6 +309,16 @@ def ensure_schema():
     #   -1  — מאיר קבע שאין התחייבות בסכום (תורם שנותן מדי פעם).
     try: con.execute("ALTER TABLE pledges ADD COLUMN confirmed INTEGER DEFAULT 1")
     except Exception: pass
+    # מאיר: "התשלום משולם דרך המשרד שלהם עם שטטפלד ביחד, שהם שולחים 2000,
+    # אז אלף זה של לאקס" — התחייבות שהכסף שלה נכנס בפועל בכרטיס של תורם
+    # אחר, ביחד עם עוד מישהו. via_donor_id הוא התורם שאצלו הכסף נחשב,
+    # via_total הסכום המשותף שהוא שולח בכל פעם (ומתוכו amount שייך לכאן).
+    try: con.execute("ALTER TABLE pledges ADD COLUMN via_donor_id INTEGER")
+    except Exception: pass
+    try: con.execute("ALTER TABLE pledges ADD COLUMN via_total TEXT DEFAULT ''")
+    except Exception: pass
+    try: con.execute("ALTER TABLE pledges ADD COLUMN via_note TEXT DEFAULT ''")
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN msg_id TEXT")   # מזהה מייל — למניעת תיוק כפול
@@ -7309,11 +7319,15 @@ class H(BaseHTTPRequestHandler):
             # כל עדכון ידני של שורה הופך אותה למאושרת, אלא אם נשלח אחרת במפורש.
             cf = b.get('confirmed')
             cf = 1 if cf is None else int(cf)
+            vdid = b.get('via_donor_id')
             con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
-                        "detail=?,permo=?,avreich=?,confirmed=? WHERE id=?",
+                        "detail=?,permo=?,avreich=?,confirmed=?,via_donor_id=?,via_total=?,via_note=? "
+                        "WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
                          1 if b.get('monthly') else 0, str(b.get('paid') or ''),
-                         b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf, pid))
+                         b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf,
+                         int(vdid) if vdid else None, str(b.get('via_total') or ''),
+                         b.get('via_note',''), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -8428,12 +8442,15 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/pledge':
             con = db(); cur = con.cursor()
             # שורה שנפתחת מהמסך היא התחייבות שמאיר רשם — מאושרת מלכתחילה.
+            vdid = b.get('via_donor_id')
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
-                        "detail,permo,avreich,confirmed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
                          b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
                          str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
-                         b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed'))))
+                         b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed')),
+                         int(vdid) if vdid else None, str(b.get('via_total') or ''), b.get('via_note','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':

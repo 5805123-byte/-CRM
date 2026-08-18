@@ -2164,12 +2164,15 @@ function commitRows(d){
   }
   pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>{
     const plan=plPlan(d,p);
+    const viaD=viaDonorOf(p);
     rows.push({pid:p.id,what:plWhat(p),
       icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
       conf:plConf(p), ended:plEnded(p),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
+      via:viaD?{id:viaD.id,name:(viaD.last+' '+viaD.first).trim(),
+        total:amtNum(p.via_total),note:String(p.via_note||'')}:null,
       avreich:String(p.avreich||''), note:String(p.note||'')});});
   // סכום קבוע שנשאר בשדה הישן בלי שורה משלו — מוצג כהצעה בלבד, כי גם
   // הוא הגיע מהייבוא ולא ממאיר
@@ -2248,19 +2251,47 @@ function commitHTML(d){
     const endBtn=(r.pid&&!ask)
       ? `<button class="cmendb noprint" data-pid="${r.pid}" data-on="${r.ended?1:0}"
            title="${r.ended?'החזר לפעילה':'סמן שההתחייבות הסתיימה'}">${r.ended?'↩':'🏁'}</button>` : '';
+    // שותפות תשלום: הכסף שלו נכנס דרך כרטיס של תורם אחר. מאיר: "שולחים
+    // 2000 ביחד, אז אלף זה של לאקס — ושלא יצבור חוב". זמין לכל שורה,
+    // לא רק ליששכר־זבולון.
+    const viaBtn=(r.pid&&!ask&&!r.ended&&!r.iz)
+      ? `<button class="cmviab noprint" data-pid="${r.pid}" title="משולם ביחד עם תורם אחר">🤝</button>` : '';
+    const viaInfo=r.via
+      ? `<div class="cmvia">🤝 משולם ביחד עם <span class="cosp2" data-did="${r.via.id}">${esc(r.via.name)} ↗</span>`
+        +(r.via.total>0.5?(' — '+f(r.via.total)+' ביחד, '+f(r.amt)+' שלו'):'')
+        +(r.via.note?(' · '+esc(r.via.note)):'')+`</div>` : '';
+    const viaEdit=(r.pid&&!ask&&!r.ended&&!r.iz)
+      ? `<div class="cmviaed hidden" data-pid="${r.pid}">
+          <input class="rvia_q" placeholder="חפש את שם התורם שדרכו זה נכנס…">
+          <div class="rvia_res"></div>
+          <div class="rvia_sel hidden"></div>
+          <div class="cmrow2"><input class="rvia_tot" inputmode="decimal" placeholder="הסכום הכולל שנשלח ביחד" value="${r.via?esc(r.via.total||''):''}">
+          <input class="rvia_note" placeholder="הערה — למשל: דרך המשרד" value="${r.via?esc(r.via.note):''}"></div>
+          <div class="cmask-b"><button class="btn sm rvia_save" data-pid="${r.pid}">💾 שמור</button>
+          ${r.via?`<button class="btn sm ghost rvia_clear" data-pid="${r.pid}">✕ בטל שותפות</button>`:''}
+          <button class="btn sm ghost rvia_close">סגור</button></div></div>` : '';
     return `<div class="cmrow${st}">
       <div class="cmhead"><span class="cmwhat">${r.icon} ${esc(r.what)}</span>
         ${amt}<span class="cmtag ${r.ended?'end':(ask?'ask':(r.mo?'mo':(r.inst?'inst':'one')))}">${tag}</span>
-        ${endBtn}${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
+        ${viaBtn}${endBtn}${r.pid?`<button class="del cmdel" data-pid="${r.pid}" title="מחק שורה">🗑</button>`:'<span class="cmpad"></span>'}</div>
       ${ask?askLine(r):''}
       ${r.ended?'<div class="cmask off">🏁 ההתחייבות הזו הסתיימה — היא לא נספרת יותר ואין ממנה חוב.</div>':''}
       ${r.avreich?`<div class="cmav">👨‍🎓 ${esc(r.avreich)}</div>`:''}
+      ${viaInfo}${viaEdit}
       ${prog}${paid}
       ${note}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav">👨‍🎓 ${esc(p.avreich||'—')}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
     </div>`;
   };
+  // מי משלם דרך הכרטיס הזה עבור התחייבות של תורם אחר — מידע בלבד,
+  // כדי שיראה שחלק ממה שהוא שולח לא באמת שלו
+  const viaIn=viaLinkedIn(d);
+  const viaInHTML=viaIn.length
+    ? `<div class="cmviain">${viaIn.map(({from,p})=>{
+        const nm=(from.last+' '+from.first).trim(), sh=amtNum(p.amount);
+        return `<div>📥 <span class="cosp2" data-did="${from.id}">${esc(nm)} ↗</span> — ${sh?(f(sh)+' מתוך מה שנכנס כאן שייך ל'+esc(plWhat(p))+' שלו'):('חלק ממה שנכנס כאן שייך ל'+esc(plWhat(p))+' שלו')}</div>`;
+      }).join('')}</div>` : '';
   // טופס ההוספה: ייעוד מהרשימה, פירוט חופשי שנשאר אצל התורם בלבד,
   // ולפי הייעוד — בחירת לילה או בחירת אברך.
   const add=`<div class="cmadd">
@@ -2275,6 +2306,14 @@ function commitHTML(d){
         <div class="cmthree"><select class="cm_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
           <select class="cm_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
           <select class="cm_hy">${heYearOpts()}</select></div></div>
+      <button type="button" class="opnlink cm_via_tgl">🤝 משולם ביחד עם תורם אחר? (לא נכנס בכרטיס שלו)</button>
+      <div class="opnbox hidden cm_viabox">
+        <div class="hintxt" style="margin:0 0 5px">כשהכסף נכנס בפועל בכרטיס של מישהו אחר — למשל שניהם שולחים יחד דרך אותו משרד — כתוב כאן מי זה וכמה מתוך הסכום המשותף שייך לתורם הזה.</div>
+        <input class="cm_via_q" placeholder="חפש את שם התורם שדרכו זה נכנס…">
+        <div class="cm_via_res"></div>
+        <div class="cm_via_sel hidden"></div>
+        <div class="cmrow2"><input class="cm_via_tot" inputmode="decimal" placeholder="הסכום הכולל שנשלח ביחד">
+        <input class="cm_via_note" placeholder="הערה — למשל: דרך המשרד"></div></div>
       <div class="cmrow2">
         <input class="cm_amt" inputmode="decimal" placeholder="כמה">
         <select class="cm_plan">
@@ -2293,6 +2332,7 @@ function commitHTML(d){
   return `<div class="cmbox"><div class="cmbox-t">📋 ההתחייבויות שלו
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
       ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
+    ${viaInHTML}
     ${rows.map(line).join('')||'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>'}
     ${purposeAllocHTML(d)}
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
@@ -2336,7 +2376,8 @@ function wireCommit(d,body){
     await api('PUT','/api/pledge/'+p.id,{category:p.category||'',amount:p.amount||'',
       status:p.status||'',note:p.note||'',monthly:+p.monthly?1:0,paid:p.paid||'',
       detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||'',
-      confirmed:(p.confirmed!=null?+p.confirmed:1)});};
+      confirmed:(p.confirmed!=null?+p.confirmed:1),
+      via_donor_id:p.via_donor_id||'',via_total:p.via_total||'',via_note:p.via_note||''});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
   // סכום ידני שנשאר לצד תשלומים שנקלטו במערכת יוצר שני מספרים סותרים
   // על אותה שורה. מה שנקלט הוא הקובע, ולכן הידני נמחק פעם אחת.
@@ -2436,6 +2477,37 @@ function wireCommit(d,body){
     await api('DELETE','/api/pledge/'+p.id);
     d.pledges=(d.pledges||[]).filter(x=>String(x.id)!==String(p.id));
     await syncAmt(); toast('נמחק'); redraw();});
+  // שותפות תשלום על שורה קיימת — עריכה/ביטול, אותו רעיון כמו בטופס ההוספה
+  box.querySelectorAll('.cmviab').forEach(b=>b.onclick=()=>{
+    const ed=box.querySelector('.cmviaed[data-pid="'+b.dataset.pid+'"]'); if(!ed)return;
+    ed.classList.toggle('hidden');
+    if(ed.classList.contains('hidden')||ed.dataset.wired)return;
+    ed.dataset.wired='1';
+    const p=pOf(b.dataset.pid); if(!p)return;
+    const q=ed.querySelector('.rvia_q'), res=ed.querySelector('.rvia_res'), selD=ed.querySelector('.rvia_sel'),
+          tot=ed.querySelector('.rvia_tot'), noteI=ed.querySelector('.rvia_note');
+    let rid=+(p.via_donor_id||0);
+    if(rid){const dd=DB.find(x=>x.id===rid); if(dd){
+      selD.classList.remove('hidden');
+      selD.innerHTML=`נבחר: 🤝 ${esc((dd.last+' '+dd.first).trim())} <button type="button" class="viax">✕</button>`;
+      selD.querySelector('.viax').onclick=()=>{rid=0;selD.classList.add('hidden');selD.innerHTML='';};}}
+    wireDonorSearch(q,res,dd=>{rid=dd.id;
+      selD.classList.remove('hidden');
+      selD.innerHTML=`נבחר: 🤝 ${esc((dd.last+' '+dd.first).trim())} <button type="button" class="viax">✕</button>`;
+      selD.querySelector('.viax').onclick=()=>{rid=0;selD.classList.add('hidden');selD.innerHTML='';};
+    },d.id);
+    const save=ed.querySelector('.rvia_save');
+    if(save)save.onclick=async()=>{
+      if(!rid){toast('בחר תורם מהרשימה');return;}
+      await putPl(p,{via_donor_id:rid,via_total:tot.value.trim(),via_note:noteI.value.trim()});
+      toast('נשמר ✓'); redraw();};
+    const clr=ed.querySelector('.rvia_clear');
+    if(clr)clr.onclick=async()=>{
+      await putPl(p,{via_donor_id:'',via_total:'',via_note:''});
+      toast('בוטל ✓'); redraw();};
+    const closeB=ed.querySelector('.rvia_close');
+    if(closeB)closeB.onclick=()=>ed.classList.add('hidden');
+  });
 
   // ----- טופס ההוספה -----
   const sel=box.querySelector('.cm_cat'), nrow=box.querySelector('.cm_newrow'),
@@ -2495,6 +2567,19 @@ function wireCommit(d,body){
   wireAvNew(avsel, box.querySelector('.cm_avnew'), box.querySelector('.cm_avadd'));
   addMics(box,['.cmnote','.cm_det']);
 
+  // שותפות תשלום בטופס ההוספה — הכסף נכנס בכרטיס של תורם אחר
+  let VIAID=0;
+  const viaTgl=box.querySelector('.cm_via_tgl'), viaBoxEl=box.querySelector('.cm_viabox'),
+        viaQ=box.querySelector('.cm_via_q'), viaRes=box.querySelector('.cm_via_res'),
+        viaSelD=box.querySelector('.cm_via_sel'), viaTot=box.querySelector('.cm_via_tot'),
+        viaNoteI=box.querySelector('.cm_via_note');
+  const pickVia=(dd,selEl,setId)=>{setId(dd.id);
+    selEl.classList.remove('hidden');
+    selEl.innerHTML=`נבחר: 🤝 ${esc((dd.last+' '+dd.first).trim())} <button type="button" class="viax">✕</button>`;
+    selEl.querySelector('.viax').onclick=()=>{setId(0);selEl.classList.add('hidden');selEl.innerHTML='';};};
+  if(viaTgl)viaTgl.onclick=()=>viaBoxEl.classList.toggle('hidden');
+  if(viaQ)wireDonorSearch(viaQ,viaRes,dd=>pickVia(dd,viaSelD,v=>VIAID=v),d.id);
+
   box.querySelector('.cm_add').onclick=async()=>{
     let cat=sel.value.trim();
     if(cat==='__new__'){cat=nrow.querySelector('.cm_new').value.trim();
@@ -2523,12 +2608,14 @@ function wireCommit(d,body){
     const detail=det.value.trim();
     const avn=(!avbox.classList.contains('hidden')&&avsel.value&&avsel.value!=='__new__')
       ? avsel.value : '';
+    const viaTotV=VIAID?viaTot.value.trim():'', viaNoteV=VIAID?viaNoteI.value.trim():'';
     const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:total,
-      status:mo?'נתן':'טרם',monthly:mo,paid:already,detail,permo,avreich:avn,date:from});
+      status:mo?'נתן':'טרם',monthly:mo,paid:already,detail,permo,avreich:avn,date:from,
+      via_donor_id:VIAID||'',via_total:viaTotV,via_note:viaNoteV});
     if(!r||!r.id){toast('לא נשמר');return;}
     d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:total,
       status:mo?'נתן':'טרם',monthly:mo,paid:already,note:'',detail,permo,avreich:avn,
-      date:from||todayStr()}]);
+      date:from||todayStr(),via_donor_id:VIAID||null,via_total:viaTotV,via_note:viaNoteV}]);
     // צירוף התשלומים הקיימים: הייעוד שלהם משתנה לייעוד ההתחייבות, וכך
     // המערכת מזהה אותם לבד כתשלומים על החשבון — בלי כפילות
     if(mode==='inst'&&MATCH.length&&mergec.checked){
@@ -4050,25 +4137,66 @@ function renderContacts(d){
 // כמה נשאר לשלם מהתחייבות חד־פעמית: מה שהתחייב פחות מה שכבר שילם
 // כמה נגבה בפועל לייעוד הזה מאז שנרשמה ההתחייבות. כך התחייבות בתשלומים
 // מתעדכנת לבד — מאיר לא צריך למלא כל חודש כמה שולם.
+// שותפות תשלום: הכסף לא נכנס אצל התורם הזה, אלא אצל תורם אחר שמשלם
+// ביחד איתו (מאיר: "שולחים 2000 ביחד, אז אלף זה של לאקס"). כאן שולפים
+// את הכרטיס שאצלו הכסף באמת נכנס, ואת החלק היחסי שמיוחס לכאן.
+function viaDonorOf(p){
+  const id=+(p&&p.via_donor_id||0); if(!id)return null;
+  return (typeof DB!=='undefined'&&DB||[]).find(x=>x.id===id)||null;
+}
+function viaShare(p){
+  const tot=amtNum(p.via_total), amt=amtNum(p.amount);
+  return (tot>0.5&&amt>0)?Math.min(1,amt/tot):1;
+}
 function plCollected(d,p){
   const cat=String(p.category||'').trim(); if(!d||!cat)return 0;
-  // שתי התחייבויות לאותו ייעוד — אי אפשר לדעת לאיזו שייך הכסף, ולכן
-  // לא מייחסים אותו לאף אחת מהן ולא סופרים אותו פעמיים
-  if((d.pledges||[]).filter(x=>String(x.category||'').trim()===cat).length>1)return 0;
+  const via=viaDonorOf(p);
+  let src=d, share=1;
+  if(via){ src=via; share=viaShare(p); }
+  else if((d.pledges||[]).filter(x=>String(x.category||'').trim()===cat).length>1)
+    // שתי התחייבויות לאותו ייעוד — אי אפשר לדעת לאיזו שייך הכסף, ולכן
+    // לא מייחסים אותו לאף אחת מהן ולא סופרים אותו פעמיים
+    return 0;
   const from=String(p.date||'').slice(0,10);
-  const rows=(d.donations||[]).filter(x=>{
+  const rows=(src.donations||[]).filter(x=>{
     if(String(x.category||'').trim()!==cat)return false;
     const dt=String(x.date||'').slice(0,10);
     return !from||!dt||dt>=from;});
   const per=amtNum(p.permo);
-  if(per<=0.5)return rows.reduce((a,x)=>a+amtNum(x.amount),0);
+  // תקרה חודשית: מול תשלום קבוע, לפי החלק המשותף עצמו (הסכום ששני
+  // הצדדים שולחים ביחד) ולא לפי החלק היחסי — אחרת שני חיובים זהים
+  // מהייבוא באותו חודש נספרים כפול, בלי קשר לשותפות
+  const cap=via?(amtNum(p.via_total)||per):per;
+  if(cap<=0.5)return share*rows.reduce((a,x)=>a+amtNum(x.amount),0);
   // תוכנית תשלומים היא חודשית: חודש אחד = תשלום אחד לכל היותר. אצל
   // אברמוביץ יש בכמה חודשים שני חיובים זהים מהייבוא, ובלי התקרה הזו
   // הם נספרו כשני תשלומים והמניין יצא גבוה מהאמת.
   const by={};
   rows.forEach(x=>{const m=String(x.date||'').slice(0,7)||'?';
     by[m]=(by[m]||0)+amtNum(x.amount);});
-  return Object.keys(by).reduce((a,m)=>a+Math.min(per, by[m]), 0);
+  return share*Object.keys(by).reduce((a,m)=>a+Math.min(cap, by[m]), 0);
+}
+// מי משלם דרך הכרטיס הזה עבור התחייבות של תורם אחר — כדי שיראה כאן
+// שחלק ממה שהוא שולח שייך למישהו אחר, ולא ייראה כאילו הוא שלו
+// חיפוש תורם להצמדה — משמש גם לשותפות תשלום וגם למיזוג כרטיסים
+function wireDonorSearch(qEl,resEl,onPick,excludeId){
+  if(!qEl||!resEl)return;
+  qEl.oninput=()=>{
+    const s=norm(qEl.value); if(!s){resEl.innerHTML='';return;}
+    const m=(DB||[]).filter(x=>x.id!==excludeId
+      &&norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,8);
+    resEl.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')
+      ||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    resEl.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>{
+      const dd=DB.find(x=>x.id==el.dataset.did); if(!dd)return;
+      onPick(dd); qEl.value=''; resEl.innerHTML='';});
+  };
+}
+function viaLinkedIn(d){
+  const out=[];
+  (typeof DB!=='undefined'&&DB||[]).forEach(x=>(x.pledges||[]).forEach(p=>{
+    if(+(p.via_donor_id||0)===d.id)out.push({from:x,p});}));
+  return out;
 }
 // מה ששולם ידנית ומה שנגבה במערכת. תקרה בסכום ההתחייבות, כדי שסיווג
 // מאוחר של תרומות ישנות לא ייצור "שולם" גדול מההתחייבות עצמה.
