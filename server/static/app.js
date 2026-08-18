@@ -4862,14 +4862,43 @@ function prayerKvType(pt,d){
   return 'other';
 }
 let kvListQ='';
+/* ---------- הדפסה בלי שמות משפחה ----------
+   מאיר: "אני לא רוצה שאנשים בכותל יראו מי התורמים שלנו" — בכללי ובמזדמן
+   אפשר להדפיס עם שם פרטי בלבד. הבחירה נשמרת בין הכניסות. */
+let KVNOLAST=false;
+try{ KVNOLAST=localStorage.getItem('kc_kvnolast')==='1'; }catch(e){}
+function kvSetNoLast(v){ KVNOLAST=!!v;
+  try{ localStorage.setItem('kc_kvnolast', KVNOLAST?'1':'0'); }catch(e){} }
+// השם כפי שהוא מוצג ומודפס. אצל תורם עם כרטיס לוקחים את השם הפרטי עצמו;
+// אצל שם לא־משויך, שאין לו שדות נפרדים, מורידים את המילה הראשונה
+// (שם המשפחה נכתב ראשון) ומשאירים את השאר.
+function kvWho(g){
+  const full=String(g.donor||'').trim();
+  if(!KVNOLAST) return full;
+  if(g.did){ const d=(DB||[]).find(x=>x.id===g.did);
+    const f=String((d&&d.first)||'').trim();
+    return f||full; }
+  const ws=full.split(/\s+/);
+  return ws.length>1 ? ws.slice(1).join(' ') : full;
+}
+function kvNoLastBtn(){
+  return `<button class="btn sm ghost noprint" id="kvnolast">${
+    KVNOLAST?'👁️ הצג שמות משפחה':'🙈 הדפסה בלי שמות משפחה'}</button>`;
+}
+function wireNoLast(redraw){
+  const b=document.getElementById('kvnolast');
+  if(b)b.onclick=()=>{ kvSetNoLast(!KVNOLAST); redraw(); };
+}
 function renderKvList(type){
   const title=KVTYPES.find(x=>x[0]===type)[1];
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2" id="kvcnt"></span><button class="print noprint" onclick="window.print()">הדפס 🖨️</button></div>
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2" id="kvcnt"></span>${kvNoLastBtn()}<button class="print noprint" onclick="window.print()">הדפס 🖨️</button></div>
     <input class="avsearch noprint" id="kvsearch" placeholder="🔍 חפש שם תורם או שם שמוזכר בקוויטל…" value="${esc(kvListQ)}" autocomplete="off">
-    <div class="hintxt noprint" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.</div>
+    <div class="hintxt noprint" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.${
+      KVNOLAST?' <b>· מודפס בשם פרטי בלבד</b>':''}</div>
     <div class="hintxt noprint" id="kvout" style="margin:0 2px 8px"></div>
     <div id="kvlistwrap"></div>`;
   document.getElementById('kvback').onclick=()=>{kvListQ='';kvSub=null;render();};
+  wireNoLast(()=>renderKvList(type));
   const si=document.getElementById('kvsearch');
   // הכללי מאגד את שלוש הדרגות האמיתיות בלבד. "מזדמן" ו"ללא" אינם דרגה
   // ואינם נכנסים אליו — מאיר: "כל מי שיש לו קוויטל ללא צריך לצאת לגמרי".
@@ -4906,7 +4935,7 @@ function renderKvList(type){
     document.getElementById('kvlistwrap').innerHTML=groups.map(g=>{
       const empty=!g.items.some(e=>(e.text||'').trim());
       const needname=g.items.some(e=>e.needname);
-      return `<div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(g.donor)}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
+      return `<div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
         + g.items.map(e=>`<div class="names" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`).join('')
         + `</div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
@@ -4927,9 +4956,11 @@ function renderKvOcc(){
     dons.forEach(dn=>place(d,dn.hmonth||'ללא תאריך',dn.date||''));});
   let months=Object.keys(groups).sort((a,b)=>(mdate[b]||'').localeCompare(mdate[a]||''));
   months=months.filter(hm=>matchQ(hm)||Object.values(groups[hm]).some(x=>matchQ(x.d.last+' '+x.d.first+' '+x.text)));
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>קוויטל מזדמן — לפי חודשים</b><button class="print" onclick="window.print()">הדפס 🖨️</button></div>
-    ${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3>🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock"><div class="who wholink" data-did="${x.d.id}">${esc((x.d.last+' '+x.d.first).trim())} <span class="opencard">↗ כרטיס</span></div>${x.pid?`<div class="names" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}`;
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>קוויטל מזדמן — לפי חודשים</b>${kvNoLastBtn()}<button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    ${KVNOLAST?'<div class="hintxt noprint" style="margin:0 2px 8px"><b>מודפס בשם פרטי בלבד</b></div>':''}
+    ${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3>🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock"><div class="who wholink" data-did="${x.d.id}">${esc(kvWho({did:x.d.id,donor:(x.d.last+' '+x.d.first).trim()}))} <span class="opencard">↗ כרטיס</span></div>${x.pid?`<div class="names" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
+  wireNoLast(renderKvOcc);
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
   bindKvEdit();
 }
