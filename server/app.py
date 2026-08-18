@@ -6180,6 +6180,21 @@ class H(BaseHTTPRequestHandler):
                             last = iso[:10]
                 if undated or (last and last >= since):
                     continue                    # יש לו כסף, או כסף בלי תאריך
+                # תורם עם התחייבות פעילה אינו "ישן": קבוע, סכום חודשי,
+                # יששכר־זבולון או אברך על שמו — מאיר לא מוחק כאלה.
+                if 'קבוע' in (d['category'] or '') or (d['tier'] or '') == 'יששכר_זבולון':
+                    continue
+                try:
+                    if float(str(d['amount'] or 0).replace(',', '') or 0) > 0:
+                        continue
+                except Exception:
+                    pass
+                if con.execute("SELECT 1 FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0",
+                               (d['id'],)).fetchone():
+                    continue
+                if con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1",
+                               (d['id'],)).fetchone():
+                    continue
                 money = last
                 out.append({
                     'id': d['id'],
@@ -7095,6 +7110,14 @@ class H(BaseHTTPRequestHandler):
                 c = db()
                 try:
                     r = gmail_intake.sync_paypal(c, stt)
+                    try:
+                        stt['phase'] = 'קבלות אוטרייז'
+                        r2 = gmail_intake.sync_receipts(c, stt, b.get('since'))
+                        if r2.get('ok'):
+                            stt['new'] = stt.get('new', 0) + r2.get('new', 0)
+                            stt['dup'] = stt.get('dup', 0) + r2.get('dup', 0)
+                    except Exception as e2:
+                        stt['error'] = 'receipts: %s' % e2
                     if not r.get('ok'):
                         stt['error'] = r.get('detail') or r.get('error') or 'שגיאה'
                     else:

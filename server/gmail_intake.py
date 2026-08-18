@@ -1655,9 +1655,10 @@ def sync_paypal(con, status=None):
 
 # ספקי הסליקה ששולחים לנו קבלות. קבלה כזו היא הראיה שהתורם באמת תרם,
 # גם בשנים שהמערכת עוד לא מכירה (הנתונים בתוכנה מתחילים מינואר 2026).
-_RCPT_FROM = ('authorize.net', 'authorize', 'paypal', 'banquest', 'nedarim',
-              'donorsfund', 'thedonorsfund', 'pledger', 'ojcfund', 'matbia',
-              'cardknox', 'stripe')
+# מאיפה מגיעות הראיות לכסף: ספקי הסליקה, וגם סיכום בנק ווסט שנשלח כל יום
+_RCPT_FROM = ('authorize.net', 'authorize', 'paypal', 'banquest', 'bankwest',
+              'bank west', 'nedarim', 'donorsfund', 'thedonorsfund', 'pledger',
+              'ojcfund', 'matbia', 'cardknox', 'stripe')
 _RCPT_MAIL = re.compile(r'E-?Mail\s*:\s*([^\s<>,;]+@[^\s<>,;]+)', re.I)
 _ANY_MAIL = re.compile(r'[\w.+-]+@[\w.-]+\.\w+')
 
@@ -1676,13 +1677,14 @@ def _body_text(msg):
 
 
 def check_donor_mail(con, since='01-Jan-2024', status=None):
-    """מחקר לתורמים ישנים, בשני מסלולים נפרדים:
+    """מחקר לתורמים ישנים. הראיה שתורם כן תרם היא רק כסף, ולא התכתבות:
 
-    1. קבלות מספקי הסליקה — סורקים פעם אחת את כל הקבלות שהגיעו מאז
-       התאריך, שולפים מכל קבלה את כתובת האימייל של המשלם, ומסמנים את
-       התורם. זו הראיה שהוא תרם (למשל אלכסנדר חולודנקו, 180 באוקטובר 2024).
-    2. מייל שהתורם שלח אלינו — חיפוש FROM לכתובת שלו בלבד. מייל
-       ששלחנו אליו אינו נספר, כי אנחנו שולחים לכולם כמה פעמים בשנה.
+    1. קבלות מספקי הסליקה (אוטרייז, פייפאל, נדרים, דונורס פאנד ועוד).
+    2. סיכומי בנק ווסט שנשלחים אלינו כל יום — מי חויב ומה עבר באותו יום.
+
+    מכל הודעה כזו נשלפות כתובות האימייל וגם השמות באנגלית, ומותאמות
+    לתורמים. מייל שהתורם שלח אלינו אינו נחשב ראיה — מאיר: "ולא אימייל
+    ממנו". שם או אימייל שנמצא בסיכום כזה מוציא את התורם מרשימת המחיקה.
     """
     st = status if status is not None else {}
     user = os.environ.get('GMAIL_USER')
@@ -1691,19 +1693,21 @@ def check_donor_mail(con, since='01-Jan-2024', status=None):
         return {'ok': False, 'error': 'not_configured'}
     rows = [dict(r) for r in con.execute(
         "SELECT id,last,first,english,email FROM donors WHERE COALESCE(keep_old,0)=0")]
-    bymail = {}
+    bymail, byname = {}, {}
     for d in rows:
         for e in re.split(r'[\s,/;]+', d['email'] or ''):
             e = e.strip().lower()
             if '@' in e:
                 bymail.setdefault(e, d['id'])
-    st.update({'total': len(rows), 'done': 0, 'hit': 0, 'phase': 'קבלות'})
-    rcpt, wrote = {}, 0
+        nm = re.sub(r'\s+', ' ', (d['english'] or '').strip().lower())
+        if len(nm) >= 6 and ' ' in nm:
+            byname.setdefault(nm, d['id'])
+    st.update({'total': 0, 'done': 0, 'hit': 0, 'phase': 'קבלות וסיכומי בנק'})
+    seen = {}
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com')
         M.login(user, pw)
         M.select('"[Gmail]/All Mail"', readonly=True)
-        # ----- מסלול 1: קבלות מספקי הסליקה -----
         ids = []
         for src in _RCPT_FROM:
             try:
@@ -1713,7 +1717,7 @@ def check_donor_mail(con, since='01-Jan-2024', status=None):
             except Exception:
                 continue
         ids = list(dict.fromkeys(ids))
-        st['total'] = len(ids) + len(rows)
+        st['total'] = len(ids)
         for i in range(0, len(ids), 25):
             if not st.get('running', True):
                 break
@@ -1726,56 +1730,133 @@ def check_donor_mail(con, since='01-Jan-2024', status=None):
                     continue
                 try:
                     msg = email.message_from_bytes(part[1])
-                    dt = parsedate_to_datetime(msg.get('Date'))
-                    iso = dt.strftime('%Y-%m-%d')
+                    iso = parsedate_to_datetime(msg.get('Date')).strftime('%Y-%m-%d')
                 except Exception:
                     continue
                 body = _body_text(msg)
-                cand = [m.group(1) for m in _RCPT_MAIL.finditer(body)] or _ANY_MAIL.findall(body)
-                for e in cand:
+                low = re.sub(r'\s+', ' ', body.lower())
+                for e in set(_ANY_MAIL.findall(body)):
                     did = bymail.get(e.strip().lower())
-                    if did and iso > rcpt.get(did, ''):
-                        rcpt[did] = iso
+                    if did and iso > seen.get(did, ''):
+                        seen[did] = iso
+                for nm, did in byname.items():
+                    if nm in low and iso > seen.get(did, ''):
+                        seen[did] = iso
             st['done'] = st.get('done', 0) + len(ids[i:i + 25])
-        for did, iso in rcpt.items():
+        for did, iso in seen.items():
             con.execute("UPDATE donors SET mail_seen=? WHERE id=?", (iso, did))
-            wrote += 1
-        st['hit'] = wrote
-        # ----- מסלול 2: מייל שהתורם שלח אלינו -----
-        st['phase'] = 'מיילים מהתורם'
         for d in rows:
+            if d['id'] not in seen:
+                con.execute("UPDATE donors SET mail_seen='none' WHERE id=?", (d['id'],))
+        con.commit()
+        st['hit'] = len(seen)
+        try:
+            M.logout()
+        except Exception:
+            pass
+    except Exception as e:
+        st['error'] = str(e)
+        return {'ok': False, 'error': str(e)}
+    return {'ok': True, 'found': len(seen), 'checked': len(rows)}
+
+
+# ---- קבלות "Merchant Email Receipt" של אוטרייז.נט ----
+# הקבלה מכילה הכל: תאריך, סכום, מספר עסקה, שם, אימייל ותיאור. אלה תרומות
+# אמיתיות מ-2024 ו-2025 שהמערכת עוד לא הכירה, ולכן הן נטענות כשורות חיוב
+# ומשם נכנסות לכרטיס התורם כמו כל חיוב אחר.
+_RC = {
+    'date':  re.compile(r'^\s*Date/Time\s*:\s*(.+?)\s*$', re.M),
+    'amt':   re.compile(r'^\s*Amount\s*:\s*([\d,]+\.?\d*)', re.M),
+    'tid':   re.compile(r'^\s*Transaction ID\s*:\s*(\S+)', re.M),
+    'first': re.compile(r'^\s*First Name\s*:\s*(.*?)\s*$', re.M),
+    'last':  re.compile(r'^\s*Last Name\s*:\s*(.*?)\s*$', re.M),
+    'mail':  re.compile(r'^\s*E-?Mail\s*:\s*(\S+@\S+?)\s*$', re.M),
+    'desc':  re.compile(r'^\s*Description\s*:\s*(.*?)\s*$', re.M),
+    'resp':  re.compile(r'^\s*Response\s*:\s*(.*?)\s*$', re.M),
+}
+
+
+def _rc_date(v):
+    for f in ('%d-%b-%Y %H:%M:%S', '%d-%b-%Y'):
+        try:
+            return datetime.datetime.strptime(' '.join(v.split()[:2] if '%H' in f else v.split()[:1]),
+                                              f).strftime('%Y-%m-%d')
+        except Exception:
+            continue
+    m = re.search(r'(\d{1,2}-[A-Za-z]{3}-\d{4})', v or '')
+    if m:
+        try:
+            return datetime.datetime.strptime(m.group(1), '%d-%b-%Y').strftime('%Y-%m-%d')
+        except Exception:
+            pass
+    return ''
+
+
+def sync_receipts(con, status=None, since=None):
+    """טוען קבלות אוטרייז מהמייל כשורות חיוב, כולל השנים שלפני 2026."""
+    st = status if status is not None else {}
+    user = os.environ.get('GMAIL_USER')
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    since = since or os.environ.get('RECEIPTS_SINCE') or '01-Jan-2024'
+    emap = _donor_email_map(con)
+    new = dup = skip = 0
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com')
+        M.login(user, pw)
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        ids = []
+        for term in ('authorize.net', 'Merchant Email Receipt'):
+            key = 'FROM' if '@' in term or '.' in term else 'SUBJECT'
+            try:
+                typ, data = M.search(None, 'SINCE', since, key, _q(term))
+                if typ == 'OK':
+                    ids += data[0].split()
+            except Exception:
+                continue
+        ids = list(dict.fromkeys(ids))
+        st['total'] = len(ids)
+        for i in range(0, len(ids), 25):
             if not st.get('running', True):
                 break
-            st['done'] = st.get('done', 0) + 1
-            best = ''
-            for e in re.split(r'[\s,/;]+', d['email'] or ''):
-                e = e.strip()
-                if '@' not in e:
+            try:
+                typ, msgs = M.fetch(b','.join(ids[i:i + 25]), '(RFC822)')
+            except Exception:
+                continue
+            for part in msgs or []:
+                if not (isinstance(part, tuple) and part[1]):
                     continue
                 try:
-                    typ, data = M.search(None, 'SINCE', since, 'FROM', _q(e))
+                    msg = email.message_from_bytes(part[1])
                 except Exception:
                     continue
-                ids2 = data[0].split() if typ == 'OK' else []
-                if not ids2:
+                body = _body_text(msg)
+                if 'Transaction ID' not in body:
                     continue
-                try:
-                    typ, msgs = M.fetch(ids2[-1], '(BODY[HEADER.FIELDS (DATE)])')
-                except Exception:
+                g = {k: (r.search(body).group(1).strip() if r.search(body) else '')
+                     for k, r in _RC.items()}
+                if g['resp'] and 'approved' not in g['resp'].lower():
+                    skip += 1
                     continue
-                for part in msgs or []:
-                    if isinstance(part, tuple) and part[1]:
-                        try:
-                            raw = part[1].decode('utf-8', 'ignore').split(':', 1)[1].strip()
-                            iso = parsedate_to_datetime(raw).strftime('%Y-%m-%d')
-                        except Exception:
-                            continue
-                        if iso > best:
-                            best = iso
-            con.execute("UPDATE donors SET mail_from=? WHERE id=?", (best or 'none', d['id']))
-            if did_none := (d['id'] not in rcpt):
-                con.execute("UPDATE donors SET mail_seen=COALESCE(NULLIF(mail_seen,''),'none') "
-                            "WHERE id=?", (d['id'],))
+                iso = _rc_date(g['date'])
+                tid = g['tid']
+                if not (tid and iso and g['amt']):
+                    skip += 1
+                    continue
+                if con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone():
+                    dup += 1
+                    continue
+                em = (g['mail'] or '').strip().lower()
+                did = emap.get(em) if em else None
+                con.execute(
+                    "INSERT INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,"
+                    "recurring,donor_id,category,processed,source,status) "
+                    "VALUES(?,?,?,?,?,'','','','','',?,0,?,?,0,'Authorize','settled')",
+                    (tid, g['first'], g['last'], g['amt'].replace(',', ''), iso, em, did, g['desc'][:80]))
+                new += 1
+                st['new'] = new
+            st['done'] = st.get('done', 0) + len(ids[i:i + 25])
         con.commit()
         try:
             M.logout()
@@ -1784,4 +1865,4 @@ def check_donor_mail(con, since='01-Jan-2024', status=None):
     except Exception as e:
         st['error'] = str(e)
         return {'ok': False, 'error': str(e)}
-    return {'ok': True, 'receipts': wrote, 'checked': len(rows)}
+    return {'ok': True, 'new': new, 'dup': dup, 'skipped': skip}

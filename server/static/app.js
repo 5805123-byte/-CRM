@@ -837,11 +837,11 @@ async function runPaypalSync(btn){
     await new Promise(res=>setTimeout(res,2000));
     let st;try{st=await api('GET','/api/mail/paypal_sync/status');}catch(e){continue;}
     if(!st)continue;
-    if(st.running){set(st.total?('קורא… '+(st.new||0)+'/'+st.total):'סורק את המייל…');continue;}
+    if(st.running){set((st.phase?st.phase+' — ':'')+(st.total?('קורא… '+(st.done||st.new||0)+'/'+st.total):'סורק את המייל…'));continue;}
     if(btn){btn.disabled=false;set(label);}
     if(st.error){toast('שגיאת משיכה: '+st.error);return;}
     LEDGER=null; await load();
-    toast(st.new?('נמצאו '+st.new+' תשלומי PayPal ✓'+(st.dup?(' · '+st.dup+' כבר היו'):'')):'אין תשלומי PayPal חדשים');
+    toast(st.new?('נקלטו '+st.new+' תשלומים וקבלות ✓'+(st.dup?(' · '+st.dup+' כבר היו'):'')):'אין תשלומים חדשים במייל');
     render();return;
   }
   if(btn){btn.disabled=false;set(label);}
@@ -3183,7 +3183,7 @@ async function renderLedger(scroll){
       <button class="ledbig nocard" id="lednocard"><span>💵 בלי כרטיס</span><b id="depcnt">…</b><small>מפקידים לשייך או לפתוח כרטיס</small></button>
     </div>
     <button class="btn ghost ${ledAll?'on':''}" id="ledall" style="width:100%;margin:0 2px 8px">📅 הכל לפי חודשים — מקורות וייעודים</button>
-    <button class="btn ghost" id="ppsync" style="width:100%;margin:0 2px 8px">📧 משוך תשלומי PayPal מהמייל</button>
+    <button class="btn ghost" id="ppsync" style="width:100%;margin:0 2px 8px">📧 משוך קבלות ותשלומים מהמייל (אוטרייז + PayPal)</button>
     <div id="leddet"></div>
     <div class="ledlist">${(L.groups||[]).map(g=>`<button class="ledrow ${ledSrc===g.src?'on':''}" data-s="${esc(g.src)}">
       <div class="ledn">${esc(srcLabel(g.src))}</div>
@@ -4917,8 +4917,8 @@ async function renderOld(){
   if(!OLD){ try{ OLD=await api('GET','/api/inactive?since='+encodeURIComponent(oldSince)); }
             catch(e){ OLD={donors:[]}; } }
   const l=OLD.donors||[];
-  const seen=l.filter(d=>(d.mail_seen&&d.mail_seen!=='none')||(d.mail_from&&d.mail_from!=='none')).length;
-  const chk=l.filter(d=>d.mail_seen||d.mail_from).length;
+  const seen=l.filter(d=>d.mail_seen&&d.mail_seen!=='none').length;
+  const chk=l.filter(d=>d.mail_seen).length;
   view.innerHTML=`<div class="oldbar">
       <span>לא נכנס כסף מאז</span>
       <input type="date" id="oldsince" value="${esc(oldSince)}">
@@ -4927,8 +4927,8 @@ async function renderOld(){
     </div>
     <div class="cnt">${l.length} תורמים בלי שום כסף מאז ${esc(oldSince)}</div>
     <div class="hintxt" style="margin:0 2px 9px">התרומות במערכת מתחילות מינואר 2026, ולכן הבדיקה במייל היא הראיה לשנים שלפני.
-      🔎 החיפוש עובר על <b>הקבלות מספקי הסליקה</b> (אוטרייז, פייפאל, בנק ווסט, נדרים ועוד) ושולף מכל קבלה את המייל של המשלם — 🧾 קבלה = הוא באמת תרם.
-      בנוסף נבדק מייל ש<b>הוא שלח אלינו</b> בלבד; מייל ששלחנו אליו אינו נספר.</div>
+      🔎 החיפוש עובר על <b>הקבלות מספקי הסליקה</b> (אוטרייז, פייפאל, נדרים, דונורס פאנד) ועל <b>סיכומי בנק ווסט היומיים</b>, ומחפש בהם את האימייל של התורם ואת שמו באנגלית.
+      מייל שהתורם שלח אלינו <b>אינו</b> נחשב ראיה — רק כסף.</div>
     <div id="oldlist">${l.map(oldRow).join('')||'<div class="empty">אין תורמים כאלה 🎉</div>'}</div>`;
   document.getElementById('oldsince').onchange=e=>{oldSince=e.target.value||'2024-01-01';OLD=null;renderOld();};
   const mb=document.getElementById('oldmail'); if(mb)mb.onclick=()=>runMailCheck(mb);
@@ -4944,10 +4944,9 @@ function oldRow(d){
   if(d.last_money)t.push('<span class="oldtag">כסף אחרון '+esc(String(d.last_money).slice(0,7))+'</span>');
   if(!d.rows)t.push('<span class="oldtag">אין שום שורת כסף בכרטיס</span>');
   if(d.twin)t.push('<span class="oldtag ok">🔀 כרטיס כפול? '+esc(d.twin.name)+' — כסף עד '+esc(d.twin.last)+'</span>');
-  const rc=d.mail_seen&&d.mail_seen!=='none', fr=d.mail_from&&d.mail_from!=='none';
-  if(rc)t.push('<span class="oldtag ok">🧾 קבלה '+esc(d.mail_seen)+' — תרם!</span>');
-  if(fr)t.push('<span class="oldtag ok">✉️ כתב אלינו '+esc(d.mail_from)+'</span>');
-  if(!rc&&!fr&&(d.mail_seen||d.mail_from))t.push('<span class="oldtag warn">📭 שקט לגמרי במייל</span>');
+  const rc=d.mail_seen&&d.mail_seen!=='none';
+  if(rc)t.push('<span class="oldtag ok">🧾 נמצא בקבלה / בסיכום בנק '+esc(d.mail_seen)+' — תרם!</span>');
+  else if(d.mail_seen)t.push('<span class="oldtag warn">📭 אין קבלה ואין אותו בסיכומי הבנק</span>');
   return `<div class="oldrow" data-id="${d.id}">
     <div class="oldmain"><div class="oldnm oldopen">${esc(d.name)} ${d.english?('<small>'+esc(d.english)+'</small>'):''}</div>
       <div class="oldsub">${esc(d.email||'')}${d.email&&d.phone?' · ':''}${esc(d.phone||'')}</div>
