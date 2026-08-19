@@ -22,7 +22,10 @@
   /* גדלים יחסיים ל-font-size של .content שנקבע אוטומטית למילוי הדף */
   /* מאיר: "יהי רצון עד אחרי יעמדו לזכות — 40, התאריך 50, השמות 70,
      והבקשות של אחר כך 40 שוב". הגדלים נקבעים ב-fit() לפי רוחב הדף. */
-  .nusach{line-height:1.45;font-weight:600;width:100%}
+  /* מאיר: "תעשה את המילים מחצות הלילה עד הבוקר בשורה אחת" — גלישה
+     מאוזנת, שהשורות יוצאות שוות ולא נשארת מילה בודדת בסוף */
+  .nusach{line-height:1.45;font-weight:600;width:100%;text-wrap:balance}
+  .req,.nreq,.nrow{text-wrap:balance}
   .date{font-weight:800;color:var(--deep);margin:.35em 0 .25em;width:100%}
   .stand{font-weight:600;margin-bottom:.12em;width:100%}
   .stand.off{display:none}
@@ -384,10 +387,19 @@ function fitParnes(){
   const c=$('content'), body=document.getElementById('cbody');
   parnesSizes(1);
   const avail=c.clientHeight-14; if(avail<=0||!body)return;
-  if(body.getBoundingClientRect().height<=avail)return;
-  let lo=.15, hi=1;
+  const H=()=>body.getBoundingClientRect().height;
+  let lo, hi;
+  if(H()>avail){ lo=.15; hi=1; }        // הרבה שמות — מקטינים באותם יחסים
+  else {
+    // מאיר: "השם מידי קטן" — כשנשאר מקום בדף מגדילים את כולם יחד, עד
+    // שהבלוק ממלא כתשעה עשיריות מהתיבה, ולא יותר מפי 2
+    lo=1; hi=2;
+    for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
+      if(H()<=avail*.90) lo=mid; else hi=mid; }
+    parnesSizes(lo); return;
+  }
   for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
-    if(body.getBoundingClientRect().height<=avail) lo=mid; else hi=mid; }
+    if(H()<=avail) lo=mid; else hi=mid; }
   parnesSizes(lo);
 }
 // שם ארוך מתכווץ כדי להישאר בשורה אחת, במקום להישבר באמצע

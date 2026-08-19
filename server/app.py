@@ -5291,6 +5291,35 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                 out.append((w, px, heavy))
         return out
 
+    def _balance(items, dr):
+        """גלישה מאוזנת: השורות יוצאות שוות באורכן במקום שהאחרונה תישאר
+        עם מילה בודדת. מאיר: "תעשה את המילים מחצות הלילה עד הבוקר בשורה
+        אחת", וכך גם "אמן" אינו נשאר לבדו בסוף הברכה.
+        השיטה: מוצאים את הרוחב הקטן ביותר שעדיין נותן את אותו מספר שורות,
+        וגולשים לפיו."""
+        def _fill(limit):
+            out, cur, cw = [], [], 0.0
+            for t, z, h in items:
+                wpx = dr.textlength(t, font=font(z, h))
+                sp = dr.textlength(' ', font=font(z, h)) if cur else 0
+                if cur and cw + sp + wpx > limit:
+                    out.append(cur); cur, cw = [], 0.0; sp = 0
+                cur.append((t, z, h)); cw += sp + wpx
+            if cur:
+                out.append(cur)
+            return out
+        n = len(_fill(bw))
+        if n <= 1:
+            return _fill(bw)
+        lo, hi = bw * .35, bw
+        for _ in range(16):
+            mid = (lo + hi) / 2
+            if len(_fill(mid)) <= n:
+                hi = mid
+            else:
+                lo = mid
+        return _fill(hi)
+
     def wrap(text, px, heavy, dr, is_name=1):
         """שבירת שורות לרוחב התיבה, תוך שמירה על שורות שנכתבו במפורש.
         פיצול התפקידים (שם תורם / פתיח / שם) נעשה רק בבלוק השמות — הנוסח
@@ -5352,17 +5381,9 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                     # רחב מדי גם אחרי הכיווץ המותר — נשבר לשורות, ולא נחתך
                 else:
                     lines.append(full); continue
-            cur = []
-            for it in ws:
-                trial = cur + [it]
-                wpx = sum(dr.textlength(t, font=font(sz, h)) for t, sz, h in trial)
-                wpx += dr.textlength(' ', font=font(px, heavy)) * (len(trial) - 1)
-                if wpx <= bw or not cur:
-                    cur = trial
-                else:
-                    lines.append(_fitline(_join(cur), dr)); cur = [it]
-            if cur:
-                lines.append(_fitline(_join(cur), dr))
+            # גלישה מאוזנת — הנוסח והברכות, שלא תישאר מילה בודדת בשורה
+            for seg in _balance(ws, dr):
+                lines.append(_fitline(_join(seg), dr))
         return lines
 
     dr = ImageDraw.Draw(im)
@@ -5398,12 +5419,25 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
     else:
         # הגדלים נקבעו במפורש. מקטינים רק אם הטקסט ארוך מדי ואינו נכנס
         # לדף, ואז הכל יחד ובאותם יחסים.
+        # מאיר: "השם מידי קטן, זה לא נראה לי 70" — היחסים 40/50/40/70 הם
+        # המידה, אבל כשיש מעט שמות נשאר חצי דף ריק והשם נראה קטן. לכן
+        # מגדילים את כולם יחד עד שהבלוק ממלא כתשעה עשיריות מגובה התיבה,
+        # ועד פי 2 לכל היותר; וכשיש הרבה שמות — מקטינים באותם יחסים.
         best, sfit = 1.0, 1.0
         if layout(best)[0] > bh:
             lo, hi = .15, 1.0
             for _ in range(24):
                 mid = (lo + hi) / 2
                 if layout(best, 1.0, mid)[0] <= bh:
+                    lo = mid
+                else:
+                    hi = mid
+            sfit = lo
+        else:
+            lo, hi = 1.0, 2.0
+            for _ in range(20):
+                mid = (lo + hi) / 2
+                if layout(best, 1.0, mid)[0] <= bh * .90:
                     lo = mid
                 else:
                     hi = mid
