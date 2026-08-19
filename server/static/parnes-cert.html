@@ -104,7 +104,7 @@ function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;'
 const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
-const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|עלוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
+const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|עלוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$|^ו?בזכות$/;
 // פתיח שבא לפני השם — רק הוא קטן, והשמות שאחריו נשארים גדולים
 // מאיר כותב "לעלוי" בלי היו"ד — שני הכתיבים מזוהים כמילת פתיח, אחרת
 // המילה נשארת גדולה בשורת התורם והמערכת מוסיפה "לעילוי" משלה מתחתיה
@@ -188,8 +188,9 @@ function bodyRows(ws, lead){
     const rest=seg.slice(t);
     // כלל 3: הבקשה יורדת לשורה משלה ואינה נדחסת לשורת השם
     let r=-1;
-    for(let i=1;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
-    if(r>0){ rows.push({ws:rest.slice(0,r),role:'names'}); rows.push({ws:rest.slice(r),role:'req'}); }
+    for(let i=0;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
+    if(r===0) rows.push({ws:rest,role:'req'});          // שורה שכולה בקשה
+    else if(r>0){ rows.push({ws:rest.slice(0,r),role:'names'}); rows.push({ws:rest.slice(r),role:'req'}); }
     else rows.push({ws:rest,role:'names'});
   };
   let cur=[];
@@ -307,6 +308,9 @@ function dedicToggle(){
 const NUSLINES=3;
 function fit(){
   standToggle();
+  // בתעודת הפרנס כל הגדלים נקבעו במפורש, ולכן אין חיפוש גודל לפי הנוסח:
+  // קובעים אותם, ורק אם הכל יחד לא נכנס לדף מקטינים הכל באותם יחסים.
+  if(KIND==='parnes'){ fitParnes(); return; }
   // מאיר: "את התאריך תגדיל לגודל 50 תמיד" — 50 פיקסלים על רוחב 1000,
   // כלומר 5% מרוחב הדף. קבוע, ואינו מתכווץ יחד עם שאר הטקסט.
   const sh=document.getElementById('sheet');
@@ -337,20 +341,43 @@ function fit(){
       if(body.getBoundingClientRect().height<=avail){ b2=mid; lo=mid; } else { hi=mid; } }
     c.style.fontSize=b2+'px'; fitNames(c);
   }
-  fixParnes();
 }
-// מאיר: "יהי רצון עד אחרי יעמדו לזכות — גודל אחיד של 40, התאריך 50,
-// השמות 70, והבקשות של אחר כך 40 שוב". נקבע בסוף, אחרי כל חישוב אחר,
-// כדי שלא יידרס. המספרים הם על רוחב 1000 ומתאימים את עצמם לרוחב הדף.
-function fixParnes(){
-  const sh=document.getElementById('sheet');
-  if(!sh || KIND!=='parnes') return;
-  const u=sh.clientWidth/1000;
+/* מאיר: "המילים יהי רצון עד אחרי המילים יעמדו לזכות שיהיו גודל אחיד של
+   40, התאריך גודל 50, השמות גודל 70, חוץ ממה שכבר ציינתי לך כמו בן בת
+   או שיחי' וכו', הבקשות של אחר כך גודל 40 שוב."
+   המספרים הם על רוחב 1000 ומתאימים את עצמם לרוחב הדף, כדי שיהיו זהים
+   במסך, בתמונה ובהדפסה. sf מקטין את כולם יחד רק כשההקדשה ארוכה מדי. */
+function parnesSizes(sf){
+  const sh=document.getElementById('sheet'); if(!sh)return;
+  const u=(sh.clientWidth/1000)*sf;
+  // מנקים הקטנות קודמות — הן חושבו מול גודל אחר
+  document.querySelectorAll('#pairs .nline,#pairs .nlead,#pairs .nreq,#pairs .nttl')
+    .forEach(e=>e.style.removeProperty('font-size'));
   const set=(sel,n)=>document.querySelectorAll(sel)
     .forEach(e=>{e.style.setProperty('font-size',(n*u).toFixed(2)+'px','important');});
+  // גודל הבסיס קובע גם את הרווחים שבין הבלוקים (הם ביחידות em)
+  document.getElementById('content').style.fontSize=(40*u).toFixed(2)+'px';
   set('.nusach',40); set('.date',50); set('.stand',40);
   set('#pairs .names',70); set('#pairs .req',40);
   set('#pairs .nreq',40); set('#pairs .nlead',40);
+  // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת
+  document.querySelectorAll('#pairs .nline').forEach(el=>{
+    const box=el.parentElement, avail=box?box.clientWidth:0;
+    if(!avail)return;
+    const w=el.scrollWidth;
+    if(w>avail) el.style.setProperty('font-size',
+      (70*u*Math.max(.3, avail/w)).toFixed(2)+'px','important');
+  });
+}
+function fitParnes(){
+  const c=$('content'), body=document.getElementById('cbody');
+  parnesSizes(1);
+  const avail=c.clientHeight-14; if(avail<=0||!body)return;
+  if(body.getBoundingClientRect().height<=avail)return;
+  let lo=.15, hi=1;
+  for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
+    if(body.getBoundingClientRect().height<=avail) lo=mid; else hi=mid; }
+  parnesSizes(lo);
 }
 // שם ארוך מתכווץ כדי להישאר בשורה אחת, במקום להישבר באמצע
 function fitNames(c){
