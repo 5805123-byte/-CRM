@@ -296,6 +296,11 @@ function dedicToggle(){
 const NUSLINES=3;
 function fit(){
   standToggle();
+  // מאיר: "את התאריך תגדיל לגודל 50 תמיד" — 50 פיקסלים על רוחב 1000,
+  // כלומר 5% מרוחב הדף. קבוע, ואינו מתכווץ יחד עם שאר הטקסט.
+  const cd=document.getElementById('c_date'), sh=document.getElementById('sheet');
+  if(cd && sh && (KIND==='coffee'||KIND==='breakfast'))
+    cd.style.fontSize=(sh.clientWidth*0.05).toFixed(2)+'px';
   const c = $('content'), body = document.getElementById('cbody');
   const avail = c.clientHeight - 14; if(avail<=0 || !body) return;  // שוליים קטנים לקצוות
   const nus = c.querySelector('.nusach');

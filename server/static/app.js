@@ -2081,32 +2081,10 @@ function purposeAlloc(d){
           per:base.reduce((a,r)=>a+r.per,0),
           exp:out.reduce((a,r)=>a+r.exp,0), got:out.reduce((a,r)=>a+r.got,0)};
 }
-function purposeAllocHTML(d){
-  const a=purposeAlloc(d); if(!a||!a.rows.length)return '';
-  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
-  const gap=a.exp-a.got, ahead=a.extra;
-  const none=a.got<=0.5&&a.exp>0.5;      // לא נגבה ממנו כלום בכל התקופה
-  const head=none
-    ? `<span class="pabad">לא נגבה כלום</span>`
-    : (gap>0.5 ? `<span class="pabad">חסר ${f(gap)}</span>`
-               : `<span class="pagood">עומד בהתחייבות ✓</span>`);
-  const line=r=>{
-    const st=r.gap>0.5
-      ? `<span class="pabad">חסר ${f(r.gap)}${r.per>0?(' · '+(Math.round(r.gap/r.per*10)/10)+' חודשים'):''}</span>`
-      : '<span class="pagood">מלא ✓</span>';
-    return `<div class="parow"><div class="pawhat">${r.icon} ${esc(r.what)}
-        <small>${f(r.per)} × ${r.n} ${r.n===1?'חודש':'חודשים'}</small></div>
-      <div class="panum"><b>${f(r.got)}</b> <small>מתוך ${f(r.exp)}</small> ${st}</div></div>`;
-  };
-  return `<div class="pasum"><div class="pasum-t">📊 האם הגיע לסכום שהתחייב<small>עד ${esc(fmtMonth(a.thru+'-01')||a.thru)}</small>${head}</div>
-    ${a.steady>0.5?`<div class="pafix">💡 נכנסים ממנו <b>${f(a.steady)}</b> בכל חודש בלי לפספס, וכאן רשום ${f(a.per)}. סביר שהסכום הרשום אינו נכון ולא שהוא חייב — כדאי לתקן אותו למעלה.</div>`:''}
-    ${none?'<div class="panone">לא נכנס ממנו כסף כלל בתקופה הזו. ייתכן שההתחייבות כבר אינה בתוקף, שהסכום שרשום כאן אינו נכון, או שפשוט לא חייבו אותו — כדאי לבדוק לפני שסופרים את זה כחוב.</div>':''}
-    ${a.rows.map(line).join('')}
-    ${ahead>0.5?`<div class="parow"><div class="pawhat">➕ נתרם מעבר להתחייבות</div>
-      <div class="panum"><b class="paex">${f(ahead)}</b></div></div>`:''}
-    <div class="parow tot"><div class="pawhat">סה"כ</div>
-      <div class="panum"><b>${f(a.got+ahead)}</b> <small>מתוך ${f(a.exp)}</small></div></div></div>`;
-}
+// מאיר: "תוריד את זה, זה מיותר. אם כתוב חוב מסוים אז מה הענין שיהיה
+// עוד שורה". הריבוע "האם הגיע לסכום שהתחייב" ירד מדף התורם — החוב כבר
+// מופיע בראש הכרטיס ובשורת ההתחייבות עצמה. החישוב (purposeAlloc) נשאר,
+// כי מסך "לבדיקה" נשען עליו.
 // אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
 function izGapNote(d){
   const real=izRealMonthly(d); if(real<=0.5)return '';
@@ -2347,7 +2325,6 @@ function commitHTML(d){
       ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
     ${viaInHTML}
     ${rows.map(line).join('')||'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>'}
-    ${purposeAllocHTML(d)}
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>

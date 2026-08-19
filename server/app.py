@@ -5179,7 +5179,9 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
             ded = re.sub(r'\s*לזכות\s*$', '', ded)
         # מאיר: "את המילים פרנס היום תוריד לתמיד", "את המילים ארוחת בוקר
         # ואת התאריך תשים הכי למעלה תמיד באופן קבוע כדי שיהיה מקום בדף"
-        blocks = [(date, 1.05, True, _DEEP, 0, .3, 1.35, 0),
+        # מאיר: "את התאריך תגדיל לגודל 50 תמיד" — גודל קבוע ולא יחסי,
+        # ולכן הוא נשמר כמספר שלילי (ראה layout) ומשתנה רק עם רוחב התמונה
+        blocks = [(date, -(50.0 * W / 1000.0), True, _DEEP, 0, .3, 1.35, 0),
                   (ded, 1.18, True, _DEEP, 0, .28, 1.3, 0),
                   (names, 2.5, True, _BLACK, .1, .25, 1.18, 1)]
     else:
@@ -5300,7 +5302,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
     def layout(base, gap=1.0):
         total, out = 0.0, []
         for i, (txt, mult, heavy, col, mt, mb, lh, isnm) in enumerate(blocks):
-            px = base * mult
+            # מכפיל שלילי = גודל קבוע בפיקסלים, שאינו מתכווץ עם השאר
+            px = base * mult if mult > 0 else -mult
             mt, mb = mt * gap, mb * gap
             total += mt * base
             for ln in wrap(txt, px, heavy, dr, isnm):
