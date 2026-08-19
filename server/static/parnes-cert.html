@@ -47,6 +47,11 @@
   .ctitle{font-size:2.15em;font-weight:800;color:var(--deep);width:100%;margin:.06em 0 .18em}
   .cdedic{font-size:1.18em;font-weight:800;color:var(--deep);width:100%;margin-bottom:.28em;letter-spacing:.005em}
   .cnames{font-size:2.5em;font-weight:800;line-height:1.18;color:#000;width:100%;margin:.1em 0 .25em;white-space:pre-line}
+  /* כללי התעודה מרוכזים ב-app.py (חפש "כללי העיצוב הקבועים"). כאן רק
+     היישום למסך, ושני המקומות חייבים להישאר זהים.
+     קפה/בוקר: "לעילוי נשמת" בגודל השם, והבקשה בגופן שורת הנוסח. */
+  .cnames .nlead{font-size:1em}
+  .cnames .nreq{font-size:.472em}
   .cclose{font-size:1em;line-height:1.4;font-weight:600;width:100%}
   .rm{display:none}
   @media screen{.rm{display:block;position:absolute;inset-inline-start:-1.5em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.rm:hover{opacity:1}}
@@ -174,7 +179,13 @@ function bodyPart(ws, lead){
   const emit=seg=>{
     let t=0; while(t<seg.length-1 && TITLEW.test(seg[t])) t++;
     if(t) out.push(smL(seg.slice(0,t)));
-    out.push(nl(fmtWords(seg.slice(t))));
+    const rest=seg.slice(t);
+    // כלל 3: הבקשה יורדת לשורה משלה ונשברת לפי הרוחב, ולא נדחסת
+    // לשורת השם — אחרת השורה מתרחבת, מתכווצת, והזנב הופך לבלתי קריא
+    let r=-1;
+    for(let i=1;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
+    if(r>0){ out.push(nl(fmtWords(rest.slice(0,r)))); out.push(sm(rest.slice(r))); }
+    else out.push(nl(fmtWords(rest)));
   };
   let cur=[];
   for(let k=a;k<b;k++){
@@ -281,16 +292,23 @@ function fit(){
 function fitNames(c){
   c.querySelectorAll('.nlead').forEach(el=>{el.style.fontSize='';});
   const fac=new Map();
-  c.querySelectorAll('.nline').forEach(el=>{
-    el.style.fontSize='';
+  // כלל 2: מודדים קודם את כל שורות השמות, ואז נותנים לכולן את המקדם
+  // הקטן ביותר — שורה ארוכה לא מתכווצת לבדה ומשאירה שם אחר ענק לידה
+  const lines=[...c.querySelectorAll('.nline')];
+  lines.forEach(el=>{el.style.fontSize='';});
+  const need=new Map();
+  lines.forEach(el=>{
     const box=el.parentElement, avail=box?box.clientWidth:0;
     if(!avail) return;
     const w=el.scrollWidth;
-    if(w>avail){
-      const f=Math.max(.30, avail/w);
-      el.style.fontSize=f.toFixed(3)+'em';
-      const k=box; fac.set(k, Math.min(fac.get(k)||1, f));
-    }
+    const f=(w>avail)?Math.max(.30, avail/w):1;
+    need.set(box, Math.min(need.get(box)!=null?need.get(box):1, f));
+  });
+  lines.forEach(el=>{
+    const box=el.parentElement, f=need.get(box);
+    if(f==null||f>=1) return;
+    el.style.fontSize=f.toFixed(3)+'em';
+    fac.set(box, f);
   });
   // "לעילוי נשמת" חייב להישאר חצי מהשם — גם אחרי שהשם הוקטן כדי להיכנס
   fac.forEach((f,box)=>box.querySelectorAll('.nlead')
@@ -300,13 +318,14 @@ const wire = el => el.querySelectorAll('[contenteditable]').forEach(e=>e.addEven
 
 if(KIND==='coffee' || KIND==='breakfast'){
   // ----- תעודת חדר קפה / ארוחת בוקר (אותו בלאנק להשקות) -----
+  // התאריך ושורת הנוסח נצמדים לראש הדף, שיישאר מקום להקדשות ארוכות
+  $('content').classList.add('toptxt');
   $('addBtn').style.display='none';
   const dedic = KIND==='breakfast' ? 'ארוחת בוקר היום נתרמה לזכות' : 'הקפה החלב שתיה חמה ועוגיות נתרמו לזכות';
   DEDIC_FULL = dedic; DEDIC_BARE = dedic.replace(/\s*לזכות$/,'');
   $('content').innerHTML =
     `<div id="cbody">
      <div class="cdate" contenteditable="true" id="c_date" data-ph="~ ~ התאריך ~ ~"></div>
-     <div class="ctitle">פרנס יום</div>
      <div class="cdedic" contenteditable="true" id="c_dedic">${dedic}</div>
      <div class="cnames" contenteditable="true" id="c_names" data-ph="השמות"></div>
      </div>`;
