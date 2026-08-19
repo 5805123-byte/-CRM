@@ -404,12 +404,31 @@ function certText(){
   let nm='';
   if(KIND==='coffee'||KIND==='breakfast'){ nm=($('c_names')?$('c_names').innerText:'').trim(); }
   else { nm=[...document.querySelectorAll('#pairs .names')].map(e=>e.innerText.trim()).filter(Boolean).join('\n'); }
-  return {date:dt, names:nm};
+  return {date:dt, names:nm, roles:certRoles()};
+}
+// תפקיד כל שורה כפי שהוא מצויר עכשיו על המסך. השרת מקבל אותו כמו שהוא
+// ואינו מנתח את הטקסט מחדש — ניתוח שני של טקסט שכבר סודר הורס אותו:
+// "הרה\"ק רבי" נשבר לשתי שורות, ו"לזכות" הפך לשם גדול.
+function certRoles(){
+  const box=(KIND==='coffee'||KIND==='breakfast')?$('c_names'):null;
+  if(!box)return '';
+  const out=[];
+  box.childNodes.forEach(n=>{
+    if(n.nodeType!==1)return;
+    const c=n.className||'';
+    if(n.classList.contains('ndon')){ out.push('donor'); return; }
+    if(/\bnlead\b/.test(c)) out.push('lead');
+    else if(/\bnttl\b/.test(c)) out.push('ttl');
+    else if(/\bnreq\b/.test(c)) out.push('req');
+    else out.push('names');
+  });
+  return out.join(',');
 }
 // כתובת התמונה לפי מה שכתוב עכשיו על המסך
 function certPngUrl(ext){
   const {date,names}=certText();
-  return '/cert.'+(ext||'png')+'?'+new URLSearchParams({kind:KIND,date,names}).toString();
+  const {roles}=certText();
+  return '/cert.'+(ext||'png')+'?'+new URLSearchParams({kind:KIND,date,names,roles:roles||''}).toString();
 }
 // התמונה מוכנה מראש ברקע — כדי שההעתקה ללוח תקרה מיד בלחיצה (כרום דורש זאת)
 let PNGREADY=null, PNGKEY='', PNGERR='';

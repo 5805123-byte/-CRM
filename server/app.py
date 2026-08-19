@@ -5150,7 +5150,7 @@ def _bidi(s):
         return s
 
 
-def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
+def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', roles=''):
     """מצייר את תעודת הפרנס כתמונה — אותו בלאנק, אותו סידור, גופן שמתאים את עצמו לדף."""
     from PIL import Image, ImageDraw, ImageFont
     try:
@@ -5245,7 +5245,17 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         פיצול התפקידים (שם תורם / פתיח / שם) נעשה רק בבלוק השמות — הנוסח
         הקבוע והתאריך נכתבים כלשונם, אחרת "יהיו ויעמדו לזכות" נשבר ומוקטן."""
         lines = []
-        src = _cert_lines(text) if is_name else [(l, '') for l in str(text or '').split('\n')]
+        if is_name:
+            # מאיר: "עשיתי העתקה לשלוח לתורם ויצא ככה" — ההעתקה שולחת את
+            # הטקסט כפי שהוא מסודר על המסך, וניתוח שני שלו הורס אותו
+            # ("הרה\"ק רבי" נשבר לשתיים, "לזכות" הפך לשם גדול). כשהמסך
+            # שולח גם את התפקידים — משתמשים בהם כמו שהם.
+            ls = [l for l in str(text or '').split('\n')]
+            rl = [r for r in str(roles or '').split(',') if r]
+            src = (list(zip(ls, rl)) if len(rl) == len(ls) and rl
+                   else _cert_lines(text))
+        else:
+            src = [(l, '') for l in str(text or '').split('\n')]
 
         def _fitline(ln, dr):
             """רשת ביטחון: שורה שיצאה רחבה מהתיבה מוקטנת בדיוק כדי להיכנס,
@@ -6510,7 +6520,7 @@ class H(BaseHTTPRequestHandler):
             g = lambda k: (qs.get(k, [''])[0] or '')
             try:
                 data = cert_png(g('kind') or 'parnes', g('date'), g('names'), g('dedic'),
-                                int(g('w') or 1000), fmt)
+                                int(g('w') or 1000), fmt, g('roles'))
             except Exception as e:
                 return self._send(500, {'error': 'cert', 'detail': str(e)})
             self.send_response(200)
