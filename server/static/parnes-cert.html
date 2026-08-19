@@ -476,33 +476,39 @@ if(KIND==='coffee' || KIND==='breakfast'){
 // ----- שליחת התעודה לתורם כתמונה (מהתוכן שעל המסך, כולל עריכות) -----
 function certText(){
   const dt=($('c_date')?$('c_date').innerText:'').trim();
-  let nm='';
-  if(KIND==='coffee'||KIND==='breakfast'){ nm=($('c_names')?$('c_names').innerText:'').trim(); }
-  else { nm=[...document.querySelectorAll('#pairs .names')].map(e=>e.innerText.trim()).filter(Boolean).join('\n'); }
-  return {date:dt, names:nm, roles:certRoles()};
+  const rows=certRows();
+  return {date:dt, names:rows.map(r=>r.t).join('\n'), roles:rows.map(r=>r.r).join(',')};
 }
-// תפקיד כל שורה כפי שהוא מצויר עכשיו על המסך. השרת מקבל אותו כמו שהוא
-// ואינו מנתח את הטקסט מחדש — ניתוח שני של טקסט שכבר סודר הורס אותו:
-// "הרה\"ק רבי" נשבר לשתי שורות, ו"לזכות" הפך לשם גדול.
-function certRoles(){
-  const box=(KIND==='coffee'||KIND==='breakfast')?$('c_names'):null;
-  if(!box)return '';
+// שורה־שורה כפי שהיא מצוירת עכשיו על המסך, כל אחת עם התפקיד שלה.
+// הטקסט והתפקידים נבנים מאותה סריקה אחת, כדי שלעולם לא ייווצר פער
+// ביניהם. השרת מצייר אותם כמו שהם ואינו מנתח מחדש — ניתוח שני של טקסט
+// שכבר סודר הורס אותו: השם קטן, הברכה גדלה, ו"אמן" נשאר לבדו.
+function certRows(){
+  const boxes=(KIND==='coffee'||KIND==='breakfast')
+    ? [$('c_names')].filter(Boolean)
+    : [...document.querySelectorAll('#pairs .names')];
   const out=[];
-  box.childNodes.forEach(n=>{
-    if(n.nodeType!==1)return;
-    const c=n.className||'';
-    if(n.classList.contains('ndon')){ out.push('donor'); return; }
-    if(/\bnlead\b/.test(c)) out.push('lead');
-    else if(/\bnttl\b/.test(c)) out.push('ttl');
-    else if(/\bnreq\b/.test(c)) out.push('req');
-    else out.push('names');
+  boxes.forEach(box=>{
+    let any=false;
+    box.childNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      const t=(n.innerText||n.textContent||'').trim(); if(!t)return;
+      const c=n.className||'';
+      let r='names';
+      if(n.classList.contains('ndon')) r='donor';
+      else if(/\bnlead\b/.test(c)) r='lead';
+      else if(/\bnttl\b/.test(c)) r='ttl';
+      else if(/\bnreq\b/.test(c)) r='req';
+      out.push({t,r}); any=true;
+    });
+    // תיבה בלי שורות מסודרות (טקסט חופשי שנכתב זה עתה) — כמו שהיא
+    if(!any){ const t=(box.innerText||'').trim(); if(t) out.push({t,r:''}); }
   });
-  return out.join(',');
+  return out;
 }
 // כתובת התמונה לפי מה שכתוב עכשיו על המסך
 function certPngUrl(ext){
-  const {date,names}=certText();
-  const {roles}=certText();
+  const {date,names,roles}=certText();
   return '/cert.'+(ext||'png')+'?'+new URLSearchParams({kind:KIND,date,names,roles:roles||''}).toString();
 }
 // התמונה מוכנה מראש ברקע — כדי שההעתקה ללוח תקרה מיד בלחיצה (כרום דורש זאת)
