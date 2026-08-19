@@ -5014,6 +5014,12 @@ def _cert_split(ws):
     while j < n and not _CERT_TAIL.match(ws[j]):
         j += 1
     return i, j
+def _add_leilui(ws):
+    """מאיר: "חסר המילה לעילוי" — כשנכתב רק "נשמת", התעודה אומרת
+    "לעילוי נשמת". אותה השלמה בדיוק כמו במסך."""
+    return (['לעילוי'] + ws) if ws and ws[0] == 'נשמת' else ws
+
+
 def _cert_lines(text):
     """פיצול לשורות כמו בתצוגה שבמסך: שם התורם בשורה משלו, "לע\"נ אביו"
     בשורה משלו, והשמות שמתפללים עליהם בשורה האחרונה."""
@@ -5037,10 +5043,11 @@ def _cert_lines(text):
                     ded = k; break
         if ded > 0:                       # "הר\"ר רפאל לע\"נ אביו יוסף"
             out.append((' '.join(ws[:ded]), 'donor'))
-            ws = ws[ded:]
+            ws = _add_leilui(ws[ded:])
         elif idx == 0 and later_lead and not _CERT_LEAD.match(ws[0]):
             out.append((' '.join(ws), 'donor')); continue
         if _CERT_LEAD.match(ws[0]):
+            ws = _add_leilui(ws)
             i = _lead_len(ws)
             j = i
             while j < len(ws) and _CERT_REL.match(ws[j]):
@@ -5182,7 +5189,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png'):
         # מאיר: "את התאריך תגדיל לגודל 50 תמיד" — גודל קבוע ולא יחסי,
         # ולכן הוא נשמר כמספר שלילי (ראה layout) ומשתנה רק עם רוחב התמונה
         blocks = [(date, -(50.0 * W / 1000.0), True, _DEEP, 0, .3, 1.35, 0),
-                  (ded, 1.18, True, _DEEP, 0, .28, 1.3, 0),
+                  (ded, -(50.0 * W / 1000.0), True, _DEEP, 0, .28, 1.3, 0),
                   (names, 2.5, True, _BLACK, .1, .25, 1.18, 1)]
     else:
         blocks = [(_NUSACH, 1.0, False, _INK, 0, 0, 1.45, 0),
