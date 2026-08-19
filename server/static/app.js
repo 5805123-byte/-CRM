@@ -1005,6 +1005,7 @@ function render(){
   if(tab==='camp') return renderCamp();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
+  if(tab==='unlinked') return renderUnlinked();
   if(tab==='review') return renderReview();
 }
 
@@ -5752,6 +5753,76 @@ const RVKINDSUB={
   amount:'משלם באותו סכום בכל חודש, אבל בכרטיס רשום סכום אחר.',
   none:'רשומה התחייבות ולא נכנס ממנו כלום בתקופה.',
   ask:'הסכום כאן הגיע מהייבוא ולא ממך, ולכן הוא לא נחשב חוב. אשר אותו, תקן אותו, או קבע שאין התחייבות — ואז הוא לא יופיע יותר.'};
+/* ---------- 💳 חיובים בלי תורם ----------
+   מאיר על פיינגולד: "עוד חיובים שלא מופיעים פה בכלל". כסף שנגבה בפועל
+   בבנק או באשראי ואינו רשום אצל אף תורם. מקובץ לפי המשלם — אותו אדם
+   חוזר כל חודש — כך שהחלטה אחת מטפלת בכל החיובים שלו יחד. */
+let ULDATA=null;
+function ulKey(r){
+  return ((r.first||'')+'|'+(r.last||'')+'|'+(r.email||'')).toLowerCase();
+}
+async function renderUnlinked(){
+  view.innerHTML='<div class="cnt">טוען…</div>';
+  try{ ULDATA=await api('GET','/api/unlinked'); }catch(e){ ULDATA={rows:[],total:0}; }
+  const rows=(ULDATA&&ULDATA.rows)||[];
+  const g={}, order=[];
+  rows.forEach(r=>{const k=ulKey(r);
+    if(!g[k]){g[k]={k,first:r.first||'',last:r.last||'',email:r.email||'',items:[],sugg:r.sugg||[]};order.push(k);}
+    g[k].items.push(r);
+    if(!g[k].sugg.length && (r.sugg||[]).length) g[k].sugg=r.sugg;});
+  const groups=order.map(k=>g[k]);
+  groups.forEach(x=>{x.sum=x.items.reduce((a,r)=>a+amtNum(r.amount),0);});
+  groups.sort((a,b)=>b.sum-a.sum);
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const opts=(sel)=>(DB||[]).slice().sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'))
+    .map(d=>`<option value="${d.id}"${String(d.id)===String(sel)?' selected':''}>${esc((d.last+' '+d.first).trim())}</option>`).join('');
+  view.innerHTML=`<div class="cnt">💳 חיובים שנגבו ואינם רשומים אצל אף תורם
+      <small style="color:var(--muted)"> · ${rows.length} חיובים · ${f(ULDATA.total||0)}</small></div>
+    <div class="hintxt" style="margin:0 2px 10px">הכסף נכנס בפועל, אבל הוא לא מופיע אצל אף אחד — ולכן גם לא בסיכומים.
+      לכל שורה יש הצעה לפי מייל או שם. אשר, בחר תורם אחר, או סמן שאינו שייך לאף אחד.</div>
+    <div id="ullist">${groups.map(x=>{
+      const dates=x.items.slice(0,8).map(r=>esc(gregLabel(r.iso||r.date))+' · '+f(amtNum(r.amount))).join('<br>');
+      const more=x.items.length>8?('<br>ועוד '+(x.items.length-8)):'';
+      const s0=x.sugg[0];
+      return `<div class="ulg" data-k="${esc(x.k)}">
+        <div class="ulhead"><span class="ulnm">${esc((x.first+' '+x.last).trim()||'—')}</span>
+          <span class="ulsum">${f(x.sum)}</span>
+          <span class="ulwhy">${x.items.length} ${x.items.length===1?'חיוב':'חיובים'}</span></div>
+        ${x.email?`<div class="ulmail">${esc(x.email)}</div>`:''}
+        <div class="uldates">${dates}${more}</div>
+        <div class="ulb">
+          <select class="ulpick">${s0?'':'<option value="">— בחר תורם —</option>'}${opts(s0&&s0.id)}</select>
+          ${s0?`<span class="ulwhy">הצעה: ${esc(s0.why)}</span>`:'<span class="ulwhy">אין הצעה — בחר ידנית</span>'}
+        </div>
+        <div class="ulb ulact">
+          <button class="btn sm ulok">✓ שייך לתורם הזה</button>
+          <button class="btn sm ghost ulskip">✕ לא שייך לאף אחד</button>
+        </div></div>`;}).join('')||'<div class="empty">🎉 כל החיובים משויכים</div>'}</div>`;
+  wireUnlinked(groups);
+}
+function wireUnlinked(groups){
+  const byk={}; groups.forEach(x=>byk[x.k]=x);
+  view.querySelectorAll('.ulg').forEach(el=>{
+    const x=byk[el.dataset.k]; if(!x)return;
+    const tids=x.items.map(r=>r.tid);
+    el.querySelector('.ulok').onclick=async b=>{
+      const sel=el.querySelector('.ulpick'), did=sel&&sel.value;
+      if(!did){toast('בחר תורם');return;}
+      const r=await api('POST','/api/unlinked',{tids,donor_id:+did});
+      if(!r||!r.ok){toast('לא נשמר');return;}
+      el.classList.add('done');
+      el.querySelector('.ulact').innerHTML='<span class="ulwhy">✓ שויך · '+(r.donations||0)+' תרומות נרשמו</span>';
+      toast('שויך ✓');
+      try{ DB=await api('GET','/api/db'); }catch(e){}   // הכרטיס יתעדכן מיד
+    };
+    el.querySelector('.ulskip').onclick=async()=>{
+      if(!await uiConfirm('לסמן ש-'+((x.first+' '+x.last).trim()||'החיובים האלה')+' אינם שייכים לאף תורם?'))return;
+      await api('POST','/api/unlinked',{tids,skip:1});
+      el.classList.add('done');
+      el.querySelector('.ulact').innerHTML='<span class="ulwhy">✕ סומן שאינו שייך</span>';
+      toast('סומן');};
+  });
+}
 async function renderReview(){
   view.innerHTML='<div class="empty">טוען…</div>';
   if(!RVSTAT){ try{RVSTAT=(await api('GET','/api/review')).rows||{};}catch(e){RVSTAT={};} }

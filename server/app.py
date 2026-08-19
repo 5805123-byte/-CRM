@@ -504,6 +504,9 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
         try: con.execute("ALTER TABLE recon ADD COLUMN status TEXT DEFAULT 'settled'")
         except Exception: pass
+        # חיוב שמאיר סימן "לא שייך לאף אחד" — יורד ממסך החיובים ללא תורם
+        try: con.execute("ALTER TABLE recon ADD COLUMN skipped INTEGER DEFAULT 0")
+        except Exception: pass
         # חיוב שמאיר דחה במפורש ("דלג") — לא חוזר לכרטיס גם בשחזור אוטומטי
         try: con.execute("ALTER TABLE recon ADD COLUMN skipped INTEGER DEFAULT 0")
         except Exception: pass
@@ -4272,6 +4275,38 @@ def ensure_schema():
     except Exception as ex:
         print('  kvittel tier align error:', ex)
 
+    # מאיר: "אסתר לאם לא תרמה כלום השנה וזה בטוח זאב לאם, לא יודע למה
+    # הכנסת פה את התרומות של זאב לאם, תעביר הכל לזאב לאם". שני הכרטיסים
+    # הם אותו בית — אצל אסתר רשום באנגלית steven Lamm, שזה זאב — והכסף
+    # התפצל ביניהם. הכל עובר לזאב, וכרטיסה נשאר ריק כדי שמאיר ימחק אותו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='lamm_merge_v1'").fetchone():
+            z = con.execute("SELECT id FROM donors WHERE TRIM(last)='לאם' "
+                            "AND TRIM(first)='זאב'").fetchone()
+            e = con.execute("SELECT id FROM donors WHERE TRIM(last)='לאם' "
+                            "AND TRIM(first)='אסתר'").fetchone()
+            if z and e and z['id'] != e['id']:
+                moved = 0
+                for t in ('donations', 'recon', 'pledges', 'parnes', 'prayers',
+                          'transactions', 'building', 'contacts_log', 'tasks', 'partners'):
+                    try:
+                        n = con.execute("SELECT COUNT(*) FROM %s WHERE donor_id=?" % t,
+                                        (e['id'],)).fetchone()[0]
+                        if n:
+                            con.execute("UPDATE %s SET donor_id=? WHERE donor_id=?" % t,
+                                        (z['id'], e['id']))
+                            moved += n
+                    except Exception:
+                        pass
+                con.execute("UPDATE donors SET category='', amount='', tier='' WHERE id=?",
+                            (e['id'],))
+                if moved:
+                    print('  לאם: %d רשומות הועברו מאסתר לזאב' % moved)
+            con.execute("INSERT INTO seed_flags(name) VALUES('lamm_merge_v1')")
+            con.commit()
+    except Exception as ex:
+        print('  lamm merge error:', ex)
+
     con.commit(); con.close()
 
 def get_all():
@@ -7222,6 +7257,77 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'audit.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] in ('/import', '/import.html'):
             return self._send(200, open(os.path.join(STATIC, 'import.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/unlinked':
+            # מאיר על פיינגולד: "עוד חיובים שלא מופיעים פה בכלל". כסף שנגבה
+            # בפועל ואינו רשום אצל אף תורם — עם הצעת שיוך לכל חיוב, כדי
+            # שאפשר יהיה לאשר בלחיצה אחת במקום לחפש ידנית.
+            con = db()
+            try:
+                import gmail_intake as _gi
+            except Exception:
+                _gi = None
+            donors = [dict(r) for r in con.execute(
+                "SELECT id,last,first,english,business,email,phone FROM donors")]
+            bye, byloc, byfz, bysur = {}, {}, {}, {}
+            for d in donors:
+                for e in emails_of(d['email']):
+                    e = e.lower()
+                    bye.setdefault(e, set()).add(d['id'])
+                    loc = e.split('@')[0]
+                    if len(loc) >= 6:
+                        byloc.setdefault(loc, set()).add(d['id'])
+                byfz.setdefault((_fz(d['last'] or ''), _fz(d['first'] or '')), set()).add(d['id'])
+                bysur.setdefault(_fz(d['last'] or ''), set()).add(d['id'])
+            nm = {d['id']: ((d['last'] or '') + ' ' + (d['first'] or '')).strip() for d in donors}
+
+            # שם של ארגון, לא של אדם. התאמה לפי מילה בשם המשפחה מייצרת
+            # אצלו שטויות ("MGM ELECTRICAL CORP" מול "קרייף"), ולכן אצלו
+            # מציעים רק לפי מייל.
+            _ORG = re.compile(r'\b(corp|corporation|inc|llc|llp|ltd|co|company|fund|'
+                              r'foundation|trust|charit\w*|assoc\w*|resources|group|'
+                              r'holdings|partners|capital|realty|properties|services|'
+                              r'management|enterprises|industries|systems|solutions|'
+                              r'cybergrants|veteran|community)\b', re.I)
+
+            def _sugg(r):
+                """עד שלוש הצעות, מהחזקה לחלשה: מייל, שם מלא, שם משפחה."""
+                out, seen = [], set()
+                who = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
+                org = bool(_ORG.search(who)) or who.isupper() and len(who.split()) > 2
+
+                def add(ids, why):
+                    for i in (ids or ()):
+                        if i not in seen and len(out) < 3:
+                            seen.add(i); out.append({'id': i, 'name': nm.get(i, ''), 'why': why})
+                em = (r['email'] or '').strip().lower()
+                if em:
+                    add(bye.get(em), 'אותו מייל')
+                    if '@' in em:
+                        add(byloc.get(em.split('@')[0]), 'אותו שם משתמש במייל')
+                ln, fn = (r['last'] or '').strip(), (r['first'] or '').strip()
+                if org:
+                    return out                    # ארגון — רק מייל, בלי ניחוש שמות
+                if _gi and ln:
+                    for a, b in ((ln, fn), (fn, ln)):
+                        for jy in (False, True):
+                            add(byfz.get((_fz(_he_alt(_gi, a, jy)), _fz(_he_alt(_gi, b, jy)))), 'אותו שם')
+                    for w in re.split(r'[\s\-]+', ln):
+                        if len(re.sub(r'[^A-Za-z]', '', w)) >= 4:
+                            for jy in (False, True):
+                                add(bysur.get(_fz(_he_alt(_gi, w, jy))), 'אותו שם משפחה')
+                return out
+            rows = []
+            for r in con.execute(
+                    "SELECT tid,first,last,amount,date,source,email,phone FROM recon "
+                    "WHERE donor_id IS NULL AND COALESCE(skipped,0)=0 "
+                    "AND COALESCE(status,'settled')='settled' ORDER BY date DESC"):
+                x = dict(r)
+                x['iso'] = _recon_iso(r['date']) or ''
+                x['sugg'] = _sugg(r)
+                rows.append(x)
+            tot = sum(float(str(x['amount']).replace(',', '') or 0) for x in rows)
+            con.close()
+            return self._send(200, {'rows': rows, 'total': round(tot, 2)})
         if self.path.split('?')[0] == '/api/recon':
             con = db(); out = []
             try:
@@ -7692,6 +7798,53 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             return
         b = self._body()
+        if self.path == '/api/unlinked':
+            # שיוך חיוב לתורם — ורישום התרומה מיד, בלי להמתין לעליית השרת
+            # מקבל רשימת חיובים, כי אותו משלם חוזר כל חודש והחלטה אחת
+            # צריכה לטפל בכולם יחד
+            tids = b.get('tids') or ([b['tid']] if b.get('tid') else [])
+            tids = [str(t) for t in tids if str(t or '').strip()]
+            if not tids:
+                return self._send(400, {'error': 'tid required'})
+            con = db()
+            if b.get('skip'):                       # "לא שייך לאף אחד" — יורד מהרשימה
+                for t in tids:
+                    con.execute("UPDATE recon SET skipped=1 WHERE tid=?", (t,))
+                con.commit(); con.close()
+                return self._send(200, {'ok': True, 'skipped': len(tids)})
+            try:
+                did = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                con.close(); return self._send(400, {'error': 'donor_id required'})
+            if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                con.close(); return self._send(404, {'error': 'donor not found'})
+            made = 0
+            for t in tids:
+                r = con.execute("SELECT tid,amount,date,source,category FROM recon WHERE tid=?",
+                                (t,)).fetchone()
+                if not r:
+                    continue
+                con.execute("UPDATE recon SET donor_id=?, processed=1 WHERE tid=?", (did, t))
+                # חלק מהמקורות שומרים תאריך בפורמט ISO מלכתחילה, ואז
+                # ההמרה מ-"03-Mar-2026" מחזירה ריק ולא נרשמת תרומה
+                raw = str(r['date'] or '').strip()
+                iso = _recon_iso(raw) or (raw[:10] if re.match(r'^\d{4}-\d{2}-\d{2}', raw) else '')
+                try:
+                    a = round(float(str(r['amount']).replace(',', '') or 0), 2)
+                except Exception:
+                    a = 0.0
+                if iso and a > 0 and not con.execute(
+                        "SELECT 1 FROM donations WHERE COALESCE(tid,'')=?", (t,)).fetchone():
+                    src = r['source'] or ''
+                    meth = 'בנק ווסט' if src.startswith('Banquest') else (
+                        'אוטורייז' if src.startswith('Authorize') else src)
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
+                                "VALUES(?,?,?,?,?,?,1,?)",
+                                (did, iso, '%.2f' % a, (r['category'] or '').strip(), meth,
+                                 'שויך ידנית מהחיובים ללא תורם', t))
+                    made += 1
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'donor_id': did, 'donations': made})
         if self.path == '/api/intake/diag':
             try:
                 import gmail_intake
