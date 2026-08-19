@@ -20,13 +20,17 @@
   .content.toptxt{justify-content:flex-start}
   #cbody{width:100%;display:flow-root}
   /* גדלים יחסיים ל-font-size של .content שנקבע אוטומטית למילוי הדף */
-  .nusach{font-size:1em;line-height:1.45;font-weight:600;width:100%}
-  .date{font-size:1.4em;font-weight:800;color:var(--deep);margin:.35em 0 .25em;width:100%}
-  .stand{font-size:1.4em;font-weight:600;margin-bottom:.12em;width:100%}
+  /* מאיר: "יהי רצון עד אחרי יעמדו לזכות — 40, התאריך 50, השמות 70,
+     והבקשות של אחר כך 40 שוב". הגדלים נקבעים ב-fit() לפי רוחב הדף. */
+  .nusach{line-height:1.45;font-weight:600;width:100%}
+  .date{font-weight:800;color:var(--deep);margin:.35em 0 .25em;width:100%}
+  .stand{font-weight:600;margin-bottom:.12em;width:100%}
   .stand.off{display:none}
   .pair{width:100%;margin:.15em 0 .35em;position:relative}
-  .names{font-size:4em;font-weight:800;line-height:1.14;color:#000;width:100%;white-space:pre-line}
-  .req{font-size:1em;line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
+  .names{font-weight:800;line-height:1.14;color:#000;width:100%;white-space:pre-line}
+  .req{line-height:1.4;font-weight:600;width:100%;margin-top:.05em}
+  /* בתוך השמות: הבקשה והפתיח 40 מתוך 70 */
+  .names .nreq,.names .nlead{font-size:.571em}
   /* כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים */
   .names .nsm,.cnames .nsm{font-size:.42em;font-weight:600}
   /* שם התורם — קטן מהשמות שמתפללים עליהם */
@@ -333,6 +337,20 @@ function fit(){
       if(body.getBoundingClientRect().height<=avail){ b2=mid; lo=mid; } else { hi=mid; } }
     c.style.fontSize=b2+'px'; fitNames(c);
   }
+  fixParnes();
+}
+// מאיר: "יהי רצון עד אחרי יעמדו לזכות — גודל אחיד של 40, התאריך 50,
+// השמות 70, והבקשות של אחר כך 40 שוב". נקבע בסוף, אחרי כל חישוב אחר,
+// כדי שלא יידרס. המספרים הם על רוחב 1000 ומתאימים את עצמם לרוחב הדף.
+function fixParnes(){
+  const sh=document.getElementById('sheet');
+  if(!sh || KIND!=='parnes') return;
+  const u=sh.clientWidth/1000;
+  const set=(sel,n)=>document.querySelectorAll(sel)
+    .forEach(e=>{e.style.setProperty('font-size',(n*u).toFixed(2)+'px','important');});
+  set('.nusach',40); set('.date',50); set('.stand',40);
+  set('#pairs .names',70); set('#pairs .req',40);
+  set('#pairs .nreq',40); set('#pairs .nlead',40);
 }
 // שם ארוך מתכווץ כדי להישאר בשורה אחת, במקום להישבר באמצע
 function fitNames(c){

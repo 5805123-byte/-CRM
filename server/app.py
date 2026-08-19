@@ -5213,11 +5213,15 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                   (ded, -(50.0 * W / 1000.0), True, _DEEP, 0, .28, 1.3, 0),
                   (names, 2.5, True, _BLACK, .1, .25, 1.18, 1)]
     else:
-        blocks = [(_NUSACH, 1.0, False, _INK, 0, 0, 1.45, 0),
-                  (date, 1.4, True, _DEEP, .35, .25, 1.3, 0),
+        # מאיר: "המילים יהי רצון עד אחרי המילים יעמדו לזכות שיהיו גודל
+        # אחיד של 40, התאריך גודל 50, השמות גודל 70, והבקשות של אחר כך
+        # גודל 40 שוב" — גדלים קבועים (מספר שלילי), על רוחב 1000
+        _u = W / 1000.0
+        blocks = [(_NUSACH, -40 * _u, False, _INK, 0, 0, 1.45, 0),
+                  (date, -50 * _u, True, _DEEP, .35, .25, 1.3, 0),
                   ('' if _NESHAMA.search(names or '') else 'יהיו ויעמדו לזכות',
-                   1.4, False, _INK, 0, .12, 1.35, 0),
-                  (names, 4.0, True, _BLACK, .12, .2, 1.14, 1)]
+                   -40 * _u, False, _INK, 0, .12, 1.35, 0),
+                  (names, -70 * _u, True, _BLACK, .12, .2, 1.14, 1)]
     blocks = [b for b in blocks if (b[0] or '').strip()]
 
     def _join(items):
@@ -5229,8 +5233,11 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             out.append(it)
         return out
 
-    lead_r = _LEAD_R_C if kind in ('coffee', 'breakfast') else _LEAD_R
-    req_r = _REQ_R_C if kind in ('coffee', 'breakfast') else _REQ_R
+    # מאיר, בתעודת הפרנס: "הבקשות של אחר כך גודל 40 שוב" — כלומר אותו
+    # גודל של הנוסח, מתוך 70 של השמות. מילות הלוואי (בן/בת/שיחי') נשארות
+    # ביחס שכבר נקבע.
+    lead_r = _LEAD_R_C if kind in ('coffee', 'breakfast') else (40.0 / 70.0)
+    req_r = _REQ_R_C if kind in ('coffee', 'breakfast') else (40.0 / 70.0)
 
     def sized(raw, px, heavy, role='names'):
         """כל מילה בשורה עם הגודל שלה: השם שמתפללים עליו הכי גדול, שם
@@ -5337,11 +5344,12 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
 
     dr = ImageDraw.Draw(im)
 
-    def layout(base, gap=1.0):
+    def layout(base, gap=1.0, sf=1.0):
         total, out = 0.0, []
         for i, (txt, mult, heavy, col, mt, mb, lh, isnm) in enumerate(blocks):
-            # מכפיל שלילי = גודל קבוע בפיקסלים, שאינו מתכווץ עם השאר
-            px = base * mult if mult > 0 else -mult
+            # מכפיל שלילי = גודל קבוע בפיקסלים. sf מכווץ אותו רק כשהטקסט
+            # ארוך מדי ואינו נכנס לדף — אחרת הוא נשאר בדיוק כפי שנקבע.
+            px = base * mult if mult > 0 else -mult * sf
             mt, mb = mt * gap, mb * gap
             total += mt * base
             for ln in wrap(txt, px, heavy, dr, isnm):
@@ -5355,6 +5363,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
 
     # הגודל נקבע מהרוחב: הנוסח חייב לצאת בדיוק בשלוש שורות, תמיד באותו
     # גודל. רק אם הכל יחד גבוה מהתיבה — מקטינים הכל יחד ושומרים על היחסים.
+    sfit = 1.0
     if kind in ('coffee', 'breakfast'):
         lo, hi, best = 4.0, 220.0, 4.0
         for _ in range(26):
@@ -5364,17 +5373,18 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             else:
                 hi = mid
     else:
-        w1 = sum(dr.textlength(w + ' ', font=font(100, False)) for w in _NUSACH.split()) / 100.0
-        best = (_NUS_LINES * bw * .97) / max(1.0, w1)
+        # הגדלים נקבעו במפורש. מקטינים רק אם הטקסט ארוך מדי ואינו נכנס
+        # לדף, ואז הכל יחד ובאותם יחסים.
+        best, sfit = 1.0, 1.0
         if layout(best)[0] > bh:
-            lo, hi = 4.0, best
+            lo, hi = .15, 1.0
             for _ in range(24):
                 mid = (lo + hi) / 2
-                if layout(mid)[0] <= bh:
+                if layout(best, 1.0, mid)[0] <= bh:
                     lo = mid
                 else:
                     hi = mid
-            best = lo
+            sfit = lo
     # הגדלים קבועים, ולכן את השטח שנשאר מפזרים ברווחים בין הבלוקים
     # במקום להשאיר חלל גדול בתחתית התעודה
     # בתעודת הפרנס לא מרחיבים את הרווחים: הנוסח נצמד למעלה והשאר נשאר
@@ -5389,7 +5399,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             else:
                 hi2 = mid
         gap = lo2
-    total, items = layout(best, gap)
+    total, items = layout(best, gap, sfit)
     # מאיר: "המילים יהי רצון הכי למעלה שאפשר, שתמיד יהיה מקום להקדשות
     # ולתפילות". לכן בתעודת הפרנס הנוסח נצמד לראש התיבה, והשטח שנשאר
     # נופל למטה. בתעודות הקפה והבוקר נשאר המרכוז כמו שהיה.
