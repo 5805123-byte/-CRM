@@ -4298,8 +4298,14 @@ def ensure_schema():
                             moved += n
                     except Exception:
                         pass
-                con.execute("UPDATE donors SET category='', amount='', tier='' WHERE id=?",
-                            (e['id'],))
+                # מאיר: "סטיבן לאם זה זאב לאם". בכרטיס של אסתר היה רשום
+                # באנגלית steven Lamm, וזו הסיבה שחיובים שלו נחתו אצלה.
+                # השם האנגלי יורד ממנה ונשאר רק אצל זאב, אחרת חיוב עתידי
+                # של Steven Lamm יתפצל שוב בין שני הכרטיסים.
+                con.execute("UPDATE donors SET category='', amount='', tier='', english='' "
+                            "WHERE id=?", (e['id'],))
+                con.execute("UPDATE donors SET english=COALESCE(NULLIF(TRIM(english),''),'Steven Lamm') "
+                            "WHERE id=?", (z['id'],))
                 if moved:
                     print('  לאם: %d רשומות הועברו מאסתר לזאב' % moved)
             con.execute("INSERT INTO seed_flags(name) VALUES('lamm_merge_v1')")
