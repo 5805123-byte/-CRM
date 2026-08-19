@@ -52,6 +52,8 @@
      קפה/בוקר: "לעילוי נשמת" בגודל השם, והבקשה בגופן שורת הנוסח. */
   .cnames .nlead{font-size:1em}
   .cnames .nreq{font-size:.472em}
+  /* תואר ("רבי", "מרת") אינו הפתיח של ההקדשה — הוא בגודל של זצוק"ל */
+  .names .nttl,.cnames .nttl{font-size:.42em;font-weight:700;display:block}
   .cclose{font-size:1em;line-height:1.4;font-weight:600;width:100%}
   .rm{display:none}
   @media screen{.rm{display:block;position:absolute;inset-inline-start:-1.5em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.rm:hover{opacity:1}}
@@ -95,7 +97,7 @@ const KIND = q.get('kind') || 'parnes';
 
 // ----- כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים (פשוט ואמין, בלי ניחוש שם מול בקשה) -----
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצ]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
+const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
 const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|עלוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד)$/;
@@ -168,24 +170,20 @@ function dedPart(ws, trailing){
 }
 // שורת הפתיח (כולל התארים שלפני השם) אחת, אחריה כל שם בשורה משלו, ואז הברכה
 // תואר שנכתב תמיד מעל השם — "החתן", "הכלה", "הרב"
-const TITLEW=/^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|האשה|מרת|מר|הרב|רבי|הר["'״׳]ר|הרר|מוה["'״׳]ר|הרה["'״׳][גחצ]|הגה["'״׳]צ|מרן)$/;
-function bodyPart(ws, lead){
-  const [a,b]=nameSpan(ws), out=[];
-  const sm=l=>`<span class="nrow nreq">${l.map(w=>esc(w)).join(' ')}</span>`;
-  const smL=l=>`<span class="nrow nlead">${l.map(w=>esc(w)).join(' ')}</span>`;
-  const nl=w=>`<span class="nline">${w}</span>`;      // שם שלם בשורה אחת, מתכווץ אם צריך
+const TITLEW=/^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|האשה|מרת|מר|הרב|רבי|הר["'״׳]ר|הרר|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן)$/;
+function bodyRows(ws, lead){
+  const [a,b]=nameSpan(ws), rows=[];
   const head=(lead||[]).concat(ws.slice(0,a));
-  if(head.length) out.push(smL(head));
+  if(head.length) rows.push({ws:head,role:'lead'});
   const emit=seg=>{
     let t=0; while(t<seg.length-1 && TITLEW.test(seg[t])) t++;
-    if(t) out.push(smL(seg.slice(0,t)));
+    if(t) rows.push({ws:seg.slice(0,t),role:'ttl'});
     const rest=seg.slice(t);
-    // כלל 3: הבקשה יורדת לשורה משלה ונשברת לפי הרוחב, ולא נדחסת
-    // לשורת השם — אחרת השורה מתרחבת, מתכווצת, והזנב הופך לבלתי קריא
+    // כלל 3: הבקשה יורדת לשורה משלה ואינה נדחסת לשורת השם
     let r=-1;
     for(let i=1;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
-    if(r>0){ out.push(nl(fmtWords(rest.slice(0,r)))); out.push(sm(rest.slice(r))); }
-    else out.push(nl(fmtWords(rest)));
+    if(r>0){ rows.push({ws:rest.slice(0,r),role:'names'}); rows.push({ws:rest.slice(r),role:'req'}); }
+    else rows.push({ws:rest,role:'names'});
   };
   let cur=[];
   for(let k=a;k<b;k++){
@@ -193,9 +191,41 @@ function bodyPart(ws, lead){
     cur.push(ws[k]);
   }
   if(cur.length) emit(cur);
-  if(b<ws.length) out.push(sm(ws.slice(b)));
-  return out.join('');
+  if(b<ws.length) rows.push({ws:ws.slice(b),role:'req'});
+  return rows;
 }
+// מאיר: "אל תעשה אף פעם שורה עם מילה אחת. המילים הרה\"ק רבי שיהיו בשורה
+// אחת, גם המילים בן רבי שיהיו בשורה אחת, אותו גודל גופן כמו זצו\"קל"
+function joinSingles(rows){
+  // מאיר: "המילים מאחרי לעילוי נשמת אותו גודל עד המילה זצוק\"ל, חוץ
+  // מהמילים בן רבי. הרה\"ק רבי יהיו אותה שורה."
+  // שורת השמות מכילה שמות בלבד; מילות הלוואי שנגררו לסופה יורדות אל
+  // שורת התואר שאחריהן ומצטרפות אליה, בגודל של זצוק\"ל.
+  const out=[];
+  rows.forEach(r=>{
+    let ws=r.ws.slice(); const role=r.role;
+    const prev=out.length?out[out.length-1]:null;
+    if(role==='ttl' && prev && prev.role==='names'){
+      const take=[];
+      while(prev.ws.length>1 && SMALLWORD.test(prev.ws[prev.ws.length-1])) take.unshift(prev.ws.pop());
+      if(take.length) ws=take.concat(ws);
+    }
+    if(role==='ttl' && ws.length===1 && prev && (prev.role==='names'||prev.role==='ttl')){
+      prev.ws=prev.ws.concat(ws); return;
+    }
+    if(ws.length) out.push({ws,role});
+  });
+  return out.filter(r=>r.ws.length);
+}
+function rowsHTML(rows){
+  return rows.map(r=>{
+    if(r.role==='lead') return `<span class="nrow nlead">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
+    if(r.role==='ttl')  return `<span class="nrow nttl">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
+    if(r.role==='req')  return `<span class="nrow nreq">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
+    return `<span class="nline">${fmtWords(r.ws)}</span>`;
+  }).join('');
+}
+function bodyPart(ws, lead){ return rowsHTML(joinSingles(bodyRows(ws, lead))); }
 // שם התורם קטן מהשמות שמתפללים עליהם — בין אם הוא בשורה משלו ובין אם
 // הוא באותה שורה, לפני "לע\"נ" / "לרפואת"
 function formatName(line, donorLine){
