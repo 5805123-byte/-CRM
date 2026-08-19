@@ -5119,6 +5119,21 @@ _CERT_TITLE = re.compile(r'^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|�
                          r'הרה["\'״׳][גחצקי]|הגה["\'״׳]צ|מרן)$')
 
 
+# מאיר: "המילים וכל משפחתו תמיד יהיה בשורה שניה נפרדת" — הצירוף יורד
+# לשורה משלו מתחת לשם, ואינו נגרר לצדו ומאריך את שורת השם.
+_CERT_FAM1 = re.compile(r'^ו?כל$')
+_CERT_FAM2 = re.compile(r'^(משפחתו|משפחתה|משפחתם|משפחתן|משפחתך|בניו|בניה|בנותיו|'
+                        r'בנותיה|ביתו|ביתה|בני|יוצאי|זרעו|זרעה|זרעם|צאצאיו|צאצאיה)$')
+
+
+def _fam_at(ws):
+    """היכן מתחיל "וכל משפחתו" בתוך שורת שמות. ‎-1 אם אינו קיים."""
+    for i in range(1, len(ws) - 1):
+        if _CERT_FAM1.match(ws[i]) and _CERT_FAM2.match(ws[i + 1]):
+            return i
+    return -1
+
+
 def _cert_body(lead, ws):
     """שורת הפתיח, אחריה השמות בגדול, ואחריה הברכה בקטן — כל אחת בשורה שלה."""
     a, b = _cert_split(ws)
@@ -5144,11 +5159,15 @@ def _cert_body(lead, ws):
         if r == 0:                       # השורה כולה בקשה ("בזכות הנסיעה…")
             out.append((' '.join(rest), 'req'))
             return
-        if r > 0:
-            out.append((' '.join(rest[:r]), 'names'))
-            out.append((' '.join(rest[r:]), 'req'))
+        head, tail = (rest[:r], rest[r:]) if r > 0 else (rest, [])
+        f = _fam_at(head)
+        if f > 0:                        # "וכל משפחתו" בשורה שניה משלו
+            out.append((' '.join(head[:f]), 'names'))
+            out.append((' '.join(head[f:]), 'names'))
         else:
-            out.append((' '.join(rest), 'names'))
+            out.append((' '.join(head), 'names'))
+        if tail:
+            out.append((' '.join(tail), 'req'))
 
     cur = []
     for k in range(a, b):

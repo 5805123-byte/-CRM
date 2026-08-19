@@ -178,6 +178,13 @@ function dedPart(ws, trailing){
 // שורת הפתיח (כולל התארים שלפני השם) אחת, אחריה כל שם בשורה משלו, ואז הברכה
 // תואר שנכתב תמיד מעל השם — "החתן", "הכלה", "הרב"
 const TITLEW=/^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|האשה|מרת|מר|הרב|רבי|הר["'״׳]ר|הרר|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן)$/;
+// מאיר: "המילים וכל משפחתו תמיד יהיה בשורה שניה נפרדת"
+const FAM1=/^ו?כל$/;
+const FAM2=/^(משפחתו|משפחתה|משפחתם|משפחתן|משפחתך|בניו|בניה|בנותיו|בנותיה|ביתו|ביתה|בני|יוצאי|זרעו|זרעה|זרעם|צאצאיו|צאצאיה)$/;
+function famAt(ws){
+  for(let i=1;i<ws.length-1;i++) if(FAM1.test(ws[i])&&FAM2.test(ws[i+1])) return i;
+  return -1;
+}
 function bodyRows(ws, lead){
   const [a,b]=nameSpan(ws), rows=[];
   const head=(lead||[]).concat(ws.slice(0,a));
@@ -189,9 +196,13 @@ function bodyRows(ws, lead){
     // כלל 3: הבקשה יורדת לשורה משלה ואינה נדחסת לשורת השם
     let r=-1;
     for(let i=0;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
-    if(r===0) rows.push({ws:rest,role:'req'});          // שורה שכולה בקשה
-    else if(r>0){ rows.push({ws:rest.slice(0,r),role:'names'}); rows.push({ws:rest.slice(r),role:'req'}); }
-    else rows.push({ws:rest,role:'names'});
+    if(r===0){ rows.push({ws:rest,role:'req'}); return; }   // שורה שכולה בקשה
+    const head=(r>0)?rest.slice(0,r):rest, tail=(r>0)?rest.slice(r):[];
+    const f=famAt(head);
+    if(f>0){ rows.push({ws:head.slice(0,f),role:'names'});   // "וכל משפחתו" לשורה שניה
+             rows.push({ws:head.slice(f),role:'names'}); }
+    else rows.push({ws:head,role:'names'});
+    if(tail.length) rows.push({ws:tail,role:'req'});
   };
   let cur=[];
   for(let k=a;k<b;k++){
