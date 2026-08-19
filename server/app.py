@@ -302,6 +302,16 @@ def ensure_schema():
     # שורת יששכר־זבולון מחוברת לאברך עצמו — אותו שם שברשימת האברכים
     try: con.execute("ALTER TABLE pledges ADD COLUMN avreich TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "אם תורם העלה סכום או הוריד את הסכום, איך אני מעדכן את המערכת
+    # בלי שתצבור חוב או זכות" — החודש שממנו הסכום הזה תקף. החודשים שלפניו
+    # אינם נספרים לפיו, ולכן שינוי סכום באמצע השנה אינו יוצר חוב או זכות
+    # רטרואקטיביים.
+    try: con.execute("ALTER TABLE pledges ADD COLUMN since TEXT DEFAULT ''")
+    except Exception: pass
+    # מאיר: "איך אני מוחק את השורה האדומה הזו?" — אישור לפער בין מה שנגבה
+    # בפועל למה שרשום. ההערה תחזור רק אם הסכום שנגבה ישתנה שוב.
+    try: con.execute("ALTER TABLE donors ADD COLUMN gap_ok TEXT DEFAULT ''")
+    except Exception: pass
     # מאיר: "אל תכתוב לי סתם סכומים בקבוע שהוא התחייב כזה סכום כי לעולם
     # הוא לא התחייב כזה סכום". ולכן לכל שורה יש מקור ברור:
     #    1  — מאיר רשם את ההתחייבות בעצמו. רק כזו נחשבת התחייבות.
@@ -4492,7 +4502,7 @@ def recon_group(s):
     if 'donors' in s or 'ojc' in s: return 'donorsfund'
     return 'other'
 
-DONOR_FIELDS = {'last','first','english','business','phone','email','addr','tier',
+DONOR_FIELDS = {'gap_ok','last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
                 'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
 
@@ -7438,13 +7448,13 @@ class H(BaseHTTPRequestHandler):
             cf = 1 if cf is None else int(cf)
             vdid = b.get('via_donor_id')
             con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
-                        "detail=?,permo=?,avreich=?,confirmed=?,via_donor_id=?,via_total=?,via_note=? "
-                        "WHERE id=?",
+                        "detail=?,permo=?,avreich=?,confirmed=?,via_donor_id=?,via_total=?,via_note=?,"
+                        "since=? WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
                          1 if b.get('monthly') else 0, str(b.get('paid') or ''),
                          b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf,
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
-                         b.get('via_note',''), pid))
+                         b.get('via_note',''), b.get('since',''), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -8561,13 +8571,14 @@ class H(BaseHTTPRequestHandler):
             # שורה שנפתחת מהמסך היא התחייבות שמאיר רשם — מאושרת מלכתחילה.
             vdid = b.get('via_donor_id')
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
-                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note,since) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
                          b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
                          str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
                          b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed')),
-                         int(vdid) if vdid else None, str(b.get('via_total') or ''), b.get('via_note','')))
+                         int(vdid) if vdid else None, str(b.get('via_total') or ''),
+                         b.get('via_note',''), b.get('since','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':

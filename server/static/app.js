@@ -2044,7 +2044,10 @@ function purposeAlloc(d){
     pool+=amtNum(p.amount); });
   const base=rows.map(r=>{
     const per=r.inst?r.plan.per:r.amt;
-    const start=(r.inst&&r.plan.from)?(r.plan.from>first?r.plan.from:first):first;
+    // מאיר: "בלי שתצבור חוב או זכות" — סכום שהשתנה באמצע השנה נספר רק
+    // מהחודש שנרשם לו, ולא אחורה על חודשים ששולמו לפי הסכום הקודם
+    let start=(r.inst&&r.plan.from)?(r.plan.from>first?r.plan.from:first):first;
+    if(r.since&&r.since>start)start=r.since;
     const n=monthsTo(start, thru);
     let exp=per*n;
     if(r.inst)exp=Math.min(exp, r.amt);          // תשלומים — לא מעבר לסכום הכולל
@@ -2085,14 +2088,24 @@ function purposeAlloc(d){
 // עוד שורה". הריבוע "האם הגיע לסכום שהתחייב" ירד מדף התורם — החוב כבר
 // מופיע בראש הכרטיס ובשורת ההתחייבות עצמה. החישוב (purposeAlloc) נשאר,
 // כי מסך "לבדיקה" נשען עליו.
-// אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום — כדי שיהיה ברור מה להשלים
+// אזהרה קצרה כשמה שנגבה בפועל אינו מה שרשום, ושתי דרכים לסגור אותה.
+// מאיר: "אם סידרתי את זה איך אני מוחק את השורה האדומה? אם תורם העלה או
+// הוריד את הסכום איך אני מעדכן בלי שתצבור חוב או זכות?"
+//   "עדכן ל-X מהחודש" — הסכום מתעדכן, ונרשם מאיזה חודש הוא תקף, כך
+//                       שהחודשים שלפניו אינם נספרים ואין חוב/זכות מדומים.
+//   "זה בסדר"          — הסכום נשאר, וההערה נסגרת. היא תחזור רק אם
+//                       הסכום שנגבה בפועל ישתנה שוב.
 function izGapNote(d){
   const real=izRealMonthly(d); if(real<=0.5)return '';
   const shown=izRowAmt(d)+izStreamOther(d);
   if(Math.abs(real-shown)<1.5)return '';
+  if(String(d.gap_ok||'')===String(Math.round(real)))return '';
   const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   return `<div class="cmgap">⚠️ בפועל נגבה <b>${f(real)}</b> כל חודש, וכאן רשום ${f(shown)}`
-    +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')+`</div>`;
+    +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')
+    +`<div class="cmgap-b noprint">`
+    +`<button class="btn sm gapfix" data-amt="${Math.round(real)}">🔄 עדכן ל-${f(real)} מהחודש</button>`
+    +`<button class="btn sm ghost gapok" data-amt="${Math.round(real)}">✓ זה בסדר</button></div></div>`;
 }
 function monthlyRows(d){
   const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0&&plReal(p));
@@ -2159,7 +2172,7 @@ function commitRows(d){
     rows.push({pid:p.id,what:plWhat(p),
       icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
-      conf:plConf(p), ended:plEnded(p),
+      conf:plConf(p), ended:plEnded(p), since:String(p.since||''),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
       via:viaD?{id:viaD.id,name:(viaD.last+' '+viaD.first).trim(),
@@ -2367,7 +2380,8 @@ function wireCommit(d,body){
       status:p.status||'',note:p.note||'',monthly:+p.monthly?1:0,paid:p.paid||'',
       detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||'',
       confirmed:(p.confirmed!=null?+p.confirmed:1),
-      via_donor_id:p.via_donor_id||'',via_total:p.via_total||'',via_note:p.via_note||''});};
+      via_donor_id:p.via_donor_id||'',via_total:p.via_total||'',via_note:p.via_note||'',
+      since:p.since||''});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
   // סכום ידני שנשאר לצד תשלומים שנקלטו במערכת יוצר שני מספרים סותרים
   // על אותה שורה. מה שנקלט הוא הקובע, ולכן הידני נמחק פעם אחת.
@@ -2461,6 +2475,32 @@ function wireCommit(d,body){
     const on=b.dataset.on==='1';
     await putPl(p,{status:on?'נתן':'הסתיים'});
     await syncAmt(); toast(on?'חזרה לפעילה':'סומן כהסתיים'); redraw();});
+  // ----- סגירת ההערה האדומה על הפער -----
+  // "עדכן מהחודש": הסכום החדש נרשם יחד עם החודש שממנו הוא תקף, ולכן
+  // החודשים שלפניו נספרים לפי הסכום הקודם ולא נוצר חוב או זכות מדומים.
+  box.querySelectorAll('.gapfix').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.busy)return; b.dataset.busy='1';
+    try{
+      const v=b.dataset.amt, mo=todayStr().slice(0,7);
+      let p=(d.pledges||[]).find(x=>+x.monthly&&isIZcat(x.category));
+      if(!p){
+        const r=await api('POST','/api/pledge',{donor_id:d.id,category:'יששכר־זבולון',
+          amount:v,status:'נתן',monthly:1,paid:'',confirmed:1,since:mo});
+        if(!r||!r.id){toast('לא נשמר');return;}
+        p={id:r.id,donor_id:d.id,category:'יששכר־זבולון',amount:v,status:'נתן',monthly:1,
+           paid:'',note:'',detail:'',permo:'',avreich:'',confirmed:1,since:mo};
+        d.pledges=(d.pledges||[]).concat([p]);
+      } else await putPl(p,{amount:v,confirmed:1,since:mo});
+      const act=(d.partners||[]).filter(x=>x.active!=0);
+      if(act.length===1){act[0].amount=v;await api('PUT','/api/partner/'+act[0].id,{amount:v});}
+      d.gap_ok=String(v); await api('PUT','/api/donor/'+d.id,{gap_ok:d.gap_ok});
+      await syncAmt(); toast('עודכן ל-'+v+' מהחודש ✓'); redraw();
+    } finally{ delete b.dataset.busy; }});
+  // "זה בסדר": הסכום נשאר, ההערה נסגרת, והיא תחזור רק אם הגבייה תשתנה שוב
+  box.querySelectorAll('.gapok').forEach(b=>b.onclick=async()=>{
+    d.gap_ok=String(b.dataset.amt);
+    await api('PUT','/api/donor/'+d.id,{gap_ok:d.gap_ok});
+    toast('נסגר ✓'); redraw();});
   box.querySelectorAll('.cmdel').forEach(b=>b.onclick=async()=>{
     const p=pOf(b.dataset.pid); if(!p)return;
     if(!await uiConfirm('למחוק את השורה "'+plWhat(p)+'"?'))return;
