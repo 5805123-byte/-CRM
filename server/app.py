@@ -5441,9 +5441,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         if role == 'lead':                 # "לעילוי נשמת" / "לע\"נ אביו"
             z = min(fix_px, px * lead_r) if fix_px else px * lead_r
             return [(w, z, True) for w in ws]
-        if role == 'req':                  # הבקשה שאחרי השמות
-            z = min(fix_px, px * req_r) if fix_px else px * req_r
-            return [(w, z, True) for w in ws]
+        if role == 'req':                  # הבקשה שאחרי השמות — גדלה יחד איתו
+            return [(w, px * req_r, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         n, out = _lead_len(ws), []
@@ -5456,7 +5455,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             if not inreq and rq >= 0 and k >= rq:          # ברכה אחרי השם
                 inreq = True
             if inreq:
-                out.append((w, min(fix_px, px * req_r) if fix_px else px * req_r, True))
+                out.append((w, px * req_r, True))
             elif _CERT_SMALL.match(w):
                 out.append((w, px * _SML_R, False))
             else:
@@ -5518,44 +5517,56 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             f = bw / wpx
             return [(t, z * f, h) for t, z, h in ln]
 
-        def _fit(raw):
-            """כמה שורת השמות צריכה להתכווץ כדי להיכנס לרוחב התיבה."""
-            full = _join(sized(raw, px, heavy, 'names'))
-            wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
-            f = (bw / wpx) if wpx > bw else 1.0
-            return f if f >= _FIT_MIN else 1.0
-
-        # מאיר: "לעילוי נשמת בחצי מהגודל של השם". השם מתכווץ כדי להיכנס
-        # בשורה אחת, ולכן גם הפתיח שמעליו מתכווץ באותה מידה — אחרת הוא
-        # יוצא גדול כמעט כמו השם עצמו.
-        leadf = min([_fit(r) for r, ro in src if ro == 'names'] or [1.0])
-
+        rl = []                       # התפקיד של כל שורה שנוצרה
         for raw, role in src:
             ws = (sized(raw, px, heavy, role) if is_name
                   else [(w, px, heavy) for w in raw.split()])
             if not ws:
-                lines.append([]); continue
-            # מאיר: "את השם מאיפה שמתחיל הזרע שמשון עד המילים לזכות תעשה
-            # שיהיה גודל אחיד ונורמלי" — קודם כל שורה התכווצה לבד לפי
-            # אורכה, ולכן שם אחד יצא ענק והשני קטן. עכשיו כל שורות השמות
-            # חולקות את אותו מקדם, וגם הפתיח שמעליהן.
-            if role in ('lead', 'names') and leadf < 1.0:
-                ws = [(t, z * leadf, h) for t, z, h in ws]
-            # מאיר: "את השם של החתן והכלה תכתוב בגדול ממש בשורה אחת".
-            # לכן שורת השמות מתכווצת כדי להיכנס, במקום להישבר לשתיים.
+                lines.append([]); rl.append(role); continue
+            # מאיר: "תמיד תתאים את הענין לדף חוץ מהיהי רצון למעלה" —
+            # שורת שם שאינה נשברת נעצרת בשולי התיבה ומתכווצת חזרה, ולכן
+            # ההגדלה לא הועילה. עכשיו היא נשברת בצורה מאוזנת וגדלה עד
+            # שהיא ממלאת את הדף. כיווץ נשאר רק למילה בודדת רחבה מהתיבה.
             if role in ('names', 'donor'):
                 full = _join(ws)
                 wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
                 if wpx > bw:
-                    f = bw / wpx
-                    if f >= _FIT_MIN:
-                        lines.append(_fitline([(t, z * f, h) for t, z, h in full], dr)); continue
-                    # רחב מדי גם אחרי הכיווץ המותר — נשבר לשורות, ולא נחתך
+                    if len(ws) <= 1:
+                        f = bw / wpx
+                        lines.append(_fitline([(t, z * f, h) for t, z, h in full], dr))
+                        rl.append(role); continue
+                    # שם שאינו נכנס לשורה אחת נשבר לפני "בן"/"בת" — כך
+                    # קוראים "חיים רפאל שאול" ומתחת "בן אסתר ז\"ל", ולא
+                    # שבירה אקראית באמצע השם.
+                    cut = next((i for i, (t, _z, _h) in enumerate(ws)
+                                if i and _CERT_BEN.match(t)), -1)
+                    if cut > 0:
+                        for part in (ws[:cut], ws[cut:]):
+                            if part:
+                                lines.append(_fitline(_join(part), dr)); rl.append(role)
+                        continue
                 else:
-                    lines.append(full); continue
+                    lines.append(full); rl.append(role); continue
             # גלישה מאוזנת — הנוסח והברכות, שלא תישאר מילה בודדת בשורה
             for seg in _balance(ws, dr):
-                lines.append(_fitline(_join(seg), dr))
+                lines.append(_fitline(_join(seg), dr)); rl.append(role)
+
+        # מאיר: "השמות שמתפללים עליהם שיהיו הכי גדולים, הבקשות יותר קטנות".
+        # אחרי כל ההתאמות — כיווץ לרוחב, גלישה, רשתות ביטחון — נאכפת כאן
+        # ההבטחה עצמה, כדי שאף חישוב קודם לא יוכל להפוך את היחס: הבקשה
+        # ומילות הפתיח אינן עולות על 40/70 מהשם הקטן ביותר שבתעודה.
+        if is_name:
+            nm = [max(z for _, z, _ in ln) for ln, ro in zip(lines, rl)
+                  if ro in ('names', 'donor') and ln]
+            if nm:
+                cap = min(nm) * (40.0 / 70.0)
+                for i, (ln, ro) in enumerate(zip(lines, rl)):
+                    if ro not in ('req', 'lead') or not ln:
+                        continue
+                    top = max(z for _, z, _ in ln)
+                    if top > cap:
+                        f = cap / top
+                        lines[i] = [(t, z * f, h) for t, z, h in ln]
         return lines
 
     dr = ImageDraw.Draw(im)
@@ -5645,7 +5656,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             lo, hi = 1.0, 2.0
             for _ in range(20):
                 mid = (lo + hi) / 2
-                if layout(best, 1.0, mid)[0] <= bh * .90 and _nm_full(mid) >= .995:
+                if layout(best, 1.0, mid)[0] <= bh * .92:
                     lo = mid
                 else:
                     hi = mid

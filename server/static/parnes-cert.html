@@ -47,7 +47,10 @@
   /* "לעילוי נשמת" — חצי מהשם, ומתכווץ יחד איתו כשהוא מוקטן כדי להיכנס */
   .names .nlead,.cnames .nlead{font-size:.5em;font-weight:700;letter-spacing:-.01em;word-spacing:-.04em}
   /* שם שלם בשורה אחת — אם הוא ארוך מדי הוא מוקטן ולא נשבר באמצע */
-  .nline{display:block;white-space:nowrap}
+  /* מאיר: "תמיד תתאים את הענין לדף חוץ מהיהי רצון למעלה" — שורת שם
+     שלא נשברת נעצרת בשולי המסגרת ומתכווצת חזרה, ולכן ההגדלה לא עשתה
+     כלום. עכשיו היא נשברת בצורה מאוזנת וגדלה עד שהיא ממלאת את הדף. */
+  .nline{display:block;white-space:normal;text-wrap:balance}
   .nrow{display:block}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
@@ -100,7 +103,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v465";
+const BUILD = "v466";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -420,10 +423,14 @@ function parnesSizes(sf){
   // השמות — הם שגדלים
   setu('#pairs .names',70,u); setu('#pairs .req',40,u0);
   // הבקשה ומילות הפתיח: 40 קבוע, אך לעולם לא גדולות מהשם עצמו
+  // מאיר מנה במפורש מה קבוע: הנוסח, התאריך, ו"יעמדו לזכות / לעילוי
+  // נשמת / לרפואת". הבקשה שאחרי השם גדלה יחד איתו ביחס 40/70, אחרת
+  // כשהשם ממלא את הדף היא נראית זעירה לידו.
   const uq=u0*Math.min(1,sf);
-  setu('#pairs .nreq',40,uq); setu('#pairs .nlead',40,uq);
+  setu('#pairs .nreq',40,u); setu('#pairs .nlead',40,uq);
   // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת.
   // מוחזר המקדם הקטן ביותר — 1 פירושו שאף שם לא הוקטן ברוחב.
+  // רשת ביטחון בלבד: מילה בודדת רחבה מהמסגרת ואי אפשר לשבור אותה
   let minf=1;
   document.querySelectorAll('#pairs .nline').forEach(el=>{
     const box=el.parentElement, avail=box?box.clientWidth:0;
@@ -434,9 +441,34 @@ function parnesSizes(sf){
   });
   return minf;
 }
+// שם שאינו נכנס לשורה אחת נשבר לפני "בן"/"בת" — כך קוראים
+// "חיים רפאל שאול" ומתחת "בן אסתר ז\"ל", ולא שבירה אקראית באמצע השם.
+function splitAtBen(){
+  const isRel=t=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test((t||'').trim());
+  document.querySelectorAll('#pairs .nline').forEach(el=>{
+    if(el.dataset.split)return;
+    const box=el.parentElement, avail=box?box.clientWidth:0;
+    // השורה נשברת מעצמה כשהיא ארוכה — מזהים זאת לפי הגובה, לא לפי הרוחב
+    const lh=parseFloat(getComputedStyle(el).lineHeight)||1;
+    if(!avail||el.scrollHeight<lh*1.5)return;
+    const kids=[...el.childNodes];
+    let cut=-1;
+    for(let i=1;i<kids.length;i++){
+      const t=(kids[i].textContent||'').trim();
+      if(isRel(t)){ cut=i; break; }
+    }
+    if(cut<1)return;
+    const nx=document.createElement('span');
+    nx.className='nline'; nx.dataset.split='1'; el.dataset.split='1';
+    while(el.childNodes.length>cut) nx.appendChild(el.childNodes[cut]);
+    el.after(nx);
+  });
+}
 function fitParnes(){
   const c=$('content'), body=document.getElementById('cbody');
   fitNusach();
+  parnesSizes(1);
+  splitAtBen();
   parnesSizes(1);
   const avail=c.clientHeight-14; if(avail<=0||!body)return;
   const H=()=>body.getBoundingClientRect().height;
@@ -449,9 +481,11 @@ function fitParnes(){
     // קטן" — ההגדלה נבלמה רק בגובה, ולכן הנוסח גלש לעוד שורה וגדל בלי
     // הפרעה בעוד ששורת השמות נתקלה ברוחב והתכווצה בחזרה. עכשיו מגדילים
     // רק כל עוד השמות עצמם נשארים בגודל המלא שנקבע להם.
+    // מאיר: "תמיד תתאים את הענין לדף" — ההגדלה נבלמת רק בגובה. השם
+    // רשאי להישבר לשתי שורות ובלבד שיגדל וימלא את הדף.
     lo=1; hi=2;
-    for(let i=0;i<18;i++){ const mid=(lo+hi)/2; const f=parnesSizes(mid);
-      if(H()<=avail*.90 && f>=.995) lo=mid; else hi=mid; }
+    for(let i=0;i<20;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
+      if(H()<=avail*.92) lo=mid; else hi=mid; }
     parnesSizes(lo); return;
   }
   for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
