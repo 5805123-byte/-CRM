@@ -4326,6 +4326,38 @@ def ensure_schema():
     except Exception as ex:
         print('  lamm merge error:', ex)
 
+    # מאיר: "עדיין רואה אצל מוקאי רק 2". אברכים שיצאו מהכולל לפני התיקון
+    # נסגרו לגמרי, והמקום שלהם אצל התורם נעלם יחד איתם — ולכן המניין ירד.
+    # כאן הם חוזרים להיות מקום פתוח: השם והתאריך של מי שיצא נשמרים, הסכום
+    # נשאר, והשורה חוזרת להיות פעילה כדי שמאיר ימלא אותה באברך חדש.
+    # נוגעים רק בשורה שנסגרה בדיוק ביום שבו האברך יצא מהכולל — שורה
+    # שנסגרה בתאריך אחר היא הסרת שותפות רגילה ולא יציאה, ואין להחזירה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='av_slot_reopen_v1'").fetchone():
+            back = 0
+            try:
+                cutoff = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
+                rows = con.execute(
+                    "SELECT p.id pid, p.avreich av, a.ended en FROM partners p "
+                    "JOIN avreichim a ON TRIM(a.name)=TRIM(p.avreich) "
+                    "WHERE COALESCE(p.active,1)=0 AND COALESCE(TRIM(a.ended),'')<>'' "
+                    "AND COALESCE(p.ended_date,'')=a.ended AND COALESCE(TRIM(p.prev_avreich),'')='' "
+                    "AND a.ended>=?", (cutoff,)).fetchall()
+                for r in rows:
+                    con.execute("UPDATE partners SET active=1, avreich='', start_date='', "
+                                "renew_date=NULL, ended_date=NULL, prev_avreich=?, prev_ended=? "
+                                "WHERE id=?",
+                                (r['av'], greg_to_heb_full(r['en']) or r['en'], r['pid']))
+                    back += 1
+            except Exception as e2:
+                print('  slot reopen scan:', e2)
+            if back:
+                print('  מקומות שהוחזרו אחרי יציאת אברך מהכולל: %d' % back)
+            con.execute("INSERT INTO seed_flags(name) VALUES('av_slot_reopen_v1')")
+            con.commit()
+    except Exception as ex:
+        print('  slot reopen error:', ex)
+
     # מאיר: "עליתי פה על באג שעכשיו אני מבין למה יש תרומות כפולות... זה
     # בגלל שהדונרס רשום גם ברשימת הצ'קים ששלחתי לך וגם ברשימת הדונרס
     # פאונד... תיקח את הרשימה של דונרס ותמחק אותה".
