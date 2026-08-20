@@ -28,6 +28,8 @@ MAILCHK = {'running': False, 'done': 0, 'total': 0, 'hit': 0, 'error': ''}
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
 STATIC = os.path.join(HERE, 'static')
 PORT = int(os.environ.get('PORT', 8000))
+# מאיר: "מספר סידורי של קבלות שיתחילו ממספר 6000"
+RECEIPT_START = int(os.environ.get('RECEIPT_START', 6000))
 
 def db():
     con = sqlite3.connect(DB); con.row_factory = sqlite3.Row; return con
@@ -182,6 +184,7 @@ def ensure_schema():
         addr TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, email TEXT, recurring INTEGER DEFAULT 0,
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
+    CREATE TABLE IF NOT EXISTS receipts(rkey TEXT PRIMARY KEY, num INTEGER, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS pay_channels(name TEXT PRIMARY KEY, created TEXT);
@@ -7130,6 +7133,28 @@ class H(BaseHTTPRequestHandler):
                                     'cards': len(out) - len(bank),
                                     'cards_total': round(sum(x['total'] for x in out
                                                              if x['kind'] == 'card'), 2)})
+        if self.path.split('?')[0] == '/api/receipt/num':
+            # מאיר: "עם מספר סידורי של קבלות שיתחילו ממספר 6000".
+            # לכל תרומה מוקצה מספר פעם אחת בלבד — הדפסה חוזרת של אותה קבלה
+            # מחזירה את אותו המספר, כדי שלא ייווצרו שני מספרים לאותו תשלום.
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            key = (qs.get('key', [''])[0] or '').strip()[:120]
+            if not key:
+                return self._send(400, {'error': 'key required'})
+            con = db()
+            row = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()
+            if row:
+                n = int(row['num'])
+            else:
+                mx = con.execute("SELECT MAX(num) m FROM receipts").fetchone()['m']
+                n = max(RECEIPT_START, int(mx or 0) + 1)
+                con.execute("INSERT OR IGNORE INTO receipts(rkey,num,created) VALUES(?,?,?)",
+                            (key, n, today_iso()))
+                con.commit()
+                row = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()
+                n = int(row['num']) if row else n
+            con.close()
+            return self._send(200, {'ok': True, 'num': n})
         if self.path.split('?')[0] == '/api/izhistory':
             # יומן כללי — כל השינויים ביששכר־זבולון, מהחדש לישן
             con = db()

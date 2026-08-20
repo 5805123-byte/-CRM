@@ -3,80 +3,159 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kollel Chatzos — Donation Receipt</title>
+<title>Donation Receipt — Kollel Chatzos</title>
 <style>
-  @font-face{font-family:'FrankRuhl';src:url('/frankruhl-regular.ttf') format('truetype');font-weight:400 600;font-display:swap}
-  @font-face{font-family:'FrankRuhl';src:url('/frankruhl-bold.ttf') format('truetype');font-weight:700 900;font-display:swap}
-  :root{--ink:#3a2f1a;--deep:#7a1f1f;--gold:#9c7a2e;--soft:#6b6249;--line:#cdbf98}
+  /* מאיר: "תעצב לי קבלה יפה עם הפרטי עמותה בארצות הברית ומה שצריך, בלי
+     הרבה מלל של ברכות, רק קצר ולעניין, הכל באנגלית, עם מספר סידורי".
+     קבלה אמריקאית סטנדרטית: שם העמותה, כתובת, EIN, סעיף 501(c)(3),
+     שם התורם, תאריך, סכום, ומשפט "לא ניתנה תמורה". בלי ברכות. */
+  :root{
+    --ink:#1f1c2b; --soft:#6b6579; --line:#ddd6c6; --rule:#efeadd;
+    --gold:#9c7a2e; --deep:#3b357a; --paper:#ffffff; --wash:#faf7ef;
+  }
   *{box-sizing:border-box}
   html,body{margin:0}
-  body{background:#d9d2c2;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;color:var(--ink)}
-  .scroller{overflow-x:auto;padding:16px}
-  .sheet{
-    position:relative;width:794px;max-width:none;aspect-ratio:2482/3509;margin:0 auto;
-    background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
-    box-shadow:0 10px 40px rgba(0,0,0,.25);
-    container-type:inline-size;
-    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  body{
+    background:#e8e3d6; color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
-  /* אזור הכתיבה — הצד הימני הפתוח של הבלאנק (הסרגל השמאלי תפוס) */
-  .content{position:absolute;top:12.5%;left:27%;right:6.5%;bottom:8%;display:flex;flex-direction:column}
-  .rc{display:flex;justify-content:space-between;font-size:2cqw;color:var(--soft);margin-bottom:1.5cqw}
-  .title{text-align:center;font-size:3.1cqw;letter-spacing:.35cqw;color:var(--gold);text-transform:uppercase;margin:0 0 3cqw}
-  .greet{font-size:2.7cqw;margin-bottom:.5cqw}
-  .lead{font-size:2.3cqw;margin:0 0 2cqw}
-  .amountbox{text-align:center;border-top:.2cqw solid var(--line);border-bottom:.2cqw solid var(--line);padding:2cqw 0;margin:1cqw 0 2.5cqw}
-  .amountbox .lbl{font-size:1.8cqw;letter-spacing:.4cqw;color:var(--soft);text-transform:uppercase}
-  .amountbox .amt{font-size:7cqw;font-weight:700;color:var(--deep);line-height:1.1;margin:.4cqw 0}
-  .amountbox .for{font-size:2.5cqw;color:var(--gold);font-style:italic}
-  .body p{font-size:2.25cqw;line-height:1.5;margin:1.4cqw 0}
-  .heb{text-align:center;font-size:2.3cqw;line-height:1.75;color:var(--deep);margin:2cqw 0 1cqw;font-family:'FrankRuhl',"Frank Ruhl Libre","Times New Roman",serif;direction:rtl;unicode-bidi:isolate;text-wrap:balance}
-  .fine{font-size:1.7cqw;color:var(--soft);line-height:1.4;margin-top:1.5cqw}
-  .sig{margin-top:auto;padding-top:3cqw;text-align:right}
-  .sig .sigline{width:38%;border-top:.15cqw solid var(--ink);margin:0 0 1cqw auto}
-  .sig .nm{font-size:2.6cqw;color:var(--deep);font-weight:700}
-  .sig .role{font-size:2cqw;color:var(--soft)}
-  .noprint{text-align:center;margin:14px}
-  .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer;margin:0 5px}
-  .noprint button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
+  .scroller{overflow-x:auto;padding:20px}
+  .sheet{
+    position:relative; width:794px; min-height:1123px; margin:0 auto; padding:52px 58px 44px;
+    background:var(--paper); box-shadow:0 12px 44px rgba(0,0,0,.22);
+    display:flex; flex-direction:column;
+  }
+  .sheet::before{content:"";position:absolute;top:0;left:0;right:0;height:7px;
+    background:linear-gradient(90deg,var(--deep) 0 62%,var(--gold) 62% 100%)}
+
+  /* ---------- כותרת: מי מוציא את הקבלה ---------- */
+  .head{display:flex;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+  .head .logo{width:74px;height:74px;object-fit:contain;flex:0 0 auto}
+  .head .org{flex:1;min-width:0}
+  .org .legal{font-size:23px;font-weight:700;letter-spacing:.2px;line-height:1.15}
+  .org .dba{font-size:15px;color:var(--gold);letter-spacing:1.6px;text-transform:uppercase;margin-top:3px}
+  .org .addr{font-size:13px;color:var(--soft);line-height:1.55;margin-top:8px}
+  .org .addr b{color:var(--ink);font-weight:700}
+
+  /* ---------- שורת הקבלה: מספר סידורי ותאריך ---------- */
+  .strip{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin:22px 0 4px}
+  .strip .doc{font-size:26px;letter-spacing:2.4px;text-transform:uppercase;color:var(--deep);font-weight:700}
+  .strip .meta{text-align:right;font-size:13px;color:var(--soft);line-height:1.7}
+  .strip .meta b{color:var(--ink);font-size:15px;letter-spacing:.6px}
+  .strip .meta .rno b{color:var(--gold);font-size:19px}
+
+  /* ---------- למי ---------- */
+  .to{margin:22px 0 0;padding:16px 18px;background:var(--wash);border:1px solid var(--rule);border-radius:6px}
+  .to .lbl{font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:var(--soft)}
+  .to .nm{font-size:20px;font-weight:700;margin-top:4px}
+  .to .ad{font-size:13.5px;color:var(--soft);line-height:1.55;margin-top:3px}
+
+  /* ---------- הסכום ---------- */
+  .amt{display:flex;align-items:center;justify-content:space-between;gap:18px;
+       margin:20px 0 0;padding:20px 22px;border:1.5px solid var(--deep);border-radius:6px}
+  .amt .lbl{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;color:var(--soft)}
+  .amt .val{font-size:44px;font-weight:700;color:var(--deep);line-height:1.05;letter-spacing:-.5px}
+  .amt .side{text-align:right;font-size:13.5px;color:var(--soft);line-height:1.75}
+  .amt .side b{color:var(--ink)}
+
+  /* ---------- הצהרת המס ---------- */
+  .stmt{margin:22px 0 0;font-size:14px;line-height:1.65}
+  .stmt p{margin:0 0 9px}
+  .stmt .key{background:#fbf6e6;border-left:3px solid var(--gold);padding:10px 13px;font-size:13.5px;line-height:1.6}
+
+  /* ---------- חתימה ---------- */
+  .sign{margin-top:44px;padding-top:0;display:flex;justify-content:space-between;align-items:flex-end;gap:24px}
+  .sign .who{text-align:left}
+  .sign .line{width:230px;border-top:1px solid var(--ink);margin-bottom:7px}
+  .sign .nm{font-size:16px;font-weight:700}
+  .sign .role{font-size:12.5px;color:var(--soft);letter-spacing:.4px}
+  .sign .stamp{text-align:right;font-size:11.5px;color:var(--soft);line-height:1.6}
+  .sign .stamp b{display:block;font-size:13px;color:var(--gold);letter-spacing:1.4px;text-transform:uppercase}
+
+  .foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line);
+        font-size:11px;color:var(--soft);line-height:1.55;text-align:center}
+
+  .noprint{text-align:center;margin:16px}
+  .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;
+    border:none;background:var(--deep);color:#fff;cursor:pointer;margin:0 5px}
+  .noprint button.g{background:#fff;color:var(--deep);border:1px solid var(--deep)}
+
   @media print{
     @page{size:A4;margin:0}
     body{background:#fff}
     .scroller{overflow:visible;padding:0}
-    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
+    .sheet{width:210mm;min-height:297mm;box-shadow:none;margin:0;padding:16mm 15mm 12mm}
     .noprint{display:none}
   }
 </style>
 </head>
 <body>
 <div class="scroller"><div class="sheet">
-  <div class="content">
-    <div class="rc"><span>Receipt&nbsp;#: <b id="r_num"></b></span><span>Date: <b id="r_date"></b></span></div>
-    <div class="title">Official Donation Receipt</div>
 
-    <div class="greet">Dear <b id="r_name"></b>,</div>
-    <p class="lead">It is with heartfelt gratitude that we acknowledge your generous contribution:</p>
-
-    <div class="amountbox">
-      <div class="lbl">Donation Amount</div>
-      <div class="amt" id="r_amt"></div>
-      <div class="for" id="r_for"></div>
-    </div>
-
-    <div class="body">
-      <p>There is no greater z’chus than to be a partner in Torah — and above all, the Torah that ascends from our Kollel in the holy hours of <i>Chatzos</i>, when the gates of Heaven stand open and it is an <i>eis ratzon</i>, a time of boundless Divine favor.</p>
-      <div class="heb">בזכות התורה הנלמדת בעת רצון הגדול של חצות הלילה — יהי רצון שתעמוד לך לשמירה, לברכה, לרפואה ולהצלחה, לך ולכל בני ביתך.</div>
-      <p>May this great z’chus be a shield of protection over you, drawing down abundant blessing, good health, <i>nachas</i> and <i>hatzlacha</i> upon you and your entire family — <i>b’gashmiyus uv’ruchniyus</i>.</p>
-    </div>
-
-    <div class="fine">Cong. Zikhron Avos · EIN&nbsp;20-0447034 · A 501(c)(3) tax-exempt organization. No goods or services were provided in exchange for this tax-deductible contribution. Please retain this letter for your tax records.</div>
-
-    <div class="sig">
-      <div class="sigline"></div>
-      <div class="nm">Rabbi Yehoshua Meir Deutsch</div>
-      <div class="role">Rosh HaKollel</div>
+  <div class="head">
+    <img class="logo" src="/logo.png" alt="" onerror="this.style.display='none'">
+    <div class="org">
+      <div class="legal">Congregation Zikhron Avos</div>
+      <div class="dba">Kollel Chatzos</div>
+      <div class="addr">
+        1540 40th Street, Brooklyn, NY 11218<br>
+        Federal Tax ID (EIN): <b>20-0447034</b> &nbsp;·&nbsp; A 501(c)(3) tax-exempt organization
+      </div>
     </div>
   </div>
+
+  <div class="strip">
+    <div class="doc">Donation Receipt</div>
+    <div class="meta">
+      <div class="rno">Receipt No. <b id="r_num">—</b></div>
+      <div>Date of Contribution: <b id="r_date"></b></div>
+    </div>
+  </div>
+
+  <div class="to">
+    <div class="lbl">Received from</div>
+    <div class="nm" id="r_name">Friend</div>
+    <div class="ad" id="r_addr" style="display:none"></div>
+  </div>
+
+  <div class="amt">
+    <div>
+      <div class="lbl">Amount Received</div>
+      <div class="val" id="r_amt">$0</div>
+    </div>
+    <div class="side">
+      <div id="r_forwrap" style="display:none">Designated for:<br><b id="r_for"></b></div>
+      <div id="r_methwrap" style="display:none">Method: <b id="r_meth"></b></div>
+    </div>
+  </div>
+
+  <div class="stmt">
+    <p>Thank you for your contribution to Congregation Zikhron Avos (Kollel Chatzos).
+       This letter serves as your official receipt for tax purposes.</p>
+    <p class="key"><b>No goods or services were provided</b> in exchange for this contribution.
+       Congregation Zikhron Avos is a tax-exempt organization under Section 501(c)(3) of the
+       Internal Revenue Code; contributions are deductible to the extent allowed by law.
+       Please retain this receipt for your records.</p>
+  </div>
+
+  <div class="sign">
+    <div class="who">
+      <div class="line"></div>
+      <div class="nm">Rabbi Yehoshua Meir Deutsch</div>
+      <div class="role">Rosh HaKollel · Authorized Signatory</div>
+    </div>
+    <div class="stamp">
+      <b>Kollel Chatzos</b>
+      Congregation Zikhron Avos<br>
+      EIN 20-0447034
+    </div>
+  </div>
+
+  <div class="foot">
+    Congregation Zikhron Avos · 1540 40th Street, Brooklyn, NY 11218 · EIN 20-0447034 · 501(c)(3)
+  </div>
+
 </div></div>
 
 <div class="noprint">
@@ -87,26 +166,76 @@
 <script>
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
+
+// שמות הייעודים נכתבים באנגלית — הקבלה כולה באנגלית
 const PMAP = [
   [/יששכר|זבולון|zevulun|yissachar/i, 'Yissachar–Zevulun Partnership in Torah'],
-  [/פרנס.?לילה|לימוד.?לילה/i, 'Supporting the Limud Torah at Chatzos — nightly learning at midnight'],
-  [/נר.?למאור|ner\s?la?maor/i, 'Ner LaMaor'],
-  [/חדר.?קפה|coffee/i, 'Refreshments for the Lomdei Torah at Chatzos'],
-  [/ארוחת.?בוקר|breakfast/i, 'Breakfast for the Lomdei Torah'],
-  [/קוויטל|kvittel/i, 'Kvittel — Tefillah at Chatzos'],
+  [/פרנס.?לילה|לימוד.?לילה/i,        'Sponsorship of a Night of Torah Study'],
+  [/נר.?למאור|ner\s?la?maor/i,        'Ner LaMaor'],
+  [/חדר.?קפה|coffee/i,                'Refreshments for the Kollel'],
+  [/ארוחת.?בוקר|breakfast/i,          'Breakfast for the Kollel'],
+  [/קמחא|kimcha|pesach/i,             'Kimcha D’Pischa'],
+  [/מתנות.?לאביונים|matanos/i,        'Matanos LaEvyonim'],
+  [/הכנסת.?כלה|kalla/i,               'Hachnosas Kallah'],
+  [/בנין|בניין|building/i,            'Building Fund'],
+  [/קוויטל|kvittel/i,                 'Kvittel'],
 ];
-function purposeEn(p){ p=(p||'').trim(); for (const [re,en] of PMAP) if (re.test(p)) return en; return p || 'General Donation to Kollel Chatzos'; }
-function money(a){ const n = parseFloat(String(a||'').replace(/[^\d.]/g,'')); if(!n) return '$' + (a||'0'); return '$' + n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
-function niceDate(s){ let d = s ? new Date(s) : new Date(); if (isNaN(d)) d = new Date(); return d.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
+function purposeEn(p){
+  p = (p||'').trim();
+  for (const [re,en] of PMAP) if (re.test(p)) return en;
+  return /[֐-׿]/.test(p) ? 'General Donation' : (p || 'General Donation');
+}
+const MMAP = [
+  [/אשראי|credit|אותורייז|authorize/i, 'Credit Card'],
+  [/צק|צ׳ק|check|cheque/i,             'Check'],
+  [/מזומן|cash/i,                      'Cash'],
+  [/בנק|bank|wire|zelle/i,             'Bank Transfer'],
+  [/דונרס|donors\s*fund|daf/i,         'Donor Advised Fund'],
+  [/paypal|פייפאל/i,                   'PayPal'],
+  [/נדרים|nedarim/i,                   'Nedarim Plus'],
+];
+function methodEn(m){
+  m = (m||'').trim(); if (!m) return '';
+  for (const [re,en] of MMAP) if (re.test(m)) return en;
+  return /[֐-׿]/.test(m) ? '' : m;
+}
+function money(a){
+  const n = parseFloat(String(a||'').replace(/[^\d.]/g,''));
+  if (!n) return '$' + (a || '0');
+  return '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function niceDate(s){
+  let d = s ? new Date(s + (/^\d{4}-\d{2}-\d{2}$/.test(s) ? 'T12:00:00' : '')) : new Date();
+  if (isNaN(d)) d = new Date();
+  return d.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+}
 
-$('r_name').textContent = q.get('n') || 'Friend';
-$('r_amt').textContent = money(q.get('a'));
-const rawPurpose = (q.get('p') || '').trim();
-if (rawPurpose) { $('r_for').textContent = 'Designated for: ' + purposeEn(rawPurpose); }
-else { $('r_for').style.display = 'none'; }
+const name = q.get('n') || 'Friend';
+$('r_name').textContent = name;
+$('r_amt').textContent  = money(q.get('a'));
 $('r_date').textContent = niceDate(q.get('d'));
-$('r_num').textContent = q.get('r') || ('KC-' + niceDate(q.get('d')).replace(/[^\d]/g,''));
-document.title = 'Receipt — ' + ($('r_name').textContent) + ' — Kollel Chatzos';
+
+const addr = (q.get('ad') || '').trim();
+if (addr) { $('r_addr').textContent = addr; $('r_addr').style.display = ''; }
+
+const forEn = q.get('p') ? purposeEn(q.get('p')) : '';
+if (forEn) { $('r_for').textContent = forEn; $('r_forwrap').style.display = ''; }
+
+const methEn = methodEn(q.get('m'));
+if (methEn) { $('r_meth').textContent = methEn; $('r_methwrap').style.display = ''; }
+
+// מספר סידורי מהשרת — מוקצה פעם אחת לכל תרומה, ומתחיל מ-6000.
+// הדפסה חוזרת של אותה קבלה מחזירה את אותו המספר.
+(async () => {
+  const key = q.get('k') || ('x:' + name + '|' + (q.get('d')||'') + '|' + (q.get('a')||''));
+  try {
+    const r = await fetch('/api/receipt/num?key=' + encodeURIComponent(key));
+    const j = await r.json();
+    if (j && j.num) $('r_num').textContent = j.num;
+    else $('r_num').textContent = '—';
+  } catch (e) { $('r_num').textContent = '—'; }
+  document.title = 'Receipt ' + $('r_num').textContent + ' — ' + name;
+})();
 </script>
 </body>
 </html>

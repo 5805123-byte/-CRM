@@ -3916,7 +3916,13 @@ function renderDonations(d){
 /* ---------- קבלה אמריקאית (501c3) ---------- */
 function openReceipt(d,x){
   const name=(d.english&&d.english.trim())||((d.last||'')+' '+(d.first||'')).trim();
-  const p=new URLSearchParams({n:name,a:x.amount||'',p:x.category||'',d:x.date||todayStr(),r:'KC-'+(x.id||'')});
+  // הכתובת נדפסת על הקבלה כמו בקבלה אמריקאית רגילה, והמפתח קבוע לכל
+  // תרומה כדי שהדפסה חוזרת תיתן את אותו מספר סידורי ולא מספר חדש
+  const ad=[String(d.addr||'').trim(),
+            [String(d.city||'').trim(),String(d.country||'').trim(),String(d.zip||'').trim()]
+              .filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const p=new URLSearchParams({n:name,a:x.amount||'',p:x.category||'',d:x.date||todayStr(),
+    m:x.method||'',ad:ad,k:'d'+(x.id||('t'+d.id+'-'+(x.date||'')+'-'+(x.amount||'')))});
   window.open('/receipt?'+p.toString(),'_blank');
 }
 
