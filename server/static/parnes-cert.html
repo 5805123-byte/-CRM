@@ -199,6 +199,22 @@ function bodyRows(ws, lead){
     // כלל 3: הבקשה יורדת לשורה משלה ואינה נדחסת לשורת השם
     let r=-1;
     for(let i=0;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
+    // מאיר: "השמות שמתפללים עליהם שיהיו הכי גדולים, הבקשות יותר קטנות".
+    // רשימת מילות הבקשה לעולם לא תכסה הכל ("לשמחה" למשל חסרה), וכשמילה
+    // אינה מזוהה כל הבקשה נדחסת לשורת השם — שאינה נשברת — ולכן השם
+    // מתכווץ עד שהוא נעלם או חורג מהדף. לכן הכלל מבני ולא לפי רשימה:
+    // השם שמתפללים עליו נגמר אחרי שם ההורה שבא אחרי "בן"/"בת", וכל מילה
+    // שמתחילה ב-ל אחריו היא כבר בקשה.
+    if(r<0){
+      const rel=rest.findIndex(w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w));
+      if(rel>=0) for(let i=rel+2;i<rest.length;i++){
+        if(SMALLWORD.test(rest[i])) continue;
+        if(/^ל/.test(rest[i])){ r=i; break; }
+      }
+    }
+    // שורה שכולה ברכה — פותחת ב-ו/ל וארוכה. תגית משפחה קצרה
+    // ("וכל משפחתו") אינה נכנסת לכאן: היא נשארת שורת שם משלה.
+    if(r<0 && rest.length>4 && /^[לו]/.test(rest[0]) && famAt(rest)<0) r=0;
     if(r===0){ rows.push({ws:rest,role:'req'}); return; }   // שורה שכולה בקשה
     const head=(r>0)?rest.slice(0,r):rest, tail=(r>0)?rest.slice(r):[];
     const f=famAt(head);
@@ -374,14 +390,17 @@ function parnesSizes(sf){
   set('.nusach',40); set('.date',50); set('.stand',40);
   set('#pairs .names',70); set('#pairs .req',40);
   set('#pairs .nreq',40); set('#pairs .nlead',40);
-  // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת
+  // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת.
+  // מוחזר המקדם הקטן ביותר — 1 פירושו שאף שם לא הוקטן ברוחב.
+  let minf=1;
   document.querySelectorAll('#pairs .nline').forEach(el=>{
     const box=el.parentElement, avail=box?box.clientWidth:0;
     if(!avail)return;
     const w=el.scrollWidth;
-    if(w>avail) el.style.setProperty('font-size',
-      (70*u*Math.max(.3, avail/w)).toFixed(2)+'px','important');
+    if(w>avail){ const f=Math.max(.3, avail/w); minf=Math.min(minf,f);
+      el.style.setProperty('font-size',(70*u*f).toFixed(2)+'px','important'); }
   });
+  return minf;
 }
 function fitParnes(){
   const c=$('content'), body=document.getElementById('cbody');
@@ -393,9 +412,13 @@ function fitParnes(){
   else {
     // מאיר: "השם מידי קטן" — כשנשאר מקום בדף מגדילים את כולם יחד, עד
     // שהבלוק ממלא כתשעה עשיריות מהתיבה, ולא יותר מפי 2
+    // מאיר: "מידי אותיות ענקיות התאריך ופרנס לילה בחצות, והשמות יותר
+    // קטן" — ההגדלה נבלמה רק בגובה, ולכן הנוסח גלש לעוד שורה וגדל בלי
+    // הפרעה בעוד ששורת השמות נתקלה ברוחב והתכווצה בחזרה. עכשיו מגדילים
+    // רק כל עוד השמות עצמם נשארים בגודל המלא שנקבע להם.
     lo=1; hi=2;
-    for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
-      if(H()<=avail*.90) lo=mid; else hi=mid; }
+    for(let i=0;i<18;i++){ const mid=(lo+hi)/2; const f=parnesSizes(mid);
+      if(H()<=avail*.90 && f>=.995) lo=mid; else hi=mid; }
     parnesSizes(lo); return;
   }
   for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);

@@ -5255,6 +5255,37 @@ _CERT_FAM2 = re.compile(r'^(משפחתו|משפחתה|משפחתם|משפחתן|
                         r'בנותיה|ביתו|ביתה|בני|יוצאי|זרעו|זרעה|זרעם|צאצאיו|צאצאיה)$')
 
 
+# מאיר: "השמות שמתפללים עליהם שיהיו הכי גדולים, הבקשות יותר קטנות".
+# רשימת מילות הבקשה לעולם לא תכסה הכל ("לשמחה" למשל חסרה), וכשמילה אינה
+# מזוהה כל הבקשה נשארת בגודל השם. לכן הכלל מבני ולא לפי רשימה: השם
+# שמתפללים עליו נגמר אחרי שם ההורה שבא אחרי "בן"/"בת", וכל מילה שמתחילה
+# ב-ל אחריו היא כבר בקשה. שורה ארוכה שפותחת ב-ל/ו היא ברכה שלמה.
+# אותו כלל בדיוק קיים ב-parnes-cert.html — השניים חייבים להסכים.
+_CERT_BEN = re.compile(r'^(ו?ב[\u05DFת]|בר|ב["\'\u05F4\u05F3]ר)$')
+
+
+def _req_at(ws, start=0):
+    """היכן מתחילה הבקשה בתוך שורת שם. ‎-1 אם אין בקשה."""
+    for i in range(start, len(ws)):
+        if _CERT_REQ.match(ws[i]):
+            return i
+    rel = -1
+    for i in range(start, len(ws)):
+        if _CERT_BEN.match(ws[i]):
+            rel = i
+            break
+    if rel >= 0:
+        for i in range(rel + 2, len(ws)):
+            if _CERT_SMALL.match(ws[i]):
+                continue
+            if ws[i][:1] == '\u05DC':
+                return i
+    if len(ws) - start > 4 and ws[start][:1] in ('\u05DC', '\u05D5') \
+            and _fam_at(ws[start:]) < 0:
+        return start
+    return -1
+
+
 def _fam_at(ws):
     """היכן מתחיל "וכל משפחתו" בתוך שורת שמות. ‎-1 אם אינו קיים."""
     for i in range(1, len(ws) - 1):
@@ -5284,7 +5315,7 @@ def _cert_body(lead, ws):
         # נתרמה". הבקשה שאחרי השם יורדת לשורה משלה ובגודל שלה, אחרת היא
         # נדחסת לשורת השם, מרחיבה אותה, וכל השורה מתכווצת יחד — כך יצא
         # שם ענק וזנב שאי אפשר לקרוא.
-        r = next((i for i in range(0, len(rest)) if _CERT_REQ.match(rest[i])), -1)
+        r = _req_at(rest)
         if r == 0:                       # השורה כולה בקשה ("בזכות הנסיעה…")
             out.append((' '.join(rest), 'req'))
             return
@@ -5390,6 +5421,9 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
     # ביחס שכבר נקבע.
     lead_r = _LEAD_R_C if kind in ('coffee', 'breakfast') else (40.0 / 70.0)
     req_r = _REQ_R_C if kind in ('coffee', 'breakfast') else (40.0 / 70.0)
+    # בתעודת הפרנס "לעילוי נשמת", "יעמדו לזכות" והבקשות הם גודל 40 קבוע,
+    # ואינם נגזרים מגודל השמות — כך הם אינם גדלים איתם ואינם מתכווצים.
+    fix_px = 0.0 if kind in ('coffee', 'breakfast') else 40.0 * (W / 1000.0)
 
     def sized(raw, px, heavy, role='names'):
         """כל מילה בשורה עם הגודל שלה: השם שמתפללים עליו הכי גדול, שם
@@ -5398,22 +5432,27 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         ws = raw.split()
         if role == 'ttl':                  # "רבי" / "מרת" — כגודל זצוק"ל
             return [(w, px * _SML_R, True) for w in ws]
+        # הגודל קבוע (40), אבל כשהשמות מתכווצים בגלל ריבוי טקסט הוא מתכווץ
+        # איתם — אחרת הבקשה הייתה יוצאת גדולה מהשם, וזה בדיוק ההפך מהכלל.
         if role == 'lead':                 # "לעילוי נשמת" / "לע\"נ אביו"
-            return [(w, px * lead_r, True) for w in ws]
+            z = min(fix_px, px * lead_r) if fix_px else px * lead_r
+            return [(w, z, True) for w in ws]
         if role == 'req':                  # הבקשה שאחרי השמות
-            return [(w, px * req_r, True) for w in ws]
+            z = min(fix_px, px * req_r) if fix_px else px * req_r
+            return [(w, z, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         n, out = _lead_len(ws), []
         for i in range(n):                                  # פתיח לפני השם
             out.append((ws[i], px * _SML_R, True))
         i = n
+        rq = _req_at(ws, n)
         inreq = False
-        for w in ws[i:]:
-            if not inreq and _CERT_REQ.match(w):           # ברכה אחרי השם
+        for k, w in enumerate(ws[i:], start=i):
+            if not inreq and rq >= 0 and k >= rq:          # ברכה אחרי השם
                 inreq = True
             if inreq:
-                out.append((w, px * req_r, True))
+                out.append((w, min(fix_px, px * req_r) if fix_px else px * req_r, True))
             elif _CERT_SMALL.match(w):
                 out.append((w, px * _SML_R, False))
             else:
@@ -5517,12 +5556,32 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
 
     dr = ImageDraw.Draw(im)
 
+    # מאיר: "נוסח היהי רצון הקבוע... שיהיה על 2 שורות בלבד". הנוסח קבוע
+    # ולכן גם הגודל שלו קבוע: הגדול ביותר שעדיין נכנס בשתי שורות ברוחב
+    # התיבה. הוא נקבע פעם אחת, ואינו משתנה בין תעודה לתעודה.
+    if kind not in ('coffee', 'breakfast') and blocks and not blocks[0][7]:
+        lo_n, hi_n = 6.0, 60.0 * (W / 1000.0)
+        for _ in range(22):
+            mid_n = (lo_n + hi_n) / 2
+            if len(wrap(_NUSACH, mid_n, blocks[0][2], dr, 0)) <= 2:
+                lo_n = mid_n
+            else:
+                hi_n = mid_n
+        b0 = blocks[0]
+        blocks[0] = (b0[0], -lo_n, b0[2], b0[3], b0[4], b0[5], b0[6], b0[7])
+
     def layout(base, gap=1.0, sf=1.0):
         total, out = 0.0, []
         for i, (txt, mult, heavy, col, mt, mb, lh, isnm) in enumerate(blocks):
             # מכפיל שלילי = גודל קבוע בפיקסלים. sf מכווץ אותו רק כשהטקסט
             # ארוך מדי ואינו נכנס לדף — אחרת הוא נשאר בדיוק כפי שנקבע.
-            px = base * mult if mult > 0 else -mult * sf
+            # מאיר: "נוסח היהי רצון הקבוע שיהיה תמיד גודל אחיד וכמה שיותר
+            # למעלה, שיהיה על 2 שורות בלבד, בלי צורך להגדיל ולהקטין אותו אף
+            # פעם, כנ"ל התאריך גם, כנ"ל המילים יעמדו לזכות או לעילוי נשמת
+            # או לרפואת" — בתעודת הפרנס ההגדלה נוגעת בשמות בלבד. הנוסח,
+            # התאריך ומילות הפתיח נשארים בגודל שנקבע להם, תמיד.
+            grow = sf if (isnm or kind in ('coffee', 'breakfast')) else 1.0
+            px = base * mult if mult > 0 else -mult * grow
             mt, mb = mt * gap, mb * gap
             total += mt * base
             for ln in wrap(txt, px, heavy, dr, isnm):
@@ -5552,6 +5611,22 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         # המידה, אבל כשיש מעט שמות נשאר חצי דף ריק והשם נראה קטן. לכן
         # מגדילים את כולם יחד עד שהבלוק ממלא כתשעה עשיריות מגובה התיבה,
         # ועד פי 2 לכל היותר; וכשיש הרבה שמות — מקטינים באותם יחסים.
+        # מאיר: "מידי אותיות ענקיות התאריך ופרנס לילה בחצות, והשמות יותר
+        # קטן" — ההגדלה נבלמה עד עכשיו רק בגובה. הנוסח פשוט גלש לעוד שורה
+        # וגדל בלי הפרעה, בעוד ששורת השמות נתקלה ברוחב התיבה והתכווצה
+        # בחזרה — וכך היחס 40/70 התהפך והנוסח יצא גדול מהשמות.
+        # לכן ההגדלה נבלמת גם ברוחב: מגדילים רק כל עוד השמות עצמם עדיין
+        # נכתבים בגודל המלא שנקבע להם, בלי כיווץ.
+        def _nm_full(sf):
+            nm = next((b for b in blocks if b[7]), None)
+            if not nm:
+                return 1.0
+            px = -nm[1] * sf if nm[1] < 0 else base_ref * nm[1] * sf
+            lines = wrap(nm[0], px, nm[2], dr, 1)
+            mx = max([z for ln in lines for _, z, _ in ln] or [px])
+            return mx / px if px else 1.0
+
+        base_ref = 1.0
         best, sfit = 1.0, 1.0
         if layout(best)[0] > bh:
             lo, hi = .15, 1.0
@@ -5566,7 +5641,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             lo, hi = 1.0, 2.0
             for _ in range(20):
                 mid = (lo + hi) / 2
-                if layout(best, 1.0, mid)[0] <= bh * .90:
+                if layout(best, 1.0, mid)[0] <= bh * .90 and _nm_full(mid) >= .995:
                     lo = mid
                 else:
                     hi = mid
