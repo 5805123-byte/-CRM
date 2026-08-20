@@ -6,156 +6,139 @@
 <title>Donation Receipt — Kollel Chatzos</title>
 <style>
   /* מאיר: "תעצב לי קבלה יפה עם הפרטי עמותה בארצות הברית ומה שצריך, בלי
-     הרבה מלל של ברכות, רק קצר ולעניין, הכל באנגלית, עם מספר סידורי".
-     קבלה אמריקאית סטנדרטית: שם העמותה, כתובת, EIN, סעיף 501(c)(3),
-     שם התורם, תאריך, סכום, ומשפט "לא ניתנה תמורה". בלי ברכות. */
-  :root{
-    --ink:#1f1c2b; --soft:#6b6579; --line:#ddd6c6; --rule:#efeadd;
-    --gold:#9c7a2e; --deep:#3b357a; --paper:#ffffff; --wash:#faf7ef;
-  }
+     הרבה מלל של ברכות, רק קצר ולעניין, הכל באנגלית, עם מספר סידורי
+     שיתחילו ממספר 6000" · "עם הבלאנק של כולל חצות".
+     הקבלה יושבת על הבלאנק הרשמי. הסרגל השמאלי של הבלאנק כבר נושא את
+     הלוגו ואת הכתובות בארץ ובארה"ב, ולכן כאן נכתבים רק הפרטים שאינם
+     מודפסים עליו — השם החוקי של העמותה, ה-EIN וסעיף 501(c)(3) — ומה
+     שהקבלה עצמה חייבת: מספר, תאריך, ממי, כמה, ואין תמורה. */
+  :root{--ink:#3a2f1a;--deep:#7a1f1f;--gold:#9c7a2e;--soft:#6b6249;--line:#cdbf98}
   *{box-sizing:border-box}
   html,body{margin:0}
-  body{
-    background:#e8e3d6; color:var(--ink);
+  body{background:#d9d2c2;color:var(--ink);
     font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
-    -webkit-print-color-adjust:exact; print-color-adjust:exact;
-  }
-  .scroller{overflow-x:auto;padding:20px}
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .scroller{overflow-x:auto;padding:16px}
   .sheet{
-    position:relative; width:794px; min-height:1123px; margin:0 auto; padding:52px 58px 44px;
-    background:var(--paper); box-shadow:0 12px 44px rgba(0,0,0,.22);
-    display:flex; flex-direction:column;
+    position:relative;width:794px;aspect-ratio:2482/3509;margin:0 auto;
+    background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
+    box-shadow:0 10px 40px rgba(0,0,0,.25);
+    container-type:inline-size;
   }
-  .sheet::before{content:"";position:absolute;top:0;left:0;right:0;height:7px;
-    background:linear-gradient(90deg,var(--deep) 0 62%,var(--gold) 62% 100%)}
+  /* אזור הכתיבה — הצד הפתוח של הבלאנק, מימין לסרגל */
+  .content{position:absolute;top:5.4%;left:24%;right:5.5%;bottom:11.5%;
+    display:flex;flex-direction:column}
 
-  /* ---------- כותרת: מי מוציא את הקבלה ---------- */
-  .head{display:flex;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
-  .head .logo{width:74px;height:74px;object-fit:contain;flex:0 0 auto}
-  .head .org{flex:1;min-width:0}
-  .org .legal{font-size:23px;font-weight:700;letter-spacing:.2px;line-height:1.15}
-  .org .dba{font-size:15px;color:var(--gold);letter-spacing:1.6px;text-transform:uppercase;margin-top:3px}
-  .org .addr{font-size:13px;color:var(--soft);line-height:1.55;margin-top:8px}
-  .org .addr b{color:var(--ink);font-weight:700}
+  .rc{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:1.85cqw;color:var(--soft);letter-spacing:.06cqw}
+  .rc b{color:var(--ink)}
+  .rc .no b{color:var(--gold);font-size:2.7cqw;letter-spacing:.1cqw}
 
-  /* ---------- שורת הקבלה: מספר סידורי ותאריך ---------- */
-  .strip{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin:22px 0 4px}
-  .strip .doc{font-size:26px;letter-spacing:2.4px;text-transform:uppercase;color:var(--deep);font-weight:700}
-  .strip .meta{text-align:right;font-size:13px;color:var(--soft);line-height:1.7}
-  .strip .meta b{color:var(--ink);font-size:15px;letter-spacing:.6px}
-  .strip .meta .rno b{color:var(--gold);font-size:19px}
+  .title{text-align:center;font-size:3.05cqw;letter-spacing:.42cqw;color:var(--gold);
+    text-transform:uppercase;margin:1.6cqw 0 .4cqw}
+  .rule{height:.14cqw;background:linear-gradient(90deg,transparent,var(--line) 18%,var(--line) 82%,transparent);
+    margin:0 0 2.4cqw}
 
-  /* ---------- למי ---------- */
-  .to{margin:22px 0 0;padding:16px 18px;background:var(--wash);border:1px solid var(--rule);border-radius:6px}
-  .to .lbl{font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:var(--soft)}
-  .to .nm{font-size:20px;font-weight:700;margin-top:4px}
-  .to .ad{font-size:13.5px;color:var(--soft);line-height:1.55;margin-top:3px}
+  /* מאיר: "הארגון זיכרון אבות הוא רק שם רשמי של המדינה, אסור לתת לזה
+     דגש — רק כולל חצות". השם החוקי נדרש לקבלה, ולכן נשאר, אבל קטן וצדדי */
+  .org{text-align:center;font-size:1.75cqw;color:var(--soft);line-height:1.5;margin:0 0 2.6cqw}
+  .org b{color:var(--ink)}
+  .org .legal{display:block;font-size:1.35cqw;color:#a29a86;margin-top:.25cqw}
 
-  /* ---------- הסכום ---------- */
-  .amt{display:flex;align-items:center;justify-content:space-between;gap:18px;
-       margin:20px 0 0;padding:20px 22px;border:1.5px solid var(--deep);border-radius:6px}
-  .amt .lbl{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;color:var(--soft)}
-  .amt .val{font-size:44px;font-weight:700;color:var(--deep);line-height:1.05;letter-spacing:-.5px}
-  .amt .side{text-align:right;font-size:13.5px;color:var(--soft);line-height:1.75}
+  /* מאיר: "אצטרך להוסיף כמה מילים חמות למטה במקום התודה" */
+  .warm{text-align:center;font-size:2.05cqw;font-style:italic;color:var(--deep);
+    line-height:1.5;margin:auto 0 2.6cqw;text-wrap:balance}
+
+  .to{border:.13cqw solid var(--line);border-radius:.7cqw;padding:1.5cqw 1.8cqw;background:rgba(255,255,255,.5)}
+  .to .lbl{font-size:1.4cqw;letter-spacing:.28cqw;text-transform:uppercase;color:var(--soft)}
+  .to .nm{font-size:2.9cqw;font-weight:700;margin-top:.3cqw;line-height:1.2}
+  .to .ad{font-size:1.75cqw;color:var(--soft);line-height:1.5;margin-top:.3cqw}
+
+  .amt{display:flex;align-items:center;justify-content:space-between;gap:1.6cqw;
+    margin-top:2cqw;padding:2cqw 1.8cqw;border-top:.22cqw solid var(--line);border-bottom:.22cqw solid var(--line)}
+  .amt .lbl{font-size:1.5cqw;letter-spacing:.3cqw;text-transform:uppercase;color:var(--soft)}
+  .amt .val{font-size:6.2cqw;font-weight:700;color:var(--deep);line-height:1.05}
+  .amt .side{text-align:right;font-size:1.8cqw;color:var(--soft);line-height:1.7}
   .amt .side b{color:var(--ink)}
 
-  /* ---------- הצהרת המס ---------- */
-  .stmt{margin:22px 0 0;font-size:14px;line-height:1.65}
-  .stmt p{margin:0 0 9px}
-  .stmt .key{background:#fbf6e6;border-left:3px solid var(--gold);padding:10px 13px;font-size:13.5px;line-height:1.6}
+  .stmt{font-size:1.95cqw;line-height:1.6;margin-top:2.2cqw}
+  .stmt p{margin:0 0 1cqw}
+  .stmt .key{background:rgba(156,122,46,.09);border-left:.3cqw solid var(--gold);
+    padding:1.2cqw 1.4cqw;font-size:1.8cqw;line-height:1.55}
 
-  /* ---------- חתימה ---------- */
-  .sign{margin-top:44px;padding-top:0;display:flex;justify-content:space-between;align-items:flex-end;gap:24px}
-  .sign .who{text-align:left}
-  .sign .line{width:230px;border-top:1px solid var(--ink);margin-bottom:7px}
-  .sign .nm{font-size:16px;font-weight:700}
-  .sign .role{font-size:12.5px;color:var(--soft);letter-spacing:.4px}
-  .sign .stamp{text-align:right;font-size:11.5px;color:var(--soft);line-height:1.6}
-  .sign .stamp b{display:block;font-size:13px;color:var(--gold);letter-spacing:1.4px;text-transform:uppercase}
+  .sign{margin-top:0;text-align:right}
+  .sign .line{width:26cqw;border-top:.14cqw solid var(--ink);margin:0 0 .7cqw auto}
+  .sign .nm{font-size:2.3cqw;font-weight:700;color:var(--deep)}
+  .sign .role{font-size:1.7cqw;color:var(--soft)}
+  .sign .ein{text-align:right;font-size:1.5cqw;color:var(--soft);line-height:1.55;margin-top:.9cqw}
+  .sign .ein b{color:var(--gold);letter-spacing:.16cqw;text-transform:uppercase}
 
-  .foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line);
-        font-size:11px;color:var(--soft);line-height:1.55;text-align:center}
-
-  .noprint{text-align:center;margin:16px}
+  .noprint{text-align:center;margin:14px}
   .noprint button{font-family:inherit;font-size:1rem;font-weight:700;padding:12px 26px;border-radius:10px;
-    border:none;background:var(--deep);color:#fff;cursor:pointer;margin:0 5px}
-  .noprint button.g{background:#fff;color:var(--deep);border:1px solid var(--deep)}
+    border:none;background:var(--gold);color:#fff;cursor:pointer;margin:0 5px}
+  .noprint button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
 
   @media print{
     @page{size:A4;margin:0}
     body{background:#fff}
     .scroller{overflow:visible;padding:0}
-    .sheet{width:210mm;min-height:297mm;box-shadow:none;margin:0;padding:16mm 15mm 12mm}
+    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
     .noprint{display:none}
   }
 </style>
 </head>
 <body>
 <div class="scroller"><div class="sheet">
+  <div class="content">
 
-  <div class="head">
-    <img class="logo" src="/logo.png" alt="" onerror="this.style.display='none'">
+    <div class="rc">
+      <span class="no">Receipt No. <b id="r_num">—</b></span>
+      <span>Date: <b id="r_date"></b></span>
+    </div>
+
+    <div class="title">Donation Receipt</div>
+    <div class="rule"></div>
+
     <div class="org">
-      <div class="legal">Congregation Zikhron Avos</div>
-      <div class="dba">Kollel Chatzos</div>
-      <div class="addr">
-        1540 40th Street, Brooklyn, NY 11218<br>
-        Federal Tax ID (EIN): <b>20-0447034</b> &nbsp;·&nbsp; A 501(c)(3) tax-exempt organization
+      1540 40th Street, Brooklyn, NY 11218 &nbsp;·&nbsp; EIN <b>20-0447034</b> &nbsp;·&nbsp; 501(c)(3)
+      <span class="legal">registered as Cong. Zikhron Avos</span>
+    </div>
+
+    <div class="to">
+      <div class="lbl">Received from</div>
+      <div class="nm" id="r_name">Friend</div>
+      <div class="ad" id="r_addr" style="display:none"></div>
+    </div>
+
+    <div class="amt">
+      <div>
+        <div class="lbl">Amount Received</div>
+        <div class="val" id="r_amt">$0</div>
+      </div>
+      <div class="side">
+        <div id="r_forwrap" style="display:none">Designated for:<br><b id="r_for"></b></div>
+        <div id="r_methwrap" style="display:none">Method: <b id="r_meth"></b></div>
       </div>
     </div>
-  </div>
 
-  <div class="strip">
-    <div class="doc">Donation Receipt</div>
-    <div class="meta">
-      <div class="rno">Receipt No. <b id="r_num">—</b></div>
-      <div>Date of Contribution: <b id="r_date"></b></div>
+    <div class="stmt">
+      <p class="key">This letter is your official receipt for tax purposes.
+         <b>No goods or services were provided</b> in exchange for this contribution.
+         Kollel Chatzos is exempt under Section 501(c)(3) of the Internal Revenue Code;
+         contributions are tax-deductible to the extent allowed by law. Please retain this
+         receipt for your records.</p>
     </div>
-  </div>
 
-  <div class="to">
-    <div class="lbl">Received from</div>
-    <div class="nm" id="r_name">Friend</div>
-    <div class="ad" id="r_addr" style="display:none"></div>
-  </div>
+    <div class="warm" id="r_warm">With deep appreciation for your partnership in the Torah of Chatzos.</div>
 
-  <div class="amt">
-    <div>
-      <div class="lbl">Amount Received</div>
-      <div class="val" id="r_amt">$0</div>
-    </div>
-    <div class="side">
-      <div id="r_forwrap" style="display:none">Designated for:<br><b id="r_for"></b></div>
-      <div id="r_methwrap" style="display:none">Method: <b id="r_meth"></b></div>
-    </div>
-  </div>
-
-  <div class="stmt">
-    <p>Thank you for your contribution to Congregation Zikhron Avos (Kollel Chatzos).
-       This letter serves as your official receipt for tax purposes.</p>
-    <p class="key"><b>No goods or services were provided</b> in exchange for this contribution.
-       Congregation Zikhron Avos is a tax-exempt organization under Section 501(c)(3) of the
-       Internal Revenue Code; contributions are deductible to the extent allowed by law.
-       Please retain this receipt for your records.</p>
-  </div>
-
-  <div class="sign">
-    <div class="who">
+    <div class="sign">
       <div class="line"></div>
       <div class="nm">Rabbi Yehoshua Meir Deutsch</div>
       <div class="role">Rosh HaKollel · Authorized Signatory</div>
+      <div class="ein"><b>Kollel Chatzos</b> · EIN 20-0447034</div>
     </div>
-    <div class="stamp">
-      <b>Kollel Chatzos</b>
-      Congregation Zikhron Avos<br>
-      EIN 20-0447034
-    </div>
-  </div>
 
-  <div class="foot">
-    Congregation Zikhron Avos · 1540 40th Street, Brooklyn, NY 11218 · EIN 20-0447034 · 501(c)(3)
   </div>
-
 </div></div>
 
 <div class="noprint">
@@ -167,7 +150,7 @@
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 
-// שמות הייעודים נכתבים באנגלית — הקבלה כולה באנגלית
+// הקבלה כולה באנגלית — הייעוד ואמצעי התשלום מתורגמים מהעברית שבמערכת
 const PMAP = [
   [/יששכר|זבולון|zevulun|yissachar/i, 'Yissachar–Zevulun Partnership in Torah'],
   [/פרנס.?לילה|לימוד.?לילה/i,        'Sponsorship of a Night of Torah Study'],
@@ -224,15 +207,21 @@ if (forEn) { $('r_for').textContent = forEn; $('r_forwrap').style.display = ''; 
 const methEn = methodEn(q.get('m'));
 if (methEn) { $('r_meth').textContent = methEn; $('r_methwrap').style.display = ''; }
 
-// מספר סידורי מהשרת — מוקצה פעם אחת לכל תרומה, ומתחיל מ-6000.
+// המילים החמות שבתחתית — ניתנות להחלפה בפרמטר w, ואם נשלח ריק הן יורדות
+const warm = q.get('w');
+if (warm !== null) {
+  if (warm.trim()) $('r_warm').textContent = warm.trim();
+  else $('r_warm').style.display = 'none';
+}
+
+// מספר סידורי מהשרת — מוקצה פעם אחת לכל תרומה ומתחיל מ-6000.
 // הדפסה חוזרת של אותה קבלה מחזירה את אותו המספר.
 (async () => {
   const key = q.get('k') || ('x:' + name + '|' + (q.get('d')||'') + '|' + (q.get('a')||''));
   try {
     const r = await fetch('/api/receipt/num?key=' + encodeURIComponent(key));
     const j = await r.json();
-    if (j && j.num) $('r_num').textContent = j.num;
-    else $('r_num').textContent = '—';
+    $('r_num').textContent = (j && j.num) ? j.num : '—';
   } catch (e) { $('r_num').textContent = '—'; }
   document.title = 'Receipt ' + $('r_num').textContent + ' — ' + name;
 })();
