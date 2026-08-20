@@ -2982,7 +2982,16 @@ function cardDetails(d,body){
         <div class="sprows"></div>
         <div class="addrow"><button class="btn sm ghost spadd">➕ עוד ייעוד</button>
           <button class="btn sm spok" data-did="${g.did}" data-tot="${g.amt}">💾 שמור חלוקה</button></div>
-        <div class="hintxt spmsg">הסכומים חייבים להסתכם ל-${curd}${g.amt}</div></div></div>`:'';
+        <div class="hintxt spmsg">הסכומים חייבים להסתכם ל-${curd}${g.amt}</div></div>
+      <button class="btn sm ghost gvmove" data-did="${g.did}" style="width:100%;margin-top:6px">👥 להעביר את ${curd}${g.amt} או חלק ממנו לתורם אחר</button>
+      <div class="gvmovebox hidden" data-mv="${g.did}">
+        <div class="addrow" style="margin-top:6px">
+          <input class="mvamt" type="number" min="1" max="${g.amt}" value="${g.amt}" placeholder="כמה להעביר">
+          <span class="mvof">מתוך ${curd}${g.amt}</span></div>
+        <input class="mvq" placeholder="🔍 למי להעביר? — חפש שם…" autocomplete="off">
+        <div class="mvres dpres"></div>
+        <div class="hintxt">אם מעבירים את כל הסכום — התרומה עוברת כולה לכרטיס השני. אם מעבירים חלק — נשאר כאן מה שנותר, ואצלו נפתחת תרומה באותו תאריך.</div></div>
+      <button class="btn sm ghost gvdel" data-did="${g.did}" style="width:100%;margin-top:6px;color:var(--bad)">🗑 מחק את התרומה הזו</button></div>`:'';
     // בכל תרומה: סכום · עבור מה · תאריך · דרך מה נתרם. לחיצה על הייעוד פותחת את החלון.
     const what=g.don
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
@@ -3138,6 +3147,40 @@ function cardDetails(d,body){
     if(!r||!r.ok){toast(r&&r.error?r.error:'החלוקה נכשלה');return;}
     parts.forEach(x=>{if(!(CAMPAIGNS||[]).includes(x.category))CAMPAIGNS.unshift(x.category);});
     toast('חולק ל-'+parts.length+' ייעודים ✓');
+    await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
+  // מאיר: "תעשה לי כאן אפשרות מחיקה של תרומה שנכנסה או אפשרות להעביר את
+  // התרומה או חלק ממנה למישהו אחר — למשל אם שניים נתנו ביחד תרומה אז אוכל
+  // לחלק את התרומה ביניהם וזה עובר לכרטיס שלו".
+  body.querySelectorAll('.gvmove').forEach(b=>b.onclick=()=>{
+    const box=body.querySelector('.gvmovebox[data-mv="'+b.dataset.did+'"]');
+    if(box.classList.toggle('hidden')===false)box.querySelector('.mvq').focus();});
+  body.querySelectorAll('.gvmovebox').forEach(box=>{
+    const did=box.dataset.mv, q=box.querySelector('.mvq'), res=box.querySelector('.mvres');
+    const go=async other=>{
+      const dn=(d.donations||[]).find(x=>x.id==did)||{};
+      const tot=amtNum(dn.amount), amt=amtNum(box.querySelector('.mvamt').value)||tot;
+      if(amt<=0||amt>tot+0.01){toast('הסכום להעברה חייב להיות עד '+curd+Math.round(tot));return;}
+      const nm=(other.last+' '+other.first).trim();
+      const all=Math.abs(amt-tot)<0.01;
+      if(!await uiConfirm(all?('להעביר את כל התרומה של '+curd+Math.round(tot)+' אל "'+nm+'"?')
+        :('להעביר '+curd+Math.round(amt)+' מתוך '+curd+Math.round(tot)+' אל "'+nm+'"?\nכאן יישארו '+curd+Math.round(tot-amt)+'.')))return;
+      const r=await api('POST','/api/donation/'+did+'/move',{to:other.id,amount:String(amt)});
+      if(!r||!r.ok){toast(r&&r.error?r.error:'ההעברה נכשלה');return;}
+      toast('הועבר אל '+nm+' ✓');
+      await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');};
+    q.oninput=()=>{const s=norm(q.value);
+      if(!s){res.innerHTML='';return;}
+      const m=DB.filter(x=>x.id!==d.id&&norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,8);
+      res.innerHTML=m.map(x=>`<div class="dpr" data-id="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')
+        ||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=()=>{
+        const other=DB.find(x=>x.id==el.dataset.id); if(other)go(other);});};});
+  body.querySelectorAll('.gvdel').forEach(b=>b.onclick=async()=>{
+    const dn=(d.donations||[]).find(x=>x.id==b.dataset.did); if(!dn)return;
+    if(!await uiConfirm('למחוק את התרומה של '+curd+Math.round(amtNum(dn.amount))
+      +(dn.date?(' מ-'+gregLabel(dn.date)):'')+'?\nהיא תרד מהכרטיס ולא תחזור בייבוא הבא.'))return;
+    await api('DELETE','/api/donation/'+dn.id);
+    toast('נמחק ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   body.querySelectorAll('.gvcatsel').forEach(s=>s.onchange=()=>{
     const pan=s.closest('.gvpanel');

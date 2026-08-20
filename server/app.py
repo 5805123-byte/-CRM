@@ -8350,6 +8350,62 @@ class H(BaseHTTPRequestHandler):
             con.execute("DELETE FROM donations WHERE id=?", (did,))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'ids': newids})
+        m = re.match(r'/api/donation/(\d+)/move$', self.path)
+        if m:
+            # מאיר: "תעשה לי כאן אפשרות מחיקה של תרומה שנכנסה או אפשרות להעביר
+            # את התרומה או חלק ממנה למישהו אחר — למשל אם שניים נתנו ביחד
+            # תרומה אז אוכל לחלק את התרומה ביניהם וזה עובר לכרטיס שלו".
+            did = int(m.group(1)); to = int(b.get('to') or 0)
+            con = db()
+            row = con.execute("SELECT * FROM donations WHERE id=?", (did,)).fetchone()
+            if not row or not to:
+                con.close(); return self._send(404, {'error': 'not found'})
+            if not con.execute("SELECT 1 FROM donors WHERE id=?", (to,)).fetchone():
+                con.close(); return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+            if to == row['donor_id']:
+                con.close(); return self._send(200, {'ok': False, 'error': 'זה אותו תורם'})
+
+            def _n(x):
+                try:
+                    return round(float(re.sub(r'[^0-9.]', '', str(x or '0')) or 0), 2)
+                except Exception:
+                    return 0.0
+            tot = _n(row['amount'])
+            part = _n(b.get('amount')) if str(b.get('amount') or '').strip() else tot
+            if part <= 0 or part > tot + 0.01:
+                con.close()
+                return self._send(200, {'ok': False,
+                                        'error': 'הסכום להעברה חייב להיות בין 0 ל-%s' % tot})
+            base = dict(row)
+            frm = con.execute("SELECT last,first FROM donors WHERE id=?", (row['donor_id'],)).fetchone()
+            fname = ((frm['last'] if frm else '') + ' ' + (frm['first'] if frm else '')).strip()
+            if abs(part - tot) < 0.01:
+                # כל התרומה עוברת. גם החיוב עצמו נרשם מחדש על התורם החדש,
+                # אחרת הוא היה ממשיך להיראות משויך לתורם הקודם.
+                con.execute("UPDATE donations SET donor_id=? WHERE id=?", (to, did))
+                if (base.get('tid') or '').strip():
+                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (to, base['tid']))
+                newid = did
+            else:
+                # חלק בלבד. הסכום המקורי קטן, והחלק שהועבר נפתח כשורה חדשה
+                # בלי מזהה חיוב — החיוב עצמו נשאר רשום על מי ששילם בפועל.
+                cols = [c[1] for c in con.execute("PRAGMA table_info(donations)")
+                        if c[1] not in ('id', 'donor_id', 'amount', 'note', 'tid')]
+                note = (base.get('note') or '').replace(' · לא סווג — לבדוק עבור מה', '').strip()
+                note = (note + ' · ' if note else '') + ('חלק מתרומה של %s' % (fname or 'תורם אחר'))
+                names = cols + ['donor_id', 'amount', 'note', 'tid']
+                vals = [base.get(c) for c in cols] + [to, str(part), note[:400], '']
+                cur2 = con.execute("INSERT INTO donations(%s) VALUES(%s)"
+                                   % (','.join(names), ','.join('?' * len(names))), vals)
+                newid = cur2.lastrowid
+                con.execute("UPDATE donations SET amount=? WHERE id=?",
+                            (str(round(tot - part, 2)), did))
+            if (b.get('category') or '').strip():
+                cat = b['category'].strip()
+                con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
+                con.execute("UPDATE donations SET category=? WHERE id=?", (cat, newid))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': newid, 'moved': part})
         if self.path == '/api/audit/phones':
             did = int(b.get('donor_id') or 0)
             ph = (b.get('phone') or '').strip()
