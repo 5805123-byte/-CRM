@@ -8754,8 +8754,9 @@ class H(BaseHTTPRequestHandler):
             if r and not (r['started'] or '').strip() and start:
                 cur.execute("UPDATE avreichim SET started=? WHERE id=?", (start, aid))
             dn = ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
-            iz_log(cur, nm, did, '🤝 התחיל יששכר־זבולון עם האברך %s%s%s' % (
-                nm, (' · מ' + start) if start else '', (' · $' + amt) if amt else ''), at)
+            if not slot:      # מילוי מקום שהתפנה כבר נרשם ביומן כ"נכנס במקומו של"
+                iz_log(cur, nm, did, '🤝 התחיל יששכר־זבולון עם האברך %s%s%s' % (
+                    nm, (' · מ' + start) if start else '', (' · $' + amt) if amt else ''), at, start)
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'pid': pid, 'donor': dn, 'name': nm,
                                     'start_date': start})

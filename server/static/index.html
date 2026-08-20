@@ -638,6 +638,17 @@
   .izrow.izgap{color:#8a5a12;font-weight:800}
   .izrow.izgap .izgaps{color:var(--muted);font-weight:600}
   .cmav.cmavgap{color:#8a5a12;font-weight:800}
+  /* בורר תאריך עברי — יום / חודש / שנה */
+  .hedate{display:flex;gap:5px}
+  .hedate select{flex:1;min-width:0;padding:9px 6px;border:1px solid var(--line);border-radius:9px;
+    background:var(--card);color:var(--ink);font-family:inherit;font-size:.9rem;font-weight:700}
+  .hedate .hd_d{flex:0 0 22%}
+  /* היסטוריית האברכים בתוך חלון יששכר־זבולון */
+  .izhist{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
+  .izhist>summary{cursor:pointer;font-size:.8rem;font-weight:800;color:var(--muted)}
+  .izhline{font-size:.78rem;line-height:1.6;color:var(--ink);padding:3px 0;
+    border-bottom:1px solid var(--line)}
+  .izhline:last-child{border-bottom:0}
   .npmonths{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
   .npmonths .cgchip{font-family:inherit;font-size:.82rem;font-weight:800;background:#fff;color:var(--no);
     border:1px solid var(--no);border-radius:99px;padding:4px 12px;cursor:pointer;width:auto}

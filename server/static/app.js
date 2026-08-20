@@ -186,7 +186,22 @@ function izSummaryHTML(d){
     ${renewBanner(d)}
     ${mainHtml}
     ${recipHtml}
+    ${izHistHTML(d)}
     ${splitHTML(d)}</div>`;
+}
+// מאיר: "שיהיה היסטוריה בדף היששכר־זבולון של התורם — איזה אברך היה ומתי
+// יצא ומי נכנס במקומו". היומן כבר נשמר בדף הקשר תחת הערוץ הזה, ולכן אין
+// צורך בפנייה נוספת לשרת — רק בהצגה במקום שבו מאיר מחפש אותה.
+function izHistHTML(d){
+  const rows=(d.contacts||[]).filter(c=>String(c.channel||'')==='יששכר־זבולון'
+    &&String(c.summary||'').trim());
+  const past=(d.partners||[]).filter(p=>p.active==0&&String(p.avreich||'').trim());
+  if(!rows.length&&!past.length)return '';
+  const line=t=>`<div class="izhline">${t}</div>`;
+  return `<details class="izhist"><summary>🕘 היסטוריית האברכים (${rows.length+past.length})</summary>
+    ${past.map(p=>line(`<b>${esc(p.avreich)}</b> — ${esc(p.start_date||'?')}`
+      +` עד ${esc(p.ended_date?gregLabel(p.ended_date):'?')}${p.amount?(' · '+curSym(d)+esc(p.amount)):''}`)).join('')}
+    ${rows.slice(0,40).map(c=>line(esc(c.summary))).join('')}</details>`;
 }
 const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
@@ -758,6 +773,34 @@ function uiPickMonth(msg,curM,curY){
     o.querySelector('.cyes').onclick=()=>done({month:msel.value,year:ysel.value});
     o.onclick=e=>{if(e.target===o)done(null);};
   });
+}
+/* מאיר: "כשאני משבץ לאברך את התורם אמור להיות לוח שנה שאבחר מאיזה תאריך".
+   תאריך עברי בשלוש בחירות — יום, חודש, שנה — במקום הקלדה חופשית. הפורמט
+   שנשמר הוא בדיוק אותו פורמט שכבר קיים בשדות: א' אייר תשפ"ו */
+const HEDAYS=[...Array(30)].map((_,i)=>heDay(i+1));
+// כתיב מלא וחסר מעורבים בנתונים — "כסליו"/"כסלו", "סיוון"/"סיון". משמיטים
+// אימות קריאה כדי ששתי הצורות יזוהו כאותו חודש.
+const _hm=x=>String(x||'').replace(/[וי]/g,'');
+function parseHeDate(s){
+  s=String(s||'').replace(/[״"]/g,'"').replace(/\s+/g,' ').trim();
+  const body=_hm(s.split(' ').slice(1).join(' '));
+  const mo=HMORD.slice().sort((a,b)=>_hm(b).length-_hm(a).length)
+    .find(m=>_hm(m)&&body.indexOf(_hm(m))>=0)||'';
+  const yr=(s.match(/תש[^\s]*\s*$/)||[''])[0].trim();
+  const day=HEDAYS.find(d=>s.indexOf(d+' ')===0)||'';
+  return {day,mo,yr};
+}
+function hebDateSel(cls,val){
+  const p=parseHeDate(val);
+  return `<div class="hedate ${cls}">
+    <select class="hd_d">${HEDAYS.map(d=>`<option ${d===p.day?'selected':''}>${d}</option>`).join('')}</select>
+    <select class="hd_m">${HMORD.map(m=>`<option ${m===p.mo?'selected':''}>${m}</option>`).join('')}</select>
+    <select class="hd_y">${heYearOpts(p.yr||HEBYEAR)}</select></div>`;
+}
+function hebDateGet(el){
+  if(!el)return '';
+  const g=c=>{const x=el.querySelector(c);return x?x.value:'';};
+  return [g('.hd_d'),g('.hd_m'),g('.hd_y')].filter(Boolean).join(' ');
 }
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
@@ -5575,8 +5618,9 @@ function avRowHTML(a,ix){
       <input class="av_q" data-av="${esc(a.name)}" placeholder="חפש תורם…" autocomplete="off">
       <div class="dpres av_res" data-av="${esc(a.name)}"></div>
       <div class="chosen av_ch" data-av="${esc(a.name)}"></div>
-      <div class="two" style="margin-top:6px"><label class="fld"><span>מתאריך (עברי)</span><input class="av_dt" data-av="${esc(a.name)}" value="${esc(a.started||'')}" placeholder="א' אייר תשפ&quot;ו"></label>
-        <label class="fld"><span>סכום לחודש</span><input class="av_amt" data-av="${esc(a.name)}" inputmode="decimal" placeholder="850"></label></div>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>📅 מתאריך (עברי)</span>${hebDateSel('av_dt','')}</label>
+        <label class="fld"><span>סכום לחודש</span><input class="av_amt" data-av="${esc(a.name)}" inputmode="decimal" placeholder="—"></label></div>
+      <div class="hintxt av_hint" data-av="${esc(a.name)}"></div>
       <button class="btn sm av_save" data-av="${esc(a.name)}" style="width:100%;margin-top:6px">💾 שבץ ועדכן אצל התורם</button></div>`:''}
   </div>`;
 }
@@ -5660,7 +5704,13 @@ function wireByAv(){
       res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{
         const d=DB.find(y=>y.id==x.dataset.id);
         ch.textContent='נבחר: '+(d.last+' '+(d.first||'')).trim(); ch.dataset.did=d.id;
-        res.innerHTML=''; qi.value=(d.last+' '+(d.first||'')).trim();});};});
+        res.innerHTML=''; qi.value=(d.last+' '+(d.first||'')).trim();
+        // מאיר: "זה אמור להיות כבר מסונכרן שיש לו 700 שהוא משלם ואין שותף
+        // אז אוטומטית זה יכתוב 700" — הסכום נלקח ממה שהוא כבר משלם
+        const g=avDonorRate(d), am=view.querySelector('.av_amt[data-av="'+CSS.escape(av)+'"]'),
+              hn=view.querySelector('.av_hint[data-av="'+CSS.escape(av)+'"]');
+        if(am&&g.amt&&!am.value.trim())am.value=String(g.amt);
+        if(hn)hn.textContent=g.why||'';});};});
   view.querySelectorAll('.av_save').forEach(b=>b.onclick=async()=>{
     const av=b.dataset.av, sel=v=>view.querySelector('.'+v+'[data-av="'+CSS.escape(av)+'"]');
     const ch=sel('av_ch'), did=ch&&ch.dataset.did;
@@ -5668,7 +5718,8 @@ function wireByAv(){
     const a=AVLIST.find(x=>x.name===av);
     b.disabled=true;
     const r=await api('POST','/api/avreich/assign',{avreich_id:a&&a.aid,name:av,donor_id:+did,
-      start_date:(sel('av_dt').value||'').trim(),amount:(sel('av_amt').value||'').trim(),at:nowStamp()});
+      start_date:hebDateGet(view.querySelector('.hedate.av_dt')),
+      amount:(sel('av_amt').value||'').trim(),at:nowStamp()});
     b.disabled=false;
     if(r&&r.error==='already'){toast('כבר משובץ אצל התורם הזה');return;}
     if(!r||!r.ok){toast('לא נשמר');return;}
@@ -5781,6 +5832,19 @@ function avCoHolders(p){
   if(av)(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av){const nm=(o.last+' '+o.first).trim();const k=norm(nm);if(!set.has(k))set.set(k,{name:nm,id:o.id});}});});
   pwList(p).forEach(x=>{if(x.name){const k=norm(x.name);if(!set.has(k))set.set(k,{name:x.name,id:x.id});}});
   return [...set.values()];
+}
+// כמה התורם משלם לאברך. קודם כל מקום שהתפנה — הסכום שלו הוא הסכום שכבר
+// סוכם עליו; אחרת הסכום החוזר על עצמו אצל שאר האברכים שלו.
+function avDonorRate(d){
+  const act=(d.partners||[]).filter(p=>p.active!=0);
+  const slot=act.find(p=>!String(p.avreich||'').trim()&&amtNum(p.amount)>0);
+  if(slot)return {amt:Math.round(amtNum(slot.amount)),
+    why:'לפי המקום שהתפנה' + (slot.prev_avreich?(' אחרי '+slot.prev_avreich):'')};
+  const cnt={};
+  act.forEach(p=>{const v=Math.round(amtNum(p.amount)); if(v>0)cnt[v]=(cnt[v]||0)+1;});
+  let best=0,bn=0; Object.keys(cnt).forEach(v=>{if(cnt[v]>bn){best=+v;bn=cnt[v];}});
+  if(best)return {amt:best, why:'לפי מה שהוא משלם על '+(bn===1?'האברך השני':'שאר האברכים')};
+  return {amt:0, why:''};
 }
 // מקום שהתפנה — האברך שהיה בו יצא מהכולל, והתורם עדיין מחזיק אותו
 function avOpenSlot(p){return !String(p.avreich||'').trim()&&!!String(p.prev_avreich||'').trim();}
