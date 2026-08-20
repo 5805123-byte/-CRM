@@ -92,6 +92,23 @@ function coHeldWith(d){
     if(linked||byname)out.push({name:(o.last+' '+o.first).trim(),did:o.id,avreich:p.avreich,amount:p.amount,method:p.method});});});
   return out;
 }
+// מאיר: "כשאני מעדכן שבנימין שטטפלד מחזיק ביחד עם יואל שטטפלד את יחזקאל
+// חבה — כשאני נכנס לחלון של יששכר־זבולון זה אמור להראות שהם שותפים, וגם
+// ברשימה לפי אברכים או לפי תורמים זה אמור להיות מסונכרן".
+// השותפות נרשמת על שורה אחת בלבד, ולכן אצל השותף לא הייתה לה שום עדות.
+// כאן היא נקראת מהצד השני: כל אברך שמישהו אחר רשם שהתורם הזה מחזיק איתו,
+// ושאין לו שורה משלו אצל התורם.
+function izLinkedRows(d){
+  const own=new Set((d.partners||[]).filter(p=>p.active!=0).map(p=>norm(p.avreich||'')));
+  return coHeldWith(d).filter(x=>x.avreich&&!own.has(norm(x.avreich)));
+}
+function izLinkedHTML(d,cur){
+  const l=izLinkedRows(d); if(!l.length)return '';
+  return l.map(x=>`<div class="izrow izlink"><span>👨‍🎓 ${esc(x.avreich)}`
+    + ` <small class="cosp">🤝 בשותפות עם <span class="cosp2" data-did="${x.did}">${esc(x.name)} ↗</span></small>`
+    + `${x.amount?` <small class="cosptot">רשום שם ${cur}${Math.round(amtNum(x.amount))}</small>`:''}`
+    + `</span><b class="izlinkb">—</b></div>`).join('');
+}
 // חידוש שותפות יש"ז — מחזיר את החידוש הקרוב ביותר (בטווח התרעה) מבין האברכים הפעילים
 function renewInfo(d){
   const today=new Date();today.setHours(0,0,0,0);let best=null;
@@ -120,7 +137,9 @@ function izSummaryHTML(d){
   const recip=coHeldWith(d);
   if(d.tier!=='יששכר_זבולון'&&!act.length&&!recip.length)return '';
   const s=izSummary(d),cur=curSym(d);
-  const recipHtml='';   // מי מחזיק יחד איתו כבר מופיע בשורת האברך עצמה
+  // אברך שהוא מחזיק בשותפות, אבל השורה עצמה רשומה אצל השותף. הכסף נספר
+  // שם ולכן אין כאן סכום — רק העובדה שהם שותפים, ולחיצה לכרטיס שלו.
+  const recipHtml=izLinkedHTML(d,cur);
   const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(
   String(p.share||'').trim()!==''?('💳 חלקו מתוך '+cur+amtNum(p.amount)+' — לפי החלוקה שנקבעה'
     +(amtNum(p.share)?'':', אינו משלם'))
@@ -5443,9 +5462,13 @@ function sortIZ(list){const s=list.slice();
   else s.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   return s;}
 function filterIZ(){const nq=norm(avSearch);
+  // גם אברך שמוחזק בשותפות ורשום אצל השותף נכנס לחיפוש — אחרת תורם
+  // שכל האברכים שלו משותפים לא היה נמצא לפי שם האברך
+  const txt=d=>d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')
+    +' '+izLinkedRows(d).map(x=>x.avreich).join(' ');
   return sortIZ(DB.filter(d=>d.tier==='יששכר_זבולון')
-    .filter(d=>matchQ(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')))
-    .filter(d=>!nq||norm(d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')).includes(nq)));}
+    .filter(d=>matchQ(txt(d)))
+    .filter(d=>!nq||norm(txt(d)).includes(nq)));}
 // רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.
 // מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
 let avOpenId=null, avSwapId=null, avHistId=null, avInfoId=null, izHist=false;
@@ -5504,15 +5527,17 @@ function avRowHTML(a,ix){
   const h=a.holders||[], open=avOpenId===a.name, sw=avSwapId;
   const amtOf=x=>{const v=(x.share!==''&&x.share!=null)?x.share:(x.amount||'');
     const n=amtNum(v); return n?String(Math.round(n)):String(v||'');};
-  const line=(x,first)=>`<div class="avg" ${x?`data-pid="${x.pid}"`:''}>
+  // שותף מקושר — השורה עצמה רשומה אצל המחזיק השני, ולכן הסכום והתאריך
+  // נערכים שם ולא כאן. מוצג כדי שהרשימה תהיה מסונכרנת עם מה שנרשם בכרטיס.
+  const line=(x,first)=>`<div class="avg${x&&x.linked?' avglink':''}" ${x&&!x.linked?`data-pid="${x.pid}"`:''}>
     <span class="g1">${first?`<span class="avnum">${ix+1}</span>`:''}</span>
     <span class="g2">${first?`<a class="avname" data-av="${esc(a.name)}" title="לחץ לפרטים של האברך">${esc(a.name)}</a>`:''}</span>
-    <span class="g3">${x?`<a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>`:'<span class="avfree">— אין שותף —</span>'}</span>
-    <span class="g4">${x?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:''}</span>
-    <span class="g5">${x?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
+    <span class="g3">${x?`<a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>${x.linked?` <small class="avlinktag">🤝 יחד עם ${esc(x.via||'')}</small>`:''}`:'<span class="avfree">— אין שותף —</span>'}</span>
+    <span class="g4">${x&&!x.linked?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:(x?`<small class="avlinkdt">${esc(x.start_date||'')}</small>`:'')}</span>
+    <span class="g5">${x&&!x.linked?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
     <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
-    <span class="g7">${x?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
-  </div>${sw&&x&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
+    <span class="g7">${x&&!x.linked?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
+  </div>${sw&&x&&!x.linked&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
     ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
     ${avInfoId===a.name?`<div class="avinfobox">
@@ -5704,7 +5729,7 @@ function renderAvreich(){
       const s=izSummary(d),cs=curSym(d);
       return `<div class="avrow"><div class="avtop"><b class="avnamelink" data-id="${d.id}" title="פתח כרטיס">${esc(d.last)} ${esc(d.first)}</b>${act.length>1?`<span class="avcount">${act.length} אברכים</span>`:''}<span class="avpaidchip">💰 שולם ${GREGYEAR}: ${cs}${s.paid}${s.hasPay&&s.debt>0.5?(' · <b style="color:var(--no)">חוב '+cs+Math.round(s.debt)+'</b>'):''}</span><span class="avsp"></span><button class="chip avpay" data-id="${d.id}">💰 תשלומים</button><button class="chip avhist" data-id="${d.id}">🕘 היסטוריה${hist.length?' ('+hist.length+')':''}</button><button class="chip avopen" data-id="${d.id}">כרטיס</button></div>
         ${renewBanner(d)}
-        <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
+        <div class="avps">${act.length?act.map(p=>avPartnerRow(p)).join(''):''}${izLinkedHTML(d,cs)}${act.length||izLinkedRows(d).length?'':'<div class="hintxt">אין אברך פעיל כרגע</div>'}</div>
         <button class="btn sm avadd" data-id="${d.id}">➕ הוסף אברך</button>
         <div class="avfiles">${(d.files||[]).map(fileChip).join('')}<label class="filebtn">📎 העלה שטר הסכם (PDF)<input type="file" accept="application/pdf,image/*" class="izupload" data-id="${d.id}" hidden></label></div></div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.izupload').forEach(inp=>inp.onchange=()=>uploadFile('iz',+inp.dataset.id,inp,load));

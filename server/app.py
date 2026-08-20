@@ -6720,9 +6720,13 @@ class H(BaseHTTPRequestHandler):
                                   'started': r['started'] or '', 'ended': r['ended'] or '',
                                   'phone': r['phone'] or '', 'email': r['email'] or '',
                                   'addr': r['addr'] or '', 'holders': [], 'taken': False}
+            # שמות התורמים — לצורך השותפים המקושרים שאין להם שורה משלהם
+            dnames = {}
+            for r in con.execute("SELECT id,last,first FROM donors"):
+                dnames[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
             for r in con.execute(
                     "SELECT TRIM(p.avreich) a, p.id pid, p.active, p.start_date, p.amount, p.share, "
-                    "p.joint, d.id did, d.last, d.first FROM partners p "
+                    "p.joint, p.partner_with, p.partner_with_id, d.id did, d.last, d.first FROM partners p "
                     "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(TRIM(p.avreich),'')<>''"):
                 g = out.get(r['a'])
                 if g is None:
@@ -6740,6 +6744,36 @@ class H(BaseHTTPRequestHandler):
                                              'amount': r['amount'] or '', 'share': r['share'] or '',
                                              'joint': r['joint'] or 0})
                     g['taken'] = True
+                    # מאיר: "כשאני מעדכן שבנימין שטטפלד מחזיק ביחד עם יואל
+                    # שטטפלד את יחזקאל חבה — גם ברשימה לפי אברכים זה אמור
+                    # להיות מסונכרן". השותף נרשם על שורה אחת בלבד, ולכן עד
+                    # כה הוא לא הופיע כאן כלל.
+                    ids = [x.strip() for x in str(r['partner_with_id'] or '').split(',')]
+                    nms = [x.strip() for x in str(r['partner_with'] or '').split(',')]
+                    for i2, pn in enumerate(nms):
+                        pid2 = ids[i2] if i2 < len(ids) else ''
+                        who = dnames.get(int(pid2)) if str(pid2).isdigit() else ''
+                        who = who or pn
+                        if not who:
+                            continue
+                        # נאסף בצד ומתמזג רק בסוף, אחרי שכל השורות האמיתיות
+                        # נקראו — אחרת שותף מקושר היה מסתיר שורה אמיתית
+                        # שנקראה אחריו, ואיתה הסכום והכפתורים שלה
+                        g.setdefault('_linked', []).append(
+                            {'id': int(pid2) if str(pid2).isdigit() else None,
+                             'name': who, 'pid': r['pid'],
+                             'start_date': r['start_date'] or '',
+                             'amount': '', 'share': '', 'joint': r['joint'] or 0,
+                             'linked': 1, 'via': nm})
+            # מי שיש לו שורה משלו אצל אותו אברך אינו צריך גם שורת שותף
+            # מקושרת — אחרת הוא היה מופיע פעמיים באותה שורה ברשימה
+            for g in out.values():
+                seen = {h['name'] for h in g['holders']}
+                for h in g.pop('_linked', []):
+                    if h['name'] in seen:
+                        continue
+                    seen.add(h['name'])
+                    g['holders'].append(h)
             names = {}
             for r in con.execute("SELECT id,last,first FROM donors"):
                 names[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
