@@ -4313,6 +4313,46 @@ def ensure_schema():
     except Exception as ex:
         print('  lamm merge error:', ex)
 
+    # מאיר: "עליתי פה על באג שעכשיו אני מבין למה יש תרומות כפולות... זה
+    # בגלל שהדונרס רשום גם ברשימת הצ'קים ששלחתי לך וגם ברשימת הדונרס
+    # פאונד... תיקח את הרשימה של דונרס ותמחק אותה".
+    #
+    # מחיקה גורפת של כל שורות "דונרס" הייתה מוחקת גם 36,600 דולר שאין להם
+    # כפילות בכלל. לכן נמחקת רק שורה שיש לה תאומה ממש — אותו תורם, אותו
+    # תאריך, אותו סכום.
+    #
+    # שורה שיש לה מזהה עסקה מהסליקה אינה נוגעת: שני חיובים באותו יום ובאותו
+    # סכום הם לפעמים שני תשלומים אמיתיים (פערל שלמה, 22 ביולי) והמזהה הוא
+    # שמבדיל ביניהם. הכלל חל רק על שורות שהגיעו מהקבצים הידניים.
+    try:
+        rows = con.execute(
+            "SELECT id, donor_id, date, "
+            "ROUND(CAST(REPLACE(REPLACE(COALESCE(amount,'0'),',',''),'$','') AS REAL),2) a, "
+            "COALESCE(method,'') m, COALESCE(category,'') c, COALESCE(note,'') nt "
+            "FROM donations WHERE donor_id IS NOT NULL AND COALESCE(tid,'')=''").fetchall()
+        seen, drop = {}, []
+        for r in rows:
+            k = (r['donor_id'], (r['date'] or '')[:10], r['a'])
+            if r['a'] <= 0:
+                continue
+            if k not in seen:
+                seen[k] = r
+                continue
+            # יש כבר שורה זהה. נשמרת זו שהייעוד שלה מפורט יותר, כי היא
+            # הגיעה מהקובץ שבו מאיר כתב עבור מה התרומה.
+            old_r, new_r = seen[k], r
+            def score(x):
+                return (0 if x['c'] in ('', 'קבוע') else 1)
+            keep, dump = (new_r, old_r) if score(new_r) > score(old_r) else (old_r, new_r)
+            seen[k] = keep
+            drop.append(dump['id'])
+        if drop:
+            con.executemany("DELETE FROM donations WHERE id=?", [(i,) for i in drop])
+            con.commit()
+            print('  תרומות כפולות מהקבצים הידניים שנמחקו: %d' % len(drop))
+    except Exception as ex:
+        print('  manual dup cleanup error:', ex)
+
     con.commit(); con.close()
 
 def get_all():
