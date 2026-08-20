@@ -84,13 +84,27 @@ function coHolderTotal(p){
   return total;
 }
 // שותפויות הפוכות — כרטיסים אחרים שרשמו את התורם הזה כשותף מחזיק (לפי קישור או לפי שם שהוקלד)
+// מאיר: "למה לא רואים אצל יואל שטטפלד שהוא שותף עם בנימין ומחזיק את חבה?
+// התשלום יוצא רק מבנימין אבל שניהם שותפים". השותפות שלהם רשומה כחלוקת
+// תשלום ולא בשדה "מחזיקים יחד עם", ולכן היא נקראת גם משם.
 function coHeldWith(d){
-  const out=[];const dn=norm((d.last||'')+' '+(d.first||''));const dt=dn.split(' ').filter(t=>t.length>=2);
+  const out=[],seen=new Set();
+  const dn=norm((d.last||'')+' '+(d.first||''));const dt=dn.split(' ').filter(t=>t.length>=2);
+  const add=(o,p,split)=>{
+    if(!String(p.avreich||'').trim())return;
+    const k=o.id+'|'+norm(p.avreich); if(seen.has(k))return; seen.add(k);
+    out.push({name:(o.last+' '+o.first).trim(),did:o.id,avreich:p.avreich,
+              amount:p.amount,method:p.method,split:split?1:0});};
   (DB||[]).forEach(o=>{if(o.id===d.id)return;(o.partners||[]).forEach(p=>{if(p.active==0)return;
     const idlist=(String(p.partner_with_id||'')).split(',').map(s=>s.trim()).filter(Boolean);
     const linked=idlist.includes(String(d.id));
     const byname=!idlist.length&&p.partner_with&&dt.length&&dt.every(t=>norm(p.partner_with).includes(t));
-    if(linked||byname)out.push({name:(o.last+' '+o.first).trim(),did:o.id,avreich:p.avreich,amount:p.amount,method:p.method});});});
+    if(linked||byname)add(o,p,0);});});
+  // שותף בחלוקת התשלום מחזיק יחד גם את האברכים — הכסף יוצא מאחד מהם,
+  // והשני עדיין שותף. הסכום נשאר רשום אצל מי שהשורה רשומה אצלו.
+  (d.paysplit||[]).forEach(s=>{
+    const o=(DB||[]).find(x=>x.id===s.with_id); if(!o||o.id===d.id)return;
+    (o.partners||[]).forEach(p=>{if(p.active==0)return; add(o,p,1);});});
   return out;
 }
 // מאיר: "כשאני מעדכן שבנימין שטטפלד מחזיק ביחד עם יואל שטטפלד את יחזקאל
@@ -107,7 +121,7 @@ function izLinkedHTML(d,cur){
   const l=izLinkedRows(d); if(!l.length)return '';
   return l.map(x=>`<div class="izrow izlink"><span>👨‍🎓 ${esc(x.avreich)}`
     + ` <small class="cosp">🤝 בשותפות עם <span class="cosp2" data-did="${x.did}">${esc(x.name)} ↗</span></small>`
-    + `${x.amount?` <small class="cosptot">רשום שם ${cur}${Math.round(amtNum(x.amount))}</small>`:''}`
+    + `${x.amount?` <small class="cosptot">${x.split?'התשלום יוצא ממנו — ':'רשום שם '}${cur}${Math.round(amtNum(x.amount))}</small>`:''}`
     + `</span><b class="izlinkb">—</b></div>`).join('');
 }
 // חידוש שותפות יש"ז — מחזיר את החידוש הקרוב ביותר (בטווח התרעה) מבין האברכים הפעילים
@@ -5831,6 +5845,12 @@ function avCoHolders(p){
   const av=norm(p.avreich||'');const set=new Map();
   if(av)(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av){const nm=(o.last+' '+o.first).trim();const k=norm(nm);if(!set.has(k))set.set(k,{name:nm,id:o.id});}});});
   pwList(p).forEach(x=>{if(x.name){const k=norm(x.name);if(!set.has(k))set.set(k,{name:x.name,id:x.id});}});
+  // מי שמתחלק עם בעל השורה בתשלום הוא שותף גם באברך עצמו
+  const own=(DB||[]).find(x=>x.id==p.donor_id);
+  if(own&&av)(own.paysplit||[]).forEach(s=>{
+    const o=(DB||[]).find(x=>x.id===s.with_id); if(!o||o.id==p.donor_id)return;
+    const nm=(o.last+' '+o.first).trim(),k=norm(nm);
+    if(nm&&!set.has(k))set.set(k,{name:nm,id:o.id});});
   return [...set.values()];
 }
 // כמה התורם משלם לאברך. קודם כל מקום שהתפנה — הסכום שלו הוא הסכום שכבר

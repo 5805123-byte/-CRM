@@ -6764,6 +6764,15 @@ class H(BaseHTTPRequestHandler):
             dnames = {}
             for r in con.execute("SELECT id,last,first FROM donors"):
                 dnames[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+            # מאיר: "התשלום יוצא רק מבנימין אבל שניהם שותפים" — שותף בחלוקת
+            # התשלום מחזיק יחד גם את האברכים, וצריך להופיע ברשימה לפי אברכים
+            psplit = {}
+            try:
+                for r in con.execute("SELECT payer_id,donor_id FROM pay_split"):
+                    psplit.setdefault(r['payer_id'], set()).add(r['donor_id'])
+                    psplit.setdefault(r['donor_id'], set()).add(r['payer_id'])
+            except Exception:
+                pass
             for r in con.execute(
                     "SELECT TRIM(p.avreich) a, p.id pid, p.active, p.start_date, p.amount, p.share, "
                     "p.joint, p.partner_with, p.partner_with_id, d.id did, d.last, d.first FROM partners p "
@@ -6802,6 +6811,15 @@ class H(BaseHTTPRequestHandler):
                         g.setdefault('_linked', []).append(
                             {'id': int(pid2) if str(pid2).isdigit() else None,
                              'name': who, 'pid': r['pid'],
+                             'start_date': r['start_date'] or '',
+                             'amount': '', 'share': '', 'joint': r['joint'] or 0,
+                             'linked': 1, 'via': nm})
+                    for oid in psplit.get(r['did'], ()):
+                        who = dnames.get(oid) or ''
+                        if not who:
+                            continue
+                        g.setdefault('_linked', []).append(
+                            {'id': oid, 'name': who, 'pid': r['pid'],
                              'start_date': r['start_date'] or '',
                              'amount': '', 'share': '', 'joint': r['joint'] or 0,
                              'linked': 1, 'via': nm})
