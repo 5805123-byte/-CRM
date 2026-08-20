@@ -4210,7 +4210,11 @@ function renderPartners(d){
   });
   // שדה שותפים — מספר שותפים (צ'יפים). בחירה מרשימה מקשרת לכרטיס (מופיע גם אצלו); Enter מוסיף כטקסט
   const savePw=async(p)=>{p.partner_with=pwList(p).map(x=>x.name).join(', ');p.partner_with_id=pwList(p).map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
-  const addPw=async(pid,name,did)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.push({name:name,id:did?String(did):''});p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});toast('שותף נוסף ✓');renderPartners(d);if(tab==='donors')renderDonors();};
+  const addPw=async(pid,name,did)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.push({name:name,id:did?String(did):''});p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});
+    // השותף שנבחר הוא תורם יששכר־זבולון לכל דבר — מסומן מיד על המסך
+    const o=did&&DB.find(x=>x.id==did);
+    if(o&&o.tier!=='יששכר_זבולון')o.tier='יששכר_זבולון';
+    toast('שותף נוסף ✓ — מופיע גם אצלו');renderPartners(d);if(tab==='donors')renderDonors();};
   const rmPw=async(pid,idx)=>{const p=(d.partners||[]).find(x=>x.id==pid);if(!p)return;const l=pwList(p);l.splice(idx,1);p.partner_with=l.map(x=>x.name).join(', ');p.partner_with_id=l.map(x=>x.id).join(',');await api('PUT','/api/partner/'+p.id,{partner_with:p.partner_with,partner_with_id:p.partner_with_id});renderPartners(d);if(tab==='donors')renderDonors();};
   el.querySelectorAll('.ppayer').forEach(sel=>sel.onchange=async()=>{
     const p=(d.partners||[]).find(x=>x.id==sel.dataset.id); if(!p)return;
@@ -5546,7 +5550,9 @@ function filterIZ(){const nq=norm(avSearch);
   // שכל האברכים שלו משותפים לא היה נמצא לפי שם האברך
   const txt=d=>d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')
     +' '+izLinkedRows(d).map(x=>x.avreich).join(' ');
-  return sortIZ(DB.filter(d=>d.tier==='יששכר_זבולון')
+  // גם מי שלא סומן בדרגה אבל מחזיק אברך בשותפות עם תורם אחר — אחרת
+  // השותף היה נעלם מהרשימה למרות שהוא מחזיק
+  return sortIZ(DB.filter(d=>d.tier==='יששכר_זבולון'||izLinkedRows(d).length)
     .filter(d=>matchQ(txt(d)))
     .filter(d=>!nq||norm(txt(d)).includes(nq)));}
 // רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.

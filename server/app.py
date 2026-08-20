@@ -7879,6 +7879,20 @@ class H(BaseHTTPRequestHandler):
             con = db(); sets = []; vals = []
             for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','prev_avreich','prev_ended'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
+            # מאיר: "כשכתוב מחזיקים יחד — זה אמור להיות מסונכרן עם יששכר־זבולון
+            # כשבוחרים את מי מחזיקים יחד". מי שנבחר כשותף מחזיק הוא תורם
+            # יששכר־זבולון לכל דבר, ובלי הסימון הזה הוא לא היה נכנס לרשימות.
+            if 'partner_with_id' in b:
+                try:
+                    con0 = db()
+                    for x in str(b.get('partner_with_id') or '').split(','):
+                        x = x.strip()
+                        if x.isdigit():
+                            con0.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=? "
+                                         "AND COALESCE(TRIM(tier),'')<>'יששכר_זבולון'", (int(x),))
+                    con0.commit(); con0.close()
+                except Exception as e:
+                    print('  partner tier error:', e)
             # "🔄 החלפה" — המקום מתפנה ונשאר פתוח. נרשם ביומן מי היה בו.
             if str(b.get('prev_avreich') or '').strip() and not str(b.get('avreich') or '').strip():
                 try:
