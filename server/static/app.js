@@ -1,4 +1,5 @@
 'use strict';
+let HEBTODAY = '';
 let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], BUILDING_ITEMS = [], TASKKINDS_C = [], CHAN_C = [], CLK_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
@@ -140,7 +141,9 @@ function izSummaryHTML(d){
   // אברך שהוא מחזיק בשותפות, אבל השורה עצמה רשומה אצל השותף. הכסף נספר
   // שם ולכן אין כאן סכום — רק העובדה שהם שותפים, ולחיצה לכרטיס שלו.
   const recipHtml=izLinkedHTML(d,cur);
-  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow"><span>👨‍🎓 ${esc(p.avreich||'—')}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(
+  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow${avOpenSlot(p)?' izgap':''}"><span>${avOpenSlot(p)
+    ?`🚪 מקום פתוח — ${esc(p.prev_avreich)} יצא מהכולל${p.prev_ended?(' ב'+esc(p.prev_ended)):''} <small class="izgaps">חפש אברך חדש למקום הזה</small>`
+    :`👨‍🎓 ${esc(p.avreich||'—')}`}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(
   String(p.share||'').trim()!==''?('💳 חלקו מתוך '+cur+amtNum(p.amount)+' — לפי החלוקה שנקבעה'
     +(amtNum(p.share)?'':', אינו משלם'))
   :jointPayerId(p)?(jointPayerId(p)===d.id?('💳 אתה משלם את כל ה'+cur+amtNum(p.amount)):('💳 משלם: '+esc(jointPayerName(p))))
@@ -721,6 +724,24 @@ function uiConfirm(msg){
     o.onclick=e=>{if(e.target===o)done(false);};
   });
 }
+// שאלה עם תשובה בכתב — למשל התאריך העברי שבו אברך יצא מהכולל.
+// מחזיר null כשמבטלים, כדי להבדיל בין ביטול לבין תשובה ריקה.
+function uiPrompt(msg,def){
+  return new Promise(res=>{
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm">${esc(msg)}</div>
+      <input class="cinp" value="${esc(def||'')}">
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">אישור</button></div></div>`;
+    document.body.appendChild(o);
+    const inp=o.querySelector('.cinp');
+    const done=v=>{o.remove();res(v);};
+    o.querySelector('.cno').onclick=()=>done(null);
+    o.querySelector('.cyes').onclick=()=>done(inp.value.trim());
+    inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();done(inp.value.trim());}};
+    o.onclick=e=>{if(e.target===o)done(null);};
+    setTimeout(()=>{inp.focus();inp.select();},30);
+  });
+}
 // בורר חודש+שנה עברית — לשיוך תורם מזדמן לחודש/שנה מסוימים בקוויטל המזדמנים
 function uiPickMonth(msg,curM,curY){
   return new Promise(res=>{
@@ -984,7 +1005,7 @@ async function load(){
     if(r.status===304&&_LASTDATA){ d=_LASTDATA; }
     else { d=await r.json(); _LASTDATA=d; _ETAG=r.headers.get('ETag')||''; }
   }catch(e){ d = await api('GET','/api/data'); }
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || '';
+  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
@@ -2340,7 +2361,9 @@ function commitHTML(d){
       ${prog}${paid}
       ${note}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
-      ${r.iz?av.map(p=>`<div class="cmav">👨‍🎓 ${esc(p.avreich||'—')}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
+      ${r.iz?av.map(p=>`<div class="cmav${avOpenSlot(p)?' cmavgap':''}">${avOpenSlot(p)
+        ?('🚪 מקום פתוח — '+esc(p.prev_avreich)+' יצא'+(p.prev_ended?(' ב'+esc(p.prev_ended)):''))
+        :('👨‍🎓 '+esc(p.avreich||'—'))}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
     </div>`;
   };
   // מי משלם דרך הכרטיס הזה עבור התחייבות של תורם אחר — מידע בלבד,
@@ -5615,12 +5638,16 @@ function wireByAv(){
   view.querySelectorAll('.avgone').forEach(b=>b.onclick=async()=>{
     const a=AVLIST.find(x=>x.name===b.dataset.av); if(!a)return;
     const who=(a.holders||[]).map(h=>h.name);
+    // מאיר: "אמורה להיות הערה מתי האברך יצא ומי הוא היה" — התאריך העברי
+    // נשאל כאן, ונשמר על המקום שהתפנה אצל כל מחזיק.
     const msg=who.length
-      ? ('להוציא את '+a.name+' מהכולל?\nהשותפות תסתיים אצל '+who.join(', ')
-         +' בתאריך של היום, וזה יירשם אצל כל אחד מהם.')
-      : ('להוציא את '+a.name+' מהכולל?\nהוא יירד מהרשימה, וההיסטוריה שלו תישמר.');
-    if(!await uiConfirm(msg))return;
-    const r=await api('POST','/api/avreich',{id:a.aid,name:a.name,delete:1,force:1,at:nowStamp()});
+      ? ('באיזה תאריך (עברי) '+a.name+' יצא מהכולל?\nהמקום יישאר פתוח אצל '+who.join(', ')
+         +' — המניין שלהם לא ישתנה, ורק השם יתפנה.')
+      : ('באיזה תאריך (עברי) '+a.name+' יצא מהכולל?\nהוא יירד מהרשימה, וההיסטוריה שלו תישמר.');
+    const hd=await uiPrompt(msg, HEBTODAY);
+    if(hd===null)return;
+    const r=await api('POST','/api/avreich',{id:a.aid,name:a.name,delete:1,force:1,
+      at:nowStamp(),hdate:hd||HEBTODAY});
     if(!r||!r.ok){toast('לא בוצע');return;}
     toast('יצא מהכולל ✓'); await load(); renderAvByAv();});
   view.querySelectorAll('.av_q').forEach(qi=>{
@@ -5755,11 +5782,19 @@ function avCoHolders(p){
   pwList(p).forEach(x=>{if(x.name){const k=norm(x.name);if(!set.has(k))set.set(k,{name:x.name,id:x.id});}});
   return [...set.values()];
 }
+// מקום שהתפנה — האברך שהיה בו יצא מהכולל, והתורם עדיין מחזיק אותו
+function avOpenSlot(p){return !String(p.avreich||'').trim()&&!!String(p.prev_avreich||'').trim();}
+function avSlotNote(p){
+  if(!avOpenSlot(p))return '';
+  return `<div class="avgap">🚪 ${esc(p.prev_avreich)} יצא מהכולל`
+    +`${p.prev_ended?(' ב'+esc(p.prev_ended)):''} — המקום פתוח, חפש אברך חדש ומלא כאן</div>`;
+}
 function avPartnerRow(p){
   const co=avCoHolders(p);
   const coHtml=co.length?`<div class="avco">🤝 מוחזק במשותף עם: ${co.map(x=>x.id?`<span class="cosp2" data-did="${x.id}">${esc(x.name)} ↗</span>`:esc(x.name)).join(', ')}</div>`:'';
-  return `<div class="avp" data-pid="${p.id}">
-    <div class="avmain"><input class="avf avname" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך">
+  return `<div class="avp${avOpenSlot(p)?' avpgap':''}" data-pid="${p.id}">
+    ${avSlotNote(p)}
+    <div class="avmain"><input class="avf avname" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="${avOpenSlot(p)?'שם האברך החדש למקום הזה':'שם האברך'}">
       <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום" inputmode="decimal"></div>
       <button class="avend" title="החלפת אברך — הקודם יישמר בהיסטוריה">🔄 החלפה</button></div>
     <div class="avsub">
@@ -5791,7 +5826,19 @@ function bindAvFields(){
       inp.oninput=()=>mark(true);          // מסמנים שיש שינוי — השמירה בלחיצה
       inp.onchange=save;                   // יציאה מהשדה שומרת גם היא, כרשת ביטחון
     });
-    row.querySelector('.avend').onclick=async()=>{const today=todayStr();await api('PUT','/api/partner/'+pid,{active:0,ended_date:today});DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid){p.active=0;p.ended_date=today;}}));renderAvreich();toast('הסתיים — עבר להיסטוריה');};
+    // מאיר: "אז אמור להיות עוד חלון ריק שאחפש לו אברך אחד ואמלא כאן".
+    // החלפה אינה סוגרת את השורה — היא מפנה את המקום ומשאירה אותו פתוח,
+    // עם השם והתאריך של מי שהיה בו, כדי שמניין האברכים יישאר נכון.
+    row.querySelector('.avend').onclick=async()=>{
+      let p0=null; DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p0=p;}));
+      const nm=String((p0&&p0.avreich)||'').trim();
+      if(!nm){toast('המקום כבר פתוח');return;}
+      const hd=await uiPrompt('באיזה תאריך (עברי) '+nm+' יצא?', HEBTODAY);
+      if(hd===null)return;
+      const body={avreich:'',start_date:'',prev_avreich:nm,prev_ended:hd||HEBTODAY};
+      await api('PUT','/api/partner/'+pid,body);
+      if(p0)Object.assign(p0,body);
+      renderAvreich(); toast('המקום פתוח — מלא אברך חדש');};
     const jc=row.querySelector('.avjoint');if(jc)jc.onchange=async()=>{const v=jc.checked?1:0;await api('PUT','/api/partner/'+pid,{joint:v});DB.forEach(d=>(d.partners||[]).forEach(p=>{if(p.id==pid)p.joint=v;}));renderAvreich();toast(jc.checked?'סומן כמשותף ✓':'בוטל');};});
 }
 function showPayments(d){
@@ -5803,12 +5850,25 @@ function showPayments(d){
     ${list.map(x=>`<div class="remitem"><div class="ri"><b style="color:var(--yes)">$${esc(x.amount)}</b> ${x.category?('· '+esc(x.category)):''}<br><small>${esc(x.date||'')}${x.hmonth?(' · '+esc(x.hmonth)):''}${x.method?(' · '+esc(x.method)):''}</small></div></div>`).join('')||'<div class="hintxt">עדיין אין תשלומים רשומים. נכנסים דרך "רישום תרומה" בכרטיס.</div>'}`;
   remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
 }
-function showAvHist(d){
+// מאיר: "חשוב לי ההיסטוריה של האברכים השותפים — מתי נכנס חדש לפי תאריך
+// עברי שאעדכן ומתי יצא". שתי שכבות: שותפויות שנסגרו לגמרי, ולצידן היומן
+// עצמו — יציאה מהכולל, כניסה למקום שהתפנה, שינוי תאריך או סכום.
+async function showAvHist(d){
   const hist=(d.partners||[]).filter(p=>p.active==0).sort((a,b)=>(b.start_date||'').localeCompare(a.start_date||''));
+  const open=(d.partners||[]).filter(p=>p.active!=0&&avOpenSlot(p));
   const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕘 היסטוריית אברכים — ${esc(d.last)} ${esc(d.first)}</h2>
-    ${hist.map(p=>`<div class="remitem"><div class="ri"><b>${esc(p.avreich||'—')}</b><br><small>התחיל: ${esc(p.start_date||'?')} · הסתיים: ${esc(p.ended_date||'?')} ${p.amount?('· $'+esc(p.amount)):''}${p.note?(' · '+esc(p.note)):''}</small></div></div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}`;
+    <div class="hintxt">טוען את היומן…</div>`;
   remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  let log=[]; try{const r=await api('GET','/api/izhistory?donor='+d.id); log=(r&&r.rows)||[];}catch(e){}
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕘 היסטוריית אברכים — ${esc(d.last)} ${esc(d.first)}</h2>
+    ${open.map(p=>`<div class="remitem"><div class="ri"><b style="color:#8a5a12">🚪 מקום פתוח</b><br>
+      <small>${esc(p.prev_avreich||'')} יצא מהכולל${p.prev_ended?(' ב'+esc(p.prev_ended)):''}${p.amount?(' · $'+esc(p.amount)):''}</small></div></div>`).join('')}
+    ${hist.map(p=>`<div class="remitem"><div class="ri"><b>${esc(p.avreich||'—')}</b><br><small>התחיל: ${esc(p.start_date||'?')} · הסתיים: ${esc(p.ended_date||'?')} ${p.amount?('· $'+esc(p.amount)):''}${p.note?(' · '+esc(p.note)):''}</small></div></div>`).join('')}
+    ${log.length?`<div class="hintxt" style="margin:8px 2px 4px">📖 יומן השינויים</div>`+log.map(L=>
+      `<div class="remitem"><div class="ri"><b>${esc(L.hdate||L.date||'')}</b>${L.date?(' <small>'+esc(L.date)+'</small>'):''}<br><small>${esc(L.text||'')}</small></div></div>`).join(''):''}
+    ${(open.length||hist.length||log.length)?'':'<div class="hintxt">אין היסטוריה.</div>'}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
 }
 
 

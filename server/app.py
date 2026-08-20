@@ -313,6 +313,14 @@ def ensure_schema():
     # כל חודש נמדד לפי מה שבאמת היה מוסכם בו.
     try: con.execute("ALTER TABLE pledges ADD COLUMN prev_amount TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "הוא מחזיק שלושה אברכים ואחד מהם יצא — אז אמור להיות עוד חלון
+    # ריק שאחפש לו אברך... וזה תמיד צריך להיות במערכת רשום כמה הוא מחזיק".
+    # אברך שיוצא מהכולל מפנה את המקום שלו, והמקום נשאר פתוח עם השם והתאריך
+    # של מי שהיה בו — כדי שאפשר יהיה למלא אותו ולשמור את ההיסטוריה.
+    try: con.execute("ALTER TABLE partners ADD COLUMN prev_avreich TEXT DEFAULT ''")
+    except Exception: pass
+    try: con.execute("ALTER TABLE partners ADD COLUMN prev_ended TEXT DEFAULT ''")
+    except Exception: pass
     # מאיר: "איך אני מוחק את השורה האדומה הזו?" — אישור לפער בין מה שנגבה
     # בפועל למה שרשום. ההערה תחזור רק אם הסכום שנגבה ישתנה שוב.
     try: con.execute("ALTER TABLE donors ADD COLUMN gap_ok TEXT DEFAULT ''")
@@ -6583,7 +6591,7 @@ class H(BaseHTTPRequestHandler):
             try: tkinds = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
             except Exception: tkinds = []
             con.close()
-            _raw = json.dumps({'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
+            _raw = json.dumps({'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
             try: _gz = gzip.compress(_raw, 6)
             except Exception: _gz = b''
             # החתימה לפי התוכן עצמו: בנייה מחדש שיצא ממנה אותו מידע משאירה את
@@ -7077,10 +7085,17 @@ class H(BaseHTTPRequestHandler):
             con = db()
             names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
                      for r in con.execute("SELECT id,last,first FROM donors")}
+            # מאיר: "חשוב לי ההיסטוריה של האברכים השותפים — מתי נכנס חדש
+            # ומתי יצא" — היומן של תורם אחד נפתח מהכרטיס שלו
+            who = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                   .get('donor', [''])[0] or '').strip()
+            q = "SELECT * FROM avreich_log %s ORDER BY id DESC LIMIT 400" % (
+                "WHERE donor_id=?" if who.isdigit() else "")
+            cur = con.execute(q, (int(who),)) if who.isdigit() else con.execute(q)
             rows = [{'avreich': r['avreich'] or '', 'donor': names.get(r['donor_id'], ''),
                      'donor_id': r['donor_id'], 'date': r['date'] or '', 'hdate': r['hdate'] or '',
                      'text': r['text'] or '', 'at': r['at'] or ''}
-                    for r in con.execute("SELECT * FROM avreich_log ORDER BY id DESC LIMIT 400")]
+                    for r in cur]
             con.close()
             return self._send(200, {'rows': rows})
         if self.path.split('?')[0] == '/api/unclassified':
@@ -7812,8 +7827,44 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     print('  joint payer error:', e)
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','prev_avreich','prev_ended'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
+            # "🔄 החלפה" — המקום מתפנה ונשאר פתוח. נרשם ביומן מי היה בו.
+            if str(b.get('prev_avreich') or '').strip() and not str(b.get('avreich') or '').strip():
+                try:
+                    con0 = db()
+                    row0 = con0.execute("SELECT donor_id FROM partners WHERE id=?", (pid,)).fetchone()
+                    if row0:
+                        iz_log(con0, b['prev_avreich'].strip(), row0['donor_id'],
+                               '🚪 %s ירד מהמקום אצל התורם — המקום פתוח לאברך חדש'
+                               % b['prev_avreich'].strip(),
+                               now_iso(), (b.get('prev_ended') or '').strip())
+                        con0.commit()
+                    con0.close()
+                except Exception as e:
+                    print('  slot open error:', e)
+            # שם אברך שנכתב לתוך מקום שהתפנה — המקום נסגר, ונרשם ביומן מי
+            # נכנס במקום מי. בלי זה השורה הייתה נשארת מסומנת "מקום פתוח".
+            if str(b.get('avreich') or '').strip() and 'prev_avreich' not in b:
+                try:
+                    con0 = db()
+                    old = con0.execute("SELECT donor_id,prev_avreich,prev_ended,avreich FROM partners "
+                                       "WHERE id=?", (pid,)).fetchone()
+                    if old and (old['prev_avreich'] or '').strip() and not (old['avreich'] or '').strip():
+                        iz_log(con0, b['avreich'].strip(), old['donor_id'],
+                               '↩️ %s נכנס במקומו של %s' % (
+                                   b['avreich'].strip(), old['prev_avreich']),
+                               now_iso(), (b.get('start_date') or '').strip())
+                        sets.append('prev_avreich=?'); vals.append('')
+                        sets.append('prev_ended=?'); vals.append('')
+                        # אברך שחזר לכולל — חוזר גם לרשימה, אחרת הוא היה
+                        # מוחזק אצל התורם ונעדר מרשימת האברכים
+                        con0.execute("UPDATE avreichim SET ended='' WHERE TRIM(name)=? "
+                                     "AND COALESCE(TRIM(ended),'')<>''", (b['avreich'].strip(),))
+                        con0.commit()
+                    con0.close()
+                except Exception as e:
+                    print('  slot fill error:', e)
             if 'start_date' in b:   # חישוב מחדש של תאריך החידוש כשמשנים את תחילת ההסכם
                 g = heb_anniv(b.get('start_date') or '')
                 sets.append('renew_date=?'); vals.append(g.isoformat() if g else None)
@@ -8548,12 +8599,17 @@ class H(BaseHTTPRequestHandler):
                                             'who': [((x['last'] or '') + ' ' + (x['first'] or '')).strip()
                                                     for x in held]})
                 at = (b.get('at') or '').strip() or now_iso()
-                for x in held:      # השותפויות מסתיימות, וכל תורם מקבל שורה בדף הקשר
-                    cur.execute("UPDATE partners SET active=0, ended_date=? WHERE id=?", (at[:10], x['id']))
+                hd = (b.get('hdate') or '').strip() or greg_to_heb_full(at[:10]) or at[:10]
+                # מאיר: "בגלל שעשיתי שהוא יצא אז הוא כותב רק 2 אברכים — זה
+                # טעות, הוא מחזיק שלושה". המקום נשאר פתוח אצל התורם עם
+                # הסכום שלו, ורק השם מתפנה. כך המניין נכון, וברור מי היה בו.
+                for x in held:
+                    cur.execute("UPDATE partners SET avreich='', start_date='', renew_date=NULL, "
+                                "prev_avreich=?, prev_ended=? WHERE id=?", (anm, hd, x['id']))
                     iz_log(cur, anm, x['donor_id'],
-                           '🚪 האברך %s יצא מהכולל — השותפות הסתיימה' % anm, at)
+                           '🚪 האברך %s יצא מהכולל — המקום פתוח לאברך חדש' % anm, at, hd)
                 if not held:
-                    iz_log(cur, anm, None, '🚪 האברך %s יצא מהכולל' % anm, at)
+                    iz_log(cur, anm, None, '🚪 האברך %s יצא מהכולל' % anm, at, hd)
                 cur.execute("UPDATE avreichim SET ended=? WHERE id=?", (at[:10], aid))
             elif aid:
                 sets, vals = [], []
@@ -8642,9 +8698,25 @@ class H(BaseHTTPRequestHandler):
             start = (b.get('start_date') or '').strip() or greg_to_heb_full(at[:10])
             amt = (b.get('amount') or '').strip()
             g = heb_anniv(start) if start else None
-            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active,renew_date) "
-                        "VALUES(?,?,?,?,1,?)", (did, nm, start, amt, g.isoformat() if g else None))
-            pid = cur.lastrowid
+            # מאיר: "כשאני שם לו אברך חדש זה מתעדכן" — קודם כל ממלאים מקום
+            # שהתפנה אצלו, ורק אם אין כזה נפתח מקום נוסף. אחרת היה נוצר
+            # אברך רביעי אצל תורם שמחזיק שלושה.
+            slot = cur.execute(
+                "SELECT id,prev_avreich,amount FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0 "
+                "AND COALESCE(TRIM(avreich),'')='' AND COALESCE(TRIM(prev_avreich),'')<>'' "
+                "ORDER BY id LIMIT 1", (did,)).fetchone()
+            if slot:
+                pid = slot['id']
+                cur.execute("UPDATE partners SET avreich=?,start_date=?,renew_date=?"
+                            + (",amount=?" if amt else "") + " WHERE id=?",
+                            ([nm, start, g.isoformat() if g else None] + ([amt] if amt else []) + [pid]))
+                iz_log(cur, nm, did, '↩️ %s נכנס במקומו של %s' % (
+                    nm, slot['prev_avreich']), at, start)
+                cur.execute("UPDATE partners SET prev_avreich='',prev_ended='' WHERE id=?", (pid,))
+            else:
+                cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,active,renew_date) "
+                            "VALUES(?,?,?,?,1,?)", (did, nm, start, amt, g.isoformat() if g else None))
+                pid = cur.lastrowid
             if (d['tier'] or '') != 'יששכר_זבולון':      # שיוך אברך הופך אותו ליששכר־זבולון
                 cur.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=?", (did,))
             if r and not (r['started'] or '').strip() and start:
