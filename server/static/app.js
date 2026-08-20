@@ -6276,7 +6276,7 @@ function oldRow(d){
   if(rc)t.push('<span class="oldtag ok">🧾 נמצא בקבלה / בסיכום בנק '+esc(d.mail_seen)+' — תרם!</span>');
   else if(d.mail_seen)t.push('<span class="oldtag warn">📭 אין קבלה ואין אותו בסיכומי הבנק</span>');
   return `<div class="oldrow" data-id="${d.id}">
-    <div class="oldmain"><div class="oldnm oldopen">${esc(d.name)} ${d.english?('<small>'+esc(d.english)+'</small>'):''}</div>
+    <div class="oldmain oldopen" title="פתח את הכרטיס"><div class="oldnm">${esc(d.name)} ${d.english?('<small>'+esc(d.english)+'</small>'):''}</div>
       <div class="oldsub">${esc(d.email||'')}${d.email&&d.phone?' · ':''}${esc(d.phone||'')}</div>
       ${t.length?('<div class="oldtags">'+t.join('')+'</div>'):''}</div>
     <button class="oldkeep">להשאיר</button>
@@ -6288,7 +6288,13 @@ function wireOldRows(){
     const c=document.querySelector('.cnt'); if(c)c.textContent=OLD.donors.length+' תורמים בלי שום כסף מאז '+oldSince;};
   box.querySelectorAll('.oldrow').forEach(row=>{
     const id=+row.dataset.id;
-    row.querySelector('.oldopen').onclick=()=>{const d=DB.find(x=>x.id===id); if(d)openDonor(d);};
+    // מאיר: "כשאני לוחץ על שם תורם זה לא מעביר אותי לכרטיס שלו". הלחיצה
+    // נכשלה בשתיקה כשהכרטיס לא היה ברשימה שנטענה. עכשיו לוחצים על כל
+    // אזור השם, ואם הכרטיס חסר — נטען מחדש, ורק אז נאמר שהוא לא נמצא.
+    row.querySelector('.oldopen').onclick=async()=>{
+      let d=DB.find(x=>x.id===id);
+      if(!d){ await load(); d=DB.find(x=>x.id===id); }
+      if(d)openDonor(d); else toast('הכרטיס לא נמצא — רענן את הדף');};
     row.querySelector('.oldkeep').onclick=async()=>{
       await api('PUT','/api/donor/'+id,{keep_old:1});
       row.remove(); drop(id); toast('נשמר — לא יופיע יותר ברשימה');};

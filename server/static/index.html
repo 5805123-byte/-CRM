@@ -650,7 +650,7 @@
     border-bottom:1px solid var(--line)}
   .izhline:last-child{border-bottom:0}
   /* אברך שמוחזק בשותפות והשורה שלו רשומה אצל השותף */
-  .pledge.plink{background:var(--bg);border-style:dashed}
+  .pledge.plink{background:var(--ground);border-style:dashed}
   .plinktag{font-size:.72rem;font-weight:800;color:var(--muted);white-space:nowrap}
   .pledge.plink .cosp2{cursor:pointer;text-decoration:underline}
   .uclavhint{flex:1 1 100%;margin:2px 2px 0;font-weight:700}
@@ -811,7 +811,7 @@
   .confirmbox{background:var(--card);border-radius:16px;padding:20px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35)}
   .confirmbox .cm{font-size:1rem;font-weight:700;line-height:1.55;margin-bottom:16px;color:var(--ink)}
   .confirmbox .cinp{width:100%;padding:10px 12px;margin:-6px 0 14px;border:1px solid var(--line);
-    border-radius:10px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:.95rem;font-weight:700}
+    border-radius:10px;background:var(--ground);color:var(--ink);font-family:inherit;font-size:.95rem;font-weight:700}
   .confirmbox .cbtns{display:flex;gap:10px}
   .confirmbox .cbtns .btn{flex:1}
   .cardnum{font-size:.72rem;color:var(--muted);font-weight:700;background:var(--ground);border:1px solid var(--line);border-radius:99px;padding:1px 8px}
@@ -862,7 +862,10 @@
     border-radius:10px;margin-bottom:6px;background:var(--card)}
   .oldrow.gone{opacity:.35;text-decoration:line-through}
   .oldmain{flex:1;min-width:0}
-  .oldnm{font-weight:700}
+  .oldmain.oldopen{cursor:pointer;border-radius:9px;padding:2px 4px;margin:-2px -4px}
+  .oldmain.oldopen:hover{background:var(--ground)}
+  .oldmain.oldopen:hover .oldnm{text-decoration:underline}
+  .oldnm{font-weight:700;color:var(--accent)}
   .oldnm small{font-weight:400;color:var(--muted)}
   .oldsub{font-size:.78rem;color:var(--muted);direction:ltr;text-align:right;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
