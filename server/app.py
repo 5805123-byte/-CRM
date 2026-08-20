@@ -5259,7 +5259,7 @@ _CERT_FAM2 = re.compile(r'^(משפחתו|משפחתה|משפחתם|משפחתן|
 # רשימת מילות הבקשה לעולם לא תכסה הכל ("לשמחה" למשל חסרה), וכשמילה אינה
 # מזוהה כל הבקשה נשארת בגודל השם. לכן הכלל מבני ולא לפי רשימה: השם
 # שמתפללים עליו נגמר אחרי שם ההורה שבא אחרי "בן"/"בת", וכל מילה שמתחילה
-# ב-ל אחריו היא כבר בקשה. שורה ארוכה שפותחת ב-ל/ו היא ברכה שלמה.
+# הוא כבר קטן ממנו. שורה ארוכה שפותחת ב-ל/ו היא ברכה שלמה.
 # אותו כלל בדיוק קיים ב-parnes-cert.html — השניים חייבים להסכים.
 _CERT_BEN = re.compile(r'^(ו?ב[\u05DFת]|בר|ב["\'\u05F4\u05F3]ר)$')
 
@@ -5274,12 +5274,16 @@ def _req_at(ws, start=0):
         if _CERT_BEN.match(ws[i]):
             rel = i
             break
-    if rel >= 0:
-        for i in range(rel + 2, len(ws)):
-            if _CERT_SMALL.match(ws[i]):
-                continue
-            if ws[i][:1] == '\u05DC':
-                return i
+    if rel >= 0 and rel + 1 < len(ws):
+        i = rel + 2
+        while i < len(ws) and _CERT_SMALL.match(ws[i]):
+            i += 1
+        # "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
+        fam = (i + 1 < len(ws) and _CERT_FAM1.match(ws[i])
+               and _CERT_FAM2.match(ws[i + 1]))
+        # זנב שיש בו "בן"/"בת" הוא שם נוסף, ונשאר גדול
+        if i < len(ws) and not fam and not any(_CERT_BEN.match(w) for w in ws[i:]):
+            return i
     if len(ws) - start > 4 and ws[start][:1] in ('\u05DC', '\u05D5') \
             and _fam_at(ws[start:]) < 0:
         return start

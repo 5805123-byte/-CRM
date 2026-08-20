@@ -100,7 +100,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v464";
+const BUILD = "v465";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -203,16 +203,21 @@ function bodyRows(ws, lead){
     let r=-1;
     for(let i=0;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
     // מאיר: "השמות שמתפללים עליהם שיהיו הכי גדולים, הבקשות יותר קטנות".
-    // רשימת מילות הבקשה לעולם לא תכסה הכל ("לשמחה" למשל חסרה), וכשמילה
-    // אינה מזוהה כל הבקשה נדחסת לשורת השם — שאינה נשברת — ולכן השם
-    // מתכווץ עד שהוא נעלם או חורג מהדף. לכן הכלל מבני ולא לפי רשימה:
-    // השם שמתפללים עליו נגמר אחרי שם ההורה שבא אחרי "בן"/"בת", וכל מילה
-    // שמתחילה ב-ל אחריו היא כבר בקשה.
+    // רשימת מילים לעולם לא תכסה הכל, וגם זנב שאינו בקשה בכלל
+    // ("- יארצייט ט' אלול") נשאר דבוק לשורת השם, שאינה נשברת, ומכווץ
+    // אותה עד שהשם נעלם. לכן הכלל מבני ולא לפי רשימה:
+    // השם שמתפללים עליו נגמר אחרי שם ההורה שבא אחרי "בן"/"בת" ואחרי
+    // תארים צמודים (ז"ל, תחי'), וכל מה שאחריו קטן ממנו.
+    // אם בזנב עצמו יש "בן"/"בת" — זה שם נוסף, והוא נשאר גדול.
     if(r<0){
-      const rel=rest.findIndex(w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w));
-      if(rel>=0) for(let i=rel+2;i<rest.length;i++){
-        if(SMALLWORD.test(rest[i])) continue;
-        if(/^ל/.test(rest[i])){ r=i; break; }
+      const isRel=w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w);
+      const rel=rest.findIndex(isRel);
+      if(rel>=0 && rel+1<rest.length){
+        let i=rel+2;
+        while(i<rest.length && SMALLWORD.test(rest[i])) i++;
+        // "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
+        const fam = i+1<rest.length && FAM1.test(rest[i]) && FAM2.test(rest[i+1]);
+        if(i<rest.length && !fam && !rest.slice(i).some(isRel)) r=i;
       }
     }
     // שורה שכולה ברכה — פותחת ב-ו/ל וארוכה. תגית משפחה קצרה
