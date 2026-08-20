@@ -308,6 +308,11 @@ def ensure_schema():
     # רטרואקטיביים.
     try: con.execute("ALTER TABLE pledges ADD COLUMN since TEXT DEFAULT ''")
     except Exception: pass
+    # הסכום שהיה נהוג עד אותו חודש. בלעדיו החודשים שלפני השינוי לא היו
+    # נספרים כלל, ומה ששולם בהם היה נראה כמו תשלום־יתר. עם הסכום הישן
+    # כל חודש נמדד לפי מה שבאמת היה מוסכם בו.
+    try: con.execute("ALTER TABLE pledges ADD COLUMN prev_amount TEXT DEFAULT ''")
+    except Exception: pass
     # מאיר: "איך אני מוחק את השורה האדומה הזו?" — אישור לפער בין מה שנגבה
     # בפועל למה שרשום. ההערה תחזור רק אם הסכום שנגבה ישתנה שוב.
     try: con.execute("ALTER TABLE donors ADD COLUMN gap_ok TEXT DEFAULT ''")
@@ -7679,12 +7684,12 @@ class H(BaseHTTPRequestHandler):
             vdid = b.get('via_donor_id')
             con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
                         "detail=?,permo=?,avreich=?,confirmed=?,via_donor_id=?,via_total=?,via_note=?,"
-                        "since=? WHERE id=?",
+                        "since=?,prev_amount=? WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
                          1 if b.get('monthly') else 0, str(b.get('paid') or ''),
                          b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf,
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
-                         b.get('via_note',''), b.get('since',''), pid))
+                         b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or ''), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
@@ -8848,14 +8853,14 @@ class H(BaseHTTPRequestHandler):
             # שורה שנפתחת מהמסך היא התחייבות שמאיר רשם — מאושרת מלכתחילה.
             vdid = b.get('via_donor_id')
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
-                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note,since) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note,since,prev_amount) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
                          b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
                          str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
                          b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed')),
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
-                         b.get('via_note',''), b.get('since','')))
+                         b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or '')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':

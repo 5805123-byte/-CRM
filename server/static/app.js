@@ -2023,6 +2023,11 @@ function monthsTo(fromYM,toYM){
   if(!a||!b)return 0;
   return Math.max(0, ((+b[1])*12+(+b[2])) - ((+a[1])*12+(+a[2])) + 1);
 }
+function prevMonth(ym){
+  const m=String(ym||'').match(/^(\d{4})-(\d{2})/); if(!m)return '';
+  const n=(+m[1])*12+(+m[2])-1;
+  return Math.floor((n-1)/12)+'-'+String(((n-1)%12)+1).padStart(2,'0');
+}
 /* ---------- 📊 האם הגיע לסכום שהתחייב ----------
    מאיר: "תכל'ס אתה צריך שזה יעשה חשבון אם הוא הגיע לסכום שהתחייב או לא".
    לכל התחייבות: כמה הוא היה אמור לתת עד היום, כמה נגבה בפועל, ומה ההפרש.
@@ -2048,11 +2053,19 @@ function purposeAlloc(d){
     // מאיר: "בלי שתצבור חוב או זכות" — סכום שהשתנה באמצע השנה נספר רק
     // מהחודש שנרשם לו, ולא אחורה על חודשים ששולמו לפי הסכום הקודם
     let start=(r.inst&&r.plan.from)?(r.plan.from>first?r.plan.from:first):first;
-    if(r.since&&r.since>start)start=r.since;
+    // החודשים שלפני השינוי אינם נעלמים — הם נספרים לפי הסכום שהיה נהוג
+    // בהם. כך תורם שהוריד מ-1,000 ל-500 באמצע השנה אינו נראה כמי שנשאר
+    // חייב על העבר, וגם לא כמי ששילם מראש.
+    let head=0, hn=0;
+    if(r.since&&r.since>start){
+      hn=monthsTo(start, prevMonth(r.since));
+      if(hn>0&&r.prev>0.5)head=r.prev*hn;
+      start=r.since;
+    }
     const n=monthsTo(start, thru);
-    let exp=per*n;
+    let exp=per*n+head;
     if(r.inst)exp=Math.min(exp, r.amt);          // תשלומים — לא מעבר לסכום הכולל
-    return {what:r.what, icon:r.icon, per, n, exp};
+    return {what:r.what, icon:r.icon, per, n:n+hn, exp};
   });
   // החלוקה יחסית ולא לפי הסדר: כשחסר כסף, החוסר מתחלק בין ההתחייבויות
   // ולא נופל כולו על האחרונה. אחרת ייעוד אחד היה נראה "מלא ✓" בזמן
@@ -2105,8 +2118,24 @@ function izGapNote(d){
   return `<div class="cmgap">⚠️ בפועל נגבה <b>${f(real)}</b> כל חודש, וכאן רשום ${f(shown)}`
     +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')
     +`<div class="cmgap-b noprint">`
-    +`<button class="btn sm gapfix" data-amt="${Math.round(real)}">🔄 עדכן ל-${f(real)} מהחודש</button>`
+    +`<button class="btn sm gapfix" data-amt="${Math.round(real)}">🔄 עדכן ל-${f(real)}</button>`
+    +`<label class="gapfrom-l">החל מ<select class="gapfrom">${gapMonthOpts()}</select></label>`
     +`<button class="btn sm ghost gapok" data-amt="${Math.round(real)}">✓ זה בסדר</button></div></div>`;
+}
+/* מאיר: "ואז יהיה אפשרות בחירה מהחודש או מההתחלה שאבחר תאריך למשל ינואר,
+   ואז הכל יסתדר גם אצל שאר תורמים שיש לי את הבעיה הזו איתם".
+   טעפפער וסלקוביץ שותפים ביששכר־זבולון ונותנים 500 כל אחד מינואר, אבל
+   רשום 1,000 לכל אחד. בחירת "מינואר" מתקנת את כל השנה בבת אחת, ולא רק
+   מהחודש הזה והלאה. */
+function gapMonthOpts(){
+  const now=todayStr().slice(0,7), yr=GREGYEAR;
+  const out=[`<option value="${now}">החודש (${fmtMonth(now)})</option>`];
+  for(let m=12;m>=1;m--){
+    const k=yr+'-'+String(m).padStart(2,'0');
+    if(k>=now)continue;
+    out.push(`<option value="${k}">${fmtMonth(k)}${m===1?' — מתחילת השנה':''}</option>`);
+  }
+  return out.join('');
 }
 function monthlyRows(d){
   const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0&&plReal(p));
@@ -2161,9 +2190,14 @@ function commitRows(d){
     // ואם הסכום רק הוסק מהגבייה, זו הצעה ולא התחייבות.
     let byav=0; try{byav=izSummary(d).monthly*( (d.partners||[]).some(p=>p.active!=0)?1:0 );}catch(e){}
     const izReal=izPl.some(p=>plConf(p)>0)||byav>0.5;
+    // החודש שממנו הסכום תקף, והסכום שהיה נהוג לפניו — נלקחים מהשורה
+    // עצמה, אחרת עדכון של יששכר־זבולון היה נספר על כל השנה אחורה
+    const izOne=izPl.length===1?izPl[0]:null;
     rows.push({iz:1,what:'יששכר־זבולון',icon:'🤝',mo:1,amt:iza,
-      pid:(izPl.length===1?izPl[0].id:''),
-      conf:izReal?1:0, ended:izPl.length===1&&plEnded(izPl[0]),
+      pid:(izOne?izOne.id:''),
+      conf:izReal?1:0, ended:!!izOne&&plEnded(izOne),
+      since:izOne?String(izOne.since||''):'',
+      prev:izOne?amtNum(izOne.prev_amount):0,
       guess:!izPl.length,
       praw:'',note:String(d.iz_note||'')});
   }
@@ -2174,6 +2208,7 @@ function commitRows(d){
       icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
       conf:plConf(p), ended:plEnded(p), since:String(p.since||''),
+      prev:amtNum(p.prev_amount),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
       via:viaD?{id:viaD.id,name:(viaD.last+' '+viaD.first).trim(),
@@ -2382,7 +2417,7 @@ function wireCommit(d,body){
       detail:p.detail||'',permo:p.permo||'',avreich:p.avreich||'',
       confirmed:(p.confirmed!=null?+p.confirmed:1),
       via_donor_id:p.via_donor_id||'',via_total:p.via_total||'',via_note:p.via_note||'',
-      since:p.since||''});};
+      since:p.since||'',prev_amount:p.prev_amount||''});};
   const pOf=pid=>(d.pledges||[]).find(x=>String(x.id)===String(pid));
   // סכום ידני שנשאר לצד תשלומים שנקלטו במערכת יוצר שני מספרים סותרים
   // על אותה שורה. מה שנקלט הוא הקובע, ולכן הידני נמחק פעם אחת.
@@ -2482,20 +2517,32 @@ function wireCommit(d,body){
   box.querySelectorAll('.gapfix').forEach(b=>b.onclick=async()=>{
     if(b.dataset.busy)return; b.dataset.busy='1';
     try{
-      const v=b.dataset.amt, mo=todayStr().slice(0,7);
+      const v=b.dataset.amt;
+      const sel=b.closest('.cmgap-b')&&b.closest('.cmgap-b').querySelector('.gapfrom');
+      const mo=(sel&&sel.value)||todayStr().slice(0,7);
       let p=(d.pledges||[]).find(x=>+x.monthly&&isIZcat(x.category));
+      // הסכום שהיה עד עכשיו נשמר, כדי שהחודשים שלפני החודש שנבחר
+      // ייספרו לפיו ולא ייעלמו מהחשבון
+      const old=String(Math.round(izRowAmt(d))||'');
       if(!p){
         const r=await api('POST','/api/pledge',{donor_id:d.id,category:'יששכר־זבולון',
-          amount:v,status:'נתן',monthly:1,paid:'',confirmed:1,since:mo});
+          amount:v,status:'נתן',monthly:1,paid:'',confirmed:1,since:mo,prev_amount:old});
         if(!r||!r.id){toast('לא נשמר');return;}
         p={id:r.id,donor_id:d.id,category:'יששכר־זבולון',amount:v,status:'נתן',monthly:1,
-           paid:'',note:'',detail:'',permo:'',avreich:'',confirmed:1,since:mo};
+           paid:'',note:'',detail:'',permo:'',avreich:'',confirmed:1,since:mo,prev_amount:old};
         d.pledges=(d.pledges||[]).concat([p]);
-      } else await putPl(p,{amount:v,confirmed:1,since:mo});
+      } else await putPl(p,{amount:v,confirmed:1,since:mo,prev_amount:old});
       const act=(d.partners||[]).filter(x=>x.active!=0);
       if(act.length===1){act[0].amount=v;await api('PUT','/api/partner/'+act[0].id,{amount:v});}
-      d.gap_ok=String(v); await api('PUT','/api/donor/'+d.id,{gap_ok:d.gap_ok});
-      await syncAmt(); toast('עודכן ל-'+v+' מהחודש ✓'); redraw();
+      // הסכום הקבוע שבראש הכרטיס מתעדכן גם הוא, אחרת היה נשאר מוצג
+      // הסכום הישן ליד השורה המתוקנת. יש כאן התחייבות חיה, ולכן הסכום
+      // לעולם אינו מתאפס — גם אצל תורם שיש לו אברכים פעילים.
+      const tot=fixTotal(d);
+      d.gap_ok=String(v);
+      await api('PUT','/api/donor/'+d.id,
+        tot>0.5?{gap_ok:d.gap_ok,amount:String(Math.round(tot))}:{gap_ok:d.gap_ok});
+      if(tot>0.5)d.amount=String(Math.round(tot));
+      toast('עודכן ל-'+v+' החל מ'+fmtMonth(mo)+' ✓'); redraw();
     } finally{ delete b.dataset.busy; }});
   // "זה בסדר": הסכום נשאר, ההערה נסגרת, והיא תחזור רק אם הגבייה תשתנה שוב
   box.querySelectorAll('.gapok').forEach(b=>b.onclick=async()=>{
