@@ -94,10 +94,13 @@
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
   <button class="g" id="addBtn">➕ הוסף שם</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
-  <div class="tip">"📋 העתק תמונה" — ואז מדביקים בוואטסאפ או במייל. "📤 שלח לתורם" שולח את התעודה כתמונה — בטלפון ישר לוואטסאפ, במחשב מועתקת להדבקה.<br>מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.</div>
+  <div class="tip">"📋 העתק תמונה" — ואז מדביקים בוואטסאפ או במייל. "📤 שלח לתורם" שולח את התעודה כתמונה — בטלפון ישר לוואטסאפ, במחשב מועתקת להדבקה.<br>מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.<br><small id="buildstamp" style="opacity:.55"></small></div>
 </div>
 
 <script>
+// חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
+// החדשה או עותק ישן שנשמר בזיכרון הדפדפן
+const BUILD = "v464";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -377,19 +380,43 @@ function fit(){
    או שיחי' וכו', הבקשות של אחר כך גודל 40 שוב."
    המספרים הם על רוחב 1000 ומתאימים את עצמם לרוחב הדף, כדי שיהיו זהים
    במסך, בתמונה ובהדפסה. sf מקטין את כולם יחד רק כשההקדשה ארוכה מדי. */
+let NUSPX=40;
+// הנוסח קבוע ולכן גם גודלו קבוע: הגדול ביותר שעדיין נכנס בשתי שורות
+// ברוחב התיבה. נמדד פעם אחת, ואינו משתנה בין תעודה לתעודה.
+function fitNusach(){
+  const sh=document.getElementById('sheet'), el=document.querySelector('.nusach');
+  if(!sh||!el)return;
+  const u0=sh.clientWidth/1000;
+  const lines=px=>{ el.style.setProperty('font-size',(px*u0).toFixed(2)+'px','important');
+    const lh=parseFloat(getComputedStyle(el).lineHeight)||px*u0*1.45;
+    return Math.round(el.scrollHeight/lh); };
+  let lo=6, hi=60;
+  for(let i=0;i<20;i++){ const mid=(lo+hi)/2; if(lines(mid)<=2) lo=mid; else hi=mid; }
+  NUSPX=lo;
+}
 function parnesSizes(sf){
-  const sh=document.getElementById('sheet'); if(!sh)return;
-  const u=(sh.clientWidth/1000)*sf;
+  const sh=document.getElementById('sheet'); if(!sh)return 1;
+  // מאיר: "נוסח היהי רצון הקבוע שיהיה תמיד גודל אחיד וכמה שיותר למעלה,
+  // שיהיה על 2 שורות בלבד, בלי צורך להגדיל ולהקטין אותו אף פעם, כנ"ל
+  // התאריך גם, כנ"ל המילים יעמדו לזכות או לעילוי נשמת או לרפואת".
+  // u0 — הגודל הקבוע שאינו משתתף בהגדלה; u — רק השמות גדלים לפיו.
+  const u0=sh.clientWidth/1000, u=u0*sf;
   // מנקים הקטנות קודמות — הן חושבו מול גודל אחר
   document.querySelectorAll('#pairs .nline,#pairs .nlead,#pairs .nreq,#pairs .nttl')
     .forEach(e=>e.style.removeProperty('font-size'));
-  const set=(sel,n)=>document.querySelectorAll(sel)
-    .forEach(e=>{e.style.setProperty('font-size',(n*u).toFixed(2)+'px','important');});
+  const setu=(sel,n,uu)=>document.querySelectorAll(sel)
+    .forEach(e=>{e.style.setProperty('font-size',(n*uu).toFixed(2)+'px','important');});
   // גודל הבסיס קובע גם את הרווחים שבין הבלוקים (הם ביחידות em)
-  document.getElementById('content').style.fontSize=(40*u).toFixed(2)+'px';
-  set('.nusach',40); set('.date',50); set('.stand',40);
-  set('#pairs .names',70); set('#pairs .req',40);
-  set('#pairs .nreq',40); set('#pairs .nlead',40);
+  document.getElementById('content').style.fontSize=(40*u0).toFixed(2)+'px';
+  // קבועים — אינם משתתפים בהגדלה
+  setu('.date',50,u0); setu('.stand',40,u0);
+  document.querySelectorAll('.nusach').forEach(e=>{
+    e.style.setProperty('font-size',(NUSPX*u0).toFixed(2)+'px','important');});
+  // השמות — הם שגדלים
+  setu('#pairs .names',70,u); setu('#pairs .req',40,u0);
+  // הבקשה ומילות הפתיח: 40 קבוע, אך לעולם לא גדולות מהשם עצמו
+  const uq=u0*Math.min(1,sf);
+  setu('#pairs .nreq',40,uq); setu('#pairs .nlead',40,uq);
   // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת.
   // מוחזר המקדם הקטן ביותר — 1 פירושו שאף שם לא הוקטן ברוחב.
   let minf=1;
@@ -404,6 +431,7 @@ function parnesSizes(sf){
 }
 function fitParnes(){
   const c=$('content'), body=document.getElementById('cbody');
+  fitNusach();
   parnesSizes(1);
   const avail=c.clientHeight-14; if(avail<=0||!body)return;
   const H=()=>body.getBoundingClientRect().height;
@@ -603,7 +631,10 @@ let _prep=null;
 function schedulePrep(){ clearTimeout(_prep); _prep=setTimeout(preparePng,600); }
 document.addEventListener('input', schedulePrep, true);
 document.addEventListener('blur', schedulePrep, true);
-window.addEventListener('load', ()=>setTimeout(preparePng,400));
+window.addEventListener('load', ()=>{ setTimeout(preparePng,400);
+  const bs=document.getElementById('buildstamp');
+  if(bs)bs.textContent='גרסת תעודה '+BUILD;
+});
 
 window.addEventListener('resize', fit);
 window.addEventListener('load', fit);            // אחרי טעינת רקע הבלאנק
