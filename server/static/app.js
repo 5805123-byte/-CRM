@@ -3138,6 +3138,7 @@ function cardDetails(d,body){
         <input id="ucl_new" placeholder="שם הייעוד החדש…" style="display:none">
         <input id="ucl_bldg" list="bldgitems" placeholder="🏗️ מה תרם בבניין?" style="display:none">
         <select id="ucl_av" style="display:none">${avOpts()}</select>
+        <div class="hintxt uclavhint" id="ucl_avhint" style="display:none"></div>
         <input id="ucl_avnew" placeholder="שם האברך החדש" style="display:none">
         <button class="btn sm" id="ucl_avadd" style="display:none">➕ הוסף</button>
         <button class="btn sm" id="ucl_save">💾 אותו דבר לכולם</button></div></div>`;})():''}
@@ -3337,9 +3338,18 @@ function cardDetails(d,body){
   if(uclSel&&uclNew&&uclBd){ const shwA=()=>{const isNew=uclSel.value==='__new__';uclNew.style.display=isNew?'block':'none';
       const c=isNew?uclNew.value:uclSel.value;
       uclBd.style.display=/בנין|בניין/.test(c)?'block':'none';
-      const izA=isIZcat(c); if(uclAv) uclAv.style.display=izA?'block':'none';
+      // מאיר: "למה שאבחר אברך? שהמערכת תראה לבד שכבר יש לו אברכים שהוא
+      // מחזיק, זה לשלושתם ביחד, אז איך אבחר אברך אחד?" — כשיש לו אברכים
+      // רשומים הכסף שייך ליששכר־זבולון שלו ומתחלק ביניהם, ואין מה לבחור.
+      const izA=isIZcat(c), mine=izAvNames(d);
+      if(uclAv) uclAv.style.display=(izA&&!mine.length)?'block':'none';
+      const hint=document.getElementById('ucl_avhint');
+      if(hint){ hint.style.display=(izA&&mine.length)?'block':'none';
+        hint.textContent=izA&&mine.length
+          ? ('ייזקף ליששכר־זבולון של '+(mine.length===1?'האברך שלו':mine.length+' האברכים שלו')
+             +' — '+mine.join(' · ')) : ''; }
       const un=document.getElementById('ucl_avnew'),ua=document.getElementById('ucl_avadd');
-      if(!izA&&un){un.style.display='none';ua.style.display='none';}};
+      if((!izA||mine.length)&&un){un.style.display='none';ua.style.display='none';}};
     uclSel.onchange=()=>{shwA();if(uclSel.value==='__new__')uclNew.focus();}; uclNew.oninput=shwA; }
   if(uclSave)uclSave.onclick=async()=>{
     const sa=document.getElementById('ucl_cat'), na=document.getElementById('ucl_new');
@@ -3353,7 +3363,9 @@ function cardDetails(d,body){
       if(!(BUILDING_ITEMS||[]).includes(it)){ await api('POST','/api/building_items',{name:it}); BUILDING_ITEMS.unshift(it); }
       cat=cat+' — '+it; }
     let avv2='';
-    if(isIZcat(cat)){ avv2=(uclAv?uclAv.value:'').trim();
+    // אברך נבחר רק כשאין לו אף אברך רשום. כשיש — הכסף הוא של
+    // יששכר־זבולון שלו כולו, ואין טעם לשייך אותו לאברך אחד מתוך שלושה.
+    if(isIZcat(cat)&&!izAvNames(d).length){ avv2=(uclAv?uclAv.value:'').trim();
       if(!avv2||avv2==='__new__'){toast('בחר אברך מהרשימה');if(uclAv)uclAv.focus();return;} }
     uclSave.disabled=true;uclSave.textContent='שומר…';
     const r=await api('POST','/api/classify',{donor_id:d.id,category:cat,avreich:avv2});
@@ -4189,7 +4201,22 @@ function renderPartners(d){
     <label class="fld"><span>💵 שילם עד סוף חודש (מזומן / צ'ק ביד — תשלום שלא נרשם במערכת)</span><input type="month" class="pfield" data-id="${p.id}" data-k="paid_thru" value="${esc(p.paid_thru||'')}"></label>
     <label class="fld"><span>💰 הערה על האברך (למשל: "שילם הכל מראש 13/7")</span><input class="pfield" data-id="${p.id}" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערה אחת — נשמרת ומוצגת בסיכום"></label>
     <button class="btn sm psave" data-id="${p.id}" style="width:100%;margin-top:4px">💾 שמור אברך</button>
-  </div>`).join('')||'<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
+  </div>`).join('');
+  // מאיר: "עדיין לא כתוב אצל יואל שטטפלד כלום לגבי היששכר־זבולון שהוא
+  // מחזיק ביחד עם בנימין". אברך שהוא מחזיק בשותפות והשורה שלו רשומה אצל
+  // השותף מופיע גם כאן — בלי שדות עריכה, כי הם שייכים לשורה המקורית.
+  const lnk=izLinkedRows(d);
+  el.innerHTML+=lnk.map(x=>`<div class="pledge plink" style="flex-direction:column;align-items:stretch;gap:4px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>👨‍🎓 ${esc(x.avreich)}</b>
+      <span class="plinktag">🤝 בשותפות</span></div>
+    <div class="hintxt" style="margin:0">מחזיק אותו יחד עם
+      <b class="cosp2" data-did="${x.did}">${esc(x.name)} ↗</b>${x.amount
+        ?(' · '+(x.split?'התשלום יוצא ממנו':'רשום אצלו')+' '+cur+Math.round(amtNum(x.amount))):''}.
+      השורה עצמה נמצאת בכרטיס שלו, ולכן נערכת שם — כדי שהסכום לא ייספר פעמיים.</div>
+  </div>`).join('');
+  if(!act.length&&!lnk.length)
+    el.innerHTML='<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
   el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📝 מעקב חוב יששכר־זבולון</div>
       <label class="fld"><span>🔴 כמה הוא חייב עכשיו (${cur}) — עדכון ידני שגובר על החישוב</span><input id="iz_debt" inputmode="decimal" value="${esc(d.iz_debt||'')}" placeholder="השאר ריק כדי לחשב אוטומטית"></label>
       <div class="hintxt">ההערה על ההתחייבות ("שילם מראש, מכסה עד אלול") נכתבת בשורת יששכר־זבולון בסוף דף התורם — שם הכל במקום אחד.</div></div>
@@ -4225,6 +4252,8 @@ function renderPartners(d){
     renderPartners(d); refreshIzSum(d); if(tab==='donors')renderDonors();});
   el.querySelectorAll('.pjoint').forEach(cb=>cb.onchange=async()=>{const p=(d.partners||[]).find(x=>x.id==cb.dataset.id);if(!p)return;p.joint=cb.checked?1:0;await api('PUT','/api/partner/'+p.id,{joint:p.joint});toast(cb.checked?'סומן כמשותף ✓':'בוטל');renderPartners(d);if(tab==='donors')renderDonors();});
   el.querySelectorAll('.pwx').forEach(b=>b.onclick=()=>rmPw(b.dataset.id,+b.dataset.idx));
+  el.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{
+    const dd=DB.find(y=>y.id==x.dataset.did); if(dd)openDonor(dd);});
   el.querySelectorAll('.pwadd').forEach(inp=>{
     const pid=inp.dataset.id,res=el.querySelector('.pwres[data-id="'+pid+'"]');
     inp.oninput=()=>{const s=norm(inp.value);if(!s){res.innerHTML='';return;}
@@ -5871,6 +5900,13 @@ function avDonorRate(d){
   let best=0,bn=0; Object.keys(cnt).forEach(v=>{if(cnt[v]>bn){best=+v;bn=cnt[v];}});
   if(best)return {amt:best, why:'לפי מה שהוא משלם על '+(bn===1?'האברך השני':'שאר האברכים')};
   return {amt:0, why:''};
+}
+// שמות האברכים שהתורם מחזיק בפועל — כולל אלה שהשורה שלהם רשומה אצל השותף
+function izAvNames(d){
+  const out=[];
+  (d.partners||[]).forEach(p=>{const n=String(p.avreich||'').trim(); if(p.active!=0&&n)out.push(n);});
+  izLinkedRows(d).forEach(x=>{if(out.indexOf(x.avreich)<0)out.push(x.avreich);});
+  return out;
 }
 // מקום שהתפנה — האברך שהיה בו יצא מהכולל, והתורם עדיין מחזיק אותו
 function avOpenSlot(p){return !String(p.avreich||'').trim()&&!!String(p.prev_avreich||'').trim();}
