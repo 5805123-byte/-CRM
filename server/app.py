@@ -5556,6 +5556,19 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         # ההבטחה עצמה, כדי שאף חישוב קודם לא יוכל להפוך את היחס: הבקשה
         # ומילות הפתיח אינן עולות על 40/70 מהשם הקטן ביותר שבתעודה.
         if is_name:
+            # מאיר: "השם שלו יותר קטן מהשם של אמא שלו, זה צריך להיות אותו
+            # גודל בדיוק" — כל שורה התכווצה לבדה לפי אורכה, ולכן השורה
+            # הארוכה יצאה קטנה מהקצרה. כאן כל שורות השמות מיושרות לגודל
+            # הקטן שביניהן, וכך הן תמיד באותו גודל בדיוק.
+            ni = [i for i, (ln, ro) in enumerate(zip(lines, rl))
+                  if ro == 'names' and ln]
+            if len(ni) > 1:
+                tgt = min(max(z for _, z, _ in lines[i]) for i in ni)
+                for i in ni:
+                    top = max(z for _, z, _ in lines[i])
+                    if top > tgt:
+                        f = tgt / top
+                        lines[i] = [(t, z * f, h) for t, z, h in lines[i]]
             nm = [max(z for _, z, _ in ln) for ln, ro in zip(lines, rl)
                   if ro in ('names', 'donor') and ln]
             if nm:
