@@ -6171,6 +6171,13 @@ def fill_english_by_email(con):
 _ADDR_IN_MAIL = re.compile(
     r'(\d{1,6}[^\n]{4,70}?)[,\s]+'
     r'([A-Za-z][A-Za-z .\'\-]{2,28}?)[,\s]+([A-Za-z]{2})[,\s]+(\d{5})\b')
+# מאיר: "הכתובת שלו זה 2381 Nostrand" — החתימה במייל נתנה את כתובת המשרד
+# של החברה שלו ולא את כתובתו. לכן כתובת שמופיעה מיד אחרי שם חברה מסומנת
+# ככתובת משרד, ומאיר רואה את זה לפני שהוא מאשר.
+_ADDR_BIZ = re.compile(
+    r'\b(llc|l\.l\.c|inc|inc\.|corp|corporation|ltd|company|co\.|group|services|'
+    r'realty|title|management|associates|partners|holdings|capital|law|office|'
+    r'agency|solutions|enterprises|industries)\b', re.I)
 _ADDR_KW = re.compile(
     r'\b(street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|'
     r'place|pl|terrace|ter|way|parkway|pkwy|highway|hwy|turnpike|tpke|circle|cir|'
@@ -6214,9 +6221,12 @@ def addr_from_mail(con, ids):
                                       m.group(3).upper(), m.group(4))
             if _OUR_ADDR.search(full):
                 continue
+            # שם חברה ממש לפני הכתובת — סימן שזו כתובת משרד ולא כתובת בית
+            head = txt[max(0, m.start() - 120):m.start()]
+            biz = bool(_ADDR_BIZ.search(head))
             lst = out.setdefault(did, [])
-            if full not in lst:
-                lst.append(full)
+            if not any(x['addr'] == full for x in lst):
+                lst.append({'addr': full, 'office': biz})
             if len(lst) >= 3:
                 break
     return out
@@ -7591,7 +7601,9 @@ class H(BaseHTTPRequestHandler):
                 # הכתובת שהתורם עצמו כתב לנו במייל — המקור האמין ביותר,
                 # ולכן היא מוצגת ראשונה ברשימה
                 for a in inmail.get(d['id'], []):
-                    sug.insert(0, {'addr': a, 'phone': '', 'who': '', 'src': 'מהמייל שלו'})
+                    sug.insert(0, {'addr': a['addr'], 'phone': '', 'who': '',
+                                   'src': 'מהמייל שלו · כתובת משרד' if a.get('office')
+                                          else 'מהמייל שלו'})
                 sug = [s for s in sug if s['addr'] and (d['id'], s['addr']) not in rej]
                 out.append({'id': d['id'],
                             'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
