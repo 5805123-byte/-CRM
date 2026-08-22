@@ -3227,11 +3227,22 @@ def ensure_schema():
     except Exception as e:
         print('  contacts seed error:', e)
 
+    # מאיר: "מה שהוא תרם לא רשום, אתה אמור לזהות לפי האימייל שלו".
+    # השם הלועזי החסר מושלם משם השולח שבמייל, ורק אחר כך משייכים את
+    # החיובים — כך כרטיס שקיבל היום כתובת מייל תופס גם חיובים ישנים.
+    # שני המעברים רצים בכל עלייה ולא פעם אחת: הם נוגעים רק במה שעדיין
+    # חסר, ולכן ריצה חוזרת אינה משנה דבר.
+    try:
+        n = fill_english_by_email(con)
+        if n:
+            print('  שמות באנגלית שהושלמו לפי המייל: %d' % n)
+    except Exception as e:
+        print('  english fill error:', e)
+
     # שיוך אוטומטי של חיובים שנשארו בלי כרטיס — מייל, טלפון, ותעתיק השם לעברית
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_autolink_v1'").fetchone():
-            n = link_by_identity(con)
-            con.execute("INSERT INTO seed_flags(name) VALUES('recon_autolink_v1')")
+        n = link_by_identity(con)
+        if n:
             print('  חיובים ששויכו לפי מייל/טלפון/תעתיק: %d' % n)
     except Exception as e:
         print('  recon autolink error:', e)
@@ -6054,6 +6065,106 @@ def link_near_names(con):
     return n
 
 
+_LATIN_NAME = re.compile(r"^[A-Za-z][A-Za-z''\-\.]*(\s+[A-Za-z][A-Za-z''\-\.]*)+$")
+
+
+def fill_english_by_email(con):
+    """מאיר: "תעבור על כל האנשי קשר, מי שאין לו שם באנגלית תחפש באימיילים
+    או באנשי קשר או במיילים עצמם, כמו Marc Herskowitz".
+
+    השם הלועזי נלקח משם השולח של המייל שהתורם שלח לנו (marc@ilstitle.com →
+    "Marc Herskowitz"), ואם אין מייל כזה — מרשימת אנשי הקשר לפי אותה כתובת.
+    רק כשהכתובת שייכת לתורם אחד ויחיד, ורק כשהשם באמת לועזי ובן שתי מילים
+    לפחות — כדי שלא ייכנס שם של מזכירה, של חברה או של כתובת."""
+    bye = {}
+    for d in con.execute("SELECT id,email FROM donors "
+                         "WHERE TRIM(COALESCE(english,''))='' "
+                         "AND TRIM(COALESCE(email,''))<>''"):
+        for e in emails_of(d['email']):
+            bye.setdefault(e, set()).add(d['id'])
+    # כתובת שמשויכת לשני תורמים אינה מזהה אף אחד מהם
+    bye = {e: list(v)[0] for e, v in bye.items() if len(v) == 1}
+    if not bye:
+        return 0
+
+    try:
+        import gmail_intake as _gi
+    except Exception:
+        _gi = None
+    he = {r['id']: (r['last'] or '', r['first'] or '')
+          for r in con.execute("SELECT id,last,first FROM donors")}
+
+    def fits(did, nm):
+        """האם השם הלועזי באמת שייך לתורם הזה. בלי הבדיקה הזו נכנס לכרטיס
+        שם של אדם אחר שחולק את אותה כתובת — בבדיקה זה הכניס "Yitzchok Gold"
+        לכרטיס של בינעט משה. די בכך שאחת ממילות השם מתעתקת לשם המשפחה או
+        לשם הפרטי שבכרטיס."""
+        if not _gi:
+            return False
+        last, first = he.get(did, ('', ''))
+        tgt = {k for k in (_fz(last), _fz(first)) if k}
+        if not tgt:
+            return False
+        for w in re.split(r'[^A-Za-z]+', nm):
+            if len(w) < 3:
+                continue
+            for jy in (False, True):
+                try:
+                    if _fz(_he_alt(_gi, w, jy)) in tgt:
+                        return True
+                except Exception:
+                    pass
+        return False
+
+    cand = {}
+
+    def offer(did, nm):
+        nm = re.sub(r'\s+', ' ', str(nm or '')).strip()
+        if not nm or did in cand or not _LATIN_NAME.match(nm):
+            return
+        if not fits(did, nm):
+            return
+        cand[did] = nm[:60]
+
+    # 1. שם השולח מתוך המיילים שהתקבלו — המקור המדויק ביותר
+    try:
+        for r in con.execute("SELECT from_name,from_email FROM intake "
+                             "WHERE TRIM(COALESCE(from_name,''))<>'' "
+                             "ORDER BY id DESC"):
+            did = bye.get((r['from_email'] or '').strip().lower())
+            if did:
+                offer(did, r['from_name'])
+    except Exception:
+        pass
+    # 2. אנשי הקשר — השם שרשום שם לצד אותה כתובת מייל.
+    # השם שעל החיוב באשראי אינו משמש כאן בכוונה: בעל הכרטיס אינו בהכרח
+    # התורם, ובבדיקה הוא הכניס לכרטיס של אסתר לאם שם של אדם אחר לגמרי.
+    try:
+        import gcontacts as _gc
+        for fn in ('contacts_seed3.csv', 'contacts_seed.csv', 'contacts_seed2.vcf'):
+            fp = os.path.join(HERE, fn)
+            if not os.path.exists(fp):
+                continue
+            with open(fp, encoding='utf-8', errors='ignore') as fh:
+                for ct in _gc.parse_any(fh.read()):
+                    nm = (ct.get('name') or '').strip()
+                    if not nm:
+                        continue
+                    for e in ct.get('emails') or []:
+                        did = bye.get(e.strip().lower())
+                        if did:
+                            offer(did, nm)
+    except Exception as e:
+        print('  contacts english error:', e)
+
+    n = 0
+    for did, nm in cand.items():
+        con.execute("UPDATE donors SET english=? WHERE id=? "
+                    "AND TRIM(COALESCE(english,''))=''", (nm, did))
+        n += 1
+    return n
+
+
 def link_by_identity(con):
     """משייך חיובים שנשארו בלי כרטיס — לפי מייל, לפי טלפון, ולבסוף לפי תעתיק השם
     הלועזי לעברית. רק התאמה יחידה וברורה מתקבלת; כל השאר נשאר לאישור ידני."""
@@ -7895,11 +8006,23 @@ class H(BaseHTTPRequestHandler):
             fields = {k: v for k, v in b.items() if k in DONOR_FIELDS}
             if 'zip' in fields:
                 fields['zip'] = norm_zip(fields['zip'], fields.get('region', b.get('region', '')))
+            linked = 0
             if fields:
                 con = db()
                 con.execute("UPDATE donors SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",
-                            list(fields.values()) + [did]); con.commit(); con.close()
-            return self._send(200, {'ok': True})
+                            list(fields.values()) + [did]); con.commit()
+                # מאיר: "זה אמור להסתנכרן לפי האימייל". ברגע שנוספת כתובת
+                # מייל או טלפון — מחפשים מיד חיובים ישנים שנשארו בלי כרטיס,
+                # ומשלימים את השם הלועזי החסר. אחרת הכתובת נשמרת ולא קורה כלום.
+                if 'email' in fields or 'phone' in fields:
+                    try:
+                        fill_english_by_email(con)
+                        linked = link_by_identity(con)
+                        con.commit()
+                    except Exception as e:
+                        print('  donor relink error:', e)
+                con.close()
+            return self._send(200, {'ok': True, 'linked': linked})
         m = re.match(r'/api/pledge/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
