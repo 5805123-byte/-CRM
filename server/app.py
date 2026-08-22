@@ -3232,6 +3232,22 @@ def ensure_schema():
     # החיובים — כך כרטיס שקיבל היום כתובת מייל תופס גם חיובים ישנים.
     # שני המעברים רצים בכל עלייה ולא פעם אחת: הם נוגעים רק במה שעדיין
     # חסר, ולכן ריצה חוזרת אינה משנה דבר.
+    # מאיר: "בארצות הברית קודם המספר אחר כך שם רחוב" — מסדרים כתובות
+    # שנרשמו עם הדירה/הסוויטה לפני מספר הבית. מעבר מרפא: רץ בכל עלייה,
+    # ונוגע רק בכתובת שבאמת בסדר הפוך.
+    try:
+        fixed = 0
+        for r in con.execute("SELECT id,addr FROM donors WHERE TRIM(COALESCE(addr,''))<>''").fetchall():
+            nw = us_addr_order(r['addr'])
+            if nw and nw != (r['addr'] or ''):
+                con.execute("UPDATE donors SET addr=? WHERE id=?", (nw, r['id']))
+                fixed += 1
+        if fixed:
+            con.commit()
+            print('  כתובות שסודרו לסדר אמריקאי: %d' % fixed)
+    except Exception as e:
+        print('  addr order error:', e)
+
     try:
         n = fill_english_by_email(con)
         if n:
@@ -6168,6 +6184,31 @@ def fill_english_by_email(con):
 # כתובת אמריקאית בתוך גוף מייל — מעוגנת בעיר/מדינה/מיקוד, והרחוב הוא מה
 # שלפניה ומתחיל במספר. חייבת להופיע בה מילת רחוב או קומה/סוויטה, אחרת
 # מספר טלפון או תאריך היו נחשבים לכתובת.
+# מאיר: "בארצות הברית קודם המספר אחר כך שם רחוב" — כתובת שנרשמה
+# "Suite 802 2381 Nostrand Ave" מסודרת ל-"2381 Nostrand Ave, Suite 802".
+_UNIT_PRE = re.compile(
+    r'^\s*(suite|ste|apt|apartment|unit|fl|floor|rm|room|#)\s*\.?\s*([\w\-]+)'
+    r'[\s,]+(\d{1,6}\s+.*)$', re.I)
+
+
+def _order_one(s):
+    m = _UNIT_PRE.match((s or '').strip())
+    if not m:
+        return (s or '').strip()
+    kw, unit, rest = m.group(1), m.group(2), m.group(3)
+    kw = '#' if kw == '#' else kw.title()
+    parts = [p.strip() for p in rest.split(',')]
+    street, tail = parts[0], [p for p in parts[1:] if p]
+    ut = ('#' + unit) if kw == '#' else ('%s %s' % (kw, unit))
+    return ', '.join([street, ut] + tail)
+
+
+def us_addr_order(s):
+    """סדר אמריקאי: מספר, שם רחוב, ואז דירה/סוויטה."""
+    return ' ::: '.join(_order_one(x) for x in re.split(r'\s*:::\s*', (s or '').strip())
+                        if x.strip())
+
+
 _ADDR_IN_MAIL = re.compile(
     r'(\d{1,6}[^\n]{4,70}?)[,\s]+'
     r'([A-Za-z][A-Za-z .\'\-]{2,28}?)[,\s]+([A-Za-z]{2})[,\s]+(\d{5})\b')
@@ -6214,7 +6255,7 @@ def addr_from_mail(con, ids):
         txt = re.sub(r'[ \t]+', ' ', (r['body'] or '').replace('\r', ''))
         txt = re.sub(r'\n+', '\n', txt)
         for m in _ADDR_IN_MAIL.finditer(txt):
-            street = ' '.join(m.group(1).split())
+            street = us_addr_order(' '.join(m.group(1).split()))
             if not _ADDR_KW.search(street):
                 continue
             full = '%s, %s, %s %s' % (street, ' '.join(m.group(2).split()),

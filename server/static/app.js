@@ -1372,7 +1372,7 @@ async function renderNoAddr(){
     <div class="nasub">${p.phone?('📞 '+esc(p.phone)):'<span style="color:var(--no)">בלי טלפון</span>'}${p.email?(' · ✉️ '+esc(p.email)):''}</div>
     ${(p.suggest||[]).map((s,i)=>`<div class="nasug">
       <div class="nasugt">💡 ${esc(s.src)}${s.who?(' · '+esc(s.who)):''}${s.phone?(' · 📞 '+esc(s.phone)):''}</div>
-      <div class="nasuga">${esc(s.addr)}</div>
+      <div class="nasuga" dir="auto">${esc(s.addr)}</div>
       <div class="dupacts"><button class="btn sm nause" data-id="${p.id}" data-i="${i}">✔️ קבע כתובת זו</button>
         <button class="btn sm ghost nanot dupnot" data-id="${p.id}" data-i="${i}">✕ לא מתאים</button></div></div>`).join('')}
   </div>`;
@@ -1620,7 +1620,7 @@ function openDupes(){
             <div class="dupwho">${esc(d.last||'')} <span>${esc(d.first||'')}</span>${d.id===best.id?' <span class="dupkeep">מומלץ להשאיר</span>':''}</div>
             <div class="dupmeta2">כרטיס #${d.id} ${catPill(d.category)} ${pill(d.tier)}${d.english?(' · <span dir="ltr">'+esc(d.english)+'</span>'):''}</div>
             <div class="dupmeta">${d.phone?('📞 '+esc(d.phone)+' '):''}${d.email?('✉️ '+esc(d.email)+' '):''}${amtNum(d.amount)?('💵 '+esc(d.amount)+' '):''}</div>
-            ${d.addr?`<div class="dupmeta">🏠 ${esc(d.addr)}</div>`:''}
+            ${d.addr?`<div class="dupmeta" dir="auto">🏠 ${esc(d.addr)}</div>`:''}
             <div class="dupmeta2">${nd} תרומות · ${npar} פרנס · ${np} אברכים</div></div></label>`;
         }).join('')}<div class="dupacts"><button class="btn sm dupmerge" data-gi="${gi}" data-ids="${grp.map(d=>d.id).join(',')}">מזג ✓</button>
           <button class="btn sm ghost dupnot" data-ids="${grp.map(d=>d.id).join(',')}">✕ לא אותו אדם</button></div></div>`;
