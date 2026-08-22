@@ -8124,6 +8124,10 @@ class H(BaseHTTPRequestHandler):
             fields = {k: v for k, v in b.items() if k in DONOR_FIELDS}
             if 'zip' in fields:
                 fields['zip'] = norm_zip(fields['zip'], fields.get('region', b.get('region', '')))
+            # מאיר: "בארצות הברית קודם המספר אחר כך שם רחוב" — גם כתובת
+            # שנרשמת ידנית מסודרת מיד, ולא ממתינה למעבר של העלייה הבאה.
+            if 'addr' in fields and (fields.get('region', b.get('region', '')) or '') != 'il':
+                fields['addr'] = us_addr_order(fields['addr'])
             linked = 0
             if fields:
                 con = db()
