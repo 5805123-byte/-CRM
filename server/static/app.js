@@ -1381,7 +1381,7 @@ async function renderNoAddr(){
     <button class="btn" id="gcpull" style="width:100%;background:#1a73e8;border-color:#1a73e8;margin-bottom:6px">📇 משוך אנשי קשר מגוגל והשלם כתובות</button>
     <label class="btn" id="gccsvbtn" style="width:100%;background:var(--yes);border-color:var(--yes);margin-bottom:6px;display:block;text-align:center;cursor:pointer">📄 העלה אנשי קשר — CSV מגוגל או VCF מהטלפון
       <input type="file" id="gccsv" accept=".csv,.vcf,.vcard,text/csv,text/vcard,text/x-vcard" hidden></label>
-    <div id="gcout" class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש לי הצעה מוכנה מייצוא אנשי הקשר או מכתובת החיוב. לשאר אין כתובת באף קובץ שקיבלתי — לחץ על הכפתור כדי למשוך ישירות מאנשי הקשר בגוגל.</div>
+    <div id="gcout" class="hintxt" style="margin:0 2px 10px">${(NOADDR.with_suggest||0)} מהם יש הצעה מוכנה — מהמייל שהתורם עצמו שלח (בדרך כלל מהחתימה שבתחתית), מייצוא אנשי הקשר, או מכתובת החיוב. כל הצעה מחכה לאישור שלך, ומסומן ליד כל אחת מאיפה היא הגיעה. לשאר אין כתובת באף מקור — לחץ על הכפתור כדי למשוך ישירות מאנשי הקשר בגוגל.</div>
     ${withS.length?`<div class="misshead">💡 יש הצעה — ${withS.length}</div>${withS.map(card).join('')}`:''}
     ${without.length?`<div class="misshead">אין שום נתון — ${without.length}</div>${without.map(card).join('')}`:''}`;
   document.getElementById('nback').onclick=()=>{flt='';render();};

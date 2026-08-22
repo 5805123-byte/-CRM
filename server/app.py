@@ -6165,6 +6165,63 @@ def fill_english_by_email(con):
     return n
 
 
+# כתובת אמריקאית בתוך גוף מייל — מעוגנת בעיר/מדינה/מיקוד, והרחוב הוא מה
+# שלפניה ומתחיל במספר. חייבת להופיע בה מילת רחוב או קומה/סוויטה, אחרת
+# מספר טלפון או תאריך היו נחשבים לכתובת.
+_ADDR_IN_MAIL = re.compile(
+    r'(\d{1,6}[^\n]{4,70}?)[,\s]+'
+    r'([A-Za-z][A-Za-z .\'\-]{2,28}?)[,\s]+([A-Za-z]{2})[,\s]+(\d{5})\b')
+_ADDR_KW = re.compile(
+    r'\b(street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|'
+    r'place|pl|terrace|ter|way|parkway|pkwy|highway|hwy|turnpike|tpke|circle|cir|'
+    r'suite|ste|apt|unit|floor|fl)\b', re.I)
+_OUR_ADDR = re.compile(r'1540\s*40th', re.I)
+
+
+def addr_from_mail(con, ids):
+    """מאיר: "תחפש כתובת של תורמים שאין לך, תחפש באימייל שלהם — אולי זה
+    רשום באימייל שהוא רשם לי".
+
+    הכתובת נשלפת מגוף המיילים שהתורם שלח לנו — בדרך כלל מהחתימה שבתחתית.
+    רק כתובת אמריקאית מלאה (רחוב, עיר, מדינה ומיקוד) נחשבת, וכתובת המשרד
+    שלנו מסוננת. מוחזר מילון: מזהה תורם → רשימת כתובות מוצעות."""
+    bye = {}
+    for r in con.execute("SELECT id,email FROM donors WHERE TRIM(COALESCE(email,''))<>''"):
+        if r['id'] not in ids:
+            continue
+        for e in emails_of(r['email']):
+            bye.setdefault(e, set()).add(r['id'])
+    bye = {e: list(v)[0] for e, v in bye.items() if len(v) == 1}
+    if not bye:
+        return {}
+    out = {}
+    try:
+        rows = con.execute("SELECT from_email,body FROM intake "
+                           "WHERE TRIM(COALESCE(body,''))<>'' ORDER BY id DESC")
+    except Exception:
+        return {}
+    for r in rows:
+        did = bye.get((r['from_email'] or '').strip().lower())
+        if not did or len(out.get(did, [])) >= 3:
+            continue
+        txt = re.sub(r'[ \t]+', ' ', (r['body'] or '').replace('\r', ''))
+        txt = re.sub(r'\n+', '\n', txt)
+        for m in _ADDR_IN_MAIL.finditer(txt):
+            street = ' '.join(m.group(1).split())
+            if not _ADDR_KW.search(street):
+                continue
+            full = '%s, %s, %s %s' % (street, ' '.join(m.group(2).split()),
+                                      m.group(3).upper(), m.group(4))
+            if _OUR_ADDR.search(full):
+                continue
+            lst = out.setdefault(did, [])
+            if full not in lst:
+                lst.append(full)
+            if len(lst) >= 3:
+                break
+    return out
+
+
 def link_by_identity(con):
     """משייך חיובים שנשארו בלי כרטיס — לפי מייל, לפי טלפון, ולבסוף לפי תעתיק השם
     הלועזי לעברית. רק התאמה יחידה וברורה מתקבלת; כל השאר נשאר לאישור ידני."""
@@ -7506,6 +7563,10 @@ class H(BaseHTTPRequestHandler):
                     rej.add((r['donor_id'], (r['addr'] or '').strip()))
             except Exception:
                 pass
+            try:
+                inmail = addr_from_mail(con, ids)
+            except Exception as e:
+                print('  addr from mail error:', e); inmail = {}
             con.close()
             book = []
             try:
@@ -7527,6 +7588,10 @@ class H(BaseHTTPRequestHandler):
                                     'src': 'אנשי קשר'})
                 for a in sorted(bill.get(d['id'], []))[:3]:
                     sug.append({'addr': a, 'phone': '', 'who': '', 'src': 'כתובת חיוב'})
+                # הכתובת שהתורם עצמו כתב לנו במייל — המקור האמין ביותר,
+                # ולכן היא מוצגת ראשונה ברשימה
+                for a in inmail.get(d['id'], []):
+                    sug.insert(0, {'addr': a, 'phone': '', 'who': '', 'src': 'מהמייל שלו'})
                 sug = [s for s in sug if s['addr'] and (d['id'], s['addr']) not in rej]
                 out.append({'id': d['id'],
                             'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
