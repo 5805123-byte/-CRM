@@ -3556,6 +3556,91 @@ def ensure_schema():
     except Exception as e:
         print('  avreichim seed error:', e)
 
+    # מאיר: "פוקסבורוימר נותן 600 בחודש וקאופמן נותן 500 דולר בחודש,
+    # מההתחלה ככה — כל אחד נותן בנפרד והם מחזיקים בשותפות את משה אריה
+    # רוזנטל". אצל שניהם נרשם 1,000 בטעות. מעבר מרפא, נוגע רק במה שעדיין
+    # שגוי, וגם מקשר ביניהם כשותפים באותו אברך.
+    try:
+        _av = 'רוזנטל משה אריה'
+        _pair = [('פוקסברוימר', '600'), ('קאופמן', '500')]
+        _rows = {}
+        for lastnm, amt in _pair:
+            r = con.execute("SELECT p.id,p.donor_id,p.amount,d.last,d.first FROM partners p "
+                            "JOIN donors d ON d.id=p.donor_id "
+                            "WHERE TRIM(p.avreich)=? AND d.last LIKE ? AND COALESCE(p.active,1)<>0",
+                            (_av, '%' + lastnm + '%')).fetchone()
+            if r:
+                _rows[lastnm] = (r, amt)
+        _n = 0
+        if len(_rows) == 2:
+            for lastnm, (r, amt) in _rows.items():
+                other = [v[0] for k, v in _rows.items() if k != lastnm][0]
+                onm = ((other['last'] or '') + ' ' + (other['first'] or '')).strip()
+                if str(r['amount'] or '') != amt:
+                    con.execute("UPDATE partners SET amount=? WHERE id=?", (amt, r['id']))
+                    iz_log(con, _av, r['donor_id'],
+                           '💰 %s — הסכום תוקן ל-$%s לחודש' % (_av, amt), now_iso(), '')
+                    _n += 1
+                con.execute("UPDATE partners SET joint=0, partner_with=?, partner_with_id=? "
+                            "WHERE id=? AND COALESCE(partner_with_id,'')=''",
+                            (onm, other['donor_id'], r['id']))
+        if _n:
+            con.commit()
+            print('  רוזנטל משה אריה: הסכומים תוקנו אצל %d מחזיקים' % _n)
+    except Exception as e:
+        print('  rosenthal pair error:', e)
+
+    # מאיר: "עליס, קעניג יעקב מנחם והניג יצאו מהכולל לגמרי; חשין נחמן
+    # ברי\"ט זה חשין יט נחמן". ארבעת אלו לא היו בקובץ הכולל, וזו התשובה
+    # עליהם. מעבר מרפא — רץ בכל עלייה ונוגע רק במה שעדיין לא סודר.
+    try:
+        # א. אותו אברך בשני כתיבים — מאחדים לכתיב שבקובץ, כולל המחזיקים
+        _same = [('חשין נחמן ברי"ט', 'חשין יט נחמן')]
+        _merged = 0
+        for old, new in _same:
+            o = con.execute("SELECT id FROM avreichim WHERE name=?", (old,)).fetchone()
+            if not o:
+                continue
+            n2 = con.execute("SELECT id FROM avreichim WHERE name=?", (new,)).fetchone()
+            con.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (new, old))
+            con.execute("UPDATE avreich_log SET avreich=? WHERE avreich=?", (new, old))
+            if n2:
+                con.execute("DELETE FROM avreichim WHERE id=?", (o['id'],))
+            else:
+                l, f = _split_av(new)
+                con.execute("UPDATE avreichim SET name=?,last=?,first=? WHERE id=?",
+                            (new, l, f, o['id']))
+            iz_log(con, new, None, 'אותו אברך בשני כתיבים — אוחד ל"%s" (היה "%s")' % (new, old),
+                   now_iso(), '')
+            _merged += 1
+
+        # ב. אברכים שיצאו מהכולל לגמרי — המקום נשאר פתוח אצל התורם, עם
+        #    שם היוצא והתאריך, בדיוק כמו כפתור "יצא מהכולל"
+        _out = ['עליס שמואל דוד', 'קעניג יעקב מנחם', 'הניג פנחס']
+        _left = 0
+        for anm in _out:
+            r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
+            if not r or (r['ended'] or '').strip():
+                continue
+            at = now_iso()
+            hd = greg_to_heb_full(at[:10]) or at[:10]
+            held = con.execute("SELECT id,donor_id FROM partners WHERE TRIM(avreich)=? "
+                               "AND COALESCE(active,1)<>0", (anm,)).fetchall()
+            for x in held:
+                con.execute("UPDATE partners SET avreich='', start_date='', renew_date=NULL, "
+                            "prev_avreich=?, prev_ended=? WHERE id=?", (anm, hd, x['id']))
+                iz_log(con, anm, x['donor_id'],
+                       '🚪 האברך %s יצא מהכולל — המקום פתוח לאברך חדש' % anm, at, hd)
+            if not held:
+                iz_log(con, anm, None, '🚪 האברך %s יצא מהכולל' % anm, at, hd)
+            con.execute("UPDATE avreichim SET ended=? WHERE id=?", (at[:10], r['id']))
+            _left += 1
+        if _merged or _left:
+            con.commit()
+            print('  אברכים: אוחדו %d, יצאו מהכולל %d' % (_merged, _left))
+    except Exception as e:
+        print('  avreich roster fix error:', e)
+
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
     try:

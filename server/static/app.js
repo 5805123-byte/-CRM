@@ -1278,11 +1278,15 @@ function renderDonors(){
         {id:'noAddrBtn', n:nanone,t:'🏠 בלי כתובת בכלל'},
         {id:'noPhoneBtn',n:nph,   t:'📞 בלי טלפון'},
       ].filter(x=>x.n);
-      if(!items.length)return '';
+      // מאיר: "כל אלו יהיו תחת חלון אחד, לא בדף הראשי משבצת לכל אחד"
+      const tabs=[{k:'review',t:'📋 לבדיקה'},{k:'dups',t:'🧾 תשלומים כפולים'},
+                  {k:'unlinked',t:'💳 חיובים בלי תורם'},{k:'old',t:'🧹 תורמים ישנים'},
+                  {k:'mails',t:'📧 מיילים'}];
       const tot=items.reduce((a,x)=>a+x.n,0);
       return `<details class="fixbox"${FIXOPEN?' open':''} id="fixbox">
-        <summary>🧰 בדיקות ותיקונים <b class="fixcnt">${tot}</b></summary>
+        <summary>🧰 בדיקות ותיקונים${tot?` <b class="fixcnt">${tot}</b>`:''}</summary>
         ${items.map(x=>`<button class="btn fixrow" id="${x.id}">${x.t}<b>${x.n}</b></button>`).join('')}
+        ${tabs.map(x=>`<button class="btn fixrow fixtab" data-t="${x.k}">${x.t}</button>`).join('')}
       </details>`;
     })()}
     <div class="avbar"><select id="donsort" class="avsortsel">
@@ -1311,6 +1315,11 @@ function renderDonors(){
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const fx=document.getElementById('fixbox');
   if(fx)fx.addEventListener('toggle',()=>{FIXOPEN=fx.open;});
+  view.querySelectorAll('.fixtab').forEach(b=>b.onclick=()=>{
+    const t=b.dataset.t;
+    const btn=document.querySelector('.tab[data-tab="'+t+'"]');
+    if(btn){btn.click();return;}
+    tab=t;flt='';render();});
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
@@ -5855,7 +5864,7 @@ function avRowHTML(a,ix){
   // נערכים שם ולא כאן. מוצג כדי שהרשימה תהיה מסונכרנת עם מה שנרשם בכרטיס.
   const line=(x,first)=>`<div class="avg${x&&x.linked?' avglink':''}" ${x&&!x.linked?`data-pid="${x.pid}"`:''}>
     <span class="g1">${first?`<span class="avnum">${ix+1}</span>`:''}</span>
-    <span class="g2">${first?`<a class="avname" data-av="${esc(a.name)}" title="לחץ לפרטים של האברך">${esc(a.name)}</a>${a.idnum?`<small class="avid" title="תעודת זהות">${esc(a.idnum)}</small>`:''}`:''}</span>
+    <span class="g2">${first?`<a class="avname" data-av="${esc(a.name)}" title="לחץ לפרטים של האברך">${esc(a.name)}</a>`:''}</span>
     <span class="g3">${x?`<a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>${x.linked?` <small class="avlinktag">🤝 יחד עם ${esc(x.via||'')}</small>`:''}`:'<span class="avfree">— אין שותף —</span>'}</span>
     <span class="g4">${x&&!x.linked?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:(x?`<small class="avlinkdt">${esc(x.start_date||'')}</small>`:'')}</span>
     <span class="g5">${x&&!x.linked?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
