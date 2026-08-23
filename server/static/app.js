@@ -33,6 +33,12 @@ function jointHolders(p){return Math.max(1,jointGroup(p).length);}
 // חלקו של תורם באברך משותף:
 // אם נקבע מי משלם בפועל (עסק אחד / כרטיס אחד) — כל הסכום נזקף למשלם, ולשאר 0.
 // אם לא נקבע — כל אחד נושא חלק שווה.
+// מאיר: "הוא נותן אלף שקל והוא נותן 400 דולר וביחד יששכר־זבולון" —
+// לכל שורת אברך מטבע משלה, כך ששני שותפים באותו אברך יכולים לשלם
+// כל אחד במטבע שלו. ברירת המחדל היא מטבע הכרטיס.
+function pCur(p,d){const c=String((p&&p.cur)||'').trim();
+  return c==='₪'?'₪':(c==='$'?'$':curSym(d));}
+function curOpts(cur){return ['$','₪'].map(x=>`<option value="${x}" ${x===cur?'selected':''}>${x}</option>`).join('');}
 function jointPayerId(p){const v=+(p.joint_payer||0);return v>0?v:0;}
 function partnerMonthly(p){
   // חלוקה לא שווה: אצל כל מחזיק נרשם כמה הוא בעצמו משלם מהכרטיס שלו.
@@ -49,6 +55,10 @@ function izSummary(d){
   const parts=(d.partners||[]).filter(p=>p.active!=0);
   // ההתחייבות החודשית = סכום האברכים. אם לא הוזן סכום לאברך — הסכום הקבוע שבכרטיס.
   const byav=parts.reduce((s,p)=>s+partnerMonthly(p),0);
+  // כשיש אברכים בשני מטבעות — לא מחברים שקלים לדולרים. שומרים פירוט
+  // לפי מטבע, וזה מה שמוצג בשורת ההתחייבות החודשית (מאיר).
+  const byCur={};
+  parts.forEach(p=>{const c=pCur(p,d);byCur[c]=(byCur[c]||0)+partnerMonthly(p);});
   const fromCard=!byav&&d.tier==='יששכר_זבולון'&&amtNum(d.amount)>0;
   const monthly=byav||(fromCard?amtNum(d.amount):0);
   // אברך משותף: לכל מחזיק נספר חלקו בהתחייבות (ראה partnerMonthly), ולכן
@@ -68,7 +78,7 @@ function izSummary(d){
     const months=Math.max(0,nowCode-((+m[1])*12+(+m[2]))), amt=amtNum(p.amount);
     thruDebt+=months*amt; thru.push({av:p.avreich||'אברך',thru:p.paid_thru,months:months,amt:amt,owe:months*amt});});
   const manual=String(d.iz_debt||'').trim()?amtNum(d.iz_debt):null;
-  return {parts,monthly,paid,span,expected,debt,hasPay,fromCard,thru,thruDebt,manual};
+  return {parts,monthly,paid,span,expected,debt,hasPay,fromCard,thru,thruDebt,manual,byCur};
 }
 const MONFULL=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 function fmtMonth(ym){const m=String(ym||'').match(/^(\d{4})-(\d{2})/);return m?(MONFULL[+m[2]-1]+' '+m[1]):'';}
@@ -83,6 +93,20 @@ function coHolderTotal(p){
   (DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av&&!+q.joint)total+=amtNum(q.amount);});});
   return total;
 }
+// סך התרומות לאברך אחד לפי מטבע — כשמחזיק אחד משלם בשקלים והשני
+// בדולרים, אין מספר אחד שמייצג את שניהם (מאיר).
+function coHolderByCur(p,d){
+  const av=norm(p.avreich||''),m={};
+  m[pCur(p,d)]=amtNum(p.amount);
+  if(av)(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{
+    if(q.active==0||norm(q.avreich||'')!==av||+q.joint)return;
+    const c=pCur(q,o);m[c]=(m[c]||0)+amtNum(q.amount);});});
+  return m;
+}
+function coHolderTotalTxt(p,d){
+  const m=coHolderByCur(p,d),ks=Object.keys(m).filter(k=>Math.round(m[k])>0);
+  return ks.map(k=>k+Math.round(m[k]).toLocaleString('en-US')).join(' + ');
+}
 // שותפויות הפוכות — כרטיסים אחרים שרשמו את התורם הזה כשותף מחזיק (לפי קישור או לפי שם שהוקלד)
 // מאיר: "למה לא רואים אצל יואל שטטפלד שהוא שותף עם בנימין ומחזיק את חבה?
 // התשלום יוצא רק מבנימין אבל שניהם שותפים". השותפות שלהם רשומה כחלוקת
@@ -94,7 +118,8 @@ function coHeldWith(d){
     if(!String(p.avreich||'').trim())return;
     const k=o.id+'|'+norm(p.avreich); if(seen.has(k))return; seen.add(k);
     out.push({name:(o.last+' '+o.first).trim(),did:o.id,avreich:p.avreich,
-              amount:p.amount,method:p.method,split:split?1:0});};
+              amount:(String(p.share||'').trim()!==''?p.share:p.amount),
+              cur:pCur(p,o),method:p.method,split:split?1:0});};
   (DB||[]).forEach(o=>{if(o.id===d.id)return;(o.partners||[]).forEach(p=>{if(p.active==0)return;
     const idlist=(String(p.partner_with_id||'')).split(',').map(s=>s.trim()).filter(Boolean);
     const linked=idlist.includes(String(d.id));
@@ -121,7 +146,7 @@ function izLinkedHTML(d,cur){
   const l=izLinkedRows(d); if(!l.length)return '';
   return l.map(x=>`<div class="izrow izlink"><span>👨‍🎓 ${esc(x.avreich)}`
     + ` <small class="cosp">🤝 בשותפות עם <span class="cosp2" data-did="${x.did}">${esc(x.name)} ↗</span></small>`
-    + `${x.amount?` <small class="cosptot">${x.split?'התשלום יוצא ממנו — ':'רשום שם '}${cur}${Math.round(amtNum(x.amount))}</small>`:''}`
+    + `${x.amount?` <small class="cosptot">${x.split?'התשלום יוצא ממנו — ':'רשום שם '}${x.cur||cur}${Math.round(amtNum(x.amount)).toLocaleString('en-US')}</small>`:''}`
     + `</span><b class="izlinkb">—</b></div>`).join('');
 }
 // חידוש שותפות יש"ז — מחזיר את החידוש הקרוב ביותר (בטווח התרעה) מבין האברכים הפעילים
@@ -147,6 +172,22 @@ function unclassifiedIz(d){
   });
   return {n:rows.length, sum:rows.reduce((s2,x)=>s2+amtNum(x.amount),0), rows};
 }
+// ההתחייבות החודשית כטקסט — במטבע אחד סכום אחד, ובשני מטבעות שניהם
+// זה לצד זה ("₪1,000 + $400"), בלי לחבר ביניהם.
+function izMonthlyTxt(s,cur){
+  const ks=Object.keys(s.byCur||{}).filter(k=>Math.round(s.byCur[k])>0);
+  if(ks.length>1)return ks.map(k=>k+Math.round(s.byCur[k]).toLocaleString('en-US')).join(' + ');
+  return (ks[0]||cur)+Math.round(s.monthly).toLocaleString('en-US');
+}
+// סכום אברך שמוחזק "ביחד" כפי שהוא נראה לכל המחזיקים. אם כולם באותו
+// מטבע — מספר אחד; אם אחד בשקלים והשני בדולרים — שני החלקים זה לצד זה.
+function jointTotalTxt(p,d){
+  const m={};
+  jointGroup(p).forEach(x=>{const c=pCur(x.p,x.d);m[c]=(m[c]||0)+partnerMonthly(x.p);});
+  const ks=Object.keys(m).filter(k=>Math.round(m[k])>0);
+  if(ks.length>1)return ks.map(k=>k+Math.round(m[k]).toLocaleString('en-US')).join(' + ');
+  return pCur(p,d)+amtNum(p.amount).toLocaleString('en-US');
+}
 function izSummaryHTML(d){
   const act=(d.partners||[]).filter(p=>p.active!=0);
   const recip=coHeldWith(d);
@@ -155,10 +196,10 @@ function izSummaryHTML(d){
   // אברך שהוא מחזיק בשותפות, אבל השורה עצמה רשומה אצל השותף. הכסף נספר
   // שם ולכן אין כאן סכום — רק העובדה שהם שותפים, ולחיצה לכרטיס שלו.
   const recipHtml=izLinkedHTML(d,cur);
-  const rows=s.parts.map(p=>{const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${cur}${tot}</small>`:'';return `<div class="izrow${avOpenSlot(p)?' izgap':''}"><span>${avOpenSlot(p)
+  const rows=s.parts.map(p=>{const cur=pCur(p,d);const tot=avCoHolders(p).length?coHolderTotal(p):0;const totHtml=(tot>amtNum(p.amount))?` <small class="cosptot">= סה"כ ${coHolderTotalTxt(p,d)}</small>`:'';return `<div class="izrow${avOpenSlot(p)?' izgap':''}"><span>${avOpenSlot(p)
     ?`🚪 מקום פתוח — ${esc(p.prev_avreich)} יצא מהכולל${p.prev_ended?(' ב'+esc(p.prev_ended)):''} <small class="izgaps">חפש אברך חדש למקום הזה</small>`
     :`👨‍🎓 ${esc(p.avreich||'—')}`}${p.method?(' <small>'+chBadgeRaw(p.method)+'</small>'):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 משותף</small>':''}${totHtml}${p.paid_note?(' <small class="paidnote">💰 '+esc(p.paid_note)+'</small>'):''}${p.start_date?(' <small class="izstart">📅 '+esc(p.start_date)+'</small>'):''}${+p.joint&&jointHolders(p)>1?(' <small class="cosptot">'+(
-  String(p.share||'').trim()!==''?('💳 חלקו מתוך '+cur+amtNum(p.amount)+' — לפי החלוקה שנקבעה'
+  String(p.share||'').trim()!==''?('💳 חלקו מתוך '+jointTotalTxt(p,d)+' — לפי החלוקה שנקבעה'
     +(amtNum(p.share)?'':', אינו משלם'))
   :jointPayerId(p)?(jointPayerId(p)===d.id?('💳 אתה משלם את כל ה'+cur+amtNum(p.amount)):('💳 משלם: '+esc(jointPayerName(p))))
   :('חלקו מתוך '+cur+amtNum(p.amount)+' ל־'+jointHolders(p)+' מחזיקים'))+'</small>'):''}</span><b>${cur}${Math.round(partnerMonthly(p))}</b></div>`;}).join('')||'<div class="hintxt">לא הוזנו אברכים</div>';
@@ -186,7 +227,7 @@ function izSummaryHTML(d){
   else debtLine='';
   if(s.debt<=0.5&&s.manual==null&&!s.thru.length)debtLine='';   // חוב מוצג רק בחלון החוב
   const mainHtml=(act.length||s.monthly)?`${rows}
-    <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${cur}${Math.round(s.monthly)}</b></div>
+    <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${izMonthlyTxt(s,cur)}</b></div>
     ${s.hasPay?(()=>{
       // רק החלק של יששכר־זבולון. אצל פינטער נכנסים 12,800 בחודש והם
       // מסומנים כולם יששכר־זבולון, בעוד שההתחייבות ליש"ז היא 800 בלבד.
@@ -880,6 +921,16 @@ function wireChanSel(sel){
     sel.value='';refresh();showDel();toast('נמחקה');};
   showDel();
 }
+// כל תיבת "דרך תשלום" בדף — גם כאלו שנוצרו הרגע ברענון של חלון — מקבלת
+// את שדה ההוספה. מאיר: "אי אפשר כאן להוסיף דרך חדשה איך שהוא נותן"; קודם
+// זה עבד רק בתיבה שבפרטי הכרטיס, ולא בחלון היששכר־זבולון.
+function wireAllChanSels(root){
+  (root||document).querySelectorAll('select.chansel').forEach(wireChanSel);
+}
+try{
+  new MutationObserver(()=>wireAllChanSels()).observe(document.documentElement,{childList:true,subtree:true});
+}catch(e){}
+
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 // מה התורם נתן מתחילת השנה הלועזית ועד היום — מוצג בשורה ברשימת התורמים,
 // כדי שגם מי שאינו "קבוע" יראה מיד כמה הוא כבר תרם השנה (מאיר).
@@ -892,7 +943,11 @@ function fixedAmt(d){
   // כשייעוד יששכר־זבולון נספר פעם אחת ולא פעמיים
   const fx=monthlyTotal(d);
   if(fx)return curSym(d)+Math.round(fx);
-  if(d.tier==='יששכר_זבולון'){const s=(d.partners||[]).filter(p=>p.active!=0).reduce((a,p)=>a+amtNum(p.amount),0);if(s)return curSym(d)+s;}
+  if(d.tier==='יששכר_זבולון'){
+    const m={};(d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const c=pCur(p,d);m[c]=(m[c]||0)+amtNum(p.amount);});
+    const ks=Object.keys(m).filter(k=>m[k]>0);
+    if(ks.length)return ks.map(k=>k+m[k].toLocaleString('en-US')).join(' + ');
+  }
   if(d.category==='קבוע'&&amtNum(d.amount))return curSym(d)+amtNum(d.amount);
   return '';}
 // חיפוש חופשי: כל מילה בשאילתה חייבת להופיע — בלי תלות בסדר,
@@ -2483,7 +2538,7 @@ function commitHTML(d){
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
     <div class="two"><label class="fld"><span>סכום (${cur})</span><input id="dn_amt" inputmode="decimal" placeholder="480"></label>
-    <label class="fld"><span>איך נתרם</span><select id="dn_method">${DNMETH.map(x=>`<option${x===(d.channel||'')?' selected':''}>${x}</option>`).join('')}</select></label></div>
+    <label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}</select></label></div>
     <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
     <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
     <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
@@ -3686,7 +3741,7 @@ function cardInfo(d,body){
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <div class="fld"><span>אימיילים</span><div id="emails" class="phones"></div></div>
     <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
-      <label class="fld"><span>ערוץ חיוב</span><select id="f_channel">${channelOpts(d.channel)}</select></label></div>
+      <label class="fld"><span>ערוץ חיוב</span><select id="f_channel" class="chansel">${channelOpts(d.channel)}</select></label></div>
     <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
     <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
       <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
@@ -3831,6 +3886,9 @@ function giveNote(x){
 }
 // רשימת הייעודים לבחירה — הקבועים שלנו + כל המגביות, ואפשרות להוסיף חדש בלי לצאת מהשורה
 const DNMETH=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','זל','קפיטל 1','בנק ווסט','אוטורייז','דונרס פאנד','OJC','נדרים'];
+// מאיר: "אי אפשר כאן להוסיף דרך חדשה איך שהוא נותן" — הרשימה כאן
+// מצרפת גם כל דרך תשלום שמאיר הוסיף בעצמו, ולא רק את הקבועות.
+function dnMethList(){return DNMETH.concat((CHAN_C||[]).filter(x=>DNMETH.indexOf(x)<0));}
 const DNBASE=['קבוע','יששכר־זבולון','כולל יום','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','הבניין הקדוש','מזדמן','חד-פעמי'];
 function dnCatList(){return DNBASE.concat((CAMPAIGNS||[]).filter(c=>c&&!DNBASE.includes(c)));}
 // ייעוד התורם יכול להיות כמה דברים יחד — למשל יששכר־זבולון וגם נר למאור.
@@ -4195,8 +4253,8 @@ function renderPartners(d){
   el.innerHTML=act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
     <div style="display:flex;justify-content:space-between;align-items:center"><b>👨‍🎓 אברך שהוא מחזיק</b><button class="del" data-del="${p.id}">🗑</button></div>
     <input class="pfield" data-id="${p.id}" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך" style="font-weight:700">
-    <div class="two"><label class="fld"><span>סכום (${cur})</span><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></label>
-      <label class="fld"><span>איך משולם</span><select class="pfield" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
+    <div class="two"><label class="fld"><span>סכום</span><div class="curwrap"><select class="pfield curpick" data-id="${p.id}" data-k="cur">${curOpts(pCur(p,d))}</select><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></div></label>
+      <label class="fld"><span>איך משולם</span><select class="pfield chansel" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
     <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label>
     <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
@@ -4207,7 +4265,7 @@ function renderPartners(d){
       ${jointGroup(p).map(g=>`<option value="${g.d.id}" ${jointPayerId(p)===g.d.id?'selected':''}>${esc(((g.d.business||'').trim()||((g.d.last||'')+' '+(g.d.first||'')).trim()))} — משלם את כל ${curSym(d)}${amtNum(p.amount)}</option>`).join('')}
     </select></label>
     <div class="hintxt" style="margin:-6px 2px 6px">כשעסק אחד או כרטיס אחד משלם על כולם — בחר אותו כאן, והסכום ייזקף רק אליו. ההגדרה חלה על כל המחזיקים.</div>
-    <label class="fld"><span>💳 או: כמה <b>${esc((d.last+' '+(d.first||'')).trim())}</b> משלם בפועל מהכרטיס שלו</span>
+    <label class="fld"><span>💳 או: כמה <b>${esc((d.last+' '+(d.first||'')).trim())}</b> משלם בפועל מהכרטיס שלו (${pCur(p,d)})</span>
       <input class="pfield" data-id="${p.id}" data-k="share" value="${esc(p.share||'')}" inputmode="decimal" placeholder="השאר ריק לחלוקה שווה"></label>
     <div class="hintxt" style="margin:-6px 2px 6px">כשהחלוקה אינה שווה — רשום כאן אצל כל מחזיק את הסכום שלו (0 למי שמחזיק ואינו משלם). זה גובר על החלוקה השווה.</div>`:''}
     <label class="fld"><span>💵 שילם עד סוף חודש (מזומן / צ'ק ביד — תשלום שלא נרשם במערכת)</span><input type="month" class="pfield" data-id="${p.id}" data-k="paid_thru" value="${esc(p.paid_thru||'')}"></label>
@@ -4239,7 +4297,9 @@ function renderPartners(d){
     await api('PUT','/api/donor/'+d.id,{iz_debt:d.iz_debt});
     refreshIzSum(d);toast('נשמר ✓');};
   el.querySelectorAll('.pfield').forEach(inp=>{
-    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);if(inp.dataset.k==='amount'&&tab==='donors')renderDonors();};
+    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);
+      if(inp.dataset.k==='cur')renderPartners(d);            // הסמלים בשדות מתעדכנים מיד
+      if((inp.dataset.k==='amount'||inp.dataset.k==='cur')&&tab==='donors')renderDonors();};
     inp.onchange=save;let tmr;inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};
   });
   el.querySelectorAll('.psave').forEach(btn=>btn.onclick=async()=>{
@@ -4804,7 +4864,7 @@ function renderParnesEdit(d){
     <div class="two"><label class="fld"><span>חודש</span><select class="pymon" data-id="${p.id}">${HMORD.map(m=>`<option ${m===p.month?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>יום</span><select class="pyday" data-id="${p.id}">${[...Array(30)].map((_,i)=>`<option value="${i+1}" ${(i+1)==+p.day?'selected':''}>${heDay(i+1)}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה</span><select class="pyyr" data-id="${p.id}">${heYearOpts(p.hyear)}</select></label></div>
-    <label class="fld"><span>💳 דרך מה ייגבה</span><select class="pymethod" data-id="${p.id}">${channelOpts(p.method)}</select></label>
+    <label class="fld"><span>💳 דרך מה ייגבה</span><select class="pymethod chansel" data-id="${p.id}">${channelOpts(p.method)}</select></label>
     <label class="fld" style="margin:4px 0"><span>🕯️ שמות ובקשות לתעודת הפרנס</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו והבקשות (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
     <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px">💾 שמור שמות</button>
     <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
@@ -5378,7 +5438,7 @@ function pySlotHTML(t,dtext){
       <div class="two" style="gap:6px;margin-top:3px"><input class="dp_amt_edit" value="${esc(amt)}" inputmode="decimal" placeholder="כמה תרם">
         <select class="dp_cur_edit" style="max-width:110px"><option value="$" ${dpcur==='$'?'selected':''}>$ דולר</option><option value="₪" ${dpcur==='₪'?'selected':''}>₪ שקל</option></select></div>
       <button class="btn sm dp_amt_save" style="margin-top:6px;width:100%">💾 שמור סכום</button></div>
-    <label class="fld" style="margin:6px 0"><span>💳 איך נגבה (אמצעי תשלום)</span><select class="dp_method">${channelOpts(t.method)}</select></label>
+    <label class="fld" style="margin:6px 0"><span>💳 איך נגבה (אמצעי תשלום)</span><select class="dp_method chansel">${channelOpts(t.method)}</select></label>
     ${sugg?'':`<button class="dnpaid ${+paid===1?'yes':'no'} dppaid" style="margin:2px 0 8px;width:100%">${+paid===1?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>
       <button class="dnpaid setl dpsetl ${+paid===2?'on':''}" style="margin:0 0 8px;width:100%">${+paid===2?'✓ סודר — לחץ לביטול':'סודר — הכסף הגיע בתרומה נפרדת'}</button>`}
     ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
@@ -5936,7 +5996,7 @@ function avPartnerRow(p){
       <div class="avamt"><span>$</span><input class="avf" data-k="amount" value="${esc(p.amount||'')}" placeholder="סכום" inputmode="decimal"></div>
       <button class="avend" title="החלפת אברך — הקודם יישמר בהיסטוריה">🔄 החלפה</button></div>
     <div class="avsub">
-      <label class="avfld"><span>💳 אמצעי</span><select class="avf avmethod" data-k="method">${channelOpts(p.method)}</select></label>
+      <label class="avfld"><span>💳 אמצעי</span><select class="avf avmethod chansel" data-k="method">${channelOpts(p.method)}</select></label>
       <label class="avfld"><span>📅 מתאריך ההסכם</span><input class="avf" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="למשל א' אייר תשפ״ה"></label>
       <label class="avfld"><span>📝 הערות</span><input class="avf" data-k="note" value="${esc(p.note||'')}" placeholder="—"></label></div>
     <label class="avfld" style="margin-top:6px"><span>💰 עדכון תשלום ידני (למשל: שילם הכל מראש)</span><input class="avf" data-k="paid_note" value="${esc(p.paid_note||'')}" placeholder="הערת תשלום"></label>

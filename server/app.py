@@ -209,7 +209,7 @@ def ensure_schema():
     for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT')]:
         try: con.execute('ALTER TABLE avreichim ADD COLUMN %s %s' % (col, ddl))
         except Exception: pass
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT')]:
+    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT'), ('cur', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
@@ -8305,7 +8305,7 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     print('  joint payer error:', e)
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','prev_avreich','prev_ended'):
+            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','cur','prev_avreich','prev_ended'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             # מאיר: "כשכתוב מחזיקים יחד — זה אמור להיות מסונכרן עם יששכר־זבולון
             # כשבוחרים את מי מחזיקים יחד". מי שנבחר כשותף מחזיק הוא תורם
