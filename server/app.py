@@ -191,6 +191,8 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS avreichim(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE,
         last TEXT, first TEXT, note TEXT, started TEXT, created TEXT);
+    CREATE TABLE IF NOT EXISTS avreich_pending(alias TEXT PRIMARY KEY, last TEXT, first TEXT,
+        idnum TEXT, id_ok INTEGER, phone TEXT, seder TEXT, added TEXT);
     CREATE TABLE IF NOT EXISTS avreich_log(id INTEGER PRIMARY KEY AUTOINCREMENT, avreich TEXT,
         donor_id INTEGER, date TEXT, hdate TEXT, text TEXT, at TEXT);
     CREATE TABLE IF NOT EXISTS deleted_donors(key TEXT PRIMARY KEY, last TEXT, first TEXT,
@@ -206,7 +208,8 @@ def ensure_schema():
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
-    for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT')]:
+    for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT'),
+                     ('idnum', 'TEXT'), ('id_ok', 'INTEGER'), ('seder', 'TEXT')]:
         try: con.execute('ALTER TABLE avreichim ADD COLUMN %s %s' % (col, ddl))
         except Exception: pass
     for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT'), ('cur', 'TEXT')]:
@@ -3468,6 +3471,62 @@ def ensure_schema():
     except Exception as e:
         print('  zion name error:', e)
 
+    # טעינת רשימת האברכים של הכולל מהקובץ ששלח מאיר. מעבר מרפא: משלים
+    # רק מה שחסר, ומעדכן טלפון/ת"ז אם השתנו בקובץ. אברך שאינו בקובץ
+    # יותר נשאר רשום ומסומן כלא־פעיל, כדי שההיסטוריה לא תיעלם.
+    try:
+        _ap = os.path.join(HERE, 'avreichim_seed.json')
+        if os.path.exists(_ap):
+            _seed = json.load(open(_ap, encoding='utf-8'))
+            _cur = {}
+            for r in con.execute("SELECT id,name,last,first FROM avreichim"):
+                _cur[_nrm_av(r['name'] or '')] = r['id']
+                _cur[_nrm_av((r['last'] or '') + ' ' + (r['first'] or ''))] = r['id']
+                _cur[_nrm_av((r['first'] or '') + ' ' + (r['last'] or ''))] = r['id']
+            _cur.pop('', None)
+            _exist = [{'name': r['name'], 'last': r['last'] or '', 'first': r['first'] or ''}
+                      for r in con.execute("SELECT name,last,first FROM avreichim")]
+            for _e in _exist:
+                if not _e['last'] and _e['name']:
+                    _e['last'], _e['first'] = _split_av(_e['name'])
+            _new = _fill = _pend = 0
+            for a in _seed:
+                aid = _cur.get(_nrm_av(a['last'] + ' ' + a['first'])) \
+                    or _cur.get(_nrm_av(a['first'] + ' ' + a['last']))
+                if not aid:
+                    # שם דומה אך לא זהה (אליאסזדה / אליאסזאדה) — לא מוסיפים
+                    # אברך כפול ולא מדביקים ת"ז לאדם הלא נכון. ממתין לאישור.
+                    near, how = av_roster_match(a['last'] + ' ' + a['first'], _exist)
+                    if how == 'fuzzy':
+                        con.execute("INSERT OR IGNORE INTO avreich_pending"
+                                    "(alias,last,first,idnum,id_ok,phone,seder,added) "
+                                    "VALUES(?,?,?,?,?,?,?,?)",
+                                    (near['name'], a['last'], a['first'], a['idnum'],
+                                     a.get('id_ok', 1), a['phone'], a['seder'], today_iso()))
+                        _pend += 1
+                        continue
+                if aid:
+                    # לא דורסים מה שמאיר הקליד — משלימים רק את מה שריק
+                    cur2 = con.execute(
+                        "UPDATE avreichim SET idnum=?, id_ok=?, seder=?, "
+                        "phone=CASE WHEN COALESCE(TRIM(phone),'')='' THEN ? ELSE phone END "
+                        "WHERE id=? AND COALESCE(idnum,'')<>?",
+                        (a['idnum'], a.get('id_ok', 1), a['seder'], a['phone'], aid, a['idnum']))
+                    _fill += cur2.rowcount
+                else:
+                    nm = (a['last'] + ' ' + a['first']).strip()
+                    con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,idnum,id_ok,"
+                                "phone,seder,created) VALUES(?,?,?,?,?,?,?,?)",
+                                (nm, a['last'], a['first'], a['idnum'], a.get('id_ok', 1),
+                                 a['phone'], a['seder'], today_iso()))
+                    _new += 1
+            if _new or _fill or _pend:
+                con.commit()
+                print('  רשימת אברכי הכולל: נוספו %d, הושלמו פרטים ל-%d, ממתינים לאישור %d'
+                      % (_new, _fill, _pend))
+    except Exception as e:
+        print('  avreichim seed error:', e)
+
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
     try:
@@ -4770,6 +4829,57 @@ def _days(iso):
 
 
 _FZTAB = str.maketrans('ךםןףץשזצתכ', 'כמנפצססטטק')
+
+
+def _idnum_ok(s):
+    """ספרת ביקורת של תעודת זהות ישראלית (9 ספרות, כולל אפסים מובילים)."""
+    s = re.sub(r'\D', '', str(s or ''))
+    if len(s) != 9:
+        return False
+    t = 0
+    for i, ch in enumerate(s):
+        v = int(ch) * (1 if i % 2 == 0 else 2)
+        t += v if v < 10 else v - 9
+    return t % 10 == 0
+
+
+def _nrm_av(s):
+    """שם אברך בצורה אחידה — בלי גרשיים, בלי רווחים כפולים."""
+    return ' '.join(re.sub(r'["\'`״׳]', '', s or '').replace('(', ' ').replace(')', ' ').split())
+
+
+def _av_toks(s):
+    return [t for t in _nrm_av(s).split() if t]
+
+
+def av_roster_match(name, roster):
+    """מזהה שם אברך מול הרשימה הרשמית.
+
+    מחזיר (שורה, 'exact'/'fuzzy'/None). התאמה מדויקת היא בשני סדרי השם.
+    התאמה מקורבת דורשת שם משפחה תואם ועוד מילה משותפת לפי צליל, והיא
+    לעולם אינה מיושמת לבד — היא מוצגת למאיר לאישור.
+    """
+    tn = _av_toks(name)
+    if not tn:
+        return None, None
+    full = ' '.join(tn)
+    for r in roster:
+        if full in (_nrm_av(r['last'] + ' ' + r['first']), _nrm_av(r['first'] + ' ' + r['last'])):
+            return r, 'exact'
+    fzn = {_fz(t) for t in tn if _fz(t)}
+    best, hits = None, 0
+    for r in roster:
+        rt = _av_toks(r['last'] + ' ' + r['first'])
+        fzr = {_fz(t) for t in rt if _fz(t)}
+        if not fzr or not fzn:
+            continue
+        common = len(fzn & fzr)
+        if (_fz(tn[0]) in fzr or _fz(rt[0]) in fzn) and common >= 2:
+            if common > hits:
+                best, hits = r, common
+            elif common == hits and best is not r:
+                best = None            # שתי אפשרויות שקולות — לא מנחשים
+    return (best, 'fuzzy') if best else (None, None)
 
 
 def _fz(s):
@@ -7210,7 +7320,10 @@ class H(BaseHTTPRequestHandler):
                                   'first': r['first'] or '', 'note': r['note'] or '',
                                   'started': r['started'] or '', 'ended': r['ended'] or '',
                                   'phone': r['phone'] or '', 'email': r['email'] or '',
-                                  'addr': r['addr'] or '', 'holders': [], 'taken': False}
+                                  'addr': r['addr'] or '', 'holders': [], 'taken': False,
+                                  'idnum': (r['idnum'] if 'idnum' in r.keys() else '') or '',
+                                  'id_ok': (r['id_ok'] if 'id_ok' in r.keys() else 1),
+                                  'seder': (r['seder'] if 'seder' in r.keys() else '') or ''}
             # שמות התורמים — לצורך השותפים המקושרים שאין להם שורה משלהם
             dnames = {}
             for r in con.execute("SELECT id,last,first FROM donors"):
@@ -7294,9 +7407,18 @@ class H(BaseHTTPRequestHandler):
                 g.setdefault('log', []).append({'date': r['date'] or '', 'hdate': r['hdate'] or '',
                                                 'text': r['text'] or '',
                                                 'donor': names.get(r['donor_id'], '')})
-            con.close()
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
+            pend = []
+            try:
+                pend = [{'alias': r['alias'], 'name': (r['last'] + ' ' + r['first']).strip(),
+                         'idnum': r['idnum'] or '', 'phone': r['phone'] or '',
+                         'seder': r['seder'] or ''}
+                        for r in con.execute("SELECT * FROM avreich_pending ORDER BY last,first")]
+            except Exception:
+                pass
+            con.close()
             return self._send(200, {'rows': rows, 'total': len(rows),
+                                    'pending': pend,
                                     'free': sum(1 for x in rows if not x['holders'])})
         # ----- מסך הבדיקה: הסטטוס שנקבע לכל תורם -----
         if self.path.split('?')[0] == '/api/review':
@@ -9176,7 +9298,7 @@ class H(BaseHTTPRequestHandler):
                 cur.execute("UPDATE avreichim SET ended=? WHERE id=?", (at[:10], aid))
             elif aid:
                 sets, vals = [], []
-                for k in ('note', 'started', 'phone', 'email', 'addr', 'ended'):
+                for k in ('note', 'started', 'phone', 'email', 'addr', 'ended', 'idnum', 'seder'):
                     if k in b: sets.append(k + '=?'); vals.append(b[k])
                 if nm:
                     l, f = _split_av(nm)
@@ -9184,6 +9306,8 @@ class H(BaseHTTPRequestHandler):
                     sets += ['name=?', 'last=?', 'first=?']; vals += [nm, l, f]
                     if old and old['name'] != nm:      # שינוי שם — גם אצל כל המחזיקים
                         cur.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (nm, old['name']))
+                if 'idnum' in b:
+                    sets.append('id_ok=?'); vals.append(1 if _idnum_ok(b['idnum']) else 0)
                 if sets:
                     cur.execute("UPDATE avreichim SET " + ','.join(sets) + " WHERE id=?", vals + [aid])
             elif nm:
@@ -9338,6 +9462,31 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'removed': rm, 'merged': mg, 'donors': dn})
+        if self.path == '/api/avreich/pending':
+            # אישור/דחייה של שם מהרשימה הרשמית שדומה לאברך שכבר קיים.
+            # אישור = אותו אדם: הת"ז והטלפון נכנסים לאברך הקיים.
+            # דחייה = שני אנשים: נפתח אברך נפרד עם הפרטים מהקובץ.
+            alias = (b.get('alias') or '').strip()
+            con = db()
+            r = con.execute("SELECT * FROM avreich_pending WHERE alias=?", (alias,)).fetchone()
+            if not r:
+                con.close(); return self._send(404, {'ok': False, 'error': 'not found'})
+            if b.get('same'):
+                con.execute("UPDATE avreichim SET idnum=?, id_ok=?, seder=?, "
+                            "phone=CASE WHEN COALESCE(TRIM(phone),'')='' THEN ? ELSE phone END "
+                            "WHERE name=?",
+                            (r['idnum'], r['id_ok'], r['seder'], r['phone'], alias))
+                msg = 'אותו אברך — הפרטים צורפו'
+            else:
+                nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,idnum,id_ok,phone,"
+                            "seder,created) VALUES(?,?,?,?,?,?,?,?)",
+                            (nm, r['last'], r['first'], r['idnum'], r['id_ok'],
+                             r['phone'], r['seder'], today_iso()))
+                msg = 'נפתח אברך נפרד: ' + nm
+            con.execute("DELETE FROM avreich_pending WHERE alias=?", (alias,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'msg': msg})
         if self.path == '/api/avreich/new':
             # הוספת אברך חדש לרשימה — רק דרך הפעולה הזו, לא בהקלדה חופשית
             nm = (b.get('name') or '').strip()

@@ -3961,7 +3961,26 @@ function avOpts(sel){
     +'<option value="__new__">➕ אברך חדש — הוסף לרשימה…</option>';
 }
 async function loadAvList(){ try{const r=await api('GET','/api/avreichim');
-  AVLIST=(r&&r.rows)||r||[]; AVSTAT=(r&&r.rows)?r:null;}catch(e){} }
+  AVLIST=(r&&r.rows)||r||[]; AVSTAT=(r&&r.rows)?r:null; AVPEND=(r&&r.pending)||[];}catch(e){} }
+let AVPEND=[];
+// שם מהרשימה הרשמית של הכולל שדומה לאברך שכבר רשום — מאיר מחליט אם זה
+// אותו אדם (ואז הת"ז והטלפון מצטרפים אליו) או שני אנשים נפרדים.
+function avPendHTML(){
+  if(!AVPEND.length)return '';
+  return `<details class="avpend" open><summary>🆔 מהרשימה הרשמית של הכולל — ${AVPEND.length} שמות לאישור</summary>
+    <div class="hintxt" style="margin:0 2px 8px">הקובץ שהעלית כולל שם שנכתב מעט אחרת ממה שרשום כאן. אם זה אותו אברך — תעודת הזהות והטלפון ייכנסו לכרטיס הקיים. אם אלו שני אנשים — ייפתח אברך נפרד.</div>
+    ${AVPEND.map(x=>`<div class="avpendrow">
+      <div class="avpn"><b>${esc(x.alias)}</b> <span class="avpvs">↔</span> <b>${esc(x.name)}</b>
+        <small class="avid">${esc(x.idnum)}${x.phone?(' · '+esc(x.phone)):''}</small></div>
+      <div class="avpact"><button class="btn sm avpsame" data-a="${esc(x.alias)}">✔️ אותו אברך</button>
+        <button class="btn sm ghost avpdiff" data-a="${esc(x.alias)}">שני אנשים</button></div></div>`).join('')}
+  </details>`;
+}
+async function avPendAct(alias,same){
+  const r=await api('POST','/api/avreich/pending',{alias:alias,same:same?1:0});
+  toast((r&&r.msg)||'נשמר ✓');
+  AVLIST=null; AVPEND=[]; await loadAvList(); renderAvByAv();
+}
 function wireAvNew(sel,inp,btn){
   if(!sel||!inp||!btn) return;
   sel.addEventListener('change',()=>{const on=sel.value==='__new__';
@@ -5796,6 +5815,7 @@ async function renderAvByAv(){
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
       <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
+    ${avPendHTML()}
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
     <div class="avwrap"><div class="avinner">
       <div class="avghead"><span class="g1">#</span><span class="g2">האברך</span><span class="g3">הזבולון</span><span class="g4">מתאריך</span><span class="g5">סכום</span><span class="g6">הערות</span><span class="g7"></span></div>
@@ -5808,6 +5828,8 @@ async function renderAvByAv(){
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
+  view.querySelectorAll('.avpsame').forEach(b=>b.onclick=()=>avPendAct(b.dataset.a,true));
+  view.querySelectorAll('.avpdiff').forEach(b=>b.onclick=()=>avPendAct(b.dataset.a,false));
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
@@ -5839,7 +5861,7 @@ function avRowHTML(a,ix){
   // נערכים שם ולא כאן. מוצג כדי שהרשימה תהיה מסונכרנת עם מה שנרשם בכרטיס.
   const line=(x,first)=>`<div class="avg${x&&x.linked?' avglink':''}" ${x&&!x.linked?`data-pid="${x.pid}"`:''}>
     <span class="g1">${first?`<span class="avnum">${ix+1}</span>`:''}</span>
-    <span class="g2">${first?`<a class="avname" data-av="${esc(a.name)}" title="לחץ לפרטים של האברך">${esc(a.name)}</a>`:''}</span>
+    <span class="g2">${first?`<a class="avname" data-av="${esc(a.name)}" title="לחץ לפרטים של האברך">${esc(a.name)}</a>${a.idnum?`<small class="avid" title="תעודת זהות">${esc(a.idnum)}</small>`:''}`:''}</span>
     <span class="g3">${x?`<a class="avhold" data-did="${x.id}" title="פתח כרטיס">${esc(x.name)}</a>${x.linked?` <small class="avlinktag">🤝 יחד עם ${esc(x.via||'')}</small>`:''}`:'<span class="avfree">— אין שותף —</span>'}</span>
     <span class="g4">${x&&!x.linked?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:(x?`<small class="avlinkdt">${esc(x.start_date||'')}</small>`:'')}</span>
     <span class="g5">${x&&!x.linked?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
@@ -5853,6 +5875,9 @@ function avRowHTML(a,ix){
       <div class="two" style="margin-top:6px"><label class="fld"><span>📞 טלפון</span><input class="avf" data-k="phone" data-av="${esc(a.name)}" dir="ltr" value="${esc(a.phone||'')}"></label>
         <label class="fld"><span>📧 אימייל</span><input class="avf" data-k="email" data-av="${esc(a.name)}" dir="ltr" value="${esc(a.email||'')}"></label></div>
       <label class="fld" style="margin-top:6px"><span>🏠 כתובת</span><input class="avf" data-k="addr" data-av="${esc(a.name)}" value="${esc(a.addr||'')}"></label>
+      <div class="two" style="margin-top:6px"><label class="fld"><span>🆔 תעודת זהות</span><input class="avf" data-k="idnum" data-av="${esc(a.name)}" dir="ltr" inputmode="numeric" value="${esc(a.idnum||'')}"></label>
+        <label class="fld"><span>📖 סדר</span><input class="avf" data-k="seder" data-av="${esc(a.name)}" value="${esc(a.seder||'')}"></label></div>
+      ${(a.idnum&&+a.id_ok===0)?'<div class="hintxt" style="color:var(--no)">⚠️ ספרת הביקורת של תעודת הזהות אינה מסתדרת — כדאי לוודא מול הכולל</div>':''}
       ${a.started?`<div class="hintxt">התחיל: ${esc(a.started)}</div>`:''}</div>`:''}
     ${avHistId===a.name?`<div class="avhistbox">${(a.log||[]).map(L=>
       `<div class="avhline"><b>${esc(L.hdate||'')}</b> <small>${esc(L.date||'')}</small>${L.donor?(' · '+esc(L.donor)):''}<br>${esc(L.text||'')}</div>`).join('')||'<div class="hintxt">אין עדיין היסטוריה</div>'}</div>`:''}
