@@ -339,6 +339,25 @@
     font-family:inherit;font-size:.88rem;font-weight:800;text-align:center;background:#fff;color:var(--ink)}
   .cmfix{min-width:84px;text-align:center;font-weight:800;color:var(--yes);font-size:.9rem}
   .cmhead .cmsave{padding:5px 9px;font-size:.8rem;line-height:1;flex:0 0 auto}
+  /* חלון אחד לכל הבדיקות והתיקונים, במקום ארבעה כפתורים גדולים */
+  .fixbox{border:1px solid var(--line);border-radius:12px;background:var(--card);margin:6px 2px;overflow:hidden}
+  .fixbox>summary{cursor:pointer;padding:10px 12px;font-weight:800;color:var(--muted);
+    display:flex;align-items:center;gap:8px;list-style:none}
+  .fixbox>summary::-webkit-details-marker{display:none}
+  .fixbox .fixcnt{margin-inline-start:auto;background:var(--no);color:#fff;border-radius:20px;
+    padding:1px 9px;font-size:.74rem}
+  .fixbox .fixrow{display:flex;justify-content:space-between;align-items:center;width:calc(100% - 16px);
+    margin:0 8px 8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+    font-weight:700;font-size:.86rem;padding:9px 11px}
+  .fixbox .fixrow b{background:var(--no);color:#fff;border-radius:20px;padding:1px 9px;font-size:.76rem}
+  /* מיזוג ומחיקה — קטן, בשורה אחת בתחתית הכרטיס, בלי הדגשה */
+  .cardfoot{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;
+    margin:14px 2px 6px;padding-top:10px;border-top:1px solid var(--line)}
+  .cardfoot .footlink{background:none;border:0;padding:2px 4px;font:inherit;font-size:.76rem;
+    color:var(--muted);cursor:pointer;text-decoration:underline}
+  .cardfoot .footlink.danger{color:var(--no);opacity:.75}
+  .cardfoot .footsep{color:var(--muted);font-size:.76rem}
+  .cardfoot #mergebox{flex:0 0 100%;margin-top:8px}
   .cmtag{font-size:.68rem;font-weight:800;border-radius:20px;padding:2px 8px;white-space:nowrap}
   .cmtag.mo{background:var(--gold-soft);color:var(--gold)}
   .cmtag.one{background:var(--accent-soft);color:var(--accent)}

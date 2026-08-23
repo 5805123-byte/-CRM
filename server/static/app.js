@@ -1208,6 +1208,7 @@ const DFILTERS={
 const DFORDER=['il','iz','k101','reg','reglow','occ','building','new',''];
 // כל הייעודים שבשימוש בפועל + כמה תרומות וכמה כסף בכל אחד — לחיפוש ולניהול
 let catFlt='';
+let FIXOPEN=false;      // האם חלון "בדיקות ותיקונים" פתוח — נשמר בין ציורים
 function catUsage(){
   const m={};
   DB.forEach(d=>(d.donations||[]).forEach(x=>{
@@ -1269,10 +1270,21 @@ function renderDonors(){
   const nafix=DB.filter(addrIssue).length;
   const nanone=DB.filter(d=>!(d.addr||'').trim()).length;
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
-    ${ndup?`<button class="btn dupbtn" id="dupBtn">🔀 מיזוג כרטיסים כפולים (${ndup})</button>`:''}
-    ${nafix?`<button class="btn kvmissbtn" id="addrFixBtn">🔴 כתובות לתיקון — ${nafix}</button>`:''}
-    ${nanone?`<button class="btn kvmissbtn" id="noAddrBtn">🏠 בלי כתובת בכלל — ${nanone}</button>`:''}
-    ${DB.filter(d=>!(d.phone||'').trim()).length?`<button class="btn kvmissbtn" id="noPhoneBtn" style="background:var(--yes);border-color:var(--yes)">📞 השלמת טלפונים — ${DB.filter(d=>!(d.phone||'').trim()).length} בלי טלפון</button>`:''}
+    ${(()=>{
+      const nph=DB.filter(d=>!(d.phone||'').trim()).length;
+      const items=[
+        {id:'dupBtn',   n:ndup,   t:'🔀 כרטיסים כפולים למיזוג'},
+        {id:'addrFixBtn',n:nafix, t:'🏠 כתובות לתיקון'},
+        {id:'noAddrBtn', n:nanone,t:'🏠 בלי כתובת בכלל'},
+        {id:'noPhoneBtn',n:nph,   t:'📞 בלי טלפון'},
+      ].filter(x=>x.n);
+      if(!items.length)return '';
+      const tot=items.reduce((a,x)=>a+x.n,0);
+      return `<details class="fixbox"${FIXOPEN?' open':''} id="fixbox">
+        <summary>🧰 בדיקות ותיקונים <b class="fixcnt">${tot}</b></summary>
+        ${items.map(x=>`<button class="btn fixrow" id="${x.id}">${x.t}<b>${x.n}</b></button>`).join('')}
+      </details>`;
+    })()}
     <div class="avbar"><select id="donsort" class="avsortsel">
       <option value="last">מיון: שם (א-ב)</option>
       <option value="amt">מיון: סכום תרומות (גבוה→נמוך)</option>
@@ -1297,6 +1309,8 @@ function renderDonors(){
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;DLIM=60;render();};}
   const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;DLIM=60;render();};
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
+  const fx=document.getElementById('fixbox');
+  if(fx)fx.addEventListener('toggle',()=>{FIXOPEN=fx.open;});
   const db2=document.getElementById('dupBtn'); if(db2)db2.onclick=openDupes;
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
@@ -3253,13 +3267,16 @@ function cardDetails(d,body){
     <div class="sec"><h3>📄 מסמכים ותעודות</h3>
       <div class="avfiles dnfiles" id="dfiles">${(d.files||[]).filter(f=>f.kind==='donor').map(fileChip).join('')}<label class="filebtn sm">📎 צרף מסמך / תעודה<input type="file" multiple accept="application/pdf,image/*" id="df_file" hidden></label></div>
       <div class="hintxt">מה שמצורף כאן מופיע בכרטיס הראשי. שטרי יששכר־זבולון נמצאים בלשונית 🤝.</div></div>
-    <div class="sec"><button class="btn ghost" id="f_merge" style="width:100%">🔀 מזג עם כרטיס כפול (אותו אדם)</button>
-      <div id="mergebox" class="hidden" style="margin-top:8px">
+    ${notesHTML(d)}
+    <div class="cardfoot">
+      <button type="button" class="footlink" id="f_merge">🔀 מזג עם כרטיס כפול</button>
+      <span class="footsep">·</span>
+      <button type="button" class="footlink danger" id="f_delete">🗑 מחק תורם</button>
+      <div id="mergebox" class="hidden">
         <input id="mg_q" placeholder="🔍 חפש את הכרטיס הכפול למזג לכאן…" autocomplete="off">
         <div id="mg_res" class="dpres"></div>
-        <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div></div>
-    ${notesHTML(d)}
-    <div class="sec" style="text-align:center"><button class="btn ghost delbig" id="f_delete" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>`;
+        <div class="hintxt">הכרטיס הזה (${esc((d.last+' '+d.first).trim())}) יישאר, והכפול יתמזג לתוכו — כל התרומות, הקוויטל והאברכים יעברו לכאן.</div></div>
+    </div>`;
   wireDelete(d, body);   // ראשון בתור: תקלה בחיווט אחר לא תשאיר את המחיקה בלי מאזין
   wireIzSum(body.querySelector('.izsum'), d);
   const fcur=document.getElementById('f_cur');
@@ -3669,7 +3686,7 @@ async function wireDelete(d, body){
     delBtn.disabled=true; delBtn.textContent='מוחק…';
     let r=null; try{ r=await api('DELETE','/api/donor/'+d.id); }catch(e){ r={ok:false,detail:String(e)}; }
     if(!r||!r.ok){
-      delBtn.disabled=false; delBtn.textContent='🗑 מחיקת התורם לצמיתות';
+      delBtn.disabled=false; delBtn.textContent='🗑 מחק תורם';
       toast('המחיקה נכשלה'+((r&&(r.detail||r.error))?': '+(r.detail||r.error):' — נסה שוב'));
       return;
     }
