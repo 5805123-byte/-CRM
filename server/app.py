@@ -3237,50 +3237,17 @@ def ensure_schema():
     except Exception as e:
         print('  contacts seed error:', e)
 
-    # מאיר: "Marc Herskowitz זה מאיר שלום הרשקוביץ... הוא תרם עד 15 אפריל
-    # כל חודש 1000 דולר". החיובים שלו נכנסו בטעות לכרטיס של חיים (Howard)
-    # הרשקוביץ #192: בזמן ייבוא בנק ווסט לא היה שם לועזי בכרטיס של מאיר
-    # שלום, ולכן ההתאמה לפי שם משפחה מצאה מועמד יחיד — את חיים. מעבירים
-    # את החיובים ואת התרומות לכרטיס הנכון וממלאים את השם הלועזי, כדי
-    # שהתאמה כזו לא תחזור. מעבר מרפא — רץ בכל עלייה ונוגע רק במה שעדיין
-    # יושב בכרטיס הלא נכון.
-    try:
-        dst = con.execute("SELECT id,english,notes FROM donors "
-                          "WHERE LOWER(COALESCE(email,'')) LIKE '%marc@ilstitle.com%'").fetchone()
-        if dst:
-            did = dst['id']
-            if not (dst['english'] or '').strip():
-                con.execute("UPDATE donors SET english='Marc Herskowitz' WHERE id=?", (did,))
-            rows = con.execute("SELECT tid,date,amount,status,donor_id FROM recon "
-                               "WHERE LOWER(TRIM(COALESCE(first,'')))='marc' "
-                               "AND LOWER(TRIM(COALESCE(last,'')))='herskowitz'").fetchall()
-            moved_d = moved_r = 0
-            for r in rows:
-                if r['donor_id'] != did:
-                    # התרומה שנרשמה מהחיוב הזה עוברת יחד איתו
-                    diso = _recon_iso(r['date'])
-                    if diso and (r['status'] or '') == 'settled' and r['donor_id']:
-                        cur = con.execute(
-                            "UPDATE donations SET donor_id=? WHERE donor_id=? AND date=? "
-                            "AND method='Banquest' AND ROUND(CAST(amount AS REAL),2)=?",
-                            (did, r['donor_id'], diso, _amt2(r['amount'])))
-                        moved_d += cur.rowcount
-                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
-                    moved_r += 1
-            if moved_r or moved_d:
-                # מה שנדחה מ־15 במאי ואילך — הערה בכרטיס, לא חוב פתוח
-                dec = [r for r in rows if (r['status'] or '') == 'declined']
-                nt = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
-                add = ('הוראת קבע $1,000 ב-15 לחודש בבנק ווסט — נגבה ינואר–אפריל 2026. '
-                       + ('מ-15 במאי כל החיובים סורבו (%d ניסיונות) — לחדש כרטיס אשראי. ' % len(dec) if dec else '')
-                       + '(החיובים היו רשומים בטעות בכרטיס של חיים הרשקוביץ)')
-                if add[:40] not in nt:
-                    con.execute("UPDATE donors SET notes=? WHERE id=?",
-                                ((nt + ('\n' if nt else '') + add).strip(), did))
-                con.commit()
-                print('  מארק הרשקוביץ: הועברו %d חיובים ו-%d תרומות לכרטיס #%d' % (moved_r, moved_d, did))
-    except Exception as e:
-        print('  herskowitz split error:', e)
+    # מאיר: "Marc Herskowitz זה מאיר שלום הרשקוביץ", "Schia מול Eli
+    # וויינפעלד — זה שני אנשים נפרדים". בייבוא בנק ווסט ההתאמה נעשתה לפי
+    # שם משפחה בלבד, וכשרק לאחד מבני המשפחה היה שם לועזי בכרטיס — כל
+    # החיובים של המשפחה נדבקו אליו. מחזירים כל חיוב לכרטיס של בעליו,
+    # יחד עם התרומה שנוצרה ממנו. מעבר מרפא: רץ בכל עלייה ונוגע רק במה
+    # שעדיין יושב בכרטיס הלא נכון.
+    for _who in _WRONG_CARD_FIX:
+        try:
+            _fix_charges_owner(con, **_who)
+        except Exception as e:
+            print('  split error (%s):' % _who.get('eng', ''), e)
 
     # מאיר: "מה שהוא תרם לא רשום, אתה אמור לזהות לפי האימייל שלו".
     # השם הלועזי החסר מושלם משם השולח שבמייל, ורק אחר כך משייכים את
@@ -6137,6 +6104,63 @@ def link_near_names(con):
 
 
 _LATIN_NAME = re.compile(r"^[A-Za-z][A-Za-z''\-\.]*(\s+[A-Za-z][A-Za-z''\-\.]*)+$")
+
+
+# ---- חיוב שנדבק לכרטיס של קרוב משפחה עם אותו שם משפחה ----
+# מאיר: "Schia מול Eli וויינפעלד — זה שני אנשים נפרדים". כל רשומה כאן
+# אומרת: החיובים על השם הלועזי הזה שייכים לכרטיס שמזוהה ב-`find`, ולא
+# לשום כרטיס אחר. `note` היא ההערה שתירשם בכרטיס אחרי התיקון.
+_WRONG_CARD_FIX = [
+    dict(first='marc', last='herskowitz', eng='Marc Herskowitz',
+         find="LOWER(COALESCE(email,'')) LIKE '%marc@ilstitle.com%'",
+         note='הוראת קבע $1,000 ב-15 לחודש בבנק ווסט — נגבה ינואר–אפריל 2026. '
+              '(החיובים היו רשומים בטעות בכרטיס של חיים הרשקוביץ)'),
+    dict(first='schia', last='winefeld', eng='Schia Winefeld',
+         find="TRIM(COALESCE(last,''))='ווינפעלד' AND TRIM(COALESCE(first,''))='יהושע'",
+         note='הוראת קבע $1,000 לחודש בבנק ווסט. '
+              '(החיובים היו רשומים בטעות בכרטיס של אלי וויינפעלד — שני אנשים נפרדים)'),
+]
+
+
+def _fix_charges_owner(con, first, last, eng, find, note):
+    """מחזיר את כל החיובים על שם לועזי מסוים לכרטיס של בעליו, יחד עם
+    התרומות שנוצרו מהם, וממלא את השם הלועזי כדי שההתאמה לא תחזור."""
+    dst = con.execute("SELECT id,english,notes FROM donors WHERE " + find).fetchone()
+    if not dst:
+        return
+    did = dst['id']
+    if not (dst['english'] or '').strip():
+        con.execute("UPDATE donors SET english=? WHERE id=?", (eng, did))
+    rows = con.execute("SELECT tid,date,amount,status,donor_id FROM recon "
+                       "WHERE LOWER(TRIM(COALESCE(first,'')))=? "
+                       "AND LOWER(TRIM(COALESCE(last,'')))=?", (first, last)).fetchall()
+    moved_d = moved_r = 0
+    for r in rows:
+        if r['donor_id'] == did:
+            continue
+        # התרומה שנרשמה מהחיוב הזה עוברת יחד איתו
+        diso = _recon_iso(r['date'])
+        if diso and (r['status'] or '') == 'settled' and r['donor_id']:
+            # שם אמצעי התשלום נרשם בשני נוסחים לפי מסלול הייבוא
+            cur = con.execute(
+                "UPDATE donations SET donor_id=? WHERE donor_id=? AND date=? "
+                "AND COALESCE(method,'') IN ('Banquest','בנק ווסט') "
+                "AND ROUND(CAST(amount AS REAL),2)=?",
+                (did, r['donor_id'], diso, _amt2(r['amount'])))
+            moved_d += cur.rowcount
+        con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
+        moved_r += 1
+    if not (moved_r or moved_d):
+        return
+    # חיובים שנדחו — הערה בכרטיס כדי שיחדשו כרטיס, לא חוב פתוח
+    dec = [r for r in rows if (r['status'] or '') == 'declined']
+    txt = note + (' %d ניסיונות חיוב סורבו — לחדש כרטיס אשראי.' % len(dec) if dec else '')
+    nt = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
+    if note[:40] not in nt:
+        con.execute("UPDATE donors SET notes=? WHERE id=?",
+                    ((nt + ('\n' if nt else '') + txt).strip(), did))
+    con.commit()
+    print('  %s: הועברו %d חיובים ו-%d תרומות לכרטיס #%d' % (eng, moved_r, moved_d, did))
 
 
 def fill_english_by_email(con):
