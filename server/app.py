@@ -5697,6 +5697,7 @@ def _cert_body(lead, ws):
 _DEEP = (0x6a, 0x14, 0x14)
 _BLACK = (0, 0, 0)
 _INK = (0x1c, 0x17, 0x10)
+_GOLD_T = (0x8a, 0x6a, 0x22)      # תווית קטנה בזהב, כמו בדף ההדפסה
 
 
 def _bidi(s):
@@ -5705,6 +5706,73 @@ def _bidi(s):
         return get_display(s)
     except Exception:
         return s
+
+
+def izslip_png(avreich='', donor='', names='', width=1240, fmt='png'):
+    """פתק הקוויטל של היששכר־זבולון כתמונה — אותו בלאנק ואותו סידור כמו
+    בדף ההדפסה, כדי שאפשר יהיה להעתיק ולשלוח בדיוק כמו תעודת פרנס יום."""
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.open(os.path.join(STATIC, 'iz-slip.jpg')).convert('RGB')
+    if im.width != width:
+        im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
+    W, H = im.size
+    u = W / 1240.0
+    dr = ImageDraw.Draw(im)
+    reg = os.path.join(STATIC, 'frankruhl-regular.ttf')
+    bold = os.path.join(STATIC, 'frankruhl-bold.ttf')
+    cache = {}
+
+    def font(px, heavy=False):
+        k = (int(px), heavy)
+        if k not in cache:
+            cache[k] = ImageFont.truetype(bold if heavy else reg, max(7, int(px)))
+        return cache[k]
+
+    def wid(t, f):
+        return dr.textlength(t, font=f)
+
+    def center(t, f, y, fill):
+        dr.text(((W - wid(t, f)) / 2, y), t, font=f, fill=fill)
+
+    # ראש הפתק — שני השמות, משמאל ללוגו
+    fl, fn = font(15 * u), font(27 * u, True)
+    # עברית — הראשון מימין, ומשמאל ללוגו
+    x = W - int(272 * u)
+    for lbl, val in (('יששכר — האברך', avreich), ('זבולון — התורם', donor)):
+        bw2 = max(wid(val or '—', fn), wid(lbl, fl))
+        x -= bw2
+        dr.text((x + bw2 - wid(lbl, fl), int(28 * u)), lbl, font=fl, fill=_GOLD_T)
+        dr.text((x + bw2 - wid(val or '—', fn), int(48 * u)), val or '—', font=fn, fill=_DEEP)
+        x -= int(46 * u)
+    y = int(112 * u)
+    fl2 = font(22 * u, True)
+    center('הלימוד והתפילה בעת רצון של חצות הלילה יעמוד לזכות:', fl2, y, _DEEP)
+    y += int(40 * u)
+    # השמות — הכי גדולים, ומצטמצמים לבד עד שהכול נכנס
+    avail_w, avail_h = W - int(120 * u), H - y - int(28 * u)
+    txt = (names or '').strip() or '— אין עדיין שמות לקוויטל —'
+    for px in range(int(34 * u), int(9 * u), -1):
+        f = font(px, True)
+        lh = px * 1.4
+        lines = []
+        for para in txt.split('\n'):
+            cur = ''
+            for w in para.split():
+                t = (cur + ' ' + w).strip()
+                if wid(t, f) <= avail_w or not cur:
+                    cur = t
+                else:
+                    lines.append(cur); cur = w
+            lines.append(cur)
+        if len(lines) * lh <= avail_h:
+            yy = y + max(0, (avail_h - len(lines) * lh) / 2)
+            for ln in lines:
+                center(ln, f, yy, _BLACK)
+                yy += lh
+            break
+    buf = io.BytesIO()
+    im.save(buf, 'JPEG' if fmt == 'jpg' else 'PNG', quality=92)
+    return buf.getvalue()
 
 
 def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', roles=''):
@@ -7432,6 +7500,24 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/receipt':
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] in ('/izslip.png', '/izslip.jpg'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+
+            def g(k):
+                return (qs.get(k, [''])[0] or '').strip()
+            fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
+            try:
+                data = izslip_png(g('av'), g('donor'), g('names'), fmt=fmt)
+            except Exception as e:
+                return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg' if fmt == 'jpg' else 'image/png')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', 'inline; filename="kvittel.%s"' % fmt)
+            self.end_headers(); self.wfile.write(data)
+            return
+        if self.path.split('?')[0] == '/iz-slips':
+            return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/parnes-cert':
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
@@ -7452,6 +7538,42 @@ class H(BaseHTTPRequestHandler):
             self.send_header('Content-Disposition', 'inline; filename="parnes-cert.%s"' % fmt)
             self.end_headers(); self.wfile.write(data)
             return
+        if self.path.split('?')[0] == '/api/izslips':
+            # מאיר: "דף מודפס לכל אברך עם השמות של הקוויטל של היששכר־זבולון
+            # שלו". שורה לכל צמד אברך↔תורם, ולצדה שמות הקוויטל של אותו תורם.
+            con = db()
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            only = (qs.get('av', [''])[0] or '').strip()
+            pray = {}
+            for r in con.execute("SELECT donor_id,tier,text FROM prayers "
+                                 "WHERE TRIM(COALESCE(text,''))<>''"):
+                g = pray.setdefault(r['donor_id'], {})
+                g.setdefault((r['tier'] or ''), []).append(r['text'])
+            out = []
+            q = ("SELECT TRIM(p.avreich) av, d.id did, d.last, d.first, d.english "
+                 "FROM partners p JOIN donors d ON d.id=p.donor_id "
+                 "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''")
+            args = []
+            if only:
+                q += " AND TRIM(p.avreich)=?"; args.append(only)
+            seen = set()
+            for r in con.execute(q, args):
+                key = (r['av'], r['did'])
+                if key in seen:
+                    continue
+                seen.add(key)
+                g = pray.get(r['did'], {})
+                txt = '\n'.join(g.get('יששכר_זבולון') or [])
+                if not txt:                       # אין קוויטל יש"ז — לוקחים מה שיש
+                    txt = '\n'.join(sum((v for k, v in g.items()), []))
+                out.append({'avreich': r['av'],
+                            'donor': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                            'donor_id': r['did'], 'english': r['english'] or '',
+                            'names': txt.strip()})
+            con.close()
+            out.sort(key=lambda x: (_srt(x['avreich']), _srt(x['donor'])))
+            return self._send(200, {'rows': out, 'total': len(out),
+                                    'with_names': sum(1 for x in out if x['names'])})
         if self.path.split('?')[0] == '/api/avreichim':
             # רשימת האברכים לפי שם משפחה, ולצד כל אחד מי מחזיק אותו, ממתי ובכמה.
             # אברך בלי שותף מופיע גם הוא — הרשימה היא של הכולל, לא של התורמים.

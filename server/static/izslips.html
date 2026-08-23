@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>דפי קוויטל — יששכר־זבולון</title>
+<style>
+  /* שלושה פתקים בדף A4, לגזירה. כל פתק על הבלאנק של כולל חצות. */
+  @page{size:A4 portrait;margin:0}
+  :root{--ink:#2A2740;--gold:#8a6a22;--deep:#7a1f1f}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#EDE7DA;color:var(--ink);
+    font-family:"Frank Ruhl Libre","Times New Roman",serif}
+  .bar{position:sticky;top:0;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    padding:10px 14px;background:#3B357A;color:#fff;font-family:system-ui,sans-serif}
+  .bar b{font-size:1rem}
+  .bar .sp{flex:1}
+  .bar button,.bar select{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:9px;
+    border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
+  .bar button:hover{background:rgba(255,255,255,.24)}
+  .hint{padding:8px 14px;background:#fff8e6;color:#7a5a12;font-family:system-ui,sans-serif;font-size:.86rem}
+  .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;
+    box-shadow:0 6px 24px rgba(40,36,64,.18);display:flex;flex-direction:column}
+  .slip{width:210mm;height:99mm;position:relative;overflow:hidden;
+    background:url('/iz-slip.jpg') center/100% 100% no-repeat}
+  .slip .in{position:absolute;inset:5mm 9mm 4mm 9mm;display:flex;flex-direction:column}
+  /* שורת הראש — מוסטת שמאלה כדי לא להיכנס מתחת ללוגו שבימין */
+  .who{display:flex;gap:12mm;align-items:flex-start;padding-inline-start:40mm}
+  .who .w{line-height:1.2}
+  .who .lbl{font-size:8pt;color:var(--gold);font-weight:700;letter-spacing:.02em}
+  .who .nm{font-size:14.5pt;font-weight:800;color:var(--deep);white-space:nowrap}
+  .lead{margin-top:4mm;font-size:11.5pt;color:var(--ink);font-weight:700;line-height:1.3;
+    text-align:center}
+  .lead b{color:var(--deep)}
+  .names{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;
+    margin-top:1.5mm;font-size:15pt;font-weight:800;line-height:1.45;
+    white-space:pre-wrap;overflow:hidden}
+  .names.s1{font-size:13pt;line-height:1.38}
+  .names.s2{font-size:11pt;line-height:1.32}
+  .names.s3{font-size:9.2pt;line-height:1.26}
+  .empty{color:#9a9384;font-weight:600;font-size:11pt}
+  .cut{border-top:1px dashed #c9bfa6}
+  @media print{
+    html,body{background:#fff}
+    .bar,.hint{display:none}
+    .sheet{width:auto;min-height:auto;margin:0;box-shadow:none}
+    .slip{break-inside:avoid;page-break-inside:avoid}
+    .sheet{break-after:page;page-break-after:always}
+    .sheet:last-child{break-after:auto;page-break-after:auto}
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>🕯️ דפי קוויטל — יששכר־זבולון</b>
+  <select id="pick"><option value="">כל האברכים</option></select>
+  <select id="filt">
+    <option value="names">רק מי שיש לו שמות</option>
+    <option value="all">הכל (גם בלי שמות)</option>
+  </select>
+  <span class="sp"></span>
+  <span id="cnt"></span>
+  <button onclick="window.print()">🖨️ הדפס</button>
+</div>
+<div class="hint">שלושה פתקים בכל דף, בגודל שליש A4 — גוזרים לפי הקו המקווקו. בחר אברך מהרשימה כדי להדפיס רק אותו.</div>
+<div id="out"></div>
+<script>
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+  c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+let ROWS = [];
+
+// גודל השמות נקבע לפי כמה יש — כדי שהפתק לא יגלוש
+function sizeClass(txt) {
+  const t = String(txt || '');
+  const lines = t.split('\n').length + Math.floor(t.length / 46);
+  if (lines <= 4) return '';
+  if (lines <= 7) return 's1';
+  if (lines <= 11) return 's2';
+  return 's3';
+}
+function slip(r) {
+  const nm = r.names ? `<div class="names ${sizeClass(r.names)}">${esc(r.names)}</div>`
+                     : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
+  return `<div class="slip"><div class="in">
+    <div class="who">
+      <div class="w"><div class="lbl">יששכר — האברך</div><div class="nm">${esc(r.avreich)}</div></div>
+      <div class="w"><div class="lbl">זבולון — התורם</div><div class="nm">${esc(r.donor)}</div></div>
+    </div>
+    <div class="lead">הלימוד והתפילה בעת רצון של חצות הלילה <b>יעמוד לזכות:</b></div>
+    ${nm}
+  </div></div>`;
+}
+function paint() {
+  const only = document.getElementById('pick').value;
+  const mode = document.getElementById('filt').value;
+  let rows = ROWS.filter(r => (!only || r.avreich === only) && (mode === 'all' || r.names));
+  document.getElementById('cnt').textContent = rows.length + ' פתקים';
+  let h = '';
+  for (let i = 0; i < rows.length; i += 3) {
+    h += '<div class="sheet">' + rows.slice(i, i + 3)
+      .map((r, j) => (j ? '<div class="cut"></div>' : '') + slip(r)).join('') + '</div>';
+  }
+  document.getElementById('out').innerHTML = h ||
+    '<div class="hint">אין פתקים להצגה.</div>';
+}
+(async () => {
+  const q = new URLSearchParams(location.search);
+  const r = await fetch('/api/izslips' + (q.get('av') ? ('?av=' + encodeURIComponent(q.get('av'))) : ''))
+    .then(x => x.json()).catch(() => ({rows: []}));
+  ROWS = r.rows || [];
+  const sel = document.getElementById('pick');
+  [...new Set(ROWS.map(x => x.avreich))].sort((a, b) => a.localeCompare(b, 'he'))
+    .forEach(a => { const o = document.createElement('option'); o.value = o.textContent = a; sel.appendChild(o); });
+  if (q.get('av')) sel.value = q.get('av');
+  sel.onchange = paint;
+  document.getElementById('filt').onchange = paint;
+  paint();
+})();
+</script>
+</body>
+</html>

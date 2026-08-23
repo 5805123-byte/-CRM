@@ -5822,7 +5822,7 @@ async function renderAvByAv(){
   const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
-      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
     ${avPendHTML()}
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
@@ -5837,6 +5837,7 @@ async function renderAvByAv(){
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
+  document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
@@ -5873,7 +5874,7 @@ function avRowHTML(a,ix){
     <span class="g4">${x&&!x.linked?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:(x?`<small class="avlinkdt">${esc(x.start_date||'')}</small>`:'')}</span>
     <span class="g5">${x&&!x.linked?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
     <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
-    <span class="g7">${x&&!x.linked?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
+    <span class="g7">${x&&!x.linked?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avslip" data-av="${esc(a.name)}" title="פתק קוויטל של האברך">🕯️</button><button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
   </div>${sw&&x&&!x.linked&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
     ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
@@ -5897,6 +5898,34 @@ function avRowHTML(a,ix){
       <div class="hintxt av_hint" data-av="${esc(a.name)}"></div>
       <button class="btn sm av_save" data-av="${esc(a.name)}" style="width:100%;margin-top:6px">💾 שבץ ועדכן אצל התורם</button></div>`:''}
   </div>`;
+}
+// פתק הקוויטל של אברך — אותה דרך בדיוק כמו תעודת פרנס יום: פתיחה לצפייה
+// והדפסה, או העתקה כתמונה לשליחה בוואטסאפ.
+async function openIzSlip(av){
+  let rows=[];
+  try{ const r=await api('GET','/api/izslips?av='+encodeURIComponent(av)); rows=(r&&r.rows)||[]; }catch(e){}
+  if(!rows.length){toast('לא נמצא תורם לאברך הזה');return;}
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const url=r=>'/izslip.png?'+new URLSearchParams({av:r.avreich,donor:r.donor,names:r.names||''}).toString();
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕯️ פתק קוויטל — ${esc(av)}</h2>
+    ${rows.map((r,i)=>`<div class="izslipbox">
+      <div class="hintxt">זבולון: <b>${esc(r.donor)}</b>${r.names?'':' · אין עדיין שמות לקוויטל'}</div>
+      <img class="izslipimg" src="${esc(url(r))}" alt="">
+      <div class="addrow"><button class="btn sm izslipcopy" data-i="${i}">📋 העתק תמונה</button>
+        <button class="btn sm ghost izslipopen" data-i="${i}">↗ פתח להדפסה</button></div></div>`).join('')}`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('.izslipopen').forEach(b=>b.onclick=()=>
+    window.open('/iz-slips?av='+encodeURIComponent(av),'_blank'));
+  rs.querySelectorAll('.izslipcopy').forEach(b=>b.onclick=async()=>{
+    const r=rows[+b.dataset.i];
+    try{
+      const blob=await fetch(url(r)).then(x=>x.blob());
+      if(navigator.canShare&&navigator.canShare({files:[new File([blob],'kvittel.png',{type:'image/png'})]})){
+        await navigator.share({files:[new File([blob],'kvittel.png',{type:'image/png'})]}); return; }
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+      toast('התמונה הועתקה ✓');
+    }catch(e){ window.open(url(r),'_blank'); }});
 }
 function wireByAv(){
   const nb=document.getElementById('av_newbtn'), ni=document.getElementById('av_new');
@@ -5942,6 +5971,8 @@ function wireByAv(){
       res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
       res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=async()=>{
         if(await saveH(pid,{donor_id:+x.dataset.id})){avSwapId=null;toast('הועבר לתורם החדש ✓');reload();}});};});
+  // פתק הקוויטל של אברך אחד — לצפייה, להדפסה, ולהעתקה כתמונה (כמו פרנס יום)
+  view.querySelectorAll('.avslip').forEach(b=>b.onclick=()=>openIzSlip(b.dataset.av));
   view.querySelectorAll('.avassign').forEach(b=>b.onclick=()=>{
     avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; avSwapId=null; paintByAv();});
   view.querySelectorAll('.avhist2').forEach(b=>b.onclick=()=>{
