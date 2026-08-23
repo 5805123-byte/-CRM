@@ -6597,11 +6597,89 @@ function renderMails(){
       mx.href='/api/donors.csv'+(c?('?cat='+encodeURIComponent(c)):'');mx.setAttribute('download','');};
     mc.onchange=setu; setu();}
 }
+let campSel='';        // הייעוד שנבחר לדוח
+// דוח קמפיין — מאיר: "איך אני מוציא דוח כמה ומי נתן לקמפיין מסוים,
+// למשל קמחא דפסחא תשפ\"ו". הדוח נבנה מהכסף שבאמת נכנס (התרומות), ולצדו
+// מי התחייב וטרם נתן — כדי שיהיה ברור למי עוד לפנות.
+function campRows(cat){
+  const out=[];
+  DB.forEach(d=>(d.donations||[]).forEach(x=>{
+    if(String(x.category||'').trim()!==cat)return;
+    out.push({id:d.id,name:(d.last+' '+d.first).trim(),eng:d.english||'',
+      amt:amtNum(x.amount),cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curSym(d))),
+      date:x.date||'',method:x.method||'',phone:splitPhones(d.phone)[0]||''});}));
+  return out.sort((a,b)=>b.amt-a.amt||a.name.localeCompare(b.name,'he'));
+}
+// מי התחייב לייעוד הזה ועדיין לא נכנס ממנו כסף
+function campOwes(cat){
+  const paid=new Set(campRows(cat).map(r=>r.id));
+  const out=[];
+  DB.forEach(d=>(d.pledges||[]).forEach(p=>{
+    if(String(p.category||'').trim()!==cat||paid.has(d.id))return;
+    if(String(p.status||'')==='נתן')return;
+    out.push({id:d.id,name:(d.last+' '+d.first).trim(),amt:amtNum(p.amount),
+      cur:curSym(d),phone:splitPhones(d.phone)[0]||''});}));
+  return out.sort((a,b)=>b.amt-a.amt);
+}
+function campList(){
+  const m={};
+  DB.forEach(d=>(d.donations||[]).forEach(x=>{const c=String(x.category||'').trim();
+    if(c)m[c]=(m[c]||0)+amtNum(x.amount);}));
+  (CAMPAIGNS||[]).forEach(c=>{c=String(c||'').trim(); if(c&&!(c in m))m[c]=0;});
+  DB.forEach(d=>(d.pledges||[]).forEach(p=>{const c=String(p.category||'').trim();
+    if(c&&!(c in m))m[c]=0;}));
+  return Object.keys(m).sort((a,b)=>m[b]-m[a]||a.localeCompare(b,'he'));
+}
 function renderCamp(){
-  const camps={};
-  DB.forEach(d=>(d.pledges||[]).forEach(p=>{const k=p.category||'ללא';camps[k]=camps[k]||{given:0,pending:0,gsum:0,psum:0,rows:[]};const a=amtNum(p.amount),g=p.status==='נתן';if(g){camps[k].given++;camps[k].gsum+=a;}else{camps[k].pending++;camps[k].psum+=a;}camps[k].rows.push({name:(d.last+' '+d.first).trim(),amt:p.amount,given:g});}));
-  const keys=Object.keys(camps).filter(k=>matchQ(k));
-  view.innerHTML=`<div class="cnt">${keys.length} קמפיינים</div>`+(keys.map(k=>{const c=camps[k],t=c.given+c.pending,pct=t?Math.round(100*c.given/t):0;return `<div class="campc"><h3>${esc(k)}</h3><div class="csub">נתנו ${c.given} · טרם ${c.pending} · התקבל $${c.gsum} · צפוי $${c.psum}</div><div class="campbar"><i style="width:${pct}%"></i></div>${c.rows.sort((a,b)=>a.given-b.given).map(r=>`<div class="camprow ${r.given?'given':'pending'}"><span>${esc(r.name)}</span><span>$${esc(r.amt)} · ${r.given?'נתן ✓':'טרם ✗'}</span></div>`).join('')}</div>`;}).join('')||'<div class="empty">אין עדיין קמפיינים. הוסף התחייבות בכרטיס תורם.</div>');
+  chips.innerHTML='';
+  const cats=campList();
+  if(!campSel||cats.indexOf(campSel)<0)campSel=cats[0]||'';
+  const rows=campSel?campRows(campSel):[], owes=campSel?campOwes(campSel):[];
+  const byCur={}; rows.forEach(r=>{byCur[r.cur]=(byCur[r.cur]||0)+r.amt;});
+  const tot=Object.keys(byCur).map(k=>k+Math.round(byCur[k]).toLocaleString('en-US')).join(' + ')||'—';
+  const owesum={}; owes.forEach(r=>{if(r.amt)owesum[r.cur]=(owesum[r.cur]||0)+r.amt;});
+  const owetot=Object.keys(owesum).map(k=>k+Math.round(owesum[k]).toLocaleString('en-US')).join(' + ');
+  const donors=new Set(rows.map(r=>r.id)).size;
+  view.innerHTML=`<div class="avbar noprint">
+      <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}</select>
+      <button class="btn sm" id="campcopy">📋 העתק</button>
+      <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
+      <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
+      <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
+        <span><b>${rows.length}</b> תשלומים</span>${owetot?`<span class="campowe">🔴 ${owetot} התחייבו וטרם נתנו</span>`:''}</div></div>
+    <div class="camptbl">
+      <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
+      ${rows.map((r,i)=>`<div class="camprow2"><span class="c1">${i+1}</span>
+        <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}</span>
+        <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b></span>
+        <span class="c4">${esc(r.date?gregLabel(r.date):'')}</span>
+        <span class="c5">${r.method?(chBadgeRaw(r.method)||esc(chLabel(r.method))):''}</span></div>`).join('')
+        ||'<div class="empty">עדיין לא נכנס כסף לייעוד הזה</div>'}
+    </div>
+    ${owes.length?`<div class="camphd" style="margin-top:14px"><h3>🔴 התחייבו וטרם נתנו — ${owes.length}</h3></div>
+      <div class="camptbl">${owes.map((r,i)=>`<div class="camprow2 owe"><span class="c1">${i+1}</span>
+        <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a></span>
+        <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}</span>
+        <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}`;
+  const sel=document.getElementById('campsel');
+  if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
+  view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
+  const txt=()=>[campSel,tot+' · '+donors+' תורמים','']
+    .concat(rows.map((r,i)=>(i+1)+'. '+r.name+' — '+r.cur+Math.round(r.amt).toLocaleString('en-US')
+      +(r.date?(' · '+gregLabel(r.date)):''))).join('\n');
+  const cp=document.getElementById('campcopy');
+  if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(txt());toast('הועתק ✓');}catch(e){toast('לא הצלחתי להעתיק');}};
+  const cs=document.getElementById('campcsv');
+  if(cs)cs.onclick=()=>{
+    const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שם,שם באנגלית,סכום,מטבע,תאריך,אמצעי,טלפון']
+      .concat(rows.map(r=>[r.name,r.eng,Math.round(r.amt),r.cur,r.date,chLabel(r.method),r.phone].map(q).join(',')))
+      .join('\n');
+    const a=document.createElement('a');
+    a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);
+    a.download=campSel.replace(/[\\/:*?"<>|]/g,'-')+'.csv';
+    document.body.appendChild(a);a.click();a.remove();};
 }
 
 /* ---------- משימות ---------- */

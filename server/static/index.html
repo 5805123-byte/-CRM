@@ -371,6 +371,25 @@
   .avpendrow .avpvs{color:var(--muted);margin:0 4px}
   .avpendrow .avpact{display:flex;gap:6px;flex:0 0 auto}
   .splnote{margin-top:3px;color:var(--muted);font-size:.76rem;font-weight:700}
+  /* דוח קמפיין — מי נתן, כמה, ומי עוד חייב */
+  .camphd{margin:8px 2px 6px}
+  .camphd h3{margin:0;font-size:1.02rem;color:var(--accent)}
+  .campsum{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;color:var(--muted);font-size:.84rem}
+  .campsum b{color:var(--ink);font-size:1rem}
+  .campsum .campowe{color:var(--no)}
+  .camptbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
+  .camprow2{display:grid;grid-template-columns:34px 1fr 96px 92px 96px;align-items:center;
+    gap:6px;padding:7px 9px;border-bottom:1px dotted var(--line);font-size:.88rem}
+  .camprow2:last-child{border-bottom:0}
+  .camprow2.head{background:var(--bg);font-weight:800;color:var(--muted);font-size:.76rem}
+  .camprow2 .c1{color:var(--muted);font-size:.76rem}
+  .camprow2 .c3{text-align:start;color:var(--yes)}
+  .camprow2 .c4{color:var(--muted);font-size:.78rem}
+  .camprow2.owe .c3{color:var(--no)}
+  .camprow2 .cen{display:block;color:var(--muted);font-size:.72rem;direction:ltr;unicode-bidi:isolate}
+  .camprow2 a{cursor:pointer;font-weight:700}
+  @media(max-width:520px){.camprow2{grid-template-columns:26px 1fr 84px;}
+    .camprow2 .c4,.camprow2 .c5{display:none}}
   .cmtag{font-size:.68rem;font-weight:800;border-radius:20px;padding:2px 8px;white-space:nowrap}
   .cmtag.mo{background:var(--gold-soft);color:var(--gold)}
   .cmtag.one{background:var(--accent-soft);color:var(--accent)}
