@@ -5708,6 +5708,19 @@ def _bidi(s):
         return s
 
 
+def _wrap_px(dr, text, f, maxw):
+    """שובר שורה לפי רוחב אמיתי בפיקסלים — לא לפי מספר תווים."""
+    out, cur = [], ''
+    for w in str(text or '').split():
+        t = (cur + ' ' + w).strip()
+        if dr.textlength(t, font=f) <= maxw or not cur:
+            cur = t
+        else:
+            out.append(cur); cur = w
+    out.append(cur)
+    return [x for x in out if x != ''] or ['']
+
+
 def izslip_png(avreich='', donor='', names='', width=1240, fmt='png'):
     """פתק הקוויטל של היששכר־זבולון כתמונה — אותו בלאנק ואותו סידור כמו
     בדף ההדפסה, כדי שאפשר יהיה להעתיק ולשלוח בדיוק כמו תעודת פרנס יום."""
@@ -5734,36 +5747,34 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png'):
     def center(t, f, y, fill):
         dr.text(((W - wid(t, f)) / 2, y), t, font=f, fill=fill)
 
-    # ראש הפתק — שני השמות, משמאל ללוגו
-    fl, fn = font(15 * u), font(27 * u, True)
-    # עברית — הראשון מימין, ומשמאל ללוגו
-    x = W - int(272 * u)
+    # ראש הפתק — שני השמות, מימין לשמאל ומשמאל ללוגו
+    fl, fn = font(19 * u), font(35 * u, True)
+    x = W - int(250 * u)
     for lbl, val in (('יששכר — האברך', avreich), ('זבולון — התורם', donor)):
         bw2 = max(wid(val or '—', fn), wid(lbl, fl))
         x -= bw2
-        dr.text((x + bw2 - wid(lbl, fl), int(28 * u)), lbl, font=fl, fill=_GOLD_T)
-        dr.text((x + bw2 - wid(val or '—', fn), int(48 * u)), val or '—', font=fn, fill=_DEEP)
-        x -= int(46 * u)
-    y = int(112 * u)
-    fl2 = font(22 * u, True)
-    center('הלימוד והתפילה בעת רצון של חצות הלילה יעמוד לזכות:', fl2, y, _DEEP)
-    y += int(40 * u)
-    # השמות — הכי גדולים, ומצטמצמים לבד עד שהכול נכנס
-    avail_w, avail_h = W - int(120 * u), H - y - int(28 * u)
+        dr.text((x + bw2 - wid(lbl, fl), int(26 * u)), lbl, font=fl, fill=_GOLD_T)
+        dr.text((x + bw2 - wid(val or '—', fn), int(50 * u)), val or '—', font=fn, fill=_DEEP)
+        x -= int(54 * u)
+    # הנוסח — גדול, ומתחת ללוגו. "יעמוד לזכות" בשורה נפרדת (מאיר)
+    y = int(205 * u)
+    fz = font(48 * u, False)
+    nus = 'לימוד התורה ותפלה בעת רצון הגדול של חצות הלילה עד הבוקר'
+    for ln in _wrap_px(dr, nus, fz, W - int(150 * u)):
+        center(ln, fz, y, _INK); y += int(48 * u * 1.3)
+    y += int(8 * u)
+    fzk = font(48 * u, True)
+    center('יעמוד לזכות:', fzk, y, _DEEP)
+    y += int(48 * u * 1.45)
+    # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום
+    avail_w, avail_h = W - int(150 * u), H - y - int(34 * u)
     txt = (names or '').strip() or '— אין עדיין שמות לקוויטל —'
-    for px in range(int(34 * u), int(9 * u), -1):
+    for px in range(int(94 * u), int(16 * u), -2):
         f = font(px, True)
-        lh = px * 1.4
+        lh = px * 1.28
         lines = []
         for para in txt.split('\n'):
-            cur = ''
-            for w in para.split():
-                t = (cur + ' ' + w).strip()
-                if wid(t, f) <= avail_w or not cur:
-                    cur = t
-                else:
-                    lines.append(cur); cur = w
-            lines.append(cur)
+            lines += _wrap_px(dr, para, f, avail_w)
         if len(lines) * lh <= avail_h:
             yy = y + max(0, (avail_h - len(lines) * lh) / 2)
             for ln in lines:
