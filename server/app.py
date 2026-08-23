@@ -3556,6 +3556,36 @@ def ensure_schema():
     except Exception as e:
         print('  avreichim seed error:', e)
 
+    # מאיר: "אדלין ודהאן — כל אחד מהם נותן 1000 ליששכר־זבולון שלו, וזה
+    # יוצא מהעסק שלהם בתשלום אחד של 2000". כל אחד מחזיק אברך משלו;
+    # החלוקה היא של התשלום בלבד. מעבר מרפא — רק אם עוד לא רשום כך.
+    try:
+        a = con.execute("SELECT id FROM donors WHERE last LIKE '%אדלין%' "
+                        "AND first LIKE '%יצחק%'").fetchone()
+        dh = con.execute("SELECT id FROM donors WHERE last LIKE '%דהאן%' "
+                         "AND first LIKE '%אלירן%'").fetchone()
+        if a and dh:
+            note = 'תשלום אחד של $2,000 מהעסק — $1,000 לכל אחד'
+            cur2 = con.execute("UPDATE pay_split SET pct=50, note=? "
+                               "WHERE payer_id=? AND donor_id=? AND COALESCE(note,'')<>?",
+                               (note, a['id'], dh['id'], note))
+            _n = cur2.rowcount
+            if not con.execute("SELECT 1 FROM pay_split WHERE payer_id=? AND donor_id=?",
+                               (a['id'], dh['id'])).fetchone():
+                con.execute("INSERT INTO pay_split(payer_id,donor_id,pct,note,created) "
+                            "VALUES(?,?,50,?,?)", (a['id'], dh['id'], note, today_iso()))
+                _n += 1
+            # אצל כל אחד: אברך משלו ב-$1,000
+            for did in (a['id'], dh['id']):
+                con.execute("UPDATE partners SET amount='1000' WHERE donor_id=? "
+                            "AND COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')<>'' "
+                            "AND COALESCE(amount,'')<>'1000'", (did,))
+            if _n:
+                con.commit()
+                print('  אדלין ודהאן: תשלום משותף $2,000 — $1,000 לכל אחד')
+    except Exception as e:
+        print('  adlin/dahan error:', e)
+
     # מאיר: "פוקסבורוימר נותן 600 בחודש וקאופמן נותן 500 דולר בחודש,
     # מההתחלה ככה — כל אחד נותן בנפרד והם מחזיקים בשותפות את משה אריה
     # רוזנטל". אצל שניהם נרשם 1,000 בטעות. מעבר מרפא, נוגע רק במה שעדיין
@@ -7451,6 +7481,10 @@ class H(BaseHTTPRequestHandler):
                     psplit.setdefault(r['donor_id'], set()).add(r['payer_id'])
             except Exception:
                 pass
+            # מי שיש לו אברך משלו — חלוקת התשלום אצלו היא כספית בלבד
+            _own_av = {r['donor_id'] for r in con.execute(
+                "SELECT DISTINCT donor_id FROM partners "
+                "WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')<>''")}
             for r in con.execute(
                     "SELECT TRIM(p.avreich) a, p.id pid, p.active, p.start_date, p.amount, p.share, "
                     "p.joint, p.partner_with, p.partner_with_id, d.id did, d.last, d.first FROM partners p "
@@ -7494,7 +7528,11 @@ class H(BaseHTTPRequestHandler):
                              'linked': 1, 'via': nm})
                     for oid in psplit.get(r['did'], ()):
                         who = dnames.get(oid) or ''
-                        if not who:
+                        # מאיר: "אדלין ודהאן — כל אחד נותן 1000 ליששכר־זבולון
+                        # שלו, וזה יוצא מהעסק בתשלום אחד של 2000". שותף
+                        # בחלוקת תשלום שיש לו אברך משלו אינו מחזיק גם את
+                        # האברך של השני — החלוקה היא של הכסף בלבד.
+                        if not who or oid in _own_av:
                             continue
                         g.setdefault('_linked', []).append(
                             {'id': oid, 'name': who, 'pid': r['pid'],

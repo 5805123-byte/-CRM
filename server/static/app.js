@@ -127,7 +127,11 @@ function coHeldWith(d){
     if(linked||byname)add(o,p,0);});});
   // שותף בחלוקת התשלום מחזיק יחד גם את האברכים — הכסף יוצא מאחד מהם,
   // והשני עדיין שותף. הסכום נשאר רשום אצל מי שהשורה רשומה אצלו.
-  (d.paysplit||[]).forEach(s=>{
+  // מאיר: "אדלין ודהאן — כל אחד נותן 1000 ליששכר־זבולון שלו, וזה יוצא
+  // מהעסק בתשלום אחד של 2000". למי שיש אברך משלו — החלוקה כספית בלבד,
+  // והוא אינו מחזיק גם את האברך של השני.
+  const ownAv=(d.partners||[]).some(p=>p.active!=0&&String(p.avreich||'').trim());
+  if(!ownAv)(d.paysplit||[]).forEach(s=>{
     const o=(DB||[]).find(x=>x.id===s.with_id); if(!o||o.id===d.id)return;
     (o.partners||[]).forEach(p=>{if(p.active==0)return; add(o,p,1);});});
   return out;
@@ -3015,7 +3019,7 @@ function splitHTML(d){
     const t=s.role==='payer'
       ? `הכסף מגיע לבנק על שמו, ומתחלק עם <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${mine}% אצלו, ${pct}% אצל השותף.`
       : `הכסף שלו מגיע דרך <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${pct}% מכל סכום שנכנס על שמו נרשם כאן.`;
-    return `<div class="splrow">🤝 ${t}
+    return `<div class="splrow">🤝 ${t}${s.note?`<div class="splnote">${esc(s.note)}</div>`:''}
       <button class="del splx" data-id="${s.id}" title="בטל את החלוקה">🗑</button></div>`;}).join('');
   return `<div class="splbox">${body}
     <div class="splitadd ${rows.length?'hidden':''}">
@@ -6101,10 +6105,13 @@ function avCoHolders(p){
   const av=norm(p.avreich||'');const set=new Map();
   if(av)(DB||[]).forEach(o=>{if(o.id==p.donor_id)return;(o.partners||[]).forEach(q=>{if(q.active==0)return;if(norm(q.avreich||'')===av){const nm=(o.last+' '+o.first).trim();const k=norm(nm);if(!set.has(k))set.set(k,{name:nm,id:o.id});}});});
   pwList(p).forEach(x=>{if(x.name){const k=norm(x.name);if(!set.has(k))set.set(k,{name:x.name,id:x.id});}});
-  // מי שמתחלק עם בעל השורה בתשלום הוא שותף גם באברך עצמו
+  // מי שמתחלק עם בעל השורה בתשלום הוא שותף גם באברך עצמו — אלא אם יש לו
+  // אברך משלו. מאיר: "אדלין ודהאן — כל אחד נותן 1000 ליששכר־זבולון שלו,
+  // וזה יוצא מהעסק בתשלום אחד של 2000". שם החלוקה היא של הכסף בלבד.
   const own=(DB||[]).find(x=>x.id==p.donor_id);
   if(own&&av)(own.paysplit||[]).forEach(s=>{
     const o=(DB||[]).find(x=>x.id===s.with_id); if(!o||o.id==p.donor_id)return;
+    if((o.partners||[]).some(q=>q.active!=0&&String(q.avreich||'').trim()))return;
     const nm=(o.last+' '+o.first).trim(),k=norm(nm);
     if(nm&&!set.has(k))set.set(k,{name:nm,id:o.id});});
   return [...set.values()];
