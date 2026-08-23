@@ -6597,6 +6597,90 @@ function renderMails(){
       mx.href='/api/donors.csv'+(c?('?cat='+encodeURIComponent(c)):'');mx.setAttribute('download','');};
     mc.onchange=setu; setu();}
 }
+// מאיר: "תעשה לי השוואה מה רשום באקסל שלנו ומה מופיע במערכת, ותבנה לי
+// טבלה מסודרת של ההבדלים שאראה מי לא רשמנו". מדביקים כאן שתי עמודות
+// מהאקסל (שם וסכום), וההשוואה רצה מול מה שבאמת נכנס במערכת.
+function campParse(txt){
+  const out=[];
+  String(txt||'').split(/\r?\n/).forEach(ln=>{
+    if(!ln.trim())return;
+    // שם וסכום מופרדים בטאב / פסיק / נקודה־פסיק, או סכום בסוף השורה
+    let m=ln.split(/\t|;|,(?=[^,]*$)/);
+    let name,amt;
+    if(m.length>=2){ name=m.slice(0,-1).join(' '); amt=m[m.length-1]; }
+    else { const g=ln.match(/^(.*?)[\s.\u2013-]+([\d,.]+)\s*$/); if(!g)return; name=g[1]; amt=g[2]; }
+    name=String(name).replace(/["\u05f4]/g,'"').trim();
+    if(!name)return;
+    out.push({name:name, amt:amtNum(amt)});
+  });
+  return out;
+}
+// התאמת שם מהאקסל לתורם — עברית או אנגלית, בלי תלות בסדר המילים
+function campFind(name){
+  const q=norm(name), toks=q.split(' ').filter(t=>t.length>=2);
+  const lat=/[a-zA-Z]/.test(name), ln=name.toLowerCase().trim();
+  let hit=null;
+  for(const d of (DB||[])){
+    if(lat){
+      const e=String(d.english||'').toLowerCase().trim();
+      const b=String(d.business||'').toLowerCase().trim();
+      if(e&&(e===ln||(e.split(' ').every(w=>ln.includes(w))&&ln.split(' ').every(w=>e.includes(w))))){hit=d;break;}
+      if(b&&b===ln){hit=d;break;}
+    }
+    const h=norm((d.last||'')+' '+(d.first||''));
+    if(h&&toks.length&&toks.every(t=>h.includes(t))){hit=d;break;}
+  }
+  if(hit)return hit;
+  // ניסיון שני — לפי צליל בעברית (איות שונה)
+  const f=fzHe(q);
+  if(f&&f.length>=4)for(const d of (DB||[])){
+    const hf=fzHe(norm((d.last||'')+' '+(d.first||'')));
+    if(hf&&hf.includes(f))return d;
+  }
+  return null;
+}
+function campCompare(rows){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const cur=curSym({});
+  rs.innerHTML=`<button class="x" id="rx">✕</button>
+    <h2>🔍 השוואה מול האקסל — ${esc(campSel)}</h2>
+    <div class="hintxt">העתק מהאקסל שתי עמודות — שם וסכום — והדבק כאן. אפשר גם שם ואחריו הסכום באותה שורה.</div>
+    <textarea id="cmp_in" rows="8" placeholder="לאם זאב\t1100&#10;Elchanan Abramowitz\t1100&#10;קאהן אלון 360"></textarea>
+    <button class="btn" id="cmp_go" style="width:100%;margin-top:6px">📊 השווה</button>
+    <div id="cmp_out"></div>`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  document.getElementById('cmp_go').onclick=()=>{
+    const xl=campParse(document.getElementById('cmp_in').value);
+    if(!xl.length){document.getElementById('cmp_out').innerHTML='<div class="hintxt">לא זיהיתי שורות. ודא שיש שם וסכום בכל שורה.</div>';return;}
+    // סכום לכל תורם במערכת
+    const sys={};
+    rows.forEach(r=>{sys[r.id]=sys[r.id]||{name:r.name,amt:0,cur:r.cur};sys[r.id].amt+=r.amt;});
+    const miss=[], diff=[], extra=[], seen=new Set();
+    xl.forEach(x=>{
+      const d=campFind(x.name);
+      if(!d){miss.push({name:x.name,amt:x.amt,nocard:1});return;}
+      seen.add(d.id);
+      const s=sys[d.id];
+      if(!s)miss.push({name:(d.last+' '+d.first).trim(),amt:x.amt,id:d.id});
+      else if(Math.round(s.amt)!==Math.round(x.amt))
+        diff.push({name:s.name,id:d.id,xl:x.amt,sy:s.amt,cur:s.cur});
+    });
+    Object.keys(sys).forEach(id=>{if(!seen.has(+id))extra.push({id:+id,...sys[id]});});
+    const f=(v,c)=>(c||'$')+Math.round(v).toLocaleString('en-US');
+    const tbl=(ttl,cls,list,cols)=>list.length?`<div class="cmphd ${cls}">${ttl} — ${list.length}</div>
+      <div class="camptbl">${list.map((r,i)=>`<div class="camprow2"><span class="c1">${i+1}</span>
+        <span class="c2">${r.id?`<a class="avhold" data-did="${r.id}">${esc(r.name)}</a>`:esc(r.name)}${r.nocard?' <small class="cmpno">אין כרטיס במערכת</small>':''}</span>
+        ${cols(r,f)}</div>`).join('')}</div>`:'';
+    document.getElementById('cmp_out').innerHTML=
+      `<div class="cmpsum">באקסל ${xl.length} שורות · במערכת ${Object.keys(sys).length} תורמים</div>`
+      + tbl('🔴 באקסל ולא רשום אצלנו','bad',miss,(r,f)=>`<span class="c3"><b>${f(r.amt)}</b></span><span class="c4">באקסל</span><span class="c5"></span>`)
+      + tbl('🟡 סכום שונה','warn',diff,(r,f)=>`<span class="c3"><b>${f(r.xl,r.cur)}</b></span><span class="c4">במערכת ${f(r.sy,r.cur)}</span><span class="c5"></span>`)
+      + tbl('⚪ במערכת ולא באקסל','muted',extra,(r,f)=>`<span class="c3"><b>${f(r.amt,r.cur)}</b></span><span class="c4">במערכת</span><span class="c5"></span>`)
+      + (miss.length||diff.length||extra.length?'':'<div class="cmphd ok">✅ הכל תואם — אין הבדלים</div>');
+    rs.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d){remov.classList.remove('show');openDonor(d);}});
+  };
+}
 let campSel='';        // הייעוד שנבחר לדוח
 // דוח קמפיין — מאיר: "איך אני מוציא דוח כמה ומי נתן לקמפיין מסוים,
 // למשל קמחא דפסחא תשפ\"ו". הדוח נבנה מהכסף שבאמת נכנס (התרומות), ולצדו
@@ -6644,6 +6728,7 @@ function renderCamp(){
       <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}</select>
       <button class="btn sm" id="campcopy">📋 העתק</button>
       <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
+      <button class="btn sm" id="campcmp">🔍 השוואה מול אקסל</button>
       <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
     <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
@@ -6664,6 +6749,8 @@ function renderCamp(){
         <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}`;
   const sel=document.getElementById('campsel');
   if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
+  const cmp=document.getElementById('campcmp');
+  if(cmp)cmp.onclick=()=>campCompare(rows);
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
   const txt=()=>[campSel,tot+' · '+donors+' תורמים','']
     .concat(rows.map((r,i)=>(i+1)+'. '+r.name+' — '+r.cur+Math.round(r.amt).toLocaleString('en-US')
