@@ -887,7 +887,9 @@ function chCfg(ch){ch=(ch||'').trim();
 function chBadgeRaw(ch){const cfg=chCfg(ch);if(!cfg)return '';return `<span class="chbadge" style="background:${cfg.c}" title="${esc(cfg.l)}">${cfg.i} ${esc(cfg.l)}</span>`;}
 function chLabel(ch){const cfg=chCfg(ch);return cfg?cfg.l:(ch||'');}
 function channelBadge(d){return chBadgeRaw(d.channel);}
-function channelOpts(cur){cur=(cur||'').trim();let o='<option value="">— ללא —</option>';
+function channelOpts(cur){cur=(cur||'').trim();
+  if(cur==='__new__')cur='';                 // ערך שנשמר בטעות ע"י הכפתור הישן
+  let o='<option value="">— ללא —</option>';
   CHAN_ORDER.forEach(k=>{o+=`<option value="${k}" ${k===cur?'selected':''}>${CHANNELS[k].i} ${CHANNELS[k].l}</option>`;});
   (CHAN_C||[]).forEach(k=>{o+=`<option value="${esc(k)}" ${k===cur?'selected':''}>💰 ${esc(k)}</option>`;});
   if(cur&&!CHANNELS[cur]&&!(CHAN_C||[]).includes(cur))o+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
@@ -924,12 +926,32 @@ function wireChanSel(sel){
 // כל תיבת "דרך תשלום" בדף — גם כאלו שנוצרו הרגע ברענון של חלון — מקבלת
 // את שדה ההוספה. מאיר: "אי אפשר כאן להוסיף דרך חדשה איך שהוא נותן"; קודם
 // זה עבד רק בתיבה שבפרטי הכרטיס, ולא בחלון היששכר־זבולון.
-function wireAllChanSels(root){
-  (root||document).querySelectorAll('select.chansel').forEach(wireChanSel);
+async function addPayChannel(sel,prev){
+  const nm=((await uiPrompt('שם דרך התשלום החדשה — למשל: בנק ישראלי','')) ||'').trim();
+  if(!nm){sel.value=prev;return;}
+  if(!(CHAN_C||[]).includes(nm)){
+    const r=await api('POST','/api/paychannels',{name:nm});
+    CHAN_C=(r&&r.channels)||(CHAN_C||[]).concat([nm]);
+  }
+  // כל תיבות הבחירה בדף מקבלות את הדרך החדשה, וזו שנלחצה נבחרת בה
+  document.querySelectorAll('select.chansel').forEach(x=>{
+    const c=(x===sel)?nm:x.value; x.innerHTML=channelOpts(c); x.value=c;});
+  sel.value=nm; sel.dispatchEvent(new Event('change',{bubbles:true}));
+  toast('נוספה דרך תשלום ✓');
 }
-try{
-  new MutationObserver(()=>wireAllChanSels()).observe(document.documentElement,{childList:true,subtree:true});
-}catch(e){}
+// מאזין אחד לכל הדף: שורד כל רענון של חלון, ולא תלוי בשדה מוזרק.
+// תיבת "ערוץ חיוב" שבפרטי הכרטיס ממשיכה בדרך הישנה (יש לה גם מחיקה).
+document.addEventListener('change',e=>{
+  const sel=e.target;
+  if(!sel||!sel.matches||!sel.matches('select.chansel'))return;
+  if(sel.id==='f_channel'||sel._cbox)return;
+  if(sel.value!=='__new__')return;
+  addPayChannel(sel,sel._prevch||'');
+},true);
+document.addEventListener('focus',e=>{
+  const sel=e.target;
+  if(sel&&sel.matches&&sel.matches('select.chansel'))sel._prevch=sel.value;
+},true);
 
 // הסכום הקבוע (חודשי) — לתורם קבוע לפי השדה, וליששכר־זבולון סכום האברכים הפעילים
 // מה התורם נתן מתחילת השנה הלועזית ועד היום — מוצג בשורה ברשימת התורמים,
@@ -2409,6 +2431,7 @@ function commitHTML(d){
     const ask=r.conf<=0;                       // סכום שלא נרשם ביד — לא חוב
     const amt=(r.pid||r.iz)
       ? `<input class="cmamt" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
+        + `<button class="btn sm cmsave noprint" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" title="שמור את השורה">💾</button>`
       : `<b class="cmfix">${r.amt?f(r.amt):'—'}</b>`;
     const tag=r.ended?'הסתיים':(ask?(r.conf<0?'בלי סכום':'לא אושר')
                                    :(r.mo?'קבוע':(r.inst?'בתשלומים':'חד־פעמי')));
@@ -2537,7 +2560,7 @@ function commitHTML(d){
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
-    <div class="two"><label class="fld"><span>סכום (${cur})</span><input id="dn_amt" inputmode="decimal" placeholder="480"></label>
+    <div class="two"><label class="fld"><span>סכום</span><div class="curwrap"><select id="dn_cur">${curOpts(cur)}</select><input id="dn_amt" inputmode="decimal" placeholder="480"></div></label>
     <label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}</select></label></div>
     <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
     <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
@@ -2552,6 +2575,10 @@ function commitHTML(d){
     <label class="fld"><span>תוקף</span><input id="dn_ccexp" placeholder="12/28" style="direction:ltr"></label></div>
     <div class="two"><label class="fld"><span>תאריך</span><input id="dn_date" type="date"></label>
     <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label></div>
+    <label class="jointchk"><input type="checkbox" id="dn_rep"> 🔁 העביר את הסכום הזה <b>כל חודש</b> — רשום שורה לכל חודש</label>
+    <div class="two hidden" id="dn_repbox"><label class="fld"><span>מחודש</span><input type="month" id="dn_from"></label>
+      <label class="fld"><span>עד חודש</span><input type="month" id="dn_to"></label></div>
+    <div class="hintxt hidden" id="dn_rephint"></div>
     <label class="fld"><span>🕯️ שם לתפילה (לא חובה)</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label>
     <button class="btn" id="dn_add" style="width:100%">💾 שמור תרומה</button></details>
     <div class="cmopen"><button type="button" class="opnlink" id="f_opn">📌 התחייבות קודמת (לפני 2026)${amtSigned(d.debt_open)?(' · '+cur+Math.round(amtSigned(d.debt_open))):''}</button>
@@ -2618,6 +2645,24 @@ function wireCommit(d,body){
       }
     }
     await syncAmt(); toast('נשמר ✓'); redraw();};
+  box.querySelectorAll('.cmsave').forEach(btn=>btn.onclick=async()=>{
+    if(btn.dataset.busy)return; btn.dataset.busy='1';
+    const row=btn.closest('.cmrow');
+    try{
+      const nt=row&&row.querySelector('.cmnote');
+      if(nt){
+        if(nt.dataset.iz){d.iz_note=nt.value.trim();
+          await api('PUT','/api/donor/'+d.id,{iz_note:d.iz_note});}
+        else{const q=pOf(nt.dataset.pid); if(q)await putPl(q,{note:nt.value.trim()});}
+      }
+      const pd=row&&row.querySelector('.cmpd');
+      if(pd){const q=pOf(pd.dataset.pid);
+        if(q){const paid=pd.value.trim();
+          await putPl(q,{paid,status:(amtNum(q.amount)&&amtNum(paid)>=amtNum(q.amount))?'נתן':'טרם'});}}
+      const ai=row&&row.querySelector('.cmamt');
+      if(ai)await saveAmt(ai);            // שומר, מודיע ומצייר מחדש
+      else{toast('נשמר ✓'); redraw();}
+    } finally{ delete btn.dataset.busy; }});
   box.querySelectorAll('.cmpd').forEach(inp=>inp.onchange=async()=>{
     const p=pOf(inp.dataset.pid); if(!p)return;
     const paid=inp.value.trim();
@@ -3111,12 +3156,14 @@ function cardDetails(d,body){
   const gitems=[];
   (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
+    cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
     needthx:needThanks(x),thanked:+x.thanked}));
   gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
   const GVSHOW=8;                       // מציגים את האחרונות; השאר נפתחות בלחיצה — פחות גלילה
   const gvrow=g=>{
+    const curd=g.cur||curSym(d);            // מטבע השורה עצמה
     const st=g.parnes?`<span class="pstat ${pPaidCls(g.paid)}">${pPaidLbl(g.paid)}</span>`:'';
     const tog=g.parnes?`<button class="collectbtn ${+g.paid===1?'yes':'no'}" data-pid="${g.pid}">${+g.paid===1?'בטל גבייה':'✓ סמן נגבה'}</button>`
       +`<button class="collectbtn setl setlbtn ${+g.paid===2?'on':''}" data-pid="${g.pid}" title="הכסף הגיע בתרומה נפרדת — אין מה לגבות">${+g.paid===2?'בטל סודר':'סודר'}</button>`:'';
@@ -3456,6 +3503,45 @@ function cardDetails(d,body){
     if(ab)ab.textContent=day?('💾 שמור '+(DAYSAVE[day]||'יום פרנס')):'💾 שמור תרומה';
   };
   if(dnCat){dnCat.onchange=dnShow;dnMeth.onchange=dnShow;dnShow();}
+  // מאיר: "העביר בכל חודש מינואר עד אוגוסט 1000 שקל" — סימון אחד פותח
+  // טווח חודשים, וכל חודש נרשם כתשלום נפרד עם תאריך מדויק, בדיוק כמו
+  // תשלום שנכנס מבנק ווסט או מאוטורייז.
+  const dnRep=document.getElementById('dn_rep'), dnRepBox=document.getElementById('dn_repbox'),
+        dnFrom=document.getElementById('dn_from'), dnTo=document.getElementById('dn_to'),
+        dnHint=document.getElementById('dn_rephint'), dnCur=document.getElementById('dn_cur');
+  // כל התאריכים בטווח, על אותו יום בחודש כמו התאריך שנבחר למעלה
+  const repDates=()=>{
+    const a=(dnFrom&&dnFrom.value)||'', b=(dnTo&&dnTo.value)||'';
+    if(!a||!b)return [];
+    const day=((dnDate&&dnDate.value)||todayStr()).slice(8,10)||'01';
+    const out=[]; let [y,m]=a.split('-').map(Number); const [ey,em]=b.split('-').map(Number);
+    while(y*12+m<=ey*12+em && out.length<60){
+      const last=new Date(y,m,0).getDate();                 // 31 בפברואר אינו קיים
+      out.push(y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(+day,last)).padStart(2,'0'));
+      m++; if(m>12){m=1;y++;}
+    }
+    return out;
+  };
+  const dnRepShow=()=>{
+    if(!dnRep)return;
+    const on=dnRep.checked;
+    dnRepBox.classList.toggle('hidden',!on);
+    dnHint.classList.toggle('hidden',!on);
+    if(on){
+      const l=repDates(), a=amtNum((document.getElementById('dn_amt')||{}).value||0);
+      const cs=(dnCur&&dnCur.value)||cur;
+      dnHint.textContent=l.length
+        ? ('ייכתבו '+l.length+' תשלומים: '+l[0]+' עד '+l[l.length-1]
+           +(a?(' · '+cs+a.toLocaleString('en-US')+' כל חודש · סה"כ '+cs+(a*l.length).toLocaleString('en-US')):''))
+        : 'בחר מאיזה חודש ועד איזה חודש';
+    }
+  };
+  if(dnRep){
+    dnRep.onchange=dnRepShow;
+    [dnFrom,dnTo,dnDate,dnCur,document.getElementById('dn_amt')].forEach(x=>{
+      if(x){x.addEventListener('change',dnRepShow);x.addEventListener('input',dnRepShow);}});
+    dnRepShow();
+  }
   const dnAdd=document.getElementById('dn_add');
   if(dnAdd)dnAdd.onclick=async()=>{
     let cat=dnCat.value;
@@ -3474,9 +3560,19 @@ function cardDetails(d,body){
     if(c4.trim()||cx.trim())note=(note?note+' · ':'')+'כרטיס ****'+c4.trim()+(cx.trim()?(' תוקף '+cx.trim()):'');
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
     dnAdd.disabled=true;
+    const dcur=(dnCur&&dnCur.value)||'';
+    let made=0;
     if(amt&&!dayKind){
-      const r=await api('POST','/api/donation',{donor_id:d.id,amount:amt,category:cat,method,date,note});
-      d.donations=(d.donations||[]).concat([{id:r.id,donor_id:d.id,amount:amt,category:cat,method,date,note,paid:1}]);
+      // תשלום חוזר: שורה לכל חודש בטווח. אחרת — שורה אחת בתאריך שנבחר.
+      const dates=(dnRep&&dnRep.checked)?repDates():[date];
+      if(dnRep&&dnRep.checked&&!dates.length){toast('בחר מאיזה חודש ועד איזה חודש');dnAdd.disabled=false;return;}
+      for(const dt of dates){
+        const body={donor_id:d.id,amount:amt,category:cat,method,date:dt,note,cur:dcur};
+        const r=await api('POST','/api/donation',body);
+        d.donations=(d.donations||[]).concat([{id:r.id,donor_id:d.id,amount:amt,category:cat,
+          method,date:dt,note,cur:dcur,paid:1}]);
+        made++;
+      }
     }
     if(dayKind){
       const hm=document.getElementById('dn_hm').value,hd=+document.getElementById('dn_hd').value,
@@ -3490,7 +3586,7 @@ function cardDetails(d,body){
       d.prayers=(d.prayers||[]).concat([{id:r.id,text:pray,tier:tr}]);
     }
     dnAdd.disabled=false;
-    toast('נרשם ✓'+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));
+    toast((made>1?('נרשמו '+made+' תשלומים ✓'):'נרשם ✓')+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));
     cardDetails(d,body); if(tab==='donors')renderDonors();
   };
   document.getElementById('f_merge').onclick=()=>document.getElementById('mergebox').classList.toggle('hidden');
@@ -3929,12 +4025,17 @@ function dnRow(x,cur){cur=cur||'$';
 function renderDonations(d){
   const el=document.getElementById('donations');if(!el)return;const list=(d.donations||[]);const cur=curSym(d);
   const tot=list.reduce((s,x)=>s+(amtNum(x.amount)),0);
+  // תרומות בשני מטבעות אינן מתחברות — כל מטבע בסיכום שלו
+  const totC={};list.forEach(x=>{const k=(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':cur));
+    totC[k]=(totC[k]||0)+amtNum(x.amount);});
+  const totTxt=Object.keys(totC).filter(k=>Math.round(totC[k])>0)
+    .map(k=>k+Math.round(totC[k]).toLocaleString('en-US')).join(' + ')||(cur+0);
   const dncats=['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'].concat(CAMPAIGNS||[]);
   const dmeths=['אשראי','אונליין','המחאה','מזומן','העברה בנקאית','בנק ווסט','Banquest','Authorize'];
   // פרנס יום — מוצג גם כאן בתרומות, עם סטטוס גבייה (נגבה/חוב)
   const pns=(d.parnes||[]).filter(p=>p.status!=='suggested');
   const pnsHtml=pns.length?`<div class="dncount">🌙 פרנס יום (${pns.length})</div>`+pns.map(p=>{const pc=pCur(p,d),pd=+p.paid;return `<div class="dncrow"><div class="dnci"><b>${pc}${esc(p.amount||'—')}</b> · ${esc(DAYKIND[p.kind]||'🌙 פרנס')} ${esc(p.date_text||'')}${p.hyear?(' '+esc(p.hyear)):''} <span class="pstat ${pd?'yes':'no'}">${pd?'✓ נגבה':'🔴 טרם נגבה'}</span></div><div class="dncact"><button class="collectbtn ${pd?'yes':'no'} pnspaid" data-pid="${p.id}">${pd?'בטל':'✓ נגבה'}</button></div></div>`;}).join(''):'';
-  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · ${cur}${tot}</div>`:'')+(list.map(x=>dnRow(x,cur)).join('')||'<div class="hintxt">עדיין אין תרומות.</div>')+pnsHtml
+  el.innerHTML=(list.length?`<div class="dncount">${list.length} תרומות · ${totTxt}</div>`:'')+(list.map(x=>dnRow(x,cur)).join('')||'<div class="hintxt">עדיין אין תרומות.</div>')+pnsHtml
     +`<datalist id="dncats">${dncats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><datalist id="dnmeths">${dmeths.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
   el.querySelectorAll('.pnspaid').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});toast(+p.paid?'נגבה ✓':'סומן כחוב');renderDonations(d);});
   el.querySelectorAll('.dnpaid').forEach(b=>b.onclick=async()=>{const x=d.donations.find(y=>y.id==b.dataset.paid);x.paid=+x.paid?0:1;await api('PUT','/api/donation/'+x.id,{paid:x.paid});renderDonations(d);});
@@ -4297,14 +4398,17 @@ function renderPartners(d){
     await api('PUT','/api/donor/'+d.id,{iz_debt:d.iz_debt});
     refreshIzSum(d);toast('נשמר ✓');};
   el.querySelectorAll('.pfield').forEach(inp=>{
-    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);
+    const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;
+      if(inp.value==='__new__')return;      // בחירת "דרך תשלום חדשה" — לא ערך לשמירה
+      p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);
       if(inp.dataset.k==='cur')renderPartners(d);            // הסמלים בשדות מתעדכנים מיד
       if((inp.dataset.k==='amount'||inp.dataset.k==='cur')&&tab==='donors')renderDonors();};
     inp.onchange=save;let tmr;inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};
   });
   el.querySelectorAll('.psave').forEach(btn=>btn.onclick=async()=>{
     const p=(d.partners||[]).find(x=>x.id==btn.dataset.id);if(!p)return;
-    const body={};el.querySelectorAll('.pfield[data-id="'+btn.dataset.id+'"]').forEach(inp=>{p[inp.dataset.k]=inp.value;body[inp.dataset.k]=inp.value;});
+    const body={};el.querySelectorAll('.pfield[data-id="'+btn.dataset.id+'"]').forEach(inp=>{
+      if(inp.value==='__new__')return; p[inp.dataset.k]=inp.value;body[inp.dataset.k]=inp.value;});
     await api('PUT','/api/partner/'+p.id,body);refreshIzSum(d);toast('נשמר ✓');if(tab==='donors')renderDonors();
   });
   // שדה שותפים — מספר שותפים (צ'יפים). בחירה מרשימה מקשרת לכרטיס (מופיע גם אצלו); Enter מוסיף כטקסט
@@ -4872,7 +4976,7 @@ function renderParnesEdit(d){
   el.querySelectorAll('.pydsave').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);const t=el.querySelector('.pyded[data-id="'+b.dataset.id+'"]');if(!p||!t)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');});
   el.querySelectorAll('.pyamt').forEach(inp=>inp.onchange=async()=>{const p=d.parnes.find(x=>x.id==inp.dataset.id);if(!p)return;p.amount=inp.value.trim();await api('PUT','/api/parnes/'+p.id,{amount:p.amount});renderParnesEdit(d);toast('סכום עודכן ✓');});
   el.querySelectorAll('.pykind').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.kind=sel.value;await api('PUT','/api/parnes/'+p.id,{kind:p.kind});renderParnesEdit(d);toast('סוג עודכן ✓');});
-  el.querySelectorAll('.pymethod').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.method=sel.value;await api('PUT','/api/parnes/'+p.id,{method:p.method});toast('אמצעי גבייה עודכן ✓');});
+  el.querySelectorAll('.pymethod').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p||sel.value==='__new__')return;p.method=sel.value;await api('PUT','/api/parnes/'+p.id,{method:p.method});toast('אמצעי גבייה עודכן ✓');});
   const pySaveDate=async(p)=>{p.date_text=heDay(+p.day)+" "+p.month;await api('PUT','/api/parnes/'+p.id,{day:+p.day,month:p.month,date_text:p.date_text,hyear:p.hyear});renderParnesEdit(d);toast('יום עודכן ✓');};
   el.querySelectorAll('.pymon').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.month=sel.value;await pySaveDate(p);});
   el.querySelectorAll('.pyday').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.day=+sel.value;await pySaveDate(p);});

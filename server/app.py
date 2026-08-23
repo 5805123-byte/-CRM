@@ -244,7 +244,7 @@ def ensure_schema():
     for col in ('created', 'source', 'region', 'country', 'zip', 'city'):
         try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
         except Exception: pass
-    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note'):
+    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur'):
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
@@ -1695,7 +1695,7 @@ def ensure_schema():
                 con.execute("""UPDATE recon SET donor_id=? WHERE LOWER(TRIM(email))='yaelkirzner@gmail.com'
                                AND COALESCE(processed,0)=0""", (yid,))
                 for did, note in ((sid, 'קירזנר ישראל (שארפ) — לאמת אימייל וכתובת, ולקבל שמות לקוויטל'),
-                                  (sid, 'מרטין קירזנר $5,000 (24/3) חויב מאותו כרטיס של שארפ — לברר אם שייך לישראל או לכרטיס נפרד'),
+                                  (sid, 'קירזנר: $5,000 נוספים ב-24/3 מאותו כרטיס של שארפ — לברר עבור מה'),
                                   (yid, 'קירזנר יוסי — ינואר ופברואר רשומים $1,000 בלי חיוב תואם; ב-26/2 נגבו $4,000+$1,800 שטרם אושרו. להשוות')):
                     if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND note=?", (did, note)).fetchone():
                         con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'check',?)",
@@ -1720,11 +1720,11 @@ def ensure_schema():
                 # שני החיובים של 24/3 שייכים לישראל — הוא נתן, והבת נתנה בשמו. קמחא דפסחא תשפ"ו
                 con.execute("""UPDATE recon SET donor_id=?, category='קמחא דפסחא תשפ"ו'
                                WHERE LOWER(TRIM(email))='ikirzner@sharpmgmt.com' AND COALESCE(processed,0)=0""", (sid,))
-                nt = 'מרטין קירזנר — הבת של ישראל; נתנה $5,000 קמחא דפסחא תשפ"ו בשמו (בנוסף ל-$5,000 שלו)'
+                nt = 'קמחא דפסחא תשפ"ו — שני חיובים של $5,000 ב-24/3 מאותו כרטיס, סה"כ $10,000'
                 old = (con.execute("SELECT notes FROM donors WHERE id=?", (sid,)).fetchone()['notes'] or '').strip()
                 if nt not in old:
                     con.execute("UPDATE donors SET notes=? WHERE id=?", ((old + ' · ' + nt).strip(' ·') if old else nt, sid))
-                con.execute("DELETE FROM tasks WHERE donor_id=? AND note LIKE 'מרטין קירזנר $5,000%'", (sid,))
+                con.execute("DELETE FROM tasks WHERE donor_id=? AND note LIKE '%קירזנר $5,000%'", (sid,))
                 try: con.execute("""INSERT OR IGNORE INTO campaigns(name,created) VALUES('קמחא דפסחא תשפ"ו',?)""", (today_iso(),))
                 except Exception: pass
                 # יעל — הכלה. כרטיס נפרד לגמרי, ולא אצל יוסי
@@ -3236,6 +3236,48 @@ def ensure_schema():
                      _r['filled']['email'], _r['kvittel'], _r['notes'], _r['unmatched_total']))
     except Exception as e:
         print('  contacts seed error:', e)
+
+    # מאיר: "גם קירזנר — אבל אל תשתמש עם המילה מרטין". השם יורד מכל
+    # הערה וכל משימה, והנוסח מתוקן: זה אותו אדם, ושני החיובים של 24/3
+    # הם שלו. מעבר מרפא — רץ בכל עלייה ונוגע רק במה שעדיין כתוב.
+    try:
+        _bad = 'מרטין'
+        _new = 'קמחא דפסחא תשפ"ו — שני חיובים של $5,000 ב-24/3 מאותו כרטיס, סה"כ $10,000'
+        _n = 0
+        for r in con.execute("SELECT id,notes FROM donors WHERE COALESCE(notes,'') LIKE ?",
+                             ('%' + _bad + '%',)).fetchall():
+            parts = [x.strip() for x in (r['notes'] or '').replace('\n', ' · ').split(' · ')]
+            keep = [x for x in parts if x and _bad not in x]
+            if _new not in keep:
+                keep.append(_new)
+            con.execute("UPDATE donors SET notes=? WHERE id=?", (' · '.join(keep), r['id']))
+            _n += 1
+        try:
+            cur = con.execute("DELETE FROM tasks WHERE note LIKE ?", ('%' + _bad + '%',))
+            _n += cur.rowcount
+        except Exception:
+            pass
+        if _n:
+            con.commit()
+            print('  קירזנר: השם ירד מההערות והמשימות (%d)' % _n)
+    except Exception as e:
+        print('  kirzner note cleanup error:', e)
+
+    # הכפתור הישן "דרך תשלום חדשה" לא פתח שדה, ובמקום זה שמר את הסימן
+    # הפנימי __new__ כאמצעי התשלום. מנקים כל מקום שבו הוא נשמר.
+    try:
+        _cleaned = 0
+        for tbl, col in (('partners', 'method'), ('donors', 'channel'), ('parnes', 'method')):
+            try:
+                cur = con.execute("UPDATE %s SET %s='' WHERE %s='__new__'" % (tbl, col, col))
+                _cleaned += cur.rowcount
+            except Exception:
+                pass
+        if _cleaned:
+            con.commit()
+            print('  אמצעי תשלום ריקים שנוקו (__new__): %d' % _cleaned)
+    except Exception as e:
+        print('  paychannel cleanup error:', e)
 
     # מאיר: "Marc Herskowitz זה מאיר שלום הרשקוביץ", "Schia מול Eli
     # וויינפעלד — זה שני אנשים נפרדים". בייבוא בנק ווסט ההתאמה נעשתה לפי
@@ -6115,6 +6157,10 @@ _WRONG_CARD_FIX = [
          find="LOWER(COALESCE(email,'')) LIKE '%marc@ilstitle.com%'",
          note='הוראת קבע $1,000 ב-15 לחודש בבנק ווסט — נגבה ינואר–אפריל 2026. '
               '(החיובים היו רשומים בטעות בכרטיס של חיים הרשקוביץ)'),
+    # מאיר: "Sruly מול Jerry רוזנפלד — זה אותו אדם". אין מה לתקן היום,
+    # והרשומה כאן שומרת שגם חיוב עתידי בשם השני ייכנס לאותו כרטיס.
+    dict(first='sruly', last='rosenfeld', eng='Jerry Rosenfeld',
+         find="LOWER(COALESCE(email,'')) LIKE '%jerry.rosenfeld@pwc.com%'"),
     dict(first='schia', last='winefeld', eng='Schia Winefeld',
          find="TRIM(COALESCE(last,''))='ווינפעלד' AND TRIM(COALESCE(first,''))='יהושע'",
          note='הוראת קבע $1,000 לחודש בבנק ווסט. '
@@ -6122,7 +6168,7 @@ _WRONG_CARD_FIX = [
 ]
 
 
-def _fix_charges_owner(con, first, last, eng, find, note):
+def _fix_charges_owner(con, first, last, eng, find, note=None):
     """מחזיר את כל החיובים על שם לועזי מסוים לכרטיס של בעליו, יחד עם
     התרומות שנוצרו מהם, וממלא את השם הלועזי כדי שההתאמה לא תחזור."""
     dst = con.execute("SELECT id,english,notes FROM donors WHERE " + find).fetchone()
@@ -6153,12 +6199,13 @@ def _fix_charges_owner(con, first, last, eng, find, note):
     if not (moved_r or moved_d):
         return
     # חיובים שנדחו — הערה בכרטיס כדי שיחדשו כרטיס, לא חוב פתוח
-    dec = [r for r in rows if (r['status'] or '') == 'declined']
-    txt = note + (' %d ניסיונות חיוב סורבו — לחדש כרטיס אשראי.' % len(dec) if dec else '')
-    nt = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
-    if note[:40] not in nt:
-        con.execute("UPDATE donors SET notes=? WHERE id=?",
-                    ((nt + ('\n' if nt else '') + txt).strip(), did))
+    if note:
+        dec = [r for r in rows if (r['status'] or '') == 'declined']
+        txt = note + (' %d ניסיונות חיוב סורבו — לחדש כרטיס אשראי.' % len(dec) if dec else '')
+        nt = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
+        if note[:40] not in nt:
+            con.execute("UPDATE donors SET notes=? WHERE id=?",
+                        ((nt + ('\n' if nt else '') + txt).strip(), did))
     con.commit()
     print('  %s: הועברו %d חיובים ו-%d תרומות לכרטיס #%d' % (eng, moved_r, moved_d, did))
 
@@ -8278,7 +8325,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('date','amount','category','method','note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
+            for k in ('date','amount','category','method','note','cur','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
             if (b.get('category') or '').strip() and 'note' not in b:
@@ -9595,8 +9642,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/donation':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note) VALUES(?,?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''), b.get('method',''), b.get('note','')))
+            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) "
+                        "VALUES(?,?,?,?,?,?,?,1)",
+                        (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''),
+                         b.get('method',''), b.get('note',''), b.get('cur','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid, 'hmonth': greg_to_heb_monthyear(b.get('date',''))})
         if self.path == '/api/online':
