@@ -3965,21 +3965,17 @@ async function loadAvList(){ try{const r=await api('GET','/api/avreichim');
 let AVPEND=[];
 // שם מהרשימה הרשמית של הכולל שדומה לאברך שכבר רשום — מאיר מחליט אם זה
 // אותו אדם (ואז הת"ז והטלפון מצטרפים אליו) או שני אנשים נפרדים.
+// מאיר: "תלך רק לפי הקובץ ששלחתי" — הרשימה הרשמית היא רשימת האמת.
+// מי שרשום אצלנו ואינו מופיע בה מסומן, כדי שיהיה ברור שצריך לברר עליו.
 function avPendHTML(){
-  if(!AVPEND.length)return '';
-  return `<details class="avpend" open><summary>🆔 מהרשימה הרשמית של הכולל — ${AVPEND.length} שמות לאישור</summary>
-    <div class="hintxt" style="margin:0 2px 8px">הקובץ שהעלית כולל שם שנכתב מעט אחרת ממה שרשום כאן. אם זה אותו אברך — תעודת הזהות והטלפון ייכנסו לכרטיס הקיים. אם אלו שני אנשים — ייפתח אברך נפרד.</div>
-    ${AVPEND.map(x=>`<div class="avpendrow">
-      <div class="avpn"><b>${esc(x.alias)}</b> <span class="avpvs">↔</span> <b>${esc(x.name)}</b>
-        <small class="avid">${esc(x.idnum)}${x.phone?(' · '+esc(x.phone)):''}</small></div>
-      <div class="avpact"><button class="btn sm avpsame" data-a="${esc(x.alias)}">✔️ אותו אברך</button>
-        <button class="btn sm ghost avpdiff" data-a="${esc(x.alias)}">שני אנשים</button></div></div>`).join('')}
+  const out=(AVLIST||[]).filter(a=>!(a.idnum||'').trim());
+  if(!out.length)return '';
+  return `<details class="avpend"><summary>❓ ${out.length} אברכים שאינם ברשימת הכולל שנשלחה</summary>
+    <div class="hintxt" style="margin:0 2px 8px">הם רשומים כאן אך אינם מופיעים בקובץ. ייתכן שיצאו מהכולל או שהם בסדר אחר.</div>
+    ${out.map(a=>`<div class="avpendrow"><div class="avpn"><b>${esc(a.name)}</b>${
+      (a.holders||[]).length?` <small>מוחזק על ידי ${esc(a.holders.map(h=>h.name).join(', '))}</small>`
+                            :' <small>אין מחזיק</small>'}</div></div>`).join('')}
   </details>`;
-}
-async function avPendAct(alias,same){
-  const r=await api('POST','/api/avreich/pending',{alias:alias,same:same?1:0});
-  toast((r&&r.msg)||'נשמר ✓');
-  AVLIST=null; AVPEND=[]; await loadAvList(); renderAvByAv();
 }
 function wireAvNew(sel,inp,btn){
   if(!sel||!inp||!btn) return;
@@ -5828,8 +5824,6 @@ async function renderAvByAv(){
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
-  view.querySelectorAll('.avpsame').forEach(b=>b.onclick=()=>avPendAct(b.dataset.a,true));
-  view.querySelectorAll('.avpdiff').forEach(b=>b.onclick=()=>avPendAct(b.dataset.a,false));
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים

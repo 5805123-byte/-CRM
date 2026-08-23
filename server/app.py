@@ -3471,6 +3471,28 @@ def ensure_schema():
     except Exception as e:
         print('  zion name error:', e)
 
+    # שמות שהמתינו לאישור בגרסה קודמת — מאיר: "תלך רק לפי הקובץ". מוחלים
+    # אותם כמו שהם, ומרוקנים את התור.
+    try:
+        _left = con.execute("SELECT * FROM avreich_pending").fetchall()
+        for r in _left:
+            nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+            old = r['alias']
+            if nm and old and not con.execute("SELECT 1 FROM avreichim WHERE name=?", (nm,)).fetchone():
+                con.execute("UPDATE avreichim SET name=?,last=?,first=?,idnum=?,id_ok=?,seder=?,"
+                            "phone=CASE WHEN COALESCE(TRIM(phone),'')='' THEN ? ELSE phone END "
+                            "WHERE name=?",
+                            (nm, r['last'], r['first'], r['idnum'], r['id_ok'], r['seder'],
+                             r['phone'], old))
+                con.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (nm, old))
+                con.execute("UPDATE avreich_log SET avreich=? WHERE avreich=?", (nm, old))
+        if _left:
+            con.execute("DELETE FROM avreich_pending")
+            con.commit()
+            print('  שמות אברכים שהוחלו לפי הקובץ: %d' % len(_left))
+    except Exception as e:
+        print('  avreich pending apply error:', e)
+
     # טעינת רשימת האברכים של הכולל מהקובץ ששלח מאיר. מעבר מרפא: משלים
     # רק מה שחסר, ומעדכן טלפון/ת"ז אם השתנו בקובץ. אברך שאינו בקובץ
     # יותר נשאר רשום ומסומן כלא־פעיל, כדי שההיסטוריה לא תיעלם.
@@ -3489,22 +3511,29 @@ def ensure_schema():
             for _e in _exist:
                 if not _e['last'] and _e['name']:
                     _e['last'], _e['first'] = _split_av(_e['name'])
-            _new = _fill = _pend = 0
+            _new = _fill = _ren = 0
             for a in _seed:
                 aid = _cur.get(_nrm_av(a['last'] + ' ' + a['first'])) \
                     or _cur.get(_nrm_av(a['first'] + ' ' + a['last']))
                 if not aid:
-                    # שם דומה אך לא זהה (אליאסזדה / אליאסזאדה) — לא מוסיפים
-                    # אברך כפול ולא מדביקים ת"ז לאדם הלא נכון. ממתין לאישור.
+                    # שם שנכתב אצלנו מעט אחרת (אליאסזדה / אליאסזאדה) — אותו
+                    # אברך. הקובץ הוא רשימת האמת, ולכן הכתיב שבו מחליף את
+                    # שלנו — גם אצל התורמים שמחזיקים אותו.
                     near, how = av_roster_match(a['last'] + ' ' + a['first'], _exist)
                     if how == 'fuzzy':
-                        con.execute("INSERT OR IGNORE INTO avreich_pending"
-                                    "(alias,last,first,idnum,id_ok,phone,seder,added) "
-                                    "VALUES(?,?,?,?,?,?,?,?)",
-                                    (near['name'], a['last'], a['first'], a['idnum'],
-                                     a.get('id_ok', 1), a['phone'], a['seder'], today_iso()))
-                        _pend += 1
-                        continue
+                        nm = (a['last'] + ' ' + a['first']).strip()
+                        old = near['name']
+                        con.execute("UPDATE avreichim SET name=?,last=?,first=? WHERE name=?",
+                                    (nm, a['last'], a['first'], old))
+                        con.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (nm, old))
+                        con.execute("UPDATE avreich_log SET avreich=? WHERE avreich=?", (nm, old))
+                        con.execute("INSERT INTO avreich_log(avreich,donor_id,date,hdate,text,at) "
+                                    "VALUES(?,NULL,?,'',?,?)",
+                                    (nm, today_iso(),
+                                     'השם תוקן לפי רשימת הכולל: "%s" ← "%s"' % (nm, old), now_iso()))
+                        aid = _cur.get(_nrm_av(old))
+                        near['name'], near['last'], near['first'] = nm, a['last'], a['first']
+                        _ren += 1
                 if aid:
                     # לא דורסים מה שמאיר הקליד — משלימים רק את מה שריק
                     cur2 = con.execute(
@@ -3520,10 +3549,10 @@ def ensure_schema():
                                 (nm, a['last'], a['first'], a['idnum'], a.get('id_ok', 1),
                                  a['phone'], a['seder'], today_iso()))
                     _new += 1
-            if _new or _fill or _pend:
+            if _new or _fill or _ren:
                 con.commit()
-                print('  רשימת אברכי הכולל: נוספו %d, הושלמו פרטים ל-%d, ממתינים לאישור %d'
-                      % (_new, _fill, _pend))
+                print('  רשימת אברכי הכולל: נוספו %d, הושלמו פרטים ל-%d, שמות שתוקנו לפי הקובץ %d'
+                      % (_new, _fill, _ren))
     except Exception as e:
         print('  avreichim seed error:', e)
 
