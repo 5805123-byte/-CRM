@@ -6580,6 +6580,32 @@ def _fix_charges_owner(con, first, last, eng, find, note=None):
     print('  %s: הועברו %d חיובים ו-%d תרומות לכרטיס #%d' % (eng, moved_r, moved_d, did))
 
 
+# מילים שאינן שם פרטי — כדי ש-info@ או sales.office@ לא ייכנסו לכרטיס
+_MAIL_STOP = {'info', 'office', 'mail', 'email', 'admin', 'sales', 'support', 'contact',
+              'accounts', 'accounting', 'billing', 'service', 'help', 'team', 'the',
+              'and', 'inc', 'llc', 'corp', 'group', 'realty', 'law', 'cpa', 'md',
+              'me', 'my', 'new', 'usa', 'ny', 'nj', 'gmail', 'yahoo', 'hotmail'}
+
+
+def _name_from_email(addr):
+    """שם לועזי מתוך כתובת המייל: gary.schild@... → "Gary Schild".
+
+    רק כשיש הפרדה ברורה בין שתי מילים ומעלה, כל מילה אותיות בלבד, ואף
+    אחת מהן אינה מילה כללית של תיבת משרד. ספרות פוסלות את החלק כולו.
+    """
+    loc = str(addr or '').split('@')[0].strip().lower()
+    if not loc or any(ch.isdigit() for ch in loc):
+        return ''
+    parts = [p for p in re.split(r'[._\-]+', loc) if p]
+    if len(parts) < 2 or len(parts) > 3:
+        return ''
+    for p in parts:
+        # פחות מ-3 אותיות אינו שם ("nv.inegar" הפך ל-"Nv Inegar")
+        if len(p) < 3 or not p.isalpha() or p in _MAIL_STOP:
+            return ''
+    return ' '.join(p.capitalize() for p in parts)
+
+
 def fill_english_by_email(con):
     """מאיר: "תעבור על כל האנשי קשר, מי שאין לו שם באנגלית תחפש באימיילים
     או באנשי קשר או במיילים עצמם, כמו Marc Herskowitz".
@@ -6668,6 +6694,38 @@ def fill_english_by_email(con):
                             offer(did, nm)
     except Exception as e:
         print('  contacts english error:', e)
+
+    # 3. כתובת המייל עצמה — מאיר: "למה לשילד אין שם באנגלית? יש את זה
+    #    באימיילים שלו". gary.schild@... הוא Gary Schild. נכנס רק אם הוא
+    #    עובר את אותה בדיקת תעתיק כמו כל מקור אחר.
+    for e, did in bye.items():
+        if did in cand:
+            continue
+        nm = _name_from_email(e)
+        if not nm:
+            continue
+        # כאן שם המשפחה הוא העוגן: בלעדיו נכנס "Rachel Trust" לכרטיס של
+        # רחל קליין, רק כי השם הפרטי התאים. וגם הסדר מסתדר לפיו —
+        # berger.abraham הוא Abraham Berger.
+        last, _first = he.get(did, ('', ''))
+        if not last or not _gi:
+            continue
+        ws = nm.split()
+        sur = None
+        for w in ws:
+            for jy in (False, True):
+                try:
+                    if _fz(_he_alt(_gi, w, jy)) == _fz(last):
+                        sur = w
+                        break
+                except Exception:
+                    pass
+            if sur:
+                break
+        if not sur:
+            continue
+        rest = [w for w in ws if w is not sur]
+        offer(did, ' '.join(rest + [sur]))
 
     n = 0
     for did, nm in cand.items():
