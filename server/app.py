@@ -4717,6 +4717,41 @@ def ensure_schema():
     except Exception as e:
         print('  kv flow error:', e)
 
+    # מאיר על אלחנן לרר: "למה יש פעמיים עוד פעם ההתחייבות שלו? ברגע שיש לו
+    # רשום שהוא נותן 4,000 על יששכר־זבולון זה מספיק". שורה חודשית בלי ייעוד
+    # אמיתי, אצל תורם יששכר־זבולון, בדיוק באותו סכום — היא כפילות של אותו
+    # כסף והכפילה את הקבוע שלו. נמחקת מהנתונים, לא רק מהתצוגה.
+    # רצה בכל עלייה: שורה כזו נוצרת גם בייבוא הבא.
+    try:
+        _n = 0
+        for r in con.execute(
+                "SELECT id FROM donors WHERE tier='יששכר_זבולון'").fetchall():
+            rows = con.execute(
+                "SELECT id,category,amount FROM pledges WHERE donor_id=? "
+                "AND COALESCE(monthly,0)=1 AND COALESCE(confirmed,1)>0 "
+                "AND COALESCE(status,'')<>'הסתיים'", (r['id'],)).fetchall()
+            if len(rows) < 2:
+                continue
+            iz, plain = [], []
+            for p in rows:
+                cat = (p['category'] or '').strip()
+                if 'יששכר' in cat or 'יש"ז' in cat:
+                    iz.append(p)
+                elif cat in ('', 'התחייבות', 'קבוע'):
+                    plain.append(p)
+            if not iz or not plain:
+                continue
+            izamt = sum(_amt2(p['amount']) for p in iz)
+            for p in plain:
+                if izamt > 0.5 and abs(_amt2(p['amount']) - izamt) < 1:
+                    con.execute("DELETE FROM pledges WHERE id=?", (p['id'],))
+                    _n += 1
+        if _n:
+            con.commit()
+            print('  שורות התחייבות כפולות של יששכר־זבולון שנמחקו: %d' % _n)
+    except Exception as e:
+        print('  iz dup pledge error:', e)
+
     con.commit(); con.close()
 
 def get_all():
@@ -10420,11 +10455,15 @@ def health_report():
         except Exception as e:
             add('תעודות פרנס (תמונה)', 'bad', 'Pillow חסר — התעודה לא תיווצר (%s)' % e)
         # דואר
-        gu = (os.environ.get('GMAIL_USER') or '').strip()
-        if gu and (os.environ.get('GMAIL_APP_PASSWORD') or '').strip():
-            add('משיכת מיילים', 'ok', gu)
-        else:
-            add('משיכת מיילים', 'bad', 'GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים בשרת')
+        # בדיקה חיה מול ג'ימייל — לא רק "המשתנים קיימים" אלא "החיבור עובד"
+        try:
+            import gmail_intake as _gm
+            _ok, _dt = _gm.check_login()
+            add('חיבור לג׳ימייל', 'ok' if _ok else 'bad', _dt)
+        except Exception as e:
+            gu = (os.environ.get('GMAIL_USER') or '').strip()
+            add('חיבור לג׳ימייל', 'ok' if gu else 'bad',
+                gu or 'GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים ב-Render (%s)' % e)
         if SYNCSTAT.get('error'):
             add('סנכרון אחרון', 'bad', '%s — %s' % (SYNCSTAT.get('last') or '', SYNCSTAT['error']))
         elif SYNCSTAT.get('last_ok'):

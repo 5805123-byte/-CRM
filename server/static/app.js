@@ -2232,10 +2232,27 @@ function izStreamOther(d){
     .reduce((a,p)=>a+(+p.monthly?amtNum(p.amount)
       :(amtNum(p.permo)>0&&plLeft(d,p)>0.5?amtNum(p.permo):0)),0);
 }
+/* מאיר: "אם כתבתי 4,000 על יששכר־זבולון למה יש פה שוב התחייבות? ברגע
+   שיש לו רשום שהוא נותן על יששכר־זבולון זה מספיק". שורה חודשית בלי ייעוד
+   אמיתי ("התחייבות" / "קבוע") אצל תורם יששכר־זבולון היא אותו כסף עצמו,
+   ולכן היא נבלעת בשורת היששכר־זבולון ואינה נספרת פעם שנייה. */
+const NOPURP=c=>{const t=String(c||'').trim(); return !t||t==='התחייבות'||t==='קבוע';};
+// שורות חודשיות שהן כפילות של שורת היששכר־זבולון — בלי ייעוד אמיתי
+// ובאותו סכום בדיוק. הן לא מוצגות ולא נספרות בשום מקום.
+function izDupPledges(d){
+  if(String(d.tier||'')!=='יששכר_זבולון')return [];
+  const pl=(d.pledges||[]).filter(p=>+p.monthly&&plReal(p));
+  const iz=pl.filter(p=>isIZcat(p.category));
+  let byav=0; try{byav=Math.round(izSummary(d).monthly||0);}catch(e){}
+  const izAmt=iz.reduce((a,p)=>a+amtNum(p.amount),0)||byav;
+  if(izAmt<0.5)return [];
+  return pl.filter(p=>iz.indexOf(p)<0&&NOPURP(p.category)
+    &&Math.abs(amtNum(p.amount)-izAmt)<1);
+}
 function izRowAmt(d){
   let s; try{s=izSummary(d);}catch(e){return 0;}
   const pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0);
-  const izPl=pl.filter(p=>/יששכר/.test(String(p.category||'')));
+  const izPl=pl.filter(p=>isIZcat(p.category));
   const izSum=izPl.reduce((a,p)=>a+amtNum(p.amount),0);
   if(izSum>0.5)return Math.round(izSum);            // הייעוד נרשם במפורש
   const other=izOther(d);
@@ -2401,7 +2418,9 @@ function gapMonthOpts(){
   return out.join('');
 }
 function monthlyRows(d){
-  const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0&&plReal(p));
+  const dupm=izDupPledges(d);
+  const rows=[], pl=(d.pledges||[]).filter(p=>+p.monthly&&amtNum(p.amount)>0&&plReal(p)
+    &&dupm.indexOf(p)<0);
   const izPl=pl.filter(p=>/יששכר/.test(String(p.category||'')));
   const iza=izRowAmt(d);
   if(iza>0)rows.push(['🤝 יששכר־זבולון',iza]);
@@ -2444,7 +2463,10 @@ function obsYear(d){
 }
 const isNightCat=c=>/פרנס|חדר קפה|ארוחת בוקר/.test(String(c||''));
 function commitRows(d){
-  const rows=[], pl=(d.pledges||[]);
+  const rows=[], dup=izDupPledges(d);
+  // שורה כפולה של אותו כסף לא מוצגת כלל — מאיר: "זה מספיק, בלי הרבה
+  // רישומים שאינם נצרכים ומסרבלים"
+  const pl=(d.pledges||[]).filter(p=>dup.indexOf(p)<0);
   const izPl=pl.filter(p=>+p.monthly&&/יששכר/.test(String(p.category||'')));
   // יששכר־זבולון הוא אותו כסף של האברכים — שורה אחת בלבד, לא פעמיים
   const iza=izRowAmt(d);
@@ -3326,8 +3348,11 @@ function cardDetails(d,body){
     ${give}
     ${(d.parnes||[]).filter(p=>p.status!=='suggested').length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)</summary><div id="parnes"></div></details>`:''}
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
-      <div class="addrow"><select id="pa_name">${avOpts('')}</select><button class="btn sm" id="pa_add">הוסף</button></div>
-      <div class="addrow hidden" id="pa_newrow"><input id="pa_new" placeholder="שם האברך החדש — משפחה ואז פרטי"></div></details>`:''}
+      <button type="button" class="opnlink" id="pa_opn" style="margin-top:6px">➕ הוסף עוד אברך</button>
+      <div class="opnbox hidden" id="pa_opnbox">
+        <div class="addrow"><select id="pa_name">${avOpts('')}</select><button class="btn sm" id="pa_add">הוסף</button></div>
+        <div class="addrow hidden" id="pa_newrow"><input id="pa_new" placeholder="שם האברך החדש — משפחה ואז פרטי"></div>
+      </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
@@ -3582,7 +3607,13 @@ function cardDetails(d,body){
     renderPartners(d);
     // מאיר: "לא נותן לבחור אברך מהרשימה אלא סתם לכתוב שדה חופשי" —
     // הבחירה היא מרשימת האברכים של הכולל, ומי שאינו בה נוסף אליה קודם.
+    // מאיר: "כבר כתוב למעלה בחר אברך... למה יש פה שוב משבצת? זה מיותר" —
+    // הבחירה השנייה נועדה רק להוספת אברך נוסף, ולכן מקופלת עד שלוחצים.
     const pas=document.getElementById('pa_name'), panew=document.getElementById('pa_newrow');
+    const paop=document.getElementById('pa_opn');
+    if(paop)paop.onclick=()=>{const bx=document.getElementById('pa_opnbox');
+      bx.classList.toggle('hidden');
+      if(!bx.classList.contains('hidden')&&pas)pas.focus();};
     if(pas&&!AVLIST.length)loadAvList().then(()=>{pas.innerHTML=avOpts('');});
     if(pas&&panew)pas.onchange=()=>{const on=pas.value==='__new__';
       panew.classList.toggle('hidden',!on);
@@ -3600,6 +3631,7 @@ function cardDetails(d,body){
       if(panew)panew.classList.add('hidden');
       const pn=document.getElementById('pa_new'); if(pn)pn.value='';
       if(pas)pas.innerHTML=avOpts('');
+      const pbx=document.getElementById('pa_opnbox'); if(pbx)pbx.classList.add('hidden');
       renderPartners(d);toast('נוסף ✓');};
   }
   const dnDate=document.getElementById('dn_date'); if(dnDate)dnDate.value=todayStr();

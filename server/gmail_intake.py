@@ -676,6 +676,38 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
+def check_login(timeout=12):
+    """בדיקה חיה: האם החיבור לג'ימייל באמת עובד עכשיו.
+    מחזיר (ok, detail) — כדי ש'בדיקת מערכת' תגיד 'מחובר' ולא רק
+    'המשתנים מוגדרים'. מאיר: "האם זה עדיין לא מחובר?" """
+    user = (os.environ.get('GMAIL_USER') or '').strip()
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not user or not pw:
+        return False, 'GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים ב-Render'
+    M = None
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=timeout)
+        M.login(user, pw)
+        box = os.environ.get('INTAKE_MAILBOX', 'INBOX')
+        typ, data = M.select(box, readonly=True)
+        if typ != 'OK':
+            return False, '%s — התיבה %s לא נפתחה' % (user, box)
+        n = int(data[0]) if data and data[0] else 0
+        return True, '%s · מחובר · %s מיילים ב-%s' % (user, n, box)
+    except imaplib.IMAP4.error as e:
+        msg = str(e)
+        if 'AUTHENTICATIONFAILED' in msg.upper() or 'Invalid credentials' in msg:
+            return False, ('%s — הסיסמה נדחתה. צור סיסמת אפליקציה חדשה '
+                           'ועדכן את GMAIL_APP_PASSWORD ב-Render' % user)
+        return False, '%s — %s' % (user, msg[:150])
+    except Exception as e:
+        return False, '%s — %s: %s' % (user, type(e).__name__, str(e)[:120])
+    finally:
+        if M is not None:
+            try: M.logout()
+            except Exception: pass
+
+
 def _attachments(msg, max_bytes=10 * 1024 * 1024):
     """קבצים שצורפו למייל (מסמכים/תמונות). מדלג על לוגואים זעירים של חתימה."""
     out = []
