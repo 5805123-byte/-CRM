@@ -2391,10 +2391,10 @@ function purposeAlloc(d){
     // בהם. כך תורם שהוריד מ-1,000 ל-500 באמצע השנה אינו נראה כמי שנשאר
     // חייב על העבר, וגם לא כמי ששילם מראש.
     let head=0, hn=0;
-    if(r.since&&r.since>start){
-      hn=monthsTo(start, prevMonth(r.since));
+    if(r.sinceM&&r.sinceM>start){
+      hn=monthsTo(start, prevMonth(r.sinceM));
       if(hn>0&&r.prev>0.5)head=r.prev*hn;
-      start=r.since;
+      start=r.sinceM;
     }
     const n=monthsTo(start, thru);
     let exp=per*n+head;
@@ -2538,6 +2538,7 @@ function commitRows(d){
       pid:(izOne?izOne.id:''),
       conf:izReal?1:0, ended:!!izOne&&plEnded(izOne),
       since:izOne?String(izOne.since||''):'',
+      sinceM:izOne?String(izOne.since||'').slice(0,7):'',
       prev:izOne?amtNum(izOne.prev_amount):0,
       guess:!izPl.length,
       praw:'',note:String(d.iz_note||'')});
@@ -2549,6 +2550,7 @@ function commitRows(d){
       icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
       conf:plConf(p), ended:plEnded(p), since:String(p.since||''),
+      sinceM:String(p.since||'').slice(0,7),
       prev:amtNum(p.prev_amount),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
@@ -2663,8 +2665,8 @@ function commitHTML(d){
       ${prog}${paid}
       ${note}
       ${(r.mo&&(r.pid||r.iz)&&!ask&&!r.ended)
-        ? `<label class="cmsince">📅 מאז <input type="month" class="cmsincei" data-pid="${r.pid||''}"
-             ${r.iz?'data-iz="1"':''} value="${esc((r.since||'').slice(0,7))}"><small>מכאן נספרים החודשים והחוב</small></label>` : ''}
+        ? `<label class="cmsince">📅 מאז <input type="date" class="cmsincei" data-pid="${r.pid||''}"
+             ${r.iz?'data-iz="1"':''} value="${esc(sinceDate(r.since))}"><small>מכאן נספרים החודשים והחוב — החודש שבתאריך נספר במלואו</small></label>` : ''}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav${avOpenSlot(p)?' cmavgap':''}">${avOpenSlot(p)
         ?('🚪 מקום פתוח — '+esc(p.prev_avreich)+' יצא'+(p.prev_ended?(' ב'+esc(p.prev_ended)):''))
@@ -2857,13 +2859,13 @@ function wireCommit(d,body){
            monthly:1,paid:'',note:'',detail:'',permo:'',avreich:'',
            since:inp.value||'',date:todayStr()};
         d.pledges=(d.pledges||[]).concat([p]);
-        toast(inp.value?('נספר מ'+fmtMonth(inp.value)+' ✓'):'נשמר ✓');
+        toast(inp.value?('נספר מ'+fmtMonth(inp.value.slice(0,7))+' ✓'):'נשמר ✓');
         redraw(); return;
       }
     }
     if(!p)return;
     await putPl(p,{since:inp.value||''});
-    toast(inp.value?('נספר מ'+fmtMonth(inp.value)+' ✓'):'בוטל — נספר מהחודש הראשון שנכנס בו כסף');
+    toast(inp.value?('נספר מ'+fmtMonth(inp.value.slice(0,7))+' ✓'):'בוטל — נספר מהחודש הראשון שנכנס בו כסף');
     redraw();};
   box.querySelectorAll('.cmpd').forEach(inp=>inp.onchange=async()=>{
     const p=pOf(inp.dataset.pid); if(!p)return;
@@ -3213,7 +3215,7 @@ function monthLedger(d){
   // הקודמת ואינו בחשבון הזה. אם לא נקבע — סופרים מהחודש הראשון שנכנס
   // בו כסף השנה.
   let first='';
-  rows.forEach(r=>{const s=r.since||(r.inst&&r.plan&&r.plan.from)||'';
+  rows.forEach(r=>{const s=r.sinceM||(r.inst&&r.plan&&r.plan.from)||'';
     if(s&&s.length>=7&&(!first||s.slice(0,7)<first))first=s.slice(0,7);});
   if(!first)
     (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
@@ -3227,9 +3229,8 @@ function monthLedger(d){
   declinedGroups(d).forEach(r=>{const m=r.iso.slice(0,7);dec[m]=(dec[m]||0)+r.a;});
   const due1=m=>rows.reduce((s,r)=>{
     const per=r.inst?r.plan.per:r.amt;
-    const st=(r.since&&r.since.length>=7)?r.since.slice(0,7)
-      :((r.inst&&r.plan&&r.plan.from)?String(r.plan.from).slice(0,7):first);
-    if(m<st)return s+((r.since&&r.prev>0.5)?r.prev:0);
+    const st=r.sinceM||((r.inst&&r.plan&&r.plan.from)?String(r.plan.from).slice(0,7):first);
+    if(m<st)return s+((r.sinceM&&r.prev>0.5)?r.prev:0);
     if(r.inst&&r.plan&&r.plan.n&&monthsTo(st,m)>r.plan.n)return s;
     return s+per;},0);
   const out=[]; let bal=0;
@@ -3249,6 +3250,14 @@ function monthLedger(d){
           debt:Math.max(0,Math.round(totDue-totGot)),
           ahead:Math.max(0,Math.round(totGot-totDue)),
           per:due1(thru)};
+}
+// הערך שנשמר יכול להיות חודש בלבד (מגרסה קודמת) או תאריך מלא —
+// לוח השנה צריך תאריך שלם, ולכן חודש ישן מוצג כ-1 בחודש
+function sinceDate(v){
+  const t=String(v||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;
+  if(/^\d{4}-\d{2}$/.test(t))return t+'-01';
+  return '';
 }
 function nextMonth(ym){
   const a=String(ym).split('-'); let y=+a[0], m=+a[1]+1;
