@@ -230,19 +230,15 @@ function izSummaryHTML(d){
   else if(s.debt<-0.5) debtLine=`<div class="izdebt ok">🟢 מקדמה / עודף: ${cur}${Math.round(-s.debt)}</div>`;
   else debtLine='';
   if(s.debt<=0.5&&s.manual==null&&!s.thru.length)debtLine='';   // חוב מוצג רק בחלון החוב
-  const mainHtml=(act.length||s.monthly)?`${rows}
-    <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${izMonthlyTxt(s,cur)}</b></div>
-    ${''/* מאיר: "אני לא רוצה ולא צריך את החשבונות האלו, צפי לתקופה וזה.
-         אני צריך שורה תחתונה כמה הוא חייב נטו". שורות "שולם ליששכר־זבולון"
-         ו"צפוי לתקופה" ירדו — החוב מופיע בשורה האדומה שבראש הכרטיס. */}
-    ${thruHtml}
-    ${debtLine}`:'';
-  return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
-    ${renewBanner(d)}
-    ${mainHtml}
-    ${recipHtml}
-    ${izHistHTML(d)}
-    ${splitHTML(d)}</div>`;
+  // מאיר: "החלון הזה מיותר אם יש לנו כבר חלון אחר שמסכם את היששכר־זבולון
+  // — למה צריך פעמיים?". רשימת האברכים, ההתחייבות החודשית והשותפויות
+  // כבר מופיעות בחלון "האברכים שהוא מחזיק", ולכן ירדו מכאן. נשאר רק מה
+  // שאין בשום מקום אחר: "שולם עד חודש", חוב שנקבע במפורש, ההיסטוריה,
+  // ושותפות התשלום.
+  const mainHtml=`${thruHtml}${debtLine}`;
+  const body=mainHtml+izHistHTML(d)+splitHTML(d);
+  if(!body.trim())return '';
+  return `<div class="izsum">${body}</div>`;
 }
 // מאיר: "שיהיה היסטוריה בדף היששכר־זבולון של התורם — איזה אברך היה ומתי
 // יצא ומי נכנס במקומו". היומן כבר נשמר בדף הקשר תחת הערוץ הזה, ולכן אין
@@ -3628,7 +3624,7 @@ function cardDetails(d,body){
     ${hasOccKv(d)?`<div class="two"><label class="fld"><span>🗓️ חודש קוויטל (מזדמנים)</span><select id="f_kvmon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה עברית</span><select id="f_kvyr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
-    ${izSummaryHTML(d)}
+    ${renewBanner(d)}
     ${reconPendHTML(d)}
     ${catTotalsHTML(d)}
     ${give}
@@ -4917,6 +4913,10 @@ function renderPartners(d){
   </div>`).join('');
   if(!act.length&&!lnk.length)
     el.innerHTML='<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
+  // כל היששכר־זבולון במקום אחד: מה שנשאר מהסיכום (שולם עד, חוב,
+  // היסטוריה, שותפות תשלום) יושב כאן ולא בחלון נפרד למעלה
+  el.innerHTML+=izSummaryHTML(d);
+  const _izs=el.querySelector('.izsum'); if(_izs)setTimeout(()=>wireIzSum(_izs,d),0);
   el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📝 מעקב חוב יששכר־זבולון</div>
       <label class="fld"><span>🔴 כמה הוא חייב עכשיו (${cur}) — עדכון ידני שגובר על החישוב</span><input id="iz_debt" inputmode="decimal" value="${esc(d.iz_debt||'')}" placeholder="השאר ריק כדי לחשב אוטומטית"></label>
       <div class="hintxt">ההערה על ההתחייבות ("שילם מראש, מכסה עד אלול") נכתבת בשורת יששכר־זבולון בסוף דף התורם — שם הכל במקום אחד.</div></div>
