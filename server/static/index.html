@@ -1243,14 +1243,24 @@
   @media print{header.top,.chips,.pbar,.kbar .print,.print,.back,.noprint,
     .dictfab,#dictfab,.micbtn,.micwrap .micbtn{display:none!important}
     .app{max-width:none}.plaque{box-shadow:none}}
-  /* הדפסת קוויטל נקייה — רק שם תורם ושמות התפילה, בלי תזכורת/כרטיס/אייקונים */
+  /* הדפסת קוויטל נקייה — רק שם תורם ושמות התפילה, בלי תזכורת/כרטיס/אייקונים.
+     מאיר: "שיהיה יותר צפוף, שינצל את כל הדף למעלה ולמטה ובצדדים, בלי
+     רווחים, גופן קצת יותר קטן, וכמה שפחות דפים". */
   @media print{
+    @page{size:A4 portrait;margin:6mm 7mm}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .kblock.kvempty{display:none!important}
-    #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;margin-bottom:14px}
-    #kvlistwrap .kblock .who{font-size:1.25rem;font-weight:800}
+    .app{max-width:none;padding:0}
+    #kvlistwrap{margin:0;padding:0}
+    #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;
+      background:none!important;border:none!important;border-radius:0!important;
+      padding:0!important;margin:0 0 2.6mm!important}
+    #kvlistwrap .kblock .who{font-size:.94rem;font-weight:800;margin:0 0 .3mm!important;
+      color:#000!important;line-height:1.15}
     #kvlistwrap .kblock .who .opencard,#kvlistwrap .kblock .who .kvtag,#kvlistwrap .kblock .who .loose{display:none!important}
-    #kvlistwrap .kblock .names{font-size:1.15rem;line-height:1.5;border:none!important;padding:2px 0 0!important;background:none!important}
+    #kvlistwrap .kblock .names{font-size:.9rem;line-height:1.26;border:none!important;
+      padding:0!important;margin:0!important;background:none!important}
+    #kvlistwrap .kblock.kvmulti .names+.names{margin-top:.6mm!important}
   }
 </style>
 </head>
