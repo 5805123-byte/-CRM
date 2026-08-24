@@ -1258,10 +1258,15 @@
     #kvlistwrap .kblock .who{font-size:.94rem;font-weight:800;margin:0 0 .3mm!important;
       color:#000!important;line-height:1.15}
     #kvlistwrap .kblock .who .opencard,#kvlistwrap .kblock .who .kvtag,#kvlistwrap .kblock .who .loose{display:none!important}
-    #kvlistwrap .kblock .names{font-size:.9rem;line-height:1.26;border:none!important;
-      padding:0!important;margin:0!important;background:none!important}
-    #kvlistwrap .kblock.kvmulti .names+.names{margin-top:.6mm!important}
+    #kvlistwrap .kblock .names,#kvlistwrap .kblock .namesflow{font-size:.9rem;line-height:1.26;
+      border:none!important;padding:0!important;margin:0!important;background:none!important}
+    #kvlistwrap .kblock.kvmulti .namesflow+.names{margin-top:.6mm!important}
+    /* בהדפסה — הרצף עם הפסיקים. על המסך ממשיכים לערוך שורה־שורה.
+       מוסתרות רק שורות שיש להן תאום־רצף, ולא כל שדות השמות במערכת. */
+    .names.hasflow{display:none!important}
+    .namesflow{display:block!important}
   }
+  .namesflow{display:none}
 </style>
 </head>
 <body>

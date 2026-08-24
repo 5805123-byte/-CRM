@@ -5088,7 +5088,7 @@ function renderKvSearch(){
   entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔎 חיפוש בכל הקוויטל</b><span class="cnt2">(${entries.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">מציג שמות מכל סוגי הקוויטל התואמים לחיפוש. לחץ על שם לעריכה — נשמר גם בכרטיס.</div>
-    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
+    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
   const bk=document.getElementById('kvback');if(bk)bk.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';render();};
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
   bindKvEdit();
@@ -5397,13 +5397,23 @@ function renderKvList(type){
       const empty=!g.items.some(e=>(e.text||'').trim());
       const needname=g.items.some(e=>e.needname);
       return `<div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
-        + g.items.map(e=>`<div class="names" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`).join('')
+        + g.items.map(e=>`<div class="names hasflow" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`
+            + `<div class="namesflow">${esc(kvFlow(e.text))}</div>`).join('')
         + `</div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
     bindKvEdit();
   }
   si.oninput=()=>{kvListQ=si.value;paint();};
   paint();
+}
+// מאיר: "כל שם ושם האם והבקשה ואז פסיק, והשם הבא באותה שורה — לא
+// שיתפוס מקום". שורות בודדות מתחברות לרצף אחד, להדפסה בלבד.
+function kvFlow(t){
+  const parts=String(t||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length<2)return parts.join('');
+  let out=parts[0];
+  for(let i=1;i<parts.length;i++) out += (/[,.:;·|]$/.test(out)?' ':', ') + parts[i];
+  return out;
 }
 let KVOCCMON='';        // חודש יחיד להדפסה במזדמנים; ריק = הכל
 function renderKvOcc(){
@@ -5432,7 +5442,7 @@ function renderKvOcc(){
       </select>
       <span class="kvmoncnt">${nSel} תורמים בהדפסה</span></div>
     ${KVNOLAST?'<div class="hintxt noprint" style="margin:0 2px 8px"><b>מודפס בשם פרטי בלבד</b></div>':''}
-    ${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3>🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock"><div class="who wholink" data-did="${x.d.id}">${esc(kvWho({did:x.d.id,donor:(x.d.last+' '+x.d.first).trim()}))} <span class="opencard">↗ כרטיס</span></div>${x.pid?`<div class="names" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}`;
+    ${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3>🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock"><div class="who wholink" data-did="${x.d.id}">${esc(kvWho({did:x.d.id,donor:(x.d.last+' '+x.d.first).trim()}))} <span class="opencard">↗ כרטיס</span></div>${x.pid?`<div class="names hasflow" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div><div class="namesflow">${esc(kvFlow(x.text))}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;KVOCCMON='';render();};
   wireNoLast(renderKvOcc);
   const ms=document.getElementById('kvoccmon');
