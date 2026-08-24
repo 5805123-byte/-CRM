@@ -1174,6 +1174,7 @@ function render(){
   if(tab==='donors'){
     if(flt==='addrfix')return renderAddrFix();
     if(flt==='noaddr')return renderNoAddr();
+    if(flt==='noeng')return renderNoEng();
     if(flt==='nophone')return renderNoPhone();
     if(flt==='deposits')return renderDeposits();
     return renderDonors();
@@ -1281,6 +1282,7 @@ function renderDonors(){
         {id:'addrFixBtn',n:nafix, t:'🏠 כתובות לתיקון'},
         {id:'noAddrBtn', n:nanone,t:'🏠 בלי כתובת בכלל'},
         {id:'noPhoneBtn',n:nph,   t:'📞 בלי טלפון'},
+        {id:'noEngBtn',  n:DB.filter(d=>!(d.english||'').trim()).length, t:'🔤 בלי שם באנגלית'},
       ].filter(x=>x.n);
       // מאיר: "כל אלו יהיו תחת חלון אחד, לא בדף הראשי משבצת לכל אחד"
       const tabs=[{k:'review',t:'📋 לבדיקה'},{k:'dups',t:'🧾 תשלומים כפולים'},
@@ -1328,6 +1330,7 @@ function renderDonors(){
   const afb=document.getElementById('addrFixBtn'); if(afb)afb.onclick=()=>{flt='addrfix';render();};
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
   const npb=document.getElementById('noPhoneBtn'); if(npb)npb.onclick=()=>{flt='nophone';NOPHONE=null;NPLIM=15;render();};
+  const neb=document.getElementById('noEngBtn'); if(neb)neb.onclick=()=>{flt='noeng';NELIM=25;render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
@@ -1414,6 +1417,59 @@ let NOADDR=null;
 let NOPHONE=null, NPLIM=15;
 // מסך השלמת טלפונים — לכל תורם בלי טלפון מוצעים אנשי הקשר עם אותו שם משפחה,
 // ובלחיצה אחת מאשרים או דוחים. במקום לענות על שאלות בצ׳אט.
+let NELIM=25;
+// מאיר: "צריך כפתור תורמים בלי שם באנגלית". לצד כל אחד מוצעת הצעה מתוך
+// כתובת המייל שלו, וכל שם נשמר בלחיצה אחת — או שמקלידים ידנית.
+function engGuess(d){
+  const em=splitEmails(d.email||'')[0]||'';
+  const loc=em.split('@')[0].toLowerCase().trim();
+  if(!loc||/\d/.test(loc))return '';
+  const parts=loc.split(/[._\-]+/).filter(Boolean);
+  if(parts.length<2||parts.length>3)return '';
+  const stop=['info','office','mail','email','admin','sales','support','contact',
+    'accounts','accounting','billing','service','help','team','the','and','inc','llc',
+    'corp','group','realty','law','cpa','md','me','my','new','usa','ny','nj'];
+  if(parts.some(p=>p.length<3||!/^[a-z]+$/.test(p)||stop.includes(p)))return '';
+  return parts.map(p=>p[0].toUpperCase()+p.slice(1)).join(' ');
+}
+function renderNoEng(){
+  chips.innerHTML='';
+  const all=DB.filter(d=>!(d.english||'').trim())
+              .filter(d=>matchQ(d.last+' '+d.first+' '+(d.email||'')+' '+(d.phone||'')));
+  const withG=all.filter(d=>engGuess(d)).length;
+  const rows=all.slice(0,NELIM);
+  view.innerHTML=`<div class="misshead">🔤 תורמים בלי שם באנגלית</div>
+    <div class="submuted">${all.length} תורמים${withG?(' · '+withG+' מהם עם הצעה מכתובת המייל'):''}.
+      השם באנגלית משמש לקבלות, לדיוור, ולזיהוי החיובים מהבנק.</div>
+    <button class="btn ghost" id="neback" style="margin:8px 2px">→ חזרה לתורמים</button>
+    ${rows.map(d=>{const g=engGuess(d);
+      return `<div class="npcard" data-did="${d.id}">
+        <div class="nm"><b class="avnamelink" data-id="${d.id}">${esc((d.last+' '+(d.first||'')).trim())}</b>
+          <span class="rownum">#${d.id}</span></div>
+        ${d.email?`<div class="nemail" dir="ltr">${esc(splitEmails(d.email).join(' · '))}</div>`:''}
+        ${d.phone?`<div class="nemail" dir="ltr">${esc(splitPhones(d.phone)[0]||'')}</div>`:''}
+        <div class="addrow"><input class="neinp" data-did="${d.id}" dir="ltr"
+            placeholder="שם באנגלית — שם פרטי ואז שם משפחה" value="${esc(g)}">
+          <button class="btn sm nesave" data-did="${d.id}">💾 שמור</button></div>
+        ${g?'<div class="hintxt" style="margin:-2px 2px 0">💡 ההצעה מגיעה מכתובת המייל — בדוק ותקן אם צריך</div>':''}
+      </div>`;}).join('')||'<div class="empty">כל התורמים כבר עם שם באנגלית ✓</div>'}
+    ${all.length>rows.length?`<button class="btn" id="nemore" style="width:100%;margin:8px 2px">הצג עוד ${Math.min(25,all.length-rows.length)}</button>`:''}`;
+  document.getElementById('neback').onclick=()=>{flt='';render();};
+  const mb=document.getElementById('nemore'); if(mb)mb.onclick=()=>{NELIM+=25;renderNoEng();};
+  view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+  const save=async b=>{
+    const d=DB.find(x=>x.id==b.dataset.did); if(!d)return;
+    const inp=view.querySelector('.neinp[data-did="'+b.dataset.did+'"]');
+    const v=(inp?inp.value:'').trim();
+    if(!v){if(inp)inp.focus();return;}
+    b.disabled=true; d.english=v;
+    await api('PUT','/api/donor/'+d.id,{english:v});
+    toast('נשמר ✓'); renderNoEng();
+  };
+  view.querySelectorAll('.nesave').forEach(b=>b.onclick=()=>save(b));
+  view.querySelectorAll('.neinp').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();
+    save(view.querySelector('.nesave[data-did="'+i.dataset.did+'"]'));}});
+}
 async function renderNoPhone(){
   view.innerHTML='<div class="cnt">טוען הצעות…</div>';
   if(!NOPHONE){ try{ NOPHONE=await api('GET','/api/audit/phones'); }catch(e){ NOPHONE={ok:false}; } }
