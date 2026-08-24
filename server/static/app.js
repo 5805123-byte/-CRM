@@ -2748,7 +2748,9 @@ function commitHTML(d){
       <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label>
       <label class="fld"><span>📌 מזה על שנה קודמת (${GREGYEAR-1} ואחורה)</span>
         <div class="curwrap"><span class="curpick curfix">${cur}</span>
-          <input id="dn_prev" inputmode="decimal" placeholder="השאר ריק אם הכל על ${GREGYEAR}"></div></label>
+          <input id="dn_prev" inputmode="decimal" placeholder="כמה"></div></label>
+      <label class="fld"><span>עבור מה החלק הזה</span>
+        <input id="dn_prevn" placeholder="למשל: יששכר־זבולון ${GREGYEAR-1}"></label>
       <div class="hintxt" style="margin:-6px 2px 6px">כשתשלום אחד סוגר גם חוב ישן — רשום כאן כמה מתוכו הלך לשנה שעברה.
         הסכום הזה יוצא מחשבון ${GREGYEAR} ונזקף כנגד ההתחייבות הקודמת.</div>
       <label class="fld"><span>🕯️ שם לתפילה</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label></div>
@@ -3469,6 +3471,7 @@ function cardDetails(d,body){
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
+    prev:String(x.prev_year||''),prevn:String(x.prev_note||''),
     needthx:needThanks(x),thanked:+x.thanked}));
   gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
@@ -3494,6 +3497,13 @@ function cardDetails(d,body){
       <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: סעודת ראש חודש)" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
       <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label>
+      <div class="gvprev"><div class="gvlbl">📌 מזה על שנה קודמת (${GREGYEAR-1} ואחורה)</div>
+        <div class="addrow"><input class="gvprevi curpick2" data-did="${g.did}" inputmode="decimal"
+            placeholder="כמה" value="${esc(g.prev||'')}">
+          <input class="gvprevn" data-did="${g.did}" placeholder="עבור מה — למשל: יששכר־זבולון ${GREGYEAR-1}"
+            value="${esc(g.prevn||'')}">
+          <button class="btn sm gvprevok" data-did="${g.did}">💾</button></div>
+        <div class="hintxt">כשתשלום אחד סגר גם חוב ישן — הסכום הזה יוצא מחשבון ${GREGYEAR} ונזקף כנגד ההתחייבות הקודמת.</div></div>
       <button class="btn sm ghost gvsplit" data-did="${g.did}" style="width:100%;margin-top:6px">✂️ לחלק את ${curd}${g.amt} לכמה ייעודים</button>
       <div class="gvsplitbox hidden" data-sp="${g.did}">
         <div class="gvlbl" style="margin-top:8px">✂️ חלוקת ${curd}${g.amt}</div>
@@ -3516,6 +3526,7 @@ function cardDetails(d,body){
       : esc(g.what);
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
+      + `${amtNum(g.prev)>0.5?`<span class="prevchip">📌 ${curd}${Math.round(amtNum(g.prev)).toLocaleString('en-US')} ${esc(g.prevn||('על '+(GREGYEAR-1)))}</span>`:''}`
       + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}</div></div>`;
   };
   // מאיר: "גם בפרטי תרומות למטה, איפה שכתוב כל ההכנסות של התרומות,
@@ -3754,6 +3765,25 @@ function cardDetails(d,body){
   });
   body.querySelectorAll('.gvcatnew').forEach(i=>i.onkeydown=e=>{
     if(e.key==='Enter'){e.preventDefault();i.closest('.gvpanel').querySelector('.gvcatok').click();}});
+  // מאיר: "כבר רשמתי את התשלום הזה מזמן, איך אני מעדכן שחלק מזה על
+  // 2025?" — על תרומה שכבר רשומה, מתוך אותו חלון של ✏️
+  body.querySelectorAll('.gvprevok').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.busy)return; b.dataset.busy='1';
+    try{
+      const inp=body.querySelector('.gvprevi[data-did="'+b.dataset.did+'"]');
+      const dn=(d.donations||[]).find(x=>x.id==b.dataset.did); if(!dn)return;
+      const v=inp.value.trim(), n=amtNum(v);
+      if(v&&n>amtNum(dn.amount)+0.5){toast('הסכום גדול מהתרומה עצמה');inp.focus();return;}
+      const nt=(body.querySelector('.gvprevn[data-did="'+b.dataset.did+'"]')||{value:''}).value.trim();
+      dn.prev_year=v?String(n):''; dn.prev_note=v?nt:'';
+      await api('PUT','/api/donation/'+dn.id,{prev_year:dn.prev_year,prev_note:dn.prev_note});
+      toast(v?('נרשם: '+curSym(d)+Math.round(n)+' על '+(GREGYEAR-1)+' ✓'):'בוטל — הכל על '+GREGYEAR);
+      // מציירים מיד מהנתון שכבר עודכן כאן — בלי להמתין לרענון מהשרת,
+      // שממילא עונה מהמטמון ומחזיר את הכרטיס כמו שהיה
+      openDonor(d,'details');
+      if(tab==='donors')renderDonors();
+      load();
+    } finally{ delete b.dataset.busy; }});
   body.querySelectorAll('.gvsave').forEach(b=>b.onclick=async()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(!p)return;
     const sel=body.querySelector('.gvcatsel[data-did="'+b.dataset.did+'"]');
@@ -3924,7 +3954,8 @@ function cardDetails(d,body){
       for(const dt of dates){
         const py=prevLeft>0.5?String(Math.min(prevLeft,amtNum(amt))):'';
         if(py)prevLeft-=amtNum(py);
-        const body={donor_id:d.id,amount:amt,category:cat,method,date:dt,note,cur:dcur,prev_year:py};
+        const pn=py?((document.getElementById('dn_prevn')||{value:''}).value.trim()):'';
+        const body={donor_id:d.id,amount:amt,category:cat,method,date:dt,note,cur:dcur,prev_year:py,prev_note:pn};
         const r=await api('POST','/api/donation',body);
         d.donations=(d.donations||[]).concat([{id:r.id,donor_id:d.id,amount:amt,category:cat,
           method,date:dt,note,cur:dcur,prev_year:py,paid:1}]);

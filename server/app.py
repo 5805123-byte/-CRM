@@ -252,7 +252,7 @@ def ensure_schema():
     # prev_year — כמה מתוך התשלום הזה סגר חוב של שנה קודמת. מאיר: "הוא
     # נתן 33,300 וחלק מזה על 2025". הסכום הזה יוצא מחשבון השנה הנוכחית
     # ונזקף כנגד ההתחייבות הקודמת, אחרת השנה נראית משולמת יותר מהאמת.
-    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur', 'prev_year'):
+    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur', 'prev_year', 'prev_note'):
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
@@ -8942,7 +8942,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('date','amount','category','method','note','cur','prev_year','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
+            for k in ('date','amount','category','method','note','cur','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
             if (b.get('category') or '').strip() and 'note' not in b:
@@ -10324,11 +10324,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/donation':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,prev_year,paid) "
-                        "VALUES(?,?,?,?,?,?,?,?,1)",
+            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,prev_year,prev_note,paid) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,1)",
                         (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''),
                          b.get('method',''), b.get('note',''), b.get('cur',''),
-                         str(b.get('prev_year') or '')))
+                         str(b.get('prev_year') or ''), (b.get('prev_note') or '')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid, 'hmonth': greg_to_heb_monthyear(b.get('date',''))})
         if self.path == '/api/online':
