@@ -3622,6 +3622,62 @@ def ensure_schema():
     except Exception as e:
         print('  rosenthal pair error:', e)
 
+    # מאיר: "גולד וטעפלר נותנים 1000 בחודש שניהם יחד מהעסק המשותף שלהם,
+    # סלקוביץ עקיבא ויצחק טעפער כל אחד מהם נותן 5000 דולר ומחזיקים ביחד
+    # את פילמר — למה כתוב 1000 כל אחד?"
+    # joint=1 פירושו שהסכום הרשום הוא הסכום המשותף לשניהם; joint=0
+    # פירושו שכל אחד נותן את הסכום הזה בנפרד. שני המקרים מקושרים
+    # כשותפים באותו אברך, כדי שהכסף לא ייספר פעמיים ולא ייספר חסר.
+    _IZ_PAIRS = [
+        # (אברך, joint, [(שם משפחה של המחזיק, סכום לחודש), ...])
+        ('שפירא ישראל נחמן', 1, [('גולד', '1000'), ('טפלר', '1000')]),
+        ('פילמר מאיר', 0, [('סלקוביץ', '5000'), ('טעפפער', '5000')]),
+    ]
+    for _av, _joint, _pair in _IZ_PAIRS:
+        try:
+            _rows = {}
+            for lastnm, amt in _pair:
+                r = con.execute("SELECT p.id,p.donor_id,p.amount,p.joint,d.last,d.first "
+                                "FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                "WHERE TRIM(p.avreich)=? AND d.last LIKE ? "
+                                "AND COALESCE(p.active,1)<>0",
+                                (_av, '%' + lastnm + '%')).fetchone()
+                if r:
+                    _rows[lastnm] = (r, amt)
+            if len(_rows) != len(_pair):
+                continue          # אחד מהם לא נמצא — לא נוגעים בכלום
+            _n = 0
+            for lastnm, (r, amt) in _rows.items():
+                other = [v[0] for k, v in _rows.items() if k != lastnm][0]
+                onm = ((other['last'] or '') + ' ' + (other['first'] or '')).strip()
+                if str(r['amount'] or '') != amt or int(r['joint'] or 0) != _joint:
+                    con.execute("UPDATE partners SET amount=?, joint=? WHERE id=?",
+                                (amt, _joint, r['id']))
+                    iz_log(con, _av, r['donor_id'],
+                           '💰 %s — %s $%s לחודש' % (_av,
+                               'הסכום המשותף תוקן ל-' if _joint else 'הסכום תוקן ל-', amt),
+                           now_iso(), '')
+                    _n += 1
+                con.execute("UPDATE partners SET partner_with=?, partner_with_id=? "
+                            "WHERE id=? AND COALESCE(partner_with_id,'')=''",
+                            (onm, other['donor_id'], r['id']))
+                # שורת ההתחייבות בכרטיס מסונכרנת רק אצל מי שיש לו אברך אחד,
+                # כדי שהסכום שבראש הכרטיס לא יסתור את שורת האברך
+                _cnt = con.execute("SELECT COUNT(*) FROM partners WHERE donor_id=? "
+                                   "AND COALESCE(active,1)<>0 "
+                                   "AND COALESCE(TRIM(avreich),'')<>''",
+                                   (r['donor_id'],)).fetchone()[0]
+                if _cnt == 1:
+                    _own = amt if not _joint else str(int(round(float(amt) / len(_pair))))
+                    con.execute("UPDATE pledges SET amount=? WHERE donor_id=? "
+                                "AND COALESCE(monthly,0)=1 AND category LIKE '%יששכר%' "
+                                "AND COALESCE(status,'')<>'הסתיים'", (_own, r['donor_id']))
+            if _n:
+                con.commit()
+                print('  %s: הסכומים תוקנו אצל %d מחזיקים' % (_av, _n))
+        except Exception as e:
+            print('  iz pair error (%s): %s' % (_av, e))
+
     # מאיר: "עליס, קעניג יעקב מנחם והניג יצאו מהכולל לגמרי; חשין נחמן
     # ברי\"ט זה חשין יט נחמן". ארבעת אלו לא היו בקובץ הכולל, וזו התשובה
     # עליהם. מעבר מרפא — רץ בכל עלייה ונוגע רק במה שעדיין לא סודר.
