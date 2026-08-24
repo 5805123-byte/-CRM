@@ -2341,6 +2341,30 @@ function prevMonth(ym){
    לכל התחייבות: כמה הוא היה אמור לתת עד היום, כמה נגבה בפועל, ומה ההפרש.
    הכסף מחולק בין ההתחייבויות לפי החלוקה שנרשמה, כי בבנק הוא נכנס
    בחיוב אחד בלי פירוט. */
+// מאיר: "אני צריך שתמיד יהיה חשבון כמה נכנס תכליס וכמה הוא חייב".
+// שורת חשבון אחת מעל ההתחייבויות: כמה היה אמור להיכנס עד היום לפי מה
+// שרשום, כמה באמת נכנס, וכמה חסר. החישוב עצמו הוא purposeAlloc — אותו
+// חישוב שמסך "לבדיקה" נשען עליו, כדי שלא יהיו שני מספרים סותרים.
+function acctLine(d){
+  let a=null; try{a=purposeAlloc(d);}catch(e){return '';}
+  if(!a||!a.rows.length)return '';
+  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const gap=Math.round(a.exp-a.got);
+  const from=fmtMonth(a.first), to=fmtMonth(a.thru);
+  // פירוט רק על מה שחסר — שורה שנסגרה במלואה אינה מוסיפה מידע
+  const short=a.rows.filter(r=>r.gap>0.5)
+    .map(r=>`${r.icon||''} ${esc(r.what)} ${f(r.gap)}`).join(' · ');
+  return `<div class="acct ${gap>0.5?'owes':'ok'}">
+    <div class="acct-r"><span>📅 ${esc(from)} – ${esc(to)}</span>
+      <span>אמור היה להיכנס <b>${f(a.exp)}</b></span>
+      <span>נכנס בפועל <b>${f(a.got)}</b></span>
+      <span class="acct-g">${gap>0.5?('🔴 חייב <b>'+f(gap)+'</b>')
+        :(a.extra>0.5?('🟢 שילם מראש <b>'+f(a.extra)+'</b>'):'✅ מסודר')}</span></div>
+    ${short?`<div class="acct-d">${short}</div>`:''}
+    ${a.steady?`<div class="acct-d">⚠️ בפועל נכנס ${f(a.steady)} בכל חודש —
+      אם זה הסכום הנכון, עדכן את השורה כדי שלא ייצבר חוב מדומה</div>`:''}
+  </div>`;
+}
 function purposeAlloc(d){
   // רק התחייבות שמאיר רשם ושעדיין בתוקף נכנסת לחשבון. סכום שהמערכת הסיקה
   // מהגבייה אינו התחייבות, ואסור שייצור חוב.
@@ -2352,8 +2376,10 @@ function purposeAlloc(d){
   (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
     if(m.length===7&&m.slice(0,4)===yr&&(!first||m<first))first=m;});
   if(!first)first=yr+'-01';
+  // כסף שנכנס השנה אבל סגר חוב של שנה קודמת אינו שייך לחשבון השנה.
+  // מאיר: "הוא נתן 33,300 וחלק מזה על 2025 סכום מסוים".
   let pool=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===yr)
-    .reduce((a,x)=>a+amtNum(x.amount),0);
+    .reduce((a,x)=>a+amtNum(x.amount)-amtNum(x.prev_year),0);
   (d.parnes||[]).forEach(p=>{ if(+p.paid&&String(p.night_date||'').slice(0,4)===yr)
     pool+=amtNum(p.amount); });
   const base=rows.map(r=>{
@@ -2402,7 +2428,9 @@ function purposeAlloc(d){
     const per=base.reduce((a,r)=>a+r.per,0);
     if(bn>=need.length*0.6&&best<per-0.5)steady=best;
   }
-  return {thru, first, rows:out, extra:Math.round(Math.max(0,pool)), steady,
+  const prevPaid=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===yr)
+    .reduce((a,x)=>a+amtNum(x.prev_year),0);
+  return {thru, first, rows:out, extra:Math.round(Math.max(0,pool)), steady, prevPaid,
           per:base.reduce((a,r)=>a+r.per,0),
           exp:out.reduce((a,r)=>a+r.exp,0), got:out.reduce((a,r)=>a+r.got,0)};
 }
@@ -2679,7 +2707,7 @@ function commitHTML(d){
         <input class="cm_n hidden" inputmode="numeric" placeholder="לכמה תשלומים?">
         <button class="btn sm cm_add">➕ הוסף</button></div>
       <div class="cmstart hidden">
-        <label class="cmlbl">התחייבות שכבר רצה? מלא מאיזה חודש התחילה וכמה תשלומים כבר עברו</label>
+        <label class="cmlbl cmstartl">התחייבות שכבר רצה? מלא מאיזה חודש התחילה וכמה תשלומים כבר עברו</label>
         <div class="cmthree"><input type="month" class="cm_from">
           <input class="cm_done" inputmode="numeric" placeholder="כמה תשלומים כבר שולמו"></div>
         <label class="cmmerge hidden"><input type="checkbox" class="cm_merge" checked>
@@ -2688,6 +2716,7 @@ function commitHTML(d){
   return `<div class="cmbox"><div class="cmbox-t">📋 ההתחייבויות שלו
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
       ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
+    ${acctLine(d)}
     ${viaInHTML}
     ${rows.map(line).join('')||'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>'}
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
@@ -2715,6 +2744,11 @@ function commitHTML(d){
     <button type="button" class="opnlink" id="dn_more">➕ הערה ושם לתפילה (לא חובה)</button>
     <div class="opnbox hidden" id="dn_morebox">
       <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label>
+      <label class="fld"><span>📌 מזה על שנה קודמת (${GREGYEAR-1} ואחורה)</span>
+        <div class="curwrap"><span class="curpick curfix">${cur}</span>
+          <input id="dn_prev" inputmode="decimal" placeholder="השאר ריק אם הכל על ${GREGYEAR}"></div></label>
+      <div class="hintxt" style="margin:-6px 2px 6px">כשתשלום אחד סוגר גם חוב ישן — רשום כאן כמה מתוכו הלך לשנה שעברה.
+        הסכום הזה יוצא מחשבון ${GREGYEAR} ונזקף כנגד ההתחייבות הקודמת.</div>
       <label class="fld"><span>🕯️ שם לתפילה</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label></div>
     <button class="btn" id="dn_add" style="width:100%;margin-top:8px">💾 שמור תרומה</button></details>
     <div class="cmopen"><button type="button" class="opnlink" id="f_opn">📌 התחייבות קודמת (לפני 2026)${amtSigned(d.debt_open)?(' · '+cur+Math.round(amtSigned(d.debt_open))):''}</button>
@@ -2951,7 +2985,15 @@ function wireCommit(d,body){
       : (/כולל/.test(c)?'איזה כולל? — למשל: כולל הוראה (נשאר אצלו בלבד)'
         :'פירוט אצל התורם הזה בלבד (לא נשמר ברשימת הייעודים)');
     nfld.classList.toggle('hidden', plan.value!=='inst');
-    startb.classList.toggle('hidden', plan.value!=='inst');
+    // מאיר: "כאן במקום שסימנתי אמור להיות שדה עם לוח שנה ממתי הוא
+    // התחייב את ההתחייבות הזו". בהוראת קבע השדה הזה היה מוסתר, ולכן
+    // המערכת לא ידעה מאיזה חודש לספור — ולא הראתה חוב.
+    const isMo=plan.value==='mo';
+    startb.classList.toggle('hidden', plan.value!=='inst'&&!isMo);
+    donef.classList.toggle('hidden', isMo);
+    box.querySelector('.cmstartl').textContent=isMo
+      ? '📅 מאיזה חודש הוא התחייב? — מכאן נספרים החודשים והחוב'
+      : 'התחייבות שכבר רצה? מלא מאיזה חודש התחילה וכמה תשלומים כבר עברו';
     const a=amtNum(amt.value), n=parseInt(nfld.value,10)||0;
     const done=Math.min(n, parseInt(donef.value,10)||0);
     if(plan.value==='inst'&&a>0&&n>0){
@@ -3023,6 +3065,10 @@ function wireCommit(d,body){
         (useM&&MATCH[0].date?(String(MATCH[0].date).slice(0,7)+'-01'):'');
     }
     const mo=mode==='mo'?1:0;
+    // הוראת קבע — החודש שנבחר הוא החודש שממנו נספרת ההתחייבות. בלי זה
+    // הספירה מתחילה מהחודש הראשון שנכנס בו כסף, וחודשים שלא שולמו
+    // בכלל נעלמים מהחשבון.
+    const sinceMo=mo?(fromf.value||'') : '';
     // הפירוט נשמר על השורה של התורם בלבד — לא נכנס לרשימת הייעודים
     const detail=det.value.trim();
     const avn=(!avbox.classList.contains('hidden')&&avsel.value&&avsel.value!=='__new__')
@@ -3030,10 +3076,12 @@ function wireCommit(d,body){
     const viaTotV=VIAID?viaTot.value.trim():'', viaNoteV=VIAID?viaNoteI.value.trim():'';
     const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:total,
       status:mo?'נתן':'טרם',monthly:mo,paid:already,detail,permo,avreich:avn,date:from,
+      since:sinceMo,
       via_donor_id:VIAID||'',via_total:viaTotV,via_note:viaNoteV});
     if(!r||!r.id){toast('לא נשמר');return;}
     d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:total,
       status:mo?'נתן':'טרם',monthly:mo,paid:already,note:'',detail,permo,avreich:avn,
+      since:sinceMo,
       date:from||todayStr(),via_donor_id:VIAID||null,via_total:viaTotV,via_note:viaNoteV}]);
     // צירוף התשלומים הקיימים: הייעוד שלהם משתנה לייעוד ההתחייבות, וכך
     // המערכת מזהה אותם לבד כתשלומים על החשבון — בלי כפילות
@@ -3112,6 +3160,50 @@ function declinedGroups(d){
     seen[k]={iso,a,tries:1,tids:[x.tid],debt:+x.is_debt?1:0}; out.push(seen[k]);
   });
   return out.sort((a2,b2)=>a2.iso<b2.iso?-1:1);
+}
+/* מאיר: "כאן בשורה המסומנת שיהיה כתוב כמה חוב אמיתי, לא כמה חיובים לא
+   עברו — כי יש לפעמים שבסוף כן עבר — אלא תכליס כמה הוא חייב, ואז להיכנס
+   לזה ולראות איך נוצר לו החוב הזה".
+   השורה האדומה בראש הכרטיס מציגה עכשיו את החוב עצמו: מה היה אמור
+   להיכנס לפי ההתחייבויות מול מה שבאמת נכנס. הפתיחה מראה את הפירוט —
+   שורה לכל ייעוד, וכמה חסר בכל אחד. החיובים שלא עברו ירדו לסוף,
+   כרמז לבדיקה בלבד, כי חיוב שנוסה שוב ועבר אינו חוב. */
+function debtBarHTML(d){
+  let a=null; try{a=purposeAlloc(d);}catch(e){}
+  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const gap=a?Math.round(a.exp-a.got):0;
+  const man=amtSigned(d.debt_open);           // התחייבות שנשארה מלפני 2026
+  const paidPrev=a?Math.round(a.prevPaid||0):0;
+  const openPrev=Math.round(man-paidPrev);
+  const tot=Math.max(0,gap)+Math.max(0,openPrev);
+  const dec=declinedGroups(d).filter(r=>!r.debt);
+  const decSum=dec.reduce((s,r)=>s+r.a,0);
+  if(tot<=0.5&&!dec.length)return '';
+  if(tot<=0.5)return declinedHTML(d);         // אין חוב — רק רשימת הבדיקה
+  const lines=[];
+  if(a&&gap>0.5){
+    lines.push(`<div class="dbhd">📅 ${esc(fmtMonth(a.first))} – ${esc(fmtMonth(a.thru))}
+      · אמור היה להיכנס <b>${f(a.exp)}</b> · נכנס בפועל <b>${f(a.got)}</b></div>`);
+    a.rows.forEach(r=>{ if(r.gap<=0.5)return;
+      lines.push(`<div class="dbrow"><span>${r.icon||''} ${esc(r.what)}</span>
+        <span class="dbcalc">${f(r.per)} × ${r.n} ${r.n===1?'חודש':'חודשים'} = ${f(r.exp)}
+          · נכנס ${f(r.got)}</span><b>${f(r.gap)}</b></div>`);});
+  }
+  if(openPrev>0.5)
+    lines.push(`<div class="dbrow"><span>📌 התחייבות מלפני ${GREGYEAR}${d.debt_open_note?(' · '+esc(d.debt_open_note)):''}</span>
+      <span class="dbcalc">${paidPrev>0.5?('שולם ממנה '+f(paidPrev)):''}</span><b>${f(openPrev)}</b></div>`);
+  if(a&&a.steady)
+    lines.push(`<div class="dbnote">⚠️ בפועל נכנס ${f(a.steady)} בכל חודש — אם זה הסכום הנכון,
+      עדכן את שורת ההתחייבות כדי שלא ייצבר חוב מדומה</div>`);
+  return `<details class="decbox debtbox"><summary>🔴 חייב ${f(tot)}</summary>
+    ${lines.join('')}
+    ${dec.length?`<details class="decsub"><summary>🟡 ${dec.length} ${dec.length===1?'חיוב שלא עבר':'חיובים שלא עברו'} · ${f(decSum)} — לא נספרים בחוב</summary>
+      ${dec.map(r=>`<div class="decrow"><span class="decamt">${f(r.a)}</span>
+        <span class="decd">${esc(gregLabel(r.iso))}${r.tries>1?(' · '+r.tries+' ניסיונות'):''}</span>
+        <button class="dsok decdebt" data-tids="${esc(r.tids.join(','))}" data-undo="0">זה חוב</button>
+        <button class="dechide" data-tids="${esc(r.tids.join(','))}" title="לא רלוונטי — הסתר">✕</button></div>`).join('')}
+      <div class="hintxt">חיוב שנוסה שוב ועבר, או שהתורם שילם באותו חודש בדרך אחרת, אינו חוב. סמן "זה חוב" רק אם הכסף באמת חסר.</div></details>`:''}
+    <div class="hintxt">החשבון לפי ההתחייבויות הרשומות בכרטיס. אם סכום השתנה — עדכן את השורה עצמה, והחוב יתוקן.</div></details>`;
 }
 function declinedHTML(d){
   // חיוב שנדחה אינו חוב מעצמו: לרוב ניסו שוב וזה עבר, או שהתורם שילם
@@ -3359,7 +3451,7 @@ function cardDetails(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
-    ${declinedHTML(d)}
+    ${debtBarHTML(d)}
     <div class="two"><label class="fld"><span>שם משפחה</span><input id="f_last" value="${esc(d.last)}"></label>
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
@@ -3738,11 +3830,17 @@ function cardDetails(d,body){
       // תשלום חוזר: שורה לכל חודש בטווח. אחרת — שורה אחת בתאריך שנבחר.
       const dates=(dnRep&&dnRep.checked)?repDates():[date];
       if(dnRep&&dnRep.checked&&!dates.length){toast('בחר מאיזה חודש ועד איזה חודש');dnAdd.disabled=false;return;}
+      // "מזה על שנה קודמת" נרשם רק על התשלום הראשון בטווח — הוא הסכום
+      // שסגר את החוב הישן, ולא סכום שחוזר בכל חודש
+      const prevI=document.getElementById('dn_prev');
+      let prevLeft=prevI?amtNum(prevI.value):0;
       for(const dt of dates){
-        const body={donor_id:d.id,amount:amt,category:cat,method,date:dt,note,cur:dcur};
+        const py=prevLeft>0.5?String(Math.min(prevLeft,amtNum(amt))):'';
+        if(py)prevLeft-=amtNum(py);
+        const body={donor_id:d.id,amount:amt,category:cat,method,date:dt,note,cur:dcur,prev_year:py};
         const r=await api('POST','/api/donation',body);
         d.donations=(d.donations||[]).concat([{id:r.id,donor_id:d.id,amount:amt,category:cat,
-          method,date:dt,note,cur:dcur,paid:1}]);
+          method,date:dt,note,cur:dcur,prev_year:py,paid:1}]);
         made++;
       }
     }
