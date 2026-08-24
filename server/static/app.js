@@ -2746,7 +2746,8 @@ function commitHTML(d){
     <div class="hintxt" style="margin:2px 2px 7px">שלושה שדות וזהו — כמה, מתי, ואיך. כל השאר לא חובה.</div>
     <div class="two"><label class="fld"><span>💲 כמה</span><div class="curwrap"><select id="dn_cur" class="curpick">${curOpts(cur)}</select><input id="dn_amt" inputmode="decimal" placeholder="480"></div></label>
     <label class="fld"><span>📅 מתי</span><input id="dn_date" type="date"></label></div>
-    <div class="two"><label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}</select></label>
+    <div class="two"><label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
+      <div class="addrow hidden" id="dn_methnew"><input id="dn_methnewi" placeholder="איך הוא תרם? — למשל: קופת גמ&quot;ח"><button class="btn sm" id="dn_methnewb">➕ הוסף</button></div></label>
     <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
     <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
     <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
@@ -3943,6 +3944,35 @@ function cardDetails(d,body){
     if(ab)ab.textContent=day?('💾 שמור '+(DAYSAVE[day]||'יום פרנס')):'💾 שמור תרומה';
   };
   if(dnCat){dnCat.onchange=dnShow;dnMeth.onchange=dnShow;dnShow();}
+  // מאיר: "לא רואים שאפשר להוסיף אופציה חדשה איך הוא תרם" — הרשימה
+  // הייתה סגורה. עכשיו יש "➕ דרך חדשה", והיא נשמרת ומופיעה מכאן והלאה
+  // בכל מקום שבוחרים בו דרך תשלום.
+  const mnRow=document.getElementById('dn_methnew'),
+        mnInp=document.getElementById('dn_methnewi'),
+        mnBtn=document.getElementById('dn_methnewb');
+  if(dnMeth&&mnRow){
+    dnMeth.addEventListener('change',()=>{
+      const on=dnMeth.value==='__new__';
+      mnRow.classList.toggle('hidden',!on);
+      if(on)mnInp.focus();
+    });
+    const addMeth=async()=>{
+      const nm=mnInp.value.trim();
+      if(nm.length<2){toast('כתוב איך הוא תרם');mnInp.focus();return;}
+      mnBtn.disabled=true;
+      if(!(CHAN_C||[]).includes(nm)){
+        const r=await api('POST','/api/paychannels',{name:nm});
+        CHAN_C=(r&&r.channels)||(CHAN_C||[]).concat([nm]);
+      }
+      mnBtn.disabled=false;
+      // בונים מחדש את הרשימה ובוחרים את החדשה
+      dnMeth.innerHTML=dnMethList().map(x=>`<option${x===nm?' selected':''}>${esc(x)}</option>`).join('')
+        +'<option value="__new__">➕ דרך חדשה…</option>';
+      dnMeth.value=nm; mnInp.value=''; mnRow.classList.add('hidden');
+      dnShow(); toast('נוספה דרך תשלום ✓');};
+    mnBtn.onclick=addMeth;
+    mnInp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addMeth();}};
+  }
   // מאיר: "העביר בכל חודש מינואר עד אוגוסט 1000 שקל" — סימון אחד פותח
   // טווח חודשים, וכל חודש נרשם כתשלום נפרד עם תאריך מדויק, בדיוק כמו
   // תשלום שנכנס מבנק ווסט או מאוטורייז.
@@ -3993,7 +4023,9 @@ function cardDetails(d,body){
     }
     if(isBldg(cat)){const it=document.getElementById('dn_bldg').value.trim();
       if(it){if(!(BUILDING_ITEMS||[]).includes(it)){await api('POST','/api/building_items',{name:it});BUILDING_ITEMS.unshift(it);}cat=cat+' — '+it;}}
-    const amt=document.getElementById('dn_amt').value.trim(), method=dnMeth.value,
+    // "➕ דרך חדשה" שנבחרה ולא הושלמה אינה דרך תשלום
+    const method=(dnMeth.value==='__new__')?'':dnMeth.value;
+    const amt=document.getElementById('dn_amt').value.trim(),
           date=dnDate.value, pray=document.getElementById('dn_pray').value.trim();
     let note=document.getElementById('dn_note').value.trim();
     const c4=(document.getElementById('dn_cc4')||{}).value||'', cx=(document.getElementById('dn_ccexp')||{}).value||'';
