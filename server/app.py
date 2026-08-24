@@ -4699,6 +4699,24 @@ def ensure_schema():
     except Exception as ex:
         print('  manual dup cleanup error:', ex)
 
+    # מאיר: "תסדר את השמות בקוויטל של כל תורם שכתוב אצלו שם לכל שורה —
+    # שיהיה שם ושם האם והבקשה, ואז פסיק, והשם הבא באותה שורה". פעם אחת
+    # בלבד: מרגע שסודר, מאיר יכול לשבור שורות בעצמו והמערכת לא תדרוס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kv_flow_v1'").fetchone():
+            _n = 0
+            for r in con.execute("SELECT id,text FROM prayers "
+                                 "WHERE TRIM(COALESCE(text,''))<>''").fetchall():
+                nw = kv_flow(r['text'])
+                if nw and nw != (r['text'] or '').strip():
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (nw, r['id']))
+                    _n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('kv_flow_v1')")
+            con.commit()
+            print('  שמות קוויטל שסודרו לרצף עם פסיקים: %d' % _n)
+    except Exception as e:
+        print('  kv flow error:', e)
+
     con.commit(); con.close()
 
 def get_all():
