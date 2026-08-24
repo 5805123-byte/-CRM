@@ -232,13 +232,9 @@ function izSummaryHTML(d){
   if(s.debt<=0.5&&s.manual==null&&!s.thru.length)debtLine='';   // חוב מוצג רק בחלון החוב
   const mainHtml=(act.length||s.monthly)?`${rows}
     <div class="izrow tot"><span>התחייבות חודשית${s.fromCard?' <small class="izfromcard">לפי הסכום הקבוע בכרטיס</small>':''}</span><b>${izMonthlyTxt(s,cur)}</b></div>
-    ${s.hasPay?(()=>{
-      // רק החלק של יששכר־זבולון. אצל פינטער נכנסים 12,800 בחודש והם
-      // מסומנים כולם יששכר־זבולון, בעוד שההתחייבות ליש"ז היא 800 בלבד.
-      const al=purposeAlloc(d), izr=al&&al.rows.find(r=>/יששכר/.test(r.what));
-      const pd=izr?izr.got:Math.round(s.paid), ex=izr?izr.exp:Math.round(s.expected);
-      return `<div class="izrow"><span>שולם ליששכר־זבולון ב-${GREGYEAR} (${s.span} ${s.span===1?'חודש':'חודשים'})</span><b>${cur}${pd}</b></div>
-        <div class="izrow"><span>צפוי לתקופה (${s.span}×${cur}${Math.round(s.monthly)})</span><b>${cur}${ex}</b></div>`;})():''}
+    ${''/* מאיר: "אני לא רוצה ולא צריך את החשבונות האלו, צפי לתקופה וזה.
+         אני צריך שורה תחתונה כמה הוא חייב נטו". שורות "שולם ליששכר־זבולון"
+         ו"צפוי לתקופה" ירדו — החוב מופיע בשורה האדומה שבראש הכרטיס. */}
     ${thruHtml}
     ${debtLine}`:'';
   return `<div class="izsum"><div class="izsum-t">🤝 יששכר־זבולון — סיכום</div>
@@ -2553,7 +2549,7 @@ function commitRows(d){
       pid:(izOne?izOne.id:''),
       conf:izReal?1:0, ended:!!izOne&&plEnded(izOne),
       since:izOne?String(izOne.since||''):'',
-      sinceM:izOne?sinceOk(izOne.since):'',
+      sinceM:sinceDef(izOne&&izOne.since),
       prev:izOne?amtNum(izOne.prev_amount):0,
       guess:!izPl.length,
       praw:'',note:String(d.iz_note||'')});
@@ -2565,7 +2561,7 @@ function commitRows(d){
       icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
       conf:plConf(p), ended:plEnded(p), since:String(p.since||''),
-      sinceM:sinceOk(p.since),
+      sinceM:(+p.monthly?sinceDef(p.since):sinceOk(p.since)),
       prev:amtNum(p.prev_amount),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
@@ -3236,7 +3232,9 @@ function declinedGroups(d){
 function monthLedger(d){
   const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5&&r.conf>0&&!r.ended);
   if(!rows.length)return null;
-  const thru=dataThru(), yr=thru.slice(0,4);
+  // עד החודש הנוכחי ועד בכלל. dataThru מכוון לחודש שהקליטה בו הושלמה,
+  // וזה החסיר חודש שלם מההתחייבות — מאיר: "עד היום אוגוסט כולל אוגוסט"
+  const thru=todayStr().slice(0,7), yr=thru.slice(0,4);
   // מאיזה חודש סופרים: החודש שנרשם על ההתחייבות, ואם לא נרשם — החודש
   // הראשון שנכנס בו כסף השנה
   // כשנקבע במפורש "מאז" — הוא הקובע, וכסף שנכנס לפניו שייך לתקופה
@@ -3310,6 +3308,11 @@ function sinceOk(v){
   if(y<SINCE_Y0||y>cur+1||mo<1||mo>12)return '';
   return m[1]+'-'+m[2];
 }
+// מאיר: "תמיד תעשה שברירת המחדל של כל תורם שנותן קבוע ויש לו התחייבות
+// שזה מינואר 2026, אלא אם כן שיניתי בעצמי את התאריך".
+// הערך אינו נשמר — הוא רק ברירת המחדל לחישוב ולתצוגה, וכל בחירה שלו
+// גוברת עליו.
+function sinceDef(v){ return sinceOk(v) || (GREGYEAR+'-01'); }
 function nextMonth(ym){
   const a=String(ym).split('-'); let y=+a[0], m=+a[1]+1;
   if(m>12){m=1;y++;}
@@ -3546,7 +3549,10 @@ function cardDetails(d,body){
       ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
     // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
-      <div class="gvlbl">עבור מה ${curd}${g.amt} האלה?</div>
+      <div class="gvlbl">💲 הסכום</div>
+      <div class="addrow"><input class="gvamti curpick2" data-did="${g.did}" inputmode="decimal" value="${esc(g.amt||'')}">
+        <button class="btn sm gvamtok" data-did="${g.did}">💾 שמור סכום</button></div>
+      <div class="gvlbl" style="margin-top:8px">עבור מה ${curd}${g.amt} האלה?</div>
       <div class="addrow"><select class="gvcatsel" data-did="${g.did}">${dnCatOpts(g.cat)}</select></div>
       <div class="addrow gvnewrow hidden" style="margin-top:5px">
         <input class="gvcatnew" data-did="${g.did}" placeholder="שם הייעוד החדש">
@@ -3825,6 +3831,24 @@ function cardDetails(d,body){
   });
   body.querySelectorAll('.gvcatnew').forEach(i=>i.onkeydown=e=>{
     if(e.key==='Enter'){e.preventDefault();i.closest('.gvpanel').querySelector('.gvcatok').click();}});
+  // מאיר: "אם אני רוצה לשנות את הסכום — כמו שיש אפשרות לשנות ייעוד
+  // ולפצל את התרומה, שיהיה גם לסכום".
+  body.querySelectorAll('.gvamtok').forEach(b2=>b2.onclick=async()=>{
+    if(b2.dataset.busy)return; b2.dataset.busy='1';
+    try{
+      const inp=body.querySelector('.gvamti[data-did="'+b2.dataset.did+'"]');
+      const dn=(d.donations||[]).find(x=>x.id==b2.dataset.did); if(!dn)return;
+      const v=(inp.value||'').trim(), n=amtNum(v);
+      if(!v||n<=0){toast('כתוב סכום');inp.focus();return;}
+      // חלק שסומן על שנה קודמת אינו יכול לעלות על הסכום עצמו
+      if(amtNum(dn.prev_year)>n+0.5){toast('הסכום קטן מהחלק שסומן על שנה קודמת');return;}
+      dn.amount=String(n);
+      await api('PUT','/api/donation/'+dn.id,{amount:dn.amount});
+      toast('הסכום עודכן ל-'+curSym(d)+Math.round(n)+' ✓');
+      openDonor(d,'details');
+      if(tab==='donors')renderDonors();
+      load();
+    } finally{ delete b2.dataset.busy; }});
   // מאיר: "כבר רשמתי את התשלום הזה מזמן, איך אני מעדכן שחלק מזה על
   // 2025?" — על תרומה שכבר רשומה, מתוך אותו חלון של ✏️
   body.querySelectorAll('.gvprevok').forEach(b=>b.onclick=async()=>{
