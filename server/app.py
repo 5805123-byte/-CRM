@@ -5748,24 +5748,25 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png'):
         dr.text(((W - wid(t, f)) / 2, y), t, font=f, fill=fill)
 
     # ראש הפתק — שני השמות, מימין לשמאל ומשמאל ללוגו
-    fl, fn = font(19 * u), font(35 * u, True)
+    fl, fn = font(29 * u), font(50 * u, True)
     x = W - int(250 * u)
     for lbl, val in (('יששכר — האברך', avreich), ('זבולון — התורם', donor)):
         bw2 = max(wid(val or '—', fn), wid(lbl, fl))
         x -= bw2
-        dr.text((x + bw2 - wid(lbl, fl), int(26 * u)), lbl, font=fl, fill=_GOLD_T)
-        dr.text((x + bw2 - wid(val or '—', fn), int(50 * u)), val or '—', font=fn, fill=_DEEP)
-        x -= int(54 * u)
+        dr.text((x + bw2 - wid(lbl, fl), int(22 * u)), lbl, font=fl, fill=_GOLD_T)
+        dr.text((x + bw2 - wid(val or '—', fn), int(58 * u)), val or '—', font=fn, fill=_DEEP)
+        x -= int(50 * u)
     # הנוסח — גדול, ומתחת ללוגו. "יעמוד לזכות" בשורה נפרדת (מאיר)
-    y = int(205 * u)
-    fz = font(48 * u, False)
-    nus = 'לימוד התורה ותפלה בעת רצון הגדול של חצות הלילה עד הבוקר'
+    y = int(215 * u)
+    fz = font(44 * u, False)
+    nus = ('יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל '
+           'בעת רצון הגדול של חצות הלילה')
     for ln in _wrap_px(dr, nus, fz, W - int(150 * u)):
-        center(ln, fz, y, _INK); y += int(48 * u * 1.3)
+        center(ln, fz, y, _INK); y += int(44 * u * 1.3)
     y += int(8 * u)
-    fzk = font(48 * u, True)
+    fzk = font(44 * u, True)
     center('יעמוד לזכות:', fzk, y, _DEEP)
-    y += int(48 * u * 1.45)
+    y += int(44 * u * 1.5)
     # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום
     avail_w, avail_h = W - int(150 * u), H - y - int(34 * u)
     txt = (names or '').strip() or '— אין עדיין שמות לקוויטל —'
