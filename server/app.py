@@ -9878,6 +9878,11 @@ class H(BaseHTTPRequestHandler):
             if not ex:      # שורת שיוך ריקה שמחזיקה את השם ברשימה עד שישויך לתורם
                 con.execute("INSERT INTO partners(donor_id,avreich,start_date,active,note) "
                             "VALUES(NULL,?,?,0,'נוסף לרשימת האברכים')", (nm, today_iso()))
+            # וגם שורה משלו בטבלת האברכים, כדי שיהיה לו כרטיס פרטים
+            if not con.execute("SELECT 1 FROM avreichim WHERE name=?", (nm,)).fetchone():
+                l, f = _split_av(nm)
+                con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,note,started,created) "
+                            "VALUES(?,?,?,'',?,?)", (nm, l, f, today_iso(), today_iso()))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm, 'existed': bool(ex)})
         if self.path == '/api/rule':

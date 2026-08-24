@@ -2643,12 +2643,14 @@ function commitHTML(d){
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
-    <div class="two"><label class="fld"><span>סכום</span><div class="curwrap"><select id="dn_cur">${curOpts(cur)}</select><input id="dn_amt" inputmode="decimal" placeholder="480"></div></label>
-    <label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}</select></label></div>
+    <div class="hintxt" style="margin:2px 2px 7px">שלושה שדות וזהו — כמה, מתי, ואיך. כל השאר לא חובה.</div>
+    <div class="two"><label class="fld"><span>💲 כמה</span><div class="curwrap"><select id="dn_cur" class="curpick">${curOpts(cur)}</select><input id="dn_amt" inputmode="decimal" placeholder="480"></div></label>
+    <label class="fld"><span>📅 מתי</span><input id="dn_date" type="date"></label></div>
+    <div class="two"><label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}</select></label>
     <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
     <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
     <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
-    <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option></select></label>
+    <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option></select></label></div>
     <div class="addrow hidden" id="dn_newrow"><input id="dn_catfree" placeholder="שם הייעוד החדש"></div>
     <label class="fld hidden" id="dn_bldg_l"><span>🏗️ מה תרם בבניין?</span><input id="dn_bldg" list="bldgitems2" placeholder="שולחן / עמוד / מטר…"><datalist id="bldgitems2">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
     <div class="hidden" id="dn_daybox"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
@@ -2656,14 +2658,15 @@ function commitHTML(d){
     <label class="fld"><span>שנה עברית</span><select id="dn_hy">${heYearOpts()}</select></label></div>
     <div class="two hidden" id="dn_ccbox"><label class="fld"><span>4 ספרות אחרונות</span><input id="dn_cc4" inputmode="numeric" maxlength="4" placeholder="1234"></label>
     <label class="fld"><span>תוקף</span><input id="dn_ccexp" placeholder="12/28" style="direction:ltr"></label></div>
-    <div class="two"><label class="fld"><span>תאריך</span><input id="dn_date" type="date"></label>
-    <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label></div>
     <label class="jointchk"><input type="checkbox" id="dn_rep"> 🔁 העביר את הסכום הזה <b>כל חודש</b> — רשום שורה לכל חודש</label>
     <div class="two hidden" id="dn_repbox"><label class="fld"><span>מחודש</span><input type="month" id="dn_from"></label>
       <label class="fld"><span>עד חודש</span><input type="month" id="dn_to"></label></div>
     <div class="hintxt hidden" id="dn_rephint"></div>
-    <label class="fld"><span>🕯️ שם לתפילה (לא חובה)</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label>
-    <button class="btn" id="dn_add" style="width:100%">💾 שמור תרומה</button></details>
+    <button type="button" class="opnlink" id="dn_more">➕ הערה ושם לתפילה (לא חובה)</button>
+    <div class="opnbox hidden" id="dn_morebox">
+      <label class="fld"><span>הערה</span><input id="dn_note" placeholder="פירוט קצר"></label>
+      <label class="fld"><span>🕯️ שם לתפילה</span><textarea id="dn_pray" rows="2" placeholder="יעקב בן שרה לרפואה שלמה"></textarea></label></div>
+    <button class="btn" id="dn_add" style="width:100%;margin-top:8px">💾 שמור תרומה</button></details>
     <div class="cmopen"><button type="button" class="opnlink" id="f_opn">📌 התחייבות קודמת (לפני 2026)${amtSigned(d.debt_open)?(' · '+cur+Math.round(amtSigned(d.debt_open))):''}</button>
       <div class="opnbox hidden" id="f_opnbox">
         <div class="hintxt" style="margin:0 0 5px">התרומות במערכת מתחילות מינואר 2026. כאן רושמים מה הוא התחייב ולא נתן לפני כן — או מינוס, אם שילם מראש. הסכום נכנס לשורת החוב שבראש הכרטיס.</div>
@@ -3013,6 +3016,12 @@ function wireCommit(d,body){
     await syncAmt();
     toast(mo?'נוסף קבוע ✓':(mode==='inst'?'נוספה התחייבות בתשלומים ✓':'נוספה התחייבות ✓'));
     redraw();};
+  // מאיר: "יש שם מידי הרבה סיבוך כשמכניסים תורם" — הערה ושם לתפילה
+  // יורדים לשורה מתקפלת, ובחוץ נשארים רק כמה / מתי / איך / עבור מה.
+  const dnm=box.querySelector('#dn_more');
+  if(dnm)dnm.onclick=()=>{const bx=box.querySelector('#dn_morebox');
+    bx.classList.toggle('hidden');
+    if(!bx.classList.contains('hidden'))bx.querySelector('input').focus();};
   // יתרת פתיחה — עברה לכאן מלשונית "פרטים", כדי שכל הכסף יהיה במקום אחד
   const opnb=box.querySelector('#f_opn');
   if(opnb)opnb.onclick=()=>{const bx=box.querySelector('#f_opnbox');
@@ -3317,7 +3326,8 @@ function cardDetails(d,body){
     ${give}
     ${(d.parnes||[]).filter(p=>p.status!=='suggested').length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)</summary><div id="parnes"></div></details>`:''}
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
-      <div class="addrow"><input id="pa_name" placeholder="שם האברך"><button class="btn sm" id="pa_add">הוסף</button></div></details>`:''}
+      <div class="addrow"><select id="pa_name">${avOpts('')}</select><button class="btn sm" id="pa_add">הוסף</button></div>
+      <div class="addrow hidden" id="pa_newrow"><input id="pa_new" placeholder="שם האברך החדש — משפחה ואז פרטי"></div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
@@ -3570,11 +3580,27 @@ function cardDetails(d,body){
   renderParnesEdit(d); renderTransactions(d);
   if(d.tier==='יששכר_זבולון'){
     renderPartners(d);
+    // מאיר: "לא נותן לבחור אברך מהרשימה אלא סתם לכתוב שדה חופשי" —
+    // הבחירה היא מרשימת האברכים של הכולל, ומי שאינו בה נוסף אליה קודם.
+    const pas=document.getElementById('pa_name'), panew=document.getElementById('pa_newrow');
+    if(pas&&!AVLIST.length)loadAvList().then(()=>{pas.innerHTML=avOpts('');});
+    if(pas&&panew)pas.onchange=()=>{const on=pas.value==='__new__';
+      panew.classList.toggle('hidden',!on);
+      if(on)document.getElementById('pa_new').focus();};
     const pab=document.getElementById('pa_add');
-    if(pab)pab.onclick=async()=>{const n=document.getElementById('pa_name').value.trim();if(!n)return;
+    if(pab)pab.onclick=async()=>{
+      const isNew=pas&&pas.value==='__new__';
+      const n=(isNew?document.getElementById('pa_new').value:(pas?pas.value:'')).trim();
+      if(n.length<2){toast('בחר אברך מהרשימה, או הוסף אברך חדש');return;}
+      if(isNew){const a=await api('POST','/api/avreich/new',{name:n});
+        if(!a||!a.ok){toast('ההוספה לרשימת האברכים נכשלה');return;}}
       const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});
       d.partners=(d.partners||[]).concat([{id:r.id,avreich:n}]);
-      document.getElementById('pa_name').value='';renderPartners(d);toast('נוסף ✓');};
+      await loadAvList();
+      if(panew)panew.classList.add('hidden');
+      const pn=document.getElementById('pa_new'); if(pn)pn.value='';
+      if(pas)pas.innerHTML=avOpts('');
+      renderPartners(d);toast('נוסף ✓');};
   }
   const dnDate=document.getElementById('dn_date'); if(dnDate)dnDate.value=todayStr();
   const dnCat=document.getElementById('dn_cat'), dnMeth=document.getElementById('dn_method');
@@ -4023,10 +4049,18 @@ function allAvreichim(){const s=new Set();DB.forEach(d=>(d.partners||[]).forEach
 const isIZcat=c=>/יששכר|יש"?ז/.test(c||'');
 let AVLIST=[];
 function avOpts(sel){
-  const src=AVLIST.length?AVLIST:allAvreichim().map(n=>({name:n,taken:true,holders:[]}));
-  return '<option value="">— בחר אברך מהרשימה —</option>'
-    +src.map(a=>{const t=a.taken?(' — אצל '+((a.holders&&a.holders[0])?a.holders[0].name:'תורם')):' — פנוי';
-      return `<option value="${esc(a.name)}" ${a.name===sel?'selected':''}>${esc(a.name)}${esc(t)}</option>`;}).join('')
+  const cur=String(sel||'').trim();
+  const src=(AVLIST.length?AVLIST:allAvreichim().map(n=>({name:n,taken:true,holders:[]})))
+    .slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
+  // האברך שכבר רשום בשורה חייב להופיע ברשימה גם אם אינו במאגר —
+  // אחרת בחירה נראית ריקה והשם נמחק בשמירה הבאה.
+  const has=src.some(a=>String(a.name).trim()===cur);
+  const extra=(cur&&!has)?`<option value="${esc(cur)}" selected>${esc(cur)} — רשום כאן בלבד</option>`:'';
+  return `<option value="" ${cur?'':'selected'}>— בחר אברך מהרשימה —</option>`+extra
+    +src.map(a=>{const on=String(a.name).trim()===cur;
+      // בשורה של האברך עצמו אין טעם לכתוב "אצל התורם הזה" — זו כפילות
+      const t=on?'':(a.taken?(' — אצל '+((a.holders&&a.holders[0])?a.holders[0].name:'תורם')):' — פנוי');
+      return `<option value="${esc(a.name)}" ${on?'selected':''}>${esc(a.name)}${esc(t)}</option>`;}).join('')
     +'<option value="__new__">➕ אברך חדש — הוסף לרשימה…</option>';
 }
 async function loadAvList(){ try{const r=await api('GET','/api/avreichim');
@@ -4454,7 +4488,8 @@ function renderPartners(d){
   const cur=curSym(d);
   el.innerHTML=act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
     <div style="display:flex;justify-content:space-between;align-items:center"><b>👨‍🎓 אברך שהוא מחזיק</b><button class="del" data-del="${p.id}">🗑</button></div>
-    <input class="pfield" data-id="${p.id}" data-k="avreich" value="${esc(p.avreich||'')}" placeholder="שם האברך" style="font-weight:700">
+    <select class="pfield pav" data-id="${p.id}" data-k="avreich" style="font-weight:700">${avOpts(p.avreich||'')}</select>
+    <div class="addrow hidden pavnew" data-id="${p.id}"><input class="pavni" placeholder="שם האברך החדש — משפחה ואז פרטי"><button class="btn sm pavnb" data-id="${p.id}">➕ הוסף</button></div>
     <div class="two"><label class="fld"><span>סכום</span><div class="curwrap"><select class="pfield curpick" data-id="${p.id}" data-k="cur">${curOpts(pCur(p,d))}</select><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></div></label>
       <label class="fld"><span>איך משולם</span><select class="pfield chansel" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
     <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label>
@@ -4498,13 +4533,44 @@ function renderPartners(d){
     d.iz_debt=izd.value.trim();
     await api('PUT','/api/donor/'+d.id,{iz_debt:d.iz_debt});
     refreshIzSum(d);toast('נשמר ✓');};
+  // רשימת האברכים של הכולל — נטענת פעם אחת, וכשהיא מגיעה הבחירה מתמלאת
+  if(!AVLIST.length)loadAvList().then(()=>{
+    el.querySelectorAll('select.pav').forEach(s=>{
+      const p=(d.partners||[]).find(x=>x.id==s.dataset.id);
+      s.innerHTML=avOpts((p&&p.avreich)||'');});});
+  // ➕ אברך חדש — נוסף לרשימת הכולל ונבחר מיד בשורה הזו
+  el.querySelectorAll('select.pav').forEach(sel=>{
+    const row=el.querySelector('.pavnew[data-id="'+sel.dataset.id+'"]');
+    sel.addEventListener('change',()=>{const on=sel.value==='__new__';
+      if(row){row.classList.toggle('hidden',!on);if(on)row.querySelector('.pavni').focus();}});
+  });
+  el.querySelectorAll('.pavnb').forEach(btn=>{
+    const row=btn.closest('.pavnew'),inp=row.querySelector('.pavni');
+    const add=async()=>{
+      const nm=inp.value.trim();
+      if(nm.length<2){toast('כתוב את שם האברך');inp.focus();return;}
+      const p=(d.partners||[]).find(x=>x.id==btn.dataset.id); if(!p)return;
+      btn.disabled=true;
+      const r=await api('POST','/api/avreich/new',{name:nm});
+      btn.disabled=false;
+      if(!r||!r.ok){toast('ההוספה נכשלה');return;}
+      p.avreich=nm;
+      await api('PUT','/api/partner/'+p.id,{avreich:nm});
+      await loadAvList();
+      toast(r.existed?'האברך כבר היה ברשימה — נבחר ✓':'האברך נוסף לרשימה ונבחר ✓');
+      renderPartners(d); refreshIzSum(d); if(tab==='donors')renderDonors();};
+    btn.onclick=add;
+    inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
+  });
   el.querySelectorAll('.pfield').forEach(inp=>{
     const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;
       if(inp.value==='__new__')return;      // בחירת "דרך תשלום חדשה" — לא ערך לשמירה
       p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);
       if(inp.dataset.k==='cur')renderPartners(d);            // הסמלים בשדות מתעדכנים מיד
-      if((inp.dataset.k==='amount'||inp.dataset.k==='cur')&&tab==='donors')renderDonors();};
-    inp.onchange=save;let tmr;inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};
+      if(inp.dataset.k==='avreich'){await loadAvList();renderPartners(d);}
+      if((inp.dataset.k==='amount'||inp.dataset.k==='cur'||inp.dataset.k==='avreich')&&tab==='donors')renderDonors();};
+    inp.onchange=save;
+    if(inp.tagName!=='SELECT'){let tmr;inp.oninput=()=>{clearTimeout(tmr);tmr=setTimeout(save,800);};}
   });
   el.querySelectorAll('.psave').forEach(btn=>btn.onclick=async()=>{
     const p=(d.partners||[]).find(x=>x.id==btn.dataset.id);if(!p)return;
