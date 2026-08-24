@@ -3528,7 +3528,7 @@ function cardDetails(d,body){
   const dt=donorTotals(d), curd=curSym(d);
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
-  (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,rm:p.method||d.channel||''}));
+  (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,kind:p.kind||'parnes',cur:pCur(p,d),rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
@@ -3542,7 +3542,22 @@ function cardDetails(d,body){
     const st=g.parnes?`<span class="pstat ${pPaidCls(g.paid)}">${pPaidLbl(g.paid)}</span>`:'';
     const tog=g.parnes?`<button class="collectbtn ${+g.paid===1?'yes':'no'}" data-pid="${g.pid}">${+g.paid===1?'בטל גבייה':'✓ סמן נגבה'}</button>`
       +`<button class="collectbtn setl setlbtn ${+g.paid===2?'on':''}" data-pid="${g.pid}" title="הכסף הגיע בתרומה נפרדת — אין מה לגבות">${+g.paid===2?'בטל סודר':'סודר'}</button>`:'';
-    const ed=g.don?`<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`:'';
+    // מאיר: "ביקשתי שיהיה לי אפשרות לתקן סכום או לפצל או לעדכן ייעוד,
+    // ואני לא רואה כאן אפשרות שינוי" — על שורת פרנס יום לא היה ✏️ בכלל.
+    const ed=g.don
+      ? `<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`
+      : (g.parnes?`<button class="pnedit" data-pid="${g.pid}" title="שנה סכום / הקדשה">✏️</button>`:'');
+    const pnpan=g.parnes?`<div class="gvpanel hidden" data-pnpan="${g.pid}">
+      <div class="gvlbl">💲 הסכום</div>
+      <div class="curwrap"><select class="pncur curpick" data-pid="${g.pid}">${curOpts(g.cur||curd)}</select>
+        <input class="pnamt" data-pid="${g.pid}" inputmode="decimal" value="${esc(String(g.amt||''))}"></div>
+      <div class="gvlbl" style="margin-top:8px">🌙 עבור מה</div>
+      <div class="addrow"><select class="pnkind" data-pid="${g.pid}">${
+        Object.keys(DAYKIND).map(k=>`<option value="${k}" ${k===g.kind?'selected':''}>${esc(DAYKIND[k])}</option>`).join('')}</select></div>
+      <div class="gvlbl" style="margin-top:8px">📝 הקדשה</div>
+      <div class="addrow"><input class="pnded" data-pid="${g.pid}" value="${esc(g.ded||'')}" placeholder="לעילוי נשמת…"></div>
+      <button class="btn sm pnsave" data-pid="${g.pid}" style="width:100%;margin-top:8px">💾 שמור</button>
+      <button class="btn sm ghost pndel" data-pid="${g.pid}" style="width:100%;margin-top:6px;color:var(--bad)">🗑 מחק את היום הזה</button></div>`:'';
     const fb=(g.don&&g.needthx)
       ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
     // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
@@ -3591,7 +3606,7 @@ function cardDetails(d,body){
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
       + `${amtNum(g.prev)>0.5?`<span class="prevchip">📌 ${curd}${Math.round(amtNum(g.prev)).toLocaleString('en-US')} ${esc(g.prevn||('על '+(GREGYEAR-1)))}</span>`:''}`
-      + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}</div></div>`;
+      + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}${pnpan}</div></div>`;
   };
   // מאיר: "גם בפרטי תרומות למטה, איפה שכתוב כל ההכנסות של התרומות,
   // שיהיה שורה באדום כמה חייב" — אותו חשבון של השורה האדומה שבראש
@@ -3709,6 +3724,32 @@ function cardDetails(d,body){
   body.querySelectorAll('.setlbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===2?0:2;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np===2?'סומן כסודר ✓ — לא ייספר כחוב':'הסימון בוטל');cardDetails(d,body);if(tab==='donors')renderDonors();});
   body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(p)p.classList.toggle('hidden');});
+  // עריכת יום פרנס — סכום, עבור מה, והקדשה
+  body.querySelectorAll('.pnedit').forEach(b=>b.onclick=()=>{
+    const p=body.querySelector('.gvpanel[data-pnpan="'+b.dataset.pid+'"]'); if(p)p.classList.toggle('hidden');});
+  body.querySelectorAll('.pnsave').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.busy)return; b.dataset.busy='1';
+    try{
+      const pid=b.dataset.pid, pn=(d.parnes||[]).find(x=>x.id==pid); if(!pn)return;
+      const q=c=>body.querySelector(c+'[data-pid="'+pid+'"]');
+      const amt=(q('.pnamt')||{value:''}).value.trim();
+      if(!amt||amtNum(amt)<=0){toast('כתוב סכום');return;}
+      const body2={amount:String(amtNum(amt)),
+        currency:(q('.pncur')||{value:''}).value||'',
+        kind:(q('.pnkind')||{value:''}).value||pn.kind,
+        dedication:(q('.pnded')||{value:''}).value.trim()};
+      Object.assign(pn,body2);
+      await api('PUT','/api/parnes/'+pid,body2);
+      toast('נשמר ✓');
+      openDonor(d,'details'); if(tab==='donors')renderDonors(); load();
+    } finally{ delete b.dataset.busy; }});
+  body.querySelectorAll('.pndel').forEach(b=>b.onclick=async()=>{
+    const pid=b.dataset.pid, pn=(d.parnes||[]).find(x=>x.id==pid); if(!pn)return;
+    if(!await uiConfirm('למחוק את היום הזה מהכרטיס?'))return;
+    await api('DELETE','/api/parnes/'+pid);
+    d.parnes=(d.parnes||[]).filter(x=>x.id!=pid);
+    toast('נמחק');
+    openDonor(d,'details'); if(tab==='donors')renderDonors(); load();});
   // בחירת "עבור מה" ישירות על שורת התרומה — נשמר מיד
   const saveGvCat=async(did,cat)=>{
     const x=(d.donations||[]).find(y=>y.id==did); if(!x)return;
