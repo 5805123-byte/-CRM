@@ -872,11 +872,19 @@
   .chip.on{background:var(--accent);color:#fff;border-color:transparent}
   .cnt{color:var(--muted);font-size:.85rem;margin:10px 2px 0}
   .list{margin-top:10px;display:flex;flex-direction:column;gap:7px}
-  .rowc{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+  /* שורת תורם: שם עברי, ומתחתיו השם הלועזי מיושר לאותו קו. הסכומים
+     בשורה משלהם — מאיר: "שהשם באנגלית יהיה תמיד תחת השם בעברית
+     באופן מסודר, שהכל יהיה מאורגן יפה" */
+  .rowc{display:flex;align-items:flex-start;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
   .rowc:hover{border-color:var(--accent)}
-  .rowc .nm{font-weight:700;font-size:1.05rem}.rowc .nm small{font-weight:500;color:var(--muted)}
-  .rowc .en{font-size:.8rem;color:var(--muted);margin-top:2px;text-align:start}
-  .rowc .meta{margin-inline-start:auto;text-align:end;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+  .rowl{min-width:0;flex:1 1 auto;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+  .rowc .nm{font-weight:700;font-size:1.05rem;line-height:1.35}
+  .rowc .nm small{font-weight:500;color:var(--muted)}
+  .rowc .en{font-size:.82rem;color:var(--muted);direction:ltr;text-align:right;
+    letter-spacing:.01em;line-height:1.3}
+  .rowamts{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+  .rowamts .fixamt,.rowamts .yramt{margin-inline-start:0}
+  .rowc .meta{margin-inline-start:auto;text-align:end;display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:0 0 auto}
   .rowc .ph{font-size:.8rem;color:var(--muted);direction:ltr}
   .pill{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
   .pill.reg{background:var(--yes-soft);color:var(--yes)}.pill.occ{background:var(--klali-soft);color:var(--klali)}

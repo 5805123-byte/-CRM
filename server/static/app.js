@@ -1304,11 +1304,13 @@ function renderDonors(){
     ${catFlt?`<div class="cnt" style="color:var(--accent)">🎯 ${esc(catFlt)} — ${(()=>{const u=catUsage().find(x=>x[0]===catFlt);return u?(u[1]+' תרומות · $'+u[2].toLocaleString('en-US')):'';})()}</div>`:''}
     <div class="cnt">${list.length} תורמים</div><div class="list" id="donlist">${list.slice(0,DLIM).map(d=>`
     <div class="rowc" data-id="${d.id}">
-      <div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span>${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}${yearAmt(d)?`<span class="yramt" title="מתחילת ${GREGYEAR} ועד היום · סך הכל אי פעם: ${esc(curSym(d)+Math.round(donorTotals(d).all).toLocaleString('en-US'))}">💰 תרם השנה <bdi>${esc(yearAmt(d))}</bdi></span>`:''}</div>
-      ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
-      ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
-      ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
-      ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
+      <div class="rowl">
+        <div class="nm">${esc(d.last)} <small>${esc(d.first)}</small><span class="rownum">#${d.id}</span></div>
+        ${d.english?`<div class="en" dir="ltr">${esc(d.english)}</div>`:''}
+        ${(fixedAmt(d)||yearAmt(d))?`<div class="rowamts">${fixedAmt(d)?`<span class="fixamt">💵 ${esc(fixedAmt(d))} קבוע</span>`:''}${yearAmt(d)?`<span class="yramt" title="מתחילת ${GREGYEAR} ועד היום · סך הכל אי פעם: ${esc(curSym(d)+Math.round(donorTotals(d).all).toLocaleString('en-US'))}">💰 תרם השנה <bdi>${esc(yearAmt(d))}</bdi></span>`:''}</div>`:''}
+        ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
+        ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
+        ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
       <div class="meta">${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>
     ${list.length>DLIM?`<div class="moredon" id="moredon">מציג ${DLIM} מתוך ${list.length} — גלול להמשך…</div>`:''}`;
