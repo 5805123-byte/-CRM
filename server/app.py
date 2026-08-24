@@ -5708,6 +5708,18 @@ def _bidi(s):
         return s
 
 
+def kv_flow(t):
+    """מאיר: "כל שם ושם האם והבקשה ואז פסיק, והשם הבא באותה שורה".
+    שמות שנכתבו שורה־שורה מתחברים לרצף אחד מופרד בפסיקים."""
+    parts = [x.strip() for x in re.split(r'\r?\n', str(t or '')) if x.strip()]
+    if len(parts) < 2:
+        return ''.join(parts)
+    out = parts[0]
+    for x in parts[1:]:
+        out += (' ' if re.search(r'[,.:;·|]$', out) else ', ') + x
+    return out
+
+
 def _wrap_px(dr, text, f, maxw):
     """שובר שורה לפי רוחב אמיתי בפיקסלים — לא לפי מספר תווים."""
     out, cur = [], ''
@@ -5773,13 +5785,11 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     y += int(nsz * (1.5 if half else 1.8))
     # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום
     avail_w, avail_h = W - int(150 * u), H - y - int((34 if half else 90) * u)
-    txt = (names or '').strip() or '— אין עדיין שמות לקוויטל —'
+    txt = kv_flow(names).strip() or '— אין עדיין שמות לקוויטל —'
     for px in range(int((94 if half else 118) * u), int(16 * u), -2):
         f = font(px, True)
         lh = px * 1.28
-        lines = []
-        for para in txt.split('\n'):
-            lines += _wrap_px(dr, para, f, avail_w)
+        lines = _wrap_px(dr, txt, f, avail_w)
         if len(lines) * lh <= avail_h:
             yy = y + max(0, (avail_h - len(lines) * lh) / 2)
             for ln in lines:

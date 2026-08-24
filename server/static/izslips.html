@@ -34,13 +34,8 @@
     text-align:center}
   .lead .z{display:block;margin-top:1.5mm;color:var(--deep);font-weight:800}
   .names{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;
-    margin-top:3mm;font-size:45pt;font-weight:800;line-height:1.28;
-    white-space:pre-wrap;overflow:hidden}
-  .names.s1{font-size:36pt;line-height:1.26}
-  .names.s2{font-size:29pt;line-height:1.24}
-  .names.s3{font-size:23pt;line-height:1.22}
-  .names.s4{font-size:18pt;line-height:1.2}
-  .names.s5{font-size:14pt;line-height:1.18}
+    margin-top:3mm;font-size:45pt;font-weight:800;line-height:1.28;overflow:hidden}
+  .names span{display:block;width:100%}
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
   .cut{border-top:1px dashed #c9bfa6}
   @media print{
@@ -72,19 +67,30 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
   c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 let ROWS = [];
 
-// גודל השמות נקבע לפי כמה יש — כדי שהפתק לא יגלוש
-function sizeClass(txt) {
-  const t = String(txt || '');
-  const n = t.length;
-  if (n <= 40) return '';
-  if (n <= 80) return 's1';
-  if (n <= 150) return 's2';
-  if (n <= 260) return 's3';
-  if (n <= 430) return 's4';
-  return 's5';
+// מאיר: "תסדר שכל שם ושם האם והבקשה ואז פסיק, והשם הבא באותה שורה —
+// לא שיתפוס מקום". שורות בודדות מתחברות לרצף אחד מופרד בפסיקים.
+function kvFlow(t) {
+  const parts = String(t || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (parts.length < 2) return parts.join('');
+  let out = parts[0];
+  for (let i = 1; i < parts.length; i++) {
+    out += (/[,.:;·|]$/.test(out) ? ' ' : ', ') + parts[i];
+  }
+  return out;
+}
+// הקטנה לפי מדידה אמיתית — לא לפי ניחוש אורך — כדי ששום דבר לא ייחתך
+function fitNames(slip) {
+  const el = slip.querySelector('.names');
+  if (!el) return;
+  const inner = el.firstElementChild || el;
+  for (let pt = 45; pt >= 7; pt -= 0.5) {
+    el.style.fontSize = pt + 'pt';
+    el.style.lineHeight = (pt > 20 ? 1.28 : 1.22);
+    if (inner.scrollHeight <= el.clientHeight) return;
+  }
 }
 function slip(r) {
-  const nm = r.names ? `<div class="names ${sizeClass(r.names)}">${esc(r.names)}</div>`
+  const nm = r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
                      : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
   return `<div class="slip"><div class="in">
     <div class="who">
@@ -106,6 +112,7 @@ function paint() {
   }
   document.getElementById('out').innerHTML = h ||
     '<div class="hint">אין פתקים להצגה.</div>';
+  document.querySelectorAll('.slip').forEach(fitNames);
 }
 (async () => {
   const q = new URLSearchParams(location.search);
