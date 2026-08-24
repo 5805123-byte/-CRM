@@ -2553,7 +2553,7 @@ function commitRows(d){
       pid:(izOne?izOne.id:''),
       conf:izReal?1:0, ended:!!izOne&&plEnded(izOne),
       since:izOne?String(izOne.since||''):'',
-      sinceM:izOne?String(izOne.since||'').slice(0,7):'',
+      sinceM:izOne?sinceOk(izOne.since):'',
       prev:izOne?amtNum(izOne.prev_amount):0,
       guess:!izPl.length,
       praw:'',note:String(d.iz_note||'')});
@@ -2565,7 +2565,7 @@ function commitRows(d){
       icon:plEnded(p)?'🏁':(plConf(p)<0?'🔁':(+p.monthly?'🔁':(plan?'📆':'🎯'))),
       mo:+p.monthly?1:0, inst:plan?1:0, plan,
       conf:plConf(p), ended:plEnded(p), since:String(p.since||''),
-      sinceM:String(p.since||'').slice(0,7),
+      sinceM:sinceOk(p.since),
       prev:amtNum(p.prev_amount),
       amt:amtNum(p.amount),praw:String(p.paid||''),
       got:plCollected(d,p), left:plLeft(d,p),
@@ -2680,8 +2680,10 @@ function commitHTML(d){
       ${prog}${paid}
       ${note}
       ${(r.mo&&(r.pid||r.iz)&&!ask&&!r.ended)
-        ? `<label class="cmsince">📅 מאז <input type="date" class="cmsincei" data-pid="${r.pid||''}"
-             ${r.iz?'data-iz="1"':''} value="${esc(sinceDate(r.since))}"><small>מכאן נספרים החודשים והחוב — החודש שבתאריך נספר במלואו</small></label>` : ''}
+        ? `<div class="cmsince"><span>📅 מאז</span>
+             <select class="cmsincei cmsm" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceMonOpts(r.sinceM)}</select>
+             <select class="cmsincei cmsy" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceYrOpts(r.sinceM)}</select>
+             <small>מכאן נספרים החודשים והחוב</small></div>` : ''}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav${avOpenSlot(p)?' cmavgap':''}">${avOpenSlot(p)
         ?('🚪 מקום פתוח — '+esc(p.prev_avreich)+' יצא'+(p.prev_ended?(' ב'+esc(p.prev_ended)):''))
@@ -2859,7 +2861,17 @@ function wireCommit(d,body){
   box.querySelectorAll('.cmsincei').forEach(inp=>inp.onchange=async()=>{
     if(inp.dataset.busy)return; inp.dataset.busy='1';
     try{ await saveSince(inp); } finally{ delete inp.dataset.busy; }});
+  // הערך נבנה משני הבוררים של אותה שורה. חסר אחד מהם — עוד לא שומרים
+  const sinceVal=inp=>{
+    const row=inp.closest('.cmsince'); if(!row)return null;
+    const y=(row.querySelector('.cmsy')||{}).value||'';
+    const m=(row.querySelector('.cmsm')||{}).value||'';
+    if(!y&&!m)return '';                       // שניהם רוקנו — ביטול
+    if(!y||!m)return null;                     // חצי בחירה — ממתינים לשני
+    return y+'-'+m+'-01';};
   const saveSince=async inp=>{
+    const val=sinceVal(inp);
+    if(val===null){toast('בחר גם חודש וגם שנה');return;}
     let p=pOf(inp.dataset.pid);
     // שורת יששכר־זבולון שנגזרת מהאברכים ואין לה עדיין שורה משלה —
     // נפתחת אחת ברגע שנקבע לה חודש התחלה, כדי שיהיה איפה לשמור
@@ -2868,19 +2880,19 @@ function wireCommit(d,body){
       if(!p){
         const amt=String(izRowAmt(d)||'');
         const r=await api('POST','/api/pledge',{donor_id:d.id,category:'יששכר־זבולון',
-          amount:amt,status:'נתן',monthly:1,paid:'',since:inp.value||''});
+          amount:amt,status:'נתן',monthly:1,paid:'',since:val});
         if(!r||!r.id){toast('לא נשמר');return;}
         p={id:r.id,donor_id:d.id,category:'יששכר־זבולון',amount:amt,status:'נתן',
            monthly:1,paid:'',note:'',detail:'',permo:'',avreich:'',
-           since:inp.value||'',date:todayStr()};
+           since:val,date:todayStr()};
         d.pledges=(d.pledges||[]).concat([p]);
-        toast(inp.value?('נספר מ'+fmtMonth(inp.value.slice(0,7))+' ✓'):'נשמר ✓');
+        toast(val?('נספר מ'+fmtMonth(val.slice(0,7))+' ✓'):'נשמר ✓');
         redraw(); return;
       }
     }
     if(!p)return;
-    await putPl(p,{since:inp.value||''});
-    toast(inp.value?('נספר מ'+fmtMonth(inp.value.slice(0,7))+' ✓'):'בוטל — נספר מהחודש הראשון שנכנס בו כסף');
+    await putPl(p,{since:val});
+    toast(val?('נספר מ'+fmtMonth(val.slice(0,7))+' ✓'):'בוטל — נספר מהחודש הראשון שנכנס בו כסף');
     redraw();};
   box.querySelectorAll('.cmpd').forEach(inp=>inp.onchange=async()=>{
     const p=pOf(inp.dataset.pid); if(!p)return;
@@ -3253,7 +3265,7 @@ function monthLedger(d){
     const due=due1(m), g=got[m]||0;
     bal+=g-due;
     out.push({m,due,got:g,dec:dec[m]||0,bal});
-    if(out.length>36)break;
+    if(out.length>24)break;   // תקרת ביטחון — שנתיים אחורה לכל היותר
   }
   const totDue=out.reduce((s,r)=>s+r.due,0), totGot=out.reduce((s,r)=>s+r.got,0);
   // "לא כוסה" של החודשים החסרים לחוד, והעודף של החודשים הטובים לחוד —
@@ -3268,11 +3280,34 @@ function monthLedger(d){
 }
 // הערך שנשמר יכול להיות חודש בלבד (מגרסה קודמת) או תאריך מלא —
 // לוח השנה צריך תאריך שלם, ולכן חודש ישן מוצג כ-1 בחודש
-function sinceDate(v){
-  const t=String(v||'').trim();
-  if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;
-  if(/^\d{4}-\d{2}$/.test(t))return t+'-01';
-  return '';
+// בוררי חודש ושנה במקום לוח שנה. אצל מאיר לוח השנה של אנדרואיד נפתח
+// בשנה 1 ולא נתן לשנות שנה — מה שהכניס "0001" ויצר חוב של 72,000
+// במקום 18,000. שתי רשימות סגורות אינן יכולות להיכשל ככה.
+const SINCE_Y0 = 2023;
+function sinceYrOpts(v){
+  const cur=+String(GREGYEAR||new Date().getFullYear()).slice(0,4);
+  const sel=(String(v||'').match(/^(\d{4})-/)||[])[1]||'';
+  let o='<option value="">— שנה —</option>';
+  for(let y=cur+1;y>=SINCE_Y0;y--)
+    o+=`<option value="${y}" ${String(y)===sel?'selected':''}>${y}</option>`;
+  return o;
+}
+function sinceMonOpts(v){
+  const sel=(String(v||'').match(/^\d{4}-(\d{2})/)||[])[1]||'';
+  let o='<option value="">— חודש —</option>';
+  for(let i=0;i<12;i++){const m=String(i+1).padStart(2,'0');
+    o+=`<option value="${m}" ${m===sel?'selected':''}>${MONFULL[i]}</option>`;}
+  return o;
+}
+// חודש תקין בלבד. ערך מחוץ לטווח (למשל 0001-12) אינו נספר, כדי שלא
+// ייווצר חוב על מאות חודשים
+function sinceOk(v){
+  const m=String(v||'').match(/^(\d{4})-(\d{2})/);
+  if(!m)return '';
+  const y=+m[1], mo=+m[2];
+  const cur=+String(GREGYEAR||new Date().getFullYear()).slice(0,4);
+  if(y<SINCE_Y0||y>cur+1||mo<1||mo>12)return '';
+  return m[1]+'-'+m[2];
 }
 function nextMonth(ym){
   const a=String(ym).split('-'); let y=+a[0], m=+a[1]+1;

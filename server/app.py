@@ -4778,6 +4778,27 @@ def ensure_schema():
     except Exception as e:
         print('  kv flow error:', e)
 
+    # מאיר: "שנה לא נותן, וזה עושה שהוא חייב 72,000 במקום 18 אלף".
+    # לוח השנה של אנדרואיד נפתח בשנה 1 ושמר since='0001-12-26' — ומכאן
+    # החוב נספר על מאות חודשים. חודש התחלה מחוץ לטווח סביר נמחק, כדי
+    # שהחשבון יחזור לעצמו גם בלי שמאיר יתקן ידנית.
+    try:
+        _yr = int(today_iso()[:4])
+        _bad = con.execute(
+            "SELECT id,since FROM pledges WHERE COALESCE(TRIM(since),'')<>''").fetchall()
+        _n = 0
+        for _r in _bad:
+            _m = re.match(r'^(\d{4})-(\d{2})', str(_r['since'] or ''))
+            if _m and 2023 <= int(_m.group(1)) <= _yr + 1 and 1 <= int(_m.group(2)) <= 12:
+                continue
+            con.execute("UPDATE pledges SET since='' WHERE id=?", (_r['id'],))
+            _n += 1
+        if _n:
+            con.commit()
+            print('  חודש התחלה לא תקין נוקה ב-%d שורות התחייבות' % _n)
+    except Exception as e:
+        print('  since sanity error:', e)
+
     # מאיר על אלחנן לרר: "למה יש פעמיים עוד פעם ההתחייבות שלו? ברגע שיש לו
     # רשום שהוא נותן 4,000 על יששכר־זבולון זה מספיק". שורה חודשית בלי ייעוד
     # אמיתי, אצל תורם יששכר־זבולון, בדיוק באותו סכום — היא כפילות של אותו
