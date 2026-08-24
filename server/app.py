@@ -191,6 +191,8 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS avreichim(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE,
         last TEXT, first TEXT, note TEXT, started TEXT, created TEXT);
+    CREATE TABLE IF NOT EXISTS mail_names(email TEXT PRIMARY KEY, name TEXT,
+        hits INTEGER DEFAULT 0, src TEXT, seen TEXT);
     CREATE TABLE IF NOT EXISTS avreich_pending(alias TEXT PRIMARY KEY, last TEXT, first TEXT,
         idnum TEXT, id_ok INTEGER, phone TEXT, seder TEXT, added TEXT);
     CREATE TABLE IF NOT EXISTS avreich_log(id INTEGER PRIMARY KEY AUTOINCREMENT, avreich TEXT,
@@ -4700,18 +4702,18 @@ def ensure_schema():
         print('  manual dup cleanup error:', ex)
 
     # מאיר: "תסדר את השמות בקוויטל של כל תורם שכתוב אצלו שם לכל שורה —
-    # שיהיה שם ושם האם והבקשה, ואז פסיק, והשם הבא באותה שורה". פעם אחת
-    # בלבד: מרגע שסודר, מאיר יכול לשבור שורות בעצמו והמערכת לא תדרוס.
+    # שיהיה שם ושם האם והבקשה, ואז פסיק, והשם הבא באותה שורה".
+    # רץ בכל עלייה ולא פעם אחת: שמות שנכנסים מהמיילים ומהאתר מגיעים
+    # שבורים לשורות, ובלי זה הקוויטל חוזר להתפרש על דפים מיותרים.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kv_flow_v1'").fetchone():
-            _n = 0
-            for r in con.execute("SELECT id,text FROM prayers "
-                                 "WHERE TRIM(COALESCE(text,''))<>''").fetchall():
-                nw = kv_flow(r['text'])
-                if nw and nw != (r['text'] or '').strip():
-                    con.execute("UPDATE prayers SET text=? WHERE id=?", (nw, r['id']))
-                    _n += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('kv_flow_v1')")
+        _n = 0
+        for r in con.execute("SELECT id,text FROM prayers "
+                             "WHERE TRIM(COALESCE(text,''))<>''").fetchall():
+            nw = kv_flow(r['text'])
+            if nw and nw != (r['text'] or '').strip():
+                con.execute("UPDATE prayers SET text=? WHERE id=?", (nw, r['id']))
+                _n += 1
+        if _n:
             con.commit()
             print('  שמות קוויטל שסודרו לרצף עם פסיקים: %d' % _n)
     except Exception as e:
@@ -6699,7 +6701,19 @@ def fill_english_by_email(con):
             return
         cand[did] = nm[:60]
 
-    # 1. שם השולח מתוך המיילים שהתקבלו — המקור המדויק ביותר
+    # 1. שם התצוגה מהג'ימייל עצמו — הסריקה של הכותרות בתיבה הנכנסת
+    # והנשלחת. זה המקור המדויק ביותר: כך התורם חותם על המייל שלו,
+    # וכך אנחנו כתבנו אליו. השם הנפוץ ביותר לאותה כתובת מנצח.
+    try:
+        for r in con.execute("SELECT email,name FROM mail_names "
+                             "WHERE TRIM(COALESCE(name,''))<>'' "
+                             "ORDER BY hits DESC"):
+            did = bye.get((r['email'] or '').strip().lower())
+            if did:
+                offer(did, r['name'])
+    except Exception:
+        pass
+    # 2. שם השולח מתוך פניות האתר
     try:
         for r in con.execute("SELECT from_name,from_email FROM intake "
                              "WHERE TRIM(COALESCE(from_name,''))<>'' "
@@ -8709,6 +8723,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, dict(gmail_intake.MAIL_STATUS))
             except Exception as e:
                 return self._send(200, {'running': False, 'done': True, 'error': str(e)})
+        if self.path == '/api/mail/engscan/status':
+            try:
+                import gmail_intake
+                return self._send(200, dict(gmail_intake.ENG_STATUS))
+            except Exception as e:
+                return self._send(200, {'running': False, 'done': True, 'error': str(e)})
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -9233,6 +9253,39 @@ class H(BaseHTTPRequestHandler):
                     except Exception: pass
                     stt['running'] = False; stt['done'] = True
             threading.Thread(target=_run, daemon=True).start()
+            return self._send(200, {'ok': True, 'started': True})
+        if self.path == '/api/mail/engscan':
+            # מאיר: "תעבור טוב טוב על הג'ימייל בכל תצורה שהיא לראות מה השם
+            # שלו". סורק כותרות בלבד משנת 2015, מהתיבה הנכנסת והנשלחת,
+            # ומכניס לכרטיסים את השמות שעברו את בדיקת ההתאמה לשם העברי.
+            try:
+                import gmail_intake, threading
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            if not gmail_intake.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured'})
+            stt = gmail_intake.ENG_STATUS
+            if stt.get('running'):
+                return self._send(200, {'ok': True, 'started': False, 'already': True, 'status': stt})
+            stt.update({'running': True, 'new': 0, 'scanned': 0, 'total': 0,
+                        'done': False, 'error': '', 'box': '', 'filled': 0})
+
+            def _runeng():
+                c = db()
+                try:
+                    r = gmail_intake.scan_english_names(c, stt)
+                    if not r.get('ok'):
+                        stt['error'] = r.get('detail') or r.get('error') or 'שגיאה'
+                    else:
+                        stt['filled'] = fill_english_by_email(c)
+                        c.commit()
+                except Exception as e:
+                    stt['error'] = '%s: %s' % (type(e).__name__, e)
+                finally:
+                    try: c.close()
+                    except Exception: pass
+                    stt['running'] = False; stt['done'] = True
+            threading.Thread(target=_runeng, daemon=True).start()
             return self._send(200, {'ok': True, 'started': True})
         m = re.match(r'/api/intake/(\d+)/attach$', self.path)
         if m:

@@ -1442,6 +1442,9 @@ function renderNoEng(){
     <div class="submuted">${all.length} תורמים${withG?(' · '+withG+' מהם עם הצעה מכתובת המייל'):''}.
       השם באנגלית משמש לקבלות, לדיוור, ולזיהוי החיובים מהבנק.</div>
     <button class="btn ghost" id="neback" style="margin:8px 2px">→ חזרה לתורמים</button>
+    <button class="btn" id="nescan" style="width:100%;margin:0 2px 8px">📥 סרוק את הג'ימייל והשלם שמות</button>
+    <div class="hintxt" id="nescanst" style="margin:-4px 2px 8px">עובר על כל המיילים שקיבלנו ושלחנו — משנת 2015 — ולוקח את השם הלועזי
+      שמופיע ליד כתובת המייל של התורם. נכנס רק שם שמתאים לשם העברי שבכרטיס.</div>
     ${rows.map(d=>{const g=engGuess(d);
       return `<div class="npcard" data-did="${d.id}">
         <div class="nm"><b class="avnamelink" data-id="${d.id}">${esc((d.last+' '+(d.first||'')).trim())}</b>
@@ -1456,6 +1459,31 @@ function renderNoEng(){
     ${all.length>rows.length?`<button class="btn" id="nemore" style="width:100%;margin:8px 2px">הצג עוד ${Math.min(25,all.length-rows.length)}</button>`:''}`;
   document.getElementById('neback').onclick=()=>{flt='';render();};
   const mb=document.getElementById('nemore'); if(mb)mb.onclick=()=>{NELIM+=25;renderNoEng();};
+  // סריקת הג'ימייל לשמות לועזיים — רצה בשרת, וכאן רק עוקבים אחריה
+  const sb=document.getElementById('nescan'), sst=document.getElementById('nescanst');
+  if(sb)sb.onclick=async()=>{
+    sb.disabled=true; sst.textContent='מתחיל לסרוק את הג׳ימייל…';
+    const r=await api('POST','/api/mail/engscan',{});
+    if(!r||!r.ok){
+      sb.disabled=false;
+      sst.textContent=(r&&r.error==='not_configured')
+        ? 'הג׳ימייל לא מחובר בשרת — בדוק ב-🩺 בדיקת מערכת'
+        : 'הסריקה לא התחילה'+((r&&r.detail)?(' — '+r.detail):'');
+      return;}
+    for(;;){
+      await new Promise(z=>setTimeout(z,2500));
+      let s; try{s=await api('GET','/api/mail/engscan/status');}catch(e){continue;}
+      if(!s)continue;
+      if(s.error){sb.disabled=false;sst.textContent='שגיאה: '+s.error;return;}
+      if(s.done){
+        sb.disabled=false;
+        sst.textContent='הסריקה הסתיימה — '+(s.new||0)+' כתובות נבדקו, '
+          +(s.filled||0)+' שמות נכנסו לכרטיסים.';
+        if(s.filled){await load();renderNoEng();}
+        return;}
+      sst.textContent='סורק'+(s.box?(' '+s.box):'')+'… '+(s.scanned||0)
+        +(s.total?(' מתוך '+s.total):'')+' מיילים';
+    }};
   view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   const save=async b=>{
     const d=DB.find(x=>x.id==b.dataset.did); if(!d)return;

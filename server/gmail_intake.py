@@ -1898,3 +1898,129 @@ def sync_receipts(con, status=None, since=None):
         st['error'] = str(e)
         return {'ok': False, 'error': str(e)}
     return {'ok': True, 'new': new, 'dup': dup, 'skipped': skip}
+
+
+# ===== סריקת הג'ימייל לשמות לועזיים =====
+# מאיר: "למה לילד אין שם משפחה באנגלית? יש את זה באימיילים שלו ובקבלות
+# שבג'ימייל — תעבור טוב טוב על הג'ימייל בכל תצורה שהיא לראות מה השם שלו".
+# תיוק המיילים הרגיל זורק את שם התצוגה של השולח. כאן סורקים כותרות בלבד
+# (מהיר) משתי התיבות — הנכנסת והנשלחת — ושומרים לכל כתובת את השם הלועזי
+# שמופיע לצידה ואת מספר הפעמים. מכאן השם נכנס לכרטיס התורם.
+
+ENG_STATUS = {'running': False, 'new': 0, 'scanned': 0, 'total': 0,
+              'done': False, 'error': '', 'box': ''}
+
+# מילים שאינן שם של אדם — ארגונים, מערכות ושירותים
+_ENG_JUNK = re.compile(
+    r'(?i)\b(inc|llc|ltd|corp|company|foundation|fund|team|support|service|services|'
+    r'notification|notifications|no.?reply|donotreply|mailer|daemon|admin|billing|'
+    r'invoice|receipt|receipts|payments?|paypal|quickbooks|banquest|authorize|'
+    r'gmail|google|yahoo|outlook|amazon|chase|bank|newsletter|info|office|'
+    r'customer|account|accounts|update|updates|alert|alerts|security|kollel|'
+    r'chatzos|donations?|charity|tzedaka|webmaster|postmaster|bounce)\b')
+_ENG_NAME = re.compile(r"^[A-Za-z][A-Za-z'\.\- ]{2,58}$")
+
+
+def _eng_ok(nm):
+    """שם תצוגה שנראה כמו שם של אדם: אותיות לועזיות, לפחות שתי מילים,
+    בלי מילות ארגון, ובלי כתובת מייל שנכתבה כשם."""
+    nm = re.sub(r'\s+', ' ', str(nm or '')).strip().strip('"\'')
+    if not nm or '@' in nm or not _ENG_NAME.match(nm):
+        return ''
+    if _ENG_JUNK.search(nm):
+        return ''
+    ws = [w for w in nm.split() if len(w.strip(".-'")) >= 2]
+    if len(ws) < 2 or len(ws) > 4:
+        return ''
+    if nm.isupper():                       # "JOHN SMITH" → "John Smith"
+        nm = ' '.join(w.capitalize() for w in nm.split())
+    return nm[:60]
+
+
+def _eng_boxes():
+    """התיבות שנסרקות: הנכנסת, הנשלחת, וכל הדואר אם הוא זמין."""
+    out = [os.environ.get('INTAKE_MAILBOX', 'INBOX'),
+           os.environ.get('SENT_MAILBOX', '[Gmail]/Sent Mail')]
+    extra = (os.environ.get('ENG_MAILBOXES') or '').strip()
+    if extra:
+        out += [x.strip() for x in extra.split(',') if x.strip()]
+    seen, uniq = set(), []
+    for b in out:
+        if b and b not in seen:
+            seen.add(b); uniq.append(b)
+    return uniq
+
+
+def scan_english_names(con, status=None, since=None):
+    """סורק את הג'ימייל ואוסף לכל כתובת את השם הלועזי שמופיע לצידה.
+    הכותרות בלבד נמשכות, ולכן זה רץ על שנים אחורה בלי להעמיס.
+    התוצאה נשמרת בטבלה mail_names, ומשם נכנסת לכרטיסי התורמים."""
+    st = status if status is not None else {}
+    user = (os.environ.get('GMAIL_USER') or '').strip()
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    since = since or os.environ.get('ENG_SINCE') or '01-Jan-2015'
+    me = user.lower()
+    con.execute("""CREATE TABLE IF NOT EXISTS mail_names(
+        email TEXT PRIMARY KEY, name TEXT, hits INTEGER DEFAULT 0,
+        src TEXT, seen TEXT)""")
+    # כמה פעמים כל שם הופיע לצד כל כתובת — הנפוץ מנצח
+    tally = {}
+
+    def note(addr, nm, src):
+        addr = (addr or '').strip().lower()
+        nm = _eng_ok(nm)
+        if not addr or '@' not in addr or not nm or addr == me:
+            return
+        d = tally.setdefault(addr, {})
+        d[nm] = d.get(nm, 0) + (2 if src == 'sent' else 1)
+
+    M = None
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=60)
+        M.login(user, pw)
+        for box in _eng_boxes():
+            st['box'] = box
+            try:
+                typ, _ = M.select(box, readonly=True)
+                if typ != 'OK':
+                    continue
+                typ, data = M.search(None, 'SINCE', since)
+                ids = data[0].split() if typ == 'OK' else []
+            except Exception:
+                continue
+            sent = 'sent' in box.lower()
+            st['total'] = st.get('total', 0) + len(ids)
+            heads = _batch_headers(M, ids, fields='FROM TO CC')
+            for _seq, raw in heads:
+                st['scanned'] = st.get('scanned', 0) + 1
+                try:
+                    h = email.message_from_bytes(raw)
+                except Exception:
+                    continue
+                # בתיבה הנשלחת השמות שאנחנו כתבנו הם המדויקים ביותר
+                flds = ('To', 'Cc') if sent else ('From',)
+                for f in flds:
+                    for nm, ad in getaddresses([_dec(h.get(f)) or '']):
+                        note(ad, nm, 'sent' if sent else 'in')
+        try: M.logout()
+        except Exception: pass
+        M = None
+    except Exception as e:
+        st['error'] = '%s: %s' % (type(e).__name__, str(e)[:150])
+        return {'ok': False, 'error': st['error']}
+    finally:
+        if M is not None:
+            try: M.logout()
+            except Exception: pass
+    today = datetime.date.today().isoformat()
+    n = 0
+    for addr, names in tally.items():
+        nm = max(names.items(), key=lambda kv: (kv[1], len(kv[0])))
+        con.execute("INSERT OR REPLACE INTO mail_names(email,name,hits,src,seen) "
+                    "VALUES(?,?,?,'gmail',?)", (addr, nm[0], nm[1], today))
+        n += 1
+    con.commit()
+    st['new'] = n
+    return {'ok': True, 'addresses': n, 'scanned': st.get('scanned', 0)}
