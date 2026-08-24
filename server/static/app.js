@@ -1140,6 +1140,7 @@ function pendFiles(boxId,inputId){
 // חתימת הנתונים האחרונים. אם השרת עונה "לא השתנה כלום" — לא מורידים שוב
 // מגה של נתונים ולא מפענחים אותם מחדש, וזה חוסך את רוב זמן ההמתנה.
 let _ETAG='', _LASTDATA=null;
+let MAILNAMES=null;
 async function load(){
   let d;
   try{
@@ -1149,7 +1150,7 @@ async function load(){
     if(r.status===304&&_LASTDATA){ d=_LASTDATA; }
     else { d=await r.json(); _LASTDATA=d; _ETAG=r.headers.get('ETag')||''; }
   }catch(e){ d = await api('GET','/api/data'); }
-  DB = d.donors; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
+  DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
@@ -1420,7 +1421,19 @@ let NOPHONE=null, NPLIM=15;
 let NELIM=25;
 // מאיר: "צריך כפתור תורמים בלי שם באנגלית". לצד כל אחד מוצעת הצעה מתוך
 // כתובת המייל שלו, וכל שם נשמר בלחיצה אחת — או שמקלידים ידנית.
+// השם שנמצא בג'ימייל לצד כתובת המייל שלו — המקור הטוב ביותר, וקודם
+// לניחוש מתוך הכתובת עצמה. מוצג כהצעה שמאיר מאשר בלחיצה, גם כשהוא
+// לא עבר את בדיקת ההתאמה לשם העברי שמכניסה שמות אוטומטית.
+function engFromMail(d){
+  if(!MAILNAMES)return '';
+  for(const e of splitEmails(d.email||'')){
+    const v=MAILNAMES[String(e||'').trim().toLowerCase()];
+    if(v)return v;
+  }
+  return '';
+}
 function engGuess(d){
+  const fromMail=engFromMail(d); if(fromMail)return fromMail;
   const em=splitEmails(d.email||'')[0]||'';
   const loc=em.split('@')[0].toLowerCase().trim();
   if(!loc||/\d/.test(loc))return '';
@@ -1454,7 +1467,7 @@ function renderNoEng(){
         <div class="addrow"><input class="neinp" data-did="${d.id}" dir="ltr"
             placeholder="שם באנגלית — שם פרטי ואז שם משפחה" value="${esc(g)}">
           <button class="btn sm nesave" data-did="${d.id}">💾 שמור</button></div>
-        ${g?'<div class="hintxt" style="margin:-2px 2px 0">💡 ההצעה מגיעה מכתובת המייל — בדוק ותקן אם צריך</div>':''}
+        ${g?`<div class="hintxt" style="margin:-2px 2px 0">💡 ${engFromMail(d)?'ההצעה מהג׳ימייל — כך הוא חתום על המיילים שלו':'ההצעה מכתובת המייל'} — בדוק ותקן אם צריך</div>`:''}
       </div>`;}).join('')||'<div class="empty">כל התורמים כבר עם שם באנגלית ✓</div>'}
     ${all.length>rows.length?`<button class="btn" id="nemore" style="width:100%;margin:8px 2px">הצג עוד ${Math.min(25,all.length-rows.length)}</button>`:''}`;
   document.getElementById('neback').onclick=()=>{flt='';render();};
@@ -1477,12 +1490,14 @@ function renderNoEng(){
       if(s.error){sb.disabled=false;sst.textContent='שגיאה: '+s.error;return;}
       if(s.done){
         sb.disabled=false;
-        sst.textContent='הסריקה הסתיימה — '+(s.new||0)+' כתובות נבדקו, '
-          +(s.filled||0)+' שמות נכנסו לכרטיסים.';
+        sst.textContent=(s.filled
+          ? ('נמצאו '+(s.new||0)+' שמות בג׳ימייל · '+s.filled+' נכנסו לכרטיסים ✓')
+          : ('נמצאו '+(s.new||0)+' שמות בג׳ימייל, אבל אף אחד לא התאים לשם העברי שבכרטיס. '
+             +'ההצעות מופיעות בשדות למטה — אשר ידנית מה שנכון.'));
         if(s.filled){await load();renderNoEng();}
         return;}
-      sst.textContent='סורק'+(s.box?(' '+s.box):'')+'… '+(s.scanned||0)
-        +(s.total?(' מתוך '+s.total):'')+' מיילים';
+      sst.textContent='מחפש בג׳ימייל'+(/sent/i.test(s.box||'')?' (בתיבה הנשלחת)':'')
+        +'… '+(s.scanned||0)+(s.total?(' מתוך '+s.total):'')+' תורמים';
     }};
   view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
   const save=async b=>{

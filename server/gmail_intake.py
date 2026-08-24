@@ -1951,21 +1951,46 @@ def _eng_boxes():
     return uniq
 
 
+def _donor_addrs(con):
+    """כתובות המייל של תורמים שאין להם עדיין שם לועזי — רק אליהן מחפשים.
+    כתובת שמשויכת לשני תורמים אינה מזהה אף אחד, ולכן יורדת."""
+    seen = {}
+    try:
+        rows = con.execute("SELECT id,email FROM donors "
+                           "WHERE TRIM(COALESCE(english,''))='' "
+                           "AND TRIM(COALESCE(email,''))<>''").fetchall()
+    except Exception:
+        return []
+    for r in rows:
+        for e in re.split(r'[;,\s]+', str(r['email'] or '')):
+            e = e.strip().lower()
+            if '@' in e and len(e) > 4:
+                seen.setdefault(e, set()).add(r['id'])
+    return sorted(e for e, v in seen.items() if len(v) == 1)
+
+
 def scan_english_names(con, status=None, since=None):
-    """סורק את הג'ימייל ואוסף לכל כתובת את השם הלועזי שמופיע לצידה.
-    הכותרות בלבד נמשכות, ולכן זה רץ על שנים אחורה בלי להעמיס.
-    התוצאה נשמרת בטבלה mail_names, ומשם נכנסת לכרטיסי התורמים."""
+    """מחפש בג'ימייל את השם הלועזי של כל תורם שאין לו אחד.
+
+    לא סורק את כל התיבה: לכל כתובת מייל של תורם חסר עושה חיפוש
+    ממוקד בשרת (FROM בתיבה הנכנסת, TO בנשלחת), ומושך רק את הכותרות
+    של מה שנמצא. כך זה רץ על תיבה של עשרות אלפי מיילים בדקות ולא
+    בשעות, וההתקדמות נמדדת בתורמים ולא במיילים.
+    התוצאה נשמרת ב-mail_names, ומשם נכנסת לכרטיסי התורמים."""
     st = status if status is not None else {}
     user = (os.environ.get('GMAIL_USER') or '').strip()
     pw = os.environ.get('GMAIL_APP_PASSWORD')
     if not (user and pw):
         return {'ok': False, 'error': 'not_configured'}
+    addrs = _donor_addrs(con)
+    st['total'] = len(addrs); st['scanned'] = 0
+    if not addrs:
+        return {'ok': True, 'addresses': 0, 'scanned': 0, 'note': 'no_missing'}
     since = since or os.environ.get('ENG_SINCE') or '01-Jan-2015'
     me = user.lower()
     con.execute("""CREATE TABLE IF NOT EXISTS mail_names(
         email TEXT PRIMARY KEY, name TEXT, hits INTEGER DEFAULT 0,
         src TEXT, seen TEXT)""")
-    # כמה פעמים כל שם הופיע לצד כל כתובת — הנפוץ מנצח
     tally = {}
 
     def note(addr, nm, src):
@@ -1976,34 +2001,53 @@ def scan_english_names(con, status=None, since=None):
         d = tally.setdefault(addr, {})
         d[nm] = d.get(nm, 0) + (2 if src == 'sent' else 1)
 
+    inbox = os.environ.get('INTAKE_MAILBOX', 'INBOX')
+    sent = os.environ.get('SENT_MAILBOX', '[Gmail]/Sent Mail')
     M = None
     try:
-        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=60)
+        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=90)
         M.login(user, pw)
-        for box in _eng_boxes():
+        for box, key, flds in ((inbox, 'FROM', ('From',)),
+                               (sent, 'TO', ('To', 'Cc'))):
             st['box'] = box
             try:
                 typ, _ = M.select(box, readonly=True)
                 if typ != 'OK':
                     continue
-                typ, data = M.search(None, 'SINCE', since)
-                ids = data[0].split() if typ == 'OK' else []
             except Exception:
                 continue
-            sent = 'sent' in box.lower()
-            st['total'] = st.get('total', 0) + len(ids)
-            heads = _batch_headers(M, ids, fields='FROM TO CC')
-            for _seq, raw in heads:
-                st['scanned'] = st.get('scanned', 0) + 1
+            done = 0
+            for ad in addrs:
+                done += 1
+                st['scanned'] = done              # מד ההתקדמות — לפי תורמים
+                if tally.get(ad) and key == 'TO':
+                    continue                      # כבר יש שם מהתיבה הנכנסת
                 try:
-                    h = email.message_from_bytes(raw)
+                    typ, data = M.search(None, 'SINCE', since, key, '"%s"' % ad)
+                    ids = data[0].split() if typ == 'OK' else []
                 except Exception:
                     continue
-                # בתיבה הנשלחת השמות שאנחנו כתבנו הם המדויקים ביותר
-                flds = ('To', 'Cc') if sent else ('From',)
-                for f in flds:
-                    for nm, ad in getaddresses([_dec(h.get(f)) or '']):
-                        note(ad, nm, 'sent' if sent else 'in')
+                if not ids:
+                    continue
+                ids = ids[-6:]                    # די בכמה אחרונים לזיהוי השם
+                try:
+                    typ, md = M.fetch(b','.join(ids).decode(),
+                                      '(BODY.PEEK[HEADER.FIELDS (FROM TO CC)])')
+                except Exception:
+                    continue
+                if typ != 'OK' or not md:
+                    continue
+                for item in md:
+                    if not (isinstance(item, tuple) and len(item) >= 2 and item[1]):
+                        continue
+                    try:
+                        h = email.message_from_bytes(item[1])
+                    except Exception:
+                        continue
+                    for f in flds:
+                        for nm, a2 in getaddresses([_dec(h.get(f)) or '']):
+                            if (a2 or '').strip().lower() == ad:
+                                note(ad, nm, 'sent' if key == 'TO' else 'in')
         try: M.logout()
         except Exception: pass
         M = None

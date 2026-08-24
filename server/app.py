@@ -7609,8 +7609,17 @@ class H(BaseHTTPRequestHandler):
             except Exception: pchans = []
             try: tkinds = [r['name'] for r in con.execute("SELECT name FROM task_kinds ORDER BY created, name")]
             except Exception: tkinds = []
+            # שמות לועזיים שנמצאו בג'ימייל — מוצעים במסך "בלי שם באנגלית"
+            # גם לאלה שלא עברו את בדיקת ההתאמה, לאישור ידני
+            _mn = {}
+            try:
+                for _r in con.execute("SELECT email,name FROM mail_names "
+                                      "WHERE TRIM(COALESCE(name,''))<>''"):
+                    _mn[(_r['email'] or '').strip().lower()] = _r['name']
+            except Exception:
+                pass
             con.close()
-            _raw = json.dumps({'donors': donors, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
+            _raw = json.dumps({'donors': donors, 'mail_names': _mn, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
             try: _gz = gzip.compress(_raw, 6)
             except Exception: _gz = b''
             # החתימה לפי התוכן עצמו: בנייה מחדש שיצא ממנה אותו מידע משאירה את
