@@ -5721,11 +5721,14 @@ def _wrap_px(dr, text, f, maxw):
     return [x for x in out if x != ''] or ['']
 
 
-def izslip_png(avreich='', donor='', names='', width=1240, fmt='png'):
-    """פתק הקוויטל של היששכר־זבולון כתמונה — אותו בלאנק ואותו סידור כמו
-    בדף ההדפסה, כדי שאפשר יהיה להעתיק ולשלוח בדיוק כמו תעודת פרנס יום."""
+def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False):
+    """פתק הקוויטל של היששכר־זבולון כתמונה.
+
+    מאיר: "כשאני רוצה להעתיק את הדף בשביל לשלוח לתורם — שיהיה על דף שלם,
+    ורק אם אני רוצה להדפיס — על חצי דף מדויק". לכן התמונה לשליחה היא A4
+    מלא, וההדפסה (דף ה-HTML) נשארת על חצי דף."""
     from PIL import Image, ImageDraw, ImageFont
-    im = Image.open(os.path.join(STATIC, 'iz-slip.jpg')).convert('RGB')
+    im = Image.open(os.path.join(STATIC, 'iz-slip.jpg' if half else 'iz-page.jpg')).convert('RGB')
     if im.width != width:
         im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
     W, H = im.size
@@ -5757,20 +5760,21 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png'):
         dr.text((x + bw2 - wid(val or '—', fn), int(58 * u)), val or '—', font=fn, fill=_DEEP)
         x -= int(50 * u)
     # הנוסח — גדול, ומתחת ללוגו. "יעמוד לזכות" בשורה נפרדת (מאיר)
-    y = int(215 * u)
-    fz = font(44 * u, False)
+    y = int((215 if half else 250) * u)
+    fz = font((44 if half else 50) * u, False)
     nus = ('יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל '
            'בעת רצון הגדול של חצות הלילה')
+    nsz = (44 if half else 50) * u
     for ln in _wrap_px(dr, nus, fz, W - int(150 * u)):
-        center(ln, fz, y, _INK); y += int(44 * u * 1.3)
-    y += int(8 * u)
-    fzk = font(44 * u, True)
+        center(ln, fz, y, _INK); y += int(nsz * 1.3)
+    y += int((8 if half else 16) * u)
+    fzk = font(nsz, True)
     center('יעמוד לזכות:', fzk, y, _DEEP)
-    y += int(44 * u * 1.5)
+    y += int(nsz * (1.5 if half else 1.8))
     # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום
-    avail_w, avail_h = W - int(150 * u), H - y - int(34 * u)
+    avail_w, avail_h = W - int(150 * u), H - y - int((34 if half else 90) * u)
     txt = (names or '').strip() or '— אין עדיין שמות לקוויטל —'
-    for px in range(int(94 * u), int(16 * u), -2):
+    for px in range(int((94 if half else 118) * u), int(16 * u), -2):
         f = font(px, True)
         lh = px * 1.28
         lines = []
@@ -7519,7 +7523,8 @@ class H(BaseHTTPRequestHandler):
                 return (qs.get(k, [''])[0] or '').strip()
             fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
             try:
-                data = izslip_png(g('av'), g('donor'), g('names'), fmt=fmt)
+                data = izslip_png(g('av'), g('donor'), g('names'), fmt=fmt,
+                                  half=(g('half') == '1'))
             except Exception as e:
                 return self._send(500, {'ok': False, 'error': str(e)[:200]})
             self.send_response(200)

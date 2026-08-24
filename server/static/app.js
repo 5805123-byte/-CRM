@@ -5911,8 +5911,8 @@ async function openIzSlip(av){
     ${rows.map((r,i)=>`<div class="izslipbox">
       <div class="hintxt">זבולון: <b>${esc(r.donor)}</b>${r.names?'':' · אין עדיין שמות לקוויטל'}</div>
       <img class="izslipimg" src="${esc(url(r))}" alt="">
-      <div class="addrow"><button class="btn sm izslipcopy" data-i="${i}">📋 העתק תמונה</button>
-        <button class="btn sm ghost izslipopen" data-i="${i}">↗ פתח להדפסה</button></div></div>`).join('')}`;
+      <div class="addrow"><button class="btn sm izslipcopy" data-i="${i}">📋 העתק תמונה (דף שלם)</button>
+        <button class="btn sm ghost izslipopen" data-i="${i}">🖨️ הדפסה (חצי דף)</button></div></div>`).join('')}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('.izslipopen').forEach(b=>b.onclick=()=>
