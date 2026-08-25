@@ -128,6 +128,10 @@
     font-size:.9rem;margin-bottom:8px}
   .avstat .avfreen{color:var(--no)}
   /* המספר "בלי שותף" הוא כפתור — לחיצה מסננת רק אותם */
+  /* שורת קביעת התזכורת — עם תוויות, כדי ששדה התאריך יהיה מזוהה */
+  .tkrow{display:flex;gap:8px;margin-top:8px}
+  .tkrow .tkl{flex:1;min-width:0;font-size:.76rem;color:var(--muted);font-weight:600;display:block}
+  .tkrow .tkl select,.tkrow .tkl input{width:100%;margin-top:3px}
   .avfreebtn{font:inherit;font-size:inherit;color:inherit;background:transparent;
     border:1px solid transparent;border-radius:8px;padding:1px 7px;cursor:pointer}
   .avfreebtn:hover{background:var(--no-soft);border-color:#f3c9c9}

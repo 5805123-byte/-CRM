@@ -4431,7 +4431,8 @@ function cardContact(d,body){
       <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
       <div class="hintxt">התאריך התחתון = מתי לחזור אליו (נכנס ל"משימות")</div></div>
     <details class="dsec"><summary>🔔 קביעת תזכורת</summary>
-      <div class="addrow"><select id="tk_kind">${taskKindOpts()}</select><input id="tk_date" type="date"></div>
+      <div class="tkrow"><label class="tkl">על מה<select id="tk_kind">${taskKindOpts()}</select></label>
+        <label class="tkl">📅 מתי להזכיר<input id="tk_date" type="date" value="${todayStr()}"></label></div>
       <div class="addrow"><input id="tk_note" placeholder="פרטים (על מה)"><button class="btn sm" id="tk_add">➕ קבע תזכורת</button></div>
       <div class="avfiles dnfiles" id="tk_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="tk_file" hidden></label></div>
       <div class="hintxt">כל תזכורת נכנסת ללשונית "משימות", ואפשר להוסיף אותה ליומן Google.</div></details>
@@ -4451,7 +4452,13 @@ function cardContact(d,body){
   wireKindSel(document.getElementById('tk_kind'));
   wireClkSel(document.getElementById('cl_ch'));
   addMic(document.getElementById('cl_sum')); addMic(document.getElementById('tk_note'));
-  document.getElementById('tk_add').onclick=async ev=>{const btn=ev.currentTarget;if(btn.disabled)return;const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim(),date=document.getElementById('tk_date').value;if(!date){toast('בחר תאריך');return;}btn.disabled=true;const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});btn.disabled=false;if(r&&r.existing){toast('התזכורת כבר קיימת');return;}d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
+  document.getElementById('tk_add').onclick=async ev=>{const btn=ev.currentTarget;if(btn.disabled)return;const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim();
+    const dEl=document.getElementById('tk_date'), date=dEl.value;
+    // מאיר: "הוא כותב קבע תאריך ולא נפתח לי אפשרות לקבוע תאריך" —
+    // עכשיו השדה נפתח מעצמו במקום רק להודיע
+    if(!date){toast('בחר מתי להזכיר');dEl.focus();
+      try{if(dEl.showPicker)dEl.showPicker();}catch(e){}
+      return;}btn.disabled=true;const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note});btn.disabled=false;if(r&&r.existing){toast('התזכורת כבר קיימת');return;}d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,done:0});document.getElementById('tk_note').value='';
     if(tkF.arr.length){toast('מעלה קבצים…');for(const f of tkF.arr)await uploadBlob('task',r.id,f);tkF.reset();await refresh();toast('נקבעה תזכורת עם האסמכתאות ✓');return;}
     renderReminders(d);toast('נקבעה תזכורת ✓');};
 }
