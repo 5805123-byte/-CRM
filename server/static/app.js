@@ -6418,9 +6418,14 @@ function filterIZ(){const nq=norm(avSearch);
 // מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
 let avOpenId=null, avSwapId=null, avHistId=null, avInfoId=null, izHist=false;
 // חיפוש אברך לפי שם משפחה, שם פרטי, או שם השותף — בכל סדר ובאיות קרוב
+// מאיר: "איפה שכתוב 5 בלי שותף — שאוכל ללחוץ על המספר וייפתח לי מי
+// שאין לו שותף". המספר הוא כפתור, ולחיצה נוספת מחזירה את כולם.
+let avFreeOnly=false;
 function avFiltered(){
-  const s2=avSearch.trim(); if(!s2)return AVLIST;
-  return AVLIST.filter(a=>matchStr(a.name+' '+(a.note||'')+' '+(a.holders||[]).map(h=>h.name).join(' '),s2));
+  let l=AVLIST;
+  if(avFreeOnly)l=l.filter(a=>!(a.holders||[]).length);
+  const s2=avSearch.trim(); if(!s2)return l;
+  return l.filter(a=>matchStr(a.name+' '+(a.note||'')+' '+(a.holders||[]).map(h=>h.name).join(' '),s2));
 }
 async function renderAvByAv(){
   chips.innerHTML='';
@@ -6432,7 +6437,10 @@ async function renderAvByAv(){
   view.innerHTML=`<div class="avbar">
       <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
       <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
-    <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל · <b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף${q2?` · מוצגים ${rows.length}`:''}</div>
+    <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
+      <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
+        title="${avFreeOnly?'הצג את כולם':'הצג רק אברכים בלי שותף'}"><b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף ${avFreeOnly?'✕':'▸'}</button>${q2?` · מוצגים ${rows.length}`:''}</div>
+    <div class="hintxt${avFreeOnly?'':' hidden'}" id="avfreehint" style="margin:0 2px 6px">מוצגים רק אברכים שאין להם שותף. לחץ שוב כדי לראות את כולם.</div>
     ${avPendHTML()}
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
     <div class="avwrap"><div class="avinner">
@@ -6443,6 +6451,8 @@ async function renderAvByAv(){
   se.oninput=()=>{avSearch=se.value;clearTimeout(se._t);se._t=setTimeout(()=>{
     const p=se.selectionStart;paintByAv();const s2=document.getElementById('avsearch');
     if(s2){s2.focus();try{s2.setSelectionRange(p,p);}catch(e){}}},250);};
+  const afb=document.getElementById('avfreebtn');
+  if(afb)afb.onclick=()=>{avFreeOnly=!avFreeOnly;paintByAv();};
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
@@ -6468,6 +6478,17 @@ function paintByAv(){
   const rows=avFiltered();
   const el=view.querySelector('.avtlist'); if(!el)return;
   el.innerHTML=rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>';
+  // מצב הכפתור "בלי שותף" מתעדכן כאן, כי הרענון הזה אינו בונה את הכותרת
+  const fb=view.querySelector('#avfreebtn');
+  if(fb){
+    fb.classList.toggle('on',avFreeOnly);
+    const n=fb.querySelector('b');
+    fb.innerHTML=(n?n.outerHTML:'')+' בלי שותף '+(avFreeOnly?'✕':'▸');
+    fb.title=avFreeOnly?'הצג את כולם':'הצג רק אברכים בלי שותף';
+    fb.onclick=()=>{avFreeOnly=!avFreeOnly;paintByAv();};
+  }
+  const hz=view.querySelector('#avfreehint');
+  if(hz)hz.classList.toggle('hidden',!avFreeOnly);
   wireByAv();
 }
 function avRowHTML(a,ix){

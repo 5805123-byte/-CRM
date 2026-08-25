@@ -127,6 +127,11 @@
   .avstat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 11px;
     font-size:.9rem;margin-bottom:8px}
   .avstat .avfreen{color:var(--no)}
+  /* המספר "בלי שותף" הוא כפתור — לחיצה מסננת רק אותם */
+  .avfreebtn{font:inherit;font-size:inherit;color:inherit;background:transparent;
+    border:1px solid transparent;border-radius:8px;padding:1px 7px;cursor:pointer}
+  .avfreebtn:hover{background:var(--no-soft);border-color:#f3c9c9}
+  .avfreebtn.on{background:var(--no-soft);border-color:#e79c94;font-weight:700}
   .avnewbox{margin-bottom:8px}
   .avnewbox input{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:9px;
     font-family:inherit;background:var(--card);color:var(--ink)}
