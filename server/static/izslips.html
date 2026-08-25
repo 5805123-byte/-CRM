@@ -41,10 +41,13 @@
     z-index:0;pointer-events:none}
   .slip .in{position:absolute;inset:6mm 11mm 6mm 11mm;display:flex;flex-direction:column;z-index:1}
   /* שורת הראש — מוסטת שמאלה כדי לא להיכנס מתחת ללוגו שבימין */
-  .who{display:flex;gap:13mm;align-items:flex-start;padding-inline-start:36mm;min-height:33mm}
+  .who{display:flex;gap:13mm;align-items:flex-start;padding-inline-start:36mm;min-height:33mm;
+    overflow:hidden}
   .who .w{line-height:1.2}
   .who .lbl{font-size:14pt;color:var(--gold);font-weight:800;letter-spacing:.01em}
   .who .nm{font-size:24pt;font-weight:800;color:var(--deep);white-space:nowrap}
+  /* התואר ר' / מרת / ה"ה — קטן מהשם עצמו, כמו שמאיר ביקש */
+  .who .nm i{font-style:normal;font-size:14pt;font-weight:700;opacity:.9}
   /* הנוסח — פי שניים מקודם, ו"לזכות" בשורה נפרדת */
   .lead{margin-top:0.5mm;font-size:21pt;color:var(--ink);font-weight:700;line-height:1.3;
     text-align:center}
@@ -104,6 +107,21 @@ function kvFlow(t) {
   return out;
 }
 // הקטנה לפי מדידה אמיתית — לא לפי ניחוש אורך — כדי ששום דבר לא ייחתך
+// שם ארוך בכותרת (למשל ה"ה חיים ולאה אסתר לאקס) גלש מחוץ לפתק.
+// מקטינים במדידה עד שהשורה נכנסת, בדיוק כמו בשמות הקוויטל.
+function fitWho(slip) {
+  const who = slip.querySelector('.who');
+  if (!who) return;
+  const nms = [...who.querySelectorAll('.nm')];
+  for (let pt = 24; pt >= 11; pt -= 0.5) {
+    nms.forEach(n => {
+      n.style.fontSize = pt + 'pt';
+      const i = n.querySelector('i');
+      if (i) i.style.fontSize = Math.max(8, pt * 0.58) + 'pt';
+    });
+    if (who.scrollWidth <= who.clientWidth) return;
+  }
+}
 function fitNames(slip) {
   const el = slip.querySelector('.names');
   if (!el) return;
@@ -119,8 +137,8 @@ function slip(r, flip) {
                      : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
   return `<div class="slip${flip ? ' flip' : ''}"><img class="bg" src="/iz-slip.jpg" alt=""><div class="in">
     <div class="who">
-      <div class="w"><div class="lbl">יששכר</div><div class="nm">${esc(r.avreich_p || r.avreich)}</div></div>
-      <div class="w"><div class="lbl">זבולון</div><div class="nm">${esc(r.donor_p || r.donor)}</div></div>
+      <div class="w"><div class="lbl">יששכר</div><div class="nm"><i>${esc(r.av_t || "ר'")}</i> ${esc(r.avreich_p || r.avreich)}</div></div>
+      <div class="w"><div class="lbl">זבולון</div><div class="nm"><i>${esc(r.donor_t || "ר'")}</i> ${esc(r.donor_p || r.donor)}</div></div>
     </div>
     <div class="lead">יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל בעת רצון הגדול של חצות הלילה<span class="z">יעמוד לזכות:</span></div>
     ${nm}
@@ -140,7 +158,7 @@ function paint() {
   }
   document.getElementById('out').innerHTML = h ||
     '<div class="hint">אין פתקים להצגה.</div>';
-  document.querySelectorAll('.slip').forEach(fitNames);
+  document.querySelectorAll('.slip').forEach(sl => { fitWho(sl); fitNames(sl); });
 }
 (async () => {
   const q = new URLSearchParams(location.search);

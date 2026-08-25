@@ -5921,7 +5921,56 @@ def _wrap_px(dr, text, f, maxw):
     return [x for x in out if x != ''] or ['']
 
 
-def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False):
+# מאיר: "לפני השם של האברך ר' באותיות יותר קטנות, וגם אצל התורם ר',
+# ואם זה אשה אז מרת, ואם זה זוג תורמים אז ה\"ה".
+_FEM = set("""
+רבקה אסתר לאה רחל חנה שרה שפרה מרים אילנה חיה שיינא טובה רות נחמה דבורה
+שולמית אלישבע ביילא ליסה אביגיל ברכה עליזה שושנה ליזה שירה אהובה דינה
+רייזל שלי אינה עדנה ברנדי סנדרה פייגא קיילא מינדי יוכבד גיטל פרל פערל
+בלימא בת־שבע בתשבע צביה יהודית מלכה נעמי תמר הדסה זהבה אורה סימא סימה
+פריידא פרידא הינדא הינדה גולדה גולדא רייזא רוזה מרגלית עטרה בילא ביילה
+חוה עדינה יפה לילי מרתה נחמי רבקי שרי אסתי חני מיכל מיקי נועה רוני שני
+טליה מאיה יעל אפרת רינה סיגל אורית לימור מיטל דנה שני קרן ליאת ענת
+רבקי דבורי חיי שיינדל שיינדי טויבא טויבע פעסא פעסי מאטל מאטי גיטי
+""".split())
+_MALE = set("""
+דוד יעקב יוסף אברהם יצחק שמואל משה מיכאל ישראל אלי שלמה זאב יוסי ראובן
+חיים מאיר דניאל יהושע ברוך בנימין מרדכי פנחס אלחנן זאבי יהודה ארי יחזקאל
+שמחה מוטי נתנאל יואל אהרן מנחם שמעון הערשל יונה גואל חנוך סנדר בערי אוהד
+טוביה יונתן איתן אבי נתן אדם גבריאל אבא יוחאי ירדן ישעיהו נחמיה נפתלי
+אליהו עזרא שמאי דובי צבי בצלאל יוסלה חנניה פרץ ברק עמרם אלירן שלום
+אלימלך אשר גד דן זבולון חנן טוב יאיר יהונתן יחיאל ישי כלב לוי מלאכי
+מנשה נחמן נחום עובדיה עמנואל צדוק קלמן רפאל שאול שבתי שלמה שרגא תנחום
+אורי אליעזר אליקים אפרים ארז בועז ברקוביץ גרשון הלל זכריה חזקיהו יהוידע
+מוישי שרול סרולי איצי בערל וועלוול הירש ליפא מענדל נטע פישל קופל שמעלקא
+""".split())
+
+
+def _honor(first, last=''):
+    """התואר שלפני השם בפתקי הקוויטל: ר' לגבר, מרת לאשה, ה"ה לזוג."""
+    f = re.sub(r'[^\u0590-\u05ff\s\'"\u05f3\u05f4-]', ' ', str(first or '')).strip()
+    if not f:
+        return "ר\'"
+    ws = f.split()
+    # זוג: שני שמות פרטיים מחוברים ב-ו', ושניהם שמות מוכרים.
+    # "אווילין וולסין" אינו זוג — "וולסין" אינו שם פרטי.
+    for i, w in enumerate(ws):
+        if len(w) > 1 and w[0] == 'ו':
+            a2, b2 = ' '.join(ws[:i]).strip(), w[1:]
+            if a2 and (a2.split()[0] in _FEM or a2.split()[0] in _MALE) \
+               and (b2 in _FEM or b2 in _MALE):
+                return 'ה"ה'
+    for w in ws:
+        if w in _MALE:
+            return "ר\'"
+    for w in ws:
+        if w in _FEM:
+            return 'מרת'
+    return "ר\'"
+
+
+def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False,
+               av_t="ר'", donor_t="ר'"):
     """פתק הקוויטל של היששכר־זבולון כתמונה.
 
     מאיר: "כשאני רוצה להעתיק את הדף בשביל לשלוח לתורם — שיהיה על דף שלם,
@@ -5955,11 +6004,17 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     x = W - int(250 * u)
     # מאיר: "ליד המילה יששכר אל תכתוב 'האברך', וליד זבולון אל תכתוב
     # 'התורם' — זה מובן מאליו". השמות עצמם בסדר פרטי־ואז־משפחה.
-    for lbl, val in (('יששכר', avreich), ('זבולון', donor)):
-        bw2 = max(wid(val or '—', fn), wid(lbl, fl))
+    ft = font(30 * u, True)          # התואר — קטן מהשם עצמו
+    for lbl, val, ttl in (('יששכר', avreich, av_t), ('זבולון', donor, donor_t)):
+        v = val or '—'
+        tw = (wid(ttl + ' ', ft) if ttl else 0)
+        bw2 = max(wid(v, fn) + tw, wid(lbl, fl))
         x -= bw2
         dr.text((x + bw2 - wid(lbl, fl), int(22 * u)), lbl, font=fl, fill=_GOLD_T)
-        dr.text((x + bw2 - wid(val or '—', fn), int(58 * u)), val or '—', font=fn, fill=_DEEP)
+        # התואר לימין השם, בגובה בסיס דומה
+        if ttl:
+            dr.text((x + bw2 - wid(ttl, ft), int(70 * u)), ttl, font=ft, fill=_DEEP)
+        dr.text((x + bw2 - tw - wid(v, fn), int(58 * u)), v, font=fn, fill=_DEEP)
         x -= int(50 * u)
     # הנוסח — גדול, ומתחת ללוגו. "יעמוד לזכות" בשורה נפרדת (מאיר)
     y = int((215 if half else 250) * u)
@@ -7803,7 +7858,8 @@ class H(BaseHTTPRequestHandler):
             fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
             try:
                 data = izslip_png(g('av'), g('donor'), g('names'), fmt=fmt,
-                                  half=(g('half') == '1'))
+                                  half=(g('half') == '1'),
+                                  av_t=g('avt') or "ר'", donor_t=g('dnt') or "ר'")
             except Exception as e:
                 return self._send(500, {'ok': False, 'error': str(e)[:200]})
             self.send_response(200)
@@ -7881,6 +7937,7 @@ class H(BaseHTTPRequestHandler):
                     _avp = ((_af or '') + ' ' + (_al or '')).strip() or r['av']
                 _dnp = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
                 out.append({'avreich': r['av'], 'avreich_p': _avp,
+                            'av_t': "ר'", 'donor_t': _honor(r['first'], r['last']),
                             'donor': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
                             'donor_p': _dnp,
                             'donor_id': r['did'], 'english': r['english'] or '',
