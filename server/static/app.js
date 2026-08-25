@@ -7589,10 +7589,17 @@ function renderTasksTab(){
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
-      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
+      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+(hhmm(t.done_at)?(' '+hhmm(t.done_at)):'')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
         <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
         <button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
+    <div class="donepanel hidden" data-dp="${i}">
+      <label class="fld"><span>✍️ מה עשית? מה נסגר תכליס</span>
+        <input class="dnoteinp" data-i="${i}" placeholder="למשל: דיברתי איתו, ישלח צ'ק בשבוע הבא"
+          value="${esc(t.done_note||'')}"></label>
+      <div class="cmask-b"><button class="btn sm dnoteok" data-i="${i}">✓ בוצע ושמור</button>
+        <button class="btn sm ghost dnoteskip" data-i="${i}">בוצע בלי הערה</button>
+        <button class="btn sm ghost dnotex" data-i="${i}">ביטול</button></div></div>
     <div class="teditpanel hidden" data-panel="${i}">
       ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:8px">🌙 החלף/ערוך את הפרנס בלוח</button>`:''}
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="tnote" data-i="${i}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
@@ -7672,10 +7679,35 @@ function renderTasksTab(){
   view.querySelectorAll('.teditpanel .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
   view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;const t=all[r.dataset.i];if(t.dref)openDonor(t.dref);});
   const setDone=(t,v)=>setTaskDone(t,v,t.dref);
-  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();const t=all[b.dataset.done];
-    if(showDone){await setDone(t,0);toast('הוחזר לפתוחות ✓');render();checkReminders();}
-    else{await setDone(t,1);render();checkReminders();toastUndo('בוצע ✓ · נרשם בכרטיס',async()=>{await setDone(t,0);render();checkReminders();});}
+  // מאיר: "צריך שיהיה כפתור למי שביצע, שדה חופשי לתגובה — מה הוא עשה
+  // במשימה, ומה נסגר תכליס". הווי פותח שדה קצר לפני הסימון.
+  view.querySelectorAll('.tdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    const i=b.dataset.done, t=all[i];
+    if(showDone){await setDone(t,0);toast('הוחזר לפתוחות ✓');render();checkReminders();return;}
+    const pn=view.querySelector('.donepanel[data-dp="'+i+'"]');
+    if(!pn){await setDone(t,1);render();checkReminders();return;}
+    view.querySelectorAll('.donepanel').forEach(x=>{if(x!==pn)x.classList.add('hidden');});
+    pn.classList.remove('hidden');
+    const inp=pn.querySelector('.dnoteinp'); if(inp){inp.focus();inp.select();}
   });
+  const closeDone=async(i,note)=>{
+    const t=all[i];
+    if(note!==null&&t.id)await api('PUT','/api/task/'+t.id,{done_note:note});
+    if(note!==null)t.done_note=note;
+    await setDone(t,1);
+    render();checkReminders();
+    toastUndo('בוצע ✓ · נרשם בכרטיס',async()=>{await setDone(t,0);render();checkReminders();});
+  };
+  view.querySelectorAll('.dnoteok').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    const i=b.dataset.i, inp=view.querySelector('.dnoteinp[data-i="'+i+'"]');
+    await closeDone(i,(inp?inp.value:'').trim());});
+  view.querySelectorAll('.dnoteskip').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    await closeDone(b.dataset.i,null);});
+  view.querySelectorAll('.dnotex').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    b.closest('.donepanel').classList.add('hidden');});
+  view.querySelectorAll('.dnoteinp').forEach(inp=>inp.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();
+      view.querySelector('.dnoteok[data-i="'+inp.dataset.i+'"]').click();}});
   const tgd=document.getElementById('toggledone');if(tgd)tgd.onclick=()=>{showDone=!showDone;render();};
 }
 

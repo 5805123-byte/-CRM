@@ -408,6 +408,10 @@ def ensure_schema():
     try: con.execute("ALTER TABLE donors ADD COLUMN addr_ok INTEGER DEFAULT 0")
     except Exception: pass
     # הקצאת משימה למזכיר (מאיר / אהרן / ריק=אני)
+    # מאיר: "אפילו אם עושה וי על מה שביצע שיוכל לכתוב שם הערה מה הוא
+    # עשה על המשימה ומה נסגר תכליס"
+    try: con.execute("ALTER TABLE tasks ADD COLUMN done_note TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE tasks ADD COLUMN assignee TEXT")
     except Exception: pass
     # תדירות תרומה — קבוע אך לא בהכרח חודשי (רבעוני / שנתי / לחגים וכו')
@@ -6601,7 +6605,7 @@ def task_text(kind, note):
     return note if txt in note else (txt + ' — ' + note)
 
 
-def task_done_log(cur, tid, done=True, by='', when=''):
+def task_done_log(cur, tid, done=True, by='', when='', note=None):
     """סימון משימה כבוצעה — ושורת תיעוד בדף הקשר של התורם: מה נעשה, מתי, ובידי מי.
     ביטול הווי מוחק את אותה שורה, כדי שלא יישאר תיעוד על משהו שלא קרה."""
     try:
@@ -6618,13 +6622,18 @@ def task_done_log(cur, tid, done=True, by='', when=''):
     at = (when or '').strip() or now_iso()
     day = at[:10]
     who = (by or '').strip() or (t['assignee'] or '').strip() or 'מאיר'
-    cur.execute("UPDATE tasks SET done=1, done_date=?, done_by=?, done_at=? WHERE id=?",
-                (day, who, at, t['id']))
+    if note is None:
+        note = (t['done_note'] if 'done_note' in t.keys() else '') or ''
+    note = str(note or '').strip()
+    cur.execute("UPDATE tasks SET done=1, done_date=?, done_by=?, done_at=?, done_note=? WHERE id=?",
+                (day, who, at, note, t['id']))
     if not t['donor_id']:
         return None
     if cur.execute("SELECT 1 FROM contacts_log WHERE task_id=?", (t['id'],)).fetchone():
         return None
     summary = '✓ בוצע: %s · ע"י %s' % (task_text(t['kind'], t['note']), who)
+    if note:
+        summary += ' — ' + note
     cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,task_id,at) "
                 "VALUES(?,?,'משימה',?,'',?,?)", (t['donor_id'], day, summary, t['id'], at))
     return {'id': cur.lastrowid, 'donor_id': t['donor_id'], 'date': day, 'channel': 'משימה',
@@ -9231,7 +9240,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); cur = con.cursor(); sets = []; vals = []
-            for k in ('due_date','kind','note','assignee'):
+            for k in ('due_date','kind','note','assignee','done_note'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 cur.execute("UPDATE tasks SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
@@ -9239,7 +9248,8 @@ class H(BaseHTTPRequestHandler):
             if 'done' in b:   # הווי נרשם גם בדף הקשר של התורם — מה נעשה, מתי, ובידי מי
                 clog = task_done_log(cur, pid, done=bool(int(b.get('done') or 0)),
                                      by=b.get('done_by', ''),
-                                     when=b.get('done_at', '') or b.get('done_date', ''))
+                                     when=b.get('done_at', '') or b.get('done_date', ''),
+                                     note=b.get('done_note'))
             elif sets:        # עריכת משימה שכבר בוצעה — גם הרישום בכרטיס מתעדכן
                 clog = task_log_sync(cur, pid)
             con.commit(); con.close()
