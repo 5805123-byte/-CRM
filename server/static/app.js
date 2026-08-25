@@ -4930,6 +4930,24 @@ function wireIzSum(box,d){
     Object.assign(d,nd);
     refreshIzSum(d); if(tab==='donors')renderDonors();};
 }
+// מאיר: "גם בדף תורם ביששכר־זבולון שתהיה אפשרות להדפיס או לראות
+// ולהעתיק את השמות — או בפורמט כזה של המתקפל, או סתם את השמות
+// להעתקה".
+function kvNamesText(d){
+  return (d.prayers||[]).map(p=>kvFlow(String(p.text||''))).filter(Boolean).join('\n');
+}
+function kvToolsHTML(d){
+  const av=(d.partners||[]).filter(p=>p.active!=0&&(p.avreich||'').trim());
+  const txt=kvNamesText(d);
+  if(!av.length&&!txt)return '';
+  return `<div class="kvtools"><div class="kvtools-t">🕯️ הקוויטל של התורם</div>
+    ${txt?`<div class="kvtxt" id="kvtxt">${esc(txt)}</div>`:'<div class="hintxt">אין עדיין שמות לקוויטל אצל התורם הזה.</div>'}
+    <div class="kvtools-b">
+      ${txt?`<button class="btn sm ghost" id="kvcopy">📋 העתק שמות</button>`:''}
+      ${av.map(p=>`<button class="btn sm kvprint" data-av="${esc(p.avreich)}">🖨️ דף מקופל — ${esc(p.avreich)}</button>`).join('')}
+    </div>
+    <div class="hintxt">"דף מקופל" נפתח בחלון הדפסה: הפתק פעמיים בדף, למטה הפוך — מקפלים והוא עומד כאוהל.</div></div>`;
+}
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
   const act=(d.partners||[]).filter(p=>p.active!=0);
@@ -4975,8 +4993,14 @@ function renderPartners(d){
     el.innerHTML='<div class="hintxt">עדיין לא הוזן. הוסף אברך למטה.</div>';
   // כל היששכר־זבולון במקום אחד: מה שנשאר מהסיכום (שולם עד, חוב,
   // היסטוריה, שותפות תשלום) יושב כאן ולא בחלון נפרד למעלה
+  el.innerHTML+=kvToolsHTML(d);
   el.innerHTML+=izSummaryHTML(d);
   const _izs=el.querySelector('.izsum'); if(_izs)setTimeout(()=>wireIzSum(_izs,d),0);
+  // הדפסת הדף המקופל לאברך, והעתקת השמות כטקסט
+  el.querySelectorAll('.kvprint').forEach(b2=>b2.onclick=()=>
+    window.open('/iz-slips?av='+encodeURIComponent(b2.dataset.av),'_blank'));
+  const kvc=el.querySelector('#kvcopy');
+  if(kvc)kvc.onclick=()=>copyToClip(kvNamesText(d),'השמות הועתקו ✓');
   el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📝 מעקב חוב יששכר־זבולון</div>
       <label class="fld"><span>🔴 כמה הוא חייב עכשיו (${cur}) — עדכון ידני שגובר על החישוב</span><input id="iz_debt" inputmode="decimal" value="${esc(d.iz_debt||'')}" placeholder="השאר ריק כדי לחשב אוטומטית"></label>
       <div class="hintxt">ההערה על ההתחייבות ("שילם מראש, מכסה עד אלול") נכתבת בשורת יששכר־זבולון בסוף דף התורם — שם הכל במקום אחד.</div></div>

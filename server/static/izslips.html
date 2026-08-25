@@ -23,6 +23,11 @@
      ירשו color:#fff מהסרגל — לבן על לבן. כאן נקבע להן צבע משלהן. */
   .bar select option{color:#2A2740;background:#fff;font-weight:600}
   .bar select{max-width:min(46vw,320px);text-overflow:ellipsis}
+  /* מאיר: "בשורה של כל האברכים שיהיה שורת חיפוש אברך ספציפי" */
+  .bar input{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:9px;min-width:200px;
+    border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff}
+  .bar input::placeholder{color:rgba(255,255,255,.7)}
+  .bar input:focus{outline:none;background:rgba(255,255,255,.22)}
   .hint{padding:8px 14px;background:#fff8e6;color:#7a5a12;font-family:system-ui,sans-serif;font-size:.86rem}
   .sheet{width:210mm;height:297mm;margin:12px auto;background:#fff;
     box-shadow:0 6px 24px rgba(40,36,64,.18);display:flex;flex-direction:column}
@@ -63,6 +68,7 @@
 <body>
 <div class="bar">
   <b>🕯️ דפי קוויטל — יששכר־זבולון</b>
+  <input id="q" placeholder="🔍 חפש אברך או תורם…" autocomplete="off">
   <select id="pick"><option value="">כל האברכים</option></select>
   <select id="filt">
     <option value="names">רק מי שיש לו שמות</option>
@@ -116,7 +122,10 @@ function slip(r, flip) {
 function paint() {
   const only = document.getElementById('pick').value;
   const mode = document.getElementById('filt').value;
-  let rows = ROWS.filter(r => (!only || r.avreich === only) && (mode === 'all' || r.names));
+  const q = (document.getElementById('q').value || '').trim().toLowerCase();
+  const hit = r => !q || (r.avreich + ' ' + r.donor + ' ' + (r.names || ''))
+    .toLowerCase().includes(q);
+  let rows = ROWS.filter(r => (!only || r.avreich === only) && (mode === 'all' || r.names) && hit(r));
   document.getElementById('cnt').textContent = rows.length + ' פתקים';
   let h = '';
   for (const r of rows) {
@@ -137,6 +146,7 @@ function paint() {
   if (q.get('av')) sel.value = q.get('av');
   sel.onchange = paint;
   document.getElementById('filt').onchange = paint;
+  document.getElementById('q').oninput = paint;
   paint();
 })();
 </script>
