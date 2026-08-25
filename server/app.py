@@ -378,6 +378,11 @@ def ensure_schema():
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN at TEXT")
     except Exception: pass
     # תשובה שמאיר ענה על פנייה — נתלית מתחת לפנייה עצמה ולא כרישום נפרד
+    # מאיר: "אם יש משהו חדש בקשר שעדיין לא פתחתי וראיתי — שיהיה מסומן".
+    # רישום קשר נכנס מתחיל כלא־נקרא, ומסומן כנקרא כשמאיר פותח את לשונית
+    # הקשר של אותו תורם.
+    try: con.execute("ALTER TABLE contacts_log ADD COLUMN seen INTEGER DEFAULT 0")
+    except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN reply_to INTEGER")
     except Exception: pass
     # זוגות שנבדקו וסומנו "לא אותו אדם" — לא יופיעו שוב ברשימת המיזוג
@@ -4778,6 +4783,49 @@ def ensure_schema():
     except Exception as e:
         print('  kv flow error:', e)
 
+    # מאיר: "תוריד את השורה של שני אברכים כולל יום — זה לא קשור לפה
+    # בכלל ברשימות יששכר־זבולון". שורות שנרשמו כאברך אבל השם שלהן הוא
+    # התחייבות כולל יום ("... — כולל יום") אינן אברכים: הן נכנסות
+    # לרשימת האברכים של הכולל ומנפחות את היששכר־זבולון. הן עוברות
+    # לשורת התחייבות "כולל יום" רגילה, והכסף נשמר.
+    try:
+        _rows = con.execute(
+            "SELECT p.id,p.donor_id,p.avreich,p.amount,p.method,p.cur "
+            "FROM partners p WHERE COALESCE(p.active,1)<>0 "
+            "AND TRIM(COALESCE(p.avreich,'')) LIKE '%כולל יום'").fetchall()
+        _n = 0
+        for _r in _rows:
+            _amt = str(_r['amount'] or '').strip()
+            _has = con.execute(
+                "SELECT 1 FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                "AND category LIKE '%כולל יום%' AND COALESCE(status,'')<>'הסתיים'",
+                (_r['donor_id'],)).fetchone()
+            if not _has:
+                _note = (_r['avreich'] or '').replace('— כולל יום', '').strip(' —')
+                con.execute(
+                    "INSERT INTO pledges(donor_id,category,amount,status,date,note,"
+                    "monthly,paid,confirmed) VALUES(?,'כולל יום',?,'נתן',?,?,1,'',1)",
+                    (_r['donor_id'], _amt, today_iso(), _note))
+            con.execute("UPDATE partners SET active=0, ended_date=? WHERE id=?",
+                        (today_iso(), _r['id']))
+            _n += 1
+        if _n:
+            con.commit()
+            print('  שורות "כולל יום" שהיו רשומות כאברך הועברו להתחייבות: %d' % _n)
+    except Exception as e:
+        print('  kollel-yom partner error:', e)
+
+    # כל מה שכבר קיים נחשב נקרא — אחרת ביום הראשון כל הכרטיסים היו
+    # נדלקים. מכאן והלאה רק מה שנכנס חדש מסומן.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_seen_v1'").fetchone():
+            con.execute("UPDATE contacts_log SET seen=1")
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_seen_v1')")
+            con.commit()
+            print('  רישומי קשר קיימים סומנו כנקראו')
+    except Exception as e:
+        print('  contacts seen error:', e)
+
     # מאיר: "שנה לא נותן, וזה עושה שהוא חייב 72,000 במקום 18 אלף".
     # לוח השנה של אנדרואיד נפתח בשנה 1 ושמר since='0001-12-26' — ומכאן
     # החוב נספר על מאות חודשים. חודש התחלה מחוץ לטווח סביר נמחק, כדי
@@ -4862,7 +4910,12 @@ def get_all():
             dn = dict(r); dn['hmonth'] = greg_to_heb_monthyear(r['date'])
             byid[r['donor_id']]['donations'].append(dn)
     for r in c.execute("SELECT * FROM contacts_log ORDER BY date DESC"):
-        if r['donor_id'] in byid: byid[r['donor_id']]['contacts'].append(dict(r))
+        if r['donor_id'] in byid:
+            row = dict(r)
+            byid[r['donor_id']]['contacts'].append(row)
+            # רישום נכנס שעדיין לא נפתח — נספר לסימון על שורת התורם
+            if not row.get('seen') and (row.get('direction') or '') != 'out':
+                byid[r['donor_id']]['unseen'] = byid[r['donor_id']].get('unseen', 0) + 1
     general_tasks = []
     for r in c.execute("SELECT * FROM tasks ORDER BY due_date"):
         if r['donor_id'] in byid: byid[r['donor_id']]['tasks'].append(dict(r))
@@ -4892,7 +4945,7 @@ def get_all():
     # חיוב חוזר בכרטיס). מה שלא כוסה — זה חוב אמיתי.
     for d in donors:
         d['declined'] = []
-        d['declined_open'] = 0
+        d['declined_open'] = 0; d.setdefault('unseen', 0)
     try:
         ok, okmon = {}, set()
         for r in c.execute("SELECT donor_id,amount,date FROM recon "
@@ -10045,6 +10098,14 @@ class H(BaseHTTPRequestHandler):
             con.execute("DELETE FROM avreich_pending WHERE alias=?", (alias,))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'msg': msg})
+        m = re.match(r'/api/donor/(\d+)/seen$', self.path)
+        if m:   # לשונית הקשר נפתחה — כל מה שהיה חדש אצל התורם הזה נקרא
+            con = db()
+            n = con.execute("UPDATE contacts_log SET seen=1 "
+                            "WHERE donor_id=? AND COALESCE(seen,0)=0",
+                            (int(m.group(1)),)).rowcount
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'marked': n})
         if self.path == '/api/avreich/new':
             # הוספת אברך חדש לרשימה — רק דרך הפעולה הזו, לא בהקלדה חופשית
             nm = (b.get('name') or '').strip()

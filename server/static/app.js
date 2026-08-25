@@ -1307,7 +1307,7 @@ function renderDonors(){
         ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
         ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
         ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
+      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>
     ${list.length>DLIM?`<div class="moredon" id="moredon">מציג ${DLIM} מתוך ${list.length} — גלול להמשך…</div>`:''}`;
   wireMoreDonors(list);
@@ -2104,7 +2104,15 @@ function renderCard(d){
   if(cardTab==='info') return cardInfo(d,body);
   if(cardTab==='kvittel') return cardKvittel(d,body);
   if(cardTab==='building') return cardBuilding(d,body);
-  if(cardTab==='contact') return cardContact(d,body);
+  if(cardTab==='contact'){
+    // נפתחה לשונית הקשר — מה שהיה חדש אצל התורם הזה נחשב נקרא
+    if(unseenCount(d)){
+      d.unseen=0;
+      (d.contacts||[]).forEach(c=>{c.seen=1;});
+      api('POST','/api/donor/'+d.id+'/seen',{}).then(()=>{if(tab==='donors')renderDonors();});
+    }
+    return cardContact(d,body);
+  }
   if(cardTab==='tasks') return cardTasks(d,body);
 }
 function cardTasks(d,body){
@@ -4472,6 +4480,17 @@ function fbChip(x){
 const THANKS_FROM='2026-07-01';   // כל תרומה מ-1 ביולי ואילך — מעקב "הודינו?"
 function needThanks(x){let d=(x.date||'').slice(0,10);if(!d)return true;if(d.length===7)d+='-01';return d>=THANKS_FROM;}
 function unthankedCount(d){return (d.donations||[]).filter(x=>needThanks(x)&&!+x.thanked).length;}
+// מאיר: "אם לתורם יש משימה פתוחה אצלו שצריך לעשות, או יש משהו חדש
+// בקשר שעדיין לא פתחתי וראיתי — שיהיה מסומן כאן בחלון הזה".
+function openTasks(d){return (d.tasks||[]).filter(t=>!+t.done).length;}
+function unseenCount(d){return +(d.unseen||0);}
+// המשימה הדחופה ביותר — לכותרת של הסימון, כדי שיֵדע מה מחכה לו
+function nextTaskTxt(d){
+  const t=(d.tasks||[]).filter(x=>!+x.done)
+    .sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||'')))[0];
+  if(!t)return '';
+  return kindLabel(t.kind)+(t.note?(' — '+t.note):'')+(t.due_date?(' · '+fmtGreg(t.due_date)):'');
+}
 // הערה חופשית שנרשמה לתרומה (בלי סימוני הייבוא הטכניים)
 // כל האברכים במערכת — לבחירה כשמסווגים יששכר־זבולון
 function allAvreichim(){const s=new Set();DB.forEach(d=>(d.partners||[]).forEach(p=>{const a=(p.avreich||'').trim();if(a)s.add(a);}));
