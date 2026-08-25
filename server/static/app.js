@@ -5288,6 +5288,20 @@ function plPaid(d,p){
   const v=got>0.5?got:amtNum(p.paid);
   return tot>0.5?Math.min(tot,v):v;
 }
+// התאריך של התשלום האחרון שנזקף להתחייבות הזו. מאיר: "היא משלמת
+// בתשלומים את התרומות המסומנות כאן, אז למה אתה קורא לזה חוב?"
+// כשהתשלומים זורמים — זו התחייבות בתהליך, לא חוב.
+function plLastPay(d,p){
+  const cat=String(p.category||'').trim(); if(!d||!cat)return '';
+  const via=viaDonorOf(p), src=via||d, from=String(p.date||'').slice(0,10);
+  let last='';
+  (src.donations||[]).forEach(x=>{
+    if(String(x.category||'').trim()!==cat)return;
+    const dt=String(x.date||'').slice(0,10); if(!dt)return;
+    if(from&&dt<from)return;
+    if(dt>last)last=dt;});
+  return last;
+}
 function plLeft(d,p){
   if(p===undefined){p=d;d=null;}            // תאימות לקריאות ישנות
   return Math.max(0, amtNum(p.amount)-plPaid(d,p));
@@ -6302,7 +6316,17 @@ function donorDebts(d){
             +' — שולמו '+f2(paid)+' מתוך '+f2(tot)+'. היתר עוד לא הגיע זמנו.';
     } else {
       owe=tot-paid;
-      if(owe>0.5&&paid>0.5)note='שולמו '+f2(paid)+' מתוך '+f2(tot);
+      // מאיר: "גם פיינגולד משלמת בתשלומים את התרומות המסומנות כאן —
+      // אל תכניס את זה ברשימות בכלל כל זמן שזה תשלומים והתשלומים
+      // בסדר". גם בלי לוח תשלומים מוגדר, התחייבות שנכנסים אליה
+      // תשלומים באופן שוטף היא בתהליך ולא חוב. רק כשהתשלומים פסקו
+      // (חודשיים ומעלה בלי כלום) היתרה הופכת לחוב.
+      if(paid>0.5){
+        const last=plLastPay(d,p);
+        if(last&&monthsBetween(last.slice(0,7),todayStr().slice(0,7))<2)return;
+        note='שולמו '+f2(paid)+' מתוך '+f2(tot)
+            +(last?(' · התשלום האחרון '+fmtGreg(last)):'');
+      }
     }
     if(owe<=0.5)return;                                // בזמן — אין חוב
     out.push({what:(p.category||'התחייבות'),amt:owe,kind:'pledge',id:p.id,when:note}); });
