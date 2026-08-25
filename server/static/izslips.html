@@ -18,6 +18,11 @@
   .bar button,.bar select{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:9px;
     border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
   .bar button:hover{background:rgba(255,255,255,.24)}
+  /* מאיר: "כשאני רוצה לבחור אברך ספציפי הוא לא מראה לי את שמותיהם,
+     רק בטאבלט ולא במחשב". חלון הבחירה במחשב נפתח על רקע לבן, והאפשרויות
+     ירשו color:#fff מהסרגל — לבן על לבן. כאן נקבע להן צבע משלהן. */
+  .bar select option{color:#2A2740;background:#fff;font-weight:600}
+  .bar select{max-width:min(46vw,320px);text-overflow:ellipsis}
   .hint{padding:8px 14px;background:#fff8e6;color:#7a5a12;font-family:system-ui,sans-serif;font-size:.86rem}
   .sheet{width:210mm;height:297mm;margin:12px auto;background:#fff;
     box-shadow:0 6px 24px rgba(40,36,64,.18);display:flex;flex-direction:column}
