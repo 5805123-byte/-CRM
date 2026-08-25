@@ -49,7 +49,7 @@
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
   /* קו הקיפול הוא גבול של הפתק העליון ולא אלמנט נוסף — אלמנט נפרד
      הוסיף פיקסל וגלש לעמוד שני בהדפסה */
-  .slip:first-child{border-bottom:1px dashed #c9bfa6}
+  .slip:first-child{border-bottom:2px dashed #a08c5e}
   /* מאיר: "בחצי השני יהיה אותו תורם שוב, פשוט הפוך — כדי שאם אקפל את
      הדף יהיה לכל צד את הצד כתוב, וכך האברך יוכל ללמוד והדף עומד מולו
      במשולש". החצי התחתון הוא אותו פתק מסובב ב-180°, כך שאחרי קיפול
@@ -112,8 +112,8 @@ function slip(r, flip) {
                      : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
   return `<div class="slip${flip ? ' flip' : ''}"><div class="in">
     <div class="who">
-      <div class="w"><div class="lbl">יששכר — האברך</div><div class="nm">${esc(r.avreich)}</div></div>
-      <div class="w"><div class="lbl">זבולון — התורם</div><div class="nm">${esc(r.donor)}</div></div>
+      <div class="w"><div class="lbl">יששכר</div><div class="nm">${esc(r.avreich_p || r.avreich)}</div></div>
+      <div class="w"><div class="lbl">זבולון</div><div class="nm">${esc(r.donor_p || r.donor)}</div></div>
     </div>
     <div class="lead">יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל בעת רצון הגדול של חצות הלילה<span class="z">יעמוד לזכות:</span></div>
     ${nm}

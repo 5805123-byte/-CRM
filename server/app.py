@@ -5953,7 +5953,9 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     # ראש הפתק — שני השמות, מימין לשמאל ומשמאל ללוגו
     fl, fn = font(29 * u), font(50 * u, True)
     x = W - int(250 * u)
-    for lbl, val in (('יששכר — האברך', avreich), ('זבולון — התורם', donor)):
+    # מאיר: "ליד המילה יששכר אל תכתוב 'האברך', וליד זבולון אל תכתוב
+    # 'התורם' — זה מובן מאליו". השמות עצמם בסדר פרטי־ואז־משפחה.
+    for lbl, val in (('יששכר', avreich), ('זבולון', donor)):
         bw2 = max(wid(val or '—', fn), wid(lbl, fl))
         x -= bw2
         dr.text((x + bw2 - wid(lbl, fl), int(22 * u)), lbl, font=fl, fill=_GOLD_T)
@@ -7844,6 +7846,16 @@ class H(BaseHTTPRequestHandler):
                 g = pray.setdefault(r['donor_id'], {})
                 g.setdefault((r['tier'] or ''), []).append(r['text'])
             out = []
+            # שם האברך מפוצל לפי טבלת האברכים — היא הגיעה מהקובץ של מאיר
+            # ולכן היא המקור המדויק; רק אם אינו שם נופלים לפיצול לפי רווח
+            _avn = {}
+            try:
+                for _a in con.execute("SELECT name,last,first FROM avreichim"):
+                    if (_a['first'] or '').strip():
+                        _avn[(_a['name'] or '').strip()] = (
+                            (_a['first'] or '').strip() + ' ' + (_a['last'] or '').strip()).strip()
+            except Exception:
+                pass
             q = ("SELECT TRIM(p.avreich) av, d.id did, d.last, d.first, d.english "
                  "FROM partners p JOIN donors d ON d.id=p.donor_id "
                  "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''")
@@ -7860,8 +7872,17 @@ class H(BaseHTTPRequestHandler):
                 txt = '\n'.join(g.get('יששכר_זבולון') or [])
                 if not txt:                       # אין קוויטל יש"ז — לוקחים מה שיש
                     txt = '\n'.join(sum((v for k, v in g.items()), []))
-                out.append({'avreich': r['av'],
+                # מאיר: "בדפים האלו חשוב לי הכבוד של האברך והתורם — שיהיה
+                # כתוב את השם הפרטי לפני המשפחה". ברשימות ובחיפוש נשאר
+                # שם משפחה תחילה; רק כאן הסדר מתהפך.
+                _avp = _avn.get(r['av'])
+                if not _avp:
+                    _al, _af = _split_av(r['av'])
+                    _avp = ((_af or '') + ' ' + (_al or '')).strip() or r['av']
+                _dnp = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
+                out.append({'avreich': r['av'], 'avreich_p': _avp,
                             'donor': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                            'donor_p': _dnp,
                             'donor_id': r['did'], 'english': r['english'] or '',
                             'names': txt.strip()})
             con.close()
