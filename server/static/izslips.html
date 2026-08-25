@@ -19,7 +19,7 @@
     border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
   .bar button:hover{background:rgba(255,255,255,.24)}
   .hint{padding:8px 14px;background:#fff8e6;color:#7a5a12;font-family:system-ui,sans-serif;font-size:.86rem}
-  .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;
+  .sheet{width:210mm;height:297mm;margin:12px auto;background:#fff;
     box-shadow:0 6px 24px rgba(40,36,64,.18);display:flex;flex-direction:column}
   .slip{width:210mm;height:148.5mm;position:relative;overflow:hidden;
     background:url('/iz-slip.jpg') center/100% 100% no-repeat}
@@ -37,11 +37,18 @@
     margin-top:3mm;font-size:45pt;font-weight:800;line-height:1.28;overflow:hidden}
   .names span{display:block;width:100%}
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
-  .cut{border-top:1px dashed #c9bfa6}
+  /* קו הקיפול הוא גבול של הפתק העליון ולא אלמנט נוסף — אלמנט נפרד
+     הוסיף פיקסל וגלש לעמוד שני בהדפסה */
+  .slip:first-child{border-bottom:1px dashed #c9bfa6}
+  /* מאיר: "בחצי השני יהיה אותו תורם שוב, פשוט הפוך — כדי שאם אקפל את
+     הדף יהיה לכל צד את הצד כתוב, וכך האברך יוכל ללמוד והדף עומד מולו
+     במשולש". החצי התחתון הוא אותו פתק מסובב ב-180°, כך שאחרי קיפול
+     באמצע הדף עומד כאוהל ושני הצדדים נקראים כשורה. */
+  .slip.flip{transform:rotate(180deg)}
   @media print{
     html,body{background:#fff}
     .bar,.hint{display:none}
-    .sheet{width:auto;min-height:auto;margin:0;box-shadow:none}
+    .sheet{width:210mm;height:297mm;margin:0;box-shadow:none}
     .slip{break-inside:avoid;page-break-inside:avoid}
     .sheet{break-after:page;page-break-after:always}
     .sheet:last-child{break-after:auto;page-break-after:auto}
@@ -60,7 +67,7 @@
   <span id="cnt"></span>
   <button onclick="window.print()">🖨️ הדפס</button>
 </div>
-<div class="hint">תורם אחד בכל דף, על חצי A4 העליון — מקפלים או גוזרים בקו המקווקו. בחר אברך מהרשימה כדי להדפיס רק אותו.</div>
+<div class="hint">תורם אחד בכל דף, פעמיים — למעלה, ולמטה אותו פתק הפוך. מקפלים בקו המקווקו והדף עומד כאוהל, כתוב וקריא משני הצדדים. בחר אברך מהרשימה כדי להדפיס רק אותו.</div>
 <div id="out"></div>
 <script>
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
@@ -89,10 +96,10 @@ function fitNames(slip) {
     if (inner.scrollHeight <= el.clientHeight) return;
   }
 }
-function slip(r) {
+function slip(r, flip) {
   const nm = r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
                      : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
-  return `<div class="slip"><div class="in">
+  return `<div class="slip${flip ? ' flip' : ''}"><div class="in">
     <div class="who">
       <div class="w"><div class="lbl">יששכר — האברך</div><div class="nm">${esc(r.avreich)}</div></div>
       <div class="w"><div class="lbl">זבולון — התורם</div><div class="nm">${esc(r.donor)}</div></div>
@@ -108,7 +115,7 @@ function paint() {
   document.getElementById('cnt').textContent = rows.length + ' פתקים';
   let h = '';
   for (const r of rows) {
-    h += '<div class="sheet">' + slip(r) + '<div class="cut"></div></div>';
+    h += '<div class="sheet">' + slip(r) + slip(r, true) + '</div>';
   }
   document.getElementById('out').innerHTML = h ||
     '<div class="hint">אין פתקים להצגה.</div>';
