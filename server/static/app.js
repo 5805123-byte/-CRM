@@ -6284,8 +6284,17 @@ const PKLBL={parnes:'🌙 פרנס לילה',coffee:'☕ חדר קפה',breakfas
 function donorDebts(d){
   if(String(d&&d.debt_ok||'').trim())return [];   // סודר עם התורם — לא חוב פתוח
   const out=[];
+  // מאיר: "אלחנן אברמוביץ לא חייב שום חוב, הוא שילם בינתיים כמו שצריך
+  // לפי התשלומים שקבענו — אז למה כתוב שהוא חייב 35,000?"
+  // כאן נרשם הסכום המלא של ההתחייבות ולא מה שנשאר. אצלו: $35,000
+  // בתשלומים, מתוכם שולמו $21,000 — החוב הוא $14,000 ולא 35,000.
+  // התחייבות שכבר כוסתה במלואה יורדת מהרשימה לגמרי.
   (d.pledges||[]).forEach(p=>{ if(p.status==='נתן'||+p.monthly)return;   // חודשית = שוטפת, לא חוב
-    out.push({what:(p.category||'התחייבות'),amt:amtNum(p.amount),kind:'pledge',id:p.id,when:''}); });
+    const left=plLeft(d,p); if(left<=0.5)return;
+    const paid=amtNum(p.amount)-left;
+    out.push({what:(p.category||'התחייבות'),amt:left,kind:'pledge',id:p.id,
+      when:paid>0.5?('שולמו '+curSym(d)+Math.round(paid).toLocaleString('en-US')
+                     +' מתוך '+curSym(d)+Math.round(amtNum(p.amount)).toLocaleString('en-US')):''}); });
   (d.parnes||[]).forEach(p=>{ if(p.status==='suggested'||+p.paid)return;
     out.push({what:(PKLBL[p.kind]||'🌙 פרנס יום'),amt:amtNum(p.amount),kind:'parnes',id:p.id,
               when:[p.date_text,p.hyear].filter(Boolean).join(' ')}); });
