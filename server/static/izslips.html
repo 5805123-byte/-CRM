@@ -31,9 +31,15 @@
   .hint{padding:8px 14px;background:#fff8e6;color:#7a5a12;font-family:system-ui,sans-serif;font-size:.86rem}
   .sheet{width:210mm;height:297mm;margin:12px auto;background:#fff;
     box-shadow:0 6px 24px rgba(40,36,64,.18);display:flex;flex-direction:column}
-  .slip{width:210mm;height:148.5mm;position:relative;overflow:hidden;
-    background:url('/iz-slip.jpg') center/100% 100% no-repeat}
-  .slip .in{position:absolute;inset:6mm 11mm 6mm 11mm;display:flex;flex-direction:column}
+  /* מאיר: "כשאני מוריד להדפסה זה לא מראה את הלוגו ועיצוב הבלאנק".
+     רקע ב-CSS אינו מודפס אלא אם המשתמש מסמן "גרפיקת רקע" בתיבת
+     ההדפסה. תמונה אמיתית מודפסת תמיד, ולכן הבלאנק הוא <img> ולא
+     background — ולמקרה שנשאר רקע כלשהו, גם print-color-adjust. */
+  .slip{width:210mm;height:148.5mm;position:relative;overflow:hidden;background:#fdf8ee;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .slip>.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
+    z-index:0;pointer-events:none}
+  .slip .in{position:absolute;inset:6mm 11mm 6mm 11mm;display:flex;flex-direction:column;z-index:1}
   /* שורת הראש — מוסטת שמאלה כדי לא להיכנס מתחת ללוגו שבימין */
   .who{display:flex;gap:13mm;align-items:flex-start;padding-inline-start:36mm;min-height:33mm}
   .who .w{line-height:1.2}
@@ -56,7 +62,8 @@
      באמצע הדף עומד כאוהל ושני הצדדים נקראים כשורה. */
   .slip.flip{transform:rotate(180deg)}
   @media print{
-    html,body{background:#fff}
+    html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .bar,.hint{display:none}
     .sheet{width:210mm;height:297mm;margin:0;box-shadow:none}
     .slip{break-inside:avoid;page-break-inside:avoid}
@@ -110,7 +117,7 @@ function fitNames(slip) {
 function slip(r, flip) {
   const nm = r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
                      : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
-  return `<div class="slip${flip ? ' flip' : ''}"><div class="in">
+  return `<div class="slip${flip ? ' flip' : ''}"><img class="bg" src="/iz-slip.jpg" alt=""><div class="in">
     <div class="who">
       <div class="w"><div class="lbl">יששכר</div><div class="nm">${esc(r.avreich_p || r.avreich)}</div></div>
       <div class="w"><div class="lbl">זבולון</div><div class="nm">${esc(r.donor_p || r.donor)}</div></div>
