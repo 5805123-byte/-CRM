@@ -6284,17 +6284,28 @@ const PKLBL={parnes:'🌙 פרנס לילה',coffee:'☕ חדר קפה',breakfas
 function donorDebts(d){
   if(String(d&&d.debt_ok||'').trim())return [];   // סודר עם התורם — לא חוב פתוח
   const out=[];
-  // מאיר: "אלחנן אברמוביץ לא חייב שום חוב, הוא שילם בינתיים כמו שצריך
-  // לפי התשלומים שקבענו — אז למה כתוב שהוא חייב 35,000?"
-  // כאן נרשם הסכום המלא של ההתחייבות ולא מה שנשאר. אצלו: $35,000
-  // בתשלומים, מתוכם שולמו $21,000 — החוב הוא $14,000 ולא 35,000.
-  // התחייבות שכבר כוסתה במלואה יורדת מהרשימה לגמרי.
+  // מאיר: "אם בן אדם התחייב 35,000 והוא משלם את זה בתשלומים אז זה לא
+  // אמור להיות חוב בכלל. חוב זה נקרא שעבר הזמן של התשלום החודשי שהוא
+  // התחייב ולא שילם — זה חוב אמיתי".
+  // ולכן: בהתחייבות בתשלומים החוב הוא רק מה שכבר היה אמור להיכנס לפי
+  // הלוח ולא נכנס. היתרה שעוד לא הגיע זמנה אינה חוב.
+  // בהתחייבות חד־פעמית (בלי לוח תשלומים) כל מה שלא שולם הוא חוב.
+  const f2=n=>curSym(d)+Math.round(n).toLocaleString('en-US');
   (d.pledges||[]).forEach(p=>{ if(p.status==='נתן'||+p.monthly)return;   // חודשית = שוטפת, לא חוב
-    const left=plLeft(d,p); if(left<=0.5)return;
-    const paid=amtNum(p.amount)-left;
-    out.push({what:(p.category||'התחייבות'),amt:left,kind:'pledge',id:p.id,
-      when:paid>0.5?('שולמו '+curSym(d)+Math.round(paid).toLocaleString('en-US')
-                     +' מתוך '+curSym(d)+Math.round(amtNum(p.amount)).toLocaleString('en-US')):''}); });
+    const tot=amtNum(p.amount), paid=plPaid(d,p), plan=plPlan(d,p);
+    let owe, note='';
+    if(plan){
+      const dueNow=Math.min(tot, plan.per*plan.due);   // מה שכבר היה אמור להיכנס
+      owe=dueNow-paid;
+      if(owe>0.5)
+        note='לפי הלוח היו אמורים לעבור '+plan.due+' תשלומים של '+f2(plan.per)
+            +' — שולמו '+f2(paid)+' מתוך '+f2(tot)+'. היתר עוד לא הגיע זמנו.';
+    } else {
+      owe=tot-paid;
+      if(owe>0.5&&paid>0.5)note='שולמו '+f2(paid)+' מתוך '+f2(tot);
+    }
+    if(owe<=0.5)return;                                // בזמן — אין חוב
+    out.push({what:(p.category||'התחייבות'),amt:owe,kind:'pledge',id:p.id,when:note}); });
   (d.parnes||[]).forEach(p=>{ if(p.status==='suggested'||+p.paid)return;
     out.push({what:(PKLBL[p.kind]||'🌙 פרנס יום'),amt:amtNum(p.amount),kind:'parnes',id:p.id,
               when:[p.date_text,p.hyear].filter(Boolean).join(' ')}); });
