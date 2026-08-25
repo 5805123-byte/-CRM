@@ -6392,28 +6392,39 @@ function renderDebts(){
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
   const missed=q1.filter(d=>gaps(d.months,d).length>0).sort((a,b)=>gaps(b.months,b).length-gaps(a.months,a).length);
-  // חובות = התחייבויות (pledges) שטרם ניתנו + פרנס־יום שהתחייב וטרם נגבה (paid=0)
-  const debts=[];
-  q1.forEach(d=>{
-    (d.pledges||[]).forEach(p=>{if(p.status!=='נתן')debts.push({d,label:esc(p.category||'התחייבות'),amount:p.amount,method:'',kind:'pledge',id:p.id});});
-    (d.parnes||[]).forEach(p=>{if(!Number(p.paid)&&(p.status==='confirmed'||!p.status))debts.push({d,label:(PKLBL[p.kind]||'🕯️ פרנס')+(p.date_text?(' · '+esc(p.date_text)):''),amount:p.amount,method:p.method||'',kind:'parnes',id:p.id});});
-  });
+  // מאיר: "אל תכתוב 'לא עבר' אצל שום תורם כל זמן שלא נגמר החודש
+  // לגמרי — זה לא שלא עבר, פשוט עוד לא העברתי את הנתונים של אוגוסט.
+  // אם חזר חיוב באשראי ולא הצלחנו לחייב שוב — את זה אתה יכול לקרוא
+  // לא עבר".
+  // ולכן המסך הזה מציג רק חיובי אשראי שחזרו ולא נגבו מאז. התחייבויות
+  // שטרם שולמו עברו למסך "חובות", שם החישוב לפי לוח התשלומים.
+  const dec=[];
+  q1.forEach(d=>declinedGroups(d).forEach(r=>dec.push({d,r})));
+  dec.sort((a,b)=>String(b.r.iso).localeCompare(String(a.r.iso)));
+  const fD=n=>curSym()+Math.round(n).toLocaleString('en-US');
   view.innerHTML=`
-    <div class="misshead">🔴 חובות והתחייבויות שטרם שולמו (${debts.length})</div>
-    <div class="list">${debts.map((x,ix)=>`<div class="rowc"><div class="rowmain" data-id="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${x.label} ${x.amount?('· $'+esc(x.amount)):''}${x.method?(' · <span class="pmeth">'+esc(x.method)+'</span>'):''} — <b style="color:var(--no)">טרם נגבה</b></div></div><div class="meta"><button class="btn sm collectbtn" data-ix="${ix}">✓ נגבה</button></div></div>`).join('')||'<div class="hintxt">אין חובות פתוחים 🎉</div>'}</div>
-    <div class="misshead" style="margin-top:16px">🔴 חודשים שלא עברו (${missed.length})</div>
+    <div class="misshead">🔴 חיובי אשראי שחזרו ולא נגבו מאז (${dec.length})</div>
+    <div class="submuted">רק חיובים שנדחו בפועל. התחייבות שעוד לא הגיע זמנה, או חודש
+      שהקובץ שלו עדיין לא נטען — אינם "לא עבר", והם נמצאים במסך 💰 חובות.</div>
+    <div class="list">${dec.map(({d,r},ix)=>`<div class="rowc"><div class="rowmain" data-id="${d.id}">
+      <div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div>
+      <div class="miss">${esc(gregLabel(r.iso))} · <b style="color:var(--no)">${fD(r.a)}</b>${r.tries>1?(' · '+r.tries+' ניסיונות'):''}
+        ${r.debt?' <span class="pmeth">סומן כחוב</span>':''}</div></div>
+      <div class="meta"><button class="btn sm ghost decdrop" data-ix="${ix}">✓ סודר</button></div></div>`).join('')
+      ||'<div class="hintxt">אין חיובים שחזרו 🎉</div>'}</div>
+    <div class="misshead" style="margin-top:16px">🔴 חודשים שלא נכנס בהם כלום (${missed.length})</div>
     <div class="submuted">רק תורמים קבועים נבדקים כאן — מי שמסומן "קבוע", מי שיש לו התחייבות חודשית,
       או מי ששילם שלושה חודשים רצופים. מזדמן שתרם פעם אחת לא נספר כמפספס.<br>
       לחץ על חודש כדי לסמן שנגבה · "הסר שורה" מסמן שטופל</div>
     <div class="list">${missed.map(d=>{const g=gaps(d.months,d);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months,d)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowmain').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
-  // סימון חוב/התחייבות כנגבה
-  view.querySelectorAll('.collectbtn').forEach(b=>b.onclick=async e=>{e.stopPropagation();const x=debts[+b.dataset.ix];
-    if(x.kind==='parnes'){const p=(x.d.parnes||[]).find(y=>y.id==x.id);await api('PUT','/api/parnes/'+x.id,{paid:1});if(p)p.paid=1;
-      toastUndo('נגבה ✓',async()=>{await api('PUT','/api/parnes/'+x.id,{paid:0});if(p)p.paid=0;renderMissed();});}
-    else{const p=(x.d.pledges||[]).find(y=>y.id==x.id);if(p){const prev=p.status;p.status='נתן';await api('PUT','/api/pledge/'+p.id,p);
-      toastUndo('נגבה ✓',async()=>{p.status=prev;await api('PUT','/api/pledge/'+p.id,p);renderMissed();});}}
-    renderMissed();});
+  // "✓ סודר" על חיוב שחזר — מסתיר אותו מהרשימה (הכסף נכנס בדרך אחרת)
+  view.querySelectorAll('.decdrop').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    const x=dec[+b.dataset.ix]; if(!x)return;
+    b.disabled=true;
+    await api('POST','/api/recon/nodebt',{tids:x.r.tids});
+    (x.d.declined||[]).forEach(y=>{if(x.r.tids.includes(y.tid))y.covered=1;});
+    toast('סודר ✓'); renderMissed();});
   // סימון חודש בודד כנגבה
   view.querySelectorAll('.gchip').forEach(c=>c.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==c.dataset.id);const i=+c.dataset.m;const prev=d.months;d.months=setMonthChar(d.months,i,'c');await api('PUT','/api/donor/'+d.id,{months:d.months});
     toastUndo(MON[i]+' — נגבה ✓',async()=>{d.months=prev;await api('PUT','/api/donor/'+d.id,{months:prev});renderMissed();});renderMissed();});
