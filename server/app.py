@@ -4815,6 +4815,112 @@ def ensure_schema():
     except Exception as e:
         print('  kollel-yom partner error:', e)
 
+    # מאיר: "הוא כתוב כבר ברנס נתנאל, למה כתוב שוב נתנאל ברנס? כל
+    # האברכים ברשימה אמור להיות שם המשפחה ואחר כך השם הפרטי".
+    # שם שהוקלד הפוך יוצר אברך שני באותו שם. כאן מאתרים היפוכים
+    # ומאחדים אותם לצורה שבקובץ של מאיר (או לזו שיש לה מחזיקים).
+    try:
+        _seed = {}
+        try:
+            _sp = os.path.join(HERE, 'avreichim_seed.json')
+            if os.path.exists(_sp):
+                with open(_sp, encoding='utf-8') as _fh:
+                    for _x in json.load(_fh):
+                        _nm = ((_x.get('last') or '') + ' ' + (_x.get('first') or '')).strip()
+                        if _nm:
+                            _seed[_fz(_nm.replace(' ', ''))] = _nm
+        except Exception:
+            pass
+        _all = {}
+        for _r in con.execute("SELECT id,name FROM avreichim WHERE TRIM(COALESCE(name,''))<>''"):
+            _all[(_r['name'] or '').strip()] = _r['id']
+        _held = {}
+        for _r in con.execute("SELECT TRIM(avreich) a, COUNT(*) n FROM partners "
+                              "WHERE COALESCE(TRIM(avreich),'')<>'' AND donor_id IS NOT NULL "
+                              "GROUP BY TRIM(avreich)"):
+            _held[_r['a']] = _r['n']
+
+        def _rots(nm):
+            ws = nm.split()
+            return [' '.join(ws[k:] + ws[:k]) for k in range(1, len(ws))] if len(ws) > 1 else []
+
+        _fixed = 0
+        for _nm in list(_all):
+            if _nm not in _all:
+                continue
+            # הצורה הנכונה: זו שבקובץ; אם אינה שם — זו שיש לה מחזיקים
+            _good = _seed.get(_fz(_nm.replace(' ', '')))
+            _cands = [r for r in _rots(_nm) if r in _all or r in _held]
+            if not _good:
+                for _r2 in _cands:
+                    if _seed.get(_fz(_r2.replace(' ', ''))):
+                        _good = _seed[_fz(_r2.replace(' ', ''))]
+                        break
+            if not _good:
+                if _cands and _held.get(_cands[0], 0) > _held.get(_nm, 0):
+                    _good = _cands[0]
+                else:
+                    continue
+            if _good == _nm and not _cands:
+                continue
+            for _bad in ([_nm] + _cands):
+                if _bad == _good:
+                    continue
+                con.execute("UPDATE partners SET avreich=? WHERE TRIM(avreich)=?", (_good, _bad))
+                # שורת מציין־מקום ריקה של השם ההפוך — נמחקת
+                con.execute("DELETE FROM partners WHERE donor_id IS NULL AND TRIM(avreich)=?", (_good,)) \
+                    if con.execute("SELECT COUNT(*) FROM partners WHERE donor_id IS NOT NULL "
+                                   "AND TRIM(avreich)=?", (_good,)).fetchone()[0] else None
+                if _bad in _all:
+                    con.execute("DELETE FROM avreichim WHERE id=?", (_all[_bad],))
+                    _all.pop(_bad, None)
+                _fixed += 1
+                print('  אברך כפול בהיפוך: "%s" אוחד ל-"%s"' % (_bad, _good))
+            if _good not in _all:
+                _l, _f = _split_av(_good)
+                con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,note,started,created) "
+                            "VALUES(?,?,?,'',?,?)", (_good, _l, _f, today_iso(), today_iso()))
+                _all[_good] = 1
+        if _fixed:
+            con.commit()
+        # השלמת ת"ז/טלפון מהקובץ לכל אברך שחסר לו — גם אם שמו נשמר
+        # בסדר הפוך בעבר. בלי זה הוא ממשיך להופיע כ"אינו ברשימת הכולל".
+        _sfull = {}
+        try:
+            _sp2 = os.path.join(HERE, 'avreichim_seed.json')
+            if os.path.exists(_sp2):
+                with open(_sp2, encoding='utf-8') as _fh2:
+                    for _x in json.load(_fh2):
+                        _nm2 = ((_x.get('last') or '') + ' ' + (_x.get('first') or '')).strip()
+                        if _nm2:
+                            _sfull[_fz(_nm2.replace(' ', ''))] = _x
+        except Exception:
+            pass
+        _idn = 0
+        for _r in con.execute("SELECT id,name,idnum FROM avreichim").fetchall():
+            if str(_r['idnum'] or '').strip():
+                continue
+            _k2 = _fz((_r['name'] or '').replace(' ', ''))
+            _x = _sfull.get(_k2)
+            if not _x:                       # גם בסדר הפוך
+                _ws2 = (_r['name'] or '').split()
+                for _j in range(1, len(_ws2)):
+                    _x = _sfull.get(_fz(''.join(_ws2[_j:] + _ws2[:_j])))
+                    if _x:
+                        break
+            if not _x:
+                continue
+            con.execute("UPDATE avreichim SET idnum=?, id_ok=?, phone=COALESCE(NULLIF(phone,''),?), "
+                        "seder=COALESCE(NULLIF(seder,''),?) WHERE id=?",
+                        (_x.get('idnum') or '', 1 if _x.get('id_ok') else 0,
+                         _x.get('phone') or '', _x.get('seder') or '', _r['id']))
+            _idn += 1
+        if _idn:
+            con.commit()
+            print('  ת"ז הושלמה מהקובץ ל-%d אברכים' % _idn)
+    except Exception as e:
+        print('  avreich flip error:', e)
+
     # כל מה שכבר קיים נחשב נקרא — אחרת ביום הראשון כל הכרטיסים היו
     # נדלקים. מכאן והלאה רק מה שנכנס חדש מסומן.
     try:
@@ -10186,10 +10292,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'marked': n})
         if self.path == '/api/avreich/new':
             # הוספת אברך חדש לרשימה — רק דרך הפעולה הזו, לא בהקלדה חופשית
-            nm = (b.get('name') or '').strip()
+            nm = re.sub(r'\s+', ' ', (b.get('name') or '').strip())
             if len(nm) < 2:
                 return self._send(400, {'error': 'name required'})
             con = db()
+            # מאיר: "כל האברכים ברשימה — שם המשפחה ואחר כך השם הפרטי".
+            # שם שהוקלד הפוך ומוכר כבר בצורה הנכונה — משתמשים בקיים
+            # במקום לפתוח אברך שני באותו שם.
+            _ws = nm.split()
+            for _k in range(1, len(_ws)):
+                _rot = ' '.join(_ws[_k:] + _ws[:_k])
+                _hit = con.execute("SELECT name FROM avreichim WHERE name=?", (_rot,)).fetchone() \
+                    or con.execute("SELECT TRIM(avreich) name FROM partners "
+                                   "WHERE TRIM(avreich)=? LIMIT 1", (_rot,)).fetchone()
+                if _hit:
+                    nm = _hit['name']
+                    break
             ex = con.execute("SELECT 1 FROM partners WHERE TRIM(avreich)=?", (nm,)).fetchone()
             if not ex:      # שורת שיוך ריקה שמחזיקה את השם ברשימה עד שישויך לתורם
                 con.execute("INSERT INTO partners(donor_id,avreich,start_date,active,note) "
