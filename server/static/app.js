@@ -6305,30 +6305,24 @@ function donorDebts(d){
   // הלוח ולא נכנס. היתרה שעוד לא הגיע זמנה אינה חוב.
   // בהתחייבות חד־פעמית (בלי לוח תשלומים) כל מה שלא שולם הוא חוב.
   const f2=n=>curSym(d)+Math.round(n).toLocaleString('en-US');
+  // מאיר: "אם היתר לא הגיע זמנו אני לא רוצה שזה יהיה בחובות ולא בלא
+  // עבר. רק חוב ממש — שעבר הזמן ולא חויב. לא סתם לכתוב חוב".
+  // כל עוד נכנסים תשלומים להתחייבות היא בתהליך ואינה חוב, בלי קשר
+  // ללוח שהמערכת הסיקה — הקצב בפועל אינו תמיד חודשי מדויק, ולכן
+  // "מפגר 3 תשלומים" לפי לוח משוער אינו חוב אמיתי.
+  // רק כשהתשלומים פסקו לגמרי נרשם חוב, ואז רק על מה שכבר היה אמור
+  // להיכנס — לא על היתרה שזמנה עוד לא הגיע.
   (d.pledges||[]).forEach(p=>{ if(p.status==='נתן'||+p.monthly)return;   // חודשית = שוטפת, לא חוב
-    const tot=amtNum(p.amount), paid=plPaid(d,p), plan=plPlan(d,p);
-    let owe, note='';
-    if(plan){
-      const dueNow=Math.min(tot, plan.per*plan.due);   // מה שכבר היה אמור להיכנס
-      owe=dueNow-paid;
-      if(owe>0.5)
-        note='לפי הלוח היו אמורים לעבור '+plan.due+' תשלומים של '+f2(plan.per)
-            +' — שולמו '+f2(paid)+' מתוך '+f2(tot)+'. היתר עוד לא הגיע זמנו.';
-    } else {
-      owe=tot-paid;
-      // מאיר: "גם פיינגולד משלמת בתשלומים את התרומות המסומנות כאן —
-      // אל תכניס את זה ברשימות בכלל כל זמן שזה תשלומים והתשלומים
-      // בסדר". גם בלי לוח תשלומים מוגדר, התחייבות שנכנסים אליה
-      // תשלומים באופן שוטף היא בתהליך ולא חוב. רק כשהתשלומים פסקו
-      // (חודשיים ומעלה בלי כלום) היתרה הופכת לחוב.
-      if(paid>0.5){
-        const last=plLastPay(d,p);
-        if(last&&monthsBetween(last.slice(0,7),todayStr().slice(0,7))<2)return;
-        note='שולמו '+f2(paid)+' מתוך '+f2(tot)
-            +(last?(' · התשלום האחרון '+fmtGreg(last)):'');
-      }
-    }
-    if(owe<=0.5)return;                                // בזמן — אין חוב
+    const tot=amtNum(p.amount), paid=plPaid(d,p);
+    if(tot-paid<=0.5)return;                           // כוסתה — אין חוב
+    const last=plLastPay(d,p);
+    if(paid>0.5&&last&&monthsBetween(last.slice(0,7),todayStr().slice(0,7))<2)return;
+    const plan=plPlan(d,p);
+    const owe=plan?(Math.min(tot, plan.per*plan.due)-paid):(tot-paid);
+    if(owe<=0.5)return;
+    const note=paid>0.5
+      ?('שולמו '+f2(paid)+' מתוך '+f2(tot)+(last?(' · התשלום האחרון '+fmtGreg(last)):''))
+      :'';
     out.push({what:(p.category||'התחייבות'),amt:owe,kind:'pledge',id:p.id,when:note}); });
   (d.parnes||[]).forEach(p=>{ if(p.status==='suggested'||+p.paid)return;
     out.push({what:(PKLBL[p.kind]||'🌙 פרנס יום'),amt:amtNum(p.amount),kind:'parnes',id:p.id,
@@ -6393,7 +6387,7 @@ function renderDebts(){
     <div class="list">${rows.map((r,i)=>`<div class="rowc debtrow"><div class="rowmain" data-did="${r.d.id}">
       <div class="nm">${esc(r.d.last)} <small>${esc(r.d.first)}</small></div>
       ${r.list.map((x,j)=>`<div class="miss"><span class="dbw">${esc(x.what)}</span>${x.when?(' <small>'+esc(x.when)+'</small>'):''}
-        — <b style="color:var(--no)">${x.amt?f(x.amt):'ללא סכום'}</b>${(x.kind!=='iz'&&x.kind!=='months')?`<button class="btn sm dbpaid" data-i="${i}" data-j="${j}" onclick="event.stopPropagation()">✓ נגבה</button>`:''}</div>`).join('')}
+        — <b style="color:var(--no)">${x.amt?f(x.amt):'ללא סכום'}</b>${(x.kind!=='iz'&&x.kind!=='months')?`<button class="btn sm dbpaid" data-i="${i}" data-j="${j}" onclick="event.stopPropagation()">✓ נגבה</button>`:''}<button class="btn sm ghost dbdone" data-i="${i}" data-j="${j}" onclick="event.stopPropagation()" title="הכסף הגיע או שסודר איתו — הסר מהחובות">✓ סודר</button></div>`).join('')}
       ${contactBtns(r.d)}</div>
       <div class="meta"><b class="debtsum">${f(r.sum)}</b></div></div>`).join('')
       ||'<div class="empty">אין חובות פתוחים 🎉</div>'}</div>`;
@@ -6411,6 +6405,30 @@ function renderDebts(){
     else if(x.kind==='building'){const p=(r.d.building||[]).find(y=>y.id==x.id);
       if(p){p.paid=String(amtNum(p.amount));await api('PUT','/api/building/'+p.id,p);}}
     toast('נגבה ✓'); renderDebts();
+  });
+  // מאיר: "תוסיף לי עוד כפתור 'סודר' ואז החוב נמחק" — לכל סוג חוב,
+  // גם לחודשים שלא נגבו וגם ליששכר־זבולון, שלא היה להם שום כפתור.
+  view.querySelectorAll('.dbdone').forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    const r=rows[+b.dataset.i], x=r&&r.list[+b.dataset.j]; if(!x)return;
+    b.disabled=true;
+    const d=r.d;
+    if(x.kind==='months'){                       // החודשים החסרים מסומנים כטופלו
+      let nm=d.months; gaps(nm,d).forEach(i2=>nm=setMonthChar(nm,i2,'h'));
+      d.months=nm; await api('PUT','/api/donor/'+d.id,{months:nm});
+    } else if(x.kind==='iz'){                    // חוב יששכר־זבולון — מאופס ידנית
+      d.iz_debt='0'; await api('PUT','/api/donor/'+d.id,{iz_debt:'0'});
+    } else if(x.kind==='parnes'){
+      await api('PUT','/api/parnes/'+x.id,{paid:2});
+      const p=(d.parnes||[]).find(y=>y.id==x.id); if(p)p.paid=2;
+    } else if(x.kind==='building'){
+      const p=(d.building||[]).find(y=>y.id==x.id);
+      if(p){p.paid=String(amtNum(p.amount));await api('PUT','/api/building/'+p.id,p);}
+    } else {                                     // התחייבות — מסומנת כניתנה
+      const p=(d.pledges||[]).find(y=>y.id==x.id);
+      if(p){p.status='נתן';await api('PUT','/api/pledge/'+p.id,p);}
+    }
+    toast('סודר ✓ — ירד מהחובות'); renderDebts();
   });
 }
 function renderMissed(){
