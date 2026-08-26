@@ -5979,6 +5979,7 @@ function renderKvList(type){
     <div class="hintxt noprint" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.${
       KVNOLAST?' <b>· מודפס בשם פרטי בלבד</b>':''}</div>
     <div class="hintxt noprint" id="kvout" style="margin:0 2px 8px"></div>
+    <div class="noprint" id="kvqbar"></div>
     <div id="kvlistwrap"></div>`;
   document.getElementById('kvback').onclick=()=>{kvListQ='';kvSub=null;render();};
   wireNoLast(()=>renderKvList(type));
@@ -5999,8 +6000,21 @@ function renderKvList(type){
     });
     UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);
       if(inType(t))entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
-    const nq=norm(kvListQ);
-    if(nq)entries=entries.filter(e=>norm(e.donor+' '+e.text).includes(nq));
+    // מאיר: "אם אני עושה חיפוש של מישהו עם שם משפחה בקוויטל זה לא מחפש
+    // בשבילי בכלל" — גם החיפוש שבשורה העליונה מסנן את הרשימה הזאת,
+    // ולא רק תיבת החיפוש הפנימית. שניהם באותו מנוע התאמה של המערכת
+    // (מילים בכל סדר + התאמה גמישה לעברית), ולא השוואת מחרוזת פשוטה.
+    if(norm(kvListQ))entries=entries.filter(e=>matchStr(e.donor+' '+e.text,kvListQ));
+    const gq=norm(q);
+    const before=entries.length;
+    if(gq)entries=entries.filter(e=>matchQ(e.donor+' '+e.text));
+    const qbar=document.getElementById('kvqbar');
+    if(qbar)qbar.innerHTML=gq
+      ? `<div class="kvqnote"><span>🔎 מסונן לפי החיפוש למעלה: <b>${esc(q)}</b>`
+        +(entries.length?` — ${entries.length} מתוך ${before}`:' — לא נמצא כאן')+`</span>`
+        +`<button class="btn sm ghost" id="kvqall">חפש בכל סוגי הקוויטל</button>`
+        +`<button class="btn sm ghost" id="kvqclr">נקה חיפוש</button></div>`
+      : '';
     entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
     // תורם אחד = משבצת אחת. כמה שמות שנוספו לו לאורך הזמן יושבים יחד תחת שמו,
     // כל אחד עדיין ניתן לעריכה בנפרד; בהדפסה הם נקראים כרשימה אחת רצופה
@@ -6035,6 +6049,12 @@ function renderKvList(type){
         + `</div></td></tr>`;}).join('')+'</tbody></table>'+prFootHTML()
       : '<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
+    // מי שלא נמצא בסוג הזה — כפתור שמרחיב את החיפוש לכל סוגי הקוויטל,
+    // כדי שלא ייצא מהרשימה בידיים ריקות
+    const ba=document.getElementById('kvqall');
+    if(ba)ba.onclick=()=>{kvListQ='';kvSub=null;render();};
+    const bc=document.getElementById('kvqclr');
+    if(bc)bc.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';paint();};
     bindKvEdit();
   }
   si.oninput=()=>{kvListQ=si.value;paint();};
