@@ -3235,12 +3235,14 @@ function declinedGroups(d){
 // חשבון חודש־בחודש: כמה הוא היה אמור לתת באותו חודש, כמה באמת נכנס,
 // וכמה נשאר לא מכוסה. עודף של חודש אחד מכסה חוסר של חודש אחר, ולכן
 // חיוב שנכשל ובסוף שולם בדרך אחרת אינו יוצר חוב — הוא רק היסטוריה.
-function monthLedger(d){
+function monthLedger(d,thruYM){
   const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5&&r.conf>0&&!r.ended);
   if(!rows.length)return null;
   // עד החודש הנוכחי ועד בכלל. dataThru מכוון לחודש שהקליטה בו הושלמה,
-  // וזה החסיר חודש שלם מההתחייבות — מאיר: "עד היום אוגוסט כולל אוגוסט"
-  const thru=todayStr().slice(0,7), yr=thru.slice(0,4);
+  // וזה החסיר חודש שלם מההתחייבות — מאיר: "עד היום אוגוסט כולל אוגוסט".
+  // אפשר לבקש חודש סיום אחר: מסך החובות סופר רק עד החודש שנסגר, כי
+  // "עד סוף חודש, אם עדיין לא הגיעה התרומה — זה לא נקרא חוב".
+  const thru=thruYM||todayStr().slice(0,7), yr=thru.slice(0,4);
   // מאיזה חודש סופרים: החודש שנרשם על ההתחייבות, ואם לא נרשם — החודש
   // הראשון שנכנס בו כסף השנה
   // כשנקבע במפורש "מאז" — הוא הקובע, וכסף שנכנס לפניו שייך לתקופה
@@ -6332,19 +6334,26 @@ function donorDebts(d){
   // שהתורם התחייב ועדיין לא נתן.
   // תורם קבוע שלא נגבה ממנו חודשים — בדיוק כמו בחלון החוב שבכרטיס,
   // ובלי לספור פעמיים כשהחוב של יששכר־זבולון כבר מכסה את אותם חודשים
+  // מאיר: "מי שבסוף כן הושלם לו הסכום — כמו אלירן דאהן שבחודש הבא
+  // שלח פעמיים — זה לא אמור להיות בחוב. ועד סוף חודש, אם עדיין לא
+  // הגיעה התרומה, זה לא נקרא חוב".
+  // ולכן החוב אינו "כמה חודשים לא סומנו" אלא ההפרש בכסף עצמו: מה
+  // שהיה אמור להיכנס עד החודש שנסגר, מול מה שבאמת נכנס. חודש שדולג
+  // ושולם כפול בחודש שאחריו מתקזז מעצמו, והחודש הנוכחי אינו נספר.
   try{
-    const iz0=izSummary(d), gc=gaps(d.months,d), fx=amtNum(fixedAmt(d));
-    const izCov=iz0.monthly>0&&iz0.monthly>=fx-0.5&&
+    const iz0=izSummary(d);
+    const izCov=iz0.monthly>0&&
       ((iz0.manual!=null&&iz0.manual<=0.5)||(iz0.thru.length&&iz0.thruDebt<=0.5));
-    if(gc.length&&fx>0&&!izCov){
-      // אצל תורם יששכר־זבולון החישוב מדויק רק כשמוגדר "שולם עד חודש"
-      // לכל אברך. בלי זה נשענים על החודשים שסומנו בכרטיס, וזה עלול
-      // להחמיץ חודשים ישנים — ולכן אומרים את זה במפורש.
-      const nothru=iz0.parts.length&&!iz0.thru.length&&iz0.manual==null;
-      out.push({what:'📅 חודשים שלא נגבו'+(iz0.parts.length?(' · '+iz0.parts.length+' אברכים'):''),
-                amt:gc.length*fx,kind:'months',id:0,
-                when:gc.map(i=>MON[i]).join(' · ')
-                  +(nothru?' — לא הוגדר "שולם עד חודש" לאברכים, החישוב לפי החודשים שסומנו בכרטיס':'')});
+    if(!izCov){
+      const L=monthLedger(d, prevMonth(todayStr().slice(0,7)));
+      if(L&&L.debt>0.5){
+        const gc=gaps(d.months,d);
+        out.push({what:'📅 חודשים שלא נגבו'+(iz0.parts.length?(' · '+iz0.parts.length+' אברכים'):''),
+                  amt:L.debt,kind:'months',id:0,
+                  when:'מאז '+fmtMonth(L.first)+' התחייב '+curSym(d)+Math.round(L.due).toLocaleString('en-US')
+                      +' · נתן '+curSym(d)+Math.round(L.got).toLocaleString('en-US')
+                      +(gc.length?(' · חודשים ריקים: '+gc.map(i=>MON[i]).join(' · ')):'')});
+      }
     }
   }catch(e){}
   (d.building||[]).forEach(x=>{ const owed=amtNum(x.amount)-amtNum(x.paid);
