@@ -2183,6 +2183,13 @@ function renderCardTasks(d){
       <div class="cti"><div>${icon} ${esc(t.note||'')}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
         <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 צרף<input type="file" accept="image/*,audio/*,application/pdf" class="ctup" data-id="${t.id}" hidden></label></div></div>
       <button class="tedit ctedit" data-id="${t.id}" title="ערוך משימה">✏️ ערוך</button><button class="del ctdel" data-id="${t.id}">🗑</button></div>
+    <div class="donepanel hidden" data-ctdp="${t.id}">
+      <label class="fld"><span>✍️ מה עשית? מה נסגר תכליס</span>
+        <input class="ctnote" data-id="${t.id}" placeholder="למשל: דיברתי איתו, ישלח צ'ק בשבוע הבא"
+          value="${esc(t.done_note||'')}"></label>
+      <div class="cmask-b"><button class="btn sm ctnoteok" data-id="${t.id}">✓ בוצע ושמור</button>
+        <button class="btn sm ghost ctnoteskip" data-id="${t.id}">בוצע בלי הערה</button>
+        <button class="btn sm ghost ctnotex" data-id="${t.id}">ביטול</button></div></div>
     <div class="teditpanel hidden" data-ctp="${t.id}">
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="ctn" data-id="${t.id}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select class="ctk" data-id="${t.id}">${taskKindOpts(t.kind)}</select></label>
@@ -2207,7 +2214,33 @@ function renderCardTasks(d){
     if(rsp&&rsp.contact)putLog(d,rsp.contact);
     renderCardTasks(d);renderReminders(d);checkReminders();toast('נשמר ✓');});
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderCardTasks(d);});
-  el.querySelectorAll('.ctdone').forEach(b=>b.onclick=async()=>{const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;await setTaskDone(t,1,d);renderCardTasks(d);checkReminders();toastUndo('בוצע ✓ · נרשם בקשר',async()=>{await setTaskDone(t,0,d);renderCardTasks(d);checkReminders();});});
+  // מאיר: "אם ביצעתי משימה ואני עושה וי, שייפתח לי שורה שאוכל לכתוב
+  // הערות מה נסגר — זה עובד רק בדף המשימות, אבל אצל התורם עצמו לא
+  // פותח לי שורה בכלל". אותה שורת הערה בדיוק, גם כאן בכרטיס.
+  const ctDone=async(id,note)=>{
+    const t=(d.tasks||[]).find(x=>x.id==id); if(!t)return;
+    if(note!==null&&t.id){await api('PUT','/api/task/'+t.id,{done_note:note});t.done_note=note;}
+    await setTaskDone(t,1,d);
+    renderCardTasks(d);renderReminders(d);checkReminders();
+    toastUndo('בוצע ✓ · נרשם בקשר',async()=>{
+      await setTaskDone(t,0,d);renderCardTasks(d);checkReminders();});
+  };
+  el.querySelectorAll('.ctdone').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const pn=el.querySelector('.donepanel[data-ctdp="'+b.dataset.id+'"]');
+    if(!pn){ctDone(b.dataset.id,null);return;}
+    el.querySelectorAll('.donepanel').forEach(x=>{if(x!==pn)x.classList.add('hidden');});
+    pn.classList.remove('hidden');
+    const inp=pn.querySelector('.ctnote'); if(inp){inp.focus();inp.select();}});
+  el.querySelectorAll('.ctnoteok').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    const inp=el.querySelector('.ctnote[data-id="'+b.dataset.id+'"]');
+    await ctDone(b.dataset.id,(inp?inp.value:'').trim());});
+  el.querySelectorAll('.ctnoteskip').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    await ctDone(b.dataset.id,null);});
+  el.querySelectorAll('.ctnotex').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    b.closest('.donepanel').classList.add('hidden');});
+  el.querySelectorAll('.ctnote').forEach(inp=>inp.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();
+      el.querySelector('.ctnoteok[data-id="'+inp.dataset.id+'"]').click();}});
   el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
 }
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
