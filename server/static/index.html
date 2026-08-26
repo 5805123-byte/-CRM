@@ -1355,9 +1355,9 @@
     /* מאיר: "שיהיה קטן ויפה... תעצב יותר יפה את הפס, משהו יותר גרפיקה
        ועדין". קו שיער שנמוג בשני הקצוות עם מעוין זהב קטן במרכזו,
        ומתחתיו הלוגו בקצה שמאל ופרטי הכולל לצידו בשורה אחת. */
-    /* מאיר: "את הלוגו תשים בצד שמאל ותגדיל אותו בכפול" — לכן direction:ltr
-       על כל הרצועה (הלוגו הוא הראשון, ולכן הוא בקצה שמאל), והלוגו 15.2 מ"מ */
-    .prfoot{display:block;position:fixed;left:0;right:0;bottom:0;z-index:5;direction:ltr;
+    /* מאיר: "ביקשתי שהלוגו יהיה בצד ימין" — הרצועה בכיוון ימין־לשמאל,
+       ולכן הלוגו (הפריט הראשון) יושב בקצה ימין ופרטי הכולל לצידו */
+    .prfoot{display:block;position:fixed;left:0;right:0;bottom:0;z-index:5;direction:rtl;
       padding:1.8mm 3mm .6mm;height:19mm;background:#FBF6EA}
     .prfoot .prline{display:block;height:.5px;margin:0 0 1.2mm;
       background:linear-gradient(to right,rgba(190,158,88,0),
@@ -1370,7 +1370,7 @@
     .prfoot .rule{flex:0 0 auto;width:.35mm;height:9mm;border-radius:1px;
       background:linear-gradient(to bottom,rgba(190,158,88,0),
         rgba(190,158,88,.5) 45%,rgba(190,158,88,0))}
-    .prfoot .txt{flex:1 1 auto;text-align:left;
+    .prfoot .txt{flex:1 1 auto;direction:ltr;text-align:right;
       font-family:"Segoe UI",system-ui,sans-serif;font-size:7.2pt;line-height:1;
       color:#8a6a2a;letter-spacing:.08em;white-space:nowrap}
     .prfoot .txt b{font-weight:600;color:#75551a}
