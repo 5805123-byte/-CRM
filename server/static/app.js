@@ -981,6 +981,37 @@ function matchStr(s,query){
   return hf&&toks.every(t=>{const f=fzHe(t);return f.length>=3&&hf.indexOf(f)>=0;});
 }
 function matchQ(s){return matchStr(s,q);}
+// חיפוש תורם בכל תיבות הבחירה שבמערכת (פרנס יום, משימה חדשה, שיוך
+// הפקדה, החלפת תורם אצל אברך).
+// מאיר: "אני מחפש את יהושע רוזנפלד והוא לא מוצא אותו, רק אם אני כותב
+// רוזנפלד" — ואחר כך: "הוא לא מצא את רוזנפלד" גם על 'יהושע' לבד.
+// שתי סיבות: ההשוואה הייתה מחרוזת אחת ברצף (ולכן שם פרטי לפני שם
+// משפחה לא נמצא), והרשימה נחתכה ל-8 הראשונים לפי סדר המאגר — כך
+// שתורם שהתאים נשאר מחוץ לתצוגה. כאן ההתאמה גמישה, והתוצאות מדורגות:
+// מי שהמילה פותחת אצלו שם משפחה או שם פרטי עולה לראש.
+function donorHits(fields,query,lim){
+  const toks=norm(query).toLowerCase().split(' ').filter(Boolean);
+  const score=d=>{
+    const last=norm(d.last).toLowerCase(), first=norm(d.first).toLowerCase();
+    const words=(last+' '+first).split(' ').filter(Boolean);
+    let s=0;
+    toks.forEach(t=>{
+      if(last===t||first===t)s+=6;
+      else if(last.indexOf(t)===0||first.indexOf(t)===0)s+=4;
+      else if(words.some(w=>w.indexOf(t)===0))s+=3;
+      else if((last+' '+first).indexOf(t)>=0)s+=1;
+    });
+    return s;
+  };
+  const all=(DB||[]).filter(d=>matchStr(fields(d),query));
+  all.sort((a,b)=>score(b)-score(a)||String(a.last||'').localeCompare(String(b.last||''),'he'));
+  const n=lim||10;
+  return {list:all.slice(0,n), total:all.length, more:Math.max(0,all.length-n)};
+}
+// שורת "ועוד N" בסוף רשימת הבחירה, שלא ייעלם מישהו בשקט
+function hitsMoreHTML(h){
+  return h.more?`<div class="dpr dprmore">…ועוד ${h.more} — הוסף עוד מילה לחיפוש</div>`:'';
+}
 
 async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
 function fileChip(f){const m=(f.mime||'');
@@ -6246,9 +6277,11 @@ function renderDayPanel(taken){
     fm.style.display='block'; if(res)res.innerHTML='';
     if(qi)qi.value=(nd.last+' '+(nd.first||'')).trim();};
   document.getElementById('dp_new').onclick=()=>openNewDonor(nd=>pickChosen(nd));
-  qi.oninput=()=>{const s=norm(qi.value);if(!s){res.innerHTML='';return;}const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english).includes(s)).slice(0,8);
-    res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('');
-    res.querySelectorAll('.dpr').forEach(x=>x.onclick=()=>pickChosen(DB.find(y=>y.id==x.dataset.id)));};
+  qi.oninput=()=>{if(!norm(qi.value)){res.innerHTML='';return;}
+    const h=donorHits(d=>d.last+' '+d.first+' '+d.english,qi.value,25);
+    res.innerHTML=h.list.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)} ${d.tier==='יששכר_זבולון'?'· יש"ז':''}</div>`).join('')
+      +hitsMoreHTML(h)||'<div class="dpr dprmore">אין תוצאות — נסה שם אחר או "תורם חדש"</div>';
+    res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>pickChosen(DB.find(y=>y.id==x.dataset.id)));};
   document.getElementById('dp_open').onclick=()=>{if(chosen)openDonor(chosen);};
   document.getElementById('dp_kv').onclick=()=>{if(chosen)openDonor(chosen,'kvittel');};
   document.getElementById('dp_save').onclick=async ev=>{
@@ -6749,9 +6782,10 @@ function wireByAv(){
   view.querySelectorAll('.sw_q').forEach(qi=>{
     const pid=qi.dataset.pid, res=view.querySelector('.sw_res[data-pid="'+pid+'"]');
     qi.focus();
-    qi.oninput=()=>{const s2=norm(qi.value);if(!s2){res.innerHTML='';return;}
-      const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.business).includes(s2)).slice(0,8);
-      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    qi.oninput=()=>{if(!norm(qi.value)){res.innerHTML='';return;}
+      const h=donorHits(d=>d.last+' '+d.first+' '+d.english+' '+d.business,qi.value,25);
+      res.innerHTML=(h.list.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')
+        +hitsMoreHTML(h))||'<div class="dpr dprmore">אין תוצאות</div>';
       res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=async()=>{
         if(await saveH(pid,{donor_id:+x.dataset.id})){avSwapId=null;toast('הועבר לתורם החדש ✓');reload();}});};});
   // פתק הקוויטל של אברך אחד — לצפייה, להדפסה, ולהעתקה כתמונה (כמו פרנס יום)
@@ -6786,9 +6820,10 @@ function wireByAv(){
     const av=qi.dataset.av, res=view.querySelector('.av_res[data-av="'+CSS.escape(av)+'"]'),
           ch=view.querySelector('.av_ch[data-av="'+CSS.escape(av)+'"]');
     qi.focus();
-    qi.oninput=()=>{const s2=norm(qi.value);if(!s2){res.innerHTML='';return;}
-      const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.business).includes(s2)).slice(0,8);
-      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    qi.oninput=()=>{if(!norm(qi.value)){res.innerHTML='';return;}
+      const h=donorHits(d=>d.last+' '+d.first+' '+d.english+' '+d.business,qi.value,25);
+      res.innerHTML=(h.list.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}</div>`).join('')
+        +hitsMoreHTML(h))||'<div class="dpr dprmore">אין תוצאות</div>';
       res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{
         const d=DB.find(y=>y.id==x.dataset.id);
         ch.textContent='נבחר: '+(d.last+' '+(d.first||'')).trim(); ch.dataset.did=d.id;
@@ -7702,8 +7737,9 @@ function renderTasksTab(){
   let ntChosen=null;
   const ntq=document.getElementById('nt_q'),ntres=document.getElementById('nt_res'),ntch=document.getElementById('nt_chosen');
   ntq.oninput=()=>{const s=norm(ntq.value);if(!s){ntres.innerHTML='';ntChosen=null;ntch.style.display='none';return;}
-    const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business).includes(s)).slice(0,8);
-    ntres.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+    const h=donorHits(d=>d.last+' '+d.first+' '+d.english+' '+d.phone+' '+d.business,ntq.value,25);
+    ntres.innerHTML=(h.list.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.tier==='יששכר_זבולון'?' · יש"ז':''}${d.phone?(' · '+esc(splitPhones(d.phone)[0])):''}</div>`).join('')
+      +hitsMoreHTML(h))||'<div class="dpr dprmore">אין תוצאות</div>';
     ntres.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{ntChosen=DB.find(y=>y.id==x.dataset.id);ntch.style.display='block';ntch.innerHTML='✓ נבחר: <b>'+esc((ntChosen.last+' '+ntChosen.first).trim())+'</b>';ntres.innerHTML='';ntq.value=(ntChosen.last+' '+ntChosen.first).trim();});};
   const an=document.getElementById('tk_anetsync');
   if(an)an.onclick=async()=>{
@@ -7820,10 +7856,9 @@ async function renderDeposits(){
     // הצעה ראשונית לפי תעתיק השם מאנגלית
     const seed=norm((rec(k)||{}).name||'').split(' ').filter(w=>w.length>2)[0]||'';
     const run=s2=>{ if(!s2){res.innerHTML='';return;}
-      const m=DB.filter(d=>norm(d.last+' '+d.first+' '+d.english+' '+d.business).toLowerCase()
-        .includes(s2.toLowerCase())).slice(0,10);
-      res.innerHTML=m.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.business?(' · '+esc(d.business)):''}${d.english?(' · <span dir="ltr">'+esc(d.english)+'</span>'):''}</div>`).join('')
-        ||'<div class="dpr" style="color:var(--muted)">אין תוצאות — נסה שם אחר או "תורם חדש"</div>';
+      const h=donorHits(d=>d.last+' '+d.first+' '+d.english+' '+d.business,s2,25);
+      res.innerHTML=(h.list.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}${d.business?(' · '+esc(d.business)):''}${d.english?(' · <span dir="ltr">'+esc(d.english)+'</span>'):''}</div>`).join('')
+        +hitsMoreHTML(h))||'<div class="dpr dprmore">אין תוצאות — נסה שם אחר או "תורם חדש"</div>';
       res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=async()=>{
         const r=await api('POST','/api/deposits/map',{name:(rec(k)||{}).name,donor_id:+x.dataset.id});
         if(!r||!r.ok){toast('לא שויך');return;}

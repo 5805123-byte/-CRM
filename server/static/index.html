@@ -86,8 +86,12 @@
   .dlegend .lg.full{background:var(--gold-soft);border-color:var(--gold)}
   .dlegend .lg.sugg{background:var(--accent-soft);border-color:var(--accent);border-style:dashed}
   .dlegend .lg.free{background:var(--card)}
-  .dpres{display:flex;flex-direction:column;gap:4px;margin:6px 0}
+  /* הרשימה גוללת, כדי שאפשר יהיה להראות את כל המתאימים לשם פרטי נפוץ
+     בלי שהיא תשתלט על הדף */
+  .dpres{display:flex;flex-direction:column;gap:4px;margin:6px 0;
+    max-height:46vh;overflow-y:auto;overscroll-behavior:contain}
   .dpr{background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:600}
+  .dpr.dprmore{background:none;border:none;color:var(--muted);font-weight:500;font-size:.85rem;cursor:default;padding:6px 2px}
   .dpr:hover{border-color:var(--accent)}
   .chosen{font-weight:800;color:var(--accent);margin:6px 0}
   /* אברכים */
