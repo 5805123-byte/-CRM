@@ -6015,13 +6015,25 @@ function renderKvList(type){
       ? 'לא נכללים כאן: '+[nOcc?(nOcc+' מזדמנים'):'',nNone?(nNone+' בדרגה "ללא"'):'']
           .filter(Boolean).join(' · ')+'. כדי לצרף מישהו — קבע לו דרגת קוויטל בכרטיס.'
       : '';
-    document.getElementById('kvlistwrap').innerHTML=groups.map(g=>{
+    // מאיר: "זה עדיין תוקע את השמות... עדיף שיישאר רווח למטה מאשר
+    // שזה יהיה בהמשכים".
+    // הרשימה נבנית כטבלת הדפסה, ושני דברים נפרדים שומרים על התחתית:
+    // ב-tfoot יושב מרווח ריק שחוזר בכל עמוד ו*תופס מקום אמיתי*, ולכן
+    // כרום לא נותן לשורות לרדת אליו; והרצועה עצמה מצוירת בנפרד
+    // (position:fixed) ממש בתחתית כל עמוד. כך היא תמיד למטה, ולעולם
+    // לא על השמות. וכל תורם הוא שורת טבלה משלו, כי כרום שומר
+    // break-inside:avoid על שורות טבלה — אבל מתעלם ממנו על תוכן
+    // שנחתך בתוך תא אחד גדול.
+    document.getElementById('kvlistwrap').innerHTML= groups.length
+      ? '<table class="kvsheet"><tfoot class="kvfoot"><tr><td><div class="prgap"></div></td></tr></tfoot>'
+        +'<tbody>'+groups.map(g=>{
       const empty=!g.items.some(e=>(e.text||'').trim());
       const needname=g.items.some(e=>e.needname);
-      return `<div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
+      return `<tr class="kvrow${empty?' kvempty':''}"><td><div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
         + g.items.map(e=>`<div class="names hasflow" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`
             + `<div class="namesflow">${esc(kvFlow(e.text))}</div>`).join('')
-        + `</div>`;}).join('')||'<div class="empty">אין תוצאות</div>';
+        + `</div></td></tr>`;}).join('')+'</tbody></table>'+prFootHTML()
+      : '<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
     bindKvEdit();
   }
@@ -6034,9 +6046,21 @@ function renderKvList(type){
 // הפרטים שיש בבלאנק ממש בתחתית הדף בקטן, ולהוסיף את מספר הטלפון,
 // והרקע בהיר קצת כמו הבלאנק המקורי".
 // הלוגו והשורה התחתונה קבועים (position:fixed) ולכן חוזרים בכל עמוד.
+// רצועת הסיום — לוגו ופרטי הכולל. נבנית מהקוד ולא מה-HTML הקבוע,
+// כדי שתוכל לשבת בתוך tfoot של הטבלה ולחזור בכל עמוד מודפס.
+function prFootHTML(){
+  return '<div class="prfoot"><span class="prline"></span><span class="prdia"></span>'
+    +'<span class="prrow"><img class="lg" src="/kc-logo.png" alt="">'
+    +'<span class="rule"></span>'
+    +'<span class="txt"><b>+972-52-762-8272</b><i>\u00b7</i>'
+    +'<b>Chatzot18@gmail.com</b><i>\u00b7</i><b>kollelchatzot.com</b></span></span></div>';
+}
 function kvPrint(){
+  // גם ל-html, כדי שגוון הקלף ייצבע על כל הדף — כולל השוליים
   document.body.classList.add('kvprint');
+  document.documentElement.classList.add('kvprint');
   const done=()=>{document.body.classList.remove('kvprint');
+    document.documentElement.classList.remove('kvprint');
     window.removeEventListener('afterprint',done);};
   window.addEventListener('afterprint',done);
   setTimeout(()=>window.print(),60);

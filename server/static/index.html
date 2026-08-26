@@ -1335,34 +1335,54 @@
   /* לוגו ושורת פרטים בהדפסת הקוויטל — מוצגים רק בהדפסה, וחוזרים בכל
      עמוד. מאיר: "שתמיד יהיה את הלוגו בצד, ואת הפרטים שיש בבלאנק ממש
      בתחתית הדף בקטן, בשורה אחת שלא תתפוס מקום, והרקע בהיר קצת" */
-  #prfoot{display:none}
+  /* רצועת הסיום מוצגת רק בהדפסה, ויושבת ב-tfoot כדי לתפוס מקום
+     אמיתי בתחתית כל עמוד — ולא לצוף מעל השמות */
+  .kvsheet{width:100%;border-collapse:collapse;table-layout:fixed}
+  .kvsheet>tfoot{display:none}
+  .kvsheet>tfoot td,.kvsheet>tbody td{padding:0;border:0;vertical-align:top}
+  .prfoot,.prgap{display:none}
   @media print{
-    /* רצועת סיום דקה: לוגו קטן בקצה שמאל ופרטי הכולל לצידו.
-       מאיר: "שזה ממש לא יתפוס מקום, שיהיה קטן ויפה, וזה קוטע את
-       השמות של הקוויטל". גובה הרצועה ~11 מ"מ, והשוליים התחתונים
-       של העמוד גדולים ממנה — כך שהשמות נעצרים מעליה תמיד. */
-    body.kvprint #prfoot{display:flex;position:fixed;left:0;right:0;bottom:0;
-      direction:ltr;align-items:center;gap:3mm;height:11mm;padding:0 9mm;
-      z-index:5;background:#FBF6EA}
-    body.kvprint #prfoot::before{content:"";position:absolute;top:0;left:9mm;right:9mm;
-      height:.6px;background:linear-gradient(to right,
-        rgba(190,158,88,0),rgba(190,158,88,.7) 22%,rgba(190,158,88,.7) 78%,rgba(190,158,88,0))}
-    body.kvprint #prfoot .lg{flex:0 0 auto;width:9.5mm;height:auto;display:block;opacity:.92}
-    body.kvprint #prfoot .txt{flex:1 1 auto;text-align:left;
-      font-family:"Segoe UI",system-ui,sans-serif;font-size:6.6pt;line-height:1;
-      color:#7d5c14;letter-spacing:.05em;white-space:nowrap}
-    body.kvprint #prfoot .txt b{font-weight:600;color:#68490a}
-    body.kvprint #prfoot .txt span{color:#cbb078;padding:0 5px}
-    body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
+    .kvsheet>tfoot{display:table-footer-group}
+    /* המרווח הריק שב-tfoot גבוה מהרצועה עצמה — כך תמיד נשאר אוויר
+       בין השם האחרון לרצועה, גם אם המדפסת משנה שוליים */
+    .prgap{display:block;height:14mm}
+    /* מאיר: "אם יש קוויטל של תורם שזה ימשיך לעמוד הבא — שזה פשוט לא
+       יתחיל את השמות שלו, ועדיף שיישאר רווח למטה".
+       כרום מכבד break-inside:avoid על שורת טבלה, אבל מתעלם ממנו על
+       תוכן שנחתך בתוך תא אחד גדול — ולכן כל תורם הוא שורה בפני עצמה. */
+    .kvsheet>tbody>tr{break-inside:avoid;page-break-inside:avoid}
+    .kvsheet>tbody>tr.kvempty{display:none!important}
+    /* מאיר: "שיהיה קטן ויפה... תעצב יותר יפה את הפס, משהו יותר גרפיקה
+       ועדין". קו שיער שנמוג בשני הקצוות עם מעוין זהב קטן במרכזו,
+       ומתחתיו הלוגו בקצה שמאל ופרטי הכולל לצידו בשורה אחת. */
+    .prfoot{display:block;position:fixed;left:0;right:0;bottom:0;z-index:5;
+      padding:2.2mm 3mm .8mm;height:12mm;background:#FBF6EA}
+    .prfoot .prline{display:block;height:.5px;margin:0 0 1.4mm;
+      background:linear-gradient(to right,rgba(190,158,88,0),
+        rgba(190,158,88,.42) 16%,rgba(190,158,88,.42) 84%,rgba(190,158,88,0))}
+    .prfoot .prdia{position:absolute;top:2.2mm;left:50%;width:1.3mm;height:1.3mm;
+      margin:-.75mm 0 0 -.75mm;transform:rotate(45deg);
+      background:#FBF6EA;border:.22mm solid rgba(190,158,88,.55)}
+    .prfoot .prrow{display:flex;direction:ltr;align-items:center;gap:3.2mm;height:7.6mm}
+    .prfoot .lg{flex:0 0 auto;height:7.6mm;width:auto;display:block;opacity:.94}
+    .prfoot .rule{flex:0 0 auto;width:.35mm;height:6mm;border-radius:1px;
+      background:linear-gradient(to bottom,rgba(190,158,88,0),
+        rgba(190,158,88,.5) 45%,rgba(190,158,88,0))}
+    .prfoot .txt{flex:1 1 auto;text-align:left;
+      font-family:"Segoe UI",system-ui,sans-serif;font-size:6.4pt;line-height:1;
+      color:#8a6a2a;letter-spacing:.08em;white-space:nowrap}
+    .prfoot .txt b{font-weight:600;color:#75551a}
+    .prfoot .txt i{font-style:normal;color:#d3bc93;padding:0 6px}
+    html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
     body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   }
   @media print{
-    @page{size:A4 portrait;margin:7mm 8mm 14mm}
+    @page{size:A4 portrait;margin:8mm 9mm}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .kblock.kvempty{display:none!important}
     .app{max-width:none;padding:0}
     #kvlistwrap{margin:0;padding:0}
-    #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;
+    #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;display:block;
       background:none!important;border:none!important;border-radius:0!important;
       padding:0!important;margin:0 0 2.6mm!important}
     #kvlistwrap .kblock .who{font-size:.94rem;font-weight:800;margin:0 0 .3mm!important;
@@ -1381,7 +1401,6 @@
 </head>
 <body>
 <div id="rembanner" class="rembanner"></div>
-<div id="prfoot"><img class="lg" src="/kc-logo.png" alt=""><div class="txt"><b>+972-52-762-8272</b><span>|</span><b>Chatzot18@gmail.com</b><span>|</span><b>kollelchatzot.com</b></div></div>
 <div class="app">
   <header class="top">
     <div class="brand"><img src="/logo.png" alt="" style="width:38px;height:auto"><h1>כולל חצות — תורמים</h1><span class="st" id="stat"></span><button id="healthbtn" class="healthbtn" title="בדיקת מערכת">🩺</button></div>
