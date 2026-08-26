@@ -1399,9 +1399,14 @@
     .prfoot .rule{flex:0 0 auto;width:.35mm;height:9mm;border-radius:1px;
       background:linear-gradient(to bottom,rgba(190,158,88,0),
         rgba(190,158,88,.5) 45%,rgba(190,158,88,0))}
-    .prfoot .txt{flex:1 1 auto;direction:ltr;text-align:right;
-      font-family:"Segoe UI",system-ui,sans-serif;font-size:7.2pt;line-height:1;
-      color:#8a6a2a;letter-spacing:.08em;white-space:nowrap}
+    /* מאיר: "נעלם הכיתוב של הפרטים כאן בקוויטל". השורה הייתה בשורה אחת
+       שאינה נשברת, וכשהמדפסת נותנת שוליים גדולים יותר (או נייר אחר)
+       היא גלשה אל מחוץ לדף ונחתכה — הטלפון פשוט נעלם. עכשיו היא
+       מתכווצת בתוך המקום שיש, ובמקרה קיצון נשברת לשתי שורות במקום
+       להיעלם. */
+    .prfoot .txt{flex:1 1 0%;min-width:0;direction:ltr;text-align:left;
+      font-family:"Segoe UI",system-ui,sans-serif;font-size:7.2pt;line-height:1.35;
+      color:#8a6a2a;letter-spacing:.06em}
     .prfoot .txt b{font-weight:600;color:#75551a}
     .prfoot .txt i{font-style:normal;color:#d3bc93;padding:0 6px}
     html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
