@@ -1332,8 +1332,24 @@
   /* הדפסת קוויטל נקייה — רק שם תורם ושמות התפילה, בלי תזכורת/כרטיס/אייקונים.
      מאיר: "שיהיה יותר צפוף, שינצל את כל הדף למעלה ולמטה ובצדדים, בלי
      רווחים, גופן קצת יותר קטן, וכמה שפחות דפים". */
+  /* לוגו ושורת פרטים בהדפסת הקוויטל — מוצגים רק בהדפסה, וחוזרים בכל
+     עמוד. מאיר: "שתמיד יהיה את הלוגו בצד, ואת הפרטים שיש בבלאנק ממש
+     בתחתית הדף בקטן, בשורה אחת שלא תתפוס מקום, והרקע בהיר קצת" */
+  #prlogo,#prfoot{display:none}
   @media print{
-    @page{size:A4 portrait;margin:6mm 7mm}
+    body.kvprint #prlogo{display:block;position:fixed;top:3mm;inset-inline-start:5mm;
+      width:22mm;height:auto;z-index:5}
+    body.kvprint #prfoot{display:flex;position:fixed;bottom:3mm;inset-inline:0;
+      justify-content:center;align-items:center;gap:7px;z-index:5;
+      font-size:8.5pt;color:#8a6a22;direction:ltr}
+    body.kvprint #prfoot i{font-style:normal}
+    body.kvprint #prfoot .ln{flex:0 0 11mm;height:1px;background:#c9a75a;opacity:.75}
+    body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
+    body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body.kvprint #kvlistwrap{padding-top:13mm}
+  }
+  @media print{
+    @page{size:A4 portrait;margin:6mm 7mm 11mm}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .kblock.kvempty{display:none!important}
     .app{max-width:none;padding:0}
@@ -1357,6 +1373,8 @@
 </head>
 <body>
 <div id="rembanner" class="rembanner"></div>
+<img id="prlogo" src="/logo.png" alt="">
+<div id="prfoot"><span class="ln"></span><i>+972-52-762-8272</i><i>|</i><i>Chatzot18@gmail.com</i><i>|</i><i>kollelchatzot.com</i><span class="ln"></span></div>
 <div class="app">
   <header class="top">
     <div class="brand"><img src="/logo.png" alt="" style="width:38px;height:auto"><h1>כולל חצות — תורמים</h1><span class="st" id="stat"></span><button id="healthbtn" class="healthbtn" title="בדיקת מערכת">🩺</button></div>

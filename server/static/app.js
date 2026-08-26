@@ -5974,7 +5974,7 @@ function wireNoLast(redraw){
 }
 function renderKvList(type){
   const title=KVTYPES.find(x=>x[0]===type)[1];
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2" id="kvcnt"></span>${kvNoLastBtn()}<button class="print noprint" onclick="window.print()">הדפס 🖨️</button></div>
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2" id="kvcnt"></span>${kvNoLastBtn()}<button class="print noprint" onclick="kvPrint()">הדפס 🖨️</button></div>
     <input class="avsearch noprint" id="kvsearch" placeholder="🔍 חפש שם תורם או שם שמוזכר בקוויטל…" value="${esc(kvListQ)}" autocomplete="off">
     <div class="hintxt noprint" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.${
       KVNOLAST?' <b>· מודפס בשם פרטי בלבד</b>':''}</div>
@@ -6030,6 +6030,17 @@ function renderKvList(type){
 }
 // מאיר: "כל שם ושם האם והבקשה ואז פסיק, והשם הבא באותה שורה — לא
 // שיתפוס מקום". שורות בודדות מתחברות לרצף אחד, להדפסה בלבד.
+// מאיר: "בקוויטל להדפסה שתמיד יהיה את הלוגו של כולל חצות בצד, ואת
+// הפרטים שיש בבלאנק ממש בתחתית הדף בקטן, ולהוסיף את מספר הטלפון,
+// והרקע בהיר קצת כמו הבלאנק המקורי".
+// הלוגו והשורה התחתונה קבועים (position:fixed) ולכן חוזרים בכל עמוד.
+function kvPrint(){
+  document.body.classList.add('kvprint');
+  const done=()=>{document.body.classList.remove('kvprint');
+    window.removeEventListener('afterprint',done);};
+  window.addEventListener('afterprint',done);
+  setTimeout(()=>window.print(),60);
+}
 function kvFlow(t){
   const parts=String(t||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   if(parts.length<2)return parts.join('');
