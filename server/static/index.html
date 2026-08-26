@@ -1180,6 +1180,20 @@
   .pwres{margin-top:4px}
   .pwchips{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0}
   .pwchip{display:inline-flex;align-items:center;gap:4px;background:var(--chip,#eee);color:var(--ink);border-radius:99px;padding:3px 6px 3px 10px;font-size:.82rem;font-weight:700}
+  /* חלוקת הסכום בין מחזיקי אותו אברך — שורה לכל אחד */
+  .shbox{margin:8px 0 4px;padding:9px 10px;border:1px solid var(--gold);
+    border-radius:11px;background:var(--gold-soft)}
+  .shtitle{font-weight:800;font-size:.86rem;color:var(--gold);margin-bottom:7px}
+  .shrow{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .shrow .shnm{flex:1 1 auto;font-weight:700;font-size:.85rem;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .shrow .shnm small{font-weight:500;color:var(--muted)}
+  .shrow .shcur{flex:0 0 auto;color:var(--muted);font-weight:700;font-size:.85rem}
+  .shrow .shamt{flex:0 0 92px;width:92px;padding:6px 8px;border:1px solid var(--line);
+    border-radius:8px;background:var(--card);font-weight:700;text-align:center}
+  .shtot{font-weight:800;font-size:.85rem;color:var(--ink);margin:2px 0 7px}
+  .shbox .btn{width:100%}
+  .shbox .hintxt{margin-top:5px}
   .pwchip .pwx{background:none;border:none;color:var(--no);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px}
   /* ייעודי התורם — כמה ייעודים במקביל, כל אחד צ'יפ עם ✕ */
   .purpbox{display:flex;flex-direction:column;gap:5px}

@@ -2757,7 +2757,13 @@ function commitHTML(d){
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav${avOpenSlot(p)?' cmavgap':''}">${avOpenSlot(p)
         ?('🚪 מקום פתוח — '+esc(p.prev_avreich)+' יצא'+(p.prev_ended?(' ב'+esc(p.prev_ended)):''))
-        :('👨‍🎓 '+esc(p.avreich||'—'))}${amtNum(p.amount)?(' · '+f(amtNum(p.amount))):''}${coHolderNamesHtml(p)}${+p.joint?' <small class="jointbadge">🤝 ביחד</small>':''}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
+        :('👨‍🎓 '+esc(p.avreich||'—'))}${partnerMonthly(p)?(' · '+f(partnerMonthly(p))):''}${coHolderNamesHtml(p)}${
+        // מאיר על מיטמן: הכרטיס הראה ליד כהן ציון $1,400, שזה הסכום של
+        // שלושת המחזיקים יחד — ואילו אפרים נותן ממנו 650. עכשיו מוצג
+        // מה שהוא נותן, והסכום המשותף נכתב לצידו כהסבר.
+        +p.joint&&amtNum(p.amount)>partnerMonthly(p)+0.5
+          ?` <small class="jointbadge">🤝 ${f(amtNum(p.amount))} ביחד</small>`
+          :(+p.joint?' <small class="jointbadge">🤝 ביחד</small>':'')}${p.paid_thru?(' <small class="izstart">💵 שולם עד '+esc(fmtMonth(p.paid_thru))+'</small>'):''}</div>`).join(''):''}
     </div>`;
   };
   // מי משלם דרך הכרטיס הזה עבור התחייבות של תורם אחר — מידע בלבד,
@@ -5040,6 +5046,38 @@ function kvToolsHTML(d){
     </div>
     <div class="hintxt">"דף מקופל" נפתח בחלון הדפסה: הפתק פעמיים בדף, למטה הפוך — מקפלים והוא עומד כאוהל.</div></div>`;
 }
+// מאיר על אפרים מיטמן: "הוא נותן עוד 650 בשביל יששכר־זבולון ביחד עם
+// שני בניו, כשהוא נותן 650 והבן שלו גבריאל נותן 750. אני לא מצליח
+// לכתוב את זה כאן בכלל — שהמערכת לא נותנת לי לכתוב סכום מדויק כמה הוא
+// נותן וכמה השותף השני נותן, ואז הכל מסונכרן בדיוק".
+// שדה "החלק שלו" היה קיים, אבל נפתח רק אם השורות של השותפים כבר סומנו
+// "ביחד" — ולכן אצלו הוא פשוט לא הופיע. כאן זו טבלה אחת: שורה לכל
+// מחזיק עם הסכום שלו, והשמירה כותבת לכל אחד בכרטיס שלו.
+function shareRowsHTML(p,d){
+  const co=pwList(p).filter(x=>x.id);
+  if(!co.length)return '';
+  const cur=pCur(p,d), me=(d.last+' '+(d.first||'')).trim();
+  const own=String(p.share||'').trim()!==''?p.share:(+p.joint?'':p.amount);
+  const row=(id,nm,val,self)=>`<div class="shrow">
+    <span class="shnm">${self?'':'🔗 '}${esc(nm)}${self?' <small>(הכרטיס הזה)</small>':''}</span>
+    <span class="shcur">${esc(cur)}</span>
+    <input class="shamt" data-pid="${p.id}" data-did="${id}" value="${esc(val||'')}"
+      inputmode="decimal" placeholder="0"></div>`;
+  let rows=row(d.id,me,own,1);
+  co.forEach(x=>{
+    const o=(DB||[]).find(y=>y.id==x.id);
+    const q=o&&(o.partners||[]).find(z=>z.active!=0&&norm(z.avreich||'')===norm(p.avreich||''));
+    const v=q?(String(q.share||'').trim()!==''?q.share:(+q.joint?'':q.amount)):'';
+    rows+=row(x.id,x.name,v,0);
+  });
+  return `<div class="shbox">
+    <div class="shtitle">💰 כמה כל אחד נותן על ${esc(p.avreich||'האברך')}</div>
+    ${rows}
+    <div class="shtot" data-pid="${p.id}"></div>
+    <button class="btn sm shsave" data-pid="${p.id}">💾 שמור את החלוקה אצל כולם</button>
+    <div class="hintxt">הסכום נשמר בכרטיס של כל אחד בנפרד, והסך הכל נרשם כסכום של האברך. מי שמחזיק ואינו משלם — רשום לו 0.</div>
+  </div>`;
+}
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
   const act=(d.partners||[]).filter(p=>p.active!=0);
@@ -5055,6 +5093,7 @@ function renderPartners(d){
     <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
       <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
+    ${shareRowsHTML(p,d)}
     <label class="jointchk"><input type="checkbox" class="pjoint" data-id="${p.id}" ${+p.joint?'checked':''}> 🤝 מחזיקים אותו <b>ביחד</b> — הסכום למעלה הוא הסכום המשותף לכולם</label>
     ${+p.joint&&jointHolders(p)>1?`<label class="fld"><span>💳 מי משלם בפועל</span><select class="ppayer" data-id="${p.id}">
       <option value="">כל אחד את חלקו (${curSym(d)}${Math.round(amtNum(p.amount)/jointHolders(p))} לכל אחד)</option>
@@ -5163,6 +5202,55 @@ function renderPartners(d){
     toast(v?'נשמר — משלם אחד ✓':'נשמר — כל אחד את חלקו ✓');
     renderPartners(d); refreshIzSum(d); if(tab==='donors')renderDonors();});
   el.querySelectorAll('.pjoint').forEach(cb=>cb.onchange=async()=>{const p=(d.partners||[]).find(x=>x.id==cb.dataset.id);if(!p)return;p.joint=cb.checked?1:0;await api('PUT','/api/partner/'+p.id,{joint:p.joint});toast(cb.checked?'סומן כמשותף ✓':'בוטל');renderPartners(d);if(tab==='donors')renderDonors();});
+  // חלוקת הסכום בין המחזיקים — סה"כ חי מתחת לשורות, ושמירה אחת שכותבת
+  // לכל אחד בכרטיס שלו. מי שעדיין אין לו שורה על האברך — נפתחת לו אחת.
+  const shTot=pid=>{
+    const box=el.querySelector('.shtot[data-pid="'+pid+'"]');if(!box)return;
+    const p=(d.partners||[]).find(x=>x.id==pid);
+    const ins=[...el.querySelectorAll('.shamt[data-pid="'+pid+'"]')];
+    const t=ins.reduce((s,i)=>s+amtNum(i.value),0);
+    box.textContent='סה"כ לאברך: '+pCur(p,d)+Math.round(t).toLocaleString('en-US');
+  };
+  el.querySelectorAll('.shamt').forEach(i=>{shTot(i.dataset.pid);
+    i.oninput=()=>shTot(i.dataset.pid);});
+  el.querySelectorAll('.shsave').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.busy)return; b.dataset.busy='1'; b.disabled=true;
+    try{
+      const pid=b.dataset.pid, p=(d.partners||[]).find(x=>x.id==pid);
+      if(!p)return;
+      const ins=[...el.querySelectorAll('.shamt[data-pid="'+pid+'"]')];
+      const tot=String(Math.round(ins.reduce((s,i)=>s+amtNum(i.value),0)));
+      for(const i of ins){
+        const did=+i.dataset.did, mine=String(amtNum(i.value));
+        let q=null;
+        if(did===d.id) q=p;
+        else{
+          const o=(DB||[]).find(y=>y.id===did);
+          if(!o)continue;
+          o.partners=o.partners||[];
+          q=o.partners.find(z=>z.active!=0&&norm(z.avreich||'')===norm(p.avreich||''));
+          if(!q){
+            const r=await api('POST','/api/partner',{donor_id:did,avreich:p.avreich||'',
+              start_date:p.start_date||'',amount:tot,note:'',method:p.method||''});
+            if(!r||!r.id)continue;
+            q={id:r.id,donor_id:did,avreich:p.avreich||'',start_date:p.start_date||'',
+               amount:tot,note:'',active:1,method:p.method||''};
+            o.partners.push(q);
+          }
+        }
+        // הסכום הרשום על השורה הוא הסך הכל של האברך, והחלק של כל אחד
+        // נשמר בנפרד — כך אף אחד לא נספר פעמיים ואף אחד לא נספר חסר
+        q.joint=1; q.amount=tot; q.share=mine; q.cur=pCur(p,d);
+        await api('PUT','/api/partner/'+q.id,
+          {joint:1,amount:tot,share:mine,cur:q.cur,
+           partner_with:q.partner_with||'',partner_with_id:q.partner_with_id||''});
+      }
+      toast('החלוקה נשמרה אצל '+ins.length+' מחזיקים ✓');
+      await load();
+      const dd=DB.find(x=>x.id===d.id); if(dd)Object.assign(d,dd);
+      renderPartners(d); refreshIzSum(d);
+      if(tab==='donors')renderDonors();
+    } finally{ delete b.dataset.busy; b.disabled=false; }});
   el.querySelectorAll('.pwx').forEach(b=>b.onclick=()=>rmPw(b.dataset.id,+b.dataset.idx));
   el.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{
     const dd=DB.find(y=>y.id==x.dataset.did); if(dd)openDonor(dd);});
