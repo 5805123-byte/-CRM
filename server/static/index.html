@@ -1337,6 +1337,26 @@
      בתחתית הדף בקטן, בשורה אחת שלא תתפוס מקום, והרקע בהיר קצת" */
   #prfoot{display:none}
   @media print{
+    /* רצועת הסיום: הלוגו בקצה שמאל והפרטים לצידו, בשורה אחת שקטה.
+       מאיר: "שלא יהיה לוגו כמו מודבק ועקום ותלוש". הלוגו שקוף ויושב
+       על אותו קרם של הדף, וקו זהב דק מפריד בינו לבין השמות. */
+    body.kvprint #prfoot{display:flex;position:fixed;left:0;right:0;bottom:0;
+      direction:ltr;align-items:center;gap:5mm;padding:2.5mm 8mm 2.5mm;
+      z-index:5;background:#FBF6EA}
+    body.kvprint #prfoot::before{content:"";position:absolute;top:0;left:8mm;right:8mm;
+      height:1px;background:linear-gradient(to right,
+        rgba(201,167,90,0) 0%,rgba(201,167,90,.85) 18%,
+        rgba(201,167,90,.85) 82%,rgba(201,167,90,0) 100%)}
+    body.kvprint #prfoot .lg{flex:0 0 auto;width:15mm;height:auto;display:block}
+    body.kvprint #prfoot .txt{flex:1 1 auto;text-align:left;
+      font-family:"Segoe UI",system-ui,sans-serif;font-size:8pt;
+      color:#6d4f0d;letter-spacing:.04em;white-space:nowrap}
+    body.kvprint #prfoot .txt b{font-weight:600;color:#5a3f06}
+    body.kvprint #prfoot .txt span{color:#c9a75a;padding:0 6px}
+    body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
+    body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+  @media print{
     /* רצועת הסיום של הדף: הלוגו בקצה שמאל, ולצידו פרטי הכולל.
        position:fixed — ולכן חוזרת בכל עמוד מודפס. */
     /* direction:ltr — כדי שהלוגו יישב בקצה שמאל והפרטים לצידו */
@@ -1353,7 +1373,7 @@
     body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   }
   @media print{
-    @page{size:A4 portrait;margin:6mm 7mm 20mm}
+    @page{size:A4 portrait;margin:7mm 8mm 20mm}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .kblock.kvempty{display:none!important}
     .app{max-width:none;padding:0}
