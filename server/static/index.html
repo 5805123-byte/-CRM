@@ -1345,7 +1345,7 @@
     .kvsheet>tfoot{display:table-footer-group}
     /* המרווח הריק שב-tfoot גבוה מהרצועה עצמה — כך תמיד נשאר אוויר
        בין השם האחרון לרצועה, גם אם המדפסת משנה שוליים */
-    .prgap{display:block;height:14mm}
+    .prgap{display:block;height:21mm}
     /* מאיר: "אם יש קוויטל של תורם שזה ימשיך לעמוד הבא — שזה פשוט לא
        יתחיל את השמות שלו, ועדיף שיישאר רווח למטה".
        כרום מכבד break-inside:avoid על שורת טבלה, אבל מתעלם ממנו על
@@ -1355,21 +1355,23 @@
     /* מאיר: "שיהיה קטן ויפה... תעצב יותר יפה את הפס, משהו יותר גרפיקה
        ועדין". קו שיער שנמוג בשני הקצוות עם מעוין זהב קטן במרכזו,
        ומתחתיו הלוגו בקצה שמאל ופרטי הכולל לצידו בשורה אחת. */
-    .prfoot{display:block;position:fixed;left:0;right:0;bottom:0;z-index:5;
-      padding:2.2mm 3mm .8mm;height:12mm;background:#FBF6EA}
-    .prfoot .prline{display:block;height:.5px;margin:0 0 1.4mm;
+    /* מאיר: "את הלוגו תשים בצד שמאל ותגדיל אותו בכפול" — לכן direction:ltr
+       על כל הרצועה (הלוגו הוא הראשון, ולכן הוא בקצה שמאל), והלוגו 15.2 מ"מ */
+    .prfoot{display:block;position:fixed;left:0;right:0;bottom:0;z-index:5;direction:ltr;
+      padding:1.8mm 3mm .6mm;height:19mm;background:#FBF6EA}
+    .prfoot .prline{display:block;height:.5px;margin:0 0 1.2mm;
       background:linear-gradient(to right,rgba(190,158,88,0),
         rgba(190,158,88,.42) 16%,rgba(190,158,88,.42) 84%,rgba(190,158,88,0))}
-    .prfoot .prdia{position:absolute;top:2.2mm;left:50%;width:1.3mm;height:1.3mm;
+    .prfoot .prdia{position:absolute;top:1.8mm;left:50%;width:1.3mm;height:1.3mm;
       margin:-.75mm 0 0 -.75mm;transform:rotate(45deg);
       background:#FBF6EA;border:.22mm solid rgba(190,158,88,.55)}
-    .prfoot .prrow{display:flex;direction:ltr;align-items:center;gap:3.2mm;height:7.6mm}
-    .prfoot .lg{flex:0 0 auto;height:7.6mm;width:auto;display:block;opacity:.94}
-    .prfoot .rule{flex:0 0 auto;width:.35mm;height:6mm;border-radius:1px;
+    .prfoot .prrow{display:flex;align-items:center;gap:4mm;height:15.2mm}
+    .prfoot .lg{flex:0 0 auto;height:15.2mm;width:auto;display:block;opacity:.94}
+    .prfoot .rule{flex:0 0 auto;width:.35mm;height:9mm;border-radius:1px;
       background:linear-gradient(to bottom,rgba(190,158,88,0),
         rgba(190,158,88,.5) 45%,rgba(190,158,88,0))}
     .prfoot .txt{flex:1 1 auto;text-align:left;
-      font-family:"Segoe UI",system-ui,sans-serif;font-size:6.4pt;line-height:1;
+      font-family:"Segoe UI",system-ui,sans-serif;font-size:7.2pt;line-height:1;
       color:#8a6a2a;letter-spacing:.08em;white-space:nowrap}
     .prfoot .txt b{font-weight:600;color:#75551a}
     .prfoot .txt i{font-style:normal;color:#d3bc93;padding:0 6px}
@@ -1385,10 +1387,11 @@
     #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;display:block;
       background:none!important;border:none!important;border-radius:0!important;
       padding:0!important;margin:0 0 2.6mm!important}
-    #kvlistwrap .kblock .who{font-size:.94rem;font-weight:800;margin:0 0 .3mm!important;
+    /* מאיר: "את הגופן של הקוויטל תגדיל עוד קצת" */
+    #kvlistwrap .kblock .who{font-size:1.06rem;font-weight:800;margin:0 0 .4mm!important;
       color:#000!important;line-height:1.15}
     #kvlistwrap .kblock .who .opencard,#kvlistwrap .kblock .who .kvtag,#kvlistwrap .kblock .who .loose{display:none!important}
-    #kvlistwrap .kblock .names,#kvlistwrap .kblock .namesflow{font-size:.9rem;line-height:1.26;
+    #kvlistwrap .kblock .names,#kvlistwrap .kblock .namesflow{font-size:1.02rem;line-height:1.3;
       border:none!important;padding:0!important;margin:0!important;background:none!important}
     #kvlistwrap .kblock.kvmulti .namesflow+.names{margin-top:.6mm!important}
     /* בהדפסה — הרצף עם הפסיקים. על המסך ממשיכים לערוך שורה־שורה.
