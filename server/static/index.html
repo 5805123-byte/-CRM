@@ -1419,6 +1419,16 @@
      שינצל את כל הדף, וכמה שפחות דפים". */
   body.kvprint .kblock.kvempty{display:none!important}
   body.kvprint #kvlistwrap{margin:0;padding:0}
+  /* מאיר: "גם בקוויטל מזדמנים שיהיה אותו רעיון... ואותו סדר של קוויטל"
+     — כותרת החודש נשארת, אבל בגודל של הדפסה ובלי עיטורי המסך */
+  body.kvprint #kvlistwrap .kvmonth{margin:0!important}
+  body.kvprint #kvlistwrap .kvmonh{font-size:1.06rem;font-weight:800;
+    color:#75551a!important;border:0!important;border-bottom:.35mm solid rgba(190,158,88,.45)!important;
+    padding:0 0 .8mm!important;margin:0 0 2mm!important;line-height:1.2}
+  body.kvprint #kvlistwrap .kvmonh+.kvmonh{margin-top:0!important}
+  body.kvprint #kvlistwrap .kvmonh small{font-weight:600;font-size:.8rem;color:#8a6a2a}
+  /* חודש שאינו הראשון בעמוד — קצת אוויר מעליו */
+  body.kvprint #kvlistwrap .kblock+.kvmonh{margin-top:4mm!important}
   body.kvprint #kvlistwrap .kblock{display:block;
     background:none!important;border:none!important;border-radius:0!important;
     padding:0!important;margin:0 0 2.6mm!important}

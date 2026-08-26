@@ -6254,8 +6254,12 @@ function prFootHTML(){
 // ההדפסה, וממלאים אותו קוויטל־קוויטל עד שהבא כבר לא נכנס. כך גם אין
 // קוויטל שנחתך באמצע, וגם יש מספר אמיתי לכל עמוד.
 function kvPaginate(wrap){
-  const blocks=[...wrap.querySelectorAll('.kblock')].filter(b=>!b.classList.contains('kvempty'));
+  // בקוויטל מזדמן הרשימה מחולקת לכותרות חודש, והן חלק מהזרימה בדיוק
+  // כמו הקוויטלים עצמם — אחרת הן היו נעלמות בהדפסה
+  const blocks=[...wrap.querySelectorAll('.kvmonh, .kblock')]
+    .filter(b=>!b.classList.contains('kvempty'));
   if(!blocks.length)return false;
+  const isHead=e=>e.classList.contains('kvmonh');
   const hd=HEBTODAY||'';
   const mk=n=>{
     const pg=document.createElement('div');
@@ -6277,8 +6281,15 @@ function kvPaginate(wrap){
     if(body.scrollHeight>body.clientHeight+1){
       if(body.children.length>1){          // לא נכנס — עובר שלם לעמוד הבא
         body.removeChild(b);
+        // כותרת חודש לא נשארת לבדה בתחתית עמוד — היא יורדת עם הקוויטל
+        // הראשון שאחריה
+        const prev=body.lastElementChild;
+        const carry=(prev&&isHead(prev)&&!isHead(b))?prev:null;
+        if(carry)body.removeChild(carry);
         n++; pg=mk(n); body=pg.querySelector('.kvbody');
-        host.appendChild(pg); body.appendChild(b);
+        host.appendChild(pg);
+        if(carry)body.appendChild(carry);
+        body.appendChild(b);
       }
       if(body.scrollHeight>body.clientHeight+1){
         // קוויטל ארוך מעמוד שלם — מותר לו לזלוג לעמוד הבא. עדיף
@@ -6332,7 +6343,7 @@ function renderKvOcc(){
   if(KVOCCMON && allMonths.indexOf(KVOCCMON)<0) KVOCCMON='';
   if(KVOCCMON) months=months.filter(hm=>hm===KVOCCMON);
   const nSel=months.reduce((a,hm)=>a+Object.keys(groups[hm]).length,0);
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>קוויטל מזדמן — לפי חודשים</b>${kvNoLastBtn()}<button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>קוויטל מזדמן — לפי חודשים</b>${kvNoLastBtn()}<button class="print noprint" onclick="kvPrint()">הדפס 🖨️</button></div>
     <div class="kvmonbar noprint"><label>🗓️ להדפיס</label>
       <select id="kvoccmon">
         <option value="">כל החודשים (${allMonths.reduce((a,hm)=>a+Object.keys(groups[hm]).length,0)})</option>
@@ -6340,7 +6351,7 @@ function renderKvOcc(){
       </select>
       <span class="kvmoncnt">${nSel} תורמים בהדפסה</span></div>
     ${KVNOLAST?'<div class="hintxt noprint" style="margin:0 2px 8px"><b>מודפס בשם פרטי בלבד</b></div>':''}
-    ${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3>🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock"><div class="who wholink" data-did="${x.d.id}">${esc(kvWho({did:x.d.id,donor:(x.d.last+' '+x.d.first).trim()}))} <span class="opencard">↗ כרטיס</span></div>${x.pid?`<div class="names hasflow" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div><div class="namesflow">${esc(kvFlow(x.text))}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}`;
+    <div id="kvlistwrap">${months.map(hm=>{const list=Object.values(groups[hm]);return `<div class="kvmonth"><h3 class="kvmonh">🗓️ ${esc(hm)} <small>(${list.length})</small></h3>${list.map(x=>`<div class="kblock${(x.text||'').trim()?'':' kvempty'}"><div class="who wholink" data-did="${x.d.id}">${esc(kvWho({did:x.d.id,donor:(x.d.last+' '+x.d.first).trim()}))} <span class="opencard">↗ כרטיס</span></div>${x.pid?`<div class="names hasflow" contenteditable="true" data-id="${x.pid}">${esc(x.text)}</div><div class="namesflow">${esc(kvFlow(x.text))}</div>`:'<div class="hintxt">אין שם לתפילה — הוסף בכרטיס התורם</div>'}</div>`).join('')}</div>`;}).join('')||'<div class="empty">אין תרומות מזדמנות</div>'}</div>`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;KVOCCMON='';render();};
   wireNoLast(renderKvOcc);
   const ms=document.getElementById('kvoccmon');
