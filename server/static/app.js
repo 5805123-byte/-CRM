@@ -6246,15 +6246,65 @@ function prFootHTML(){
     +'<span class="txt"><b>+972-52-762-8272</b><i>\u00b7</i>'
     +'<b>Chatzot18@gmail.com</b><i>\u00b7</i><b>kollelchatzot.com</b></span></span></div>';
 }
+// מאיר: "אני רוצה שזה יהיה ממוספר כל הקוויטלאך כשאני מדפיס, שיהיה תמיד
+// מספר בקצה השמאלי למעלה, ותאריך הדפסה עברי בלבד — למשל י"ב אלול
+// תשפ"ו — מתחת למספר הסידורי".
+// כרום אינו יודע לספור עמודים ב-CSS (אין לו תיבות שוליים של @page),
+// ולכן ההדפסה נבנית כאן כעמודים ממשיים: כל עמוד הוא מיכל בגובה שטח
+// ההדפסה, וממלאים אותו קוויטל־קוויטל עד שהבא כבר לא נכנס. כך גם אין
+// קוויטל שנחתך באמצע, וגם יש מספר אמיתי לכל עמוד.
+function kvPaginate(wrap){
+  const blocks=[...wrap.querySelectorAll('.kblock')].filter(b=>!b.classList.contains('kvempty'));
+  if(!blocks.length)return false;
+  const hd=HEBTODAY||'';
+  const mk=n=>{
+    const pg=document.createElement('div');
+    pg.className='kvpage';
+    pg.innerHTML='<div class="kvhead"><b>'+n+'</b>'+(hd?'<i>'+esc(hd)+'</i>':'')+'</div>'
+      +'<div class="kvbody"></div>'+prFootHTML();
+    return pg;
+  };
+  const host=document.createElement('div');
+  host.id='kvpages';
+  wrap.innerHTML='';
+  wrap.appendChild(host);
+  let n=1, pg=mk(n), body=pg.querySelector('.kvbody');
+  host.appendChild(pg);
+  // המדידה נעשית על הפריסה האמיתית — מוסיפים, ואם חרג מהמקום מעבירים
+  // את הקוויטל כולו לעמוד הבא. אמין יותר מחישוב גבהים מראש.
+  for(const b of blocks){
+    body.appendChild(b);
+    if(body.scrollHeight>body.clientHeight+1){
+      if(body.children.length>1){          // לא נכנס — עובר שלם לעמוד הבא
+        body.removeChild(b);
+        n++; pg=mk(n); body=pg.querySelector('.kvbody');
+        host.appendChild(pg); body.appendChild(b);
+      }
+      if(body.scrollHeight>body.clientHeight+1){
+        // קוויטל ארוך מעמוד שלם — מותר לו לזלוג לעמוד הבא. עדיף
+        // להמשיך מאשר לחתוך ולאבד שמות.
+        pg.classList.add('kvtall');
+        n++; pg=mk(n); body=pg.querySelector('.kvbody');
+        host.appendChild(pg);
+      }
+    }
+  }
+  if(!body.children.length)host.removeChild(pg);   // עמוד אחרון שנשאר ריק
+  return true;
+}
 function kvPrint(){
   // גם ל-html, כדי שגוון הקלף ייצבע על כל הדף — כולל השוליים
   document.body.classList.add('kvprint');
   document.documentElement.classList.add('kvprint');
+  const wrap=document.getElementById('kvlistwrap');
+  const paged=wrap?kvPaginate(wrap):false;
   const done=()=>{document.body.classList.remove('kvprint');
     document.documentElement.classList.remove('kvprint');
-    window.removeEventListener('afterprint',done);};
+    window.removeEventListener('afterprint',done);
+    if(paged)render();          // מחזיר את הרשימה הניתנת לעריכה
+  };
   window.addEventListener('afterprint',done);
-  setTimeout(()=>window.print(),60);
+  setTimeout(()=>window.print(),80);
 }
 function kvFlow(t){
   const parts=String(t||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);

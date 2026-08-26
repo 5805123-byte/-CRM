@@ -1364,78 +1364,91 @@
   /* לוגו ושורת פרטים בהדפסת הקוויטל — מוצגים רק בהדפסה, וחוזרים בכל
      עמוד. מאיר: "שתמיד יהיה את הלוגו בצד, ואת הפרטים שיש בבלאנק ממש
      בתחתית הדף בקטן, בשורה אחת שלא תתפוס מקום, והרקע בהיר קצת" */
-  /* רצועת הסיום מוצגת רק בהדפסה, ויושבת ב-tfoot כדי לתפוס מקום
-     אמיתי בתחתית כל עמוד — ולא לצוף מעל השמות */
+  /* מאיר: "אני רוצה שזה יהיה ממוספר, שיהיה תמיד מספר בקצה השמאלי
+     למעלה, ותאריך הדפסה עברי בלבד מתחת למספר הסידורי".
+     מספר עמוד אמיתי אי אפשר לקבל מ-CSS בכרום, ולכן ההדפסה נבנית
+     כעמודים ממשיים: כל עמוד הוא מיכל בגובה שטח ההדפסה, עם כותרת
+     למעלה־שמאל, השמות באמצע, ורצועת הכולל בתחתית. החלוקה נעשית
+     בקוד לפני ההדפסה (kvPaginate), ולכן אין קוויטל שנחתך באמצע.
+     הכללים אינם בתוך @media print אלא תחת body.kvprint, כדי שהמדידה
+     שלפני ההדפסה תראה בדיוק את מה שיֵצא למדפסת. */
   .kvsheet{width:100%;border-collapse:collapse;table-layout:fixed}
   .kvsheet>tfoot{display:none}
   .kvsheet>tfoot td,.kvsheet>tbody td{padding:0;border:0;vertical-align:top}
-  .prfoot,.prgap{display:none}
-  @media print{
-    .kvsheet>tfoot{display:table-footer-group}
-    /* המרווח הריק שב-tfoot גבוה מהרצועה עצמה — כך תמיד נשאר אוויר
-       בין השם האחרון לרצועה, גם אם המדפסת משנה שוליים */
-    .prgap{display:block;height:21mm}
-    /* מאיר: "אם יש קוויטל של תורם שזה ימשיך לעמוד הבא — שזה פשוט לא
-       יתחיל את השמות שלו, ועדיף שיישאר רווח למטה".
-       כרום מכבד break-inside:avoid על שורת טבלה, אבל מתעלם ממנו על
-       תוכן שנחתך בתוך תא אחד גדול — ולכן כל תורם הוא שורה בפני עצמה. */
-    .kvsheet>tbody>tr{break-inside:avoid;page-break-inside:avoid}
-    .kvsheet>tbody>tr.kvempty{display:none!important}
-    /* מאיר: "שיהיה קטן ויפה... תעצב יותר יפה את הפס, משהו יותר גרפיקה
-       ועדין". קו שיער שנמוג בשני הקצוות עם מעוין זהב קטן במרכזו,
-       ומתחתיו הלוגו בקצה שמאל ופרטי הכולל לצידו בשורה אחת. */
-    /* מאיר: "ביקשתי שהלוגו יהיה בצד ימין" — הרצועה בכיוון ימין־לשמאל,
-       ולכן הלוגו (הפריט הראשון) יושב בקצה ימין ופרטי הכולל לצידו */
-    .prfoot{display:block;position:fixed;left:0;right:0;bottom:0;z-index:5;direction:rtl;
-      padding:1.8mm 3mm .6mm;height:19mm;background:#FBF6EA}
-    .prfoot .prline{display:block;height:.5px;margin:0 0 1.2mm;
-      background:linear-gradient(to right,rgba(190,158,88,0),
-        rgba(190,158,88,.42) 16%,rgba(190,158,88,.42) 84%,rgba(190,158,88,0))}
-    .prfoot .prdia{position:absolute;top:1.8mm;left:50%;width:1.3mm;height:1.3mm;
-      margin:-.75mm 0 0 -.75mm;transform:rotate(45deg);
-      background:#FBF6EA;border:.22mm solid rgba(190,158,88,.55)}
-    .prfoot .prrow{display:flex;align-items:center;gap:4mm;height:15.2mm}
-    .prfoot .lg{flex:0 0 auto;height:15.2mm;width:auto;display:block;opacity:.94}
-    .prfoot .rule{flex:0 0 auto;width:.35mm;height:9mm;border-radius:1px;
-      background:linear-gradient(to bottom,rgba(190,158,88,0),
-        rgba(190,158,88,.5) 45%,rgba(190,158,88,0))}
-    /* מאיר: "נעלם הכיתוב של הפרטים כאן בקוויטל". השורה הייתה בשורה אחת
-       שאינה נשברת, וכשהמדפסת נותנת שוליים גדולים יותר (או נייר אחר)
-       היא גלשה אל מחוץ לדף ונחתכה — הטלפון פשוט נעלם. עכשיו היא
-       מתכווצת בתוך המקום שיש, ובמקרה קיצון נשברת לשתי שורות במקום
-       להיעלם. */
-    .prfoot .txt{flex:1 1 0%;min-width:0;direction:ltr;text-align:left;
-      font-family:"Segoe UI",system-ui,sans-serif;font-size:7.2pt;line-height:1.35;
-      color:#8a6a2a;letter-spacing:.06em}
-    .prfoot .txt b{font-weight:600;color:#75551a}
-    .prfoot .txt i{font-style:normal;color:#d3bc93;padding:0 6px}
-    html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
-    body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  }
+  .prfoot,.kvhead{display:none}
+  body.kvprint .kvpage{height:281mm;display:flex;flex-direction:column;
+    overflow:hidden;background:#FBF6EA}
+  body.kvprint .kvpage+.kvpage{margin-top:6mm}
+  /* קוויטל ארוך מעמוד שלם — מותר לו לזלוג, עדיף מלחתוך שמות */
+  body.kvprint .kvpage.kvtall{height:auto;overflow:visible}
+  body.kvprint .kvbody{flex:1 1 auto;min-height:0}
+  /* הכותרת: המספר הסידורי בקצה השמאלי, והתאריך העברי מתחתיו */
+  body.kvprint .kvhead{display:flex;flex:0 0 auto;flex-direction:column;
+    align-items:flex-start;direction:ltr;padding:0 1mm 2.6mm;line-height:1.15}
+  body.kvprint .kvhead b{font-size:9.5pt;font-weight:800;color:#75551a}
+  body.kvprint .kvhead i{font-style:normal;font-size:7.4pt;color:#8a6a2a;
+    direction:rtl;letter-spacing:.02em}
+  /* מאיר: "שיהיה קטן ויפה... תעצב יותר יפה את הפס, משהו יותר גרפיקה
+     ועדין". קו שיער שנמוג בשני הקצוות עם מעוין זהב קטן במרכזו.
+     "ביקשתי שהלוגו יהיה בצד ימין" — הרצועה בכיוון ימין־לשמאל, ולכן
+     הלוגו (הפריט הראשון) יושב בקצה ימין ופרטי הכולל לצידו. */
+  body.kvprint .prfoot{display:block;position:relative;flex:0 0 auto;direction:rtl;
+    padding:1.8mm 3mm .6mm;height:19mm;background:#FBF6EA}
+  body.kvprint .prfoot .prline{display:block;height:.5px;margin:0 0 1.2mm;
+    background:linear-gradient(to right,rgba(190,158,88,0),
+      rgba(190,158,88,.42) 16%,rgba(190,158,88,.42) 84%,rgba(190,158,88,0))}
+  body.kvprint .prfoot .prdia{position:absolute;top:1.8mm;left:50%;width:1.3mm;height:1.3mm;
+    margin:-.75mm 0 0 -.75mm;transform:rotate(45deg);
+    background:#FBF6EA;border:.22mm solid rgba(190,158,88,.55)}
+  body.kvprint .prfoot .prrow{display:flex;align-items:center;gap:4mm;height:15.2mm}
+  body.kvprint .prfoot .lg{flex:0 0 auto;height:15.2mm;width:auto;display:block;opacity:.94}
+  body.kvprint .prfoot .rule{flex:0 0 auto;width:.35mm;height:9mm;border-radius:1px;
+    background:linear-gradient(to bottom,rgba(190,158,88,0),
+      rgba(190,158,88,.5) 45%,rgba(190,158,88,0))}
+  /* מאיר: "נעלם הכיתוב של הפרטים כאן בקוויטל". השורה הייתה בשורה אחת
+     שאינה נשברת, וכשהמדפסת נותנת שוליים גדולים יותר (או נייר אחר)
+     היא גלשה אל מחוץ לדף ונחתכה — הטלפון פשוט נעלם. עכשיו היא
+     מתכווצת בתוך המקום שיש, ובמקרה קיצון נשברת לשתי שורות. */
+  body.kvprint .prfoot .txt{flex:1 1 0%;min-width:0;direction:ltr;text-align:left;
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:7.2pt;line-height:1.35;
+    color:#8a6a2a;letter-spacing:.06em}
+  body.kvprint .prfoot .txt b{font-weight:600;color:#75551a}
+  body.kvprint .prfoot .txt i{font-style:normal;color:#d3bc93;padding:0 6px}
+  /* טיפוגרפיית ההדפסה — תחת body.kvprint ולא בתוך @media print, כדי
+     שהמדידה שלפני ההדפסה תהיה זהה לפלט. מאיר: "שיהיה יותר צפוף,
+     שינצל את כל הדף, וכמה שפחות דפים". */
+  body.kvprint .kblock.kvempty{display:none!important}
+  body.kvprint #kvlistwrap{margin:0;padding:0}
+  body.kvprint #kvlistwrap .kblock{display:block;
+    background:none!important;border:none!important;border-radius:0!important;
+    padding:0!important;margin:0 0 2.6mm!important}
+  /* מאיר: "את הגופן של הקוויטל תגדיל עוד קצת" */
+  body.kvprint #kvlistwrap .kblock .who{font-size:1.06rem;font-weight:800;
+    margin:0 0 .4mm!important;color:#000!important;line-height:1.15}
+  body.kvprint #kvlistwrap .kblock .who .opencard,
+  body.kvprint #kvlistwrap .kblock .who .kvtag,
+  body.kvprint #kvlistwrap .kblock .who .loose{display:none!important}
+  /* מאיר: "אני רוצה שיהיה ישר בצדדים, שלא יהיה יוצא ונכנס — הכל ישר
+     כמו סרגל". יישור לשני הצדדים; השורה האחרונה נשארת צמודה לימין. */
+  body.kvprint #kvlistwrap .kblock .names,
+  body.kvprint #kvlistwrap .kblock .namesflow{font-size:1.02rem;line-height:1.3;
+    text-align:justify;text-align-last:right;-webkit-hyphens:none;hyphens:none;
+    border:none!important;padding:0!important;margin:0!important;background:none!important}
+  body.kvprint #kvlistwrap .kblock.kvmulti .namesflow+.names{margin-top:.6mm!important}
+  /* בהדפסה — הרצף עם הפסיקים. על המסך ממשיכים לערוך שורה־שורה. */
+  body.kvprint .names.hasflow{display:none!important}
+  body.kvprint .namesflow{display:block!important}
+  html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
+  body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @media print{
     @page{size:A4 portrait;margin:8mm 9mm}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
-    .kblock.kvempty{display:none!important}
     .app{max-width:none;padding:0}
-    #kvlistwrap{margin:0;padding:0}
-    #kvlistwrap .kblock{break-inside:avoid;page-break-inside:avoid;display:block;
-      background:none!important;border:none!important;border-radius:0!important;
-      padding:0!important;margin:0 0 2.6mm!important}
-    /* מאיר: "את הגופן של הקוויטל תגדיל עוד קצת" */
-    #kvlistwrap .kblock .who{font-size:1.06rem;font-weight:800;margin:0 0 .4mm!important;
-      color:#000!important;line-height:1.15}
-    #kvlistwrap .kblock .who .opencard,#kvlistwrap .kblock .who .kvtag,#kvlistwrap .kblock .who .loose{display:none!important}
-    /* מאיר: "אני רוצה שיהיה ישר בצדדים, שלא יהיה יוצא ונכנס — הכל ישר
-       כמו סרגל". יישור לשני הצדדים; השורה האחרונה נשארת צמודה לימין
-       ולא נמתחת. */
-    #kvlistwrap .kblock .names,#kvlistwrap .kblock .namesflow{font-size:1.02rem;line-height:1.3;
-      text-align:justify;text-align-last:right;-webkit-hyphens:none;hyphens:none;
-      border:none!important;padding:0!important;margin:0!important;background:none!important}
-    #kvlistwrap .kblock.kvmulti .namesflow+.names{margin-top:.6mm!important}
-    /* בהדפסה — הרצף עם הפסיקים. על המסך ממשיכים לערוך שורה־שורה.
-       מוסתרות רק שורות שיש להן תאום־רצף, ולא כל שדות השמות במערכת. */
-    .names.hasflow{display:none!important}
-    .namesflow{display:block!important}
+    /* כל עמוד הוא באמת עמוד */
+    .kvpage{break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid}
+    .kvpage.kvtall{break-inside:auto;page-break-inside:auto}
+    .kvpage:last-child{break-after:auto;page-break-after:auto}
+    .kvpage+.kvpage{margin-top:0!important}
   }
   .namesflow{display:none}
 </style>
