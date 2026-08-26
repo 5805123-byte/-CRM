@@ -1335,21 +1335,25 @@
   /* לוגו ושורת פרטים בהדפסת הקוויטל — מוצגים רק בהדפסה, וחוזרים בכל
      עמוד. מאיר: "שתמיד יהיה את הלוגו בצד, ואת הפרטים שיש בבלאנק ממש
      בתחתית הדף בקטן, בשורה אחת שלא תתפוס מקום, והרקע בהיר קצת" */
-  #prlogo,#prfoot{display:none}
+  #prfoot{display:none}
   @media print{
-    body.kvprint #prlogo{display:block;position:fixed;top:3mm;inset-inline-start:5mm;
-      width:22mm;height:auto;z-index:5}
-    body.kvprint #prfoot{display:flex;position:fixed;bottom:3mm;inset-inline:0;
-      justify-content:center;align-items:center;gap:7px;z-index:5;
-      font-size:8.5pt;color:#8a6a22;direction:ltr}
-    body.kvprint #prfoot i{font-style:normal}
-    body.kvprint #prfoot .ln{flex:0 0 11mm;height:1px;background:#c9a75a;opacity:.75}
+    /* רצועת הסיום של הדף: הלוגו בקצה שמאל, ולצידו פרטי הכולל.
+       position:fixed — ולכן חוזרת בכל עמוד מודפס. */
+    /* direction:ltr — כדי שהלוגו יישב בקצה שמאל והפרטים לצידו */
+    body.kvprint #prfoot{display:flex;position:fixed;bottom:3mm;left:0;right:0;
+      direction:ltr;justify-content:flex-start;align-items:center;gap:4mm;
+      padding:2mm 5mm 0;z-index:5;background:#FBF6EA;border-top:1px solid #d9c294}
+    body.kvprint #prfoot .lg{flex:0 0 auto;width:22mm;height:auto;display:block}
+    body.kvprint #prfoot .txt{flex:1 1 auto;direction:ltr;text-align:left;
+      font-family:"Segoe UI",system-ui,sans-serif;font-size:8.2pt;line-height:1.5;
+      color:#6d4f0d;letter-spacing:.03em;white-space:nowrap}
+    body.kvprint #prfoot .txt b{font-weight:700;color:#5a3f06}
+    body.kvprint #prfoot .txt span{color:#c9a75a;padding:0 5px;font-weight:400}
     body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
     body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body.kvprint #kvlistwrap{padding-top:13mm}
   }
   @media print{
-    @page{size:A4 portrait;margin:6mm 7mm 11mm}
+    @page{size:A4 portrait;margin:6mm 7mm 20mm}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .kblock.kvempty{display:none!important}
     .app{max-width:none;padding:0}
@@ -1373,8 +1377,7 @@
 </head>
 <body>
 <div id="rembanner" class="rembanner"></div>
-<img id="prlogo" src="/logo.png" alt="">
-<div id="prfoot"><span class="ln"></span><i>+972-52-762-8272</i><i>|</i><i>Chatzot18@gmail.com</i><i>|</i><i>kollelchatzot.com</i><span class="ln"></span></div>
+<div id="prfoot"><img class="lg" src="/kc-logo.png" alt=""><div class="txt"><b>+972-52-762-8272</b><span>|</span><b>Chatzot18@gmail.com</b><span>|</span><b>kollelchatzot.com</b></div></div>
 <div class="app">
   <header class="top">
     <div class="brand"><img src="/logo.png" alt="" style="width:38px;height:auto"><h1>כולל חצות — תורמים</h1><span class="st" id="stat"></span><button id="healthbtn" class="healthbtn" title="בדיקת מערכת">🩺</button></div>

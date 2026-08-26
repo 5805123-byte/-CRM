@@ -1,8 +1,8 @@
 // Service worker — installable app, always-fresh UI.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v541';
+const CACHE = 'kc-crm-v545';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
-const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/icon-192.png', '/icon-512.png'];
+const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
