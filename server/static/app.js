@@ -2589,6 +2589,9 @@ function commitRows(d){
       sinceM:sinceDef(izOne&&izOne.since),
       prev:izOne?amtNum(izOne.prev_amount):0,
       guess:!izPl.length,
+      // כמה רשומות עומדות מאחורי השורה הזאת. יותר מאחת — הסכום שמוצג
+      // הוא הסכום שלהן יחד, וצריך לומר את זה במפורש
+      izn:izPl.length, izparts:izPl.map(p=>amtNum(p.amount)),
       praw:'',note:String(d.iz_note||'')});
   }
   pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>{
@@ -2717,6 +2720,7 @@ function commitHTML(d){
              <select class="cmsincei cmsm" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceMonOpts(r.sinceM)}</select>
              <select class="cmsincei cmsy" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceYrOpts(r.sinceM)}</select>
              <small>מכאן נספרים החודשים והחוב</small></div>` : ''}
+      ${r.izn>1?`<div class="cmdup">🧾 מאחורי השורה הזו ${r.izn} רשומות יששכר־זבולון (${r.izparts.map(x=>f(x)).join(' + ')}), והסכום שמוצג הוא הסכום שלהן יחד. כתיבת סכום כאן תאחד אותן לשורה אחת.</div>`:''}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav${avOpenSlot(p)?' cmavgap':''}">${avOpenSlot(p)
         ?('🚪 מקום פתוח — '+esc(p.prev_avreich)+' יצא'+(p.prev_ended?(' ב'+esc(p.prev_ended)):''))
@@ -2851,8 +2855,23 @@ function wireCommit(d,body){
     // תיקון שורת יששכר־זבולון שאין לה עדיין שורה משלה — נפתחת אחת,
     // ומאותו רגע הסכום שנכתב הוא הקובע ולא ההערכה מהגבייה.
     // אם כבר יש שורת יש"ז — מעדכנים אותה, ולא פותחים עוד אחת.
-    if(!p&&inp.dataset.iz)
-      p=(d.pledges||[]).find(x=>+x.monthly&&isIZcat(x.category));
+    //
+    // מאיר על סלקוביץ: "כתוב כאן שהוא 1000 דולר וזה לא נכון, אני מנסה
+    // לתקן את זה בסכום וזה לא שומר ולא עושה כלום". הסיבה: היו לו שתי
+    // רשומות יששכר־זבולון של 500, והשורה בכרטיס הציגה את הסכום שלהן
+    // יחד. הסכום שנכתב נשמר על הראשונה בלבד, ולכן הסך הכל נשאר 1,000
+    // והמסך לא זז. יששכר־זבולון הוא שורה אחת, ולכן מה שנכתב כאן הוא
+    // הסכום של השורה כולה — והרשומות הכפולות מתאחדות לאחת.
+    if(!p&&inp.dataset.iz){
+      const izAll=(d.pledges||[]).filter(x=>+x.monthly&&isIZcat(x.category));
+      p=izAll[0];
+      const extra=izAll.slice(1);
+      for(const x of extra){
+        await api('DELETE','/api/pledge/'+x.id);
+        d.pledges=(d.pledges||[]).filter(y=>y!==x);
+      }
+      if(extra.length)toast('אוחדו '+izAll.length+' שורות יששכר־זבולון לשורה אחת');
+    }
     if(!p&&inp.dataset.iz){
       const r=await api('POST','/api/pledge',{donor_id:d.id,category:'יששכר־זבולון',
         amount:v,status:'נתן',monthly:1,paid:''});
