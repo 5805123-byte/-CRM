@@ -3589,11 +3589,13 @@ def ensure_schema():
                 con.execute("INSERT INTO pay_split(payer_id,donor_id,pct,note,created) "
                             "VALUES(?,?,50,?,?)", (a['id'], dh['id'], note, today_iso()))
                 _n += 1
-            # אצל כל אחד: אברך משלו ב-$1,000
+            # אצל כל אחד: אברך משלו ב-$1,000 — נרשם רק אם השורה עדיין
+            # בלי סכום. פעם זה נכתב בכל עלייה של השרת, וכל תיקון ידני
+            # של הסכום נמחק בהפעלה הבאה (אותה תקלה שהתגלתה אצל סלקוביץ).
             for did in (a['id'], dh['id']):
                 con.execute("UPDATE partners SET amount='1000' WHERE donor_id=? "
                             "AND COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')<>'' "
-                            "AND COALESCE(amount,'')<>'1000'", (did,))
+                            "AND COALESCE(TRIM(amount),'')=''", (did,))
             if _n:
                 con.commit()
                 print('  אדלין ודהאן: תשלום משותף $2,000 — $1,000 לכל אחד')
@@ -3635,58 +3637,41 @@ def ensure_schema():
         print('  rosenthal pair error:', e)
 
     # מאיר: "גולד וטעפלר נותנים 1000 בחודש שניהם יחד מהעסק המשותף שלהם,
-    # סלקוביץ עקיבא ויצחק טעפער כל אחד מהם נותן 5000 דולר ומחזיקים ביחד
-    # את פילמר — למה כתוב 1000 כל אחד?"
-    # joint=1 פירושו שהסכום הרשום הוא הסכום המשותף לשניהם; joint=0
-    # פירושו שכל אחד נותן את הסכום הזה בנפרד. שני המקרים מקושרים
-    # כשותפים באותו אברך, כדי שהכסף לא ייספר פעמיים ולא ייספר חסר.
+    # סלקוביץ עקיבא ויצחק טעפער מחזיקים ביחד את פילמר".
+    # שני הזוגות מקושרים כשותפים באותו אברך, כדי שיראו זה את זה בכרטיס.
+    #
+    # הסכומים עצמם *אינם* נקבעים כאן. פעם הם נכתבו מכאן בכל עלייה של
+    # השרת, וזו הייתה הסיבה למה שמאיר תיאר: "אני כותב כאן 500 דולר,
+    # ואני נכנס שוב לכרטיס שלו וכתוב לי 5000... זה מוסיף לו 0 או משגע
+    # את המערכת וכותב לי חוב על 40000". כל תיקון ידני נמחק בעלייה הבאה,
+    # ו-8 חודשים כפול 5,000 נתנו חוב של 40,000. מה שנכתב בכרטיס הוא
+    # האמת, והקוד לא קובע סכומים במקומו.
     _IZ_PAIRS = [
-        # (אברך, joint, [(שם משפחה של המחזיק, סכום לחודש), ...])
-        ('שפירא ישראל נחמן', 1, [('גולד', '1000'), ('טפלר', '1000')]),
-        ('פילמר מאיר', 0, [('סלקוביץ', '5000'), ('טעפפער', '5000')]),
+        # (אברך, [שמות המשפחה של המחזיקים])
+        ('שפירא ישראל נחמן', ['גולד', 'טפלר']),
+        ('פילמר מאיר', ['סלקוביץ', 'טעפפער']),
     ]
-    for _av, _joint, _pair in _IZ_PAIRS:
+    for _av, _pair in _IZ_PAIRS:
         try:
             _rows = {}
-            for lastnm, amt in _pair:
-                r = con.execute("SELECT p.id,p.donor_id,p.amount,p.joint,d.last,d.first "
+            for lastnm in _pair:
+                r = con.execute("SELECT p.id,p.donor_id,d.last,d.first "
                                 "FROM partners p JOIN donors d ON d.id=p.donor_id "
                                 "WHERE TRIM(p.avreich)=? AND d.last LIKE ? "
                                 "AND COALESCE(p.active,1)<>0",
                                 (_av, '%' + lastnm + '%')).fetchone()
                 if r:
-                    _rows[lastnm] = (r, amt)
+                    _rows[lastnm] = r
             if len(_rows) != len(_pair):
                 continue          # אחד מהם לא נמצא — לא נוגעים בכלום
-            _n = 0
-            for lastnm, (r, amt) in _rows.items():
-                other = [v[0] for k, v in _rows.items() if k != lastnm][0]
+            for lastnm, r in _rows.items():
+                other = [v for k, v in _rows.items() if k != lastnm][0]
                 onm = ((other['last'] or '') + ' ' + (other['first'] or '')).strip()
-                if str(r['amount'] or '') != amt or int(r['joint'] or 0) != _joint:
-                    con.execute("UPDATE partners SET amount=?, joint=? WHERE id=?",
-                                (amt, _joint, r['id']))
-                    iz_log(con, _av, r['donor_id'],
-                           '💰 %s — %s $%s לחודש' % (_av,
-                               'הסכום המשותף תוקן ל-' if _joint else 'הסכום תוקן ל-', amt),
-                           now_iso(), '')
-                    _n += 1
+                # ממלא רק מה שריק — לעולם לא דורס קישור שנקבע ידנית
                 con.execute("UPDATE partners SET partner_with=?, partner_with_id=? "
                             "WHERE id=? AND COALESCE(partner_with_id,'')=''",
                             (onm, other['donor_id'], r['id']))
-                # שורת ההתחייבות בכרטיס מסונכרנת רק אצל מי שיש לו אברך אחד,
-                # כדי שהסכום שבראש הכרטיס לא יסתור את שורת האברך
-                _cnt = con.execute("SELECT COUNT(*) FROM partners WHERE donor_id=? "
-                                   "AND COALESCE(active,1)<>0 "
-                                   "AND COALESCE(TRIM(avreich),'')<>''",
-                                   (r['donor_id'],)).fetchone()[0]
-                if _cnt == 1:
-                    _own = amt if not _joint else str(int(round(float(amt) / len(_pair))))
-                    con.execute("UPDATE pledges SET amount=? WHERE donor_id=? "
-                                "AND COALESCE(monthly,0)=1 AND category LIKE '%יששכר%' "
-                                "AND COALESCE(status,'')<>'הסתיים'", (_own, r['donor_id']))
-            if _n:
-                con.commit()
-                print('  %s: הסכומים תוקנו אצל %d מחזיקים' % (_av, _n))
+            con.commit()
         except Exception as e:
             print('  iz pair error (%s): %s' % (_av, e))
 
