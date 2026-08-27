@@ -1013,7 +1013,56 @@ function hitsMoreHTML(h){
   return h.more?`<div class="dpr dprmore">…ועוד ${h.more} — הוסף עוד מילה לחיפוש</div>`:'';
 }
 
-async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
+/* ---------- עבודה בלי אינטרנט ----------
+   מאיר: "איך אני עושה שה-CRM יעבוד גם אופליין, גם כשאין wifi".
+   הנתונים נשמרים במכשיר, וכל שמירה שנעשית בלי רשת נכנסת לתור אצל
+   ה-service worker ונשלחת לשרת ברגע שהחיבור חוזר. כאן רק מראים
+   את המצב, כדי שתמיד יהיה ברור אם עובדים על עותק ומה עדיין ממתין. */
+let OFFLINE=false, PENDING=0;
+function netPaint(){
+  let el=document.getElementById('netbar');
+  if(!el){
+    el=document.createElement('div');
+    el.id='netbar'; el.className='netbar';
+    document.body.appendChild(el);
+  }
+  const off=OFFLINE||!navigator.onLine;
+  if(!off&&!PENDING){el.classList.remove('show');el.textContent='';return;}
+  el.className='netbar show'+(off?' off':' wait');
+  const nch=n=>n===1?'שינוי אחד':(n+' שינויים');
+  el.textContent=off
+    ? ('📴 אין חיבור — עובדים על העותק שבמכשיר'+(PENDING?(' · '+nch(PENDING)+(PENDING===1?' ממתין':' ממתינים')+' לשליחה'):''))
+    : ('🔄 שולח '+nch(PENDING)+' ששמרת בלי חיבור…');
+}
+function netInit(){
+  const sw=navigator.serviceWorker;
+  if(!sw)return;
+  sw.addEventListener('message',e=>{
+    const d=e.data||{};
+    if(d.kc==='queued'){PENDING=d.n||0;netPaint();}
+    if(d.kc==='pending'){PENDING=d.n||0;netPaint();}
+    if(d.kc==='synced'){
+      PENDING=d.left||0;
+      if(d.sent)toast(d.sent===1?'השינוי ששמרת בלי חיבור נשלח ✓'
+                                 :('נשלחו '+d.sent+' שינויים ששמרת בלי חיבור ✓'));
+      if(d.failed)toast(d.failed+' שינויים לא התקבלו בשרת');
+      netPaint();
+      if(d.sent)load();
+    }
+  });
+  const ping=()=>{ if(sw.controller)sw.controller.postMessage({kc:'pending'}); };
+  const sync=()=>{ if(sw.controller)sw.controller.postMessage({kc:'sync'}); };
+  window.addEventListener('online',()=>{OFFLINE=false;netPaint();sync();setTimeout(()=>load(),800);});
+  window.addEventListener('offline',()=>{OFFLINE=true;netPaint();});
+  sw.ready.then(()=>{ping();sync();});
+  setInterval(()=>{ if(navigator.onLine&&PENDING)sync(); },30000);
+}
+async function api(m,u,b){
+  const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+  // נשמר בתור עד שהחיבור יחזור — המסך ממשיך כרגיל
+  if(r.headers.get('X-KC-Queued')==='1'&&!OFFLINE){OFFLINE=true;netPaint();}
+  return r.json();
+}
 function fileChip(f){const m=(f.mime||'');
   const dl=`<a class="fdl" href="/api/file/${f.id}?dl=1" download="${esc(f.name||'file')}" title="הורד למכשיר">⬇️</a>`;
   // הודעה קולית מוואטסאפ — נגן ישירות בכרטיס
@@ -1170,9 +1219,13 @@ async function load(){
     const h={};
     if(_ETAG&&_LASTDATA)h['If-None-Match']=_ETAG;
     const r=await fetch('/api/data',{headers:h});
-    if(r.status===304&&_LASTDATA){ d=_LASTDATA; }
-    else { d=await r.json(); _LASTDATA=d; _ETAG=r.headers.get('ETag')||''; }
-  }catch(e){ d = await api('GET','/api/data'); }
+    if(r.status===304&&_LASTDATA){ d=_LASTDATA; OFFLINE=false; }
+    else { d=await r.json(); _LASTDATA=d;
+      // כשאין רשת, ה-service worker מגיש את העותק האחרון ומסמן זאת
+      OFFLINE=r.headers.get('X-KC-Offline')==='1';
+      _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
+  }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }
+  netPaint();
   DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
@@ -8091,4 +8144,5 @@ function renderOcc(){
 (function(){const f=document.getElementById('dictfab');if(!f)return;
   if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){f.style.display='none';return;}
   f.onclick=()=>{if(SRACT){try{stopDictation();}catch(e){}SRACT=null;f.classList.remove('rec');}openDictPad();};})();
+netInit();
 load();

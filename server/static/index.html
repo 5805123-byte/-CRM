@@ -1329,6 +1329,15 @@
   /* פס תזכורות מפריע */
   .rembanner{display:none;background:var(--no);color:#fff;padding:11px 16px;font-weight:800;text-align:center;cursor:pointer;position:sticky;top:0;z-index:60;box-shadow:0 3px 12px rgba(0,0,0,.25)}
   .rembanner.show{display:block}
+  /* מצב הרשת — "אין חיבור" / "שולח את מה שנשמר בלי חיבור".
+     יושב בתחתית המסך כדי שלא יזוז את התוכן, ואינו מודפס. */
+  .netbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:70;
+    padding:9px 14px;text-align:center;font-weight:800;font-size:.86rem;color:#fff;
+    box-shadow:0 -3px 12px rgba(0,0,0,.18)}
+  .netbar.show{display:block}
+  .netbar.off{background:#6b6472}
+  .netbar.wait{background:var(--accent,#403a86)}
+  @media print{.netbar{display:none!important}}
   /* תזכורות בכרטיס */
   .remitem{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:6px}
   .remitem.over{border-color:var(--no);background:var(--no-soft)}
