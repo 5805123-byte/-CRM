@@ -955,7 +955,11 @@
   .confirmbox .cm{font-size:1rem;font-weight:700;line-height:1.55;margin-bottom:16px;color:var(--ink)}
   .confirmbox .cinp{width:100%;padding:10px 12px;margin:-6px 0 14px;border:1px solid var(--line);
     border-radius:10px;background:var(--ground);color:var(--ink);font-family:inherit;font-size:.95rem;font-weight:700}
-  .confirmbox .cbtns{display:flex;gap:10px}
+  /* שורת "מה בוצע" — טקסט המשימה מעל שדה ההערה, ושלושה כפתורים */
+  .confirmbox .cmsub{font-size:.86rem;color:var(--muted);font-weight:600;
+    margin:-10px 0 12px;line-height:1.5}
+  .confirmbox .cbtns{display:flex;gap:8px;flex-wrap:wrap}
+  .confirmbox .cbtns .btn{flex:1 1 auto;white-space:nowrap}
   .confirmbox .cbtns .btn{flex:1}
   .cardnum{font-size:.72rem;color:var(--muted);font-weight:700;background:var(--ground);border:1px solid var(--line);border-radius:99px;padding:1px 8px}
   .rownum{font-size:.7rem;color:var(--muted);font-weight:700;margin-inline-start:4px}

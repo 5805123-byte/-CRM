@@ -721,7 +721,10 @@ function openRemPopup(){
     const t=due[a.dataset.i]; if(!t.dref)return;
     remov.classList.remove('show'); openDonor(t.dref);});
   rs.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);openRemPopup();render();});
-  rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i];await setTaskDone(t,1,t.dref);checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
+  rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{
+    const t=due[b.dataset.i];
+    if(!await doneWithNote(t,t.dref))return;          // בוטל — המשימה נשארת פתוחה
+    checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
   rs.querySelectorAll('.rsnooze').forEach(b=>b.onclick=async()=>{const t=due[b.dataset.i],nd=addDay(todayStr().replace(/-/g,'')),nds=nd.slice(0,4)+'-'+nd.slice(4,6)+'-'+nd.slice(6,8);if(t.id)await api('PUT','/api/task/'+t.id,{due_date:nds});const lt=(t.dref.tasks||[]).find(x=>x.id===t.id);if(lt)lt.due_date=nds;checkReminders();openRemPopup();render();toast('נדחה למחר');});
 }
 
@@ -807,6 +810,40 @@ function uiPrompt(msg,def){
     o.onclick=e=>{if(e.target===o)done(null);};
     setTimeout(()=>{inp.focus();inp.select();},30);
   });
+}
+/* מאיר: "כשאני עושה בוצע על משימה זה לא נותן לי לכתוב שום הערה כמו
+   שביקשתי". שורת ההערה מומשה בדף המשימות ובכרטיס התורם, אבל לא בחלון
+   התזכורות ולא ברשימת התזכורות שבכרטיס. כאן היא במקום אחד משותף, כדי
+   שכל מקום שמסמן "בוצע" ישאל את אותה שאלה.
+   מחזיר: מחרוזת = ההערה · '' = בוצע בלי הערה · null = בוטל. */
+function askDoneNote(what,cur){
+  return new Promise(res=>{
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm">✍️ מה עשית? מה נסגר תכליס</div>
+      ${what?`<div class="cmsub">${esc(what)}</div>`:''}
+      <input class="cinp" value="${esc(cur||'')}" placeholder="למשל: דיברתי איתו, ישלח צ'ק בשבוע הבא">
+      <div class="cbtns"><button class="btn ghost cx">ביטול</button>
+        <button class="btn ghost cskip">בוצע בלי הערה</button>
+        <button class="btn cyes">✓ בוצע ושמור</button></div></div>`;
+    document.body.appendChild(o);
+    const inp=o.querySelector('.cinp');
+    const done=v=>{o.remove();res(v);};
+    o.querySelector('.cx').onclick=()=>done(null);
+    o.querySelector('.cskip').onclick=()=>done('');
+    o.querySelector('.cyes').onclick=()=>done(inp.value.trim());
+    inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();done(inp.value.trim());}};
+    o.onclick=e=>{if(e.target===o)done(null);};
+    setTimeout(()=>{inp.focus();inp.select();},30);
+  });
+}
+// סימון "בוצע" עם שאלת ההערה — הדרך היחידה לסמן משימה כבוצעה
+async function doneWithNote(t,dref){
+  if(!t)return false;
+  const note=await askDoneNote(String(t.note||t.donor||'').trim(),t.done_note||'');
+  if(note===null)return false;                       // בוטל
+  if(note&&t.id){ await api('PUT','/api/task/'+t.id,{done_note:note}); t.done_note=note; }
+  await setTaskDone(t,1,dref||t.dref);
+  return true;
 }
 // בורר חודש+שנה עברית — לשיוך תורם מזדמן לחודש/שנה מסוימים בקוויטל המזדמנים
 function uiPickMonth(msg,curM,curY){
@@ -4694,7 +4731,10 @@ function renderReminders(d){
       ${whoChipHTML(t,'data-rwho="'+t.id+'"')}${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener">➕ ליומן</a>`:''}
       <button class="stbtn" style="background:var(--yes);color:#fff" data-done="${t.id}">✓</button><button class="del" data-del="${t.id}">🗑</button></div>`;}).join('')||'<div class="hintxt">אין תזכורות. הוסף למטה.</div>';
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderReminders(d);});
-  el.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const t=d.tasks.find(x=>x.id==b.dataset.done);if(t)await setTaskDone(t,1,d);renderReminders(d);checkReminders();toast('בוצע ✓ · נרשם בקשר');});
+  el.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{
+    const t=d.tasks.find(x=>x.id==b.dataset.done);
+    if(!await doneWithNote(t,d))return;
+    renderReminders(d);renderCardTasks(d);checkReminders();toast('בוצע ✓ · נרשם בקשר');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/task/'+b.dataset.del);d.tasks=d.tasks.filter(x=>x.id!=b.dataset.del);renderReminders(d);});
   el.querySelectorAll('.tkup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;renderReminders(d);}));
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.tasks||[]).forEach(t=>{t.files=(t.files||[]).filter(f=>f.id!=b.dataset.fid);});renderReminders(d);toast('נמחק');});
