@@ -1212,6 +1212,16 @@
   .cttask{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line)}
   .cttask:last-child{border-bottom:none}
   .cttask .cti{flex:1}.cttask .ctmeta{font-size:.78rem;color:var(--muted)}.cttask .ctmeta.over{color:var(--no);font-weight:800}
+  /* משימות שכבר בוצעו — נשארות בכרטיס, מסומנות כמטופלות */
+  .ctdone-h{margin:12px 0 6px;font-weight:800;font-size:.84rem;color:var(--muted);
+    border-top:1px dashed var(--line);padding-top:9px}
+  .ctdrow{display:flex;align-items:flex-start;gap:9px;padding:6px 0;
+    border-bottom:1px solid var(--line)}
+  .ctdrow:last-child{border-bottom:none}
+  .ctdrow .ctdi{flex:1;min-width:0}
+  .ctdrow .ctdtxt{text-decoration:line-through;color:var(--muted);font-size:.9rem}
+  .ctdrow .ctdmeta{font-size:.76rem;color:var(--yes);font-weight:700;margin-top:2px}
+  .ctdrow .ctundo{flex:0 0 auto;padding:4px 8px}
   .cttask .tdone{background:var(--yes-soft);color:var(--yes);border:1px solid var(--yes);width:30px;height:30px;border-radius:50%;font-weight:800;cursor:pointer;flex-shrink:0}
   .cardcbar{display:flex;gap:12px;justify-content:center;margin:2px 0 12px}
   .cardcbar .cbtn{width:46px;height:46px;font-size:1.3rem}

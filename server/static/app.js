@@ -2250,6 +2250,19 @@ function renderCardTasks(d){
       <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select class="ctw" data-id="${t.id}">${assigneeOpts(t.assignee)}</select></label>
       <button class="btn sm ctsave" data-id="${t.id}" style="width:100%;margin-top:8px">💾 שמור שינויים</button>
     </div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
+  // מאיר: "אצל כל תורם, אם יש משימה — אפילו שבוצעה — שיהיה כתוב שבוצעה
+  // ומה בוצע. שיהיה כזה כמו מחוק, שטופל כבר, אבל חשוב שיראו את כל
+  // המשימות שנעשו אצלו."
+  const dn=(d.tasks||[]).filter(t=>+t.done)
+    .sort((a,b)=>String(b.done_date||b.due_date||'').localeCompare(String(a.done_date||a.due_date||'')));
+  if(dn.length) el.innerHTML+=`<div class="ctdone-h">✓ בוצעו (${dn.length})</div>`
+    +dn.map(t=>{const icon=kindLabel(t.kind).split(' ')[0];
+      return `<div class="ctdrow" data-id="${t.id}">
+        <div class="ctdi"><div class="ctdtxt">${icon} ${esc(t.note||'')}</div>
+          <div class="ctdmeta">✓ ${esc(t.done_date||t.due_date||'')}${hhmm(t.done_at)?(' '+hhmm(t.done_at)):''} · ע"י ${esc(t.done_by||whoName(t))}</div>
+          ${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}
+          ${(t.files||[]).length?`<div class="avfiles">${(t.files||[]).map(fileChip).join('')}</div>`:''}</div>
+        <button class="btn sm ghost ctundo" data-id="${t.id}" title="החזר לפתוחות">↩️</button></div>`;}).join('');
   el.querySelectorAll('.ctk').forEach(wireKindSel);
   addMics(el,['.ctn']);
   el.querySelectorAll('.ctup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,async()=>{
@@ -2294,6 +2307,12 @@ function renderCardTasks(d){
   el.querySelectorAll('.ctnote').forEach(inp=>inp.onkeydown=e=>{
     if(e.key==='Enter'){e.preventDefault();
       el.querySelector('.ctnoteok[data-id="'+inp.dataset.id+'"]').click();}});
+  // החזרת משימה שבוצעה לרשימת הפתוחות — הרישום בקשר נמחק יחד איתה
+  el.querySelectorAll('.ctundo').forEach(b=>b.onclick=async()=>{
+    const t=(d.tasks||[]).find(x=>x.id==b.dataset.id); if(!t)return;
+    b.disabled=true;
+    await setTaskDone(t,0,d);
+    renderCardTasks(d);renderReminders(d);checkReminders();toast('הוחזר לפתוחות ✓');});
   el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
 }
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
