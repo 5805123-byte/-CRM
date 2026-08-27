@@ -8830,6 +8830,16 @@ class H(BaseHTTPRequestHandler):
                 x['iso'] = _recon_iso(r['date']) or ''
                 x['sugg'] = _sugg(r)
                 rows.append(x)
+            # מאיר: "למה אצל אלי ווינפלד לא רואים את התרומות מבנק ווסט? הרי
+            # נכנס כל חודש 720 דולר מינואר". הכסף נגבה, אבל החיוב לא שויך
+            # לאף כרטיס — ולכן לא הופיע אצלו וגם לא בסיכומים. כאן אפשר
+            # לבקש רק את מה שמוצע לתורם מסוים, כדי להראות לו את זה
+            # בכרטיס עצמו במקום שיחפש במסך נפרד.
+            _for = (urllib.parse.parse_qs(
+                urllib.parse.urlparse(self.path).query).get('donor') or [''])[0]
+            if str(_for).strip().isdigit():
+                _fid = int(_for)
+                rows = [x for x in rows if any(s['id'] == _fid for s in (x['sugg'] or []))]
             tot = sum(float(str(x['amount']).replace(',', '') or 0) for x in rows)
             con.close()
             return self._send(200, {'rows': rows, 'total': round(tot, 2)})

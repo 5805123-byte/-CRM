@@ -3793,6 +3793,7 @@ function cardDetails(d,body){
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור</button>
     ${renewBanner(d)}
     ${reconPendHTML(d)}
+    <div id="ulmine"></div>
     ${catTotalsHTML(d)}
     ${give}
     ${(d.parnes||[]).filter(p=>p.status!=='suggested').length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)</summary><div id="parnes"></div></details>`:''}
@@ -3839,6 +3840,7 @@ function cardDetails(d,body){
     toast(d.region==='il'?'שקלים ₪ ✓':'דולרים $ ✓');
     cardDetails(d,body); if(tab==='donors')renderDonors();};
   wireCommit(d,body);   // בלוק ההתחייבויות בתחתית העמוד
+  renderUlMine(d);      // כסף שנגבה ולא שויך לאף כרטיס — אם משהו מתאים לו
   const dgo=document.getElementById('debtgo'), ddt=document.getElementById('debtdet');
   if(dgo)dgo.onclick=()=>{DEBTOPEN=!DEBTOPEN; ddt.classList.toggle('hidden',!DEBTOPEN);
     document.querySelector('#debtline .debtcue').textContent=DEBTOPEN?'▲':'▼ ממה?';};
@@ -4450,6 +4452,63 @@ function cardKvittel(d,body){
 const RCATS=['','קבוע','יששכר־זבולון','כולל יום','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','קוויטל','מזדמן','חד-פעמי','הבניין הקדוש'];
 const RPARNES=['פרנס לילה','חדר קפה','ארוחת בוקר'];
 function pendCount(d){return (d.recon_pending||[]).length+(d.intake_pending||[]).length;}
+/* ---------- כסף שנכנס ואינו רשום אצלו ----------
+   מאיר: "למה אצל אלי בן ציון ווינפלד לא רואים סכומים של תרומות מבנק
+   ווסט? הרי נכנס כל חודש 720 דולר בבנק ווסט מינואר".
+   הכסף אכן נגבה, אבל החיוב לא שויך לאף כרטיס — ולכן לא הופיע אצלו,
+   לא בסיכומים, ולא היה שום רמז בכרטיס שיש כסף כזה. הרשימה הזאת
+   מביאה לכרטיס את החיובים הלא־משויכים שמתאימים לו, ומאפשרת לצרף
+   אותם בלחיצה אחת. */
+async function renderUlMine(d){
+  const el=document.getElementById('ulmine'); if(!el||!d||!d.id)return;
+  let r=null;
+  try{ r=await api('GET','/api/unlinked?donor='+d.id); }catch(e){ return; }
+  const rows=(r&&r.rows)||[];
+  if(!rows.length){el.innerHTML='';return;}
+  // מקבצים לפי השם שרשום בבנק. ההצעה לפי שם משפחה תופסת גם בני משפחה
+  // אחרים, ולכן כל שם מצורף בנפרד — ולא הכל בלחיצה אחת.
+  const g={},order=[];
+  rows.forEach(x=>{const k=((x.first||'')+'|'+(x.last||'')+'|'+(x.email||'')).toLowerCase();
+    if(!g[k]){g[k]={nm:((x.first||'')+' '+(x.last||'')).trim()||'—',email:x.email||'',
+      why:(x.sugg||[]).find(s=>s.id===d.id),items:[]};order.push(k);}
+    g[k].items.push(x);});
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const mine=amtNum(d.amount);
+  const groups=order.map(k=>g[k]);
+  groups.forEach(x=>{x.sum=x.items.reduce((a,y)=>a+amtNum(y.amount),0);
+    x.per=x.items.length?amtNum(x.items[0].amount):0;
+    // סכום שמתאים בדיוק להתחייבות שבכרטיס — סימן חזק שזה באמת הוא
+    x.hit=mine>0.5&&Math.abs(x.per-mine)<0.5;});
+  groups.sort((a,b)=>(b.hit-a.hit)||(b.sum-a.sum));
+  el.innerHTML=`<div class="sec ulmine"><h3>💳 כסף שנכנס ואינו רשום אצלו</h3>
+    <div class="hintxt" style="margin:0 2px 8px">חיובים שנגבו בפועל ולא שויכו לאף תורם — ולכן אינם מופיעים בכרטיס ולא בסיכומים.
+      הם עלו כאן כי הם דומים לשמו. בדוק כל שם בנפרד לפני שאתה מצרף.</div>
+    ${groups.map((x,i)=>`<div class="ulmg" data-i="${i}">
+      <div class="ulmhd"><b>${esc(x.nm)}</b>${x.hit?' <span class="ulmhit">✓ אותו סכום שבכרטיס</span>':''}
+        <span class="ulmsum">${f(x.sum)}</span></div>
+      ${x.email?`<div class="ulmmail">${esc(x.email)}</div>`:''}
+      <div class="ulmwhy">${x.items.length} ${x.items.length===1?'חיוב':'חיובים'} · ${f(x.per)} לחודש${x.why?(' · הוצע לפי '+esc(x.why.why)):''}</div>
+      <div class="ulmrows">${x.items.slice(0,8).map(y=>`<div class="ulmrow"><b>${f(amtNum(y.amount))}</b>
+        <span>${esc(gregLabel(y.iso||y.date))}</span><small>${esc(y.source||'')}</small></div>`).join('')}
+        ${x.items.length>8?`<div class="hintxt">ועוד ${x.items.length-8}</div>`:''}</div>
+      <div class="cmask-b"><button class="btn sm ulmok" data-i="${i}">✓ אלו שלו — צרף לכרטיס</button>
+        <button class="btn sm ghost ulmno" data-i="${i}">✕ לא שלו</button></div></div>`).join('')}
+  </div>`;
+  el.querySelectorAll('.ulmok').forEach(b=>b.onclick=async()=>{
+    const x=groups[+b.dataset.i]; b.disabled=true;
+    const r2=await api('POST','/api/unlinked',{tids:x.items.map(y=>y.tid),donor_id:d.id});
+    if(!r2||r2.error){b.disabled=false;toast('לא צורף');return;}
+    toast('צורפו '+x.items.length+' חיובים לכרטיס ✓');
+    await load(); const dd=DB.find(y=>y.id===d.id); if(dd)openDonor(dd);
+  });
+  el.querySelectorAll('.ulmno').forEach(b=>b.onclick=async()=>{
+    const x=groups[+b.dataset.i];
+    if(!await uiConfirm('לסמן שהחיובים על השם "'+x.nm+'" אינם שייכים לאף תורם?'))return;
+    b.disabled=true;
+    await api('POST','/api/unlinked',{tids:x.items.map(y=>y.tid),skip:1});
+    toast('סומן'); renderUlMine(d);
+  });
+}
 function reconPendHTML(d){
   const rp=(d.recon_pending||[]), ip=(d.intake_pending||[]);
   if(!rp.length&&!ip.length)return '';

@@ -1,6 +1,6 @@
 // Service worker — installable app, always-fresh UI, and עבודה בלי אינטרנט.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v564';
+const CACHE = 'kc-crm-v566';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
 const DATA_CACHE = 'kc-data';      // העותק האחרון של הנתונים, לשימוש בלי רשת
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
@@ -170,11 +170,11 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       try {
         const r = await fetch(e.request);
-        if (r.ok) { const copy = r.clone(); caches.open(DATA_CACHE).then(c => c.put(url.pathname, copy)); }
+        if (r.ok) { const copy = r.clone(); caches.open(DATA_CACHE).then(c => c.put(url.pathname + url.search, copy)); }
         return r;
       } catch (err) {
         const c = await caches.open(DATA_CACHE);
-        const hit = await c.match(url.pathname);
+        const hit = await c.match(url.pathname + url.search);
         if (hit) {
           const h = new Headers(hit.headers);
           h.set('X-KC-Offline', '1');

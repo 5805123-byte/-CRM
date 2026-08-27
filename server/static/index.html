@@ -1329,6 +1329,23 @@
   /* פס תזכורות מפריע */
   .rembanner{display:none;background:var(--no);color:#fff;padding:11px 16px;font-weight:800;text-align:center;cursor:pointer;position:sticky;top:0;z-index:60;box-shadow:0 3px 12px rgba(0,0,0,.25)}
   .rembanner.show{display:block}
+  /* כסף שנגבה ואינו רשום אצל התורם — מוצג בכרטיס עם אפשרות לצרף */
+  .sec.ulmine{border:1px solid var(--gold);background:var(--gold-soft)}
+  .sec.ulmine h3{color:var(--gold)}
+  .ulmg{border:1px solid var(--line);border-radius:11px;background:var(--card);
+    padding:9px 11px;margin-bottom:8px}
+  .ulmg:last-child{margin-bottom:0}
+  .ulmhd{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .ulmhd b{font-weight:800}
+  .ulmhd .ulmsum{margin-inline-start:auto;font-weight:800;color:var(--yes)}
+  .ulmhit{font-size:.74rem;font-weight:800;color:var(--yes);background:var(--yes-soft);
+    border-radius:99px;padding:2px 7px}
+  .ulmmail{font-size:.78rem;color:var(--muted);direction:ltr;text-align:right}
+  .ulmwhy{font-size:.79rem;color:var(--muted);margin:2px 0 6px}
+  .ulmrows{display:flex;flex-direction:column;gap:2px;margin:0 0 7px}
+  .ulmrow{display:flex;align-items:baseline;gap:8px;font-size:.84rem}
+  .ulmrow b{font-weight:800;min-width:58px}
+  .ulmrow small{color:var(--muted)}
   /* מצב הרשת — "אין חיבור" / "שולח את מה שנשמר בלי חיבור".
      יושב בתחתית המסך כדי שלא יזוז את התוכן, ואינו מודפס. */
   .netbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:70;
