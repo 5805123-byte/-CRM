@@ -103,7 +103,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v467";
+const BUILD = "v468";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -232,7 +232,18 @@ function bodyRows(ws, lead){
     if(f>0){ rows.push({ws:head.slice(0,f),role:'names'});   // "וכל משפחתו" לשורה שניה
              rows.push({ws:head.slice(f),role:'names'}); }
     else rows.push({ws:head,role:'names'});
-    if(tail.length) rows.push({ws:tail,role:'req'});
+    if(tail.length) emitTail(tail);
+  };
+  // הזנב שאחרי השם עלול להכיל עוד שמות ("...על ראש השנה, אלישבע בת
+  // אילנה לשמחה..."). חותכים לפי הפיסוק, וכל קטע שהוא שם חוזר לפיצול
+  // המלא — אחרת השם השני נבלע בתוך הבקשה ויוצא בגופן של בקשה.
+  const emitTail=tail=>{
+    const segs=tailRows(tail);
+    if(segs.length===1 && !segs[0].rel){ rows.push({ws:tail,role:'req'}); return; }
+    segs.forEach(sg=>{
+      if(sg.rel && sg.ws.length<tail.length) emit(sg.ws);
+      else rows.push({ws:sg.ws,role:'req'});
+    });
   };
   let cur=[];
   for(let k=a;k<b;k++){
@@ -240,8 +251,36 @@ function bodyRows(ws, lead){
     cur.push(ws[k]);
   }
   if(cur.length) emit(cur);
-  if(b<ws.length) rows.push({ws:ws.slice(b),role:'req'});
+  // מאיר: "את השמות ושם האמא אותיות גדולות, את הבקשות אותיות קטנות,
+  // מסודר בפרופורציה". אחרי הברכה של השם הראשון באים בדרך כלל עוד
+  // שמות ("אמונה רחל בת הלנה לבריאות...", "זיו בן נורית למנוחת
+  // הנפש"), וכל הזנב הזה נדחס לשורת בקשה אחת ענקית — שם ובקשה
+  // באותו גודל, וגולש מהתעודה. כאן הזנב נחתך לפי הפסיקים, וכל קטע
+  // שיש בו "בן"/"בת" חוזר לעבור את אותו פיצול: השם גדול, הבקשה קטנה.
+  if(b<ws.length) emitTail(ws.slice(b));
   return rows;
+}
+// חיתוך הזנב לקטעים לפי פיסוק, וסימון מי מהם הוא שם ומי בקשה
+function tailRows(ws){
+  const isRel=w=>/^(ו?ב[ןת]|בר|ב["'\u05f4\u05f3]ר)$/.test(w);
+  const chunks=[]; let cur=[];
+  ws.forEach(w=>{ cur.push(w);
+    if(/[,;·]$/.test(w)){ chunks.push(cur); cur=[]; } });
+  if(cur.length) chunks.push(cur);
+  const out=[];
+  chunks.forEach(ch=>{
+    // מנקים פסיק מסוף הקטע — הוא סימן חיתוך, לא חלק מהשם
+    const c=ch.map((w,i)=>i===ch.length-1?w.replace(/[,;·]+$/,''):w).filter(Boolean);
+    if(!c.length)return;
+    const rel=c.findIndex(isRel);
+    // "שם בן/בת אם" — צריך מילה לפניו ומילה אחריו
+    const isName=rel>0 && rel+1<c.length;
+    // קטע שהוא המשך של הבקשה הקודמת נצמד אליה, שלא ייווצרו שורות זעירות
+    if(!isName && out.length && !out[out.length-1].rel){
+      out[out.length-1].ws=out[out.length-1].ws.concat(c); return; }
+    out.push({ws:c, rel:isName});
+  });
+  return out;
 }
 // מאיר: "אל תעשה אף פעם שורה עם מילה אחת. המילים הרה\"ק רבי שיהיו בשורה
 // אחת, גם המילים בן רבי שיהיו בשורה אחת, אותו גודל גופן כמו זצו\"קל"

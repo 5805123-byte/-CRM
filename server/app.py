@@ -5992,7 +5992,21 @@ def _cert_body(lead, ws):
         else:
             out.append((' '.join(head), 'names'))
         if tail:
+            emit_tail(tail)
+
+    def emit_tail(tail):
+        # הזנב שאחרי השם עלול להכיל עוד שמות ("...על ראש השנה, אלישבע
+        # בת אילנה לשמחה..."). חותכים אותו לפי הפיסוק, וכל קטע שהוא שם
+        # חוזר לפיצול המלא. בלי זה השם השני נבלע בתוך הבקשה.
+        segs = _cert_tail(tail)
+        if len(segs) == 1 and not segs[0][1]:
             out.append((' '.join(tail), 'req'))
+            return
+        for seg, is_name in segs:
+            if is_name and len(seg) < len(tail):
+                emit(seg)
+            else:
+                out.append((' '.join(seg), 'req'))
 
     cur = []
     for k in range(a, b):
@@ -6001,9 +6015,46 @@ def _cert_body(lead, ws):
         cur.append(ws[k])
     if cur:
         emit(cur)
+    # מאיר: "את השמות ושם האמא אותיות גדולות, את הבקשות אותיות קטנות,
+    # מסודר בפרופורציה". אחרי הברכה של השם הראשון באים בדרך כלל עוד
+    # שמות ("אמונה רחל בת הלנה לבריאות...", "זיו בן נורית למנוחת
+    # הנפש"), וכל הזנב הזה נדחס לשורת בקשה אחת — שם ובקשה באותו גודל,
+    # וגולש מהתעודה. כאן הזנב נחתך לפי הפסיקים, וכל קטע שיש בו
+    # "בן"/"בת" עובר את אותו פיצול: השם גדול, הבקשה קטנה.
+    # אותו תיקון בדיוק נמצא גם ב-parnes-cert.html — התעודה מצוירת
+    # בשני המקומות, וחייבת לצאת זהה במסך ובתמונה שנשלחת לתורם.
     if ws[b:]:
-        out.append((' '.join(ws[b:]), 'req'))
+        emit_tail(ws[b:])
     return out or [(' '.join(lead), 'lead')]
+
+
+_CERT_REL = re.compile(r'^(ו?ב[\u05df\u05ea]|בר|ב["\'\u05f4\u05f3]ר)$')
+
+
+def _cert_tail(ws):
+    """חיתוך הזנב שאחרי הברכה הראשונה לקטעים לפי פיסוק, וסימון מי מהם
+    שם ("X בן/בת Y") ומי המשך הבקשה."""
+    chunks, cur = [], []
+    for w in ws:
+        cur.append(w)
+        if w[-1:] in (',', ';', '\u00b7'):
+            chunks.append(cur); cur = []
+    if cur:
+        chunks.append(cur)
+    out = []
+    for ch in chunks:
+        c = ch[:-1] + [ch[-1].rstrip(',;\u00b7')] if ch else []
+        c = [w for w in c if w]
+        if not c:
+            continue
+        rel = next((i for i, w in enumerate(c) if _CERT_REL.match(w)), -1)
+        is_name = rel > 0 and rel + 1 < len(c)
+        # קטע שהוא המשך הבקשה נצמד אליה, שלא ייווצרו שורות זעירות
+        if not is_name and out and not out[-1][1]:
+            out[-1] = (out[-1][0] + c, False)
+            continue
+        out.append((c, is_name))
+    return out
 
 
 _DEEP = (0x6a, 0x14, 0x14)
