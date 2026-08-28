@@ -259,7 +259,12 @@ function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],t
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
       toastEl = document.getElementById('toast');
-const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_שבועי':['שבועי','wkly'],'קוויטל_כללי':['כללי','klali']};
+// מאיר: "בדרגת קוויטל אני רוצה עוד דרגה שיהיה כתוב 'זמנים מיוחדים' —
+// זה כשהוא מבקש שיזכירו אותו באיזשהו זמן מיוחד, ואנחנו נדפיס את זה.
+// למשל מי שתורם חד־פעמי עבור משהו. ומה שנכניס מעכשיו שזה יהיה
+// ברירת המחדל בקוויטל, לא מה שהיה."
+const TIER_DEFAULT = 'קוויטל_זמנים';
+const TIERS = {'יששכר_זבולון':['יששכר־זבולון','ishz'],'קוויטל_101':['כל לילה','k101'],'קוויטל_שבועי':['שבועי','wkly'],'קוויטל_זמנים':['זמנים מיוחדים','ztime'],'קוויטל_כללי':['כללי','klali']};
 const CATS = ['', 'קבוע', 'מזדמן', 'פרנס יום', 'בניין/הקדשה'];
 // התווית שמוצגת לכל סוג התחייבות. הערך עצמו נשאר כפי שהוא בבסיס הנתונים
 const CATLBL = {'':'— ללא —','מזדמן':'מזדמן / חד־פעמי'};
@@ -2047,7 +2052,8 @@ function openNewDonor(onCreate,pre){
   document.getElementById('nd_last').focus();
   document.getElementById('nd_save').onclick=async()=>{
     const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
-    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),region:document.getElementById('nd_region').value};
+    // מאיר: "ומה שנכניס מעכשיו שזה יהיה ברירת מחדל בקוויטל, לא מה שהיה"
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),region:document.getElementById('nd_region').value,tier:TIER_DEFAULT};
     const r=await api('POST','/api/donor',body);
     const nd={id:r.id,...body,category:'',amount:'',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[],created:todayStr(),source:'ידני'};
     DB.push(nd);
@@ -2157,7 +2163,7 @@ let CURD=null;          // התורם שכרטיסו פתוח כרגע
 function tierOpts(d){
   const cur=(d&&d.tier)||'';
   const isOcc=!cur && hasOccKv(d);
-  const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי'}[t]):'— ללא —'}</option>`).join('');
+  const base=['','יששכר_זבולון','קוויטל_101','קוויטל_שבועי','קוויטל_זמנים'].map(t=>`<option value="${t}" ${(t===cur&&!isOcc)?'selected':''}>${t?({'יששכר_זבולון':'יששכר־זבולון','קוויטל_101':'כל לילה','קוויטל_שבועי':'שבועי','קוויטל_זמנים':'זמנים מיוחדים'}[t]):'— ללא —'}</option>`).join('');
   const occLbl=isOcc?('מזדמנים'+(d.kv_month?(' · '+d.kv_month+(d.kv_year?(' '+d.kv_year):'')):'')):'מזדמנים';
   return base+`<option value="__occ" ${isOcc?'selected':''}>${occLbl}</option>`;
 }
@@ -6002,6 +6008,7 @@ const KVTYPES=[
   ['iz','קוויטל יששכר־זבולון','שותפי יששכר־זבולון'],
   ['101','קוויטל כל לילה','תורמי כל לילה (101)'],
   ['weekly','קוויטל שבועי','מי שסומן שבועי בכרטיס'],
+  ['ztime','קוויטל זמנים מיוחדים','מי שמבקש שיזכירו אותו בזמן מסוים'],
   ['occ','קוויטל מזדמן','לפי חודשים — נשמר לכל השנים'],
   ['klali','קוויטל כללי','הכל יחד להדפסה (בלי מזדמן ובלי "ללא")']
 ];
@@ -6022,7 +6029,7 @@ function kvMembers(type){
   return seen;
 }
 let kvSub=null;
-function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',occ:'מזדמן',klali:'כללי'})[t]||'כללי';}
+function kvTypeLabel(t){return ({iz:'יש"ז','101':'כל לילה',weekly:'שבועי',ztime:'זמנים מיוחדים',occ:'מזדמן',klali:'כללי'})[t]||'כללי';}
 // לאיזה קוויטל שייך התורם (לפי דרגה/קטגוריה) — למי שאמור להיות לו שם לתפילה
 // מאיר: "אני עברתי על הכל וסידרתי מי שבוע ומי מזדמן" — מה שרשום בכרטיס
 // הוא הקובע. אין ניחוש לפי סכומים, ומזדמן גובר על דרגת קוויטל ישנה
@@ -6035,6 +6042,7 @@ function kvMemberType(d){
   if(d.tier==='יששכר_זבולון')return 'iz';
   if(d.tier==='קוויטל_101')return '101';
   if(d.tier==='קוויטל_שבועי'||d.tier==='קוויטל_כללי')return 'weekly';
+  if(d.tier==='קוויטל_זמנים')return 'ztime';
   return null;
 }
 // הכלל הישן של "קבוע פחות מ-101" לא נמחק — הוא רק עבר למקום הנכון:
@@ -6065,7 +6073,7 @@ function renderKvittel(){
     view.innerHTML=`<div class="cnt">בחר סוג קוויטל <small style="color:var(--muted)">· או חפש שם למעלה כדי לדלג ישר לתוצאות</small></div>
       ${miss?`<button class="btn kvmissbtn" id="kvMissBtn">🔴 חסרים שמות קוויטל — ${miss} לטיפול</button>`:''}
       ${unl?`<button class="btn kvunlbtn" id="kvUnlBtn">🔗 קוויטל לא־משויכים — ${unl} להחלטה</button>`:''}
-      <button class="btn kvintakebtn" id="kvIntakeBtn">📨 בקשות תפילה מהאתר (מהמייל)…</button>
+      <button class="btn kvintakebtn" id="kvIntakeBtn">📨 קוויטל מהמייל — למיון, בדיקה ושיוך…</button>
       <button class="btn ghost" id="kvDedupBtn" style="width:100%;margin-top:6px">🧹 נקה שמות כפולים בקוויטל של כולם</button>
       <div class="kvmenu">${KVTYPES.map(([k,t,s])=>{const n=kvMembers(k).size;
         return `<button class="kvbtn" data-k="${k}"><b>${t}</b><span class="kvn">${n} ${n===1?'תורם':'תורמים'}</span><small>${s}</small></button>`;}).join('')}</div>`;
@@ -6172,7 +6180,7 @@ function intDiag(r){
 function paintIntake(){
   const items=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
   const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 בקשות תפילה מהאתר</b><span class="cnt2">(${nNew} לטיפול)</span>
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 קוויטל מהמייל — למיון, בדיקה ושיוך</b><span class="cnt2">(${nNew} לטיפול)</span>
       <button class="btn sm" id="intSync">🔄 משוך מהמייל</button>
       <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div>
     ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
@@ -6284,6 +6292,7 @@ function prayerKvType(pt,d){
   if(pt==='יששכר_זבולון')return 'iz';
   if(pt==='קוויטל_101')return '101';
   if(pt==='שבועי'||pt==='קוויטל_שבועי'||pt==='קוויטל_כללי')return 'weekly';
+  if(pt==='קוויטל_זמנים')return 'ztime';
   return 'other';
 }
 let kvListQ='';

@@ -3952,7 +3952,17 @@ def ensure_schema():
     # קוויטל ששמור באיש קשר נפרד בגוגל ("שמחה מילר - קוויטל"): השמות עצמם
     # יושבים בשדה ההערות, ובייבוא נלקח בטעות שדה מותאם-אישית שערכו המילה
     # "קוויטל" בלבד. רץ בכל עלייה ורק משלים לכרטיס שאין בו קוויטל אמיתי.
+    # מאיר: "כל שמות חדשים שנכנסים דרך הג'ימייל — אל תכניס את זה ישירות
+    # לכרטיס התורם, כי זה גרם לי בעיות עם איות השמות וגם עשה כפילויות.
+    # כמו למשל בכרטיס של יחזקאל סייד נהיה בלגן עם השמות שלו שהיו
+    # מסודרים לפני כן, ועכשיו בגלל הסנכרון זה השתבש שם."
+    # המעבר הזה היה מוסיף שמות מאנשי הקשר לתוך כרטיסים בכל עלייה של
+    # השרת, ודרס סדר שמאיר סידר ביד. הוא כבוי. שמות חדשים מגיעים
+    # לחלון "קוויטל מהמייל — למיון, בדיקה ושיוך", ומשם מאיר מצרף.
+    KV_CONTACT_FILL = False
     try:
+        if not KV_CONTACT_FILL:
+            raise StopIteration
         import csv as _csv
         KVEND = re.compile(r'קו[וי]{1,2}יטל\s*$')
 
@@ -4037,6 +4047,8 @@ def ensure_schema():
         if nadd:
             con.commit()
             print('  קוויטל מאיש קשר נפרד שהושלם לכרטיס: %d' % nadd)
+    except StopIteration:
+        pass
     except Exception as ex:
         print('  kvittel contact fill error:', ex)
 
@@ -4202,6 +4214,23 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('goldgrab_amt_v1')")
     except Exception as ex:
         print('  goldgrab amount error:', ex)
+
+    # מאיר: "יש כמה תורמים שמזדמנים נכנס לתוך תשרי תשפ"ו — זה טעות, כי
+    # תשרי תשפ"ו היה לפני כמעט שנה. תשנה את כל מה שהכנסתי מזדמנים תשרי
+    # תשפ"ו לאלול תשפ"ו."
+    # חד־פעמי: מה שמאיר ישנה מכאן והלאה נשאר שלו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='occ_tishrei_to_elul_v1'").fetchone():
+            cur2 = con.execute(
+                "UPDATE donors SET kv_month='אלול' "
+                "WHERE TRIM(COALESCE(kv_month,''))='תשרי' "
+                "AND REPLACE(REPLACE(TRIM(COALESCE(kv_year,'')),'\u05f4','\"'),'\u05f3',\"'\") IN ('תשפ\"ו')")
+            if cur2.rowcount:
+                print('  מזדמנים: %d תורמים הועברו מתשרי תשפ"ו לאלול תשפ"ו' % cur2.rowcount)
+            con.execute("INSERT INTO seed_flags(name) VALUES('occ_tishrei_to_elul_v1')")
+            con.commit()
+    except Exception as ex:
+        print('  occ month fix error:', ex)
 
     # זאב לאם הוא Steven Lamm — כך הוא רשום באנשי הקשר, עם אותו טלפון
     # (917-701-7148) שבכרטיס. אסתר לאם היא אדם אחר לגמרי, והשם האנגלי שלו
@@ -6675,6 +6704,11 @@ def apply_name_map(con):
     if n:
         con.commit()
     return n
+
+
+# דרגת הקוויטל שכרטיס חדש נפתח בה. מאיר: "זמנים מיוחדים — זה כשהוא
+# מבקש שיזכירו אותו באיזשהו זמן מיוחד, ואנחנו נדפיס את זה".
+TIER_DEFAULT = 'קוויטל_זמנים'
 
 
 def _dkey(last, first):
@@ -10244,6 +10278,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'name': nm})
         if self.path == '/api/donor':
             con = db(); cur = con.cursor()
+            # מאיר: "מה שנכניס מעכשיו שזה יהיה ברירת מחדל בקוויטל, לא מה
+            # שהיה" — כרטיס חדש נפתח בדרגת "זמנים מיוחדים", אלא אם נשלחה
+            # דרגה אחרת במפורש. כרטיסים קיימים אינם נוגעים בזה.
+            if not str(b.get('tier') or '').strip():
+                b['tier'] = TIER_DEFAULT
             # נפתח מחדש כרטיס בשם שנמחק — הוא כבר לא נחשב "מחוק"
             try: cur.execute("DELETE FROM deleted_donors WHERE key=?",
                              (_dkey(b.get('last', ''), b.get('first', '')),))
