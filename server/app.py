@@ -252,7 +252,10 @@ def ensure_schema():
     # prev_year — כמה מתוך התשלום הזה סגר חוב של שנה קודמת. מאיר: "הוא
     # נתן 33,300 וחלק מזה על 2025". הסכום הזה יוצא מחשבון השנה הנוכחית
     # ונזקף כנגד ההתחייבות הקודמת, אחרת השנה נראית משולמת יותר מהאמת.
-    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur', 'prev_year', 'prev_note'):
+    # receipt_num / receipt_at — מספר הקבלה שהופקה ב-EZcount ומתי נשלחה,
+    # כדי שלא תישלח קבלה כפולה על אותה תרומה
+    for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur', 'prev_year',
+                'prev_note', 'receipt_num', 'receipt_at', 'receipt_url'):
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
@@ -9967,6 +9970,56 @@ class H(BaseHTTPRequestHandler):
             if nm:
                 con = db(); con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso())); con.commit(); con.close()
             return self._send(200, {'ok': True, 'name': nm})
+        # מאיר: "אם אני מכניס ידנית הפקדה לבנק הישראלי שלנו, אני רוצה
+        # שאוכל לשלוח קבלה ישירות מהמערכת לאימייל של התורם, דרך מערכת
+        # הקבלות של איזיקאונט, בלחיצת כפתור."
+        m = re.match(r'/api/donation/(\d+)/receipt$', self.path)
+        if m:
+            did = int(m.group(1))
+            con = db()
+            row = con.execute("SELECT * FROM donations WHERE id=?", (did,)).fetchone()
+            if not row:
+                con.close(); return self._send(404, {'error': 'not found'})
+            d = con.execute("SELECT last,first,email FROM donors WHERE id=?",
+                            (row['donor_id'],)).fetchone()
+            # קבלה שכבר הופקה על התרומה הזאת — לא מפיקים שוב
+            if str(row['receipt_num'] or '').strip() and not b.get('again'):
+                con.close()
+                return self._send(200, {'ok': True, 'already': True,
+                                        'docnum': row['receipt_num'],
+                                        'url': row['receipt_url'] or ''})
+            email = (b.get('email') or '').strip() or (
+                (emails_of(d['email'])[0] if d and d['email'] else ''))
+            name = ((d['last'] + ' ' + (d['first'] or '')).strip()) if d else ''
+            cur = (row['cur'] or '').strip()
+            currency = 'USD' if cur in ('$', 'USD') else ('ILS' if cur in ('\u20aa', 'ILS') else
+                                                          (b.get('currency') or 'ILS'))
+            try:
+                import ezcount as _ez
+            except Exception as e:
+                con.close(); return self._send(200, {'ok': False, 'error': 'EZcount לא זמין: %s' % e})
+            ok, res = _ez.send_receipt(
+                name=name, email=email, amount=row['amount'], currency=currency,
+                date=(row['date'] or '')[:10],
+                purpose=b.get('purpose') or row['category'] or '',
+                method=row['method'] or '', note=row['note'] or '')
+            if not ok:
+                con.close(); return self._send(200, {'ok': False, 'error': str(res)})
+            con.execute("UPDATE donations SET receipt_num=?, receipt_at=?, receipt_url=? WHERE id=?",
+                        (res.get('docnum') or '', now_iso(), res.get('doc_url') or '', did))
+            # נרשם גם בדף הקשר, כדי שיהיה תיעוד שהקבלה נשלחה
+            try:
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) "
+                            "VALUES(?,?,'מייל',?,'')",
+                            (row['donor_id'], today_iso(),
+                             '\U0001f9fe נשלחה קבלה %s על %s%s' % (
+                                 res.get('docnum') or '', cur or '', row['amount'])))
+            except Exception:
+                pass
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'docnum': res.get('docnum') or '',
+                                    'url': res.get('doc_url') or '', 'email': email})
         m = re.match(r'/api/donation/(\d+)/split$', self.path)
         if m:      # פיצול תרומה אחת לכמה ייעודים — הסכומים חייבים להסתכם במקורי
             did = int(m.group(1))
@@ -10962,6 +11015,17 @@ def health_report():
             gu = (os.environ.get('GMAIL_USER') or '').strip()
             add('חיבור לג׳ימייל', 'ok' if gu else 'bad',
                 gu or 'GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים ב-Render (%s)' % e)
+        # קבלות — EZcount
+        try:
+            import ezcount as _ez
+            if _ez.configured():
+                _ok2, _m2 = _ez.check()
+                add('קבלות (EZcount)', 'ok' if _ok2 else 'bad', _m2)
+            else:
+                add('קבלות (EZcount)', 'warn',
+                    'לא מוגדר — יש להגדיר ב-Render את EZCOUNT_API_KEY ו-EZCOUNT_API_EMAIL')
+        except Exception as e:
+            add('קבלות (EZcount)', 'bad', 'שגיאה בבדיקת EZcount: %s' % e)
         if SYNCSTAT.get('error'):
             add('סנכרון אחרון', 'bad', '%s — %s' % (SYNCSTAT.get('last') or '', SYNCSTAT['error']))
         elif SYNCSTAT.get('last_ok'):

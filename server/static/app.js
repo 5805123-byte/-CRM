@@ -3749,6 +3749,7 @@ function cardDetails(d,body){
     cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
     prev:String(x.prev_year||''),prevn:String(x.prev_note||''),
+    rcpt:String(x.receipt_num||''),
     needthx:needThanks(x),thanked:+x.thanked}));
   gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
@@ -3760,8 +3761,11 @@ function cardDetails(d,body){
       +`<button class="collectbtn setl setlbtn ${+g.paid===2?'on':''}" data-pid="${g.pid}" title="הכסף הגיע בתרומה נפרדת — אין מה לגבות">${+g.paid===2?'בטל סודר':'סודר'}</button>`:'';
     // מאיר: "ביקשתי שיהיה לי אפשרות לתקן סכום או לפצל או לעדכן ייעוד,
     // ואני לא רואה כאן אפשרות שינוי" — על שורת פרנס יום לא היה ✏️ בכלל.
+    // מאיר: "בלחיצת כפתור תישלח לו קבלה כשאני מכניס תרומות שלו" —
+    // הקבלה מופקת ב-EZcount ונשלחת משם לתורם, מכתובת הכולל
     const ed=g.don
       ? `<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`
+        +`<button class="gvrcpt${g.rcpt?' sent':''}" data-did="${g.did}" title="${g.rcpt?('קבלה '+g.rcpt+' נשלחה — לחץ לשליחה חוזרת'):'שלח קבלה במייל לתורם'}">🧾</button>`
       : (g.parnes?`<button class="pnedit" data-pid="${g.pid}" title="שנה סכום / הקדשה">✏️</button>`:'');
     const pnpan=g.parnes?`<div class="gvpanel hidden" data-pnpan="${g.pid}">
       <div class="gvlbl">💲 הסכום</div>
@@ -3940,6 +3944,24 @@ function cardDetails(d,body){
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn:not(.setlbtn)').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===1?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
   body.querySelectorAll('.setlbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===2?0:2;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np===2?'סומן כסודר ✓ — לא ייספר כחוב':'הסימון בוטל');cardDetails(d,body);if(tab==='donors')renderDonors();});
+  // שליחת קבלה לתורם דרך EZcount
+  body.querySelectorAll('.gvrcpt').forEach(b=>b.onclick=async()=>{
+    const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
+    const em=(splitEmails(d.email)[0]||'').trim();
+    if(!em){toast('אין מייל לתורם — מלא מייל בלשונית פרטים');return;}
+    const cs=(String(x.cur||'').trim())||curSym(d);
+    const again=!!String(x.receipt_num||'').trim();
+    const msg=again?('כבר נשלחה קבלה '+x.receipt_num+' על התרומה הזאת. לשלוח שוב?')
+                   :('לשלוח קבלה על '+cs+x.amount+' אל '+em+' דרך EZcount?');
+    if(!await uiConfirm(msg))return;
+    b.disabled=true; toast('מפיק קבלה…');
+    const r=await api('POST','/api/donation/'+x.id+'/receipt',{again:again?1:0});
+    b.disabled=false;
+    if(!r||!r.ok){toast((r&&r.error)||'הקבלה לא נשלחה');return;}
+    x.receipt_num=r.docnum||''; x.receipt_url=r.url||'';
+    toast('קבלה '+(r.docnum||'')+' נשלחה אל '+(r.email||em)+' ✓');
+    cardDetails(d,body);
+  });
   body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(p)p.classList.toggle('hidden');});
   // עריכת יום פרנס — סכום, עבור מה, והקדשה
@@ -4912,8 +4934,8 @@ function dnCatOpts(cur){
     +`<option value="__new__">➕ ייעוד חדש…</option>`;
 }
 function dnRow(x,cur){cur=cur||'$';
-  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${dnNote(x)}</div>`+
-    `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה">🧾</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
+  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${x.receipt_num?`<span class="rcptmini">🧾 קבלה ${esc(x.receipt_num)} נשלחה</span>`:''}${dnNote(x)}</div>`+
+    `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה להדפסה">🧾</button><button class="dnsend" data-id="${x.id}" title="שלח קבלה במייל לתורם (EZcount)">📧</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     (needThanks(x)?`<div class="thxrow"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו':'🙏 להודות'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
     `<div class="dnedit hidden" data-de="${x.id}">
@@ -4975,6 +4997,23 @@ function renderDonations(d){
   el.querySelectorAll('.dnup').forEach(inp=>inp.onchange=()=>uploadFile('donation',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(y=>y.id===d.id);if(dd)d.donations=dd.donations;renderDonations(d);}));
   el.querySelectorAll('.dnfiles .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.donations||[]).forEach(x=>{x.files=(x.files||[]).filter(f=>f.id!=b.dataset.fid);});renderDonations(d);toast('נמחק');});
   el.querySelectorAll('.dnrcpt').forEach(b=>b.onclick=()=>{const x=d.donations.find(y=>y.id==b.dataset.id);openReceipt(d,x);});
+  // מאיר: "בלחיצת כפתור תישלח לו קבלה כשאני מכניס תרומות שלו" — הקבלה
+  // מופקת ב-EZcount ונשלחת משם לתורם, מכתובת הכולל
+  el.querySelectorAll('.dnsend').forEach(b=>b.onclick=async()=>{
+    const x=d.donations.find(y=>y.id==b.dataset.id); if(!x)return;
+    const em=(splitEmails(d.email)[0]||'').trim();
+    if(!em){toast('אין מייל לתורם — מלא מייל בלשונית פרטים');return;}
+    const cur=curSym(d);
+    if(x.receipt_num&&!await uiConfirm('כבר נשלחה קבלה '+x.receipt_num+' על התרומה הזאת. לשלוח שוב?'))return;
+    if(!x.receipt_num&&!await uiConfirm('לשלוח קבלה על '+cur+x.amount+' אל '+em+' דרך EZcount?'))return;
+    b.disabled=true; toast('מפיק קבלה…');
+    const r=await api('POST','/api/donation/'+x.id+'/receipt',{again:x.receipt_num?1:0});
+    b.disabled=false;
+    if(!r||!r.ok){toast(((r&&r.error)||'הקבלה לא נשלחה'));return;}
+    x.receipt_num=r.docnum||''; x.receipt_url=r.url||'';
+    toast('קבלה '+(r.docnum||'')+' נשלחה אל '+(r.email||em)+' ✓');
+    renderDonations(d); renderContacts(d);
+  });
   el.querySelectorAll('.dnfb').forEach(b=>b.onclick=()=>{el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]').classList.toggle('hidden');});
   el.querySelectorAll('.fb_save').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.fbedit[data-fb="'+b.dataset.id+'"]');
