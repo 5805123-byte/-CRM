@@ -4458,13 +4458,60 @@ function renderEmails(d){
   const list=splitEmails(d.email); if(!list.length) list.push('');
   list.forEach(addRow);
 }
+/* ---------- קידומת מדינה לטלפון ----------
+   מאיר: "כשאני מוסיף טלפון של תורם שיהיה כתוב איזו מדינה זה — למשל זה
+   ארצות הברית — ושאוכל לבחור בין מדינות, אבל ברירת המחדל תהיה ארצות
+   הברית עם הקידומת +1".
+   הקידומות מסודרות מהארוכה לקצרה, כדי ש-+972 ייקרא לפני +97 ו-+9. */
+const DIALS=[
+  ['+1','🇺🇸','ארה"ב / קנדה'],
+  ['+972','🇮🇱','ישראל'],
+  ['+44','🇬🇧','אנגליה'],
+  ['+32','🇧🇪','בלגיה'],
+  ['+33','🇫🇷','צרפת'],
+  ['+41','🇨🇭','שווייץ'],
+  ['+43','🇦🇹','אוסטריה'],
+  ['+49','🇩🇪','גרמניה'],
+  ['+61','🇦🇺','אוסטרליה'],
+  ['+27','🇿🇦','דרום אפריקה'],
+  ['+52','🇲🇽','מקסיקו'],
+  ['+55','🇧🇷','ברזיל'],
+  ['+54','🇦🇷','ארגנטינה'],
+  ['+380','🇺🇦','אוקראינה'],
+  ['+7','🇷🇺','רוסיה']
+];
+const DIAL_DEF='+1';
+const DIALS_BY_LEN=DIALS.slice().sort((a,b)=>b[0].length-a[0].length);
+// מפרק מספר שמור לקידומת ולשאר, לפי הקידומת הארוכה ביותר שמתאימה
+function phParts(v){
+  const t=String(v||'').trim();
+  if(t.charAt(0)==='+'){
+    const flat=t.replace(/[^\d+]/g,'');
+    for(const [code] of DIALS_BY_LEN)
+      if(flat.indexOf(code)===0) return {code, rest:t.slice(t.indexOf(code.slice(1))+code.length-1).trim()};
+    return {code:'', rest:t};
+  }
+  return {code:t?'':DIAL_DEF, rest:t};      // מספר ישן בלי קידומת — נשאר כמו שהוא
+}
+function dialOpts(sel){
+  return DIALS.map(([c,f,n])=>`<option value="${c}" ${c===sel?'selected':''}>${f} ${n} ${c}</option>`).join('')
+    + (sel&&!DIALS.some(x=>x[0]===sel)?`<option value="${esc(sel)}" selected>${esc(sel)}</option>`:'')
+    + `<option value="" ${sel?'':'selected'}>— בלי קידומת —</option>`;
+}
 function renderPhones(d){
   const el=document.getElementById('phones'); if(!el) return;
   el.innerHTML='';
-  const save=async()=>{const nums=[...el.querySelectorAll('.phin')].map(x=>x.value.trim()).filter(Boolean);d.phone=nums.join(' / ');await api('PUT','/api/donor/'+d.id,{phone:d.phone});toast('נשמר ✓');if(tab==='donors')renderDonors();};
-  const addRow=(val)=>{const row=document.createElement('div');row.className='phrow';
-    row.innerHTML=`<input class="phin" dir="ltr" inputmode="tel" value="${esc(val||'')}" placeholder="+1 ..."><button class="del phdel" title="מחק">🗑</button>`;
+  const full=row=>{const c=row.querySelector('.phcc').value, n=row.querySelector('.phin').value.trim();
+    if(!n)return ''; return (c?c+' ':'')+n;};
+  const save=async()=>{const nums=[...el.querySelectorAll('.phrow')].map(full).filter(Boolean);
+    d.phone=nums.join(' / ');await api('PUT','/api/donor/'+d.id,{phone:d.phone});toast('נשמר ✓');if(tab==='donors')renderDonors();};
+  const addRow=(val)=>{const p=phParts(val);
+    const row=document.createElement('div');row.className='phrow';
+    row.innerHTML=`<select class="phcc" title="קידומת מדינה">${dialOpts(p.code)}</select>`
+      +`<input class="phin" dir="ltr" inputmode="tel" value="${esc(p.rest||'')}" placeholder="267-625-7751">`
+      +`<button class="del phdel" title="מחק">🗑</button>`;
     row.querySelector('.phin').onchange=save;
+    row.querySelector('.phcc').onchange=save;
     row.querySelector('.phdel').onclick=()=>{row.remove();save();};
     el.insertBefore(row, el.lastChild); return row;};
   const addBtn=document.createElement('button');addBtn.className='btn sm phadd';addBtn.textContent='➕ טלפון נוסף';
@@ -4659,7 +4706,6 @@ function cardInfo(d,body){
     <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
       <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
     <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
-    <label class="fld"><span>עבור מה (מטרה כללית)</span><input id="f_purpose" value="${esc(d.purpose)}"></label>
     <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><textarea id="f_notes" rows="3" placeholder="כתוב כאן כל דבר שתרצה למצוא אחר כך בחיפוש">${esc(d.notes||'')}</textarea></label>
     ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
@@ -4669,7 +4715,10 @@ function cardInfo(d,body){
   body.insertAdjacentHTML('beforeend',
     '<div class="sec" style="text-align:center"><button class="btn ghost delbig delcard" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>');
   wireDelete(d,body);
-  const INF=['english','business','region','channel','addr','city','country','zip','purpose','notes','debt_open','debt_open_note'];
+  // מאיר: "זה מיותר — כשמכניסים תרומה כבר בוחרים בתרומה עבור מה, אין
+  // צורך במילוי הפרטים את זה". שדה "מטרה כללית" ירד מהמסך; מה שכבר
+  // רשום בו נשאר במסד ואינו נמחק.
+  const INF=['english','business','region','channel','addr','city','country','zip','notes','debt_open','debt_open_note'];
   wireFields(d,INF);
   wireChanSel(document.getElementById('f_channel'));
   const sv=document.getElementById('f_saveall');
