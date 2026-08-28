@@ -3763,9 +3763,14 @@ function cardDetails(d,body){
     // ואני לא רואה כאן אפשרות שינוי" — על שורת פרנס יום לא היה ✏️ בכלל.
     // מאיר: "בלחיצת כפתור תישלח לו קבלה כשאני מכניס תרומות שלו" —
     // הקבלה מופקת ב-EZcount ונשלחת משם לתורם, מכתובת הכולל
+    // מאיר: "לצד כל תרומה בשקלים בלבד שיהיה את הקבלה של איזיקאונט, לא
+    // בדולרים — בדולרים אנחנו צריכים לעצב משהו יפה, בשבוע הבא".
+    // EZcount הוא מערכת החשבוניות הישראלית, ולכן הכפתור מופיע רק על
+    // תרומה בשקלים.
+    const canRcpt=g.don&&curd==='₪';
     const ed=g.don
       ? `<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`
-        +`<button class="gvrcpt${g.rcpt?' sent':''}" data-did="${g.did}" title="${g.rcpt?('קבלה '+g.rcpt+' נשלחה — לחץ לשליחה חוזרת'):'שלח קבלה במייל לתורם'}">🧾</button>`
+        +(canRcpt?`<button class="gvrcpt${g.rcpt?' sent':''}" data-did="${g.did}" title="${g.rcpt?('קבלה '+g.rcpt+' נשלחה — לחץ לשליחה חוזרת'):'שלח קבלה במייל לתורם (EZcount)'}">🧾</button>`:'')
       : (g.parnes?`<button class="pnedit" data-pid="${g.pid}" title="שנה סכום / הקדשה">✏️</button>`:'');
     const pnpan=g.parnes?`<div class="gvpanel hidden" data-pnpan="${g.pid}">
       <div class="gvlbl">💲 הסכום</div>

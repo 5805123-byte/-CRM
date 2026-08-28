@@ -9992,8 +9992,19 @@ class H(BaseHTTPRequestHandler):
                 (emails_of(d['email'])[0] if d and d['email'] else ''))
             name = ((d['last'] + ' ' + (d['first'] or '')).strip()) if d else ''
             cur = (row['cur'] or '').strip()
-            currency = 'USD' if cur in ('$', 'USD') else ('ILS' if cur in ('\u20aa', 'ILS') else
-                                                          (b.get('currency') or 'ILS'))
+            # אם לא נרשם מטבע על התרומה — המטבע של הכרטיס הוא הקובע
+            if not cur and d:
+                _dc = con.execute("SELECT region FROM donors WHERE id=?",
+                                  (row['donor_id'],)).fetchone()
+                cur = '\u20aa' if (_dc and (_dc['region'] or '') == 'il') else '$'
+            # מאיר: "לצד כל תרומה בשקלים בלבד שיהיה את הקבלה של איזיקאונט,
+            # לא בדולרים — בדולרים אנחנו צריכים לעצב משהו יפה, בשבוע הבא"
+            if cur not in ('\u20aa', 'ILS'):
+                con.close()
+                return self._send(200, {'ok': False,
+                                        'error': 'קבלת EZcount היא לתרומות בשקלים בלבד. '
+                                                 'לתרומות בדולרים עדיין אין קבלה במערכת.'})
+            currency = 'ILS'
             try:
                 import ezcount as _ez
             except Exception as e:
