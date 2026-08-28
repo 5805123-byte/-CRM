@@ -103,7 +103,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v469";
+const BUILD = "v470";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -637,6 +637,76 @@ function certRows(){
   });
   return out;
 }
+// ----- התמונה המועתקת = צילום מדויק של התצוגה -----
+// מאיר: "בהעתקת התמונה זה יוצא די קטן הכתב, אני רוצה שזה יהיה כמו התצוגה
+// כאן שאני מסמן לך בלורד אדום". התעודה צוירה בשני מקומות — כאן במסך ובשרת
+// — ושני חישובים של אותו טקסט לעולם לא יוצאים זהים. לכן מכאן והלאה המסך
+// מודד את מה שכבר מצויר עליו: כל שורה כפי שהדפדפן שבר אותה, גודל הגופן
+// שלה בפועל, מקומה על הדף וצבעה. השרת רק מצייר את זה כמו שהוא.
+// המדידה תקפה רק אחרי שהגופן פרנק־רוהל נטען בפועל; עד אז הדפדפן מציג
+// גופן חלופי, וכל מידה שתילקח ממנו תהיה שונה ממה שיראה התורם
+let FONTSOK=false;
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{FONTSOK=true;});
+else FONTSOK=true;
+function rgbHex(s){
+  const m=/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(s||''); if(!m) return '';
+  const h=n=>(+n).toString(16).padStart(2,'0');
+  const v='#'+h(m[1])+h(m[2])+h(m[3]);
+  return v==='#000000'?'':v;                    // שחור הוא ברירת המחדל בשרת
+}
+function certLayout(){
+  const sh=document.getElementById('sheet'), c=document.getElementById('content');
+  if(!sh||!c||!FONTSOK) return null;   // בלי הגופן האמיתי המדידה שקרית
+  const sr=sh.getBoundingClientRect();
+  if(!sr.width||!sr.height) return null;
+  const segs=[], rng=document.createRange();
+  const w=document.createTreeWalker(c, NodeFilter.SHOW_TEXT, null);
+  for(let tn=w.nextNode(); tn; tn=w.nextNode()){
+    const raw=tn.nodeValue||''; if(!raw.trim()) continue;
+    const el=tn.parentElement; if(!el||!el.getClientRects().length) continue;
+    if(el.closest('.rm,.noprint')) continue;      // כפתורי העריכה אינם חלק מהתעודה
+    const cs=getComputedStyle(el);
+    const px=parseFloat(cs.fontSize)||0; if(!px) continue;
+    const bold=(parseInt(cs.fontWeight,10)||400)>=600?1:0, col=rgbHex(cs.color);
+    // ראש כל תו — כך יודעים היכן בדיוק הדפדפן שבר את השורה
+    const tops=new Array(raw.length).fill(null);
+    for(let i=0;i<raw.length;i++){
+      rng.setStart(tn,i); rng.setEnd(tn,i+1);
+      const r=rng.getBoundingClientRect();
+      tops[i]=(r.width||r.height)?r.top:null;
+    }
+    let a=0;
+    while(a<raw.length){
+      while(a<raw.length&&(tops[a]===null||!raw[a].trim())) a++;   // רווחים בקצה — לא נמדדים
+      if(a>=raw.length) break;
+      let b=a+1;
+      while(b<raw.length&&(tops[b]===null||Math.abs(tops[b]-tops[a])<1)) b++;
+      let e=b; while(e>a&&(!raw[e-1].trim()||tops[e-1]===null)) e--;
+      if(e>a){
+        rng.setStart(tn,a); rng.setEnd(tn,e);
+        const r=rng.getBoundingClientRect(), t=raw.slice(a,e).trim();
+        if(t&&r.width>0) segs.push([
+          +(r.left+r.width/2-sr.left).toFixed(1), +(r.top-sr.top).toFixed(1),
+          +r.height.toFixed(1), +px.toFixed(2), bold, col, t]);
+      }
+      a=b;
+    }
+  }
+  if(!segs.length) return null;
+  return {w:+sr.width.toFixed(1), h:+sr.height.toFixed(1), s:segs};
+}
+// מה שנשלח לשרת: הטקסט (רשת ביטחון) והפריסה שנמדדה עכשיו
+function certReq(ext){
+  const {date,names,roles}=certText();
+  const body={kind:KIND, date, names, roles:roles||'', fmt:ext||'png'};
+  const L=certLayout(); if(L) body.layout=L;
+  return body;
+}
+async function certFetch(ext){
+  const body=certReq(ext);
+  return fetch('/cert.'+(ext||'png'), {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+}
 // כתובת התמונה לפי מה שכתוב עכשיו על המסך
 function certPngUrl(ext){
   const {date,names,roles}=certText();
@@ -644,11 +714,14 @@ function certPngUrl(ext){
 }
 // התמונה מוכנה מראש ברקע — כדי שההעתקה ללוח תקרה מיד בלחיצה (כרום דורש זאת)
 let PNGREADY=null, PNGKEY='', PNGERR='';
+const pngKey=()=>{ try{ return JSON.stringify(certReq('png')); }catch(e){ return certPngUrl('png'); } };
 async function preparePng(){
-  const k=certPngUrl('png');
+  if(!FONTSOK){ try{ await document.fonts.ready; FONTSOK=true; }catch(e){ FONTSOK=true; } }
+  const k=pngKey();
   if(PNGKEY===k && PNGREADY) return PNGREADY;
   PNGKEY=k; PNGREADY=null; PNGERR='';
-  try{ const r=await fetch(k); const b=await r.blob();
+  try{ const r=await fetch('/cert.png',{method:'POST',
+        headers:{'Content-Type':'application/json'}, body:k}); const b=await r.blob();
     if(b && b.size>5000 && (b.type||'').indexOf('image')>=0){ PNGREADY=b; }
     else{ PNGERR=await b.text().catch(()=>'')||('שגיאת שרת '+r.status); } }
   catch(e){ PNGERR='אין חיבור לשרת'; }
@@ -664,7 +737,7 @@ $('copyBtn').onclick=async()=>{
   const ok=()=>{ b.textContent='✅ הועתק — הדבק בוואטסאפ'; setTimeout(()=>{b.textContent=t0;},2500); };
   let err='';
   // 1) התמונה כבר בזיכרון — הדרך שעובדת בכרום
-  if(PNGREADY && PNGKEY===certPngUrl('png')){
+  if(PNGREADY && PNGKEY===pngKey()){
     try{ await navigator.clipboard.write([new ClipboardItem({'image/png':PNGREADY})]); ok(); return; }
     catch(e){ err=e&&e.message||String(e); }
   }
@@ -690,7 +763,7 @@ $('sendBtn').onclick=async()=>{
   b.disabled=true; b.textContent='מכין את התמונה…';
   const url=certPngUrl('jpg');
   let blob=null;
-  try{ const rs=await fetch(url); blob=await rs.blob(); }
+  try{ const rs=await certFetch('jpg'); blob=await rs.blob(); }
   catch(e){ b.disabled=false; b.textContent=t0; window.open(url,'_blank'); return; }
   if(!blob||blob.size<5000||(blob.type||'').indexOf('image')<0){   // לא לשלוח קובץ פגום
     b.disabled=false; b.textContent=t0; alert('התמונה לא נוצרה כראוי — נסה שוב'); return; }

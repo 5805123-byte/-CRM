@@ -6227,8 +6227,29 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     return buf.getvalue()
 
 
-def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', roles=''):
-    """מצייר את תעודת הפרנס כתמונה — אותו בלאנק, אותו סידור, גופן שמתאים את עצמו לדף."""
+def _cert_hex(s):
+    """'#rrggbb' -> (r,g,b). ריק או לא תקין = שחור."""
+    s = str(s or '').strip().lstrip('#')
+    if len(s) == 3:
+        s = ''.join(c * 2 for c in s)
+    if len(s) != 6:
+        return _BLACK
+    try:
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except ValueError:
+        return _BLACK
+
+
+def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', roles='',
+             layout=None):
+    """מצייר את תעודת הפרנס כתמונה — אותו בלאנק, אותו סידור, גופן שמתאים את עצמו לדף.
+
+    מאיר: "בהעתקת התמונה זה יוצא די קטן הכתב, אני רוצה שזה יהיה כמו התצוגה
+    כאן". התעודה צוירה בשני מקומות — במסך ובשרת — וכל חישוב שני של אותו
+    טקסט יצא מעט אחר. לכן כשהמסך שולח את מה שכבר מצויר עליו (layout: כל
+    שורה, גודלה, מקומה וצבעה), השרת מצייר אותם כמו שהם ואינו מחשב דבר —
+    והתמונה המועתקת היא העתק מדויק של התצוגה. בלי layout נשאר החישוב הישן,
+    לשימוש של קישורים שנוצרים מחוץ למסך התעודה."""
     from PIL import Image, ImageDraw, ImageFont
     try:
         from PIL import features as _pf
@@ -6252,6 +6273,40 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         if k not in cache:
             cache[k] = ImageFont.truetype(bold if heavy else reg, max(6, int(px)))
         return cache[k]
+
+    def _save():
+        buf = io.BytesIO()
+        if fmt == 'jpg':
+            im.save(buf, 'JPEG', quality=88, optimize=True, progressive=True)
+        else:
+            im.save(buf, 'PNG', compress_level=6)
+        return buf.getvalue()
+
+    # ---- העתק מדויק של התצוגה שעל המסך ----
+    segs = (layout or {}).get('s') if isinstance(layout, dict) else None
+    if segs:
+        lw = float(layout.get('w') or 0) or W
+        lh = float(layout.get('h') or 0) or H
+        sx, sy = W / lw, H / lh
+        dr = ImageDraw.Draw(im)
+        for seg in segs:
+            try:
+                cx, ytop, hgt, px, bd, col, txt = (list(seg) + [''] * 7)[:7]
+                txt = str(txt or '').strip()
+                if not txt:
+                    continue
+                f = font(max(6, round(float(px) * sx)), bool(bd))
+                a, d = f.getmetrics()
+                # הדפדפן מוסר את תיבת הטקסט (ראש וגובה); קו הבסיס נגזר
+                # ממנה לפי יחס העלייה/ירידה של הגופן עצמו, כך שכל המקטעים
+                # שבשורה אחת יושבים על אותו קו גם כשגודלם שונה
+                base = float(ytop) * sy + float(hgt) * sy * (a / float(a + d) if (a + d) else .8)
+                s = txt if raqm else txt[::-1]
+                dr.text((float(cx) * sx - dr.textlength(s, font=f) / 2, base),
+                        s, font=f, fill=_cert_hex(col), anchor='ls')
+            except Exception:
+                continue
+        return _save()
 
     # כל בלוק: (טקסט, יחס-גודל, מודגש, צבע, רווח-לפני, רווח-אחרי, גובה-שורה)
     if kind in ('coffee', 'breakfast'):
@@ -6571,12 +6626,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             f = font(s, h)
             dr.text((x, base_y), t if raqm else t[::-1], font=f, fill=col, anchor='ls')
             x += dr.textlength(t, font=f)
-    buf = io.BytesIO()
-    if fmt == 'jpg':
-        im.save(buf, 'JPEG', quality=88, optimize=True, progressive=True)
-    else:
-        im.save(buf, 'PNG', compress_level=6)
-    return buf.getvalue()
+    return _save()
 
 
 MERGE_HEB = {'donations': 'תרומות', 'prayers': 'שמות קוויטל', 'parnes': 'פרנס יום',
@@ -9441,6 +9491,25 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
+        # התעודה כתמונה, לפי הפריסה שנמדדה על המסך. נשלחת ב-POST ולא בכתובת,
+        # כי הפריסה ארוכה מכדי להיכנס לכתובת אינטרנט. אינה משנה נתונים, ולכן
+        # לפני bump_data — שלא תבטל את המטמון בכל הקשה במסך התעודה.
+        if self.path.split('?')[0] in ('/cert.png', '/cert.jpg'):
+            b = self._body()
+            fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
+            try:
+                data = cert_png(b.get('kind') or 'parnes', b.get('date') or '',
+                                b.get('names') or '', b.get('dedic') or '',
+                                int(b.get('w') or 1000), fmt, b.get('roles') or '',
+                                b.get('layout') if isinstance(b.get('layout'), dict) else None)
+            except Exception as e:
+                return self._send(500, {'error': 'cert', 'detail': str(e)})
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg' if fmt == 'jpg' else 'image/png')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', 'inline; filename="parnes-cert.%s"' % fmt)
+            self.end_headers(); self.wfile.write(data)
+            return
         bump_data()
         # Authorize.net מודיע ברגע שחיוב עבר. מאמתים חתימה, מושכים את העסקה,
         # ורושמים אותה. חייב להיות לפני קריאת הגוף כ-JSON — החתימה על הגוף הגולמי.
