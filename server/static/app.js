@@ -1998,6 +1998,8 @@ function openNewDonor(onCreate,pre){
     <label class="fld"><span>שם באנגלית</span><input id="nd_english" dir="ltr" placeholder="English name"></label>
     <label class="fld"><span>אזור / מטבע</span><select id="nd_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il">🇮🇱 ארץ ישראל (₪)</option></select></label>
     <label class="fld"><span>טלפון</span><input id="nd_phone" dir="ltr" inputmode="tel" placeholder="+1 ..."></label>
+    <label class="fld"><span>אימייל</span><input id="nd_email" dir="ltr" inputmode="email" placeholder="name@example.com"></label>
+    <div class="hintxt" style="margin:-4px 2px 8px">כדאי למלא — לפי המייל חיובי האשראי והבנק נתפסים לכרטיס לבד, בלי לשייך ידנית.</div>
     <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="nd_addr" dir="auto" placeholder="רחוב ומספר"></label>
     <div class="two"><label class="fld"><span>עיר</span><input id="nd_city" dir="auto" placeholder="עיר"></label>
       <label class="fld"><span>מדינה</span><input id="nd_country" dir="auto" placeholder="מדינה"></label></div>
@@ -2053,7 +2055,7 @@ function openNewDonor(onCreate,pre){
   document.getElementById('nd_save').onclick=async()=>{
     const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
     // מאיר: "ומה שנכניס מעכשיו שזה יהיה ברירת מחדל בקוויטל, לא מה שהיה"
-    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),region:document.getElementById('nd_region').value,tier:TIER_DEFAULT};
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),email:g('nd_email'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),region:document.getElementById('nd_region').value,tier:TIER_DEFAULT};
     const r=await api('POST','/api/donor',body);
     const nd={id:r.id,...body,category:'',amount:'',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[],created:todayStr(),source:'ידני'};
     DB.push(nd);
