@@ -103,7 +103,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v468";
+const BUILD = "v469";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -349,7 +349,9 @@ function wireFmt(el){
 }
 
 const CFG = {
-  parnes:    {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'11%'},
+  // מאיר: "חתוך פה למטה" — הטקסט ירד לתוך ציור הבניין. הציור מתחיל
+  // ב-87.4% מגובה הדף, ולכן התיבה נעצרת ב-86.5%.
+  parnes:    {bg:'/letterhead.jpg',        top:'9.5%', left:'25%', right:'5%', bottom:'13.5%'},
   coffee:    {bg:'/letterhead-coffee.jpg',  top:'24%',  left:'9%',  right:'9%', bottom:'21%'},
   breakfast: {bg:'/letterhead-coffee.jpg',  top:'24%',  left:'9%',  right:'9%', bottom:'21%'},
 };
