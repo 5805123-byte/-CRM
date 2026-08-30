@@ -298,13 +298,12 @@ def personalize(text, who, html=False, d='rtl'):
         first = full
     g = ((who.get('gender') or 'm') + 'm')[0]
     kv = [x.strip() for x in str(who.get('kvittel') or '').split('\n') if x.strip()]
+    avs = [x.strip() for x in str(who.get('avreich') or '').split('\n') if x.strip()]
     simple = {'שם': first, 'משפחה': last, 'שם מלא': full,
               'תואר': (who.get('title') or TITLE_ALL).strip() or TITLE_ALL,
               # מאיר: "יששכר־זבולון — אני רוצה למזג לו את השם של האברך
               # שלומד בשבילו בתוך המכתב, ואת הקוויטל שלו"
-              'אברך': (who.get('avreich') or '').strip(),
-              'name': first, 'lastname': last, 'fullname': full,
-              'avreich': (who.get('avreich') or '').strip()}
+              'name': first, 'lastname': last, 'fullname': full}
     side = 'right' if d == 'rtl' else 'left'
 
     def sub(m):
@@ -332,11 +331,17 @@ def personalize(text, who, html=False, d='rtl'):
             return (BIG % _esc(full)) if html else full
         if key in ('הי"ו', 'הי\u05f4ו', 'סיום'):
             return _esc(TITLE_END) if html else TITLE_END
-        if key in ('אברך', 'avreich'):
-            av = (who.get('avreich') or '').strip()
-            if not av:
+        if key in ('אברך', 'אברכים', 'avreich'):
+            # מאיר: "ואם יש לתורם כמה אברכים שהוא מחזיק — שאכתוב '3
+            # האברכים האלו לומדים בשבילך' ואז אצרף את שלושת השמות."
+            if not avs:
                 return ''
-            return (BOLD % _esc(av)) if html else av
+            names = [(BOLD % _esc(x)) if html else x for x in avs]
+            if len(names) == 1:
+                return names[0]
+            return ', '.join(names[:-1]) + ' ו' + names[-1]
+        if key in ('מספר אברכים', 'כמה אברכים'):
+            return str(len(avs))
         if key in ('קוויטל', 'kvittel'):
             if not kv:
                 return ''

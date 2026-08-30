@@ -8084,7 +8084,8 @@ def mail_recipients(con, ids):
         kvtxt = gk.get('יששכר_זבולון') or sum((v for v in gk.values()), [])
         who = {'first': (d['first'] or '').strip(), 'last': (d['last'] or '').strip(),
                'title': ttl, 'gender': g,
-               'avreich': ' · '.join(avs.get(d['id']) or []),
+               # שורה לכל אברך — כך אפשר גם לספור אותם וגם לחבר אותם יפה
+               'avreich': '\n'.join(avs.get(d['id']) or []),
                # שורה לכל שם — כדי שבמכתב הם יֵצאו זה מתחת לזה, מודגשים
                'kvittel': '\n'.join(x.strip() for x in kvtxt if x and x.strip())}
         addrs = emails_of(d['email'])
