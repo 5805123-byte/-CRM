@@ -161,13 +161,51 @@ def _esc(s):
             .replace('>', '&gt;').replace('"', '&quot;'))
 
 
-def personalize(text, name):
-    """{{שם}} בגוף המכתב מוחלף בשם התורם. גם באנגלית, למי שנוח לו כך."""
-    n = (name or '').strip()
-    out = str(text or '')
-    for k in ('{{שם}}', '{{ שם }}', '{{name}}', '{{ name }}', '{שם}'):
-        out = out.replace(k, n)
-    return out
+_PH = re.compile(r'\{\{\s*([^{}]*?)\s*\}\}')
+
+
+def personalize(text, who):
+    """מחליף את הסימונים שבמכתב בפרטי התורם שמקבל אותו.
+
+    מאיר: "אם אני רוצה להכניס לו תואר לפני או אחרי לכל אחד — אם זה גבר
+    אז משהו אחד ואם זה אשה אז משהו אחר, איך אני אמור להסתדר עם זה?"
+
+        {{שם}}      שם פרטי                      יצחק
+        {{משפחה}}   שם משפחה                     רוזנפלד
+        {{שם מלא}}  שם פרטי ומשפחה               יצחק רוזנפלד
+        {{תואר}}    ר' לגבר · מרת לאשה · ה"ה לזוג
+
+    ולשון פנייה: כמה מילים עם קו ביניהן — הראשונה לגבר, השנייה לאשה,
+    ואם נכתבה שלישית היא לזוג:
+
+        שתזכ{{ה|י|ו}} לכל טוב   ->  שתזכה / שתזכי / שתזכו
+        {{היקר|היקרה}}          ->  היקר / היקרה
+    """
+    if isinstance(who, str):                  # תאימות לקריאה עם שם בלבד
+        who = {'name': who}
+    first = (who.get('first') or '').strip()
+    last = (who.get('last') or '').strip()
+    full = (who.get('name') or (first + ' ' + last)).strip()
+    if not first:
+        first = full
+    g = ((who.get('gender') or 'm') + 'm')[0]
+    simple = {'שם': first, 'משפחה': last, 'שם מלא': full,
+              'תואר': (who.get('title') or '').strip(),
+              'name': first, 'lastname': last, 'fullname': full}
+
+    def sub(m):
+        key = m.group(1)
+        if '|' in key:                        # לשון זכר / נקבה / זוג
+            parts = [p.strip() for p in key.split('|')]
+            i = {'m': 0, 'f': 1, 'c': 2}.get(g, 0)
+            if i >= len(parts):
+                i = 0
+            return parts[i]
+        if key in simple:
+            return simple[key]
+        return m.group(0)                     # סימון לא מוכר — נשאר כמו שהוא
+
+    return _PH.sub(sub, str(text or ''))
 
 
 def _html(body, unsub_url, sig):
@@ -191,10 +229,10 @@ def _html(body, unsub_url, sig):
             + paras + foot + '</div></body></html>')
 
 
-def plain_text(body, name, unsub_url='', sig=''):
+def plain_text(body, who, unsub_url='', sig=''):
     """גוף המכתב כטקסט פשוט — בדיוק מה שנשלח, וגם מה שמוצג בתצוגה
     המקדימה. אותו חישוב אחד לשני המקומות, כדי שלא ייפרדו."""
-    out = personalize(body, name)
+    out = personalize(body, who)
     if (sig or '').strip():
         out += '\n\n' + sig.strip()
     if unsub_url:
@@ -202,7 +240,7 @@ def plain_text(body, name, unsub_url='', sig=''):
     return out
 
 
-def build(to, name, subject, body, unsub_url='', sig='', attachments=None):
+def build(to, who, subject, body, unsub_url='', sig='', attachments=None):
     """הודעה אישית אחת. בשורת הנמען יש כתובת אחת בלבד — ואין ולא יהיה
     כאן Cc או Bcc.
 
@@ -213,11 +251,14 @@ def build(to, name, subject, body, unsub_url='', sig='', attachments=None):
     בדיוק כפי שנכתבה.
     """
     c = cfg()
-    txt = personalize(body, name)
-    subj = personalize(subject, name) or 'כולל חצות'
+    if isinstance(who, str):
+        who = {'name': who}
+    name = (who.get('name') or '').strip()
+    txt = personalize(body, who)
+    subj = personalize(subject, who) or 'כולל חצות'
 
     alt = MIMEMultipart('alternative')
-    alt.attach(MIMEText(plain_text(body, name, unsub_url, sig), 'plain', 'utf-8'))
+    alt.attach(MIMEText(plain_text(body, who, unsub_url, sig), 'plain', 'utf-8'))
     alt.attach(MIMEText(_html(txt, unsub_url, sig), 'html', 'utf-8'))
     atts = [a for a in (attachments or []) if a and a[2]]
     if atts:

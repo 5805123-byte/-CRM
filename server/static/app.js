@@ -7902,16 +7902,29 @@ let mailFlt='';
    ובשורת הנמען כתובה רק הכתובת שלו. אף תורם אינו רואה את הכתובות של
    האחרים. השליחה עצמה איטית ומדודה — כך היא נראית אנושית ולא כדיוור
    המוני, וזה חלק מרכזי מלהישאר מחוץ לספאם. */
+// הסימונים שאפשר להכניס למכתב — כל אחד נכתב אחרת אצל כל תורם
+const MLVARS=[['{{תואר}}',"ר' לגבר · מרת לאשה · ה\"ה לזוג"],
+              ['{{שם}}','השם הפרטי'],
+              ['{{שם מלא}}','שם פרטי ומשפחה'],
+              ['{{משפחה}}','שם המשפחה'],
+              ['{{ה|י|ו}}','לשון פנייה: גבר | אשה | זוג']];
 let mailSub='log', MLSETUP=null, MLPOLL=null;
-const mlAud={who:'cat', cat:'', tier:''};
-let mlDrop=new Set();          // תורמים שמאיר הוריד ידנית מהרשימה הזאת
+// מאיר: "אם אני רוצה רק 2 תורמים אני צריך לסנן את כולם?" — לא. הרשימה
+// מתחילה ריקה, ומוסיפים אליה: תורם אחד בחיפוש, או קבוצה שלמה בלחיצה.
+let mlPick=new Set(), mlQ='';
+const dHasMail=d=>(d.email||'').includes('@');
+const dName=d=>((d.last||'')+' '+(d.first||'')).trim();
+const byName=(a,b)=>dName(a).localeCompare(dName(b),'he');
 function mlAudience(){
-  let list=DB.filter(d=>(d.email||'').includes('@'));
-  if(mlAud.who==='cat'&&mlAud.cat) list=list.filter(d=>(d.category||'').trim()===mlAud.cat);
-  if(mlAud.who==='tier'&&mlAud.tier) list=list.filter(d=>(d.tier||'').trim()===mlAud.tier);
-  return list.filter(d=>!mlDrop.has(d.id))
-             .sort((a,b)=>((a.last||'')+' '+(a.first||'')).localeCompare(((b.last||'')+' '+(b.first||'')),'he'));
+  return DB.filter(d=>mlPick.has(d.id)&&dHasMail(d)).sort(byName);
 }
+function mlAddAll(list){
+  let add=0, no=0;
+  list.forEach(d=>{ if(!dHasMail(d)){no++;return;} if(!mlPick.has(d.id)){mlPick.add(d.id);add++;} });
+  toast(add?('נוספו '+add+' תורמים'+(no?(' · '+no+' בלי מייל דולגו'):'')+' ✓'):'לא נוסף אף אחד חדש');
+  renderMailSend();
+}
+const id2key=id=>({ml_subj:'subj',ml_body:'body',ml_sig:'sig'})[id]||id;
 function mlSaved(k,d){ try{ return localStorage.getItem('kc_ml_'+k)||d; }catch(e){ return d; } }
 function mlSave(k,v){ try{ localStorage.setItem('kc_ml_'+k,v); }catch(e){} }
 async function mlLoadSetup(){
@@ -7935,29 +7948,39 @@ function renderMailSend(){
   const cats=[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
   const tiers=[...new Set(DB.map(d=>(d.tier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
   const list=mlAudience();
-  const noMail=DB.filter(d=>!(d.email||'').includes('@')).length;
+  const noMail=DB.filter(d=>!dHasMail(d)).sort(byName);
+  const hits=mlQ.trim()?donorHits(d=>dName(d)+' '+(d.english||'')+' '+(d.email||''),mlQ,12):null;
   chips.innerHTML='';
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_back">← חזרה ליומן המיילים</button></div>
     <div class="rbtitle">✉️ שליחת מייל לתורמים</div>
     ${mlSetupHTML()}
     <div class="hintxt mlnobcc">כל תורם מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף תורם אינו רואה את הכתובות של האחרים. לכל מייל מצורף קישור הסרה, כפי שג׳ימייל דורש מדיוור.</div>
     <div class="sec">
+      <div class="rbtitle" style="text-align:right">1️⃣ למי שולחים</div>
+      <div class="addrow"><input id="ml_q" value="${esc(mlQ)}" placeholder="🔍 חפש תורם והוסף אותו — שם, אנגלית או מייל" autocomplete="off"></div>
+      ${hits?`<div class="dpres">${hits.list.map(d=>`<div class="dpr${mlPick.has(d.id)?' on':''}" data-add="${d.id}">${esc(dName(d))}${d.english?` <small>${esc(d.english)}</small>`:''}${dHasMail(d)?` <small class="mlem">${esc((d.email||'').split(/[;,\/\s]+/)[0])}</small>`:' <small class="mlno">אין מייל</small>'}${mlPick.has(d.id)?' ✓':''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא תורם</div>'}${hitsMoreHTML(hits)}</div>`:''}
+      <div class="hintxt" style="margin:6px 2px">או הוסף קבוצה שלמה בבת אחת:</div>
       <div class="two">
-        <label class="fld"><span>למי שולחים</span><select id="ml_who">
-          <option value="cat" ${mlAud.who==='cat'?'selected':''}>לפי קטגוריה</option>
-          <option value="tier" ${mlAud.who==='tier'?'selected':''}>לפי דרגת קוויטל</option>
-          <option value="all" ${mlAud.who==='all'?'selected':''}>כל התורמים שיש להם מייל</option>
-        </select></label>
-        ${mlAud.who==='cat'?`<label class="fld"><span>קטגוריה</span><select id="ml_cat2"><option value="">— בחר —</option>${cats.map(c=>`<option ${c===mlAud.cat?'selected':''}>${esc(c)}</option>`).join('')}</select></label>`:''}
-        ${mlAud.who==='tier'?`<label class="fld"><span>דרגה</span><select id="ml_tier"><option value="">— בחר —</option>${tiers.map(c=>`<option ${c===mlAud.tier?'selected':''}>${esc(KVTIER[c]||c)}</option>`).join('')}</select></label>`:''}
+        <label class="fld"><span>קטגוריה</span><select id="ml_cat2"><option value="">— בחר קטגוריה —</option>${cats.map(c=>`<option>${esc(c)} (${DB.filter(d=>(d.category||'').trim()===c&&dHasMail(d)).length})</option>`).join('')}</select></label>
+        <label class="fld"><span>דרגת קוויטל</span><select id="ml_tier"><option value="">— בחר דרגה —</option>${tiers.map(c=>`<option value="${esc(c)}">${esc(KVTIER[c]||c)} (${DB.filter(d=>(d.tier||'').trim()===c&&dHasMail(d)).length})</option>`).join('')}</select></label>
       </div>
-      <div class="mlcnt"><b>${list.length}</b> תורמים ברשימה${noMail?` · <span class="hintxt">${noMail} תורמים בלי כתובת מייל אינם נכללים</span>`:''}${mlDrop.size?` · <button class="btn sm ghost" id="ml_undrop">החזר ${mlDrop.size} שהורדתי</button>`:''}</div>
-      <div class="mllist">${list.slice(0,300).map(d=>`<span class="mlchip">${esc(((d.last||'')+' '+(d.first||'')).trim())}<button class="mlx" data-id="${d.id}" title="אל תשלח אליו">✕</button></span>`).join('')||'<span class="hintxt">אין אף תורם ברשימה</span>'}${list.length>300?`<span class="hintxt">…ועוד ${list.length-300}</span>`:''}</div>
+      <div class="addrow"><button class="btn sm ghost" id="ml_addall" style="width:100%">➕ הוסף את כל התורמים שיש להם מייל (${DB.filter(dHasMail).length})</button></div>
+      <div class="mlcnt">נבחרו <b>${list.length}</b> תורמים${list.length?` · <button class="btn sm ghost" id="ml_clear">נקה הכל</button>`:''}</div>
+      <div class="mllist">${list.slice(0,300).map(d=>`<span class="mlchip">${esc(dName(d))}<button class="mlx" data-id="${d.id}" title="הסר מהרשימה">✕</button></span>`).join('')||'<span class="hintxt">הרשימה ריקה — חפש תורם למעלה, או הוסף קבוצה.</span>'}${list.length>300?`<span class="hintxt">…ועוד ${list.length-300}</span>`:''}</div>
+      ${noMail.length?`<details class="mlskip"><summary>${noMail.length} תורמים בלי כתובת מייל — לא ניתן לשלוח להם. הצג את הרשימה</summary>
+        <div class="hintxt" style="margin:4px 2px">לחיצה על שם פותחת את הכרטיס שלו כדי להוסיף כתובת.</div>
+        ${noMail.map(d=>`<div class="mlskr mlnomail" data-did="${d.id}">${esc(dName(d))}${d.phone?` <small>${esc(String(d.phone).split(/[;,\/]/)[0].trim())}</small>`:''}${d.category?` <small>${esc(d.category)}</small>`:''} ↗</div>`).join('')}</details>`:''}
     </div>
     <div class="sec">
+      <div class="rbtitle" style="text-align:right">2️⃣ המכתב</div>
       <label class="fld"><span>נושא</span><input id="ml_subj" value="${esc(mlSaved('subj',''))}" placeholder="למשל: לקראת ראש השנה — מכולל חצות"></label>
-      <label class="fld"><span>תוכן המכתב</span><textarea id="ml_body" rows="10" placeholder="שלום {{שם}},&#10;&#10;...">${esc(mlSaved('body',''))}</textarea></label>
-      <div class="hintxt">אפשר לכתוב <b>{{שם}}</b> בתוך הנושא או המכתב — יוחלף בשם התורם. שורה ריקה = פסקה חדשה.</div>
+      <label class="fld"><span>תוכן המכתב</span><textarea id="ml_body" rows="10" placeholder="לכבוד {{תואר}} {{שם מלא}},&#10;&#10;...">${esc(mlSaved('body',''))}</textarea></label>
+      <div class="mlvars">${MLVARS.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
+      <div class="hintxt">לחיצה על סימון מכניסה אותו לתוך המכתב (או לנושא, אם הסמן שם).
+        <b>{{תואר}}</b> נכתב לבד לכל אחד: <b>ר'</b> לגבר, <b>מרת</b> לאשה, <b>ה"ה</b> לזוג.
+        ולשון פנייה — שתי מילים עם קו ביניהן, הראשונה לגבר והשנייה לאשה:
+        <b>שתזכ{{ה|י}}</b> ← "שתזכה" לגבר, "שתזכי" לאשה. מילה שלישית (למשל <b>{{ה|י|ו}}</b>) היא לזוג.
+        שורה ריקה = פסקה חדשה.</div>
       <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
     </div>
     <div class="addrow">
@@ -7968,13 +7991,42 @@ function renderMailSend(){
     <div id="ml_out"></div>
     <div id="ml_hist"></div>`;
   document.getElementById('ml_back').onclick=()=>{clearInterval(MLPOLL);MLPOLL=null;mailSub='log';render();};
-  const w=document.getElementById('ml_who');
-  w.onchange=()=>{mlAud.who=w.value;renderMailSend();};
-  const c2=document.getElementById('ml_cat2'); if(c2)c2.onchange=()=>{mlAud.cat=c2.value;renderMailSend();};
+  // ---- בחירת הנמענים ----
+  const qi=document.getElementById('ml_q');
+  qi.oninput=()=>{mlQ=qi.value;renderMailSend();
+    const e=document.getElementById('ml_q'); if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}};
+  view.querySelectorAll('.dpr[data-add]').forEach(el=>el.onclick=()=>{
+    const id=+el.dataset.add, d=DB.find(x=>x.id===id);
+    if(!d)return;
+    // אין לו כתובת — במקום לסרב, פותחים את הכרטיס כדי להוסיף אותה
+    if(!dHasMail(d)){toast('אין לו כתובת מייל — נפתח הכרטיס להוספה');openDonor(d,'contact');return;}
+    if(mlPick.has(id))mlPick.delete(id); else mlPick.add(id);
+    renderMailSend();});
+  const c2=document.getElementById('ml_cat2');
+  if(c2)c2.onchange=()=>{const c=c2.value.replace(/ \(\d+\)$/,'');
+    if(c)mlAddAll(DB.filter(d=>(d.category||'').trim()===c)); c2.value='';};
   const tw=document.getElementById('ml_tier');
-  if(tw)tw.onchange=()=>{const lbl=tw.value;mlAud.tier=tiers.find(x=>(KVTIER[x]||x)===lbl)||lbl;renderMailSend();};
-  const ud=document.getElementById('ml_undrop'); if(ud)ud.onclick=()=>{mlDrop=new Set();renderMailSend();};
-  view.querySelectorAll('.mlx').forEach(b=>b.onclick=()=>{mlDrop.add(+b.dataset.id);renderMailSend();});
+  if(tw)tw.onchange=()=>{const v=tw.value;
+    if(v)mlAddAll(DB.filter(d=>(d.tier||'').trim()===v)); tw.value='';};
+  document.getElementById('ml_addall').onclick=()=>mlAddAll(DB.slice());
+  const cl=document.getElementById('ml_clear');
+  if(cl)cl.onclick=()=>{mlPick=new Set();renderMailSend();};
+  view.querySelectorAll('.mlx').forEach(b=>b.onclick=()=>{mlPick.delete(+b.dataset.id);renderMailSend();});
+  view.querySelectorAll('.mlnomail').forEach(el=>el.onclick=()=>{
+    const d=DB.find(x=>x.id==el.dataset.did); if(d)openDonor(d,'contact');});
+  // ---- סימונים שנכנסים למכתב ----
+  let mlLast=null;
+  ['ml_body','ml_subj'].forEach(id=>{const e=document.getElementById(id);
+    if(e)e.addEventListener('focus',()=>{mlLast=e;});});
+  view.querySelectorAll('.mlvar').forEach(b=>b.onclick=()=>{
+    const e=mlLast||document.getElementById('ml_body');
+    const s=e.selectionStart==null?e.value.length:e.selectionStart,
+          t2=e.selectionEnd==null?s:e.selectionEnd;
+    // רווח לפני, אם צמוד למילה — אחרת יוצא "ר'מאיר" במקום "ר' מאיר"
+    const v=((s>0&&!/[\s(\[{־-]$/.test(e.value.slice(0,s)))?' ':'')+b.dataset.v;
+    e.value=e.value.slice(0,s)+v+e.value.slice(t2);
+    e.focus(); e.setSelectionRange(s+v.length,s+v.length);
+    mlSave(id2key(e.id),e.value);});
   const gv=()=>({ids:mlAudience().map(d=>d.id),
                  subject:document.getElementById('ml_subj').value.trim(),
                  body:document.getElementById('ml_body').value,

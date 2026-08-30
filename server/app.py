@@ -221,6 +221,10 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS app_kv(k TEXT PRIMARY KEY, v TEXT);
     CREATE INDEX IF NOT EXISTS ix_mailq_batch ON mail_queue(batch, status);
     """)
+    # פרטי הפנייה לכל נמען — שם פרטי, משפחה, תואר ולשון זכר/נקבה
+    for _c in ('fname', 'lname', 'title', 'gender'):
+        try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s TEXT DEFAULT ''" % _c)
+        except Exception: pass
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT'),
                      ('idnum', 'TEXT'), ('id_ok', 'INTEGER'), ('seder', 'TEXT')]:
@@ -6190,6 +6194,14 @@ _MALE = set("""
 """.split())
 
 
+def _gender(first):
+    """'m' גבר · 'f' אשה · 'c' זוג. נגזר מאותה בדיקה של התואר, כדי ששניהם
+    לעולם לא יסתרו זה את זה. מאיר: "אם זה גבר אז משהו אחד ואם זה אשה אז
+    משהו אחר" — הדיוור משתמש בזה כדי לכתוב לכל אחד בלשון שלו."""
+    h = _honor(first)
+    return 'c' if h == 'ה"ה' else ('f' if h == 'מרת' else 'm')
+
+
 def _honor(first, last=''):
     """התואר שלפני השם בפתקי הקוויטל: ר' לגבר, מרת לאשה, ה"ה לזוג."""
     f = re.sub(r'[^\u0590-\u05ff\s\'"\u05f3\u05f4-]', ' ', str(first or '')).strip()
@@ -7972,6 +7984,8 @@ def mail_recipients(con, ids):
     rows = con.execute("SELECT id,last,first,email FROM donors WHERE id IN (%s)" % qs, want)
     for d in rows:
         nm = ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or (d['last'] or '')
+        who = {'first': (d['first'] or '').strip(), 'last': (d['last'] or '').strip(),
+               'title': _honor(d['first'], d['last']), 'gender': _gender(d['first'])}
         addrs = emails_of(d['email'])
         if not addrs:
             raw = str(d['email'] or '').strip()
@@ -7991,7 +8005,9 @@ def mail_recipients(con, ids):
                              'why': 'הכתובת ' + e + ' כבר נשלחת לתורם אחר — לא נשלח פעמיים'})
                 continue
             seen.add(e); got += 1
-            out.append({'donor_id': d['id'], 'name': nm, 'email': e})
+            r = {'donor_id': d['id'], 'name': nm, 'email': e}
+            r.update(who)
+            out.append(r)
     return out, skip
 
 
@@ -8039,7 +8055,10 @@ def mail_worker(batch_id):
                 con.commit(); st['skipped'] += 1; st['left'] = len(rows) - i - 1
                 continue
             st['now'] = r['name'] or em
-            msg = bulkmail.build(em, r['name'] or '', b['subject'] or '', b['body'] or '',
+            who = {'name': r['name'] or '', 'first': r['fname'] or '',
+                   'last': r['lname'] or '', 'title': r['title'] or '',
+                   'gender': r['gender'] or 'm'}
+            msg = bulkmail.build(em, who, b['subject'] or '', b['body'] or '',
                                  mail_unsub_url(b['base'] or '', secret, em), b['sig'] or '')
             ok, err, dead = sender.send(msg)
             if ok:
@@ -8049,7 +8068,7 @@ def mail_worker(batch_id):
                 st['sent'] += 1
                 try:
                     log_sent_mail(r['donor_id'], em, b['subject'] or '',
-                                  bulkmail.personalize(b['body'] or '', r['name'] or ''),
+                                  bulkmail.personalize(b['body'] or '', who),
                                   msg['Message-ID'])
                 except Exception:
                     pass
@@ -10016,10 +10035,10 @@ class H(BaseHTTPRequestHandler):
             sample, subj = '', ''
             if first:
                 sample = bulkmail.plain_text(
-                    b.get('body') or '', first['name'],
+                    b.get('body') or '', first,
                     mail_unsub_url(b.get('base') or '', secret, first['email']),
                     b.get('sig') or '')
-                subj = bulkmail.personalize(b.get('subject') or '', first['name'])
+                subj = bulkmail.personalize(b.get('subject') or '', first)
             return self._send(200, {'ok': True, 'count': len(to), 'skipped': skip,
                                     'subject': subj,
                                     'to': [x['email'] for x in to[:200]],
@@ -10051,8 +10070,10 @@ class H(BaseHTTPRequestHandler):
                                now_iso(), len(to)))
             bid = cur.lastrowid
             for x in to:
-                con.execute("INSERT INTO mail_queue(batch,donor_id,email,name) VALUES(?,?,?,?)",
-                            (bid, x['donor_id'], x['email'], x['name']))
+                con.execute("INSERT INTO mail_queue(batch,donor_id,email,name,fname,lname,"
+                            "title,gender) VALUES(?,?,?,?,?,?,?,?)",
+                            (bid, x['donor_id'], x['email'], x['name'], x.get('first', ''),
+                             x.get('last', ''), x.get('title', ''), x.get('gender', 'm')))
             con.commit(); con.close()
             st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
                        'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,
