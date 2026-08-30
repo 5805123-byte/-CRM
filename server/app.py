@@ -10238,6 +10238,13 @@ class H(BaseHTTPRequestHandler):
             kv_set(con, 'mail_pass', pw)
             kv_set(con, 'mail_from', (b.get('from') or user).strip())
             kv_set(con, 'mail_from_name', (b.get('name') or 'כולל חצות').strip())
+            # מאיר: "ואם אני רוצה שיחזירו אימייל לג'ימייל?" — התשובה של
+            # התורם הולכת לכתובת הזאת, לא לכתובת שממנה נשלח.
+            rep = (b.get('reply') or '').strip()
+            if rep:
+                kv_set(con, 'mail_reply', rep)
+            else:
+                con.execute("DELETE FROM app_kv WHERE k='mail_reply'")
             con.commit(); con.close()
             load_mail_cfg()
             return self._send(200, {'ok': True, 'host': h2, 'port': p2, 'msg': msg2})

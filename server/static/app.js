@@ -7971,6 +7971,9 @@ function mlCfgHTML(){
       <input id="mc_pass" type="password" value="" placeholder="${c&&c.has_pass?'••••••••  (שמורה)':'הסיסמה שאיתה נכנסים לתיבה'}" dir="ltr" autocomplete="new-password"></label>
     <label class="fld"><span>שם השולח כפי שהתורם יראה</span>
       <input id="mc_name" value="${esc(nm)}" placeholder="כולל חצות"></label>
+    <label class="fld"><span>לאן יגיעו התשובות של התורמים</span>
+      <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — התשובות יגיעו לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
+    <div class="hintxt">אם תכתוב כאן <b>chatzot18@gmail.com</b>, המייל ייצא מהכתובת של הכולל, אבל כשהתורם ילחץ "השב" התשובה תגיע לג׳ימייל שלך.</div>
     <details class="mladv"><summary>הגדרות מתקדמות — רק אם הבדיקה נכשלה</summary>
       <div class="two">
         <label class="fld"><span>שרת הדואר (SMTP)</span><input id="mc_host" value="${esc((c&&c.saved&&c.saved.mail_host)||'')}" placeholder="נמצא לבד" dir="ltr"></label>
@@ -8000,6 +8003,7 @@ function wireMlCfg(){
     const b={user:document.getElementById('mc_user').value.trim(),
              pass:document.getElementById('mc_pass').value,
              name:document.getElementById('mc_name').value.trim(),
+             reply:document.getElementById('mc_reply').value.trim(),
              host:document.getElementById('mc_host').value.trim(),
              port:document.getElementById('mc_port').value.trim()};
     if(!b.user.includes('@')){msg.innerHTML='<div class="mlwarn">חסרה כתובת מייל תקינה</div>';return;}
