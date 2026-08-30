@@ -7895,7 +7895,179 @@ async function runMailCheck(btn){
 /* ---------- קמפיינים ---------- */
 /* ---------- 📧 כל המיילים שנמשכו — במקום אחד ---------- */
 let mailFlt='';
+/* ---------- דיוור לתורמים ----------
+   מאיר: "אני רוצה שיהיה לי במערכת תוכנה לשליחת מיילים בלי שיועברו לספאם,
+   ובלי עותק מוסתר."
+   אין כאן ולא יהיה עותק מוסתר: כל תורם מקבל הודעה נפרדת משלו, בשמו,
+   ובשורת הנמען כתובה רק הכתובת שלו. אף תורם אינו רואה את הכתובות של
+   האחרים. השליחה עצמה איטית ומדודה — כך היא נראית אנושית ולא כדיוור
+   המוני, וזה חלק מרכזי מלהישאר מחוץ לספאם. */
+let mailSub='log', MLSETUP=null, MLPOLL=null;
+const mlAud={who:'cat', cat:'', tier:''};
+let mlDrop=new Set();          // תורמים שמאיר הוריד ידנית מהרשימה הזאת
+function mlAudience(){
+  let list=DB.filter(d=>(d.email||'').includes('@'));
+  if(mlAud.who==='cat'&&mlAud.cat) list=list.filter(d=>(d.category||'').trim()===mlAud.cat);
+  if(mlAud.who==='tier'&&mlAud.tier) list=list.filter(d=>(d.tier||'').trim()===mlAud.tier);
+  return list.filter(d=>!mlDrop.has(d.id))
+             .sort((a,b)=>((a.last||'')+' '+(a.first||'')).localeCompare(((b.last||'')+' '+(b.first||'')),'he'));
+}
+function mlSaved(k,d){ try{ return localStorage.getItem('kc_ml_'+k)||d; }catch(e){ return d; } }
+function mlSave(k,v){ try{ localStorage.setItem('kc_ml_'+k,v); }catch(e){} }
+async function mlLoadSetup(){
+  try{ MLSETUP=await api('GET','/api/mail/setup'); }catch(e){ MLSETUP={ok:false,msg:'אין חיבור לשרת'}; }
+}
+function mlSetupHTML(){
+  const s=MLSETUP;
+  if(!s) return '<div class="hintxt">בודק את החיבור לדואר…</div>';
+  const warn=[];
+  if(!s.ok) warn.push('❌ '+esc(s.msg||'הדואר לא מוגדר'));
+  else{
+    warn.push('✅ מחובר · שולח מ־<b>'+esc(s.from||'')+'</b>');
+    if(s.free_domain) warn.push('⚠️ הכתובת היא ג׳ימייל פרטי. דיוור לעשרות תורמים ממנה מסונן לספאם — '
+      +'עדיף לשלוח מכתובת של הדומיין של הכולל, עם SPF/DKIM/DMARC.');
+    warn.push('נשלחו היום '+(s.today||0)+' · נשארו '+(s.left||0)+' עד התקרה היומית ('+(s.cap||0)+')');
+    if(s.optouts) warn.push('🚫 '+s.optouts+' כתובות ביקשו להסיר את עצמן — הן מדולגות אוטומטית');
+  }
+  return '<div class="mlsetup'+(s.ok?'':' bad')+'">'+warn.join('<br>')+'</div>';
+}
+function renderMailSend(){
+  const cats=[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
+  const tiers=[...new Set(DB.map(d=>(d.tier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
+  const list=mlAudience();
+  const noMail=DB.filter(d=>!(d.email||'').includes('@')).length;
+  chips.innerHTML='';
+  view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_back">← חזרה ליומן המיילים</button></div>
+    <div class="rbtitle">✉️ שליחת מייל לתורמים</div>
+    ${mlSetupHTML()}
+    <div class="hintxt mlnobcc">כל תורם מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף תורם אינו רואה את הכתובות של האחרים. לכל מייל מצורף קישור הסרה, כפי שג׳ימייל דורש מדיוור.</div>
+    <div class="sec">
+      <div class="two">
+        <label class="fld"><span>למי שולחים</span><select id="ml_who">
+          <option value="cat" ${mlAud.who==='cat'?'selected':''}>לפי קטגוריה</option>
+          <option value="tier" ${mlAud.who==='tier'?'selected':''}>לפי דרגת קוויטל</option>
+          <option value="all" ${mlAud.who==='all'?'selected':''}>כל התורמים שיש להם מייל</option>
+        </select></label>
+        ${mlAud.who==='cat'?`<label class="fld"><span>קטגוריה</span><select id="ml_cat2"><option value="">— בחר —</option>${cats.map(c=>`<option ${c===mlAud.cat?'selected':''}>${esc(c)}</option>`).join('')}</select></label>`:''}
+        ${mlAud.who==='tier'?`<label class="fld"><span>דרגה</span><select id="ml_tier"><option value="">— בחר —</option>${tiers.map(c=>`<option ${c===mlAud.tier?'selected':''}>${esc(KVTIER[c]||c)}</option>`).join('')}</select></label>`:''}
+      </div>
+      <div class="mlcnt"><b>${list.length}</b> תורמים ברשימה${noMail?` · <span class="hintxt">${noMail} תורמים בלי כתובת מייל אינם נכללים</span>`:''}${mlDrop.size?` · <button class="btn sm ghost" id="ml_undrop">החזר ${mlDrop.size} שהורדתי</button>`:''}</div>
+      <div class="mllist">${list.slice(0,300).map(d=>`<span class="mlchip">${esc(((d.last||'')+' '+(d.first||'')).trim())}<button class="mlx" data-id="${d.id}" title="אל תשלח אליו">✕</button></span>`).join('')||'<span class="hintxt">אין אף תורם ברשימה</span>'}${list.length>300?`<span class="hintxt">…ועוד ${list.length-300}</span>`:''}</div>
+    </div>
+    <div class="sec">
+      <label class="fld"><span>נושא</span><input id="ml_subj" value="${esc(mlSaved('subj',''))}" placeholder="למשל: לקראת ראש השנה — מכולל חצות"></label>
+      <label class="fld"><span>תוכן המכתב</span><textarea id="ml_body" rows="10" placeholder="שלום {{שם}},&#10;&#10;...">${esc(mlSaved('body',''))}</textarea></label>
+      <div class="hintxt">אפשר לכתוב <b>{{שם}}</b> בתוך הנושא או המכתב — יוחלף בשם התורם. שורה ריקה = פסקה חדשה.</div>
+      <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
+    </div>
+    <div class="addrow">
+      <button class="btn sm ghost" id="ml_prev" style="flex:1">👁️ בדיקה — מה יקבל התורם הראשון</button>
+      <button class="btn" id="ml_go" style="flex:1">📤 שלח לכולם</button>
+    </div>
+    <div id="ml_prog"></div>
+    <div id="ml_out"></div>
+    <div id="ml_hist"></div>`;
+  document.getElementById('ml_back').onclick=()=>{clearInterval(MLPOLL);MLPOLL=null;mailSub='log';render();};
+  const w=document.getElementById('ml_who');
+  w.onchange=()=>{mlAud.who=w.value;renderMailSend();};
+  const c2=document.getElementById('ml_cat2'); if(c2)c2.onchange=()=>{mlAud.cat=c2.value;renderMailSend();};
+  const tw=document.getElementById('ml_tier');
+  if(tw)tw.onchange=()=>{const lbl=tw.value;mlAud.tier=tiers.find(x=>(KVTIER[x]||x)===lbl)||lbl;renderMailSend();};
+  const ud=document.getElementById('ml_undrop'); if(ud)ud.onclick=()=>{mlDrop=new Set();renderMailSend();};
+  view.querySelectorAll('.mlx').forEach(b=>b.onclick=()=>{mlDrop.add(+b.dataset.id);renderMailSend();});
+  const gv=()=>({ids:mlAudience().map(d=>d.id),
+                 subject:document.getElementById('ml_subj').value.trim(),
+                 body:document.getElementById('ml_body').value,
+                 sig:document.getElementById('ml_sig').value.trim(),
+                 base:location.origin});
+  ['subj','body','sig'].forEach(k=>{const e=document.getElementById('ml_'+k);
+    if(e)e.oninput=()=>mlSave(k,e.value);});
+  document.getElementById('ml_prev').onclick=async()=>{
+    const b=gv(); const o=document.getElementById('ml_out');
+    if(!b.ids.length){toast('אין נמענים');return;}
+    o.innerHTML='<div class="hintxt">בודק…</div>';
+    const r=await api('POST','/api/mail/preview',b);
+    o.innerHTML=`<div class="sec mlprev"><div class="rbtitle">כך זה ייראה — ${r.count} נמענים</div>
+      ${r.first?`<div class="hintxt">אל: <b>${esc(r.first.name)}</b> &lt;${esc(r.first.email)}&gt; · בלבד. אין עותק מוסתר.</div>
+      <div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div>`:''}
+      <pre class="mlsample">${esc(r.sample||'')}</pre>
+      ${(r.skipped||[]).length?`<details class="mlskip"><summary>${r.skipped.length} תורמים לא יקבלו — ולמה</summary>
+        ${r.skipped.map(s=>`<div class="mlskr">${esc(s.name)} — ${esc(s.why)}</div>`).join('')}</details>`:''}
+      </div>`;
+  };
+  document.getElementById('ml_go').onclick=async()=>{
+    const b=gv();
+    if(!b.subject){toast('חסר נושא');return;}
+    if(!b.body.trim()){toast('חסר תוכן');return;}
+    if(!b.ids.length){toast('אין נמענים');return;}
+    if(!(MLSETUP&&MLSETUP.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
+    if(!await uiConfirm('לשלוח מייל אישי נפרד ל־'+b.ids.length+' תורמים?\n\nהשליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
+    const r=await api('POST','/api/mail/send',b);
+    if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    mlWatch();
+  };
+  mlHistory();
+  if(MLSETUP===null) mlLoadSetup().then(()=>{ if(tab==='mails'&&mailSub==='send') renderMailSend(); });
+  mlWatch(true);
+}
+// מעקב חי אחרי המשלוח
+async function mlWatch(quiet){
+  clearInterval(MLPOLL); MLPOLL=null;
+  let alive=false;
+  const paint=s=>{
+    const o=document.getElementById('ml_prog'); if(!o)return;
+    // בכניסה למסך לא מציגים משלוח ישן שכבר הסתיים — רק משלוח שרץ עכשיו
+    if(!s||!s.total||(quiet&&!s.running)){ o.innerHTML=''; return; }
+    const done=s.sent+s.failed+s.skipped, pct=s.total?Math.round(done*100/s.total):0;
+    o.innerHTML=`<div class="sec mlprog">
+      <div class="rbtitle">${s.running?'📤 שולח…':'✔️ המשלוח הסתיים'}</div>
+      <div class="mlbar"><i style="width:${pct}%"></i></div>
+      <div class="mlnums">נשלחו <b>${s.sent}</b> מתוך ${s.total}${s.failed?` · נכשלו ${s.failed}`:''}${s.skipped?` · דולגו ${s.skipped}`:''}</div>
+      ${s.running&&s.now?`<div class="hintxt">כרגע: ${esc(s.now)}</div>`:''}
+      ${s.error?`<div class="hintxt bad">${esc(s.error)}</div>`:''}
+      ${s.running?'<div class="addrow"><button class="btn sm ghost" id="ml_stop">⏸️ עצור</button></div>':''}</div>`;
+    const st=document.getElementById('ml_stop');
+    if(st)st.onclick=async()=>{await api('POST','/api/mail/stop',{});toast('עוצר…');};
+  };
+  const tick=async()=>{
+    let s=null; try{ s=await api('GET','/api/mail/send/status'); }catch(e){}
+    const was=alive; alive=!!(s&&s.running);
+    quiet=quiet&&!alive;              // ברגע שמשלוח רץ — מציגים אותו
+    paint(s);
+    if(!alive){
+      clearInterval(MLPOLL); MLPOLL=null;
+      if(was){ mlHistory(); MLSETUP=null; mlLoadSetup(); }   // הסתיים עכשיו
+    }
+  };
+  await tick();
+  if(alive) MLPOLL=setInterval(tick,2000);
+}
+async function mlHistory(){
+  const el=document.getElementById('ml_hist'); if(!el)return;
+  let r=null; try{ r=await api('GET','/api/mail/batches'); }catch(e){ return; }
+  const rows=(r&&r.rows)||[];
+  if(!rows.length){el.innerHTML='';return;}
+  const heb={queued:'ממתין',sending:'שולח',done:'הסתיים',paused:'נעצר באמצע'};
+  el.innerHTML=`<div class="sec"><div class="rbtitle">משלוחים קודמים</div>
+    ${rows.map(b=>`<div class="mlbrow"><div><b>${esc(b.subject||b.name||'')}</b>
+      <span class="hintxt">${esc(b.created||'')} · ${esc(heb[b.status]||b.status)}</span></div>
+      <div class="hintxt">נשלחו ${b.counts.sent||0} מתוך ${b.total}${b.counts.failed?` · נכשלו ${b.counts.failed}`:''}${b.counts.dead?` · כתובות פסולות ${b.counts.dead}`:''}</div>
+      ${((b.counts.failed||0)+(b.counts.dead||0))?`<button class="btn sm ghost mlfail" data-id="${b.id}">מי לא קיבל, ולמה</button>`:''}
+      ${(b.status!=='done'&&(b.counts.queued||0))?`<button class="btn sm ghost mlres" data-id="${b.id}">▶️ המשך את המשלוח (${b.counts.queued} נותרו)</button>`:''}
+      <div class="mlfx" data-id="${b.id}"></div></div>`).join('')}</div>`;
+  el.querySelectorAll('.mlres').forEach(b=>b.onclick=async()=>{
+    const r2=await api('POST','/api/mail/batch/'+b.dataset.id+'/resume',{});
+    if(r2&&r2.ok){toast('ממשיך…');mlWatch();}else toast('לא ניתן כרגע');});
+  el.querySelectorAll('.mlfail').forEach(b=>b.onclick=async()=>{
+    const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
+    if(box.innerHTML){box.innerHTML='';return;}
+    const r2=await api('GET','/api/mail/batch/'+b.dataset.id);
+    const bad=((r2&&r2.rows)||[]).filter(x=>x.status!=='sent');
+    box.innerHTML=bad.map(x=>`<div class="mlskr">${esc(x.name||'')} &lt;${esc(x.email)}&gt; — ${esc(x.error||x.status)}</div>`).join('')
+      ||'<div class="hintxt">הכל נשלח</div>';});
+}
 function renderMails(){
+  if(mailSub==='send') return renderMailSend();
   const all=[];
   DB.forEach(d=>(d.contacts||[]).forEach(c=>{ if(c.channel==='אימייל') all.push({c,d}); }));
   all.sort((a,b)=>String(b.c.date||'').localeCompare(String(a.c.date||''))||b.c.id-a.c.id);
@@ -7913,6 +8085,7 @@ function renderMails(){
   if(mailFlt==='kv')list=list.filter(x=>(x.c.summary||'').includes('🕯️'));
   list=list.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.c.summary||'')+' '+(x.c.body||'')+' '+(x.c.body_he||'')));
   view.innerHTML=`<div class="rbtitle">📧 כל המיילים עם התורמים — נכנסים וששלחנו, לפי תאריך</div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn" id="ml_compose" style="width:100%">✉️ שלח מייל לתורמים — הודעה אישית לכל אחד</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_sync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><select id="ml_cat" style="flex:1">${['— כל התורמים —',...[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'))].map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <a class="btn sm ghost" id="ml_csv" href="#" style="flex:1;text-align:center;text-decoration:none">📤 ייצוא רשימת תפוצה (CSV)</a></div>
@@ -7929,6 +8102,8 @@ function renderMails(){
     </div>`).join('')||'<div class="empty">אין מיילים. לחץ "משוך מיילים".</div>'}</div>`;
   view.querySelectorAll('.mlwho').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'contact'));
   view.querySelectorAll('.mailrow .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);await load();render();toast('נמחק');});
+  const mcp=document.getElementById('ml_compose');
+  if(mcp)mcp.onclick=()=>{mailSub='send';render();};
   const ms=document.getElementById('ml_sync'); if(ms)ms.onclick=()=>runMailSync(ms);
   const mc=document.getElementById('ml_cat'),mx=document.getElementById('ml_csv');
   if(mx){const setu=()=>{const c=mc.selectedIndex>0?mc.value:'';

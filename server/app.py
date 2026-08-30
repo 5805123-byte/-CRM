@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """שרת CRM כולל חצות — מגיש את הממשק + API לשמירה (SQLite)."""
-import sqlite3, json, os, re, base64, datetime, csv, io, gzip, time, hashlib, threading, urllib.parse
+import sqlite3, json, os, re, base64, datetime, csv, io, gzip, time, hashlib, hmac, threading, urllib.parse
 from urllib.parse import quote
 
 def today_iso():
@@ -208,6 +208,18 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS intake(id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
         from_name TEXT, from_email TEXT, subject TEXT, received TEXT, body TEXT, names TEXT,
         donor_id INTEGER, status TEXT DEFAULT 'new', created TEXT);
+    /* דיוור לתורמים — מאיר: "שליחת מיילים בלי שיועברו לספאם, ובלי עותק
+       מוסתר". כל נמען הוא שורה משלו, ולכן נשלחת אליו הודעה נפרדת. */
+    CREATE TABLE IF NOT EXISTS mail_batch(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT,
+        subject TEXT, body TEXT, sig TEXT, base TEXT, created TEXT, total INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'queued');
+    CREATE TABLE IF NOT EXISTS mail_queue(id INTEGER PRIMARY KEY AUTOINCREMENT, batch INTEGER,
+        donor_id INTEGER, email TEXT, name TEXT, status TEXT DEFAULT 'queued',
+        tries INTEGER DEFAULT 0, error TEXT, sent_at TEXT);
+    CREATE TABLE IF NOT EXISTS mail_optout(email TEXT PRIMARY KEY, donor_id INTEGER,
+        reason TEXT, at TEXT);
+    CREATE TABLE IF NOT EXISTS app_kv(k TEXT PRIMARY KEY, v TEXT);
+    CREATE INDEX IF NOT EXISTS ix_mailq_batch ON mail_queue(batch, status);
     """)
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT'),
@@ -7899,6 +7911,229 @@ def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):
         pass
 
 
+# ---------------------------------------------------------------------------
+# דיוור לתורמים
+# מאיר: "אני רוצה שיהיה לי במערכת תוכנה לשליחת מיילים בלי שיועברו לספאם,
+# ובלי עותק מוסתר." שני הדברים הם אותו דבר: מייל אחד למאה אנשים ב"עותק
+# מוסתר" הוא בדיוק מה שמסנני הספאם מחפשים. לכן לכל תורם נבנית ונשלחת
+# הודעה נפרדת, שבה בשורת הנמען כתובה רק הכתובת שלו. הפרטים ב-bulkmail.py.
+# ---------------------------------------------------------------------------
+
+def kv_get(con, k, d=''):
+    try:
+        r = con.execute("SELECT v FROM app_kv WHERE k=?", (k,)).fetchone()
+        return r['v'] if r else d
+    except Exception:
+        return d
+
+
+def kv_set(con, k, v):
+    con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) "
+                "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
+
+
+def mail_secret(con):
+    """סוד קבוע לקישורי ההסרה — נוצר פעם אחת ונשמר במסד."""
+    s = kv_get(con, 'mail_secret')
+    if not s:
+        s = os.urandom(24).hex()
+        kv_set(con, 'mail_secret', s)
+        con.commit()
+    return s
+
+
+def mail_unsub_url(base, secret, email):
+    if not base:
+        return ''
+    import bulkmail
+    return '%s/unsub?e=%s&t=%s' % (base.rstrip('/'),
+                                   urllib.parse.quote(email),
+                                   bulkmail.unsub_token(email, secret))
+
+
+def mail_optouts(con):
+    try:
+        return {(r['email'] or '').strip().lower()
+                for r in con.execute("SELECT email FROM mail_optout")}
+    except Exception:
+        return set()
+
+
+def mail_recipients(con, ids):
+    """מרחיב רשימת תורמים לרשימת נמענים. שורה לכל כתובת, בלי כפילויות —
+    ומחזיר גם את מי שנפסל ולמה, כדי שמאיר יראה את זה לפני השליחה."""
+    import bulkmail
+    out, skip, seen = [], [], set()
+    off = mail_optouts(con)
+    want = [int(x) for x in (ids or []) if str(x).strip().lstrip('-').isdigit()]
+    if not want:
+        return out, skip
+    qs = ','.join('?' * len(want))
+    rows = con.execute("SELECT id,last,first,email FROM donors WHERE id IN (%s)" % qs, want)
+    for d in rows:
+        nm = ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or (d['last'] or '')
+        addrs = emails_of(d['email'])
+        if not addrs:
+            raw = str(d['email'] or '').strip()
+            skip.append({'donor_id': d['id'], 'name': nm,
+                         'why': ('הכתובת אינה תקינה: ' + raw) if raw else 'אין כתובת מייל'})
+            continue
+        got = 0
+        for e in addrs:
+            if not bulkmail.valid(e):
+                skip.append({'donor_id': d['id'], 'name': nm, 'why': 'כתובת לא תקינה: ' + e})
+                continue
+            if e in off:
+                skip.append({'donor_id': d['id'], 'name': nm, 'why': 'ביקש להסיר את עצמו'})
+                continue
+            if e in seen:                     # אותה כתובת אצל שני תורמים
+                skip.append({'donor_id': d['id'], 'name': nm,
+                             'why': 'הכתובת ' + e + ' כבר נשלחת לתורם אחר — לא נשלח פעמיים'})
+                continue
+            seen.add(e); got += 1
+            out.append({'donor_id': d['id'], 'name': nm, 'email': e})
+    return out, skip
+
+
+def mail_sent_today(con):
+    try:
+        return con.execute("SELECT COUNT(*) c FROM mail_queue WHERE status='sent' "
+                           "AND substr(COALESCE(sent_at,''),1,10)=?", (today_iso(),)).fetchone()['c']
+    except Exception:
+        return 0
+
+
+def mail_worker(batch_id):
+    """שולח את התור, אחד־אחד, בקצב אנושי. כל הודעה נשלחת לנמען אחד בלבד."""
+    import bulkmail
+    st = bulkmail.STATUS
+    con = db()
+    try:
+        b = con.execute("SELECT * FROM mail_batch WHERE id=?", (batch_id,)).fetchone()
+        if not b:
+            st.update({'running': False, 'done': True, 'error': 'המשלוח לא נמצא'})
+            return
+        secret = mail_secret(con)
+        c = bulkmail.cfg()
+        rows = list(con.execute("SELECT * FROM mail_queue WHERE batch=? AND status='queued' "
+                                "ORDER BY id", (batch_id,)))
+        st.update({'running': True, 'done': False, 'batch': batch_id, 'total': len(rows),
+                   'sent': 0, 'failed': 0, 'skipped': 0, 'left': len(rows), 'error': '',
+                   'now': '', 'stop': False})
+        con.execute("UPDATE mail_batch SET status='sending' WHERE id=?", (batch_id,))
+        con.commit()
+        sender = bulkmail.Sender()
+        off = mail_optouts(con)
+        for i, r in enumerate(rows):
+            if st.get('stop'):
+                st['error'] = 'הופסק על ידך'
+                break
+            if mail_sent_today(con) >= c['cap']:
+                st['error'] = ('נעצר — הגענו לתקרה היומית (%d הודעות). '
+                               'השאר יישלחו כשתפעיל שוב מחר.' % c['cap'])
+                break
+            em = (r['email'] or '').strip().lower()
+            if em in off:                      # ביקש להסיר בזמן שהמשלוח רץ
+                con.execute("UPDATE mail_queue SET status='skipped', error=? WHERE id=?",
+                            ('ביקש להסיר את עצמו', r['id']))
+                con.commit(); st['skipped'] += 1; st['left'] = len(rows) - i - 1
+                continue
+            st['now'] = r['name'] or em
+            msg = bulkmail.build(em, r['name'] or '', b['subject'] or '', b['body'] or '',
+                                 mail_unsub_url(b['base'] or '', secret, em), b['sig'] or '')
+            ok, err, dead = sender.send(msg)
+            if ok:
+                con.execute("UPDATE mail_queue SET status='sent', sent_at=?, error='' WHERE id=?",
+                            (now_iso(), r['id']))
+                con.commit()          # לשחרר את המסד — התיוק פותח חיבור משלו
+                st['sent'] += 1
+                try:
+                    log_sent_mail(r['donor_id'], em, b['subject'] or '',
+                                  bulkmail.personalize(b['body'] or '', r['name'] or ''),
+                                  msg['Message-ID'])
+                except Exception:
+                    pass
+            else:
+                con.execute("UPDATE mail_queue SET status=?, tries=tries+1, error=? WHERE id=?",
+                            ('dead' if dead else 'failed', err[:300], r['id']))
+                st['failed'] += 1
+                if dead:                       # כתובת פסולה — לא מנסים אותה שוב
+                    con.execute("INSERT OR IGNORE INTO mail_optout(email,donor_id,reason,at) "
+                                "VALUES(?,?,?,?)", (em, r['donor_id'], 'הכתובת נדחתה', now_iso()))
+                    off.add(em)
+                elif 'התחברות' in err:
+                    st['error'] = err
+                    con.commit()
+                    break
+            con.commit()
+            st['left'] = len(rows) - i - 1
+            if i + 1 < len(rows) and c['gap']:
+                for _ in range(int(c['gap'] * 4)):
+                    if st.get('stop'):
+                        break
+                    time.sleep(0.25)
+        sender.close()
+        left = con.execute("SELECT COUNT(*) c FROM mail_queue WHERE batch=? AND status='queued'",
+                           (batch_id,)).fetchone()['c']
+        con.execute("UPDATE mail_batch SET status=? WHERE id=?",
+                    ('done' if not left else 'paused', batch_id))
+        con.commit()
+    except Exception as e:
+        st['error'] = str(e)[:200]
+    finally:
+        st['running'] = False
+        st['done'] = True
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def do_unsub(path):
+    """מוציא כתובת מרשימת התפוצה לפי הקישור שבמייל. המפתח נבדק, כדי
+    שאיש לא יוכל להסיר תורם אחר."""
+    import bulkmail
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+    em = (qs.get('e', [''])[0] or '').strip().lower()
+    tok = (qs.get('t', [''])[0] or '').strip()
+    if not em or not tok:
+        return False
+    con = db()
+    try:
+        if not hmac.compare_digest(bulkmail.unsub_token(em, mail_secret(con)), tok):
+            return False
+        did = None
+        for d in con.execute("SELECT id,email FROM donors WHERE COALESCE(email,'')<>''"):
+            if em in emails_of(d['email']):
+                did = d['id']; break
+        cur = con.execute("INSERT OR IGNORE INTO mail_optout(email,donor_id,reason,at) VALUES(?,?,?,?)",
+                          (em, did, 'ביקש להסיר את עצמו מהמייל', now_iso()))
+        if did and cur.rowcount:          # רק בפעם הראשונה — לא שורה על כל לחיצה
+            try:
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,direction,at) "
+                            "VALUES(?,?,?,?,'','out',?)",
+                            (did, today_iso(), 'אימייל',
+                             '🚫 ביקש להסיר את עצמו מרשימת התפוצה (%s)' % em, now_iso()))
+            except Exception:
+                pass
+        con.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        con.close()
+
+
+UNSUB_HTML = """<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>כולל חצות</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#f4f1e8;font-family:system-ui,Arial,sans-serif;color:#2A2740}
+.box{max-width:440px;padding:32px 28px;background:#fff;border-radius:16px;text-align:center;
+box-shadow:0 8px 30px rgba(0,0,0,.09)}h1{font-size:1.25rem;margin:0 0 10px}
+p{margin:0;line-height:1.7;color:#555}</style></head><body><div class="box">
+<h1>%s</h1><p>%s</p></div></body></html>"""
+
+
 def build_ics():
     """פיד יומן לכל התזכורות הפתוחות — לחיבור אוטומטי ליומן Google."""
     con = db(); c = con.cursor()
@@ -8177,6 +8412,14 @@ class H(BaseHTTPRequestHandler):
             self.send_header('Content-Disposition', 'inline; filename="kvittel.%s"' % fmt)
             self.end_headers(); self.wfile.write(data)
             return
+        # הסרה מרשימת התפוצה — הקישור שבתחתית כל מייל
+        if self.path.split('?')[0] == '/unsub':
+            ok = do_unsub(self.path)
+            page = UNSUB_HTML % (('הוסרת מרשימת התפוצה', 'לא נשלח אליך יותר דואר מכולל חצות. '
+                                  'אם זו הייתה טעות — השב למייל ונחזיר אותך.')
+                                 if ok else
+                                 ('הקישור אינו תקף', 'ייתכן שהוא נחתך. השב למייל ונטפל בזה.'))
+            return self._send(200, page.encode('utf-8'), 'text/html')
         if self.path.split('?')[0] == '/iz-slips':
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/parnes-cert':
@@ -9254,6 +9497,47 @@ class H(BaseHTTPRequestHandler):
                 out.append(x)
             con.close()
             return self._send(200, {'configured': _intake_configured(), 'items': out})
+        # ---- דיוור לתורמים ----
+        if self.path.split('?')[0] == '/api/mail/send/status':
+            try:
+                import bulkmail
+                return self._send(200, dict(bulkmail.STATUS))
+            except Exception as e:
+                return self._send(200, {'running': False, 'done': True, 'error': str(e)})
+        if self.path.split('?')[0] == '/api/mail/setup':
+            try:
+                import bulkmail
+                ok, msg = bulkmail.check()
+                c = bulkmail.cfg()
+                con = db(); n = mail_sent_today(con)
+                off = con.execute("SELECT COUNT(*) c FROM mail_optout").fetchone()['c']
+                con.close()
+                return self._send(200, {'ok': ok, 'msg': msg, 'from': c['frm'],
+                                        'name': c['name'], 'cap': c['cap'], 'gap': c['gap'],
+                                        'today': n, 'left': max(0, c['cap'] - n),
+                                        'free_domain': bulkmail.free_domain(), 'optouts': off})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'msg': str(e)[:200]})
+        if self.path.split('?')[0] == '/api/mail/batches':
+            con = db()
+            rows = []
+            for b in con.execute("SELECT * FROM mail_batch ORDER BY id DESC LIMIT 30"):
+                st = {r['status']: r['c'] for r in con.execute(
+                    "SELECT status, COUNT(*) c FROM mail_queue WHERE batch=? GROUP BY status",
+                    (b['id'],))}
+                rows.append({'id': b['id'], 'name': b['name'], 'subject': b['subject'],
+                             'created': b['created'], 'total': b['total'],
+                             'status': b['status'], 'counts': st})
+            con.close()
+            return self._send(200, {'rows': rows})
+        m = re.match(r'/api/mail/batch/(\d+)$', self.path.split('?')[0])
+        if m:
+            con = db()
+            rows = [dict(r) for r in con.execute(
+                "SELECT donor_id,email,name,status,error,sent_at FROM mail_queue "
+                "WHERE batch=? ORDER BY id", (int(m.group(1)),))]
+            con.close()
+            return self._send(200, {'rows': rows})
         if self.path == '/api/mail/paypal_sync/status':
             try:
                 import gmail_intake
@@ -9588,6 +9872,16 @@ class H(BaseHTTPRequestHandler):
             self.send_header('Content-Disposition', 'inline; filename="parnes-cert.%s"' % fmt)
             self.end_headers(); self.wfile.write(data)
             return
+        # הסרה מרשימת התפוצה בלחיצה אחת. ג'ימייל ו-Yahoo שולחים POST לכתובת
+        # שבכותרת List-Unsubscribe; בלי זה דיוור מסונן לספאם.
+        if self.path.split('?')[0] == '/unsub':
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                if n > 0:
+                    self.rfile.read(n)
+            except Exception:
+                pass
+            return self._send(200, {'ok': bool(do_unsub(self.path))})
         bump_data()
         # Authorize.net מודיע ברגע שחיוב עבר. מאמתים חתימה, מושכים את העסקה,
         # ורושמים אותה. חייב להיות לפני קריאת הגוף כ-JSON — החתימה על הגוף הגולמי.
@@ -9711,6 +10005,96 @@ class H(BaseHTTPRequestHandler):
                     MAILCHK['running'] = False
             threading.Thread(target=_run, daemon=True).start()
             return self._send(200, {'ok': True, 'started': True})
+        # ---- דיוור: בדיקה לפני שליחה, ואז שליחה ----
+        if self.path == '/api/mail/preview':
+            import bulkmail
+            con = db()
+            to, skip = mail_recipients(con, b.get('ids'))
+            secret = mail_secret(con)
+            con.close()
+            first = to[0] if to else None
+            sample, subj = '', ''
+            if first:
+                sample = bulkmail.plain_text(
+                    b.get('body') or '', first['name'],
+                    mail_unsub_url(b.get('base') or '', secret, first['email']),
+                    b.get('sig') or '')
+                subj = bulkmail.personalize(b.get('subject') or '', first['name'])
+            return self._send(200, {'ok': True, 'count': len(to), 'skipped': skip,
+                                    'subject': subj,
+                                    'to': [x['email'] for x in to[:200]],
+                                    'first': first, 'sample': sample})
+        if self.path == '/api/mail/send':
+            import bulkmail
+            if not bulkmail.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured',
+                                        'detail': 'החיבור לדואר לא הוגדר ב-Render'})
+            st = bulkmail.STATUS
+            if st.get('running'):
+                return self._send(200, {'ok': False, 'error': 'busy',
+                                        'detail': 'משלוח אחר עדיין רץ'})
+            subject = (b.get('subject') or '').strip()
+            body = (b.get('body') or '').strip()
+            if not subject or not body:
+                return self._send(200, {'ok': False, 'error': 'empty',
+                                        'detail': 'חסר נושא או תוכן'})
+            con = db()
+            to, skip = mail_recipients(con, b.get('ids'))
+            if not to:
+                con.close()
+                return self._send(200, {'ok': False, 'error': 'no_recipients',
+                                        'detail': 'אין אף נמען עם כתובת מייל תקינה'})
+            cur = con.execute("INSERT INTO mail_batch(name,subject,body,sig,base,created,total,status) "
+                              "VALUES(?,?,?,?,?,?,?,'queued')",
+                              ((b.get('name') or subject)[:120], subject, body,
+                               (b.get('sig') or '').strip(), (b.get('base') or '').strip(),
+                               now_iso(), len(to)))
+            bid = cur.lastrowid
+            for x in to:
+                con.execute("INSERT INTO mail_queue(batch,donor_id,email,name) VALUES(?,?,?,?)",
+                            (bid, x['donor_id'], x['email'], x['name']))
+            con.commit(); con.close()
+            st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
+                       'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,
+                       'left': len(to), 'error': '', 'now': ''})
+            try:
+                import threading as _th
+                _th.Thread(target=mail_worker, args=(bid,), daemon=True).start()
+            except Exception as e:
+                st.update({'running': False, 'done': True, 'error': str(e)[:200]})
+                return self._send(200, {'ok': False, 'error': 'thread', 'detail': str(e)[:200]})
+            return self._send(200, {'ok': True, 'batch': bid, 'count': len(to),
+                                    'skipped': len(skip)})
+        if self.path == '/api/mail/stop':
+            try:
+                import bulkmail
+                bulkmail.STATUS['stop'] = True
+                return self._send(200, {'ok': True})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+        m = re.match(r'/api/mail/batch/(\d+)/resume$', self.path)
+        if m:
+            import bulkmail
+            if bulkmail.STATUS.get('running'):
+                return self._send(200, {'ok': False, 'error': 'busy'})
+            bid = int(m.group(1))
+            bulkmail.STATUS['stop'] = False
+            import threading as _th
+            _th.Thread(target=mail_worker, args=(bid,), daemon=True).start()
+            return self._send(200, {'ok': True, 'batch': bid})
+        if self.path == '/api/mail/optout':
+            em = (b.get('email') or '').strip().lower()
+            if not em:
+                return self._send(400, {'error': 'email required'})
+            con = db()
+            if b.get('undo'):
+                con.execute("DELETE FROM mail_optout WHERE email=?", (em,))
+            else:
+                con.execute("INSERT OR IGNORE INTO mail_optout(email,donor_id,reason,at) "
+                            "VALUES(?,?,?,?)", (em, b.get('donor_id'),
+                                                b.get('reason') or 'הוסר ידנית', now_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/mail/paypal_sync':     # משיכת תשלומי PayPal מהמייל ומהספאם — ברקע
             try:
                 import gmail_intake, threading

@@ -1,6 +1,6 @@
 // Service worker — installable app, always-fresh UI, and עבודה בלי אינטרנט.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v578';
+const CACHE = 'kc-crm-v579';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
 const DATA_CACHE = 'kc-data';      // העותק האחרון של הנתונים, לשימוש בלי רשת
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
@@ -134,6 +134,14 @@ self.addEventListener('fetch', e => {
       } catch (err) { /* אם משהו נכשל — עדיין נפתח את האפליקציה */ }
       return Response.redirect('/?share=1', 303);
     })());
+    return;
+  }
+  // דיוור לתורמים אינו נכנס לתור: משלוח שיצא לבד שעה אחרי שנלחץ, בלי
+  // שמאיר רואה, הוא לא מה שהוא ביקש. בלי רשת פשוט נאמר שאי אפשר עכשיו.
+  if (e.request.method === 'POST' && url.pathname.startsWith('/api/mail/')) {
+    e.respondWith(fetch(e.request).catch(() => new Response(
+      JSON.stringify({ok: false, offline: true, detail: 'אין חיבור לאינטרנט — שליחת מיילים דורשת חיבור'}),
+      {status: 200, headers: {'Content-Type': 'application/json'}})));
     return;
   }
   // שמירה בלי רשת — נכנסת לתור ותישלח כשהחיבור יחזור
