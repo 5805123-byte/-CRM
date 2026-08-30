@@ -260,10 +260,18 @@ GREET_PRE = 'לכבוד ידידינו ושותפינו היקר ה"ה '
 GREET_POST = ' הי"ו'
 TITLE_END = 'הי"ו'          # התואר שאחרי השם
 AV_PRE, AV_POST = 'הר"ר ', ' שליט"א'    # התואר של האברך במכתב
-# מאיר: "השם של התורם צריך להיות מודגש ויותר גדול מכל הגופן כאן" —
-# שם התורם הוא הדבר הגדול ביותר במכתב, גדול גם מתיבת הקוויטל.
-BIG = '<b style="font-size:1.6em;line-height:1.35;letter-spacing:.01em">%s</b>'
-BOLD = '<b>%s</b>'
+# מאיר: "אני רוצה גופן של עברית במיוחד של שם התורם ושם האברך, בגדול."
+# בדואר אי אפשר לצרף גופן — לקוחות הדואר חוסמים גופנים חיצוניים. לכן
+# נבחרת שרשרת של גופנים עבריים שמותקנים ברוב המחשבים, ובסופה serif כללי:
+# מי שיש לו פרנק־רוהל יראה אותו, ואצל כל האחרים ייפול לגופן עברי מכובד
+# אחר — ובכל מקרה שונה בבירור מגוף המכתב.
+HEBFONT = ("'Frank Ruhl Libre','FrankRuhlCLM','David Libre',David,'Narkisim',"
+           "'Times New Roman',serif")
+# שם התורם — הדבר הגדול ביותר במכתב, גדול גם מתיבת הקוויטל
+BIG = ('<b style="font-family:%s;font-size:1.6em;line-height:1.35;'
+       'letter-spacing:.01em">%%s</b>' % HEBFONT)
+# שם האברך — באותו גופן, מודגש וגדול מהטקסט אך קטן משם התורם
+BOLD = '<b style="font-family:%s;font-size:1.18em">%%s</b>' % HEBFONT
 KVBOX = ('<span style="display:block;margin:14px 0;padding:13px 17px;background:#faf6ec;'
          'border-%s:4px solid #9c7a2e;border-radius:9px;font-size:1.12em;font-weight:700;'
          'line-height:1.8;color:#1c1710">')
