@@ -8102,9 +8102,10 @@ function renderMailSend(){
       <div class="hintxt">מוסיף תמונה זעירה ובלתי נראית למכתב. מי שחוסם תמונות לא נספר, ולכן המספר תמיד נמוך מהאמת. אפשר לכבות — "מי השיב" ימשיך לעבוד בכל מקרה.</div>
     </div>
     <div class="addrow">
-      <button class="btn sm ghost" id="ml_prev" style="flex:1">👁️ בדיקה — מה יקבל התורם הראשון</button>
-      <button class="btn" id="ml_go" style="flex:1">📤 שלח לכולם</button>
+      <button class="btn sm ghost" id="ml_prev" style="flex:1">👁️ תצוגה מקדימה — לא שולח כלום</button>
+      <button class="btn" id="ml_go" style="flex:1"${list.length?'':' disabled'}>📤 ${list.length?('שלח ל־'+list.length+' '+(list.length===1?'נמען שסימנת':'הנמענים שסימנת')):'לא סימנת אף נמען'}</button>
     </div>
+    <div class="hintxt" style="text-align:center;margin-top:-2px">נשלח <b>רק</b> למי שמסומן ב-✔ למעלה${list.length===1?` — כרגע ${esc(dName(list[0]))} בלבד`:''}.</div>
     <div id="ml_prog"></div>
     <div id="ml_out"></div>
     <div id="ml_hist"></div>`;
@@ -8164,7 +8165,8 @@ function renderMailSend(){
     if(!b.ids.length){toast('אין נמענים');return;}
     o.innerHTML='<div class="hintxt">בודק…</div>';
     const r=await api('POST','/api/mail/preview',b);
-    o.innerHTML=`<div class="sec mlprev"><div class="rbtitle">כך זה ייראה — ${r.count} נמענים</div>
+    o.innerHTML=`<div class="sec mlprev"><div class="rbtitle">👁️ תצוגה מקדימה — עדיין לא נשלח כלום</div>
+      <div class="hintxt">כך ייראה המכתב אצל הנמען הראשון מתוך ${r.count}. עבור לשליחה רק אחרי שהכל נראה טוב.</div>
       ${r.first?`<div class="hintxt">אל: <b>${esc(r.first.name)}</b> &lt;${esc(r.first.email)}&gt; · בלבד. אין עותק מוסתר.</div>
       <div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div>`:''}
       <pre class="mlsample">${esc(r.sample||'')}</pre>
@@ -8180,7 +8182,8 @@ function renderMailSend(){
     if(!b.body.trim()){toast('חסר תוכן');return;}
     if(!b.ids.length){toast('אין נמענים');return;}
     if(!(MLSETUP&&MLSETUP.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
-    if(!await uiConfirm('לשלוח מייל אישי נפרד ל־'+b.ids.length+' תורמים?\n\nהשליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
+    const who=b.ids.length===1?('ל־'+dName(mlAudience()[0])+' בלבד'):('ל־'+b.ids.length+' התורמים שסימנת');
+    if(!await uiConfirm('לשלוח '+who+'?\n\nכל אחד מקבל הודעה נפרדת משלו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
     const r=await api('POST','/api/mail/send',b);
     if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
     mlWatch();
