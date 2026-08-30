@@ -258,7 +258,9 @@ _PH = re.compile(r'\{\{\s*([^{}]*?)\s*\}\}')
 TITLE_ALL = 'ה"ה'
 GREET_PRE = 'לכבוד ידידינו ושותפינו היקר ה"ה '
 GREET_POST = ' הי"ו'
+TITLE_END = 'הי"ו'          # התואר שאחרי השם
 BIG = '<b style="font-size:1.32em;letter-spacing:.01em">%s</b>'
+BOLD = '<b>%s</b>'
 KVBOX = ('<span style="display:block;margin:14px 0;padding:13px 17px;background:#faf6ec;'
          'border-%s:4px solid #9c7a2e;border-radius:9px;font-size:1.18em;font-weight:700;'
          'line-height:1.85;color:#1c1710">')
@@ -307,6 +309,11 @@ def personalize(text, who, html=False, d='rtl'):
 
     def sub(m):
         key = m.group(1)
+        if html:
+            # ב-HTML הטקסט מוברח לפני ההצבה, ולכן גרשיים שבתוך הסימון
+            # (למשל {{הי"ו}}) הגיעו לכאן כ-&quot; — מחזירים אותם כדי שהשם
+            # של הסימון יזוהה
+            key = key.replace('&quot;', '"').replace('&#34;', '"').replace('&amp;', '&')
         if '|' in key:                        # לשון זכר / נקבה / זוג
             parts = [p.strip() for p in key.split('|')]
             i = {'m': 0, 'f': 1, 'c': 2}.get(g, 0)
@@ -319,8 +326,17 @@ def personalize(text, who, html=False, d='rtl'):
             # לכולם אותו דבר."
             return (GREET_PRE + BIG % _esc(full) + GREET_POST) if html \
                 else (GREET_PRE + full + GREET_POST)
-        if key in ('שם גדול', 'bigname'):
+        # מאיר: "אני רוצה פשוט — תואר לפני השם, שם מלא מודגש, תואר אחרי
+        # השם, וקוויטל מודגש, ואם יש אברך שלומד בשבילו — מודגש. וזהו."
+        if key in ('שם', 'שם גדול', 'name', 'bigname'):
             return (BIG % _esc(full)) if html else full
+        if key in ('הי"ו', 'הי\u05f4ו', 'סיום'):
+            return _esc(TITLE_END) if html else TITLE_END
+        if key in ('אברך', 'avreich'):
+            av = (who.get('avreich') or '').strip()
+            if not av:
+                return ''
+            return (BOLD % _esc(av)) if html else av
         if key in ('קוויטל', 'kvittel'):
             if not kv:
                 return ''
