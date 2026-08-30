@@ -252,7 +252,20 @@ def _esc(s):
 _PH = re.compile(r'\{\{\s*([^{}]*?)\s*\}\}')
 
 
-def personalize(text, who):
+# מאיר: "אני לא מרוצה מהתוארים — אני רוצה שלכולם יהיה אותו תואר, גם נשים
+# גם גברים. התואר הראשון זה ה"ה, והסיום הי"ו. לכולם אותו דבר."
+# בפתקי הקוויטל התואר נשאר ר' / מרת / ה"ה לפי האדם; במכתבים הוא אחיד.
+TITLE_ALL = 'ה"ה'
+GREET_PRE = 'לכבוד ידידינו ושותפינו היקר ה"ה '
+GREET_POST = ' הי"ו'
+BIG = '<b style="font-size:1.32em;letter-spacing:.01em">%s</b>'
+KVBOX = ('<span style="display:block;margin:14px 0;padding:13px 17px;background:#faf6ec;'
+         'border-%s:4px solid #9c7a2e;border-radius:9px;font-size:1.18em;font-weight:700;'
+         'line-height:1.85;color:#1c1710">')
+KVLINE = '<span style="display:block">%s</span>'
+
+
+def personalize(text, who, html=False, d='rtl'):
     """מחליף את הסימונים שבמכתב בפרטי התורם שמקבל אותו.
 
     מאיר: "אם אני רוצה להכניס לו תואר לפני או אחרי לכל אחד — אם זה גבר
@@ -282,15 +295,15 @@ def personalize(text, who):
     if not first:
         first = full
     g = ((who.get('gender') or 'm') + 'm')[0]
+    kv = [x.strip() for x in str(who.get('kvittel') or '').split('\n') if x.strip()]
     simple = {'שם': first, 'משפחה': last, 'שם מלא': full,
-              'תואר': (who.get('title') or '').strip(),
+              'תואר': (who.get('title') or TITLE_ALL).strip() or TITLE_ALL,
               # מאיר: "יששכר־זבולון — אני רוצה למזג לו את השם של האברך
               # שלומד בשבילו בתוך המכתב, ואת הקוויטל שלו"
               'אברך': (who.get('avreich') or '').strip(),
-              'קוויטל': (who.get('kvittel') or '').strip(),
               'name': first, 'lastname': last, 'fullname': full,
-              'avreich': (who.get('avreich') or '').strip(),
-              'kvittel': (who.get('kvittel') or '').strip()}
+              'avreich': (who.get('avreich') or '').strip()}
+    side = 'right' if d == 'rtl' else 'left'
 
     def sub(m):
         key = m.group(1)
@@ -300,8 +313,22 @@ def personalize(text, who):
             if i >= len(parts):
                 i = 0
             return parts[i]
+        if key in ('פנייה', 'greeting'):
+            # מאיר: "שאני כותב 'לכבוד ידידינו ושותפינו היקר ה\"ה' ואז את
+            # השם שלו באותיות גדולות יותר בעברית מודגשות, ואז הי\"ו.
+            # לכולם אותו דבר."
+            return (GREET_PRE + BIG % _esc(full) + GREET_POST) if html \
+                else (GREET_PRE + full + GREET_POST)
+        if key in ('שם גדול', 'bigname'):
+            return (BIG % _esc(full)) if html else full
+        if key in ('קוויטל', 'kvittel'):
+            if not kv:
+                return ''
+            if not html:
+                return '\n'.join(kv)
+            return (KVBOX % side) + ''.join(KVLINE % _esc(x) for x in kv) + '</span>'
         if key in simple:
-            return simple[key]
+            return (_esc(simple[key]) if html else simple[key])
         return m.group(0)                     # סימון לא מוכר — נשאר כמו שהוא
 
     return _PH.sub(sub, str(text or ''))
@@ -331,24 +358,21 @@ def open_token(qid, secret):
                     ('o:%s' % qid).encode('utf-8'), 'sha256').hexdigest()[:16]
 
 
-def _html(body, unsub_url, sig, d='rtl', pixel=''):
+def _html(body, unsub_url, sig, d='rtl', pixel='', who=None):
     """מכתב פשוט ונקי. בלי תמונות, בלי כפתורים צבעוניים ובלי טבלאות
-    שיווקיות — מכתב שנראה כמו מכתב עובר את המסננים הרבה יותר טוב."""
-    paras = ''.join('<p dir="auto" style="margin:0 0 12px">%s</p>'
-                    % _esc(p).replace('\n', '<br>')
+    שיווקיות — מכתב שנראה כמו מכתב עובר את המסננים הרבה יותר טוב.
+
+    הטקסט מגיע לכאן כתבנית, לא מוחלף מראש: קודם מבריחים אותו כ-HTML ורק
+    אחר כך מציבים את הסימונים — כך השם והקוויטל יכולים לצאת מודגשים
+    וגדולים, בלי שהעיצוב ייבלע בהברחה."""
+    def _p(x):
+        x = _esc(x).replace('\n', '<br>')
+        return personalize(x, who, html=True, d=d) if who is not None else x
+    paras = ''.join('<p dir="auto" style="margin:0 0 12px">%s</p>' % _p(p)
                     for p in re.split(r'\n\s*\n', str(body or '').strip()) if p.strip())
     foot = ''
     if sig:
-        foot += ('<p dir="auto" style="margin:18px 0 0;color:#555">%s</p>'
-                 % _esc(sig).replace('\n', '<br>'))
-    if unsub_url:
-        foot += ('<p dir="auto" style="margin:16px 0 0;font-size:12px;color:#888">'
-                 + ('If you no longer wish to receive emails from us — '
-                    '<a href="%s" style="color:#888">click here to unsubscribe</a>'
-                    if d == 'ltr' else
-                    'אם אינך מעוניין לקבל מאיתנו מיילים — '
-                    '<a href="%s" style="color:#888">לחץ כאן להסרה</a>') % _esc(unsub_url)
-                 + '</p>')
+        foot += ('<p dir="auto" style="margin:18px 0 0;color:#555">%s</p>' % _p(sig))
     if pixel:
         # פיקסל מעקב פתיחות. עובד רק כשהתורם מאשר הצגת תמונות, ולכן
         # המספר תמיד נמוך מהאמת — ראה את ההסבר במסך.
@@ -368,10 +392,10 @@ def plain_text(body, who, unsub_url='', sig=''):
     out = personalize(body, who)
     if (sig or '').strip():
         out += '\n\n' + sig.strip()
-    if unsub_url:
-        d = letter_dir(str(body or '') + ' ' + str(sig or ''))
-        out += (('\n\nTo unsubscribe: ' if d == 'ltr'
-                 else '\n\nלהסרה מרשימת התפוצה: ') + unsub_url)
+    # מאיר: "אני לא רוצה שיהיה רשום להסרה מהרשימה בכלל, שזה לא יהיה כתוב.
+    # אם תורם לא רוצה לקבל — הוא ישלח אימייל." לכן אין שורת הסרה בגוף
+    # המכתב. כותרת List-Unsubscribe נשארת, כי היא אינה נראית לקורא אך
+    # בלעדיה הדיוור נופל לספאם — וזה בדיוק מה שמאיר ביקש למנוע.
     return out
 
 
@@ -394,8 +418,8 @@ def build(to, who, subject, body, unsub_url='', sig='', attachments=None, pixel=
 
     alt = MIMEMultipart('alternative')
     alt.attach(MIMEText(plain_text(body, who, unsub_url, sig), 'plain', 'utf-8'))
-    alt.attach(MIMEText(_html(txt, unsub_url, sig,
-                              letter_dir(str(body or '') + ' ' + str(sig or '')), pixel),
+    dirn = letter_dir(str(body or '') + ' ' + str(sig or ''))
+    alt.attach(MIMEText(_html(body, unsub_url, sig, dirn, pixel, who),
                         'html', 'utf-8'))
     atts = [a for a in (attachments or []) if a and a[2]]
     if atts:

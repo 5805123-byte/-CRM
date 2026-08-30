@@ -8077,15 +8077,16 @@ def mail_recipients(con, ids):
         g = (d['gender'] or '').strip()[:1]
         if g not in ('m', 'f', 'c'):
             g = _gender(d['first'])
-            ttl = _honor(d['first'], d['last'])
-        else:
-            ttl = _TITLE[g]
+        # מאיר: "אני רוצה שלכולם יהיה אותו תואר, גם נשים גם גברים — ה\"ה."
+        # במכתבים התואר אחיד; בפתקי הקוויטל הוא נשאר ר' / מרת / ה"ה לפי האדם.
+        ttl = 'ה"ה'
         gk = kvs.get(d['id']) or {}
         kvtxt = gk.get('יששכר_זבולון') or sum((v for v in gk.values()), [])
         who = {'first': (d['first'] or '').strip(), 'last': (d['last'] or '').strip(),
                'title': ttl, 'gender': g,
                'avreich': ' · '.join(avs.get(d['id']) or []),
-               'kvittel': kv_flow('\n'.join(kvtxt)).strip()}
+               # שורה לכל שם — כדי שבמכתב הם יֵצאו זה מתחת לזה, מודגשים
+               'kvittel': '\n'.join(x.strip() for x in kvtxt if x and x.strip())}
         addrs = emails_of(d['email'])
         if not addrs:
             raw = str(d['email'] or '').strip()
@@ -10214,13 +10215,21 @@ class H(BaseHTTPRequestHandler):
             secret = mail_secret(con)
             con.close()
             first = to[0] if to else None
-            sample, subj = '', ''
+            sample, subj, sample_html = '', '', ''
             if first:
                 sample = bulkmail.plain_text(
                     b.get('body') or '', first,
                     mail_unsub_url(b.get('base') or '', secret, first['email']),
                     b.get('sig') or '')
                 subj = bulkmail.personalize(b.get('subject') or '', first)
+                # התצוגה המקדימה מראה את המכתב כפי שהוא ייראה באמת, עם
+                # ההדגשות והגדלים — לא רק כטקסט
+                sample_html = bulkmail._html(
+                    b.get('body') or '',
+                    mail_unsub_url(b.get('base') or '', secret, first['email']),
+                    b.get('sig') or '',
+                    bulkmail.letter_dir((b.get('body') or '') + ' ' + (b.get('sig') or '')),
+                    '', first)
             # מיזוג שיוצא ריק הוא משפט קטוע אצל התורם — מזהירים לפני השליחה
             tmpl = (b.get('subject') or '') + ' ' + (b.get('body') or '')
             warn = []
@@ -10234,6 +10243,7 @@ class H(BaseHTTPRequestHandler):
                                  'names': bad[:40]})
             return self._send(200, {'ok': True, 'count': len(to), 'skipped': skip,
                                     'subject': subj, 'warn': warn,
+                                    'html': sample_html,
                                     'to': [x['email'] for x in to[:200]],
                                     'first': first, 'sample': sample})
         if self.path == '/api/mail/send':
