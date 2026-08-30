@@ -1404,9 +1404,10 @@ function renderDonors(){
         {id:'noEngBtn',  n:DB.filter(d=>!(d.english||'').trim()).length, t:'🔤 בלי שם באנגלית'},
       ].filter(x=>x.n);
       // מאיר: "כל אלו יהיו תחת חלון אחד, לא בדף הראשי משבצת לכל אחד"
+      // מיילים אינו כאן — הוא לשונית רגילה למעלה. מאיר: "איפה הלשונית
+      // מיילים נמצאת?" — דבר שמשתמשים בו כל שבוע לא נקבר תחת "תיקונים".
       const tabs=[{k:'review',t:'📋 לבדיקה'},{k:'dups',t:'🧾 תשלומים כפולים'},
-                  {k:'unlinked',t:'💳 חיובים בלי תורם'},{k:'old',t:'🧹 תורמים ישנים'},
-                  {k:'mails',t:'📧 מיילים'}];
+                  {k:'unlinked',t:'💳 חיובים בלי תורם'},{k:'old',t:'🧹 תורמים ישנים'}];
       const tot=items.reduce((a,x)=>a+x.n,0);
       return `<details class="fixbox"${FIXOPEN?' open':''} id="fixbox">
         <summary>🧰 בדיקות ותיקונים${tot?` <b class="fixcnt">${tot}</b>`:''}</summary>
