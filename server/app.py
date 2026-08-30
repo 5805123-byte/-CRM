@@ -3,11 +3,40 @@
 import sqlite3, json, os, re, base64, datetime, csv, io, gzip, time, hashlib, hmac, threading, urllib.parse
 from urllib.parse import quote
 
+# מאיר: "השעון לא נכון, אני רוצה שעון ישראל כאן מדויק." השרת ב-Render
+# רץ בשעון עולמי (UTC), ולכן כל השעות שנרשמו היו מוקדמות בשעתיים־שלוש.
+# מכאן והלאה כל תאריך ושעה שנרשמים במערכת הם שעון ישראל.
+try:
+    from zoneinfo import ZoneInfo
+    IL_TZ = ZoneInfo('Asia/Jerusalem')
+except Exception:
+    IL_TZ = None
+
+
+def _il_dst(u):
+    """שעון קיץ בישראל — גיבוי בלבד, אם חבילת אזורי הזמן חסרה בשרת.
+    מתחיל ביום ראשון האחרון של מרץ ומסתיים ביום ראשון האחרון של אוקטובר."""
+    def last_sunday(year, month):
+        d = datetime.date(year, month, 31 if month in (3, 10) else 30)
+        return d - datetime.timedelta(days=(d.weekday() + 1) % 7)
+    s = last_sunday(u.year, 3)
+    e = last_sunday(u.year, 10)
+    return s <= u.date() < e
+
+
+def il_now():
+    """הזמן הנוכחי בישראל, בלי אזור זמן מצורף (כדי שיתנהג כמו קודם)."""
+    if IL_TZ is not None:
+        return datetime.datetime.now(IL_TZ).replace(tzinfo=None)
+    u = datetime.datetime.utcnow()
+    return u + datetime.timedelta(hours=3 if _il_dst(u) else 2)
+
+
 def today_iso():
-    return datetime.date.today().isoformat()
+    return il_now().date().isoformat()
 
 def now_iso():
-    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    return il_now().strftime('%Y-%m-%d %H:%M')
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from hebdate import week_before, greg_to_heb_monthyear, greg_to_heb_full, current_heb_year, heb_to_greg, future_parnes, heb_greg_year, kvittel_default_month, HMONTHS
 
@@ -2970,7 +2999,7 @@ def ensure_schema():
     # (יש להם תרומה עם תאריך) נשארו מסומנים כלא־עברו. משלימים מהתרומות.
     # רץ בכל הפעלה, בלי דגל, כדי שיישאר מעודכן גם אחרי ייבוא חדש.
     try:
-        yr = str(datetime.date.today().year)
+        yr = str(il_now().year)
         marks = {}
         for r in con.execute("SELECT donor_id, SUBSTR(date,6,2) mo FROM donations "
                              "WHERE LENGTH(COALESCE(date,''))>=7 AND SUBSTR(date,1,4)=?", (yr,)):
@@ -4798,7 +4827,7 @@ def ensure_schema():
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='av_slot_reopen_v1'").fetchone():
             back = 0
             try:
-                cutoff = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
+                cutoff = (il_now().date() - datetime.timedelta(days=90)).isoformat()
                 rows = con.execute(
                     "SELECT p.id pid, p.avreich av, a.ended en FROM partners p "
                     "JOIN avreichim a ON TRIM(a.name)=TRIM(p.avreich) "

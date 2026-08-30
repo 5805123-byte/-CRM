@@ -13,6 +13,14 @@
     INTAKE_MAILBOX      (רשות) תיבה, ברירת מחדל INBOX
 """
 import os, re, imaplib, email, datetime, sqlite3
+
+# מאיר: "אני רוצה שעון ישראל כאן מדויק." השרת רץ ב-UTC, ולכן התאריכים
+# שנרשמו על מיילים נכנסים היו של אתמול בשעות הערב.
+try:
+    from hebdate import il_today
+except Exception:
+    def il_today():
+        return datetime.date.today()
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime, getaddresses
 
@@ -1038,7 +1046,7 @@ def _mail_when(hmsg):
     except Exception:
         dt = None
     if dt is None:
-        d = datetime.date.today().isoformat()
+        d = il_today().isoformat()
         return d, ''
     try:
         from zoneinfo import ZoneInfo
@@ -1185,7 +1193,7 @@ def sync_contacts(con, status=None):
                     try:
                         con.execute("""INSERT INTO files(kind,ref_id,name,mime,data,created)
                                        VALUES('contact',?,?,?,?,?)""",
-                                    (cid, fn, mt, sqlite3.Binary(data), datetime.date.today().isoformat()))
+                                    (cid, fn, mt, sqlite3.Binary(data), il_today().isoformat()))
                     except Exception:
                         pass
             except Exception:
@@ -1209,7 +1217,7 @@ def sync_contacts(con, status=None):
                 try:
                     con.execute("""INSERT INTO files(kind,ref_id,name,mime,data,created)
                                    VALUES('contact',?,?,?,?,?)""",
-                                (cid, fn, mt, sqlite3.Binary(data), datetime.date.today().isoformat()))
+                                (cid, fn, mt, sqlite3.Binary(data), il_today().isoformat()))
                 except Exception:
                     pass
             if bd:      # מרעננים גם את התקציר והטקסט המלא — עכשיו יש לנו את המייל המקורי
@@ -1270,7 +1278,7 @@ def _sent_since():
     if v:
         return v
     back = int(os.environ.get('SENTLOG_DAYS') or 30)
-    return (datetime.date.today() - datetime.timedelta(days=back)).strftime('%d-%b-%Y')
+    return (il_today() - datetime.timedelta(days=back)).strftime('%d-%b-%Y')
 
 
 def _addrs(hmsg, *heads):
@@ -1382,7 +1390,7 @@ def diag(days=21):
     froms = [x.strip().lower() for x in (os.environ.get('INTAKE_FROM') or '').split(',') if x.strip()]
     subj = (os.environ.get('INTAKE_SUBJECT') or '').strip()
     MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    d0 = datetime.date.today() - datetime.timedelta(days=int(days))
+    d0 = il_today() - datetime.timedelta(days=int(days))
     since = '%02d-%s-%d' % (d0.day, MON[d0.month - 1], d0.year)
     out = []
     try:
@@ -1522,7 +1530,7 @@ def sync(con):
                 cur = con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,status,created)
                                VALUES(?,?,?,?,?,?,?, 'new', ?)""",
                             (mid, fname, real_email, subject, received, body, names,
-                             datetime.date.today().isoformat()))
+                             il_today().isoformat()))
                 iid = cur.lastrowid
                 new += 1
             if donor:                 # זוהה תורם לפי מייל — צירוף אוטומטי לקוויטל שלו, נגמר הסיפור
@@ -2058,7 +2066,7 @@ def scan_english_names(con, status=None, since=None):
         if M is not None:
             try: M.logout()
             except Exception: pass
-    today = datetime.date.today().isoformat()
+    today = il_today().isoformat()
     n = 0
     for addr, names in tally.items():
         nm = max(names.items(), key=lambda kv: (kv[1], len(kv[0])))

@@ -7,6 +7,25 @@ try:
 except Exception:
     OK = False
 
+# מאיר: "אני רוצה שעון ישראל כאן מדויק." התאריך העברי מתחלף לפי היום
+# בארץ, ולכן "היום" כאן הוא היום בישראל ולא בשעון השרת.
+try:
+    from zoneinfo import ZoneInfo
+    _IL = ZoneInfo('Asia/Jerusalem')
+except Exception:
+    _IL = None
+
+
+def il_today():
+    if _IL is not None:
+        return datetime.datetime.now(_IL).date()
+    u = datetime.datetime.utcnow()
+    def _ls(year, month):
+        d = datetime.date(year, month, 31)
+        return d - datetime.timedelta(days=(d.weekday() + 1) % 7)
+    dst = _ls(u.year, 3) <= u.date() < _ls(u.year, 10)
+    return (u + datetime.timedelta(hours=3 if dst else 2)).date()
+
 HMONTHS = {'ניסן':1,'אייר':2,'סיון':3,'סיוון':3,'תמוז':4,'אב':5,'אלול':6,'תשרי':7,
            'חשון':8,'חשוון':8,'מרחשון':8,'כסלו':9,'טבת':10,'שבט':11,
            'אדר':12,'אדר א':12,'אדר ב':13,'אדר א׳':12,'אדר ב׳':13}
@@ -25,7 +44,7 @@ def heb_to_greg(text, today=None):
     """מקבל טקסט עברי; מחזיר datetime.date של המופע הבא (>= היום), או None."""
     if not OK or not text:
         return None
-    today = today or datetime.date.today()
+    today = today or il_today()
     txt = re.sub(r'[\"\']', '', str(text)).strip()
     parts = txt.split()
     if len(parts) < 2:
@@ -84,7 +103,7 @@ def kvittel_default_month(today=None):
     if not OK:
         return ('', '')
     try:
-        d = today or datetime.date.today()
+        d = today or il_today()
         h = dates.GregorianDate(d.year, d.month, d.day).to_heb()
         if h.day >= 20:                       # מכ' לחודש כבר מכינים לחודש הבא
             h = h.add(months=1)
@@ -98,7 +117,7 @@ def current_heb_year(today=None):
     if not OK:
         return ''
     import datetime
-    t = today or datetime.date.today()
+    t = today or il_today()
     try:
         return hq(dates.GregorianDate(t.year, t.month, t.day).to_heb().hebrew_date_string().split()[-1])
     except Exception:
@@ -136,7 +155,7 @@ def _cur_heb_year_num(today=None):
     if not OK:
         return 0
     import datetime
-    t = today or datetime.date.today()
+    t = today or il_today()
     try:
         return dates.GregorianDate(t.year, t.month, t.day).to_heb().year
     except Exception:
