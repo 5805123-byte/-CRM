@@ -7910,8 +7910,7 @@ let mailFlt='';
 // ניחוש לפי השם הפרטי, וקביעה ידנית גוברת עליו.
 const GENOPTS=[['','לפי השם הפרטי — אוטומטי'],['m',"גבר — ר' · שתזכה"],
                ['f','אשה — מרת · שתזכי'],['c','זוג — ה\"ה · שתזכו']];
-const MLVARS=[['{{פנייה}}','לכבוד ידידינו ושותפינו היקר ה"ה — השם גדול ומודגש — הי"ו'],
-              ['{{שם גדול}}','השם בלבד, גדול ומודגש'],
+const MLVARS=[['{{שם גדול}}','השם בלבד, גדול ומודגש'],
               ['{{קוויטל}}','שמות הקוויטל, מודגשים בתיבה משלהם'],
               ['{{אברך}}','שם האברך שלומד עבורו'],
               ['{{שם מלא}}','שם פרטי ומשפחה, טקסט רגיל'],
@@ -7922,7 +7921,12 @@ const MLVARS=[['{{פנייה}}','לכבוד ידידינו ושותפינו הי
 let mailSub='log', MLSETUP=null, MLPOLL=null;
 // מאיר: "אם אני רוצה רק 2 תורמים אני צריך לסנן את כולם?" — לא. הרשימה
 // מתחילה ריקה, ומוסיפים אליה: תורם אחד בחיפוש, או קבוצה שלמה בלחיצה.
-let mlPick=new Set(), mlQ='', mlGrp='', mlShow='mail';
+// מאיר: "אם אני מסמן אחד, שזה לא יציע לי לשלוח לכל ה-12 — זה מבלבל
+// אותי. ברגע שאני מסמן אחד שכולם ייעלמו לי מהאופק." לכן ברגע שנבחר
+// נמען אחד הרשימה הגדולה נסגרת ונשארים רק הנבחרים; להוסיף עוד אפשר
+// בשורת חיפוש קטנה, ולפתוח את הרשימה המלאה בכפתור מפורש.
+let mlPick=new Set(), mlQ='', mlGrp='', mlShow='mail', mlAdding=true, mlAddQ='';
+function mlBrowse(){ return mlAdding||!mlPick.size; }
 // שם הדרגה כפי שקוראים לה, ולא הערך הפנימי ("קוויטל_שבועי")
 const tierLabel=v=>(TIERS[v]&&TIERS[v][0])||KVTIER[v]||String(v||'').replace(/^קוויטל_/,'');
 const dHasMail=d=>(d.email||'').includes('@');
@@ -8046,7 +8050,9 @@ function renderMailSend(){
   const cats=[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
   const tiers=[...new Set(DB.map(d=>(d.tier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
   const list=mlAudience();
-  const flist=mlFiltered();
+  const flist=mlBrowse()?mlFiltered():[];
+  const hits=(!mlBrowse()&&mlAddQ.trim())
+    ? donorHits(d=>dName(d)+' '+(d.english||'')+' '+(d.email||''),mlAddQ,10) : null;
   chips.innerHTML='';
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_back">← חזרה ליומן המיילים</button></div>
     <div class="rbtitle">✉️ שליחת מייל לתורמים</div>
@@ -8055,6 +8061,7 @@ function renderMailSend(){
     <div class="hintxt mlnobcc">כל תורם מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף תורם אינו רואה את הכתובות של האחרים. במכתב עצמו לא כתוב דבר על הסרה מהרשימה.</div>
     <div class="sec">
       <div class="rbtitle" style="text-align:right">1️⃣ למי שולחים</div>
+      ${mlBrowse()?`
       <div class="mlfilt">
         <input id="ml_q" value="${esc(mlQ)}" placeholder="🔍 סנן לפי שם, אנגלית, עסק או מייל" autocomplete="off">
         <div class="mlfrow">
@@ -8066,16 +8073,13 @@ function renderMailSend(){
             <option value="mail"${mlShow==='mail'?' selected':''}>רק מי שיש לו מייל · ${DB.filter(dHasMail).length}</option>
             <option value="all"${mlShow==='all'?' selected':''}>כל התורמים · ${DB.length}</option>
             <option value="nomail"${mlShow==='nomail'?' selected':''}>רק מי שאין לו מייל · ${DB.filter(d=>!dHasMail(d)).length}</option>
-            <option value="picked"${mlShow==='picked'?' selected':''}>רק הנבחרים · ${mlPick.size}</option>
           </select>
         </div>
         <div class="mlfrow">
           <button class="btn sm" id="ml_allf">✅ סמן את כל ${flist.length} שברשימה</button>
-          <button class="btn sm ghost" id="ml_nonef">בטל סימון לרשימה</button>
-          ${mlPick.size?`<button class="btn sm ghost" id="ml_clear">נקה בחירה (${mlPick.size})</button>`:''}
+          ${mlPick.size?`<button class="btn sm ghost" id="ml_done">✔️ סיימתי לבחור (${mlPick.size})</button>`:''}
         </div>
       </div>
-      <div class="mlsel">נבחרו <b>${list.length}</b> נמענים${mlPick.size>list.length?` <span class="hintxt">(${mlPick.size-list.length} מהם בלי כתובת מייל ולא יישלח אליהם)</span>`:''}</div>
       <div class="mlbox">${flist.map(d=>{const on=mlPick.has(d.id),em=(d.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
         return `<div class="mlrow${on?' on':''}" data-did="${d.id}">
           <span class="mlck">${on?'✔':''}</span>
@@ -8083,6 +8087,24 @@ function renderMailSend(){
           <span class="mlmeta">${d.category?`<b class="mltag">${esc(d.category)}</b>`:''}${d.tier?`<b class="mltag t2">${esc(KVTIER[d.tier]||d.tier)}</b>`:''}</span>
           <span class="mlad">${em.length?esc(em.join(' · ')):'<u class="mlno">אין כתובת מייל — פתח כרטיס</u>'}</span>
         </div>`;}).join('')||'<div class="mlempty">לא נמצא אף תורם שמתאים לסינון.</div>'}</div>
+      `:`
+      <div class="mlsel">אלה הנמענים שסימנת — <b>${list.length}</b>${mlPick.size>list.length?` <span class="hintxt">(${mlPick.size-list.length} בלי מייל, לא יישלח אליהם)</span>`:''}</div>
+      <div class="mlbox">${DB.filter(d=>mlPick.has(d.id)).sort(byName).map(d=>{const on=mlPick.has(d.id),em=(d.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
+        return `<div class="mlrow${on?' on':''}" data-did="${d.id}">
+          <span class="mlck">${on?'✔':''}</span>
+          <span class="mlnm">${esc(dName(d))}${d.english?`<i>${esc(d.english)}</i>`:''}</span>
+          <span class="mlmeta">${d.category?`<b class="mltag">${esc(d.category)}</b>`:''}${d.tier?`<b class="mltag t2">${esc(KVTIER[d.tier]||d.tier)}</b>`:''}</span>
+          <span class="mlad">${em.length?esc(em.join(' · ')):'<u class="mlno">אין כתובת מייל — פתח כרטיס</u>'}</span>
+        </div>`;}).join('')}</div>
+      <div class="mlfilt" style="margin-top:8px">
+        <input id="ml_add" value="${esc(mlAddQ)}" placeholder="➕ להוסיף עוד — הקלד שם" autocomplete="off">
+        ${mlAddQ.trim()?`<div class="dpres">${(hits?hits.list:[]).map(d=>`<div class="dpr${mlPick.has(d.id)?' on':''}" data-add="${d.id}">${esc(dName(d))}${d.english?` <small>${esc(d.english)}</small>`:''}${dHasMail(d)?` <small class="mlem">${esc((d.email||'').split(/[;,\/\s]+/)[0])}</small>`:' <small class="mlno">אין מייל</small>'}${mlPick.has(d.id)?' ✓':''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא תורם</div>'}</div>`:''}
+        <div class="mlfrow">
+          <button class="btn sm ghost" id="ml_open">📋 פתח את הרשימה המלאה</button>
+          <button class="btn sm ghost" id="ml_clear">נקה בחירה (${mlPick.size})</button>
+        </div>
+      </div>
+      `}
     </div>
     <div class="sec">
       <div class="rbtitle" style="text-align:right">2️⃣ המכתב</div>
@@ -8090,11 +8112,10 @@ function renderMailSend(){
       <label class="fld"><span>תוכן המכתב</span><textarea id="ml_body" rows="10" placeholder="לכבוד {{תואר}} {{שם מלא}},&#10;&#10;...">${esc(mlSaved('body',''))}</textarea></label>
       <div class="mlvars">${MLVARS.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
       <div class="hintxt">לחיצה על סימון מכניסה אותו לתוך המכתב (או לנושא, אם הסמן שם).<br>
-        <b>{{פנייה}}</b> — שורת הפתיחה השלמה, אחידה לכולם: <i>לכבוד ידידינו ושותפינו היקר ה"ה</i>
-        <b>השם בגדול ומודגש</b> <i>הי"ו</i>. גם לגברים וגם לנשים, בדיוק אותו נוסח.<br>
+        <b>{{שם גדול}}</b> — השם בעברית, גדול ומודגש. כותבים סביבו את הפתיחה שרוצים,
+        למשל: <i>לכבוד ידידינו ושותפינו היקר ה"ה</i> <b>{{שם גדול}}</b> <i>הי"ו</i>.<br>
         <b>{{קוויטל}}</b> — שמות הקוויטל, כל שם בשורה משלו, מודגשים וגדולים בתיבה נפרדת.
         <b>{{אברך}}</b> — האברך שלומד עבורו. שניהם נמשכים לבד מהכרטיס.<br>
-        <b>{{שם גדול}}</b> — רק השם, גדול ומודגש, אם תרצה לכתוב פתיחה משלך.<br>
         לשון פנייה — שתי מילים עם קו ביניהן, הראשונה לגבר והשנייה לאשה:
         <b>שתזכ{{ה|י}}</b> ← "שתזכה" / "שתזכי". מילה שלישית (<b>{{ה|י|ו}}</b>) היא לזוג.<br>
         השמות תמיד בעברית, גם כשהמכתב באנגלית. שורה ריקה = פסקה חדשה.</div>
@@ -8115,30 +8136,42 @@ function renderMailSend(){
   wireMlCfg();
   // ---- בחירת הנמענים ----
   // רק תיבת החיפוש מצוירת מחדש תוך כדי הקלדה, ולכן מחזירים לה את המיקוד
-  const qi=document.getElementById('ml_q');
+  const keepFocus=id=>{const e=document.getElementById(id);
+    if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}};
   let _qt=null;
-  qi.oninput=()=>{const v=qi.value;clearTimeout(_qt);_qt=setTimeout(()=>{mlQ=v;renderMailSend();
-    const e=document.getElementById('ml_q');
-    if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},180);};
+  const qi=document.getElementById('ml_q');
+  if(qi)qi.oninput=()=>{const v=qi.value;clearTimeout(_qt);
+    _qt=setTimeout(()=>{mlQ=v;renderMailSend();keepFocus('ml_q');},180);};
+  const ai=document.getElementById('ml_add');
+  if(ai)ai.oninput=()=>{const v=ai.value;clearTimeout(_qt);
+    _qt=setTimeout(()=>{mlAddQ=v;renderMailSend();keepFocus('ml_add');},180);};
+  const opn=document.getElementById('ml_open');
+  if(opn)opn.onclick=()=>{mlAdding=true;mlAddQ='';renderMailSend();};
+  const dn=document.getElementById('ml_done');
+  if(dn)dn.onclick=()=>{mlAdding=false;mlQ='';renderMailSend();};
   const gp=document.getElementById('ml_grp');
   if(gp)gp.onchange=()=>{mlGrp=gp.value;renderMailSend();};
   const sw=document.getElementById('ml_show');
   if(sw)sw.onchange=()=>{mlShow=sw.value;renderMailSend();};
-  document.getElementById('ml_allf').onclick=()=>{
+  if(mlShow==='picked')mlShow='mail';    // התצוגה הזאת הוחלפה בסגירת הרשימה
+  const allf=document.getElementById('ml_allf');
+  if(allf)allf.onclick=()=>{
     let add=0,no=0;
     flist.forEach(d=>{ if(!dHasMail(d)){no++;return;} if(!mlPick.has(d.id)){mlPick.add(d.id);add++;} });
     toast(add?('נוספו '+add+(no?(' · '+no+' בלי מייל דולגו'):'')+' ✓'):'לא נוסף אף אחד חדש');
-    renderMailSend();};
-  document.getElementById('ml_nonef').onclick=()=>{
-    flist.forEach(d=>mlPick.delete(d.id)); renderMailSend();};
+    mlAdding=false; mlQ=''; renderMailSend();};
   const cl=document.getElementById('ml_clear');
-  if(cl)cl.onclick=()=>{mlPick=new Set();renderMailSend();};
-  view.querySelectorAll('.mlrow').forEach(el=>el.onclick=()=>{
-    const d=DB.find(x=>x.id==el.dataset.did); if(!d)return;
-    // אין לו כתובת — במקום לסרב, פותחים את הכרטיס כדי להוסיף אותה
+  if(cl)cl.onclick=()=>{mlPick=new Set();mlAdding=true;mlAddQ='';renderMailSend();};
+  // סימון תורם — הרשימה הגדולה נסגרת מיד ונשארים רק מי שנבחר
+  const toggle=d=>{
     if(!dHasMail(d)){toast('אין לו כתובת מייל — נפתח הכרטיס להוספה');openDonor(d,'contact');return;}
     if(mlPick.has(d.id))mlPick.delete(d.id); else mlPick.add(d.id);
-    renderMailSend();});
+    mlAdding=false; mlQ=''; mlAddQ='';
+    renderMailSend();};
+  view.querySelectorAll('.mlrow').forEach(el=>el.onclick=()=>{
+    const d=DB.find(x=>x.id==el.dataset.did); if(d)toggle(d);});
+  view.querySelectorAll('.dpr[data-add]').forEach(el=>el.onclick=()=>{
+    const d=DB.find(x=>x.id==el.dataset.add); if(d)toggle(d);});
   // ---- סימונים שנכנסים למכתב ----
   let mlLast=null;
   ['ml_body','ml_subj'].forEach(id=>{const e=document.getElementById(id);
