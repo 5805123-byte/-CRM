@@ -174,6 +174,11 @@ def personalize(text, who):
         {{משפחה}}   שם משפחה                     רוזנפלד
         {{שם מלא}}  שם פרטי ומשפחה               יצחק רוזנפלד
         {{תואר}}    ר' לגבר · מרת לאשה · ה"ה לזוג
+        {{אברך}}    האברך שלומד עבורו            נתנאל ברנס
+        {{קוויטל}}  שמות הקוויטל שלו             יצחק בן חנה לרפואה שלמה, ...
+
+    השמות תמיד נכתבים בעברית, גם כשהמכתב עצמו באנגלית — הם נלקחים
+    מהכרטיס כמו שהם.
 
     ולשון פנייה: כמה מילים עם קו ביניהן — הראשונה לגבר, השנייה לאשה,
     ואם נכתבה שלישית היא לזוג:
@@ -191,7 +196,13 @@ def personalize(text, who):
     g = ((who.get('gender') or 'm') + 'm')[0]
     simple = {'שם': first, 'משפחה': last, 'שם מלא': full,
               'תואר': (who.get('title') or '').strip(),
-              'name': first, 'lastname': last, 'fullname': full}
+              # מאיר: "יששכר־זבולון — אני רוצה למזג לו את השם של האברך
+              # שלומד בשבילו בתוך המכתב, ואת הקוויטל שלו"
+              'אברך': (who.get('avreich') or '').strip(),
+              'קוויטל': (who.get('kvittel') or '').strip(),
+              'name': first, 'lastname': last, 'fullname': full,
+              'avreich': (who.get('avreich') or '').strip(),
+              'kvittel': (who.get('kvittel') or '').strip()}
 
     def sub(m):
         key = m.group(1)
@@ -208,24 +219,48 @@ def personalize(text, who):
     return _PH.sub(sub, str(text or ''))
 
 
-def _html(body, unsub_url, sig):
+_HEB = re.compile(r'[\u0590-\u05ff]')
+_LAT = re.compile(r'[A-Za-z]')
+
+
+def letter_dir(text, raw=True):
+    """כיוון המכתב לפי מה שנכתב בו בפועל.
+
+    מאיר: "אני מסגנן את המכתב באנגלית, אבל השם צריך להיות בעברית — שם
+    ושם משפחה בעברית." מכתב באנגלית שמיושר לימין נראה שבור, ולכן הכיוון
+    נקבע לפי רוב האותיות. שם עברי בתוך משפט אנגלי (או להפך) יושב נכון
+    בזכות dir="auto" של כל פסקה — הדפדפן מסדר אותו בעצמו.
+    """
+    # נמדד על התבנית כפי שנכתבה, בלי הסימונים — אחרת שמות עבריים שנמזגו
+    # לתוך מכתב אנגלי היו הופכים אותו לימין-לשמאל
+    s = _PH.sub(' ', str(text or '')) if raw else str(text or '')
+    return 'rtl' if len(_HEB.findall(s)) >= len(_LAT.findall(s)) else 'ltr'
+
+
+def _html(body, unsub_url, sig, d='rtl'):
     """מכתב פשוט ונקי. בלי תמונות, בלי כפתורים צבעוניים ובלי טבלאות
     שיווקיות — מכתב שנראה כמו מכתב עובר את המסננים הרבה יותר טוב."""
-    paras = ''.join('<p style="margin:0 0 12px">%s</p>' % _esc(p).replace('\n', '<br>')
+    paras = ''.join('<p dir="auto" style="margin:0 0 12px">%s</p>'
+                    % _esc(p).replace('\n', '<br>')
                     for p in re.split(r'\n\s*\n', str(body or '').strip()) if p.strip())
     foot = ''
     if sig:
-        foot += ('<p style="margin:18px 0 0;color:#555">%s</p>'
+        foot += ('<p dir="auto" style="margin:18px 0 0;color:#555">%s</p>'
                  % _esc(sig).replace('\n', '<br>'))
     if unsub_url:
-        foot += ('<p style="margin:16px 0 0;font-size:12px;color:#888">'
-                 'אם אינך מעוניין לקבל מאיתנו מיילים — '
-                 '<a href="%s" style="color:#888">לחץ כאן להסרה</a></p>' % _esc(unsub_url))
-    return ('<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">'
+        foot += ('<p dir="auto" style="margin:16px 0 0;font-size:12px;color:#888">'
+                 + ('If you no longer wish to receive emails from us — '
+                    '<a href="%s" style="color:#888">click here to unsubscribe</a>'
+                    if d == 'ltr' else
+                    'אם אינך מעוניין לקבל מאיתנו מיילים — '
+                    '<a href="%s" style="color:#888">לחץ כאן להסרה</a>') % _esc(unsub_url)
+                 + '</p>')
+    return ('<!doctype html><html lang="%s" dir="%s"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
             '<body style="margin:0;padding:18px;background:#ffffff">'
-            '<div style="max-width:600px;margin:0 auto;direction:rtl;text-align:right;'
+            '<div style="max-width:600px;margin:0 auto;direction:%s;text-align:start;'
             'font-family:Arial,\'Segoe UI\',sans-serif;font-size:16px;line-height:1.7;color:#222">'
+            % (('en', 'ltr', 'ltr') if d == 'ltr' else ('he', 'rtl', 'rtl'))
             + paras + foot + '</div></body></html>')
 
 
@@ -236,7 +271,9 @@ def plain_text(body, who, unsub_url='', sig=''):
     if (sig or '').strip():
         out += '\n\n' + sig.strip()
     if unsub_url:
-        out += '\n\nלהסרה מרשימת התפוצה: ' + unsub_url
+        d = letter_dir(str(body or '') + ' ' + str(sig or ''))
+        out += (('\n\nTo unsubscribe: ' if d == 'ltr'
+                 else '\n\nלהסרה מרשימת התפוצה: ') + unsub_url)
     return out
 
 
@@ -259,7 +296,9 @@ def build(to, who, subject, body, unsub_url='', sig='', attachments=None):
 
     alt = MIMEMultipart('alternative')
     alt.attach(MIMEText(plain_text(body, who, unsub_url, sig), 'plain', 'utf-8'))
-    alt.attach(MIMEText(_html(txt, unsub_url, sig), 'html', 'utf-8'))
+    alt.attach(MIMEText(_html(txt, unsub_url, sig,
+                              letter_dir(str(body or '') + ' ' + str(sig or ''))),
+                        'html', 'utf-8'))
     atts = [a for a in (attachments or []) if a and a[2]]
     if atts:
         msg = MIMEMultipart('mixed')

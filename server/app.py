@@ -222,7 +222,7 @@ def ensure_schema():
     CREATE INDEX IF NOT EXISTS ix_mailq_batch ON mail_queue(batch, status);
     """)
     # פרטי הפנייה לכל נמען — שם פרטי, משפחה, תואר ולשון זכר/נקבה
-    for _c in ('fname', 'lname', 'title', 'gender'):
+    for _c in ('fname', 'lname', 'title', 'gender', 'avreich', 'kvittel'):
         try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s TEXT DEFAULT ''" % _c)
         except Exception: pass
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
@@ -316,6 +316,11 @@ def ensure_schema():
     # השם האמיתי נשאר בכרטיס ובכל מסכי המשרד; רק מה שמודפס ויוצא החוצה
     # נכתב "א.א.".
     try: con.execute("ALTER TABLE donors ADD COLUMN anon INTEGER DEFAULT 0")
+    except Exception: pass
+    # מאיר: "אני אגדיר את התורמים אם זה גבר או אישה" — הניחוש לפי השם
+    # הפרטי נכון ברוב המקרים, אבל כשמאיר קובע במפורש, קביעתו גוברת.
+    # 'm' גבר · 'f' אשה · 'c' זוג · ריק = לפי השם
+    try: con.execute("ALTER TABLE donors ADD COLUMN gender TEXT DEFAULT ''")
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN mail_seen TEXT DEFAULT ''")
     except Exception: pass
@@ -5309,7 +5314,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'gap_ok','last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year','anon'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year','anon','gender'}
 
 # מאיר: "בהכל תכתוב רק את המילה א.א." — כך נכתב שמו של תורם בעילום שם
 # בכל מה שמודפס: פתק היששכר־זבולון, הקוויטל השבועי והמזדמנים.
@@ -6202,8 +6207,15 @@ def _gender(first):
     return 'c' if h == 'ה"ה' else ('f' if h == 'מרת' else 'm')
 
 
-def _honor(first, last=''):
-    """התואר שלפני השם בפתקי הקוויטל: ר' לגבר, מרת לאשה, ה"ה לזוג."""
+_TITLE = {'m': "ר'", 'f': 'מרת', 'c': 'ה"ה'}
+
+
+def _honor(first, last='', gender=''):
+    """התואר שלפני השם בפתקי הקוויטל: ר' לגבר, מרת לאשה, ה"ה לזוג.
+    קביעה ידנית בכרטיס גוברת על הניחוש לפי השם."""
+    g = (gender or '').strip()[:1]
+    if g in _TITLE:
+        return _TITLE[g]
     f = re.sub(r'[^\u0590-\u05ff\s\'"\u05f3\u05f4-]', ' ', str(first or '')).strip()
     if not f:
         return "ר\'"
@@ -6977,6 +6989,30 @@ def _split_av(name):
         return '', ''
     n = 2 if (len(p) > 2 and p[0] in _AV_PREFIX) else 1
     return ' '.join(p[:n]), ' '.join(p[n:])
+
+
+def _av_display(con):
+    """שם האברך כפי שהוא נכתב לתורם: פרטי ואז משפחה. טבלת האברכים היא
+    המקור המדויק (היא הגיעה מהקובץ של מאיר), ורק מה שאינו שם נחתך לפי
+    כלל שם המשפחה."""
+    out = {}
+    try:
+        for a in con.execute("SELECT name,last,first FROM avreichim"):
+            if (a['first'] or '').strip():
+                out[(a['name'] or '').strip()] = ((a['first'] or '').strip() + ' '
+                                                  + (a['last'] or '').strip()).strip()
+    except Exception:
+        pass
+    return out
+
+
+def _av_nice(name, avn=None):
+    """שם אברך אחד, פרטי ואז משפחה."""
+    nm = (name or '').strip()
+    if avn and avn.get(nm):
+        return avn[nm]
+    l, f = _split_av(nm)
+    return ((f or '') + ' ' + (l or '')).strip() or nm
 
 
 def _srt(s):
@@ -7981,11 +8017,42 @@ def mail_recipients(con, ids):
     if not want:
         return out, skip
     qs = ','.join('?' * len(want))
-    rows = con.execute("SELECT id,last,first,email FROM donors WHERE id IN (%s)" % qs, want)
+    # שם האברך שלומד עבורו, והקוויטל שלו — כדי שאפשר יהיה למזג אותם
+    # לתוך המכתב. מאיר: "יששכר־זבולון אני רוצה למזג לו את השם של האברך
+    # שלומד בשבילו בתוך המכתב, ואת הקוויטל שלו... שזה יעשה לי אוטומטי."
+    avn = _av_display(con)
+    avs, kvs = {}, {}
+    try:
+        for r in con.execute("SELECT donor_id, TRIM(avreich) av FROM partners "
+                             "WHERE donor_id IN (%s) AND COALESCE(active,1)<>0 "
+                             "AND COALESCE(TRIM(avreich),'')<>''" % qs, want):
+            avs.setdefault(r['donor_id'], [])
+            nmv = _av_nice(r['av'], avn)
+            if nmv not in avs[r['donor_id']]:
+                avs[r['donor_id']].append(nmv)
+    except Exception:
+        pass
+    try:
+        for r in con.execute("SELECT donor_id, tier, text FROM prayers "
+                             "WHERE donor_id IN (%s) AND COALESCE(TRIM(text),'')<>''" % qs, want):
+            kvs.setdefault(r['donor_id'], {}).setdefault(r['tier'] or '', []).append(r['text'])
+    except Exception:
+        pass
+    rows = con.execute("SELECT id,last,first,email,gender FROM donors WHERE id IN (%s)" % qs, want)
     for d in rows:
         nm = ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or (d['last'] or '')
+        g = (d['gender'] or '').strip()[:1]
+        if g not in ('m', 'f', 'c'):
+            g = _gender(d['first'])
+            ttl = _honor(d['first'], d['last'])
+        else:
+            ttl = _TITLE[g]
+        gk = kvs.get(d['id']) or {}
+        kvtxt = gk.get('יששכר_זבולון') or sum((v for v in gk.values()), [])
         who = {'first': (d['first'] or '').strip(), 'last': (d['last'] or '').strip(),
-               'title': _honor(d['first'], d['last']), 'gender': _gender(d['first'])}
+               'title': ttl, 'gender': g,
+               'avreich': ' · '.join(avs.get(d['id']) or []),
+               'kvittel': kv_flow('\n'.join(kvtxt)).strip()}
         addrs = emails_of(d['email'])
         if not addrs:
             raw = str(d['email'] or '').strip()
@@ -8057,7 +8124,8 @@ def mail_worker(batch_id):
             st['now'] = r['name'] or em
             who = {'name': r['name'] or '', 'first': r['fname'] or '',
                    'last': r['lname'] or '', 'title': r['title'] or '',
-                   'gender': r['gender'] or 'm'}
+                   'gender': r['gender'] or 'm',
+                   'avreich': r['avreich'] or '', 'kvittel': r['kvittel'] or ''}
             msg = bulkmail.build(em, who, b['subject'] or '', b['body'] or '',
                                  mail_unsub_url(b['base'] or '', secret, em), b['sig'] or '')
             ok, err, dead = sender.send(msg)
@@ -8475,16 +8543,9 @@ class H(BaseHTTPRequestHandler):
             out = []
             # שם האברך מפוצל לפי טבלת האברכים — היא הגיעה מהקובץ של מאיר
             # ולכן היא המקור המדויק; רק אם אינו שם נופלים לפיצול לפי רווח
-            _avn = {}
-            try:
-                for _a in con.execute("SELECT name,last,first FROM avreichim"):
-                    if (_a['first'] or '').strip():
-                        _avn[(_a['name'] or '').strip()] = (
-                            (_a['first'] or '').strip() + ' ' + (_a['last'] or '').strip()).strip()
-            except Exception:
-                pass
+            _avn = _av_display(con)
             q = ("SELECT TRIM(p.avreich) av, d.id did, d.last, d.first, d.english, "
-                 "COALESCE(d.anon,0) anon "
+                 "COALESCE(d.anon,0) anon, COALESCE(d.gender,'') gender "
                  "FROM partners p JOIN donors d ON d.id=p.donor_id "
                  "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''")
             args = []
@@ -8503,13 +8564,10 @@ class H(BaseHTTPRequestHandler):
                 # מאיר: "בדפים האלו חשוב לי הכבוד של האברך והתורם — שיהיה
                 # כתוב את השם הפרטי לפני המשפחה". ברשימות ובחיפוש נשאר
                 # שם משפחה תחילה; רק כאן הסדר מתהפך.
-                _avp = _avn.get(r['av'])
-                if not _avp:
-                    _al, _af = _split_av(r['av'])
-                    _avp = ((_af or '') + ' ' + (_al or '')).strip() or r['av']
+                _avp = _av_nice(r['av'], _avn)
                 _dnp = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
                 _dn = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
-                _dt = _honor(r['first'], r['last'])
+                _dt = _honor(r['first'], r['last'], r['gender'])
                 # תורם בעילום שם — על הפתק נכתב "א.א." בלבד, בלי תואר
                 if int(r['anon'] or 0):
                     _dnp = _dn = ANON_NAME
@@ -10039,8 +10097,19 @@ class H(BaseHTTPRequestHandler):
                     mail_unsub_url(b.get('base') or '', secret, first['email']),
                     b.get('sig') or '')
                 subj = bulkmail.personalize(b.get('subject') or '', first)
+            # מיזוג שיוצא ריק הוא משפט קטוע אצל התורם — מזהירים לפני השליחה
+            tmpl = (b.get('subject') or '') + ' ' + (b.get('body') or '')
+            warn = []
+            for key, fld, lbl in (('אברך', 'avreich', 'האברך שלומד עבורם'),
+                                  ('קוויטל', 'kvittel', 'שמות הקוויטל')):
+                if ('{{%s}}' % key) not in tmpl.replace('{{ ', '{{').replace(' }}', '}}'):
+                    continue
+                bad = [x['name'] for x in to if not (x.get(fld) or '').strip()]
+                if bad:
+                    warn.append({'ph': '{{%s}}' % key, 'what': lbl, 'n': len(bad),
+                                 'names': bad[:40]})
             return self._send(200, {'ok': True, 'count': len(to), 'skipped': skip,
-                                    'subject': subj,
+                                    'subject': subj, 'warn': warn,
                                     'to': [x['email'] for x in to[:200]],
                                     'first': first, 'sample': sample})
         if self.path == '/api/mail/send':
@@ -10071,9 +10140,10 @@ class H(BaseHTTPRequestHandler):
             bid = cur.lastrowid
             for x in to:
                 con.execute("INSERT INTO mail_queue(batch,donor_id,email,name,fname,lname,"
-                            "title,gender) VALUES(?,?,?,?,?,?,?,?)",
+                            "title,gender,avreich,kvittel) VALUES(?,?,?,?,?,?,?,?,?,?)",
                             (bid, x['donor_id'], x['email'], x['name'], x.get('first', ''),
-                             x.get('last', ''), x.get('title', ''), x.get('gender', 'm')))
+                             x.get('last', ''), x.get('title', ''), x.get('gender', 'm'),
+                             x.get('avreich', ''), x.get('kvittel', '')))
             con.commit(); con.close()
             st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
                        'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,

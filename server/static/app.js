@@ -3859,6 +3859,9 @@ function cardDetails(d,body){
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
       <label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label></div>
+    <label class="fld"><span>גבר / אשה / זוג — קובע את התואר בפתקים ואת לשון הפנייה במכתבים</span><select id="f_gender">
+      ${GENOPTS.map(([v,l])=>`<option value="${v}"${(d.gender||'')===v?' selected':''}>${esc(l)}</option>`).join('')}
+    </select></label>
     ${hasFreq(d)?`<label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label>`:''}
     <div class="curline">מטבע: <button class="curbtn" id="f_cur" type="button" title="לחץ להחלפת מטבע">${d.region==='il'?'🇮🇱 ₪':'🇺🇸 $'}</button>
       <small>הסכומים הקבועים נרשמים בסוף העמוד, בשורות ההתחייבות</small></div>
@@ -4394,7 +4397,7 @@ function cardDetails(d,body){
       }catch(e){ toast('❌ המיזוג לא נשמר: '+(e&&e.message||e)); }
       load().then(()=>{const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});});
   };
-  const FF=['last','first','category','frequency'];   // הסכום נשמר מהשורות עצמן
+  const FF=['last','first','category','frequency','gender'];   // הסכום נשמר מהשורות עצמן
   wireFields(d,FF);
   wireNotes(d,body);
   // שינוי ההתחייבות מחליף גם את מה שרלוונטי להציג (תדירות רק לקבועים)
@@ -7903,10 +7906,16 @@ let mailFlt='';
    האחרים. השליחה עצמה איטית ומדודה — כך היא נראית אנושית ולא כדיוור
    המוני, וזה חלק מרכזי מלהישאר מחוץ לספאם. */
 // הסימונים שאפשר להכניס למכתב — כל אחד נכתב אחרת אצל כל תורם
+// מאיר: "אני אגדיר את התורמים אם זה גבר או אישה" — ברירת המחדל היא
+// ניחוש לפי השם הפרטי, וקביעה ידנית גוברת עליו.
+const GENOPTS=[['','לפי השם הפרטי — אוטומטי'],['m',"גבר — ר' · שתזכה"],
+               ['f','אשה — מרת · שתזכי'],['c','זוג — ה\"ה · שתזכו']];
 const MLVARS=[['{{תואר}}',"ר' לגבר · מרת לאשה · ה\"ה לזוג"],
               ['{{שם}}','השם הפרטי'],
               ['{{שם מלא}}','שם פרטי ומשפחה'],
               ['{{משפחה}}','שם המשפחה'],
+              ['{{אברך}}','שם האברך שלומד עבורו'],
+              ['{{קוויטל}}','שמות הקוויטל שלו'],
               ['{{ה|י|ו}}','לשון פנייה: גבר | אשה | זוג']];
 let mailSub='log', MLSETUP=null, MLPOLL=null;
 // מאיר: "אם אני רוצה רק 2 תורמים אני צריך לסנן את כולם?" — לא. הרשימה
@@ -7997,9 +8006,13 @@ function renderMailSend(){
       <label class="fld"><span>תוכן המכתב</span><textarea id="ml_body" rows="10" placeholder="לכבוד {{תואר}} {{שם מלא}},&#10;&#10;...">${esc(mlSaved('body',''))}</textarea></label>
       <div class="mlvars">${MLVARS.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
       <div class="hintxt">לחיצה על סימון מכניסה אותו לתוך המכתב (או לנושא, אם הסמן שם).
-        <b>{{תואר}}</b> נכתב לבד לכל אחד: <b>ר'</b> לגבר, <b>מרת</b> לאשה, <b>ה"ה</b> לזוג.
+        <b>{{תואר}}</b> נכתב לבד לכל אחד: <b>ר'</b> לגבר, <b>מרת</b> לאשה, <b>ה"ה</b> לזוג —
+        לפי מה שקבעת בכרטיס התורם בשורת "פנייה במכתבים", ואם לא קבעת — לפי השם הפרטי.
         ולשון פנייה — שתי מילים עם קו ביניהן, הראשונה לגבר והשנייה לאשה:
-        <b>שתזכ{{ה|י}}</b> ← "שתזכה" לגבר, "שתזכי" לאשה. מילה שלישית (למשל <b>{{ה|י|ו}}</b>) היא לזוג.
+        <b>שתזכ{{ה|י}}</b> ← "שתזכה" לגבר, "שתזכי" לאשה. מילה שלישית (למשל <b>{{ה|י|ו}}</b>) היא לזוג.<br>
+        <b>{{אברך}}</b> — שם האברך שלומד עבורו (ליששכר־זבולון). <b>{{קוויטל}}</b> — שמות הקוויטל שלו.
+        שניהם נמשכים לבד מהכרטיס.<br>
+        השמות תמיד בעברית, גם כשהמכתב באנגלית — והמכתב מיושר לבד לפי השפה שכתבת בה.
         שורה ריקה = פסקה חדשה.</div>
       <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
     </div>
@@ -8068,6 +8081,8 @@ function renderMailSend(){
       ${r.first?`<div class="hintxt">אל: <b>${esc(r.first.name)}</b> &lt;${esc(r.first.email)}&gt; · בלבד. אין עותק מוסתר.</div>
       <div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div>`:''}
       <pre class="mlsample">${esc(r.sample||'')}</pre>
+      ${(r.warn||[]).map(w=>`<div class="mlwarn">⚠️ אצל <b>${w.n}</b> מהנמענים אין ${esc(w.what)} — ${esc(w.ph)} ייצא ריק אצלם.
+        <details><summary>מי הם</summary><div class="hintxt">${w.names.map(esc).join(' · ')}${w.n>w.names.length?' …':''}</div></details></div>`).join('')}
       ${(r.skipped||[]).length?`<details class="mlskip"><summary>${r.skipped.length} תורמים לא יקבלו — ולמה</summary>
         ${r.skipped.map(s=>`<div class="mlskr">${esc(s.name)} — ${esc(s.why)}</div>`).join('')}</details>`:''}
       </div>`;
