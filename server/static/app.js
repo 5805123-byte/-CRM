@@ -4559,9 +4559,8 @@ function cardKvittel(d,body){
       ${isOcc?`<div class="two" style="margin-top:6px"><label class="fld"><span>🗓️ חודש עברי (מזדמנים)</span><select id="kv_mon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>שנה עברית</span><select id="kv_yr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>
         <div class="hintxt">התורם יופיע בקוויטל מזדמן תחת <b>${esc((d.kv_month||'—')+' '+(d.kv_year||''))}</b>. שנה כאן בכל עת.</div>`:''}
-      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="kv_anon" ${+d.anon?'checked':''}>
-        <span>🕶️ בעילום שם — להדפיס <b>${ANON_NAME}</b> במקום שמו</span></label>
-      <div class="hintxt">השם האמיתי נשאר בכרטיס ובכל מסכי המשרד. בקוויטל, בקוויטל המזדמנים ובפתק היששכר־זבולון (בשורת הזבולון) יודפס <b>${ANON_NAME}</b> בלבד.</div>
+      ${+d.anon?`<label class="jointchk" style="margin-top:8px"><input type="checkbox" id="kv_anon" checked>
+        <span>🕶️ בעילום שם — בקוויטל מודפס <b>${ANON_NAME}</b> במקום שמו</span></label>`:''}
     </div>
     ${inKv?`<div class="hintxt">✡️ מסומן בקוויטל <b>${KVTIER[d.tier]}</b>.${empty?' עדיין לא הוזנו שמות לתפילה — הוסף למטה (בדרך כלל שם התורם: "פלוני בן אמו").':''}</div>`:''}
     <div id="prayers"></div>
