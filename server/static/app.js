@@ -2737,12 +2737,14 @@ function commitRows(d){
       pid:(izOne?izOne.id:''),
       conf:izReal?1:0, ended:!!izOne&&plEnded(izOne),
       since:izOne?String(izOne.since||''):'',
-      sinceM:sinceDef(izOne&&izOne.since),
+      sinceM:izSinceDef(d, izOne&&izOne.since),
       prev:izOne?amtNum(izOne.prev_amount):0,
       guess:!izPl.length,
       // כמה רשומות עומדות מאחורי השורה הזאת. יותר מאחת — הסכום שמוצג
       // הוא הסכום שלהן יחד, וצריך לומר את זה במפורש
       izn:izPl.length, izparts:izPl.map(p=>amtNum(p.amount)),
+      stamp:rowStamp(izOne)||rowStamp(((d.partners||[]).filter(p=>p.active!=0&&p.created)
+        .sort((a,b)=>String(b.updated||b.created).localeCompare(String(a.updated||a.created)))[0])),
       praw:'',note:String(d.iz_note||'')});
   }
   pl.filter(p=>izPl.indexOf(p)<0).forEach(p=>{
@@ -2758,7 +2760,7 @@ function commitRows(d){
       got:plCollected(d,p), left:plLeft(d,p),
       via:viaD?{id:viaD.id,name:(viaD.last+' '+viaD.first).trim(),
         total:amtNum(p.via_total),note:String(p.via_note||'')}:null,
-      avreich:String(p.avreich||''), note:String(p.note||'')});});
+      avreich:String(p.avreich||''), note:String(p.note||''), stamp:rowStamp(p)});});
   // סכום קבוע שנשאר בשדה הישן בלי שורה משלו — מוצג כהצעה בלבד, כי גם
   // הוא הגיע מהייבוא ולא ממאיר
   if(!rows.length&&amtNum(d.amount)>0)
@@ -2871,6 +2873,7 @@ function commitHTML(d){
              <select class="cmsincei cmsm" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceMonOpts(r.sinceM)}</select>
              <select class="cmsincei cmsy" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceYrOpts(r.sinceM)}</select>
              <small>מכאן נספרים החודשים והחוב</small></div>` : ''}
+      ${r.stamp?`<div class="cmstamp">${esc(r.stamp)}</div>`:''}
       ${r.izn>1?`<div class="cmdup">🧾 מאחורי השורה הזו ${r.izn} רשומות יששכר־זבולון (${r.izparts.map(x=>f(x)).join(' + ')}), והסכום שמוצג הוא הסכום שלהן יחד. כתיבת סכום כאן תאחד אותן לשורה אחת.</div>`:''}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
       ${r.iz?av.map(p=>`<div class="cmav${avOpenSlot(p)?' cmavgap':''}">${avOpenSlot(p)
@@ -3528,6 +3531,28 @@ function sinceOk(v){
 // הערך אינו נשמר — הוא רק ברירת המחדל לחישוב ולתצוגה, וכל בחירה שלו
 // גוברת עליו.
 function sinceDef(v){ return sinceOk(v) || (GREGYEAR+'-01'); }
+// מאיר: "הכי חשוב לראות אצל התורם באיזה תאריך עברי ולועזי בדיוק שיבצתי
+// את האברך — שיהיה כתוב תאריך בקטן על ההתחייבות שזה עודכן בתאריך פלוני."
+const dmy=g=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(g||''));return m?(m[3]+'/'+m[2]+'/'+m[1]):'';};
+function rowStamp(o){
+  if(!o)return '';
+  const c=dmy(o.created), u=dmy(o.updated);
+  const ch=String(o.created_heb||''), uh=String(o.updated_heb||'');
+  const out=[];
+  if(c) out.push('נרשם '+(ch?ch+' · ':'')+c);
+  if(u&&u!==c) out.push('עודכן '+(uh?uh+' · ':'')+u);
+  return out.join('  |  ');
+}
+// מאיר: "לא יהיה כתוב מינואר 2026 אם הכנסתי ידנית מישהו... ואם לא מילאתי
+// כלום אז שזה יהיה ברירת מחדל ינואר 2026."
+// כשלא נקבע חודש במפורש, החודש נלקח מהתאריך הלועזי המוקדם ביותר שרשום
+// על האברכים שהתורם מחזיק — וזה מסנכרן את מפת התשלומים עם מה שהוזן.
+function izSinceDef(d, v){
+  if(sinceOk(v)) return sinceOk(v);
+  const ds=(d&&d.partners||[]).filter(p=>p.active!=0)
+    .map(p=>String(p.start_greg||'').slice(0,7)).filter(x=>/^\d{4}-\d{2}$/.test(x)).sort();
+  return ds.length?ds[0]:(GREGYEAR+'-01');
+}
 function nextMonth(ym){
   const a=String(ym).split('-'); let y=+a[0], m=+a[1]+1;
   if(m>12){m=1;y++;}
@@ -3879,7 +3904,7 @@ function cardDetails(d,body){
         <div class="two"><label class="fld"><span>סכום חודשי</span><div class="curwrap"><select id="pa_cur">${curOpts(curSym(d))}</select><input id="pa_amt" inputmode="decimal" placeholder="0"></div></label>
           <label class="fld"><span>איך משולם</span><select id="pa_meth" class="chansel">${channelOpts(d.channel||'')}</select></label></div>
         <label class="fld"><span>מאיזה תאריך הוא משלם (לועזי)</span><input type="date" id="pa_greg" value="${todayStr()}"></label>
-        <div class="hintxt">התאריך העברי ייכתב לבד לפי התאריך הזה. אם תשאיר ריק — ייחשב מהיום.</div>
+        <div class="hintxt" id="pa_hebv">התאריך העברי ייכתב לבד לפי התאריך הזה.</div>
         <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
@@ -4229,6 +4254,16 @@ function cardDetails(d,body){
     if(pas&&panew)pas.onchange=()=>{const on=pas.value==='__new__';
       panew.classList.toggle('hidden',!on);
       if(on)document.getElementById('pa_new').focus();};
+    // מאיר: "ממתי מאיזה תאריך עברי מתחיל השותפות ומאיזה תאריך לועזי הוא
+    // התחייב" — התאריך העברי מוצג כאן חי, כדי שיראה את שניהם לפני השמירה.
+    const pag=document.getElementById('pa_greg'), pahv=document.getElementById('pa_hebv');
+    const paHeb=async()=>{
+      if(!pag||!pahv)return;
+      if(!pag.value){pahv.textContent='בלי תאריך — ייחשב מהיום.';return;}
+      try{const r=await api('GET','/api/hebdate?d='+encodeURIComponent(pag.value));
+        pahv.innerHTML=r&&r.heb?('בעברית: <b>'+esc(r.heb)+'</b> — ייכתב לבד על השותפות.'):'';}
+      catch(e){}};
+    if(pag){pag.onchange=paHeb;paHeb();}
     const pab=document.getElementById('pa_add');
     if(pab)pab.onclick=async()=>{
       const isNew=pas&&pas.value==='__new__';

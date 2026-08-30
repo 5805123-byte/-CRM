@@ -265,6 +265,12 @@ def ensure_schema():
         except Exception: pass
     # מאיר: "אני רוצה שזה ישאל מאיזה תאריך לועזי הוא משלם את ההתחייבות,
     # ושזה יסתנכרן במערכת — ולא יעשה ברירת מחדל של ינואר."
+    # מאיר: "הכי חשוב לראות אצל התורם באיזה תאריך עברי ולועזי בדיוק שיבצתי
+    # את האברך — שיהיה כתוב תאריך בקטן על ההתחייבות שזה עודכן בתאריך פלוני."
+    for _t in ('partners', 'pledges'):
+        for _c in ('created', 'created_heb', 'updated', 'updated_heb'):
+            try: con.execute("ALTER TABLE %s ADD COLUMN %s TEXT DEFAULT ''" % (_t, _c))
+            except Exception: pass
     for col, ddl in [('start_date', 'TEXT'), ('start_greg', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT'), ('cur', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
@@ -8247,6 +8253,16 @@ def mail_worker(batch_id):
             pass
 
 
+def _stamp(kind='created'):
+    """חותמת מתי הרשומה נוצרה או עודכנה — לועזי ועברי, בשעון ישראל."""
+    g = today_iso()
+    try:
+        h = greg_to_heb_full(g)
+    except Exception:
+        h = ''
+    return {kind: g, kind + '_heb': h}
+
+
 def do_unsub(path):
     """מוציא כתובת מרשימת התפוצה לפי הקישור שבמייל. המפתח נבדק, כדי
     שאיש לא יוכל להסיר תורם אחר."""
@@ -9698,6 +9714,14 @@ class H(BaseHTTPRequestHandler):
                                         'free_domain': bulkmail.free_domain(), 'optouts': off})
             except Exception as e:
                 return self._send(200, {'ok': False, 'msg': str(e)[:200]})
+        # תאריך עברי לתאריך לועזי — למסכים שמראים את שניהם זה לצד זה
+        if self.path.split('?')[0] == '/api/hebdate':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            g = (qs.get('d', [''])[0] or '').strip()[:10]
+            try:
+                return self._send(200, {'greg': g, 'heb': greg_to_heb_full(g) if g else ''})
+            except Exception:
+                return self._send(200, {'greg': g, 'heb': ''})
         if self.path.split('?')[0] == '/api/mail/config':
             import bulkmail
             con = db()
@@ -9905,16 +9929,19 @@ class H(BaseHTTPRequestHandler):
             cf = b.get('confirmed')
             cf = 1 if cf is None else int(cf)
             vdid = b.get('via_donor_id')
+            _st = _stamp('updated')
             con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
                         "detail=?,permo=?,avreich=?,confirmed=?,via_donor_id=?,via_total=?,via_note=?,"
-                        "since=?,prev_amount=? WHERE id=?",
+                        "since=?,prev_amount=?,updated=?,updated_heb=? WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
                          1 if b.get('monthly') else 0, str(b.get('paid') or ''),
                          b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf,
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
-                         b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or ''), pid))
+                         b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or ''),
+                         _st['updated'], _st['updated_heb'], pid))
             con.commit(); con.close()
-            return self._send(200, {'ok': True})
+            return self._send(200, {'ok': True, 'updated': _st['updated'],
+                                    'updated_heb': _st['updated_heb']})
         m = re.match(r'/api/parnes/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
@@ -10010,7 +10037,8 @@ class H(BaseHTTPRequestHandler):
                         b['start_date'] = greg_to_heb_full((b['start_greg'] or '').strip()[:10])
                 except Exception:
                     pass
-            for k in ('avreich','start_date','start_greg','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','cur','prev_avreich','prev_ended'):
+            b.update(_stamp('updated'))
+            for k in ('avreich','start_date','start_greg','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','cur','prev_avreich','prev_ended','updated','updated_heb'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             # מאיר: "כשכתוב מחזיקים יחד — זה אמור להיות מסונכרן עם יששכר־זבולון
             # כשבוחרים את מי מחזיקים יחד". מי שנבחר כשותף מחזיק הוא תורם
@@ -11548,15 +11576,18 @@ class H(BaseHTTPRequestHandler):
             con = db(); cur = con.cursor()
             # שורה שנפתחת מהמסך היא התחייבות שמאיר רשם — מאושרת מלכתחילה.
             vdid = b.get('via_donor_id')
+            _st = _stamp()
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
-                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note,since,prev_amount) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note,since,prev_amount,"
+                        "created,created_heb) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
                          b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
                          str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
                          b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed')),
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
-                         b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or '')))
+                         b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or ''),
+                         _st['created'], _st['created_heb']))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':
@@ -11711,11 +11742,13 @@ class H(BaseHTTPRequestHandler):
             if sg and not sd:
                 try: sd = greg_to_heb_full(sg)
                 except Exception: sd = ''
+            st = _stamp()
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO partners(donor_id,avreich,start_date,start_greg,amount,note,"
-                        "active,method,cur) VALUES(?,?,?,?,?,?,1,?,?)",
+                        "active,method,cur,created,created_heb) VALUES(?,?,?,?,?,?,1,?,?,?,?)",
                         (b.get('donor_id'), b.get('avreich', ''), sd, sg, b.get('amount', ''),
-                         b.get('note', ''), b.get('method', ''), b.get('cur', '')))
+                         b.get('note', ''), b.get('method', ''), b.get('cur', ''),
+                         st['created'], st['created_heb']))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid, 'start_date': sd})
         if self.path == '/api/transaction':
