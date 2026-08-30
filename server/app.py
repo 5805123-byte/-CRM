@@ -4235,6 +4235,35 @@ def ensure_schema():
     except Exception as ex:
         print('  occ month fix error:', ex)
 
+    # מאיר: "השם של אליעזר בן שם התהפך פה". שם משפחה בן שתי מילים ("בן שם")
+    # נחתך בעבר אחרי המילה הראשונה, ולכן נשמר משפחה="בן" ופרטי="שם אליעזר
+    # ליפא" — ובפתק היששכר־זבולון זה הודפס הפוך. הפיצול תוקן, וכאן מתוקנות
+    # השורות שכבר נשמרו. פעם אחת בלבד, ורק שורות שבהן שם המשפחה הוא מילת
+    # חיבור בודדת — כל שאר השורות אינן נוגעות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='av_prefix_split_v1'").fetchone():
+            fixed = 0
+            for t in ('avreichim', 'avreich_pending'):
+                key = 'name' if t == 'avreichim' else 'alias'
+                try:
+                    rows = list(con.execute("SELECT %s k,last,first FROM %s" % (key, t)))
+                except Exception:
+                    continue
+                for r in rows:
+                    if (r['last'] or '').strip() not in _AV_PREFIX:
+                        continue
+                    l, f = _split_av(r['k'])
+                    if l != (r['last'] or '') and l and f:
+                        con.execute("UPDATE %s SET last=?, first=? WHERE %s=?" % (t, key),
+                                    (l, f, r['k']))
+                        fixed += 1
+            if fixed:
+                print('  שמות אברכים: %d שמות משפחה בני שתי מילים תוקנו' % fixed)
+            con.execute("INSERT INTO seed_flags(name) VALUES('av_prefix_split_v1')")
+            con.commit()
+    except Exception as ex:
+        print('  av split fix error:', ex)
+
     # זאב לאם הוא Steven Lamm — כך הוא רשום באנשי הקשר, עם אותו טלפון
     # (917-701-7148) שבכרטיס. אסתר לאם היא אדם אחר לגמרי, והשם האנגלי שלו
     # נדבק לכרטיס שלה בטעות בייבוא. חמשת התשלומים בקובץ הצ׳קים/דונרס נרשמו
@@ -6881,10 +6910,22 @@ def _is_avreich(name):
     return bool(n) and 'כולל יום' not in n
 
 
+# שמות משפחה שנכתבים בשתי מילים. מאיר: "השם של אליעזר בן שם התהפך פה" —
+# "בן שם אליעזר ליפא" נחתך אחרי המילה הראשונה, ולכן שם המשפחה יצא "בן"
+# והפתק הודפס "ר' שם אליעזר ליפא בן". כשהמילה הראשונה היא אחת מאלה, שם
+# המשפחה הוא שתי המילים הראשונות.
+_AV_PREFIX = {'בן', 'בת', 'בר', 'אבו', 'אבן', 'דה', 'די', 'דל', 'דוס',
+              'ואן', 'פון', 'לה', 'אל', 'בני'}
+
+
 def _split_av(name):
     """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
     p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
-    return (p[0] if p else ''), (' '.join(p[1:]) if len(p) > 1 else '')
+    p = [x for x in p if x]
+    if not p:
+        return '', ''
+    n = 2 if (len(p) > 2 and p[0] in _AV_PREFIX) else 1
+    return ' '.join(p[:n]), ' '.join(p[n:])
 
 
 def _srt(s):
