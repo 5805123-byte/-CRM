@@ -4559,6 +4559,9 @@ function cardKvittel(d,body){
       ${isOcc?`<div class="two" style="margin-top:6px"><label class="fld"><span>🗓️ חודש עברי (מזדמנים)</span><select id="kv_mon">${HMORD.map(m=>`<option ${m===(d.kv_month||'')?'selected':''}>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>שנה עברית</span><select id="kv_yr">${heYearOpts(d.kv_year||HEBYEAR)}</select></label></div>
         <div class="hintxt">התורם יופיע בקוויטל מזדמן תחת <b>${esc((d.kv_month||'—')+' '+(d.kv_year||''))}</b>. שנה כאן בכל עת.</div>`:''}
+      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="kv_anon" ${+d.anon?'checked':''}>
+        <span>🕶️ בעילום שם — להדפיס <b>${ANON_NAME}</b> במקום שמו</span></label>
+      <div class="hintxt">השם האמיתי נשאר בכרטיס ובכל מסכי המשרד. בקוויטל, בקוויטל המזדמנים ובפתק היששכר־זבולון (בשורת הזבולון) יודפס <b>${ANON_NAME}</b> בלבד.</div>
     </div>
     ${inKv?`<div class="hintxt">✡️ מסומן בקוויטל <b>${KVTIER[d.tier]}</b>.${empty?' עדיין לא הוזנו שמות לתפילה — הוסף למטה (בדרך כלל שם התורם: "פלוני בן אמו").':''}</div>`:''}
     <div id="prayers"></div>
@@ -4584,6 +4587,10 @@ function cardKvittel(d,body){
   const kvm=document.getElementById('kv_mon'),kvy=document.getElementById('kv_yr');
   const saveOcc=async()=>{d.kv_month=kvm.value;d.kv_year=kvy.value;await api('PUT','/api/donor/'+d.id,{kv_month:d.kv_month,kv_year:d.kv_year});toast('עודכן · '+d.kv_month+' '+d.kv_year+' ✓');cardKvittel(d,body);};
   if(kvm)kvm.onchange=saveOcc; if(kvy)kvy.onchange=saveOcc;
+  const kan=document.getElementById('kv_anon');
+  if(kan)kan.onchange=async()=>{d.anon=kan.checked?1:0;
+    await api('PUT','/api/donor/'+d.id,{anon:d.anon});
+    toast(d.anon?('יודפס '+ANON_NAME+' ✓'):'יודפס שמו המלא ✓');};
   document.getElementById('pr_add').onclick=async()=>{const t=document.getElementById('pr_new').value.trim();if(!t)return;const r=await api('POST','/api/prayer',{donor_id:d.id,text:t,tier:d.tier||''});d.prayers=d.prayers||[];d.prayers.push({id:r.id,text:t,tier:d.tier||''});document.getElementById('pr_new').value='';renderPrayers(d);toast('נוסף ✓');};
 }
 /* חיובים מאוטרייז/בנק ווסט שטרם אושרו — אישור ישירות מכרטיס התורם */
@@ -6155,7 +6162,7 @@ function renderKvSearch(){
   entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔎 חיפוש בכל הקוויטל</b><span class="cnt2">(${entries.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">מציג שמות מכל סוגי הקוויטל התואמים לחיפוש. לחץ על שם לעריכה — נשמר גם בכרטיס.</div>
-    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(e.donor)} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
+    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(kvWho({did:e.did,donor:e.donor}))} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
   const bk=document.getElementById('kvback');if(bk)bk.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';render();};
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
   bindKvEdit();
@@ -6401,7 +6408,12 @@ function kvSetNoLast(v){ KVNOLAST=!!v;
 // השם כפי שהוא מוצג ומודפס. אצל תורם עם כרטיס לוקחים את השם הפרטי עצמו;
 // אצל שם לא־משויך, שאין לו שדות נפרדים, מורידים את המילה הראשונה
 // (שם המשפחה נכתב ראשון) ומשאירים את השאר.
+// מאיר: "אצל אלחנן לרר הוא רוצה שזה יהיה בעילום שמו — בקוויטל שלו בשם
+// של הזבולון וגם בקוויטלאך שלו, בהכל תכתוב רק את המילה א.א."
+const ANON_NAME='א.א.';
+const isAnon=did=>{const d=did&&(DB||[]).find(x=>x.id===did);return !!(d&&+d.anon);};
 function kvWho(g){
+  if(isAnon(g&&g.did)) return ANON_NAME;
   const full=String(g.donor||'').trim();
   if(!KVNOLAST) return full;
   if(g.did){ const d=(DB||[]).find(x=>x.id===g.did);
@@ -7190,9 +7202,10 @@ async function openIzSlip(av){
   if(!rows.length){toast('לא נמצא תורם לאברך הזה');return;}
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   // בפתק עצמו — שם פרטי ואז משפחה, כמו בדפי ההדפסה
+  // תורם בעילום שם מגיע כ"א.א." בלי תואר — השרת מזהה זאת לבד
   const url=r=>'/izslip.png?'+new URLSearchParams({av:r.avreich_p||r.avreich,
     donor:r.donor_p||r.donor,names:r.names||'',
-    avt:r.av_t||"ר'",dnt:r.donor_t||"ר'"}).toString();
+    avt:r.av_t||"ר'",dnt:(r.donor_t===''?'':(r.donor_t||"ר'"))}).toString();
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕯️ פתק קוויטל — ${esc(av)}</h2>
     ${rows.map((r,i)=>`<div class="izslipbox">
       <div class="hintxt">זבולון: <b>${esc(r.donor_t||'')} ${esc(r.donor_p||r.donor)}</b>${r.names?'':' · אין עדיין שמות לקוויטל'}</div>

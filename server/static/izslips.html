@@ -63,7 +63,30 @@
      ולא הפוך". שני החצאים באותו כיוון: גוזרים בקו המקווקו ומקבלים
      שני פתקים זהים, או מקפלים. */
   .slip.flip{transform:none}
+  /* מאיר: "אני רוצה גם אפשרות של הדפסה של דף שלם כזה בדיוק, רק לא חצי
+     דף — שיהיה לי את שתי האפשרויות כדי לשלוח לתורם". דף שלם = פתק אחד
+     בעמוד, על הבלאנק המלא. הגדלים ביחס שבו התמונה מצוירת בשרת, כדי
+     שהמסך, ההדפסה והתמונה שנשלחת ייראו אותו דבר. */
+  .sheet.one{display:block}
+  .slip.full{height:297mm;border-bottom:none}
+  .slip.full .who{min-height:36mm}
+  .slip.full .lead{font-size:24pt;margin-top:2mm}
+  .slip.full .lead .z{margin-top:2.5mm}
+  .slip.full .names{font-size:56pt;margin-top:5mm}
+  /* מאיר: "תעשה לי כמו בדף של פרנס יום — למטה לשלוח לתורם, להעתיק או
+     להדפיס". הכפתורים אינם חלק מהפתק ואינם מודפסים. */
+  .acts{width:210mm;margin:6px auto 18px;display:flex;flex-wrap:wrap;gap:8px;
+    justify-content:center;font-family:system-ui,sans-serif}
+  .acts button{font:inherit;font-size:.92rem;font-weight:700;padding:10px 18px;border-radius:10px;
+    border:none;color:#fff;background:#8a6a22;cursor:pointer}
+  .acts button.wa{background:#25D366}
+  .acts button.cp{background:#3b2f5e}
+  .acts button.g{background:#fff;color:#8a6a22;border:1px solid #8a6a22}
+  .acts button:disabled{opacity:.6;cursor:default}
   @media print{
+    .acts{display:none}
+    /* הדפסת פתק אחד בלבד — כשלוחצים "הדפס את הפתק הזה" */
+    body.oneonly .sheet:not(.only){display:none}
     html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .bar,.hint{display:none}
@@ -83,11 +106,15 @@
     <option value="names">רק מי שיש לו שמות</option>
     <option value="all">הכל (גם בלי שמות)</option>
   </select>
+  <select id="mode">
+    <option value="half">חצי דף — שניים בעמוד</option>
+    <option value="full">דף שלם — אחד בעמוד</option>
+  </select>
   <span class="sp"></span>
   <span id="cnt"></span>
   <button onclick="window.print()">🖨️ הדפס</button>
 </div>
-<div class="hint">תורם אחד בכל דף, פעמיים — שני החצאים באותו כיוון. גוזרים בקו המקווקו ומקבלים שני פתקים זהים, או מקפלים. בחר אברך מהרשימה כדי להדפיס רק אותו.</div>
+<div class="hint" id="hint"></div>
 <div id="out"></div>
 <script>
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
@@ -125,39 +152,133 @@ function fitNames(slip) {
   const el = slip.querySelector('.names');
   if (!el) return;
   const inner = el.firstElementChild || el;
-  for (let pt = 45; pt >= 7; pt -= 0.5) {
+  const top = slip.classList.contains('full') ? 56 : 45;
+  for (let pt = top; pt >= 7; pt -= 0.5) {
     el.style.fontSize = pt + 'pt';
     el.style.lineHeight = (pt > 20 ? 1.28 : 1.22);
     if (inner.scrollHeight <= el.clientHeight) return;
   }
 }
-function slip(r, flip) {
+function slip(r, flip, full) {
   const nm = r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
                      : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
-  return `<div class="slip${flip ? ' flip' : ''}"><img class="bg" src="/iz-slip.jpg" alt=""><div class="in">
+  return `<div class="slip${flip ? ' flip' : ''}${full ? ' full' : ''}"><img class="bg" src="${full ? '/iz-page.jpg' : '/iz-slip.jpg'}" alt=""><div class="in">
     <div class="who">
       <div class="w"><div class="lbl">יששכר</div><div class="nm"><i>${esc(r.av_t || "ר'")}</i> ${esc(r.avreich_p || r.avreich)}</div></div>
-      <div class="w"><div class="lbl">זבולון</div><div class="nm"><i>${esc(r.donor_t || "ר'")}</i> ${esc(r.donor_p || r.donor)}</div></div>
+      <div class="w"><div class="lbl">זבולון</div><div class="nm">${r.donor_t===''?'':`<i>${esc(r.donor_t||"ר'")}</i> `}${esc(r.donor_p || r.donor)}</div></div>
     </div>
     <div class="lead">יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל בעת רצון הגדול של חצות הלילה<span class="z">יעמוד לזכות:</span></div>
     ${nm}
   </div></div>`;
 }
+// ----- התמונה של פתק אחד, בדיוק כמו שהוא מצויר -----
+// מאיר: "שיהיה לי את שתי האפשרויות, גם על חצי דף כזה וגם על דף שלם, עם
+// אפשרות העתקה, הדפסה ולשלוח לתורם". התמונה מגיעה מהשרת באותו סידור
+// שרואים כאן, בגודל שמתאים לשליחה בוואטסאפ ובמייל.
+function slipImgUrl(r, ext) {
+  return '/izslip.' + (ext || 'png') + '?' + new URLSearchParams({
+    av: r.avreich_p || r.avreich, donor: r.donor_p || r.donor, names: r.names || '',
+    avt: r.av_t || "ר'", dnt: (r.donor_t === '' ? '' : (r.donor_t || "ר'")),
+    half: FULL ? '' : '1'}).toString();
+}
+async function slipBlob(r, ext) {
+  const res = await fetch(slipImgUrl(r, ext));
+  const b = await res.blob();
+  if (!b || b.size < 5000 || (b.type || '').indexOf('image') < 0) throw new Error('bad');
+  return b;
+}
+function flash(b, txt) {
+  const t0 = b.dataset.t0 || b.textContent;
+  b.dataset.t0 = t0; b.textContent = txt;
+  setTimeout(() => { b.textContent = b.dataset.t0; }, 2500);
+}
+async function copySlip(b, r) {
+  if (!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write)) {
+    alert('הדפדפן הזה לא תומך בהעתקת תמונה — השתמש ב"שלח לתורם"'); return; }
+  const t0 = b.textContent; b.disabled = true; b.textContent = 'מעתיק…';
+  try {
+    // ספארי דורש שההבטחה תיווצר בתוך הלחיצה עצמה
+    await navigator.clipboard.write([new ClipboardItem({'image/png': slipBlob(r, 'png')})]);
+    b.disabled = false; b.textContent = t0; flash(b, '✅ הועתק — הדבק בוואטסאפ'); return;
+  } catch (e) {}
+  try {
+    const blob = await slipBlob(r, 'png');
+    await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+    b.disabled = false; b.textContent = t0; flash(b, '✅ הועתק — הדבק בוואטסאפ'); return;
+  } catch (e) {
+    b.disabled = false; b.textContent = t0;
+    alert('ההעתקה נכשלה — נסה "שלח לתורם"');
+  }
+}
+async function sendSlip(b, r) {
+  const t0 = b.textContent; b.disabled = true; b.textContent = 'מכין את התמונה…';
+  let blob = null;
+  try { blob = await slipBlob(r, 'jpg'); }
+  catch (e) { b.disabled = false; b.textContent = t0; window.open(slipImgUrl(r, 'jpg'), '_blank'); return; }
+  const who = (r.donor_p || r.donor || '').trim();
+  const fname = 'קוויטל' + (who ? (' — ' + who) : '') + '.jpg';
+  const cap = 'קוויטל יששכר־זבולון — כולל חצות 🕯️';
+  b.disabled = false; b.textContent = t0;
+  try {
+    const file = new File([blob], fname, {type: 'image/jpeg'});
+    if (navigator.canShare && navigator.canShare({files: [file]})) {
+      await navigator.share({files: [file], text: cap}); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      const png = await slipBlob(r, 'png');
+      await navigator.clipboard.write([new ClipboardItem({'image/png': png})]);
+      alert('התמונה הועתקה — פתח וואטסאפ ווב או מייל והדבק (Ctrl+V)'); return; }
+  } catch (e) {}
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+// הדפסת פתק אחד בלבד — שאר הדף מוסתר רק לרגע ההדפסה
+function printOne(sheet) {
+  document.querySelectorAll('.sheet.only').forEach(s => s.classList.remove('only'));
+  sheet.classList.add('only');
+  document.body.classList.add('oneonly');
+  const back = () => { document.body.classList.remove('oneonly'); sheet.classList.remove('only'); };
+  window.addEventListener('afterprint', back, {once: true});
+  setTimeout(back, 60000);            // רשת ביטחון אם הדפדפן לא מדווח
+  window.print();
+}
+
+let FULL = false;
 function paint() {
   const only = document.getElementById('pick').value;
   const mode = document.getElementById('filt').value;
+  FULL = document.getElementById('mode').value === 'full';
   const q = (document.getElementById('q').value || '').trim().toLowerCase();
-  const hit = r => !q || (r.avreich + ' ' + r.donor + ' ' + (r.names || ''))
+  // תורם בעילום שם מודפס כ"א.א.", אבל במשרד עדיין מוצאים אותו לפי שמו
+  const hit = r => !q || (r.avreich + ' ' + r.donor + ' ' + (r.donor_find || '') + ' ' + (r.names || ''))
     .toLowerCase().includes(q);
   let rows = ROWS.filter(r => (!only || r.avreich === only) && (mode === 'all' || r.names) && hit(r));
   document.getElementById('cnt').textContent = rows.length + ' פתקים';
+  document.getElementById('hint').innerHTML = FULL
+    ? 'דף שלם — פתק אחד בעמוד, לשליחה לתורם או להדפסה. תחת כל פתק: שליחה, העתקה והדפסה של אותו פתק בלבד.'
+    : 'חצי דף — תורם אחד בכל עמוד, פעמיים, שני החצאים באותו כיוון. גוזרים בקו המקווקו ומקבלים שני פתקים זהים, או מקפלים.';
   let h = '';
-  for (const r of rows) {
-    h += '<div class="sheet">' + slip(r) + slip(r, true) + '</div>';
-  }
+  rows.forEach((r, i) => {
+    h += '<div class="sheet' + (FULL ? ' one' : '') + '" data-i="' + i + '">'
+       + (FULL ? slip(r, false, true) : (slip(r) + slip(r, true))) + '</div>'
+       + '<div class="acts" data-i="' + i + '">'
+       + '<button class="wa act-send">📤 שלח לתורם</button>'
+       + '<button class="cp act-copy">📋 העתק תמונה</button>'
+       + '<button class="act-print">🖨️ הדפס את הפתק הזה</button>'
+       + '</div>';
+  });
   document.getElementById('out').innerHTML = h ||
     '<div class="hint">אין פתקים להצגה.</div>';
   document.querySelectorAll('.slip').forEach(sl => { fitWho(sl); fitNames(sl); });
+  document.querySelectorAll('.acts').forEach(box => {
+    const r = rows[+box.dataset.i];
+    const sheet = document.querySelector('.sheet[data-i="' + box.dataset.i + '"]');
+    box.querySelector('.act-send').onclick = function () { sendSlip(this, r); };
+    box.querySelector('.act-copy').onclick = function () { copySlip(this, r); };
+    box.querySelector('.act-print').onclick = () => printOne(sheet);
+  });
 }
 (async () => {
   const q = new URLSearchParams(location.search);
@@ -169,6 +290,7 @@ function paint() {
     .forEach(a => { const o = document.createElement('option'); o.value = o.textContent = a; sel.appendChild(o); });
   if (q.get('av')) sel.value = q.get('av');
   sel.onchange = paint;
+  document.getElementById('mode').onchange = paint;
   document.getElementById('filt').onchange = paint;
   document.getElementById('q').oninput = paint;
   paint();

@@ -295,6 +295,12 @@ def ensure_schema():
         PRIMARY KEY(donor_id, mo, amount));""")
     try: con.execute("ALTER TABLE donors ADD COLUMN keep_old INTEGER DEFAULT 0")
     except Exception: pass
+    # מאיר: "אצל אלחנן לרר, הוא רוצה שזה יהיה בעילום שמו — אז בקוויטל שלו
+    # בשם של הזבולון, וגם בקוויטלאך שלו, בהכל תכתוב רק את המילה א.א."
+    # השם האמיתי נשאר בכרטיס ובכל מסכי המשרד; רק מה שמודפס ויוצא החוצה
+    # נכתב "א.א.".
+    try: con.execute("ALTER TABLE donors ADD COLUMN anon INTEGER DEFAULT 0")
+    except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN mail_seen TEXT DEFAULT ''")
     except Exception: pass
     # תאריך המייל האחרון שהתורם שלח אלינו (לא מה ששלחנו אליו)
@@ -4264,6 +4270,18 @@ def ensure_schema():
     except Exception as ex:
         print('  av split fix error:', ex)
 
+    # מאיר: "אצל אלחנן לרר, הוא רוצה שזה יהיה בעילום שמו". מסמנים אותו
+    # פעם אחת; מכאן והלאה הסימון נעשה מהכרטיס עצמו, בלשונית הקוויטל.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='anon_lerer_v1'").fetchone():
+            cur2 = con.execute("UPDATE donors SET anon=1 WHERE last='לרר' AND first='אלחנן'")
+            if cur2.rowcount:
+                print('  אלחנן לרר סומן בעילום שם — יודפס "%s"' % ANON_NAME)
+            con.execute("INSERT INTO seed_flags(name) VALUES('anon_lerer_v1')")
+            con.commit()
+    except Exception as ex:
+        print('  anon flag error:', ex)
+
     # זאב לאם הוא Steven Lamm — כך הוא רשום באנשי הקשר, עם אותו טלפון
     # (917-701-7148) שבכרטיס. אסתר לאם היא אדם אחר לגמרי, והשם האנגלי שלו
     # נדבק לכרטיס שלה בטעות בייבוא. חמשת התשלומים בקובץ הצ׳קים/דונרס נרשמו
@@ -5275,7 +5293,11 @@ def recon_group(s):
 
 DONOR_FIELDS = {'gap_ok','last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year','anon'}
+
+# מאיר: "בהכל תכתוב רק את המילה א.א." — כך נכתב שמו של תורם בעילום שם
+# בכל מה שמודפס: פתק היששכר־זבולון, הקוויטל השבועי והמזדמנים.
+ANON_NAME = 'א.א.'
 
 def norm_zip(z, region):
     """מיקוד ארה\"ב בן 4 ספרות איבד אפס מוביל — משלים ל-5 ספרות."""
@@ -6187,6 +6209,11 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     ורק אם אני רוצה להדפיס — על חצי דף מדויק". לכן התמונה לשליחה היא A4
     מלא, וההדפסה (דף ה-HTML) נשארת על חצי דף."""
     from PIL import Image, ImageDraw, ImageFont
+    # תורם בעילום שם — "א.א." בלי תואר לפניו
+    if (donor or '').strip() == ANON_NAME:
+        donor_t = ''
+    if (avreich or '').strip() == ANON_NAME:
+        av_t = ''
     im = Image.open(os.path.join(STATIC, 'iz-slip.jpg' if half else 'iz-page.jpg')).convert('RGB')
     if im.width != width:
         im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
@@ -8194,7 +8221,8 @@ class H(BaseHTTPRequestHandler):
                             (_a['first'] or '').strip() + ' ' + (_a['last'] or '').strip()).strip()
             except Exception:
                 pass
-            q = ("SELECT TRIM(p.avreich) av, d.id did, d.last, d.first, d.english "
+            q = ("SELECT TRIM(p.avreich) av, d.id did, d.last, d.first, d.english, "
+                 "COALESCE(d.anon,0) anon "
                  "FROM partners p JOIN donors d ON d.id=p.donor_id "
                  "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''")
             args = []
@@ -8218,10 +8246,19 @@ class H(BaseHTTPRequestHandler):
                     _al, _af = _split_av(r['av'])
                     _avp = ((_af or '') + ' ' + (_al or '')).strip() or r['av']
                 _dnp = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
+                _dn = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                _dt = _honor(r['first'], r['last'])
+                # תורם בעילום שם — על הפתק נכתב "א.א." בלבד, בלי תואר
+                if int(r['anon'] or 0):
+                    _dnp = _dn = ANON_NAME
+                    _dt = ''
                 out.append({'avreich': r['av'], 'avreich_p': _avp,
-                            'av_t': "ר'", 'donor_t': _honor(r['first'], r['last']),
-                            'donor': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                            'av_t': "ר'", 'donor_t': _dt,
+                            'donor': _dn,
                             'donor_p': _dnp,
+                            # לחיפוש במסך המשרד בלבד — אינו נדפס על הפתק
+                            'donor_find': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                            'anon': int(r['anon'] or 0),
                             'donor_id': r['did'], 'english': r['english'] or '',
                             'names': txt.strip()})
             con.close()
