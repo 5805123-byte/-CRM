@@ -60,7 +60,17 @@ STATUS = {'running': False, 'done': True, 'batch': 0, 'total': 0, 'sent': 0,
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$')
 
 
+# מה שמאיר הגדיר במסך "מאיפה נשלח הדואר". גובר על משתני הסביבה, כי הוא
+# הדבר האחרון שנקבע במפורש. נטען מהמסד בעליית השרת ובכל שמירה.
+# מאיר: "אני לא הבנתי איך אני מחבר אותו בכלל" — ההגדרה ב-Render הייתה
+# מסובכת מדי, ולכן היא נעשית מתוך המערכת עצמה.
+OVERRIDE = {}
+
+
 def _env(k, d=''):
+    o = OVERRIDE.get(k)
+    if o not in (None, ''):
+        return str(o).strip()
     return (os.environ.get(k) or d).strip()
 
 
@@ -124,6 +134,70 @@ def _connect():
         except smtplib.SMTPNotSupportedError:
             pass                      # ממסר פנימי שאינו דורש התחברות
     return s
+
+
+def _try(host, port, user, pw):
+    """ניסיון התחברות אחד. מחזיר (הצליח, שגיאה)."""
+    ctx = ssl.create_default_context()
+    s = None
+    try:
+        if port == 465:
+            s = smtplib.SMTP_SSL(host, port, timeout=20, context=ctx)
+        else:
+            s = smtplib.SMTP(host, port, timeout=20)
+            try:
+                s.starttls(context=ctx)
+            except smtplib.SMTPNotSupportedError:
+                pass
+        try:
+            s.login(user, pw)
+        except smtplib.SMTPNotSupportedError:
+            pass                      # ממסר שאינו דורש התחברות
+        return True, ''
+    except smtplib.SMTPAuthenticationError as e:
+        return False, 'auth:' + str(e)[:160]
+    except Exception as e:
+        return False, 'conn:' + str(e)[:160]
+    finally:
+        try:
+            if s:
+                s.quit()
+        except Exception:
+            pass
+
+
+def probe(user, pw, host='', port=0):
+    """מוצא לבד את שרת הדואר והפורט של הכתובת.
+
+    מאיר לא אמור לדעת מהו "SMTP" ומהו "פורט 465". הוא נותן כתובת וסיסמה,
+    וכאן מנסים את הצירופים המקובלים עד שאחד מהם מתחבר. מחזיר
+    (הצליח, שרת, פורט, הודעה בעברית).
+    """
+    user = (user or '').strip()
+    dom = user.split('@')[-1].lower()
+    if not user or '@' not in user or not pw:
+        return False, '', 0, 'חסרה כתובת או סיסמה'
+    if host:
+        hosts = [host.strip()]
+    elif dom in ('gmail.com', 'googlemail.com'):
+        hosts = ['smtp.gmail.com']
+    else:
+        hosts = ['mail.' + dom, 'smtp.' + dom, dom]
+    ports = [int(port)] if port else [465, 587]
+    lastauth = ''
+    for h in hosts:
+        for pt in ports:
+            ok, err = _try(h, pt, user, pw)
+            if ok:
+                return True, h, pt, 'מחובר · שולח מ־%s' % user
+            if err.startswith('auth:'):
+                # השרת נמצא ועונה — הסיסמה היא הבעיה, אין טעם לנסות עוד
+                lastauth = err[5:]
+    if lastauth:
+        return False, '', 0, ('שרת הדואר נמצא אבל דחה את הסיסמה. בדוק את הסיסמה '
+                              'של התיבה %s. (%s)' % (user, lastauth[:80]))
+    return False, '', 0, ('לא הצלחתי להתחבר לשרת הדואר של %s. ייתכן ששם השרת '
+                          'שונה — בקש ממנהל האחסון את כתובת ה-SMTP והפורט.' % dom)
 
 
 def check():

@@ -7952,6 +7952,76 @@ function mlSave(k,v){ try{ localStorage.setItem('kc_ml_'+k,v); }catch(e){} }
 async function mlLoadSetup(){
   try{ MLSETUP=await api('GET','/api/mail/setup'); }catch(e){ MLSETUP={ok:false,msg:'אין חיבור לשרת'}; }
 }
+// מאיר: "איך אני מחבר את האימייל של רבי דויטש למערכת? לא הבנתי בדיוק."
+// ההגדרה ב-Render הייתה מסובכת מדי, ולכן היא נעשית כאן: כתובת וסיסמה,
+// והמערכת מוצאת לבד את שרת הדואר ואת הפורט, בודקת שזה עובד, ורק אז שומרת.
+let MLCFG=null, mlCfgOpen=false;
+function mlCfgHTML(){
+  const c=MLCFG;
+  if(!mlCfgOpen) return `<div class="addrow" style="margin:0 2px 8px">
+    <button class="btn sm ghost" id="ml_cfgopen" style="width:100%">⚙️ מאיפה נשלח הדואר — שנה כתובת שולח</button></div>`;
+  const u=(c&&c.saved&&c.saved.mail_user)||'';
+  const nm=(c&&c.saved&&c.saved.mail_from_name)||'כולל חצות';
+  return `<div class="sec mlcfg">
+    <div class="rbtitle" style="text-align:right">⚙️ מאיפה נשלח הדואר</div>
+    <div class="hintxt">כרגע נשלח מ־<b>${esc((c&&c.in_use&&c.in_use.from)||'—')}</b>${c&&c.from_app?'':' (מוגדר ב-Render)'}</div>
+    <label class="fld"><span>כתובת המייל שממנה לשלוח</span>
+      <input id="mc_user" value="${esc(u)}" placeholder="rabbideutsch@kollelchatzot.com" dir="ltr" autocomplete="off"></label>
+    <label class="fld"><span>הסיסמה של התיבה הזאת${c&&c.has_pass?' — שמורה. השאר ריק כדי לא לשנות':''}</span>
+      <input id="mc_pass" type="password" value="" placeholder="${c&&c.has_pass?'••••••••  (שמורה)':'הסיסמה שאיתה נכנסים לתיבה'}" dir="ltr" autocomplete="new-password"></label>
+    <label class="fld"><span>שם השולח כפי שהתורם יראה</span>
+      <input id="mc_name" value="${esc(nm)}" placeholder="כולל חצות"></label>
+    <details class="mladv"><summary>הגדרות מתקדמות — רק אם הבדיקה נכשלה</summary>
+      <div class="two">
+        <label class="fld"><span>שרת הדואר (SMTP)</span><input id="mc_host" value="${esc((c&&c.saved&&c.saved.mail_host)||'')}" placeholder="נמצא לבד" dir="ltr"></label>
+        <label class="fld"><span>פורט</span><input id="mc_port" value="${esc((c&&c.saved&&c.saved.mail_port)||'')}" placeholder="465 או 587" dir="ltr" inputmode="numeric"></label>
+      </div>
+      <div class="hintxt">השאר ריק והמערכת תנסה לבד את הצירופים המקובלים.</div>
+    </details>
+    <div id="mc_msg"></div>
+    <div class="addrow">
+      <button class="btn" id="mc_save" style="flex:2">🔌 בדוק וחבר</button>
+      <button class="btn sm ghost" id="mc_cancel" style="flex:1">סגור</button>
+    </div>
+    ${c&&c.from_app?`<div class="addrow"><button class="btn sm ghost" id="mc_clear" style="width:100%">↩️ חזור לשליחה דרך ג׳ימייל</button></div>`:''}
+    <div class="hintxt">הסיסמה נשמרת בשרת של המערכת בלבד. היא לא מוצגת כאן שוב, ולא נכנסת לגיבוי שמורידים.</div>
+  </div>`;
+}
+function wireMlCfg(){
+  const o=document.getElementById('ml_cfgopen');
+  if(o){o.onclick=async()=>{mlCfgOpen=true;
+    if(!MLCFG){try{MLCFG=await api('GET','/api/mail/config');}catch(e){}}
+    renderMailSend();};return;}
+  const cn=document.getElementById('mc_cancel');
+  if(cn)cn.onclick=()=>{mlCfgOpen=false;renderMailSend();};
+  const sv=document.getElementById('mc_save');
+  if(sv)sv.onclick=async()=>{
+    const msg=document.getElementById('mc_msg');
+    const b={user:document.getElementById('mc_user').value.trim(),
+             pass:document.getElementById('mc_pass').value,
+             name:document.getElementById('mc_name').value.trim(),
+             host:document.getElementById('mc_host').value.trim(),
+             port:document.getElementById('mc_port').value.trim()};
+    if(!b.user.includes('@')){msg.innerHTML='<div class="mlwarn">חסרה כתובת מייל תקינה</div>';return;}
+    sv.disabled=true;const t0=sv.textContent;sv.textContent='בודק את החיבור…';
+    msg.innerHTML='<div class="hintxt">מנסה להתחבר — זה יכול לקחת עד חצי דקה…</div>';
+    let r=null; try{ r=await api('POST','/api/mail/config',b); }catch(e){}
+    sv.disabled=false;sv.textContent=t0;
+    if(r&&r.ok){
+      msg.innerHTML=`<div class="mlok">✅ ${esc(r.msg||'מחובר')} · שרת ${esc(r.host)} פורט ${r.port}</div>`;
+      MLCFG=null;MLSETUP=null;
+      try{MLCFG=await api('GET','/api/mail/config');}catch(e){}
+      await mlLoadSetup();
+      setTimeout(()=>{mlCfgOpen=false;renderMailSend();},1800);
+    }else msg.innerHTML=`<div class="mlwarn">${esc((r&&r.msg)||'הבדיקה נכשלה')}</div>`;
+  };
+  const cl=document.getElementById('mc_clear');
+  if(cl)cl.onclick=async()=>{
+    if(!await uiConfirm('לחזור לשליחה דרך הג׳ימייל?'))return;
+    await api('POST','/api/mail/config',{clear:1});
+    MLCFG=null;MLSETUP=null;await mlLoadSetup();mlCfgOpen=false;renderMailSend();
+    toast('חזרנו לג׳ימייל ✓');};
+}
 function mlSetupHTML(){
   const s=MLSETUP;
   if(!s) return '<div class="hintxt">בודק את החיבור לדואר…</div>';
@@ -7975,6 +8045,7 @@ function renderMailSend(){
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_back">← חזרה ליומן המיילים</button></div>
     <div class="rbtitle">✉️ שליחת מייל לתורמים</div>
     ${mlSetupHTML()}
+    ${mlCfgHTML()}
     <div class="hintxt mlnobcc">כל תורם מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף תורם אינו רואה את הכתובות של האחרים. לכל מייל מצורף קישור הסרה, כפי שג׳ימייל דורש מדיוור.</div>
     <div class="sec">
       <div class="rbtitle" style="text-align:right">1️⃣ למי שולחים</div>
@@ -8031,6 +8102,7 @@ function renderMailSend(){
     <div id="ml_out"></div>
     <div id="ml_hist"></div>`;
   document.getElementById('ml_back').onclick=()=>{clearInterval(MLPOLL);MLPOLL=null;mailSub='log';render();};
+  wireMlCfg();
   // ---- בחירת הנמענים ----
   // רק תיבת החיפוש מצוירת מחדש תוך כדי הקלדה, ולכן מחזירים לה את המיקוד
   const qi=document.getElementById('ml_q');

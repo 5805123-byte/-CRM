@@ -7980,6 +7980,35 @@ def kv_set(con, k, v):
                 "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
 
 
+# ההגדרות שנקבעות מתוך המערכת (מסך "מאיפה נשלח הדואר"). הסיסמה נשמרת
+# במסד שעל הדיסק של Render בלבד — היא לעולם אינה מוחזרת למסך, ואינה
+# נכנסת לגיבוי שמאיר מוריד או שולח.
+MAIL_CFG_KEYS = {'mail_host': 'MAIL_HOST', 'mail_port': 'MAIL_PORT',
+                 'mail_user': 'MAIL_USER', 'mail_pass': 'MAIL_PASS',
+                 'mail_from': 'MAIL_FROM', 'mail_from_name': 'MAIL_FROM_NAME',
+                 'mail_reply': 'MAIL_REPLY_TO'}
+SECRET_KV = ('mail_pass',)          # לא יוצא מהשרת. לא בגיבוי, לא ב-API.
+
+
+def load_mail_cfg(con=None):
+    """טוען את הגדרות הדואר מהמסד אל מנוע השליחה."""
+    import bulkmail
+    own = con is None
+    if own:
+        con = db()
+    try:
+        bulkmail.OVERRIDE.clear()
+        for k, env in MAIL_CFG_KEYS.items():
+            v = kv_get(con, k)
+            if str(v or '').strip():
+                bulkmail.OVERRIDE[env] = v
+    except Exception as e:
+        print('  mail cfg load error:', e)
+    finally:
+        if own:
+            con.close()
+
+
 def mail_secret(con):
     """סוד קבוע לקישורי ההסרה — נוצר פעם אחת ונשמר במסד."""
     s = kv_get(con, 'mail_secret')
@@ -8330,6 +8359,14 @@ class H(BaseHTTPRequestHandler):
                 with dst:
                     src.backup(dst)
                 src.close()
+                # סיסמת הדואר אינה יוצאת מהשרת — לא בגיבוי שמאיר מוריד
+                # ולא בעותק שהוא שולח הלאה
+                try:
+                    dst.execute("DELETE FROM app_kv WHERE k IN (%s)"
+                                % ','.join('?' * len(SECRET_KV)), SECRET_KV)
+                    dst.commit()
+                except Exception:
+                    pass
                 if light:
                     # גיבוי קל לשליחה: כל הנתונים, בלי גוף הקבצים המצורפים
                     # (תעודות וצילומים). השמות נשארים, רק התוכן הכבד יורד.
@@ -9595,6 +9632,18 @@ class H(BaseHTTPRequestHandler):
                                         'free_domain': bulkmail.free_domain(), 'optouts': off})
             except Exception as e:
                 return self._send(200, {'ok': False, 'msg': str(e)[:200]})
+        if self.path.split('?')[0] == '/api/mail/config':
+            import bulkmail
+            con = db()
+            cur = {k: kv_get(con, k) for k in MAIL_CFG_KEYS if k not in SECRET_KV}
+            has = bool(str(kv_get(con, 'mail_pass') or '').strip())
+            con.close()
+            c = bulkmail.cfg()
+            return self._send(200, {'saved': cur, 'has_pass': has,
+                                    'in_use': {'host': c['host'], 'port': c['port'],
+                                               'user': c['user'], 'from': c['frm'],
+                                               'name': c['name']},
+                                    'from_app': bool(bulkmail.OVERRIDE)})
         if self.path.split('?')[0] == '/api/mail/batches':
             con = db()
             rows = []
@@ -10156,6 +10205,42 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'thread', 'detail': str(e)[:200]})
             return self._send(200, {'ok': True, 'batch': bid, 'count': len(to),
                                     'skipped': len(skip)})
+        if self.path == '/api/mail/config':
+            # מאיר: "אני לא הבנתי איך אני מחבר אותו בכלל" — כאן הוא נותן
+            # כתובת וסיסמה, המערכת מוצאת לבד את השרת ואת הפורט, בודקת
+            # שההתחברות עובדת, ורק אז שומרת. לא עובד = לא נשמר.
+            import bulkmail
+            con = db()
+            if b.get('clear'):
+                for k in MAIL_CFG_KEYS:
+                    con.execute("DELETE FROM app_kv WHERE k=?", (k,))
+                con.commit(); con.close()
+                load_mail_cfg()
+                ok2, msg2 = bulkmail.check()
+                return self._send(200, {'ok': True, 'cleared': True,
+                                        'msg': 'חזרנו לשליחה דרך ג׳ימייל. ' + msg2})
+            user = (b.get('user') or '').strip()
+            pw = b.get('pass')
+            if pw is None or pw == '':          # לא הוקלדה סיסמה חדשה
+                pw = kv_get(con, 'mail_pass')
+            host = (b.get('host') or '').strip()
+            try:
+                port = int(b.get('port') or 0)
+            except (TypeError, ValueError):
+                port = 0
+            ok2, h2, p2, msg2 = bulkmail.probe(user, pw, host, port)
+            if not ok2:
+                con.close()
+                return self._send(200, {'ok': False, 'msg': msg2})
+            kv_set(con, 'mail_host', h2)
+            kv_set(con, 'mail_port', str(p2))
+            kv_set(con, 'mail_user', user)
+            kv_set(con, 'mail_pass', pw)
+            kv_set(con, 'mail_from', (b.get('from') or user).strip())
+            kv_set(con, 'mail_from_name', (b.get('name') or 'כולל חצות').strip())
+            con.commit(); con.close()
+            load_mail_cfg()
+            return self._send(200, {'ok': True, 'host': h2, 'port': p2, 'msg': msg2})
         if self.path == '/api/mail/stop':
             try:
                 import bulkmail
@@ -11806,6 +11891,7 @@ def _authnet_loop():
 
 def serve():
     ensure_schema()
+    load_mail_cfg()
     import threading
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
     threading.Thread(target=_authnet_loop, daemon=True).start()
