@@ -7920,7 +7920,9 @@ const MLVARS=[['{{תואר}}',"ר' לגבר · מרת לאשה · ה\"ה לזו�
 let mailSub='log', MLSETUP=null, MLPOLL=null;
 // מאיר: "אם אני רוצה רק 2 תורמים אני צריך לסנן את כולם?" — לא. הרשימה
 // מתחילה ריקה, ומוסיפים אליה: תורם אחד בחיפוש, או קבוצה שלמה בלחיצה.
-let mlPick=new Set(), mlQ='', mlCat='', mlTier='', mlShow='mail';
+let mlPick=new Set(), mlQ='', mlGrp='', mlShow='mail';
+// שם הדרגה כפי שקוראים לה, ולא הערך הפנימי ("קוויטל_שבועי")
+const tierLabel=v=>(TIERS[v]&&TIERS[v][0])||KVTIER[v]||String(v||'').replace(/^קוויטל_/,'');
 const dHasMail=d=>(d.email||'').includes('@');
 const dName=d=>((d.last||'')+' '+(d.first||'')).trim();
 const byName=(a,b)=>dName(a).localeCompare(dName(b),'he');
@@ -7936,8 +7938,11 @@ function mlFiltered(){
   if(mlShow==='mail') l=l.filter(dHasMail);
   else if(mlShow==='nomail') l=l.filter(d=>!dHasMail(d));
   else if(mlShow==='picked') l=l.filter(d=>mlPick.has(d.id));
-  if(mlCat) l=l.filter(d=>(d.category||'').trim()===mlCat);
-  if(mlTier) l=l.filter(d=>(d.tier||'').trim()===mlTier);
+  // מאיר: "אני צריך לפי קטגוריות — יששכר־זבולון, ומזדמנים גם". יששכר־זבולון
+  // הוא דרגת קוויטל ומזדמן הוא התחייבות, ולכן שניהם יושבים כאן ברשימה אחת
+  // ואין צורך לדעת באיזה שדה כל אחד מהם נמצא.
+  if(mlGrp.startsWith('c:')) l=l.filter(d=>(d.category||'').trim()===mlGrp.slice(2));
+  else if(mlGrp.startsWith('t:')) l=l.filter(d=>(d.tier||'').trim()===mlGrp.slice(2));
   if(q) l=l.filter(d=>matchStr(dName(d)+' '+(d.english||'')+' '+(d.email||'')+' '+(d.business||''),q));
   return l.sort(byName);
 }
@@ -7976,8 +7981,10 @@ function renderMailSend(){
       <div class="mlfilt">
         <input id="ml_q" value="${esc(mlQ)}" placeholder="🔍 סנן לפי שם, אנגלית, עסק או מייל" autocomplete="off">
         <div class="mlfrow">
-          <select id="ml_cat2"><option value="">כל הקטגוריות</option>${cats.map(c=>`<option value="${esc(c)}"${c===mlCat?' selected':''}>${esc(c)} · ${DB.filter(d=>(d.category||'').trim()===c).length}</option>`).join('')}</select>
-          <select id="ml_tier"><option value="">כל דרגות הקוויטל</option>${tiers.map(c=>`<option value="${esc(c)}"${c===mlTier?' selected':''}>${esc(KVTIER[c]||c)} · ${DB.filter(d=>(d.tier||'').trim()===c).length}</option>`).join('')}</select>
+          <select id="ml_grp"><option value="">כל הקבוצות</option>
+            <optgroup label="לפי התחייבות">${cats.map(c=>`<option value="c:${esc(c)}"${('c:'+c)===mlGrp?' selected':''}>${esc(catLabel(c))} · ${DB.filter(d=>(d.category||'').trim()===c).length}</option>`).join('')}</optgroup>
+            <optgroup label="לפי דרגת קוויטל">${tiers.map(c=>`<option value="t:${esc(c)}"${('t:'+c)===mlGrp?' selected':''}>${esc(tierLabel(c))} · ${DB.filter(d=>(d.tier||'').trim()===c).length}</option>`).join('')}</optgroup>
+          </select>
           <select id="ml_show">
             <option value="mail"${mlShow==='mail'?' selected':''}>רק מי שיש לו מייל · ${DB.filter(dHasMail).length}</option>
             <option value="all"${mlShow==='all'?' selected':''}>כל התורמים · ${DB.length}</option>
@@ -8031,10 +8038,8 @@ function renderMailSend(){
   qi.oninput=()=>{const v=qi.value;clearTimeout(_qt);_qt=setTimeout(()=>{mlQ=v;renderMailSend();
     const e=document.getElementById('ml_q');
     if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},180);};
-  const c2=document.getElementById('ml_cat2');
-  if(c2)c2.onchange=()=>{mlCat=c2.value;renderMailSend();};
-  const tw=document.getElementById('ml_tier');
-  if(tw)tw.onchange=()=>{mlTier=tw.value;renderMailSend();};
+  const gp=document.getElementById('ml_grp');
+  if(gp)gp.onchange=()=>{mlGrp=gp.value;renderMailSend();};
   const sw=document.getElementById('ml_show');
   if(sw)sw.onchange=()=>{mlShow=sw.value;renderMailSend();};
   document.getElementById('ml_allf').onclick=()=>{

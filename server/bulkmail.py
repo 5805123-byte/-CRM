@@ -138,7 +138,13 @@ def check():
         except Exception:
             pass
     except smtplib.SMTPAuthenticationError:
-        return False, 'שם המשתמש או הסיסמה של הדואר אינם נכונים'
+        # מאיר: "שיניתי באמת סיסמא, אולי זו הבעיה?" — כן. שינוי סיסמת
+        # החשבון מבטל את כל "סיסמאות האפליקציה" שנוצרו קודם, וזאת הסיסמה
+        # שהשרת משתמש בה. צריך ליצור חדשה ולהחליף אותה ב-Render.
+        return False, ('הדואר דחה את הסיסמה. אם שינית לאחרונה את סיסמת חשבון '
+                       'הג׳ימייל — כל "סיסמאות האפליקציה" הישנות בוטלו. צור סיסמת '
+                       'אפליקציה חדשה ב-myaccount.google.com/apppasswords והחלף '
+                       'את GMAIL_APP_PASSWORD ב-Render (16 תווים, בלי רווחים).')
     except Exception as e:
         return False, 'אין תקשורת אל שרת הדואר: %s' % e
     c = cfg()
