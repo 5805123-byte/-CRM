@@ -259,6 +259,7 @@ TITLE_ALL = 'ה"ה'
 GREET_PRE = 'לכבוד ידידינו ושותפינו היקר ה"ה '
 GREET_POST = ' הי"ו'
 TITLE_END = 'הי"ו'          # התואר שאחרי השם
+AV_PRE, AV_POST = 'הר"ר ', ' שליט"א'    # התואר של האברך במכתב
 BIG = '<b style="font-size:1.32em;letter-spacing:.01em">%s</b>'
 BOLD = '<b>%s</b>'
 KVBOX = ('<span style="display:block;margin:14px 0;padding:13px 17px;background:#faf6ec;'
@@ -336,7 +337,9 @@ def personalize(text, who, html=False, d='rtl'):
             # האברכים האלו לומדים בשבילך' ואז אצרף את שלושת השמות."
             if not avs:
                 return ''
-            names = [(BOLD % _esc(x)) if html else x for x in avs]
+            # מאיר: "שזה יכתוב את כל התואר של האברך — למשל הר\"ר יעקב יוסף
+            # אנשין שליט\"א". התואר בגופן רגיל, השם עצמו מודגש.
+            names = [AV_PRE + ((BOLD % _esc(x)) if html else x) + AV_POST for x in avs]
             if len(names) == 1:
                 return names[0]
             return ', '.join(names[:-1]) + ' ו' + names[-1]

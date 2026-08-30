@@ -234,7 +234,9 @@ def ensure_schema():
                      ('idnum', 'TEXT'), ('id_ok', 'INTEGER'), ('seder', 'TEXT')]:
         try: con.execute('ALTER TABLE avreichim ADD COLUMN %s %s' % (col, ddl))
         except Exception: pass
-    for col, ddl in [('start_date', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT'), ('cur', 'TEXT')]:
+    # מאיר: "אני רוצה שזה ישאל מאיזה תאריך לועזי הוא משלם את ההתחייבות,
+    # ושזה יסתנכרן במערכת — ולא יעשה ברירת מחדל של ינואר."
+    for col, ddl in [('start_date', 'TEXT'), ('start_greg', 'TEXT'), ('amount', 'TEXT'), ('active', 'INTEGER DEFAULT 1'), ('ended_date', 'TEXT'), ('method', 'TEXT'), ('partner_with', 'TEXT'), ('partner_with_id', 'INTEGER'), ('renew_date', 'TEXT'), ('paid_note', 'TEXT'), ('joint', 'INTEGER DEFAULT 0'), ('paid_thru', 'TEXT'), ('joint_payer', 'INTEGER'), ('share', 'TEXT'), ('cur', 'TEXT')]:
         try: con.execute(f"ALTER TABLE partners ADD COLUMN {col} {ddl}")
         except Exception: pass
     # תאריך חידוש שותפות יש"ז — המופע הבא של תאריך תחילת ההסכם העברי (שנה מהתחלה). מחושב מחדש בכל הפעלה.
@@ -9971,7 +9973,15 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     print('  joint payer error:', e)
             con = db(); sets = []; vals = []
-            for k in ('avreich','start_date','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','cur','prev_avreich','prev_ended'):
+            # שינוי התאריך הלועזי מעדכן גם את העברי, אם מאיר לא כתב אותו בעצמו
+            if 'start_greg' in b and (b.get('start_greg') or '').strip() and not (b.get('start_date') or '').strip():
+                try:
+                    cur0 = con.execute("SELECT start_date FROM partners WHERE id=?", (pid,)).fetchone()
+                    if not (cur0 and (cur0['start_date'] or '').strip()):
+                        b['start_date'] = greg_to_heb_full((b['start_greg'] or '').strip()[:10])
+                except Exception:
+                    pass
+            for k in ('avreich','start_date','start_greg','amount','note','active','ended_date','method','partner_with','partner_with_id','paid_note','paid_thru','renew_date','joint','joint_payer','share','cur','prev_avreich','prev_ended'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k] or None if k == 'partner_with_id' else b[k])
             # מאיר: "כשכתוב מחזיקים יחד — זה אמור להיות מסונכרן עם יששכר־זבולון
             # כשבוחרים את מי מחזיקים יחד". מי שנבחר כשותף מחזיק הוא תורם
@@ -11666,11 +11676,19 @@ class H(BaseHTTPRequestHandler):
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':
+            # התאריך הלועזי הוא המקור; העברי נגזר ממנו כדי ששניהם לא ייפרדו.
+            sg = (b.get('start_greg') or '').strip()[:10]
+            sd = (b.get('start_date') or '').strip()
+            if sg and not sd:
+                try: sd = greg_to_heb_full(sg)
+                except Exception: sd = ''
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,amount,note,active,method) VALUES(?,?,?,?,?,1,?)",
-                        (b.get('donor_id'), b.get('avreich',''), b.get('start_date',''), b.get('amount',''), b.get('note',''), b.get('method','')))
+            cur.execute("INSERT INTO partners(donor_id,avreich,start_date,start_greg,amount,note,"
+                        "active,method,cur) VALUES(?,?,?,?,?,?,1,?,?)",
+                        (b.get('donor_id'), b.get('avreich', ''), sd, sg, b.get('amount', ''),
+                         b.get('note', ''), b.get('method', ''), b.get('cur', '')))
             con.commit(); pid = cur.lastrowid; con.close()
-            return self._send(200, {'ok': True, 'id': pid})
+            return self._send(200, {'ok': True, 'id': pid, 'start_date': sd})
         if self.path == '/api/transaction':
             con = db(); cur = con.cursor()
             cur.execute("""INSERT INTO transactions(donor_id,date,amount,category,method,status,trans_id,sub_id,inst_total,inst_paid,recurring,note,created)

@@ -3874,8 +3874,13 @@ function cardDetails(d,body){
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <button type="button" class="opnlink" id="pa_opn" style="margin-top:6px">➕ הוסף עוד אברך</button>
       <div class="opnbox hidden" id="pa_opnbox">
-        <div class="addrow"><select id="pa_name">${avOpts('')}</select><button class="btn sm" id="pa_add">הוסף</button></div>
+        <div class="addrow"><select id="pa_name">${avOpts('')}</select></div>
         <div class="addrow hidden" id="pa_newrow"><input id="pa_new" placeholder="שם האברך החדש — משפחה ואז פרטי"></div>
+        <div class="two"><label class="fld"><span>סכום חודשי</span><div class="curwrap"><select id="pa_cur">${curOpts(curSym(d))}</select><input id="pa_amt" inputmode="decimal" placeholder="0"></div></label>
+          <label class="fld"><span>איך משולם</span><select id="pa_meth" class="chansel">${channelOpts(d.channel||'')}</select></label></div>
+        <label class="fld"><span>מאיזה תאריך הוא משלם (לועזי)</span><input type="date" id="pa_greg" value="${todayStr()}"></label>
+        <div class="hintxt">התאריך העברי ייכתב לבד לפי התאריך הזה. אם תשאיר ריק — ייחשב מהיום.</div>
+        <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
     ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
@@ -4231,11 +4236,17 @@ function cardDetails(d,body){
       if(n.length<2){toast('בחר אברך מהרשימה, או הוסף אברך חדש');return;}
       if(isNew){const a=await api('POST','/api/avreich/new',{name:n});
         if(!a||!a.ok){toast('ההוספה לרשימת האברכים נכשלה');return;}}
-      const r=await api('POST','/api/partner',{donor_id:d.id,avreich:n});
-      d.partners=(d.partners||[]).concat([{id:r.id,avreich:n}]);
+      const gv=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+      const row={donor_id:d.id, avreich:n, amount:gv('pa_amt'), cur:gv('pa_cur'),
+                 method:gv('pa_meth'), start_greg:gv('pa_greg')||todayStr()};
+      const r=await api('POST','/api/partner',row);
+      d.partners=(d.partners||[]).concat([{id:r.id, avreich:n, amount:row.amount,
+        cur:row.cur, method:row.method, start_greg:row.start_greg,
+        start_date:(r&&r.start_date)||''}]);
       await loadAvList();
       if(panew)panew.classList.add('hidden');
       const pn=document.getElementById('pa_new'); if(pn)pn.value='';
+      ['pa_amt'].forEach(k=>{const e=document.getElementById(k); if(e)e.value='';});
       if(pas)pas.innerHTML=avOpts('');
       const pbx=document.getElementById('pa_opnbox'); if(pbx)pbx.classList.add('hidden');
       renderPartners(d);toast('נוסף ✓');};
@@ -5371,7 +5382,8 @@ function renderPartners(d){
     <div class="addrow hidden pavnew" data-id="${p.id}"><input class="pavni" placeholder="שם האברך החדש — משפחה ואז פרטי"><button class="btn sm pavnb" data-id="${p.id}">➕ הוסף</button></div>
     <div class="two"><label class="fld"><span>סכום</span><div class="curwrap"><select class="pfield curpick" data-id="${p.id}" data-k="cur">${curOpts(pCur(p,d))}</select><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></div></label>
       <label class="fld"><span>איך משולם</span><select class="pfield chansel" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
-    <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="א' אייר תשפ״ו"></label>
+    <div class="two"><label class="fld"><span>מתאריך שהוא משלם (לועזי)</span><input type="date" class="pfield" data-id="${p.id}" data-k="start_greg" value="${esc((p.start_greg||'').slice(0,10))}"></label>
+      <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="נכתב לבד מהתאריך הלועזי"></label></div>
     <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
       <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
@@ -7916,8 +7928,7 @@ const MLVARS=[['{{תואר}}','ה"ה — לפני השם'],
               ['{{שם}}','השם המלא, מודגש וגדול'],
               ['{{הי"ו}}','הי"ו — אחרי השם'],
               ['{{קוויטל}}','שמות הקוויטל, מודגשים'],
-              ['{{אברך}}','שם האברך שלומד עבורו, מודגש — או כל האברכים שלו'],
-              ['{{מספר אברכים}}','כמה אברכים הוא מחזיק']];
+              ['{{אברך}}','שם האברך שלומד עבורו, מודגש — או כל האברכים שלו']];
 let mailSub='log', MLSETUP=null, MLPOLL=null;
 // מאיר: "אם אני רוצה רק 2 תורמים אני צריך לסנן את כולם?" — לא. הרשימה
 // מתחילה ריקה, ומוסיפים אליה: תורם אחד בחיפוש, או קבוצה שלמה בלחיצה.
@@ -8115,9 +8126,8 @@ function renderMailSend(){
         <b>{{תואר}} {{שם}} {{הי"ו}}</b> ← <i>ה"ה</i> <b>יהושע מאיר דויטש</b> <i>הי"ו</i> —
         כותבים סביבם מה שרוצים, למשל "לכבוד ידידינו ושותפינו היקר".<br>
         <b>{{קוויטל}}</b> — שמות הקוויטל שלו, כל שם בשורה, מודגשים בתיבה משלהם.
-        <b>{{אברך}}</b> — שם האברך שלומד עבורו, מודגש. אם הוא מחזיק כמה אברכים —
-        כולם ייכתבו יחד ("נתנאל ברנס, אליעזר ליפא בן שם ויצחק כהן"), ו<b>{{מספר אברכים}}</b>
-        ייתן את המספר: <i>{{מספר אברכים}} האברכים האלו לומדים בשבילך: {{אברך}}</i>.<br>
+        <b>{{אברך}}</b> — האברך שלומד עבורו, עם התואר המלא: <i>הר"ר</i> <b>יעקב יוסף אנשין</b> <i>שליט"א</i>.
+        אם הוא מחזיק כמה אברכים — כולם ייכתבו יחד, כל אחד עם התואר שלו.<br>
         הכל נמשך לבד מהכרטיס, ואם אין לו — לא נכתב כלום.<br>
         השמות תמיד בעברית, גם כשהמכתב באנגלית. שורה ריקה = פסקה חדשה.</div>
       <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
