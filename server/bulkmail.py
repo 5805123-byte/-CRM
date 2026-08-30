@@ -325,7 +325,13 @@ def letter_dir(text, raw=True):
     return 'rtl' if len(_HEB.findall(s)) >= len(_LAT.findall(s)) else 'ltr'
 
 
-def _html(body, unsub_url, sig, d='rtl'):
+def open_token(qid, secret):
+    """מפתח לפיקסל המעקב — כדי שאיש לא יוכל לזייף פתיחה של תורם אחר."""
+    return hmac.new((secret or '').encode('utf-8'),
+                    ('o:%s' % qid).encode('utf-8'), 'sha256').hexdigest()[:16]
+
+
+def _html(body, unsub_url, sig, d='rtl', pixel=''):
     """מכתב פשוט ונקי. בלי תמונות, בלי כפתורים צבעוניים ובלי טבלאות
     שיווקיות — מכתב שנראה כמו מכתב עובר את המסננים הרבה יותר טוב."""
     paras = ''.join('<p dir="auto" style="margin:0 0 12px">%s</p>'
@@ -343,6 +349,10 @@ def _html(body, unsub_url, sig, d='rtl'):
                     'אם אינך מעוניין לקבל מאיתנו מיילים — '
                     '<a href="%s" style="color:#888">לחץ כאן להסרה</a>') % _esc(unsub_url)
                  + '</p>')
+    if pixel:
+        # פיקסל מעקב פתיחות. עובד רק כשהתורם מאשר הצגת תמונות, ולכן
+        # המספר תמיד נמוך מהאמת — ראה את ההסבר במסך.
+        foot += '<img src="%s" width="1" height="1" alt="" style="display:block;border:0">' % _esc(pixel)
     return ('<!doctype html><html lang="%s" dir="%s"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
             '<body style="margin:0;padding:18px;background:#ffffff">'
@@ -365,7 +375,7 @@ def plain_text(body, who, unsub_url='', sig=''):
     return out
 
 
-def build(to, who, subject, body, unsub_url='', sig='', attachments=None):
+def build(to, who, subject, body, unsub_url='', sig='', attachments=None, pixel=''):
     """הודעה אישית אחת. בשורת הנמען יש כתובת אחת בלבד — ואין ולא יהיה
     כאן Cc או Bcc.
 
@@ -385,7 +395,7 @@ def build(to, who, subject, body, unsub_url='', sig='', attachments=None):
     alt = MIMEMultipart('alternative')
     alt.attach(MIMEText(plain_text(body, who, unsub_url, sig), 'plain', 'utf-8'))
     alt.attach(MIMEText(_html(txt, unsub_url, sig,
-                              letter_dir(str(body or '') + ' ' + str(sig or ''))),
+                              letter_dir(str(body or '') + ' ' + str(sig or '')), pixel),
                         'html', 'utf-8'))
     atts = [a for a in (attachments or []) if a and a[2]]
     if atts:

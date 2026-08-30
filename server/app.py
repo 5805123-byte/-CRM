@@ -222,9 +222,13 @@ def ensure_schema():
     CREATE INDEX IF NOT EXISTS ix_mailq_batch ON mail_queue(batch, status);
     """)
     # פרטי הפנייה לכל נמען — שם פרטי, משפחה, תואר ולשון זכר/נקבה
-    for _c in ('fname', 'lname', 'title', 'gender', 'avreich', 'kvittel'):
+    for _c in ('fname', 'lname', 'title', 'gender', 'avreich', 'kvittel', 'opened_at'):
         try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s TEXT DEFAULT ''" % _c)
         except Exception: pass
+    try: con.execute("ALTER TABLE mail_queue ADD COLUMN opens INTEGER DEFAULT 0")
+    except Exception: pass
+    try: con.execute("ALTER TABLE mail_batch ADD COLUMN track INTEGER DEFAULT 1")
+    except Exception: pass
     # מיגרציה — הוספת עמודות חדשות אם חסרות (דיסק קבוע קיים)
     for col, ddl in [('phone', 'TEXT'), ('email', 'TEXT'), ('addr', 'TEXT'), ('ended', 'TEXT'),
                      ('idnum', 'TEXT'), ('id_ok', 'INTEGER'), ('seder', 'TEXT')]:
@@ -8155,8 +8159,13 @@ def mail_worker(batch_id):
                    'last': r['lname'] or '', 'title': r['title'] or '',
                    'gender': r['gender'] or 'm',
                    'avreich': r['avreich'] or '', 'kvittel': r['kvittel'] or ''}
+            pix = ''
+            if int(b['track'] if 'track' in b.keys() else 1) and (b['base'] or ''):
+                pix = '%s/o.png?i=%d&t=%s' % ((b['base'] or '').rstrip('/'), r['id'],
+                                              bulkmail.open_token(r['id'], secret))
             msg = bulkmail.build(em, who, b['subject'] or '', b['body'] or '',
-                                 mail_unsub_url(b['base'] or '', secret, em), b['sig'] or '')
+                                 mail_unsub_url(b['base'] or '', secret, em), b['sig'] or '',
+                                 pixel=pix)
             ok, err, dead = sender.send(msg)
             if ok:
                 con.execute("UPDATE mail_queue SET status='sent', sent_at=?, error='' WHERE id=?",
@@ -8535,6 +8544,30 @@ class H(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Content-Disposition', 'inline; filename="kvittel.%s"' % fmt)
             self.end_headers(); self.wfile.write(data)
+            return
+        # פיקסל מעקב פתיחות — נטען כשהתורם פותח את המייל ומאשר תמונות
+        if self.path.split('?')[0] == '/o.png':
+            try:
+                import bulkmail
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                qid = int(qs.get('i', ['0'])[0] or 0)
+                tok = (qs.get('t', [''])[0] or '').strip()
+                if qid and tok:
+                    con = db()
+                    if hmac.compare_digest(bulkmail.open_token(qid, mail_secret(con)), tok):
+                        con.execute("UPDATE mail_queue SET opens=COALESCE(opens,0)+1, "
+                                    "opened_at=CASE WHEN COALESCE(opened_at,'')='' THEN ? "
+                                    "ELSE opened_at END WHERE id=?", (now_iso(), qid))
+                        con.commit()
+                    con.close()
+            except Exception:
+                pass
+            gif = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/gif')
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+            self.send_header('Content-Length', str(len(gif)))
+            self.end_headers(); self.wfile.write(gif)
             return
         # הסרה מרשימת התפוצה — הקישור שבתחתית כל מייל
         if self.path.split('?')[0] == '/unsub':
@@ -9664,6 +9697,48 @@ class H(BaseHTTPRequestHandler):
                 "WHERE batch=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             return self._send(200, {'rows': rows})
+        m = re.match(r'/api/mail/batch/(\d+)/stats$', self.path.split('?')[0])
+        if m:
+            # מאיר: "יש במערכת סטטיסטיקה מי פתח את האימייל, ומי עוד לא קרא,
+            # ומי השיב?" — פתיחות נמדדות בפיקסל ולכן הן תמיד נמוכות מהאמת
+            # (מי שלא מאשר תמונות אינו נספר). תשובות נמדדות מהמיילים
+            # הנכנסים עצמם, ולכן הן מדויקות.
+            bid = int(m.group(1))
+            con = db()
+            b = con.execute("SELECT * FROM mail_batch WHERE id=?", (bid,)).fetchone()
+            if not b:
+                con.close(); return self._send(404, {'error': 'not found'})
+            when = (b['created'] or '')[:10] or today_iso()
+            rep = set()
+            try:
+                for r in con.execute(
+                        "SELECT DISTINCT donor_id FROM contacts_log WHERE channel='אימייל' "
+                        "AND COALESCE(direction,'')<>'out' AND COALESCE(date,'')>=?", (when,)):
+                    rep.add(r['donor_id'])
+            except Exception:
+                pass
+            off = mail_optouts(con)
+            rows = []
+            for r in con.execute("SELECT * FROM mail_queue WHERE batch=? ORDER BY id", (bid,)):
+                rows.append({'donor_id': r['donor_id'], 'name': r['name'], 'email': r['email'],
+                             'status': r['status'], 'error': r['error'] or '',
+                             'sent_at': r['sent_at'] or '',
+                             'opened': bool((r['opened_at'] or '').strip()),
+                             'opened_at': r['opened_at'] or '',
+                             'opens': int(r['opens'] or 0),
+                             'replied': r['donor_id'] in rep,
+                             'unsub': (r['email'] or '').lower() in off})
+            con.close()
+            sent = [x for x in rows if x['status'] == 'sent']
+            return self._send(200, {
+                'track': int(b['track'] if 'track' in b.keys() else 1),
+                'created': b['created'], 'subject': b['subject'], 'rows': rows,
+                'tot': {'total': len(rows), 'sent': len(sent),
+                        'opened': sum(1 for x in sent if x['opened']),
+                        'replied': sum(1 for x in sent if x['replied']),
+                        'unsub': sum(1 for x in rows if x['unsub']),
+                        'failed': sum(1 for x in rows if x['status'] in ('failed', 'dead')),
+                        'queued': sum(1 for x in rows if x['status'] == 'queued')}})
         if self.path == '/api/mail/paypal_sync/status':
             try:
                 import gmail_intake
@@ -10181,11 +10256,11 @@ class H(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, {'ok': False, 'error': 'no_recipients',
                                         'detail': 'אין אף נמען עם כתובת מייל תקינה'})
-            cur = con.execute("INSERT INTO mail_batch(name,subject,body,sig,base,created,total,status) "
-                              "VALUES(?,?,?,?,?,?,?,'queued')",
+            cur = con.execute("INSERT INTO mail_batch(name,subject,body,sig,base,created,total,"
+                              "status,track) VALUES(?,?,?,?,?,?,?,'queued',?)",
                               ((b.get('name') or subject)[:120], subject, body,
                                (b.get('sig') or '').strip(), (b.get('base') or '').strip(),
-                               now_iso(), len(to)))
+                               now_iso(), len(to), 0 if b.get('track') is False else 1))
             bid = cur.lastrowid
             for x in to:
                 con.execute("INSERT INTO mail_queue(batch,donor_id,email,name,fname,lname,"

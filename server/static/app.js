@@ -3859,9 +3859,6 @@ function cardDetails(d,body){
       <label class="fld"><span>שם פרטי</span><input id="f_first" value="${esc(d.first)}"></label></div>
     <div class="two"><label class="fld"><span>התחייבות</span><select id="f_category">${sel}</select></label>
       <label class="fld"><span>דרגת קוויטל</span><select id="f_tier">${tierOpts(d)}</select></label></div>
-    <label class="fld"><span>גבר / אשה / זוג — קובע את התואר בפתקים ואת לשון הפנייה במכתבים</span><select id="f_gender">
-      ${GENOPTS.map(([v,l])=>`<option value="${v}"${(d.gender||'')===v?' selected':''}>${esc(l)}</option>`).join('')}
-    </select></label>
     ${hasFreq(d)?`<label class="fld"><span>תדירות</span><select id="f_frequency">${freqOpts(d.frequency)}</select></label>`:''}
     <div class="curline">מטבע: <button class="curbtn" id="f_cur" type="button" title="לחץ להחלפת מטבע">${d.region==='il'?'🇮🇱 ₪':'🇺🇸 $'}</button>
       <small>הסכומים הקבועים נרשמים בסוף העמוד, בשורות ההתחייבות</small></div>
@@ -4397,7 +4394,7 @@ function cardDetails(d,body){
       }catch(e){ toast('❌ המיזוג לא נשמר: '+(e&&e.message||e)); }
       load().then(()=>{const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});});
   };
-  const FF=['last','first','category','frequency','gender'];   // הסכום נשמר מהשורות עצמן
+  const FF=['last','first','category','frequency'];   // הסכום נשמר מהשורות עצמן
   wireFields(d,FF);
   wireNotes(d,body);
   // שינוי ההתחייבות מחליף גם את מה שרלוונטי להציג (תדירות רק לקבועים)
@@ -4735,6 +4732,9 @@ function cardInfo(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
+    <label class="fld"><span>גבר / אשה / זוג — קובע את התואר בפתקי הקוויטל ואת לשון הפנייה במכתבים</span><select id="f_gender">
+      ${GENOPTS.map(([v,l])=>`<option value="${v}"${(d.gender||'')===v?' selected':''}>${esc(l)}</option>`).join('')}
+    </select></label>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <div class="fld"><span>אימיילים</span><div id="emails" class="phones"></div></div>
     <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
@@ -4755,7 +4755,7 @@ function cardInfo(d,body){
   // מאיר: "זה מיותר — כשמכניסים תרומה כבר בוחרים בתרומה עבור מה, אין
   // צורך במילוי הפרטים את זה". שדה "מטרה כללית" ירד מהמסך; מה שכבר
   // רשום בו נשאר במסד ואינו נמחק.
-  const INF=['english','business','region','channel','addr','city','country','zip','notes','debt_open','debt_open_note'];
+  const INF=['english','business','gender','region','channel','addr','city','country','zip','notes','debt_open','debt_open_note'];
   wireFields(d,INF);
   wireChanSel(document.getElementById('f_channel'));
   const sv=document.getElementById('f_saveall');
@@ -8097,6 +8097,9 @@ function renderMailSend(){
         השמות תמיד בעברית, גם כשהמכתב באנגלית — והמכתב מיושר לבד לפי השפה שכתבת בה.
         שורה ריקה = פסקה חדשה.</div>
       <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
+      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="ml_track" ${mlSaved('track','1')==='1'?'checked':''}>
+        <span>📊 עקוב אחרי מי פתח את המייל</span></label>
+      <div class="hintxt">מוסיף תמונה זעירה ובלתי נראית למכתב. מי שחוסם תמונות לא נספר, ולכן המספר תמיד נמוך מהאמת. אפשר לכבות — "מי השיב" ימשיך לעבוד בכל מקרה.</div>
     </div>
     <div class="addrow">
       <button class="btn sm ghost" id="ml_prev" style="flex:1">👁️ בדיקה — מה יקבל התורם הראשון</button>
@@ -8150,9 +8153,12 @@ function renderMailSend(){
                  subject:document.getElementById('ml_subj').value.trim(),
                  body:document.getElementById('ml_body').value,
                  sig:document.getElementById('ml_sig').value.trim(),
+                 track:document.getElementById('ml_track').checked,
                  base:location.origin});
   ['subj','body','sig'].forEach(k=>{const e=document.getElementById('ml_'+k);
     if(e)e.oninput=()=>mlSave(k,e.value);});
+  const trk=document.getElementById('ml_track');
+  if(trk)trk.onchange=()=>mlSave('track',trk.checked?'1':'0');
   document.getElementById('ml_prev').onclick=async()=>{
     const b=gv(); const o=document.getElementById('ml_out');
     if(!b.ids.length){toast('אין נמענים');return;}
@@ -8225,15 +8231,44 @@ async function mlHistory(){
     ${rows.map(b=>`<div class="mlbrow"><div><b>${esc(b.subject||b.name||'')}</b>
       <span class="hintxt">${esc(b.created||'')} · ${esc(heb[b.status]||b.status)}</span></div>
       <div class="hintxt">נשלחו ${b.counts.sent||0} מתוך ${b.total}${b.counts.failed?` · נכשלו ${b.counts.failed}`:''}${b.counts.dead?` · כתובות פסולות ${b.counts.dead}`:''}</div>
+      <button class="btn sm ghost mlstat" data-id="${b.id}">📊 מי פתח, מי השיב</button>
       ${((b.counts.failed||0)+(b.counts.dead||0))?`<button class="btn sm ghost mlfail" data-id="${b.id}">מי לא קיבל, ולמה</button>`:''}
       ${(b.status!=='done'&&(b.counts.queued||0))?`<button class="btn sm ghost mlres" data-id="${b.id}">▶️ המשך את המשלוח (${b.counts.queued} נותרו)</button>`:''}
       <div class="mlfx" data-id="${b.id}"></div></div>`).join('')}</div>`;
   el.querySelectorAll('.mlres').forEach(b=>b.onclick=async()=>{
     const r2=await api('POST','/api/mail/batch/'+b.dataset.id+'/resume',{});
     if(r2&&r2.ok){toast('ממשיך…');mlWatch();}else toast('לא ניתן כרגע');});
+  el.querySelectorAll('.mlstat').forEach(b=>b.onclick=async()=>{
+    const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
+    if(box.dataset.mode==='stat'){box.innerHTML='';box.dataset.mode='';return;}
+    box.dataset.mode='stat'; box.innerHTML='<div class="hintxt">טוען…</div>';
+    const r=await api('GET','/api/mail/batch/'+b.dataset.id+'/stats');
+    if(!r||!r.tot){box.innerHTML='<div class="hintxt">לא נטען</div>';return;}
+    const t=r.tot, pc=n=>t.sent?Math.round(n*100/t.sent)+'%':'—';
+    const grp=(ttl,list,cls)=>list.length?`<details class="mlgrp"><summary>${ttl} (${list.length})</summary>
+      ${list.map(x=>`<div class="mlskr ${cls||''}${x.donor_id?' mlgo':''}" data-did="${x.donor_id||''}">${esc(x.name||x.email)}${x.opens>1?` <small>· נפתח ${x.opens} פעמים</small>`:''}${x.error?` <small>· ${esc(x.error)}</small>`:''}</div>`).join('')}</details>`:'';
+    const sent=r.rows.filter(x=>x.status==='sent');
+    box.innerHTML=`<div class="mlstats">
+      <div class="mlstat1"><b>${t.sent}</b><span>נשלחו</span></div>
+      <div class="mlstat1 ok"><b>${t.opened}</b><span>נפתחו · ${pc(t.opened)}</span></div>
+      <div class="mlstat1 ok"><b>${t.replied}</b><span>השיבו · ${pc(t.replied)}</span></div>
+      ${t.failed?`<div class="mlstat1 bad"><b>${t.failed}</b><span>נכשלו</span></div>`:''}
+      ${t.unsub?`<div class="mlstat1 bad"><b>${t.unsub}</b><span>ביקשו הסרה</span></div>`:''}
+      ${t.queued?`<div class="mlstat1"><b>${t.queued}</b><span>עדיין בתור</span></div>`:''}
+    </div>
+    ${r.track?'':'<div class="hintxt">במשלוח הזה לא היה מעקב פתיחות — לכן "נפתחו" ריק.</div>'}
+    ${grp('✅ פתחו את המייל', sent.filter(x=>x.opened))}
+    ${grp('💬 השיבו לנו', sent.filter(x=>x.replied))}
+    ${grp('⏳ עדיין לא נפתח', sent.filter(x=>!x.opened&&!x.replied))}
+    ${grp('❌ לא הגיע', r.rows.filter(x=>x.status==='failed'||x.status==='dead'),'bad')}
+    ${grp('🚫 ביקשו הסרה', r.rows.filter(x=>x.unsub),'bad')}
+    <div class="hintxt">"נפתחו" נמדד לפי טעינת תמונה במייל. מי שהמייל שלו חוסם תמונות — לא נספר, גם אם קרא. לכן המספר האמיתי תמיד גבוה יותר. "השיבו" נמדד מהמיילים שנכנסו אלינו אחרי המשלוח — זה מדויק, אבל דורש שתלחץ "משוך מיילים" כדי שהמערכת תדע עליהם.</div>`;
+    box.querySelectorAll('.mlgo').forEach(el2=>el2.onclick=()=>{
+      const d=DB.find(x=>x.id==el2.dataset.did); if(d)openDonor(d,'contact');});});
   el.querySelectorAll('.mlfail').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
-    if(box.innerHTML){box.innerHTML='';return;}
+    if(box.innerHTML&&box.dataset.mode!=='stat'){box.innerHTML='';return;}
+    box.dataset.mode='';
     const r2=await api('GET','/api/mail/batch/'+b.dataset.id);
     const bad=((r2&&r2.rows)||[]).filter(x=>x.status!=='sent');
     box.innerHTML=bad.map(x=>`<div class="mlskr">${esc(x.name||'')} &lt;${esc(x.email)}&gt; — ${esc(x.error||x.status)}</div>`).join('')
