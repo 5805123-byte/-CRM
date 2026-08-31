@@ -7724,13 +7724,15 @@ async function renderUnlinked(){
 // אלה אינם כסף שנכנס, ולכן הם ברשימה נפרדת ואי אפשר לרשום אותם כתרומה.
 function ulFailedHTML(){
   const fl=(ULDATA&&ULDATA.failed)||[];
+  const old=(ULDATA&&ULDATA.failed_older)||0;
   if(!fl.length)return '';
   const f=n=>'$'+Math.round(n).toLocaleString('en-US');
   const SH={declined:'נדחה',error:'שגיאה',voided:'בוטל',refund:'זוכה'};
   return `<div class="cnt" style="margin-top:18px">🔴 חיובים שלא עברו
       <small style="color:var(--muted)"> · ${fl.length} · ${f(ULDATA.failed_total||0)} שלא נכנסו</small></div>
     <div class="hintxt" style="margin:0 2px 10px">הכרטיס נדחה — <b>לא נכנס כסף</b>, ולכן אי אפשר לרשום את זה כתרומה.
-      הסיבה כתובה כפי שהיא בקובץ של אוטרייז. אפשר לפתוח את הכרטיס של התורם כדי לחזור אליו, או לסמן שטופל.</div>
+      הסיבה כתובה כפי שהיא בקובץ של אוטרייז. אפשר לפתוח את הכרטיס של התורם כדי לחזור אליו, או לסמן שטופל.
+      <br>הרשימה מוגבלת לחודשיים האחרונים${old?` — עוד ${old} דחיות ישנות יותר מוסתרות (הן עדיין נשמרות, ומופיעות בכרטיס של התורם עצמו)`:''}.</div>
     <div id="ulfail">${fl.map(r=>{const s0=(r.sugg||[])[0];
       return `<div class="ulg ulbad" data-tid="${esc(r.tid)}">
         <div class="ulhead"><span class="ulnm">${esc(((r.first||'')+' '+(r.last||'')).trim()||'—')}</span>

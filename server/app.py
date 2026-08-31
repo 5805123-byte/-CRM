@@ -9560,13 +9560,26 @@ class H(BaseHTTPRequestHandler):
                 x['sugg'] = _sugg(r)
                 failed.append(x)
             failed.sort(key=lambda x: x['iso'] or '', reverse=True)
+            older = 0
             if str(_for).strip().isdigit():
                 _fid2 = int(_for)
                 failed = [x for x in failed if any(s['id'] == _fid2 for s in (x['sugg'] or []))]
+            else:
+                # מאיר: "תגביל את הרשימה האדומה לחודשיים בלבד". דחיות ישנות
+                # כבר לא ניתנות לטיפול, והן הציפו את הרשימה. חלון = החודש
+                # הנוכחי והחודש שלפניו. בבקשה על תורם מסוים לא מגבילים,
+                # כי שם חשוב לראות את כל ההיסטוריה שלו.
+                _t = il_now().date()
+                _cy, _cm = (_t.year - 1, 12) if _t.month == 1 else (_t.year, _t.month - 1)
+                _cut = '%04d-%02d-01' % (_cy, _cm)
+                keep = [x for x in failed if (x['iso'] or '') >= _cut]
+                older = len(failed) - len(keep)
+                failed = keep
             ftot = sum(float(str(x['amount']).replace(',', '') or 0) for x in failed)
             con.close()
             return self._send(200, {'rows': rows, 'total': round(tot, 2),
-                                    'failed': failed, 'failed_total': round(ftot, 2)})
+                                    'failed': failed, 'failed_total': round(ftot, 2),
+                                    'failed_older': older})
         if self.path.split('?')[0] == '/api/recon':
             con = db(); out = []
             try:
