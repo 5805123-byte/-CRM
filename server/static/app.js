@@ -1288,7 +1288,15 @@ ov.onclick=e=>{if(e.target===ov){ov.classList.remove('show');try{localStorage.re
   if(typeof restoreScroll==='function')restoreScroll();}};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
 
+// מאיר: "תבדוק שאין בכמה מקומות אותו רעיון של חיפוש ומיון — שהכל יהיה
+// במקום אחד." יש תיבת חיפוש אחת, למעלה, והיא מסננת את המסך שפתוח.
+// הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
+const QPH={donors:'חיפוש שם / טלפון / עסק…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
+  avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
+  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…'};
 function render(){
+  const qi=document.getElementById('q');
+  if(qi)qi.placeholder=QPH[tab]||QPH.donors;
   chips.innerHTML='';
   if(tab==='donors'){
     if(flt==='addrfix')return renderAddrFix();
@@ -6643,7 +6651,6 @@ function wireNoLast(redraw){
 function renderKvList(type){
   const title=KVTYPES.find(x=>x[0]===type)[1];
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>${title}</b><span class="cnt2" id="kvcnt"></span>${kvNoLastBtn()}<button class="print noprint" onclick="kvPrint()">הדפס 🖨️</button></div>
-    <input class="avsearch noprint" id="kvsearch" placeholder="🔍 חפש שם תורם או שם שמוזכר בקוויטל…" value="${esc(kvListQ)}" autocomplete="off">
     <div class="hintxt noprint" style="margin:0 2px 8px">לתיקון: לחץ על השם, ערוך, ולחץ מחוץ לו — נשמר גם בכרטיס.${
       KVNOLAST?' <b>· מודפס בשם פרטי בלבד</b>':''}</div>
     <div class="hintxt noprint" id="kvout" style="margin:0 2px 8px"></div>
@@ -6651,7 +6658,6 @@ function renderKvList(type){
     <div id="kvlistwrap"></div>`;
   document.getElementById('kvback').onclick=()=>{kvListQ='';kvSub=null;render();};
   wireNoLast(()=>renderKvList(type));
-  const si=document.getElementById('kvsearch');
   // הכללי מאגד את שלוש הדרגות האמיתיות בלבד. "מזדמן" ו"ללא" אינם דרגה
   // ואינם נכנסים אליו — מאיר: "כל מי שיש לו קוויטל ללא צריך לצאת לגמרי".
   const inType=t=>kvInType(t,type);
@@ -6669,10 +6675,9 @@ function renderKvList(type){
     UNLINKED.forEach(p=>{const t=prayerKvType(p.tier,null);
       if(inType(t))entries.push({id:p.id,text:p.text,donor:p.name||'—',last:(p.name||'').split(' ').slice(-1)[0],loose:true});});
     // מאיר: "אם אני עושה חיפוש של מישהו עם שם משפחה בקוויטל זה לא מחפש
-    // בשבילי בכלל" — גם החיפוש שבשורה העליונה מסנן את הרשימה הזאת,
-    // ולא רק תיבת החיפוש הפנימית. שניהם באותו מנוע התאמה של המערכת
-    // (מילים בכל סדר + התאמה גמישה לעברית), ולא השוואת מחרוזת פשוטה.
-    if(norm(kvListQ))entries=entries.filter(e=>matchStr(e.donor+' '+e.text,kvListQ));
+    // בשבילי בכלל" — החיפוש שבשורה העליונה מסנן גם את הרשימה הזאת, לפי
+    // שם התורם וגם לפי השמות שבתוך הקוויטל. קודם עמדה כאן תיבת חיפוש
+    // שנייה שסיננה יחד איתה; מאיר: "שהכל יהיה במקום אחד".
     const gq=norm(q);
     const before=entries.length;
     if(gq)entries=entries.filter(e=>matchQ(e.donor+' '+e.text));
@@ -6725,7 +6730,6 @@ function renderKvList(type){
     if(bc)bc.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';paint();};
     bindKvEdit();
   }
-  si.oninput=()=>{kvListQ=si.value;paint();};
   paint();
 }
 // מאיר: "כל שם ושם האם והבקשה ואז פסיק, והשם הבא באותה שורה — לא
@@ -7271,7 +7275,7 @@ function renderMissed(){
 }
 
 /* ---------- אברכים (יששכר־זבולון) ---------- */
-let avView='cards', avSort='last', avSearch='', AVSTAT=null;
+let avView='cards', avSort='last', AVSTAT=null;
 function avFirstAvreich(d){return ((d.partners||[]).filter(p=>p.active!=0)[0]||{}).avreich||'';}
 function avSumAmt(d){return (d.partners||[]).filter(p=>p.active!=0).reduce((s,p)=>s+amtNum(p.amount),0);}
 function sortIZ(list){const s=list.slice();
@@ -7279,7 +7283,16 @@ function sortIZ(list){const s=list.slice();
   else if(avSort==='amt') s.sort((a,b)=>avSumAmt(b)-avSumAmt(a));
   else s.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   return s;}
-function filterIZ(){const nq=norm(avSearch);
+// מאיר: "תבדוק שאין בכמה מקומות אותו רעיון של חיפוש ומיון — שהכל יהיה
+// במקום אחד." בורר המיון של יששכר־זבולון נכתב פעמיים, ותיבת חיפוש
+// מקומית עמדה ליד תיבת החיפוש הראשית וסיננה יחד איתה. נשארה תיבה אחת
+// (העליונה) ובורר מיון אחד, מוגדר כאן.
+const AVSORT=[['last','מיון: תורם (א-ב)'],['av','מיון: אברך (א-ב)'],
+              ['amt','מיון: סכום (גבוה→נמוך)']];
+const avSortSel=id=>`<select id="${id}" class="avsortsel">`
+  +AVSORT.map(([v,t])=>`<option value="${v}"${avSort===v?' selected':''}>${t}</option>`).join('')
+  +`</select>`;
+function filterIZ(){
   // גם אברך שמוחזק בשותפות ורשום אצל השותף נכנס לחיפוש — אחרת תורם
   // שכל האברכים שלו משותפים לא היה נמצא לפי שם האברך
   const txt=d=>d.last+' '+d.first+' '+(d.partners||[]).map(p=>p.avreich).join(' ')
@@ -7287,8 +7300,7 @@ function filterIZ(){const nq=norm(avSearch);
   // גם מי שלא סומן בדרגה אבל מחזיק אברך בשותפות עם תורם אחר — אחרת
   // השותף היה נעלם מהרשימה למרות שהוא מחזיק
   return sortIZ(DB.filter(d=>d.tier==='יששכר_זבולון'||izLinkedRows(d).length)
-    .filter(d=>matchQ(txt(d)))
-    .filter(d=>!nq||norm(txt(d)).includes(nq)));}
+    .filter(d=>matchQ(txt(d))));}
 // רשימת האברכים של הכולל לפי שם משפחה — מי מחזיק כל אחד, ממתי ובכמה.
 // מכאן אפשר לשבץ שותף לאברך פנוי, ולראות מיד למי עוד אין.
 let avOpenId=null, avSwapId=null, avHistId=null, avInfoId=null, izHist=false;
@@ -7299,18 +7311,18 @@ let avFreeOnly=false;
 function avFiltered(){
   let l=AVLIST;
   if(avFreeOnly)l=l.filter(a=>!(a.holders||[]).length);
-  const s2=avSearch.trim(); if(!s2)return l;
-  return l.filter(a=>matchStr(a.name+' '+(a.note||'')+' '+(a.holders||[]).map(h=>h.name).join(' '),s2));
+  // מאיר: "שהכל יהיה במקום אחד" — גם הרשימה הזאת מסוננת בתיבת החיפוש
+  // העליונה, ולא בתיבה נפרדת שעמדה לידה
+  return l.filter(a=>matchQ(a.name+' '+(a.note||'')+' '+(a.holders||[]).map(h=>h.name).join(' ')));
 }
 async function renderAvByAv(){
   chips.innerHTML='';
   view.innerHTML='<div class="cnt">טוען את רשימת האברכים…</div>';
   await loadAvList();
   const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
-  const q2=avSearch.trim();
+  const q2=String(q||'').trim();
   const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
-      <input id="avsearch" class="avsearch" placeholder="🔍 חפש אברך או שותף…" value="${esc(avSearch)}" autocomplete="off">
       <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
@@ -7322,10 +7334,6 @@ async function renderAvByAv(){
       <div class="avghead"><span class="g1">#</span><span class="g2">האברך</span><span class="g3">הזבולון</span><span class="g4">מתאריך</span><span class="g5">סכום</span><span class="g6">הערות</span><span class="g7"></span></div>
       <div class="avtlist">${rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>'}</div>
     </div></div>`;
-  const se=document.getElementById('avsearch');
-  se.oninput=()=>{avSearch=se.value;clearTimeout(se._t);se._t=setTimeout(()=>{
-    const p=se.selectionStart;paintByAv();const s2=document.getElementById('avsearch');
-    if(s2){s2.focus();try{s2.setSelectionRange(p,p);}catch(e){}}},250);};
   const afb=document.getElementById('avfreebtn');
   if(afb)afb.onclick=()=>{avFreeOnly=!avFreeOnly;paintByAv();};
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
@@ -7584,12 +7592,7 @@ async function renderAvPrint(){
 function renderAvTable(){
   view.innerHTML=`<div class="avbar noprint">
       <button class="back" id="avcards">→ חזרה לעריכה</button>
-      <input id="avtsearch" class="avsearch" placeholder="🔍 חפש תורם או אברך…" value="${esc(avSearch)}" autocomplete="off">
-      <select id="avtsort" class="avsortsel">
-        <option value="last">מיון: תורם (א-ב)</option>
-        <option value="av">מיון: אברך (א-ב)</option>
-        <option value="amt">מיון: סכום (גבוה→נמוך)</option>
-      </select>
+      ${avSortSel('avtsort')}
       <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
     <div class="avtabtitle"><b id="avttl"></b></div>
     <div style="overflow-x:auto"><table class="avtable"><thead><tr>
@@ -7605,7 +7608,6 @@ function renderAvTable(){
     view.querySelectorAll('.avsort-th').forEach(th=>th.classList.toggle('on',th.dataset.s===avSort));
   }
   document.getElementById('avcards').onclick=()=>{avView='cards';render();};
-  document.getElementById('avtsearch').oninput=e=>{avSearch=e.target.value;paintRows();};
   sortSel.onchange=()=>{avSort=sortSel.value;paintRows();};
   view.querySelectorAll('.avsort-th').forEach(th=>th.onclick=()=>{avSort=th.dataset.s;sortSel.value=avSort;paintRows();});
   paintRows();
@@ -7617,17 +7619,11 @@ function renderAvreich(){
   if(avView==='avprint') return renderAvPrint();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
   view.innerHTML=`<div class="avbar">
-      <input id="avsearch" class="avsearch" placeholder="🔍 חפש תורם או אברך…" value="${esc(avSearch)}" autocomplete="off">
-      <select id="avsort" class="avsortsel">
-        <option value="last">מיון: תורם (א-ב)</option>
-        <option value="av">מיון: אברך (א-ב)</option>
-        <option value="amt">מיון: סכום (גבוה→נמוך)</option>
-      </select>
+      ${avSortSel('avsort')}
       <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button></div>
     <div class="cnt" id="avcnt"></div>
     <div class="avlist" id="avlistwrap"></div>`;
   const sortSel=document.getElementById('avsort'); sortSel.value=avSort;
-  const searchEl=document.getElementById('avsearch');
   function paintList(){
     const izd=filterIZ();
     document.getElementById('avcnt').innerHTML=`${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות`;
@@ -7650,7 +7646,6 @@ function renderAvreich(){
   }
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
   document.getElementById('avbyavbtn').onclick=()=>{avView='byav';render();};
-  searchEl.oninput=()=>{avSearch=searchEl.value;paintList();};
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();
 }
