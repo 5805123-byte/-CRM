@@ -63,10 +63,20 @@ RECEIPT_START = int(os.environ.get('RECEIPT_START', 6000))
 def db():
     con = sqlite3.connect(DB); con.row_factory = sqlite3.Row; return con
 
+# תווי כיווניות בלתי־נראים (RLM/LRM/PDF/isolates), רווח באפס רוחב ו-BOM.
+# הם נדבקים לכל טקסט שמועתק מוואטסאפ, ממייל או ממסמך בעברית, והעין אינה
+# רואה אותם. כתובת מייל שנדבק לה תו כזה נשברת בשליחה בלי הסבר.
+_INVIS_RX = re.compile('[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff\u00ad]')
+
+
+def strip_invis(s):
+    return _INVIS_RX.sub('', str(s or ''))
+
+
 def emails_of(s):
     """כל כתובות המייל של תורם. לתורם יכולות להיות כמה כתובות בשדה אחד,
     מופרדות בפסיק / נקודה-פסיק / קו נטוי / רווח — כולן משמשות לזיהוי ולשליחה."""
-    return [e for e in re.split(r'[;,/\s]+', (s or '').strip().lower()) if '@' in e]
+    return [e for e in re.split(r'[;,/\s]+', strip_invis(s).strip().lower()) if '@' in e]
 
 _NIKUD = re.compile(r'[֑-ׇ]')
 def _norm(s):
@@ -10714,11 +10724,15 @@ class H(BaseHTTPRequestHandler):
                 ok2, msg2 = bulkmail.check()
                 return self._send(200, {'ok': True, 'cleared': True,
                                         'msg': 'חזרנו לשליחה דרך ג׳ימייל. ' + msg2})
-            user = (b.get('user') or '').strip()
+            # תווי כיווניות בלתי־נראים שנדבקים לטקסט שמועתק מוואטסאפ או
+            # ממייל בעברית. מאיר הדביק שם שרת וקיבל
+            # "UnicodeEncodeError: 'idna' codec can't encode '\u202c'" —
+            # העין רואה שם תקין והמחרוזת ארוכה בתו אחד.
+            user = bulkmail.clean(b.get('user'))
             pw = b.get('pass')
             if pw is None or pw == '':          # לא הוקלדה סיסמה חדשה
                 pw = kv_get(con, 'mail_pass')
-            host = (b.get('host') or '').strip()
+            host = bulkmail.clean(b.get('host'))
             try:
                 port = int(b.get('port') or 0)
             except (TypeError, ValueError):
@@ -10734,11 +10748,11 @@ class H(BaseHTTPRequestHandler):
             kv_set(con, 'mail_port', str(p2))
             kv_set(con, 'mail_user', user)
             kv_set(con, 'mail_pass', pw)
-            kv_set(con, 'mail_from', (b.get('from') or user).strip())
-            kv_set(con, 'mail_from_name', (b.get('name') or 'כולל חצות').strip())
+            kv_set(con, 'mail_from', bulkmail.clean(b.get('from')) or user)
+            kv_set(con, 'mail_from_name', bulkmail.clean(b.get('name')) or 'כולל חצות')
             # מאיר: "ואם אני רוצה שיחזירו אימייל לג'ימייל?" — התשובה של
             # התורם הולכת לכתובת הזאת, לא לכתובת שממנה נשלח.
-            rep = (b.get('reply') or '').strip()
+            rep = bulkmail.clean(b.get('reply'))
             if rep:
                 kv_set(con, 'mail_reply', rep)
             else:

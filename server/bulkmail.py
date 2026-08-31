@@ -136,6 +136,19 @@ def _connect():
     return s
 
 
+# תווי כיווניות בלתי־נראים שנדבקים לטקסט שמועתק מוואטסאפ, ממייל או
+# ממסמך בעברית. מאיר הדביק שם שרת והתקבל:
+#   UnicodeEncodeError: 'idna' codec can't encode character '\u202c'
+# העין רואה "mail.kollelchatzot.com" והמחרוזת ארוכה בתו אחד. נוקה בכל
+# מקום שנכנסת אליו כתובת או שם שרת, כי אי אפשר לראות את זה במסך.
+_INVIS = re.compile('[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff\u00ad]')
+
+
+def clean(s):
+    """מנקה תווים בלתי־נראים ורווחים מקצה מחרוזת שהמשתמש הדביק."""
+    return _INVIS.sub('', str(s or '')).strip()
+
+
 def _try(host, port, user, pw):
     """ניסיון התחברות אחד. מחזיר (הצליח, שגיאה)."""
     ctx = ssl.create_default_context()
@@ -175,7 +188,8 @@ def probe(user, pw, host='', port=0, log=None):
     וכאן מנסים את הצירופים המקובלים עד שאחד מהם מתחבר. מחזיר
     (הצליח, שרת, פורט, הודעה בעברית).
     """
-    user = (user or '').strip()
+    user = clean(user)
+    host = clean(host)
     dom = user.split('@')[-1].lower()
     if not user or '@' not in user or not pw:
         return False, '', 0, 'חסרה כתובת או סיסמה'
