@@ -2557,7 +2557,7 @@ function izRowAmt(d){
 // נחשב חוב — אחרת כל תורם ייראה חסר עד שיגיע הקובץ הבא.
 let DATATHRU=null;
 function dataThru(){
-  if(DATATHRU)return DATATHRU;
+  if(DATATHRU!==null)return DATATHRU;   // '' הוא תשובה תקפה (ינואר), לא "לא חושב"
   // כמה תרומות יש בכל חודש. חודש שהקובץ שלו רק התחיל להיקלט מכיל חלק
   // קטן מהרגיל, ואם סופרים אותו כמעט כל תורם נראה כאילו חסר לו חודש.
   const cnt={};
@@ -2574,6 +2574,17 @@ function dataThru(){
     break;
   }
   DATATHRU=ms[i];
+  // מאיר: "כל הדף הזה פשוט לא נכון ומטעה מאוד, אני לא יודע מה זה החיובים
+  // המוגזמים האלו". החישוב הוא "כמה חודשים × הסכום החודשי", והחודש האחרון
+  // נלקח מהתאריכים שבמערכת בלי שום גבול — ולכן תאריך עתידי אחד (או נסיגה
+  // אל שנה שעברה, כשחודשי השנה הנוכחית עדיין דלילים) הפך את החשבון לשנה
+  // שלמה: 12 × הסכום החודשי, גם באמצע השנה. שני גבולות ברורים:
+  //   · לא מעבר לחודש שכבר נסגר — חודש שעוד רץ אינו חוב;
+  //   · לא לפני ינואר של השנה הנוכחית — אחרת נמדדת שנה שכבר הסתיימה.
+  const cap=prevMonth(todayStr().slice(0,7));
+  if(DATATHRU>cap)DATATHRU=cap;
+  const jan=todayStr().slice(0,4)+'-01';
+  if(DATATHRU<jan)DATATHRU='';        // בינואר עדיין אין חודש סגור השנה
   return DATATHRU;
 }
 function monthsTo(fromYM,toYM){
@@ -2620,7 +2631,8 @@ function purposeAlloc(d){
   // מהגבייה אינו התחייבות, ואסור שייצור חוב.
   const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5&&r.conf>0&&!r.ended);
   if(!rows.length)return null;
-  const thru=dataThru(), yr=thru.slice(0,4);
+  const thru=dataThru(); if(!thru)return null;   // אין עדיין חודש סגור השנה
+  const yr=thru.slice(0,4);
   // תחילת הספירה: החודש הראשון שנכנס בו כסף השנה, ולא לפני תחילת השנה
   let first='';
   (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
@@ -2680,7 +2692,8 @@ function purposeAlloc(d){
   }
   const prevPaid=(d.donations||[]).filter(x=>String(x.date||'').slice(0,4)===yr)
     .reduce((a,x)=>a+amtNum(x.prev_year),0);
-  return {thru, first, rows:out, extra:Math.round(Math.max(0,pool)), steady, prevPaid,
+  return {thru, first, last:thru, n:base.reduce((a,r)=>Math.max(a,r.n),0),
+          rows:out, extra:Math.round(Math.max(0,pool)), steady, prevPaid,
           per:base.reduce((a,r)=>a+r.per,0),
           exp:out.reduce((a,r)=>a+r.exp,0), got:out.reduce((a,r)=>a+r.got,0)};
 }
@@ -7714,7 +7727,8 @@ function reviewList(){
       why='חסרים '+curSym(d)+Math.round(gap)+' — חודשים שלא נגבו';}
     else return;
     out.push({d, kind, why, gap:Math.round(gap), exp:a.exp, got:a.got,
-      per:Math.round(a.per), thru:a.thru, rows:a.rows});
+      per:Math.round(a.per), thru:a.thru, rows:a.rows,
+      first:a.first, last:a.last, n:a.n});
   });
   const ord={short:0, amount:1, none:2, ask:3};
   out.sort((x,y)=>(ord[x.kind]-ord[y.kind])||(y.gap-x.gap)||(y.got-x.got));
@@ -7754,6 +7768,7 @@ async function renderUnlinked(){
       <small style="color:var(--muted)"> · ${rows.length} חיובים · ${f(ULDATA.total||0)}</small></div>
     <div class="hintxt" style="margin:0 2px 10px">הכסף נכנס בפועל, אבל הוא לא מופיע אצל אף אחד — ולכן גם לא בסיכומים.
       לכל שורה יש הצעה לפי מייל או שם. אשר, בחר תורם אחר, או סמן שאינו שייך לאף אחד.</div>
+    ${ulMonthsHTML()}
     <div id="ullist">${groups.map(x=>{
       const dates=x.items.slice(0,8).map(r=>esc(gregLabel(r.iso||r.date))+' · '+f(amtNum(r.amount))).join('<br>');
       const more=x.items.length>8?('<br>ועוד '+(x.items.length-8)):'';
@@ -7799,9 +7814,27 @@ function ulFailedHTML(){
         <div class="uldates">${esc(gregLabel(r.iso||r.date))}${r.phone?(' · '+esc(r.phone)):''}</div>
         ${r.note?`<div class="ulreason">📄 ${esc(r.note)}</div>`:''}
         <div class="ulb ulact">
-          ${s0?`<button class="btn sm ghost ulopen" data-did="${s0.id}">↗ ${esc(s0.name)}</button>`:'<span class="ulwhy">לא זוהה תורם</span>'}
+          ${r.donor_name?`<button class="btn sm ghost ulopen" data-did="${r.donor_id}">↗ ${esc(r.donor_name)}</button>`
+            :(s0?`<button class="btn sm ghost ulopen" data-did="${s0.id}">↗ ${esc(s0.name)}</button>`:'<span class="ulwhy">לא זוהה תורם</span>')}
           <button class="btn sm ghost ulfskip">✓ טיפלתי — הסתר</button>
         </div></div>`;}).join('')}</div>`;
+}
+// מאיר: "אני לא רואה את החיובים של אוגוסט בכלל פה". חיוב שכבר שויך לתורם
+// יורד מרשימת המיון — וזה נראה כאילו הוא לא נכנס. השורה הזאת אומרת בדיוק
+// כמה חיובים יש בכל חודש ואיפה כל אחד מהם, בלי לנחש.
+function ulMonthsHTML(){
+  const ms=(ULDATA&&ULDATA.months)||[];
+  if(!ms.length)return '';
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const nm=m=>fmtMonth(m)||m;
+  return `<div class="ulmon"><b>מה נכנס בחודשים האחרונים</b>
+    ${ms.map(m=>`<div class="ulmonrow"><span class="ulmonm">${esc(nm(m.m))}</span>
+      <span>${m.n} חיובים · ${f(m.sum)}</span>
+      <span class="ulmonb">${m.linked?`<i class="ok">✓ ${m.linked} כבר אצל תורם</i>`:''}${
+        m.wait?`<i class="wait">⏳ ${m.wait} ממתינים למיון</i>`:''}${
+        m.failed?`<i class="bad">🔴 ${m.failed} לא עברו</i>`:''}${
+        m.skipped?`<i>✕ ${m.skipped} סומנו כלא שייכים</i>`:''}</span></div>`).join('')}
+    <div class="hintxt" style="margin:4px 2px 0">חיוב שכבר משויך לתורם אינו ברשימת המיון למטה — הוא נמצא בכרטיס שלו.</div></div>`;
 }
 function wireUlFailed(){
   view.querySelectorAll('.ulbad').forEach(el=>{
@@ -7859,6 +7892,19 @@ async function renderReview(){
   document.getElementById('rvprint').onclick=()=>window.print();
   wireReview();
 }
+// מאיר: "כל הדף הזה פשוט לא נכון ומטעה מאוד, אני לא יודע מה זה החיובים
+// המוגזמים האלו". השורה אמרה "חסרים $20,280" בלי לומר על איזו תקופה —
+// ולכן אי אפשר היה לבדוק אותה. כאן כתוב במפורש מאיזה חודש עד איזה,
+// כמה חודשים, כפול כמה, מול כמה באמת נכנס.
+function rvMathHTML(x,f){
+  if(x.kind==='ask'||!x.first||!x.last)return '';
+  const n=x.n||monthsTo(x.first,x.last);
+  if(!n)return '';
+  return `<div class="rvmath">${esc(fmtMonth(x.first))} – ${esc(fmtMonth(x.last))}
+    · ${n} ${n===1?'חודש':'חודשים'} × ${f(x.per)} = <b>${f(x.exp)}</b>
+    · נכנס <b>${f(x.got)}</b>${x.gap>0.5?` · חסר <b class="bad">${f(x.gap)}</b>`:''}
+    <br><small>החודש שרץ עכשיו אינו נספר — חוב נמדד רק עד החודש האחרון שנסגר.</small></div>`;
+}
 function rvRow(x){
   const st=(RVSTAT[x.d.id]||{}), cur=curSym(x.d);
   const f=n=>cur+Math.round(n).toLocaleString('en-US');
@@ -7867,6 +7913,7 @@ function rvRow(x){
       <span class="rvnum">${x.kind==='ask'?('נכנס '+f(x.got)):(f(x.got)+' מתוך '+f(x.exp))}</span></div>
     <div class="rvwhy">${esc(x.why)}</div>
     <div class="rvdet">${x.rows.map(r=>esc(r.what)+' · '+f(r.per)+(x.kind==='ask'?'':' לחודש')).join(' | ')}</div>
+    ${rvMathHTML(x,f)}
     <div class="rvbtns noprint">${RVST.map(([k,t])=>
       `<button class="rvb ${st.status===k?'on '+k:''}" data-st="${k}">${t}</button>`).join('')}</div>
     <input class="rvnote" value="${esc(st.note||'')}" placeholder="הערה — מה סוכם">

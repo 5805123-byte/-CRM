@@ -9673,14 +9673,19 @@ class H(BaseHTTPRequestHandler):
             # תכתוב לי שם, במקום שממנו אני ממיין, שזה לא עבר, ותכתוב את
             # הסיבה." חיובים שנדחו אינם כסף שנכנס, ולכן הם ברשימה נפרדת
             # ואי אפשר לרשום אותם כתרומה בטעות.
+            # מאיר: "אני לא רואה את החיובים של אוגוסט בכלל פה". חיוב שנדחה
+            # והמערכת כבר שייכה אותו לתורם לא הופיע כאן כלל — התנאי היה
+            # donor_id IS NULL — ולכן נראה כאילו הוא לא נכנס. חיוב שלא עבר
+            # הוא כסף שלא נכנס, וצריך לראות אותו גם כשידוע של מי הוא.
             failed = []
             for r in con.execute(
-                    "SELECT tid,first,last,amount,date,source,email,phone,status,note "
-                    "FROM recon WHERE donor_id IS NULL AND COALESCE(skipped,0)=0 "
+                    "SELECT tid,first,last,amount,date,source,email,phone,status,note,donor_id "
+                    "FROM recon WHERE COALESCE(skipped,0)=0 "
                     "AND COALESCE(status,'settled')<>'settled'"):
                 x = dict(r)
                 x['iso'] = _recon_iso(r['date']) or ''
-                x['sugg'] = _sugg(r)
+                x['donor_name'] = nm.get(r['donor_id'], '') if r['donor_id'] else ''
+                x['sugg'] = [] if r['donor_id'] else _sugg(r)
                 failed.append(x)
             failed.sort(key=lambda x: x['iso'] or '', reverse=True)
             older = 0
@@ -9699,10 +9704,36 @@ class H(BaseHTTPRequestHandler):
                 older = len(failed) - len(keep)
                 failed = keep
             ftot = sum(float(str(x['amount']).replace(',', '') or 0) for x in failed)
+            # מאיר: "אני לא רואה את החיובים של אוגוסט בכלל פה". רוב החיובים
+            # של חודש נגמר כבר משויכים לתורם, ולכן אינם ברשימת המיון — וזה
+            # נראה כאילו הם לא נכנסו. השורה הזאת אומרת במפורש כמה חיובים יש
+            # בכל חודש ואיפה כל אחד מהם נמצא, כדי שלא יהיה צריך לנחש.
+            months = {}
+            for r in con.execute("SELECT date,donor_id,skipped,status,amount FROM recon"):
+                iso = _recon_iso(r['date']) or ''
+                if not iso:
+                    continue
+                m = months.setdefault(iso[:7], {'m': iso[:7], 'n': 0, 'linked': 0,
+                                                'wait': 0, 'skipped': 0, 'failed': 0, 'sum': 0.0})
+                m['n'] += 1
+                bad = (r['status'] or 'settled') != 'settled'
+                if bad:
+                    m['failed'] += 1
+                else:
+                    m['sum'] += float(str(r['amount']).replace(',', '') or 0)
+                    if r['donor_id']:
+                        m['linked'] += 1
+                    elif int(r['skipped'] or 0):
+                        m['skipped'] += 1
+                    else:
+                        m['wait'] += 1
+            recent = [months[k] for k in sorted(months, reverse=True)[:4]]
+            for m in recent:
+                m['sum'] = round(m['sum'], 2)
             con.close()
             return self._send(200, {'rows': rows, 'total': round(tot, 2),
                                     'failed': failed, 'failed_total': round(ftot, 2),
-                                    'failed_older': older})
+                                    'failed_older': older, 'months': recent})
         if self.path.split('?')[0] == '/api/recon':
             con = db(); out = []
             try:
