@@ -8427,6 +8427,16 @@ function mlCfgHTML(){
       <input id="mc_pass" type="password" value="" placeholder="${c&&c.has_pass?'••••••••  (שמורה)':'הסיסמה שאיתה נכנסים לתיבה'}" dir="ltr" autocomplete="new-password"></label>
     <label class="fld"><span>שם השולח כפי שהתורם יראה</span>
       <input id="mc_name" value="${esc(nm)}" placeholder="כולל חצות"></label>
+    <label class="fld"><span>כתובת השולח שתוצג — רק אם שונה מכתובת ההתחברות</span>
+      <input id="mc_from" value="${esc((c&&c.saved&&c.saved.mail_from)||'')}"
+        placeholder="השאר ריק — יוצג אותו דבר" dir="ltr" autocomplete="off"></label>
+    <div class="hintxt">מאיר: "עדיין יש את הסימן האדום למעלה" — שרת הדואר של הדומיין
+      מעביר לג׳ימייל בלי הצפנה, וג׳ימייל מסמן על כך מנעול אדום. אי אפשר לתקן זאת מכאן.
+      דרך לעקוף: להתחבר למעלה עם <b>chatzot18@gmail.com</b> וסיסמת האפליקציה, ולכתוב כאן
+      <b>rabbideutsch@kollelchatzot.com</b> — הדואר ייצא דרך ג׳ימייל (מוצפן, ומגיע טוב),
+      והתורם יראה את כתובת הכולל.
+      <br><b>תנאי:</b> קודם להוסיף את הכתובת בג׳ימייל תחת הגדרות ← חשבונות ← "שלח דואר בשם",
+      ולאשר את הקוד שיישלח לתיבה. בלי זה ג׳ימייל מתעלם מהשדה הזה ומציג את כתובת הג׳ימייל.</div>
     <label class="fld"><span>לאן יגיעו התשובות של התורמים</span>
       <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — התשובות יגיעו לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
     <div class="hintxt">אם תכתוב כאן <b>chatzot18@gmail.com</b>, המייל ייצא מהכתובת של הכולל, אבל כשהתורם ילחץ "השב" התשובה תגיע לג׳ימייל שלך.</div>
@@ -8459,6 +8469,7 @@ function wireMlCfg(){
     const b={user:document.getElementById('mc_user').value.trim(),
              pass:document.getElementById('mc_pass').value,
              name:document.getElementById('mc_name').value.trim(),
+             from:document.getElementById('mc_from').value.trim(),
              reply:document.getElementById('mc_reply').value.trim(),
              host:document.getElementById('mc_host').value.trim(),
              port:document.getElementById('mc_port').value.trim()};
