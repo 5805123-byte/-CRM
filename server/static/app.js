@@ -8473,7 +8473,19 @@ function wireMlCfg(){
       try{MLCFG=await api('GET','/api/mail/config');}catch(e){}
       await mlLoadSetup();
       setTimeout(()=>{mlCfgOpen=false;renderMailSend();},1800);
-    }else msg.innerHTML=`<div class="mlwarn">${esc((r&&r.msg)||'הבדיקה נכשלה')}</div>`;
+    }else{
+      msg.innerHTML=`<div class="mlwarn">${esc((r&&r.msg)||'הבדיקה נכשלה')}</div>`;
+      // מאיר: "איך אני מכניס כאן את הפרטים של הדומיין שחסר?" — כשהבדיקה
+      // נכשלת, ההגדרות המתקדמות נפתחות לבד (הן היו מקופלות ולא נמצאו),
+      // ושדה השרת מוצע מראש כ-mail.<דומיין> — זה השם המקובל, ושם מנהל
+      // האחסון בדרך כלל שם את שרת הדואר.
+      const adv=document.querySelector('.mladv'), hh=document.getElementById('mc_host');
+      if(adv)adv.open=true;
+      const dom=(b.user.split('@')[1]||'').trim();
+      if(hh&&!hh.value&&dom){hh.value='mail.'+dom;}
+      const pp=document.getElementById('mc_port'); if(pp&&!pp.value)pp.value='465';
+      if(hh)hh.focus();
+    }
   };
   const cl=document.getElementById('mc_clear');
   if(cl)cl.onclick=async()=>{
