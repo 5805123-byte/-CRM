@@ -39,6 +39,7 @@
 import hmac
 import os
 import re
+import socket
 import smtplib
 import ssl
 import time
@@ -181,6 +182,23 @@ def _try(host, port, user, pw):
             pass
 
 
+def _real_name(host):
+    """השם האמיתי של השרת שמאחורי שם אליאס, לפי reverse DNS.
+
+    מאיר קיבל: "certificate is not valid for 'mail.kollelchatzot.com'".
+    זה מצב רגיל באחסון משותף — השרת אחד ומשרת הרבה דומיינים, והתעודה
+    שלו היא על השם שלו עצמו (mail10.myhsphere.biz) ולא על שם הלקוח.
+    החיבור עצמו הצליח; רק בדיקת השם נכשלה. אז מתחברים לשם שהתעודה באמת
+    נכתבה עליו — וכך האימות עובר במלואו, בלי לוותר על שום בדיקה.
+    """
+    try:
+        ip = socket.gethostbyname(host)
+        rev = socket.gethostbyaddr(ip)[0]
+        return rev if rev and rev.lower() != host.lower() else ''
+    except Exception:
+        return ''
+
+
 def probe(user, pw, host='', port=0, log=None):
     """מוצא לבד את שרת הדואר והפורט של הכתובת.
 
@@ -208,18 +226,42 @@ def probe(user, pw, host='', port=0, log=None):
     # שהיא למנהל האחסון.
     if log is None:
         log = []
+    mismatch = []            # שרתים שענו אבל התעודה שלהם על שם אחר
+    tried = set()
+
+    def attempt(h, pt):
+        nonlocal lastauth
+        if (h, pt) in tried:
+            return False
+        tried.add((h, pt))
+        t0 = time.time()
+        ok, err = _try(h, pt, user, pw)
+        log.append({'host': h, 'port': pt, 'ok': ok,
+                    'sec': round(time.time() - t0, 1),
+                    'err': '' if ok else err})
+        if ok:
+            return True
+        if err.startswith('auth:'):
+            # השרת נמצא ועונה — הסיסמה היא הבעיה, אין טעם לנסות עוד
+            lastauth = err[5:]
+        elif 'Hostname mismatch' in err or 'CERTIFICATE_VERIFY_FAILED' in err:
+            if h not in mismatch:
+                mismatch.append(h)
+        return False
     for h in hosts:
         for pt in ports:
-            t0 = time.time()
-            ok, err = _try(h, pt, user, pw)
-            log.append({'host': h, 'port': pt, 'ok': ok,
-                        'sec': round(time.time() - t0, 1),
-                        'err': '' if ok else err})
-            if ok:
+            if attempt(h, pt):
                 return True, h, pt, 'מחובר · שולח מ־%s' % user
-            if err.startswith('auth:'):
-                # השרת נמצא ועונה — הסיסמה היא הבעיה, אין טעם לנסות עוד
-                lastauth = err[5:]
+    # התעודה על שם אחר — מנסים את השם האמיתי של השרת עצמו
+    for h in mismatch:
+        real = _real_name(h)
+        if not real:
+            continue
+        for pt in ports:
+            if attempt(real, pt):
+                return (True, real, pt,
+                        'מחובר · שולח מ־%s (דרך %s — זה שמו האמיתי של שרת '
+                        'הדואר של %s)' % (user, real, h))
     if lastauth:
         return False, '', 0, ('שרת הדואר נמצא אבל דחה את הסיסמה. בדוק את הסיסמה '
                               'של התיבה %s. (%s)' % (user, lastauth[:80]))
@@ -230,6 +272,11 @@ def probe(user, pw, host='', port=0, log=None):
                               'ולא סיסמה — משהו חוסם את הדרך בין השרת שלנו לשרת '
                               'הדואר. בקש ממנהל האחסון לפתוח שליחת SMTP מכתובות '
                               'חיצוניות.' % (hosts[0] if hosts else dom))
+    if mismatch:
+        return False, '', 0, ('שרת הדואר של %s ענה, אבל תעודת האבטחה שלו רשומה '
+                              'על שם אחר, ולא הצלחתי למצוא את השם הנכון. בקש '
+                              'ממנהל האחסון את שם שרת ה-SMTP כפי שהוא רשום '
+                              'בתעודה.' % dom)
     return False, '', 0, ('לא הצלחתי להתחבר לשרת הדואר של %s. ייתכן ששם השרת '
                           'שונה — בקש ממנהל האחסון את כתובת ה-SMTP והפורט.' % dom)
 
