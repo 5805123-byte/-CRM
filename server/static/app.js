@@ -8420,7 +8420,8 @@ function mlCfgHTML(){
   const nm=(c&&c.saved&&c.saved.mail_from_name)||'כולל חצות';
   return `<div class="sec mlcfg">
     <div class="rbtitle" style="text-align:right">⚙️ מאיפה נשלח הדואר</div>
-    <div class="hintxt">כרגע נשלח מ־<b>${esc((c&&c.in_use&&c.in_use.from)||'—')}</b>${c&&c.from_app?'':' (מוגדר ב-Render)'}</div>
+    <div class="hintxt">כרגע נשלח מ־<b>${esc((c&&c.in_use&&c.in_use.from)||'—')}</b>${c&&c.from_app?'':' (מוגדר ב-Render)'}${
+      (c&&c.in_use&&c.in_use.host)?` · דרך השרת <b dir="ltr">${esc(c.in_use.host)}:${esc(String(c.in_use.port||''))}</b>`:''}</div>
     <label class="fld"><span>כתובת המייל שממנה לשלוח</span>
       <input id="mc_user" value="${esc(u)}" placeholder="rabbideutsch@kollelchatzot.com" dir="ltr" autocomplete="off"></label>
     <label class="fld"><span>הסיסמה של התיבה הזאת${c&&c.has_pass?' — שמורה. השאר ריק כדי לא לשנות':''}</span>
@@ -8440,12 +8441,15 @@ function mlCfgHTML(){
     <label class="fld"><span>לאן יגיעו התשובות של התורמים</span>
       <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — התשובות יגיעו לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
     <div class="hintxt">אם תכתוב כאן <b>chatzot18@gmail.com</b>, המייל ייצא מהכתובת של הכולל, אבל כשהתורם ילחץ "השב" התשובה תגיע לג׳ימייל שלך.</div>
-    <details class="mladv"><summary>הגדרות מתקדמות — רק אם הבדיקה נכשלה</summary>
+    <details class="mladv"${(c&&c.saved&&c.saved.mail_host)?' open':''}><summary>🖥️ שרת הדואר (SMTP)${
+        (c&&c.saved&&c.saved.mail_host)?` — <b dir="ltr">${esc(c.saved.mail_host)}</b>`:' — נמצא לבד'}</summary>
       <div class="two">
-        <label class="fld"><span>שרת הדואר (SMTP)</span><input id="mc_host" value="${esc((c&&c.saved&&c.saved.mail_host)||'')}" placeholder="נמצא לבד" dir="ltr"></label>
+        <label class="fld"><span>שם השרת</span><input id="mc_host" value="${esc((c&&c.saved&&c.saved.mail_host)||'')}" placeholder="נמצא לבד" dir="ltr"></label>
         <label class="fld"><span>פורט</span><input id="mc_port" value="${esc((c&&c.saved&&c.saved.mail_port)||'')}" placeholder="465 או 587" dir="ltr" inputmode="numeric"></label>
       </div>
-      <div class="hintxt">השאר ריק והמערכת תנסה לבד את הצירופים המקובלים.</div>
+      <div class="hintxt">מאיר: "איפה אני משנה את שם השרת כאן?" — כאן. אם מנהל האחסון
+        נתן שם שרת מסוים (למשל <b dir="ltr">mail10.myhsphere.biz</b>) — כתוב אותו כאן ולחץ
+        "בדוק וחבר". השאר ריק והמערכת תחפש לבד, אבל זה איטי יותר.</div>
     </details>
     <div id="mc_msg"></div>
     <div class="addrow">
