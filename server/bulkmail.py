@@ -120,15 +120,32 @@ def free_domain():
 
 def _connect():
     c = cfg()
-    ctx = ssl.create_default_context()
-    if c['port'] == 465:
-        s = smtplib.SMTP_SSL(c['host'], c['port'], timeout=40, context=ctx)
-    else:
-        s = smtplib.SMTP(c['host'], c['port'], timeout=40)
+
+    def open_(relaxed):
+        ctx = ssl.create_default_context()
+        if relaxed:
+            # שרת דואר ישן שההצפנה שלו חלשה מהתקן של היום. בדיקת תעודת
+            # האבטחה נשארת מלאה — רק דרישת גודל מפתח ההחלפה מתרככת.
+            try:
+                ctx.set_ciphers('DEFAULT@SECLEVEL=1')
+            except Exception:
+                pass
+        if c['port'] == 465:
+            return smtplib.SMTP_SSL(c['host'], c['port'], timeout=40, context=ctx)
+        s2 = smtplib.SMTP(c['host'], c['port'], timeout=40)
         try:
-            s.starttls(context=ctx)
+            s2.starttls(context=ctx)
         except smtplib.SMTPNotSupportedError:
             pass                      # שרת מקומי לבדיקות — בלי הצפנה
+        return s2
+    try:
+        s = open_(False)
+    except ssl.SSLError as e:
+        # אותה תאימות לאחור שבבדיקת החיבור — אחרת החיבור נבדק בהצלחה
+        # והשליחה עצמה נופלת
+        if not any(x in str(e) for x in _OLD_TLS):
+            raise
+        s = open_(True)
     if c['pw']:
         try:
             s.login(c['user'], c['pw'])
@@ -150,9 +167,27 @@ def clean(s):
     return _INVIS.sub('', str(s or '')).strip()
 
 
-def _try(host, port, user, pw):
-    """ניסיון התחברות אחד. מחזיר (הצליח, שגיאה)."""
+# שגיאות הצפנה שמקורן בשרת ישן, ולא בשם או בסיסמה. מאיר קיבל מהשרת של
+# האחסון: "DH_KEY_TOO_SMALL" — מפתח החלפה בן 1024 סיביות, שהתקן של היום
+# כבר אינו מקבל. במקרים כאלה מנסים שוב בתאימות לאחור.
+_OLD_TLS = ('DH_KEY_TOO_SMALL', 'SSLV3_ALERT_HANDSHAKE_FAILURE',
+            'UNSUPPORTED_PROTOCOL', 'WRONG_SIGNATURE_TYPE', 'EE_KEY_TOO_SMALL',
+            'CA_MD_TOO_WEAK', 'NO_CIPHERS_AVAILABLE')
+
+
+def _try(host, port, user, pw, relaxed=False):
+    """ניסיון התחברות אחד. מחזיר (הצליח, שגיאה).
+
+    relaxed — מתירים אלגוריתמי הצפנה ישנים יותר (SECLEVEL=1) עבור שרתים
+    שלא עודכנו. בדיקת תעודת האבטחה נשארת מלאה; מה שמשתנה הוא רק גודל
+    מפתח ההחלפה שאנחנו מוכנים לקבל.
+    """
     ctx = ssl.create_default_context()
+    if relaxed:
+        try:
+            ctx.set_ciphers('DEFAULT@SECLEVEL=1')
+        except Exception:
+            pass
     s = None
     try:
         if port == 465:
@@ -228,14 +263,28 @@ def probe(user, pw, host='', port=0, log=None):
         log = []
     mismatch = []            # שרתים שענו אבל התעודה שלהם על שם אחר
     tried = set()
+    legacy = False           # התחברנו רק אחרי ויתור על דרישת הצפנה מודרנית
 
     def attempt(h, pt):
-        nonlocal lastauth
+        nonlocal lastauth, legacy
         if (h, pt) in tried:
             return False
         tried.add((h, pt))
         t0 = time.time()
         ok, err = _try(h, pt, user, pw)
+        # שרת ישן שההצפנה שלו חלשה מהתקן של היום — מנסים שוב בתאימות
+        # לאחור, בלי לוותר על בדיקת תעודת האבטחה
+        if not ok and any(x in err for x in _OLD_TLS):
+            ok2, err2 = _try(h, pt, user, pw, relaxed=True)
+            if ok2:
+                legacy = True
+                log.append({'host': h, 'port': pt, 'ok': True,
+                            'sec': round(time.time() - t0, 1),
+                            'err': '', 'legacy': True})
+                return True
+            err = err + ' | גם בתאימות לאחור: ' + err2
+            if err2.startswith('auth:'):
+                lastauth = err2[5:]
         log.append({'host': h, 'port': pt, 'ok': ok,
                     'sec': round(time.time() - t0, 1),
                     'err': '' if ok else err})
@@ -248,10 +297,12 @@ def probe(user, pw, host='', port=0, log=None):
             if h not in mismatch:
                 mismatch.append(h)
         return False
+    old = (' · שים לב: שרת הדואר משתמש בהצפנה ישנה, והתחברנו בתאימות לאחור. '
+           'כדאי לבקש ממנהל האחסון לעדכן את השרת.')
     for h in hosts:
         for pt in ports:
             if attempt(h, pt):
-                return True, h, pt, 'מחובר · שולח מ־%s' % user
+                return True, h, pt, ('מחובר · שולח מ־%s' % user) + (old if legacy else '')
     # התעודה על שם אחר — מנסים את השם האמיתי של השרת עצמו
     for h in mismatch:
         real = _real_name(h)
@@ -260,8 +311,8 @@ def probe(user, pw, host='', port=0, log=None):
         for pt in ports:
             if attempt(real, pt):
                 return (True, real, pt,
-                        'מחובר · שולח מ־%s (דרך %s — זה שמו האמיתי של שרת '
-                        'הדואר של %s)' % (user, real, h))
+                        ('מחובר · שולח מ־%s (דרך %s — זה שמו האמיתי של שרת '
+                         'הדואר של %s)' % (user, real, h)) + (old if legacy else ''))
     if lastauth:
         return False, '', 0, ('שרת הדואר נמצא אבל דחה את הסיסמה. בדוק את הסיסמה '
                               'של התיבה %s. (%s)' % (user, lastauth[:80]))
