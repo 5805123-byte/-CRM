@@ -10723,10 +10723,13 @@ class H(BaseHTTPRequestHandler):
                 port = int(b.get('port') or 0)
             except (TypeError, ValueError):
                 port = 0
-            ok2, h2, p2, msg2 = bulkmail.probe(user, pw, host, port)
+            # יומן הניסיונות — איזה שרת, איזה פורט ומה בדיוק נכשל. מוצג
+            # במסך כדי שאפשר יהיה להעביר אותו כמו שהוא למנהל האחסון.
+            _log = []
+            ok2, h2, p2, msg2 = bulkmail.probe(user, pw, host, port, log=_log)
             if not ok2:
                 con.close()
-                return self._send(200, {'ok': False, 'msg': msg2})
+                return self._send(200, {'ok': False, 'msg': msg2, 'tried': _log})
             kv_set(con, 'mail_host', h2)
             kv_set(con, 'mail_port', str(p2))
             kv_set(con, 'mail_user', user)

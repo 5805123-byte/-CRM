@@ -157,7 +157,9 @@ def _try(host, port, user, pw):
     except smtplib.SMTPAuthenticationError as e:
         return False, 'auth:' + str(e)[:160]
     except Exception as e:
-        return False, 'conn:' + str(e)[:160]
+        # סוג התקלה חשוב לאבחון: timeout = החיבור נחסם בדרך ולא הגיע לשרת,
+        # refused = השרת ענה ואמר "לא כאן", ssl = בעיית הצפנה/פורט
+        return False, 'conn:' + type(e).__name__ + ': ' + str(e)[:140]
     finally:
         try:
             if s:
@@ -166,7 +168,7 @@ def _try(host, port, user, pw):
             pass
 
 
-def probe(user, pw, host='', port=0):
+def probe(user, pw, host='', port=0, log=None):
     """מוצא לבד את שרת הדואר והפורט של הכתובת.
 
     מאיר לא אמור לדעת מהו "SMTP" ומהו "פורט 465". הוא נותן כתובת וסיסמה,
@@ -185,9 +187,20 @@ def probe(user, pw, host='', port=0):
         hosts = ['mail.' + dom, 'smtp.' + dom, dom]
     ports = [int(port)] if port else [465, 587]
     lastauth = ''
+    # מאיר: "היא שלחה לי את השם של השרת ואת המספר וזה לא מצליח להתחבר
+    # עדיין, היא אומרת שזה אמור להיות בסדר מבחינתה." בלי לדעת מה בדיוק
+    # נכשל אי אפשר להתקדם, ולכן כל ניסיון נרשם: איזה שרת, איזה פורט, ומה
+    # השגיאה המדויקת. הרשימה מוצגת במסך כדי שאפשר יהיה להעביר אותה כמו
+    # שהיא למנהל האחסון.
+    if log is None:
+        log = []
     for h in hosts:
         for pt in ports:
+            t0 = time.time()
             ok, err = _try(h, pt, user, pw)
+            log.append({'host': h, 'port': pt, 'ok': ok,
+                        'sec': round(time.time() - t0, 1),
+                        'err': '' if ok else err})
             if ok:
                 return True, h, pt, 'מחובר · שולח מ־%s' % user
             if err.startswith('auth:'):
@@ -196,6 +209,13 @@ def probe(user, pw, host='', port=0):
     if lastauth:
         return False, '', 0, ('שרת הדואר נמצא אבל דחה את הסיסמה. בדוק את הסיסמה '
                               'של התיבה %s. (%s)' % (user, lastauth[:80]))
+    # כשכל הניסיונות נגמרו בפסק זמן — החיבור נחסם בדרך ולא הגיע לשרת כלל
+    if log and all('TimeoutError' in (x['err'] or '') or 'timed out' in (x['err'] or '')
+                   for x in log):
+        return False, '', 0, ('החיבור לשרת %s לא נענה כלל (פסק זמן). זה לא שם שגוי '
+                              'ולא סיסמה — משהו חוסם את הדרך בין השרת שלנו לשרת '
+                              'הדואר. בקש ממנהל האחסון לפתוח שליחת SMTP מכתובות '
+                              'חיצוניות.' % (hosts[0] if hosts else dom))
     return False, '', 0, ('לא הצלחתי להתחבר לשרת הדואר של %s. ייתכן ששם השרת '
                           'שונה — בקש ממנהל האחסון את כתובת ה-SMTP והפורט.' % dom)
 

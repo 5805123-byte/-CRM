@@ -8474,7 +8474,19 @@ function wireMlCfg(){
       await mlLoadSetup();
       setTimeout(()=>{mlCfgOpen=false;renderMailSend();},1800);
     }else{
-      msg.innerHTML=`<div class="mlwarn">${esc((r&&r.msg)||'הבדיקה נכשלה')}</div>`;
+      // מאיר: "היא שלחה לי את השם של השרת ואת המספר וזה לא מצליח להתחבר
+      // עדיין, היא אומרת שזה אמור להיות בסדר מבחינתה." בלי לדעת מה בדיוק
+      // נכשל אין במה להתקדם — כאן מוצג כל ניסיון עם השגיאה המדויקת, ואפשר
+      // להעתיק את הכל ולשלוח למנהל האחסון.
+      const tr=(r&&r.tried)||[];
+      msg.innerHTML=`<div class="mlwarn">${esc((r&&r.msg)||'הבדיקה נכשלה')}</div>`
+        +(tr.length?`<details class="mldiag"><summary>🔧 מה בדיוק ניסינו — להעביר למנהל האחסון</summary>
+          <div class="mldiagl" dir="ltr">${tr.map(t=>`${esc(t.host)}:${t.port} — ${t.ok?'OK':esc(t.err||'')} (${t.sec}s)`).join('<br>')}</div>
+          <button class="btn sm ghost" id="mc_copy" style="width:100%;margin-top:6px">📋 העתק</button></details>`:'');
+      const cp=document.getElementById('mc_copy');
+      if(cp)cp.onclick=()=>copyToClip(
+        'SMTP test for '+b.user+'\n'+tr.map(t=>t.host+':'+t.port+' — '+(t.ok?'OK':(t.err||''))+' ('+t.sec+'s)').join('\n'),
+        'הועתק ✓');
       // מאיר: "איך אני מכניס כאן את הפרטים של הדומיין שחסר?" — כשהבדיקה
       // נכשלת, ההגדרות המתקדמות נפתחות לבד (הן היו מקופלות ולא נמצאו),
       // ושדה השרת מוצע מראש כ-mail.<דומיין> — זה השם המקובל, ושם מנהל
