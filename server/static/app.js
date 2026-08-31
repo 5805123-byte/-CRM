@@ -7714,8 +7714,43 @@ async function renderUnlinked(){
         <div class="ulb ulact">
           <button class="btn sm ulok">✓ שייך לתורם הזה</button>
           <button class="btn sm ghost ulskip">✕ לא שייך לאף אחד</button>
-        </div></div>`;}).join('')||'<div class="empty">🎉 כל החיובים משויכים</div>'}</div>`;
+        </div></div>`;}).join('')||'<div class="empty">🎉 כל החיובים משויכים</div>'}</div>
+    ${ulFailedHTML()}`;
   wireUnlinked(groups);
+  wireUlFailed();
+}
+// מאיר: "יש פה כמה שלא עבר להם הכרטיס מאיזו סיבה שהיא — תכתוב לי שם,
+// במקום שממנו אני ממיין, שזה לא עבר, ותכתוב את הסיבה שכתוב באקסל."
+// אלה אינם כסף שנכנס, ולכן הם ברשימה נפרדת ואי אפשר לרשום אותם כתרומה.
+function ulFailedHTML(){
+  const fl=(ULDATA&&ULDATA.failed)||[];
+  if(!fl.length)return '';
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const SH={declined:'נדחה',error:'שגיאה',voided:'בוטל',refund:'זוכה'};
+  return `<div class="cnt" style="margin-top:18px">🔴 חיובים שלא עברו
+      <small style="color:var(--muted)"> · ${fl.length} · ${f(ULDATA.failed_total||0)} שלא נכנסו</small></div>
+    <div class="hintxt" style="margin:0 2px 10px">הכרטיס נדחה — <b>לא נכנס כסף</b>, ולכן אי אפשר לרשום את זה כתרומה.
+      הסיבה כתובה כפי שהיא בקובץ של אוטרייז. אפשר לפתוח את הכרטיס של התורם כדי לחזור אליו, או לסמן שטופל.</div>
+    <div id="ulfail">${fl.map(r=>{const s0=(r.sugg||[])[0];
+      return `<div class="ulg ulbad" data-tid="${esc(r.tid)}">
+        <div class="ulhead"><span class="ulnm">${esc(((r.first||'')+' '+(r.last||'')).trim()||'—')}</span>
+          <span class="ulsum bad">${f(amtNum(r.amount))}</span>
+          <span class="ulwhy">${esc(SH[r.status]||r.status||'')}</span></div>
+        ${r.email?`<div class="ulmail">${esc(r.email)}</div>`:''}
+        <div class="uldates">${esc(gregLabel(r.iso||r.date))}${r.phone?(' · '+esc(r.phone)):''}</div>
+        ${r.note?`<div class="ulreason">📄 ${esc(r.note)}</div>`:''}
+        <div class="ulb ulact">
+          ${s0?`<button class="btn sm ghost ulopen" data-did="${s0.id}">↗ ${esc(s0.name)}</button>`:'<span class="ulwhy">לא זוהה תורם</span>'}
+          <button class="btn sm ghost ulfskip">✓ טיפלתי — הסתר</button>
+        </div></div>`;}).join('')}</div>`;
+}
+function wireUlFailed(){
+  view.querySelectorAll('.ulbad').forEach(el=>{
+    const op=el.querySelector('.ulopen');
+    if(op)op.onclick=()=>{const d=DB.find(x=>x.id==op.dataset.did); if(d)openDonor(d,'details');};
+    el.querySelector('.ulfskip').onclick=async()=>{
+      await api('POST','/api/unlinked',{tids:[el.dataset.tid],skip:1});
+      el.classList.add('done'); toast('הוסתר ✓');};});
 }
 function wireUnlinked(groups){
   const byk={}; groups.forEach(x=>byk[x.k]=x);

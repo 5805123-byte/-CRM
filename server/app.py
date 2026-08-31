@@ -620,6 +620,10 @@ def ensure_schema():
         # חיוב שנדחה שמאיר סימן במפורש כחוב אמיתי. חיוב שנדחה אינו חוב
         # מעצמו — ברוב המקרים ניסו לחייב שוב וזה עבר, או שהתורם שילם באותו
         # חודש בדרך אחרת. רק סימון ידני מכניס אותו לסכום החוב.
+        # מאיר: "תכתוב לי שם, במקום שממנו אני ממיין, שזה לא עבר — ותכתוב
+        # את הסיבה שכתוב באקסל." הסיבה נשמרת כלשונה מהקובץ, בלי ניחוש.
+        try: con.execute("ALTER TABLE recon ADD COLUMN note TEXT DEFAULT ''")
+        except Exception: pass
         try: con.execute("ALTER TABLE recon ADD COLUMN is_debt INTEGER DEFAULT 0")
         except Exception: pass
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_jul2026_v6'").fetchone():
@@ -4331,6 +4335,46 @@ def ensure_schema():
             con.commit()
     except Exception as ex:
         print('  av split fix error:', ex)
+
+    # מאיר: "אני שולח לך את כל התרומות שנכנסו באוטרייז במהלך חודש אוגוסט.
+    # תכניס את כל התרומות למקום שממנו אני יוכל למיין בקלות לתורמים, בלי
+    # שתנחש לבד... חשוב לי שזה לא ייכנס ישירות לכרטיס של התורם."
+    # הן נכנסות למסך "חיובים בלי תורם" בלבד — בלי שיוך, בלי ניחוש, ובלי
+    # לרשום שקל אצל אף תורם. חיוב שכבר קיים לפי מספר העסקה אינו נכנס שוב.
+    try:
+        ap = os.path.join(HERE, 'authorize_aug2026_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_aug2026_v1'").fetchone() \
+           and os.path.exists(ap):
+            with open(ap, encoding='utf-8') as f:
+                _rows = json.load(f)
+            _n = _skip = 0
+            for x in _rows:
+                tid = str(x.get('tid') or '').strip()
+                if not tid:
+                    continue
+                if con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone():
+                    # החיוב כבר נמצא מייבוא קודם — לא נוגעים בו, רק משלימים
+                    # את סיבת הדחייה אם היא חסרה
+                    if (x.get('note') or '').strip():
+                        con.execute("UPDATE recon SET note=? WHERE tid=? "
+                                    "AND COALESCE(TRIM(note),'')=''", (x['note'], tid))
+                    _skip += 1
+                    continue
+                con.execute(
+                    "INSERT INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,"
+                    "email,recurring,donor_id,category,processed,source,status,note) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,NULL,'',0,?,?,?)",
+                    (tid, x.get('first', ''), x.get('last', ''), x.get('amount', ''),
+                     x.get('date', ''), x.get('addr', ''), x.get('city', ''), x.get('state', ''),
+                     x.get('zip', ''), x.get('phone', ''), x.get('email', ''),
+                     1 if x.get('recurring') else 0, 'Authorize 08-2026',
+                     x.get('status', 'settled'), x.get('note', '')))
+                _n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_aug2026_v1')")
+            con.commit()
+            print('  אוטרייז אוגוסט 2026: נוספו %d חיובים למיון (%d כבר היו)' % (_n, _skip))
+    except Exception as ex:
+        print('  authorize aug 2026 error:', ex)
 
     # מאיר: "אצל אלחנן לרר, הוא רוצה שזה יהיה בעילום שמו". מסמנים אותו
     # פעם אחת; מכאן והלאה הסימון נעשה מהכרטיס עצמו, בלשונית הקוויטל.
@@ -9483,11 +9527,14 @@ class H(BaseHTTPRequestHandler):
             for r in con.execute(
                     "SELECT tid,first,last,amount,date,source,email,phone FROM recon "
                     "WHERE donor_id IS NULL AND COALESCE(skipped,0)=0 "
-                    "AND COALESCE(status,'settled')='settled' ORDER BY date DESC"):
+                    "AND COALESCE(status,'settled')='settled'"):
                 x = dict(r)
                 x['iso'] = _recon_iso(r['date']) or ''
                 x['sugg'] = _sugg(r)
                 rows.append(x)
+            # התאריך נשמר כטקסט ("31-May-2026"), ולכן מיון SQL עליו מסדר
+            # לפי אלף־בית ולא לפי זמן — החדשים לא היו למעלה
+            rows.sort(key=lambda x: x['iso'] or '', reverse=True)
             # מאיר: "למה אצל אלי ווינפלד לא רואים את התרומות מבנק ווסט? הרי
             # נכנס כל חודש 720 דולר מינואר". הכסף נגבה, אבל החיוב לא שויך
             # לאף כרטיס — ולכן לא הופיע אצלו וגם לא בסיכומים. כאן אפשר
@@ -9499,8 +9546,27 @@ class H(BaseHTTPRequestHandler):
                 _fid = int(_for)
                 rows = [x for x in rows if any(s['id'] == _fid for s in (x['sugg'] or []))]
             tot = sum(float(str(x['amount']).replace(',', '') or 0) for x in rows)
+            # מאיר: "יש פה כמה שלא עבר להם הכרטיס מאיזו סיבה שהיא — אז
+            # תכתוב לי שם, במקום שממנו אני ממיין, שזה לא עבר, ותכתוב את
+            # הסיבה." חיובים שנדחו אינם כסף שנכנס, ולכן הם ברשימה נפרדת
+            # ואי אפשר לרשום אותם כתרומה בטעות.
+            failed = []
+            for r in con.execute(
+                    "SELECT tid,first,last,amount,date,source,email,phone,status,note "
+                    "FROM recon WHERE donor_id IS NULL AND COALESCE(skipped,0)=0 "
+                    "AND COALESCE(status,'settled')<>'settled'"):
+                x = dict(r)
+                x['iso'] = _recon_iso(r['date']) or ''
+                x['sugg'] = _sugg(r)
+                failed.append(x)
+            failed.sort(key=lambda x: x['iso'] or '', reverse=True)
+            if str(_for).strip().isdigit():
+                _fid2 = int(_for)
+                failed = [x for x in failed if any(s['id'] == _fid2 for s in (x['sugg'] or []))]
+            ftot = sum(float(str(x['amount']).replace(',', '') or 0) for x in failed)
             con.close()
-            return self._send(200, {'rows': rows, 'total': round(tot, 2)})
+            return self._send(200, {'rows': rows, 'total': round(tot, 2),
+                                    'failed': failed, 'failed_total': round(ftot, 2)})
         if self.path.split('?')[0] == '/api/recon':
             con = db(); out = []
             try:
