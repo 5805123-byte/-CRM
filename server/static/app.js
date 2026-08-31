@@ -7253,16 +7253,23 @@ async function openIzSlip(av){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   // בפתק עצמו — שם פרטי ואז משפחה, כמו בדפי ההדפסה
   // תורם בעילום שם מגיע כ"א.א." בלי תואר — השרת מזהה זאת לבד
-  const url=r=>'/izslip.png?'+new URLSearchParams({av:r.avreich_p||r.avreich,
-    donor:r.donor_p||r.donor,names:r.names||'',
-    avt:r.av_t||"ר'",dnt:(r.donor_t===''?'':(r.donor_t||"ר'"))}).toString();
+  // מאיר: "אם יש לאברך 2 או 3 שותפים שמחזיקים אותו אז זה מוציא לכל שותף
+  // דף — מסרבל ובלגן. שיהיו כל השותפים באותו דף, מחולק, ורק לוגו אחד."
+  const url=()=>{const p=new URLSearchParams();
+    p.set('av',rows[0].avreich_p||rows[0].avreich); p.set('avt',rows[0].av_t||"ר'");
+    rows.forEach(r=>{p.append('donor',r.donor_p||r.donor);
+      p.append('dnt',r.donor_t===''?'':(r.donor_t||"ר'")); p.append('names',r.names||'');});
+    return '/izslip.png?'+p.toString();};
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕯️ פתק קוויטל — ${esc(av)}</h2>
-    ${rows.map((r,i)=>`<div class="izslipbox">
-      <div class="hintxt">זבולון: <b>${esc(r.donor_t||'')} ${esc(r.donor_p||r.donor)}</b>${r.names?'':' · אין עדיין שמות לקוויטל'}</div>
-      <img class="izslipimg" src="${esc(url(r))}" alt="">
-      <div class="addrow"><button class="btn sm izslipcopy" data-i="${i}">📋 העתק תמונה (דף שלם)</button>
-        <button class="btn sm ghost izsliptxt" data-i="${i}"${r.names?'':' disabled'}>📝 העתק את השמות בלבד</button>
-        <button class="btn sm ghost izslipopen" data-i="${i}">🖨️ הדפסה (חצי דף)</button></div></div>`).join('')}`;
+    <div class="izslipbox">
+      <div class="hintxt">${rows.length>1?`<b>${rows.length} שותפים מחזיקים את האברך — כולם על אותו דף, מחולק בקו מפריד.</b><br>`:''}
+        ${rows.map(r=>'זבולון: <b>'+esc(r.donor_t||'')+' '+esc(r.donor_p||r.donor)+'</b>'
+          +(r.names?'':' · אין עדיין שמות לקוויטל')).join('<br>')}</div>
+      <img class="izslipimg" src="${esc(url())}" alt="">
+      <div class="addrow"><button class="btn sm izslipcopy">📋 העתק תמונה (דף שלם)</button>
+        <button class="btn sm ghost izslipopen">🖨️ הדפסה (חצי דף)</button></div>
+      <div class="addrow">${rows.map((r,i)=>`<button class="btn sm ghost izsliptxt" data-i="${i}"${r.names?'':' disabled'}>📝 השמות של ${esc(r.donor_p||r.donor)}</button>`).join('')}</div>
+    </div>`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   // מאיר: "אני רוצה גם אפשרות להעתקת טקסט הקוויטל בלבד" — בלי תמונה,
@@ -7273,14 +7280,13 @@ async function openIzSlip(av){
   rs.querySelectorAll('.izslipopen').forEach(b=>b.onclick=()=>
     window.open('/iz-slips?av='+encodeURIComponent(av),'_blank'));
   rs.querySelectorAll('.izslipcopy').forEach(b=>b.onclick=async()=>{
-    const r=rows[+b.dataset.i];
     try{
-      const blob=await fetch(url(r)).then(x=>x.blob());
+      const blob=await fetch(url()).then(x=>x.blob());
       if(navigator.canShare&&navigator.canShare({files:[new File([blob],'kvittel.png',{type:'image/png'})]})){
         await navigator.share({files:[new File([blob],'kvittel.png',{type:'image/png'})]}); return; }
       await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
       toast('התמונה הועתקה ✓');
-    }catch(e){ window.open(url(r),'_blank'); }});
+    }catch(e){ window.open(url(),'_blank'); }});
 }
 function wireByAv(){
   const nb=document.getElementById('av_newbtn'), ni=document.getElementById('av_new');

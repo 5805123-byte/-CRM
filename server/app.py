@@ -6323,18 +6323,31 @@ def _honor(first, last='', gender=''):
 
 
 def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False,
-               av_t="ר'", donor_t="ר'"):
+               av_t="ר'", donor_t="ר'", parts=None):
     """פתק הקוויטל של היששכר־זבולון כתמונה.
 
     מאיר: "כשאני רוצה להעתיק את הדף בשביל לשלוח לתורם — שיהיה על דף שלם,
     ורק אם אני רוצה להדפיס — על חצי דף מדויק". לכן התמונה לשליחה היא A4
-    מלא, וההדפסה (דף ה-HTML) נשארת על חצי דף."""
+    מלא, וההדפסה (דף ה-HTML) נשארת על חצי דף.
+
+    מאיר: "אם יש לאברך 2 או 3 שותפים שמחזיקים אותו אז זה מוציא לכל שותף
+    דף — זה מאוד מסרבל ובלגן. תעשה שכשמדפיסים דפים לאברך יהיו כל השותפים
+    באותו דף, אבל שיהיה מחולק, ורק לוגו אחד למעלה." לכן parts הוא רשימת
+    (שם התורם, תוארו, שמות הקוויטל שלו) — הראש והנוסח נכתבים פעם אחת,
+    ומתחתיהם רצועה לכל שותף עם כותרת משלו וקו מפריד ביניהן."""
     from PIL import Image, ImageDraw, ImageFont
     # תורם בעילום שם — "א.א." בלי תואר לפניו
     if (donor or '').strip() == ANON_NAME:
         donor_t = ''
     if (avreich or '').strip() == ANON_NAME:
         av_t = ''
+    parts = [p for p in (parts or []) if (p[0] or '').strip() or (p[2] or '').strip()]
+    if not parts:
+        parts = [(donor, donor_t, names)]
+    parts = [((p[0] or '').strip(),
+              ('' if (p[0] or '').strip() == ANON_NAME else (p[1] or "ר'")),
+              (p[2] or '')) for p in parts]
+    donor, donor_t = parts[0][0], parts[0][1]
     im = Image.open(os.path.join(STATIC, 'iz-slip.jpg' if half else 'iz-page.jpg')).convert('RGB')
     if im.width != width:
         im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
@@ -6388,17 +6401,60 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     y += int(nsz * (1.5 if half else 1.8))
     # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום
     avail_w, avail_h = W - int(150 * u), H - y - int((34 if half else 90) * u)
-    txt = kv_flow(names).strip() or '— אין עדיין שמות לקוויטל —'
-    for px in range(int((94 if half else 118) * u), int(16 * u), -2):
-        f = font(px, True)
-        lh = px * 1.28
-        lines = _wrap_px(dr, txt, f, avail_w)
-        if len(lines) * lh <= avail_h:
-            yy = y + max(0, (avail_h - len(lines) * lh) / 2)
-            for ln in lines:
-                center(ln, f, yy, _BLACK)
-                yy += lh
-            break
+    n = len(parts)
+    # כותרת הרצועה — "יששכר <אברך> · זבולון <תורם>". רק לשותף השני והלאה;
+    # הראשון כבר כתוב בראש הדף ליד הלוגו. כל קטע נכתב לחוד ומימין לשמאל,
+    # כדי שהתוויות יישארו בזהב והשמות בצבע הכהה — כמו בראש הדף.
+    sub_px = (28 if half else 34) * u
+    fsl, fsn = font(sub_px), font(sub_px, True)
+    sub_h = int(sub_px * 2.0)
+
+    def subhead(av_s, dn_s, yy):
+        segs = [('יששכר ', fsl, _GOLD_T), (av_s, fsn, _DEEP),
+                ('  ·  ', fsl, _GOLD_T),
+                ('זבולון ', fsl, _GOLD_T), (dn_s, fsn, _DEEP)]
+        tot = sum(wid(t, f) for t, f, _ in segs)
+        xx = (W + tot) / 2                       # מתחילים מהקצה הימני
+        for t, f, col in segs:
+            xx -= wid(t, f)
+            dr.text((xx, yy), t, font=f, fill=col)
+
+    # גודל אחיד לכל הרצועות — אחרת אצל שותף אחד השמות ענקיים ואצל
+    # השני זעירים, ונראה כמו שני דפים שהודבקו. כדי שהגודל האחיד לא ייקבע
+    # לפי הרצועה הצפופה ביותר, הגובה מתחלק לפי מה שכל רצועה באמת צריכה
+    # ולא בחלקים שווים — ורק העודף מתחלק שווה בשווה.
+    txts = [kv_flow(p[2]).strip() or '— אין עדיין שמות לקוויטל —' for p in parts]
+    blocks, need, size = [], [], 0
+    for px in range(int((94 if half else 118) * u), int(13 * u), -2):
+        f, lh = font(px, True), px * 1.28
+        b = [_wrap_px(dr, t, f, avail_w) for t in txts]
+        nd = [len(b[i]) * lh + (sub_h if i else 0) for i in range(n)]
+        if sum(nd) <= avail_h:
+            blocks, need, size = b, nd, px; break
+    if not blocks:                               # גם הקטן ביותר לא נכנס
+        size = int(13 * u)
+        f, lh = font(size, True), size * 1.28
+        blocks = [_wrap_px(dr, t, f, avail_w) for t in txts]
+        need = [len(blocks[i]) * lh + (sub_h if i else 0) for i in range(n)]
+    f, lh = font(size, True), size * 1.28
+    extra = max(0, (avail_h - sum(need))) / n
+    top = y
+    for i, lines in enumerate(blocks):
+        band, dn, dt = need[i] + extra, parts[i][0], parts[i][1]
+        yy = top
+        if i:
+            # קו מפריד דק ומקווקו בין השותפים — כמו קו גזירה
+            ly, dash = int(top), int(9 * u)
+            for dx in range(int(90 * u), W - int(90 * u), dash * 2):
+                dr.line([(dx, ly), (dx + dash, ly)], fill=_GOLD_T, width=max(1, int(1.5 * u)))
+            subhead(((av_t + ' ') if av_t else '') + (avreich or '—'),
+                    ((dt + ' ') if dt else '') + (dn or '—'), top + int(sub_px * .5))
+            yy += sub_h
+        room = band - (sub_h if i else 0)
+        yy += max(0, (room - len(lines) * lh) / 2)
+        for ln in lines:
+            center(ln, f, yy, _BLACK); yy += lh
+        top += band
     buf = io.BytesIO()
     im.save(buf, 'JPEG' if fmt == 'jpg' else 'PNG', quality=92)
     return buf.getvalue()
@@ -8621,15 +8677,27 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/receipt':
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] in ('/izslip.png', '/izslip.jpg'):
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            # keep_blank_values — שותף בלי שמות קוויטל שולח names ריק, ובלעדיו
+            # הרשימות מתקצרות והשמות נדבקים לשותף הלא נכון
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query,
+                                       keep_blank_values=True)
 
             def g(k):
                 return (qs.get(k, [''])[0] or '').strip()
             fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
+            # אברך עם כמה שותפים — donor/names/dnt חוזרים על עצמם, אחד
+            # לכל שותף, והכל נכתב על אותו דף (מאיר: "בלגן, דף לכל שותף")
+            dns, nms = qs.get('donor') or [''], qs.get('names') or ['']
+            dts = qs.get('dnt') or []
+            parts = [(dns[i] if i < len(dns) else '',
+                      dts[i] if i < len(dts) else "ר'",
+                      nms[i] if i < len(nms) else '')
+                     for i in range(max(len(dns), len(nms)))]
             try:
                 data = izslip_png(g('av'), g('donor'), g('names'), fmt=fmt,
                                   half=(g('half') == '1'),
-                                  av_t=g('avt') or "ר'", donor_t=g('dnt') or "ר'")
+                                  av_t=g('avt') or "ר'", donor_t=g('dnt') or "ר'",
+                                  parts=parts)
             except Exception as e:
                 return self._send(500, {'ok': False, 'error': str(e)[:200]})
             self.send_response(200)

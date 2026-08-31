@@ -55,6 +55,20 @@
   .names{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;
     margin-top:3mm;font-size:45pt;font-weight:800;line-height:1.28;overflow:hidden}
   .names span{display:block;width:100%}
+  /* מאיר: "אם יש לאברך 2 או 3 שותפים שמחזיקים אותו אז זה מוציא לכל שותף
+     דף — מסרבל ובלגן. שיהיו כל השותפים באותו דף, אבל מחולק, ורק לוגו
+     אחד למעלה." רצועה לכל שותף, בגובה שווה, עם קו מפריד וכותרת. */
+  .secs{flex:1;display:flex;flex-direction:column;min-height:0}
+  /* flex-basis:auto — הגובה נקבע לפי מה שכל רצועה באמת צריכה, ורק העודף
+     מתחלק שווה בשווה. חלוקה לחלקים שווים הקטינה את כל הגופנים לפי
+     הרצועה הצפופה ביותר. */
+  .sec{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .sec + .sec{border-top:1.2pt dashed var(--gold);padding-top:1.5mm}
+  .subwho{text-align:center;font-size:13pt;line-height:1.25;white-space:nowrap;
+    overflow:hidden;margin-bottom:.5mm}
+  .subwho b{color:var(--deep);font-weight:800;font-size:16pt}
+  .subwho i{font-style:normal;color:var(--gold);font-weight:800}
+  .sec + .sec .names{margin-top:1mm}
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
   /* קו הקיפול הוא גבול של הפתק העליון ולא אלמנט נוסף — אלמנט נפרד
      הוסיף פיקסל וגלש לעמוד שני בהדפסה */
@@ -148,38 +162,68 @@ function fitWho(slip) {
     if (who.scrollWidth <= who.clientWidth) return;
   }
 }
+// אותה מדידה לכותרת של שותף נוסף — שורה אחת שאסור שתיחתך
+function fitSub(slip) {
+  slip.querySelectorAll('.subwho').forEach(sw => {
+    for (let pt = 13; pt >= 7; pt -= 0.5) {
+      sw.style.fontSize = pt + 'pt';
+      sw.querySelectorAll('b').forEach(b => { b.style.fontSize = (pt * 1.23) + 'pt'; });
+      if (sw.scrollWidth <= sw.clientWidth) return;
+    }
+  });
+}
+// כל הרצועות בדף יורדות יחד לאותו גודל — אחרת אצל שותף אחד השמות
+// ענקיים ואצל השני זעירים, וזה נראה כמו שני דפים שהודבקו
 function fitNames(slip) {
-  const el = slip.querySelector('.names');
-  if (!el) return;
-  const inner = el.firstElementChild || el;
+  const els = [...slip.querySelectorAll('.names')];
+  if (!els.length) return;
   const top = slip.classList.contains('full') ? 56 : 45;
   for (let pt = top; pt >= 7; pt -= 0.5) {
-    el.style.fontSize = pt + 'pt';
-    el.style.lineHeight = (pt > 20 ? 1.28 : 1.22);
-    if (inner.scrollHeight <= el.clientHeight) return;
+    els.forEach(el => {
+      el.style.fontSize = pt + 'pt';
+      el.style.lineHeight = (pt > 20 ? 1.28 : 1.22);
+    });
+    if (els.every(el => (el.firstElementChild || el).scrollHeight <= el.clientHeight)) return;
   }
 }
-function slip(r, flip, full) {
-  const nm = r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
-                     : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
+// מאיר: "מיטמן הם שלושה שמחזיקים את ציון כהן — שיהיה כתוב בהתחלה אפרים
+// מיטמן והשמות שלו, אחר כך ציון כהן יששכר / מאיר מיטמן זבולון ואז השמות
+// שלו, ורק לוגו אחד למעלה". הראש והנוסח פעם אחת; לכל שותף נוסף כותרת
+// משלו מעל השמות שלו, וקו מפריד ביניהם.
+function slip(g, flip, full) {
+  const ps = g.parts;
+  const nmOf = r => r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
+                            : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
+  const avn = esc(g.avreich_p || g.avreich), avt = esc(g.av_t || "ר'");
+  const dnm = r => (r.donor_t === '' ? '' : `<i>${esc(r.donor_t || "ר'")}</i> `) + esc(r.donor_p || r.donor);
+  const secs = ps.map((r, i) => '<div class="sec">' + (i ? `<div class="subwho">
+        <i>יששכר</i> <b>${avt} ${avn}</b> &nbsp;·&nbsp; <i>זבולון</i> <b>${dnm(r)}</b></div>` : '')
+    + nmOf(r) + '</div>').join('');
   return `<div class="slip${flip ? ' flip' : ''}${full ? ' full' : ''}"><img class="bg" src="${full ? '/iz-page.jpg' : '/iz-slip.jpg'}" alt=""><div class="in">
     <div class="who">
-      <div class="w"><div class="lbl">יששכר</div><div class="nm"><i>${esc(r.av_t || "ר'")}</i> ${esc(r.avreich_p || r.avreich)}</div></div>
-      <div class="w"><div class="lbl">זבולון</div><div class="nm">${r.donor_t===''?'':`<i>${esc(r.donor_t||"ר'")}</i> `}${esc(r.donor_p || r.donor)}</div></div>
+      <div class="w"><div class="lbl">יששכר</div><div class="nm"><i>${avt}</i> ${avn}</div></div>
+      <div class="w"><div class="lbl">זבולון</div><div class="nm">${dnm(ps[0])}</div></div>
     </div>
     <div class="lead">יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל בעת רצון הגדול של חצות הלילה<span class="z">יעמוד לזכות:</span></div>
-    ${nm}
+    <div class="secs">${secs}</div>
   </div></div>`;
 }
 // ----- התמונה של פתק אחד, בדיוק כמו שהוא מצויר -----
 // מאיר: "שיהיה לי את שתי האפשרויות, גם על חצי דף כזה וגם על דף שלם, עם
 // אפשרות העתקה, הדפסה ולשלוח לתורם". התמונה מגיעה מהשרת באותו סידור
 // שרואים כאן, בגודל שמתאים לשליחה בוואטסאפ ובמייל.
-function slipImgUrl(r, ext) {
-  return '/izslip.' + (ext || 'png') + '?' + new URLSearchParams({
-    av: r.avreich_p || r.avreich, donor: r.donor_p || r.donor, names: r.names || '',
-    avt: r.av_t || "ר'", dnt: (r.donor_t === '' ? '' : (r.donor_t || "ר'")),
-    half: FULL ? '' : '1'}).toString();
+function slipImgUrl(g, ext) {
+  const p = new URLSearchParams();
+  p.set('av', g.avreich_p || g.avreich);
+  p.set('avt', g.av_t || "ר'");
+  // שותף לכל שלישייה donor/dnt/names — השרת מצייר את כולם על אותו דף
+  g.parts.forEach(r => {
+    p.append('donor', r.donor_p || r.donor);
+    p.append('dnt', r.donor_t === '' ? '' : (r.donor_t || "ר'"));
+    p.append('names', r.names || '');
+  });
+  if (!FULL) p.set('half', '1');
+  return '/izslip.' + (ext || 'png') + '?' + p.toString();
 }
 async function slipBlob(r, ext) {
   const res = await fetch(slipImgUrl(r, ext));
@@ -215,7 +259,7 @@ async function sendSlip(b, r) {
   let blob = null;
   try { blob = await slipBlob(r, 'jpg'); }
   catch (e) { b.disabled = false; b.textContent = t0; window.open(slipImgUrl(r, 'jpg'), '_blank'); return; }
-  const who = (r.donor_p || r.donor || '').trim();
+  const who = (r.avreich_p || r.avreich || '').trim();
   const fname = 'קוויטל' + (who ? (' — ' + who) : '') + '.jpg';
   const cap = 'קוויטל יששכר־זבולון — כולל חצות 🕯️';
   b.disabled = false; b.textContent = t0;
@@ -255,25 +299,36 @@ function paint() {
   const hit = r => !q || (r.avreich + ' ' + r.donor + ' ' + (r.donor_find || '') + ' ' + (r.names || ''))
     .toLowerCase().includes(q);
   let rows = ROWS.filter(r => (!only || r.avreich === only) && (mode === 'all' || r.names) && hit(r));
-  document.getElementById('cnt').textContent = rows.length + ' פתקים';
-  document.getElementById('hint').innerHTML = FULL
-    ? 'דף שלם — פתק אחד בעמוד, לשליחה לתורם או להדפסה. תחת כל פתק: שליחה, העתקה והדפסה של אותו פתק בלבד.'
-    : 'חצי דף — תורם אחד בכל עמוד, פעמיים, שני החצאים באותו כיוון. גוזרים בקו המקווקו ומקבלים שני פתקים זהים, או מקפלים.';
+  // אברך אחד = דף אחד, גם כשמחזיקים אותו כמה שותפים
+  const gm = new Map();
+  rows.forEach(r => {
+    let g = gm.get(r.avreich);
+    if (!g) gm.set(r.avreich, g = {avreich: r.avreich, avreich_p: r.avreich_p,
+                                   av_t: r.av_t, parts: []});
+    g.parts.push(r);
+  });
+  const groups = [...gm.values()];
+  const many = groups.filter(g => g.parts.length > 1).length;
+  document.getElementById('cnt').textContent = groups.length + ' דפים · ' + rows.length + ' שותפים';
+  document.getElementById('hint').innerHTML = (FULL
+    ? 'דף שלם — אברך אחד בעמוד, לשליחה לתורם או להדפסה. תחת כל דף: שליחה, העתקה והדפסה של אותו דף בלבד.'
+    : 'חצי דף — אברך אחד בכל עמוד, פעמיים, שני החצאים באותו כיוון. גוזרים בקו המקווקו ומקבלים שני פתקים זהים, או מקפלים.')
+    + (many ? ' &nbsp;·&nbsp; <b>' + many + ' אברכים מוחזקים ביותר משותף אחד — כל השותפים שלהם באותו דף, מחולק בקו מפריד.</b>' : '');
   let h = '';
-  rows.forEach((r, i) => {
+  groups.forEach((g, i) => {
     h += '<div class="sheet' + (FULL ? ' one' : '') + '" data-i="' + i + '">'
-       + (FULL ? slip(r, false, true) : (slip(r) + slip(r, true))) + '</div>'
+       + (FULL ? slip(g, false, true) : (slip(g) + slip(g, true))) + '</div>'
        + '<div class="acts" data-i="' + i + '">'
        + '<button class="wa act-send">📤 שלח לתורם</button>'
        + '<button class="cp act-copy">📋 העתק תמונה</button>'
-       + '<button class="act-print">🖨️ הדפס את הפתק הזה</button>'
+       + '<button class="act-print">🖨️ הדפס את הדף הזה</button>'
        + '</div>';
   });
   document.getElementById('out').innerHTML = h ||
     '<div class="hint">אין פתקים להצגה.</div>';
-  document.querySelectorAll('.slip').forEach(sl => { fitWho(sl); fitNames(sl); });
+  document.querySelectorAll('.slip').forEach(sl => { fitWho(sl); fitSub(sl); fitNames(sl); });
   document.querySelectorAll('.acts').forEach(box => {
-    const r = rows[+box.dataset.i];
+    const r = groups[+box.dataset.i];
     const sheet = document.querySelector('.sheet[data-i="' + box.dataset.i + '"]');
     box.querySelector('.act-send').onclick = function () { sendSlip(this, r); };
     box.querySelector('.act-copy').onclick = function () { copySlip(this, r); };
