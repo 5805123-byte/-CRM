@@ -2052,10 +2052,8 @@ function openNewDonor(onCreate,pre){
     <label class="fld"><span>טלפון</span><input id="nd_phone" dir="ltr" inputmode="tel" placeholder="+1 ..."></label>
     <label class="fld"><span>אימייל</span><input id="nd_email" dir="ltr" inputmode="email" placeholder="name@example.com"></label>
     <div class="hintxt" style="margin:-4px 2px 8px">כדאי למלא — לפי המייל חיובי האשראי והבנק נתפסים לכרטיס לבד, בלי לשייך ידנית.</div>
-    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="nd_addr" dir="auto" placeholder="רחוב ומספר"></label>
-    <div class="two"><label class="fld"><span>עיר</span><input id="nd_city" dir="auto" placeholder="עיר"></label>
-      <label class="fld"><span>מדינה</span><input id="nd_country" dir="auto" placeholder="מדינה"></label></div>
-    <label class="fld"><span>מיקוד</span><input id="nd_zip" dir="ltr" placeholder="מיקוד"></label>
+    <label class="fld"><span>כתובת מלאה — הכל בשורה אחת, כולל מיקוד</span><input id="nd_addr1" dir="auto"
+      placeholder="1540 40th Street, Brooklyn, NY 11218"></label>
     <div class="sec"><h3 style="color:var(--gold);font-size:1rem">💵 תרומה ראשונה (לא חובה)</h3>
       <label class="fld"><span>תאריך קבלת התרומה (לועזי)</span><input id="nd_date" type="date"></label>
       <div id="nd_purposes"></div>
@@ -2064,32 +2062,36 @@ function openNewDonor(onCreate,pre){
     <div class="sec"><button class="btn" id="nd_save" style="width:100%">✔ צור כרטיס תורם</button></div>`;
   ov.classList.add('show');
   document.getElementById('cx').onclick=()=>ov.classList.remove('show');
-  ['english','phone','email','addr','city','country','zip','last','first'].forEach(k=>{
+  ['english','phone','email','last','first'].forEach(k=>{
     const el=document.getElementById('nd_'+k); if(el&&pre[k])el.value=pre[k];});
+  // כתובת שהגיעה מהצעה (חיוב אשראי, איש קשר) — נכנסת לשורה האחת
+  (()=>{const el=document.getElementById('nd_addr1');
+    if(el&&(pre.addr||pre.city||pre.country||pre.zip))el.value=addrLine(pre);})();
   const g=id=>document.getElementById(id).value.trim();
   // בחירת ארץ ישראל → מילוי אוטומטי: מדינה, קידומת +972, פלייסהולדר מיקוד
   // בכרטיס חדש בלבד: טלפון או כתובת ישראליים בוחרים ₪ מראש — ותמיד אפשר לשנות
   (()=>{
     const rg=document.getElementById('nd_region'), ph=document.getElementById('nd_phone'),
-          ad=document.getElementById('nd_addr'), ct=document.getElementById('nd_city');
+          ad=document.getElementById('nd_addr1');
     if(!rg||!ph)return;
     const IL=/ירושלים|ביתר|בית שמש|בני ברק|אלעד|מודיעין|אשדוד|צפת|טבריה|רכסים|חיפה|ישראל|israel|jerusalem|bnei ?brak|beitar|ashdod/i;
     const sniff=()=>{
       if(rg._touched)return;                       // מרגע שבחרת ידנית — לא נוגעים
       const p2=String(ph.value||'').replace(/[^\d+]/g,'');
-      const t=[ad&&ad.value,ct&&ct.value].join(' ');
+      const t=String((ad&&ad.value)||'');
       rg.value=(p2.startsWith('+972')||p2.startsWith('972')||IL.test(t))?'il':'';
     };
-    [ph,ad,ct].forEach(x=>x&&x.addEventListener('input',sniff));
+    [ph,ad].forEach(x=>x&&x.addEventListener('input',sniff));
     rg.addEventListener('change',()=>{rg._touched=1;});
   })();
   document.getElementById('nd_region').onchange=e=>{
-    const ph=document.getElementById('nd_phone'), co=document.getElementById('nd_country'), zp=document.getElementById('nd_zip');
+    const ph=document.getElementById('nd_phone'), ad=document.getElementById('nd_addr1');
     if(e.target.value==='il'){
-      if(!co.value.trim())co.value='ישראל';
       let v=ph.value.trim(); if(!v){ph.value='+972 ';} else if(v[0]==='0'){ph.value='+972 '+v.slice(1);}
-      ph.placeholder='+972 ...'; zp.placeholder='מיקוד (7 ספרות)';
-    }else{ ph.placeholder='+1 ...'; }
+      ph.placeholder='+972 ...';
+      if(ad)ad.placeholder='רחוב ומספר, עיר, ישראל 9043500';
+    }else{ ph.placeholder='+1 ...';
+      if(ad)ad.placeholder='1540 40th Street, Brooklyn, NY 11218'; }
   };
   document.getElementById('nd_date').value=todayStr();  // ברירת מחדל: היום
   const purpBox=document.getElementById('nd_purposes');
@@ -2107,7 +2109,11 @@ function openNewDonor(onCreate,pre){
   document.getElementById('nd_save').onclick=async()=>{
     const last=g('nd_last'); if(!last){toast('מלא שם משפחה');return;}
     // מאיר: "ומה שנכניס מעכשיו שזה יהיה ברירת מחדל בקוויטל, לא מה שהיה"
-    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),email:g('nd_email'),addr:g('nd_addr'),city:g('nd_city'),country:g('nd_country'),zip:g('nd_zip'),region:document.getElementById('nd_region').value,tier:TIER_DEFAULT};
+    const _rg=document.getElementById('nd_region').value;
+    const _ad=splitAddrLine(g('nd_addr1'));
+    if(_rg==='il'&&!_ad.country)_ad.country='ישראל';
+    const body={last,first:g('nd_first'),english:g('nd_english'),phone:g('nd_phone'),email:g('nd_email'),
+      addr:_ad.addr,city:_ad.city,country:_ad.country,zip:_ad.zip,region:_rg,tier:TIER_DEFAULT};
     const r=await api('POST','/api/donor',body);
     const nd={id:r.id,...body,category:'',amount:'',prayers:[],parnes:[],donations:[],contacts:[],tasks:[],partners:[],transactions:[],pledges:[],files:[],created:todayStr(),source:'ידני'};
     DB.push(nd);
@@ -2240,6 +2246,40 @@ async function applyTierSelect(d,selId){
   }
   renderCard(d);
   if(tab==='donors')renderDonors();
+}
+/* ---------- כתובת בשורה אחת ----------
+   מאיר: "אני מעדיף שהכתובת של התורם תהיה בשורה אחת, הכל כולל מיקוד —
+   לא ככה כל דבר בפני עצמו." במסד נשארו ארבעה שדות נפרדים (הקבלה,
+   תוויות הדואר וההשוואה מול חיובי האשראי נשענים עליהם), ולכן השורה
+   מפורקת בשמירה ומורכבת חזרה בטעינה. הפורמט קבוע — "רחוב, עיר, מדינה
+   מיקוד" — כך שכתובת שנשמרת ונטענת שוב חוזרת בדיוק כמו שהייתה. */
+function addrLine(d){
+  const ad=String((d&&d.addr)||'').trim(), ct=String((d&&d.city)||'').trim(),
+        co=String((d&&d.country)||'').trim(), z=String((d&&d.zip)||'').trim();
+  // המיקוד נצמד למדינה כשיש מדינה ("Brooklyn, NY 11218"), ולעיר כשאין
+  // ("ביתר עילית 9043500") — כך הפירוק חזרה מחזיר בדיוק את אותם שדות
+  if(co)return [ad, ct, (co+' '+z).trim()].filter(Boolean).join(', ');
+  if(ct)return [ad, (ct+' '+z).trim()].filter(Boolean).join(', ');
+  return (ad+' '+z).trim();
+}
+// מיקוד בסוף השורה: 5 או 9 ספרות אמריקאיות, או 5-7 ספרות ישראליות
+const ZIPRX=/(?:^|[\s,])(\d{5}(?:-\d{4})?|\d{7})\s*$/;
+function splitAddrLine(s){
+  const parts=String(s||'').split(',').map(x=>x.trim()).filter((x,i,a)=>x||i<a.length-1);
+  const out={addr:'',city:'',country:'',zip:''};
+  if(!parts.length)return out;
+  let last=parts[parts.length-1]||'';
+  const m=ZIPRX.exec(last);
+  if(m){ out.zip=m[1]; last=last.slice(0,m.index).trim(); }
+  parts[parts.length-1]=last;
+  // מה שנשאר בחלק האחרון אחרי המיקוד הוא המדינה כשיש שלושה חלקים
+  // ומעלה, ועיר כשיש שניים. החלוקה נבחרה כך שכתובת שנשמרת ונטענת שוב
+  // מחזירה בדיוק את אותם שדות, בלי להוסיף או להוריד פסיקים.
+  if(!last)parts.pop();
+  else if(parts.length>=3)out.country=parts.pop();
+  if(parts.length>=2)out.city=parts.pop();
+  out.addr=parts.join(', ').trim();
+  return out;
 }
 function wireFields(d,flds){flds.forEach(fld=>{const el=document.getElementById('f_'+fld);if(!el)return;el.onchange=async e=>{d[fld]=e.target.value;await api('PUT','/api/donor/'+d.id,{[fld]:e.target.value});toast('נשמר ✓');if(fld==='last'||fld==='first'){document.getElementById('cardTitle').textContent=(d.last+' '+d.first).trim();}if(['last','first','tier','category','region','channel'].includes(fld)&&tab==='donors')renderDonors();};});}
 
@@ -4842,17 +4882,13 @@ function cardInfo(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <label class="fld"><span>שם באנגלית</span><input id="f_english" value="${esc(d.english)}" dir="ltr"></label>
     <label class="fld"><span>עסק</span><input id="f_business" value="${esc(d.business)}"></label>
-    <label class="fld"><span>גבר / אשה / זוג — קובע את התואר בפתקי הקוויטל ואת לשון הפנייה במכתבים</span><select id="f_gender">
-      ${GENOPTS.map(([v,l])=>`<option value="${v}"${(d.gender||'')===v?' selected':''}>${esc(l)}</option>`).join('')}
-    </select></label>
     <div class="fld"><span>טלפונים</span><div id="phones" class="phones"></div></div>
     <div class="fld"><span>אימיילים</span><div id="emails" class="phones"></div></div>
     <div class="two"><label class="fld"><span>אזור / מטבע</span><select id="f_region"><option value="">🇺🇸 חו"ל ($)</option><option value="il" ${d.region==='il'?'selected':''}>🇮🇱 ארץ ישראל (₪)</option></select></label>
       <label class="fld"><span>ערוץ חיוב</span><select id="f_channel" class="chansel">${channelOpts(d.channel)}</select></label></div>
-    <label class="fld"><span>כתובת (רחוב ומספר)</span><input id="f_addr" value="${esc(d.addr)}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
-    <div class="two"><label class="fld"><span>עיר</span><input id="f_city" value="${esc(d.city||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label>
-      <label class="fld"><span>מדינה</span><input id="f_country" value="${esc(d.country||'')}" dir="${d.region==='il'?'rtl':'ltr'}"></label></div>
-    <label class="fld"><span>מיקוד</span><input id="f_zip" value="${esc(d.zip||'')}" dir="ltr"></label>
+    <label class="fld"><span>כתובת מלאה — הכל בשורה אחת, כולל מיקוד</span><input id="f_addr1"
+      value="${esc(addrLine(d))}" dir="${d.region==='il'?'rtl':'ltr'}"
+      placeholder="${d.region==='il'?'רחוב ומספר, עיר, ישראל 9043500':'1540 40th Street, Brooklyn, NY 11218'}"></label>
     <label class="fld"><span>📝 הערות (למשל: הגיע דרך אבא קלוק) — ניתן לחיפוש</span><textarea id="f_notes" rows="3" placeholder="כתוב כאן כל דבר שתרצה למצוא אחר כך בחיפוש">${esc(d.notes||'')}</textarea></label>
     ${d.notes?`<div class="hintxt" style="margin:-4px 2px 8px">🔎 <a class="notelink" href="#">חפש את כל מי שיש לו הערה דומה</a></div>`:''}
     <button class="btn" id="f_saveall" style="width:100%;margin:6px 0">💾 שמור פרטים</button>
@@ -4865,13 +4901,25 @@ function cardInfo(d,body){
   // מאיר: "זה מיותר — כשמכניסים תרומה כבר בוחרים בתרומה עבור מה, אין
   // צורך במילוי הפרטים את זה". שדה "מטרה כללית" ירד מהמסך; מה שכבר
   // רשום בו נשאר במסד ואינו נמחק.
-  const INF=['english','business','gender','region','channel','addr','city','country','zip','notes','debt_open','debt_open_note'];
+  const INF=['english','business','region','channel','notes','debt_open','debt_open_note'];
   wireFields(d,INF);
+  // הכתובת נכתבת בשורה אחת ונשמרת מפורקת — כך הקבלה, תוויות הדואר
+  // וההשוואה מול חיובי האשראי ממשיכות לעבוד בלי שינוי
+  const saveAddr=async()=>{
+    const el=document.getElementById('f_addr1'); if(!el)return null;
+    const a=splitAddrLine(el.value);
+    if(d.region==='il'&&!a.country)a.country='ישראל';
+    Object.assign(d,a);
+    return a;
+  };
+  const a1=document.getElementById('f_addr1');
+  if(a1)a1.onchange=async()=>{await api('PUT','/api/donor/'+d.id,await saveAddr());toast('נשמר ✓');};
   wireChanSel(document.getElementById('f_channel'));
   const sv=document.getElementById('f_saveall');
   if(sv)sv.onclick=async()=>{
     const body2={};
     INF.forEach(k=>{const el=document.getElementById('f_'+k); if(el)body2[k]=el.value;});
+    Object.assign(body2, (await saveAddr())||{});
     if(body2.channel==='__new__')body2.channel=d.channel||'';   // לא נשמר לפני שהוזן שם
     await api('PUT','/api/donor/'+d.id,body2);
     Object.assign(d,body2); toast('נשמר ✓'); if(tab==='donors')renderDonors();
