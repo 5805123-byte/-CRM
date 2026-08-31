@@ -5266,10 +5266,47 @@ let chFilter='';
 /* ---------- ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד ---------- */
 let LEDGER=null, ledSrc=null, ledFail=false, ledNoCat=false, ledAll=false, ledMon=null;
 // שמות קריאים למקורות, בלי לאחד ביניהם — הוא ביקש לראות כל אחד לחוד
-const SRCLBL={'Banquest 01-08-2026':'💳 בנק ווסט','Authorize 01-08-2026':'💳 אוטרייז',
-  'Authorize 07-2026':'💳 אוטרייז (יולי)','Authorize אונליין':'💳 אוטרייז — מהאתר (חי)',
-  'Donors Fund 2026':'🏦 דונרס פאנד','OJC 2026':'🏦 OJC','צ׳קים 2026':"🧾 צ'קים"};
+// השרת כבר מאחד את שמות הייבוא למקור אחד (ראה _led_src ב-app.py); כאן
+// רק מוסיפים אייקון. מקור שאינו ברשימה מוצג כמו שהוא ולא נעלם.
+const SRCLBL={'בנק ווסט':'💳 בנק ווסט','אוטרייז':'💳 אוטרייז',
+  'דונרס פאנד':'🏦 דונרס פאנד','OJC':'🏦 OJC','PayPal':'💳 PayPal','צ׳קים 2026':"🧾 צ'קים"};
 const srcLabel=s2=>SRCLBL[s2]||s2;
+/* מאיר: "אני רוצה רשימה מדויקת של כל אלו שעבר להם והם כבר מתויקים אצל
+   התורמים, ואפשרות לפתוח לפי חודשים — שאוכל לבחור את אוגוסט ולראות מי
+   באוטרייז עבר לו, גם בבנק ווסט. שיהיה חלון יפה, מי עבר לו בחודש פלוני."
+   הפירוט החודשי כבר היה קיים, אבל רק אחרי בחירת מקור — שני מסכים פנימה,
+   ולכן הוא לא נמצא. כאן הוא עולה לראש הלשונית: בוחרים חודש ורואים את כל
+   מי שעבר לו באותו חודש, מכל המקורות יחד. */
+let ledPick=null, ledPickSrc='';        // חודש, ובתוכו מקור חיוב מסוים
+// כל מי שעבר לו בחודש שנבחר — הכל יחד או לפי מקור, עם שם התורם אם מתויק
+async function ledPickBox(el){
+  const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+  el.innerHTML='<div class="cnt">טוען…</div>';
+  let r; try{ r=await api('GET','/api/ledger?since=2026-01-01&month='+encodeURIComponent(ledPick)
+      +(ledPickSrc?('&src='+encodeURIComponent(ledPickSrc)):'')); }
+  catch(e){ r={rows:[]}; }
+  const rows=(r.rows||[]).filter(x=>matchQ((x.name||'')+' '+(x.bank||'')));
+  const bySrc={}; rows.forEach(x=>{bySrc[x.src]=(bySrc[x.src]||0)+(x.amount||0);});
+  const filed=rows.filter(x=>x.donor_id).length;
+  el.innerHTML=`<div class="cnt">✅ עבר בהצלחה · ${esc(fmtMonth(ledPick+'-01')||ledPick)}${
+      ledPickSrc?(' · '+esc(srcLabel(ledPickSrc))):''}
+      <small style="color:var(--muted)"> · ${rows.length} חיובים · ${f(rows.reduce((s,x)=>s+x.amount,0))}</small>
+      <button class="btn sm ghost" id="ledpx">← חזרה לחודשים</button></div>
+    <div class="hintxt" style="margin:0 2px 8px">${filed} מתוך ${rows.length} כבר מתויקים אצל תורם — לחץ על שורה כדי לפתוח את הכרטיס.
+      ${rows.length-filed?'השאר ממתינים למיון תחת 🧰 בדיקות ותיקונים ← 💳 חיובים בלי תורם.':''}</div>
+    ${ledPickSrc?'':`<div class="m2wrap">${Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>
+      `<span class="m2chip">${esc(srcLabel(k))} <b>${f(v)}</b></span>`).join('')}</div>`}
+    <div class="list">${rows.map(x=>`<div class="rowc" data-id="${x.donor_id||''}">
+      <div><div class="nm">${esc(x.name||x.bank||'—')}${x.name&&x.bank?` <small dir="ltr">${esc(x.bank)}</small>`:''}</div>
+        <div class="purp">${esc(gregLabel(x.date)||x.date)} · ${esc(srcLabel(x.src))}${x.note?(' · '+esc(x.note)):''}</div></div>
+      <div class="meta"><b>${f(x.amount)}</b>${x.donor_id?'':'<span class="txbadge no">לא מתויק</span>'}</div>
+    </div>`).join('')||'<div class="empty">אין חיובים שעברו בחודש הזה</div>'}</div>`;
+  el.querySelectorAll('.rowc').forEach(r2=>r2.onclick=()=>{
+    const d=DB.find(x=>x.id==r2.dataset.id);
+    if(d)openDonor(d); else toast('החיוב הזה עדיין לא שויך לתורם');});
+  const c=document.getElementById('ledpx');
+  if(c)c.onclick=()=>{ledPick=null;ledPickSrc='';ledAll=true;renderLedger(1);};
+}
 async function renderLedger(scroll){
   const box=document.getElementById('ledgerbox'); if(!box)return;
   if(!LEDGER){ try{ LEDGER=await api('GET','/api/ledger?since=2026-01-01'); }catch(e){ LEDGER={groups:[]}; } }
@@ -5277,7 +5314,7 @@ async function renderLedger(scroll){
   const L=LEDGER;
   const nc=noCatList(), ncs=nc.reduce((s,o)=>s+amtNum(o.x.amount),0);
   box.innerHTML=`<div class="ledtot">
-      <div class="ledbig"><span>💰 נכנס מאז ינואר</span><b>${f(L.total)}</b><small>${L.n} חיובים</small></div>
+      <button class="ledbig good ${ledAll||ledPick?'on':''}" id="ledtot"><span>💰 נכנס מאז ינואר</span><b>${f(L.total)}</b><small>${L.n} חיובים — לחץ לפירוט חודשי</small></button>
       <button class="ledbig bad ${ledFail?'on':''}" id="ledfail"><span>🔴 לא עבר</span><b>${f(L.bad_total)}</b><small>${L.bad_n} חיובים — לחץ לראות</small></button>
       <button class="ledbig what ${ledNoCat?'on':''}" id="lednocat"><span>🎯 בלי ייעוד</span><b>${f(ncs)}</b><small>${nc.length} תרומות — להשלים עבור מה</small></button>
       <button class="ledbig nocard" id="lednocard"><span>💵 בלי כרטיס</span><b id="depcnt">…</b><small>מפקידים לשייך או לפתוח כרטיס</small></button>
@@ -5295,7 +5332,10 @@ async function renderLedger(scroll){
   document.getElementById('ledfail').onclick=()=>{ledFail=!ledFail; ledSrc=null; ledNoCat=false; ledMon=null; renderLedger(1);};
   document.getElementById('lednocat').onclick=()=>{ledNoCat=!ledNoCat; ledSrc=null; ledFail=false; ledMon=null; WFLIM=40; renderLedger(1);};
   document.getElementById('lednocard').onclick=()=>{flt='deposits'; DEPS=null; depOpen=null; tab='donors'; render();};
-  document.getElementById('ledall').onclick=()=>{ledAll=!ledAll; ledSrc=null; ledFail=false; ledNoCat=false; ledMon=null; renderLedger(1);};
+  document.getElementById('ledall').onclick=()=>{ledAll=!ledAll; ledSrc=null; ledFail=false; ledNoCat=false; ledMon=null; ledPick=null; renderLedger(1);};
+  document.getElementById('ledtot').onclick=()=>{
+    const on=ledAll||ledPick; ledPick=null; ledPickSrc='';
+    ledAll=!on; ledSrc=null; ledFail=false; ledNoCat=false; ledMon=null; renderLedger(1);};
   const pps=document.getElementById('ppsync'); if(pps)pps.onclick=()=>runPaypalSync(pps);
   // מספר המפקידים שאין להם כרטיס — נטען ברקע כדי לא לעכב את המסך
   api('GET','/api/deposits').then(r=>{const e=document.getElementById('depcnt');
@@ -5305,6 +5345,7 @@ async function renderLedger(scroll){
 // scroll=1 — לגלול לפירוט שנפתח, כדי שלא ייפתח מתחת למסך ויראה כאילו לא נלחץ
 async function ledDetail(scroll){
   const el=document.getElementById('leddet'); if(!el)return;
+  if(ledPick){ await ledPickBox(el); if(scroll)ledScroll(el); return; }
   if(ledNoCat){ whatForBox(el); if(scroll)ledScroll(el); return; }
   if(ledAll){ monthsBox(el); if(scroll)ledScroll(el); return; }
   if(!ledSrc&&!ledFail){ el.innerHTML=''; document.querySelectorAll('.ledrow').forEach(b=>b.classList.remove('on')); return; }
@@ -5359,14 +5400,21 @@ function monthsBox(el){
       <summary><b>${esc(fmtMonth(b.ym+'-01')||b.ym)}</b>
         <span class="m2t">${f(b.total)}</span>
         <small>${b.n} חיובים${b.bad_n?(' · 🔴 '+b.bad_n+' לא עברו '+f(b.bad)):''}</small></summary>
-      <div class="m2sec">💳 דרך איפה עבר</div>
-      ${Object.entries(b.src).sort((x,y)=>y[1].t-x[1].t).map(([k,v])=>`<div class="m2row">
-        <span>${esc(srcLabel(k))}</span><b>${f(v.t)}</b><small>${v.n}${v.bn?(' · 🔴 '+v.bn):''}</small></div>`).join('')||'<div class="hintxt">—</div>'}
+      <div class="m2sec">💳 דרך איפה עבר <small>— לחץ כדי לראות מי</small></div>
+      <button class="m2row m2go all" data-ym="${b.ym}" data-src="">
+        <span>הכל יחד</span><b>${f(b.total)}</b><small>${b.n} ›</small></button>
+      ${Object.entries(b.src).sort((x,y)=>y[1].t-x[1].t).map(([k,v])=>`<button class="m2row m2go" data-ym="${b.ym}" data-src="${esc(k)}">
+        <span>${esc(srcLabel(k))}</span><b>${f(v.t)}</b><small>${v.n}${v.bn?(' · 🔴 '+v.bn):''} ›</small></button>`).join('')||'<div class="hintxt">—</div>'}
       <div class="m2sec">🎯 עבור מה</div>
       ${Object.entries(b.cat).sort((x,y)=>y[1].t-x[1].t).map(([k,v])=>`<div class="m2row">
         <span>${esc(k)}</span><b>${f(v.t)}</b><small>${v.n}</small></div>`).join('')||'<div class="hintxt">—</div>'}
     </details>`).join('')||'<div class="empty">אין נתונים</div>'}`;
   const c=document.getElementById('mballx'); if(c)c.onclick=()=>{ledAll=false;renderLedger();};
+  // מאיר: "שיהיה פירוט של כל חודש בתוך החלונית הזו, מחולק לפי איך חויב —
+  // אוטרייז, בנק ווסט וכו'." הקליק על מקור בתוך חודש פותח את השמות עצמם.
+  el.querySelectorAll('.m2go').forEach(b=>b.onclick=()=>{
+    ledPick=b.dataset.ym; ledPickSrc=b.dataset.src||'';
+    ledAll=false; ledSrc=null; ledFail=false; ledNoCat=false; ledMon=null; renderLedger(1);});
 }
 // גלילה אל הפירוט שנפתח — בלי זה הוא נפתח מתחת לגובה המסך ונראה כאילו לא נלחץ
 function ledScroll(el){ if(el&&el.innerHTML)setTimeout(()=>el.scrollIntoView({block:'start',behavior:'smooth'}),40); }

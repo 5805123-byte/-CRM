@@ -5439,6 +5439,38 @@ def _amt2(a):
         return 0.0
 
 
+_SRC_CANON = ((r'authorize', 'אוטרייז'), (r'banquest', 'בנק ווסט'),
+              (r'donors', 'דונרס פאנד'), (r'\bojc\b', 'OJC'), (r'paypal', 'PayPal'))
+
+
+def _led_src(s):
+    """שם המקור בלי תאריך הייבוא.
+
+    מאיר: "תבדוק שאין בכמה מקומות אותו רעיון — שהכל יהיה במקום אחד."
+    כל קובץ ייבוא נשמר עם שם משלו ('Authorize 01-08-2026', 'Authorize
+    08-2026'), ולכן אותו מקור הופיע כמה פעמים ברשימה, וקובץ חדש הופיע
+    בלי שם בעברית. כאן הם מתאחדים לשורה אחת."""
+    s = (s or 'אחר').strip()
+    for pat, name in _SRC_CANON:
+        if re.search(pat, s, re.I):
+            return name
+    return s
+
+
+def _who_keys(r):
+    """מפתחות זיהוי של המשלם בשורת חיוב — מייל, ואם אין גם שם מלא.
+    משמש להצמדת חיוב שנדחה לחיוב שעבר של אותו אדם."""
+    out = []
+    em = (r['email'] or '').strip().lower()
+    if em:
+        out.append('e:' + em)
+    who = ((r['first'] or '') + ' ' + (r['last'] or '')).strip().lower()
+    who = re.sub(r'\s+', ' ', who)
+    if who:
+        out.append('n:' + who)
+    return out
+
+
 def _days(iso):
     """'2026-03-24' -> מספר ימים, להשוואת קרבה בין תאריכים."""
     try:
@@ -9180,6 +9212,10 @@ class H(BaseHTTPRequestHandler):
             since = (qs.get('since', ['2026-01-01'])[0] or '2026-01-01')[:10]
             want = (qs.get('src', [''])[0] or '').strip()
             fail = qs.get('failed', [''])[0] == '1'
+            # מאיר: "אני רוצה לבחור את אוגוסט ולראות מי באוטרייז עבר לו,
+            # גם בבנק ווסט — בכל חודש לעבור על הרשימה של מי שעבר לו."
+            # חודש בלי מקור = כל המקורות יחד באותו חודש.
+            month = (qs.get('month', [''])[0] or '').strip()[:7]
             con = db()
             names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
                      for r in con.execute("SELECT id,last,first FROM donors")}
@@ -9193,7 +9229,7 @@ class H(BaseHTTPRequestHandler):
                     amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
                 except Exception:
                     amt = 0.0
-                src = r['source'] or 'אחר'
+                src = _led_src(r['source'])
                 bad = (r['status'] or 'settled') not in ('settled', '')
                 g = groups.setdefault(src, {'src': src, 'n': 0, 'total': 0.0, 'bad_n': 0,
                                             'bad_total': 0.0, 'first': '', 'last': '', 'mon': {}})
@@ -9208,9 +9244,10 @@ class H(BaseHTTPRequestHandler):
                     mo['n'] += 1; mo['total'] += amt
                     if iso:
                         g['first'] = min(g['first'] or iso, iso); g['last'] = max(g['last'], iso)
-                if (want and src != want) or (fail and not bad) or (not fail and want and bad):
+                if (want and src != want) or (fail and not bad) or (month and ym != month) \
+                   or (not fail and (want or month) and bad):
                     continue
-                if want or fail:
+                if want or fail or month:
                     rows.append({'tid': r['tid'], 'name': names.get(r['donor_id'], ''),
                                  'donor_id': r['donor_id'],
                                  'bank': ' '.join(x for x in ((r['first'] or '').strip(),
@@ -9677,6 +9714,30 @@ class H(BaseHTTPRequestHandler):
             # והמערכת כבר שייכה אותו לתורם לא הופיע כאן כלל — התנאי היה
             # donor_id IS NULL — ולכן נראה כאילו הוא לא נכנס. חיוב שלא עבר
             # הוא כסף שלא נכנס, וצריך לראות אותו גם כשידוע של מי הוא.
+            # מאיר: "אם אתה רואה שבסוף כן עבר לו החיוב הזה, עם עוד ניסיון
+            # חיוב שעשינו או שהמערכת עשתה לבד — אל תכניס את זה כאן בלא
+            # עברו." ניסיון שנכשל וחזר והצליח אינו כסף חסר. הזיהוי: אותו
+            # אדם (מייל, או שם פרטי+משפחה), אותו סכום, ובתוך שבועיים.
+            ok_try = {}
+            for r in con.execute(
+                    "SELECT first,last,email,amount,date FROM recon "
+                    "WHERE COALESCE(status,'settled')='settled'"):
+                iso = _recon_iso(r['date']) or ''
+                if not iso:
+                    continue
+                for k in _who_keys(r):
+                    ok_try.setdefault((k, _amt2(r['amount'])), []).append(iso)
+
+            def _retried(r, iso):
+                """האם אותו חיוב עבר בהצלחה בניסיון אחר, בסמוך לתאריך."""
+                if not iso:
+                    return ''
+                a = _amt2(r['amount'])
+                for k in _who_keys(r):
+                    for d2 in ok_try.get((k, a), ()):
+                        if abs(_days(d2) - _days(iso)) <= 14:
+                            return d2
+                return ''
             failed = []
             for r in con.execute(
                     "SELECT tid,first,last,amount,date,source,email,phone,status,note,donor_id "
@@ -9684,6 +9745,8 @@ class H(BaseHTTPRequestHandler):
                     "AND COALESCE(status,'settled')<>'settled'"):
                 x = dict(r)
                 x['iso'] = _recon_iso(r['date']) or ''
+                if _retried(r, x['iso']):
+                    continue                      # נגבה בסוף — לא חוסר
                 x['donor_name'] = nm.get(r['donor_id'], '') if r['donor_id'] else ''
                 x['sugg'] = [] if r['donor_id'] else _sugg(r)
                 failed.append(x)
