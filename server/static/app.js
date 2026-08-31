@@ -5125,18 +5125,49 @@ function autoCatHTML(d){
   (d.donations||[]).forEach(x=>{ if(String(x.category||'').trim())return;
     const a=Math.round(amtNum(x.amount)); if(a>0)need[a]=(need[a]||0)+1;});
   const sug=Object.entries(need).filter(([a,n])=>n>1).sort((a,b)=>b[1]-a[1]).slice(0,4);
-  return `<details class="acbox"${R.length?'':''}><summary>🎯 ייעוד קבוע לפי סכום${
-      R.length?` <b>· ${R.length}</b>`:''}</summary>
-    <div class="hintxt" style="margin:2px 2px 6px">כל תרומה בסכום הזה תקבל את הייעוד לבד — גם מה שכבר רשום וגם מה שייכנס מכאן.
-      תרומה שכבר יש לה ייעוד לא משתנה.</div>
-    ${R.map((r,i)=>`<div class="acrow" data-i="${i}"><b>${cur}${Math.round(r.amt).toLocaleString('en-US')}</b>
-      <span>→ ${esc(r.cat)}</span><button class="tinydel acdel" data-i="${i}">🗑</button></div>`).join('')}
-    <div class="addrow" style="margin-top:6px">
-      <input class="ac_amt" type="number" min="1" step="1" placeholder="סכום" style="max-width:7em">
-      <select class="ac_cat">${dnCatOpts('')}</select>
-      <button class="btn sm ac_add">➕ הוסף</button></div>
-    ${sug.length?`<div class="hintxt" style="margin:6px 2px 0">סכומים שחוזרים אצלו בלי ייעוד:
-      ${sug.map(([a,n])=>`<button class="acsug" data-a="${a}">${cur}${(+a).toLocaleString('en-US')} · ${n} פעמים</button>`).join(' ')}</div>`:''}
+  // מה שאין לו ייעוד עולה לראש — זה מה שמסומן מראש וזה מה שצריך טיפול
+  const ds=(d.donations||[]).slice().sort((a,b)=>
+    (String(a.category||'').trim()?1:0)-(String(b.category||'').trim()?1:0)
+    || String(b.date||'').localeCompare(String(a.date||'')));
+  const nNo=ds.filter(x=>!String(x.category||'').trim()).length;
+  return `<details class="acbox"><summary>🎯 סידור ייעודים${
+      nNo?` <b>· ${nNo} בלי ייעוד</b>`:(R.length?` <b>· כלל קבוע</b>`:'')}</summary>
+    <div class="actabs">
+      <button class="actab on" data-t="bulk">סמן הכל חוץ מ…</button>
+      <button class="actab" data-t="rule">כלל קבוע לפי סכום${R.length?(' · '+R.length):''}</button>
+    </div>
+    <div class="acpane" data-p="bulk">
+      <div class="hintxt" style="margin:2px 2px 6px">בחר ייעוד, הורד סימון ממה שלא שייך, ולחץ החל.
+        מסומן מראש כל מה שאין לו ייעוד, והוא מופיע ראשון. סימון תרומה שכבר יש לה ייעוד יחליף אותו.</div>
+      <div class="addrow"><select class="bc_cat">${dnCatOpts('')}</select>
+        <button class="btn sm bc_go">✔ החל על <b class="bc_n">${nNo}</b></button></div>
+      <div class="addrow acbldg hidden"><input class="bc_bldg" list="bldgitems3"
+        placeholder="🏗️ מה תרם בבניין? (שולחן / עמוד / מטר…)"></div>
+      <div class="addrow" style="margin-top:4px">
+        <button class="btn sm ghost bc_pick" data-m="all">סמן הכל</button>
+        <button class="btn sm ghost bc_pick" data-m="empty">רק בלי ייעוד</button>
+        <button class="btn sm ghost bc_pick" data-m="none">נקה</button></div>
+      <div class="bclist">${ds.map(x=>{const c=String(x.category||'').trim();
+        return `<label class="bcrow${c?'':' bcno'}"><input type="checkbox" class="bc_x" value="${x.id}"${c?'':' checked'}>
+          <b>${cur}${Math.round(amtNum(x.amount)).toLocaleString('en-US')}</b>
+          <span class="bcdate">${esc(x.date?gregLabel(x.date):'')}</span>
+          <span class="bccat">${c?esc(c):'— בלי ייעוד —'}</span></label>`;}).join('')
+        ||'<div class="hintxt">אין תרומות רשומות.</div>'}</div>
+    </div>
+    <div class="acpane hidden" data-p="rule">
+      <div class="hintxt" style="margin:2px 2px 6px">כל תרומה בסכום הזה תקבל את הייעוד לבד — גם מה שכבר רשום וגם מה שייכנס מכאן.
+        תרומה שכבר יש לה ייעוד לא משתנה.</div>
+      ${R.map((r,i)=>`<div class="acrow" data-i="${i}"><b>${cur}${Math.round(r.amt).toLocaleString('en-US')}</b>
+        <span>→ ${esc(r.cat)}</span><button class="tinydel acdel" data-i="${i}">🗑</button></div>`).join('')}
+      <div class="addrow" style="margin-top:6px">
+        <input class="ac_amt" type="number" min="1" step="1" placeholder="סכום" style="max-width:7em">
+        <select class="ac_cat">${dnCatOpts('')}</select>
+        <button class="btn sm ac_add">➕ הוסף</button></div>
+      <div class="addrow acbldg hidden"><input class="ac_bldg" list="bldgitems3"
+        placeholder="🏗️ מה תרם בבניין? (שולחן / עמוד / מטר…)"></div>
+      ${sug.length?`<div class="hintxt" style="margin:6px 2px 0">סכומים שחוזרים אצלו בלי ייעוד:
+        ${sug.map(([a,n])=>`<button class="acsug" data-a="${a}">${cur}${(+a).toLocaleString('en-US')} · ${n} פעמים</button>`).join(' ')}</div>`:''}
+    </div>
   </details>`;
 }
 function wireAutoCat(d,body,redraw){
@@ -5148,14 +5179,67 @@ function wireAutoCat(d,body,redraw){
     toast(r.filled?('נשמר ✓ · '+r.filled+' תרומות קיבלו ייעוד'):'נשמר ✓');
     await load(); redraw();
   };
-  const amt=box.querySelector('.ac_amt'), cat=box.querySelector('.ac_cat');
+  // לשוניות הפנים — "סמן הכל חוץ מ…" מול "כלל קבוע לפי סכום"
+  box.querySelectorAll('.actab').forEach(t=>t.onclick=e=>{e.preventDefault();
+    box.querySelectorAll('.actab').forEach(x=>x.classList.toggle('on',x===t));
+    box.querySelectorAll('.acpane').forEach(p=>p.classList.toggle('hidden',p.dataset.p!==t.dataset.t));});
+  // ---- סימון קבוצתי: הכל חוץ ממה שמורידים ----
+  const boxes=()=>[...box.querySelectorAll('.bc_x')];
+  const nEl=box.querySelector('.bc_n');
+  const recount=()=>{ if(nEl)nEl.textContent=boxes().filter(c=>c.checked).length; };
+  boxes().forEach(c=>c.onchange=recount);
+  box.querySelectorAll('.bc_pick').forEach(b=>b.onclick=e=>{e.preventDefault();
+    const m=b.dataset.m;
+    boxes().forEach(c=>{ const row=c.closest('.bcrow');
+      c.checked = m==='all' ? true : m==='none' ? false : row.classList.contains('bcno'); });
+    recount();});
+  // מאיר: "כאן זה אמור לשאול עבור מה בבניין הקדוש, כמו שזה שואל בכמה
+  // דרכים כשאני מכניס תרומה שלו לבניין." בניין לבד לא אומר כלום — צריך
+  // לדעת מה נתרם בו, והייעוד נשמר כ"הבניין הקדוש — שולחן".
+  const bldgWire=(sel,inp)=>{
+    if(!sel||!inp)return;
+    const row=inp.closest('.acbldg');
+    const upd=()=>{const on=isBldgCat(sel.value); row.classList.toggle('hidden',!on); if(on)inp.focus();};
+    sel.addEventListener('change',upd); upd();
+  };
+  // הייעוד המלא שנבחר, כולל פרטי הבניין. מחזיר '' כשחסר משהו.
+  const fullCat=async(sel,inp)=>{
+    let c=(sel.value||'').trim();
+    if(c==='__new__'){toast('בחר ייעוד');return '';}
+    if(!c){toast('בחר ייעוד');return '';}
+    if(isBldgCat(c)){
+      const it=(inp.value||'').trim();
+      if(it.length<2){toast('כתוב מה הוא תרם בבניין');inp.focus();return '';}
+      await bldgRemember(it); c=c+' — '+it;
+    }
+    return c;
+  };
+  const bgo=box.querySelector('.bc_go'), bcat=box.querySelector('.bc_cat'),
+        bbld=box.querySelector('.bc_bldg');
+  if(bcat)bcat.onchange=async()=>{ if(bcat.value==='__new__'){const v=await uiPrompt('שם הייעוד החדש');
+    bcat.innerHTML=dnCatOpts(v||''); bcat.value=v||''; } };
+  bldgWire(bcat,bbld);
+  if(bgo)bgo.onclick=async()=>{
+    const ids=boxes().filter(c2=>c2.checked).map(c2=>+c2.value);
+    if(!ids.length){toast('לא סומן כלום');return;}
+    const c=await fullCat(bcat,bbld); if(!c)return;
+    if(!await uiConfirm('לרשום "'+c+'" על '+ids.length+' תרומות?'))return;
+    bgo.disabled=true;
+    const r=await api('POST','/api/donations/bulkcat',{donor_id:d.id,ids,category:c});
+    bgo.disabled=false;
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    toast(r.updated+' תרומות קיבלו ייעוד ✓');
+    await load(); redraw();};
+  const amt=box.querySelector('.ac_amt'), cat=box.querySelector('.ac_cat'),
+        abld=box.querySelector('.ac_bldg');
   box.querySelectorAll('.acsug').forEach(b=>b.onclick=()=>{amt.value=b.dataset.a;cat.focus();});
   cat.onchange=async()=>{ if(cat.value==='__new__'){const v=await uiPrompt('שם הייעוד החדש');
-    cat.innerHTML=dnCatOpts(v||''); cat.value=v||'';} };
-  box.querySelector('.ac_add').onclick=()=>{
-    const a=parseFloat(amt.value||'0'), c=(cat.value||'').trim();
+    cat.innerHTML=dnCatOpts(v||''); cat.value=v||''; } };
+  bldgWire(cat,abld);
+  box.querySelector('.ac_add').onclick=async()=>{
+    const a=parseFloat(amt.value||'0');
     if(!(a>0)){amt.focus();toast('מלא סכום');return;}
-    if(!c||c==='__new__'){toast('בחר ייעוד');return;}
+    const c=await fullCat(cat,abld); if(!c)return;
     save(autoCatRules(d).filter(r=>Math.round(r.amt)!==Math.round(a)).concat([{amt:a,cat:c}]));};
   box.querySelectorAll('.acdel').forEach(b=>b.onclick=()=>
     save(autoCatRules(d).filter((r,i)=>i!==+b.dataset.i)));

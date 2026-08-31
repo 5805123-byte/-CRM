@@ -11974,6 +11974,27 @@ class H(BaseHTTPRequestHandler):
                                         'paid': 0, 'night_date': gd, 'hyear': ys, 'method': b.get('method', '')})
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due, 'suggestions': suggestions})
+        if self.path == '/api/donations/bulkcat':
+            # מאיר: "איך אני משייך לתורם את כל מה שהוא נתן עבור ייעוד מיוחד
+            # חוץ ממה שאציין שלא? יש פה קצת בילבול, אני רוצה סדר מסודר
+            # שיהיה יותר קל ונגיש ומהיר." סימון אחד לכל התרומות, והוא מוריד
+            # את הסימון ממה שלא שייך — במקום ללחוץ "עבור מה?" על כל שורה.
+            try:
+                did = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id required'})
+            cat = str(b.get('category') or '').strip()
+            ids = [int(x) for x in (b.get('ids') or []) if str(x).strip().isdigit()]
+            if not ids:
+                return self._send(400, {'error': 'ids required'})
+            con = db()
+            n = 0
+            for i in ids:
+                cur2 = con.execute("UPDATE donations SET category=? WHERE id=? AND donor_id=?",
+                                   (cat, i, did))
+                n += cur2.rowcount
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'updated': n, 'category': cat})
         if self.path == '/api/autocat':
             # מאיר: "איפה אני כותב אצל התורמת הזו שאם זה 800 דולר כל חודש
             # אז זה יששכר־זבולון? יש עוד תורמים כאלו." כלל אחד או יותר
