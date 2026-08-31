@@ -8594,9 +8594,11 @@ function renderMailSend(){
         הכל נמשך לבד מהכרטיס, ואם אין לו — לא נכתב כלום.<br>
         השמות תמיד בעברית, גם כשהמכתב באנגלית. שורה ריקה = פסקה חדשה.</div>
       <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
-      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="ml_track" ${mlSaved('track','1')==='1'?'checked':''}>
+      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="ml_track" ${mlSaved('track','0')==='1'?'checked':''}>
         <span>📊 עקוב אחרי מי פתח את המייל</span></label>
-      <div class="hintxt">מוסיף תמונה זעירה ובלתי נראית למכתב. מי שחוסם תמונות לא נספר, ולכן המספר תמיד נמוך מהאמת. אפשר לכבות — "מי השיב" ימשיך לעבוד בכל מקרה.</div>
+      <div class="hintxt">מאיר: "אני לא רוצה את מה שכתוב למטה שם" — המעקב מוסיף תמונה זעירה בתחתית המכתב,
+        ויש תוכנות מייל שמציגות במקומה שורת כתובת גלויה. לכן הוא <b>מכובה כברירת מחדל</b>.
+        כשהוא כבוי אין שום תוספת במכתב, ו"מי השיב" ממשיך לעבוד כרגיל.</div>
     </div>
     <div class="addrow">
       <button class="btn sm ghost" id="ml_prev" style="flex:1">👁️ תצוגה מקדימה — לא שולח כלום</button>

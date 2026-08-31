@@ -10690,7 +10690,12 @@ class H(BaseHTTPRequestHandler):
                               "status,track) VALUES(?,?,?,?,?,?,?,'queued',?)",
                               ((b.get('name') or subject)[:120], subject, body,
                                (b.get('sig') or '').strip(), (b.get('base') or '').strip(),
-                               now_iso(), len(to), 0 if b.get('track') is False else 1))
+                               now_iso(), len(to),
+                               # מאיר: "אני לא רוצה את מה שכתוב למטה שם" —
+                               # מעקב פתיחות מוסיף תמונה זעירה שיש תוכנות מייל
+                               # שמציגות במקומה שורת כתובת גלויה. ברירת המחדל
+                               # היא בלי מעקב, ורק סימון מפורש מפעיל אותו.
+                               1 if b.get('track') is True else 0))
             bid = cur.lastrowid
             for x in to:
                 con.execute("INSERT INTO mail_queue(batch,donor_id,email,name,fname,lname,"
