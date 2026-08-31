@@ -8014,6 +8014,7 @@ async function renderUnlinked(){
         </div>
         <div class="ulb ulact">
           <button class="btn sm ulok">✓ שייך לתורם הזה</button>
+          <button class="btn sm ghost ulnew">➕ תורם חדש</button>
           <button class="btn sm ghost ulskip">✕ לא שייך לאף אחד</button>
         </div></div>`;}).join('')||'<div class="empty">🎉 כל החיובים משויכים</div>'}</div>
     ${ulFailedHTML()}`;
@@ -8105,6 +8106,21 @@ function wireUnlinked(groups){
       el.querySelector('.ulact').innerHTML='<span class="ulwhy">✓ שויך · '+(r.donations||0)+' תרומות נרשמו</span>';
       toast('שויך ✓');
       try{ DB=await api('GET','/api/db'); }catch(e){}   // הכרטיס יתעדכן מיד
+    };
+    // מאיר: "אם זה תורם חדש ולא ברשימה — שייפתח לי חלון תורם חדש ואז
+    // למלא את פרטיו וכו'." הפרטים שבחיוב (שם לועזי, מייל, טלפון, כתובת)
+    // נכנסים לטופס מראש, ואחרי היצירה החיובים משויכים לכרטיס החדש לבד.
+    el.querySelector('.ulnew').onclick=()=>{
+      const r0=x.items[0]||{};
+      const en=((x.first||'')+' '+(x.last||'')).trim()
+        .toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase());
+      openNewDonor(async nd=>{
+        const r=await api('POST','/api/unlinked',{tids,donor_id:nd.id});
+        if(!r||!r.ok){toast('הכרטיס נוצר, אבל השיוך לא נשמר');return;}
+        toast('נוצר כרטיס ושויכו '+(r.donations||0)+' תרומות ✓');
+        await load(); ULDATA=null; renderUnlinked();
+      },{english:en, email:x.email||'', phone:r0.phone||'',
+         addr:r0.addr||'', city:r0.city||'', country:r0.state||'', zip:r0.zip||''});
     };
     el.querySelector('.ulskip').onclick=async()=>{
       if(!await uiConfirm('לסמן ש-'+((x.first+' '+x.last).trim()||'החיובים האלה')+' אינם שייכים לאף תורם?'))return;

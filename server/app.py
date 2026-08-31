@@ -9725,7 +9725,10 @@ class H(BaseHTTPRequestHandler):
                 return out
             rows = []
             for r in con.execute(
-                    "SELECT tid,first,last,amount,date,source,email,phone FROM recon "
+                    "SELECT tid,first,last,amount,date,source,email,phone,"
+                    # מאיר: "אם זה תורם חדש ולא ברשימה — שייפתח לי חלון תורם
+                    # חדש ואז למלא את פרטיו". הכתובת שבחיוב נכנסת לטופס
+                    "addr,city,state,zip FROM recon "
                     "WHERE donor_id IS NULL AND COALESCE(skipped,0)=0 "
                     "AND COALESCE(status,'settled')='settled'"):
                 x = dict(r)
