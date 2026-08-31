@@ -303,7 +303,11 @@ def ensure_schema():
             g = heb_to_greg(row['date_text'])
             if g: con.execute("UPDATE parnes SET night_date=? WHERE id=?", (g.isoformat(), row['id']))
     except Exception: pass
-    for col in ('created', 'source', 'region', 'country', 'zip', 'city'):
+    # auto_cat — מאיר: "איפה אני כותב אצל התורמת הזו שאם זה 800 דולר כל
+    # חודש אז זה יששכר־זבולון? לא הכל לאותו ייעוד, וזה משגע אותי לעשות
+    # לכל אחד ייעוד שלו. יש עוד תורמים כאלו." כלל לכל תורם: סכום → ייעוד,
+    # כ-JSON [{"amt":800,"cat":"יששכר־זבולון"}]
+    for col in ('created', 'source', 'region', 'country', 'zip', 'city', 'auto_cat'):
         try: con.execute(f"ALTER TABLE donors ADD COLUMN {col} TEXT")
         except Exception: pass
     # prev_year — כמה מתוך התשלום הזה סגר חוב של שנה קודמת. מאיר: "הוא
@@ -5399,7 +5403,7 @@ def recon_group(s):
 
 DONOR_FIELDS = {'gap_ok','last','first','english','business','phone','email','addr','tier',
                 'category','purpose','amount','channel','pay_status','last_active','notes',
-                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year','anon','gender'}
+                'region','country','zip','city','iz_note','iz_debt','debt_ok','debt_note','debt_open','debt_open_note','keep_old','mail_seen','mail_from','kv_skip','addr_ok','frequency','months','kv_month','kv_year','anon','gender','auto_cat'}
 
 # מאיר: "בהכל תכתוב רק את המילה א.א." — כך נכתב שמו של תורם בעילום שם
 # בכל מה שמודפס: פתק היששכר־זבולון, הקוויטל השבועי והמזדמנים.
@@ -5455,6 +5459,42 @@ def _led_src(s):
         if re.search(pat, s, re.I):
             return name
     return s
+
+
+def autocat_rules(v):
+    """כללי הייעוד הקבוע של תורם: [{'amt':800,'cat':'יששכר־זבולון'}]."""
+    try:
+        out = []
+        for x in (json.loads(v or '[]') or []):
+            a = _amt2(x.get('amt'))
+            c = str(x.get('cat') or '').strip()
+            if a > 0.004 and c:
+                out.append({'amt': a, 'cat': c})
+        return out
+    except Exception:
+        return []
+
+
+def apply_autocat(con, donor_id):
+    """ממלא ייעוד לתרומות של התורם שאין להן ייעוד והסכום שלהן תואם לכלל.
+
+    מאיר: "איפה אני כותב אצל התורמת הזו שאם זה 800 דולר כל חודש אז זה
+    יששכר־זבולון? לא הכל לאותו ייעוד, וזה משגע אותי לעשות לכל אחד ייעוד
+    שלו." הכלל אינו דורס ייעוד שכבר נכתב — הוא ממלא רק את הריקים."""
+    r = con.execute("SELECT auto_cat FROM donors WHERE id=?", (donor_id,)).fetchone()
+    rules = autocat_rules(r['auto_cat'] if r else '')
+    if not rules:
+        return 0
+    n = 0
+    for d in con.execute("SELECT id,amount FROM donations WHERE donor_id=? "
+                         "AND COALESCE(TRIM(category),'')=''", (donor_id,)):
+        a = _amt2(d['amount'])
+        for k in rules:
+            if abs(k['amt'] - a) < 0.005:
+                con.execute("UPDATE donations SET category=? WHERE id=?", (k['cat'], d['id']))
+                n += 1
+                break
+    return n
 
 
 def _who_keys(r):
@@ -10529,8 +10569,11 @@ class H(BaseHTTPRequestHandler):
                                 (did, iso, '%.2f' % a, (r['category'] or '').strip(), meth,
                                  'שויך ידנית מהחיובים ללא תורם', t))
                     made += 1
+            # ייעוד קבוע לפי סכום, אם הוגדר לתורם — כדי שלא יצטרך לסווג ידנית
+            auto = apply_autocat(con, did)
             con.commit(); con.close()
-            return self._send(200, {'ok': True, 'donor_id': did, 'donations': made})
+            return self._send(200, {'ok': True, 'donor_id': did, 'donations': made,
+                                    'auto_cat': auto})
         if self.path == '/api/intake/diag':
             try:
                 import gmail_intake
@@ -11931,6 +11974,28 @@ class H(BaseHTTPRequestHandler):
                                         'paid': 0, 'night_date': gd, 'hyear': ys, 'method': b.get('method', '')})
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due, 'suggestions': suggestions})
+        if self.path == '/api/autocat':
+            # מאיר: "איפה אני כותב אצל התורמת הזו שאם זה 800 דולר כל חודש
+            # אז זה יששכר־זבולון? יש עוד תורמים כאלו." כלל אחד או יותר
+            # לכל תורם — סכום → ייעוד — שנשמר וגם מוחל על מה שכבר רשום.
+            try:
+                did = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'donor_id required'})
+            rules = []
+            for x in (b.get('rules') or []):
+                a2 = _amt2(x.get('amt'))
+                c2 = str(x.get('cat') or '').strip()
+                if a2 > 0.004 and c2:
+                    rules.append({'amt': a2, 'cat': c2})
+            con = db()
+            if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                con.close(); return self._send(404, {'error': 'donor not found'})
+            con.execute("UPDATE donors SET auto_cat=? WHERE id=?",
+                        (json.dumps(rules, ensure_ascii=False), did))
+            n = apply_autocat(con, did)
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'rules': rules, 'filled': n})
         if self.path == '/api/prayer':
             con = db(); cur = con.cursor()
             cur.execute("INSERT INTO prayers(donor_id,text,tier) VALUES(?,?,?)",
@@ -11944,7 +12009,11 @@ class H(BaseHTTPRequestHandler):
                         (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''),
                          b.get('method',''), b.get('note',''), b.get('cur',''),
                          str(b.get('prev_year') or ''), (b.get('prev_note') or '')))
-            con.commit(); pid = cur.lastrowid; con.close()
+            pid = cur.lastrowid
+            # ייעוד קבוע לפי סכום, אם הוגדר לתורם
+            try: apply_autocat(con, int(b.get('donor_id')))
+            except Exception: pass
+            con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': pid, 'hmonth': greg_to_heb_monthyear(b.get('date',''))})
         if self.path == '/api/online':
             first = (b.get('first') or '').strip()

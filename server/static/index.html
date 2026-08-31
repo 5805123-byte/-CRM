@@ -96,6 +96,17 @@
   .mlbar i{display:block;height:100%;background:var(--yes,#3a9a53);transition:width .3s}
   .mlnums{text-align:center;font-size:.9rem;margin-top:4px}
   .mlbrow{padding:7px 2px;border-bottom:1px solid #eee7da}
+  /* ייעוד קבוע לפי סכום */
+  .acbox{margin:6px 2px 10px;padding:7px 10px;border:1px solid #e3d9c2;border-radius:10px;background:#fffdf6}
+  .acbox>summary{cursor:pointer;font-weight:800;font-size:.88rem;color:#8a6a22;list-style:none}
+  .acbox>summary::-webkit-details-marker{display:none}
+  .acbox>summary::before{content:'▸ ';font-size:.8em}
+  .acbox[open]>summary::before{content:'▾ '}
+  .acrow{display:flex;align-items:center;gap:8px;padding:4px 2px;border-top:1px solid #f0e9d8;font-size:.88rem}
+  .acrow b{min-width:5em}
+  .acrow span{flex:1}
+  .acsug{font:inherit;font-size:.78rem;font-weight:700;padding:2px 9px;margin:2px 2px 0;
+    border-radius:999px;border:1px solid #e0d3ae;background:#fff;color:#8a6a22;cursor:pointer}
   /* "נכנס מאז ינואר" — כפתור שנפתח לפירוט חודשי לפי מקור חיוב */
   .ledbig.good.on{outline:2px solid #2f6b3e;outline-offset:-2px}
   .m2row.m2go{width:100%;font:inherit;text-align:inherit;cursor:pointer;border:none;
@@ -607,7 +618,9 @@
   .uldates{font-size:.76rem;color:var(--muted);margin-top:4px;line-height:1.6}
   .ulb{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
   .ulb .btn.sm{font-size:.8rem;padding:6px 11px}
-  .ulpick{padding:7px 10px;border:1px solid var(--gold);border-radius:9px;
+  .ulfind{flex:1 1 100%;padding:7px 10px;border:1px solid var(--gold);border-radius:9px;
+    background:var(--card);color:var(--ink);font-family:inherit;font-size:.85rem;min-width:0}
+  .ulpick{flex:1 1 100%;padding:7px 10px;border:1px solid var(--gold);border-radius:9px;
     background:var(--card);color:var(--ink);font-family:inherit;font-size:.85rem;
     font-weight:700;max-width:100%}
   .ulwhy{font-size:.72rem;color:var(--muted)}

@@ -3981,7 +3981,7 @@ function cardDetails(d,body){
         <b>${curd}${L.got.toLocaleString('en-US')}</b> · חסר
         <b>${curd}${L.debt.toLocaleString('en-US')}</b></div>`;
   }catch(e){}
-  const give=gitems.length?bldgList('bldgitems3')+`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>${oweLine}`
+  const give=gitems.length?bldgList('bldgitems3')+`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>${oweLine}${autoCatHTML(d)}`
     + gitems.slice(0,GVSHOW).map(gvrow).join('')
     + (gitems.length>GVSHOW?`<details class="gvmore"><summary>הצג עוד ${gitems.length-GVSHOW}</summary>${gitems.slice(GVSHOW).map(gvrow).join('')}</details>`:'')
     + `</div>`:'';
@@ -4151,6 +4151,7 @@ function cardDetails(d,body){
   };
   const gvOpen=did=>{const p=body.querySelector('.gvpanel[data-pan="'+did+'"]');if(p)p.classList.toggle('hidden');};
   body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>gvOpen(b.dataset.did));
+  wireAutoCat(d,body,()=>{cardDetails(d,body); if(tab==='donors')renderDonors();});
   // ---- חלוקת תרומה אחת לכמה ייעודים ----
   const spRow=(amt,cat)=>`<div class="addrow sprow" style="margin-top:5px">
     <input class="spamt" inputmode="decimal" placeholder="סכום" value="${esc(amt||'')}" style="max-width:96px">
@@ -5106,6 +5107,58 @@ function purposeList(d){return String((d&&d.purpose)||'').split('·').map(x=>x.t
 function purpChips(l){
   return l.map((c,i)=>`<span class="purpchip">${esc(c)}<button type="button" class="purpx" data-i="${i}" title="הסר">✕</button></span>`).join('')
     ||'<span class="hintxt">עוד לא נבחר ייעוד</span>';
+}
+/* ---------- ייעוד קבוע לפי סכום ----------
+   מאיר: "איפה אני כותב אצל התורמת הזו שאם זה 800 דולר כל חודש אז זה
+   יששכר־זבולון? כי לא הכל לאותו ייעוד, וזה משגע אותי לעשות על כל אחד
+   ייעוד שלו. יש עוד תורמים כאלו." כלל אחד או יותר לכל תורם: סכום →
+   ייעוד. הוא ממלא רק תרומות שאין להן ייעוד — לעולם אינו דורס ייעוד
+   שנכתב ביד — וחל גם על מה שכבר רשום וגם על מה שייכנס מכאן והלאה. */
+function autoCatRules(d){
+  try{const a=JSON.parse(d.auto_cat||'[]');return Array.isArray(a)?a.filter(x=>+x.amt>0&&x.cat):[];}
+  catch(e){return [];}
+}
+function autoCatHTML(d){
+  const cur=curSym(d), R=autoCatRules(d);
+  // הסכומים שחוזרים אצלו בלי ייעוד — הצעה מוכנה ללחיצה
+  const need={};
+  (d.donations||[]).forEach(x=>{ if(String(x.category||'').trim())return;
+    const a=Math.round(amtNum(x.amount)); if(a>0)need[a]=(need[a]||0)+1;});
+  const sug=Object.entries(need).filter(([a,n])=>n>1).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  return `<details class="acbox"${R.length?'':''}><summary>🎯 ייעוד קבוע לפי סכום${
+      R.length?` <b>· ${R.length}</b>`:''}</summary>
+    <div class="hintxt" style="margin:2px 2px 6px">כל תרומה בסכום הזה תקבל את הייעוד לבד — גם מה שכבר רשום וגם מה שייכנס מכאן.
+      תרומה שכבר יש לה ייעוד לא משתנה.</div>
+    ${R.map((r,i)=>`<div class="acrow" data-i="${i}"><b>${cur}${Math.round(r.amt).toLocaleString('en-US')}</b>
+      <span>→ ${esc(r.cat)}</span><button class="tinydel acdel" data-i="${i}">🗑</button></div>`).join('')}
+    <div class="addrow" style="margin-top:6px">
+      <input class="ac_amt" type="number" min="1" step="1" placeholder="סכום" style="max-width:7em">
+      <select class="ac_cat">${dnCatOpts('')}</select>
+      <button class="btn sm ac_add">➕ הוסף</button></div>
+    ${sug.length?`<div class="hintxt" style="margin:6px 2px 0">סכומים שחוזרים אצלו בלי ייעוד:
+      ${sug.map(([a,n])=>`<button class="acsug" data-a="${a}">${cur}${(+a).toLocaleString('en-US')} · ${n} פעמים</button>`).join(' ')}</div>`:''}
+  </details>`;
+}
+function wireAutoCat(d,body,redraw){
+  const box=body.querySelector('.acbox'); if(!box)return;
+  const save=async rules=>{
+    const r=await api('POST','/api/autocat',{donor_id:d.id,rules});
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    d.auto_cat=JSON.stringify(r.rules||[]);
+    toast(r.filled?('נשמר ✓ · '+r.filled+' תרומות קיבלו ייעוד'):'נשמר ✓');
+    await load(); redraw();
+  };
+  const amt=box.querySelector('.ac_amt'), cat=box.querySelector('.ac_cat');
+  box.querySelectorAll('.acsug').forEach(b=>b.onclick=()=>{amt.value=b.dataset.a;cat.focus();});
+  cat.onchange=async()=>{ if(cat.value==='__new__'){const v=await uiPrompt('שם הייעוד החדש');
+    cat.innerHTML=dnCatOpts(v||''); cat.value=v||'';} };
+  box.querySelector('.ac_add').onclick=()=>{
+    const a=parseFloat(amt.value||'0'), c=(cat.value||'').trim();
+    if(!(a>0)){amt.focus();toast('מלא סכום');return;}
+    if(!c||c==='__new__'){toast('בחר ייעוד');return;}
+    save(autoCatRules(d).filter(r=>Math.round(r.amt)!==Math.round(a)).concat([{amt:a,cat:c}]));};
+  box.querySelectorAll('.acdel').forEach(b=>b.onclick=()=>
+    save(autoCatRules(d).filter((r,i)=>i!==+b.dataset.i)));
 }
 function dnCatOpts(cur){
   const L=dnCatList();
@@ -7871,8 +7924,9 @@ async function renderUnlinked(){
         ${x.email?`<div class="ulmail">${esc(x.email)}</div>`:''}
         <div class="uldates">${dates}${more}</div>
         <div class="ulb">
+          <input class="ulfind" placeholder="🔍 הקלד שם לחיפוש…" autocomplete="off">
           <select class="ulpick">${s0?'':'<option value="">— בחר תורם —</option>'}${opts(s0&&s0.id)}</select>
-          ${s0?`<span class="ulwhy">הצעה: ${esc(s0.why)}</span>`:'<span class="ulwhy">אין הצעה — בחר ידנית</span>'}
+          ${s0?`<span class="ulwhy">הצעה: ${esc(s0.why)}</span>`:'<span class="ulwhy">אין הצעה — הקלד שם או בחר מהרשימה</span>'}
         </div>
         <div class="ulb ulact">
           <button class="btn sm ulok">✓ שייך לתורם הזה</button>
@@ -7940,6 +7994,24 @@ function wireUnlinked(groups){
   view.querySelectorAll('.ulg').forEach(el=>{
     const x=byk[el.dataset.k]; if(!x)return;
     const tids=x.items.map(r=>r.tid);
+    // מאיר: "זה רק נותן לגלול ולחפש תורם, ולא נותן חיפוש חופשי שזה
+    // יותר קל." הקלדה מצמצמת את הרשימה, ובהתאמה אחת היא נבחרת לבד.
+    const find=el.querySelector('.ulfind'), sel=el.querySelector('.ulpick');
+    if(find&&sel){
+      const all=[...sel.options].map(o=>({v:o.value,t:o.textContent}));
+      find.oninput=()=>{
+        const s=find.value.trim();
+        const hit=s?all.filter(o=>o.v&&matchStr(o.t,s)):all;
+        const keep=sel.value;
+        sel.innerHTML=(hit.length?'':'<option value="">— לא נמצא —</option>')
+          +hit.map(o=>`<option value="${esc(o.v)}">${esc(o.t)}</option>`).join('');
+        if(hit.some(o=>o.v===keep))sel.value=keep;
+        else if(hit.length&&hit[0].v)sel.value=hit[0].v;   // התאמה ראשונה נבחרת לבד
+        const w=el.querySelector('.ulwhy:last-of-type');
+        if(w&&s)w.textContent=hit.filter(o=>o.v).length+' תואמים';
+      };
+      find.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();sel.focus();}};
+    }
     el.querySelector('.ulok').onclick=async b=>{
       const sel=el.querySelector('.ulpick'), did=sel&&sel.value;
       if(!did){toast('בחר תורם');return;}
