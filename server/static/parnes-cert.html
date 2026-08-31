@@ -76,9 +76,19 @@
   .noprint .tip{font-size:.85rem;color:#7a6f50;margin-top:8px}
   @media print{
     @page{size:A4;margin:0}
-    body{background:#fff}
+    /* מאיר: "בכל ההדפסות על הבלאנק המילה בס"ד למעלה קטועה, ויש צבע לבן
+       סביב הבלאנק — אני רוצה שהבלאנק יהיה בשלמותו לגמרי."
+       בבלאנק עצמו הבס"ד יושב 2.9מ"מ מהקצה הימני ו-4מ"מ מהעליון (נמדד על
+       הקובץ), ואף מדפסת אינה מדפיסה עד הקצה — 4-6מ"מ מכל צד הם שטח מת.
+       לכן הדף כולו — הבלאנק והטקסט יחד — מוקטן ב-3.8% ומתרכז, וכך הכל
+       נופל בתוך השטח שהמדפסת באמת מדפיסה. ההקטנה היא transform ולא שינוי
+       מידות, ולכן שבירת השורות והגופן שנבחר נשארים בדיוק כמו במסך.
+       מאחורי הדף המוקטן נפרש אותו בלאנק על כל העמוד, כדי שהשוליים יהיו
+       בצבע הנייר של הבלאנק ולא לבנים. */
+    html,body{background:#fdf9ee var(--bgurl) center center/100% 100% no-repeat}
     .scroller{overflow:visible;padding:0}
-    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
+    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0;
+      transform:scale(.962);transform-origin:center center}
     .noprint{display:none}
     [contenteditable]:focus{background:none;box-shadow:none}
     [contenteditable]:empty:before{content:''}
@@ -357,6 +367,8 @@ const CFG = {
 };
 const cfg = CFG[KIND] || CFG.parnes;
 $('sheet').style.backgroundImage = `url("${cfg.bg}")`;
+// אותו בלאנק נפרש גם מאחורי הדף בהדפסה, כדי שהשוליים לא יהיו לבנים
+document.documentElement.style.setProperty('--bgurl', `url("/bleed${cfg.bg}")`);
 Object.assign($('content').style, {top:cfg.top, left:cfg.left, right:cfg.right, bottom:cfg.bottom});
 
 // מאיר: "איפה שכתוב לעילוי נשמת — תוריד את המילים יהיו ויעמדו לזכות"

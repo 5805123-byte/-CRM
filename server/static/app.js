@@ -1294,6 +1294,7 @@ function render(){
     if(flt==='addrfix')return renderAddrFix();
     if(flt==='noaddr')return renderNoAddr();
     if(flt==='noeng')return renderNoEng();
+    if(flt==='nomail')return renderNoMail();
     if(flt==='nophone')return renderNoPhone();
     if(flt==='deposits')return renderDeposits();
     return renderDonors();
@@ -1402,6 +1403,9 @@ function renderDonors(){
         {id:'noAddrBtn', n:nanone,t:'🏠 בלי כתובת בכלל'},
         {id:'noPhoneBtn',n:nph,   t:'📞 בלי טלפון'},
         {id:'noEngBtn',  n:DB.filter(d=>!(d.english||'').trim()).length, t:'🔤 בלי שם באנגלית'},
+        // מאיר: "מי אלו התורמים שאין להם אימייל? איפה אני רואה את הרשימה
+        // שלהם בדיוק?" — בלי מייל אי אפשר לצרף אותם לדיוור
+        {id:'noMailBtn', n:DB.filter(noMail).length, t:'✉️ בלי כתובת אימייל'},
       ].filter(x=>x.n);
       // מאיר: "כל אלו יהיו תחת חלון אחד, לא בדף הראשי משבצת לכל אחד"
       // מיילים אינו כאן — הוא לשונית רגילה למעלה. מאיר: "איפה הלשונית
@@ -1453,6 +1457,7 @@ function renderDonors(){
   const nab=document.getElementById('noAddrBtn'); if(nab)nab.onclick=()=>{flt='noaddr';NOADDR=null;render();};
   const npb=document.getElementById('noPhoneBtn'); if(npb)npb.onclick=()=>{flt='nophone';NOPHONE=null;NPLIM=15;render();};
   const neb=document.getElementById('noEngBtn'); if(neb)neb.onclick=()=>{flt='noeng';NELIM=25;render();};
+  const nmb=document.getElementById('noMailBtn'); if(nmb)nmb.onclick=()=>{flt='nomail';NMLIM=25;render();};
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   document.getElementById('newDonorBtn').onclick=openNewDonor;
 }
@@ -1633,6 +1638,52 @@ function renderNoEng(){
   view.querySelectorAll('.nesave').forEach(b=>b.onclick=()=>save(b));
   view.querySelectorAll('.neinp').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();
     save(view.querySelector('.nesave[data-did="'+i.dataset.did+'"]'));}});
+}
+// מאיר: "וגם מי אלו התורמים שאין להם אימייל? איפה אני רואה את הרשימה
+// שלהם בדיוק? תבנה לי רשימה." בלי מייל אי אפשר לצרף אותם לדיוור, ולכן
+// הרשימה ממוינת לפי מי שתרם הכי הרבה — מי שכדאי להשיג ממנו כתובת קודם.
+let NMLIM=25;
+function noMail(d){ return !splitEmails(d.email||'').length; }
+function renderNoMail(){
+  chips.innerHTML='';
+  const all=DB.filter(noMail)
+              .filter(d=>matchQ(d.last+' '+d.first+' '+(d.english||'')+' '+(d.phone||'')))
+              .sort((a,b)=>donorTotals(b).all-donorTotals(a).all);
+  const nph=all.filter(d=>(d.phone||'').trim()).length;
+  const rows=all.slice(0,NMLIM);
+  view.innerHTML=`<div class="misshead">✉️ תורמים בלי כתובת אימייל</div>
+    <div class="submuted">${all.length} תורמים${nph?(' · '+nph+' מהם עם טלפון'):''} — הם אינם מקבלים דיוור.
+      ממוין לפי סכום התרומות, מהגבוה לנמוך.</div>
+    <button class="btn ghost" id="nmback" style="margin:8px 2px">→ חזרה לתורמים</button>
+    ${rows.map(d=>{const t=donorTotals(d).all;
+      return `<div class="npcard" data-did="${d.id}">
+        <div class="nm"><b class="avnamelink" data-id="${d.id}">${esc((d.last+' '+(d.first||'')).trim())}</b>
+          <span class="rownum">#${d.id}</span></div>
+        ${d.english?`<div class="nemail" dir="ltr">${esc(d.english)}</div>`:''}
+        ${d.phone?`<div class="nemail" dir="ltr">${esc(splitPhones(d.phone).join(' · '))}</div>`
+                 :'<div class="hintxt" style="margin:2px">גם בלי טלפון</div>'}
+        ${t?`<div class="hintxt" style="margin:2px">💰 תרם עד היום ${esc(curSym(d)+Math.round(t).toLocaleString('en-US'))}</div>`:''}
+        <div class="addrow"><input class="nminp" data-did="${d.id}" dir="ltr" type="email"
+            placeholder="כתובת אימייל" autocomplete="off">
+          <button class="btn sm nmsave" data-did="${d.id}">💾 שמור</button></div>
+      </div>`;}).join('')||'<div class="empty">לכל התורמים יש כתובת אימייל ✓</div>'}
+    ${all.length>rows.length?`<button class="btn" id="nmmore" style="width:100%;margin:8px 2px">הצג עוד ${Math.min(25,all.length-rows.length)}</button>`:''}`;
+  document.getElementById('nmback').onclick=()=>{flt='';render();};
+  const mb=document.getElementById('nmmore'); if(mb)mb.onclick=()=>{NMLIM+=25;renderNoMail();};
+  view.querySelectorAll('.avnamelink').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.id)));
+  const save=async b=>{
+    const d=DB.find(x=>x.id==b.dataset.did); if(!d)return;
+    const inp=view.querySelector('.nminp[data-did="'+b.dataset.did+'"]');
+    const v=(inp?inp.value:'').trim();
+    if(!v||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){
+      if(inp){inp.focus();toast('כתובת אימייל לא תקינה');} return;}
+    b.disabled=true; d.email=v;
+    await api('PUT','/api/donor/'+d.id,{email:v});
+    toast('נשמר ✓'); renderNoMail();
+  };
+  view.querySelectorAll('.nmsave').forEach(b=>b.onclick=()=>save(b));
+  view.querySelectorAll('.nminp').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();
+    save(view.querySelector('.nmsave[data-did="'+i.dataset.did+'"]'));}});
 }
 async function renderNoPhone(){
   view.innerHTML='<div class="cnt">טוען הצעות…</div>';

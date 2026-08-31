@@ -101,10 +101,21 @@
     .acts{display:none}
     /* הדפסת פתק אחד בלבד — כשלוחצים "הדפס את הפתק הזה" */
     body.oneonly .sheet:not(.only){display:none}
-    html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    /* מאיר: "בכל ההדפסות על הבלאנק המילה בס"ד למעלה קטועה, ויש צבע לבן
+       סביב הבלאנק — אני רוצה שהבלאנק יהיה בשלמותו לגמרי."
+       אף מדפסת אינה מדפיסה עד קצה הנייר (4-6מ"מ מכל צד הם שטח מת), ולכן
+       הדף כולו — הבלאנק והשמות יחד — מוקטן ב-3.8% ומתרכז. ההקטנה היא
+       transform ולא שינוי מידות, ולכן שבירת השורות והגופן שנבחרו נשארים
+       בדיוק כמו במסך. מאחורי הדף המוקטן נפרש אותו בלאנק על כל העמוד
+       (בחצי דף — פעמיים, בדיוק על גבולות הפתקים), כדי שהשוליים יהיו
+       בצבע הנייר של הבלאנק ולא לבנים. */
+    html,body{background:#fdf8ee url("/bleed/iz-slip.jpg") top center/100% 50% repeat-y;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body.fullmode{background:#fdf8ee url("/bleed/iz-page.jpg") center center/100% 100% no-repeat}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .bar,.hint{display:none}
-    .sheet{width:210mm;height:297mm;margin:0;box-shadow:none}
+    .sheet{width:210mm;height:297mm;margin:0;box-shadow:none;
+      transform:scale(.962);transform-origin:center center}
     .slip{break-inside:avoid;page-break-inside:avoid}
     .sheet{break-after:page;page-break-after:always}
     .sheet:last-child{break-after:auto;page-break-after:auto}
@@ -294,6 +305,7 @@ function paint() {
   const only = document.getElementById('pick').value;
   const mode = document.getElementById('filt').value;
   FULL = document.getElementById('mode').value === 'full';
+  document.body.classList.toggle('fullmode', FULL);   // הבלאנק שמאחורי הדף בהדפסה
   const q = (document.getElementById('q').value || '').trim().toLowerCase();
   // תורם בעילום שם מודפס כ"א.א.", אבל במשרד עדיין מוצאים אותו לפי שמו
   const hit = r => !q || (r.avreich + ' ' + r.donor + ' ' + (r.donor_find || '') + ' ' + (r.names || ''))

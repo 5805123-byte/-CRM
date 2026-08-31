@@ -6322,6 +6322,46 @@ def _honor(first, last='', gender=''):
     return "ר\'"
 
 
+_BLEED_OK = ('letterhead.jpg', 'letterhead-coffee.jpg', 'iz-page.jpg', 'iz-slip.jpg')
+_BLEED = {}
+
+
+def bleed_bg(name, scale=0.962):
+    """רקע העמוד להדפסה — הבלאנק מוקטן למרכז, והשוליים ממולאים במתיחת
+    פיקסלי הקצה שלו.
+
+    מאיר: "בכל ההדפסות על הבלאנק המילה בס"ד למעלה קטועה, ויש צבע לבן סביב
+    הבלאנק — אני רוצה שהבלאנק יהיה בשלמותו לגמרי." בבלאנק עצמו הבס"ד יושב
+    2.9מ"מ מהקצה הימני ו-4מ"מ מהעליון, ואף מדפסת אינה מדפיסה עד הקצה. לכן
+    הדף מוקטן ומתרכז — אבל אז נשאר שוליים לבנים. אי אפשר פשוט לפרוש את
+    הבלאנק עצמו מאחוריו: יש בו תוכן ליד הקצה (הבס"ד, הסרגל השמאלי), והוא
+    היה מופיע פעמיים. מתיחת פיקסלי הקצה נותנת מסגרת באותו צבע נייר בדיוק,
+    בלי שום תוכן כפול."""
+    key = (name, round(scale, 4))
+    if key in _BLEED:
+        return _BLEED[key]
+    from PIL import Image
+    im = Image.open(os.path.join(STATIC, name)).convert('RGB')
+    W, H = im.size
+    iw, ih = max(1, int(W * scale)), max(1, int(H * scale))
+    ox, oy = (W - iw) // 2, (H - ih) // 2
+    inner = im.resize((iw, ih), Image.LANCZOS)
+    out = Image.new('RGB', (W, H))
+    out.paste(inner, (ox, oy))
+    if oy > 0:                                   # שוליים עליונים
+        out.paste(inner.crop((0, 0, iw, 1)).resize((iw, oy)), (ox, 0))
+    if H - oy - ih > 0:                          # תחתונים
+        out.paste(inner.crop((0, ih - 1, iw, ih)).resize((iw, H - oy - ih)), (ox, oy + ih))
+    if ox > 0:                                   # שמאל — עמודה שלמה, כולל הפינות
+        out.paste(out.crop((ox, 0, ox + 1, H)).resize((ox, H)), (0, 0))
+    if W - ox - iw > 0:                          # ימין
+        out.paste(out.crop((ox + iw - 1, 0, ox + iw, H)).resize((W - ox - iw, H)), (ox + iw, 0))
+    buf = io.BytesIO()
+    out.save(buf, 'JPEG', quality=88, optimize=True, progressive=True)
+    _BLEED[key] = buf.getvalue()
+    return _BLEED[key]
+
+
 def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False,
                av_t="ר'", donor_t="ר'", parts=None):
     """פתק הקוויטל של היששכר־זבולון כתמונה.
@@ -8676,6 +8716,21 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/receipt':
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
+        # רקע העמוד להדפסה — הבלאנק עם שוליים מתוחים, בלי תוכן כפול
+        if self.path.split('?')[0].startswith('/bleed/'):
+            nm = self.path.split('?')[0][len('/bleed/'):]
+            if nm not in _BLEED_OK:
+                return self._send(404, {'ok': False})
+            try:
+                data = bleed_bg(nm)
+            except Exception as e:
+                return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] in ('/izslip.png', '/izslip.jpg'):
             # keep_blank_values — שותף בלי שמות קוויטל שולח names ריק, ובלעדיו
             # הרשימות מתקצרות והשמות נדבקים לשותף הלא נכון

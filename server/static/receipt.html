@@ -80,9 +80,16 @@
 
   @media print{
     @page{size:A4;margin:0}
-    body{background:#fff}
+    /* מאיר: "בכל ההדפסות על הבלאנק המילה בס"ד למעלה קטועה, ויש צבע לבן
+       סביב הבלאנק — אני רוצה שהבלאנק יהיה בשלמותו לגמרי."
+       בבלאנק הבס"ד יושב 2.9מ"מ מהקצה הימני ו-4מ"מ מהעליון, ואף מדפסת
+       אינה מדפיסה עד הקצה. לכן הדף כולו — הבלאנק והקבלה יחד — מוקטן
+       ב-3.8% ומתרכז, ומאחוריו נפרש אותו בלאנק על כל העמוד כדי שהשוליים
+       יהיו בצבע הנייר ולא לבנים. */
+    html,body{background:#fdf9ee url("/bleed/letterhead.jpg") center center/100% 100% no-repeat}
     .scroller{overflow:visible;padding:0}
-    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0}
+    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0;
+      transform:scale(.962);transform-origin:center center}
     .noprint{display:none}
   }
 </style>
