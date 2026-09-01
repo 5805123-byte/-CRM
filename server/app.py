@@ -737,6 +737,55 @@ def ensure_schema():
             print(f'  Banquest ינו-אוג: נטענו {nr}, הותאמו {matched}')
     except Exception as e:
         print('  שגיאת Banquest:', e)
+    # ---- בנק ווסט (USAePay) אוגוסט 2026: מ-10 באוגוסט ואילך ----
+    # הדוח שמאיר שלח מכסה את כל החודש, אבל 1–2 באוגוסט כבר נטענו בקובץ
+    # ינואר–אוגוסט. השורות הכפולות סוננו בהכנת הקובץ, ולכן כאן נשאר רק
+    # מה שחדש. "עבור מה" נלקח מתיאור החיוב בדוח עצמו.
+    try:
+        up = os.path.join(HERE, 'usaepay_aug2026_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_usaepay_aug2026_v1'").fetchone() \
+           and os.path.exists(up):
+            def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+            byeng, bylast = {}, {}
+            for d in con.execute("SELECT id,english,business FROM donors"):
+                for v in (d['english'], d['business']):
+                    if (v or '').strip():
+                        byeng.setdefault(_ne(v), d['id'])
+                toks = (d['english'] or '').split()
+                if toks:
+                    bylast.setdefault(_ne(toks[-1]), []).append((d['id'], _ne(toks[0])))
+            nr = matched = 0
+            for x in json.load(open(up, encoding='utf-8')):
+                did = byeng.get(_ne(x['name']))
+                if not did:
+                    toks = x['name'].split()
+                    cand = bylast.get(_ne(toks[-1]), []) if toks else []
+                    fn = _ne(toks[0]) if len(toks) > 1 else ''
+                    # שם משפחה לבדו אינו מספיק — שני הרשקוביץ שונים אינם
+                    # אותו תורם. בלי התאמה גם בשם הפרטי החיוב נשאר לשיוך ידני.
+                    if fn:
+                        okc = [i for i, f in cand if f and (f == fn or f[:1] == fn[:1])]
+                        if len(okc) == 1:
+                            did = okc[0]
+                    elif len(cand) == 1:
+                        did = cand[0][0]
+                con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,
+                                   state,zip,phone,email,recurring,donor_id,category,processed,
+                                   source,status)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'Banquest 08-2026',?)""",
+                            (x['tid'], x['first'], x['last'], x['amount'], x['date'],
+                             x.get('addr', ''), x.get('city', ''), x.get('state', ''),
+                             x.get('zip', ''), x.get('phone', ''), x.get('email', ''),
+                             x.get('recurring', 0), did, x.get('category', ''),
+                             x.get('status', 'settled')))
+                nr += 1
+                if did:
+                    matched += 1
+            matched += apply_name_map(con)      # שמות שמאיר כבר שייך פעם אחת
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_usaepay_aug2026_v1')")
+            print(f'  בנק ווסט אוגוסט: נטענו {nr}, הותאמו {matched}')
+    except Exception as e:
+        print('  שגיאת בנק ווסט אוגוסט:', e)
     # ---- צ'ייס ינואר–7 באוגוסט 2026: רק כסף שנכנס (זל, ACH, העברות בנקאיות) ----
     # הדוח שמאיר שלח מסונן ל"All credit transactions" — אין בו שום חיוב שיצא.
     try:
@@ -1881,6 +1930,55 @@ def ensure_schema():
             print(f'  תמצות מיילים קיימים: {nfix}')
     except Exception as e:
         print('  mail gist error:', e)
+
+    # רישום חיובי בנק ווסט של אוגוסט אצל התורמים. הספירה היא לפי כמות ולא
+    # לפי "קיים/לא קיים": מי שחויב פעמיים באותו סכום באותו חודש (ורצברגר,
+    # 210 ב-21 וב-22 באוגוסט) חייב לקבל שתי שורות. מה שמאיר כבר הזין ידנית
+    # נספר ומקוזז, ולכן הרצה חוזרת אינה מכפילה דבר.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='usaepay_aug2026_post_v1'").fetchone():
+            up = os.path.join(HERE, 'usaepay_aug2026_seed.json')
+            desc = {}
+            if os.path.exists(up):
+                for x in json.load(open(up, encoding='utf-8')):
+                    desc[x['tid']] = (x.get('desc') or '').strip()
+            dcat = {r['id']: (r['category'] or '')
+                    for r in con.execute("SELECT id,category FROM donors")}
+            need = {}
+            for r in con.execute("SELECT tid,donor_id,amount,date,category FROM recon "
+                                 "WHERE source='Banquest 08-2026' AND COALESCE(processed,0)=0 "
+                                 "AND COALESCE(status,'settled')='settled' "
+                                 "AND donor_id IS NOT NULL"):
+                diso = _recon_iso(r['date'])
+                if not diso:
+                    continue
+                need.setdefault((r['donor_id'], diso[:7], _amt2(r['amount'])), []).append(dict(r))
+            ins = skip = 0
+            for (did, ym, a), lst in need.items():
+                have = con.execute(
+                    "SELECT COUNT(*) c FROM donations WHERE donor_id=? "
+                    "AND SUBSTR(COALESCE(date,''),1,7)=? AND COALESCE(method,'')='Banquest' "
+                    "AND ROUND(CAST(amount AS REAL),2)=? AND LENGTH(COALESCE(date,''))>7 "
+                    "AND COALESCE(note,'') NOT LIKE 'ייבוא 2026%'", (did, ym, a)).fetchone()['c']
+                for r in lst:
+                    if have > 0:            # כבר רשום — מקזזים ולא מוסיפים
+                        have -= 1; skip += 1
+                    else:
+                        d2 = _recon_iso(r['date'])
+                        cat = (r['category'] or '').strip() or dcat.get(did, '') or 'מזדמן'
+                        dd = desc.get(r['tid'], '')
+                        note = ('זיכוי בבנק ווסט' if a < 0 else 'נגבה בבנק ווסט')
+                        if dd:
+                            note += ' · ' + dd[:120]
+                        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,"
+                                    "note,paid) VALUES(?,?,?,?,'Banquest',?,1)",
+                                    (did, d2, r['amount'], cat, note))
+                        ins += 1
+                    con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('usaepay_aug2026_post_v1')")
+            print('  בנק ווסט אוגוסט: נרשמו %d תרומות, %d היו כבר רשומות' % (ins, skip))
+    except Exception as e:
+        print('  usaepay aug post error:', e)
 
     # מיזוג בנק ווסט: כל חיוב שטרם אושר, מסווג לפי כל הנתונים שיש — רשימות החגים,
     # דרגת יששכר־זבולון, דוח הקבועים והוראות הקבע. מה שלא מזוהה בוודאות נשאר לאישור ידני.
