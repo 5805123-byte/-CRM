@@ -12351,8 +12351,11 @@ class H(BaseHTTPRequestHandler):
                         (b.get('donor_id'), b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date','')))
             cid = cur.lastrowid; task_id = None
             if b.get('next_date'):
+                # מאיר: "אני צריך בחלון הזה תזכורת לענות לו או משהו אחר,
+                # ותאריך" — סוג התזכורת נבחר ברישום עצמו ולא נקבע מראש
+                _k = (b.get('kind') or '').strip() or 'followup'
                 cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                            (b.get('donor_id'), b['next_date'], 'followup', b.get('summary','')[:80]))
+                            (b.get('donor_id'), b['next_date'], _k, b.get('summary','')[:80]))
                 task_id = cur.lastrowid
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})

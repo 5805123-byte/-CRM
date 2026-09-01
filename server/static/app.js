@@ -4951,8 +4951,10 @@ function cardContact(d,body){
       <div class="addrow"><select id="cl_ch">${clkOpts('')}</select><input id="cl_date" type="date" value="${todayStr()}"></div>
       <textarea id="cl_sum" rows="2" placeholder="מה סוכם / תוכן השיחה" style="margin-top:6px"></textarea>
       <div class="avfiles dnfiles" id="cl_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="cl_file" hidden></label></div>
-      <div class="addrow"><input id="cl_next" type="date" title="מתי לחזור"><button class="btn sm" id="cl_add">שמור</button></div>
-      <div class="hintxt">התאריך התחתון = מתי לחזור אליו (נכנס ל"משימות")</div></div>
+      <div class="addrow"><select id="cl_kind" title="על מה להזכיר">${taskKindOpts('followup')}</select>
+        <input id="cl_next" type="date" title="מתי להזכיר"><button class="btn sm" id="cl_add">שמור</button></div>
+      <div class="hintxt">מלא תאריך — והתזכורת נכנסת ל"משימות" עם מה שבחרת מימין (לענות לו, להתקשר, או כל סוג אחר).
+        בלי תאריך נשמר רק תיעוד השיחה.</div></div>
     <details class="dsec"><summary>🔔 קביעת תזכורת</summary>
       <div class="tkrow"><label class="tkl">על מה<select id="tk_kind">${taskKindOpts()}</select></label>
         <label class="tkl">📅 מתי להזכיר<input id="tk_date" type="date" value="${todayStr()}"></label></div>
@@ -4969,10 +4971,11 @@ function cardContact(d,body){
     if(!(d.email||'').trim()){toast('אין כתובת מייל בכרטיס — הוסף אותה כדי לתייק מיילים');return;}
     await runMailSync(msb); await refresh();
   };
-  document.getElementById('cl_add').onclick=async()=>{let ch=document.getElementById('cl_ch').value;if(ch==='__new__'){toast('כתוב את שם סוג הקשר');return;}const date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:'followup',note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
+  document.getElementById('cl_add').onclick=async()=>{let ch=document.getElementById('cl_ch').value;if(ch==='__new__'){toast('כתוב את שם סוג הקשר');return;}const date=document.getElementById('cl_date').value,sum=document.getElementById('cl_sum').value.trim(),next=document.getElementById('cl_next').value;if(!sum&&!date)return;let kd=(document.getElementById('cl_kind')||{}).value||'followup';if(kd==='__new__')kd='followup';const r=await api('POST','/api/contact',{donor_id:d.id,channel:ch,date:date,summary:sum,next_date:next,kind:kd});d.contacts=d.contacts||[];d.contacts.unshift({id:r.id,channel:ch,date:date,summary:sum,next_date:next});if(next){d.tasks=d.tasks||[];d.tasks.push({id:r.task_id,donor_id:d.id,due_date:next,kind:kd,note:sum.slice(0,80),done:0});}document.getElementById('cl_sum').value='';
     if(clF.arr.length){toast('מעלה קבצים…');for(const f of clF.arr)await uploadBlob('contact',r.id,f);clF.reset();await refresh();toast('נשמר עם האסמכתאות ✓');return;}
     renderContacts(d);renderReminders(d);toast('נשמר ✓');};
   wireKindSel(document.getElementById('tk_kind'));
+  wireKindSel(document.getElementById('cl_kind'));
   wireClkSel(document.getElementById('cl_ch'));
   addMic(document.getElementById('cl_sum')); addMic(document.getElementById('tk_note'));
   document.getElementById('tk_add').onclick=async ev=>{const btn=ev.currentTarget;if(btn.disabled)return;const kind=await kindValue(document.getElementById('tk_kind'));if(!kind)return;const note=document.getElementById('tk_note').value.trim();
