@@ -64,10 +64,14 @@
      הרצועה הצפופה ביותר. */
   .sec{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .sec + .sec{border-top:1.2pt dashed var(--gold);padding-top:1.5mm}
-  .subwho{text-align:center;font-size:13pt;line-height:1.25;white-space:nowrap;
+  /* מאיר: "אני רוצה שהכל יהיה אותו גודל, גם השותף השני שמתחתיו — השם
+     שלו ושל האברך והקוויטל, הכל אותו גודל ללא הבדל." לכן כותרת השותף
+     הנוסף כתובה באותם גדלים בדיוק של שורת הראש: התווית 14pt זהב והשם
+     24pt כהה, והמדידה מקטינה את שתיהן יחד כדי שיישארו שוות. */
+  .subwho{text-align:center;font-size:14pt;line-height:1.25;white-space:nowrap;
     overflow:hidden;margin-bottom:.5mm}
-  .subwho b{color:var(--deep);font-weight:800;font-size:16pt}
-  .subwho i{font-style:normal;color:var(--gold);font-weight:800}
+  .subwho b{color:var(--deep);font-weight:800;font-size:24pt}
+  .subwho i{font-style:normal;color:var(--gold);font-weight:800;font-size:14pt}
   .sec + .sec .names{margin-top:1mm}
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
   /* קו הקיפול הוא גבול של הפתק העליון ולא אלמנט נוסף — אלמנט נפרד
@@ -160,28 +164,32 @@ function kvFlow(t) {
 // הקטנה לפי מדידה אמיתית — לא לפי ניחוש אורך — כדי ששום דבר לא ייחתך
 // שם ארוך בכותרת (למשל ה"ה חיים ולאה אסתר לאקס) גלש מחוץ לפתק.
 // מקטינים במדידה עד שהשורה נכנסת, בדיוק כמו בשמות הקוויטל.
+// שורת הראש וכותרות השותפים מוקטנות יחד לגודל אחד. מאיר: "הכל אותו
+// גודל ללא הבדל" — לכן לא מודדים כל אחת לחוד, אלא מחפשים את הגודל
+// הגדול ביותר שבו *כולן* נכנסות, ומחילים אותו על כולן.
 function fitWho(slip) {
   const who = slip.querySelector('.who');
-  if (!who) return;
-  const nms = [...who.querySelectorAll('.nm')];
-  for (let pt = 24; pt >= 11; pt -= 0.5) {
+  const subs = [...slip.querySelectorAll('.subwho')];
+  const nms = who ? [...who.querySelectorAll('.nm')] : [];
+  if (!nms.length && !subs.length) return;
+  const set = pt => {
     nms.forEach(n => {
       n.style.fontSize = pt + 'pt';
       const i = n.querySelector('i');
       if (i) i.style.fontSize = Math.max(8, pt * 0.58) + 'pt';
     });
-    if (who.scrollWidth <= who.clientWidth) return;
+    subs.forEach(sw => {
+      sw.style.fontSize = Math.max(8, pt * 0.58) + 'pt';
+      sw.querySelectorAll('b').forEach(b => { b.style.fontSize = pt + 'pt'; });
+      sw.querySelectorAll('i').forEach(i => { i.style.fontSize = Math.max(8, pt * 0.58) + 'pt'; });
+    });
+  };
+  for (let pt = 24; pt >= 9; pt -= 0.5) {
+    set(pt);
+    const okWho = !who || who.scrollWidth <= who.clientWidth;
+    const okSub = subs.every(sw => sw.scrollWidth <= sw.clientWidth);
+    if (okWho && okSub) return;
   }
-}
-// אותה מדידה לכותרת של שותף נוסף — שורה אחת שאסור שתיחתך
-function fitSub(slip) {
-  slip.querySelectorAll('.subwho').forEach(sw => {
-    for (let pt = 13; pt >= 7; pt -= 0.5) {
-      sw.style.fontSize = pt + 'pt';
-      sw.querySelectorAll('b').forEach(b => { b.style.fontSize = (pt * 1.23) + 'pt'; });
-      if (sw.scrollWidth <= sw.clientWidth) return;
-    }
-  });
 }
 // כל הרצועות בדף יורדות יחד לאותו גודל — אחרת אצל שותף אחד השמות
 // ענקיים ואצל השני זעירים, וזה נראה כמו שני דפים שהודבקו
@@ -338,7 +346,7 @@ function paint() {
   });
   document.getElementById('out').innerHTML = h ||
     '<div class="hint">אין פתקים להצגה.</div>';
-  document.querySelectorAll('.slip').forEach(sl => { fitWho(sl); fitSub(sl); fitNames(sl); });
+  document.querySelectorAll('.slip').forEach(sl => { fitWho(sl); fitNames(sl); });
   document.querySelectorAll('.acts').forEach(box => {
     const r = groups[+box.dataset.i];
     const sheet = document.querySelector('.sheet[data-i="' + box.dataset.i + '"]');

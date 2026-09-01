@@ -6492,12 +6492,39 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     def center(t, f, y, fill):
         dr.text(((W - wid(t, f)) / 2, y), t, font=f, fill=fill)
 
+    # מאיר: "אני רוצה שהכל יהיה אותו גודל, גם השותף השני שמתחתיו — השם
+    # שלו ושל האברך והקוויטל, הכל אותו גודל ללא הבדל." לכן לא מודדים כל
+    # שורה לחוד: מחפשים את הגודל הגדול ביותר שבו שורת הראש *וכל* כותרות
+    # השותפים נכנסות, ומשתמשים בו בכולן.
+    def _headw(px):
+        f_n, f_t = font(px, True), font(px * (30.0 / 50.0), True)
+        f_l = font(px * (29.0 / 50.0))
+        tot = 0
+        for lbl, val, ttl in (('יששכר', avreich, av_t), ('זבולון', donor, donor_t)):
+            tw = (wid(ttl + ' ', f_t) if ttl else 0)
+            tot += max(wid(val or '—', f_n) + tw, wid(lbl, f_l)) + 50 * u
+        return tot
+
+    def _subw(px):
+        f_n, f_l = font(px, True), font(px * (29.0 / 50.0))
+        worst = 0
+        for dn, dt, _nm in parts[1:]:
+            segs = [('יששכר ', f_l), (((av_t + ' ') if av_t else '') + (avreich or '—'), f_n),
+                    ('  ·  ', f_l), ('זבולון ', f_l),
+                    (((dt + ' ') if dt else '') + (dn or '—'), f_n)]
+            worst = max(worst, sum(wid(t, f) for t, f in segs))
+        return worst
+    NM_PX = 50 * u
+    while NM_PX > 14 * u:
+        if _headw(NM_PX) <= W - int(250 * u) and _subw(NM_PX) <= W - int(80 * u):
+            break
+        NM_PX -= 2
     # ראש הפתק — שני השמות, מימין לשמאל ומשמאל ללוגו
-    fl, fn = font(29 * u), font(50 * u, True)
+    fl, fn = font(NM_PX * (29.0 / 50.0)), font(NM_PX, True)
     x = W - int(250 * u)
     # מאיר: "ליד המילה יששכר אל תכתוב 'האברך', וליד זבולון אל תכתוב
     # 'התורם' — זה מובן מאליו". השמות עצמם בסדר פרטי־ואז־משפחה.
-    ft = font(30 * u, True)          # התואר — קטן מהשם עצמו
+    ft = font(NM_PX * (30.0 / 50.0), True)     # התואר — קטן מהשם עצמו
     for lbl, val, ttl in (('יששכר', avreich, av_t), ('זבולון', donor, donor_t)):
         v = val or '—'
         tw = (wid(ttl + ' ', ft) if ttl else 0)
@@ -6527,14 +6554,18 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     # כותרת הרצועה — "יששכר <אברך> · זבולון <תורם>". רק לשותף השני והלאה;
     # הראשון כבר כתוב בראש הדף ליד הלוגו. כל קטע נכתב לחוד ומימין לשמאל,
     # כדי שהתוויות יישארו בזהב והשמות בצבע הכהה — כמו בראש הדף.
-    sub_px = (28 if half else 34) * u
-    fsl, fsn = font(sub_px), font(sub_px, True)
-    sub_h = int(sub_px * 2.0)
+    # מאיר: "אני רוצה שהכל יהיה אותו גודל, גם השותף השני שמתחתיו — השם
+    # שלו ושל האברך והקוויטל, הכל אותו גודל ללא הבדל." לכן כותרת השותף
+    # הנוסף נכתבת באותם גדלים בדיוק של שורת הראש: השם 50u והתווית 29u,
+    # ואם היא רחבה מהדף היא מוקטנת — והשורה שלמעלה יורדת איתה.
+    sub_nm = NM_PX                    # בדיוק כמו שורת הראש
+    sub_h = int(sub_nm * 1.9)
 
     def subhead(av_s, dn_s, yy):
-        segs = [('יששכר ', fsl, _GOLD_T), (av_s, fsn, _DEEP),
-                ('  ·  ', fsl, _GOLD_T),
-                ('זבולון ', fsl, _GOLD_T), (dn_s, fsn, _DEEP)]
+        f_l, f_n = font(sub_nm * (29.0 / 50.0)), font(sub_nm, True)
+        segs = [('יששכר ', f_l, _GOLD_T), (av_s, f_n, _DEEP),
+                ('  ·  ', f_l, _GOLD_T),
+                ('זבולון ', f_l, _GOLD_T), (dn_s, f_n, _DEEP)]
         tot = sum(wid(t, f) for t, f, _ in segs)
         xx = (W + tot) / 2                       # מתחילים מהקצה הימני
         for t, f, col in segs:
@@ -6570,7 +6601,7 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
             for dx in range(int(90 * u), W - int(90 * u), dash * 2):
                 dr.line([(dx, ly), (dx + dash, ly)], fill=_GOLD_T, width=max(1, int(1.5 * u)))
             subhead(((av_t + ' ') if av_t else '') + (avreich or '—'),
-                    ((dt + ' ') if dt else '') + (dn or '—'), top + int(sub_px * .5))
+                    ((dt + ' ') if dt else '') + (dn or '—'), top + int(sub_nm * .35))
             yy += sub_h
         room = band - (sub_h if i else 0)
         yy += max(0, (room - len(lines) * lh) / 2)
