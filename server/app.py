@@ -1944,15 +1944,35 @@ def ensure_schema():
                     desc[x['tid']] = (x.get('desc') or '').strip()
             dcat = {r['id']: (r['category'] or '')
                     for r in con.execute("SELECT id,category FROM donors")}
-            need = {}
+            allr = []
             for r in con.execute("SELECT tid,donor_id,amount,date,category FROM recon "
                                  "WHERE source='Banquest 08-2026' AND COALESCE(processed,0)=0 "
                                  "AND COALESCE(status,'settled')='settled' "
                                  "AND donor_id IS NOT NULL"):
-                diso = _recon_iso(r['date'])
-                if not diso:
+                d = dict(r)
+                d['iso'] = _recon_iso(r['date'])
+                d['a'] = _amt2(r['amount'])
+                if d['iso']:
+                    allr.append(d)
+            # מאיר: "אם הוא הזדכה והחזרנו את החיוב אל תכניס את החיוב שזוכה".
+            # זיכוי מבטל חיוב אחד באותו סכום אצל אותו תורם — שניהם יורדים,
+            # ומה שנשאר הוא רק מה שבאמת נגבה. מבטלים את החיוב המאוחר ביותר
+            # שקדם לזיכוי, כי הוא זה שנעשה בטעות.
+            drop, cancel = set(), 0
+            for c in sorted([x for x in allr if x['a'] < 0], key=lambda x: x['iso']):
+                cand = [x for x in allr if x['donor_id'] == c['donor_id']
+                        and x['a'] == -c['a'] and x['iso'] <= c['iso']
+                        and x['tid'] not in drop]
+                if cand:
+                    drop.add(max(cand, key=lambda x: x['iso'])['tid'])
+                    drop.add(c['tid'])
+                    cancel += 1
+            need = {}
+            for r in allr:
+                if r['tid'] in drop:
+                    con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
                     continue
-                need.setdefault((r['donor_id'], diso[:7], _amt2(r['amount'])), []).append(dict(r))
+                need.setdefault((r['donor_id'], r['iso'][:7], r['a']), []).append(r)
             ins = skip = 0
             for (did, ym, a), lst in need.items():
                 have = con.execute(
@@ -1976,9 +1996,34 @@ def ensure_schema():
                         ins += 1
                     con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
             con.execute("INSERT INTO seed_flags(name) VALUES('usaepay_aug2026_post_v1')")
-            print('  בנק ווסט אוגוסט: נרשמו %d תרומות, %d היו כבר רשומות' % (ins, skip))
+            print('  בנק ווסט אוגוסט: נרשמו %d תרומות, %d היו כבר רשומות, '
+                  '%d חיובים בוטלו מול זיכוי' % (ins, skip, cancel))
     except Exception as e:
         print('  usaepay aug post error:', e)
+
+    # ניקוי אחרי הגרסה הראשונה, שרשמה את הזיכוי כשורה שלילית במקום לבטל
+    # את החיוב שזוכה. כל שורת זיכוי יורדת יחד עם חיוב אחד באותו סכום.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='usaepay_aug2026_credit_v2'").fetchone():
+            gone = 0
+            for c in con.execute("SELECT id,donor_id,date,amount FROM donations "
+                                 "WHERE COALESCE(method,'')='Banquest' "
+                                 "AND COALESCE(note,'') LIKE 'זיכוי בבנק ווסט%' "
+                                 "AND CAST(amount AS REAL)<0").fetchall():
+                m = con.execute(
+                    "SELECT id FROM donations WHERE donor_id=? AND COALESCE(method,'')='Banquest' "
+                    "AND SUBSTR(COALESCE(date,''),1,7)=? "
+                    "AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(date,'')<=? "
+                    "ORDER BY date DESC, id DESC LIMIT 1",
+                    (c['donor_id'], str(c['date'])[:7], -_amt2(c['amount']), c['date'])).fetchone()
+                if m:
+                    con.execute("DELETE FROM donations WHERE id IN (?,?)", (c['id'], m['id']))
+                    gone += 1
+            if gone:
+                print('  בנק ווסט אוגוסט: הוסרו %d זוגות חיוב+זיכוי' % gone)
+            con.execute("INSERT INTO seed_flags(name) VALUES('usaepay_aug2026_credit_v2')")
+    except Exception as e:
+        print('  usaepay credit cleanup error:', e)
 
     # מיזוג בנק ווסט: כל חיוב שטרם אושר, מסווג לפי כל הנתונים שיש — רשימות החגים,
     # דרגת יששכר־זבולון, דוח הקבועים והוראות הקבע. מה שלא מזוהה בוודאות נשאר לאישור ידני.
@@ -4070,7 +4115,7 @@ def ensure_schema():
             if 'chase' in s or "צ'ייס" in s or 'צייס' in s: return 'ch'
             return s
 
-        pend = {}
+        allrows = []
         for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed FROM recon "
                              "WHERE donor_id IS NOT NULL AND COALESCE(skipped,0)=0 "
                              "AND (status IS NULL OR status='settled') ORDER BY date,tid"):
@@ -4081,8 +4126,30 @@ def ensure_schema():
                 amt = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
             except Exception:
                 continue
-            if amt > 0:
-                pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((dict(r), iso, amt))
+            allrows.append((dict(r), iso, amt))
+        # מאיר: "אם הוא הזדכה והחזרנו את החיוב אל תכניס את החיוב שזוכה."
+        # זיכוי מבטל חיוב אחד באותו סכום, אצל אותו תורם ובאותו מסלול —
+        # שניהם יורדים, ומה שנרשם בכרטיס הוא רק מה שבאמת נגבה. מבוטל
+        # החיוב המאוחר ביותר שקדם לזיכוי, כי הוא זה שנעשה בטעות.
+        refunded = set()
+        for cr, ciso, camt in sorted([x for x in allrows if x[2] < 0], key=lambda x: x[1]):
+            cand = [x for x in allrows if x[2] == -camt and x[1] <= ciso
+                    and x[0]['donor_id'] == cr['donor_id']
+                    and _fam(x[0]['source']) == _fam(cr['source'])
+                    and x[0]['tid'] not in refunded]
+            if cand:
+                refunded.add(max(cand, key=lambda x: x[1])[0]['tid'])
+                refunded.add(cr['tid'])
+        # חיוב שזוכה ונרשם בכרטיס בעלייה קודמת — יורד משם עכשיו
+        if refunded:
+            gone = con.execute("DELETE FROM donations WHERE tid IN (%s)"
+                               % ','.join('?' * len(refunded)), tuple(refunded)).rowcount
+            if gone:
+                print('  חיובים שזוכו והוסרו מהכרטיסים: %d' % gone)
+        pend = {}
+        for r, iso, amt in allrows:
+            if amt > 0 and r['tid'] not in refunded:
+                pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((r, iso, amt))
         # חיוב שכבר נרשם — מזוהה לפי מזהה העסקה עצמו ולא לפי ניחוש. כך
         # חיוב השלמה על חודש שלא נגבה (פערל שילם שלוש פעמים ביולי על
         # אפריל-מאי-יוני) נספר, ואילו אותו חיוב שדווח פעמיים אינו נספר.
