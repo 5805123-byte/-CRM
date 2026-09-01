@@ -8524,10 +8524,20 @@ function mlCfgHTML(){
     <button class="btn sm ghost" id="ml_cfgopen" style="width:100%">⚙️ מאיפה נשלח הדואר — שנה כתובת שולח</button></div>`;
   const u=(c&&c.saved&&c.saved.mail_user)||'';
   const nm=(c&&c.saved&&c.saved.mail_from_name)||'כולל חצות';
+  const gm=(c&&c.gmail_user)||'', onGm=!!gm&&(((c&&c.in_use&&c.in_use.user)||'').toLowerCase()===gm.toLowerCase());
   return `<div class="sec mlcfg">
     <div class="rbtitle" style="text-align:right">⚙️ מאיפה נשלח הדואר</div>
     <div class="hintxt">כרגע נשלח מ־<b>${esc((c&&c.in_use&&c.in_use.from)||'—')}</b>${c&&c.from_app?'':' (מוגדר ב-Render)'}${
       (c&&c.in_use&&c.in_use.host)?` · דרך השרת <b dir="ltr">${esc(c.in_use.host)}:${esc(String(c.in_use.port||''))}</b>`:''}</div>
+    ${gm?`<div class="mlpick">
+      <div class="hintxt" style="margin:0 0 6px">שתי דרכים לשלוח, ואפשר להחליף ביניהן מתי שרוצים:</div>
+      ${onGm?`<div class="mlok">📮 שולח עכשיו דרך הג׳ימייל — <b dir="ltr">${esc(gm)}</b></div>`
+            :`<button class="btn" id="mc_gmail" style="width:100%">📮 שלח דרך הג׳ימייל שלנו — <span dir="ltr">${esc(gm)}</span></button>
+              <div class="hintxt">לחיצה אחת. אין מה למלא — לא סיסמה ולא שם שרת, הם כבר שמורים בשרת של המערכת.
+                זו הדרך המומלצת לדיוור גדול: הכתובת ותיקה, ההודעות יוצאות מוצפנות ולא נתקעות בספאם.</div>`}
+      <div class="hintxt" style="margin-top:8px">הדרך השנייה — שליחה דרך שרת הדואר של הדומיין. היא זו שדורשת
+        כתובת, סיסמה ולפעמים גם שם שרת, וכל השדות שלה הם מכאן ולמטה.</div>
+    </div>`:''}
     <label class="fld"><span>כתובת המייל שממנה לשלוח</span>
       <input id="mc_user" value="${esc(u)}" placeholder="rabbideutsch@kollelchatzot.com" dir="ltr" autocomplete="off"></label>
     <label class="fld"><span>הסיסמה של התיבה הזאת${c&&c.has_pass?' — שמורה. השאר ריק כדי לא לשנות':''}</span>
@@ -8585,7 +8595,7 @@ function mlCfgHTML(){
       <button class="btn" id="mc_save" style="flex:2">🔌 בדוק וחבר</button>
       <button class="btn sm ghost" id="mc_cancel" style="flex:1">סגור</button>
     </div>
-    ${c&&c.from_app?`<div class="addrow"><button class="btn sm ghost" id="mc_clear" style="width:100%">↩️ חזור לשליחה דרך ג׳ימייל</button></div>`:''}
+    ${(c&&c.from_app&&!gm)?`<div class="addrow"><button class="btn sm ghost" id="mc_clear" style="width:100%">↩️ חזור לשליחה דרך ג׳ימייל</button></div>`:''}
     <div class="hintxt">הסיסמה נשמרת בשרת של המערכת בלבד. היא לא מוצגת כאן שוב, ולא נכנסת לגיבוי שמורידים.</div>
   </div>`;
 }
@@ -8677,12 +8687,36 @@ function wireMlCfg(){
   const skd=document.querySelector('.mc_skipdef');
   if(skd)skd.onclick=()=>{const t=document.getElementById('mc_skip');
     if(MLCFG&&MLCFG.skip_default!=null)t.value=MLCFG.skip_default;};
+  const gmSwitch=async(btn)=>{
+    const msg=document.getElementById('mc_msg');
+    btn.disabled=true;const t0=btn.textContent;btn.textContent='מעביר…';
+    let r=null;try{r=await api('POST','/api/mail/config',{clear:1});}catch(e){}
+    btn.disabled=false;btn.textContent=t0;
+    MLCFG=null;MLSETUP=null;
+    try{MLCFG=await api('GET','/api/mail/config');}catch(e){}
+    await mlLoadSetup();
+    if(msg&&r&&r.msg)msg.innerHTML='<div class="mlok">✅ '+esc(r.msg)+'</div>';
+    toast('עובר לשליחה דרך הג׳ימייל ✓');
+    setTimeout(()=>{mlCfgOpen=false;renderMailSend();},1200);
+    renderMailSend();};
+  const gb=document.getElementById('mc_gmail');
+  if(gb)gb.onclick=()=>gmSwitch(gb);
   const cl=document.getElementById('mc_clear');
   if(cl)cl.onclick=async()=>{
     if(!await uiConfirm('לחזור לשליחה דרך הג׳ימייל?'))return;
-    await api('POST','/api/mail/config',{clear:1});
-    MLCFG=null;MLSETUP=null;await mlLoadSetup();mlCfgOpen=false;renderMailSend();
-    toast('חזרנו לג׳ימייל ✓');};
+    gmSwitch(cl);};
+  // מאיר: "זה שואל אותי סיסמאות ושרת" — כתובת ג׳ימייל לא צריכה שם שרת,
+  // ושם השרת של הדומיין שנשאר בשדה היה נשלח איתה ומפיל את החיבור.
+  const mu=document.getElementById('mc_user');
+  if(mu)mu.oninput=()=>{
+    const v=mu.value.trim(), pf=document.getElementById('mc_pass');
+    const gu=((MLCFG&&MLCFG.gmail_user)||'').toLowerCase();
+    if(pf)pf.placeholder=(gu&&v.toLowerCase()===gu)
+      ?'אין צורך — סיסמת האפליקציה כבר שמורה בשרת. השאר ריק'
+      :'הסיסמה שאיתה נכנסים לתיבה';
+    if(!/@(gmail|googlemail)\.com$/i.test(v))return;
+    const h=document.getElementById('mc_host'),p=document.getElementById('mc_port');
+    if(h)h.value='';if(p)p.value='';};
 }
 function mlSetupHTML(){
   const s=MLSETUP;

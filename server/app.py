@@ -10221,6 +10221,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'saved': cur, 'has_pass': has,
                                     'skip': _skip,
                                     'skip_default': _skip_def,
+                                    # הכתובת שמוגדרת ב-Render — היא מוצגת על
+                                    # הכפתור "שלח דרך הג׳ימייל". הסיסמה עצמה
+                                    # לא יוצאת מכאן לעולם.
+                                    'gmail_user': (os.environ.get('GMAIL_USER')
+                                                   or '').strip(),
                                     'in_use': {'host': c['host'], 'port': c['port'],
                                                'user': c['user'], 'from': c['frm'],
                                                'name': c['name'],
@@ -10893,7 +10898,13 @@ class H(BaseHTTPRequestHandler):
             import bulkmail
             con = db()
             if b.get('clear'):
-                for k in MAIL_CFG_KEYS:
+                # מאיר: "זה שואל אותי סיסמאות ושרת וכו' כשאני רוצה לעשות
+                # ששילח מהג'ימייל" — המעבר לג׳ימייל לא דורש כלום. מוחקים
+                # רק את מה ששייך לשרת של הדומיין. שם השולח, התקרה היומית
+                # והמרווח נשארים — הם ההגדרות שלו, לא של הדומיין, ומחיקתם
+                # הייתה מאפסת את התקרה בדיוק לפני משלוח גדול.
+                for k in ('mail_host', 'mail_port', 'mail_user',
+                          'mail_pass', 'mail_from'):
                     con.execute("DELETE FROM app_kv WHERE k=?", (k,))
                 con.commit(); con.close()
                 load_mail_cfg()
@@ -10908,6 +10919,14 @@ class H(BaseHTTPRequestHandler):
             pw = b.get('pass')
             if pw is None or pw == '':          # לא הוקלדה סיסמה חדשה
                 pw = kv_get(con, 'mail_pass')
+            # מאיר: "איך אני מדלג על זה" — כשהכתובת היא הג׳ימייל של הכולל,
+            # סיסמת האפליקציה כבר יושבת ב-Render ואין שום סיבה לבקש אותה
+            # שוב. אם השדה נשאר ריק — משתמשים בה.
+            _genv = (os.environ.get('GMAIL_USER') or '').strip().lower()
+            _pw_env = False
+            if (not str(pw or '').strip()) and user.lower() == _genv:
+                pw = (os.environ.get('GMAIL_APP_PASSWORD') or '').strip()
+                _pw_env = True
             host = bulkmail.clean(b.get('host'))
             try:
                 port = int(b.get('port') or 0)
@@ -10923,7 +10942,12 @@ class H(BaseHTTPRequestHandler):
             kv_set(con, 'mail_host', h2)
             kv_set(con, 'mail_port', str(p2))
             kv_set(con, 'mail_user', user)
-            kv_set(con, 'mail_pass', pw)
+            if _pw_env:
+                # הסיסמה הגיעה מ-Render — אין טעם להעתיק אותה למסד. מוחקים
+                # סיסמה ישנה של דומיין אחר שנשארה שם, אחרת היא תיתפס.
+                con.execute("DELETE FROM app_kv WHERE k='mail_pass'")
+            else:
+                kv_set(con, 'mail_pass', pw)
             kv_set(con, 'mail_from', bulkmail.clean(b.get('from')) or user)
             kv_set(con, 'mail_from_name', bulkmail.clean(b.get('name')) or 'כולל חצות')
             # מאיר: "ואם אני רוצה שיחזירו אימייל לג'ימייל?" — התשובה של
