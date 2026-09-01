@@ -9044,11 +9044,15 @@ class H(BaseHTTPRequestHandler):
                 dnames[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
             # מאיר: "התשלום יוצא רק מבנימין אבל שניהם שותפים" — שותף בחלוקת
             # התשלום מחזיק יחד גם את האברכים, וצריך להופיע ברשימה לפי אברכים
-            psplit = {}
+            psplit, splitid = {}, {}
             try:
-                for r in con.execute("SELECT payer_id,donor_id FROM pay_split"):
+                # מאיר: "תוסיף כפתורים גם לשורת המחזיק יחד" — מזהה החלוקה
+                # נשלח כדי שאפשר יהיה לבטל אותה מהשורה עצמה
+                for r in con.execute("SELECT id,payer_id,donor_id FROM pay_split"):
                     psplit.setdefault(r['payer_id'], set()).add(r['donor_id'])
                     psplit.setdefault(r['donor_id'], set()).add(r['payer_id'])
+                    splitid[(r['payer_id'], r['donor_id'])] = r['id']
+                    splitid[(r['donor_id'], r['payer_id'])] = r['id']
             except Exception:
                 pass
             # מי שיש לו אברך משלו — חלוקת התשלום אצלו היא כספית בלבד
@@ -9108,7 +9112,8 @@ class H(BaseHTTPRequestHandler):
                             {'id': oid, 'name': who, 'pid': r['pid'],
                              'start_date': r['start_date'] or '',
                              'amount': '', 'share': '', 'joint': r['joint'] or 0,
-                             'linked': 1, 'via': nm})
+                             'linked': 1, 'via': nm,
+                             'split_id': splitid.get((r['did'], oid)) or 0})
             # מי שיש לו שורה משלו אצל אותו אברך אינו צריך גם שורת שותף
             # מקושרת — אחרת הוא היה מופיע פעמיים באותה שורה ברשימה
             for g in out.values():

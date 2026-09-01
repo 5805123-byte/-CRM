@@ -7524,7 +7524,8 @@ function avRowHTML(a,ix){
     <span class="g4">${x&&!x.linked?`<input class="avh_dt" data-pid="${x.pid}" value="${esc(x.start_date||'')}" placeholder="מתאריך">`:(x?`<small class="avlinkdt">${esc(x.start_date||'')}</small>`:'')}</span>
     <span class="g5">${x&&!x.linked?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
     <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
-    <span class="g7">${x&&!x.linked?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${first?`<button class="ib avslip" data-av="${esc(a.name)}" title="פתק קוויטל של האברך">🕯️</button><button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
+    <span class="g7">${x&&!x.linked?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${
+      x&&x.linked?`<button class="ib avl_kv" data-did="${x.id}" title="שמות הקוויטל שלו">🕯️</button><button class="ib avl_full" data-did="${x.id}" data-av="${esc(a.name)}" title="הפוך לשותף מלא — שורה משלו עם תאריך וסכום">⬆️</button>${x.split_id?`<button class="ib rd avl_rm" data-sid="${x.split_id}" data-nm="${esc(x.name)}" title="בטל את ההחזקה המשותפת">✕</button>`:''}`:''}${first?`<button class="ib avslip" data-av="${esc(a.name)}" title="פתק קוויטל של האברך">🕯️</button><button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
   </div>${sw&&x&&!x.linked&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
     ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
@@ -7629,6 +7630,38 @@ function wireByAv(){
     if(await saveH(b.dataset.pid,{remove:1})){toast('הוסר ✓');reload();}});
   view.querySelectorAll('.avh_swap').forEach(b=>b.onclick=()=>{
     avSwapId=(avSwapId===+b.dataset.pid)?null:+b.dataset.pid; paintByAv();});
+  // מאיר: "תוסיף כפתורים גם לשורת המחזיק יחד." לשורה הזאת אין שורת
+  // שותפות משלה — היא הצמדה לשורה של המשלם — ולכן הכפתורים שלה אחרים:
+  // הקוויטל שלו עצמו, הפיכה לשותף מלא, וביטול ההחזקה המשותפת.
+  view.querySelectorAll('.avl_kv').forEach(b=>b.onclick=()=>{
+    const d=DB.find(x=>x.id==b.dataset.did);
+    if(d)openDonor(d,'kvittel'); else toast('לא נמצא הכרטיס');});
+  view.querySelectorAll('.avl_full').forEach(b=>b.onclick=async()=>{
+    const av=b.dataset.av, a2=AVLIST.find(x=>x.name===av), did=+b.dataset.did;
+    // מרגע שיש לו אברך משלו, חלוקת התשלום נחשבת כספית בלבד ואינה הופכת
+    // אותו למחזיק־יחד אצל אברכים אחרים — כלל שקיים במערכת מלכתחילה.
+    // אם הוא מחזיק־יחד ביותר מאברך אחד, חשוב לומר זאת לפני ולא אחרי.
+    const also=(AVLIST||[]).filter(g=>g.name!==av&&(g.holders||[])
+      .some(h=>h.linked&&+h.id===did)).map(g=>g.name);
+    if(!await uiConfirm('להפוך אותו לשותף מלא באברך '+av+'?\n'
+        +'תיפתח לו שורה משלו — עם תאריך, סכום וכל הכפתורים.'
+        +(also.length?('\n\n⚠️ שים לב: הוא מופיע כמחזיק־יחד גם אצל '
+            +also.join(', ')+'.\nמרגע שיהיה לו אברך משלו הוא יירד משם, '
+            +'כי חלוקת התשלום תיחשב כספית בלבד. אם הוא באמת מחזיק גם אותם — '
+            +'הפוך אותו לשותף מלא גם שם.'):'')))return;
+    b.disabled=true;
+    const r=await api('POST','/api/avreich/assign',{avreich_id:a2&&a2.aid,name:av,
+      donor_id:+b.dataset.did,start_date:'',amount:'',at:nowStamp()});
+    b.disabled=false;
+    if(r&&r.error==='already'){toast('כבר יש לו שורה משלו');return;}
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    toast('נפתחה שורה ל'+(r.donor||'')+' ✓'); reload();});
+  view.querySelectorAll('.avl_rm').forEach(b=>b.onclick=async()=>{
+    if(!await uiConfirm('לבטל את ההחזקה המשותפת של '+b.dataset.nm+'?\n'
+        +'הוא ירד מהאברכים של השותף, וגם חלוקת התשלום ביניהם תתבטל.'))return;
+    const r=await api('POST','/api/paysplit',{delete:1,id:+b.dataset.sid});
+    if(!r||!r.ok){toast('לא בוטל');return;}
+    toast('בוטל ✓'); await load(); reload();});
   view.querySelectorAll('.sw_q').forEach(qi=>{
     const pid=qi.dataset.pid, res=view.querySelector('.sw_res[data-pid="'+pid+'"]');
     qi.focus();
