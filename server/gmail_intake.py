@@ -1117,6 +1117,8 @@ def sync_contacts(con, status=None):
     pw = os.environ.get('GMAIL_APP_PASSWORD')
     if not (user and pw):
         return {'ok': False, 'error': 'not_configured'}
+    skip_pats = mail_skip_pats(con)
+    skipped_noise = 0
     emap = _donor_email_map(con)
     if not emap:
         return {'ok': True, 'new': 0, 'note': 'no_donor_emails'}
@@ -1155,6 +1157,9 @@ def sync_contacts(con, status=None):
                     con.execute("UPDATE contacts_log SET at=? WHERE id=?", (_mail_when(hmsg)[1], ex['id']))
                 continue
             subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
+            if mail_is_noise(subject, femail, skip_pats):
+                skipped_noise += 1          # אישור אוטומטי — לא ליומן הקשר
+                continue
             dstr, at = _mail_when(hmsg)
             todo.append((seq, did, mid, subject, dstr, at))
         st['total'] = len(todo)
@@ -1293,6 +1298,45 @@ def _addrs(hmsg, *heads):
     return out
 
 
+# מאיר: "אני מקבל כל אימייל של אישור תשלום בנדרים פלוס וזה לא טוב. אני
+# רוצה כאן במיילים שיימשך רק הודעות נטו של תורמים בלבד." אישורי תשלום
+# ורכישה נשלחים אוטומטית ומציפים את יומן הקשר בלי שום מידע שאפשר לעשות
+# בו משהו. הרשימה ניתנת לעריכה מהמסך (app_kv: mail_skip), ומה שכאן הוא
+# ברירת המחדל.
+MAIL_SKIP_DEFAULT = ('נדרים פלוס', 'nedarim', 'אישור תשלום', 'אישור רכישה',
+                     'אישור רכישת', 'קבלה על תשלום', 'לתשלום ·', 'no-reply',
+                     'noreply', 'אישור הזמנה', 'חשבונית')
+_SKIP_CACHE = {'v': None, 'pats': None}
+
+
+def mail_skip_pats(con=None):
+    """דפוסי נושא/שולח שלא מתויקים ביומן הקשר."""
+    raw = None
+    if con is not None:
+        try:
+            r = con.execute("SELECT v FROM app_kv WHERE k='mail_skip'").fetchone()
+            raw = r['v'] if r else None
+            if raw is not None and not str(raw).strip():
+                raw = ''          # רשימה שרוקנה במכוון — לא מסננים כלום
+        except Exception:
+            raw = None
+    if raw is None:
+        raw = os.environ.get('MAIL_SKIP')
+    if raw is None:
+        return MAIL_SKIP_DEFAULT
+    if _SKIP_CACHE['v'] != raw:
+        _SKIP_CACHE['v'] = raw
+        _SKIP_CACHE['pats'] = tuple(
+            x.strip().lower() for x in re.split(r'[\n,;|]+', raw) if x.strip())
+    return _SKIP_CACHE['pats']
+
+
+def mail_is_noise(subject, addr, pats):
+    """נכון כשההודעה היא אישור אוטומטי ולא התכתבות אמיתית."""
+    t = ((subject or '') + ' ' + (addr or '')).lower()
+    return any(p and p in t for p in pats)
+
+
 def sync_sent(con, status=None):
     """מתייק ליומן הקשר גם את המיילים *ששלחנו* לתורמים — מתיבת הנשלחים של ג'ימייל.
     כך כל התכתבות, לשני הכיוונים, יושבת בכרטיס התורם בלי עבודה ידנית."""
@@ -1304,6 +1348,8 @@ def sync_sent(con, status=None):
     emap = _donor_email_map(con)
     if not emap:
         return {'ok': True, 'new': 0, 'note': 'no_donor_emails'}
+    skip_pats = mail_skip_pats(con)
+    skipped_noise = 0
     since = _sent_since()
     box = os.environ.get('SENT_MAILBOX', '[Gmail]/Sent Mail')
     new = 0
@@ -1327,6 +1373,9 @@ def sync_sent(con, status=None):
             subject = _dec(hmsg.get('Subject')) or '(ללא נושא)'
             parents = _thread_parents(hmsg)   # על איזה מייל מאיר ענה בג'ימייל
             dstr, at = _mail_when(hmsg)
+            if mail_is_noise(subject, '', skip_pats):
+                skipped_noise += 1          # אישור אוטומטי — לא ליומן הקשר
+                continue
             for ad in _addrs(hmsg, 'To', 'Cc', 'Bcc'):
                 did = emap.get(ad)
                 if not did or ad == user.lower():
@@ -1367,7 +1416,7 @@ def sync_sent(con, status=None):
             if new % 20 == 0:
                 con.commit()
         con.commit()
-        return {'ok': True, 'new': new}
+        return {'ok': True, 'new': new, 'noise': skipped_noise}
     except imaplib.IMAP4.error as e:
         return {'ok': False, 'error': 'login_failed', 'detail': str(e), 'new': new}
     except Exception as e:

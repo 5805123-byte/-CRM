@@ -10146,9 +10146,23 @@ class H(BaseHTTPRequestHandler):
             con = db()
             cur = {k: kv_get(con, k) for k in MAIL_CFG_KEYS if k not in SECRET_KV}
             has = bool(str(kv_get(con, 'mail_pass') or '').strip())
+            # מאיר: "אני רוצה שיימשך רק הודעות נטו של תורמים בלבד" — דפוסי
+            # הנושא של אישורים אוטומטיים שאינם מתויקים ביומן הקשר
+            try:
+                import gmail_intake as _gi2
+                _skip_def = '\n'.join(_gi2.MAIL_SKIP_DEFAULT)
+            except Exception:
+                _skip_def = ''
+            # kv_get מחזיר '' גם לערך שלא נשמר מעולם, ולכן ברירת המחדל
+            # לא הוצגה במסך. מבדילים לפי קיום השורה עצמה.
+            _has_skip = bool(con.execute(
+                "SELECT 1 FROM app_kv WHERE k='mail_skip'").fetchone())
+            _skip = kv_get(con, 'mail_skip') if _has_skip else _skip_def
             con.close()
             c = bulkmail.cfg()
             return self._send(200, {'saved': cur, 'has_pass': has,
+                                    'skip': _skip,
+                                    'skip_default': _skip_def,
                                     'in_use': {'host': c['host'], 'port': c['port'],
                                                'user': c['user'], 'from': c['frm'],
                                                'name': c['name']},
@@ -10785,6 +10799,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'thread', 'detail': str(e)[:200]})
             return self._send(200, {'ok': True, 'batch': bid, 'count': len(to),
                                     'skipped': len(skip)})
+        if self.path == '/api/mail/skip':
+            # רשימת הדפוסים שלא מתויקים ביומן הקשר. נשמרת לבדה, בלי
+            # לגעת בהגדרות החיבור.
+            con = db()
+            kv_set(con, 'mail_skip', str(b.get('skip') or ''))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/mail/config':
             # מאיר: "אני לא הבנתי איך אני מחבר אותו בכלל" — כאן הוא נותן
             # כתובת וסיסמה, המערכת מוצאת לבד את השרת ואת הפורט, בודקת
@@ -12156,9 +12177,33 @@ class H(BaseHTTPRequestHandler):
             if valid:
                 did = int(did)
             else:
-                cur.execute("INSERT INTO donors(last,first,phone,email,addr,category,channel,notes,created,source) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                            (last or name, first, phone, email, addr, 'מזדמן', 'אונליין', 'תרומה מקוונת', today_iso(), 'אונליין'))
-                did = cur.lastrowid
+                # מאיר: "פתחתי לי כרטיסים לכל מי ששלח אימייל? למה? זה משגע
+                # אותי סתם." כל רכישה או תשלום מהאתר פתח כרטיס תורם חדש
+                # במצב "מזדמן · אונליין", גם למי שאינו תורם. קודם מחפשים
+                # התאמה לתורם קיים לפי מייל, טלפון או שם מלא; ואם אין —
+                # לא נפתח כרטיס. זה אותו כלל שמאיר קבע על הקוויטלים
+                # שנכנסים מהג'ימייל: "אל תכניס את זה ישירות לכרטיס תורם".
+                did = None
+                em = (email or '').strip().lower()
+                if em:
+                    for r in cur.execute("SELECT id,email FROM donors "
+                                         "WHERE TRIM(COALESCE(email,''))<>''"):
+                        if em in emails_of(r['email']):
+                            did = r['id']; break
+                if did is None and phone:
+                    _p = re.sub(r'\D', '', phone)[-9:]
+                    if len(_p) >= 9:
+                        for r in cur.execute("SELECT id,phone FROM donors "
+                                             "WHERE TRIM(COALESCE(phone,''))<>''"):
+                            if any(re.sub(r'\D', '', x)[-9:] == _p
+                                   for x in re.split(r'[;,/]', r['phone'] or '')):
+                                did = r['id']; break
+                if did is None and (last or '').strip() and (first or '').strip():
+                    r = cur.execute("SELECT id FROM donors WHERE TRIM(last)=? AND TRIM(first)=?",
+                                    (last.strip(), first.strip())).fetchone()
+                    if r:
+                        did = r['id']
+                valid = did is not None
             # תיאור ההתחייבות
             if recurring:
                 dtxt = '12 חודשים' if duration == '12' else 'ללא הגבלה'
@@ -12173,6 +12218,38 @@ class H(BaseHTTPRequestHandler):
             if notes: parts.append('הערה: ' + notes)
             note = 'תרומה מקוונת · ' + ' · '.join(parts)
             inst_total = (12 if duration == '12' else 0) if recurring else installments
+            if did is None:
+                # אין תורם מתאים — לא נפתח כרטיס. התשלום נכנס למסך המיון
+                # "💳 חיובים בלי תורם", והשמות לתפילה לרשימת הקוויטלים
+                # הממתינים — שני מסכים שמאיר כבר עובד איתם.
+                tid = 'ON' + hashlib.sha1(
+                    ('%s|%s|%s|%s' % (name, em or phone, amt, now_iso())).encode('utf-8')
+                ).hexdigest()[:14]
+                cur.execute(
+                    "INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,phone,email,"
+                    "recurring,donor_id,category,processed,source,status) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,NULL,?,0,'אונליין','settled')",
+                    (tid, first, last or name, amt, today_iso(), addr, phone, email,
+                     1 if recurring else 0, cat))
+                _pn = []
+                for p2 in prayers[:4]:
+                    nm2 = (p2.get('name') or '').strip()
+                    if not nm2:
+                        continue
+                    mom2 = (p2.get('mother') or '').strip()
+                    req2 = (p2.get('request') or '').strip()
+                    _pn.append(nm2 + (' בן/בת ' + mom2 if mom2 else '')
+                               + (' — ' + req2 if req2 else ''))
+                if _pn:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO intake(message_id,from_name,from_email,subject,"
+                        "received,body,names,donor_id,status,created) "
+                        "VALUES(?,?,?,?,?,?,?,NULL,'new',?)",
+                        ('online:' + tid, name, email, 'תרומה מקוונת · ' + cat,
+                         today_iso(), note, '\n'.join(_pn), today_iso()))
+                con.commit(); con.close()
+                return self._send(200, {'ok': True, 'pending': True, 'tid': tid,
+                                        'msg': 'נקלט למיון — לא נפתח כרטיס תורם'})
             cur.execute("""INSERT INTO transactions(donor_id,date,amount,category,method,status,inst_total,inst_paid,recurring,note,created)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                         (did, '', amt, cat, pay_label, 'pending', inst_total, 0, 1 if recurring else 0, note, 'online'))

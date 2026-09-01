@@ -8474,6 +8474,16 @@ function mlCfgHTML(){
     <label class="fld"><span>לאן יגיעו התשובות של התורמים</span>
       <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — התשובות יגיעו לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
     <div class="hintxt">אם תכתוב כאן <b>chatzot18@gmail.com</b>, המייל ייצא מהכתובת של הכולל, אבל כשהתורם ילחץ "השב" התשובה תגיע לג׳ימייל שלך.</div>
+    <details class="mladv"><summary>🧹 מה לא לתייק ביומן הקשר</summary>
+      <div class="hintxt">מאיר: "אני מקבל כל אימייל של אישור תשלום בנדרים פלוס וזה לא טוב — אני רוצה
+        שיימשך רק הודעות נטו של תורמים." מייל שהנושא או השולח שלו מכיל אחת מהשורות כאן
+        אינו נכנס ליומן הקשר. שורה אחת לכל ביטוי.</div>
+      <textarea id="mc_skip" rows="6" dir="auto" style="width:100%;font-family:inherit"
+        placeholder="נדרים פלוס&#10;אישור תשלום&#10;אישור רכישה">${esc((c&&c.skip)||'')}</textarea>
+      <div class="addrow" style="margin-top:6px">
+        <button class="btn sm mc_skipsave" style="flex:2">💾 שמור את הרשימה</button>
+        <button class="btn sm ghost mc_skipdef" style="flex:1">↩️ ברירת מחדל</button></div>
+    </details>
     <details class="mladv"${(c&&c.saved&&c.saved.mail_host)?' open':''}><summary>🖥️ שרת הדואר (SMTP)${
         (c&&c.saved&&c.saved.mail_host)?` — <b dir="ltr">${esc(c.saved.mail_host)}</b>`:' — נמצא לבד'}</summary>
       <div class="two">
@@ -8547,6 +8557,18 @@ function wireMlCfg(){
       if(hh)hh.focus();
     }
   };
+  // רשימת מה שלא מתויק ביומן הקשר — נשמרת לבדה, בלי לבדוק חיבור
+  const sk=document.querySelector('.mc_skipsave');
+  if(sk)sk.onclick=async()=>{
+    const t=document.getElementById('mc_skip');
+    sk.disabled=true;
+    const r=await api('POST','/api/mail/skip',{skip:t.value});
+    sk.disabled=false;
+    toast(r&&r.ok?'נשמר ✓ — יחול במשיכה הבאה':'לא נשמר');
+    MLCFG=null;};
+  const skd=document.querySelector('.mc_skipdef');
+  if(skd)skd.onclick=()=>{const t=document.getElementById('mc_skip');
+    if(MLCFG&&MLCFG.skip_default!=null)t.value=MLCFG.skip_default;};
   const cl=document.getElementById('mc_clear');
   if(cl)cl.onclick=async()=>{
     if(!await uiConfirm('לחזור לשליחה דרך הג׳ימייל?'))return;
