@@ -9325,6 +9325,61 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'since': since, 'donors': out})
         if self.path == '/api/inactive/mailcheck/status':
             return self._send(200, dict(MAILCHK))
+        if self.path.split('?')[0] == '/api/audit/online':
+            # מאיר: "פתחתי לי כרטיסים לכל מי ששלח אימייל? למה?" — עד
+            # התיקון כל תשלום או רכישה מהאתר פתח כרטיס תורם. כאן הרשימה
+            # של אותם כרטיסים, עם כל מה שתלוי בכל אחד, כדי שאפשר יהיה
+            # לעבור ולמחוק בבטחה. מוצג קודם מי שאין לו כלום.
+            con = db()
+            out = []
+            for d in con.execute(
+                    "SELECT id,last,first,english,email,phone,created,source,channel,category "
+                    "FROM donors WHERE COALESCE(source,'')='אונליין' "
+                    "OR COALESCE(channel,'')='אונליין'"):
+                did = d['id']
+
+                def _n(sql, args=(did,)):
+                    try:
+                        return con.execute(sql, args).fetchone()[0] or 0
+                    except Exception:
+                        return 0
+                don = _n("SELECT COUNT(*) FROM donations WHERE donor_id=?")
+                amt = 0.0
+                try:
+                    for x in con.execute("SELECT amount FROM donations WHERE donor_id=?", (did,)):
+                        amt += _amt2(x['amount'])
+                except Exception:
+                    pass
+                tx_real = _n("SELECT COUNT(*) FROM transactions WHERE donor_id=? "
+                             "AND COALESCE(status,'')<>'pending'")
+                tx_pend = _n("SELECT COUNT(*) FROM transactions WHERE donor_id=? "
+                             "AND COALESCE(status,'')='pending'")
+                out.append({
+                    'id': did,
+                    'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                    'english': d['english'] or '', 'email': d['email'] or '',
+                    'phone': d['phone'] or '', 'created': d['created'] or '',
+                    'category': d['category'] or '',
+                    'donations': don, 'amount': round(amt, 2),
+                    'tx_real': tx_real, 'tx_pending': tx_pend,
+                    'prayers': _n("SELECT COUNT(*) FROM prayers WHERE donor_id=?"),
+                    'partners': _n("SELECT COUNT(*) FROM partners WHERE donor_id=? "
+                                   "AND COALESCE(active,1)<>0"),
+                    'parnes': _n("SELECT COUNT(*) FROM parnes WHERE donor_id=? "
+                                 "AND COALESCE(status,'')<>'suggested'"),
+                    'pledges': _n("SELECT COUNT(*) FROM pledges WHERE donor_id=?"),
+                    'contacts': _n("SELECT COUNT(*) FROM contacts_log WHERE donor_id=?"),
+                    'recon': _n("SELECT COUNT(*) FROM recon WHERE donor_id=?"),
+                })
+            con.close()
+            # "ריק" = לא נכנס ממנו כסף ואין לו שום התחייבות. השמות לתפילה
+            # והמשימה נוצרו על ידי אותה פנייה עצמה, ולכן אינם סימן לכלום.
+            for x in out:
+                x['empty'] = not (x['donations'] or x['tx_real'] or x['partners']
+                                  or x['parnes'] or x['pledges'] or x['recon'])
+            out.sort(key=lambda x: (0 if x['empty'] else 1, -x['amount'], x['name']))
+            return self._send(200, {'rows': out, 'total': len(out),
+                                    'empty': sum(1 for x in out if x['empty'])})
         if self.path.split('?')[0] == '/api/ledger':
             # ספר החיובים: כל מה שנכנס מינואר, כל אמצעי בנפרד, וגם מה שלא עבר.
             # הנתונים מגיעים מטבלת ההתאמות — שם יושב כל חיוב אמיתי עם המקור שלו.

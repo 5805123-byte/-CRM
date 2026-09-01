@@ -1319,6 +1319,7 @@ function render(){
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
   if(tab==='unlinked') return renderUnlinked();
+  if(tab==='online') return renderOnlineCards();
   if(tab==='review') return renderReview();
 }
 
@@ -1419,7 +1420,9 @@ function renderDonors(){
       // מיילים אינו כאן — הוא לשונית רגילה למעלה. מאיר: "איפה הלשונית
       // מיילים נמצאת?" — דבר שמשתמשים בו כל שבוע לא נקבר תחת "תיקונים".
       const tabs=[{k:'review',t:'📋 לבדיקה'},{k:'dups',t:'🧾 תשלומים כפולים'},
-                  {k:'unlinked',t:'💳 חיובים בלי תורם'},{k:'old',t:'🧹 תורמים ישנים'}];
+                  {k:'unlinked',t:'💳 חיובים בלי תורם'},
+                  {k:'online',t:'🌐 כרטיסים שנפתחו מהאתר'},
+                  {k:'old',t:'🧹 תורמים ישנים'}];
       const tot=items.reduce((a,x)=>a+x.n,0);
       return `<details class="fixbox"${FIXOPEN?' open':''} id="fixbox">
         <summary>🧰 בדיקות ותיקונים${tot?` <b class="fixcnt">${tot}</b>`:''}</summary>
@@ -8002,6 +8005,73 @@ const RVKINDSUB={
   amount:'משלם באותו סכום בכל חודש, אבל בכרטיס רשום סכום אחר.',
   none:'רשומה התחייבות ולא נכנס ממנו כלום בתקופה.',
   ask:'הסכום כאן הגיע מהייבוא ולא ממך, ולכן הוא לא נחשב חוב. אשר אותו, תקן אותו, או קבע שאין התחייבות — ואז הוא לא יופיע יותר.'};
+/* ---------- 🌐 כרטיסים שנפתחו מהאתר ----------
+   מאיר: "פתחתי לי כרטיסים לכל מי ששלח אימייל? למה? זה משגע אותי סתם."
+   עד התיקון כל תשלום או רכישה מהאתר פתח כרטיס תורם. התיקון מונע חדשים;
+   כאן עוברים על אלה שכבר נפתחו. מי שאין לו כלום מוצג ראשון, ומי שכן
+   נכנס ממנו כסף מסומן בבירור כדי שלא יימחק בטעות. */
+let ONDATA=null, onShow='empty';
+function onWhat(r){const f=n=>'$'+Math.round(n||0).toLocaleString('en-US');const p=[];
+  if(r.donations)p.push(r.donations+' תרומות · '+f(r.amount));
+  if(r.tx_real)p.push(r.tx_real+' חיובים');
+  if(r.partners)p.push(r.partners+' אברכים');
+  if(r.parnes)p.push(r.parnes+' פרנס יום');
+  if(r.pledges)p.push(r.pledges+' התחייבויות');
+  if(r.recon)p.push(r.recon+' שורות בנק');
+  if(r.contacts)p.push(r.contacts+' רישומי קשר');
+  if(r.prayers)p.push(r.prayers+' שמות לקוויטל');
+  if(r.tx_pending)p.push(r.tx_pending+' חיוב ממתין (מהפנייה עצמה)');
+  return p;}
+async function renderOnlineCards(){
+  chips.innerHTML='';
+  view.innerHTML='<div class="cnt">טוען…</div>';
+  if(!ONDATA){ try{ ONDATA=await api('GET','/api/audit/online'); }catch(e){ ONDATA={rows:[]}; } }
+  const all=(ONDATA.rows||[]).filter(r=>matchQ(r.name+' '+r.english+' '+r.email+' '+r.phone));
+  const rows=onShow==='empty'?all.filter(r=>r.empty):all;
+  view.innerHTML=`<div class="cnt">🌐 כרטיסים שנפתחו דרך האתר
+      <small style="color:var(--muted)"> · ${ONDATA.total||0} סה"כ · ${ONDATA.empty||0} ריקים לגמרי</small></div>
+    <div class="hintxt" style="margin:0 2px 8px">כל תשלום או רכישה מהאתר פתח כרטיס תורם. <b>זה כבר לא קורה</b> —
+      מהיום פנייה שאינה מזוהה נכנסת ל"חיובים בלי תורם" ולא פותחת כרטיס. כאן עוברים על מה שכבר נפתח.
+      <br><b>ריק לגמרי</b> = לא נכנס ממנו כסף ואין לו שום התחייבות. השמות לתפילה והחיוב הממתין נוצרו
+      על ידי אותה פנייה עצמה ואינם סימן לכלום.</div>
+    <div class="addrow" style="margin:0 2px 10px">
+      <button class="btn sm ${onShow==='empty'?'':'ghost'}" id="on_e">רק הריקים (${ONDATA.empty||0})</button>
+      <button class="btn sm ${onShow==='all'?'':'ghost'}" id="on_a">הכל (${ONDATA.total||0})</button></div>
+    <div class="list">${rows.map(r=>{const w=onWhat(r);
+      return `<div class="ulg ${r.empty?'':'ulbad'}" data-id="${r.id}">
+        <div class="ulhead"><span class="ulnm avnamelink" data-id="${r.id}">${esc(r.name||'—')}</span>
+          <span class="rownum">#${r.id}</span>
+          ${r.empty?'<span class="onchip ok">ריק לגמרי</span>':'<span class="onchip bad">⚠️ יש אצלו נתונים — לא למחוק</span>'}</div>
+        ${r.email?`<div class="ulmail">${esc(r.email)}</div>`:''}
+        <div class="uldates">${r.created?('נוסף '+esc(r.created)):''}${r.phone?(' · '+esc(r.phone)):''}${r.category?(' · '+esc(r.category)):''}</div>
+        ${w.length?`<div class="ulreason" dir="rtl">${esc(w.join(' · '))}</div>`:''}
+        <div class="ulb ulact">
+          <button class="btn sm ghost onopen" data-id="${r.id}">↗ פתח כרטיס</button>
+          <button class="btn sm ${r.empty?'':'ghost'} ondel" data-id="${r.id}" data-nm="${esc(r.name||'')}">🗑 מחק</button>
+        </div></div>`;}).join('')||'<div class="empty">🎉 אין כרטיסים כאלה</div>'}</div>
+    ${rows.filter(r=>r.empty).length>1?`<div class="addrow" style="margin:12px 2px">
+      <button class="btn delbig" id="on_all" style="width:100%">🗑 מחק את כל ${rows.filter(r=>r.empty).length} הריקים בבת אחת</button></div>`:''}`;
+  document.getElementById('on_e').onclick=()=>{onShow='empty';renderOnlineCards();};
+  document.getElementById('on_a').onclick=()=>{onShow='all';renderOnlineCards();};
+  view.querySelectorAll('.avnamelink,.onopen').forEach(b=>b.onclick=()=>{
+    const d=DB.find(x=>x.id==b.dataset.id); if(d)openDonor(d);});
+  const del=async id=>{const r=await api('DELETE','/api/donor/'+id);return !!(r&&r.ok!==false);};
+  view.querySelectorAll('.ondel').forEach(b=>b.onclick=async()=>{
+    const row=(ONDATA.rows||[]).find(x=>x.id==b.dataset.id), w=row?onWhat(row):[];
+    if(!await uiConfirm('למחוק לצמיתות את הכרטיס של '+b.dataset.nm+'?'
+        +(w.length?('\n\n⚠️ יש אצלו: '+w.join(' · ')+'\nהמחיקה תמחק גם אותם.'):'')))return;
+    b.disabled=true;
+    if(!await del(+b.dataset.id)){toast('לא נמחק');b.disabled=false;return;}
+    toast('נמחק ✓'); ONDATA=null; await load(); renderOnlineCards();});
+  const ab=document.getElementById('on_all');
+  if(ab)ab.onclick=async()=>{
+    const ids=rows.filter(r=>r.empty).map(r=>r.id);
+    if(!await uiConfirm('למחוק לצמיתות '+ids.length+' כרטיסים ריקים?\n'
+        +'אלה כרטיסים שנפתחו מהאתר ולא נכנס מהם שום כסף.\nאי אפשר לבטל.'))return;
+    ab.disabled=true; let n=0;
+    for(const id of ids){ if(await del(id))n++; ab.textContent='מוחק… '+n+'/'+ids.length; }
+    toast(n+' כרטיסים נמחקו ✓'); ONDATA=null; await load(); renderOnlineCards();};
+}
 /* ---------- 💳 חיובים בלי תורם ----------
    מאיר על פיינגולד: "עוד חיובים שלא מופיעים פה בכלל". כסף שנגבה בפועל
    בבנק או באשראי ואינו רשום אצל אף תורם. מקובץ לפי המשלם — אותו אדם
