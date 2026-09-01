@@ -8950,8 +8950,41 @@ class H(BaseHTTPRequestHandler):
             args = []
             if only:
                 q += " AND TRIM(p.avreich)=?"; args.append(only)
+            # מאיר: "עכשיו זה בכלל לא מופיע בקוויטל התורם השני שמחזיק אותו
+            # — למשל חבה יש לו 2 שותפים ומופיע בפתק רק אחד." השותף השני
+            # מוחזק "יחד עם" (pay_split) ואין לו שורת partners משלו, ולכן
+            # לא הגיע לכאן כלל. הוא מחזיק את האברך בדיוק כמו הראשון, וצריך
+            # להופיע על אותו דף עם שמות הקוויטל שלו.
+            psplit = {}
+            try:
+                for r0 in con.execute("SELECT payer_id,donor_id FROM pay_split"):
+                    psplit.setdefault(r0['payer_id'], set()).add(r0['donor_id'])
+                    psplit.setdefault(r0['donor_id'], set()).add(r0['payer_id'])
+            except Exception:
+                pass
+            drow = {d['id']: dict(d) for d in con.execute(
+                "SELECT id,last,first,english,COALESCE(anon,0) anon,"
+                "COALESCE(gender,'') gender FROM donors")}
+            # אותו כלל שברשימת האברכים: מי שיש לו אברך משלו — חלוקת
+            # התשלום אצלו כספית בלבד ואינה הופכת אותו למחזיק־יחד
+            _own_av = {x['donor_id'] for x in con.execute(
+                "SELECT DISTINCT donor_id FROM partners "
+                "WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')<>''")}
+            rows0 = [dict(r) for r in con.execute(q, args)]
+            have = {(x['av'], x['did']) for x in rows0}
+            for r0 in list(rows0):
+                for did2 in psplit.get(r0['did'], ()):
+                    d2 = drow.get(did2)
+                    if did2 in _own_av:
+                        continue
+                    if d2 and (r0['av'], did2) not in have:
+                        have.add((r0['av'], did2))
+                        rows0.append({'av': r0['av'], 'did': did2, 'last': d2['last'],
+                                      'first': d2['first'], 'english': d2['english'],
+                                      'anon': d2['anon'], 'gender': d2['gender'],
+                                      'joint': 1})
             seen = set()
-            for r in con.execute(q, args):
+            for r in rows0:
                 key = (r['av'], r['did'])
                 if key in seen:
                     continue
@@ -8972,6 +9005,7 @@ class H(BaseHTTPRequestHandler):
                     _dnp = _dn = ANON_NAME
                     _dt = ''
                 out.append({'avreich': r['av'], 'avreich_p': _avp,
+                            'joint': int(r.get('joint') or 0),
                             'av_t': "ר'", 'donor_t': _dt,
                             'donor': _dn,
                             'donor_p': _dnp,

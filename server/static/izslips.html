@@ -209,6 +209,11 @@ function fitNames(slip) {
 // מיטמן והשמות שלו, אחר כך ציון כהן יששכר / מאיר מיטמן זבולון ואז השמות
 // שלו, ורק לוגו אחד למעלה". הראש והנוסח פעם אחת; לכל שותף נוסף כותרת
 // משלו מעל השמות שלו, וקו מפריד ביניהם.
+// מפתח קיבוץ לאברך: אותו שם שנכתב עם רווח כפול או עם תו כיווניות נסתר
+// (מהעתקה מוואטסאפ) התפצל לשני דפים, ובכל אחד הופיע שותף אחד בלבד.
+const avKey = s => String(s || '')
+  .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
+  .replace(/\s+/g, ' ').trim();
 function slip(g, flip, full) {
   const ps = g.parts;
   const nmOf = r => r.names ? `<div class="names"><span>${esc(kvFlow(r.names))}</span></div>`
@@ -318,18 +323,29 @@ function paint() {
   // תורם בעילום שם מודפס כ"א.א.", אבל במשרד עדיין מוצאים אותו לפי שמו
   const hit = r => !q || (r.avreich + ' ' + r.donor + ' ' + (r.donor_find || '') + ' ' + (r.names || ''))
     .toLowerCase().includes(q);
-  let rows = ROWS.filter(r => (!only || r.avreich === only) && (mode === 'all' || r.names) && hit(r));
-  // אברך אחד = דף אחד, גם כשמחזיקים אותו כמה שותפים
+  // מאיר: "עכשיו זה בכלל לא מופיע בקוויטל התורם השני שמחזיק אותו —
+  // למשל חבה יש לו 2 שותפים ומופיע בפתק רק אחד." הסינון "רק מי שיש לו
+  // שמות" פעל על כל שורה בנפרד, ולכן שותף בלי שמות קוויטל נעלם מתוך
+  // הדף של האברך. הסינון עבר לרמת הדף: דף נכנס אם *לאחד* מהשותפים יש
+  // שמות, וכל השותפים שלו מופיעים בו — גם מי שעדיין אין לו שמות, כדי
+  // שיהיה ברור שהוא מחזיק ושחסר למלא לו.
+  let rows = ROWS.filter(r => (!only || avKey(r.avreich) === avKey(only)) && hit(r));
+  // אברך אחד = דף אחד, גם כשמחזיקים אותו כמה שותפים. המפתח מנוקה
+  // מרווחים כפולים, אחרת אותו אברך שנכתב מעט אחרת בשתי שורות התפצל
+  // לשני דפים ובכל אחד הופיע שותף בודד.
   const gm = new Map();
   rows.forEach(r => {
-    let g = gm.get(r.avreich);
-    if (!g) gm.set(r.avreich, g = {avreich: r.avreich, avreich_p: r.avreich_p,
-                                   av_t: r.av_t, parts: []});
+    const k = avKey(r.avreich);
+    let g = gm.get(k);
+    if (!g) gm.set(k, g = {avreich: r.avreich, avreich_p: r.avreich_p,
+                           av_t: r.av_t, parts: []});
     g.parts.push(r);
   });
-  const groups = [...gm.values()];
+  let groups = [...gm.values()];
+  if (mode !== 'all') groups = groups.filter(g => g.parts.some(r => r.names));
+  const shown = groups.reduce((n, g) => n + g.parts.length, 0);
   const many = groups.filter(g => g.parts.length > 1).length;
-  document.getElementById('cnt').textContent = groups.length + ' דפים · ' + rows.length + ' שותפים';
+  document.getElementById('cnt').textContent = groups.length + ' דפים · ' + shown + ' שותפים';
   document.getElementById('hint').innerHTML = (FULL
     ? 'דף שלם — אברך אחד בעמוד, לשליחה לתורם או להדפסה. תחת כל דף: שליחה, העתקה והדפסה של אותו דף בלבד.'
     : 'חצי דף — אברך אחד בכל עמוד, פעמיים, שני החצאים באותו כיוון. גוזרים בקו המקווקו ומקבלים שני פתקים זהים, או מקפלים.')
