@@ -8280,7 +8280,10 @@ def kv_set(con, k, v):
 MAIL_CFG_KEYS = {'mail_host': 'MAIL_HOST', 'mail_port': 'MAIL_PORT',
                  'mail_user': 'MAIL_USER', 'mail_pass': 'MAIL_PASS',
                  'mail_from': 'MAIL_FROM', 'mail_from_name': 'MAIL_FROM_NAME',
-                 'mail_reply': 'MAIL_REPLY_TO'}
+                 'mail_reply': 'MAIL_REPLY_TO',
+                 # מאיר: "פעם בחודש לשלוח 500 ביחד" — התקרה הייתה 400
+                 # והמשלוח היה נעצר באמצע. ניתן לשינוי מהמסך.
+                 'mail_cap': 'MAIL_DAILY_CAP', 'mail_gap': 'MAIL_GAP_SEC'}
 SECRET_KV = ('mail_pass',)          # לא יוצא מהשרת. לא בגיבוי, לא ב-API.
 
 
@@ -10220,7 +10223,8 @@ class H(BaseHTTPRequestHandler):
                                     'skip_default': _skip_def,
                                     'in_use': {'host': c['host'], 'port': c['port'],
                                                'user': c['user'], 'from': c['frm'],
-                                               'name': c['name']},
+                                               'name': c['name'],
+                                               'cap': c['cap'], 'gap': c['gap']},
                                     'from_app': bool(bulkmail.OVERRIDE)})
         if self.path.split('?')[0] == '/api/mail/batches':
             con = db()
@@ -10854,6 +10858,27 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'thread', 'detail': str(e)[:200]})
             return self._send(200, {'ok': True, 'batch': bid, 'count': len(to),
                                     'skipped': len(skip)})
+        if self.path == '/api/mail/limits':
+            # תקרה יומית ומרווח בין הודעות. נשמרים לבדם, בלי לבדוק חיבור,
+            # כדי שאפשר יהיה לשנות אותם גם כשאין סיסמה ביד.
+            con = db()
+            try:
+                cap = max(1, min(20000, int(b.get('cap') or 0)))
+            except (TypeError, ValueError):
+                cap = 0
+            try:
+                gap = max(0.0, min(120.0, float(b.get('gap'))))
+            except (TypeError, ValueError):
+                gap = -1
+            if cap:
+                kv_set(con, 'mail_cap', str(cap))
+            if gap >= 0:
+                kv_set(con, 'mail_gap', str(gap))
+            con.commit(); con.close()
+            load_mail_cfg()
+            import bulkmail as _bm
+            c2 = _bm.cfg()
+            return self._send(200, {'ok': True, 'cap': c2['cap'], 'gap': c2['gap']})
         if self.path == '/api/mail/skip':
             # רשימת הדפוסים שלא מתויקים ביומן הקשר. נשמרת לבדה, בלי
             # לגעת בהגדרות החיבור.

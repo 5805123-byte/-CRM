@@ -8544,6 +8544,19 @@ function mlCfgHTML(){
     <label class="fld"><span>לאן יגיעו התשובות של התורמים</span>
       <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — התשובות יגיעו לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
     <div class="hintxt">אם תכתוב כאן <b>chatzot18@gmail.com</b>, המייל ייצא מהכתובת של הכולל, אבל כשהתורם ילחץ "השב" התשובה תגיע לג׳ימייל שלך.</div>
+    <details class="mladv" open><summary>📊 כמה לשלוח ובאיזה קצב</summary>
+      <div class="hintxt">מאיר: "פעם בחודש לשלוח 500 ביחד." התקרה היומית עוצרת את המשלוח כשמגיעים
+        אליה, ולכן היא חייבת להיות גבוהה ממה שאתה שולח בפעם אחת. המרווח הוא ההשהיה בין
+        הודעה להודעה — הוא מה שמונע שהשרת יראה בזה הצפה.</div>
+      <div class="two">
+        <label class="fld"><span>תקרה יומית (הודעות)</span>
+          <input id="mc_cap" value="${esc((c&&c.in_use&&c.in_use.cap)||'')}" dir="ltr" inputmode="numeric"></label>
+        <label class="fld"><span>מרווח בין הודעות (שניות)</span>
+          <input id="mc_gap" value="${esc((c&&c.in_use&&c.in_use.gap)||'')}" dir="ltr" inputmode="decimal"></label>
+      </div>
+      <div class="hintxt" id="mc_eta"></div>
+      <button class="btn sm mc_limsave" style="width:100%;margin-top:6px">💾 שמור</button>
+    </details>
     <details class="mladv"><summary>🧹 מה לא לתייק ביומן הקשר</summary>
       <div class="hintxt">מאיר: "אני מקבל כל אימייל של אישור תשלום בנדרים פלוס וזה לא טוב — אני רוצה
         שיימשך רק הודעות נטו של תורמים." מייל שהנושא או השולח שלו מכיל אחת מהשורות כאן
@@ -8627,6 +8640,28 @@ function wireMlCfg(){
       if(hh)hh.focus();
     }
   };
+  // תקרה וקצב — נשמרים לבדם, בלי לבדוק חיבור
+  const eta=()=>{const e=document.getElementById('mc_eta');
+    if(!e)return;
+    const cp=parseInt((document.getElementById('mc_cap')||{}).value||'0',10);
+    const gp=parseFloat((document.getElementById('mc_gap')||{}).value||'0');
+    if(!(cp>0))return;
+    const mins=Math.round(cp*(gp>0?gp:0)/60);
+    e.innerHTML='במלוא התקרה: <b>'+cp+' הודעות</b>'
+      +(gp>0?(' · '+(mins>=60?((mins/60).toFixed(1)+' שעות'):(mins+' דקות'))):'')
+      +'. שליחה של 500 דורשת תקרה של 500 לפחות.';};
+  ['mc_cap','mc_gap'].forEach(id=>{const e=document.getElementById(id); if(e)e.oninput=eta;});
+  eta();
+  const lim=document.querySelector('.mc_limsave');
+  if(lim)lim.onclick=async()=>{
+    lim.disabled=true;
+    const r=await api('POST','/api/mail/limits',{
+      cap:document.getElementById('mc_cap').value,
+      gap:document.getElementById('mc_gap').value});
+    lim.disabled=false;
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    toast('נשמר ✓ — תקרה '+r.cap+' · מרווח '+r.gap+'ש');
+    MLCFG=null; MLSETUP=null; await mlLoadSetup(); renderMailSend();};
   // רשימת מה שלא מתויק ביומן הקשר — נשמרת לבדה, בלי לבדוק חיבור
   const sk=document.querySelector('.mc_skipsave');
   if(sk)sk.onclick=async()=>{
