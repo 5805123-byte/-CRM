@@ -8284,7 +8284,7 @@ MAIL_CFG_KEYS = {'mail_host': 'MAIL_HOST', 'mail_port': 'MAIL_PORT',
                  # מאיר: "פעם בחודש לשלוח 500 ביחד" — התקרה הייתה 400
                  # והמשלוח היה נעצר באמצע. ניתן לשינוי מהמסך.
                  'mail_cap': 'MAIL_DAILY_CAP', 'mail_gap': 'MAIL_GAP_SEC'}
-SECRET_KV = ('mail_pass',)          # לא יוצא מהשרת. לא בגיבוי, לא ב-API.
+SECRET_KV = ('mail_pass', 'mail_gpass')   # לא יוצא מהשרת. לא בגיבוי, לא ב-API.
 
 
 def load_mail_cfg(con=None):
@@ -10216,16 +10216,20 @@ class H(BaseHTTPRequestHandler):
             _has_skip = bool(con.execute(
                 "SELECT 1 FROM app_kv WHERE k='mail_skip'").fetchone())
             _skip = kv_get(con, 'mail_skip') if _has_skip else _skip_def
+            # הג׳ימייל נשמר בנפרד מהדומיין, כדי שהמעבר ביניהם יהיה לחיצה
+            _gu = (kv_get(con, 'mail_gmail')
+                   or (os.environ.get('GMAIL_USER') or '').strip())
+            _gr = bool(str(kv_get(con, 'mail_gpass') or '').strip()
+                       or (os.environ.get('GMAIL_APP_PASSWORD') or '').strip())
             con.close()
             c = bulkmail.cfg()
             return self._send(200, {'saved': cur, 'has_pass': has,
                                     'skip': _skip,
                                     'skip_default': _skip_def,
-                                    # הכתובת שמוגדרת ב-Render — היא מוצגת על
-                                    # הכפתור "שלח דרך הג׳ימייל". הסיסמה עצמה
-                                    # לא יוצאת מכאן לעולם.
-                                    'gmail_user': (os.environ.get('GMAIL_USER')
-                                                   or '').strip(),
+                                    # הכתובת שמוצגת על הכפתור "שלח דרך
+                                    # הג׳ימייל". הסיסמה עצמה לא יוצאת מכאן
+                                    # לעולם — רק אם היא קיימת.
+                                    'gmail_user': _gu, 'gmail_ready': _gr,
                                     'in_use': {'host': c['host'], 'port': c['port'],
                                                'user': c['user'], 'from': c['frm'],
                                                'name': c['name'],
@@ -10897,12 +10901,43 @@ class H(BaseHTTPRequestHandler):
             # שההתחברות עובדת, ורק אז שומרת. לא עובד = לא נשמר.
             import bulkmail
             con = db()
+            if b.get('gmail'):
+                # מעבר לשליחה דרך הג׳ימייל. פרטי הג׳ימייל נשמרים בנפרד
+                # מפרטי הדומיין, ולכן אחרי חיבור אחד המעבר בין השניים הוא
+                # לחיצה — בלי להקליד שוב כתובת, סיסמה או שם שרת.
+                gu = (bulkmail.clean(b.get('user')) or kv_get(con, 'mail_gmail')
+                      or (os.environ.get('GMAIL_USER') or '').strip())
+                gp = (str(b.get('pass') or '').strip() or kv_get(con, 'mail_gpass')
+                      or (os.environ.get('GMAIL_APP_PASSWORD') or '').strip())
+                if not gu or not gp:
+                    con.close()
+                    return self._send(200, {'ok': False, 'need_gmail': True,
+                                            'msg': 'צריך פעם אחת כתובת ג׳ימייל '
+                                                   'וסיסמת אפליקציה.'})
+                _log = []
+                ok2, h2, p2, msg2 = bulkmail.probe(gu, gp, 'smtp.gmail.com', 465,
+                                                   log=_log)
+                if not ok2:
+                    con.close()
+                    return self._send(200, {'ok': False, 'need_gmail': True,
+                                            'msg': msg2, 'tried': _log})
+                kv_set(con, 'mail_gmail', gu)
+                kv_set(con, 'mail_gpass', gp)
+                kv_set(con, 'mail_host', h2)
+                kv_set(con, 'mail_port', str(p2))
+                kv_set(con, 'mail_user', gu)
+                kv_set(con, 'mail_pass', gp)
+                # כתובת שולח של הדומיין על גבי חיבור ג׳ימייל — ג׳ימייל דורס
+                # אותה וממילא אינה מוצגת. משאירים את כתובת הג׳ימייל.
+                con.execute("DELETE FROM app_kv WHERE k='mail_from'")
+                con.commit(); con.close()
+                load_mail_cfg()
+                return self._send(200, {'ok': True, 'host': h2, 'port': p2,
+                                        'msg': msg2})
             if b.get('clear'):
-                # מאיר: "זה שואל אותי סיסמאות ושרת וכו' כשאני רוצה לעשות
-                # ששילח מהג'ימייל" — המעבר לג׳ימייל לא דורש כלום. מוחקים
-                # רק את מה ששייך לשרת של הדומיין. שם השולח, התקרה היומית
-                # והמרווח נשארים — הם ההגדרות שלו, לא של הדומיין, ומחיקתם
-                # הייתה מאפסת את התקרה בדיוק לפני משלוח גדול.
+                # המעבר חזרה לג׳ימייל אינו דורש דבר. מוחקים רק את מה ששייך
+                # לשרת של הדומיין. שם השולח, התקרה היומית והמרווח נשארים —
+                # מחיקתם הייתה מאפסת תקרה שהוגדרה לקראת משלוח גדול.
                 for k in ('mail_host', 'mail_port', 'mail_user',
                           'mail_pass', 'mail_from'):
                     con.execute("DELETE FROM app_kv WHERE k=?", (k,))
@@ -10942,6 +10977,9 @@ class H(BaseHTTPRequestHandler):
             kv_set(con, 'mail_host', h2)
             kv_set(con, 'mail_port', str(p2))
             kv_set(con, 'mail_user', user)
+            if user.split('@')[-1].lower() in ('gmail.com', 'googlemail.com'):
+                kv_set(con, 'mail_gmail', user)
+                kv_set(con, 'mail_gpass', pw)
             if _pw_env:
                 # הסיסמה הגיעה מ-Render — אין טעם להעתיק אותה למסד. מוחקים
                 # סיסמה ישנה של דומיין אחר שנשארה שם, אחרת היא תיתפס.

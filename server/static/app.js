@@ -8524,43 +8524,28 @@ function mlCfgHTML(){
     <button class="btn sm ghost" id="ml_cfgopen" style="width:100%">⚙️ מאיפה נשלח הדואר — שנה כתובת שולח</button></div>`;
   const u=(c&&c.saved&&c.saved.mail_user)||'';
   const nm=(c&&c.saved&&c.saved.mail_from_name)||'כולל חצות';
-  const gm=(c&&c.gmail_user)||'', onGm=!!gm&&(((c&&c.in_use&&c.in_use.user)||'').toLowerCase()===gm.toLowerCase());
+  const gm=(c&&c.gmail_user)||'', ready=!!(c&&c.gmail_ready);
+  const now=((c&&c.in_use&&c.in_use.user)||'').toLowerCase();
+  const onGm=!!now&&/@(gmail|googlemail)\.com$/.test(now);
   return `<div class="sec mlcfg">
     <div class="rbtitle" style="text-align:right">⚙️ מאיפה נשלח הדואר</div>
-    <div class="hintxt">כרגע נשלח מ־<b>${esc((c&&c.in_use&&c.in_use.from)||'—')}</b>${c&&c.from_app?'':' (מוגדר ב-Render)'}${
-      (c&&c.in_use&&c.in_use.host)?` · דרך השרת <b dir="ltr">${esc(c.in_use.host)}:${esc(String(c.in_use.port||''))}</b>`:''}</div>
-    ${gm?`<div class="mlpick">
-      <div class="hintxt" style="margin:0 0 6px">שתי דרכים לשלוח, ואפשר להחליף ביניהן מתי שרוצים:</div>
-      ${onGm?`<div class="mlok">📮 שולח עכשיו דרך הג׳ימייל — <b dir="ltr">${esc(gm)}</b></div>`
-            :`<button class="btn" id="mc_gmail" style="width:100%">📮 שלח דרך הג׳ימייל שלנו — <span dir="ltr">${esc(gm)}</span></button>
-              <div class="hintxt">לחיצה אחת. אין מה למלא — לא סיסמה ולא שם שרת, הם כבר שמורים בשרת של המערכת.
-                זו הדרך המומלצת לדיוור גדול: הכתובת ותיקה, ההודעות יוצאות מוצפנות ולא נתקעות בספאם.</div>`}
-      <div class="hintxt" style="margin-top:8px">הדרך השנייה — שליחה דרך שרת הדואר של הדומיין. היא זו שדורשת
-        כתובת, סיסמה ולפעמים גם שם שרת, וכל השדות שלה הם מכאן ולמטה.</div>
-    </div>`:''}
-    <label class="fld"><span>כתובת המייל שממנה לשלוח</span>
-      <input id="mc_user" value="${esc(u)}" placeholder="rabbideutsch@kollelchatzot.com" dir="ltr" autocomplete="off"></label>
-    <label class="fld"><span>הסיסמה של התיבה הזאת${c&&c.has_pass?' — שמורה. השאר ריק כדי לא לשנות':''}</span>
-      <input id="mc_pass" type="password" value="" placeholder="${c&&c.has_pass?'••••••••  (שמורה)':'הסיסמה שאיתה נכנסים לתיבה'}" dir="ltr" autocomplete="new-password"></label>
+    <div class="hintxt">כרגע: <b dir="ltr">${esc((c&&c.in_use&&c.in_use.from)||'לא מוגדר')}</b></div>
+    ${onGm?`<div class="mlok">📮 שולח דרך הג׳ימייל</div>`
+      :(ready&&gm)?`<button class="btn" id="mc_gmail" style="width:100%;margin:8px 0">📮 שלח דרך הג׳ימייל — <span dir="ltr">${esc(gm)}</span></button>`
+      :`<div class="mlpick">
+      <div class="fldttl">📮 שליחה דרך ג׳ימייל</div>
+      <label class="fld"><span>כתובת הג׳ימייל</span>
+        <input id="gm_user" value="${esc(gm)}" placeholder="chatzot18@gmail.com" dir="ltr" autocomplete="off"></label>
+      <label class="fld"><span>סיסמת אפליקציה — 16 תווים מ־myaccount.google.com/apppasswords</span>
+        <input id="gm_pass" type="password" value="" dir="ltr" autocomplete="new-password"></label>
+      <button class="btn" id="mc_gmail" style="width:100%">📮 חבר ושלח מהג׳ימייל</button>
+      <div class="hintxt">פעם אחת בלבד. מכאן ואילך זו לחיצה אחת.</div>
+    </div>`}
     <label class="fld"><span>שם השולח כפי שהתורם יראה</span>
       <input id="mc_name" value="${esc(nm)}" placeholder="כולל חצות"></label>
-    <label class="fld"><span>כתובת השולח שתוצג — רק אם שונה מכתובת ההתחברות</span>
-      <input id="mc_from" value="${esc((c&&c.saved&&c.saved.mail_from)||'')}"
-        placeholder="השאר ריק — יוצג אותו דבר" dir="ltr" autocomplete="off"></label>
-    <div class="hintxt">מאיר: "עדיין יש את הסימן האדום למעלה" — שרת הדואר של הדומיין
-      מעביר לג׳ימייל בלי הצפנה, וג׳ימייל מסמן על כך מנעול אדום. אי אפשר לתקן זאת מכאן.
-      דרך לעקוף: להתחבר למעלה עם <b>chatzot18@gmail.com</b> וסיסמת האפליקציה, ולכתוב כאן
-      <b>rabbideutsch@kollelchatzot.com</b> — הדואר ייצא דרך ג׳ימייל (מוצפן, ומגיע טוב),
-      והתורם יראה את כתובת הכולל.
-      <br><b>תנאי:</b> קודם להוסיף את הכתובת בג׳ימייל תחת הגדרות ← חשבונות ← "שלח דואר בשם",
-      ולאשר את הקוד שיישלח לתיבה. בלי זה ג׳ימייל מתעלם מהשדה הזה ומציג את כתובת הג׳ימייל.</div>
     <label class="fld"><span>לאן יגיעו התשובות של התורמים</span>
-      <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — התשובות יגיעו לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
-    <div class="hintxt">אם תכתוב כאן <b>chatzot18@gmail.com</b>, המייל ייצא מהכתובת של הכולל, אבל כשהתורם ילחץ "השב" התשובה תגיע לג׳ימייל שלך.</div>
+      <input id="mc_reply" value="${esc((c&&c.saved&&c.saved.mail_reply)||'')}" placeholder="השאר ריק — לאותה כתובת ששולחת" dir="ltr" autocomplete="off"></label>
     <details class="mladv" open><summary>📊 כמה לשלוח ובאיזה קצב</summary>
-      <div class="hintxt">מאיר: "פעם בחודש לשלוח 500 ביחד." התקרה היומית עוצרת את המשלוח כשמגיעים
-        אליה, ולכן היא חייבת להיות גבוהה ממה שאתה שולח בפעם אחת. המרווח הוא ההשהיה בין
-        הודעה להודעה — הוא מה שמונע שהשרת יראה בזה הצפה.</div>
       <div class="two">
         <label class="fld"><span>תקרה יומית (הודעות)</span>
           <input id="mc_cap" value="${esc((c&&c.in_use&&c.in_use.cap)||'')}" dir="ltr" inputmode="numeric"></label>
@@ -8571,32 +8556,32 @@ function mlCfgHTML(){
       <button class="btn sm mc_limsave" style="width:100%;margin-top:6px">💾 שמור</button>
     </details>
     <details class="mladv"><summary>🧹 מה לא לתייק ביומן הקשר</summary>
-      <div class="hintxt">מאיר: "אני מקבל כל אימייל של אישור תשלום בנדרים פלוס וזה לא טוב — אני רוצה
-        שיימשך רק הודעות נטו של תורמים." מייל שהנושא או השולח שלו מכיל אחת מהשורות כאן
-        אינו נכנס ליומן הקשר. שורה אחת לכל ביטוי.</div>
+      <div class="hintxt">מייל שהנושא או השולח שלו מכיל אחת מהשורות כאן אינו נכנס ליומן. שורה לכל ביטוי.</div>
       <textarea id="mc_skip" rows="6" dir="auto" style="width:100%;font-family:inherit"
         placeholder="נדרים פלוס&#10;אישור תשלום&#10;אישור רכישה">${esc((c&&c.skip)||'')}</textarea>
       <div class="addrow" style="margin-top:6px">
         <button class="btn sm mc_skipsave" style="flex:2">💾 שמור את הרשימה</button>
         <button class="btn sm ghost mc_skipdef" style="flex:1">↩️ ברירת מחדל</button></div>
     </details>
-    <details class="mladv"${(c&&c.saved&&c.saved.mail_host)?' open':''}><summary>🖥️ שרת הדואר (SMTP)${
-        (c&&c.saved&&c.saved.mail_host)?` — <b dir="ltr">${esc(c.saved.mail_host)}</b>`:' — נמצא לבד'}</summary>
+    <details class="mladv"><summary>🌐 שליחה דרך שרת הדומיין (מתקדם)</summary>
+      <label class="fld"><span>כתובת המייל שממנה לשלוח</span>
+        <input id="mc_user" value="${esc(onGm?'':u)}" placeholder="name@yourdomain.com" dir="ltr" autocomplete="off"></label>
+      <label class="fld"><span>הסיסמה של התיבה${c&&c.has_pass?' — שמורה, השאר ריק כדי לא לשנות':''}</span>
+        <input id="mc_pass" type="password" value="" placeholder="${c&&c.has_pass?'••••••••':''}" dir="ltr" autocomplete="new-password"></label>
       <div class="two">
-        <label class="fld"><span>שם השרת</span><input id="mc_host" value="${esc((c&&c.saved&&c.saved.mail_host)||'')}" placeholder="נמצא לבד" dir="ltr"></label>
-        <label class="fld"><span>פורט</span><input id="mc_port" value="${esc((c&&c.saved&&c.saved.mail_port)||'')}" placeholder="465 או 587" dir="ltr" inputmode="numeric"></label>
+        <label class="fld"><span>שם השרת</span><input id="mc_host" value="${esc(onGm?'':(c&&c.saved&&c.saved.mail_host)||'')}" placeholder="נמצא לבד" dir="ltr"></label>
+        <label class="fld"><span>פורט</span><input id="mc_port" value="${esc(onGm?'':(c&&c.saved&&c.saved.mail_port)||'')}" placeholder="465 או 587" dir="ltr" inputmode="numeric"></label>
       </div>
-      <div class="hintxt">מאיר: "איפה אני משנה את שם השרת כאן?" — כאן. אם מנהל האחסון
-        נתן שם שרת מסוים (למשל <b dir="ltr">mail10.myhsphere.biz</b>) — כתוב אותו כאן ולחץ
-        "בדוק וחבר". השאר ריק והמערכת תחפש לבד, אבל זה איטי יותר.</div>
+      <label class="fld"><span>כתובת השולח שתוצג — רק אם שונה מכתובת ההתחברות</span>
+        <input id="mc_from" value="${esc(onGm?'':(c&&c.saved&&c.saved.mail_from)||'')}"
+          placeholder="השאר ריק — יוצג אותו דבר" dir="ltr" autocomplete="off"></label>
+      <div id="mc_msg"></div>
+      <button class="btn" id="mc_save" style="width:100%;margin-top:6px">🔌 בדוק וחבר</button>
     </details>
-    <div id="mc_msg"></div>
-    <div class="addrow">
-      <button class="btn" id="mc_save" style="flex:2">🔌 בדוק וחבר</button>
-      <button class="btn sm ghost" id="mc_cancel" style="flex:1">סגור</button>
+    <div class="addrow" style="margin-top:8px">
+      <button class="btn sm ghost" id="mc_cancel" style="width:100%">סגור</button>
     </div>
-    ${(c&&c.from_app&&!gm)?`<div class="addrow"><button class="btn sm ghost" id="mc_clear" style="width:100%">↩️ חזור לשליחה דרך ג׳ימייל</button></div>`:''}
-    <div class="hintxt">הסיסמה נשמרת בשרת של המערכת בלבד. היא לא מוצגת כאן שוב, ולא נכנסת לגיבוי שמורידים.</div>
+    <div class="hintxt">הסיסמאות נשמרות בשרת של המערכת בלבד — לא מוצגות כאן שוב ולא נכנסות לגיבוי.</div>
   </div>`;
 }
 function wireMlCfg(){
@@ -8687,36 +8672,32 @@ function wireMlCfg(){
   const skd=document.querySelector('.mc_skipdef');
   if(skd)skd.onclick=()=>{const t=document.getElementById('mc_skip');
     if(MLCFG&&MLCFG.skip_default!=null)t.value=MLCFG.skip_default;};
-  const gmSwitch=async(btn)=>{
-    const msg=document.getElementById('mc_msg');
-    btn.disabled=true;const t0=btn.textContent;btn.textContent='מעביר…';
-    let r=null;try{r=await api('POST','/api/mail/config',{clear:1});}catch(e){}
-    btn.disabled=false;btn.textContent=t0;
+  // מעבר לשליחה דרך הג׳ימייל. אחרי חיבור אחד אין מה למלא — לא כתובת,
+  // לא סיסמה ולא שם שרת.
+  const gb=document.getElementById('mc_gmail');
+  if(gb)gb.onclick=async()=>{
+    const gu=document.getElementById('gm_user'), gp=document.getElementById('gm_pass');
+    const body={gmail:1};
+    if(gu)body.user=gu.value.trim();
+    if(gp)body.pass=gp.value;
+    gb.disabled=true;const t0=gb.textContent;gb.textContent='מתחבר…';
+    let r=null;try{r=await api('POST','/api/mail/config',body);}catch(e){}
+    gb.disabled=false;gb.textContent=t0;
+    if(!(r&&r.ok)){
+      const box=gb.parentNode;
+      let m=box.querySelector('.gmerr');
+      if(!m){m=document.createElement('div');m.className='mlwarn gmerr';box.appendChild(m);}
+      m.textContent=(r&&r.msg)||'ההתחברות נכשלה';
+      return;}
     MLCFG=null;MLSETUP=null;
     try{MLCFG=await api('GET','/api/mail/config');}catch(e){}
     await mlLoadSetup();
-    if(msg&&r&&r.msg)msg.innerHTML='<div class="mlok">✅ '+esc(r.msg)+'</div>';
-    toast('עובר לשליחה דרך הג׳ימייל ✓');
-    setTimeout(()=>{mlCfgOpen=false;renderMailSend();},1200);
+    toast('שולח מהג׳ימייל ✓');
     renderMailSend();};
-  const gb=document.getElementById('mc_gmail');
-  if(gb)gb.onclick=()=>gmSwitch(gb);
   const cl=document.getElementById('mc_clear');
   if(cl)cl.onclick=async()=>{
-    if(!await uiConfirm('לחזור לשליחה דרך הג׳ימייל?'))return;
-    gmSwitch(cl);};
-  // מאיר: "זה שואל אותי סיסמאות ושרת" — כתובת ג׳ימייל לא צריכה שם שרת,
-  // ושם השרת של הדומיין שנשאר בשדה היה נשלח איתה ומפיל את החיבור.
-  const mu=document.getElementById('mc_user');
-  if(mu)mu.oninput=()=>{
-    const v=mu.value.trim(), pf=document.getElementById('mc_pass');
-    const gu=((MLCFG&&MLCFG.gmail_user)||'').toLowerCase();
-    if(pf)pf.placeholder=(gu&&v.toLowerCase()===gu)
-      ?'אין צורך — סיסמת האפליקציה כבר שמורה בשרת. השאר ריק'
-      :'הסיסמה שאיתה נכנסים לתיבה';
-    if(!/@(gmail|googlemail)\.com$/i.test(v))return;
-    const h=document.getElementById('mc_host'),p=document.getElementById('mc_port');
-    if(h)h.value='';if(p)p.value='';};
+    await api('POST','/api/mail/config',{clear:1});
+    MLCFG=null;MLSETUP=null;await mlLoadSetup();renderMailSend();};
 }
 function mlSetupHTML(){
   const s=MLSETUP;
@@ -8725,8 +8706,6 @@ function mlSetupHTML(){
   if(!s.ok) warn.push('❌ '+esc(s.msg||'הדואר לא מוגדר'));
   else{
     warn.push('✅ מחובר · שולח מ־<b>'+esc(s.from||'')+'</b>');
-    if(s.free_domain) warn.push('⚠️ הכתובת היא ג׳ימייל פרטי. דיוור לעשרות תורמים ממנה מסונן לספאם — '
-      +'עדיף לשלוח מכתובת של הדומיין של הכולל, עם SPF/DKIM/DMARC.');
     warn.push('נשלחו היום '+(s.today||0)+' · נשארו '+(s.left||0)+' עד התקרה היומית ('+(s.cap||0)+')');
     if(s.optouts) warn.push('🚫 '+s.optouts+' כתובות ביקשו להסיר את עצמן — הן מדולגות אוטומטית');
   }
