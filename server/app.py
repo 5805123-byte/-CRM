@@ -866,14 +866,22 @@ def ensure_schema():
             print('  סכומים שנחתכו בין שותפים לתשלום: %d' % n)
     except Exception as e:
         print('  paysplit error:', e)
-    # שם שנכתב בבנק עם שגיאת הקלדה של אות אחת — Rosenfed במקום Rosenfeld וכדומה
+    # שם שנכתב בבנק עם שגיאת הקלדה של אות אחת — Rosenfed במקום Rosenfeld
+    # וכדומה. רץ בכל עלייה, כי אותה שגיאת כתיב חוזרת גם בקובץ של החודש
+    # הבא, ואין טעם שמאיר ימזג שוב את אותו שם עצמו.
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_nearnames_v1'").fetchone():
-            n = link_near_names(con)
-            con.execute("INSERT INTO seed_flags(name) VALUES('recon_nearnames_v1')")
+        n = link_near_names(con)
+        if n:
             print('  חיובים ששויכו למרות שגיאת כתיב בשם: %d' % n)
     except Exception as e:
         print('  near names error:', e)
+    # שמות שמאיר כבר שייך פעם אחת ביד — חלים גם על הקבצים הבאים
+    try:
+        n = apply_name_map(con)
+        if n:
+            print('  חיובים ששויכו לפי שיוך קודם של מאיר: %d' % n)
+    except Exception as e:
+        print('  name map error:', e)
     # TOSFOSYOMTOV02 בצ'ייס = משה דויטש. שתיים משלוש השורות כתוב בהן במפורש
     # "zichron avos from moishe deutsch", והשלישית באה מאותו ORIG ID.
     try:
@@ -3392,12 +3400,18 @@ def ensure_schema():
             'sm berger':                ('ברגר', 'שמואל'),
         }),
     ):
+        # מאיר: "זה פשוט וברור למי שזה שייך... לא הבנתי מה הבעיה ולמה צריך
+        # שוב למזג אותם." הטבלה הזאת היא בדיוק רשימת "השם בבנק = הכרטיס
+        # הזה" שהוא כבר אישר. היא רצה פעם אחת בלבד, ולכן חיובים של חודש
+        # חדש הגיעו אחרי שהסימון כבר נרשם ונשארו לא משויכים — ומאיר נדרש
+        # למזג שוב את אותם שמות עצמם. מעכשיו היא רצה בכל עלייה: אין בה
+        # ניחוש, רק שמות שנקבעו במפורש, ולכן אין סיכון לשיוך שגוי.
         try:
-            if con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
-                continue
             n = link_card_names(con, _link)
-            con.execute("INSERT INTO seed_flags(name) VALUES(?)", (_flag,))
-            print('  חיובים ששויכו לפי שם על האשראי (%s): %d' % (_flag[-2:], n))
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
+                con.execute("INSERT INTO seed_flags(name) VALUES(?)", (_flag,))
+            if n:
+                print('  חיובים ששויכו לפי שם על האשראי (%s): %d' % (_flag[-2:], n))
         except Exception as e:
             print('  card name link error:', e)
 
@@ -7904,6 +7918,7 @@ def link_by_identity(con):
     donors = [dict(r) for r in con.execute(
         "SELECT id,last,first,english,business,email,phone FROM donors")]
     bye, byp, byfz, bylat, byloc = {}, {}, {}, {}, {}
+    byfzt, bysur = {}, {}          # (שם משפחה, מילה אחת מהשם הפרטי) / שם משפחה
 
     def words(s):
         return ' '.join(sorted(re.sub(r'[^a-z ]', ' ', (s or '').lower()).split()))
@@ -7919,6 +7934,17 @@ def link_by_identity(con):
             if k:
                 byp.setdefault(k, set()).add(d['id'])
         byfz.setdefault((_fz(d['last'] or ''), _fz(d['first'] or '')), set()).add(d['id'])
+        # מאיר: "רוזנפלד זה יהושע רוזנפלד ואתה רואה לפי השם ומשפחה, וגם
+        # שטטפלד." שני דברים חסרו: שם פרטי אחד מתוך כמה בכרטיס — הכרטיס
+        # של שטטפלד רשום "יצחק וברכה", והבנק שולח "Bracha" בלבד; ושם
+        # משפחה שנכתב בבנק בשגיאת אות אחת — "Rosenfed" במקום "Rosenfeld".
+        _l = _fz(d['last'] or '')
+        if _l:
+            bysur.setdefault(_l, set()).add(d['id'])
+            for _t in re.split(r'\s+', d['first'] or ''):
+                _t = _fz(re.sub(r'^ו', '', _t.strip()))     # "וברכה" -> ברכה
+                if _t:
+                    byfzt.setdefault((_l, _t), set()).add(d['id'])
         for src in (d['english'], d['business']):
             w = words(src)
             if len(w) >= 6:
@@ -7949,6 +7975,25 @@ def link_by_identity(con):
                 for jy in (False, True):
                     ha = _he_alt(_gi, a, jy); hb = _he_alt(_gi, b, jy)
                     ids = ids or one(byfz.get((_fz(ha), _fz(hb))))
+                    # שם פרטי אחד מתוך כמה בכרטיס ("יצחק וברכה" מול Bracha)
+                    ids = ids or one(byfzt.get((_fz(ha), _fz(hb))))
+                    # אות אחת שונה — או בשם המשפחה או בשם הפרטי, לא בשניהם.
+                    # "Rosenfed" חסרה ל׳ בשם המשפחה והשם הפרטי זהה;
+                    # "Brachca" מול "ברכה" — שם המשפחה זהה. שם פרטי קצר
+                    # (ראשי תיבות, "בט") אינו מטושטש, אחרת כל שם קצר נדבק.
+                    k1, k2 = _fz(ha), _fz(hb)
+                    if not ids and len(k1) >= 4 and k2:
+                        ids = one({i for (s, t), v in byfzt.items()
+                                   if t == k2 and _lev1(s, k1) for i in v})
+                    if not ids and len(k1) >= 4 and len(k2) >= 3:
+                        ids = one({i for (s, t), v in byfzt.items()
+                                   if s == k1 and _lev1(t, k2) for i in v})
+        # שם משפחה בלבד — הבנק שלח "Kirzner Kirzner" או שם משפחה יחיד.
+        # מתקבל רק כשיש בדיוק כרטיס אחד בשם הזה, אחרת שני בני משפחה שונים
+        # היו נדבקים לאותו כרטיס.
+        if not ids and _gi and len(re.sub(r'[^A-Za-z]', '', ln)) >= 4 \
+                and (not fn or _fz(_he_alt(_gi, fn)) == _fz(_he_alt(_gi, ln))):
+            ids = one(bysur.get(_fz(_he_alt(_gi, ln))))
         if ids:
             found[r['tid']] = list(ids)[0]
     if not found:
