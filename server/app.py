@@ -7924,9 +7924,12 @@ def link_by_identity(con):
             if len(w) >= 6:
                 bylat.setdefault(w, set()).add(d['id'])
     found = {}
+    # מאיר: "ניסית למזג לפי אימייל ושם?" — הזיהוי כאן נעשה על כל חיוב שאין
+    # לו כרטיס, גם כשהוא נדחה וגם כשהוא כבר סומן כטופל. קודם שניהם סוננו,
+    # ולכן חיוב שנדחה הופיע ברשימה האדומה בלי שם תורם. הרישום בכרטיס עצמו
+    # נשאר רק לחיוב שעבר — למטה.
     for r in con.execute("SELECT tid,first,last,email,phone FROM recon "
-                         "WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled' "
-                         "AND donor_id IS NULL"):
+                         "WHERE donor_id IS NULL AND COALESCE(skipped,0)=0"):
         em = (r['email'] or '').strip().lower()
         ln, fn = (r['last'] or '').strip(), (r['first'] or '').strip()
 
@@ -7953,8 +7956,15 @@ def link_by_identity(con):
     dinfo = {r['id']: ((r['category'] or ''), (r['tier'] or ''))
              for r in con.execute("SELECT id,category,tier FROM donors")}
     ins = 0
+    # חיוב שנדחה, ושורה שכבר סומנה כטופלת — מקבלים שם תורם בלבד. כסף לא
+    # נגבה בהם, ולכן אין מה לרשום בכרטיס.
+    for tid, did in found.items():
+        con.execute("UPDATE recon SET donor_id=? WHERE tid=? AND donor_id IS NULL "
+                    "AND (COALESCE(status,'settled')<>'settled' "
+                    "     OR COALESCE(processed,0)=1)", (did, tid))
     for r in list(con.execute("SELECT tid,first,last,amount,date,source FROM recon "
-                              "WHERE COALESCE(processed,0)=0 AND donor_id IS NULL")):
+                              "WHERE COALESCE(processed,0)=0 AND donor_id IS NULL "
+                              "AND COALESCE(status,'settled')='settled'")):
         did = found.get(r['tid'])
         if not did:
             continue
