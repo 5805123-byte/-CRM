@@ -10417,6 +10417,15 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(200, {'ok': False, 'msg': str(e)[:200]})
         # תאריך עברי לתאריך לועזי — למסכים שמראים את שניהם זה לצד זה
+        if self.path.split('?')[0] == '/api/hebmonth':
+            # ימי החודש העברי ויום השבוע של כל אחד — ללוח הפרנס
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                import hebdate as _hd
+                return self._send(200, _hd.month_days((qs.get('m', [''])[0] or '')[:20],
+                                                      (qs.get('y', [''])[0] or '')[:20]))
+            except Exception:
+                return self._send(200, {'ok': False, 'len': 30, 'days': {}})
         if self.path.split('?')[0] == '/api/hebdate':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             g = (qs.get('d', [''])[0] or '').strip()[:10]

@@ -192,3 +192,57 @@ def week_before(text, today=None):
     if not g:
         return None
     return (g - datetime.timedelta(days=7)).isoformat()
+
+
+# מאיר: "שיהיה כתוב את היום בשבוע על כל תאריך, ואם זה שבת אז שלא יוכלו
+# לעשות על זה פרנס לילה ולא ארוחת בוקר ולא חדר קפה."
+_GEMY = {'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9,
+         'י': 10, 'כ': 20, 'ך': 20, 'ל': 30, 'מ': 40, 'ם': 40, 'נ': 50, 'ן': 50,
+         'ס': 60, 'ע': 70, 'פ': 80, 'ף': 80, 'צ': 90, 'ץ': 90, 'ק': 100,
+         'ר': 200, 'ש': 300, 'ת': 400}
+# יום ראשון בפייתון הוא 6, שני הוא 0 — ולכן זה סדר האותיות כאן
+_DOW_HE = ['ב', 'ג', 'ד', 'ה', 'ו', 'ש', 'א']
+_DOW_FULL = {'א': 'ראשון', 'ב': 'שני', 'ג': 'שלישי', 'ד': 'רביעי',
+             'ה': 'חמישי', 'ו': 'שישי', 'ש': 'שבת'}
+
+
+def year_num(s):
+    """'תשפ״ו' -> 5786. מספר שנכתב כמו שהוא מתקבל גם הוא."""
+    t = str(s or '').strip()
+    if re.fullmatch(r'\d{4}', t):
+        return int(t)
+    n = sum(_GEMY.get(c, 0) for c in re.sub(r'[^א-ת]', '', t))
+    if not n:
+        return 0
+    return n + 5000 if n < 1000 else n
+
+
+def month_days(mon, yr=''):
+    """ימי החודש העברי: איזה יום בשבוע כל יום, ומה אורך החודש.
+
+    השבת נקבעת לפי היום הלועזי של התאריך העברי. לילה של יום שהוא שבת
+    הוא ליל שבת, ולכן אותו יום חסום לפרנס לילה, לחדר קפה ולארוחת בוקר.
+    """
+    out = {'ok': False, 'len': 30, 'year': '', 'days': {}}
+    if not OK:
+        return out
+    key = re.sub(r'[\"\'׳״]', '', str(mon or '')).strip()
+    m = HMONTHS.get(key)
+    y = year_num(yr) or _cur_heb_year_num()
+    if not m or not y:
+        return out
+    try:
+        from pyluach import hebrewcal
+        mo = hebrewcal.Month(y, m)
+        out['len'] = len(mo)
+        for dnum in mo:
+            g = dates.HebrewDate(y, m, dnum).to_pydate()
+            w = g.weekday()
+            L = _DOW_HE[w]
+            out['days'][str(dnum)] = {'dow': L, 'name': _DOW_FULL[L],
+                                      'shabbos': (w == 5), 'greg': g.isoformat()}
+        out['ok'] = True
+        out['year'] = hq(dates.HebrewDate(y, m, 1).hebrew_date_string().split()[-1])
+    except Exception:
+        return out
+    return out

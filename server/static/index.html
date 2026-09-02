@@ -224,6 +224,12 @@
   .daycell.multi .dnm{font-size:.55rem}
   .pyslot+.pyslot{border-top:3px double var(--line);margin-top:10px;padding-top:10px}
   .daycell.sel{outline:3px solid var(--accent)}
+  /* יום בשבוע על כל תאריך, ושבת שאי אפשר לשבץ בה */
+  .daycell .dw{font-size:.58rem;font-weight:700;color:var(--muted);line-height:1}
+  .daycell.shab{background:#eceff4;border-color:#c6ccd6;cursor:not-allowed;opacity:.85}
+  .daycell.shab .dn,.daycell.shab .dw{color:#5a6472}
+  .daycell.shab .dw{font-weight:800}
+  .daycell .dshab{font-size:1rem;line-height:1}
   .daycell.unpaid{border-color:var(--no);box-shadow:inset 0 0 0 2px var(--no)}
   .movebox{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;font-size:.82rem;font-weight:700;color:var(--muted)}
   .movebox select{padding:6px 8px;border:1px solid var(--gold);border-radius:8px;font-family:inherit;background:var(--card);color:var(--ink);font-weight:700}

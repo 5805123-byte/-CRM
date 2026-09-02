@@ -7117,8 +7117,25 @@ function parnesTaken(kind){const taken={};DB.forEach(d=>(d.parnes||[]).forEach(p
 function pyMain(l){return (l||[]).find(x=>x.status!=='suggested')||(l||[])[0]||null;}
 function kindToggle(){return `<div class="ktoggle">${PKINDS.map(([k,l])=>`<button class="ktog ${pyKind===k?'on':''}" data-k="${k}">${l}</button>`).join('')}</div>`;}
 function bindKindToggle(){view.querySelectorAll('.ktog').forEach(b=>b.onclick=()=>{pyKind=b.dataset.k;pyDay=null;render();});}
+// ימי השבוע של החודש המוצג. נטענים פעם אחת לכל חודש ונשמרים, ולכן
+// מעבר בין חודשים אינו פונה לשרת שוב.
+let PYDOW={}, PYDOWQ={};
+function pyDowKey(){ return (pyMonth||'')+'|'+(HEBYEAR||''); }
+function pyDow(n){ const m=PYDOW[pyDowKey()]; return m?m[String(n)]:null; }
+async function pyDowLoad(){
+  const k=pyDowKey();
+  if(!pyMonth||PYDOW[k]||PYDOWQ[k])return;
+  PYDOWQ[k]=1;
+  try{
+    const r=await api('GET','/api/hebmonth?m='+encodeURIComponent(pyMonth)
+                      +'&y='+encodeURIComponent(HEBYEAR||''));
+    PYDOW[k]=(r&&r.ok)?(r.days||{}):{};
+  }catch(e){ PYDOW[k]={}; }
+  if(tab==='parnes'&&pyDowKey()===k)render();
+}
 function renderParnes(){
   chips.innerHTML='';
+  pyDowLoad();
   savePy();   // שמירת המקום (חודש/יום) לשחזור אחרי רענון
   const taken=parnesTaken(pyKind);
   if(!pyMonth){
@@ -7135,7 +7152,12 @@ function renderParnes(){
         <button class="mnav" id="pmnext">${esc(hMonHop(1))}</button></div></div>
     <div class="hintxt swipehint">👉 החלק באצבע על הלוח כדי להחליף חודש · או לחץ על שם החודש שאתה רוצה</div>
     <div class="dlegend"><span class="lg full"></span>מאושר <span class="lg sugg"></span>הצעה <span class="lg free"></span>פנוי</div>
-    <div class="daygrid">${days.map(n=>{const l=taken[pyMonth+'|'+n]||[];const t=pyMain(l);const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=l.some(x=>x.status!=='suggested'&&!+x.paid);return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${pyDay===n?'sel':''}" data-d="${n}"><span class="dn">${heDay(n)}</span>${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:'<span class="dplus">+</span>'}</button>`;}).join('')}</div>
+    <div class="daygrid">${days.map(n=>{const l=taken[pyMonth+'|'+n]||[];const t=pyMain(l);const cls=t?(t.status==='suggested'?'sugg':'full'):'free';const unpaid=l.some(x=>x.status!=='suggested'&&!+x.paid);
+      // מאיר: "אם זה שבת אז שלא יוכלו לעשות על זה פרנס לילה ולא ארוחת
+      // בוקר ולא חדר קפה" — הלילה של יום שהוא שבת הוא ליל שבת.
+      // יום שכבר תפוס נשאר פתוח, כדי שלא ייעלם מהלוח מה שכבר נרשם.
+      const wd=pyDow(n), shab=wd&&wd.shabbos&&!l.length;
+      return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${shab?'shab':''} ${pyDay===n?'sel':''}" data-d="${n}"${shab?' disabled title="שבת — אין פרנס לילה, חדר קפה או ארוחת בוקר"':''}><span class="dn">${heDay(n)}</span>${wd?`<span class="dw">${esc(wd.shabbos?'שבת':'יום '+wd.dow)}</span>`:''}${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:(shab?'<span class="dshab">🕯️</span>':'<span class="dplus">+</span>')}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle(); wirePyPick();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
