@@ -2777,6 +2777,29 @@ function izGapNote(d){
    טעפפער וסלקוביץ שותפים ביששכר־זבולון ונותנים 500 כל אחד מינואר, אבל
    רשום 1,000 לכל אחד. בחירת "מינואר" מתקנת את כל השנה בבת אחת, ולא רק
    מהחודש הזה והלאה. */
+/* שאלה אחת כשסכום של התחייבות חודשית משתנה: מאיזה חודש הסכום החדש תקף.
+   "כל השנה" הוא המצב השני — כשזו לא העלאה אלא תיקון של מספר שגוי. */
+function askSinceMonth(row, oldA, newA, cur){
+  return new Promise(res=>{
+    const ex=row.querySelector('.cmchg'); if(ex)ex.remove();
+    const f=n=>cur+Math.round(n).toLocaleString('en-US');
+    const b=document.createElement('div');
+    b.className='cmchg noprint';
+    b.innerHTML=`<div>מ-${f(oldA)} ל-${f(newA)} — <b>מאיזה חודש?</b></div>
+      <div class="cmchg-b"><select class="chgmo">${gapMonthOpts()}</select>
+        <button class="btn sm chgok">💾 שמור</button></div>
+      <div class="cmchg-b"><button class="btn sm ghost chgall">כל השנה — תיקון של מספר שגוי</button>
+        <button class="btn sm ghost chgx">ביטול</button></div>
+      <small>החודשים שלפני כן יישארו ${f(oldA)} לחודש, ולא ייווצר חוב.</small>`;
+    row.appendChild(b);
+    b.scrollIntoView({block:'nearest'});
+    b.querySelector('.chgok').onclick=()=>{
+      const v=b.querySelector('.chgmo').value; b.remove();
+      res({since:v+'-01', prev:String(Math.round(oldA))});};
+    b.querySelector('.chgall').onclick=()=>{b.remove(); res({all:1});};
+    b.querySelector('.chgx').onclick=()=>{b.remove(); res(null);};
+  });
+}
 function gapMonthOpts(){
   const now=todayStr().slice(0,7), yr=GREGYEAR;
   const out=[`<option value="${now}">החודש (${fmtMonth(now)})</option>`];
@@ -2987,7 +3010,11 @@ function commitHTML(d){
         ? `<div class="cmsince"><span>📅 מאז</span>
              <select class="cmsincei cmsm" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceMonOpts(r.sinceM)}</select>
              <select class="cmsincei cmsy" data-pid="${r.pid||''}" ${r.iz?'data-iz="1"':''}>${sinceYrOpts(r.sinceM)}</select>
-             <small>מכאן נספרים החודשים והחוב</small></div>` : ''}
+             <small>מכאן נספרים החודשים והחוב</small>${
+               // סכום שהשתנה באמצע השנה — כתוב במפורש מה היה לפניו, אחרת
+               // נראה כאילו החודשים הראשונים פשוט לא נספרים
+               (r.prev>0.5&&Math.abs(r.prev-amtNum(r.amt))>0.5)
+                 ?`<small class="cmprev">· עד אז ${f(r.prev)} לחודש</small>`:''}</div>` : ''}
       ${r.stamp?`<div class="cmstamp">${esc(r.stamp)}</div>`:''}
       ${r.izn>1?`<div class="cmdup">🧾 מאחורי השורה הזו ${r.izn} רשומות יששכר־זבולון (${r.izparts.map(x=>f(x)).join(' + ')}), והסכום שמוצג הוא הסכום שלהן יחד. כתיבת סכום כאן תאחד אותן לשורה אחת.</div>`:''}
       ${r.iz&&!ask&&!r.ended?izGapNote(d):''}
@@ -3156,8 +3183,23 @@ function wireCommit(d,body){
       d.pledges=(d.pledges||[]).concat([p]);
     }
     if(!p)return;
+    // מאיר: "תורם התחייב בינואר 900 ובפברואר העלה ל-1000. אני צריך דרך
+    // לעדכן את זה כדי שלא יכתוב לו חיוב סתם." סכום חדש בלי לומר ממתי
+    // נספר על כל השנה אחורה, והחודשים ששולמו לפי הסכום הישן נראים כחוב.
+    // לכן על שינוי בהתחייבות חודשית נשאלת שאלה אחת: מאיזה חודש.
+    const oldA=amtNum(p.amount), newA=amtNum(v);
+    let extra={};
+    if(+p.monthly&&oldA>0.5&&newA>0.5&&Math.abs(oldA-newA)>0.5){
+      const row=inp.closest('.cmrow');
+      const ans=row?await askSinceMonth(row,oldA,newA,curSym(d)):{all:1};
+      if(!ans){inp.value=p.amount||'';return;}          // ביטול — כלום לא זז
+      // "כל השנה" = המספר הקודם היה פשוט שגוי, ולכן גם החודשים שלפני
+      // חודש ההתחלה נספרים לפי הסכום החדש — ולא נעלמים מהחשבון
+      extra=ans.all?{prev_amount:String(Math.round(newA))}
+                   :{since:ans.since,prev_amount:ans.prev};
+    }
     // סכום שנכתב כאן ביד הוא התחייבות מאושרת — מאותו רגע זו האמת ולא הצעה
-    await putPl(p,{amount:v,confirmed:1});
+    await putPl(p,Object.assign({amount:v,confirmed:1},extra));
     // אברך יחיד — הסכום שלו הולך יחד עם ההתחייבות, שלא יישארו שני מספרים
     if(inp.dataset.iz!==undefined||isIZcat(p.category)){
       const act=(d.partners||[]).filter(x=>x.active!=0);
