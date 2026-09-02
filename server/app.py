@@ -355,6 +355,11 @@ def ensure_schema():
     # נרשם, וכל דיווח חוזר של אותו תשלום יצר שורה נוספת.
     try: con.execute("ALTER TABLE donations ADD COLUMN tid TEXT")
     except Exception: pass
+    # מאיר: "אם הכנסתי פה שזה פרנס לילה — שיפתח לי חלון לשאול איזה לילה,
+    # ושיהיה כתוב ליד המילה פרנס איזה לילה היה לו." הלילה שהתרומה קנתה.
+    # תרומות ישנות נשארות בלי שיבוץ — "רק מעכשיו ואילך".
+    try: con.execute("ALTER TABLE donations ADD COLUMN parnes_id INTEGER")
+    except Exception: pass
     try: con.execute("CREATE INDEX IF NOT EXISTS idx_don_tid ON donations(tid)")
     except Exception: pass
     # מסך הבדיקה: לכל תורם שיש לגביו שאלה — הסטטוס שמאיר קבע והערה שכתב
@@ -10698,7 +10703,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('date','amount','category','method','note','cur','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked'):
+            for k in ('date','amount','category','method','note','cur','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked','parnes_id'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
             if (b.get('category') or '').strip() and 'note' not in b:

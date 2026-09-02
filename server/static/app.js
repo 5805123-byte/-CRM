@@ -1827,6 +1827,15 @@ async function bldgRemember(it){
 // והיום שנבחר נרשם על התורם הזה, מסומן כנגבה, והייעוד נכנס לתרומה
 let PYPICK=null;
 function openParnesPick(o,cat,note){
+  // כשמתחילים מתוך כרטיס התורם — הכרטיס נסגר, אחרת הוא נשאר פרוש
+  // מעל הלוח ואי אפשר ללחוץ על היום
+  try{
+    const ov2=document.getElementById('ov');
+    if(ov2&&ov2.classList.contains('show')){
+      ov2.classList.remove('show');
+      try{localStorage.removeItem('kc_donor');}catch(e){}
+    }
+  }catch(e){}
   PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
           amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
           note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
@@ -1848,7 +1857,9 @@ function wirePyPick(){
 async function pyPickDone(pid){
   const P=PYPICK; if(!P)return;
   if(pid)await api('PUT','/api/parnes/'+pid,{paid:1});
-  await api('PUT','/api/donation/'+P.id,{category:P.cat,note:P.note});
+  // הלילה נשמר על התרומה עצמה, כדי שבכרטיס ייכתב ליד "פרנס" איזה לילה
+  await api('PUT','/api/donation/'+P.id,
+            {category:P.cat,note:P.note,parnes_id:(pid||null)});
   PYPICK=null;
   await load(); toast('✓ '+P.name+' — הלילה נתפס ונרשם כנגבה');
 }
@@ -3931,6 +3942,7 @@ function cardDetails(d,body){
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
+    pnid:String(x.parnes_id||''),
     prev:String(x.prev_year||''),prevn:String(x.prev_note||''),
     rcpt:String(x.receipt_num||''),
     needthx:needThanks(x),thanked:+x.thanked}));
@@ -4011,8 +4023,15 @@ function cardDetails(d,body){
     // מאיר: "כשאני רואה שהוא הכניס פרנס יום — שאוכל ללחוץ על זה ולהגיע
     // לראות את הפרנס יום שלו, את התעודה ואת הכל. וגם ביששכר־זבולון,
     // שאראה את הפרטים ואת השטר — אבל רק לחיצה על הכפתור, פשוט וחלק."
+    // תרומה שהייעוד שלה הוא פרנס/קפה/בוקר: אם כבר שובץ לה לילה — הוא
+    // כתוב כאן ולוחצים עליו; ואם לא — כפתור שמוביל ללוח לבחור לילה.
+    const pnk = g.don && WFDAY[g.cat];
+    const pnr = (pnk && g.pnid) ? (d.parnes||[]).find(p=>String(p.id)===g.pnid) : null;
+    const night = pnr ? ((pnr.date_text||'') + (pnr.hyear?(' '+pnr.hyear):'')).trim() : '';
     const what=g.don
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
+        + (night ? `<button class="gvgo" data-go="parnes" data-pid="${esc(g.pnid)}" title="לפתוח את הלילה הזה — הקדשה, שמות ותעודה">🌙 ${esc(night)} ↗</button>` : '')
+        + ((pnk && !night) ? `<button class="gvgo pick" data-pick="${g.did}" title="לבחור לו לילה בלוח">🌙 שבץ לילה</button>` : '')
         + (isIZcat(g.cat) ? `<button class="gvgo" data-go="iz" title="לפתוח את יששכר־זבולון — האברך, השותף והשטר">↗</button>` : '')
       : `<button class="gvgo wide" data-go="parnes" data-pid="${g.pid}" title="לפתוח את היום הזה — הקדשה, שמות ותעודה">${esc(g.what)} ↗</button>`;
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
@@ -4195,6 +4214,16 @@ function cardDetails(d,body){
     if(nn!==String(x.note||'')){body2.note=nn;x.note=nn;}
     x.category=cat;
     await api('PUT','/api/donation/'+did,body2);
+    // מאיר: "אם הכנסתי פה שזה פרנס לילה — שזה יפתח לי חלון לשאול איזה
+    // לילה." רק כשנקבע עכשיו ועדיין אין לילה; תרומות ישנות לא נוגעים בהן.
+    if(WFDAY[cat] && !x.parnes_id){
+      cardDetails(d,body); if(tab==='donors')renderDonors();
+      if(await uiConfirm('לשבץ לו עכשיו לילה בלוח?')){
+        openParnesPick({x, d}, cat, giveNote(x)); return;
+      }
+      toast('נרשם: '+cat+' ✓ — אפשר לשבץ לילה בכל רגע מהכפתור בשורה');
+      return;
+    }
     cardDetails(d,body); if(tab==='donors')renderDonors();
     toast(cat?('נרשם: '+cat+' ✓'):'הייעוד נוקה');
   };
@@ -4202,7 +4231,15 @@ function cardDetails(d,body){
   body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>gvOpen(b.dataset.did));
   // קפיצה מהשורה אל המקום שבו נמצא הכל — ימי הפרנס או יששכר־זבולון.
   // הסעיף נפתח, נגלל אל מרכז המסך ומהבהב פעם אחת כדי שהעין תמצא אותו.
-  body.querySelectorAll('.gvgo').forEach(b=>b.onclick=e=>{
+  // תרומת פרנס שעדיין לא שובץ לה לילה — נפתח הלוח, ומה שייבחר שם
+  // נרשם חזרה על התרומה הזאת
+  body.querySelectorAll('.gvgo[data-pick]').forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    const x=(d.donations||[]).find(y=>String(y.id)===b.dataset.pick);
+    if(!x)return;
+    openParnesPick({x, d}, x.category||'פרנס לילה', giveNote(x));
+  });
+  body.querySelectorAll('.gvgo[data-go]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
     const box=body.querySelector(b.dataset.go==='iz'?'#partners':'#parnes');
     const sec=box&&box.closest('details');
