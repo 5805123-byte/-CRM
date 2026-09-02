@@ -8589,7 +8589,8 @@ def mail_recipients(con, ids):
             kvs.setdefault(r['donor_id'], {}).setdefault(r['tier'] or '', []).append(r['text'])
     except Exception:
         pass
-    rows = con.execute("SELECT id,last,first,email,gender FROM donors WHERE id IN (%s)" % qs, want)
+    rows = con.execute("SELECT id,last,first,english,business,email,gender FROM donors "
+                       "WHERE id IN (%s)" % qs, want)
     for d in rows:
         nm = ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or (d['last'] or '')
         g = (d['gender'] or '').strip()[:1]
@@ -8602,6 +8603,11 @@ def mail_recipients(con, ids):
         kvtxt = gk.get('יששכר_זבולון') or sum((v for v in gk.values()), [])
         who = {'first': (d['first'] or '').strip(), 'last': (d['last'] or '').strip(),
                'title': ttl, 'gender': g,
+               # מכתב באנגלית עם שם עברי נראה זר. {{אנגלית}} מוציא את השם
+               # הלועזי מהכרטיס, ואם אין — נופל לשם העברי, כדי שלא ייצא
+               # "לכבוד ," בלי שם בכלל.
+               'english': ((d['english'] or '').strip()
+                           or (d['business'] or '').strip() or nm),
                # שורה לכל אברך — כך אפשר גם לספור אותם וגם לחבר אותם יפה
                'avreich': '\n'.join(avs.get(d['id']) or []),
                # שורה לכל שם — כדי שבמכתב הם יֵצאו זה מתחת לזה, מודגשים

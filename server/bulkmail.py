@@ -442,7 +442,10 @@ def personalize(text, who, html=False, d='rtl'):
     g = ((who.get('gender') or 'm') + 'm')[0]
     kv = [x.strip() for x in str(who.get('kvittel') or '').split('\n') if x.strip()]
     avs = [x.strip() for x in str(who.get('avreich') or '').split('\n') if x.strip()]
+    eng = (who.get('english') or '').strip() or full
     simple = {'שם': first, 'משפחה': last, 'שם מלא': full,
+              # מכתב באנגלית — השם הלועזי מהכרטיס
+              'אנגלית': eng, 'שם באנגלית': eng, 'english': eng,
               'תואר': (who.get('title') or TITLE_ALL).strip() or TITLE_ALL,
               # מאיר: "יששכר־זבולון — אני רוצה למזג לו את השם של האברך
               # שלומד בשבילו בתוך המכתב, ואת הקוויטל שלו"
