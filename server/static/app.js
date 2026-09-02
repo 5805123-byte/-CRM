@@ -7006,10 +7006,13 @@ function prFootHTML(){
 function kvPaginate(wrap){
   // בקוויטל מזדמן הרשימה מחולקת לכותרות חודש, והן חלק מהזרימה בדיוק
   // כמו הקוויטלים עצמם — אחרת הן היו נעלמות בהדפסה
-  const blocks=[...wrap.querySelectorAll('.kvmonh, .kblock')]
-    .filter(b=>!b.classList.contains('kvempty'));
-  if(!blocks.length)return false;
   const isHead=e=>e.classList.contains('kvmonh');
+  const all=[...wrap.querySelectorAll('.kvmonh, .kblock')]
+    .filter(b=>!b.classList.contains('kvempty'));
+  // כותרת חודש שכל הקוויטלים שלו ריקים אינה מודפסת כלל — אחרת יוצא עמוד
+  // של כותרות חודשים בלי שם אחד מתחתן
+  const blocks=all.filter((b,i)=>!isHead(b)||(all[i+1]&&!isHead(all[i+1])));
+  if(!blocks.length)return false;
   const hd=HEBTODAY||'';
   const mk=n=>{
     const pg=document.createElement('div');
@@ -7053,20 +7056,43 @@ function kvPaginate(wrap){
   if(!body.children.length)host.removeChild(pg);   // עמוד אחרון שנשאר ריק
   return true;
 }
-function kvPrint(){
+// מאיר: "אחרי שאני מדפיס את הקוויטל עולה לי עוד קובץ של 29 דפים." זה
+// היה המסך עצמו, גולמי ובלי חלוקה לעמודים — כל הדפסה שלא יצאה מהכפתור
+// (Ctrl+P, או הדפסה שנייה) הדפיסה את הרשימה כמו שהיא. מעכשיו כל הדפסה
+// של המסך הזה עוברת דרך אותה הכנה, ולכן אין גרסה גולמית שאפשר להדפיס.
+let KVPRINTING=false;
+function kvPrintPrep(){
+  if(KVPRINTING)return false;
+  const wrap=document.getElementById('kvlistwrap');
+  if(!wrap||!wrap.querySelector('.kblock'))return false;
+  KVPRINTING=true;
   // גם ל-html, כדי שגוון הקלף ייצבע על כל הדף — כולל השוליים
   document.body.classList.add('kvprint');
   document.documentElement.classList.add('kvprint');
-  const wrap=document.getElementById('kvlistwrap');
-  const paged=wrap?kvPaginate(wrap):false;
-  const done=()=>{document.body.classList.remove('kvprint');
-    document.documentElement.classList.remove('kvprint');
-    window.removeEventListener('afterprint',done);
-    if(paged)render();          // מחזיר את הרשימה הניתנת לעריכה
-  };
+  return kvPaginate(wrap);
+}
+function kvPrintRestore(paged){
+  if(!KVPRINTING)return;
+  KVPRINTING=false;
+  document.body.classList.remove('kvprint');
+  document.documentElement.classList.remove('kvprint');
+  if(paged)render();            // מחזיר את הרשימה הניתנת לעריכה
+}
+function kvPrint(){
+  if(KVPRINTING)return;
+  const paged=kvPrintPrep();
+  const done=()=>{window.removeEventListener('afterprint',done);kvPrintRestore(paged);};
   window.addEventListener('afterprint',done);
   setTimeout(()=>window.print(),80);
 }
+// הדפסה שהתחילה מהדפדפן ולא מהכפתור — מקבלת בדיוק את אותם עמודים
+window.addEventListener('beforeprint',()=>{
+  if(KVPRINTING)return;
+  const paged=kvPrintPrep();
+  if(!paged&&!KVPRINTING)return;
+  const done=()=>{window.removeEventListener('afterprint',done);kvPrintRestore(paged);};
+  window.addEventListener('afterprint',done);
+});
 function kvFlow(t){
   const parts=String(t||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   if(parts.length<2)return parts.join('');

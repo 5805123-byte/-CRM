@@ -1606,7 +1606,11 @@
   .kvsheet>tfoot{display:none}
   .kvsheet>tfoot td,.kvsheet>tbody td{padding:0;border:0;vertical-align:top}
   .prfoot,.kvhead{display:none}
-  body.kvprint .kvpage{height:281mm;display:flex;flex-direction:column;
+  /* מאיר: "אני לא רוצה להדפיס שוליים לבנות! בשום צורה." העמוד הוא
+     גיליון A4 מלא, והצבע מגיע עד הקצה. השוליים שהיו קודם ב-@page הפכו
+     לריפוד פנימי — אותו מרחק לטקסט, בלי פס לבן מסביב. */
+  body.kvprint .kvpage{height:297mm;width:210mm;box-sizing:border-box;
+    padding:8mm 9mm;display:flex;flex-direction:column;
     overflow:hidden;background:#FBF6EA}
   body.kvprint .kvpage+.kvpage{margin-top:6mm}
   /* קוויטל ארוך מעמוד שלם — מותר לו לזלוג, עדיף מלחתוך שמות */
@@ -1659,9 +1663,13 @@
   body.kvprint #kvlistwrap .kvmonh small{font-weight:600;font-size:.8rem;color:#8a6a2a}
   /* חודש שאינו הראשון בעמוד — קצת אוויר מעליו */
   body.kvprint #kvlistwrap .kblock+.kvmonh{margin-top:4mm!important}
+  /* מאיר: "אני רוצה שלכל תורם יהיה מסגרת משלו, אבל הגופן שיהיה אותו
+     גודל, ושלא יהיה המשך של אותו תורם לדף הבא אף פעם." */
   body.kvprint #kvlistwrap .kblock{display:block;
-    background:none!important;border:none!important;border-radius:0!important;
-    padding:0!important;margin:0 0 2.6mm!important}
+    background:#FFFCF3!important;border:.3mm solid #D9C79A!important;
+    border-radius:2.2mm!important;
+    padding:2mm 2.8mm!important;margin:0 0 2.2mm!important;
+    break-inside:avoid;page-break-inside:avoid}
   /* מאיר: "את הגופן של הקוויטל תגדיל עוד קצת" */
   body.kvprint #kvlistwrap .kblock .who{font-size:1.06rem;font-weight:800;
     margin:0 0 .4mm!important;color:#000!important;line-height:1.15}
@@ -1681,7 +1689,11 @@
   html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
   body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @media print{
+    /* שאר ההדפסות במערכת ממשיכות עם שוליים רגילים; רק דפי הקוויטל
+       יוצאים בלי שוליים כלל, כי הרקע שלהם צריך להגיע עד קצה הנייר */
     @page{size:A4 portrait;margin:8mm 9mm}
+    @page kvfull{size:A4 portrait;margin:0}
+    .kvpage{page:kvfull}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .app{max-width:none;padding:0}
     /* כל עמוד הוא באמת עמוד */
