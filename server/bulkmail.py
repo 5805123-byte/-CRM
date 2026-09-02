@@ -524,6 +524,51 @@ def open_token(qid, secret):
                     ('o:%s' % qid).encode('utf-8'), 'sha256').hexdigest()[:16]
 
 
+# מאיר כותב את הקישורים בסגנון [לחץ כאן](כתובת) — וזה יצא אצל התורם
+# כטקסט מת, כי גוף המכתב מוברח כ-HTML ואף שלב לא הפך אותו לקישור.
+# כאן זה נעשה: גם הסגנון הזה, וגם כתובת או מייל שנכתבו כמו שהם.
+_LNKS = 'color:#1a5fb4;text-decoration:underline'
+_MD_LNK = re.compile(r'\[([^\]\n]{1,140})\]\(\s*'
+                     r'((?:https?://|mailto:|tel:|www\.)[^)\s]{3,400})\s*\)')
+_BARE_URL = re.compile(r'(?<![\w@/">.])((?:https?://|www\.)[^\s<>"\'()]{4,400})')
+_BARE_EM = re.compile(r'(?<![\w.@:/">])([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24})\b')
+
+
+def _links(h):
+    """הופך את הקישורים שבטקסט לקישורים לחיצים. הקישור שכבר נבנה נשמר
+    בצד ולא נסרק שוב, אחרת הכתובת שבתוכו הייתה מקבלת קישור משל עצמה."""
+    keep = []
+
+    def stash(url, txt):
+        if url.startswith('www.'):
+            url = 'http://' + url
+        keep.append('<a href="%s" style="%s">%s</a>' % (url, _LNKS, txt))
+        return '\x00%d\x00' % (len(keep) - 1)
+
+    h = _MD_LNK.sub(lambda m: stash(m.group(2).strip(), m.group(1).strip()), h)
+    h = _BARE_URL.sub(lambda m: stash(m.group(1), m.group(1)), h)
+    h = _BARE_EM.sub(lambda m: stash('mailto:' + m.group(1), m.group(1)), h)
+    return re.sub('\x00(\\d+)\x00', lambda m: keep[int(m.group(1))], h)
+
+
+def _plain_links(t):
+    """באותו מכתב כטקסט פשוט — הכתובת נכתבת אחרי המילה, אחרת התורם
+    שקורא את הגרסה הזאת רואה "לחץ כאן" בלי לאן."""
+    def one(m):
+        txt, url = m.group(1).strip(), m.group(2).strip()
+        if url.startswith('mailto:') or url.startswith('tel:'):
+            url = url.split(':', 1)[1]
+        # הכתובת כבר כתובה במילים עצמן ("www.kollelchatzot.com",
+        # מספר טלפון עם מקפים) — אין טעם לחזור עליה פעמיים
+        def bare(s):
+            return re.sub(r'[^a-z0-9@.+]', '', s.lower()).lstrip('+')
+        b1, b2 = bare(txt), bare(re.sub(r'^https?://(www\.)?', '', url))
+        if b1 and b2 and (b1 in b2 or b2 in b1):
+            return txt
+        return '%s: %s' % (txt, url)
+    return _MD_LNK.sub(one, t)
+
+
 def _html(body, unsub_url, sig, d='rtl', pixel='', who=None):
     """מכתב פשוט ונקי. בלי תמונות, בלי כפתורים צבעוניים ובלי טבלאות
     שיווקיות — מכתב שנראה כמו מכתב עובר את המסננים הרבה יותר טוב.
@@ -532,7 +577,9 @@ def _html(body, unsub_url, sig, d='rtl', pixel='', who=None):
     אחר כך מציבים את הסימונים — כך השם והקוויטל יכולים לצאת מודגשים
     וגדולים, בלי שהעיצוב ייבלע בהברחה."""
     def _p(x):
-        x = _esc(x).replace('\n', '<br>')
+        # הקישורים נבנים לפני ההצבה של השם והקוויטל, כדי ששם שיש בו
+        # נקודה או @ לא ייהפך בטעות לקישור
+        x = _links(_esc(x).replace('\n', '<br>'))
         return personalize(x, who, html=True, d=d) if who is not None else x
     paras = ''.join('<p dir="auto" style="margin:0 0 12px">%s</p>' % _p(p)
                     for p in re.split(r'\n\s*\n', str(body or '').strip()) if p.strip())
@@ -555,9 +602,9 @@ def _html(body, unsub_url, sig, d='rtl', pixel='', who=None):
 def plain_text(body, who, unsub_url='', sig=''):
     """גוף המכתב כטקסט פשוט — בדיוק מה שנשלח, וגם מה שמוצג בתצוגה
     המקדימה. אותו חישוב אחד לשני המקומות, כדי שלא ייפרדו."""
-    out = personalize(body, who)
+    out = personalize(_plain_links(body or ''), who)
     if (sig or '').strip():
-        out += '\n\n' + sig.strip()
+        out += '\n\n' + _plain_links(sig.strip())
     # מאיר: "אני לא רוצה שיהיה רשום להסרה מהרשימה בכלל, שזה לא יהיה כתוב.
     # אם תורם לא רוצה לקבל — הוא ישלח אימייל." לכן אין שורת הסרה בגוף
     # המכתב. כותרת List-Unsubscribe נשארת, כי היא אינה נראית לקורא אך
