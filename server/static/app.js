@@ -1836,8 +1836,12 @@ function openParnesPick(o,cat,note){
       try{localStorage.removeItem('kc_donor');}catch(e){}
     }
   }catch(e){}
+  // מאיר: "למה כתוב כאן לא נגבה, ובתוך השמות שלו כתוב נגבה באוטורייז?"
+  // הכסף כבר נגבה — דרך מה שכתוב על התרומה — ולכן אמצעי התשלום עובר
+  // איתה ליום הפרנס, ואינו נשאר "ללא".
   PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
           amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
+          meth:(o.x.method||o.d.channel||''),
           note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
   pyKind=PYPICK.kind; pyMonth=null; pyDay=null; flt=''; plaque=null; tab='parnes';
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));
@@ -4219,7 +4223,7 @@ function cardDetails(d,body){
     if(WFDAY[cat] && !x.parnes_id){
       cardDetails(d,body); if(tab==='donors')renderDonors();
       if(await uiConfirm('לשבץ לו עכשיו לילה בלוח?')){
-        openParnesPick({x, d}, cat, giveNote(x)); return;
+        openParnesPick({x, d}, cat, ''); return;
       }
       toast('נרשם: '+cat+' ✓ — אפשר לשבץ לילה בכל רגע מהכפתור בשורה');
       return;
@@ -4237,7 +4241,9 @@ function cardDetails(d,body){
     e.stopPropagation();
     const x=(d.donations||[]).find(y=>String(y.id)===b.dataset.pick);
     if(!x)return;
-    openParnesPick({x, d}, x.category||'פרנס לילה', giveNote(x));
+    // בלי הערה: שדה "שמות ובקשות לתעודה" נועד לשמות שמאיר כותב, ולא
+    // להערת הגבייה של התרומה ("נגבה באוטורייז · על שם ...")
+    openParnesPick({x, d}, x.category||'פרנס לילה', '');
   });
   body.querySelectorAll('.gvgo[data-go]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -7242,7 +7248,7 @@ function renderDayPanel(taken){
       const ded=(document.getElementById('pyp_ded')||{value:''}).value.trim();
       const r=await api('POST','/api/parnes',{donor_id:PYPICK.donor_id,day:pyDay,month:pyMonth,
         date_text:dtext,dedication:ded,amount:PYPICK.amount,kind:pyKind,status:'confirmed',
-        currency:PYPICK.cur,hyear:HEBYEAR});
+        currency:PYPICK.cur,hyear:HEBYEAR,method:PYPICK.meth||''});
       if(!r||!r.id){tk.disabled=false;toast('לא שובץ');return;}
       await pyPickDone(r.id);};
   }
