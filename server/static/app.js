@@ -7111,6 +7111,12 @@ const PKINDS=[['parnes','🌙 פרנס לילה'],['coffee','☕ חדר קפה']
 // לילה אחד יכול להיות מוחזק בידי כמה תורמים — לכל תאריך נשמרת רשימה
 function parnesTaken(kind){const taken={};DB.forEach(d=>(d.parnes||[]).forEach(p=>{
   if((p.kind||'parnes')!==kind)return; if(!(p.month&&p.day))return;
+  // מאיר: "זה נפתח לי על אותו יום שוב ושוב ושוב." שיבוץ יום יוצר
+  // אוטומטית הצעות לאותו יום בשלוש השנים הבאות, והלוח הציג את כולן
+  // יחד — ארבעה בלוקים זהים לאותו תאריך. הלוח מראה שנה אחת: זו שהוא
+  // עומד בה. ההצעות לשנים הבאות נשארות בכרטיס התורם.
+  const hy=hq(p.hyear||'');
+  if(hy && HEBYEAR && hy!==hq(HEBYEAR))return;
   const k=p.month+'|'+p.day; (taken[k]=taken[k]||[]).push({...p,donor:(d.last+' '+d.first).trim(),dref:d});}));
   return taken;}
 // המחזיק ה'ראשי' של הלילה לצביעת המשבצת: מאושר גובר על הצעה
@@ -7119,7 +7125,7 @@ function kindToggle(){return `<div class="ktoggle">${PKINDS.map(([k,l])=>`<butto
 function bindKindToggle(){view.querySelectorAll('.ktog').forEach(b=>b.onclick=()=>{pyKind=b.dataset.k;pyDay=null;render();});}
 // ימי השבוע של החודש המוצג. נטענים פעם אחת לכל חודש ונשמרים, ולכן
 // מעבר בין חודשים אינו פונה לשרת שוב.
-let PYDOW={}, PYDOWQ={};
+let PYDOW={}, PYDOWQ={}, PYLEN={};
 function pyDowKey(){ return (pyMonth||'')+'|'+(HEBYEAR||''); }
 function pyDow(n){ const m=PYDOW[pyDowKey()]; return m?m[String(n)]:null; }
 async function pyDowLoad(){
@@ -7130,6 +7136,7 @@ async function pyDowLoad(){
     const r=await api('GET','/api/hebmonth?m='+encodeURIComponent(pyMonth)
                       +'&y='+encodeURIComponent(HEBYEAR||''));
     PYDOW[k]=(r&&r.ok)?(r.days||{}):{};
+    if(r&&r.ok&&+r.len)PYLEN[k]=+r.len;
   }catch(e){ PYDOW[k]={}; }
   if(tab==='parnes'&&pyDowKey()===k)render();
 }
@@ -7145,7 +7152,10 @@ function renderParnes(){
     view.querySelectorAll('.hmbtn').forEach(b=>b.onclick=()=>{pyMonth=b.dataset.m;pyDay=null;render();});
     return;
   }
-  const days=[];for(let i=1;i<=30;i++)days.push(i);
+  // מאיר: "אם יש רק 29 יום אז ברור שאל תעשה אותו כאופציה." אורך החודש
+  // מגיע מהלוח האמיתי; עד שהוא נטען מציגים 30 כמו קודם.
+  const mlen=PYLEN[pyDowKey()]||30;
+  const days=[];for(let i=1;i<=mlen;i++)days.push(i);
   view.innerHTML=kindToggle()+pyPickBar()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button>
       <div class="monthnav"><button class="mnav" id="pmprev">${esc(hMonHop(-1))}</button>
         <b>חודש ${pyMonth}</b>
@@ -7156,8 +7166,8 @@ function renderParnes(){
       // מאיר: "אם זה שבת אז שלא יוכלו לעשות על זה פרנס לילה ולא ארוחת
       // בוקר ולא חדר קפה" — הלילה של יום שהוא שבת הוא ליל שבת.
       // יום שכבר תפוס נשאר פתוח, כדי שלא ייעלם מהלוח מה שכבר נרשם.
-      const wd=pyDow(n), shab=wd&&wd.shabbos&&!l.length;
-      return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${shab?'shab':''} ${pyDay===n?'sel':''}" data-d="${n}"${shab?' disabled title="שבת — אין פרנס לילה, חדר קפה או ארוחת בוקר"':''}><span class="dn">${heDay(n)}</span>${wd?`<span class="dw">${esc(wd.shabbos?'שבת':'יום '+wd.dow)}</span>`:''}${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:(shab?'<span class="dshab">🕯️</span>':'<span class="dplus">+</span>')}</button>`;}).join('')}</div>
+      const wd=pyDow(n), blk=wd&&wd.block&&!l.length, why=(wd&&wd.why)||'';
+      return `<button class="daycell ${cls} ${unpaid?'unpaid':''} ${l.length>1?'multi':''} ${blk?'shab':''} ${pyDay===n?'sel':''}" data-d="${n}"${blk?(' disabled title="'+esc(why)+' — אין פרנס לילה, חדר קפה או ארוחת בוקר"'):''}><span class="dn">${heDay(n)}</span>${wd?`<span class="dw">${esc(why||('יום '+wd.dow))}</span>`:''}${t?`<span class="dnm">${l.map(x=>esc(x.donor.split(' ')[0])).join('<br>')}</span>${unpaid?'<span class="unpaiddot">🔴</span>':''}`:(blk?`<span class="dshab">${wd.shabbos?'🕯️':'🍷'}</span>`:'<span class="dplus">+</span>')}</button>`;}).join('')}</div>
     <div id="daypanel"></div>`;
   bindKindToggle(); wirePyPick();
   document.getElementById('pmback').onclick=()=>{pyMonth=null;pyDay=null;render();};
@@ -7268,7 +7278,8 @@ function renderDayPanel(taken){
 function pySlotHTML(t,dtext){
   const sugg=t.status==='suggested', paid=+t.paid, amt=t.amount||'', k=t.id;
   const dpcur=pCur(t,DB.find(x=>x.id==t.donor_id));
-  return `<div class="sec pyslot" data-pid="${k}"><h3>${sugg?'🔵 הצעה':(paid?'🟢 נגבה':'🔴 חוב — טרם נגבה')} · ${esc(dtext)}</h3>
+  // השנה נכתבת תמיד — בלעדיה שני בלוקים של אותו תאריך נראים זהים
+  return `<div class="sec pyslot" data-pid="${k}"><h3>${sugg?'🔵 הצעה':(paid?'🟢 נגבה':'🔴 חוב — טרם נגבה')} · ${esc(dtext)}${t.hyear?(' '+esc(hq(t.hyear))):''}</h3>
     <div class="remitem ${sugg?'':(paid?'given':'')}"><div class="ri"><b>${esc(t.donor)}</b>${amt?(' · <b style="color:'+(paid?'var(--yes)':'var(--no)')+'">'+dpcur+esc(amt)+'</b>'):''}${t.method?(' · '+esc(chLabel(t.method))):''}</div></div>
     <div class="fld" style="margin:6px 0"><span>💰 סכום — מלא ידני לכל פרנס</span>
       <div class="two" style="gap:6px;margin-top:3px"><input class="dp_amt_edit" value="${esc(amt)}" inputmode="decimal" placeholder="כמה תרם">

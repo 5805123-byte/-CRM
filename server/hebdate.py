@@ -217,6 +217,13 @@ def year_num(s):
     return n + 5000 if n < 1000 else n
 
 
+# ימים שאסורים במלאכה בארץ ישראל — אין בהם פרנס לילה, חדר קפה או
+# ארוחת בוקר. חול המועד אינו כאן, וכך גם חנוכה ופורים.
+_YOMTOV = {(7, 1): 'ראש השנה', (7, 2): 'ראש השנה', (7, 10): 'יום כיפור',
+           (7, 15): 'סוכות', (7, 22): 'שמחת תורה',
+           (1, 15): 'פסח', (1, 21): 'שביעי של פסח', (3, 6): 'שבועות'}
+
+
 def month_days(mon, yr=''):
     """ימי החודש העברי: איזה יום בשבוע כל יום, ומה אורך החודש.
 
@@ -239,8 +246,13 @@ def month_days(mon, yr=''):
             g = dates.HebrewDate(y, m, dnum).to_pydate()
             w = g.weekday()
             L = _DOW_HE[w]
+            sh = (w == 5)
+            yt = _YOMTOV.get((m, dnum), '')
             out['days'][str(dnum)] = {'dow': L, 'name': _DOW_FULL[L],
-                                      'shabbos': (w == 5), 'greg': g.isoformat()}
+                                      'shabbos': sh, 'yomtov': yt,
+                                      'block': bool(sh or yt),
+                                      'why': ('שבת' if sh else yt),
+                                      'greg': g.isoformat()}
         out['ok'] = True
         out['year'] = hq(dates.HebrewDate(y, m, 1).hebrew_date_string().split()[-1])
     except Exception:
