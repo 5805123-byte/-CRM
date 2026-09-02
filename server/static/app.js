@@ -7045,11 +7045,21 @@ function kvPaginate(wrap){
         body.appendChild(b);
       }
       if(body.scrollHeight>body.clientHeight+1){
-        // קוויטל ארוך מעמוד שלם — מותר לו לזלוג לעמוד הבא. עדיף
-        // להמשיך מאשר לחתוך ולאבד שמות.
-        pg.classList.add('kvtall');
-        n++; pg=mk(n); body=pg.querySelector('.kvbody');
-        host.appendChild(pg);
+        // מאיר: "שלא יהיה המשך של אותו תורם לדף הבא אף פעם." קוויטל
+        // שארוך מעמוד שלם מוקטן עד שהוא נכנס — רק הוא, ושאר התורמים
+        // נשארים בגודל המלא. רק אם גם בהקטנה המרבית הוא לא נכנס,
+        // מותר לו לזלוג, כי עדיף להמשיך מאשר לחתוך ולאבד שמות.
+        let z=1;
+        while(z>0.6 && body.scrollHeight>body.clientHeight+1){
+          z=Math.round((z-0.04)*100)/100;
+          b.style.setProperty('--kvz', z);
+        }
+        if(body.scrollHeight>body.clientHeight+1){
+          b.style.removeProperty('--kvz');
+          pg.classList.add('kvtall');
+          n++; pg=mk(n); body=pg.querySelector('.kvbody');
+          host.appendChild(pg);
+        }
       }
     }
   }

@@ -1671,7 +1671,7 @@
     padding:2mm 2.8mm!important;margin:0 0 2.2mm!important;
     break-inside:avoid;page-break-inside:avoid}
   /* מאיר: "את הגופן של הקוויטל תגדיל עוד קצת" */
-  body.kvprint #kvlistwrap .kblock .who{font-size:1.06rem;font-weight:800;
+  body.kvprint #kvlistwrap .kblock .who{font-size:calc(var(--kvz,1) * 1.06rem);font-weight:800;
     margin:0 0 .4mm!important;color:#000!important;line-height:1.15}
   body.kvprint #kvlistwrap .kblock .who .opencard,
   body.kvprint #kvlistwrap .kblock .who .kvtag,
@@ -1679,7 +1679,7 @@
   /* מאיר: "אני רוצה שיהיה ישר בצדדים, שלא יהיה יוצא ונכנס — הכל ישר
      כמו סרגל". יישור לשני הצדדים; השורה האחרונה נשארת צמודה לימין. */
   body.kvprint #kvlistwrap .kblock .names,
-  body.kvprint #kvlistwrap .kblock .namesflow{font-size:1.02rem;line-height:1.3;
+  body.kvprint #kvlistwrap .kblock .namesflow{font-size:calc(var(--kvz,1) * 1.02rem);line-height:1.3;
     text-align:justify;text-align-last:right;-webkit-hyphens:none;hyphens:none;
     border:none!important;padding:0!important;margin:0!important;background:none!important}
   body.kvprint #kvlistwrap .kblock.kvmulti .namesflow+.names{margin-top:.6mm!important}
@@ -1689,11 +1689,12 @@
   html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
   body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @media print{
-    /* שאר ההדפסות במערכת ממשיכות עם שוליים רגילים; רק דפי הקוויטל
-       יוצאים בלי שוליים כלל, כי הרקע שלהם צריך להגיע עד קצה הנייר */
-    @page{size:A4 portrait;margin:8mm 9mm}
-    @page kvfull{size:A4 portrait;margin:0}
-    .kvpage{page:kvfull}
+    /* הנייר כולו הוא שטח הדפסה — בלי שוליים בכלל, כדי שרקע הקלף יגיע
+       עד הקצה. שאר ההדפסות במערכת מקבלות את אותו מרווח דרך ריפוד פנימי,
+       ולכן הן לא השתנו. (@page בשם לא היה אמין בכרום כאן: עמוד שגובהו
+       297מ״מ בתוך שטח של 281מ״מ נשפך לשני גיליונות.) */
+    @page{size:A4 portrait;margin:0}
+    body:not(.kvprint) .app{padding:8mm 9mm!important}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .app{max-width:none;padding:0}
     /* כל עמוד הוא באמת עמוד */
