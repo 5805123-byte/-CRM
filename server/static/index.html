@@ -1006,6 +1006,14 @@
   .gvcatbtn::before{content:'🎯';font-size:.8rem}
   .gvcatbtn::after{content:'✏️';font-size:.72rem;opacity:.6}
   .gvcatbtn.need{color:#fff;background:var(--no);border-color:var(--no)}
+  /* קפיצה מהשורה אל ימי הפרנס או אל יששכר־זבולון — לחיצה אחת */
+  .gvgo{font-family:inherit;font-size:.82rem;font-weight:800;color:var(--accent);
+    background:var(--ground);border:1px solid var(--line);border-radius:99px;
+    padding:3px 10px;cursor:pointer;width:auto;display:inline-flex;align-items:center;gap:4px}
+  .gvgo:hover{background:var(--card);border-color:var(--accent)}
+  .gvgo.wide{font-weight:700}
+  @keyframes gvflash{0%,100%{background:transparent}20%,60%{background:#fdf3d6}}
+  .gvflash{animation:gvflash 1.5s ease;border-radius:10px}
   .gvlbl{font-weight:800;font-size:.82rem;color:var(--accent);margin-bottom:5px}
   .catmgrlist{max-height:52vh;overflow:auto}
   .catmgrrow{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line)}

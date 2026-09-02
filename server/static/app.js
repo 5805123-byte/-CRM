@@ -4008,9 +4008,13 @@ function cardDetails(d,body){
         <div class="hintxt">אם מעבירים את כל הסכום — התרומה עוברת כולה לכרטיס השני. אם מעבירים חלק — נשאר כאן מה שנותר, ואצלו נפתחת תרומה באותו תאריך.</div></div>
       <button class="btn sm ghost gvdel" data-did="${g.did}" style="width:100%;margin-top:6px;color:var(--bad)">🗑 מחק את התרומה הזו</button></div>`:'';
     // בכל תרומה: סכום · עבור מה · תאריך · דרך מה נתרם. לחיצה על הייעוד פותחת את החלון.
+    // מאיר: "כשאני רואה שהוא הכניס פרנס יום — שאוכל ללחוץ על זה ולהגיע
+    // לראות את הפרנס יום שלו, את התעודה ואת הכל. וגם ביששכר־זבולון,
+    // שאראה את הפרטים ואת השטר — אבל רק לחיצה על הכפתור, פשוט וחלק."
     const what=g.don
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
-      : esc(g.what);
+        + (isIZcat(g.cat) ? `<button class="gvgo" data-go="iz" title="לפתוח את יששכר־זבולון — האברך, השותף והשטר">↗</button>` : '')
+      : `<button class="gvgo wide" data-go="parnes" data-pid="${g.pid}" title="לפתוח את היום הזה — הקדשה, שמות ותעודה">${esc(g.what)} ↗</button>`;
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
       + `${amtNum(g.prev)>0.5?`<span class="prevchip">📌 ${curd}${Math.round(amtNum(g.prev)).toLocaleString('en-US')} ${esc(g.prevn||('על '+(GREGYEAR-1)))}</span>`:''}`
@@ -4196,6 +4200,23 @@ function cardDetails(d,body){
   };
   const gvOpen=did=>{const p=body.querySelector('.gvpanel[data-pan="'+did+'"]');if(p)p.classList.toggle('hidden');};
   body.querySelectorAll('.gvcatbtn').forEach(b=>b.onclick=()=>gvOpen(b.dataset.did));
+  // קפיצה מהשורה אל המקום שבו נמצא הכל — ימי הפרנס או יששכר־זבולון.
+  // הסעיף נפתח, נגלל אל מרכז המסך ומהבהב פעם אחת כדי שהעין תמצא אותו.
+  body.querySelectorAll('.gvgo').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const box=body.querySelector(b.dataset.go==='iz'?'#partners':'#parnes');
+    const sec=box&&box.closest('details');
+    if(!sec){toast(b.dataset.go==='iz'?'אין כאן יששכר־זבולון':'אין ימים משובצים');return;}
+    sec.open=true;
+    // שורת היום שנלחץ — מסומנת גם היא, כדי שלא יחפש אותה ברשימה
+    const row=b.dataset.pid&&box.querySelector('[data-id="'+b.dataset.pid+'"]');
+    const to=(row&&row.closest('.plwrap'))||sec;
+    to.scrollIntoView({behavior:'smooth',block:'center'});
+    to.classList.remove('gvflash');
+    void to.offsetWidth;                       // מאפס את האנימציה לפני הפעלה חוזרת
+    to.classList.add('gvflash');
+    setTimeout(()=>to.classList.remove('gvflash'),1600);
+  });
   wireAutoCat(d,body,()=>{cardDetails(d,body); if(tab==='donors')renderDonors();});
   // ---- חלוקת תרומה אחת לכמה ייעודים ----
   const spRow=(amt,cat)=>`<div class="addrow sprow" style="margin-top:5px">
