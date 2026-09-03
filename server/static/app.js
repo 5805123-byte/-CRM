@@ -8706,6 +8706,10 @@ const MLTPL=[{
   name:'ימים נוראים — יששכר־זבולון, אברך אחד',
   subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
   body:[
+   // מאיר: "כמובא בזוהר ובספרים שמי שקם חצות ולומד תורה, מה שהוא
+   // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
+   // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    // מאיר: "אני רוצה שהשם של התורם עם התואר שלו לפני ואחרי השם שיהיה
    // בשורה נפרדת" — שורה אחת יורדת, ולכן זו אותה פסקה בשורה חדשה
@@ -8726,6 +8730,9 @@ const MLTPL=[{
    '{{אברך}}',
    'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, he sits down on the floor and says Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learns Torah until the morning light.',
    'Every hour that he sits and learns Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, he davens for you personally, by name.',
+   // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
+   // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
+   'And your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
@@ -8757,6 +8764,10 @@ const MLTPL=[{
   name:'ימים נוראים — יששכר־זבולון, יותר מאברך אחד',
   subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
   body:[
+   // מאיר: "כמובא בזוהר ובספרים שמי שקם חצות ולומד תורה, מה שהוא
+   // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
+   // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    // מאיר: "אני לא אוהב את המשפט הזה שהוא לא רק מחזיק אחד אלא 4. תכתוב
@@ -8765,6 +8776,9 @@ const MLTPL=[{
    '{{אברך}}',
    'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, they sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
    'Every hour that they sit and learn Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, each one of them davens for you personally, by name.',
+   // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
+   // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
+   'And your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings — and all of it {{מספר אברכים}} times over.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel, {{מספר אברכים}} of them. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
@@ -8795,6 +8809,10 @@ const MLTPL=[{
   name:'ימים נוראים — קוויטל שבועי',
   subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
   body:[
+   // מאיר: "כמובא בזוהר ובספרים שמי שקם חצות ולומד תורה, מה שהוא
+   // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
+   // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    // מאיר תיקן: "קוויטל שבועי זה שכל האברכים של הכולל חצות נוסעים
@@ -8807,10 +8825,18 @@ const MLTPL=[{
    // מאיר: "אל תכתוב שהוא נותן מידי חודש — ואם הוא נותן הכל בבת אחת
    // בשביל כל השנה? תכתוב משהו שזה קביעות ותמיכה לכל אורך הדרך במשך
    // כל השנה."
-   'You stand behind Kollel Chatzos steadily, all year long. That steady support is such a zechus that the avreichim are able to sit and learn at chatzos because of you — and because of it, your Kvitel is always with us.',
-   'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim of Kollel Chatzos travel to the Kosel HaMaaravi and to Kever Rochel. They stand there in the middle of the night, say Tehillim together — and your Kvitel is in their hands. Your names are davened for there, at the Kosel and at Kever Rochel, at chatzos, from the heart.',
-   'Every Erev Rosh Chodesh they travel to Meron, to Rabbi Shimon bar Yochai. And at every eis ratzon — a journey to the kevarim of tzaddikim, a special day in the year — your Kvitel goes with them. Wherever the Kollel goes to daven, you are there.',
-   'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: a whole year of Torah learned at chatzos in your merit, and tefillos said for you at the Kosel, at Kever Rochel and in Meron, at the hour the Zohar HaKadosh calls the most desirable and most exalted of all.',
+   // מאיר: "לא שהוא עומד מאחורי כולל חצות אלא הוא תומך אישי נלהב וקבוע
+   // בלימוד התורה של חצות הלילה ובזכותו קול התורה נשמע בכל לילה ע"י
+   // למעלה ממאה אברכים בעת רצון הגדול של חצות, זה השמירה שלו."
+   'You are a warm, personal and steady supporter of the Torah of chatzos halayla — and in your merit, the sound of Torah is heard every single night from more than a hundred avreichim, at the great eis ratzon of chatzos. That is your special shemirah: that they daven for you, and that your Kvitel is always with them.',
+   // "הזכרת פעמיים את הכותל וקבר רחל, אין צורך להכפיל" — פעם אחת, עם
+   // "המקום שלא זזה ממנו שכינה מעולם".
+   'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim travel to the Kosel HaMaaravi — the place from which the Shechinah has never moved — and to Kever Rochel. They stand there in the middle of the night, say Tehillim together, and your Kvitel is in their hands.',
+   // "תדגיש יותר את הענין שיש עיתות רצון מיוחדים שתמיד הוא מוזכר מהקוויטל
+   // המיוחד שלו, הם מתפללים שם אחרי שם מכל הלב והנשמה, ורבים ראו ישועות
+   // גדולות בזכות התפילות שלהם באופן למעלה מדרך הטבע."
+   'Every Erev Rosh Chodesh they are in Meron, by Rabbi Shimon bar Yochai. And there are special eisei ratzon in the year — a journey to the kevarim of tzaddikim, a special day — and at every one of them you are always mentioned, from your own Kvitel. They daven name after name, with all their heart and all their soul. Many have seen great yeshuos from these tefillos, above the way of nature.',
+   'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: a whole year of Torah learned at chatzos in your merit, and tefillos said for you at every eis ratzon, at the hour the Zohar HaKadosh calls the most desirable and most exalted of all.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos, and the families of these same avreichim have nothing to eat for Yom Tov. They are groaning under their debts.',
