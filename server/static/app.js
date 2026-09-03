@@ -8804,7 +8804,10 @@ const MLTPL=[{
    // פעם בשבוע אלא כמה פעמים בחודש. הוא תמיד מוזכר בקוויטל בגלל שהוא
    // תורם קבוע והתרומות הקבועות שלו הם זכות עצומה שבזכותה הם יכולים
    // ללמוד."
-   'You hold up Kollel Chatzos steadily, month after month. That steady giving is such a zechus that the avreichim are able to sit and learn at chatzos because of you — and because of it, your Kvitel is always with us.',
+   // מאיר: "אל תכתוב שהוא נותן מידי חודש — ואם הוא נותן הכל בבת אחת
+   // בשביל כל השנה? תכתוב משהו שזה קביעות ותמיכה לכל אורך הדרך במשך
+   // כל השנה."
+   'You stand behind Kollel Chatzos steadily, all year long. That steady support is such a zechus that the avreichim are able to sit and learn at chatzos because of you — and because of it, your Kvitel is always with us.',
    'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim of Kollel Chatzos travel to the Kosel HaMaaravi and to Kever Rochel. They stand there in the middle of the night, say Tehillim together — and your Kvitel is in their hands. Your names are davened for there, at the Kosel and at Kever Rochel, at chatzos, from the heart.',
    'Every Erev Rosh Chodesh they travel to Meron, to Rabbi Shimon bar Yochai. And at every eis ratzon — a journey to the kevarim of tzaddikim, a special day in the year — your Kvitel goes with them. Wherever the Kollel goes to daven, you are there.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: a whole year of Torah learned at chatzos in your merit, and tefillos said for you at the Kosel, at Kever Rochel and in Meron, at the hour the Zohar HaKadosh calls the most desirable and most exalted of all.',
