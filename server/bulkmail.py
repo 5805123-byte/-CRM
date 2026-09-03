@@ -418,7 +418,10 @@ KVLINE = '<span style="display:block">%s</span>'
 #
 # כל אפשרות: כותרת, שורת הסבר, וקישור (ריק = אין למה ללחוץ).
 DONATE = [
-    ('💳', 'Credit Card', 'Up to 3 monthly payments',
+    # מאיר: "בחלון של כרטיס אשראי צריך להיות כתוב תרומה בכרטיס אשראי
+    # דרך האתר שלנו" — הריבוע לא אמר לאן הלחיצה מובילה.
+    ('💳', 'Credit Card', 'Donate by credit card on our website<br>'
+     'Up to 3 monthly payments',
      'https://kollelchatzot.com/donate.php'),
     ('💵', 'Zelle / QuickPay', 'Kollelchatzos1@gmail.com<br>'
      '(appears as Congregation Zichron Avos)', 'mailto:Kollelchatzos1@gmail.com'),

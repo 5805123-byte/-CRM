@@ -8737,6 +8737,42 @@ const MLTPL=[{
    '{{קוויטל}}',
    'I would be glad if you would reply and update your Kvitel.'
   ].join('\n\n')
+},{
+  // מאיר: "צריך לעשות בשליחת האימיילים 2 קטגוריות של יששכר זבולון,
+  // אחד רגיל ועוד אחד למי שיש יותר מאברך אחד" — זה השני. אותו נוסח
+  // שאישר, ברבים, ועם {{מספר אברכים}} משולב במקומות שבהם המספר עצמו
+  // הוא העניין. מאיר: "אם יש לתורם כמה אברכים שהוא מחזיק — שאכתוב '3
+  // האברכים האלו לומדים בשבילך' ואז אצרף את שלושת השמות."
+  id:'yt_iz2',
+  name:'ימים נוראים — יששכר־זבולון, יותר מאברך אחד',
+  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached.',
+  body:[
+   'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
+   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
+   'You do not hold one avreich in the Kollel. You hold {{מספר אברכים}} of them, and every one of them learns for you.',
+   'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, {{אברך}} — your Yissachar-Zevulun partners, the avreichim who learn as your shluchim and in your merit — sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
+   'Every hour that they sit and learn Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, each one of them davens for you personally, by name.',
+   'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings — and all of it {{מספר אברכים}} times over.',
+   'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel, {{מספר אברכים}} of them. You are holding stock here that only goes up, all year long.',
+   '{{קו}}',
+   'There are 110 families in Kollel Chatzos, and the families of these same avreichim have nothing to eat for Yom Tov. They are groaning under their debts.',
+   'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
+   'We want to give each family [$1,200](https://kollelchatzot.com/donate.php), so that they will have what to eat for Yom Tov b\'derech kavod.',
+   'And another [$100](https://kollelchatzot.com/donate.php) as a special gift for the avreich\'s wife, hers alone, to encourage her and to strengthen her for the mesirus nefesh she gives night after night.',
+   'With this money you are hosting a poor family for Yom Tov. The Zohar HaKadosh says that the Ushpizin do not enter a man\'s sukkah until they see a poor man sitting at his table.',
+   'They are your guests for Yom Tov.',
+   'I am asking you with all my heart: I would be glad to be your shaliach to help them. [Take one family](https://kollelchatzot.com/donate.php). If you can, take two. They are waiting for you.',
+   'And if you have a friend, an acquaintance or a relative who would want a share in this, you are welcome to send them this letter with the link.',
+   'I am waiting to hear back from you.',
+   '{{תרומה}}',
+   '{{קו}}',
+   'I deeply appreciate your steady support. Kollel Chatzos stands because of you, and every hour of it is written to your name.',
+   'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
+   'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
+   'YOUR KVITEL NAMES',
+   '{{קוויטל}}',
+   'I would be glad if you would reply and update your Kvitel.'
+  ].join('\n\n')
 }];
 async function mlLoadSetup(){
   try{ MLSETUP=await api('GET','/api/mail/setup'); }catch(e){ MLSETUP={ok:false,msg:'אין חיבור לשרת'}; }
