@@ -9243,16 +9243,23 @@ async function mlHistory(){
     const sent=r.rows.filter(x=>x.status==='sent');
     box.innerHTML=`<div class="mlstats">
       <div class="mlstat1"><b>${t.sent}</b><span>נשלחו</span></div>
-      <div class="mlstat1 ok"><b>${t.opened}</b><span>נפתחו · ${pc(t.opened)}</span></div>
+      ${r.track?`<div class="mlstat1 ok"><b>${t.opened}</b><span>נפתחו · ${pc(t.opened)}</span></div>`
+        // מאיר: "פתחתי את האימייל לפני עשר דקות ויותר ועדיין כתוב לא
+        // נפתחו, ועשיתי ריענון של המערכת." המעקב היה כבוי במשלוח הזה,
+        // ולכן אין מאיפה לדעת. האריח הראה 0 · 0% כאילו זה נמדד ויצא
+        // אפס, ולכן הוא מציג עכשיו מקף ואומר במפורש שהמעקב היה כבוי.
+        :`<div class="mlstat1"><b>—</b><span>נפתחו · מעקב כבוי</span></div>`}
       <div class="mlstat1 ok"><b>${t.replied}</b><span>השיבו · ${pc(t.replied)}</span></div>
       ${t.failed?`<div class="mlstat1 bad"><b>${t.failed}</b><span>נכשלו</span></div>`:''}
       ${t.unsub?`<div class="mlstat1 bad"><b>${t.unsub}</b><span>ביקשו הסרה</span></div>`:''}
       ${t.queued?`<div class="mlstat1"><b>${t.queued}</b><span>עדיין בתור</span></div>`:''}
     </div>
-    ${r.track?'':'<div class="hintxt">במשלוח הזה לא היה מעקב פתיחות — לכן "נפתחו" ריק.</div>'}
-    ${grp('✅ פתחו את המייל', sent.filter(x=>x.opened))}
+    ${r.track?'':'<div class="hintxt">במשלוח הזה <b>מעקב הפתיחות היה כבוי</b>, ולכן אין לנו מאיפה לדעת מי פתח — גם אם פתח. "השיבו" כן עובד. כדי לראות פתיחות בפעם הבאה, סמן "📊 עקוב אחרי מי פתח את המייל" לפני השליחה.</div>'}
     ${grp('💬 השיבו לנו', sent.filter(x=>x.replied))}
-    ${grp('⏳ עדיין לא נפתח', sent.filter(x=>!x.opened&&!x.replied))}
+    ${r.track?grp('✅ פתחו את המייל', sent.filter(x=>x.opened))
+      // בלי מעקב כל הנמענים היו נכנסים ל"עדיין לא נפתח", וזו טעות —
+      // אין ידיעה, לא ידיעה שלילית
+      +grp('⏳ עדיין לא נפתח', sent.filter(x=>!x.opened&&!x.replied)):''}
     ${grp('❌ לא הגיע', r.rows.filter(x=>x.status==='failed'||x.status==='dead'),'bad')}
     ${grp('🚫 ביקשו הסרה', r.rows.filter(x=>x.unsub),'bad')}
     <div class="hintxt">"נפתחו" נמדד לפי טעינת תמונה במייל. מי שהמייל שלו חוסם תמונות — לא נספר, גם אם קרא. לכן המספר האמיתי תמיד גבוה יותר. "השיבו" נמדד מהמיילים שנכנסו אלינו אחרי המשלוח — זה מדויק, אבל דורש שתלחץ "משוך מיילים" כדי שהמערכת תדע עליהם.</div>`;
