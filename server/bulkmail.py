@@ -418,14 +418,9 @@ KVLINE = '<span style="display:block">%s</span>'
 DONATE = [
     ('💳', 'Credit Card', 'Up to 3 monthly payments',
      'https://kollelchatzot.com/donate.php'),
-    # מאיר: "תוציא את דגל ישראל, יש כאלה שלא אוהבים. במקום זה סימן של
-    # שקל חדש, ושיהיה כתוב תרומה בשקלים בחשבון הישראלי."
-    ('₪', 'Nedarim Plus', 'Donate in ₪ · the Israeli account',
-     'https://www.matara.pro/nedarimplus/online/?mosad=5777499'),
     ('💵', 'Zelle / QuickPay', 'Kollelchatzos1@gmail.com<br>'
      '(appears as Congregation Zichron Avos)', 'mailto:Kollelchatzos1@gmail.com'),
-    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzos of Congregation Zichron Avos<br>'
-     'Tax ID # 20-0447034', ''),
+    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzos<br>Tax ID # 20-0447034', ''),
     ('✉️', 'Check', 'Made out to Kollel Chatzos<br>'
      'c/o Friedman Family<br>1540 40th Street, Brooklyn, NY 11218<br>'
      'Tax ID # 20-0447034',
@@ -435,6 +430,10 @@ DONATE = [
      '%20like%20to%20take%20a%20family%20for%20Yom%20Tov'),
     ('📞', 'Phone', 'My own number — call me directly<br>+972 52-762-8272',
      'tel:+972527628272'),
+    # מאיר: "תוציא את דגל ישראל, יש כאלה שלא אוהבים. במקום זה סימן של
+    # שקל חדש." ו"נדרים פלוס שיהיה הכי למטה" — רוב התורמים בחו״ל.
+    ('₪', 'Nedarim Plus', 'Donate in ₪ · the Israeli account',
+     'https://www.matara.pro/nedarimplus/online/?mosad=5777499'),
 ]
 DONATE_FOOT = 'All donations are tax deductible · Tax ID # 20-0447034'
 # קו מפריד בין חלקי המכתב — במקום מקף על פני כל השורה
