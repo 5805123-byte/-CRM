@@ -8738,7 +8738,7 @@ const MLTPL=[{
    // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
    // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
    // מאיר: "בנוסף ליששכר זבולון שלו" — הקוויטל שנוסע הוא מעבר לאברך.
-   'And in addition to your Yissachar-Zevulun partner, your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
+   'And in addition to your Yissachar-Zevulun partner, your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too — at the most auspicious hour and in the most auspicious place, the eis ratzon of chatzos halayla.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
@@ -8787,7 +8787,7 @@ const MLTPL=[{
    'Every hour that they sit and learn Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, each one of them davens for you personally, by name.',
    // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
    // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
-   'And in addition to your Yissachar-Zevulun partners, your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
+   'And in addition to your Yissachar-Zevulun partners, your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too — at the most auspicious hour and in the most auspicious place, the eis ratzon of chatzos halayla.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings — and all of it {{מספר אברכים}} times over.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel, {{מספר אברכים}} of them. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
@@ -8845,7 +8845,7 @@ const MLTPL=[{
    // "המקום שלא זזה ממנו שכינה מעולם".
    // מאיר: "זה לא שהקוויטל שלו בידיים שלהם (מה יש לו מזה?) אלא הם
    // מתפללים עליו באופן אישי מכל הלב."
-   'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim travel to the Kosel HaMaaravi — the place from which the Shechinah has never moved — and to Kever Rochel. They stand there in the middle of the night, say Tehillim together, and daven for you personally, with all their heart.',
+   'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim travel to the Kosel HaMaaravi — the place from which the Shechinah has never moved — and to Kever Rochel. They stand there in the middle of the night — at the most auspicious hour, in the most auspicious place — say Tehillim together, and daven for you personally, with all their heart.',
    // "תדגיש יותר את הענין שיש עיתות רצון מיוחדים שתמיד הוא מוזכר מהקוויטל
    // המיוחד שלו, הם מתפללים שם אחרי שם מכל הלב והנשמה, ורבים ראו ישועות
    // גדולות בזכות התפילות שלהם באופן למעלה מדרך הטבע."
