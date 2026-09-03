@@ -8692,7 +8692,7 @@ function mlFiltered(){
   if(q) l=l.filter(d=>matchStr(dName(d)+' '+(d.english||'')+' '+(d.email||'')+' '+(d.business||''),q));
   return l.sort(byName);
 }
-const id2key=id=>({ml_subj:'subj',ml_body:'body',ml_sig:'sig'})[id]||id;
+const id2key=id=>({ml_subj:'subj',ml_body:'body'})[id]||id;
 function mlSaved(k,d){ try{ return localStorage.getItem('kc_ml_'+k)||d; }catch(e){ return d; } }
 function mlSave(k,v){ try{ localStorage.setItem('kc_ml_'+k,v); }catch(e){} }
 // מאיר: "איך אני עכשיו מעתיק את מכתב ליששכר זבולון היחיד, לעצב
@@ -9014,7 +9014,6 @@ function renderMailSend(){
         אם הוא מחזיק כמה אברכים — כולם ייכתבו יחד, כל אחד עם התואר שלו.<br>
         הכל נמשך לבד מהכרטיס, ואם אין לו — לא נכתב כלום.<br>
         השמות תמיד בעברית, גם כשהמכתב באנגלית. שורה ריקה = פסקה חדשה.</div>
-      <label class="fld"><span>חתימה (בתחתית כל מכתב)</span><input id="ml_sig" value="${esc(mlSaved('sig','כולל חצות · ביתר עילית · 02-5803545'))}"></label>
       <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="ml_track" ${mlSaved('track','0')==='1'?'checked':''}>
         <span>📊 עקוב אחרי מי פתח את המייל</span></label>
       <div class="hintxt">מאיר: "אני לא רוצה את מה שכתוב למטה שם" — המעקב מוסיף תמונה זעירה בתחתית המכתב,
@@ -9085,10 +9084,14 @@ function renderMailSend(){
   const gv=()=>({ids:mlAudience().map(d=>d.id),
                  subject:document.getElementById('ml_subj').value.trim(),
                  body:document.getElementById('ml_body').value,
-                 sig:document.getElementById('ml_sig').value.trim(),
+                 // מאיר: "את זה תעשה שיימחק לגמרי, יש כבר פרטים שלי בתוך
+                 // האימייל" — הטלפון, הווטסאפ והכתובת יושבים בריבועי
+                 // התרומה, והחתימה חזרה על אותם פרטים בתחתית. אין יותר
+                 // שדה חתימה, ולכן לא נוספת שורה לשום מכתב.
+                 sig:'',
                  track:document.getElementById('ml_track').checked,
                  base:location.origin});
-  ['subj','body','sig'].forEach(k=>{const e=document.getElementById('ml_'+k);
+  ['subj','body'].forEach(k=>{const e=document.getElementById('ml_'+k);
     if(e)e.oninput=()=>mlSave(k,e.value);});
   const trk=document.getElementById('ml_track');
   if(trk)trk.onchange=()=>mlSave('track',trk.checked?'1':'0');
