@@ -1606,10 +1606,16 @@
   .kvsheet>tfoot{display:none}
   .kvsheet>tfoot td,.kvsheet>tbody td{padding:0;border:0;vertical-align:top}
   .prfoot,.kvhead{display:none}
-  /* מאיר: "אני לא רוצה להדפיס שוליים לבנות! בשום צורה." העמוד הוא
-     גיליון A4 מלא, והצבע מגיע עד הקצה. השוליים שהיו קודם ב-@page הפכו
-     לריפוד פנימי — אותו מרחק לטקסט, בלי פס לבן מסביב. */
-  body.kvprint .kvpage{height:297mm;width:210mm;box-sizing:border-box;
+  /* מאיר: "אני לא רוצה להדפיס שוליים לבנות! בשום צורה." הצבע מגיע עד
+     הקצה, והשוליים שהיו קודם ב-@page הפכו לריפוד פנימי.
+     מאיר: "יש לי באג בהדפסת הקוויטל הכללי, זה מתפרס לדפים הרבה —
+     במקום 24 דפים נהיה 60 דפים." העמוד היה בגובה A4 מדויק (297מ״מ),
+     ולכן על נייר Letter (279.4מ״מ) — הנייר הרגיל במשרד בארה״ב — כל
+     עמוד גלש לגיליון שני כמעט ריק, ומספר הדפים הוכפל. הגובה כאן הוא
+     עכשיו 276מ״מ, שנכנס גם ל-Letter וגם ל-A4 וגם כששוליי הדפדפן אינם
+     אפס, ולכן אף עמוד אינו נשפך. השטח שנשאר על A4 אינו לבן: רקע הקלף
+     יושב על html ונצבע על כל הגיליון. */
+  body.kvprint .kvpage{height:var(--kvph,276mm);width:210mm;box-sizing:border-box;
     padding:8mm 9mm;display:flex;flex-direction:column;
     overflow:hidden;background:#FBF6EA}
   body.kvprint .kvpage+.kvpage{margin-top:6mm}
@@ -1687,13 +1693,16 @@
   body.kvprint .names.hasflow{display:none!important}
   body.kvprint .namesflow{display:block!important}
   html.kvprint,body.kvprint,body.kvprint .app,body.kvprint #view{background:#FBF6EA!important}
-  body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  html.kvprint,body.kvprint,body.kvprint *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @media print{
     /* הנייר כולו הוא שטח הדפסה — בלי שוליים בכלל, כדי שרקע הקלף יגיע
        עד הקצה. שאר ההדפסות במערכת מקבלות את אותו מרווח דרך ריפוד פנימי,
        ולכן הן לא השתנו. (@page בשם לא היה אמין בכרום כאן: עמוד שגובהו
-       297מ״מ בתוך שטח של 281מ״מ נשפך לשני גיליונות.) */
-    @page{size:A4 portrait;margin:0}
+       297מ״מ בתוך שטח של 281מ״מ נשפך לשני גיליונות.)
+       size:auto ולא A4 — כדי שכרום יעבוד עם הנייר שבמדפסת עצמה. כשביקשנו
+       A4 והנייר היה Letter, כרום פרס עמוד של 297מ״מ על גיליון של 279מ״מ
+       וכל עמוד יצא על שני גיליונות. */
+    @page{size:auto;margin:0}
     body:not(.kvprint) .app{padding:8mm 9mm!important}
     #rembanner,.rembanner,.kbar,.opencard,.kvtag,.kvcopy,.loose,.hintxt{display:none!important}
     .app{max-width:none;padding:0}
