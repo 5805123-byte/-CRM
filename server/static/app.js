@@ -8704,7 +8704,7 @@ function mlSave(k,v){ try{ localStorage.setItem('kc_ml_'+k,v); }catch(e){} }
 const MLTPL=[{
   id:'yt_iz1',
   name:'ימים נוראים — יששכר־זבולון, אברך אחד',
-  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached.',
+  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
   body:[
    'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    // מאיר: "אני רוצה שהשם של התורם עם התואר שלו לפני ואחרי השם שיהיה
@@ -8755,7 +8755,7 @@ const MLTPL=[{
   // האברכים האלו לומדים בשבילך' ואז אצרף את שלושת השמות."
   id:'yt_iz2',
   name:'ימים נוראים — יששכר־זבולון, יותר מאברך אחד',
-  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached.',
+  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
   body:[
    'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
