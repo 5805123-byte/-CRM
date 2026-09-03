@@ -8779,9 +8779,11 @@ const MLTPL=[{
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    // מאיר: "אני לא אוהב את המשפט הזה שהוא לא רק מחזיק אחד אלא 4. תכתוב
    // פשוט: אתה מחזיק ותומך בשותפות יששכר זבולון ב-4 אברכים וכו'."
-   'You hold and support {{מספר אברכים}} avreichim in your Yissachar-Zevulun partnership — avreichim who learn for you and daven for you:',
+   // מאיר: "במכתב שמחזיק כמה אברכים לא שינית את זה" — אותו סדר כמו
+   // באברך אחד: קודם חצות ושערי שמים, ואז השותפים, והשמות בשורה משלהם.
+   'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, your Yissachar-Zevulun partners — the {{מספר אברכים}} avreichim you hold and support, who learn for you and daven for you — are there:',
    '{{אברך}}',
-   'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, they sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
+   'They sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
    'Every hour that they sit and learn Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, each one of them davens for you personally, by name.',
    // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
    // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
