@@ -8871,6 +8871,45 @@ const MLTPL=[{
    '{{קוויטל}}',
    'I would be glad if you would reply and update your Kvitel.'
   ].join('\n\n')
+},{
+  // מאיר: "בקוויטל כל לילה זה מאוד חשוב להדגיש את הענין שיש שלשה אברכים
+  // צדיקים מיוחדים מתמידים שהם מזכירים ומתפללים על השמות והבקשות שלו
+  // ושל המשפחה שלו. כאן כן להדגיש חזק מאוד את הקביעות החודשית שלו,
+  // שבכל חודש וחודש הוא תומך באופן קבוע. לכתוב בקטע חיובי שזה שומר
+  // עליו ומביא לו ברכה וישועה ושמירה בזכות התמיכה שלו, שאנחנו קוראים
+  // לו ממבר של הכולל חצות."
+  id:'yt_101',
+  name:'ימים נוראים — קוויטל כל לילה',
+  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
+  body:[
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
+   'Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
+   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
+   'You are a member of Kollel Chatzos. Month after month, every single month, you stand behind the Torah of chatzos steadily — and that steadiness is your shemirah. It guards you, and it brings you brachah, yeshuah and protection, all year long.',
+   'Every single night, at the great eis ratzon of chatzos halayla, three special avreichim — tzaddikim and masmidim who sit over the Torah night after night — take your Kvitel and mention your names and your requests, yours and your family\'s, one by one, from the heart.',
+   'Not once. Not on special occasions. Every night of the year, at the hour שערי שמים stand open and the Ribono Shel Olam comes down to listen to whoever is learning Torah, your names rise — at the hour the Zohar HaKadosh calls the most desirable and most exalted of all.',
+   'And your Kvitel travels with the Kollel too. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too — at the most auspicious hour and in the most auspicious place, the eis ratzon of chatzos halayla.',
+   'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: a whole year of Torah learned at chatzos in your merit, and three avreichim who davened for you every single night of it.',
+   'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up, all year long.',
+   '{{קו}}',
+   'There are 110 families in Kollel Chatzos, and the families of these same avreichim have nothing to eat for Yom Tov. They are groaning under their debts.',
+   'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
+   'We want to give each family [$1,200](https://kollelchatzot.com/donate.php), so that they will have what to eat for Yom Tov b\'derech kavod.',
+   'And another [$100](https://kollelchatzot.com/donate.php) as a special gift for the avreich\'s wife, hers alone, to encourage her and to strengthen her for the mesirus nefesh she gives night after night.',
+   'With this money you are hosting a poor family for Yom Tov. The Zohar HaKadosh says that the Ushpizin do not enter a man\'s sukkah until they see a poor man sitting at his table.',
+   'They are your guests for Yom Tov.',
+   'I am asking you with all my heart: I would be glad to be your shaliach to help them. [Take one family](https://kollelchatzot.com/donate.php), and if you can, take two. They are waiting for you.',
+   'And if you have a friend, an acquaintance or a relative who would want a share in this, you are welcome to send them this letter with the link.',
+   'I am waiting to hear back from you.',
+   '{{תרומה}}',
+   '{{קו}}',
+   'I deeply appreciate your steady support. Kollel Chatzos stands because of you, and every hour of it is written to your name.',
+   'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
+   'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
+   'YOUR KVITEL NAMES',
+   '{{קוויטל}}',
+   'I would be glad if you would reply and update your Kvitel.'
+  ].join('\n\n')
 }];
 async function mlLoadSetup(){
   try{ MLSETUP=await api('GET','/api/mail/setup'); }catch(e){ MLSETUP={ok:false,msg:'אין חיבור לשרת'}; }
