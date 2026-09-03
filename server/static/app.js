@@ -8657,6 +8657,11 @@ let mailSub='log', MLSETUP=null, MLPOLL=null;
 // נמען אחד הרשימה הגדולה נסגרת ונשארים רק הנבחרים; להוסיף עוד אפשר
 // בשורת חיפוש קטנה, ולפתוח את הרשימה המלאה בכפתור מפורש.
 let mlPick=new Set(), mlQ='', mlGrp='', mlShow='mail', mlAdding=true, mlAddQ='';
+// כמה אברכים פעילים ובעלי שם יש לתורם. זה בדיוק מה שהמיזוג {{אברך}}
+// יוציא במכתב, ולכן החלוקה לקבוצות נעשית לפי אותו מספר.
+function izAvCount(d){
+  return ((d&&d.partners)||[]).filter(p=>p.active!=0&&String(p.avreich||'').trim()).length;
+}
 function mlBrowse(){ return mlAdding||!mlPick.size; }
 // שם הדרגה כפי שקוראים לה, ולא הערך הפנימי ("קוויטל_שבועי")
 const tierLabel=v=>(TIERS[v]&&TIERS[v][0])||KVTIER[v]||String(v||'').replace(/^קוויטל_/,'');
@@ -8680,6 +8685,10 @@ function mlFiltered(){
   // ואין צורך לדעת באיזה שדה כל אחד מהם נמצא.
   if(mlGrp.startsWith('c:')) l=l.filter(d=>(d.category||'').trim()===mlGrp.slice(2));
   else if(mlGrp.startsWith('t:')) l=l.filter(d=>(d.tier||'').trim()===mlGrp.slice(2));
+  // מאיר: "2 קטגוריות של יששכר־זבולון, אחד רגיל ועוד אחד למי שיש יותר
+  // מאברך אחד" — לשני אלה יש נוסח שונה במכתב ({{מספר אברכים}}).
+  else if(mlGrp==='iz:1') l=l.filter(d=>izAvCount(d)===1);
+  else if(mlGrp==='iz:2') l=l.filter(d=>izAvCount(d)>1);
   if(q) l=l.filter(d=>matchStr(dName(d)+' '+(d.english||'')+' '+(d.email||'')+' '+(d.business||''),q));
   return l.sort(byName);
 }
@@ -8907,6 +8916,10 @@ function renderMailSend(){
         <div class="mlfrow">
           <select id="ml_grp"><option value="">כל הקבוצות</option>
             <optgroup label="לפי התחייבות">${cats.map(c=>`<option value="c:${esc(c)}"${('c:'+c)===mlGrp?' selected':''}>${esc(catLabel(c))} · ${DB.filter(d=>(d.category||'').trim()===c).length}</option>`).join('')}</optgroup>
+            <optgroup label="יששכר־זבולון — לפי מספר אברכים">
+              <option value="iz:1"${mlGrp==='iz:1'?' selected':''}>🤝 אברך אחד · ${DB.filter(d=>izAvCount(d)===1).length}</option>
+              <option value="iz:2"${mlGrp==='iz:2'?' selected':''}>🤝 יותר מאברך אחד · ${DB.filter(d=>izAvCount(d)>1).length}</option>
+            </optgroup>
             <optgroup label="לפי דרגת קוויטל">${tiers.map(c=>`<option value="t:${esc(c)}"${('t:'+c)===mlGrp?' selected':''}>${esc(tierLabel(c))} · ${DB.filter(d=>(d.tier||'').trim()===c).length}</option>`).join('')}</optgroup>
           </select>
           <select id="ml_show">
