@@ -8759,7 +8759,9 @@ const MLTPL=[{
   body:[
    'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'You do not hold one avreich in the Kollel. You hold {{מספר אברכים}} of them — your Yissachar-Zevulun partners, the avreichim who learn for you and daven for you:',
+   // מאיר: "אני לא אוהב את המשפט הזה שהוא לא רק מחזיק אחד אלא 4. תכתוב
+   // פשוט: אתה מחזיק ותומך בשותפות יששכר זבולון ב-4 אברכים וכו'."
+   'You hold and support {{מספר אברכים}} avreichim in your Yissachar-Zevulun partnership — avreichim who learn for you and daven for you:',
    '{{אברך}}',
    'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, they sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
    'Every hour that they sit and learn Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, each one of them davens for you personally, by name.',
