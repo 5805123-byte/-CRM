@@ -8727,13 +8727,18 @@ const MLTPL=[{
    // ככה זה בולט יותר ולא מתבלבל עם האנגלית." השמות בפסקה משלהם, ולכן
    // הכיוון שלה עברי (dir=auto) וכמה שמות נשברים לשורות נכון, ולא
    // מתערבבים בתוך שורה אנגלית.
-   'Your Yissachar-Zevulun partner, the avreich who learns for you and davens for you:',
+   // מאיר: "זה היה כתוב אחרת ושינית את זה, ככה זה לא טוב. תכתוב קודם
+   // את השורה בחצות הלילה וכו' שהרבונו של עולם וכו', האברך.. השותף
+   // שלך היששכר זבולון" — הסדר המקורי: קודם חצות ושערי שמים, ואז
+   // השותף, והשם בשורה משלו.
+   'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, your Yissachar-Zevulun partner — the avreich who learns for you and davens for you — is there:',
    '{{אברך}}',
-   'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, he sits down on the floor and says Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learns Torah until the morning light.',
+   'He sits down on the floor and says Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learns Torah until the morning light.',
    'Every hour that he sits and learns Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, he davens for you personally, by name.',
    // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
    // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
-   'And your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
+   // מאיר: "בנוסף ליששכר זבולון שלו" — הקוויטל שנוסע הוא מעבר לאברך.
+   'And in addition to your Yissachar-Zevulun partner, your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
@@ -8780,7 +8785,7 @@ const MLTPL=[{
    'Every hour that they sit and learn Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, each one of them davens for you personally, by name.',
    // מאיר: "תכניס את זה למכתב יששכר זבולון — שמזכירים ומתפללים על השמות
    // שלו גם בכותל בכל פעם שנוסעים, וקבר רחל ומירון אצל רבי שמעון."
-   'And your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
+   'And in addition to your Yissachar-Zevulun partners, your Kvitel travels with the Kollel. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings — and all of it {{מספר אברכים}} times over.',
    'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel, {{מספר אברכים}} of them. You are holding stock here that only goes up, all year long.',
    '{{קו}}',
