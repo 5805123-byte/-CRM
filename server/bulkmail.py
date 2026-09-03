@@ -416,20 +416,35 @@ KVLINE = '<span style="display:block">%s</span>'
 #
 # כל אפשרות: כותרת, שורת הסבר, וקישור (ריק = אין למה ללחוץ).
 DONATE = [
-    ('💳', 'Credit Card', 'Up to 3 payments', 'https://kollelchatzot.com/donate.php'),
-    ('🇮🇱', 'Nedarim Plus', 'Israeli account, in ₪',
+    ('💳', 'Credit Card', 'Up to 3 monthly payments',
+     'https://kollelchatzot.com/donate.php'),
+    # מאיר: "תוציא את דגל ישראל, יש כאלה שלא אוהבים. במקום זה סימן של
+    # שקל חדש, ושיהיה כתוב תרומה בשקלים בחשבון הישראלי."
+    ('₪', 'Nedarim Plus', 'Donate in ₪ · the Israeli account',
      'https://www.matara.pro/nedarimplus/online/?mosad=5777499'),
-    ('💵', 'Zelle / QuickPay', 'Kollelchatzos1@gmail.com',
-     'mailto:Kollelchatzos1@gmail.com'),
-    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzos of Cong. Zichron Avos', ''),
-    ('✉️', 'Check', 'Kollel Chatzos, c/o Friedman Family<br>'
-     '1540 40th Street, Brooklyn, NY 11218', ''),
-    ('💬', 'WhatsApp', 'Message me directly',
+    ('💵', 'Zelle / QuickPay', 'Kollelchatzos1@gmail.com<br>'
+     '(appears as Congregation Zichron Avos)', 'mailto:Kollelchatzos1@gmail.com'),
+    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzos of Congregation Zichron Avos<br>'
+     'Tax ID # 20-0447034', ''),
+    ('✉️', 'Check', 'Made out to Kollel Chatzos<br>'
+     'c/o Friedman Family<br>1540 40th Street, Brooklyn, NY 11218<br>'
+     'Tax ID # 20-0447034',
+     'https://maps.google.com/?q=1540+40th+Street+Brooklyn+NY+11218'),
+    ('💬', 'WhatsApp', 'Straight to me — write any time',
      'https://wa.me/972527628272?text=Hello%20Rabbi%20Deutsch%2C%20I%20would'
      '%20like%20to%20take%20a%20family%20for%20Yom%20Tov'),
-    ('📞', 'Phone', '+972 52-762-8272', 'tel:+972527628272'),
+    ('📞', 'Phone', 'My own number — call me directly<br>+972 52-762-8272',
+     'tel:+972527628272'),
 ]
 DONATE_FOOT = 'All donations are tax deductible · Tax ID # 20-0447034'
+# קו מפריד בין חלקי המכתב — במקום מקף על פני כל השורה
+DIVIDER = ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+           'border="0" style="margin:22px 0"><tr>'
+           '<td style="border-top:1px solid #e2d9c3;font-size:0;line-height:0">&nbsp;</td>'
+           '<td width="26" align="center" style="font-size:13px;line-height:1;'
+           'color:#c9a94e;padding:0 6px">&#9670;</td>'
+           '<td style="border-top:1px solid #e2d9c3;font-size:0;line-height:0">&nbsp;</td>'
+           '</tr></table>')
 _TILE = ('<td width="50%%" valign="top" style="padding:4px">'
          '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0">'
          '<tr><td style="border:1px solid #ddd6c6;border-radius:10px;background:#fffdf7;'
@@ -554,6 +569,8 @@ def personalize(text, who, html=False, d='rtl'):
             return str(len(avs))
         if key in ('תרומה', 'תשלום', 'donate'):
             return donate_html() if html else donate_text()
+        if key in ('קו', 'הפרדה', 'divider'):
+            return DIVIDER if html else '— — —'
         if key in ('קוויטל', 'kvittel'):
             if not kv:
                 return ''
