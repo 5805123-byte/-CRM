@@ -8710,7 +8710,8 @@ const MLTPL=[{
    // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
    // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
+   // מאיר: "לתקן — הקוויטל המיוחד עם השמות והבקשות שלך."
+   'Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    // מאיר: "אני רוצה שהשם של התורם עם התואר שלו לפני ואחרי השם שיהיה
    // בשורה נפרדת" — שורה אחת יורדת, ולכן זו אותה פסקה בשורה חדשה
    // ולא פסקה נפרדת עם רווח גדול.
@@ -8768,7 +8769,8 @@ const MLTPL=[{
    // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
    // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
+   // מאיר: "לתקן — הקוויטל המיוחד עם השמות והבקשות שלך."
+   'Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    // מאיר: "אני לא אוהב את המשפט הזה שהוא לא רק מחזיק אחד אלא 4. תכתוב
    // פשוט: אתה מחזיק ותומך בשותפות יששכר זבולון ב-4 אברכים וכו'."
@@ -8813,7 +8815,8 @@ const MLTPL=[{
    // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
    // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   'Your Kvitel is at the bottom of this email — your names, that we daven for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
+   // מאיר: "לתקן — הקוויטל המיוחד עם השמות והבקשות שלך."
+   'Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    // מאיר תיקן: "קוויטל שבועי זה שכל האברכים של הכולל חצות נוסעים
    // פעם בשבוע לכותל המערבי או לקבר רחל, וכל ערב ראש חודש למירון אצל
@@ -8828,10 +8831,14 @@ const MLTPL=[{
    // מאיר: "לא שהוא עומד מאחורי כולל חצות אלא הוא תומך אישי נלהב וקבוע
    // בלימוד התורה של חצות הלילה ובזכותו קול התורה נשמע בכל לילה ע"י
    // למעלה ממאה אברכים בעת רצון הגדול של חצות, זה השמירה שלו."
-   'You are a warm, personal and steady supporter of the Torah of chatzos halayla — and in your merit, the sound of Torah is heard every single night from more than a hundred avreichim, at the great eis ratzon of chatzos. That is your special shemirah: that they daven for you, and that your Kvitel is always with them.',
+   // מאיר: "להוסיף את המילה במיוחד כשהם גם מתפללים עליך — העיקר זה
+   // שהוא מחזיק תורה וגם מתפללים עליו."
+   'You are a warm, personal and steady supporter of the Torah of chatzos halayla — and in your merit, the sound of Torah is heard every single night from more than a hundred avreichim, at the great eis ratzon of chatzos. That is your special shemirah: you hold up the Torah of chatzos — and on top of that, they also daven for you, especially, and your Kvitel is always with them.',
    // "הזכרת פעמיים את הכותל וקבר רחל, אין צורך להכפיל" — פעם אחת, עם
    // "המקום שלא זזה ממנו שכינה מעולם".
-   'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim travel to the Kosel HaMaaravi — the place from which the Shechinah has never moved — and to Kever Rochel. They stand there in the middle of the night, say Tehillim together, and your Kvitel is in their hands.',
+   // מאיר: "זה לא שהקוויטל שלו בידיים שלהם (מה יש לו מזה?) אלא הם
+   // מתפללים עליו באופן אישי מכל הלב."
+   'Several times a month, at the great eis ratzon of chatzos halayla, the avreichim travel to the Kosel HaMaaravi — the place from which the Shechinah has never moved — and to Kever Rochel. They stand there in the middle of the night, say Tehillim together, and daven for you personally, with all their heart.',
    // "תדגיש יותר את הענין שיש עיתות רצון מיוחדים שתמיד הוא מוזכר מהקוויטל
    // המיוחד שלו, הם מתפללים שם אחרי שם מכל הלב והנשמה, ורבים ראו ישועות
    // גדולות בזכות התפילות שלהם באופן למעלה מדרך הטבע."
