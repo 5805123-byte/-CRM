@@ -409,6 +409,68 @@ KVBOX = ('<span style="display:block;margin:14px 0;padding:13px 17px;background:
          'line-height:1.8;color:#1c1710">')
 KVLINE = '<span style="display:block">%s</span>'
 
+# מאיר: "נעשה ריבועים כאלה יפים שהבן אדם רואה באופן יפה ובולט את כל
+# אפשרויות התרומה... או שזה מכביד על המערכת של האימייל?" לא מכביד: אלו
+# טבלאות טקסט עם מסגרת, בלי שום תמונה — כמה אלפי תווים בסך הכל. תמונה
+# היא מה שמכביד, וגם נחסמת אצל רוב התורמים.
+#
+# כל אפשרות: כותרת, שורת הסבר, וקישור (ריק = אין למה ללחוץ).
+DONATE = [
+    ('💳', 'Credit Card', 'Up to 3 payments', 'https://kollelchatzot.com/donate.php'),
+    ('🇮🇱', 'Nedarim Plus', 'Israeli account, in ₪',
+     'https://www.matara.pro/nedarimplus/online/?mosad=5777499'),
+    ('💵', 'Zelle / QuickPay', 'Kollelchatzos1@gmail.com',
+     'mailto:Kollelchatzos1@gmail.com'),
+    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzos of Cong. Zichron Avos', ''),
+    ('✉️', 'Check', 'Kollel Chatzos, c/o Friedman Family<br>'
+     '1540 40th Street, Brooklyn, NY 11218', ''),
+    ('💬', 'WhatsApp', 'Message me directly',
+     'https://wa.me/972527628272?text=Hello%20Rabbi%20Deutsch%2C%20I%20would'
+     '%20like%20to%20take%20a%20family%20for%20Yom%20Tov'),
+    ('📞', 'Phone', '+972 52-762-8272', 'tel:+972527628272'),
+]
+DONATE_FOOT = 'All donations are tax deductible · Tax ID # 20-0447034'
+_TILE = ('<td width="50%%" valign="top" style="padding:4px">'
+         '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0">'
+         '<tr><td style="border:1px solid #ddd6c6;border-radius:10px;background:#fffdf7;'
+         'padding:11px 12px;text-align:center;font-size:14px;line-height:1.45">'
+         '<div style="font-size:20px;line-height:1">%s</div>'
+         '<div style="font-weight:700;color:#2b2b2b;margin-top:3px">%s</div>'
+         '<div style="color:#6b6257;font-size:12px;margin-top:2px">%s</div>'
+         '</td></tr></table></td>')
+
+
+def donate_html():
+    """אפשרויות התרומה כריבועים — שניים בשורה, בלי תמונות ובלי כלום
+    שנחסם. טבלאות ולא flex/grid, כי אאוטלוק אינו תומך בהם."""
+    cells = []
+    for icon, title, sub, url in DONATE:
+        t = title if not url else \
+            '<a href="%s" style="color:#1a5fb4;text-decoration:none">%s</a>' % (url, title)
+        cells.append(_TILE % (icon, t, sub))
+    rows = ''
+    for i in range(0, len(cells), 2):
+        pair = cells[i:i + 2]
+        if len(pair) == 1:
+            pair.append('<td width="50%"></td>')
+        rows += '<tr>' + ''.join(pair) + '</tr>'
+    return ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'border="0" style="margin:14px 0">' + rows + '</table>'
+            '<div style="text-align:center;color:#6b6257;font-size:12px;margin:2px 0 10px">'
+            + _esc(DONATE_FOOT) + '</div>')
+
+
+def donate_text():
+    """אותן אפשרויות בטקסט פשוט — למי שקורא את הגרסה בלי עיצוב."""
+    out = []
+    for icon, title, sub, url in DONATE:
+        s = re.sub(r'<br\s*/?>', ' · ', sub)
+        line = '%s %s — %s' % (icon, title, s)
+        if url and not url.startswith('mailto:') and not url.startswith('tel:'):
+            line += '\n   ' + url
+        out.append(line)
+    return '\n'.join(out) + '\n\n' + DONATE_FOOT
+
 
 def personalize(text, who, html=False, d='rtl'):
     """מחליף את הסימונים שבמכתב בפרטי התורם שמקבל אותו.
@@ -490,6 +552,8 @@ def personalize(text, who, html=False, d='rtl'):
             return ', '.join(names[:-1]) + ' ו' + names[-1]
         if key in ('מספר אברכים', 'כמה אברכים'):
             return str(len(avs))
+        if key in ('תרומה', 'תשלום', 'donate'):
+            return donate_html() if html else donate_text()
         if key in ('קוויטל', 'kvittel'):
             if not kv:
                 return ''
