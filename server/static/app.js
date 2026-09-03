@@ -8710,7 +8710,10 @@ const MLTPL=[{
    // מאיר: "אני רוצה שהשם של התורם עם התואר שלו לפני ואחרי השם שיהיה
    // בשורה נפרדת" — שורה אחת יורדת, ולכן זו אותה פסקה בשורה חדשה
    // ולא פסקה נפרדת עם רווח גדול.
-   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}},',
+   // הפסיק בסוף השורה ירד: השורה עברית בתוך מכתב אנגלי, והפסיק קפץ
+   // לצד הימני של השם במקום להיצמד לסופו. מאיר: "יש פה פסיק אחד שצריך
+   // להוריד במכתב".
+   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    'At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, {{אברך}} — your Yissachar-Zevulun partner, the avreich who learns as your shaliach and in your merit — sits down on the floor and says Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learns Torah until the morning light.',
    'Every hour that he sits and learns Torah at chatzos, it is as if you are sitting there and learning. And every night, at that eis ratzon, he davens for you personally, by name.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: so many hours of Torah and of tefillah, at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings.',

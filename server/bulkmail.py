@@ -677,7 +677,10 @@ def _html(body, unsub_url, sig, d='rtl', pixel='', who=None):
             '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
             '<body style="margin:0;padding:18px;background:#ffffff">'
             '<div style="max-width:600px;margin:0 auto;direction:%s;text-align:start;'
-            'font-family:Arial,\'Segoe UI\',sans-serif;font-size:16px;line-height:1.7;color:#222">'
+            # מאיר: "הייתי רוצה אולי להגדיל טיפונת את כל הטקסט באנגלית".
+            # 17px במקום 16. כל שאר הגדלים במכתב נגזרים מזה ב-em — השם,
+            # שם האברך ותיבת הקוויטל — ולכן הכל גדל יחד ובאותו יחס.
+            'font-family:Arial,\'Segoe UI\',sans-serif;font-size:17px;line-height:1.7;color:#222">'
             % (('en', 'ltr', 'ltr') if d == 'ltr' else ('he', 'rtl', 'rtl'))
             + paras + foot + '</div></body></html>')
 
