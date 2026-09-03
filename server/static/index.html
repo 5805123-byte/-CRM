@@ -1680,8 +1680,17 @@
      נשאר, וזה מה שבאמת שומר על תורם שלם בעמוד אחד. */
   body.kvprint #kvlistwrap .kblock{display:block;
     background:none!important;border:0!important;border-radius:0!important;
-    padding:0!important;margin:0 0 1.6mm!important;
+    padding:0!important;margin:0 0 .8mm!important;
     break-inside:avoid;page-break-inside:avoid}
+  /* מאיר: "אני רוצה הפרדה קטנה בין תורם לתורם אבל שלא ייקח הרבה מקום."
+     קו שיער בתוך המרווח שכבר קיים — המרווח ירד ל-.8מ״מ מכל צד, ולכן
+     ההפרדה עולה 0.2מ״מ לתורם בלבד ולא מזיזה את מספר הדפים. הקו נמוג
+     בקצוות כמו הפס שברצועה התחתונה, כדי שיהיה עדין ולא ייראה כטבלה.
+     אחרי כותרת חודש אין קו — שם הכותרת עצמה היא ההפרדה. */
+  body.kvprint #kvlistwrap .kblock+.kblock{padding-top:.8mm!important;
+    border-top:.2mm solid transparent!important;
+    border-image:linear-gradient(to right,rgba(190,158,88,0),
+      rgba(190,158,88,.5) 14%,rgba(190,158,88,.5) 86%,rgba(190,158,88,0)) 1!important}
   /* מאיר: "את הגופן של הקוויטל תגדיל עוד קצת" */
   body.kvprint #kvlistwrap .kblock .who{font-size:calc(var(--kvz,1) * 1.06rem);font-weight:800;
     margin:0 0 .4mm!important;color:#000!important;line-height:1.15}
