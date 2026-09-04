@@ -8937,15 +8937,19 @@ const MLTPL=[{
   // "זמנים מיוחדים" — הקוויטל שלו נוסע עם הכולל בעיתות הרצון.
   id:'yt_occ',
   name:'ימים נוראים — מזדמן / זמנים מיוחדים (עם קוויטל)',
-  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names attached',
+  // מאיר: "זה מדי יבש, וזה גם לא הכי נכון. לכתוב שהשמות שהוא מסר לנו עם
+  // התרומה שלו — כשהוא תרם התפללו על השמות שלו בחצות הלילה ולמדו והקדישו
+  // את הלימוד לזכותו. מעבר לזה השמות שלו שמורים אצלנו ומתי שהוא ירצה
+  // שנתפלל... הוא מוזמן תמיד לעדכן אותנו. גם בכותרת ובפתיחה — לא שמתפללים
+  // עליהם בחצות אלא שהם שמורים אצלנו. ולפני השמות — אם תרצה שזה יהיה
+  // באופן קבוע עם תרומה חודשית, זה זכות עצומה שמחזיקה את הכולל."
+  subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names are kept with us',
   body:[
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   'Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.',
+   'The names you gave us with your donation are kept with us — you will find them at the bottom of this email. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'Your name is written in the Kvitel of Kollel Chatzos. You gave to the Torah of chatzos — and from that day on, you are carried with us to every eis ratzon.',
-   'At every special eis ratzon in the year, your Kvitel travels with the avreichim of Kollel Chatzos. When they go at chatzos halayla to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, to Meron by Rabbi Shimon bar Yochai, and to the kevarim of tzaddikim on special days, you are mentioned there, from your own Kvitel — at the most auspicious hour and in the most auspicious place. They daven name after name, with all their heart and all their soul. Many have seen great yeshuos from these tefillos, above the way of nature.',
-   'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies Torah learned at chatzos in your merit, and tefillos said for you at every eis ratzon, at the hour the Zohar HaKadosh calls the most desirable and most exalted of all.',
-   'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up, all year long.',
+   'When you gave your donation, your names were davened for at chatzos halayla — at the hour שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah — and the avreichim learned and dedicated their learning in your merit.',
+   'And beyond that, your names stay with us. Whenever you would like us to daven for them — at the great eis ratzon of chatzos, at a special time, at the Kosel HaMaaravi, the place from which the Shechinah has never moved, in Meron by Rabbi Shimon bar Yochai — or to dedicate the learning at chatzos in your merit, you are always welcome to update us, and we would be glad to daven for them.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos, and the families of these same avreichim have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
@@ -8961,6 +8965,13 @@ const MLTPL=[{
    'I deeply appreciate your support. Kollel Chatzos stands because of people like you, and every hour of it is written to your name.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
+   '{{קו}}',
+   // מאיר: "את זה צריך יותר לעדן, ולכתוב עם התרומה שלו שהוא נתן זה הכח
+   // והזכות שלו בקול התורה שנשמע בחצות וזה הברכה ושמירה שלו. הייתי שם
+   // את זה לפני השמות, מתמקד שם." פסקאות ראש השנה ו"אין לי מילים"
+   // ירדו מהגוף, והרעיון עבר לכאן, לפני השמות.
+   'The names below are yours in the Kvitel of Kollel Chatzos. With the donation you gave, you have a share and a zechus in the kol Torah that rises at chatzos halayla — and that is your brachah and your shemirah.',
+   'And if you would like it to be permanent — with a [steady monthly donation](https://kollelchatzot.com/donate.php) — it would be a tremendous zechus. That is what holds up Kollel Chatzos and the avreichim who learn here, and lets the kol Torah of chatzos go on.',
    'YOUR KVITEL NAMES',
    '{{קוויטל}}',
    'I would be glad if you would reply and update your Kvitel.'
