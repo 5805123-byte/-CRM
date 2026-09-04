@@ -8966,6 +8966,8 @@ const MLTPL=[{
    'The names below are the names you gave us with your donations to Kollel Chatzos. When you gave, they were davened for at chatzos halayla — at the hour שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah — and the avreichim learned and dedicated their learning in your merit. With those donations you have a share and a zechus in the kol Torah that rises at chatzos, and that is your brachah and your shemirah.',
    'Your names stay with us. Whenever you would like us to daven for them — at the great eis ratzon of chatzos, at a special time, at the Kosel HaMaaravi, the place from which the Shechinah has never moved, in Meron by Rabbi Shimon bar Yochai — or to dedicate the learning at chatzos in your merit, you are always welcome to write to us, and we would be glad to daven for them.',
    'And if you would like this to be permanent: for [$148 a month](https://kollelchatzot.com/donate.php), three avreichim daven for you every single night at chatzos, name after name, from your Kvitel. A steady monthly donation is what makes someone a member of Kollel Chatzos — one of the pillars the Kollel stands on. It is what holds up the avreichim who learn here, and lets the kol Torah of chatzos go on.',
+   // מאיר: "להוסיף שאפשר גם לתת בקביעות עוד אפשרויות."
+   'There are other ways to give steadily as well — a Yissachar-Zevulun partnership with an avreich who learns for you, or any monthly amount that is right for you. Write to me, and we will find the right one together.',
    'YOUR KVITEL NAMES',
    '{{קוויטל}}',
    'I would be glad if you would reply and update your Kvitel.'
