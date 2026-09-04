@@ -8888,7 +8888,11 @@ const MLTPL=[{
    // מאיר: "אל תכתוב ממבר, אתה חוזר על עצמך שוב חודש בחודש. תעשה את זה
    // חם מרגש שהוא שותף פעיל בלימוד התורה ותפילה בעת רצון של חצות הלילה,
    // בזכותו יש קול תורה, כשהוא שותף כל חודש עם התרומה הקבועה שלו."
-   'You are an active partner in the Torah and the tefillah of chatzos halayla. Every month, with your steady donation, you take part in it — and because of you there is a kol Torah at the great eis ratzon of chatzos. That partnership is your shemirah: it guards you, and it brings you brachah, yeshuah and protection, all year long.',
+   // מאיר: "ארבע פעמים במשפט אחד חוזר על עצמו המילה שותפות. תכוון את זה
+   // לכיוון מה הוא מרוויח מזה שהוא נותן כל חודש — קול התורה בזכותו,
+   // האברכים שקמים חצות מתפללים עליו בעת רצון הגדול, ובזכות זה הם
+   // מתקיימים ויכולים ללמוד ברוגע במיוחד במצב הקשה בארץ ישראל."
+   'Every month your donation arrives — and because of it there is a kol Torah at chatzos. The avreichim who rise in the middle of the night to learn can sit over the Torah with peace of mind, especially in these hard times in Eretz Yisroel, because you stand behind them. And what comes back to you? Those same avreichim, at the great eis ratzon of chatzos, daven for you. Your monthly gift turns into Torah and tefillah every single night — and that is what guards you and brings you brachah and yeshuah all year long.',
    'Every single night, at the great eis ratzon of chatzos halayla, three special avreichim — tzaddikim and masmidim who sit over the Torah night after night — take your Kvitel and mention your names and your requests, yours and your family\'s, one by one, from the heart.',
    'Not once. Not on special occasions. Every night of the year, at the hour שערי שמים stand open and the Ribono Shel Olam comes down to listen to whoever is learning Torah, your names rise — at the hour the Zohar HaKadosh calls the most desirable and most exalted of all.',
    'And your Kvitel travels with the Kollel too. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too — at the most auspicious hour and in the most auspicious place, the eis ratzon of chatzos halayla.',
