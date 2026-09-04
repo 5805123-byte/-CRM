@@ -8978,17 +8978,14 @@ const MLTPL=[{
   // בפתיחה ובלי תיבת השמות בסוף — במקומה הזמנה לשלוח שמות.
   id:'yt_nokv',
   name:'ימים נוראים — בלי קוויטל',
-  // מאיר: "שים לב שהכותרת הראשית צריכה להיות שונה, כמו: הירשם לקוויטל של
-  // הכולל חצות." הנושא, השורה הראשונה והחלק שלפני הסוף — כולם סביב
-  // ההצטרפות לקוויטל, כי לתורם הזה אין עדיין שמות אצלנו.
-  subj:'Sign up for the Kvitel of Kollel Chatzos — and take a needy Kollel family for Yom Tov',
+  // מאיר: "הכותרת — בעיקר על לתת אוכל למשפחות העניות של הכולל חצות. בתוך
+  // המכתב אל תתחיל עם כלום, רק עם לכבוד וכו'. אל תכתוב שהוא לא בקוויטל
+  // עדיין, ואל תכתוב שיש בתחתית פרטים — תדבר רק על המשפחות. אבל כן
+  // תכתוב בהתחלה שהוא תרם לנו לכולל חצות ויש לו זכות וחלק בלימוד התורה."
+  subj:'Needy Kollel Chatzos families wait for Yom Tov food — take one or two for Yom Tov',
   body:[
-   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   'Your names are not yet on the Kvitel of Kollel Chatzos. At the bottom of this email you will see how to add them — and they will be davened for at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'You have a part in Kollel Chatzos — in the Torah that is learned here in the middle of the night. At chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour, more than a hundred avreichim sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light. Your support has a share in every hour of it.',
-   'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: hours of Torah and of tefillah at chatzos, the most desirable and most exalted hour of all, as the Zohar HaKadosh brings.',
-   'I have no words to describe what I feel toward you — that you hold up Torah and talmidei chachamim who learn here in the Kollel. You are holding stock here that only goes up.',
+   'You gave to Kollel Chatzos — and with that, you have a share and a zechus in the Torah that is learned here at chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. More than a hundred avreichim sit down on the floor, say Tikkun Chatzos, and learn until the morning light — and your support has a share in every hour of it.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos — the families of these same avreichim — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
