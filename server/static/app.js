@@ -8937,21 +8937,18 @@ const MLTPL=[{
   // "זמנים מיוחדים" — הקוויטל שלו נוסע עם הכולל בעיתות הרצון.
   id:'yt_occ',
   name:'ימים נוראים — מזדמן / זמנים מיוחדים (עם קוויטל)',
-  // מאיר: "זה מדי יבש, וזה גם לא הכי נכון. לכתוב שהשמות שהוא מסר לנו עם
-  // התרומה שלו — כשהוא תרם התפללו על השמות שלו בחצות הלילה ולמדו והקדישו
-  // את הלימוד לזכותו. מעבר לזה השמות שלו שמורים אצלנו ומתי שהוא ירצה
-  // שנתפלל... הוא מוזמן תמיד לעדכן אותנו. גם בכותרת ובפתיחה — לא שמתפללים
-  // עליהם בחצות אלא שהם שמורים אצלנו. ולפני השמות — אם תרצה שזה יהיה
-  // באופן קבוע עם תרומה חודשית, זה זכות עצומה שמחזיקה את הכולל."
+  // מאיר: "את כל מה שסימנתי תשים למטה לפני שהוא רואה את השמות של הקוויטל
+  // שלו, תשלב את זה יפה עם מה שכבר כתוב שם. למטה איפה שכתוב שיקח משהו
+  // קבוע — בפירוט: ב-148 דולר לחודש שלושה אברכים יתפללו עליו כל לילה
+  // בחצות, והתרומות הקבועות מעידות שהוא ממברשיפ של הכולל ואחד מעמודי
+  // היסוד. 'עם התרומות שלך שנתת', לא 'עם התרומה' — יש כאלו שנתנו כמה
+  // פעמים. שלא יוכפלו משפטים. תמחק למעלה ותשלב יפה למטה."
   subj:'Needy Kollel families wait for Yom Tov food — take one or two. Your Kvitel names are kept with us',
   body:[
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   'The names you gave us with your donation are kept with us — you will find them at the bottom of this email. If anything has changed, we would be glad if you would update us.',
+   'The names you gave us with your donations to Kollel Chatzos are kept with us — you will find them at the bottom of this email. If anything has changed, we would be glad if you would update us.',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'When you gave your donation, your names were davened for at chatzos halayla — at the hour שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah — and the avreichim learned and dedicated their learning in your merit.',
-   'And beyond that, your names stay with us. Whenever you would like us to daven for them — at the great eis ratzon of chatzos, at a special time, at the Kosel HaMaaravi, the place from which the Shechinah has never moved, in Meron by Rabbi Shimon bar Yochai — or to dedicate the learning at chatzos in your merit, you are always welcome to update us, and we would be glad to daven for them.',
-   '{{קו}}',
-   'There are 110 families in Kollel Chatzos, and the families of these same avreichim have nothing to eat for Yom Tov. They are groaning under their debts.',
+   'There are 110 families in Kollel Chatzos — the families of the avreichim who learn here at chatzos — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
    'We want to give each family [$1,200](https://kollelchatzot.com/donate.php), so that they will have what to eat for Yom Tov b\'derech kavod.',
    'And another [$100](https://kollelchatzot.com/donate.php) as a special gift for the avreich\'s wife, hers alone, to encourage her and to strengthen her for the mesirus nefesh she gives night after night.',
@@ -8966,12 +8963,9 @@ const MLTPL=[{
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    '{{קו}}',
-   // מאיר: "את זה צריך יותר לעדן, ולכתוב עם התרומה שלו שהוא נתן זה הכח
-   // והזכות שלו בקול התורה שנשמע בחצות וזה הברכה ושמירה שלו. הייתי שם
-   // את זה לפני השמות, מתמקד שם." פסקאות ראש השנה ו"אין לי מילים"
-   // ירדו מהגוף, והרעיון עבר לכאן, לפני השמות.
-   'The names below are yours in the Kvitel of Kollel Chatzos. With the donation you gave, you have a share and a zechus in the kol Torah that rises at chatzos halayla — and that is your brachah and your shemirah.',
-   'And if you would like it to be permanent — with a [steady monthly donation](https://kollelchatzot.com/donate.php) — it would be a tremendous zechus. That is what holds up Kollel Chatzos and the avreichim who learn here, and lets the kol Torah of chatzos go on.',
+   'The names below are the names you gave us with your donations to Kollel Chatzos. When you gave, they were davened for at chatzos halayla — at the hour שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah — and the avreichim learned and dedicated their learning in your merit. With those donations you have a share and a zechus in the kol Torah that rises at chatzos, and that is your brachah and your shemirah.',
+   'Your names stay with us. Whenever you would like us to daven for them — at the great eis ratzon of chatzos, at a special time, at the Kosel HaMaaravi, the place from which the Shechinah has never moved, in Meron by Rabbi Shimon bar Yochai — or to dedicate the learning at chatzos in your merit, you are always welcome to write to us, and we would be glad to daven for them.',
+   'And if you would like this to be permanent: for [$148 a month](https://kollelchatzot.com/donate.php), three avreichim daven for you every single night at chatzos, name after name, from your Kvitel. A steady monthly donation is what makes someone a member of Kollel Chatzos — one of the pillars the Kollel stands on. It is what holds up the avreichim who learn here, and lets the kol Torah of chatzos go on.',
    'YOUR KVITEL NAMES',
    '{{קוויטל}}',
    'I would be glad if you would reply and update your Kvitel.'
