@@ -8900,7 +8900,10 @@ const MLTPL=[{
    // בכל מילה שהם מתפללים עם השמות והבקשות שלך."
    // מאיר: "להוסיף — התרומה הקבועה המיוחדת שלך, זה מה שמחזיק את הכולל
    // חצות וזה מנוע להמשיך את הקול תורה ותפילה בחצות."
-   'In the merit of your steady donation, you are an active partner — you have a share and a special zechus in the kol Torah that rises every night at chatzos from more than a hundred avreichim, tzaddikim. Your special steady donation is what holds up Kollel Chatzos — it is the engine that keeps the Torah and the tefillah of chatzos going, night after night.',
+   // מאיר: "זה חוזר על עצמו באותה שורה, תכניס את הכל בשורה אחת או שניים
+   // בלי לחזור על עצמו" — התרומה מוזכרת פעם אחת, והיא המנוע והשותפות
+   // באותה נשימה.
+   'Your steady donation is the engine of Kollel Chatzos. It is what keeps the Torah and the tefillah of chatzos going, night after night — and it makes you an active partner, with a share and a special zechus in the kol Torah of more than a hundred avreichim, tzaddikim, every night at chatzos.',
    'And at that holy, uniquely auspicious hour, three specially chosen avreichim daven for you, night after night, at chatzos. They guard you with their Torah and they bless you, and their tefillos break through and rise up above. They have kavanah in every word they daven — with your names and your requests, one by one.',
    'And your Kvitel travels with the Kollel too. Every time the avreichim go to the Kosel HaMaaravi — the place from which the Shechinah has never moved — to Kever Rochel, and to Meron by Rabbi Shimon bar Yochai, your names are mentioned and davened for there too — at the most auspicious hour and in the most auspicious place, the eis ratzon of chatzos halayla.',
    'On Rosh Hashanah, when the whole year is laid on the scales, you come and you pass through and you are blessed — because on your side of the scale there lies an enormous weight, more than can be put into writing or into words: a whole year of Torah learned at chatzos in your merit, and three avreichim who davened for you every single night of it.',
