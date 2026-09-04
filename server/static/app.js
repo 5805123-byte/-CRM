@@ -8985,7 +8985,9 @@ const MLTPL=[{
   subj:'Needy Kollel Chatzos families wait for Yom Tov food — take one or two for Yom Tov',
   body:[
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'You gave to Kollel Chatzos — and with that, you have a share and a zechus in the Torah that is learned here at chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. More than a hundred avreichim sit down on the floor, say Tikkun Chatzos, and learn until the morning light — and your support has a share in every hour of it.',
+   // מאיר: "אני לא אוהב את המשפט בהתחלה, פשוט תתחיל עם זה שיש לו זכות עם
+   // תרומתו שנתן לכולל חצות."
+   'With the donation you gave to Kollel Chatzos, you have a share and a zechus in the Torah that is learned here at chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. More than a hundred avreichim sit down on the floor, say Tikkun Chatzos, and learn until the morning light — and your support has a share in every hour of it.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos — the families of these same avreichim — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
