@@ -8987,7 +8987,11 @@ const MLTPL=[{
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    // מאיר: "אני לא אוהב את המשפט בהתחלה, פשוט תתחיל עם זה שיש לו זכות עם
    // תרומתו שנתן לכולל חצות."
-   'With the donation you gave to Kollel Chatzos, you have a share and a zechus in the Torah that is learned here at chatzos halayla, when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. More than a hundred avreichim sit down on the floor, say Tikkun Chatzos, and learn until the morning light — and your support has a share in every hour of it.',
+   // מאיר: "צריך להתחיל בכלליות על כולל חצות, ואחר כך בשורה הבאה שהוא
+   // כבר תרם בעבר בלשון יפה — שירגיש קשר. הוא תרם לפני שנה־שנתיים, הוא
+   // לא יבין 'מה התרומה עכשיו פה'."
+   'Kollel Chatzos in Eretz Yisroel is a Kollel of more than a hundred avreichim who rise every night at chatzos halayla — when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. They sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
+   'You are no stranger to this Torah. Some time ago you opened your hand to Kollel Chatzos — and that gift has not been forgotten. It gave you a share and a zechus in every hour of Torah learned here at chatzos since, and it is what brings me to write to you today, as one who already has a part in this.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos — the families of these same avreichim — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
