@@ -8757,6 +8757,7 @@ const MLTPL=[{
    '{{תרומה}}',
    '{{קו}}',
    'I deeply appreciate your steady support. Kollel Chatzos stands because of you, and every hour of it is written to your name.',
+   'As every year, I will be zoche to be in Uman on Rosh Hashanah, at the holy tziyun of Rabbeinu Nachman of Breslov zy"a — and of course I am taking your Kvitel with me, and I will daven there for every name and every request, especially on Erev Rosh Hashanah, which is the most auspicious time of all to daven there.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    'YOUR KVITEL NAMES',
@@ -8806,6 +8807,7 @@ const MLTPL=[{
    '{{תרומה}}',
    '{{קו}}',
    'I deeply appreciate your steady support. Kollel Chatzos stands because of you, and every hour of it is written to your name.',
+   'As every year, I will be zoche to be in Uman on Rosh Hashanah, at the holy tziyun of Rabbeinu Nachman of Breslov zy"a — and of course I am taking your Kvitel with me, and I will daven there for every name and every request, especially on Erev Rosh Hashanah, which is the most auspicious time of all to daven there.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    'YOUR KVITEL NAMES',
@@ -8868,6 +8870,7 @@ const MLTPL=[{
    '{{תרומה}}',
    '{{קו}}',
    'I deeply appreciate your steady support. Kollel Chatzos stands because of you, and every hour of it is written to your name.',
+   'As every year, I will be zoche to be in Uman on Rosh Hashanah, at the holy tziyun of Rabbeinu Nachman of Breslov zy"a — and of course I am taking your Kvitel with me, and I will daven there for every name and every request, especially on Erev Rosh Hashanah, which is the most auspicious time of all to daven there.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    'YOUR KVITEL NAMES',
@@ -8924,6 +8927,7 @@ const MLTPL=[{
    '{{תרומה}}',
    '{{קו}}',
    'I deeply appreciate your steady support. Kollel Chatzos stands because of you, and every hour of it is written to your name.',
+   'As every year, I will be zoche to be in Uman on Rosh Hashanah, at the holy tziyun of Rabbeinu Nachman of Breslov zy"a — and of course I am taking your Kvitel with me, and I will daven there for every name and every request, especially on Erev Rosh Hashanah, which is the most auspicious time of all to daven there.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    'YOUR KVITEL NAMES',
@@ -8960,6 +8964,7 @@ const MLTPL=[{
    '{{תרומה}}',
    '{{קו}}',
    'I deeply appreciate your support. Kollel Chatzos stands because of people like you, and every hour of it is written to your name.',
+   'As every year, I will be zoche to be in Uman on Rosh Hashanah, at the holy tziyun of Rabbeinu Nachman of Breslov zy"a — and of course I am taking your Kvitel with me, and I will daven there for every name and every request, especially on Erev Rosh Hashanah, which is the most auspicious time of all to daven there.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    '{{קו}}',
@@ -8990,10 +8995,11 @@ const MLTPL=[{
    // מאיר: "צריך להתחיל בכלליות על כולל חצות, ואחר כך בשורה הבאה שהוא
    // כבר תרם בעבר בלשון יפה — שירגיש קשר. הוא תרם לפני שנה־שנתיים, הוא
    // לא יבין 'מה התרומה עכשיו פה'."
-   'Kollel Chatzos in Eretz Yisroel is a Kollel of more than a hundred avreichim who rise every night at chatzos halayla — when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. They sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
-   // מאיר: "לא שלילי, ולא להתחיל עם ענין התרומה. קודם על הכולל חצות, ואז
-   // להשחיל שהוא תרם בעבר והוא ממשפחת כולל חצות."
-   'And you belong to this. With the donations you have given to Kollel Chatzos, you are part of the Kollel Chatzos family — you have a share and a zechus in every hour of Torah learned here at chatzos, and it is as one of our own that I write to you today.',
+   // מאיר: "אין צורך לפתיח שכזה כי הוא כבר תורם — להתחיל בלשון שהוא כבר
+   // מכיר: בכולל חצות שלנו שזכית להיות שותף בו לומדים כיום למעלה ממאה
+   // אברכים כל לילה בעת רצון של חצות."
+   'In our Kollel Chatzos, which you have had the zechus to be a partner in, more than a hundred avreichim learn today, every single night, at the eis ratzon of chatzos halayla — when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. They sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
+   'With the donations you have given to Kollel Chatzos, you are part of the Kollel Chatzos family — you have a share and a zechus in every hour of that Torah, and it is as one of our own that I write to you today.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos — the families of these same avreichim — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
@@ -9007,6 +9013,7 @@ const MLTPL=[{
    '{{תרומה}}',
    '{{קו}}',
    'I deeply appreciate your support. Kollel Chatzos stands because of people like you, and every hour of it is written to your name.',
+   'As every year, I will be zoche to be in Uman on Rosh Hashanah, at the holy tziyun of Rabbeinu Nachman of Breslov zy"a — and of course, if you reply with your names, I will take them with me and daven there for every name and every request, especially on Erev Rosh Hashanah, which is the most auspicious time of all to daven there.',
    'כתיבה וחתימה טובה\nשנה טובה ומתוקה\nשנה של בריאות, שמחה, אושר ועושר, ונחת וכל טוב אמן',
    'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzos, Eretz Yisroel',
    '{{קו}}',
