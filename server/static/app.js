@@ -8999,7 +8999,7 @@ const MLTPL=[{
    // מכיר: בכולל חצות שלנו שזכית להיות שותף בו לומדים כיום למעלה ממאה
    // אברכים כל לילה בעת רצון של חצות."
    'In our Kollel Chatzos, which you have had the zechus to be a partner in, more than a hundred avreichim learn today, every single night, at the eis ratzon of chatzos halayla — when שערי שמים open and the Ribono Shel Olam comes down to listen to whoever is learning Torah at that hour. They sit down on the floor and say Tikkun Chatzos, weeping over the galus of Klal Yisroel and davening for the geulah, and then learn Torah until the morning light.',
-   'With the donations you have given to Kollel Chatzos, you are part of the Kollel Chatzos family — you have a share and a zechus in every hour of that Torah, and that is what brings me to write to you today.',
+   'With the donations you have given to Kollel Chatzos, you are part of the Kollel Chatzos family — you have a share and a zechus in every hour of that Torah.',
    '{{קו}}',
    'There are 110 families in Kollel Chatzos — the families of these same avreichim — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
