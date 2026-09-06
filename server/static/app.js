@@ -896,6 +896,18 @@ function hebDateGet(el){
   return [g('.hd_d'),g('.hd_m'),g('.hd_y')].filter(Boolean).join(' ');
 }
 function pill(t){if(!TIERS[t])return '';const[l,c]=TIERS[t];return `<span class="pill ${c}">${l}</span>`;}
+// מאיר: "בדף הראשי — כל מי שיש לו קוויטל שיהיה כתוב קוויטל ואיזה דרגת
+// קוויטל הוא. מי שאין לו קוויטל שלא יהיה כתוב." הקובע הוא השמות בקוויטל,
+// לא הדרגה שבכרטיס: דרגה בלי שמות לא מוצגת, ושמות בלי דרגה מוצגים כ"קוויטל".
+function kvPill(d){
+  const ps=(d.prayers||[]).filter(p=>String(p.text||p.name||'').trim());
+  if(!ps.length)return '';
+  let t=(d.tier||'').trim();
+  if(!TIERS[t]){const cnt={};ps.forEach(p=>{const k=String(p.tier||'').trim();if(TIERS[k])cnt[k]=(cnt[k]||0)+1;});
+    t=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0]||'';}
+  const [l,c]=TIERS[t]||['','klali'];
+  return `<span class="pill ${c}" title="${ps.length} שמות בקוויטל">🕯️ קוויטל${l?' · '+l:''}</span>`;
+}
 function catPill(c){if(c==='קבוע')return '<span class="pill reg">קבוע</span>';if(c==='מזדמן')return '<span class="pill occ">מזדמן</span>';return '';}
 // ערוצי חיוב — תג צבעוני מובחן לכל ערוץ (בצבעי המותג)
 const CHANNELS={
@@ -1449,7 +1461,7 @@ function renderDonors(){
         ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
         ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
         ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${pill(d.tier)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
+      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${kvPill(d)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>
     ${list.length>DLIM?`<div class="moredon" id="moredon">מציג ${DLIM} מתוך ${list.length} — גלול להמשך…</div>`:''}`;
   wireMoreDonors(list);
