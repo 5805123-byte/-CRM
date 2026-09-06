@@ -1047,6 +1047,41 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('barchaim_kvittel_v1')")
     except Exception as e:
         print('  שגיאת קוויטל בר חיים:', e)
+    # עדנה גילאור (#122, guilor@aol.com) היא עדנה סגל, בעלה נועם. מאיר: "צריך
+    # להיות הכרטיס שלהם נועם ועדנה סגל — תמצא את הטלפון שלהם ואת השמות."
+    # הפרטים מאנשי הקשר בגוגל: שלושה טלפונים וכתובת בגרייט נק. כרטיס "סגל"
+    # נפרד, אם נפתח בינתיים, ממוזג לתוך #122.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='segal_guilor_v1'").fetchone():
+            keep = None
+            for r in con.execute("SELECT id,email FROM donors WHERE lower(COALESCE(email,'')) LIKE '%guilor@aol.com%' ORDER BY (id=122) DESC, id"):
+                keep = r['id']; break
+            if keep:
+                for d in con.execute("SELECT id FROM donors WHERE id<>? AND TRIM(COALESCE(last,''))='סגל' "
+                                     "AND (first LIKE '%עדנה%' OR first LIKE '%נועם%')", (keep,)).fetchall():
+                    drop = d['id']
+                    for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners','transactions','building'):
+                        try: con.execute(f"UPDATE {t} SET donor_id=? WHERE donor_id=?", (keep, drop))
+                        except Exception: pass
+                    try: con.execute("UPDATE files SET ref_id=? WHERE kind='iz' AND ref_id=?", (keep, drop))
+                    except Exception: pass
+                    con.execute("DELETE FROM donors WHERE id=?", (drop,))
+                k = dict(con.execute("SELECT * FROM donors WHERE id=?", (keep,)).fetchone())
+                kp = [p.strip() for p in re.split(r'[/,]', k.get('phone') or '') if p.strip()]
+                for p in ('+1 516-482-8353', '+1 516-428-6352', '+1 516-482-6777'):
+                    if not any(re.sub(r'\D', '', p)[-10:] == re.sub(r'\D', '', q)[-10:] for q in kp):
+                        kp.append(p)
+                sets = {'last': 'סגל', 'first': 'נועם ועדנה', 'phone': ' / '.join(kp)}
+                if not (k.get('english') or '').strip():
+                    sets['english'] = 'Noam & Edna Segal (Guilor)'
+                if not (k.get('addr') or '').strip():
+                    sets.update({'addr': '17 Ravine Rd, Great Neck, NY 11023, US', 'city': 'Great Neck',
+                                 'zip': '11023', 'country': 'NY', 'region': 'us'})
+                con.execute("UPDATE donors SET " + ', '.join(f"{c}=?" for c in sets) + " WHERE id=?",
+                            tuple(sets.values()) + (keep,))
+            con.execute("INSERT INTO seed_flags(name) VALUES('segal_guilor_v1')")
+    except Exception as e:
+        print('  שגיאת סגל/גילאור:', e)
     # קוויטל 101 מאנשי הקשר בגוגל — מסמן דרגת "כל לילה" ומייבא את שמות התפילה מההערות
     try:
         seed101 = os.path.join(HERE, 'kvittel101_seed.json')
