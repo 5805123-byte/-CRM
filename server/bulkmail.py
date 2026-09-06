@@ -383,6 +383,29 @@ def _esc(s):
 
 _PH = re.compile(r'\{\{\s*([^{}]*?)\s*\}\}')
 
+# קטע במכתב שתלוי בשאלה אם לתורם יש שמות בקוויטל. מאיר: "מי שאין לו שמות
+# ויש לו יששכר־זבולון — איזה מכתב אשלח לו?" — אותו מכתב, שמתאים את עצמו:
+#     {{אם קוויטל}} ...יש שמות... {{אחרת}} ...אין שמות... {{סוף}}
+# הקטע יכול להיות בתוך משפט או להשתרע על כמה פסקאות, ולכן הוא נפתר על
+# המכתב כולו לפני חלוקתו לפסקאות.
+_COND = re.compile(r'\{\{\s*אם קוויטל\s*\}\}(.*?)(?:\{\{\s*אחרת\s*\}\}(.*?))?\{\{\s*סוף\s*\}\}', re.S)
+
+
+def _has_kv(who):
+    if isinstance(who, str) or not who:
+        return False
+    return bool(str(who.get('kvittel') or '').strip())
+
+
+def resolve_cond(text, who):
+    """בוחר את הענף הנכון בכל קטע מותנה, ומנקה שורות ריקות שנשארו."""
+    text = str(text or '')
+    if '{{' not in text:
+        return text
+    yes = _has_kv(who)
+    text = _COND.sub(lambda m: (m.group(1) if yes else (m.group(2) or '')), text)
+    return re.sub(r'\n[ \t]*\n(?:[ \t]*\n)+', '\n\n', text).strip('\n')
+
 
 # מאיר: "אני לא מרוצה מהתוארים — אני רוצה שלכולם יהיה אותו תואר, גם נשים
 # גם גברים. התואר הראשון זה ה"ה, והסיום הי"ו. לכולם אותו דבר."
@@ -515,6 +538,7 @@ def personalize(text, who, html=False, d='rtl'):
     """
     if isinstance(who, str):                  # תאימות לקריאה עם שם בלבד
         who = {'name': who}
+    text = resolve_cond(text, who)
     first = (who.get('first') or '').strip()
     last = (who.get('last') or '').strip()
     full = (who.get('name') or (first + ' ' + last)).strip()
@@ -670,6 +694,8 @@ def _html(body, unsub_url, sig, d='rtl', pixel='', who=None):
         # נקודה או @ לא ייהפך בטעות לקישור
         x = _links(_esc(x).replace('\n', '<br>'))
         return personalize(x, who, html=True, d=d) if who is not None else x
+    if who is not None:
+        body = resolve_cond(body, who)        # לפני החלוקה לפסקאות — הקטע יכול לחצות פסקאות
     paras = ''.join('<p dir="auto" style="margin:0 0 12px">%s</p>' % _p(p)
                     for p in re.split(r'\n\s*\n', str(body or '').strip()) if p.strip())
     foot = ''
