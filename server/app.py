@@ -10561,6 +10561,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, dict(gmail_intake.ENG_STATUS))
             except Exception as e:
                 return self._send(200, {'running': False, 'done': True, 'error': str(e)})
+        if self.path == '/api/intake/donorscan/status':
+            try:
+                import gmail_intake
+                return self._send(200, dict(gmail_intake.DN_STATUS))
+            except Exception as e:
+                return self._send(200, {'running': False, 'done': True, 'error': str(e)})
         m = re.match(r'/api/pubdonor/(\d+)$', self.path)
         if m:
             con = db(); r = con.execute("SELECT last,first,purpose,amount FROM donors WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
@@ -10992,6 +10998,36 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
             con = db(); res = gmail_intake.sync(con); con.close()
             return self._send(200, res)
+        if self.path == '/api/intake/donorscan':
+            # מאיר: "תחפש בכל האימיילים של תורמים שיש את האימייל שלהם בכרטיס
+            # ותבדוק אם הם שלחו שמות לתפילה בשנתיים האחרונות" — רץ ברקע,
+            # והתוצאות נכנסות לרשימת "קוויטל מהמייל" משויכות לכרטיס.
+            try:
+                import gmail_intake, threading
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
+            if not gmail_intake.configured():
+                return self._send(200, {'ok': False, 'error': 'not_configured'})
+            dst = gmail_intake.DN_STATUS
+            if dst.get('running'):
+                return self._send(200, {'ok': True, 'started': False, 'already': True, 'status': dst})
+            dst.update({'running': True, 'done': False, 'error': '', 'total': 0, 'scanned': 0,
+                        'mails': 0, 'found': 0, 'donors': 0, 'phase': ''})
+
+            def _rundn():
+                c = db()
+                try:
+                    r = gmail_intake.scan_donor_names(c, dst)
+                    if not r.get('ok'):
+                        dst['error'] = r.get('detail') or r.get('error') or 'שגיאה'
+                except Exception as e:
+                    dst['error'] = '%s: %s' % (type(e).__name__, e)
+                finally:
+                    try: c.close()
+                    except Exception: pass
+                    dst['running'] = False; dst['done'] = True
+            threading.Thread(target=_rundn, daemon=True).start()
+            return self._send(200, {'ok': True, 'started': True})
         # ----- מחקר במייל לתורמים ישנים — רץ ברקע -----
         if self.path == '/api/inactive/mailcheck':
             if MAILCHK.get('running'):

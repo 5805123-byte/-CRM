@@ -6751,7 +6751,9 @@ function paintIntake(){
   const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 קוויטל מהמייל — למיון, בדיקה ושיוך</b><span class="cnt2">(${nNew} לטיפול)</span>
       <button class="btn sm" id="intSync">🔄 משוך מהמייל</button>
+      <button class="btn sm" id="intDnScan" title="לכל תורם עם אימייל בכרטיס: מה הוא שלח לנו בשנתיים האחרונות, ואילו שמות לתפילה עדיין לא בקוויטל שלו">🔎 סרוק מיילים של תורמים · שנתיים</button>
       <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div>
+    <div class="hintxt" id="intDnSt" style="margin:0 2px 6px"></div>
     ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
     <div class="hintxt" style="margin:2px 2px 8px">כל בקשה שהגיעה במייל מהאתר. ✅ = השמות כבר צורפו לקוויטל אצל התורם · 🔴 = עדיין לא. אפשר לערוך את השמות, לצרף לתורם, או לסמן שטופל.</div>
     <div id="intdiag"></div>
@@ -6764,6 +6766,32 @@ function paintIntake(){
     toast('נמשכו '+(r.new||0)+' בקשות'+(r.attached?' · '+r.attached+' צורפו אוטומטית לקוויטל לפי המייל':'')+' ✓');
     INTAKE=null;await loadIntake();paintIntake();intDiag(r);
   };
+  // סריקת המיילים של כל התורמים לשמות — רצה בשרת, כאן רק עוקבים
+  const dnb=document.getElementById('intDnScan'), dnst=document.getElementById('intDnSt');
+  const dnPoll=async()=>{
+    for(;;){
+      await new Promise(z=>setTimeout(z,2500));
+      let s; try{s=await api('GET','/api/intake/donorscan/status');}catch(e){continue;}
+      if(!s)continue;
+      const prog=`${s.phase||''} · ${s.scanned||0}/${s.total||0} תורמים · ${s.mails||0} מיילים נקראו · נמצאו <b>${s.found||0}</b> בקשות אצל ${s.donors||0} תורמים`;
+      if(s.error){dnb.disabled=false;dnst.innerHTML='שגיאה: '+esc(s.error);return;}
+      if(s.done||!s.running){
+        dnb.disabled=false;
+        dnst.innerHTML='✅ הסריקה הסתיימה מ־'+esc(s.since||'')+': '+prog+'. הבקשות ברשימה למטה, כל אחת מקושרת לכרטיס — צרף בלחיצה.';
+        INTAKE=null;await loadIntake();paintIntake();
+        const st2=document.getElementById('intDnSt'); if(st2)st2.innerHTML=dnst.innerHTML;
+        return;}
+      dnst.innerHTML='⏳ סורק… '+prog;
+    }
+  };
+  if(dnb)dnb.onclick=async()=>{
+    dnb.disabled=true; dnst.textContent='מתחיל לסרוק את הג׳ימייל…';
+    const r=await api('POST','/api/intake/donorscan',{});
+    if(!r||!r.ok){dnb.disabled=false;dnst.textContent=(r&&r.error==='not_configured')?'הג׳ימייל לא מחובר בשרת':'הסריקה לא התחילה'+((r&&r.detail)?(' — '+r.detail):'');return;}
+    dnPoll();
+  };
+  // אם סריקה כבר רצה ברקע (נכנסנו למסך באמצע) — ממשיכים לעקוב
+  api('GET','/api/intake/donorscan/status').then(s=>{if(s&&s.running){dnb.disabled=true;dnst.textContent='⏳ סריקה רצה ברקע…';dnPoll();}}).catch(()=>{});
   const dgb=document.getElementById('intDiagBtn');
   if(dgb)dgb.onclick=async()=>{
     dgb.disabled=true; const o=dgb.textContent; dgb.textContent='בודק…';

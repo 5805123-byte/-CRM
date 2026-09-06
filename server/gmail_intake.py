@@ -2125,3 +2125,189 @@ def scan_english_names(con, status=None, since=None):
     con.commit()
     st['new'] = n
     return {'ok': True, 'addresses': n, 'scanned': st.get('scanned', 0)}
+
+
+# ===== סריקת מיילים של תורמים לשמות לתפילה =====
+# מאיר: "יש הרבה תורמים שיש את האימייל שלהם בכרטיס ולא מיזגת את השמות. תחפש
+# בכל האימיילים של תורמים שיש את האימייל שלהם בכרטיס, ותבדוק אם הם שלחו שמות
+# לתפילה בשנתיים האחרונות." לכל כתובת של תורם — חיפוש ממוקד בשרת (FROM בכל
+# הדואר), פענוח השמות מגוף המייל, וכל מה שעדיין לא בקוויטל שלו נכנס לרשימת
+# "קוויטל מהמייל" משויך לכרטיס — משם הוא ממזג בלחיצה.
+DN_STATUS = {'running': False, 'done': False, 'error': '', 'total': 0, 'scanned': 0,
+             'mails': 0, 'found': 0, 'donors': 0, 'phase': ''}
+
+
+def _kv_norm(s):
+    s = re.sub(r'[^א-תa-zA-Z ]', ' ', str(s or '').lower())
+    s = s.translate(str.maketrans('ךםןףץ', 'כמנפצ'))
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def _all_donor_addrs(con):
+    """כתובת → מזהה תורם, לכל תורם עם אימייל בכרטיס. כתובת שמופיעה אצל שני
+    תורמים אינה מזהה אף אחד, ולכן יורדת."""
+    seen = {}
+    for r in con.execute("SELECT id,email FROM donors WHERE TRIM(COALESCE(email,''))<>''"):
+        for e in re.split(r'[;,/\s]+', str(r['email'] or '').lower()):
+            e = e.strip().strip('<>')
+            if '@' in e and len(e) > 4:
+                seen.setdefault(e, set()).add(r['id'])
+    return {e: next(iter(v)) for e, v in seen.items() if len(v) == 1}
+
+
+_REL_W = {'בנ', 'בת', 'ben', 'bas', 'bat'}
+
+
+def _new_lines(con, did, names):
+    """רק השמות שעדיין לא נמצאים בקוויטל של התורם."""
+    have = set()
+    for p in con.execute("SELECT name,text FROM prayers WHERE donor_id=?", (did,)):
+        for fld in (p['name'], p['text']):
+            for ln in str(fld or '').split('\n'):
+                n = _kv_norm(ln)
+                if n:
+                    have.add(n)
+    out = []
+    for ln in (names or '').split('\n'):
+        n = _kv_norm(ln)
+        if not n or n in have:
+            continue
+        # משווים רק את השם עצמו (פלוני בן/בת פלונית) — בלי נוסח הבקשה שאחריו.
+        # שם שכל מילותיו כבר מופיעות בשורה אחת של הקוויטל — לא חדש.
+        words = n.split()                     # אחרי הנרמול 'בן' נכתב 'בנ'
+        rel = next((i for i, w in enumerate(words) if w in _REL_W), -1)
+        head = words[:rel + 2] if rel >= 0 else words
+        toks = [t for t in head if t not in _REL_W]
+        if len(toks) >= 2 and any(all(t in h.split() for t in toks) for h in have):
+            continue
+        out.append(ln.strip())
+    return '\n'.join(dict.fromkeys(out))
+
+
+def _fetch_msgs(M, ids, chunk=20):
+    for i in range(0, len(ids), chunk):
+        try:
+            typ, md = M.fetch(b','.join(ids[i:i + chunk]), '(BODY.PEEK[])')
+        except Exception:
+            continue
+        if typ != 'OK' or not md:
+            continue
+        for item in md:
+            if isinstance(item, tuple) and len(item) >= 2 and item[1]:
+                try:
+                    yield email.message_from_bytes(item[1])
+                except Exception:
+                    continue
+
+
+def _intake_row(con, msg, femail, did, names, body):
+    mid = (msg.get('Message-ID') or '').strip()
+    if not mid:
+        return False
+    if con.execute("SELECT 1 FROM intake WHERE message_id=?", (mid,)).fetchone():
+        return False
+    fname, _ = parseaddr(_dec(msg.get('From')))
+    try:
+        received = parsedate_to_datetime(msg.get('Date')).date().isoformat()
+    except Exception:
+        received = ''
+    con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,donor_id,status,created)
+                   VALUES(?,?,?,?,?,?,?,?,'new',?)""",
+                (mid, fname, femail, _dec(msg.get('Subject')), received, body[:6000], names, did,
+                 il_today().isoformat()))
+    return True
+
+
+def scan_donor_names(con, status=None, years=2, per_addr=40):
+    st = status if status is not None else DN_STATUS
+    user = (os.environ.get('GMAIL_USER') or '').strip()
+    pw = os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    amap = _all_donor_addrs(con)
+    addrs = sorted(amap)
+    since = (il_today() - datetime.timedelta(days=365 * years)).strftime('%d-%b-%Y')
+    st.update({'total': len(addrs), 'scanned': 0, 'mails': 0, 'found': 0, 'donors': 0,
+               'since': since, 'phase': 'מיילים מהתורמים'})
+    hit_donors = set()
+    M = None
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=90)
+        M.login(user, pw)
+        typ, _ = M.select('"[Gmail]/All Mail"', readonly=True)
+        if typ != 'OK':
+            M.select('INBOX', readonly=True)
+        # שלב א: מה שכל תורם שלח לנו בעצמו
+        for n, ad in enumerate(addrs, 1):
+            st['scanned'] = n
+            if not st.get('running', True):
+                break
+            try:
+                typ, data = M.search(None, 'SINCE', since, 'FROM', '"%s"' % ad)
+                ids = data[0].split() if typ == 'OK' else []
+            except Exception:
+                continue
+            if not ids:
+                continue
+            ids = ids[-per_addr:]
+            did = amap[ad]
+            for msg in _fetch_msgs(M, ids):
+                st['mails'] += 1
+                body = _strip_quoted(_extract_text(msg))
+                if not body:
+                    continue
+                names = _parse_names(body, translate=True)
+                if not names.strip():
+                    continue
+                new = _new_lines(con, did, names)
+                if not new:
+                    continue
+                if _intake_row(con, msg, ad, did, new, body):
+                    st['found'] += 1
+                    hit_donors.add(did)
+            con.commit()
+        # שלב ב: טפסים מהאתר (הכתובת של התורם בגוף המייל) — גם מלפני 2026
+        froms = [x.strip().lower() for x in (os.environ.get('INTAKE_FROM') or '').split(',') if x.strip()]
+        subj = (os.environ.get('INTAKE_SUBJECT') or '').strip()
+        if froms or subj:
+            st['phase'] = 'טפסים מהאתר'
+            ids = set()
+            for f in froms:
+                try:
+                    typ, data = M.search(None, 'SINCE', since, 'FROM', _q(f))
+                    if typ == 'OK':
+                        ids |= set(data[0].split())
+                except Exception:
+                    continue
+            if subj:
+                try:
+                    typ, data = M.search(None, 'SINCE', since, 'SUBJECT', _q(subj))
+                    if typ == 'OK':
+                        ids |= set(data[0].split())
+                except Exception:
+                    pass
+            for msg in _fetch_msgs(M, sorted(ids, key=lambda x: int(x))):
+                st['mails'] += 1
+                body = _extract_text(msg)
+                real = (_submitter_email(body) or '').lower()
+                did = amap.get(real)
+                if not did:
+                    continue
+                names = _parse_names(body, translate=True)
+                new = _new_lines(con, did, names) if names.strip() else ''
+                if new and _intake_row(con, msg, real, did, new, body):
+                    st['found'] += 1
+                    hit_donors.add(did)
+            con.commit()
+    except imaplib.IMAP4.error as e:
+        st['error'] = 'login_failed: %s' % str(e)[:150]
+        return {'ok': False, 'error': st['error']}
+    except Exception as e:
+        st['error'] = '%s: %s' % (type(e).__name__, str(e)[:150])
+        return {'ok': False, 'error': st['error']}
+    finally:
+        if M is not None:
+            try: M.logout()
+            except Exception: pass
+    st['donors'] = len(hit_donors)
+    return {'ok': True, 'found': st['found'], 'donors': len(hit_donors), 'scanned': st['scanned']}
