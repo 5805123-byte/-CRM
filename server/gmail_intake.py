@@ -2043,7 +2043,10 @@ def scan_english_names(con, status=None, since=None):
     st['total'] = len(addrs); st['scanned'] = 0
     if not addrs:
         return {'ok': True, 'addresses': 0, 'scanned': 0, 'note': 'no_missing'}
-    since = since or os.environ.get('ENG_SINCE') or '01-Jan-2015'
+    # מאיר: "תחפש טוב בג'ימייל עד ארבע שנים" — בכל הדואר (גם מה שבארכיון,
+    # שלא נמצא ב-INBOX), ולא רק בשישה המיילים האחרונים של כל כתובת.
+    since = since or os.environ.get('ENG_SINCE') or \
+        (il_today() - datetime.timedelta(days=365 * 4)).strftime('%d-%b-%Y')
     me = user.lower()
     con.execute("""CREATE TABLE IF NOT EXISTS mail_names(
         email TEXT PRIMARY KEY, name TEXT, hits INTEGER DEFAULT 0,
@@ -2064,11 +2067,14 @@ def scan_english_names(con, status=None, since=None):
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=90)
         M.login(user, pw)
-        for box, key, flds in ((inbox, 'FROM', ('From',)),
+        for box, key, flds in (('[Gmail]/All Mail', 'FROM', ('From',)),
                                (sent, 'TO', ('To', 'Cc'))):
             st['box'] = box
             try:
-                typ, _ = M.select(box, readonly=True)
+                typ, _ = M.select('"%s"' % box, readonly=True)
+                if typ != 'OK' and key == 'FROM':
+                    box = inbox; st['box'] = box
+                    typ, _ = M.select('"%s"' % box, readonly=True)
                 if typ != 'OK':
                     continue
             except Exception:
@@ -2086,7 +2092,7 @@ def scan_english_names(con, status=None, since=None):
                     continue
                 if not ids:
                     continue
-                ids = ids[-6:]                    # די בכמה אחרונים לזיהוי השם
+                ids = ids[-15:]                   # די בכמה אחרונים לזיהוי השם
                 try:
                     typ, md = M.fetch(b','.join(ids).decode(),
                                       '(BODY.PEEK[HEADER.FIELDS (FROM TO CC)])')

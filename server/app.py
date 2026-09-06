@@ -1082,6 +1082,44 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('segal_guilor_v1')")
     except Exception as e:
         print('  שגיאת סגל/גילאור:', e)
+    # אנשי קשר שבהערותיהם רשום "כרטיס #N במערכת" — קישור ישיר לכרטיס. מאיר:
+    # "buddy@internetworkcontrols.com — חסר לו פרטים". משלימים רק מה שחסר:
+    # טלפון, מייל וכתובת. לא דורסים כלום.
+    try:
+        seed3 = os.path.join(HERE, 'contacts_seed3.csv')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_card_fill_v1'").fetchone() \
+                and os.path.exists(seed3):
+            import gcontacts as _gcc
+            with open(seed3, encoding='utf-8-sig', errors='replace') as f:
+                cards = _gcc.parse_csv(f.read())
+            nf = {'phone': 0, 'email': 0, 'addr': 0}
+            for ct in cards:
+                did = ct.get('card')
+                if not did:
+                    continue
+                d = con.execute("SELECT id,phone,email,addr FROM donors WHERE id=?", (did,)).fetchone()
+                if not d:
+                    continue
+                ph = [p.strip() for p in re.split(r'[/,]', d['phone'] or '') if p.strip()]
+                have = {_ph10(p) for p in ph}
+                for p in ct.get('phones') or []:
+                    k = _ph10(p)
+                    if k and k not in have and len(k) >= 7:
+                        ph.append(p); have.add(k); nf['phone'] += 1
+                if ' / '.join(ph) != (d['phone'] or ''):
+                    con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(ph), did))
+                em = emails_of(d['email'])
+                add = [e for e in (ct.get('emails') or []) if e not in em]
+                if add:
+                    con.execute("UPDATE donors SET email=? WHERE id=?", (', '.join(em + add), did))
+                    nf['email'] += len(add)
+                if not (d['addr'] or '').strip() and (ct.get('addrs') or []):
+                    con.execute("UPDATE donors SET addr=? WHERE id=?", (ct['addrs'][0], did))
+                    nf['addr'] += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_card_fill_v1')")
+            print('  השלמה לפי מספר כרטיס באנשי הקשר: %d טלפונים, %d מיילים, %d כתובות' % (nf['phone'], nf['email'], nf['addr']))
+    except Exception as e:
+        print('  שגיאת השלמה לפי כרטיס:', e)
     # קוויטל 101 מאנשי הקשר בגוגל — מסמן דרגת "כל לילה" ומייבא את שמות התפילה מההערות
     try:
         seed101 = os.path.join(HERE, 'kvittel101_seed.json')
@@ -7764,12 +7802,17 @@ def fill_english_by_email(con):
         return False
 
     cand = {}
+    # כל הכרטיסים בלי שם לועזי — גם בלי מייל. איש קשר שבהערותיו רשום
+    # "כרטיס #82 במערכת" מזהה את הכרטיס ישירות.
+    noeng = {r['id'] for r in con.execute("SELECT id FROM donors WHERE TRIM(COALESCE(english,''))=''")}
 
-    def offer(did, nm):
-        nm = re.sub(r'\s+', ' ', str(nm or '')).strip()
-        if not nm or did in cand or not _LATIN_NAME.match(nm):
+    def offer(did, nm, direct=False):
+        nm = re.sub(r'\s+', ' ', re.sub(r'\([^)]*\)', ' ', str(nm or ''))).strip(' ,-')
+        if not nm or did in cand or did not in noeng or not _LATIN_NAME.match(nm):
             return
-        if not fits(did, nm):
+        if nm.islower() or nm.isupper():      # "dahan avraham" → "Dahan Avraham"
+            nm = ' '.join(w.capitalize() for w in nm.split())
+        if not direct and not fits(did, nm):
             return
         cand[did] = nm[:60]
 
@@ -7806,12 +7849,23 @@ def fill_english_by_email(con):
                 continue
             with open(fp, encoding='utf-8', errors='ignore') as fh:
                 for ct in _gc.parse_any(fh.read()):
+                    # מאיר: "buddy@internetworkcontrols.com — אפילו שם באנגלית אין
+                    # לו". השם ישב ב-Nickname של איש הקשר: "Buddy Berkowitz".
+                    # כשההערה מצביעה על מספר הכרטיס — זה קישור ישיר, בלי בדיקת
+                    # תעתיק; לפי מייל — עם הבדיקה כמו כל מקור אחר.
+                    nicks = [x for x in (ct.get('nicks') or []) if re.search(r'[A-Za-z]', x)]
+                    card = ct.get('card')
+                    if card and card in noeng:
+                        for x in nicks:
+                            offer(card, x, direct=True)
                     nm = (ct.get('name') or '').strip()
-                    if not nm:
-                        continue
                     for e in ct.get('emails') or []:
                         did = bye.get(e.strip().lower())
-                        if did:
+                        if not did:
+                            continue
+                        for x in nicks:
+                            offer(did, x)
+                        if nm:
                             offer(did, nm)
     except Exception as e:
         print('  contacts english error:', e)

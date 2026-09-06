@@ -122,6 +122,11 @@ def parse_csv(text):
              'labels': [x.strip() for x in re.split(r':::', g(r, 'Labels') or '') if x.strip()]}
         if not c['name']:
             c['name'] = c['org']
+        # השם הלועזי של רוב התורמים יושב דווקא בשדה Nickname ("Buddy Berkowitz",
+        # "Edna Guilor"), ובהערות רשום מספר הכרטיס במערכת — קישור ישיר.
+        c['nicks'] = [x.strip() for x in re.split(r'\s*:::\s*', g(r, 'Nickname')) if x.strip()]
+        mcard = re.search(r'כרטיס\s*#\s*(\d+)', c['note'] or '')
+        c['card'] = int(mcard.group(1)) if mcard else None
         for col in mail_c:
             for v in re.split(r'\s*:::\s*', g(r, col)):
                 v = v.strip().lower()
