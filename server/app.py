@@ -54,6 +54,7 @@ def heb_anniv(start_date):
 HERE = os.path.dirname(os.path.abspath(__file__))
 # מצב בדיקת המייל לתורמים ישנים — רצה ברקע, והדף עוקב אחרי ההתקדמות
 MAILCHK = {'running': False, 'done': 0, 'total': 0, 'hit': 0, 'error': ''}
+BACKFILL_STAT = {'cards': 0, 'at': ''}   # כמה כרטיסים הושלמו מהחיובים בעליית השרת האחרונה
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
 STATIC = os.path.join(HERE, 'static')
 PORT = int(os.environ.get('PORT', 8000))
@@ -4094,6 +4095,7 @@ def ensure_schema():
         n = purge_deleted(con)
         try:
             nb = backfill_from_recon(con)
+            BACKFILL_STAT.update(cards=nb, at=now_iso())
             if nb:
                 print('  פרטים מהחיובים שהושלמו לכרטיסים: %d' % nb)
         except Exception as e:
@@ -13318,6 +13320,9 @@ def health_report():
         over = n("SELECT COUNT(*) FROM tasks WHERE COALESCE(done,0)=0 AND COALESCE(due_date,'')<>'' AND due_date<?",
                  today_iso())
         add('משימות שעבר זמנן', 'ok' if not over else 'warn', '%d משימות' % over)
+        # מאיר: "כמה תורמים עודכנו בעקבות זה עכשיו?" — המספר מהעלייה האחרונה
+        add('פרטים שהושלמו מהחיובים', 'ok',
+            '%d כרטיסים קיבלו אימייל / טלפון / כתובת מחיובים בעלייה האחרונה (%s)' % (BACKFILL_STAT['cards'], BACKFILL_STAT['at'] or '—'))
         # מיגרציות
         add('עדכוני מבנה שרצו', 'ok', '%d' % n("SELECT COUNT(*) FROM seed_flags"))
     except Exception as e:
