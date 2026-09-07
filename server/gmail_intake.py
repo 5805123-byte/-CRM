@@ -1584,8 +1584,8 @@ def sync(con):
             msg = email.message_from_bytes(md[0][1])
             mid = (msg.get('Message-ID') or '').strip() or f'{user}:{i.decode()}'
             existing = con.execute("SELECT id,status FROM intake WHERE message_id=?", (mid,)).fetchone()
-            if existing and existing['status'] == 'handled':
-                continue   # כבר טופל — לא נוגעים
+            if existing and existing['status'] in ('handled', 'deleted'):
+                continue   # כבר טופל או נמחק — לא נוגעים ולא מחזירים
             fname, femail = parseaddr(_dec(msg.get('From')))
             subject = _dec(msg.get('Subject'))
             try:

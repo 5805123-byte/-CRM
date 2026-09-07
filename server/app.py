@@ -5602,7 +5602,7 @@ def get_all():
         # מאיר: "הצעות מהקבצים הישנים — רק בחלון הקוויטל הכללי, לא בכרטיס
         # של התורם בשום אופן." לכן פריטי 'kvittel_*' לא נכנסים לכרטיס.
         for r in c.execute("""SELECT id,from_name,from_email,subject,received,names,donor_id FROM intake
-                              WHERE COALESCE(status,'')<>'handled' AND COALESCE(TRIM(names),'')<>''
+                              WHERE COALESCE(status,'') NOT IN ('handled','deleted') AND COALESCE(TRIM(names),'')<>''
                                 AND COALESCE(message_id,'') NOT LIKE 'kvittel_%'"""):
             did = r['donor_id'] or emap.get((r['from_email'] or '').strip().lower())
             if did and did in byid:
@@ -8464,7 +8464,7 @@ def queue_old_kvittel(con, entries, label, src):
             body += '\n\n— גרסה שנייה (קובץ הוורד) —\n' + alt
         # כבר מחכה לו פריט מקובץ ישן אחר — לא פותחים שני; נוסח שונה מצטרף אליו
         prev = con.execute("SELECT id,body FROM intake WHERE donor_id=? AND message_id LIKE 'kvittel_%' "
-                           "AND COALESCE(status,'')<>'handled'", (d['id'],)).fetchone()
+                           "AND COALESCE(status,'') NOT IN ('handled','deleted')", (d['id'],)).fetchone()
         if prev:
             if re.sub(r'\s+', '', notes) not in re.sub(r'\s+', '', prev['body'] or ''):
                 con.execute("UPDATE intake SET body=? WHERE id=?",
@@ -10554,7 +10554,8 @@ class H(BaseHTTPRequestHandler):
                     if all(t in pt for t in toks):
                         return True
                 return False
-            for r in con.execute("SELECT * FROM intake ORDER BY (status='handled'), received DESC, id DESC"):
+            for r in con.execute("SELECT * FROM intake WHERE COALESCE(status,'')<>'deleted' "
+                                 "ORDER BY (status='handled'), received DESC, id DESC"):
                 x = dict(r); x['match'] = None
                 # תעתיק־מחדש מתוך גוף המייל בכל טעינה — כדי שהשיפורים בעברית יחולו גם על בקשות ישנות
                 if _gi and r['status'] != 'handled':
@@ -12952,7 +12953,10 @@ class H(BaseHTTPRequestHandler):
         bump_data()
         m = re.match(r'/api/intake/(\d+)$', self.path)
         if m:
-            con = db(); con.execute("DELETE FROM intake WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
+            # מאיר: "מחקתי 3 פעמים לפחות וכל פעם זה מביא אותם שוב". מחיקה אמיתית
+            # השכיחה את המייל, והמשיכה הבאה הכניסה אותו מחדש. לכן הרשומה נשארת
+            # עם status='deleted' — מוסתרת מהרשימה, והמשיכה מדלגת עליה לתמיד.
+            con = db(); con.execute("UPDATE intake SET status='deleted' WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/recon/(.+)$', self.path)
         if m:

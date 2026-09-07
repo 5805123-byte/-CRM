@@ -6761,15 +6761,19 @@ function intDiag(r){
 function paintIntake(){
   const items=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
   const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
-  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 קוויטל מהמייל — למיון, בדיקה ושיוך</b><span class="cnt2">(${nNew} לטיפול)</span>
-      <button class="btn sm" id="intSync">🔄 משוך מהמייל</button>
-      <button class="btn sm" id="intDnScan" title="לכל תורם עם אימייל בכרטיס: מה הוא שלח לנו בשנתיים האחרונות, ואילו שמות לתפילה עדיין לא בקוויטל שלו">🔎 סרוק מיילים של תורמים · שנתיים</button>
-      <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div>
+  // מאיר: "תעשה חלון אחד של בדיקה ומיון וזהו, מה כל הבלגן פה?" — כותרת
+  // אחת, כפתור אחד שמושך הכל, והכלים הנדירים מקופלים למטה.
+  view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>📨 בדיקה ומיון</b><span class="cnt2">(${nNew} לטיפול)</span>
+      <button class="btn sm" id="intSync" title="מושך בקשות חדשות מהאתר, ואחר כך סורק ברקע את המיילים של כל התורמים">🔄 משוך מהמייל</button></div>
     <div class="hintxt" id="intDnSt" style="margin:0 2px 6px"></div>
     ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
-    <div class="hintxt" style="margin:2px 2px 8px">כל שם שהגיע מהאתר, מהג׳ימייל או מקובץ ישן (📁) מחכה כאן לאישורך — שום דבר לא מתמזג לבד, והשמות נשמרים כפי שנכתבו, בלי תרגום. ✅ = כבר יש שמות בקוויטל אצל התורם · 🔴 = אין לו קוויטל בכלל. ערוך אם צריך, ואז ➕ צרף, או סמן שטופל.</div>
+    <div class="hintxt" style="margin:2px 2px 8px">שום דבר לא מתמזג לבד: כל שם מחכה כאן עד שתצרף אותו. מה שמחקת לא חוזר. ✅ = כבר יש לו קוויטל · 🔴 = אין לו קוויטל בכלל · 📁 = מקובץ ישן.</div>
     <div id="intdiag"></div>
-    <div id="intlist"></div>`;
+    <div id="intlist"></div>
+    <details class="dsec" style="margin-top:14px"><summary>🛠️ כלים נוספים</summary>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn sm ghost" id="intDnScan" title="לכל תורם עם אימייל בכרטיס: מה הוא שלח לנו בשנתיים האחרונות">🔎 סרוק מיילים של תורמים · שנתיים</button>
+        <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div></details>`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
   document.getElementById('intSync').onclick=async()=>{
     const btn=document.getElementById('intSync');btn.disabled=true;btn.textContent='מושך…';
@@ -6777,6 +6781,11 @@ function paintIntake(){
     if(!r.ok){toast(r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאת משיכה: '+(r.detail||r.error||''));btn.disabled=false;btn.textContent='🔄 משוך מהמייל';return;}
     toast('נמשכו '+(r.new||0)+' בקשות'+(r.linked?' · '+r.linked+' זוהו לפי המייל וממתינות לאישורך':'')+' ✓');
     INTAKE=null;await loadIntake();paintIntake();intDiag(r);
+    // ואחרי הטפסים מהאתר — גם המיילים של התורמים עצמם, ברקע (כפתור אחד לכל)
+    try{
+      const r2=await api('POST','/api/intake/donorscan',{});
+      if(r2&&r2.ok){paintIntake();intDiag(r);}   // הציור מחדש מזהה שהסריקה רצה ועוקב אחריה
+    }catch(e){}
   };
   // סריקת המיילים של כל התורמים לשמות — רצה בשרת, כאן רק עוקבים
   const dnb=document.getElementById('intDnScan'), dnst=document.getElementById('intDnSt');
