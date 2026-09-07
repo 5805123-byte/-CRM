@@ -1365,6 +1365,21 @@ function catUsage(){
   (CAMPAIGNS||[]).forEach(c=>{c=String(c||'').trim(); if(c&&!m[c])m[c]=[c,0,0];});
   return Object.values(m).sort((a,b)=>b[2]-a[2]||a[0].localeCompare(b[0],'he'));
 }
+// שאלת דרגה לפני צירוף שמות לקוויטל. מחזיר את הדרגה, או null אם ביטל.
+const KV_TIER_CHOICES=[['יששכר_זבולון','🤝 יששכר־זבולון'],['קוויטל_101','🌙 כל לילה'],['קוויטל_שבועי','📅 שבועי'],['קוויטל_זמנים','⏰ זמנים מיוחדים'],['קוויטל_כללי','📜 כללי']];
+function askKvTier(cur,who){
+  return new Promise(res=>{
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:4px">🕯️ לאיזו דרגת קוויטל לשייך${who?(' את '+esc(who)):''}?</div>
+      ${cur?`<div class="hintxt" style="margin-bottom:8px">בכרטיס רשום עכשיו: <b>${esc(tierLabel(cur)||cur)}</b></div>`:'<div class="hintxt" style="margin-bottom:8px">בכרטיס אין עדיין דרגה — הדרגה שתבחר תירשם גם בכרטיס.</div>'}
+      <div style="display:flex;flex-direction:column;gap:6px">${KV_TIER_CHOICES.map(([k,l])=>`<button class="btn ${k===cur?'':'ghost'} kvtc" data-k="${k}" style="width:100%">${l}${k===cur?' ✓':''}</button>`).join('')}</div>
+      <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">ביטול</button></div></div>`;
+    document.body.appendChild(o);
+    const done=v=>{o.remove();res(v);};
+    o.querySelector('.cno').onclick=()=>done(null);o.onclick=e=>{if(e.target===o)done(null);};
+    o.querySelectorAll('.kvtc').forEach(b=>b.onclick=()=>done(b.dataset.k));
+  });
+}
 function openCatManager(){
   const rows=catUsage();
   const o=document.createElement('div');o.className='confirmov';
@@ -6867,13 +6882,19 @@ function paintIntake(){
     // נשארים בדף הבקשות — הפריט יתעדכן ויראה קישור "פתח כרטיס ↗" (בלי לקפוץ ולאבד את המקום)
     await load();INTAKE=null;await loadIntake();paintIntake();
   });
-  list.querySelectorAll('.intattach').forEach(b=>b.onclick=async()=>{
-    const names=getNames(b.dataset.id);if(!names){toast('אין שמות לצירוף');return;}
-    await api('POST','/api/intake/'+b.dataset.id+'/attach',{donor_id:+b.dataset.did,names:names});
-    const dd=DB.find(x=>x.id==+b.dataset.did);if(dd){dd.prayers=dd.prayers||[];dd.prayers.push({text:names,tier:dd.tier||'קוויטל_שבועי'});}
-    const it=INTAKE.find(x=>x.id==b.dataset.id);if(it){it.status='handled';it.in_kvittel=true;}
-    toast('צורף לקוויטל ✓');paintIntake();
-  });
+  // מאיר: "כשאני מצרף תורם מהרשימה הזו לקוויטל אני רוצה שזה ישאל אותי
+  // לאיזה דרגה לשייך אותו בקוויטל" — שאלה אחת לפני הצירוף
+  const attachTo=async(iid,did)=>{
+    const names=getNames(iid);if(!names){toast('אין שמות לצירוף');return;}
+    const dd=DB.find(x=>x.id==did);
+    const tier=await askKvTier(dd?(dd.tier||''):'', dd?(dd.last+' '+(dd.first||'')).trim():'');
+    if(tier===null)return;                                  // ביטל
+    await api('POST','/api/intake/'+iid+'/attach',{donor_id:did,names:names,tier:tier});
+    if(dd){dd.prayers=dd.prayers||[];dd.prayers.push({text:names,tier:tier});if(!(dd.tier||'').trim())dd.tier=tier;}
+    const it=INTAKE.find(x=>x.id==iid);if(it){it.status='handled';it.in_kvittel=true;if(dd)it.match={id:did,name:(dd.last+' '+dd.first).trim(),tier:dd.tier||''};}
+    toast('צורף לקוויטל · '+(tierLabel(tier)||tier)+' ✓');paintIntake();
+  };
+  list.querySelectorAll('.intattach').forEach(b=>b.onclick=()=>attachTo(b.dataset.id,+b.dataset.did));
   list.querySelectorAll('.intaddkv').forEach(b=>b.onclick=async()=>{
     const names=getNames(b.dataset.id);if(!names){toast('אין שמות להוספה');return;}
     await api('POST','/api/intake/'+b.dataset.id+'/attach',{names:names});   // בלי donor_id → שם לא־משויך
@@ -6887,13 +6908,7 @@ function paintIntake(){
     inp.oninput=()=>{const s=norm(inp.value);if(!s){res.innerHTML='';return;}
       const m=DB.filter(x=>norm(x.last+' '+x.first+' '+x.english+' '+x.phone).includes(s)).slice(0,6);
       res.innerHTML=m.map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
-      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{
-        const names=getNames(id);if(!names){toast('אין שמות לצירוף');return;}
-        await api('POST','/api/intake/'+id+'/attach',{donor_id:+el.dataset.did,names:names});
-        const dd=DB.find(x=>x.id==+el.dataset.did);if(dd){dd.prayers=dd.prayers||[];dd.prayers.push({text:names,tier:dd.tier||'קוויטל_שבועי'});}
-        const it=INTAKE.find(x=>x.id==id);if(it){it.status='handled';it.in_kvittel=true;it.match={id:+el.dataset.did,name:(dd.last+' '+dd.first).trim(),tier:dd.tier||''};}
-        toast('צורף לקוויטל ✓');paintIntake();
-      });
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>attachTo(id,+el.dataset.did));
     };
   });
 }

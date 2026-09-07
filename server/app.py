@@ -10613,9 +10613,14 @@ class H(BaseHTTPRequestHandler):
                 if r['donor_id']:
                     hit = next((d for d in donors if d['id'] == r['donor_id']), hit)
                 if hit and r['status'] != 'handled' and _gi and (x['names'] or '').strip():
-                    # מאיר: "כבר סידרתי בתוך הקוויטל וזה חוזר" — כל השמות כבר אצלו → נסגר
+                    # מאיר: "כבר סידרתי בתוך הקוויטל וזה חוזר" — כל השמות כבר אצלו → נסגר.
+                    # הצעה מקובץ ישן: "אם יש לתורם כבר שמות — אל תנסה אפילו למזג" → נסגרת
+                    # ברגע שיש לו שם כלשהו בקוויטל.
                     try:
-                        if not _gi._new_lines(con, hit['id'], x['names']):
+                        from_file = str(r['message_id'] or '').startswith('kvittel_')
+                        has_any = from_file and con.execute(
+                            "SELECT 1 FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (hit['id'],)).fetchone()
+                        if has_any or not _gi._new_lines(con, hit['id'], x['names']):
                             con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (hit['id'], r['id']))
                             con.commit(); x['status'] = 'handled'
                     except Exception:
@@ -11693,6 +11698,13 @@ class H(BaseHTTPRequestHandler):
             if did:  # שיוך לכרטיס תורם קיים — דרגת השם לפי דרגת התורם (ריק=לפי הקטגוריה, למשל מזדמן)
                 tier = con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()
                 tval = (tier['tier'] if tier else '') or ''
+                # מאיר: "שזה ישאל אותי לאיזה דרגה לשייך אותו" — הדרגה שבחר קובעת
+                # לשם, ואם בכרטיס אין דרגה — נרשמת גם שם.
+                chosen = (b.get('tier') or '').strip()
+                if chosen:
+                    tval = chosen
+                    if not (tier['tier'] if tier else ''):
+                        con.execute("UPDATE donors SET tier=? WHERE id=?", (chosen, did))
                 con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, text, tval))
                 try: dedup_prayers(con, did)      # אותו שם לא נרשם פעמיים
                 except Exception: pass
