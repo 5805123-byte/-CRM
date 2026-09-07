@@ -6774,7 +6774,11 @@ function intDiag(r){
       ${sk.map(x=>`<div class="miss2" dir="ltr">${esc(x.date||'')} · ${esc(x.from||'')} · ${esc(x.subject||'')}</div>`).join('')}</details>`:'');
 }
 function paintIntake(){
-  const items=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
+  // מאיר: "למה זה מראה לי ככה? זה כבר טופל בעבר" — מה שטופל לא מוצג,
+  // אלא אם מבקשים לראות אותו במפורש (כפתור בתחתית)
+  const all=(INTAKE||[]).filter(x=>matchQ((x.names||'')+' '+(x.from_name||'')+' '+(x.from_email||'')+' '+(x.subject||'')));
+  const nDone=all.filter(x=>x.status==='handled').length;
+  const items=(window.INTAKE_SHOWDONE||String(q||'').trim())?all:all.filter(x=>x.status!=='handled');   // בחיפוש רואים הכל
   const nNew=(INTAKE||[]).filter(x=>x.status!=='handled').length;
   // מאיר: "תעשה חלון אחד של בדיקה ומיון וזהו, מה כל הבלגן פה?" — כותרת
   // אחת, כפתור אחד שמושך הכל, והכלים הנדירים מקופלים למטה.
@@ -6866,7 +6870,9 @@ function paintIntake(){
       </div>
       <details class="intraw"><summary style="cursor:pointer;color:var(--muted);font-size:.8rem">הצג את המייל המלא</summary><pre style="white-space:pre-wrap;font-size:.82rem">${esc(x.body||'')}</pre></details>
     </div>`;
-  }).join('')||'<div class="empty">אין בקשות. לחץ "משוך מהמייל".</div>';
+  }).join('')||'<div class="empty">✅ הכל טופל — אין שמות שמחכים לך.</div>';
+  if(nDone)list.innerHTML+=`<div style="text-align:center;margin:12px 0"><button class="btn sm ghost" id="intShowDone">${window.INTAKE_SHOWDONE?'הסתר את מה שטופל':'הצג גם מה שכבר טופל ('+nDone+')'}</button></div>`;
+  const sd=document.getElementById('intShowDone'); if(sd)sd.onclick=()=>{window.INTAKE_SHOWDONE=!window.INTAKE_SHOWDONE;paintIntake();};
   list.querySelectorAll('.wholink[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(d=>d.id==w.dataset.did),'kvittel'));
   const getNames=id=>{const c=list.querySelector('.intcard[data-id="'+id+'"]');return c?c.querySelector('.intnames').value.trim():'';};
   list.querySelectorAll('.intsave').forEach(b=>b.onclick=async()=>{await api('PUT','/api/intake/'+b.dataset.id,{names:getNames(b.dataset.id)});const it=INTAKE.find(x=>x.id==b.dataset.id);if(it)it.names=getNames(b.dataset.id);toast('נשמר ✓');});
