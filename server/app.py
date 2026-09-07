@@ -1120,6 +1120,25 @@ def ensure_schema():
             print('  השלמה לפי מספר כרטיס באנשי הקשר: %d טלפונים, %d מיילים, %d כתובות' % (nf['phone'], nf['email'], nf['addr']))
     except Exception as e:
         print('  שגיאת השלמה לפי כרטיס:', e)
+    # שמות מקובץ ישן — לאישור בלבד. מאיר: "תסנן רק אנשי קשר שעדיין נמצאים
+    # במערכת, רשימה למי שאין בכלל שמות בקוויטל, ותשאל אותי על כל אחד אם למזג.
+    # אל תמזג לבד בכלל." כל התאמה נכנסת לחלון "קוויטל מהמייל" משויכת לכרטיס,
+    # והמיזוג רק בלחיצה שלו. מי שכבר יש לו שמות — לא נוגעים.
+    try:
+        for fname, flag, label in (('kvittel_old_file.json', 'kvittel_oldfile_review_v1', 'קובץ ישן'),
+                                   ('kvittel_all_seed.json', 'kvittel_all_review_v1', 'אנשי קשר "קוויטל"')):
+            fp = os.environ.get('KV_OLDFILE') if fname == 'kvittel_old_file.json' and os.environ.get('KV_OLDFILE') \
+                else os.path.join(HERE, fname)
+            if con.execute("SELECT 1 FROM seed_flags WHERE name=?", (flag,)).fetchone() or not os.path.exists(fp):
+                continue
+            with open(fp, encoding='utf-8') as f:
+                entries = json.load(f)
+            r = queue_old_kvittel(con, entries, label, fname)
+            con.execute("INSERT INTO seed_flags(name) VALUES(?)", (flag,))
+            print('  %s: %d ברשומות, %d הותאמו לכרטיס קיים, %d בלי קוויטל נכנסו לאישור, %d כבר עם שמות'
+                  % (label, r['total'], r['matched'], r['queued'], r['has_names']))
+    except Exception as e:
+        print('  שגיאת קובץ קוויטל ישן:', e)
     # קוויטל 101 מאנשי הקשר בגוגל — מסמן דרגת "כל לילה" ומייבא את שמות התפילה מההערות
     try:
         seed101 = os.path.join(HERE, 'kvittel101_seed.json')
@@ -8337,6 +8356,7 @@ _NICK = {
     'גבי': 'גבריאל', 'אבי': 'אברהם', 'אברומי': 'אברהם', 'אברימי': 'אברהם',
     'זלמן': 'שניאור', 'סנדר': 'אלכסנדר', 'בערי': 'דוב', 'בעריש': 'דוב', 'בערל': 'דוב',
     'איצי': 'יצחק', 'איציק': 'יצחק', 'איציקל': 'יצחק',
+    'דודי': 'דוד', 'דוידי': 'דוד', 'דודל': 'דוד',
     'שמילי': 'שמואל', 'שמולי': 'שמואל', 'מולי': 'שמואל',
     'מנדי': 'מנחם', 'מענדי': 'מנחם', 'מנדל': 'מנחם', 'מענדל': 'מנחם',
     'לייזר': 'אליעזר', 'לוזר': 'אליעזר',
@@ -8370,6 +8390,77 @@ def _firstok(a, b, strict=False):
     if len(x) < mn or len(y) < mn:
         return False
     return x.startswith(y) or y.startswith(x) or x.endswith(y) or y.endswith(x)
+
+
+def match_existing_donor(con, entry, donors=None):
+    """הכרטיס הקיים של רשומה ישנה — טלפון, מייל, ואז שם משפחה לפי צליל עם שם
+    פרטי שמתיישב. רק התאמה יחידה נחשבת; ספק = לא מותאם."""
+    if donors is None:
+        donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,aliases FROM donors")]
+    phones = {_ph10(p) for p in (entry.get('phones') or []) if _ph10(p) and len(_ph10(p)) >= 7}
+    emails = {str(e).strip().lower() for e in (entry.get('emails') or []) if '@' in str(e)}
+    cands = []
+    for d in donors:
+        if phones and any(_ph10(p) in phones for p in re.split(r'[;,/]+', d['phone'] or '')):
+            cands.append(d)
+        elif emails and any(e in emails for e in emails_of(d['email'])):
+            cands.append(d)
+    if len({c['id'] for c in cands}) == 1:
+        return cands[0]
+    if cands:
+        return None
+    last = (entry.get('last') or '').strip()
+    first = (entry.get('first') or '').strip()
+    if not last and entry.get('display'):
+        toks = _tok_he(entry['display'])
+        if not toks:
+            return None
+        last, first = toks[-1], ' '.join(toks[:-1])
+    lk = _fz(last)
+    if not lk:
+        return None
+    same = [d for d in donors if _fz(d['last'] or '') == lk]
+    if not same:
+        return None
+    if first:
+        ok = []
+        for d in same:
+            alts = [d['first'] or ''] + [x.strip() for x in re.split(r'[,;/]', d.get('aliases') or '') if x.strip()]
+            if any(_firstok(a, b) for a in _tok_he(first) for v in alts for b in _tok_he(v)):
+                ok.append(d)
+        same = ok
+    return same[0] if len({d['id'] for d in same}) == 1 else None
+
+
+def queue_old_kvittel(con, entries, label, src):
+    """רשומות שמות מקובץ ישן → חלון האישור, רק לכרטיסים קיימים בלי שום שם בקוויטל."""
+    donors = [dict(r) for r in con.execute("SELECT id,last,first,email,phone,aliases FROM donors")]
+    has = {r[0] for r in con.execute("SELECT DISTINCT donor_id FROM prayers "
+                                     "WHERE donor_id IS NOT NULL AND COALESCE(TRIM(text),'')<>''")}
+    out = {'total': 0, 'matched': 0, 'queued': 0, 'has_names': 0}
+    today = il_today().isoformat() if 'il_today' in globals() else datetime.date.today().isoformat()
+    for i, e in enumerate(entries or []):
+        notes = re.sub(r'[ \t]+', ' ', str(e.get('notes') or e.get('names') or '')).strip()
+        if not notes:
+            continue
+        out['total'] += 1
+        d = match_existing_donor(con, e, donors)
+        if not d:
+            continue
+        out['matched'] += 1
+        if d['id'] in has:
+            out['has_names'] += 1
+            continue
+        mid = '%s:%d' % (src, i)
+        if con.execute("SELECT 1 FROM intake WHERE message_id=?", (mid,)).fetchone():
+            continue
+        disp = (e.get('display') or ((e.get('first') or '') + ' ' + (e.get('last') or ''))).strip()
+        con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,donor_id,status,created)
+                       VALUES(?,?,?,?,?,?,?,?,'new',?)""",
+                    (mid, '📁 ' + label + ' · ' + disp, '', 'שמות מ' + label, '', notes, notes, d['id'], today))
+        out['queued'] += 1
+    con.commit()
+    return out
 
 
 def contacts_fill(con, cards, status=None):
@@ -10453,9 +10544,11 @@ class H(BaseHTTPRequestHandler):
                 # תעתיק־מחדש מתוך גוף המייל בכל טעינה — כדי שהשיפורים בעברית יחולו גם על בקשות ישנות
                 if _gi and r['status'] != 'handled':
                     try:
-                        rp = _gi._parse_names(r['body'] or '')
-                        if rp.strip():
-                            x['names'] = rp
+                        # מאיר: "אל תתרגם לי לעברית" — רק כשלא נשמרו שמות עדיין
+                        if not (x.get('names') or '').strip():
+                            rp = _gi._parse_names(r['body'] or '', raw=True)
+                            if rp.strip():
+                                x['names'] = rp
                     except Exception:
                         pass
                 if r['status'] != 'handled' and not (x['names'] or '').strip():
@@ -11548,7 +11641,7 @@ class H(BaseHTTPRequestHandler):
             reparsed = ''
             try:
                 import gmail_intake as _gi2
-                reparsed = _gi2._parse_names(r['body'] or '')
+                reparsed = _gi2._parse_names(r['body'] or '', raw=True)
             except Exception:
                 reparsed = ''
             text = (b.get('names') or reparsed or r['names'] or r['body'] or '').strip()
@@ -11574,7 +11667,7 @@ class H(BaseHTTPRequestHandler):
             reparsed = ''
             try:
                 import gmail_intake as _gi3
-                reparsed = _gi3._parse_names(r['body'] or '')
+                reparsed = _gi3._parse_names(r['body'] or '', raw=True)
             except Exception:
                 reparsed = ''
             text = (b.get('names') or reparsed or r['names'] or '').strip()

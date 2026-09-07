@@ -618,17 +618,49 @@ def _fmt_one(name, mother, father, request):
     return s
 
 
-def _parse_names(body, translate=False):
-    """בונה שם/שמות קוויטל מתוך הטופס — תומך בכמה שמות במייל אחד: 'Name בן/בת Mother נוסח'."""
+def _fmt_raw(name, mother, father, request):
+    """השם כפי שנכתב, בלי תעתיק. מאיר: "אל תתרגם לי לעברית — העברית שאתה
+    מתרגם לא נכונה לפעמים בשמות קוויטל." הוא בודק ומתקן בעצמו."""
+    name = re.sub(r'\s+', ' ', (name or '')).strip()
+    if _is_junk_name(name):
+        return ''
+    par = re.sub(r'\s+', ' ', (mother or father or '')).strip()
+    s = name
+    if par and not re.search(r'\b(ben|bas|bat|בן|בת)\s*$', name, re.I):
+        if re.search(r'[֐-׿]', name):
+            fw = _he_norm_g(re.split(r'\s+', name)[0])
+            rel = 'בת' if (fw in _FEM_WORDS_HE or fw in _FEMALE_HE) else 'בן'
+        else:
+            rel = 'bas' if re.split(r'\s+', name)[0].lower() in _FEMALE else 'ben'
+        s += ' ' + rel
+    if par:
+        s += ' ' + par
+    req = re.sub(r'\s+', ' ', (request or '')).strip()
+    if req:
+        s += ' — ' + req
+    return s
+
+
+# מאיר: "מעכשיו כל שם תשלח לבדיקה בחלון הייעודי בקוויטל, ואל תתרגם לי
+# לעברית." ברירת המחדל בכל המערכת: השמות נשמרים כפי שנכתבו.
+RAW_NAMES = True
+
+
+def _parse_names(body, translate=False, raw=None):
+    """בונה שם/שמות קוויטל מתוך הטופס — תומך בכמה שמות במייל אחד: 'Name בן/בת Mother נוסח'.
+    raw=True: בלי תעתיק ובלי תרגום — השורות כפי שנכתבו."""
     if not body:
         return ''
+    if raw is None:
+        raw = RAW_NAMES
     body = _fixmoji(body)
     records = []
     cur = {}
 
     def flush():
         if cur.get('name'):
-            records.append(_fmt_one(cur.get('name', ''), cur.get('mother', ''), cur.get('father', ''), cur.get('request', '')))
+            f = _fmt_raw if raw else _fmt_one
+            records.append(f(cur.get('name', ''), cur.get('mother', ''), cur.get('father', ''), cur.get('request', '')))
         cur.clear()
 
     generic = []
@@ -650,16 +682,16 @@ def _parse_names(body, translate=False):
                 continue
         if re.search(r'[֐-׿]', ln) and re.search(r'\b(בן|בת)\b', ln):
             # שורה שנכתבה חופשי — לעיתים עברית ואנגלית מעורבבות. מוציאים את האנגלית
-            generic.append(_he_mixed(ln, translate))
+            generic.append(ln.strip() if raw else _he_mixed(ln, translate))
     flush()
     if not records and not generic:
         # שורה חופשית באנגלית בלבד בצורת "Name ben/bas Mother" — אחרון, רק אם לא נמצא כלום
         for ln in body.split('\n'):
             if re.search(r"[A-Za-z']{2,}\s+(ben|bas|bat)\s+[A-Za-z']{2,}", ln, re.I):
-                he = _he_mixed(ln, translate)
+                he = ln.strip() if raw else _he_mixed(ln, translate)
                 if he and not _is_junk_name(he):
                     generic.append(he)
-    out = [_he_spell(o) for o in (records + [g for g in generic if g])]
+    out = [(o if raw else _he_spell(o)) for o in (records + [g for g in generic if g])]
     return '\n'.join(dict.fromkeys([o for o in out if o]))
 
 
@@ -1582,13 +1614,15 @@ def sync(con):
                              il_today().isoformat()))
                 iid = cur.lastrowid
                 new += 1
-            if donor:                 # זוהה תורם לפי מייל — צירוף אוטומטי לקוויטל שלו, נגמר הסיפור
-                _autoattach(donor, names)
-                con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (donor['id'], iid))
+            if donor:
+                # מאיר: "גם שמות שיוצאים מהג'ימייל אל תמזג — כל שם תשלח לבדיקה
+                # בחלון הייעודי בקוויטל ותשאל אותי." הכרטיס מקושר, המיזוג
+                # רק בלחיצה שלו. (בעבר: _autoattach — צירוף אוטומטי.)
+                con.execute("UPDATE intake SET donor_id=? WHERE id=?", (donor['id'], iid))
                 attached += 1
         M.logout()
         con.commit()
-        return {'ok': True, 'new': new, 'attached': attached, 'scanned': scanned,
+        return {'ok': True, 'new': new, 'linked': attached, 'scanned': scanned,
                 'skipped': skipped, 'mailbox': mailbox, 'since': _imap_since(),
                 'subject': subj, 'from': froms}
     except imaplib.IMAP4.error as e:

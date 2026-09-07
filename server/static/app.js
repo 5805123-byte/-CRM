@@ -6767,7 +6767,7 @@ function paintIntake(){
       <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div>
     <div class="hintxt" id="intDnSt" style="margin:0 2px 6px"></div>
     ${INTAKE_CFG?'':`<div class="missbox">⚙️ חיבור המייל עדיין לא הוגדר בשרת. הגדר ב-Render את <b>GMAIL_USER</b> ו-<b>GMAIL_APP_PASSWORD</b> (וגם INTAKE_FROM לסינון לפי כתובת האתר). ראה הוראות.</div>`}
-    <div class="hintxt" style="margin:2px 2px 8px">כל בקשה שהגיעה במייל מהאתר. ✅ = השמות כבר צורפו לקוויטל אצל התורם · 🔴 = עדיין לא. אפשר לערוך את השמות, לצרף לתורם, או לסמן שטופל.</div>
+    <div class="hintxt" style="margin:2px 2px 8px">כל שם שהגיע מהאתר, מהג׳ימייל או מקובץ ישן (📁) מחכה כאן לאישורך — שום דבר לא מתמזג לבד, והשמות נשמרים כפי שנכתבו, בלי תרגום. ✅ = כבר יש שמות בקוויטל אצל התורם · 🔴 = אין לו קוויטל בכלל. ערוך אם צריך, ואז ➕ צרף, או סמן שטופל.</div>
     <div id="intdiag"></div>
     <div id="intlist"></div>`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
@@ -6775,7 +6775,7 @@ function paintIntake(){
     const btn=document.getElementById('intSync');btn.disabled=true;btn.textContent='מושך…';
     const r=await api('POST','/api/intake/sync',{});
     if(!r.ok){toast(r.error==='not_configured'?'המייל לא מוגדר בשרת':'שגיאת משיכה: '+(r.detail||r.error||''));btn.disabled=false;btn.textContent='🔄 משוך מהמייל';return;}
-    toast('נמשכו '+(r.new||0)+' בקשות'+(r.attached?' · '+r.attached+' צורפו אוטומטית לקוויטל לפי המייל':'')+' ✓');
+    toast('נמשכו '+(r.new||0)+' בקשות'+(r.linked?' · '+r.linked+' זוהו לפי המייל וממתינות לאישורך':'')+' ✓');
     INTAKE=null;await loadIntake();paintIntake();intDiag(r);
   };
   // סריקת המיילים של כל התורמים לשמות — רצה בשרת, כאן רק עוקבים
