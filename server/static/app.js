@@ -8782,10 +8782,10 @@ const MLTPL=[{
    // מאיר: "כמובא בזוהר ובספרים שמי שקם חצות ולומד תורה, מה שהוא
    // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
    // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
-   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    // מאיר: "לתקן — הקוויטל המיוחד עם השמות והבקשות שלך."
    '{{אם קוויטל}}Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.{{אחרת}}Your Yissachar-Zevulun partner davens for you every night at chatzos. We would be glad to receive your names and your requests — simply reply to this email — so that he can mention them there by name.{{סוף}}',
+   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    // מאיר: "אני רוצה שהשם של התורם עם התואר שלו לפני ואחרי השם שיהיה
    // בשורה נפרדת" — שורה אחת יורדת, ולכן זו אותה פסקה בשורה חדשה
    // ולא פסקה נפרדת עם רווח גדול.
@@ -8845,10 +8845,10 @@ const MLTPL=[{
    // מאיר: "כמובא בזוהר ובספרים שמי שקם חצות ולומד תורה, מה שהוא
    // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
    // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
-   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    // מאיר: "לתקן — הקוויטל המיוחד עם השמות והבקשות שלך."
    '{{אם קוויטל}}Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.{{אחרת}}Your Yissachar-Zevulun partners daven for you every night at chatzos. We would be glad to receive your names and your requests — simply reply to this email — so that they can mention them there by name.{{סוף}}',
+   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    // מאיר: "אני לא אוהב את המשפט הזה שהוא לא רק מחזיק אחד אלא 4. תכתוב
    // פשוט: אתה מחזיק ותומך בשותפות יששכר זבולון ב-4 אברכים וכו'."
    // מאיר: "במכתב שמחזיק כמה אברכים לא שינית את זה" — אותו סדר כמו
@@ -8892,10 +8892,10 @@ const MLTPL=[{
    // מאיר: "כמובא בזוהר ובספרים שמי שקם חצות ולומד תורה, מה שהוא
    // מברך ומתפלל על זה מתקיים ואף אחד לא יכול למחות בו... תקצר את זה
    // לשורה וחצי או שניים ותשים את זה בהתחלת האימיילים של כולם."
-   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
-   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    // מאיר: "לתקן — הקוויטל המיוחד עם השמות והבקשות שלך."
    '{{אם קוויטל}}Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.{{אחרת}}The avreichim of the Kollel daven for you at every eis ratzon — at chatzos, at the Kosel HaMaaravi, at Kever Rochel and in Meron. We would be glad to receive your names and your requests — simply reply to this email — so that they can mention them there by name.{{סוף}}',
+   'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
+   'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
    // מאיר תיקן: "קוויטל שבועי זה שכל האברכים של הכולל חצות נוסעים
    // פעם בשבוע לכותל המערבי או לקבר רחל, וכל ערב ראש חודש למירון אצל
    // רבי שמעון בר יוחאי, ובכל הזדמנות עת רצון או נסיעה... הם מקבלים את
@@ -8952,9 +8952,9 @@ const MLTPL=[{
   name:'ימים נוראים — קוויטל כל לילה',
   subj:'Needy Kollel families wait for Yom Tov food — take one or two{{אם קוויטל}}. Your Kvitel names attached{{סוף}}',
   body:[
+   '{{אם קוויטל}}Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.{{אחרת}}Three chosen avreichim daven for you every single night at chatzos. We would be glad to receive your names and your requests — simply reply to this email — so that they can mention them there by name.{{סוף}}',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   '{{אם קוויטל}}Your special Kvitel — with your names and your requests — is at the bottom of this email. We daven for them at the great eis ratzon of chatzos, when שערי שמים stand open and the tefillos rise straight to the כסא הכבוד. If anything has changed, we would be glad if you would update us.{{אחרת}}Three chosen avreichim daven for you every single night at chatzos. We would be glad to receive your names and your requests — simply reply to this email — so that they can mention them there by name.{{סוף}}',
    // מאיר: "אל תכתוב ממבר, אתה חוזר על עצמך שוב חודש בחודש. תעשה את זה
    // חם מרגש שהוא שותף פעיל בלימוד התורה ותפילה בעת רצון של חצות הלילה,
    // בזכותו יש קול תורה, כשהוא שותף כל חודש עם התרומה הקבועה שלו."
@@ -9011,9 +9011,9 @@ const MLTPL=[{
   // פעמים. שלא יוכפלו משפטים. תמחק למעלה ותשלב יפה למטה."
   subj:'Needy Kollel families wait for Yom Tov food — take one or two{{אם קוויטל}}. Your Kvitel names are kept with us{{סוף}}',
   body:[
+   '{{אם קוויטל}}The names you gave us with your donations to Kollel Chatzos are kept with us — you will find them at the bottom of this email. If anything has changed, we would be glad if you would update us.{{אחרת}}We would be glad to receive your names and your requests, so that they will be davened for at chatzos halayla — simply reply to this email with the names.{{סוף}}',
    'To our dear partner in the Torah of chatzos,\n{{תואר}} {{שם}} {{הי"ו}}',
    'The Zohar HaKadosh and the seforim bring that one who rises at chatzos and learns Torah — whatever he blesses and davens for is fulfilled, and no one can stand in its way. We see it here all the time: yeshuos above the way of nature.',
-   '{{אם קוויטל}}The names you gave us with your donations to Kollel Chatzos are kept with us — you will find them at the bottom of this email. If anything has changed, we would be glad if you would update us.{{אחרת}}We would be glad to receive your names and your requests, so that they will be davened for at chatzos halayla — simply reply to this email with the names.{{סוף}}',
    'There are 110 families in Kollel Chatzos — the families of the avreichim who learn here at chatzos — and they have nothing to eat for Yom Tov. They are groaning under their debts.',
    'An avreich who is moser nefesh every night of the year for Torah, with a house full of children — and they have nothing to put on the table for the Yomim Tovim. The dollar has fallen, the cost of living here has risen sharply, and we are fighting over every single dollar.',
    'We want to give each family [$1,200](https://kollelchatzot.com/donate.php), so that they will have what to eat for Yom Tov b\'derech kavod.',
