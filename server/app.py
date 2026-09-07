@@ -4092,6 +4092,12 @@ def ensure_schema():
     # תורם שנמחק ונוצר מחדש באחת המיגרציות — נמחק שוב
     try:
         n = purge_deleted(con)
+        try:
+            nb = backfill_from_recon(con)
+            if nb:
+                print('  פרטים מהחיובים שהושלמו לכרטיסים: %d' % nb)
+        except Exception as e:
+            print('  recon backfill error:', e)
         # פריט מקובץ ישן שהתורם שלו נמחק — אין לו קיום בלי כרטיס (מאיר: "רק לאנשי
         # קשר קיימים בלבד"), ולכן נעלם יחד עם התורם
         try:
@@ -6161,6 +6167,8 @@ def recon_apply(cur, tid, b):
                         "WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(note,'') NOT LIKE ?",
                         (_rn, did, _amt, '%' + _rn + '%'))
     cur.execute("UPDATE recon SET processed=1, donor_id=?, category=? WHERE tid=?", (did, cat, tid))
+    try: backfill_from_recon(cur)      # הפרטים שבחיוב → לשדות הריקים בכרטיס
+    except Exception: pass
     return (200, {'ok': True, 'donor_id': did})
 
 _KV_STRIP = str.maketrans('ךםןףץ', 'כמנפצ')
@@ -7497,6 +7505,72 @@ TIER_DEFAULT = 'קוויטל_זמנים'
 def _dkey(last, first):
     """מפתח זהות של תורם למעקב אחרי מחיקות — בלי גרשיים ורווחים."""
     return (_fz(last or '') + '|' + _fz(first or '')).strip('|')
+
+
+def backfill_from_recon(con):
+    """מאיר: "היא תרמה לפני חודשיים ולא נכנס לפרטים שלה כלום." החיוב מביא
+    איתו אימייל, טלפון וכתובת — כאן הם נכנסים לכרטיס של התורם שהחיוב שויך
+    אליו, ורק לשדות שריקים אצלו. שום דבר קיים לא נדרס. מחזיר כמה כרטיסים
+    הושלמו."""
+    n = 0
+    # חיוב בלי כרטיס שהאימייל שבו שייך לכרטיס אחד ויחיד — מקושר אליו (כמו
+    # שקבלות מקושרות לפי אימייל מאז ומתמיד). הקישור בלבד; האישור נשאר בדף החיובים.
+    try:
+        bym = {}
+        for d in con.execute("SELECT id,email FROM donors WHERE TRIM(COALESCE(email,''))<>''"):
+            for e in emails_of(d['email']):
+                bym.setdefault(e, set()).add(d['id'])
+        for r in con.execute("SELECT tid,email FROM recon WHERE donor_id IS NULL AND COALESCE(TRIM(email),'')<>''").fetchall():
+            ids = bym.get((r['email'] or '').strip().lower()) or set()
+            if len(ids) == 1:
+                con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (next(iter(ids)), r['tid']))
+    except Exception:
+        pass
+    def _tc(s):     # 'flushing' → 'Flushing', '6932 136th st apt 1a' → '6932 136th St Apt 1a'
+        s = re.sub(r'\s+', ' ', str(s or '')).strip()
+        return ' '.join(w if (w.isupper() and len(w) <= 3) else w.capitalize() for w in s.split())
+    try:
+        rows = con.execute("""SELECT r.donor_id, r.email, r.phone, r.addr, r.city, r.state, r.zip
+                              FROM recon r WHERE r.donor_id IS NOT NULL
+                                AND (COALESCE(TRIM(r.email),'')<>'' OR COALESCE(TRIM(r.phone),'')<>''
+                                     OR COALESCE(TRIM(r.addr),'')<>'')
+                              ORDER BY r.date DESC""").fetchall()
+    except Exception:
+        return 0
+    seen = set()
+    for r in rows:
+        did = r['donor_id']
+        d = con.execute("SELECT id,email,phone,addr,city,zip,country,region FROM donors WHERE id=?", (did,)).fetchone()
+        if not d:
+            continue
+        sets = {}
+        em = (r['email'] or '').strip().lower()
+        if em and '@' in em and em not in emails_of(d['email']):
+            have = emails_of(d['email'])
+            sets['email'] = ', '.join(have + [em]) if have else em
+        ph = (r['phone'] or '').strip()
+        if re.fullmatch(r'\d{10}', ph):
+            ph = '+1 %s-%s-%s' % (ph[:3], ph[3:6], ph[6:])
+        if ph and len(_ph10(ph)) >= 7:
+            cur = [p.strip() for p in re.split(r'[/,]', d['phone'] or '') if p.strip()]
+            if _ph10(ph) not in {_ph10(p) for p in cur}:
+                sets['phone'] = ' / '.join(cur + [ph])
+        if (r['addr'] or '').strip() and not (d['addr'] or '').strip():
+            st_ = (r['state'] or '').strip().upper()
+            parts = [_tc(r['addr']), _tc(r['city']), ' '.join(x for x in (st_, (r['zip'] or '').strip()) if x)]
+            sets['addr'] = ', '.join(x for x in parts if x) + ', US'
+            if not (d['city'] or '').strip() and (r['city'] or '').strip(): sets['city'] = _tc(r['city'])
+            if not (d['zip'] or '').strip() and (r['zip'] or '').strip(): sets['zip'] = r['zip'].strip()
+            if not (d['country'] or '').strip() and st_: sets['country'] = st_
+            if not (d['region'] or '').strip(): sets['region'] = 'us'
+        if sets:
+            con.execute("UPDATE donors SET " + ', '.join(f"{c}=?" for c in sets) + " WHERE id=?",
+                        tuple(sets.values()) + (did,))
+            if did not in seen:
+                seen.add(did); n += 1
+    if n:
+        getattr(con, 'connection', con).commit()     # עובד גם עם cursor
+    return n
 
 
 def purge_deleted(con):
@@ -11144,6 +11218,8 @@ class H(BaseHTTPRequestHandler):
                 tid = anet.webhook_tid(ev)
                 con = db()
                 res = anet.sync(con, link=link_by_identity, only_tid=tid) if tid else {}
+                try: backfill_from_recon(con)
+                except Exception: pass
                 con.close()
                 ANETSTAT.update(last=now_iso(), last_ok=now_iso(), hooks=ANETSTAT['hooks'] + 1,
                                 result=str(res), error='')
@@ -11555,6 +11631,8 @@ class H(BaseHTTPRequestHandler):
                     try:
                         stt['phase'] = 'קבלות אוטרייז'
                         r2 = gmail_intake.sync_receipts(c, stt, b.get('since'))
+                        try: backfill_from_recon(c)
+                        except Exception: pass
                         if r2.get('ok'):
                             stt['new'] = stt.get('new', 0) + r2.get('new', 0)
                             stt['dup'] = stt.get('dup', 0) + r2.get('dup', 0)
@@ -12173,6 +12251,8 @@ class H(BaseHTTPRequestHandler):
             try:
                 con = db()
                 res = anet.sync(con, days=int(b.get('days') or 10), link=link_by_identity)
+                try: backfill_from_recon(con)
+                except Exception: pass
                 con.close()
                 ANETSTAT.update(last=now_iso(), last_ok=now_iso(), result=str(res), error='',
                                 runs=ANETSTAT['runs'] + 1)
@@ -13299,6 +13379,8 @@ def _authnet_loop():
                 con = db()
                 res = anet.sync(con, days=int(os.environ.get('AUTHNET_DAYS') or 10),
                                 link=link_by_identity)
+                try: backfill_from_recon(con)
+                except Exception: pass
                 con.close()
                 bump_data()
                 ANETSTAT.update(last=now_iso(), last_ok=now_iso(), result=str(res), error='',

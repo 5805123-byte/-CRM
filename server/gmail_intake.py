@@ -1931,9 +1931,21 @@ _RC = {
     'first': re.compile(r'^\s*First Name\s*:\s*(.*?)\s*$', re.M),
     'last':  re.compile(r'^\s*Last Name\s*:\s*(.*?)\s*$', re.M),
     'mail':  re.compile(r'^\s*E-?Mail\s*:\s*(\S+@\S+?)\s*$', re.M),
+    # פרטי החיוב (CUSTOMER BILLING) — הראשונים בקבלה; המשלוח שאחריהם ריק
+    'addr':  re.compile(r'^\s*Address\s*:\s*(.*?)\s*$', re.M),
+    'city':  re.compile(r'^\s*City\s*:\s*(.*?)\s*$', re.M),
+    'state': re.compile(r'^\s*State/Province\s*:\s*(.*?)\s*$', re.M),
+    'zip':   re.compile(r'^\s*Zip/Postal Code\s*:\s*(.*?)\s*$', re.M),
+    'phone': re.compile(r'^\s*Phone\s*:\s*(.*?)\s*$', re.M),
     'desc':  re.compile(r'^\s*Description\s*:\s*(.*?)\s*$', re.M),
     'resp':  re.compile(r'^\s*Response\s*:\s*(.*?)\s*$', re.M),
 }
+
+
+def _title_addr(s):
+    """'6932 136th st apt 1a' → '6932 136th St Apt 1a' — כפי שנכתב בכרטיסים."""
+    s = re.sub(r'\s+', ' ', (s or '')).strip()
+    return ' '.join(w if (w.isupper() and len(w) <= 3) else w.capitalize() for w in s.split())
 
 
 def _rc_date(v):
@@ -2004,16 +2016,28 @@ def sync_receipts(con, status=None, since=None):
                 if not (tid and iso and g['amt']):
                     skip += 1
                     continue
-                if con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone():
-                    dup += 1
-                    continue
                 em = (g['mail'] or '').strip().lower()
+                # מאיר: "למה אין את הפרטים של התורמת הזו במערכת?" — הקבלה מכילה
+                # כתובת וטלפון, ועד עכשיו נשמר ממנה רק האימייל.
+                addr = _title_addr(g['addr']); city = _title_addr(g['city'])
+                state = (g['state'] or '').strip().upper(); zipc = (g['zip'] or '').strip()
+                phone = re.sub(r'[^\d+]', '', g['phone'] or '')
+                if len(phone) == 10:
+                    phone = '+1 %s-%s-%s' % (phone[:3], phone[3:6], phone[6:])
+                old = con.execute("SELECT addr,phone FROM recon WHERE tid=?", (tid,)).fetchone()
+                if old:
+                    dup += 1
+                    if (addr or phone) and not ((old['addr'] or '').strip() or (old['phone'] or '').strip()):
+                        con.execute("UPDATE recon SET addr=?,city=?,state=?,zip=?,phone=? WHERE tid=?",
+                                    (addr, city, state, zipc, phone, tid))   # השלמה לשורות ישנות
+                    continue
                 did = emap.get(em) if em else None
                 con.execute(
                     "INSERT INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,"
                     "recurring,donor_id,category,processed,source,status) "
-                    "VALUES(?,?,?,?,?,'','','','','',?,0,?,?,0,'Authorize','settled')",
-                    (tid, g['first'], g['last'], g['amt'].replace(',', ''), iso, em, did, g['desc'][:80]))
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,0,'Authorize','settled')",
+                    (tid, g['first'], g['last'], g['amt'].replace(',', ''), iso, addr, city, state, zipc, phone,
+                     em, did, g['desc'][:80]))
                 new += 1
                 st['new'] = new
             st['done'] = st.get('done', 0) + len(ids[i:i + 25])
