@@ -6845,7 +6845,7 @@ function paintIntake(){
     <div id="intlist"></div>
     <details class="dsec" style="margin-top:14px"><summary>🛠️ כלים נוספים</summary>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-        <button class="btn sm ghost" id="intDnScan" title="לכל תורם עם אימייל בכרטיס: מה הוא שלח לנו בשנתיים האחרונות">🔎 סרוק מיילים של תורמים · שנתיים</button>
+        <button class="btn sm ghost" id="intDnScan" title="לכל תורם עם אימייל בכרטיס: מה הוא שלח לנו בארבע השנים האחרונות">🔎 סרוק מיילים של תורמים · 4 שנים</button>
         <button class="btn sm ghost" id="intDiagBtn">🩺 בדיקה — מה יש בתיבה</button></div></details>`;
   document.getElementById('kvback').onclick=()=>{kvSub=null;render();};
   document.getElementById('intSync').onclick=async()=>{

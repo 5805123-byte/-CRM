@@ -1181,6 +1181,14 @@ def ensure_schema():
                 qn += 1
             con.execute("INSERT INTO seed_flags(name) VALUES('olga_kv_review_v1')")
             print('  אולגה קירשבוים — שמות לאישור נכנסו ל-%d כרטיסים' % qn)
+        # הנוסח העדכני — מאיר מצא אותו במייל משנת 2023
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='olga_kv_review_v2'").fetchone():
+            OLGA2 = ("אביאל אברהם בן רבקה וזוגתו חיה יהודית בת שרה — לברכה, לתשובה, לילדים ולפרנסה\n"
+                     "אמיתי גדעון בן חיה יהודית — לברכה\n"
+                     "יאיר בצלאל בן חיה יהודית — לברכה")
+            con.execute("UPDATE intake SET names=?, body=?, subject='שמות מהמייל (2023)' "
+                        "WHERE message_id LIKE 'kvittel_olga:%' AND COALESCE(status,'')='new'", (OLGA2, OLGA2))
+            con.execute("INSERT INTO seed_flags(name) VALUES('olga_kv_review_v2')")
     except Exception as e:
         print('  שגיאת אולגה:', e)
     # קוויטל 101 מאנשי הקשר בגוגל — מסמן דרגת "כל לילה" ומייבא את שמות התפילה מההערות

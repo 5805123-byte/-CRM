@@ -2321,7 +2321,9 @@ def _intake_row(con, msg, femail, did, names, body):
     return True
 
 
-def scan_donor_names(con, status=None, years=2, per_addr=40):
+# מאיר: "מצאתי את זה באימייל משנת 2023 — בטוח שיש עוד הרבה תורמים כאלו."
+# שנתיים לא הספיקו; הסריקה מכסה ארבע שנים.
+def scan_donor_names(con, status=None, years=4, per_addr=60):
     st = status if status is not None else DN_STATUS
     user = (os.environ.get('GMAIL_USER') or '').strip()
     pw = os.environ.get('GMAIL_APP_PASSWORD')
