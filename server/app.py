@@ -4092,6 +4092,14 @@ def ensure_schema():
     # תורם שנמחק ונוצר מחדש באחת המיגרציות — נמחק שוב
     try:
         n = purge_deleted(con)
+        # פריט מקובץ ישן שהתורם שלו נמחק — אין לו קיום בלי כרטיס (מאיר: "רק לאנשי
+        # קשר קיימים בלבד"), ולכן נעלם יחד עם התורם
+        try:
+            con.execute("UPDATE intake SET status='deleted' WHERE COALESCE(message_id,'') LIKE 'kvittel_%' "
+                        "AND donor_id IS NULL AND COALESCE(status,'')<>'handled'")
+            con.commit()
+        except Exception:
+            pass
         if n:
             print('  כרטיסים שנמחקו וחזרו — נמחקו שוב: %d' % n)
     except Exception as e:
@@ -7507,6 +7515,8 @@ def purge_deleted(con):
                   'sugg_reject', 'addr_reject'):
             try: con.execute("DELETE FROM %s WHERE donor_id=?" % t, (r['id'],))
             except Exception: pass
+        try: con.execute("UPDATE intake SET status='deleted' WHERE donor_id=? AND COALESCE(status,'')<>'handled'", (r['id'],))
+        except Exception: pass
         for t in ('recon', 'intake'):
             try: con.execute("UPDATE %s SET donor_id=NULL WHERE donor_id=?" % t, (r['id'],))
             except Exception: pass
@@ -11728,6 +11738,9 @@ class H(BaseHTTPRequestHandler):
             try: con.execute("DELETE FROM deleted_donors WHERE key=?",
                              (_dkey(b.get('last',''), b.get('first','')),))
             except Exception: pass
+            for _e in emails_of(b.get('email') or ''):
+                try: con.execute("DELETE FROM deleted_donors WHERE key=?", ('email:' + _e,))
+                except Exception: pass
             cur = con.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (last, first, english, '', phone, email, addr, '', 'מזדמן', '', '', today_iso(),
@@ -12343,6 +12356,9 @@ class H(BaseHTTPRequestHandler):
             try: cur.execute("DELETE FROM deleted_donors WHERE key=?",
                              (_dkey(b.get('last', ''), b.get('first', '')),))
             except Exception: pass
+            for _e in emails_of(b.get('email') or ''):
+                try: cur.execute("DELETE FROM deleted_donors WHERE key=?", ('email:' + _e,))
+                except Exception: pass
             cur.execute("""INSERT INTO donors(last,first,english,business,phone,email,addr,tier,category,purpose,amount,created,source,region,country,zip,city)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (b.get('last',''), b.get('first',''), b.get('english',''), b.get('business',''), b.get('phone',''),
@@ -12984,12 +13000,21 @@ class H(BaseHTTPRequestHandler):
             try: con.execute("DELETE FROM files WHERE kind='transaction' AND ref_id IN (SELECT id FROM transactions WHERE donor_id=?)", (did,))
             except Exception: pass
             try:
-                _d = con.execute("SELECT last,first,english FROM donors WHERE id=?", (did,)).fetchone()
+                _d = con.execute("SELECT last,first,english,email FROM donors WHERE id=?", (did,)).fetchone()
                 if _d:
                     con.execute("INSERT OR REPLACE INTO deleted_donors(key,last,first,english,created) "
                                 "VALUES(?,?,?,?,?)",
                                 (_dkey(_d['last'], _d['first']), _d['last'], _d['first'],
                                  _d['english'] or '', today_iso()))
+                    # מאיר: "מחקתי את התורמים האלו בכלל מהמערכת וזה שוב חוזר". גם
+                    # כתובות המייל נזכרות — משיכה מהג'ימייל לא תפתח להם עוד פריט.
+                    for _e in emails_of(_d['email']):
+                        con.execute("INSERT OR REPLACE INTO deleted_donors(key,last,first,english,created) "
+                                    "VALUES(?,?,?,?,?)", ('email:' + _e, _d['last'], _d['first'],
+                                                          _d['english'] or '', today_iso()))
+            except Exception: pass
+            try:      # מה שחיכה לו בחלון הבדיקה נעלם יחד איתו
+                con.execute("UPDATE intake SET status='deleted' WHERE donor_id=? AND COALESCE(status,'')<>'handled'", (did,))
             except Exception: pass
             for t in ('pledges','parnes','prayers','donations','contacts_log','tasks','partners',
                       'transactions','building','donor_rules','avreich_log','sugg_reject','addr_reject'):

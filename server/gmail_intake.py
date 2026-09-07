@@ -1512,6 +1512,14 @@ def diag(days=21):
         return {'ok': False, 'error': 'diag_failed', 'detail': str(e)}
 
 
+def deleted_emails(con):
+    """כתובות של תורמים שמאיר מחק מהמערכת — מהן לא פותחים עוד פריטים."""
+    try:
+        return {r[0][6:] for r in con.execute("SELECT key FROM deleted_donors WHERE key LIKE 'email:%'")}
+    except Exception:
+        return set()
+
+
 def sync(con):
     """מושך מיילים חדשים לתוך טבלת intake. מחזיר dict עם התוצאה."""
     user = os.environ.get('GMAIL_USER')
@@ -1577,6 +1585,7 @@ def sync(con):
             ids = set(data[0].split()) if typ == 'OK' else set()
         scanned = len(ids)
         skipped = []
+        gone = deleted_emails(con)
         for i in sorted(ids, key=lambda x: int(x)):
             typ, md = M.fetch(i, '(RFC822)')
             if typ != 'OK' or not md or not md[0]:
@@ -1602,6 +1611,8 @@ def sync(con):
                 continue
             # המייל האמיתי של התורם נמצא בגוף המייל (המיילים מועברים דרך כתובת אחת) — מזהים לפיו
             real_email = (_submitter_email(body) or femail or '').lower()
+            if real_email in gone or (femail or '').lower() in gone:
+                continue                  # תורם שנמחק מהמערכת — לא חוזר דרך המייל
             donor = _match_donor(real_email)   # זיהוי תורם לפי האימייל האמיתי
             if existing:              # רענון פריט שעדיין לא טופל — מתקן פענוח עברית/תעתיק ישן
                 iid = existing['id']
@@ -2265,7 +2276,8 @@ def scan_donor_names(con, status=None, years=2, per_addr=40):
     if not (user and pw):
         return {'ok': False, 'error': 'not_configured'}
     amap = _all_donor_addrs(con)
-    addrs = sorted(amap)
+    gone = deleted_emails(con)
+    addrs = sorted(a for a in amap if a not in gone)
     since = (il_today() - datetime.timedelta(days=365 * years)).strftime('%d-%b-%Y')
     st.update({'total': len(addrs), 'scanned': 0, 'mails': 0, 'found': 0, 'donors': 0,
                'since': since, 'phase': 'מיילים מהתורמים'})
