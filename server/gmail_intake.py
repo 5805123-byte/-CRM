@@ -1512,6 +1512,14 @@ def diag(days=21):
         return {'ok': False, 'error': 'diag_failed', 'detail': str(e)}
 
 
+def _fingerprint(msg, body):
+    """מזהה יציב למייל בלי Message-ID — מהשולח, התאריך, הנושא והגוף."""
+    import hashlib
+    raw = '|'.join([_dec(msg.get('From')), (msg.get('Date') or '')[:31], _dec(msg.get('Subject')),
+                    re.sub(r'\s+', ' ', (body or '')[:3000])])
+    return 'fp:' + hashlib.sha1(raw.encode('utf-8', 'replace')).hexdigest()
+
+
 def deleted_emails(con):
     """כתובות של תורמים שמאיר מחק מהמערכת — מהן לא פותחים עוד פריטים."""
     try:
@@ -1591,10 +1599,6 @@ def sync(con):
             if typ != 'OK' or not md or not md[0]:
                 continue
             msg = email.message_from_bytes(md[0][1])
-            mid = (msg.get('Message-ID') or '').strip() or f'{user}:{i.decode()}'
-            existing = con.execute("SELECT id,status FROM intake WHERE message_id=?", (mid,)).fetchone()
-            if existing and existing['status'] in ('handled', 'deleted'):
-                continue   # כבר טופל או נמחק — לא נוגעים ולא מחזירים
             fname, femail = parseaddr(_dec(msg.get('From')))
             subject = _dec(msg.get('Subject'))
             try:
@@ -1603,7 +1607,19 @@ def sync(con):
             except Exception:
                 received = ''
             body = _extract_text(msg)
+            # מאיר: "זה שוב חוזר על עצמו ומעלה את השמות שמחקתי כבר כמה פעמים".
+            # מייל בלי Message-ID קיבל מזהה לפי מספרו הרץ בתיבה — שמשתנה בכל
+            # משיכה, ולכן אותו מייל נכנס שוב ושוב. עכשיו המזהה נגזר מהתוכן.
+            mid = (msg.get('Message-ID') or '').strip() or _fingerprint(msg, body)
+            existing = con.execute("SELECT id,status FROM intake WHERE message_id=?", (mid,)).fetchone()
             names = _parse_names(body, translate=True)
+            if not existing and names.strip():
+                # גם מזהה שהשתנה (העברה, כפילות בתיבה) — אותו שולח, אותו יום, אותם שמות
+                existing = con.execute("SELECT id,status FROM intake WHERE lower(COALESCE(from_email,''))=? "
+                                       "AND COALESCE(received,'')=? AND COALESCE(names,'')=?",
+                                       ((_submitter_email(body) or femail or '').lower(), received, names)).fetchone()
+            if existing and existing['status'] in ('handled', 'deleted'):
+                continue   # כבר טופל או נמחק — לא נוגעים ולא מחזירים
             if not names.strip():     # אין שמות לתפילה (למשל רק "thank you") — לא מכניסים לרשימה
                 if len(skipped) < 12:
                     skipped.append({'from': femail, 'subject': _dec(msg.get('Subject')),
@@ -2252,9 +2268,7 @@ def _fetch_msgs(M, ids, chunk=20):
 
 
 def _intake_row(con, msg, femail, did, names, body):
-    mid = (msg.get('Message-ID') or '').strip()
-    if not mid:
-        return False
+    mid = (msg.get('Message-ID') or '').strip() or _fingerprint(msg, body)
     if con.execute("SELECT 1 FROM intake WHERE message_id=?", (mid,)).fetchone():
         return False
     fname, _ = parseaddr(_dec(msg.get('From')))
@@ -2262,6 +2276,9 @@ def _intake_row(con, msg, femail, did, names, body):
         received = parsedate_to_datetime(msg.get('Date')).date().isoformat()
     except Exception:
         received = ''
+    if con.execute("SELECT 1 FROM intake WHERE lower(COALESCE(from_email,''))=? AND COALESCE(received,'')=? "
+                   "AND COALESCE(names,'')=?", ((femail or '').lower(), received, names)).fetchone():
+        return False              # אותו מייל תחת מזהה אחר — כבר ברשימה (או נמחק)
     con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,donor_id,status,created)
                    VALUES(?,?,?,?,?,?,?,?,'new',?)""",
                 (mid, fname, femail, _dec(msg.get('Subject')), received, body[:6000], names, did,
