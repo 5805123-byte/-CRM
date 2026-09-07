@@ -1971,7 +1971,8 @@ def sync_receipts(con, status=None, since=None):
     pw = os.environ.get('GMAIL_APP_PASSWORD')
     if not (user and pw):
         return {'ok': False, 'error': 'not_configured'}
-    since = since or os.environ.get('RECEIPTS_SINCE') or '01-Jan-2024'
+    # מאיר: "ביקשתי רק 2026" — קבלות מלפני כן אינן נטענות
+    since = since or os.environ.get('RECEIPTS_SINCE') or '01-Jan-2026'
     emap = _donor_email_map(con)
     new = dup = skip = 0
     try:

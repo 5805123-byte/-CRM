@@ -4932,8 +4932,29 @@ async function renderUlMine(d){
         <span>${esc(gregLabel(y.iso||y.date))}</span><small>${esc(y.source||'')}</small></div>`).join('')}
         ${x.items.length>8?`<div class="hintxt">ועוד ${x.items.length-8}</div>`:''}</div>
       <div class="cmask-b"><button class="btn sm ulmok" data-i="${i}">✓ אלו שלו — צרף לכרטיס</button>
-        <button class="btn sm ghost ulmno" data-i="${i}">✕ לא שלו</button></div></div>`).join('')}
+        <button class="btn sm ghost ulmoth" data-i="${i}">👤 שייך לתורם אחר…</button>
+        <button class="btn sm ghost ulmno" data-i="${i}">✕ לא שלו</button></div>
+      <div class="ulmpick hidden" data-i="${i}"><input class="intq ulmq" placeholder="🔍 חפש את התורם שהחיובים האלה שלו…" autocomplete="off"><div class="intres dpres ulmres"></div></div></div>`).join('')}
   </div>`;
+  // מאיר: "יש מלא הצעות של תורמים דומים שזה לא שלו אבל שייכים לתורם אחר —
+  // אין אפשרות למזג לתורם אחר" — חיפוש כרטיס וצירוף אליו מכאן
+  el.querySelectorAll('.ulmoth').forEach(b=>b.onclick=()=>{
+    const box=el.querySelector('.ulmpick[data-i="'+b.dataset.i+'"]'); if(!box)return;
+    box.classList.toggle('hidden'); const inp=box.querySelector('.ulmq'); if(!box.classList.contains('hidden'))inp.focus();
+    const res=box.querySelector('.ulmres');
+    inp.oninput=()=>{const s=inp.value.trim(); if(!s){res.innerHTML='';return;}
+      const h=donorHits(x=>x.last+' '+x.first+' '+x.english+' '+x.phone, s, 8);
+      res.innerHTML=h.list.filter(x=>x.id!==d.id).map(x=>`<div class="dpr" data-did="${x.id}">${esc(x.last)} ${esc(x.first)} <span style="color:var(--muted)">#${x.id}${x.english?(' · '+esc(x.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(r=>r.onclick=async()=>{
+        const x=groups[+b.dataset.i], od=DB.find(y=>y.id==+r.dataset.did);
+        if(!await uiConfirm('לצרף '+x.items.length+' חיובים על השם "'+x.nm+'" לכרטיס של '+(od?(od.last+' '+od.first):'#'+r.dataset.did)+'?'))return;
+        const r2=await api('POST','/api/unlinked',{tids:x.items.map(y=>y.tid),donor_id:+r.dataset.did});
+        if(!r2||r2.error){toast('לא צורף');return;}
+        toast('צורפו '+x.items.length+' חיובים לכרטיס של '+(od?od.last:'')+' ✓');
+        await load(); const dd=DB.find(y=>y.id===d.id); if(dd)openDonor(dd);
+      });
+    };
+  });
   el.querySelectorAll('.ulmok').forEach(b=>b.onclick=async()=>{
     const x=groups[+b.dataset.i]; b.disabled=true;
     const r2=await api('POST','/api/unlinked',{tids:x.items.map(y=>y.tid),donor_id:d.id});

@@ -1121,6 +1121,17 @@ def ensure_schema():
             print('  השלמה לפי מספר כרטיס באנשי הקשר: %d טלפונים, %d מיילים, %d כתובות' % (nf['phone'], nf['email'], nf['addr']))
     except Exception as e:
         print('  שגיאת השלמה לפי כרטיס:', e)
+    # מאיר: "אצל כולם הכנסת תשלומים של 2025, 2024 — מי ביקש? ביקשתי רק 2026."
+    # קבלות מלפני 2026 שנטענו מהמייל ולא אושרו לאף כרטיס — יורדות. מה שכבר
+    # אושר לכרטיס (processed=1) נשאר, כי זו החלטה שלו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='recon_pre2026_cleanup_v1'").fetchone():
+            cur = con.execute("DELETE FROM recon WHERE source='Authorize' AND COALESCE(processed,0)=0 "
+                              "AND COALESCE(date,'')<'2026-01-01'")
+            con.execute("INSERT INTO seed_flags(name) VALUES('recon_pre2026_cleanup_v1')")
+            print('  קבלות מלפני 2026 שלא אושרו — הוסרו: %d' % cur.rowcount)
+    except Exception as e:
+        print('  שגיאת ניקוי קבלות ישנות:', e)
     # שמות מקובץ ישן — לאישור בלבד. מאיר: "תסנן רק אנשי קשר שעדיין נמצאים
     # במערכת, רשימה למי שאין בכלל שמות בקוויטל, ותשאל אותי על כל אחד אם למזג.
     # אל תמזג לבד בכלל." כל התאמה נכנסת לחלון "קוויטל מהמייל" משויכת לכרטיס,
