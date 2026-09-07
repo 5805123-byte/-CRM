@@ -6013,6 +6013,9 @@ def recon_apply(cur, tid, b):
         _kvm, _kvy = ((nd.get('kv_month') or ''), (nd.get('kv_year') or '')) if _occ else ('', '')
         if _occ and not _kvm:
             _kvm, _kvy = kvittel_default_month()
+        for _k in [_dkey(nd.get('last', ''), nd.get('first', ''))] + ['email:' + _e for _e in emails_of(row['email'])]:
+            try: cur.execute("DELETE FROM deleted_donors WHERE key=?", (_k,))
+            except Exception: pass
         cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source,notes,tier,kv_month,kv_year)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (nd.get('last', ''), nd.get('first', ''), (row['first'] + ' ' + row['last']).strip(),
@@ -7502,13 +7505,21 @@ def purge_deleted(con):
     שוב כל כרטיס שנוצר בשם שכבר נמחק."""
     n = 0
     try:
-        keys = {r['key'] for r in con.execute("SELECT key FROM deleted_donors")}
+        keys = {r['key']: (r['created'] or '') for r in con.execute("SELECT key,created FROM deleted_donors")}
     except Exception:
         return 0
     if not keys:
         return 0
-    for r in con.execute("SELECT id,last,first FROM donors").fetchall():
-        if _dkey(r['last'], r['first']) not in keys:
+    for r in con.execute("SELECT id,last,first,created FROM donors").fetchall():
+        k = _dkey(r['last'], r['first'])
+        if k not in keys:
+            continue
+        # כרטיס שנפתח אחרי המחיקה — מאיר פתח אותו בכוונה (אותו שם, או אדם אחר
+        # באותו שם). לא מוחקים אותו, והמחיקה הישנה נשכחת. בלי זה כל עליית שרת
+        # מחקה אותו מחדש — "שוב ושוב ושוב".
+        if (r['created'] or '') and keys[k] and str(r['created'])[:10] > str(keys[k])[:10]:
+            try: con.execute("DELETE FROM deleted_donors WHERE key=?", (k,))
+            except Exception: pass
             continue
         for t in ('pledges', 'parnes', 'prayers', 'donations', 'contacts_log', 'tasks',
                   'partners', 'transactions', 'building', 'donor_rules', 'avreich_log',
@@ -12533,6 +12544,9 @@ class H(BaseHTTPRequestHandler):
             if not last:
                 return self._send(400, {'error': 'last required'})
             con = db(); cur = con.cursor()
+            for _k in [_dkey(last, (b.get('first') or '').strip())] + ['email:' + _e for _e in emails_of(b.get('email') or '')]:
+                try: cur.execute("DELETE FROM deleted_donors WHERE key=?", (_k,))
+                except Exception: pass
             cur.execute("""INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,
                                               category,created,source,notes)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,'חיובים לא מזוהים',?)""",
@@ -13100,6 +13114,17 @@ def health_report():
         try:
             sz = os.path.getsize(DB) / 1048576.0
             add('גודל הקובץ', 'ok' if sz < 400 else 'warn', '%.1f MB' % sz)
+        except Exception:
+            pass
+        # מאיר: "כל מה שעבדתי כאילו לא עבדתי כלום" — אם הקובץ לא יושב על הדיסק
+        # הקבוע של Render, כל עדכון גרסה מוחק את כל העבודה. כאן רואים את זה מיד.
+        try:
+            on_disk = os.path.abspath(DB).startswith('/var/data')
+            oldest = con.execute("SELECT MIN(created) FROM donors WHERE COALESCE(created,'')<>''").fetchone()[0] or ''
+            add('שמירת הנתונים בין עדכונים', 'ok' if (on_disk or not os.environ.get('RENDER')) else 'bad',
+                ('הקובץ על הדיסק הקבוע (%s)' % DB if on_disk else
+                 'הקובץ ב-%s — לא על הדיסק הקבוע! יש להגדיר ב-Render דיסק ב-/var/data ו-DB_PATH=/var/data/crm.db' % DB)
+                + (' · הכרטיס הוותיק ביותר נפתח %s' % oldest if oldest else ''))
         except Exception:
             pass
         # תעודות פרנס — נכשלו בעבר כי Pillow לא הותקן

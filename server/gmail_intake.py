@@ -1630,10 +1630,16 @@ def sync(con):
             if real_email in gone or (femail or '').lower() in gone:
                 continue                  # תורם שנמחק מהמערכת — לא חוזר דרך המייל
             donor = _match_donor(real_email)   # זיהוי תורם לפי האימייל האמיתי
-            if existing:              # רענון פריט שעדיין לא טופל — מתקן פענוח עברית/תעתיק ישן
+            if existing:
+                # פריט שכבר ברשימה — לא נוגעים בשמות שמאיר ערך ולא בכרטיס שבחר.
+                # (בעבר הרענון דרס את השמות בכל משיכה — "כל מה שעבדתי כאילו לא
+                # עבדתי כלום".) מרעננים רק כותרות וגוף.
                 iid = existing['id']
-                con.execute("UPDATE intake SET from_name=?, from_email=?, subject=?, received=?, body=?, names=? WHERE id=?",
-                            (fname, real_email, subject, received, body, names, iid))
+                con.execute("UPDATE intake SET from_name=?, from_email=?, subject=?, received=?, body=? WHERE id=?",
+                            (fname, real_email, subject, received, body, iid))
+                if donor and not con.execute("SELECT donor_id FROM intake WHERE id=?", (iid,)).fetchone()[0]:
+                    con.execute("UPDATE intake SET donor_id=? WHERE id=?", (donor['id'], iid))
+                continue
             else:
                 cur = con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,status,created)
                                VALUES(?,?,?,?,?,?,?, 'new', ?)""",
