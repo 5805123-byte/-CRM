@@ -5599,8 +5599,11 @@ def get_all():
                     emap[e] = None          # כתובת אצל שני תורמים — לא משייכים לבד
                 elif e not in emap:
                     emap[e] = d['id']
+        # מאיר: "הצעות מהקבצים הישנים — רק בחלון הקוויטל הכללי, לא בכרטיס
+        # של התורם בשום אופן." לכן פריטי 'kvittel_*' לא נכנסים לכרטיס.
         for r in c.execute("""SELECT id,from_name,from_email,subject,received,names,donor_id FROM intake
-                              WHERE COALESCE(status,'')<>'handled' AND COALESCE(TRIM(names),'')<>''"""):
+                              WHERE COALESCE(status,'')<>'handled' AND COALESCE(TRIM(names),'')<>''
+                                AND COALESCE(message_id,'') NOT LIKE 'kvittel_%'"""):
             did = r['donor_id'] or emap.get((r['from_email'] or '').strip().lower())
             if did and did in byid:
                 byid[did]['intake_pending'].append(dict(r))
