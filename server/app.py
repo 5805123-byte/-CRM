@@ -54,7 +54,7 @@ def heb_anniv(start_date):
 HERE = os.path.dirname(os.path.abspath(__file__))
 # מצב בדיקת המייל לתורמים ישנים — רצה ברקע, והדף עוקב אחרי ההתקדמות
 MAILCHK = {'running': False, 'done': 0, 'total': 0, 'hit': 0, 'error': ''}
-BACKFILL_STAT = {'cards': 0, 'at': ''}   # כמה כרטיסים הושלמו מהחיובים בעליית השרת האחרונה
+BACKFILL_STAT = {'cards': 0, 'at': '', 'names': []}   # מה הושלם מהחיובים בעליית השרת האחרונה
 DB = os.environ.get('DB_PATH') or os.path.join(HERE, 'crm.db')
 STATIC = os.path.join(HERE, 'static')
 PORT = int(os.environ.get('PORT', 8000))
@@ -4095,7 +4095,7 @@ def ensure_schema():
         n = purge_deleted(con)
         try:
             nb = backfill_from_recon(con)
-            BACKFILL_STAT.update(cards=nb, at=now_iso())
+            BACKFILL_STAT.update(cards=nb, at=now_iso(), names=list(getattr(backfill_from_recon, 'last_names', []))[:40])
             if nb:
                 print('  פרטים מהחיובים שהושלמו לכרטיסים: %d' % nb)
         except Exception as e:
@@ -7539,7 +7539,7 @@ def backfill_from_recon(con):
                               ORDER BY r.date DESC""").fetchall()
     except Exception:
         return 0
-    seen = set()
+    seen = set(); names = []
     for r in rows:
         did = r['donor_id']
         d = con.execute("SELECT id,email,phone,addr,city,zip,country,region FROM donors WHERE id=?", (did,)).fetchone()
@@ -7570,8 +7570,13 @@ def backfill_from_recon(con):
                         tuple(sets.values()) + (did,))
             if did not in seen:
                 seen.add(did); n += 1
+                nm = con.execute("SELECT last,first FROM donors WHERE id=?", (did,)).fetchone()
+                what = [k for k in ('email', 'phone', 'addr') if k in sets]
+                names.append('%s #%d (%s)' % (((nm['last'] or '') + ' ' + (nm['first'] or '')).strip(), did,
+                                              ', '.join({'email': 'אימייל', 'phone': 'טלפון', 'addr': 'כתובת'}[k] for k in what)))
     if n:
         getattr(con, 'connection', con).commit()     # עובד גם עם cursor
+    backfill_from_recon.last_names = names
     return n
 
 
@@ -13312,8 +13317,14 @@ def health_report():
         add('תורמים בלי טלפון ובלי מייל', 'ok' if noph < donors * 0.4 else 'warn', '%d מתוך %d' % (noph, donors))
         # אברכי יש"ז בלי סכום
         try:
-            noamt = n("SELECT COUNT(*) FROM partners WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(amount),'')=''")
-            add('אברכי יש"ז בלי סכום', 'ok' if not noamt else 'warn', '%d אברכים' % noamt)
+            # מאיר: "אני רוצה לראות מי" — השמות, לא רק המספר
+            pr = con.execute("""SELECT p.avreich, d.last, d.first FROM partners p
+                                 LEFT JOIN donors d ON d.id=p.donor_id
+                                 WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.amount),'')=''""").fetchall()
+            who = ' · '.join('%s (תורם: %s)' % ((r['avreich'] or '').strip() or 'אברך בלי שם',
+                                                 ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or '—') for r in pr[:12])
+            add('אברכי יש"ז בלי סכום', 'ok' if not pr else 'warn',
+                ('%d אברכים: ' % len(pr) + who + (' …' if len(pr) > 12 else '')) if pr else '0 אברכים')
         except Exception:
             pass
         # משימות שעבר זמנן
@@ -13322,7 +13333,8 @@ def health_report():
         add('משימות שעבר זמנן', 'ok' if not over else 'warn', '%d משימות' % over)
         # מאיר: "כמה תורמים עודכנו בעקבות זה עכשיו?" — המספר מהעלייה האחרונה
         add('פרטים שהושלמו מהחיובים', 'ok',
-            '%d כרטיסים קיבלו אימייל / טלפון / כתובת מחיובים בעלייה האחרונה (%s)' % (BACKFILL_STAT['cards'], BACKFILL_STAT['at'] or '—'))
+            '%d כרטיסים קיבלו אימייל / טלפון / כתובת מחיובים בעלייה האחרונה (%s)' % (BACKFILL_STAT['cards'], BACKFILL_STAT['at'] or '—')
+            + ((': ' + ' · '.join(BACKFILL_STAT.get('names') or [])) if BACKFILL_STAT.get('names') else ''))
         # מיגרציות
         add('עדכוני מבנה שרצו', 'ok', '%d' % n("SELECT COUNT(*) FROM seed_flags"))
     except Exception as e:
