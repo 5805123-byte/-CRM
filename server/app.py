@@ -1151,6 +1151,38 @@ def ensure_schema():
                   % (label, r['total'], r['matched'], r['queued'], r['has_names']))
     except Exception as e:
         print('  שגיאת קובץ קוויטל ישן:', e)
+    # מאיר: "Olga Kirschbaum אין לה קוויטל במערכת ואין מצב שאין לה." השמות
+    # נמצאו באיש הקשר 'חיה אולגה קירשבוים - שירצקי - קוויטל' בגוגל. נכנסים
+    # לחלון הבדיקה מקושרים לכרטיס שלה — לא לקוויטל ישירות (הכלל: בלי מיזוג לבד).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='olga_kv_review_v1'").fetchone():
+            OLGA = ("אביאל אברהם בן רבקה לברכה והצלחה בכל מעשי ידיו\n"
+                    "זוגתו חיה יהודית בת שרה\n"
+                    "אמיתי גדעון בן חיה יהודית לבריאות טובה\n"
+                    "יאיר בצלאל בן חיה יהודית לגדול בתורה ויראת שמים\n"
+                    "לכל המשפחה שמירה, נחת ושמחה וכל טוב אמן")
+            cands = []
+            for r in con.execute("SELECT id,last,first,email FROM donors"):
+                em = (r['email'] or '').lower()
+                nm = (r['last'] or '') + ' ' + (r['first'] or '')
+                if 'okirschbaum@yahoo.com' in em or r['id'] in (487, 555) \
+                        or ('קירשב' in nm and ('אולגה' in nm or 'חיה' in nm)) or 'שירצקי' in nm:
+                    cands.append(r['id'])
+            qn = 0
+            for did in dict.fromkeys(cands):
+                if con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND COALESCE(TRIM(text),'')<>''", (did,)).fetchone():
+                    continue
+                if con.execute("SELECT 1 FROM intake WHERE message_id=?", ('kvittel_olga:%d' % did,)).fetchone():
+                    continue
+                con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,donor_id,status,created)
+                               VALUES(?,?,?,?,?,?,?,?,'new',?)""",
+                            ('kvittel_olga:%d' % did, '📁 אנשי קשר "קוויטל" · חיה אולגה קירשבוים', 'okirschbaum@yahoo.com',
+                             'שמות מאנשי הקשר', '', OLGA, OLGA, did, today_iso()))
+                qn += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('olga_kv_review_v1')")
+            print('  אולגה קירשבוים — שמות לאישור נכנסו ל-%d כרטיסים' % qn)
+    except Exception as e:
+        print('  שגיאת אולגה:', e)
     # קוויטל 101 מאנשי הקשר בגוגל — מסמן דרגת "כל לילה" ומייבא את שמות התפילה מההערות
     try:
         seed101 = os.path.join(HERE, 'kvittel101_seed.json')
