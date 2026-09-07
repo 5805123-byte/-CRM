@@ -1645,7 +1645,11 @@ def sync(con):
                 # מאיר: "גם שמות שיוצאים מהג'ימייל אל תמזג — כל שם תשלח לבדיקה
                 # בחלון הייעודי בקוויטל ותשאל אותי." הכרטיס מקושר, המיזוג
                 # רק בלחיצה שלו. (בעבר: _autoattach — צירוף אוטומטי.)
-                con.execute("UPDATE intake SET donor_id=? WHERE id=?", (donor['id'], iid))
+                # מאיר: "את זה כבר סידרתי בתוך הקוויטל וזה חוזר על עצמו" — שמות
+                # שכולם כבר בקוויטל של התורם לא מחכים שוב; הפריט נסגר כטופל.
+                done = not _new_lines(con, donor['id'], names)
+                con.execute("UPDATE intake SET donor_id=?, status=? WHERE id=?",
+                            (donor['id'], 'handled' if done else (existing['status'] if existing else 'new'), iid))
                 attached += 1
         M.logout()
         con.commit()

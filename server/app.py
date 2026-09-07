@@ -10601,6 +10601,14 @@ class H(BaseHTTPRequestHandler):
                         break
                 if r['donor_id']:
                     hit = next((d for d in donors if d['id'] == r['donor_id']), hit)
+                if hit and r['status'] != 'handled' and _gi and (x['names'] or '').strip():
+                    # מאיר: "כבר סידרתי בתוך הקוויטל וזה חוזר" — כל השמות כבר אצלו → נסגר
+                    try:
+                        if not _gi._new_lines(con, hit['id'], x['names']):
+                            con.execute("UPDATE intake SET donor_id=?, status='handled' WHERE id=?", (hit['id'], r['id']))
+                            con.commit(); x['status'] = 'handled'
+                    except Exception:
+                        pass
                 if hit:
                     x['match'] = {'id': hit['id'], 'name': (hit['last'] + ' ' + (hit['first'] or '')).strip(), 'tier': hit['tier'] or ''}
                     if not x['in_kvittel']:
