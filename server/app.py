@@ -8455,9 +8455,21 @@ def queue_old_kvittel(con, entries, label, src):
         if con.execute("SELECT 1 FROM intake WHERE message_id=?", (mid,)).fetchone():
             continue
         disp = (e.get('display') or ((e.get('first') or '') + ' ' + (e.get('last') or ''))).strip()
+        body = notes
+        alt = re.sub(r'[ \t]+', ' ', str(e.get('alt') or '')).strip()
+        if alt:      # אותו תורם בשני הקבצים בנוסח שונה — מאיר רואה את שניהם
+            body += '\n\n— גרסה שנייה (קובץ הוורד) —\n' + alt
+        # כבר מחכה לו פריט מקובץ ישן אחר — לא פותחים שני; נוסח שונה מצטרף אליו
+        prev = con.execute("SELECT id,body FROM intake WHERE donor_id=? AND message_id LIKE 'kvittel_%' "
+                           "AND COALESCE(status,'')<>'handled'", (d['id'],)).fetchone()
+        if prev:
+            if re.sub(r'\s+', '', notes) not in re.sub(r'\s+', '', prev['body'] or ''):
+                con.execute("UPDATE intake SET body=? WHERE id=?",
+                            ((prev['body'] or '') + '\n\n— גרסה נוספת (%s · %s) —\n%s' % (label, disp, notes), prev['id']))
+            continue
         con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,donor_id,status,created)
                        VALUES(?,?,?,?,?,?,?,?,'new',?)""",
-                    (mid, '📁 ' + label + ' · ' + disp, '', 'שמות מ' + label, '', notes, notes, d['id'], today))
+                    (mid, '📁 ' + label + ' · ' + disp, '', 'שמות מ' + label, '', body, notes, d['id'], today))
         out['queued'] += 1
     con.commit()
     return out
