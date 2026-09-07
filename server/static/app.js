@@ -2505,23 +2505,36 @@ function renderCardTasks(d){
     renderCardTasks(d);renderReminders(d);checkReminders();toast('הוחזר לפתוחות ✓');});
   el.querySelectorAll('.ctdel').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+b.dataset.id);d.tasks=(d.tasks||[]).filter(x=>x.id!=b.dataset.id);renderCardTasks(d);checkReminders();toast('נמחק');});
 }
-function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=amtNum(x.paid);});return {price,paid,owed:price-paid};}
+// מאיר: "התחייב שולחן היכל זרע שמשון 7200, וכל פעם שמכניס כסף זה מתקזז לו
+// מהחוב." תרומה שנרשמה עם הייעוד "הבניין הקדוש — <האובייקט>" נספרת מעצמה
+// על ההקדשה. השדה "שולם" הידני נשאר למה ששולם לפני שהתחילו לרשום במערכת.
+function bldKey(s){return norm(String(s||'')).toLowerCase().replace(/[^א-תa-z0-9 ]/g,'').replace(/\s+/g,' ').trim();}
+function bldAutoPaid(d,x){
+  const k=bldKey(x.object); if(!k)return 0;
+  return (d.donations||[]).reduce((s,dn)=>{
+    const c=String(dn.category||''); const tail=c.split(/\s[—–-]\s/).pop();
+    return s+((bldKey(tail)===k||bldKey(c)===k)?amtNum(dn.amount):0);},0);
+}
+function bldPaid(d,x){return amtNum(x.paid)+bldAutoPaid(d,x);}
+function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=bldPaid(d,x);});return {price,paid,owed:price-paid};}
 function cardBuilding(d,body){
   const t=buildTotals(d),cur=curSym(d);
   body.innerHTML=`<div class="totals"><div class="tot"><span>סה"כ הקדשות</span><b>${cur}${t.price}</b></div><div class="tot"><span>שולם</span><b>${cur}${t.paid}</b></div><div class="tot ${t.owed>0?'year':''}"><span>נשאר לתשלום</span><b>${cur}${t.owed}</b></div></div>
     <div id="bldlist"></div>
     <div class="sec"><h3>➕ הוסף הקדשה בבניין</h3>
-      <label class="fld"><span>מה ההקדשה (אובייקט)</span><input id="bl_obj" placeholder="למשל: עמוד, ספר תורה, חדר…"></label>
-      <div class="two"><label class="fld"><span>מחיר (בכמה קנה)</span><input id="bl_amt" placeholder="סכום"></label>
-        <label class="fld"><span>שולם עד כה</span><input id="bl_paid" placeholder="סכום"></label></div>
+      <label class="fld"><span>מה ההקדשה (אובייקט)</span><input id="bl_obj" placeholder="למשל: שולחן היכל זרע שמשון, עמוד, ספר תורה…"></label>
+      <div class="two"><label class="fld"><span>כמה התחייב (המחיר)</span><input id="bl_amt" placeholder="סכום"></label>
+        <label class="fld"><span>שולם לפני שנרשם במערכת (רשות)</span><input id="bl_paid" placeholder="0"></label></div>
+      <div class="hintxt">מכאן והלאה: כל תרומה שתרשום לו עם "הבניין הקדוש" ושם ההקדשה — יורדת מהחוב לבד.</div>
       <button class="btn" id="bl_add">הוסף הקדשה</button></div>`;
   renderBuilding(d);
   document.getElementById('bl_add').onclick=async()=>{const obj=document.getElementById('bl_obj').value.trim(),amt=document.getElementById('bl_amt').value.trim(),paid=document.getElementById('bl_paid').value.trim();if(!obj&&!amt){toast('הכנס אובייקט וסכום');return;}const r=await api('POST','/api/building',{donor_id:d.id,object:obj,amount:amt,paid:paid});d.building=d.building||[];d.building.push({id:r.id,donor_id:d.id,object:obj,amount:amt,paid:paid,note:'',date:todayStr()});cardBuilding(d,body);toast('נוסף ✓');if(tab==='donors')renderDonors();};
 }
 function renderBuilding(d){
   const el=document.getElementById('bldlist');if(!el)return;const cur=curSym(d);
-  el.innerHTML=(d.building||[]).map(x=>{const owed=amtNum(x.amount)-amtNum(x.paid);return `<div class="plwrap"><div class="pledge ${owed>0?'pending':'given'}"><div class="pi"><b>🏛️ ${esc(x.object||'—')}</b><br><small>מחיר: ${cur}${esc(String(amtNum(x.amount)))} · שולם: ${cur}${esc(String(amtNum(x.paid)))} · <b style="color:${owed>0?'var(--no)':'var(--yes)'}">${owed>0?('נשאר לתשלום '+cur+owed):'שולם במלואו ✓'}</b></small>${x.note?('<br><small>'+esc(x.note)+'</small>'):''}</div><button class="del" data-del="${x.id}">🗑</button></div>
-    <div class="bldedit"><input class="blf" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="אובייקט"><input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" placeholder="מחיר" inputmode="decimal"><input class="blf" data-k="paid" data-id="${x.id}" value="${esc(x.paid||'')}" placeholder="שולם" inputmode="decimal"></div></div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה, או שלח לי את אקסל הבניין ואמזג הכל.</div>';
+  el.innerHTML=(d.building||[]).map(x=>{const auto=bldAutoPaid(d,x),paid=amtNum(x.paid)+auto,owed=amtNum(x.amount)-paid;return `<div class="plwrap"><div class="pledge ${owed>0?'pending':'given'}"><div class="pi"><b>🏛️ ${esc(x.object||'—')}</b><br><small>התחייב: ${cur}${esc(String(amtNum(x.amount)))} · שולם: ${cur}${esc(String(paid))}${auto?(' <span style="color:var(--muted)">(מזה '+cur+auto+' מתרומות שנרשמו)</span>'):''} · <b style="color:${owed>0?'var(--no)':'var(--yes)'}">${owed>0?('נשאר לתשלום '+cur+owed):'שולם במלואו ✓'}</b></small>${x.note?('<br><small>'+esc(x.note)+'</small>'):''}</div><button class="del" data-del="${x.id}">🗑</button></div>
+    <div class="bldedit"><input class="blf" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="אובייקט"><input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" placeholder="התחייב (מחיר)" inputmode="decimal"><input class="blf" data-k="paid" data-id="${x.id}" value="${esc(x.paid||'')}" placeholder="שולם לפני הרישום" inputmode="decimal" title="מה ששולם לפני שהתחילו לרשום תרומות במערכת. תרומות שנרשמות עם הייעוד 'הבניין הקדוש — ${esc(x.object||'')}' מתווספות לבד."></div></div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה, או שלח לי את אקסל הבניין ואמזג הכל.</div>';
+  if((d.building||[]).length)el.innerHTML+='<div class="hintxt" style="margin:4px 2px 8px">💡 כל תרומה שתרשום עם "עבור מה: הבניין הקדוש" ותכתוב בה את שם ההקדשה — מתקזזת מהחוב לבד.</div>';
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/building/'+b.dataset.del);d.building=d.building.filter(x=>x.id!=b.dataset.del);cardBuilding(d,document.getElementById('cardBody'));toast('נמחק');if(tab==='donors')renderDonors();});
   el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;x[inp.dataset.k]=inp.value;await api('PUT','/api/building/'+x.id,{[inp.dataset.k]:inp.value});cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
 }
@@ -3106,7 +3119,8 @@ function commitHTML(d){
         <select class="cm_plan">
           <option value="mo">🔁 קבוע כל חודש</option>
           <option value="inst">📆 בתשלומים</option>
-          <option value="one">🎯 חד־פעמי</option></select>
+          <option value="one">🎯 חד־פעמי</option>
+          <option value="bldg">🏛️ הקדשה / אובייקט מסוים (הכסף מתקזז מהחוב)</option></select>
         <input class="cm_n hidden" inputmode="numeric" placeholder="לכמה תשלומים?">
         <button class="btn sm cm_add">➕ הוסף</button></div>
       <div class="cmstart hidden">
@@ -3120,7 +3134,10 @@ function commitHTML(d){
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
       ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
     ${viaInHTML}
-    ${rows.map(line).join('')||'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>'}
+    ${(d.building||[]).map(x=>{const paid=bldPaid(d,x),owed=amtNum(x.amount)-paid;return `<div class="cmrow${owed>0.5?' owe':' done'}">
+      <div class="cmhead"><span class="cmwhat">🏛️ ${esc(x.object||'הקדשה')}</span><b class="cmfix">${f(amtNum(x.amount))}</b><span class="cmtag one">הקדשה</span><button class="cmbldgo noprint" title="פתח בלשונית בניין">↗</button></div>
+      <div class="cminst">התחייב ${f(amtNum(x.amount))} · שולם ${f(paid)} · ${owed>0.5?('<b class="cmleft no">נשאר '+f(owed)+'</b>'):'<b class="cmleft ok">שולם במלואו ✓</b>'}${bldAutoPaid(d,x)?(' · <small>'+f(bldAutoPaid(d,x))+' מתרומות שנרשמו</small>'):''}</div></div>`;}).join('')}
+    ${rows.map(line).join('')||((d.building||[]).length?'':'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>')}
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
@@ -3134,7 +3151,7 @@ function commitHTML(d){
     <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
     <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option></select></label></div>
     <div class="addrow hidden" id="dn_newrow"><input id="dn_catfree" placeholder="שם הייעוד החדש"></div>
-    <label class="fld hidden" id="dn_bldg_l"><span>🏗️ מה תרם בבניין?</span><input id="dn_bldg" list="bldgitems2" placeholder="שולחן / עמוד / מטר…"><datalist id="bldgitems2">${(BUILDING_ITEMS||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+    <label class="fld hidden" id="dn_bldg_l"><span>🏗️ מה תרם בבניין?</span><input id="dn_bldg" list="bldgitems2" placeholder="שולחן / עמוד / מטר…"><datalist id="bldgitems2">${(d.building||[]).map(x=>`<option value="${esc(x.object||'')}">`).join('')}${(BUILDING_ITEMS||[]).filter(x=>!(d.building||[]).some(b=>b.object===x)).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
     <div class="hidden" id="dn_daybox"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
     <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
     <label class="fld"><span>שנה עברית</span><select id="dn_hy">${heYearOpts()}</select></label></div>
@@ -3334,6 +3351,7 @@ function wireCommit(d,body){
        paid:'',note:'',detail:'',permo:'',avreich:'',confirmed:0,date:todayStr()};
     d.pledges=(d.pledges||[]).concat([p]);
     return p;};
+  box.querySelectorAll('.cmbldgo').forEach(b=>b.onclick=()=>{cardTab='building';renderCard(d);});
   box.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{
     if(b.dataset.busy)return; b.dataset.busy='1';
     try{
@@ -3453,7 +3471,9 @@ function wireCommit(d,body){
     nrow.classList.toggle('hidden', sel.value!=='__new__');
     avbox.classList.toggle('hidden', !isIZcat(c));
     nightbox.classList.toggle('hidden', !isNightCat(c));
-    det.placeholder=isBldgCat(c)
+    det.placeholder=(plan.value==='bldg')
+      ? 'מה ההקדשה? — למשל: שולחן היכל זרע שמשון (חובה)'
+      : isBldgCat(c)
       ? 'מה בדיוק תרם בבניין? — למשל: כיסוי רדיאטורים ומעקות'
       : (/כולל/.test(c)?'איזה כולל? — למשל: כולל הוראה (נשאר אצלו בלבד)'
         :'פירוט אצל התורם הזה בלבד (לא נשמר ברשימת הייעודים)');
@@ -3522,6 +3542,19 @@ function wireCommit(d,body){
     if(!cat){toast('בחר עבור מה');return;}
     const total=amt.value.trim(), a=amtNum(total);
     const mode=plan.value;
+    if(mode==='bldg'){
+      // מאיר: "התחייב לאובייקט מסוים — לא התחייבות חודשית". נרשם כהקדשה
+      // בלשונית בניין, ושם רואים התחייב / שולם / נשאר, והתרומות מתקזזות לבד.
+      const obj=(det.value.trim()||cat).replace(/^הבניין הקדוש\s*[—–-]\s*/,'');
+      if(!a){toast('כמה התחייב?');return;}
+      if(!obj){toast('כתוב בפירוט מה ההקדשה — למשל: שולחן היכל זרע שמשון');return;}
+      const rb=await api('POST','/api/building',{donor_id:d.id,object:obj,amount:total,paid:''});
+      if(!rb||!rb.id){toast('לא נשמר');return;}
+      d.building=(d.building||[]).concat([{id:rb.id,donor_id:d.id,object:obj,amount:total,paid:'',note:'',date:todayStr()}]);
+      if(!(BUILDING_ITEMS||[]).includes(obj)){try{await api('POST','/api/building_items',{name:obj});BUILDING_ITEMS.unshift(obj);}catch(e){}}
+      toast('נרשמה הקדשה: '+obj+' — '+total+' ✓');
+      cardDetails(d,document.getElementById('cardBody')); if(tab==='donors')renderDonors(); return;
+    }
     let permo='', already='', from='';
     if(mode==='inst'){
       const n=parseInt(nfld.value,10)||0;
