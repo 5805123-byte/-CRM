@@ -4260,6 +4260,8 @@ def ensure_schema():
             iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
             if not iso or len(iso) < 7:
                 continue
+            if iso < '2026-01-01':
+                continue          # מאיר: "ביקשתי רק 2026" — חיוב ישן לא נכנס לכרטיס מעצמו
             try:
                 amt = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
             except Exception:
@@ -4340,6 +4342,24 @@ def ensure_schema():
             print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
     except Exception as ex:
         print('  post pending error:', ex)
+
+    # מאיר: "אצל כולם הכנסת תשלומים של 2025, 2024 — מי ביקש את זה? ביקשתי רק
+    # 2026." תרומות שנרשמו בכרטיסים מעצמן מחיובים ישנים ("נכנס מאוטרייז" וכו')
+    # יורדות, יחד עם שורות החיוב שלהן. מה שמאיר רשם או אישר ביד — נשאר.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='donations_pre2026_cleanup_v1'").fetchone():
+            olds = con.execute("SELECT id,tid FROM donations WHERE COALESCE(date,'')<'2026-01-01' "
+                               "AND COALESCE(note,'') LIKE 'נכנס מ%'").fetchall()
+            tids = [r['tid'] for r in olds if r['tid']]
+            if olds:
+                con.execute("DELETE FROM donations WHERE id IN (%s)" % ','.join('?' * len(olds)), [r['id'] for r in olds])
+            if tids:
+                con.execute("DELETE FROM recon WHERE tid IN (%s)" % ','.join('?' * len(tids)), tids)
+            con.execute("INSERT INTO seed_flags(name) VALUES('donations_pre2026_cleanup_v1')")
+            con.commit()
+            print('  תרומות אוטומטיות מלפני 2026 שהוסרו מהכרטיסים: %d' % len(olds))
+    except Exception as ex:
+        print('  pre-2026 cleanup error:', ex)
 
     # קוויטל ששמור באיש קשר נפרד בגוגל ("שמחה מילר - קוויטל"): השמות עצמם
     # יושבים בשדה ההערות, ובייבוא נלקח בטעות שדה מותאם-אישית שערכו המילה
