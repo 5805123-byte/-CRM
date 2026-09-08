@@ -10976,7 +10976,7 @@ class H(BaseHTTPRequestHandler):
             off = mail_optouts(con)
             rows = []
             for r in con.execute("SELECT * FROM mail_queue WHERE batch=? ORDER BY id", (bid,)):
-                rows.append({'donor_id': r['donor_id'], 'name': r['name'], 'email': r['email'],
+                rows.append({'qid': r['id'], 'donor_id': r['donor_id'], 'name': r['name'], 'email': r['email'],
                              'status': r['status'], 'error': r['error'] or '',
                              'sent_at': r['sent_at'] or '',
                              'opened': bool((r['opened_at'] or '').strip()),
@@ -11741,6 +11741,18 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': True})
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
+        m = re.match(r'/api/mail/batch/(\d+)/reset_opens$', self.path)
+        if m:
+            # מאיר: "אם אני בעצמי רואה את האימייל ששלחתי בדואר נשלח זה גם מסמן
+            # שפתח" — הפתיחות של נמען אחד (או של כל המשלוח) מתאפסות.
+            bid = int(m.group(1)); qid = b.get('qid')
+            con = db()
+            if qid:
+                con.execute("UPDATE mail_queue SET opens=0, opened_at='' WHERE batch=? AND id=?", (bid, int(qid)))
+            else:
+                con.execute("UPDATE mail_queue SET opens=0, opened_at='' WHERE batch=?", (bid,))
+            commit_retry(con); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/mail/batch/(\d+)/resume$', self.path)
         if m:
             import bulkmail
