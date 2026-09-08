@@ -59,8 +59,9 @@
   .cnames{font-size:2.5em;font-weight:800;line-height:1.18;color:#000;width:100%;margin:.1em 0 .25em;white-space:pre-line}
   /* כללי התעודה מרוכזים ב-app.py (חפש "כללי העיצוב הקבועים"). כאן רק
      היישום למסך, ושני המקומות חייבים להישאר זהים.
-     קפה/בוקר: "לעילוי נשמת" בגודל השם, והבקשה בגופן שורת הנוסח. */
-  .cnames .nlead{font-size:1em}
+     קפה/בוקר: "לעילוי נשמת" מודגש, 40 מתוך 70 מהשם (מאיר: "לא בגודל
+     הזה"), והבקשה בגופן שורת הנוסח. */
+  .cnames .nlead{font-size:.571em}
   .cnames .nreq{font-size:.472em}
   /* תואר ("רבי", "מרת") אינו הפתיח של ההקדשה — הוא בגודל של זצוק"ל */
   .names .nttl,.cnames .nttl{font-size:.42em;font-weight:700;display:block}
@@ -113,7 +114,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v472";
+const BUILD = "v473";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
