@@ -9405,7 +9405,7 @@ function renderMailSend(){
         </div>
         <div class="mlfrow">
           <button class="btn sm" id="ml_allf">✅ סמן את כל ${flist.length} שברשימה</button>
-          ${mlPick.size?`<button class="btn sm ghost" id="ml_done">✔️ סיימתי לבחור (${mlPick.size})</button>`:''}
+          ${mlPick.size?`<button class="btn sm" id="ml_done">✔️ סיימתי לבחור — סימנתי ${mlPick.size}</button>`:''}
         </div>
       </div>
       <div class="mlbox">${flist.map(d=>{const on=mlPick.has(d.id),em=(d.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
@@ -9494,12 +9494,17 @@ function renderMailSend(){
     mlAdding=false; mlQ=''; renderMailSend();};
   const cl=document.getElementById('ml_clear');
   if(cl)cl.onclick=()=>{mlPick=new Set();mlAdding=true;mlAddQ='';renderMailSend();};
-  // סימון תורם — הרשימה הגדולה נסגרת מיד ונשארים רק מי שנבחר
+  // סימון תורם. מאיר: "אני מנסה לבחור מתוך הרשימה והוא לא נותן לי להמשיך
+  // לסמן אלא מיד קופץ" — הרשימה נשארת פתוחה עם כל הסימונים, במקום הגלילה
+  // הנוכחי. סוגרים אותה רק בלחיצה על "סיימתי לבחור".
   const toggle=d=>{
     if(!dHasMail(d)){toast('אין לו כתובת מייל — נפתח הכרטיס להוספה');openDonor(d,'contact');return;}
     if(mlPick.has(d.id))mlPick.delete(d.id); else mlPick.add(d.id);
-    mlAdding=false; mlQ=''; mlAddQ='';
-    renderMailSend();};
+    const box=view.querySelector('.mlbox'), st=box?box.scrollTop:0, wy=window.scrollY;
+    mlAddQ='';
+    renderMailSend();
+    const nb=view.querySelector('.mlbox'); if(nb)nb.scrollTop=st;
+    window.scrollTo(0,wy);};
   view.querySelectorAll('.mlrow').forEach(el=>el.onclick=()=>{
     const d=DB.find(x=>x.id==el.dataset.did); if(d)toggle(d);});
   view.querySelectorAll('.dpr[data-add]').forEach(el=>el.onclick=()=>{
