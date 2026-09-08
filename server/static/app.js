@@ -9407,13 +9407,11 @@ function renderMailSend(){
               <option value="iz:1"${mlGrp==='iz:1'?' selected':''}>🤝 אברך אחד · ${DB.filter(d=>izAvCount(d)===1).length}</option>
               <option value="iz:2"${mlGrp==='iz:2'?' selected':''}>🤝 יותר מאברך אחד · ${DB.filter(d=>izAvCount(d)>1).length}</option>
             </optgroup>
-            <optgroup label="קוויטל מזדמן וזמנים מיוחדים — מכתב אחד לשניהם">
-              <option value="occ+zt"${mlGrp==='occ+zt'?' selected':''}>🗓️ מזדמנים (כל החודשים) + זמנים מיוחדים · ${DB.filter(d=>hasOccKv(d)||(d.tier||'').trim()==='קוויטל_זמנים').length}</option>
-              <option value="occ:"${mlGrp==='occ:'?' selected':''}>🗓️ רק מזדמנים עם קוויטל · ${DB.filter(hasOccKv).length}</option>
-              ${HMORD.map(m=>{const n=DB.filter(d=>hasOccKv(d)&&String(d.kv_month||'').trim()===m).length;return n?`<option value="occ:${m}"${mlGrp==='occ:'+m?' selected':''}>🗓️ ${m} · ${n}</option>`:'';}).join('')}
+            <optgroup label="מזדמנים וזמנים מיוחדים — מכתב אחד לשניהם">
+              <option value="occ+zt"${mlGrp==='occ+zt'?' selected':''}>🗓️ מזדמנים + זמנים מיוחדים · ${DB.filter(d=>hasOccKv(d)||(d.tier||'').trim()==='קוויטל_זמנים').length}</option>
             </optgroup>
             <optgroup label="בלי קוויטל"><option value="kv:none"${mlGrp==='kv:none'?' selected':''}>🚫 אין קוויטל בכלל · ${DB.filter(d=>!(d.tier||'').trim()&&!((d.prayers||[]).length)).length}</option></optgroup>
-            <optgroup label="לפי דרגת קוויטל">${tiers.map(c=>`<option value="t:${esc(c)}"${('t:'+c)===mlGrp?' selected':''}>${esc(tierLabel(c))} · ${DB.filter(d=>(d.tier||'').trim()===c).length}</option>`).join('')}</optgroup>
+            <optgroup label="לפי דרגת קוויטל">${tiers.filter(c=>c!=='קוויטל_זמנים').map(c=>`<option value="t:${esc(c)}"${('t:'+c)===mlGrp?' selected':''}>${esc(tierLabel(c))} · ${DB.filter(d=>(d.tier||'').trim()===c).length}</option>`).join('')}</optgroup>
           </select>
           <select id="ml_show">
             <option value="mail"${mlShow==='mail'?' selected':''}>רק מי שיש לו מייל · ${DB.filter(dHasMail).length}</option>
