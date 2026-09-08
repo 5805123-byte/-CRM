@@ -9665,7 +9665,7 @@ async function mlHistory(){
       +(x.opens?` <small>· נפתח ${x.opens===1?'פעם אחת':x.opens+' פעמים'}${x.opened_at?(' · '+esc(String(x.opened_at).slice(0,16).replace('T',' '))):''}</small>`:'')
       +(x.error?` <small class="mlno">· ${esc(x.error)}</small>`:'');
     const grp=(ttl,list,cls,reset)=>list.length?`<details class="mlgrp" open><summary>${ttl} (${list.length})</summary>
-      ${list.map((x,i)=>`<div class="mlskr ${cls||''}${x.donor_id?' mlgo':''}" data-did="${x.donor_id||''}">${i+1}. ${line(x)}${reset?` <button class="del mlrst" data-qid="${x.qid}" title="אפס פתיחות — זה אני שפתחתי, לא הוא">↺</button>`:''}</div>`).join('')}</details>`:'';
+      ${list.map((x,i)=>`<div class="mlskr ${cls||''}${x.donor_id?' mlgo':''}" data-did="${x.donor_id||''}">${i+1}. ${line(x)}</div>`).join('')}</details>`:'';
     const sent=r.rows.filter(x=>x.status==='sent');
     const opened=sent.filter(x=>x.opened).sort((a,b)=>(b.opens||0)-(a.opens||0));
     const bad=r.rows.filter(x=>x.status==='failed'||x.status==='dead');
@@ -9693,7 +9693,6 @@ async function mlHistory(){
     ${r.track?'':'<div class="hintxt">במשלוח הזה <b>מעקב הפתיחות היה כבוי</b>, ולכן אין לנו מאיפה לדעת מי פתח — גם אם פתח. "השיבו" כן עובד. כדי לראות פתיחות בפעם הבאה, סמן "📊 עקוב אחרי מי פתח את המייל" לפני השליחה.</div>'}
     <div class="mlfrow"><button class="btn sm ghost mlcopy">📋 העתק סיכום כטקסט</button>
       ${r.track&&t.opened?`<button class="btn sm ghost mlrstall" title="מאפס את כל הפתיחות של המשלוח — למשל אחרי שעברת בעצמך על הנשלחים">↺ אפס את כל הפתיחות</button>`:''}</div>
-    ${r.track?'<div class="hintxt">↺ ליד שם = לאפס לו את הפתיחות, כשאתה יודע שזה אתה שפתחת את העותק ב"נשלח" ולא הוא.</div>':''}
     ${r.track?grp('✅ פתחו את המייל', opened, '', true):''}
     ${grp('💬 השיבו לנו', sent.filter(x=>x.replied))}
     ${grp('❌ האימייל חזר / לא הגיע', bad,'bad')}
@@ -9703,8 +9702,6 @@ async function mlHistory(){
     box.querySelectorAll('.mlgo').forEach(el2=>el2.onclick=()=>{
       const d=DB.find(x=>x.id==el2.dataset.did); if(d)openDonor(d,'contact');});
     const cp=box.querySelector('.mlcopy'); if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(txt());toast('הסיכום הועתק ✓');}catch(e){toast('לא הצלחתי להעתיק');}};
-    box.querySelectorAll('.mlrst').forEach(x=>x.onclick=async ev=>{ev.stopPropagation();
-      await api('POST','/api/mail/batch/'+b.dataset.id+'/reset_opens',{qid:+x.dataset.qid});toast('אופס ✓');box.dataset.mode='';b.click();});
     const ra=box.querySelector('.mlrstall'); if(ra)ra.onclick=async()=>{
       if(!await uiConfirm('לאפס את כל הפתיחות של המשלוח הזה? הספירה תתחיל מחדש מעכשיו.'))return;
       await api('POST','/api/mail/batch/'+b.dataset.id+'/reset_opens',{});toast('אופס ✓');box.dataset.mode='';b.click();};});
