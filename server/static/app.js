@@ -9659,9 +9659,24 @@ async function mlHistory(){
     const r=await api('GET','/api/mail/batch/'+b.dataset.id+'/stats');
     if(!r||!r.tot){box.innerHTML='<div class="hintxt">לא נטען</div>';return;}
     const t=r.tot, pc=n=>t.sent?Math.round(n*100/t.sent)+'%':'—';
-    const grp=(ttl,list,cls)=>list.length?`<details class="mlgrp"><summary>${ttl} (${list.length})</summary>
-      ${list.map(x=>`<div class="mlskr ${cls||''}${x.donor_id?' mlgo':''}" data-did="${x.donor_id||''}">${esc(x.name||x.email)}${x.opens>1?` <small>· נפתח ${x.opens} פעמים</small>`:''}${x.error?` <small>· ${esc(x.error)}</small>`:''}</div>`).join('')}</details>`:'';
+    // מאיר: "סיכום יפה ברשימה מסודרת — מי פתח וכמה פעמים, מי חזר לו האימייל
+    // ואיזה אימייל חזר" — כל שורה עם הכתובת, הפתיחות בסדר יורד, והסיבה לכישלון
+    const line=x=>`${esc(x.name||'')} <small dir="ltr">&lt;${esc(x.email)}&gt;</small>`
+      +(x.opens?` <small>· נפתח ${x.opens===1?'פעם אחת':x.opens+' פעמים'}${x.opened_at?(' · '+esc(String(x.opened_at).slice(0,16).replace('T',' '))):''}</small>`:'')
+      +(x.error?` <small class="mlno">· ${esc(x.error)}</small>`:'');
+    const grp=(ttl,list,cls)=>list.length?`<details class="mlgrp" open><summary>${ttl} (${list.length})</summary>
+      ${list.map((x,i)=>`<div class="mlskr ${cls||''}${x.donor_id?' mlgo':''}" data-did="${x.donor_id||''}">${i+1}. ${line(x)}</div>`).join('')}</details>`:'';
     const sent=r.rows.filter(x=>x.status==='sent');
+    const opened=sent.filter(x=>x.opened).sort((a,b)=>(b.opens||0)-(a.opens||0));
+    const bad=r.rows.filter(x=>x.status==='failed'||x.status==='dead');
+    // סיכום כטקסט — להעתקה לוואטסאפ או לשליחה
+    const txt=()=>{const L=[];L.push('סיכום משלוח: '+(r.subject||'')+' · '+String(r.created||'').slice(0,10));
+      L.push('נשלחו '+t.sent+' מתוך '+t.total+(r.track?(' · נפתחו '+t.opened):' · מעקב פתיחות כבוי')+' · השיבו '+t.replied+' · לא הגיע '+t.failed);
+      if(r.track){L.push('');L.push('✅ פתחו ('+opened.length+'):');opened.forEach((x,i)=>L.push((i+1)+'. '+(x.name||'')+' <'+x.email+'> — '+(x.opens===1?'פעם אחת':x.opens+' פעמים')));}
+      const rp=sent.filter(x=>x.replied); if(rp.length){L.push('');L.push('💬 השיבו ('+rp.length+'):');rp.forEach((x,i)=>L.push((i+1)+'. '+(x.name||'')+' <'+x.email+'>'));}
+      if(bad.length){L.push('');L.push('❌ חזר / לא הגיע ('+bad.length+'):');bad.forEach((x,i)=>L.push((i+1)+'. '+(x.name||'')+' <'+x.email+'> — '+(x.error||x.status)));}
+      if(r.track){const no=sent.filter(x=>!x.opened&&!x.replied);if(no.length){L.push('');L.push('⏳ עדיין לא נפתח ('+no.length+'):');no.forEach((x,i)=>L.push((i+1)+'. '+(x.name||'')+' <'+x.email+'>'));}}
+      return L.join('\n');};
     box.innerHTML=`<div class="mlstats">
       <div class="mlstat1"><b>${t.sent}</b><span>נשלחו</span></div>
       ${r.track?`<div class="mlstat1 ok"><b>${t.opened}</b><span>נפתחו · ${pc(t.opened)}</span></div>`
@@ -9676,16 +9691,16 @@ async function mlHistory(){
       ${t.queued?`<div class="mlstat1"><b>${t.queued}</b><span>עדיין בתור</span></div>`:''}
     </div>
     ${r.track?'':'<div class="hintxt">במשלוח הזה <b>מעקב הפתיחות היה כבוי</b>, ולכן אין לנו מאיפה לדעת מי פתח — גם אם פתח. "השיבו" כן עובד. כדי לראות פתיחות בפעם הבאה, סמן "📊 עקוב אחרי מי פתח את המייל" לפני השליחה.</div>'}
+    <div class="mlfrow"><button class="btn sm ghost mlcopy">📋 העתק סיכום כטקסט</button></div>
+    ${r.track?grp('✅ פתחו את המייל', opened):''}
     ${grp('💬 השיבו לנו', sent.filter(x=>x.replied))}
-    ${r.track?grp('✅ פתחו את המייל', sent.filter(x=>x.opened))
-      // בלי מעקב כל הנמענים היו נכנסים ל"עדיין לא נפתח", וזו טעות —
-      // אין ידיעה, לא ידיעה שלילית
-      +grp('⏳ עדיין לא נפתח', sent.filter(x=>!x.opened&&!x.replied)):''}
-    ${grp('❌ לא הגיע', r.rows.filter(x=>x.status==='failed'||x.status==='dead'),'bad')}
+    ${grp('❌ האימייל חזר / לא הגיע', bad,'bad')}
+    ${r.track?grp('⏳ עדיין לא נפתח', sent.filter(x=>!x.opened&&!x.replied)):''}
     ${grp('🚫 ביקשו הסרה', r.rows.filter(x=>x.unsub),'bad')}
     <div class="hintxt">"נפתחו" נמדד לפי טעינת תמונה במייל. מי שהמייל שלו חוסם תמונות — לא נספר, גם אם קרא. לכן המספר האמיתי תמיד גבוה יותר. "השיבו" נמדד מהמיילים שנכנסו אלינו אחרי המשלוח — זה מדויק, אבל דורש שתלחץ "משוך מיילים" כדי שהמערכת תדע עליהם.</div>`;
     box.querySelectorAll('.mlgo').forEach(el2=>el2.onclick=()=>{
-      const d=DB.find(x=>x.id==el2.dataset.did); if(d)openDonor(d,'contact');});});
+      const d=DB.find(x=>x.id==el2.dataset.did); if(d)openDonor(d,'contact');});
+    const cp=box.querySelector('.mlcopy'); if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(txt());toast('הסיכום הועתק ✓');}catch(e){toast('לא הצלחתי להעתיק');}};});
   el.querySelectorAll('.mlfail').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
     if(box.innerHTML&&box.dataset.mode!=='stat'){box.innerHTML='';return;}
