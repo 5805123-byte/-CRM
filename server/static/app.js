@@ -8821,6 +8821,35 @@ function mlFiltered(){
 }
 const id2key=id=>({ml_subj:'subj',ml_body:'body'})[id]||id;
 function mlSaved(k,d){ try{ return localStorage.getItem('kc_ml_'+k)||d; }catch(e){ return d; } }
+// מאיר: "שוב אני שולח לעצמי אימייל ואותה שגיאה — שלחת לי נוסח תקין, מה קרה
+// בשליחה?" התיבה שומרת את הטקסט מהפעם שבה נטען המכתב המוכן, ולכן תיקון
+// בנוסח לא הגיע אליה. כאן מזהים שהטקסט שבתיבה הוא גרסה ישנה של מכתב מוכן:
+// אם לא נערך — מתעדכן לבד; אם נערך — כפתור לטעינה, והשליחה נעצרת עד אז.
+function mlStaleTpl(){
+  const body=mlSaved('body',''), tid=mlSaved('tpl_id',''), copy=mlSaved('tpl_body','');
+  if(!body.trim())return null;
+  let t=MLTPL.find(x=>x.id===tid);
+  if(t){ if(t.body===body)return null; return {t, edited: body!==copy}; }
+  // טקסט שנטען לפני שהתחלנו לזכור איזה מכתב זה — מזהים לפי סימני ההיכר
+  if(/^The Zohar HaKadosh/.test(body.trim())||/Your special Kvitel|names you gave us/.test(body)){
+    const g=body.includes('{{מספר אברכים}}')?'yt_iz2':body.includes('{{אברך}}')?'yt_iz1'
+      :/three specially chosen|Three chosen/.test(body)?'yt_101':/Several times a month/.test(body)?'yt_wk'
+      :/kept with us|names you gave us/.test(body)?'yt_occ':'';
+    t=MLTPL.find(x=>x.id===g); if(t&&t.body!==body)return {t, edited:true};
+  }
+  return null;
+}
+function mlStaleCheck(){
+  const box=document.getElementById('ml_stale'); if(!box)return;
+  const s=mlStaleTpl(); box.innerHTML='';
+  if(!s)return;
+  const bx=document.getElementById('ml_body'), sx=document.getElementById('ml_subj');
+  const apply=()=>{sx.value=s.t.subj;bx.value=s.t.body;mlSave('subj',s.t.subj);mlSave('body',s.t.body);
+    mlSave('tpl_id',s.t.id);mlSave('tpl_body',s.t.body);mlSave('tpl_subj',s.t.subj);box.innerHTML='';};
+  if(!s.edited){ apply(); toast('המכתב "'+s.t.name+'" עודכן לגרסה החדשה ✓'); return; }
+  box.innerHTML=`<div class="missbox">⚠️ הטקסט שבתיבה הוא <b>גרסה ישנה</b> של המכתב "${esc(s.t.name)}". הנוסח במערכת עודכן מאז. <button class="btn sm" id="ml_stale_btn">🔄 טען את הגרסה המעודכנת</button></div>`;
+  document.getElementById('ml_stale_btn').onclick=()=>{apply();toast('המכתב עודכן ✓');};
+}
 function mlSave(k,v){ try{ localStorage.setItem('kc_ml_'+k,v); }catch(e){} }
 // מאיר: "איך אני עכשיו מעתיק את מכתב ליששכר זבולון היחיד, לעצב
 // באימייל? אני רוצה שזה יהיה מעוצב יפה, איך עושים את זה" — אין מה
@@ -9406,6 +9435,7 @@ function renderMailSend(){
       <div class="rbtitle" style="text-align:right">2️⃣ המכתב</div>
       <label class="fld"><span>מכתב מוכן</span><select id="ml_tpl"><option value="">— טען מכתב מוכן —</option>${MLTPL.map(t=>`<option value="${esc(t.id)}">📄 ${esc(t.name)}</option>`).join('')}</select></label>
       <div class="hintxt" style="margin:-4px 2px 8px">בחירה כאן ממלאת את הנושא ואת המכתב. אין מה לעצב ביד — המערכת בונה את העיצוב בשליחה.</div>
+      <div id="ml_stale"></div>
       <label class="fld"><span>נושא</span><input id="ml_subj" value="${esc(mlSaved('subj',''))}" placeholder="למשל: לקראת ראש השנה — מכולל חצות"></label>
       <label class="fld"><span>תוכן המכתב</span><textarea id="ml_body" rows="10" placeholder="לכבוד {{תואר}} {{שם מלא}},&#10;&#10;...">${esc(mlSaved('body',''))}</textarea></label>
       <div class="mlvars">${MLVARS.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
@@ -9507,8 +9537,11 @@ function renderMailSend(){
     if((bx.value||'').trim() && !confirm('להחליף את מה שכתוב עכשיו במכתב "'+t.name+'"?'))return;
     sx.value=t.subj; bx.value=t.body;
     mlSave('subj',t.subj); mlSave('body',t.body);
+    mlSave('tpl_id',t.id); mlSave('tpl_body',t.body); mlSave('tpl_subj',t.subj);
+    const stale=document.getElementById('ml_stale'); if(stale)stale.innerHTML='';
     toast('המכתב נטען — לחץ על תצוגה מקדימה');
   };
+  mlStaleCheck();
   document.getElementById('ml_prev').onclick=async()=>{
     const b=gv(); const o=document.getElementById('ml_out');
     if(!b.ids.length){toast('אין נמענים');return;}
@@ -9533,6 +9566,9 @@ function renderMailSend(){
     if(!b.body.trim()){toast('חסר תוכן');return;}
     if(!b.ids.length){toast('אין נמענים');return;}
     if(!(MLSETUP&&MLSETUP.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
+    // גרסה ישנה של מכתב מוכן לא יוצאת — קודם טוענים את המעודכנת
+    const st=mlStaleTpl();
+    if(st){mlStaleCheck();toast('הטקסט שבתיבה הוא גרסה ישנה של "'+st.t.name+'" — לחץ למעלה על "טען את הגרסה המעודכנת"');return;}
     const who=b.ids.length===1?('ל־'+dName(mlAudience()[0])+' בלבד'):('ל־'+b.ids.length+' התורמים שסימנת');
     if(!await uiConfirm('לשלוח '+who+'?\n\nכל אחד מקבל הודעה נפרדת משלו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
     const r=await api('POST','/api/mail/send',b);
