@@ -8956,6 +8956,42 @@ def mail_recipients(con, ids):
             nmv = _av_nice(r['av'], avn)
             if nmv not in avs[r['donor_id']]:
                 avs[r['donor_id']].append(nmv)
+        # מאיר: "יואל שטטפלד מחזיק יששכר־זבולון ביחד עם בנימין" — השורה רשומה
+        # אצל השותף. אותו היגיון כמו coHeldWith במסך: קישור מפורש
+        # (partner_with_id), קישור לפי שם (partner_with), ושותפות תשלום כשאין
+        # לו אברך משלו.
+        names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                 for r in con.execute("SELECT id,last,first FROM donors WHERE id IN (%s)" % qs, want)}
+        others = con.execute("SELECT donor_id, TRIM(avreich) av, partner_with, partner_with_id FROM partners "
+                             "WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')<>''").fetchall()
+        splits = {}
+        try:
+            for r in con.execute("SELECT payer_id, donor_id FROM pay_split"):
+                splits.setdefault(r['payer_id'], set()).add(r['donor_id'])
+                splits.setdefault(r['donor_id'], set()).add(r['payer_id'])
+        except Exception:
+            pass
+        for did in want:
+            toks = [x for x in _norm(names.get(did, '')).split() if len(x) >= 2]
+            for r in others:
+                if r['donor_id'] == did:
+                    continue
+                ids = [x.strip() for x in str(r['partner_with_id'] or '').split(',') if x.strip()]
+                linked = str(did) in ids
+                byname = (not ids) and bool(r['partner_with']) and bool(toks) \
+                    and all(x in _norm(r['partner_with']) for x in toks)
+                if linked or byname:
+                    nmv = _av_nice(r['av'], avn)
+                    avs.setdefault(did, [])
+                    if nmv not in avs[did]:
+                        avs[did].append(nmv)
+            if not avs.get(did):          # שותפות תשלום — רק למי שאין אברך משלו
+                for r in others:
+                    if r['donor_id'] in splits.get(did, set()):
+                        nmv = _av_nice(r['av'], avn)
+                        avs.setdefault(did, [])
+                        if nmv not in avs[did]:
+                            avs[did].append(nmv)
     except Exception:
         pass
     try:

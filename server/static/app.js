@@ -8786,8 +8786,10 @@ let mailSub='log', MLSETUP=null, MLPOLL=null;
 let mlPick=new Set(), mlQ='', mlGrp='', mlShow='mail', mlAdding=true, mlAddQ='';
 // כמה אברכים פעילים ובעלי שם יש לתורם. זה בדיוק מה שהמיזוג {{אברך}}
 // יוציא במכתב, ולכן החלוקה לקבוצות נעשית לפי אותו מספר.
+// מאיר: "למה יואל שטטפלד לא ברשימה? הוא מחזיק יששכר־זבולון ביחד עם בנימין"
+// — השורה רשומה אצל השותף, ולכן נספרים גם האברכים המקושרים (izAvNames).
 function izAvCount(d){
-  return ((d&&d.partners)||[]).filter(p=>p.active!=0&&String(p.avreich||'').trim()).length;
+  try{ return izAvNames(d||{}).length; }catch(e){ return ((d&&d.partners)||[]).filter(p=>p.active!=0&&String(p.avreich||'').trim()).length; }
 }
 function mlBrowse(){ return mlAdding||!mlPick.size; }
 // שם הדרגה כפי שקוראים לה, ולא הערך הפנימי ("קוויטל_שבועי")
