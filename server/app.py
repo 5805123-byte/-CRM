@@ -62,7 +62,29 @@ PORT = int(os.environ.get('PORT', 8000))
 RECEIPT_START = int(os.environ.get('RECEIPT_START', 6000))
 
 def db():
-    con = sqlite3.connect(DB); con.row_factory = sqlite3.Row; return con
+    # מאיר, באמצע משלוח: "database is locked — מה קרה?" — כמה תהליכים כותבים
+    # במקביל (משלוח, סריקת מיילים, סנכרון חיובים), וברירת המחדל של SQLite
+    # מוותרת אחרי 5 שניות. WAL מאפשר קריאה במקביל לכתיבה, וההמתנה ארוכה
+    # יותר — כותב מחכה לתורו במקום להיכשל.
+    con = sqlite3.connect(DB, timeout=60); con.row_factory = sqlite3.Row
+    try:
+        con.execute('PRAGMA busy_timeout=60000')
+        con.execute('PRAGMA journal_mode=WAL')
+    except Exception:
+        pass
+    return con
+
+
+def commit_retry(con, tries=8):
+    """commit שמחכה כשהקובץ נעול, במקום להפיל את כל הפעולה."""
+    for k in range(tries):
+        try:
+            con.commit(); return True
+        except sqlite3.OperationalError as e:
+            if 'locked' not in str(e).lower() or k == tries - 1:
+                raise
+            time.sleep(1.5 * (k + 1))
+    return False
 
 # תווי כיווניות בלתי־נראים (RLM/LRM/PDF/isolates), רווח באפס רוחב ו-BOM.
 # הם נדבקים לכל טקסט שמועתק מוואטסאפ, ממייל או ממסמך בעברית, והעין אינה
@@ -9074,7 +9096,7 @@ def mail_worker(batch_id):
                    'sent': 0, 'failed': 0, 'skipped': 0, 'left': len(rows), 'error': '',
                    'now': '', 'stop': False})
         con.execute("UPDATE mail_batch SET status='sending' WHERE id=?", (batch_id,))
-        con.commit()
+        commit_retry(con)
         sender = bulkmail.Sender()
         off = mail_optouts(con)
         for i, r in enumerate(rows):
@@ -9089,7 +9111,7 @@ def mail_worker(batch_id):
             if em in off:                      # ביקש להסיר בזמן שהמשלוח רץ
                 con.execute("UPDATE mail_queue SET status='skipped', error=? WHERE id=?",
                             ('ביקש להסיר את עצמו', r['id']))
-                con.commit(); st['skipped'] += 1; st['left'] = len(rows) - i - 1
+                commit_retry(con); st['skipped'] += 1; st['left'] = len(rows) - i - 1
                 continue
             st['now'] = r['name'] or em
             who = {'name': r['name'] or '', 'first': r['fname'] or '',
@@ -9107,7 +9129,7 @@ def mail_worker(batch_id):
             if ok:
                 con.execute("UPDATE mail_queue SET status='sent', sent_at=?, error='' WHERE id=?",
                             (now_iso(), r['id']))
-                con.commit()          # לשחרר את המסד — התיוק פותח חיבור משלו
+                commit_retry(con)          # לשחרר את המסד — התיוק פותח חיבור משלו
                 st['sent'] += 1
                 try:
                     log_sent_mail(r['donor_id'], em, b['subject'] or '',
@@ -9125,9 +9147,9 @@ def mail_worker(batch_id):
                     off.add(em)
                 elif 'התחברות' in err:
                     st['error'] = err
-                    con.commit()
+                    commit_retry(con)
                     break
-            con.commit()
+            commit_retry(con)
             st['left'] = len(rows) - i - 1
             if i + 1 < len(rows) and c['gap']:
                 for _ in range(int(c['gap'] * 4)):
@@ -9139,9 +9161,18 @@ def mail_worker(batch_id):
                            (batch_id,)).fetchone()['c']
         con.execute("UPDATE mail_batch SET status=? WHERE id=?",
                     ('done' if not left else 'paused', batch_id))
-        con.commit()
+        commit_retry(con)
     except Exception as e:
-        st['error'] = str(e)[:200]
+        msg = str(e)
+        if 'locked' in msg.lower():
+            msg = 'בסיס הנתונים היה תפוס לרגע (database is locked) — המשלוח נעצר. לחץ "המשך" והוא ימשיך מאותו מקום.'
+        st['error'] = msg[:200]
+        # מה שלא נשלח נשאר בתור, והמשלוח מסומן "מושהה" כדי שאפשר יהיה להמשיך
+        try:
+            con.execute("UPDATE mail_batch SET status='paused' WHERE id=?", (batch_id,))
+            commit_retry(con)
+        except Exception:
+            pass
     finally:
         st['running'] = False
         st['done'] = True
