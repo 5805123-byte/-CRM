@@ -1031,6 +1031,11 @@ function matchStr(s,query){
   const h=norm(s).toLowerCase(), toks=norm(query).toLowerCase().split(' ').filter(Boolean);
   if(!toks.length)return true;
   if(toks.every(t=>h.indexOf(t)>=0))return true;
+  // מאיר: "כשאני עושה חיפוש לפי אימייל או טלפון — שיעלה מי שאני מחפש".
+  // טלפון: ספרות בלבד, בלי מקפים/רווחים/קידומת — 0527183090 מוצא +972 52-718-3090
+  const hd=h.replace(/\D/g,'');
+  if(toks.every(t=>{const td=t.replace(/\D/g,'');if(td.length<5||td.length!==t.replace(/[-+() .]/g,'').length)return false;
+    const tail=td.replace(/^(972|1|0)/,'').slice(-9);return tail.length>=5&&hd.indexOf(tail)>=0;}))return true;
   const hf=fzHe(h);
   return hf&&toks.every(t=>{const f=fzHe(t);return f.length>=3&&hf.indexOf(f)>=0;});
 }
@@ -1303,7 +1308,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // מאיר: "תבדוק שאין בכמה מקומות אותו רעיון של חיפוש ומיון — שהכל יהיה
 // במקום אחד." יש תיבת חיפוש אחת, למעלה, והיא מסננת את המסך שפתוח.
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
-const QPH={donors:'חיפוש שם / טלפון / עסק…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
+const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
   debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…'};
 function render(){
@@ -1422,7 +1427,7 @@ function renderDonors(){
   chips.innerHTML=DFORDER.map(k=>{const cnt=DB.filter(DFILTERS[k].fn).length;return `<button class="chip ${flt===k?'on':''}" data-k="${k}">${DFILTERS[k].label} <b>${cnt}</b></button>`;}).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{flt=c.dataset.k;DLIM=60;render();});
   const ff=(DFILTERS[flt]||DFILTERS['']).fn;
-  let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+d.business+' '+d.english+' '+(d.notes||'')+' '+(d.building||[]).map(x=>x.object).join(' ')));
+  let list=DB.filter(d=>ff(d)&&matchQ(d.last+' '+d.first+' '+d.phone+' '+(d.email||'')+' '+d.business+' '+d.english+' '+(d.notes||'')+' '+(d.building||[]).map(x=>x.object).join(' ')));
   if(catFlt)list=list.filter(d=>(d.donations||[]).some(x=>String(x.category||'').trim()===catFlt));
   if(donSort==='new'||flt==='new') list=list.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
   else if(donSort==='amt') list=list.slice().sort((a,b)=>donorTotals(b).all-donorTotals(a).all);
