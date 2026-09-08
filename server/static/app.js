@@ -8828,6 +8828,8 @@ function mlFiltered(){
   else if(mlGrp==='kv:none') l=l.filter(d=>!(d.tier||'').trim()&&!((d.prayers||[]).length));
   // מאיר: "אני לא רואה בקטגוריות מכתבים קוויטל מזדמנים של חודש אחד" —
   // תורמי קוויטל מזדמן, כולם או לפי החודש העברי שנקבע להם בכרטיס
+  // מאיר: "לזמנים מיוחדים אותו אימייל בדיוק של מזדמנים — שניהם ביחד"
+  else if(mlGrp==='occ+zt') l=l.filter(d=>hasOccKv(d)||(d.tier||'').trim()==='קוויטל_זמנים');
   else if(mlGrp==='occ:') l=l.filter(hasOccKv);
   else if(mlGrp.startsWith('occ:')) l=l.filter(d=>hasOccKv(d)&&String(d.kv_month||'').trim()===mlGrp.slice(4));
   if(q) l=l.filter(d=>matchStr(dName(d)+' '+(d.english||'')+' '+(d.email||'')+' '+(d.business||''),q));
@@ -9405,8 +9407,9 @@ function renderMailSend(){
               <option value="iz:1"${mlGrp==='iz:1'?' selected':''}>🤝 אברך אחד · ${DB.filter(d=>izAvCount(d)===1).length}</option>
               <option value="iz:2"${mlGrp==='iz:2'?' selected':''}>🤝 יותר מאברך אחד · ${DB.filter(d=>izAvCount(d)>1).length}</option>
             </optgroup>
-            <optgroup label="קוויטל מזדמן — לפי חודש">
-              <option value="occ:"${mlGrp==='occ:'?' selected':''}>🗓️ כל המזדמנים עם קוויטל · ${DB.filter(hasOccKv).length}</option>
+            <optgroup label="קוויטל מזדמן וזמנים מיוחדים — מכתב אחד לשניהם">
+              <option value="occ+zt"${mlGrp==='occ+zt'?' selected':''}>🗓️ מזדמנים (כל החודשים) + זמנים מיוחדים · ${DB.filter(d=>hasOccKv(d)||(d.tier||'').trim()==='קוויטל_זמנים').length}</option>
+              <option value="occ:"${mlGrp==='occ:'?' selected':''}>🗓️ רק מזדמנים עם קוויטל · ${DB.filter(hasOccKv).length}</option>
               ${HMORD.map(m=>{const n=DB.filter(d=>hasOccKv(d)&&String(d.kv_month||'').trim()===m).length;return n?`<option value="occ:${m}"${mlGrp==='occ:'+m?' selected':''}>🗓️ ${m} · ${n}</option>`:'';}).join('')}
             </optgroup>
             <optgroup label="בלי קוויטל"><option value="kv:none"${mlGrp==='kv:none'?' selected':''}>🚫 אין קוויטל בכלל · ${DB.filter(d=>!(d.tier||'').trim()&&!((d.prayers||[]).length)).length}</option></optgroup>
