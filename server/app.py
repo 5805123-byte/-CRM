@@ -685,6 +685,15 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  שגיאת מיזוג קמפיינים 2:', e)
+    # הקמפיין של עכשיו (העמודה השלישית בטבלה) חייב להופיע ברשימת הקמפיינים
+    try:
+        _tg = campaign_target()
+        if _tg:
+            con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (_tg, today_iso()))
+            con.execute("INSERT OR REPLACE INTO campaign_flags(name,shown,updated) VALUES(?,1,?)", (_tg, today_iso()))
+            con.commit()
+    except Exception as e:
+        print('  שגיאת קמפיין יעד:', e)
     # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -6363,9 +6372,20 @@ def campaign_compare(con, cat):
     return {'cat': cat, 'cols': cols, 'rows': out, 'extra': extra}
 
 
+def campaign_target():
+    """הקמפיין של עכשיו — העמודה השלישית בטבלה של מאיר (סוכות תשפ"ז). קבוע בקובץ,
+    לא תלוי במה שנבחר ברשימה הנפתחת."""
+    try:
+        with open(os.path.join(HERE, 'campaign_compare.json'), encoding='utf-8') as f:
+            return (json.load(f).get('target') or '').strip()
+    except Exception:
+        return ''
+
+
 def campaign_sheet(con, cat):
     """הטבלה של מאיר בדיוק כמו בקובץ: שם כפי שנכתב, בסדר הקובץ, עמודה לכל רשימה,
     ועמודה ריקה לקמפיין הנוכחי שמתמלאת מהתרומות/התחייבויות שנרשמו."""
+    cat = campaign_target() or cat
     cmp_ = campaign_compare(con, cat)
     byname = {}
     for r in cmp_['rows']:

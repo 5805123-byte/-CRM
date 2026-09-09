@@ -9941,7 +9941,7 @@ async function campSheet(box){
   let r=null;
   try{r=await api('GET','/api/campaigns/sheet?cat='+encodeURIComponent(campSel||''));}catch(e){}
   if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון</div>';return;}
-  const cols=r.cols, rows=r.rows;
+  const cols=r.cols, rows=r.rows, tcat=r.cat||campSel;   // העמודה השלישית — תמיד הקמפיין של עכשיו
   const f=v=>v?Math.round(v).toLocaleString('en-US'):'';
   const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
   rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
@@ -9952,9 +9952,9 @@ async function campSheet(box){
     return '<span class="cshempty">—</span>';
   };
   box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד</h3>
-      <div class="campsum"><span><b>${rows.length}</b> תורמים</span><span>לחיצה על התא של ${esc(campSel||'הקמפיין')} — למילוי</span></div></div>
+      <div class="campsum"><span><b>${rows.length}</b> תורמים</span><span>לחיצה על התא של ${esc(tcat)} — למילוי</span></div></div>
     <div class="shtbl">
-      <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(campSel||'—')}</span></div>
+      <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(tcat)}</span></div>
       ${rows.map((x,i)=>`<div class="cshr" data-i="${i}">
         <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.card_name||x.name)}</a>${x.card_name&&norm(x.card_name).split(' ').sort().join(' ')!==norm(x.name).split(' ').sort().join(' ')?`<small class="cshfile">${esc(x.name)}</small>`:''}`:esc(x.name)}<button class="cshlnk" data-i="${i}" title="שייך לתורם קיים בשם אחר">🔗</button></span>
         ${cols.map(c=>`<span class="csha">${f(x.vals[c.key])||'<span class="cshempty">-</span>'}</span>`).join('')}
@@ -9985,13 +9985,12 @@ async function campSheet(box){
     inp.value=(x.last||''); inp.focus(); inp.oninput();
   });
   box.querySelectorAll('.cshcell').forEach(cell=>cell.onclick=()=>{
-    if(!campSel){toast('בחר קמפיין למעלה');return;}
     const x=rows[+cell.dataset.i], rowEl=cell.closest('.cshr');
     const old=box.querySelector('.cmpform'); if(old)old.remove();
     const it=(x.items||[])[0];
     const cur=x.now?x.now:(x.pledge?x.pledge.amount:(cols.map(c=>x.vals[c.key]||0).find(v=>v)||''));
     const fm=document.createElement('div'); fm.className='cmpform';
-    fm.innerHTML=`<b>${esc(x.name)}</b> → ${esc(campSel)}
+    fm.innerHTML=`<b>${esc(x.name)}</b> → ${esc(tcat)}
       <input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}">
       <select class="cf_st"><option value="paid"${x.now?' selected':''}>✅ חויב / נגבה</option><option value="pledge"${(!x.now&&x.pledge)?' selected':''}>🔴 עדיין לא</option></select>
       <select class="cf_m"><option value="">דרך מה…</option>${dnMethList().map(m=>`<option${it&&chLabel(it.method)===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
@@ -10012,14 +10011,14 @@ async function campSheet(box){
         did=rr.donor_id; toast('נפתח כרטיס ל'+x.name);
       }
       const d=DB.find(y=>y.id===did);
-      const pl=d&&(d.pledges||[]).find(y=>String(y.category||'').trim()===campSel&&y.status!=='נתן');
+      const pl=d&&(d.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
       if(st==='paid'){
-        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:campSel,paid:1});
-        else await api('POST','/api/donation',{donor_id:did,amount:amt,category:campSel,method:m,date:date,note:''});
+        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:tcat,paid:1});
+        else await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:''});
         if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
       }else{
         if(pl){pl.amount=amt;pl.note=m?('דרך: '+m):(pl.note||'');await api('PUT','/api/pledge/'+pl.id,pl);}
-        else await api('POST','/api/pledge',{donor_id:did,category:campSel,amount:amt,status:'טרם',date:date,note:m?('דרך: '+m):''});
+        else await api('POST','/api/pledge',{donor_id:did,category:tcat,amount:amt,status:'טרם',date:date,note:m?('דרך: '+m):''});
       }
       toast('נשמר ✓'); await load(); campSheet(box);
     };
