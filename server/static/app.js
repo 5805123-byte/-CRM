@@ -9918,7 +9918,7 @@ async function campCompareTable(box){
   try{r=await api('GET','/api/campaigns/compare?cat='+encodeURIComponent(campSel||''));}catch(e){}
   if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון את ההשוואה</div>';return;}
   const cols=r.cols;
-  const f=v=>v?('$'+Math.round(v).toLocaleString('en-US')):'';
+  const f=v=>v?Math.round(v).toLocaleString('en-US'):'';
   const rows=r.rows.filter(x=>x.now||cols.some(c=>x.vals[c.key]));
   const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
   rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});

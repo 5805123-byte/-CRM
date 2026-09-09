@@ -6022,6 +6022,8 @@ def campaign_match(con, rows, dfrom='', dto=''):
                 put(by_ph, _d7(p), d['id'])
         heb = _norm((d['last'] or '') + ' ' + (d['first'] or '')).strip()
         put(by_name, heb, d['id'])
+        # ברשימות של מאיר השם הפרטי בא לפני המשפחה ("מאיר דבורקין")
+        put(by_name, _norm((d['first'] or '') + ' ' + (d['last'] or '')).strip(), d['id'])
         for nm in {_lat(d['english']), _lat((d['first'] or '') + ' ' + (d['last'] or '')),
                    _lat((d['last'] or '') + ' ' + (d['first'] or ''))}:
             if nm and ' ' in nm:
@@ -6167,10 +6169,15 @@ def campaign_compare(con, cat):
         return rows[k]
 
     for L in lists:
-        for x in campaign_match(con, L['rows'], L.get('from', ''), L.get('to', '')):
+        for src, x in zip(L['rows'], campaign_match(con, L['rows'], L.get('from', ''), L.get('to', ''))):
             if x['status'] == 'skip':
                 continue
-            r = row_for(x['donor_id'], x['name'])
+            did = x['donor_id']
+            # שם משפחה בלבד לא מספיק כשברשימה יש גם שם פרטי — אחרת שלושה
+            # רוזנפלדים נופלים על כרטיס אחד. עדיף "אין כרטיס" מאשר שיוך שגוי.
+            if did and x['how'] == 'שם משפחה בלבד' and (src.get('first') or len((src.get('name') or '').split()) > 1):
+                did = None
+            r = row_for(did, x['name'])
             r['vals'][L['key']] = round(r['vals'].get(L['key'], 0) + (x['amount'] or 0), 2)
     if cat:
         for d in con.execute("""SELECT donor_id, SUM(amount) a, COUNT(*) n FROM donations
