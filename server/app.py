@@ -6187,8 +6187,9 @@ KV_DESC = {
     'קוויטל_101': 'שלשה אברכים צדיקים מתפללים ומזכירים את השמות והבקשות האלו בכל לילה '
                   'בעת רצון של חצות, ובנוסף לזה ' + KV_GEN,
     'קוויטל_שבועי': KV_GEN,
-    'קוויטל_זמנים': KV_GEN,
     'קוויטל_כללי': KV_GEN,
+    # מאיר: "במזדמנים וזמנים מיוחדים רק תכתוב השמות שמתפללים בחצות הלילה" —
+    # בלי שורת הסבר; רק הכותרת והשמות.
 }
 
 
@@ -6222,8 +6223,6 @@ def donor_kvpage(con, did):
                       else 'בנוסף לאברך הלומד ומתפלל בחצות לילה לזכותו — ') + KV_GEN)
     if tier in KV_DESC:
         lines.append(KV_DESC[tier])
-    if not lines:
-        lines.append(KV_GEN)
     # מאיר: "פרנס יום אל תכתוב כלום" — ימי פרנס אינם מוזכרים בדף הזה
     names, seen = [], set()
     for r in con.execute("SELECT text,tier FROM prayers WHERE donor_id=? AND TRIM(COALESCE(text,''))<>'' ORDER BY id", (did,)):
