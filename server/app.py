@@ -6325,7 +6325,24 @@ def campaign_compare(con, cat):
                            'status': p['status'] or ''}
     out = list(rows.values())
     out.sort(key=lambda r: _norm(r['name']))       # לפי א"ב, כמו ברשימה של מאיר
-    return {'cat': cat, 'cols': cols, 'rows': out}
+    # מאיר: "מה חסר לנו במערכת" — גם ההפך: מי שרשום אצלנו בייעוד הזה ואינו ברשימה
+    extra = {}
+    for L in lists:
+        catL = (L.get('category') or '').strip()
+        if not catL:
+            continue
+        inlist = {r['donor_id'] for r in out if r['donor_id'] and r['vals'].get(L['key'])}
+        ex = []
+        for did, ds in dons.items():
+            if did not in names or did in inlist:
+                continue
+            tot = sum(float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0)
+                      for d in ds if (d['category'] or '').strip() == catL)
+            if tot:
+                ex.append({'donor_id': did, 'name': names[did], 'eng': eng.get(did, ''), 'amount': round(tot, 2)})
+        ex.sort(key=lambda r: _norm(r['name']))
+        extra[L['key']] = ex
+    return {'cat': cat, 'cols': cols, 'rows': out, 'extra': extra}
 
 
 def campaign_backfill(con, key, only_name=''):

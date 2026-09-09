@@ -9971,6 +9971,32 @@ async function campCompareTable(box){
       <button class="btn sm ghost cmplnk" data-i="${i}">🔗 ${x.donor_id?'תורם אחר…':'שייך לתורם…'}</button></div>
       <div class="cmppick hidden" data-i="${i}"><input class="cmpq" placeholder="חפש לפי שם / אנגלית…"><div class="cmpres"></div></div>`;
   };
+  // ❗ מה חסר במערכת — מאיר: "רשימת השוואות בין מה שמופיע אצלנו במערכת לבין
+  // הרשימה בקובץ ששלחתי לך… שאוכל לראות מה חסר לנו במערכת שלא הוספנו עדיין"
+  const gapsHtml=()=>cols.map(c=>{
+    const inList=rows.map((x,i)=>[x,i]).filter(([x])=>x.vals[c.key]);
+    const noCard=inList.filter(([x])=>!x.donor_id);
+    const miss=inList.filter(([x])=>x.donor_id&&!x.have[c.key]);
+    const diff=inList.filter(([x])=>x.donor_id&&x.have[c.key]&&Math.round(x.have[c.key])!==Math.round(x.vals[c.key]));
+    const ok=inList.length-noCard.length-miss.length-diff.length;
+    const extra=(r.extra&&r.extra[c.key])||[];
+    const nameOf=x=>x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>${x.eng?` <small class="cen">${esc(x.eng)}</small>`:''}`:`<span class="cmpnm">${esc(x.name)}</span>`;
+    const grp=(ttl,cls,list,cell)=>list.length?`<div class="cmphd ${cls}">${ttl} — ${list.length}</div>
+      <div class="camptbl">${list.map(([x,i],n)=>`<div class="cmprow${x.donor_id?'':' nocard'}"><div class="cmpname"><span class="c1">${n+1}</span>${nameOf(x)}${cell(x,i)}</div>${x.donor_id?'':acts(x,i)}</div>`).join('')}</div>`:'';
+    const sumMiss=miss.reduce((a,[x])=>a+x.vals[c.key],0)+noCard.reduce((a,[x])=>a+x.vals[c.key],0);
+    return `<div class="camphd" style="margin-top:14px"><h3>📋 ${esc(c.label)}</h3>
+        <div class="campsum"><span>ברשימה <b>${inList.length}</b></span><span>✅ רשום אצלנו <b>${ok}</b></span><span class="campowe">❗ חסר <b>${miss.length+noCard.length}</b>${sumMiss?(' · '+f(sumMiss)):''}</span></div></div>
+      ${grp('🔴 ברשימה, יש כרטיס, ולא רשום במערכת','bad',miss,(x,i)=>`<span class="chipv"><b>${f(x.vals[c.key])}</b><button class="cmpin" data-k="${esc(c.key)}" data-n="${esc(x.name)}" title="הכנס לכרטיס">📥</button></span>`)}
+      ${grp('🟠 ברשימה ואין כרטיס במערכת','bad',noCard,(x,i)=>`<span class="chipv"><b>${f(x.vals[c.key])}</b></span>`)}
+      ${grp('🟡 רשום, אבל בסכום שונה','warn',diff,(x,i)=>`<span class="chipv"><small>ברשימה</small><b>${f(x.vals[c.key])}</b></span><span class="chipv"><small>במערכת</small><b>${f(x.have[c.key])}</b></span>`)}
+      ${extra.length?`<div class="cmphd muted">⚪ רשום אצלנו ולא ברשימה — ${extra.length}</div>
+        <div class="camptbl">${extra.map((x,n)=>`<div class="cmprow"><div class="cmpname"><span class="c1">${n+1}</span>${nameOf(x)}<span class="chipv"><b>${f(x.amount)}</b></span></div></div>`).join('')}</div>`:''}
+      ${(miss.length+noCard.length+diff.length)?'':'<div class="cmphd ok">✅ הכל מהרשימה רשום במערכת</div>'}`;
+  }).join('');
+  if(CAMPMODE==='gaps'){
+    box.innerHTML=`<div class="camphd"><h3>❗ מה חסר במערכת — מול הקובץ ששלחת</h3>
+      ${missing?`<div class="cmpbar"><span>📥 <b>${missing}</b> סכומים אפשר להכניס לכרטיסים בלחיצה</span><button class="btn sm" id="cmpfillall">הכנס את כולם</button></div>`:''}</div>${gapsHtml()}`;
+  }else
   box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד — ${rows.length} תורמים</h3>
       <div class="campsum">${cols.map(c=>`<span class="cmpcol">${esc(c.label)} <small>(${c.n})</small>${c.src==='db'?` <button class="del cmpdel" data-k="${esc(c.key)}" title="מחק רשימה">🗑</button>`:''}</span>`).join('')}
         <button class="btn sm ghost" id="cmppaste">📥 הדבק רשימה</button></div>
@@ -10096,7 +10122,7 @@ function campPasteList(box){
 // מאיר: "אני צריך שיהיה רשימה אחת רק של קמפיין שאבחר לראות. ורשימה אחת של שלשתם ביחד."
 let CAMPMODE='one';   // one = הקמפיין הנבחר בלבד · all = טבלת שלושתם ביחד
 function renderCamp(){
-  chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד'],['gaps','❗ מה חסר במערכת']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{CAMPMODE=c.dataset.k;renderCamp();});
   const cats=campList();
   if(!campSel||cats.indexOf(campSel)<0)campSel=cats[0]||'';
@@ -10114,7 +10140,7 @@ function renderCamp(){
       <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
       <button class="btn sm" id="campcmp">🔍 השוואה מול אקסל</button>
       <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
-    <div id="campone"${CAMPMODE==='all'?' hidden':''}>
+    <div id="campone"${CAMPMODE!=='one'?' hidden':''}>
     <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
         <span><b>${rows.length}</b> תשלומים</span>${owetot?`<span class="campowe">🔴 ${owetot} התחייבו וטרם נתנו</span>`:''}</div></div>
@@ -10133,7 +10159,7 @@ function renderCamp(){
         <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}</span>
         <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}
     </div>
-    <div id="campcmpbox"${CAMPMODE==='all'?'':' hidden'}></div>`;
+    <div id="campcmpbox"${CAMPMODE==='one'?' hidden':''}></div>`;
   const sel=document.getElementById('campsel');
   if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
   const ad=document.getElementById('campadd');
@@ -10145,7 +10171,7 @@ function renderCamp(){
     if(!confirm('להסיר את "'+campSel+'" מרשימת הקמפיינים?\nהתרומות נשארות כמו שהן — הוא רק לא יופיע כאן. אפשר להחזיר דרך ➕.'))return;
     if(await campSetShown(campSel,0)){toast('הוסר מהרשימה ✓');campSel='';renderCamp();}
   };
-  if(CAMPMODE==='all')campCompareTable(document.getElementById('campcmpbox'));
+  if(CAMPMODE!=='one')campCompareTable(document.getElementById('campcmpbox'));
   const cmp=document.getElementById('campcmp');
   if(cmp)cmp.onclick=()=>campCompare(rows);
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
