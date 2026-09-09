@@ -730,8 +730,12 @@ def ensure_schema():
                                  "WHERE donor_id=? AND COALESCE(monthly,0)=1 AND category LIKE '%יששכר%' "
                                  "AND COALESCE(status,'')<>'הופסק'", (did,)).rowcount
                 ps = con.execute("SELECT id FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (did,)).fetchall()
-                if len(ps) == 1:
-                    con.execute("UPDATE partners SET amount='2300' WHERE id=?", (ps[0]['id'],))
+                # מאיר: "לשני יששכר זבולון" — 2300 יחד לשני האברכים, 1150 לכל אחד
+                if ps:
+                    each = 2300 / len(ps)
+                    each = str(int(each)) if each == int(each) else ('%.2f' % each)
+                    for r0 in ps:
+                        con.execute("UPDATE partners SET amount=? WHERE id=?", (each, r0['id']))
                 print(f"  טאובנפלד: התחייבות יש\"ז 2300 מ-5/2026 (קודם 1600) — {n1} שורות, {len(ps)} אברכים")
             else:
                 print(f'  טאובנפלד: לא תוקן — נמצאו {len(hit)} כרטיסים מתאימים')
