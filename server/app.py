@@ -712,6 +712,33 @@ def ensure_schema():
                 print(f'  תיקון טבלת סוכות: {len(rows)} תרומות הועברו לסוכות תשפ"ז')
     except Exception as e:
         print('  שגיאת תיקון טבלת סוכות:', e)
+    # מאיר: "אצל טאובנפלד יש טעות בהתחייבויות שלה — ההתחייבות של יששכר־זבולון
+    # עד חודש מאי הייתה 1600 דולר לחודש, מחודש מאי היא 2300$". ההתחייבות
+    # החודשית מקבלת 2300 מ-5/2026 עם 1600 כסכום הקודם, כך שהחודשים שלפני
+    # מאי נספרים לפי 1600 ולא נוצר חוב מדומה. סכום האברך מתעדכן כשיש אחד.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='taubenfeld_iz_v1'").fetchone():
+            cands = [dict(r) for r in con.execute(
+                "SELECT id,last,first FROM donors WHERE last LIKE '%טאובנפלד%' OR english LIKE '%aubenfeld%'")]
+            hit = [d for d in cands if con.execute(
+                "SELECT 1 FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1 AND category LIKE '%יששכר%' "
+                "AND COALESCE(status,'')<>'הופסק' LIMIT 1", (d['id'],)).fetchone()
+                or con.execute("SELECT 1 FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0 LIMIT 1", (d['id'],)).fetchone()]
+            if len(hit) == 1:
+                did = hit[0]['id']
+                n1 = con.execute("UPDATE pledges SET amount='2300', since='2026-05-01', prev_amount='1600', confirmed=1 "
+                                 "WHERE donor_id=? AND COALESCE(monthly,0)=1 AND category LIKE '%יששכר%' "
+                                 "AND COALESCE(status,'')<>'הופסק'", (did,)).rowcount
+                ps = con.execute("SELECT id FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (did,)).fetchall()
+                if len(ps) == 1:
+                    con.execute("UPDATE partners SET amount='2300' WHERE id=?", (ps[0]['id'],))
+                print(f"  טאובנפלד: התחייבות יש\"ז 2300 מ-5/2026 (קודם 1600) — {n1} שורות, {len(ps)} אברכים")
+            else:
+                print(f'  טאובנפלד: לא תוקן — נמצאו {len(hit)} כרטיסים מתאימים')
+            con.execute("INSERT INTO seed_flags(name) VALUES('taubenfeld_iz_v1')")
+            con.commit()
+    except Exception as e:
+        print('  שגיאת תיקון טאובנפלד:', e)
     # הקמפיין של עכשיו (העמודה השלישית בטבלה) חייב להופיע ברשימת הקמפיינים
     try:
         _tg = campaign_target()
