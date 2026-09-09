@@ -6176,6 +6176,145 @@ def campaign_match(con, rows, dfrom='', dto=''):
 # וקמחא דפסחא תשפ"ו. וטור שלישי יהיה מה שעכשיו אמלא ע"י הכנסת התרומות".
 # הרשימות: הרשימות שמאיר שלח להשוואה (campaign_compare.json — לא הרשימות
 # הישנות שבמערכת, "כי לא הכל מסונכרן אצלך בדיוק") + רשימות שהודבקו במסך.
+# מאיר: "בדף של קוויטל אני צריך אפשרות לשלוח לתורם / להעתיק / להדפיס רק את
+# השמות של תורם ספציפי — למעלה התאריך של אותו יום, השם ושם המשפחה, השמות
+# באותיות גדולות, ומה הוא תורם לכולל: יששכר־זבולון עם מי (וכמה מחזיק),
+# תורם קבוע ששלושה אברכים מתפללים עליו, שבועי וכו'."
+KV_DESC = {
+    'קוויטל_101': 'תורם קבוע — שלושה אברכים מתפללים עליו בכל לילה בחצות',
+    'קוויטל_שבועי': 'קוויטל שבועי — מזכירים אותו בחצות הלילה מדי שבוע',
+    'קוויטל_זמנים': 'קוויטל בזמנים מיוחדים — מזכירים אותו בעתות רצון',
+    'קוויטל_כללי': 'קוויטל כללי — מוזכר בתפילת חצות',
+}
+
+
+def donor_kvpage(con, did):
+    """הנתונים לדף הקוויטל של תורם אחד: תאריך היום, שמו, מה הוא נותן, והשמות."""
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return None
+    anon = int(d['anon'] or 0) if 'anon' in d.keys() else 0
+    gender = (d['gender'] or '') if 'gender' in d.keys() else ''
+    if anon:
+        title, name = '', ANON_NAME
+    else:
+        title = _honor(d['first'], d['last'], gender)
+        name = ((d['first'] or '') + ' ' + (d['last'] or '')).strip()
+    tier = (d['tier'] or '').strip()
+    _avn = _av_display(con)
+    avs = [_av_nice((r['avreich'] or '').strip(), _avn) for r in con.execute(
+        "SELECT avreich FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0 "
+        "AND COALESCE(TRIM(avreich),'')<>'' ORDER BY id", (did,))]
+    lines = []
+    if avs:
+        if len(avs) == 1:
+            lines.append("שותף יששכר־זבולון — מחזיק את ר' " + avs[0])
+        else:
+            lines.append('שותף יששכר־זבולון — מחזיק %d אברכים: %s' % (len(avs), ', '.join("ר' " + a for a in avs)))
+    if tier in KV_DESC:
+        lines.append(KV_DESC[tier])
+    elif tier == 'יששכר_זבולון' and not avs:
+        lines.append('שותף יששכר־זבולון')
+    try:
+        np_ = con.execute("SELECT COUNT(*) FROM parnes WHERE donor_id=? AND COALESCE(status,'')<>'suggested'", (did,)).fetchone()[0]
+        if np_:
+            lines.append('פרנס יום — %s' % ('יום אחד' if np_ == 1 else '%d ימים' % np_))
+    except Exception:
+        pass
+    names, seen = [], set()
+    for r in con.execute("SELECT text,tier FROM prayers WHERE donor_id=? AND TRIM(COALESCE(text,''))<>'' ORDER BY id", (did,)):
+        k = _pray_key(r['text'])
+        if k in seen:
+            continue
+        seen.add(k); names.append(r['text'].strip())
+    today = today_iso()
+    y, m, dd = today.split('-')
+    return {'donor_id': did, 'title': title, 'name': name, 'english': d['english'] or '',
+            'tier': tier, 'tier_label': {'יששכר_זבולון': 'יששכר־זבולון', 'קוויטל_101': 'כל לילה', 'קוויטל_שבועי': 'שבועי',
+                                         'קוויטל_זמנים': 'זמנים מיוחדים', 'קוויטל_כללי': 'כללי'}.get(tier, ''),
+            'avreichim': avs, 'lines': lines, 'names': names,
+            'date_heb': greg_to_heb_full(today), 'date_greg': '%s.%s.%s' % (dd, m, y)}
+
+
+def kvpage_png(con, did, width=1240, fmt='png'):
+    """דף הקוויטל של תורם אחד כתמונה — על הבלאנק המלא, לשליחה/העתקה."""
+    from PIL import Image, ImageDraw, ImageFont
+    info = donor_kvpage(con, did)
+    if not info:
+        raise ValueError('donor')
+    im = Image.open(os.path.join(STATIC, 'iz-page.jpg')).convert('RGB')
+    if im.width != width:
+        im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
+    W, H = im.size
+    u = W / 1240.0
+    dr = ImageDraw.Draw(im)
+    reg = os.path.join(STATIC, 'frankruhl-regular.ttf')
+    bold = os.path.join(STATIC, 'frankruhl-bold.ttf')
+    cache = {}
+
+    def font(px, heavy=False):
+        k = (int(px), heavy)
+        if k not in cache:
+            cache[k] = ImageFont.truetype(bold if heavy else reg, max(7, int(px)))
+        return cache[k]
+
+    def wid(t, f):
+        return dr.textlength(t, font=f)
+
+    def center(t, f, y, fill):
+        dr.text(((W - wid(t, f)) / 2, y), t, font=f, fill=fill)
+
+    def right(t, f, y, fill, margin):
+        dr.text((W - margin - wid(t, f), y), t, font=f, fill=fill)
+
+    marg = int(75 * u)
+    # התאריך של אותו יום — משמאל למעלה, רחוק מהלוגו שבימין
+    fd = font(26 * u)
+    dr.text((marg, int(30 * u)), info['date_heb'], font=fd, fill=_GOLD_T)
+    dr.text((marg, int(30 * u) + int(26 * u * 1.35)), info['date_greg'], font=fd, fill=_GOLD_T)
+    # השם — מתחת ללוגו, במרכז
+    y = int(250 * u)
+    nm_px = 58 * u
+    fn, ft = font(nm_px, True), font(nm_px * .6, True)
+    full = ((info['title'] + ' ') if info['title'] else '') + info['name']
+    while wid(full, fn) > W - 2 * marg and nm_px > 20 * u:
+        nm_px -= 2 * u; fn = font(nm_px, True)
+    center(full, fn, y, _DEEP)
+    y += int(nm_px * 1.5)
+    # מה הוא תורם לכולל
+    fl = font(30 * u)
+    for ln in info['lines']:
+        for w in _wrap_px(dr, ln, fl, W - 2 * marg):
+            center(w, fl, y, _GOLD_T); y += int(30 * u * 1.35)
+    y += int(14 * u)
+    # קו ו"יעמוד לזכות:"
+    dash = int(9 * u)
+    for dx in range(int(90 * u), W - int(90 * u), dash * 2):
+        dr.line([(dx, y), (dx + dash, y)], fill=_GOLD_T, width=max(1, int(1.5 * u)))
+    y += int(24 * u)
+    fzk = font(40 * u, True)
+    center('שמות לתפילה בחצות הלילה:', fzk, y, _DEEP)
+    y += int(40 * u * 1.7)
+    # השמות — הכי גדולים שנכנסים
+    avail_w, avail_h = W - 2 * marg, H - y - int(90 * u)
+    txt = kv_flow('\n'.join(info['names'])).strip() or '— אין עדיין שמות לקוויטל —'
+    lines, size = [], int(13 * u)
+    for px in range(int(118 * u), int(13 * u), -2):
+        f = font(px, True); lh = px * 1.28
+        b = _wrap_px(dr, txt, f, avail_w)
+        if len(b) * lh <= avail_h:
+            lines, size = b, px; break
+    if not lines:
+        f = font(size, True); lines = _wrap_px(dr, txt, f, avail_w)
+    f, lh = font(size, True), size * 1.28
+    yy = y + max(0, (avail_h - len(lines) * lh) / 2)
+    for ln in lines:
+        center(ln, f, yy, _BLACK); yy += lh
+    buf = io.BytesIO()
+    im.save(buf, 'JPEG' if fmt == 'jpg' else 'PNG', quality=92)
+    return buf.getvalue()
+
+
 def campaign_ref_lists(con):
     out = []
     try:
@@ -10036,6 +10175,32 @@ class H(BaseHTTPRequestHandler):
                                  if ok else
                                  ('הקישור אינו תקף', 'ייתכן שהוא נחתך. השב למייל ונטפל בזה.'))
             return self._send(200, page.encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/kv-page':
+            return self._send(200, open(os.path.join(STATIC, 'kvpage.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/kvpage':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: did = int((qs.get('donor') or ['0'])[0])
+            except ValueError: did = 0
+            con = db()
+            try: info = donor_kvpage(con, did)
+            finally: con.close()
+            return self._send(200 if info else 404, info or {'error': 'not found'})
+        if self.path.split('?')[0] in ('/kvpage.png', '/kvpage.jpg'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: did = int((qs.get('donor') or ['0'])[0])
+            except ValueError: did = 0
+            fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'
+            con = db()
+            try: data = kvpage_png(con, did, fmt=fmt)
+            except Exception as e:
+                con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            con.close()
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg' if fmt == 'jpg' else 'image/png')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', 'inline; filename="kvittel.%s"' % fmt)
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/iz-slips':
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/parnes-cert':

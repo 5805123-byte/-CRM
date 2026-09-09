@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>דף קוויטל של תורם</title>
+<style>
+  /* מאיר: "בדף של קוויטל — לשלוח לתורם, להעתיק או להדפיס רק את השמות של תורם
+     ספציפי. למעלה התאריך של אותו יום, השם ושם המשפחה, השמות באותיות גדולות,
+     ומה הוא תורם לכולל." דף שלם על הבלאנק, כמו דף היששכר־זבולון. */
+  @page{size:A4 portrait;margin:0}
+  :root{--ink:#2A2740;--gold:#8a6a22;--deep:#7a1f1f}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#EDE7DA;color:var(--ink);font-family:"Frank Ruhl Libre","Times New Roman",serif}
+  .bar{position:sticky;top:0;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;background:#3B357A;color:#fff;font-family:system-ui,sans-serif}
+  .bar b{font-size:1rem}.bar .sp{flex:1}
+  .bar button{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
+  .sheet{width:210mm;height:297mm;margin:12px auto;background:#fff;box-shadow:0 6px 24px rgba(40,36,64,.18)}
+  .slip{width:210mm;height:297mm;position:relative;overflow:hidden;background:#fdf8ee;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .slip>.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:0;pointer-events:none}
+  .slip .in{position:absolute;inset:6mm 12mm 8mm 12mm;display:flex;flex-direction:column;z-index:1}
+  .date{position:absolute;left:0;top:0;text-align:left;color:var(--gold);font-size:13pt;font-weight:700;line-height:1.35}
+  .date span{display:block;direction:ltr}
+  .nm{margin-top:34mm;text-align:center;color:var(--deep);font-size:30pt;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden}
+  .nm i{font-style:normal;font-size:18pt}
+  .lines{text-align:center;color:var(--gold);font-size:15pt;font-weight:700;line-height:1.4;margin-top:3mm}
+  .rule{border-top:1.2pt dashed var(--gold);margin:4mm 8mm 3mm}
+  .z{text-align:center;color:var(--deep);font-size:20pt;font-weight:800}
+  .names{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;margin-top:3mm;font-size:56pt;font-weight:800;line-height:1.28;overflow:hidden}
+  .names span{display:block;width:100%}
+  .empty{color:#9a9384;font-weight:600;font-size:16pt}
+  .acts{width:210mm;margin:6px auto 18px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-family:system-ui,sans-serif}
+  .acts button{font:inherit;font-size:.92rem;font-weight:700;padding:10px 18px;border-radius:10px;border:none;color:#fff;background:#8a6a22;cursor:pointer}
+  .acts button.wa{background:#25D366}.acts button.cp{background:#3b2f5e}.acts button:disabled{opacity:.6}
+  @media print{
+    .bar,.acts{display:none}
+    html,body{background:#fdf8ee url("/bleed/iz-page.jpg") center center/100% 100% no-repeat;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .sheet{margin:0;box-shadow:none;transform:scale(.962);transform-origin:center center}
+  }
+</style>
+</head>
+<body>
+<div class="bar"><b>🕯️ דף קוויטל של תורם</b><span class="sp"></span><span id="cnt"></span><button onclick="window.print()">🖨️ הדפס</button></div>
+<div id="out"></div>
+<script>
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+function kvFlow(list) {
+  const parts = (list || []).map(x => String(x || '').trim()).filter(Boolean);
+  if (parts.length < 2) return parts.join('');
+  let out = parts[0];
+  for (let i = 1; i < parts.length; i++) out += (/[,.:;·|]$/.test(out) ? ' ' : ', ') + parts[i];
+  return out;
+}
+function fit(el, top, min) {
+  for (let pt = top; pt >= min; pt -= 0.5) {
+    el.style.fontSize = pt + 'pt';
+    if ((el.firstElementChild || el).scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth) return;
+  }
+}
+const DID = new URLSearchParams(location.search).get('donor') || '';
+const imgUrl = ext => '/kvpage.' + (ext || 'png') + '?donor=' + encodeURIComponent(DID) + '&t=' + Date.now();
+async function blobOf(ext) {
+  const b = await (await fetch(imgUrl(ext))).blob();
+  if (!b || b.size < 5000 || (b.type || '').indexOf('image') < 0) throw new Error('bad');
+  return b;
+}
+function flash(b, t) { const t0 = b.dataset.t0 || b.textContent; b.dataset.t0 = t0; b.textContent = t; setTimeout(() => { b.textContent = t0; }, 2500); }
+async function copyImg(b) {
+  if (!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write)) { alert('הדפדפן הזה לא תומך בהעתקת תמונה — השתמש ב"שלח לתורם"'); return; }
+  const t0 = b.textContent; b.disabled = true; b.textContent = 'מעתיק…';
+  try { await navigator.clipboard.write([new ClipboardItem({'image/png': blobOf('png')})]); b.disabled = false; b.textContent = t0; flash(b, '✅ הועתק — הדבק בוואטסאפ'); return; } catch (e) {}
+  try { const bl = await blobOf('png'); await navigator.clipboard.write([new ClipboardItem({'image/png': bl})]); b.disabled = false; b.textContent = t0; flash(b, '✅ הועתק — הדבק בוואטסאפ'); }
+  catch (e) { b.disabled = false; b.textContent = t0; alert('ההעתקה נכשלה — נסה "שלח לתורם"'); }
+}
+async function sendImg(b, info) {
+  const t0 = b.textContent; b.disabled = true; b.textContent = 'מכין את התמונה…';
+  let blob = null;
+  try { blob = await blobOf('jpg'); } catch (e) { b.disabled = false; b.textContent = t0; window.open(imgUrl('jpg'), '_blank'); return; }
+  const fname = 'קוויטל — ' + (info.name || '') + '.jpg', cap = 'קוויטל — כולל חצות 🕯️';
+  b.disabled = false; b.textContent = t0;
+  try { const file = new File([blob], fname, {type: 'image/jpeg'}); if (navigator.canShare && navigator.canShare({files: [file]})) { await navigator.share({files: [file], text: cap}); return; } }
+  catch (e) { if (e && e.name === 'AbortError') return; }
+  try { if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) { const png = await blobOf('png'); await navigator.clipboard.write([new ClipboardItem({'image/png': png})]); alert('התמונה הועתקה — פתח וואטסאפ ווב או מייל והדבק (Ctrl+V)'); return; } } catch (e) {}
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+(async () => {
+  const info = await fetch('/api/kvpage?donor=' + encodeURIComponent(DID)).then(x => x.json()).catch(() => null);
+  if (!info || info.error) { document.getElementById('out').innerHTML = '<div class="acts">לא נמצא תורם</div>'; return; }
+  document.title = 'קוויטל — ' + info.name;
+  document.getElementById('cnt').textContent = info.name + ' · ' + info.names.length + ' שמות';
+  const names = info.names.length ? `<span>${esc(kvFlow(info.names))}</span>` : '<span class="empty">— אין עדיין שמות לקוויטל —</span>';
+  document.getElementById('out').innerHTML = `<div class="sheet"><div class="slip"><img class="bg" src="/iz-page.jpg" alt=""><div class="in">
+      <div class="date"><span>${esc(info.date_heb)}</span><span>${esc(info.date_greg)}</span></div>
+      <div class="nm">${info.title ? `<i>${esc(info.title)}</i> ` : ''}${esc(info.name)}</div>
+      <div class="lines">${info.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>
+      <div class="rule"></div>
+      <div class="z">שמות לתפילה בחצות הלילה:</div>
+      <div class="names">${names}</div>
+    </div></div></div>
+    <div class="acts"><button class="wa" id="send">📤 שלח לתורם</button><button class="cp" id="copy">📋 העתק תמונה</button><button onclick="window.print()">🖨️ הדפס</button></div>`;
+  fit(document.querySelector('.nm'), 30, 12);
+  fit(document.querySelector('.names'), 56, 8);
+  document.getElementById('send').onclick = function () { sendImg(this, info); };
+  document.getElementById('copy').onclick = function () { copyImg(this); };
+})();
+</script>
+</body>
+</html>

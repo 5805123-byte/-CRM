@@ -6386,7 +6386,7 @@ async function flushPrayers(){ const f=PRSAVE; PRSAVE=null;
 function renderPrayers(d){
   const el=document.getElementById('prayers');
   const prs=(d.prayers||[]);
-  const allBtn=prs.length>1?`<button class="btn sm ghost" id="prcopyall" style="width:100%;margin-bottom:6px">📋 העתק את כל השמות</button>`:'';
+  const allBtn=`<div class="addrow" style="margin-bottom:6px"><a class="btn sm ghost" href="/kv-page?donor=${d.id}" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none">🕯️ דף קוויטל של התורם — שלח / העתק / הדפס</a>${prs.length>1?`<button class="btn sm ghost" id="prcopyall">📋 העתק את כל השמות</button>`:''}</div>`;
   el.innerHTML=allBtn+(prs.map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}">${esc(p.text)}</textarea><button class="prcopy" data-id="${p.id}" title="העתק שם">📋</button><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>')
     +(prs.length?`<button class="btn sm prsaveall" id="prsaveall" style="width:100%;margin-top:4px">💾 שמור שמות</button>
        <div class="hintxt dirtyhint hidden" id="prdirty">✏️ יש שינוי שעדיין לא נשמר — לחץ "💾 שמור שמות"</div>`:'');
@@ -6734,7 +6734,7 @@ function renderKvSearch(){
   entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔎 חיפוש בכל הקוויטל</b><span class="cnt2">(${entries.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">מציג שמות מכל סוגי הקוויטל התואמים לחיפוש. לחץ על שם לעריכה — נשמר גם בכרטיס.</div>
-    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(kvWho({did:e.did,donor:e.donor}))} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
+    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(kvWho({did:e.did,donor:e.donor}))} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?` <a class="kvpagebtn" href="/kv-page?donor=${e.did}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="דף קוויטל של התורם — לשלוח, להעתיק, להדפיס">📄 דף</a>`:''}${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
   const bk=document.getElementById('kvback');if(bk)bk.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';render();};
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
   bindKvEdit();
