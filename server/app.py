@@ -6102,11 +6102,12 @@ def campaign_match(con, rows, dfrom='', dto=''):
 
 # מאיר: "אני רוצה שיהיה כאן בקמפיינים רשימה מסודרת… של סוכות שנה שעברה
 # וקמחא דפסחא תשפ"ו. וטור שלישי יהיה מה שעכשיו אמלא ע"י הכנסת התרומות".
-# הרשימות: מהקובץ שכבר במערכת (פורים/פסח תשפ"ו) + רשימות שהודבקו במסך.
+# הרשימות: הרשימות שמאיר שלח להשוואה (campaign_compare.json — לא הרשימות
+# הישנות שבמערכת, "כי לא הכל מסונכרן אצלך בדיוק") + רשימות שהודבקו במסך.
 def campaign_ref_lists(con):
     out = []
     try:
-        with open(os.path.join(HERE, 'campaign_lists.json'), encoding='utf-8') as f:
+        with open(os.path.join(HERE, 'campaign_compare.json'), encoding='utf-8') as f:
             for L in json.load(f).get('lists', []):
                 out.append({'key': L['key'], 'label': L['label'], 'category': L.get('category', ''),
                             'from': L.get('from', ''), 'to': L.get('to', ''), 'rows': L['rows'], 'src': 'file'})
@@ -6179,7 +6180,7 @@ def campaign_compare(con, cat):
             r = row_for(d['donor_id'], names[d['donor_id']])
             r['now'] = round(float(d['a'] or 0), 2); r['now_n'] = int(d['n'] or 0)
     out = list(rows.values())
-    out.sort(key=lambda r: (0 if r['donor_id'] else 1, r['name']))
+    out.sort(key=lambda r: _norm(r['name']))       # לפי א"ב, כמו ברשימה של מאיר
     return {'cat': cat, 'cols': cols, 'rows': out}
 
 

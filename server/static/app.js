@@ -9911,22 +9911,21 @@ function campAddDialog(){
 }
 // טבלת השוואה לפי תורם: עמודה לכל רשימה (סוכות שנה שעברה, קמחא דפסחא תשפ"ו…)
 // ועמודה אחרונה — מה שנכנס עכשיו לקמפיין הנבחר מהתרומות שהוזנו.
-let CMPCOLS=null;     // אילו עמודות מוצגות (null = הכל)
 async function campCompareTable(box){
   if(!box)return;
   box.innerHTML='<div class="hintxt">טוען השוואה…</div>';
   let r=null;
   try{r=await api('GET','/api/campaigns/compare?cat='+encodeURIComponent(campSel||''));}catch(e){}
   if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון את ההשוואה</div>';return;}
-  if(CMPCOLS===null)CMPCOLS=r.cols.map(c=>c.key);
-  const cols=r.cols.filter(c=>CMPCOLS.includes(c.key));
+  const cols=r.cols;
   const f=v=>v?('$'+Math.round(v).toLocaleString('en-US')):'';
   const rows=r.rows.filter(x=>x.now||cols.some(c=>x.vals[c.key]));
   const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
   rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
   const grid=`grid-template-columns:30px minmax(130px,1fr) ${cols.map(()=>'108px').join(' ')} 108px`;
-  box.innerHTML=`<div class="camphd" style="margin-top:16px"><h3>📊 טבלת השוואה — ${rows.length} תורמים</h3>
-      <div class="campsum">${r.cols.map(c=>`<label class="cmpcol"><input type="checkbox" data-k="${esc(c.key)}"${CMPCOLS.includes(c.key)?' checked':''}> ${esc(c.label)} <small>(${c.n})</small>${c.src==='db'?` <button class="del cmpdel" data-k="${esc(c.key)}" title="מחק רשימה">🗑</button>`:''}</label>`).join('')}
+  box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד — ${rows.length} תורמים</h3>
+      <div class="campsum">${r.cols.map(c=>`<span class="cmpcol">${esc(c.label)} <small>(${c.n})</small>${c.src==='db'?` <button class="del cmpdel" data-k="${esc(c.key)}" title="מחק רשימה">🗑</button>`:''}</span>`).join('')}
+        <span class="cmpcol">נכנס עכשיו: <b>${esc(campSel||'—')}</b></span>
         <button class="btn sm ghost" id="cmppaste">📥 הדבק רשימה</button></div></div>
     <div class="camptbl cmpwrap"><div class="cmpgrid">
       <div class="camprow2 head" style="${grid}"><span class="c1">#</span><span class="c2">תורם</span>${cols.map(c=>`<span class="cc">${esc(c.label)}</span>`).join('')}<span class="cc cmpnow">נכנס עכשיו</span></div>
@@ -9934,18 +9933,15 @@ async function campCompareTable(box){
         <span class="c2">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>`:esc(x.name)+' <small class="cmpno">אין כרטיס</small>'}${x.eng?`<small class="cen">${esc(x.eng)}</small>`:''}</span>
         ${cols.map(c=>`<span class="cc">${f(x.vals[c.key])}</span>`).join('')}
         <span class="cc cmpnow">${x.now?('<b>'+f(x.now)+'</b>'):'<span class="cmpmiss">—</span>'}</span></div>`).join('')
-        ||'<div class="empty">אין עדיין רשימות להשוואה — הדבק רשימה או הכנס תרומות לקמפיין</div>'}
+        ||'<div class="empty">אין עדיין רשימות להשוואה — הרשימות שתשלח ייכנסו לכאן</div>'}
       ${rows.length?`<div class="camprow2 head" style="${grid}"><span class="c1"></span><span class="c2">סה"כ</span>${cols.map(c=>`<span class="cc">${f(sum[c.key])}</span>`).join('')}<span class="cc cmpnow"><b>${f(sumNow)}</b></span></div>`:''}
     </div></div>`;
-  box.querySelectorAll('.cmpcol input').forEach(i=>i.onchange=()=>{
-    CMPCOLS=Array.from(box.querySelectorAll('.cmpcol input')).filter(x=>x.checked).map(x=>x.dataset.k);
-    campCompareTable(box);});
   box.querySelectorAll('.cmpdel').forEach(b=>b.onclick=async e=>{
     e.preventDefault();
     const c=r.cols.find(x=>x.key===b.dataset.k);
     if(!confirm('למחוק את הרשימה "'+(c?c.label:'')+'"?'))return;
     await api('POST','/api/campaigns/lists',{key:b.dataset.k,delete:true});
-    CMPCOLS=null;campCompareTable(box);});
+    campCompareTable(box);});
   const pb=box.querySelector('#cmppaste');
   if(pb)pb.onclick=()=>campPasteList(box);
   box.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
@@ -9967,12 +9963,15 @@ function campPasteList(box){
     if(!rows.length){toast('לא זיהיתי שורות — שם וסכום בכל שורה');return;}
     const r=await api('POST','/api/campaigns/lists',{label:label,rows:rows.map(x=>({name:x.name,amount:String(x.amt)}))});
     if(!r||!r.ok){toast('לא נשמר');return;}
-    done();toast('נשמרה רשימה — '+r.n+' שורות ✓');CMPCOLS=null;campCompareTable(box);
+    done();toast('נשמרה רשימה — '+r.n+' שורות ✓');campCompareTable(box);
   };
   setTimeout(()=>{const i=o.querySelector('#cmpl_label');if(i)i.focus();},50);
 }
+// מאיר: "אני צריך שיהיה רשימה אחת רק של קמפיין שאבחר לראות. ורשימה אחת של שלשתם ביחד."
+let CAMPMODE='one';   // one = הקמפיין הנבחר בלבד · all = טבלת שלושתם ביחד
 function renderCamp(){
-  chips.innerHTML='';
+  chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{CAMPMODE=c.dataset.k;renderCamp();});
   const cats=campList();
   if(!campSel||cats.indexOf(campSel)<0)campSel=cats[0]||'';
   const rows=campSel?campRows(campSel):[], owes=campSel?campOwes(campSel):[];
@@ -9989,6 +9988,7 @@ function renderCamp(){
       <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
       <button class="btn sm" id="campcmp">🔍 השוואה מול אקסל</button>
       <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div id="campone"${CAMPMODE==='all'?' hidden':''}>
     <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
         <span><b>${rows.length}</b> תשלומים</span>${owetot?`<span class="campowe">🔴 ${owetot} התחייבו וטרם נתנו</span>`:''}</div></div>
@@ -10006,7 +10006,8 @@ function renderCamp(){
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a></span>
         <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}</span>
         <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}
-    <div id="campcmpbox"></div>`;
+    </div>
+    <div id="campcmpbox"${CAMPMODE==='all'?'':' hidden'}></div>`;
   const sel=document.getElementById('campsel');
   if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
   const ad=document.getElementById('campadd');
@@ -10016,7 +10017,7 @@ function renderCamp(){
     if(!confirm('להסיר את "'+campSel+'" מרשימת הקמפיינים?\nהתרומות נשארות כמו שהן — הוא רק לא יופיע כאן. אפשר להחזיר דרך ➕.'))return;
     if(await campSetShown(campSel,0)){toast('הוסר מהרשימה ✓');campSel='';renderCamp();}
   };
-  campCompareTable(document.getElementById('campcmpbox'));
+  if(CAMPMODE==='all')campCompareTable(document.getElementById('campcmpbox'));
   const cmp=document.getElementById('campcmp');
   if(cmp)cmp.onclick=()=>campCompare(rows);
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
