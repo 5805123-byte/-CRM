@@ -252,6 +252,8 @@ def ensure_schema():
     -- רשימות ייחוס לקמפיינים (סוכות שנה שעברה, קמחא דפסחא תשפ"ו) שהודבקו מהמערכת
     CREATE TABLE IF NOT EXISTS campaign_ref_lists(key TEXT PRIMARY KEY, label TEXT, category TEXT,
         rows TEXT, created TEXT);
+    -- שיוך ידני של שם מרשימת קמפיין לכרטיס תורם (כשהשם ברשימה שונה מהכרטיס)
+    CREATE TABLE IF NOT EXISTS campaign_links(name TEXT PRIMARY KEY, donor_id INTEGER, created TEXT);
     CREATE TABLE IF NOT EXISTS receipts(rkey TEXT PRIMARY KEY, num INTEGER, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
@@ -6112,7 +6114,8 @@ def campaign_ref_lists(con):
         with open(os.path.join(HERE, 'campaign_compare.json'), encoding='utf-8') as f:
             for L in json.load(f).get('lists', []):
                 out.append({'key': L['key'], 'label': L['label'], 'category': L.get('category', ''),
-                            'from': L.get('from', ''), 'to': L.get('to', ''), 'rows': L['rows'], 'src': 'file'})
+                            'from': L.get('from', ''), 'to': L.get('to', ''), 'date': L.get('date', ''),
+                            'method': L.get('method', ''), 'rows': L['rows'], 'src': 'file'})
     except Exception:
         pass
     try:
@@ -6154,41 +6157,110 @@ def campaign_parse_text(txt):
 
 
 def campaign_compare(con, cat):
-    """טבלת השוואה לתורם: עמודה לכל רשימת ייחוס + עמודה של מה שנכנס עכשיו לייעוד הנבחר."""
+    """טבלת השוואה לתורם: עמודה לכל רשימת ייחוס + עמודה של מה שנכנס עכשיו לייעוד הנבחר.
+    לכל שורה גם: האם סכום הרשימה כבר רשום בכרטיס (have), מה נגבה עכשיו ואיך,
+    והתחייבות פתוחה לייעוד הנוכחי."""
     lists = campaign_ref_lists(con)
-    cols = [{'key': L['key'], 'label': L['label'], 'src': L['src'], 'n': len(L['rows'])} for L in lists]
+    cols = [{'key': L['key'], 'label': L['label'], 'src': L['src'], 'n': len(L['rows']),
+             'category': L.get('category', '')} for L in lists]
     rows = {}          # donor_id או 'x:<שם>' -> שורה
     names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
     eng = {r['id']: (r['english'] or '') for r in con.execute("SELECT id,english FROM donors")}
+    # שיוכים שמאיר קבע ידנית בטבלה ("שייך לתורם" / "כרטיס חדש") — קודמים לכל ניחוש
+    try:
+        links = {r['name']: r['donor_id'] for r in con.execute("SELECT name,donor_id FROM campaign_links")
+                 if r['donor_id'] in names}
+    except Exception:
+        links = {}
+    # כל התרומות לפי תורם — כדי לדעת מה כבר רשום בכרטיס
+    dons = {}
+    for d in con.execute("SELECT donor_id,date,amount,category,method,id FROM donations"):
+        dons.setdefault(d['donor_id'], []).append(d)
 
-    def row_for(did, nm):
+    def row_for(did, nm, src=None):
         k = did if did else ('x:' + _norm(nm))
         if k not in rows:
             rows[k] = {'donor_id': did, 'name': names.get(did, nm) if did else nm,
-                       'eng': eng.get(did, '') if did else '', 'vals': {}, 'now': 0.0, 'now_n': 0}
+                       'eng': eng.get(did, '') if did else '', 'vals': {}, 'have': {},
+                       'now': 0.0, 'now_n': 0, 'methods': [], 'pledge': None,
+                       'last': (src or {}).get('last', ''), 'first': (src or {}).get('first', '')}
         return rows[k]
+
+    def recorded(did, L, amt):
+        """כמה מהסכום הזה כבר רשום בכרטיס: לפי הייעוד של הרשימה, או תרומה
+        באותו סכום בתוך חלון המגבית (נרשמה בלי ייעוד / בייעוד אחר)."""
+        tot = 0.0
+        for d in dons.get(did, []):
+            if (d['category'] or '').strip() == (L.get('category') or '').strip():
+                tot += float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0)
+        if tot:
+            return round(tot, 2)
+        f, t = L.get('from', ''), L.get('to', '')
+        for d in dons.get(did, []):
+            a = float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0)
+            iso = str(d['date'] or '')[:10]
+            if abs(a - amt) < 0.01 and (not f or iso >= f) and (not t or iso <= t):
+                return round(a, 2)
+        return 0.0
 
     for L in lists:
         for src, x in zip(L['rows'], campaign_match(con, L['rows'], L.get('from', ''), L.get('to', ''))):
             if x['status'] == 'skip':
                 continue
-            did = x['donor_id']
+            did = links.get(_norm(x['name'])) or x['donor_id']
             # שם משפחה בלבד לא מספיק כשברשימה יש גם שם פרטי — אחרת שלושה
             # רוזנפלדים נופלים על כרטיס אחד. עדיף "אין כרטיס" מאשר שיוך שגוי.
-            if did and x['how'] == 'שם משפחה בלבד' and (src.get('first') or len((src.get('name') or '').split()) > 1):
+            if did and not links.get(_norm(x['name'])) and x['how'] == 'שם משפחה בלבד' \
+                    and (src.get('first') or len((src.get('name') or '').split()) > 1):
                 did = None
-            r = row_for(did, x['name'])
+            r = row_for(did, x['name'], src)
             r['vals'][L['key']] = round(r['vals'].get(L['key'], 0) + (x['amount'] or 0), 2)
+            if did:
+                r['have'][L['key']] = recorded(did, L, r['vals'][L['key']])
     if cat:
-        for d in con.execute("""SELECT donor_id, SUM(amount) a, COUNT(*) n FROM donations
-                                WHERE TRIM(COALESCE(category,''))=? GROUP BY donor_id""", (cat,)):
-            if d['donor_id'] not in names:
+        for did, ds in dons.items():
+            if did not in names:
                 continue
-            r = row_for(d['donor_id'], names[d['donor_id']])
-            r['now'] = round(float(d['a'] or 0), 2); r['now_n'] = int(d['n'] or 0)
+            mine = [d for d in ds if (d['category'] or '').strip() == cat]
+            if not mine:
+                continue
+            r = row_for(did, names[did])
+            r['now'] = round(sum(float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0) for d in mine), 2)
+            r['now_n'] = len(mine)
+            r['methods'] = sorted({(d['method'] or '').strip() for d in mine if (d['method'] or '').strip()})
+        for p in con.execute("""SELECT donor_id,amount,status,id FROM pledges
+                                WHERE TRIM(COALESCE(category,''))=? AND COALESCE(status,'')<>'נתן'""", (cat,)):
+            if p['donor_id'] not in names:
+                continue
+            r = row_for(p['donor_id'], names[p['donor_id']])
+            r['pledge'] = {'id': p['id'], 'amount': float(re.sub(r'[^0-9.]', '', str(p['amount'] or '0')) or 0),
+                           'status': p['status'] or ''}
     out = list(rows.values())
     out.sort(key=lambda r: _norm(r['name']))       # לפי א"ב, כמו ברשימה של מאיר
     return {'cat': cat, 'cols': cols, 'rows': out}
+
+
+def campaign_backfill(con, key, only_name=''):
+    """מכניס לכרטיסים את סכומי הרשימה שעדיין לא רשומים בהם. מאיר: "מה שמופיע
+    כבר אל תוסיף שלא יהיו התנגשויות וכפיליות". מחזיר כמה נכנסו ולמי."""
+    cmp_ = campaign_compare(con, '')
+    lists = {L['key']: L for L in campaign_ref_lists(con)}
+    keys = [key] if key and key != '*' else list(lists.keys())
+    done = []
+    for k in keys:
+        L = lists.get(k)
+        if not L:
+            continue
+        for r in cmp_['rows']:
+            if not r['donor_id'] or not r['vals'].get(k) or r['have'].get(k):
+                continue
+            if only_name and _norm(r['name']) != _norm(only_name):
+                continue
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
+                        (r['donor_id'], L.get('date') or L.get('to') or today_iso(), str(int(r['vals'][k])),
+                         L.get('category') or L['label'], L.get('method', ''), 'מרשימת ' + L['label'], ''))
+            done.append({'donor_id': r['donor_id'], 'name': r['name'], 'amount': r['vals'][k], 'list': L['label']})
+    return done
 
 
 def recon_apply(cur, tid, b):
@@ -12297,6 +12369,36 @@ class H(BaseHTTPRequestHandler):
             commit_retry(con); con.close()
             bump_data()
             return self._send(200, {'ok': True, 'name': nm, 'shown': shown})
+        if self.path == '/api/campaigns/link':
+            # מאיר: "אם יש תורם שאין לו כרטיס אז שיהיה שם הצעה או להוסיף תורם
+            # חדש או למזג לתורם שהוא אולי מופיע בשם אחר"
+            nm = (b.get('name') or '').strip()
+            if not nm:
+                return self._send(400, {'error': 'name'})
+            con = db(); cur = con.cursor()
+            did = b.get('donor_id')
+            if not did and b.get('create'):
+                last = (b.get('last') or '').strip() or nm.split()[-1]
+                first = (b.get('first') or '').strip()
+                cur.execute("INSERT INTO donors(last,first,tier,created,source) VALUES(?,?,?,?,?)",
+                            (last, first, TIER_DEFAULT, today_iso(), 'רשימת קמפיין'))
+                did = cur.lastrowid
+            if not did:
+                con.close(); return self._send(400, {'error': 'donor'})
+            cur.execute("INSERT OR REPLACE INTO campaign_links(name,donor_id,created) VALUES(?,?,?)",
+                        (_norm(nm), int(did), today_iso()))
+            commit_retry(con); con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'donor_id': int(did)})
+        if self.path == '/api/campaigns/backfill':
+            con = db()
+            try:
+                done = campaign_backfill(con, (b.get('key') or '*').strip(), (b.get('name') or '').strip())
+                commit_retry(con)
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'n': len(done), 'done': done})
         if self.path == '/api/campaigns/lists':
             # רשימת ייחוס לקמפיין (למשל סוכות שנה שעברה) — מודבקת מאקסל: שם וסכום בכל שורה
             key = (b.get('key') or '').strip()
