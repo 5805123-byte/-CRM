@@ -10001,10 +10001,19 @@ function campSheetRender(box,r){
     const fm=document.createElement('div'); fm.className='cmpform cshpick';
     fm.innerHTML=`<div style="width:100%"><b>${esc(x.name)}</b> — לאיזה כרטיס לשייך?</div>
       <input class="cmpq" placeholder="חפש לפי שם / אנגלית / טלפון…" style="flex:1 1 200px">
-      <button class="btn sm ghost cf_x">ביטול</button><div class="cmpres" style="width:100%"></div>`;
+      <button class="btn sm ghost cf_x">ביטול</button><div class="cmpres" style="width:100%"></div>
+      <button class="btn sm cf_new" style="width:100%">➕ אין כזה תורם — פתח כרטיס חדש: ${esc((x.last||'')+' '+(x.first||''))}</button>`;
     rowEl.after(fm);
     const inp=fm.querySelector('.cmpq'), res=fm.querySelector('.cmpres');
     fm.querySelector('.cf_x').onclick=()=>fm.remove();
+    // מאיר: "אם אין כזה תורם במערכת אז שיהיה לי גם משם אפשרות לפתוח כרטיס חדש"
+    fm.querySelector('.cf_new').onclick=async()=>{
+      fm.querySelector('.cf_new').disabled=true; CAMP_SCROLL=window.scrollY;
+      const rr=await api('POST','/api/campaigns/link',{name:x.name,create:1,last:x.last,first:x.first});
+      if(!rr||!rr.ok){toast('לא הצלחתי לפתוח כרטיס');fm.querySelector('.cf_new').disabled=false;return;}
+      toast('נפתח כרטיס ✓'); await load();
+      const nd=DB.find(y=>y.id===rr.donor_id); if(nd)openDonor(nd,'details');   // להשלים טלפון/מייל
+    };
     inp.oninput=()=>{const q=inp.value.trim(); if(!q){res.innerHTML='';return;}
       const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||'')+' '+(y.phone||''),q,8);
       res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
