@@ -671,6 +671,20 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  שגיאת מיזוג קמפיינים:', e)
+    # מאיר: "תמזג את קמחא דסוכות תשפ"ז לתוך סוכות תשפ"ז"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='campaign_merge_v2'").fetchone():
+            names = [r[0] for r in con.execute("SELECT DISTINCT TRIM(category) FROM donations WHERE COALESCE(category,'')<>''")]
+            names += [r[0] for r in con.execute("SELECT DISTINCT TRIM(category) FROM pledges WHERE COALESCE(category,'')<>''")]
+            names += [r[0] for r in con.execute("SELECT name FROM campaigns")]
+            for nm in set(names):
+                k = re.sub(r'[\s"\u05f4\'’]', '', nm)
+                if k in ('קמחאדסוכותתשפז', 'קמחאדסוכתתשפז') and nm != 'סוכות תשפ"ז':
+                    campaign_merge(con, nm, 'סוכות תשפ"ז')
+            con.execute("INSERT INTO seed_flags(name) VALUES('campaign_merge_v2')")
+            con.commit()
+    except Exception as e:
+        print('  שגיאת מיזוג קמפיינים 2:', e)
     # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
