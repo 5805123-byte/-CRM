@@ -6386,7 +6386,8 @@ async function flushPrayers(){ const f=PRSAVE; PRSAVE=null;
 function renderPrayers(d){
   const el=document.getElementById('prayers');
   const prs=(d.prayers||[]);
-  const allBtn=`<div class="addrow" style="margin-bottom:6px"><a class="btn sm ghost" href="/kv-page?donor=${d.id}" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none">🕯️ דף קוויטל של התורם — שלח / העתק / הדפס</a>${prs.length>1?`<button class="btn sm ghost" id="prcopyall">📋 העתק את כל השמות</button>`:''}</div>`;
+  const allBtn=`<div class="addrow" style="margin-bottom:6px"><button class="btn sm ghost kvpagebtn2" data-kvp="${d.id}" style="flex:1">🕯️ דף קוויטל של התורם — שלח / העתק / הדפס</button>${prs.length>1?`<button class="btn sm ghost" id="prcopyall">📋 העתק את כל השמות</button>`:''}</div>`;
+  el.onclick=e=>{const b=e.target.closest('[data-kvp]');if(b){e.stopPropagation();openKvPage(+b.dataset.kvp);}};
   el.innerHTML=allBtn+(prs.map(p=>`<div class="prow"><textarea class="prtx" data-id="${p.id}">${esc(p.text)}</textarea><button class="prcopy" data-id="${p.id}" title="העתק שם">📋</button><button class="del" data-del="${p.id}">🗑</button></div>`).join('')||'<div class="hintxt">אין שמות עדיין. הוסף למטה.</div>')
     +(prs.length?`<button class="btn sm prsaveall" id="prsaveall" style="width:100%;margin-top:4px">💾 שמור שמות</button>
        <div class="hintxt dirtyhint hidden" id="prdirty">✏️ יש שינוי שעדיין לא נשמר — לחץ "💾 שמור שמות"</div>`:'');
@@ -6734,9 +6735,10 @@ function renderKvSearch(){
   entries.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he'));
   view.innerHTML=`<div class="kbar"><button class="back" id="kvback">→ סוגי קוויטל</button><b>🔎 חיפוש בכל הקוויטל</b><span class="cnt2">(${entries.length})</span></div>
     <div class="hintxt" style="margin:0 2px 8px">מציג שמות מכל סוגי הקוויטל התואמים לחיפוש. לחץ על שם לעריכה — נשמר גם בכרטיס.</div>
-    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(kvWho({did:e.did,donor:e.donor}))} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?` <a class="kvpagebtn" href="/kv-page?donor=${e.did}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="דף קוויטל של התורם — לשלוח, להעתיק, להדפיס">📄 דף</a>`:''}${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
+    ${entries.map(e=>`<div class="kblock"><div class="who${e.did?' wholink':''}"${e.did?` data-did="${e.did}"`:''}>${esc(kvWho({did:e.did,donor:e.donor}))} <span class="kvtag">${kvTypeLabel(e.kt)}</span>${e.did?` <button class="kvpagebtn" data-kvp="${e.did}" title="דף קוויטל של התורם — לשלוח, להעתיק, להדפיס">📄 דף</button>`:''}${e.did?' <span class="opencard">↗ כרטיס</span>':''}${e.loose?' <span class="loose">· לא משויך</span>':''}</div><div class="names hasflow" contenteditable="true" data-id="${e.id}">${esc(e.text)}</div><div class="namesflow">${esc(kvFlow(e.text))}</div></div>`).join('')||'<div class="empty">לא נמצאו שמות בקוויטל התואמים לחיפוש</div>'}`;
   const bk=document.getElementById('kvback');if(bk)bk.onclick=()=>{const qi=document.getElementById('q');if(qi)qi.value='';q='';render();};
   view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
+  view.querySelectorAll('[data-kvp]').forEach(b=>b.onclick=e=>{e.stopPropagation();openKvPage(+b.dataset.kvp);});
   bindKvEdit();
 }
 function renderKvittel(){
@@ -7113,7 +7115,7 @@ function renderKvList(type){
         +'<tbody>'+groups.map(g=>{
       const empty=!g.items.some(e=>(e.text||'').trim());
       const needname=g.items.some(e=>e.needname);
-      return `<tr class="kvrow${empty?' kvempty':''}"><td><div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?` <a class="kvpagebtn noprint" href="/kv-page?donor=${g.did}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="דף קוויטל של התורם — לשלוח, להעתיק, להדפיס">📄 דף</a> <span class="opencard">↗ כרטיס</span>`:''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
+      return `<tr class="kvrow${empty?' kvempty':''}"><td><div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?` <button class="kvpagebtn noprint" data-kvp="${g.did}" title="דף קוויטל של התורם — לשלוח, להעתיק, להדפיס">📄 דף</button> <span class="opencard">↗ כרטיס</span>`:''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
         + g.items.map(e=>`<div class="names hasflow" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`).join('')
         // מאיר: "שלא יהיה כל שם שורה בפני עצמה אלא בשורות אחידות כמו כולם ועם
         // פסיק" — בהדפסה כל השמות של התורם זורמים ברצף אחד, גם כשהם נשמרו
@@ -7122,6 +7124,7 @@ function renderKvList(type){
         + `</div></td></tr>`;}).join('')+'</tbody></table>'+prFootHTML()
       : '<div class="empty">אין תוצאות</div>';
     view.querySelectorAll('.who[data-did]').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'kvittel'));
+    view.querySelectorAll('[data-kvp]').forEach(b=>b.onclick=e=>{e.stopPropagation();openKvPage(+b.dataset.kvp);});
     // מי שלא נמצא בסוג הזה — כפתור שמרחיב את החיפוש לכל סוגי הקוויטל,
     // כדי שלא ייצא מהרשימה בידיים ריקות
     const ba=document.getElementById('kvqall');
@@ -7925,6 +7928,38 @@ async function openIzSlip(av){
       await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
       toast('התמונה הועתקה ✓');
     }catch(e){ window.open(url(),'_blank'); }});
+}
+// מאיר: "אני רוצה לראות שייפתח לי הדף הזה כשאני לוחץ, ואז את אפשרויות
+// ההעתקה, הדפסה וכו' — כמו בתעודה של פרנס או יששכר־זבולון". דף הקוויטל של
+// התורם נפתח בחלון בתוך המערכת, עם התמונה והכפתורים מתחתיה.
+async function openKvPage(did){
+  const d=DB.find(x=>x.id==did); if(!d)return;
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const url=ext=>'/kvpage.'+(ext||'png')+'?donor='+did+'&t='+Date.now();
+  const nm=(d.last+' '+d.first).trim();
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🕯️ דף קוויטל — ${esc(nm)}</h2>
+    <div class="izslipbox">
+      <img class="izslipimg" src="${esc(url())}" alt="">
+      <div class="addrow"><button class="btn sm kvpsend">📤 שלח לתורם</button>
+        <button class="btn sm kvpcopy">📋 העתק תמונה</button>
+        <button class="btn sm ghost kvpprint">🖨️ הדפסה</button></div>
+      <div class="addrow"><button class="btn sm ghost kvptxt"${(d.prayers||[]).length?'':' disabled'}>📝 העתק את השמות כטקסט</button></div>
+    </div>`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelector('.kvpprint').onclick=()=>window.open('/kv-page?donor='+did,'_blank');
+  rs.querySelector('.kvptxt').onclick=()=>copyToClip(kvFlow((d.prayers||[]).map(p=>p.text||'').filter(Boolean).join('\n')),'השמות הועתקו ✓');
+  const grab=async ext=>{const b=await fetch(url(ext)).then(x=>x.blob()); if(!b||b.size<5000)throw new Error('bad'); return b;};
+  rs.querySelector('.kvpcopy').onclick=async()=>{
+    try{ await navigator.clipboard.write([new ClipboardItem({'image/png':grab('png')})]); toast('התמונה הועתקה ✓'); return; }catch(e){}
+    try{ const b=await grab('png'); await navigator.clipboard.write([new ClipboardItem({'image/png':b})]); toast('התמונה הועתקה ✓'); }
+    catch(e){ window.open(url(),'_blank'); }};
+  rs.querySelector('.kvpsend').onclick=async()=>{
+    try{
+      const b=await grab('jpg'); const f=new File([b],'קוויטל — '+nm+'.jpg',{type:'image/jpeg'});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],text:'קוויטל — כולל חצות 🕯️'});return;}
+      await navigator.clipboard.write([new ClipboardItem({'image/png':await grab('png')})]); toast('התמונה הועתקה — הדבק בוואטסאפ או במייל');
+    }catch(e){ if(e&&e.name==='AbortError')return; window.open(url('jpg'),'_blank'); }};
 }
 function wireByAv(){
   const nb=document.getElementById('av_newbtn'), ni=document.getElementById('av_new');
