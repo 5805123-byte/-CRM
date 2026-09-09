@@ -11687,12 +11687,19 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     print('  joint payer error:', e)
             con = db(); sets = []; vals = []
-            # שינוי התאריך הלועזי מעדכן גם את העברי, אם מאיר לא כתב אותו בעצמו
+            # שני הלוחות מסונכרנים: שינוי התאריך הלועזי מעדכן את העברי, ובחירה
+            # בלוח העברי (from_heb) מעדכנת את הלועזי.
             if 'start_greg' in b and (b.get('start_greg') or '').strip() and not (b.get('start_date') or '').strip():
                 try:
-                    cur0 = con.execute("SELECT start_date FROM partners WHERE id=?", (pid,)).fetchone()
-                    if not (cur0 and (cur0['start_date'] or '').strip()):
-                        b['start_date'] = greg_to_heb_full((b['start_greg'] or '').strip()[:10])
+                    b['start_date'] = greg_to_heb_full((b['start_greg'] or '').strip()[:10]) or ''
+                except Exception:
+                    pass
+            if b.get('from_heb') and (b.get('start_date') or '').strip():
+                try:
+                    _pt = (b['start_date'] or '').split()
+                    _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1]) if len(_pt) >= 3 else None
+                    if _g:
+                        b['start_greg'] = _g.isoformat()
                 except Exception:
                     pass
             b.update(_stamp('updated'))
@@ -11755,7 +11762,7 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE partners SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
                 con.commit()
             con.close()
-            return self._send(200, {'ok': True})
+            return self._send(200, {'ok': True, 'start_date': b.get('start_date', ''), 'start_greg': b.get('start_greg', '')})
         m = re.match(r'/api/building/(\d+)$', self.path)
         if m:
             b = self._body(); bid = int(m.group(1))

@@ -5924,7 +5924,7 @@ function renderPartners(d){
     <div class="two"><label class="fld"><span>סכום</span><div class="curwrap"><select class="pfield curpick" data-id="${p.id}" data-k="cur">${curOpts(pCur(p,d))}</select><input class="pfield" data-id="${p.id}" data-k="amount" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></div></label>
       <label class="fld"><span>איך משולם</span><select class="pfield chansel" data-id="${p.id}" data-k="method">${channelOpts(p.method)}</select></label></div>
     <div class="two"><label class="fld"><span>מתאריך שהוא משלם (לועזי)</span><input type="date" class="pfield" data-id="${p.id}" data-k="start_greg" value="${esc((p.start_greg||'').slice(0,10))}"></label>
-      <label class="fld"><span>מתאריך (עברי)</span><input class="pfield" data-id="${p.id}" data-k="start_date" value="${esc(p.start_date||'')}" placeholder="נכתב לבד מהתאריך הלועזי"></label></div>
+      <label class="fld"><span>מתאריך (עברי)</span><div class="pstart" data-id="${p.id}">${hebDateSel('pstart_'+p.id,p.start_date||'')}</div></label></div>
     <div class="fld"><span>🤝 מחזיקים יחד עם (אפשר כמה שותפים)</span>
       <div class="pwchips" data-id="${p.id}">${pwList(p).map((x,i)=>`<span class="pwchip">${x.id?'🔗 ':''}${esc(x.name)}<button class="pwx" data-id="${p.id}" data-idx="${i}" title="הסר">✕</button></span>`).join('')}</div>
       <input class="pwadd" data-id="${p.id}" placeholder="➕ הוסף שותף — חפש שם ובחר…" autocomplete="off"><div class="pwres dpres" data-id="${p.id}"></div></div>
@@ -6005,10 +6005,19 @@ function renderPartners(d){
     btn.onclick=add;
     inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add();}};
   });
+  // מאיר: "אני מנסה להכניס תאריך התחלה… זה נותן לי לכתוב לבד במקום לבחור מהלוח
+  // העברי" — התאריך העברי נבחר מיום/חודש/שנה, והלועזי מתעדכן ממנו (וגם להפך).
+  el.querySelectorAll('.pstart').forEach(box=>box.querySelectorAll('select').forEach(sl=>sl.onchange=async()=>{
+    const p=(d.partners||[]).find(x=>x.id==box.dataset.id);if(!p)return;
+    const v=hebDateGet(box); p.start_date=v;
+    const r=await api('PUT','/api/partner/'+p.id,{start_date:v,from_heb:1});
+    if(r&&r.start_greg){p.start_greg=r.start_greg;const g=el.querySelector('.pfield[data-id="'+p.id+'"][data-k="start_greg"]');if(g)g.value=r.start_greg;}
+    toast('נשמר ✓');}));
   el.querySelectorAll('.pfield').forEach(inp=>{
     const save=async()=>{const p=(d.partners||[]).find(x=>x.id==inp.dataset.id);if(!p)return;
       if(inp.value==='__new__')return;      // בחירת "דרך תשלום חדשה" — לא ערך לשמירה
-      p[inp.dataset.k]=inp.value;await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);
+      p[inp.dataset.k]=inp.value;const r=await api('PUT','/api/partner/'+p.id,{[inp.dataset.k]:inp.value});refreshIzSum(d);
+      if(inp.dataset.k==='start_greg'&&r&&r.start_date){p.start_date=r.start_date;renderPartners(d);}   // הלוח העברי מתעדכן מהלועזי
       if(inp.dataset.k==='cur')renderPartners(d);            // הסמלים בשדות מתעדכנים מיד
       if(inp.dataset.k==='avreich'){await loadAvList();renderPartners(d);}
       if((inp.dataset.k==='amount'||inp.dataset.k==='cur'||inp.dataset.k==='avreich')&&tab==='donors')renderDonors();};
