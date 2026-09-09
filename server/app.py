@@ -7392,6 +7392,22 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     # ואם היא רחבה מהדף היא מוקטנת — והשורה שלמעלה יורדת איתה.
     sub_nm = NM_PX                    # בדיוק כמו שורת הראש
     sub_h = int(sub_nm * 1.9)
+    # מאיר: "שיהיה אותו נוסח בדיוק לכל אברך שלומד לזכותו" — בדף לתורם (רצועה
+    # לכל אברך, pav) הנוסח המלא ו"יעמוד לזכות:" חוזרים בכל רצועה. הנוסח
+    # ברצועה קטן יותר מהראש, כדי שיישאר מקום לשמות.
+    nus_lines = _wrap_px(dr, nus, font(int(nsz)), W - int(150 * u))     # אותו גודל כמו בראש הדף
+    nus_h = int(len(nus_lines) * nsz * 1.3 + nsz * 1.9)
+
+    def bandhead_h(i):
+        return (sub_h + (nus_h if parts[i][3] else 0)) if i else 0
+
+    def lead_at(yy):
+        fz2, fzk2 = font(int(nsz)), font(int(nsz), True)
+        for ln in nus_lines:
+            center(ln, fz2, yy, _INK); yy += int(nsz * 1.3)
+        yy += int(6 * u)
+        center('יעמוד לזכות:', fzk2, yy, _DEEP)
+        return yy + int(nsz * 1.6)
 
     def subhead(av_s, dn_s, yy):
         f_l, f_n = font(sub_nm * (29.0 / 50.0)), font(sub_nm, True)
@@ -7413,14 +7429,14 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     for px in range(int((94 if half else 118) * u), int(13 * u), -2):
         f, lh = font(px, True), px * 1.28
         b = [_wrap_px(dr, t, f, avail_w) for t in txts]
-        nd = [len(b[i]) * lh + (sub_h if i else 0) for i in range(n)]
+        nd = [len(b[i]) * lh + bandhead_h(i) for i in range(n)]
         if sum(nd) <= avail_h:
             blocks, need, size = b, nd, px; break
     if not blocks:                               # גם הקטן ביותר לא נכנס
         size = int(13 * u)
         f, lh = font(size, True), size * 1.28
         blocks = [_wrap_px(dr, t, f, avail_w) for t in txts]
-        need = [len(blocks[i]) * lh + (sub_h if i else 0) for i in range(n)]
+        need = [len(blocks[i]) * lh + bandhead_h(i) for i in range(n)]
     f, lh = font(size, True), size * 1.28
     extra = max(0, (avail_h - sum(need))) / n
     top = y
@@ -7435,7 +7451,9 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
             subhead(((av_t + ' ') if av_t else '') + (parts[i][3] or avreich or '—'),
                     ((dt + ' ') if dt else '') + (dn or '—'), top + int(sub_nm * .35))
             yy += sub_h
-        room = band - (sub_h if i else 0)
+            if parts[i][3]:
+                yy = lead_at(yy)
+        room = band - bandhead_h(i)
         yy += max(0, (room - len(lines) * lh) / 2)
         for ln in lines:
             center(ln, f, yy, _BLACK); yy += lh

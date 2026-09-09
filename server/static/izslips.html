@@ -73,6 +73,7 @@
   .subwho b{color:var(--deep);font-weight:800;font-size:24pt}
   .subwho i{font-style:normal;color:var(--gold);font-weight:800;font-size:14pt}
   .sec + .sec .names{margin-top:1mm}
+  .lead.sub{margin-top:1mm}          /* אותו נוסח, אותו גודל כמו בראש הדף */
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
   /* קו הקיפול הוא גבול של הפתק העליון ולא אלמנט נוסף — אלמנט נפרד
      הוסיף פיקסל וגלש לעמוד שני בהדפסה */
@@ -224,8 +225,12 @@ function slip(g, flip, full) {
                             : '<div class="names"><span class="empty">— אין עדיין שמות לקוויטל —</span></div>';
   const avn = esc(g.avreich_p || g.avreich), avt = esc(g.av_t || "ר'");
   const dnm = r => (r.donor_t === '' ? '' : `<i>${esc(r.donor_t || "ר'")}</i> `) + esc(r.donor_p || r.donor);
+  // מאיר: "שיהיה אותו נוסח בדיוק לכל אברך שלומד לזכותו" — בדף לתורם כל רצועה
+  // מקבלת גם את הנוסח המלא ו"יעמוד לזכות:", לא רק את שורת הכותרת.
+  const LEAD = 'יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל בעת רצון הגדול של חצות הלילה<span class="z">יעמוד לזכות:</span>';
   const secs = ps.map((r, i) => '<div class="sec">' + (i ? `<div class="subwho">
-        <i>יששכר</i> <b>${r.av_p ? esc(r.av_t || "ר'") + ' ' + esc(r.av_p) : (avt + ' ' + avn)}</b> &nbsp;·&nbsp; <i>זבולון</i> <b>${dnm(r)}</b></div>` : '')
+        <i>יששכר</i> <b>${r.av_p ? esc(r.av_t || "ר'") + ' ' + esc(r.av_p) : (avt + ' ' + avn)}</b> &nbsp;·&nbsp; <i>זבולון</i> <b>${dnm(r)}</b></div>`
+        + (r.av_p ? `<div class="lead sub">${LEAD}</div>` : '') : '')
     + nmOf(r) + '</div>').join('');
   return `<div class="slip${flip ? ' flip' : ''}${full ? ' full' : ''}"><img class="bg" src="${full ? '/iz-page.jpg' : '/iz-slip.jpg'}" alt=""><div class="in">
     <div class="who">
@@ -335,9 +340,16 @@ function paint() {
   // שמות, וכל השותפים שלו מופיעים בו — גם מי שעדיין אין לו שמות, כדי
   // שיהיה ברור שהוא מחזיק ושחסר למלא לו.
   const GRP = document.getElementById('grp').value;
+  // דף לתורם הוא לשליחה לתורם — דף שלם בלבד. "אין ענין במקופל, כי זה בשביל
+  // התורם; לאברך כבר יש מקופל כל אחד בנפרד."
+  const modeSel = document.getElementById('mode');
+  modeSel.querySelector('option[value="half"]').disabled = (GRP === 'donor');
+  if (GRP === 'donor' && modeSel.value === 'half') modeSel.value = 'full';
   const onlyDonor = document.body.dataset.donor || '';
   let rows = ROWS.filter(r => (!only || avKey(r.avreich) === avKey(only)) && hit(r)
                           && (!onlyDonor || String(r.donor_id) === onlyDonor));
+  FULL = modeSel.value === 'full';
+  document.body.classList.toggle('fullmode', FULL);
   if (GRP === 'donor') {
     // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
     // על אותו דף, כל אחד לחוד". דף לתורם: הראש עם האברך הראשון, ומתחתיו

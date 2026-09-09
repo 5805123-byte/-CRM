@@ -5920,8 +5920,7 @@ function renderPartners(d){
   // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
   // על אותו דף, גם במקופל וגם בדף שלם, וגם כל אברך דף בפני עצמו"
   el.innerHTML=(act.length>1?`<div class="addrow" style="margin-bottom:8px">
-      <button class="btn sm ghost izall" data-mode="half">🕯️ דף אחד — כל ${act.length} האברכים (חצי דף)</button>
-      <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד — כל האברכים (דף שלם)</button>
+      <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד לתורם — כל ${act.length} האברכים</button>
       <button class="btn sm ghost izsep">🕯️ כל אברך בדף נפרד</button></div>`:'')
     +act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
     <div style="display:flex;justify-content:space-between;align-items:center"><b>👨‍🎓 אברך שהוא מחזיק</b><button class="del" data-del="${p.id}">🗑</button></div>
