@@ -6174,6 +6174,65 @@ def campaign_parse_text(txt):
     return rows
 
 
+_HEB_SK = {'ב': 'b', 'ג': 'g', 'ד': 'd', 'ז': 's', 'ח': 'k', 'ט': 't', 'כ': 'k', 'ך': 'k', 'ל': 'l',
+           'מ': 'm', 'ם': 'm', 'נ': 'n', 'ן': 'n', 'ס': 's', 'פ': 'p', 'ף': 'p', 'צ': 's', 'ץ': 's',
+           'ק': 'k', 'ר': 'r', 'ש': 's', 'ת': 't'}
+
+
+def _skel(s):
+    """שלד עיצורים משותף לעברית ולאנגלית — כדי להשוות "אברמוביץ" ל-Abramowitz,
+    "יצחק" ל-Yitzchok. אותיות ניקוד/תנועות נזרקות, צלילים דומים מתאחדים."""
+    s = str(s or '').lower().strip()
+    if re.search(r'[א-ת]', s):
+        out = ''.join(_HEB_SK.get(ch, '') for ch in s)
+    else:
+        for a, b in (('tz', 's'), ('tsch', 's'), ('sch', 's'), ('sh', 's'), ('ch', 'k'), ('ph', 'p'),
+                     ('th', 't'), ('ck', 'k'), ('x', 'ks')):
+            s = s.replace(a, b)
+        s = s.translate(str.maketrans('cqzvwfj', 'kksbbpg'))
+        out = re.sub(r'[^bgdklmnprst]', '', s)
+    return re.sub(r'(.)\1+', r'\1', out)
+
+
+def campaign_suggest(src, donors):
+    """הצעות כרטיס לשם מרשימה שלא זוהה: שם משפחה לפי צליל בעברית עם שם פרטי
+    שמתיישב, או שם באנגלית עם אותו שלד עיצורים. מחזיר (הצעות ממוינות, האם
+    ההצעה הראשונה בטוחה מספיק לשיוך אוטומטי)."""
+    nm = (src.get('name') or '').strip()
+    w = nm.split()
+    last = (src.get('last') or (w[-1] if w else '')).strip()
+    first = (src.get('first') or ' '.join(w[:-1])).strip()
+    fl, ff = _fz(last), _fz(first)
+    sl, sf = _skel(last), _skel(first)
+    out = []
+    for d in donors:
+        sc, why = 0, ''
+        if fl and _fz(d['last'] or '') == fl:
+            sc += 2; why = 'שם משפחה דומה'
+            fr = re.sub(r'\(.*?\)', ' ', d['first'] or '')
+            als = [fr] + re.findall(r'\((.*?)\)', d['first'] or '')
+            if first and any(_firstok(a.strip(), first) for a in als if a.strip()):
+                sc += 3; why = 'שם משפחה + שם פרטי'
+            elif not (d['first'] or '').strip():
+                sc += 1
+        en = (d['english'] or '').strip()
+        if en and sl and len(sl) >= 3:
+            ew = [_skel(x) for x in re.split(r'[\s,]+', en) if x]
+            if sl in ew:
+                sc += 2; why = why or 'שם באנגלית'
+                if sf and len(sf) >= 2 and any(x == sf or x.startswith(sf) for x in ew if x != sl):
+                    sc += 3; why = 'שם באנגלית — פרטי ומשפחה'
+                elif sf and any(x == sf for x in ew if x != sl):      # שלד קצר מדי (יהושע = "s") — הצעה בלבד
+                    sc += 2; why = 'שם באנגלית — פרטי ומשפחה'
+        if sc >= 2:
+            out.append((sc, {'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                             'eng': en, 'why': why}))
+    out.sort(key=lambda x: -x[0])
+    top = [x for x in out if x[0] >= 5]
+    sure = len(top) == 1 and (len(out) < 2 or out[1][0] < out[0][0])
+    return [x[1] for x in out[:3]], sure
+
+
 def campaign_compare(con, cat):
     """טבלת השוואה לתורם: עמודה לכל רשימת ייחוס + עמודה של מה שנכנס עכשיו לייעוד הנבחר.
     לכל שורה גם: האם סכום הרשימה כבר רשום בכרטיס (have), מה נגבה עכשיו ואיך,
@@ -6194,13 +6253,14 @@ def campaign_compare(con, cat):
     dons = {}
     for d in con.execute("SELECT donor_id,date,amount,category,method,id FROM donations"):
         dons.setdefault(d['donor_id'], []).append(d)
+    alld = [dict(r) for r in con.execute("SELECT id,last,first,english FROM donors")]
 
     def row_for(did, nm, src=None):
         k = did if did else ('x:' + _norm(nm))
         if k not in rows:
             rows[k] = {'donor_id': did, 'name': names.get(did, nm) if did else nm,
                        'eng': eng.get(did, '') if did else '', 'vals': {}, 'have': {},
-                       'now': 0.0, 'now_n': 0, 'methods': [], 'pledge': None,
+                       'now': 0.0, 'now_n': 0, 'methods': [], 'pledge': None, 'sugg': [], 'how': '',
                        'last': (src or {}).get('last', ''), 'first': (src or {}).get('first', '')}
         return rows[k]
 
@@ -6231,7 +6291,17 @@ def campaign_compare(con, cat):
             if did and not links.get(_norm(x['name'])) and x['how'] == 'שם משפחה בלבד' \
                     and (src.get('first') or len((src.get('name') or '').split()) > 1):
                 did = None
+            sugg, how = [], (x['how'] or '') if did else ''
+            if not did:
+                # מאיר: "מידי הרבה אנשים לא ממוזגים" — צליל בעברית, כינויים, ושם באנגלית
+                sugg, sure = campaign_suggest(src, alld)
+                if sure:
+                    did, how = sugg[0]['id'], sugg[0]['why']
             r = row_for(did, x['name'], src)
+            if did and how and not r['how']:
+                r['how'] = how
+            if not did and sugg and not r['sugg']:
+                r['sugg'] = sugg
             r['vals'][L['key']] = round(r['vals'].get(L['key'], 0) + (x['amount'] or 0), 2)
             if did:
                 r['have'][L['key']] = recorded(did, L, r['vals'][L['key']])

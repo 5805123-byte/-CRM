@@ -573,7 +573,22 @@
   .cmpin:hover,.cmpadd:hover{background:var(--bg)}
   .cmppaid{color:var(--yes);font-weight:700;font-size:.8rem}
   .cmpowe{color:var(--no);font-weight:700;font-size:.8rem}
-  .cmpact{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .cmpact{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+  .cmpmaybe{color:var(--muted);font-size:.8rem;font-weight:700}
+  .cmprow{padding:8px 10px;border-bottom:1px solid var(--line)}
+  .cmprow:last-child{border-bottom:0}
+  .cmprow.nocard{background:color-mix(in srgb,var(--no) 4%,var(--card))}
+  .cmprow.total{background:var(--bg)}
+  .cmpname{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-weight:800}
+  .cmpname .c1{color:var(--muted);font-size:.76rem;font-weight:400;min-width:22px}
+  .cmpname .cen{display:inline;font-weight:400}
+  .cmphow{color:var(--gold);font-weight:700;font-size:.72rem}
+  .cmpchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+  .chipv{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--bg);font-size:.9rem;white-space:nowrap}
+  .chipv small{color:var(--muted);font-size:.72rem}
+  .chipv.now{border-color:var(--yes);background:color-mix(in srgb,var(--yes) 7%,var(--bg))}
+  .chipv .cmpin,.chipv .cmpadd{margin-inline-start:0}
+  @media print{.cmpin,.cmpadd,.cmpact,.cmppick{display:none!important}}
   .cmppick{margin-top:6px}
   .cmppick input{width:100%;box-sizing:border-box}
   .cmppick .cmpres{display:flex;flex-direction:column;gap:4px;margin-top:4px}

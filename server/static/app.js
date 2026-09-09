@@ -9947,39 +9947,45 @@ async function campCompareTable(box){
   // כמה סכומים מהרשימות עדיין לא רשומים בכרטיסים (רק אצל מי שיש לו כרטיס)
   const missing=rows.reduce((n,x)=>n+(x.donor_id?cols.filter(c=>x.vals[c.key]&&!x.have[c.key]).length:0),0);
   const nocard=rows.filter(x=>!x.donor_id).length;
-  const grid=`grid-template-columns:30px minmax(170px,1fr) ${cols.map(()=>'112px').join(' ')} 112px 150px`;
-  const paidCell=x=>{
-    if(!x.donor_id)return '';
-    if(x.now)return `<span class="cmppaid">✅ ${(x.methods||[]).map(m=>chBadgeRaw(m)||esc(chLabel(m))).join(' ')||'נגבה'}</span>`;
-    if(x.pledge)return `<span class="cmpowe">🔴 טרם נגבה${x.pledge.amount?(' · '+f(x.pledge.amount)):''}</span>`;
-    return '';
-  };
-  const listCell=(x,c)=>{
-    const v=x.vals[c.key]; if(!v)return '<span class="cc"></span>';
+  const fuzzy=x=>x.how&&/דומה|אנגלית/.test(x.how);   // זוהה לפי צליל / שם באנגלית — לא לפי שם זהה
+  // שבב אחד לכל רשימה — הכל בשורה אחת, בלי גלילה לרוחב
+  const listChip=(x,c)=>{
+    const v=x.vals[c.key]; if(!v)return '';
     let tag='';
     if(x.donor_id)tag=x.have[c.key]?'<span class="cmpok" title="כבר רשום בכרטיס">✓</span>'
-      :`<button class="cmpin" data-k="${esc(c.key)}" data-n="${esc(x.name)}" title="הכנס לכרטיס — ${esc(c.label)} ${f(v)}">📥</button>`;
-    return `<span class="cc">${f(v)}${tag}</span>`;
+      :`<button class="cmpin" data-k="${esc(c.key)}" data-n="${esc(x.name)}" title="הכנס לכרטיס">📥</button>`;
+    return `<span class="chipv"><small>${esc(c.label)}</small><b>${f(v)}</b>${tag}</span>`;
+  };
+  const nowChip=x=>{
+    if(!x.donor_id||!campSel)return '';
+    let st='';
+    if(x.now)st=`<span class="cmppaid">✅ ${(x.methods||[]).map(m=>chBadgeRaw(m)||esc(chLabel(m))).join(' ')||'נגבה'}</span>`;
+    else if(x.pledge)st=`<span class="cmpowe">🔴 טרם נגבה${x.pledge.amount?(' · '+f(x.pledge.amount)):''}</span>`;
+    return `<span class="chipv now"><small>${esc(campSel)}</small>${x.now?`<b>${f(x.now)}</b>`:'<span class="cmpmiss">—</span>'}${st}<button class="cmpadd" data-i="${rows.indexOf(x)}" title="הוסף תרומה / התחייבות">➕</button></span>`;
+  };
+  const acts=(x,i)=>{
+    if(x.donor_id&&!fuzzy(x))return '';
+    const sg=(x.sugg||[]).map(sg=>`<button class="btn sm ghost cmpsg" data-i="${i}" data-did="${sg.id}" title="${esc(sg.why)}">🔗 ${esc(sg.name)}${sg.eng?` <small>${esc(sg.eng)}</small>`:''}</button>`).join('');
+    return `<div class="cmpact">${sg?`<span class="cmpmaybe">אולי:</span>${sg}`:''}
+      ${x.donor_id?'':`<button class="btn sm ghost cmpnew" data-i="${i}">➕ כרטיס חדש</button>`}
+      <button class="btn sm ghost cmplnk" data-i="${i}">🔗 ${x.donor_id?'תורם אחר…':'שייך לתורם…'}</button></div>
+      <div class="cmppick hidden" data-i="${i}"><input class="cmpq" placeholder="חפש לפי שם / אנגלית…"><div class="cmpres"></div></div>`;
   };
   box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד — ${rows.length} תורמים</h3>
       <div class="campsum">${cols.map(c=>`<span class="cmpcol">${esc(c.label)} <small>(${c.n})</small>${c.src==='db'?` <button class="del cmpdel" data-k="${esc(c.key)}" title="מחק רשימה">🗑</button>`:''}</span>`).join('')}
-        <span class="cmpcol">נכנס עכשיו: <b>${esc(campSel||'—')}</b></span>
         <button class="btn sm ghost" id="cmppaste">📥 הדבק רשימה</button></div>
-      ${missing?`<div class="cmpbar"><span>📥 <b>${missing}</b> סכומים מהרשימות עדיין לא רשומים בכרטיסים</span><button class="btn sm" id="cmpfillall">הכנס את כולם לכרטיסים</button></div>`:''}
-      ${nocard?`<div class="hintxt">🔴 ${nocard} שמות בלי כרטיס — ליד כל אחד: ➕ כרטיס חדש, או 🔗 שיוך לתורם שאולי רשום בשם אחר.</div>`:''}</div>
-    <div class="camptbl cmpwrap"><div class="cmpgrid">
-      <div class="camprow2 head" style="${grid}"><span class="c1">#</span><span class="c2">תורם</span>${cols.map(c=>`<span class="cc">${esc(c.label)}</span>`).join('')}<span class="cc cmpnow">נכנס עכשיו</span><span class="cc">נגבה?</span></div>
-      ${rows.map((x,i)=>`<div class="camprow2" style="${grid}" data-i="${i}"><span class="c1">${i+1}</span>
-        <span class="c2">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>${x.eng?`<small class="cen">${esc(x.eng)}</small>`:''}`
-          :`${esc(x.name)} <small class="cmpno">אין כרטיס</small>
-           <div class="cmpact"><button class="btn sm ghost cmpnew" data-i="${i}">➕ כרטיס חדש</button><button class="btn sm ghost cmplnk" data-i="${i}">🔗 שייך לתורם…</button></div>
-           <div class="cmppick hidden" data-i="${i}"><input class="cmpq" placeholder="חפש לפי שם / אנגלית…"><div class="cmpres"></div></div>`}</span>
-        ${cols.map(c=>listCell(x,c)).join('')}
-        <span class="cc cmpnow">${x.now?('<b>'+f(x.now)+'</b>'):'<span class="cmpmiss">—</span>'}${x.donor_id&&campSel?` <button class="cmpadd" data-i="${i}" title="הוסף תרומה / התחייבות ל${esc(campSel)}">➕</button>`:''}</span>
-        <span class="cc">${paidCell(x)}</span></div>`).join('')
+      ${missing?`<div class="cmpbar"><span>📥 <b>${missing}</b> סכומים מהרשימות לא רשומים בכרטיסים</span><button class="btn sm" id="cmpfillall">הכנס את כולם</button></div>`:''}
+      ${nocard?`<div class="hintxt">🔴 ${nocard} בלי כרטיס — לחיצה על "אולי" מצרפת לכרטיס המוצע.</div>`:''}</div>
+    <div class="camptbl">
+      ${rows.map((x,i)=>`<div class="cmprow${x.donor_id?'':' nocard'}" data-i="${i}">
+        <div class="cmpname"><span class="c1">${i+1}</span>
+          ${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>${x.eng?`<small class="cen">${esc(x.eng)}</small>`:''}${fuzzy(x)?`<small class="cmphow" title="${esc(x.how)}">≈ זוהה לפי דמיון</small>`:''}`
+            :`<span class="cmpnm">${esc(x.name)}</span><small class="cmpno">אין כרטיס</small>`}</div>
+        <div class="cmpchips">${cols.map(c=>listChip(x,c)).join('')}${nowChip(x)}</div>
+        ${acts(x,i)}</div>`).join('')
         ||'<div class="empty">אין עדיין רשימות להשוואה — הרשימות שתשלח ייכנסו לכאן</div>'}
-      ${rows.length?`<div class="camprow2 head" style="${grid}"><span class="c1"></span><span class="c2">סה"כ</span>${cols.map(c=>`<span class="cc">${f(sum[c.key])}</span>`).join('')}<span class="cc cmpnow"><b>${f(sumNow)}</b></span><span class="cc"></span></div>`:''}
-    </div></div>`;
+      ${rows.length?`<div class="cmprow total"><div class="cmpname"><b>סה"כ</b></div><div class="cmpchips">${cols.map(c=>`<span class="chipv"><small>${esc(c.label)}</small><b>${f(sum[c.key])}</b></span>`).join('')}${campSel?`<span class="chipv now"><small>${esc(campSel)}</small><b>${f(sumNow)}</b></span>`:''}</div></div>`:''}
+    </div>`;
   const refresh=async()=>{await load();campCompareTable(box);};
   box.querySelectorAll('.cmpdel').forEach(b=>b.onclick=async e=>{
     e.preventDefault();
@@ -10003,6 +10009,15 @@ async function campCompareTable(box){
     const rr=await api('POST','/api/campaigns/backfill',{key:'*'});
     if(!rr||!rr.ok){fa.disabled=false;toast('לא נכנס');return;}
     toast('נכנסו '+rr.n+' תרומות לכרטיסים ✓'); refresh();};
+  const linkTo=async(x,did,label)=>{
+    if(!await uiConfirm('לשייך את "'+x.name+'" מהרשימה לכרטיס של '+label+'?'))return;
+    const rr=await api('POST','/api/campaigns/link',{name:x.name,donor_id:did});
+    if(!rr||!rr.ok){toast('לא שויך');return;}
+    toast('שויך ✓'); refresh();};
+  // "אולי: …" — שיוך בלחיצה אחת להצעה
+  box.querySelectorAll('.cmpsg').forEach(b=>b.onclick=()=>{
+    const x=rows[+b.dataset.i], od=DB.find(y=>y.id==+b.dataset.did);
+    linkTo(x,+b.dataset.did,od?(od.last+' '+od.first):b.textContent.trim());});
   // ➕ כרטיס חדש לשם בלי כרטיס
   box.querySelectorAll('.cmpnew').forEach(b=>b.onclick=async()=>{
     const x=rows[+b.dataset.i];
@@ -10018,17 +10033,14 @@ async function campCompareTable(box){
     inp.oninput=()=>{const q=inp.value.trim(); if(!q){res.innerHTML='';return;}
       const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||''),q,8);
       res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
-      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>{
         const od=DB.find(y=>y.id==+el.dataset.did);
-        if(!await uiConfirm('לשייך את "'+x.name+'" מהרשימה לכרטיס של '+(od?(od.last+' '+od.first):'#'+el.dataset.did)+'?'))return;
-        const rr=await api('POST','/api/campaigns/link',{name:x.name,donor_id:+el.dataset.did});
-        if(!rr||!rr.ok){toast('לא שויך');return;}
-        toast('שויך ✓'); refresh();});};
+        linkTo(x,+el.dataset.did,od?(od.last+' '+od.first):('#'+el.dataset.did));});};
     if(!pk.classList.contains('hidden')){inp.value=(x.last||'');inp.focus();inp.oninput();}
   });
   // ➕ תרומה / התחייבות לקמפיין הנוכחי — ישירות מהשורה
   box.querySelectorAll('.cmpadd').forEach(b=>b.onclick=()=>{
-    const x=rows[+b.dataset.i], rowEl=b.closest('.camprow2');
+    const x=rows[+b.dataset.i], rowEl=b.closest('.cmprow');
     const old=box.querySelector('.cmpform'); if(old)old.remove();
     const guess=cols.map(c=>x.vals[c.key]||0).find(v=>v)||'';
     const fm=document.createElement('div'); fm.className='cmpform';
