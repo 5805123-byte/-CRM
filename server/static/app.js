@@ -9944,12 +9944,27 @@ function campKeepScroll(){
   const y=CAMP_SCROLL; CAMP_SCROLL=null;
   requestAnimationFrame(()=>window.scrollTo(0,y));
 }
+let SHEET_Q='';
 async function campSheet(box){
   if(!box.querySelector('.shtbl'))box.innerHTML='<div class="hintxt">טוען…</div>';
   let r=null;
   try{r=await api('GET','/api/campaigns/sheet?cat='+encodeURIComponent(campSel||''));}catch(e){}
   if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון</div>';return;}
+  campSheetRender(box,r);
+}
+function campSheetRender(box,r){
   const cols=r.cols, rows=r.rows, tcat=r.cat||campSel;   // העמודה השלישית — תמיד הקמפיין של עכשיו
+  // מאיר: "אני צריך פה שורת חיפוש לפי שם או משפחה או סכום"
+  const shq=String(SHEET_Q||'').trim(), shqn=norm(shq), shqd=shq.replace(/[^0-9]/g,'');
+  const hit=x=>{
+    if(!shq)return true;
+    const nm=norm((x.name||'')+' '+(x.card_name||''));
+    if(shqn&&shqn.split(' ').every(w=>nm.includes(w)))return true;
+    if(shqd){const amts=cols.map(c=>x.vals[c.key]||0).concat([x.now||0,x.pledge?x.pledge.amount:0]);
+      if(amts.some(a=>a&&String(Math.round(a)).includes(shqd)))return true;}
+    return false;
+  };
+  const shown=rows.map((x,i)=>[x,i]).filter(([x])=>hit(x));
   const f=v=>v?Math.round(v).toLocaleString('en-US'):'';
   const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
   rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
@@ -9960,16 +9975,21 @@ async function campSheet(box){
     return '<span class="cshempty">—</span>';
   };
   box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד</h3>
-      <div class="campsum"><span><b>${rows.length}</b> תורמים</span><span>לחיצה על התא של ${esc(tcat)} — למילוי</span></div></div>
+      <div class="campsum"><span><b>${shq?(shown.length+' מתוך '+rows.length):rows.length}</b> תורמים</span><span>לחיצה על התא של ${esc(tcat)} — למילוי</span></div></div>
+    <div class="shsearch"><input id="shq" type="search" placeholder="🔍 חיפוש לפי שם, משפחה או סכום…" value="${esc(shq)}"></div>
     <div class="shtbl">
       <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(tcat)}</span></div>
-      ${rows.map((x,i)=>`<div class="cshr" data-i="${i}">
+      ${shown.map(([x,i])=>`<div class="cshr" data-i="${i}">
         <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.card_name||x.name)}</a>${x.card_name&&norm(x.card_name).split(' ').sort().join(' ')!==norm(x.name).split(' ').sort().join(' ')?`<small class="cshfile">${esc(x.name)}</small>`:''}`:esc(x.name)}<button class="cshlnk" data-i="${i}" title="שייך לתורם קיים בשם אחר">🔗</button></span>
         ${cols.map(c=>`<span class="csha">${f(x.vals[c.key])||'<span class="cshempty">-</span>'}</span>`).join('')}
         <span class="csha now cshcell" data-i="${i}" title="לחץ למילוי">${nowCell(x)}</span></div>`).join('')}
-      <div class="cshr total"><span class="cshn">סה"כ</span>${cols.map(c=>`<span class="csha">${f(sum[c.key])}</span>`).join('')}<span class="csha now">${f(sumNow)}</span></div>
+      ${shown.length?'':'<div class="empty">לא נמצא</div>'}
+      ${shq?'':`<div class="cshr total"><span class="cshn">סה"כ</span>${cols.map(c=>`<span class="csha">${f(sum[c.key])}</span>`).join('')}<span class="csha now">${f(sumNow)}</span></div>`}
     </div>`;
   campKeepScroll();
+  const shqEl=box.querySelector('#shq');
+  if(shqEl){let t;shqEl.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{SHEET_Q=shqEl.value;const pos=shqEl.selectionStart;
+      campSheetRender(box,r);const e2=box.querySelector('#shq');if(e2){e2.focus();try{e2.setSelectionRange(pos,pos);}catch(_){}}},150);};}
   box.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(y=>y.id==a.dataset.did);if(d)openDonor(d);});
   // 🔗 מאיר: "בשמות תורמים שאוכל בעצמי למזג את זה לתורם קיים שהוא בשם אחר…
   // בלחיצת כפתור זה משתנה השם ואז כשאני ממלא אותו שם זה מסנכרן לכל המערכת"
