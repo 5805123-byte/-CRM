@@ -11756,6 +11756,7 @@ class H(BaseHTTPRequestHandler):
             ctype = {'.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json',
                      '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.jpg': 'image/jpeg',
                      '.jpeg': 'image/jpeg', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff2': 'font/woff2',
+                     '.pdf': 'application/pdf',
                      '.webmanifest': 'application/manifest+json'}.get(ext, 'text/plain')
             if path == '/manifest.json':
                 ctype = 'application/manifest+json'   # נדרש כדי שאנדרואיד ירשום את יעד השיתוף
