@@ -637,8 +637,10 @@ function openDictPad(){
     const l=dictHist(); l.splice(+b.dataset.i,1);
     try{localStorage.setItem(DICTKEY,JSON.stringify(l));}catch(e){} openDictPad();});
 }
-// מצמיד כפתור מיקרופון לשדה טקסט. נשאר בפינה ולא משנה את הפריסה
+// מאיר: "אני לא צריך את המיקרופון בצד, אני משתמש עם מקלדת שיש מיקרופון" —
+// אין יותר כפתורי מיקרופון בשדות ולא כפתור צף. ההכתבה נעשית מהמקלדת.
 function addMic(el){
+  return;
   if(!SPR||!el||el._micd)return; el._micd=1;
   const w=document.createElement('div'); w.className='micwrap';
   el.parentNode.insertBefore(w,el); w.appendChild(el);
