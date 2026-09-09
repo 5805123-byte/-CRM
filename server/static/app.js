@@ -9933,8 +9933,79 @@ function campAddDialog(){
 }
 // טבלת השוואה לפי תורם: עמודה לכל רשימה (סוכות שנה שעברה, קמחא דפסחא תשפ"ו…)
 // ועמודה אחרונה — מה שנכנס עכשיו לקמפיין הנבחר מהתרומות שהוזנו.
+// 📊 שלושתם ביחד — מאיר: "טבלה פשוטה נקיה עם שמות בדיוק כמו הדוגמא ששלחתי לך…
+// את הטור השלישי תשאיר ריק ואני ימלא אותו ידנית… אם כבר חויב או לא ודרך מה שילם".
+// הטור השלישי הוא התרומות/ההתחייבויות של הקמפיין הנבחר — אותו מידע שבכרטיס התורם.
+async function campSheet(box){
+  box.innerHTML='<div class="hintxt">טוען…</div>';
+  let r=null;
+  try{r=await api('GET','/api/campaigns/sheet?cat='+encodeURIComponent(campSel||''));}catch(e){}
+  if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון</div>';return;}
+  const cols=r.cols, rows=r.rows;
+  const f=v=>v?Math.round(v).toLocaleString('en-US'):'';
+  const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
+  rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
+  const nowCell=x=>{
+    if(x.now){const m=(x.items||[]).map(i=>i.method).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
+      return `<b>${f(x.now)}</b><small class="cshst ok">✅ נגבה${m.length?(' · '+m.map(v=>esc(chLabel(v))).join(', ')):''}</small>`;}
+    if(x.pledge)return `<b>${f(x.pledge.amount)}</b><small class="cshst no">🔴 טרם נגבה</small>`;
+    return '<span class="cshempty">—</span>';
+  };
+  box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד</h3>
+      <div class="campsum"><span><b>${rows.length}</b> תורמים</span><span>לחיצה על התא של ${esc(campSel||'הקמפיין')} — למילוי</span></div></div>
+    <div class="shtbl">
+      <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(campSel||'—')}</span></div>
+      ${rows.map((x,i)=>`<div class="cshr" data-i="${i}">
+        <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>`:esc(x.name)}</span>
+        ${cols.map(c=>`<span class="csha">${f(x.vals[c.key])||'<span class="cshempty">-</span>'}</span>`).join('')}
+        <span class="csha now cshcell" data-i="${i}" title="לחץ למילוי">${nowCell(x)}</span></div>`).join('')}
+      <div class="cshr total"><span class="cshn">סה"כ</span>${cols.map(c=>`<span class="csha">${f(sum[c.key])}</span>`).join('')}<span class="csha now">${f(sumNow)}</span></div>
+    </div>`;
+  box.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(y=>y.id==a.dataset.did);if(d)openDonor(d);});
+  box.querySelectorAll('.cshcell').forEach(cell=>cell.onclick=()=>{
+    if(!campSel){toast('בחר קמפיין למעלה');return;}
+    const x=rows[+cell.dataset.i], rowEl=cell.closest('.cshr');
+    const old=box.querySelector('.cmpform'); if(old)old.remove();
+    const it=(x.items||[])[0];
+    const cur=x.now?x.now:(x.pledge?x.pledge.amount:(cols.map(c=>x.vals[c.key]||0).find(v=>v)||''));
+    const fm=document.createElement('div'); fm.className='cmpform';
+    fm.innerHTML=`<b>${esc(x.name)}</b> → ${esc(campSel)}
+      <input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}">
+      <select class="cf_st"><option value="paid"${x.now?' selected':''}>✅ חויב / נגבה</option><option value="pledge"${(!x.now&&x.pledge)?' selected':''}>🔴 עדיין לא</option></select>
+      <select class="cf_m"><option value="">דרך מה…</option>${dnMethList().map(m=>`<option${it&&chLabel(it.method)===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
+      <input type="date" class="cf_date" value="${(it&&it.date)||todayStr()}">
+      <button class="btn sm cf_go">שמור</button><button class="btn sm ghost cf_x">ביטול</button>`;
+    rowEl.after(fm);
+    fm.querySelector('.cf_amt').focus();
+    fm.querySelector('.cf_x').onclick=()=>fm.remove();
+    fm.querySelector('.cf_go').onclick=async()=>{
+      const amt=fm.querySelector('.cf_amt').value.trim(), st=fm.querySelector('.cf_st').value,
+            m=fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr();
+      if(!amtNum(amt)){toast('צריך סכום');return;}
+      fm.querySelector('.cf_go').disabled=true;
+      let did=x.donor_id;
+      if(!did){   // אין עדיין כרטיס לשם הזה — נפתח כרטיס, בלי שאלות
+        const rr=await api('POST','/api/campaigns/link',{name:x.name,create:1,last:x.last,first:x.first});
+        if(!rr||!rr.ok){toast('לא הצלחתי לפתוח כרטיס');fm.querySelector('.cf_go').disabled=false;return;}
+        did=rr.donor_id; toast('נפתח כרטיס ל'+x.name);
+      }
+      const d=DB.find(y=>y.id===did);
+      const pl=d&&(d.pledges||[]).find(y=>String(y.category||'').trim()===campSel&&y.status!=='נתן');
+      if(st==='paid'){
+        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:campSel,paid:1});
+        else await api('POST','/api/donation',{donor_id:did,amount:amt,category:campSel,method:m,date:date,note:''});
+        if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
+      }else{
+        if(pl){pl.amount=amt;pl.note=m?('דרך: '+m):(pl.note||'');await api('PUT','/api/pledge/'+pl.id,pl);}
+        else await api('POST','/api/pledge',{donor_id:did,category:campSel,amount:amt,status:'טרם',date:date,note:m?('דרך: '+m):''});
+      }
+      toast('נשמר ✓'); await load(); campSheet(box);
+    };
+  });
+}
 async function campCompareTable(box){
   if(!box)return;
+  if(CAMPMODE==='all')return campSheet(box);
   box.innerHTML='<div class="hintxt">טוען השוואה…</div>';
   let r=null;
   try{r=await api('GET','/api/campaigns/compare?cat='+encodeURIComponent(campSel||''));}catch(e){}
@@ -9996,22 +10067,7 @@ async function campCompareTable(box){
   if(CAMPMODE==='gaps'){
     box.innerHTML=`<div class="camphd"><h3>❗ מה חסר במערכת — מול הקובץ ששלחת</h3>
       ${missing?`<div class="cmpbar"><span>📥 <b>${missing}</b> סכומים אפשר להכניס לכרטיסים בלחיצה</span><button class="btn sm" id="cmpfillall">הכנס את כולם</button></div>`:''}</div>${gapsHtml()}`;
-  }else
-  box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד — ${rows.length} תורמים</h3>
-      <div class="campsum">${cols.map(c=>`<span class="cmpcol">${esc(c.label)} <small>(${c.n})</small>${c.src==='db'?` <button class="del cmpdel" data-k="${esc(c.key)}" title="מחק רשימה">🗑</button>`:''}</span>`).join('')}
-        <button class="btn sm ghost" id="cmppaste">📥 הדבק רשימה</button></div>
-      ${missing?`<div class="cmpbar"><span>📥 <b>${missing}</b> סכומים מהרשימות לא רשומים בכרטיסים</span><button class="btn sm" id="cmpfillall">הכנס את כולם</button></div>`:''}
-      ${nocard?`<div class="hintxt">🔴 ${nocard} בלי כרטיס — לחיצה על "אולי" מצרפת לכרטיס המוצע.</div>`:''}</div>
-    <div class="camptbl">
-      ${rows.map((x,i)=>`<div class="cmprow${x.donor_id?'':' nocard'}" data-i="${i}">
-        <div class="cmpname"><span class="c1">${i+1}</span>
-          ${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>${x.eng?`<small class="cen">${esc(x.eng)}</small>`:''}${fuzzy(x)?`<small class="cmphow" title="${esc(x.how)}">≈ זוהה לפי דמיון</small>`:''}`
-            :`<span class="cmpnm">${esc(x.name)}</span><small class="cmpno">אין כרטיס</small>`}</div>
-        <div class="cmpchips">${cols.map(c=>listChip(x,c)).join('')}${nowChip(x)}</div>
-        ${acts(x,i)}</div>`).join('')
-        ||'<div class="empty">אין עדיין רשימות להשוואה — הרשימות שתשלח ייכנסו לכאן</div>'}
-      ${rows.length?`<div class="cmprow total"><div class="cmpname"><b>סה"כ</b></div><div class="cmpchips">${cols.map(c=>`<span class="chipv"><small>${esc(c.label)}</small><b>${f(sum[c.key])}</b></span>`).join('')}${campSel?`<span class="chipv now"><small>${esc(campSel)}</small><b>${f(sumNow)}</b></span>`:''}</div></div>`:''}
-    </div>`;
+  }
   const refresh=async()=>{await load();campCompareTable(box);};
   box.querySelectorAll('.cmpdel').forEach(b=>b.onclick=async e=>{
     e.preventDefault();

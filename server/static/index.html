@@ -589,6 +589,24 @@
   .chipv.now{border-color:var(--yes);background:color-mix(in srgb,var(--yes) 7%,var(--bg))}
   .chipv .cmpin,.chipv .cmpadd{margin-inline-start:0}
   @media print{.cmpin,.cmpadd,.cmpact,.cmppick{display:none!important}}
+  /* הטבלה של שלושתם ביחד — כמו הקובץ: שם + עמודה לכל מגבית */
+  .shtbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
+  .cshr{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 1.2fr;align-items:center;gap:6px;padding:9px 10px;border-bottom:1px solid var(--line)}
+  .cshr:nth-child(even){background:color-mix(in srgb,var(--bg) 60%,var(--card))}
+  .cshr.head{background:var(--ink);color:#fff;font-weight:800;font-size:.8rem}
+  .cshr.head .now{color:#c8f7d0}
+  .cshr.total{background:var(--bg);font-weight:800}
+  .cshn{font-weight:700;overflow-wrap:anywhere}
+  .cshn a{cursor:pointer}
+  .csha{text-align:center;font-variant-numeric:tabular-nums;border-inline-start:1px solid var(--line);align-self:stretch;display:flex;align-items:center;justify-content:center}
+  .cshr.head .csha{border-inline-start-color:rgba(255,255,255,.25);line-height:1.15;text-align:center}
+  .csha.now{color:var(--yes);font-weight:700}
+  .cshcell{cursor:pointer;min-height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+  .cshcell:hover{background:var(--bg)}
+  .cshst{display:block;font-size:.68rem;font-weight:700;white-space:nowrap}
+  .cshst.ok{color:var(--yes)} .cshst.no{color:var(--no)}
+  .cshempty{color:var(--muted);opacity:.6}
+  @media(max-width:520px){.cshr{padding:8px 6px;font-size:.9rem}.cshr.head{font-size:.7rem}}
   .cmppick{margin-top:6px}
   .cmppick input{width:100%;box-sizing:border-box}
   .cmppick .cmpres{display:flex;flex-direction:column;gap:4px;margin-top:4px}

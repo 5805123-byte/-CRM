@@ -6260,8 +6260,8 @@ def campaign_compare(con, cat):
         if k not in rows:
             rows[k] = {'donor_id': did, 'name': names.get(did, nm) if did else nm,
                        'eng': eng.get(did, '') if did else '', 'vals': {}, 'have': {},
-                       'now': 0.0, 'now_n': 0, 'methods': [], 'pledge': None, 'sugg': [], 'how': '',
-                       'last': (src or {}).get('last', ''), 'first': (src or {}).get('first', '')}
+                       'now': 0.0, 'now_n': 0, 'methods': [], 'items': [], 'pledge': None, 'sugg': [], 'how': '',
+                       'names': [], 'last': (src or {}).get('last', ''), 'first': (src or {}).get('first', '')}
         return rows[k]
 
     def recorded(did, L, amt):
@@ -6298,6 +6298,8 @@ def campaign_compare(con, cat):
                 if sure:
                     did, how = sugg[0]['id'], sugg[0]['why']
             r = row_for(did, x['name'], src)
+            if x['name'] not in r['names']:
+                r['names'].append(x['name'])
             if did and how and not r['how']:
                 r['how'] = how
             if not did and sugg and not r['sugg']:
@@ -6316,6 +6318,8 @@ def campaign_compare(con, cat):
             r['now'] = round(sum(float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0) for d in mine), 2)
             r['now_n'] = len(mine)
             r['methods'] = sorted({(d['method'] or '').strip() for d in mine if (d['method'] or '').strip()})
+            r['items'] = [{'id': d['id'], 'amount': float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0),
+                           'method': (d['method'] or '').strip(), 'date': str(d['date'] or '')[:10]} for d in mine]
         for p in con.execute("""SELECT donor_id,amount,status,id FROM pledges
                                 WHERE TRIM(COALESCE(category,''))=? AND COALESCE(status,'')<>'נתן'""", (cat,)):
             if p['donor_id'] not in names:
@@ -6343,6 +6347,38 @@ def campaign_compare(con, cat):
         ex.sort(key=lambda r: _norm(r['name']))
         extra[L['key']] = ex
     return {'cat': cat, 'cols': cols, 'rows': out, 'extra': extra}
+
+
+def campaign_sheet(con, cat):
+    """הטבלה של מאיר בדיוק כמו בקובץ: שם כפי שנכתב, בסדר הקובץ, עמודה לכל רשימה,
+    ועמודה ריקה לקמפיין הנוכחי שמתמלאת מהתרומות/התחייבויות שנרשמו."""
+    cmp_ = campaign_compare(con, cat)
+    byname = {}
+    for r in cmp_['rows']:
+        for n in r['names']:
+            byname[_norm(n)] = r
+    entries = {}
+    for L in campaign_ref_lists(con):
+        for row in L['rows']:
+            k = _norm(row.get('name') or '')
+            if not k:
+                continue
+            e = entries.setdefault(k, {'name': row.get('name', ''), 'last': row.get('last', ''), 'first': row.get('first', ''),
+                                       'order': row.get('order', 10 ** 6), 'vals': {}})
+            e['order'] = min(e['order'], row.get('order', 10 ** 6))
+            try: a = float(re.sub(r'[^0-9.]', '', str(row.get('amount') or '0')) or 0)
+            except ValueError: a = 0.0
+            e['vals'][L['key']] = round(e['vals'].get(L['key'], 0) + a, 2)
+    out = []
+    for k, e in entries.items():
+        r = byname.get(k)
+        e['donor_id'] = r['donor_id'] if r else None
+        e['now'] = r['now'] if r else 0.0
+        e['items'] = r['items'] if r else []
+        e['pledge'] = r['pledge'] if r else None
+        out.append(e)
+    out.sort(key=lambda e: (e['order'], _norm(e['name'])))
+    return {'cat': cat, 'cols': cmp_['cols'], 'rows': out}
 
 
 def campaign_backfill(con, key, only_name=''):
@@ -11071,6 +11107,14 @@ class H(BaseHTTPRequestHandler):
             rows = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             con.close()
             return self._send(200, rows)
+        if self.path.split('?')[0] == '/api/campaigns/sheet':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                out = campaign_sheet(con, (qs.get('cat') or [''])[0].strip())
+            finally:
+                con.close()
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/campaigns/compare':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             cat = (qs.get('cat') or [''])[0].strip()
