@@ -6373,6 +6373,7 @@ def campaign_sheet(con, cat):
     for k, e in entries.items():
         r = byname.get(k)
         e['donor_id'] = r['donor_id'] if r else None
+        e['card_name'] = r['name'] if (r and r['donor_id']) else ''
         e['now'] = r['now'] if r else 0.0
         e['items'] = r['items'] if r else []
         e['pledge'] = r['pledge'] if r else None

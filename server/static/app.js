@@ -9956,12 +9956,34 @@ async function campSheet(box){
     <div class="shtbl">
       <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(campSel||'—')}</span></div>
       ${rows.map((x,i)=>`<div class="cshr" data-i="${i}">
-        <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>`:esc(x.name)}</span>
+        <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.card_name||x.name)}</a>${x.card_name&&norm(x.card_name).split(' ').sort().join(' ')!==norm(x.name).split(' ').sort().join(' ')?`<small class="cshfile">${esc(x.name)}</small>`:''}`:esc(x.name)}<button class="cshlnk" data-i="${i}" title="שייך לתורם קיים בשם אחר">🔗</button></span>
         ${cols.map(c=>`<span class="csha">${f(x.vals[c.key])||'<span class="cshempty">-</span>'}</span>`).join('')}
         <span class="csha now cshcell" data-i="${i}" title="לחץ למילוי">${nowCell(x)}</span></div>`).join('')}
       <div class="cshr total"><span class="cshn">סה"כ</span>${cols.map(c=>`<span class="csha">${f(sum[c.key])}</span>`).join('')}<span class="csha now">${f(sumNow)}</span></div>
     </div>`;
   box.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(y=>y.id==a.dataset.did);if(d)openDonor(d);});
+  // 🔗 מאיר: "בשמות תורמים שאוכל בעצמי למזג את זה לתורם קיים שהוא בשם אחר…
+  // בלחיצת כפתור זה משתנה השם ואז כשאני ממלא אותו שם זה מסנכרן לכל המערכת"
+  box.querySelectorAll('.cshlnk').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const x=rows[+b.dataset.i], rowEl=b.closest('.cshr');
+    const old=box.querySelector('.cmpform'); if(old)old.remove();
+    const fm=document.createElement('div'); fm.className='cmpform cshpick';
+    fm.innerHTML=`<div style="width:100%"><b>${esc(x.name)}</b> — לאיזה כרטיס לשייך?</div>
+      <input class="cmpq" placeholder="חפש לפי שם / אנגלית / טלפון…" style="flex:1 1 200px">
+      <button class="btn sm ghost cf_x">ביטול</button><div class="cmpres" style="width:100%"></div>`;
+    rowEl.after(fm);
+    const inp=fm.querySelector('.cmpq'), res=fm.querySelector('.cmpres');
+    fm.querySelector('.cf_x').onclick=()=>fm.remove();
+    inp.oninput=()=>{const q=inp.value.trim(); if(!q){res.innerHTML='';return;}
+      const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||'')+' '+(y.phone||''),q,8);
+      res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{
+        const rr=await api('POST','/api/campaigns/link',{name:x.name,donor_id:+el.dataset.did});
+        if(!rr||!rr.ok){toast('לא שויך');return;}
+        toast('שויך ✓'); await load(); campSheet(box);});};
+    inp.value=(x.last||''); inp.focus(); inp.oninput();
+  });
   box.querySelectorAll('.cshcell').forEach(cell=>cell.onclick=()=>{
     if(!campSel){toast('בחר קמפיין למעלה');return;}
     const x=rows[+cell.dataset.i], rowEl=cell.closest('.cshr');
