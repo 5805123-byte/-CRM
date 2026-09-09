@@ -6443,6 +6443,40 @@ def campaign_sheet(con, cat):
     return {'cat': cat, 'cols': cmp_['cols'], 'rows': out}
 
 
+def campaign_review(con):
+    """מאיר: "תשאל אותי כל אחד מי זה… אם אתה חושב שזה מישהו כמו למשל יוסף מרדכי
+    אני עושה לך כן, ואם זה מישהו חדש אז אני אעשה לך שזה מישהו חדש". לכל שם בקובץ,
+    בסדר הקובץ: האם כבר אושר ידנית, מה הניחוש של המערכת, והצעות נוספות."""
+    sheet = campaign_sheet(con, '')
+    cmp_ = campaign_compare(con, '')
+    byname = {}
+    for r in cmp_['rows']:
+        for n in r['names']:
+            byname[_norm(n)] = r
+    try:
+        links = {r['name']: r['donor_id'] for r in con.execute("SELECT name,donor_id FROM campaign_links")}
+    except Exception:
+        links = {}
+    names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+    eng = {r['id']: (r['english'] or '') for r in con.execute("SELECT id,english FROM donors")}
+    out = []
+    for e in sheet['rows']:
+        k = _norm(e['name'])
+        r = byname.get(k)
+        lk = links.get(k)
+        item = {'name': e['name'], 'last': e['last'], 'first': e['first'], 'vals': e['vals'],
+                'confirmed': bool(lk and lk in names), 'donor_id': None, 'card_name': '', 'eng': '', 'how': '', 'sugg': []}
+        if item['confirmed']:
+            item.update({'donor_id': lk, 'card_name': names.get(lk, ''), 'eng': eng.get(lk, '')})
+        elif r:
+            if r['donor_id']:
+                item.update({'donor_id': r['donor_id'], 'card_name': names.get(r['donor_id'], ''),
+                             'eng': eng.get(r['donor_id'], ''), 'how': r.get('how') or 'שם זהה'})
+            item['sugg'] = [x for x in (r.get('sugg') or []) if x['id'] != r['donor_id']]
+        out.append(item)
+    return {'rows': out, 'total': len(out), 'confirmed': sum(1 for x in out if x['confirmed'])}
+
+
 def campaign_backfill(con, key, only_name=''):
     """מכניס לכרטיסים את סכומי הרשימה שעדיין לא רשומים בהם. מאיר: "מה שמופיע
     כבר אל תוסיף שלא יהיו התנגשויות וכפיליות". מחזיר כמה נכנסו ולמי."""
@@ -11169,6 +11203,13 @@ class H(BaseHTTPRequestHandler):
             rows = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             con.close()
             return self._send(200, rows)
+        if self.path.split('?')[0] == '/api/campaigns/review':
+            con = db()
+            try:
+                out = campaign_review(con)
+            finally:
+                con.close()
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/campaigns/sheet':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             con = db()

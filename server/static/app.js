@@ -9977,7 +9977,8 @@ function campSheetRender(box,r){
   };
   box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד</h3>
       <div class="campsum"><span><b>${shq?(shown.length+' מתוך '+rows.length):rows.length}</b> תורמים</span><span>לחיצה על התא של ${esc(tcat)} — למילוי</span></div></div>
-    <div class="shsearch"><input id="shq" type="search" placeholder="🔍 חיפוש לפי שם, משפחה או סכום…" value="${esc(shq)}"></div>
+    <div class="shsearch"><input id="shq" type="search" placeholder="🔍 חיפוש לפי שם, משפחה או סכום…" value="${esc(shq)}">
+      <button class="btn sm ghost" id="shreview" style="margin-top:6px;width:100%">🧭 לעבור על הרשימה שם־שם — לאשר מי זה מי</button></div>
     <div class="shtbl">
       <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(tcat)}</span></div>
       ${shown.map(([x,i])=>`<div class="cshr" data-i="${i}">
@@ -9988,6 +9989,7 @@ function campSheetRender(box,r){
       ${shq?'':`<div class="cshr total"><span class="cshn">סה"כ</span>${cols.map(c=>`<span class="csha">${f(sum[c.key])}</span>`).join('')}<span class="csha now">${f(sumNow)}</span></div>`}
     </div>`;
   campKeepScroll();
+  const rv=box.querySelector('#shreview'); if(rv)rv.onclick=campReview;
   const shqEl=box.querySelector('#shq');
   if(shqEl){let t;shqEl.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{SHEET_Q=shqEl.value;const pos=shqEl.selectionStart;
       campSheetRender(box,r);const e2=box.querySelector('#shq');if(e2){e2.focus();try{e2.setSelectionRange(pos,pos);}catch(_){}}},150);};}
@@ -10065,6 +10067,61 @@ function campSheetRender(box,r){
       toast('נשמר ✓'); await load();
     };
   });
+}
+// 🧭 מעבר שם־שם על הרשימה מהקובץ. מאיר: "תשאל אותי כל אחד מי זה… אני עושה לך
+// כן / לא / חדש, או שאני ממזג אותו לבד ברשימה — ואז תמזג את זה לשלושתם ביחד".
+async function campReview(){
+  let r=null; try{r=await api('GET','/api/campaigns/review');}catch(e){}
+  if(!r||!r.rows){toast('לא הצלחתי לטעון');return;}
+  const todo=r.rows.map((x,i)=>({...x,i})).filter(x=>!x.confirmed);
+  if(!todo.length){toast('כל השמות ברשימה כבר מאושרים ✓');return;}
+  const f=v=>v?Math.round(v).toLocaleString('en-US'):'';
+  const o=document.createElement('div');o.className='confirmov';
+  document.body.appendChild(o);
+  let k=0, done=0;
+  const close=async()=>{o.remove();if(done){CAMP_SCROLL=window.scrollY;await load();}};
+  const show=()=>{
+    if(k>=todo.length){o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">✅ סיימנו — ${done} אושרו</div>
+        <div class="cbtns" style="margin-top:10px"><button class="btn cno">סגור</button></div></div>`;
+      o.querySelector('.cno').onclick=close;return;}
+    const x=todo[k];
+    const amts=Object.keys(x.vals||{}).map(kk=>f(x.vals[kk])).filter(Boolean).join(' · ');
+    const guess=x.donor_id?{id:x.donor_id,name:x.card_name,eng:x.eng,why:x.how}:(x.sugg[0]||null);
+    const others=(x.sugg||[]).filter(g=>!guess||g.id!==guess.id);
+    o.innerHTML=`<div class="confirmbox rvbox">
+      <div class="rvtop"><span class="rvcnt">${k+1} מתוך ${todo.length}</span><button class="btn sm ghost rvx">✕ סגור</button></div>
+      <div class="rvname">${esc(x.name)}</div>
+      <div class="hintxt">מהקובץ${amts?(' · '+amts):''}</div>
+      ${guess?`<div class="rvguess">האם זה <b>${esc(guess.name)}</b>${guess.eng?` <small>${esc(guess.eng)}</small>`:''}?<div class="hintxt">${esc(guess.why||'')}</div></div>
+        <button class="btn rvyes" style="width:100%">✅ כן, זה הוא</button>`
+        :'<div class="rvguess"><b>לא מצאתי מישהו דומה במערכת</b></div>'}
+      ${others.length?`<div class="hintxt" style="margin-top:8px">אולי:</div><div class="rvalts">${others.map(g=>`<button class="btn sm ghost rvalt" data-did="${g.id}">🔗 ${esc(g.name)}${g.eng?` <small>${esc(g.eng)}</small>`:''}</button>`).join('')}</div>`:''}
+      <div class="rvacts">
+        <button class="btn ghost rvnew">🆕 חדש — פתח כרטיס: ${esc((x.last||'')+' '+(x.first||''))}</button>
+        <button class="btn ghost rvother">🔍 מישהו אחר…</button>
+        <button class="btn ghost rvskip">⏭ אחר כך</button>
+      </div>
+      <div class="rvpick hidden"><input class="cmpq" placeholder="חפש לפי שם / אנגלית / טלפון…"><div class="cmpres"></div></div>
+    </div>`;
+    const link=async(did,create)=>{
+      const body=create?{name:x.name,create:1,last:x.last,first:x.first}:{name:x.name,donor_id:did};
+      const rr=await api('POST','/api/campaigns/link',body);
+      if(!rr||!rr.ok){toast('לא נשמר');return;}
+      done++; k++; show();
+    };
+    o.querySelector('.rvx').onclick=close;
+    const y=o.querySelector('.rvyes'); if(y)y.onclick=()=>link(guess.id);
+    o.querySelectorAll('.rvalt').forEach(b=>b.onclick=()=>link(+b.dataset.did));
+    o.querySelector('.rvnew').onclick=()=>link(null,true);
+    o.querySelector('.rvskip').onclick=()=>{k++;show();};
+    const pk=o.querySelector('.rvpick'), inp=pk.querySelector('.cmpq'), res=pk.querySelector('.cmpres');
+    o.querySelector('.rvother').onclick=()=>{pk.classList.toggle('hidden');if(!pk.classList.contains('hidden')){inp.value=x.last||'';inp.focus();inp.oninput();}};
+    inp.oninput=()=>{const qq=inp.value.trim(); if(!qq){res.innerHTML='';return;}
+      const h=donorHits(d=>d.last+' '+d.first+' '+(d.english||'')+' '+(d.business||'')+' '+(d.phone||''),qq,8);
+      res.innerHTML=h.list.map(d=>`<div class="dpr" data-did="${d.id}">${esc(d.last)} ${esc(d.first)} <span style="color:var(--muted)">#${d.id}${d.english?(' · '+esc(d.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>link(+el.dataset.did));};
+  };
+  show();
 }
 async function campCompareTable(box){
   if(!box)return;
