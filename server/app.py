@@ -685,6 +685,32 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  שגיאת מיזוג קמפיינים 2:', e)
+    # מאיר מילא בטבלה את אברמוביץ וקונקול לסוכות תשפ"ז, אבל העמודה הייתה קשורה
+    # בטעות ל"קמחא דפסחא תשפ"ו" — מה שנרשם היום (9.9.2026) תחת פסח שייך לסוכות תשפ"ז.
+    # אם זו הייתה עריכה של תרומת הפסח המקורית — מחזירים אותה לתאריך פסח ופותחים
+    # תרומה חדשה לסוכות תשפ"ז באותו סכום ודרך.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='sheet_pesach_fix_v1'").fetchone():
+            _P, _S, _D = 'קמחא דפסחא תשפ"ו', 'סוכות תשפ"ז', '2026-09-09'
+            rows = con.execute("SELECT id,donor_id,amount,method FROM donations WHERE TRIM(COALESCE(category,''))=? AND date=?",
+                               (_P, _D)).fetchall()
+            for r in rows:
+                others = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND id<>?",
+                                     (r['donor_id'], _P, r['id'])).fetchone()[0]
+                if others:
+                    con.execute("UPDATE donations SET category=? WHERE id=?", (_S, r['id']))
+                else:
+                    con.execute("UPDATE donations SET date='2026-04-01' WHERE id=?", (r['id'],))
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
+                                (r['donor_id'], _D, r['amount'], _S, r['method'] or '', '', ''))
+            con.execute("UPDATE pledges SET category=? WHERE TRIM(COALESCE(category,''))=? AND date=? AND COALESCE(status,'')<>'נתן'",
+                        (_S, _P, _D))
+            con.execute("INSERT INTO seed_flags(name) VALUES('sheet_pesach_fix_v1')")
+            con.commit()
+            if rows:
+                print(f'  תיקון טבלת סוכות: {len(rows)} תרומות הועברו לסוכות תשפ"ז')
+    except Exception as e:
+        print('  שגיאת תיקון טבלת סוכות:', e)
     # הקמפיין של עכשיו (העמודה השלישית בטבלה) חייב להופיע ברשימת הקמפיינים
     try:
         _tg = campaign_target()
