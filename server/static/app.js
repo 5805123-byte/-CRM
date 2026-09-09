@@ -7113,7 +7113,7 @@ function renderKvList(type){
         +'<tbody>'+groups.map(g=>{
       const empty=!g.items.some(e=>(e.text||'').trim());
       const needname=g.items.some(e=>e.needname);
-      return `<tr class="kvrow${empty?' kvempty':''}"><td><div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?' <span class="opencard">↗ כרטיס</span>':''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
+      return `<tr class="kvrow${empty?' kvempty':''}"><td><div class="kblock${empty?' kvempty':''}${g.items.length>1?' kvmulti':''}"><div class="who${g.did?' wholink':''}"${g.did?` data-did="${g.did}"`:''}>${esc(kvWho(g))}${g.did?` <a class="kvpagebtn noprint" href="/kv-page?donor=${g.did}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="דף קוויטל של התורם — לשלוח, להעתיק, להדפיס">📄 דף</a> <span class="opencard">↗ כרטיס</span>`:''}${needname?' <span class="kvtag">אין שם — הקלד כאן</span>':''}${g.loose?' <span class="loose">· לא משויך</span>':''}</div>`
         + g.items.map(e=>`<div class="names hasflow" contenteditable="true" ${e.id?`data-id="${e.id}"`:`data-newdid="${e.newdid}"`}>${esc(e.text)}</div>`).join('')
         // מאיר: "שלא יהיה כל שם שורה בפני עצמה אלא בשורות אחידות כמו כולם ועם
         // פסיק" — בהדפסה כל השמות של התורם זורמים ברצף אחד, גם כשהם נשמרו
