@@ -6215,12 +6215,7 @@ def donor_kvpage(con, did):
         lines.append(KV_DESC[tier])
     elif tier == 'יששכר_זבולון' and not avs:
         lines.append('שותף יששכר־זבולון')
-    try:
-        np_ = con.execute("SELECT COUNT(*) FROM parnes WHERE donor_id=? AND COALESCE(status,'')<>'suggested'", (did,)).fetchone()[0]
-        if np_:
-            lines.append('פרנס יום — %s' % ('יום אחד' if np_ == 1 else '%d ימים' % np_))
-    except Exception:
-        pass
+    # מאיר: "פרנס יום אל תכתוב כלום" — ימי פרנס אינם מוזכרים בדף הזה
     names, seen = [], set()
     for r in con.execute("SELECT text,tier FROM prayers WHERE donor_id=? AND TRIM(COALESCE(text,''))<>'' ORDER BY id", (did,)):
         k = _pray_key(r['text'])
