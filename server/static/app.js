@@ -1312,7 +1312,8 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
 const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
-  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…'};
+  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',camp:'חיפוש שם, משפחה או סכום…',
+  old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…'};
 function render(){
   const qi=document.getElementById('q');
   if(qi)qi.placeholder=QPH[tab]||QPH.donors;
@@ -8395,7 +8396,7 @@ function ulKey(r){
 async function renderUnlinked(){
   view.innerHTML='<div class="cnt">טוען…</div>';
   try{ ULDATA=await api('GET','/api/unlinked'); }catch(e){ ULDATA={rows:[],total:0}; }
-  const rows=(ULDATA&&ULDATA.rows)||[];
+  const rows=((ULDATA&&ULDATA.rows)||[]).filter(r=>matchQ((r.first||'')+' '+(r.last||'')+' '+(r.email||'')+' '+Math.round(amtNum(r.amount))));
   const g={}, order=[];
   rows.forEach(r=>{const k=ulKey(r);
     if(!g[k]){g[k]={k,first:r.first||'',last:r.last||'',email:r.email||'',items:[],sugg:r.sugg||[]};order.push(k);}
@@ -8622,7 +8623,7 @@ let DUPALL=false;
 async function renderDups(){
   view.innerHTML='<div class="empty">טוען…</div>';
   if(!DUPS){ try{ DUPS=await api('GET','/api/dups'+(DUPALL?'?all=1':'')); }catch(e){ DUPS={groups:[]}; } }
-  const g=DUPS.groups||[];
+  const g=(DUPS.groups||[]).filter(x=>matchQ(JSON.stringify(x)));
   const f=n=>'$'+Math.round(n).toLocaleString('en-US');
   const ap=DUPS.approved||0;
   view.innerHTML=`<div class="cnt">${g.length} מקרים של אותו תורם, אותו חודש ואותו סכום —
@@ -8679,7 +8680,7 @@ async function renderOld(){
   view.innerHTML='<div class="empty">טוען…</div>';
   if(!OLD){ try{ OLD=await api('GET','/api/inactive?since='+encodeURIComponent(oldSince)); }
             catch(e){ OLD={donors:[]}; } }
-  const l=OLD.donors||[];
+  const l=(OLD.donors||[]).filter(d=>matchQ((d.last||'')+' '+(d.first||'')+' '+(d.english||'')+' '+(d.name||'')));
   const seen=l.filter(d=>d.mail_seen&&d.mail_seen!=='none').length;
   const chk=l.filter(d=>d.mail_seen).length;
   view.innerHTML=`<div class="oldbar">
@@ -9955,7 +9956,7 @@ async function campSheet(box){
 function campSheetRender(box,r){
   const cols=r.cols, rows=r.rows, tcat=r.cat||campSel;   // העמודה השלישית — תמיד הקמפיין של עכשיו
   // מאיר: "אני צריך פה שורת חיפוש לפי שם או משפחה או סכום"
-  const shq=String(SHEET_Q||'').trim(), shqn=norm(shq), shqd=shq.replace(/[^0-9]/g,'');
+  const shq=String(SHEET_Q||q||'').trim(), shqn=norm(shq), shqd=shq.replace(/[^0-9]/g,'');
   const hit=x=>{
     if(!shq)return true;
     const nm=norm((x.name||'')+' '+(x.card_name||''));
@@ -10065,7 +10066,8 @@ async function campCompareTable(box){
   if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון את ההשוואה</div>';return;}
   const cols=r.cols;
   const f=v=>v?Math.round(v).toLocaleString('en-US'):'';
-  const rows=r.rows.filter(x=>x.now||x.pledge||cols.some(c=>x.vals[c.key]));
+  const rows=r.rows.filter(x=>x.now||x.pledge||cols.some(c=>x.vals[c.key]))
+    .filter(x=>!q||matchQ((x.name||'')+' '+(x.eng||'')+' '+cols.map(c=>Math.round(x.vals[c.key]||0)).join(' ')+' '+Math.round(x.now||0)));
   const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
   rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
   // כמה סכומים מהרשימות עדיין לא רשומים בכרטיסים (רק אצל מי שיש לו כרטיס)
@@ -10236,7 +10238,8 @@ function renderCamp(){
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{CAMPMODE=c.dataset.k;renderCamp();});
   const cats=campList();
   if(!campSel||cats.indexOf(campSel)<0)campSel=cats[0]||'';
-  const rows=campSel?campRows(campSel):[], owes=campSel?campOwes(campSel):[];
+  const qh=r=>!q||matchQ((r.name||'')+' '+(r.eng||'')+' '+Math.round(r.amt||0)+' '+(r.phone||''));
+  const rows=(campSel?campRows(campSel):[]).filter(qh), owes=(campSel?campOwes(campSel):[]).filter(qh);
   const byCur={}; rows.forEach(r=>{byCur[r.cur]=(byCur[r.cur]||0)+r.amt;});
   const tot=Object.keys(byCur).map(k=>k+Math.round(byCur[k]).toLocaleString('en-US')).join(' + ')||'—';
   const owesum={}; owes.forEach(r=>{if(r.amt)owesum[r.cur]=(owesum[r.cur]||0)+r.amt;});
