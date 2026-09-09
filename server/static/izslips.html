@@ -139,6 +139,10 @@
     <option value="half">חצי דף — שניים בעמוד</option>
     <option value="full">דף שלם — אחד בעמוד</option>
   </select>
+  <select id="grp" title="מאיר: כשתורם מחזיק 2 אברכים — כולם על אותו דף, כל אחד לחוד">
+    <option value="av">דף לכל אברך — כל השותפים שלו</option>
+    <option value="donor">דף לכל תורם — כל האברכים שלו</option>
+  </select>
   <span class="sp"></span>
   <span id="cnt"></span>
   <button onclick="window.print()">🖨️ הדפס</button>
@@ -221,7 +225,7 @@ function slip(g, flip, full) {
   const avn = esc(g.avreich_p || g.avreich), avt = esc(g.av_t || "ר'");
   const dnm = r => (r.donor_t === '' ? '' : `<i>${esc(r.donor_t || "ר'")}</i> `) + esc(r.donor_p || r.donor);
   const secs = ps.map((r, i) => '<div class="sec">' + (i ? `<div class="subwho">
-        <i>יששכר</i> <b>${avt} ${avn}</b> &nbsp;·&nbsp; <i>זבולון</i> <b>${dnm(r)}</b></div>` : '')
+        <i>יששכר</i> <b>${r.av_p ? esc(r.av_t || "ר'") + ' ' + esc(r.av_p) : (avt + ' ' + avn)}</b> &nbsp;·&nbsp; <i>זבולון</i> <b>${dnm(r)}</b></div>` : '')
     + nmOf(r) + '</div>').join('');
   return `<div class="slip${flip ? ' flip' : ''}${full ? ' full' : ''}"><img class="bg" src="${full ? '/iz-page.jpg' : '/iz-slip.jpg'}" alt=""><div class="in">
     <div class="who">
@@ -245,6 +249,7 @@ function slipImgUrl(g, ext) {
     p.append('donor', r.donor_p || r.donor);
     p.append('dnt', r.donor_t === '' ? '' : (r.donor_t || "ר'"));
     p.append('names', r.names || '');
+    p.append('pav', r.av_p || '');           // במצב "דף לכל תורם" — האברך של הרצועה
   });
   if (!FULL) p.set('half', '1');
   return '/izslip.' + (ext || 'png') + '?' + p.toString();
@@ -329,7 +334,30 @@ function paint() {
   // הדף של האברך. הסינון עבר לרמת הדף: דף נכנס אם *לאחד* מהשותפים יש
   // שמות, וכל השותפים שלו מופיעים בו — גם מי שעדיין אין לו שמות, כדי
   // שיהיה ברור שהוא מחזיק ושחסר למלא לו.
-  let rows = ROWS.filter(r => (!only || avKey(r.avreich) === avKey(only)) && hit(r));
+  const GRP = document.getElementById('grp').value;
+  const onlyDonor = document.body.dataset.donor || '';
+  let rows = ROWS.filter(r => (!only || avKey(r.avreich) === avKey(only)) && hit(r)
+                          && (!onlyDonor || String(r.donor_id) === onlyDonor));
+  if (GRP === 'donor') {
+    // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
+    // על אותו דף, כל אחד לחוד". דף לתורם: הראש עם האברך הראשון, ומתחתיו
+    // רצועה לכל אברך נוסף עם כותרת משלו — אותם שמות קוויטל (של התורם).
+    const dm = new Map();
+    rows.forEach(r => {
+      const k = r.donor_id || avKey(r.donor);
+      let g = dm.get(k);
+      if (!g) dm.set(k, g = {avreich: r.avreich, avreich_p: r.avreich_p, av_t: r.av_t, parts: [], donor: r.donor});
+      g.parts.push({...r, av_p: r.avreich_p || r.avreich});
+    });
+    let groups = [...dm.values()];
+    if (mode !== 'all') groups = groups.filter(g => g.parts.some(r => r.names));
+    const many = groups.filter(g => g.parts.length > 1).length;
+    document.getElementById('cnt').textContent = groups.length + ' דפים · ' + groups.length + ' תורמים';
+    document.getElementById('hint').innerHTML = 'דף לכל תורם — כל האברכים שהוא מחזיק על אותו דף, כל אחד ברצועה משלו עם קו מפריד.'
+      + (many ? ' &nbsp;·&nbsp; <b>' + many + ' תורמים מחזיקים יותר מאברך אחד.</b>' : '')
+      + ' לדף נפרד לכל אברך — בחר למעלה "דף לכל אברך".';
+    return draw(groups);
+  }
   // אברך אחד = דף אחד, גם כשמחזיקים אותו כמה שותפים. המפתח מנוקה
   // מרווחים כפולים, אחרת אותו אברך שנכתב מעט אחרת בשתי שורות התפצל
   // לשני דפים ובכל אחד הופיע שותף בודד.
@@ -350,6 +378,9 @@ function paint() {
     ? 'דף שלם — אברך אחד בעמוד, לשליחה לתורם או להדפסה. תחת כל דף: שליחה, העתקה והדפסה של אותו דף בלבד.'
     : 'חצי דף — אברך אחד בכל עמוד, פעמיים, שני החצאים באותו כיוון. גוזרים בקו המקווקו ומקבלים שני פתקים זהים, או מקפלים.')
     + (many ? ' &nbsp;·&nbsp; <b>' + many + ' אברכים מוחזקים ביותר משותף אחד — כל השותפים שלהם באותו דף, מחולק בקו מפריד.</b>' : '');
+  draw(groups);
+}
+function draw(groups) {
   let h = '';
   groups.forEach((g, i) => {
     h += '<div class="sheet' + (FULL ? ' one' : '') + '" data-i="' + i + '">'
@@ -380,7 +411,11 @@ function paint() {
   [...new Set(ROWS.map(x => x.avreich))].sort((a, b) => a.localeCompare(b, 'he'))
     .forEach(a => { const o = document.createElement('option'); o.value = o.textContent = a; sel.appendChild(o); });
   if (q.get('av')) sel.value = q.get('av');
+  if (q.get('donor')) document.body.dataset.donor = q.get('donor');   // מכרטיס התורם — רק הדפים שלו
+  if (q.get('grp')) document.getElementById('grp').value = q.get('grp');
+  if (q.get('mode')) document.getElementById('mode').value = q.get('mode');
   sel.onchange = paint;
+  document.getElementById('grp').onchange = paint;
   document.getElementById('mode').onchange = paint;
   document.getElementById('filt').onchange = paint;
   document.getElementById('q').oninput = paint;

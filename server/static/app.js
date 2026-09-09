@@ -5917,7 +5917,13 @@ function renderPartners(d){
   const act=(d.partners||[]).filter(p=>p.active!=0);
   const izfiles=(d.files||[]).filter(f=>f.kind==='iz'||!f.kind);
   const cur=curSym(d);
-  el.innerHTML=act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
+  // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
+  // על אותו דף, גם במקופל וגם בדף שלם, וגם כל אברך דף בפני עצמו"
+  el.innerHTML=(act.length>1?`<div class="addrow" style="margin-bottom:8px">
+      <button class="btn sm ghost izall" data-mode="half">🕯️ דף אחד — כל ${act.length} האברכים (חצי דף)</button>
+      <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד — כל האברכים (דף שלם)</button>
+      <button class="btn sm ghost izsep">🕯️ כל אברך בדף נפרד</button></div>`:'')
+    +act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
     <div style="display:flex;justify-content:space-between;align-items:center"><b>👨‍🎓 אברך שהוא מחזיק</b><button class="del" data-del="${p.id}">🗑</button></div>
     <select class="pfield pav" data-id="${p.id}" data-k="avreich" style="font-weight:700">${avOpts(p.avreich||'')}</select>
     <div class="addrow hidden pavnew" data-id="${p.id}"><input class="pavni" placeholder="שם האברך החדש — משפחה ואז פרטי"><button class="btn sm pavnb" data-id="${p.id}">➕ הוסף</button></div>
@@ -6007,6 +6013,8 @@ function renderPartners(d){
   });
   // מאיר: "אני מנסה להכניס תאריך התחלה… זה נותן לי לכתוב לבד במקום לבחור מהלוח
   // העברי" — התאריך העברי נבחר מיום/חודש/שנה, והלועזי מתעדכן ממנו (וגם להפך).
+  el.querySelectorAll('.izall').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=donor&mode='+b.dataset.mode,'_blank'));
+  el.querySelectorAll('.izsep').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=av&mode=full','_blank'));
   el.querySelectorAll('.pstart').forEach(box=>box.querySelectorAll('select').forEach(sl=>sl.onchange=async()=>{
     const p=(d.partners||[]).find(x=>x.id==box.dataset.id);if(!p)return;
     const v=hebDateGet(box); p.start_date=v;

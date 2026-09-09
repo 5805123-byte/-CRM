@@ -7292,11 +7292,16 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
         av_t = ''
     parts = [p for p in (parts or []) if (p[0] or '').strip() or (p[2] or '').strip()]
     if not parts:
-        parts = [(donor, donor_t, names)]
+        parts = [(donor, donor_t, names, '')]
+    # רצועה = (תורם, תוארו, שמות, אברך). האברך ריק = האברך שבראש הדף;
+    # במצב "דף לכל תורם" לכל רצועה אברך משלה ואותם שמות קוויטל.
     parts = [((p[0] or '').strip(),
               ('' if (p[0] or '').strip() == ANON_NAME else (p[1] or "ר'")),
-              (p[2] or '')) for p in parts]
+              (p[2] or ''),
+              ((p[3] if len(p) > 3 else '') or '').strip()) for p in parts]
     donor, donor_t = parts[0][0], parts[0][1]
+    if parts[0][3]:
+        avreich = parts[0][3]
     im = Image.open(os.path.join(STATIC, 'iz-slip.jpg' if half else 'iz-page.jpg')).convert('RGB')
     if im.width != width:
         im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
@@ -7335,8 +7340,8 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     def _subw(px):
         f_n, f_l = font(px, True), font(px * (29.0 / 50.0))
         worst = 0
-        for dn, dt, _nm in parts[1:]:
-            segs = [('יששכר ', f_l), (((av_t + ' ') if av_t else '') + (avreich or '—'), f_n),
+        for dn, dt, _nm, pav in parts[1:]:
+            segs = [('יששכר ', f_l), (((av_t + ' ') if av_t else '') + (pav or avreich or '—'), f_n),
                     ('  ·  ', f_l), ('זבולון ', f_l),
                     (((dt + ' ') if dt else '') + (dn or '—'), f_n)]
             worst = max(worst, sum(wid(t, f) for t, f in segs))
@@ -7427,7 +7432,7 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
             ly, dash = int(top), int(9 * u)
             for dx in range(int(90 * u), W - int(90 * u), dash * 2):
                 dr.line([(dx, ly), (dx + dash, ly)], fill=_GOLD_T, width=max(1, int(1.5 * u)))
-            subhead(((av_t + ' ') if av_t else '') + (avreich or '—'),
+            subhead(((av_t + ' ') if av_t else '') + (parts[i][3] or avreich or '—'),
                     ((dt + ' ') if dt else '') + (dn or '—'), top + int(sub_nm * .35))
             yy += sub_h
         room = band - (sub_h if i else 0)
@@ -9962,9 +9967,11 @@ class H(BaseHTTPRequestHandler):
             # לכל שותף, והכל נכתב על אותו דף (מאיר: "בלגן, דף לכל שותף")
             dns, nms = qs.get('donor') or [''], qs.get('names') or ['']
             dts = qs.get('dnt') or []
+            pavs = qs.get('pav') or []            # "דף לכל תורם" — אברך לכל רצועה
             parts = [(dns[i] if i < len(dns) else '',
                       dts[i] if i < len(dts) else "ר'",
-                      nms[i] if i < len(nms) else '')
+                      nms[i] if i < len(nms) else '',
+                      (pavs[i] if i < len(pavs) else '').strip())
                      for i in range(max(len(dns), len(nms)))]
             try:
                 data = izslip_png(g('av'), g('donor'), g('names'), fmt=fmt,
