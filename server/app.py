@@ -6225,18 +6225,25 @@ def donor_kvpage(con, did):
     if tier in KV_DESC:
         lines.append(KV_DESC[tier])
     # מאיר: "פרנס יום אל תכתוב כלום" — ימי פרנס אינם מוזכרים בדף הזה
-    names, seen = [], set()
+    # מאיר: "אם עשיתי הפרדה בקוויטל כשהכנסתי אותו — של שתי שורות למטה — אז תבין
+    # שאני רוצה שזה יהיה בשתי שורות למטה". כל רשומת קוויטל היא פסקה משלה, ושורה
+    # ריקה בתוך רשומה פותחת פסקה חדשה. בתוך פסקה השמות זורמים עם פסיקים.
+    names, paras, seen = [], [], set()
     for r in con.execute("SELECT text,tier FROM prayers WHERE donor_id=? AND TRIM(COALESCE(text,''))<>'' ORDER BY id", (did,)):
         k = _pray_key(r['text'])
         if k in seen:
             continue
         seen.add(k); names.append(r['text'].strip())
+        for chunk in re.split(r'\n\s*\n', r['text'].strip()):
+            t = kv_flow(chunk).strip()
+            if t:
+                paras.append(t)
     today = today_iso()
     y, m, dd = today.split('-')
     return {'donor_id': did, 'title': title, 'name': name, 'english': d['english'] or '',
             'tier': tier, 'tier_label': {'יששכר_זבולון': 'יששכר־זבולון', 'קוויטל_101': 'כל לילה', 'קוויטל_שבועי': 'שבועי',
                                          'קוויטל_זמנים': 'זמנים מיוחדים', 'קוויטל_כללי': 'כללי'}.get(tier, ''),
-            'avreichim': avs, 'lines': lines, 'names': names,
+            'avreichim': avs, 'lines': lines, 'names': names, 'paras': paras,
             'date_heb': greg_to_heb_full(today), 'date_greg': '%s.%s.%s' % (dd, m, y)}
 
 
@@ -6301,19 +6308,24 @@ def kvpage_png(con, did, width=1240, fmt='png'):
     y += int(40 * u * 1.7)
     # השמות — הכי גדולים שנכנסים
     avail_w, avail_h = W - 2 * marg, H - y - int(90 * u)
-    txt = kv_flow('\n'.join(info['names'])).strip() or '— אין עדיין שמות לקוויטל —'
-    lines, size = [], int(13 * u)
+    paras = info.get('paras') or ['— אין עדיין שמות לקוויטל —']
+    blocks, size = [], int(13 * u)
     for px in range(int(118 * u), int(13 * u), -2):
         f = font(px, True); lh = px * 1.28
-        b = _wrap_px(dr, txt, f, avail_w)
-        if len(b) * lh <= avail_h:
-            lines, size = b, px; break
-    if not lines:
-        f = font(size, True); lines = _wrap_px(dr, txt, f, avail_w)
+        b = [_wrap_px(dr, t, f, avail_w) for t in paras]
+        tot = sum(len(x) for x in b) * lh + (len(b) - 1) * lh * 0.7     # רווח בין פסקאות
+        if tot <= avail_h:
+            blocks, size = b, px; break
+    if not blocks:
+        f = font(size, True); blocks = [_wrap_px(dr, t, f, avail_w) for t in paras]
     f, lh = font(size, True), size * 1.28
-    yy = y + max(0, (avail_h - len(lines) * lh) / 2)
-    for ln in lines:
-        center(ln, f, yy, _BLACK); yy += lh
+    tot = sum(len(x) for x in blocks) * lh + (len(blocks) - 1) * lh * 0.7
+    yy = y + max(0, (avail_h - tot) / 2)
+    for i, lines in enumerate(blocks):
+        if i:
+            yy += lh * 0.7
+        for ln in lines:
+            center(ln, f, yy, _BLACK); yy += lh
     buf = io.BytesIO()
     im.save(buf, 'JPEG' if fmt == 'jpg' else 'PNG', quality=92)
     return buf.getvalue()
