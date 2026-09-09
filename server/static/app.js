@@ -9870,9 +9870,31 @@ function campOwes(cat){
 // או ל"ג בעומר". ייעוד נחשב קמפיין אם הוא אחד מאלה — או אם מאיר סימן אותו
 // במפורש (➕). ייעוד שהוסר (🗑) נשאר על התרומות, רק לא מוצג כאן.
 const CAMP_RE=/קמחא|קימחא|פסח|pesach|pischa|מתנות לאביונים|לאביונים|פורים|purim|סוכות|סוכת|sukk|succ|ל"ג בעומר|ל״ג בעומר|לג בעומר|lag ?b/i;
+const CAMP_NOT=/בשר|עופות|מצות|יין|דגים/;   // "בשר ועופות לפסח" — קנייה לחג, לא קמפיין
 function campIsReal(c){
   if(c in (CAMPFLAGS||{}))return !!CAMPFLAGS[c];
-  return CAMP_RE.test(c);
+  return CAMP_RE.test(c)&&!CAMP_NOT.test(c);
+}
+// 🔀 מיזוג הקמפיין הנבחר לתוך קמפיין אחר (למשל "קמפיין פורים" → "מתנות לאביונים תשפ"ו")
+function campMergeDialog(){
+  const src=campSel; if(!src)return;
+  const others=campAllCats().filter(c=>c!==src).sort((a,b)=>(campIsReal(b)?1:0)-(campIsReal(a)?1:0));   // קמפיינים אמיתיים קודם
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:4px">🔀 למזג את "${esc(src)}" לתוך…</div>
+    <div class="hintxt" style="margin-bottom:8px">כל התרומות וההתחייבויות של "${esc(src)}" יעברו לקמפיין שתבחר, והשם הישן ייעלם מהרשימה.</div>
+    <div class="catmgrlist">${others.map(c=>`<div class="catmgrrow"><button class="catmgrgo cmgo" data-c="${esc(c)}">${esc(c)}${campIsReal(c)?'':' <small style="color:var(--muted)">(מוסתר)</small>'}</button></div>`).join('')}</div>
+    <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);const done=()=>o.remove();
+  o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
+  o.querySelectorAll('.cmgo').forEach(b=>b.onclick=async()=>{
+    const dst=b.dataset.c;
+    if(!await uiConfirm('למזג את "'+src+'" לתוך "'+dst+'"?'))return;
+    const r=await api('POST','/api/campaigns/merge',{from:src,into:dst});
+    if(!r||!r.ok){toast('המיזוג נכשל');return;}
+    done(); toast('מוזג — '+r.moved+' רשומות עברו ל"'+dst+'" ✓');
+    CAMPFLAGS[dst]=1; delete CAMPFLAGS[src]; CAMPAIGNS=(CAMPAIGNS||[]).filter(x=>x!==src);
+    campSel=dst; await load(); renderCamp();
+  });
 }
 function campAllCats(){
   const m={};
@@ -10074,8 +10096,8 @@ function renderCamp(){
   const donors=new Set(rows.map(r=>r.id)).size;
   view.innerHTML=`<div class="avbar noprint">
       <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}${cats.length?'':'<option value="">— אין קמפיינים —</option>'}</select>
-      <button class="btn sm ghost" id="campadd" title="הוסף קמפיין לרשימה">➕</button>
-      ${campSel?`<button class="btn sm ghost" id="camphide" title="הסר מרשימת הקמפיינים (התרומות נשארות)">🗑</button>`:''}
+      <button class="btn sm ghost" id="campadd" title="הוסף קמפיין לרשימה">➕ קמפיין</button>
+      ${campSel?`<button class="btn sm ghost" id="campmerge" title="מזג את הקמפיין הזה לתוך קמפיין אחר">🔀 מזג</button><button class="btn sm ghost" id="camphide" title="הסר מרשימת הקמפיינים (התרומות נשארות)">🗑 הסר</button>`:''}
       <button class="btn sm" id="campcopy">📋 העתק</button>
       <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
       <button class="btn sm" id="campcmp">🔍 השוואה מול אקסל</button>
@@ -10104,6 +10126,8 @@ function renderCamp(){
   if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
   const ad=document.getElementById('campadd');
   if(ad)ad.onclick=campAddDialog;
+  const mg=document.getElementById('campmerge');
+  if(mg)mg.onclick=campMergeDialog;
   const hd=document.getElementById('camphide');
   if(hd)hd.onclick=async()=>{
     if(!confirm('להסיר את "'+campSel+'" מרשימת הקמפיינים?\nהתרומות נשארות כמו שהן — הוא רק לא יופיע כאן. אפשר להחזיר דרך ➕.'))return;

@@ -653,6 +653,24 @@ def ensure_schema():
                              AND TRIM(COALESCE(p.dedication,''))<>'')""")
             con.execute("INSERT INTO seed_flags(name) VALUES('prayer_parnes_dedup')")
     except Exception: pass
+    # מאיר על רשימת הקמפיינים: "קמפיין פורים שזה בעצם מתנות לאביונים תשפ"ו תמזג
+    # אותם ביחד. גם קמחא דפסחא באנגלית זה קמחא דפסחא תשפ"ו. בשר ועופות זה לא קמפיין."
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='campaign_merge_v1'").fetchone():
+            names = [r[0] for r in con.execute("SELECT DISTINCT TRIM(category) FROM donations WHERE COALESCE(category,'')<>''")]
+            names += [r[0] for r in con.execute("SELECT name FROM campaigns")]
+            for nm in set(names):
+                k = re.sub(r'[\s"\u05f4\'’]', '', nm).lower()
+                if k.startswith('קמפייןפורים') or k == 'פוריםתשפו':
+                    campaign_merge(con, nm, 'מתנות לאביונים תשפ"ו')
+                elif k in ('kimchadpischa', 'kimchadepischa', 'קמחאדפסחאתשפו') and nm != 'קמחא דפסחא תשפ"ו':
+                    campaign_merge(con, nm, 'קמחא דפסחא תשפ"ו')
+                elif nm.startswith('בשר'):
+                    con.execute("INSERT OR REPLACE INTO campaign_flags(name,shown,updated) VALUES(?,0,?)", (nm, today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('campaign_merge_v1')")
+            con.commit()
+    except Exception as e:
+        print('  שגיאת מיזוג קמפיינים:', e)
     # טעינת עסקאות Authorize יולי 2026 לטבלת ההתאמה (דף הווב לטיפול)
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
@@ -6261,6 +6279,27 @@ def campaign_backfill(con, key, only_name=''):
                          L.get('category') or L['label'], L.get('method', ''), 'מרשימת ' + L['label'], ''))
             done.append({'donor_id': r['donor_id'], 'name': r['name'], 'amount': r['vals'][k], 'list': L['label']})
     return done
+
+
+def campaign_merge(con, src, dst):
+    """מיזוג ייעוד לתוך ייעוד אחר: כל התרומות, ההתחייבויות, החיובים והכללים
+    עוברים לשם החדש, והשם הישן נעלם מהרשימות. מאיר: "יש פה קמפיין פורים
+    שזה בעצם מתנות לאביונים תשפ"ו תמזג אותם ביחד"."""
+    src, dst = (src or '').strip(), (dst or '').strip()
+    if not src or not dst or src == dst:
+        return 0
+    n = 0
+    for tbl in ('donations', 'pledges', 'recon', 'donor_rules'):
+        try:
+            cur = con.execute(f"UPDATE {tbl} SET category=? WHERE TRIM(COALESCE(category,''))=?", (dst, src))
+            n += cur.rowcount
+        except Exception:
+            pass
+    con.execute("DELETE FROM campaigns WHERE name=?", (src,))
+    con.execute("DELETE FROM campaign_flags WHERE name=?", (src,))
+    con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (dst, today_iso()))
+    con.execute("INSERT OR REPLACE INTO campaign_flags(name,shown,updated) VALUES(?,1,?)", (dst, today_iso()))
+    return n
 
 
 def recon_apply(cur, tid, b):
@@ -12390,6 +12429,18 @@ class H(BaseHTTPRequestHandler):
             commit_retry(con); con.close()
             bump_data()
             return self._send(200, {'ok': True, 'donor_id': int(did)})
+        if self.path == '/api/campaigns/merge':
+            src, dst = (b.get('from') or '').strip(), (b.get('into') or '').strip()
+            if not src or not dst or src == dst:
+                return self._send(400, {'error': 'names'})
+            con = db()
+            try:
+                n = campaign_merge(con, src, dst)
+                commit_retry(con)
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'moved': n, 'into': dst})
         if self.path == '/api/campaigns/backfill':
             con = db()
             try:
