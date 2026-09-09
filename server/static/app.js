@@ -9938,8 +9938,14 @@ function campAddDialog(){
 // 📊 שלושתם ביחד — מאיר: "טבלה פשוטה נקיה עם שמות בדיוק כמו הדוגמא ששלחתי לך…
 // את הטור השלישי תשאיר ריק ואני ימלא אותו ידנית… אם כבר חויב או לא ודרך מה שילם".
 // הטור השלישי הוא התרומות/ההתחייבויות של הקמפיין הנבחר — אותו מידע שבכרטיס התורם.
+let CAMP_SCROLL=null;   // מאיר: אחרי עדכון/מיזוג בטבלה — להישאר באותו מקום, לא לקפוץ להתחלה
+function campKeepScroll(){
+  if(CAMP_SCROLL==null)return;
+  const y=CAMP_SCROLL; CAMP_SCROLL=null;
+  requestAnimationFrame(()=>window.scrollTo(0,y));
+}
 async function campSheet(box){
-  box.innerHTML='<div class="hintxt">טוען…</div>';
+  if(!box.querySelector('.shtbl'))box.innerHTML='<div class="hintxt">טוען…</div>';
   let r=null;
   try{r=await api('GET','/api/campaigns/sheet?cat='+encodeURIComponent(campSel||''));}catch(e){}
   if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון</div>';return;}
@@ -9963,6 +9969,7 @@ async function campSheet(box){
         <span class="csha now cshcell" data-i="${i}" title="לחץ למילוי">${nowCell(x)}</span></div>`).join('')}
       <div class="cshr total"><span class="cshn">סה"כ</span>${cols.map(c=>`<span class="csha">${f(sum[c.key])}</span>`).join('')}<span class="csha now">${f(sumNow)}</span></div>
     </div>`;
+  campKeepScroll();
   box.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(y=>y.id==a.dataset.did);if(d)openDonor(d);});
   // 🔗 מאיר: "בשמות תורמים שאוכל בעצמי למזג את זה לתורם קיים שהוא בשם אחר…
   // בלחיצת כפתור זה משתנה השם ואז כשאני ממלא אותו שם זה מסנכרן לכל המערכת"
@@ -9981,9 +9988,10 @@ async function campSheet(box){
       const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||'')+' '+(y.phone||''),q,8);
       res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
       res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=async()=>{
+        CAMP_SCROLL=window.scrollY;
         const rr=await api('POST','/api/campaigns/link',{name:x.name,donor_id:+el.dataset.did});
         if(!rr||!rr.ok){toast('לא שויך');return;}
-        toast('שויך ✓'); await load(); campSheet(box);});};
+        toast('שויך ✓'); await load();});};
     inp.value=(x.last||''); inp.focus(); inp.oninput();
   });
   box.querySelectorAll('.cshcell').forEach(cell=>cell.onclick=()=>{
@@ -9995,17 +10003,19 @@ async function campSheet(box){
     fm.innerHTML=`<b>${esc(x.name)}</b> → ${esc(tcat)}
       <input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}">
       <select class="cf_st"><option value="paid"${x.now?' selected':''}>✅ חויב / נגבה</option><option value="pledge"${(!x.now&&x.pledge)?' selected':''}>🔴 עדיין לא</option></select>
-      <select class="cf_m"><option value="">דרך מה…</option>${dnMethList().map(m=>`<option${it&&chLabel(it.method)===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
+      <select class="cf_m chansel">${channelOpts(it?it.method:'')}</select>
       <input type="date" class="cf_date" value="${(it&&it.date)||todayStr()}">
       <button class="btn sm cf_go">שמור</button><button class="btn sm ghost cf_x">ביטול</button>`;
     rowEl.after(fm);
+    wireChanSel(fm.querySelector('.cf_m'));   // ➕ דרך תשלום חדשה (נדרים פלוס…) — נשמרת לכל המערכת
     fm.querySelector('.cf_amt').focus();
     fm.querySelector('.cf_x').onclick=()=>fm.remove();
     fm.querySelector('.cf_go').onclick=async()=>{
       const amt=fm.querySelector('.cf_amt').value.trim(), st=fm.querySelector('.cf_st').value,
-            m=fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr();
+            m=fm.querySelector('.cf_m').value==='__new__'?'':fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr();
       if(!amtNum(amt)){toast('צריך סכום');return;}
       fm.querySelector('.cf_go').disabled=true;
+      CAMP_SCROLL=window.scrollY;
       let did=x.donor_id;
       if(!did){   // אין עדיין כרטיס לשם הזה — נפתח כרטיס, בלי שאלות
         const rr=await api('POST','/api/campaigns/link',{name:x.name,create:1,last:x.last,first:x.first});
@@ -10022,7 +10032,7 @@ async function campSheet(box){
         if(pl){pl.amount=amt;pl.note=m?('דרך: '+m):(pl.note||'');await api('PUT','/api/pledge/'+pl.id,pl);}
         else await api('POST','/api/pledge',{donor_id:did,category:tcat,amount:amt,status:'טרם',date:date,note:m?('דרך: '+m):''});
       }
-      toast('נשמר ✓'); await load(); campSheet(box);
+      toast('נשמר ✓'); await load();
     };
   });
 }
@@ -10091,7 +10101,8 @@ async function campCompareTable(box){
     box.innerHTML=`<div class="camphd"><h3>❗ מה חסר במערכת — מול הקובץ ששלחת</h3>
       ${missing?`<div class="cmpbar"><span>📥 <b>${missing}</b> סכומים אפשר להכניס לכרטיסים בלחיצה</span><button class="btn sm" id="cmpfillall">הכנס את כולם</button></div>`:''}</div>${gapsHtml()}`;
   }
-  const refresh=async()=>{await load();campCompareTable(box);};
+  campKeepScroll();
+  const refresh=async()=>{CAMP_SCROLL=window.scrollY;await load();};
   box.querySelectorAll('.cmpdel').forEach(b=>b.onclick=async e=>{
     e.preventDefault();
     const c=r.cols.find(x=>x.key===b.dataset.k);
