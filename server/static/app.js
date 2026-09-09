@@ -9982,7 +9982,7 @@ function campSheetRender(box,r){
     <div class="shtbl">
       <div class="cshr head"><span class="cshn">שם התורם</span>${cols.map(c=>`<span class="csha">${esc(c.label)}</span>`).join('')}<span class="csha now">${esc(tcat)}</span></div>
       ${shown.map(([x,i])=>`<div class="cshr" data-i="${i}">
-        <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.card_name||x.name)}</a>${x.card_name&&norm(x.card_name).split(' ').sort().join(' ')!==norm(x.name).split(' ').sort().join(' ')?`<small class="cshfile">${esc(x.name)}</small>`:''}`:esc(x.name)}<button class="cshlnk" data-i="${i}" title="שייך לתורם קיים בשם אחר">🔗</button></span>
+        <span class="cshn">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.card_name||x.name)}</a>`:esc(x.name)}<button class="cshlnk" data-i="${i}" title="${esc(x.name)} — שייך לתורם אחר">🔗</button></span>
         ${cols.map(c=>`<span class="csha">${f(x.vals[c.key])||'<span class="cshempty">-</span>'}</span>`).join('')}
         <span class="csha now cshcell" data-i="${i}" title="לחץ למילוי">${nowCell(x)}</span></div>`).join('')}
       ${shown.length?'':'<div class="empty">לא נמצא</div>'}
