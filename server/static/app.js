@@ -1,6 +1,6 @@
 'use strict';
 let HEBTODAY = '';
-let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], BUILDING_ITEMS = [], TASKKINDS_C = [], CHAN_C = [], CLK_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
+let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], CAMPFLAGS = {}, BUILDING_ITEMS = [], TASKKINDS_C = [], CHAN_C = [], CLK_C = [], tab = 'donors', flt = '', q = '', plaque = null, GLAST = 6, pyMonth = null, pyDay = null, HEBYEAR = '', donSort = 'last', taskWho = '', showDone = false;
 // מאיר (אני, ריק) ואהרן — הקצאת משימות
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
@@ -1285,7 +1285,7 @@ async function load(){
       _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
   }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }
   netPaint();
-  DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
+  DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; CAMPFLAGS = d.campaign_flags || {}; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
@@ -9866,7 +9866,15 @@ function campOwes(cat){
       cur:curSym(d),phone:splitPhones(d.phone)[0]||''});}));
   return out.sort((a,b)=>b.amt-a.amt);
 }
-function campList(){
+// מאיר: "כל מה שיש כאן זה לא קמפיין חוץ מקמחא דפסחא ומתנות לאביונים וסוכות
+// או ל"ג בעומר". ייעוד נחשב קמפיין אם הוא אחד מאלה — או אם מאיר סימן אותו
+// במפורש (➕). ייעוד שהוסר (🗑) נשאר על התרומות, רק לא מוצג כאן.
+const CAMP_RE=/קמחא|קימחא|פסח|pesach|pischa|מתנות לאביונים|לאביונים|פורים|purim|סוכות|סוכת|sukk|succ|ל"ג בעומר|ל״ג בעומר|לג בעומר|lag ?b/i;
+function campIsReal(c){
+  if(c in (CAMPFLAGS||{}))return !!CAMPFLAGS[c];
+  return CAMP_RE.test(c);
+}
+function campAllCats(){
   const m={};
   DB.forEach(d=>(d.donations||[]).forEach(x=>{const c=String(x.category||'').trim();
     if(c)m[c]=(m[c]||0)+amtNum(x.amount);}));
@@ -9874,6 +9882,94 @@ function campList(){
   DB.forEach(d=>(d.pledges||[]).forEach(p=>{const c=String(p.category||'').trim();
     if(c&&!(c in m))m[c]=0;}));
   return Object.keys(m).sort((a,b)=>m[b]-m[a]||a.localeCompare(b,'he'));
+}
+function campList(){return campAllCats().filter(campIsReal);}
+async function campSetShown(c,shown){
+  const r=await api('POST','/api/campaigns/flag',{name:c,shown:shown?1:0});
+  if(!r||!r.ok){toast('לא נשמר');return false;}
+  CAMPFLAGS[c]=shown?1:0;
+  if(shown&&!(CAMPAIGNS||[]).includes(c))CAMPAIGNS.unshift(c);
+  return true;
+}
+// ➕ קמפיין — בחירה מייעוד קיים שאינו מוצג, או שם חדש
+function campAddDialog(){
+  const hidden=campAllCats().filter(c=>!campIsReal(c));
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800;margin-bottom:6px">➕ הוספת קמפיין</div>
+    <input id="campnew" placeholder="שם קמפיין חדש, למשל: סוכות תשפ&quot;ז" style="width:100%;box-sizing:border-box">
+    <button class="btn" id="campnewgo" style="width:100%;margin-top:6px">הוסף</button>
+    ${hidden.length?`<div class="hintxt" style="margin-top:10px">או ייעוד קיים שלא מוצג בקמפיינים:</div>
+    <div class="catmgrlist">${hidden.map(c=>`<div class="catmgrrow"><button class="catmgrgo campshow" data-c="${esc(c)}">${esc(c)}</button></div>`).join('')}</div>`:''}
+    <div class="cbtns" style="margin-top:10px"><button class="btn ghost cno">סגור</button></div></div>`;
+  document.body.appendChild(o);const done=()=>o.remove();
+  o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
+  const add=async c=>{c=String(c||'').trim();if(!c)return;if(await campSetShown(c,1)){campSel=c;done();renderCamp();toast('נוסף ✓');}};
+  o.querySelector('#campnewgo').onclick=()=>add(o.querySelector('#campnew').value);
+  o.querySelector('#campnew').onkeydown=e=>{if(e.key==='Enter')add(e.target.value);};
+  o.querySelectorAll('.campshow').forEach(b=>b.onclick=()=>add(b.dataset.c));
+  setTimeout(()=>{const i=o.querySelector('#campnew');if(i)i.focus();},50);
+}
+// טבלת השוואה לפי תורם: עמודה לכל רשימה (סוכות שנה שעברה, קמחא דפסחא תשפ"ו…)
+// ועמודה אחרונה — מה שנכנס עכשיו לקמפיין הנבחר מהתרומות שהוזנו.
+let CMPCOLS=null;     // אילו עמודות מוצגות (null = הכל)
+async function campCompareTable(box){
+  if(!box)return;
+  box.innerHTML='<div class="hintxt">טוען השוואה…</div>';
+  let r=null;
+  try{r=await api('GET','/api/campaigns/compare?cat='+encodeURIComponent(campSel||''));}catch(e){}
+  if(!r||!r.cols){box.innerHTML='<div class="hintxt">לא הצלחתי לטעון את ההשוואה</div>';return;}
+  if(CMPCOLS===null)CMPCOLS=r.cols.map(c=>c.key);
+  const cols=r.cols.filter(c=>CMPCOLS.includes(c.key));
+  const f=v=>v?('$'+Math.round(v).toLocaleString('en-US')):'';
+  const rows=r.rows.filter(x=>x.now||cols.some(c=>x.vals[c.key]));
+  const sum={};cols.forEach(c=>sum[c.key]=0);let sumNow=0;
+  rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
+  const grid=`grid-template-columns:30px minmax(130px,1fr) ${cols.map(()=>'108px').join(' ')} 108px`;
+  box.innerHTML=`<div class="camphd" style="margin-top:16px"><h3>📊 טבלת השוואה — ${rows.length} תורמים</h3>
+      <div class="campsum">${r.cols.map(c=>`<label class="cmpcol"><input type="checkbox" data-k="${esc(c.key)}"${CMPCOLS.includes(c.key)?' checked':''}> ${esc(c.label)} <small>(${c.n})</small>${c.src==='db'?` <button class="del cmpdel" data-k="${esc(c.key)}" title="מחק רשימה">🗑</button>`:''}</label>`).join('')}
+        <button class="btn sm ghost" id="cmppaste">📥 הדבק רשימה</button></div></div>
+    <div class="camptbl cmpwrap"><div class="cmpgrid">
+      <div class="camprow2 head" style="${grid}"><span class="c1">#</span><span class="c2">תורם</span>${cols.map(c=>`<span class="cc">${esc(c.label)}</span>`).join('')}<span class="cc cmpnow">נכנס עכשיו</span></div>
+      ${rows.map((x,i)=>`<div class="camprow2" style="${grid}"><span class="c1">${i+1}</span>
+        <span class="c2">${x.donor_id?`<a class="avhold" data-did="${x.donor_id}">${esc(x.name)}</a>`:esc(x.name)+' <small class="cmpno">אין כרטיס</small>'}${x.eng?`<small class="cen">${esc(x.eng)}</small>`:''}</span>
+        ${cols.map(c=>`<span class="cc">${f(x.vals[c.key])}</span>`).join('')}
+        <span class="cc cmpnow">${x.now?('<b>'+f(x.now)+'</b>'):'<span class="cmpmiss">—</span>'}</span></div>`).join('')
+        ||'<div class="empty">אין עדיין רשימות להשוואה — הדבק רשימה או הכנס תרומות לקמפיין</div>'}
+      ${rows.length?`<div class="camprow2 head" style="${grid}"><span class="c1"></span><span class="c2">סה"כ</span>${cols.map(c=>`<span class="cc">${f(sum[c.key])}</span>`).join('')}<span class="cc cmpnow"><b>${f(sumNow)}</b></span></div>`:''}
+    </div></div>`;
+  box.querySelectorAll('.cmpcol input').forEach(i=>i.onchange=()=>{
+    CMPCOLS=Array.from(box.querySelectorAll('.cmpcol input')).filter(x=>x.checked).map(x=>x.dataset.k);
+    campCompareTable(box);});
+  box.querySelectorAll('.cmpdel').forEach(b=>b.onclick=async e=>{
+    e.preventDefault();
+    const c=r.cols.find(x=>x.key===b.dataset.k);
+    if(!confirm('למחוק את הרשימה "'+(c?c.label:'')+'"?'))return;
+    await api('POST','/api/campaigns/lists',{key:b.dataset.k,delete:true});
+    CMPCOLS=null;campCompareTable(box);});
+  const pb=box.querySelector('#cmppaste');
+  if(pb)pb.onclick=()=>campPasteList(box);
+  box.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
+}
+// 📥 הדבקת רשימה מאקסל — שם וסכום בכל שורה — נשמרת בשרת כעמודה בטבלה
+function campPasteList(box){
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="max-width:520px"><div class="cm" style="font-weight:800;margin-bottom:6px">📥 הדבקת רשימה להשוואה</div>
+    <input id="cmpl_label" placeholder="שם הרשימה, למשל: סוכות תשפ&quot;ו" style="width:100%;box-sizing:border-box;margin-bottom:6px">
+    <div class="hintxt">העתק מהאקסל שתי עמודות — שם וסכום — והדבק כאן.</div>
+    <textarea id="cmpl_txt" rows="10" style="width:100%;box-sizing:border-box" placeholder="לאם זאב\t1100&#10;Elchanan Abramowitz\t1100&#10;קאהן אלון 360"></textarea>
+    <div class="cbtns" style="margin-top:10px"><button class="btn" id="cmpl_go">שמור רשימה</button><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);const done=()=>o.remove();
+  o.querySelector('.cno').onclick=done;o.onclick=e=>{if(e.target===o)done();};
+  o.querySelector('#cmpl_go').onclick=async()=>{
+    const label=o.querySelector('#cmpl_label').value.trim(), text=o.querySelector('#cmpl_txt').value;
+    if(!label){toast('צריך שם לרשימה');return;}
+    const rows=campParse(text);
+    if(!rows.length){toast('לא זיהיתי שורות — שם וסכום בכל שורה');return;}
+    const r=await api('POST','/api/campaigns/lists',{label:label,rows:rows.map(x=>({name:x.name,amount:String(x.amt)}))});
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    done();toast('נשמרה רשימה — '+r.n+' שורות ✓');CMPCOLS=null;campCompareTable(box);
+  };
+  setTimeout(()=>{const i=o.querySelector('#cmpl_label');if(i)i.focus();},50);
 }
 function renderCamp(){
   chips.innerHTML='';
@@ -9886,7 +9982,9 @@ function renderCamp(){
   const owetot=Object.keys(owesum).map(k=>k+Math.round(owesum[k]).toLocaleString('en-US')).join(' + ');
   const donors=new Set(rows.map(r=>r.id)).size;
   view.innerHTML=`<div class="avbar noprint">
-      <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}</select>
+      <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}${cats.length?'':'<option value="">— אין קמפיינים —</option>'}</select>
+      <button class="btn sm ghost" id="campadd" title="הוסף קמפיין לרשימה">➕</button>
+      ${campSel?`<button class="btn sm ghost" id="camphide" title="הסר מרשימת הקמפיינים (התרומות נשארות)">🗑</button>`:''}
       <button class="btn sm" id="campcopy">📋 העתק</button>
       <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
       <button class="btn sm" id="campcmp">🔍 השוואה מול אקסל</button>
@@ -9907,9 +10005,18 @@ function renderCamp(){
       <div class="camptbl">${owes.map((r,i)=>`<div class="camprow2 owe"><span class="c1">${i+1}</span>
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a></span>
         <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}</span>
-        <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}`;
+        <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}
+    <div id="campcmpbox"></div>`;
   const sel=document.getElementById('campsel');
   if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
+  const ad=document.getElementById('campadd');
+  if(ad)ad.onclick=campAddDialog;
+  const hd=document.getElementById('camphide');
+  if(hd)hd.onclick=async()=>{
+    if(!confirm('להסיר את "'+campSel+'" מרשימת הקמפיינים?\nהתרומות נשארות כמו שהן — הוא רק לא יופיע כאן. אפשר להחזיר דרך ➕.'))return;
+    if(await campSetShown(campSel,0)){toast('הוסר מהרשימה ✓');campSel='';renderCamp();}
+  };
+  campCompareTable(document.getElementById('campcmpbox'));
   const cmp=document.getElementById('campcmp');
   if(cmp)cmp.onclick=()=>campCompare(rows);
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});

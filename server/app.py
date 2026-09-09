@@ -246,6 +246,12 @@ def ensure_schema():
         addr TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, email TEXT, recurring INTEGER DEFAULT 0,
         donor_id INTEGER, category TEXT, processed INTEGER DEFAULT 0, source TEXT, status TEXT DEFAULT 'settled');
     CREATE TABLE IF NOT EXISTS campaigns(name TEXT PRIMARY KEY, created TEXT);
+    -- מאיר: "כל מה שיש כאן זה לא קמפיין חוץ מקמחא דפסחא ומתנות לאביונים וסוכות
+    -- או ל"ג בעומר". ייעוד שהוסר מלשונית הקמפיינים נשאר על התרומות — רק לא מוצג שם.
+    CREATE TABLE IF NOT EXISTS campaign_flags(name TEXT PRIMARY KEY, shown INTEGER DEFAULT 1, updated TEXT);
+    -- רשימות ייחוס לקמפיינים (סוכות שנה שעברה, קמחא דפסחא תשפ"ו) שהודבקו מהמערכת
+    CREATE TABLE IF NOT EXISTS campaign_ref_lists(key TEXT PRIMARY KEY, label TEXT, category TEXT,
+        rows TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS receipts(rkey TEXT PRIMARY KEY, num INTEGER, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
@@ -6094,6 +6100,89 @@ def campaign_match(con, rows, dfrom='', dto=''):
     return out
 
 
+# מאיר: "אני רוצה שיהיה כאן בקמפיינים רשימה מסודרת… של סוכות שנה שעברה
+# וקמחא דפסחא תשפ"ו. וטור שלישי יהיה מה שעכשיו אמלא ע"י הכנסת התרומות".
+# הרשימות: מהקובץ שכבר במערכת (פורים/פסח תשפ"ו) + רשימות שהודבקו במסך.
+def campaign_ref_lists(con):
+    out = []
+    try:
+        with open(os.path.join(HERE, 'campaign_lists.json'), encoding='utf-8') as f:
+            for L in json.load(f).get('lists', []):
+                out.append({'key': L['key'], 'label': L['label'], 'category': L.get('category', ''),
+                            'from': L.get('from', ''), 'to': L.get('to', ''), 'rows': L['rows'], 'src': 'file'})
+    except Exception:
+        pass
+    try:
+        for r in con.execute("SELECT key,label,category,rows,created FROM campaign_ref_lists ORDER BY created,key"):
+            try: rows = json.loads(r['rows'] or '[]')
+            except Exception: rows = []
+            out.append({'key': r['key'], 'label': r['label'], 'category': r['category'] or '',
+                        'from': '', 'to': '', 'rows': rows, 'src': 'db'})
+    except Exception:
+        pass
+    return out
+
+
+def campaign_parse_text(txt):
+    """שורות שהודבקו מאקסל — שם וסכום. מפריד טאב/פסיק/נקודה־פסיק, או סכום בסוף השורה."""
+    rows = []
+    for ln in str(txt or '').splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        parts = re.split(r'\t|;', ln)
+        if len(parts) < 2:
+            parts = re.split(r',(?=[^,]*$)', ln)
+        name = amt = None
+        if len(parts) >= 2 and re.search(r'\d', parts[-1]):
+            name, amt = ' '.join(p.strip() for p in parts[:-1]), parts[-1]
+        else:
+            g = re.match(r'^(.*?)[\s.–\-]+\$?([\d,.]+)\s*$', ln)
+            if not g:
+                continue
+            name, amt = g.group(1), g.group(2)
+        name = re.sub(r'["״]', '"', name).strip(' -–')
+        if not name:
+            continue
+        try: a = float(re.sub(r'[^0-9.]', '', amt) or 0)
+        except ValueError: a = 0.0
+        rows.append({'name': name, 'amount': str(int(a) if a == int(a) else a)})
+    return rows
+
+
+def campaign_compare(con, cat):
+    """טבלת השוואה לתורם: עמודה לכל רשימת ייחוס + עמודה של מה שנכנס עכשיו לייעוד הנבחר."""
+    lists = campaign_ref_lists(con)
+    cols = [{'key': L['key'], 'label': L['label'], 'src': L['src'], 'n': len(L['rows'])} for L in lists]
+    rows = {}          # donor_id או 'x:<שם>' -> שורה
+    names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+    eng = {r['id']: (r['english'] or '') for r in con.execute("SELECT id,english FROM donors")}
+
+    def row_for(did, nm):
+        k = did if did else ('x:' + _norm(nm))
+        if k not in rows:
+            rows[k] = {'donor_id': did, 'name': names.get(did, nm) if did else nm,
+                       'eng': eng.get(did, '') if did else '', 'vals': {}, 'now': 0.0, 'now_n': 0}
+        return rows[k]
+
+    for L in lists:
+        for x in campaign_match(con, L['rows'], L.get('from', ''), L.get('to', '')):
+            if x['status'] == 'skip':
+                continue
+            r = row_for(x['donor_id'], x['name'])
+            r['vals'][L['key']] = round(r['vals'].get(L['key'], 0) + (x['amount'] or 0), 2)
+    if cat:
+        for d in con.execute("""SELECT donor_id, SUM(amount) a, COUNT(*) n FROM donations
+                                WHERE TRIM(COALESCE(category,''))=? GROUP BY donor_id""", (cat,)):
+            if d['donor_id'] not in names:
+                continue
+            r = row_for(d['donor_id'], names[d['donor_id']])
+            r['now'] = round(float(d['a'] or 0), 2); r['now_n'] = int(d['n'] or 0)
+    out = list(rows.values())
+    out.sort(key=lambda r: (0 if r['donor_id'] else 1, r['name']))
+    return {'cat': cat, 'cols': cols, 'rows': out}
+
+
 def recon_apply(cur, tid, b):
     """אישור שורת חיוב אחת: יצירת/עדכון התורם, התרומה, המשימה והקוויטל.
     לא פותח ולא סוגר חיבור — כדי שאפשר יהיה לאשר קבוצה שלמה בבקשה אחת."""
@@ -9387,6 +9476,8 @@ class H(BaseHTTPRequestHandler):
             donors, unlinked, general_tasks = get_all()
             con = db(); camps = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             bitems = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
+            try: cflags = {r['name']: int(r['shown'] or 0) for r in con.execute("SELECT name,shown FROM campaign_flags")}
+            except Exception: cflags = {}
             try: nd = [[r['a'], r['b']] for r in con.execute("SELECT a,b FROM not_dupes")]
             except Exception: nd = []
             try: ckinds = [r['name'] for r in con.execute("SELECT name FROM contact_kinds ORDER BY created, name")]
@@ -9405,7 +9496,7 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             con.close()
-            _raw = json.dumps({'donors': donors, 'mail_names': _mn, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
+            _raw = json.dumps({'donors': donors, 'mail_names': _mn, 'unlinked_prayers': unlinked, 'general_tasks': general_tasks, 'campaigns': camps, 'campaign_flags': cflags, 'building_items': bitems, 'not_dupes': nd, 'task_kinds': tkinds, 'pay_channels': pchans, 'contact_kinds': ckinds, 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()), 'kv_default': list(kvittel_default_month())}, ensure_ascii=False).encode('utf-8')
             try: _gz = gzip.compress(_raw, 6)
             except Exception: _gz = b''
             # החתימה לפי התוכן עצמו: בנייה מחדש שיצא ממנה אותו מידע משאירה את
@@ -10774,6 +10865,15 @@ class H(BaseHTTPRequestHandler):
             rows = [r['name'] for r in con.execute("SELECT name FROM campaigns ORDER BY created DESC, name")]
             con.close()
             return self._send(200, rows)
+        if self.path.split('?')[0] == '/api/campaigns/compare':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cat = (qs.get('cat') or [''])[0].strip()
+            con = db()
+            try:
+                out = campaign_compare(con, cat)
+            finally:
+                con.close()
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/building_items':
             con = db()
             rows = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
@@ -12175,6 +12275,39 @@ class H(BaseHTTPRequestHandler):
                             (did, mo, a, today_iso()))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/campaigns/flag':
+            # הצגה/הסתרה של ייעוד בלשונית הקמפיינים. לא נוגע בתרומות ולא מוחק את הייעוד.
+            nm = (b.get('name') or '').strip()
+            if not nm:
+                return self._send(400, {'error': 'name'})
+            shown = 1 if b.get('shown') else 0
+            con = db()
+            con.execute("INSERT OR REPLACE INTO campaign_flags(name,shown,updated) VALUES(?,?,?)",
+                        (nm, shown, today_iso()))
+            if shown:
+                con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso()))
+            commit_retry(con); con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'name': nm, 'shown': shown})
+        if self.path == '/api/campaigns/lists':
+            # רשימת ייחוס לקמפיין (למשל סוכות שנה שעברה) — מודבקת מאקסל: שם וסכום בכל שורה
+            key = (b.get('key') or '').strip()
+            if key and b.get('delete'):
+                con = db()
+                con.execute("DELETE FROM campaign_ref_lists WHERE key=?", (key,))
+                commit_retry(con); con.close()
+                return self._send(200, {'ok': True, 'deleted': key})
+            label = (b.get('label') or '').strip()
+            rows = b.get('rows') if isinstance(b.get('rows'), list) else campaign_parse_text(b.get('text') or '')
+            if not label or not rows:
+                return self._send(200, {'ok': False, 'error': 'empty', 'rows': len(rows or [])})
+            if not key:
+                key = 'l' + re.sub(r'[^0-9]', '', today_iso()) + '_' + str(abs(hash(label)) % 10000)
+            con = db()
+            con.execute("INSERT OR REPLACE INTO campaign_ref_lists(key,label,category,rows,created) VALUES(?,?,?,?,?)",
+                        (key, label, (b.get('category') or label).strip(), json.dumps(rows, ensure_ascii=False), today_iso()))
+            commit_retry(con); con.close()
+            return self._send(200, {'ok': True, 'key': key, 'label': label, 'n': len(rows)})
         if self.path == '/api/campaigns':
             nm = (b.get('name') or '').strip()
             if nm and b.get('delete'):        # מחיקת ייעוד מהרשימה. תרומות שכבר סווגו לא נוגעים בהן

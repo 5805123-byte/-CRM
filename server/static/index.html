@@ -345,7 +345,7 @@
   .avhline small{color:var(--muted)}
   .avswapbox .sw_q,.avassignbox .av_q{width:100%;padding:7px 9px;border:1px solid var(--accent);border-radius:8px;
     font-family:inherit;font-size:.85rem;background:var(--card);color:var(--ink)}
-  .avbar{display:flex;align-items:center;gap:8px;margin:8px 0}
+  .avbar{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}
   .avtable{width:100%;border-collapse:collapse;background:var(--card);font-size:.9rem}
   .avtable th,.avtable td{border:1px solid var(--line);padding:8px 10px;text-align:start}
   .avtable th{background:var(--gold-soft);color:var(--gold);font-weight:800}
@@ -559,6 +559,15 @@
   .cmphd.bad{color:var(--no)} .cmphd.warn{color:var(--gold)}
   .cmphd.muted{color:var(--muted)} .cmphd.ok{color:var(--yes)}
   .cmpno{color:var(--no);font-weight:700;font-size:.72rem}
+  /* טבלת השוואה בקמפיינים — עמודה לכל רשימה, גוללת לרוחב בטלפון */
+  .cmpwrap{overflow-x:auto}
+  .cmpgrid{min-width:100%;width:max-content}
+  .camprow2 .cc{color:var(--muted);font-size:.84rem;font-weight:700;white-space:nowrap}
+  .camprow2 .cc.cmpnow{color:var(--yes);font-size:.9rem}
+  .camprow2.head .cc{font-size:.74rem;white-space:normal;line-height:1.15;padding-inline-end:6px}
+  .camprow2 .cmpmiss{color:var(--line)}
+  .cmpcol{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+  .cmpcol .del{padding:0 4px;font-size:.8rem}
   #cmp_in{width:100%;font-family:inherit;font-size:.9rem;padding:8px;border:1px solid var(--line);
     border-radius:10px;background:var(--card);color:var(--ink)}
   .camphd{margin:8px 2px 6px}
