@@ -5668,6 +5668,63 @@ def ensure_schema():
     except Exception as e:
         print('  iz dup pledge error:', e)
 
+    # רץ אחרון — אחרי כל ההשלמות מאנשי הקשר, כדי שגם מה שנוסף שם ינורמל
+    # מאיר: "שבכל מי שבארצות הברית וקנדה יהיה לו פלוס ואת המספר 1, שאוכל לחייג
+    # ישירות לכולם מהמערכת". נרמול חד־פעמי של הטלפונים השמורים: +1 למספר
+    # אמריקאי, +972 לישראלי, וקידומת כפולה ("+1 +1718…") מתיישרת.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='phone_e164_v1'").fetchone():
+            _DIALS = ['972', '380', '1', '44', '32', '33', '41', '43', '49', '61', '27', '52', '55', '54', '7']
+
+            def _norm_one(t, region):
+                t = (t or '').strip()
+                if not t:
+                    return ''
+                had_plus = '+' in t
+                d = re.sub(r'\D', '', t)
+                code = ''
+                if had_plus:
+                    while len(d) > 11 and d.startswith('11'):
+                        d = d[1:]
+                    while len(d) > 12 and d.startswith('972972'):
+                        d = d[3:]
+                    for c in sorted(_DIALS, key=len, reverse=True):
+                        if d.startswith(c):
+                            code, d = '+' + c, d[len(c):]; break
+                    if not code:
+                        code, d = '+' + d[:1], d[1:]
+                elif len(d) == 11 and d[0] == '1':
+                    code, d = '+1', d[1:]
+                elif len(d) == 10 and d[0] != '0':
+                    code = '+1'
+                elif d.startswith('972') and len(d) >= 11:
+                    code, d = '+972', d[3:]
+                elif d[:1] == '0' and len(d) in (9, 10):
+                    code, d = '+972', d[1:]
+                else:
+                    return t                                  # לא מזוהה — נשאר כמו שהוא
+                if code == '+1' and len(d) == 10:
+                    rest = d[:3] + '-' + d[3:6] + '-' + d[6:]
+                elif code == '+972' and len(d) == 9:
+                    rest = d[:2] + '-' + d[2:5] + '-' + d[5:]
+                elif code == '+972' and len(d) == 8:
+                    rest = d[:1] + '-' + d[1:4] + '-' + d[4:]
+                else:
+                    rest = d
+                return code + ' ' + rest
+
+            n = 0
+            for r in con.execute("SELECT id,phone,COALESCE(region,'') region FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+                parts = [x.strip() for x in re.split(r'\s*/\s*', r['phone']) if x.strip()]
+                new = ' / '.join(_norm_one(x, r['region']) for x in parts)
+                if new != r['phone']:
+                    con.execute("UPDATE donors SET phone=? WHERE id=?", (new, r['id'])); n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('phone_e164_v1')")
+            con.commit()
+            print(f'  טלפונים נורמלו לקידומת בינלאומית: {n}')
+    except Exception as e:
+        print('  שגיאת נרמול טלפונים:', e)
+
     con.commit(); con.close()
 
 def get_all():

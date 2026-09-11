@@ -1484,7 +1484,7 @@ function renderDonors(){
         ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
         ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
         ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${kvPill(d)}${d.phone?`<span class="ph">${esc(d.phone)}</span>`:''}${(d.email||'').trim()?`<span class="ph em" dir="ltr" title="אימייל">✉️ ${esc((splitEmails(d.email).length?splitEmails(d.email):[d.email.trim()]).join(' · '))}</span>`:''}</div>
+      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${kvPill(d)}${d.phone?`<span class="ph">${splitPhones(d.phone).map(p=>`<a class="phlink" href="${esc(telHref(p,d.region))}" onclick="event.stopPropagation()" title="חייג">📞 ${esc(phNorm(p,d.region).disp)}</a>`).join(' · ')}</span>`:''}${(d.email||'').trim()?`<span class="ph em" dir="ltr" title="אימייל">✉️ ${esc((splitEmails(d.email).length?splitEmails(d.email):[d.email.trim()]).join(' · '))}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>
     ${list.length>DLIM?`<div class="moredon" id="moredon">מציג ${DLIM} מתוך ${list.length} — גלול להמשך…</div>`:''}`;
   wireMoreDonors(list);
@@ -4846,16 +4846,40 @@ const DIALS=[
 ];
 const DIAL_DEF='+1';
 const DIALS_BY_LEN=DIALS.slice().sort((a,b)=>b[0].length-a[0].length);
-// מפרק מספר שמור לקידומת ולשאר, לפי הקידומת הארוכה ביותר שמתאימה
+// מאיר: "שבכל מי שבארצות הברית וקנדה יהיה לו פלוס ואת המספר 1, שאוכל לחייג
+// ישירות לכולם מהמערכת". כל מספר מנורמל לקידומת + מספר: מספר אמריקאי של 10
+// ספרות (או 11 עם 1 בהתחלה) → +1; מספר ישראלי שמתחיל ב-0 → +972.
+// "+1 +1718-377-0930" (קידומת כפולה מעריכה ישנה) מתיישר גם הוא.
+function phNorm(v,region){
+  let t=String(v||'').trim(); if(!t)return {code:'',rest:'',e164:'',disp:''};
+  const hadPlus=t.indexOf('+')>=0;
+  let d=t.replace(/[^\d]/g,'');
+  let code='';
+  if(hadPlus){
+    // קידומת כפולה — "+1 +1718…" → מורידים "1" חוזר
+    while(d.length>11&&d.startsWith('11'))d=d.slice(1);
+    while(d.length>12&&d.startsWith('972972'))d=d.slice(3);
+    for(const [c] of DIALS_BY_LEN){const cc=c.slice(1); if(d.startsWith(cc)){code=c;d=d.slice(cc.length);break;}}
+    if(!code){code='+'+d.slice(0,1);d=d.slice(1);}
+  }else if(d.length===11&&d[0]==='1'){code='+1';d=d.slice(1);}
+  else if(d.length===10&&d[0]!=='0'){code='+1';}
+  else if(d.startsWith('972')&&d.length>=11){code='+972';d=d.slice(3);}
+  else if(d[0]==='0'&&(d.length===9||d.length===10)){code='+972';d=d.slice(1);}
+  else if(d.length===12&&d[0]==='1'&&region!=='il'){code='+1';d=d.slice(1);}
+  const rest=code==='+1'&&d.length===10?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6)
+            :code==='+972'&&d.length===9?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5)
+            :code==='+972'&&d.length===8?d.slice(0,1)+'-'+d.slice(1,4)+'-'+d.slice(4)
+            :code?d:t;
+  return {code, rest, e164:code?(code+d):'', disp:code?(code+' '+rest):t};
+}
+// קישור חיוג — תמיד בינלאומי, כדי שיעבוד גם מהארץ וגם מחו"ל
+function telHref(v,region){const n=phNorm(v,region);return 'tel:'+(n.e164||String(v||'').replace(/[^\d+]/g,''));}
+function waHref(v,region){const n=phNorm(v,region);const num=(n.e164||'').replace('+','')||waNum(v);return num?('https://wa.me/'+num):'';}
+// מפרק מספר שמור לקידומת ולשאר — לעורך שבכרטיס
 function phParts(v){
-  const t=String(v||'').trim();
-  if(t.charAt(0)==='+'){
-    const flat=t.replace(/[^\d+]/g,'');
-    for(const [code] of DIALS_BY_LEN)
-      if(flat.indexOf(code)===0) return {code, rest:t.slice(t.indexOf(code.slice(1))+code.length-1).trim()};
-    return {code:'', rest:t};
-  }
-  return {code:t?'':DIAL_DEF, rest:t};      // מספר ישן בלי קידומת — נשאר כמו שהוא
+  const n=phNorm(v);
+  if(n.code)return {code:n.code,rest:n.rest};
+  return {code:String(v||'').trim()?'':DIAL_DEF, rest:String(v||'').trim()};
 }
 function dialOpts(sel){
   return DIALS.map(([c,f,n])=>`<option value="${c}" ${c===sel?'selected':''}>${f} ${n} ${c}</option>`).join('')
@@ -4873,9 +4897,13 @@ function renderPhones(d){
     const row=document.createElement('div');row.className='phrow';
     row.innerHTML=`<select class="phcc" title="קידומת מדינה">${dialOpts(p.code)}</select>`
       +`<input class="phin" dir="ltr" inputmode="tel" value="${esc(p.rest||'')}" placeholder="267-625-7751">`
+      +`<a class="cbtn call phcall" title="חייג">📞</a><a class="cbtn wa phwa" target="_blank" rel="noopener" title="וואטסאפ">💬</a>`
       +`<button class="del phdel" title="מחק">🗑</button>`;
-    row.querySelector('.phin').onchange=save;
-    row.querySelector('.phcc').onchange=save;
+    const links=()=>{const f=full(row); const c=row.querySelector('.phcall'), w=row.querySelector('.phwa');
+      c.href=f?telHref(f,d.region):'#'; w.href=f?(waHref(f,d.region)||'#'):'#'; c.style.visibility=w.style.visibility=f?'':'hidden';};
+    links();
+    row.querySelector('.phin').onchange=()=>{links();save();};
+    row.querySelector('.phcc').onchange=()=>{links();save();};
     row.querySelector('.phdel').onclick=()=>{row.remove();save();};
     el.insertBefore(row, el.lastChild); return row;};
   const addBtn=document.createElement('button');addBtn.className='btn sm phadd';addBtn.textContent='➕ טלפון נוסף';
@@ -10426,10 +10454,10 @@ function renderCamp(){
 // כפתורי קשר מהירים — התקשרות / וואטסאפ / אימייל ישירות מהמשימה
 function waNum(p){let n=(p||'').replace(/[^0-9]/g,'');if(n.length>=9&&n[0]==='0')n='972'+n.slice(1);return n;}
 function contactBtns(d){
-  const ph=splitPhones(d.phone)[0]||'', wa=waNum(ph), em=(d.email||'').trim();
+  const ph=splitPhones(d.phone)[0]||'', wa=waHref(ph,d.region), em=(d.email||'').trim();
   let h='';
-  if(ph)h+=`<a class="cbtn call" href="tel:${esc(ph)}" onclick="event.stopPropagation()" title="התקשר ${esc(ph)}">📞</a>`;
-  if(wa)h+=`<a class="cbtn wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
+  if(ph)h+=`<a class="cbtn call" href="${esc(telHref(ph,d.region))}" onclick="event.stopPropagation()" title="התקשר ${esc(phNorm(ph,d.region).disp)}">📞</a>`;
+  if(wa)h+=`<a class="cbtn wa" href="${esc(wa)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
   if(em)h+=`<a class="cbtn mail" href="mailto:${esc(em)}" onclick="event.stopPropagation()" title="${esc(em)}">📧</a>`;
   return h?`<span class="cbtns">${h}</span>`:'';
 }
