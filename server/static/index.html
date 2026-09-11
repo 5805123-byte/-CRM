@@ -1170,7 +1170,8 @@
   /* מאיר: "לכל תורם בדף הראשי — הכתובת אימייל שלו" */
   .rowc .ph.em{margin-top:0;overflow-wrap:anywhere;unicode-bidi:isolate}
   .rowc .ph .phlink{color:var(--accent);text-decoration:none;font-weight:700;direction:ltr;unicode-bidi:isolate}
-  .phrow .cbtn{flex:0 0 auto}
+  .phrow .cbtn{flex:0 0 auto;width:30px;height:30px;font-size:.9rem}
+  .phrow .phin{min-width:0}
   .pill{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
   .pill.reg{background:var(--yes-soft);color:var(--yes)}.pill.occ{background:var(--klali-soft);color:var(--klali)}
   .pill.ishz{background:var(--gold-soft);color:var(--gold)}.pill.k101{background:var(--accent-soft);color:var(--accent)}.pill.klali{background:var(--klali-soft);color:var(--klali)}.pill.wkly{background:#e3f0fb;color:#1a5fb4}.pill.freq{background:#fdf1e0;color:#b5641a}.pill.py{background:var(--gold-soft);color:var(--gold)}
@@ -1366,6 +1367,8 @@
   .phrow .phcc{flex:0 0 auto;max-width:44%;padding:9px 8px;border:1px solid var(--line);
     border-radius:9px;background:var(--card);color:var(--ink);font-family:inherit;font-size:.88rem}
   .phrow .phdel{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.05rem;padding:4px}
+  @media(max-width:520px){.phrow{flex-wrap:wrap}.phrow .phcc{max-width:100%;flex:1 1 100%;order:1}
+    .phrow .phin{order:2;flex:1 1 120px}.phrow .cbtn,.phrow .phdel{order:3}}
   .phadd{align-self:flex-start;margin-top:2px}
   .hintxt{color:var(--muted);font-size:.85rem;padding:4px 0}
   /* שורת "מסונן לפי החיפוש למעלה" ברשימת הקוויטל */
