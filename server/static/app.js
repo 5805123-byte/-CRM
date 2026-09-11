@@ -4874,7 +4874,15 @@ function phNorm(v,region){
 }
 // קישור חיוג — תמיד בינלאומי, כדי שיעבוד גם מהארץ וגם מחו"ל
 function telHref(v,region){const n=phNorm(v,region);return 'tel:'+(n.e164||String(v||'').replace(/[^\d+]/g,''));}
-function waHref(v,region){const n=phNorm(v,region);const num=(n.e164||'').replace('+','')||waNum(v);return num?('https://wa.me/'+num):'';}
+// מאיר: "כשאני לוחץ על הודעות שזה מיד יעבור לוואטסאפ ביזנס ולא ישאל אותי כל
+// פעם מחדש" — באנדרואיד הקישור פונה ישירות לאפליקציית וואטסאפ ביזנס
+// (com.whatsapp.w4b); במכשירים אחרים נשאר wa.me הרגיל.
+const IS_ANDROID=/Android/i.test(navigator.userAgent||'');
+const WA_TGT=IS_ANDROID?'':'target="_blank" rel="noopener"';   // קישור intent נפתח באותה לשונית
+function waHref(v,region){const n=phNorm(v,region);const num=(n.e164||'').replace('+','')||waNum(v);
+  if(!num)return '';
+  if(IS_ANDROID)return 'intent://send/?phone='+num+'#Intent;scheme=whatsapp;package=com.whatsapp.w4b;S.browser_fallback_url='+encodeURIComponent('https://wa.me/'+num)+';end';
+  return 'https://wa.me/'+num;}
 // מפרק מספר שמור לקידומת ולשאר — לעורך שבכרטיס
 function phParts(v){
   const n=phNorm(v);
@@ -4893,7 +4901,7 @@ function renderPhones(d){
   // (+1 718-377-0930) ככפתור גדול שמחייג, ולידו וואטסאפ
   const dial=document.createElement('div'); dial.className='phdial'; el.appendChild(dial);
   const paintDial=()=>{const nums=splitPhones(d.phone);
-    dial.innerHTML=nums.map(p=>{const n=phNorm(p,d.region);return `<span class="phdialrow"><a class="phdialnum" href="${esc(telHref(p,d.region))}">📞 ${esc(n.disp)}</a>${waHref(p,d.region)?`<a class="cbtn wa" href="${esc(waHref(p,d.region))}" target="_blank" rel="noopener" title="וואטסאפ">💬</a>`:''}</span>`;}).join('')
+    dial.innerHTML=nums.map(p=>{const n=phNorm(p,d.region);return `<span class="phdialrow"><a class="phdialnum" href="${esc(telHref(p,d.region))}">📞 ${esc(n.disp)}</a>${waHref(p,d.region)?`<a class="cbtn wa" href="${esc(waHref(p,d.region))}" ${WA_TGT} title="וואטסאפ">💬</a>`:''}</span>`;}).join('')
       +(nums.length?'<div class="hintxt" style="margin:2px 0 6px">לחיצה על המספר מחייגת. לעריכה — השדות למטה.</div>':'');};
   paintDial();
   const full=row=>{const c=row.querySelector('.phcc').value, n=row.querySelector('.phin').value.trim();
@@ -4904,7 +4912,7 @@ function renderPhones(d){
     const row=document.createElement('div');row.className='phrow';
     row.innerHTML=`<select class="phcc" title="קידומת מדינה">${dialOpts(p.code)}</select>`
       +`<input class="phin" dir="ltr" inputmode="tel" value="${esc(p.rest||'')}" placeholder="267-625-7751">`
-      +`<a class="cbtn call phcall" title="חייג">📞</a><a class="cbtn wa phwa" target="_blank" rel="noopener" title="וואטסאפ">💬</a>`
+      +`<a class="cbtn call phcall" title="חייג">📞</a><a class="cbtn wa phwa" ${WA_TGT} title="וואטסאפ">💬</a>`
       +`<button class="del phdel" title="מחק">🗑</button>`;
     const links=()=>{const f=full(row); const c=row.querySelector('.phcall'), w=row.querySelector('.phwa');
       c.href=f?telHref(f,d.region):'#'; w.href=f?(waHref(f,d.region)||'#'):'#'; c.style.visibility=w.style.visibility=f?'':'hidden';};
@@ -10464,7 +10472,7 @@ function contactBtns(d){
   const ph=splitPhones(d.phone)[0]||'', wa=waHref(ph,d.region), em=(d.email||'').trim();
   let h='';
   if(ph)h+=`<a class="cbtn call" href="${esc(telHref(ph,d.region))}" onclick="event.stopPropagation()" title="התקשר ${esc(phNorm(ph,d.region).disp)}">📞</a>`;
-  if(wa)h+=`<a class="cbtn wa" href="${esc(wa)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
+  if(wa)h+=`<a class="cbtn wa" href="${esc(wa)}" ${WA_TGT} onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
   if(em)h+=`<a class="cbtn mail" href="mailto:${esc(em)}" onclick="event.stopPropagation()" title="${esc(em)}">📧</a>`;
   return h?`<span class="cbtns">${h}</span>`:'';
 }
