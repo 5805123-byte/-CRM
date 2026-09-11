@@ -4889,10 +4889,17 @@ function dialOpts(sel){
 function renderPhones(d){
   const el=document.getElementById('phones'); if(!el) return;
   el.innerHTML='';
+  // מאיר: "שהכל יהיה מוכן לחיוג גם בדף פרטים" — מעל העורך, כל מספר במלואו
+  // (+1 718-377-0930) ככפתור גדול שמחייג, ולידו וואטסאפ
+  const dial=document.createElement('div'); dial.className='phdial'; el.appendChild(dial);
+  const paintDial=()=>{const nums=splitPhones(d.phone);
+    dial.innerHTML=nums.map(p=>{const n=phNorm(p,d.region);return `<span class="phdialrow"><a class="phdialnum" href="${esc(telHref(p,d.region))}">📞 ${esc(n.disp)}</a>${waHref(p,d.region)?`<a class="cbtn wa" href="${esc(waHref(p,d.region))}" target="_blank" rel="noopener" title="וואטסאפ">💬</a>`:''}</span>`;}).join('')
+      +(nums.length?'<div class="hintxt" style="margin:2px 0 6px">לחיצה על המספר מחייגת. לעריכה — השדות למטה.</div>':'');};
+  paintDial();
   const full=row=>{const c=row.querySelector('.phcc').value, n=row.querySelector('.phin').value.trim();
     if(!n)return ''; return (c?c+' ':'')+n;};
   const save=async()=>{const nums=[...el.querySelectorAll('.phrow')].map(full).filter(Boolean);
-    d.phone=nums.join(' / ');await api('PUT','/api/donor/'+d.id,{phone:d.phone});toast('נשמר ✓');if(tab==='donors')renderDonors();};
+    d.phone=nums.join(' / ');await api('PUT','/api/donor/'+d.id,{phone:d.phone});paintDial();toast('נשמר ✓');if(tab==='donors')renderDonors();};
   const addRow=(val)=>{const p=phParts(val);
     const row=document.createElement('div');row.className='phrow';
     row.innerHTML=`<select class="phcc" title="קידומת מדינה">${dialOpts(p.code)}</select>`
