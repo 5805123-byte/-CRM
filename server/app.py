@@ -14007,8 +14007,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': plid, 'donor_id': did})
         if self.path == '/api/contact':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date','')))
+            # seen=1 — רישום שהמערכת יצרה בעצמה (חיוג/וואטסאפ מהמערכת) לא מדליק "חדש" על הכרטיס
+            cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('date',''), b.get('channel',''), b.get('summary',''), b.get('next_date',''),
+                         1 if b.get('seen') else 0, now_iso()))
             cid = cur.lastrowid; task_id = None
             if b.get('next_date'):
                 # מאיר: "אני צריך בחלון הזה תזכורת לענות לו או משהו אחר,

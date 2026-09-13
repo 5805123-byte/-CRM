@@ -1484,7 +1484,7 @@ function renderDonors(){
         ${d.purpose?`<div class="purp">🎯 ${esc(d.purpose)}</div>`:''}
         ${d.notes?`<div class="dnote">📝 ${esc(String(d.notes).replace(/\s+/g,' ').slice(0,90))}</div>`:''}
         ${d.created?`<div class="newp">🆕 נוסף ${esc(d.created)}${d.source?(' · '+esc(d.source)):''}</div>`:''}</div>
-      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${kvPill(d)}${d.phone?`<span class="ph">${splitPhones(d.phone).map(p=>`<a class="phlink" href="${esc(telHref(p,d.region))}" onclick="event.stopPropagation()" title="חייג">📞 ${esc(phNorm(p,d.region).disp)}</a>`).join(' · ')}</span>`:''}${(d.email||'').trim()?`<span class="ph em" dir="ltr" title="אימייל">✉️ ${esc((splitEmails(d.email).length?splitEmails(d.email):[d.email.trim()]).join(' · '))}</span>`:''}</div>
+      <div class="meta">${openTasks(d)?`<span class="pill todo" title="${esc(nextTaskTxt(d))}">📋 ${openTasks(d)} ${openTasks(d)===1?'משימה':'משימות'}</span>`:''}${unseenCount(d)?`<span class="pill fresh" title="רישומי קשר חדשים שעוד לא נפתחו">✉️ ${unseenCount(d)} חדש</span>`:''}${unthankedCount(d)?`<span class="pill thx">🙏 ${unthankedCount(d)}</span>`:''}${hasOpenParnes(d)?'<span class="pill py">🌙</span>':''}${channelBadge(d)}${catPill(d.category)}${freqLabel(d.frequency)?`<span class="pill freq">🔁 ${freqLabel(d.frequency)}</span>`:''}${kvPill(d)}${d.phone?`<span class="ph">${splitPhones(d.phone).map(p=>`<a class="phlink" href="${esc(telHref(p,d.region))}" data-log="${d.id}" onclick="event.stopPropagation()" title="חייג">📞 ${esc(phNorm(p,d.region).disp)}</a>`).join(' · ')}</span>`:''}${(d.email||'').trim()?`<span class="ph em" dir="ltr" title="אימייל">✉️ ${esc((splitEmails(d.email).length?splitEmails(d.email):[d.email.trim()]).join(' · '))}</span>`:''}</div>
     </div>`).join('')||'<div class="empty">אין תוצאות</div>'}</div>
     ${list.length>DLIM?`<div class="moredon" id="moredon">מציג ${DLIM} מתוך ${list.length} — גלול להמשך…</div>`:''}`;
   wireMoreDonors(list);
@@ -4901,7 +4901,7 @@ function renderPhones(d){
   // (+1 718-377-0930) ככפתור גדול שמחייג, ולידו וואטסאפ
   const dial=document.createElement('div'); dial.className='phdial'; el.appendChild(dial);
   const paintDial=()=>{const nums=splitPhones(d.phone);
-    dial.innerHTML=nums.map(p=>{const n=phNorm(p,d.region);return `<span class="phdialrow"><a class="phdialnum" href="${esc(telHref(p,d.region))}">📞 ${esc(n.disp)}</a>${waHref(p,d.region)?`<a class="cbtn wa" href="${esc(waHref(p,d.region))}" ${WA_TGT} title="וואטסאפ">💬</a>`:''}</span>`;}).join('')
+    dial.innerHTML=nums.map(p=>{const n=phNorm(p,d.region);return `<span class="phdialrow"><a class="phdialnum" href="${esc(telHref(p,d.region))}" data-log="${d.id}">📞 ${esc(n.disp)}</a>${waHref(p,d.region)?`<a class="cbtn wa" href="${esc(waHref(p,d.region))}" ${WA_TGT} data-log="${d.id}" title="וואטסאפ">💬</a>`:''}</span>`;}).join('')
       +(nums.length?'<div class="hintxt" style="margin:2px 0 6px">לחיצה על המספר מחייגת. לעריכה — השדות למטה.</div>':'');};
   paintDial();
   const full=row=>{const c=row.querySelector('.phcc').value, n=row.querySelector('.phin').value.trim();
@@ -4912,7 +4912,7 @@ function renderPhones(d){
     const row=document.createElement('div');row.className='phrow';
     row.innerHTML=`<select class="phcc" title="קידומת מדינה">${dialOpts(p.code)}</select>`
       +`<input class="phin" dir="ltr" inputmode="tel" value="${esc(p.rest||'')}" placeholder="267-625-7751">`
-      +`<a class="cbtn call phcall" title="חייג">📞</a><a class="cbtn wa phwa" ${WA_TGT} title="וואטסאפ">💬</a>`
+      +`<a class="cbtn call phcall" data-log="${d.id}" title="חייג">📞</a><a class="cbtn wa phwa" ${WA_TGT} data-log="${d.id}" title="וואטסאפ">💬</a>`
       +`<button class="del phdel" title="מחק">🗑</button>`;
     const links=()=>{const f=full(row); const c=row.querySelector('.phcall'), w=row.querySelector('.phwa');
       c.href=f?telHref(f,d.region):'#'; w.href=f?(waHref(f,d.region)||'#'):'#'; c.style.visibility=w.style.visibility=f?'':'hidden';};
@@ -10467,12 +10467,35 @@ function renderCamp(){
 
 /* ---------- משימות ---------- */
 // כפתורי קשר מהירים — התקשרות / וואטסאפ / אימייל ישירות מהמשימה
+// מאיר: "כל מי שחייגתי אליו דרך המערכת אני רוצה שזה ייכנס בדף קשר שלו" —
+// כל לחיצה על 📞 או 💬 במערכת נרשמת ביומן הקשר של התורם, עם השעה והמספר.
+const _DIALLOG={};
+// capture phase — הקישורים עצמם עוצרים את ה־bubbling (stopPropagation) כדי לא לפתוח כרטיס,
+// לכן המאזין חייב לרוץ לפניהם ולא אחריהם.
+document.addEventListener('click',e=>{
+  const a=e.target.closest&&e.target.closest('a[data-log]'); if(!a)return;
+  const did=+a.dataset.log, d=DB.find(x=>x.id===did); if(!d)return;
+  const href=a.getAttribute('href')||'';
+  if(!href||href==='#')return;
+  const wa=/wa\.me|whatsapp/.test(href);
+  const num=wa?('+'+((href.match(/phone=(\d+)/)||href.match(/wa\.me\/(\d+)/)||[])[1]||'')):href.replace(/^tel:/,'');
+  const key=did+'|'+(wa?'w':'t')+num; const now=Date.now();
+  if(_DIALLOG[key]&&now-_DIALLOG[key]<60000)return;      // לחיצה כפולה — רישום אחד
+  _DIALLOG[key]=now;
+  const ch=wa?'וואטסאפ':'טלפון', when=todayStr();     // השעה נשמרת ב-at ומוצגת ליד התאריך
+  const sum=(wa?'הודעת וואטסאפ מהמערכת ל-':'חיוג מהמערכת ל-')+num;
+  api('POST','/api/contact',{donor_id:did,channel:ch,date:when,summary:sum,next_date:'',seen:1}).then(r=>{
+    if(!r||!r.id)return;
+    d.contacts=d.contacts||[]; d.contacts.unshift({id:r.id,donor_id:did,channel:ch,date:when,summary:sum,next_date:'',seen:1,at:new Date().toISOString()});
+    try{renderContacts(d);}catch(_){}      // אם הכרטיס פתוח — יומן הקשר מתעדכן מיד
+  }).catch(()=>{});
+},true);
 function waNum(p){let n=(p||'').replace(/[^0-9]/g,'');if(n.length>=9&&n[0]==='0')n='972'+n.slice(1);return n;}
 function contactBtns(d){
   const ph=splitPhones(d.phone)[0]||'', wa=waHref(ph,d.region), em=(d.email||'').trim();
   let h='';
-  if(ph)h+=`<a class="cbtn call" href="${esc(telHref(ph,d.region))}" onclick="event.stopPropagation()" title="התקשר ${esc(phNorm(ph,d.region).disp)}">📞</a>`;
-  if(wa)h+=`<a class="cbtn wa" href="${esc(wa)}" ${WA_TGT} onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
+  if(ph)h+=`<a class="cbtn call" href="${esc(telHref(ph,d.region))}" data-log="${d.id}" onclick="event.stopPropagation()" title="התקשר ${esc(phNorm(ph,d.region).disp)}">📞</a>`;
+  if(wa)h+=`<a class="cbtn wa" href="${esc(wa)}" ${WA_TGT} data-log="${d.id}" onclick="event.stopPropagation()" title="וואטסאפ">💬</a>`;
   if(em)h+=`<a class="cbtn mail" href="mailto:${esc(em)}" onclick="event.stopPropagation()" title="${esc(em)}">📧</a>`;
   return h?`<span class="cbtns">${h}</span>`:'';
 }
