@@ -10484,10 +10484,14 @@ document.addEventListener('click',e=>{
   _DIALLOG[key]=now;
   const ch=wa?'וואטסאפ':'טלפון', when=todayStr();     // השעה נשמרת ב-at ומוצגת ליד התאריך
   const sum=(wa?'הודעת וואטסאפ מהמערכת ל-':'חיוג מהמערכת ל-')+num;
-  api('POST','/api/contact',{donor_id:did,channel:ch,date:when,summary:sum,next_date:'',seen:1}).then(r=>{
+  // keepalive — הטלפון עובר מיד לחייגן/לוואטסאפ והדף נכנס לרקע; בלי זה הבקשה עלולה להיקטע
+  fetch('/api/contact',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({donor_id:did,channel:ch,date:when,summary:sum,next_date:'',seen:1})})
+  .then(r=>r.json()).then(r=>{
     if(!r||!r.id)return;
     d.contacts=d.contacts||[]; d.contacts.unshift({id:r.id,donor_id:did,channel:ch,date:when,summary:sum,next_date:'',seen:1,at:new Date().toISOString()});
     try{renderContacts(d);}catch(_){}      // אם הכרטיס פתוח — יומן הקשר מתעדכן מיד
+    try{toast((wa?'💬':'📞')+' נרשם ביומן הקשר של '+((d.first||'')+' '+(d.last||'')).trim());}catch(_){}
   }).catch(()=>{});
 },true);
 function waNum(p){let n=(p||'').replace(/[^0-9]/g,'');if(n.length>=9&&n[0]==='0')n='972'+n.slice(1);return n;}
