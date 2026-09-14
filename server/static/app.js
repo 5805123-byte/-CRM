@@ -1297,7 +1297,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','calls'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1318,7 +1318,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
   debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',camp:'חיפוש שם, משפחה או סכום…',
-  old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…'};
+  old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
 function render(){
   const qi=document.getElementById('q');
   if(qi)qi.placeholder=QPH[tab]||QPH.donors;
@@ -1341,6 +1341,7 @@ function render(){
   if(tab==='missed') return renderMissed();
   if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
+  if(tab==='calls') return renderCalls();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
   if(tab==='unlinked') return renderUnlinked();
@@ -1595,9 +1596,9 @@ async function uploadContactsCsv(inp){
 // SMS Backup & Restore נקרא כאן ונשלח לשרת; מספר שלא זוהה מוצג עם הצעת
 // כרטיס לפי השם שבאנשי הקשר, ובלחיצה אחת נשמר בכרטיס והשיחות שלו נכנסות.
 let CALLTXT='';
-async function uploadCallLog(inp){
+async function uploadCallLog(inp,outId,lblId){
   const f=inp.files&&inp.files[0]; if(!f)return;
-  const out=document.getElementById('callout'), lbl=document.getElementById('callimpbtn');
+  const out=document.getElementById(outId||'callout'), lbl=document.getElementById(lblId||'callimpbtn');
   const t0=lbl?lbl.firstChild.nodeValue:'';
   if(lbl)lbl.firstChild.nodeValue='קורא את הקובץ…';
   let text='';
@@ -1613,6 +1614,7 @@ async function uploadCallLog(inp){
   }
   renderCallImport(out,r);
   if(r.added||r.updated){ await load(); }
+  return r;
 }
 function renderCallImport(out,r){
   if(!out)return;
@@ -7790,6 +7792,59 @@ function renderDebts(){
     }
     toast('סודר ✓ — ירד מהחובות'); renderDebts();
   });
+}
+/* ---------- 📲 שיחות — הרשימה המרוכזת ----------
+   מאיר: "איפה אני רואה את הסיכום רשימה במרוכז?" — כל השיחות עם תורמים
+   שנרשמו ביומן הקשר (מיומן הטלפון שיובא, ומחיוגים שנעשו מהמערכת), במקום
+   אחד: תורם, תאריך, שעה, משך, כיוון. סינון לפי תקופה, סה"כ, והעתקה. */
+let CALLS_PER='month';
+function callSecs(t){                    // "1:43 דק׳" / "24 שנ׳" / "1:05 שע׳" → שניות
+  let m=/(\d+):(\d{2})\s*שע/.exec(t||''); if(m)return (+m[1])*3600+(+m[2])*60;
+  m=/(\d+):(\d{2})\s*דק/.exec(t||''); if(m)return (+m[1])*60+(+m[2]);
+  m=/(\d+)\s*שנ/.exec(t||''); if(m)return +m[1];
+  return 0;
+}
+function callRows(){
+  const out=[];
+  DB.forEach(d=>(d.contacts||[]).forEach(c=>{
+    const s=String(c.summary||'');
+    const imported=s.startsWith('📲'), dialed=/^(חיוג מהמערכת|הודעת וואטסאפ מהמערכת)/.test(s);
+    if(!imported&&!dialed)return;
+    const at=c.at&&/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(c.at)?c.at:((c.date||'')+' '+hhmm(c.at||''));
+    let kind=imported?(/נכנסת/.test(s)?'נכנסת':'יוצאת'):(/וואטסאפ/.test(s)?'וואטסאפ':'חיוג');
+    const missed=imported&&/לא נענתה/.test(s);
+    const durm=/·\s*([\d:]+\s*(?:שנ׳|דק׳|שע׳))/.exec(s);
+    out.push({d,c,at:at.trim(),date:(c.date||at).slice(0,10),time:at.slice(11,16),kind,missed,dur:durm?durm[1]:'',secs:durm?callSecs(durm[1]):0});
+  }));
+  out.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+  return out;
+}
+function renderCalls(){
+  const all=callRows().filter(r=>matchQ(r.d.last+' '+r.d.first+' '+(r.d.english||'')));
+  const today=todayStr(), from=d=>{const x=new Date();x.setDate(x.getDate()-d);return x.toISOString().slice(0,10);};
+  const lim={today:today,week:from(7),month:from(30),year:from(365),all:'0000'}[CALLS_PER]||'0000';
+  const rows=all.filter(r=>r.date>=lim);
+  const tot=rows.reduce((s,r)=>s+r.secs,0);
+  const totTxt=tot>=3600?(Math.floor(tot/3600)+':'+String(Math.floor(tot%3600/60)).padStart(2,'0')+' שע׳'):(Math.floor(tot/60)+':'+String(tot%60).padStart(2,'0')+' דק׳');
+  const donors=new Set(rows.map(r=>r.d.id)).size;
+  const PER=[['today','היום'],['week','שבוע'],['month','חודש'],['year','שנה'],['all','הכל']];
+  const line=r=>`${r.d.last} ${r.d.first} — ${r.date} ${r.time} — ${r.missed?'לא נענתה':(r.dur||'')} (${r.kind})`;
+  view.innerHTML=`
+    <div class="misshead">📲 שיחות עם תורמים — ${rows.length} · ${donors} תורמים · סה"כ ${totTxt}</div>
+    <div class="chips" style="margin:4px 0 8px">${PER.map(([k,l])=>`<button class="chip callper ${CALLS_PER===k?'on':''}" data-k="${k}">${l}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <label class="btn sm" id="callimpbtn2" style="cursor:pointer">📲 ייבוא יומן השיחות מהטלפון<input type="file" id="callimp2" accept=".xml,.html,.htm,text/xml,text/html" hidden></label>
+      <button class="btn sm ghost" id="callcopy2">📋 העתק את הרשימה</button></div>
+    <div id="callout2"></div>
+    <div class="hintxt">מיומן השיחות של הטלפון (הקובץ של SMS Backup &amp; Restore) ומחיוגים שנעשו מהמערכת. לחיצה על שם פותחת את יומן הקשר של התורם.</div>
+    ${rows.length?`<div style="overflow-x:auto"><table class="calltbl"><thead><tr><th>תורם</th><th>תאריך</th><th>שעה</th><th>משך</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td><b class="callgo" data-did="${r.d.id}">${esc(r.d.last)} ${esc(r.d.first)}</b></td><td dir="ltr">${esc(r.date)}</td><td dir="ltr">${esc(r.time)}</td><td>${r.missed?'<span style="color:var(--no)">לא נענתה</span>':esc(r.dur||'—')}</td><td>${esc(r.kind)}</td></tr>`).join('')}
+    </tbody></table></div>`:'<div class="hintxt">אין עדיין שיחות בתקופה הזו. העלה את קובץ יומן השיחות, או חייג מהמערכת.</div>'}`;
+  view.querySelectorAll('.callper').forEach(b=>b.onclick=()=>{CALLS_PER=b.dataset.k;renderCalls();});
+  view.querySelectorAll('.callgo').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.did); if(d)openDonor(d,'contact');});
+  const cc=view.querySelector('#callcopy2'); if(cc)cc.onclick=()=>copyTxt(rows.map(line).join('\n'));
+  const ci=view.querySelector('#callimp2'); if(ci)ci.onchange=()=>uploadCallLog(ci,'callout2','callimpbtn2').then(r=>{
+    if(tab!=='calls')return; if(r&&r.ok){renderCalls(); toast(`נקראו ${r.calls} שיחות · ${(r.matched||[]).length} עם תורמים · ${r.added} חדשות נכנסו`);}});
 }
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
