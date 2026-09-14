@@ -5754,6 +5754,45 @@ def ensure_schema():
     except Exception as e:
         print('  שגיאת נרמול טלפונים:', e)
 
+    # מאיר: "אין מצב שרק 13. תתאם תמזג בין המספרים לתורמים" — מספרים מיומן
+    # השיחות (11–13.9) שהשם באנשי הקשר שלו תואם בוודאות לכרטיס. נכנסים
+    # לטלפונים של הכרטיס (בלי לדרוס), כדי שהייבוא יזהה את השיחות שלהם.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='call_links_v1'").fetchone():
+            import calllog as _cl1
+            LINKS = [
+                (2,  '+1 718-614-1968',  'אפרים מיטמן'),
+                (36, '+1 718-677-6869',  'ב.אברמוביץ (אלחנן אברמוביץ באנשי הקשר)'),
+                (18, '+1 917-613-0355',  'ברכה שטטפלד'),
+                (18, '+1 917-613-0306',  'שטטפלד יצחק'),
+                (23, '+1 848-525-9882',  'יהושע רוזנפלד'),
+                (6,  '+1 917-613-6482',  'רפאל טרייטעל'),
+                (29, '+1 347-308-3664',  'שמחה מילר'),
+                (24, '+1 516-761-2375',  'שמעון עשור'),
+                (66, '+1 212-724-2625',  'ארי שמואל'),
+                (30, '+972 53-836-0021', 'יוסף גולדגלאנץ'),
+                (5,  '+1 347-576-3770',  'יעקב קלמן הורוביץ'),
+                (38, '+1 305-753-0726',  'שלמה פערל'),
+                (58, '+1 917-604-6254',  'סנדר נייווירטה'),
+                (62, '+1 773-678-2708',  'יצחק בליסקו'),
+                (46, '+1 917-816-8129',  'מנדלסון מוטי'),
+            ]
+            nl = 0
+            for did, ph, who in LINKS:
+                d = con.execute("SELECT phone FROM donors WHERE id=?", (did,)).fetchone()
+                if not d:
+                    continue
+                have = [x.strip() for x in re.split(r'\s*/\s*', d['phone'] or '') if x.strip()]
+                if _cl1.phone_key(ph) in {_cl1.phone_key(x) for x in have}:
+                    continue
+                have.append(ph)
+                con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(have), did)); nl += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('call_links_v1')")
+            con.commit()
+            print('  מספרים מיומן השיחות שויכו לכרטיסים: %d' % nl)
+    except Exception as e:
+        print('  שגיאת שיוך מספרים:', e)
+
     con.commit(); con.close()
 
 def get_all():
@@ -12611,15 +12650,36 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'no_calls'})
                 # הצעת כרטיס לכל מספר שלא זוהה — לפי השם שבאנשי הקשר של הטלפון
                 donors = [dict(r) for r in con.execute("SELECT id,first,last,english FROM donors")]
+                # מאיר: "תתאם תמזג בין המספרים לתורמים" — כשהשם הפרטי והמשפחה
+                # תואמים לכרטיס אחד בלבד, המספר נכנס לכרטיס והשיחות שלו מיובאות
+                # מיד; השאר נשארים להצעה.
+                auto = []; left = []
                 for u in res['unmatched']:
                     nm = (u.get('name') or '').strip(); w = nm.split()
-                    sug = []
+                    sug, sure = [], False
                     if nm:
-                        sug, _ = campaign_suggest({'name': nm}, donors)
+                        sug, sure = campaign_suggest({'name': nm}, donors)
                         if not sug and len(w) > 1:            # באנשי הקשר לרוב "פרטי משפחה"
-                            sug, _ = campaign_suggest({'last': w[0], 'first': ' '.join(w[1:])}, donors)
+                            sug, sure = campaign_suggest({'last': w[0], 'first': ' '.join(w[1:])}, donors)
                     u['suggest'] = sug[:2]
                     u['pretty'] = calllog.pretty(u['number'])
+                    strong = sure and sug and re.search(r'פרטי', sug[0].get('why') or '')
+                    if strong:
+                        did = sug[0]['id']; key = calllog.phone_key(u['number'])
+                        d = con.execute("SELECT phone FROM donors WHERE id=?", (did,)).fetchone()
+                        have = [x.strip() for x in re.split(r'\s*/\s*', (d['phone'] if d else '') or '') if x.strip()]
+                        if key not in [calllog.phone_key(x) for x in have]:
+                            have.append(calllog.pretty(u['number']))
+                            con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(have), did)); con.commit()
+                        r2 = calllog.import_calls(con, txt, b.get('since') or '', only_key=key)
+                        res['added'] += r2.get('added', 0); res['updated'] += r2.get('updated', 0)
+                        res['matched'] = (res.get('matched') or []) + (r2.get('matched') or [])
+                        auto.append({'name': nm, 'pretty': u['pretty'], 'donor_id': did, 'to': sug[0]['name'], 'n': u['n']})
+                    else:
+                        left.append(u)
+                res['unmatched'] = left; res['unmatched_total'] = len(left); res['auto'] = auto
+                res['matched'].sort(key=lambda m: m['at'])
+                res['donors'] = len({m['donor_id'] for m in res['matched']})
             finally:
                 con.close()
             return self._send(200, res)

@@ -1632,6 +1632,7 @@ function renderCallImport(out,r){
   const tot=M.reduce((s,m)=>s+(+m.secs||0),0), totTxt=tot>=3600?(Math.floor(tot/3600)+':'+String(Math.floor(tot%3600/60)).padStart(2,'0')+' שע׳'):(Math.floor(tot/60)+':'+String(tot%60).padStart(2,'0')+' דק׳');
   out.innerHTML=`<div class="hintxt" style="margin-top:8px">✅ נקראו <b>${n(r.calls)}</b> שיחות${r.from?(' ('+esc(r.from)+' עד '+esc(r.to)+')'):''} ·
     נכנסו <b>${n(r.added)}</b> ליומן הקשר של <b>${n(r.donors)}</b> תורמים${n(r.updated)?(' · '+n(r.updated)+' חיוגים מהמערכת קיבלו משך'):''}${n(r.dup)?(' · '+n(r.dup)+' כבר היו'):''}${n(r.ignored)?(' · '+n(r.ignored)+' ממספרים שסימנת "לא תורם"'):''}.</div>
+    ${(r.auto||[]).length?`<div class="hintxt">🔗 שויכו לבד לפי השם באנשי הקשר: ${r.auto.map(a=>`<b>${esc(a.name)}</b> ← ${esc(a.to)}`).join(' · ')}. המספר נשמר בכרטיס — אם טעיתי, מחק אותו שם.</div>`:''}
     ${M.length?`<div class="misshead">📲 שיחות עם תורמים — ${M.length} · סה"כ ${totTxt}</div>
     <div style="overflow-x:auto"><table class="calltbl"><thead><tr><th>תורם</th><th>תאריך</th><th>שעה</th><th>משך</th><th></th></tr></thead><tbody>${mrows}</tbody></table></div>
     <button class="btn sm ghost" id="callcopy" style="margin:6px 0 10px">📋 העתק את הרשימה</button>`:''}
