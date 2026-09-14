@@ -10183,8 +10183,9 @@ function campSheetRender(box,r){
   rows.forEach(x=>{cols.forEach(c=>sum[c.key]+=(x.vals[c.key]||0));sumNow+=x.now||0;});
   const nowCell=x=>{
     if(x.now){const m=(x.items||[]).map(i=>i.method).filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
-      return `<b>${f(x.now)}</b><small class="cshst ok">✅ נגבה${m.length?(' · '+m.map(v=>esc(chLabel(v))).join(', ')):''}</small>`;}
-    if(x.pledge)return `<b>${f(x.pledge.amount)}</b><small class="cshst no">🔴 טרם נגבה</small>`;
+      const nt=(x.items||[]).map(i=>i.note).filter(Boolean).join(' · ');
+      return `<b>${f(x.now)}</b><small class="cshst ok">✅ נגבה${m.length?(' · '+m.map(v=>esc(chLabel(v))).join(', ')):''}</small>${nt?`<small class="cshnote">📝 ${esc(nt)}</small>`:''}`;}
+    if(x.pledge)return `<b>${f(x.pledge.amount)}</b><small class="cshst no">🔴 טרם נגבה</small>${x.pledge.note?`<small class="cshnote">📝 ${esc(x.pledge.note)}</small>`:''}`;
     return '<span class="cshempty">—</span>';
   };
   box.innerHTML=`<div class="camphd"><h3>📊 שלושתם ביחד</h3>
@@ -10249,6 +10250,7 @@ function campSheetRender(box,r){
       <select class="cf_st"><option value="paid"${x.now?' selected':''}>✅ חויב / נגבה</option><option value="pledge"${(!x.now&&x.pledge)?' selected':''}>🔴 עדיין לא</option></select>
       <select class="cf_m chansel">${channelOpts(it?it.method:'')}</select>
       <input type="date" class="cf_date" value="${(it&&it.date)||todayStr()}">
+      <input class="cf_note" placeholder="📝 הערה — למשל: בתשלומים, 3 תשלומים, ישלם אחרי החגים" value="${esc((it&&it.note)||(x.pledge&&x.pledge.note)||'')}" style="flex:1 1 100%">
       <button class="btn sm cf_go">שמור</button><button class="btn sm ghost cf_x">ביטול</button>`;
     rowEl.after(fm);
     wireChanSel(fm.querySelector('.cf_m'));   // ➕ דרך תשלום חדשה (נדרים פלוס…) — נשמרת לכל המערכת
@@ -10256,7 +10258,8 @@ function campSheetRender(box,r){
     fm.querySelector('.cf_x').onclick=()=>fm.remove();
     fm.querySelector('.cf_go').onclick=async()=>{
       const amt=fm.querySelector('.cf_amt').value.trim(), st=fm.querySelector('.cf_st').value,
-            m=fm.querySelector('.cf_m').value==='__new__'?'':fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr();
+            m=fm.querySelector('.cf_m').value==='__new__'?'':fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr(),
+            note=fm.querySelector('.cf_note').value.trim();
       if(!amtNum(amt)){toast('צריך סכום');return;}
       fm.querySelector('.cf_go').disabled=true;
       CAMP_SCROLL=window.scrollY;
@@ -10269,13 +10272,14 @@ function campSheetRender(box,r){
       const d=DB.find(y=>y.id===did);
       const pl=d&&(d.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
       if(st==='paid'){
-        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:tcat,paid:1});
-        else{const rr=await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:''});
+        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:tcat,paid:1,note:note});
+        else{const rr=await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:note});
           if(rr&&rr.merged)toast('החיוב הזה כבר נכנס מהאשראי — סווג ל'+tcat+' בלי שורה כפולה');}
         if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
       }else{
-        if(pl){pl.amount=amt;pl.note=m?('דרך: '+m):(pl.note||'');await api('PUT','/api/pledge/'+pl.id,pl);}
-        else await api('POST','/api/pledge',{donor_id:did,category:tcat,amount:amt,status:'טרם',date:date,note:m?('דרך: '+m):''});
+        const pnote=[note,m?('דרך: '+m):''].filter(Boolean).join(' · ');
+        if(pl){pl.amount=amt;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
+        else await api('POST','/api/pledge',{donor_id:did,category:tcat,amount:amt,status:'טרם',date:date,note:pnote});
       }
       toast('נשמר ✓'); await load();
     };

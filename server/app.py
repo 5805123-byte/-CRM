@@ -6861,7 +6861,7 @@ def campaign_compare(con, cat):
         links = {}
     # כל התרומות לפי תורם — כדי לדעת מה כבר רשום בכרטיס
     dons = {}
-    for d in con.execute("SELECT donor_id,date,amount,category,method,id FROM donations"):
+    for d in con.execute("SELECT donor_id,date,amount,category,method,id,note FROM donations"):
         dons.setdefault(d['donor_id'], []).append(d)
     alld = [dict(r) for r in con.execute("SELECT id,last,first,english FROM donors")]
 
@@ -6929,14 +6929,15 @@ def campaign_compare(con, cat):
             r['now_n'] = len(mine)
             r['methods'] = sorted({(d['method'] or '').strip() for d in mine if (d['method'] or '').strip()})
             r['items'] = [{'id': d['id'], 'amount': float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0),
-                           'method': (d['method'] or '').strip(), 'date': str(d['date'] or '')[:10]} for d in mine]
-        for p in con.execute("""SELECT donor_id,amount,status,id FROM pledges
+                           'method': (d['method'] or '').strip(), 'date': str(d['date'] or '')[:10],
+                           'note': (d['note'] or '').strip()} for d in mine]
+        for p in con.execute("""SELECT donor_id,amount,status,id,note FROM pledges
                                 WHERE TRIM(COALESCE(category,''))=? AND COALESCE(status,'')<>'נתן'""", (cat,)):
             if p['donor_id'] not in names:
                 continue
             r = row_for(p['donor_id'], names[p['donor_id']])
             r['pledge'] = {'id': p['id'], 'amount': float(re.sub(r'[^0-9.]', '', str(p['amount'] or '0')) or 0),
-                           'status': p['status'] or ''}
+                           'status': p['status'] or '', 'note': (p['note'] or '').strip()}
     out = list(rows.values())
     out.sort(key=lambda r: _norm(r['name']))       # לפי א"ב, כמו ברשימה של מאיר
     # מאיר: "מה חסר לנו במערכת" — גם ההפך: מי שרשום אצלנו בייעוד הזה ואינו ברשימה
