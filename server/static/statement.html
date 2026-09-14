@@ -3,13 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Annual Contribution Statement — Kollel Chatzos</title>
+<title>Receipt — Kollel Chatzos</title>
 <style>
   /* מאיר: "תבנה לי קבלה יפה בשביל הטקס בארצות הברית עם כל הפרטים שלנו…
-     על הבלאנק שלנו". התורם ביקש קבלה על כל תרומות השנה, עם הכתובת שלו
-     ועם "no goods or services were rendered". אותו בלאנק ואותה שפה
-     עיצובית של הקבלה הבודדת (receipt.html) — כאן עם טבלת כל התרומות של
-     השנה וסכום כולל. */
+     על הבלאנק שלנו" · "אני לא אוהב את הכותרת הזו שיש פה אנואל" · "ברכה
+     קצרה ויפה… מקסימום 2 שורות מעוצב בתוך המכתב הרשמי" · "שתעצב את זה
+     בצורה של קבלה ולא מכתב" · "אם אין את התשלומים שלו במערכת — אפשרות
+     שאמלא ידנית דרך המערכת".
+     קבלה על כל תרומות השנה: מספר, תאריך, ממי, טבלת התרומות, סה"כ,
+     ההצהרה הנדרשת, ברכה של שתי שורות וחתימה. מה שמתמלא ידנית בסרגל
+     נשמר בכרטיס התורם כתרומות רגילות. */
   :root{--ink:#3a2f1a;--deep:#7a1f1f;--gold:#9c7a2e;--soft:#6b6249;--line:#cdbf98}
   *{box-sizing:border-box}
   html,body{margin:0}
@@ -22,15 +25,14 @@
     box-shadow:0 10px 40px rgba(0,0,0,.25);container-type:inline-size}
   .content{position:absolute;top:5.4%;left:24%;right:5.5%;bottom:11.5%;display:flex;flex-direction:column}
 
-  .rc{display:flex;justify-content:space-between;align-items:baseline;font-size:1.85cqw;color:var(--soft);letter-spacing:.06cqw}
-  .rc b{color:var(--ink)}
-  .rc .no b{color:var(--gold);font-size:2.7cqw;letter-spacing:.1cqw}
-  .title{text-align:center;font-size:2.9cqw;letter-spacing:.4cqw;color:var(--gold);text-transform:uppercase;margin:1.6cqw 0 .2cqw}
-  .sub{text-align:center;font-size:2cqw;color:var(--deep);letter-spacing:.2cqw;margin:0 0 .5cqw}
-  .rule{height:.14cqw;background:linear-gradient(90deg,transparent,var(--line) 18%,var(--line) 82%,transparent);margin:0 0 2cqw}
-  .org{text-align:center;font-size:1.7cqw;color:var(--soft);line-height:1.5;margin:0 0 2.2cqw}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:.22cqw solid var(--gold);padding-bottom:1cqw}
+  .head .ttl{font-size:4.2cqw;letter-spacing:.7cqw;color:var(--gold);text-transform:uppercase;line-height:1}
+  .head .ttl small{display:block;font-size:1.6cqw;letter-spacing:.3cqw;color:var(--deep);margin-top:.6cqw}
+  .head .meta{text-align:right;font-size:1.75cqw;color:var(--soft);line-height:1.6}
+  .head .meta b{color:var(--ink)}
+  .head .meta .no{font-size:2.6cqw;color:var(--gold);letter-spacing:.1cqw}
+  .org{display:flex;justify-content:space-between;gap:1cqw;font-size:1.55cqw;color:var(--soft);line-height:1.5;margin:1.2cqw 0 2cqw}
   .org b{color:var(--ink)}
-  .org .legal{display:block;font-size:1.35cqw;color:#a29a86;margin-top:.25cqw}
 
   .to{border:.13cqw solid var(--line);border-radius:.7cqw;padding:1.3cqw 1.8cqw;background:rgba(255,255,255,.5)}
   .to .lbl{font-size:1.4cqw;letter-spacing:.28cqw;text-transform:uppercase;color:var(--soft)}
@@ -40,69 +42,95 @@
   table{width:100%;border-collapse:collapse;margin-top:2cqw;font-size:1.8cqw}
   th{font-size:1.35cqw;letter-spacing:.25cqw;text-transform:uppercase;color:var(--soft);font-weight:400;
      text-align:left;padding:.5cqw .8cqw;border-bottom:.2cqw solid var(--line)}
-  td{padding:.75cqw .8cqw;border-bottom:.1cqw solid var(--line);vertical-align:top}
+  td{padding:.7cqw .8cqw;border-bottom:.1cqw solid var(--line);vertical-align:top}
   th.r,td.r{text-align:right;white-space:nowrap}
   td.meth{color:var(--soft)}
-  tr.tot td{border-top:.22cqw solid var(--line);border-bottom:none;padding-top:1.2cqw;font-weight:700}
-  tr.tot td.r{font-size:3cqw;color:var(--deep)}
-  tr.tot td.lbl{font-size:1.5cqw;letter-spacing:.3cqw;text-transform:uppercase;color:var(--soft);font-weight:400;vertical-align:bottom}
+  table.many td,table.many th{padding-top:.4cqw;padding-bottom:.4cqw;font-size:1.6cqw}
   .none{text-align:center;color:var(--soft);font-style:italic;padding:2cqw;font-size:1.9cqw}
+  .total{display:flex;justify-content:flex-end;align-items:baseline;gap:2cqw;margin-top:1.4cqw;padding:1.2cqw 1.6cqw;
+    background:rgba(156,122,46,.09);border-radius:.7cqw}
+  .total .lbl{font-size:1.5cqw;letter-spacing:.3cqw;text-transform:uppercase;color:var(--soft)}
+  .total .val{font-size:3.6cqw;font-weight:700;color:var(--deep)}
 
-  .stmt{font-size:1.85cqw;line-height:1.6;margin-top:2cqw}
-  .stmt .key{background:rgba(156,122,46,.09);border-left:.3cqw solid var(--gold);padding:1.2cqw 1.4cqw;font-size:1.75cqw;line-height:1.55;margin:0}
-  .warm{text-align:center;font-size:2cqw;font-style:italic;color:var(--deep);line-height:1.5;margin:auto 0 2.2cqw;text-wrap:balance}
+  .stmt{font-size:1.7cqw;line-height:1.55;margin-top:1.8cqw;color:var(--ink)}
+  .stmt b{color:var(--deep)}
+  /* מאיר: "ברכה קצרה ויפה… מקסימום 2 שורות מעוצב" */
+  .bless{margin:auto 0 1.8cqw;text-align:center;font-style:italic;color:var(--deep);font-size:1.95cqw;line-height:1.5;
+    padding:1.2cqw 1cqw;border-top:.12cqw solid var(--line);border-bottom:.12cqw solid var(--line)}
   .sign{text-align:right}
-  .sign .line{width:26cqw;border-top:.14cqw solid var(--ink);margin:0 0 .7cqw auto}
+  .sign .heb{font-size:1.9cqw;color:var(--ink);direction:rtl;margin-bottom:.4cqw}
   .sign .nm{font-size:2.3cqw;font-weight:700;color:var(--deep)}
   .sign .role{font-size:1.7cqw;color:var(--soft)}
-  .sign .ein{font-size:1.5cqw;color:var(--soft);line-height:1.55;margin-top:.9cqw}
-  .sign .ein b{color:var(--gold);letter-spacing:.16cqw;text-transform:uppercase}
 
-  .bar{max-width:794px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;
-       font-family:system-ui,sans-serif;font-size:.95rem}
+  .bar{max-width:794px;margin:0 auto 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;
+       font-family:system-ui,sans-serif;font-size:.95rem;direction:rtl}
   .bar select,.bar input{font:inherit;padding:8px 10px;border:1px solid #b9ad8e;border-radius:8px;background:#fff}
-  .bar input{flex:1 1 260px;min-width:200px}
+  .bar input.wide{flex:1 1 260px;min-width:200px;direction:ltr}
   .bar button{font-family:inherit;font-size:1rem;font-weight:700;padding:10px 18px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer}
   .bar button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
   .warn{max-width:794px;margin:0 auto 10px;background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:8px 12px;font-family:system-ui,sans-serif;font-size:.92rem;direction:rtl;text-align:right}
+  /* מילוי ידני — מאיר: "במקרה כזה שאין את התשלומים שלו במערכת אז תעשה אפשרות שאמלא ידנית" */
+  details.manual{max-width:794px;margin:0 auto 12px;background:#fff;border:1px solid #b9ad8e;border-radius:10px;padding:8px 12px;font-family:system-ui,sans-serif;direction:rtl;text-align:right}
+  details.manual summary{cursor:pointer;font-weight:700;color:var(--gold)}
+  .mrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
+  .mrow input,.mrow select{font:inherit;padding:7px 8px;border:1px solid #b9ad8e;border-radius:8px;background:#fff}
+  .mrow input.amt{width:96px}.mrow input.dt{width:150px}.mrow input.mo{width:120px}
+  .mrow button{font:inherit;font-weight:700;padding:8px 14px;border-radius:8px;border:none;background:var(--gold);color:#fff;cursor:pointer}
+  .mrow .lbl{font-size:.9rem;color:#6b6249;flex-basis:100%}
+  .mlist{font-size:.9rem;margin-top:6px}
+  .mlist div{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #eee}
+  .mlist button{background:none;border:none;color:#a33;cursor:pointer;font-size:1rem}
   @media print{
     @page{size:A4;margin:0}
     html,body{background:#fdf9ee url("/bleed/letterhead.jpg") center center/100% 100% no-repeat}
     .scroller{overflow:visible;padding:0}
     .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0;transform:scale(.962);transform-origin:center center}
-    .bar,.warn{display:none}
+    .bar,.warn,details.manual{display:none}
   }
 </style>
 </head>
 <body>
 <div class="bar">
-  <label>Tax year <select id="yr"></select></label>
-  <input id="adr" placeholder="Donor address for the statement (street, city, state, zip)">
+  <label>שנת מס <select id="yr"></select></label>
+  <input id="adr" class="wide" placeholder="כתובת התורם לקבלה (street, city, state, zip)">
   <button class="g" id="adrsave">💾 שמור כתובת בכרטיס</button>
-  <button onclick="window.print()">🖨️ Print / Save as PDF</button>
-  <button class="g" onclick="history.length>1?history.back():window.close()">← Back</button>
+  <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
+  <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
 </div>
 <div class="warn" id="warn" style="display:none"></div>
+<details class="manual" id="manual">
+  <summary>✍️ מילוי ידני — תשלומים שאינם רשומים במערכת</summary>
+  <div class="mrow"><span class="lbl">תשלום בודד:</span>
+    <input class="dt" id="m_date" type="date"> <input class="amt" id="m_amt" inputmode="decimal" placeholder="$ סכום">
+    <select id="m_cat"><option value="קבוע">Monthly Support</option><option value="מזדמן">General Donation</option><option value="יששכר־זבולון">Yissachar–Zevulun</option><option value="פרנס לילה">Night of Torah</option><option value="קמחא דפסחא">Kimcha D’Pischa</option><option value="סוכות">Yom Tov Fund</option><option value="בניין">Building Fund</option></select>
+    <select id="m_meth"><option value="אשראי">Credit Card</option><option value="המחאה">Check</option><option value="מזומן">Cash</option><option value="העברה בנקאית">Bank / Zelle</option><option value="Donors Fund">Donor Advised Fund</option><option value="PayPal">PayPal</option></select>
+    <button id="m_add">➕ הוסף</button></div>
+  <div class="mrow"><span class="lbl">תשלום חודשי קבוע — אותו סכום כל חודש (למשל $100 × 12):</span>
+    <input class="amt" id="r_amt" inputmode="decimal" placeholder="$ לחודש"> מ- <input class="mo" id="r_from" type="month"> עד <input class="mo" id="r_to" type="month">
+    <button id="r_add">➕ הוסף את כל החודשים</button></div>
+  <div class="lbl" style="font-size:.85rem;color:#6b6249">מה שמוסיפים כאן נשמר בכרטיס התורם כתרומות ששולמו, ונכנס לקבלה מיד.</div>
+  <div class="mlist" id="mlist"></div>
+</details>
 <div class="scroller"><div class="sheet"><div class="content">
-  <div class="rc"><span class="no">Statement No. <b id="r_num">—</b></span><span>Date: <b id="r_date"></b></span></div>
-  <div class="title">Annual Contribution Statement</div>
-  <div class="sub">Tax Year <span id="r_year"></span></div>
-  <div class="rule"></div>
-  <div class="org">1540 40th Street, Brooklyn, NY 11218 &nbsp;·&nbsp; EIN <b>20-0447034</b> &nbsp;·&nbsp; 501(c)(3)
-    <span class="legal">registered as Cong. Zikhron Avos</span></div>
+  <div class="head">
+    <div class="ttl">Receipt<small>Contributions for tax year <span class="yr2"></span></small></div>
+    <div class="meta"><div>No. <b class="no" id="r_num">—</b></div><div>Date: <b id="r_date"></b></div></div>
+  </div>
+  <div class="org"><span><b>Kollel Chatzos</b> · Cong. Zikhron Avos · 501(c)(3)</span><span>Tax ID (EIN) <b>20-0447034</b></span></div>
   <div class="to"><div class="lbl">Received from</div><div class="nm" id="r_name">Friend</div><div class="ad" id="r_addr" style="display:none"></div></div>
   <table id="tbl"><thead><tr><th>Date</th><th>Designation</th><th>Method</th><th class="r">Amount</th></tr></thead><tbody id="rows"></tbody></table>
-  <div class="stmt"><p class="key">This statement is your official receipt for tax purposes for all contributions received
-    from you during the calendar year <span class="yr2"></span>. <b>No goods or services were provided</b> in exchange for these
-    contributions. Kollel Chatzos is exempt under Section 501(c)(3) of the Internal Revenue Code; contributions are
-    tax-deductible to the extent allowed by law. Please retain this statement for your records.</p></div>
-  <div class="warm">With deep appreciation for your partnership in the Torah of Chatzos.</div>
-  <div class="sign"><div class="line"></div><div class="nm">Rabbi Yehoshua Meir Deutsch</div>
-    <div class="role">Rosh HaKollel · Authorized Signatory</div><div class="ein"><b>Kollel Chatzos</b> · EIN 20-0447034</div></div>
+  <div class="total" id="totbox"><span class="lbl">Total received in <span class="yr2"></span></span><span class="val" id="r_total">$0.00</span></div>
+  <div class="stmt">This receipt covers all contributions received from you during the calendar year <span class="yr2"></span>.
+    <b>No goods or services were provided in exchange for these contributions.</b> Contributions are tax-deductible to the
+    extent allowed by law. Please keep this receipt for your records.</div>
+  <div class="bless">It is a tremendous zechus to be a full partner in the Torah and Avodas Hashem of the Chatzos hours —
+    may you merit all the Brachos of one who arises at midnight to learn Torah.</div>
+  <div class="sign"><div class="heb">בברכת התורה</div><div class="nm">Rabbi Yehoshua Meir Deutsch</div><div class="role">Rosh HaKollel</div></div>
 </div></div></div>
 <script>
 const q = new URLSearchParams(location.search), $ = id => document.getElementById(id);
 const DID = q.get('donor') || '';
+let CUR = null;
 const PMAP = [[/יששכר|זבולון|zevulun|yissachar/i,'Yissachar–Zevulun Partnership'],[/פרנס.?לילה|לימוד.?לילה|פרנס/i,'Sponsorship of a Night of Torah'],
   [/נר.?למאור/i,'Ner LaMaor'],[/חדר.?קפה|coffee/i,'Refreshments for the Kollel'],[/ארוחת.?בוקר|breakfast/i,'Breakfast for the Kollel'],
   [/קמחא|kimcha|pesach/i,'Kimcha D’Pischa'],[/מתנות.?לאביונים|matanos/i,'Matanos LaEvyonim'],[/הכנסת.?כלה|kalla/i,'Hachnosas Kallah'],
@@ -119,24 +147,53 @@ function paintAddr(){ const a = $('adr').value.trim(); $('r_addr').textContent =
 async function load(year){
   const r = await fetch('/api/statement?donor=' + encodeURIComponent(DID) + (year ? '&year=' + year : '')).then(x => x.json()).catch(() => null);
   if (!r || r.error) { $('warn').style.display = ''; $('warn').textContent = 'לא נמצא תורם'; return; }
-  document.title = 'Statement ' + r.num + ' — ' + r.name + ' ' + r.year;
-  $('r_num').textContent = r.num; $('r_date').textContent = nice(r.date); $('r_year').textContent = r.year;
+  CUR = r;
+  document.title = 'Receipt ' + r.num + ' — ' + r.name + ' ' + r.year;
+  $('r_num').textContent = r.num; $('r_date').textContent = nice(r.date);
   document.querySelectorAll('.yr2').forEach(e => e.textContent = r.year);
   $('r_name').textContent = r.name;
   if (!$('adr').value) $('adr').value = r.addr || ''; paintAddr();
   const ys = [...new Set([...(r.years||[]), String(new Date().getFullYear()), String(new Date().getFullYear()-1), r.year])].sort().reverse();
   $('yr').innerHTML = ys.map(y => `<option ${y===r.year?'selected':''}>${y}</option>`).join('');
   const rows = r.items || [];
+  $('tbl').classList.toggle('many', rows.length > 12);
   $('rows').innerHTML = rows.map(i => `<tr><td>${shortD(i.date)}</td><td>${purposeEn(i.category)}</td><td class="meth">${methodEn(i.method)}</td><td class="r">${money(i.amount)}</td></tr>`).join('')
-    + (rows.length ? `<tr class="tot"><td class="lbl" colspan="3">Total contributions received in ${r.year}</td><td class="r">${money(r.total)}</td></tr>`
-                   : `<tr><td colspan="4" class="none">No contributions recorded for ${r.year}.</td></tr>`);
+    || `<tr><td colspan="4" class="none">No contributions recorded for ${r.year}.</td></tr>`;
+  $('r_total').textContent = money(r.total);
+  $('mlist').innerHTML = rows.map(i => `<div><span>${shortD(i.date)} · ${purposeEn(i.category)} · ${money(i.amount)}</span><button data-id="${i.id}" title="מחק מהכרטיס">🗑</button></div>`).join('');
+  $('mlist').querySelectorAll('button').forEach(b => b.onclick = async () => {
+    if (!confirm('למחוק את התרומה הזאת מהכרטיס?')) return;
+    await fetch('/api/donation/' + b.dataset.id, {method:'DELETE'}); load($('yr').value);
+  });
+  if (!$('r_from').value) { $('r_from').value = r.year + '-01'; $('r_to').value = r.year + '-12'; $('m_date').value = r.year + '-01-01'; }
   const w = [];
-  if (!rows.length) w.push('אין תרומות משנת ' + r.year + ' בכרטיס. תוסיף אותן בלשונית ראשי ותרענן, או בחר שנה אחרת למעלה.');
+  if (!rows.length) { w.push('אין תרומות משנת ' + r.year + ' בכרטיס — מלא אותן ידנית למטה (✍️), או בחר שנה אחרת.'); $('manual').open = true; }
   if (!(r.addr||'').trim()) w.push('אין כתובת בכרטיס — הקלד את הכתובת בשדה למעלה (היא נכנסת לקבלה מיד), ואפשר לשמור אותה בכרטיס.');
   const nonusd = rows.filter(i => i.cur === '₪').length;
   if (nonusd) w.push(nonusd + ' תרומות בשקלים מופיעות כאן כסכום בדולרים — בדוק לפני הדפסה.');
   $('warn').style.display = w.length ? '' : 'none'; $('warn').innerHTML = w.join('<br>');
 }
+async function addDon(date, amt, cat, meth){
+  await fetch('/api/donation', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({donor_id:+DID, date, amount:String(amt), category:cat, method:meth, cur:'$', note:'נוסף ידנית מהקבלה השנתית'})});
+}
+$('m_add').onclick = async () => {
+  const d = $('m_date').value, a = parseFloat($('m_amt').value.replace(/[^\d.]/g,''));
+  if (!d || !a) { alert('צריך תאריך וסכום'); return; }
+  $('m_add').disabled = true; await addDon(d, a, $('m_cat').value, $('m_meth').value); $('m_add').disabled = false; $('m_amt').value = '';
+  load(d.slice(0,4));
+};
+$('r_add').onclick = async () => {
+  const a = parseFloat($('r_amt').value.replace(/[^\d.]/g,'')), f = $('r_from').value, t = $('r_to').value;
+  if (!a || !f || !t || f > t) { alert('צריך סכום, חודש התחלה וחודש סיום'); return; }
+  const months = []; let [y, m] = f.split('-').map(Number); const [ty, tm] = t.split('-').map(Number);
+  while (y < ty || (y === ty && m <= tm)) { months.push(y + '-' + String(m).padStart(2,'0') + '-01'); m++; if (m > 12) { m = 1; y++; } }
+  if (months.length > 36) { alert('יותר מ-36 חודשים — בדוק את הטווח'); return; }
+  if (!confirm('להוסיף ' + months.length + ' תשלומים של $' + a + ' לכרטיס?')) return;
+  $('r_add').disabled = true;
+  for (const d of months) await addDon(d, a, $('m_cat').value, $('m_meth').value);
+  $('r_add').disabled = false; load(f.slice(0,4));
+};
 $('yr').onchange = () => load($('yr').value);
 $('adr').oninput = paintAddr;
 $('adrsave').onclick = async () => {
