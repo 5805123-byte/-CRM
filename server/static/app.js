@@ -1297,7 +1297,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','calls'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1341,7 +1341,6 @@ function render(){
   if(tab==='missed') return renderMissed();
   if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
-  if(tab==='calls') return renderCalls();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
   if(tab==='unlinked') return renderUnlinked();
@@ -7829,9 +7828,10 @@ function renderCalls(){
   const donors=new Set(rows.map(r=>r.d.id)).size;
   const PER=[['today','היום'],['week','שבוע'],['month','חודש'],['year','שנה'],['all','הכל']];
   const line=r=>`${r.d.last} ${r.d.first} — ${r.date} ${r.time} — ${r.missed?'לא נענתה':(r.dur||'')} (${r.kind})`;
-  view.innerHTML=`
+  chips.innerHTML=PER.map(([k,l])=>`<button class="chip callper ${CALLS_PER===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.querySelectorAll('.callper').forEach(b=>b.onclick=()=>{CALLS_PER=b.dataset.k;renderCalls();});
+  view.innerHTML=`${mailCallsSwitch('calls')}
     <div class="misshead">📲 שיחות עם תורמים — ${rows.length} · ${donors} תורמים · סה"כ ${totTxt}</div>
-    <div class="chips" style="margin:4px 0 8px">${PER.map(([k,l])=>`<button class="chip callper ${CALLS_PER===k?'on':''}" data-k="${k}">${l}</button>`).join('')}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <label class="btn sm" id="callimpbtn2" style="cursor:pointer">📲 ייבוא יומן השיחות מהטלפון<input type="file" id="callimp2" accept=".xml,.html,.htm,text/xml,text/html" hidden></label>
       <button class="btn sm ghost" id="callcopy2">📋 העתק את הרשימה</button></div>
@@ -7840,11 +7840,11 @@ function renderCalls(){
     ${rows.length?`<div style="overflow-x:auto"><table class="calltbl"><thead><tr><th>תורם</th><th>תאריך</th><th>שעה</th><th>משך</th><th></th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td><b class="callgo" data-did="${r.d.id}">${esc(r.d.last)} ${esc(r.d.first)}</b></td><td dir="ltr">${esc(r.date)}</td><td dir="ltr">${esc(r.time)}</td><td>${r.missed?'<span style="color:var(--no)">לא נענתה</span>':esc(r.dur||'—')}</td><td>${esc(r.kind)}</td></tr>`).join('')}
     </tbody></table></div>`:'<div class="hintxt">אין עדיין שיחות בתקופה הזו. העלה את קובץ יומן השיחות, או חייג מהמערכת.</div>'}`;
-  view.querySelectorAll('.callper').forEach(b=>b.onclick=()=>{CALLS_PER=b.dataset.k;renderCalls();});
+  wireMailCallsSwitch();
   view.querySelectorAll('.callgo').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.did); if(d)openDonor(d,'contact');});
   const cc=view.querySelector('#callcopy2'); if(cc)cc.onclick=()=>copyTxt(rows.map(line).join('\n'));
   const ci=view.querySelector('#callimp2'); if(ci)ci.onchange=()=>uploadCallLog(ci,'callout2','callimpbtn2').then(r=>{
-    if(tab!=='calls')return; if(r&&r.ok){renderCalls(); toast(`נקראו ${r.calls} שיחות · ${(r.matched||[]).length} עם תורמים · ${r.added} חדשות נכנסו`);}});
+    if(tab!=='mails'||mailSub!=='calls')return; if(r&&r.ok){renderCalls(); toast(`נקראו ${r.calls} שיחות · ${(r.matched||[]).length} עם תורמים · ${r.added} חדשות נכנסו`);}});
 }
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
@@ -9912,8 +9912,16 @@ async function mlHistory(){
     box.innerHTML=bad.map(x=>`<div class="mlskr">${esc(x.name||'')} &lt;${esc(x.email)}&gt; — ${esc(x.error||x.status)}</div>`).join('')
       ||'<div class="hintxt">הכל נשלח</div>';});
 }
+// מאיר: "תכניס את שיחות בתוך לשונית מיילים ותקרא לזה מיילים ושיחות"
+function mailCallsSwitch(cur){
+  return `<div class="mcsw"><button class="btn ${cur==='mails'?'':'ghost'} mcsw_b" data-s="log">📧 מיילים</button><button class="btn ${cur==='calls'?'':'ghost'} mcsw_b" data-s="calls">📲 שיחות</button></div>`;
+}
+function wireMailCallsSwitch(){
+  view.querySelectorAll('.mcsw_b').forEach(b=>b.onclick=()=>{mailSub=b.dataset.s;render();});
+}
 function renderMails(){
   if(mailSub==='send') return renderMailSend();
+  if(mailSub==='calls') return renderCalls();
   const all=[];
   DB.forEach(d=>(d.contacts||[]).forEach(c=>{ if(c.channel==='אימייל') all.push({c,d}); }));
   all.sort((a,b)=>String(b.c.date||'').localeCompare(String(a.c.date||''))||b.c.id-a.c.id);
@@ -9930,7 +9938,7 @@ function renderMails(){
   if(mailFlt==='files')list=list.filter(x=>(x.c.files||[]).length);
   if(mailFlt==='kv')list=list.filter(x=>(x.c.summary||'').includes('🕯️'));
   list=list.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.c.summary||'')+' '+(x.c.body||'')+' '+(x.c.body_he||'')));
-  view.innerHTML=`<div class="rbtitle">📧 כל המיילים עם התורמים — נכנסים וששלחנו, לפי תאריך</div>
+  view.innerHTML=`${mailCallsSwitch('mails')}<div class="rbtitle">📧 כל המיילים עם התורמים — נכנסים וששלחנו, לפי תאריך</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn" id="ml_compose" style="width:100%">✉️ שלח מייל לתורמים — הודעה אישית לכל אחד</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ml_sync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><select id="ml_cat" style="flex:1">${['— כל התורמים —',...[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'))].map(c=>`<option>${esc(c)}</option>`).join('')}</select>
@@ -9950,6 +9958,7 @@ function renderMails(){
   view.querySelectorAll('.mailrow .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);await load();render();toast('נמחק');});
   const mcp=document.getElementById('ml_compose');
   if(mcp)mcp.onclick=()=>{mailSub='send';render();};
+  wireMailCallsSwitch();
   const ms=document.getElementById('ml_sync'); if(ms)ms.onclick=()=>runMailSync(ms);
   const mc=document.getElementById('ml_cat'),mx=document.getElementById('ml_csv');
   if(mx){const setu=()=>{const c=mc.selectedIndex>0?mc.value:'';
