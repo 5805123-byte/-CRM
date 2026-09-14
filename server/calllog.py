@@ -156,6 +156,8 @@ def fmt_secs(s):
     return '%d:%02d שע׳' % (h, m)
 
 
+MIN_SECS = 30
+
 KIND_HE = {'out': 'שיחה יוצאת', 'in': 'שיחה נכנסת', 'missed': 'שיחה שלא נענתה',
            'rejected': 'שיחה שנדחתה', 'blocked': 'שיחה חסומה', 'voicemail': 'תא קולי', 'external': 'שיחה'}
 
@@ -176,6 +178,10 @@ def import_calls(con, text, since='', only_key=''):
     """מייבא את הקובץ. מחזיר סיכום + רשימת מספרים שלא זוהו (שם מהטלפון + מספר).
     only_key — רק השיחות של מספר אחד (אחרי שמאיר שייך אותו לתורם)."""
     calls = parse(text)
+    # מאיר: "תכניס רק משיחות של 30 שניות" — שיחה קצרה מזה (לא נענתה, תא
+    # קולי, ניתוק מיידי) לא נרשמת ולא נספרת.
+    nshort = sum(1 for c in calls if c['secs'] < MIN_SECS)
+    calls = [c for c in calls if c['secs'] >= MIN_SECS]
     if only_key:
         calls = [c for c in calls if phone_key(c['number']) == only_key]
     if since:
@@ -243,7 +249,7 @@ def import_calls(con, text, since='', only_key=''):
     for m in matched:
         m['name'] = names.get(m['donor_id'], '#%s' % m['donor_id'])
     matched.sort(key=lambda m: m['at'])
-    return {'ok': True, 'calls': len(calls), 'added': added, 'updated': updated, 'dup': dup, 'ignored': nign,
+    return {'ok': True, 'calls': len(calls), 'short': nshort, 'added': added, 'updated': updated, 'dup': dup, 'ignored': nign,
             'donors': len({m['donor_id'] for m in matched}), 'unmatched': un[:200], 'unmatched_total': len(un), 'matched': matched[:500],
             'from': min((c['at'] for c in calls), default=None) and min(c['at'] for c in calls).strftime('%Y-%m-%d'),
             'to': max((c['at'] for c in calls), default=None) and max(c['at'] for c in calls).strftime('%Y-%m-%d')}

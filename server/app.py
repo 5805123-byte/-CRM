@@ -5793,6 +5793,23 @@ def ensure_schema():
     except Exception as e:
         print('  שגיאת שיוך מספרים:', e)
 
+    # מאיר: "תכניס רק משיחות של 30 שניות" — שיחות קצרות שכבר יובאו יורדות מיומן הקשר
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='calls_min30_v1'").fetchone():
+            import calllog as _cl2
+            gone = 0
+            for r in con.execute("SELECT id,summary FROM contacts_log WHERE msg_id LIKE 'call:%'").fetchall():
+                s = r['summary'] or ''
+                m = re.search(r'·\s*(\d+)\s*שנ׳', s)
+                short = ('לא נענתה' in s) or (m and int(m.group(1)) < _cl2.MIN_SECS)
+                if short:
+                    con.execute("DELETE FROM contacts_log WHERE id=?", (r['id'],)); gone += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('calls_min30_v1')")
+            con.commit()
+            print('  שיחות קצרות מ-30 שניות שהוסרו מיומן הקשר: %d' % gone)
+    except Exception as e:
+        print('  שגיאת ניקוי שיחות קצרות:', e)
+
     con.commit(); con.close()
 
 def get_all():
