@@ -1214,44 +1214,71 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('segal_guilor_v1')")
     except Exception as e:
         print('  שגיאת סגל/גילאור:', e)
-    # אנשי קשר שבהערותיהם רשום "כרטיס #N במערכת" — קישור ישיר לכרטיס. מאיר:
-    # "buddy@internetworkcontrols.com — חסר לו פרטים". משלימים רק מה שחסר:
-    # טלפון, מייל וכתובת. לא דורסים כלום.
+    # ביטול השלמה שגויה. ב-6.9 נוספה השלמה "לפי מספר כרטיס" — ההערה
+    # "כרטיס #N במערכת כולל חצות" באנשי הקשר של גוגל התפרשה כמספר הכרטיס
+    # במערכת הזו. אבל המספרים שם (עד #633) הם ממספור ישן ולא מהכרטיסים
+    # הנוכחיים (#1–#78), ולכן 55 כרטיסים קיבלו טלפונים, מיילים וכתובות של
+    # אנשים אחרים (מיטמן #2 קיבל את הטלפון והמייל של אלחנן אברמוביץ).
+    # כאן מורידים בדיוק את מה שאותה השלמה הכניסה: ערך שמופיע אצל איש הקשר
+    # עם אותו מספר — ורק כשהשם של איש הקשר לא דומה לשם שבכרטיס.
     try:
         seed3 = os.path.join(HERE, 'contacts_seed3.csv')
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_card_fill_v1'").fetchone() \
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_card_fill_v1'").fetchone() \
+                and not con.execute("SELECT 1 FROM seed_flags WHERE name='contacts_card_fill_undo_v1'").fetchone() \
                 and os.path.exists(seed3):
-            import gcontacts as _gcc
+            import gcontacts as _gcu
             with open(seed3, encoding='utf-8-sig', errors='replace') as f:
-                cards = _gcc.parse_csv(f.read())
-            nf = {'phone': 0, 'email': 0, 'addr': 0}
+                cards = _gcu.parse_csv(f.read())
+            nu = {'phone': 0, 'email': 0, 'addr': 0, 'donors': set()}
             for ct in cards:
                 did = ct.get('card')
                 if not did:
                     continue
-                d = con.execute("SELECT id,phone,email,addr FROM donors WHERE id=?", (did,)).fetchone()
+                d = con.execute("SELECT id,last,first,phone,email,addr FROM donors WHERE id=?", (did,)).fetchone()
                 if not d:
                     continue
-                ph = [p.strip() for p in re.split(r'[/,]', d['phone'] or '') if p.strip()]
-                have = {_ph10(p) for p in ph}
-                for p in ct.get('phones') or []:
-                    k = _ph10(p)
-                    if k and k not in have and len(k) >= 7:
-                        ph.append(p); have.add(k); nf['phone'] += 1
-                if ' / '.join(ph) != (d['phone'] or ''):
-                    con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(ph), did))
+                # איש קשר שבאמת נושא את שם התורם — ייתכן שהמספור תאם במקרה; לא נוגעים
+                cw = [w for w in re.split(r'[\s,()\-]+', ct.get('name') or '') if len(w) > 1]
+                if any(_fz(w) and _fz(w) == _fz(d['last'] or '') for w in cw):
+                    continue
+                # phone_key — בלי קידומת מדינה ובלי אפס מוביל, כי הטלפונים בכרטיסים
+                # כבר נורמלו ל-+972/+1 אחרי אותה השלמה
+                import calllog as _cl
+                cph = {_cl.phone_key(p) for p in (ct.get('phones') or []) if _cl.phone_key(p)}
+                cem = {e.strip().lower() for e in (ct.get('emails') or [])}
+                ph = [p.strip() for p in re.split(r'\s*/\s*', d['phone'] or '') if p.strip()]
+                keep = [p for p in ph if _cl.phone_key(p) not in cph]
+                if len(keep) != len(ph):
+                    con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(keep), did))
+                    nu['phone'] += len(ph) - len(keep); nu['donors'].add(did)
                 em = emails_of(d['email'])
-                add = [e for e in (ct.get('emails') or []) if e not in em]
-                if add:
-                    con.execute("UPDATE donors SET email=? WHERE id=?", (', '.join(em + add), did))
-                    nf['email'] += len(add)
-                if not (d['addr'] or '').strip() and (ct.get('addrs') or []):
-                    con.execute("UPDATE donors SET addr=? WHERE id=?", (ct['addrs'][0], did))
-                    nf['addr'] += 1
-            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_card_fill_v1')")
-            print('  השלמה לפי מספר כרטיס באנשי הקשר: %d טלפונים, %d מיילים, %d כתובות' % (nf['phone'], nf['email'], nf['addr']))
+                keepm = [e for e in em if e.strip().lower() not in cem]
+                if len(keepm) != len(em):
+                    con.execute("UPDATE donors SET email=? WHERE id=?", (', '.join(keepm), did))
+                    nu['email'] += len(em) - len(keepm); nu['donors'].add(did)
+                ad = (d['addr'] or '').strip()
+                if ad and ad in [a.strip() for a in (ct.get('addrs') or [])]:
+                    con.execute("UPDATE donors SET addr='' WHERE id=?", (did,))
+                    nu['addr'] += 1; nu['donors'].add(did)
+            # שיחות מיומן הטלפון שיובאו לפי טלפון שגוי — יורדות מהכרטיס הלא נכון
+            try:
+                import calllog as _clu
+                nrm = 0
+                for r in con.execute("SELECT id,donor_id,msg_id FROM contacts_log WHERE msg_id LIKE 'call:%'").fetchall():
+                    k = (r['msg_id'] or '')[5:].split('|')[0]
+                    d = con.execute("SELECT phone FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+                    keys = {_clu.phone_key(p) for p in re.split(r'\s*/\s*', (d['phone'] if d else '') or '')}
+                    if k not in keys:
+                        con.execute("DELETE FROM contacts_log WHERE id=?", (r['id'],)); nrm += 1
+                if nrm:
+                    print('  שיחות שיובאו לכרטיס לא נכון והוסרו: %d' % nrm)
+            except Exception as e:
+                print('  call cleanup error:', e)
+            con.execute("INSERT INTO seed_flags(name) VALUES('contacts_card_fill_undo_v1')")
+            print('  ביטול ההשלמה לפי מספר כרטיס: %d טלפונים, %d מיילים, %d כתובות ב-%d כרטיסים'
+                  % (nu['phone'], nu['email'], nu['addr'], len(nu['donors'])))
     except Exception as e:
-        print('  שגיאת השלמה לפי כרטיס:', e)
+        print('  שגיאת ביטול השלמה לפי כרטיס:', e)
     # מאיר: "אצל כולם הכנסת תשלומים של 2025, 2024 — מי ביקש? ביקשתי רק 2026."
     # קבלות מלפני 2026 שנטענו מהמייל ולא אושרו לאף כרטיס — יורדות. מה שכבר
     # אושר לכרטיס (processed=1) נשאר, כי זו החלטה שלו.
@@ -8773,10 +8800,8 @@ def fill_english_by_email(con):
                     # כשההערה מצביעה על מספר הכרטיס — זה קישור ישיר, בלי בדיקת
                     # תעתיק; לפי מייל — עם הבדיקה כמו כל מקור אחר.
                     nicks = [x for x in (ct.get('nicks') or []) if re.search(r'[A-Za-z]', x)]
-                    card = ct.get('card')
-                    if card and card in noeng:
-                        for x in nicks:
-                            offer(card, x, direct=True)
+                    # מספר הכרטיס שבהערות איש הקשר הוא ממספור ישן — לא מזהה
+                    # כרטיס כאן. רק לפי מייל, עם בדיקת התעתיק.
                     nm = (ct.get('name') or '').strip()
                     for e in ct.get('emails') or []:
                         did = bye.get(e.strip().lower())

@@ -196,6 +196,7 @@ def import_calls(con, text, since='', only_key=''):
     except Exception:
         ignored = set()
     added = 0; updated = 0; dup = 0; donors = set(); unmatched = {}; nign = 0
+    matched = []           # מאיר: "רשימה סיכום מסודרת כל מי שהתקשרתי אליו והוא תורם — כמה זמן ומתי"
     for c in calls:
         key = phone_key(c['number'])
         did = bykey.get(key)
@@ -210,6 +211,8 @@ def import_calls(con, text, since='', only_key=''):
             continue
         at = c['at'].strftime('%Y-%m-%d %H:%M')
         ext = 'call:%s|%s' % (key, c['at'].strftime('%Y%m%d%H%M%S'))
+        matched.append({'donor_id': did, 'at': at, 'kind': c['kind'], 'secs': c['secs'],
+                        'dur': fmt_secs(c['secs']), 'number': c['number']})
         if con.execute("SELECT 1 FROM contacts_log WHERE msg_id=?", (ext,)).fetchone():
             dup += 1; continue
         disp = c['number']
@@ -235,7 +238,12 @@ def import_calls(con, text, since='', only_key=''):
         donors.add(did)
     con.commit()
     un = sorted(unmatched.values(), key=lambda u: (-u['n'], u['last']), reverse=False)
+    names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+             for r in con.execute("SELECT id,last,first FROM donors")}
+    for m in matched:
+        m['name'] = names.get(m['donor_id'], '#%s' % m['donor_id'])
+    matched.sort(key=lambda m: m['at'])
     return {'ok': True, 'calls': len(calls), 'added': added, 'updated': updated, 'dup': dup, 'ignored': nign,
-            'donors': len(donors), 'unmatched': un[:200], 'unmatched_total': len(un),
+            'donors': len(donors), 'unmatched': un[:200], 'unmatched_total': len(un), 'matched': matched[:500],
             'from': min((c['at'] for c in calls), default=None) and min(c['at'] for c in calls).strftime('%Y-%m-%d'),
             'to': max((c['at'] for c in calls), default=None) and max(c['at'] for c in calls).strftime('%Y-%m-%d')}

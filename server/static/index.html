@@ -591,6 +591,12 @@
   .chipv .cmpin,.chipv .cmpadd{margin-inline-start:0}
   @media print{.cmpin,.cmpadd,.cmpact,.cmppick{display:none!important}}
   /* הטבלה של שלושתם ביחד — כמו הקובץ: שם + עמודה לכל מגבית */
+  /* סיכום השיחות מיומן הטלפון */
+  .calltbl{width:100%;border-collapse:collapse;font-size:.9rem;background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .calltbl th,.calltbl td{padding:6px 5px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-size:.85rem}
+  .calltbl td:first-child{white-space:normal;min-width:90px}
+  .calltbl th{background:var(--bg2,#f3f0ea);font-weight:700;font-size:.82rem;color:var(--muted)}
+  .calltbl .callgo{cursor:pointer;color:var(--brand,#3b2f5e)}
   .shtbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
   .cshr{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 1.2fr;align-items:center;gap:6px;padding:9px 10px;border-bottom:1px solid var(--line)}
   .cshr:nth-child(even){background:color-mix(in srgb,var(--bg) 60%,var(--card))}

@@ -1625,9 +1625,19 @@ function renderCallImport(out,r){
     <div class="dupacts"><button class="btn sm ghost callpick" data-i="${i}">🔍 תורם אחר…</button>
       <button class="btn sm ghost callno" data-i="${i}">✕ לא תורם</button></div>
     <div class="callpk" data-i="${i}"></div></div>`).join('');
+  // מאיר: "רשימה סיכום מסודרת כל מי שהתקשרתי אליו והוא תורם — כמה זמן שיחה ומתי"
+  const M=r.matched||[];
+  const kind=k=>({out:'יוצאת',in:'נכנסת',missed:'לא נענתה',rejected:'נדחתה',blocked:'חסומה',voicemail:'תא קולי'}[k]||'');
+  const mrows=M.map(m=>`<tr><td><b class="callgo" data-did="${m.donor_id}">${esc(m.name)}</b></td><td dir="ltr">${esc((m.at||'').slice(0,10))}</td><td dir="ltr">${esc((m.at||'').slice(11))}</td><td>${m.dur?esc(m.dur):'<span style="color:var(--no)">לא נענתה</span>'}</td><td>${kind(m.kind)}</td></tr>`).join('');
+  const tot=M.reduce((s,m)=>s+(+m.secs||0),0), totTxt=tot>=3600?(Math.floor(tot/3600)+':'+String(Math.floor(tot%3600/60)).padStart(2,'0')+' שע׳'):(Math.floor(tot/60)+':'+String(tot%60).padStart(2,'0')+' דק׳');
   out.innerHTML=`<div class="hintxt" style="margin-top:8px">✅ נקראו <b>${n(r.calls)}</b> שיחות${r.from?(' ('+esc(r.from)+' עד '+esc(r.to)+')'):''} ·
     נכנסו <b>${n(r.added)}</b> ליומן הקשר של <b>${n(r.donors)}</b> תורמים${n(r.updated)?(' · '+n(r.updated)+' חיוגים מהמערכת קיבלו משך'):''}${n(r.dup)?(' · '+n(r.dup)+' כבר היו'):''}${n(r.ignored)?(' · '+n(r.ignored)+' ממספרים שסימנת "לא תורם"'):''}.</div>
+    ${M.length?`<div class="misshead">📲 שיחות עם תורמים — ${M.length} · סה"כ ${totTxt}</div>
+    <div style="overflow-x:auto"><table class="calltbl"><thead><tr><th>תורם</th><th>תאריך</th><th>שעה</th><th>משך</th><th></th></tr></thead><tbody>${mrows}</tbody></table></div>
+    <button class="btn sm ghost" id="callcopy" style="margin:6px 0 10px">📋 העתק את הרשימה</button>`:''}
     ${rows?`<div class="misshead">❔ מספרים שלא זוהו — ${n(r.unmatched_total)}</div><div class="hintxt">מי שהוא תורם — שייך אותו לכרטיס, המספר יישמר שם והשיחות ייכנסו. מי שלא — "לא תורם", ולא יוצע שוב.</div>${rows}`:''}`;
+  out.querySelectorAll('.callgo').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.did); if(d)openDonor(d,'contact');});
+  const cc=out.querySelector('#callcopy'); if(cc)cc.onclick=()=>copyTxt(M.map(m=>`${m.name} — ${(m.at||'').slice(0,10)} ${(m.at||'').slice(11)} — ${m.dur||'לא נענתה'} (${kind(m.kind)})`).join('\n'));
   const U=r.unmatched||[];
   const done=(i,msg)=>{const el=out.querySelector(`.narow[data-i="${i}"]`); if(el)el.innerHTML=`<div class="nasub">${msg}</div>`;};
   out.querySelectorAll('.calluse').forEach(b=>b.onclick=()=>assignCall(U[+b.dataset.i],+b.dataset.did,b,done));
