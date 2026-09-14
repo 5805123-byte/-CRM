@@ -12648,75 +12648,13 @@ class H(BaseHTTPRequestHandler):
                 res = calllog.import_calls(con, txt, b.get('since') or '')
                 if not res.get('calls'):
                     return self._send(200, {'ok': False, 'error': 'no_calls'})
-                # הצעת כרטיס לכל מספר שלא זוהה — לפי השם שבאנשי הקשר של הטלפון
-                donors = [dict(r) for r in con.execute("SELECT id,first,last,english FROM donors")]
-                # מאיר: "תתאם תמזג בין המספרים לתורמים" — כשהשם הפרטי והמשפחה
-                # תואמים לכרטיס אחד בלבד, המספר נכנס לכרטיס והשיחות שלו מיובאות
-                # מיד; השאר נשארים להצעה.
-                auto = []; left = []
-                for u in res['unmatched']:
-                    nm = (u.get('name') or '').strip(); w = nm.split()
-                    sug, sure = [], False
-                    if nm:
-                        sug, sure = campaign_suggest({'name': nm}, donors)
-                        if not sug and len(w) > 1:            # באנשי הקשר לרוב "פרטי משפחה"
-                            sug, sure = campaign_suggest({'last': w[0], 'first': ' '.join(w[1:])}, donors)
-                    u['suggest'] = sug[:2]
-                    u['pretty'] = calllog.pretty(u['number'])
-                    strong = sure and sug and re.search(r'פרטי', sug[0].get('why') or '')
-                    if strong:
-                        did = sug[0]['id']; key = calllog.phone_key(u['number'])
-                        d = con.execute("SELECT phone FROM donors WHERE id=?", (did,)).fetchone()
-                        have = [x.strip() for x in re.split(r'\s*/\s*', (d['phone'] if d else '') or '') if x.strip()]
-                        if key not in [calllog.phone_key(x) for x in have]:
-                            have.append(calllog.pretty(u['number']))
-                            con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(have), did)); con.commit()
-                        r2 = calllog.import_calls(con, txt, b.get('since') or '', only_key=key)
-                        res['added'] += r2.get('added', 0); res['updated'] += r2.get('updated', 0)
-                        res['matched'] = (res.get('matched') or []) + (r2.get('matched') or [])
-                        auto.append({'name': nm, 'pretty': u['pretty'], 'donor_id': did, 'to': sug[0]['name'], 'n': u['n']})
-                    else:
-                        left.append(u)
-                res['unmatched'] = left; res['unmatched_total'] = len(left); res['auto'] = auto
-                res['matched'].sort(key=lambda m: m['at'])
-                res['donors'] = len({m['donor_id'] for m in res['matched']})
+                # מאיר: "מי שלא מופיע במערכת המספר שלו זה סימן שהוא לא תורם שלנו,
+                # אז לא צריך השלמות" — ההצלבה היא לפי טלפון בלבד. מספר שאינו
+                # באף כרטיס נספר ולא מוצע לשיוך.
+                res['unmatched'] = []
             finally:
                 con.close()
             return self._send(200, res)
-        if self.path == '/api/calls/assign':      # מספר מהיומן → כרטיס: נשמר בטלפונים והשיחות שלו נכנסות
-            import calllog
-            did = int(b.get('donor_id') or 0); num = (b.get('number') or '').strip()
-            if not did or not calllog.digits(num):
-                return self._send(400, {'ok': False, 'error': 'donor_id and number required'})
-            con = db()
-            try:
-                d = con.execute("SELECT id,phone FROM donors WHERE id=?", (did,)).fetchone()
-                if not d:
-                    return self._send(404, {'ok': False, 'error': 'no donor'})
-                key = calllog.phone_key(num)
-                have = [x.strip() for x in re.split(r'\s*/\s*', d['phone'] or '') if x.strip()]
-                if key not in [calllog.phone_key(x) for x in have]:
-                    have.append(calllog.pretty(num))
-                    con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(have), did))
-                    con.commit()
-                res = calllog.import_calls(con, b.get('text') or '', b.get('since') or '', only_key=key)
-                res['phone'] = ' / '.join(have)
-            finally:
-                con.close()
-            return self._send(200, res)
-        if self.path == '/api/calls/ignore':      # "לא תורם" — לא יוצע שוב
-            import calllog
-            num = (b.get('number') or '').strip(); key = calllog.phone_key(num)
-            if not key:
-                return self._send(400, {'ok': False})
-            con = db()
-            try:
-                con.execute("INSERT OR REPLACE INTO call_ignore(key,name,number,created) VALUES(?,?,?,?)",
-                            (key, (b.get('name') or '')[:80], num, now_iso()))
-                con.commit()
-            finally:
-                con.close()
-            return self._send(200, {'ok': True})
         if self.path == '/api/contacts/csv':   # קובץ אנשי קשר של גוגל — השלמת כתובות ממנו
             try:
                 import gcontacts

@@ -244,6 +244,6 @@ def import_calls(con, text, since='', only_key=''):
         m['name'] = names.get(m['donor_id'], '#%s' % m['donor_id'])
     matched.sort(key=lambda m: m['at'])
     return {'ok': True, 'calls': len(calls), 'added': added, 'updated': updated, 'dup': dup, 'ignored': nign,
-            'donors': len(donors), 'unmatched': un[:200], 'unmatched_total': len(un), 'matched': matched[:500],
+            'donors': len({m['donor_id'] for m in matched}), 'unmatched': un[:200], 'unmatched_total': len(un), 'matched': matched[:500],
             'from': min((c['at'] for c in calls), default=None) and min(c['at'] for c in calls).strftime('%Y-%m-%d'),
             'to': max((c['at'] for c in calls), default=None) and max(c['at'] for c in calls).strftime('%Y-%m-%d')}

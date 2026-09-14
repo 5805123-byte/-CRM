@@ -1617,55 +1617,19 @@ async function uploadCallLog(inp){
 function renderCallImport(out,r){
   if(!out)return;
   const n=x=>+x||0;
-  const rows=(r.unmatched||[]).map((u,i)=>`<div class="narow" data-i="${i}">
-    <div class="nahd"><b>${esc(u.name||'ללא שם')}</b><span class="namoney">${n(u.n)} ${n(u.n)===1?'שיחה':'שיחות'}</span></div>
-    <div class="nasub" dir="ltr" style="text-align:right">📞 ${esc(u.pretty||u.number)}${u.last?(' · '+esc(u.last)):''}</div>
-    ${(u.suggest||[]).map(s=>{const strong=/פרטי|\+/.test(s.why||'');   // רק משפחה/שלד — ניחוש, לא ודאות
-      return `<button class="btn sm calluse${strong?'':' ghost'}" data-i="${i}" data-did="${s.id}" style="margin:4px 0 0">${strong?'✔️ זה':'❔ אולי'} ${esc(s.name)}${s.eng?(' · '+esc(s.eng)):''} <small>(${esc(s.why)})</small></button>`;}).join('')}
-    <div class="dupacts"><button class="btn sm ghost callpick" data-i="${i}">🔍 תורם אחר…</button>
-      <button class="btn sm ghost callno" data-i="${i}">✕ לא תורם</button></div>
-    <div class="callpk" data-i="${i}"></div></div>`).join('');
-  // מאיר: "רשימה סיכום מסודרת כל מי שהתקשרתי אליו והוא תורם — כמה זמן שיחה ומתי"
+  // מאיר: "רשימה סיכום מסודרת כל מי שהתקשרתי אליו והוא תורם — כמה זמן שיחה ומתי".
+  // ההצלבה לפי טלפון בלבד: "מי שלא מופיע במערכת המספר שלו זה סימן שהוא לא תורם שלנו".
   const M=r.matched||[];
   const kind=k=>({out:'יוצאת',in:'נכנסת',missed:'לא נענתה',rejected:'נדחתה',blocked:'חסומה',voicemail:'תא קולי'}[k]||'');
   const mrows=M.map(m=>`<tr><td><b class="callgo" data-did="${m.donor_id}">${esc(m.name)}</b></td><td dir="ltr">${esc((m.at||'').slice(0,10))}</td><td dir="ltr">${esc((m.at||'').slice(11))}</td><td>${m.dur?esc(m.dur):'<span style="color:var(--no)">לא נענתה</span>'}</td><td>${kind(m.kind)}</td></tr>`).join('');
   const tot=M.reduce((s,m)=>s+(+m.secs||0),0), totTxt=tot>=3600?(Math.floor(tot/3600)+':'+String(Math.floor(tot%3600/60)).padStart(2,'0')+' שע׳'):(Math.floor(tot/60)+':'+String(tot%60).padStart(2,'0')+' דק׳');
   out.innerHTML=`<div class="hintxt" style="margin-top:8px">✅ נקראו <b>${n(r.calls)}</b> שיחות${r.from?(' ('+esc(r.from)+' עד '+esc(r.to)+')'):''} ·
-    נכנסו <b>${n(r.added)}</b> ליומן הקשר של <b>${n(r.donors)}</b> תורמים${n(r.updated)?(' · '+n(r.updated)+' חיוגים מהמערכת קיבלו משך'):''}${n(r.dup)?(' · '+n(r.dup)+' כבר היו'):''}${n(r.ignored)?(' · '+n(r.ignored)+' ממספרים שסימנת "לא תורם"'):''}.</div>
-    ${(r.auto||[]).length?`<div class="hintxt">🔗 שויכו לבד לפי השם באנשי הקשר: ${r.auto.map(a=>`<b>${esc(a.name)}</b> ← ${esc(a.to)}`).join(' · ')}. המספר נשמר בכרטיס — אם טעיתי, מחק אותו שם.</div>`:''}
+    <b>${M.length}</b> מהן עם תורמים (${n(r.donors)} כרטיסים) · נכנסו ליומן הקשר <b>${n(r.added)}</b>${n(r.updated)?(' · '+n(r.updated)+' חיוגים מהמערכת קיבלו משך'):''}${n(r.dup)?(' · '+n(r.dup)+' כבר היו'):''}${n(r.unmatched_total)?(' · '+n(r.unmatched_total)+' מספרים שאינם באף כרטיס — דולגו'):''}.</div>
     ${M.length?`<div class="misshead">📲 שיחות עם תורמים — ${M.length} · סה"כ ${totTxt}</div>
     <div style="overflow-x:auto"><table class="calltbl"><thead><tr><th>תורם</th><th>תאריך</th><th>שעה</th><th>משך</th><th></th></tr></thead><tbody>${mrows}</tbody></table></div>
-    <button class="btn sm ghost" id="callcopy" style="margin:6px 0 10px">📋 העתק את הרשימה</button>`:''}
-    ${rows?`<div class="misshead">❔ מספרים שלא זוהו — ${n(r.unmatched_total)}</div><div class="hintxt">מי שהוא תורם — שייך אותו לכרטיס, המספר יישמר שם והשיחות ייכנסו. מי שלא — "לא תורם", ולא יוצע שוב.</div>${rows}`:''}`;
+    <button class="btn sm ghost" id="callcopy" style="margin:6px 0 10px">📋 העתק את הרשימה</button>`:'<div class="hintxt">אף מספר מהקובץ לא נמצא בכרטיסי התורמים.</div>'}`;
   out.querySelectorAll('.callgo').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.did); if(d)openDonor(d,'contact');});
   const cc=out.querySelector('#callcopy'); if(cc)cc.onclick=()=>copyTxt(M.map(m=>`${m.name} — ${(m.at||'').slice(0,10)} ${(m.at||'').slice(11)} — ${m.dur||'לא נענתה'} (${kind(m.kind)})`).join('\n'));
-  const U=r.unmatched||[];
-  const done=(i,msg)=>{const el=out.querySelector(`.narow[data-i="${i}"]`); if(el)el.innerHTML=`<div class="nasub">${msg}</div>`;};
-  out.querySelectorAll('.calluse').forEach(b=>b.onclick=()=>assignCall(U[+b.dataset.i],+b.dataset.did,b,done));
-  out.querySelectorAll('.callno').forEach(b=>b.onclick=async()=>{
-    const u=U[+b.dataset.i]; b.disabled=true;
-    try{ await api('POST','/api/calls/ignore',{number:u.number,name:u.name||''}); }catch(e){}
-    done(b.dataset.i,'✕ '+esc(u.name||u.number)+' — לא תורם, לא יוצע שוב');
-  });
-  out.querySelectorAll('.callpick').forEach(b=>b.onclick=()=>{
-    const u=U[+b.dataset.i], box=out.querySelector(`.callpk[data-i="${b.dataset.i}"]`);
-    box.innerHTML=`<input class="cmpq" placeholder="חפש לפי שם / אנגלית…" style="width:100%;margin-top:6px"><div class="cmpres"></div>`;
-    const inp=box.querySelector('.cmpq'), res=box.querySelector('.cmpres');
-    inp.oninput=()=>{const q=inp.value.trim(); if(!q){res.innerHTML='';return;}
-      const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||''),q,8);
-      res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
-      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>assignCall(u,+el.dataset.did,el,done,b.dataset.i));};
-    const w=(u.name||'').split(' '); inp.value=w.length>1?w[w.length-1]:(u.name||''); inp.focus(); inp.oninput();
-  });
-}
-async function assignCall(u,did,btn,done,idx){
-  if(!u||!did)return; btn.disabled=true;
-  let r=null;
-  try{ r=await api('POST','/api/calls/assign',{donor_id:did,number:u.number,text:CALLTXT}); }catch(e){ r=null; }
-  if(!r||!r.ok){ btn.disabled=false; toast('לא הצלחתי לשייך'); return; }
-  const d=DB.find(x=>x.id===did);
-  done(idx!=null?idx:btn.dataset.i,'✔️ '+esc(u.pretty||u.number)+' נשמר בכרטיס של <b>'+esc(d?(d.last+' '+d.first):('#'+did))+'</b> · '+(+r.added||0)+' שיחות נכנסו ליומן הקשר');
-  toast('שויך ✓'); await load();
 }
 // מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס
 let NOADDR=null;
