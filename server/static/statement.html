@@ -92,8 +92,9 @@
 <body>
 <div class="bar">
   <label>שנת מס <select id="yr"></select></label>
-  <input id="adr" class="wide" placeholder="כתובת התורם לקבלה (street, city, state, zip)">
-  <button class="g" id="adrsave">💾 שמור כתובת בכרטיס</button>
+  <span id="adrwrap" style="display:contents"><input id="adr" class="wide" placeholder="כתובת התורם לקבלה (street, city, state, zip)">
+  <button class="g" id="adrsave">💾 שמור כתובת בכרטיס</button></span>
+  <button class="g" id="adredit" style="display:none" title="הכתובת נלקחת מהכרטיס — כאן אפשר לתקן אותה">✏️ כתובת</button>
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
 </div>
@@ -153,6 +154,10 @@ async function load(year){
   document.querySelectorAll('.yr2').forEach(e => e.textContent = r.year);
   $('r_name').textContent = r.name;
   if (!$('adr').value) $('adr').value = r.addr || ''; paintAddr();
+  // הכתובת נלקחת מהכרטיס; שדה ההקלדה מופיע רק כשאין כתובת בכרטיס (או בלחיצה על ✏️)
+  const hasAddr = !!(r.addr || '').trim();
+  $('adrwrap').style.display = hasAddr ? 'none' : 'contents'; $('adredit').style.display = hasAddr ? '' : 'none';
+  $('adredit').onclick = () => { $('adrwrap').style.display = 'contents'; $('adredit').style.display = 'none'; $('adr').focus(); };
   const ys = [...new Set([...(r.years||[]), String(new Date().getFullYear()), String(new Date().getFullYear()-1), r.year])].sort().reverse();
   $('yr').innerHTML = ys.map(y => `<option ${y===r.year?'selected':''}>${y}</option>`).join('');
   const rows = r.items || [];
