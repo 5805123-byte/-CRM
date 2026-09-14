@@ -4168,7 +4168,8 @@ function cardDetails(d,body){
         <b>${curd}${L.got.toLocaleString('en-US')}</b> · חסר
         <b>${curd}${L.debt.toLocaleString('en-US')}</b></div>`;
   }catch(e){}
-  const give=gitems.length?bldgList('bldgitems3')+`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span></div>${oweLine}${autoCatHTML(d)}`
+  // מאיר: "תבנה לי קבלה יפה בשביל הטקס בארצות הברית" — קבלה שנתית על כל תרומות השנה, על הבלאנק
+  const give=gitems.length?bldgList('bldgitems3')+`<div class="givelist"><div class="givehd">💵 מה תרם ועבור מה <span class="givecnt">${gitems.length}</span>${(d.donations||[]).length?`<button class="btn sm ghost gvstmt" title="קבלה שנתית לארה\"ב — כל התרומות של השנה על הבלאנק, באנגלית">🧾 קבלה שנתית</button>`:''}</div>${oweLine}${autoCatHTML(d)}`
     + gitems.slice(0,GVSHOW).map(gvrow).join('')
     + (gitems.length>GVSHOW?`<details class="gvmore"><summary>הצג עוד ${gitems.length-GVSHOW}</summary>${gitems.slice(GVSHOW).map(gvrow).join('')}</details>`:'')
     + `</div>`:'';
@@ -4280,6 +4281,11 @@ function cardDetails(d,body){
   body.querySelectorAll('.collectbtn:not(.setlbtn)').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===1?0:1;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
   body.querySelectorAll('.setlbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===2?0:2;p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np===2?'סומן כסודר ✓ — לא ייספר כחוב':'הסימון בוטל');cardDetails(d,body);if(tab==='donors')renderDonors();});
   // שליחת קבלה לתורם דרך EZcount
+  const gvs=body.querySelector('.gvstmt'); if(gvs)gvs.onclick=()=>{
+    const yrs=[...new Set((d.donations||[]).map(x=>String(x.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
+    const cur=String(new Date().getFullYear()), prev=String(+cur-1);
+    const y=yrs.includes(prev)?prev:(yrs[0]||cur);     // ברירת מחדל: השנה שעברה (עונת המס), אם יש בה תרומות
+    window.open('/statement?donor='+d.id+'&year='+y,'_blank');};
   body.querySelectorAll('.gvrcpt').forEach(b=>b.onclick=async()=>{
     const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
     const em=(splitEmails(d.email)[0]||'').trim();

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Annual Contribution Statement — Kollel Chatzos</title>
+<style>
+  /* מאיר: "תבנה לי קבלה יפה בשביל הטקס בארצות הברית עם כל הפרטים שלנו…
+     על הבלאנק שלנו". התורם ביקש קבלה על כל תרומות השנה, עם הכתובת שלו
+     ועם "no goods or services were rendered". אותו בלאנק ואותה שפה
+     עיצובית של הקבלה הבודדת (receipt.html) — כאן עם טבלת כל התרומות של
+     השנה וסכום כולל. */
+  :root{--ink:#3a2f1a;--deep:#7a1f1f;--gold:#9c7a2e;--soft:#6b6249;--line:#cdbf98}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:#d9d2c2;color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .scroller{overflow-x:auto;padding:16px}
+  .sheet{position:relative;width:794px;aspect-ratio:2482/3509;margin:0 auto;
+    background:#fdf9ee url("/letterhead.jpg") top center/100% 100% no-repeat;
+    box-shadow:0 10px 40px rgba(0,0,0,.25);container-type:inline-size}
+  .content{position:absolute;top:5.4%;left:24%;right:5.5%;bottom:11.5%;display:flex;flex-direction:column}
+
+  .rc{display:flex;justify-content:space-between;align-items:baseline;font-size:1.85cqw;color:var(--soft);letter-spacing:.06cqw}
+  .rc b{color:var(--ink)}
+  .rc .no b{color:var(--gold);font-size:2.7cqw;letter-spacing:.1cqw}
+  .title{text-align:center;font-size:2.9cqw;letter-spacing:.4cqw;color:var(--gold);text-transform:uppercase;margin:1.6cqw 0 .2cqw}
+  .sub{text-align:center;font-size:2cqw;color:var(--deep);letter-spacing:.2cqw;margin:0 0 .5cqw}
+  .rule{height:.14cqw;background:linear-gradient(90deg,transparent,var(--line) 18%,var(--line) 82%,transparent);margin:0 0 2cqw}
+  .org{text-align:center;font-size:1.7cqw;color:var(--soft);line-height:1.5;margin:0 0 2.2cqw}
+  .org b{color:var(--ink)}
+  .org .legal{display:block;font-size:1.35cqw;color:#a29a86;margin-top:.25cqw}
+
+  .to{border:.13cqw solid var(--line);border-radius:.7cqw;padding:1.3cqw 1.8cqw;background:rgba(255,255,255,.5)}
+  .to .lbl{font-size:1.4cqw;letter-spacing:.28cqw;text-transform:uppercase;color:var(--soft)}
+  .to .nm{font-size:2.8cqw;font-weight:700;margin-top:.3cqw;line-height:1.2}
+  .to .ad{font-size:1.75cqw;color:var(--soft);line-height:1.5;margin-top:.3cqw;white-space:pre-line}
+
+  table{width:100%;border-collapse:collapse;margin-top:2cqw;font-size:1.8cqw}
+  th{font-size:1.35cqw;letter-spacing:.25cqw;text-transform:uppercase;color:var(--soft);font-weight:400;
+     text-align:left;padding:.5cqw .8cqw;border-bottom:.2cqw solid var(--line)}
+  td{padding:.75cqw .8cqw;border-bottom:.1cqw solid var(--line);vertical-align:top}
+  th.r,td.r{text-align:right;white-space:nowrap}
+  td.meth{color:var(--soft)}
+  tr.tot td{border-top:.22cqw solid var(--line);border-bottom:none;padding-top:1.2cqw;font-weight:700}
+  tr.tot td.r{font-size:3cqw;color:var(--deep)}
+  tr.tot td.lbl{font-size:1.5cqw;letter-spacing:.3cqw;text-transform:uppercase;color:var(--soft);font-weight:400;vertical-align:bottom}
+  .none{text-align:center;color:var(--soft);font-style:italic;padding:2cqw;font-size:1.9cqw}
+
+  .stmt{font-size:1.85cqw;line-height:1.6;margin-top:2cqw}
+  .stmt .key{background:rgba(156,122,46,.09);border-left:.3cqw solid var(--gold);padding:1.2cqw 1.4cqw;font-size:1.75cqw;line-height:1.55;margin:0}
+  .warm{text-align:center;font-size:2cqw;font-style:italic;color:var(--deep);line-height:1.5;margin:auto 0 2.2cqw;text-wrap:balance}
+  .sign{text-align:right}
+  .sign .line{width:26cqw;border-top:.14cqw solid var(--ink);margin:0 0 .7cqw auto}
+  .sign .nm{font-size:2.3cqw;font-weight:700;color:var(--deep)}
+  .sign .role{font-size:1.7cqw;color:var(--soft)}
+  .sign .ein{font-size:1.5cqw;color:var(--soft);line-height:1.55;margin-top:.9cqw}
+  .sign .ein b{color:var(--gold);letter-spacing:.16cqw;text-transform:uppercase}
+
+  .bar{max-width:794px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;
+       font-family:system-ui,sans-serif;font-size:.95rem}
+  .bar select,.bar input{font:inherit;padding:8px 10px;border:1px solid #b9ad8e;border-radius:8px;background:#fff}
+  .bar input{flex:1 1 260px;min-width:200px}
+  .bar button{font-family:inherit;font-size:1rem;font-weight:700;padding:10px 18px;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer}
+  .bar button.g{background:#fff;color:var(--gold);border:1px solid var(--gold)}
+  .warn{max-width:794px;margin:0 auto 10px;background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:8px 12px;font-family:system-ui,sans-serif;font-size:.92rem;direction:rtl;text-align:right}
+  @media print{
+    @page{size:A4;margin:0}
+    html,body{background:#fdf9ee url("/bleed/letterhead.jpg") center center/100% 100% no-repeat}
+    .scroller{overflow:visible;padding:0}
+    .sheet{width:210mm;height:297mm;aspect-ratio:auto;box-shadow:none;margin:0;transform:scale(.962);transform-origin:center center}
+    .bar,.warn{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <label>Tax year <select id="yr"></select></label>
+  <input id="adr" placeholder="Donor address for the statement (street, city, state, zip)">
+  <button class="g" id="adrsave">💾 שמור כתובת בכרטיס</button>
+  <button onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <button class="g" onclick="history.length>1?history.back():window.close()">← Back</button>
+</div>
+<div class="warn" id="warn" style="display:none"></div>
+<div class="scroller"><div class="sheet"><div class="content">
+  <div class="rc"><span class="no">Statement No. <b id="r_num">—</b></span><span>Date: <b id="r_date"></b></span></div>
+  <div class="title">Annual Contribution Statement</div>
+  <div class="sub">Tax Year <span id="r_year"></span></div>
+  <div class="rule"></div>
+  <div class="org">1540 40th Street, Brooklyn, NY 11218 &nbsp;·&nbsp; EIN <b>20-0447034</b> &nbsp;·&nbsp; 501(c)(3)
+    <span class="legal">registered as Cong. Zikhron Avos</span></div>
+  <div class="to"><div class="lbl">Received from</div><div class="nm" id="r_name">Friend</div><div class="ad" id="r_addr" style="display:none"></div></div>
+  <table id="tbl"><thead><tr><th>Date</th><th>Designation</th><th>Method</th><th class="r">Amount</th></tr></thead><tbody id="rows"></tbody></table>
+  <div class="stmt"><p class="key">This statement is your official receipt for tax purposes for all contributions received
+    from you during the calendar year <span class="yr2"></span>. <b>No goods or services were provided</b> in exchange for these
+    contributions. Kollel Chatzos is exempt under Section 501(c)(3) of the Internal Revenue Code; contributions are
+    tax-deductible to the extent allowed by law. Please retain this statement for your records.</p></div>
+  <div class="warm">With deep appreciation for your partnership in the Torah of Chatzos.</div>
+  <div class="sign"><div class="line"></div><div class="nm">Rabbi Yehoshua Meir Deutsch</div>
+    <div class="role">Rosh HaKollel · Authorized Signatory</div><div class="ein"><b>Kollel Chatzos</b> · EIN 20-0447034</div></div>
+</div></div></div>
+<script>
+const q = new URLSearchParams(location.search), $ = id => document.getElementById(id);
+const DID = q.get('donor') || '';
+const PMAP = [[/יששכר|זבולון|zevulun|yissachar/i,'Yissachar–Zevulun Partnership'],[/פרנס.?לילה|לימוד.?לילה|פרנס/i,'Sponsorship of a Night of Torah'],
+  [/נר.?למאור/i,'Ner LaMaor'],[/חדר.?קפה|coffee/i,'Refreshments for the Kollel'],[/ארוחת.?בוקר|breakfast/i,'Breakfast for the Kollel'],
+  [/קמחא|kimcha|pesach/i,'Kimcha D’Pischa'],[/מתנות.?לאביונים|matanos/i,'Matanos LaEvyonim'],[/הכנסת.?כלה|kalla/i,'Hachnosas Kallah'],
+  [/בנין|בניין|building/i,'Building Fund'],[/סוכות|succos|sukkos/i,'Yom Tov Fund'],[/קבוע|monthly/i,'Monthly Support'],[/מזדמן|כללי/i,'General Donation']];
+const purposeEn = p => { p=(p||'').trim(); for (const [re,en] of PMAP) if (re.test(p)) return en; return /[֐-׿]/.test(p)?'General Donation':(p||'General Donation'); };
+const MMAP = [[/אשראי|credit|authorize|banquest|בנק ווסט|אונליין|online|card/i,'Credit Card'],[/צק|צ׳ק|המחאה|check|cheque/i,'Check'],[/מזומן|cash/i,'Cash'],
+  [/בנק|bank|wire|zelle|העברה/i,'Bank Transfer'],[/דונרס|donors\s*fund|daf|ojc/i,'Donor Advised Fund'],[/paypal/i,'PayPal'],[/נדרים|nedarim/i,'Nedarim Plus']];
+const methodEn = m => { m=(m||'').trim(); if(!m) return ''; for (const [re,en] of MMAP) if (re.test(m)) return en; return /[֐-׿]/.test(m)?'':m; };
+const money = n => '$' + (+n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const nice = s => { let d = s ? new Date(s + (/^\d{4}-\d{2}-\d{2}$/.test(s)?'T12:00:00':'')) : new Date(); if (isNaN(d)) d = new Date();
+  return d.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); };
+const shortD = s => { const d = new Date(s + 'T12:00:00'); return isNaN(d) ? s : d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+function paintAddr(){ const a = $('adr').value.trim(); $('r_addr').textContent = a; $('r_addr').style.display = a ? '' : 'none'; }
+async function load(year){
+  const r = await fetch('/api/statement?donor=' + encodeURIComponent(DID) + (year ? '&year=' + year : '')).then(x => x.json()).catch(() => null);
+  if (!r || r.error) { $('warn').style.display = ''; $('warn').textContent = 'לא נמצא תורם'; return; }
+  document.title = 'Statement ' + r.num + ' — ' + r.name + ' ' + r.year;
+  $('r_num').textContent = r.num; $('r_date').textContent = nice(r.date); $('r_year').textContent = r.year;
+  document.querySelectorAll('.yr2').forEach(e => e.textContent = r.year);
+  $('r_name').textContent = r.name;
+  if (!$('adr').value) $('adr').value = r.addr || ''; paintAddr();
+  const ys = [...new Set([...(r.years||[]), String(new Date().getFullYear()), String(new Date().getFullYear()-1), r.year])].sort().reverse();
+  $('yr').innerHTML = ys.map(y => `<option ${y===r.year?'selected':''}>${y}</option>`).join('');
+  const rows = r.items || [];
+  $('rows').innerHTML = rows.map(i => `<tr><td>${shortD(i.date)}</td><td>${purposeEn(i.category)}</td><td class="meth">${methodEn(i.method)}</td><td class="r">${money(i.amount)}</td></tr>`).join('')
+    + (rows.length ? `<tr class="tot"><td class="lbl" colspan="3">Total contributions received in ${r.year}</td><td class="r">${money(r.total)}</td></tr>`
+                   : `<tr><td colspan="4" class="none">No contributions recorded for ${r.year}.</td></tr>`);
+  const w = [];
+  if (!rows.length) w.push('אין תרומות משנת ' + r.year + ' בכרטיס. תוסיף אותן בלשונית ראשי ותרענן, או בחר שנה אחרת למעלה.');
+  if (!(r.addr||'').trim()) w.push('אין כתובת בכרטיס — הקלד את הכתובת בשדה למעלה (היא נכנסת לקבלה מיד), ואפשר לשמור אותה בכרטיס.');
+  const nonusd = rows.filter(i => i.cur === '₪').length;
+  if (nonusd) w.push(nonusd + ' תרומות בשקלים מופיעות כאן כסכום בדולרים — בדוק לפני הדפסה.');
+  $('warn').style.display = w.length ? '' : 'none'; $('warn').innerHTML = w.join('<br>');
+}
+$('yr').onchange = () => load($('yr').value);
+$('adr').oninput = paintAddr;
+$('adrsave').onclick = async () => {
+  const a = $('adr').value.trim(); if (!a || !DID) return;
+  const b = $('adrsave'); b.disabled = true;
+  // אותה חלוקה כמו בכרטיס (splitAddrLine): רחוב, עיר, מדינה, מיקוד — כדי שתוויות הדואר ימשיכו לעבוד
+  const parts = a.split(',').map(x => x.trim()).filter((x, i, arr) => x || i < arr.length - 1);
+  const out = {addr:'', city:'', country:'', zip:''};
+  let last = parts[parts.length - 1] || '';
+  const m = /(\b\d{5}(?:-\d{4})?|\b[A-Z]\d[A-Z] ?\d[A-Z]\d|\b\d{7})\s*$/i.exec(last);
+  if (m) { out.zip = m[1]; last = last.slice(0, m.index).trim(); }
+  parts[parts.length - 1] = last;
+  if (!last) parts.pop(); else if (parts.length >= 3) out.country = parts.pop();
+  if (parts.length >= 2) out.city = parts.pop();
+  out.addr = parts.join(', ').trim();
+  try { await fetch('/api/donor/' + DID, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(out)}); b.textContent = '✅ נשמר בכרטיס'; }
+  catch (e) { b.textContent = 'לא נשמר'; }
+  setTimeout(() => { b.textContent = '💾 שמור כתובת בכרטיס'; b.disabled = false; }, 2500);
+};
+load(q.get('year') || '');
+</script>
+</body>
+</html>

@@ -10372,6 +10372,56 @@ class H(BaseHTTPRequestHandler):
             try: info = donor_kvpage(con, did)
             finally: con.close()
             return self._send(200 if info else 404, info or {'error': 'not found'})
+        # קבלה שנתית לארה"ב — מאיר: "תבנה לי קבלה יפה בשביל הטקס בארצות הברית
+        # עם כל הפרטים שלנו… על הבלאנק שלנו". התורם (Naimark) ביקש: קבלה על
+        # כל תרומות 2025, עם הכתובת שלו ועם "no goods or services were rendered".
+        if self.path.split('?')[0] == '/statement':
+            return self._send(200, open(os.path.join(STATIC, 'statement.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/statement':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: did = int((qs.get('donor') or ['0'])[0])
+            except ValueError: did = 0
+            year = re.sub(r'\D', '', (qs.get('year') or [''])[0])[:4]
+            con = db()
+            try:
+                d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+                if not d:
+                    return self._send(404, {'error': 'not found'})
+                rows = [dict(r) for r in con.execute(
+                    "SELECT id,date,amount,category,method,cur,paid FROM donations WHERE donor_id=? ORDER BY date", (did,))]
+                years = sorted({(r['date'] or '')[:4] for r in rows if (r['date'] or '')[:4].isdigit()}, reverse=True)
+                if not year:
+                    year = years[0] if years else today_iso()[:4]
+                items = []
+                for r in rows:
+                    if (r['date'] or '')[:4] != year or not int(r.get('paid') or 0):
+                        continue
+                    try: a = float(re.sub(r'[^\d.]', '', str(r['amount'] or '')) or 0)
+                    except ValueError: a = 0
+                    if a <= 0:
+                        continue
+                    items.append({'id': r['id'], 'date': r['date'], 'amount': a, 'category': r['category'] or '',
+                                  'method': r['method'] or '', 'cur': (r['cur'] or '').strip()})
+                ad = [str(d['addr'] or '').strip(),
+                      ' '.join(x for x in (str(d['city'] or '').strip(), str(d['country'] or '').strip(),
+                                           str(d['zip'] or '').strip()) if x)]
+                name = (d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+                # מספר סידורי קבוע לתורם+שנה — הדפסה חוזרת נותנת את אותו מספר
+                key = 'y%d-%s' % (did, year)
+                row = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()
+                if row:
+                    num = int(row['num'])
+                else:
+                    mx = con.execute("SELECT MAX(num) m FROM receipts").fetchone()['m']
+                    num = max(RECEIPT_START, int(mx or 0) + 1)
+                    con.execute("INSERT OR IGNORE INTO receipts(rkey,num,created) VALUES(?,?,?)", (key, num, today_iso()))
+                    con.commit()
+                return self._send(200, {'donor_id': did, 'name': name, 'addr': ', '.join(x for x in ad if x),
+                                        'email': (d['email'] or '').strip(), 'year': year, 'years': years,
+                                        'items': items, 'total': round(sum(i['amount'] for i in items), 2),
+                                        'num': num, 'date': today_iso()})
+            finally:
+                con.close()
         if self.path.split('?')[0] in ('/kvpage.png', '/kvpage.jpg'):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
