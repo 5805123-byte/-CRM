@@ -1160,7 +1160,7 @@ def sync_contacts(con, status=None):
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com')
         M.login(user, pw)
-        M.select(mailbox)
+        M.select(mailbox, readonly=True)          # קריאה בלבד — לא מסמן 'נקרא' בג'ימייל
         typ, data = M.search(None, 'SINCE', since)
         ids = data[0].split() if typ == 'OK' else []
         st['total'] = len(ids)
@@ -1198,7 +1198,7 @@ def sync_contacts(con, status=None):
         for n, (seq, did, mid, subject, dstr, at) in enumerate(todo, 1):   # שלב 3: גוף רק למה שנכנס
             body, atts = '', []
             try:
-                typ, md = M.fetch(seq.decode(), '(RFC822)')
+                typ, md = M.fetch(seq.decode(), '(BODY.PEEK[])')
                 if typ == 'OK' and md and md[0]:
                     full_msg = email.message_from_bytes(md[0][1])
                     body = _extract_text(full_msg)
@@ -1242,7 +1242,7 @@ def sync_contacts(con, status=None):
         for seq, cid in backfill:
             atts, bd, subj = [], '', ''
             try:
-                typ, md = M.fetch(seq.decode(), '(RFC822)')
+                typ, md = M.fetch(seq.decode(), '(BODY.PEEK[])')
                 if typ == 'OK' and md and md[0]:
                     fm = email.message_from_bytes(md[0][1])
                     atts = _attachments(fm)
@@ -1389,7 +1389,7 @@ def sync_sent(con, status=None):
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com')
         M.login(user, pw)
-        if M.select(_q(box))[0] != 'OK' and M.select('[Gmail]/&BdcF4QXVBeQF3AXZ-')[0] != 'OK':
+        if M.select(_q(box), readonly=True)[0] != 'OK' and M.select('[Gmail]/&BdcF4QXVBeQF3AXZ-', readonly=True)[0] != 'OK':
             return {'ok': True, 'new': 0, 'note': 'no_sent_box'}
         typ, data = M.search(None, 'SINCE', since)
         ids = data[0].split() if typ == 'OK' else []
@@ -1426,7 +1426,7 @@ def sync_sent(con, status=None):
             if seq not in bodies:
                 body = ''
                 try:
-                    typ, md = M.fetch(seq.decode(), '(RFC822)')
+                    typ, md = M.fetch(seq.decode(), '(BODY.PEEK[])')
                     if typ == 'OK' and md and md[0]:
                         body = _extract_text(email.message_from_bytes(md[0][1]))
                 except Exception:
@@ -1477,7 +1477,7 @@ def diag(days=21):
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com')
         M.login(user, pw)
-        M.select(mailbox)
+        M.select(mailbox, readonly=True)          # קריאה בלבד — לא מסמן 'נקרא' בג'ימייל
         typ, data = M.search(None, 'SINCE', since)
         ids = data[0].split() if typ == 'OK' else []
         ids = sorted(ids, key=lambda x: int(x))[-40:]
@@ -1493,7 +1493,7 @@ def diag(days=21):
             row['subj_ok'] = (not subj) or (subj.lower() in (sj or '').lower())
             # רק על מה שנראה כמו בקשה נבדוק גם את הגוף — שליפה מלאה יקרה
             if row['subj_ok'] and len(out) < 25:
-                t2, m2 = M.fetch(i, '(RFC822)')
+                t2, m2 = M.fetch(i, '(BODY.PEEK[])')
                 if t2 == 'OK' and m2 and m2[0]:
                     msg = email.message_from_bytes(m2[0][1])
                     body = _extract_text(msg)
@@ -1561,7 +1561,7 @@ def sync(con):
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com')
         M.login(user, pw)
-        M.select(mailbox)
+        M.select(mailbox, readonly=True)          # קריאה בלבד — לא מסמן 'נקרא' בג'ימייל
         crit = ['SINCE', _imap_since()]
         if subj:
             crit += ['SUBJECT', _q(subj)]   # ציטוט חובה כשהנושא מכיל רווח
@@ -1595,7 +1595,7 @@ def sync(con):
         skipped = []
         gone = deleted_emails(con)
         for i in sorted(ids, key=lambda x: int(x)):
-            typ, md = M.fetch(i, '(RFC822)')
+            typ, md = M.fetch(i, '(BODY.PEEK[])')
             if typ != 'OK' or not md or not md[0]:
                 continue
             msg = email.message_from_bytes(md[0][1])
@@ -1760,7 +1760,7 @@ def sync_paypal(con, status=None):
             for i in range(0, len(ids), 40):
                 chunk = b','.join(ids[i:i + 40])
                 try:
-                    typ, msgs = M.fetch(chunk, '(RFC822)')
+                    typ, msgs = M.fetch(chunk, '(BODY.PEEK[])')
                 except Exception:
                     continue
                 for part in msgs or []:
@@ -1882,7 +1882,7 @@ def check_donor_mail(con, since='01-Jan-2024', status=None):
             if not st.get('running', True):
                 break
             try:
-                typ, msgs = M.fetch(b','.join(ids[i:i + 25]), '(RFC822)')
+                typ, msgs = M.fetch(b','.join(ids[i:i + 25]), '(BODY.PEEK[])')
             except Exception:
                 continue
             for part in msgs or []:
@@ -1994,7 +1994,7 @@ def sync_receipts(con, status=None, since=None):
             if not st.get('running', True):
                 break
             try:
-                typ, msgs = M.fetch(b','.join(ids[i:i + 25]), '(RFC822)')
+                typ, msgs = M.fetch(b','.join(ids[i:i + 25]), '(BODY.PEEK[])')
             except Exception:
                 continue
             for part in msgs or []:
