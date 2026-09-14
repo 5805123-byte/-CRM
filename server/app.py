@@ -6420,6 +6420,215 @@ def donor_kvpage(con, did):
             'date_heb': greg_to_heb_full(today), 'date_greg': '%s.%s.%s' % (dd, m, y)}
 
 
+def statement_data(con, did, year=''):
+    """הנתונים לקבלה השנתית: התורם, כתובתו, התרומות ששולמו באותה שנה, סה"כ ומספר סידורי."""
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return None
+    rows = [dict(r) for r in con.execute(
+        "SELECT id,date,amount,category,method,cur,paid FROM donations WHERE donor_id=? ORDER BY date", (did,))]
+    years = sorted({(r['date'] or '')[:4] for r in rows if (r['date'] or '')[:4].isdigit()}, reverse=True)
+    if not year:
+        year = years[0] if years else today_iso()[:4]
+    items = []
+    for r in rows:
+        if (r['date'] or '')[:4] != year or not int(r.get('paid') or 0):
+            continue
+        try: a = float(re.sub(r'[^\d.]', '', str(r['amount'] or '')) or 0)
+        except ValueError: a = 0
+        if a <= 0:
+            continue
+        items.append({'id': r['id'], 'date': r['date'], 'amount': a, 'category': r['category'] or '',
+                      'method': r['method'] or '', 'cur': (r['cur'] or '').strip()})
+    ad = [str(d['addr'] or '').strip(),
+          ' '.join(x for x in (str(d['city'] or '').strip(), str(d['country'] or '').strip(),
+                               str(d['zip'] or '').strip()) if x)]
+    name = (d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+    key = 'y%d-%s' % (did, year)               # מספר סידורי קבוע לתורם+שנה
+    row = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()
+    if row:
+        num = int(row['num'])
+    else:
+        mx = con.execute("SELECT MAX(num) m FROM receipts").fetchone()['m']
+        num = max(RECEIPT_START, int(mx or 0) + 1)
+        con.execute("INSERT OR IGNORE INTO receipts(rkey,num,created) VALUES(?,?,?)", (key, num, today_iso()))
+        con.commit()
+    return {'donor_id': did, 'name': name, 'addr': ', '.join(x for x in ad if x),
+            'email': (d['email'] or '').strip(), 'year': year, 'years': years,
+            'items': items, 'total': round(sum(i['amount'] for i in items), 2),
+            'num': num, 'date': today_iso()}
+
+
+_ST_PURPOSE = [(r'יששכר|זבולון|zevulun|yissachar', 'Yissachar–Zevulun Partnership'),
+               (r'פרנס.?לילה|לימוד.?לילה|פרנס', 'Sponsorship of a Night of Torah'),
+               (r'נר.?למאור', 'Ner LaMaor'), (r'חדר.?קפה|coffee', 'Refreshments for the Kollel'),
+               (r'ארוחת.?בוקר|breakfast', 'Breakfast for the Kollel'), (r'קמחא|kimcha|pesach', 'Kimcha D’Pischa'),
+               (r'מתנות.?לאביונים|matanos', 'Matanos LaEvyonim'), (r'הכנסת.?כלה|kalla', 'Hachnosas Kallah'),
+               (r'בנין|בניין|building', 'Building Fund'), (r'סוכות|succos|sukkos', 'Yom Tov Fund'),
+               (r'קבוע|monthly', 'Monthly Support'), (r'מזדמן|כללי', 'General Donation')]
+_ST_METHOD = [(r'אשראי|credit|authorize|banquest|בנק ווסט|אונליין|online|card', 'Credit Card'),
+              (r'צק|צ׳ק|המחאה|check|cheque', 'Check'), (r'מזומן|cash', 'Cash'),
+              (r'בנק|bank|wire|zelle|העברה', 'Bank Transfer'), (r'דונרס|donors\s*fund|daf|ojc', 'Donor Advised Fund'),
+              (r'paypal', 'PayPal'), (r'נדרים|nedarim', 'Nedarim Plus')]
+
+
+def _st_map(table, v, default):
+    v = (v or '').strip()
+    for rx, en in table:
+        if re.search(rx, v, re.I):
+            return en
+    return default if re.search(r'[\u0590-\u05ff]', v) or not v else v
+
+
+def statement_file(con, did, year, fmt='pdf'):
+    """הקבלה השנתית מצוירת על הבלאנק המלא (letterhead.jpg) — כ-PDF של עמוד
+    אחד שהוא התמונה עצמה, או כ-JPG. אותו סידור כמו בדף statement.html."""
+    from PIL import Image, ImageDraw, ImageFont
+    info = statement_data(con, did, year)
+    if not info:
+        raise ValueError('donor')
+    im = Image.open(os.path.join(STATIC, 'letterhead.jpg')).convert('RGB')
+    W, H = im.size                                  # 2482×3509 = A4 ב-300dpi
+    u = W / 100.0                                   # 1cqw של דף ה-HTML
+    dr = ImageDraw.Draw(im)
+    reg = os.path.join(STATIC, 'frankruhl-regular.ttf'); bold = os.path.join(STATIC, 'frankruhl-bold.ttf')
+    cache = {}
+
+    def font(px, heavy=False):
+        k = (int(px), heavy)
+        if k not in cache:
+            cache[k] = ImageFont.truetype(bold if heavy else reg, max(8, int(px)))
+        return cache[k]
+    wid = lambda t, f: dr.textlength(t, font=f)
+    INK, DEEP, GOLD, SOFT, LINE = (0x3a, 0x2f, 0x1a), (0x7a, 0x1f, 0x1f), (0x9c, 0x7a, 0x2e), (0x6b, 0x62, 0x49), (0xcd, 0xbf, 0x98)
+
+    def wrap(t, f, maxw):
+        out, cur = [], ''
+        for w in t.split():
+            tt = (cur + ' ' + w).strip()
+            if wid(tt, f) <= maxw or not cur: cur = tt
+            else: out.append(cur); cur = w
+        if cur: out.append(cur)
+        return out
+
+    def spaced(t, f, x, y, fill, sp):          # אותיות מרווחות (letter-spacing)
+        for ch in t:
+            dr.text((x, y), ch, font=f, fill=fill); x += wid(ch, f) + sp
+        return x
+
+    def spaced_w(t, f, sp):
+        return sum(wid(ch, f) + sp for ch in t) - sp
+
+    x0, x1 = int(W * .24), int(W * (1 - .055))
+    y = int(H * .054)
+    cw = x1 - x0
+    # ---- כותרת: RECEIPT + מספר ותאריך ----
+    ft = font(4.2 * u, False); sp = .7 * u
+    spaced('RECEIPT', ft, x0, y, GOLD, sp)
+    fs = font(1.6 * u); sub = 'CONTRIBUTIONS FOR TAX YEAR ' + info['year']
+    spaced(sub, fs, x0, y + 4.2 * u + .6 * u, DEEP, .3 * u)
+    fm, fmb, fno = font(1.75 * u), font(1.75 * u, True), font(2.6 * u, True)
+    t1 = 'No. '; dr.text((x1 - wid(t1, fm) - wid(str(info['num']), fno), y + .2 * u), t1, font=fm, fill=SOFT)
+    dr.text((x1 - wid(str(info['num']), fno), y - .6 * u), str(info['num']), font=fno, fill=GOLD)
+    dt = datetime.date.fromisoformat(info['date'][:10]).strftime('%B %-d, %Y')
+    t2 = 'Date: '
+    dr.text((x1 - wid(t2, fm) - wid(dt, fmb), y + 3.4 * u), t2, font=fm, fill=SOFT)
+    dr.text((x1 - wid(dt, fmb), y + 3.4 * u), dt, font=fmb, fill=INK)
+    y += int(7.2 * u)
+    dr.line([(x0, y), (x1, y)], fill=GOLD, width=max(2, int(.22 * u)))
+    # ---- שורת העמותה ----
+    y += int(1.2 * u)
+    fo, fob = font(1.55 * u), font(1.55 * u, True)
+    x = x0; dr.text((x, y), 'Kollel Chatzos', font=fob, fill=INK); x += wid('Kollel Chatzos', fob)
+    dr.text((x, y), ' · Cong. Zikhron Avos · 501(c)(3)', font=fo, fill=SOFT)
+    tid = 'Tax ID (EIN) '; ein = '20-0447034'
+    dr.text((x1 - wid(ein, fob), y), ein, font=fob, fill=INK)
+    dr.text((x1 - wid(ein, fob) - wid(tid, fo), y), tid, font=fo, fill=SOFT)
+    y += int(4 * u)
+    # ---- Received from ----
+    fl, fn, fa = font(1.4 * u), font(2.8 * u, True), font(1.75 * u)
+    box_h = int((1.3 + 1.4 + .3 + 2.8 * 1.2 + (1.75 * 1.5 + .3 if info['addr'] else 0) + 1.3) * u)
+    dr.rounded_rectangle([x0, y, x1, y + box_h], radius=int(.7 * u), fill=(255, 253, 247), outline=LINE, width=max(2, int(.13 * u)))
+    yy = y + int(1.3 * u); xx = x0 + int(1.8 * u)
+    spaced('RECEIVED FROM', fl, xx, yy, SOFT, .28 * u); yy += int(1.4 * u + .4 * u)
+    dr.text((xx, yy), info['name'], font=fn, fill=INK); yy += int(2.8 * u * 1.2 + .3 * u)
+    if info['addr']:
+        dr.text((xx, yy), info['addr'], font=fa, fill=SOFT)
+    y += box_h + int(2 * u)
+    # ---- טבלה ----
+    many = len(info['items']) > 12
+    fh = font(1.35 * u); fr = font((1.6 if many else 1.8) * u)
+    cols = [x0 + int(.8 * u), x0 + int(cw * .27), x0 + int(cw * .57), x1 - int(.8 * u)]
+    for i, h in enumerate(['DATE', 'DESIGNATION', 'METHOD']):
+        spaced(h, fh, cols[i], y, SOFT, .25 * u)
+    spaced('AMOUNT', fh, cols[3] - spaced_w('AMOUNT', fh, .25 * u), y, SOFT, .25 * u)
+    y += int(1.35 * u + .6 * u)
+    dr.line([(x0, y), (x1, y)], fill=LINE, width=max(2, int(.2 * u)))
+    rh = int(((.4 if many else .7) * 2 + (1.6 if many else 1.8) * 1.25) * u)
+    if not info['items']:
+        fi = font(1.9 * u); t = 'No contributions recorded for %s.' % info['year']
+        dr.text((x0 + (cw - wid(t, fi)) / 2, y + int(2 * u)), t, font=fi, fill=SOFT); y += int(6 * u)
+    for it in info['items']:
+        ty = y + int((.4 if many else .7) * u)
+        dd = datetime.date.fromisoformat(it['date'][:10]).strftime('%b %-d, %Y') if re.match(r'\d{4}-\d{2}-\d{2}', it['date'] or '') else (it['date'] or '')
+        dr.text((cols[0], ty), dd, font=fr, fill=INK)
+        dr.text((cols[1], ty), _st_map(_ST_PURPOSE, it['category'], 'General Donation'), font=fr, fill=INK)
+        dr.text((cols[2], ty), _st_map(_ST_METHOD, it['method'], ''), font=fr, fill=SOFT)
+        amt = '$' + format(it['amount'], ',.2f')
+        dr.text((cols[3] - wid(amt, fr), ty), amt, font=fr, fill=INK)
+        y += rh
+        dr.line([(x0, y), (x1, y)], fill=LINE, width=max(1, int(.1 * u)))
+    # ---- סה"כ ----
+    y += int(1.4 * u)
+    th = int(3.6 * u * 1.1 + 2.4 * u)
+    dr.rounded_rectangle([x0, y, x1, y + th], radius=int(.7 * u), fill=(244, 236, 220))
+    ftl, ftv = font(1.5 * u), font(3.6 * u, True)
+    tot = '$' + format(info['total'], ',.2f')
+    dr.text((x1 - int(1.6 * u) - wid(tot, ftv), y + int(1.0 * u)), tot, font=ftv, fill=DEEP)
+    lbl = 'TOTAL RECEIVED IN ' + info['year']
+    spaced(lbl, ftl, x1 - int(1.6 * u) - wid(tot, ftv) - int(2 * u) - spaced_w(lbl, ftl, .3 * u), y + th - int(1.2 * u) - int(1.5 * u * 1.1), SOFT, .3 * u)
+    y += th + int(1.8 * u)
+    # ---- ההצהרה ----
+    fp, fpb = font(1.7 * u), font(1.7 * u, True)
+    parts = [('This receipt covers all contributions received from you during the calendar year %s. ' % info['year'], fp, INK),
+             ('No goods or services were provided in exchange for these contributions. ', fpb, DEEP),
+             ('Contributions are tax-deductible to the extent allowed by law. Please keep this receipt for your records.', fp, INK)]
+    lh = int(1.7 * u * 1.55); x = x0; line_y = y
+    for text, f, col in parts:
+        for w in text.split():
+            ww = wid(w + ' ', f)
+            if x + ww > x1 and x > x0:
+                x = x0; line_y += lh
+            dr.text((x, line_y), w, font=f, fill=col); x += ww
+    y = line_y + lh
+    # ---- ברכה (שתי שורות) וחתימה — מהתחתית כלפי מעלה ----
+    bottom = int(H * (1 - .115))
+    fsg, fsr, fhb = font(2.3 * u, True), font(1.7 * u), font(1.9 * u, True)
+    sy = bottom - int((2.3 * 1.2 + 1.7 * 1.3 + 1.9 * 1.3) * u)
+    dr.text((x1 - wid('בברכת התורה', fhb), sy), 'בברכת התורה', font=fhb, fill=INK); sy += int(1.9 * 1.3 * u)
+    dr.text((x1 - wid('Rabbi Yehoshua Meir Deutsch', fsg), sy), 'Rabbi Yehoshua Meir Deutsch', font=fsg, fill=DEEP); sy += int(2.3 * 1.2 * u)
+    dr.text((x1 - wid('Rosh HaKollel', fsr), sy), 'Rosh HaKollel', font=fsr, fill=SOFT)
+    fb = font(1.9 * u)
+    bl = ['A tremendous zechus — a full partner in the Torah of the Chatzos hours.',
+          'May you merit all the Brachos of one who arises at midnight to learn Torah.']
+    blh = int(1.9 * 1.5 * u)
+    by = bottom - int((2.3 * 1.2 + 1.7 * 1.3 + 1.9 * 1.3) * u) - int(1.8 * u) - int(1.2 * u) - blh * 2
+    top_line = by - int(1.2 * u)
+    if top_line < y + int(1 * u):                  # טבלה ארוכה — הברכה נדחפת מטה ככל האפשר
+        top_line = y + int(1 * u); by = top_line + int(1.2 * u)
+    dr.line([(x0, top_line), (x1, top_line)], fill=LINE, width=max(1, int(.12 * u)))
+    for ln in bl:
+        dr.text((x0 + (cw - wid(ln, fb)) / 2, by), ln, font=fb, fill=DEEP); by += blh
+    dr.line([(x0, by + int(1.2 * u)), (x1, by + int(1.2 * u))], fill=LINE, width=max(1, int(.12 * u)))
+    buf = io.BytesIO()
+    safe = re.sub(r'[^\w\-]+', '_', info['name'])[:40] or 'donor'
+    if fmt == 'pdf':
+        im.save(buf, 'PDF', resolution=300.0, quality=88)
+        return buf.getvalue(), 'Receipt_%s_%s.pdf' % (safe, info['year'])
+    im.save(buf, 'JPEG', quality=90)
+    return buf.getvalue(), 'Receipt_%s_%s.jpg' % (safe, info['year'])
+
+
 def kvpage_png(con, did, width=1240, fmt='png'):
     """דף הקוויטל של תורם אחד כתמונה — על הבלאנק המלא, לשליחה/העתקה."""
     from PIL import Image, ImageDraw, ImageFont
@@ -10383,45 +10592,30 @@ class H(BaseHTTPRequestHandler):
             except ValueError: did = 0
             year = re.sub(r'\D', '', (qs.get('year') or [''])[0])[:4]
             con = db()
-            try:
-                d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
-                if not d:
-                    return self._send(404, {'error': 'not found'})
-                rows = [dict(r) for r in con.execute(
-                    "SELECT id,date,amount,category,method,cur,paid FROM donations WHERE donor_id=? ORDER BY date", (did,))]
-                years = sorted({(r['date'] or '')[:4] for r in rows if (r['date'] or '')[:4].isdigit()}, reverse=True)
-                if not year:
-                    year = years[0] if years else today_iso()[:4]
-                items = []
-                for r in rows:
-                    if (r['date'] or '')[:4] != year or not int(r.get('paid') or 0):
-                        continue
-                    try: a = float(re.sub(r'[^\d.]', '', str(r['amount'] or '')) or 0)
-                    except ValueError: a = 0
-                    if a <= 0:
-                        continue
-                    items.append({'id': r['id'], 'date': r['date'], 'amount': a, 'category': r['category'] or '',
-                                  'method': r['method'] or '', 'cur': (r['cur'] or '').strip()})
-                ad = [str(d['addr'] or '').strip(),
-                      ' '.join(x for x in (str(d['city'] or '').strip(), str(d['country'] or '').strip(),
-                                           str(d['zip'] or '').strip()) if x)]
-                name = (d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
-                # מספר סידורי קבוע לתורם+שנה — הדפסה חוזרת נותנת את אותו מספר
-                key = 'y%d-%s' % (did, year)
-                row = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()
-                if row:
-                    num = int(row['num'])
-                else:
-                    mx = con.execute("SELECT MAX(num) m FROM receipts").fetchone()['m']
-                    num = max(RECEIPT_START, int(mx or 0) + 1)
-                    con.execute("INSERT OR IGNORE INTO receipts(rkey,num,created) VALUES(?,?,?)", (key, num, today_iso()))
-                    con.commit()
-                return self._send(200, {'donor_id': did, 'name': name, 'addr': ', '.join(x for x in ad if x),
-                                        'email': (d['email'] or '').strip(), 'year': year, 'years': years,
-                                        'items': items, 'total': round(sum(i['amount'] for i in items), 2),
-                                        'num': num, 'date': today_iso()})
-            finally:
-                con.close()
+            try: info = statement_data(con, did, year)
+            finally: con.close()
+            return self._send(200 if info else 404, info or {'error': 'not found'})
+        # הקבלה כקובץ — PDF (העמוד הוא התמונה עצמה, בלי שוליים לבנים) או JPG.
+        # מאיר: "שלא יהיה לבן בקצוות בכלל" — הדפסה מהדפדפן באנדרואיד מוסיפה
+        # שוליים משלה; כאן הבלאנק ממלא את כל העמוד.
+        if self.path.split('?')[0] in ('/statement.pdf', '/statement.jpg'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: did = int((qs.get('donor') or ['0'])[0])
+            except ValueError: did = 0
+            year = re.sub(r'\D', '', (qs.get('year') or [''])[0])[:4]
+            fmt = 'pdf' if self.path.split('?')[0].endswith('.pdf') else 'jpg'
+            con = db()
+            try: data, fname = statement_file(con, did, year, fmt)
+            except Exception as e:
+                con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            con.close()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf' if fmt == 'pdf' else 'image/jpeg')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', '%s; filename="%s"' % ('attachment' if qs.get('dl') else 'inline', fname))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] in ('/kvpage.png', '/kvpage.jpg'):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
