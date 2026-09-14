@@ -6999,6 +6999,23 @@ def campaign_sheet(con, cat):
         e['items'] = r['items'] if r else []
         e['pledge'] = r['pledge'] if r else None
         out.append(e)
+    # מאיר: "למה הם כתובים פעמיים פה בקמפיינים?" — שני שמות מהרשימות ששויכו
+    # לאותו כרטיס (ניקול אייזנברג ← יערעט, טיילר לקומב ← קאסנדרה לקומב) הם
+    # שורה אחת: הסכומים מתחברים לפי עמודה, והשמות המקוריים נשמרים להצגה.
+    merged, keep = {}, []
+    for e in out:
+        e['names'] = [e['name']]
+        if not e['donor_id']:
+            keep.append(e); continue
+        m = merged.get(e['donor_id'])
+        if not m:
+            merged[e['donor_id']] = e; keep.append(e); continue
+        for k, v in e['vals'].items():
+            m['vals'][k] = round(m['vals'].get(k, 0) + v, 2)
+        m['order'] = min(m['order'], e['order'])
+        if e['name'] not in m['names']:
+            m['names'].append(e['name'])
+    out = keep
     out.sort(key=lambda e: (e['order'], _norm(e['name'])))
     return {'cat': cat, 'cols': cmp_['cols'], 'rows': out}
 
