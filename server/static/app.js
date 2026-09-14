@@ -5121,7 +5121,8 @@ function reconPendHTML(d){
   const ch=rp.length?`<div class="hintxt" style="margin-top:8px"><b>💳 חיובים מהאשראי</b> — בחר עבור מה ולחץ "הכנס".</div>
     ${rp.map(r=>`<div class="rpitem" data-tid="${esc(r.tid)}">
       <div class="rphd"><b>$${esc(r.amount||'')}</b> · ${esc(r.date||'')} <span class="givemeth">${esc(r.source||'')}</span>${+r.recurring?' <span class="fbchip on">🔁 הוראת קבע</span>':''}</div>
-      <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category)}</select></label>
+      ${r.pledge_hint?`<div class="hintxt" style="margin:4px 0 0;color:var(--no)">💡 יש לו התחייבות פתוחה על <b>$${Math.round(r.pledge_hint.amount).toLocaleString('en-US')}</b> ל<b>${esc(r.pledge_hint.category)}</b> — זה כנראה עבור זה. אשר, או בחר ייעוד אחר.</div>`:''}
+      <div class="two" style="margin-top:5px"><label class="fld"><span>עבור מה</span><select class="rpcat">${opts(r.category||(r.pledge_hint?r.pledge_hint.category:''))}</select></label>
         <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
       <label class="fld"><span>📝 הערה לתרומה (רשות) — תישמר גם בהערות התורם</span><input class="rpnote" placeholder="למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת"></label>
       <div class="two"><label class="fld"><span>✅ משימה (רשות)</span><select class="rptaskk">${taskKindOpts()}</select></label>
@@ -10269,7 +10270,8 @@ function campSheetRender(box,r){
       const pl=d&&(d.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
       if(st==='paid'){
         if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:tcat,paid:1});
-        else await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:''});
+        else{const rr=await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:''});
+          if(rr&&rr.merged)toast('החיוב הזה כבר נכנס מהאשראי — סווג ל'+tcat+' בלי שורה כפולה');}
         if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
       }else{
         if(pl){pl.amount=amt;pl.note=m?('דרך: '+m):(pl.note||'');await api('PUT','/api/pledge/'+pl.id,pl);}

@@ -4447,12 +4447,12 @@ def ensure_schema():
         def _fam(s):
             s = (s or '').strip().lower()
             if 'banquest' in s or 'בנק ווסט' in s: return 'bq'
-            if 'authorize' in s or 'אוטרייז' in s or 'אוטורייז' in s: return 'az'
+            if 'authorize' in s or 'אוטרייז' in s or 'אוטורייז' in s or 'אותורייז' in s: return 'az'
             if 'chase' in s or "צ'ייס" in s or 'צייס' in s: return 'ch'
             return s
 
         allrows = []
-        for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed FROM recon "
+        for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed,recurring FROM recon "
                              "WHERE donor_id IS NOT NULL AND COALESCE(skipped,0)=0 "
                              "AND (status IS NULL OR status='settled') ORDER BY date,tid"):
             iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
@@ -4493,8 +4493,26 @@ def ensure_schema():
         # אפריל-מאי-יוני) נספר, ואילו אותו חיוב שדווח פעמיים אינו נספר.
         done_tids = {r['tid'] for r in con.execute(
             "SELECT tid FROM donations WHERE COALESCE(tid,'')<>''")}
+        # תרומה שמאיר רשם ביד על אותו כסף (סכום זהה, עד 10 ימים מהחיוב) — מקבלת את
+        # מזהה העסקה במקום שתיפתח שורה שנייה
+        _mg = 0
         for k, lst in pend.items():
-            pend[k] = [x for x in lst if x[0]['tid'] not in done_tids]
+            for r, iso, amt in lst:
+                if r['tid'] in done_tids:
+                    continue
+                _meth = next((v for pre, v in SRCLBL.items() if (r['source'] or '').startswith(pre)), r['source'] or '')
+                if merge_manual_donation(con, r['donor_id'], iso, amt, r['tid'], _meth):
+                    done_tids.add(r['tid']); _mg += 1
+        if _mg:
+            print('  חיובים שהותאמו לתרומות שנרשמו ביד: %d' % _mg)
+        # חיוב חד־פעמי בסכום של התחייבות פתוחה — נשאר לשאלה "עבור מה" בכרטיס
+        _held = set()
+        for k, lst in pend.items():
+            for r, iso, amt in lst:
+                if r['tid'] not in done_tids and not r.get('recurring') and open_pledge_for(con, r['donor_id'], amt):
+                    _held.add(r['tid'])
+        for k, lst in pend.items():
+            pend[k] = [x for x in lst if x[0]['tid'] not in done_tids and x[0]['tid'] not in _held]
         # שורות ותיקות שנרשמו לפני שהיה שדה מזהה עסקה. כל שורה כזו מכסה
         # חיוב אחד בלבד, ולכן היא "נצרכת" ברגע שהותאמה — אחרת חיוב תאום
         # אמיתי נחסם על ידה. מאיר על פערל: "אמנם זה לא עבר שלושה חודשים
@@ -5864,7 +5882,12 @@ def get_all():
                               WHERE COALESCE(processed,0)=0 AND donor_id IS NOT NULL
                                 AND (status IS NULL OR status='settled')"""):
             if r['donor_id'] in byid:
-                byid[r['donor_id']]['recon_pending'].append(dict(r))
+                rp = dict(r)
+                try:                                   # התחייבות פתוחה באותו סכום — "זה כנראה עבור זה"
+                    rp['pledge_hint'] = open_pledge_for(c, r['donor_id'], float(str(r['amount'] or 0).replace(',', '') or 0))
+                except Exception:
+                    rp['pledge_hint'] = None
+                byid[r['donor_id']]['recon_pending'].append(rp)
     except Exception:
         pass
     # חיובים שלא עברו. כרטיס שנדחה ואז נגבה בהצלחה אינו חוב — זה ניסיון
@@ -7058,6 +7081,91 @@ def campaign_merge(con, src, dst):
     return n
 
 
+_CARD_GENERIC = ('אשראי', 'credit', 'אונליין', 'online', 'card', 'כרטיס')
+_CARD_AZ = ('authorize', 'אוטרייז', 'אוטורייז', 'אותורייז')
+_CARD_BQ = ('banquest', 'בנק ווסט')
+
+
+def _card_fam(s):
+    s = (s or '').strip().lower()
+    if any(k in s for k in _CARD_BQ): return 'bq'
+    if any(k in s for k in _CARD_AZ): return 'az'
+    return s
+
+
+def _meth_matches(manual, charge_meth):
+    """אמצעי תשלום שמאיר רשם ביד מול מקור החיוב: ריק או "אשראי" מתאים לכל חיוב
+    כרטיס; אחרת אותה משפחה (אוטורייז/בנק ווסט)."""
+    m = (manual or '').strip().lower()
+    if not m or any(k in m for k in _CARD_GENERIC):
+        return True
+    return _card_fam(m) == _card_fam(charge_meth)
+
+
+def merge_manual_donation(cur, did, iso, amount, tid, meth, days=10):
+    """מאיר: "אם הכנסתי ידנית תרומה, למשל בקמפיינים, וכתבתי תאריך ידני אוטרייז —
+    המערכת צריכה לזהות כשמכניסה את כל התרומות מאוטרייז שלא יהיה כפילויות".
+    תרומה שנרשמה ביד (בלי מזהה עסקה, לא מייבוא) לאותו תורם, באותו סכום, בטווח
+    ימים מהחיוב, באמצעי תשלום של כרטיס — היא אותו כסף. היא מקבלת את מזהה
+    העסקה, את התאריך המדויק ואת המקור, ולא נפתחת שורה שנייה.
+    מחזירה את מזהה התרומה שמוזגה, או None."""
+    try:
+        d0 = datetime.date.fromisoformat(str(iso or '')[:10])
+    except Exception:
+        return None
+    best = None
+    for r in cur.execute("SELECT id,date,method,note FROM donations WHERE donor_id=? "
+                         "AND COALESCE(tid,'')='' AND ROUND(CAST(amount AS REAL),2)=?",
+                         (did, round(float(amount), 2))).fetchall():
+        nt = (r['note'] or '').strip()
+        if nt.startswith(('ייבוא', 'נכנס מ', 'שויך ידנית')):
+            continue                                    # שורה שהגיעה מחיוב אחר
+        try:
+            d1 = datetime.date.fromisoformat(str(r['date'] or '')[:10])
+        except Exception:
+            continue
+        gap = abs((d1 - d0).days)
+        if gap > days or not _meth_matches(r['method'], meth):
+            continue
+        if best is None or gap < best[0]:
+            best = (gap, r['id'], nt)
+    if not best:
+        return None
+    src_he = 'בנק ווסט' if _card_fam(meth) == 'bq' else 'אוטורייז'
+    note = (best[2] + ' · ' if best[2] else '') + 'אומת מול החיוב ב' + src_he
+    cur.execute("UPDATE donations SET date=?, method=?, tid=?, paid=1, note=? WHERE id=?",
+                (str(iso)[:10], meth, tid, note, best[1]))
+    return best[1]
+
+
+def open_pledge_for(cur, did, amount):
+    """התחייבות פתוחה (לא "נתן") של התורם באותו סכום — מאיר: "אם הוא התחייב
+    סכום מסוים ועדיין לא נגבה והמערכת רואה שנכנס הסכום הזה, שתשאל אותי עבור
+    מה זה". מחזירה {id, category, amount} או None."""
+    try:
+        a0 = round(float(amount), 2)
+    except Exception:
+        return None
+    for p in cur.execute("SELECT id,category,amount,status FROM pledges WHERE donor_id=? "
+                         "AND COALESCE(status,'') NOT IN ('נתן','הסתיים') AND COALESCE(monthly,0)=0", (did,)).fetchall():
+        try:
+            a = round(float(re.sub(r'[^0-9.]', '', str(p['amount'] or '0')) or 0), 2)
+        except Exception:
+            continue
+        if a and abs(a - a0) < 0.01:
+            return {'id': p['id'], 'category': (p['category'] or '').strip(), 'amount': a}
+    return None
+
+
+def settle_pledge(cur, did, cat, amount):
+    """אחרי שהכסף נרשם לייעוד — ההתחייבות באותו ייעוד וסכום מסומנת "נתן"."""
+    p = open_pledge_for(cur, did, amount)
+    if p and (p['category'] == (cat or '').strip()):
+        cur.execute("UPDATE pledges SET status='נתן' WHERE id=?", (p['id'],))
+        return True
+    return False
+
+
 def recon_apply(cur, tid, b):
     """אישור שורת חיוב אחת: יצירת/עדכון התורם, התרומה, המשימה והקוויטל.
     לא פותח ולא סוגר חיבור — כדי שאפשר יהיה לאשר קבוצה שלמה בבקשה אחת."""
@@ -7183,8 +7291,17 @@ def recon_apply(cur, tid, b):
         _un = (b.get('note') or '').strip()      # הערה שנכתבה בדף החיובים
         if _un:
             _nt += ' · ' + _un
-        cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid) VALUES(?,?,?,?,?,?,1)",
-                    (did, diso, row['amount'], cat, pay_method, _nt))
+        try: _amt_f = float(str(row['amount']).replace(',', '') or 0)
+        except Exception: _amt_f = 0
+        _merged = merge_manual_donation(cur, did, diso, _amt_f, tid, pay_method) if (diso and _amt_f > 0) else None
+        if _merged:
+            if cat:
+                cur.execute("UPDATE donations SET category=? WHERE id=? AND COALESCE(TRIM(category),'')=''", (cat, _merged))
+        else:
+            cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) VALUES(?,?,?,?,?,?,1,?)",
+                        (did, diso, row['amount'], cat, pay_method, _nt, tid))
+        if _amt_f > 0:
+            settle_pledge(cur, did, cat, _amt_f)
     if row['recurring']:
         cur.execute("UPDATE donors SET category='קבוע' WHERE id=? AND COALESCE(category,'')=''", (did,))
     # תזכורת לעשות את הלילה בפועל — נקבעת לפי תאריך הלילה עצמו, לא לפי מתי שולם.
@@ -9310,7 +9427,7 @@ def link_by_identity(con):
         con.execute("UPDATE recon SET donor_id=? WHERE tid=? AND donor_id IS NULL "
                     "AND (COALESCE(status,'settled')<>'settled' "
                     "     OR COALESCE(processed,0)=1)", (did, tid))
-    for r in list(con.execute("SELECT tid,first,last,amount,date,source FROM recon "
+    for r in list(con.execute("SELECT tid,first,last,amount,date,source,recurring FROM recon "
                               "WHERE COALESCE(processed,0)=0 AND donor_id IS NULL "
                               "AND COALESCE(status,'settled')='settled'")):
         did = found.get(r['tid'])
@@ -9328,6 +9445,13 @@ def link_by_identity(con):
         # אותו תשלום שדווח בשני קבצים עם תאריך רישום שונה (14 מול 15 במאי)
         # הוא תשלום אחד. ההשוואה כאן היא לפי חודש — קודם היא השוותה
         # 'YYYY-MM' לתאריך מלא ולכן מעולם לא תפסה, ונוצרה שורה כפולה.
+        # תרומה שמאיר רשם ביד על אותו כסף — מקבלת את מזהה העסקה, בלי שורה שנייה
+        if merge_manual_donation(con, did, diso, a, r['tid'], meth):
+            con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+            continue
+        # התחייבות פתוחה באותו סכום — לא מסווגים לבד; החיוב מחכה בכרטיס לשאלה "עבור מה"
+        if not r['recurring'] and open_pledge_for(con, did, a):
+            continue
         old = con.execute("SELECT id,category,date FROM donations WHERE donor_id=? "
                           "AND SUBSTR(COALESCE(date,''),1,7)=? AND COALESCE(method,'')=? "
                           "AND ROUND(CAST(amount AS REAL),2)=?",
@@ -9378,7 +9502,7 @@ def link_card_names(con, link):
         pass
     ins = 0
     for r in list(con.execute(
-            "SELECT tid,first,last,amount,date,source FROM recon "
+            "SELECT tid,first,last,amount,date,source,recurring FROM recon "
             "WHERE COALESCE(processed,0)=0 AND COALESCE(status,'settled')='settled' "
             "AND donor_id IS NULL")):
         did = ids.get(((r['first'] or '') + ' ' + (r['last'] or '')).strip().lower())
@@ -9397,6 +9521,13 @@ def link_card_names(con, link):
         # אותו תשלום שדווח בשני קבצים עם תאריך רישום שונה (14 מול 15 במאי)
         # הוא תשלום אחד. ההשוואה כאן היא לפי חודש — קודם היא השוותה
         # 'YYYY-MM' לתאריך מלא ולכן מעולם לא תפסה, ונוצרה שורה כפולה.
+        # תרומה שמאיר רשם ביד על אותו כסף — מקבלת את מזהה העסקה, בלי שורה שנייה
+        if merge_manual_donation(con, did, diso, a, r['tid'], meth):
+            con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+            continue
+        # התחייבות פתוחה באותו סכום — לא מסווגים לבד; החיוב מחכה בכרטיס לשאלה "עבור מה"
+        if not r['recurring'] and open_pledge_for(con, did, a):
+            continue
         old = con.execute("SELECT id,category,date FROM donations WHERE donor_id=? "
                           "AND SUBSTR(COALESCE(date,''),1,7)=? AND COALESCE(method,'')=? "
                           "AND ROUND(CAST(amount AS REAL),2)=?",
@@ -12517,6 +12648,8 @@ class H(BaseHTTPRequestHandler):
                     src = r['source'] or ''
                     meth = 'בנק ווסט' if src.startswith('Banquest') else (
                         'אוטורייז' if src.startswith('Authorize') else src)
+                    if merge_manual_donation(con, did, iso, a, t, meth):
+                        made += 1; continue           # כבר נרשם ביד — אותו כסף
                     con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
                                 "VALUES(?,?,?,?,?,?,1,?)",
                                 (did, iso, '%.2f' % a, (r['category'] or '').strip(), meth,
@@ -14228,6 +14361,33 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/donation':
             con = db(); cur = con.cursor()
+            # ההפך: החיוב כבר נכנס מאוטרייז ("לא סווג"), ועכשיו מאיר רושם אותו ביד
+            # (למשל בקמפיין) — במקום שורה שנייה, השורה שנכנסה מקבלת את הייעוד.
+            try:
+                _a = float(str(b.get('amount') or '').replace(',', '') or 0)
+                _m = (b.get('method') or '').strip()
+                _iso = str(b.get('date') or '')[:10]
+                if _a > 0 and _iso and b.get('donor_id') and (not _m or _card_fam(_m) in ('az', 'bq') or any(k in _m.lower() for k in _CARD_GENERIC)):
+                    _d0 = datetime.date.fromisoformat(_iso)
+                    for r in cur.execute("SELECT id,date,method,category,note FROM donations WHERE donor_id=? "
+                                         "AND COALESCE(tid,'')<>'' AND ROUND(CAST(amount AS REAL),2)=?",
+                                         (int(b.get('donor_id')), round(_a, 2))).fetchall():
+                        try: _d1 = datetime.date.fromisoformat(str(r['date'] or '')[:10])
+                        except Exception: continue
+                        if abs((_d1 - _d0).days) > 10 or not _meth_matches(_m, r['method']):
+                            continue
+                        _cat_old = (r['category'] or '').strip()
+                        if _cat_old and _cat_old != 'מזדמן' and 'לא סווג' not in (r['note'] or ''):
+                            continue                 # כבר סווג לייעוד אחר — לא נוגעים
+                        _nt = re.sub(r'\s*·\s*לא סווג[^·]*', '', r['note'] or '').strip()
+                        cur.execute("UPDATE donations SET category=?, note=?, paid=1 WHERE id=?",
+                                    ((b.get('category') or '').strip() or _cat_old, (_nt + ' · ' if _nt else '') + 'סווג ידנית', r['id']))
+                        settle_pledge(cur, int(b.get('donor_id')), (b.get('category') or '').strip(), _a)
+                        con.commit(); con.close()
+                        return self._send(200, {'ok': True, 'id': r['id'], 'merged': True,
+                                                'hmonth': greg_to_heb_monthyear(str(r['date'] or ''))})
+            except Exception:
+                pass
             cur.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,prev_year,prev_note,paid) "
                         "VALUES(?,?,?,?,?,?,?,?,?,1)",
                         (b.get('donor_id'), b.get('date',''), b.get('amount',''), b.get('category',''),
