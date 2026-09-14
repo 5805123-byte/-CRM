@@ -254,6 +254,8 @@ def ensure_schema():
         rows TEXT, created TEXT);
     -- שיוך ידני של שם מרשימת קמפיין לכרטיס תורם (כשהשם ברשימה שונה מהכרטיס)
     CREATE TABLE IF NOT EXISTS campaign_links(name TEXT PRIMARY KEY, donor_id INTEGER, created TEXT);
+    -- מספרים מיומן השיחות של הטלפון שמאיר סימן "לא תורם" — לא יוצעו שוב בייבוא הבא
+    CREATE TABLE IF NOT EXISTS call_ignore(key TEXT PRIMARY KEY, name TEXT, number TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS receipts(rkey TEXT PRIMARY KEY, num INTEGER, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
@@ -12569,6 +12571,67 @@ class H(BaseHTTPRequestHandler):
                     stt['running'] = False; stt['done'] = True
             threading.Thread(target=_runpp, daemon=True).start()
             return self._send(200, {'ok': True, 'started': True})
+        # ---- יומן השיחות מהטלפון → יומן הקשר של התורמים ----
+        # מאיר: "מה עם מה שהיה עד עכשיו?" — הקובץ של SMS Backup & Restore
+        # (XML או HTML) מועלה כאן; כל מספר מוצלב עם הטלפונים בכרטיסים.
+        if self.path == '/api/calls/import':
+            import calllog
+            txt = b.get('text') or ''
+            if len(txt) < 20:
+                return self._send(200, {'ok': False, 'error': 'empty'})
+            con = db()
+            try:
+                res = calllog.import_calls(con, txt, b.get('since') or '')
+                if not res.get('calls'):
+                    return self._send(200, {'ok': False, 'error': 'no_calls'})
+                # הצעת כרטיס לכל מספר שלא זוהה — לפי השם שבאנשי הקשר של הטלפון
+                donors = [dict(r) for r in con.execute("SELECT id,first,last,english FROM donors")]
+                for u in res['unmatched']:
+                    nm = (u.get('name') or '').strip(); w = nm.split()
+                    sug = []
+                    if nm:
+                        sug, _ = campaign_suggest({'name': nm}, donors)
+                        if not sug and len(w) > 1:            # באנשי הקשר לרוב "פרטי משפחה"
+                            sug, _ = campaign_suggest({'last': w[0], 'first': ' '.join(w[1:])}, donors)
+                    u['suggest'] = sug[:2]
+                    u['pretty'] = calllog.pretty(u['number'])
+            finally:
+                con.close()
+            return self._send(200, res)
+        if self.path == '/api/calls/assign':      # מספר מהיומן → כרטיס: נשמר בטלפונים והשיחות שלו נכנסות
+            import calllog
+            did = int(b.get('donor_id') or 0); num = (b.get('number') or '').strip()
+            if not did or not calllog.digits(num):
+                return self._send(400, {'ok': False, 'error': 'donor_id and number required'})
+            con = db()
+            try:
+                d = con.execute("SELECT id,phone FROM donors WHERE id=?", (did,)).fetchone()
+                if not d:
+                    return self._send(404, {'ok': False, 'error': 'no donor'})
+                key = calllog.phone_key(num)
+                have = [x.strip() for x in re.split(r'\s*/\s*', d['phone'] or '') if x.strip()]
+                if key not in [calllog.phone_key(x) for x in have]:
+                    have.append(calllog.pretty(num))
+                    con.execute("UPDATE donors SET phone=? WHERE id=?", (' / '.join(have), did))
+                    con.commit()
+                res = calllog.import_calls(con, b.get('text') or '', b.get('since') or '', only_key=key)
+                res['phone'] = ' / '.join(have)
+            finally:
+                con.close()
+            return self._send(200, res)
+        if self.path == '/api/calls/ignore':      # "לא תורם" — לא יוצע שוב
+            import calllog
+            num = (b.get('number') or '').strip(); key = calllog.phone_key(num)
+            if not key:
+                return self._send(400, {'ok': False})
+            con = db()
+            try:
+                con.execute("INSERT OR REPLACE INTO call_ignore(key,name,number,created) VALUES(?,?,?,?)",
+                            (key, (b.get('name') or '')[:80], num, now_iso()))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/contacts/csv':   # קובץ אנשי קשר של גוגל — השלמת כתובות ממנו
             try:
                 import gcontacts

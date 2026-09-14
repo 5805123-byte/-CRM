@@ -551,8 +551,13 @@ async function openHealth(){
     <a class="btn" id="hbackup" href="/api/backup" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none">💾 גיבוי מלא — לשמור אצלך</a>
     <div class="hintxt">כל הנתונים כולל התעודות והקבצים (כ-34MB). שמור אותו מדי פעם — זה הביטוח שלך.</div>
     <a class="btn" id="hbacklite" href="/api/backup?light=1" download style="width:100%;margin-top:8px;display:block;text-align:center;text-decoration:none;background:var(--yes)">📤 קובץ קטן — לשלוח לקלוד</a>
-    <div class="hintxt">אותם נתונים בדיוק בלי גוף הקבצים — כ-200KB בלבד, נשלח בקלות בצ׳אט.</div>`;
+    <div class="hintxt">אותם נתונים בדיוק בלי גוף הקבצים — כ-200KB בלבד, נשלח בקלות בצ׳אט.</div>
+    <label class="btn" id="callimpbtn" style="width:100%;margin-top:14px;display:block;text-align:center;cursor:pointer;background:#3b2f5e;border-color:#3b2f5e">📲 ייבוא יומן השיחות מהטלפון
+      <input type="file" id="callimp" accept=".xml,.html,.htm,text/xml,text/html" hidden></label>
+    <div class="hintxt">הקובץ של SMS Backup &amp; Restore (calls-….xml, או ה-HTML מ"הצג גיבויים ← שתף"). כל שיחה עם תורם נכנסת ליומן הקשר שלו עם השעה והמשך. שיחה שכבר יובאה לא נכנסת פעמיים.</div>
+    <div id="callout"></div>`;
   document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
+  const ci=document.getElementById('callimp'); if(ci)ci.onchange=()=>uploadCallLog(ci);
   showVer();
   document.getElementById('hagain').onclick=openHealth;
   const hb=document.getElementById('hbackup');
@@ -1584,6 +1589,72 @@ async function uploadContactsCsv(inp){
     ${fl.addr||0} כתובות, ${fl.phone||0} טלפונים, ${fl.email||0} מיילים${r.kvittel?(', '+r.kvittel+' קוויטל'):''}${r.notes?(', '+r.notes+' הערות'):''}.
     ${r.unmatched_total?('<br>⚠️ '+r.unmatched_total+' אנשי קשר עם כתובת שלא שויכו לתורם (רובם לא תורמים).'):''}`);
   NOADDR=null; await load(); render();
+}
+// ===== יומן השיחות מהטלפון → יומן הקשר =====
+// מאיר: "מה עם מה שהיה עד עכשיו?" — השיחות שנעשו מחוץ למערכת. הקובץ של
+// SMS Backup & Restore נקרא כאן ונשלח לשרת; מספר שלא זוהה מוצג עם הצעת
+// כרטיס לפי השם שבאנשי הקשר, ובלחיצה אחת נשמר בכרטיס והשיחות שלו נכנסות.
+let CALLTXT='';
+async function uploadCallLog(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return;
+  const out=document.getElementById('callout'), lbl=document.getElementById('callimpbtn');
+  const t0=lbl?lbl.firstChild.nodeValue:'';
+  if(lbl)lbl.firstChild.nodeValue='קורא את הקובץ…';
+  let text='';
+  try{ text=await f.text(); }catch(e){ if(out)out.innerHTML='<div class="hintxt">❌ לא הצלחתי לקרוא את הקובץ</div>'; if(lbl)lbl.firstChild.nodeValue=t0; return; }
+  inp.value=''; CALLTXT=text;
+  if(lbl)lbl.firstChild.nodeValue='מצליב עם התורמים…';
+  let r=null;
+  try{ r=await api('POST','/api/calls/import',{text}); }catch(e){ r=null; }
+  if(lbl)lbl.firstChild.nodeValue=t0;
+  if(!r||!r.ok){
+    const why={empty:'הקובץ ריק',no_calls:'לא נמצאו שיחות בקובץ — צריך את הקובץ של SMS Backup & Restore (calls-….xml או ה-HTML שלו)'}[r&&r.error]||((r&&(r.detail||r.error))||'שגיאה');
+    if(out)out.innerHTML='<div class="hintxt">❌ '+esc(why)+'</div>'; return;
+  }
+  renderCallImport(out,r);
+  if(r.added||r.updated){ await load(); }
+}
+function renderCallImport(out,r){
+  if(!out)return;
+  const n=x=>+x||0;
+  const rows=(r.unmatched||[]).map((u,i)=>`<div class="narow" data-i="${i}">
+    <div class="nahd"><b>${esc(u.name||'ללא שם')}</b><span class="namoney">${n(u.n)} ${n(u.n)===1?'שיחה':'שיחות'}</span></div>
+    <div class="nasub" dir="ltr" style="text-align:right">📞 ${esc(u.pretty||u.number)}${u.last?(' · '+esc(u.last)):''}</div>
+    ${(u.suggest||[]).map(s=>{const strong=/פרטי|\+/.test(s.why||'');   // רק משפחה/שלד — ניחוש, לא ודאות
+      return `<button class="btn sm calluse${strong?'':' ghost'}" data-i="${i}" data-did="${s.id}" style="margin:4px 0 0">${strong?'✔️ זה':'❔ אולי'} ${esc(s.name)}${s.eng?(' · '+esc(s.eng)):''} <small>(${esc(s.why)})</small></button>`;}).join('')}
+    <div class="dupacts"><button class="btn sm ghost callpick" data-i="${i}">🔍 תורם אחר…</button>
+      <button class="btn sm ghost callno" data-i="${i}">✕ לא תורם</button></div>
+    <div class="callpk" data-i="${i}"></div></div>`).join('');
+  out.innerHTML=`<div class="hintxt" style="margin-top:8px">✅ נקראו <b>${n(r.calls)}</b> שיחות${r.from?(' ('+esc(r.from)+' עד '+esc(r.to)+')'):''} ·
+    נכנסו <b>${n(r.added)}</b> ליומן הקשר של <b>${n(r.donors)}</b> תורמים${n(r.updated)?(' · '+n(r.updated)+' חיוגים מהמערכת קיבלו משך'):''}${n(r.dup)?(' · '+n(r.dup)+' כבר היו'):''}${n(r.ignored)?(' · '+n(r.ignored)+' ממספרים שסימנת "לא תורם"'):''}.</div>
+    ${rows?`<div class="misshead">❔ מספרים שלא זוהו — ${n(r.unmatched_total)}</div><div class="hintxt">מי שהוא תורם — שייך אותו לכרטיס, המספר יישמר שם והשיחות ייכנסו. מי שלא — "לא תורם", ולא יוצע שוב.</div>${rows}`:''}`;
+  const U=r.unmatched||[];
+  const done=(i,msg)=>{const el=out.querySelector(`.narow[data-i="${i}"]`); if(el)el.innerHTML=`<div class="nasub">${msg}</div>`;};
+  out.querySelectorAll('.calluse').forEach(b=>b.onclick=()=>assignCall(U[+b.dataset.i],+b.dataset.did,b,done));
+  out.querySelectorAll('.callno').forEach(b=>b.onclick=async()=>{
+    const u=U[+b.dataset.i]; b.disabled=true;
+    try{ await api('POST','/api/calls/ignore',{number:u.number,name:u.name||''}); }catch(e){}
+    done(b.dataset.i,'✕ '+esc(u.name||u.number)+' — לא תורם, לא יוצע שוב');
+  });
+  out.querySelectorAll('.callpick').forEach(b=>b.onclick=()=>{
+    const u=U[+b.dataset.i], box=out.querySelector(`.callpk[data-i="${b.dataset.i}"]`);
+    box.innerHTML=`<input class="cmpq" placeholder="חפש לפי שם / אנגלית…" style="width:100%;margin-top:6px"><div class="cmpres"></div>`;
+    const inp=box.querySelector('.cmpq'), res=box.querySelector('.cmpres');
+    inp.oninput=()=>{const q=inp.value.trim(); if(!q){res.innerHTML='';return;}
+      const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||''),q,8);
+      res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>assignCall(u,+el.dataset.did,el,done,b.dataset.i));};
+    const w=(u.name||'').split(' '); inp.value=w.length>1?w[w.length-1]:(u.name||''); inp.focus(); inp.oninput();
+  });
+}
+async function assignCall(u,did,btn,done,idx){
+  if(!u||!did)return; btn.disabled=true;
+  let r=null;
+  try{ r=await api('POST','/api/calls/assign',{donor_id:did,number:u.number,text:CALLTXT}); }catch(e){ r=null; }
+  if(!r||!r.ok){ btn.disabled=false; toast('לא הצלחתי לשייך'); return; }
+  const d=DB.find(x=>x.id===did);
+  done(idx!=null?idx:btn.dataset.i,'✔️ '+esc(u.pretty||u.number)+' נשמר בכרטיס של <b>'+esc(d?(d.last+' '+d.first):('#'+did))+'</b> · '+(+r.added||0)+' שיחות נכנסו ליומן הקשר');
+  toast('שויך ✓'); await load();
 }
 // מי אין לו כתובת בכלל — עם הצעה מוכנה איפה שיש, ובלחיצה אחת נכנסת לכרטיס
 let NOADDR=null;
