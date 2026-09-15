@@ -10067,7 +10067,7 @@ function campRows(cat){
     if(String(x.category||'').trim()!==cat)return;
     out.push({id:d.id,name:(d.last+' '+d.first).trim(),eng:d.english||'',
       amt:amtNum(x.amount),cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curSym(d))),
-      date:x.date||'',method:x.method||'',phone:splitPhones(d.phone)[0]||''});}));
+      date:x.date||'',method:x.method||'',phone:splitPhones(d.phone)[0]||'',note:giveNote(x)||''});}));
   return out.sort((a,b)=>b.amt-a.amt||a.name.localeCompare(b.name,'he'));
 }
 // מי התחייב לייעוד הזה ועדיין לא נכנס ממנו כסף
@@ -10078,7 +10078,7 @@ function campOwes(cat){
     if(String(p.category||'').trim()!==cat||paid.has(d.id))return;
     if(String(p.status||'')==='נתן')return;
     out.push({id:d.id,name:(d.last+' '+d.first).trim(),amt:amtNum(p.amount),
-      cur:curSym(d),phone:splitPhones(d.phone)[0]||''});}));
+      cur:curSym(d),phone:splitPhones(d.phone)[0]||'',note:String(p.note||'').trim()});}));
   return out.sort((a,b)=>b.amt-a.amt);
 }
 // מאיר: "כל מה שיש כאן זה לא קמפיין חוץ מקמחא דפסחא ומתנות לאביונים וסוכות
@@ -10598,7 +10598,7 @@ function renderCamp(){
     <div class="camptbl">
       <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
       ${rows.map((r,i)=>`<div class="camprow2"><span class="c1">${i+1}</span>
-        <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}</span>
+        <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
         <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b></span>
         <span class="c4">${esc(r.date?gregLabel(r.date):'')}</span>
         <span class="c5">${r.method?(chBadgeRaw(r.method)||esc(chLabel(r.method))):''}</span></div>`).join('')
@@ -10606,9 +10606,9 @@ function renderCamp(){
     </div>
     ${owes.length?`<div class="camphd" style="margin-top:14px"><h3>🔴 התחייבו וטרם נתנו — ${owes.length}</h3></div>
       <div class="camptbl">${owes.map((r,i)=>`<div class="camprow2 owe"><span class="c1">${i+1}</span>
-        <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a></span>
+        <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
         <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}</span>
-        <span class="c4" dir="ltr">${esc(r.phone)}</span><span class="c5"></span></div>`).join('')}</div>`:''}
+        <span class="c4"></span><span class="c5"></span></div>`).join('')}</div>`:''}
     </div>
     <div id="campcmpbox"${CAMPMODE==='one'?' hidden':''}></div>`;
   const sel=document.getElementById('campsel');
