@@ -10519,8 +10519,8 @@ let CAMPMODE='one';   // one = הקמפיין הנבחר בלבד · all = טב�
 // מאיר: "איפה אני מוסיף פה תורם מהרשימה בשביל סוכות תשפ"ז? אין פה איפה להוסיף".
 // בדוח הקמפיין: בוחרים תורם (או פותחים כרטיס חדש), סכום, נגבה/עדיין לא, דרך,
 // תאריך והערה — אותו טופס כמו בטבלת "שלושתם ביחד", והתרומה נרשמת לקמפיין.
-function campAddDonorForm(box){
-  if(!box)return; if(box.firstChild){box.innerHTML='';return;}
+function campAddDonorForm(box,preset){
+  if(!box)return; if(box.firstChild&&!preset){box.innerHTML='';return;}
   const tcat=campSel; let picked=null;
   box.innerHTML=`<div class="cmpform" style="border:1px solid var(--line);border-radius:12px;margin-bottom:10px">
     <div style="width:100%"><b>מי התורם?</b> <span id="cad_who" style="color:var(--brand)"></span></div>
@@ -10569,7 +10569,8 @@ function campAddDonorForm(box){
     }
     toast('נשמר ✓'); await load(); renderCamp();
   };
-  q.focus();
+  if(preset){choose(preset); box.scrollIntoView({behavior:'smooth',block:'center'});}   // ➕ תוספת משורה בטבלה — התורם כבר נבחר
+  else q.focus();
 }
 function renderCamp(){
   chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד'],['gaps','❗ מה חסר במערכת']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
@@ -10607,7 +10608,7 @@ function renderCamp(){
       <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c6">תוספת</span><span class="c7">סה"כ</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
       ${grp.map((g,i)=>{const r=g.main;return `<div class="camprow2"><span class="c1">${i+1}</span>
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
-        <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b></span>
+        <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b><button class="cplusbtn" data-did="${r.id}" title="הוסף תוספת לתורם הזה">➕</button></span>
         <span class="c6">${g.extras.map(x=>`<span class="cplus" dir="ltr">+${x.cur}${Math.round(x.amt).toLocaleString('en-US')}</span>${x.note?`<small class="cnote">📝 ${esc(x.note)}</small>`:''}`).join('')}</span>
         <span class="c7">${g.extras.length?`<b>${r.cur}${Math.round(g.total).toLocaleString('en-US')}</b>`:''}</span>
         <span class="c4">${esc(r.date?gregLabel(r.date):'')}</span>
@@ -10627,6 +10628,8 @@ function renderCamp(){
   if(ad)ad.onclick=campAddDialog;
   const adn=document.getElementById('campadddonor');
   if(adn)adn.onclick=()=>campAddDonorForm(document.getElementById('campaddbox'));
+  // מאיר: "איפה אני מוסיף את התוספת שהתורם הוסיף?" — ➕ ליד הסכום פותח את הטופס עם התורם כבר נבחר
+  view.querySelectorAll('.cplusbtn').forEach(b=>b.onclick=e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(d)campAddDonorForm(document.getElementById('campaddbox'),d);});
   const mg=document.getElementById('campmerge');
   if(mg)mg.onclick=campMergeDialog;
   const hd=document.getElementById('camphide');
