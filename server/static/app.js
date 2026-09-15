@@ -10590,6 +10590,17 @@ function renderCamp(){
   const grp=[]; const gi={};
   rows.forEach(r=>{let g=gi[r.id]; if(!g){g={main:r,extras:[],total:0};gi[r.id]=g;grp.push(g);}else g.extras.push(r); g.total+=r.amt;});
   grp.forEach(g=>{const all=[g.main].concat(g.extras).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))); g.main=all[0]; g.extras=all.slice(1);});   // הראשונה לפי תאריך — התוספות אחריה
+  // מאיר: "ניסיתי להוסיף לאברמוביץ עוד תרומה שאמר שנחייב אותו ועדיין לא חייבנו —
+  // אני רוצה שזה כן יהיה ברשימה הזו". תורם שכבר נתן ויש לו התחייבות פתוחה
+  // לאותו קמפיין: ההתחייבות מופיעה בשורה שלו כתוספת "🔴 טרם", ונספרת בסה"כ.
+  const pendsum={};
+  grp.forEach(g=>{const d=DB.find(x=>x.id===g.main.id); if(!d)return;
+    (d.pledges||[]).forEach(p=>{if(String(p.category||'').trim()!==campSel||String(p.status||'')==='נתן')return;
+      const a=amtNum(p.amount); if(!a)return;
+      const cur=(String(p.cur||'').trim()==='₪'?'₪':(String(p.cur||'').trim()==='$'?'$':g.main.cur));
+      g.extras.push({id:d.id,amt:a,cur:cur,note:String(p.note||'').trim(),pending:true}); g.total+=a; pendsum[cur]=(pendsum[cur]||0)+a;});});
+  Object.keys(pendsum).forEach(k=>{owesum[k]=(owesum[k]||0)+pendsum[k];});
+  const owetot2=Object.keys(owesum).map(k=>k+Math.round(owesum[k]).toLocaleString('en-US')).join(' + ');
   grp.sort((a,b)=>b.total-a.total||a.main.name.localeCompare(b.main.name,'he'));
   view.innerHTML=`<div class="avbar noprint">
       <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}${cats.length?'':'<option value="">— אין קמפיינים —</option>'}</select>
@@ -10602,14 +10613,14 @@ function renderCamp(){
     <div id="campone"${CAMPMODE!=='one'?' hidden':''}>
     <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
-        <span><b>${rows.length}</b> תשלומים</span>${owetot?`<span class="campowe">🔴 ${owetot} התחייבו וטרם נתנו</span>`:''}</div></div>
+        <span><b>${rows.length}</b> תשלומים</span>${owetot2?`<span class="campowe">🔴 ${owetot2} התחייבו וטרם נתנו</span>`:''}</div></div>
     ${campSel?`<button class="btn" id="campadddonor" style="width:100%;margin:0 0 8px">➕ הוסף תורם ל${esc(campSel)} — תרומה או התחייבות</button><div id="campaddbox"></div>`:''}
     <div class="camptbl${grp.some(g=>g.extras.length)?' plus':''}">
       <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c6">תוספת</span><span class="c7">סה"כ</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
       ${grp.map((g,i)=>{const r=g.main;return `<div class="camprow2"><span class="c1">${i+1}</span>
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
         <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b><button class="cplusbtn" data-did="${r.id}" title="הוסף תוספת לתורם הזה">➕</button></span>
-        <span class="c6">${g.extras.map(x=>`<span class="cplus" dir="ltr">+${x.cur}${Math.round(x.amt).toLocaleString('en-US')}</span>${x.note?`<small class="cnote">📝 ${esc(x.note)}</small>`:''}`).join('')}</span>
+        <span class="c6">${g.extras.map(x=>`<span class="cplus${x.pending?' pend':''}" dir="ltr">+${x.cur}${Math.round(x.amt).toLocaleString('en-US')}</span>${x.pending?'<small class="cshst no">🔴 טרם נגבה</small>':''}${x.note?`<small class="cnote">📝 ${esc(x.note)}</small>`:''}`).join('')}</span>
         <span class="c7">${g.extras.length?`<b>${r.cur}${Math.round(g.total).toLocaleString('en-US')}</b>`:''}</span>
         <span class="c4">${esc(r.date?gregLabel(r.date):'')}</span>
         <span class="c5">${r.method?(chBadgeRaw(r.method)||esc(chLabel(r.method))):''}</span></div>`;}).join('')
