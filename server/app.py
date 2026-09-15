@@ -474,6 +474,8 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN via_total TEXT DEFAULT ''")
     except Exception: pass
+    try: con.execute("ALTER TABLE pledges ADD COLUMN cur TEXT DEFAULT ''")      # מטבע ההתחייבות: '$' / '₪' (ריק = לפי אזור התורם)
+    except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN via_note TEXT DEFAULT ''")
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN notes TEXT")   # הערות חופשיות (למשל: הגיע דרך אבא קלוק)
@@ -6861,7 +6863,7 @@ def campaign_compare(con, cat):
         links = {}
     # כל התרומות לפי תורם — כדי לדעת מה כבר רשום בכרטיס
     dons = {}
-    for d in con.execute("SELECT donor_id,date,amount,category,method,id,note FROM donations"):
+    for d in con.execute("SELECT donor_id,date,amount,category,method,id,note,cur FROM donations"):
         dons.setdefault(d['donor_id'], []).append(d)
     alld = [dict(r) for r in con.execute("SELECT id,last,first,english FROM donors")]
 
@@ -6930,14 +6932,14 @@ def campaign_compare(con, cat):
             r['methods'] = sorted({(d['method'] or '').strip() for d in mine if (d['method'] or '').strip()})
             r['items'] = [{'id': d['id'], 'amount': float(re.sub(r'[^0-9.]', '', str(d['amount'] or '0')) or 0),
                            'method': (d['method'] or '').strip(), 'date': str(d['date'] or '')[:10],
-                           'note': (d['note'] or '').strip()} for d in mine]
-        for p in con.execute("""SELECT donor_id,amount,status,id,note FROM pledges
+                           'note': (d['note'] or '').strip(), 'cur': (d['cur'] or '').strip()} for d in mine]
+        for p in con.execute("""SELECT donor_id,amount,status,id,note,cur FROM pledges
                                 WHERE TRIM(COALESCE(category,''))=? AND COALESCE(status,'')<>'נתן'""", (cat,)):
             if p['donor_id'] not in names:
                 continue
             r = row_for(p['donor_id'], names[p['donor_id']])
             r['pledge'] = {'id': p['id'], 'amount': float(re.sub(r'[^0-9.]', '', str(p['amount'] or '0')) or 0),
-                           'status': p['status'] or '', 'note': (p['note'] or '').strip()}
+                           'status': p['status'] or '', 'note': (p['note'] or '').strip(), 'cur': (p['cur'] or '').strip()}
     out = list(rows.values())
     out.sort(key=lambda r: _norm(r['name']))       # לפי א"ב, כמו ברשימה של מאיר
     # מאיר: "מה חסר לנו במערכת" — גם ההפך: מי שרשום אצלנו בייעוד הזה ואינו ברשימה
@@ -12361,13 +12363,13 @@ class H(BaseHTTPRequestHandler):
             _st = _stamp('updated')
             con.execute("UPDATE pledges SET category=?,amount=?,status=?,note=?,monthly=?,paid=?,"
                         "detail=?,permo=?,avreich=?,confirmed=?,via_donor_id=?,via_total=?,via_note=?,"
-                        "since=?,prev_amount=?,updated=?,updated_heb=? WHERE id=?",
+                        "since=?,prev_amount=?,updated=?,updated_heb=?,cur=COALESCE(?,cur) WHERE id=?",
                         (b.get('category',''), b.get('amount',''), b.get('status',''), b.get('note',''),
                          1 if b.get('monthly') else 0, str(b.get('paid') or ''),
                          b.get('detail',''), str(b.get('permo') or ''), b.get('avreich',''), cf,
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
                          b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or ''),
-                         _st['updated'], _st['updated_heb'], pid))
+                         _st['updated'], _st['updated_heb'], (b.get('cur') if 'cur' in b else None), pid))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'updated': _st['updated'],
                                     'updated_heb': _st['updated_heb']})
@@ -14272,15 +14274,15 @@ class H(BaseHTTPRequestHandler):
             _st = _stamp()
             cur.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,"
                         "detail,permo,avreich,confirmed,via_donor_id,via_total,via_note,since,prev_amount,"
-                        "created,created_heb) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "created,created_heb,cur) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (b.get('donor_id'), b.get('category',''), b.get('amount',''), b.get('status','טרם'),
                          b.get('date') or today_iso(), b.get('note',''), 1 if b.get('monthly') else 0,
                          str(b.get('paid') or ''), b.get('detail',''), str(b.get('permo') or ''),
                          b.get('avreich',''), 1 if b.get('confirmed') is None else int(b.get('confirmed')),
                          int(vdid) if vdid else None, str(b.get('via_total') or ''),
                          b.get('via_note',''), b.get('since',''), str(b.get('prev_amount') or ''),
-                         _st['created'], _st['created_heb']))
+                         _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/parnes':

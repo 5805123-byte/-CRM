@@ -10078,7 +10078,7 @@ function campOwes(cat){
     if(String(p.category||'').trim()!==cat||paid.has(d.id))return;
     if(String(p.status||'')==='נתן')return;
     out.push({id:d.id,name:(d.last+' '+d.first).trim(),amt:amtNum(p.amount),
-      cur:curSym(d),phone:splitPhones(d.phone)[0]||'',note:String(p.note||'').trim()});}));
+      cur:(String(p.cur||'').trim()==='₪'?'₪':(String(p.cur||'').trim()==='$'?'$':curSym(d))),phone:splitPhones(d.phone)[0]||'',note:String(p.note||'').trim()});}));
   return out.sort((a,b)=>b.amt-a.amt);
 }
 // מאיר: "כל מה שיש כאן זה לא קמפיין חוץ מקמחא דפסחא ומתנות לאביונים וסוכות
@@ -10246,7 +10246,7 @@ function campSheetRender(box,r){
     const cur=x.now?x.now:(x.pledge?x.pledge.amount:(cols.map(c=>x.vals[c.key]||0).find(v=>v)||''));
     const fm=document.createElement('div'); fm.className='cmpform';
     fm.innerHTML=`<b>${esc(x.name)}</b> → ${esc(tcat)}
-      <input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}">
+      <input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}"><select class="cf_cur" title="מטבע — ברירת מחדל דולר"><option value="$">$</option><option value="₪"${((it&&it.cur)||(x.pledge&&x.pledge.cur))==='₪'?' selected':''}>₪</option></select>
       <select class="cf_st"><option value="paid"${x.now?' selected':''}>✅ חויב / נגבה</option><option value="pledge"${(!x.now&&x.pledge)?' selected':''}>🔴 עדיין לא</option></select>
       <select class="cf_m chansel">${channelOpts(it?it.method:'')}</select>
       <input type="date" class="cf_date" value="${(it&&it.date)||todayStr()}">
@@ -10259,7 +10259,7 @@ function campSheetRender(box,r){
     fm.querySelector('.cf_go').onclick=async()=>{
       const amt=fm.querySelector('.cf_amt').value.trim(), st=fm.querySelector('.cf_st').value,
             m=fm.querySelector('.cf_m').value==='__new__'?'':fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr(),
-            note=fm.querySelector('.cf_note').value.trim();
+            note=fm.querySelector('.cf_note').value.trim(), ccy=fm.querySelector('.cf_cur').value||'$';
       if(!amtNum(amt)){toast('צריך סכום');return;}
       fm.querySelector('.cf_go').disabled=true;
       CAMP_SCROLL=window.scrollY;
@@ -10272,14 +10272,14 @@ function campSheetRender(box,r){
       const d=DB.find(y=>y.id===did);
       const pl=d&&(d.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
       if(st==='paid'){
-        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:tcat,paid:1,note:note});
-        else{const rr=await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:note});
+        if((x.items||[]).length===1)await api('PUT','/api/donation/'+x.items[0].id,{amount:amt,method:m,date:date,category:tcat,paid:1,note:note,cur:ccy});
+        else{const rr=await api('POST','/api/donation',{donor_id:did,amount:amt,category:tcat,method:m,date:date,note:note,cur:ccy});
           if(rr&&rr.merged)toast('החיוב הזה כבר נכנס מהאשראי — סווג ל'+tcat+' בלי שורה כפולה');}
         if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
       }else{
         const pnote=[note,m?('דרך: '+m):''].filter(Boolean).join(' · ');
-        if(pl){pl.amount=amt;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
-        else await api('POST','/api/pledge',{donor_id:did,category:tcat,amount:amt,status:'טרם',date:date,note:pnote});
+        if(pl){pl.amount=amt;pl.cur=ccy;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
+        else await api('POST','/api/pledge',{donor_id:did,category:tcat,amount:amt,status:'טרם',date:date,note:pnote,cur:ccy});
       }
       toast('נשמר ✓'); await load();
     };
@@ -10528,7 +10528,7 @@ function campAddDonorForm(box){
     <button class="btn sm ghost" id="cad_new">➕ תורם חדש</button>
     <div class="cmpres" id="cad_res" style="width:100%"></div>
     <div id="cad_fields" style="display:none">
-      <input class="cf_amt" id="cad_amt" inputmode="decimal" placeholder="סכום">
+      <input class="cf_amt" id="cad_amt" inputmode="decimal" placeholder="סכום"><select id="cad_cur" title="מטבע — ברירת מחדל דולר"><option value="$">$</option><option value="₪">₪</option></select>
       <select id="cad_st"><option value="paid">✅ חויב / נגבה</option><option value="pledge">🔴 עדיין לא</option></select>
       <select class="chansel" id="cad_m">${channelOpts('')}</select>
       <input type="date" id="cad_date" value="${todayStr()}">
@@ -10553,18 +10553,19 @@ function campAddDonorForm(box){
     if(!picked){toast('בחר תורם');return;}
     const amt=box.querySelector('#cad_amt').value.trim(), st=box.querySelector('#cad_st').value,
           m=box.querySelector('#cad_m').value==='__new__'?'':box.querySelector('#cad_m').value,
-          date=box.querySelector('#cad_date').value||todayStr(), note=box.querySelector('#cad_note').value.trim();
+          date=box.querySelector('#cad_date').value||todayStr(), note=box.querySelector('#cad_note').value.trim(),
+          ccy=box.querySelector('#cad_cur').value||'$';
     if(!amtNum(amt)){toast('צריך סכום');return;}
     box.querySelector('#cad_go').disabled=true;
     const pl=(picked.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
     if(st==='paid'){
-      const rr=await api('POST','/api/donation',{donor_id:picked.id,amount:amt,category:tcat,method:m,date:date,note:note});
+      const rr=await api('POST','/api/donation',{donor_id:picked.id,amount:amt,category:tcat,method:m,date:date,note:note,cur:ccy});
       if(rr&&rr.merged)toast('החיוב הזה כבר נכנס מהאשראי — סווג ל'+tcat+' בלי שורה כפולה');
       if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
     }else{
       const pnote=[note,m?('דרך: '+m):''].filter(Boolean).join(' · ');
-      if(pl){pl.amount=amt;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
-      else await api('POST','/api/pledge',{donor_id:picked.id,category:tcat,amount:amt,status:'טרם',date:date,note:pnote});
+      if(pl){pl.amount=amt;pl.cur=ccy;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
+      else await api('POST','/api/pledge',{donor_id:picked.id,category:tcat,amount:amt,status:'טרם',date:date,note:pnote,cur:ccy});
     }
     toast('נשמר ✓'); await load(); renderCamp();
   };
