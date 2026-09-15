@@ -9927,35 +9927,6 @@ function mailCallsSwitch(cur){
 function wireMailCallsSwitch(){
   view.querySelectorAll('.mcsw_b').forEach(b=>b.onclick=()=>{mailSub=b.dataset.s;render();});
 }
-// מאיר: "קיבלתי כמה מיילים מתורמים שרוצים לתרום בשביל סוכות… תרכז לי את זה
-// ברשימה מסודרת". תשובות שהגיעו מתורמים למייל של יום טוב: מייל נכנס מאז
-// תחילת ספטמבר שמדבר על סוכות / יום טוב / משפחה של אברך / הסכומים מהמייל.
-const SUKKOS_RX=/yom\s*tov|yomim\s*tovim|sukk|succ|ushpizin|סוכות|יום\s*טוב|אושפיזין|take\s+one\s+family|one\s+family|famil|\$\s?1,?200|\$\s?100\b/i;
-function isSukkosReply(x){
-  const c=x.c; if(c.direction==='out')return false;
-  if(String(c.date||'')<'2026-09-01')return false;
-  return SUKKOS_RX.test((c.summary||'')+' '+(c.body||'')+' '+(c.body_he||''));
-}
-function sukkosRows(list){
-  const seen=new Set(); const out=[];
-  list.forEach(({c,d})=>{
-    if(seen.has(d.id))return; seen.add(d.id);           // תורם אחד — שורה אחת (המייל האחרון שלו)
-    const txt=(c.body||''); const m=/\$\s?([\d,]{2,7})/.exec(txt)||/([\d,]{3,7})\s?\$/.exec(txt);
-    const gist=String(c.summary||'').replace(/^📧\s*/,'').split(' — ').slice(1).join(' — ')||String(c.summary||'').replace(/^📧\s*/,'');
-    out.push({id:d.id,name:((d.last||'')+' '+(d.first||'')).trim(),eng:d.english||'',date:c.date||'',amt:m?m[1]:'',gist:gist.slice(0,140),email:(splitEmails(d.email)[0]||'')});
-  });
-  return out;
-}
-function sukkosSummaryHTML(list){
-  const rows=sukkosRows(list);
-  if(!rows.length)return '<div class="hintxt">אין עדיין תשובות כאלה. לחץ "📥 משוך מיילים" ואז חזור לכאן.</div>';
-  return `<div class="misshead">🍋 מי כתב שרוצה לתרום לסוכות — ${rows.length} תורמים</div>
-    <div class="hintxt">כל תורם פעם אחת, לפי המייל האחרון שלו. הסכום נלקח מגוף המייל כשהוא כתוב שם. לחיצה על השם פותחת את הכרטיס.</div>
-    <div style="overflow-x:auto"><table class="calltbl"><thead><tr><th>תורם</th><th>תאריך</th><th>סכום</th><th>מה כתב</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td><b class="mlwho" data-did="${r.id}">${esc(r.name)}</b>${r.eng?`<br><small style="color:var(--muted)">${esc(r.eng)}</small>`:''}</td><td dir="ltr">${esc(r.date)}</td><td>${r.amt?('$'+esc(r.amt)):'—'}</td><td style="white-space:normal;min-width:180px">${esc(r.gist)}</td></tr>`).join('')}
-    </tbody></table></div>
-    <button class="btn sm ghost" id="skcopy" style="margin:6px 0 10px">📋 העתק את הרשימה</button>`;
-}
 function renderMails(){
   if(mailSub==='send') return renderMailSend();
   if(mailSub==='calls') return renderCalls();
@@ -9966,8 +9937,7 @@ function renderMails(){
   const F=[['','הכל',all.length],['in','📥 מהתורם',all.filter(x=>x.c.direction!=='out').length],
            ['out','📤 ששלחנו',all.filter(x=>x.c.direction==='out').length],
            ['files','📎 עם קבצים',withFiles],
-           ['kv','🕯️ שמות לקוויטל',all.filter(x=>(x.c.summary||'').includes('🕯️')).length],
-           ['sukkos','🍋 סוכות — תשובות למייל',all.filter(isSukkosReply).length]];
+           ['kv','🕯️ שמות לקוויטל',all.filter(x=>(x.c.summary||'').includes('🕯️')).length]];
   chips.innerHTML=F.map(([k,l,n])=>`<button class="chip ${mailFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
   chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{mailFlt=b.dataset.k;render();});
   let list=all;
@@ -9975,7 +9945,6 @@ function renderMails(){
   if(mailFlt==='out')list=list.filter(x=>x.c.direction==='out');
   if(mailFlt==='files')list=list.filter(x=>(x.c.files||[]).length);
   if(mailFlt==='kv')list=list.filter(x=>(x.c.summary||'').includes('🕯️'));
-  if(mailFlt==='sukkos')list=list.filter(isSukkosReply);
   list=list.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.c.summary||'')+' '+(x.c.body||'')+' '+(x.c.body_he||'')));
   view.innerHTML=`${mailCallsSwitch('mails')}<div class="rbtitle">📧 כל המיילים עם התורמים — נכנסים וששלחנו, לפי תאריך</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn" id="ml_compose" style="width:100%">✉️ שלח מייל לתורמים — הודעה אישית לכל אחד</button></div>
@@ -9983,7 +9952,6 @@ function renderMails(){
     <div class="addrow" style="margin:0 2px 8px"><select id="ml_cat" style="flex:1">${['— כל התורמים —',...[...new Set(DB.map(d=>(d.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'))].map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <a class="btn sm ghost" id="ml_csv" href="#" style="flex:1;text-align:center;text-decoration:none">📤 ייצוא רשימת תפוצה (CSV)</a></div>
     <div class="hintxt" style="margin:-4px 2px 10px">שורה לכל כתובת מייל — כולל תורמים עם כמה כתובות. מתאים לייבוא ל-Brevo / MailerLite לדיוור אישי עם שם התורם.</div>
-    ${mailFlt==='sukkos'?sukkosSummaryHTML(list):''}
     <div class="cnt">${list.length} מיילים</div>
     <div class="list">${list.map(({c,d},i)=>`<div class="mailrow">
       <div class="mailhd"><span class="mlwho" data-did="${d.id}">${esc((d.last||'')+' '+(d.first||''))} ↗</span>
@@ -9995,7 +9963,6 @@ function renderMails(){
       ${(c.files||[]).length?`<div class="avfiles dnfiles">${(c.files||[]).map(fileChip).join('')}</div>`:''}
     </div>`).join('')||'<div class="empty">אין מיילים. לחץ "משוך מיילים".</div>'}</div>`;
   view.querySelectorAll('.mlwho').forEach(w=>w.onclick=()=>openDonor(DB.find(x=>x.id==w.dataset.did),'contact'));
-  const sk=view.querySelector('#skcopy'); if(sk)sk.onclick=()=>copyTxt(sukkosRows(list).map(r=>`${r.name} — ${r.date}${r.amt?(' — $'+r.amt):''}${r.gist?(' — '+r.gist):''}`).join('\n'));
   view.querySelectorAll('.mailrow .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);await load();render();toast('נמחק');});
   const mcp=document.getElementById('ml_compose');
   if(mcp)mcp.onclick=()=>{mailSub='send';render();};
