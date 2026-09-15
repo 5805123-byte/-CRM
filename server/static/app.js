@@ -10246,7 +10246,7 @@ function campSheetRender(box,r){
     const cur=x.now?x.now:(x.pledge?x.pledge.amount:(cols.map(c=>x.vals[c.key]||0).find(v=>v)||''));
     const fm=document.createElement('div'); fm.className='cmpform';
     fm.innerHTML=`<b>${esc(x.name)}</b> → ${esc(tcat)}
-      <input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}"><select class="cf_cur" title="מטבע — ברירת מחדל דולר"><option value="$">$</option><option value="₪"${((it&&it.cur)||(x.pledge&&x.pledge.cur))==='₪'?' selected':''}>₪</option></select>
+      <span class="amtgrp"><input class="cf_amt" inputmode="decimal" placeholder="סכום" value="${cur?Math.round(cur):''}"><button type="button" class="cf_cur" data-v="${((it&&it.cur)||(x.pledge&&x.pledge.cur))==='₪'?'₪':'$'}" title="לחץ להחליף בין דולר לשקל">${((it&&it.cur)||(x.pledge&&x.pledge.cur))==='₪'?'₪':'$'}</button></span>
       <select class="cf_st"><option value="paid"${x.now?' selected':''}>✅ חויב / נגבה</option><option value="pledge"${(!x.now&&x.pledge)?' selected':''}>🔴 עדיין לא</option></select>
       <select class="cf_m chansel">${channelOpts(it?it.method:'')}</select>
       <input type="date" class="cf_date" value="${(it&&it.date)||todayStr()}">
@@ -10259,7 +10259,7 @@ function campSheetRender(box,r){
     fm.querySelector('.cf_go').onclick=async()=>{
       const amt=fm.querySelector('.cf_amt').value.trim(), st=fm.querySelector('.cf_st').value,
             m=fm.querySelector('.cf_m').value==='__new__'?'':fm.querySelector('.cf_m').value, date=fm.querySelector('.cf_date').value||todayStr(),
-            note=fm.querySelector('.cf_note').value.trim(), ccy=fm.querySelector('.cf_cur').value||'$';
+            note=fm.querySelector('.cf_note').value.trim(), ccy=fm.querySelector('.cf_cur').dataset.v||'$';
       if(!amtNum(amt)){toast('צריך סכום');return;}
       fm.querySelector('.cf_go').disabled=true;
       CAMP_SCROLL=window.scrollY;
@@ -10528,7 +10528,7 @@ function campAddDonorForm(box){
     <button class="btn sm ghost" id="cad_new">➕ תורם חדש</button>
     <div class="cmpres" id="cad_res" style="width:100%"></div>
     <div id="cad_fields" style="display:none">
-      <input class="cf_amt" id="cad_amt" inputmode="decimal" placeholder="סכום"><select id="cad_cur" title="מטבע — ברירת מחדל דולר"><option value="$">$</option><option value="₪">₪</option></select>
+      <span class="amtgrp"><input class="cf_amt" id="cad_amt" inputmode="decimal" placeholder="סכום"><button type="button" class="cf_cur" id="cad_cur" data-v="$" title="לחץ להחליף בין דולר לשקל">$</button></span>
       <select id="cad_st"><option value="paid">✅ חויב / נגבה</option><option value="pledge">🔴 עדיין לא</option></select>
       <select class="chansel" id="cad_m">${channelOpts('')}</select>
       <input type="date" id="cad_date" value="${todayStr()}">
@@ -10554,7 +10554,7 @@ function campAddDonorForm(box){
     const amt=box.querySelector('#cad_amt').value.trim(), st=box.querySelector('#cad_st').value,
           m=box.querySelector('#cad_m').value==='__new__'?'':box.querySelector('#cad_m').value,
           date=box.querySelector('#cad_date').value||todayStr(), note=box.querySelector('#cad_note').value.trim(),
-          ccy=box.querySelector('#cad_cur').value||'$';
+          ccy=box.querySelector('#cad_cur').dataset.v||'$';
     if(!amtNum(amt)){toast('צריך סכום');return;}
     box.querySelector('#cad_go').disabled=true;
     const pl=(picked.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
@@ -10659,6 +10659,9 @@ function renderCamp(){
 // כפתורי קשר מהירים — התקשרות / וואטסאפ / אימייל ישירות מהמשימה
 // מאיר: "כל מי שחייגתי אליו דרך המערכת אני רוצה שזה ייכנס בדף קשר שלו" —
 // כל לחיצה על 📞 או 💬 במערכת נרשמת ביומן הקשר של התורם, עם השעה והמספר.
+// מאיר: "שש"ח לא יתפוס לי שורה שלמה — שיהיה בצד הסכום האפשרות להחליף בין דולר לשקל"
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('button.cf_cur'); if(!b)return;
+  b.dataset.v=b.dataset.v==='$'?'₪':'$'; b.textContent=b.dataset.v;});
 const _DIALLOG={};
 // capture phase — הקישורים עצמם עוצרים את ה־bubbling (stopPropagation) כדי לא לפתוח כרטיס,
 // לכן המאזין חייב לרוץ לפניהם ולא אחריהם.
