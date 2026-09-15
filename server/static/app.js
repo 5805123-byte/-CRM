@@ -4008,6 +4008,16 @@ function debtSummary(d){
 let DEBTOPEN=false;
 function debtHTML(d){
   const x=debtSummary(d);
+  // מאיר: "לא הבנתי — יש לו חוב ויש לו יתרה?? יש לו חוב." שני חלונות על אותו
+  // חוב בלבלו. כשיש חלון "🔴 חייב" (החשבון מאז שהתחייב), החודשים שלא נגבו,
+  // היששכר־זבולון והיתרה מלפני 2026 כבר בתוכו — וכאן נשאר רק מה שאינו שם
+  // (ימי פרנס, התחייבויות חד־פעמיות, חיובים שסומנו כחוב).
+  let L=null; try{L=monthLedger(d);}catch(e){}
+  const hasLedger=!!(L&&L.debt>0.5);
+  if(hasLedger){
+    x.rows=x.rows.filter(r=>!['חודשים שלא נגבו','יששכר־זבולון','חוב מלפני 2026'].includes(r.t));
+    x.total=x.rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0);
+  }
   const f=n=>(n<0?'-':'')+x.cur+Math.abs(Math.round(n)).toLocaleString('en-US');
   // חוב שסודר — שורה זעירה אחת בלבד, עם ההסבר שנכתב בזמן הסידור
   if(String(d.debt_ok||'').trim())
@@ -4016,7 +4026,7 @@ function debtHTML(d){
   // אין חוב — אין חלון. גם לא שורת "אין חוב פתוח" וגם לא ניסיונות
   // חיוב שנדחו: הם נמצאים בלשונית "🔴 לא עבר" ואין להם מה לתפוס מקום כאן.
   if(!x.rows.length||x.total<=0.5)return '';
-  return `<div class="debtline" id="debtline">💰 יתרה פתוחה
+  return `<div class="debtline" id="debtline">🔴 ${hasLedger?'חוב נוסף':'חוב פתוח'}
       <button class="debtamt" id="debtgo">${f(x.total)}</button>
       <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span>
       <button class="debtsetl" id="debtsetl" title="סוכם עם התורם בדרך אחרת">סודר</button></div>
