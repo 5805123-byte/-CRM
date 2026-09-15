@@ -5813,6 +5813,30 @@ def ensure_schema():
     except Exception as e:
         print('  שגיאת שיוך מספרים:', e)
 
+    # מאיר: "תכניס לכרטיס של יעקב יוסף קלאק את ה-15,000, ותכתוב אצל אבא שהוא
+    # בשותפות עם יעקב בזה" — קמחא דפסחא תשפ"ו, יענקי ואבא קלוק יחד.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='klock_kimcha_v1'").fetchone():
+            _cat = 'קמחא דפסחא תשפ"ו'
+            yy = con.execute("SELECT id FROM donors WHERE last LIKE '%קלאק%' AND first LIKE '%יעקב יוסף%'").fetchone()
+            ab = con.execute("SELECT id,notes FROM donors WHERE last LIKE '%קלאק%' AND first LIKE '%אבא%'").fetchone()
+            if yy:
+                have = con.execute("SELECT 1 FROM donations WHERE donor_id=? AND category=? AND ROUND(CAST(amount AS REAL))=15000",
+                                   (yy['id'], _cat)).fetchone()
+                if not have:
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
+                                (yy['id'], '2026-03-25', '15000', _cat, '', 'יענקי ואבא קלוק יחד — קמחא דפסחא תשפ"ו', '$'))
+                    print('  קלאק יעקב יוסף: נרשמו $15,000 לקמחא דפסחא תשפ"ו')
+            if ab:
+                _n = (ab['notes'] or '').strip()
+                _add = 'בשותפות עם יעקב יוסף קלאק בקמחא דפסחא תשפ"ו — $15,000 (רשום בכרטיס של יעקב יוסף)'
+                if _add not in _n:
+                    con.execute("UPDATE donors SET notes=? WHERE id=?", ((_n + ' · ' if _n else '') + _add, ab['id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('klock_kimcha_v1')")
+            con.commit()
+    except Exception as e:
+        print('  klock kimcha error:', e)
+
     # מאיר: "תכניס רק משיחות של 30 שניות" — שיחות קצרות שכבר יובאו יורדות מיומן הקשר
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='calls_min30_v1'").fetchone():
