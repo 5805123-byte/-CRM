@@ -10582,6 +10582,13 @@ function renderCamp(){
   const owesum={}; owes.forEach(r=>{if(r.amt)owesum[r.cur]=(owesum[r.cur]||0)+r.amt;});
   const owetot=Object.keys(owesum).map(k=>k+Math.round(owesum[k]).toLocaleString('en-US')).join(' + ');
   const donors=new Set(rows.map(r=>r.id)).size;
+  // מאיר: "אם תורם הוסיף עוד תרומה על התרומה שלו לקמפיין — עוד טור לסכום עם
+  // הערה ואז סך הכל, אבל שזה לא יתפוס מקום במסך": שורה אחת לתורם — התרומה
+  // הראשונה בטור "סכום", התוספות בטור צר, וסה"כ. הטורים מופיעים רק כשיש תוספת.
+  const grp=[]; const gi={};
+  rows.forEach(r=>{let g=gi[r.id]; if(!g){g={main:r,extras:[],total:0};gi[r.id]=g;grp.push(g);}else g.extras.push(r); g.total+=r.amt;});
+  grp.forEach(g=>{const all=[g.main].concat(g.extras).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))); g.main=all[0]; g.extras=all.slice(1);});   // הראשונה לפי תאריך — התוספות אחריה
+  grp.sort((a,b)=>b.total-a.total||a.main.name.localeCompare(b.main.name,'he'));
   view.innerHTML=`<div class="avbar noprint">
       <select id="campsel" class="avsortsel">${cats.map(c=>`<option value="${esc(c)}"${c===campSel?' selected':''}>${esc(c)}</option>`).join('')}${cats.length?'':'<option value="">— אין קמפיינים —</option>'}</select>
       <button class="btn sm ghost" id="campadd" title="הוסף קמפיין לרשימה">➕ קמפיין</button>
@@ -10595,13 +10602,15 @@ function renderCamp(){
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
         <span><b>${rows.length}</b> תשלומים</span>${owetot?`<span class="campowe">🔴 ${owetot} התחייבו וטרם נתנו</span>`:''}</div></div>
     ${campSel?`<button class="btn" id="campadddonor" style="width:100%;margin:0 0 8px">➕ הוסף תורם ל${esc(campSel)} — תרומה או התחייבות</button><div id="campaddbox"></div>`:''}
-    <div class="camptbl">
-      <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
-      ${rows.map((r,i)=>`<div class="camprow2"><span class="c1">${i+1}</span>
+    <div class="camptbl${grp.some(g=>g.extras.length)?' plus':''}">
+      <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c6">תוספת</span><span class="c7">סה"כ</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
+      ${grp.map((g,i)=>{const r=g.main;return `<div class="camprow2"><span class="c1">${i+1}</span>
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
         <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b></span>
+        <span class="c6">${g.extras.map(x=>`<span class="cplus" dir="ltr">+${x.cur}${Math.round(x.amt).toLocaleString('en-US')}</span>${x.note?`<small class="cnote">📝 ${esc(x.note)}</small>`:''}`).join('')}</span>
+        <span class="c7">${g.extras.length?`<b>${r.cur}${Math.round(g.total).toLocaleString('en-US')}</b>`:''}</span>
         <span class="c4">${esc(r.date?gregLabel(r.date):'')}</span>
-        <span class="c5">${r.method?(chBadgeRaw(r.method)||esc(chLabel(r.method))):''}</span></div>`).join('')
+        <span class="c5">${r.method?(chBadgeRaw(r.method)||esc(chLabel(r.method))):''}</span></div>`;}).join('')
         ||'<div class="empty">עדיין לא נכנס כסף לייעוד הזה</div>'}
     </div>
     ${owes.length?`<div class="camphd" style="margin-top:14px"><h3>🔴 התחייבו וטרם נתנו — ${owes.length}</h3></div>

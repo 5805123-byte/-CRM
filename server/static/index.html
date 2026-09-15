@@ -661,8 +661,15 @@
   .camprow2.owe .c3{color:var(--no)}
   .camprow2 .cen{display:block;color:var(--muted);font-size:.72rem;direction:ltr;unicode-bidi:isolate}
   .camprow2 a{cursor:pointer;font-weight:700}
+  /* טורי "תוספת" ו"סה"כ" — רק כשיש לתורם יותר מתרומה אחת לקמפיין */
+  .camprow2 .c6,.camprow2 .c7{display:none}
+  .camptbl.plus .camprow2{grid-template-columns:34px 1fr 90px 92px 90px 92px 96px}
+  .camptbl.plus .camprow2 .c6,.camptbl.plus .camprow2 .c7{display:block}
+  .camprow2 .c6{font-size:.82rem;color:var(--yes)}.camprow2 .cplus{display:block;font-weight:700;text-align:start}
+  .camprow2 .c7{color:var(--ink)}
   @media(max-width:520px){.camprow2{grid-template-columns:26px 1fr 84px;}
-    .camprow2 .c4,.camprow2 .c5{display:none}}
+    .camprow2 .c4,.camprow2 .c5{display:none}
+    .camptbl.plus .camprow2{grid-template-columns:22px 1fr 70px 70px 70px}}
   .cmtag{font-size:.68rem;font-weight:800;border-radius:20px;padding:2px 8px;white-space:nowrap}
   .cmtag.mo{background:var(--gold-soft);color:var(--gold)}
   .cmtag.one{background:var(--accent-soft);color:var(--accent)}
