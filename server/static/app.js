@@ -4122,7 +4122,8 @@ function cardDetails(d,body){
       <div class="addrow gvbldgrow hidden" style="margin-top:5px">
         <input class="gvbldg" data-did="${g.did}" list="bldgitems3" placeholder="🏗️ מה תרם בבניין? (שולחן / עמוד / מטר…)">
         <button class="btn sm gvbldgok" data-did="${g.did}">➕ הוסף</button></div>
-      <div class="addrow" style="margin-top:5px"><input class="gvnote" placeholder="פירוט (למשל: סעודת ראש חודש)" value="${esc(g.ded)}">
+      <div class="gvlbl" style="margin-top:8px">📝 הערה</div>
+      <div class="addrow"><input class="gvnote" placeholder="בקצרה — למשל: בתשלומים, 3 תשלומים" value="${esc(g.ded)}">
         <button class="btn sm gvsave" data-did="${g.did}">💾</button></div>
       <label class="gvall"><input type="checkbox" class="gvrule"> 🔁 כל ${curd}${g.amt} של התורם הזה = זה (גם בעתיד)</label>
       <div class="gvprev"><div class="gvlbl">📌 מזה על שנה קודמת (${GREGYEAR-1} ואחורה)</div>
@@ -4166,7 +4167,7 @@ function cardDetails(d,body){
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
       + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
       + `${amtNum(g.prev)>0.5?`<span class="prevchip">📌 ${curd}${Math.round(amtNum(g.prev)).toLocaleString('en-US')} ${esc(g.prevn||('על '+(GREGYEAR-1)))}</span>`:''}`
-      + `${g.ded?`<div class="givesub">${esc(g.ded)}</div>`:''}${pan}${pnpan}</div></div>`;
+      + `${g.ded?`<div class="givesub" title="${esc(g.ded)}">📝 ${esc(g.don?shortNote(g.ded,3):g.ded)}</div>`:''}${pan}${pnpan}</div></div>`;
   };
   // מאיר: "גם בפרטי תרומות למטה, איפה שכתוב כל ההכנסות של התרומות,
   // שיהיה שורה באדום כמה חייב" — אותו חשבון של השורה האדומה שבראש
@@ -4544,7 +4545,10 @@ function cardDetails(d,body){
     const dn=(d.donations||[]).find(x=>x.id==b.dataset.did); if(!dn)return;
     b.disabled=true;
     if(rule){ await api('POST','/api/rule',{donor_id:d.id,amount:parseFloat(dn.amount),category:cat,note}); }
-    else { await api('PUT','/api/donation/'+b.dataset.did,{category:cat,note:note?(String(dn.note||'').split(' · ')[0]+' · '+note):dn.note}); }
+    else {
+      // החלקים הטכניים של ההערה (מאיפה הגיע, על שם מי) נשמרים; ההערה של מאיר מוחלפת
+      const tech=String(dn.note||'').split(' · ').map(s=>s.trim()).filter(s=>s&&GVDROP.test(s));
+      await api('PUT','/api/donation/'+b.dataset.did,{category:cat,note:tech.concat(note?[note]:[]).join(' · ')}); }
     toast(rule?'נשמר לכל הסכום הזה ✓':'נשמר ✓');
     await load(); const dd=DB.find(x=>x.id===d.id); if(dd)openDonor(dd,'details');});
   const uclSave=document.getElementById('ucl_save');
@@ -5395,7 +5399,10 @@ function dnNote(x){
 }
 // במסך הראשי משאירים רק הערה אמיתית (מי תרם בשמו, דרך מי) — לא מספרי אסמכתא ולא שמות דוחות
 const GVNOISE=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|קבוע|מזדמן)$/;
-const GVDROP=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|אסמכתא .*)$/;
+// חלקים טכניים בהערת התרומה (מאיפה הגיעה, על שם מי חויב, התאמות) — לא הערה של מאיר
+const GVDROP=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|אסמכתא .*|נגבה ב.*|על שם .*|נכנס מ.*|אומת מול.*|שויך ידנית.*|סווג ידנית|התאמת .*|Recurring monthly gift|ייבוא.*|לא סווג.*)$/;
+// מאיר: "אפשרות של הערה על כל תרומה… שזה יופיע ב-3 מילים" — בשורה מוצגות המילים הראשונות
+function shortNote(t,n){const w=String(t||'').trim().split(/\s+/).filter(Boolean); n=n||3; return w.length>n?w.slice(0,n).join(' ')+'…':w.join(' ');}
 function giveNote(x){
   let t=dnNoteText(x).split('·').map(s=>s.trim()).filter(s=>s&&!GVDROP.test(s)).join(' · ');
   t=t.replace(/^[\s·]+|[\s·]+$/g,'').trim();
