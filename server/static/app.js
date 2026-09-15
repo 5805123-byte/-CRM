@@ -10516,6 +10516,60 @@ function campPasteList(box){
 }
 // מאיר: "אני צריך שיהיה רשימה אחת רק של קמפיין שאבחר לראות. ורשימה אחת של שלשתם ביחד."
 let CAMPMODE='one';   // one = הקמפיין הנבחר בלבד · all = טבלת שלושתם ביחד
+// מאיר: "איפה אני מוסיף פה תורם מהרשימה בשביל סוכות תשפ"ז? אין פה איפה להוסיף".
+// בדוח הקמפיין: בוחרים תורם (או פותחים כרטיס חדש), סכום, נגבה/עדיין לא, דרך,
+// תאריך והערה — אותו טופס כמו בטבלת "שלושתם ביחד", והתרומה נרשמת לקמפיין.
+function campAddDonorForm(box){
+  if(!box)return; if(box.firstChild){box.innerHTML='';return;}
+  const tcat=campSel; let picked=null;
+  box.innerHTML=`<div class="cmpform" style="border:1px solid var(--line);border-radius:12px;margin-bottom:10px">
+    <div style="width:100%"><b>מי התורם?</b> <span id="cad_who" style="color:var(--brand)"></span></div>
+    <input class="cmpq" id="cad_q" placeholder="חפש לפי שם / משפחה / אנגלית / טלפון…" style="flex:1 1 220px">
+    <button class="btn sm ghost" id="cad_new">➕ תורם חדש</button>
+    <div class="cmpres" id="cad_res" style="width:100%"></div>
+    <div id="cad_fields" style="display:none">
+      <input class="cf_amt" id="cad_amt" inputmode="decimal" placeholder="סכום">
+      <select id="cad_st"><option value="paid">✅ חויב / נגבה</option><option value="pledge">🔴 עדיין לא</option></select>
+      <select class="chansel" id="cad_m">${channelOpts('')}</select>
+      <input type="date" id="cad_date" value="${todayStr()}">
+      <input id="cad_note" placeholder="📝 הערה — למשל: בתשלומים, 3 תשלומים" style="flex:1 1 100%">
+      <button class="btn sm" id="cad_go">שמור ל${esc(tcat)}</button><button class="btn sm ghost" id="cad_x">ביטול</button>
+    </div></div>`;
+  const q=box.querySelector('#cad_q'), res=box.querySelector('#cad_res'), who=box.querySelector('#cad_who'), fields=box.querySelector('#cad_fields');
+  wireChanSel(box.querySelector('#cad_m'));
+  const choose=d=>{picked=d; who.textContent=(d.last+' '+d.first).trim()+(d.english?(' · '+d.english):''); res.innerHTML=''; q.value=''; fields.style.display='contents'; box.querySelector('#cad_amt').focus();};
+  q.oninput=()=>{const s=q.value.trim(); if(!s){res.innerHTML='';return;}
+    const h=donorHits(y=>y.last+' '+y.first+' '+(y.english||'')+' '+(y.business||'')+' '+(y.phone||''),s,8);
+    res.innerHTML=h.list.map(y=>`<div class="dpr" data-did="${y.id}">${esc(y.last)} ${esc(y.first)} <span style="color:var(--muted)">#${y.id}${y.english?(' · '+esc(y.english)):''}</span></div>`).join('')+hitsMoreHTML(h)||'<div class="dpr" style="color:var(--muted)">אין תוצאות — לחץ "תורם חדש"</div>';
+    res.querySelectorAll('.dpr[data-did]').forEach(el=>el.onclick=()=>choose(DB.find(y=>y.id==el.dataset.did)));};
+  box.querySelector('#cad_new').onclick=async()=>{
+    const nm=(q.value.trim()||prompt('שם התורם (משפחה ואז פרטי):')||'').trim(); if(!nm)return;
+    const w=nm.split(/\s+/); const last=w[0], first=w.slice(1).join(' ');
+    const rr=await api('POST','/api/campaigns/link',{name:nm,create:1,last:last,first:first});
+    if(!rr||!rr.ok){toast('לא הצלחתי לפתוח כרטיס');return;}
+    await load(); const nd=DB.find(y=>y.id===rr.donor_id); if(nd){toast('נפתח כרטיס ל'+nm+' — השלם טלפון/מייל בכרטיס אחר כך');choose(nd);}};
+  box.querySelector('#cad_x').onclick=()=>{box.innerHTML='';};
+  box.querySelector('#cad_go').onclick=async()=>{
+    if(!picked){toast('בחר תורם');return;}
+    const amt=box.querySelector('#cad_amt').value.trim(), st=box.querySelector('#cad_st').value,
+          m=box.querySelector('#cad_m').value==='__new__'?'':box.querySelector('#cad_m').value,
+          date=box.querySelector('#cad_date').value||todayStr(), note=box.querySelector('#cad_note').value.trim();
+    if(!amtNum(amt)){toast('צריך סכום');return;}
+    box.querySelector('#cad_go').disabled=true;
+    const pl=(picked.pledges||[]).find(y=>String(y.category||'').trim()===tcat&&y.status!=='נתן');
+    if(st==='paid'){
+      const rr=await api('POST','/api/donation',{donor_id:picked.id,amount:amt,category:tcat,method:m,date:date,note:note});
+      if(rr&&rr.merged)toast('החיוב הזה כבר נכנס מהאשראי — סווג ל'+tcat+' בלי שורה כפולה');
+      if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
+    }else{
+      const pnote=[note,m?('דרך: '+m):''].filter(Boolean).join(' · ');
+      if(pl){pl.amount=amt;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
+      else await api('POST','/api/pledge',{donor_id:picked.id,category:tcat,amount:amt,status:'טרם',date:date,note:pnote});
+    }
+    toast('נשמר ✓'); await load(); renderCamp();
+  };
+  q.focus();
+}
 function renderCamp(){
   chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד'],['gaps','❗ מה חסר במערכת']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{CAMPMODE=c.dataset.k;renderCamp();});
@@ -10540,6 +10594,7 @@ function renderCamp(){
     <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
         <span><b>${rows.length}</b> תשלומים</span>${owetot?`<span class="campowe">🔴 ${owetot} התחייבו וטרם נתנו</span>`:''}</div></div>
+    ${campSel?`<button class="btn" id="campadddonor" style="width:100%;margin:0 0 8px">➕ הוסף תורם ל${esc(campSel)} — תרומה או התחייבות</button><div id="campaddbox"></div>`:''}
     <div class="camptbl">
       <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
       ${rows.map((r,i)=>`<div class="camprow2"><span class="c1">${i+1}</span>
@@ -10560,6 +10615,8 @@ function renderCamp(){
   if(sel)sel.onchange=()=>{campSel=sel.value;renderCamp();};
   const ad=document.getElementById('campadd');
   if(ad)ad.onclick=campAddDialog;
+  const adn=document.getElementById('campadddonor');
+  if(adn)adn.onclick=()=>campAddDonorForm(document.getElementById('campaddbox'));
   const mg=document.getElementById('campmerge');
   if(mg)mg.onclick=campMergeDialog;
   const hd=document.getElementById('camphide');
