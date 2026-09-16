@@ -258,6 +258,15 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS call_ignore(key TEXT PRIMARY KEY, name TEXT, number TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS receipts(rkey TEXT PRIMARY KEY, num INTEGER, created TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
+    -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
+    -- שמאיר יקבע פעם אחת לכל משלם "מי זה ולמה מיועד הכסף" וכל החיובים שלו ייכנסו
+    CREATE TABLE IF NOT EXISTS bldg_import(tid TEXT PRIMARY KEY, key TEXT, name TEXT, email TEXT, phone TEXT,
+        amount TEXT, date TEXT, descr TEXT, ttype TEXT, source TEXT, imported INTEGER DEFAULT 0, created TEXT);
+    CREATE TABLE IF NOT EXISTS bldg_map(key TEXT PRIMARY KEY, donor_id INTEGER, object TEXT, note TEXT,
+        skip INTEGER DEFAULT 0, created TEXT);
+    -- אותו משלם, תיאור חיוב שונה (שולחן / חדר קפה / ראש השנה) — ייעוד אחר או "לא להכניס"
+    CREATE TABLE IF NOT EXISTS bldg_map_desc(key TEXT, descr TEXT, object TEXT, skip INTEGER DEFAULT 0,
+        PRIMARY KEY(key, descr));
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS pay_channels(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
@@ -6529,6 +6538,237 @@ def _st_map(table, v, default):
     return default if re.search(r'[\u0590-\u05ff]', v) or not v else v
 
 
+# ===== קרן הבניין — ייבוא דוח בנק ווסט (USAePay) של חשבון הבניין =====
+# מאיר: "תבנה ווב לשאול כל תורם מי זה ולמה מיועד הכסף וכו' ואמלא ותכניס
+# לתורמים, רוב התרומות חוזרות על עצמן אז פשוט אעשה על כל תורם פעם אחת עדכון
+# ושזה ייכנס." המשלם מזוהה לפי מספר המנוי (Recurring Cust ID) או מספר הלקוח,
+# ובלעדיהם לפי שם בעל הכרטיס. לכל משלם קובעים פעם אחת כרטיס + ייעוד, וכל
+# החיובים שלו — גם מדוח עתידי — נכנסים לבד.
+BLDG_CAT = 'הבניין הקדוש'
+
+
+def bldg_parse(text):
+    """שורות מאושרות מדוח USAePay (CSV). זיכוי (Transaction Type C) נכנס כסכום שלילי."""
+    import csv, io
+    text = (text or '').lstrip('﻿')
+    rows = list(csv.DictReader(io.StringIO(text)))
+    out = []
+    for r in rows:
+        g = lambda k: (r.get(k) or '').strip()
+        if g('Result') != 'A' or not g('Transaction ID'):
+            continue
+        tt = g('Transaction Type')
+        if tt not in ('S', 'C'):
+            continue
+        try:
+            amt = round(float(g('Amount').replace(',', '')), 2)
+        except ValueError:
+            continue
+        if tt == 'C':
+            amt = -amt
+        m = re.match(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', g('Date'))
+        if not m:
+            continue
+        yy = int(m.group(3)); yy = yy + 2000 if yy < 100 else yy
+        iso = '%04d-%02d-%02d' % (yy, int(m.group(1)), int(m.group(2)))
+        rc = g('Recurring Cust ID'); cn = g('Customer #')
+        holder = g('Card Holder') or (g('Billing First Name') + ' ' + g('Billing Last Name')).strip()
+        if rc and rc != '0':
+            key = 'r' + rc
+        elif cn and cn != '0':
+            key = 'c' + cn.lower()
+        else:
+            key = 'n' + re.sub(r'[^a-z0-9]', '', holder.lower()) + '|' + g('Card Number')[-4:]
+        name = holder
+        bf, bl = g('Billing First Name'), g('Billing Last Name')
+        if bf or bl:
+            name = (bf + ' ' + bl).strip()
+        out.append({'tid': g('Transaction ID'), 'key': key, 'name': name, 'holder': holder,
+                    'email': g('Billing Email'), 'phone': g('Billing Phone'),
+                    'amount': ('%.2f' % amt), 'date': iso,
+                    'descr': re.sub(r'\s+', ' ', g('Description')).strip(),
+                    'ttype': tt, 'source': g('Source Name')})
+    return out
+
+
+def bldg_store(con, rows):
+    """שומר את השורות (חיוב שכבר נשמר לא נדרס). מחזיר כמה חדשות."""
+    n = 0
+    for x in rows:
+        cur = con.execute("INSERT OR IGNORE INTO bldg_import(tid,key,name,email,phone,amount,date,descr,ttype,source,imported,created) "
+                          "VALUES(?,?,?,?,?,?,?,?,?,?,0,?)",
+                          (x['tid'], x['key'], x['name'], x['email'], x['phone'], x['amount'], x['date'],
+                           x['descr'], x['ttype'], x['source'], today_iso()))
+        n += cur.rowcount
+    return n
+
+
+def bldg_suggest(con, g, donors):
+    """הצעת כרטיס למשלם: מייל זהה → טלפון זהה → שם באנגלית (campaign_suggest)."""
+    import calllog
+    em = (g.get('email') or '').strip().lower()
+    ph = calllog.phone_key(g.get('phone') or '')
+    out = []
+    if em:
+        for d in donors:
+            if em in [e.strip().lower() for e in re.split(r'[,;\s]+', d['email'] or '') if e.strip()]:
+                out.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                            'eng': d['english'] or '', 'why': 'אותו מייל'})
+    if ph and len(ph) >= 9:
+        for d in donors:
+            if any(calllog.phone_key(p) == ph for p in re.split(r'[,;/]+', d['phone'] or '') if p.strip()):
+                if not any(o['id'] == d['id'] for o in out):
+                    out.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                                'eng': d['english'] or '', 'why': 'אותו טלפון'})
+    if not out:
+        # שם באנגלית כפי שכתוב בכרטיס (Azriela Jaffe) — שם משפחה זהה + אותה אות ראשונה בפרטי
+        def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+        nm = (g.get('name') or '').strip()
+        w = nm.split()
+        if len(w) >= 2:
+            ln, fn = _ne(w[-1]), _ne(w[0])
+            for d in donors:
+                ew = (d['english'] or '').split()
+                if len(ew) >= 2 and _ne(ew[-1]) == ln and (_ne(ew[0]) == fn or (fn and _ne(ew[0])[:1] == fn[:1])):
+                    out.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(),
+                                'eng': d['english'] or '', 'why': 'אותו שם באנגלית' if _ne(ew[0]) == fn else 'שם באנגלית דומה'})
+    if not out:
+        nm = (g.get('name') or '').strip()
+        w = nm.split()
+        sug, _ = campaign_suggest({'name': nm, 'last': w[-1] if w else '', 'first': ' '.join(w[:-1])}, donors)
+        # שלד של שם משפחה בלבד מציע רעש (david → כל דוד) — רק התאמה של שני השמות
+        out = [s for s in sug if 'פרטי' in (s.get('why') or '')]
+    return out[:3]
+
+
+def bldg_groups(con):
+    """כל המשלמים בדוח, ממוינים לפי סה"כ, עם השיוך שנקבע (אם נקבע) והצעות."""
+    donors = [dict(r) for r in con.execute("SELECT id,last,first,english,email,phone FROM donors")]
+    names = {d['id']: ((d['last'] or '') + ' ' + (d['first'] or '')).strip() for d in donors}
+    maps = {r['key']: dict(r) for r in con.execute("SELECT * FROM bldg_map")}
+    dmaps = {}
+    for r in con.execute("SELECT * FROM bldg_map_desc"):
+        dmaps.setdefault(r['key'], {})[r['descr']] = {'object': r['object'] or '', 'skip': int(r['skip'] or 0)}
+    grp = {}
+    indon = {r['tid'][3:] for r in con.execute("SELECT tid FROM donations WHERE tid LIKE 'UEP%'")}
+    for r in con.execute("SELECT * FROM bldg_import ORDER BY date, tid"):
+        r = dict(r); r['imported'] = 1 if r['tid'] in indon else 0
+        g = grp.get(r['key'])
+        if not g:
+            g = grp[r['key']] = {'key': r['key'], 'name': r['name'], 'email': r['email'], 'phone': r['phone'],
+                                 'n': 0, 'total': 0.0, 'first': r['date'], 'last': r['date'], 'descrs': [],
+                                 'rows': [], 'imported': 0, 'sources': set()}
+        if not g['email'] and r['email']: g['email'] = r['email']
+        if not g['phone'] and r['phone']: g['phone'] = r['phone']
+        a = float(r['amount'] or 0)
+        g['n'] += 1; g['total'] += a; g['last'] = r['date']
+        g['imported'] += 1 if r['imported'] else 0
+        g['sources'].add(r['source'] or '')
+        if r['descr'] and r['descr'] not in g['descrs']:
+            g['descrs'].append(r['descr'])
+        g['rows'].append({'tid': r['tid'], 'date': r['date'], 'amount': r['amount'], 'descr': r['descr'],
+                          'imported': r['imported'], 'ttype': r['ttype']})
+    out = []
+    for g in grp.values():
+        g['sources'] = sorted(s for s in g['sources'] if s)
+        g['total'] = round(g['total'], 2)
+        m = maps.get(g['key'])
+        g['map'] = None
+        if m:
+            g['map'] = {'donor_id': m['donor_id'], 'donor': names.get(m['donor_id'], ''), 'object': m['object'] or '',
+                        'note': m['note'] or '', 'skip': int(m['skip'] or 0), 'descs': dmaps.get(g['key'], {})}
+        g['sugg'] = [] if m else bldg_suggest(con, g, donors)
+        out.append(g)
+    out.sort(key=lambda g: (1 if g['map'] else 0, -abs(g['total'])))
+    return out, [{'id': d['id'], 'name': names[d['id']], 'eng': d['english'] or ''} for d in donors]
+
+
+def bldg_apply(con, key, old_obj='', old_did=None):
+    """מכניס לכרטיס את כל החיובים של המשלם שטרם נכנסו. חיוב שכבר רשום (לפי מזהה
+    החיוב, או אותו סכום באותם ימים בייעוד בניין) לא נכנס פעמיים. שיוך מחדש
+    מעדכן את הייעוד/הכרטיס גם בתרומות שכבר נכנסו מכאן."""
+    m = con.execute("SELECT * FROM bldg_map WHERE key=?", (key,)).fetchone()
+    if not m or m['skip'] or not m['donor_id']:
+        return {'ins': 0, 'dup': 0, 'upd': 0}
+    did = int(m['donor_id']); obj = (m['object'] or '').strip()
+    dmap = {r['descr']: r for r in con.execute("SELECT * FROM bldg_map_desc WHERE key=?", (key,))}
+
+    def obj_for(descr):
+        o = dmap.get(descr or '')
+        if o and (o['object'] or '').strip():
+            return o['object'].strip()
+        return obj
+
+    def cat_for(descr):
+        o = obj_for(descr)
+        return (BLDG_CAT + ' — ' + o) if o else BLDG_CAT
+
+    def skipped(descr):
+        o = dmap.get(descr or '')
+        return bool(o and o['skip'])
+    ins = dup = upd = 0
+    objs = set()
+    for r in con.execute("SELECT tid,descr FROM bldg_import WHERE key=?", (key,)).fetchall():
+        t = r['tid']
+        if skipped(r['descr']):
+            # תיאור שמאיר סימן "לא להכניס" — אם כבר נכנס מכאן, יוצא
+            con.execute("DELETE FROM donations WHERE tid=?", ('UEP' + t,))
+            con.execute("UPDATE bldg_import SET imported=1 WHERE tid=?", (t,))
+            continue
+        cat = cat_for(r['descr'])
+        # תרומה שכבר נכנסה מכאן — מיישרים לפי השיוך העדכני
+        c = con.execute("UPDATE donations SET donor_id=?, category=? WHERE tid=? AND (donor_id<>? OR COALESCE(category,'')<>?)",
+                        (did, cat, 'UEP' + t, did, cat))
+        upd += c.rowcount
+    for r in con.execute("SELECT * FROM bldg_import WHERE key=? AND imported=0 ORDER BY date", (key,)).fetchall():
+        t = r['tid']; a = round(float(r['amount'] or 0), 2)
+        cat = cat_for(r['descr'])
+        if obj_for(r['descr']):
+            objs.add(obj_for(r['descr']))
+        ex = con.execute("SELECT id FROM donations WHERE tid IN (?,?)", ('UEP' + t, 'BQ' + t)).fetchone()
+        if not ex:
+            # אותו סכום אצל אותו תורם באותם ימים, כבר בייעוד בניין — נרשם ידנית קודם
+            ex = con.execute("SELECT id FROM donations WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
+                             "AND COALESCE(tid,'')='' AND (category LIKE '%בניין%' OR category LIKE '%בנין%') "
+                             "AND ABS(JULIANDAY(date)-JULIANDAY(?))<=3", (did, a, r['date'])).fetchone()
+            if ex:
+                con.execute("UPDATE donations SET tid=? WHERE id=?", ('UEP' + t, ex['id']))
+        if ex:
+            dup += 1
+        else:
+            note = 'קרן הבניין — בנק ווסט'
+            if r['descr']:
+                note += ' · ' + r['descr'][:120]
+            if r['ttype'] == 'C':
+                note = 'זיכוי · ' + note
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) "
+                        "VALUES(?,?,?,?,?,?,?,'$',1)",
+                        (did, r['date'], r['amount'], cat, 'בנק ווסט', note, 'UEP' + t))
+            ins += 1
+        con.execute("UPDATE bldg_import SET imported=1 WHERE tid=?", (t,))
+    # ייעודים בשימוש אצל המשלם — מה שכבר נכנס פעם (חיובים ישנים) וגם מה שנכנס עכשיו
+    for r in con.execute("SELECT DISTINCT category FROM donations WHERE donor_id=? AND tid IN "
+                         "(SELECT 'UEP'||tid FROM bldg_import WHERE key=?)", (did, key)).fetchall():
+        c = r['category'] or ''
+        if c.startswith(BLDG_CAT + ' — '):
+            objs.add(c[len(BLDG_CAT) + 3:].strip())
+    for o in objs:
+        con.execute("INSERT OR IGNORE INTO building_items(name,created) VALUES(?,?)", (o, today_iso()))
+        # שורת הקדשה בכרטיס — כדי שהתרומות ייספרו עליה (הסכום שהתחייב נשאר למאיר למלא)
+        have = con.execute("SELECT id FROM building WHERE donor_id=? AND COALESCE(object,'')=?", (did, o)).fetchone()
+        if not have:
+            con.execute("INSERT INTO building(donor_id,object,amount,paid,note,date) VALUES(?,?,'','',?,?)",
+                        (did, o, (m['note'] or '').strip() if o == obj else '', today_iso()))
+        elif o == obj and (m['note'] or '').strip():
+            con.execute("UPDATE building SET note=? WHERE id=? AND COALESCE(note,'')=''", ((m['note'] or '').strip(), have['id']))
+    # שורת הקדשה ריקה שנפתחה מכאן לייעוד הקודם (מאיר שינה את שם הייעוד) — יוצאת
+    if old_obj and old_obj not in objs:
+        con.execute("DELETE FROM building WHERE donor_id=? AND COALESCE(object,'')=? AND COALESCE(amount,'')='' "
+                    "AND COALESCE(paid,'')='' AND NOT EXISTS (SELECT 1 FROM donations d WHERE d.donor_id=building.donor_id "
+                    "AND d.category=?)", (old_did or did, old_obj, BLDG_CAT + ' — ' + old_obj))
+    return {'ins': ins, 'dup': dup, 'upd': upd}
+
+
 def statement_file(con, did, year, fmt='pdf'):
     """הקבלה השנתית מצוירת על הבלאנק המלא (letterhead.jpg) — כ-PDF של עמוד
     אחד שהוא התמונה עצמה, או כ-JPG. אותו סידור כמו בדף statement.html."""
@@ -10761,6 +11001,17 @@ class H(BaseHTTPRequestHandler):
         # כל תרומות 2025, עם הכתובת שלו ועם "no goods or services were rendered".
         if self.path.split('?')[0] == '/statement':
             return self._send(200, open(os.path.join(STATIC, 'statement.html'), 'rb').read(), 'text/html')
+        # קרן הבניין — מסך השיוך של דוח בנק ווסט של חשבון הבניין
+        if self.path.split('?')[0] == '/bldg':
+            return self._send(200, open(os.path.join(STATIC, 'bldg.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/bldg':
+            con = db()
+            try:
+                groups, donors = bldg_groups(con)
+                items = [r['name'] for r in con.execute("SELECT name FROM building_items ORDER BY created DESC, name")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'groups': groups, 'donors': donors, 'items': items})
         if self.path.split('?')[0] == '/api/statement':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
@@ -13076,6 +13327,68 @@ class H(BaseHTTPRequestHandler):
         # ---- יומן השיחות מהטלפון → יומן הקשר של התורמים ----
         # מאיר: "מה עם מה שהיה עד עכשיו?" — הקובץ של SMS Backup & Restore
         # (XML או HTML) מועלה כאן; כל מספר מוצלב עם הטלפונים בכרטיסים.
+        if self.path == '/api/bldg/upload':
+            # דוח USAePay (CSV) של חשבון קרן הבניין — נשמר, ומה שכבר שויך נכנס מיד
+            txt = b.get('text') or ''
+            if len(txt) < 20:
+                return self._send(200, {'ok': False, 'error': 'empty'})
+            try:
+                rows = bldg_parse(txt)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'parse', 'detail': str(e)})
+            if not rows:
+                return self._send(200, {'ok': False, 'error': 'no_rows'})
+            con = db()
+            try:
+                new = bldg_store(con, rows)
+                auto = 0
+                for r in con.execute("SELECT key FROM bldg_map WHERE skip=0 AND donor_id IS NOT NULL").fetchall():
+                    auto += bldg_apply(con, r['key'])['ins']
+                commit_retry(con)
+            finally:
+                con.close()
+            if auto:
+                bump_data()
+            return self._send(200, {'ok': True, 'rows': len(rows), 'new': new, 'auto': auto})
+        if self.path == '/api/bldg/map':
+            # מאיר קובע למשלם: איזה כרטיס, למה מיועד הכסף, הערה — או "דלג" (לא בניין)
+            key = (b.get('key') or '').strip()
+            if not key:
+                return self._send(400, {'error': 'key'})
+            con = db(); cur = con.cursor()
+            try:
+                did = b.get('donor_id')
+                cr = b.get('create') or {}
+                if not did and cr.get('last'):
+                    cur.execute("INSERT INTO donors(last,first,english,email,phone,tier,created,source) VALUES(?,?,?,?,?,?,?,?)",
+                                ((cr.get('last') or '').strip(), (cr.get('first') or '').strip(),
+                                 (cr.get('english') or '').strip(), (cr.get('email') or '').strip(),
+                                 (cr.get('phone') or '').strip(), TIER_DEFAULT, today_iso(), 'קרן הבניין'))
+                    did = cur.lastrowid
+                skip = 1 if b.get('skip') else 0
+                if not skip and not did:
+                    return self._send(400, {'error': 'donor'})
+                old = cur.execute("SELECT donor_id,object FROM bldg_map WHERE key=?", (key,)).fetchone()
+                cur.execute("INSERT OR REPLACE INTO bldg_map(key,donor_id,object,note,skip,created) VALUES(?,?,?,?,?,?)",
+                            (key, int(did) if did else None, (b.get('object') or '').strip(),
+                             (b.get('note') or '').strip(), skip, today_iso()))
+                # ייעוד שונה / "לא להכניס" לפי תיאור החיוב (משלם אחד — שולחן וגם חדר קפה)
+                if isinstance(b.get('descs'), list):
+                    cur.execute("DELETE FROM bldg_map_desc WHERE key=?", (key,))
+                    for x in b['descs']:
+                        if not isinstance(x, dict): continue
+                        o = (x.get('object') or '').strip(); sk = 1 if x.get('skip') else 0
+                        if o or sk:
+                            cur.execute("INSERT OR REPLACE INTO bldg_map_desc(key,descr,object,skip) VALUES(?,?,?,?)",
+                                        (key, (x.get('descr') or '').strip(), o, sk))
+                res = bldg_apply(con, key, (old['object'] or '') if old else '', old['donor_id'] if old else None) \
+                    if not skip else {'ins': 0, 'dup': 0, 'upd': 0}
+                commit_retry(con)
+            finally:
+                con.close()
+            bump_data()
+            res.update({'ok': True, 'donor_id': int(did) if did else None})
+            return self._send(200, res)
         if self.path == '/api/calls/import':
             import calllog
             txt = b.get('text') or ''

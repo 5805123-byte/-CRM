@@ -555,7 +555,9 @@ async function openHealth(){
     <label class="btn" id="callimpbtn" style="width:100%;margin-top:14px;display:block;text-align:center;cursor:pointer;background:#3b2f5e;border-color:#3b2f5e">📲 ייבוא יומן השיחות מהטלפון
       <input type="file" id="callimp" accept=".xml,.html,.htm,text/xml,text/html" hidden></label>
     <div class="hintxt">הקובץ של SMS Backup &amp; Restore (calls-….xml, או ה-HTML מ"הצג גיבויים ← שתף"). כל שיחה עם תורם נכנסת ליומן הקשר שלו עם השעה והמשך. שיחה שכבר יובאה לא נכנסת פעמיים.</div>
-    <div id="callout"></div>`;
+    <div id="callout"></div>
+    <a class="btn" href="/bldg" style="width:100%;margin-top:14px;display:block;text-align:center;text-decoration:none;background:#5a4a1e;border-color:#5a4a1e">🏛️ קרן הבניין — ייבוא דוח בנק ווסט</a>
+    <div class="hintxt">הדוח (CSV) של חשבון הבניין. לכל משלם קובעים פעם אחת מי זה ולמה מיועד הכסף — וכל החיובים שלו נכנסים לכרטיס.</div>`;
   document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
   const ci=document.getElementById('callimp'); if(ci)ci.onchange=()=>uploadCallLog(ci);
   showVer();

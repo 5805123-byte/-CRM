@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>קרן הבניין — ייבוא בנק ווסט</title>
+<style>
+  /* מאיר: "תבנה ווב לשאול כל תורם מי זה ולמה מיועד הכסף וכו' ואמלא ותכניס
+     לתורמים, רוב התרומות חוזרות על עצמן אז פשוט אעשה על כל תורם פעם אחת
+     עדכון ושזה ייכנס." — לכל משלם בדוח כרטיס אחד: מי זה, למה מיועד, הערה.
+     ברגע שנקבע, כל החיובים שלו (גם מדוח הבא) נכנסים לכרטיס התורם לבד. */
+  :root{--bg:#f4f1ea;--card:#fff;--ink:#2a2740;--soft:#6b6257;--line:#e2dccd;--acc:#7a1f1f;--gold:#9c7a2e;--ok:#1f7a3a;--warn:#a35b00}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;font-size:15px}
+  header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0;flex:1}
+  header a{color:var(--soft);text-decoration:none;font-size:14px}
+  main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
+  .btn{border:1px solid var(--acc);background:var(--acc);color:#fff;border-radius:9px;padding:9px 14px;font-size:15px;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--acc)}
+  .btn.ok{background:var(--ok);border-color:var(--ok)}
+  .btn.sm{padding:6px 10px;font-size:13px}
+  .btn:disabled{opacity:.5}
+  .up{display:block;text-align:center;margin:0 0 10px}
+  .hint{color:var(--soft);font-size:13px;line-height:1.45;margin:4px 0 10px}
+  .prog{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px;line-height:1.5}
+  .prog b{color:var(--acc)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;font-family:inherit}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .g{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .g.done{background:#f7fbf7;border-color:#cfe3d4}
+  .g.skip{opacity:.6}
+  .gh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .gh .nm{font-size:17px;font-weight:700;direction:ltr;text-align:left}
+  .gh .tot{font-size:17px;font-weight:700;color:var(--acc);direction:ltr}
+  .meta{color:var(--soft);font-size:13px;margin-top:3px;line-height:1.5;word-break:break-word}
+  .meta span{margin-left:10px}
+  .descs{margin:6px 0 2px;font-size:13.5px;line-height:1.45}
+  .descs .d{display:inline-block;background:#f3ede0;border-radius:6px;padding:2px 8px;margin:2px 0 2px 4px;direction:ltr;cursor:pointer}
+  .descs .d:hover{background:#eadfc0}
+  details{margin-top:4px}
+  summary{cursor:pointer;color:var(--soft);font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+  td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.a{direction:ltr;text-align:left;white-space:nowrap;font-weight:600}
+  td.im{color:var(--ok);white-space:nowrap}
+  .form{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}
+  .lbl{font-size:12.5px;color:var(--soft);margin:8px 0 3px}
+  details.dd{margin-top:10px;background:#faf8f2;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  details.dd summary{color:var(--ink);font-size:13.5px}
+  .drow{border-top:1px dashed var(--line);padding:7px 0}
+  .drow .dt{font-size:13.5px;text-align:left}
+  .drow .dn{font-size:12.5px;color:var(--soft);margin:2px 0 4px}
+  .drow .row2{align-items:center}
+  .drow .dsk{flex:0 0 auto;font-size:13px;white-space:nowrap;display:flex;align-items:center;gap:4px}
+  .drow .dsk input{width:auto}
+  .descs small{color:var(--soft)}
+  input,textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .sugg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+  .sugg .chip{border-color:#cbbf9c;background:#fbf7ec}
+  .sugg .chip small{color:var(--soft);margin-right:4px}
+  .hits{border:1px solid var(--line);border-radius:8px;background:#fff;max-height:180px;overflow:auto;margin-top:4px}
+  .hits div{padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer}
+  .hits div:hover{background:#f7f3ea}
+  .hits small{color:var(--soft);margin-right:6px}
+  .pick{background:#eef7ef;border:1px solid #cfe3d4;border-radius:8px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .pick b{color:var(--ok)}
+  .new{background:#fbf7ec;border:1px solid #e7dcbf;border-radius:8px;padding:8px 10px;margin-top:6px}
+  .row2{display:flex;gap:8px}
+  .row2>*{flex:1}
+  .acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .acts .btn{flex:1}
+  .res{margin-top:8px;font-size:13.5px}
+  .res.ok{color:var(--ok)} .res.bad{color:var(--acc)}
+  .mapped{margin-top:8px;padding:8px 10px;background:#eef7ef;border-radius:8px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .mapped.sk{background:#f1f1f1;color:var(--soft)}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:9}
+  .toast.show{opacity:1}
+  .empty{text-align:center;color:var(--soft);padding:30px 10px;font-size:15px;line-height:1.6}
+</style>
+</head>
+<body>
+<header><h1>🏛️ קרן הבניין — דוח בנק ווסט</h1><a href="/">← חזרה למערכת</a></header>
+<main>
+  <label class="btn up" id="upbtn">📥 העלה דוח (CSV) מבנק ווסט — חשבון הבניין<input type="file" id="upf" accept=".csv,text/csv" hidden></label>
+  <div class="hint">הדוח של USAePay (Transactions Report). נכנסים רק חיובים שאושרו. כל משלם מופיע פעם אחת עם כל החיובים שלו — קובעים לו כרטיס וייעוד, וכל החיובים נכנסים לכרטיס התורם. משלם שכבר שויך — חיוב חדש שלו מדוח הבא נכנס לבד.</div>
+  <div class="prog" id="prog" hidden></div>
+  <div class="chips" id="chips" hidden>
+    <button class="chip on" data-f="todo">לשיוך</button>
+    <button class="chip" data-f="done">שויכו</button>
+    <button class="chip" data-f="skip">דילגתי</button>
+    <button class="chip" data-f="all">הכל</button>
+  </div>
+  <div id="list"></div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>{n=Number(n)||0;const s=(Math.round(Math.abs(n)*100)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});return (n<0?'-':'')+'$'+s;};
+const dmy=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?m[3]+'.'+m[2]+'.'+m[1].slice(2):(s||'');};
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>e.classList.remove('show'),2200);}
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
+// חיפוש כרטיס — לפי מילים בעברית או באנגלית
+function norm(s){return String(s||'').replace(/[֑-ׇ"'׳״.,]/g,'').replace(/[ךםןףץ]/g,c=>({'ך':'כ','ם':'מ','ן':'נ','ף':'פ','ץ':'צ'}[c])).toLowerCase();}
+function hits(q,lim){const toks=norm(q).split(/\s+/).filter(Boolean);if(!toks.length)return[];
+  return D.donors.map(d=>{const h=norm(d.name),e=norm(d.eng);let s=0;
+    toks.forEach(t=>{if(h.split(' ').some(w=>w===t))s+=6;else if(h.split(' ').some(w=>w.indexOf(t)===0))s+=4;else if(e.split(' ').some(w=>w.indexOf(t)===0))s+=4;else if(h.indexOf(t)>=0||e.indexOf(t)>=0)s+=1;});
+    return [s,d];}).filter(x=>x[0]>0).sort((a,b)=>b[0]-a[0]).slice(0,lim||8).map(x=>x[1]);}
+
+let D={groups:[],donors:[],items:[]}, F='todo', OPEN={};
+async function load(){D=await api('GET','/api/bldg');render();itemsList();}
+function stateOf(g){return !g.map?'todo':(g.map.skip?'skip':'done');}
+function render(){
+  const gs=D.groups, todo=gs.filter(g=>stateOf(g)==='todo').length, done=gs.filter(g=>stateOf(g)==='done').length, sk=gs.filter(g=>stateOf(g)==='skip').length;
+  const tot=gs.reduce((s,g)=>s+g.total,0), rows=gs.reduce((s,g)=>s+g.n,0), imp=gs.reduce((s,g)=>s+g.imported,0);
+  $('#prog').hidden=!gs.length; $('#chips').hidden=!gs.length;
+  if(gs.length){
+    $('#prog').innerHTML=`בדוח: <b>${gs.length}</b> משלמים · ${rows} חיובים · ${money(tot)}<br>`+
+      `נשארו לשיוך: <b>${todo}</b> · שויכו: ${done} · דילגתי: ${sk} · נכנסו לכרטיסים: <b>${imp}</b> חיובים`;
+    // כשאין יותר מה לשייך — לעבור לבד לרשימת מה ששויך
+    if(F==='todo'&&!todo&&done)F='done';
+  }
+  document.querySelectorAll('#chips .chip').forEach(c=>c.classList.toggle('on',c.dataset.f===F));
+  const show=gs.filter(g=>F==='all'||stateOf(g)===F);
+  if(!gs.length){$('#list').innerHTML='<div class="empty">עוד לא הועלה דוח.<br>לחץ על "העלה דוח" ובחר את קובץ ה-CSV מבנק ווסט.</div>';return;}
+  if(!show.length){$('#list').innerHTML='<div class="empty">'+(F==='todo'?'🎉 כל המשלמים שויכו':'אין כאן כלום')+'</div>';return;}
+  $('#list').innerHTML=show.map(card).join('');
+  show.forEach(wire);
+}
+// סיכום לפי תיאור החיוב — כמה חיובים וכמה כסף בכל תיאור, מהגדול לקטן
+function dstats(g){const m={};g.rows.forEach(r=>{const k=r.descr||'';m[k]=m[k]||{d:k,n:0,total:0};m[k].n++;m[k].total+=Number(r.amount)||0;});
+  return Object.values(m).sort((a,b)=>b.total-a.total);}
+function card(g){
+  const st=stateOf(g), open=OPEN[g.key]||st==='todo';
+  const rng=g.first===g.last?dmy(g.first):dmy(g.first)+' – '+dmy(g.last);
+  const woo=g.sources.some(s=>/woo/i.test(s))?' <span title="הזמנה מהאתר — כנראה לא לבניין">🛒 מהאתר</span>':'';
+  return `<div class="g ${st}" data-k="${esc(g.key)}">
+    <div class="gh"><span class="nm">${esc(g.name||g.holder||'?')}</span><span class="tot">${money(g.total)}</span></div>
+    <div class="meta"><span>${g.n} חיובים</span><span>${rng}</span>${g.email?`<span dir="ltr">${esc(g.email)}</span>`:''}${g.phone?`<span dir="ltr">${esc(g.phone)}</span>`:''}${woo}</div>
+    ${g.descrs.length===1?`<div class="descs">📝 <span class="d" title="לחץ כדי להעתיק לייעוד">${esc(g.descrs[0])}</span></div>`:''}
+    ${g.descrs.length>1?`<div class="descs">📝 ${dstats(g).map(x=>`<span class="d" title="לחץ כדי להעתיק לייעוד">${esc(x.d)} <small>×${x.n}</small></span>`).join('')}</div>`:''}
+    <details><summary>הצג את החיובים (${g.n})</summary><table>${g.rows.map(r=>`<tr><td>${dmy(r.date)}</td><td class="a">${money(r.amount)}</td><td dir="ltr" style="color:var(--soft)">${esc(r.descr)}</td><td class="im">${r.imported?'✓ בכרטיס':''}</td></tr>`).join('')}</table></details>
+    ${st==='done'?`<div class="mapped">➜ <b>${esc(g.map.donor)}</b> · ${esc(g.map.object||'הבניין הקדוש')}${g.map.note?' · '+esc(g.map.note):''}${Object.keys(g.map.descs||{}).length?` · 🔀 ${Object.keys(g.map.descs).length} תיאורים בנפרד`:''}<button class="btn sm ghost edit">✏️ שנה</button></div>`:''}
+    ${st==='skip'?`<div class="mapped sk">⏭ דילגתי — לא לבניין<button class="btn sm ghost edit">✏️ שנה</button></div>`:''}
+    <div class="form" ${open?'':'hidden'}>
+      <div class="lbl">מי זה? (כרטיס במערכת)</div>
+      ${g.sugg&&g.sugg.length?`<div class="sugg">${g.sugg.map(s=>`<button class="chip pickS" data-id="${s.id}" data-n="${esc(s.name)}">${esc(s.name)}<small>${esc(s.why||'')}</small></button>`).join('')}</div>`:''}
+      <div class="picked" ${g.map&&g.map.donor_id?'':'hidden'}><div class="pick"><span>✓ <b class="pn">${esc(g.map&&g.map.donor||'')}</b></span><button class="btn sm ghost unpick">החלף</button></div></div>
+      <div class="search" ${g.map&&g.map.donor_id?'hidden':''}>
+        <input class="q" placeholder="חפש כרטיס — שם בעברית או באנגלית…">
+        <div class="hits" hidden></div>
+        <button class="btn sm ghost mknew" style="margin-top:6px">➕ אין לו כרטיס — צור חדש</button>
+        <div class="new" hidden>
+          <div class="row2"><div><div class="lbl">שם משפחה (עברית)</div><input class="nlast"></div><div><div class="lbl">שם פרטי</div><input class="nfirst"></div></div>
+          <div class="hint">המייל, הטלפון והשם באנגלית מהדוח ייכנסו לכרטיס החדש.</div>
+        </div>
+      </div>
+      <div class="lbl">למה מיועד הכסף? (ההקדשה בבניין)</div>
+      <input class="obj" list="items" value="${esc(g.map&&g.map.object||'')}" placeholder="למשל: שולחן היכל זרע שמשון, ארונות ספרים…">
+      ${g.descrs.length>1?`<details class="dd" ${Object.keys(g.map&&g.map.descs||{}).length?'open':''}><summary>🔀 לא הכל לאותו ייעוד? — ייעוד לפי תיאור החיוב (${g.descrs.length} תיאורים)</summary>
+        <div class="hint">מה שנשאר ריק נכנס לייעוד הראשי שלמעלה. "לא להכניס" — למשל חיוב בטעות או תרומה שלא לבניין.</div>
+        ${dstats(g).map(x=>{const o=(g.map&&g.map.descs||{})[x.d]||{};return `<div class="drow" data-d="${esc(x.d)}"><div class="dt" dir="ltr">${esc(x.d)||'(בלי תיאור)'}</div><div class="dn">${x.n} × · ${money(x.total)}</div>
+          <div class="row2"><input class="dobj" list="items" value="${esc(o.object||'')}" placeholder="כמו הייעוד הראשי"><label class="dsk"><input type="checkbox" class="dskip" ${o.skip?'checked':''}> לא להכניס</label></div></div>`;}).join('')}
+      </details>`:''}
+      <div class="lbl">הערה (לא חובה)</div>
+      <input class="note" value="${esc(g.map&&g.map.note||'')}" placeholder="למשל: שותפות עם…, סוכם על 36 תשלומים…">
+      <div class="acts"><button class="btn ok save">✓ הכנס לכרטיס (${g.n} חיובים)</button><button class="btn ghost skipb">⏭ דלג — לא לבניין</button></div>
+      <div class="res"></div>
+    </div></div>`;
+}
+function wire(g){
+  const el=document.querySelector(`.g[data-k="${CSS.escape(g.key)}"]`); if(!el)return;
+  let did=g.map&&g.map.donor_id||null, create=null;
+  const q=el.querySelector('.q'), hb=el.querySelector('.hits'), nw=el.querySelector('.new');
+  const pick=(id,name)=>{did=id;create=null;el.querySelector('.pn').textContent=name;el.querySelector('.picked').hidden=false;el.querySelector('.search').hidden=true;nw.hidden=true;};
+  el.querySelectorAll('.pickS').forEach(b=>b.onclick=()=>pick(+b.dataset.id,b.dataset.n));
+  el.querySelector('.unpick').onclick=()=>{did=null;el.querySelector('.picked').hidden=true;el.querySelector('.search').hidden=false;q.focus();};
+  el.querySelectorAll('.edit').forEach(b=>b.onclick=()=>{OPEN[g.key]=true;el.querySelector('.form').hidden=false;b.closest('.mapped').hidden=true;});
+  el.querySelectorAll('.descs .d').forEach(d=>d.onclick=()=>{el.querySelector('.obj').value=d.textContent;toast('הועתק לייעוד — אפשר לתרגם לעברית');});
+  q.oninput=()=>{const h=hits(q.value,8);hb.hidden=!h.length;hb.innerHTML=h.map(d=>`<div data-id="${d.id}">${esc(d.name)}${d.eng?`<small dir="ltr">${esc(d.eng)}</small>`:''}</div>`).join('');
+    hb.querySelectorAll('div').forEach(x=>x.onclick=()=>{const d=D.donors.find(y=>y.id==x.dataset.id);pick(d.id,d.name);});};
+  el.querySelector('.mknew').onclick=()=>{nw.hidden=!nw.hidden;if(!nw.hidden){const w=(g.name||'').split(' ');if(!el.querySelector('.nlast').value)el.querySelector('.nlast').placeholder=w[w.length-1]||'';el.querySelector('.nlast').focus();}};
+  const res=el.querySelector('.res');
+  el.querySelector('.save').onclick=async()=>{
+    const obj=el.querySelector('.obj').value.trim(), note=el.querySelector('.note').value.trim();
+    let body={key:g.key,object:obj,note};
+    body.descs=[...el.querySelectorAll('.drow')].map(r=>({descr:r.dataset.d,object:r.querySelector('.dobj').value.trim(),skip:r.querySelector('.dskip').checked?1:0}));
+    if(did)body.donor_id=did;
+    else if(!nw.hidden&&el.querySelector('.nlast').value.trim()){
+      body.create={last:el.querySelector('.nlast').value.trim(),first:el.querySelector('.nfirst').value.trim(),english:g.name||'',email:g.email||'',phone:g.phone||''};
+    } else {res.className='res bad';res.textContent='בחר כרטיס, או צור כרטיס חדש עם שם משפחה';return;}
+    if(!obj&&!confirm('לא כתבת למה מיועד הכסף — להכניס בכל זאת כ"הבניין הקדוש" בלי הקדשה?'))return;
+    el.querySelector('.save').disabled=true;
+    const r=await api('POST','/api/bldg/map',body).catch(()=>null);
+    el.querySelector('.save').disabled=false;
+    if(!r||!r.ok){res.className='res bad';res.textContent='❌ '+((r&&r.error)||'שגיאה');return;}
+    toast(`נכנסו ${r.ins} חיובים לכרטיס`+(r.dup?` (${r.dup} כבר היו)`:''));
+    OPEN[g.key]=false; await load();
+  };
+  el.querySelector('.skipb').onclick=async()=>{
+    const r=await api('POST','/api/bldg/map',{key:g.key,skip:1}).catch(()=>null);
+    if(!r||!r.ok){res.className='res bad';res.textContent='❌ שגיאה';return;}
+    OPEN[g.key]=false; toast('דילגתי'); await load();
+  };
+}
+document.querySelectorAll('#chips .chip').forEach(c=>c.onclick=()=>{F=c.dataset.f;render();});
+$('#upf').onchange=async()=>{
+  const f=$('#upf').files[0]; if(!f)return;
+  const lbl=$('#upbtn'); lbl.firstChild.nodeValue='קורא את הדוח…';
+  let text=''; try{text=await f.text();}catch(e){toast('לא הצלחתי לקרוא את הקובץ');lbl.firstChild.nodeValue='📥 העלה דוח (CSV) מבנק ווסט — חשבון הבניין';return;}
+  $('#upf').value='';
+  const r=await api('POST','/api/bldg/upload',{text}).catch(()=>null);
+  lbl.firstChild.nodeValue='📥 העלה דוח (CSV) מבנק ווסט — חשבון הבניין';
+  if(!r||!r.ok){toast('❌ '+({empty:'הקובץ ריק',no_rows:'לא נמצאו חיובים מאושרים בקובץ',parse:'לא הצלחתי לקרוא את הקובץ'}[r&&r.error]||'שגיאה'));return;}
+  toast(`נקראו ${r.rows} חיובים (${r.new} חדשים)`+(r.auto?` · ${r.auto} נכנסו לבד לכרטיסים`:''));
+  F='todo'; await load();
+};
+function itemsList(){let dl=document.getElementById('items');if(!dl){dl=document.createElement('datalist');dl.id='items';document.body.appendChild(dl);}
+  dl.innerHTML=(D.items||[]).map(i=>`<option value="${esc(i)}">`).join('');}
+load().then(itemsList);
+</script>
+</body>
+</html>
