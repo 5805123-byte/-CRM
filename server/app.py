@@ -5846,6 +5846,34 @@ def ensure_schema():
     except Exception as e:
         print('  klock kimcha error:', e)
 
+    # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
+    # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
+    # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
+    # ולכן כל מה שאינו מהקובץ של הבניין יוצא, כולל תרומות שנכנסו ממנו בטעות.
+    try:
+        _bf = os.path.join(HERE, 'bldg_seed.csv')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bldg_seed_v1'").fetchone() and os.path.exists(_bf):
+            rows = bldg_parse(open(_bf, encoding='utf-8').read())
+            keep = {x['tid'] for x in rows}
+            bad = [r['tid'] for r in con.execute("SELECT tid FROM bldg_import").fetchall() if r['tid'] not in keep]
+            gone = 0
+            for t in bad:
+                c = con.execute("DELETE FROM donations WHERE tid=? AND (note LIKE 'קרן הבניין — בנק ווסט%' OR note LIKE 'זיכוי · קרן הבניין%')", ('UEP' + t,))
+                gone += c.rowcount
+                con.execute("DELETE FROM bldg_import WHERE tid=?", (t,))
+            con.execute("DELETE FROM bldg_map WHERE key NOT IN (SELECT DISTINCT key FROM bldg_import)")
+            con.execute("DELETE FROM bldg_map_desc WHERE key NOT IN (SELECT DISTINCT key FROM bldg_import)")
+            # שורות הקדשה ריקות שנפתחו מהשיוך המוטעה ואין מאחוריהן תרומה
+            con.execute("DELETE FROM building WHERE COALESCE(amount,'')='' AND COALESCE(paid,'')='' AND date>='2026-09-16' "
+                        "AND NOT EXISTS (SELECT 1 FROM donations d WHERE d.donor_id=building.donor_id AND d.category=? || ' — ' || building.object)",
+                        (BLDG_CAT,))
+            n = bldg_store(con, rows)
+            con.execute("INSERT INTO seed_flags(name) VALUES('bldg_seed_v1')")
+            con.commit()
+            print('  קרן הבניין: נטענו %d חיובים מהקובץ של הבניין, הוסרו %d שורות זרות ו-%d תרומות שנכנסו בטעות' % (n, len(bad), gone))
+    except Exception as e:
+        print('  bldg seed error:', e)
+
     # מאיר: "תכניס רק משיחות של 30 שניות" — שיחות קצרות שכבר יובאו יורדות מיומן הקשר
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='calls_min30_v1'").fetchone():
@@ -13340,6 +13368,15 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'no_rows'})
             con = db()
             try:
+                # דוח של החשבון הראשי (החיובים שלו כבר במערכת כ-BQ…) — לא של הבניין
+                tids = [x['tid'] for x in rows]
+                known = 0
+                for i in range(0, len(tids), 400):
+                    ch = ['BQ' + t for t in tids[i:i + 400]]
+                    q = ','.join('?' * len(ch))
+                    known += con.execute("SELECT COUNT(*) c FROM (SELECT tid FROM recon WHERE tid IN (%s) UNION SELECT tid FROM donations WHERE tid IN (%s))" % (q, q), ch + ch).fetchone()['c']
+                if known >= max(3, len(tids) * 0.3):
+                    return self._send(200, {'ok': False, 'error': 'main_account', 'known': known, 'rows': len(rows)})
                 new = bldg_store(con, rows)
                 auto = 0
                 for r in con.execute("SELECT key FROM bldg_map WHERE skip=0 AND donor_id IS NOT NULL").fetchall():
@@ -13350,6 +13387,17 @@ class H(BaseHTTPRequestHandler):
             if auto:
                 bump_data()
             return self._send(200, {'ok': True, 'rows': len(rows), 'new': new, 'auto': auto})
+        if self.path == '/api/bldg/clear':
+            # מחיקת הדוח מהמסך — מה שכבר נכנס לכרטיסים נשאר
+            con = db()
+            try:
+                con.execute("DELETE FROM bldg_import WHERE 'UEP'||tid NOT IN (SELECT COALESCE(tid,'') FROM donations)")
+                con.execute("DELETE FROM bldg_map WHERE key NOT IN (SELECT DISTINCT key FROM bldg_import)")
+                con.execute("DELETE FROM bldg_map_desc WHERE key NOT IN (SELECT DISTINCT key FROM bldg_import)")
+                commit_retry(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/bldg/map':
             # מאיר קובע למשלם: איזה כרטיס, למה מיועד הכסף, הערה — או "דלג" (לא בניין)
             key = (b.get('key') or '').strip()

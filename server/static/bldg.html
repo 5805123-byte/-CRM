@@ -86,6 +86,7 @@
   <label class="btn up" id="upbtn">📥 העלה דוח (CSV) מבנק ווסט — חשבון הבניין<input type="file" id="upf" accept=".csv,text/csv" hidden></label>
   <div class="hint">הדוח של USAePay (Transactions Report). נכנסים רק חיובים שאושרו. כל משלם מופיע פעם אחת עם כל החיובים שלו — קובעים לו כרטיס וייעוד, וכל החיובים נכנסים לכרטיס התורם. משלם שכבר שויך — חיוב חדש שלו מדוח הבא נכנס לבד.</div>
   <div class="prog" id="prog" hidden></div>
+  <div id="clearrow" hidden style="text-align:center;margin:-4px 0 8px"><button class="btn sm ghost" id="clearbtn">🗑 זה לא הדוח הנכון — נקה את המסך</button></div>
   <div class="chips" id="chips" hidden>
     <button class="chip on" data-f="todo">לשיוך</button>
     <button class="chip" data-f="done">שויכו</button>
@@ -115,7 +116,7 @@ function stateOf(g){return !g.map?'todo':(g.map.skip?'skip':'done');}
 function render(){
   const gs=D.groups, todo=gs.filter(g=>stateOf(g)==='todo').length, done=gs.filter(g=>stateOf(g)==='done').length, sk=gs.filter(g=>stateOf(g)==='skip').length;
   const tot=gs.reduce((s,g)=>s+g.total,0), rows=gs.reduce((s,g)=>s+g.n,0), imp=gs.reduce((s,g)=>s+g.imported,0);
-  $('#prog').hidden=!gs.length; $('#chips').hidden=!gs.length;
+  $('#prog').hidden=!gs.length; $('#chips').hidden=!gs.length; $('#clearrow').hidden=!gs.length;
   if(gs.length){
     $('#prog').innerHTML=`בדוח: <b>${gs.length}</b> משלמים · ${rows} חיובים · ${money(tot)}<br>`+
       `נשארו לשיוך: <b>${todo}</b> · שויכו: ${done} · דילגתי: ${sk} · נכנסו לכרטיסים: <b>${imp}</b> חיובים`;
@@ -206,6 +207,7 @@ function wire(g){
   };
 }
 document.querySelectorAll('#chips .chip').forEach(c=>c.onclick=()=>{F=c.dataset.f;render();});
+$('#clearbtn').onclick=async()=>{if(!confirm('לנקות את הדוח מהמסך? מה שכבר נכנס לכרטיסים נשאר.'))return;await api('POST','/api/bldg/clear',{});F='todo';toast('נוקה');await load();};
 $('#upf').onchange=async()=>{
   const f=$('#upf').files[0]; if(!f)return;
   const lbl=$('#upbtn'); lbl.firstChild.nodeValue='קורא את הדוח…';
@@ -213,6 +215,7 @@ $('#upf').onchange=async()=>{
   $('#upf').value='';
   const r=await api('POST','/api/bldg/upload',{text}).catch(()=>null);
   lbl.firstChild.nodeValue='📥 העלה דוח (CSV) מבנק ווסט — חשבון הבניין';
+  if(r&&r.error==='main_account'){alert('זה הדוח של החשבון הראשי של בנק ווסט — '+r.known+' מתוך '+r.rows+' החיובים כבר במערכת מהייבוא הרגיל.\nכאן מעלים רק את הדוח של חשבון קרן הבניין.');return;}
   if(!r||!r.ok){toast('❌ '+({empty:'הקובץ ריק',no_rows:'לא נמצאו חיובים מאושרים בקובץ',parse:'לא הצלחתי לקרוא את הקובץ'}[r&&r.error]||'שגיאה'));return;}
   toast(`נקראו ${r.rows} חיובים (${r.new} חדשים)`+(r.auto?` · ${r.auto} נכנסו לבד לכרטיסים`:''));
   F='todo'; await load();
