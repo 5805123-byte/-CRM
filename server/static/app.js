@@ -1131,6 +1131,7 @@ async function api(m,u,b){
   if(r.headers.get('X-KC-Queued')==='1'&&!OFFLINE){OFFLINE=true;netPaint();}
   return r.json();
 }
+function isAudioFile(f){return (f.mime||'').indexOf('audio')>=0||/\.(ogg|opus|m4a|mp3|wav|aac|amr|webm)$/i.test(f.name||'');}
 function fileChip(f){const m=(f.mime||'');
   const dl=`<a class="fdl" href="/api/file/${f.id}?dl=1" download="${esc(f.name||'file')}" title="הורד למכשיר">⬇️</a>`;
   // הודעה קולית מוואטסאפ — נגן ישירות בכרטיס
@@ -1269,13 +1270,60 @@ function pendFiles(boxId,inputId){
   if(!box||!inp)return {arr,reset(){}};
   const paint=()=>{
     box.querySelectorAll('.pchip').forEach(x=>x.remove());
-    arr.forEach((f,i)=>{const s=document.createElement('span');s.className='fchip pchip';
-      s.innerHTML=`${(f.type||'').indexOf('audio')>=0?'🎙️':((f.type||'').indexOf('image')>=0?'🖼️':'📎')} ${esc(f.name)} <button class="fdel">✕</button>`;
+    arr.forEach((f,i)=>{const s=document.createElement('span');s.className='fchip pchip'+((f.type||'').indexOf('audio')>=0?' audio':'');
+      // הקלטה — נגן קטן לשמוע לפני השמירה
+      if((f.type||'').indexOf('audio')>=0){s.innerHTML=`🎙️ <audio controls preload="metadata"></audio><button class="fdel">✕</button>`;s.querySelector('audio').src=URL.createObjectURL(f);}
+      else s.innerHTML=`${(f.type||'').indexOf('image')>=0?'🖼️':'📎'} ${esc(f.name)} <button class="fdel">✕</button>`;
       s.querySelector('.fdel').onclick=()=>{arr.splice(i,1);paint();};
       box.insertBefore(s,box.firstChild);});
   };
   inp.onchange=()=>{[...inp.files].forEach(f=>arr.push(f));inp.value='';paint();};
-  return {arr,reset(){arr.length=0;paint();}};
+  // מאיר: "אני רוצה להקליט לעצמי הודעות במקום להקליד" — כפתור הקלטה ליד "צרף"
+  addVoiceBtn(box,f=>{arr.push(f);paint();});
+  return {arr,add(f){arr.push(f);paint();},reset(){arr.length=0;paint();}};
+}
+// ===== הקלטת הודעה קולית בתוך המערכת (MediaRecorder) =====
+// מאיר: "שאני אוכל להקליט הודעה ולהעלות את זה בקובץ כאילו שאני מקליט הודעה,
+// ואז במשימות אני אשמע את ההודעה שלי במקום להקליד." לחיצה — מתחיל להקליט,
+// לחיצה שנייה — עוצר, וההקלטה מצורפת למשימה כמו קובץ קול מוואטסאפ.
+function voiceMime(){
+  if(!window.MediaRecorder)return '';
+  return ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus','audio/aac',''].find(m=>!m||MediaRecorder.isTypeSupported(m))||'';
+}
+function addVoiceBtn(box,onFile){
+  if(!box||box.querySelector('.vrec'))return;
+  const b=document.createElement('button'); b.type='button'; b.className='filebtn sm vrec'; b.textContent='🎤 הקלט הודעה';
+  box.appendChild(b);
+  let rec=null,chunks=[],t0=0,tm=null,stream=null;
+  const stop=()=>{if(rec&&rec.state!=='inactive')rec.stop();};
+  b.onclick=async e=>{
+    e.preventDefault(); e.stopPropagation();
+    if(rec&&rec.state==='recording'){stop();return;}
+    if(!navigator.mediaDevices||!window.MediaRecorder){toast('הדפדפן הזה לא תומך בהקלטה — צרף הקלטה מוואטסאפ');return;}
+    try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+    catch(err){toast('אין גישה למיקרופון — אשר את ההרשאה בדפדפן');return;}
+    const mime=voiceMime(); chunks=[];
+    try{rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);}
+    catch(err){rec=new MediaRecorder(stream);}
+    rec.ondataavailable=ev=>{if(ev.data&&ev.data.size)chunks.push(ev.data);};
+    rec.onstop=()=>{
+      clearInterval(tm); b.classList.remove('on'); b.textContent='🎤 הקלט הודעה';
+      (stream.getTracks()||[]).forEach(x=>x.stop());
+      const type=rec.mimeType||mime||'audio/webm';
+      const ext=/mp4|aac|m4a/.test(type)?'m4a':(/ogg/.test(type)?'ogg':'webm');
+      const secs=Math.round((Date.now()-t0)/1000);
+      if(!chunks.length||secs<1){toast('ההקלטה ריקה');return;}
+      const now=new Date(), pad=n=>String(n).padStart(2,'0');
+      const name=`הודעה-קולית-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.${ext}`;
+      const f=new File([new Blob(chunks,{type})],name,{type});
+      toast('ההקלטה מוכנה ('+secs+' שנ׳) — לחץ ▶ לשמוע, ושמור את המשימה');
+      onFile(f);
+    };
+    rec.start(250); t0=Date.now(); b.classList.add('on');
+    const tick=()=>{const s=Math.round((Date.now()-t0)/1000);b.textContent='⏹ עצור הקלטה  '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+    tick(); tm=setInterval(tick,500);
+    toast('מקליט… לחץ שוב כדי לעצור');
+  };
 }
 // חתימת הנתונים האחרונים. אם השרת עונה "לא השתנה כלום" — לא מורידים שוב
 // מגה של נתונים ולא מפענחים אותם מחדש, וזה חוסך את רוב זמן ההמתנה.
@@ -2462,8 +2510,11 @@ function cardTasks(d,body){
   const ctF=pendFiles('ct_files','ct_file');
   document.getElementById('ct_add').onclick=async ev=>{
     const btn=ev.currentTarget; if(btn.disabled)return;
-    const note=document.getElementById('ct_note').value.trim(),kind=await kindValue(document.getElementById('ct_kind')),date=document.getElementById('ct_date').value,who=document.getElementById('ct_who').value;
-    if(!kind){return;}if(!note){toast('כתוב מה צריך לעשות');return;}if(!date){toast('בחר תאריך');return;}
+    let note=document.getElementById('ct_note').value.trim();const kind=await kindValue(document.getElementById('ct_kind')),date=document.getElementById('ct_date').value,who=document.getElementById('ct_who').value;
+    if(!kind){return;}
+    const hasVoice=ctF.arr.some(f=>(f.type||'').indexOf('audio')>=0);
+    if(!note&&!hasVoice){toast('כתוב מה צריך לעשות — או הקלט הודעה');return;}if(!date){toast('בחר תאריך');return;}
+    if(!note)note='🎤 הודעה קולית';   // משימה שהוקלטה בלי טקסט
     btn.disabled=true;                 // הגנה מלחיצה כפולה — אחרת נוצרות שתי משימות
     const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who});
     btn.disabled=false;
@@ -2471,8 +2522,8 @@ function cardTasks(d,body){
     d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,done:0});
     document.getElementById('ct_note').value='';
     if(ctF.arr.length){toast('מעלה קבצים…');for(const f of ctF.arr)await uploadBlob('task',r.id,f);ctF.reset();
-      await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;
-      renderCardTasks(d);toast('נוספה משימה עם האסמכתאות ✓');checkReminders();return;}
+      await load();const dd=DB.find(x=>x.id===d.id)||d;
+      openDonor(dd,'tasks');toast('נוספה משימה עם ההקלטה/הקבצים ✓');checkReminders();return;}
     renderCardTasks(d);toast('נוספה משימה ✓');checkReminders();};
 }
 function renderCardTasks(d){
@@ -2512,8 +2563,11 @@ function renderCardTasks(d){
         <button class="btn sm ghost ctundo" data-id="${t.id}" title="החזר לפתוחות">↩️</button></div>`;}).join('');
   el.querySelectorAll('.ctk').forEach(wireKindSel);
   addMics(el,['.ctn']);
-  el.querySelectorAll('.ctup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,async()=>{
-    await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;renderCardTasks(d);}));
+  // אחרי רענון הנתונים הכרטיס נפתח מחדש — נשארים בלשונית המשימות
+  const backHere=async()=>{await load();openDonor(DB.find(x=>x.id===d.id)||d,'tasks');};
+  el.querySelectorAll('.ctup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,backHere));
+  el.querySelectorAll('.cttask .avfiles').forEach(bx=>{const tid=+bx.closest('.cttask').dataset.id;
+    addVoiceBtn(bx,async f=>{toast('מעלה את ההקלטה…');await uploadBlob('task',tid,f);await backHere();toast('ההקלטה נשמרה במשימה ✓');});});
   el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p)p.classList.toggle('hidden');});
   el.querySelectorAll('.ctsave').forEach(b=>b.onclick=async()=>{
     const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;
@@ -5312,6 +5366,7 @@ function renderReminders(d){
     renderReminders(d);renderCardTasks(d);checkReminders();toast('בוצע ✓ · נרשם בקשר');});
   el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/task/'+b.dataset.del);d.tasks=d.tasks.filter(x=>x.id!=b.dataset.del);renderReminders(d);});
   el.querySelectorAll('.tkup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,async()=>{await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;renderReminders(d);}));
+  el.querySelectorAll('.tkup').forEach(inp=>{const tid=+inp.dataset.id;addVoiceBtn(inp.closest('.avfiles'),async f=>{toast('מעלה את ההקלטה…');await uploadBlob('task',tid,f);await load();const dd=DB.find(x=>x.id===d.id);if(dd)d.tasks=dd.tasks;renderReminders(d);toast('ההקלטה נשמרה ✓');});});
   el.querySelectorAll('.fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);(d.tasks||[]).forEach(t=>{t.files=(t.files||[]).filter(f=>f.id!=b.dataset.fid);});renderReminders(d);toast('נמחק');});
 }
 const FBCH={'תודה':'🙏 תודה','הקדשה':'🖼️ הקדשה','אימייל':'📧 אימייל','וואטסאפ':'💬 וואטסאפ','טלפון':'📞 טלפון'};
@@ -10839,7 +10894,7 @@ function renderTasksTab(){
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
-      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
+      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}${(t.files||[]).some(isAudioFile)?`<div class="avfiles" onclick="event.stopPropagation()">${(t.files||[]).filter(isAudioFile).map(fileChip).join('')}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+(hhmm(t.done_at)?(' '+hhmm(t.done_at)):'')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
         <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
         <button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
@@ -10912,10 +10967,12 @@ function renderTasksTab(){
   document.getElementById('nt_add').onclick=async ev=>{
     const btn=ev.currentTarget; if(btn.disabled)return;
     const kind=await kindValue(document.getElementById('nt_kind'));if(!kind)return;
-    const date=document.getElementById('nt_date').value,note=document.getElementById('nt_note').value.trim();
+    const date=document.getElementById('nt_date').value;let note=document.getElementById('nt_note').value.trim();
     const whoEl=document.getElementById('nt_who');
     const who=whoEl?whoEl.value:inWho;   // ברירת המחדל לפי החלון, וניתן לשנות כאן
-    if(!note&&!ntChosen){toast('כתוב מה צריך לעשות');return;}
+    const hasVoice=ntF.arr.some(f=>(f.type||'').indexOf('audio')>=0);
+    if(!note&&!ntChosen&&!hasVoice){toast('כתוב מה צריך לעשות — או הקלט הודעה');return;}
+    if(!note&&hasVoice)note='🎤 הודעה קולית';
     if(!date){toast('בחר תאריך');return;}
     btn.disabled=true;                   // לחיצה כפולה יצרה שתי משימות זהות
     const body={due_date:date,kind:kind,note:note,assignee:who};
@@ -10927,6 +10984,8 @@ function renderTasksTab(){
     if(ntF.arr.length){toast('מעלה קבצים…');for(const f of ntF.arr)await uploadBlob('task',r.id,f);ntF.reset();await load();}
     toast('המשימה נוספה ✓'+(who?' — '+who:''));render();checkReminders();};
   view.querySelectorAll('.ttup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,load));
+  view.querySelectorAll('.teditpanel .avfiles').forEach(bx=>{const inp=bx.querySelector('.ttup');if(!inp)return;const tid=+inp.dataset.id;
+    addVoiceBtn(bx,async f=>{toast('מעלה את ההקלטה…');await uploadBlob('task',tid,f);await load();toast('ההקלטה נשמרה במשימה ✓');});});
   view.querySelectorAll('.teditpanel .fdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/file/'+b.dataset.fid);load();});
   view.querySelectorAll('.taskrow').forEach(r=>r.onclick=e=>{if(e.target.classList.contains('tdone')||e.target.classList.contains('gcal'))return;const t=all[r.dataset.i];if(t.dref)openDonor(t.dref);});
   const setDone=(t,v)=>setTaskDone(t,v,t.dref);
