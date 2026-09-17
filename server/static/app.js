@@ -10706,11 +10706,38 @@ function campPledgeEditor(row,d,pl){
   };
   box.scrollIntoView({behavior:'smooth',block:'center'}); box.querySelector('.cpamt').focus();
 }
+// מאיר: "כל פעם שאני נכנס למערכת זה בוחר ברירת מחדל על תשפ"ו — אני רוצה שזה
+// יבחר את הקמפיין של עכשיו, למשל סוכות תשפ"ז". הקמפיין שהחג שלו הכי קרוב
+// לפי התאריך העברי של היום: תשרי=סוכות, אדר=מתנות לאביונים, ניסן=קמחא
+// דפסחא, אייר=ל"ג בעומר. אם אין עדיין קמפיין קדימה — האחרון שהיה.
+const _HMON={'תשרי':1,'חשון':2,'חשוון':2,'מרחשון':2,'כסלו':3,'טבת':4,'שבט':5,'אדר':6,"אדר א'":6,"אדר ב'":6,'אדר א':6,'אדר ב':6,'ניסן':7,'אייר':8,'סיון':9,'סיוון':9,'תמוז':10,'אב':11,'מנחם אב':11,'אלול':12};
+function hebYearNum(s){const v={'א':1,'ב':2,'ג':3,'ד':4,'ה':5,'ו':6,'ז':7,'ח':8,'ט':9,'י':10,'כ':20,'ל':30,'מ':40,'נ':50,'ס':60,'ע':70,'פ':80,'צ':90,'ק':100,'ר':200,'ש':300,'ת':400};
+  let n=0;for(const c of String(s||'').replace(/["'״׳]/g,''))n+=v[c]||0;return n;}
+function campHolidayMonth(c){
+  if(/סוכות|סוכת|sukk|succ/i.test(c))return 1;
+  if(/מתנות לאביונים|לאביונים|פורים|purim/i.test(c))return 6;
+  if(/קמחא|קימחא|פסח|pesach|pischa/i.test(c))return 7;
+  if(/ל"ג בעומר|ל״ג בעומר|לג בעומר|lag ?b/i.test(c))return 8;
+  return 0;
+}
+function campDefault(cats){
+  const m=/([א-ת]{2,5}(?: [אב]')?) (תש[א-ת"״']+)\s*$/.exec(HEBTODAY||'');
+  const curM=m?(_HMON[m[1]]||0):0, curY=hebYearNum(m?m[2]:HEBYEAR);
+  if(!curM||!curY)return '';
+  const keyed=cats.map(c=>{const hm=campHolidayMonth(c);if(!hm)return null;
+    const ym=/תש[א-ת"״']+/.exec(c);const y=ym?hebYearNum(ym[0]):curY;
+    return {c,k:y*100+hm};}).filter(Boolean);
+  if(!keyed.length)return '';
+  const from=curY*100+curM;                        // החג של החודש או הבא אחריו; אחרת — האחרון שהיה
+  const ahead=keyed.filter(x=>x.k>=from).sort((a,b)=>a.k-b.k);
+  if(ahead.length)return ahead[0].c;
+  return keyed.sort((a,b)=>b.k-a.k)[0].c;
+}
 function renderCamp(){
   chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד'],['gaps','❗ מה חסר במערכת']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{CAMPMODE=c.dataset.k;renderCamp();});
   const cats=campList();
-  if(!campSel||cats.indexOf(campSel)<0)campSel=cats[0]||'';
+  if(!campSel||cats.indexOf(campSel)<0)campSel=campDefault(cats)||cats[0]||'';
   const qh=r=>!q||matchQ((r.name||'')+' '+(r.eng||'')+' '+Math.round(r.amt||0)+' '+(r.phone||''));
   const rows=(campSel?campRows(campSel):[]).filter(qh), owes=(campSel?campOwes(campSel):[]).filter(qh);
   const byCur={}; rows.forEach(r=>{byCur[r.cur]=(byCur[r.cur]||0)+r.amt;});
