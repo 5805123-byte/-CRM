@@ -5935,6 +5935,23 @@ def ensure_schema():
                 print('  גולד יעקב: אביו וחמיו בשורות נפרדות לרפו"ש')
             con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v3')")
             con.commit()
+        # מאיר: "אצל יעקב גולד תוריד את כל השמות שיש אצלו שזה רשום אצל רבקה
+        # טפלר, אין צורך בכפילויות" — משפחת טפלר וארבעת השמות מרשימת הרפו"ש
+        # שנמצאים בקוויטל שלה יוצאים מהקוויטל של גולד.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gold_yaakov_kv_v4'").fetchone():
+            gd = con.execute("SELECT id FROM donors WHERE last='גולד' AND first='יעקב'").fetchone()
+            pr = con.execute("SELECT id,text FROM prayers WHERE donor_id=? AND text LIKE '%יעקב בן נעכא%'", (gd['id'],)).fetchone() if gd else None
+            if pr:
+                tx = pr['text']
+                tx = re.sub(r',?\s*חיים שלום בן העניא רבקה.*?אהרון יהושע בן רבקה בריינדל[^.]*\.', '.', tx, flags=re.S)
+                for nm in ('שמואל שלמה בן רחל', 'דבורה הענא בת שרה בילא', 'דבורה הענה בת שרה בילה', 'העניא רבקה בת רחל', 'הניה רבקה בת רחל', 'משה אפרים בן פיגא', 'משה אפרים בן פייגה'):
+                    tx = re.sub(r'(,\s*)?' + re.escape(nm) + r'(?=\s*[,.]|\s+ל|$)', '', tx)
+                tx = re.sub(r'\.\s*,', '.', tx); tx = re.sub(r'\s{2,}', ' ', tx); tx = re.sub(r'\.\s*\.', '.', tx).strip(' ,')
+                if tx != pr['text']:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (tx, pr['id']))
+                    print('  גולד יעקב: הוסרו השמות שכתובים אצל טפלר')
+            con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v4')")
+            con.commit()
     except Exception as e:
         print('  gold kv error:', e)
 
