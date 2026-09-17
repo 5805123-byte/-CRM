@@ -5881,6 +5881,29 @@ def ensure_schema():
     except Exception as e:
         print('  friedman kv error:', e)
 
+    # יעקב גולד כתב: אביו אברהם יצחק בן מרים וחמיו אברהם יצחק בן פערל לרפו"ש,
+    # בתו מיכל בת נחמה רחל לשידוך ומרים בת נחמה רחל לילדים. שלושת הראשונים
+    # כבר בקוויטל שלו; מוסיפים "לזרע של קיימא" למרים, ומפרידים בפסיקים את
+    # רשימת הרפו"ש שהייתה כתובה ברצף.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gold_yaakov_kv_v1'").fetchone():
+            gd = con.execute("SELECT id FROM donors WHERE last='גולד' AND first='יעקב'").fetchone()
+            pr = con.execute("SELECT id,text FROM prayers WHERE donor_id=? AND text LIKE '%יעקב בן נעכא%'", (gd['id'],)).fetchone() if gd else None
+            if pr:
+                tx = pr['text']
+                if 'מרים בת נחמה רחל לזרע' not in tx:
+                    tx = tx.replace('מרים בת נחמה רחל,', 'מרים בת נחמה רחל לזרע של קיימא,', 1)
+                tx = tx.replace('נעכא בת גיטל אברהם יצחק בן מרים שמואל שלמה בן רחל דבורה הענא בת שרה בילא העניא רבקה בת רחל משה אפרים בן פיגא רבקה בת חיה אברהם יצחק בן פנינה פערל לרפואה שלמה במהרה',
+                                'נעכא בת גיטל, אברהם יצחק בן מרים, שמואל שלמה בן רחל, דבורה הענא בת שרה בילא, העניא רבקה בת רחל, משה אפרים בן פיגא, רבקה בת חיה, אברהם יצחק בן פנינה פערל לרפואה שלמה במהרה')
+                tx = re.sub(r'\s+,', ',', re.sub(r' {2,}', ' ', tx)).strip()
+                if tx != pr['text']:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (tx, pr['id']))
+                    print('  גולד יעקב: הקוויטל עודכן')
+            con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v1')")
+            con.commit()
+    except Exception as e:
+        print('  gold kv error:', e)
+
     # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
     # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
     # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
