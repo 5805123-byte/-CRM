@@ -6559,15 +6559,41 @@ def donor_kvpage(con, did):
         name = ((d['first'] or '') + ' ' + (d['last'] or '')).strip()
     tier = (d['tier'] or '').strip()
     _avn = _av_display(con)
-    avs = [_av_nice((r['avreich'] or '').strip(), _avn) for r in con.execute(
+    raw_avs = [(r['avreich'] or '').strip() for r in con.execute(
         "SELECT avreich FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0 "
         "AND COALESCE(TRIM(avreich),'')<>'' ORDER BY id", (did,))]
+    avs = [_av_nice(a, _avn) for a in raw_avs]
+    # מאיר: "אם מחזיקים ביחד שניים… תעשה בדף למעלה יעקב גולד וטפלר מחזיקים את
+    # ישראל נחמן שפירא — כל שני שותפים שמחזיקים מישהו, שיהיה כתוב למעלה את
+    # שלושת השותפים". מי עוד מחזיק את אותו אברך (שורת שותפות פעילה):
+    co = {}
+    for a in raw_avs:
+        others = []
+        for r in con.execute("SELECT d.id,d.first,d.last,d.gender,d.anon,p.avreich FROM partners p JOIN donors d ON d.id=p.donor_id "
+                             "WHERE p.donor_id<>? AND COALESCE(p.active,1)<>0 ORDER BY d.last,d.first", (did,)):
+            if _norm(r['avreich']) != _norm(a) or not _norm(a):
+                continue
+            if int(r['anon'] or 0):
+                nm = ANON_NAME
+            else:
+                nm = (_honor(r['first'], r['last'], r['gender'] or '') + ' ' + ((r['first'] or '') + ' ' + (r['last'] or '')).strip()).strip()
+            if nm not in others:
+                others.append(nm)
+        co[a] = others
     lines = []
     if avs:
+        me = (title + ' ' + name).strip()
         if len(avs) == 1:
-            lines.append("שותף יששכר־זבולון — מחזיק את ר' " + avs[0])
+            if co.get(raw_avs[0]):
+                lines.append('שותפי יששכר־זבולון %s — מחזיקים יחד את ר\' %s' % (' ו'.join([me] + co[raw_avs[0]]) if len(co[raw_avs[0]]) == 1
+                             else (', '.join([me] + co[raw_avs[0]][:-1]) + ' ו' + co[raw_avs[0]][-1]), avs[0]))
+            else:
+                lines.append("שותף יששכר־זבולון — מחזיק את ר' " + avs[0])
         else:
-            lines.append('שותף יששכר־זבולון — מחזיק %d אברכים: %s' % (len(avs), ', '.join("ר' " + a for a in avs)))
+            parts = []
+            for a, nice in zip(raw_avs, avs):
+                parts.append("ר' " + nice + ((' (יחד עם %s)' % ' ו'.join(co[a])) if co.get(a) else ''))
+            lines.append('שותף יששכר־זבולון — מחזיק %d אברכים: %s' % (len(avs), ', '.join(parts)))
     if avs or tier == 'יששכר_זבולון':
         if not avs:
             lines.append('שותף יששכר־זבולון')
