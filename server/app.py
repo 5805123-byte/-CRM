@@ -5917,6 +5917,24 @@ def ensure_schema():
                     print('  גולד יעקב: רפו"ש נכתב במפורש ליד אביו וחמיו')
             con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v2')")
             con.commit()
+        # מאיר: "תכתוב עליו בנפרד רפואה שלמה וגם על השני שביקשתי" — אביו וחמיו
+        # יוצאים מהרשימה הארוכה לשתי שורות נפרדות בקוויטל שלו.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gold_yaakov_kv_v3'").fetchone():
+            gd = con.execute("SELECT id FROM donors WHERE last='גולד' AND first='יעקב'").fetchone()
+            pr = con.execute("SELECT id,text,tier FROM prayers WHERE donor_id=? AND text LIKE '%יעקב בן נעכא%'", (gd['id'],)).fetchone() if gd else None
+            if pr:
+                tx = pr['text']
+                tx = tx.replace('אברהם יצחק בן מרים לרפואה שלמה במהרה, ', '').replace('אברהם יצחק בן מרים, ', '')
+                tx = tx.replace(', אברהם יצחק בן פנינה פערל לרפואה שלמה במהרה', ' לרפואה שלמה במהרה').replace(', אברהם יצחק בן פנינה פערל', '')
+                tx = tx.replace('לרפואה שלמה במהרה לרפואה שלמה במהרה', 'לרפואה שלמה במהרה')
+                if tx != pr['text']:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (tx, pr['id']))
+                for nm in ('אברהם יצחק בן מרים לרפואה שלמה במהרה', 'אברהם יצחק בן פנינה פערל לרפואה שלמה במהרה'):
+                    if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND TRIM(text)=?", (gd['id'], nm)).fetchone():
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (gd['id'], nm, pr['tier'] or ''))
+                print('  גולד יעקב: אביו וחמיו בשורות נפרדות לרפו"ש')
+            con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v3')")
+            con.commit()
     except Exception as e:
         print('  gold kv error:', e)
 
