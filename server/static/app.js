@@ -10598,7 +10598,10 @@ let CAMPMODE='one';   // one = הקמפיין הנבחר בלבד · all = טב�
 // מאיר: "איפה אני מוסיף פה תורם מהרשימה בשביל סוכות תשפ"ז? אין פה איפה להוסיף".
 // בדוח הקמפיין: בוחרים תורם (או פותחים כרטיס חדש), סכום, נגבה/עדיין לא, דרך,
 // תאריך והערה — אותו טופס כמו בטבלת "שלושתם ביחד", והתרומה נרשמת לקמפיין.
-function campAddDonorForm(box,preset){
+// opts.separate — מאיר: "להוסיף להתחייבות שלו עוד התחייבות נפרדת… שזה יופיע
+// בשני דברים נפרדים": התחייבות חדשה לצד הקיימת, לא עדכון שלה.
+function campAddDonorForm(box,preset,opts){
+  opts=opts||{};
   if(!box)return; if(box.firstChild&&!preset){box.innerHTML='';return;}
   const tcat=campSel; let picked=null;
   box.innerHTML=`<div class="cmpform" style="border:1px solid var(--line);border-radius:12px;margin-bottom:10px">
@@ -10608,7 +10611,7 @@ function campAddDonorForm(box,preset){
     <div class="cmpres" id="cad_res" style="width:100%"></div>
     <div id="cad_fields" style="display:none">
       <span class="amtgrp"><input class="cf_amt" id="cad_amt" inputmode="decimal" placeholder="סכום"><button type="button" class="cf_cur" id="cad_cur" data-v="$" title="לחץ להחליף בין דולר לשקל">$</button></span>
-      <select id="cad_st"><option value="paid">✅ חויב / נגבה</option><option value="pledge">🔴 עדיין לא</option></select>
+      <select id="cad_st"><option value="paid">✅ חויב / נגבה</option><option value="pledge"${opts.pledge?' selected':''}>🔴 עדיין לא</option></select>
       <select class="chansel" id="cad_m">${channelOpts('')}</select>
       <input type="date" id="cad_date" value="${todayStr()}">
       <input id="cad_note" placeholder="📝 הערה — למשל: בתשלומים, 3 תשלומים" style="flex:1 1 100%">
@@ -10643,7 +10646,12 @@ function campAddDonorForm(box,preset){
       if(pl){pl.status='נתן';await api('PUT','/api/pledge/'+pl.id,pl);}
     }else{
       const pnote=[note,m?('דרך: '+m):''].filter(Boolean).join(' · ');
-      if(pl){pl.amount=amt;pl.cur=ccy;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
+      let sep=!!opts.separate;
+      if(pl&&!sep){
+        // יש לו כבר התחייבות פתוחה לקמפיין — נפרדת או עדכון של הקיימת?
+        sep=confirm('ל'+(picked.last+' '+picked.first).trim()+' כבר יש התחייבות פתוחה ל'+tcat+' של '+(pl.cur||'$')+Math.round(amtNum(pl.amount)).toLocaleString('en-US')+'.\n\nאישור = להוסיף התחייבות נפרדת (יופיעו שתיים).\nביטול = לעדכן את הקיימת לסכום החדש.');
+      }
+      if(pl&&!sep){pl.amount=amt;pl.cur=ccy;pl.note=pnote||pl.note||'';await api('PUT','/api/pledge/'+pl.id,pl);}
       else await api('POST','/api/pledge',{donor_id:picked.id,category:tcat,amount:amt,status:'טרם',date:date,note:pnote,cur:ccy});
     }
     toast('נשמר ✓'); await load(); renderCamp();
@@ -10668,6 +10676,7 @@ function campPledgeEditor(row,d,pl){
     <button class="btn sm cpsave">💾 שמור תיקון</button>
     <button class="btn sm cpgot" style="background:var(--yes);border-color:var(--yes)">✅ נגבה — רשום את התרומה</button>
     <button class="btn sm ghost cpdel" style="color:var(--no)">🗑 מחק התחייבות</button>
+    <button class="btn sm ghost cpmore">➕ התחייבות נוספת (נפרדת)</button>
     <button class="btn sm ghost cpx">ביטול</button>
     <div class="hintxt" style="width:100%">"נגבה" רושם תרומה לקמפיין בסכום, בדרך ובתאריך שלמעלה, וסוגר את ההתחייבות. אם נגבה פחות — תקן קודם את הסכום.</div></div>`;
   row.after(box); wireChanSel(box.querySelector('.cpm'));
@@ -10676,6 +10685,7 @@ function campPledgeEditor(row,d,pl){
     date:box.querySelector('.cpdate').value||todayStr(),note:box.querySelector('.cpnote').value.trim()});
   const putPledge=async(fields)=>{Object.assign(pl,fields);await api('PUT','/api/pledge/'+pl.id,pl);};
   box.querySelector('.cpx').onclick=()=>box.remove();
+  box.querySelector('.cpmore').onclick=()=>{box.remove();campAddDonorForm(document.getElementById('campaddbox'),d,{separate:true,pledge:true});};
   box.querySelector('.cpsave').onclick=async()=>{
     const v=val(); if(!amtNum(v.amt)){toast('צריך סכום');return;}
     await putPledge({amount:v.amt,cur:v.ccy,note:[v.note,v.m?('דרך: '+v.m):''].filter(Boolean).join(' · ')});
@@ -10754,7 +10764,7 @@ function renderCamp(){
     ${owes.length?`<div class="camphd" style="margin-top:14px"><h3>🔴 התחייבו וטרם נתנו — ${owes.length}</h3></div>
       <div class="camptbl">${owes.map((r,i)=>`<div class="camprow2 owe"><span class="c1">${i+1}</span>
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
-        <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}<button class="cpedit" data-pid="${r.pid}" data-did="${r.id}" title="תקן סכום / נגבה / מחק">✏️</button></span>
+        <span class="c3">${r.amt?('<b>'+r.cur+Math.round(r.amt).toLocaleString('en-US')+'</b>'):'—'}<button class="cpedit" data-pid="${r.pid}" data-did="${r.id}" title="תקן סכום / נגבה / מחק">✏️</button><button class="cplusbtn" data-did="${r.id}" data-sep="1" title="הוסף לו התחייבות או תרומה נוספת — נפרדת">➕</button></span>
         <span class="c4"></span><span class="c5"></span></div>`).join('')}</div>`:''}
     </div>
     <div id="campcmpbox"${CAMPMODE==='one'?' hidden':''}></div>`;
@@ -10765,7 +10775,7 @@ function renderCamp(){
   const adn=document.getElementById('campadddonor');
   if(adn)adn.onclick=()=>campAddDonorForm(document.getElementById('campaddbox'));
   // מאיר: "איפה אני מוסיף את התוספת שהתורם הוסיף?" — ➕ ליד הסכום פותח את הטופס עם התורם כבר נבחר
-  view.querySelectorAll('.cplusbtn').forEach(b=>b.onclick=e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(d)campAddDonorForm(document.getElementById('campaddbox'),d);});
+  view.querySelectorAll('.cplusbtn').forEach(b=>b.onclick=e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(d)campAddDonorForm(document.getElementById('campaddbox'),d,{separate:true,pledge:!!b.dataset.sep});});
   // מאיר: "אני רוצה לתקן את הסכום של התחייבות או לעשות נגבה וכו' וזה לא נותן לי כאן לתקן"
   view.querySelectorAll('.cpedit').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const d=DB.find(x=>x.id==b.dataset.did), pl=d&&(d.pledges||[]).find(p=>String(p.id)===String(b.dataset.pid));
