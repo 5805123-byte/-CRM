@@ -5964,6 +5964,35 @@ def ensure_schema():
     except Exception as e:
         print('  romi kv error:', e)
 
+    # רבקה טפלר שלחה קוויטל חדש (מאיר: "תעשה חדש לפי מה שהיא שלחה עכשיו").
+    # בעל וזוג', הילדים הנשואים עם בני זוגם, ואז שאר השמות — כולם לבריאות
+    # וברכה והצלחה בכל העניינים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tepler_kv_v1'").fetchone():
+            tp = con.execute("SELECT id,tier FROM donors WHERE last='טפלר' AND first='רבקה'").fetchone()
+            if tp:
+                kv = '\n'.join([
+                    "חיים שלום בן העניא רבקה וזוג' רבקה בריינדל בת דבורה הענא",
+                    "יואל פנחס בן רבקה בריינדל וזוג' אילה עיטה הענה בת גלדה בריינה לזרע של קיימא, אביגיל חי' בת אילה עיטה הענה",
+                    "יהודה מאיר בן רבקה בריינדל וזוג' עטרה בת חדוה לזרע של קיימא",
+                    "אברהם בן רבקה בריינדל לזיווג הגון בקרוב",
+                    "ישראל אשר בן רבקה בריינדל, שרה אסתר מינדל בת רבקה בריינדל, אהרון יהושע בן רבקה בריינדל",
+                    "שמואל שלמה בן רחל, דבורה הענה בת שרה בילה, משה אפרים בן פייגה, הניה רבקה בת רחל, רחל בת איידל",
+                    "כולם לבריאות וברכה והצלחה בכל העניינים",
+                ])
+                old = con.execute("SELECT id FROM prayers WHERE donor_id=? ORDER BY id", (tp['id'],)).fetchall()
+                if old:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (kv, old[0]['id']))
+                    for r in old[1:]:
+                        con.execute("DELETE FROM prayers WHERE id=?", (r['id'],))
+                else:
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,?,?,?)", (tp['id'], '', kv, tp['tier'] or ''))
+                print('  טפלר רבקה: הקוויטל עודכן')
+            con.execute("INSERT INTO seed_flags(name) VALUES('tepler_kv_v1')")
+            con.commit()
+    except Exception as e:
+        print('  tepler kv error:', e)
+
     # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
     # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
     # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
