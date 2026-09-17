@@ -5938,6 +5938,32 @@ def ensure_schema():
     except Exception as e:
         print('  gold kv error:', e)
 
+    # מיכאל רומי שלח קוויטל מעודכן (מאיר: "צריך לעדכן את זה לפי זה, לא לכתוב
+    # אבי מורי אלא את השם שהוא רשם לעילוי נשמת"). שמו ושם אמו כפי שהיו בכרטיס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='romi_kv_v1'").fetchone():
+            rm = con.execute("SELECT id FROM donors WHERE last='רומי' AND first='מיכאל'").fetchone()
+            if rm:
+                kv = '\n'.join([
+                    "מיכאל בן רוזלין חנה לרפואה שלמה, רפואת הנפש ורפואת הגוף, שלום בית, עשירות גדולה ולזכות לתת הרבה ממון לצדקה",
+                    "חנה בת דבורה לרפואה שלמה, הצלחה רבה בכל העניינים, פרנסה בשפע ושלום בית",
+                    "ראובן אברהם בן חנה, גד יצחק ניסים בן חנה, עזרא יעקב בן חנה להצלחה גדולה, להיות קרובים לה' יתברך, הצלחה בלימודים, ושיזכו להיות בעלי בתים ובעלי צדקה",
+                    "רוזלין חנה בת באלדה לרפואה שלמה ואריכות ימים ושנים",
+                    "לעילוי נשמת שלמה בן מרים",
+                ])
+                old = con.execute("SELECT id FROM prayers WHERE donor_id=? AND text LIKE '%מיכאל בן רוזלין חנה%' ORDER BY id", (rm['id'],)).fetchall()
+                if old:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (kv, old[0]['id']))
+                    for r in old[1:]:
+                        con.execute("DELETE FROM prayers WHERE id=?", (r['id'],))
+                else:
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,?,?,?)", (rm['id'], '', kv, 'קוויטל_101'))
+                print('  רומי מיכאל: הקוויטל עודכן')
+            con.execute("INSERT INTO seed_flags(name) VALUES('romi_kv_v1')")
+            con.commit()
+    except Exception as e:
+        print('  romi kv error:', e)
+
     # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
     # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
     # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
