@@ -6542,7 +6542,12 @@ function monthPlus(ym,n){
   let y=+m[1], mo=+m[2]-1+n; y+=Math.floor(mo/12); mo=((mo%12)+12)%12;
   return MONFULL[mo]+' '+y;
 }
-function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight+6)+'px';}
+// מאיר: "אני לא מצליח לראות את סוף הקוויטל בדף שלו" — הגובה נמדד לפני שהכרטיס
+// סיים להיפתח, ולכן הקוויטל הארוך נחתך. מודדים שוב אחרי שהפריסה התייצבה,
+// וגם כשמסובבים את המסך.
+function autoGrow(t){const fit=()=>{t.style.height='auto';t.style.height=(t.scrollHeight+8)+'px';};
+  fit(); requestAnimationFrame(fit); setTimeout(fit,350); setTimeout(fit,1200);
+  if(!t._grow){t._grow=1;window.addEventListener('resize',fit);}}
 // העתקה ללוח — עם נפילה חלופה לאפליקציה מותקנת (execCommand)
 async function copyToClip(txt,okMsg){
   txt=(txt||'').trim();if(!txt){toast('אין מה להעתיק');return;}
