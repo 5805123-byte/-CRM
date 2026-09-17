@@ -3788,9 +3788,29 @@ function declinedGroups(d){
 // חשבון חודש־בחודש: כמה הוא היה אמור לתת באותו חודש, כמה באמת נכנס,
 // וכמה נשאר לא מכוסה. עודף של חודש אחד מכסה חוסר של חודש אחר, ולכן
 // חיוב שנכשל ובסוף שולם בדרך אחרת אינו יוצר חוב — הוא רק היסטוריה.
+// אברך משותף בלי "משלם אחד" ובלי חלוקה קבועה — חשבון אחד לכל המחזיקים.
+// מאיר על טפלר: "היא נותנת את זה ביחד עם יעקב גולד, ויעקב גולד נתן את רוב
+// הכסף כל השנה — אז למה כתוב שהיא חייבת?" ההתחייבות היא הסכום המלא של
+// האברך, והתרומות של כל השותפים נספרות יחד.
+function jointMates(d){
+  const out=[],seen=new Set();
+  (d.partners||[]).forEach(p=>{
+    if(p.active==0||!+p.joint||jointPayerId(p)||String(p.share||'').trim()!=='')return;
+    jointGroup(p).forEach(g=>{if(g.d.id===d.id||seen.has(g.d.id)||String(g.p.share||'').trim()!=='')return;
+      seen.add(g.d.id);out.push(g.d);});});
+  return out;
+}
 function monthLedger(d,thruYM){
   const rows=commitRows(d).filter(r=>(r.mo||r.inst)&&r.amt>0.5&&r.conf>0&&!r.ended);
   if(!rows.length)return null;
+  const mates=jointMates(d);
+  const dons=(d.donations||[]).slice();
+  if(mates.length){
+    const izr=rows.find(r=>r.iz);
+    if(izr){const full=(d.partners||[]).filter(p=>p.active!=0).reduce((s,p)=>s+((+p.joint&&!jointPayerId(p)&&String(p.share||'').trim()==='')?amtNum(p.amount):partnerMonthly(p)),0);
+      if(full>0.5)izr.amt=full;}
+    mates.forEach(o=>(o.donations||[]).forEach(x=>dons.push(x)));
+  }
   // עד החודש הנוכחי ועד בכלל. dataThru מכוון לחודש שהקליטה בו הושלמה,
   // וזה החסיר חודש שלם מההתחייבות — מאיר: "עד היום אוגוסט כולל אוגוסט".
   // אפשר לבקש חודש סיום אחר: מסך החובות סופר רק עד החודש שנסגר, כי
@@ -3805,12 +3825,12 @@ function monthLedger(d,thruYM){
   rows.forEach(r=>{const s=r.sinceM||(r.inst&&r.plan&&r.plan.from)||'';
     if(s&&s.length>=7&&(!first||s.slice(0,7)<first))first=s.slice(0,7);});
   if(!first)
-    (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
+    dons.forEach(x=>{const m=String(x.date||'').slice(0,7);
       if(m.length===7&&m.slice(0,4)===yr&&(!first||m<first))first=m;});
   if(!first)first=yr+'-01';
   // מה נכנס בכל חודש — בלי החלק שסגר חוב של שנה קודמת
   const got={};
-  (d.donations||[]).forEach(x=>{const m=String(x.date||'').slice(0,7);
+  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);
     if(m.length===7)got[m]=(got[m]||0)+amtNum(x.amount)-amtNum(x.prev_year);});
   const dec={};
   declinedGroups(d).forEach(r=>{const m=r.iso.slice(0,7);dec[m]=(dec[m]||0)+r.a;});
@@ -3836,7 +3856,9 @@ function monthLedger(d,thruYM){
           miss:Math.round(miss), over:Math.round(over),
           debt:Math.max(0,Math.round(totDue-totGot)),
           ahead:Math.max(0,Math.round(totGot-totDue)),
-          per:due1(thru)};
+          per:due1(thru),
+          joint:mates.map(o=>(o.last+' '+o.first).trim()),
+          jointLead:!mates.some(o=>o.id<d.id)};   // ברשימת החובות החוב המשותף מופיע פעם אחת
 }
 // הערך שנשמר יכול להיות חודש בלבד (מגרסה קודמת) או תאריך מלא —
 // לוח השנה צריך תאריך שלם, ולכן חודש ישן מוצג כ-1 בחודש
@@ -3915,7 +3937,9 @@ function debtBarHTML(d){
   if(tot<=0.5)return '';        // אין חוב — ולא מציקים עם חיובים שנכשלו
   // מאיר: "אל תסתכל על כל חודש אלא בכללי מה היה מאז שהתחייב — כמה נכנס
   // וכמה חסר". שלוש שורות וזהו: מאז מתי, הסיכום, וכפתור לחיובים שחזרו.
-  return `<details class="decbox debtbox"><summary>🔴 חייב ${f(tot)}</summary>
+  const jn=(L&&L.joint&&L.joint.length)?L.joint.join(', '):'';
+  return `<details class="decbox debtbox"><summary>🔴 ${jn?'חייבים יחד':'חייב'} ${f(tot)}</summary>
+    ${jn?`<div class="hintxt" style="margin:2px 0 4px">🤝 חשבון משותף עם ${esc(jn)} — ההתחייבות היא הסכום המלא של האברך, והתרומות של כולכם נספרות יחד.</div>`:''}
     ${L?`<div class="dbtot"><span>מאז ${esc(fmtMonth(L.first))}</span>
       <span>התחייב <b>${f(L.due)}</b></span>
       <span>נתן <b>${f(L.got)}</b></span>
@@ -4230,7 +4254,7 @@ function cardDetails(d,body){
   let oweLine='';
   try{ const L=monthLedger(d);
     if(L&&L.debt>0.5)
-      oweLine=`<div class="dnowe">🔴 מאז ${esc(fmtMonth(L.first))} התחייב
+      oweLine=`<div class="dnowe">🔴 ${(L.joint||[]).length?('יחד עם '+esc(L.joint.join(', '))+' · '):''}מאז ${esc(fmtMonth(L.first))} התחייב
         <b>${curd}${L.due.toLocaleString('en-US')}</b> · נתן
         <b>${curd}${L.got.toLocaleString('en-US')}</b> · חסר
         <b>${curd}${L.debt.toLocaleString('en-US')}</b></div>`;
@@ -7784,9 +7808,9 @@ function donorDebts(d){
       ((iz0.manual!=null&&iz0.manual<=0.5)||(iz0.thru.length&&iz0.thruDebt<=0.5));
     if(!izCov){
       const L=monthLedger(d, prevMonth(todayStr().slice(0,7)));
-      if(L&&L.debt>0.5){
+      if(L&&L.debt>0.5&&(!(L.joint||[]).length||L.jointLead)){
         const gc=gaps(d.months,d);
-        out.push({what:'📅 חודשים שלא נגבו'+(iz0.parts.length?(' · '+iz0.parts.length+' אברכים'):''),
+        out.push({what:'📅 חודשים שלא נגבו'+(iz0.parts.length?(' · '+iz0.parts.length+' אברכים'):'')+((L.joint||[]).length?(' · יחד עם '+L.joint.join(', ')):''),
                   amt:L.debt,kind:'months',id:0,
                   when:'מאז '+fmtMonth(L.first)+' התחייב '+curSym(d)+Math.round(L.due).toLocaleString('en-US')
                       +' · נתן '+curSym(d)+Math.round(L.got).toLocaleString('en-US')
