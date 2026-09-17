@@ -5901,6 +5901,22 @@ def ensure_schema():
                     print('  גולד יעקב: הקוויטל עודכן')
             con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v1')")
             con.commit()
+        # מאיר: "לא רואה שהוספת לאברהם יצחק בן מרים לרפואה שלמה" — הבקשה כתובה
+        # במפורש ליד אביו וליד חמיו, לא רק בסוף הרשימה.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gold_yaakov_kv_v2'").fetchone():
+            gd = con.execute("SELECT id FROM donors WHERE last='גולד' AND first='יעקב'").fetchone()
+            pr = con.execute("SELECT id,text FROM prayers WHERE donor_id=? AND text LIKE '%יעקב בן נעכא%'", (gd['id'],)).fetchone() if gd else None
+            if pr:
+                tx = pr['text']
+                if 'אברהם יצחק בן מרים לרפואה' not in tx:
+                    tx = tx.replace('אברהם יצחק בן מרים', 'אברהם יצחק בן מרים לרפואה שלמה במהרה', 1)
+                if 'אברהם יצחק בן פנינה פערל לרפואה' not in tx and 'אברהם יצחק בן פערל לרפואה' not in tx:
+                    tx = tx.replace('אברהם יצחק בן פנינה פערל', 'אברהם יצחק בן פנינה פערל לרפואה שלמה במהרה', 1)
+                if tx != pr['text']:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (tx, pr['id']))
+                    print('  גולד יעקב: רפו"ש נכתב במפורש ליד אביו וחמיו')
+            con.execute("INSERT INTO seed_flags(name) VALUES('gold_yaakov_kv_v2')")
+            con.commit()
     except Exception as e:
         print('  gold kv error:', e)
 
