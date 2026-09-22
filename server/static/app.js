@@ -10168,7 +10168,7 @@ function campRows(cat){
   const out=[];
   DB.forEach(d=>(d.donations||[]).forEach(x=>{
     if(String(x.category||'').trim()!==cat)return;
-    out.push({id:d.id,name:(d.last+' '+d.first).trim(),eng:d.english||'',
+    out.push({id:d.id,xid:x.id,name:(d.last+' '+d.first).trim(),eng:d.english||'',
       amt:amtNum(x.amount),cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curSym(d))),
       date:x.date||'',method:x.method||'',phone:splitPhones(d.phone)[0]||'',note:giveNote(x)||''});}));
   return out.sort((a,b)=>b.amt-a.amt||a.name.localeCompare(b.name,'he'));
@@ -10757,6 +10757,42 @@ function campDefault(cats){
   if(ahead.length)return ahead[0].c;
   return keyed.sort((a,b)=>b.k-a.k)[0].c;
 }
+// עריכת תרומה שנכנסה לקמפיין, ישירות מהטבלה: סכום ומטבע, דרך, תאריך, הערה — או מחיקה.
+function campDonationEditor(row,d,x){
+  if(!row)return;
+  const old=row.nextElementSibling; if(old&&old.classList.contains('cpedbox')){old.remove();return;}
+  view.querySelectorAll('.cpedbox').forEach(b=>b.remove());
+  const box=document.createElement('div'); box.className='cpedbox';
+  const cur=(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curSym(d)));
+  box.innerHTML=`<div class="cmpform cped" style="border-color:var(--yes)"><div style="width:100%"><b>${esc((d.last+' '+d.first).trim())}</b> — תרומה ל${esc(x.category||'')}</div>
+    <span class="amtgrp"><input class="cf_amt cdamt" inputmode="decimal" value="${esc(x.amount||'')}" placeholder="סכום"><button type="button" class="cf_cur cdcur" data-v="${cur}" title="לחץ להחליף בין דולר לשקל">${cur}</button></span>
+    <select class="chansel cdm">${channelOpts(x.method||'')}</select>
+    <input type="date" class="cddate" value="${esc(String(x.date||'').slice(0,10))}">
+    <input class="cdnote" value="${esc(giveNote(x)||'')}" placeholder="📝 הערה" style="flex:1 1 100%">
+    <button class="btn sm cdsave">💾 שמור תיקון</button>
+    <button class="btn sm ghost cddel" style="color:var(--no)">🗑 מחק את התרומה</button>
+    <button class="btn sm ghost cdx">ביטול</button>
+    <div class="hintxt" style="width:100%">מחיקה מורידה את התרומה מהכרטיס ומהקמפיין. אם הכסף עוד לא נכנס באמת — עדיף למחוק ולרשום אותו כהתחייבות דרך ➕.</div></div>`;
+  row.after(box); wireChanSel(box.querySelector('.cdm'));
+  box.querySelector('.cdx').onclick=()=>box.remove();
+  box.querySelector('.cdsave').onclick=async()=>{
+    const amt=box.querySelector('.cdamt').value.trim(), ccy=box.querySelector('.cdcur').dataset.v||'$',
+          m=box.querySelector('.cdm').value==='__new__'?'':box.querySelector('.cdm').value,
+          date=box.querySelector('.cddate').value||x.date, note=box.querySelector('.cdnote').value.trim();
+    if(!amtNum(amt)){toast('צריך סכום');return;}
+    // ההערה: החלק הטכני (ייבוא/נגבה ב…) נשאר, רק ההערה החופשית מתחלפת
+    const tech=String(x.note||'').split(' · ').filter(s=>GVDROP.test(s));
+    const newNote=tech.concat(note?[note]:[]).join(' · ');
+    await api('PUT','/api/donation/'+x.id,{amount:amt,cur:ccy,method:m,date:date,note:newNote});
+    toast('התרומה תוקנה ✓'); await load(); renderCamp();
+  };
+  box.querySelector('.cddel').onclick=async()=>{
+    if(!confirm('למחוק את התרומה של '+(d.last+' '+d.first).trim()+' ('+cur+Math.round(amtNum(x.amount)).toLocaleString('en-US')+')?\nהיא תרד מהכרטיס שלו ומהקמפיין.'))return;
+    await api('DELETE','/api/donation/'+x.id);
+    toast('התרומה נמחקה'); await load(); renderCamp();
+  };
+  box.scrollIntoView({behavior:'smooth',block:'center'}); box.querySelector('.cdamt').focus();
+}
 function renderCamp(){
   chips.innerHTML=[['one','🎯 קמפיין נבחר'],['all','📊 שלושתם ביחד'],['gaps','❗ מה חסר במערכת']].map(([k,l])=>`<button class="chip ${CAMPMODE===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{CAMPMODE=c.dataset.k;renderCamp();});
@@ -10805,8 +10841,8 @@ function renderCamp(){
       <div class="camprow2 head"><span class="c1">#</span><span class="c2">תורם</span><span class="c3">סכום</span><span class="c6">תוספת</span><span class="c7">סה"כ</span><span class="c4">תאריך</span><span class="c5">איך</span></div>
       ${grp.map((g,i)=>{const r=g.main;return `<div class="camprow2"><span class="c1">${i+1}</span>
         <span class="c2"><a class="avhold" data-did="${r.id}">${esc(r.name)}</a>${r.eng?`<small class="cen">${esc(r.eng)}</small>`:''}${r.note?`<small class="cnote">📝 ${esc(r.note)}</small>`:''}</span>
-        <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b><button class="cplusbtn" data-did="${r.id}" title="הוסף תוספת לתורם הזה">➕</button></span>
-        <span class="c6">${g.extras.map(x=>`<span class="cplus${x.pending?' pend':''}" dir="ltr">+${x.cur}${Math.round(x.amt).toLocaleString('en-US')}</span>${x.pending?`<small class="cshst no">🔴 טרם נגבה</small><button class="cpedit" data-pid="${x.pid}" data-did="${x.id}" title="תקן סכום / נגבה / מחק">✏️</button>`:''}${x.note?`<small class="cnote">📝 ${esc(x.note)}</small>`:''}`).join('')}</span>
+        <span class="c3"><b>${r.cur}${Math.round(r.amt).toLocaleString('en-US')}</b><button class="cpedit cdedit" data-xid="${r.xid}" data-did="${r.id}" title="תקן סכום / תאריך / דרך, או מחק">✏️</button><button class="cplusbtn" data-did="${r.id}" title="הוסף תוספת לתורם הזה">➕</button></span>
+        <span class="c6">${g.extras.map(x=>`<span class="cplus${x.pending?' pend':''}" dir="ltr">+${x.cur}${Math.round(x.amt).toLocaleString('en-US')}</span>${x.pending?`<small class="cshst no">🔴 טרם נגבה</small><button class="cpedit" data-pid="${x.pid}" data-did="${x.id}" title="תקן סכום / נגבה / מחק">✏️</button>`:`<button class="cpedit cdedit" data-xid="${x.xid}" data-did="${x.id}" title="תקן או מחק">✏️</button>`}${x.note?`<small class="cnote">📝 ${esc(x.note)}</small>`:''}`).join('')}</span>
         <span class="c7">${g.extras.length?`<b>${r.cur}${Math.round(g.total).toLocaleString('en-US')}</b>`:''}</span>
         <span class="c4">${esc(r.date?gregLabel(r.date):'')}</span>
         <span class="c5">${r.method?(chBadgeRaw(r.method)||esc(chLabel(r.method))):''}</span></div>`;}).join('')
@@ -10828,7 +10864,13 @@ function renderCamp(){
   // מאיר: "איפה אני מוסיף את התוספת שהתורם הוסיף?" — ➕ ליד הסכום פותח את הטופס עם התורם כבר נבחר
   view.querySelectorAll('.cplusbtn').forEach(b=>b.onclick=e=>{e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(d)campAddDonorForm(document.getElementById('campaddbox'),d,{separate:true,pledge:!!b.dataset.sep});});
   // מאיר: "אני רוצה לתקן את הסכום של התחייבות או לעשות נגבה וכו' וזה לא נותן לי כאן לתקן"
-  view.querySelectorAll('.cpedit').forEach(b=>b.onclick=e=>{e.stopPropagation();
+  // מאיר: "אם אני רוצה לבטל את ההתחייבות שלו או לתקן את הסכום אצלו בדף
+  // בקמפיין — איך אני אמור לעשות את זה באופן קל ומהיר" — ✏️ גם על תרומה שנכנסה
+  view.querySelectorAll('.cdedit').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const d=DB.find(x=>x.id==b.dataset.did), x=d&&(d.donations||[]).find(y=>String(y.id)===String(b.dataset.xid));
+    if(!d||!x){toast('התרומה לא נמצאה — רענן');return;}
+    campDonationEditor(b.closest('.camprow2'),d,x);});
+  view.querySelectorAll('.cpedit:not(.cdedit)').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const d=DB.find(x=>x.id==b.dataset.did), pl=d&&(d.pledges||[]).find(p=>String(p.id)===String(b.dataset.pid));
     if(!d||!pl){toast('ההתחייבות לא נמצאה — רענן');return;}
     campPledgeEditor(b.closest('.camprow2'),d,pl);});
