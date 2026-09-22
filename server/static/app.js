@@ -5743,6 +5743,9 @@ function renderDonations(d){
 }
 /* ---------- קבלה אמריקאית (501c3) ---------- */
 function openReceipt(d,x){
+  // תרומה בשקלים — קבלה ישראלית (סעיף 46) בעברית על הבלאנק
+  const ccy=String(x.cur||'').trim()||curSym(d);
+  if(ccy==='₪'&&x.id){window.open('/receipt-il?donation='+x.id,'_blank');return;}
   const name=(d.english&&d.english.trim())||((d.last||'')+' '+(d.first||'')).trim();
   // הכתובת נדפסת על הקבלה כמו בקבלה אמריקאית רגילה, והמפתח קבוע לכל
   // תרומה כדי שהדפסה חוזרת תיתן את אותו מספר סידורי ולא מספר חדש

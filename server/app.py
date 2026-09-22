@@ -60,6 +60,7 @@ STATIC = os.path.join(HERE, 'static')
 PORT = int(os.environ.get('PORT', 8000))
 # מאיר: "מספר סידורי של קבלות שיתחילו ממספר 6000"
 RECEIPT_START = int(os.environ.get('RECEIPT_START', 6000))
+RECEIPT_IL_START = int(os.environ.get('RECEIPT_IL_START', 1))     # סדרת הקבלות הישראליות (סעיף 46) — נפרדת
 
 def db():
     # מאיר, באמצע משלוח: "database is locked — מה קרה?" — כמה תהליכים כותבים
@@ -6010,6 +6011,28 @@ def ensure_schema():
     except Exception as e:
         print('  tepler kv error:', e)
 
+    # מאיר: "זה תרומה שאני צריך לשלוח להם קבלה רשמית — ע"ש טלקונקט בע"מ,
+    # ח.פ. 513889543" — העברה בנקאית של ₪3,150 ב-07.09.2026 (דיסקונט, אסמכתא 531057)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='telconnect_v1'").fetchone():
+            tc = con.execute("SELECT id FROM donors WHERE business LIKE '%טלקונקט%' OR last LIKE '%טלקונקט%'").fetchone()
+            if not tc:
+                con.execute("INSERT INTO donors(last,first,business,english,addr,city,region,tier,created,source,notes) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            ('טלקונקט בע"מ', '', 'טלקונקט בע"מ', 'Tel Connect Ltd', 'ולנשטיין 63', 'ירושלים', 'il',
+                             TIER_DEFAULT, today_iso(), 'העברה בנקאית', 'ח.פ. 513889543'))
+                tcid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            else:
+                tcid = tc['id']
+            if not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date='2026-09-07' AND ROUND(CAST(amount AS REAL))=3150", (tcid,)).fetchone():
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
+                            (tcid, '2026-09-07', '3150', 'תרומה', 'העברה בנקאית', 'העברה מבנק דיסקונט · אסמכתא 531057 · ח.פ. 513889543', '₪'))
+                print('  טלקונקט: נרשמה תרומה של ₪3,150')
+            con.execute("INSERT INTO seed_flags(name) VALUES('telconnect_v1')")
+            con.commit()
+    except Exception as e:
+        print('  telconnect error:', e)
+
     # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
     # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
     # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
@@ -11219,6 +11242,39 @@ class H(BaseHTTPRequestHandler):
         # כל תרומות 2025, עם הכתובת שלו ועם "no goods or services were rendered".
         if self.path.split('?')[0] == '/statement':
             return self._send(200, open(os.path.join(STATIC, 'statement.html'), 'rb').read(), 'text/html')
+        # קבלה ישראלית (סעיף 46) — מאיר: "אני רוצה להנפיק קבלות ישראליות מעמותה שלנו"
+        if self.path.split('?')[0] == '/receipt-il':
+            return self._send(200, open(os.path.join(STATIC, 'receipt_il.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/receipt_il':
+            import receipt_il as _ril
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: xid = int((qs.get('donation') or ['0'])[0])
+            except ValueError: xid = 0
+            con = db()
+            try:
+                info = _ril.receipt_data(con, xid, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full) if xid else None
+                org = _ril.org_settings(con, kv_get)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'info': info, 'org': org})
+        if self.path.split('?')[0] in ('/receipt-il.pdf', '/receipt-il.jpg'):
+            import receipt_il as _ril
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: xid = int((qs.get('donation') or ['0'])[0])
+            except ValueError: xid = 0
+            fmt = 'pdf' if self.path.split('?')[0].endswith('.pdf') else 'jpg'
+            con = db()
+            try: data, fname = _ril.receipt_file(con, xid, fmt, STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
+            except Exception as e:
+                con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            con.close()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf' if fmt == 'pdf' else 'image/jpeg')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "%s; filename*=UTF-8''%s" % ('attachment' if qs.get('dl') else 'inline', quote(fname)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers(); self.wfile.write(data)
+            return
         # קרן הבניין — מסך השיוך של דוח בנק ווסט של חשבון הבניין
         if self.path.split('?')[0] == '/bldg':
             return self._send(200, open(os.path.join(STATIC, 'bldg.html'), 'rb').read(), 'text/html')
@@ -13577,6 +13633,19 @@ class H(BaseHTTPRequestHandler):
             if auto:
                 bump_data()
             return self._send(200, {'ok': True, 'rows': len(rows), 'new': new, 'auto': auto})
+        if self.path == '/api/receipt_il/org':
+            # פרטי העמותה לקבלה הישראלית — נשמרים פעם אחת
+            import receipt_il as _ril
+            con = db()
+            try:
+                for k in _ril.ORG_KEYS:
+                    if k in b:
+                        kv_set(con, k, (b.get(k) or '').strip())
+                commit_retry(con)
+                org = _ril.org_settings(con, kv_get)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'org': org})
         if self.path == '/api/bldg/clear':
             # מחיקת הדוח מהמסך — מה שכבר נכנס לכרטיסים נשאר
             con = db()
