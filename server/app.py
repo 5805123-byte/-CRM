@@ -268,6 +268,12 @@ def ensure_schema():
     -- אותו משלם, תיאור חיוב שונה (שולחן / חדר קפה / ראש השנה) — ייעוד אחר או "לא להכניס"
     CREATE TABLE IF NOT EXISTS bldg_map_desc(key TEXT, descr TEXT, object TEXT, skip INTEGER DEFAULT 0,
         PRIMARY KEY(key, descr));
+    -- מלגות אברכים: חודשיות (period 'YYYY-MM') וחגים (period 'סוכות תשפ"ז'), לכל כולל בנפרד.
+    -- amount = מהדוח; extra = מה שמאיר הוסיף; note = הערה שלו
+    CREATE TABLE IF NOT EXISTS stipends(id INTEGER PRIMARY KEY AUTOINCREMENT, kollel TEXT, kind TEXT, period TEXT,
+        name TEXT, amount REAL DEFAULT 0, extra REAL DEFAULT 0, note TEXT, details TEXT, att TEXT, src TEXT,
+        created TEXT, updated TEXT);
+    CREATE UNIQUE INDEX IF NOT EXISTS stipends_u ON stipends(kollel, kind, period, name);
     CREATE TABLE IF NOT EXISTS task_kinds(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS pay_channels(name TEXT PRIMARY KEY, created TEXT);
     CREATE TABLE IF NOT EXISTS contact_kinds(name TEXT PRIMARY KEY, created TEXT);
@@ -6052,6 +6058,24 @@ def ensure_schema():
     except Exception as e:
         print('  karp kv error:', e)
 
+    # מלגות אברכים — הקבצים שמאיר שלח בצ'אט: סיכום מלגות אלול תשפ"ו (08/2026)
+    # לשלושת הכוללים, ומלגות חג הסוכות תשפ"ז לכולל חצות (93) ולכולל הוראה (21).
+    try:
+        _sf = os.path.join(HERE, 'stipends_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_seed_v1'").fetchone() and os.path.exists(_sf):
+            n = 0
+            for r in json.load(open(_sf, encoding='utf-8')):
+                c = con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) "
+                                "VALUES(?,?,?,?,?,0,'',?,?,?,?)",
+                                (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0),
+                                 r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += c.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_seed_v1')")
+            con.commit()
+            print('  מלגות אברכים: נטענו %d שורות' % n)
+    except Exception as e:
+        print('  stipends seed error:', e)
+
     # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
     # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
     # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
@@ -11264,6 +11288,23 @@ class H(BaseHTTPRequestHandler):
         # קבלה ישראלית (סעיף 46) — מאיר: "אני רוצה להנפיק קבלות ישראליות מעמותה שלנו"
         if self.path.split('?')[0] == '/receipt-il':
             return self._send(200, open(os.path.join(STATIC, 'receipt_il.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/stipends':
+            # חלון האברכים — כל המלגות, לכל כולל בנפרד. תווית עברית לכל חודש.
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT * FROM stipends ORDER BY kollel, kind, period DESC, name")]
+                names = {}
+                for r in con.execute("SELECT name, COALESCE(seder,'') s FROM avreichim WHERE COALESCE(TRIM(name),'')<>'' AND COALESCE(ended,'')=''"):
+                    names.setdefault(r['s'] or 'חצות', []).append(r['name'])
+            finally:
+                con.close()
+            labels = {}
+            for r in rows:
+                if r['kind'] == 'monthly' and re.match(r'^\d{4}-\d{2}$', r['period'] or '') and r['period'] not in labels:
+                    try: he = greg_to_heb_monthyear(r['period'] + '-15')
+                    except Exception: he = ''
+                    labels[r['period']] = (he + ' · ' if he else '') + r['period'][5:] + '/' + r['period'][:4]
+            return self._send(200, {'ok': True, 'rows': rows, 'labels': labels, 'names': names})
         if self.path.split('?')[0] == '/api/receipt_il':
             import receipt_il as _ril
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -12919,6 +12960,23 @@ class H(BaseHTTPRequestHandler):
                         print('  donor relink error:', e)
                 con.close()
             return self._send(200, {'ok': True, 'linked': linked})
+        m = re.match(r'/api/stipends/(\d+)$', self.path)
+        if m:
+            b = self._body(); sid = int(m.group(1))
+            con = db(); sets = []; vals = []
+            for k in ('amount', 'extra', 'note', 'name', 'details'):
+                if k in b:
+                    v = b[k]
+                    if k in ('amount', 'extra'):
+                        try: v = float(str(v).replace(',', '') or 0)
+                        except ValueError: v = 0.0
+                    sets.append(k + '=?'); vals.append(v)
+            if sets:
+                sets.append('updated=?'); vals.append(now_iso())
+                con.execute("UPDATE stipends SET " + ','.join(sets) + " WHERE id=?", vals + [sid])
+                commit_retry(con)
+            con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/pledge/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
@@ -13652,6 +13710,73 @@ class H(BaseHTTPRequestHandler):
             if auto:
                 bump_data()
             return self._send(200, {'ok': True, 'rows': len(rows), 'new': new, 'auto': auto})
+        if self.path == '/api/stipends':
+            # שורה ידנית — אברך שנוסף לרשימה של חודש/חג
+            kol, kind, per, nm = (b.get('kollel') or '').strip(), (b.get('kind') or '').strip(), (b.get('period') or '').strip(), (b.get('name') or '').strip()
+            if not (kol and kind and per and nm):
+                return self._send(400, {'error': 'fields'})
+            con = db()
+            try:
+                con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+                            "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, note=excluded.note, updated=excluded.created",
+                            (kol, kind, per, nm, float(b.get('amount') or 0), float(b.get('extra') or 0), (b.get('note') or '').strip(), '', '', 'ידני', now_iso()))
+                commit_retry(con)
+                rid = con.execute("SELECT id FROM stipends WHERE kollel=? AND kind=? AND period=? AND name=?", (kol, kind, per, nm)).fetchone()['id']
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': rid})
+        if self.path == '/api/stipends/upload':
+            # דוח חודשי (PDF עם טקסט) — כל הכוללים שבו; או רשימת חג מודבקת לכולל שנבחר
+            import stipends as _sp
+            kind = (b.get('kind') or 'monthly').strip()
+            text = b.get('text') or ''
+            if b.get('pdf'):
+                try:
+                    from pypdf import PdfReader
+                    rd = PdfReader(io.BytesIO(base64.b64decode(b['pdf'])))
+                    text = '\n'.join((pg.extract_text() or '') for pg in rd.pages)
+                except Exception as e:
+                    return self._send(200, {'ok': False, 'error': 'pdf', 'detail': str(e)[:200]})
+            if len(text.strip()) < 5:
+                return self._send(200, {'ok': False, 'error': 'empty'})
+            ins = upd = 0; groups = {}
+            con = db()
+            try:
+                if kind == 'monthly':
+                    period, rows, totals = _sp.parse_monthly(text)
+                    period = (b.get('period') or '').strip() or period
+                    if not rows or not period:
+                        return self._send(200, {'ok': False, 'error': 'parse', 'found': len(rows), 'period': period})
+                    for r in rows:
+                        cur = con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,0,'',?,?,?,?) "
+                                          "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, details=excluded.details, att=excluded.att, updated=excluded.created",
+                                          (r['kollel'], 'monthly', period, r['name'], r['amount'], r['details'] + ((' · ' + r['also']) if r.get('also') else ''), r['att'], 'קובץ', now_iso()))
+                        groups[r['kollel']] = groups.get(r['kollel'], 0) + 1
+                    ins = len(rows)
+                else:
+                    kol = (b.get('kollel') or 'חצות').strip(); period = (b.get('period') or '').strip()
+                    if not period:
+                        return self._send(400, {'error': 'period'})
+                    rows = _sp.parse_list(text)
+                    if not rows:
+                        return self._send(200, {'ok': False, 'error': 'parse', 'found': 0})
+                    for r in rows:
+                        con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,0,'','','',?,?) "
+                                    "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, updated=excluded.created",
+                                    (kol, 'holiday', period, r['name'], r['amount'], 'קובץ', now_iso()))
+                    ins = len(rows); groups[kol] = len(rows)
+                commit_retry(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'n': ins, 'groups': groups, 'period': period})
+        if self.path == '/api/stipends/delete_group':
+            con = db()
+            try:
+                c = con.execute("DELETE FROM stipends WHERE kollel=? AND kind=? AND period=?", ((b.get('kollel') or ''), (b.get('kind') or ''), (b.get('period') or '')))
+                commit_retry(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'n': c.rowcount})
         if self.path == '/api/receipt_il/org':
             # פרטי העמותה לקבלה הישראלית — נשמרים פעם אחת
             import receipt_il as _ril
@@ -15283,6 +15408,10 @@ class H(BaseHTTPRequestHandler):
             con.execute("DELETE FROM recon WHERE tid=?", (tid,))
             con.commit(); con.close()
             return self._send(200, {'ok': n > 0, 'deleted': n})
+        m = re.match(r'/api/stipends/(\d+)$', self.path)
+        if m:
+            con = db(); con.execute("DELETE FROM stipends WHERE id=?", (int(m.group(1)),)); commit_retry(con); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/donor/(\d+)$', self.path)
         if m:
             did = int(m.group(1)); con = db()

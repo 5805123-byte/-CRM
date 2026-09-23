@@ -648,6 +648,33 @@
   .cmpform .cf_amt{width:90px}
   .cplusbtn{width:auto;background:none;border:1px solid var(--line);border-radius:8px;font-size:.72rem;padding:1px 5px;margin-inline-start:6px;cursor:pointer;opacity:.7;vertical-align:middle}
   .cplusbtn:hover{opacity:1}
+  /* חלון האברכים — מלגות חודשיות וחגים */
+  .stbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
+  .stgrp{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .stgh{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;background:var(--ground)}
+  .stgh b{flex:1;font-size:1.02rem}
+  .stgh .sttot{font-weight:800;color:var(--brand);white-space:nowrap}
+  .stgh .stn{color:var(--muted);font-size:.82rem;white-space:nowrap}
+  .stgh .stcar{color:var(--muted);font-size:.8rem}
+  .strow{display:grid;grid-template-columns:30px 1fr 110px 34px;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
+  .strow .stname{font-weight:700}
+  .strow .stname small{display:block;font-weight:400;color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .strow .stname small.stnote{color:var(--brand);white-space:normal}
+  .strow .stamt{text-align:left;direction:ltr;font-weight:800;white-space:nowrap}
+  .strow .stamt small{display:block;font-weight:600;color:var(--yes);font-size:.75rem}
+  .strow .stidx{color:var(--muted);font-size:.8rem}
+  .stedit{width:auto;background:none;border:1px solid var(--line);border-radius:8px;font-size:.8rem;padding:2px 5px;cursor:pointer}
+  .stform{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:#fbf7ec;border-top:1px dashed var(--line)}
+  .stform input{flex:1 1 90px;min-width:0;padding:8px 10px}
+  .stform input.stwide{flex:1 1 100%}
+  .stform .btn{flex:0 0 auto}
+  .stfoot{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:2px solid var(--line);font-weight:700;background:var(--ground);flex-wrap:wrap}
+  .stfoot small{font-weight:400;color:var(--muted)}
+  .stsum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:6px}
+  .stsum h3{margin:0 0 6px;font-size:1rem}
+  .stsum .r{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
+  .stsum .r.tot{font-weight:800;border-bottom:none;color:var(--brand);font-size:1.05rem}
+  @media(max-width:520px){.strow{grid-template-columns:24px 1fr 90px 30px}}
   .cpedit{width:auto;background:none;border:1px solid var(--line);border-radius:8px;font-size:.72rem;padding:1px 5px;margin-inline-start:6px;cursor:pointer;opacity:.75;vertical-align:middle}
   .cpedit:hover{opacity:1}
   .cpedbox .cped{border:1px solid var(--no);border-radius:12px;margin:4px 6px 8px;background:var(--card)}
@@ -1857,6 +1884,7 @@
       <button class="tab" data-tab="parnes">פרנס יום</button>
       <button class="tab" data-tab="charges">💳 חיובים</button>
       <button class="tab" data-tab="avreich">🤝 יששכר־זבולון</button>
+      <button class="tab" data-tab="stip">🎓 אברכים</button>
       <button class="tab danger" data-tab="debts">💰 חובות</button>
       <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
       <button class="tab" data-tab="mails">📧 מיילים ושיחות</button>
