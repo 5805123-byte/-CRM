@@ -6033,6 +6033,25 @@ def ensure_schema():
     except Exception as e:
         print('  telconnect error:', e)
 
+    # מאיר: "Mayer Asher Ben Tzivia, Yosef Dov Ben Gittel — תוסיף את השמות האלו
+    # לרפואה שלמה אצל הקוויטל של אסתר קארפ"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='karp_esther_kv_v1'").fetchone():
+            kp = con.execute("SELECT id FROM donors WHERE last='קארפ' AND first='אסתר'").fetchone()
+            pr = con.execute("SELECT id,text FROM prayers WHERE donor_id=? ORDER BY id", (kp['id'],)).fetchone() if kp else None
+            if pr:
+                tx = pr['text'].rstrip()
+                for nm in ('מאיר אשר בן צביה לרפואה שלמה', 'יוסף דוב בן גיטל לרפואה שלמה'):
+                    if nm.split(' לרפואה')[0] not in tx:
+                        tx += ', ' + nm
+                if tx != pr['text']:
+                    con.execute("UPDATE prayers SET text=? WHERE id=?", (tx, pr['id']))
+                    print('  קארפ אסתר: נוספו שני שמות לרפו"ש')
+            con.execute("INSERT INTO seed_flags(name) VALUES('karp_esther_kv_v1')")
+            con.commit()
+    except Exception as e:
+        print('  karp kv error:', e)
+
     # קרן הבניין: הקובץ שמאיר שלח בצ'אט (דוח בנק ווסט של חשבון הבניין, 2023–2026)
     # נטען ישירות למסך השיוך. מאיר העלה בטעות את דוח אוגוסט של החשבון הראשי —
     # "זה של בנק ווסט שכבר ייבאתי לך על חודש אוגוסט וזה לא של הבנין בכלל" —
