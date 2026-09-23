@@ -6073,6 +6073,21 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_seed_v1')")
             con.commit()
             print('  מלגות אברכים: נטענו %d שורות' % n)
+        # מאיר: "קובץ של מלגות חודש אב — זה חודש אב תשפ"ו ולא תמוז… תערוך את זה כמו
+        # שערכת לחודש אלול" — פירוט מלגות (תמוז-אב) של כולל חצות, 122 אברכים, ₪213,245
+        # (בלי שורת "הניסוי הבדיקה" שבקובץ). הפירוט של שני החודשים מאוחד לשורה אחת.
+        _af = os.path.join(HERE, 'stipends_av_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_av_5786_v1'").fetchone() and os.path.exists(_af):
+            n = 0
+            for r in json.load(open(_af, encoding='utf-8')):
+                c = con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) "
+                                "VALUES(?,?,?,?,?,0,'',?,?,?,?)",
+                                (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0),
+                                 r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += c.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v1')")
+            con.commit()
+            print('  מלגות אב תשפ"ו: נטענו %d שורות' % n)
     except Exception as e:
         print('  stipends seed error:', e)
 
