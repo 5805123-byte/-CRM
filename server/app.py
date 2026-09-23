@@ -6088,6 +6088,23 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v1')")
             con.commit()
             print('  מלגות אב תשפ"ו: נטענו %d שורות' % n)
+        # מאיר: "מעורב שם אברכים של כולל חצות וכולל הוראה ביחד, צריך להפריד… אם הוא
+        # קיבל על שניהם אז לחלק את התשלום מה לכולל חצות ומה להוראה ושיופיע בשניהם".
+        # הקובץ חולק לפי סוג הרכיב (מלגת אחהצ/שכ"ז ← הוראה; מלגת נוכחות/דף היומי ←
+        # חיים טובים; מלגת שעות/תענית דיבור ← חצות). שורות אב שלא נערכו מוחלפות.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_av_5786_v2'").fetchone() and os.path.exists(_af):
+            con.execute("DELETE FROM stipends WHERE kind='monthly' AND period='2026-07' AND src='קובץ' "
+                        "AND COALESCE(extra,0)=0 AND COALESCE(note,'')=''")
+            n = 0
+            for r in json.load(open(_af, encoding='utf-8')):
+                c = con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) "
+                                "VALUES(?,?,?,?,?,0,'',?,?,?,?)",
+                                (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0),
+                                 r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += c.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v2')")
+            con.commit()
+            print('  מלגות אב תשפ"ו: הופרדו לפי כוללים — %d שורות' % n)
     except Exception as e:
         print('  stipends seed error:', e)
 
