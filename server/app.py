@@ -13717,9 +13717,19 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {'error': 'fields'})
             con = db()
             try:
-                con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,?,?,?,?,?,?) "
-                            "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, note=excluded.note, updated=excluded.created",
-                            (kol, kind, per, nm, float(b.get('amount') or 0), float(b.get('extra') or 0), (b.get('note') or '').strip(), '', '', 'ידני', now_iso()))
+                try: amt = float(str(b.get('amount') or 0).replace(',', '') or 0)
+                except ValueError: amt = 0.0
+                note = (b.get('note') or '').strip()
+                ex = con.execute("SELECT id,extra,note FROM stipends WHERE kollel=? AND kind=? AND period=? AND name=?", (kol, kind, per, nm)).fetchone()
+                if ex and b.get('as_extra'):
+                    # מאיר: "אם הוספתי לו עוד כסף" — אברך שכבר ברשימה: הסכום נכנס כתוספת, ההערה מצטרפת
+                    con.execute("UPDATE stipends SET extra=COALESCE(extra,0)+?, note=?, updated=? WHERE id=?",
+                                (amt, ((ex['note'] or '').strip() + (' · ' if (ex['note'] or '').strip() and note else '') + note).strip(), now_iso(), ex['id']))
+                elif ex:
+                    con.execute("UPDATE stipends SET amount=?, note=?, updated=? WHERE id=?", (amt, note or ex['note'] or '', now_iso(), ex['id']))
+                else:
+                    con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                                (kol, kind, per, nm, 0.0 if b.get('as_extra') else amt, amt if b.get('as_extra') else float(b.get('extra') or 0), note, '', '', 'ידני', now_iso()))
                 commit_retry(con)
                 rid = con.execute("SELECT id FROM stipends WHERE kollel=? AND kind=? AND period=? AND name=?", (kol, kind, per, nm)).fetchone()['id']
             finally:

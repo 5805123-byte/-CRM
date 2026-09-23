@@ -10740,8 +10740,21 @@ async function renderStip(){
         <div style="display:flex;gap:6px;padding:8px 10px;flex-wrap:wrap"><button class="btn sm ghost stadd" data-per="${esc(per)}">➕ הוסף אברך לרשימה</button><button class="btn sm ghost stcsv" data-per="${esc(per)}">⬇️ אקסל</button><button class="btn sm ghost stdelgrp" data-per="${esc(per)}" style="color:var(--no);margin-inline-start:auto">🗑 מחק את הרשימה</button></div>`:''}
     </div>`;};
   const grand=rows.reduce((s,r)=>s+tot(r),0);
+  const kolLabel=STIP_KOL.find(x=>x[0]===stipKollel)[1];
+  const quick=stipEdit==='quick'?`<div class="stform stquick">
+      <div style="width:100%;font-weight:800">➕ הוסף אברך / תוספת — ${esc(kolLabel)} · ${stipView==='holiday'?'מלגות חגים':'מלגות חודשיות'}</div>
+      <select class="stq_per" style="flex:1 1 150px">${periods.map(p=>`<option value="${esc(p)}">${esc(stipLabel(stipView,p))}</option>`).join('')}<option value="__new__">➕ ${stipView==='holiday'?'חג חדש…':'חודש חדש…'}</option></select>
+      <input class="stq_newper" placeholder="${stipView==='holiday'?'שם החג, למשל: חנוכה תשפ&quot;ז':'החודש, למשל: 2026-09'}" style="display:none">
+      <input class="stq_name stwide" list="stnames" placeholder="שם האברך (משפחה ואז פרטי)">
+      <input class="stq_amt" inputmode="decimal" placeholder="סכום ₪">
+      <select class="stq_mode" style="flex:1 1 150px"><option value="new">🎓 מלגה (שורה חדשה)</option><option value="extra">➕ תוספת למלגה שכבר ברשימה</option></select>
+      <input class="stq_note stwide" placeholder="📝 הערה — למשל: תוספת לחג, חתונה, שולם במזומן">
+      <button class="btn sm stq_save">💾 שמור</button><button class="btn sm ghost ste_x">ביטול</button>
+      <div class="hintxt" style="width:100%">אברך שכבר ברשימה של אותה תקופה: ב"תוספת" הסכום מתווסף למלגה שלו והשורה מראה "+תוספת"; ב"מלגה" הסכום מחליף את הסכום שלו.</div></div>`:'';
   view.innerHTML=`<div class="stbar">
-      <label class="btn sm" style="cursor:pointer">📥 העלה דוח חודשי (PDF)<input type="file" id="stpdf" accept="application/pdf,.pdf" hidden></label>
+      <button class="btn" id="stquick" style="flex-basis:100%">➕ הוסף אברך / תוספת לרשימה</button>
+      ${quick}
+      <label class="btn sm ghost" style="cursor:pointer">📥 העלה דוח חודשי (PDF)<input type="file" id="stpdf" accept="application/pdf,.pdf" hidden></label>
       <button class="btn sm ghost" id="stpaste">📋 הדבק רשימת ${stipView==='holiday'?'חג':'חודש'}</button>
       <span class="hintxt" style="flex-basis:100%;margin:0">הדוח החודשי (סיכום מלגות אברכים) נכנס לכל הכוללים שבו בבת אחת. רשימת חג — שם וסכום בכל שורה, לכולל שנבחר. אברך שכבר ברשימה: הסכום מתעדכן, התוספת וההערה שלך נשארות.</span></div>
     <datalist id="stnames">${[...new Set((STIPNAMES[stipKollel]||[]).concat(STIP.filter(r=>r.kollel===stipKollel).map(r=>r.name)))].sort().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
@@ -10750,6 +10763,24 @@ async function renderStip(){
       ${periods.map(per=>{const g=rows.filter(r=>r.period===per);return `<div class="r"><span>${esc(stipLabel(stipView,per))} <small style="color:var(--muted)">${g.length} אברכים</small></span><b>${stMoney(g.reduce((s,r)=>s+tot(r),0))}</b></div>`;}).join('')}
       <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}</span></div></div>`:''}`;
   view.querySelectorAll('.stghd').forEach(h=>h.onclick=()=>{const k=stipKollel+'|'+stipView+'|'+h.dataset.per;stipOpen[k]=!stipOpen[k];renderStip();});
+  const qb=document.getElementById('stquick');
+  if(qb)qb.onclick=()=>{stipEdit=stipEdit==='quick'?null:'quick';renderStip();setTimeout(()=>{const f=view.querySelector('.stq_name');if(f)f.focus();},50);};
+  const qp=view.querySelector('.stq_per');
+  if(qp){const np=view.querySelector('.stq_newper');qp.onchange=()=>{np.style.display=qp.value==='__new__'?'':'none';if(qp.value==='__new__')np.focus();};if(!periods.length){qp.value='__new__';np.style.display='';}}
+  const qs=view.querySelector('.stq_save');
+  if(qs)qs.onclick=async()=>{
+    const f=qs.closest('.stform');
+    let per=f.querySelector('.stq_per').value; if(per==='__new__')per=f.querySelector('.stq_newper').value.trim();
+    const name=f.querySelector('.stq_name').value.trim(), amt=f.querySelector('.stq_amt').value.trim(), note=f.querySelector('.stq_note').value.trim(), mode=f.querySelector('.stq_mode').value;
+    if(!per){toast(stipView==='holiday'?'כתוב את שם החג':'כתוב את החודש');return;}
+    if(stipView==='monthly'&&!/^\d{4}-\d{2}$/.test(per)){toast('החודש בצורה 2026-09');return;}
+    if(!name){toast('כתוב שם אברך');return;} if(!amtNum(amt)){toast('כתוב סכום');return;}
+    const r=await api('POST','/api/stipends',{kollel:stipKollel,kind:stipView,period:per,name,amount:amt,note,as_extra:mode==='extra'?1:0});
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    await loadStip(); stipEdit=null; Object.keys(stipOpen).forEach(k=>delete stipOpen[k]); stipOpen[stipKollel+'|'+stipView+'|'+per]=true;
+    toast((mode==='extra'?'התוספת נרשמה ל':'נוסף ')+name+' ✓'); renderStip();
+    setTimeout(()=>{const row=[...view.querySelectorAll('.strow')].find(x=>x.querySelector('.stname')&&x.querySelector('.stname').firstChild&&x.querySelector('.stname').textContent.startsWith(name));if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.background='#fff6d6';}},80);
+  };
   view.querySelectorAll('.stedit').forEach(b=>b.onclick=e=>{e.stopPropagation();stipEdit=(stipEdit===+b.dataset.id)?null:+b.dataset.id;renderStip();
     setTimeout(()=>{const f=view.querySelector('.stform[data-edit] .ste_extra');if(f)f.focus();},50);});
   view.querySelectorAll('.ste_x').forEach(b=>b.onclick=()=>{stipEdit=null;renderStip();});
