@@ -6105,6 +6105,26 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v2')")
             con.commit()
             print('  מלגות אב תשפ"ו: הופרדו לפי כוללים — %d שורות' % n)
+        # תיקון החלוקה לשלושה אברכים (סכום חד־פעמי הולך לכולל שבו רוב המלגה שלו,
+        # לא לכולל הוראה סתם כי הוא מופיע גם שם) — רק שורות שמאיר לא ערך.
+        _cf = os.path.join(HERE, 'stipends_av_v3_changed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_av_5786_v3'").fetchone() and os.path.exists(_af) and os.path.exists(_cf):
+            names = json.load(open(_cf, encoding='utf-8'))
+            n = 0
+            for nm in names:
+                con.execute("DELETE FROM stipends WHERE kind='monthly' AND period='2026-07' AND name=? AND src='קובץ' "
+                            "AND COALESCE(extra,0)=0 AND COALESCE(note,'')=''", (nm,))
+            for r in json.load(open(_af, encoding='utf-8')):
+                if r['name'] not in names:
+                    continue
+                c = con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) "
+                                "VALUES(?,?,?,?,?,0,'',?,?,?,?)",
+                                (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0),
+                                 r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += c.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v3')")
+            con.commit()
+            print('  מלגות אב תשפ"ו: תוקנה החלוקה ל-%d שורות' % n)
     except Exception as e:
         print('  stipends seed error:', e)
 
