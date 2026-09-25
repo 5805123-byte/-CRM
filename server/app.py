@@ -6125,6 +6125,20 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v3')")
             con.commit()
             print('  מלגות אב תשפ"ו: תוקנה החלוקה ל-%d שורות' % n)
+        # מאיר: "חלוקה נוספת לסוכות תשפ"ז לאברכי כולל חצות — שיהיה עוד רשימה של
+        # 'מזומנים' ערב סוכות תשפ"ז" — 75 אברכים שקיבלו, ₪48,920 (מהקובץ "חלוקת ערב סוכות").
+        _mf = os.path.join(HERE, 'stipends_sukkos_cash_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_sukkos_cash_v1'").fetchone() and os.path.exists(_mf):
+            n = 0
+            for r in json.load(open(_mf, encoding='utf-8')):
+                c = con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) "
+                                "VALUES(?,?,?,?,?,0,?,?,?,?,?)",
+                                (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0),
+                                 r.get('note') or '', r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += c.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v1')")
+            con.commit()
+            print('  מזומנים ערב סוכות תשפ"ז: נטענו %d שורות' % n)
     except Exception as e:
         print('  stipends seed error:', e)
 
