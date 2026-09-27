@@ -6154,6 +6154,20 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v2')")
             con.commit()
             print('  מזומנים ערב סוכות: כל האברכים ברשימה, ✓ למי שקיבל')
+        # מאיר שלח שוב את הקובץ עם עמודת ה"וי": הסכומים וה-✓ בדיוק לפי הקובץ
+        # (64 עם וי + ברלב שמעון ש"כן קיבל כבר"; 10 עם סכום בלי וי — ממתינים).
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_sukkos_cash_v3'").fetchone() and os.path.exists(_mf):
+            per = 'מזומנים ערב סוכות תשפ"ז'
+            for r in json.load(open(_mf, encoding='utf-8')):
+                ex = con.execute("SELECT id FROM stipends WHERE kollel=? AND kind=? AND period=? AND name=?", (r['kollel'], r['kind'], per, r['name'])).fetchone()
+                if ex:
+                    con.execute("UPDATE stipends SET amount=?, got=?, updated=? WHERE id=?", (float(r['amount'] or 0), int(r.get('got') or 0), now_iso(), ex['id']))
+                else:
+                    con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created,got) VALUES(?,?,?,?,?,0,'','','',?,?,?)",
+                                (r['kollel'], r['kind'], per, r['name'], float(r['amount'] or 0), 'קובץ', today_iso(), int(r.get('got') or 0)))
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v3')")
+            con.commit()
+            print('  מזומנים ערב סוכות: סומן ✓ לפי עמודת הוי בקובץ')
     except Exception as e:
         print('  stipends seed error:', e)
 
