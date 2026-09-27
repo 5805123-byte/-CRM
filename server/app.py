@@ -6168,6 +6168,12 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v3')")
             con.commit()
             print('  מזומנים ערב סוכות: סומן ✓ לפי עמודת הוי בקובץ')
+        # שורה כפולה שנוצרה מאיות שונה בקובץ השני ("ורטהיימר אליהו" לצד "וורטהיימר אליהו יהודה")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_sukkos_cash_v4'").fetchone():
+            con.execute("DELETE FROM stipends WHERE kind='holiday' AND period='מזומנים ערב סוכות תשפ\"ז' AND name='ורטהיימר אליהו' "
+                        "AND COALESCE(amount,0)=0 AND COALESCE(extra,0)=0 AND COALESCE(note,'')=''")
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v4')")
+            con.commit()
     except Exception as e:
         print('  stipends seed error:', e)
 
