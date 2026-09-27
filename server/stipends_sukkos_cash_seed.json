@@ -387,7 +387,7 @@
 "amount": 600,
 "att": "",
 "details": "",
-"note": "וי ✓"
+"note": ""
 },
 {
 "kollel": "חצות",
@@ -745,6 +745,206 @@
 "period": "מזומנים ערב סוכות תשפ\"ז",
 "name": "שפירא שמואל נחמן",
 "amount": 960,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "אהרוני דוד",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "אלוש משה",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "בולמן יהודה",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "בינדר דן",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "ברנס נתנאל",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "דוד ישי",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "דויטש יהושע מאיר",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "וורטהיימר אליהו יהודה",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "זמיר יוסף",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "חשין נחמן",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "כהן אליהו פנחס",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "לנדאו אפרים",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "מייקוף ישראל",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "משי זהב נחמן שבתי",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "פרנקיל מנחם מרדכי",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "פרנקל יונתן",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "קיל דב",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "קלפר מרדכי",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "רבינוביץ אהרן",
+"amount": 0,
+"att": "",
+"details": "",
+"note": ""
+},
+{
+"kollel": "חצות",
+"kind": "holiday",
+"period": "מזומנים ערב סוכות תשפ\"ז",
+"name": "רבינוביץ יהודה",
+"amount": 0,
 "att": "",
 "details": "",
 "note": ""

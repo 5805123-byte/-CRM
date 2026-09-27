@@ -10726,6 +10726,7 @@ async function renderStip(){
       ${open?`${list.map((r,i)=>`<div class="strow" data-id="${r.id}"><span class="stidx">${i+1}</span>
           <span class="stname">${esc(r.name)}${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
           <span class="stamt">${stMoney(tot(r))}${+r.extra?`<small>+${stMoney(r.extra)} תוספת</small>`:''}</span>
+          <button class="stgot${+r.got?' on':''}" data-id="${r.id}" title="${+r.got?'קיבל ✓ — לחץ לבטל':'לחץ לסמן שקיבל'}">✓</button>
           <button class="stedit" data-id="${r.id}" title="תקן / הוסף / הערה">✏️</button></div>
           ${stipEdit===r.id?`<div class="stform" data-edit="${r.id}">
             <input class="ste_amt" inputmode="decimal" value="${esc(r.amount||0)}" placeholder="סכום מהדוח" title="הסכום מהדוח">
@@ -10736,7 +10737,7 @@ async function renderStip(){
             <input class="sta_name stwide" list="stnames" placeholder="שם האברך">
             <input class="sta_amt" inputmode="decimal" placeholder="סכום"><input class="sta_note" placeholder="📝 הערה">
             <button class="btn sm sta_save" data-per="${esc(per)}">💾 הוסף</button><button class="btn sm ghost ste_x">ביטול</button></div>`:''}
-        <div class="stfoot"><span>סה"כ ${esc(stipLabel(stipView,per))} <small>· מהדוח ${stMoney(base)}${ext?(' + תוספות '+stMoney(ext)):''}</small></span><span>${stMoney(base+ext)}</span></div>
+        <div class="stfoot"><span>סה"כ ${esc(stipLabel(stipView,per))} <small>· מהדוח ${stMoney(base)}${ext?(' + תוספות '+stMoney(ext)):''} · ✓ קיבלו ${all.filter(r=>+r.got).length} מתוך ${all.length}</small></span><span>${stMoney(base+ext)}</span></div>
         <div style="display:flex;gap:6px;padding:8px 10px;flex-wrap:wrap"><button class="btn sm ghost stadd" data-per="${esc(per)}">➕ הוסף אברך לרשימה</button><button class="btn sm ghost stcsv" data-per="${esc(per)}">⬇️ אקסל</button><button class="btn sm ghost stdelgrp" data-per="${esc(per)}" style="color:var(--no);margin-inline-start:auto">🗑 מחק את הרשימה</button></div>`:''}
     </div>`;};
   const grand=rows.reduce((s,r)=>s+tot(r),0);
@@ -10784,6 +10785,9 @@ async function renderStip(){
   view.querySelectorAll('.stedit').forEach(b=>b.onclick=e=>{e.stopPropagation();stipEdit=(stipEdit===+b.dataset.id)?null:+b.dataset.id;renderStip();
     setTimeout(()=>{const f=view.querySelector('.stform[data-edit] .ste_extra');if(f)f.focus();},50);});
   view.querySelectorAll('.ste_x').forEach(b=>b.onclick=()=>{stipEdit=null;renderStip();});
+  // מאיר: "תעשה וי למי שקיבל" — לחיצה על ✓ מסמנת/מבטלת
+  view.querySelectorAll('.stgot').forEach(b=>b.onclick=async e=>{e.stopPropagation();const r=STIP.find(x=>x.id===+b.dataset.id);if(!r)return;
+    r.got=+r.got?0:1; await api('PUT','/api/stipends/'+r.id,{got:r.got}); renderStip();});
   view.querySelectorAll('.ste_save').forEach(b=>b.onclick=async()=>{
     const f=b.closest('.stform'); const id=+b.dataset.id;
     const body={amount:f.querySelector('.ste_amt').value.trim()||0,extra:f.querySelector('.ste_extra').value.trim()||0,note:f.querySelector('.ste_note').value.trim()};

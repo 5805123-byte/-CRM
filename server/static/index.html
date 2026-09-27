@@ -656,7 +656,9 @@
   .stgh .sttot{font-weight:800;color:var(--brand);white-space:nowrap}
   .stgh .stn{color:var(--muted);font-size:.82rem;white-space:nowrap}
   .stgh .stcar{color:var(--muted);font-size:.8rem}
-  .strow{display:grid;grid-template-columns:30px 1fr 110px 34px;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
+  .strow{display:grid;grid-template-columns:30px 1fr 110px 30px 34px;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
+  .stgot{width:auto;background:#fff;border:1px solid var(--line);color:#bbb;border-radius:8px;font-size:.85rem;padding:2px 5px;cursor:pointer;font-weight:800}
+  .stgot.on{background:var(--yes);border-color:var(--yes);color:#fff}
   .strow>*{min-width:0}
   .strow .stname{font-weight:700}
   /* מאיר (צילום מסך): פירוט ארוך דחף את הסכום וה-✏️ מחוץ לשורה — הפירוט נשבר לשתי שורות לכל היותר */
@@ -676,7 +678,7 @@
   .stsum h3{margin:0 0 6px;font-size:1rem}
   .stsum .r{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
   .stsum .r.tot{font-weight:800;border-bottom:none;color:var(--brand);font-size:1.05rem}
-  @media(max-width:520px){.strow{grid-template-columns:24px 1fr 90px 30px}}
+  @media(max-width:520px){.strow{grid-template-columns:24px 1fr 90px 28px 30px}}
   .cpedit{width:auto;background:none;border:1px solid var(--line);border-radius:8px;font-size:.72rem;padding:1px 5px;margin-inline-start:6px;cursor:pointer;opacity:.75;vertical-align:middle}
   .cpedit:hover{opacity:1}
   .cpedbox .cped{border:1px solid var(--no);border-radius:12px;margin:4px 6px 8px;background:var(--card)}

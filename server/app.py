@@ -402,6 +402,8 @@ def ensure_schema():
     # ו-mail_seen שומר את תוצאת החיפוש במייל (תאריך אחרון או 'none')
     # מזהה העסקה שממנה נוצרה התרומה. בלעדיו אי אפשר היה לדעת אם חיוב כבר
     # נרשם, וכל דיווח חוזר של אותו תשלום יצר שורה נוספת.
+    try: con.execute("ALTER TABLE stipends ADD COLUMN got INTEGER DEFAULT 0")   # ✓ קיבל (וי)
+    except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN tid TEXT")
     except Exception: pass
     # מאיר: "אם הכנסתי פה שזה פרנס לילה — שיפתח לי חלון לשאול איזה לילה,
@@ -6139,6 +6141,19 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v1')")
             con.commit()
             print('  מזומנים ערב סוכות תשפ"ז: נטענו %d שורות' % n)
+        # מאיר: "תכניס את כולם ותעשה וי למי שקיבל" — כל 95 האברכים ברשימה; מי שקיבל
+        # מסומן ✓, מי שלא (20) עם 0 כדי שאפשר יהיה למלא.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_sukkos_cash_v2'").fetchone() and os.path.exists(_mf):
+            per = 'מזומנים ערב סוכות תשפ"ז'
+            for r in json.load(open(_mf, encoding='utf-8')):
+                con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) "
+                            "VALUES(?,?,?,?,?,0,'','','',?,?)",
+                            (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0), 'קובץ', today_iso()))
+            con.execute("UPDATE stipends SET got=1 WHERE kind='holiday' AND period=? AND COALESCE(amount,0)+COALESCE(extra,0)>0", (per,))
+            con.execute("UPDATE stipends SET note='' WHERE kind='holiday' AND period=? AND note='וי ✓'", (per,))
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v2')")
+            con.commit()
+            print('  מזומנים ערב סוכות: כל האברכים ברשימה, ✓ למי שקיבל')
     except Exception as e:
         print('  stipends seed error:', e)
 
@@ -13030,10 +13045,12 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); sid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('amount', 'extra', 'note', 'name', 'details'):
+            for k in ('amount', 'extra', 'note', 'name', 'details', 'got'):
                 if k in b:
                     v = b[k]
-                    if k in ('amount', 'extra'):
+                    if k == 'got':
+                        v = 1 if b[k] else 0
+                    elif k in ('amount', 'extra'):
                         try: v = float(str(v).replace(',', '') or 0)
                         except ValueError: v = 0.0
                     sets.append(k + '=?'); vals.append(v)
