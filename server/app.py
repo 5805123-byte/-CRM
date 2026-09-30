@@ -6174,6 +6174,20 @@ def ensure_schema():
                         "AND COALESCE(amount,0)=0 AND COALESCE(extra,0)=0 AND COALESCE(note,'')=''")
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash_v4')")
             con.commit()
+        # מאיר: "בסוכות שיהיה עוד רשימה — חלוקת מזומנים הילולא רבינו" (חלוקת מזומנים
+        # הילולת רבינו הק' זיע"א): 96 אברכים, 22 קיבלו, ₪11,640.
+        _hf = os.path.join(HERE, 'stipends_hilula_cash_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_hilula_cash_v1'").fetchone() and os.path.exists(_hf):
+            n = 0
+            for r in json.load(open(_hf, encoding='utf-8')):
+                c = con.execute("INSERT OR IGNORE INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created,got) "
+                                "VALUES(?,?,?,?,?,0,?,?,?,?,?,?)",
+                                (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0), r.get('note') or '',
+                                 r.get('details') or '', r.get('att') or '', 'קובץ', today_iso(), int(r.get('got') or 0)))
+                n += c.rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_hilula_cash_v1')")
+            con.commit()
+            print('  חלוקת מזומנים הילולא רבינו: נטענו %d שורות' % n)
     except Exception as e:
         print('  stipends seed error:', e)
 
