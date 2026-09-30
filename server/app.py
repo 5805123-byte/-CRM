@@ -6188,6 +6188,20 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_hilula_cash_v1')")
             con.commit()
             print('  חלוקת מזומנים הילולא רבינו: נטענו %d שורות' % n)
+        # שמות שבקובץ נכתב אחריהם "לבדוק" (ירבלום, מויאל, סבאן, שטרנברג, שפירא ישראל) —
+        # ה"לבדוק" עובר להערה והשם מתיישר לשם המלא; וורטהיימר באיות הרגיל.
+        _hx = os.path.join(HERE, 'stipends_hilula_fix.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_hilula_cash_v2'").fetchone() and os.path.exists(_hx):
+            per = 'חלוקת מזומנים הילולא רבינו'
+            for old_nm, (new_nm, note) in json.load(open(_hx, encoding='utf-8')).items():
+                ex = con.execute("SELECT id FROM stipends WHERE kind='holiday' AND period=? AND name=?", (per, new_nm)).fetchone()
+                if ex:
+                    con.execute("DELETE FROM stipends WHERE kind='holiday' AND period=? AND name=? AND COALESCE(extra,0)=0", (per, old_nm))
+                else:
+                    con.execute("UPDATE stipends SET name=?, note=CASE WHEN COALESCE(note,'')='' THEN ? ELSE note END WHERE kind='holiday' AND period=? AND name=?",
+                                (new_nm, note or '', per, old_nm))
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_hilula_cash_v2')")
+            con.commit()
     except Exception as e:
         print('  stipends seed error:', e)
 
