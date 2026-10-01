@@ -65,6 +65,9 @@
   .cnames .nreq{font-size:.472em}
   /* תואר ("רבי", "מרת") אינו הפתיח של ההקדשה — הוא בגודל של זצוק"ל */
   .names .nttl,.cnames .nttl{font-size:.42em;font-weight:700;display:block}
+  /* מאיר: "תמיד המילים ליום הולדת או ליום היארצייט וכדומה שזה יהיה בשורה
+     נפרדת באותיות קצת יותר קטנות" — שורה משלו, 34 מתוך 40 של הברכה */
+  .names .nevt,.cnames .nevt{font-size:.4em;font-weight:700;display:block;letter-spacing:-.01em}
   .cclose{font-size:1em;line-height:1.4;font-weight:600;width:100%}
   .rm{display:none}
   @media screen{.rm{display:block;position:absolute;inset-inline-start:-1.5em;top:0;background:none;border:none;color:#c43a2b;cursor:pointer;font-size:.8em;opacity:.5}.rm:hover{opacity:1}}
@@ -136,11 +139,26 @@ const LEADWORD=/^(לע[יו]?לוי|נשמת|לע["'״׳]?נ|לזכר|לזכות
 const DEDWORD=/^(לע[יו]?לוי|נשמת|לע["'״׳]?נ|לזכר|לזכות|לרפואת|להצלחת|לישועת|לפרנסת|לברכת|לכבוד|לרגל|ליום|לשמחת|לנישואי|לאירוסי|לבר|לבת)$/;
 // המשך הפתיח — מילה שנחשבת חלק מהבקשה רק מיד אחרי המילה שלפניה, כך
 // ש"שלמה" ב"לרפואה שלמה" קטן אבל "שלמה" כשם פרטי נשאר גדול
-const EVENTW=['הולדתו','הולדתה','הולדת','ההולדת','הולדתם','נישואיו','נישואיה','נישואיהם','נישואי','הנישואין','הנישואים','אירוסיו','אירוסיה','האירוסין','הברית','ברית','הבר','הבת','בר','בת','מצוה','מצווה','השנה','שמחת','יום','הבית','חנוכת'];
+const EVENTW=['הולדתו','הולדתה','הולדת','ההולדת','הולדתם','נישואיו','נישואיה','נישואיהם','נישואי','הנישואין','הנישואים','אירוסיו','אירוסיה','האירוסין','הברית','ברית','הבר','הבת','בר','בת','מצוה','מצווה','השנה','שמחת','יום','הבית','חנוכת',
+  'היארצייט','יארצייט','היא"צ','יא"צ','היאר"צ','יאר"צ','היא״צ','יא״צ','היאר״צ','יאר״צ','השלושים','הזכרון','הזיכרון','הפדיון','פדיון','הבן','האפשערן','התספורת'];
+// מילה שפותחת צירוף אירוע — "ליום הולדתו", "ליום היארצייט", "לרגל הבר מצוה"
+const EVTLEAD=/^(ליום|לשמחת|לרגל|לכבוד|לנישואי|לאירוסי|לבר|לבת|יום|שמחת)$/;
+// אורך צירוף האירוע בתחילת השורה; צירוף שנגמר ב"של" ממשיך לשם — פתיח, לא אירוע
+function evtLen(ws){
+  if(!ws.length || !EVTLEAD.test(ws[0])) return 0;
+  let i=1;
+  while(i<ws.length && (LEAD2[ws[i-1]]||[]).indexOf(ws[i])>=0) i++;
+  return ws[i-1]==='של' ? 0 : i;
+}
+// מאיר: "תמיד המילים ליום הולדת או ליום היארצייט וכדומה שזה יהיה בשורה נפרדת
+// באותיות קצת יותר קטנות" — צירוף אירוע שאין אחריו שם (רק ברכה או סוף) הוא שורה משלו
+function evtOnly(ws){ const n=evtLen(ws); return (n && (n>=ws.length || REQSTART.test(ws[n]))) ? n : 0; }
+const BENW=/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/;
 const LEAD2={'לרפואה':['שלמה','שלימה'],'לברכה':['והצלחה'],'להצלחה':['וברכה'],
   'לזיווג':['הגון'],'לפרנסה':['טובה'],'לזרע':['של','קודש'],'של':['קיימא'],'לישועה':['שלמה'],
   'ליום':EVENTW,'לשמחת':EVENTW,'לרגל':EVENTW,'לכבוד':EVENTW,'יום':EVENTW,'שמחת':EVENTW,
-  'הבר':['מצוה','מצווה'],'הבת':['מצוה','מצווה'],'בר':['מצוה','מצווה'],'בת':['מצוה','מצווה'],'לבר':['מצוה','מצווה'],'לבת':['מצוה','מצווה'],'חנוכת':['הבית'],'מצוה':['של'],'מצווה':['של']};
+  'הבר':['מצוה','מצווה'],'הבת':['מצוה','מצווה'],'בר':['מצוה','מצווה'],'בת':['מצוה','מצווה'],'לבר':['מצוה','מצווה'],'לבת':['מצוה','מצווה'],'חנוכת':['הבית'],'מצוה':['של'],'מצווה':['של'],
+  'הבן':['הבן'],'הפדיון':['הבן'],'פדיון':['הבן']};
 // אורך פתיח ההקדשה בלבד (לע"נ, לרגל, ליום הולדתו…), בלי מילות ברכה
 function dedChain(ws){
   let i=0;
@@ -197,6 +215,10 @@ function addLeilui(ws){
 }
 function dedPart(ws, trailing){
   ws=addLeilui(ws);
+  // "ליום היארצייט" / "ליום הולדתו לברכה והצלחה…" — אירוע בשורה משלו ואחריו הברכה
+  const ne=evtOnly(ws);
+  if(ne) return `<span class="nrow nevt">${ws.slice(0,ne).map(w=>esc(w)).join(' ')}</span>`
+    +(ne<ws.length?`<span class="nrow nreq">${ws.slice(ne).map(w=>esc(w)).join(' ')}</span>`:'');
   const k=leadLen(ws);
   let r=k;
   while(r<ws.length && RELWORD.test(ws[r])) r++;
@@ -204,6 +226,9 @@ function dedPart(ws, trailing){
   // ("לרפואה שלמה") ובגודל הנוסח, ואם היא פותחת — היא הפתיח, חצי מהשם
   if(k>0 && r>=ws.length)
     return `<span class="nrow ${trailing?'nreq':'nlead'}">${ws.map(w=>esc(w)).join(' ')}</span>`;
+  // "לברכה והצלחה בכל העניינים" — מילת ברכה (לא סמיכות) בלי בן/בת: כולה ברכה
+  if(k>0 && !DEDWORD.test(ws[0]) && !ws.some(w=>BENW.test(w)))
+    return `<span class="nrow nreq">${ws.map(w=>esc(w)).join(' ')}</span>`;
   if(k>0 && r<ws.length) return bodyPart(ws.slice(r), ws.slice(0,r));
   return bodyPart(ws);
 }
@@ -338,16 +363,24 @@ function joinSingles(rows){
 }
 function rowsHTML(rows){
   return rows.map(r=>{
+    // פתיח שכולו אירוע ("ליום הולדתו" לפני השם) — שורת אירוע
+    if(r.role==='lead' && evtLen(r.ws)===r.ws.length) return `<span class="nrow nevt">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     if(r.role==='lead') return `<span class="nrow nlead">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     if(r.role==='ttl')  return `<span class="nrow nttl">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
-    if(r.role==='req')  return `<span class="nrow nreq">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
+    if(r.role==='req'){
+      // ברכה שפותחת באירוע: "ליום הולדתו" בשורה משלו, והברכה מתחתיו
+      const n=evtLen(r.ws);
+      if(n) return `<span class="nrow nevt">${r.ws.slice(0,n).map(w=>esc(w)).join(' ')}</span>`
+        +(n<r.ws.length?`<span class="nrow nreq">${r.ws.slice(n).map(w=>esc(w)).join(' ')}</span>`:'');
+      return `<span class="nrow nreq">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
+    }
     return `<span class="nline">${fmtWords(r.ws)}</span>`;
   }).join('');
 }
 function bodyPart(ws, lead){ return rowsHTML(joinSingles(bodyRows(ws, lead))); }
 // שם התורם קטן מהשמות שמתפללים עליהם — בין אם הוא בשורה משלו ובין אם
 // הוא באותה שורה, לפני "לע\"נ" / "לרפואת"
-function formatName(line, donorLine){
+function formatName(line, donorLine, afterName){
   const t=(line||'').trim(); if(!t) return '';
   const ws=t.split(/\s+/);
   let ded=-1;
@@ -363,15 +396,18 @@ function formatName(line, donorLine){
       if(DEDWORD.test(ws[k]) && ll<ws.length-k && !REQSTART.test(ws[k+ll])){ ded=k; break; } }
   // מי תורם ועבור מה הוא תורם — תמיד בשתי שורות נפרדות
   if(ded>0) return `<span class="nrow ndon"><span class="nline">${fmtWords(ws.slice(0,ded))}</span></span>`+dedPart(ws.slice(ded),1);
-  if(LEADWORD.test(ws[0])) return dedPart(ws);
+  if(LEADWORD.test(ws[0])) return dedPart(ws, !!afterName);
   const body=bodyPart(ws);
   return donorLine ? `<span class="ndon">${body}</span>` : body;
 }
 function formatLines(text){
   const ls=String(text||'').split('\n');
-  // שורה ראשונה היא שם התורם רק אם אחריה יש שורת הקדשה/בקשה
-  const hasLead=ls.some((l,i)=>i>0 && LEADWORD.test((l.trim().split(/\s+/)[0]||'')));
-  return ls.map((l,i)=>formatName(l, i===0 && hasLead)).join('\n');
+  // שורה ראשונה היא שם התורם רק אם אחריה באה הקדשה עם שם ("לע\"נ אביו…").
+  // שורת אירוע ("ליום היארצייט") או ברכה ("לרפואה שלמה") אחרי השם אינן
+  // הקדשה של תורם — השם שלפניהן הוא מי שמתפללים עליו, והוא נשאר גדול.
+  const hasLead=ls.some((l,i)=>{ if(i===0) return false; const ws=l.trim().split(/\s+/).filter(Boolean);
+    return ws.length && DEDWORD.test(ws[0]) && !evtOnly(ws); });
+  return ls.map((l,i)=>formatName(l, i===0 && hasLead, i>0 && !hasLead)).join('\n');
 }
 function wireFmt(el){
   el.addEventListener('focus',()=>{ el.textContent=el.innerText; });      // עריכה בטקסט רגיל
@@ -483,7 +519,7 @@ function parnesSizes(sf){
   // u0 — הגודל הקבוע שאינו משתתף בהגדלה; u — רק השמות גדלים לפיו.
   const u0=sh.clientWidth/1000, u=u0*sf;
   // מנקים הקטנות קודמות — הן חושבו מול גודל אחר
-  document.querySelectorAll('#pairs .nline,#pairs .nlead,#pairs .nreq,#pairs .nttl')
+  document.querySelectorAll('#pairs .nline,#pairs .nlead,#pairs .nreq,#pairs .nttl,#pairs .nevt')
     .forEach(e=>e.style.removeProperty('font-size'));
   const setu=(sel,n,uu)=>document.querySelectorAll(sel)
     .forEach(e=>{e.style.setProperty('font-size',(n*uu).toFixed(2)+'px','important');});
@@ -500,7 +536,7 @@ function parnesSizes(sf){
   // נשמת / לרפואת". הבקשה שאחרי השם גדלה יחד איתו ביחס 40/70, אחרת
   // כשהשם ממלא את הדף היא נראית זעירה לידו.
   const uq=u0*Math.min(1,sf);
-  setu('#pairs .nreq',40,u); setu('#pairs .nlead',40,uq);
+  setu('#pairs .nreq',40,u); setu('#pairs .nlead',40,uq); setu('#pairs .nevt',34,u);
   // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת.
   // מוחזר המקדם הקטן ביותר — 1 פירושו שאף שם לא הוקטן ברוחב.
   // רשת ביטחון בלבד: מילה בודדת רחבה מהמסגרת ואי אפשר לשבור אותה
@@ -661,6 +697,7 @@ function certRows(){
       if(n.classList.contains('ndon')) r='donor';
       else if(/\bnlead\b/.test(c)) r='lead';
       else if(/\bnttl\b/.test(c)) r='ttl';
+      else if(/\bnevt\b/.test(c)) r='evt';
       else if(/\bnreq\b/.test(c)) r='req';
       out.push({t,r}); any=true;
     });

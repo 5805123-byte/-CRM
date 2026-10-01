@@ -8193,6 +8193,7 @@ _FIT_MIN = .30      # עד כמה מותר להקטין שורת שמות כדי
 # מאיר: "איפה שכתוב לעילוי נשמת — תוריד את המילים יהיו ויעמדו לזכות"
 _NESHAMA = re.compile(r'לע[יו]?לוי|לע["\'\u05f4\u05f3]?נ(\s|$)|נשמת|לרפוא')
 _SPACE_R = .92      # רוחב הרווח בין המילים
+_EVT_R = .85        # "ליום הולדתו" / "ליום היארצייט" — קצת קטן מהברכה (34 מתוך 40)
 # פתיח שבא לפני השם ("לעילוי נשמת אסתר בת יהושע") — רק הפתיח קטן, והשמות
 # שאחריו גדולים. שונה מברכה שבאה אחרי השם ונמשכת עד הסוף.
 # מאיר (תשרי תשפ"ז): "ליום הולדתו מרדכי דוד בן ברכה" יצא כולו ענק — "כ"כ הרבה
@@ -8212,14 +8213,42 @@ _CERT_DED = re.compile(r'^(לע[יו]?לוי|נשמת|לע["\'״׳]?נ|לזכר|
 # כך "שלמה" ב"לרפואה שלמה" קטן, אבל "שלמה" כשם פרטי נשאר גדול.
 _EVENT = ('הולדתו', 'הולדתה', 'הולדת', 'ההולדת', 'הולדתם', 'נישואיו', 'נישואיה', 'נישואיהם', 'נישואי',
           'הנישואין', 'הנישואים', 'אירוסיו', 'אירוסיה', 'האירוסין', 'הברית', 'ברית', 'הבר', 'הבת', 'בר', 'בת',
-          'מצוה', 'מצווה', 'השנה', 'הולדתה', 'שמחת', 'יום', 'הולדת', 'הבית', 'חנוכת')
+          'מצוה', 'מצווה', 'השנה', 'הולדתה', 'שמחת', 'יום', 'הולדת', 'הבית', 'חנוכת',
+          'היארצייט', 'יארצייט', 'היא"צ', 'יא"צ', 'היאר"צ', 'יאר"צ', 'היא״צ', 'יא״צ', 'היאר״צ', 'יאר״צ',
+          'השלושים', 'הזכרון', 'הזיכרון', 'הנישואין', 'הפדיון', 'פדיון', 'הבן', 'האפשערן', 'התספורת')
+# מילה שפותחת צירוף אירוע — "ליום הולדתו", "ליום היארצייט", "לרגל הבר מצוה"
+_EVT_LEAD = re.compile(r'^(ליום|לשמחת|לרגל|לכבוד|לנישואי|לאירוסי|לבר|לבת|יום|שמחת)$')
 _CERT_LEAD2 = {'לרפואה': ('שלמה', 'שלימה'), 'לברכה': ('והצלחה',), 'להצלחה': ('וברכה',),
                'לזיווג': ('הגון',), 'לפרנסה': ('טובה',), 'לזרע': ('של', 'קודש'),
                'של': ('קיימא',), 'לישועה': ('שלמה',),
                'ליום': _EVENT, 'לשמחת': _EVENT, 'לרגל': _EVENT, 'לכבוד': _EVENT, 'יום': _EVENT,
                'שמחת': _EVENT, 'הבר': ('מצוה', 'מצווה'), 'הבת': ('מצוה', 'מצווה'), 'בר': ('מצוה', 'מצווה'),
                'בת': ('מצוה', 'מצווה'), 'לבר': ('מצוה', 'מצווה'), 'לבת': ('מצוה', 'מצווה'),
-               'חנוכת': ('הבית',), 'מצוה': ('של',), 'מצווה': ('של',), 'לנישואי': (), 'לאירוסי': ()}
+               'חנוכת': ('הבית',), 'מצוה': ('של',), 'מצווה': ('של',), 'לנישואי': (), 'לאירוסי': (),
+               'הבן': ('הבן',), 'הפדיון': ('הבן',), 'פדיון': ('הבן',)}
+
+
+def _evt_len(ws):
+    """אורך צירוף האירוע בתחילת השורה ("ליום הולדתו", "לרגל הבר מצוה"). 0 אם אין.
+    צירוף שנגמר ב"של" ממשיך לשם ("לרגל הבר מצוה של יוסף") — זה פתיח, לא אירוע."""
+    if not ws or not _EVT_LEAD.match(ws[0]):
+        return 0
+    i = 1
+    while i < len(ws) and ws[i] in _CERT_LEAD2.get(ws[i - 1], ()):
+        i += 1
+    if ws[i - 1] == 'של':
+        return 0
+    return i
+
+
+def _evt_only(ws):
+    """מאיר: "תמיד המילים ליום הולדת או ליום היארצייט וכדומה שזה יהיה בשורה
+    נפרדת באותיות קצת יותר קטנות". צירוף אירוע שאין אחריו שם — רק ברכה או
+    סוף השורה — הוא שורת אירוע משלו. מחזיר את אורכו, או 0."""
+    n = _evt_len(ws)
+    if n and (n >= len(ws) or _CERT_REQ.match(ws[n])):
+        return n
+    return 0
 
 
 def _ded_chain(ws):
@@ -8289,7 +8318,11 @@ def _cert_lines(text):
     """פיצול לשורות כמו בתצוגה שבמסך: שם התורם בשורה משלו, "לע\"נ אביו"
     בשורה משלו, והשמות שמתפללים עליהם בשורה האחרונה."""
     raws = str(text or '').split('\n')
-    later_lead = any(i > 0 and (r.split() or [''])[0] and _CERT_LEAD.match(r.split()[0])
+    # השורה הראשונה היא שם התורם רק אם אחריה באה הקדשה עם שם ("לע\"נ אביו…").
+    # שורת אירוע ("ליום היארצייט") או ברכה ("לרפואה שלמה") אחרי השם אינן
+    # הקדשה של תורם — השם שלפניהן הוא מי שמתפללים עליו, והוא נשאר גדול.
+    later_lead = any(i > 0 and r.split() and _CERT_DED.match(r.split()[0])
+                     and not _evt_only(r.split())
                      for i, r in enumerate(raws))
     out = []
     for idx, raw in enumerate(raws):
@@ -8317,21 +8350,58 @@ def _cert_lines(text):
             out.append((' '.join(ws), 'donor')); continue
         if _CERT_LEAD.match(ws[0]):
             ws = _add_leilui(ws)
+            # "ליום היארצייט" / "ליום הולדתו לברכה והצלחה…" — אירוע בשורה
+            # משלו, ואחריו הברכה. אין כאן שם שיגדל.
+            ne = _evt_only(ws)
+            if ne:
+                out.append((' '.join(ws[:ne]), 'evt'))
+                if ne < len(ws):
+                    out.append((' '.join(ws[ne:]), 'req'))
+                continue
             i = _lead_len(ws)
             j = i
             while j < len(ws) and _CERT_REL.match(ws[j]):
                 j += 1
             # שורה שכולה פתיח ואין אחריה שם: אחרי שם התורם זו הבקשה
             # ("לרפואה שלמה") בגודל הנוסח, ובתחילת הבלוק זה הפתיח — חצי מהשם
+            after_name = out and out[-1][1] == 'names'
             if i > 0 and j >= len(ws):
-                out.append((' '.join(ws), 'req' if ded > 0 else 'lead'))
+                out.append((' '.join(ws), 'req' if (ded > 0 or after_name) else 'lead'))
+                continue
+            # "לברכה והצלחה בכל העניינים" — מילת ברכה (לא סמיכות) בלי בן/בת
+            # אחריה: כל השורה ברכה, לא פתיח ואחריו "שם" ענק
+            if i > 0 and not _CERT_DED.match(ws[0]) and not any(_CERT_BEN.match(w) for w in ws):
+                out.append((' '.join(ws), 'req'))
                 continue
             # כל הפתיח בשורה משלו ובקטן — גם "לעילוי נשמת" בלי מילת קרבה
             if i > 0 and j < len(ws):
                 out.extend(_cert_body(ws[:j], ws[j:]))
                 continue
         out.extend(_cert_body([], ws))
-    return _cert_join1(out)
+    return _cert_join1(_cert_split_evt(out))
+
+
+def _cert_split_evt(rows):
+    """מאיר: "תמיד המילים ליום הולדת או ליום היארצייט וכדומה שזה יהיה בשורה
+    נפרדת באותיות קצת יותר קטנות" — ברכה שפותחת בצירוף אירוע נחצית: האירוע
+    בשורה משלו (evt), והברכה אחריו. פתיח שכולו אירוע נעשה גם הוא evt."""
+    out = []
+    for txt, role in rows:
+        ws = str(txt or '').split()
+        if role == 'req':
+            n = _evt_len(ws)
+            if n and n < len(ws):
+                out.append((' '.join(ws[:n]), 'evt'))
+                out.append((' '.join(ws[n:]), 'req'))
+                continue
+            if n:
+                out.append((' '.join(ws), 'evt'))
+                continue
+        elif role == 'lead' and ws and _evt_len(ws) == len(ws):
+            out.append((' '.join(ws), 'evt'))
+            continue
+        out.append((txt, role))
+    return out
 
 
 def _cert_join1(rows):
@@ -8997,6 +9067,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             return [(w, z, True) for w in ws]
         if role == 'req':                  # הבקשה שאחרי השמות — גדלה יחד איתו
             return [(w, px * req_r, True) for w in ws]
+        if role == 'evt':                  # "ליום הולדתו" — שורה משלו, קצת קטן מהברכה
+            return [(w, px * req_r * _EVT_R, True) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         n, out = _lead_len(ws), []
@@ -9128,11 +9200,12 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             if nm:
                 cap = min(nm) * (40.0 / 70.0)
                 for i, (ln, ro) in enumerate(zip(lines, rl)):
-                    if ro not in ('req', 'lead') or not ln:
+                    if ro not in ('req', 'lead', 'evt') or not ln:
                         continue
                     top = max(z for _, z, _ in ln)
-                    if top > cap:
-                        f = cap / top
+                    c = cap * _EVT_R if ro == 'evt' else cap
+                    if top > c:
+                        f = c / top
                         lines[i] = [(t, z * f, h) for t, z, h in ln]
         return lines
 
