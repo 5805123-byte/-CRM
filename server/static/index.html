@@ -876,6 +876,11 @@
     font-family:inherit;font-size:.85rem;text-align:center}
   .cm_calc{flex:1 1 100%;margin-top:4px}
   /* תת-חלונות בתוך בלוק ההתחייבויות — הכל במקום אחד, בלי לתפוס מקום סתם */
+  /* רישום תרומה / התחייבות — שני מצבים לאותו טופס */
+  .dnmode{display:flex;gap:6px;margin:4px 0 8px}
+  .dnmode .dnm{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 6px;
+    font-family:inherit;font-size:.86rem;font-weight:700;color:var(--muted);cursor:pointer}
+  .dnmode .dnm.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
   /* קיצורי דרך מהכרטיס — "להגיע לעוד אובייקטים בלי הרבה סיבוכים" */
   .cmquick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px}
   .cmquick .cmqt{font-size:.8rem;color:var(--muted);font-weight:700}

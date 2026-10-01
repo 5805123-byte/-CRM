@@ -3286,13 +3286,15 @@ function commitHTML(d){
       <button type="button" class="cmq" data-q="donation">💵 תרומה</button></div>
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
-    <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
-    <div class="hintxt" style="margin:2px 2px 7px">שלושה שדות וזהו — כמה, מתי, ואיך. כל השאר לא חובה.</div>
+    <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה / התחייבות</summary>
+    <div class="dnmode"><button type="button" class="dnm on" data-m="paid">💵 תרומה שנכנסה</button><button type="button" class="dnm" data-m="pledge">🎯 התחייב — עדיין לא שולם</button></div>
+    <div class="hintxt" id="dn_hint" style="margin:2px 2px 7px">שלושה שדות וזהו — כמה, מתי, ואיך. כל השאר לא חובה.</div>
     <div class="two"><label class="fld"><span>💲 כמה</span><div class="curwrap"><select id="dn_cur" class="curpick">${curOpts(cur)}</select><input id="dn_amt" inputmode="decimal" placeholder="480"></div></label>
     <label class="fld"><span>📅 מתי</span><input id="dn_date" type="date"></label></div>
-    <div class="two"><label class="fld"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
+    <div class="two"><label class="fld" id="dn_meth_l"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
       <div class="addrow hidden" id="dn_methnew"><input id="dn_methnewi" placeholder="איך הוא תרם? — למשל: קופת גמ&quot;ח"><button class="btn sm" id="dn_methnewb">➕ הוסף</button></div></label>
     <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
+    <option value="__personal__">✏️ ייעוד אישי — רק אצלו…</option>
     <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
     <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
     <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option></select></label></div>
@@ -4780,15 +4782,32 @@ function cardDetails(d,body){
   const dnDate=document.getElementById('dn_date'); if(dnDate)dnDate.value=todayStr();
   const dnCat=document.getElementById('dn_cat'), dnMeth=document.getElementById('dn_method');
   const isBldg=c=>/בנין|בניין/.test(c||'');
+  // מאיר: "אם תורם התחייב סכום מסוים עבור משהו מסוים שאוכל להכניס את ההתחייבות
+  // שלו בקלות ובקיצור כאן… לא רק תרומה שנכנסה אלא תרומה שהתחייב… ואפשרות
+  // להוסיף אצלו ייעוד מסוים שיישאר רק אצלו ולא אצל כולם" — אותו טופס, שני
+  // מצבים: נכנסה (תרומה) / התחייב (התחייבות חד־פעמית, חוב עד שישולם).
+  let dnMode='paid';
   const dnShow=()=>{
     const o=dnCat.options[dnCat.selectedIndex], day=o?o.dataset.day:'';
+    const pledge=dnMode==='pledge';
     document.getElementById('dn_daybox').classList.toggle('hidden',!day);
-    document.getElementById('dn_newrow').classList.toggle('hidden',dnCat.value!=='__new__');
+    const nr=document.getElementById('dn_newrow'), nf=document.getElementById('dn_catfree');
+    nr.classList.toggle('hidden',dnCat.value!=='__new__'&&dnCat.value!=='__personal__');
+    if(nf)nf.placeholder=dnCat.value==='__personal__'?'עבור מה התחייב? (יישאר רק בכרטיס שלו)':'שם הייעוד החדש';
     document.getElementById('dn_bldg_l').classList.toggle('hidden',!isBldg(dnCat.value));
-    document.getElementById('dn_ccbox').classList.toggle('hidden',!/אשראי|אונליין/.test(dnMeth.value));
+    document.getElementById('dn_ccbox').classList.toggle('hidden',pledge||!/אשראי|אונליין/.test(dnMeth.value));
+    // בהתחייבות אין "איך נתרם" ואין תשלום חוזר — רק כמה, מתי ועבור מה
+    const ml=document.getElementById('dn_meth_l'); if(ml)ml.classList.toggle('hidden',pledge);
+    const rp=document.querySelector('#dnbox .jointchk'); if(rp)rp.classList.toggle('hidden',pledge);
+    if(pledge){const rb=document.getElementById('dn_repbox');if(rb)rb.classList.add('hidden');}
+    const hint=document.getElementById('dn_hint');
+    if(hint)hint.textContent=pledge?'כמה התחייב, מתי, ועבור מה. יירשם כחוב בהתחייבויות עד שהכסף ייכנס.':'שלושה שדות וזהו — כמה, מתי, ואיך. כל השאר לא חובה.';
     const ab=document.getElementById('dn_add');       // הכפתור אומר בדיוק מה יישמר
-    if(ab)ab.textContent=day?('💾 שמור '+(DAYSAVE[day]||'יום פרנס')):'💾 שמור תרומה';
+    if(ab)ab.textContent=day?('💾 שמור '+(DAYSAVE[day]||'יום פרנס')):(pledge?'💾 שמור התחייבות':'💾 שמור תרומה');
   };
+  document.querySelectorAll('#dnbox .dnm').forEach(b=>b.onclick=()=>{dnMode=b.dataset.m;
+    document.querySelectorAll('#dnbox .dnm').forEach(x=>x.classList.toggle('on',x===b));dnShow();
+    const a=document.getElementById('dn_amt');if(a)a.focus();});
   if(dnCat){dnCat.onchange=dnShow;dnMeth.onchange=dnShow;dnShow();}
   // מאיר: "לא רואים שאפשר להוסיף אופציה חדשה איך הוא תרם" — הרשימה
   // הייתה סגורה. עכשיו יש "➕ דרך חדשה", והיא נשמרת ומופיעה מכאן והלאה
@@ -4867,6 +4886,12 @@ function cardDetails(d,body){
       if(cat.length<2){toast('כתוב את שם הייעוד');return;}
       if(!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
     }
+    // ייעוד אישי — נשמר רק על השורה של התורם הזה, לא נכנס לרשימה של כולם
+    if(cat==='__personal__'){
+      cat=document.getElementById('dn_catfree').value.trim();
+      if(cat.length<2){toast('כתוב עבור מה');return;}
+    }
+    if(!cat&&dnMode==='pledge'){toast('בחר עבור מה התחייב');return;}
     if(isBldg(cat)){const it=document.getElementById('dn_bldg').value.trim();
       if(it){if(!(BUILDING_ITEMS||[]).includes(it)){await api('POST','/api/building_items',{name:it});BUILDING_ITEMS.unshift(it);}cat=cat+' — '+it;}}
     // "➕ דרך חדשה" שנבחרה ולא הושלמה אינה דרך תשלום
@@ -4879,8 +4904,15 @@ function cardDetails(d,body){
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
     dnAdd.disabled=true;
     const dcur=(dnCur&&dnCur.value)||'';
-    let made=0;
-    if(amt&&!dayKind){
+    let made=0, pledged=false;
+    if(amt&&!dayKind&&dnMode==='pledge'){
+      // התחייבות חד־פעמית: שורה בהתחייבויות, חוב עד שתרומה תיכנס כנגדה
+      const r=await api('POST','/api/pledge',{donor_id:d.id,category:cat,amount:amt,status:'טרם',date,note,cur:dcur,monthly:0,confirmed:1});
+      if(!r||!r.id){toast('לא נשמר');dnAdd.disabled=false;return;}
+      d.pledges=(d.pledges||[]).concat([{id:r.id,donor_id:d.id,category:cat,amount:amt,status:'טרם',date,note,cur:dcur,monthly:0,confirmed:1,paid:'',detail:'',permo:'',avreich:''}]);
+      pledged=true;
+    }
+    else if(amt&&!dayKind){
       // תשלום חוזר: שורה לכל חודש בטווח. אחרת — שורה אחת בתאריך שנבחר.
       const dates=(dnRep&&dnRep.checked)?repDates():[date];
       if(dnRep&&dnRep.checked&&!dates.length){toast('בחר מאיזה חודש ועד איזה חודש');dnAdd.disabled=false;return;}
@@ -4911,7 +4943,7 @@ function cardDetails(d,body){
       d.prayers=(d.prayers||[]).concat([{id:r.id,text:pray,tier:tr}]);
     }
     dnAdd.disabled=false;
-    toast((made>1?('נרשמו '+made+' תשלומים ✓'):'נרשם ✓')+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));
+    toast((pledged?'ההתחייבות נרשמה ✓':(made>1?('נרשמו '+made+' תשלומים ✓'):'נרשם ✓'))+(dayKind?' + יום נתפס':'')+(pray?' + שם לקוויטל':''));
     cardDetails(d,body); if(tab==='donors')renderDonors();
   };
   document.getElementById('f_merge').onclick=()=>document.getElementById('mergebox').classList.toggle('hidden');
