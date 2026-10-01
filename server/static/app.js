@@ -6919,10 +6919,28 @@ function renderParnesEdit(d){
       <label class="fld"><span>שנה</span><select class="pyyr" data-id="${p.id}">${heYearOpts(p.hyear)}</select></label></div>
     <label class="fld"><span>💳 דרך מה ייגבה</span><select class="pymethod chansel" data-id="${p.id}">${channelOpts(p.method)}</select></label>
     <label class="fld" style="margin:4px 0"><span>🕯️ שמות ובקשות לתעודת הפרנס</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו והבקשות (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
-    <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px">💾 שמור שמות</button>
+    <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px;width:100%">💾 שמור</button>
     <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
   el.querySelectorAll('.pyded').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.parnes.find(x=>x.id==t.dataset.id);if(!p||(p.dedication||'')===t.value)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');};});
-  el.querySelectorAll('.pydsave').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);const t=el.querySelector('.pyded[data-id="'+b.dataset.id+'"]');if(!p||!t)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');});
+  // מאיר: "איך אני שומר את זה? תעשה שיהיה כפתור שמירה" — כל שדה נשמר גם
+  // לבד ברגע שמשנים אותו, אבל הכפתור שומר את כל הפרנס בבת אחת: סכום, סוג,
+  // יום, חודש, שנה, אמצעי גבייה והשמות — כדי שיהיה ברור שהכל נשמר.
+  el.querySelectorAll('.pydsave').forEach(b=>b.onclick=async()=>{
+    const p=d.parnes.find(x=>x.id==b.dataset.id); if(!p)return;
+    const q=cls=>el.querySelector('.'+cls+'[data-id="'+b.dataset.id+'"]');
+    const t=q('pyded'), am=q('pyamt'), kd=q('pykind'), mo=q('pymon'), dy=q('pyday'), yr=q('pyyr'), me=q('pymethod');
+    const body={};
+    if(t){p.dedication=t.value;body.dedication=t.value;}
+    if(am){p.amount=am.value.trim();body.amount=p.amount;}
+    if(kd){p.kind=kd.value;body.kind=p.kind;}
+    if(mo&&dy){p.month=mo.value;p.day=+dy.value;p.date_text=heDay(p.day)+' '+p.month;body.month=p.month;body.day=p.day;body.date_text=p.date_text;}
+    if(yr){p.hyear=yr.value;body.hyear=p.hyear;}
+    if(me&&me.value!=='__new__'){p.method=me.value;body.method=p.method;}
+    b.disabled=true;
+    const r=await api('PUT','/api/parnes/'+p.id,body);
+    b.disabled=false;
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    renderParnesEdit(d);toast('הפרנס נשמר ✓');});
   el.querySelectorAll('.pyamt').forEach(inp=>inp.onchange=async()=>{const p=d.parnes.find(x=>x.id==inp.dataset.id);if(!p)return;p.amount=inp.value.trim();await api('PUT','/api/parnes/'+p.id,{amount:p.amount});renderParnesEdit(d);toast('סכום עודכן ✓');});
   el.querySelectorAll('.pykind').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.kind=sel.value;await api('PUT','/api/parnes/'+p.id,{kind:p.kind});renderParnesEdit(d);toast('סוג עודכן ✓');});
   el.querySelectorAll('.pymethod').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p||sel.value==='__new__')return;p.method=sel.value;await api('PUT','/api/parnes/'+p.id,{method:p.method});toast('אמצעי גבייה עודכן ✓');});

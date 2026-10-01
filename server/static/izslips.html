@@ -35,14 +35,24 @@
      רקע ב-CSS אינו מודפס אלא אם המשתמש מסמן "גרפיקת רקע" בתיבת
      ההדפסה. תמונה אמיתית מודפסת תמיד, ולכן הבלאנק הוא <img> ולא
      background — ולמקרה שנשאר רקע כלשהו, גם print-color-adjust. */
-  .slip{width:210mm;height:148.5mm;position:relative;overflow:hidden;background:#fdf8ee;
+  /* מאיר (תשרי תשפ"ז): "תעביר גם את פתקי יששכר זבולון לבלאנק החדש" — הפתק
+     על הבלאנק הלבן: דף לבן, בס"ד בפינה הימנית העליונה, ובתחתית קו העיטור,
+     הלוגו ושורת הפרטים. בלי לוגו בראש — שורת הראש מתחילה מהשוליים. */
+  @font-face{font-family:'Fontov';font-weight:400;src:url(/fontov-regular.otf) format('opentype')}
+  @font-face{font-family:'Fontov';font-weight:700;src:url(/fontov-bold.otf) format('opentype')}
+  .slip{width:210mm;height:148.5mm;position:relative;overflow:hidden;background:#fff;
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .slip>.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
-    z-index:0;pointer-events:none}
-  .slip .in{position:absolute;inset:6mm 11mm 6mm 11mm;display:flex;flex-direction:column;z-index:1}
-  /* שורת הראש — מוסטת שמאלה כדי לא להיכנס מתחת ללוגו שבימין */
-  .who{display:flex;gap:13mm;align-items:flex-start;padding-inline-start:36mm;min-height:33mm;
-    overflow:hidden}
+  .slip .bsd{position:absolute;top:5mm;right:10mm;font-family:'Fontov',serif;font-weight:700;font-size:11pt;color:#7a1f10}
+  .slip .in{position:absolute;inset:12mm 10mm 22mm 10mm;display:flex;flex-direction:column;z-index:1}
+  .slip .footer{position:absolute;right:10mm;left:10mm;bottom:4mm;direction:rtl}
+  .slip .footer .orn{display:block;width:100%;height:3mm;margin:0 0 1mm}
+  .slip .footer .line{display:flex;align-items:center;gap:3mm}
+  .slip .footer .logo{width:10mm;flex:0 0 auto;display:block}
+  .slip .footer .contact{font-family:'Fontov',serif;font-weight:400;font-size:8pt;color:#4a2a17;white-space:nowrap;letter-spacing:.1px}
+  .slip .footer .contact .sep{font-style:normal;color:#a8763c;margin:0 2.2mm}
+  .slip .footer .contact .web{direction:ltr;unicode-bidi:isolate}
+  /* שורת הראש — שני השמות מימין לשמאל */
+  .who{display:flex;gap:13mm;align-items:flex-start;overflow:hidden}
   .who .w{line-height:1.2}
   .who .lbl{font-size:14pt;color:var(--gold);font-weight:800;letter-spacing:.01em}
   .who .nm{font-size:24pt;font-weight:800;color:var(--deep);white-space:nowrap}
@@ -88,8 +98,13 @@
      שהמסך, ההדפסה והתמונה שנשלחת ייראו אותו דבר. */
   .sheet.one{display:block}
   .slip.full{height:297mm;border-bottom:none}
-  .slip.full .who{min-height:36mm}
-  .slip.full .lead{font-size:24pt;margin-top:2mm}
+  .slip.full .bsd{top:9mm;right:12mm}
+  .slip.full .in{inset:18mm 14mm 30mm 14mm}
+  .slip.full .footer{right:12mm;left:12mm;bottom:5mm}
+  .slip.full .footer .orn{height:4mm}
+  .slip.full .footer .logo{width:13mm}
+  .slip.full .footer .contact{font-size:9pt}
+  .slip.full .lead{font-size:24pt;margin-top:4mm}
   .slip.full .lead .z{margin-top:2.5mm}
   .slip.full .names{font-size:56pt;margin-top:5mm}
   /* מאיר: "תעשה לי כמו בדף של פרנס יום — למטה לשלוח לתורם, להעתיק או
@@ -114,13 +129,11 @@
        בדיוק כמו במסך. מאחורי הדף המוקטן נפרש אותו בלאנק על כל העמוד
        (בחצי דף — פעמיים, בדיוק על גבולות הפתקים), כדי שהשוליים יהיו
        בצבע הנייר של הבלאנק ולא לבנים. */
-    html,body{background:#fdf8ee url("/bleed/iz-slip.jpg") top center/100% 50% repeat-y;
-      -webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body.fullmode{background:#fdf8ee url("/bleed/iz-page.jpg") center center/100% 100% no-repeat}
+    /* על הבלאנק הלבן אין רקע שצריך להגיע לקצה — נייר לבן רגיל, בלי הקטנה */
+    html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .bar,.hint{display:none}
-    .sheet{width:210mm;height:297mm;margin:0;box-shadow:none;
-      transform:scale(.962);transform-origin:center center}
+    .sheet{width:210mm;height:297mm;margin:0;box-shadow:none}
     .slip{break-inside:avoid;page-break-inside:avoid}
     .sheet{break-after:page;page-break-after:always}
     .sheet:last-child{break-after:auto;page-break-after:auto}
@@ -232,15 +245,25 @@ function slip(g, flip, full) {
         <i>יששכר</i> <b>${r.av_p ? esc(r.av_t || "ר'") + ' ' + esc(r.av_p) : (avt + ' ' + avn)}</b> &nbsp;·&nbsp; <i>זבולון</i> <b>${dnm(r)}</b></div>`
         + (r.av_p ? `<div class="lead sub">${LEAD}</div>` : '') : '')
     + nmOf(r) + '</div>').join('');
-  return `<div class="slip${flip ? ' flip' : ''}${full ? ' full' : ''}"><img class="bg" src="${full ? '/iz-page.jpg' : '/iz-slip.jpg'}" alt=""><div class="in">
+  return `<div class="slip${flip ? ' flip' : ''}${full ? ' full' : ''}"><div class="bsd">בס"ד</div><div class="in">
     <div class="who">
       <div class="w"><div class="lbl">יששכר</div><div class="nm"><i>${avt}</i> ${avn}</div></div>
       <div class="w"><div class="lbl">זבולון</div><div class="nm">${dnm(ps[0])}</div></div>
     </div>
     <div class="lead">יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל בעת רצון הגדול של חצות הלילה<span class="z">יעמוד לזכות:</span></div>
     <div class="secs">${secs}</div>
-  </div></div>`;
+  </div>${FOOT}</div>`;
 }
+// רצועת הסיום של הבלאנק הלבן — בדיוק כמו בתבנית של מאיר
+const ORN = '<svg class="orn" viewBox="0 0 1000 24" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
+  + '<defs><linearGradient id="fl" x1="0" x2="1"><stop offset="0" stop-color="#a8763c" stop-opacity="0"/><stop offset="1" stop-color="#a8763c"/></linearGradient>'
+  + '<linearGradient id="fr" x1="0" x2="1"><stop offset="0" stop-color="#a8763c"/><stop offset="1" stop-color="#a8763c" stop-opacity="0"/></linearGradient></defs>'
+  + '<rect x="0" y="11.4" width="455" height="1.2" fill="url(#fl)"/><rect x="545" y="11.4" width="455" height="1.2" fill="url(#fr)"/>'
+  + '<g fill="none" stroke="#a8763c" stroke-width="1.1" stroke-linecap="round" vector-effect="non-scaling-stroke">'
+  + '<path d="M462 12 c8 -9 18 -9 26 0 c-8 9 -18 9 -26 0z"/><path d="M538 12 c-8 -9 -18 -9 -26 0 c8 9 18 9 26 0z"/></g>'
+  + '<path d="M500 5 l6 7 -6 7 -6 -7z" fill="#7a1f10"/><circle cx="457" cy="12" r="1.6" fill="#a8763c"/><circle cx="543" cy="12" r="1.6" fill="#a8763c"/></svg>';
+const FOOT = '<div class="footer">' + ORN + '<div class="line"><img class="logo" src="/logo-blank.png" alt="">'
+  + '<span class="contact">רחוב כנסת יחזקאל 38, ביתר עילית<i class="sep">·</i>טל\' משרד: 02-5803545<i class="sep">·</i>chatzot18@gmail.com<i class="sep">·</i><span class="web">www.kollelchatzot.com</span></span></div></div>';
 // ----- התמונה של פתק אחד, בדיוק כמו שהוא מצויר -----
 // מאיר: "שיהיה לי את שתי האפשרויות, גם על חצי דף כזה וגם על דף שלם, עם
 // אפשרות העתקה, הדפסה ולשלוח לתורם". התמונה מגיעה מהשרת באותו סידור
