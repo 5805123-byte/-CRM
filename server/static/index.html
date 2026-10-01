@@ -1785,11 +1785,16 @@
      עמוד (תמונה ולא רקע CSS, כדי שתודפס תמיד). העמוד הוא 276מ"מ (נייר Letter
      וגם A4), ולכן התמונה נצמדת לתחתית ו-21 המ"מ העליונים שלה נחתכים; הבס"ד
      נכתב בשורת הכותרת. השטח התחתון (איור, לוגו ופרטים) נשמר פנוי. */
-  body.kvprint .kvpage{height:var(--kvph,276mm);width:210mm;box-sizing:border-box;
+  /* מאיר (אחרי ההדפסה הראשונה): "זה מידי למעלה כל הלוגו והבנין. תוריד כמה
+     שיותר למטה לקצה הדף שלא יתפוס לי מקום" — העמוד הוא עכשיו בגובה דף A4
+     (296מ"מ, מילימטר ביטחון), והבלאנק צמוד לתחתית, כך שהאיור והלוגו יושבים
+     בקצה הנייר ממש כמו בקובץ שלו. (על נייר Letter האמריקאי, שהוא נמוך יותר,
+     העמוד יגלוש — ההדפסה היא על A4.) */
+  body.kvprint .kvpage{height:var(--kvph,296mm);width:210mm;box-sizing:border-box;
     padding:7mm 12mm 0;display:flex;flex-direction:column;position:relative;
     overflow:hidden;background:#fff}
   body.kvprint .kvbg{position:absolute;left:0;bottom:0;width:210mm;height:297mm;z-index:0;
-    pointer-events:none;clip-path:inset(21mm 0 0 0)}
+    pointer-events:none}
   body.kvprint .kvhead,body.kvprint .kvbody{position:relative;z-index:1}
   body.kvprint .kvpage+.kvpage{margin-top:6mm}
   /* קוויטל ארוך מעמוד שלם — מותר לו לזלוג, עדיף מלחתוך שמות */
@@ -1802,9 +1807,9 @@
   body.kvprint .kvhead b{font-size:9.5pt;font-weight:800;color:#75551a}
   body.kvprint .kvhead i{font-style:normal;font-size:7.4pt;color:#8a6a2a;
     direction:rtl;letter-spacing:.02em}
-  /* בס"ד — בקצה הימני של שורת הכותרת, כמו בבלאנק */
-  body.kvprint .kvhead .bsd{margin-left:auto;direction:rtl;font-family:'Fontov',"Frank Ruhl Libre",serif;
-    font-weight:700;font-size:11pt;color:#7a1f10;letter-spacing:0}
+  /* הבס"ד מגיע מהבלאנק עצמו (בפינה הימנית העליונה של התמונה); שורת הכותרת
+     — המספר והתאריך בצד שמאל — יורדת מתחתיו */
+  body.kvprint .kvhead{padding-top:8mm}
   /* מאיר: "שיהיה קטן ויפה... תעצב יותר יפה את הפס, משהו יותר גרפיקה
      ועדין". קו שיער שנמוג בשני הקצוות עם מעוין זהב קטן במרכזו.
      "ביקשתי שהלוגו יהיה בצד ימין" — הרצועה בכיוון ימין־לשמאל, ולכן

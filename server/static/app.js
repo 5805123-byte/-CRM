@@ -7456,7 +7456,7 @@ function kvPaginate(wrap){
   const mk=n=>{
     const pg=document.createElement('div');
     pg.className='kvpage';
-    pg.innerHTML='<div class="kvhead"><b>'+n+'</b>'+(hd?'<i>'+esc(hd)+'</i>':'')+'<span class="bsd">בס"ד</span></div>'
+    pg.innerHTML='<div class="kvhead"><b>'+n+'</b>'+(hd?'<i>'+esc(hd)+'</i>':'')+'</div>'
       +'<div class="kvbody"></div>'+prFootHTML();
     return pg;
   };
