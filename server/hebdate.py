@@ -162,8 +162,10 @@ def _cur_heb_year_num(today=None):
         return 0
 
 def future_parnes(date_text, hyear, n=3, today=None):
-    """אותו יום עברי (יום+חודש) בשנים הבאות — החל מהשנה שאחרי הנוכחית (לא לפני תשפ״ז).
-    מחזיר [(שם-שנה-עברי, 'YYYY-MM-DD'), ...]."""
+    """אותו יום עברי (יום+חודש) בשנים שאחרי השנה שנרשמה — רק לילות שעוד לא עברו.
+    מאיר: "גם אם בחרתי למישהו פרנס לילה בתאריך מסוים שזה יציע לי גם בשנה הבאה
+    בתור הצעה". פרנס של תשפ״ו שנרשם עכשיו מציע את תשפ״ז אם הלילה עוד לפנינו,
+    ולא קופץ ישר לתשפ״ח. מחזיר [(שם-שנה-עברי, 'YYYY-MM-DD'), ...]."""
     if not OK:
         return []
     txt = re.sub(r'[\"\']', '', str(date_text or '')).strip()
@@ -174,16 +176,21 @@ def future_parnes(date_text, hyear, n=3, today=None):
     base = heb_year_num(hyear)
     if not m or not (1 <= d <= 30) or not base:
         return []
+    t = today or il_today()
     cur = _cur_heb_year_num(today)
-    start = max(base, cur) + 1   # אף פעם לא השנה הנוכחית או קודמת — מתחיל מהשנה הבאה (תשפ״ז והלאה)
     out = []
-    for yr in range(start, start + n):
+    yr = base + 1
+    last = max(base, cur) + n
+    while len(out) < n and yr <= last:
         try:
             hd = dates.HebrewDate(yr, m, d)
-            ys = hq(hd.hebrew_date_string().split()[-1])
-            out.append((ys, hd.to_pydate().isoformat()))
+            g = hd.to_pydate()
+            if g >= t:
+                ys = hq(hd.hebrew_date_string().split()[-1])
+                out.append((ys, g.isoformat()))
         except Exception:
             pass
+        yr += 1
     return out
 
 def week_before(text, today=None):

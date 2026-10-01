@@ -2628,6 +2628,21 @@ def ensure_schema():
     except Exception as e:
         print('  parnes v2 error:', e)
 
+    # מאיר: "גם אם בחרתי למישהו פרנס לילה בתאריך מסוים שזה יציע לי גם בשנה הבאה
+    # בתור הצעה". עד כה ההצעות נוצרו רק בשיבוץ חדש מהלוח — כאן, פעם אחת, גם
+    # לכל פרנס מאושר שכבר רשום (שנתיים קדימה; כל אישור מוסיף את השנים שאחריו).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_sugg_backfill_v1'").fetchone():
+            n = 0
+            for r in list(con.execute("SELECT * FROM parnes WHERE COALESCE(status,'confirmed')<>'suggested' "
+                                      "AND COALESCE(hyear,'')<>'' AND COALESCE(date_text,'')<>''")):
+                n += len(parnes_suggest(con, dict(r), 2))
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_sugg_backfill_v1')")
+            con.commit()
+            print('  הצעות פרנס לשנים הבאות: נוספו %d' % n)
+    except Exception as e:
+        print('  parnes sugg backfill error:', e)
+
     # מרמרשטיין: השם העברי בכרטיס הוא "משה" בעוד שבאנגלית רשום Zev — מיישרים לזאב,
     # וקובעים את הכללים שהמשרד מסר: $2,700 = יששכר־זבולון (שלושה אברכים), $1,100 = קמחא דפסחא תשפ"ו
     try:
@@ -11023,6 +11038,32 @@ def mail_worker(batch_id):
             pass
 
 
+def parnes_suggest(con, p, n=3):
+    """הצעות לשנים הבאות עבור פרנס מאושר — אותו יום עברי, status='suggested'.
+    מאיר: "גם אם בחרתי למישהו פרנס לילה בתאריך מסוים שזה יציע לי גם בשנה הבאה
+    בתור הצעה… שזה יופיע בצבע חלש". שנה שכבר יש בה שורה לאותו תורם ויום (בכל
+    מצב) לא מקבלת הצעה נוספת. מחזיר את השורות שנוספו."""
+    out = []
+    if not (p.get('hyear') and p.get('date_text')):
+        return out
+    kind = p.get('kind') or 'parnes'
+    for ys, gd in future_parnes(p['date_text'], p['hyear'], n):
+        if con.execute("SELECT 1 FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')=? "
+                       "AND date_text=? AND hyear=?", (p['donor_id'], kind, p['date_text'], ys)).fetchone():
+            continue
+        row = {'donor_id': p['donor_id'], 'day': p.get('day') or 0, 'month': p.get('month') or '',
+               'date_text': p['date_text'], 'amount': p.get('amount') or '', 'dedication': p.get('dedication') or '',
+               'kind': kind, 'status': 'suggested', 'paid': 0, 'night_date': gd, 'hyear': ys,
+               'method': p.get('method') or '', 'currency': p.get('currency') or ''}
+        c = con.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method,currency) "
+                        "VALUES(?,?,?,?,?,?,?,'suggested',0,?,?,?,?)",
+                        (row['donor_id'], row['day'], row['month'], row['date_text'], row['amount'], row['dedication'],
+                         kind, gd, ys, row['method'], row['currency']))
+        row['id'] = c.lastrowid
+        out.append(row)
+    return out
+
+
 def _stamp(kind='created'):
     """חותמת מתי הרשומה נוצרה או עודכנה — לועזי ועברי, בשעון ישראל."""
     g = today_iso()
@@ -13175,8 +13216,14 @@ class H(BaseHTTPRequestHandler):
                 sets.append('night_date=?'); vals.append(_ng.isoformat() if _ng else '')
             if sets:
                 con.execute("UPDATE parnes SET "+",".join(sets)+" WHERE id=?", vals+[pid])
+            # הצעה שאושרה ("גם השנה") — ממשיכה להציע את השנים שאחריה
+            suggestions = []
+            if b.get('status') == 'confirmed':
+                r = con.execute("SELECT * FROM parnes WHERE id=?", (pid,)).fetchone()
+                if r:
+                    suggestions = parnes_suggest(con, dict(r), 3)
             con.commit(); con.close()
-            return self._send(200, {'ok': True})
+            return self._send(200, {'ok': True, 'suggestions': suggestions})
         m = re.match(r'/api/prayer/(\d+)$', self.path)
         if m:
             b = self._body(); pid = int(m.group(1))
@@ -15274,17 +15321,10 @@ class H(BaseHTTPRequestHandler):
             # הצעות אוטומטיות לשנים הבאות — אותו יום עברי, כ"הצעה" שטרם נגבתה
             suggestions = []
             if b.get('status', 'confirmed') != 'suggested' and b.get('hyear'):
-                for ys, gd in future_parnes(b.get('date_text', ''), b.get('hyear', ''), 3):
-                    if cur.execute("SELECT 1 FROM parnes WHERE donor_id=? AND kind=? AND date_text=? AND hyear=?",
-                                   (b.get('donor_id'), b.get('kind', 'parnes'), b.get('date_text', ''), ys)).fetchone():
-                        continue
-                    cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method) VALUES(?,?,?,?,?,?,?,'suggested',0,?,?,?)",
-                                (b.get('donor_id'), b.get('day', 0), b.get('month', ''), b.get('date_text', ''), b.get('amount', ''),
-                                 b.get('dedication', ''), b.get('kind', 'parnes'), gd, ys, b.get('method', '')))
-                    suggestions.append({'id': cur.lastrowid, 'donor_id': b.get('donor_id'), 'day': b.get('day', 0),
-                                        'month': b.get('month', ''), 'date_text': b.get('date_text', ''), 'amount': b.get('amount', ''),
-                                        'dedication': b.get('dedication', ''), 'kind': b.get('kind', 'parnes'), 'status': 'suggested',
-                                        'paid': 0, 'night_date': gd, 'hyear': ys, 'method': b.get('method', '')})
+                suggestions = parnes_suggest(con, {'donor_id': b.get('donor_id'), 'day': b.get('day', 0), 'month': b.get('month', ''),
+                                                   'date_text': b.get('date_text', ''), 'amount': b.get('amount', ''),
+                                                   'dedication': b.get('dedication', ''), 'kind': b.get('kind', 'parnes'),
+                                                   'hyear': b.get('hyear', ''), 'method': b.get('method', ''), 'currency': ccy}, 3)
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': pid, 'reminder_id': tid, 'reminder_date': due, 'suggestions': suggestions})
         if self.path == '/api/donations/bulkcat':

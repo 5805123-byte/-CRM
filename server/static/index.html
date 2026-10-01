@@ -217,7 +217,8 @@
   .daycell .dplus{color:var(--muted);font-size:1.1rem}
   .daycell.full{background:var(--gold-soft);border-color:var(--gold)}
   .daycell.full .dnm{font-size:.62rem;color:var(--gold);font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .daycell.sugg{background:var(--accent-soft);border-color:var(--accent);border-style:dashed}
+  .daycell.sugg{background:var(--accent-soft);border-color:var(--accent);border-style:dashed;opacity:.62}
+  .daycell.sugg.sel{opacity:1}
   .daycell.sugg .dnm{font-size:.62rem;color:var(--accent);font-weight:700;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* כמה תורמים לאותו לילה — כל השמות, שורה לכל אחד */
   .daycell .dnm{line-height:1.2}
@@ -875,6 +876,13 @@
     font-family:inherit;font-size:.85rem;text-align:center}
   .cm_calc{flex:1 1 100%;margin-top:4px}
   /* תת-חלונות בתוך בלוק ההתחייבויות — הכל במקום אחד, בלי לתפוס מקום סתם */
+  /* קיצורי דרך מהכרטיס — "להגיע לעוד אובייקטים בלי הרבה סיבוכים" */
+  .cmquick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px}
+  .cmquick .cmqt{font-size:.8rem;color:var(--muted);font-weight:700}
+  .cmquick .cmq{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;
+    font-family:inherit;font-size:.82rem;font-weight:700;color:var(--ink);cursor:pointer}
+  .cmquick .cmq:hover{border-color:var(--gold);background:var(--gold-soft)}
+  .pypick .pypbtns{display:flex;gap:6px}
   .cmbox .cmsub{margin-top:9px;background:#fff}
   .cmbox .cmsub>summary{font-size:.85rem}
   .cmbox .cmadd{border-top:none;padding-top:0;margin-top:2px}
@@ -1309,6 +1317,12 @@
   .pledge{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;margin-bottom:6px;border:1px solid var(--line)}
   .pledge.given{background:var(--yes-soft);border-color:var(--yes)}
   .pledge.pending{background:var(--no-soft);border-color:var(--no)}
+  /* הצעה לשנה הבאה (היה לו פרנס בשנה שעברה) — בצבע חלש, מקווקו, עד שמאיר מאשר */
+  .pledge.sugg{background:var(--accent-soft);border-color:var(--accent);border-style:dashed;opacity:.62}
+  .pledge.sugg .pi b{color:var(--accent)}
+  .plwrap.plsugg>*:not(.pledge){opacity:.5}
+  .plwrap.plsugg:hover>*,.plwrap.plsugg:focus-within>*{opacity:1}
+  .dsec summary .suggn{color:var(--accent);font-weight:600;font-size:.78rem}
   .pledge .pi{flex:1}.pledge .pi b{font-size:1rem}.pledge .pi small{color:var(--muted)}
   /* כמה כבר שולם מתוך ההתחייבות, והיתרה שמתחשבנת לבד */
   .plpay{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:.83rem;color:var(--muted)}

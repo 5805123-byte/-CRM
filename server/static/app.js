@@ -1960,6 +1960,24 @@ async function bldgRemember(it){
 // והיום שנבחר נרשם על התורם הזה, מסומן כנגבה, והייעוד נכנס לתרומה
 let PYPICK=null;
 function openParnesPick(o,cat,note){
+  // מאיר: "למה כתוב כאן לא נגבה, ובתוך השמות שלו כתוב נגבה באוטורייז?"
+  // הכסף כבר נגבה — דרך מה שכתוב על התרומה — ולכן אמצעי התשלום עובר
+  // איתה ליום הפרנס, ואינו נשאר "ללא".
+  PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
+          amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
+          meth:(o.x.method||o.d.channel||''),
+          note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
+  pyPickStart();
+}
+// מאיר: "להיכנס מהכרטיס ראשי של התורם לפרנס לילה וכדומה… רק שזה יוביל לשם".
+// בלי תרומה מאחורי זה — בוחרים יום בלוח, הסכום נכתב שם (רשות), וחוזרים לכרטיס.
+function openParnesQuick(d,kind){
+  const cat=Object.keys(WFDAY).find(c=>WFDAY[c]===kind)||'פרנס לילה';
+  PYPICK={id:null,quick:true,donor_id:d.id,name:(d.last+' '+d.first).trim(),amount:'',cur:curSym(d),
+          cat,kind,meth:(d.channel||''),note:'',ded:''};
+  pyPickStart();
+}
+function pyPickStart(){
   // כשמתחילים מתוך כרטיס התורם — הכרטיס נסגר, אחרת הוא נשאר פרוש
   // מעל הלוח ואי אפשר ללחוץ על היום
   try{
@@ -1969,30 +1987,39 @@ function openParnesPick(o,cat,note){
       try{localStorage.removeItem('kc_donor');}catch(e){}
     }
   }catch(e){}
-  // מאיר: "למה כתוב כאן לא נגבה, ובתוך השמות שלו כתוב נגבה באוטורייז?"
-  // הכסף כבר נגבה — דרך מה שכתוב על התרומה — ולכן אמצעי התשלום עובר
-  // איתה ליום הפרנס, ואינו נשאר "ללא".
-  PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
-          amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
-          meth:(o.x.method||o.d.channel||''),
-          note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
   pyKind=PYPICK.kind; pyMonth=null; pyDay=null; flt=''; plaque=null; tab='parnes';
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));
   try{localStorage.setItem('kc_tab','parnes');}catch(e){}
-  render(); toast('בחר את הלילה של '+PYPICK.name);
+  render(); toast((PYPICK.kind==='parnes'?'בחר את הלילה של ':'בחר את היום של ')+PYPICK.name);
 }
 function pyPickBar(){
   if(!PYPICK)return '';
-  return `<div class="pypick"><span>🎯 משבץ עכשיו: <b>${esc(PYPICK.name)}</b> · ${PYPICK.cur}${esc(PYPICK.amount)} — לחץ על היום שהוא תפס</span>
-    <button class="btn sm ghost" id="pypx">✕ ביטול</button></div>`;
+  const what=PYPICK.quick?(' · '+((PKINDS.find(k=>k[0]===PYPICK.kind)||[])[1]||'')+' — לחץ על היום בלוח'):(' · '+PYPICK.cur+esc(PYPICK.amount)+' — לחץ על היום שהוא תפס');
+  return `<div class="pypick"><span>🎯 משבץ עכשיו: <b>${esc(PYPICK.name)}</b>${what}</span>
+    <span class="pypbtns">${PYPICK.quick?'<button class="btn sm ghost" id="pypback">↩ חזרה לכרטיס</button>':''}<button class="btn sm ghost" id="pypx">✕ ביטול</button></span></div>`;
+}
+function pyPickBack(did){
+  const dd=DB.find(x=>x.id==did); if(!dd)return;
+  openDonor(dd);
+  setTimeout(()=>{const el=document.getElementById('parnes');if(!el)return;
+    const det=el.closest('details');if(det)det.open=true;el.scrollIntoView({block:'start'});},150);
 }
 function wirePyPick(){
   const b=document.getElementById('pypx');
   if(b)b.onclick=()=>{PYPICK=null;render();toast('בוטל');};
+  const k=document.getElementById('pypback');
+  if(k)k.onclick=()=>{const did=PYPICK&&PYPICK.donor_id;PYPICK=null;render();pyPickBack(did);};
 }
 // היום נבחר: התרומה מקבלת את הייעוד, והלילה מסומן כנגבה
 async function pyPickDone(pid){
   const P=PYPICK; if(!P)return;
+  if(P.quick){
+    // קיצור דרך מהכרטיס — אין תרומה לסמן; הפרנס נרשם, וחוזרים לכרטיס לראות אותו
+    PYPICK=null;
+    await load(); toast('✓ '+P.name+' — נרשם בלוח');
+    pyPickBack(P.donor_id);
+    return;
+  }
   if(pid)await api('PUT','/api/parnes/'+pid,{paid:1});
   // הלילה נשמר על התרומה עצמה, כדי שבכרטיס ייכתב ליד "פרנס" איזה לילה
   await api('PUT','/api/donation/'+P.id,
@@ -3250,6 +3277,13 @@ function commitHTML(d){
       <div class="cmhead"><span class="cmwhat">🏛️ ${esc(x.object||'הקדשה')}</span><b class="cmfix">${f(amtNum(x.amount))}</b><span class="cmtag one">הקדשה</span><button class="cmbldgo noprint" title="פתח בלשונית בניין">↗</button></div>
       <div class="cminst">התחייב ${f(amtNum(x.amount))} · שולם ${f(paid)} · ${owed>0.5?('<b class="cmleft no">נשאר '+f(owed)+'</b>'):'<b class="cmleft ok">שולם במלואו ✓</b>'}${bldAutoPaid(d,x)?(' · <small>'+f(bldAutoPaid(d,x))+' מתרומות שנרשמו</small>'):''}</div></div>`;}).join('')}
     ${rows.map(line).join('')||((d.building||[]).length?'':'<div class="hintxt">אין עדיין התחייבות רשומה. הוסף שורה למטה.</div>')}
+    <div class="cmquick noprint"><span class="cmqt">⚡ קצר:</span>
+      <button type="button" class="cmq" data-q="parnes">🌙 פרנס לילה</button>
+      <button type="button" class="cmq" data-q="coffee">☕ חדר קפה</button>
+      <button type="button" class="cmq" data-q="breakfast">🍳 ארוחת בוקר</button>
+      <button type="button" class="cmq" data-q="building">🏛️ הקדשה בבניין</button>
+      <button type="button" class="cmq" data-q="avreich">🤝 אברך</button>
+      <button type="button" class="cmq" data-q="donation">💵 תרומה</button></div>
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה</summary>
@@ -3464,6 +3498,25 @@ function wireCommit(d,body){
     d.pledges=(d.pledges||[]).concat([p]);
     return p;};
   box.querySelectorAll('.cmbldgo').forEach(b=>b.onclick=()=>{cardTab='building';renderCard(d);});
+  // מאיר: "להיכנס מהכרטיס ראשי של התורם לפרנס לילה וכדומה… באופן קצר וקולע
+  // להגיע לעוד אובייקטים בלי הרבה סיבוכים ולמלא טפסים — רק שזה יוביל לשם"
+  box.querySelectorAll('.cmq').forEach(b=>b.onclick=async()=>{
+    const k=b.dataset.q;
+    if(k==='parnes'||k==='coffee'||k==='breakfast')return openParnesQuick(d,k);
+    if(k==='building'){cardTab='building';renderCard(d);
+      setTimeout(()=>{const i=document.getElementById('bl_obj');if(i){i.scrollIntoView({block:'center'});i.focus();}},80);return;}
+    if(k==='donation'){const dn=document.getElementById('dnbox');if(dn){dn.open=true;dn.scrollIntoView({block:'start'});
+      const a=document.getElementById('dn_amt');if(a)a.focus();}return;}
+    if(k==='avreich'){
+      // אברך = יששכר־זבולון. תורם שעוד לא סומן כך — מסומן עכשיו, וחלון האברכים נפתח
+      if(d.tier!=='יששכר_זבולון'){d.tier='יששכר_זבולון';await api('PUT','/api/donor/'+d.id,{tier:d.tier});
+        toast('סומן כיששכר־זבולון ✓');renderCard(d);if(tab==='donors')renderDonors();}
+      setTimeout(()=>{const p=document.getElementById('partners');if(!p)return;
+        const det=p.closest('details');if(det)det.open=true;
+        const bx=document.getElementById('pa_opnbox');if(bx)bx.classList.remove('hidden');
+        const ps=document.getElementById('pa_name');if(ps){ps.scrollIntoView({block:'center'});ps.focus();}},120);
+    }
+  });
   box.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{
     if(b.dataset.busy)return; b.dataset.busy='1';
     try{
@@ -4287,7 +4340,7 @@ function cardDetails(d,body){
     <div id="ulmine"></div>
     ${catTotalsHTML(d)}
     ${give}
-    ${(d.parnes||[]).filter(p=>p.status!=='suggested').length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)</summary><div id="parnes"></div></details>`:''}
+    ${(d.parnes||[]).length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)${(d.parnes||[]).some(p=>p.status==='suggested')?' <small class="suggn">· יש הצעה לשנה הבאה</small>':''}</summary><div id="parnes"></div></details>`:''}
     ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <button type="button" class="opnlink" id="pa_opn" style="margin-top:6px">➕ הוסף עוד אברך</button>
       <div class="opnbox hidden" id="pa_opnbox">
@@ -6856,7 +6909,9 @@ function renderParnesEdit(d){
   const tdy=todayStr(), cur=curSym(d);
   const ptot=(d.parnes||[]).reduce((s,p)=>s+amtNum(p.amount),0);
   const head=(d.parnes&&d.parnes.length)?`<div class="dncount">${d.parnes.length} ימי פרנס · סה"כ ${cur}${ptot}</div>`:'';
-  el.innerHTML=head+((d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy;return `<div class="plwrap"><div class="pledge ${p.status==='suggested'?'pending':'given'}"><div class="pi"><b>${p.status==='suggested'?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}${p.hyear?(' '+esc(p.hyear)):''}</b> ${p.amount?('· <b style="color:var(--yes)">'+cur+esc(p.amount)+'</b>'):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}</div><button class="del" data-del="${p.id}">🗑</button></div>
+  // מאיר: "שזה יציע לי גם בשנה הבאה בתור הצעה… שזה יופיע בצבע חלש שזה יהיה
+  // הסימן שזה הצעה כי שנה שעברה היה לו" — ההצעה חיוורת, עם כפתור "גם השנה"
+  el.innerHTML=head+((d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy, sg=p.status==='suggested';return `<div class="plwrap ${sg?'plsugg':''}"><div class="pledge ${sg?'sugg':'given'}"><div class="pi"><b>${sg?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}${p.hyear?(' '+esc(p.hyear)):''}</b> ${p.amount?('· <b style="color:var(--yes)">'+cur+esc(p.amount)+'</b>'):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}${sg?'<br><small>כמו שנה שעברה — לשאול אותו אם גם השנה</small>':''}</div>${sg?`<button class="btn sm pyok" data-id="${p.id}">✓ גם השנה</button>`:''}<button class="del" data-del="${p.id}">🗑</button></div>
     <div class="two" style="margin:6px 0 0"><label class="fld"><span>סכום</span><input class="pyamt" data-id="${p.id}" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></label>
       <label class="fld"><span>סוג</span><select class="pykind" data-id="${p.id}"><option value="parnes" ${p.kind==='parnes'?'selected':''}>🌙 פרנס לילה</option><option value="coffee" ${p.kind==='coffee'?'selected':''}>☕ פרנס קפה</option><option value="breakfast" ${p.kind==='breakfast'?'selected':''}>🍳 ארוחת בוקר</option></select></label></div>
     <div class="two"><label class="fld"><span>חודש</span><select class="pymon" data-id="${p.id}">${HMORD.map(m=>`<option ${m===p.month?'selected':''}>${m}</option>`).join('')}</select></label>
@@ -6875,6 +6930,10 @@ function renderParnesEdit(d){
   el.querySelectorAll('.pymon').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.month=sel.value;await pySaveDate(p);});
   el.querySelectorAll('.pyday').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.day=+sel.value;await pySaveDate(p);});
   el.querySelectorAll('.pyyr').forEach(sel=>sel.onchange=async()=>{const p=d.parnes.find(x=>x.id==sel.dataset.id);if(!p)return;p.hyear=sel.value;await api('PUT','/api/parnes/'+p.id,{hyear:p.hyear});renderParnesEdit(d);toast('שנה עודכנה ✓');});
+  el.querySelectorAll('.pyok').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);if(!p)return;b.disabled=true;
+    p.status='confirmed';const r=await api('PUT','/api/parnes/'+p.id,{status:'confirmed'});
+    if(r&&r.suggestions&&r.suggestions.length)d.parnes.push(...r.suggestions);
+    renderParnesEdit(d);toast('אושר — גם השנה ✓'+(r&&r.suggestions&&r.suggestions.length?' (הוצע גם לשנים הבאות)':''));});
   el.querySelectorAll('.pypaid').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.paid=+p.paid?0:1;await api('PUT','/api/parnes/'+p.id,{paid:p.paid});renderParnesEdit(d);toast(+p.paid?'סומן כשולם ✓':'בוטל הסימון');});
   el.querySelectorAll('.pycert').forEach(b=>b.onclick=()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);openParnesCert(d,p);});
   el.querySelectorAll('.pypic').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);p.photo=p.photo==='sent'?'':'sent';await api('PUT','/api/parnes/'+p.id,{photo:p.photo});renderParnesEdit(d);toast(p.photo==='sent'?'סומן — תמונת הקדשה נשלחה ✓':'בוטל הסימון');});
@@ -7625,25 +7684,37 @@ function renderDayPanel(taken){
     const mine=list.find(x=>x.donor_id===PYPICK.donor_id);
     const box=document.createElement('div');
     box.className='sec pypickbox';
+    const Q=PYPICK.quick, kl=(PKINDS.find(k=>k[0]===pyKind)||[])[1]||'';
     box.innerHTML=mine
-      ? `<h3>🎯 ${esc(PYPICK.name)} כבר משובץ ללילה הזה</h3>
+      ? (Q?`<h3>🎯 ${esc(PYPICK.name)} כבר משובץ ליום הזה</h3>
+         <div class="hintxt">${mine.status==='suggested'?'זו הצעה משנה שעברה — אפשר לאשר אותה למטה ("גם השנה").':'היום הזה כבר רשום עליו.'}</div>
+         <button class="btn ghost" id="pyp_back">↩ חזרה לכרטיס</button>`
+        :`<h3>🎯 ${esc(PYPICK.name)} כבר משובץ ללילה הזה</h3>
          <div class="hintxt">${+mine.paid?'הלילה כבר מסומן כנגבה — אפשר רק לרשום את הייעוד על התרומה.':'נסמן אותו כנגבה ונרשום את הייעוד על התרומה.'}</div>
-         <button class="btn" id="pyp_mark">✓ ${PYPICK.cur}${esc(PYPICK.amount)} — נגבה על הלילה הזה</button>`
+         <button class="btn" id="pyp_mark">✓ ${PYPICK.cur}${esc(PYPICK.amount)} — נגבה על הלילה הזה</button>`)
       : `<h3>🎯 לשבץ את ${esc(PYPICK.name)} ל־${esc(dtext)}</h3>
-         <div class="hintxt">${list.length?('הלילה כבר מוחזק בידי '+list.map(x=>esc(x.donor)).join(', ')+' — אפשר לצרף אותו כשותף.'):'הלילה פנוי.'}</div>
+         <div class="hintxt">${list.length?('היום כבר מוחזק בידי '+list.map(x=>esc(x.donor)).join(', ')+' — אפשר לצרף אותו כשותף.'):'היום פנוי.'}</div>
+         ${Q?`<div class="two"><label class="fld"><span>💰 סכום (רשות)</span><div class="curwrap"><select id="pyp_cur" class="curpick">${curOpts(PYPICK.cur)}</select><input id="pyp_amt" inputmode="decimal" placeholder="כמה"></div></label>
+           <label class="fld"><span>שנה</span><select id="pyp_yr">${heYearOpts(HEBYEAR)}</select></label></div>`:''}
          <label class="fld"><span>בקשה ללימוד הלילה / הקדשה (רשות)</span><textarea id="pyp_ded" rows="2">${esc(PYPICK.ded||'')}</textarea></label>
-         <button class="btn" id="pyp_take">🌙 שבץ ${PYPICK.cur}${esc(PYPICK.amount)} ללילה הזה</button>`;
+         <button class="btn" id="pyp_take">${Q?('✓ רשום '+kl+' — '+esc(dtext)):('🌙 שבץ '+PYPICK.cur+esc(PYPICK.amount)+' ללילה הזה')}</button>`;
     panel.prepend(box);
     const mk=document.getElementById('pyp_mark');
     if(mk)mk.onclick=async()=>{mk.disabled=true;await pyPickDone(mine.id);};
+    const bk=document.getElementById('pyp_back');
+    if(bk)bk.onclick=()=>{const did=PYPICK.donor_id;PYPICK=null;render();pyPickBack(did);};
     const tk=document.getElementById('pyp_take');
     if(tk)tk.onclick=async()=>{
       tk.disabled=true;
       const ded=(document.getElementById('pyp_ded')||{value:''}).value.trim();
+      const amt=Q?(document.getElementById('pyp_amt')||{value:''}).value.trim():PYPICK.amount;
+      const ccy=Q?((document.getElementById('pyp_cur')||{}).value||PYPICK.cur):PYPICK.cur;
+      const hy=Q?((document.getElementById('pyp_yr')||{}).value||HEBYEAR):HEBYEAR;
       const r=await api('POST','/api/parnes',{donor_id:PYPICK.donor_id,day:pyDay,month:pyMonth,
-        date_text:dtext,dedication:ded,amount:PYPICK.amount,kind:pyKind,status:'confirmed',
-        currency:PYPICK.cur,hyear:HEBYEAR,method:PYPICK.meth||''});
+        date_text:dtext,dedication:ded,amount:amt,kind:pyKind,status:'confirmed',
+        currency:ccy,hyear:hy,method:PYPICK.meth||''});
       if(!r||!r.id){tk.disabled=false;toast('לא שובץ');return;}
+      if(r.existing&&Q){toast('היום הזה כבר רשום עליו');}
       await pyPickDone(r.id);};
   }
   const qi=document.getElementById('dp_q'),res=document.getElementById('dp_res');let chosen=null;
