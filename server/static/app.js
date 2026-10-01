@@ -6705,7 +6705,10 @@ function parnesCertUrl(d,p){
   if(run.length>1)return parnesCertUrlMulti(d,run);
   const dtext=(p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||'');
   const yr=p.hyear||HEBYEAR;const date=dtext+(yr?(' '+yr):'');
-  const names=(p.dedication&&p.dedication.trim())||(d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'';
+  // מאיר: "אני צריך שזה רק ישמור את הפרנס יום ואת השמות של אותו יום של
+  // פרנס, זה לא שייך לקוויטל" — התעודה מקבלת רק את השמות שנכתבו על יום
+  // הפרנס עצמו. אין יותר נפילה לשמות הקוויטל של התורם כשהשדה ריק.
+  const names=(p.dedication&&p.dedication.trim())||'';
   return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
 }
 // למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
@@ -6743,7 +6746,7 @@ function parnesCertUrlMulti(d,list){
   if(!list.length)return '';
   const date=parnesDateLabel(list);
   const dd=[...new Set(list.map(p=>(p.dedication||'').trim()).filter(Boolean))];
-  const names=dd.join('\n')||((d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'');
+  const names=dd.join('\n');            // רק שמות הפרנס — לא הקוויטל
   return location.origin+'/parnes-cert?'+new URLSearchParams(
     {kind:list[0].kind||'parnes',date,names}).toString();
 }
@@ -6754,9 +6757,8 @@ function parnesCertPng(d,p){
     :((p.day&&p.month)?(heDay(+p.day)+" "+p.month):(p.date_text||''));
   const yr=(run.length>1)?'':(p.hyear||HEBYEAR);const date=dtext+(yr?(' '+yr):'');
   const names=(run.length>1)
-    ? ([...new Set(run.map(x=>(x.dedication||'').trim()).filter(Boolean))].join('\n')
-        ||((d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||''))
-    : ((p.dedication&&p.dedication.trim())||(d&&d.prayers&&d.prayers[0]&&d.prayers[0].text)||'');
+    ? [...new Set(run.map(x=>(x.dedication||'').trim()).filter(Boolean))].join('\n')
+    : ((p.dedication&&p.dedication.trim())||'');       // רק שמות הפרנס — לא הקוויטל
   return {png:'/cert.png?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString(),
           jpg:'/cert.jpg?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString()};
 }
@@ -6918,8 +6920,8 @@ function renderParnesEdit(d){
       <label class="fld"><span>יום</span><select class="pyday" data-id="${p.id}">${[...Array(30)].map((_,i)=>`<option value="${i+1}" ${(i+1)==+p.day?'selected':''}>${heDay(i+1)}</option>`).join('')}</select></label>
       <label class="fld"><span>שנה</span><select class="pyyr" data-id="${p.id}">${heYearOpts(p.hyear)}</select></label></div>
     <label class="fld"><span>💳 דרך מה ייגבה</span><select class="pymethod chansel" data-id="${p.id}">${channelOpts(p.method)}</select></label>
-    <label class="fld" style="margin:4px 0"><span>🕯️ שמות ובקשות לתעודת הפרנס</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו והבקשות (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
-    <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px;width:100%">💾 שמור</button>
+    <label class="fld" style="margin:4px 0"><span>🌙 השמות והבקשות של יום הפרנס הזה (לתעודה — בנפרד מהקוויטל)</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו ביום הפרנס (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
+    <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px;width:100%">💾 שמור את הפרנס</button>
     <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
   el.querySelectorAll('.pyded').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.parnes.find(x=>x.id==t.dataset.id);if(!p||(p.dedication||'')===t.value)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');};});
   // מאיר: "איך אני שומר את זה? תעשה שיהיה כפתור שמירה" — כל שדה נשמר גם
@@ -7785,7 +7787,7 @@ function pySlotHTML(t,dtext){
     ${sugg?'':`<button class="dnpaid ${+paid===1?'yes':'no'} dppaid" style="margin:2px 0 8px;width:100%">${+paid===1?'✓ נגבה — לחץ לביטול':'🔴 חוב — סמן שנגבה'}</button>
       <button class="dnpaid setl dpsetl ${+paid===2?'on':''}" style="margin:0 0 8px;width:100%">${+paid===2?'✓ סודר — לחץ לביטול':'סודר — הכסף הגיע בתרומה נפרדת'}</button>`}
     ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
-    <label class="fld" style="margin:6px 0"><span>🕯️ שמות ובקשות לתעודה</span><textarea class="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו והבקשות">${esc(t.dedication||'')}</textarea></label>
+    <label class="fld" style="margin:6px 0"><span>🌙 השמות והבקשות של היום הזה (לתעודה — בנפרד מהקוויטל)</span><textarea class="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו ביום הפרנס">${esc(t.dedication||'')}</textarea></label>
     <button class="btn sm dp_ded_save" style="margin-bottom:6px">💾 שמור שמות</button>
     <div class="movebox">🔀 העבר ליום אחר:
       <select class="dpmvmon">${HMORD.map(m=>`<option ${m===pyMonth?'selected':''}>${m}</option>`).join('')}</select>
