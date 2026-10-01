@@ -7349,15 +7349,72 @@ def statement_file(con, did, year, fmt='pdf'):
     return buf.getvalue(), 'Receipt_%s_%s.jpg' % (safe, info['year'])
 
 
+_BLANK_RED = (0x7a, 0x1f, 0x10)
+_BLANK_GOLD = (0xa8, 0x76, 0x3c)
+_BLANK_INK = (0x4a, 0x2a, 0x17)
+_BLANK_CONTACT = ('רחוב כנסת יחזקאל 38, ביתר עילית', "טל' משרד: 02-5803545", 'chatzot18@gmail.com', 'www.kollelchatzot.com')
+
+
+def blank_page(width=1240):
+    """הבלאנק הלבן של מאיר (תשרי תשפ"ז, "עשיתי בלאנק חדש דרך קלוד… שיהיה אחיד
+    הכל"): דף A4 לבן, בס"ד בפינה הימנית העליונה, ובתחתית קו עיטור עם מעוין,
+    הלוגו השקוף ושורת הפרטים — אותן מידות כמו בתבנית ה-HTML שלו.
+    מחזיר (תמונה, גובה השטח הפנוי מעל הרצועה בפיקסלים)."""
+    from PIL import Image, ImageDraw, ImageFont
+    W = width; H = round(W * 297 / 210.0)
+    mm = W / 210.0; pt = W / 595.3
+    im = Image.new('RGB', (W, H), (255, 255, 255))
+    dr = ImageDraw.Draw(im)
+    fb = ImageFont.truetype(os.path.join(STATIC, 'fontov-bold.otf'), max(8, int(11 * pt)))
+    fr = ImageFont.truetype(os.path.join(STATIC, 'fontov-regular.otf'), max(8, int(9 * pt)))
+    t = 'בס"ד'
+    dr.text((W - 12 * mm - dr.textlength(t, font=fb), 9 * mm), t, font=fb, fill=_BLANK_RED)
+    # הרצועה: לוגו 13 מ"מ רוחב, 5 מ"מ מהתחתית; מעליו קו העיטור (4 מ"מ)
+    logo = Image.open(os.path.join(STATIC, 'logo-blank.png')).convert('RGBA')
+    lw = int(13 * mm); lh = int(logo.height * lw / logo.width)
+    logo = logo.resize((lw, lh), Image.LANCZOS)
+    x0, x1 = 12 * mm, W - 12 * mm
+    line_top = H - 5 * mm - lh
+    im.paste(logo, (int(x1 - lw), int(line_top)), logo)
+    cy = line_top + lh / 2.0
+    x = x1 - lw - 3 * mm
+    dot = '·'
+    for i, seg in enumerate(_BLANK_CONTACT):
+        if i:
+            dr.text((x, cy), dot, font=fr, fill=_BLANK_GOLD, anchor='rm')
+            x -= dr.textlength(dot, font=fr) + 2.2 * mm
+        latin = seg.isascii()
+        dr.text((x, cy), seg, font=fr, fill=_BLANK_INK, anchor='rm', direction='ltr' if latin else 'rtl')
+        x -= dr.textlength(seg, font=fr, direction='ltr' if latin else 'rtl') + 2.2 * mm
+    orn_h = 4 * mm; oy = line_top - 1 * mm - orn_h
+    sx = (x1 - x0) / 1000.0; sy = orn_h / 24.0
+    ov = Image.new('RGBA', im.size, (0, 0, 0, 0)); od = ImageDraw.Draw(ov)
+    ly = oy + 12 * sy; th = max(1, int(round(1.2 * sy)))
+    n = int(455 * sx)
+    for i in range(n):                       # הקו נמוג לקצוות
+        a = int(255 * (i + 1) / n)
+        od.line([(x0 + i, ly), (x0 + i, ly + th)], fill=_BLANK_GOLD + (a,))
+        od.line([(x1 - i, ly), (x1 - i, ly + th)], fill=_BLANK_GOLD + (a,))
+    im.paste(ov, (0, 0), ov)
+    st = max(1, int(round(1.1 * sy)))
+    for cx0, cx1 in ((462, 488), (512, 538)):   # שני "עלים"
+        dr.ellipse([x0 + cx0 * sx, oy + (12 - 6.75) * sy, x0 + cx1 * sx, oy + (12 + 6.75) * sy],
+                   outline=_BLANK_GOLD, width=st)
+    dr.polygon([(x0 + 500 * sx, oy + 5 * sy), (x0 + 506 * sx, oy + 12 * sy),
+                (x0 + 500 * sx, oy + 19 * sy), (x0 + 494 * sx, oy + 12 * sy)], fill=_BLANK_RED)
+    for cx in (457, 543):
+        r = 1.6 * sy
+        dr.ellipse([x0 + cx * sx - r, oy + 12 * sy - r, x0 + cx * sx + r, oy + 12 * sy + r], fill=_BLANK_GOLD)
+    return im, int(oy - 2 * mm)
+
+
 def kvpage_png(con, did, width=1240, fmt='png'):
-    """דף הקוויטל של תורם אחד כתמונה — על הבלאנק המלא, לשליחה/העתקה."""
+    """דף הקוויטל של תורם אחד כתמונה — על הבלאנק הלבן, לשליחה/העתקה."""
     from PIL import Image, ImageDraw, ImageFont
     info = donor_kvpage(con, did)
     if not info:
         raise ValueError('donor')
-    im = Image.open(os.path.join(STATIC, 'iz-page.jpg')).convert('RGB')
-    if im.width != width:
-        im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
+    im, foot_y = blank_page(width)
     W, H = im.size
     u = W / 1240.0
     dr = ImageDraw.Draw(im)
@@ -7380,13 +7437,14 @@ def kvpage_png(con, did, width=1240, fmt='png'):
     def right(t, f, y, fill, margin):
         dr.text((W - margin - wid(t, f), y), t, font=f, fill=fill)
 
-    marg = int(75 * u)
-    # התאריך של אותו יום — משמאל למעלה, רחוק מהלוגו שבימין
+    mm = W / 210.0
+    marg = int(18 * mm)                      # השוליים של גוף הבלאנק (18 מ"מ)
+    # התאריך של אותו יום — משמאל למעלה, מול הבס"ד שבימין
     fd = font(26 * u)
-    dr.text((marg, int(30 * u)), info['date_heb'], font=fd, fill=_GOLD_T)
-    dr.text((marg, int(30 * u) + int(26 * u * 1.35)), info['date_greg'], font=fd, fill=_GOLD_T)
-    # השם — מתחת ללוגו, במרכז
-    y = int(250 * u)
+    dr.text((marg, int(18 * mm)), info['date_heb'], font=fd, fill=_GOLD_T)
+    dr.text((marg, int(18 * mm) + int(26 * u * 1.35)), info['date_greg'], font=fd, fill=_GOLD_T)
+    # השם — במרכז, מתחת לשורת התאריך
+    y = int(34 * mm)
     nm_px = 58 * u
     fn, ft = font(nm_px, True), font(nm_px * .6, True)
     full = ((info['title'] + ' ') if info['title'] else '') + info['name']
@@ -7408,8 +7466,8 @@ def kvpage_png(con, did, width=1240, fmt='png'):
     fzk = font(40 * u, True)
     center('שמות לתפילה בחצות הלילה:', fzk, y, _DEEP)
     y += int(40 * u * 1.7)
-    # השמות — הכי גדולים שנכנסים
-    avail_w, avail_h = W - 2 * marg, H - y - int(90 * u)
+    # השמות — הכי גדולים שנכנסים, עד הרצועה שבתחתית
+    avail_w, avail_h = W - 2 * marg, foot_y - y
     paras = info.get('paras') or ['— אין עדיין שמות לקוויטל —']
     blocks, size = [], int(13 * u)
     for px in range(int(118 * u), int(13 * u), -2):
