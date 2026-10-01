@@ -8826,12 +8826,11 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     donor, donor_t = parts[0][0], parts[0][1]
     if parts[0][3]:
         avreich = parts[0][3]
-    # מאיר (תשרי תשפ"ז): "תעביר גם את פתקי יששכר זבולון לבלאנק החדש" — הפתק
-    # על הבלאנק הלבן, בלי לוגו בראש; שורת הראש מתחילה מהשוליים הימניים.
-    im, foot_y = blank_page(width, half=half)
+    im = Image.open(os.path.join(STATIC, 'iz-slip.jpg' if half else 'iz-page.jpg')).convert('RGB')
+    if im.width != width:
+        im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
     W, H = im.size
     u = W / 1240.0
-    mm = W / 210.0
     dr = ImageDraw.Draw(im)
     reg = os.path.join(STATIC, 'frankruhl-regular.ttf')
     bold = os.path.join(STATIC, 'frankruhl-bold.ttf')
@@ -8849,8 +8848,6 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     def center(t, f, y, fill):
         dr.text(((W - wid(t, f)) / 2, y), t, font=f, fill=fill)
 
-    marg = int((10 if half else 14) * mm)          # שולי הגוף על הבלאנק הלבן
-    top = int((12 if half else 18) * mm)           # מתחת לבס"ד שבפינה
     # מאיר: "אני רוצה שהכל יהיה אותו גודל, גם השותף השני שמתחתיו — השם
     # שלו ושל האברך והקוויטל, הכל אותו גודל ללא הבדל." לכן לא מודדים כל
     # שורה לחוד: מחפשים את הגודל הגדול ביותר שבו שורת הראש *וכל* כותרות
@@ -8875,12 +8872,12 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
         return worst
     NM_PX = 50 * u
     while NM_PX > 14 * u:
-        if _headw(NM_PX) <= W - 2 * marg and _subw(NM_PX) <= W - 2 * marg:
+        if _headw(NM_PX) <= W - int(250 * u) and _subw(NM_PX) <= W - int(80 * u):
             break
         NM_PX -= 2
-    # ראש הפתק — שני השמות, מימין לשמאל, מהשוליים הימניים
+    # ראש הפתק — שני השמות, מימין לשמאל ומשמאל ללוגו
     fl, fn = font(NM_PX * (29.0 / 50.0)), font(NM_PX, True)
-    x = W - marg
+    x = W - int(250 * u)
     # מאיר: "ליד המילה יששכר אל תכתוב 'האברך', וליד זבולון אל תכתוב
     # 'התורם' — זה מובן מאליו". השמות עצמם בסדר פרטי־ואז־משפחה.
     ft = font(NM_PX * (30.0 / 50.0), True)     # התואר — קטן מהשם עצמו
@@ -8889,26 +8886,26 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
         tw = (wid(ttl + ' ', ft) if ttl else 0)
         bw2 = max(wid(v, fn) + tw, wid(lbl, fl))
         x -= bw2
-        dr.text((x + bw2 - wid(lbl, fl), top), lbl, font=fl, fill=_GOLD_T)
+        dr.text((x + bw2 - wid(lbl, fl), int(22 * u)), lbl, font=fl, fill=_GOLD_T)
         # התואר לימין השם, בגובה בסיס דומה
         if ttl:
-            dr.text((x + bw2 - wid(ttl, ft), top + int(48 * u)), ttl, font=ft, fill=_DEEP)
-        dr.text((x + bw2 - tw - wid(v, fn), top + int(36 * u)), v, font=fn, fill=_DEEP)
+            dr.text((x + bw2 - wid(ttl, ft), int(70 * u)), ttl, font=ft, fill=_DEEP)
+        dr.text((x + bw2 - tw - wid(v, fn), int(58 * u)), v, font=fn, fill=_DEEP)
         x -= int(50 * u)
-    # הנוסח — גדול, מתחת לשורת הראש. "יעמוד לזכות" בשורה נפרדת (מאיר)
-    y = top + int((100 if half else 115) * u)
+    # הנוסח — גדול, ומתחת ללוגו. "יעמוד לזכות" בשורה נפרדת (מאיר)
+    y = int((215 if half else 250) * u)
     fz = font((44 if half else 50) * u, False)
     nus = ('יהי רצון שזכות לימוד התורה והתפילה שאני לומד ומתפלל '
            'בעת רצון הגדול של חצות הלילה')
     nsz = (44 if half else 50) * u
-    for ln in _wrap_px(dr, nus, fz, W - 2 * marg):
+    for ln in _wrap_px(dr, nus, fz, W - int(150 * u)):
         center(ln, fz, y, _INK); y += int(nsz * 1.3)
     y += int((8 if half else 16) * u)
     fzk = font(nsz, True)
     center('יעמוד לזכות:', fzk, y, _DEEP)
     y += int(nsz * (1.5 if half else 1.8))
-    # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום, עד הרצועה
-    avail_w, avail_h = W - 2 * marg, foot_y - y
+    # השמות — הכי גדולים, ומצטמצמים לבד רק אם באמת אין מקום
+    avail_w, avail_h = W - int(150 * u), H - y - int((34 if half else 90) * u)
     n = len(parts)
     # כותרת הרצועה — "יששכר <אברך> · זבולון <תורם>". רק לשותף השני והלאה;
     # הראשון כבר כתוב בראש הדף ליד הלוגו. כל קטע נכתב לחוד ומימין לשמאל,
@@ -8922,7 +8919,7 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
     # מאיר: "שיהיה אותו נוסח בדיוק לכל אברך שלומד לזכותו" — בדף לתורם (רצועה
     # לכל אברך, pav) הנוסח המלא ו"יעמוד לזכות:" חוזרים בכל רצועה. הנוסח
     # ברצועה קטן יותר מהראש, כדי שיישאר מקום לשמות.
-    nus_lines = _wrap_px(dr, nus, font(int(nsz)), W - 2 * marg)     # אותו גודל כמו בראש הדף
+    nus_lines = _wrap_px(dr, nus, font(int(nsz)), W - int(150 * u))     # אותו גודל כמו בראש הדף
     nus_h = int(len(nus_lines) * nsz * 1.3 + nsz * 1.9)
 
     def bandhead_h(i):
@@ -8973,7 +8970,7 @@ def izslip_png(avreich='', donor='', names='', width=1240, fmt='png', half=False
         if i:
             # קו מפריד דק ומקווקו בין השותפים — כמו קו גזירה
             ly, dash = int(top), int(9 * u)
-            for dx in range(marg, W - marg, dash * 2):
+            for dx in range(int(90 * u), W - int(90 * u), dash * 2):
                 dr.line([(dx, ly), (dx + dash, ly)], fill=_GOLD_T, width=max(1, int(1.5 * u)))
             subhead(((av_t + ' ') if av_t else '') + (parts[i][3] or avreich or '—'),
                     ((dt + ' ') if dt else '') + (dn or '—'), top + int(sub_nm * .35))
