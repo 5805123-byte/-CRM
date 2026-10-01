@@ -7429,16 +7429,11 @@ function renderKvList(type){
 // \u05de\u05d0\u05d9\u05e8 (\u05ea\u05e9\u05e8\u05d9 \u05ea\u05e9\u05e4"\u05d6): "\u05e2\u05e9\u05d9\u05ea\u05d9 \u05d1\u05dc\u05d0\u05e0\u05e7 \u05d7\u05d3\u05e9 \u05d3\u05e8\u05da \u05e7\u05dc\u05d5\u05d3, \u05d5\u05d0\u05e0\u05d9 \u05e8\u05d5\u05e6\u05d4 \u05e9\u05d4\u05d3\u05e4\u05e1\u05ea \u05d4\u05e7\u05d5\u05d5\u05d9\u05d8\u05dc
 // \u05ea\u05d4\u05d9\u05d4 \u05e2\u05dc\u05d9\u05d5\u2026 \u05e9\u05d9\u05d4\u05d9\u05d4 \u05d0\u05d7\u05d9\u05d3 \u05d4\u05db\u05dc". \u05d4\u05e8\u05e6\u05d5\u05e2\u05d4 \u05d4\u05d9\u05d0 \u05d1\u05d3\u05d9\u05d5\u05e7 \u05d6\u05d5 \u05e9\u05d1\u05ea\u05d1\u05e0\u05d9\u05ea \u05d4\u05d1\u05dc\u05d0\u05e0\u05e7 \u05d4\u05dc\u05d1\u05df:
 // \u05e7\u05d5 \u05e2\u05d9\u05d8\u05d5\u05e8 \u05e2\u05dd \u05de\u05e2\u05d5\u05d9\u05df, \u05d4\u05dc\u05d5\u05d2\u05d5 \u05d4\u05e9\u05e7\u05d5\u05e3 \u05d5\u05e9\u05d5\u05e8\u05ea \u05d4\u05e4\u05e8\u05d8\u05d9\u05dd \u05e9\u05dc \u05d4\u05de\u05e9\u05e8\u05d3.
-const BLANK_ORN='<svg class="orn" viewBox="0 0 1000 24" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
-  +'<defs><linearGradient id="bfl" x1="0" x2="1"><stop offset="0" stop-color="#a8763c" stop-opacity="0"/><stop offset="1" stop-color="#a8763c"/></linearGradient>'
-  +'<linearGradient id="bfr" x1="0" x2="1"><stop offset="0" stop-color="#a8763c"/><stop offset="1" stop-color="#a8763c" stop-opacity="0"/></linearGradient></defs>'
-  +'<rect x="0" y="11.4" width="455" height="1.2" fill="url(#bfl)"/><rect x="545" y="11.4" width="455" height="1.2" fill="url(#bfr)"/>'
-  +'<g fill="none" stroke="#a8763c" stroke-width="1.1" stroke-linecap="round" vector-effect="non-scaling-stroke">'
-  +'<path d="M462 12 c8 -9 18 -9 26 0 c-8 9 -18 9 -26 0z"/><path d="M538 12 c-8 -9 -18 -9 -26 0 c8 9 18 9 26 0z"/></g>'
-  +'<path d="M500 5 l6 7 -6 7 -6 -7z" fill="#7a1f10"/><circle cx="457" cy="12" r="1.6" fill="#a8763c"/><circle cx="543" cy="12" r="1.6" fill="#a8763c"/></svg>';
-const BLANK_CONTACT='<span class="contact">\u05e8\u05d7\u05d5\u05d1 \u05db\u05e0\u05e1\u05ea \u05d9\u05d7\u05d6\u05e7\u05d0\u05dc 38, \u05d1\u05d9\u05ea\u05e8 \u05e2\u05d9\u05dc\u05d9\u05ea<i class="sep">\u00b7</i>\u05d8\u05dc\' \u05de\u05e9\u05e8\u05d3: 02-5803545<i class="sep">\u00b7</i>chatzot18@gmail.com<i class="sep">\u00b7</i><span class="web">www.kollelchatzot.com</span></span>';
+// מאיר (גרסה שנייה): "בניתי בלאנק חדש, אני רוצה שכל הקוויטל ההדפסות יהיו על
+// הבלאנק הזה מעכשיו" — הבלאנק שבנה (blank-kv.jpg) נפרש כתמונה מאחורי כל
+// עמוד, והרצועה היא רק שטח ריק מעל האיור, הלוגו והפרטים שבתמונה.
 function prFootHTML(){
-  return '<div class="prfoot">'+BLANK_ORN+'<div class="line"><img class="logo" src="/logo-blank.png" alt="">'+BLANK_CONTACT+'</div></div>';
+  return '<img class="kvbg" src="/blank-kv.jpg" alt=""><div class="prfoot"></div>';
 }
 // מאיר: "אני רוצה שזה יהיה ממוספר כל הקוויטלאך כשאני מדפיס, שיהיה תמיד
 // מספר בקצה השמאלי למעלה, ותאריך הדפסה עברי בלבד — למשל י"ב אלול

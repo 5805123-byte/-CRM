@@ -22,9 +22,13 @@
   .bar b{font-size:1rem}.bar .sp{flex:1}
   .bar button{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
   .sheet{width:210mm;height:297mm;margin:12px auto;background:#fff;box-shadow:0 6px 24px rgba(40,36,64,.18)}
+  /* מאיר (תשרי תשפ"ז, גרסה שנייה): "בניתי בלאנק חדש, אני רוצה שכל הקוויטל
+     ההדפסות יהיו על הבלאנק הזה מעכשיו" — הבלאנק שבנה (PDF) מצויר כתמונה
+     מאחורי הדף: בס"ד למעלה, ולמטה איור בית המדרש, הלוגו ושורות הפרטים.
+     תמונה אמיתית (img) ולא רקע CSS, כדי שתודפס תמיד. */
   .slip{width:210mm;height:297mm;position:relative;overflow:hidden;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .bsd{position:absolute;top:9mm;right:12mm;font-family:'Fontov',serif;font-weight:700;font-size:11pt;color:var(--bred)}
-  .slip .in{position:absolute;inset:18mm 18mm 30mm 18mm;display:flex;flex-direction:column;z-index:1}
+  .slip>.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:0;pointer-events:none}
+  .slip .in{position:absolute;inset:18mm 18mm 52mm 18mm;display:flex;flex-direction:column;z-index:1}
   .date{position:absolute;left:0;top:0;text-align:left;color:var(--gold);font-size:13pt;font-weight:700;line-height:1.35}
   .date span{display:block;direction:ltr}
   .nm{margin-top:16mm;text-align:center;color:var(--deep);font-size:30pt;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden}
@@ -37,14 +41,6 @@
   .names p{margin:0}
   .names p + p{margin-top:.7em}          /* הפרדה שמאיר עשה בקוויטל — פסקה נפרדת */
   .empty{color:#9a9384;font-weight:600;font-size:16pt}
-  /* רצועת הסיום של הבלאנק — אותן מידות כמו בתבנית */
-  .footer{position:absolute;right:12mm;left:12mm;bottom:5mm;direction:rtl}
-  .footer .orn{display:block;width:100%;height:4mm;margin:0 0 1mm}
-  .footer .line{display:flex;align-items:center;gap:3mm}
-  .footer .logo{width:13mm;flex:0 0 auto;display:block}
-  .footer .contact{font-family:'Fontov',serif;font-weight:400;font-size:9pt;color:var(--bink);white-space:nowrap;letter-spacing:.1px}
-  .footer .contact .sep{font-style:normal;color:var(--bgold);margin:0 2.2mm}
-  .footer .contact .web{direction:ltr;unicode-bidi:isolate}
   .acts{width:210mm;margin:6px auto 18px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-family:system-ui,sans-serif}
   .acts button{font:inherit;font-size:.92rem;font-weight:700;padding:10px 18px;border-radius:10px;border:none;color:#fff;background:#8a6a22;cursor:pointer}
   .acts button.wa{background:#25D366}.acts button.cp{background:#3b2f5e}.acts button:disabled{opacity:.6}
@@ -60,15 +56,6 @@
 <div id="out"></div>
 <script>
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const ORN = '<svg class="orn" viewBox="0 0 1000 24" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
-  + '<defs><linearGradient id="fl" x1="0" x2="1"><stop offset="0" stop-color="#a8763c" stop-opacity="0"/><stop offset="1" stop-color="#a8763c"/></linearGradient>'
-  + '<linearGradient id="fr" x1="0" x2="1"><stop offset="0" stop-color="#a8763c"/><stop offset="1" stop-color="#a8763c" stop-opacity="0"/></linearGradient></defs>'
-  + '<rect x="0" y="11.4" width="455" height="1.2" fill="url(#fl)"/><rect x="545" y="11.4" width="455" height="1.2" fill="url(#fr)"/>'
-  + '<g fill="none" stroke="#a8763c" stroke-width="1.1" stroke-linecap="round" vector-effect="non-scaling-stroke">'
-  + '<path d="M462 12 c8 -9 18 -9 26 0 c-8 9 -18 9 -26 0z"/><path d="M538 12 c-8 -9 -18 -9 -26 0 c8 9 18 9 26 0z"/></g>'
-  + '<path d="M500 5 l6 7 -6 7 -6 -7z" fill="#7a1f10"/><circle cx="457" cy="12" r="1.6" fill="#a8763c"/><circle cx="543" cy="12" r="1.6" fill="#a8763c"/></svg>';
-const FOOT = '<div class="footer">' + ORN + '<div class="line"><img class="logo" src="/logo-blank.png" alt="">'
-  + '<span class="contact">רחוב כנסת יחזקאל 38, ביתר עילית<i class="sep">·</i>טל\' משרד: 02-5803545<i class="sep">·</i>chatzot18@gmail.com<i class="sep">·</i><span class="web">www.kollelchatzot.com</span></span></div></div>';
 function kvFlow(list) {
   const parts = (list || []).map(x => String(x || '').trim()).filter(Boolean);
   if (parts.length < 2) return parts.join('');
@@ -115,14 +102,14 @@ async function sendImg(b, info) {
   document.getElementById('cnt').textContent = info.name + ' · ' + info.names.length + ' שמות';
   const paras = info.paras && info.paras.length ? info.paras : (info.names.length ? [kvFlow(info.names)] : []);
   const names = paras.length ? `<span>${paras.map(t => `<p>${esc(t)}</p>`).join('')}</span>` : '<span class="empty">— אין עדיין שמות לקוויטל —</span>';
-  document.getElementById('out').innerHTML = `<div class="sheet"><div class="slip"><div class="bsd">בס"ד</div><div class="in">
+  document.getElementById('out').innerHTML = `<div class="sheet"><div class="slip"><img class="bg" src="/blank-kv.jpg" alt=""><div class="in">
       <div class="date"><span>${esc(info.date_heb)}</span><span>${esc(info.date_greg)}</span></div>
       <div class="nm">${info.title ? `<i>${esc(info.title)}</i> ` : ''}${esc(info.name)}</div>
       <div class="lines">${info.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>
       <div class="rule"></div>
       <div class="z">שמות לתפילה בחצות הלילה:</div>
       <div class="names">${names}</div>
-    </div>${FOOT}</div></div>
+    </div></div></div>
     <div class="acts"><button class="wa" id="send">📤 שלח לתורם</button><button class="cp" id="copy">📋 העתק תמונה</button><button onclick="window.print()">🖨️ הדפס</button></div>`;
   fit(document.querySelector('.nm'), 30, 12);
   fit(document.querySelector('.names'), 56, 8);
