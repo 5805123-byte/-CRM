@@ -9024,8 +9024,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
     x0, y0 = int(cfg['box'][0] * W), int(cfg['box'][1] * H)
     x1, y1 = int(cfg['box'][2] * W), int(cfg['box'][3] * H)
     bw, bh = x1 - x0, y1 - y0
-    reg = os.path.join(STATIC, 'frankruhl-regular.ttf')
-    bold = os.path.join(STATIC, 'frankruhl-bold.ttf')
+    # מאיר (תשרי תשפ"ז): "את הגופן של האותיות בפרנס יום אני רוצה אותיות נחל
+    # נובע" — הגופן BA Franknatan (Nachal Novea) שהוא שמר ב-Claude. יש לו
+    # משקל אחד בלבד, ולכן ההדגשה נעשית בקו מתאר דק (כמו שהדפדפן מעבה לבד).
+    reg = bold = os.path.join(STATIC, 'nachal-novea.otf')
     cache = {}
 
     def font(px, heavy):
@@ -9033,6 +9035,9 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         if k not in cache:
             cache[k] = ImageFont.truetype(bold if heavy else reg, max(6, int(px)))
         return cache[k]
+
+    def _sw(f, heavy):
+        return max(1, int(round(f.size * 0.02))) if heavy else 0
 
     def _save():
         buf = io.BytesIO()
@@ -9063,7 +9068,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                 base = float(ytop) * sy + float(hgt) * sy * (a / float(a + d) if (a + d) else .8)
                 s = txt if raqm else txt[::-1]
                 dr.text((float(cx) * sx - dr.textlength(s, font=f) / 2, base),
-                        s, font=f, fill=_cert_hex(col), anchor='ls')
+                        s, font=f, fill=_cert_hex(col), anchor='ls',
+                        stroke_width=_sw(f, bool(bd)), stroke_fill=_cert_hex(col))
             except Exception:
                 continue
         return _save()
@@ -9387,7 +9393,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         # PIL מסדר עברית מימין לשמאל בעצמו; לכן רק סדר המקטעים מתהפך — הראשון נכתב הכי ימינה
         for t, s, h in reversed(ln):
             f = font(s, h)
-            dr.text((x, base_y), t if raqm else t[::-1], font=f, fill=col, anchor='ls')
+            dr.text((x, base_y), t if raqm else t[::-1], font=f, fill=col, anchor='ls',
+                    stroke_width=_sw(f, h), stroke_fill=col)
             x += dr.textlength(t, font=f)
     return _save()
 
