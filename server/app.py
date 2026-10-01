@@ -9024,10 +9024,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
     x0, y0 = int(cfg['box'][0] * W), int(cfg['box'][1] * H)
     x1, y1 = int(cfg['box'][2] * W), int(cfg['box'][3] * H)
     bw, bh = x1 - x0, y1 - y0
-    # מאיר (תשרי תשפ"ז): "את הגופן של האותיות בפרנס יום אני רוצה אותיות נחל
-    # נובע" — הגופן BA Franknatan (Nachal Novea) שהוא שמר ב-Claude. יש לו
-    # משקל אחד בלבד, ולכן ההדגשה נעשית בקו מתאר דק (כמו שהדפדפן מעבה לבד).
-    reg = bold = os.path.join(STATIC, 'nachal-novea.otf')
+    # מאיר (תשרי תשפ"ז): "את הפרנס יום אני רוצה שתעשה את BA Fontov Bold" —
+    # הגופן ששמר ב-Claude ("גופני BA"). כל התעודה בו, גם הנוסח וגם השמות;
+    # הוא כבר מודגש, ולכן אין צורך בקו מתאר.
+    reg = bold = os.path.join(STATIC, 'fontov-bold.otf')
     cache = {}
 
     def font(px, heavy):
@@ -9037,7 +9037,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         return cache[k]
 
     def _sw(f, heavy):
-        return max(1, int(round(f.size * 0.02))) if heavy else 0
+        return 0
 
     def _save():
         buf = io.BytesIO()
