@@ -5,7 +5,7 @@ let DB = [], OCC = [], UNLINKED = [], GTASKS = [], CAMPAIGNS = [], CAMPFLAGS = {
 function assigneeOpts(cur){return [['','מאיר'],['אהרן','אהרן']].map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function curSym(d){ return (d && d.region==='il') ? '₪' : '$'; }
 // מטבע של יום פרנס: מה שנבחר לאותו יום, ואם לא נבחר — לפי האזור של התורם
-function pCur(p,d){ return (p&&String(p.currency||'').trim())||curSym(d); }
+// (המטבע של שורה — פרנס או אברך — נקבע ב-pCur למטה)
 const GMON=['','ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 const GREGYEAR=String(new Date().getFullYear());
 // תצוגת חודש לועזי לפי תאריך ("2026-07" → "יולי 2026") — התרומות הקבועות נגבות לפי חודש לועזי
@@ -36,7 +36,10 @@ function jointHolders(p){return Math.max(1,jointGroup(p).length);}
 // מאיר: "הוא נותן אלף שקל והוא נותן 400 דולר וביחד יששכר־זבולון" —
 // לכל שורת אברך מטבע משלה, כך ששני שותפים באותו אברך יכולים לשלם
 // כל אחד במטבע שלו. ברירת המחדל היא מטבע הכרטיס.
-function pCur(p,d){const c=String((p&&p.cur)||'').trim();
+// מאיר: "אני מסמן שהוא התחייב 8000 שקל עבור פרנס יום הושענא רבה וזה שומר
+// בדולרים" — לשורת פרנס השדה הוא currency, לשורת אברך cur; היו שתי פונקציות
+// באותו שם והשנייה דרסה את הראשונה, ולכן הפרנס תמיד הוצג במטבע הכרטיס.
+function pCur(p,d){const c=String((p&&(p.currency||p.cur))||'').trim();
   return c==='₪'?'₪':(c==='$'?'$':curSym(d));}
 function curOpts(cur){return ['$','₪'].map(x=>`<option value="${x}" ${x===cur?'selected':''}>${x}</option>`).join('');}
 function jointPayerId(p){const v=+(p.joint_payer||0);return v>0?v:0;}
@@ -6945,7 +6948,7 @@ function renderParnesEdit(d){
   const head=(d.parnes&&d.parnes.length)?`<div class="dncount">${d.parnes.length} ימי פרנס · סה"כ ${cur}${ptot}</div>`:'';
   // מאיר: "שזה יציע לי גם בשנה הבאה בתור הצעה… שזה יופיע בצבע חלש שזה יהיה
   // הסימן שזה הצעה כי שנה שעברה היה לו" — ההצעה חיוורת, עם כפתור "גם השנה"
-  el.innerHTML=head+((d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy, sg=p.status==='suggested';return `<div class="plwrap ${sg?'plsugg':''}"><div class="pledge ${sg?'sugg':'given'}"><div class="pi"><b>${sg?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}${p.hyear?(' '+esc(p.hyear)):''}</b> ${p.amount?('· <b style="color:var(--yes)">'+cur+esc(p.amount)+'</b>'):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}${sg?'<br><small>כמו שנה שעברה — לשאול אותו אם גם השנה</small>':''}</div>${sg?`<button class="btn sm pyok" data-id="${p.id}">✓ גם השנה</button>`:''}<button class="del" data-del="${p.id}">🗑</button></div>
+  el.innerHTML=head+((d.parnes||[]).map(p=>{const passed=p.night_date&&p.night_date<tdy, sg=p.status==='suggested';return `<div class="plwrap ${sg?'plsugg':''}"><div class="pledge ${sg?'sugg':'given'}"><div class="pi"><b>${sg?'🔵 הצעה':'🟢'} ${DAYKIND[p.kind]||'🌙'} · ${esc(p.date_text)}${p.hyear?(' '+esc(p.hyear)):''}</b> ${p.amount?('· <b style="color:var(--yes)">'+pCur(p,d)+esc(p.amount)+'</b>'):''}${passed&&+p.paid?' <span class="fbchip on">🌙 הסתיים</span>':''}${sg?'<br><small>כמו שנה שעברה — לשאול אותו אם גם השנה</small>':''}</div>${sg?`<button class="btn sm pyok" data-id="${p.id}">✓ גם השנה</button>`:''}<button class="del" data-del="${p.id}">🗑</button></div>
     <div class="two" style="margin:6px 0 0"><label class="fld"><span>סכום</span><input class="pyamt" data-id="${p.id}" value="${esc(p.amount||'')}" inputmode="decimal" placeholder="0"></label>
       <label class="fld"><span>סוג</span><select class="pykind" data-id="${p.id}"><option value="parnes" ${p.kind==='parnes'?'selected':''}>🌙 פרנס לילה</option><option value="coffee" ${p.kind==='coffee'?'selected':''}>☕ פרנס קפה</option><option value="breakfast" ${p.kind==='breakfast'?'selected':''}>🍳 ארוחת בוקר</option></select></label></div>
     <div class="two"><label class="fld"><span>חודש</span><select class="pymon" data-id="${p.id}">${HMORD.map(m=>`<option ${m===p.month?'selected':''}>${m}</option>`).join('')}</select></label>
