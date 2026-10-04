@@ -6563,6 +6563,50 @@ def _recon_iso(d):
     return f"{m.group(3)}-{_MONI.get(m.group(2).lower(), '01')}-{m.group(1)}" if m else ''
 
 
+def _recon_iso_any(d):
+    """תאריך של שורת חיוב — בקבצים 'dd-Mon-yyyy', בחיבור החי כבר ISO."""
+    d = str(d or '').strip()
+    if re.match(r'^\d{4}-\d{2}-\d{2}', d):
+        return d[:10]
+    return _recon_iso(d)
+
+
+def _recon_ym(d):
+    """'YYYY-MM' של החיוב — לחלוקת דף החיובים לפי חודשים."""
+    return _recon_iso_any(d)[:7]
+
+
+def _manual_match(con, did, iso, amount, source, days=10):
+    """מאיר: "שים לב שלא יהיו כפילויות… את כל סוכות תשפ"ז שכבר גבינו רשמתי במערכת
+    שזה נגבה כבר". תרומה שנרשמה ביד (בלי מזהה חיוב) לאותו תורם, באותו סכום,
+    בטווח ימים מהחיוב — היא אותו כסף. בדף החיובים היא מוצגת ליד החיוב, ובאישור
+    החיוב מתאחד איתה (merge_manual_donation) במקום לפתוח שורה שנייה."""
+    try:
+        d0 = datetime.date.fromisoformat(str(iso or '')[:10])
+        a = round(float(str(amount or 0).replace(',', '').replace('$', '')), 2)
+    except Exception:
+        return None
+    src = (source or '').lower()
+    meth = 'Banquest' if ('banquest' in src or 'ווסט' in src) else 'Authorize'
+    best = None
+    for r in con.execute("SELECT id,date,method,note,category FROM donations WHERE donor_id=? "
+                         "AND COALESCE(tid,'')='' AND ROUND(CAST(amount AS REAL),2)=?", (did, a)):
+        nt = (r['note'] or '').strip()
+        if nt.startswith(('ייבוא', 'נכנס מ', 'שויך ידנית')):
+            continue
+        try:
+            d1 = datetime.date.fromisoformat(str(r['date'] or '')[:10])
+        except Exception:
+            continue
+        gap = abs((d1 - d0).days)
+        if gap > days or not _meth_matches(r['method'], meth):
+            continue
+        if best is None or gap < best['gap']:
+            best = {'gap': gap, 'id': r['id'], 'date': str(r['date'])[:10],
+                    'category': r['category'] or '', 'note': nt}
+    return best
+
+
 def _amt2(a):
     """סכום כמספר עגול לשתי ספרות — להשוואה בין חיוב שנדחה לחיוב שעבר."""
     try:
@@ -12831,9 +12875,44 @@ class H(BaseHTTPRequestHandler):
                         _pm = 'Banquest' if 'Banquest' in (r['source'] or '') else 'Authorize'
                         x['match_summary'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND method=?", (r['donor_id'], _pm)).fetchone()[0]
                         x['match_summary_other'] = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND note='ייבוא 2026' AND COALESCE(method,'')<>?", (r['donor_id'], _pm)).fetchone()[0]
+                # החודש של החיוב (לחלוקה לפי חודשים), ומה שכבר רשום בכרטיס באותו סכום:
+                # תרומה ידנית (למשל מרשימת סוכות) או התחייבות פתוחה — כדי שיהיה ברור
+                # עבור מה זה ושלא תיווצר כפילות
+                x['ym'] = _recon_ym(r['date'])
+                x['manual'] = x['pledge'] = None
+                if r['donor_id'] and not r['processed']:
+                    try:
+                        x['manual'] = _manual_match(con, r['donor_id'], _recon_iso_any(r['date']), r['amount'], r['source'])
+                        if not x['manual']:
+                            x['pledge'] = open_pledge_for(con, r['donor_id'], r['amount'])
+                    except Exception:
+                        pass
                 out.append(x)
             con.close()
             return self._send(200, out)
+        if self.path.split('?')[0] == '/api/recon/months':
+            # מאיר: "כל התרומות של ספטמבר שייכנסו לתוך חלונית של חיובים 09/2026, וגם של
+            # שאר החודשים לפי חודש… מי שאין לו כרטיס שיקבל שורה אדומה"
+            con = db(); months = {}
+            for r in con.execute("SELECT source, processed, status, date, donor_id FROM recon"):
+                ym = _recon_ym(r['date'])
+                if not ym:
+                    continue
+                g = recon_group(r['source'])
+                mo = months.setdefault(ym, {'ym': ym, 'label': ym[5:7] + '/' + ym[:4], 'sources': {},
+                                            'pending': 0, 'nocard': 0, 'done': 0, 'total': 0})
+                sg = mo['sources'].setdefault(g, {'pending': 0, 'nocard': 0, 'done': 0, 'total': 0})
+                settled = (not r['status']) or r['status'] == 'settled'
+                for a in (mo, sg):
+                    a['total'] += 1
+                    if r['processed']:
+                        a['done'] += 1
+                    elif settled:
+                        a['pending'] += 1
+                        if not r['donor_id']:
+                            a['nocard'] += 1
+            con.close()
+            return self._send(200, sorted(months.values(), key=lambda m: m['ym'], reverse=True))
         if self.path.split('?')[0] == '/api/audit/excel':
             # השוואה: תרומות שיובאו מהאקסל מול החיובים שנגבו בפועל (רק בתקופה שהאקסל מכסה)
             con = db()

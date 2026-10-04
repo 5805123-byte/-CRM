@@ -18,6 +18,19 @@
   .filters button.on{background:var(--accent);color:#fff;border-color:transparent}
   .grp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;margin:11px 0;box-shadow:0 2px 8px rgba(0,0,0,.04)}
   .grp.done{opacity:.55}
+  /* מאיר: "מי שאין לו כרטיס שיקבל שורה אדומה ברשימות האלו" */
+  .grp.nocard{border-color:#e9a79a;background:#fff7f5;box-shadow:inset 5px 0 0 var(--no)}
+  .nocardtag{display:inline-block;background:var(--no);color:#fff;border-radius:6px;padding:2px 8px;font-size:.74rem;font-weight:800;margin-inline-start:6px;vertical-align:middle}
+  /* לשוניות החודשים — "חיובים 09/2026" */
+  .months{display:flex;gap:6px;margin:8px 0 0;flex-wrap:wrap}
+  .months button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:6px 11px;font-size:.82rem;font-weight:800;cursor:pointer;font-family:inherit}
+  .months button.on{background:var(--gold);color:#fff;border-color:transparent}
+  .months button small{font-weight:700;color:var(--muted);margin-inline-start:4px}
+  .months button.on small{color:#fff8}
+  .months button .red{color:var(--no)}
+  .months button.on .red{color:#ffd9d2}
+  .sechead{font-weight:800;font-size:.95rem;margin:14px 2px 2px;color:var(--ink)}
+  .sechead.red{color:var(--no)}
   .gname{font-weight:800;font-size:1.05rem;direction:ltr;text-align:right}
   .gsum{color:var(--muted);font-size:.85rem;margin-top:2px}
   .match{margin:8px 0;padding:8px 10px;border-radius:10px;font-size:.9rem}
@@ -109,6 +122,7 @@
 <div class="bar">
   <div class="prog"><i id="pbar"></i></div>
   <div class="sub" id="pcount" style="margin:5px 0 0"></div>
+  <div class="months" id="months"></div>
   <div class="filters">
     <button data-f="pending" class="on">🕒 לטיפול</button>
     <button data-f="nomatch">❓ בלי כרטיס</button>
@@ -225,8 +239,27 @@ function srcGroup(s){ s=(s||'').toLowerCase();
 const SRCLABEL={authorize:'אוטרייז',banquest:'בנק ווסט',checks:'צ׳קים',transfers:'העברות בנקאיות וזל',donorsfund:'דונרס פאנד / OJC'};
 
 // שמירת מיקום העבודה — כדי לחזור לאותה נקודה אחרי כניסה לכרטיס תורם וחזרה
-const PKEY='recpos_'+(SRC||'all'), FKEY='recfilt_'+(SRC||'all');
+const PKEY='recpos_'+(SRC||'all'), FKEY='recfilt_'+(SRC||'all'), MKEY='recmon_'+(SRC||'all');
 try{const sf=sessionStorage.getItem(FKEY); if(sf)FILT=sf;}catch(e){}
+// מאיר: "כל התרומות של ספטמבר שייכנסו לתוך חלונית של חיובים 09/2026, וגם של שאר
+// החודשים לפי חודש" — החודש שנבחר; מהקישור (m=2026-09), אחרת מה שנשמר, אחרת החודש האחרון
+let MON = new URLSearchParams(location.search).get('m') || '';
+if(!MON){ try{ MON = sessionStorage.getItem(MKEY) || ''; }catch(e){} }
+let monInit = !!MON;
+function monLabel(ym){ return ym ? ('חיובים '+ym.slice(5,7)+'/'+ym.slice(0,4)) : 'כל החודשים'; }
+function renderMonths(){
+  const box=$('#months'); if(!box) return;
+  const by={};
+  DATA.forEach(x=>{ const ym=x.ym||''; if(!ym) return; const a=(by[ym]=by[ym]||{pending:0,nocard:0});
+    const settled=!x.status||x.status==='settled';
+    if(!x.processed&&settled){ a.pending++; if(!x.donor_id) a.nocard++; } });
+  const yms=Object.keys(by).sort().reverse();
+  if(!monInit){ MON = yms[0] || ''; monInit=true; }
+  if(MON && !by[MON]) MON = yms[0] || '';
+  box.innerHTML = yms.map(ym=>`<button data-m="${ym}" class="${ym===MON?'on':''}">${monLabel(ym)}${by[ym].pending?`<small>${by[ym].pending} לטיפול</small>`:''}${by[ym].nocard?`<small class="red">🔴 ${by[ym].nocard} בלי כרטיס</small>`:''}</button>`).join('')
+    + `<button data-m="" class="${MON?'':'on'}">כל החודשים</button>`;
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{ MON=b.dataset.m; try{sessionStorage.setItem(MKEY,MON);}catch(e){} window.scrollTo(0,0); render(); });
+}
 let didRestore=false;
 function savePos(k){try{sessionStorage.setItem(PKEY,JSON.stringify({y:window.scrollY,k:k||null}));}catch(e){}}
 window.addEventListener('scroll',()=>{clearTimeout(savePos._t);savePos._t=setTimeout(()=>savePos(null),200);},{passive:true});
@@ -244,12 +277,14 @@ async function load(){ [DATA, CAMPAIGNS, BUILDING_ITEMS] = await Promise.all([ap
 function groupKey(x){ return norm(x.first+' '+x.last); }
 
 function render(){
-  const total = DATA.length, done = DATA.filter(x=>x.processed).length;
+  renderMonths();
+  const ROWS = MON ? DATA.filter(x=>x.ym===MON) : DATA;
+  const total = ROWS.length, done = ROWS.filter(x=>x.processed).length;
   $('#pbar').style.width = total? (done/total*100)+'%':'0';
-  $('#pcount').textContent = `${done} / ${total} טופלו`;
+  $('#pcount').textContent = `${monLabel(MON)} · ${done} / ${total} טופלו`;
   // group by person
   const groups = {};
-  DATA.forEach(x=>{ const k=groupKey(x); (groups[k]=groups[k]||[]).push(x); });
+  ROWS.forEach(x=>{ const k=groupKey(x); (groups[k]=groups[k]||[]).push(x); });
   let entries = Object.entries(groups);
   entries = entries.filter(([k,txs])=>{
     const allDone = txs.every(t=>t.processed);
@@ -262,11 +297,17 @@ function render(){
     if(FILT==='failed') return hasFailed;
     return true;
   });
-  entries.sort((a,b)=>a[0].localeCompare(b[0]));
+  // סדר: קודם מי שאין לו כרטיס (אדום), אחר כך לטיפול, ובסוף מה שטופל — ובתוך כל קבוצה לפי שם
+  const rank=([k,txs])=>{ const allDone=txs.every(t=>t.processed); const matched=txs.some(t=>t.donor_id);
+    const hasSettled=txs.some(t=>!t.status||t.status==='settled'); return allDone?2:((!matched&&hasSettled)?0:1); };
+  entries.sort((a,b)=>rank(a)-rank(b)||a[0].localeCompare(b[0]));
   document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b.dataset.f===FILT));
   const list = $('#list');
   if(!entries.length){ list.innerHTML='<div class="done-msg">🎉 אין פריטים בקטגוריה הזו</div>'; return; }
-  list.innerHTML = entries.map(([k,txs])=>groupCard(k,txs)).join('') + `<datalist id="bldgdl">${BUILDING_ITEMS.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
+  let html='', lastRank=-1;
+  const SECT={0:'<div class="sechead red">🔴 תורם בלי כרטיס — חפש מי זה או הקם לו כרטיס</div>',1:'<div class="sechead">🕒 יש כרטיס — לאשר עבור מה</div>',2:'<div class="sechead" style="color:var(--yes)">✓ טופלו</div>'};
+  entries.forEach(e=>{ const r=rank(e); if(r!==lastRank){ html+=SECT[r]; lastRank=r; } html+=groupCard(e[0],e[1]); });
+  list.innerHTML = html + `<datalist id="bldgdl">${BUILDING_ITEMS.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
   entries.forEach(([k,txs])=>wireGroup(k,txs));
   if(!didRestore){ didRestore=true; requestAnimationFrame(restorePos); }
 }
@@ -295,8 +336,16 @@ function groupCard(k,txs){
   const settled = txs.filter(t=>!t.status||t.status==='settled');
   const failedN = txs.length - settled.length;
   const total = settled.reduce((s,t)=>s+parseFloat(t.amount||0),0);
-  let head = `<div class="gname">${esc((t0.first+' '+t0.last).trim())}</div>
+  const nocard = !matched && !allDone && settled.length>0;
+  let head = `<div class="gname">${esc((t0.first+' '+t0.last).trim())}${nocard?'<span class="nocardtag">🔴 בלי כרטיס</span>':''}</div>
     <div class="gsum">${settled.length} עברו · סה"כ $${total.toFixed(2)}${failedN?(' · <span style="color:var(--no)">'+failedN+' לא עברו</span>'):''}${t0.email?(' · '+esc(t0.email)):''}</div>`;
+  // מאיר: "שלא יהיו כפילויות… את כל סוכות תשפ"ז שכבר גבינו רשמתי במערכת" — חיוב
+  // שכבר רשום בכרטיס ביד (אותו סכום, אותם ימים) מוצג כאן, ובאישור הוא מתאחד איתו
+  const manuals=txs.filter(t=>t.manual&&!t.processed);
+  const pledges=txs.filter(t=>t.pledge&&!t.manual&&!t.processed);
+  let dupHtml='';
+  if(manuals.length) dupHtml+=`<div class="dupok">✓ כבר רשום בכרטיס ביד: ${manuals.map(t=>`$${(+t.amount).toFixed(0)} · ${esc(t.manual.date.split('-').reverse().join('.'))}${t.manual.category?(' · <b>'+esc(t.manual.category)+'</b>'):''}`).join(' | ')} — באישור החיוב יתאחד עם הרישום הזה, בלי כפילות</div>`;
+  if(pledges.length) dupHtml+=`<div class="dupok">🎯 יש התחייבות פתוחה בסכום הזה: ${pledges.map(t=>`<b>${esc(t.pledge.category||'ללא ייעוד')}</b> $${(+t.amount).toFixed(0)}`).join(' | ')} — באישור תיסגר ההתחייבות</div>`;
   const miss=missingMonths(txs);
   const missHtml=miss.length?('<div class="missbox">'+miss.map(x=>`🔴 הוראת קבע $${x.amt} — כנראה לא עברה בחודשים: <b>${x.miss.map(m=>HEMON[m]).join(', ')}</b>`).join('<br>')+'</div>'):'';
   let matchHtml;
@@ -355,16 +404,20 @@ function groupCard(k,txs){
   const rows = txs.map(t=>{
     const amt=parseFloat(t.amount||0), is480=amt===480;
     const failed = t.status && t.status!=='settled';
-    const cur=t.category||(t.processed?'':auto.cat)||'';
+    // "עבור מה" מראש: מה שכבר רשום בכרטיס ביד לסכום הזה (רשימת סוכות וכד'),
+    // התחייבות פתוחה, ואחרת הזיהוי האוטומטי של הקבוצה
+    const cur=t.category||(t.processed?'':(((t.manual&&t.manual.category)||(t.pledge&&t.pledge.category))||auto.cat))||'';
     let opts=CATS.map(c=>`<option value="${esc(c)}" ${c===cur?'selected':''}>${c||'— עבור מה? —'}</option>`).join('');
     if(CAMPAIGNS.length) opts+='<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.map(c=>`<option value="${esc(c)}" ${c===cur?'selected':''}>${esc(c)}</option>`).join('')+'</optgroup>';
+    if(cur&&!CATS.includes(cur)&&!CAMPAIGNS.includes(cur)) opts+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;   // ייעוד אישי שרשום בכרטיס
     opts+=`<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>`;
     const STLBL={declined:'🔴 נדחה — לא עבר',error:'🔴 שגיאה — לא עבר',voided:'🔴 בוטל — לא עבר',refund:'↩️ הוחזר'};
     const stlbl = STLBL[t.status]||'🔴 לא עבר';
     return `<div class="txn ${failed?'failed':''}" data-tid="${esc(t.tid)}">
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
       ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
-      ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?'<span style="color:var(--yes);font-weight:800">✓ טופל</span>':`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit"><input class="bldgitem" list="bldgdl" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:${isBldg(cur)?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
+      ${t.manual&&!t.processed?'<span class="py" style="background:#eaf6ee;color:#1e6b3a">✓ כבר רשום — יאומת</span>':''}
+      ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?`<span style="color:var(--yes);font-weight:800">✓ טופל${t.category?(' · '+esc(t.category)):''}</span>`:`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit"><input class="bldgitem" list="bldgdl" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:${isBldg(cur)?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
       ${(!failed&&!t.processed)?(()=>{const show=is480||PARNES_CATS.includes(cur);return `<div class="pypick" style="display:${show?'flex':'none'};gap:6px;width:100%;margin-top:5px">
         <select class="pymon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
         <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>
@@ -383,8 +436,8 @@ function groupCard(k,txs){
       <select class="allcat">${bulkOpts}</select></label>
     ${auto.cat?`<div class="autowhy">✨ זוהה אוטומטית: <b>${esc(auto.cat)}</b> — ${esc(auto.why)}</div>`:''}
     <div class="autowhy">אפשר לשנות שורה בודדת למטה אחרי הבחירה.</div></div>`;
-  return `<div class="grp ${allDone?'done':''}" data-k="${esc(k)}">
-    ${head}${missHtml}${matchHtml}${assign}${kvHtml}${addrHtml}${noteHtml}${allDone?'':bulkHtml}${rows}
+  return `<div class="grp ${allDone?'done':''}${nocard?' nocard':''}" data-k="${esc(k)}">
+    ${head}${missHtml}${matchHtml}${dupHtml}${assign}${kvHtml}${addrHtml}${noteHtml}${allDone?'':bulkHtml}${rows}
     ${allDone?'':`<button class="btn go">✓ הכנס את כל התרומות של ${esc((t0.first+' '+t0.last).trim())}</button>`}
     <button class="grpdel">🗑 מחק את ${esc((t0.first+' '+t0.last).trim())} מדף החיובים (ניסיון תרומה / כפילות)</button>
   </div>`;

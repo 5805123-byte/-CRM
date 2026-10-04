@@ -6072,7 +6072,8 @@ function renderCharges(){
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_audit" style="width:100%">🔍 בדיקת סתירות — אקסל מול חיובים בפועל</button></div>
     <div id="auditbox"></div>
     <div id="ledgerbox">טוען…</div>
-    <div id="reconboxes" class="reconboxes"></div>`+
+    <div id="reconboxes" class="reconboxes"></div>
+    <div id="reconmonths"></div>`+
     (rows.length?`<div class="cnt">${rows.length} חיובים</div><div class="list">`:'<div class="list hidden">')+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
@@ -6119,6 +6120,15 @@ function renderCharges(){
       return `<a class="reconbox ${active?'act':'empty'}" ${active?`href="/reconcile?src=${g.key}" target="_blank" rel="noopener"`:''}>
         <div class="rb-t">${g.icon} ${esc(g.label)}</div>
         <div class="rb-s">${active?('<b>'+g.pending+'</b> לטיפול · '+g.done+' טופלו'):'יעלה כשתשלח את הקובץ'}</div></a>`;}).join('');
+  });
+  // מאיר: "כל התרומות של ספטמבר שייכנסו לתוך חלונית של חיובים 09/2026, וגם של שאר
+  // החודשים לפי חודש… מי שאין לו כרטיס שיקבל שורה אדומה" — חלונית לכל חודש,
+  // ובתוכה כל מקור (בנק ווסט / אוטרייז…) עם כמה לטיפול וכמה בלי כרטיס
+  api('GET','/api/recon/months').then(ms=>{const box=document.getElementById('reconmonths');if(!box||!Array.isArray(ms)||!ms.length)return;
+    const LBL={authorize:'💳 אוטרייז',banquest:'🏦 בנק ווסט',checks:'🧾 צ׳קים',transfers:'🔁 העברות / זל',donorsfund:'🎗️ דונרס פאנד',other:'אחר'};
+    box.innerHTML='<div class="rbtitle" style="margin-top:12px">📅 חיובים לפי חודש</div>'+ms.map(m=>`<div class="recmon ${m.pending?'':'quiet'}">
+        <div class="recmon-h"><b>חיובים ${esc(m.label)}</b><span>${m.pending?('<b>'+m.pending+'</b> לטיפול'):'הכל טופל ✓'}${m.nocard?` · <span class="red">🔴 ${m.nocard} בלי כרטיס</span>`:''} · ${m.done} טופלו</span></div>
+        <div class="recmon-s">${Object.keys(m.sources).map(k=>{const s=m.sources[k];return `<a href="/reconcile?src=${k}&m=${m.ym}" target="_blank" rel="noopener" class="recmon-src ${s.pending?'':'quiet'}">${LBL[k]||k}<small>${s.pending?(s.pending+' לטיפול'):'טופל'}${s.nocard?(' · <span class="red">🔴 '+s.nocard+'</span>'):''}</small></a>`;}).join('')}</div></div>`).join('');
   });
 }
 // רענון בלוק הסיכום של יש"ז בלבד (בלי לרנדר מחדש את כל הכרטיס ולסגור חלוניות)
