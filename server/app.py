@@ -2551,8 +2551,17 @@ def ensure_schema():
             ('ay', ['%אקרמן%', '%אקערמאן%', '%אקערמן%'], ['%ישעי%', '%שעיה%'], ['%ackerman%yesh%', '%yesh%ackerman%', '%shaya%ackerman%', '%ackerman%shaya%'], 'אקרמן ישעיה'),
             # מאיר: "Abramowitz זה אלחנן אברמוביץ" — בקובץ בלי שם פרטי
             ('abramowitz', ['%אברמוביץ%', '%אבראמאוויטש%', '%אברמוביטש%'], ['%אלחנן%'], ['%elchanan%abramowitz%', '%abramowitz%elchanan%', '%elchonon%abramowitz%'], 'אברמוביץ אלחנן'),
+            # מאיר: "Jeffery Kahn זה אורי קאהן, אם אין אותו אז תפתח לו כרטיס חדש"
+            ('jeffery kahn', ['%קאהן%', '%קאן%'], ['%אורי%'], ['%uri%kahn%', '%kahn%uri%', '%jeffery kahn%'], 'קאהן אורי',
+             {'last': 'קאהן', 'first': 'אורי', 'english': 'Jeffery Kahn'}),
+            # מאיר: "HAND IN HAND זה יצחק וברכה שטטפלד" — החברה של שטטפלד
+            ('hand in hand development', ['%שטטפלד%', '%שטעטפעלד%', '%סטטפלד%'], ['%יצחק%', '%ברכה%'], ['%stattfeld%', '%stettfeld%', '%statfeld%', '%hand in hand%'], 'שטטפלד יצחק וברכה'),
+            # מאיר: "Marc Mendelson Bluestone Group זה יוסף מרדכי מנדלסון"
+            ('marc mendelson bluestone group', ['%מנדלסון%', '%מענדעלסאן%', '%מנדלסן%'], ['%יוסף%', '%מרדכי%'], ['%mendelson%', '%mendelsohn%'], 'מנדלסון יוסף מרדכי'),
         ]
-        for _key, _lasts, _firsts, _engs, _desc in _BQ_NAMES:
+        for _ent in _BQ_NAMES:
+            _key, _lasts, _firsts, _engs, _desc = _ent[:5]
+            _mk = _ent[5] if len(_ent) > 5 else None
             _flag = 'bq_name_' + _key
             if con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
                 continue
@@ -2571,6 +2580,18 @@ def ensure_schema():
                 for ep in _engs:
                     d0 = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE ? ORDER BY id LIMIT 1", (ep,)).fetchone()
                     if d0: break
+            if not d0 and _mk:
+                # אין כרטיס — נפתח חדש, עם הפרטים שיש בחיוב (מייל/טלפון אם יש)
+                _rx = con.execute("SELECT email,phone,addr,city,zip FROM recon WHERE lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,'')))=? "
+                                  "ORDER BY rowid DESC LIMIT 1", (_key,)).fetchone()
+                con.execute("INSERT INTO donors(last,first,english,phone,email,addr,city,zip,category,created,source) "
+                            "VALUES(?,?,?,?,?,?,?,?,'מזדמן',?,'Banquest')",
+                            (_mk['last'], _mk['first'], _mk.get('english', ''),
+                             (_rx['phone'] if _rx else '') or '', (_rx['email'] if _rx else '') or '',
+                             (_rx['addr'] if _rx else '') or '', (_rx['city'] if _rx else '') or '', (_rx['zip'] if _rx else '') or '',
+                             today_iso()))
+                d0 = {'id': con.execute("SELECT last_insert_rowid()").fetchone()[0]}
+                print('  %s: נפתח כרטיס חדש — %s' % (_key.upper(), _desc))
             if not d0:
                 print('  %s: לא נמצא כרטיס של %s — נשאר לשיוך ידני' % (_key.upper(), _desc))
                 continue
