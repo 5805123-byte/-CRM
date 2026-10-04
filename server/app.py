@@ -2536,26 +2536,52 @@ def ensure_schema():
                   % (ins, merged, had, unk))
             for k, v in sorted(by.items(), key=lambda x: -x[1]):
                 print('      %-24s %d' % (k, v))
-        # מאיר: "FF בסוף עבר, זה פייגא לאה פרכטר" — החיוב של 1,300 שנדחה פעמיים
-        # ב-16.9 עבר למחרת בשני חלקים (800 + 500). השם "FF" מקושר לכרטיס שלה
-        # (גם להבא), שני החיובים שעברו נרשמים אצלה, והדחיות יורדות מ"לא עבר".
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='banquest_sep2026_ff_v1'").fetchone():
-            ff = con.execute("SELECT id FROM donors WHERE last LIKE '%פרכטר%' AND (first LIKE '%פייגא%' OR first LIKE '%פיגא%' OR first LIKE '%לאה%') "
-                             "ORDER BY id LIMIT 1").fetchone()
-            if not ff:
-                ff = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%frechter%' OR lower(COALESCE(english,'')) LIKE '%frachter%' ORDER BY id LIMIT 1").fetchone()
-            if ff:
-                con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", ('ff', ff['id'], today_iso()))
-                con.execute("UPDATE recon SET donor_id=? WHERE donor_id IS NULL AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,'')))='ff'", (ff['id'],))
-                tids = [r['tid'] for r in con.execute("SELECT tid FROM recon WHERE donor_id=? AND source='Banquest 09-2026'", (ff['id'],))]
-                ins, merged, had, unk, by = banquest_post(con, 'Banquest 09-2026', tids)
-                con.execute("UPDATE recon SET processed=1, skipped=1 WHERE donor_id=? AND COALESCE(status,'settled')<>'settled' "
-                            "AND source='Banquest 09-2026'", (ff['id'],))
-                con.execute("INSERT INTO seed_flags(name) VALUES('banquest_sep2026_ff_v1')")
-                con.commit()
-                print('  FF = פרכטר (תורם %s): נרשמו %d' % (ff['id'], ins))
-            else:
-                print('  FF: לא נמצא כרטיס של פרכטר פייגא לאה — נשאר לשיוך ידני')
+        # מאיר: "FF בסוף עבר, זה פייגא לאה פרכטר", "ML זה לינדה מאגאזניטש" — שמות
+        # בראשי תיבות מהקובץ של ספטמבר, כפי שמאיר כתב מי הם. כל שם מקושר לכרטיס
+        # במפת השמות (גם להבא), החיובים שעברו נרשמים בכרטיס בלי כפילויות, ודחייה
+        # של אותו אדם באותו חודש יורדת מ"לא עבר" (הכסף הגיע בניסיון אחר).
+        # (מפתח, [תבניות שם משפחה], [תבניות שם פרטי], [תבניות שם לועזי], תיאור)
+        _BQ_NAMES = [
+            ('ff', ['%פרכטר%'], ['%פייגא%', '%פיגא%', '%לאה%'], ['%frechter%', '%frachter%'], 'פרכטר פייגא לאה'),
+            ('ml', ['%מאגאזניטש%', '%מגזניטש%', '%מאגזניטש%', '%מגאזניטש%'], ['%לינדה%'], ['%magaz%'], 'מאגאזניטש לינדה'),
+            # מאיר: "AB זה בנימין אקרמן", "FJ זה יעקב פרכטר"
+            ('ab', ['%אקרמן%', '%אקערמאן%', '%אקערמן%'], ['%בנימין%', '%בנציון%'], ['%ackerman%', '%akerman%'], 'אקרמן בנימין'),
+            ('fj', ['%פרכטר%'], ['%יעקב%', '%יענקי%', '%יענקל%'], ['%frechter%jacob%', '%jacob%frechter%', '%yaakov%frechter%'], 'פרכטר יעקב'),
+            # מאיר: "AY זה ישעיה אקרמן"
+            ('ay', ['%אקרמן%', '%אקערמאן%', '%אקערמן%'], ['%ישעי%', '%שעיה%'], ['%ackerman%yesh%', '%yesh%ackerman%', '%shaya%ackerman%', '%ackerman%shaya%'], 'אקרמן ישעיה'),
+        ]
+        for _key, _lasts, _firsts, _engs, _desc in _BQ_NAMES:
+            _flag = 'bq_name_' + _key
+            if con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
+                continue
+            d0 = None
+            for lp in _lasts:
+                d0 = con.execute("SELECT id FROM donors WHERE last LIKE ? AND (%s) ORDER BY id LIMIT 1"
+                                 % ' OR '.join(['first LIKE ?'] * len(_firsts)), [lp] + _firsts).fetchone()
+                if d0: break
+            if not d0:
+                # שם משפחה לבדו — רק אם יש כרטיס אחד כזה (שני פרכטר / שני אקרמן אינם אותו תורם)
+                for lp in _lasts:
+                    _c = con.execute("SELECT id FROM donors WHERE last LIKE ?", (lp,)).fetchall()
+                    if len(_c) == 1:
+                        d0 = _c[0]; break
+            if not d0:
+                for ep in _engs:
+                    d0 = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE ? ORDER BY id LIMIT 1", (ep,)).fetchone()
+                    if d0: break
+            if not d0:
+                print('  %s: לא נמצא כרטיס של %s — נשאר לשיוך ידני' % (_key.upper(), _desc))
+                continue
+            did0 = d0['id']
+            con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", (_key, did0, today_iso()))
+            con.execute("UPDATE recon SET donor_id=? WHERE donor_id IS NULL AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,'')))=?", (did0, _key))
+            tids = [r['tid'] for r in con.execute("SELECT tid FROM recon WHERE donor_id=? AND source='Banquest 09-2026'", (did0,))]
+            ins, merged, had, unk, by = banquest_post(con, 'Banquest 09-2026', tids)
+            con.execute("UPDATE recon SET processed=1, skipped=1 WHERE donor_id=? AND COALESCE(status,'settled')<>'settled' "
+                        "AND source='Banquest 09-2026' AND COALESCE(processed,0)=0", (did0,))
+            con.execute("INSERT INTO seed_flags(name) VALUES(?)", (_flag,))
+            con.commit()
+            print('  %s = %s (תורם %s): נרשמו %d, היו כבר %d' % (_key.upper(), _desc, did0, ins, had))
     except Exception as e:
         print('  בנק ווסט ספטמבר error:', e)
 
