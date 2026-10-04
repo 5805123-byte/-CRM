@@ -10834,6 +10834,10 @@ let stipKollel='חצות', stipView='monthly', STIP=null, STIPLBL={}, STIPNAMES=
 // מאיר: "כאן למעלה שיהיה את כל הלשוניות של מלגות שיש למטה… ואוכל לבחור אחד
 // מהם ולראות את הרשימה בלי להצטרך לגלול" — התקופה שנבחרה לכל כולל/תצוגה
 let stipPer={};
+// מאיר: "במלגות חגים יהיה כתוב רק את המילה סוכות תשפ"ז" — החג שנבחר לכל כולל;
+// הרשימות של אותו חג ("קמחא דסוכות", "חלוקת מזומנים סוכות") מתקבצות תחתיו.
+let stipFamSel={};
+const stipFam=p=>String(p||'').replace(/^(חלוקת מזומנים|מזומנים ערב|מזומנים|קמחא ד)\s*/,'').replace(/^פסחא\b/,'פסח').trim()||String(p||'');
 const STIP_KOL=[['חצות','🌙 כולל חצות'],['הוראה','📘 כולל הוראה'],['חיים טובים','📗 חיים טובים']];
 const stMoney=n=>'₪'+Math.round(n||0).toLocaleString('en-US');
 async function loadStip(){const r=await api('GET','/api/stipends');STIP=(r&&r.rows)||[];STIPLBL=(r&&r.labels)||{};STIPNAMES=(r&&r.names)||{};}
@@ -10858,12 +10862,30 @@ async function renderStip(){
   if(periods.length&&!periods.some(p=>stipOpen[stipKollel+'|'+stipView+'|'+p]))stipOpen[stipKollel+'|'+stipView+'|'+periods[0]]=true;   // הקבוצה החדשה פתוחה
   // לשוניות התקופות למעלה: בוחרים חג / חודש ורואים רק אותו, פתוח
   const selKey=stipKollel+'|'+stipView;
-  let selPer=stipPer[selKey];
-  if(selPer===undefined||(selPer&&!periods.includes(selPer)))selPer=periods[0]||'';
+  let selPer=stipPer[selKey], perBar='', shownPeriods=periods;
+  if(stipView==='holiday'){
+    // מאיר: "במלגות חגים יהיה כתוב רק את המילה סוכות תשפ"ז ושם יהיה את… קמחא
+    // דסוכות תשפ"ז ואת החלוקה של מזומנים" — למעלה החג בלבד, ומתחתיו הרשימות שלו.
+    const fams=[...new Set(periods.map(stipFam))];
+    let fam=stipFamSel[selKey];
+    if(fam===undefined||(fam&&!fams.includes(fam)))fam=fams[0]||'';
+    stipFamSel[selKey]=fam;
+    const minId=p=>Math.min(...rows.filter(r=>r.period===p).map(r=>r.id));
+    const subs=fam?periods.filter(p=>stipFam(p)===fam).sort((a,b)=>minId(a)-minId(b)):[];   // הרשימה הראשית (קמחא) לפני המזומנים
+    if(fam&&(selPer===undefined||(selPer&&!subs.includes(selPer))))selPer=subs[0]||'';
+    if(!fam)selPer='';
+    shownPeriods=fam?(selPer?subs.filter(p=>p===selPer):subs):periods;
+    perBar=periods.length?`<div class="stperbar">${fams.map(f=>`<button class="stpc ${f===fam?'on':''}" data-fam="${esc(f)}">${esc(f)}</button>`).join('')}<button class="stpc all ${fam?'':'on'}" data-fam="">הכל</button></div>`
+      +(subs.length>1?`<div class="stperbar sub">${subs.map(p=>`<button class="stpc ${p===selPer?'on':''}" data-per="${esc(p)}">${esc(p)}</button>`).join('')}<button class="stpc all ${selPer?'':'on'}" data-per="">שתי הרשימות</button></div>`:''):'';
+  }else{
+    // חודשים: שורה שגוללים לרוחב, מהחודש האחרון שעודכן ואחורה
+    if(selPer===undefined||(selPer&&!periods.includes(selPer)))selPer=periods[0]||'';
+    shownPeriods=selPer?periods.filter(p=>p===selPer):periods;
+    perBar=periods.length?`<div class="stperbar scroll"><button class="stpc all ${selPer?'':'on'}" data-per="">הכל</button>${periods.map(p=>`<button class="stpc ${p===selPer?'on':''}" data-per="${esc(p)}">${esc(stipLabel(stipView,p).split(' · ')[0])}</button>`).join('')}</div>`:'';
+  }
   stipPer[selKey]=selPer;
   if(selPer)stipOpen[stipKollel+'|'+stipView+'|'+selPer]=true;
-  const shownPeriods=selPer?periods.filter(p=>p===selPer):periods;
-  const perBar=periods.length?`<div class="stperbar">${periods.map(p=>`<button class="stpc ${p===selPer?'on':''}" data-per="${esc(p)}">${esc(stipLabel(stipView,p))}</button>`).join('')}<button class="stpc all ${selPer?'':'on'}" data-per="">הכל</button></div>`:'';
+  else if(stipView==='holiday'&&stipFamSel[selKey])shownPeriods.forEach(p=>{stipOpen[stipKollel+'|'+stipView+'|'+p]=true;});   // "שתי הרשימות" — שתיהן פתוחות
   const tot=r=>(+r.amount||0)+(+r.extra||0);
   const grpHTML=per=>{
     const key=stipKollel+'|'+stipView+'|'+per, open=!!stipOpen[key];
@@ -10913,7 +10935,8 @@ async function renderStip(){
       ${periods.map(per=>{const g=rows.filter(r=>r.period===per);return `<div class="r"><span>${esc(stipLabel(stipView,per))} <small style="color:var(--muted)">${g.length} אברכים</small></span><b>${stMoney(g.reduce((s,r)=>s+tot(r),0))}</b></div>`;}).join('')}
       <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}</span></div></div>`:''}`;
   view.querySelectorAll('.stghd').forEach(h=>h.onclick=()=>{const k=stipKollel+'|'+stipView+'|'+h.dataset.per;stipOpen[k]=!stipOpen[k];renderStip();});
-  view.querySelectorAll('.stpc').forEach(b=>b.onclick=()=>{stipPer[selKey]=b.dataset.per;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
+  view.querySelectorAll('.stpc[data-per]').forEach(b=>b.onclick=()=>{stipPer[selKey]=b.dataset.per;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
+  view.querySelectorAll('.stpc[data-fam]').forEach(b=>b.onclick=()=>{stipFamSel[selKey]=b.dataset.fam;stipPer[selKey]=undefined;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
   const qb=document.getElementById('stquick');
   if(qb)qb.onclick=()=>{stipEdit=stipEdit==='quick'?null:'quick';renderStip();setTimeout(()=>{const f=view.querySelector('.stq_name');if(f)f.focus();},50);};
   const qp=view.querySelector('.stq_per');

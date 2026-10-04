@@ -6238,6 +6238,13 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash2_v1')")
             con.commit()
             print('  חלוקת מזומנים סוכות תשפ"ז: %d אברכים' % n)
+        # מאיר: "במלגות חגים יהיה כתוב רק את המילה סוכות תשפ"ז ושם יהיה את סוכות
+        # תשפ"ז שתקרא לזה קמחא דסוכות תשפ"ז ואת החלוקה של מזומנים" — הרשימה
+        # הראשית של החג נקראת מעכשיו "קמחא דסוכות תשפ"ז", לצד "חלוקת מזומנים".
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_sukkos_rename_v1'").fetchone():
+            con.execute("UPDATE stipends SET period='קמחא דסוכות תשפ\"ז' WHERE kind='holiday' AND period='סוכות תשפ\"ז'")
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_rename_v1')")
+            con.commit()
     except Exception as e:
         print('  stipends seed error:', e)
 

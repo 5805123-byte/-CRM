@@ -667,6 +667,14 @@
     font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer}
   .stperbar .stpc.on{background:var(--accent);color:#fff;border-color:transparent}
   .stperbar .stpc.all{margin-inline-start:auto}
+  /* הרשימות של החג שנבחר (קמחא דסוכות · חלוקת מזומנים) — שורה שנייה, קטנה יותר */
+  .stperbar.sub{top:40px;z-index:2;margin-top:-4px}
+  .stperbar.sub .stpc{font-size:.78rem;padding:4px 10px;border-style:dashed}
+  .stperbar.sub .stpc.on{border-style:solid;background:var(--accent2,#6b5fb5)}
+  /* חודשים: שורה שגוללים לרוחב מהחודש האחרון ואחורה */
+  .stperbar.scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+  .stperbar.scroll .stpc{white-space:nowrap;flex:0 0 auto}
+  .stperbar.scroll .stpc.all{margin-inline-start:0}
   .stbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
   .stgrp{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
   .stgh{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;background:var(--ground)}
