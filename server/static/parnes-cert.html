@@ -135,6 +135,7 @@ function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;'
 const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|[ושה]?יב[א-ת]{1,5}["'״׳][אט]|[א-ת]{1,6}["״][א-ת]{1,3}|ה["'״׳]ה|ר|רב|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
+const REQ2=/^(ו?ל\S{2,}|פרנסה|הצלחה|ישועה|רפואה|זיווג|בריאות|שידוך|הרחבה|אריכות|סי?יעתא|הצלחת|ברכת|ישועת|רפואת|פרנסת|שי?זכ\S*|שתזכ\S*|שימצא|שתמצא|שיצליח|שתצליח|שיתברך|שתתברך|ברוך|ברוכה)$/;
 const REQSTART=/^(ו?ל)(רפוא\S*|הצלח\S*|זיווג\S*|זרע\S*|פרנס\S*|ישוע\S*|ברכ\S*|נחת|חיים|בני\S*|שלום|עילוי|עלוי|זכר|כל|אריכ\S*|בריא\S*|שנה|כפרת|הרחב\S*|מזל|שידוך|בן|בת)$|^(לע["'״׳]?נ|לזכות|לזכר|לרגל|לכבוד|ליום|לשמחת|לנישואי|לאירוסי)$|^ו?בזכות$/;
 // פתיח שבא לפני השם — רק הוא קטן, והשמות שאחריו נשארים גדולים
 // מאיר כותב "לעלוי" בלי היו"ד — שני הכתיבים מזוהים כמילת פתיח, אחרת
@@ -279,10 +280,12 @@ function bodyRows(ws, lead){
         while(i<rest.length-1 && SMALLWORD.test(rest[i])) i++;
         i++;
         while(i<rest.length && SMALLWORD.test(rest[i])) i++;
+        // מילת בקשה מיד אחרי שם ההורה (או אחרי המילה השנייה שלו) — "פרנסה ברווח", "לילך בדרך"
+        for(let k=i;k<Math.min(rest.length,i+2);k++) if(REQ2.test(rest[k])&&!isRel(rest[k])){ r=k; break; }
         // "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
         const fam = i+1<rest.length && FAM1.test(rest[i]) && FAM2.test(rest[i+1]);
         // מילה בודדת אחרי שם ההורה ("בן ראצא טובה") היא חלק מהשם, לא בקשה
-        if(i<rest.length && !fam && rest.length-i>=2 && !rest.slice(i).some(isRel)) r=i;
+        if(r<0 && i<rest.length && !fam && rest.length-i>=2 && !rest.slice(i).some(isRel)) r=i;
       }
     }
     // שורה שכולה ברכה — פותחת ב-ו/ל וארוכה. תגית משפחה קצרה
@@ -410,14 +413,26 @@ function formatName(line, donorLine, afterName){
   const body=bodyPart(ws);
   return donorLine ? `<span class="ndon">${body}</span>` : body;
 }
+// מאיר כותב כמה שמות בשורה אחת מופרדים בפסיק — כל קטע עם שם נעשה שורה משלו
+function expandLines(ls){
+  const out=[];
+  ls.forEach(raw=>{
+    const segs=raw.split(/[,;·]/).map(x=>x.trim());
+    const named=segs.filter(x=>x&&x.split(/\s+/).some(w=>BENW.test(w)));
+    if(named.length>=2) segs.forEach(x=>{ if(x) out.push(x); }); else out.push(raw);
+  });
+  return out;
+}
 function formatLines(text){
-  const ls=String(text||'').split('\n');
+  const ls=expandLines(String(text||'').split('\n'));
   // שורה ראשונה היא שם התורם רק אם אחריה באה הקדשה עם שם ("לע\"נ אביו…").
   // שורת אירוע ("ליום היארצייט") או ברכה ("לרפואה שלמה") אחרי השם אינן
   // הקדשה של תורם — השם שלפניהן הוא מי שמתפללים עליו, והוא נשאר גדול.
   const hasLead=ls.some((l,i)=>{ if(i===0) return false; const ws=l.trim().split(/\s+/).filter(Boolean);
     return ws.length && DEDWORD.test(ws[0]) && !evtOnly(ws); });
-  return ls.map((l,i)=>formatName(l, i===0 && hasLead, i>0 && !hasLead)).join('\n');
+  // כל שורה היא כבר בלוק (nline / nrow / ndon) — בלי '\n' ביניהן, אחרת
+  // white-space:pre-line מוסיף שורה ריקה בין שם לשם והשמות מתכווצים לחינם
+  return ls.map((l,i)=>formatName(l, i===0 && hasLead, i>0 && !hasLead)).map(x=>/^<span/.test(x.trim())?x:x+'\n').join('');
 }
 function wireFmt(el){
   el.addEventListener('focus',()=>{ el.textContent=el.innerText; });      // עריכה בטקסט רגיל
@@ -540,13 +555,14 @@ function parnesSizes(sf){
   document.querySelectorAll('.nusach').forEach(e=>{
     e.style.setProperty('font-size',(NUSPX*u0).toFixed(2)+'px','important');});
   // השמות — הם שגדלים
-  setu('#pairs .names',70,u); setu('#pairs .req',30,u0);
+  setu('#pairs .names',70,u); setu('#pairs .req',25,u0);
   // הבקשה ומילות הפתיח: 40 קבוע, אך לעולם לא גדולות מהשם עצמו
   // מאיר מנה במפורש מה קבוע: הנוסח, התאריך, ו"יעמדו לזכות / לעילוי
   // נשמת / לרפואת". הבקשה שאחרי השם גדלה יחד איתו ביחס 40/70, אחרת
   // כשהשם ממלא את הדף היא נראית זעירה לידו.
   const uq=u0*Math.min(1,sf);
-  setu('#pairs .nreq',30,u); setu('#pairs .nlead',40,uq); setu('#pairs .nevt',26,u);
+  // מאיר: "הבקשות יהיו אותיות יותר קטנות בגודל של המילה בן או בת" — 25 מתוך 70, כמו בן/בת (.36)
+  setu('#pairs .nreq',25,u); setu('#pairs .nlead',40,uq); setu('#pairs .nevt',22,u);
   // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת.
   // מוחזר המקדם הקטן ביותר — 1 פירושו שאף שם לא הוקטן ברוחב.
   // רשת ביטחון בלבד: מילה בודדת רחבה מהמסגרת ואי אפשר לשבור אותה
