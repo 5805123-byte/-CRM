@@ -2549,6 +2549,8 @@ def ensure_schema():
             ('fj', ['%פרכטר%'], ['%יעקב%', '%יענקי%', '%יענקל%'], ['%frechter%jacob%', '%jacob%frechter%', '%yaakov%frechter%'], 'פרכטר יעקב'),
             # מאיר: "AY זה ישעיה אקרמן"
             ('ay', ['%אקרמן%', '%אקערמאן%', '%אקערמן%'], ['%ישעי%', '%שעיה%'], ['%ackerman%yesh%', '%yesh%ackerman%', '%shaya%ackerman%', '%ackerman%shaya%'], 'אקרמן ישעיה'),
+            # מאיר: "Abramowitz זה אלחנן אברמוביץ" — בקובץ בלי שם פרטי
+            ('abramowitz', ['%אברמוביץ%', '%אבראמאוויטש%', '%אברמוביטש%'], ['%אלחנן%'], ['%elchanan%abramowitz%', '%abramowitz%elchanan%', '%elchonon%abramowitz%'], 'אברמוביץ אלחנן'),
         ]
         for _key, _lasts, _firsts, _engs, _desc in _BQ_NAMES:
             _flag = 'bq_name_' + _key
