@@ -2558,6 +2558,8 @@ def ensure_schema():
             ('hand in hand development', ['%שטטפלד%', '%שטעטפעלד%', '%סטטפלד%'], ['%יצחק%', '%ברכה%'], ['%stattfeld%', '%stettfeld%', '%statfeld%', '%hand in hand%'], 'שטטפלד יצחק וברכה'),
             # מאיר: "Marc Mendelson Bluestone Group זה יוסף מרדכי מנדלסון"
             ('marc mendelson bluestone group', ['%מנדלסון%', '%מענדעלסאן%', '%מנדלסן%'], ['%יוסף%', '%מרדכי%'], ['%mendelson%', '%mendelsohn%'], 'מנדלסון יוסף מרדכי'),
+            # מאיר: "Monarch healthcare זה זאב שטרן"
+            ('monarch healthcare', ['%שטרן%', '%שטערן%'], ['%זאב%', '%וואלף%', '%וולף%'], ['%zev%stern%', '%stern%zev%', '%wolf%stern%', '%monarch%'], 'שטרן זאב'),
         ]
         for _ent in _BQ_NAMES:
             _key, _lasts, _firsts, _engs, _desc = _ent[:5]
