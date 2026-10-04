@@ -650,6 +650,12 @@
   .cplusbtn{width:auto;background:none;border:1px solid var(--line);border-radius:8px;font-size:.72rem;padding:1px 5px;margin-inline-start:6px;cursor:pointer;opacity:.7;vertical-align:middle}
   .cplusbtn:hover{opacity:1}
   /* חלון האברכים — מלגות חודשיות וחגים */
+  /* לשוניות התקופות (חגים / חודשים) — למעלה, במקום לגלול לרשימה */
+  .stperbar{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;position:sticky;top:0;z-index:3;background:var(--ground);padding:4px 0}
+  .stperbar .stpc{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;
+    font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer}
+  .stperbar .stpc.on{background:var(--accent);color:#fff;border-color:transparent}
+  .stperbar .stpc.all{margin-inline-start:auto}
   .stbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
   .stgrp{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
   .stgh{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;background:var(--ground)}

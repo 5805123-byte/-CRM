@@ -10821,6 +10821,9 @@ function campAddDonorForm(box,preset,opts){
 אפשרות להוסיף אצל כל אברך אם הוספתי לו עוד כסף… לכתוב הערות על כל תשלום…
 ובסוף סיכום סופי סה"כ לכל ייעוד. תמיד שהכולל חצות יהיה מופרד לגמרי מכולל הוראה." */
 let stipKollel='חצות', stipView='monthly', STIP=null, STIPLBL={}, STIPNAMES={}, stipOpen={}, stipEdit=null;
+// מאיר: "כאן למעלה שיהיה את כל הלשוניות של מלגות שיש למטה… ואוכל לבחור אחד
+// מהם ולראות את הרשימה בלי להצטרך לגלול" — התקופה שנבחרה לכל כולל/תצוגה
+let stipPer={};
 const STIP_KOL=[['חצות','🌙 כולל חצות'],['הוראה','📘 כולל הוראה'],['חיים טובים','📗 חיים טובים']];
 const stMoney=n=>'₪'+Math.round(n||0).toLocaleString('en-US');
 async function loadStip(){const r=await api('GET','/api/stipends');STIP=(r&&r.rows)||[];STIPLBL=(r&&r.labels)||{};STIPNAMES=(r&&r.names)||{};}
@@ -10843,6 +10846,14 @@ async function renderStip(){
   if(stipView==='monthly')periods.sort((a,b)=>b.localeCompare(a));
   else periods.sort((a,b)=>Math.max(...rows.filter(r=>r.period===b).map(r=>r.id))-Math.max(...rows.filter(r=>r.period===a).map(r=>r.id)));
   if(periods.length&&!periods.some(p=>stipOpen[stipKollel+'|'+stipView+'|'+p]))stipOpen[stipKollel+'|'+stipView+'|'+periods[0]]=true;   // הקבוצה החדשה פתוחה
+  // לשוניות התקופות למעלה: בוחרים חג / חודש ורואים רק אותו, פתוח
+  const selKey=stipKollel+'|'+stipView;
+  let selPer=stipPer[selKey];
+  if(selPer===undefined||(selPer&&!periods.includes(selPer)))selPer=periods[0]||'';
+  stipPer[selKey]=selPer;
+  if(selPer)stipOpen[stipKollel+'|'+stipView+'|'+selPer]=true;
+  const shownPeriods=selPer?periods.filter(p=>p===selPer):periods;
+  const perBar=periods.length?`<div class="stperbar">${periods.map(p=>`<button class="stpc ${p===selPer?'on':''}" data-per="${esc(p)}">${esc(stipLabel(stipView,p))}</button>`).join('')}<button class="stpc all ${selPer?'':'on'}" data-per="">הכל</button></div>`:'';
   const tot=r=>(+r.amount||0)+(+r.extra||0);
   const grpHTML=per=>{
     const key=stipKollel+'|'+stipView+'|'+per, open=!!stipOpen[key];
@@ -10880,18 +10891,19 @@ async function renderStip(){
       <input class="stq_note stwide" placeholder="📝 הערה — למשל: תוספת לחג, חתונה, שולם במזומן">
       <button class="btn sm stq_save">💾 שמור</button><button class="btn sm ghost ste_x">ביטול</button>
       <div class="hintxt" style="width:100%">אברך שכבר ברשימה של אותה תקופה: ב"תוספת" הסכום מתווסף למלגה שלו והשורה מראה "+תוספת"; ב"מלגה" הסכום מחליף את הסכום שלו.</div></div>`:'';
-  view.innerHTML=`<div class="stbar">
+  view.innerHTML=perBar+`<div class="stbar">
       <button class="btn" id="stquick" style="flex-basis:100%">➕ הוסף אברך / תוספת לרשימה</button>
       ${quick}
       <label class="btn sm ghost" style="cursor:pointer">📥 העלה דוח חודשי (PDF)<input type="file" id="stpdf" accept="application/pdf,.pdf" hidden></label>
       <button class="btn sm ghost" id="stpaste">📋 הדבק רשימת ${stipView==='holiday'?'חג':'חודש'}</button>
       <span class="hintxt" style="flex-basis:100%;margin:0">הדוח החודשי (סיכום מלגות אברכים) נכנס לכל הכוללים שבו בבת אחת. רשימת חג — שם וסכום בכל שורה, לכולל שנבחר. אברך שכבר ברשימה: הסכום מתעדכן, התוספת וההערה שלך נשארות.</span></div>
     <datalist id="stnames">${[...new Set((STIPNAMES[stipKollel]||[]).concat(STIP.filter(r=>r.kollel===stipKollel).map(r=>r.name)))].sort().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
-    ${periods.map(grpHTML).join('')||`<div class="empty">אין עדיין ${stipView==='holiday'?'מלגות חגים':'מלגות חודשיות'} ל${esc(STIP_KOL.find(x=>x[0]===stipKollel)[1].replace(/^\S+ /,''))}. העלה דוח או הדבק רשימה.</div>`}
+    ${shownPeriods.map(grpHTML).join('')||`<div class="empty">אין עדיין ${stipView==='holiday'?'מלגות חגים':'מלגות חודשיות'} ל${esc(STIP_KOL.find(x=>x[0]===stipKollel)[1].replace(/^\S+ /,''))}. העלה דוח או הדבק רשימה.</div>`}
     ${periods.length>1?`<div class="stsum"><h3>📊 סיכום — ${esc(STIP_KOL.find(x=>x[0]===stipKollel)[1])} · ${stipView==='holiday'?'מלגות חגים':'מלגות חודשיות'}</h3>
       ${periods.map(per=>{const g=rows.filter(r=>r.period===per);return `<div class="r"><span>${esc(stipLabel(stipView,per))} <small style="color:var(--muted)">${g.length} אברכים</small></span><b>${stMoney(g.reduce((s,r)=>s+tot(r),0))}</b></div>`;}).join('')}
       <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}</span></div></div>`:''}`;
   view.querySelectorAll('.stghd').forEach(h=>h.onclick=()=>{const k=stipKollel+'|'+stipView+'|'+h.dataset.per;stipOpen[k]=!stipOpen[k];renderStip();});
+  view.querySelectorAll('.stpc').forEach(b=>b.onclick=()=>{stipPer[selKey]=b.dataset.per;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
   const qb=document.getElementById('stquick');
   if(qb)qb.onclick=()=>{stipEdit=stipEdit==='quick'?null:'quick';renderStip();setTimeout(()=>{const f=view.querySelector('.stq_name');if(f)f.focus();},50);};
   const qp=view.querySelector('.stq_per');
