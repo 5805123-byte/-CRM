@@ -229,6 +229,18 @@ def _already_posted(con, did, diso, meth, a):
     return False
 
 
+def _find_donat(con):
+    """הכרטיס של מרדכי דונט (Sol Restoration) — לפי שם עברי, שם לועזי או שם העסק."""
+    for q in ("SELECT id FROM donors WHERE (last LIKE '%דונט%' OR last LIKE '%דאנט%' OR last LIKE '%דונאט%') AND first LIKE '%מרדכי%' ORDER BY id LIMIT 1",
+              "SELECT id FROM donors WHERE (last LIKE '%דונט%' OR last LIKE '%דאנט%' OR last LIKE '%דונאט%') ORDER BY id LIMIT 1",
+              "SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%donat%' AND (lower(COALESCE(english,'')) LIKE '%mordech%' OR lower(COALESCE(english,'')) LIKE '%sol%') ORDER BY id LIMIT 1",
+              "SELECT id FROM donors WHERE lower(COALESCE(business,'')) LIKE '%sol restoration%' OR lower(COALESCE(business,'')) LIKE '%goldstar%' ORDER BY id LIMIT 1"):
+        r = con.execute(q).fetchone()
+        if r:
+            return r
+    return None
+
+
 def ensure_schema():
     """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
     con = db()
@@ -2572,6 +2584,14 @@ def ensure_schema():
             # מאיר: "progressive hem/onc זה מורדכי זוננשיין"
             ('progressive hem onc', ['%זוננשיין%', '%זונענשיין%', '%זוננשין%', '%זונשיין%'], ['%מרדכי%', '%מורדכי%'], ['%sonnenschein%', '%zonenshein%', '%sonenshein%', '%progressive%'], 'זוננשיין מרדכי',
              {'business': 'progressive hem/onc', 'raw': 'progressive hem/onc'}),
+            # מאיר: "אייזנברגר זה יוסף ורבקה יערעט שכבר יש להם כרטיס תורם ונראה לי שכבר
+            # כתוב שהם נתנו את הסכום הזה בסוכות תשפ"ז" — חיוב מאוטרייז; ה-1,300 מתאמת
+            # מול מה שכבר רשום ביד (אותו סכום, עד 40 יום) ולא נפתח פעמיים.
+            ('nicole eisenberger', ['%יערעט%', '%יערט%', '%ירט%', '%ג\'רט%', '%זשערעט%'], ['%יוסף%', '%רבקה%'], ['%jeret%', '%eisenberger%'], 'יערעט יוסף ורבקה',
+             {'source': 'Authorize 09-2026'}),
+            # מאיר: "לואי זה יצחק לאווי שהוא גם במערכת ורשום שהוא נתן כי רשמתי ידנית"
+            ('yitzy lowy', ['%לאווי%', '%לאוי%', '%לואי%', '%לעווי%'], ['%יצחק%'], ['%lowy%', '%loewy%'], 'לאווי יצחק',
+             {'source': 'Authorize 09-2026'}),
         ]
         for _ent in _BQ_NAMES:
             _key, _lasts, _firsts, _engs, _desc = _ent[:5]
@@ -2616,14 +2636,15 @@ def ensure_schema():
             _raw = (_mk or {}).get('raw') or _key        # השם כפי שהוא בקובץ (למשל עם קו נטוי)
             con.execute("UPDATE recon SET donor_id=? WHERE donor_id IS NULL AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,''))) IN (?,?)", (did0, _key, _raw))
             # חיוב מספטמבר באותו שם שנקשר אוטומטית לכרטיס אחר — עובר לכרטיס שמאיר אמר, יחד עם התרומה שנרשמה ממנו
-            for _w in con.execute("SELECT tid FROM recon WHERE source='Banquest 09-2026' AND donor_id<>? "
-                                  "AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,''))) IN (?,?)", (did0, _key, _raw)).fetchall():
+            for _w in con.execute("SELECT tid FROM recon WHERE source=? AND donor_id<>? "
+                                  "AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,''))) IN (?,?)", ((_mk or {}).get('source') or 'Banquest 09-2026', did0, _key, _raw)).fetchall():
                 con.execute("UPDATE donations SET donor_id=? WHERE tid=?", (did0, _w['tid']))
                 con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did0, _w['tid']))
-            tids = [r['tid'] for r in con.execute("SELECT tid FROM recon WHERE donor_id=? AND source='Banquest 09-2026'", (did0,))]
-            ins, merged, had, unk, by = banquest_post(con, 'Banquest 09-2026', tids)
+            _src = (_mk or {}).get('source') or 'Banquest 09-2026'
+            tids = [r['tid'] for r in con.execute("SELECT tid FROM recon WHERE donor_id=? AND source=?", (did0, _src))]
+            ins, merged, had, unk, by = banquest_post(con, _src, tids)
             con.execute("UPDATE recon SET processed=1, skipped=1 WHERE donor_id=? AND COALESCE(status,'settled')<>'settled' "
-                        "AND source='Banquest 09-2026' AND COALESCE(processed,0)=0", (did0,))
+                        "AND source=? AND COALESCE(processed,0)=0", (did0, _src))
             con.execute("INSERT INTO seed_flags(name) VALUES(?)", (_flag,))
             con.commit()
             print('  %s = %s (תורם %s): נרשמו %d, היו כבר %d' % (_key.upper(), _desc, did0, ins, had))
@@ -2699,23 +2720,19 @@ def ensure_schema():
                 '81807809186': (SUK, 'יו"ט'),                                  # Abba Kloc 2,600
                 '81813655913': (SUK, 'יו"ט'),                                  # Michael Jacobsen 1,200
                 '81815386565': (SUK, 'יו"ט'),                                  # Meir Mittman 3,000
-                '81815366802': (SUK, 'יו"ט · Sol Restoration = מרדכי פוקס'),   # Sol Restoration 1,800
+                '81815366802': (SUK, 'יו"ט · Sol Restoration = מרדכי דונט'),   # Sol Restoration 1,800
                 '81814787993': ('פרנס לילה', 'פרנס יום — Yarzeit of Aharon ben Yekusiel Yehuda'),   # Rachel Sims 480
             }
-            # Sol Restoration = מרדכי פוקס — שם החברה נשמר בכרטיס, והחיוב עובר אליו
-            fx = None
-            for q, a in (("SELECT id FROM donors WHERE (last LIKE '%פוקס%' OR last LIKE '%פיקס%') AND first LIKE '%מרדכי%' ORDER BY id LIMIT 1", ()),
-                         ("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%fuchs%' AND lower(COALESCE(english,'')) LIKE '%mordech%' ORDER BY id LIMIT 1", ()),
-                         ("SELECT id FROM donors WHERE lower(COALESCE(business,'')) LIKE '%sol restoration%' OR lower(COALESCE(business,'')) LIKE '%goldstar%' ORDER BY id LIMIT 1", ())):
-                fx = con.execute(q, a).fetchone()
-                if fx: break
+            # מאיר: "Sol Restoration זה מרדכי דונט על סוכות תשפ"ז" — שם החברה נשמר
+            # בכרטיס, והחיוב עובר אליו
+            fx = _find_donat(con)
             if fx:
                 con.execute("UPDATE donors SET business=? WHERE id=? AND COALESCE(TRIM(business),'')=''", ('Sol Restoration', fx['id']))
                 con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES('sol restoration',?,0,?)", (fx['id'], today_iso()))
                 con.execute("UPDATE recon SET donor_id=? WHERE tid='81815366802'", (fx['id'],))
                 con.execute("UPDATE donations SET donor_id=? WHERE tid='81815366802'", (fx['id'],))
             else:
-                print('  Sol Restoration: לא נמצא כרטיס של פוקס מרדכי — נשאר לשיוך ידני')
+                print('  Sol Restoration: לא נמצא כרטיס של דונט מרדכי — נשאר לשיוך ידני')
             # אלי גרוס — תורם חדש (אלא אם כבר יש כרטיס "גרוס אלי" בדיוק)
             eg = con.execute("SELECT id FROM donors WHERE last='גרוס' AND first='אלי' ORDER BY id LIMIT 1").fetchone()
             if not eg:
@@ -2763,6 +2780,58 @@ def ensure_schema():
             print('  אוטרייז ספטמבר — ההערות של מאיר: עודכנו %d, נרשמו %d' % (nu, nd))
     except Exception as e:
         print('  אוטרייז ספטמבר notes error:', e)
+
+    # תיקון: בגרסה הראשונה Sol Restoration נקשר בטעות לפוקס מרדכי (קריאה שגויה של
+    # כתב היד). מאיר: "Sol Restoration זה מרדכי דונט על סוכות תשפ"ז".
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='authorize_sep2026_sol_v2'").fetchone():
+            dn = _find_donat(con)
+            if dn:
+                for w in con.execute("SELECT id FROM donors WHERE id<>? AND business='Sol Restoration'", (dn['id'],)).fetchall():
+                    con.execute("UPDATE donors SET business='' WHERE id=?", (w['id'],))     # הורדת שם העסק מהכרטיס השגוי
+                con.execute("UPDATE donors SET business=? WHERE id=? AND COALESCE(TRIM(business),'')=''", ('Sol Restoration', dn['id']))
+                con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES('sol restoration',?,0,?)", (dn['id'], today_iso()))
+                con.execute("UPDATE recon SET donor_id=? WHERE tid='81815366802'", (dn['id'],))
+                con.execute("UPDATE donations SET donor_id=?, category=?, note=REPLACE(COALESCE(note,''),'מרדכי פוקס','מרדכי דונט') WHERE tid='81815366802'", (dn['id'], 'סוכות תשפ"ז'))
+                try: settle_pledge(con, dn['id'], 'סוכות תשפ"ז', 1800.0)
+                except Exception: pass
+                print('  Sol Restoration → דונט מרדכי (#%s)' % dn['id'])
+            else:
+                print('  Sol Restoration: לא נמצא כרטיס של דונט מרדכי — נשאר לשיוך ידני')
+            con.execute("INSERT INTO seed_flags(name) VALUES('authorize_sep2026_sol_v2')")
+            con.commit()
+    except Exception as e:
+        print('  sol v2 error:', e)
+
+    # מאיר: "רחל סימס כבר עשינו את הלימוד הזה על י"ט אלול" — ה-480 מאוטרייז (22.9) הוא
+    # פרנס הלילה של י"ט אלול תשפ"ו (1.9.2026), שכבר נעשה. נרשם כפרנס מאושר ושולם,
+    # עם ההקדשה מהחיוב, והמשימה "לקבוע יום" נסגרת.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='sims_parnes_elul_v1'").fetchone():
+            rs = con.execute("SELECT donor_id FROM recon WHERE tid='81814787993'").fetchone()
+            did = rs['donor_id'] if rs else None
+            if not did:
+                r0 = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%rachel%sims%' OR (last LIKE '%סימס%' AND first LIKE '%רחל%') ORDER BY id LIMIT 1").fetchone()
+                did = r0['id'] if r0 else None
+            if did:
+                ex = con.execute("SELECT id FROM parnes WHERE donor_id=? AND COALESCE(date_text,'')=? AND COALESCE(hyear,'')=? AND COALESCE(status,'')<>'suggested'",
+                                 (did, 'י"ט אלול', 'תשפ"ו')).fetchone()
+                if ex:
+                    pid = ex['id']
+                    con.execute("UPDATE parnes SET status='confirmed', paid=1, amount=COALESCE(NULLIF(amount,''),'480'), method=COALESCE(NULLIF(method,''),'Authorize') WHERE id=?", (pid,))
+                else:
+                    con.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method,currency) "
+                                "VALUES(?,19,'אלול','י\"ט אלול','480','Aharon ben Yekusiel Yehuda','parnes','confirmed',1,'2026-09-01','תשפ\"ו','Authorize','$')", (did,))
+                    pid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.execute("UPDATE donations SET parnes_id=?, category='פרנס לילה' WHERE tid='81814787993' AND COALESCE(parnes_id,0)=0", (pid,))
+                con.execute("UPDATE tasks SET done=1 WHERE donor_id=? AND kind='parnes' AND note LIKE '%לקבוע יום לפרנס%' AND COALESCE(done,0)=0", (did,))
+                print('  רחל סימס: פרנס י"ט אלול תשפ"ו נרשם כנעשה (#%s)' % pid)
+            else:
+                print('  רחל סימס: לא נמצא כרטיס — נשאר לשיוך ידני')
+            con.execute("INSERT INTO seed_flags(name) VALUES('sims_parnes_elul_v1')")
+            con.commit()
+    except Exception as e:
+        print('  sims parnes error:', e)
 
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
