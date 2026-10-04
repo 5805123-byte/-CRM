@@ -16,8 +16,11 @@ function gregLabel(dateStr){if(!dateStr)return '';const m=String(dateStr).match(
 function donorTotals(d){
   let all=0,year=0,pending=0;
   (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if((x.date||'').slice(0,4)===GREGYEAR)year+=a;});
-  (d.parnes||[]).forEach(x=>{const a=amtNum(x.amount);if(+x.paid)all+=a;else if(x.status!=='suggested')pending+=a;});   // נגבה→all · התחייבות→pending · הצעה עתידית→לא נספרת
-  return {all,year,pending};
+  // מאיר: "למה כתוב יש לו חוב 8000 דולר, זה שקלים" — פרנס בשקלים אינו מצטרף לסכום בדולרים
+  const cur=curSym(d), other={};
+  (d.parnes||[]).forEach(x=>{const a=amtNum(x.amount);if(+x.paid)all+=a;else if(x.status!=='suggested'){const c=pCur(x,d);if(c===cur)pending+=a;else other[c]=(other[c]||0)+a;}});   // נגבה→all · התחייבות→pending · הצעה עתידית→לא נספרת
+  const pendingOther=Object.keys(other).map(c=>c+Math.round(other[c]).toLocaleString('en-US')).join(' + ');
+  return {all,year,pending,pendingOther};
 }
 // חישוב יששכר־זבולון: התחייבות חודשית (סך האברכים) מול מה ששולם בפועל בחודשים שכבר שילם = החוב
 // אברך שמוחזק "ביחד" — הסכום הרשום הוא הסכום המשותף לכל המחזיקים.
@@ -2534,7 +2537,8 @@ function cardTasks(d,body){
       <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="ct_who">${assigneeOpts('')}</select></label><label class="fld"><span>&nbsp;</span><button class="btn" id="ct_add" style="width:100%">➕ הוסף משימה</button></label></div>
       <div class="avfiles dnfiles" id="ct_files"><label class="filebtn sm">📎 צרף תמונה / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="ct_file" hidden></label></div>
       <div class="hintxt">כל משימה נכנסת גם ללשונית "משימות" הראשית וליומן Google.</div></div>
-    <div class="sec"><h3>📋 המשימות של ${esc((d.last+' '+d.first).trim())}</h3><div id="ct_list"></div></div>`;
+    <div class="sec"><h3>📋 המשימות של ${esc((d.last+' '+d.first).trim())}</h3><div id="ct_list"></div></div>
+    <div class="sec" id="ct_pl"></div>`;
   renderCardTasks(d);
   addMic(document.getElementById('ct_note'));
   wireKindSel(document.getElementById('ct_kind'));
@@ -2557,14 +2561,29 @@ function cardTasks(d,body){
       openDonor(dd,'tasks');toast('נוספה משימה עם ההקלטה/הקבצים ✓');checkReminders();return;}
     renderCardTasks(d);toast('נוספה משימה ✓');checkReminders();};
 }
+// מאיר: "המשימה שהכנסתי שהוא התחייב לתת 100 ש"ח לכל אברך הושענא רבה תהילים
+// לא כתוב כאן" — מה שנכתב על התחייבות או על יום פרנס (הערה / הקדשה) מופיע
+// גם בלשונית המשימות, כדי שלא יאבד בין הלשוניות.
+function renderCardPledgeNotes(d){
+  const el=document.getElementById('ct_pl');if(!el)return;
+  const items=[];
+  (d.pledges||[]).forEach(p=>{if(String(p.status||'')==='נתן'||+p.monthly)return;
+    items.push({ic:'🎯',t:plWhat(p)+(amtNum(p.amount)?(' · '+pCur(p,d)+Math.round(amtNum(p.amount)).toLocaleString('en-US')):''),n:String(p.note||'').trim(),dt:p.date||''});});
+  (d.parnes||[]).forEach(p=>{if(p.status==='suggested'||+p.paid)return;
+    items.push({ic:'',t:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):'')+(amtNum(p.amount)?(' · '+pCur(p,d)+Math.round(amtNum(p.amount)).toLocaleString('en-US')):''),n:String(p.dedication||'').trim(),dt:p.night_date||''});});
+  if(!items.length){el.innerHTML='';return;}
+  el.innerHTML=`<h3>📌 התחייבויות פתוחות ומה שנכתב עליהן</h3>`+items.map(x=>`<div class="cttask"><div class="cti"><div>${x.ic} ${esc(x.t)}</div>${x.n?`<div class="miss2">📝 ${esc(x.n)}</div>`:''}${x.dt?`<div class="ctmeta">${esc(x.dt)}</div>`:''}</div></div>`).join('')
+    +`<div class="hintxt">לעריכה — בלשונית "ראשי" (התחייבויות) או בחלק "ימים משובצים" (פרנס).</div>`;
+}
 function renderCardTasks(d){
+  renderCardPledgeNotes(d);
   const el=document.getElementById('ct_list');if(!el)return;const td=todayStr();
   const open=(d.tasks||[]).filter(t=>!t.done||t.done==0).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   el.innerHTML=open.map(t=>{const over=t.due_date&&t.due_date<td,icon=kindLabel(t.kind).split(' ')[0];
     return `<div class="cttask" data-id="${t.id}"><button class="tdone ctdone" data-id="${t.id}">✓</button>
       <div class="cti"><div>${icon} ${esc(t.note||'')}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
         <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 צרף<input type="file" accept="image/*,audio/*,application/pdf" class="ctup" data-id="${t.id}" hidden></label></div></div>
-      <button class="tedit ctedit" data-id="${t.id}" title="ערוך משימה">✏️ ערוך</button><button class="del ctdel" data-id="${t.id}">🗑</button></div>
+      ${t.kind==='parnes'?`<button class="btn sm ghost ctboard" data-id="${t.id}" title="פתח את היום הזה בלוח הפרנס">🗓️ ללוח הפרנס</button>`:''}<button class="tedit ctedit" data-id="${t.id}" title="ערוך משימה">✏️ ערוך</button><button class="del ctdel" data-id="${t.id}">🗑</button></div>
     <div class="donepanel hidden" data-ctdp="${t.id}">
       <label class="fld"><span>✍️ מה עשית? מה נסגר תכליס</span>
         <input class="ctnote" data-id="${t.id}" placeholder="למשל: דיברתי איתו, ישלח צ'ק בשבוע הבא"
@@ -2600,6 +2619,16 @@ function renderCardTasks(d){
   el.querySelectorAll('.cttask .avfiles').forEach(bx=>{const tid=+bx.closest('.cttask').dataset.id;
     addVoiceBtn(bx,async f=>{toast('מעלה את ההקלטה…');await uploadBlob('task',tid,f);await backHere();toast('ההקלטה נשמרה במשימה ✓');});});
   el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p)p.classList.toggle('hidden');});
+  // מאיר: "אם יש לתורם פרנס יום בדף קשר שלו במשימות אז אמור להיות קישור לדף
+  // לוח פרנס יום באופן אוטומטי" — הכפתור פותח את הלוח על היום של הפרנס
+  el.querySelectorAll('.ctboard').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const t=(d.tasks||[]).find(x=>x.id==b.dataset.id); if(!t)return;
+    const p=taskParnes({...t,dref:d}); if(!p){toast('לא נמצא יום פרנס בכרטיס');return;}
+    const cx=document.getElementById('cx'); if(cx)cx.click();
+    tab='parnes';pyKind=p.kind||'parnes';pyMonth=p.month;pyDay=+p.day;flt='';plaque=null;
+    try{localStorage.setItem('kc_tab','parnes');}catch(e){}
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));
+    render(); window.scrollTo({top:0,behavior:'smooth'});});
   el.querySelectorAll('.ctsave').forEach(b=>b.onclick=async()=>{
     const t=(d.tasks||[]).find(x=>x.id==b.dataset.id);if(!t)return;
     const kind=await kindValue(el.querySelector('.ctk[data-id="'+b.dataset.id+'"]'));if(!kind)return;
@@ -4106,9 +4135,11 @@ function debtSummary(d){
     s:gc.length+' × '+cur+Math.round(fx),
     chips:gc.map(i=>`<button class="gchip cgchip" data-m="${i}">${MON[i]} ✓</button>`).join('')});
   // ימי פרנס שטרם נגבו
+  // מאיר: "למה כתוב יש לו חוב 8000 דולר, זה שקלים" — כל מטבע בשורה משלו,
+  // ורק המטבע של הכרטיס נכנס לסכום הכולל
   const pn=(d.parnes||[]).filter(p=>p.status!=='suggested'&&!+p.paid);
-  const pnSum=pn.reduce((s2,p)=>s2+amtNum(p.amount),0);
-  if(pnSum>0.5)rows.push({t:'ימי פרנס שטרם נגבו',v:pnSum,s:pn.length+' ימים'});
+  const pnBy={}; pn.forEach(p=>{const c=pCur(p,d);pnBy[c]=pnBy[c]||{n:0,v:0};pnBy[c].n++;pnBy[c].v+=amtNum(p.amount);});
+  Object.keys(pnBy).forEach(c=>{if(pnBy[c].v>0.5)rows.push({t:'ימי פרנס שטרם נגבו',v:pnBy[c].v,s:pnBy[c].n+' ימים',cur:c,info:c!==cur});});
   // חיוב שנדחה אינו חוב מעצמו: ברוב המקרים ניסו לחייב שוב וזה עבר, או
   // שהתורם שילם באותו חודש בדרך אחרת (אלי וויינפעלד שילם 720 בכל חודש,
   // יהושע רוזנפלד שילם עשרות אלפים). לכן הרשימה מוצגת לבדיקה בלבד, ורק
@@ -4140,7 +4171,8 @@ function debtSummary(d){
       s:pl.length+' '+(pl.length===1?'התחייבות':'התחייבויות'),
       list:pl.map(p=>({txt:plWhat(p)+' · '+cur+Math.round(plOpen(p))
         +(plPlan(d,p)?' (תשלומים שאיחרו)':(amtNum(p.paid)?(' (מתוך '+cur+Math.round(amtNum(p.amount))+', שולם '+cur+Math.round(amtNum(p.paid))+')'):''))}))});
-  return {rows,total:rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0),cur};
+  const otherTot={}; rows.forEach(r=>{if(r.cur&&r.cur!==cur)otherTot[r.cur]=(otherTot[r.cur]||0)+r.v;});
+  return {rows,total:rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0),cur,other:otherTot};
 }
 // שורה אחת בלבד. הסכום עצמו הוא הקישור — לחיצה פותחת את הפירוט
 // ורואים בדיוק ממה הוא מורכב: מה לא עבר ומה עוד לא נשלח.
@@ -4157,23 +4189,24 @@ function debtHTML(d){
     x.rows=x.rows.filter(r=>!['חודשים שלא נגבו','יששכר־זבולון','חוב מלפני 2026'].includes(r.t));
     x.total=x.rows.filter(r=>!r.info).reduce((s2,r)=>s2+r.v,0);
   }
-  const f=n=>(n<0?'-':'')+x.cur+Math.abs(Math.round(n)).toLocaleString('en-US');
+  const f=(n,c)=>(n<0?'-':'')+(c||x.cur)+Math.abs(Math.round(n)).toLocaleString('en-US');
+  const otherStr=Object.keys(x.other||{}).map(c=>f(x.other[c],c)).join(' + ');
   // חוב שסודר — שורה זעירה אחת בלבד, עם ההסבר שנכתב בזמן הסידור
   if(String(d.debt_ok||'').trim())
     return `<div class="debtok">✓ החוב סודר${d.debt_note?(' · '+esc(d.debt_note)):''}`
       +`<button class="debtundo" id="debtundo" title="החזר לחוב פתוח">↺</button></div>`;
   // אין חוב — אין חלון. גם לא שורת "אין חוב פתוח" וגם לא ניסיונות
   // חיוב שנדחו: הם נמצאים בלשונית "🔴 לא עבר" ואין להם מה לתפוס מקום כאן.
-  if(!x.rows.length||x.total<=0.5)return '';
+  if(!x.rows.length||(x.total<=0.5&&!otherStr))return '';
   return `<div class="debtline" id="debtline">🔴 ${hasLedger?'חוב נוסף':'חוב פתוח'}
-      <button class="debtamt" id="debtgo">${f(x.total)}</button>
+      <button class="debtamt" id="debtgo">${x.total>0.5?f(x.total):''}${otherStr?((x.total>0.5?' + ':'')+otherStr):''}</button>
       <span class="debtcue">${DEBTOPEN?'▲':'▼ ממה?'}</span>
       <button class="debtsetl" id="debtsetl" title="סוכם עם התורם בדרך אחרת">סודר</button></div>
     <div class="debtokform hidden" id="debtokform">
       <input id="debtokwhy" placeholder="איך סודר? (למשל: ישלים בצ׳ק בראש חודש)">
       <button class="btn sm" id="debtokgo">💾 סודר</button></div>
     <div class="debtdet ${DEBTOPEN?'':'hidden'}" id="debtdet">
-      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.list?`<span class="dslist">${r.list.map(t=>`<small>${esc(t.txt)}${(t.tids||[]).length?`<button class="dsok${t.undo?' on':''}" data-tids="${esc(t.tids.join(','))}" data-undo="${t.undo?1:0}" title="${t.undo?'לא חוב — הורד מהסכום':'הכסף הזה באמת חסר — הוסף לחוב'}">${t.undo?'✓ חוב':'זה חוב'}</button>`:''}</small>`).join('')}</span>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v)}</b></div>`).join('')}
+      ${x.rows.map(r=>`<div class="dsrow ${r.info?'info':''}"><span>${r.t}${r.s?`<small>${esc(r.s)}</small>`:''}${r.tip?`<small class="dstip">${esc(r.tip)}</small>`:''}${r.list?`<span class="dslist">${r.list.map(t=>`<small>${esc(t.txt)}${(t.tids||[]).length?`<button class="dsok${t.undo?' on':''}" data-tids="${esc(t.tids.join(','))}" data-undo="${t.undo?1:0}" title="${t.undo?'לא חוב — הורד מהסכום':'הכסף הזה באמת חסר — הוסף לחוב'}">${t.undo?'✓ חוב':'זה חוב'}</button>`:''}</small>`).join('')}</span>`:''}${r.chips?`<span class="dschips">${r.chips}<small>לחץ על חודש כדי לסמן שנגבה</small></span>`:''}</span><b>${f(r.v,r.cur)}</b></div>`).join('')}
     </div>`;
 }
 function catTotalsHTML(d){
@@ -4360,7 +4393,7 @@ function cardDetails(d,body){
         <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
-    ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${dt.pending>0?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${curd}${dt.pending}</b></div>`:''}</div>`:''}
+    ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
