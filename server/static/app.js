@@ -11182,6 +11182,9 @@ function renderCamp(){
   grp.forEach(g=>{const d=DB.find(x=>x.id===g.main.id); if(!d)return;
     (d.pledges||[]).forEach(p=>{if(String(p.category||'').trim()!==campSel||String(p.status||'')==='נתן')return;
       const a=amtNum(p.amount); if(!a)return;
+      // מאיר: "התחייב 1200 לשלוח צ'ק, למה כתוב 2400" — התחייבות שכבר נכנס עליה
+      // כסף באותו סכום היא אותו כסף, לא תוספת
+      if([g.main].concat(g.extras).some(x=>!x.pending&&Math.abs(x.amt-a)<0.01))return;
       const cur=(String(p.cur||'').trim()==='₪'?'₪':(String(p.cur||'').trim()==='$'?'$':g.main.cur));
       g.extras.push({id:d.id,pid:p.id,amt:a,cur:cur,note:String(p.note||'').trim(),pending:true}); g.total+=a; pendsum[cur]=(pendsum[cur]||0)+a;});});
   Object.keys(pendsum).forEach(k=>{owesum[k]=(owesum[k]||0)+pendsum[k];});

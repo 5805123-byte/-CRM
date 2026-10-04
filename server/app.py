@@ -2833,6 +2833,40 @@ def ensure_schema():
     except Exception as e:
         print('  sims parnes error:', e)
 
+    # מאיר: "יהושע פרנקל התחייב 1200 לשלוח צ'ק, למה כתוב 2400" — התחייבות שכבר
+    # נתנו עליה (תרומה באותו ייעוד ובאותו סכום, מאז תאריך ההתחייבות) מסומנת "נתן",
+    # כדי שלא תיספר פעמיים בקמפיין. סריקה חד-פעמית על כל ההתחייבויות הפתוחות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='pledges_autosettle_v1'").fetchone():
+            n = 0
+            used = set()
+            for p in con.execute("SELECT id,donor_id,category,amount,date FROM pledges "
+                                 "WHERE COALESCE(status,'') NOT IN ('נתן','הסתיים') AND COALESCE(monthly,0)=0 "
+                                 "AND COALESCE(TRIM(category),'')<>''").fetchall():
+                a = _amt2(re.sub(r'[^0-9.]', '', str(p['amount'] or '0')) or 0)
+                if not a:
+                    continue
+                since = (str(p['date'] or '')[:10] or '2026-01-01')
+                try:
+                    since = (datetime.date.fromisoformat(since) - datetime.timedelta(days=14)).isoformat()
+                except Exception:
+                    since = '2026-01-01'
+                for d in con.execute("SELECT id FROM donations WHERE donor_id=? AND TRIM(COALESCE(category,''))=? "
+                                     "AND ROUND(CAST(amount AS REAL),2)=? AND COALESCE(date,'')>=? "
+                                     "AND COALESCE(paid,1)<>0 ORDER BY date", (p['donor_id'], p['category'].strip(), a, since)).fetchall():
+                    if d['id'] in used:
+                        continue
+                    used.add(d['id'])
+                    con.execute("UPDATE pledges SET status='נתן' WHERE id=?", (p['id'],))
+                    n += 1
+                    break
+            con.execute("INSERT INTO seed_flags(name) VALUES('pledges_autosettle_v1')")
+            con.commit()
+            if n:
+                print('  התחייבויות שכבר ניתנו וסומנו "נתן": %d' % n)
+    except Exception as e:
+        print('  pledges autosettle error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -16143,6 +16177,14 @@ class H(BaseHTTPRequestHandler):
                          b.get('method',''), b.get('note',''), b.get('cur',''),
                          str(b.get('prev_year') or ''), (b.get('prev_note') or '')))
             pid = cur.lastrowid
+            # מאיר: "יהושע פרנקל התחייב 1200 לשלוח צ'ק, למה כתוב 2400" — התרומה
+            # שנרשמה ביד לא סגרה את ההתחייבות, ובקמפיין נספרו שתיהן. תרומה באותו
+            # ייעוד ובאותו סכום סוגרת את ההתחייבות הפתוחה ("נתן").
+            try:
+                if _a > 0:
+                    settle_pledge(cur, int(b.get('donor_id')), (b.get('category') or '').strip(), _a)
+            except Exception:
+                pass
             # ייעוד קבוע לפי סכום, אם הוגדר לתורם
             try: apply_autocat(con, int(b.get('donor_id')))
             except Exception: pass
