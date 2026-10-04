@@ -2555,11 +2555,23 @@ def ensure_schema():
             ('jeffery kahn', ['%קאהן%', '%קאן%'], ['%אורי%'], ['%uri%kahn%', '%kahn%uri%', '%jeffery kahn%'], 'קאהן אורי',
              {'last': 'קאהן', 'first': 'אורי', 'english': 'Jeffery Kahn'}),
             # מאיר: "HAND IN HAND זה יצחק וברכה שטטפלד" — החברה של שטטפלד
-            ('hand in hand development', ['%שטטפלד%', '%שטעטפעלד%', '%סטטפלד%'], ['%יצחק%', '%ברכה%'], ['%stattfeld%', '%stettfeld%', '%statfeld%', '%hand in hand%'], 'שטטפלד יצחק וברכה'),
+            # מאיר: "כל אלו זה שם של חברה שלהם שאמור להופיע בכרטיס תורם על שם חברה
+            # ואתה אמור לדעת לבד לאן הם שייכים" — שם החברה נשמר בכרטיס בשדה "עסק",
+            # ומאז הזיהוי בחיובים הבאים אוטומטי (ההתאמה בודקת גם את שדה העסק).
+            ('hand in hand development', ['%שטטפלד%', '%שטעטפעלד%', '%סטטפלד%'], ['%יצחק%', '%ברכה%'], ['%stattfeld%', '%stettfeld%', '%statfeld%', '%hand in hand%'], 'שטטפלד יצחק וברכה',
+             {'business': 'HAND IN HAND DEVELOPMENT'}),
             # מאיר: "Marc Mendelson Bluestone Group זה יוסף מרדכי מנדלסון"
-            ('marc mendelson bluestone group', ['%מנדלסון%', '%מענדעלסאן%', '%מנדלסן%'], ['%יוסף%', '%מרדכי%'], ['%mendelson%', '%mendelsohn%'], 'מנדלסון יוסף מרדכי'),
+            ('marc mendelson bluestone group', ['%מנדלסון%', '%מענדעלסאן%', '%מנדלסן%'], ['%יוסף%', '%מרדכי%'], ['%mendelson%', '%mendelsohn%'], 'מנדלסון יוסף מרדכי',
+             {'business': 'Marc Mendelson Bluestone Group'}),
             # מאיר: "Monarch healthcare זה זאב שטרן"
-            ('monarch healthcare', ['%שטרן%', '%שטערן%'], ['%זאב%', '%וואלף%', '%וולף%'], ['%zev%stern%', '%stern%zev%', '%wolf%stern%', '%monarch%'], 'שטרן זאב'),
+            ('monarch healthcare', ['%שטרן%', '%שטערן%'], ['%זאב%', '%וואלף%', '%וולף%'], ['%zev%stern%', '%stern%zev%', '%wolf%stern%', '%monarch%'], 'שטרן זאב',
+             {'business': 'Monarch healthcare'}),
+            # מאיר: "Sharp Managment זה יוסף קירזנר"
+            ('sharp managment', ['%קירזנר%', '%קירזנער%'], ['%יוסף%', '%יוסי%'], ['%yossi%kirzner%', '%kirzner%yossi%', '%yosef%kirzner%', '%joseph%kirzner%'], 'קירזנר יוסף',
+             {'business': 'Sharp Managment'}),
+            # מאיר: "progressive hem/onc זה מורדכי זוננשיין"
+            ('progressive hem onc', ['%זוננשיין%', '%זונענשיין%', '%זוננשין%', '%זונשיין%'], ['%מרדכי%', '%מורדכי%'], ['%sonnenschein%', '%zonenshein%', '%sonenshein%', '%progressive%'], 'זוננשיין מרדכי',
+             {'business': 'progressive hem/onc', 'raw': 'progressive hem/onc'}),
         ]
         for _ent in _BQ_NAMES:
             _key, _lasts, _firsts, _engs, _desc = _ent[:5]
@@ -2582,7 +2594,7 @@ def ensure_schema():
                 for ep in _engs:
                     d0 = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE ? ORDER BY id LIMIT 1", (ep,)).fetchone()
                     if d0: break
-            if not d0 and _mk:
+            if not d0 and _mk and _mk.get('last'):
                 # אין כרטיס — נפתח חדש, עם הפרטים שיש בחיוב (מייל/טלפון אם יש)
                 _rx = con.execute("SELECT email,phone,addr,city,zip FROM recon WHERE lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,'')))=? "
                                   "ORDER BY rowid DESC LIMIT 1", (_key,)).fetchone()
@@ -2598,8 +2610,16 @@ def ensure_schema():
                 print('  %s: לא נמצא כרטיס של %s — נשאר לשיוך ידני' % (_key.upper(), _desc))
                 continue
             did0 = d0['id']
+            if _mk and _mk.get('business'):
+                con.execute("UPDATE donors SET business=? WHERE id=? AND COALESCE(TRIM(business),'')=''", (_mk['business'], did0))
             con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", (_key, did0, today_iso()))
-            con.execute("UPDATE recon SET donor_id=? WHERE donor_id IS NULL AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,'')))=?", (did0, _key))
+            _raw = (_mk or {}).get('raw') or _key        # השם כפי שהוא בקובץ (למשל עם קו נטוי)
+            con.execute("UPDATE recon SET donor_id=? WHERE donor_id IS NULL AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,''))) IN (?,?)", (did0, _key, _raw))
+            # חיוב מספטמבר באותו שם שנקשר אוטומטית לכרטיס אחר — עובר לכרטיס שמאיר אמר, יחד עם התרומה שנרשמה ממנו
+            for _w in con.execute("SELECT tid FROM recon WHERE source='Banquest 09-2026' AND donor_id<>? "
+                                  "AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,''))) IN (?,?)", (did0, _key, _raw)).fetchall():
+                con.execute("UPDATE donations SET donor_id=? WHERE tid=?", (did0, _w['tid']))
+                con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did0, _w['tid']))
             tids = [r['tid'] for r in con.execute("SELECT tid FROM recon WHERE donor_id=? AND source='Banquest 09-2026'", (did0,))]
             ins, merged, had, unk, by = banquest_post(con, 'Banquest 09-2026', tids)
             con.execute("UPDATE recon SET processed=1, skipped=1 WHERE donor_id=? AND COALESCE(status,'settled')<>'settled' "
