@@ -2680,6 +2680,90 @@ def ensure_schema():
     except Exception as e:
         print('  אוטרייז ספטמבר error:', e)
 
+    # מאיר (על הדף המודפס של אוטרייז ספטמבר): "רשמתי בהערות מה עבור סוכות תשפ"ז,
+    # קראתי לזה יו"ט… תתאם את זה ישירות. יש אחד גרוס שהוא תורם חדש, צריך להקים לו
+    # כרטיס חדש, השם בעברית הוא אלי גרוס, שאר הפרטים יש לך מאוטרייז." וגם:
+    # Sol Restoration = מרדכי פוקס; רחל סימס $480 = פרנס יום.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='authorize_sep2026_notes_v1'").fetchone():
+            SUK = 'סוכות תשפ"ז'
+            marks = {
+                '81790163205': (SUK, 'יו"ט (?) — לפי מאיר, לבדוק'),          # Nathaniel Douek 500
+                '81790520235': (SUK, 'יו"ט'),                                  # Elchanan Abramowitz 2,500
+                '81790414122': (SUK, 'יו"ט'),                                  # Cassandra Lacombe 1,501
+                '81790550838': (SUK, 'יו"ט'),                                  # Tyler Lacombe 1,200
+                '81791398004': (SUK, 'יו"ט'),                                  # Zev Marmurstein 3,900
+                '81803718487': (SUK, 'יו"ט'),                                  # Nicole Eisenberger 1,300
+                '81803740774': (SUK, 'יו"ט'),                                  # Yitzy Lowy 1,300
+                '81806562739': (SUK, 'יו"ט'),                                  # Danial Jacobson 1,300
+                '81807809186': (SUK, 'יו"ט'),                                  # Abba Kloc 2,600
+                '81813655913': (SUK, 'יו"ט'),                                  # Michael Jacobsen 1,200
+                '81815386565': (SUK, 'יו"ט'),                                  # Meir Mittman 3,000
+                '81815366802': (SUK, 'יו"ט · Sol Restoration = מרדכי פוקס'),   # Sol Restoration 1,800
+                '81814787993': ('פרנס לילה', 'פרנס יום — Yarzeit of Aharon ben Yekusiel Yehuda'),   # Rachel Sims 480
+            }
+            # Sol Restoration = מרדכי פוקס — שם החברה נשמר בכרטיס, והחיוב עובר אליו
+            fx = None
+            for q, a in (("SELECT id FROM donors WHERE (last LIKE '%פוקס%' OR last LIKE '%פיקס%') AND first LIKE '%מרדכי%' ORDER BY id LIMIT 1", ()),
+                         ("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%fuchs%' AND lower(COALESCE(english,'')) LIKE '%mordech%' ORDER BY id LIMIT 1", ()),
+                         ("SELECT id FROM donors WHERE lower(COALESCE(business,'')) LIKE '%sol restoration%' OR lower(COALESCE(business,'')) LIKE '%goldstar%' ORDER BY id LIMIT 1", ())):
+                fx = con.execute(q, a).fetchone()
+                if fx: break
+            if fx:
+                con.execute("UPDATE donors SET business=? WHERE id=? AND COALESCE(TRIM(business),'')=''", ('Sol Restoration', fx['id']))
+                con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES('sol restoration',?,0,?)", (fx['id'], today_iso()))
+                con.execute("UPDATE recon SET donor_id=? WHERE tid='81815366802'", (fx['id'],))
+                con.execute("UPDATE donations SET donor_id=? WHERE tid='81815366802'", (fx['id'],))
+            else:
+                print('  Sol Restoration: לא נמצא כרטיס של פוקס מרדכי — נשאר לשיוך ידני')
+            # אלי גרוס — תורם חדש (אלא אם כבר יש כרטיס "גרוס אלי" בדיוק)
+            eg = con.execute("SELECT id FROM donors WHERE last='גרוס' AND first='אלי' ORDER BY id LIMIT 1").fetchone()
+            if not eg:
+                rx = con.execute("SELECT * FROM recon WHERE tid='81791246574'").fetchone()
+                if rx:
+                    con.execute("INSERT INTO donors(last,first,english,phone,email,addr,city,country,zip,category,created,source) "
+                                "VALUES('גרוס','אלי','Eli Gross',?,?,?,?,?,?,'מזדמן',?,'Authorize')",
+                                (rx['phone'] or '', rx['email'] or '', rx['addr'] or '', rx['city'] or '', rx['state'] or '', rx['zip'] or '', today_iso()))
+                    eg = {'id': con.execute("SELECT last_insert_rowid()").fetchone()[0]}
+                    print('  אלי גרוס: נפתח כרטיס חדש (#%s)' % eg['id'])
+            if eg:
+                con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES('eli gross',?,0,?)", (eg['id'], today_iso()))
+                for t in ('81791246574', '81791253554'):
+                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (eg['id'], t))
+                    con.execute("UPDATE donations SET donor_id=? WHERE tid=?", (eg['id'], t))
+                    marks[t] = ('', '? — לפי מאיר, לבדוק עבור מה')
+            nd = nu = 0
+            for tid, (cat, note) in marks.items():
+                row = con.execute("SELECT * FROM recon WHERE tid=?", (tid,)).fetchone()
+                if not row:
+                    continue
+                dn = con.execute("SELECT id,donor_id,note,amount FROM donations WHERE tid=? ORDER BY id LIMIT 1", (tid,)).fetchone()
+                if dn:
+                    old = (dn['note'] or '').replace(' · לא סווג — לבדוק עבור מה', '')
+                    con.execute("UPDATE donations SET category=CASE WHEN ?<>'' THEN ? ELSE category END, note=? WHERE id=?",
+                                (cat, cat, (old + ' · ' if old else '') + note, dn['id']))
+                    if cat:
+                        try: settle_pledge(con, dn['donor_id'], cat, _amt2(dn['amount']))
+                        except Exception: pass
+                    con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat, tid))
+                    if cat == 'פרנס לילה':
+                        nm0 = con.execute("SELECT last,first FROM donors WHERE id=?", (dn['donor_id'],)).fetchone()
+                        _pn = '🌙 לקבוע יום לפרנס — ' + (((nm0['last'] or '') + ' ' + (nm0['first'] or '')).strip() if nm0 else '')
+                        if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND COALESCE(done,0)=0", (dn['donor_id'],)).fetchone():
+                            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'parnes',?)", (dn['donor_id'], today_iso(), _pn))
+                    nu += 1
+                elif row['donor_id'] and not row['processed']:
+                    st, _ = recon_apply(con, tid, {'donor_id': row['donor_id'], 'category': cat, 'note': note})
+                    nd += 1 if st == 200 else 0
+                else:
+                    con.execute("UPDATE recon SET category=? WHERE tid=?", (cat, tid))   # בלי כרטיס — הייעוד ממולא מראש לשיוך
+            con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (SUK, today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('authorize_sep2026_notes_v1')")
+            con.commit()
+            print('  אוטרייז ספטמבר — ההערות של מאיר: עודכנו %d, נרשמו %d' % (nu, nd))
+    except Exception as e:
+        print('  אוטרייז ספטמבר notes error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
