@@ -6217,6 +6217,27 @@ def ensure_schema():
                                 (new_nm, note or '', per, old_nm))
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_hilula_cash_v2')")
             con.commit()
+        # מאיר (ד' תשרי תשפ"ז): "זה העדכון של חלוקת מזומנים סוכות תשפ"ז… תקרא לזה
+        # חלוקת מזומנים סוכות תשפ"ז, מה שיש חלוקת מזומנים לפני זה תמחק ותעדכן לפי
+        # הקובץ הזה" — הסיכום המרוכז (ערב סוכות · הילולת רבינו · הושענא רבה) של
+        # 96 אברכי כולל חצות מחליף את שתי רשימות המזומנים הקודמות. הסכום הוא
+        # הסה"כ לאברך והפירוט בשלושת החלקים; ✓ למי שקיבל משהו.
+        _sc = os.path.join(HERE, 'stipends_sukkos_cash2_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_sukkos_cash2_v1'").fetchone() and os.path.exists(_sc):
+            per = 'חלוקת מזומנים סוכות תשפ"ז'
+            con.execute("DELETE FROM stipends WHERE kind='holiday' AND period IN (?,?,?)",
+                        ('מזומנים ערב סוכות תשפ"ז', 'חלוקת מזומנים הילולא רבינו', per))
+            _fmt = lambda v: ('%d' % v if float(v) == int(v) else str(v)) if v else '—'
+            n = 0
+            for r in json.load(open(_sc, encoding='utf-8')):
+                det = 'ערב סוכות %s · הילולת רבינו %s · הושענא רבה %s' % (_fmt(r['erev']), _fmt(r['hilula']), _fmt(r['hoshana']))
+                con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created,got) "
+                            "VALUES('חצות','holiday',?,?,?,0,'',?,'','pdf',?,?)",
+                            (per, r['name'], float(r['total']), det, now_iso(), 1 if r['total'] else 0))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_sukkos_cash2_v1')")
+            con.commit()
+            print('  חלוקת מזומנים סוכות תשפ"ז: %d אברכים' % n)
     except Exception as e:
         print('  stipends seed error:', e)
 

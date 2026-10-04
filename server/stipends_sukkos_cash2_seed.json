@@ -1,0 +1,770 @@
+[
+{
+"n": 1,
+"name": "אבלסון מאיר",
+"erev": 500.0,
+"hilula": 450.0,
+"hoshana": 0,
+"total": 950.0
+},
+{
+"n": 2,
+"name": "אהרוני דוד",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 3,
+"name": "אורדנטליך יוסף",
+"erev": 800.0,
+"hilula": 500.0,
+"hoshana": 0,
+"total": 1300.0
+},
+{
+"n": 4,
+"name": "אלוש משה",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 5,
+"name": "אליאסזאדה אהרן",
+"erev": 400.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 400.0
+},
+{
+"n": 6,
+"name": "אנשין אברהם",
+"erev": 500.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 500.0
+},
+{
+"n": 7,
+"name": "אנשין יעקב",
+"erev": 900.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 900.0
+},
+{
+"n": 8,
+"name": "אריאלי אלישע",
+"erev": 600.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 600.0
+},
+{
+"n": 9,
+"name": "בולמן יהודה",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 10,
+"name": "בורשטיין מרדכי",
+"erev": 340.0,
+"hilula": 0,
+"hoshana": 360.0,
+"total": 700.0
+},
+{
+"n": 11,
+"name": "בינדר דן",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 12,
+"name": "בן שם אליעזר",
+"erev": 350.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 350.0
+},
+{
+"n": 13,
+"name": "בן שם ישראל",
+"erev": 500.0,
+"hilula": 0,
+"hoshana": 200.0,
+"total": 700.0
+},
+{
+"n": 14,
+"name": "בנדור יצחק",
+"erev": 700.0,
+"hilula": 400.0,
+"hoshana": 440.0,
+"total": 1540.0
+},
+{
+"n": 15,
+"name": "ברלב שמעון",
+"erev": 500.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 500.0
+},
+{
+"n": 16,
+"name": "ברנד יחיאל",
+"erev": 740.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 740.0
+},
+{
+"n": 17,
+"name": "ברנס נתנאל",
+"erev": 0,
+"hilula": 0,
+"hoshana": 360.0,
+"total": 360.0
+},
+{
+"n": 18,
+"name": "גבאי יעקב",
+"erev": 520.0,
+"hilula": 0,
+"hoshana": 380.0,
+"total": 900.0
+},
+{
+"n": 19,
+"name": "גוטליב חיים",
+"erev": 600.0,
+"hilula": 400.0,
+"hoshana": 300.0,
+"total": 1300.0
+},
+{
+"n": 20,
+"name": "גולדברגר שמעון",
+"erev": 460.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 460.0
+},
+{
+"n": 21,
+"name": "גולדמן נתן",
+"erev": 500.0,
+"hilula": 0,
+"hoshana": 510.0,
+"total": 1010.0
+},
+{
+"n": 22,
+"name": "גלינסקי אבא",
+"erev": 300.0,
+"hilula": 0,
+"hoshana": 257.0,
+"total": 557.0
+},
+{
+"n": 23,
+"name": "גלנט נפתלי",
+"erev": 1000.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 1000.0
+},
+{
+"n": 24,
+"name": "דוד ישי",
+"erev": 0,
+"hilula": 0,
+"hoshana": 600.0,
+"total": 600.0
+},
+{
+"n": 25,
+"name": "דויטש יהושע",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 26,
+"name": "הורביץ שמואל",
+"erev": 820.0,
+"hilula": 0,
+"hoshana": 900.0,
+"total": 1720.0
+},
+{
+"n": 27,
+"name": "היילפרין מנחם",
+"erev": 720.0,
+"hilula": 370.0,
+"hoshana": 0,
+"total": 1090.0
+},
+{
+"n": 28,
+"name": "הכט יוסף",
+"erev": 900.0,
+"hilula": 320.0,
+"hoshana": 3000.0,
+"total": 4220.0
+},
+{
+"n": 29,
+"name": "המלי שמואל",
+"erev": 400.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 400.0
+},
+{
+"n": 30,
+"name": "הרטשטיין מרדכי",
+"erev": 640.0,
+"hilula": 400.0,
+"hoshana": 300.0,
+"total": 1340.0
+},
+{
+"n": 31,
+"name": "וולך נחמן",
+"erev": 700.0,
+"hilula": 480.0,
+"hoshana": 520.0,
+"total": 1700.0
+},
+{
+"n": 32,
+"name": "ורטהיימר אליהו",
+"erev": 0,
+"hilula": 0,
+"hoshana": 635.0,
+"total": 635.0
+},
+{
+"n": 33,
+"name": "וייל נחמן",
+"erev": 1000.0,
+"hilula": 520.0,
+"hoshana": 0,
+"total": 1520.0
+},
+{
+"n": 34,
+"name": "ויכלדר אברהם",
+"erev": 250.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 250.0
+},
+{
+"n": 35,
+"name": "זונאבנד רפאל",
+"erev": 600.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 600.0
+},
+{
+"n": 36,
+"name": "זילבר ברוך",
+"erev": 530.0,
+"hilula": 525.0,
+"hoshana": 0,
+"total": 1055.0
+},
+{
+"n": 37,
+"name": "זמיר יוסף",
+"erev": 0,
+"hilula": 0,
+"hoshana": 100.0,
+"total": 100.0
+},
+{
+"n": 38,
+"name": "חבה יחזקאל",
+"erev": 740.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 740.0
+},
+{
+"n": 39,
+"name": "חגבי יוסף",
+"erev": 650.0,
+"hilula": 480.0,
+"hoshana": 0,
+"total": 1130.0
+},
+{
+"n": 40,
+"name": "חזן שמעון",
+"erev": 900.0,
+"hilula": 480.0,
+"hoshana": 520.0,
+"total": 1900.0
+},
+{
+"n": 41,
+"name": "חנון יהודה",
+"erev": 780.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 780.0
+},
+{
+"n": 42,
+"name": "חשין יט נחמן",
+"erev": 700.0,
+"hilula": 510.0,
+"hoshana": 460.0,
+"total": 1670.0
+},
+{
+"n": 43,
+"name": "חשין נחמן",
+"erev": 0,
+"hilula": 400.0,
+"hoshana": 0,
+"total": 400.0
+},
+{
+"n": 44,
+"name": "טברסקי שמואל",
+"erev": 650.0,
+"hilula": 550.0,
+"hoshana": 0,
+"total": 1200.0
+},
+{
+"n": 45,
+"name": "טוטיאן שלמה",
+"erev": 800.0,
+"hilula": 300.0,
+"hoshana": 520.0,
+"total": 1620.0
+},
+{
+"n": 46,
+"name": "טנגי שלום",
+"erev": 650.0,
+"hilula": 400.0,
+"hoshana": 450.0,
+"total": 1500.0
+},
+{
+"n": 47,
+"name": "יגלניק אברהם",
+"erev": 650.0,
+"hilula": 440.0,
+"hoshana": 0,
+"total": 1090.0
+},
+{
+"n": 48,
+"name": "ירבלום נתן",
+"erev": 400.0,
+"hilula": 100.0,
+"hoshana": 350.0,
+"total": 850.0
+},
+{
+"n": 49,
+"name": "כהן אליהו",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 50,
+"name": "כהן ציון",
+"erev": 500.0,
+"hilula": 0,
+"hoshana": 360.0,
+"total": 860.0
+},
+{
+"n": 51,
+"name": "כץ נתן",
+"erev": 800.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 800.0
+},
+{
+"n": 52,
+"name": "לנדאו אפרים",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 53,
+"name": "מאור יהונתן",
+"erev": 800.0,
+"hilula": 480.0,
+"hoshana": 520.0,
+"total": 1800.0
+},
+{
+"n": 54,
+"name": "מאיר דב",
+"erev": 600.0,
+"hilula": 0,
+"hoshana": 480.0,
+"total": 1080.0
+},
+{
+"n": 55,
+"name": "מויאל אשר",
+"erev": 700.0,
+"hilula": 1120.0,
+"hoshana": 480.0,
+"total": 2300.0
+},
+{
+"n": 56,
+"name": "מייקוף ישראל",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 57,
+"name": "מלמד לוי",
+"erev": 620.0,
+"hilula": 330.0,
+"hoshana": 490.0,
+"total": 1440.0
+},
+{
+"n": 58,
+"name": "מן נחמן",
+"erev": 1000.0,
+"hilula": 400.0,
+"hoshana": 380.0,
+"total": 1780.0
+},
+{
+"n": 59,
+"name": "מרגליות שמעון",
+"erev": 280.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 280.0
+},
+{
+"n": 60,
+"name": "משי זהב נחמן",
+"erev": 0,
+"hilula": 0,
+"hoshana": 515.0,
+"total": 515.0
+},
+{
+"n": 61,
+"name": "משמרתי מאיר",
+"erev": 700.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 700.0
+},
+{
+"n": 62,
+"name": "נמני ירחמיאל",
+"erev": 850.0,
+"hilula": 750.0,
+"hoshana": 470.0,
+"total": 2070.0
+},
+{
+"n": 63,
+"name": "נעימי מרדכי",
+"erev": 600.0,
+"hilula": 320.0,
+"hoshana": 360.0,
+"total": 1280.0
+},
+{
+"n": 64,
+"name": "נעימי נחמן",
+"erev": 650.0,
+"hilula": 0,
+"hoshana": 250.0,
+"total": 900.0
+},
+{
+"n": 65,
+"name": "סבאן אילן",
+"erev": 700.0,
+"hilula": 380.0,
+"hoshana": 520.0,
+"total": 1600.0
+},
+{
+"n": 66,
+"name": "סיימונס שמואל",
+"erev": 170.0,
+"hilula": 0,
+"hoshana": 570.0,
+"total": 740.0
+},
+{
+"n": 67,
+"name": "עליס שמואל",
+"erev": 0,
+"hilula": 1200.0,
+"hoshana": 0,
+"total": 1200.0
+},
+{
+"n": 68,
+"name": "עקשטיין גמליאל",
+"erev": 800.0,
+"hilula": 500.0,
+"hoshana": 500.0,
+"total": 1800.0
+},
+{
+"n": 69,
+"name": "פויפר אליהו",
+"erev": 675.0,
+"hilula": 0,
+"hoshana": 360.0,
+"total": 1035.0
+},
+{
+"n": 70,
+"name": "פוקסברומר אפרים",
+"erev": 660.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 660.0
+},
+{
+"n": 71,
+"name": "פיוטרקובסקי אברהם",
+"erev": 500.0,
+"hilula": 0,
+"hoshana": 450.0,
+"total": 950.0
+},
+{
+"n": 72,
+"name": "פיליפס יונתן",
+"erev": 325.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 325.0
+},
+{
+"n": 73,
+"name": "פילמר מאיר",
+"erev": 820.0,
+"hilula": 360.0,
+"hoshana": 0,
+"total": 1180.0
+},
+{
+"n": 74,
+"name": "פראנק שלום",
+"erev": 660.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 660.0
+},
+{
+"n": 75,
+"name": "פרנקיל מנחם",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 76,
+"name": "פרנקל יונתן",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 77,
+"name": "צוקר לוי",
+"erev": 950.0,
+"hilula": 0,
+"hoshana": 1100.0,
+"total": 2050.0
+},
+{
+"n": 78,
+"name": "קיל דב",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 79,
+"name": "קלוגר שלמה",
+"erev": 800.0,
+"hilula": 450.0,
+"hoshana": 520.0,
+"total": 1770.0
+},
+{
+"n": 80,
+"name": "קלפהולץ אליהו",
+"erev": 900.0,
+"hilula": 500.0,
+"hoshana": 0,
+"total": 1400.0
+},
+{
+"n": 81,
+"name": "קלפר מרדכי",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 82,
+"name": "קלצקין גרשון",
+"erev": 800.0,
+"hilula": 450.0,
+"hoshana": 440.0,
+"total": 1690.0
+},
+{
+"n": 83,
+"name": "קניג יוסף",
+"erev": 520.0,
+"hilula": 0,
+"hoshana": 400.0,
+"total": 920.0
+},
+{
+"n": 84,
+"name": "קרישבסקי נתן",
+"erev": 620.0,
+"hilula": 540.0,
+"hoshana": 380.0,
+"total": 1540.0
+},
+{
+"n": 85,
+"name": "רבינוביץ אהרן",
+"erev": 0,
+"hilula": 700.0,
+"hoshana": 100.0,
+"total": 800.0
+},
+{
+"n": 86,
+"name": "רבינוביץ יהודה",
+"erev": 0,
+"hilula": 0,
+"hoshana": 0,
+"total": 0
+},
+{
+"n": 87,
+"name": "רובינפיין חיים",
+"erev": 480.0,
+"hilula": 0,
+"hoshana": 0,
+"total": 480.0
+},
+{
+"n": 88,
+"name": "רובינפלד דב",
+"erev": 425.0,
+"hilula": 0,
+"hoshana": 625.0,
+"total": 1050.0
+},
+{
+"n": 89,
+"name": "רובינפלד יוסף",
+"erev": 900.0,
+"hilula": 0,
+"hoshana": 360.0,
+"total": 1260.0
+},
+{
+"n": 90,
+"name": "רוזנבלט אהרן",
+"erev": 320.0,
+"hilula": 250.0,
+"hoshana": 0,
+"total": 570.0
+},
+{
+"n": 91,
+"name": "רוזנבלט נחמן",
+"erev": 1000.0,
+"hilula": 600.0,
+"hoshana": 560.0,
+"total": 2160.0
+},
+{
+"n": 92,
+"name": "רוזנטל משה",
+"erev": 820.0,
+"hilula": 0,
+"hoshana": 900.0,
+"total": 1720.0
+},
+{
+"n": 93,
+"name": "רוזנפלד יצחק",
+"erev": 715.0,
+"hilula": 1150.0,
+"hoshana": 0,
+"total": 1865.0
+},
+{
+"n": 94,
+"name": "שטרנברג יצחק",
+"erev": 900.0,
+"hilula": 600.0,
+"hoshana": 560.0,
+"total": 2060.0
+},
+{
+"n": 95,
+"name": "שפירא ישראל",
+"erev": 750.0,
+"hilula": 300.0,
+"hoshana": 380.0,
+"total": 1430.0
+},
+{
+"n": 96,
+"name": "שפירא שמואל",
+"erev": 960.0,
+"hilula": 0,
+"hoshana": 740.0,
+"total": 1700.0
+}
+]
