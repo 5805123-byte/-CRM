@@ -67,6 +67,9 @@
   .txn.failed{opacity:.75}
   .txn.failed .amt{text-decoration:line-through;color:var(--muted)}
   .failbadge{background:#fdeee9;color:var(--no);border:1px solid #f2c9bc;border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:800;white-space:nowrap}
+  /* נדחה אבל עבר בניסיון נוסף — לא חוסר, רק שורה אפורה */
+  .okbadge{background:#f1f0ea;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:700;white-space:nowrap}
+  .txn.retried{opacity:.55}
   .py{background:#fff3e0;color:#b5641a;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800}
   .txn select{flex:1;min-width:120px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:.85rem}
   .btn{border:none;border-radius:10px;padding:10px 16px;font-weight:800;font-size:.92rem;cursor:pointer;font-family:inherit}
@@ -289,7 +292,7 @@ function render(){
   entries = entries.filter(([k,txs])=>{
     const allDone = txs.every(t=>t.processed);
     const matched = txs.some(t=>t.donor_id);
-    const hasFailed = txs.some(t=>t.status && t.status!=='settled');
+    const hasFailed = txs.some(t=>t.status && t.status!=='settled' && !t.retried);   // מאיר: "אם עבר משהו בסוף אל תסמן לי"
     const hasSettled = txs.some(t=>!t.status || t.status==='settled');
     if(FILT==='pending') return !allDone && hasSettled;   // רק מי שיש לו עסקה שעברה וטרם טופלה
     if(FILT==='done') return allDone;
@@ -334,7 +337,7 @@ function groupCard(k,txs){
   const matched = txs.find(t=>t.donor_id);
   const siteAddr = [t0.addr,t0.city,t0.state,t0.zip].filter(Boolean).join(', ');
   const settled = txs.filter(t=>!t.status||t.status==='settled');
-  const failedN = txs.length - settled.length;
+  const failedN = txs.filter(t=>t.status&&t.status!=='settled'&&!t.retried).length;
   const total = settled.reduce((s,t)=>s+parseFloat(t.amount||0),0);
   const nocard = !matched && !allDone && settled.length>0;
   let head = `<div class="gname">${esc((t0.first+' '+t0.last).trim())}${nocard?'<span class="nocardtag">🔴 בלי כרטיס</span>':''}</div>
@@ -412,12 +415,12 @@ function groupCard(k,txs){
     if(cur&&!CATS.includes(cur)&&!CAMPAIGNS.includes(cur)) opts+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;   // ייעוד אישי שרשום בכרטיס
     opts+=`<option value="__new__">➕ עבור מה חדש… (טקסט חופשי)</option>`;
     const STLBL={declined:'🔴 נדחה — לא עבר',error:'🔴 שגיאה — לא עבר',voided:'🔴 בוטל — לא עבר',refund:'↩️ הוחזר'};
-    const stlbl = STLBL[t.status]||'🔴 לא עבר';
-    return `<div class="txn ${failed?'failed':''}" data-tid="${esc(t.tid)}">
+    const stlbl = t.retried?('↩️ נדחה, ועבר בסוף ב-'+t.retried.slice(8,10)+'/'+t.retried.slice(5,7)):(STLBL[t.status]||'🔴 לא עבר');
+    return `<div class="txn ${failed?'failed':''} ${t.retried?'retried':''}" data-tid="${esc(t.tid)}">
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
       ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${/\d{4}$/.test(t.note||'')?`<span class="rec" title="הכרטיס שחויב">💳 ${esc(t.note)}</span>`:''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
       ${t.manual&&!t.processed?'<span class="py" style="background:#eaf6ee;color:#1e6b3a">✓ כבר רשום — יאומת</span>':''}
-      ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?`<span style="color:var(--yes);font-weight:800">✓ טופל${t.category?(' · '+esc(t.category)):''}</span>`:`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit"><input class="bldgitem" list="bldgdl" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:${isBldg(cur)?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
+      ${failed?`<span class="${t.retried?'okbadge':'failbadge'}">${stlbl}</span>`:(t.processed?`<span style="color:var(--yes);font-weight:800">✓ טופל${t.category?(' · '+esc(t.category)):''}</span>`:`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit"><input class="bldgitem" list="bldgdl" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:${isBldg(cur)?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
       ${(!failed&&!t.processed)?(()=>{const show=is480||PARNES_CATS.includes(cur);return `<div class="pypick" style="display:${show?'flex':'none'};gap:6px;width:100%;margin-top:5px">
         <select class="pymon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select>
         <select class="pyday">${Array.from({length:30},(_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select>

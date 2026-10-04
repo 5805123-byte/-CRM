@@ -2529,100 +2529,33 @@ def ensure_schema():
             con.commit()
             print(f'  בנק ווסט ספטמבר: נטענו {nr}, הותאמו {matched}')
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='banquest_sep2026_post_v1'").fetchone():
-            dinfo = {r['id']: ((r['tier'] or ''), (r['category'] or ''))
-                     for r in con.execute("SELECT id,tier,category FROM donors")}
-            allr = []
-            for r in con.execute("SELECT tid,donor_id,amount,date,recurring,note FROM recon "
-                                 "WHERE source='Banquest 09-2026' AND COALESCE(processed,0)=0 "
-                                 "AND COALESCE(status,'settled')='settled' AND donor_id IS NOT NULL"):
-                d = dict(r)
-                d['iso'] = _recon_iso(r['date'])
-                d['a'] = _amt2(r['amount'])
-                if d['iso'] and d['a'] > 0:
-                    allr.append(d)
-            need = {}
-            for r in allr:
-                need.setdefault((r['donor_id'], r['iso'][:7], r['a']), []).append(r)
-            ins = merged = had = unk = 0
-            by = {}
-
-            def _guess(did, a, rec):
-                """עבור מה: התחייבות פתוחה באותו סכום → כלל קבוע של התורם → מה
-                שאותו סכום סווג אצלו בחיוב קודם → הוראת קבע (יששכר־זבולון לפי
-                הדרגה, אחרת הקטגוריה של הכרטיס) → הקטגוריה של הכרטיס, לבדיקה."""
-                rr = con.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
-                                 (did, a)).fetchone()
-                if rr and (rr['category'] or '').strip():
-                    return rr['category'].strip(), 'כלל קבוע', False
-                if not rec:
-                    pl = open_pledge_for(con, did, a)
-                    if pl and pl['category']:
-                        return pl['category'], 'התחייבות', False
-                # הוראת קבע לומדת רק מהוראת קבע קודמת; חיוב חד-פעמי — מחיוב חד-פעמי
-                # קודם באותו סכום, או מתרומה קודמת באותו סכום מאז אייר.
-                pr = con.execute("SELECT category FROM recon WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
-                                 "AND COALESCE(processed,0)=1 AND COALESCE(TRIM(category),'')<>'' "
-                                 "AND COALESCE(recurring,0)=? ORDER BY rowid DESC LIMIT 1",
-                                 (did, a, 1 if rec else 0)).fetchone()
-                if pr:
-                    return pr['category'].strip(), 'כמו בחיוב הקודם', False
-                if not rec:
-                    pd_ = con.execute("SELECT category FROM donations WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
-                                      "AND COALESCE(TRIM(category),'')<>'' AND COALESCE(date,'')>='2026-05-01' "
-                                      "AND COALESCE(note,'') NOT LIKE '%הוראת קבע%' ORDER BY date DESC LIMIT 1",
-                                      (did, a)).fetchone()
-                    if pd_:
-                        return pd_['category'].strip(), 'כמו בתרומה הקודמת', False
-                tier, dcat = dinfo.get(did, ('', ''))
-                if rec and 'יששכר' in tier:
-                    return 'יששכר־זבולון', 'דרגת יששכר־זבולון', False
-                if rec:
-                    return (dcat or 'קבוע'), 'הוראת קבע', False
-                return (dcat or 'מזדמן'), 'לא סווג', True
-
-            for (did, ym, a), lst in need.items():
-                have = [x['id'] for x in con.execute(
-                    "SELECT id FROM donations WHERE donor_id=? AND SUBSTR(COALESCE(date,''),1,7)=? "
-                    "AND COALESCE(method,'')='Banquest' AND ROUND(CAST(amount AS REAL),2)=? "
-                    "AND LENGTH(COALESCE(date,''))>7 AND COALESCE(note,'') NOT LIKE 'ייבוא 2026%' "
-                    "AND COALESCE(tid,'')='' ORDER BY date", (did, ym, a))]
-                for r in sorted(lst, key=lambda x: x['iso']):
-                    tid = r['tid']
-                    if have:                     # כבר רשום מבנק ווסט — מקזזים ולא מוסיפים
-                        xid = have.pop(0)
-                        con.execute("UPDATE donations SET tid=? WHERE id=?", (tid, xid))
-                        c0 = con.execute("SELECT category FROM donations WHERE id=?", (xid,)).fetchone()
-                        con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?",
-                                    ((c0['category'] if c0 else '') or '', tid))
-                        had += 1
-                        continue
-                    # מה שמאיר רשם ביד (סוכות תשפ"ז וכד') — אותו כסף, מקבל את מזהה החיוב
-                    mid = merge_manual_donation(con, did, r['iso'], a, tid, 'Banquest',
-                                                days=(10 if r['recurring'] else 40))
-                    if mid:
-                        c0 = con.execute("SELECT category FROM donations WHERE id=?", (mid,)).fetchone()
-                        cat0 = ((c0['category'] if c0 else '') or '').strip()
-                        if cat0:
-                            settle_pledge(con, did, cat0, a)
-                        con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat0, tid))
-                        merged += 1
-                        continue
-                    cat, why, chk = _guess(did, a, r['recurring'])
-                    note = (r['note'] or '').strip()
-                    if chk:
-                        note = (note + ' · ' if note else '') + 'לא סווג — לבדוק עבור מה'
-                    st, res = recon_apply(con, tid, {'donor_id': did, 'category': cat, 'note': note})
-                    if st == 200:
-                        ins += 1
-                        by[why] = by.get(why, 0) + 1
-                    else:
-                        unk += 1
+            ins, merged, had, unk, by = banquest_post(con, 'Banquest 09-2026')
             con.execute("INSERT INTO seed_flags(name) VALUES('banquest_sep2026_post_v1')")
             con.commit()
             print('  בנק ווסט ספטמבר: נרשמו %d, אומתו מול רישום ידני %d, היו כבר %d, נכשלו %d'
                   % (ins, merged, had, unk))
             for k, v in sorted(by.items(), key=lambda x: -x[1]):
                 print('      %-24s %d' % (k, v))
+        # מאיר: "FF בסוף עבר, זה פייגא לאה פרכטר" — החיוב של 1,300 שנדחה פעמיים
+        # ב-16.9 עבר למחרת בשני חלקים (800 + 500). השם "FF" מקושר לכרטיס שלה
+        # (גם להבא), שני החיובים שעברו נרשמים אצלה, והדחיות יורדות מ"לא עבר".
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='banquest_sep2026_ff_v1'").fetchone():
+            ff = con.execute("SELECT id FROM donors WHERE last LIKE '%פרכטר%' AND (first LIKE '%פייגא%' OR first LIKE '%פיגא%' OR first LIKE '%לאה%') "
+                             "ORDER BY id LIMIT 1").fetchone()
+            if not ff:
+                ff = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%frechter%' OR lower(COALESCE(english,'')) LIKE '%frachter%' ORDER BY id LIMIT 1").fetchone()
+            if ff:
+                con.execute("INSERT OR REPLACE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", ('ff', ff['id'], today_iso()))
+                con.execute("UPDATE recon SET donor_id=? WHERE donor_id IS NULL AND lower(TRIM(COALESCE(first,'')||' '||COALESCE(last,'')))='ff'", (ff['id'],))
+                tids = [r['tid'] for r in con.execute("SELECT tid FROM recon WHERE donor_id=? AND source='Banquest 09-2026'", (ff['id'],))]
+                ins, merged, had, unk, by = banquest_post(con, 'Banquest 09-2026', tids)
+                con.execute("UPDATE recon SET processed=1, skipped=1 WHERE donor_id=? AND COALESCE(status,'settled')<>'settled' "
+                            "AND source='Banquest 09-2026'", (ff['id'],))
+                con.execute("INSERT INTO seed_flags(name) VALUES('banquest_sep2026_ff_v1')")
+                con.commit()
+                print('  FF = פרכטר (תורם %s): נרשמו %d' % (ff['id'], ins))
+            else:
+                print('  FF: לא נמצא כרטיס של פרכטר פייגא לאה — נשאר לשיוך ידני')
     except Exception as e:
         print('  בנק ווסט ספטמבר error:', e)
 
@@ -8303,6 +8236,103 @@ def recon_apply(cur, tid, b):
     except Exception: pass
     return (200, {'ok': True, 'donor_id': did})
 
+def banquest_post(con, source, only_tids=None):
+    """רישום חיובי בנק ווסט שעברו ויש להם כרטיס — בכרטיס התורם, בלי כפילויות.
+    מאיר: "אתה גם מכניס את זה לתוך כרטיס תורמים לכל תורם את התרומה שלו, רק שוב
+    מבקש לשים לב שלא יהיה כפילויות". קודם קיזוז מול מה שכבר רשום מבנק ווסט באותו
+    חודש וסכום (לפי כמות), אחר כך אימות מול רישום ידני באותו סכום, ורק מה שחדש
+    נפתח כשורה. מחזירה (נרשמו, אומתו, היו כבר, נכשלו, לפי-סיבה)."""
+    dinfo = {r['id']: ((r['tier'] or ''), (r['category'] or ''))
+             for r in con.execute("SELECT id,tier,category FROM donors")}
+    allr = []
+    for r in con.execute("SELECT tid,donor_id,amount,date,recurring,note FROM recon "
+                         "WHERE source=? AND COALESCE(processed,0)=0 "
+                         "AND COALESCE(status,'settled')='settled' AND donor_id IS NOT NULL" + (" AND tid IN (%s)" % ",".join("?" * len(only_tids)) if only_tids else ""), [source] + list(only_tids or [])):
+        d = dict(r)
+        d['iso'] = _recon_iso(r['date'])
+        d['a'] = _amt2(r['amount'])
+        if d['iso'] and d['a'] > 0:
+            allr.append(d)
+    need = {}
+    for r in allr:
+        need.setdefault((r['donor_id'], r['iso'][:7], r['a']), []).append(r)
+    ins = merged = had = unk = 0
+    by = {}
+
+    def _guess(did, a, rec):
+        """עבור מה: התחייבות פתוחה באותו סכום → כלל קבוע של התורם → מה
+        שאותו סכום סווג אצלו בחיוב קודם → הוראת קבע (יששכר־זבולון לפי
+        הדרגה, אחרת הקטגוריה של הכרטיס) → הקטגוריה של הכרטיס, לבדיקה."""
+        rr = con.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
+                         (did, a)).fetchone()
+        if rr and (rr['category'] or '').strip():
+            return rr['category'].strip(), 'כלל קבוע', False
+        if not rec:
+            pl = open_pledge_for(con, did, a)
+            if pl and pl['category']:
+                return pl['category'], 'התחייבות', False
+        # הוראת קבע לומדת רק מהוראת קבע קודמת; חיוב חד-פעמי — מחיוב חד-פעמי
+        # קודם באותו סכום, או מתרומה קודמת באותו סכום מאז אייר.
+        pr = con.execute("SELECT category FROM recon WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
+                         "AND COALESCE(processed,0)=1 AND COALESCE(TRIM(category),'')<>'' "
+                         "AND COALESCE(recurring,0)=? ORDER BY rowid DESC LIMIT 1",
+                         (did, a, 1 if rec else 0)).fetchone()
+        if pr:
+            return pr['category'].strip(), 'כמו בחיוב הקודם', False
+        if not rec:
+            pd_ = con.execute("SELECT category FROM donations WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
+                              "AND COALESCE(TRIM(category),'')<>'' AND COALESCE(date,'')>='2026-05-01' "
+                              "AND COALESCE(note,'') NOT LIKE '%הוראת קבע%' ORDER BY date DESC LIMIT 1",
+                              (did, a)).fetchone()
+            if pd_:
+                return pd_['category'].strip(), 'כמו בתרומה הקודמת', False
+        tier, dcat = dinfo.get(did, ('', ''))
+        if rec and 'יששכר' in tier:
+            return 'יששכר־זבולון', 'דרגת יששכר־זבולון', False
+        if rec:
+            return (dcat or 'קבוע'), 'הוראת קבע', False
+        return (dcat or 'מזדמן'), 'לא סווג', True
+
+    for (did, ym, a), lst in need.items():
+        have = [x['id'] for x in con.execute(
+            "SELECT id FROM donations WHERE donor_id=? AND SUBSTR(COALESCE(date,''),1,7)=? "
+            "AND COALESCE(method,'')='Banquest' AND ROUND(CAST(amount AS REAL),2)=? "
+            "AND LENGTH(COALESCE(date,''))>7 AND COALESCE(note,'') NOT LIKE 'ייבוא 2026%' "
+            "AND COALESCE(tid,'')='' ORDER BY date", (did, ym, a))]
+        for r in sorted(lst, key=lambda x: x['iso']):
+            tid = r['tid']
+            if have:                     # כבר רשום מבנק ווסט — מקזזים ולא מוסיפים
+                xid = have.pop(0)
+                con.execute("UPDATE donations SET tid=? WHERE id=?", (tid, xid))
+                c0 = con.execute("SELECT category FROM donations WHERE id=?", (xid,)).fetchone()
+                con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?",
+                            ((c0['category'] if c0 else '') or '', tid))
+                had += 1
+                continue
+            # מה שמאיר רשם ביד (סוכות תשפ"ז וכד') — אותו כסף, מקבל את מזהה החיוב
+            mid = merge_manual_donation(con, did, r['iso'], a, tid, 'Banquest',
+                                        days=(10 if r['recurring'] else 40))
+            if mid:
+                c0 = con.execute("SELECT category FROM donations WHERE id=?", (mid,)).fetchone()
+                cat0 = ((c0['category'] if c0 else '') or '').strip()
+                if cat0:
+                    settle_pledge(con, did, cat0, a)
+                con.execute("UPDATE recon SET processed=1, category=? WHERE tid=?", (cat0, tid))
+                merged += 1
+                continue
+            cat, why, chk = _guess(did, a, r['recurring'])
+            note = (r['note'] or '').strip()
+            if chk:
+                note = (note + ' · ' if note else '') + 'לא סווג — לבדוק עבור מה'
+            st, res = recon_apply(con, tid, {'donor_id': did, 'category': cat, 'note': note})
+            if st == 200:
+                ins += 1
+                by[why] = by.get(why, 0) + 1
+            else:
+                unk += 1
+    return ins, merged, had, unk, by
+
+
 _KV_STRIP = str.maketrans('ךםןףץ', 'כמנפצ')
 
 
@@ -12994,8 +13024,35 @@ class H(BaseHTTPRequestHandler):
                     return _tr._he_name(str(s).strip())
                 except Exception:
                     return ''
+            # מאיר: "אם עבר משהו בסוף אל תסמן לי" — חיוב שנדחה ואחר כך עבר (אותו
+            # אדם לפי מייל/שם, או אותו תורם; אותו סכום; בתוך שבועיים) אינו "לא עבר".
+            ok_try = {}
+            try:
+                for q in con.execute("SELECT first,last,email,amount,date,donor_id FROM recon "
+                                     "WHERE COALESCE(status,'settled') IN ('settled','')"):
+                    iso = _recon_iso_any(q['date'])
+                    if not iso:
+                        continue
+                    a = _amt2(q['amount'])
+                    for k in _who_keys(q) + (['d:%s' % q['donor_id']] if q['donor_id'] else []):
+                        ok_try.setdefault((k, a), []).append(iso)
+            except Exception:
+                ok_try = {}
+
+            def _retried(q):
+                iso = _recon_iso_any(q['date'])
+                if not iso:
+                    return ''
+                a = _amt2(q['amount'])
+                best = ''
+                for k in _who_keys(q) + (['d:%s' % q['donor_id']] if q['donor_id'] else []):
+                    for d2 in ok_try.get((k, a), ()):
+                        if abs(_days(d2) - _days(iso)) <= 14 and (not best or d2 < best):
+                            best = d2
+                return best
             for r in con.execute("SELECT * FROM recon ORDER BY processed, last, first"):
                 x = dict(r)
+                x['retried'] = _retried(r) if (r['status'] and r['status'] != 'settled') else ''
                 if not r['donor_id']:
                     x['sugg_last'] = _he_sugg(r['last'])
                     x['sugg_first'] = _he_sugg(r['first'])
