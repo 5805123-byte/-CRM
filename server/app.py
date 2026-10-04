@@ -9004,8 +9004,16 @@ _CERT_FAM2 = re.compile(r'^(משפחתו|משפחתה|משפחתם|משפחתן|
 _CERT_BEN = re.compile(r'^(ו?ב[\u05DFת]|בר|ב["\'\u05F4\u05F3]ר)$')
 
 
+_CERT_DASH = ('—', '–', '-', '־', '―')
+
+
 def _req_at(ws, start=0):
     """היכן מתחילה הבקשה בתוך שורת שם. ‎-1 אם אין בקשה."""
+    # מקף בין השם לבקשה ("ראצא טובה — פרנסה ברווח") — כל מה שלפניו הוא השם,
+    # גם כששם האם הוא שתי מילים; הבקשה מתחילה במקף.
+    for i in range(start + 1, len(ws)):
+        if ws[i] in _CERT_DASH:
+            return i
     for i in range(start, len(ws)):
         if _CERT_REQ.match(ws[i]):
             return i
@@ -9026,8 +9034,10 @@ def _req_at(ws, start=0):
         # "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
         fam = (i + 1 < len(ws) and _CERT_FAM1.match(ws[i])
                and _CERT_FAM2.match(ws[i + 1]))
-        # זנב שיש בו "בן"/"בת" הוא שם נוסף, ונשאר גדול
-        if i < len(ws) and not fam and not any(_CERT_BEN.match(w) for w in ws[i:]):
+        # זנב שיש בו "בן"/"בת" הוא שם נוסף, ונשאר גדול. מילה בודדת אחרי שם
+        # ההורה ("בן ראצא טובה") היא חלק משם ההורה, לא בקשה — בקשה בלי מקף
+        # ובלי מילת ברכה מתחילה רק כשיש בה שתי מילים ומעלה.
+        if i < len(ws) and not fam and len(ws) - i >= 2 and not any(_CERT_BEN.match(w) for w in ws[i:]):
             return i
     if len(ws) - start > 4 and ws[start][:1] in ('\u05DC', '\u05D5') \
             and _fam_at(ws[start:]) < 0:
@@ -9515,7 +9525,11 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
     # מאיר (תשרי תשפ"ז): "את הפרנס יום אני רוצה שתעשה את BA Fontov Bold" —
     # הגופן ששמר ב-Claude ("גופני BA"). כל התעודה בו, גם הנוסח וגם השמות;
     # הוא כבר מודגש, ולכן אין צורך בקו מתאר.
-    reg = bold = os.path.join(STATIC, 'fontov-bold.otf')
+    # מאיר (תשרי תשפ"ז): "רק השמות ושם האמא צריך להיות באותיות גדולות בולטות,
+    # שאר הבקשות וגם המילה בן או בת צריך להיות יותר קטן ולא מודגש" — השמות
+    # ב-Fontov Bold, הבקשות ומילות הקישור ב-Fontov Regular.
+    reg = os.path.join(STATIC, 'fontov-regular.otf')
+    bold = os.path.join(STATIC, 'fontov-bold.otf')
     cache = {}
 
     def font(px, heavy):
@@ -9602,7 +9616,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
     # גודל של הנוסח, מתוך 70 של השמות. מילות הלוואי (בן/בת/שיחי') נשארות
     # ביחס שכבר נקבע.
     lead_r = _LEAD_R_C if kind in ('coffee', 'breakfast') else (40.0 / 70.0)
-    req_r = _REQ_R_C if kind in ('coffee', 'breakfast') else (40.0 / 70.0)
+    # מאיר: "שאר הבקשות… יותר קטן ולא מודגש" — הבקשה 30 מתוך 70 של השם, לא מודגשת
+    req_r = _REQ_R_C if kind in ('coffee', 'breakfast') else (30.0 / 70.0)
     # בתעודת הפרנס "לעילוי נשמת", "יעמדו לזכות" והבקשות הם גודל 40 קבוע,
     # ואינם נגזרים מגודל השמות — כך הם אינם גדלים איתם ואינם מתכווצים.
     fix_px = 0.0 if kind in ('coffee', 'breakfast') else 40.0 * (W / 1000.0)
@@ -9619,10 +9634,10 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         if role == 'lead':                 # "לעילוי נשמת" / "לע\"נ אביו"
             z = min(fix_px, px * lead_r) if fix_px else px * lead_r
             return [(w, z, True) for w in ws]
-        if role == 'req':                  # הבקשה שאחרי השמות — גדלה יחד איתו
-            return [(w, px * req_r, True) for w in ws]
+        if role == 'req':                  # הבקשה שאחרי השמות — גדלה יחד איתו, לא מודגשת
+            return [(w, px * req_r, False) for w in ws]
         if role == 'evt':                  # "ליום הולדתו" — שורה משלו, קצת קטן מהברכה
-            return [(w, px * req_r * _EVT_R, True) for w in ws]
+            return [(w, px * req_r * _EVT_R, False) for w in ws]
         if role == 'donor':                                 # שם התורם
             return [(w, px * (_SML_R if _CERT_SMALL.match(w) else _DON_R), True) for w in ws]
         n, out = _lead_len(ws), []
@@ -9635,7 +9650,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             if not inreq and rq >= 0 and k >= rq:          # ברכה אחרי השם
                 inreq = True
             if inreq:
-                out.append((w, px * req_r, True))
+                out.append((w, px * req_r, False))
             elif _CERT_SMALL.match(w):
                 out.append((w, px * _SML_R, False))
             else:
@@ -9753,11 +9768,12 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                   if ro in ('names', 'donor') and ln]
             if nm:
                 cap = min(nm) * (40.0 / 70.0)
+                capq = min(nm) * req_r            # הבקשה — קטנה מהפתיח
                 for i, (ln, ro) in enumerate(zip(lines, rl)):
                     if ro not in ('req', 'lead', 'evt') or not ln:
                         continue
                     top = max(z for _, z, _ in ln)
-                    c = cap * _EVT_R if ro == 'evt' else cap
+                    c = capq * _EVT_R if ro == 'evt' else (capq if ro == 'req' else cap)
                     if top > c:
                         f = c / top
                         lines[i] = [(t, z * f, h) for t, z, h in ln]
