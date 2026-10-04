@@ -415,7 +415,7 @@ function groupCard(k,txs){
     const stlbl = STLBL[t.status]||'🔴 לא עבר';
     return `<div class="txn ${failed?'failed':''}" data-tid="${esc(t.tid)}">
       <span class="amt">$${amt.toFixed(2)}</span><span class="date">${esc(t.date)}</span>
-      ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
+      ${t.recurring?'<span class="rec">הוראת קבע</span>':''}${/\d{4}$/.test(t.note||'')?`<span class="rec" title="הכרטיס שחויב">💳 ${esc(t.note)}</span>`:''}${is480&&!failed?'<span class="py">פרנס לילה</span>':''}
       ${t.manual&&!t.processed?'<span class="py" style="background:#eaf6ee;color:#1e6b3a">✓ כבר רשום — יאומת</span>':''}
       ${failed?`<span class="failbadge">${stlbl}</span>`:(t.processed?`<span style="color:var(--yes);font-weight:800">✓ טופל${t.category?(' · '+esc(t.category)):''}</span>`:`<select class="cat">${opts}</select><input class="newcat" placeholder="עבור מה? (למשל מתנות לאביונים תשפ״ו)" style="display:none;width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit"><input class="bldgitem" list="bldgdl" placeholder="🏗️ מה תרם בבניין? (שולחן/עמוד/מטר…)" style="display:${isBldg(cur)?'block':'none'};width:100%;margin-top:5px;padding:7px 9px;border:1px solid var(--gold);border-radius:8px;font-family:inherit">`)}
       ${(!failed&&!t.processed)?(()=>{const show=is480||PARNES_CATS.includes(cur);return `<div class="pypick" style="display:${show?'flex':'none'};gap:6px;width:100%;margin-top:5px">
