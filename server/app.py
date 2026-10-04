@@ -2630,6 +2630,56 @@ def ensure_schema():
     except Exception as e:
         print('  בנק ווסט ספטמבר error:', e)
 
+    # ---- אוטרייז ספטמבר 2026 — קובץ העסקאות שמאיר הוריד (Transaction_2026-10-04) ----
+    # אותו מסלול כמו בנק ווסט ספטמבר: לתור "חיובים 09/2026", שיוך לכרטיס לפי מייל/
+    # טלפון/שם לועזי/מפת השמות, ורישום בכרטיס בלי כפילויות (קיזוז מול מה שכבר רשום
+    # מאוטרייז, אימות מול רישום ידני). מה שלא זוהה נשאר אדום בתור.
+    try:
+        _ap = os.path.join(HERE, 'authorize_sep2026_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='authorize_sep2026_v1'").fetchone() \
+           and os.path.exists(_ap):
+            def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+            byeng, byprev = {}, {}
+            for d in con.execute("SELECT id,english,business FROM donors"):
+                for v in (d['english'], d['business']):
+                    if (v or '').strip():
+                        byeng.setdefault(_ne(v), d['id'])
+            for r in con.execute("SELECT first,last,donor_id FROM recon WHERE donor_id IS NOT NULL ORDER BY rowid DESC"):
+                byprev.setdefault(_ne((r['first'] or '') + (r['last'] or '')), r['donor_id'])
+            nr = matched = 0
+            for x in json.load(open(_ap, encoding='utf-8')):
+                k = _ne(x.get('first', '') + x.get('last', ''))
+                did = (byprev.get(k) or byeng.get(k)) if k else None
+                c = con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,
+                                       phone,email,recurring,donor_id,category,processed,source,status,note)
+                                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'',0,'Authorize 09-2026',?,?)""",
+                                (x['tid'], x.get('first', ''), x.get('last', ''), x['amount'], x['date'],
+                                 x.get('addr', ''), x.get('city', ''), x.get('state', ''), x.get('zip', ''),
+                                 x.get('phone', ''), x.get('email', ''), x.get('recurring', 0), did,
+                                 x.get('status', 'settled'), x.get('card', '')))
+                if c.rowcount:
+                    nr += 1
+                    if did:
+                        matched += 1
+            matched += apply_name_map(con)
+            try:
+                link_by_identity(con)
+            except Exception as _e:
+                print('  אוטרייז ספטמבר: זיהוי לפי מייל/שם —', _e)
+            con.execute("INSERT INTO seed_flags(name) VALUES('authorize_sep2026_v1')")
+            con.commit()
+            print(f'  אוטרייז ספטמבר: נטענו {nr}, הותאמו {matched}')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='authorize_sep2026_post_v1'").fetchone():
+            ins, merged, had, unk, by = banquest_post(con, 'Authorize 09-2026')
+            con.execute("INSERT INTO seed_flags(name) VALUES('authorize_sep2026_post_v1')")
+            con.commit()
+            print('  אוטרייז ספטמבר: נרשמו %d, אומתו מול רישום ידני %d, היו כבר %d, נכשלו %d'
+                  % (ins, merged, had, unk))
+            for k, v in sorted(by.items(), key=lambda x: -x[1]):
+                print('      %-24s %d' % (k, v))
+    except Exception as e:
+        print('  אוטרייז ספטמבר error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -8313,6 +8363,7 @@ def banquest_post(con, source, only_tids=None):
     מבקש לשים לב שלא יהיה כפילויות". קודם קיזוז מול מה שכבר רשום מבנק ווסט באותו
     חודש וסכום (לפי כמות), אחר כך אימות מול רישום ידני באותו סכום, ורק מה שחדש
     נפתח כשורה. מחזירה (נרשמו, אומתו, היו כבר, נכשלו, לפי-סיבה)."""
+    meth = 'Banquest' if 'Banquest' in (source or '') else 'Authorize'   # אמצעי התשלום לפי המקור (כמו ב-recon_apply)
     dinfo = {r['id']: ((r['tier'] or ''), (r['category'] or ''))
              for r in con.execute("SELECT id,tier,category FROM donors")}
     allr = []
@@ -8322,6 +8373,8 @@ def banquest_post(con, source, only_tids=None):
         d = dict(r)
         d['iso'] = _recon_iso(r['date'])
         d['a'] = _amt2(r['amount'])
+        if meth == 'Authorize' and abs(d['a'] - 480) < 0.01:
+            continue        # פרנס לילה ($480) — דורש בחירת לילה, נשאר לאישור בדף החיובים
         if d['iso'] and d['a'] > 0:
             allr.append(d)
     need = {}
@@ -8367,9 +8420,9 @@ def banquest_post(con, source, only_tids=None):
     for (did, ym, a), lst in need.items():
         have = [x['id'] for x in con.execute(
             "SELECT id FROM donations WHERE donor_id=? AND SUBSTR(COALESCE(date,''),1,7)=? "
-            "AND COALESCE(method,'')='Banquest' AND ROUND(CAST(amount AS REAL),2)=? "
+            "AND COALESCE(method,'')=? AND ROUND(CAST(amount AS REAL),2)=? "
             "AND LENGTH(COALESCE(date,''))>7 AND COALESCE(note,'') NOT LIKE 'ייבוא 2026%' "
-            "AND COALESCE(tid,'')='' ORDER BY date", (did, ym, a))]
+            "AND COALESCE(tid,'')='' ORDER BY date", (did, ym, meth, a))]
         for r in sorted(lst, key=lambda x: x['iso']):
             tid = r['tid']
             if have:                     # כבר רשום מבנק ווסט — מקזזים ולא מוסיפים
@@ -8381,7 +8434,7 @@ def banquest_post(con, source, only_tids=None):
                 had += 1
                 continue
             # מה שמאיר רשם ביד (סוכות תשפ"ז וכד') — אותו כסף, מקבל את מזהה החיוב
-            mid = merge_manual_donation(con, did, r['iso'], a, tid, 'Banquest',
+            mid = merge_manual_donation(con, did, r['iso'], a, tid, meth,
                                         days=(10 if r['recurring'] else 40))
             if mid:
                 c0 = con.execute("SELECT category FROM donations WHERE id=?", (mid,)).fetchone()
