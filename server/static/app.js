@@ -789,7 +789,7 @@ function findDupes(){
 }
 
 // פרנס "פתוח" = הלילה עדיין לא עבר, או שעבר אך טרם שולם. הירח נעלם רק כשהלילה עבר וגם שולם.
-function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>!(p.night_date&&p.night_date<t&&+p.paid));}
+function hasOpenParnes(d){const t=todayStr();return (d.parnes||[]).some(p=>p.status!=='suggested'&&!(p.night_date&&p.night_date<t&&+p.paid));}
 function toast(t){toastEl.textContent=t;toastEl.classList.add('show');setTimeout(()=>toastEl.classList.remove('show'),1300);}
 let _undoTimer;
 function toastUndo(msg,undoFn){
@@ -4206,7 +4206,9 @@ function cardDetails(d,body){
   const dt=donorTotals(d), curd=curSym(d);
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
-  (d.parnes||[]).forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,kind:p.kind||'parnes',cur:pCur(p,d),rm:p.method||d.channel||''}));
+  // מאיר: "אל תכניס ככה למשימות של תורם בדף ראשי שלו, רק תשמור את זה בפרנס
+  // לילה" — הצעות לשנים הבאות אינן חוב ואינן ברשימת "מה תרם"
+  (d.parnes||[]).filter(p=>p.status!=='suggested').forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,kind:p.kind||'parnes',cur:pCur(p,d),rm:p.method||d.channel||''}));
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
@@ -11341,13 +11343,21 @@ function renderTasksTab(){
   pdebts.sort((a,b)=>(a.p.night_date||'').localeCompare(b.p.night_date||''));
   const debtSec=pdebts.length?`<div class="misshead" style="margin-top:10px">🔴 חובות פרנס לגבייה (${pdebts.length})</div>
     <div class="list">${pdebts.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${esc(DAYKIND[x.p.kind]||'🌙 פרנס')}${x.p.date_text?(' · '+esc(x.p.date_text)):''}${x.p.hyear?(' '+esc(x.p.hyear)):''}${x.p.amount?(' · '+pCur(x.p,x.d)+esc(x.p.amount)):''} — <b style="color:var(--no)">טרם נגבה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm pcollect" data-pid="${x.p.id}" data-did="${x.d.id}">✓ נגבה</button></div></div>`).join('')}</div>`:'';
+  // מאיר: "רק תשמור את זה בפרנס לילה… וחודש לפני התאריך תציג לי את זה במשימות
+  // אבל שלא יעמוד לי מול העיניים כל הזמן" — הצעה לשנה הבאה מופיעה כאן רק
+  // משלושים יום לפני הלילה, ורק כאן.
+  const moAhead=inDaysStr(30), wkBack=inDaysStr(-7);
+  const psugg=[]; DB.forEach(d=>(d.parnes||[]).forEach(p=>{if(p.status==='suggested'&&p.night_date&&p.night_date<=moAhead&&p.night_date>=wkBack&&matchQ(d.last+' '+d.first+' '+(p.date_text||'')))psugg.push({d,p});}));
+  psugg.sort((a,b)=>(a.p.night_date||'').localeCompare(b.p.night_date||''));
+  const suggSec=psugg.length?`<div class="misshead" style="margin-top:10px">🔵 פרנס כמו שנה שעברה — לשאול אם גם השנה (${psugg.length})</div>
+    <div class="list">${psugg.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">${esc(DAYKIND[x.p.kind]||'🌙 פרנס')}${x.p.date_text?(' · '+esc(x.p.date_text)):''}${x.p.hyear?(' '+esc(x.p.hyear)):''} · ${fmtGreg(x.p.night_date)}${x.p.amount?(' · '+pCur(x.p,x.d)+esc(x.p.amount)):''} — <b style="color:var(--accent)">שנה שעברה עשה, לשאול אותו</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm psugok" data-pid="${x.p.id}" data-did="${x.d.id}">✓ גם השנה</button><button class="btn sm ghost psugno" data-pid="${x.p.id}" data-did="${x.d.id}">✕ לא השנה</button></div></div>`).join('')}</div>`:'';
   const renews=[]; DB.forEach(d=>{const r=renewInfo(d);if(r&&matchQ(d.last+' '+d.first))renews.push({d,r});});
   renews.sort((a,b)=>(a.r.date||'').localeCompare(b.r.date||''));
   const renewSec=renews.length?`<div class="misshead" style="margin-top:10px">🔴 חידוש שותפות יש"ז מתקרב (${renews.length})</div>
     <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
   view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_anetsync" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>${renewSec}${debtSec}
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_anetsync" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>${suggSec}${renewSec}${debtSec}
     <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
       <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
       <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
@@ -11388,6 +11398,11 @@ function renderTasksTab(){
   // חובות פרנס — פתיחת כרטיס / סימון שנגבה
   view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});
   view.querySelectorAll('.avopen2').forEach(b=>b.onclick=e=>{e.stopPropagation();openDonor(DB.find(x=>x.id==b.dataset.did));});
+  view.querySelectorAll('.psugok').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==+b.dataset.did),p=(d&&d.parnes||[]).find(x=>x.id==+b.dataset.pid);if(!p)return;
+    const r=await api('PUT','/api/parnes/'+p.id,{status:'confirmed'});p.status='confirmed';
+    if(r&&r.suggestions&&d)d.parnes=d.parnes.concat(r.suggestions);toast('אושר ✓ — שובץ ללילה');render();});
+  view.querySelectorAll('.psugno').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==+b.dataset.did);if(!d)return;
+    await api('DELETE','/api/parnes/'+b.dataset.pid);d.parnes=(d.parnes||[]).filter(x=>x.id!=+b.dataset.pid);toast('הוסר');render();});
   view.querySelectorAll('.pcollect').forEach(b=>b.onclick=async e=>{e.stopPropagation();const d=DB.find(x=>x.id==+b.dataset.did),p=(d&&d.parnes||[]).find(x=>x.id==+b.dataset.pid);if(p){p.paid=1;await api('PUT','/api/parnes/'+p.id,{paid:1});}toast('נגבה ✓');render();});
   document.getElementById('icscopy').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(ics);toast('הכתובת הועתקה ✓');};
   // עריכת / מחיקת משימה
