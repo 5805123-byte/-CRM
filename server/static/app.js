@@ -6165,6 +6165,23 @@ function wireIzSum(box,d){
 function kvNamesText(d){
   return (d.prayers||[]).map(p=>kvFlow(String(p.text||''))).filter(Boolean).join('\n');
 }
+// מאיר: "תעשה אפשרות תמיד למשוך שמות מהקוויטל של התורם לפרנס לילה, לא שזה
+// יקבע את זה לשמות אלא שיהיה אפשרות לקחת מהקוויטל" — כפתור ליד תיבת ההקדשה.
+// לוחצים, והשמות מהקוויטל נכנסים לתיבה (בלי לדרוס מה שכבר כתוב). לא נשמר
+// עד שמאיר שומר.
+function kvPullBtnHTML(cls){return `<button type="button" class="btn sm ghost kvpull ${cls||''}" style="margin:-2px 0 6px;font-size:.8rem">🕯️ קח את השמות מהקוויטל</button>`;}
+function kvPullInto(ta,d){
+  if(!ta)return;
+  const dd=(d&&d.prayers)?d:(d&&d.id?DB.find(x=>x.id==d.id):null);
+  const txt=dd?kvNamesText(dd):'';
+  if(!txt){toast('אין שמות בקוויטל של התורם הזה');return;}
+  const cur=ta.value.trim();
+  if(cur&&cur.indexOf(txt)>=0){toast('השמות מהקוויטל כבר בתיבה');return;}
+  ta.value=cur?(cur+'\n'+txt):txt;
+  ta.dispatchEvent(new Event('input'));
+  ta.focus();
+  toast('השמות הועתקו מהקוויטל — אפשר לערוך, ואז לשמור');
+}
 function kvToolsHTML(d){
   const av=(d.partners||[]).filter(p=>p.active!=0&&(p.avreich||'').trim());
   const txt=kvNamesText(d);
@@ -6966,8 +6983,10 @@ function renderParnesEdit(d){
       <label class="fld"><span>שנה</span><select class="pyyr" data-id="${p.id}">${heYearOpts(p.hyear)}</select></label></div>
     <label class="fld"><span>💳 דרך מה ייגבה</span><select class="pymethod chansel" data-id="${p.id}">${channelOpts(p.method)}</select></label>
     <label class="fld" style="margin:4px 0"><span>🌙 השמות והבקשות של יום הפרנס הזה (לתעודה — בנפרד מהקוויטל)</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו ביום הפרנס (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
+    ${kvPullBtnHTML('pykvpull').replace('class="','data-id="'+p.id+'" class="')}
     <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px;width:100%">💾 שמור את הפרנס</button>
     <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
+  el.querySelectorAll('.pykvpull').forEach(b=>b.onclick=()=>kvPullInto(el.querySelector('.pyded[data-id="'+b.dataset.id+'"]'),d));
   el.querySelectorAll('.pyded').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.parnes.find(x=>x.id==t.dataset.id);if(!p||(p.dedication||'')===t.value)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');};});
   // מאיר: "איך אני שומר את זה? תעשה שיהיה כפתור שמירה" — כל שדה נשמר גם
   // לבד ברגע שמשנים אותו, אבל הכפתור שומר את כל הפרנס בבת אחת: סכום, סוג,
@@ -7742,6 +7761,7 @@ function renderDayPanel(taken){
         <div class="addrow"><button type="button" class="btn sm ghost" id="dp_open">📋 פתח כרטיס</button><button type="button" class="btn sm ghost" id="dp_kv">🕯️ פתח קוויטל</button></div>
         <div class="hintxt">כדאי לבדוק את שם הקוויטל שלו — בדרך כלל רוצים שיזכירו אותו באותו לילה.</div>
         <label class="fld"><span>בקשה ללימוד הלילה / הקדשה</span><textarea id="dp_ded" rows="2"></textarea></label>
+        ${kvPullBtnHTML().replace('class="','id="dp_kvpull" class="')}
         <div class="two"><label class="fld"><span>סכום (רשות)</span><input id="dp_amt"></label>
           <label class="fld"><span>סוג</span><select id="dp_status"><option value="confirmed">🟢 מאושר</option><option value="suggested">🔵 הצעה</option></select></label></div>
         <button class="btn" id="dp_save">${list.length?'צרף ללילה זה':'שבץ ללילה זה'}</button></div></div>`;
@@ -7764,12 +7784,15 @@ function renderDayPanel(taken){
          ${Q?`<div class="two"><label class="fld"><span>💰 סכום (רשות)</span><div class="curwrap"><select id="pyp_cur" class="curpick">${curOpts(PYPICK.cur)}</select><input id="pyp_amt" inputmode="decimal" placeholder="כמה"></div></label>
            <label class="fld"><span>שנה</span><select id="pyp_yr">${heYearOpts(HEBYEAR)}</select></label></div>`:''}
          <label class="fld"><span>בקשה ללימוד הלילה / הקדשה (רשות)</span><textarea id="pyp_ded" rows="2">${esc(PYPICK.ded||'')}</textarea></label>
+         ${kvPullBtnHTML().replace('class="','id="pyp_kvpull" class="')}
          <button class="btn" id="pyp_take">${Q?('✓ רשום '+kl+' — '+esc(dtext)):('🌙 שבץ '+PYPICK.cur+esc(PYPICK.amount)+' ללילה הזה')}</button>`;
     panel.prepend(box);
     const mk=document.getElementById('pyp_mark');
     if(mk)mk.onclick=async()=>{mk.disabled=true;await pyPickDone(mine.id);};
     const bk=document.getElementById('pyp_back');
     if(bk)bk.onclick=()=>{const did=PYPICK.donor_id;PYPICK=null;render();pyPickBack(did);};
+    const pkp=document.getElementById('pyp_kvpull');
+    if(pkp)pkp.onclick=()=>kvPullInto(document.getElementById('pyp_ded'),DB.find(x=>x.id==PYPICK.donor_id));
     const tk=document.getElementById('pyp_take');
     if(tk)tk.onclick=async()=>{
       tk.disabled=true;
@@ -7799,6 +7822,7 @@ function renderDayPanel(taken){
     res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>pickChosen(DB.find(y=>y.id==x.dataset.id)));};
   document.getElementById('dp_open').onclick=()=>{if(chosen)openDonor(chosen);};
   document.getElementById('dp_kv').onclick=()=>{if(chosen)openDonor(chosen,'kvittel');};
+  const dkp=document.getElementById('dp_kvpull'); if(dkp)dkp.onclick=()=>{if(!chosen){toast('בחר תורם קודם');return;}kvPullInto(document.getElementById('dp_ded'),chosen);};
   document.getElementById('dp_save').onclick=async ev=>{
     const btn=ev.currentTarget; if(btn.disabled)return;
     if(!chosen){toast('בחר תורם');return;}
@@ -7828,6 +7852,7 @@ function pySlotHTML(t,dtext){
       <button class="dnpaid setl dpsetl ${+paid===2?'on':''}" style="margin:0 0 8px;width:100%">${+paid===2?'✓ סודר — לחץ לביטול':'סודר — הכסף הגיע בתרומה נפרדת'}</button>`}
     ${sugg?'<div class="hintxt">הצעה — פנה אליו האם לעשות לו גם השנה. אם הסכים, אשר.</div>':''}
     <label class="fld" style="margin:6px 0"><span>🌙 השמות והבקשות של היום הזה (לתעודה — בנפרד מהקוויטל)</span><textarea class="dp_ded_edit" rows="2" placeholder="השמות שיוזכרו ביום הפרנס">${esc(t.dedication||'')}</textarea></label>
+    ${kvPullBtnHTML('dp_kvpull_edit')}
     <button class="btn sm dp_ded_save" style="margin-bottom:6px">💾 שמור שמות</button>
     <div class="movebox">🔀 העבר ליום אחר:
       <select class="dpmvmon">${HMORD.map(m=>`<option ${m===pyMonth?'selected':''}>${m}</option>`).join('')}</select>
@@ -7866,6 +7891,7 @@ function pyWireSlot(t,dtext,taken){
     await api('PUT','/api/parnes/'+t.id,{dedication:dded.value});toast('נשמר ✓');};
   dded.onblur=()=>{if((t.dedication||'')!==dded.value)ddedSave();};
   q('dp_ded_save').onclick=ddedSave;
+  const kpe=q('dp_kvpull_edit'); if(kpe)kpe.onclick=()=>kvPullInto(q('dp_ded_edit'),t.dref);
   q('dpmove').onclick=async()=>{
     const nm=q('dpmvmon').value, nd=+q('dpmvday').value;
     if(nm===pyMonth && nd===pyDay){toast('בחר יום אחר');return;}
