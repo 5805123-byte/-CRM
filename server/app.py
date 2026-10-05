@@ -3217,6 +3217,20 @@ def ensure_schema():
     except Exception as e:
         print('  community v3 error:', e)
 
+    # קהילה v4 — מאיר: "גיטי פקשר אל תכתוב ככה. תכתוב אהרן פקשר אבל הפרטים של גיטי"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_seed_v4'").fetchone():
+            g = con.execute("SELECT id FROM members WHERE TRIM(last)='פקשר' AND TRIM(first) IN ('גיטי','גיטל') ORDER BY id LIMIT 1").fetchone()
+            if g:
+                con.execute("UPDATE members SET first='אהרן', gender='m', updated=? WHERE id=?", (now_iso(), g['id']))
+                for d in con.execute("SELECT id FROM members WHERE TRIM(last)='פקשר' AND TRIM(first)='אהרן' AND id<>?", (g['id'],)).fetchall():
+                    con.execute("UPDATE member_log SET member_id=? WHERE member_id=?", (g['id'], d['id']))
+                    con.execute("DELETE FROM members WHERE id=?", (d['id'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_seed_v4')")
+            con.commit()
+    except Exception as e:
+        print('  community v4 error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
