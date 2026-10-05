@@ -2906,6 +2906,44 @@ def ensure_schema():
     except Exception as e:
         print('  dedupe error:', e)
 
+    # מאיר: "הוא לא נתן את הסכום הזה בכלל ליום טוב… אתה צריך לבדוק לפי סכומים ואם
+    # לא הכנסתי את זה ידנית אז זה לא של יום טוב… על פי רוב הכנסתי הכל ידנית ומה
+    # שלא, כתבתי לך בדף את המילה יום טוב". חיוב שיובא וקיבל "סוכות תשפ"ז" בלי
+    # שאומת מול רישום ידני, בלי סימון יו"ט ובלי התחייבות שנסגרה — חוזר ל"לבדוק".
+    # ואברמוביץ: 3,800 = מעקות הבניין; 1,300 (בנק ווסט 16.9) + 2,500 (אוטרייז) = סוכות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='sukkos_cat_fix_v1'").fetchone():
+            SUK = 'סוכות תשפ"ז'
+            fixed = []
+            ab = con.execute("SELECT id FROM donors WHERE last LIKE '%אברמוביץ%' AND first LIKE '%אלחנן%' ORDER BY id LIMIT 1").fetchone()
+            if ab:
+                for r in con.execute("SELECT id,amount,note FROM donations WHERE donor_id=? AND COALESCE(tid,'')='' AND TRIM(COALESCE(category,''))=?", (ab['id'], SUK)).fetchall():
+                    if abs(_amt2(r['amount']) - 3800) < 0.01:
+                        con.execute("UPDATE donations SET category='קרן הבניין', note=? WHERE id=?",
+                                    (((r['note'] or '').strip() + ' · ' if (r['note'] or '').strip() else '') + 'מעקות הבנין הקדוש', r['id']))
+                        fixed.append('אברמוביץ 3800→בניין')
+                con.execute("UPDATE donations SET category=?, note=REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','')||' · סוכות לפי מאיר' WHERE tid='BQ84891664' AND donor_id=?", (SUK, ab['id']))
+                con.execute("UPDATE recon SET category=? WHERE tid='BQ84891664'", (SUK,))
+            for r in con.execute("SELECT id,donor_id,amount,note,tid FROM donations WHERE COALESCE(tid,'')<>'' AND TRIM(COALESCE(category,''))=?", (SUK,)).fetchall():
+                nt = r['note'] or ''
+                if 'אומת מול' in nt or 'יו\"ט' in nt or 'יו"ט' in nt or 'לפי מאיר' in nt:
+                    continue
+                a = _amt2(r['amount'])
+                pl = con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND COALESCE(status,'')='נתן'", (r['donor_id'], SUK)).fetchall()
+                if any(abs(_amt2(re.sub(r'[^0-9.]', '', str(p0 or '0')) or 0) - a) < 0.01 for p0 in
+                       [x['amount'] for x in con.execute("SELECT amount FROM pledges WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND COALESCE(status,'')='נתן'", (r['donor_id'], SUK))]):
+                    continue                    # התחייבות שמאיר רשם ונסגרה — זה כן סוכות
+                con.execute("UPDATE donations SET category='', note=? WHERE id=?",
+                            ((nt.replace(' · לא סווג — לבדוק עבור מה', '') + ' · ' if nt else '') + 'לא סווג — לבדוק עבור מה', r['id']))
+                con.execute("UPDATE recon SET category='' WHERE tid=?", (r['tid'],))
+                fixed.append(str(r['donor_id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('sukkos_cat_fix_v1')")
+            con.commit()
+            if fixed:
+                print('  סוכות תשפ"ז: הורד ייעוד מנוחש מ-%d שורות (%s)' % (len(fixed), ', '.join(fixed[:30])))
+    except Exception as e:
+        print('  sukkos cat fix error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -8674,6 +8712,9 @@ def recon_apply(cur, tid, b):
     except Exception: pass
     return (200, {'ok': True, 'donor_id': did})
 
+_CAMP_CAT = re.compile(r'סוכות|פסח|קמחא|מתנות|פורים|חנוכה|ל"ג|לג בעומר|שבועות|ראש השנה|יו"ט|יום טוב')
+
+
 def banquest_post(con, source, only_tids=None):
     """רישום חיובי בנק ווסט שעברו ויש להם כרטיס — בכרטיס התורם, בלי כפילויות.
     מאיר: "אתה גם מכניס את זה לתוך כרטיס תורמים לכל תורם את התרומה שלו, רק שוב
@@ -8714,18 +8755,20 @@ def banquest_post(con, source, only_tids=None):
                 return pl['category'], 'התחייבות', False
         # הוראת קבע לומדת רק מהוראת קבע קודמת; חיוב חד-פעמי — מחיוב חד-פעמי
         # קודם באותו סכום, או מתרומה קודמת באותו סכום מאז אייר.
+        # מאיר: "אם לא הכנסתי את זה ידנית אז זה לא של יום טוב… תעשה חישובים לפני
+        # שאתה מנחש" — ייעוד של חג/מגבית לא מנוחש מחיוב קודם; רק ייעודים קבועים.
         pr = con.execute("SELECT category FROM recon WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
                          "AND COALESCE(processed,0)=1 AND COALESCE(TRIM(category),'')<>'' "
                          "AND COALESCE(recurring,0)=? ORDER BY rowid DESC LIMIT 1",
                          (did, a, 1 if rec else 0)).fetchone()
-        if pr:
+        if pr and not _CAMP_CAT.search(pr['category']):
             return pr['category'].strip(), 'כמו בחיוב הקודם', False
         if not rec:
             pd_ = con.execute("SELECT category FROM donations WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
                               "AND COALESCE(TRIM(category),'')<>'' AND COALESCE(date,'')>='2026-05-01' "
                               "AND COALESCE(note,'') NOT LIKE '%הוראת קבע%' ORDER BY date DESC LIMIT 1",
                               (did, a)).fetchone()
-            if pd_:
+            if pd_ and not _CAMP_CAT.search(pd_['category']):
                 return pd_['category'].strip(), 'כמו בתרומה הקודמת', False
         tier, dcat = dinfo.get(did, ('', ''))
         if rec and 'יששכר' in tier:
