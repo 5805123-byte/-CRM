@@ -11298,7 +11298,9 @@ function renderCamp(){
       <button class="btn sm" id="campcopy">📋 העתק</button>
       <button class="btn sm ghost" id="campcsv">⬇️ אקסל</button>
       <button class="btn sm" id="campcmp">🔍 השוואה מול אקסל</button>
+      ${campSel?`<button class="btn sm" id="campdupes" style="background:var(--no);border-color:var(--no)">🔎 כפילויות</button>`:''}
       <button class="print" onclick="window.print()">הדפס 🖨️</button></div>
+    <div id="campdupebox"></div>
     <div id="campone"${CAMPMODE!=='one'?' hidden':''}>
     <div class="camphd"><h3>🎯 ${esc(campSel||'—')}</h3>
       <div class="campsum"><span><b>${tot}</b> נכנס</span><span><b>${donors}</b> תורמים</span>
@@ -11351,6 +11353,27 @@ function renderCamp(){
   if(CAMPMODE!=='one')campCompareTable(document.getElementById('campcmpbox'));
   const cmp=document.getElementById('campcmp');
   if(cmp)cmp.onclick=()=>campCompare(rows);
+  // מאיר: "יש עוד הרבה כאלו" — זוגות חשודים בייעוד הזה (אותו תורם, אותו סכום,
+  // עד 60 יום): איחוד בלחיצה, השורה הידנית נשארת
+  const dp=document.getElementById('campdupes');
+  if(dp)dp.onclick=async()=>{
+    const box=document.getElementById('campdupebox'); box.innerHTML='<div class="cnt">בודק…</div>';
+    const r=await api('GET','/api/dupes?cat='+encodeURIComponent(campSel));
+    const pairs=(r&&r.pairs)||[];
+    if(!pairs.length){box.innerHTML='<div class="sec"><h3>🔎 כפילויות ב'+esc(campSel)+'</h3><div class="hintxt">לא נמצאו זוגות חשודים — אותו תורם באותו סכום עד 60 יום.</div></div>';return;}
+    const f=x=>(x.amount?('$'+Math.round(amtNum(x.amount)).toLocaleString('en-US')):'')+' · '+esc(x.date||'')+(x.method?(' · '+esc(chLabel(x.method)||x.method)):'')+(x.tid?' · מהקובץ':' · ידני')+(x.note?('<br><small>📝 '+esc(x.note)+'</small>'):'');
+    box.innerHTML=`<div class="sec"><h3>🔎 כפילויות חשודות ב${esc(campSel)} — ${pairs.length}</h3>
+      <div class="hintxt">כל זוג: אותו תורם, אותו סכום, עד 60 יום. "מזג" משאיר את השורה הראשונה (הידנית) ומוחק את השנייה. אם זה באמת שתי תרומות — "לא כפול".</div>
+      ${pairs.map((p,i)=>`<div class="rowc" data-i="${i}"><div><div class="nm">${esc(p.name)} <small>$${Math.round(p.amount).toLocaleString('en-US')} · ${p.gap} ימים הפרש</small></div>
+        <div class="miss2">✅ נשאר: ${f(p.keep)}</div><div class="miss2" style="color:var(--no)">🗑 יימחק: ${f(p.drop)}</div></div>
+        <div class="meta"><button class="btn sm dpmerge" data-i="${i}">🔀 מזג</button><button class="btn sm ghost dpskip" data-i="${i}">לא כפול</button></div></div>`).join('')}</div>`;
+    box.querySelectorAll('.dpmerge').forEach(b=>b.onclick=async()=>{const p=pairs[b.dataset.i];b.disabled=true;
+      const rr=await api('POST','/api/dupes/merge',{keep:p.keep.id,drop:p.drop.id});
+      if(!rr||!rr.ok){b.disabled=false;toast('לא אוחד');return;}
+      const row=box.querySelector('.rowc[data-i="'+b.dataset.i+'"]'); if(row)row.remove();
+      toast('אוחד ✓'); await load(); renderCamp(); setTimeout(()=>{const d2=document.getElementById('campdupes');if(d2)d2.click();},50);});
+    box.querySelectorAll('.dpskip').forEach(b=>b.onclick=()=>{const row=box.querySelector('.rowc[data-i="'+b.dataset.i+'"]');if(row)row.remove();});
+  };
   view.querySelectorAll('.avhold').forEach(a=>a.onclick=()=>{const d=DB.find(x=>x.id==a.dataset.did);if(d)openDonor(d);});
   const txt=()=>[campSel,tot+' · '+donors+' תורמים','']
     .concat(rows.map((r,i)=>(i+1)+'. '+r.name+' — '+r.cur+Math.round(r.amt).toLocaleString('en-US')
