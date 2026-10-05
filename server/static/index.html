@@ -1783,6 +1783,31 @@
   .calcell.sel .caltask{background:rgba(255,255,255,.25);color:#fff}
   .calmore{display:block;font-size:.72rem;color:var(--muted)}
   @media (max-width:700px){.calcell{min-height:78px;font-size:.7rem;padding:3px}.caltask{font-size:.66rem;max-height:2.5em;padding:1px 3px}.calcell>b{font-size:.8rem}.calcell>b small{display:none}.calhd{font-size:.7rem}.calnav b{font-size:1.05rem}}
+  /* 📅 יומן — לוח חודשי גדול, כמו ביומן Google */
+  .bigcal .calnav b{font-size:1.6rem}
+  .bcgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;direction:rtl}
+  .bch{text-align:center;font-weight:800;font-size:1rem;color:var(--muted);padding:6px 0;border-bottom:2px solid var(--line)}
+  .bcc{min-height:170px;border:1px solid var(--line);border-radius:12px;padding:6px;background:var(--card);cursor:pointer;overflow:hidden}
+  .bcc.empty{border-color:transparent;background:transparent;cursor:default}
+  .bcc.shab{background:#f1f0ea}
+  .bcc.today{border:2px solid var(--accent);box-shadow:0 0 0 3px rgba(59,53,122,.12)}
+  .bcc.sel{background:#ecebf7;border-color:var(--accent)}
+  .bcd{display:flex;align-items:baseline;gap:6px;margin-bottom:5px}
+  .bcd b{font-size:1.25rem}.bcd small{color:var(--muted);font-weight:700}.bcd em{font-style:normal;background:var(--accent);color:#fff;border-radius:6px;padding:0 6px;font-size:.75rem;font-weight:800}
+  .bce{display:block;border-radius:7px;padding:4px 6px;margin-bottom:4px;font-size:.92rem;line-height:1.3;background:rgba(59,53,122,.1);color:var(--ink);cursor:pointer;max-height:3.9em;overflow:hidden}
+  .bce:hover{filter:brightness(.95)}
+  .bce.k-event{background:#dff3e4;color:#17522d}
+  .bce.k-parnes{background:#f6ecd0;color:#5c4512}
+  .bce.late{background:#fdeee9;color:var(--no)}
+  .bce .bct{font-weight:900;margin-inline-end:4px;color:var(--deep,#7a1f1f)}
+  .bce.k-event .bct{color:#0f4a24}
+  .bce .bcx{font-weight:500}.bce .bcp{display:block;font-size:.8rem;opacity:.85}
+  .bcmore{font-size:.8rem;color:var(--muted);text-align:center}
+  .bcday{margin-top:12px;border:2px solid var(--accent)}
+  .bcrow{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
+  .bcrow-m{flex:1;font-size:1rem}.bcrow .meta{display:flex;flex-direction:column;gap:4px;align-items:stretch}
+  .bcadd{margin-top:12px;padding-top:8px;border-top:1px dashed var(--line)}.bcadd h4{margin:0 0 6px}
+  @media (max-width:760px){.bcc{min-height:110px;padding:4px}.bce{font-size:.72rem;padding:2px 4px;max-height:3.2em}.bcd b{font-size:1rem}.bcd small{display:none}.bch{font-size:.75rem}.bigcal .calnav b{font-size:1.15rem}}
   .remitem.soon{border-color:var(--accent);background:#f3f1fb}
   .remstage{background:var(--accent);color:#fff;border-radius:6px;padding:1px 7px;font-size:.78rem;margin-inline-end:4px}
   @media (max-width:600px){.calcell{min-height:52px;font-size:.62rem}.caltask{display:none}.calcell.has::after{content:'●';color:var(--accent);font-size:.8rem}.calmore{display:none}}
@@ -1956,6 +1981,7 @@
     <div class="tabs">
       <button class="tab on" data-tab="donors">תורמים</button>
       <button class="tab" data-tab="tasks">משימות</button>
+      <button class="tab" data-tab="cal">📅 יומן</button>
       <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
       <button class="tab" data-tab="charges">💳 חיובים</button>

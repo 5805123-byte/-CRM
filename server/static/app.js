@@ -703,7 +703,15 @@ function remStage(t){
   else st.push(['d0',at(0,8,0),'היום']);
   if(now>=(hm?at(0,hm[0],hm[1]):at(1,0,0)))return null;     // הזמן עבר — זה כבר "הגיע זמנה"
   let best=null; st.forEach(s=>{if(now>=s[1])best=s;});
-  return best?{key:best[0],label:best[2]}:null;
+  if(!best)return null;
+  // התווית לפי המרחק האמיתי מהיום (לא לפי השלב) — משימה של היום שעוד לא
+  // הגיעו 3 השעות שלפניה היא "היום", לא "מחר"
+  const diff=Math.round((at(0,12,0)-new Date(new Date().setHours(12,0,0,0)).getTime())/86400000);
+  let label=best[2];
+  if(diff<=0)label=best[0]==='h1'?'בעוד שעה!':(best[0]==='h3'?'היום — בעוד כ-3 שעות':('היום'+(hm?(' ב-'+t.at_time):'')));
+  else if(diff===1)label='מחר'+(hm?(' ב-'+t.at_time):'');
+  else label='בעוד '+diff+' ימים';
+  return {key:best[0],label};
 }
 function upcomingReminders(){
   const out=[], push=(t,donor,dref)=>{if(t.done&&t.done!=0)return;const s=remStage(t);if(s)out.push({...t,donor,dref,stage:s});};
@@ -1406,7 +1414,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1442,6 +1450,7 @@ function render(){
     return renderDonors();
   }
   if(tab==='tasks') return renderTasksTab();
+  if(tab==='cal') return renderCalTab();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
   if(tab==='charges') return renderCharges();
@@ -11428,6 +11437,78 @@ function calHTML(all,today){
     <div class="calgrid"><div class="calhd">ראשון</div><div class="calhd">שני</div><div class="calhd">שלישי</div><div class="calhd">רביעי</div><div class="calhd">חמישי</div><div class="calhd">שישי</div><div class="calhd">שבת</div>${cells.join('')}</div>
     <div class="hintxt">${calSel?('מוצגות למטה רק המשימות של '+fmtGreg(calSel)+' — לחץ שוב על היום כדי לחזור לכל החודש'):'לחץ על יום כדי לראות למטה רק את המשימות שלו. ירוק = שמחה, אדום = עבר הזמן.'}</div></div>`;
 }
+/* ---------- 📅 יומן — לוח חודשי גדול, כמו ביומן Google ----------
+מאיר: "שיהיה לוח במקום אחר, ושזה יהיה גדול, ממש גדול… כמו פרנס היום, שיראו את
+האותיות שכתוב בפנים, תזכורות ושעות, כמו ביומן של גוגל". הלשונית מראה חודש
+שלם ברוחב המסך: משימות (עם שעה ומקום), שמחות, ולילות פרנס שמשובצים. */
+let calFlt='';
+function calEntries(){
+  const out=[]; const td=todayStr();
+  DB.forEach(d=>{const nm=(d.last+' '+d.first).trim();
+    (d.tasks||[]).forEach(t=>{if(t.done&&t.done!=0)return;out.push({kind:t.kind==='event'?'event':'task',date:t.due_date||'',time:t.at_time||'',title:nm,text:t.note||'',place:t.place||'',t:t,d:d,icon:kindLabel(t.kind).split(' ')[0]});});
+    (d.parnes||[]).forEach(p=>{if(p.status==='suggested'||!p.night_date)return;out.push({kind:'parnes',date:p.night_date,time:'',title:nm,text:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.dedication?(' — '+p.dedication):''),place:'',p:p,d:d,icon:(DAYKIND[p.kind]||'🌙').split(' ')[0]});});});
+  GTASKS.forEach(t=>{if(t.done&&t.done!=0)return;out.push({kind:t.kind==='event'?'event':'task',date:t.due_date||'',time:t.at_time||'',title:t.note||'משימה',text:'',place:t.place||'',t:t,d:null,icon:kindLabel(t.kind).split(' ')[0]});});
+  return out.filter(e=>/^\d{4}-\d{2}-\d{2}$/.test(e.date)).sort((a,b)=>(a.date+(a.time||'99')).localeCompare(b.date+(b.time||'99')));
+}
+function renderCalTab(){
+  const today=todayStr();
+  if(!calYM)calYM=today.slice(0,7);
+  const F=[['','הכל'],['task','📋 משימות'],['event','🎉 שמחות'],['parnes','🌙 פרנס יום']];
+  chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
+  let E=calEntries(); if(calFlt)E=E.filter(e=>e.kind===calFlt);
+  const qq=String(q||'').trim(); if(qq)E=E.filter(e=>matchQ(e.title+' '+e.text+' '+e.place));
+  const [Y,M]=calYM.split('-').map(Number);
+  const dim=new Date(Y,M,0).getDate(), start=new Date(Y,M-1,1).getDay();
+  const by={}; E.forEach(e=>{if(e.date.slice(0,7)===calYM)(by[e.date]=by[e.date]||[]).push(e);});
+  const DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const ent=e=>`<div class="bce k-${e.kind} ${e.date<today?'late':''}" data-k="${e.kind}" data-id="${e.t?e.t.id:(e.p?e.p.id:'')}" data-did="${e.d?e.d.id:''}" title="${esc(e.text)}">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}<span class="bci">${e.icon}</span> <b>${esc(e.title)}</b>${e.text?`<span class="bcx"> — ${esc(e.text)}</span>`:''}${e.place?`<span class="bcp">📍 ${esc(e.place)}</span>`:''}</div>`;
+  const cells=[]; for(let i=0;i<start;i++)cells.push('<div class="bcc empty"></div>');
+  for(let d=1;d<=dim;d++){const k=calYM+'-'+String(d).padStart(2,'0'), L=by[k]||[], dow=new Date(Y,M-1,d).getDay();
+    cells.push(`<div class="bcc ${k===today?'today':''} ${k===calSel?'sel':''} ${dow===6?'shab':''}" data-d="${k}"><div class="bcd"><b>${d}</b><small>${DOW[dow]}</small>${k===today?'<em>היום</em>':''}</div>${L.slice(0,5).map(ent).join('')}${L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''}</div>`);}
+  const pm=new Date(Y,M-2,1), nm=new Date(Y,M,1), ym=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0');
+  const sel=calSel?(by[calSel]||[]):[];
+  const dayPanel=calSel?`<div class="sec bcday" id="bcday"><h3>📅 ${fmtGreg(calSel)} · יום ${DOW[new Date(calSel+'T12:00:00').getDay()]}${calSel===today?' · היום':''}</h3>
+      ${sel.length?sel.map((e,i)=>`<div class="bcrow"><div class="bcrow-m">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}${e.icon} <b>${esc(e.title)}</b>${e.text?(' — '+esc(e.text)):''}${e.place?`<div class="miss2">📍 ${esc(e.place)}</div>`:''}${e.d?contactBtns(e.d):''}</div>
+        <div class="meta">${e.t?`<button class="btn sm bcdone" data-i="${i}">✓ בוצע</button>`:''}${e.d?`<button class="btn sm ghost bcopen" data-i="${i}">📋 כרטיס</button>`:''}${e.p?`<button class="btn sm ghost bcboard" data-i="${i}">🌙 בלוח הפרנס</button>`:''}${e.t&&gcalLink(e.t,e.title)?`<a class="gcal" href="${gcalLink(e.t,e.title)}" target="_blank" rel="noopener">ליומן Google</a>`:''}</div></div>`).join(''):'<div class="hintxt">אין כלום ביום הזה.</div>'}
+      <div class="bcadd"><h4>➕ הוסף ליום הזה</h4>
+        <input id="bc_note" placeholder="✍️ מה? (למשל: חתונה של…, להתקשר ל…)" autocomplete="off">
+        <input id="bc_q" placeholder="🔍 תורם (רשות)" autocomplete="off" style="margin-top:6px"><div id="bc_res" class="dpres"></div><div id="bc_chosen" class="pick" style="display:none"></div>
+        <div class="two" style="margin-top:6px"><select id="bc_kind">${taskKindOpts('event')}</select><input type="time" id="bc_time"></div>
+        <input id="bc_place" placeholder="📍 מקום (לשמחה)" style="margin-top:6px">
+        <button class="btn" id="bc_add" style="width:100%;margin-top:6px">➕ הוסף</button></div></div>`:'';
+  view.innerHTML=`<div class="bigcal">
+    <div class="calnav">
+      <span class="calbtns"><button class="btn sm ghost calgo" data-ym="${(Y-1)+'-'+String(M).padStart(2,'0')}">‹‹ ${Y-1}</button><button class="btn sm ghost calgo" data-ym="${ym(pm)}">‹ ${GMON[pm.getMonth()+1]}</button></span>
+      <b>${GMON[M]} ${Y}</b>
+      <span class="calbtns"><button class="btn sm ghost calgo" data-ym="${ym(nm)}">${GMON[nm.getMonth()+1]} ›</button><button class="btn sm ghost calgo" data-ym="${(Y+1)+'-'+String(M).padStart(2,'0')}">${Y+1} ››</button></span>
+      <span class="calbtns"><button class="btn sm calgo" data-ym="${today.slice(0,7)}">היום</button></span></div>
+    <div class="bcgrid">${DOW.map(x=>`<div class="bch">${x}</div>`).join('')}${cells.join('')}</div>
+    <div class="hintxt">לחיצה על יום פותחת אותו למטה עם כל מה שיש בו ואפשרות להוסיף. לחיצה על שורה פותחת את הכרטיס. ירוק = שמחה · סגול = משימה · זהב = פרנס יום · אדום = עבר הזמן.</div>
+    ${dayPanel}</div>`;
+  view.querySelectorAll('.calgo').forEach(b=>b.onclick=()=>{calYM=b.dataset.ym;calSel='';render();});
+  view.querySelectorAll('.bcc[data-d]').forEach(c=>c.onclick=()=>{calSel=calSel===c.dataset.d?'':c.dataset.d;render();if(calSel){const el=document.getElementById('bcday');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}});
+  view.querySelectorAll('.bce[data-did]').forEach(x=>x.onclick=e=>{e.stopPropagation();const d=DB.find(y=>y.id==x.dataset.did);if(d)openDonor(d,x.dataset.k==='parnes'?'details':'tasks');});
+  view.querySelectorAll('.bcdone').forEach(b=>b.onclick=async()=>{const e=sel[b.dataset.i];if(!e||!e.t)return;if(!await doneWithNote({...e.t,donor:e.title,dref:e.d},e.d))return;checkReminders();render();toast('בוצע ✓');});
+  view.querySelectorAll('.bcopen').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(e&&e.d)openDonor(e.d,e.t?'tasks':'details');});
+  view.querySelectorAll('.bcboard').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(!e||!e.p)return;tab='parnes';pyKind=e.p.kind||'parnes';pyMonth=e.p.month;pyDay=+e.p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();window.scrollTo(0,0);});
+  // הוספה מהירה ליום שנבחר
+  const bq=document.getElementById('bc_q'); let bcChosen=null;
+  if(bq){const res=document.getElementById('bc_res'),ch=document.getElementById('bc_chosen');
+    wireKindSel(document.getElementById('bc_kind'));
+    bq.oninput=()=>{if(!norm(bq.value)){res.innerHTML='';return;}const h=donorHits(d=>d.last+' '+d.first+' '+d.english,bq.value,12);
+      res.innerHTML=h.list.map(d=>`<div class="dpr" data-id="${d.id}">${esc(d.last)} ${esc(d.first)}</div>`).join('')||'<div class="dpr dprmore">אין תוצאות</div>';
+      res.querySelectorAll('.dpr[data-id]').forEach(x=>x.onclick=()=>{bcChosen=DB.find(y=>y.id==x.dataset.id);ch.style.display='';ch.textContent='נבחר: '+(bcChosen.last+' '+(bcChosen.first||'')).trim();res.innerHTML='';bq.value='';});};
+    document.getElementById('bc_add').onclick=async ev=>{const btn=ev.currentTarget;const note=document.getElementById('bc_note').value.trim();if(!note){toast('כתוב מה');return;}
+      const kind=await kindValue(document.getElementById('bc_kind'));if(!kind)return;
+      const body={due_date:calSel,kind:kind,note:note,assignee:'',at_time:document.getElementById('bc_time').value||'',place:document.getElementById('bc_place').value.trim()};
+      if(bcChosen)body.donor_id=bcChosen.id;
+      btn.disabled=true;const r=await api('POST','/api/task',body);btn.disabled=false;
+      if(!r||!r.id){toast('לא נשמר');return;}
+      const rec={id:r.id,donor_id:bcChosen?bcChosen.id:null,due_date:calSel,kind:kind,note:note,assignee:'',done:0,at_time:body.at_time,place:body.place};
+      if(bcChosen){bcChosen.tasks=bcChosen.tasks||[];bcChosen.tasks.push(rec);}else GTASKS.push(rec);
+      toast('נוסף ✓ — וגם ליומן Google');checkReminders();render();};}
+}
 function renderTasksTab(){
   const today=todayStr();
   const opts=[['','הכל'],['charge','💳 לחייב'],['parnes','🌙 פרנס'],['prayer','🙏 תפילה'],['followup','📞 לחזור']];
@@ -11472,11 +11553,10 @@ function renderTasksTab(){
     <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
   // מאיר: "אני רוצה שהלוח שנה יהיה למעלה במשימות, למעלה למעלה, וגם שזה יהיה יותר
   // גדול ויראו מה כתוב… שזה יעמוד על החודש… ויוכלו לדפדף מחודש לחודש או משנה לשנה"
-  view.innerHTML=`${taskView==='cal'&&!showDone?calHTML(all,today):`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_view" style="width:100%">📅 הצג לוח שנה</button></div>`}
+  view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm" id="tk_view" style="width:100%">📅 פתח את היומן הגדול (חודש שלם, כמו ביומן Google)</button></div>
     <div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${suggSec}${renewSec}${debtSec}
     <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div>
     ${showDone?'<div class="submuted">"↩️ החזר לפתוחות" מבטל את הווי והמשימה חוזרת לרשימה — גם הרישום בכרטיס התורם נמחק. "✏️ ערוך" משנה את הטקסט בלי לבטל את הביצוע.</div>':''}<div class="list">${all.map((t,i)=>{
-    if(taskView==='cal'&&!showDone){const k=t.due_date||'';if(calSel?k!==calSel:(k.slice(0,7)!==(calYM||today.slice(0,7))))return '';}
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
@@ -11625,9 +11705,7 @@ function renderTasksTab(){
     if(e.key==='Enter'){e.preventDefault();
       view.querySelector('.dnoteok[data-i="'+inp.dataset.i+'"]').click();}});
   const tgd=document.getElementById('toggledone');if(tgd)tgd.onclick=()=>{showDone=!showDone;render();};
-  const tv=document.getElementById('tk_view');if(tv)tv.onclick=()=>{taskView=taskView==='cal'?'list':'cal';try{localStorage.setItem('kc_taskview',taskView);}catch(e){}render();};
-  view.querySelectorAll('.calgo').forEach(b=>b.onclick=()=>{calYM=b.dataset.ym;calSel='';render();});
-  view.querySelectorAll('.calcell[data-d]').forEach(c=>c.onclick=()=>{calSel=calSel===c.dataset.d?'':c.dataset.d;render();});
+  const tv=document.getElementById('tk_view');if(tv)tv.onclick=()=>{tab='cal';try{localStorage.setItem('kc_tab','cal');}catch(e){}document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='cal'));render();window.scrollTo(0,0);};
 }
 
 /* ---------- הפקדות שלא זוהו (צ'ייס / זל) ---------- */
