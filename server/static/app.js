@@ -11233,22 +11233,35 @@ function campDonationEditor(row,d,x){
     <select class="chansel cdm">${channelOpts(x.method||'')}</select>
     <input type="date" class="cddate" value="${esc(String(x.date||'').slice(0,10))}">
     <input class="cdnote" value="${esc(giveNote(x)||'')}" placeholder="📝 הערה" style="flex:1 1 100%">
+    <label class="fld" style="flex:1 1 100%;margin:0"><span>📂 עבור מה — אפשר להעביר לייעוד אחר (זה יוציא אותה מהרשימה הזו)</span>
+      <select class="cdcat">${[...new Set([String(x.category||'').trim()].concat(campAllCats()).concat(CATS.filter(Boolean)))].filter(c=>c!=null).map(c=>`<option value="${esc(c)}" ${c===String(x.category||'').trim()?'selected':''}>${c||'— בלי ייעוד —'}</option>`).join('')}<option value="__new__">➕ ייעוד חדש…</option></select>
+      <input class="cdcatnew" placeholder="שם הייעוד החדש" style="display:none;margin-top:4px"></label>
     <button class="btn sm cdsave">💾 שמור תיקון</button>
     <button class="btn sm ghost cddel" style="color:var(--no)">🗑 מחק את התרומה</button>
     <button class="btn sm ghost cdx">ביטול</button>
     <div class="hintxt" style="width:100%">מחיקה מורידה את התרומה מהכרטיס ומהקמפיין. אם הכסף עוד לא נכנס באמת — עדיף למחוק ולרשום אותו כהתחייבות דרך ➕.</div></div>`;
   row.after(box); wireChanSel(box.querySelector('.cdm'));
   box.querySelector('.cdx').onclick=()=>box.remove();
+  // מאיר: "אם בטעות כתבתי שזה לסוכות תשפ"ז וזה בשביל משהו אחר, אני צריך אפשרות
+  // להעביר את התרומה לייעוד אחר… כפתור פשוט" — בורר ייעוד בתוך התיקון
+  const catSel=box.querySelector('.cdcat'), catNew=box.querySelector('.cdcatnew');
+  catSel.onchange=()=>{catNew.style.display=catSel.value==='__new__'?'':'none';if(catSel.value==='__new__')catNew.focus();};
   box.querySelector('.cdsave').onclick=async()=>{
     const amt=box.querySelector('.cdamt').value.trim(), ccy=box.querySelector('.cdcur').dataset.v||'$',
           m=box.querySelector('.cdm').value==='__new__'?'':box.querySelector('.cdm').value,
           date=box.querySelector('.cddate').value||x.date, note=box.querySelector('.cdnote').value.trim();
     if(!amtNum(amt)){toast('צריך סכום');return;}
+    const cat=catSel.value==='__new__'?catNew.value.trim():catSel.value;
+    if(catSel.value==='__new__'&&!cat){toast('כתוב את שם הייעוד החדש');catNew.focus();return;}
     // ההערה: החלק הטכני (ייבוא/נגבה ב…) נשאר, רק ההערה החופשית מתחלפת
     const tech=String(x.note||'').split(' · ').filter(s=>GVDROP.test(s));
     const newNote=tech.concat(note?[note]:[]).join(' · ');
-    await api('PUT','/api/donation/'+x.id,{amount:amt,cur:ccy,method:m,date:date,note:newNote});
-    toast('התרומה תוקנה ✓'); await load(); renderCamp();
+    const body={amount:amt,cur:ccy,method:m,date:date,note:newNote};
+    const moved=cat!==String(x.category||'').trim();
+    if(moved)body.category=cat;
+    await api('PUT','/api/donation/'+x.id,body);
+    if(moved&&cat&&!CAMPAIGNS.includes(cat)&&!CATS.includes(cat))CAMPAIGNS.push(cat);
+    toast(moved?('הועבר ל"'+(cat||'בלי ייעוד')+'" ✓ — ירד מהרשימה הזו'):'התרומה תוקנה ✓'); await load(); renderCamp();
   };
   box.querySelector('.cddel').onclick=async()=>{
     if(!confirm('למחוק את התרומה של '+(d.last+' '+d.first).trim()+' ('+cur+Math.round(amtNum(x.amount)).toLocaleString('en-US')+')?\nהיא תרד מהכרטיס שלו ומהקמפיין.'))return;
