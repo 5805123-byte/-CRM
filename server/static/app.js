@@ -1414,7 +1414,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1434,7 +1434,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
 const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',stip:'חיפוש אברך…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
-  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',camp:'חיפוש שם, משפחה או סכום…',
+  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',camp:'חיפוש שם, משפחה או סכום…',
   old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
 function render(){
   const qi=document.getElementById('q');
@@ -1451,6 +1451,7 @@ function render(){
   }
   if(tab==='tasks') return renderTasksTab();
   if(tab==='cal') return renderCalTab();
+  if(tab==='comm') return renderComm();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
   if(tab==='charges') return renderCharges();
@@ -11838,5 +11839,288 @@ function renderOcc(){
 (function(){const f=document.getElementById('dictfab');if(!f)return;
   if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){f.style.display='none';return;}
   f.onclick=()=>{if(SRACT){try{stopDictation();}catch(e){}SRACT=null;f.classList.remove('rec');}openDictPad();};})();
+// ===================== הקהילה =====================
+// מאיר: "רשימה חדשה של מתפללי בית הכנסת שתיקרא בשם הקהילה — נתחיל עם
+// הרשימה הפשוטה שלהם עם הפרטים וכתובת אימייל וטלפון… שיהיה להם רשומה של
+// שליחת אימייל בתוך הכרטיס שלהם כמו שעשית לי עם שליחת אימייל לתורמים…
+// שאוכל להכין להם אימייל ולבחור למי לשלוח או כולם ביחד… מי שיש לו מקום
+// שיהיה לך את המספר מקום שלו לפי המפה של בית כנסת."
+// הרשימה נפרדת מהתורמים (טבלת members), ושליחת המייל רצה באותו מנוע
+// בדיוק: הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר.
+let MEMBERS=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='';
+const mName=m=>((m.last||'')+' '+(m.first||'')).trim();
+const mHasMail=m=>(m.email||'').includes('@');
+const mEmails=m=>(m.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
+const byMName=(a,b)=>mName(a).localeCompare(mName(b),'he');
+async function cmLoad(force){
+  if(MEMBERS&&!force)return MEMBERS;
+  const r=await api('GET','/api/members');
+  MEMBERS=((r&&r.rows)||[]).sort(byMName);
+  return MEMBERS;
+}
+function cmSeat(m){ return String(m.seat||'').trim(); }
+function renderComm(){
+  if(MEMBERS===null){
+    view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען את רשימת הקהילה…</div>';
+    cmLoad().then(()=>{ if(tab==='comm')render(); });
+    return;
+  }
+  if(cmSub==='send') return renderCommSend();
+  const all=MEMBERS;
+  const chk=m=>(m.notes||'').includes('לבדוק');
+  const F=[['','הכל',all.length],
+           ['mail','📧 עם מייל',all.filter(mHasMail).length],
+           ['nomail','🚫 בלי מייל',all.filter(m=>!mHasMail(m)).length],
+           ['seat','💺 עם מקום',all.filter(m=>cmSeat(m)).length],
+           ['noseat','בלי מקום',all.filter(m=>!cmSeat(m)).length],
+           ['check','⚠️ לבדוק',all.filter(chk).length]];
+  chips.innerHTML=F.filter(([k,,n])=>k===''||n).map(([k,l,n])=>`<button class="chip ${cmFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
+  chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{cmFlt=b.dataset.k;render();});
+  let list=all.slice();
+  if(cmFlt==='mail')list=list.filter(mHasMail);
+  if(cmFlt==='nomail')list=list.filter(m=>!mHasMail(m));
+  if(cmFlt==='seat')list=list.filter(m=>cmSeat(m));
+  if(cmFlt==='noseat')list=list.filter(m=>!cmSeat(m));
+  if(cmFlt==='check')list=list.filter(chk);
+  list=list.filter(m=>matchQ(mName(m)+' '+(m.phone||'')+' '+(m.email||'')+' '+(m.addr||'')+' '+(m.city||'')+' '+(m.seat||'')+' '+(m.notes||'')));
+  if(cmFlt==='seat')list.sort((a,b)=>(parseInt(a.seat)||9999)-(parseInt(b.seat)||9999)||byMName(a,b));
+  view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
+    <div class="addrow" style="margin:0 2px 8px">
+      <button class="btn" id="cm_mail" style="flex:2">✉️ שלח מייל לקהילה — הודעה אישית לכל אחד</button>
+      <button class="btn ghost" id="cm_new" style="flex:1">➕ חבר חדש</button>
+    </div>
+    <div class="addrow" style="margin:0 2px 8px">
+      <button class="btn sm ghost" id="cm_csv" style="flex:1">📤 ייצוא הרשימה (CSV לאקסל)</button>
+    </div>
+    <div class="hintxt" style="margin:-2px 2px 8px">לחיצה על שורה פותחת את הכרטיס: פרטים, מספר מקום בבית הכנסת, ויומן המיילים שנשלחו אליו. בהמשך יתווספו כאן הוראות הקבע (נדרים פלוס) והתשלומים.</div>
+    <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
+    <div class="list">${list.map(m=>`<div class="cmrow${chk(m)?' chk':''}" data-id="${m.id}">
+      <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>
+        ${cmSeat(m)?`<span class="cmseat" title="מספר מקום בבית הכנסת">💺 ${esc(cmSeat(m))}</span>`:''}
+        ${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}</div>
+      <div class="cmdt">
+        ${m.phone?`<span dir="ltr">📞 ${esc(m.phone)}</span>`:''}
+        ${mHasMail(m)?`<span dir="ltr" class="cmem">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmno">אין מייל</span>'}
+        ${(m.addr||m.city)?`<span>🏠 ${esc([m.addr,m.city].filter(Boolean).join(', '))}</span>`:''}
+      </div>
+      ${chk(m)?`<div class="cmnote">⚠️ ${esc(m.notes)}</div>`:''}
+    </div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
+  view.querySelectorAll('.cmrow').forEach(el=>el.onclick=()=>{const m=MEMBERS.find(x=>x.id==el.dataset.id);if(m)openMember(m);});
+  document.getElementById('cm_new').onclick=()=>openMember(null);
+  document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
+  document.getElementById('cm_csv').onclick=()=>{
+    const H=['שם משפחה','שם פרטי','מקום','טלפון','אימייל','כתובת','עיר','הערות'];
+    const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const rows=[H.map(cell).join(',')].concat(all.map(m=>[m.last,m.first,m.seat,m.phone,m.email,m.addr,m.city,m.notes].map(cell).join(',')));
+    const blob=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kehila.csv';document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},800);
+  };
+}
+// כרטיס חבר קהילה — פרטים לעריכה, מספר מקום, שליחת מייל ויומן
+function openMember(m){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const isNew=!m; m=m||{};
+  const f=(id,lbl,val,ph,dir)=>`<label class="fld"><span>${lbl}</span><input id="${id}" value="${esc(val||'')}" placeholder="${esc(ph||'')}"${dir?` dir="${dir}"`:''}></label>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button>
+    <h2>🕍 ${isNew?'חבר קהילה חדש':esc(mName(m))}</h2>
+    ${!isNew&&(m.notes||'').includes('לבדוק')?`<div class="missbox">⚠️ ${esc(m.notes)}</div>`:''}
+    <div class="two">${f('cm_last','שם משפחה',m.last,'')}${f('cm_first','שם פרטי',m.first,'')}</div>
+    <div class="two">${f('cm_seat','💺 מספר מקום בבית הכנסת',m.seat,'לפי המפה')}${f('cm_phone','טלפון',m.phone,'050-0000000','ltr')}</div>
+    ${f('cm_email','אימייל (אפשר כמה, מופרדים ב־/)',m.email,'name@gmail.com','ltr')}
+    <div class="two">${f('cm_addr','כתובת',m.addr,'רחוב ומספר')}${f('cm_city','עיר',m.city,'ביתר עילית')}</div>
+    <label class="fld"><span>הערות</span><textarea id="cm_notes" rows="2">${esc(m.notes||'')}</textarea></label>
+    ${m.source?`<div class="hintxt">מקור: ${esc(m.source)}</div>`:''}
+    <div class="addrow">
+      <button class="btn" id="cm_save" style="flex:2">💾 ${isNew?'הוסף לקהילה':'שמור'}</button>
+      ${isNew?'':`<button class="btn ghost" id="cm_send1" style="flex:1"${mHasMail(m)?'':' disabled title="אין כתובת מייל"'}>✉️ שלח לו מייל</button>`}
+    </div>
+    ${isNew?'':`<div class="sec"><div class="rbtitle">📧 יומן — מה נשלח אליו</div><div id="cm_log" class="hintxt">טוען…</div>
+      <div class="addrow" style="margin-top:8px"><input id="cm_lognote" placeholder="הערה / שיחה — רישום ידני" style="flex:3"><button class="btn sm ghost" id="cm_logadd" style="flex:1">➕ רשום</button></div></div>
+    <div class="addrow" style="margin-top:14px"><button class="btn sm ghost danger" id="cm_del" style="flex:1">🗑️ הסר מרשימת הקהילה</button></div>`}`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const vals=()=>({last:document.getElementById('cm_last').value.trim(),first:document.getElementById('cm_first').value.trim(),
+    seat:document.getElementById('cm_seat').value.trim(),phone:document.getElementById('cm_phone').value.trim(),
+    email:document.getElementById('cm_email').value.trim(),addr:document.getElementById('cm_addr').value.trim(),
+    city:document.getElementById('cm_city').value.trim(),notes:document.getElementById('cm_notes').value.trim()});
+  document.getElementById('cm_save').onclick=async()=>{
+    const v=vals(); if(!v.last){toast('חסר שם משפחה');return;}
+    const r=isNew?await api('POST','/api/members',v):await api('PUT','/api/members/'+m.id,v);
+    if(!r||!r.ok){toast((r&&r.detail)||'לא נשמר');return;}
+    await cmLoad(true); toast(isNew?'נוסף לקהילה ✓':'נשמר ✓'); remov.classList.remove('show'); if(tab==='comm')render();
+  };
+  const s1=document.getElementById('cm_send1');
+  if(s1)s1.onclick=()=>{cmPick=new Set([m.id]);cmAdding=false;cmAddQ='';cmSub='send';remov.classList.remove('show');
+    if(tab!=='comm'){tab='comm';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='comm'));try{localStorage.setItem('kc_tab','comm');}catch(e){}}
+    render();window.scrollTo(0,0);};
+  const del=document.getElementById('cm_del');
+  if(del)del.onclick=async()=>{
+    if(!await uiConfirm('להסיר את '+mName(m)+' מרשימת הקהילה?'))return;
+    await api('DELETE','/api/members/'+m.id); await cmLoad(true); remov.classList.remove('show'); toast('הוסר'); if(tab==='comm')render();
+  };
+  if(!isNew){
+    const paintLog=async()=>{
+      const box=document.getElementById('cm_log'); if(!box)return;
+      const r=await api('GET','/api/members/'+m.id+'/log'); const rows=(r&&r.rows)||[];
+      box.innerHTML=rows.length?rows.map(x=>`<div class="cmlog"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
+        ${(x.body||'').trim()&&x.direction==='out'?`<details><summary>הצג את המכתב</summary><pre class="mhe">${esc(x.body)}</pre></details>`:''}</div>`).join('')
+        :'<div class="hintxt">עדיין לא נשלח אליו כלום.</div>';
+      box.querySelectorAll('.cmlogdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/members/log/'+b.dataset.id);paintLog();});
+    };
+    paintLog();
+    document.getElementById('cm_logadd').onclick=async()=>{
+      const t=document.getElementById('cm_lognote').value.trim(); if(!t){toast('כתוב משהו');return;}
+      await api('POST','/api/members/'+m.id+'/log',{summary:t,channel:'הערה'}); document.getElementById('cm_lognote').value=''; paintLog(); toast('נרשם ✓');
+    };
+  }
+}
+// שליחת מייל לקהילה — אותו מנוע ואותה צורה כמו אצל התורמים
+function cmAudience(){ return MEMBERS.filter(m=>cmPick.has(m.id)&&mHasMail(m)).sort(byMName); }
+function cmBrowse(){ return cmAdding||!cmPick.size; }
+function renderCommSend(){
+  const list=cmAudience();
+  const q2=cmQ.trim();
+  let flist=cmBrowse()?MEMBERS.filter(mHasMail):[];
+  if(q2)flist=flist.filter(m=>matchStr(mName(m)+' '+(m.email||'')+' '+(m.seat||''),q2));
+  const hits=(!cmBrowse()&&cmAddQ.trim())?MEMBERS.filter(m=>matchStr(mName(m)+' '+(m.email||''),cmAddQ.trim())).slice(0,10):null;
+  const row=m=>{const on=cmPick.has(m.id),em=mEmails(m);
+    return `<div class="mlrow${on?' on':''}" data-mid="${m.id}">
+      <span class="mlck">${on?'✔':''}</span>
+      <span class="mlnm">${esc(mName(m))}${cmSeat(m)?`<i>💺 מקום ${esc(cmSeat(m))}</i>`:''}</span>
+      <span class="mlmeta"><b class="mltag">קהילה</b></span>
+      <span class="mlad">${em.length?esc(em.join(' · ')):'<u class="mlno">אין כתובת מייל</u>'}</span>
+    </div>`;};
+  const vars=MLVARS.filter(([v])=>!/קוויטל|אברך/.test(v));
+  chips.innerHTML='';
+  view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_back">← חזרה לרשימת הקהילה</button></div>
+    <div class="rbtitle">✉️ שליחת מייל לקהילה</div>
+    ${mlSetupHTML()}
+    <div class="hintxt mlnobcc">כל חבר מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף אחד אינו רואה את הכתובות של האחרים. בדיוק כמו אצל התורמים.</div>
+    <div class="sec">
+      <div class="rbtitle" style="text-align:right">1️⃣ למי שולחים</div>
+      ${cmBrowse()?`
+      <div class="mlfilt">
+        <input id="cm_q" value="${esc(cmQ)}" placeholder="🔍 סנן לפי שם, מייל או מספר מקום" autocomplete="off">
+        <div class="mlfrow">
+          <button class="btn sm" id="cm_allf">✅ סמן את כל ${flist.length} שברשימה</button>
+          ${cmPick.size?`<button class="btn sm" id="cm_done">✔️ סיימתי לבחור — סימנתי ${cmPick.size}</button>`:''}
+        </div>
+      </div>
+      <div class="mlbox">${flist.map(row).join('')||'<div class="mlempty">לא נמצא אף חבר עם מייל שמתאים לסינון.</div>'}</div>
+      <div class="hintxt">${MEMBERS.filter(m=>!mHasMail(m)).length} חברים בלי כתובת מייל אינם ברשימה הזאת — אפשר להוסיף להם מייל בכרטיס.</div>
+      `:`
+      <div class="mlsel">אלה הנמענים שסימנת — <b>${list.length}</b></div>
+      <div class="mlbox">${MEMBERS.filter(m=>cmPick.has(m.id)).sort(byMName).map(row).join('')}</div>
+      <div class="mlfilt" style="margin-top:8px">
+        <input id="cm_add" value="${esc(cmAddQ)}" placeholder="➕ להוסיף עוד — הקלד שם" autocomplete="off">
+        ${cmAddQ.trim()?`<div class="dpres">${(hits||[]).map(m=>`<div class="dpr${cmPick.has(m.id)?' on':''}" data-add="${m.id}">${esc(mName(m))}${mHasMail(m)?` <small class="mlem">${esc(mEmails(m)[0])}</small>`:' <small class="mlno">אין מייל</small>'}${cmPick.has(m.id)?' ✓':''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא</div>'}</div>`:''}
+        <div class="mlfrow">
+          <button class="btn sm ghost" id="cm_open">📋 פתח את הרשימה המלאה</button>
+          <button class="btn sm ghost" id="cm_clear">נקה בחירה (${cmPick.size})</button>
+        </div>
+      </div>`}
+    </div>
+    <div class="sec">
+      <div class="rbtitle" style="text-align:right">2️⃣ המכתב</div>
+      <label class="fld"><span>נושא</span><input id="cm_subj" value="${esc(mlSaved('cm_subj',''))}" placeholder="למשל: זמני התפילות לחג"></label>
+      <label class="fld"><span>תוכן המכתב</span><textarea id="cm_body" rows="10" placeholder="לכבוד {{תואר}} {{שם}} {{הי&quot;ו}},&#10;&#10;...">${esc(mlSaved('cm_body',''))}</textarea></label>
+      <div class="mlvars">${vars.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
+      <div class="hintxt">לחיצה על סימון מכניסה אותו למכתב: <b>{{תואר}} {{שם}} {{הי"ו}}</b> ← <i>ה"ה</i> <b>נחמן בינדר</b> <i>הי"ו</i>.
+        השם נמשך לבד מהכרטיס של כל חבר. שורה ריקה = פסקה חדשה. המערכת בונה את העיצוב בשליחה — אין מה לעצב ביד.</div>
+      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="cm_track" ${mlSaved('cm_track','0')==='1'?'checked':''}>
+        <span>📊 עקוב אחרי מי פתח את המייל</span></label>
+    </div>
+    <div class="addrow">
+      <button class="btn sm ghost" id="cm_prev" style="flex:1">👁️ תצוגה מקדימה — לא שולח כלום</button>
+      <button class="btn" id="cm_go" style="flex:1"${list.length?'':' disabled'}>📤 ${list.length?('שלח ל־'+list.length+' '+(list.length===1?'נמען שסימנת':'הנמענים שסימנת')):'לא סימנת אף נמען'}</button>
+    </div>
+    <div class="hintxt" style="text-align:center;margin-top:-2px">נשלח <b>רק</b> למי שמסומן ב-✔ למעלה${list.length===1?` — כרגע ${esc(mName(list[0]))} בלבד`:''}.</div>
+    <div id="ml_prog"></div>
+    <div id="ml_out"></div>
+    <div id="cm_hist"></div>`;
+  document.getElementById('cm_back').onclick=()=>{clearInterval(MLPOLL);MLPOLL=null;cmSub='list';render();};
+  const keepFocus=id=>{const e=document.getElementById(id);if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}};
+  let _qt=null;
+  const qi=document.getElementById('cm_q');
+  if(qi)qi.oninput=()=>{const v=qi.value;clearTimeout(_qt);_qt=setTimeout(()=>{cmQ=v;renderCommSend();keepFocus('cm_q');},180);};
+  const ai=document.getElementById('cm_add');
+  if(ai)ai.oninput=()=>{const v=ai.value;clearTimeout(_qt);_qt=setTimeout(()=>{cmAddQ=v;renderCommSend();keepFocus('cm_add');},180);};
+  const opn=document.getElementById('cm_open'); if(opn)opn.onclick=()=>{cmAdding=true;cmAddQ='';renderCommSend();};
+  const dn=document.getElementById('cm_done'); if(dn)dn.onclick=()=>{cmAdding=false;cmQ='';renderCommSend();};
+  const allf=document.getElementById('cm_allf');
+  if(allf)allf.onclick=()=>{let add=0;flist.forEach(m=>{if(!cmPick.has(m.id)){cmPick.add(m.id);add++;}});
+    toast(add?('נוספו '+add+' ✓'):'לא נוסף אף אחד חדש');cmAdding=false;cmQ='';renderCommSend();};
+  const cl=document.getElementById('cm_clear'); if(cl)cl.onclick=()=>{cmPick=new Set();cmAdding=true;cmAddQ='';renderCommSend();};
+  const toggle=m=>{
+    if(!mHasMail(m)){toast('אין לו כתובת מייל — נפתח הכרטיס להוספה');openMember(m);return;}
+    if(cmPick.has(m.id))cmPick.delete(m.id); else cmPick.add(m.id);
+    const box=view.querySelector('.mlbox'), st=box?box.scrollTop:0, wy=window.scrollY;
+    cmAddQ=''; renderCommSend();
+    const nb=view.querySelector('.mlbox'); if(nb)nb.scrollTop=st; window.scrollTo(0,wy);};
+  view.querySelectorAll('.mlrow[data-mid]').forEach(el=>el.onclick=()=>{const m=MEMBERS.find(x=>x.id==el.dataset.mid);if(m)toggle(m);});
+  view.querySelectorAll('.dpr[data-add]').forEach(el=>el.onclick=()=>{const m=MEMBERS.find(x=>x.id==el.dataset.add);if(m)toggle(m);});
+  let last=null;
+  ['cm_body','cm_subj'].forEach(id=>{const e=document.getElementById(id);if(e){e.addEventListener('focus',()=>{last=e;});e.oninput=()=>mlSave(id,e.value);}});
+  view.querySelectorAll('.mlvar').forEach(b=>b.onclick=()=>{
+    const e=last||document.getElementById('cm_body');
+    const s=e.selectionStart==null?e.value.length:e.selectionStart, t2=e.selectionEnd==null?s:e.selectionEnd;
+    const v=((s>0&&!/[\s(\[{־-]$/.test(e.value.slice(0,s)))?' ':'')+b.dataset.v;
+    e.value=e.value.slice(0,s)+v+e.value.slice(t2); e.focus(); e.setSelectionRange(s+v.length,s+v.length); mlSave(e.id,e.value);});
+  const trk=document.getElementById('cm_track'); if(trk)trk.onchange=()=>mlSave('cm_track',trk.checked?'1':'0');
+  const gv=()=>({members:cmAudience().map(m=>m.id),subject:document.getElementById('cm_subj').value.trim(),
+    body:document.getElementById('cm_body').value,sig:'',track:document.getElementById('cm_track').checked,base:location.origin});
+  document.getElementById('cm_prev').onclick=async()=>{
+    const b=gv(); const o=document.getElementById('ml_out');
+    if(!b.members.length){toast('אין נמענים');return;}
+    o.innerHTML='<div class="hintxt">בודק…</div>';
+    const r=await api('POST','/api/mail/preview',b);
+    o.innerHTML=`<div class="sec mlprev"><div class="rbtitle">👁️ תצוגה מקדימה — עדיין לא נשלח כלום</div>
+      <div class="hintxt">כך ייראה המכתב אצל הנמען הראשון מתוך ${r.count}.</div>
+      ${r.first?`<div class="hintxt">אל: <b>${esc(r.first.name)}</b> &lt;${esc(r.first.email)}&gt; · בלבד. אין עותק מוסתר.</div>
+      <div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div>`:''}
+      ${r.html?`<div class="mlhtml">${r.html}</div>`:''}
+      <details class="mlplain"><summary>כך זה ייראה במייל שאינו תומך בעיצוב</summary><pre class="mlsample">${esc(r.sample||'')}</pre></details>
+      ${(r.skipped||[]).length?`<details class="mlskip"><summary>${r.skipped.length} חברים לא יקבלו — ולמה</summary>
+        ${r.skipped.map(s=>`<div class="mlskr">${esc(s.name)} — ${esc(s.why)}</div>`).join('')}</details>`:''}
+      </div>`;
+  };
+  document.getElementById('cm_go').onclick=async()=>{
+    const b=gv();
+    if(!b.subject){toast('חסר נושא');return;}
+    if(!b.body.trim()){toast('חסר תוכן');return;}
+    if(!b.members.length){toast('אין נמענים');return;}
+    if(!(MLSETUP&&MLSETUP.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
+    const who=b.members.length===1?('ל־'+mName(cmAudience()[0])+' בלבד'):('ל־'+b.members.length+' חברי הקהילה שסימנת');
+    if(!await uiConfirm('לשלוח '+who+'?\n\nכל אחד מקבל הודעה נפרדת משלו, בשמו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
+    const r=await api('POST','/api/mail/send',b);
+    if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    mlWatch();
+  };
+  cmHistory();
+  if(MLSETUP===null) mlLoadSetup().then(()=>{ if(tab==='comm'&&cmSub==='send') renderCommSend(); });
+  mlWatch(true);
+}
+async function cmHistory(){
+  const el=document.getElementById('cm_hist'); if(!el)return;
+  let r=null; try{ r=await api('GET','/api/mail/batches'); }catch(e){ return; }
+  const rows=((r&&r.rows)||[]).filter(b=>b.audience==='members');
+  if(!rows.length){el.innerHTML='';return;}
+  const heb={queued:'ממתין',sending:'שולח',done:'הסתיים',paused:'נעצר באמצע'};
+  el.innerHTML=`<div class="sec"><div class="rbtitle">משלוחים קודמים לקהילה</div>
+    ${rows.map(b=>`<div class="mlbrow"><div><b>${esc(b.subject||b.name||'')}</b> <span class="hintxt">${esc(b.created||'')} · ${esc(heb[b.status]||b.status)}</span></div>
+      <div class="hintxt">נשלחו ${b.counts.sent||0} מתוך ${b.total}${b.counts.failed?` · נכשלו ${b.counts.failed}`:''}${b.counts.dead?` · כתובות פסולות ${b.counts.dead}`:''}</div>
+      ${((b.counts.failed||0)+(b.counts.dead||0))?`<button class="btn sm ghost cmfail" data-id="${b.id}">מי לא קיבל, ולמה</button>`:''}
+      ${(b.status!=='done'&&(b.counts.queued||0))?`<button class="btn sm ghost cmres" data-id="${b.id}">▶️ המשך את המשלוח (${b.counts.queued} נותרו)</button>`:''}
+      <div class="mlfx" data-id="${b.id}"></div></div>`).join('')}</div>`;
+  el.querySelectorAll('.cmres').forEach(b=>b.onclick=async()=>{const r2=await api('POST','/api/mail/batch/'+b.dataset.id+'/resume',{});if(r2&&r2.ok){toast('ממשיך…');mlWatch();}else toast('לא ניתן כרגע');});
+  el.querySelectorAll('.cmfail').forEach(b=>b.onclick=async()=>{
+    const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
+    if(box.innerHTML){box.innerHTML='';return;}
+    const r2=await api('GET','/api/mail/batch/'+b.dataset.id);
+    const bad=((r2&&r2.rows)||[]).filter(x=>x.status!=='sent');
+    box.innerHTML=bad.map(x=>`<div class="mlskr">${esc(x.name||'')} &lt;${esc(x.email)}&gt; — ${esc(x.error||x.status)}</div>`).join('')||'<div class="hintxt">הכל נשלח</div>';});
+}
+
 netInit();
 load();

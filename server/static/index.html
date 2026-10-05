@@ -26,6 +26,20 @@
   .mlsetup.bad{background:#fdeeee;border-color:#e6b8b8}
   .mlnobcc{background:#fff8e6;border:1px solid #e8d9a8;border-radius:10px;padding:8px 11px;margin:0 2px 8px}
   .mlcnt{margin:8px 2px 4px;font-size:.9rem}
+  /* הקהילה — רשימת מתפללי בית הכנסת */
+  .cmrow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 13px;cursor:pointer}
+  .cmrow:hover{background:#f7f3e8}
+  .cmrow.chk{border-color:#e3b24a;background:#fff9ea}
+  .cmhd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .cmnm{font-weight:800;font-size:1.05rem}
+  .cmseat{font-size:.8rem;font-weight:800;padding:2px 9px;border-radius:999px;background:#e4e8f5;color:#3b357a;white-space:nowrap}
+  .cmmails{font-size:.78rem;color:var(--muted);margin-inline-start:auto;white-space:nowrap}
+  .cmdt{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:.88rem;color:#5a5340;margin-top:4px}
+  .cmdt .cmem{color:#4a7a5a;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .cmdt .cmno{color:#c43a2b}
+  .cmnote{font-size:.82rem;color:#8a5a00;margin-top:5px}
+  .cmlog{padding:7px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+  .cmlog .fdel{float:left}
   /* בחירת נמענים — רשימה גדולה וברורה, עם סינון למעלה */
   .mlfilt{margin:6px 2px 8px}
   .mlfilt>input{width:100%;font:inherit;font-size:1.02rem;padding:11px 13px;border-radius:11px;
@@ -1995,6 +2009,7 @@
       <button class="tab danger" data-tab="debts">💰 חובות</button>
       <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
       <button class="tab" data-tab="mails">📧 מיילים ושיחות</button>
+      <button class="tab" data-tab="comm">🕍 קהילה</button>
       <button class="tab" data-tab="camp">קמפיינים</button>
       <button class="tab hidden" data-tab="old">🧹 תורמים ישנים</button>
       <button class="tab hidden danger" data-tab="review">📋 לבדיקה</button>

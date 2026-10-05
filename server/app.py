@@ -320,7 +320,21 @@ def ensure_schema():
         reason TEXT, at TEXT);
     CREATE TABLE IF NOT EXISTS app_kv(k TEXT PRIMARY KEY, v TEXT);
     CREATE INDEX IF NOT EXISTS ix_mailq_batch ON mail_queue(batch, status);
+    /* הקהילה — מאיר: "רשימה חדשה של מתפללי בית הכנסת שתיקרא בשם הקהילה".
+       רשימה נפרדת מהתורמים, עם כרטיס לכל חבר, מספר מקום לפי מפת בית הכנסת,
+       ושליחת מייל כמו אצל התורמים. בהמשך: הוראות קבע (נדרים פלוס), תשלומים ותזכורות. */
+    CREATE TABLE IF NOT EXISTS members(id INTEGER PRIMARY KEY AUTOINCREMENT, last TEXT, first TEXT,
+        email TEXT, phone TEXT, addr TEXT, city TEXT, seat TEXT, category TEXT DEFAULT 'קהילה',
+        notes TEXT, source TEXT, gender TEXT, active INTEGER DEFAULT 1, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS member_log(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER,
+        date TEXT, channel TEXT, summary TEXT, body TEXT, direction TEXT, msg_id TEXT, at TEXT);
+    CREATE INDEX IF NOT EXISTS ix_mlog_member ON member_log(member_id);
     """)
+    for _c in ('member_id INTEGER',):
+        try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s" % _c)
+        except Exception: pass
+    try: con.execute("ALTER TABLE mail_batch ADD COLUMN audience TEXT DEFAULT 'donors'")
+    except Exception: pass
     # פרטי הפנייה לכל נמען — שם פרטי, משפחה, תואר ולשון זכר/נקבה
     for _c in ('fname', 'lname', 'title', 'gender', 'avreich', 'kvittel', 'opened_at'):
         try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s TEXT DEFAULT ''" % _c)
@@ -3060,6 +3074,37 @@ def ensure_schema():
             print('  מרמרשטיין 3300: ' + (', '.join(done) if done else 'לא נמצא'))
     except Exception as e:
         print('  marmurstein error:', e)
+
+    # הקהילה — טעינה ראשונית מהרשימה שמאיר סינן ("סינון חברי הקהילה": כן/לא
+    # לכל שם מתוך הוראות הקבע), ממוזגת עם תווית "חברי קהילה חדש" בג'ימייל.
+    # מי שסומן "לא" בסינון אבל נמצא בג'ימייל — נכנס עם הערה לבדיקה, לא נזרק.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_seed_v1'").fetchone():
+            _cf = os.path.join(HERE, 'community_seed.json')
+            n_in = 0
+            if os.path.exists(_cf):
+                with open(_cf, encoding='utf-8') as fh:
+                    for r in json.load(fh):
+                        if not (r.get('last') or '').strip():
+                            continue
+                        dup = con.execute("SELECT 1 FROM members WHERE TRIM(last)=? AND TRIM(COALESCE(first,''))=?",
+                                          ((r.get('last') or '').strip(), (r.get('first') or '').strip())).fetchone()
+                        if dup:
+                            continue
+                        con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,created,updated) "
+                                    "VALUES(?,?,?,?,?,?,?,'קהילה',?,?,?,1,?,?)",
+                                    ((r.get('last') or '').strip(), (r.get('first') or '').strip(),
+                                     (r.get('email') or '').strip(), (r.get('phone') or '').strip(),
+                                     (r.get('addr') or '').strip(), (r.get('city') or '').strip(),
+                                     (r.get('seat') or '').strip(), (r.get('notes') or '').strip(),
+                                     (r.get('source') or '').strip(), _gender(r.get('first') or ''),
+                                     now_iso(), now_iso()))
+                        n_in += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_seed_v1')")
+            con.commit()
+            print('  קהילה: נטענו %d חברים' % n_in)
+    except Exception as e:
+        print('  community seed error:', e)
 
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
@@ -11903,6 +11948,64 @@ def mail_recipients(con, ids):
     return out, skip
 
 
+def member_recipients(con, ids):
+    """נמענים מרשימת הקהילה — אותו מבנה בדיוק כמו mail_recipients לתורמים,
+    כדי שאותו מנוע דיוור (הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר) ישרת
+    גם את הקהילה. מאיר: "שכל אחד יראה כמו שזה נשלח אליו בלבד, עם השם שלו
+    כמו אצל התורמים בדיוק"."""
+    import bulkmail
+    out, skip, seen = [], [], set()
+    off = mail_optouts(con)
+    want = [int(x) for x in (ids or []) if str(x).strip().lstrip('-').isdigit()]
+    if not want:
+        return out, skip
+    qs = ','.join('?' * len(want))
+    for d in con.execute("SELECT id,last,first,email,gender FROM members WHERE id IN (%s)" % qs, want):
+        nm = ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or (d['last'] or '')
+        g = (d['gender'] or '').strip()[:1]
+        if g not in ('m', 'f', 'c'):
+            g = _gender(d['first'])
+        who = {'first': (d['first'] or '').strip(), 'last': (d['last'] or '').strip(),
+               'title': 'ה"ה', 'gender': g, 'english': nm, 'avreich': '', 'kvittel': ''}
+        addrs = emails_of(d['email'])
+        if not addrs:
+            raw = str(d['email'] or '').strip()
+            skip.append({'member_id': d['id'], 'name': nm,
+                         'why': ('הכתובת אינה תקינה: ' + raw) if raw else 'אין כתובת מייל'})
+            continue
+        for e in addrs:
+            if not bulkmail.valid(e):
+                skip.append({'member_id': d['id'], 'name': nm, 'why': 'כתובת לא תקינה: ' + e})
+                continue
+            if e in off:
+                skip.append({'member_id': d['id'], 'name': nm, 'why': 'ביקש להסיר את עצמו'})
+                continue
+            if e in seen:
+                skip.append({'member_id': d['id'], 'name': nm,
+                             'why': 'הכתובת ' + e + ' כבר נשלחת לחבר אחר — לא נשלח פעמיים'})
+                continue
+            seen.add(e)
+            r = {'donor_id': None, 'member_id': d['id'], 'name': nm, 'email': e}
+            r.update(who)
+            out.append(r)
+    return out, skip
+
+
+def log_member_mail(member_id, to, subject, body, msg_id=''):
+    """מתייק בכרטיס החבר כל מייל שנשלח אליו — כמו יומן הקשר אצל התורם."""
+    if not member_id:
+        return
+    try:
+        con = db()
+        con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) "
+                    "VALUES(?,?,?,?,?,'out',?,?)",
+                    (member_id, today_iso(), 'אימייל', '📤 שלחנו: ' + (subject or 'מייל'),
+                     (body or '').strip(), (msg_id or '').strip(), now_iso()))
+        con.commit(); con.close()
+    except Exception:
+        pass
+
+
 def mail_sent_today(con):
     try:
         return con.execute("SELECT COUNT(*) c FROM mail_queue WHERE status='sent' "
@@ -11965,9 +12068,15 @@ def mail_worker(batch_id):
                 commit_retry(con)          # לשחרר את המסד — התיוק פותח חיבור משלו
                 st['sent'] += 1
                 try:
-                    log_sent_mail(r['donor_id'], em, b['subject'] or '',
-                                  bulkmail.personalize(b['body'] or '', who),
-                                  msg['Message-ID'])
+                    mid = r['member_id'] if 'member_id' in r.keys() else None
+                    if mid:
+                        log_member_mail(mid, em, b['subject'] or '',
+                                        bulkmail.personalize(b['body'] or '', who),
+                                        msg['Message-ID'])
+                    else:
+                        log_sent_mail(r['donor_id'], em, b['subject'] or '',
+                                      bulkmail.personalize(b['body'] or '', who),
+                                      msg['Message-ID'])
                 except Exception:
                     pass
             else:
@@ -14044,15 +14153,36 @@ class H(BaseHTTPRequestHandler):
                     (b['id'],))}
                 rows.append({'id': b['id'], 'name': b['name'], 'subject': b['subject'],
                              'created': b['created'], 'total': b['total'],
-                             'status': b['status'], 'counts': st})
+                             'status': b['status'], 'counts': st,
+                             'audience': (b['audience'] if 'audience' in b.keys() else '') or 'donors'})
             con.close()
             return self._send(200, {'rows': rows})
         m = re.match(r'/api/mail/batch/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
             rows = [dict(r) for r in con.execute(
-                "SELECT donor_id,email,name,status,error,sent_at FROM mail_queue "
+                "SELECT donor_id,member_id,email,name,status,error,sent_at FROM mail_queue "
                 "WHERE batch=? ORDER BY id", (int(m.group(1)),))]
+            con.close()
+            return self._send(200, {'rows': rows})
+        # ---- הקהילה ----
+        if self.path.split('?')[0] == '/api/members':
+            con = db()
+            logs = {r['member_id']: (r['c'], r['last']) for r in con.execute(
+                "SELECT member_id, COUNT(*) c, MAX(date) last FROM member_log GROUP BY member_id")}
+            rows = []
+            for r in con.execute("SELECT * FROM members WHERE COALESCE(active,1)<>0 ORDER BY last, first"):
+                d = dict(r)
+                d['mails'], d['last_mail'] = logs.get(r['id'], (0, ''))
+                rows.append(d)
+            con.close()
+            return self._send(200, {'rows': rows})
+        m = re.match(r'/api/members/(\d+)/log$', self.path.split('?')[0])
+        if m:
+            con = db()
+            rows = [dict(r) for r in con.execute(
+                "SELECT id,date,channel,summary,body,direction,at FROM member_log "
+                "WHERE member_id=? ORDER BY date DESC, id DESC", (int(m.group(1)),))]
             con.close()
             return self._send(200, {'rows': rows})
         m = re.match(r'/api/mail/batch/(\d+)/stats$', self.path.split('?')[0])
@@ -14177,6 +14307,26 @@ class H(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         bump_data()
+        m = re.match(r'/api/members/(\d+)$', self.path)
+        if m:
+            # עדכון כרטיס חבר קהילה — רק השדות שנשלחו
+            b = self._body(); mid = int(m.group(1))
+            allowed = ('last', 'first', 'email', 'phone', 'addr', 'city', 'seat', 'category',
+                       'notes', 'source', 'gender', 'active')
+            fields = {k: b[k] for k in allowed if k in b}
+            if 'last' in fields and not str(fields['last'] or '').strip():
+                return self._send(400, {'error': 'last required', 'detail': 'חסר שם משפחה'})
+            con = db()
+            if not con.execute("SELECT 1 FROM members WHERE id=?", (mid,)).fetchone():
+                con.close(); return self._send(404, {'error': 'member not found'})
+            if fields:
+                sets = ', '.join('%s=?' % k for k in fields) + ', updated=?'
+                vals = [(str(v).strip() if not isinstance(v, (int, float)) else v) if v is not None else '' for v in fields.values()]
+                con.execute("UPDATE members SET %s WHERE id=?" % sets, vals + [now_iso(), mid])
+            con.commit()
+            row = dict(con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone())
+            con.close()
+            return self._send(200, {'ok': True, 'member': row})
         m = re.match(r'/api/recon/(.+)/donor$', self.path)
         if m:
             # שיוך שורת חיוב לכרטיס תורם קיים — מדף האימות
@@ -14652,11 +14802,44 @@ class H(BaseHTTPRequestHandler):
                     MAILCHK['running'] = False
             threading.Thread(target=_run, daemon=True).start()
             return self._send(200, {'ok': True, 'started': True})
+        # ---- הקהילה: חבר חדש ----
+        if self.path == '/api/members':
+            last = (b.get('last') or '').strip()
+            if not last:
+                return self._send(400, {'error': 'last required', 'detail': 'חסר שם משפחה'})
+            con = db()
+            cur = con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,created,updated) "
+                              "VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?,?)",
+                              (last, (b.get('first') or '').strip(), (b.get('email') or '').strip(),
+                               (b.get('phone') or '').strip(), (b.get('addr') or '').strip(),
+                               (b.get('city') or '').strip(), str(b.get('seat') or '').strip(),
+                               (b.get('category') or 'קהילה').strip() or 'קהילה',
+                               (b.get('notes') or '').strip(), (b.get('source') or 'נוסף ידנית').strip(),
+                               (b.get('gender') or '').strip() or _gender(b.get('first') or ''),
+                               now_iso(), now_iso()))
+            mid = cur.lastrowid
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': mid})
+        m = re.match(r'/api/members/(\d+)/log$', self.path)
+        if m:
+            # רישום ידני בכרטיס החבר — שיחה, הודעה, הערה
+            con = db()
+            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
+                        (int(m.group(1)), (b.get('date') or today_iso())[:10], (b.get('channel') or 'הערה').strip(),
+                         (b.get('summary') or '').strip(), (b.get('body') or '').strip(),
+                         (b.get('direction') or 'note').strip(), '', now_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         # ---- דיוור: בדיקה לפני שליחה, ואז שליחה ----
         if self.path == '/api/mail/preview':
             import bulkmail
             con = db()
-            to, skip = mail_recipients(con, b.get('ids'))
+            # members — נמענים מרשימת הקהילה; ids — תורמים. אותו מנוע לשניהם.
+            if b.get('members'):
+                to, skip = member_recipients(con, b.get('members'))
+            else:
+                to, skip = mail_recipients(con, b.get('ids'))
             secret = mail_secret(con)
             con.close()
             first = to[0] if to else None
@@ -14706,13 +14889,17 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'empty',
                                         'detail': 'חסר נושא או תוכן'})
             con = db()
-            to, skip = mail_recipients(con, b.get('ids'))
+            is_members = bool(b.get('members'))
+            if is_members:
+                to, skip = member_recipients(con, b.get('members'))
+            else:
+                to, skip = mail_recipients(con, b.get('ids'))
             if not to:
                 con.close()
                 return self._send(200, {'ok': False, 'error': 'no_recipients',
                                         'detail': 'אין אף נמען עם כתובת מייל תקינה'})
             cur = con.execute("INSERT INTO mail_batch(name,subject,body,sig,base,created,total,"
-                              "status,track) VALUES(?,?,?,?,?,?,?,'queued',?)",
+                              "status,track,audience) VALUES(?,?,?,?,?,?,?,'queued',?,?)",
                               ((b.get('name') or subject)[:120], subject, body,
                                (b.get('sig') or '').strip(), (b.get('base') or '').strip(),
                                now_iso(), len(to),
@@ -14720,14 +14907,15 @@ class H(BaseHTTPRequestHandler):
                                # מעקב פתיחות מוסיף תמונה זעירה שיש תוכנות מייל
                                # שמציגות במקומה שורת כתובת גלויה. ברירת המחדל
                                # היא בלי מעקב, ורק סימון מפורש מפעיל אותו.
-                               1 if b.get('track') is True else 0))
+                               1 if b.get('track') is True else 0,
+                               'members' if is_members else 'donors'))
             bid = cur.lastrowid
             for x in to:
-                con.execute("INSERT INTO mail_queue(batch,donor_id,email,name,fname,lname,"
-                            "title,gender,avreich,kvittel) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                            (bid, x['donor_id'], x['email'], x['name'], x.get('first', ''),
-                             x.get('last', ''), x.get('title', ''), x.get('gender', 'm'),
-                             x.get('avreich', ''), x.get('kvittel', '')))
+                con.execute("INSERT INTO mail_queue(batch,donor_id,member_id,email,name,fname,lname,"
+                            "title,gender,avreich,kvittel) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            (bid, x.get('donor_id'), x.get('member_id'), x['email'], x['name'],
+                             x.get('first', ''), x.get('last', ''), x.get('title', ''),
+                             x.get('gender', 'm'), x.get('avreich', ''), x.get('kvittel', '')))
             con.commit(); con.close()
             st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
                        'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,
@@ -16687,6 +16875,18 @@ class H(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         bump_data()
+        m = re.match(r'/api/members/(\d+)$', self.path)
+        if m:
+            # מחיקת חבר מרשימת הקהילה. יומן המיילים שלו נשאר במסד.
+            con = db(); mid = int(m.group(1))
+            n = con.execute("SELECT COUNT(*) FROM members WHERE id=?", (mid,)).fetchone()[0]
+            con.execute("DELETE FROM members WHERE id=?", (mid,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': n > 0})
+        m = re.match(r'/api/members/log/(\d+)$', self.path)
+        if m:
+            con = db(); con.execute("DELETE FROM member_log WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/intake/(\d+)$', self.path)
         if m:
             # מאיר: "מחקתי 3 פעמים לפחות וכל פעם זה מביא אותם שוב". מחיקה אמיתית
