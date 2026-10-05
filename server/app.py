@@ -2958,6 +2958,38 @@ def ensure_schema():
     except Exception as e:
         print('  campaigns junk error:', e)
 
+    # מאיר: "מה שלא רשמתי בייעוד ידני אל תשייך אוטומטי" — חיובי ספטמבר שקיבלו ייעוד
+    # מנוחש (קבוע / יששכר־זבולון / מזדמן / לפי חיוב קודם) חוזרים ל"לבדוק עבור מה".
+    # נשאר רק מה שבא מרישום ידני (אומת מול), מסימון יו"ט, מכלל קבוע או מהתחייבות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='no_autocat_sep_v1'").fetchone():
+            n = 0
+            tids = {r['tid'] for r in con.execute("SELECT tid FROM recon WHERE source IN ('Banquest 09-2026','Authorize 09-2026')")}
+            for r in con.execute("SELECT id,donor_id,amount,category,note,tid FROM donations WHERE COALESCE(tid,'')<>'' "
+                                 "AND TRIM(COALESCE(category,''))<>''").fetchall():
+                if r['tid'] not in tids:
+                    continue
+                nt = r['note'] or ''
+                if 'אומת מול' in nt or 'יו"ט' in nt or 'לפי מאיר' in nt or 'סווג ידנית' in nt:
+                    continue
+                a = _amt2(r['amount']); cat = (r['category'] or '').strip()
+                if con.execute("SELECT 1 FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?", (r['donor_id'], a)).fetchone():
+                    continue
+                pl_ok = any(abs(_amt2(re.sub(r'[^0-9.]', '', str(x['amount'] or '0')) or 0) - a) < 0.01
+                            for x in con.execute("SELECT amount FROM pledges WHERE donor_id=? AND TRIM(COALESCE(category,''))=?", (r['donor_id'], cat)))
+                if pl_ok:
+                    continue
+                con.execute("UPDATE donations SET category='', note=? WHERE id=?",
+                            ((nt.replace(' · לא סווג — לבדוק עבור מה', '') + ' · ' if nt else '') + 'לא סווג — לבדוק עבור מה', r['id']))
+                con.execute("UPDATE recon SET category='' WHERE tid=?", (r['tid'],))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('no_autocat_sep_v1')")
+            con.commit()
+            if n:
+                print('  ספטמבר: הורד ייעוד מנוחש מ-%d חיובים — נשארים "לבדוק עבור מה"' % n)
+    except Exception as e:
+        print('  no autocat error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -8760,9 +8792,10 @@ def banquest_post(con, source, only_tids=None):
     by = {}
 
     def _guess(did, a, rec):
-        """עבור מה: התחייבות פתוחה באותו סכום → כלל קבוע של התורם → מה
-        שאותו סכום סווג אצלו בחיוב קודם → הוראת קבע (יששכר־זבולון לפי
-        הדרגה, אחרת הקטגוריה של הכרטיס) → הקטגוריה של הכרטיס, לבדיקה."""
+        """עבור מה — רק ממה שמאיר רשם ביד: כלל קבוע של התורם ("כל $X = ייעוד") או
+        התחייבות פתוחה באותו סכום. מאיר: "מה שלא רשמתי בייעוד ידני אל תשייך
+        אוטומטי" — בלי ניחוש לפי חיוב קודם, דרגה או קטגוריית הכרטיס. כל השאר
+        נכנס בלי ייעוד, מסומן "לבדוק עבור מה"."""
         rr = con.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
                          (did, a)).fetchone()
         if rr and (rr['category'] or '').strip():
@@ -8771,29 +8804,7 @@ def banquest_post(con, source, only_tids=None):
             pl = open_pledge_for(con, did, a)
             if pl and pl['category']:
                 return pl['category'], 'התחייבות', False
-        # הוראת קבע לומדת רק מהוראת קבע קודמת; חיוב חד-פעמי — מחיוב חד-פעמי
-        # קודם באותו סכום, או מתרומה קודמת באותו סכום מאז אייר.
-        # מאיר: "אם לא הכנסתי את זה ידנית אז זה לא של יום טוב… תעשה חישובים לפני
-        # שאתה מנחש" — ייעוד של חג/מגבית לא מנוחש מחיוב קודם; רק ייעודים קבועים.
-        pr = con.execute("SELECT category FROM recon WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
-                         "AND COALESCE(processed,0)=1 AND COALESCE(TRIM(category),'')<>'' "
-                         "AND COALESCE(recurring,0)=? ORDER BY rowid DESC LIMIT 1",
-                         (did, a, 1 if rec else 0)).fetchone()
-        if pr and not _CAMP_CAT.search(pr['category']):
-            return pr['category'].strip(), 'כמו בחיוב הקודם', False
-        if not rec:
-            pd_ = con.execute("SELECT category FROM donations WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=? "
-                              "AND COALESCE(TRIM(category),'')<>'' AND COALESCE(date,'')>='2026-05-01' "
-                              "AND COALESCE(note,'') NOT LIKE '%הוראת קבע%' ORDER BY date DESC LIMIT 1",
-                              (did, a)).fetchone()
-            if pd_ and not _CAMP_CAT.search(pd_['category']):
-                return pd_['category'].strip(), 'כמו בתרומה הקודמת', False
-        tier, dcat = dinfo.get(did, ('', ''))
-        if rec and 'יששכר' in tier:
-            return 'יששכר־זבולון', 'דרגת יששכר־זבולון', False
-        if rec:
-            return (dcat or 'קבוע'), 'הוראת קבע', False
-        return (dcat or 'מזדמן'), 'לא סווג', True
+        return '', 'לא סווג', True
 
     for (did, ym, a), lst in need.items():
         have = [x['id'] for x in con.execute(
