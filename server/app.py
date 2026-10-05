@@ -12392,7 +12392,8 @@ def build_ics():
         who = names.get(r['donor_id'], '')
         title = (KIND_HE.get(r['kind'], '🔔') + ' ' + who + ((' — ' + r['note']) if r['note'] else '')).strip()
         title = title.replace('\n', ' ').replace(',', '\\,').replace(';', '\\;')
-        hm = re.sub(r'\D', '', str(r['at_time'] or ''))[:4] if r['kind'] == 'event' else ''
+        # מאיר: "שאוכל לבחור שעה של משימה, רק אם ארצה" — שעה היא רשות בכל סוג משימה
+        hm = re.sub(r'\D', '', str(r['at_time'] or ''))[:4]
         if len(hm) == 4:
             # מאיר: "שזה ייתן לי תזכורת יום לפני זה וגם באותו יום כמה שעות לפני" —
             # אירוע עם שעה: שלוש שעות, ותזכורות יום לפני ושלוש שעות לפני

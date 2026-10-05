@@ -287,10 +287,11 @@ const KIND = {charge:'🧾 לחייב',parnes:'🌙 פרנס יום',prayer:'�
 const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['prayer','🙏 לבקש שמות לקוויטל'],['parnes','🌙 פרנס יום'],['event','🎉 שמחה / הזמנה (חתונה, בר מצווה…)'],['cert','📜 תעודת יששכר־זבולון'],['other','🔔 אחר']];
 // מאיר: "בכל פעם שאני שולח הזמנה לבר מצווה או חתונה… עם תאריך והמקום שתכניס
 // את זה ללוח של גוגל" — לאירוע יש שעה ומקום; השדות מופיעים רק כשהסוג הוא שמחה
-function eventFieldsHTML(pre,t){return `<div class="two evfields" data-ev="${pre}" style="margin-top:6px;display:none"><label class="fld"><span>🕒 שעה</span><input type="time" id="${pre}_time" value="${esc((t&&t.at_time)||'')}"></label><label class="fld"><span>📍 מקום</span><input id="${pre}_place" placeholder="אולם / כתובת" value="${esc((t&&t.place)||'')}"></label></div>`;}
-function wireEventFields(sel,pre){if(!sel)return;const box=document.querySelector('.evfields[data-ev="'+pre+'"]');if(!box)return;const upd=()=>{box.style.display=sel.value==='event'?'':'none';};sel.addEventListener('change',upd);upd();}
+function eventFieldsHTML(pre,t){return `<div class="two evfields" data-ev="${pre}" style="margin-top:6px;display:none"><label class="fld"><span>🕒 שעה (רשות)</span><input type="time" id="${pre}_time" value="${esc((t&&t.at_time)||'')}"></label><label class="fld"><span>📍 מקום (רשות)</span><input id="${pre}_place" placeholder="אולם / כתובת" value="${esc((t&&t.place)||'')}"></label></div>`;}
+// מאיר: "שאוכל לבחור שעה של משימה, רק אם ארצה לבחור" — שעה ומקום הם רשות, בכל סוג משימה
+function wireEventFields(sel,pre){const box=document.querySelector('.evfields[data-ev="'+pre+'"]');if(box)box.style.display='';}
 function eventVals(pre){const t=document.getElementById(pre+'_time'),p=document.getElementById(pre+'_place');return {at_time:t?t.value:'',place:p?p.value.trim():''};}
-function eventMeta(t){return (t&&t.kind==='event'&&(t.at_time||t.place))?`<div class="miss2">${t.at_time?('🕒 '+esc(t.at_time)+' '):''}${t.place?('📍 '+esc(t.place)):''}</div>`:'';}
+function eventMeta(t){return (t&&(t.at_time||t.place))?`<div class="miss2">${t.at_time?('🕒 '+esc(t.at_time)+' '):''}${t.place?('📍 '+esc(t.place)):''}</div>`:'';}
 // סוגי משימה שמאיר מגדיר בעצמו נשמרים כ־"c:שם הסוג"
 const isCustKind=k=>String(k||'').slice(0,2)==='c:';
 const custKind=k=>isCustKind(k)?String(k).slice(2):'';
@@ -683,11 +684,11 @@ function inDaysStr(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.
 function addDay(ymd8){const y=+ymd8.slice(0,4),m=+ymd8.slice(4,6)-1,d=+ymd8.slice(6,8);return new Date(Date.UTC(y,m,d+1)).toISOString().slice(0,10).replace(/-/g,'');}
 function gcalLink(t,donor){const d=(t.due_date||'').replace(/-/g,'');if(d.length!==8)return '';const title=encodeURIComponent((kindLabel(t.kind)||'תזכורת')+' — '+donor+(t.note?': '+t.note:''));
   const hm=String(t.at_time||'').replace(/\D/g,'').slice(0,4);
-  if(t.kind==='event'&&hm.length===4){const hh=+hm.slice(0,2),mm=hm.slice(2);const e=String((hh+3)%24).padStart(2,'0');
+  if(hm.length===4){const hh=+hm.slice(0,2),mm=hm.slice(2);const e=String((hh+3)%24).padStart(2,'0');
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}T${hm}00/${d}T${e}${mm}00&ctz=Asia/Jerusalem${t.place?('&location='+encodeURIComponent(t.place)):''}`;}
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}/${addDay(d)}`;}
 // שמחה עם שעה שעדיין לא הגיעה היום — אינה "הגיע זמנה", היא ב"מתקרב"
-function evTimeMs(t){const D=t.due_date||'';if(!/^\d{4}-\d{2}-\d{2}$/.test(D))return null;const hm=(t.kind==='event'&&/^\d{2}:\d{2}/.test(t.at_time||''))?t.at_time.split(':').map(Number):null;if(!hm)return null;const [y,m,d]=D.split('-').map(Number);return new Date(y,m-1,d,hm[0],hm[1]).getTime();}
+function evTimeMs(t){const D=t.due_date||'';if(!/^\d{4}-\d{2}-\d{2}$/.test(D))return null;const hm=(/^\d{2}:\d{2}/.test(t.at_time||''))?t.at_time.split(':').map(Number):null;if(!hm)return null;const [y,m,d]=D.split('-').map(Number);return new Date(y,m-1,d,hm[0],hm[1]).getTime();}
 function dueTasks(){const td=todayStr(),out=[],now=Date.now();DB.forEach(d=>(d.tasks||[]).forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td){const em=evTimeMs(t);if(em&&em>now)return;out.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}}));GTASKS.forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td){const em=evTimeMs(t);if(em&&em>now)return;out.push({...t,donor:'',dref:null});}});return out.sort((a,b)=>(a.due_date||'').localeCompare(b.due_date||''));}
 // מאיר: "כל פעם שיש משימה שזה יקפוץ לי ושזה יזכיר לי יומיים לפני זה, יום לפני
 // זה, באותו יום כמה שעות לפני זה, ואחר כך שעה לפני זה" — שלב התזכורת שהגיע
@@ -696,7 +697,7 @@ function dueTasks(){const td=todayStr(),out=[],now=Date.now();DB.forEach(d=>(d.t
 function remStage(t){
   const D=t.due_date||''; if(!/^\d{4}-\d{2}-\d{2}$/.test(D))return null;
   const [y,m,d]=D.split('-').map(Number);
-  const hm=(t.kind==='event'&&/^\d{2}:\d{2}/.test(t.at_time||''))?t.at_time.split(':').map(Number):null;
+  const hm=(/^\d{2}:\d{2}/.test(t.at_time||''))?t.at_time.split(':').map(Number):null;
   const at=(off,h,mi)=>new Date(y,m-1,d+off,h,mi).getTime(), now=Date.now();
   const st=[['d2',at(-2,9,0),'בעוד יומיים'],['d1',at(-1,9,0),'מחר']];
   if(hm)st.push(['h3',at(0,hm[0]-3,hm[1]),'היום — בעוד כ-3 שעות'],['h1',at(0,hm[0]-1,hm[1]),'בעוד שעה!']);
@@ -2616,7 +2617,7 @@ function cardTasks(d,body){
     if(!note&&!hasVoice){toast('כתוב מה צריך לעשות — או הקלט הודעה');return;}if(!date){toast('בחר תאריך');return;}
     if(!note)note='🎤 הודעה קולית';   // משימה שהוקלטה בלי טקסט
     btn.disabled=true;                 // הגנה מלחיצה כפולה — אחרת נוצרות שתי משימות
-    const evx=kind==='event'?eventVals('ct'):{at_time:'',place:''};
+    const evx=eventVals('ct');
     const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,...evx});
     btn.disabled=false;
     if(r&&r.existing){toast('המשימה כבר קיימת');return;}
@@ -2702,7 +2703,7 @@ function renderCardTasks(d){
     const note=el.querySelector('.ctn[data-id="'+b.dataset.id+'"]').value.trim();
     const date=el.querySelector('.ctd[data-id="'+b.dataset.id+'"]').value;
     const who=el.querySelector('.ctw[data-id="'+b.dataset.id+'"]').value;
-    const ev=kind==='event'?eventVals('cte'+t.id):{at_time:'',place:''};
+    const ev=eventVals('cte'+t.id);
     b.disabled=true;
     const rsp=await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who,...ev});
     t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;t.at_time=ev.at_time;t.place=ev.place;
@@ -11493,7 +11494,7 @@ function calEntries(){
 // מאיר: "אני רוצה תאריך עברי, וגם למעלה בגדול את התאריך העברי ובקטן יותר את
 // התאריך הלועזי, העיקר שיתחיל מא' לחודש העברי ויהיה כתוב כל יום איזה יום
 // לחודש" — היומן בנוי לפי החודש העברי; הימים מהשרת (/api/hebmonth).
-let calHeb=null, HMCACHE={};
+let calHeb=null, HMCACHE={}, calEdit=null;
 function hebTodayParts(){const ws=String(HEBTODAY||'').split(/\s+/).filter(Boolean);if(ws.length<3)return null;return {m:ws.slice(1,-1).join(' '),y:ws[ws.length-1]};}
 async function hebMonth(m,y){const k=m+'|'+y;if(!HMCACHE[k]){const r=await api('GET','/api/hebmonth?m='+encodeURIComponent(m)+'&y='+encodeURIComponent(y));HMCACHE[k]=(r&&r.ok)?r:null;}return HMCACHE[k];}
 function gregShort(iso){const p=String(iso||'').split('-');return p.length===3?(+p[2]+'.'+(+p[1])):'';}
@@ -11516,18 +11517,25 @@ async function renderCalTab(){
   let selHeb='';
   for(let n=1;n<=HM.len;n++){const dd=HM.days[String(n)]||{}, k=dd.greg||'', L=by[k]||[], dow=DOWK[dd.dow]||0;
     if(k===calSel)selHeb=heDay(n)+' '+HM.month;
-    cells.push(`<div class="bcc ${k===today?'today':''} ${k===calSel?'sel':''} ${dd.shabbos?'shab':''} ${dd.yomtov?'yt':''}" data-d="${k}"><div class="bcd"><b>${heDay(n)}</b><i class="bcm">${esc(HM.month)}</i><small>${DOW[dow]}</small><span class="bcg">${gregShort(k)}</span>${k===today?'<em>היום</em>':''}</div>${dd.yomtov?`<div class="bcyt">🕯️ ${esc(dd.yomtov)}</div>`:''}${dd.parsha?`<div class="bcpr">📖 פרשת ${esc(dd.parsha)}</div>`:''}${L.slice(0,5).map(ent).join('')}${L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''}</div>`);}
+    const isSel=k===calSel;
+    // מאיר: "שאוכל לתקן, להוסיף דברים בריבוע עצמו של היום בלי שזה יירד למטה" —
+    // היום שנבחר נפתח במקומו: כל מה שיש בו עם ✎ לתיקון, ושורת הוספה בתוכו
+    const entSel=e=>{const t=e.t;
+      if(t&&calEdit===t.id)return `<div class="bced" data-id="${t.id}"><input class="bce_note" value="${esc(t.note||'')}" placeholder="מה?"><div class="two"><input type="time" class="bce_time" value="${esc(t.at_time||'')}" title="שעה (רשות)"><input class="bce_place" value="${esc(t.place||'')}" placeholder="📍 מקום (רשות)"></div><div class="bcea"><button class="btn sm bce_save">💾 שמור</button><button class="btn sm ghost bce_cancel">ביטול</button><button class="btn sm ghost bce_del" title="מחק">🗑</button></div></div>`;
+      return `<div class="bcer">${ent(e)}${t?`<span class="bcea"><button class="btn sm ghost bcedit" data-id="${t.id}" title="תקן">✎</button><button class="btn sm ghost bcdone2" data-id="${t.id}" title="בוצע">✓</button></span>`:''}</div>`;};
+    const inner=isSel?(L.map(entSel).join('')+`<div class="bcin">
+        <input id="bc_note" placeholder="✍️ מה? (למשל: חתונה של…, להתקשר ל…)" autocomplete="off">
+        <div class="two"><select id="bc_kind">${taskKindOpts('event')}</select><input type="time" id="bc_time" title="שעה (רשות)"></div>
+        <input id="bc_q" placeholder="🔍 תורם (רשות)" autocomplete="off"><div id="bc_res" class="dpres"></div><div id="bc_chosen" class="pick" style="display:none"></div>
+        <input id="bc_place" placeholder="📍 מקום (רשות)">
+        <button class="btn sm" id="bc_add" style="width:100%">➕ הוסף ליום הזה</button></div>`)
+      :(L.slice(0,5).map(ent).join('')+(L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''));
+    cells.push(`<div class="bcc ${k===today?'today':''} ${isSel?'sel':''} ${dd.shabbos?'shab':''} ${dd.yomtov?'yt':''}" data-d="${k}"><div class="bcd"><b>${heDay(n)}</b><i class="bcm">${esc(HM.month)}</i><small>${DOW[dow]}</small><span class="bcg">${gregShort(k)}</span>${k===today?'<em>היום</em>':''}${isSel?'<button class="bcx2" title="סגור">✕</button>':''}</div>${dd.yomtov?`<div class="bcyt">🕯️ ${esc(dd.yomtov)}</div>`:''}${dd.parsha?`<div class="bcpr">📖 פרשת ${esc(dd.parsha)}</div>`:''}${inner}</div>`);}
   const sel=calSel?(by[calSel]||[]):[];
   const tp=hebTodayParts();
   const dayPanel=calSel?`<div class="sec bcday" id="bcday"><h3>📅 ${esc(selHeb)} ${esc(HM.year)} <small>· ${fmtGreg(calSel)} · יום ${DOW[new Date(calSel+'T12:00:00').getDay()]}${calSel===today?' · היום':''}</small></h3>
       ${sel.length?sel.map((e,i)=>`<div class="bcrow"><div class="bcrow-m">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}${e.icon} <b>${esc(e.title)}</b>${e.text?(' — '+esc(e.text)):''}${e.place?`<div class="miss2">📍 ${esc(e.place)}</div>`:''}${e.d?contactBtns(e.d):''}</div>
-        <div class="meta">${e.t?`<button class="btn sm bcdone" data-i="${i}">✓ בוצע</button>`:''}${e.d?`<button class="btn sm ghost bcopen" data-i="${i}">📋 כרטיס</button>`:''}${e.p?`<button class="btn sm ghost bcboard" data-i="${i}">🌙 בלוח הפרנס</button>`:''}${e.t&&gcalLink(e.t,e.title)?`<a class="gcal" href="${gcalLink(e.t,e.title)}" target="_blank" rel="noopener">ליומן Google</a>`:''}</div></div>`).join(''):'<div class="hintxt">אין כלום ביום הזה.</div>'}
-      <div class="bcadd"><h4>➕ הוסף ליום הזה</h4>
-        <input id="bc_note" placeholder="✍️ מה? (למשל: חתונה של…, להתקשר ל…)" autocomplete="off">
-        <input id="bc_q" placeholder="🔍 תורם (רשות)" autocomplete="off" style="margin-top:6px"><div id="bc_res" class="dpres"></div><div id="bc_chosen" class="pick" style="display:none"></div>
-        <div class="two" style="margin-top:6px"><select id="bc_kind">${taskKindOpts('event')}</select><input type="time" id="bc_time"></div>
-        <input id="bc_place" placeholder="📍 מקום (לשמחה)" style="margin-top:6px">
-        <button class="btn" id="bc_add" style="width:100%;margin:6px 0 0">➕ הוסף</button></div></div>`:'';
+        <div class="meta">${e.t?`<button class="btn sm bcdone" data-i="${i}">✓ בוצע</button>`:''}${e.d?`<button class="btn sm ghost bcopen" data-i="${i}">📋 כרטיס</button>`:''}${e.p?`<button class="btn sm ghost bcboard" data-i="${i}">🌙 בלוח הפרנס</button>`:''}${e.t&&gcalLink(e.t,e.title)?`<a class="gcal" href="${gcalLink(e.t,e.title)}" target="_blank" rel="noopener">ליומן Google</a>`:''}</div></div>`).join(''):'<div class="hintxt">אין כלום ביום הזה.</div>'}</div>`:'';
   const yn=HM.ynum||0;
   view.innerHTML=`<div class="bigcal">
     <div class="calnav">
@@ -11536,11 +11544,34 @@ async function renderCalTab(){
       <span class="calbtns"><button class="btn sm ghost calhg" data-m="${esc(HM.next.m)}" data-y="${esc(HM.next.y)}">${esc(HM.next.m)} ›</button><button class="btn sm ghost calhg" data-m="${esc(calHeb.m)}" data-y="${yn+1}" title="שנה קדימה">שנה ››</button></span>
       <span class="calbtns">${tp?`<button class="btn sm calhg" data-m="${esc(tp.m)}" data-y="${esc(tp.y)}">היום</button>`:''}</span></div>
     <div class="bcgrid">${DOW.map(x=>`<div class="bch">${x}</div>`).join('')}${cells.join('')}</div>
-    <div class="hintxt">לחיצה על יום פותחת אותו למטה עם כל מה שיש בו ואפשרות להוסיף. לחיצה על שורה פותחת את הכרטיס. ירוק = שמחה · סגול = משימה · זהב = פרנס יום · אדום = עבר הזמן.</div>
+    <div class="hintxt">לחיצה על יום פותחת אותו במקומו — עם ✎ לתיקון, ✓ לביצוע ושורת הוספה. שעה ומקום הם רשות. ירוק = שמחה · סגול = משימה · זהב = פרנס יום · אדום = עבר הזמן.</div>
     ${dayPanel}</div>`;
   view.querySelectorAll('.calhg').forEach(b=>b.onclick=()=>{calHeb={m:b.dataset.m,y:b.dataset.y};calSel='';render();});
-  view.querySelectorAll('.bcc[data-d]').forEach(c=>c.onclick=()=>{calSel=calSel===c.dataset.d?'':c.dataset.d;render();if(calSel)setTimeout(()=>{const el=document.getElementById('bcday');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},150);});
+  view.querySelectorAll('.bcc[data-d]').forEach(c=>c.onclick=e=>{
+    if(e.target.closest('.bcin,.bced,.bcea,.dpres'))return;      // עבודה בתוך הריבוע — לא סוגרת אותו
+    if(c.dataset.d===calSel&&!e.target.closest('.bcx2,.bcd'))return;
+    calEdit=null; calSel=calSel===c.dataset.d?'':c.dataset.d; render();});
   view.querySelectorAll('.bce[data-did]').forEach(x=>x.onclick=e=>{e.stopPropagation();const d=DB.find(y=>y.id==x.dataset.did);if(d)openDonor(d,x.dataset.k==='parnes'?'details':'tasks');});
+  // ✎ תיקון בתוך הריבוע
+  const findT=id=>{for(const d of DB){const t=(d.tasks||[]).find(x=>x.id==id);if(t)return {t,d};}const t=GTASKS.find(x=>x.id==id);return t?{t,d:null}:null;};
+  view.querySelectorAll('.bcedit').forEach(b=>b.onclick=e=>{e.stopPropagation();calEdit=+b.dataset.id;render();setTimeout(()=>{const i=view.querySelector('.bce_note');if(i)i.focus();},50);});
+  view.querySelectorAll('.bcdone2').forEach(b=>b.onclick=async e=>{e.stopPropagation();const f=findT(b.dataset.id);if(!f)return;
+    if(!await doneWithNote({...f.t,donor:f.d?(f.d.last+' '+f.d.first).trim():'',dref:f.d},f.d))return;checkReminders();render();toast('בוצע ✓');});
+  const ed=view.querySelector('.bced');
+  if(ed){const f=findT(ed.dataset.id);
+    ed.querySelector('.bce_cancel').onclick=e=>{e.stopPropagation();calEdit=null;render();};
+    ed.querySelector('.bce_save').onclick=async e=>{e.stopPropagation();if(!f)return;
+      const note=ed.querySelector('.bce_note').value.trim(),at=ed.querySelector('.bce_time').value||'',pl=ed.querySelector('.bce_place').value.trim();
+      if(!note){toast('כתוב מה');return;}
+      const r=await api('PUT','/api/task/'+f.t.id,{note,at_time:at,place:pl});
+      if(!r||!r.ok){toast('לא נשמר');return;}
+      Object.assign(f.t,{note,at_time:at,place:pl}); calEdit=null; checkReminders(); render(); toast('תוקן ✓');};
+    ed.querySelector('.bce_del').onclick=async e=>{e.stopPropagation();if(!f)return;
+      if(!await uiConfirm('למחוק את המשימה?'))return;
+      await api('DELETE','/api/task/'+f.t.id);
+      if(f.d)f.d.tasks=(f.d.tasks||[]).filter(x=>x.id!==f.t.id);else GTASKS=GTASKS.filter(x=>x.id!==f.t.id);
+      calEdit=null; checkReminders(); render(); toast('נמחק');};
+    ed.querySelector('.bce_note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();ed.querySelector('.bce_save').click();}});}
   view.querySelectorAll('.bcdone').forEach(b=>b.onclick=async()=>{const e=sel[b.dataset.i];if(!e||!e.t)return;if(!await doneWithNote({...e.t,donor:e.title,dref:e.d},e.d))return;checkReminders();render();toast('בוצע ✓');});
   view.querySelectorAll('.bcopen').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(e&&e.d)openDonor(e.d,e.t?'tasks':'details');});
   view.querySelectorAll('.bcboard').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(!e||!e.p)return;tab='parnes';pyKind=e.p.kind||'parnes';pyMonth=e.p.month;pyDay=+e.p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();window.scrollTo(0,0);});
@@ -11559,7 +11590,8 @@ async function renderCalTab(){
       if(!r||!r.id){toast('לא נשמר');return;}
       const rec={id:r.id,donor_id:bcChosen?bcChosen.id:null,due_date:calSel,kind:kind,note:note,assignee:'',done:0,at_time:body.at_time,place:body.place};
       if(bcChosen){bcChosen.tasks=bcChosen.tasks||[];bcChosen.tasks.push(rec);}else GTASKS.push(rec);
-      toast('נוסף ✓ — וגם ליומן Google');checkReminders();render();};}
+      toast('נוסף ✓ — וגם ליומן Google');checkReminders();render();};
+    document.getElementById('bc_note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('bc_add').click();}});}
 }
 function renderTasksTab(){
   const today=todayStr();
@@ -11713,7 +11745,7 @@ function renderTasksTab(){
     if(!note&&hasVoice)note='🎤 הודעה קולית';
     if(!date){toast('בחר תאריך');return;}
     btn.disabled=true;                   // לחיצה כפולה יצרה שתי משימות זהות
-    const body={due_date:date,kind:kind,note:note,assignee:who,...(kind==='event'?eventVals('nt'):{})};
+    const body={due_date:date,kind:kind,note:note,assignee:who,...eventVals('nt')};
     if(ntChosen)body.donor_id=ntChosen.id;
     const r=await api('POST','/api/task',body);
     if(r&&r.existing){btn.disabled=false;toast('המשימה כבר קיימת');render();return;}
