@@ -2892,6 +2892,20 @@ def ensure_schema():
     except Exception as e:
         print('  donat wedding error:', e)
 
+    # מאיר: "הכנסת לי כפילויות בסוכות תשפ"ז, אני כל כך הרבה הזהרתי שזה לא יקרה" —
+    # תרומה שמאיר רשם ביד וחיוב מהקובץ באותו סכום, עד 45 יום, אותה משפחת אמצעי
+    # תשלום — הם אותו כסף. השורה של מאיר נשארת (עם מספר העסקה), השורה שנפתחה
+    # מהקובץ נמחקת. סריקה חד-פעמית על כל התורמים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='dupes_import_v2'").fetchone():
+            n, names = dedupe_imports(con, since='2026-07-01', days=45)
+            con.execute("INSERT INTO seed_flags(name) VALUES('dupes_import_v2')")
+            con.commit()
+            if n:
+                print('  כפילויות שאוחדו (ידני + ייבוא): %d — %s' % (n, ', '.join(names[:40])))
+    except Exception as e:
+        print('  dedupe error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -8304,8 +8318,11 @@ def campaign_merge(con, src, dst):
 
 
 _CARD_GENERIC = ('אשראי', 'credit', 'אונליין', 'online', 'card', 'כרטיס')
-_CARD_AZ = ('authorize', 'אוטרייז', 'אוטורייז', 'אותורייז')
-_CARD_BQ = ('banquest', 'בנק ווסט')
+# מאיר: "הכנסת לי כפילויות בסוכות תשפ"ז" — הרישום הידני שלו נשמר עם ערוץ
+# 'בנק_ווסט' (קו תחתון, כמו בבורר), וזה לא זוהה כבנק ווסט, ולכן החיוב מהקובץ
+# לא אומת מולו ונפתח שוב. כל האיותים כאן.
+_CARD_AZ = ('authorize', 'אוטרייז', 'אוטורייז', 'אותורייז', 'אוטרייס', 'authnet')
+_CARD_BQ = ('banquest', 'בנק ווסט', 'בנק_ווסט', 'בנקווסט', 'בנק-ווסט', 'bankwest', 'bank west', 'usaepay')
 
 
 def _card_fam(s):
@@ -8336,11 +8353,13 @@ def merge_manual_donation(cur, did, iso, amount, tid, meth, days=10):
     except Exception:
         return None
     best = None
-    for r in cur.execute("SELECT id,date,method,note FROM donations WHERE donor_id=? "
-                         "AND COALESCE(tid,'')='' AND ROUND(CAST(amount AS REAL),2)=?",
-                         (did, round(float(amount), 2))).fetchall():
+    a0 = _amt2(amount)
+    for r in cur.execute("SELECT id,date,method,note,amount FROM donations WHERE donor_id=? "
+                         "AND COALESCE(tid,'')=''", (did,)).fetchall():
+        if abs(_amt2(r['amount']) - a0) > 0.01:         # השוואה בפייתון — גם '1,300' עם פסיק
+            continue
         nt = (r['note'] or '').strip()
-        if nt.startswith(('ייבוא', 'נכנס מ', 'שויך ידנית')):
+        if nt.startswith(('ייבוא', 'נכנס מ', 'שויך ידנית', 'נגבה ב')):
             continue                                    # שורה שהגיעה מחיוב אחר
         try:
             d1 = datetime.date.fromisoformat(str(r['date'] or '')[:10])
@@ -8386,6 +8405,92 @@ def settle_pledge(cur, did, cat, amount):
         cur.execute("UPDATE pledges SET status='נתן' WHERE id=?", (p['id'],))
         return True
     return False
+
+
+def _is_import_row(r):
+    nt = (r['note'] or '').strip()
+    return bool((r['tid'] or '').strip()) or nt.startswith(('ייבוא', 'נכנס מ', 'נגבה ב'))
+
+
+def merge_dupe_pair(con, keep_id, drop_id):
+    """איחוד שתי שורות שהן אותו כסף: השורה שנשארת מקבלת את מספר העסקה, התאריך
+    ואמצעי התשלום של שורת הייבוא (אם זו שורת ייבוא), והשנייה נמחקת."""
+    k = con.execute("SELECT * FROM donations WHERE id=?", (keep_id,)).fetchone()
+    d = con.execute("SELECT * FROM donations WHERE id=?", (drop_id,)).fetchone()
+    if not k or not d or k['donor_id'] != d['donor_id']:
+        return False
+    tid = (d['tid'] or '').strip() or (k['tid'] or '').strip()
+    imp = d if _is_import_row(d) else (k if _is_import_row(k) else None)
+    meth = (imp['method'] if imp else k['method']) or k['method'] or ''
+    date = (imp['date'] if imp else k['date']) or k['date'] or ''
+    fam = _card_fam(meth)
+    src = 'בנק ווסט' if fam == 'bq' else ('אוטורייז' if fam == 'az' else (meth or 'הייבוא'))
+    note = (k['note'] or '').strip()
+    if 'אומת מול' not in note:
+        note = (note + ' · ' if note else '') + 'אומת מול החיוב ב' + src
+    cat = (k['category'] or '').strip() or (d['category'] or '').strip()
+    con.execute("UPDATE donations SET tid=?, method=?, date=?, paid=1, note=?, category=? WHERE id=?",
+                (tid, meth, date, note, cat, keep_id))
+    con.execute("DELETE FROM donations WHERE id=?", (drop_id,))
+    if tid:
+        con.execute("UPDATE recon SET category=?, processed=1, donor_id=? WHERE tid=?", (cat, k['donor_id'], tid))
+    return True
+
+
+def find_dupes(con, since='2026-07-01', days=45, cat=None, strict=True):
+    """זוגות תרומות של אותו תורם באותו סכום בטווח ימים: שורה ידנית מול שורת ייבוא
+    (strict) — או כל זוג באותו ייעוד (strict=False, לבדיקה ידנית).
+    מחזיר רשימת {donor_id, keep, drop, amount, gap} — keep = הידנית."""
+    rows = {}
+    for r in con.execute("SELECT id,donor_id,date,amount,category,method,note,tid FROM donations "
+                         "WHERE donor_id IS NOT NULL AND COALESCE(date,'')>=? AND LENGTH(COALESCE(date,''))>=10 "
+                         "ORDER BY date", (since,)):
+        if cat and (r['category'] or '').strip() != cat:
+            continue
+        rows.setdefault(r['donor_id'], []).append(dict(r))
+    out, used = [], set()
+    for did, lst in rows.items():
+        for i in range(len(lst)):
+            for j in range(i + 1, len(lst)):
+                a, b = lst[i], lst[j]
+                if a['id'] in used or b['id'] in used:
+                    continue
+                if abs(_amt2(a['amount']) - _amt2(b['amount'])) > 0.01:
+                    continue
+                try:
+                    gap = abs((datetime.date.fromisoformat(a['date'][:10]) - datetime.date.fromisoformat(b['date'][:10])).days)
+                except Exception:
+                    continue
+                if gap > days:
+                    continue
+                ia, ib = _is_import_row(a), _is_import_row(b)
+                if strict:
+                    if ia == ib:
+                        continue              # שתי ידניות / שני ייבואים — לא נוגעים לבד
+                    man, imp = (b, a) if ia else (a, b)
+                    if not _meth_matches(man['method'], imp['method']):
+                        continue
+                    ca, cb = (man['category'] or '').strip(), (imp['category'] or '').strip()
+                    generic = ('', 'מזדמן', 'קבוע')
+                    if ca and cb and ca != cb and cb not in generic and ca not in generic:
+                        continue              # שני ייעודים שונים ומפורשים — לבדיקה ידנית
+                    keep, drop = man, imp
+                else:
+                    keep, drop = (b, a) if ia and not ib else (a, b)
+                used.add(a['id']); used.add(b['id'])
+                out.append({'donor_id': did, 'keep': keep, 'drop': drop, 'amount': _amt2(a['amount']), 'gap': gap})
+    return out
+
+
+def dedupe_imports(con, since='2026-07-01', days=45):
+    """איחוד אוטומטי של כל הזוגות הבטוחים (ידני מול ייבוא). מחזיר (כמות, שמות)."""
+    nm = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+    n, names = 0, []
+    for p in find_dupes(con, since, days, strict=True):
+        if merge_dupe_pair(con, p['keep']['id'], p['drop']['id']):
+            n += 1
+            names.append('%s %s' % (nm.get(p['donor_id'], p['donor_id']), int(p['amount'])))
+    return n, names
 
 
 def recon_apply(cur, tid, b):
@@ -12214,6 +12319,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, page.encode('utf-8'), 'text/html')
         if self.path.split('?')[0] == '/kv-page':
             return self._send(200, open(os.path.join(STATIC, 'kvpage.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/dupes':
+            # מאיר: "יש עוד הרבה כאלו" — זוגות חשודים (אותו תורם, אותו סכום, עד 60 יום)
+            # בייעוד שנבחר, לאיחוד בלחיצה מדף הקמפיין
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cat = (qs.get('cat', [''])[0] or '').strip() or None
+            con = db()
+            try:
+                nm = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+                out = []
+                for p in find_dupes(con, since='2026-01-01', days=60, cat=cat, strict=False):
+                    out.append({'donor_id': p['donor_id'], 'name': nm.get(p['donor_id'], ''), 'amount': p['amount'], 'gap': p['gap'],
+                                'keep': {k: p['keep'].get(k) for k in ('id', 'date', 'amount', 'category', 'method', 'note', 'tid')},
+                                'drop': {k: p['drop'].get(k) for k in ('id', 'date', 'amount', 'category', 'method', 'note', 'tid')}})
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'pairs': out})
         if self.path.split('?')[0] == '/api/kvpage':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
@@ -15275,6 +15396,14 @@ class H(BaseHTTPRequestHandler):
             commit_retry(con); con.close()
             bump_data()
             return self._send(200, {'ok': True, 'donor_id': int(did)})
+        if self.path == '/api/dupes/merge':
+            con = db()
+            try:
+                ok = merge_dupe_pair(con, int(b.get('keep') or 0), int(b.get('drop') or 0))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': bool(ok)})
         if self.path == '/api/campaigns/merge':
             src, dst = (b.get('from') or '').strip(), (b.get('into') or '').strip()
             if not src or not dst or src == dst:
