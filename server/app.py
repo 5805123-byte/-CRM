@@ -2990,6 +2990,49 @@ def ensure_schema():
     except Exception as e:
         print('  no autocat error:', e)
 
+    # מאיר (אישר): ה-10,000 של ישראל קירזנר לסוכות תשפ"ז נולד מהתחייבות שנרשמה על
+    # האח הלא נכון וסומנה "נתן" — הכסף הוא של יוסף: 3,500 + 6,500 בבנק ווסט ב-16.9.
+    # מוחקים את השורה של ישראל ואת הרישום הידני של יוסף (10,000), ומסווגים את שני
+    # החיובים האמיתיים של יוסף כסוכות תשפ"ז עם ההערה שלו.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kirzner_sukkos_fix_v1'").fetchone():
+            SUK = 'סוכות תשפ"ז'
+            done = []
+            # ישראל: שורת 10,000 לסוכות (לא מייבוא)
+            isr = con.execute("SELECT id FROM donors WHERE last LIKE '%קירזנר%' AND first LIKE '%ישראל%' ORDER BY id LIMIT 1").fetchone()
+            if isr:
+                for r in con.execute("SELECT id,amount FROM donations WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND COALESCE(tid,'')='' AND COALESCE(date,'')>='2026-09-01'", (isr['id'], SUK)).fetchall():
+                    if abs(_amt2(r['amount']) - 10000) < 0.01:
+                        con.execute("DELETE FROM donations WHERE id=?", (r['id'],)); done.append('ישראל 10000 נמחק')
+                # ההתחייבות שסומנה "נתן" — יורדת גם היא
+                con.execute("DELETE FROM pledges WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND REPLACE(REPLACE(COALESCE(amount,''),',',''),'$','')='10000'", (isr['id'], SUK))
+            yos = con.execute("SELECT id FROM donors WHERE last LIKE '%קירזנר%' AND (first LIKE '%יוסף%' OR first LIKE '%יוסי%') ORDER BY id LIMIT 1").fetchone()
+            if yos:
+                note0 = ''
+                for r in con.execute("SELECT id,amount,note FROM donations WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND COALESCE(tid,'')='' AND COALESCE(date,'')>='2026-09-01'", (yos['id'], SUK)).fetchall():
+                    if abs(_amt2(r['amount']) - 10000) < 0.01:
+                        note0 = (r['note'] or '').strip()
+                        con.execute("DELETE FROM donations WHERE id=?", (r['id'],)); done.append('יוסף 10000 ידני נמחק')
+                for tid in ('BQ84930592', 'BQ84930472'):          # 3,500 + 6,500 — 16.9, Amex 2002
+                    r = con.execute("SELECT id,note,donor_id FROM donations WHERE tid=?", (tid,)).fetchone()
+                    if r:
+                        nt = (r['note'] or '').replace(' · לא סווג — לבדוק עבור מה', '')
+                        nt = nt + ' · סוכות לפי מאיר' + ((' · ' + note0) if note0 else '')
+                        con.execute("UPDATE donations SET donor_id=?, category=?, note=? WHERE id=?", (yos['id'], SUK, nt, r['id']))
+                        con.execute("UPDATE recon SET donor_id=?, category=?, processed=1 WHERE tid=?", (yos['id'], SUK, tid))
+                        done.append(tid + '→סוכות')
+                    else:
+                        rr = con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone()
+                        if rr:
+                            con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (yos['id'], tid))
+                            recon_apply(con, tid, {'donor_id': yos['id'], 'category': SUK, 'note': 'סוכות לפי מאיר' + ((' · ' + note0) if note0 else '')})
+                            done.append(tid + ' נרשם')
+            con.execute("INSERT INTO seed_flags(name) VALUES('kirzner_sukkos_fix_v1')")
+            con.commit()
+            print('  קירזנר סוכות: ' + (', '.join(done) if done else 'לא נמצא מה לתקן'))
+    except Exception as e:
+        print('  kirzner sukkos error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
