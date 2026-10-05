@@ -565,6 +565,12 @@ def ensure_schema():
     # הקצאת משימה למזכיר (מאיר / אהרן / ריק=אני)
     # מאיר: "אפילו אם עושה וי על מה שביצע שיוכל לכתוב שם הערה מה הוא
     # עשה על המשימה ומה נסגר תכליס"
+    # מאיר: "בכל פעם שאני שולח הזמנה לבר מצווה או חתונה או אירוע אחר עם תאריך
+    # והמקום שתכניס את זה ללוח של גוגל" — שעה ומקום לאירוע (משימה מסוג 'event')
+    try: con.execute("ALTER TABLE tasks ADD COLUMN at_time TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE tasks ADD COLUMN place TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE tasks ADD COLUMN done_note TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE tasks ADD COLUMN assignee TEXT")
@@ -2866,6 +2872,25 @@ def ensure_schema():
                 print('  התחייבויות שכבר ניתנו וסומנו "נתן": %d' % n)
     except Exception as e:
         print('  pledges autosettle error:', e)
+
+    # ההזמנה הראשונה שמאיר שלח: חתונת חיה שרה בת מרדכי ומאשא דונט עם בצלאל יאיר
+    # (פודולסקי), יום חמישי כ"ז תשרי תשפ"ז (08.10.2026), אולמי "קונקורד" כינרת 2
+    # בני ברק, קבלת פנים 17:30, חופה 18:00 — נכנסת ככמשימת שמחה אצל דונט מרדכי.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_donat_wedding_v1'").fetchone():
+            dn = _find_donat(con)
+            if dn:
+                note = 'חתונת חיה שרה (בת מרדכי ומאשא דונט) עם בצלאל יאיר (פודולסקי) · קבלת פנים 17:30, חופה 18:00'
+                if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='event' AND due_date='2026-10-08'", (dn['id'],)).fetchone():
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                                (dn['id'], '2026-10-08', 'event', note, '', '17:30', 'אולמי "קונקורד", כינרת 2, בני ברק'))
+                    print('  חתונת דונט: נרשמה כשמחה ב-08.10.2026 (#%s)' % dn['id'])
+            else:
+                print('  חתונת דונט: לא נמצא כרטיס של דונט מרדכי')
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_donat_wedding_v1')")
+            con.commit()
+    except Exception as e:
+        print('  donat wedding error:', e)
 
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
@@ -6948,7 +6973,7 @@ def norm_zip(z, region):
         return '0' + z
     return z
 
-KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל',
+KIND_HE = {'charge': '💳 לחייב', 'parnes': '🌙 פרנס יום', 'prayer': '🙏 להתפלל', 'event': '🎉 שמחה',
            'followup': '📞 לחזור', 'other': '🔔 תזכורת'}
 
 _MONI = {'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
@@ -11835,6 +11860,21 @@ def build_ics():
         who = names.get(r['donor_id'], '')
         title = (KIND_HE.get(r['kind'], '🔔') + ' ' + who + ((' — ' + r['note']) if r['note'] else '')).strip()
         title = title.replace('\n', ' ').replace(',', '\\,').replace(';', '\\;')
+        hm = re.sub(r'\D', '', str(r['at_time'] or ''))[:4] if r['kind'] == 'event' else ''
+        if len(hm) == 4:
+            # מאיר: "שזה ייתן לי תזכורת יום לפני זה וגם באותו יום כמה שעות לפני" —
+            # אירוע עם שעה: שלוש שעות, ותזכורות יום לפני ושלוש שעות לפני
+            hh, mm = int(hm[:2]), int(hm[2:])
+            end = (hh + 3) % 24
+            place = (r['place'] or '').replace('\n', ' ').replace(',', '\\,').replace(';', '\\;')
+            out += ['BEGIN:VEVENT', f'UID:task{r["id"]}@kollel-chatzot',
+                    f'DTSTART;TZID=Asia/Jerusalem:{d}T{hh:02d}{mm:02d}00',
+                    f'DTEND;TZID=Asia/Jerusalem:{d}T{end:02d}{mm:02d}00',
+                    'STATUS:CONFIRMED', f'SUMMARY:{title}'] + ([f'LOCATION:{place}'] if place else []) + [
+                    'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-P1D', f'DESCRIPTION:{title}', 'END:VALARM',
+                    'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT3H', f'DESCRIPTION:{title}', 'END:VALARM',
+                    'END:VEVENT']
+            continue
         out += ['BEGIN:VEVENT', f'UID:task{r["id"]}@kollel-chatzot', f'DTSTART;VALUE=DATE:{d}',
                 'STATUS:CONFIRMED', f'SUMMARY:{title}', 'BEGIN:VALARM', 'ACTION:DISPLAY',
                 'TRIGGER:-PT9H', f'DESCRIPTION:{title}', 'END:VALARM', 'END:VEVENT']
@@ -14028,7 +14068,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); cur = con.cursor(); sets = []; vals = []
-            for k in ('due_date','kind','note','assignee','done_note'):
+            for k in ('due_date','kind','note','assignee','done_note','at_time','place'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 cur.execute("UPDATE tasks SET " + ",".join(sets) + " WHERE id=?", vals + [pid])
@@ -16332,8 +16372,8 @@ class H(BaseHTTPRequestHandler):
             if ex:
                 con.close()
                 return self._send(200, {'ok': True, 'id': ex['id'], 'existing': True})
-            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,?)",
-                        (did, due, kind, note, who))
+            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                        (did, due, kind, note, who, (b.get('at_time') or '').strip()[:5], (b.get('place') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':

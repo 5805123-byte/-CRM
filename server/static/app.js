@@ -282,9 +282,15 @@ const FREQ = [['','חודשי'],['x2m','פעמיים בחודש'],['2m','כל ח
 function freqOpts(cur){return FREQ.map(([v,l])=>`<option value="${v}" ${v===(cur||'')?'selected':''}>${l}</option>`).join('');}
 function freqLabel(v){const f=FREQ.find(x=>x[0]===v);return f&&f[0]?f[1]:'';}
 const MON = ['ינ','פב','מר','אפ','מא','יו','יול','אג','ספ','אק','נו','דצ'];
-const KIND = {charge:'🧾 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 לבקש שמות',followup:'📞 להתקשר',email:'📧 אימייל/וואטסאפ',verify:'💰 לבדוק שנגבה',card:'💳 לבדוק כרטיס',other:'🔔 אחר'};
+const KIND = {charge:'🧾 לחייב',parnes:'🌙 פרנס יום',prayer:'🙏 לבקש שמות',followup:'📞 להתקשר',email:'📧 אימייל/וואטסאפ',verify:'💰 לבדוק שנגבה',card:'💳 לבדוק כרטיס',event:'🎉 שמחה',other:'🔔 אחר'};
 // רשימת סוגי המשימה — משמשת בכל מקום שבו קובעים משימה
-const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['prayer','🙏 לבקש שמות לקוויטל'],['parnes','🌙 פרנס יום'],['cert','📜 תעודת יששכר־זבולון'],['other','🔔 אחר']];
+const TASKKINDS=[['followup','📞 להתקשר אליו'],['email','📧 לשלוח אימייל / וואטסאפ'],['verify','💰 לבדוק שנגבה'],['card','💳 לבדוק כרטיס'],['charge','🧾 לחייב'],['prayer','🙏 לבקש שמות לקוויטל'],['parnes','🌙 פרנס יום'],['event','🎉 שמחה / הזמנה (חתונה, בר מצווה…)'],['cert','📜 תעודת יששכר־זבולון'],['other','🔔 אחר']];
+// מאיר: "בכל פעם שאני שולח הזמנה לבר מצווה או חתונה… עם תאריך והמקום שתכניס
+// את זה ללוח של גוגל" — לאירוע יש שעה ומקום; השדות מופיעים רק כשהסוג הוא שמחה
+function eventFieldsHTML(pre,t){return `<div class="two evfields" data-ev="${pre}" style="margin-top:6px;display:none"><label class="fld"><span>🕒 שעה</span><input type="time" id="${pre}_time" value="${esc((t&&t.at_time)||'')}"></label><label class="fld"><span>📍 מקום</span><input id="${pre}_place" placeholder="אולם / כתובת" value="${esc((t&&t.place)||'')}"></label></div>`;}
+function wireEventFields(sel,pre){if(!sel)return;const box=document.querySelector('.evfields[data-ev="'+pre+'"]');if(!box)return;const upd=()=>{box.style.display=sel.value==='event'?'':'none';};sel.addEventListener('change',upd);upd();}
+function eventVals(pre){const t=document.getElementById(pre+'_time'),p=document.getElementById(pre+'_place');return {at_time:t?t.value:'',place:p?p.value.trim():''};}
+function eventMeta(t){return (t&&t.kind==='event'&&(t.at_time||t.place))?`<div class="miss2">${t.at_time?('🕒 '+esc(t.at_time)+' '):''}${t.place?('📍 '+esc(t.place)):''}</div>`:'';}
 // סוגי משימה שמאיר מגדיר בעצמו נשמרים כ־"c:שם הסוג"
 const isCustKind=k=>String(k||'').slice(0,2)==='c:';
 const custKind=k=>isCustKind(k)?String(k).slice(2):'';
@@ -675,7 +681,11 @@ function nowStamp(){const d=new Date(),z=n=>String(n).padStart(2,'0');
 const hhmm=s=>{const m=/\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(s||'');return m?m[1]:'';};
 function inDaysStr(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.toISOString().slice(0,10);}
 function addDay(ymd8){const y=+ymd8.slice(0,4),m=+ymd8.slice(4,6)-1,d=+ymd8.slice(6,8);return new Date(Date.UTC(y,m,d+1)).toISOString().slice(0,10).replace(/-/g,'');}
-function gcalLink(t,donor){const d=(t.due_date||'').replace(/-/g,'');if(d.length!==8)return '';const title=encodeURIComponent((kindLabel(t.kind)||'תזכורת')+' — '+donor+(t.note?': '+t.note:''));return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}/${addDay(d)}`;}
+function gcalLink(t,donor){const d=(t.due_date||'').replace(/-/g,'');if(d.length!==8)return '';const title=encodeURIComponent((kindLabel(t.kind)||'תזכורת')+' — '+donor+(t.note?': '+t.note:''));
+  const hm=String(t.at_time||'').replace(/\D/g,'').slice(0,4);
+  if(t.kind==='event'&&hm.length===4){const hh=+hm.slice(0,2),mm=hm.slice(2);const e=String((hh+3)%24).padStart(2,'0');
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}T${hm}00/${d}T${e}${mm}00&ctz=Asia/Jerusalem${t.place?('&location='+encodeURIComponent(t.place)):''}`;}
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}/${addDay(d)}`;}
 function dueTasks(){const td=todayStr(),out=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td)out.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));return out.sort((a,b)=>(a.due_date||'').localeCompare(b.due_date||''));}
 // מי אחראי על המשימה — מוצג בכל מקום שבו רואים משימה, וניתן להחליף בלחיצה
 const whoName=t=>(((t&&t.assignee)||'')==='אהרן'?'אהרן':'מאיר');
@@ -2534,6 +2544,7 @@ function cardTasks(d,body){
       <input id="ct_note" placeholder="✍️ מה צריך לעשות (למשל: להתפלל עליו, לתקן פרטים, לחזור)…" autocomplete="off">
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select id="ct_kind">${taskKindOpts('other')}</select></label>
         <label class="fld"><span>תאריך</span><input id="ct_date" type="date" value="${todayStr()}"></label></div>
+      ${eventFieldsHTML('ct')}
       <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="ct_who">${assigneeOpts('')}</select></label><label class="fld"><span>&nbsp;</span><button class="btn" id="ct_add" style="width:100%">➕ הוסף משימה</button></label></div>
       <div class="avfiles dnfiles" id="ct_files"><label class="filebtn sm">📎 צרף תמונה / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="ct_file" hidden></label></div>
       <div class="hintxt">כל משימה נכנסת גם ללשונית "משימות" הראשית וליומן Google.</div></div>
@@ -2542,6 +2553,7 @@ function cardTasks(d,body){
   renderCardTasks(d);
   addMic(document.getElementById('ct_note'));
   wireKindSel(document.getElementById('ct_kind'));
+  wireEventFields(document.getElementById('ct_kind'),'ct');
   const ctF=pendFiles('ct_files','ct_file');
   document.getElementById('ct_add').onclick=async ev=>{
     const btn=ev.currentTarget; if(btn.disabled)return;
@@ -2551,10 +2563,11 @@ function cardTasks(d,body){
     if(!note&&!hasVoice){toast('כתוב מה צריך לעשות — או הקלט הודעה');return;}if(!date){toast('בחר תאריך');return;}
     if(!note)note='🎤 הודעה קולית';   // משימה שהוקלטה בלי טקסט
     btn.disabled=true;                 // הגנה מלחיצה כפולה — אחרת נוצרות שתי משימות
-    const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who});
+    const evx=kind==='event'?eventVals('ct'):{at_time:'',place:''};
+    const r=await api('POST','/api/task',{donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,...evx});
     btn.disabled=false;
     if(r&&r.existing){toast('המשימה כבר קיימת');return;}
-    d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,done:0});
+    d.tasks=d.tasks||[];d.tasks.push({id:r.id,donor_id:d.id,due_date:date,kind:kind,note:note,assignee:who,done:0,...evx});
     document.getElementById('ct_note').value='';
     if(ctF.arr.length){toast('מעלה קבצים…');for(const f of ctF.arr)await uploadBlob('task',r.id,f);ctF.reset();
       await load();const dd=DB.find(x=>x.id===d.id)||d;
@@ -2581,7 +2594,7 @@ function renderCardTasks(d){
   const open=(d.tasks||[]).filter(t=>!t.done||t.done==0).sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
   el.innerHTML=open.map(t=>{const over=t.due_date&&t.due_date<td,icon=kindLabel(t.kind).split(' ')[0];
     return `<div class="cttask" data-id="${t.id}"><button class="tdone ctdone" data-id="${t.id}">✓</button>
-      <div class="cti"><div>${icon} ${esc(t.note||'')}</div><div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
+      <div class="cti"><div>${icon} ${esc(t.note||'')}</div>${eventMeta(t)}<div class="ctmeta ${over?'over':''}">${esc(t.due_date||'—')} ${whoChipHTML(t,'data-rwho="'+t.id+'"')}${gcalLink(t,(d.last+' '+d.first).trim())?` <a class="gcal" href="${gcalLink(t,(d.last+' '+d.first).trim())}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div>
         <div class="avfiles">${(t.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 צרף<input type="file" accept="image/*,audio/*,application/pdf" class="ctup" data-id="${t.id}" hidden></label></div></div>
       ${t.kind==='parnes'?`<button class="btn sm ghost ctboard" data-id="${t.id}" title="פתח את היום הזה בלוח הפרנס">🗓️ ללוח הפרנס</button>`:''}<button class="tedit ctedit" data-id="${t.id}" title="ערוך משימה">✏️ ערוך</button><button class="del ctdel" data-id="${t.id}">🗑</button></div>
     <div class="donepanel hidden" data-ctdp="${t.id}">
@@ -2595,6 +2608,7 @@ function renderCardTasks(d){
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="ctn" data-id="${t.id}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select class="ctk" data-id="${t.id}">${taskKindOpts(t.kind)}</select></label>
         <label class="fld"><span>תאריך</span><input type="date" class="ctd" data-id="${t.id}" value="${esc(t.due_date||'')}"></label></div>
+      ${eventFieldsHTML('cte'+t.id,t)}
       <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select class="ctw" data-id="${t.id}">${assigneeOpts(t.assignee)}</select></label>
       <button class="btn sm ctsave" data-id="${t.id}" style="width:100%;margin-top:8px">💾 שמור שינויים</button>
     </div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
@@ -2618,7 +2632,7 @@ function renderCardTasks(d){
   el.querySelectorAll('.ctup').forEach(inp=>inp.onchange=()=>uploadFile('task',+inp.dataset.id,inp,backHere));
   el.querySelectorAll('.cttask .avfiles').forEach(bx=>{const tid=+bx.closest('.cttask').dataset.id;
     addVoiceBtn(bx,async f=>{toast('מעלה את ההקלטה…');await uploadBlob('task',tid,f);await backHere();toast('ההקלטה נשמרה במשימה ✓');});});
-  el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p)p.classList.toggle('hidden');});
+  el.querySelectorAll('.ctedit').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=el.querySelector('.teditpanel[data-ctp="'+b.dataset.id+'"]');if(p){p.classList.toggle('hidden');wireEventFields(p.querySelector('.ctk'),'cte'+b.dataset.id);}});
   // מאיר: "אם יש לתורם פרנס יום בדף קשר שלו במשימות אז אמור להיות קישור לדף
   // לוח פרנס יום באופן אוטומטי" — הכפתור פותח את הלוח על היום של הפרנס
   el.querySelectorAll('.ctboard').forEach(b=>b.onclick=e=>{e.stopPropagation();
@@ -2635,9 +2649,10 @@ function renderCardTasks(d){
     const note=el.querySelector('.ctn[data-id="'+b.dataset.id+'"]').value.trim();
     const date=el.querySelector('.ctd[data-id="'+b.dataset.id+'"]').value;
     const who=el.querySelector('.ctw[data-id="'+b.dataset.id+'"]').value;
+    const ev=kind==='event'?eventVals('cte'+t.id):{at_time:'',place:''};
     b.disabled=true;
-    const rsp=await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who});
-    t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;
+    const rsp=await api('PUT','/api/task/'+t.id,{note:note,kind:kind,due_date:date,assignee:who,...ev});
+    t.note=note;t.kind=kind;t.due_date=date;t.assignee=who;t.at_time=ev.at_time;t.place=ev.place;
     if(rsp&&rsp.contact)putLog(d,rsp.contact);
     renderCardTasks(d);renderReminders(d);checkReminders();toast('נשמר ✓');});
   el.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);renderCardTasks(d);});
@@ -11400,6 +11415,7 @@ function renderTasksTab(){
       <div id="nt_res" class="dpres"></div>
       <div id="nt_chosen" class="pick" style="display:none"></div>
       <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
+      ${eventFieldsHTML('nt')}
       <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select id="nt_who">${assigneeOpts(inWho)}</select></label>
       <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
@@ -11410,7 +11426,7 @@ function renderTasksTab(){
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
-      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}${(t.files||[]).some(isAudioFile)?`<div class="avfiles" onclick="event.stopPropagation()">${(t.files||[]).filter(isAudioFile).map(fileChip).join('')}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
+      <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${eventMeta(t)}${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}${(t.files||[]).some(isAudioFile)?`<div class="avfiles" onclick="event.stopPropagation()">${(t.files||[]).filter(isAudioFile).map(fileChip).join('')}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+(hhmm(t.done_at)?(' '+hhmm(t.done_at)):'')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
         <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
         <button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
@@ -11483,6 +11499,7 @@ function renderTasksTab(){
   if(tms)tms.onclick=()=>runMailSync(tms);
   const ntF=pendFiles('nt_files','nt_file');
   wireKindSel(document.getElementById('nt_kind'));
+  wireEventFields(document.getElementById('nt_kind'),'nt');
   addMic(document.getElementById('nt_note'));
   addMics(view,['.tnote']);
   document.getElementById('nt_add').onclick=async ev=>{
@@ -11496,7 +11513,7 @@ function renderTasksTab(){
     if(!note&&hasVoice)note='🎤 הודעה קולית';
     if(!date){toast('בחר תאריך');return;}
     btn.disabled=true;                   // לחיצה כפולה יצרה שתי משימות זהות
-    const body={due_date:date,kind:kind,note:note,assignee:who};
+    const body={due_date:date,kind:kind,note:note,assignee:who,...(kind==='event'?eventVals('nt'):{})};
     if(ntChosen)body.donor_id=ntChosen.id;
     const r=await api('POST','/api/task',body);
     if(r&&r.existing){btn.disabled=false;toast('המשימה כבר קיימת');render();return;}
