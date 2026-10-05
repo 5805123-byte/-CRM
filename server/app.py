@@ -3033,6 +3033,34 @@ def ensure_schema():
     except Exception as e:
         print('  kirzner sukkos error:', e)
 
+    # מאיר: "מרמרשטיין זאב — הוא לא נתן 3300, רק 3900 לסוכות". אין חיוב של 3,300
+    # בקבצי ספטמבר (באוטרייז 3,900 ב-9.9, בבנק ווסט 2,700 הוראת קבע). שורת 3,300
+    # לסוכות: אם היא בלי מספר עסקה (נרשמה ביד / מהתחייבות) — נמחקת; אם היא חיוב
+    # אמיתי — הייעוד יורד והיא נשארת בכרטיס "לבדוק עבור מה".
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='marmurstein_3300_v1'").fetchone():
+            SUK = 'סוכות תשפ"ז'
+            zm = con.execute("SELECT id FROM donors WHERE last LIKE '%מרמרשטיין%' AND first LIKE '%זאב%' ORDER BY id LIMIT 1").fetchone()
+            if not zm:
+                zm = con.execute("SELECT id FROM donors WHERE lower(COALESCE(english,'')) LIKE '%marmurstein%' ORDER BY id LIMIT 1").fetchone()
+            done = []
+            if zm:
+                for r in con.execute("SELECT id,amount,tid,note FROM donations WHERE donor_id=? AND TRIM(COALESCE(category,''))=?", (zm['id'], SUK)).fetchall():
+                    if abs(_amt2(r['amount']) - 3300) < 0.01:
+                        if (r['tid'] or '').strip():
+                            nt = (r['note'] or '').replace(' · לא סווג — לבדוק עבור מה', '')
+                            con.execute("UPDATE donations SET category='', note=? WHERE id=?", (nt + ' · לא סוכות (לפי מאיר) — לבדוק עבור מה', r['id']))
+                            con.execute("UPDATE recon SET category='' WHERE tid=?", (r['tid'],))
+                            done.append('3300 חיוב — ירד מסוכות')
+                        else:
+                            con.execute("DELETE FROM donations WHERE id=?", (r['id'],)); done.append('3300 ידני — נמחק')
+                con.execute("DELETE FROM pledges WHERE donor_id=? AND TRIM(COALESCE(category,''))=? AND REPLACE(REPLACE(COALESCE(amount,''),',',''),'$','')='3300'", (zm['id'], SUK))
+            con.execute("INSERT INTO seed_flags(name) VALUES('marmurstein_3300_v1')")
+            con.commit()
+            print('  מרמרשטיין 3300: ' + (', '.join(done) if done else 'לא נמצא'))
+    except Exception as e:
+        print('  marmurstein error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
