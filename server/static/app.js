@@ -11409,19 +11409,24 @@ function taskParnes(t){
 }
 // מאיר: "שבמשימות יהיה גם לוח שנה מה צריך לעשות" — תצוגת חודש עם המשימות על
 // הימים; לחיצה על יום מראה את המשימות שלו למטה
-let taskView=(()=>{try{return localStorage.getItem('kc_taskview')||'list';}catch(e){return 'list';}})(), calYM='', calSel='';
+let taskView=(()=>{try{return localStorage.getItem('kc_taskview')||'cal';}catch(e){return 'cal';}})(), calYM='', calSel='';
 function calHTML(all,today){
   if(!calYM)calYM=today.slice(0,7);
   const [Y,M]=calYM.split('-').map(Number);
   const first=new Date(Y,M-1,1), dim=new Date(Y,M,0).getDate(), start=first.getDay();
   const by={}; all.forEach(t=>{const k=t.due_date||'';if(k.slice(0,7)===calYM)(by[k]=by[k]||[]).push(t);});
   const cells=[]; for(let i=0;i<start;i++)cells.push('<div class="calcell empty"></div>');
-  for(let d=1;d<=dim;d++){const k=calYM+'-'+String(d).padStart(2,'0'), L=by[k]||[];
-    cells.push(`<div class="calcell ${k===today?'today':''} ${k===calSel?'sel':''} ${L.length?'has':''}" data-d="${k}"><b>${d}</b>${L.slice(0,3).map(t=>`<span class="caltask ${t.kind==='event'?'ev':''} ${t.due_date<today?'late':''}" title="${esc(t.note||'')}">${kindLabel(t.kind).split(' ')[0]} ${esc((t.donor||t.note||'').split(' ').slice(0,2).join(' '))}${t.at_time?(' '+esc(t.at_time)):''}</span>`).join('')}${L.length>3?`<span class="calmore">+${L.length-3}</span>`:''}</div>`);}
+  const DOW=['א','ב','ג','ד','ה','ו','ש'];
+  for(let d=1;d<=dim;d++){const k=calYM+'-'+String(d).padStart(2,'0'), L=by[k]||[], dow=new Date(Y,M-1,d).getDay();
+    cells.push(`<div class="calcell ${k===today?'today':''} ${k===calSel?'sel':''} ${L.length?'has':''} ${dow===6?'shab':''}" data-d="${k}"><b>${d} <small>יום ${DOW[dow]}</small></b>${L.slice(0,4).map(t=>`<span class="caltask ${t.kind==='event'?'ev':''} ${t.due_date<today?'late':''}" title="${esc(t.note||'')}">${kindLabel(t.kind).split(' ')[0]} <b>${esc(t.donor||'')}</b>${t.at_time?(' <i>'+esc(t.at_time)+'</i>'):''}${t.note?(' '+esc(t.note)):''}</span>`).join('')}${L.length>4?`<span class="calmore">ועוד ${L.length-4}…</span>`:''}</div>`);}
   const pm=new Date(Y,M-2,1), nm=new Date(Y,M,1), ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-  return `<div class="calnav"><button class="btn sm ghost calgo" data-ym="${ym(pm)}">‹ ${GMON[pm.getMonth()+1]}</button><b>${GMON[M]} ${Y}</b><button class="btn sm ghost calgo" data-ym="${today.slice(0,7)}">היום</button><button class="btn sm ghost calgo" data-ym="${ym(nm)}">${GMON[nm.getMonth()+1]} ›</button></div>
-    <div class="calgrid"><div class="calhd">א</div><div class="calhd">ב</div><div class="calhd">ג</div><div class="calhd">ד</div><div class="calhd">ה</div><div class="calhd">ו</div><div class="calhd">ש</div>${cells.join('')}</div>
-    <div class="hintxt">${calSel?('מוצגות המשימות של '+fmtGreg(calSel)+' — לחץ שוב על היום כדי לראות את כל החודש'):'לחץ על יום כדי לראות רק את המשימות שלו. אדום = עבר הזמן, ירוק = שמחה.'}</div>`;
+  return `<div class="calwrap"><div class="calnav">
+      <span class="calbtns"><button class="btn sm ghost calgo" data-ym="${(Y-1)+'-'+String(M).padStart(2,'0')}" title="שנה אחורה">‹‹ ${Y-1}</button><button class="btn sm ghost calgo" data-ym="${ym(pm)}">‹ ${GMON[pm.getMonth()+1]}</button></span>
+      <b>${GMON[M]} ${Y}</b>
+      <span class="calbtns"><button class="btn sm ghost calgo" data-ym="${ym(nm)}">${GMON[nm.getMonth()+1]} ›</button><button class="btn sm ghost calgo" data-ym="${(Y+1)+'-'+String(M).padStart(2,'0')}" title="שנה קדימה">${Y+1} ››</button></span>
+      <span class="calbtns"><button class="btn sm calgo" data-ym="${today.slice(0,7)}">היום</button><button class="btn sm ghost" id="tk_view" title="הסתר את הלוח">✕ הסתר</button></span></div>
+    <div class="calgrid"><div class="calhd">ראשון</div><div class="calhd">שני</div><div class="calhd">שלישי</div><div class="calhd">רביעי</div><div class="calhd">חמישי</div><div class="calhd">שישי</div><div class="calhd">שבת</div>${cells.join('')}</div>
+    <div class="hintxt">${calSel?('מוצגות למטה רק המשימות של '+fmtGreg(calSel)+' — לחץ שוב על היום כדי לחזור לכל החודש'):'לחץ על יום כדי לראות למטה רק את המשימות שלו. ירוק = שמחה, אדום = עבר הזמן.'}</div></div>`;
 }
 function renderTasksTab(){
   const today=todayStr();
@@ -11465,23 +11470,11 @@ function renderTasksTab(){
   renews.sort((a,b)=>(a.r.date||'').localeCompare(b.r.date||''));
   const renewSec=renews.length?`<div class="misshead" style="margin-top:10px">🔴 חידוש שותפות יש"ז מתקרב (${renews.length})</div>
     <div class="list">${renews.map(x=>`<div class="rowc"><div class="rowmain" data-did="${x.d.id}"><div class="nm">${esc(x.d.last)} <small>${esc(x.d.first)}</small></div><div class="miss">🤝 ${x.r.avreich?esc(x.r.avreich)+' · ':''}${x.r.days<0?'עברה שנה מההתחלה':('סיום שנה '+fmtGreg(x.r.date))}${x.r.days>=0?(' · בעוד '+x.r.days+' ימים'):''} — <b style="color:var(--no)">לחדש + תעודה חדשה</b></div>${contactBtns(x.d)}</div><div class="meta"><button class="btn sm avopen2" data-did="${x.d.id}">כרטיס</button></div></div>`).join('')}</div>`:'';
-  view.innerHTML=`<div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
-    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_anetsync" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>${suggSec}${renewSec}${debtSec}
-    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
-      <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
-      <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
-      <div id="nt_res" class="dpres"></div>
-      <div id="nt_chosen" class="pick" style="display:none"></div>
-      <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
-      ${eventFieldsHTML('nt')}
-      <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select id="nt_who">${assigneeOpts(inWho)}</select></label>
-      <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
-      <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
-      <div class="hintxt">בחר מי מבצע — מאיר או אהרן. ברירת המחדל היא החלון שאתה נמצא בו. אפשר גם לשייך לתורם.</div></div>
-    <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
-    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><span><button class="btn sm ghost" id="tk_view">${taskView==='cal'?'📋 רשימה':'📅 לוח שנה'}</button> <button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></span></div>
-    ${taskView==='cal'&&!showDone?calHTML(all,today):''}
+  // מאיר: "אני רוצה שהלוח שנה יהיה למעלה במשימות, למעלה למעלה, וגם שזה יהיה יותר
+  // גדול ויראו מה כתוב… שזה יעמוד על החודש… ויוכלו לדפדף מחודש לחודש או משנה לשנה"
+  view.innerHTML=`${taskView==='cal'&&!showDone?calHTML(all,today):`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_view" style="width:100%">📅 הצג לוח שנה</button></div>`}
+    <div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${suggSec}${renewSec}${debtSec}
+    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div>
     ${showDone?'<div class="submuted">"↩️ החזר לפתוחות" מבטל את הווי והמשימה חוזרת לרשימה — גם הרישום בכרטיס התורם נמחק. "✏️ ערוך" משנה את הטקסט בלי לבטל את הביצוע.</div>':''}<div class="list">${all.map((t,i)=>{
     if(taskView==='cal'&&!showDone){const k=t.due_date||'';if(calSel?k!==calSel:(k.slice(0,7)!==(calYM||today.slice(0,7))))return '';}
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
@@ -11507,6 +11500,20 @@ function renderTasksTab(){
       <div class="avfiles" style="margin-top:6px">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה / אסמכתא<input type="file" accept="image/*,audio/*,application/pdf" class="ttup" data-id="${t.id}" hidden></label></div>
     </div>`;
   }).join('')||`<div class="empty">${showDone?'עדיין לא סומנה אף משימה כבוצעה':'אין משימות פתוחות 🎉'}</div>`}</div>`;
+  view.innerHTML+=`    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_anetsync" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>
+    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
+      <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
+      <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
+      <div id="nt_res" class="dpres"></div>
+      <div id="nt_chosen" class="pick" style="display:none"></div>
+      <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
+      ${eventFieldsHTML('nt')}
+      <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select id="nt_who">${assigneeOpts(inWho)}</select></label>
+      <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
+      <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
+      <div class="hintxt">בחר מי מבצע — מאיר או אהרן. ברירת המחדל היא החלון שאתה נמצא בו. אפשר גם לשייך לתורם.</div></div>
+    <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>`;
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
   // חובות פרנס — פתיחת כרטיס / סימון שנגבה
   view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});

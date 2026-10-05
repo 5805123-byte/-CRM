@@ -1761,22 +1761,28 @@
   .icsbox{background:var(--accent-soft);border:1px solid var(--accent);border-radius:11px;padding:12px;margin:10px 0;font-size:.9rem;word-break:break-all}
   .icsbox b{color:var(--accent)}.icsbox .u{direction:ltr;display:block;background:var(--card);padding:8px;border-radius:8px;margin-top:6px;font-family:monospace;font-size:.8rem}
   .whobar{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 10px}
-  /* לוח שנה במשימות — מאיר: "שבמשימות יהיה גם לוח שנה מה צריך לעשות" */
-  .calnav{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:6px 0}
-  .calnav b{font-size:1.05rem}
-  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;direction:rtl}
-  .calhd{text-align:center;font-weight:800;font-size:.8rem;color:var(--muted);padding:2px 0}
-  .calcell{min-height:64px;border:1px solid var(--line);border-radius:8px;padding:3px 4px;background:var(--card);cursor:pointer;font-size:.72rem;overflow:hidden}
+  /* לוח שנה במשימות — מאיר: "שהלוח שנה יהיה למעלה במשימות… יותר גדול, ויראו מה כתוב" */
+  .calwrap{margin:0 0 12px}
+  .calnav{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:4px 0 8px;flex-wrap:wrap}
+  .calnav b{font-size:1.3rem;color:var(--accent)}
+  .calbtns{display:flex;gap:4px}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;direction:rtl}
+  .calhd{text-align:center;font-weight:800;font-size:.85rem;color:var(--muted);padding:4px 0}
+  .calcell{min-height:118px;border:1px solid var(--line);border-radius:10px;padding:5px 6px;background:var(--card);cursor:pointer;font-size:.86rem;overflow:hidden}
   .calcell.empty{border-color:transparent;background:transparent;cursor:default}
-  .calcell b{display:block;font-size:.8rem;color:var(--muted)}
-  .calcell.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-  .calcell.today b{color:var(--accent)}
-  .calcell.sel{background:var(--accent);color:#fff}.calcell.sel b{color:#fff}
+  .calcell.shab{background:#f1f0ea}
+  .calcell>b{display:block;font-size:.95rem;color:var(--ink);margin-bottom:3px}
+  .calcell>b small{font-weight:600;color:var(--muted);font-size:.72rem}
+  .calcell.today{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
+  .calcell.today>b{color:var(--accent)}
+  .calcell.sel{background:var(--accent);color:#fff}.calcell.sel>b,.calcell.sel>b small{color:#fff}
   .calcell.has{background:#fbf7ea}.calcell.sel.has{background:var(--accent)}
-  .caltask{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;border-radius:4px;padding:0 3px;background:rgba(59,53,122,.08)}
+  .caltask{display:block;line-height:1.25;border-radius:5px;padding:2px 4px;margin-bottom:2px;background:rgba(59,53,122,.09);font-size:.8rem;max-height:2.6em;overflow:hidden}
+  .caltask b{font-weight:800}.caltask i{font-style:normal;font-weight:700;color:var(--deep,#7a1f1f)}
   .caltask.ev{background:#e6f4ea;color:#1e6b3a}.caltask.late{background:#fdeee9;color:var(--no)}
   .calcell.sel .caltask{background:rgba(255,255,255,.25);color:#fff}
-  .calmore{display:block;font-size:.68rem;color:var(--muted)}
+  .calmore{display:block;font-size:.72rem;color:var(--muted)}
+  @media (max-width:700px){.calcell{min-height:78px;font-size:.7rem;padding:3px}.caltask{font-size:.66rem;max-height:2.5em;padding:1px 3px}.calcell>b{font-size:.8rem}.calcell>b small{display:none}.calhd{font-size:.7rem}.calnav b{font-size:1.05rem}}
   .remitem.soon{border-color:var(--accent);background:#f3f1fb}
   .remstage{background:var(--accent);color:#fff;border-radius:6px;padding:1px 7px;font-size:.78rem;margin-inline-end:4px}
   @media (max-width:600px){.calcell{min-height:52px;font-size:.62rem}.caltask{display:none}.calcell.has::after{content:'●';color:var(--accent);font-size:.8rem}.calmore{display:none}}
