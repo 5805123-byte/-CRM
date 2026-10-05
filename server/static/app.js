@@ -11847,7 +11847,7 @@ function renderOcc(){
 // שיהיה לך את המספר מקום שלו לפי המפה של בית כנסת."
 // הרשימה נפרדת מהתורמים (טבלת members), ושליחת המייל רצה באותו מנוע
 // בדיוק: הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר.
-let MEMBERS=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='';
+let MEMBERS=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null;
 const mName=m=>((m.last||'')+' '+(m.first||'')).trim();
 const mHasMail=m=>(m.email||'').includes('@');
 const mEmails=m=>(m.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
@@ -11896,7 +11896,8 @@ function renderComm(){
       <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>
         ${cmSeat(m)?`<span class="cmseat" title="מספר מקום בבית הכנסת">💺 ${esc(cmSeat(m))}</span>`:''}
         ${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}
-        ${chk(m)?`<span class="cmask"><button class="btn sm cmyes" data-id="${m.id}">✔ כן</button><button class="btn sm ghost cmno" data-id="${m.id}">✘ לא</button></span>`:`<button class="fdel cmrm" data-id="${m.id}" title="הסר מהרשימה">✕</button>`}</div>
+        <span class="cmask"><button class="btn sm cmyes${chk(m)?'':' ghost'}" data-id="${m.id}" title="${chk(m)?'נשאר בקהילה':'כבר בקהילה'}">✔ כן</button><button class="btn sm ghost cmno" data-id="${m.id}" title="יורד מרשימת הקהילה">✘ לא</button><button class="btn sm ghost cmmg" data-id="${m.id}" title="מיזוג עם חבר קהילה אחר">🔀 מזג</button></span></div>
+      ${cmMergeId===m.id?`<div class="cmmgbox" data-id="${m.id}"><input class="cmmq" placeholder="🔍 שם החבר הכפול — הכרטיס של ${esc(mName(m))} נשאר ומקבל ממנו מה שחסר" autocomplete="off"><div class="dpres cmmres"></div></div>`:''}
       <div class="cmdt">
         ${m.phone?`<span dir="ltr">📞 ${esc(m.phone)}</span>`:''}
         ${mHasMail(m)?`<span dir="ltr" class="cmem">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmno">אין מייל</span>'}
@@ -11905,11 +11906,29 @@ function renderComm(){
     </div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
   view.querySelectorAll('.cmrow').forEach(el=>el.onclick=e=>{if(e.target.closest('button'))return;const m=MEMBERS.find(x=>x.id==el.dataset.id);if(m)openMember(m);});
   // ❓ כן — נשאר בקהילה; לא — יורד מהרשימה
-  view.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{await api('PUT','/api/members/'+b.dataset.id,{pending:0,notes:''});await cmLoad(true);toast('נשאר בקהילה ✓');render();});
-  view.querySelectorAll('.cmno').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/members/'+b.dataset.id);await cmLoad(true);toast('ירד מהרשימה');render();});
-  view.querySelectorAll('.cmrm').forEach(b=>b.onclick=async()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);
-    if(!await uiConfirm('להסיר את '+mName(m)+' מרשימת הקהילה?'))return;
-    await api('DELETE','/api/members/'+m.id);await cmLoad(true);toast('הוסר');render();});
+  // מאיר: "תעשה הכל אותו דבר, כן ולא ומזג לחבר קהילה אחר" — אותם שלושה כפתורים בכל שורה
+  view.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);
+    if(!m||!m.pending){toast('כבר בקהילה ✓');return;}
+    await api('PUT','/api/members/'+m.id,{pending:0,notes:''});await cmLoad(true);toast('נשאר בקהילה ✓');render();});
+  view.querySelectorAll('.cmno').forEach(b=>b.onclick=async()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id); if(!m)return;
+    // מי שיש עליו שאלה יורד מיד; חבר ותיק — אישור קצר, שלא יימחק בטעות
+    if(!m.pending&&!await uiConfirm('להוריד את '+mName(m)+' מרשימת הקהילה?'))return;
+    await api('DELETE','/api/members/'+m.id);await cmLoad(true);toast('ירד מהרשימה');render();});
+  view.querySelectorAll('.cmmg').forEach(b=>b.onclick=()=>{cmMergeId=cmMergeId==b.dataset.id?null:+b.dataset.id;render();
+    const inp=view.querySelector('.cmmq'); if(inp)inp.focus();});
+  const mgq=view.querySelector('.cmmq');
+  if(mgq){const box=mgq.closest('.cmmgbox'), keep=MEMBERS.find(x=>x.id==box.dataset.id), res=box.querySelector('.cmmres');
+    mgq.onclick=e=>e.stopPropagation();
+    mgq.oninput=()=>{const t=mgq.value.trim(); res.innerHTML='';
+      if(t.length<2)return;
+      const hits=MEMBERS.filter(x=>x.id!==keep.id&&matchStr(mName(x)+' '+(x.email||'')+' '+(x.phone||''),t)).slice(0,8);
+      res.innerHTML=hits.map(x=>`<div class="dpr" data-mg="${x.id}">🔀 ${esc(mName(x))}${cmSeat(x)?` <small>💺 ${esc(cmSeat(x))}</small>`:''}${mHasMail(x)?` <small class="mlem">${esc(mEmails(x)[0])}</small>`:''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא</div>';
+      res.querySelectorAll('.dpr[data-mg]').forEach(el=>el.onclick=async e=>{e.stopPropagation();
+        const o=MEMBERS.find(x=>x.id==el.dataset.mg); if(!o)return;
+        if(!await uiConfirm('למזג את "'+mName(o)+'" לתוך "'+mName(keep)+'"?\n\nהכרטיס של '+mName(keep)+' נשאר ומקבל ממנו מייל/טלפון/מקום שחסרים; הכרטיס של '+mName(o)+' נמחק.'))return;
+        const r=await api('POST','/api/members/merge',{keep:keep.id,drop:o.id});
+        if(!r||!r.ok){toast('המיזוג לא בוצע');return;}
+        cmMergeId=null; await cmLoad(true); toast('מוזג ✓'); render();});};}
   // ➕ הוספה מהירה בשורה אחת — כמו אצל האברכים: "שם משפחה שם פרטי", ואפשר גם טלפון ומייל
   const addQuick=async()=>{
     const inp=document.getElementById('cm_new'); const t=(inp.value||'').trim(); if(!t)return;
