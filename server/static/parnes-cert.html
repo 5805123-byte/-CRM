@@ -621,11 +621,37 @@ function fitParnes(){
     lo=1; hi=2;
     for(let i=0;i<20;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
       if(H()<=avail*.92) lo=mid; else hi=mid; }
-    parnesSizes(lo); return;
+    parnesSizes(lo);
+    growRequest(avail);
+    return;
   }
   for(let i=0;i<18;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
     if(H()<=avail) lo=mid; else hi=mid; }
   parnesSizes(lo);
+}
+// מאיר: "בפרנס לילה תגדיל לפי הצורך את הבקשה אחרי השמות" — השמות הגיעו
+// לגודלם המלא ונשאר מקום ריק מתחת לבקשה. הבקשה (ושורת "ליום הולדתה")
+// גדלה עד שהבלוק ממלא את הדף — ולעולם לא יותר מ-40/70 מהשם (הגודל שמאיר
+// קבע לבקשות), כדי שהשמות יישארו הבולטים ביותר.
+function growRequest(avail){
+  const body=document.getElementById('cbody'); if(!body)return;
+  const reqs=[...document.querySelectorAll('#pairs .nreq')], evts=[...document.querySelectorAll('#pairs .nevt')];
+  if(!reqs.length&&!evts.length)return;
+  const H=()=>body.getBoundingClientRect().height;
+  if(H()>avail*.92)return;
+  const names=[...document.querySelectorAll('#pairs .nline')].map(e=>parseFloat(getComputedStyle(e).fontSize)||0).filter(Boolean);
+  if(!names.length)return;
+  const base=reqs.length?parseFloat(getComputedStyle(reqs[0]).fontSize):parseFloat(getComputedStyle(evts[0]).fontSize);
+  const baseEvt=evts.length?parseFloat(getComputedStyle(evts[0]).fontSize):base*.88;
+  const cap=Math.min(...names)*(40/70);
+  const maxF=Math.max(1,cap/base);
+  const apply=f=>{
+    reqs.forEach(e=>e.style.setProperty('font-size',(base*f).toFixed(2)+'px','important'));
+    evts.forEach(e=>e.style.setProperty('font-size',(baseEvt*f).toFixed(2)+'px','important'));
+  };
+  let lo=1, hi=maxF;
+  for(let i=0;i<18;i++){ const mid=(lo+hi)/2; apply(mid); if(H()<=avail*.92) lo=mid; else hi=mid; }
+  apply(lo);
 }
 // שם ארוך מתכווץ כדי להישאר בשורה אחת, במקום להישבר באמצע
 function fitNames(c){
