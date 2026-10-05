@@ -3333,6 +3333,34 @@ def ensure_schema():
     except Exception as e:
         print('  community q error:', e)
 
+    # קהילה — התשובות של מאיר מדף הווב "שיוך רוכשים לקהילה" (87 שאלות): מופעלות
+    # כאן על השאלות שעדיין פתוחות במערכת. מה שכבר נענה במסך — לא נוגעים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_q_answers_v1'").fetchone():
+            _cf = os.path.join(HERE, 'community_q_answers.json')
+            n = 0
+            if os.path.exists(_cf):
+                with open(_cf, encoding='utf-8') as fh:
+                    for a in json.load(fh):
+                        qr = con.execute("SELECT * FROM member_q WHERE name=? AND status='open' LIMIT 1", (a.get('name'),)).fetchone()
+                        if not qr:
+                            continue
+                        ch = str(a.get('choice') or '')
+                        if ch.startswith('m:'):
+                            nm = ch[2:].strip()
+                            tgt = con.execute("SELECT id FROM members WHERE TRIM(COALESCE(last,''))||' '||TRIM(COALESCE(first,''))=? ORDER BY id LIMIT 1", (nm,)).fetchone()
+                            if not tgt:
+                                continue
+                            ch = 'm:%d' % tgt['id']
+                        ok, _ = apply_member_q(con, qr, ch)
+                        if ok:
+                            n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_q_answers_v1')")
+            con.commit()
+            print('  קהילה: הופעלו %d תשובות שיוך מדף הווב' % n)
+    except Exception as e:
+        print('  community q answers error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -12256,6 +12284,66 @@ def merge_members(con, keep_id, drop_id):
     return True
 
 
+def apply_member_q(con, qr, choice):
+    """מפעיל תשובה לשאלת שיוך מנדרים פלוס. choice: m:<member id> / new / no.
+    מחזיר (ok, member_id). משמש גם את המסך וגם את הטעינה מתשובות דף הווב."""
+    choice = str(choice or '').strip()
+    mid = None
+    if choice.startswith('m:'):
+        try:
+            mid = int(choice[2:])
+        except ValueError:
+            return False, None
+        tgt = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone()
+        if not tgt:
+            return False, None
+        sets = {}
+        for fld in ('email', 'phone'):
+            cur = [x.strip() for x in str(tgt[fld] or '').split('/') if x.strip()]
+            new = [x.strip() for x in str(qr['email' if fld == 'email' else 'phone'] or '').split('/') if x.strip()
+                   and x.strip().lower() not in [c.lower() for c in cur]]
+            if new:
+                sets[fld] = ' / '.join(cur + new)
+        if (qr['addr'] or '').strip() and not str(tgt['addr'] or '').strip():
+            sets['addr'] = qr['addr'].strip()
+            if (qr['city'] or '').strip() and not str(tgt['city'] or '').strip():
+                sets['city'] = qr['city'].strip()
+        # שם בן המשפחה שקנה/תרם נשמר בהערות — כדי שיידעו על שם מי זה היה
+        note = 'נדרים פלוס: %s' % qr['name']
+        if note not in str(tgt['notes'] or ''):
+            sets['notes'] = (str(tgt['notes'] or '').strip() + ' · ' + note).strip(' ·')
+        src = tgt['source'] or ''
+        if 'נדרים פלוס' not in src:
+            sets['source'] = (src + ' + נדרים פלוס').strip(' +')
+        con.execute("UPDATE members SET %s, updated=? WHERE id=?" % ', '.join('%s=?' % k for k in sets),
+                    list(sets.values()) + [now_iso(), mid])
+    elif choice == 'new':
+        parts = (qr['name'] or '').split()
+        # בנדרים פלוס השם לרוב "פרטי משפחה"; אם המילה הראשונה היא שם משפחה שבקהילה — היא המשפחה
+        last, first = (parts[-1], ' '.join(parts[:-1])) if len(parts) > 1 else (parts[0] if parts else '', '')
+        try:
+            for c in json.loads(qr['cands'] or '[]'):
+                cl = str(c).split()[0] if str(c).split() else ''
+                if cl and parts and parts[0] == cl:
+                    last, first = parts[0], ' '.join(parts[1:]); break
+        except Exception:
+            pass
+        # אותו אדם שכבר נפתח (למשל "אשר ברזסקי" ו"ברזסקי אשר") — לא פעמיים
+        ex = con.execute("SELECT id FROM members WHERE TRIM(last)=? AND TRIM(first)=?", (last, first)).fetchone()
+        if ex:
+            mid = ex['id']
+            return apply_member_q(con, qr, 'm:%d' % mid)
+        cur = con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,pending,created,updated) "
+                          "VALUES(?,?,?,?,?,?,?,'קהילה','',?,?,1,0,?,?)",
+                          (last, first, qr['email'] or '', qr['phone'] or '', qr['addr'] or '', qr['city'] or '', '',
+                           'נדרים פלוס', _gender(first), now_iso(), now_iso()))
+        mid = cur.lastrowid
+    elif choice != 'no':
+        return False, None
+    con.execute("UPDATE member_q SET status='done', answer=?, answered=? WHERE id=?", (choice, now_iso(), qr['id']))
+    return True, mid
+
+
 def log_member_mail(member_id, to, subject, body, msg_id=''):
     """מתייק בכרטיס החבר כל מייל שנשלח אליו — כמו יומן הקשר אצל התורם."""
     if not member_id:
@@ -15111,55 +15199,9 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE member_q SET status='open', answer='', answered='' WHERE id=?", (qid,))
                 con.commit(); con.close()
                 return self._send(200, {'ok': True})
-            mid = None
-            if choice.startswith('m:'):
-                try:
-                    mid = int(choice[2:])
-                except ValueError:
-                    mid = None
-                tgt = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone() if mid else None
-                if not tgt:
-                    con.close(); return self._send(400, {'error': 'member not found'})
-                sets = {}
-                for fld in ('email', 'phone'):
-                    cur = [x.strip() for x in str(tgt[fld] or '').split('/') if x.strip()]
-                    new = [x.strip() for x in str(qr[fld] or '').split('/') if x.strip()
-                           and x.strip().lower() not in [c.lower() for c in cur]]
-                    if new:
-                        sets[fld] = ' / '.join(cur + new)
-                if (qr['addr'] or '').strip() and not str(tgt['addr'] or '').strip():
-                    sets['addr'] = qr['addr'].strip()
-                    if (qr['city'] or '').strip() and not str(tgt['city'] or '').strip():
-                        sets['city'] = qr['city'].strip()
-                # שם בן המשפחה שקנה/תרם נשמר בהערות — כדי שיידעו על שם מי זה היה
-                note = ('נדרים פלוס: %s' % qr['name'])
-                if note not in str(tgt['notes'] or ''):
-                    sets['notes'] = (str(tgt['notes'] or '').strip() + ' · ' + note).strip(' ·')
-                src = tgt['source'] or ''
-                if 'נדרים פלוס' not in src:
-                    sets['source'] = (src + ' + נדרים פלוס').strip(' +')
-                con.execute("UPDATE members SET %s, updated=? WHERE id=?" % ', '.join('%s=?' % k for k in sets),
-                            list(sets.values()) + [now_iso(), mid])
-            elif choice == 'new':
-                parts = (qr['name'] or '').split()
-                # בנדרים פלוס השם לרוב "פרטי משפחה"; אם המילה האחרונה היא שם משפחה שבקהילה — היא המשפחה
-                last, first = (parts[-1], ' '.join(parts[:-1])) if len(parts) > 1 else (parts[0] if parts else '', '')
-                try:
-                    cands = json.loads(qr['cands'] or '[]')
-                    for c in cands:
-                        cl = str(c).split()[0] if str(c).split() else ''
-                        if cl and parts and parts[0] == cl:
-                            last, first = parts[0], ' '.join(parts[1:]); break
-                except Exception:
-                    pass
-                cur = con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,pending,created,updated) "
-                                  "VALUES(?,?,?,?,?,?,?,'קהילה','',?,?,1,0,?,?)",
-                                  (last, first, qr['email'] or '', qr['phone'] or '', qr['addr'] or '', qr['city'] or '', '',
-                                   'נדרים פלוס', _gender(first), now_iso(), now_iso()))
-                mid = cur.lastrowid
-            elif choice != 'no':
+            ok, mid = apply_member_q(con, qr, choice)
+            if not ok:
                 con.close(); return self._send(400, {'error': 'bad choice'})
-            con.execute("UPDATE member_q SET status='done', answer=?, answered=? WHERE id=?", (choice, now_iso(), qid))
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'member_id': mid})
         if self.path == '/api/members/merge':
