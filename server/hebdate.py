@@ -262,6 +262,30 @@ def month_days(mon, yr=''):
                                       'greg': g.isoformat()}
         out['ok'] = True
         out['year'] = hq(dates.HebrewDate(y, m, 1).hebrew_date_string().split()[-1])
+        # ליומן העברי: סדר החודשים של השנה (עם אדר א/ב בשנה מעוברת), והחודש
+        # הקודם והבא — כולל מעבר שנה (אלול -> תשרי של השנה הבאה)
+        leap = hebrewcal.Year(y).leap
+        names = {1: 'ניסן', 2: 'אייר', 3: 'סיון', 4: 'תמוז', 5: 'אב', 6: 'אלול', 7: 'תשרי',
+                 8: 'חשון', 9: 'כסלו', 10: 'טבת', 11: 'שבט', 12: ('אדר א' if leap else 'אדר'), 13: 'אדר ב'}
+        order = [7, 8, 9, 10, 11, 12] + ([13] if leap else []) + [1, 2, 3, 4, 5, 6]
+        out['months'] = [names[k] for k in order]
+        out['month'] = names.get(m, key)
+        out['ynum'] = y
+        i = order.index(m) if m in order else 0
+        def _yl(yy):
+            try: return hq(dates.HebrewDate(yy, 7, 1).hebrew_date_string().split()[-1])
+            except Exception: return str(yy)
+        if i > 0:
+            out['prev'] = {'m': names[order[i - 1]], 'y': out['year']}
+        else:
+            py = y - 1; pl = hebrewcal.Year(py).leap
+            out['prev'] = {'m': 'אלול', 'y': _yl(py)}
+        if i < len(order) - 1:
+            out['next'] = {'m': names[order[i + 1]], 'y': out['year']}
+        else:
+            out['next'] = {'m': 'תשרי', 'y': _yl(y + 1)}
+        out['first'] = dates.HebrewDate(y, m, 1).to_pydate().isoformat()
+        out['last'] = dates.HebrewDate(y, m, out['len']).to_pydate().isoformat()
     except Exception:
         return out
     return out

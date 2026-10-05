@@ -11450,25 +11450,36 @@ function calEntries(){
   GTASKS.forEach(t=>{if(t.done&&t.done!=0)return;out.push({kind:t.kind==='event'?'event':'task',date:t.due_date||'',time:t.at_time||'',title:t.note||'משימה',text:'',place:t.place||'',t:t,d:null,icon:kindLabel(t.kind).split(' ')[0]});});
   return out.filter(e=>/^\d{4}-\d{2}-\d{2}$/.test(e.date)).sort((a,b)=>(a.date+(a.time||'99')).localeCompare(b.date+(b.time||'99')));
 }
-function renderCalTab(){
+// מאיר: "אני רוצה תאריך עברי, וגם למעלה בגדול את התאריך העברי ובקטן יותר את
+// התאריך הלועזי, העיקר שיתחיל מא' לחודש העברי ויהיה כתוב כל יום איזה יום
+// לחודש" — היומן בנוי לפי החודש העברי; הימים מהשרת (/api/hebmonth).
+let calHeb=null, HMCACHE={};
+function hebTodayParts(){const ws=String(HEBTODAY||'').split(/\s+/).filter(Boolean);if(ws.length<3)return null;return {m:ws.slice(1,-1).join(' '),y:ws[ws.length-1]};}
+async function hebMonth(m,y){const k=m+'|'+y;if(!HMCACHE[k]){const r=await api('GET','/api/hebmonth?m='+encodeURIComponent(m)+'&y='+encodeURIComponent(y));HMCACHE[k]=(r&&r.ok)?r:null;}return HMCACHE[k];}
+function gregShort(iso){const p=String(iso||'').split('-');return p.length===3?(+p[2]+'.'+(+p[1])):'';}
+async function renderCalTab(){
   const today=todayStr();
-  if(!calYM)calYM=today.slice(0,7);
+  if(!calHeb)calHeb=hebTodayParts()||{m:pyMonth||'תשרי',y:HEBYEAR};
   const F=[['','הכל'],['task','📋 משימות'],['event','🎉 שמחות'],['parnes','🌙 פרנס יום']];
   chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
   chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
+  view.innerHTML='<div class="cnt">טוען את החודש…</div>';
+  const HM=await hebMonth(calHeb.m,calHeb.y);
+  if(!HM){view.innerHTML='<div class="empty">לא הצלחתי לטעון את החודש העברי</div>';return;}
   let E=calEntries(); if(calFlt)E=E.filter(e=>e.kind===calFlt);
   const qq=String(q||'').trim(); if(qq)E=E.filter(e=>matchQ(e.title+' '+e.text+' '+e.place));
-  const [Y,M]=calYM.split('-').map(Number);
-  const dim=new Date(Y,M,0).getDate(), start=new Date(Y,M-1,1).getDay();
-  const by={}; E.forEach(e=>{if(e.date.slice(0,7)===calYM)(by[e.date]=by[e.date]||[]).push(e);});
-  const DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const by={}; E.forEach(e=>{(by[e.date]=by[e.date]||[]).push(e);});
+  const DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'], DOWK={'א':0,'ב':1,'ג':2,'ד':3,'ה':4,'ו':5,'ש':6};
   const ent=e=>`<div class="bce k-${e.kind} ${e.date<today?'late':''}" data-k="${e.kind}" data-id="${e.t?e.t.id:(e.p?e.p.id:'')}" data-did="${e.d?e.d.id:''}" title="${esc(e.text)}">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}<span class="bci">${e.icon}</span> <b>${esc(e.title)}</b>${e.text?`<span class="bcx"> — ${esc(e.text)}</span>`:''}${e.place?`<span class="bcp">📍 ${esc(e.place)}</span>`:''}</div>`;
+  const d1=HM.days['1']||{}, start=DOWK[d1.dow]!=null?DOWK[d1.dow]:0;
   const cells=[]; for(let i=0;i<start;i++)cells.push('<div class="bcc empty"></div>');
-  for(let d=1;d<=dim;d++){const k=calYM+'-'+String(d).padStart(2,'0'), L=by[k]||[], dow=new Date(Y,M-1,d).getDay();
-    cells.push(`<div class="bcc ${k===today?'today':''} ${k===calSel?'sel':''} ${dow===6?'shab':''}" data-d="${k}"><div class="bcd"><b>${d}</b><small>${DOW[dow]}</small>${k===today?'<em>היום</em>':''}</div>${L.slice(0,5).map(ent).join('')}${L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''}</div>`);}
-  const pm=new Date(Y,M-2,1), nm=new Date(Y,M,1), ym=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0');
+  let selHeb='';
+  for(let n=1;n<=HM.len;n++){const dd=HM.days[String(n)]||{}, k=dd.greg||'', L=by[k]||[], dow=DOWK[dd.dow]||0;
+    if(k===calSel)selHeb=heDay(n)+' '+HM.month;
+    cells.push(`<div class="bcc ${k===today?'today':''} ${k===calSel?'sel':''} ${dd.shabbos?'shab':''} ${dd.yomtov?'yt':''}" data-d="${k}"><div class="bcd"><b>${heDay(n)}</b><small>${DOW[dow]}</small><span class="bcg">${gregShort(k)}</span>${k===today?'<em>היום</em>':''}</div>${dd.yomtov?`<div class="bcyt">🕯️ ${esc(dd.yomtov)}</div>`:''}${L.slice(0,5).map(ent).join('')}${L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''}</div>`);}
   const sel=calSel?(by[calSel]||[]):[];
-  const dayPanel=calSel?`<div class="sec bcday" id="bcday"><h3>📅 ${fmtGreg(calSel)} · יום ${DOW[new Date(calSel+'T12:00:00').getDay()]}${calSel===today?' · היום':''}</h3>
+  const tp=hebTodayParts();
+  const dayPanel=calSel?`<div class="sec bcday" id="bcday"><h3>📅 ${esc(selHeb)} ${esc(HM.year)} <small>· ${fmtGreg(calSel)} · יום ${DOW[new Date(calSel+'T12:00:00').getDay()]}${calSel===today?' · היום':''}</small></h3>
       ${sel.length?sel.map((e,i)=>`<div class="bcrow"><div class="bcrow-m">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}${e.icon} <b>${esc(e.title)}</b>${e.text?(' — '+esc(e.text)):''}${e.place?`<div class="miss2">📍 ${esc(e.place)}</div>`:''}${e.d?contactBtns(e.d):''}</div>
         <div class="meta">${e.t?`<button class="btn sm bcdone" data-i="${i}">✓ בוצע</button>`:''}${e.d?`<button class="btn sm ghost bcopen" data-i="${i}">📋 כרטיס</button>`:''}${e.p?`<button class="btn sm ghost bcboard" data-i="${i}">🌙 בלוח הפרנס</button>`:''}${e.t&&gcalLink(e.t,e.title)?`<a class="gcal" href="${gcalLink(e.t,e.title)}" target="_blank" rel="noopener">ליומן Google</a>`:''}</div></div>`).join(''):'<div class="hintxt">אין כלום ביום הזה.</div>'}
       <div class="bcadd"><h4>➕ הוסף ליום הזה</h4>
@@ -11476,18 +11487,19 @@ function renderCalTab(){
         <input id="bc_q" placeholder="🔍 תורם (רשות)" autocomplete="off" style="margin-top:6px"><div id="bc_res" class="dpres"></div><div id="bc_chosen" class="pick" style="display:none"></div>
         <div class="two" style="margin-top:6px"><select id="bc_kind">${taskKindOpts('event')}</select><input type="time" id="bc_time"></div>
         <input id="bc_place" placeholder="📍 מקום (לשמחה)" style="margin-top:6px">
-        <button class="btn" id="bc_add" style="width:100%;margin-top:6px">➕ הוסף</button></div></div>`:'';
+        <button class="btn" id="bc_add" style="width:100%;margin:6px 0 0">➕ הוסף</button></div></div>`:'';
+  const yn=HM.ynum||0;
   view.innerHTML=`<div class="bigcal">
     <div class="calnav">
-      <span class="calbtns"><button class="btn sm ghost calgo" data-ym="${(Y-1)+'-'+String(M).padStart(2,'0')}">‹‹ ${Y-1}</button><button class="btn sm ghost calgo" data-ym="${ym(pm)}">‹ ${GMON[pm.getMonth()+1]}</button></span>
-      <b>${GMON[M]} ${Y}</b>
-      <span class="calbtns"><button class="btn sm ghost calgo" data-ym="${ym(nm)}">${GMON[nm.getMonth()+1]} ›</button><button class="btn sm ghost calgo" data-ym="${(Y+1)+'-'+String(M).padStart(2,'0')}">${Y+1} ››</button></span>
-      <span class="calbtns"><button class="btn sm calgo" data-ym="${today.slice(0,7)}">היום</button></span></div>
+      <span class="calbtns"><button class="btn sm ghost calhg" data-m="${esc(calHeb.m)}" data-y="${yn-1}" title="שנה אחורה">‹‹ שנה</button><button class="btn sm ghost calhg" data-m="${esc(HM.prev.m)}" data-y="${esc(HM.prev.y)}">‹ ${esc(HM.prev.m)}</button></span>
+      <span class="calttl"><b>${esc(HM.month)} ${esc(HM.year)}</b><small>${fmtGreg(HM.first)} – ${fmtGreg(HM.last)}</small></span>
+      <span class="calbtns"><button class="btn sm ghost calhg" data-m="${esc(HM.next.m)}" data-y="${esc(HM.next.y)}">${esc(HM.next.m)} ›</button><button class="btn sm ghost calhg" data-m="${esc(calHeb.m)}" data-y="${yn+1}" title="שנה קדימה">שנה ››</button></span>
+      <span class="calbtns">${tp?`<button class="btn sm calhg" data-m="${esc(tp.m)}" data-y="${esc(tp.y)}">היום</button>`:''}</span></div>
     <div class="bcgrid">${DOW.map(x=>`<div class="bch">${x}</div>`).join('')}${cells.join('')}</div>
     <div class="hintxt">לחיצה על יום פותחת אותו למטה עם כל מה שיש בו ואפשרות להוסיף. לחיצה על שורה פותחת את הכרטיס. ירוק = שמחה · סגול = משימה · זהב = פרנס יום · אדום = עבר הזמן.</div>
     ${dayPanel}</div>`;
-  view.querySelectorAll('.calgo').forEach(b=>b.onclick=()=>{calYM=b.dataset.ym;calSel='';render();});
-  view.querySelectorAll('.bcc[data-d]').forEach(c=>c.onclick=()=>{calSel=calSel===c.dataset.d?'':c.dataset.d;render();if(calSel){const el=document.getElementById('bcday');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}});
+  view.querySelectorAll('.calhg').forEach(b=>b.onclick=()=>{calHeb={m:b.dataset.m,y:b.dataset.y};calSel='';render();});
+  view.querySelectorAll('.bcc[data-d]').forEach(c=>c.onclick=()=>{calSel=calSel===c.dataset.d?'':c.dataset.d;render();if(calSel)setTimeout(()=>{const el=document.getElementById('bcday');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},150);});
   view.querySelectorAll('.bce[data-did]').forEach(x=>x.onclick=e=>{e.stopPropagation();const d=DB.find(y=>y.id==x.dataset.did);if(d)openDonor(d,x.dataset.k==='parnes'?'details':'tasks');});
   view.querySelectorAll('.bcdone').forEach(b=>b.onclick=async()=>{const e=sel[b.dataset.i];if(!e||!e.t)return;if(!await doneWithNote({...e.t,donor:e.title,dref:e.d},e.d))return;checkReminders();render();toast('בוצע ✓');});
   view.querySelectorAll('.bcopen').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(e&&e.d)openDonor(e.d,e.t?'tasks':'details');});
