@@ -1761,6 +1761,25 @@
   .icsbox{background:var(--accent-soft);border:1px solid var(--accent);border-radius:11px;padding:12px;margin:10px 0;font-size:.9rem;word-break:break-all}
   .icsbox b{color:var(--accent)}.icsbox .u{direction:ltr;display:block;background:var(--card);padding:8px;border-radius:8px;margin-top:6px;font-family:monospace;font-size:.8rem}
   .whobar{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 10px}
+  /* לוח שנה במשימות — מאיר: "שבמשימות יהיה גם לוח שנה מה צריך לעשות" */
+  .calnav{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:6px 0}
+  .calnav b{font-size:1.05rem}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;direction:rtl}
+  .calhd{text-align:center;font-weight:800;font-size:.8rem;color:var(--muted);padding:2px 0}
+  .calcell{min-height:64px;border:1px solid var(--line);border-radius:8px;padding:3px 4px;background:var(--card);cursor:pointer;font-size:.72rem;overflow:hidden}
+  .calcell.empty{border-color:transparent;background:transparent;cursor:default}
+  .calcell b{display:block;font-size:.8rem;color:var(--muted)}
+  .calcell.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .calcell.today b{color:var(--accent)}
+  .calcell.sel{background:var(--accent);color:#fff}.calcell.sel b{color:#fff}
+  .calcell.has{background:#fbf7ea}.calcell.sel.has{background:var(--accent)}
+  .caltask{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;border-radius:4px;padding:0 3px;background:rgba(59,53,122,.08)}
+  .caltask.ev{background:#e6f4ea;color:#1e6b3a}.caltask.late{background:#fdeee9;color:var(--no)}
+  .calcell.sel .caltask{background:rgba(255,255,255,.25);color:#fff}
+  .calmore{display:block;font-size:.68rem;color:var(--muted)}
+  .remitem.soon{border-color:var(--accent);background:#f3f1fb}
+  .remstage{background:var(--accent);color:#fff;border-radius:6px;padding:1px 7px;font-size:.78rem;margin-inline-end:4px}
+  @media (max-width:600px){.calcell{min-height:52px;font-size:.62rem}.caltask{display:none}.calcell.has::after{content:'●';color:var(--accent);font-size:.8rem}.calmore{display:none}}
   .whochip{flex:1 1 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 10px;font-size:.9rem;font-weight:700;cursor:pointer;font-family:inherit;min-width:70px}
   .whochip.on{background:var(--accent);color:#fff;border-color:transparent}
   .whochip b{opacity:.7;font-size:.82rem}

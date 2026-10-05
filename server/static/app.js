@@ -686,7 +686,38 @@ function gcalLink(t,donor){const d=(t.due_date||'').replace(/-/g,'');if(d.length
   if(t.kind==='event'&&hm.length===4){const hh=+hm.slice(0,2),mm=hm.slice(2);const e=String((hh+3)%24).padStart(2,'0');
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}T${hm}00/${d}T${e}${mm}00&ctz=Asia/Jerusalem${t.place?('&location='+encodeURIComponent(t.place)):''}`;}
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${d}/${addDay(d)}`;}
-function dueTasks(){const td=todayStr(),out=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td)out.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));return out.sort((a,b)=>(a.due_date||'').localeCompare(b.due_date||''));}
+// שמחה עם שעה שעדיין לא הגיעה היום — אינה "הגיע זמנה", היא ב"מתקרב"
+function evTimeMs(t){const D=t.due_date||'';if(!/^\d{4}-\d{2}-\d{2}$/.test(D))return null;const hm=(t.kind==='event'&&/^\d{2}:\d{2}/.test(t.at_time||''))?t.at_time.split(':').map(Number):null;if(!hm)return null;const [y,m,d]=D.split('-').map(Number);return new Date(y,m-1,d,hm[0],hm[1]).getTime();}
+function dueTasks(){const td=todayStr(),out=[],now=Date.now();DB.forEach(d=>(d.tasks||[]).forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td){const em=evTimeMs(t);if(em&&em>now)return;out.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}}));GTASKS.forEach(t=>{if((!t.done||t.done==0)&&t.due_date&&t.due_date<=td){const em=evTimeMs(t);if(em&&em>now)return;out.push({...t,donor:'',dref:null});}});return out.sort((a,b)=>(a.due_date||'').localeCompare(b.due_date||''));}
+// מאיר: "כל פעם שיש משימה שזה יקפוץ לי ושזה יזכיר לי יומיים לפני זה, יום לפני
+// זה, באותו יום כמה שעות לפני זה, ואחר כך שעה לפני זה" — שלב התזכורת שהגיע
+// למשימה: יומיים לפני (9:00), יום לפני (9:00), ואז לפי השעה — 3 שעות לפני
+// ושעה לפני; למשימה בלי שעה — בבוקר אותו יום. מוחזר השלב האחרון שהגיע.
+function remStage(t){
+  const D=t.due_date||''; if(!/^\d{4}-\d{2}-\d{2}$/.test(D))return null;
+  const [y,m,d]=D.split('-').map(Number);
+  const hm=(t.kind==='event'&&/^\d{2}:\d{2}/.test(t.at_time||''))?t.at_time.split(':').map(Number):null;
+  const at=(off,h,mi)=>new Date(y,m-1,d+off,h,mi).getTime(), now=Date.now();
+  const st=[['d2',at(-2,9,0),'בעוד יומיים'],['d1',at(-1,9,0),'מחר']];
+  if(hm)st.push(['h3',at(0,hm[0]-3,hm[1]),'היום — בעוד כ-3 שעות'],['h1',at(0,hm[0]-1,hm[1]),'בעוד שעה!']);
+  else st.push(['d0',at(0,8,0),'היום']);
+  if(now>=(hm?at(0,hm[0],hm[1]):at(1,0,0)))return null;     // הזמן עבר — זה כבר "הגיע זמנה"
+  let best=null; st.forEach(s=>{if(now>=s[1])best=s;});
+  return best?{key:best[0],label:best[2]}:null;
+}
+function upcomingReminders(){
+  const out=[], push=(t,donor,dref)=>{if(t.done&&t.done!=0)return;const s=remStage(t);if(s)out.push({...t,donor,dref,stage:s});};
+  DB.forEach(d=>(d.tasks||[]).forEach(t=>push(t,(d.last+' '+d.first).trim(),d)));
+  GTASKS.forEach(t=>push(t,'',null));
+  return out.sort((a,b)=>(a.due_date+(a.at_time||'')).localeCompare(b.due_date+(b.at_time||'')));
+}
+const remSeen=()=>{try{return JSON.parse(localStorage.getItem('kc_remseen')||'{}');}catch(e){return {};}};
+function remMarkSeen(items){const s=remSeen();items.forEach(x=>{s[x.id+':'+x.stage.key]=1;});try{localStorage.setItem('kc_remseen',JSON.stringify(s));}catch(e){}}
+function remUnseen(items){const s=remSeen();return items.filter(x=>!s[x.id+':'+x.stage.key]);}
+function remNotify(items){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  items.slice(0,4).forEach(x=>{try{new Notification('⏰ '+x.stage.label+' — '+(x.donor||'משימה'),{body:(x.note||'')+(x.at_time?(' · '+x.at_time):'')+(x.place?(' · '+x.place):''),tag:'kc-rem-'+x.id+'-'+x.stage.key});}catch(e){}});
+}
 // מי אחראי על המשימה — מוצג בכל מקום שבו רואים משימה, וניתן להחליף בלחיצה
 const whoName=t=>(((t&&t.assignee)||'')==='אהרן'?'אהרן':'מאיר');
 function whoChipHTML(t,attrs){return `<button class="whoflip ${whoName(t)==='אהרן'?'ah':'me'}" ${attrs||''} title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${whoName(t)} ⇄</button>`;}
@@ -730,28 +761,40 @@ function putLog(d,c){
   if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
 }
 function checkReminders(){
-  const due=dueTasks(),ban=document.getElementById('rembanner');
-  if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
-  ban.textContent=`🔔 ${due.length} תזכורות ממתינות — לחץ לטיפול`;ban.classList.add('show');
+  const due=dueTasks(),up=upcomingReminders(),ban=document.getElementById('rembanner');
+  if(!due.length&&!up.length){ban.classList.remove('show');ban.textContent='';return;}
+  ban.textContent=`🔔 ${due.length?(due.length+' תזכורות ממתינות'):''}${due.length&&up.length?' · ':''}${up.length?('⏰ '+up.length+' מתקרבות'):''} — לחץ לטיפול`;ban.classList.add('show');
   ban.onclick=()=>openRemPopup();
-  if(!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
+  // שלב תזכורת חדש (יומיים לפני / מחר / 3 שעות / שעה) קופץ פעם אחת, גם כהתראת דפדפן
+  // "נראה" נרשם רק כשסוגרים את החלון — אחרת רענון אוטומטי של הדף בולע את התזכורת
+  const fresh=remUnseen(up);
+  if(fresh.length){remNotify(fresh);openRemPopup();return;}
+  if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
 }
+setInterval(()=>{try{if(DB&&DB.length)checkReminders();}catch(e){}},60*1000);
 function openRemPopup(){
-  const due=dueTasks(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
-  if(!due.length){remov.classList.remove('show');return;}
-  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔔 תזכורות שהגיע זמנן (${due.length})</h2>
+  const due=dueTasks(),up=upcomingReminders(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
+  if(!due.length&&!up.length){remov.classList.remove('show');return;}
+  const upHTML=up.length?`<h2 style="margin-top:${due.length?'14px':'0'}">⏰ מתקרב (${up.length})</h2>
+    ${up.map((t,i)=>`<div class="remitem soon"><div class="ri"><b><span class="remstage">${esc(t.stage.label)}</span> ${esc(kindLabel(t.kind))} ${t.dref?`<a class="remname" data-u="${i}">${esc(t.donor)} ↗</a>`:esc(t.donor)}</b><br><small>${esc(t.due_date)}${t.at_time?(' 🕒 '+esc(t.at_time)):''}${t.place?(' 📍 '+esc(t.place)):''} ${esc(t.note||'')}</small></div>
+      <button class="btn sm rdone" data-u="${i}">בוצע ✓</button></div>`).join('')}`:'';
+  rs.innerHTML=`<button class="x" id="rx">✕</button>${due.length?`<h2>🔔 תזכורות שהגיע זמנן (${due.length})</h2>
     <div class="hintxt">סמן בוצע, או דחה למחר.</div>
     <div class="hintxt">לחיצה על שם התורם פותחת את הכרטיס שלו.</div>
     ${due.map((t,i)=>`<div class="remitem over"><div class="ri"><b>${esc(kindLabel(t.kind))} ${t.dref?`<a class="remname" data-i="${i}">${esc(t.donor)} ↗</a>`:esc(t.donor)}</b><br><small>${esc(t.due_date)} ${esc(t.note||'')}</small><br>${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
-      <button class="btn sm rdone" data-i="${i}">בוצע ✓</button><button class="no rsnooze" data-i="${i}">דחה מחר</button></div>`).join('')}`;
+      <button class="btn sm rdone" data-i="${i}">בוצע ✓</button><button class="no rsnooze" data-i="${i}">דחה מחר</button></div>`).join('')}`:''}${upHTML}
+    ${('Notification' in window)&&Notification.permission!=='granted'?'<button class="btn sm ghost" id="remperm" style="margin-top:10px;width:100%">🔔 הפעל התראות קופצות בדפדפן (גם כשהחלון ברקע)</button>':''}`;
   remov.classList.add('show');
-  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  document.getElementById('rx').onclick=()=>{remov.classList.remove('show');remMarkSeen(up);};
+  const rp=document.getElementById('remperm'); if(rp)rp.onclick=()=>{Notification.requestPermission().then(p=>{toast(p==='granted'?'התראות הופעלו ✓':'לא אושר');openRemPopup();});};
+  rs.querySelectorAll('.remname[data-u]').forEach(a=>a.onclick=e=>{e.stopPropagation();const t=up[a.dataset.u];if(!t.dref)return;remov.classList.remove('show');remMarkSeen(up);openDonor(t.dref,'tasks');});
+  rs.querySelectorAll('.rdone[data-u]').forEach(b=>b.onclick=async()=>{const t=up[b.dataset.u];if(!await doneWithNote(t,t.dref))return;checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
   // שם התורם פותח את הכרטיס שלו — כדי לטפל בתזכורת מול כל המידע שלפניך
-  rs.querySelectorAll('.remname').forEach(a=>a.onclick=e=>{e.stopPropagation();
+  rs.querySelectorAll('.remname[data-i]').forEach(a=>a.onclick=e=>{e.stopPropagation();
     const t=due[a.dataset.i]; if(!t.dref)return;
     remov.classList.remove('show'); openDonor(t.dref);});
   rs.querySelectorAll('[data-rwho]').forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;await flipWho(b.dataset.rwho);openRemPopup();render();});
-  rs.querySelectorAll('.rdone').forEach(b=>b.onclick=async()=>{
+  rs.querySelectorAll('.rdone[data-i]').forEach(b=>b.onclick=async()=>{
     const t=due[b.dataset.i];
     if(!await doneWithNote(t,t.dref))return;          // בוטל — המשימה נשארת פתוחה
     checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
@@ -11364,6 +11407,22 @@ function taskParnes(t){
   const ps=t.dref.parnes||[];
   return ps.find(p=>p.date_text&&(t.note||'').includes(p.date_text))||ps[0]||null;
 }
+// מאיר: "שבמשימות יהיה גם לוח שנה מה צריך לעשות" — תצוגת חודש עם המשימות על
+// הימים; לחיצה על יום מראה את המשימות שלו למטה
+let taskView=(()=>{try{return localStorage.getItem('kc_taskview')||'list';}catch(e){return 'list';}})(), calYM='', calSel='';
+function calHTML(all,today){
+  if(!calYM)calYM=today.slice(0,7);
+  const [Y,M]=calYM.split('-').map(Number);
+  const first=new Date(Y,M-1,1), dim=new Date(Y,M,0).getDate(), start=first.getDay();
+  const by={}; all.forEach(t=>{const k=t.due_date||'';if(k.slice(0,7)===calYM)(by[k]=by[k]||[]).push(t);});
+  const cells=[]; for(let i=0;i<start;i++)cells.push('<div class="calcell empty"></div>');
+  for(let d=1;d<=dim;d++){const k=calYM+'-'+String(d).padStart(2,'0'), L=by[k]||[];
+    cells.push(`<div class="calcell ${k===today?'today':''} ${k===calSel?'sel':''} ${L.length?'has':''}" data-d="${k}"><b>${d}</b>${L.slice(0,3).map(t=>`<span class="caltask ${t.kind==='event'?'ev':''} ${t.due_date<today?'late':''}" title="${esc(t.note||'')}">${kindLabel(t.kind).split(' ')[0]} ${esc((t.donor||t.note||'').split(' ').slice(0,2).join(' '))}${t.at_time?(' '+esc(t.at_time)):''}</span>`).join('')}${L.length>3?`<span class="calmore">+${L.length-3}</span>`:''}</div>`);}
+  const pm=new Date(Y,M-2,1), nm=new Date(Y,M,1), ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  return `<div class="calnav"><button class="btn sm ghost calgo" data-ym="${ym(pm)}">‹ ${GMON[pm.getMonth()+1]}</button><b>${GMON[M]} ${Y}</b><button class="btn sm ghost calgo" data-ym="${today.slice(0,7)}">היום</button><button class="btn sm ghost calgo" data-ym="${ym(nm)}">${GMON[nm.getMonth()+1]} ›</button></div>
+    <div class="calgrid"><div class="calhd">א</div><div class="calhd">ב</div><div class="calhd">ג</div><div class="calhd">ד</div><div class="calhd">ה</div><div class="calhd">ו</div><div class="calhd">ש</div>${cells.join('')}</div>
+    <div class="hintxt">${calSel?('מוצגות המשימות של '+fmtGreg(calSel)+' — לחץ שוב על היום כדי לראות את כל החודש'):'לחץ על יום כדי לראות רק את המשימות שלו. אדום = עבר הזמן, ירוק = שמחה.'}</div>`;
+}
 function renderTasksTab(){
   const today=todayStr();
   const opts=[['','הכל'],['charge','💳 לחייב'],['parnes','🌙 פרנס'],['prayer','🙏 תפילה'],['followup','📞 לחזור']];
@@ -11421,8 +11480,10 @@ function renderTasksTab(){
       <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
       <div class="hintxt">בחר מי מבצע — מאיר או אהרן. ברירת המחדל היא החלון שאתה נמצא בו. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>
-    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div>
+    <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><span><button class="btn sm ghost" id="tk_view">${taskView==='cal'?'📋 רשימה':'📅 לוח שנה'}</button> <button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></span></div>
+    ${taskView==='cal'&&!showDone?calHTML(all,today):''}
     ${showDone?'<div class="submuted">"↩️ החזר לפתוחות" מבטל את הווי והמשימה חוזרת לרשימה — גם הרישום בכרטיס התורם נמחק. "✏️ ערוך" משנה את הטקסט בלי לבטל את הביצוע.</div>':''}<div class="list">${all.map((t,i)=>{
+    if(taskView==='cal'&&!showDone){const k=t.due_date||'';if(calSel?k!==calSel:(k.slice(0,7)!==(calYM||today.slice(0,7))))return '';}
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
     const isParnes=t.kind==='parnes'&&taskParnes(t);
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
@@ -11557,6 +11618,9 @@ function renderTasksTab(){
     if(e.key==='Enter'){e.preventDefault();
       view.querySelector('.dnoteok[data-i="'+inp.dataset.i+'"]').click();}});
   const tgd=document.getElementById('toggledone');if(tgd)tgd.onclick=()=>{showDone=!showDone;render();};
+  const tv=document.getElementById('tk_view');if(tv)tv.onclick=()=>{taskView=taskView==='cal'?'list':'cal';try{localStorage.setItem('kc_taskview',taskView);}catch(e){}render();};
+  view.querySelectorAll('.calgo').forEach(b=>b.onclick=()=>{calYM=b.dataset.ym;calSel='';render();});
+  view.querySelectorAll('.calcell[data-d]').forEach(c=>c.onclick=()=>{calSel=calSel===c.dataset.d?'':c.dataset.d;render();});
 }
 
 /* ---------- הפקדות שלא זוהו (צ'ייס / זל) ---------- */
