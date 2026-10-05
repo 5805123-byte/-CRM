@@ -11879,7 +11879,7 @@ function renderOcc(){
 // שיהיה לך את המספר מקום שלו לפי המפה של בית כנסת."
 // הרשימה נפרדת מהתורמים (טבלת members), ושליחת המייל רצה באותו מנוע
 // בדיוק: הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר.
-let MEMBERS=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null;
+let MEMBERS=null, MQ=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null;
 const mName=m=>((m.last||'')+' '+(m.first||'')).trim();
 const mHasMail=m=>(m.email||'').includes('@');
 const mEmails=m=>(m.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
@@ -11888,7 +11888,27 @@ async function cmLoad(force){
   if(MEMBERS&&!force)return MEMBERS;
   const r=await api('GET','/api/members');
   MEMBERS=((r&&r.rows)||[]).sort(byMName);
+  try{const q=await api('GET','/api/members/questions');MQ=(q&&q.rows)||[];}catch(e){MQ=MQ||[];}
   return MEMBERS;
+}
+// ❓ שאלות שיוך מנדרים פלוס — מאיר: "תשאל אותי על כל מי שיש לו שם משפחה והוא רשום
+// בקהילה, למי הוא שייך". כל שאלה עם כפתורים, והתשובה מופעלת מיד בשרת.
+function cmQuestionsHTML(){
+  const open=(MQ||[]).filter(x=>x.status==='open');
+  if(!open.length)return '';
+  const byKey={}; (MEMBERS||[]).forEach(m=>{byKey[mName(m)]=m;});
+  return `<div class="sec cmqsec"><div class="rbtitle">❓ שיוך מנדרים פלוס — ${open.length} שאלות</div>
+    <div class="hintxt" style="margin:0 2px 8px">אנשים מהייצוא של נדרים פלוס ששם המשפחה שלהם בקהילה אבל השם לא זהה. למי כל אחד שייך? הפרטים שלו (טלפון, מייל, כתובת) ייכנסו לכרטיס שתבחר. "חבר חדש" פותח לו שורה משלו.</div>
+    ${open.map(x=>`<div class="cmq" data-id="${x.id}"><div class="cmqh"><b>${esc(x.name)}</b>${x.what?`<span class="cmqw">🧾 ${esc(x.what)}</span>`:''}</div>
+      <div class="cmqd">${[x.phone,x.email,[x.addr,x.city].filter(Boolean).join(', ')].filter(Boolean).map(esc).join(' · ')||'אין פרטי קשר בייצוא'}</div>
+      <div class="cmqo">${(x.cands||[]).map(k=>{const m=byKey[k];return m?`<button class="btn sm ghost cmqa" data-id="${x.id}" data-c="m:${m.id}">שייך ל־<b>${esc(k)}</b>${cmSeat(m)?` <small>💺 ${esc(cmSeat(m))}</small>`:''}</button>`:'';}).join('')}
+        <button class="btn sm cmqa" data-id="${x.id}" data-c="new">➕ חבר חדש</button><button class="btn sm ghost cmqa" data-id="${x.id}" data-c="no">✘ לא מהקהילה</button></div></div>`).join('')}</div>`;
+}
+function wireCmQuestions(){
+  view.querySelectorAll('.cmqa').forEach(b=>b.onclick=async e=>{e.stopPropagation();
+    const r=await api('POST','/api/members/question/'+b.dataset.id,{choice:b.dataset.c});
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    await cmLoad(true); toast(b.dataset.c==='no'?'לא מהקהילה':b.dataset.c==='new'?'נפתח חבר חדש ✓':'הפרטים נכנסו לכרטיס ✓'); render();});
 }
 function cmSeat(m){ return String(m.seat||'').trim(); }
 function renderComm(){
@@ -11905,7 +11925,8 @@ function renderComm(){
            ['nomail','🚫 בלי מייל',all.filter(m=>!mHasMail(m)).length],
            ['seat','💺 עם מקום',all.filter(m=>cmSeat(m)).length],
            ['noseat','בלי מקום',all.filter(m=>!cmSeat(m)).length],
-           ['check','❓ שאלה — כן או לא',all.filter(chk).length]];
+           ['check','❓ שאלה — כן או לא',all.filter(chk).length],
+           ['nq','🧾 שיוך מנדרים פלוס',(MQ||[]).filter(x=>x.status==='open').length]];
   chips.innerHTML=F.filter(([k,,n])=>k===''||n).map(([k,l,n])=>`<button class="chip ${cmFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
   chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{cmFlt=b.dataset.k;render();});
   let list=all.slice();
@@ -11914,6 +11935,10 @@ function renderComm(){
   if(cmFlt==='seat')list=list.filter(m=>cmSeat(m));
   if(cmFlt==='noseat')list=list.filter(m=>!cmSeat(m));
   if(cmFlt==='check')list=list.filter(chk);
+  if(cmFlt==='nq'){
+    view.innerHTML=cmQuestionsHTML()||'<div class="empty">אין שאלות פתוחות — הכל שויך.</div>';
+    wireCmQuestions(); return;
+  }
   list=list.filter(m=>matchQ(mName(m)+' '+(m.phone||'')+' '+(m.email||'')+' '+(m.addr||'')+' '+(m.city||'')+' '+(m.seat||'')+' '+(m.notes||'')));
   if(cmFlt==='seat')list.sort((a,b)=>(parseInt(a.seat)||9999)-(parseInt(b.seat)||9999)||byMName(a,b));
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
@@ -11923,6 +11948,7 @@ function renderComm(){
     </div>
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
     ${all.filter(chk).length?`<div class="hintxt" style="margin:0 2px 8px">❓ על <b>${all.filter(chk).length}</b> יש שאלה אם הם שייכים לקהילה — לחץ <b>כן</b> (נשאר) או <b>לא</b> (יורד מהרשימה).</div>`:''}
+    ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
     <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
     <div class="list">${list.map(m=>`<div class="cmrow${chk(m)?' chk':''}" data-id="${m.id}">
       <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>
@@ -11979,6 +12005,7 @@ function renderComm(){
   document.getElementById('cm_newbtn').onclick=addQuick;
   document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
   document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
+  const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
   document.getElementById('cm_csv').onclick=()=>{
     const H=['שם משפחה','שם פרטי','מקום','טלפון','אימייל','כתובת','עיר','הערות'];
     const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
