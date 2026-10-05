@@ -11867,13 +11867,13 @@ function renderComm(){
   }
   if(cmSub==='send') return renderCommSend();
   const all=MEMBERS;
-  const chk=m=>(m.notes||'').includes('לבדוק');
+  const chk=m=>!!m.pending;
   const F=[['','הכל',all.length],
            ['mail','📧 עם מייל',all.filter(mHasMail).length],
            ['nomail','🚫 בלי מייל',all.filter(m=>!mHasMail(m)).length],
            ['seat','💺 עם מקום',all.filter(m=>cmSeat(m)).length],
            ['noseat','בלי מקום',all.filter(m=>!cmSeat(m)).length],
-           ['check','⚠️ לבדוק',all.filter(chk).length]];
+           ['check','❓ שאלה — כן או לא',all.filter(chk).length]];
   chips.innerHTML=F.filter(([k,,n])=>k===''||n).map(([k,l,n])=>`<button class="chip ${cmFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
   chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{cmFlt=b.dataset.k;render();});
   let list=all.slice();
@@ -11887,26 +11887,46 @@ function renderComm(){
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
     <div class="addrow" style="margin:0 2px 8px">
       <button class="btn" id="cm_mail" style="flex:2">✉️ שלח מייל לקהילה — הודעה אישית לכל אחד</button>
-      <button class="btn ghost" id="cm_new" style="flex:1">➕ חבר חדש</button>
+      <button class="btn sm ghost" id="cm_csv" style="flex:1">📤 CSV</button>
     </div>
-    <div class="addrow" style="margin:0 2px 8px">
-      <button class="btn sm ghost" id="cm_csv" style="flex:1">📤 ייצוא הרשימה (CSV לאקסל)</button>
-    </div>
-    <div class="hintxt" style="margin:-2px 2px 8px">לחיצה על שורה פותחת את הכרטיס: פרטים, מספר מקום בבית הכנסת, ויומן המיילים שנשלחו אליו. בהמשך יתווספו כאן הוראות הקבע (נדרים פלוס) והתשלומים.</div>
+    <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
+    ${all.filter(chk).length?`<div class="hintxt" style="margin:0 2px 8px">❓ על <b>${all.filter(chk).length}</b> יש שאלה אם הם שייכים לקהילה — לחץ <b>כן</b> (נשאר) או <b>לא</b> (יורד מהרשימה).</div>`:''}
     <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
     <div class="list">${list.map(m=>`<div class="cmrow${chk(m)?' chk':''}" data-id="${m.id}">
       <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>
         ${cmSeat(m)?`<span class="cmseat" title="מספר מקום בבית הכנסת">💺 ${esc(cmSeat(m))}</span>`:''}
-        ${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}</div>
+        ${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}
+        ${chk(m)?`<span class="cmask"><button class="btn sm cmyes" data-id="${m.id}">✔ כן</button><button class="btn sm ghost cmno" data-id="${m.id}">✘ לא</button></span>`:`<button class="fdel cmrm" data-id="${m.id}" title="הסר מהרשימה">✕</button>`}</div>
       <div class="cmdt">
         ${m.phone?`<span dir="ltr">📞 ${esc(m.phone)}</span>`:''}
         ${mHasMail(m)?`<span dir="ltr" class="cmem">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmno">אין מייל</span>'}
         ${(m.addr||m.city)?`<span>🏠 ${esc([m.addr,m.city].filter(Boolean).join(', '))}</span>`:''}
       </div>
-      ${chk(m)?`<div class="cmnote">⚠️ ${esc(m.notes)}</div>`:''}
     </div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
-  view.querySelectorAll('.cmrow').forEach(el=>el.onclick=()=>{const m=MEMBERS.find(x=>x.id==el.dataset.id);if(m)openMember(m);});
-  document.getElementById('cm_new').onclick=()=>openMember(null);
+  view.querySelectorAll('.cmrow').forEach(el=>el.onclick=e=>{if(e.target.closest('button'))return;const m=MEMBERS.find(x=>x.id==el.dataset.id);if(m)openMember(m);});
+  // ❓ כן — נשאר בקהילה; לא — יורד מהרשימה
+  view.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{await api('PUT','/api/members/'+b.dataset.id,{pending:0,notes:''});await cmLoad(true);toast('נשאר בקהילה ✓');render();});
+  view.querySelectorAll('.cmno').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/members/'+b.dataset.id);await cmLoad(true);toast('ירד מהרשימה');render();});
+  view.querySelectorAll('.cmrm').forEach(b=>b.onclick=async()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);
+    if(!await uiConfirm('להסיר את '+mName(m)+' מרשימת הקהילה?'))return;
+    await api('DELETE','/api/members/'+m.id);await cmLoad(true);toast('הוסר');render();});
+  // ➕ הוספה מהירה בשורה אחת — כמו אצל האברכים: "שם משפחה שם פרטי", ואפשר גם טלפון ומייל
+  const addQuick=async()=>{
+    const inp=document.getElementById('cm_new'); const t=(inp.value||'').trim(); if(!t)return;
+    const toks=t.split(/[\s,]+/).filter(Boolean);
+    const email=toks.filter(x=>x.includes('@')).join(' / ');
+    const phone=toks.filter(x=>!x.includes('@')&&/^[\d+][\d\-+]{6,}$/.test(x)).join(' / ');
+    const name=toks.filter(x=>!x.includes('@')&&!/^[\d+][\d\-+]{6,}$/.test(x));
+    if(!name.length){toast('כתוב שם משפחה ואז שם פרטי');return;}
+    const last=name[0], first=name.slice(1).join(' ');
+    const dup=MEMBERS.find(m=>norm(m.last)===norm(last)&&norm(m.first)===norm(first));
+    if(dup){toast('כבר ברשימה: '+mName(dup));openMember(dup);return;}
+    const r=await api('POST','/api/members',{last,first,email,phone,source:'נוסף ידנית'});
+    if(!r||!r.ok){toast((r&&r.detail)||'לא נוסף');return;}
+    inp.value=''; await cmLoad(true); toast('נוסף לקהילה ✓'); render();
+  };
+  document.getElementById('cm_newbtn').onclick=addQuick;
+  document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
   document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_csv').onclick=()=>{
     const H=['שם משפחה','שם פרטי','מקום','טלפון','אימייל','כתובת','עיר','הערות'];
@@ -11924,7 +11944,6 @@ function openMember(m){
   const f=(id,lbl,val,ph,dir)=>`<label class="fld"><span>${lbl}</span><input id="${id}" value="${esc(val||'')}" placeholder="${esc(ph||'')}"${dir?` dir="${dir}"`:''}></label>`;
   rs.innerHTML=`<button class="x" id="rx">✕</button>
     <h2>🕍 ${isNew?'חבר קהילה חדש':esc(mName(m))}</h2>
-    ${!isNew&&(m.notes||'').includes('לבדוק')?`<div class="missbox">⚠️ ${esc(m.notes)}</div>`:''}
     <div class="two">${f('cm_last','שם משפחה',m.last,'')}${f('cm_first','שם פרטי',m.first,'')}</div>
     <div class="two">${f('cm_seat','💺 מספר מקום בבית הכנסת',m.seat,'לפי המפה')}${f('cm_phone','טלפון',m.phone,'050-0000000','ltr')}</div>
     ${f('cm_email','אימייל (אפשר כמה, מופרדים ב־/)',m.email,'name@gmail.com','ltr')}

@@ -333,6 +333,9 @@ def ensure_schema():
     for _c in ('member_id INTEGER',):
         try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s" % _c)
         except Exception: pass
+    # pending=1 — יש שאלה אם הוא שייך לקהילה; מאיר עונה כן/לא בשורה
+    try: con.execute("ALTER TABLE members ADD COLUMN pending INTEGER DEFAULT 0")
+    except Exception: pass
     try: con.execute("ALTER TABLE mail_batch ADD COLUMN audience TEXT DEFAULT 'donors'")
     except Exception: pass
     # פרטי הפנייה לכל נמען — שם פרטי, משפחה, תואר ולשון זכר/נקבה
@@ -3091,20 +3094,84 @@ def ensure_schema():
                                           ((r.get('last') or '').strip(), (r.get('first') or '').strip())).fetchone()
                         if dup:
                             continue
-                        con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,created,updated) "
-                                    "VALUES(?,?,?,?,?,?,?,'קהילה',?,?,?,1,?,?)",
+                        con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,pending,created,updated) "
+                                    "VALUES(?,?,?,?,?,?,?,'קהילה',?,?,?,1,?,?,?)",
                                     ((r.get('last') or '').strip(), (r.get('first') or '').strip(),
                                      (r.get('email') or '').strip(), (r.get('phone') or '').strip(),
                                      (r.get('addr') or '').strip(), (r.get('city') or '').strip(),
                                      (r.get('seat') or '').strip(), (r.get('notes') or '').strip(),
                                      (r.get('source') or '').strip(), _gender(r.get('first') or ''),
-                                     now_iso(), now_iso()))
+                                     1 if r.get('pending') else 0, now_iso(), now_iso()))
                         n_in += 1
             con.execute("INSERT INTO seed_flags(name) VALUES('community_seed_v1')")
             con.commit()
             print('  קהילה: נטענו %d חברים' % n_in)
     except Exception as e:
         print('  community seed error:', e)
+
+    # קהילה v2 — הרשימה המאוחדת: הסינון + ג'ימייל + האקסל של מאיר + מפת בית הכנסת
+    # (מספרי מקום). מעדכן כרטיסים קיימים לפי שם (בלי להרוס מה שמאיר ערך), מוסיף
+    # חדשים, ומוריד את מי שירד מהקובץ (דורון אלחרר עזב לנתיבות; כפילויות אותו שם).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_seed_v2'").fetchone():
+            _cf = os.path.join(HERE, 'community_seed.json')
+            if os.path.exists(_cf):
+                _FIN = {'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ'}
+
+                def _mkey(s):
+                    s = re.sub(r'\s+', ' ', str(s or '')).strip()
+                    s = re.sub(r"[\"'׳״.\-]", '', s)
+                    s = ''.join(_FIN.get(c, c) for c in s)
+                    return re.sub(r'יי', 'י', re.sub(r'וו', 'ו', s)).replace(' ', '')
+                with open(_cf, encoding='utf-8') as fh:
+                    recs = json.load(fh)
+                have = {}
+                for r in con.execute("SELECT * FROM members"):
+                    have.setdefault((_mkey(r['last']), _mkey(r['first'])), []).append(dict(r))
+                keep, n_up, n_in = set(), 0, 0
+                for r in recs:
+                    k = (_mkey(r.get('last')), _mkey(r.get('first')))
+                    rows = have.get(k) or []
+                    if rows:
+                        m = rows[0]; keep.add(m['id'])
+                        sets = {}
+                        for f in ('email', 'phone', 'addr', 'city'):
+                            if not (m.get(f) or '').strip() and (r.get(f) or '').strip():
+                                sets[f] = r[f].strip()
+                        if (r.get('seat') or '').strip() and not (m.get('seat') or '').strip():
+                            sets['seat'] = r['seat'].strip()
+                        if (r.get('source') or '') != (m.get('source') or ''):
+                            sets['source'] = r.get('source') or ''
+                        # השאלה (כן/לא) רק אם מאיר עוד לא ענה עליה
+                        if int(m.get('pending') or 0) and not r.get('pending'):
+                            sets['pending'] = 0; sets['notes'] = ''
+                        elif r.get('pending') and not int(m.get('pending') or 0) and (m.get('notes') or '') != '':
+                            sets['pending'] = 1; sets['notes'] = r.get('notes') or ''
+                        if sets:
+                            con.execute("UPDATE members SET %s, updated=? WHERE id=?" % ', '.join('%s=?' % f for f in sets),
+                                        list(sets.values()) + [now_iso(), m['id']])
+                            n_up += 1
+                    else:
+                        cur = con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,pending,created,updated) "
+                                          "VALUES(?,?,?,?,?,?,?,'קהילה',?,?,?,1,?,?,?)",
+                                          ((r.get('last') or '').strip(), (r.get('first') or '').strip(),
+                                           (r.get('email') or '').strip(), (r.get('phone') or '').strip(),
+                                           (r.get('addr') or '').strip(), (r.get('city') or '').strip(),
+                                           (r.get('seat') or '').strip(), (r.get('notes') or '').strip(),
+                                           (r.get('source') or '').strip(), _gender(r.get('first') or ''),
+                                           1 if r.get('pending') else 0, now_iso(), now_iso()))
+                        keep.add(cur.lastrowid); n_in += 1
+                # מי שלא בקובץ המאוחד ולא נוסף ביד — יורד (אלחרר, כפילויות)
+                gone = [r['id'] for r in con.execute("SELECT id, source FROM members")
+                        if r['id'] not in keep and 'ידנית' not in (r['source'] or '')]
+                for mid in gone:
+                    if not con.execute("SELECT 1 FROM member_log WHERE member_id=?", (mid,)).fetchone():
+                        con.execute("DELETE FROM members WHERE id=?", (mid,))
+                print('  קהילה v2: עודכנו %d, נוספו %d, ירדו %d' % (n_up, n_in, len(gone)))
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_seed_v2')")
+            con.commit()
+    except Exception as e:
+        print('  community v2 error:', e)
 
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
@@ -14312,7 +14379,7 @@ class H(BaseHTTPRequestHandler):
             # עדכון כרטיס חבר קהילה — רק השדות שנשלחו
             b = self._body(); mid = int(m.group(1))
             allowed = ('last', 'first', 'email', 'phone', 'addr', 'city', 'seat', 'category',
-                       'notes', 'source', 'gender', 'active')
+                       'notes', 'source', 'gender', 'active', 'pending')
             fields = {k: b[k] for k in allowed if k in b}
             if 'last' in fields and not str(fields['last'] or '').strip():
                 return self._send(400, {'error': 'last required', 'detail': 'חסר שם משפחה'})
