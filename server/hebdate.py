@@ -255,8 +255,17 @@ def month_days(mon, yr=''):
             L = _DOW_HE[w]
             sh = (w == 5)
             yt = _YOMTOV.get((m, dnum), '')
+            # מאיר: "ביומן שבשבת יהיה כתוב את הפרשה" — לפי מנהג ארץ ישראל.
+            # בשבת של יום טוב אין פרשת השבוע, ואז נשאר שם החג.
+            pr = ''
+            if sh:
+                try:
+                    from pyluach import parshios
+                    pr = hq(parshios.getparsha_string(dates.HebrewDate(y, m, dnum), israel=True, hebrew=True) or '')
+                except Exception:
+                    pr = ''
             out['days'][str(dnum)] = {'dow': L, 'name': _DOW_FULL[L],
-                                      'shabbos': sh, 'yomtov': yt,
+                                      'shabbos': sh, 'yomtov': yt, 'parsha': pr,
                                       'block': bool(sh or yt),
                                       'why': ('שבת' if sh else yt),
                                       'greg': g.isoformat()}

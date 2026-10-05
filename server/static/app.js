@@ -11516,7 +11516,7 @@ async function renderCalTab(){
   let selHeb='';
   for(let n=1;n<=HM.len;n++){const dd=HM.days[String(n)]||{}, k=dd.greg||'', L=by[k]||[], dow=DOWK[dd.dow]||0;
     if(k===calSel)selHeb=heDay(n)+' '+HM.month;
-    cells.push(`<div class="bcc ${k===today?'today':''} ${k===calSel?'sel':''} ${dd.shabbos?'shab':''} ${dd.yomtov?'yt':''}" data-d="${k}"><div class="bcd"><b>${heDay(n)}</b><small>${DOW[dow]}</small><span class="bcg">${gregShort(k)}</span>${k===today?'<em>היום</em>':''}</div>${dd.yomtov?`<div class="bcyt">🕯️ ${esc(dd.yomtov)}</div>`:''}${L.slice(0,5).map(ent).join('')}${L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''}</div>`);}
+    cells.push(`<div class="bcc ${k===today?'today':''} ${k===calSel?'sel':''} ${dd.shabbos?'shab':''} ${dd.yomtov?'yt':''}" data-d="${k}"><div class="bcd"><b>${heDay(n)}</b><i class="bcm">${esc(HM.month)}</i><small>${DOW[dow]}</small><span class="bcg">${gregShort(k)}</span>${k===today?'<em>היום</em>':''}</div>${dd.yomtov?`<div class="bcyt">🕯️ ${esc(dd.yomtov)}</div>`:''}${dd.parsha?`<div class="bcpr">📖 פרשת ${esc(dd.parsha)}</div>`:''}${L.slice(0,5).map(ent).join('')}${L.length>5?`<div class="bcmore">ועוד ${L.length-5} — לחץ על היום</div>`:''}</div>`);}
   const sel=calSel?(by[calSel]||[]):[];
   const tp=hebTodayParts();
   const dayPanel=calSel?`<div class="sec bcday" id="bcday"><h3>📅 ${esc(selHeb)} ${esc(HM.year)} <small>· ${fmtGreg(calSel)} · יום ${DOW[new Date(calSel+'T12:00:00').getDay()]}${calSel===today?' · היום':''}</small></h3>
