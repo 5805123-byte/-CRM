@@ -3361,6 +3361,23 @@ def ensure_schema():
     except Exception as e:
         print('  community q answers error:', e)
 
+    # קהילה — מאיר: "אשר ברזסקי כתוב פעמיים, ותמזג את שמואל בלוי לבלויא"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_fix_v9'").fetchone():
+            # כפילויות באותו שם בדיוק — נשאר הראשון, השאר מתמזגים לתוכו
+            for r in con.execute("SELECT TRIM(last) l, TRIM(COALESCE(first,'')) f, COUNT(*) c FROM members GROUP BY l, f HAVING c>1").fetchall():
+                ids = [x['id'] for x in con.execute("SELECT id FROM members WHERE TRIM(last)=? AND TRIM(COALESCE(first,''))=? ORDER BY id", (r['l'], r['f']))]
+                for d in ids[1:]:
+                    merge_members(con, ids[0], d)
+            a = con.execute("SELECT id FROM members WHERE TRIM(last)='בלויא' AND TRIM(first)='שמואל' ORDER BY id LIMIT 1").fetchone()
+            d = con.execute("SELECT id FROM members WHERE TRIM(last)='בלוי' AND TRIM(first)='שמואל' ORDER BY id LIMIT 1").fetchone()
+            if a and d:
+                merge_members(con, a['id'], d['id'])
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_fix_v9')")
+            con.commit()
+    except Exception as e:
+        print('  community fix v9 error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
