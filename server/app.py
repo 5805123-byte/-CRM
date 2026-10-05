@@ -2944,6 +2944,20 @@ def ensure_schema():
     except Exception as e:
         print('  sukkos cat fix error:', e)
 
+    # ניקוי רשימת הייעודים: תיאורי העברות בנקאיות שנכנסו לרשימה בטעות יורדים
+    # ממנה (התרומות עצמן לא משתנות)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='campaigns_junk_v1'").fetchone():
+            gone = [r['name'] for r in con.execute("SELECT name FROM campaigns") if _CAT_JUNK.search(r['name'] or '')]
+            for g in gone:
+                con.execute("DELETE FROM campaigns WHERE name=?", (g,))
+            con.execute("INSERT INTO seed_flags(name) VALUES('campaigns_junk_v1')")
+            con.commit()
+            if gone:
+                print('  ירדו מרשימת הייעודים %d תיאורים בנקאיים: %s' % (len(gone), ' | '.join(gone[:12])))
+    except Exception as e:
+        print('  campaigns junk error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -8626,7 +8640,9 @@ def recon_apply(cur, tid, b):
             cat = _rr['category'] or ''
     # קטגוריה חופשית (עבור מה) — נשמרת לרשימה קבועה לשימוש חוזר
     BASE_CATS = {'', 'קבוע', 'יששכר־זבולון', 'פרנס לילה', 'חדר קפה', 'ארוחת בוקר', 'נר למאור', 'קוויטל', 'מזדמן', 'חד-פעמי', 'אחר'}
-    if cat and cat not in BASE_CATS:
+    # מאיר: "כל זה זה לא ייעודים ולא יודע למה זה נכנס כאן לרשימה" — תיאור של
+    # העברה בנקאית (TD BANK · Lawrence NY, CYBERGRANTS.COM) אינו ייעוד לרשימה
+    if cat and cat not in BASE_CATS and not _CAT_JUNK.search(cat):
         cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
     # אמצעי התשלום לפי מקור ההתאמה (Authorize / Banquest / בנק ווסט)
     pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
@@ -8712,6 +8728,8 @@ def recon_apply(cur, tid, b):
     except Exception: pass
     return (200, {'ok': True, 'donor_id': did})
 
+# שם שנראה כמו תיאור בנקאי ולא כמו ייעוד: אותיות לטיניות גדולות, " · ", .COM, BANK…
+_CAT_JUNK = re.compile(r'[A-Z]{3,}|·|\.com|bank|transfer|charity|cgds|rfb=|zelle|wire', re.I)
 _CAMP_CAT = re.compile(r'סוכות|פסח|קמחא|מתנות|פורים|חנוכה|ל"ג|לג בעומר|שבועות|ראש השנה|יו"ט|יום טוב')
 
 

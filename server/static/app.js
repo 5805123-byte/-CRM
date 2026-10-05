@@ -11234,8 +11234,8 @@ function campDonationEditor(row,d,x){
     <input type="date" class="cddate" value="${esc(String(x.date||'').slice(0,10))}">
     <input class="cdnote" value="${esc(giveNote(x)||'')}" placeholder="📝 הערה" style="flex:1 1 100%">
     <label class="fld" style="flex:1 1 100%;margin:0"><span>📂 עבור מה — אפשר להעביר לייעוד אחר (זה יוציא אותה מהרשימה הזו)</span>
-      <select class="cdcat">${[...new Set([String(x.category||'').trim()].concat(campAllCats()).concat(CATS.filter(Boolean)))].filter(c=>c!=null).map(c=>`<option value="${esc(c)}" ${c===String(x.category||'').trim()?'selected':''}>${c||'— בלי ייעוד —'}</option>`).join('')}<option value="__new__">➕ ייעוד חדש…</option></select>
-      <input class="cdcatnew" placeholder="שם הייעוד החדש" style="display:none;margin-top:4px"></label>
+      <select class="cdcat">${[...new Set([String(x.category||'').trim()].concat(dnCatList()))].map(c=>`<option value="${esc(c)}" ${c===String(x.category||'').trim()?'selected':''}>${c||'— בלי ייעוד —'}</option>`).join('')}<option value="__personal__">✏️ ייעוד אישי — רק אצלו (לא נכנס לרשימה)…</option><option value="__new__">➕ ייעוד חדש לרשימה של כולם…</option></select>
+      <input class="cdcatnew" placeholder="עבור מה? (למשל: עוגות הושענא רבה)" style="display:none;margin-top:4px"></label>
     <button class="btn sm cdsave">💾 שמור תיקון</button>
     <button class="btn sm ghost cddel" style="color:var(--no)">🗑 מחק את התרומה</button>
     <button class="btn sm ghost cdx">ביטול</button>
@@ -11245,14 +11245,18 @@ function campDonationEditor(row,d,x){
   // מאיר: "אם בטעות כתבתי שזה לסוכות תשפ"ז וזה בשביל משהו אחר, אני צריך אפשרות
   // להעביר את התרומה לייעוד אחר… כפתור פשוט" — בורר ייעוד בתוך התיקון
   const catSel=box.querySelector('.cdcat'), catNew=box.querySelector('.cdcatnew');
-  catSel.onchange=()=>{catNew.style.display=catSel.value==='__new__'?'':'none';if(catSel.value==='__new__')catNew.focus();};
+  // מאיר: "יש ייעודים שאני רוצה לשמור רק לתורם ספציפי בשביל משהו ייחודי… רק
+  // ייעוד שהוא של רבים שיהיה ברשימה" — ייעוד אישי נשמר על התרומה בלבד
+  catSel.onchange=()=>{const free=catSel.value==='__new__'||catSel.value==='__personal__';catNew.style.display=free?'':'none';if(free)catNew.focus();};
   box.querySelector('.cdsave').onclick=async()=>{
     const amt=box.querySelector('.cdamt').value.trim(), ccy=box.querySelector('.cdcur').dataset.v||'$',
           m=box.querySelector('.cdm').value==='__new__'?'':box.querySelector('.cdm').value,
           date=box.querySelector('.cddate').value||x.date, note=box.querySelector('.cdnote').value.trim();
     if(!amtNum(amt)){toast('צריך סכום');return;}
-    const cat=catSel.value==='__new__'?catNew.value.trim():catSel.value;
-    if(catSel.value==='__new__'&&!cat){toast('כתוב את שם הייעוד החדש');catNew.focus();return;}
+    const free=catSel.value==='__new__'||catSel.value==='__personal__';
+    const cat=free?catNew.value.trim():catSel.value;
+    if(free&&!cat){toast('כתוב עבור מה');catNew.focus();return;}
+    if(catSel.value==='__new__'&&!(CAMPAIGNS||[]).includes(cat)){await api('POST','/api/campaigns',{name:cat});CAMPAIGNS.unshift(cat);}
     // ההערה: החלק הטכני (ייבוא/נגבה ב…) נשאר, רק ההערה החופשית מתחלפת
     const tech=String(x.note||'').split(' · ').filter(s=>GVDROP.test(s));
     const newNote=tech.concat(note?[note]:[]).join(' · ');
@@ -11260,7 +11264,6 @@ function campDonationEditor(row,d,x){
     const moved=cat!==String(x.category||'').trim();
     if(moved)body.category=cat;
     await api('PUT','/api/donation/'+x.id,body);
-    if(moved&&cat&&!CAMPAIGNS.includes(cat)&&!CATS.includes(cat))CAMPAIGNS.push(cat);
     toast(moved?('הועבר ל"'+(cat||'בלי ייעוד')+'" ✓ — ירד מהרשימה הזו'):'התרומה תוקנה ✓'); await load(); renderCamp();
   };
   box.querySelector('.cddel').onclick=async()=>{
