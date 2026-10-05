@@ -3173,6 +3173,50 @@ def ensure_schema():
     except Exception as e:
         print('  community v2 error:', e)
 
+    # קהילה v3 — מאיר: "את משה אלוש אתה יכול למצוא את הפרטים שלו ברשימת אברכים כי
+    # הוא גם אברך, רייכמן זה מנשה רייכמן, פקשר זה גיטי פקשר או גיטל"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_seed_v3'").fetchone():
+            def _m1(last, first):
+                return con.execute("SELECT * FROM members WHERE TRIM(last)=? AND TRIM(first)=? ORDER BY id LIMIT 1",
+                                   (last, first)).fetchone()
+
+            def _take_seat(keep, drop):
+                """המקום של השורה הכפולה עובר לכרטיס הנכון, והכפולה יורדת"""
+                if not keep or not drop:
+                    return
+                seat = (keep['seat'] or '').strip() or (drop['seat'] or '').strip()
+                src = keep['source'] or ''
+                if 'מפת בית הכנסת' not in src:
+                    src = (src + ' + מפת בית הכנסת').strip(' +')
+                con.execute("UPDATE members SET seat=?, source=?, pending=0, notes='', updated=? WHERE id=?",
+                            (seat, src, now_iso(), keep['id']))
+                con.execute("UPDATE member_log SET member_id=? WHERE member_id=?", (keep['id'], drop['id']))
+                con.execute("DELETE FROM members WHERE id=?", (drop['id'],))
+            _take_seat(_m1('רייכמן', 'מנשה'), _m1('רייכמן', 'משה'))
+            _take_seat(_m1('פקשר', 'גיטי') or _m1('פקשר', 'גיטל'), _m1('פקשר', 'אהרן'))
+            al = _m1('אלוש', 'משה')
+            if al:
+                av = None
+                try:
+                    av = con.execute("SELECT phone, email, addr FROM avreichim WHERE last LIKE '%אלוש%' AND first LIKE '%משה%' LIMIT 1").fetchone()
+                except Exception:
+                    pass
+                sets = {}
+                for f in ('phone', 'email', 'addr'):
+                    if av and (av[f] or '').strip() and not (al[f] or '').strip():
+                        sets[f] = av[f].strip()
+                if not sets.get('phone') and not (al['phone'] or '').strip():
+                    sets['phone'] = '054-8433324'
+                sets['source'] = ((al['source'] or '') + ' + רשימת האברכים').strip(' +')
+                con.execute("UPDATE members SET %s, updated=? WHERE id=?" % ', '.join('%s=?' % f for f in sets),
+                            list(sets.values()) + [now_iso(), al['id']])
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_seed_v3')")
+            con.commit()
+            print('  קהילה v3: רייכמן / פקשר / אלוש עודכנו')
+    except Exception as e:
+        print('  community v3 error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
