@@ -3231,6 +3231,18 @@ def ensure_schema():
     except Exception as e:
         print('  community v4 error:', e)
 
+    # קהילה v5 — מאיר: "שייר רפאל זה שר רפאל. תמזג אותם."
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_seed_v5'").fetchone():
+            a = con.execute("SELECT id FROM members WHERE TRIM(last)='שר' AND TRIM(first)='רפאל' ORDER BY id LIMIT 1").fetchone()
+            b = con.execute("SELECT id FROM members WHERE TRIM(last)='שייר' AND TRIM(first)='רפאל' ORDER BY id LIMIT 1").fetchone()
+            if a and b:
+                merge_members(con, a['id'], b['id'])
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_seed_v5')")
+            con.commit()
+    except Exception as e:
+        print('  community v5 error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -12116,6 +12128,44 @@ def member_recipients(con, ids):
     return out, skip
 
 
+def merge_members(con, keep_id, drop_id):
+    """מיזוג שני כרטיסים בקהילה לאחד. מאיר: "שייר רפאל זה שר רפאל. תמזג אותם."
+    הכרטיס שנשאר מקבל כל מה שחסר לו מהשני (מייל, טלפון, כתובת, מקום, הערות),
+    היומן עובר אליו, והכפול נמחק."""
+    k = con.execute("SELECT * FROM members WHERE id=?", (keep_id,)).fetchone()
+    d = con.execute("SELECT * FROM members WHERE id=?", (drop_id,)).fetchone()
+    if not k or not d or keep_id == drop_id:
+        return False
+    sets = {}
+    for f in ('email', 'phone'):
+        parts = [x.strip() for x in str(k[f] or '').split('/') if x.strip()]
+        for x in str(d[f] or '').split('/'):
+            x = x.strip()
+            if x and x.lower() not in [p.lower() for p in parts]:
+                parts.append(x)
+        sets[f] = ' / '.join(parts)
+    for f in ('addr', 'city', 'seat', 'gender'):
+        if not str(k[f] or '').strip() and str(d[f] or '').strip():
+            sets[f] = str(d[f]).strip()
+    if str(d['notes'] or '').strip() and str(d['notes'] or '').strip() not in str(k['notes'] or ''):
+        sets['notes'] = (str(k['notes'] or '').strip() + ' · ' + str(d['notes']).strip()).strip(' ·')
+    src = [x.strip() for x in str(k['source'] or '').split(' + ') if x.strip()]
+    for x in str(d['source'] or '').split(' + '):
+        if x.strip() and x.strip() not in src:
+            src.append(x.strip())
+    sets['source'] = ' + '.join(src)
+    sets['pending'] = 1 if (int(k['pending'] or 0) and int(d['pending'] or 0)) else 0
+    con.execute("UPDATE members SET %s, updated=? WHERE id=?" % ', '.join('%s=?' % f for f in sets),
+                list(sets.values()) + [now_iso(), keep_id])
+    con.execute("UPDATE member_log SET member_id=? WHERE member_id=?", (keep_id, drop_id))
+    try:
+        con.execute("UPDATE mail_queue SET member_id=? WHERE member_id=?", (keep_id, drop_id))
+    except Exception:
+        pass
+    con.execute("DELETE FROM members WHERE id=?", (drop_id,))
+    return True
+
+
 def log_member_mail(member_id, to, subject, body, msg_id=''):
     """מתייק בכרטיס החבר כל מייל שנשלח אליו — כמו יומן הקשר אצל התורם."""
     if not member_id:
@@ -14945,6 +14995,16 @@ class H(BaseHTTPRequestHandler):
             mid = cur.lastrowid
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': mid})
+        if self.path == '/api/members/merge':
+            # מיזוג שני חברים — מהכרטיס במסך הקהילה
+            try:
+                keep, drop = int(b.get('keep')), int(b.get('drop'))
+            except (TypeError, ValueError):
+                return self._send(400, {'error': 'keep/drop required'})
+            con = db()
+            ok = merge_members(con, keep, drop)
+            con.commit(); con.close()
+            return self._send(200, {'ok': ok, 'id': keep})
         m = re.match(r'/api/members/(\d+)/log$', self.path)
         if m:
             # רישום ידני בכרטיס החבר — שיחה, הודעה, הערה

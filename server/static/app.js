@@ -11956,6 +11956,9 @@ function openMember(m){
     </div>
     ${isNew?'':`<div class="sec"><div class="rbtitle">📧 יומן — מה נשלח אליו</div><div id="cm_log" class="hintxt">טוען…</div>
       <div class="addrow" style="margin-top:8px"><input id="cm_lognote" placeholder="הערה / שיחה — רישום ידני" style="flex:3"><button class="btn sm ghost" id="cm_logadd" style="flex:1">➕ רשום</button></div></div>
+    <div class="sec"><div class="rbtitle">🔀 מיזוג עם חבר אחר</div>
+      <div class="hintxt">אותו אדם שנכנס פעמיים (למשל "שייר רפאל" ו"שר רפאל")? הקלד את השם השני — הכרטיס הזה נשאר, ומקבל ממנו כל מה שחסר.</div>
+      <input id="cm_mergeq" placeholder="🔍 שם החבר הכפול" autocomplete="off"><div id="cm_mergeres" class="dpres"></div></div>
     <div class="addrow" style="margin-top:14px"><button class="btn sm ghost danger" id="cm_del" style="flex:1">🗑️ הסר מרשימת הקהילה</button></div>`}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
@@ -11979,6 +11982,21 @@ function openMember(m){
     await api('DELETE','/api/members/'+m.id); await cmLoad(true); remov.classList.remove('show'); toast('הוסר'); if(tab==='comm')render();
   };
   if(!isNew){
+    // 🔀 מיזוג — מאיר: "גם בבחירה של ווב במערכת תעשה לי אפשרות של מיזוג"
+    const mq=document.getElementById('cm_mergeq'), mr=document.getElementById('cm_mergeres');
+    if(mq)mq.oninput=()=>{
+      const t=mq.value.trim(); mr.innerHTML='';
+      if(t.length<2)return;
+      const hits=MEMBERS.filter(x=>x.id!==m.id&&matchStr(mName(x)+' '+(x.email||'')+' '+(x.phone||''),t)).slice(0,8);
+      mr.innerHTML=hits.map(x=>`<div class="dpr" data-mg="${x.id}">🔀 ${esc(mName(x))}${x.seat?` <small>💺 ${esc(x.seat)}</small>`:''}${x.email?` <small class="mlem">${esc(mEmails(x)[0]||'')}</small>`:''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא</div>';
+      mr.querySelectorAll('.dpr[data-mg]').forEach(el=>el.onclick=async()=>{
+        const o=MEMBERS.find(x=>x.id==el.dataset.mg); if(!o)return;
+        if(!await uiConfirm('למזג את "'+mName(o)+'" לתוך "'+mName(m)+'"?\n\nהכרטיס של '+mName(m)+' נשאר, מקבל ממנו מייל/טלפון/מקום שחסרים, והכרטיס של '+mName(o)+' נמחק.'))return;
+        const r=await api('POST','/api/members/merge',{keep:m.id,drop:o.id});
+        if(!r||!r.ok){toast('המיזוג לא בוצע');return;}
+        await cmLoad(true); toast('מוזג ✓'); const nm=MEMBERS.find(x=>x.id===m.id); if(tab==='comm')render(); if(nm)openMember(nm);
+      });
+    };
     const paintLog=async()=>{
       const box=document.getElementById('cm_log'); if(!box)return;
       const r=await api('GET','/api/members/'+m.id+'/log'); const rows=(r&&r.rows)||[];
