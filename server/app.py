@@ -2932,6 +2932,19 @@ def ensure_schema():
     except Exception as e:
         print('  karmi wedding error:', e)
 
+    # מאיר: "תכתוב לי יום חמישי בשעה ארבע וחצי, פגישה אצל ראש העיר ביומן" (נאמר ביום
+    # שלישי 06.10.2026 → יום חמישי 08.10.2026, 16:30)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_mayor_meeting_v1'").fetchone():
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-08' AND note LIKE '%ראש העיר%'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                            (None, '2026-10-08', 'other', 'פגישה אצל ראש העיר', '', '16:30', 'לשכת ראש העיר'))
+                print('  פגישה אצל ראש העיר: נרשמה ל-08.10.2026 16:30')
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_mayor_meeting_v1')")
+            con.commit()
+    except Exception as e:
+        print('  mayor meeting error:', e)
+
     # מפת בית הכנסת — מאיר: "בדיוק אותו מבנה והושבה כמו בצילום". השמות שבצילום הם
     # הבסיס: מקום שאין עליו חבר מהרשימה מקבל את השם מהצילום כתווית (ניתן לעריכה).
     try:
