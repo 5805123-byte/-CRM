@@ -12767,7 +12767,40 @@ def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True):
         except Exception:
             pass
     con.commit()
+    if sent:
+        # עותק למשרד — איזיקאונט לא שולח עותק על מסמכים שנוצרו דרך ה-API ("לא כולל אוטומציה"),
+        # לכן המערכת שולחת עותק בעצמה ברגע שהקובץ זמין (שרת הקבצים שלהם לפעמים חוסם זמנית — 429)
+        threading.Timer(3, receipt_office_copy, args=(rid,)).start()
     return receipt_doc(con, rid), ''
+
+
+def receipt_office_copy(rid, attempt=0):
+    """שולח למשרד עותק של קבלת איזיקאונט שנשלחה לתורם. אם הקובץ עוד לא זמין — מנסה שוב
+    אחרי 5, 15 ו-30 דקות."""
+    office = (os.environ.get('RECEIPT_COPY_TO') or os.environ.get('GMAIL_USER') or '').strip()
+    if not office:
+        return
+    try:
+        con = db()
+        r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+        if not r or not r['sent_at'] or 'עותק נשלח' in (r['note'] or ''):
+            con.close(); return
+        pdf, fname = receipt_pdf(con, rid)
+        if not pdf:
+            con.close()
+            if attempt < 3:
+                threading.Timer((300, 900, 1800)[attempt], receipt_office_copy, args=(rid, attempt + 1)).start()
+            return
+        import mailer
+        subject = "עותק: קבלה %s — %s → %s" % (r['num'], r['name'], r['sent_to'] or '')
+        body = 'עותק למשרד של קבלת איזיקאונט %s על ₪%s שנשלחה אל %s.' % (r['num'], format(float(r['amount'] or 0), ',.2f'), r['sent_to'] or '')
+        res = mailer.send(office, subject, body, [(fname, 'application/pdf', pdf)])
+        if res.get('ok'):
+            con.execute("UPDATE receipt_docs SET note=? WHERE id=?", (((r['note'] or '') + ' · עותק נשלח למשרד').strip(' ·'), rid))
+            con.commit()
+        con.close()
+    except Exception as e:
+        print('  office copy error:', e)
 
 
 def receipt_issue(con, don_id, kind=None, email='', send=True):
@@ -12882,6 +12915,14 @@ def receipt_send(con, rid, email=''):
     if res.get('ok'):
         con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=? WHERE id=?", (now_iso(), to, rid))
         con.commit()
+        # מאיר: "בדרך כלל אני גם מקבל אימייל של קבלה" — עותק למשרד על כל קבלה שנשלחת
+        office = (os.environ.get('RECEIPT_COPY_TO') or os.environ.get('GMAIL_USER') or '').strip()
+        if office and office.lower() != to.lower():
+            try:
+                mailer.send(office, 'עותק: ' + subject + ' → ' + to, 'עותק למשרד של הקבלה שנשלחה אל %s.\n\n%s' % (to, body),
+                            [(fname, 'application/pdf', pdf)])
+            except Exception:
+                pass
         try:
             log_sent_mail(r['donor_id'], to, subject, body, res.get('msg_id'), 1)
         except Exception:
