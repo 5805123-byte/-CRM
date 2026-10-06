@@ -45,10 +45,10 @@ def _base():
 
 
 def _auth():
-    a = {'api_key': _env('EZCOUNT_API_KEY'), 'api_email': _env('EZCOUNT_API_EMAIL')}
-    dev = _env('EZCOUNT_DEV_EMAIL')
-    if dev:
-        a['developer_email'] = dev
+    # ה-API של EZcount מזדהה עם api_key + developer_email (איש הקשר לעניין ה-API).
+    # המייל של החשבון (EZCOUNT_API_EMAIL) משמש כ-developer_email אם לא הוגדר אחר.
+    a = {'api_key': _env('EZCOUNT_API_KEY'),
+         'developer_email': _env('EZCOUNT_DEV_EMAIL') or _env('EZCOUNT_API_EMAIL')}
     return a
 
 
@@ -76,7 +76,12 @@ def _post(path, payload, timeout=30):
     if body.get('success') in (True, 'true', 1, '1'):
         return True, body
     msg = (body.get('errMsg') or body.get('error') or body.get('message')
-           or body.get('err') or 'שגיאה לא ידועה')
+           or body.get('err') or '')
+    code = body.get('errCode') or body.get('error_code') or body.get('code') or ''
+    if not msg:
+        msg = 'תשובה לא מובנת: %s' % raw[:200]
+    if code:
+        msg = 'error code %s: %s' % (code, msg)
     return False, 'EZcount: %s' % msg
 
 
@@ -92,10 +97,8 @@ def check():
     if ok:
         return True, 'מחובר ל-EZcount ✓'
     t = str(res)
-    # שגיאה שאינה על ההרשאה פירושה שהמפתח התקבל
-    if any(w in t for w in ('key', 'מפתח', 'auth', 'הרשא', 'permission', 'unauthor')):
-        return False, t
-    return True, 'מחובר ל-EZcount ✓ (%s)' % t[:80]
+    # מאיר ראה "מחובר ✓ (error code 1010)" — שגיאה היא שגיאה, לא מדווחים חיבור תקין
+    return False, t + ' — בדוק ב-Render את EZCOUNT_API_KEY (המפתח מהגדרות ה-API באיזיקאונט) ואת EZCOUNT_API_EMAIL'
 
 
 def _pay_type(method):
@@ -156,7 +159,15 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
         body['doc_date'] = date           # תאריך ההפקדה, לא תאריך ההפקה
     ok, res = _post('/api/createDoc', body)
     if not ok:
-        return False, res
+        # ניסיון שני בלי השדות האופציונליים (כתובת, טלפון, תאריך, הערה) — אם אחד מהם
+        # הוא מה שהפריע ל-EZcount, הקבלה עדיין תופק עם השם והסכום
+        first_err = res
+        for k in ('customer_address', 'customer_phone', 'doc_date', 'comment'):
+            body.pop(k, None)
+        ok, res = _post('/api/createDoc', body)
+        if not ok:
+            print('  EZcount createDoc נכשל:', first_err, '|', res)
+            return False, first_err
     return True, {
         'docnum': str(res.get('docnum') or res.get('doc_number') or res.get('doc_uuid') or ''),
         'doc_url': res.get('pdf_link') or res.get('doc_url') or '',

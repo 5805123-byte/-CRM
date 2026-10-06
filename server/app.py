@@ -12695,9 +12695,10 @@ def receipt_issue_ez(con, don_id, email='', address='', phone=''):
     return receipt_doc(con, rid), ''
 
 
-def receipt_issue(con, don_id, kind=None):
+def receipt_issue(con, don_id, kind=None, email=''):
     """מפיק קבלה על תרומה (פעם אחת — הפקה חוזרת מחזירה את אותה קבלה) ושומר את ה-PDF.
-    שקלים: דרך EZcount אם הוא מוגדר ב-Render, אחרת בעיצוב שלנו. דולר: הקבלה האמריקאית."""
+    שקלים: דרך EZcount אם הוא מוגדר ב-Render, אחרת בעיצוב שלנו. דולר: הקבלה האמריקאית.
+    email — כתובת לשליחה (אם ניתנה); ב-EZcount הוא שולח, בעיצוב שלנו שולחים מכאן."""
     row = con.execute("SELECT * FROM donations WHERE id=?", (don_id,)).fetchone()
     if not row:
         return None
@@ -12706,7 +12707,7 @@ def receipt_issue(con, don_id, kind=None):
     if ex:
         return receipt_doc(con, ex['id'])
     if kind == 'il' and ez_ready():
-        doc, err = receipt_issue_ez(con, don_id)
+        doc, err = receipt_issue_ez(con, don_id, email=email)
         if not doc:
             raise RuntimeError(err)
         return doc
@@ -12810,6 +12811,28 @@ def receipt_send(con, rid, email=''):
                         'not_configured': 'שליחת מייל לא מוגדרת ב-Render'}[res['error']]
     res['to'] = to
     return res
+
+
+def receipt_autosend(con, doc, email=''):
+    """מאיר: "כשאני כותב לו הפק קבלה — שהוא יקבל את זה באימייל שלו". אם הקבלה עדיין
+    לא נשלחה (עיצוב שלנו, או EZcount בלי מייל) — שולחים מכאן לכתובת שניתנה או לזו שבכרטיס.
+    מחזיר (doc מעודכן, שגיאת שליחה או '')."""
+    if not doc or doc.get('sent_at'):
+        return doc, ''
+    d = con.execute("SELECT email FROM donors WHERE id=?", (doc['donor_id'],)).fetchone()
+    to = (email or '').strip() or (emails_of(d['email'])[0] if d and d['email'] else '')
+    if not to:
+        return doc, ''
+    if email:
+        con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (email.strip(), doc['donor_id']))
+        con.commit()
+    try:
+        res = receipt_send(con, doc['id'], to)
+    except Exception as e:
+        return doc, str(e)[:160]
+    if res.get('ok'):
+        return receipt_doc(con, doc['id']), ''
+    return doc, res.get('error') or 'השליחה נכשלה'
 
 
 def seat_renumber(con, pos, num):
@@ -16096,15 +16119,17 @@ class H(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self._send(400, {'ok': False, 'error': 'donation_id required'})
             con = db()
+            email = (b.get('email') or '').strip()
             try:
-                doc = receipt_issue(con, did, b.get('kind'))
+                doc = receipt_issue(con, did, b.get('kind'), email=email)
             except Exception as e:
-                con.close(); return self._send(200, {'ok': False, 'error': 'ההפקה נכשלה: %s' % str(e)[:160]})
-            con.close()
+                con.close(); return self._send(200, {'ok': False, 'error': 'ההפקה נכשלה: %s' % str(e)[:200]})
             if not doc:
-                return self._send(404, {'ok': False, 'error': 'התרומה לא נמצאה'})
+                con.close(); return self._send(404, {'ok': False, 'error': 'התרומה לא נמצאה'})
+            doc, send_error = receipt_autosend(con, doc, email)
+            con.close()
             bump_data()
-            return self._send(200, {'ok': True, 'doc': doc})
+            return self._send(200, {'ok': True, 'doc': doc, 'send_error': send_error})
         if self.path == '/api/receipts/new':
             # תרומה חדשה + קבלה עליה — מתוך חלון הקבלות
             try:
@@ -16128,9 +16153,10 @@ class H(BaseHTTPRequestHandler):
                 doc = receipt_issue(con, did, kind)
             except Exception as e:
                 con.close(); bump_data(); return self._send(200, {'ok': False, 'error': 'התרומה נשמרה אבל ההפקה נכשלה: %s' % str(e)[:160]})
+            doc, send_error = receipt_autosend(con, doc, '')
             con.close()
             bump_data()
-            return self._send(200, {'ok': True, 'doc': doc, 'donation_id': did})
+            return self._send(200, {'ok': True, 'doc': doc, 'donation_id': did, 'send_error': send_error})
         m = re.match(r'/api/receipts/(\d+)/send$', self.path)
         if m:
             con = db()
