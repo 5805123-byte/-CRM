@@ -16272,6 +16272,22 @@ class H(BaseHTTPRequestHandler):
             if res.get('ok'):
                 bump_data()
             return self._send(200, res)
+        m = re.match(r'/api/receipts/(\d+)/pdf$', self.path)
+        if m:
+            # מאיר: "אי אפשר גם לשלוח את זה מהמערכת מהכרטיס שלו?" — קבלת איזיקאונט שהקובץ שלה
+            # לא התקבל: מורידים אותו מאתר איזיקאונט ומצרפים כאן, ומאז שולחים אותה מהמערכת
+            try:
+                data = base64.b64decode(b.get('data') or '')
+            except Exception:
+                data = b''
+            if data[:4] != b'%PDF':
+                return self._send(200, {'ok': False, 'error': 'הקובץ אינו PDF'})
+            con = db()
+            if not con.execute("SELECT 1 FROM receipt_docs WHERE id=?", (int(m.group(1)),)).fetchone():
+                con.close(); return self._send(404, {'ok': False, 'error': 'not found'})
+            con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (data, int(m.group(1))))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/receipts/(\d+)/delete$', self.path)
         if m:
             # ביטול קבלה שהופקה בטעות — רק אם עדיין לא נשלחה. המספר הסידורי נשאר תפוס.
