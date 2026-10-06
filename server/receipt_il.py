@@ -295,9 +295,9 @@ def receipt_file(con, don_id, fmt, STATIC, kv_get, RECEIPT_IL_START, today_iso, 
     for i, s in enumerate(stmt):
         for ln in wrap(s, fpb if i == 0 else fp, cw):
             R(ln, fpb if i == 0 else fp, x1, y, DEEP if i == 0 else INK); y += lh
-    # ---- ברכה ושורת העמותה — מאיר: "את החתימה של הרב יהושע מאיר דויטש תוריד" ----
-    sy = min(y + int(7 * u), int(H * (1 - .115)) - int(7 * u))
-    C('תודה על שותפותך בתורת חצות. תזכו למצוות.', font(2.0 * u), x0 + cw // 2, sy - int(3.2 * u), DEEP)
+    # ---- שורת העמותה — מאיר: "את החתימה של הרב יהושע מאיר דויטש תוריד", "גם תוריד את
+    # המילים תודה על שותפותך בתורת חצות" ----
+    sy = min(y + int(3 * u), int(H * (1 - .115)) - int(3 * u))
     dr.line([(x0, sy), (x1, sy)], fill=LINE, width=max(1, int(.1 * u)))
     C(nm + ((' · ע"ר ' + org['org_il_reg']) if org['org_il_reg'] else ''), font(1.5 * u), x0 + cw // 2, sy + int(1.0 * u), SOFT)
     buf = io.BytesIO()

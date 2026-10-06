@@ -3568,6 +3568,11 @@ def ensure_schema():
             con.execute("UPDATE receipt_docs SET pdf=NULL WHERE kind='il' AND COALESCE(src,'own')='own' AND sent_at IS NULL")
             con.execute("INSERT INTO seed_flags(name) VALUES('receipt_il_addr_v1')")
             con.commit()
+        # מאיר: "גם תוריד את המילים תודה על שותפותך בתורת חצות" — ציור מחדש של ה-PDF השמור
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='receipt_il_redraw_v2'").fetchone():
+            con.execute("UPDATE receipt_docs SET pdf=NULL WHERE kind='il' AND COALESCE(src,'own')='own' AND sent_at IS NULL")
+            con.execute("INSERT INTO seed_flags(name) VALUES('receipt_il_redraw_v2')")
+            con.commit()
     except Exception as e:
         print('  receipt il addr error:', e)
 
