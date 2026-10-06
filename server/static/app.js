@@ -4584,8 +4584,8 @@ function cardDetails(d,body){
     if(r.doc.sent_at)toast('קבלה '+r.doc.num+' הופקה ונשלחה אל '+(r.doc.sent_to||em)+' ✓');
     else if(r.send_error)await uiAlert('קבלה '+r.doc.num+' הופקה, אבל השליחה במייל נכשלה:\n'+r.send_error);
     else toast('קבלה '+r.doc.num+' הופקה ✓ (לא נשלחה במייל)');
-    window.open('/api/receipts/'+r.doc.id+'.pdf','_blank');
     cardDetails(d,body);
+    await rcOpenDoc(r.doc);
   });
   // הסימון הקטן: לא נשלחה → שליחה במייל; נשלחה → צפייה
   body.querySelectorAll('.rcmini[data-rc]').forEach(b=>b.onclick=async()=>{
@@ -12444,6 +12444,14 @@ async function rcLoad(force){
 function rcMaybeReload(){
   if(RCPTS&&Date.now()-RCPTS_AT>20000){rcLoad(true).then(()=>{if(tab==='rcpt')renderReceipts();});}
 }
+// פתיחת הקבלה אחרי הפקה: ה-PDF אם נשמר, אחרת הקישור של איזיקאונט, אחרת הסבר
+// (מאיר קיבל דף "not found" כשהקובץ לא התקבל מאיזיקאונט)
+async function rcOpenDoc(doc){
+  if(!doc)return;
+  if(doc.has_pdf){window.open('/api/receipts/'+doc.id+'.pdf','_blank');return;}
+  if(doc.url){window.open(doc.url,'_blank');return;}
+  await uiAlert('קבלה '+doc.num+' הופקה באיזיקאונט ונרשמה כאן, אבל הקובץ שלה לא התקבל מאיזיקאונט.\nלראות אותה: באתר איזיקאונט ← מסמכים. כדי לשלוח מהמערכת: הורד משם את ה-PDF וצרף אותו בחלון הקבלות ("📎 צרף את ה-PDF מאיזיקאונט").');
+}
 function rcMoney(r){const n=+r.amount||0;return (r.kind==='il'?'₪':'$')+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function rcDate(s){const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?(m[3]+'.'+m[2]+'.'+m[1]):'';}
 // שליחת קבלה במייל — משותף לחלון הקבלות ולכרטיס התורם. מחזיר את הקבלה המעודכנת או null
@@ -12545,8 +12553,7 @@ function wireSlip(){
     rcSlip=null; await Promise.all([rcLoad(true),load()]);
     if(r.send_error)await uiAlert('קבלה '+(r.doc.num||'')+' הופקה, אבל השליחה במייל נכשלה:\n'+r.send_error);
     else toast('קבלה '+(r.doc.num||'')+' הופקה'+(r.doc.sent_at?' ונשלחה':'')+' ✓');
-    if(r.doc.url||r.doc.id)window.open(r.doc.url||('/api/receipts/'+r.doc.id+'.pdf'),'_blank');
-    renderReceipts();
+    renderReceipts(); await rcOpenDoc(r.doc);
   };
 }
 // כניסה לחלון הקבלות עם אסמכתא ששותפה לאפליקציה (וואטסאפ / קבצים)
@@ -12642,7 +12649,7 @@ function renderReceipts(){
     await rcLoad(true);
     if(r.send_error)await uiAlert('קבלה '+r.doc.num+' הופקה, אבל השליחה במייל נכשלה:\n'+r.send_error);
     else toast('קבלה '+r.doc.num+' הופקה'+(r.doc.sent_at?' ונשלחה':'')+' ✓');
-    window.open('/api/receipts/'+r.doc.id+'.pdf','_blank'); renderReceipts();
+    renderReceipts(); await rcOpenDoc(r.doc);
   });
   const ok=document.getElementById('rc_newok'); if(ok)ok.onclick=async()=>{
     const amt=document.getElementById('rc_amt').value.trim();
@@ -12657,7 +12664,7 @@ function renderReceipts(){
     await Promise.all([rcLoad(true),load()]);
     if(r.send_error)await uiAlert('קבלה '+r.doc.num+' הופקה, אבל השליחה במייל נכשלה:\n'+r.send_error);
     else toast('קבלה '+r.doc.num+' הופקה'+(r.doc.sent_at?' ונשלחה':'')+' ✓');
-    window.open('/api/receipts/'+r.doc.id+'.pdf','_blank'); renderReceipts();
+    renderReceipts(); await rcOpenDoc(r.doc);
   };
   view.querySelectorAll('.rcnm[data-donor]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==+b.dataset.donor);if(d)openDonor(d);else toast('הכרטיס לא נמצא');});
   // צירוף קובץ הקבלה שהורד מאתר איזיקאונט

@@ -269,10 +269,18 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
             print('  EZcount createDoc נכשל:', first_err, '|', res)
             LAST.update(at=_now(), ok=False, msg=str(first_err)[:600])
             return False, first_err
-    LAST.update(at=_now(), ok=True, msg='קבלה %s הופקה' % (res.get('docnum') or res.get('doc_number') or ''))
+    link = ''
+    for k in ('pdf_link', 'pdf_link_copy', 'doc_url', 'pdfLink', 'pdf', 'link', 'url', 'doc_link'):
+        v = res.get(k)
+        if isinstance(v, str) and v.startswith('http'):
+            link = v; break
+    # מאיר קיבל "not found" בפתיחת ה-PDF — כדי לדעת מה איזיקאונט מחזיר, שמות השדות של
+    # התשובה (בלי ערכים) מוצגים ב-🩺 ליד ההפקה האחרונה
+    LAST.update(at=_now(), ok=True, msg='קבלה %s הופקה · שדות בתשובה: %s · קישור PDF: %s' % (
+        res.get('docnum') or res.get('doc_number') or '', ','.join(sorted(k for k in res.keys() if k != 'success'))[:200], 'יש' if link else 'אין'))
     return True, {
         'docnum': str(res.get('docnum') or res.get('doc_number') or res.get('doc_uuid') or ''),
-        'doc_url': res.get('pdf_link') or res.get('doc_url') or '',
+        'doc_url': link,
         'sent': bool(email),
     }
 

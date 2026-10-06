@@ -12702,7 +12702,7 @@ def receipt_build(con, kind, don_id):
 
 def receipt_doc(con, rid):
     r = con.execute("SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,"
-                    "sent_at,sent_to,note,url,src FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+                    "sent_at,sent_to,note,url,src,(pdf IS NOT NULL) AS has_pdf FROM receipt_docs WHERE id=?", (rid,)).fetchone()
     return dict(r) if r else None
 
 
