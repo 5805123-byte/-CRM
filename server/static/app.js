@@ -12065,6 +12065,7 @@ function openSeat(pos,num){
     <div class="hintxt">${s?`יושב כאן: <b>${esc(s.name)}</b>`:(lbl?`כתוב כאן: <b>${esc(lbl)}</b>`:'המקום פנוי')}</div>
     <label class="fld"><span>🔍 להושיב חבר קהילה (הקלד שם)</span><input id="sm_q" autocomplete="off" placeholder="שם משפחה / פרטי"></label><div id="sm_res" class="dpres"></div>
     <div class="addrow">${s||lbl?`<button class="btn sm ghost" id="sm_clear">🚫 לפנות את המקום</button>`:''}</div>
+    ${s||lbl?`<div class="smmove"><label class="fld"><span>🔁 להעביר את ${esc(s?s.name:lbl)} למקום אחר</span><input id="sm_to" dir="ltr" inputmode="numeric" placeholder="מספר המקום החדש"></label><button class="btn sm" id="sm_mv">🔁 העבר</button></div>`:''}
     <div class="two" style="margin-top:8px"><label class="fld"><span>✍️ שם חופשי (לא חבר)</span><input id="sm_lbl" value="${esc(lbl)}" placeholder="למשל: אורח / ראש כולל"></label><label class="fld"><span>🔢 מספר המקום</span><input id="sm_num" value="${esc(num)}" dir="ltr"></label></div>
     <div class="addrow"><button class="btn sm" id="sm_save">💾 שמור</button></div>
     ${hist.length?`<div class="sec"><div class="rbtitle">🕘 היסטוריה של המקום</div>${hist.map(x=>`<div class="hintxt">${esc(String(x.at||'').slice(0,16).replace('T',' '))} — ${esc(smLogText(x))}</div>`).join('')}</div>`:''}`;
@@ -12080,6 +12081,21 @@ function openSeat(pos,num){
       const r=await api('POST','/api/seats/assign',{seat:num,member_id:m.id});
       if(!r||!r.ok){toast('לא נשמר');return;}
       remov.classList.remove('show'); await Promise.all([cmLoad(true),smLoad(true)]); toast('נשמר ✓'); render();});};
+  // מאיר: "תעשה לי אפשרות של העברה למושב אחר שאבחר" — אם המקום החדש תפוס, מחליפים ביניהם
+  const mv=document.getElementById('sm_mv'); if(mv){const ti=document.getElementById('sm_to');
+    ti.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();mv.click();}};
+    mv.onclick=async()=>{const to=ti.value.trim(); if(!to){ti.focus();return;}
+      if(to===String(num)){toast('זה אותו מקום');return;}
+      const who=s?s.name:lbl, ts=SEATS.seats[to], tl=SEATS.meta[to]||'';
+      const known=[...view.querySelectorAll('.sms[data-num]')].some(e=>e.dataset.num===to);
+      let msg='להעביר את '+who+' ממקום '+num+' למקום '+to+'?';
+      if(ts)msg='במקום '+to+' יושב '+ts.name+'. להחליף ביניהם? ('+who+' → '+to+', '+ts.name+' → '+num+')';
+      else if(tl)msg='במקום '+to+' כתוב "'+tl+'". להעביר את '+who+' לשם ולהעביר את "'+tl+'" למקום '+num+'?';
+      else if(!known)msg='מקום '+to+' לא נמצא במפה. להעביר בכל זאת?';
+      if(!await uiConfirm(msg))return;
+      const r=await api('POST','/api/seats/move',{from:num,to});
+      if(!r||!r.ok){toast('לא הועבר');return;}
+      remov.classList.remove('show'); await Promise.all([cmLoad(true),smLoad(true)]); toast(who+' הועבר למקום '+to+' ✓'); render();};}
   const cl=document.getElementById('sm_clear'); if(cl)cl.onclick=async()=>{
     const r=await api('POST','/api/seats/assign',{seat:num,member_id:null,label:''});
     if(!r||!r.ok){toast('לא נשמר');return;}

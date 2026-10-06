@@ -3484,6 +3484,20 @@ def ensure_schema():
     except Exception as e:
         print('  community pending off error:', e)
 
+    # מאיר (צילום כרטיס תורם מנדרים פלוס): "תוסיף אותו ואת הפרטים שלו לקהילה" — חשין אברהם חיים
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_add_chashin_v1'").fetchone():
+            if not con.execute("SELECT 1 FROM members WHERE (last='חשין' AND first LIKE 'אברהם%') OR email='7174647@gmail.com'").fetchone():
+                con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,pending,created,updated) "
+                            "VALUES(?,?,?,?,?,?,?,'קהילה',?,?,?,1,0,?,?)",
+                            ('חשין', 'אברהם חיים', '7174647@gmail.com', '052-7174647', 'הרב אבא שאול 15', 'ביתר עילית', '',
+                             'נדרים פלוס: תרומה עבור מקום 103', 'נדרים פלוס', 'm', now_iso(), now_iso()))
+                print('  קהילה: נוסף חשין אברהם חיים')
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_add_chashin_v1')")
+            con.commit()
+    except Exception as e:
+        print('  community add chashin error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -12481,6 +12495,45 @@ def seat_assign(con, seat, member_id=None, label=None):
     return True
 
 
+def seat_move(con, frm, to):
+    """מעביר את מי שיושב במקום frm למקום to. אם to תפוס — השניים מתחלפים.
+    שם חופשי (תווית) עובר גם הוא. כל שינוי נרשם ביומן המקומות עם תאריך."""
+    frm = str(frm or '').strip(); to = str(to or '').strip()
+    if not frm or not to or frm == to:
+        return False
+    seats, meta, _ = seats_state(con)
+    a, al, b, bl = seats.get(frm), meta.get(frm), seats.get(to), meta.get(to)
+    if not a and not al:
+        return False
+    now = now_iso()
+    LOG = "INSERT INTO seat_log(seat,kind,from_member,from_name,to_member,to_name,note,at) VALUES(?,?,?,?,?,?,?,?)"
+
+    def setseat(mid, add, rem):
+        m = con.execute("SELECT id,last,first,seat FROM members WHERE id=?", (mid,)).fetchone()
+        if not m:
+            return None
+        lst = [x for x in _seat_list(m['seat']) if x != rem]
+        if add not in lst:
+            lst.append(add)
+        con.execute("UPDATE members SET seat=?, updated=? WHERE id=?", (_seat_join(lst), now, m['id']))
+        return m
+
+    con.execute("DELETE FROM seat_meta WHERE seat IN (?,?)", (frm, to))
+    ma = setseat(a['member_id'], to, frm) if a else None
+    mb = setseat(b['member_id'], frm, to) if b else None
+    if ma:
+        con.execute(LOG, (to, 'move' if (b or bl) else 'set', mb['id'] if mb else None, _mname_fl(mb) if mb else (bl or ''),
+                          ma['id'], _mname_fl(ma), f'הועבר ממקום {frm}', now))
+        con.execute(LOG, (frm, 'move' if (mb or bl) else 'clear', ma['id'], _mname_fl(ma),
+                          mb['id'] if mb else None, _mname_fl(mb) if mb else (bl or ''), f'עבר למקום {to}', now))
+    elif al:
+        con.execute("INSERT INTO seat_meta(seat,label) VALUES(?,?)", (to, al))
+        con.execute(LOG, (to, 'label', None, '', None, al, f'הועבר ממקום {frm}', now))
+    if bl:
+        con.execute("INSERT INTO seat_meta(seat,label) VALUES(?,?)", (frm, bl))
+    return True
+
+
 def seat_renumber(con, pos, num):
     """משנה את המספר המוצג של משבצת (pos = המספר המקורי במפה)."""
     pos = str(pos or '').strip(); num = str(num or '').strip()
@@ -15643,6 +15696,13 @@ class H(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 mid = None
             ok = seat_assign(con, b.get('seat'), mid, b.get('label') if 'label' in b else None)
+            con.commit(); con.close()
+            return self._send(200, {'ok': ok})
+        if self.path == '/api/seats/move':
+            # מאיר: "תעשה לי אפשרות של העברה למושב אחר שאבחר" — מי שיושב במקום עובר למקום אחר;
+            # אם המקום השני תפוס, השניים מתחלפים
+            con = db()
+            ok = seat_move(con, b.get('from'), b.get('to'))
             con.commit(); con.close()
             return self._send(200, {'ok': ok})
         if self.path == '/api/seats/renumber':
