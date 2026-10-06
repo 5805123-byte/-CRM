@@ -11879,7 +11879,7 @@ function renderOcc(){
 // שיהיה לך את המספר מקום שלו לפי המפה של בית כנסת."
 // הרשימה נפרדת מהתורמים (טבלת members), ושליחת המייל רצה באותו מנוע
 // בדיוק: הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר.
-let MEMBERS=null, MQ=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null;
+let MEMBERS=null, MQ=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null, cmEditId=null;
 const mName=m=>((m.last||'')+' '+(m.first||'')).trim();
 const mHasMail=m=>(m.email||'').includes('@');
 const mEmails=m=>(m.email||'').split(/[;,\/\s]+/).filter(x=>x.includes('@'));
@@ -11925,7 +11925,6 @@ function renderComm(){
            ['nomail','🚫 בלי מייל',all.filter(m=>!mHasMail(m)).length],
            ['seat','💺 עם מקום',all.filter(m=>cmSeat(m)).length],
            ['noseat','בלי מקום',all.filter(m=>!cmSeat(m)).length],
-           ['check','❓ שאלה — כן או לא',all.filter(chk).length],
            ['nq','🧾 שיוך מנדרים פלוס',(MQ||[]).filter(x=>x.status==='open').length]];
   chips.innerHTML=F.filter(([k,,n])=>k===''||n).map(([k,l,n])=>`<button class="chip ${cmFlt===k?'on':''}" data-k="${k}">${l} <b>${n}</b></button>`).join('');
   chips.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{cmFlt=b.dataset.k;render();});
@@ -11934,7 +11933,6 @@ function renderComm(){
   if(cmFlt==='nomail')list=list.filter(m=>!mHasMail(m));
   if(cmFlt==='seat')list=list.filter(m=>cmSeat(m));
   if(cmFlt==='noseat')list=list.filter(m=>!cmSeat(m));
-  if(cmFlt==='check')list=list.filter(chk);
   if(cmFlt==='nq'){
     view.innerHTML=cmQuestionsHTML()||'<div class="empty">אין שאלות פתוחות — הכל שויך.</div>';
     wireCmQuestions(); return;
@@ -11947,46 +11945,21 @@ function renderComm(){
       <button class="btn sm ghost" id="cm_csv" style="flex:1">📤 CSV</button>
     </div>
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
-    ${all.filter(chk).length?`<div class="hintxt" style="margin:0 2px 8px">❓ על <b>${all.filter(chk).length}</b> יש שאלה אם הם שייכים לקהילה — לחץ <b>כן</b> (נשאר) או <b>לא</b> (יורד מהרשימה).</div>`:''}
     ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
     <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
-    <div class="list">${list.map(m=>`<div class="cmrow${chk(m)?' chk':''}" data-id="${m.id}">
-      <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>
-        ${cmSeat(m)?`<span class="cmseat" title="מספר מקום בבית הכנסת">💺 ${esc(cmSeat(m))}</span>`:''}
-        ${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}
-        <span class="cmask"><button class="btn sm cmyes${chk(m)?'':' ghost'}" data-id="${m.id}" title="${chk(m)?'נשאר בקהילה':'כבר בקהילה'}">✔ כן</button><button class="btn sm ghost cmno" data-id="${m.id}" title="יורד מרשימת הקהילה">✘ לא</button><button class="btn sm ghost cmmg" data-id="${m.id}" title="מיזוג עם חבר קהילה אחר">🔀 מזג</button></span></div>
-      ${cmMergeId===m.id?`<div class="cmmgbox" data-id="${m.id}"><input class="cmmq" placeholder="🔍 שם החבר הכפול — הכרטיס של ${esc(mName(m))} נשאר ומקבל ממנו מה שחסר" autocomplete="off"><div class="dpres cmmres"></div></div>`:''}
+    <div class="list">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
+      <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}<button class="cmpen" data-id="${m.id}" title="תיקון · הוספת מייל/טלפון/כתובת · מחיקה · מיזוג">✎</button></div>
       <div class="cmdt">
         ${m.phone?`<span dir="ltr">📞 ${esc(m.phone)}</span>`:''}
+        ${cmSeat(m)?`<span class="cmseat2" title="מקום בבית הכנסת">💺 ${esc(cmSeat(m))}</span>`:''}
         ${mHasMail(m)?`<span dir="ltr" class="cmem">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmno">אין מייל</span>'}
         ${(m.addr||m.city)?`<span>🏠 ${esc([m.addr,m.city].filter(Boolean).join(', '))}</span>`:''}
-      </div>
-    </div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
-  view.querySelectorAll('.cmrow').forEach(el=>el.onclick=e=>{if(e.target.closest('button'))return;const m=MEMBERS.find(x=>x.id==el.dataset.id);if(m)openMember(m);});
-  // ❓ כן — נשאר בקהילה; לא — יורד מהרשימה
-  // מאיר: "תעשה הכל אותו דבר, כן ולא ומזג לחבר קהילה אחר" — אותם שלושה כפתורים בכל שורה
-  view.querySelectorAll('.cmyes').forEach(b=>b.onclick=async()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);
-    if(!m||!m.pending){toast('כבר בקהילה ✓');return;}
-    await api('PUT','/api/members/'+m.id,{pending:0,notes:''});await cmLoad(true);toast('נשאר בקהילה ✓');render();});
-  view.querySelectorAll('.cmno').forEach(b=>b.onclick=async()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id); if(!m)return;
-    // מי שיש עליו שאלה יורד מיד; חבר ותיק — אישור קצר, שלא יימחק בטעות
-    if(!m.pending&&!await uiConfirm('להוריד את '+mName(m)+' מרשימת הקהילה?'))return;
-    await api('DELETE','/api/members/'+m.id);await cmLoad(true);toast('ירד מהרשימה');render();});
-  view.querySelectorAll('.cmmg').forEach(b=>b.onclick=()=>{cmMergeId=cmMergeId==b.dataset.id?null:+b.dataset.id;render();
-    const inp=view.querySelector('.cmmq'); if(inp)inp.focus();});
-  const mgq=view.querySelector('.cmmq');
-  if(mgq){const box=mgq.closest('.cmmgbox'), keep=MEMBERS.find(x=>x.id==box.dataset.id), res=box.querySelector('.cmmres');
-    mgq.onclick=e=>e.stopPropagation();
-    mgq.oninput=()=>{const t=mgq.value.trim(); res.innerHTML='';
-      if(t.length<2)return;
-      const hits=MEMBERS.filter(x=>x.id!==keep.id&&matchStr(mName(x)+' '+(x.email||'')+' '+(x.phone||''),t)).slice(0,8);
-      res.innerHTML=hits.map(x=>`<div class="dpr" data-mg="${x.id}">🔀 ${esc(mName(x))}${cmSeat(x)?` <small>💺 ${esc(cmSeat(x))}</small>`:''}${mHasMail(x)?` <small class="mlem">${esc(mEmails(x)[0])}</small>`:''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא</div>';
-      res.querySelectorAll('.dpr[data-mg]').forEach(el=>el.onclick=async e=>{e.stopPropagation();
-        const o=MEMBERS.find(x=>x.id==el.dataset.mg); if(!o)return;
-        if(!await uiConfirm('למזג את "'+mName(o)+'" לתוך "'+mName(keep)+'"?\n\nהכרטיס של '+mName(keep)+' נשאר ומקבל ממנו מייל/טלפון/מקום שחסרים; הכרטיס של '+mName(o)+' נמחק.'))return;
-        const r=await api('POST','/api/members/merge',{keep:keep.id,drop:o.id});
-        if(!r||!r.ok){toast('המיזוג לא בוצע');return;}
-        cmMergeId=null; await cmLoad(true); toast('מוזג ✓'); render();});};}
+      </div></div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
+  // ✎ — מאיר: "שיהיה אצל כל אחד עיפרון קטן לתיקונים או שינויים או הוספת אימייל או כתובת
+  // או טלפון או מחיקה או מיזוג, אבל לא לעשות מזה סיפור של כרטיס כמו אצל התורמים"
+  view.querySelectorAll('.cmpen').forEach(b=>b.onclick=()=>{cmEditId=cmEditId==b.dataset.id?null:+b.dataset.id;cmMergeId=null;render();
+    const i=view.querySelector('.cmed .ce_phone'); if(i&&cmEditId)i.focus();});
+  wireCmEdit();
   // ➕ הוספה מהירה בשורה אחת — כמו אצל האברכים: "שם משפחה שם פרטי", ואפשר גם טלפון ומייל
   const addQuick=async()=>{
     const inp=document.getElementById('cm_new'); const t=(inp.value||'').trim(); if(!t)return;
@@ -11997,7 +11970,7 @@ function renderComm(){
     if(!name.length){toast('כתוב שם משפחה ואז שם פרטי');return;}
     const last=name[0], first=name.slice(1).join(' ');
     const dup=MEMBERS.find(m=>norm(m.last)===norm(last)&&norm(m.first)===norm(first));
-    if(dup){toast('כבר ברשימה: '+mName(dup));openMember(dup);return;}
+    if(dup){toast('כבר ברשימה: '+mName(dup));cmEditId=dup.id;render();return;}
     const r=await api('POST','/api/members',{last,first,email,phone,source:'נוסף ידנית'});
     if(!r||!r.ok){toast((r&&r.detail)||'לא נוסף');return;}
     inp.value=''; await cmLoad(true); toast('נוסף לקהילה ✓'); render();
@@ -12014,6 +11987,50 @@ function renderComm(){
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kehila.csv';document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},800);
   };
+}
+// שורת תיקון קטנה בתוך הרשימה — במקום כרטיס גדול
+function cmEditHTML(m){
+  const f=(cls,lbl,val,ph,dir)=>`<label class="fld"><span>${lbl}</span><input class="${cls}" value="${esc(val||'')}" placeholder="${esc(ph||'')}"${dir?` dir="${dir}"`:''}></label>`;
+  return `<div class="cmrow cmed" data-id="${m.id}">
+    <div class="cmhd"><span class="cmnm">✎ ${esc(mName(m))}</span><button class="cmpen ce_x" title="סגור בלי לשמור">✕</button></div>
+    <div class="two">${f('ce_last','שם משפחה',m.last)}${f('ce_first','שם פרטי',m.first)}</div>
+    <div class="two">${f('ce_phone','טלפון',m.phone,'050-0000000','ltr')}${f('ce_seat','💺 מקום בבית הכנסת',m.seat,'לפי המפה')}</div>
+    ${f('ce_email','אימייל (כמה — מופרדים ב־/)',m.email,'name@gmail.com','ltr')}
+    <div class="two">${f('ce_addr','כתובת',m.addr,'רחוב ומספר')}${f('ce_city','עיר',m.city,'ביתר עילית')}</div>
+    ${f('ce_notes','הערות',m.notes,'')}
+    <div class="addrow cmedb"><button class="btn sm ce_save">💾 שמור</button><button class="btn sm ghost ce_mail"${mHasMail(m)?'':' disabled title="אין מייל"'}>✉️ שלח לו מייל</button><button class="btn sm ghost ce_merge">🔀 מזג</button><button class="btn sm ghost ce_del">🗑 הסר</button></div>
+    ${cmMergeId===m.id?`<div class="cmmgbox" data-id="${m.id}"><input class="cmmq" placeholder="🔍 שם הכפול — ${esc(mName(m))} נשאר ומקבל ממנו מה שחסר" autocomplete="off"><div class="dpres cmmres"></div></div>`:''}
+  </div>`;
+}
+function wireCmEdit(){
+  const ed=view.querySelector('.cmed'); if(!ed)return;
+  const m=MEMBERS.find(x=>x.id==ed.dataset.id); if(!m)return;
+  const v=c=>{const e=ed.querySelector('.'+c);return e?e.value.trim():'';};
+  ed.querySelector('.ce_x').onclick=()=>{cmEditId=null;cmMergeId=null;render();};
+  ed.querySelector('.ce_save').onclick=async()=>{
+    const body={last:v('ce_last'),first:v('ce_first'),phone:v('ce_phone'),seat:v('ce_seat'),email:v('ce_email'),addr:v('ce_addr'),city:v('ce_city'),notes:v('ce_notes')};
+    if(!body.last){toast('חסר שם משפחה');return;}
+    const r=await api('PUT','/api/members/'+m.id,body);
+    if(!r||!r.ok){toast((r&&r.detail)||'לא נשמר');return;}
+    cmEditId=null; cmMergeId=null; await cmLoad(true); toast('נשמר ✓'); render();};
+  ed.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter'&&!i.classList.contains('cmmq')){e.preventDefault();ed.querySelector('.ce_save').click();}}));
+  const ml=ed.querySelector('.ce_mail'); if(ml)ml.onclick=()=>{cmPick=new Set([m.id]);cmAdding=false;cmAddQ='';cmEditId=null;cmSub='send';render();window.scrollTo(0,0);};
+  ed.querySelector('.ce_del').onclick=async()=>{
+    if(!await uiConfirm('להסיר את '+mName(m)+' מרשימת הקהילה?'))return;
+    await api('DELETE','/api/members/'+m.id); cmEditId=null; await cmLoad(true); toast('הוסר'); render();};
+  ed.querySelector('.ce_merge').onclick=()=>{cmMergeId=cmMergeId===m.id?null:m.id;render();const i=view.querySelector('.cmmq');if(i)i.focus();};
+  const mgq=ed.querySelector('.cmmq');
+  if(mgq){const res=ed.querySelector('.cmmres');
+    mgq.oninput=()=>{const t=mgq.value.trim(); res.innerHTML='';
+      if(t.length<2)return;
+      const hits=MEMBERS.filter(x=>x.id!==m.id&&matchStr(mName(x)+' '+(x.email||'')+' '+(x.phone||''),t)).slice(0,8);
+      res.innerHTML=hits.map(x=>`<div class="dpr" data-mg="${x.id}">🔀 ${esc(mName(x))}${cmSeat(x)?` <small>💺 ${esc(cmSeat(x))}</small>`:''}${mHasMail(x)?` <small class="mlem">${esc(mEmails(x)[0])}</small>`:''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא</div>';
+      res.querySelectorAll('.dpr[data-mg]').forEach(el=>el.onclick=async()=>{
+        const o=MEMBERS.find(x=>x.id==el.dataset.mg); if(!o)return;
+        if(!await uiConfirm('למזג את "'+mName(o)+'" לתוך "'+mName(m)+'"?\n\n'+mName(m)+' נשאר ומקבל ממנו מייל/טלפון/מקום שחסרים; '+mName(o)+' נמחק.'))return;
+        const r=await api('POST','/api/members/merge',{keep:m.id,drop:o.id});
+        if(!r||!r.ok){toast('המיזוג לא בוצע');return;}
+        cmMergeId=null; cmEditId=null; await cmLoad(true); toast('מוזג ✓'); render();});};}
 }
 // כרטיס חבר קהילה — פרטים לעריכה, מספר מקום, שליחת מייל ויומן
 function openMember(m){
@@ -12168,7 +12185,7 @@ function renderCommSend(){
     toast(add?('נוספו '+add+' ✓'):'לא נוסף אף אחד חדש');cmAdding=false;cmQ='';renderCommSend();};
   const cl=document.getElementById('cm_clear'); if(cl)cl.onclick=()=>{cmPick=new Set();cmAdding=true;cmAddQ='';renderCommSend();};
   const toggle=m=>{
-    if(!mHasMail(m)){toast('אין לו כתובת מייל — נפתח הכרטיס להוספה');openMember(m);return;}
+    if(!mHasMail(m)){toast('אין לו כתובת מייל — אפשר להוסיף ב-✎ ברשימה');return;}
     if(cmPick.has(m.id))cmPick.delete(m.id); else cmPick.add(m.id);
     const box=view.querySelector('.mlbox'), st=box?box.scrollTop:0, wy=window.scrollY;
     cmAddQ=''; renderCommSend();

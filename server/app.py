@@ -3378,6 +3378,17 @@ def ensure_schema():
     except Exception as e:
         print('  community fix v9 error:', e)
 
+    # מאיר: "גם כל הכן ולא — כבר כתבתי ואישרתי מה כן ומה לא, ואין צורך שזה יופיע עדיין"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='community_pending_off_v1'").fetchone():
+            for r in con.execute("SELECT id, notes FROM members WHERE COALESCE(pending,0)=1").fetchall():
+                nt = re.sub(r"סומן 'לא' בסינון[^·]*", '', str(r['notes'] or '')).replace(' · ', ' · ').strip(' ·').strip()
+                con.execute("UPDATE members SET pending=0, notes=?, updated=? WHERE id=?", (nt, now_iso(), r['id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('community_pending_off_v1')")
+            con.commit()
+    except Exception as e:
+        print('  community pending off error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
