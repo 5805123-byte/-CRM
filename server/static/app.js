@@ -11993,11 +11993,12 @@ function renderComm(){
 // הגדלה, הקטנה, הדפסה, ואפשרות לשינוי במפה עצמה על כל מקום... ושיישמר אצל ההוא
 // ששינו לו את המקום, ויהיה כתוב אצלו בפרטים את תאריך השינוי — רק אם נלחץ על
 // המספר מושב שלו"
-let SLAY=null, SEATS=null, smOpen=null, smZoom=0;   // 0 = התאמה אוטומטית לרוחב
-try{smZoom=parseFloat(localStorage.getItem('kc_smz')||'0')||0;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
-// המפה רחבה מהמסך — בפתיחה הראשונה היא מוקטנת כך שכולה תיראה בלי גלילה
+let SLAY=null, SEATS=null, smOpen=null, smMult=1;   // smMult — הגדלה יחסית מעל ההתאמה לרוחב
+try{smMult=parseFloat(localStorage.getItem('kc_smm')||'1')||1;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
+// מאיר: "שלא אצטרך להזיז את המפה ימינה ושמאלה אלא שאראה את כל המפה על המסך במחשב או
+// בטלפון" — המפה תמיד מוקטנת לרוחב המסך; ➕/➖ מגדילים ומקטינים מעל זה, ↔️ מחזיר
 function smFit(){const w=view.querySelector('.smwrap'),g=view.querySelector('.smgrid');if(!w||!g)return;
-  g.style.zoom=1; const z=Math.min(1.6,Math.max(.3,((w.clientWidth-14)/g.scrollWidth)*.97)); g.style.zoom=z; return z;}
+  g.style.zoom=1; const base=Math.max(.2,(w.clientWidth-12)/g.scrollWidth); const z=Math.min(2.5,base*smMult); g.style.zoom=z; return z;}
 async function smLoad(force){
   if(!SLAY){try{SLAY=await (await fetch('/seat_layout.json',{cache:'no-store'})).json();}catch(e){SLAY={cols:7,rows:[]};}}
   if(!SEATS||force){const r=await api('GET','/api/seats');SEATS=r&&r.seats?r:{seats:{},meta:{},renum:{},log:[]};}
@@ -12016,7 +12017,7 @@ function smGridHTML(){
   const rows=SLAY.rows||[]; const groups=[]; 
   if(rows.length>1)groups.push([rows[0],rows[1]]); rows.slice(2).forEach(r=>groups.push([r]));
   const html=groups.map(g=>`<div class="smrow">${colw.map((w,i)=>`<div class="smslot" style="width:${W(w)}">${g.map(r=>block(r[i])).join('')}</div>`).join('')}</div>`).join('');
-  return `<div class="smgrid" style="zoom:${smZoom||1}">${html}</div>`;
+  return `<div class="smgrid">${html}</div>`;
 }
 function smSectionHTML(){
   return `<div class="sec smsec"><div class="smhd"><button class="btn sm ghost" id="sm_tog">${smOpen?'▾':'▸'} 🗺️ מפת בית הכנסת</button>
@@ -12025,12 +12026,12 @@ function smSectionHTML(){
 }
 function wireSeatMap(){
   const tg=document.getElementById('sm_tog'); if(tg)tg.onclick=async()=>{smOpen=!smOpen;try{localStorage.setItem('kc_smopen',smOpen?'1':'0');}catch(e){} if(smOpen&&!SEATS){render();await smLoad();} render();};
-  if(!smZoom)setTimeout(smFit,0);
-  const z=d=>{const g=view.querySelector('.smgrid');const cur=smZoom||parseFloat(g&&g.style.zoom)||1;
-    smZoom=Math.min(2.2,Math.max(.35,+(cur+d).toFixed(2)));try{localStorage.setItem('kc_smz',String(smZoom));}catch(e){}if(g)g.style.zoom=smZoom;};
-  const mi=document.getElementById('sm_minus'); if(mi)mi.onclick=()=>z(-.1);
-  const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.1);
-  const ft=document.getElementById('sm_fit'); if(ft)ft.onclick=()=>{smZoom=0;try{localStorage.setItem('kc_smz','0');}catch(e){}smFit();};
+  setTimeout(smFit,0);
+  if(!window._smRO){window._smRO=true;window.addEventListener('resize',()=>{if(tab==='comm')smFit();});}
+  const z=d=>{smMult=Math.min(4,Math.max(.5,+(smMult+d).toFixed(2)));try{localStorage.setItem('kc_smm',String(smMult));}catch(e){}smFit();};
+  const mi=document.getElementById('sm_minus'); if(mi)mi.onclick=()=>z(-.15);
+  const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.15);
+  const ft=document.getElementById('sm_fit'); if(ft)ft.onclick=()=>{smMult=1;try{localStorage.setItem('kc_smm','1');}catch(e){}smFit();};
   const pr=document.getElementById('sm_print'); if(pr)pr.onclick=()=>window.open('/seat-map-print','_blank');
   view.querySelectorAll('.sms[data-pos]').forEach(el=>el.onclick=()=>openSeat(el.dataset.pos,el.dataset.num));
   if(smOpen&&!SEATS){smLoad().then(()=>{if(tab==='comm')render();});}
