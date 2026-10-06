@@ -34,7 +34,9 @@ UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 LAST = {'at': '', 'ok': None, 'msg': ''}      # הקריאה האחרונה ל-createDoc — מוצגת ב-🩺
 
 # אמצעי התשלום כפי שהוא נרשם אצלנו -> קוד התשלום ב-EZcount
-PAY_CASH, PAY_CHEQUE, PAY_TRANSFER, PAY_CARD = 1, 2, 3, 4
+# הקבלה 165890 יצאה עם "כרטיס אשראי" על העברה בנקאית — הקודים של EZcount:
+# 1 מזומן · 2 המחאה · 3 כרטיס אשראי · 4 העברה בנקאית
+PAY_CASH, PAY_CHEQUE, PAY_CARD, PAY_TRANSFER = 1, 2, 3, 4
 
 
 def _env(k, d=''):
