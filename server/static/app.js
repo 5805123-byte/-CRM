@@ -6333,11 +6333,14 @@ function shareRowsHTML(p,d){
 function renderPartners(d){
   const el=document.getElementById('partners');if(!el)return;
   const act=(d.partners||[]).filter(p=>p.active!=0);
-  const izfiles=(d.files||[]).filter(f=>f.kind==='iz'||!f.kind);
+  // מאיר: "כשנכנסים ליששכר זבולון שלו אמור להיות גם הקובץ של השטר שותפות שלו" —
+  // השטר למעלה, ראשון; גם קובץ שהועלה כמסמך בכרטיס הראשי מופיע כאן
+  const izfiles=(d.files||[]).filter(f=>f.kind==='iz'||f.kind==='donor'||!f.kind);
   const cur=curSym(d);
+  const shtarHTML=`<div class="izshtar iztop"><div class="izshtar-t">📄 שטר שותפות יששכר־זבולון:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין — אפשר להעלות כאן</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
   // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
   // על אותו דף, גם במקופל וגם בדף שלם, וגם כל אברך דף בפני עצמו"
-  el.innerHTML=(act.length>1?`<div class="addrow" style="margin-bottom:8px">
+  el.innerHTML=shtarHTML+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
       <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד לתורם — כל ${act.length} האברכים</button>
       <button class="btn sm ghost izsep">🕯️ כל אברך בדף נפרד</button></div>`:'')
     +act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -6392,8 +6395,7 @@ function renderPartners(d){
   if(kvc)kvc.onclick=()=>copyToClip(kvNamesText(d),'השמות הועתקו ✓');
   el.innerHTML+=`<div class="izshtar"><div class="izshtar-t">📝 מעקב חוב יששכר־זבולון</div>
       <label class="fld"><span>🔴 כמה הוא חייב עכשיו (${cur}) — עדכון ידני שגובר על החישוב</span><input id="iz_debt" inputmode="decimal" value="${esc(d.iz_debt||'')}" placeholder="השאר ריק כדי לחשב אוטומטית"></label>
-      <div class="hintxt">ההערה על ההתחייבות ("שילם מראש, מכסה עד אלול") נכתבת בשורת יששכר־זבולון בסוף דף התורם — שם הכל במקום אחד.</div></div>
-    <div class="izshtar"><div class="izshtar-t">📄 שטר שותפות:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
+      <div class="hintxt">ההערה על ההתחייבות ("שילם מראש, מכסה עד אלול") נכתבת בשורת יששכר־זבולון בסוף דף התורם — שם הכל במקום אחד.</div></div>`;
   const izd=el.querySelector('#iz_debt');
   if(izd)izd.onblur=async()=>{if((d.iz_debt||'')===izd.value.trim())return;
     d.iz_debt=izd.value.trim();
@@ -12002,14 +12004,19 @@ async function smLoad(force){
 }
 function smWho(num){const s=SEATS.seats[num];return s?s.name:(SEATS.meta[num]||'');}
 function smGridHTML(){
-  const cells=[];
-  (SLAY.rows||[]).forEach(row=>row.forEach(b=>{
-    if(!b){cells.push('<div class="smb empty"></div>');return;}
-    if(b.box){cells.push(`<div class="smb smbox${b.dash?' dash':''}" style="grid-row:span ${b.rows||1}"><b>${esc(b.box)}</b>${b.sub?`<small>${esc(b.sub)}</small>`:''}</div>`);return;}
+  // כל שורה היא flex מימין לשמאל עם "תאים" ברוחב קבוע לפי העמודה — בדיוק כמו בצילום;
+  // שתי השורות הראשונות ממוזגות (ראש כולל וארון הקודש גבוהים ופרושים על שתיהן)
+  const W=n=>`calc(${n} * var(--su) + 8px)`, colw=SLAY.colw||[4,3,3,5,3,4,4];
+  const block=b=>{
+    if(!b)return '';
+    if(b.box)return `<div class="smb smbox${b.dash?' dash':''}${b.rows>1?' tall':''}" style="width:${W(b.w||5)}"><b>${esc(b.box)}</b>${b.sub?`<small>${esc(b.sub)}</small>`:''}</div>`;
     const st=(b.seats||[]).map(n=>{const pos=String(n),num=SEATS.renum[pos]||pos,who=smWho(num),s=SEATS.seats[num];
       return `<div class="sms${who?'':' free'}" data-pos="${pos}" data-num="${esc(num)}" data-mid="${s?s.member_id:''}" title="לחץ לתיקון"><b>${esc(num)}</b><span>${esc(who)}</span><em class="smpen">✎</em></div>`;}).join('');
-    cells.push(`<div class="smb"><i>${esc(b.label)}</i><div class="smr">${st}</div></div>`);}));
-  return `<div class="smgrid" style="grid-template-columns:repeat(${SLAY.cols||7},1fr);zoom:${smZoom||1}">${cells.join('')}</div>`;
+    return `<div class="smb" style="width:${W((b.seats||[]).length)}"><i>${esc(b.label)}</i><div class="smr">${st}</div></div>`;};
+  const rows=SLAY.rows||[]; const groups=[]; 
+  if(rows.length>1)groups.push([rows[0],rows[1]]); rows.slice(2).forEach(r=>groups.push([r]));
+  const html=groups.map(g=>`<div class="smrow">${colw.map((w,i)=>`<div class="smslot" style="width:${W(w)}">${g.map(r=>block(r[i])).join('')}</div>`).join('')}</div>`).join('');
+  return `<div class="smgrid" style="zoom:${smZoom||1}">${html}</div>`;
 }
 function smSectionHTML(){
   return `<div class="sec smsec"><div class="smhd"><button class="btn sm ghost" id="sm_tog">${smOpen?'▾':'▸'} 🗺️ מפת בית הכנסת</button>

@@ -2932,6 +2932,26 @@ def ensure_schema():
     except Exception as e:
         print('  karmi wedding error:', e)
 
+    # מפת בית הכנסת — מאיר: "בדיוק אותו מבנה והושבה כמו בצילום". השמות שבצילום הם
+    # הבסיס: מקום שאין עליו חבר מהרשימה מקבל את השם מהצילום כתווית (ניתן לעריכה).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='seat_photo_names_v1'").fetchone():
+            lay = seat_layout()
+            seats, meta, renum = seats_state(con)
+            n = 0
+            for num, nm in (lay.get('names') or {}).items():
+                if num in seats or not nm:
+                    continue
+                if (meta.get(num) or '').strip():
+                    continue
+                con.execute("INSERT INTO seat_meta(seat,label) VALUES(?,?) ON CONFLICT(seat) DO UPDATE SET label=excluded.label", (num, nm))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('seat_photo_names_v1')")
+            con.commit()
+            print('  מפה: %d מקומות קיבלו את השם מהצילום' % n)
+    except Exception as e:
+        print('  seat photo names error:', e)
+
     # מאיר: "הכנסת לי כפילויות בסוכות תשפ"ז, אני כל כך הרבה הזהרתי שזה לא יקרה" —
     # תרומה שמאיר רשם ביד וחיוב מהקובץ באותו סכום, עד 45 יום, אותה משפחת אמצעי
     # תשלום — הם אותו כסף. השורה של מאיר נשארת (עם מספר העסקה), השורה שנפתחה
@@ -12444,28 +12464,34 @@ def seat_map_html(con, for_print=True):
 
     def _h(s):
         return str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    cells = []
-    for row in lay.get('rows', []):
-        for b in row:
-            if b is None:
-                cells.append('<div class="smb empty"></div>'); continue
-            if 'box' in b:
-                cells.append('<div class="smb smbox%s" style="grid-row:span %d"><b>%s</b>%s</div>'
-                             % (' dash' if b.get('dash') else '', int(b.get('rows') or 1), _h(b['box']),
-                                ('<small>%s</small>' % _h(b['sub'])) if b.get('sub') else ''))
-                continue
-            st = []
-            for n in b.get('seats', []):
-                pos = str(n); num = renum.get(pos, pos)
-                who = seats.get(num, {}).get('name') or meta.get(num) or ''
-                st.append('<div class="sms%s"><b>%s</b><span>%s</span></div>' % ('' if who else ' free', _h(num), _h(who)))
-            cells.append('<div class="smb"><i>%s</i><div class="smr">%s</div></div>' % (_h(b.get('label')), ''.join(st)))
-    return ('<div class="smgrid" style="grid-template-columns:repeat(%d,1fr)">%s</div>' % (int(lay.get('cols') or 7), ''.join(cells)))
+    W = lambda n: 'calc(%d * var(--su) + 8px)' % int(n)
+    colw = lay.get('colw') or [4, 3, 3, 5, 3, 4, 4]
+
+    def block(b):
+        if not b:
+            return ''
+        if 'box' in b:
+            return ('<div class="smb smbox%s%s" style="width:%s"><b>%s</b>%s</div>'
+                    % (' dash' if b.get('dash') else '', ' tall' if int(b.get('rows') or 1) > 1 else '', W(b.get('w') or 5), _h(b['box']),
+                       ('<small>%s</small>' % _h(b['sub'])) if b.get('sub') else ''))
+        st = []
+        for n in b.get('seats', []):
+            pos = str(n); num = renum.get(pos, pos)
+            who = seats.get(num, {}).get('name') or meta.get(num) or ''
+            st.append('<div class="sms%s"><b>%s</b><span>%s</span></div>' % ('' if who else ' free', _h(num), _h(who)))
+        return '<div class="smb" style="width:%s"><i>%s</i><div class="smr">%s</div></div>' % (W(len(b.get('seats', []))), _h(b.get('label')), ''.join(st))
+    rows = lay.get('rows', [])
+    groups = ([[rows[0], rows[1]]] if len(rows) > 1 else []) + [[r] for r in rows[2:]]
+    html = ''.join('<div class="smrow">%s</div>' % ''.join(
+        '<div class="smslot" style="width:%s">%s</div>' % (W(w), ''.join(block(r[i] if i < len(r) else None) for r in g))
+        for i, w in enumerate(colw)) for g in groups)
+    return '<div class="smgrid">%s</div>' % html
 
 
 _SEATMAP_CSS = """
-.smgrid{display:grid;gap:8px 10px;direction:rtl;font-family:FR,"Frank Ruhl Libre",serif}
-.smb{border:1.5px solid #c9a24a;border-radius:9px;padding:3px;background:#fffdf6;min-height:52px}
+.smgrid{--su:46px;display:flex;flex-direction:column;gap:8px;direction:rtl;width:max-content;font-family:FR,"Frank Ruhl Libre",serif}
+.smrow{display:flex;gap:12px;align-items:flex-start}.smslot{display:flex;flex-direction:column;gap:8px;flex:0 0 auto}.smbox.tall{min-height:118px}
+.smb{border:1.5px solid #c9a24a;border-radius:9px;padding:3px;background:#fffdf6;min-height:52px;box-sizing:border-box}
 .smb.empty{border:none;background:none}
 .smb>i{display:block;font-style:normal;font-size:9px;color:#8a6a22;text-align:center;line-height:1.1}
 .smr{display:flex;gap:3px;justify-content:center}
@@ -14730,7 +14756,7 @@ class H(BaseHTTPRequestHandler):
                     'body{font-family:FR,serif;margin:12px;background:#fff;color:#222}h1{font-size:18px;margin:0 0 6px}'
                     '.bar{display:flex;gap:8px;margin:0 0 10px}.bar a,.bar button{font:inherit;font-size:13px;padding:7px 14px;border:1px solid #3b357a;border-radius:9px;background:#3b357a;color:#fff;cursor:pointer;text-decoration:none}.bar .g{background:#fff;color:#3b357a}'
                     + _SEATMAP_CSS +
-                    '@media print{.bar{display:none}body{margin:0}@page{size:A4 landscape;margin:6mm}.smgrid{gap:5px 7px}}'
+                    '@media print{.bar{display:none}body{margin:0}@page{size:A4 landscape;margin:6mm}.smgrid{zoom:.74}}'
                     '</style></head><body><div class="bar"><button onclick="window.print()">🖨️ הדפסה / שמירה כ-PDF</button>'
                     '<a class="g" href="/seat-map-original.png" download="מפת-בית-הכנסת.png">⬇️ הורדת המפה המקורית</a></div>'
                     '<h1>מפת בית הכנסת · כולל חצות · ' + today_iso() + '</h1>' + grid + '</body></html>')
