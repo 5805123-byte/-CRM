@@ -94,11 +94,13 @@ def _doc_type_fallback(res, current):
     import re as _re
     t = str(res or '')
     allowed = []
-    m = _re.search(r'allowed[^\d]*((?:\d{3}[^\d]{0,6})+)', t, _re.I)
+    m = _re.search(r'allowed[^\d]*((?:\d{3,4}[^\d]{0,6})+)', t, _re.I)
     if m:
-        allowed = [int(x) for x in _re.findall(r'\d{3}', m.group(1))]
+        allowed = [int(x) for x in _re.findall(r'\d{3,4}', m.group(1))]
+    # קודם סוגי הקבלה (405 קבלה על תרומה, 400 קבלה) מתוך המותרים, אחר כך השאר
+    pref = [x for x in DOC_TYPES_TRY if x in allowed] + [x for x in allowed if x not in DOC_TYPES_TRY]
     out = []
-    for x in allowed + list(DOC_TYPES_TRY):
+    for x in pref + list(DOC_TYPES_TRY):
         if x != current and x not in out:
             out.append(x)
     return out[:4]
