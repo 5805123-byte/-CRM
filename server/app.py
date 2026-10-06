@@ -14783,6 +14783,67 @@ class H(BaseHTTPRequestHandler):
                 "WHERE batch=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             return self._send(200, {'rows': rows})
+        # ---- מלגות: דף הדפסה / PDF לרשימה אחת ----
+        # מאיר: "בסוף כל רשימת מלגות תעשה לי אפשרות להורדה או הדפסה לקובץ פידיפ"
+        if self.path.split('?')[0] == '/stip-print':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            kol = (qs.get('kollel', [''])[0] or '').strip()[:40]
+            kind = (qs.get('kind', [''])[0] or '').strip()[:20]
+            per = (qs.get('period', [''])[0] or '').strip()[:80]
+            con = db()
+            rows = [dict(r) for r in con.execute(
+                "SELECT * FROM stipends WHERE kollel=? AND kind=? AND period=? ORDER BY name", (kol, kind, per))]
+            con.close()
+            rows.sort(key=lambda r: str(r.get('name') or ''))
+            is_cash = 'מזומנים' in per
+            KOL = {'חצות': 'כולל חצות', 'הוראה': 'כולל הוראה', 'חיים טובים': 'כולל חיים טובים'}
+
+            def _h(s):
+                return str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+            def _m(v):
+                try:
+                    return '₪' + format(int(round(float(v or 0))), ',')
+                except Exception:
+                    return str(v or '')
+            tot = lambda r: float(r.get('amount') or 0) + float(r.get('extra') or 0)
+            base = sum(float(r.get('amount') or 0) for r in rows)
+            ext = sum(float(r.get('extra') or 0) for r in rows)
+            usd_n = sum(1 for r in rows if float(r.get('usd') or 0))
+            usd_s = sum(float(r.get('usd') or 0) for r in rows)
+            got = sum(1 for r in rows if int(r.get('got') or 0))
+            trs = []
+            for i, r in enumerate(rows, 1):
+                trs.append('<tr><td class="i">%d</td><td class="nm">%s%s</td><td class="am">%s%s</td>%s<td class="g">%s</td><td class="d">%s%s</td></tr>' % (
+                    i, _h(r.get('name')), '',
+                    _m(tot(r)), ('<small> (+%s)</small>' % _m(r.get('extra'))) if float(r.get('extra') or 0) else '',
+                    ('<td class="u">%s</td>' % ('$%d' % round(float(r.get('usd') or 0)) if float(r.get('usd') or 0) else '—')) if is_cash else '',
+                    '✓' if int(r.get('got') or 0) else '', _h(r.get('details')),
+                    ('<br>📝 ' + _h(r.get('note'))) if (r.get('note') or '').strip() else ''))
+            if kind == 'monthly':
+                ttl = 'מלגות חודשיות %s' % _h(per)
+            else:
+                ttl = _h(per)
+            page = ('<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                    '<title>%s — %s</title><style>'
+                    "@font-face{font-family:FR;src:url('/frankruhl-regular.ttf')}@font-face{font-family:FR;font-weight:700;src:url('/frankruhl-bold.ttf')}"
+                    'body{font-family:FR,serif;font-size:11px;margin:14px;color:#222;background:#fff}h1{font-size:18px;margin:0 0 3px}.sub{font-size:11px;color:#555;margin-bottom:8px}'
+                    '.bar{display:flex;gap:8px;margin:0 0 10px}.bar button{font:inherit;font-size:13px;padding:7px 14px;border:1px solid #3b357a;border-radius:9px;background:#3b357a;color:#fff;cursor:pointer}'
+                    'table{width:100%%;border-collapse:collapse}th{background:#eee;font-size:10.5px;text-align:right;padding:4px;border-bottom:1px solid #999}'
+                    'td{padding:3px 4px;border-bottom:1px solid #ddd;vertical-align:top}.i{color:#888;width:22px}.nm{font-weight:700;white-space:nowrap}.am{font-weight:700;white-space:nowrap}'
+                    '.u{text-align:center;font-weight:700;color:#2f5f3f;white-space:nowrap}.g{text-align:center;color:#2f5f3f;font-weight:700;width:22px}.d{font-size:9.5px;color:#555}'
+                    'tfoot td{font-weight:700;background:#f4f1e8;border-top:2px solid #999}'
+                    'thead{display:table-header-group}tr{page-break-inside:avoid}@media print{.bar{display:none}body{margin:0}@page{margin:10mm 8mm}}'
+                    '</style></head><body><div class="bar"><button onclick="window.print()">🖨️ הדפסה / שמירה כ-PDF</button></div>'
+                    '<h1>%s · %s</h1><div class="sub">%d אברכים · מהדוח %s%s · ✓ קיבלו %d מתוך %d%s · %s</div>'
+                    '<table><thead><tr><th>#</th><th>האברך</th><th>סכום</th>%s<th>קיבל</th><th>פירוט / הערה</th></tr></thead><tbody>%s</tbody>'
+                    '<tfoot><tr><td></td><td>סה"כ</td><td>%s</td>%s<td>%d</td><td>%s</td></tr></tfoot></table></body></html>'
+                    % (ttl, KOL.get(kol, kol), ttl, KOL.get(kol, kol), len(rows), _m(base), (' + תוספות ' + _m(ext)) if ext else '', got, len(rows),
+                       (' · 💵 100$ לאשה: %d אברכים = $%s' % (usd_n, format(int(usd_s), ','))) if is_cash else '', today_iso(),
+                       '<th>100$ לאשה</th>' if is_cash else '', ''.join(trs),
+                       _m(base + ext), ('<td class="u">$%s</td>' % format(int(usd_s), ',')) if is_cash else '', got,
+                       ('מזומנים %s + $%s' % (_m(base + ext), format(int(usd_s), ','))) if is_cash else ''))
+            return self._send(200, page.encode('utf-8'), 'text/html')
         # ---- מפת בית הכנסת ----
         if self.path.split('?')[0] == '/api/seats':
             con = db()

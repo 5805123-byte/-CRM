@@ -11047,7 +11047,7 @@ async function renderStip(){
         <div class="stfoot"><span>סה"כ ${esc(stipLabel(stipView,per))} <small>· מהדוח ${stMoney(base)}${ext?(' + תוספות '+stMoney(ext)):''} · ✓ קיבלו ${all.filter(r=>+r.got).length} מתוך ${all.length}</small></span><span>${stMoney(base+ext)}</span></div>
         ${isCash(per)?(()=>{const u=all.filter(r=>+r.usd),us=u.reduce((s,r)=>s+(+r.usd||0),0);return `<div class="stfoot stusdf"><span>💵 100$ לאשה <small>· ${u.length} אברכים מתוך ${all.length}${all.length-u.length?(' · בלי: '+all.filter(r=>!+r.usd).map(r=>esc(r.name)).join(', ')):''}</small></span><span>$${us.toLocaleString('en-US')}</span></div>
         <div class="stfoot"><span>סה"כ הכל <small>· מזומנים ${stMoney(base+ext)} + ${u.length}×100$</small></span><span>${stMoney(base+ext)} + $${us.toLocaleString('en-US')}</span></div>`;})():''}
-        <div style="display:flex;gap:6px;padding:8px 10px;flex-wrap:wrap"><button class="btn sm ghost stadd" data-per="${esc(per)}">➕ הוסף אברך לרשימה</button><button class="btn sm ghost stcsv" data-per="${esc(per)}">⬇️ אקסל</button><button class="btn sm ghost stdelgrp" data-per="${esc(per)}" style="color:var(--no);margin-inline-start:auto">🗑 מחק את הרשימה</button></div>`:''}
+        <div style="display:flex;gap:6px;padding:8px 10px;flex-wrap:wrap"><button class="btn sm ghost stadd" data-per="${esc(per)}">➕ הוסף אברך לרשימה</button><button class="btn sm ghost stcsv" data-per="${esc(per)}">⬇️ אקסל</button><button class="btn sm ghost stprint" data-per="${esc(per)}">🖨️ הדפסה / PDF</button><button class="btn sm ghost stdelgrp" data-per="${esc(per)}" style="color:var(--no);margin-inline-start:auto">🗑 מחק את הרשימה</button></div>`:''}
     </div>`;};
   const grand=rows.reduce((s,r)=>s+tot(r),0);
   const kolLabel=STIP_KOL.find(x=>x[0]===stipKollel)[1];
@@ -11122,6 +11122,8 @@ async function renderStip(){
     await api('POST','/api/stipends/delete_group',{kollel:stipKollel,kind:stipView,period:per}); await loadStip(); toast('הרשימה נמחקה'); renderStip();});
   view.querySelectorAll('.stusd').forEach(b=>b.onclick=async()=>{const r=STIP.find(x=>x.id==b.dataset.id);if(!r)return;const v=+r.usd?0:100;
     await api('PUT','/api/stipends/'+r.id,{usd:v});r.usd=v;renderStip();});
+  // מאיר: "בסוף כל רשימת מלגות תעשה לי אפשרות להורדה או הדפסה לקובץ פידיפ"
+  view.querySelectorAll('.stprint').forEach(b=>b.onclick=()=>window.open('/stip-print?kollel='+encodeURIComponent(stipKollel)+'&kind='+encodeURIComponent(stipView)+'&period='+encodeURIComponent(b.dataset.per),'_blank'));
   view.querySelectorAll('.stcsv').forEach(b=>b.onclick=()=>{
     const per=b.dataset.per, g=rows.filter(r=>r.period===per).sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
     const qv=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
