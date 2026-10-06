@@ -12502,6 +12502,7 @@ function rcSlipHTML(){
       <div class="two"><label class="fld"><span>כתובת</span><input id="rs_addr" value="${esc(s.addr)}"></label><label class="fld"><span>עיר</span><input id="rs_city" value="${esc(s.city)}"></label></div>
       <label class="fld"><span>טלפון</span><input id="rs_phone" value="${esc(s.phone)}" dir="ltr"></label>
     </div>
+    <label class="fld"><span>🪪 ת.ז. / ח.פ לקבלה (אם יש)</span><input id="rs_crn" value="${esc(s.crn||'')}" dir="ltr" inputmode="numeric" placeholder="נשמר בכרטיס ומודפס על הקבלה"></label>
     <div class="two"><label class="fld"><span>💲 סכום (₪)</span><input id="rs_amt" inputmode="decimal" value="${esc(s.amount)}"></label><label class="fld"><span>📅 תאריך ההעברה</span><input id="rs_date" type="date" value="${esc(s.date)}"></label></div>
     <div class="two"><label class="fld"><span>🔖 אסמכתא</span><input id="rs_ref" value="${esc(s.ref)}" dir="ltr"></label><label class="fld"><span>🎯 עבור</span><input id="rs_pur" value="${esc(s.purpose)}" list="rc_purs2"><datalist id="rc_purs2">${RCATS.filter(Boolean).map(c=>`<option value="${esc(c)}">`).join('')}<option value="תרומה"></datalist></label></div>
     <div class="two"><label class="fld"><span>💳 אמצעי</span><input id="rs_meth" value="${esc(s.method)}"></label><label class="fld"><span>✉️ מייל התורם</span><input id="rs_email" value="${esc(s.email)}" dir="ltr" placeholder="אם יש"></label></div>
@@ -12513,7 +12514,7 @@ function rcSlipHTML(){
 function wireSlip(){
   if(!rcSlip)return;
   const s=rcSlip, g=id=>document.getElementById(id);
-  const sync=()=>{const v=id=>(g(id)?g(id).value:'');Object.assign(s,{last:v('rs_last'),first:v('rs_first'),addr:v('rs_addr'),city:v('rs_city'),phone:v('rs_phone'),amount:v('rs_amt'),date:v('rs_date'),ref:v('rs_ref'),purpose:v('rs_pur'),method:v('rs_meth'),email:v('rs_email'),send:!!(g('rs_send')&&g('rs_send').checked)});};
+  const sync=()=>{const v=id=>(g(id)?g(id).value:'');Object.assign(s,{last:v('rs_last'),first:v('rs_first'),addr:v('rs_addr'),city:v('rs_city'),phone:v('rs_phone'),amount:v('rs_amt'),date:v('rs_date'),ref:v('rs_ref'),purpose:v('rs_pur'),method:v('rs_meth'),email:v('rs_email'),crn:v('rs_crn'),send:!!(g('rs_send')&&g('rs_send').checked)});};
   view.querySelectorAll('input[name=rc_pick]').forEach(r=>r.onchange=()=>{sync();s.pick=r.value==='new'?'new':+r.value;renderReceipts();});
   const go=g('rs_go'); if(go)go.onclick=async()=>{
     sync();
@@ -12522,7 +12523,7 @@ function wireSlip(){
     const picked=s.pick==='new'?null:(s.donors.find(d=>d.id===s.pick)||{});
     const emTo=s.email||(picked&&picked.email)||'';
     if(s.send&&!emTo){toast('סימנת לשלוח במייל, אבל אין כתובת מייל');g('rs_email').focus();return;}
-    const body={amount:s.amount,date:s.date,ref:s.ref,purpose:s.purpose,method:s.method,email:s.email,send:s.send?1:0,note:'אסמכתא מ-'+s.file};
+    const body={amount:s.amount,date:s.date,ref:s.ref,purpose:s.purpose,method:s.method,email:s.email,crn:s.crn||'',send:s.send?1:0,note:'אסמכתא מ-'+s.file};
     if(s.pick==='new'){if(!(s.last||s.first)){toast('חסר שם לתורם החדש');return;}body.new_donor={last:s.last,first:s.first,addr:s.addr,city:s.city,phone:s.phone,email:s.email};}
     else body.donor_id=s.pick;
     const who=s.pick==='new'?((s.last+' '+s.first).trim()):(picked.name||'');

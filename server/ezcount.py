@@ -128,7 +128,7 @@ def _pay_type(method):
 
 
 def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
-                 method='', note='', address='', phone='', require_email=True):
+                 method='', note='', address='', phone='', require_email=True, crn=''):
     """מפיק קבלה ושולח אותה לתורם. מחזיר (הצלחה, תוצאה/שגיאה).
 
     בהצלחה התוצאה היא dict עם docnum (מספר הקבלה) ו-doc_url אם התקבל.
@@ -170,6 +170,8 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
         body['customer_address'] = address.strip()
     if (phone or '').strip():
         body['customer_phone'] = phone.strip()
+    if (crn or '').strip():
+        body['customer_crn'] = crn.strip()       # ת.ז. / ח.פ של התורם — מודפס על הקבלה
     if date:
         body['doc_date'] = date           # תאריך ההפקדה, לא תאריך ההפקה
     ok, res = _post('/api/createDoc', body)

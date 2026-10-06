@@ -3556,6 +3556,23 @@ def ensure_schema():
 
     # מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט" — הקבלה של טוקצינסקי
     # שהופקה בעיצוב שלנו ולא נשלחה מוחלפת בקבלת איזיקאונט (רק כשהחיבור מוגדר)
+    # מאיר: "n0504940212@gmail.com זה אימייל של גדליהו נתן טוקצינסקי, וזה התעודת זהות שלו
+    # בשביל הקבלה 318754421" — נכנסים לכרטיס התורם ולחבר הקהילה; הקבלה לוקחת משם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tukachinsky_contact_v1'").fetchone():
+            for r in con.execute("SELECT id, notes FROM donors WHERE last LIKE '%טוקצינסקי%' AND first LIKE '%נתן%'").fetchall():
+                con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", ('n0504940212@gmail.com', r['id']))
+                old = (r['notes'] or '').strip()
+                if '318754421' not in old:
+                    con.execute("UPDATE donors SET notes=? WHERE id=?", ((old + ' · ' if old else '') + 'ת.ז. 318754421', r['id']))
+            con.execute("UPDATE members SET email=?, updated=? WHERE last='טוקצינסקי' AND first LIKE '%נתן%' AND COALESCE(TRIM(email),'')=''",
+                        ('n0504940212@gmail.com', now_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('tukachinsky_contact_v1')")
+            con.commit()
+            print('  טוקצינסקי: מייל ות.ז. נכנסו לכרטיס')
+    except Exception as e:
+        print('  tukachinsky contact error:', e)
+
     # מאיר: "כתוב 0 בקבלות ישראליות" — הגרסה הקודמת מחקה את הקבלה בעיצוב שלנו לפני שאיזיקאונט
     # ענה, ואם הוא נכשל לא נשארה קבלה בכלל. עכשיו: בכל עלייה, אם אין עדיין קבלת איזיקאונט על
     # ההעברה — מנסים להפיק (בלי שליחה), ורק אחרי הצלחה מוחקים את זו בעיצוב שלנו; ואם אין
@@ -12679,9 +12696,14 @@ def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True):
     address = (address or '').strip() or (', '.join(x for x in (str(d['addr'] or '').strip(), str(d['city'] or '').strip()) if x) if d else '')
     phone = (phone or '').strip() or ((d['phone'] or '').strip() if d else '')
     note = (row['note'] or '').strip()
+    # ת.ז. / ח.פ — כמו בקבלה בעיצוב שלנו: מתוך הערת התרומה או הערות הכרטיס ("ת.ז. 123456789")
+    crn = ''
+    mm = re.search(r'(ח\.?\s?פ\.?|ת\.?\s?ז\.?|ע\.?\s?מ\.?)\s*:?\s*(\d{6,9})', note + ' ' + ((d['notes'] or '') if d else ''))
+    if mm:
+        crn = mm.group(2)
     ok, res = _ez.send_receipt(name=name, email=email, amount=row['amount'], currency='ILS', date=(row['date'] or '')[:10],
                                purpose=(row['category'] or '').strip() or 'תרומה לכולל חצות', method=row['method'] or '',
-                               note=note, address=address, phone=phone, require_email=False)
+                               note=note, address=address, phone=phone, require_email=False, crn=crn)
     if not ok:
         return None, str(res)
     docnum = str(res.get('docnum') or '')
@@ -16097,6 +16119,11 @@ class H(BaseHTTPRequestHandler):
             email = (b.get('email') or '').strip()
             if email:        # מייל שהוקלד כאן נשמר גם בכרטיס אם אין שם
                 con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (email, donor_id))
+            crn = re.sub(r'\D', '', str(b.get('crn') or ''))
+            if crn:          # ת.ז. / ח.פ לקבלה — נשמר בהערות הכרטיס, משם הקבלות לוקחות אותו
+                old = (con.execute("SELECT notes FROM donors WHERE id=?", (donor_id,)).fetchone()['notes'] or '').strip()
+                if crn not in old:
+                    con.execute("UPDATE donors SET notes=? WHERE id=?", ((old + ' · ' if old else '') + 'ת.ז. ' + crn, donor_id))
             try:
                 did = int(b.get('donation_id') or 0)
             except (TypeError, ValueError):
