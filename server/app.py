@@ -424,6 +424,10 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
     except Exception: pass
+    # חלון הקבלות: url — קישור ל-PDF אצל EZcount; src — 'ez' (איזיקאונט) / 'own' (העיצוב שלנו)
+    for col in ('url', 'src'):
+        try: con.execute(f"ALTER TABLE receipt_docs ADD COLUMN {col} TEXT")
+        except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -3541,6 +3545,22 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  tukachinsky error:', e)
+
+    # מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט" — הקבלה של טוקצינסקי
+    # שהופקה בעיצוב שלנו ולא נשלחה מוחלפת בקבלת איזיקאונט (רק כשהחיבור מוגדר)
+    try:
+        if ez_ready() and not con.execute("SELECT 1 FROM seed_flags WHERE name='tukachinsky_ez_v1'").fetchone():
+            r = con.execute("SELECT rd.id, rd.donation_id FROM receipt_docs rd JOIN donors d ON d.id=rd.donor_id "
+                            "WHERE rd.kind='il' AND COALESCE(rd.src,'own')='own' AND rd.sent_at IS NULL "
+                            "AND d.last LIKE '%טוקצינסקי%' AND rd.date='2026-09-24'").fetchone()
+            if r:
+                con.execute("DELETE FROM receipt_docs WHERE id=?", (r['id'],)); con.commit()
+                doc, err = receipt_issue_ez(con, r['donation_id'])
+                print('  טוקצינסקי: קבלת איזיקאונט', (doc and doc['num']) or ('לא הופקה: ' + err))
+            con.execute("INSERT INTO seed_flags(name) VALUES('tukachinsky_ez_v1')")
+            con.commit()
+    except Exception as e:
+        print('  tukachinsky ez error:', e)
 
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
@@ -12616,12 +12636,68 @@ def receipt_build(con, kind, don_id):
 
 def receipt_doc(con, rid):
     r = con.execute("SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,"
-                    "sent_at,sent_to,note FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+                    "sent_at,sent_to,note,url,src FROM receipt_docs WHERE id=?", (rid,)).fetchone()
     return dict(r) if r else None
 
 
+def ez_ready():
+    try:
+        import ezcount as _ez
+        return _ez.configured()
+    except Exception:
+        return False
+
+
+def receipt_issue_ez(con, don_id, email='', address='', phone=''):
+    """קבלה ישראלית דרך EZcount — מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט".
+    מופקת בחשבון EZcount של הכולל; אם יש מייל — EZcount שולח אותה לתורם; ה-PDF נשמר אצלנו."""
+    import ezcount as _ez
+    row = con.execute("SELECT * FROM donations WHERE id=?", (don_id,)).fetchone()
+    if not row:
+        return None, 'התרומה לא נמצאה'
+    d = con.execute("SELECT * FROM donors WHERE id=?", (row['donor_id'],)).fetchone()
+    name = ((d['business'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else 'תורם'
+    email = (email or '').strip() or ((emails_of(d['email'])[0] if d and d['email'] else ''))
+    address = (address or '').strip() or (', '.join(x for x in (str(d['addr'] or '').strip(), str(d['city'] or '').strip()) if x) if d else '')
+    phone = (phone or '').strip() or ((d['phone'] or '').strip() if d else '')
+    note = (row['note'] or '').strip()
+    ok, res = _ez.send_receipt(name=name, email=email, amount=row['amount'], currency='ILS', date=(row['date'] or '')[:10],
+                               purpose=(row['category'] or '').strip() or 'תרומה לכולל חצות', method=row['method'] or '',
+                               note=note, address=address, phone=phone, require_email=False)
+    if not ok:
+        return None, str(res)
+    docnum = str(res.get('docnum') or '')
+    url = res.get('doc_url') or ''
+    pdf = _ez.fetch_pdf(url) if url else None
+    try:
+        num = int(re.sub(r'\D', '', docnum) or 0)
+    except ValueError:
+        num = 0
+    try:
+        amt = float(re.sub(r'[^\d.]', '', str(row['amount'] or '')) or 0)
+    except ValueError:
+        amt = 0.0
+    sent = now_iso() if (email and res.get('sent')) else None
+    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,sent_at,sent_to,note,url,src) "
+                "VALUES('il',?,?,?,?,?,?,'₪',?,?,?,?,?,?,?,?,?,'ez')",
+                (num, don_id, row['donor_id'], name, email, amt, (row['date'] or today_iso())[:10],
+                 (row['category'] or '').strip() or 'תרומה', row['method'] or '', pdf, now_iso(), sent, email if sent else None,
+                 'איזיקאונט ' + docnum, url))
+    rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    con.execute("UPDATE donations SET receipt_num=?, receipt_at=?, receipt_url=? WHERE id=?", (docnum, now_iso(), url, don_id))
+    if sent:
+        try:
+            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,'מייל',?,'')",
+                        (row['donor_id'], today_iso(), '\U0001f9fe נשלחה קבלה %s (איזיקאונט) על ₪%s אל %s' % (docnum, row['amount'], email)))
+        except Exception:
+            pass
+    con.commit()
+    return receipt_doc(con, rid), ''
+
+
 def receipt_issue(con, don_id, kind=None):
-    """מפיק קבלה על תרומה (פעם אחת — הפקה חוזרת מחזירה את אותה קבלה) ושומר את ה-PDF."""
+    """מפיק קבלה על תרומה (פעם אחת — הפקה חוזרת מחזירה את אותה קבלה) ושומר את ה-PDF.
+    שקלים: דרך EZcount אם הוא מוגדר ב-Render, אחרת בעיצוב שלנו. דולר: הקבלה האמריקאית."""
     row = con.execute("SELECT * FROM donations WHERE id=?", (don_id,)).fetchone()
     if not row:
         return None
@@ -12629,9 +12705,14 @@ def receipt_issue(con, don_id, kind=None):
     ex = con.execute("SELECT id FROM receipt_docs WHERE kind=? AND donation_id=?", (kind, don_id)).fetchone()
     if ex:
         return receipt_doc(con, ex['id'])
+    if kind == 'il' and ez_ready():
+        doc, err = receipt_issue_ez(con, don_id)
+        if not doc:
+            raise RuntimeError(err)
+        return doc
     info, pdf, fname = receipt_build(con, kind, don_id)
-    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'')",
+    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note,src) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'','own')",
                 (kind, info['num'], don_id, info['donor_id'], info['name'], info.get('email') or '', info['amount'],
                  '₪' if kind == 'il' else '$', info['date'], info.get('purpose') or '', info.get('method') or '',
                  pdf, now_iso()))
@@ -12648,9 +12729,38 @@ def receipt_pdf(con, rid):
     fname = ('קבלה-%04d-%s.pdf' % (r['num'], safe)) if r['kind'] == 'il' else ('Receipt-%d-%s.pdf' % (r['num'], safe))
     if r['pdf']:
         return bytes(r['pdf']), fname
+    if (r['src'] or '') == 'ez':
+        # קבלת איזיקאונט שה-PDF שלה עוד לא ירד — מנסים שוב מהקישור
+        import ezcount as _ez
+        pdf = _ez.fetch_pdf(r['url'] or '')
+        if not pdf:
+            return None, None
+        con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (pdf, rid)); con.commit()
+        return pdf, fname
     info, pdf, fname2 = receipt_build(con, r['kind'], r['donation_id'])
     con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (pdf, rid)); con.commit()
     return pdf, fname2
+
+
+def donor_suggest(con, name, limit=6):
+    """תורמים שדומים לשם שבאסמכתא — לפי מילים משותפות בשם המשפחה / הפרטי / העסק."""
+    toks = [t for t in re.split(r'[\s,.\-]+', (name or '').strip()) if len(t) >= 2]
+    if not toks:
+        return []
+    out = []
+    for d in con.execute("SELECT id,last,first,business,english,email,phone,addr,city,region FROM donors").fetchall():
+        hay = ' '.join(str(d[k] or '') for k in ('last', 'first', 'business', 'english'))
+        score = 0
+        for t in toks:
+            if t in hay:
+                score += 3 if t in str(d['last'] or '') else 1
+        if score:
+            out.append((score, {'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip() or (d['business'] or ''),
+                                'email': (d['email'] or '').strip(), 'phone': (d['phone'] or '').strip(),
+                                'addr': ', '.join(x for x in (str(d['addr'] or '').strip(), str(d['city'] or '').strip()) if x),
+                                'il': (d['region'] or '') == 'il'}))
+    out.sort(key=lambda x: (-x[0], x[1]['name']))
+    return [x[1] for x in out[:limit]]
 
 
 def receipt_send(con, rid, email=''):
@@ -12663,6 +12773,8 @@ def receipt_send(con, rid, email=''):
     if not to:
         return {'ok': False, 'error': 'אין כתובת מייל לתורם — מלא מייל בכרטיס'}
     pdf, fname = receipt_pdf(con, rid)
+    if not pdf:
+        return {'ok': False, 'error': 'ה-PDF של הקבלה לא זמין (איזיקאונט לא החזיר קובץ) — אפשר לשלוח מתוך איזיקאונט'}
     amt = float(r['amount'] or 0)
     try:
         dd = datetime.date.fromisoformat((r['date'] or '')[:10])
@@ -15076,14 +15188,14 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/receipts':
             con = db()
             rows = [dict(r) for r in con.execute(
-                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note "
+                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note,url,src "
                 "FROM receipt_docs ORDER BY id DESC")]
             con.close()
             try:
                 import mailer; mail_ok = mailer.configured()
             except Exception:
                 mail_ok = False
-            return self._send(200, {'ok': True, 'rows': rows, 'mail': mail_ok})
+            return self._send(200, {'ok': True, 'rows': rows, 'mail': mail_ok, 'ez': ez_ready()})
         m = re.match(r'/api/receipts/(\d+)\.pdf$', self.path.split('?')[0])
         if m:
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -15895,6 +16007,88 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             return self._send(200, {'ok': ok})
         # ---- חלון הקבלות ----
+        if self.path == '/api/receipts/slip':
+            # מאיר: "שאני אשלח לך אסמכתא ואני אוציא משם קבלה, אין לי כוח להכניס שם את כל
+            # הנתונים של התורם" — קוראים את ה-PDF של ההעברה ומציעים את התורם, הסכום והתאריך
+            try:
+                data = base64.b64decode(b.get('data') or '')
+            except Exception:
+                data = b''
+            if not data:
+                return self._send(200, {'ok': False, 'error': 'לא התקבל קובץ'})
+            mime = (b.get('mime') or '').lower()
+            parsed = {'name': '', 'addr': '', 'amount': 0, 'date': '', 'ref': '', 'purpose': '', 'found': []}
+            if data[:4] == b'%PDF' or 'pdf' in mime:
+                try:
+                    import bankslip
+                    parsed = bankslip.parse_pdf(data)
+                except Exception as e:
+                    parsed['error'] = str(e)[:120]
+            con = db()
+            sugg = donor_suggest(con, parsed.get('name') or '')
+            con.close()
+            return self._send(200, {'ok': True, 'parsed': parsed, 'donors': sugg, 'is_pdf': data[:4] == b'%PDF',
+                                    'ez': ez_ready()})
+        if self.path == '/api/receipts/ezcount':
+            # קבלה ישראלית דרך איזיקאונט: תורם קיים או חדש + תרומה (אם אין donation_id) + הפקה
+            con = db()
+            try:
+                donor_id = int(b.get('donor_id') or 0)
+            except (TypeError, ValueError):
+                donor_id = 0
+            nd = b.get('new_donor') or {}
+            if not donor_id and nd:
+                last, first = (nd.get('last') or '').strip(), (nd.get('first') or '').strip()
+                if not last and not first:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'חסר שם לתורם החדש'})
+                con.execute("INSERT INTO donors(last,first,phone,email,addr,city,category,region,created,source) "
+                            "VALUES(?,?,?,?,?,?,'מזדמן','il',?,'אסמכתא')",
+                            (last, first, (nd.get('phone') or '').strip(), (nd.get('email') or '').strip(),
+                             (nd.get('addr') or '').strip(), (nd.get('city') or '').strip(), today_iso()))
+                donor_id = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            if not donor_id or not con.execute("SELECT 1 FROM donors WHERE id=?", (donor_id,)).fetchone():
+                con.close(); return self._send(200, {'ok': False, 'error': 'לא נבחר תורם'})
+            email = (b.get('email') or '').strip()
+            if email:        # מייל שהוקלד כאן נשמר גם בכרטיס אם אין שם
+                con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (email, donor_id))
+            try:
+                did = int(b.get('donation_id') or 0)
+            except (TypeError, ValueError):
+                did = 0
+            if not did:
+                amount = re.sub(r'[^\d.]', '', str(b.get('amount') or ''))
+                if not amount or float(amount) <= 0:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+                # אותה העברה כבר רשומה בכרטיס (אותו תאריך ואותו סכום) — לא פותחים תרומה כפולה
+                dup = con.execute("SELECT id FROM donations WHERE donor_id=? AND date=? AND ABS(CAST(REPLACE(amount,',','') AS REAL)-?)<0.01",
+                                  (donor_id, (b.get('date') or today_iso())[:10], float(amount))).fetchone()
+                if dup:
+                    did = dup['id']
+            if not did:
+                note = (b.get('note') or '').strip()
+                if b.get('ref') and ('אסמכתא' not in note):
+                    note = ('אסמכתא %s' % str(b.get('ref')).strip() + (' · ' + note if note else ''))
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,'₪',1)",
+                            (donor_id, (b.get('date') or today_iso())[:10], amount, (b.get('purpose') or 'תרומה').strip(),
+                             (b.get('method') or 'העברה בנקאית').strip(), note))
+                did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            ex = con.execute("SELECT id FROM receipt_docs WHERE kind='il' AND donation_id=?", (did,)).fetchone()
+            if ex:
+                doc = receipt_doc(con, ex['id']); con.close()
+                return self._send(200, {'ok': True, 'doc': doc, 'already': True})
+            if not ez_ready():
+                con.close()
+                return self._send(200, {'ok': False, 'error': 'החיבור לאיזיקאונט לא מוגדר ב-Render (EZCOUNT_API_KEY / EZCOUNT_API_EMAIL)', 'donation_id': did})
+            try:
+                doc, err = receipt_issue_ez(con, did, email=email)
+            except Exception as e:
+                doc, err = None, str(e)[:160]
+            con.close()
+            bump_data()
+            if not doc:
+                return self._send(200, {'ok': False, 'error': 'איזיקאונט: ' + err, 'donation_id': did})
+            return self._send(200, {'ok': True, 'doc': doc, 'donation_id': did})
         if self.path == '/api/receipts/issue':
             # הפקת קבלה על תרומה קיימת (לפי המטבע: שקלים → ישראלית, אחרת → ארה"ב)
             try:

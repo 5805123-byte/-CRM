@@ -110,14 +110,18 @@ def _pay_type(method):
 
 
 def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
-                 method='', note=''):
+                 method='', note='', address='', phone='', require_email=True):
     """מפיק קבלה ושולח אותה לתורם. מחזיר (הצלחה, תוצאה/שגיאה).
 
     בהצלחה התוצאה היא dict עם docnum (מספר הקבלה) ו-doc_url אם התקבל.
+    מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט… שאני אשלח לך אסמכתא
+    ואני אוציא משם קבלה" — לכן אפשר להפיק גם בלי מייל (require_email=False):
+    הקבלה נוצרת ב-EZcount ונשמרת אצלנו, ונשלחת מהמערכת כשיהיה מייל.
     """
     if not configured():
         return False, 'החיבור ל-EZcount לא הוגדר ב-Render'
-    if not (email or '').strip():
+    email = (email or '').strip()
+    if require_email and not email:
         return False, 'אין כתובת מייל לתורם — אי אפשר לשלוח קבלה'
     try:
         amt = round(float(str(amount).replace(',', '') or 0), 2)
@@ -130,17 +134,24 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
     body.update({
         'type': int(_env('EZCOUNT_DOCTYPE', str(DEF_TYPE)) or DEF_TYPE),
         'customer_name': (name or '').strip() or 'תורם',
-        'customer_email': email.strip(),
         'item': [{'details': desc, 'amount': 1, 'price': amt, 'price_type': 0}],
         'payment': [{'payment_type': _pay_type(method), 'payment_sum': amt}],
         'price_total': amt,
         'currency': (currency or 'ILS').upper(),
-        'send_email': True,               # EZcount שולח את הקבלה לתורם
-        'email_to': email.strip(),
-        'email_text': 'תודה רבה על תרומתך לכולל חצות. הקבלה מצורפת.',
         'comment': (note or '').strip(),
         'lang': 'he',
     })
+    if email:
+        body['customer_email'] = email
+        body['send_email'] = True         # EZcount שולח את הקבלה לתורם
+        body['email_to'] = email
+        body['email_text'] = 'תודה רבה על תרומתך לכולל חצות. הקבלה מצורפת.'
+    else:
+        body['send_email'] = False
+    if (address or '').strip():
+        body['customer_address'] = address.strip()
+    if (phone or '').strip():
+        body['customer_phone'] = phone.strip()
     if date:
         body['doc_date'] = date           # תאריך ההפקדה, לא תאריך ההפקה
     ok, res = _post('/api/createDoc', body)
@@ -149,5 +160,17 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
     return True, {
         'docnum': str(res.get('docnum') or res.get('doc_number') or res.get('doc_uuid') or ''),
         'doc_url': res.get('pdf_link') or res.get('doc_url') or '',
-        'sent': True,
+        'sent': bool(email),
     }
+
+
+def fetch_pdf(url, timeout=30):
+    """מוריד את ה-PDF של הקבלה מהקישור ש-EZcount החזיר. מחזיר bytes או None."""
+    if not (url or '').startswith('http'):
+        return None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'kollel-crm'}), timeout=timeout) as r:
+            data = r.read()
+        return data if data[:4] == b'%PDF' else None
+    except Exception:
+        return None
