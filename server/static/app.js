@@ -11991,8 +11991,11 @@ function renderComm(){
 // הגדלה, הקטנה, הדפסה, ואפשרות לשינוי במפה עצמה על כל מקום... ושיישמר אצל ההוא
 // ששינו לו את המקום, ויהיה כתוב אצלו בפרטים את תאריך השינוי — רק אם נלחץ על
 // המספר מושב שלו"
-let SLAY=null, SEATS=null, smOpen=null, smZoom=1;
-try{smZoom=parseFloat(localStorage.getItem('kc_smz')||'1')||1;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
+let SLAY=null, SEATS=null, smOpen=null, smZoom=0;   // 0 = התאמה אוטומטית לרוחב
+try{smZoom=parseFloat(localStorage.getItem('kc_smz')||'0')||0;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
+// המפה רחבה מהמסך — בפתיחה הראשונה היא מוקטנת כך שכולה תיראה בלי גלילה
+function smFit(){const w=view.querySelector('.smwrap'),g=view.querySelector('.smgrid');if(!w||!g)return;
+  g.style.zoom=1; const z=Math.min(1.6,Math.max(.35,(w.clientWidth-10)/g.scrollWidth)); g.style.zoom=z; return z;}
 async function smLoad(force){
   if(!SLAY){try{SLAY=await (await fetch('/seat_layout.json',{cache:'no-store'})).json();}catch(e){SLAY={cols:7,rows:[]};}}
   if(!SEATS||force){const r=await api('GET','/api/seats');SEATS=r&&r.seats?r:{seats:{},meta:{},renum:{},log:[]};}
@@ -12006,18 +12009,21 @@ function smGridHTML(){
     const st=(b.seats||[]).map(n=>{const pos=String(n),num=SEATS.renum[pos]||pos,who=smWho(num),s=SEATS.seats[num];
       return `<div class="sms${who?'':' free'}" data-pos="${pos}" data-num="${esc(num)}" data-mid="${s?s.member_id:''}" title="לחץ לתיקון"><b>${esc(num)}</b><span>${esc(who)}</span><em class="smpen">✎</em></div>`;}).join('');
     cells.push(`<div class="smb"><i>${esc(b.label)}</i><div class="smr">${st}</div></div>`);}));
-  return `<div class="smgrid" style="grid-template-columns:repeat(${SLAY.cols||7},1fr);zoom:${smZoom}">${cells.join('')}</div>`;
+  return `<div class="smgrid" style="grid-template-columns:repeat(${SLAY.cols||7},1fr);zoom:${smZoom||1}">${cells.join('')}</div>`;
 }
 function smSectionHTML(){
   return `<div class="sec smsec"><div class="smhd"><button class="btn sm ghost" id="sm_tog">${smOpen?'▾':'▸'} 🗺️ מפת בית הכנסת</button>
-    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><a class="btn sm ghost" href="/seat-map-original.png" download="מפת-בית-הכנסת.png">⬇️ הורדה</a></span>`:''}</div>
+    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_fit" title="להתאים לרוחב המסך">↔️</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><a class="btn sm ghost" href="/seat-map-original.png" download="מפת-בית-הכנסת.png">⬇️ הורדה</a></span>`:''}</div>
     ${smOpen?(SEATS?`<div class="smwrap">${smGridHTML()}</div><div class="hintxt">לחיצה על מקום: להושיב חבר, לפנות, לשנות מספר או לכתוב שם חופשי. כל שינוי נרשם עם תאריך אצל מי שהמקום שלו השתנה (לחיצה על 💺 בשורה שלו).</div>`:'<div class="hintxt">טוען את המפה…</div>'):''}</div>`;
 }
 function wireSeatMap(){
   const tg=document.getElementById('sm_tog'); if(tg)tg.onclick=async()=>{smOpen=!smOpen;try{localStorage.setItem('kc_smopen',smOpen?'1':'0');}catch(e){} if(smOpen&&!SEATS){render();await smLoad();} render();};
-  const z=d=>{smZoom=Math.min(2.2,Math.max(.45,+(smZoom+d).toFixed(2)));try{localStorage.setItem('kc_smz',String(smZoom));}catch(e){}const g=view.querySelector('.smgrid');if(g)g.style.zoom=smZoom;};
-  const mi=document.getElementById('sm_minus'); if(mi)mi.onclick=()=>z(-.15);
-  const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.15);
+  if(!smZoom)setTimeout(smFit,0);
+  const z=d=>{const g=view.querySelector('.smgrid');const cur=smZoom||parseFloat(g&&g.style.zoom)||1;
+    smZoom=Math.min(2.2,Math.max(.35,+(cur+d).toFixed(2)));try{localStorage.setItem('kc_smz',String(smZoom));}catch(e){}if(g)g.style.zoom=smZoom;};
+  const mi=document.getElementById('sm_minus'); if(mi)mi.onclick=()=>z(-.1);
+  const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.1);
+  const ft=document.getElementById('sm_fit'); if(ft)ft.onclick=()=>{smZoom=0;try{localStorage.setItem('kc_smz','0');}catch(e){}smFit();};
   const pr=document.getElementById('sm_print'); if(pr)pr.onclick=()=>window.open('/seat-map-print','_blank');
   view.querySelectorAll('.sms[data-pos]').forEach(el=>el.onclick=()=>openSeat(el.dataset.pos,el.dataset.num));
   if(smOpen&&!SEATS){smLoad().then(()=>{if(tab==='comm')render();});}
