@@ -3556,6 +3556,21 @@ def ensure_schema():
 
     # מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט" — הקבלה של טוקצינסקי
     # שהופקה בעיצוב שלנו ולא נשלחה מוחלפת בקבלת איזיקאונט (רק כשהחיבור מוגדר)
+    # מאיר: "בקבלה שלנו… תוריד את הת.ד. 30067, זה כבר לא רלוונטי" — גם אם הכתובת נשמרה
+    # בהגדרות הקבלה הישראלית (app_kv), מורידים ממנה את תא הדואר
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='receipt_il_addr_v1'").fetchone():
+            cur_addr = kv_get(con, 'org_il_addr', '')
+            if cur_addr and '30067' in cur_addr:
+                new_addr = re.sub(r'ת\.?\s?ד\.?\s*30067\s*', '', cur_addr).replace('90500', '').strip(' ,·')
+                con.execute("INSERT INTO app_kv(k,v) VALUES('org_il_addr',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (new_addr or 'ביתר עילית',))
+            # קבלות בעיצוב שלנו שעוד לא נשלחו — ה-PDF השמור מצויר מחדש בעיצוב המעודכן בצפייה הבאה
+            con.execute("UPDATE receipt_docs SET pdf=NULL WHERE kind='il' AND COALESCE(src,'own')='own' AND sent_at IS NULL")
+            con.execute("INSERT INTO seed_flags(name) VALUES('receipt_il_addr_v1')")
+            con.commit()
+    except Exception as e:
+        print('  receipt il addr error:', e)
+
     # מאיר: "n0504940212@gmail.com זה אימייל של גדליהו נתן טוקצינסקי, וזה התעודת זהות שלו
     # בשביל הקבלה 318754421" — נכנסים לכרטיס התורם ולחבר הקהילה; הקבלה לוקחת משם
     try:

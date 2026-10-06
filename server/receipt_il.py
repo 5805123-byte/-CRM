@@ -19,7 +19,7 @@ ORG_KEYS = ('org_il_name', 'org_il_reg', 'org_il_addr', 'org_il_sec46', 'org_il_
 ORG_DEFAULT = {
     'org_il_name': 'כולל חצות נחלת יהושע ביתר עילית (ע"ר)',
     'org_il_reg': '580493914',
-    'org_il_addr': 'ת.ד. 30067 ביתר עילית 90500',
+    'org_il_addr': 'ביתר עילית',           # מאיר: "תוריד את הת.ד. 30067, זה כבר לא רלוונטי"
     'org_il_sec46': 'למוסד אישור לפי סעיף 46 לפקודת מס הכנסה',
     'org_il_signer': 'הרב יהושע מאיר דויטש',
     'org_il_role': 'ראש הכולל',
@@ -287,18 +287,19 @@ def receipt_file(con, don_id, fmt, STATIC, kv_get, RECEIPT_IL_START, today_iso, 
     stmt = ['תרומה זו התקבלה ללא כל תמורה.']
     if org['org_il_sec46']:
         stmt.append('העמותה היא מוסד ציבורי שאושר לעניין סעיף 46 לפקודת מס הכנסה, והתרומה מזכה בזיכוי ממס בכפוף להוראות הסעיף.')
-    stmt.append('קבלה זו הופקה באופן ממוחשב. נא לשמור אותה לצורכי מס.')
+    # מאיר: "האם צריך להיות כתוב מסמך ממוחשב?" — כן: מסמך שמופק במחשב ונשלח כקובץ
+    # חייב לשאת את המילים "מסמך ממוחשב". "חתום דיגיטלית" לא נכתב, כי הקובץ הזה אינו
+    # חתום בחתימה אלקטרונית מאושרת (את זה עושה איזיקאונט בקבלה הרשמית).
+    stmt.append('מסמך ממוחשב. נא לשמור קבלה זו לצורכי מס.')
     lh = int(1.6 * u * 1.55)
     for i, s in enumerate(stmt):
         for ln in wrap(s, fpb if i == 0 else fp, cw):
             R(ln, fpb if i == 0 else fp, x1, y, DEEP if i == 0 else INK); y += lh
-    # ---- ברכה + חתימה — צמודות לתוכן, לא בתחתית הדף ----
-    sy = min(y + int(9.5 * u), int(H * (1 - .115)) - int(9.5 * u))
-    C('תודה על שותפותך בתורת חצות. תזכו למצוות.', font(2.0 * u), x0 + cw // 2, sy - int(4.6 * u), DEEP)
-    dr.line([(x0, sy), (x0 + int(26 * u), sy)], fill=INK, width=max(2, int(.14 * u)))
-    L(org['org_il_signer'] or '', font(2.2 * u, True), x0, sy + int(.7 * u), DEEP)
-    L(' · '.join(x for x in (org['org_il_role'], 'מורשה חתימה') if x), font(1.6 * u), x0, sy + int(3.4 * u), SOFT)
-    R(nm + ((' · ע"ר ' + org['org_il_reg']) if org['org_il_reg'] else ''), font(1.5 * u), x1, sy + int(1.2 * u), SOFT)
+    # ---- ברכה ושורת העמותה — מאיר: "את החתימה של הרב יהושע מאיר דויטש תוריד" ----
+    sy = min(y + int(7 * u), int(H * (1 - .115)) - int(7 * u))
+    C('תודה על שותפותך בתורת חצות. תזכו למצוות.', font(2.0 * u), x0 + cw // 2, sy - int(3.2 * u), DEEP)
+    dr.line([(x0, sy), (x1, sy)], fill=LINE, width=max(1, int(.1 * u)))
+    C(nm + ((' · ע"ר ' + org['org_il_reg']) if org['org_il_reg'] else ''), font(1.5 * u), x0 + cw // 2, sy + int(1.0 * u), SOFT)
     buf = io.BytesIO()
     safe = re.sub(r'[^\w֐-׿ .-]+', '', info['name'] or '')[:40].strip() or 'donor'
     if fmt == 'pdf':
