@@ -3556,17 +3556,26 @@ def ensure_schema():
 
     # מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט" — הקבלה של טוקצינסקי
     # שהופקה בעיצוב שלנו ולא נשלחה מוחלפת בקבלת איזיקאונט (רק כשהחיבור מוגדר)
+    # מאיר: "כתוב 0 בקבלות ישראליות" — הגרסה הקודמת מחקה את הקבלה בעיצוב שלנו לפני שאיזיקאונט
+    # ענה, ואם הוא נכשל לא נשארה קבלה בכלל. עכשיו: בכל עלייה, אם אין עדיין קבלת איזיקאונט על
+    # ההעברה — מנסים להפיק (בלי שליחה), ורק אחרי הצלחה מוחקים את זו בעיצוב שלנו; ואם אין
+    # שום קבלה (איזיקאונט לא זמין / נכשל) — מפיקים בעיצוב שלנו כדי שהחלון לא יהיה ריק.
     try:
-        if ez_ready() and not con.execute("SELECT 1 FROM seed_flags WHERE name='tukachinsky_ez_v1'").fetchone():
-            r = con.execute("SELECT rd.id, rd.donation_id FROM receipt_docs rd JOIN donors d ON d.id=rd.donor_id "
-                            "WHERE rd.kind='il' AND COALESCE(rd.src,'own')='own' AND rd.sent_at IS NULL "
-                            "AND d.last LIKE '%טוקצינסקי%' AND rd.date='2026-09-24'").fetchone()
-            if r:
-                con.execute("DELETE FROM receipt_docs WHERE id=?", (r['id'],)); con.commit()
-                doc, err = receipt_issue_ez(con, r['donation_id'])
-                print('  טוקצינסקי: קבלת איזיקאונט', (doc and doc['num']) or ('לא הופקה: ' + err))
-            con.execute("INSERT INTO seed_flags(name) VALUES('tukachinsky_ez_v1')")
-            con.commit()
+        dn = con.execute("SELECT dn.id FROM donations dn JOIN donors d ON d.id=dn.donor_id "
+                         "WHERE d.last LIKE '%טוקצינסקי%' AND dn.date='2026-09-24'").fetchone()
+        if dn:
+            has_ez = con.execute("SELECT id FROM receipt_docs WHERE donation_id=? AND src='ez'", (dn['id'],)).fetchone()
+            if not has_ez and ez_ready():
+                doc, err = receipt_issue_ez(con, dn['id'], send=False)
+                if doc:
+                    con.execute("DELETE FROM receipt_docs WHERE donation_id=? AND id<>? AND kind='il' AND sent_at IS NULL", (dn['id'], doc['id']))
+                    con.commit()
+                    print('  טוקצינסקי: קבלת איזיקאונט מס\'', doc['num'])
+                else:
+                    print('  טוקצינסקי: איזיקאונט נכשל —', err)
+            if not con.execute("SELECT 1 FROM receipt_docs WHERE donation_id=?", (dn['id'],)).fetchone():
+                receipt_issue_own(con, dn['id'], 'il')
+                print('  טוקצינסקי: קבלה בעיצוב שלנו (עד שאיזיקאונט יעבוד)')
     except Exception as e:
         print('  tukachinsky ez error:', e)
 
@@ -12720,6 +12729,11 @@ def receipt_issue(con, don_id, kind=None, email='', send=True):
         if not doc:
             raise RuntimeError(err)
         return doc
+    return receipt_issue_own(con, don_id, kind)
+
+
+def receipt_issue_own(con, don_id, kind):
+    """קבלה בעיצוב שלנו (PIL על הבלאנק) — דולר תמיד; שקלים רק כשאיזיקאונט לא זמין."""
     info, pdf, fname = receipt_build(con, kind, don_id)
     con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note,src) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'','own')",
