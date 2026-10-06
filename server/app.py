@@ -2917,6 +2917,21 @@ def ensure_schema():
     except Exception as e:
         print('  donat wedding error:', e)
 
+    # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
+    # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
+    # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_karmi_herman_wedding_v1'").fetchone():
+            note = 'חתונת נחמן ישראל כרמי (בן ערן כרמי, צפת) עם חיה הרמן (בת יצחק הרמן, ביתר) · א\' חשוון תשפ"ז · קבלת פנים 18:30, חופה 19:00'
+            if not con.execute("SELECT 1 FROM tasks WHERE kind='event' AND due_date='2026-10-12' AND note LIKE '%כרמי%'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                            (None, '2026-10-12', 'event', note, '', '18:30', 'אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש'))
+                print('  חתונת כרמי–הרמן: נרשמה כשמחה ב-12.10.2026')
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_karmi_herman_wedding_v1')")
+            con.commit()
+    except Exception as e:
+        print('  karmi wedding error:', e)
+
     # מאיר: "הכנסת לי כפילויות בסוכות תשפ"ז, אני כל כך הרבה הזהרתי שזה לא יקרה" —
     # תרומה שמאיר רשם ביד וחיוב מהקובץ באותו סכום, עד 45 יום, אותה משפחת אמצעי
     # תשלום — הם אותו כסף. השורה של מאיר נשארת (עם מספר העסקה), השורה שנפתחה
