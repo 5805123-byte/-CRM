@@ -2945,6 +2945,14 @@ def ensure_schema():
                 print('  פגישה אצל ראש העיר: נרשמה ל-08.10.2026 16:30')
             con.execute("INSERT INTO seed_flags(name) VALUES('event_mayor_meeting_v1')")
             con.commit()
+        # מאיר: "הפגישה עם ראש העיר הוקדמה למחר יום רביעי בשתיים וחצי במקום יום חמישי"
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_mayor_meeting_v2'").fetchone():
+            r = con.execute("SELECT id FROM tasks WHERE due_date='2026-10-08' AND note LIKE '%ראש העיר%' AND done=0").fetchone()
+            if r:
+                con.execute("UPDATE tasks SET due_date='2026-10-07', at_time='14:30' WHERE id=?", (r['id'],))
+                print('  פגישה אצל ראש העיר: הוקדמה ל-07.10.2026 14:30')
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_mayor_meeting_v2')")
+            con.commit()
     except Exception as e:
         print('  mayor meeting error:', e)
 
