@@ -3601,6 +3601,20 @@ def ensure_schema():
         dn = con.execute("SELECT dn.id FROM donations dn JOIN donors d ON d.id=dn.donor_id "
                          "WHERE d.last LIKE '%טוקצינסקי%' AND dn.date='2026-09-24'").fetchone()
         if dn:
+            # הקבלה 165883 כבר הופקה אצל איזיקאונט ב-06.10.2026 (🩺 הראה "קבלה 165883 הופקה ✓"),
+            # אבל לא נרשמה אצלנו בגלל הכפילות עם הקבלה בעיצוב שלנו. רושמים אותה — בלי להפיק שוב.
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='tukachinsky_ez_165883_v1'").fetchone():
+                if not con.execute("SELECT 1 FROM receipt_docs WHERE src='ez' AND num=165883").fetchone() and \
+                   not con.execute("SELECT 1 FROM receipt_docs WHERE donation_id=? AND src='ez'", (dn['id'],)).fetchone():
+                    con.execute("DELETE FROM receipt_docs WHERE kind='il' AND donation_id=? AND COALESCE(src,'own')='own'", (dn['id'],))
+                    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,sent_at,sent_to,note,url,src) "
+                                "SELECT 'il',165883,dn.id,dn.donor_id,(d.last||' '||d.first),COALESCE(d.email,''),7750,'₪',dn.date,'תרומה',"
+                                "COALESCE(dn.method,''),NULL,?,NULL,NULL,'איזיקאונט 165883 — הופקה 06.10.2026; ה-PDF באתר איזיקאונט','','ez' "
+                                "FROM donations dn JOIN donors d ON d.id=dn.donor_id WHERE dn.id=?", (now_iso(), dn['id']))
+                    con.execute("UPDATE donations SET receipt_num='165883', receipt_at=? WHERE id=?", (now_iso(), dn['id']))
+                    print('  טוקצינסקי: קבלת איזיקאונט 165883 נרשמה')
+                con.execute("INSERT INTO seed_flags(name) VALUES('tukachinsky_ez_165883_v1')")
+                con.commit()
             has_ez = con.execute("SELECT id FROM receipt_docs WHERE donation_id=? AND src='ez'", (dn['id'],)).fetchone()
             # מאיר: "שוב קיבלתי אימייל מהם על השגיאה, אולי שזה יפסיק לשלוח עד שאסדר את זה" —
             # מנסים שוב בעלייה רק אם המפתחות ב-Render השתנו מאז הניסיון שנכשל
@@ -12749,6 +12763,9 @@ def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True):
     except ValueError:
         amt = 0.0
     sent = now_iso() if (email and res.get('sent')) else None
+    # קבלה בעיצוב שלנו על אותה תרומה מפנה את מקומה לקבלת איזיקאונט (לכל תרומה קבלה אחת
+    # לכל סוג — אחרת ההכנסה נכשלת אחרי שהקבלה כבר נוצרה אצל איזיקאונט)
+    con.execute("DELETE FROM receipt_docs WHERE kind='il' AND donation_id=? AND COALESCE(src,'own')='own'", (don_id,))
     con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,sent_at,sent_to,note,url,src) "
                 "VALUES('il',?,?,?,?,?,?,'₪',?,?,?,?,?,?,?,?,?,'ez')",
                 (num, don_id, row['donor_id'], name, email, amt, (row['date'] or today_iso())[:10],
@@ -15287,8 +15304,8 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/receipts':
             con = db()
             rows = [dict(r) for r in con.execute(
-                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note,url,src "
-                "FROM receipt_docs ORDER BY id DESC")]
+                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note,url,src,"
+                "(pdf IS NOT NULL) AS has_pdf FROM receipt_docs ORDER BY id DESC")]
             con.close()
             try:
                 import mailer; mail_ok = mailer.configured()

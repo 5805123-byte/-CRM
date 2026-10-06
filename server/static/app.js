@@ -12613,7 +12613,9 @@ function renderReceipts(){
       <b class="rcamt">${rcMoney(r)}</b>
       <span class="rcpur">${r.src==='ez'?'<b class="rcez">איזיקאונט</b> · ':''}${esc(r.purpose||'')}${r.method?` · ${esc(r.method)}`:''}</span>
       <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>
-      <span class="rcact"><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>${r.sent_at?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="ביטול קבלה שהופקה בטעות">🗑</button>`}</span>
+      <span class="rcact">${(r.src==='ez'&&!r.has_pdf&&!r.url)
+        ? `<span class="hintxt" title="הקבלה הופקה באיזיקאונט, אבל הקובץ לא התקבל — פותחים ושולחים אותה מאתר איזיקאונט">📄 הקובץ באתר איזיקאונט</span>`
+        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>`}${r.sent_at||r.src==='ez'?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="ביטול קבלה שהופקה בטעות">🗑</button>`}</span>
     </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
   view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;
   // ---- חיווט ----
