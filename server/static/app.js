@@ -11561,7 +11561,7 @@ async function renderCalTab(){
   const qq=String(q||'').trim(); if(qq)E=E.filter(e=>matchQ(e.title+' '+e.text+' '+e.place));
   const by={}; E.forEach(e=>{(by[e.date]=by[e.date]||[]).push(e);});
   const DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'], DOWK={'א':0,'ב':1,'ג':2,'ד':3,'ה':4,'ו':5,'ש':6};
-  const ent=e=>`<div class="bce k-${e.kind} ${e.date<today?'late':''}" data-k="${e.kind}" data-id="${e.t?e.t.id:(e.p?e.p.id:'')}" data-did="${e.d?e.d.id:''}" title="${esc(e.text)}">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}<span class="bci">${e.icon}</span> <b>${esc(e.title)}</b>${e.text?`<span class="bcx"> — ${esc(e.text)}</span>`:''}${e.place?`<span class="bcp">📍 ${esc(e.place)}</span>`:''}</div>`;
+  const ent=e=>`<div class="bce k-${e.kind} ${e.date<today?'late':''}" data-ix="${E.indexOf(e)}" data-k="${e.kind}" data-id="${e.t?e.t.id:(e.p?e.p.id:'')}" data-did="${e.d?e.d.id:''}" title="לחץ לראות הכל">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}<span class="bci">${e.icon}</span> <b>${esc(e.title)}</b>${e.text?`<span class="bcx"> — ${esc(e.text)}</span>`:''}${e.place?`<span class="bcp">📍 ${esc(e.place)}</span>`:''}</div>`;
   const d1=HM.days['1']||{}, start=DOWK[d1.dow]!=null?DOWK[d1.dow]:0;
   const cells=[]; for(let i=0;i<start;i++)cells.push('<div class="bcc empty"></div>');
   let selHeb='';
@@ -11601,7 +11601,10 @@ async function renderCalTab(){
     if(e.target.closest('.bcin,.bced,.bcea,.dpres'))return;      // עבודה בתוך הריבוע — לא סוגרת אותו
     if(c.dataset.d===calSel&&!e.target.closest('.bcx2,.bcd'))return;
     calEdit=null; calSel=calSel===c.dataset.d?'':c.dataset.d; render();});
-  view.querySelectorAll('.bce[data-did]').forEach(x=>x.onclick=e=>{e.stopPropagation();const d=DB.find(y=>y.id==x.dataset.did);if(d)openDonor(d,x.dataset.k==='parnes'?'details':'tasks');});
+  // מאיר: "כשאני רוצה לראות את כל הטקסט ביומן זה לא נותן לי, ואצל תורמים זה מכניס אותי
+  // לכרטיס שלהם — זה לא טוב". לחיצה על פריט פותחת חלון קטן עם כל הפרטים; הכרטיס נפתח
+  // רק מכפתור "📋 כרטיס התורם" שבתוך החלון.
+  view.querySelectorAll('.bce[data-ix]').forEach(x=>x.onclick=ev=>{ev.stopPropagation();const e=E[+x.dataset.ix];if(e)calShowEntry(e);});
   // ✎ תיקון בתוך הריבוע
   const findT=id=>{for(const d of DB){const t=(d.tasks||[]).find(x=>x.id==id);if(t)return {t,d};}const t=GTASKS.find(x=>x.id==id);return t?{t,d:null}:null;};
   view.querySelectorAll('.bcedit').forEach(b=>b.onclick=e=>{e.stopPropagation();calEdit=+b.dataset.id;render();setTimeout(()=>{const i=view.querySelector('.bce_note');if(i)i.focus();},50);});
@@ -11642,6 +11645,32 @@ async function renderCalTab(){
       if(bcChosen){bcChosen.tasks=bcChosen.tasks||[];bcChosen.tasks.push(rec);}else GTASKS.push(rec);
       toast('נוסף ✓ — וגם ליומן Google');checkReminders();render();};
     document.getElementById('bc_note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('bc_add').click();}});}
+}
+// חלון פרטים של פריט ביומן — הטקסט המלא, שעה, מקום, התורם, ופעולות
+function calShowEntry(e){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const dow=e.date?DOW[new Date(e.date+'T12:00:00').getDay()]:'';
+  const gl=e.t&&gcalLink(e.t,e.title);
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>${e.icon} ${esc(e.title)}</h2>
+    <div class="hintxt">📅 יום ${esc(dow)} · ${esc(fmtGreg(e.date))}${e.time?` · 🕒 <b>${esc(e.time)}</b>`:''}</div>
+    ${e.text?`<div class="calfull">${esc(e.text)}</div>`:''}
+    ${e.place?`<div class="hintxt">📍 ${esc(e.place)}</div>`:''}
+    ${e.d?`<div class="hintxt">👤 ${esc(((e.d.last||'')+' '+(e.d.first||'')).trim())} ${contactBtns(e.d)}</div>`:''}
+    <div class="addrow" style="flex-wrap:wrap;gap:6px;margin-top:10px">
+      ${e.t?`<button class="btn sm" id="ce_edit">✎ תקן</button><button class="btn sm ghost" id="ce_done">✓ בוצע</button>`:''}
+      ${e.d?`<button class="btn sm ghost" id="ce_card">📋 כרטיס התורם</button>`:''}
+      ${e.p?`<button class="btn sm ghost" id="ce_board">🌙 בלוח הפרנס</button>`:''}
+      ${gl?`<a class="btn sm ghost" href="${gl}" target="_blank" rel="noopener">ליומן Google</a>`:''}
+    </div>`;
+  remov.classList.add('show');
+  const close=()=>remov.classList.remove('show');
+  document.getElementById('rx').onclick=close;
+  const g=id=>document.getElementById(id);
+  if(g('ce_edit'))g('ce_edit').onclick=()=>{close();calSel=e.date;calEdit=e.t.id;render();setTimeout(()=>{const i=view.querySelector('.bce_note');if(i)i.focus();},60);};
+  if(g('ce_done'))g('ce_done').onclick=async()=>{close();if(!await doneWithNote({...e.t,donor:e.title,dref:e.d},e.d))return;checkReminders();render();toast('בוצע ✓');};
+  if(g('ce_card'))g('ce_card').onclick=()=>{close();openDonor(e.d,e.p?'details':'tasks');};
+  if(g('ce_board'))g('ce_board').onclick=()=>{close();tab='parnes';pyKind=e.p.kind||'parnes';pyMonth=e.p.month;pyDay=+e.p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();window.scrollTo(0,0);};
 }
 function renderTasksTab(){
   const today=todayStr();
