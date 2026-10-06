@@ -3618,7 +3618,13 @@ def ensure_schema():
             # מאיר: "אוי, למה יצא כל כך הרבה פעמים קבלה?" — ההפקה האוטומטית בעלייה יצרה קבלה
             # חדשה באיזיקאונט בכל עדכון (הרישום אצלנו נכשל, והניסיון חזר). אין יותר הפקה
             # אוטומטית בכלל: קבלות באיזיקאונט נוצרות רק בלחיצה מפורשת של מאיר במערכת.
-            pass
+            # מאיר ביטל את הקבלות באיזיקאונט ומחק את הרישום — מספר הקבלה הישן שנשאר על
+            # התרומה עצמה יורד, כדי שהכרטיס לא יראה "נשלחה"
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='tukachinsky_rcpt_clear_v1'").fetchone():
+                if not con.execute("SELECT 1 FROM receipt_docs WHERE donation_id=?", (dn['id'],)).fetchone():
+                    con.execute("UPDATE donations SET receipt_num='', receipt_at='', receipt_url='' WHERE id=?", (dn['id'],))
+                con.execute("INSERT INTO seed_flags(name) VALUES('tukachinsky_rcpt_clear_v1')")
+                con.commit()
     except Exception as e:
         print('  tukachinsky ez error:', e)
 
@@ -16273,12 +16279,16 @@ class H(BaseHTTPRequestHandler):
         if m:
             # ביטול קבלה שהופקה בטעות — רק אם עדיין לא נשלחה. המספר הסידורי נשאר תפוס.
             con = db()
-            r = con.execute("SELECT sent_at FROM receipt_docs WHERE id=?", (int(m.group(1)),)).fetchone()
+            r = con.execute("SELECT sent_at, donation_id, src FROM receipt_docs WHERE id=?", (int(m.group(1)),)).fetchone()
             if not r:
                 con.close(); return self._send(404, {'ok': False, 'error': 'not found'})
             if r['sent_at']:
                 con.close(); return self._send(200, {'ok': False, 'error': 'הקבלה כבר נשלחה — אי אפשר למחוק'})
             con.execute("DELETE FROM receipt_docs WHERE id=?", (int(m.group(1)),))
+            # מאיר: "כתוב לי נשלחה" — אחרי מחיקת רישום של קבלת איזיקאונט, גם מספר הקבלה
+            # שנשמר על התרומה עצמה יורד, אחרת הכרטיס ממשיך להראות שנשלחה
+            if (r['src'] or '') == 'ez':
+                con.execute("UPDATE donations SET receipt_num='', receipt_at='', receipt_url='' WHERE id=?", (r['donation_id'],))
             con.commit(); con.close()
             bump_data()
             return self._send(200, {'ok': True})
