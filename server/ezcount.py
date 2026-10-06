@@ -219,7 +219,18 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
     if (crn or '').strip():
         body['customer_crn'] = crn.strip()       # ת.ז. / ח.פ של התורם — מודפס על הקבלה
     if date:
-        body['doc_date'] = date           # תאריך ההפקדה, לא תאריך ההפקה
+        # מאיר: "אני צריך שהקבלה תהיה על היום שהוא נתן, כמו שכתוב במסמך" — תאריך המסמך
+        # ותאריך התשלום הם יום ההעברה; וליתר ביטחון התאריך נכתב גם בהערה שמודפסת על הקבלה
+        body['date'] = date
+        body['doc_date'] = date
+        for p in body['payment']:
+            p['date'] = date
+        try:
+            import datetime as _dt
+            nice = _dt.date.fromisoformat(date[:10]).strftime('%d.%m.%Y')
+        except Exception:
+            nice = date
+        body['comment'] = ('התקבל ב-' + nice + ((' · ' + body['comment']) if body.get('comment') else ''))
     ok, res = _post('/api/createDoc', body)
     if not ok and _is_type_error(res):
         # סוג מסמך שאינו מותר לסוג החשבון — מנסים את הסוגים שהשרת מציין, ואז את הרשימה שלנו
@@ -249,8 +260,10 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
         # ניסיון נוסף בלי השדות האופציונליים (כתובת, טלפון, תאריך, הערה) — אם אחד מהם
         # הוא מה שהפריע ל-EZcount, הקבלה עדיין תופק עם השם והסכום
         first_err = res
-        for k in ('customer_address', 'customer_phone', 'doc_date', 'comment'):
+        for k in ('customer_address', 'customer_phone', 'doc_date', 'date'):
             body.pop(k, None)
+        for p in body.get('payment', []):
+            p.pop('date', None)
         ok, res = _post('/api/createDoc', body)
         if not ok:
             print('  EZcount createDoc נכשל:', first_err, '|', res)

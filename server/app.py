@@ -3615,29 +3615,10 @@ def ensure_schema():
                     print('  טוקצינסקי: קבלת איזיקאונט 165883 נרשמה')
                 con.execute("INSERT INTO seed_flags(name) VALUES('tukachinsky_ez_165883_v1')")
                 con.commit()
-            has_ez = con.execute("SELECT id FROM receipt_docs WHERE donation_id=? AND src='ez'", (dn['id'],)).fetchone()
-            # מאיר: "שוב קיבלתי אימייל מהם על השגיאה, אולי שזה יפסיק לשלוח עד שאסדר את זה" —
-            # מנסים שוב בעלייה רק אם המפתחות ב-Render השתנו מאז הניסיון שנכשל
-            sig = hashlib.sha256(('|'.join(os.environ.get(k, '') for k in ('EZCOUNT_API_KEY', 'EZCOUNT_CREATED_BY_KEY', 'EZCOUNT_API_EMAIL', 'EZCOUNT_DEV_EMAIL', 'EZCOUNT_BASE'))).encode()).hexdigest()[:16]
-            # מאיר: "עשיתי מנוי לחבילה באיזיקאונט, זה אמור לעבוד עם אותו מפתח — תנסה עכשיו"
-            # (v2: אחרי המעבר לסוג מסמך 405 — קבלה על תרומה)
-            if not con.execute("SELECT 1 FROM seed_flags WHERE name='ez_retry_v2'").fetchone():
-                con.execute("DELETE FROM app_kv WHERE k='ez_failed_sig'")
-                con.execute("INSERT INTO seed_flags(name) VALUES('ez_retry_v2')")
-                con.commit()
-            if not has_ez and ez_ready() and kv_get(con, 'ez_failed_sig', '') != sig:
-                doc, err = receipt_issue_ez(con, dn['id'], send=False)
-                if doc:
-                    con.execute("DELETE FROM receipt_docs WHERE donation_id=? AND id<>? AND kind='il' AND sent_at IS NULL", (dn['id'], doc['id']))
-                    con.commit()
-                    print('  טוקצינסקי: קבלת איזיקאונט מס\'', doc['num'])
-                else:
-                    con.execute("INSERT INTO app_kv(k,v) VALUES('ez_failed_sig',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (sig,))
-                    con.commit()
-                    print('  טוקצינסקי: איזיקאונט נכשל —', err, '(לא ינסה שוב עד שהמפתחות ב-Render ישתנו)')
-            if not con.execute("SELECT 1 FROM receipt_docs WHERE donation_id=?", (dn['id'],)).fetchone():
-                receipt_issue_own(con, dn['id'], 'il')
-                print('  טוקצינסקי: קבלה בעיצוב שלנו (עד שאיזיקאונט יעבוד)')
+            # מאיר: "אוי, למה יצא כל כך הרבה פעמים קבלה?" — ההפקה האוטומטית בעלייה יצרה קבלה
+            # חדשה באיזיקאונט בכל עדכון (הרישום אצלנו נכשל, והניסיון חזר). אין יותר הפקה
+            # אוטומטית בכלל: קבלות באיזיקאונט נוצרות רק בלחיצה מפורשת של מאיר במערכת.
+            pass
     except Exception as e:
         print('  tukachinsky ez error:', e)
 

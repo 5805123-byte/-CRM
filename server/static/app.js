@@ -12615,7 +12615,7 @@ function renderReceipts(){
       <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>
       <span class="rcact">${(r.src==='ez'&&!r.has_pdf&&!r.url)
         ? `<button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
-        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>`}${r.sent_at||r.src==='ez'?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="ביטול קבלה שהופקה בטעות">🗑</button>`}</span>
+        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
     </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
   view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;
   // ---- חיווט ----
@@ -12678,7 +12678,7 @@ function renderReceipts(){
   });
   view.querySelectorAll('.rcdel').forEach(b=>b.onclick=async()=>{
     const r=all.find(x=>x.id==+b.dataset.id); if(!r)return;
-    if(!await uiConfirm('לבטל את קבלה '+r.num+' של '+r.name+'? (המספר הסידורי יישאר תפוס)'))return;
+    if(!await uiConfirm(r.src==='ez'?('למחוק את הרישום של קבלה '+r.num+' של '+r.name+' אצלנו?\nזה לא מבטל את הקבלה באיזיקאונט — את זה עושים באתר שלהם.'):('לבטל את קבלה '+r.num+' של '+r.name+'? (המספר הסידורי יישאר תפוס)')))return;
     const res=await api('POST','/api/receipts/'+r.id+'/delete',{});
     if(!res||!res.ok){toast((res&&res.error)||'לא בוטל');return;}
     const d=DB.find(x=>x.id==r.donor_id); const x=d&&(d.donations||[]).find(y=>y.id==r.donation_id); if(x){x.rc_id=0;x.rc_num='';x.rc_sent='';}
