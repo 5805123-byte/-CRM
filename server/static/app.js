@@ -12435,8 +12435,14 @@ async function cmHistory(){
 // לאימייל של התורם כשנעשה שלח."
 let RCPTS=null, rcKind='il', rcNew=false, rcDonor=null, rcQ='';
 try{rcKind=localStorage.getItem('kc_rck')==='us'?'us':'il';}catch(e){}
+let RCPTS_AT=0;
 async function rcLoad(force){
-  if(!RCPTS||force){const r=await api('GET','/api/receipts');RCPTS=(r&&r.rows)?r:{rows:[],mail:false};}
+  if(!RCPTS||force){const r=await api('GET','/api/receipts');RCPTS=(r&&r.rows)?r:{rows:[],mail:false};RCPTS_AT=Date.now();}
+}
+// מאיר: "לא רואה את הקבלה בדף של קבלות" — קבלה שהופקה בשרת (בעלייה / מהכרטיס) לא הופיעה
+// עד רענון מלא; עכשיו הרשימה נטענת מחדש בכל כניסה לחלון אם עברו יותר מ-20 שניות
+function rcMaybeReload(){
+  if(RCPTS&&Date.now()-RCPTS_AT>20000){rcLoad(true).then(()=>{if(tab==='rcpt')renderReceipts();});}
 }
 function rcMoney(r){const n=+r.amount||0;return (r.kind==='il'?'₪':'$')+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function rcDate(s){const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?(m[3]+'.'+m[2]+'.'+m[1]):'';}
@@ -12555,6 +12561,7 @@ function renderReceipts(){
     rcLoad().then(()=>{if(tab==='rcpt')render();});
     return;
   }
+  rcMaybeReload();
   const all=RCPTS.rows||[];
   const nIl=all.filter(r=>r.kind==='il').length, nUs=all.filter(r=>r.kind==='us').length;
   const qq=(q||'').trim();
@@ -12568,6 +12575,7 @@ function renderReceipts(){
     </div>
     <div class="rcbar">${rcKind==='il'?`<button class="btn sm ${rcSlip?'ghost':''}" id="rc_slipbtn">${rcSlip?'✕ סגור את האסמכתא':'📎 אסמכתא → קבלה'}</button><input type="file" id="rc_slipf" accept="application/pdf,image/*" style="display:none">`:''}
       <button class="btn sm ${rcNew?'':'ghost'}" id="rc_newbtn">${rcNew?'✕ סגור':'➕ הפקת קבלה ידנית'}</button>
+      <button class="btn sm ghost" id="rc_reload" title="לטעון מחדש את הרשימה">🔄</button>
       <span class="hintxt">${rows.length} קבלות · סה"כ ${sym}${tot.toLocaleString('en-US',{maximumFractionDigits:2})} · נשלחו ${nSent} · לא נשלחו ${rows.length-nSent}</span>
       ${rcKind==='il'&&RCPTS.ez===false?'<span class="hintxt" style="color:var(--no)">⚠️ איזיקאונט לא מוגדר ב-Render (EZCOUNT_API_KEY / EZCOUNT_API_EMAIL) — בינתיים הקבלות בעיצוב שלנו</span>':''}
       ${RCPTS.mail===false?'<span class="hintxt" style="color:var(--no)">⚠️ שליחת מייל לא מוגדרת ב-Render (GMAIL_USER / GMAIL_APP_PASSWORD)</span>':''}</div>
@@ -12615,6 +12623,7 @@ function renderReceipts(){
   if(sf)sf.onchange=()=>{if(sf.files[0])rcSlipUpload(sf.files[0]);};
   wireSlip();
   const nb=document.getElementById('rc_newbtn'); if(nb)nb.onclick=()=>{rcNew=!rcNew;rcDonor=null;rcQ='';renderReceipts();if(rcNew){const i=document.getElementById('rc_q');if(i)i.focus();}};
+  const rl=document.getElementById('rc_reload'); if(rl)rl.onclick=async()=>{toast('טוען…');await Promise.all([rcLoad(true),load()]);renderReceipts();};
   const qi=document.getElementById('rc_q'); if(qi){let _t;qi.oninput=()=>{clearTimeout(_t);_t=setTimeout(()=>{rcQ=qi.value;renderReceipts();
     const e=document.getElementById('rc_q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},150);};}
   view.querySelectorAll('.rcnew .dpr[data-id]').forEach(el=>el.onclick=()=>{rcDonor=+el.dataset.id;renderReceipts();});
