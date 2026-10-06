@@ -11995,7 +11995,7 @@ let SLAY=null, SEATS=null, smOpen=null, smZoom=0;   // 0 = התאמה אוטומ
 try{smZoom=parseFloat(localStorage.getItem('kc_smz')||'0')||0;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
 // המפה רחבה מהמסך — בפתיחה הראשונה היא מוקטנת כך שכולה תיראה בלי גלילה
 function smFit(){const w=view.querySelector('.smwrap'),g=view.querySelector('.smgrid');if(!w||!g)return;
-  g.style.zoom=1; const z=Math.min(1.6,Math.max(.35,(w.clientWidth-10)/g.scrollWidth)); g.style.zoom=z; return z;}
+  g.style.zoom=1; const z=Math.min(1.6,Math.max(.3,((w.clientWidth-14)/g.scrollWidth)*.97)); g.style.zoom=z; return z;}
 async function smLoad(force){
   if(!SLAY){try{SLAY=await (await fetch('/seat_layout.json',{cache:'no-store'})).json();}catch(e){SLAY={cols:7,rows:[]};}}
   if(!SEATS||force){const r=await api('GET','/api/seats');SEATS=r&&r.seats?r:{seats:{},meta:{},renum:{},log:[]};}
