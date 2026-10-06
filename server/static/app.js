@@ -11899,7 +11899,7 @@ function cmQuestionsHTML(){
   const byKey={}; (MEMBERS||[]).forEach(m=>{byKey[mName(m)]=m;});
   return `<div class="sec cmqsec"><div class="rbtitle">❓ שיוך מנדרים פלוס — ${open.length} שאלות</div>
     <div class="hintxt" style="margin:0 2px 8px">אנשים מהייצוא של נדרים פלוס ששם המשפחה שלהם בקהילה אבל השם לא זהה. למי כל אחד שייך? הפרטים שלו (טלפון, מייל, כתובת) ייכנסו לכרטיס שתבחר. "חבר חדש" פותח לו שורה משלו.</div>
-    ${open.map(x=>`<div class="cmq" data-id="${x.id}"><div class="cmqh"><b>${esc(x.name)}</b>${x.what?`<span class="cmqw">🧾 ${esc(x.what)}</span>`:''}</div>
+    ${open.map(x=>`<div class="cmqrow" data-id="${x.id}"><div class="cmqh"><b>${esc(x.name)}</b>${x.what?`<span class="cmqw">🧾 ${esc(x.what)}</span>`:''}</div>
       <div class="cmqd">${[x.phone,x.email,[x.addr,x.city].filter(Boolean).join(', ')].filter(Boolean).map(esc).join(' · ')||'אין פרטי קשר בייצוא'}</div>
       <div class="cmqo">${(x.cands||[]).map(k=>{const m=byKey[k];return m?`<button class="btn sm ghost cmqa" data-id="${x.id}" data-c="m:${m.id}">שייך ל־<b>${esc(k)}</b>${cmSeat(m)?` <small>💺 ${esc(cmSeat(m))}</small>`:''}</button>`:'';}).join('')}
         <button class="btn sm cmqa" data-id="${x.id}" data-c="new">➕ חבר חדש</button><button class="btn sm ghost cmqa" data-id="${x.id}" data-c="no">✘ לא מהקהילה</button></div></div>`).join('')}</div>`;
@@ -11942,21 +11942,24 @@ function renderComm(){
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
     <div class="addrow" style="margin:0 2px 8px">
       <button class="btn" id="cm_mail" style="flex:2">✉️ שלח מייל לקהילה — הודעה אישית לכל אחד</button>
-      <button class="btn sm ghost" id="cm_csv" style="flex:1">📤 CSV</button>
+      <button class="btn sm ghost" id="cm_print" style="flex:1">🖨️ הדפסה / PDF</button>
+      <button class="btn sm ghost" id="cm_xlsx" style="flex:1">📊 אקסל</button>
     </div>
+    ${smSectionHTML()}
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
     ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
     <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
-    <div class="list">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
-      <div class="cmhd"><span class="cmnm">${esc(mName(m))}</span>${m.mails?`<span class="cmmails" title="מיילים שנשלחו">📤 ${m.mails}</span>`:''}<button class="cmpen" data-id="${m.id}" title="תיקון · הוספת מייל/טלפון/כתובת · מחיקה · מיזוג">✎</button></div>
-      <div class="cmdt">
-        ${m.phone?`<span dir="ltr">📞 ${esc(m.phone)}</span>`:''}
-        ${cmSeat(m)?`<span class="cmseat2" title="מקום בבית הכנסת">💺 ${esc(cmSeat(m))}</span>`:''}
-        ${mHasMail(m)?`<span dir="ltr" class="cmem">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmno">אין מייל</span>'}
-        ${(m.addr||m.city)?`<span>🏠 ${esc([m.addr,m.city].filter(Boolean).join(', '))}</span>`:''}
-      </div></div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
+    <div class="list cmlist">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
+      <span class="cmnm">${esc(mName(m))}${m.mails?`<small class="cmmails" title="מיילים שנשלחו">📤${m.mails}</small>`:''}</span>
+      ${m.phone?`<span class="cmi" dir="ltr">📞 ${esc(m.phone)}</span>`:''}
+      ${cmSeat(m)?`<button class="cmi cmseat2" data-id="${m.id}" title="מקום בבית הכנסת — לחץ לראות שינויים">💺 ${esc(cmSeat(m))}</button>`:''}
+      ${mHasMail(m)?`<span class="cmi cmem" dir="ltr">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmi cmno">אין מייל</span>'}
+      ${(m.addr||m.city)?`<span class="cmi">🏠 ${esc([m.addr,m.city].filter(Boolean).join(', '))}</span>`:''}
+      <button class="cmpen" data-id="${m.id}" title="תיקון · הוספת מייל/טלפון/כתובת · מחיקה · מיזוג">✎</button></div>`).join('')||'<div class="empty">לא נמצא אף חבר שמתאים לסינון.</div>'}</div>`;
   // ✎ — מאיר: "שיהיה אצל כל אחד עיפרון קטן לתיקונים או שינויים או הוספת אימייל או כתובת
   // או טלפון או מחיקה או מיזוג, אבל לא לעשות מזה סיפור של כרטיס כמו אצל התורמים"
+  wireSeatMap();
+  view.querySelectorAll('.cmseat2[data-id]').forEach(b=>b.onclick=()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);if(m)openSeatHistory(m);});
   view.querySelectorAll('.cmpen').forEach(b=>b.onclick=()=>{cmEditId=cmEditId==b.dataset.id?null:+b.dataset.id;cmMergeId=null;render();
     const i=view.querySelector('.cmed .ce_phone'); if(i&&cmEditId)i.focus();});
   wireCmEdit();
@@ -11979,15 +11982,99 @@ function renderComm(){
   document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
   document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
-  document.getElementById('cm_csv').onclick=()=>{
-    const H=['שם משפחה','שם פרטי','מקום','טלפון','אימייל','כתובת','עיר','הערות'];
-    const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-    const rows=[H.map(cell).join(',')].concat(all.map(m=>[m.last,m.first,m.seat,m.phone,m.email,m.addr,m.city,m.notes].map(cell).join(',')));
-    const blob=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kehila.csv';document.body.appendChild(a);a.click();
-    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},800);
-  };
+  // מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
+  document.getElementById('cm_print').onclick=()=>window.open('/kehila-print'+(cmFlt==='seat'?'?sort=seat':''),'_blank');
+  document.getElementById('cm_xlsx').onclick=()=>{location.href='/api/members.xlsx'+(cmFlt==='seat'?'?sort=seat':'');};
 }
+// ===== מפת בית הכנסת =====
+// מאיר: "תשים את המפה ששלחתי לך עם המקומות, שיהיה למעלה בדף של הקהילה להורדה או
+// הגדלה, הקטנה, הדפסה, ואפשרות לשינוי במפה עצמה על כל מקום... ושיישמר אצל ההוא
+// ששינו לו את המקום, ויהיה כתוב אצלו בפרטים את תאריך השינוי — רק אם נלחץ על
+// המספר מושב שלו"
+let SLAY=null, SEATS=null, smOpen=null, smZoom=1;
+try{smZoom=parseFloat(localStorage.getItem('kc_smz')||'1')||1;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
+async function smLoad(force){
+  if(!SLAY){try{SLAY=await (await fetch('/seat_layout.json',{cache:'no-store'})).json();}catch(e){SLAY={cols:7,rows:[]};}}
+  if(!SEATS||force){const r=await api('GET','/api/seats');SEATS=r&&r.seats?r:{seats:{},meta:{},renum:{},log:[]};}
+}
+function smWho(num){const s=SEATS.seats[num];return s?s.name:(SEATS.meta[num]||'');}
+function smGridHTML(){
+  const cells=[];
+  (SLAY.rows||[]).forEach(row=>row.forEach(b=>{
+    if(!b){cells.push('<div class="smb empty"></div>');return;}
+    if(b.box){cells.push(`<div class="smb smbox${b.dash?' dash':''}" style="grid-row:span ${b.rows||1}"><b>${esc(b.box)}</b>${b.sub?`<small>${esc(b.sub)}</small>`:''}</div>`);return;}
+    const st=(b.seats||[]).map(n=>{const pos=String(n),num=SEATS.renum[pos]||pos,who=smWho(num),s=SEATS.seats[num];
+      return `<div class="sms${who?'':' free'}" data-pos="${pos}" data-num="${esc(num)}" data-mid="${s?s.member_id:''}" title="לחץ לתיקון"><b>${esc(num)}</b><span>${esc(who)}</span><em class="smpen">✎</em></div>`;}).join('');
+    cells.push(`<div class="smb"><i>${esc(b.label)}</i><div class="smr">${st}</div></div>`);}));
+  return `<div class="smgrid" style="grid-template-columns:repeat(${SLAY.cols||7},1fr);zoom:${smZoom}">${cells.join('')}</div>`;
+}
+function smSectionHTML(){
+  return `<div class="sec smsec"><div class="smhd"><button class="btn sm ghost" id="sm_tog">${smOpen?'▾':'▸'} 🗺️ מפת בית הכנסת</button>
+    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><a class="btn sm ghost" href="/seat-map-original.png" download="מפת-בית-הכנסת.png">⬇️ הורדה</a></span>`:''}</div>
+    ${smOpen?(SEATS?`<div class="smwrap">${smGridHTML()}</div><div class="hintxt">לחיצה על מקום: להושיב חבר, לפנות, לשנות מספר או לכתוב שם חופשי. כל שינוי נרשם עם תאריך אצל מי שהמקום שלו השתנה (לחיצה על 💺 בשורה שלו).</div>`:'<div class="hintxt">טוען את המפה…</div>'):''}</div>`;
+}
+function wireSeatMap(){
+  const tg=document.getElementById('sm_tog'); if(tg)tg.onclick=async()=>{smOpen=!smOpen;try{localStorage.setItem('kc_smopen',smOpen?'1':'0');}catch(e){} if(smOpen&&!SEATS){render();await smLoad();} render();};
+  const z=d=>{smZoom=Math.min(2.2,Math.max(.45,+(smZoom+d).toFixed(2)));try{localStorage.setItem('kc_smz',String(smZoom));}catch(e){}const g=view.querySelector('.smgrid');if(g)g.style.zoom=smZoom;};
+  const mi=document.getElementById('sm_minus'); if(mi)mi.onclick=()=>z(-.15);
+  const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.15);
+  const pr=document.getElementById('sm_print'); if(pr)pr.onclick=()=>window.open('/seat-map-print','_blank');
+  view.querySelectorAll('.sms[data-pos]').forEach(el=>el.onclick=()=>openSeat(el.dataset.pos,el.dataset.num));
+  if(smOpen&&!SEATS){smLoad().then(()=>{if(tab==='comm')render();});}
+}
+// עריכת מקום אחד — חלון קטן
+function openSeat(pos,num){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const s=SEATS.seats[num], lbl=SEATS.meta[num]||'';
+  const hist=(SEATS.log||[]).filter(x=>String(x.seat)===String(num)).slice(0,8);
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>💺 מקום ${esc(num)}</h2>
+    <div class="hintxt">${s?`יושב כאן: <b>${esc(s.name)}</b>`:(lbl?`כתוב כאן: <b>${esc(lbl)}</b>`:'המקום פנוי')}</div>
+    <label class="fld"><span>🔍 להושיב חבר קהילה (הקלד שם)</span><input id="sm_q" autocomplete="off" placeholder="שם משפחה / פרטי"></label><div id="sm_res" class="dpres"></div>
+    <div class="addrow">${s||lbl?`<button class="btn sm ghost" id="sm_clear">🚫 לפנות את המקום</button>`:''}</div>
+    <div class="two" style="margin-top:8px"><label class="fld"><span>✍️ שם חופשי (לא חבר)</span><input id="sm_lbl" value="${esc(lbl)}" placeholder="למשל: אורח / ראש כולל"></label><label class="fld"><span>🔢 מספר המקום</span><input id="sm_num" value="${esc(num)}" dir="ltr"></label></div>
+    <div class="addrow"><button class="btn sm" id="sm_save">💾 שמור</button></div>
+    ${hist.length?`<div class="sec"><div class="rbtitle">🕘 היסטוריה של המקום</div>${hist.map(x=>`<div class="hintxt">${esc(String(x.at||'').slice(0,16).replace('T',' '))} — ${esc(smLogText(x))}</div>`).join('')}</div>`:''}`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const q=document.getElementById('sm_q'), res=document.getElementById('sm_res');
+  q.oninput=()=>{const t=q.value.trim();res.innerHTML='';if(t.length<2)return;
+    const hits=(MEMBERS||[]).filter(m=>matchStr(mName(m)+' '+(m.first||'')+' '+(m.last||''),t)).slice(0,8);
+    res.innerHTML=hits.map(m=>`<div class="dpr" data-id="${m.id}">${esc(mName(m))}${cmSeat(m)?` <small>💺 ${esc(cmSeat(m))}</small>`:''}</div>`).join('')||'<div class="dpr dprmore">לא נמצא</div>';
+    res.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
+      const m=MEMBERS.find(x=>x.id==el.dataset.id);
+      if(s&&!await uiConfirm('להושיב את '+mName(m)+' במקום '+num+' במקום '+s.name+'?'))return;
+      const r=await api('POST','/api/seats/assign',{seat:num,member_id:m.id});
+      if(!r||!r.ok){toast('לא נשמר');return;}
+      remov.classList.remove('show'); await Promise.all([cmLoad(true),smLoad(true)]); toast('נשמר ✓'); render();});};
+  const cl=document.getElementById('sm_clear'); if(cl)cl.onclick=async()=>{
+    const r=await api('POST','/api/seats/assign',{seat:num,member_id:null,label:''});
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    remov.classList.remove('show'); await Promise.all([cmLoad(true),smLoad(true)]); toast('המקום פונה'); render();};
+  document.getElementById('sm_save').onclick=async()=>{
+    const nl=document.getElementById('sm_lbl').value.trim(), nn=document.getElementById('sm_num').value.trim();
+    if(nn&&nn!==num){const r=await api('POST','/api/seats/renumber',{pos,num:nn});if(!r||!r.ok){toast('המספר לא שונה');return;}}
+    const cur=nn||num;
+    if(nl!==lbl&&!s){const r=await api('POST','/api/seats/assign',{seat:cur,member_id:null,label:nl});if(!r||!r.ok){toast('לא נשמר');return;}}
+    remov.classList.remove('show'); await Promise.all([cmLoad(true),smLoad(true)]); toast('נשמר ✓'); render();};
+  setTimeout(()=>q.focus(),50);
+}
+function smLogText(x){
+  if(x.kind==='renum')return (x.note||'')+' — '+(x.to_name||'');
+  if(x.kind==='move')return 'עבר מ-'+(x.from_name||'')+' ל-'+(x.to_name||'');
+  if(x.kind==='set')return 'ניתן ל-'+(x.to_name||'');
+  if(x.kind==='clear')return 'פונה (היה של '+(x.from_name||'')+')';
+  return x.note||'';
+}
+// 💺 בשורה של החבר — מה השתנה לו ומתי
+async function openSeatHistory(m){
+  await smLoad();
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const rows=(SEATS.log||[]).filter(x=>x.from_member==m.id||x.to_member==m.id);
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>💺 ${esc(mName(m))} — מקום ${esc(cmSeat(m)||'—')}</h2>
+    ${rows.length?rows.map(x=>`<div class="cmlog"><b>${esc(fmtGreg(String(x.at||'').slice(0,10)))}</b> ${esc(String(x.at||'').slice(11,16))} · מקום ${esc(x.seat)} — ${esc(smLogText(x))}</div>`).join(''):'<div class="hintxt">לא נרשם שינוי במקום שלו.</div>'}`;
+  remov.classList.add('show'); document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+}
+
 // שורת תיקון קטנה בתוך הרשימה — במקום כרטיס גדול
 function cmEditHTML(m){
   const f=(cls,lbl,val,ph,dir)=>`<label class="fld"><span>${lbl}</span><input class="${cls}" value="${esc(val||'')}" placeholder="${esc(ph||'')}"${dir?` dir="${dir}"`:''}></label>`;

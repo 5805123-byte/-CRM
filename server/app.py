@@ -329,6 +329,14 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS member_log(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER,
         date TEXT, channel TEXT, summary TEXT, body TEXT, direction TEXT, msg_id TEXT, at TEXT);
     CREATE INDEX IF NOT EXISTS ix_mlog_member ON member_log(member_id);
+    /* מפת בית הכנסת — מאיר: "אפשרות לשינוי במפה עצמה על כל מקום... ושיישמר אצל ההוא
+       ששינו לו את המקום, ויהיה כתוב אצלו בפרטים את תאריך השינוי". הפריסה בקובץ
+       static/seat_layout.json; מי יושב איפה — בשדה seat של החבר; כאן ההיסטוריה,
+       תוויות חופשיות (מקום שאינו של חבר) ומספרים ששונו. */
+    CREATE TABLE IF NOT EXISTS seat_log(id INTEGER PRIMARY KEY AUTOINCREMENT, seat TEXT, kind TEXT,
+        from_member INTEGER, from_name TEXT, to_member INTEGER, to_name TEXT, note TEXT, at TEXT);
+    CREATE TABLE IF NOT EXISTS seat_meta(seat TEXT PRIMARY KEY, label TEXT);
+    CREATE TABLE IF NOT EXISTS seat_renum(pos TEXT PRIMARY KEY, num TEXT);
     """)
     for _c in ('member_id INTEGER',):
         try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s" % _c)
@@ -12312,6 +12320,149 @@ def merge_members(con, keep_id, drop_id):
     return True
 
 
+def _seat_list(s):
+    return [x for x in re.split(r'[,\s]+', str(s or '').strip()) if x]
+
+
+def _seat_join(lst):
+    def _k(x):
+        d = re.sub(r'\D', '', x)
+        return (int(d) if d else 9999, x)
+    return ', '.join(sorted(dict.fromkeys(lst), key=_k))
+
+
+def _mname_fl(r):
+    """השם כפי שהוא על המפה: פרטי ואז משפחה"""
+    return ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
+
+
+def seats_state(con):
+    seats = {}
+    for r in con.execute("SELECT id,last,first,seat FROM members WHERE COALESCE(active,1)<>0 ORDER BY id"):
+        for n in _seat_list(r['seat']):
+            seats.setdefault(n, {'member_id': r['id'], 'name': _mname_fl(r)})
+    meta = {r['seat']: r['label'] for r in con.execute("SELECT seat,label FROM seat_meta")}
+    renum = {r['pos']: r['num'] for r in con.execute("SELECT pos,num FROM seat_renum")}
+    return seats, meta, renum
+
+
+def seat_layout():
+    try:
+        with open(os.path.join(STATIC, 'seat_layout.json'), encoding='utf-8') as fh:
+            return json.load(fh)
+    except Exception:
+        return {'cols': 7, 'rows': []}
+
+
+def seat_assign(con, seat, member_id=None, label=None):
+    """מושיב חבר במקום (ומוריד את מי שישב שם), או מנקה את המקום, או שם תווית חופשית.
+    כל שינוי נרשם ביומן המקומות עם תאריך — אצל מי שהוסר ואצל מי שקיבל."""
+    seat = str(seat or '').strip()
+    if not seat:
+        return False
+    now = now_iso()
+    old = []
+    for r in con.execute("SELECT id,last,first,seat FROM members WHERE COALESCE(active,1)<>0").fetchall():
+        lst = _seat_list(r['seat'])
+        if seat in lst and (member_id is None or r['id'] != member_id):
+            con.execute("UPDATE members SET seat=?, updated=? WHERE id=?", (_seat_join([x for x in lst if x != seat]), now, r['id']))
+            old.append(r)
+    if member_id:
+        m = con.execute("SELECT id,last,first,seat FROM members WHERE id=?", (member_id,)).fetchone()
+        if not m:
+            return False
+        lst = _seat_list(m['seat'])
+        if seat not in lst:
+            con.execute("UPDATE members SET seat=?, updated=? WHERE id=?", (_seat_join(lst + [seat]), now, m['id']))
+        for o in old:
+            con.execute("INSERT INTO seat_log(seat,kind,from_member,from_name,to_member,to_name,note,at) VALUES(?,?,?,?,?,?,?,?)",
+                        (seat, 'move', o['id'], _mname_fl(o), m['id'], _mname_fl(m), '', now))
+        if not old:
+            con.execute("INSERT INTO seat_log(seat,kind,from_member,from_name,to_member,to_name,note,at) VALUES(?,?,?,?,?,?,?,?)",
+                        (seat, 'set', None, '', m['id'], _mname_fl(m), '', now))
+        con.execute("DELETE FROM seat_meta WHERE seat=?", (seat,))
+    else:
+        for o in old:
+            con.execute("INSERT INTO seat_log(seat,kind,from_member,from_name,to_member,to_name,note,at) VALUES(?,?,?,?,?,?,?,?)",
+                        (seat, 'clear', o['id'], _mname_fl(o), None, '', '', now))
+        if label is not None:
+            label = str(label).strip()
+            if label:
+                con.execute("INSERT INTO seat_meta(seat,label) VALUES(?,?) ON CONFLICT(seat) DO UPDATE SET label=excluded.label", (seat, label))
+            else:
+                con.execute("DELETE FROM seat_meta WHERE seat=?", (seat,))
+    return True
+
+
+def seat_renumber(con, pos, num):
+    """משנה את המספר המוצג של משבצת (pos = המספר המקורי במפה)."""
+    pos = str(pos or '').strip(); num = str(num or '').strip()
+    if not pos or not num:
+        return False
+    cur = con.execute("SELECT num FROM seat_renum WHERE pos=?", (pos,)).fetchone()
+    old_num = cur['num'] if cur else pos
+    if old_num == num:
+        return True
+    now = now_iso()
+    for r in con.execute("SELECT id,last,first,seat FROM members WHERE COALESCE(active,1)<>0").fetchall():
+        lst = _seat_list(r['seat'])
+        if old_num in lst:
+            con.execute("UPDATE members SET seat=?, updated=? WHERE id=?",
+                        (_seat_join([num if x == old_num else x for x in lst]), now, r['id']))
+            con.execute("INSERT INTO seat_log(seat,kind,from_member,from_name,to_member,to_name,note,at) VALUES(?,?,?,?,?,?,?,?)",
+                        (num, 'renum', r['id'], _mname_fl(r), r['id'], _mname_fl(r), 'המספר שונה מ-%s ל-%s' % (old_num, num), now))
+    lb = con.execute("SELECT label FROM seat_meta WHERE seat=?", (old_num,)).fetchone()
+    if lb:
+        con.execute("DELETE FROM seat_meta WHERE seat=?", (old_num,))
+        con.execute("INSERT INTO seat_meta(seat,label) VALUES(?,?) ON CONFLICT(seat) DO UPDATE SET label=excluded.label", (num, lb['label']))
+    if num == pos:
+        con.execute("DELETE FROM seat_renum WHERE pos=?", (pos,))
+    else:
+        con.execute("INSERT INTO seat_renum(pos,num) VALUES(?,?) ON CONFLICT(pos) DO UPDATE SET num=excluded.num", (pos, num))
+    return True
+
+
+def seat_map_html(con, for_print=True):
+    """המפה כ-HTML — לדף ההדפסה / PDF"""
+    seats, meta, renum = seats_state(con)
+    lay = seat_layout()
+
+    def _h(s):
+        return str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    cells = []
+    for row in lay.get('rows', []):
+        for b in row:
+            if b is None:
+                cells.append('<div class="smb empty"></div>'); continue
+            if 'box' in b:
+                cells.append('<div class="smb smbox%s" style="grid-row:span %d"><b>%s</b>%s</div>'
+                             % (' dash' if b.get('dash') else '', int(b.get('rows') or 1), _h(b['box']),
+                                ('<small>%s</small>' % _h(b['sub'])) if b.get('sub') else ''))
+                continue
+            st = []
+            for n in b.get('seats', []):
+                pos = str(n); num = renum.get(pos, pos)
+                who = seats.get(num, {}).get('name') or meta.get(num) or ''
+                st.append('<div class="sms%s"><b>%s</b><span>%s</span></div>' % ('' if who else ' free', _h(num), _h(who)))
+            cells.append('<div class="smb"><i>%s</i><div class="smr">%s</div></div>' % (_h(b.get('label')), ''.join(st)))
+    return ('<div class="smgrid" style="grid-template-columns:repeat(%d,1fr)">%s</div>' % (int(lay.get('cols') or 7), ''.join(cells)))
+
+
+_SEATMAP_CSS = """
+.smgrid{display:grid;gap:8px 10px;direction:rtl;font-family:FR,"Frank Ruhl Libre",serif}
+.smb{border:1.5px solid #c9a24a;border-radius:9px;padding:3px;background:#fffdf6;min-height:52px}
+.smb.empty{border:none;background:none}
+.smb>i{display:block;font-style:normal;font-size:9px;color:#8a6a22;text-align:center;line-height:1.1}
+.smr{display:flex;gap:3px;justify-content:center}
+.sms{flex:1;min-width:0;border:1px solid #d9c48a;border-radius:6px;background:#fff;text-align:center;padding:2px 1px;line-height:1.15}
+.sms b{display:block;font-size:13px}.sms span{display:block;font-size:8.5px;color:#333;white-space:normal;overflow:hidden}
+.sms.free{background:#fdf7e8}
+.smbox{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fbf3df;color:#8a6a22;font-size:14px}
+.smbox.dash{border-style:dashed;background:#fff}
+.smbox small{font-size:10px;border:1px solid #c9a24a;border-radius:6px;padding:2px 8px;margin-top:4px;background:#fff}
+"""
+
+
 def apply_member_q(con, qr, choice):
     """מפעיל תשובה לשאלת שיוך מנדרים פלוס. choice: m:<member id> / new / no.
     מחזיר (ok, member_id). משמש גם את המסך וגם את הטעינה מתשובות דף הווב."""
@@ -14547,7 +14698,104 @@ class H(BaseHTTPRequestHandler):
                 "WHERE batch=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             return self._send(200, {'rows': rows})
+        # ---- מפת בית הכנסת ----
+        if self.path.split('?')[0] == '/api/seats':
+            con = db()
+            seats, meta, renum = seats_state(con)
+            log = [dict(r) for r in con.execute("SELECT * FROM seat_log ORDER BY id DESC LIMIT 500")]
+            con.close()
+            return self._send(200, {'seats': seats, 'meta': meta, 'renum': renum, 'log': log})
+        if self.path.split('?')[0] == '/seat-map-print':
+            con = db()
+            grid = seat_map_html(con)
+            con.close()
+            page = ('<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                    '<title>מפת בית הכנסת — כולל חצות</title><style>'
+                    "@font-face{font-family:FR;src:url('/frankruhl-regular.ttf')}@font-face{font-family:FR;font-weight:700;src:url('/frankruhl-bold.ttf')}"
+                    'body{font-family:FR,serif;margin:12px;background:#fff;color:#222}h1{font-size:18px;margin:0 0 6px}'
+                    '.bar{display:flex;gap:8px;margin:0 0 10px}.bar a,.bar button{font:inherit;font-size:13px;padding:7px 14px;border:1px solid #3b357a;border-radius:9px;background:#3b357a;color:#fff;cursor:pointer;text-decoration:none}.bar .g{background:#fff;color:#3b357a}'
+                    + _SEATMAP_CSS +
+                    '@media print{.bar{display:none}body{margin:0}@page{size:A4 landscape;margin:6mm}.smgrid{gap:5px 7px}}'
+                    '</style></head><body><div class="bar"><button onclick="window.print()">🖨️ הדפסה / שמירה כ-PDF</button>'
+                    '<a class="g" href="/seat-map-original.png" download="מפת-בית-הכנסת.png">⬇️ הורדת המפה המקורית</a></div>'
+                    '<h1>מפת בית הכנסת · כולל חצות · ' + today_iso() + '</h1>' + grid + '</body></html>')
+            return self._send(200, page.encode('utf-8'), 'text/html')
         # ---- הקהילה ----
+        if self.path.split('?')[0] in ('/api/members.xlsx', '/kehila-print'):
+            # מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            by_seat = (qs.get('sort', [''])[0] or '') == 'seat'
+            con = db()
+            rows = [dict(r) for r in con.execute("SELECT * FROM members WHERE COALESCE(active,1)<>0 ORDER BY last, first")]
+            con.close()
+
+            def _seatn(m):
+                s = re.sub(r'\D', ' ', str(m.get('seat') or '')).split()
+                return int(s[0]) if s else 9999
+            if by_seat:
+                rows.sort(key=lambda m: (_seatn(m), (m.get('last') or ''), (m.get('first') or '')))
+            if self.path.split('?')[0] == '/api/members.xlsx':
+                try:
+                    import openpyxl
+                    from openpyxl.styles import Font, Alignment, PatternFill
+                    from openpyxl.utils import get_column_letter
+                except Exception:
+                    return self._send(500, {'error': 'openpyxl'})
+                wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'הקהילה'
+                ws.sheet_view.rightToLeft = True
+                hdr = ['#', 'שם משפחה', 'שם פרטי', 'מקום', 'טלפון', 'אימייל', 'כתובת', 'עיר', 'הערות']
+                ws.append(hdr)
+                for c in ws[1]:
+                    c.font = Font(bold=True); c.fill = PatternFill('solid', fgColor='EEEEEE')
+                    c.alignment = Alignment(horizontal='right')
+                for i, m in enumerate(rows, 1):
+                    ws.append([i, m.get('last') or '', m.get('first') or '', m.get('seat') or '', m.get('phone') or '',
+                               m.get('email') or '', m.get('addr') or '', m.get('city') or '', m.get('notes') or ''])
+                for i, w in enumerate([5, 16, 16, 9, 22, 32, 24, 12, 30], 1):
+                    ws.column_dimensions[get_column_letter(i)].width = w
+                ws.freeze_panes = 'A2'
+                bio = io.BytesIO(); wb.save(bio); data = bio.getvalue()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s" % urllib.parse.quote('הקהילה.xlsx'))
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers(); self.wfile.write(data)
+                return
+            # דף הדפסה — "שמור כ-PDF" מהדפדפן
+            def _h(s):
+                return (str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+            trs = []
+            for i, m in enumerate(rows, 1):
+                addr = ', '.join(x for x in [(m.get('addr') or '').strip(), (m.get('city') or '').strip()] if x)
+                trs.append('<tr><td class="i">%d</td><td class="nm">%s %s</td><td class="st">%s</td><td class="ltr">%s</td>'
+                           '<td class="ltr">%s</td><td>%s</td><td class="nt">%s</td></tr>'
+                           % (i, _h(m.get('last')), _h(m.get('first')), _h(m.get('seat')), _h(m.get('phone')),
+                              _h(m.get('email')), _h(addr), _h(m.get('notes'))))
+            n_mail = sum(1 for m in rows if '@' in str(m.get('email') or ''))
+            n_seat = sum(1 for m in rows if str(m.get('seat') or '').strip())
+            page = ('<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                    '<title>הקהילה — כולל חצות</title><style>'
+                    "@font-face{font-family:FR;src:url('/frankruhl-regular.ttf')}@font-face{font-family:FR;font-weight:700;src:url('/frankruhl-bold.ttf')}"
+                    'body{font-family:FR,"Frank Ruhl Libre",serif;font-size:11px;margin:14px;color:#222;background:#fff}'
+                    'h1{font-size:19px;margin:0 0 3px}.sub{font-size:11px;color:#555;margin-bottom:8px}'
+                    '.bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}.bar a,.bar button{font:inherit;font-size:13px;padding:7px 14px;border:1px solid #3b357a;border-radius:9px;background:#3b357a;color:#fff;cursor:pointer;text-decoration:none}'
+                    '.bar .g{background:#fff;color:#3b357a}'
+                    'table{width:100%%;border-collapse:collapse}th{background:#eee;font-size:10.5px;text-align:right;padding:4px;border-bottom:1px solid #999}'
+                    'td{padding:3px 4px;border-bottom:1px solid #ddd;vertical-align:top}.i{color:#888;width:22px}.nm{font-weight:700;white-space:nowrap}'
+                    '.st{text-align:center;white-space:nowrap}.ltr{direction:ltr;text-align:left;font-size:10px}.nt{font-size:9.5px;color:#555}'
+                    'thead{display:table-header-group}tr{page-break-inside:avoid}'
+                    '@media print{.bar{display:none}body{margin:0}@page{margin:10mm 8mm}}'
+                    '</style></head><body>'
+                    '<div class="bar"><button onclick="window.print()">🖨️ הדפסה / שמירה כ-PDF</button>'
+                    '<a class="g" href="/kehila-print%s">%s</a><a class="g" href="/api/members.xlsx%s">📊 הורדה לאקסל</a></div>'
+                    '<h1>הקהילה — מתפללי בית הכנסת · כולל חצות</h1>'
+                    '<div class="sub">%d חברים · עם מייל %d · עם מקום %d · מסודר לפי %s · %s</div>'
+                    '<table><thead><tr><th>#</th><th>שם</th><th>מקום</th><th>טלפון</th><th>אימייל</th><th>כתובת</th><th>הערות</th></tr></thead>'
+                    '<tbody>%s</tbody></table></body></html>'
+                    % ('' if by_seat else '?sort=seat', 'לפי שם' if by_seat else '💺 לפי מספר מקום',
+                       '?sort=seat' if by_seat else '', len(rows), n_mail, n_seat,
+                       'מספר מקום' if by_seat else 'שם משפחה', today_iso(), ''.join(trs)))
+            return self._send(200, page.encode('utf-8'), 'text/html')
         if self.path.split('?')[0] == '/api/members':
             con = db()
             logs = {r['member_id']: (r['c'], r['last']) for r in con.execute(
@@ -15232,6 +15480,22 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(400, {'error': 'bad choice'})
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'member_id': mid})
+        if self.path == '/api/seats/assign':
+            # מהמפה: להושיב חבר / לפנות / תווית חופשית
+            con = db()
+            mid = b.get('member_id')
+            try:
+                mid = int(mid) if mid not in (None, '', 0, '0') else None
+            except (TypeError, ValueError):
+                mid = None
+            ok = seat_assign(con, b.get('seat'), mid, b.get('label') if 'label' in b else None)
+            con.commit(); con.close()
+            return self._send(200, {'ok': ok})
+        if self.path == '/api/seats/renumber':
+            con = db()
+            ok = seat_renumber(con, b.get('pos'), b.get('num'))
+            con.commit(); con.close()
+            return self._send(200, {'ok': ok})
         if self.path == '/api/members/merge':
             # מיזוג שני חברים — מהכרטיס במסך הקהילה
             try:

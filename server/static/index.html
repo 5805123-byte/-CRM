@@ -26,28 +26,45 @@
   .mlsetup.bad{background:#fdeeee;border-color:#e6b8b8}
   .mlnobcc{background:#fff8e6;border:1px solid #e8d9a8;border-radius:10px;padding:8px 11px;margin:0 2px 8px}
   .mlcnt{margin:8px 2px 4px;font-size:.9rem}
-  /* הקהילה — רשימת מתפללי בית הכנסת */
-  .cmrow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 13px;cursor:pointer}
-  .cmrow:hover{background:#f7f3e8}
-  .cmhd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .cmnm{font-weight:800;font-size:1.05rem}
-  .cmseat{font-size:.8rem;font-weight:800;padding:2px 9px;border-radius:999px;background:#e4e8f5;color:#3b357a;white-space:nowrap}
-  .cmmails{font-size:.78rem;color:var(--muted);margin-inline-start:auto;white-space:nowrap}
-  .cmdt{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:.88rem;color:#5a5340;margin-top:4px}
-  .cmdt .cmem{color:#4a7a5a;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-  .cmdt .cmno{color:#c43a2b}
-  /* מאיר: "רק כמו האברכים — פרטים וזהו", עיפרון קטן לתיקון, מקום קטן ליד הטלפון */
-  .cmpen{margin-inline-start:auto;background:none;border:1px solid var(--line);border-radius:8px;padding:1px 9px;cursor:pointer;color:var(--muted);font-size:.95rem;line-height:1.5}
+  /* הקהילה — מאיר: "עיצוב יותר נוח לעין של כל משבצת, אבל שיקח פחות מקום, נוח לגלגל" —
+     שורה אחת דחוסה לכל חבר: שם, טלפון, מקום, מייל, כתובת, ועיפרון בקצה */
+  .cmlist{gap:3px}
+  .cmrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 11px;font-size:.88rem;line-height:1.35}
+  .cmlist .cmrow:nth-child(even){background:#fbf9f3}
+  .cmrow:hover{border-color:var(--accent)}
+  .cmnm{font-weight:800;font-size:.98rem;flex:0 0 190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmmails{font-size:.72rem;color:var(--muted);font-weight:600;margin-inline-start:6px}
+  .cmi{color:#4a4436;white-space:nowrap}.cmi.cmem{color:#3e6e50;direction:ltr}.cmi.cmno{color:#b8534a;font-size:.8rem}
+  .cmseat2{color:#5a5340;background:none;border:none;font:inherit;cursor:pointer;padding:0}
+  .cmseat2:hover{color:var(--accent);text-decoration:underline}
+  /* מפת בית הכנסת */
+  .smsec{margin-top:6px;padding-top:8px}
+  .smhd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.smtools{display:flex;gap:6px;margin-inline-start:auto}.smtools .btn{text-decoration:none}
+  .smwrap{overflow:auto;margin-top:8px;padding:4px;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .smgrid{display:grid;gap:8px 10px;direction:rtl;min-width:760px}
+  .smb{border:1.5px solid #c9a24a;border-radius:9px;padding:3px;background:#fffdf6;min-height:52px}
+  .smb.empty{border:none;background:none;min-height:0}
+  .smb>i{display:block;font-style:normal;font-size:10px;color:#8a6a22;text-align:center;line-height:1.1}
+  .smr{display:flex;gap:3px;justify-content:center}
+  .sms{position:relative;flex:1;min-width:0;border:1px solid #d9c48a;border-radius:6px;background:#fff;text-align:center;padding:2px 1px;line-height:1.15;cursor:pointer}
+  .sms b{display:block;font-size:14px}.sms span{display:block;font-size:9px;color:#333;min-height:2.3em;overflow:hidden}
+  .sms.free{background:#fdf7e8}.sms:hover{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,53,122,.15)}
+  .sms .smpen{position:absolute;top:1px;inset-inline-start:2px;font-style:normal;font-size:9px;color:var(--accent);opacity:0}.sms:hover .smpen{opacity:1}
+  .smbox{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fbf3df;color:#8a6a22;font-size:14px}
+  .smbox.dash{border-style:dashed;background:#fff}
+  .smbox small{font-size:10px;border:1px solid #c9a24a;border-radius:6px;padding:2px 8px;margin-top:4px;background:#fff}
+  .cmpen{margin-inline-start:auto;background:none;border:1px solid var(--line);border-radius:7px;padding:0 8px;cursor:pointer;color:var(--muted);font-size:.9rem;line-height:1.5}
   .cmpen:hover{color:var(--accent);border-color:var(--accent)}
-  .cmseat2{color:#5a5340;white-space:nowrap}
-  .cmed{border-color:var(--accent);cursor:default}
+  .cmed{display:block;border-color:var(--accent);cursor:default;padding:8px 12px}
+  .cmed .cmhd{display:flex;align-items:center}.cmed .cmnm{flex:1}
   .cmed label.fld{margin:4px 0}.cmed label.fld span{font-size:.72rem;margin-bottom:1px}
   .cmed .two{display:flex;gap:8px}.cmed .two label.fld{flex:1}
   .cmedb{margin-top:6px}.cmedb .btn{padding:6px 11px;font-size:.86rem}
   .cmmgbox{margin-top:8px}
   .cmmgbox .cmmq{width:100%;font:inherit;font-size:.95rem;padding:9px 12px;border-radius:10px;border:1px solid var(--line)}
+  @media (max-width:760px){.cmnm{flex:1 0 100%}.cmrow{padding:5px 9px;gap:1px 10px;font-size:.84rem}}
   .cmlog{padding:7px 0;border-bottom:1px solid var(--line);font-size:.9rem}
-  .cmq{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:8px}
+  .cmqrow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:8px}
   .cmqh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.cmqh b{font-size:1.05rem}
   .cmqw{font-size:.8rem;color:var(--accent);font-weight:700}
   .cmqd{font-size:.86rem;color:#5a5340;margin:3px 0 8px;direction:ltr;text-align:right}
