@@ -43,7 +43,11 @@ def _env(k, d=''):
 
 def _now():
     import datetime
-    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo('Asia/Jerusalem')).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
 
 def configured():
