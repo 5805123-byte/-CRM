@@ -12005,11 +12005,19 @@ function renderComm(){
 // ששינו לו את המקום, ויהיה כתוב אצלו בפרטים את תאריך השינוי — רק אם נלחץ על
 // המספר מושב שלו"
 let SLAY=null, SEATS=null, smOpen=null, smMult=1;   // smMult — הגדלה יחסית מעל ההתאמה לרוחב
-try{smMult=parseFloat(localStorage.getItem('kc_smm')||'1')||1;smOpen=localStorage.getItem('kc_smopen')==='1';}catch(e){}
+try{smMult=parseFloat(localStorage.getItem('kc_smm')||'1')||1;smOpen=localStorage.getItem('kc_smopen')==='1';
+  if(!localStorage.getItem('kc_smm2')){smMult=1;localStorage.setItem('kc_smm','1');localStorage.setItem('kc_smm2','1');}}catch(e){}   // איפוס חד־פעמי של הגדלה ישנה
 // מאיר: "שלא אצטרך להזיז את המפה ימינה ושמאלה אלא שאראה את כל המפה על המסך במחשב או
 // בטלפון" — המפה תמיד מוקטנת לרוחב המסך; ➕/➖ מגדילים ומקטינים מעל זה, ↔️ מחזיר
 function smFit(){const w=view.querySelector('.smwrap'),g=view.querySelector('.smgrid');if(!w||!g)return;
-  g.style.zoom=1; const base=Math.max(.2,(w.clientWidth-12)/g.scrollWidth); const z=Math.min(2.5,base*smMult); g.style.zoom=z; return z;}
+  g.style.zoom=1; const base=Math.max(.2,(w.clientWidth-16)/g.scrollWidth); let z=Math.min(2.5,base*smMult); g.style.zoom=z;
+  // בדיקה חוזרת — אם בכל זאת גולש (דפדפן שמודד אחרת / פס גלילה שהופיע בינתיים), מקטינים עוד טיפה
+  if(smMult<=1){for(let i=0;i<4;i++){const bw=g.getBoundingClientRect().width,aw=w.clientWidth-10;if(bw<=aw)break;z=+(z*aw/bw*.995).toFixed(4);g.style.zoom=z;}}
+  window._smLastW=w.clientWidth; return z;}
+// הרוחב של האזור משתנה גם בלי שינוי גודל חלון (פס גלילה שמופיע אחרי טעינת הרשימה, סרגל צד) — עוקבים אחריו
+function smWatch(){const w=view.querySelector('.smwrap');if(!w||!window.ResizeObserver)return;
+  if(window._smRO2)window._smRO2.disconnect();
+  window._smRO2=new ResizeObserver(()=>{if(tab==='comm'&&w.isConnected&&w.clientWidth!==window._smLastW)smFit();});window._smRO2.observe(w);}
 async function smLoad(force){
   if(!SLAY){try{SLAY=await (await fetch('/seat_layout.json',{cache:'no-store'})).json();}catch(e){SLAY={cols:7,rows:[]};}}
   if(!SEATS||force){const r=await api('GET','/api/seats');SEATS=r&&r.seats?r:{seats:{},meta:{},renum:{},log:[]};}
@@ -12037,8 +12045,9 @@ function smSectionHTML(){
 }
 function wireSeatMap(){
   const tg=document.getElementById('sm_tog'); if(tg)tg.onclick=async()=>{smOpen=!smOpen;try{localStorage.setItem('kc_smopen',smOpen?'1':'0');}catch(e){} if(smOpen&&!SEATS){render();await smLoad();} render();};
-  setTimeout(smFit,0);
-  if(!window._smRO){window._smRO=true;window.addEventListener('resize',()=>{if(tab==='comm')smFit();});}
+  setTimeout(()=>{smFit();smWatch();},0); setTimeout(smFit,400); setTimeout(smFit,1500);
+  if(!window._smRO){window._smRO=true;window.addEventListener('resize',()=>{if(tab==='comm')smFit();});
+    window.addEventListener('load',()=>{if(tab==='comm')smFit();});if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(tab==='comm')smFit();});}
   const z=d=>{smMult=Math.min(4,Math.max(.5,+(smMult+d).toFixed(2)));try{localStorage.setItem('kc_smm',String(smMult));}catch(e){}smFit();};
   const mi=document.getElementById('sm_minus'); if(mi)mi.onclick=()=>z(-.15);
   const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.15);
