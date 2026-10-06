@@ -56,6 +56,10 @@ def _auth():
     # המייל של החשבון (EZCOUNT_API_EMAIL) משמש כ-developer_email אם לא הוגדר אחר.
     a = {'api_key': _env('EZCOUNT_API_KEY'),
          'developer_email': _env('EZCOUNT_DEV_EMAIL') or _env('EZCOUNT_API_EMAIL')}
+    # EZcount ענה: "'created_by_api_key' is a mandatory key for distributors users" —
+    # החשבון מוגדר אצלם כמפיץ, ולכן המסמך חייב לציין באיזה מפתח (של העסק) הוא נוצר.
+    # ברירת המחדל: אותו מפתח; אם לעסק יש מפתח נפרד — EZCOUNT_CREATED_BY_KEY ב-Render.
+    a['created_by_api_key'] = _env('EZCOUNT_CREATED_BY_KEY') or a['api_key']
     return a
 
 
