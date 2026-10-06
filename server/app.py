@@ -270,6 +270,13 @@ def ensure_schema():
     -- מספרים מיומן השיחות של הטלפון שמאיר סימן "לא תורם" — לא יוצעו שוב בייבוא הבא
     CREATE TABLE IF NOT EXISTS call_ignore(key TEXT PRIMARY KEY, name TEXT, number TEXT, created TEXT);
     CREATE TABLE IF NOT EXISTS receipts(rkey TEXT PRIMARY KEY, num INTEGER, created TEXT);
+    /* חלון הקבלות — מאיר: "כל הקבלות שאנחנו מפיקים יישמרו שם בחלונית וגם יישלחו
+       לאימייל של התורם". kind: 'us' (העמותה בארה"ב, דולר) / 'il' (ישראל, שקלים).
+       ה-PDF נשמר בזמן ההפקה כדי שהקבלה לא תשתנה אחר כך. */
+    CREATE TABLE IF NOT EXISTS receipt_docs(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, num INTEGER,
+        donation_id INTEGER, donor_id INTEGER, name TEXT, email TEXT, amount REAL, cur TEXT, date TEXT,
+        purpose TEXT, method TEXT, pdf BLOB, created TEXT, sent_at TEXT, sent_to TEXT, note TEXT);
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_rdoc_don ON receipt_docs(kind, donation_id);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
     -- שמאיר יקבע פעם אחת לכל משלם "מי זה ולמה מיועד הכסף" וכל החיובים שלו ייכנסו
@@ -3497,6 +3504,43 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  community add chashin error:', e)
+
+    # מאיר (אישור העברה בנקאית מבנק לאומי, 24.09.2026, ₪7,750, "תרומה"): "תוסיף אותו
+    # לרשימת התורמים וגם בקהילה, ואני צריך שתנפיק לי קבלה על הסכום הזה… תוסיף את
+    # המספר טלפון של נתן המצורף כאן +972 50-494-0212 גם לקהילה וגם לתורמים"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='donor_tukachinsky_v1'").fetchone():
+            dr = con.execute("SELECT id FROM donors WHERE last LIKE '%טוקצינסקי%' AND first LIKE '%נתן%'").fetchone()
+            if dr:
+                did_ = dr['id']
+                con.execute("UPDATE donors SET phone=COALESCE(NULLIF(phone,''),'050-494-0212'), addr=COALESCE(NULLIF(addr,''),'כנסת יחזקאל 37/11'), "
+                            "city=COALESCE(NULLIF(city,''),'ביתר עילית'), region=COALESCE(NULLIF(region,''),'il') WHERE id=?", (did_,))
+            else:
+                con.execute("INSERT INTO donors(last,first,phone,addr,city,category,region,created,source,notes) "
+                            "VALUES('טוקצינסקי','גדליהו נתן','050-494-0212','כנסת יחזקאל 37/11','ביתר עילית','מזדמן','il',?,'העברה בנקאית',"
+                            "'תרם ₪7,750 בהעברה בנקאית מבנק לאומי ב-24.09.2026 (אסמכתא 69120)')", (today_iso(),))
+                did_ = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            dn = con.execute("SELECT id FROM donations WHERE donor_id=? AND date='2026-09-24' AND CAST(REPLACE(amount,',','') AS REAL)=7750", (did_,)).fetchone()
+            if dn:
+                dnid = dn['id']
+            else:
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
+                            (did_, '2026-09-24', '7750', 'תרומה', 'העברה בנקאית', 'העברה בנקאית מבנק לאומי · אסמכתא 69120', '₪'))
+                dnid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            if not con.execute("SELECT 1 FROM members WHERE last='טוקצינסקי' AND first LIKE '%נתן%'").fetchone():
+                con.execute("INSERT INTO members(last,first,email,phone,addr,city,seat,category,notes,source,gender,active,pending,created,updated) "
+                            "VALUES('טוקצינסקי','גדליהו נתן','','050-494-0212','כנסת יחזקאל 37/11','ביתר עילית','','קהילה','','תורם','m',1,0,?,?)",
+                            (now_iso(), now_iso()))
+            con.commit()
+            try:
+                doc = receipt_issue(con, dnid, 'il')
+                print('  טוקצינסקי: תורם #%s, תרומה #%s, קבלה ישראלית מס\' %s הופקה (לא נשלחה — אין מייל)' % (did_, dnid, doc and doc['num']))
+            except Exception as e2:
+                print('  טוקצינסקי: הקבלה לא הופקה:', e2)
+            con.execute("INSERT INTO seed_flags(name) VALUES('donor_tukachinsky_v1')")
+            con.commit()
+    except Exception as e:
+        print('  tukachinsky error:', e)
 
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
@@ -7344,10 +7388,19 @@ def get_all():
             byid[r['donor_id']]['prayers'].append({'id': r['id'], 'text': r['text'], 'tier': r['tier']})
         else:
             unlinked.append({'id': r['id'], 'name': r['name'], 'text': r['text'], 'tier': r['tier']})
+    dmap = {}
     for r in c.execute("SELECT * FROM donations ORDER BY date DESC"):
         if r['donor_id'] in byid:
             dn = dict(r); dn['hmonth'] = greg_to_heb_monthyear(r['date'])
-            byid[r['donor_id']]['donations'].append(dn)
+            byid[r['donor_id']]['donations'].append(dn); dmap[r['id']] = dn
+    # הקבלה שהופקה על התרומה (חלון הקבלות) — מספר, סוג, ואם נשלחה
+    try:
+        for r in c.execute("SELECT id,kind,num,donation_id,sent_at FROM receipt_docs"):
+            dn = dmap.get(r['donation_id'])
+            if dn is not None:
+                dn['rc_id'] = r['id']; dn['rc_kind'] = r['kind']; dn['rc_num'] = r['num']; dn['rc_sent'] = r['sent_at'] or ''
+    except Exception:
+        pass
     for r in c.execute("SELECT * FROM contacts_log ORDER BY date DESC"):
         if r['donor_id'] in byid:
             row = dict(r)
@@ -12534,6 +12587,119 @@ def seat_move(con, frm, to):
     return True
 
 
+# ---------- חלון הקבלות ----------
+# מאיר: "אני רוצה שיהיה חלון קבלות, ושם יהיה שני חלונות — אחד של חו"ל, העמותה
+# שלנו בארצות הברית, עם הקבלה שעיצבת לי, והשני קבלות ישראליות בשקלים, עם העיצוב
+# שעשית לי. כל הקבלות שאנחנו מפיקים יישמרו שם בחלונית וגם יישלחו לאימייל של
+# התורם כשנעשה שלח… ושכל קבלה תישמר אצלו בפרטי תורם בדף הראשון, עם סימון
+# נשלח / עדיין לא נשלח."
+def receipt_kind_for(con, row):
+    """'il' לתרומה בשקלים, 'us' לכל השאר — לפי המטבע של התרומה, ואם אין — לפי הכרטיס."""
+    cur = (row['cur'] or '').strip()
+    if not cur:
+        d = con.execute("SELECT region FROM donors WHERE id=?", (row['donor_id'],)).fetchone()
+        cur = '₪' if (d and (d['region'] or '') == 'il') else '$'
+    return 'il' if cur in ('₪', 'ILS') else 'us'
+
+
+def receipt_build(con, kind, don_id):
+    if kind == 'il':
+        import receipt_il as _m
+        info = _m.receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
+        pdf, fname = _m.receipt_file(con, don_id, 'pdf', STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
+    else:
+        import receipt_us as _m
+        info = _m.receipt_data(con, don_id, RECEIPT_START, today_iso)
+        pdf, fname = _m.receipt_file(con, don_id, 'pdf', STATIC, RECEIPT_START, today_iso)
+    return info, pdf, fname
+
+
+def receipt_doc(con, rid):
+    r = con.execute("SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,"
+                    "sent_at,sent_to,note FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+    return dict(r) if r else None
+
+
+def receipt_issue(con, don_id, kind=None):
+    """מפיק קבלה על תרומה (פעם אחת — הפקה חוזרת מחזירה את אותה קבלה) ושומר את ה-PDF."""
+    row = con.execute("SELECT * FROM donations WHERE id=?", (don_id,)).fetchone()
+    if not row:
+        return None
+    kind = kind if kind in ('il', 'us') else receipt_kind_for(con, row)
+    ex = con.execute("SELECT id FROM receipt_docs WHERE kind=? AND donation_id=?", (kind, don_id)).fetchone()
+    if ex:
+        return receipt_doc(con, ex['id'])
+    info, pdf, fname = receipt_build(con, kind, don_id)
+    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'')",
+                (kind, info['num'], don_id, info['donor_id'], info['name'], info.get('email') or '', info['amount'],
+                 '₪' if kind == 'il' else '$', info['date'], info.get('purpose') or '', info.get('method') or '',
+                 pdf, now_iso()))
+    rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    con.commit()
+    return receipt_doc(con, rid)
+
+
+def receipt_pdf(con, rid):
+    r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+    if not r:
+        return None, None
+    safe = re.sub(r'[^\w֐-׿ .-]+', '', r['name'] or '')[:40].strip() or 'donor'
+    fname = ('קבלה-%04d-%s.pdf' % (r['num'], safe)) if r['kind'] == 'il' else ('Receipt-%d-%s.pdf' % (r['num'], safe))
+    if r['pdf']:
+        return bytes(r['pdf']), fname
+    info, pdf, fname2 = receipt_build(con, r['kind'], r['donation_id'])
+    con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (pdf, rid)); con.commit()
+    return pdf, fname2
+
+
+def receipt_send(con, rid, email=''):
+    """שולח את הקבלה (PDF מצורף) למייל של התורם, ומסמן שנשלחה."""
+    r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+    if not r:
+        return {'ok': False, 'error': 'הקבלה לא נמצאה'}
+    d = con.execute("SELECT * FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+    to = (email or '').strip() or (emails_of(d['email'])[0] if d and d['email'] else '') or (r['email'] or '').strip()
+    if not to:
+        return {'ok': False, 'error': 'אין כתובת מייל לתורם — מלא מייל בכרטיס'}
+    pdf, fname = receipt_pdf(con, rid)
+    amt = float(r['amount'] or 0)
+    try:
+        dd = datetime.date.fromisoformat((r['date'] or '')[:10])
+    except ValueError:
+        dd = datetime.date.today()
+    if r['kind'] == 'il':
+        subject = "קבלה מס' %04d על תרומתך — כולל חצות" % r['num']
+        body = ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
+                "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
+                % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
+    else:
+        subject = 'Donation Receipt No. %d — Kollel Chatzos' % r['num']
+        body = ('Dear %s,\n\nAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
+                'No goods or services were provided in exchange for this contribution.\n\n'
+                'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
+                % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%B %-d, %Y')))
+    try:
+        import mailer
+    except Exception as e:
+        return {'ok': False, 'error': 'mailer: %s' % e}
+    if not mailer.configured():
+        return {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render (GMAIL_USER / GMAIL_APP_PASSWORD)'}
+    res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)])
+    if res.get('ok'):
+        con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=? WHERE id=?", (now_iso(), to, rid))
+        con.commit()
+        try:
+            log_sent_mail(r['donor_id'], to, subject, body, res.get('msg_id'), 1)
+        except Exception:
+            pass
+    elif res.get('error') in ('login_failed', 'send_failed', 'not_configured'):
+        res['error'] = {'login_failed': 'ההתחברות לג׳ימייל נכשלה', 'send_failed': 'השליחה נכשלה: ' + str(res.get('detail') or '')[:120],
+                        'not_configured': 'שליחת מייל לא מוגדרת ב-Render'}[res['error']]
+    res['to'] = to
+    return res
+
+
 def seat_renumber(con, pos, num):
     """משנה את המספר המוצג של משבצת (pos = המספר המקורי במפה)."""
     pos = str(pos or '').strip(); num = str(num or '').strip()
@@ -14906,6 +15072,36 @@ class H(BaseHTTPRequestHandler):
                        ('מזומנים %s + $%s' % (_m(base + ext), format(int(usd_s), ','))) if is_cash else ''))
             return self._send(200, page.encode('utf-8'), 'text/html')
         # ---- מפת בית הכנסת ----
+        # חלון הקבלות — כל הקבלות שהופקו (בלי ה-PDF עצמו), החדשות למעלה
+        if self.path.split('?')[0] == '/api/receipts':
+            con = db()
+            rows = [dict(r) for r in con.execute(
+                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note "
+                "FROM receipt_docs ORDER BY id DESC")]
+            con.close()
+            try:
+                import mailer; mail_ok = mailer.configured()
+            except Exception:
+                mail_ok = False
+            return self._send(200, {'ok': True, 'rows': rows, 'mail': mail_ok})
+        m = re.match(r'/api/receipts/(\d+)\.pdf$', self.path.split('?')[0])
+        if m:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                data, fname = receipt_pdf(con, int(m.group(1)))
+            except Exception as e:
+                con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            con.close()
+            if not data:
+                return self._send(404, {'ok': False, 'error': 'not found'})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "%s; filename*=UTF-8''%s" % ('attachment' if qs.get('dl') else 'inline', quote(fname)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/seats':
             con = db()
             seats, meta, renum = seats_state(con)
@@ -15698,6 +15894,73 @@ class H(BaseHTTPRequestHandler):
             ok = seat_assign(con, b.get('seat'), mid, b.get('label') if 'label' in b else None)
             con.commit(); con.close()
             return self._send(200, {'ok': ok})
+        # ---- חלון הקבלות ----
+        if self.path == '/api/receipts/issue':
+            # הפקת קבלה על תרומה קיימת (לפי המטבע: שקלים → ישראלית, אחרת → ארה"ב)
+            try:
+                did = int(b.get('donation_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'ok': False, 'error': 'donation_id required'})
+            con = db()
+            try:
+                doc = receipt_issue(con, did, b.get('kind'))
+            except Exception as e:
+                con.close(); return self._send(200, {'ok': False, 'error': 'ההפקה נכשלה: %s' % str(e)[:160]})
+            con.close()
+            if not doc:
+                return self._send(404, {'ok': False, 'error': 'התרומה לא נמצאה'})
+            bump_data()
+            return self._send(200, {'ok': True, 'doc': doc})
+        if self.path == '/api/receipts/new':
+            # תרומה חדשה + קבלה עליה — מתוך חלון הקבלות
+            try:
+                donor_id = int(b.get('donor_id'))
+            except (TypeError, ValueError):
+                return self._send(400, {'ok': False, 'error': 'donor_id required'})
+            amount = re.sub(r'[^\d.]', '', str(b.get('amount') or ''))
+            if not amount or float(amount) <= 0:
+                return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+            kind = 'il' if b.get('kind') == 'il' else 'us'
+            cur = '₪' if kind == 'il' else '$'
+            con = db()
+            if not con.execute("SELECT 1 FROM donors WHERE id=?", (donor_id,)).fetchone():
+                con.close(); return self._send(404, {'ok': False, 'error': 'התורם לא נמצא'})
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
+                        (donor_id, (b.get('date') or today_iso())[:10], amount, (b.get('purpose') or '').strip(),
+                         (b.get('method') or '').strip(), (b.get('note') or '').strip(), cur))
+            did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            con.commit()
+            try:
+                doc = receipt_issue(con, did, kind)
+            except Exception as e:
+                con.close(); bump_data(); return self._send(200, {'ok': False, 'error': 'התרומה נשמרה אבל ההפקה נכשלה: %s' % str(e)[:160]})
+            con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'doc': doc, 'donation_id': did})
+        m = re.match(r'/api/receipts/(\d+)/send$', self.path)
+        if m:
+            con = db()
+            try:
+                res = receipt_send(con, int(m.group(1)), b.get('email') or '')
+            except Exception as e:
+                con.close(); return self._send(200, {'ok': False, 'error': 'השליחה נכשלה: %s' % str(e)[:160]})
+            con.close()
+            if res.get('ok'):
+                bump_data()
+            return self._send(200, res)
+        m = re.match(r'/api/receipts/(\d+)/delete$', self.path)
+        if m:
+            # ביטול קבלה שהופקה בטעות — רק אם עדיין לא נשלחה. המספר הסידורי נשאר תפוס.
+            con = db()
+            r = con.execute("SELECT sent_at FROM receipt_docs WHERE id=?", (int(m.group(1)),)).fetchone()
+            if not r:
+                con.close(); return self._send(404, {'ok': False, 'error': 'not found'})
+            if r['sent_at']:
+                con.close(); return self._send(200, {'ok': False, 'error': 'הקבלה כבר נשלחה — אי אפשר למחוק'})
+            con.execute("DELETE FROM receipt_docs WHERE id=?", (int(m.group(1)),))
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': True})
         if self.path == '/api/seats/move':
             # מאיר: "תעשה לי אפשרות של העברה למושב אחר שאבחר" — מי שיושב במקום עובר למקום אחר;
             # אם המקום השני תפוס, השניים מתחלפים

@@ -1415,7 +1415,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1435,7 +1435,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
 const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',stip:'חיפוש אברך…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
-  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',camp:'חיפוש שם, משפחה או סכום…',
+  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',camp:'חיפוש שם, משפחה או סכום…',
   old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
 function render(){
   const qi=document.getElementById('q');
@@ -1453,6 +1453,7 @@ function render(){
   if(tab==='tasks') return renderTasksTab();
   if(tab==='cal') return renderCalTab();
   if(tab==='comm') return renderComm();
+  if(tab==='rcpt') return renderReceipts();
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
   if(tab==='charges') return renderCharges();
@@ -4317,6 +4318,7 @@ function cardDetails(d,body){
     pnid:String(x.parnes_id||''),
     prev:String(x.prev_year||''),prevn:String(x.prev_note||''),
     rcpt:String(x.receipt_num||''),
+    rcid:+x.rc_id||0,rcnum:String(x.rc_num||''),rcsent:String(x.rc_sent||''),rckind:x.rc_kind||'',
     needthx:needThanks(x),thanked:+x.thanked}));
   gitems.sort((a,b)=>String(b.k||'').localeCompare(String(a.k||'')));   // החדשות למעלה, לפי תאריך אמיתי
   const methChip=rm=>rm?(chBadgeRaw(rm)||`<span class="givemeth">${esc(chLabel(rm))}</span>`):'';
@@ -4334,10 +4336,16 @@ function cardDetails(d,body){
     // בדולרים — בדולרים אנחנו צריכים לעצב משהו יפה, בשבוע הבא".
     // EZcount הוא מערכת החשבוניות הישראלית, ולכן הכפתור מופיע רק על
     // תרומה בשקלים.
-    const canRcpt=g.don&&curd==='₪';
+    // מאיר: "שכל קבלה שאנחנו מוציאים לתורם תישמר אצלו בפרטי תורם בדף הראשון
+    // שלו, ושיהיה סימון נשלח קבלה או עדיין לא נשלח — משהו מזערי."
+    // 🧾 מפיק קבלה (שקלים → ישראלית, דולר → ארה"ב) ושומר אותה בחלון הקבלות;
+    // אחרי ההפקה במקומו סימון קטן: נשלחה / לא נשלחה (לחיצה — שליחה / צפייה).
+    const rcm=g.don?(g.rcid
+      ? `<button class="rcmini ${g.rcsent?'yes':'no'}" data-rc="${g.rcid}" data-did="${g.did}" title="${g.rcsent?('קבלה '+g.rcnum+' נשלחה '+g.rcsent.slice(0,10)+' — לחץ לצפייה'):('קבלה '+g.rcnum+' הופקה ולא נשלחה — לחץ לשליחה במייל')}">🧾 ${g.rcsent?'נשלחה':'לא נשלחה'}</button>`
+      : (g.rcpt?`<span class="rcmini yes" title="קבלת EZcount ${esc(g.rcpt)} נשלחה">🧾 נשלחה</span>`
+               :`<button class="gvrcpt" data-did="${g.did}" title="הפק קבלה ${curd==='₪'?'ישראלית (שקלים)':'לארה״ב (דולר)'}">🧾</button>`)):'';
     const ed=g.don
-      ? `<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`
-        +(canRcpt?`<button class="gvrcpt${g.rcpt?' sent':''}" data-did="${g.did}" title="${g.rcpt?('קבלה '+g.rcpt+' נשלחה — לחץ לשליחה חוזרת'):'שלח קבלה במייל לתורם (EZcount)'}">🧾</button>`:'')
+      ? `<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`+rcm
       : (g.parnes?`<button class="pnedit" data-pid="${g.pid}" title="שנה סכום / הקדשה">✏️</button>`:'');
     const pnpan=g.parnes?`<div class="gvpanel hidden" data-pnpan="${g.pid}">
       <div class="gvlbl">💲 הסכום</div>
@@ -4540,22 +4548,26 @@ function cardDetails(d,body){
     const cur=String(new Date().getFullYear()), prev=String(+cur-1);
     const y=yrs.includes(prev)?prev:(yrs[0]||cur);     // ברירת מחדל: השנה שעברה (עונת המס), אם יש בה תרומות
     window.open('/statement?donor='+d.id+'&year='+y,'_blank');};
+  // 🧾 הפקת קבלה על התרומה — נשמרת בחלון הקבלות ונפתחת לצפייה
   body.querySelectorAll('.gvrcpt').forEach(b=>b.onclick=async()=>{
     const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
-    const em=(splitEmails(d.email)[0]||'').trim();
-    if(!em){toast('אין מייל לתורם — מלא מייל בלשונית פרטים');return;}
     const cs=(String(x.cur||'').trim())||curSym(d);
-    const again=!!String(x.receipt_num||'').trim();
-    const msg=again?('כבר נשלחה קבלה '+x.receipt_num+' על התרומה הזאת. לשלוח שוב?')
-                   :('לשלוח קבלה על '+cs+x.amount+' אל '+em+' דרך EZcount?');
-    if(!await uiConfirm(msg))return;
+    if(!await uiConfirm('להפיק קבלה '+(cs==='₪'?'ישראלית':'לארה"ב')+' על '+cs+x.amount+'?'))return;
     b.disabled=true; toast('מפיק קבלה…');
-    const r=await api('POST','/api/donation/'+x.id+'/receipt',{again:again?1:0});
+    const r=await api('POST','/api/receipts/issue',{donation_id:x.id});
     b.disabled=false;
-    if(!r||!r.ok){toast((r&&r.error)||'הקבלה לא נשלחה');return;}
-    x.receipt_num=r.docnum||''; x.receipt_url=r.url||'';
-    toast('קבלה '+(r.docnum||'')+' נשלחה אל '+(r.email||em)+' ✓');
+    if(!r||!r.ok){toast((r&&r.error)||'ההפקה נכשלה');return;}
+    x.rc_id=r.doc.id; x.rc_num=r.doc.num; x.rc_kind=r.doc.kind; x.rc_sent=r.doc.sent_at||'';
+    RCPTS=null; toast('קבלה '+r.doc.num+' הופקה ✓');
+    window.open('/api/receipts/'+r.doc.id+'.pdf','_blank');
     cardDetails(d,body);
+  });
+  // הסימון הקטן: לא נשלחה → שליחה במייל; נשלחה → צפייה
+  body.querySelectorAll('.rcmini[data-rc]').forEach(b=>b.onclick=async()=>{
+    const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
+    if(x.rc_sent){window.open('/api/receipts/'+x.rc_id+'.pdf','_blank');return;}
+    const r=await rcSendFlow({id:x.rc_id,num:x.rc_num,donor_id:d.id,email:d.email,name:(d.last||'')+' '+(d.first||'')});
+    if(r){x.rc_sent=r.sent_at||new Date().toISOString().slice(0,10);cardDetails(d,body);}
   });
   body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(p)p.classList.toggle('hidden');});
@@ -12389,6 +12401,134 @@ async function cmHistory(){
     const r2=await api('GET','/api/mail/batch/'+b.dataset.id);
     const bad=((r2&&r2.rows)||[]).filter(x=>x.status!=='sent');
     box.innerHTML=bad.map(x=>`<div class="mlskr">${esc(x.name||'')} &lt;${esc(x.email)}&gt; — ${esc(x.error||x.status)}</div>`).join('')||'<div class="hintxt">הכל נשלח</div>';});
+}
+
+// ========== 🧾 חלון הקבלות ==========
+// מאיר: "אני רוצה שיהיה חלון קבלות, ושם יהיה שני חלונות — אחד של חו"ל, העמותה
+// שלנו בארצות הברית, עם הקבלה שעיצבת לי, והשני קבלות ישראליות בשקלים, עם
+// העיצוב שעשית לי. כל הקבלות שאנחנו מפיקים יישמרו שם בחלונית וגם יישלחו
+// לאימייל של התורם כשנעשה שלח."
+let RCPTS=null, rcKind='il', rcNew=false, rcDonor=null, rcQ='';
+try{rcKind=localStorage.getItem('kc_rck')==='us'?'us':'il';}catch(e){}
+async function rcLoad(force){
+  if(!RCPTS||force){const r=await api('GET','/api/receipts');RCPTS=(r&&r.rows)?r:{rows:[],mail:false};}
+}
+function rcMoney(r){const n=+r.amount||0;return (r.kind==='il'?'₪':'$')+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function rcDate(s){const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?(m[3]+'.'+m[2]+'.'+m[1]):'';}
+// שליחת קבלה במייל — משותף לחלון הקבלות ולכרטיס התורם. מחזיר את הקבלה המעודכנת או null
+async function rcSendFlow(rc){
+  let em=(splitEmails(rc.email||'')[0]||'').trim();
+  if(!em){em=(await uiPrompt('אין מייל לתורם. לאיזו כתובת לשלוח את קבלה '+rc.num+'?',''))||'';em=em.trim();if(!em)return null;
+    if(!em.includes('@')){toast('כתובת מייל לא תקינה');return null;}}
+  else if(!await uiConfirm('לשלוח את קבלה '+rc.num+' במייל אל '+em+'?'))return null;
+  toast('שולח…');
+  const r=await api('POST','/api/receipts/'+rc.id+'/send',{email:em});
+  if(!r||!r.ok){toast((r&&r.error)||'השליחה נכשלה');return null;}
+  RCPTS=null; toast('קבלה '+rc.num+' נשלחה אל '+(r.to||em)+' ✓');
+  return {sent_at:new Date().toISOString().slice(0,10),to:r.to||em};
+}
+function rcDonorCur(d){return curSym(d);}
+function rcDonationsOf(d,kind){
+  // תרומות של התורם במטבע של החלון שעדיין אין עליהן קבלה מהסוג הזה
+  const want=kind==='il'?'₪':'$';
+  return (d.donations||[]).filter(x=>{const c=String(x.cur||'').trim()||curSym(d);return c===want&&!(x.rc_id&&x.rc_kind===kind);})
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+}
+function renderReceipts(){
+  if(RCPTS===null){
+    view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען את הקבלות…</div>';
+    rcLoad().then(()=>{if(tab==='rcpt')render();});
+    return;
+  }
+  const all=RCPTS.rows||[];
+  const nIl=all.filter(r=>r.kind==='il').length, nUs=all.filter(r=>r.kind==='us').length;
+  const qq=(q||'').trim();
+  let rows=all.filter(r=>r.kind===rcKind);
+  if(qq)rows=rows.filter(r=>matchStr([r.name,r.num,r.amount,r.purpose,r.email,r.date].join(' '),qq));
+  const tot=rows.reduce((s,r)=>s+(+r.amount||0),0), nSent=rows.filter(r=>r.sent_at).length;
+  const sym=rcKind==='il'?'₪':'$';
+  const head=`<div class="rctabs">
+      <button class="rctab${rcKind==='il'?' on':''}" data-k="il">🇮🇱 ישראל — קבלות בשקלים <span class="givecnt">${nIl}</span></button>
+      <button class="rctab${rcKind==='us'?' on':''}" data-k="us">🇺🇸 חו"ל — העמותה בארה"ב, בדולר <span class="givecnt">${nUs}</span></button>
+    </div>
+    <div class="rcbar"><button class="btn sm ${rcNew?'ghost':''}" id="rc_newbtn">${rcNew?'✕ סגור':'➕ הפקת קבלה חדשה'}</button>
+      <span class="hintxt">${rows.length} קבלות · סה"כ ${sym}${tot.toLocaleString('en-US',{maximumFractionDigits:2})} · נשלחו ${nSent} · לא נשלחו ${rows.length-nSent}</span>
+      ${RCPTS.mail===false?'<span class="hintxt" style="color:var(--no)">⚠️ שליחת מייל לא מוגדרת ב-Render (GMAIL_USER / GMAIL_APP_PASSWORD)</span>':''}</div>`;
+  // ---- הפקה חדשה: בחירת תורם → תרומה קיימת בלי קבלה / תרומה חדשה ----
+  let newbox='';
+  if(rcNew){
+    const d=rcDonor?DB.find(x=>x.id==rcDonor):null;
+    if(!d){
+      const hits=rcQ.trim().length>=2?DB.filter(x=>matchStr([x.last,x.first,x.english,x.business,x.email,x.phone].join(' '),rcQ)).slice(0,10):[];
+      newbox=`<div class="rcnew"><div class="rbtitle">למי להפיק קבלה ${rcKind==='il'?'ישראלית (שקלים)':'לארה"ב (דולר)'}?</div>
+        <input id="rc_q" autocomplete="off" placeholder="הקלד שם תורם / מייל / טלפון…" value="${esc(rcQ)}">
+        <div class="dpres">${hits.map(x=>`<div class="dpr" data-id="${x.id}">${esc(((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'')}${x.english?` <small>${esc(x.english)}</small>`:''}${x.email?` <small>✉️ ${esc(splitEmails(x.email)[0]||'')}</small>`:''}</div>`).join('')||(rcQ.trim().length>=2?'<div class="dpr dprmore">לא נמצא — התורם צריך להיות ברשימת התורמים</div>':'')}</div></div>`;
+    }else{
+      const dns=rcDonationsOf(d,rcKind);
+      const nm=((d.last||'')+' '+(d.first||'')).trim();
+      const em=splitEmails(d.email)[0]||'';
+      newbox=`<div class="rcnew"><div class="rbtitle">🧾 קבלה ${rcKind==='il'?'ישראלית':'לארה"ב'} עבור <b>${esc(nm)}</b>${em?` <small>✉️ ${esc(em)}</small>`:' <small style="color:var(--no)">— אין מייל בכרטיס</small>'} <button class="btn sm ghost" id="rc_back">↩ תורם אחר</button></div>
+        ${dns.length?`<div class="hintxt">תרומות שעדיין אין עליהן קבלה — לחץ להפיק:</div>${dns.map(x=>`<div class="rcdn"><b>${sym}${esc(x.amount)}</b><span>${esc(rcDate(x.date))}</span><span>${esc(x.category||'')}</span><span class="rcmeth">${esc(x.method||'')}</span><button class="btn sm rcissue" data-did="${x.id}">🧾 הפק קבלה</button></div>`).join('')}`:'<div class="hintxt">אין תרומות בלי קבלה במטבע הזה.</div>'}
+        <details class="rcnewdn"${dns.length?'':' open'}><summary>➕ תרומה חדשה + קבלה</summary>
+          <div class="two"><label class="fld"><span>💲 סכום (${sym})</span><input id="rc_amt" inputmode="decimal" placeholder="0"></label>
+            <label class="fld"><span>📅 תאריך התרומה</span><input id="rc_date" type="date" value="${todayStr()}"></label></div>
+          <div class="two"><label class="fld"><span>💳 אמצעי תשלום</span><input id="rc_meth" list="rc_meths" placeholder="העברה בנקאית / מזומן / צ'ק…"><datalist id="rc_meths"><option value="העברה בנקאית"><option value="מזומן"><option value="צ'ק"><option value="כרטיס אשראי"><option value="נדרים פלוס"><option value="הוראת קבע"><option value="Zelle"><option value="PayPal"><option value="Check"><option value="Credit Card"></datalist></label>
+            <label class="fld"><span>🎯 עבור</span><input id="rc_pur" list="rc_purs" placeholder="תרומה / יששכר־זבולון / פרנס לילה…"><datalist id="rc_purs">${RCATS.filter(Boolean).map(c=>`<option value="${esc(c)}">`).join('')}<option value="תרומה"></datalist></label></div>
+          <label class="fld"><span>📝 הערה (למשל אסמכתא)</span><input id="rc_note" placeholder="אסמכתא 12345"></label>
+          <div class="addrow"><button class="btn sm" id="rc_newok">🧾 שמור את התרומה והפק קבלה</button></div></details></div>`;
+    }
+  }
+  // ---- הרשימה ----
+  const list=rows.length?rows.map(r=>`<div class="rcrow" data-id="${r.id}">
+      <b class="rcno">${r.kind==='il'?String(r.num).padStart(4,'0'):r.num}</b>
+      <span class="rcdt">${esc(rcDate(r.date))}</span>
+      <button class="rcnm" data-donor="${r.donor_id}" title="לפתוח את כרטיס התורם">${esc(r.name)}</button>
+      <b class="rcamt">${rcMoney(r)}</b>
+      <span class="rcpur">${esc(r.purpose||'')}${r.method?` · ${esc(r.method)}`:''}</span>
+      <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>
+      <span class="rcact"><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>${r.sent_at?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="ביטול קבלה שהופקה בטעות">🗑</button>`}</span>
+    </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
+  view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;
+  // ---- חיווט ----
+  view.querySelectorAll('.rctab').forEach(b=>b.onclick=()=>{rcKind=b.dataset.k;try{localStorage.setItem('kc_rck',rcKind);}catch(e){}rcDonor=null;renderReceipts();});
+  const nb=document.getElementById('rc_newbtn'); if(nb)nb.onclick=()=>{rcNew=!rcNew;rcDonor=null;rcQ='';renderReceipts();if(rcNew){const i=document.getElementById('rc_q');if(i)i.focus();}};
+  const qi=document.getElementById('rc_q'); if(qi){let _t;qi.oninput=()=>{clearTimeout(_t);_t=setTimeout(()=>{rcQ=qi.value;renderReceipts();
+    const e=document.getElementById('rc_q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},150);};}
+  view.querySelectorAll('.rcnew .dpr[data-id]').forEach(el=>el.onclick=()=>{rcDonor=+el.dataset.id;renderReceipts();});
+  const bk=document.getElementById('rc_back'); if(bk)bk.onclick=()=>{rcDonor=null;rcQ='';renderReceipts();};
+  view.querySelectorAll('.rcissue').forEach(b=>b.onclick=async()=>{
+    b.disabled=true; toast('מפיק קבלה…');
+    const r=await api('POST','/api/receipts/issue',{donation_id:+b.dataset.did,kind:rcKind});
+    if(!r||!r.ok){b.disabled=false;toast((r&&r.error)||'ההפקה נכשלה');return;}
+    const d=DB.find(x=>x.id==rcDonor); const x=d&&(d.donations||[]).find(y=>y.id==+b.dataset.did);
+    if(x){x.rc_id=r.doc.id;x.rc_num=r.doc.num;x.rc_kind=r.doc.kind;x.rc_sent='';}
+    await rcLoad(true); toast('קבלה '+r.doc.num+' הופקה ✓'); window.open('/api/receipts/'+r.doc.id+'.pdf','_blank'); renderReceipts();
+  });
+  const ok=document.getElementById('rc_newok'); if(ok)ok.onclick=async()=>{
+    const amt=document.getElementById('rc_amt').value.trim();
+    if(!amtNum(amt)){toast('חסר סכום');document.getElementById('rc_amt').focus();return;}
+    ok.disabled=true; toast('שומר ומפיק…');
+    const r=await api('POST','/api/receipts/new',{donor_id:rcDonor,kind:rcKind,amount:amt,date:document.getElementById('rc_date').value,
+      method:document.getElementById('rc_meth').value.trim(),purpose:document.getElementById('rc_pur').value.trim(),note:document.getElementById('rc_note').value.trim()});
+    ok.disabled=false;
+    if(!r||!r.ok){toast((r&&r.error)||'ההפקה נכשלה');return;}
+    await Promise.all([rcLoad(true),load()]); toast('קבלה '+r.doc.num+' הופקה ✓'); window.open('/api/receipts/'+r.doc.id+'.pdf','_blank'); renderReceipts();
+  };
+  view.querySelectorAll('.rcnm[data-donor]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==+b.dataset.donor);if(d)openDonor(d);else toast('הכרטיס לא נמצא');});
+  view.querySelectorAll('.rcsend').forEach(b=>b.onclick=async()=>{
+    const r=all.find(x=>x.id==+b.dataset.id); if(!r)return;
+    const d=DB.find(x=>x.id==r.donor_id);
+    const res=await rcSendFlow({id:r.id,num:r.kind==='il'?String(r.num).padStart(4,'0'):r.num,donor_id:r.donor_id,email:(d&&d.email)||r.email||'',name:r.name});
+    if(res){const x=d&&(d.donations||[]).find(y=>y.id==r.donation_id);if(x)x.rc_sent=res.sent_at;await rcLoad(true);renderReceipts();}
+  });
+  view.querySelectorAll('.rcdel').forEach(b=>b.onclick=async()=>{
+    const r=all.find(x=>x.id==+b.dataset.id); if(!r)return;
+    if(!await uiConfirm('לבטל את קבלה '+r.num+' של '+r.name+'? (המספר הסידורי יישאר תפוס)'))return;
+    const res=await api('POST','/api/receipts/'+r.id+'/delete',{});
+    if(!res||!res.ok){toast((res&&res.error)||'לא בוטל');return;}
+    const d=DB.find(x=>x.id==r.donor_id); const x=d&&(d.donations||[]).find(y=>y.id==r.donation_id); if(x){x.rc_id=0;x.rc_num='';x.rc_sent='';}
+    await rcLoad(true); toast('הקבלה בוטלה'); renderReceipts();
+  });
 }
 
 netInit();

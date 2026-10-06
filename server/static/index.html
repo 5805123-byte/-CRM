@@ -1780,6 +1780,37 @@
   .gvrcpt{background:none;border:none;cursor:pointer;font-size:.98rem;padding:2px 4px;opacity:.75}
   .gvrcpt:hover{opacity:1}
   .gvrcpt.sent{opacity:1;filter:drop-shadow(0 0 2px var(--yes))}
+  /* הסימון המזערי בכרטיס: קבלה נשלחה / לא נשלחה */
+  .rcmini{font-family:inherit;font-size:.72rem;font-weight:700;border-radius:99px;padding:1px 7px;cursor:pointer;white-space:nowrap;border:1px solid transparent;margin-inline-start:4px}
+  .rcmini.yes{color:var(--yes);background:var(--yes-soft)}
+  .rcmini.no{color:var(--no);background:var(--no-soft);border-color:var(--no-soft)}
+  /* 🧾 חלון הקבלות */
+  .rctabs{display:flex;gap:8px;flex-wrap:wrap}
+  .rctab{flex:1 1 auto;font-family:inherit;font-weight:800;font-size:.95rem;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer}
+  .rctab.on{background:var(--accent);color:#fff;border-color:transparent}
+  .rctab .givecnt{margin-inline-start:4px}
+  .rcbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .rcnew{margin-top:10px;padding:10px;border:1px dashed var(--accent);border-radius:12px;background:var(--card)}
+  .rcnew input{width:100%}
+  .rcnew .rbtitle small{font-weight:400;color:var(--muted)}
+  .rcdn{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 8px;border-bottom:1px solid var(--line);font-size:.9rem}
+  .rcdn .rcmeth{color:var(--muted);font-size:.8rem}
+  .rcdn .btn{margin-inline-start:auto}
+  .rcnewdn{margin-top:8px}.rcnewdn summary{cursor:pointer;font-weight:700;padding:6px 0}
+  .rclist{margin-top:10px}
+  .rcrow{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;padding:7px 8px;border-bottom:1px solid var(--line);font-size:.9rem;min-width:0}
+  .rcrow>*{flex:0 0 auto}.rcrow .rcnm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32%}
+  .rcrow .rcno{color:var(--accent);min-width:46px;font-variant-numeric:tabular-nums}
+  .rcrow .rcdt{color:var(--muted);font-size:.8rem;min-width:76px}
+  .rcrow .rcnm{font-family:inherit;font-size:.92rem;font-weight:700;background:none;border:none;color:var(--ink);cursor:pointer;padding:0;text-decoration:underline dotted}
+  .rcrow .rcamt{min-width:84px}
+  .rcrow .rcpur{color:var(--muted);font-size:.8rem;flex:1 1 60px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext}
+  .rcrow .rcst{font-size:.74rem;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap}
+  .rcrow .rcst.yes{color:var(--yes);background:var(--yes-soft)}
+  .rcrow .rcst.no{color:var(--no);background:var(--no-soft)}
+  .rcrow .rcact{display:flex;gap:4px;margin-inline-start:auto}
+  .rcrow .rcact .btn{text-decoration:none;padding:4px 8px;font-size:.78rem}
+  @media(max-width:640px){.rcrow{flex-wrap:wrap}.rcrow .rcpur{flex-basis:100%}.rcrow .rcnm{max-width:none}.rcrow .rcact{margin-inline-start:0;flex-basis:100%;justify-content:flex-end}}
   /* כסף שנגבה ואינו רשום אצל התורם — מוצג בכרטיס עם אפשרות לצרף */
   .sec.ulmine{border:1px solid var(--gold);background:var(--gold-soft)}
   .sec.ulmine h3{color:var(--gold)}
@@ -2065,6 +2096,7 @@
       <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
       <button class="tab" data-tab="charges">💳 חיובים</button>
+      <button class="tab" data-tab="rcpt">🧾 קבלות</button>
       <button class="tab" data-tab="avreich">🤝 יששכר־זבולון</button>
       <button class="tab" data-tab="stip">🎓 אברכים</button>
       <button class="tab danger" data-tab="debts">💰 חובות</button>
