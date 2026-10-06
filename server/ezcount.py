@@ -25,7 +25,11 @@ import urllib.error
 import urllib.request
 
 DEF_BASE = 'https://api.ezcount.co.il'
-DEF_TYPE = 320                 # קבלה
+# EZcount ענה: "document type 320 can't be created for company type 4" — החשבון הוא
+# מלכ"ר/עמותה, והמסמך המתאים לתרומה הוא "קבלה על תרומה" (405). אם גם הוא לא מותר,
+# מנסים את הסוגים שהשרת מציין כמותרים (ראה _doc_type_fallback).
+DEF_TYPE = 405                 # קבלה על תרומה
+DOC_TYPES_TRY = (405, 400, 320)
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'
 LAST = {'at': '', 'ok': None, 'msg': ''}      # הקריאה האחרונה ל-createDoc — מוצגת ב-🩺
 
@@ -80,6 +84,26 @@ def _is_key_error(res):
     return any(w in t for w in ('api_key', 'api key', 'distributor', 'מפתח', 'developer_email'))
 
 
+def _is_type_error(res):
+    t = str(res or '').lower()
+    return 'document type' in t or 'company type' in t or 'סוג מסמך' in t
+
+
+def _doc_type_fallback(res, current):
+    """סוגי מסמך לנסות אחרי שגיאת סוג: קודם מה שהשרת מציין כמותר, אחר כך הרשימה שלנו."""
+    import re as _re
+    t = str(res or '')
+    allowed = []
+    m = _re.search(r'allowed[^\d]*((?:\d{3}[^\d]{0,6})+)', t, _re.I)
+    if m:
+        allowed = [int(x) for x in _re.findall(r'\d{3}', m.group(1))]
+    out = []
+    for x in allowed + list(DOC_TYPES_TRY):
+        if x != current and x not in out:
+            out.append(x)
+    return out[:4]
+
+
 def _post(path, payload, timeout=30):
     """קריאה ל-API. מחזירה (הצלחה, גוף/שגיאה בעברית).
     שגיאה של EZcount מוחזרת כלשונה, כדי שיהיה ברור מה בדיוק חסר."""
@@ -125,12 +149,11 @@ def check():
     """
     if not configured():
         return False, 'לא הוגדר. יש להגדיר ב-Render את EZCOUNT_API_KEY ו-EZCOUNT_API_EMAIL'
-    ok, res = _post('/api/checkApiKey', _auth())
-    if ok:
-        return True, 'מחובר ל-EZcount ✓'
-    t = str(res)
-    # מאיר ראה "מחובר ✓ (error code 1010)" — שגיאה היא שגיאה, לא מדווחים חיבור תקין
-    return False, t + ' — בדוק ב-Render את EZCOUNT_API_KEY (המפתח מהגדרות ה-API באיזיקאונט) ואת EZCOUNT_API_EMAIL'
+    # ל-EZcount אין נקודת בדיקה (checkApiKey מחזיר דף HTML) — הבדיקה האמיתית היא ההפקה
+    # האחרונה בפועל (LAST), שמוצגת לצד השורה הזו ב-🩺
+    if LAST.get('at') and not LAST.get('ok'):
+        return False, 'המפתח מוגדר, אבל ההפקה האחרונה נכשלה'
+    return True, 'המפתח מוגדר' + (' · מחובר ✓' if LAST.get('ok') else ' (עדיין לא הופקה קבלה)')
 
 
 def _pay_type(method):
@@ -192,6 +215,16 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
     if date:
         body['doc_date'] = date           # תאריך ההפקדה, לא תאריך ההפקה
     ok, res = _post('/api/createDoc', body)
+    if not ok and _is_type_error(res):
+        # סוג מסמך שאינו מותר לסוג החשבון — מנסים את הסוגים שהשרת מציין, ואז את הרשימה שלנו
+        first_err = res
+        for t in _doc_type_fallback(res, body['type']):
+            body['type'] = t
+            ok, res = _post('/api/createDoc', body)
+            if ok or not _is_type_error(res):
+                break
+        if not ok:
+            res = first_err
     if not ok and _is_key_error(res):
         # מאיר: בעמוד ה-API של איזיקאונט יש מפתח ל"מערכות שונות", ובנפרד לפייפאל/ויקס.
         # לא ברור איזה מפתח הוא "של העסק" ואיזה "של המפיץ" — אם הוגדרו שניים ב-Render
@@ -215,7 +248,7 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
         ok, res = _post('/api/createDoc', body)
         if not ok:
             print('  EZcount createDoc נכשל:', first_err, '|', res)
-            LAST.update(at=_now(), ok=False, msg=str(first_err)[:200])
+            LAST.update(at=_now(), ok=False, msg=str(first_err)[:600])
             return False, first_err
     LAST.update(at=_now(), ok=True, msg='קבלה %s הופקה' % (res.get('docnum') or res.get('doc_number') or ''))
     return True, {

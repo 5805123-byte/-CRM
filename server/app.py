@@ -3606,9 +3606,10 @@ def ensure_schema():
             # מנסים שוב בעלייה רק אם המפתחות ב-Render השתנו מאז הניסיון שנכשל
             sig = hashlib.sha256(('|'.join(os.environ.get(k, '') for k in ('EZCOUNT_API_KEY', 'EZCOUNT_CREATED_BY_KEY', 'EZCOUNT_API_EMAIL', 'EZCOUNT_DEV_EMAIL', 'EZCOUNT_BASE'))).encode()).hexdigest()[:16]
             # מאיר: "עשיתי מנוי לחבילה באיזיקאונט, זה אמור לעבוד עם אותו מפתח — תנסה עכשיו"
-            if not con.execute("SELECT 1 FROM seed_flags WHERE name='ez_retry_v1'").fetchone():
+            # (v2: אחרי המעבר לסוג מסמך 405 — קבלה על תרומה)
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='ez_retry_v2'").fetchone():
                 con.execute("DELETE FROM app_kv WHERE k='ez_failed_sig'")
-                con.execute("INSERT INTO seed_flags(name) VALUES('ez_retry_v1')")
+                con.execute("INSERT INTO seed_flags(name) VALUES('ez_retry_v2')")
                 con.commit()
             if not has_ez and ez_ready() and kv_get(con, 'ez_failed_sig', '') != sig:
                 doc, err = receipt_issue_ez(con, dn['id'], send=False)
