@@ -12620,8 +12620,8 @@ function renderReceipts(){
       <b class="rcamt">${rcMoney(r)}</b>
       <span class="rcpur">${r.src==='ez'?'<b class="rcez">איזיקאונט</b> · ':''}${esc(r.purpose||'')}${r.method?` · ${esc(r.method)}`:''}</span>
       <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>
-      <span class="rcact">${(r.src==='ez'&&!r.has_pdf&&!r.url)
-        ? `<button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
+      <span class="rcact">${(r.src==='ez'&&!r.has_pdf)
+        ? `${r.url?`<a class="btn sm ghost" href="${esc(r.url)}" target="_blank" title="לפתוח את הקבלה אצל איזיקאונט">👁 באיזיקאונט</a>`:''}<button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
         : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
     </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
   view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;

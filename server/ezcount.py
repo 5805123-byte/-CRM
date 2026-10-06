@@ -288,10 +288,26 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
 def fetch_pdf(url, timeout=30):
     """מוריד את ה-PDF של הקבלה מהקישור ש-EZcount החזיר. מחזיר bytes או None."""
     if not (url or '').startswith('http'):
+        LAST['msg'] = (LAST.get('msg') or '') + ' · PDF: אין קישור'
         return None
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=timeout) as r:
+        req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': 'application/pdf,*/*'})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             data = r.read()
-        return data if data[:4] == b'%PDF' else None
-    except Exception:
+            ctype = (r.headers.get('Content-Type') or '')[:60]
+        if data[:4] == b'%PDF':
+            return data
+        # לפעמים הקישור הוא דף צפייה (HTML) שבתוכו הקישור לקובץ עצמו
+        import re as _re
+        m = _re.search(r'https?://[^"\'\s<>]+\.pdf[^"\'\s<>]*', data.decode('utf-8', 'replace'))
+        if m and m.group(0) != url:
+            req2 = urllib.request.Request(m.group(0), headers={'User-Agent': UA, 'Accept': 'application/pdf,*/*'})
+            with urllib.request.urlopen(req2, timeout=timeout) as r2:
+                d2 = r2.read()
+            if d2[:4] == b'%PDF':
+                return d2
+        LAST['msg'] = (LAST.get('msg') or '') + ' · PDF: הקישור החזיר %s (%s)' % (ctype or 'לא PDF', data[:40].decode('utf-8', 'replace').replace('\n', ' '))
+        return None
+    except Exception as e:
+        LAST['msg'] = (LAST.get('msg') or '') + ' · PDF: שגיאה בהורדה %s' % str(e)[:80]
         return None
