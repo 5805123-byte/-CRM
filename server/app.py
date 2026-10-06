@@ -12648,7 +12648,7 @@ def ez_ready():
         return False
 
 
-def receipt_issue_ez(con, don_id, email='', address='', phone=''):
+def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True):
     """קבלה ישראלית דרך EZcount — מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט".
     מופקת בחשבון EZcount של הכולל; אם יש מייל — EZcount שולח אותה לתורם; ה-PDF נשמר אצלנו."""
     import ezcount as _ez
@@ -12657,7 +12657,8 @@ def receipt_issue_ez(con, don_id, email='', address='', phone=''):
         return None, 'התרומה לא נמצאה'
     d = con.execute("SELECT * FROM donors WHERE id=?", (row['donor_id'],)).fetchone()
     name = ((d['business'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else 'תורם'
-    email = (email or '').strip() or ((emails_of(d['email'])[0] if d and d['email'] else ''))
+    # מאיר: "שהמערכת תשאל אותי לפני שליחת אימייל" — בלי send הקבלה רק מופקת ונשמרת
+    email = ((email or '').strip() or ((emails_of(d['email'])[0] if d and d['email'] else ''))) if send else ''
     address = (address or '').strip() or (', '.join(x for x in (str(d['addr'] or '').strip(), str(d['city'] or '').strip()) if x) if d else '')
     phone = (phone or '').strip() or ((d['phone'] or '').strip() if d else '')
     note = (row['note'] or '').strip()
@@ -12695,7 +12696,7 @@ def receipt_issue_ez(con, don_id, email='', address='', phone=''):
     return receipt_doc(con, rid), ''
 
 
-def receipt_issue(con, don_id, kind=None, email=''):
+def receipt_issue(con, don_id, kind=None, email='', send=True):
     """מפיק קבלה על תרומה (פעם אחת — הפקה חוזרת מחזירה את אותה קבלה) ושומר את ה-PDF.
     שקלים: דרך EZcount אם הוא מוגדר ב-Render, אחרת בעיצוב שלנו. דולר: הקבלה האמריקאית.
     email — כתובת לשליחה (אם ניתנה); ב-EZcount הוא שולח, בעיצוב שלנו שולחים מכאן."""
@@ -12707,7 +12708,7 @@ def receipt_issue(con, don_id, kind=None, email=''):
     if ex:
         return receipt_doc(con, ex['id'])
     if kind == 'il' and ez_ready():
-        doc, err = receipt_issue_ez(con, don_id, email=email)
+        doc, err = receipt_issue_ez(con, don_id, email=email, send=send)
         if not doc:
             raise RuntimeError(err)
         return doc
@@ -16104,7 +16105,7 @@ class H(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, {'ok': False, 'error': 'החיבור לאיזיקאונט לא מוגדר ב-Render (EZCOUNT_API_KEY / EZCOUNT_API_EMAIL)', 'donation_id': did})
             try:
-                doc, err = receipt_issue_ez(con, did, email=email)
+                doc, err = receipt_issue_ez(con, did, email=email, send=bool(b.get('send')))
             except Exception as e:
                 doc, err = None, str(e)[:160]
             con.close()
@@ -16120,13 +16121,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {'ok': False, 'error': 'donation_id required'})
             con = db()
             email = (b.get('email') or '').strip()
+            send = bool(b.get('send'))          # מאיר: "שהמערכת תשאל אותי לפני שליחת אימייל"
             try:
-                doc = receipt_issue(con, did, b.get('kind'), email=email)
+                doc = receipt_issue(con, did, b.get('kind'), email=email, send=send)
             except Exception as e:
                 con.close(); return self._send(200, {'ok': False, 'error': 'ההפקה נכשלה: %s' % str(e)[:200]})
             if not doc:
                 con.close(); return self._send(404, {'ok': False, 'error': 'התרומה לא נמצאה'})
-            doc, send_error = receipt_autosend(con, doc, email)
+            send_error = ''
+            if send:
+                doc, send_error = receipt_autosend(con, doc, email)
             con.close()
             bump_data()
             return self._send(200, {'ok': True, 'doc': doc, 'send_error': send_error})
@@ -16149,11 +16153,14 @@ class H(BaseHTTPRequestHandler):
                          (b.get('method') or '').strip(), (b.get('note') or '').strip(), cur))
             did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
             con.commit()
+            send = bool(b.get('send'))
             try:
-                doc = receipt_issue(con, did, kind)
+                doc = receipt_issue(con, did, kind, send=send)
             except Exception as e:
                 con.close(); bump_data(); return self._send(200, {'ok': False, 'error': 'התרומה נשמרה אבל ההפקה נכשלה: %s' % str(e)[:160]})
-            doc, send_error = receipt_autosend(con, doc, '')
+            send_error = ''
+            if send:
+                doc, send_error = receipt_autosend(con, doc, '')
             con.close()
             bump_data()
             return self._send(200, {'ok': True, 'doc': doc, 'donation_id': did, 'send_error': send_error})
@@ -17211,33 +17218,30 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False,
                                         'error': 'קבלת EZcount היא לתרומות בשקלים בלבד. '
                                                  'לתרומות בדולרים עדיין אין קבלה במערכת.'})
-            currency = 'ILS'
+            # מאיר: "שכל הקבלות שאני מפיק מעכשיו מהמערכת דרך איזיקאונט יוצגו בחלון קבלות" —
+            # גם הכפתור הישן הזה עובר דרך חלון הקבלות (receipt_docs), לא ישירות ל-EZcount
+            if not email:
+                con.close(); return self._send(200, {'ok': False, 'error': 'אין כתובת מייל לתורם — מלא מייל בכרטיס'})
+            if not ez_ready():
+                con.close(); return self._send(200, {'ok': False, 'error': 'החיבור לאיזיקאונט לא מוגדר ב-Render (EZCOUNT_API_KEY / EZCOUNT_API_EMAIL)'})
+            ex = con.execute("SELECT id FROM receipt_docs WHERE kind='il' AND donation_id=?", (did,)).fetchone()
+            if ex:
+                # הקבלה כבר קיימת בחלון הקבלות — שליחה חוזרת מהמערכת, עם ה-PDF
+                res = receipt_send(con, ex['id'], email)
+                doc = receipt_doc(con, ex['id']); con.close()
+                if not res.get('ok'):
+                    return self._send(200, {'ok': False, 'error': res.get('error') or 'השליחה נכשלה'})
+                bump_data()
+                return self._send(200, {'ok': True, 'docnum': str(doc['num']), 'url': doc.get('url') or '', 'email': email})
             try:
-                import ezcount as _ez
+                doc, err = receipt_issue_ez(con, did, email=email, send=True)
             except Exception as e:
-                con.close(); return self._send(200, {'ok': False, 'error': 'EZcount לא זמין: %s' % e})
-            ok, res = _ez.send_receipt(
-                name=name, email=email, amount=row['amount'], currency=currency,
-                date=(row['date'] or '')[:10],
-                purpose=b.get('purpose') or row['category'] or '',
-                method=row['method'] or '', note=row['note'] or '')
-            if not ok:
-                con.close(); return self._send(200, {'ok': False, 'error': str(res)})
-            con.execute("UPDATE donations SET receipt_num=?, receipt_at=?, receipt_url=? WHERE id=?",
-                        (res.get('docnum') or '', now_iso(), res.get('doc_url') or '', did))
-            # נרשם גם בדף הקשר, כדי שיהיה תיעוד שהקבלה נשלחה
-            try:
-                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) "
-                            "VALUES(?,?,'מייל',?,'')",
-                            (row['donor_id'], today_iso(),
-                             '\U0001f9fe נשלחה קבלה %s על %s%s' % (
-                                 res.get('docnum') or '', cur or '', row['amount'])))
-            except Exception:
-                pass
-            con.commit(); con.close()
+                doc, err = None, str(e)[:160]
+            con.close()
+            if not doc:
+                return self._send(200, {'ok': False, 'error': 'איזיקאונט: ' + err})
             bump_data()
-            return self._send(200, {'ok': True, 'docnum': res.get('docnum') or '',
-                                    'url': res.get('doc_url') or '', 'email': email})
+            return self._send(200, {'ok': True, 'docnum': str(doc['num']), 'url': doc.get('url') or '', 'email': email})
         m = re.match(r'/api/donation/(\d+)/split$', self.path)
         if m:      # פיצול תרומה אחת לכמה ייעודים — הסכומים חייבים להסתכם במקורי
             did = int(m.group(1))

@@ -864,10 +864,10 @@ function toastUndo(msg,undoFn){
   _undoTimer=setTimeout(()=>{toastEl.classList.remove('show');},6000);
 }
 // אישור בתוך האפליקציה — confirm() של הדפדפן חסום לעיתים באפליקציה המותקנת (PWA)
-function uiConfirm(msg){
+function uiConfirm(msg,yesLbl,noLbl){
   return new Promise(res=>{
     const o=document.createElement('div');o.className='confirmov';
-    o.innerHTML=`<div class="confirmbox"><div class="cm">${esc(msg).replace(/\n/g,'<br>')}</div><div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">אישור</button></div></div>`;
+    o.innerHTML=`<div class="confirmbox"><div class="cm">${esc(msg).replace(/\n/g,'<br>')}</div><div class="cbtns"><button class="btn ghost cno">${esc(noLbl||'ביטול')}</button><button class="btn cyes">${esc(yesLbl||'אישור')}</button></div></div>`;
     document.body.appendChild(o);
     const done=v=>{o.remove();res(v);};
     o.querySelector('.cno').onclick=()=>done(false);
@@ -4568,12 +4568,14 @@ function cardDetails(d,body){
   body.querySelectorAll('.gvrcpt').forEach(b=>b.onclick=async()=>{
     const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
     const cs=(String(x.cur||'').trim())||curSym(d);
-    let em=(splitEmails(d.email)[0]||'').trim();
-    if(em){if(!await uiConfirm('להפיק קבלה '+(cs==='₪'?'ישראלית':'לארה"ב')+' על '+cs+x.amount+' ולשלוח אותה אל '+em+'?'))return;}
-    else{const v=await uiPrompt('אין מייל בכרטיס. לאיזו כתובת לשלוח את הקבלה? (ריק = להפיק בלי לשלוח)','');if(v===null)return;em=v.trim();
-      if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return;}}
+    if(!await uiConfirm('להפיק קבלה '+(cs==='₪'?'ישראלית':'לארה"ב')+' על '+cs+x.amount+'?'))return;
+    // מאיר: "שהמערכת תשאל אותי לפני שליחת אימייל האם לשלוח את הקבלה באימייל" — שאלה נפרדת
+    let em=(splitEmails(d.email)[0]||'').trim(), send=false;
+    if(em){send=await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן, לשלוח','לא, רק להפיק');}
+    else{const v=await uiPrompt('אין מייל בכרטיס. לשלוח את הקבלה במייל? הקלד כתובת (ריק = רק להפיק, בלי לשלוח)','');
+      em=(v||'').trim(); if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return;} send=!!em;}
     b.disabled=true; toast('מפיק קבלה…');
-    const r=await api('POST','/api/receipts/issue',{donation_id:x.id,email:em});
+    const r=await api('POST','/api/receipts/issue',{donation_id:x.id,email:em,send:send?1:0});
     b.disabled=false;
     if(!r||!r.ok){await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return;}
     x.rc_id=r.doc.id; x.rc_num=r.doc.num; x.rc_kind=r.doc.kind; x.rc_sent=r.doc.sent_at||'';
@@ -4581,7 +4583,7 @@ function cardDetails(d,body){
     RCPTS=null;
     if(r.doc.sent_at)toast('קבלה '+r.doc.num+' הופקה ונשלחה אל '+(r.doc.sent_to||em)+' ✓');
     else if(r.send_error)await uiAlert('קבלה '+r.doc.num+' הופקה, אבל השליחה במייל נכשלה:\n'+r.send_error);
-    else toast('קבלה '+r.doc.num+' הופקה ✓ (לא נשלחה — אין מייל)');
+    else toast('קבלה '+r.doc.num+' הופקה ✓ (לא נשלחה במייל)');
     window.open('/api/receipts/'+r.doc.id+'.pdf','_blank');
     cardDetails(d,body);
   });
@@ -12502,7 +12504,8 @@ function rcSlipHTML(){
     </div>
     <div class="two"><label class="fld"><span>💲 סכום (₪)</span><input id="rs_amt" inputmode="decimal" value="${esc(s.amount)}"></label><label class="fld"><span>📅 תאריך ההעברה</span><input id="rs_date" type="date" value="${esc(s.date)}"></label></div>
     <div class="two"><label class="fld"><span>🔖 אסמכתא</span><input id="rs_ref" value="${esc(s.ref)}" dir="ltr"></label><label class="fld"><span>🎯 עבור</span><input id="rs_pur" value="${esc(s.purpose)}" list="rc_purs2"><datalist id="rc_purs2">${RCATS.filter(Boolean).map(c=>`<option value="${esc(c)}">`).join('')}<option value="תרומה"></datalist></label></div>
-    <div class="two"><label class="fld"><span>💳 אמצעי</span><input id="rs_meth" value="${esc(s.method)}"></label><label class="fld"><span>✉️ מייל לשליחת הקבלה (אם יש)</span><input id="rs_email" value="${esc(s.email)}" dir="ltr" placeholder="ריק = הקבלה נשמרת ולא נשלחת"></label></div>
+    <div class="two"><label class="fld"><span>💳 אמצעי</span><input id="rs_meth" value="${esc(s.method)}"></label><label class="fld"><span>✉️ מייל התורם</span><input id="rs_email" value="${esc(s.email)}" dir="ltr" placeholder="אם יש"></label></div>
+    <label class="gvall"><input type="checkbox" id="rs_send" ${s.send?'checked':''}> 📧 לשלוח את הקבלה במייל לתורם אחרי ההפקה</label>
     <div class="addrow"><button class="btn" id="rs_go">🧾 הפק קבלה ${RCPTS&&RCPTS.ez?'באיזיקאונט':''}</button></div>
     <div class="hintxt">${RCPTS&&RCPTS.ez?'הקבלה מופקת בחשבון איזיקאונט של הכולל עם פרטי התורם, נשמרת כאן, ואם יש מייל — איזיקאונט שולח אותה לתורם.':'איזיקאונט לא מוגדר ב-Render — הקבלה תופק בעיצוב שלנו. כשיוגדר, הכפתור הזה יפיק באיזיקאונט.'}</div>
   </div>`;
@@ -12510,22 +12513,25 @@ function rcSlipHTML(){
 function wireSlip(){
   if(!rcSlip)return;
   const s=rcSlip, g=id=>document.getElementById(id);
-  const sync=()=>{const v=id=>(g(id)?g(id).value:'');Object.assign(s,{last:v('rs_last'),first:v('rs_first'),addr:v('rs_addr'),city:v('rs_city'),phone:v('rs_phone'),amount:v('rs_amt'),date:v('rs_date'),ref:v('rs_ref'),purpose:v('rs_pur'),method:v('rs_meth'),email:v('rs_email')});};
+  const sync=()=>{const v=id=>(g(id)?g(id).value:'');Object.assign(s,{last:v('rs_last'),first:v('rs_first'),addr:v('rs_addr'),city:v('rs_city'),phone:v('rs_phone'),amount:v('rs_amt'),date:v('rs_date'),ref:v('rs_ref'),purpose:v('rs_pur'),method:v('rs_meth'),email:v('rs_email'),send:!!(g('rs_send')&&g('rs_send').checked)});};
   view.querySelectorAll('input[name=rc_pick]').forEach(r=>r.onchange=()=>{sync();s.pick=r.value==='new'?'new':+r.value;renderReceipts();});
   const go=g('rs_go'); if(go)go.onclick=async()=>{
     sync();
     if(!amtNum(s.amount)){toast('חסר סכום');g('rs_amt').focus();return;}
     if(s.email&&!s.email.includes('@')){toast('מייל לא תקין');return;}
-    const body={amount:s.amount,date:s.date,ref:s.ref,purpose:s.purpose,method:s.method,email:s.email,note:'אסמכתא מ-'+s.file};
+    const picked=s.pick==='new'?null:(s.donors.find(d=>d.id===s.pick)||{});
+    const emTo=s.email||(picked&&picked.email)||'';
+    if(s.send&&!emTo){toast('סימנת לשלוח במייל, אבל אין כתובת מייל');g('rs_email').focus();return;}
+    const body={amount:s.amount,date:s.date,ref:s.ref,purpose:s.purpose,method:s.method,email:s.email,send:s.send?1:0,note:'אסמכתא מ-'+s.file};
     if(s.pick==='new'){if(!(s.last||s.first)){toast('חסר שם לתורם החדש');return;}body.new_donor={last:s.last,first:s.first,addr:s.addr,city:s.city,phone:s.phone,email:s.email};}
     else body.donor_id=s.pick;
-    const who=s.pick==='new'?((s.last+' '+s.first).trim()):((s.donors.find(d=>d.id===s.pick)||{}).name||'');
-    if(!await uiConfirm('להפיק קבלה על ₪'+s.amount+' ל'+who+(s.email?' ולשלוח אל '+s.email:' (בלי שליחה — אין מייל)')+'?'))return;
+    const who=s.pick==='new'?((s.last+' '+s.first).trim()):(picked.name||'');
+    if(!await uiConfirm('להפיק קבלה על ₪'+s.amount+' ל'+who+(s.send?' ולשלוח במייל אל '+emTo:' (בלי שליחה במייל)')+'?'))return;
     go.disabled=true; toast('מפיק קבלה…');
     let r=await api('POST','/api/receipts/ezcount',body);
     if(r&&!r.ok&&r.donation_id&&/לא מוגדר/.test(r.error||'')){
       // איזיקאונט לא מוגדר — התרומה כבר נשמרה; מפיקים בעיצוב שלנו
-      r=await api('POST','/api/receipts/issue',{donation_id:r.donation_id,kind:'il'});
+      r=await api('POST','/api/receipts/issue',{donation_id:r.donation_id,kind:'il',email:s.email,send:s.send?1:0});
     }
     go.disabled=false;
     if(!r||!r.ok){await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return;}
@@ -12586,6 +12592,7 @@ function renderReceipts(){
           <div class="two"><label class="fld"><span>💳 אמצעי תשלום</span><input id="rc_meth" list="rc_meths" placeholder="העברה בנקאית / מזומן / צ'ק…"><datalist id="rc_meths"><option value="העברה בנקאית"><option value="מזומן"><option value="צ'ק"><option value="כרטיס אשראי"><option value="נדרים פלוס"><option value="הוראת קבע"><option value="Zelle"><option value="PayPal"><option value="Check"><option value="Credit Card"></datalist></label>
             <label class="fld"><span>🎯 עבור</span><input id="rc_pur" list="rc_purs" placeholder="תרומה / יששכר־זבולון / פרנס לילה…"><datalist id="rc_purs">${RCATS.filter(Boolean).map(c=>`<option value="${esc(c)}">`).join('')}<option value="תרומה"></datalist></label></div>
           <label class="fld"><span>📝 הערה (למשל אסמכתא)</span><input id="rc_note" placeholder="אסמכתא 12345"></label>
+          <label class="gvall"><input type="checkbox" id="rc_send" ${em?'checked':''} ${em?'':'disabled'}> 📧 לשלוח את הקבלה במייל לתורם אחרי ההפקה${em?'':' (אין מייל בכרטיס)'}</label>
           <div class="addrow"><button class="btn sm" id="rc_newok">🧾 שמור את התרומה והפק קבלה</button></div></details></div>`;
     }
   }
@@ -12612,8 +12619,11 @@ function renderReceipts(){
   view.querySelectorAll('.rcnew .dpr[data-id]').forEach(el=>el.onclick=()=>{rcDonor=+el.dataset.id;renderReceipts();});
   const bk=document.getElementById('rc_back'); if(bk)bk.onclick=()=>{rcDonor=null;rcQ='';renderReceipts();};
   view.querySelectorAll('.rcissue').forEach(b=>b.onclick=async()=>{
+    const dd=DB.find(x=>x.id==rcDonor); const em=dd?(splitEmails(dd.email)[0]||''):'';
+    let sendIt=false;
+    if(em)sendIt=await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן, לשלוח','לא, רק להפיק');
     b.disabled=true; toast('מפיק קבלה…');
-    const r=await api('POST','/api/receipts/issue',{donation_id:+b.dataset.did,kind:rcKind});
+    const r=await api('POST','/api/receipts/issue',{donation_id:+b.dataset.did,kind:rcKind,send:sendIt?1:0});
     if(!r||!r.ok){b.disabled=false;await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return;}
     const d=DB.find(x=>x.id==rcDonor); const x=d&&(d.donations||[]).find(y=>y.id==+b.dataset.did);
     if(x){x.rc_id=r.doc.id;x.rc_num=r.doc.num;x.rc_kind=r.doc.kind;x.rc_sent=r.doc.sent_at||'';}
@@ -12625,8 +12635,10 @@ function renderReceipts(){
   const ok=document.getElementById('rc_newok'); if(ok)ok.onclick=async()=>{
     const amt=document.getElementById('rc_amt').value.trim();
     if(!amtNum(amt)){toast('חסר סכום');document.getElementById('rc_amt').focus();return;}
+    const sendIt=!!(document.getElementById('rc_send')&&document.getElementById('rc_send').checked);
+    if(!await uiConfirm('להפיק קבלה על '+(rcKind==='il'?'₪':'$')+amt+(sendIt?' ולשלוח אותה במייל לתורם':' (בלי שליחה במייל)')+'?'))return;
     ok.disabled=true; toast('שומר ומפיק…');
-    const r=await api('POST','/api/receipts/new',{donor_id:rcDonor,kind:rcKind,amount:amt,date:document.getElementById('rc_date').value,
+    const r=await api('POST','/api/receipts/new',{donor_id:rcDonor,kind:rcKind,amount:amt,date:document.getElementById('rc_date').value,send:sendIt?1:0,
       method:document.getElementById('rc_meth').value.trim(),purpose:document.getElementById('rc_pur').value.trim(),note:document.getElementById('rc_note').value.trim()});
     ok.disabled=false;
     if(!r||!r.ok){await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return;}
