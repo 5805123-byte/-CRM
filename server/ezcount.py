@@ -63,6 +63,23 @@ def _auth():
     return a
 
 
+def _auth_variants():
+    """כל הצירופים הסבירים של שני המפתחות — הראשון הוא ברירת המחדל (_auth)."""
+    k1, k2 = _env('EZCOUNT_API_KEY'), _env('EZCOUNT_CREATED_BY_KEY')
+    dev = _env('EZCOUNT_DEV_EMAIL') or _env('EZCOUNT_API_EMAIL')
+    out = [_auth()]
+    if k2 and k2 != k1:
+        out.append({'api_key': k2, 'developer_email': dev, 'created_by_api_key': k1})
+        out.append({'api_key': k2, 'developer_email': dev})
+        out.append({'api_key': k1, 'developer_email': dev})
+    return out
+
+
+def _is_key_error(res):
+    t = str(res or '').lower()
+    return any(w in t for w in ('api_key', 'api key', 'distributor', 'מפתח', 'developer_email'))
+
+
 def _post(path, payload, timeout=30):
     """קריאה ל-API. מחזירה (הצלחה, גוף/שגיאה בעברית).
     שגיאה של EZcount מוחזרת כלשונה, כדי שיהיה ברור מה בדיוק חסר."""
@@ -175,8 +192,22 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
     if date:
         body['doc_date'] = date           # תאריך ההפקדה, לא תאריך ההפקה
     ok, res = _post('/api/createDoc', body)
+    if not ok and _is_key_error(res):
+        # מאיר: בעמוד ה-API של איזיקאונט יש מפתח ל"מערכות שונות", ובנפרד לפייפאל/ויקס.
+        # לא ברור איזה מפתח הוא "של העסק" ואיזה "של המפיץ" — אם הוגדרו שניים ב-Render
+        # (EZCOUNT_API_KEY + EZCOUNT_CREATED_BY_KEY), מנסים את כל הצירופים לפני שמוותרים.
+        first_err = res
+        for auth in _auth_variants()[1:]:
+            for k in ('api_key', 'developer_email', 'created_by_api_key'):
+                body.pop(k, None)
+            body.update(auth)
+            ok, res = _post('/api/createDoc', body)
+            if ok or not _is_key_error(res):
+                break
+        if not ok:
+            res = first_err
     if not ok:
-        # ניסיון שני בלי השדות האופציונליים (כתובת, טלפון, תאריך, הערה) — אם אחד מהם
+        # ניסיון נוסף בלי השדות האופציונליים (כתובת, טלפון, תאריך, הערה) — אם אחד מהם
         # הוא מה שהפריע ל-EZcount, הקבלה עדיין תופק עם השם והסכום
         first_err = res
         for k in ('customer_address', 'customer_phone', 'doc_date', 'comment'):
