@@ -11019,6 +11019,9 @@ async function renderStip(){
   if(selPer)stipOpen[stipKollel+'|'+stipView+'|'+selPer]=true;
   else if(stipView==='holiday'&&stipFamSel[selKey])shownPeriods.forEach(p=>{stipOpen[stipKollel+'|'+stipView+'|'+p]=true;});   // "שתי הרשימות" — שתיהן פתוחות
   const tot=r=>(+r.amount||0)+(+r.extra||0);
+  // מאיר: "ברשימת מזומנים תוסיף עוד טור שנקרא 100$ לאשה… ותכתוב סיכום בסוף" — לחיצה
+  // על הטור מסמנת / מבטלת 100$; בסוף הרשימה: כמה אברכים וסה"כ בדולרים, לצד המזומנים בש"ח
+  const isCash=per=>/מזומנים/.test(String(per||''));
   const grpHTML=per=>{
     const key=stipKollel+'|'+stipView+'|'+per, open=!!stipOpen[key];
     const all=rows.filter(r=>r.period===per).sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
@@ -11026,9 +11029,10 @@ async function renderStip(){
     const base=all.reduce((s,r)=>s+(+r.amount||0),0), ext=all.reduce((s,r)=>s+(+r.extra||0),0);
     return `<div class="stgrp" data-per="${esc(per)}">
       <div class="stgh stghd" data-per="${esc(per)}"><span class="stcar">${open?'▼':'◀'}</span><b>${esc(stipLabel(stipView,per))}</b><span class="stn">${all.length} אברכים</span><span class="sttot">${stMoney(base+ext)}</span></div>
-      ${open?`${list.map((r,i)=>`<div class="strow" data-id="${r.id}"><span class="stidx">${i+1}</span>
+      ${open?`${isCash(per)?`<div class="sthead"><span class="stidx">#</span><span class="stname">האברך · פירוט המזומנים</span><span class="stamt">מזומנים</span><span class="stusdh">100$ לאשה</span><span class="stgoth">קיבל</span></div>`:''}${list.map((r,i)=>`<div class="strow${isCash(per)?' cash':''}" data-id="${r.id}"><span class="stidx">${i+1}</span>
           <span class="stname">${esc(r.name)}${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
           <span class="stamt">${stMoney(tot(r))}${+r.extra?`<small>+${stMoney(r.extra)} תוספת</small>`:''}</span>
+          ${isCash(per)?`<button class="stusd${+r.usd?' on':''}" data-id="${r.id}" title="${+r.usd?'קיבלה 100$ — לחץ לבטל':'לחץ לסמן 100$ לאשה'}">${+r.usd?'$'+Math.round(+r.usd):'—'}</button>`:''}
           <button class="stgot${+r.got?' on':''}" data-id="${r.id}" title="${+r.got?'קיבל ✓ — לחץ לבטל':'לחץ לסמן שקיבל'}">✓</button>
           <button class="stedit" data-id="${r.id}" title="תקן / הוסף / הערה">✏️</button></div>
           ${stipEdit===r.id?`<div class="stform" data-edit="${r.id}">
@@ -11041,6 +11045,8 @@ async function renderStip(){
             <input class="sta_amt" inputmode="decimal" placeholder="סכום"><input class="sta_note" placeholder="📝 הערה">
             <button class="btn sm sta_save" data-per="${esc(per)}">💾 הוסף</button><button class="btn sm ghost ste_x">ביטול</button></div>`:''}
         <div class="stfoot"><span>סה"כ ${esc(stipLabel(stipView,per))} <small>· מהדוח ${stMoney(base)}${ext?(' + תוספות '+stMoney(ext)):''} · ✓ קיבלו ${all.filter(r=>+r.got).length} מתוך ${all.length}</small></span><span>${stMoney(base+ext)}</span></div>
+        ${isCash(per)?(()=>{const u=all.filter(r=>+r.usd),us=u.reduce((s,r)=>s+(+r.usd||0),0);return `<div class="stfoot stusdf"><span>💵 100$ לאשה <small>· ${u.length} אברכים מתוך ${all.length}${all.length-u.length?(' · בלי: '+all.filter(r=>!+r.usd).map(r=>esc(r.name)).join(', ')):''}</small></span><span>$${us.toLocaleString('en-US')}</span></div>
+        <div class="stfoot"><span>סה"כ הכל <small>· מזומנים ${stMoney(base+ext)} + ${u.length}×100$</small></span><span>${stMoney(base+ext)} + $${us.toLocaleString('en-US')}</span></div>`;})():''}
         <div style="display:flex;gap:6px;padding:8px 10px;flex-wrap:wrap"><button class="btn sm ghost stadd" data-per="${esc(per)}">➕ הוסף אברך לרשימה</button><button class="btn sm ghost stcsv" data-per="${esc(per)}">⬇️ אקסל</button><button class="btn sm ghost stdelgrp" data-per="${esc(per)}" style="color:var(--no);margin-inline-start:auto">🗑 מחק את הרשימה</button></div>`:''}
     </div>`;};
   const grand=rows.reduce((s,r)=>s+tot(r),0);
@@ -11065,7 +11071,8 @@ async function renderStip(){
     ${shownPeriods.map(grpHTML).join('')||`<div class="empty">אין עדיין ${stipView==='holiday'?'מלגות חגים':'מלגות חודשיות'} ל${esc(STIP_KOL.find(x=>x[0]===stipKollel)[1].replace(/^\S+ /,''))}. העלה דוח או הדבק רשימה.</div>`}
     ${periods.length>1?`<div class="stsum"><h3>📊 סיכום — ${esc(STIP_KOL.find(x=>x[0]===stipKollel)[1])} · ${stipView==='holiday'?'מלגות חגים':'מלגות חודשיות'}</h3>
       ${periods.map(per=>{const g=rows.filter(r=>r.period===per);return `<div class="r"><span>${esc(stipLabel(stipView,per))} <small style="color:var(--muted)">${g.length} אברכים</small></span><b>${stMoney(g.reduce((s,r)=>s+tot(r),0))}</b></div>`;}).join('')}
-      <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}</span></div></div>`:''}`;
+      ${(()=>{const u=rows.filter(r=>+r.usd);return u.length?`<div class="r"><span>💵 100$ לאשה <small style="color:var(--muted)">${u.length} אברכים</small></span><b>$${u.reduce((s,r)=>s+(+r.usd||0),0).toLocaleString('en-US')}</b></div>`:'';})()}
+      <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}${rows.some(r=>+r.usd)?` + $${rows.reduce((s,r)=>s+(+r.usd||0),0).toLocaleString('en-US')}`:''}</span></div></div>`:''}`;
   view.querySelectorAll('.stghd').forEach(h=>h.onclick=()=>{const k=stipKollel+'|'+stipView+'|'+h.dataset.per;stipOpen[k]=!stipOpen[k];renderStip();});
   view.querySelectorAll('.stpc[data-per]').forEach(b=>b.onclick=()=>{stipPer[selKey]=b.dataset.per;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
   view.querySelectorAll('.stpc[data-fam]').forEach(b=>b.onclick=()=>{stipFamSel[selKey]=b.dataset.fam;stipPer[selKey]=undefined;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
@@ -11113,10 +11120,12 @@ async function renderStip(){
   view.querySelectorAll('.stdelgrp').forEach(b=>b.onclick=async()=>{
     const per=b.dataset.per; if(!confirm('למחוק את כל הרשימה של '+stipLabel(stipView,per)+' ('+STIP_KOL.find(x=>x[0]===stipKollel)[1]+')?\nכולל התוספות וההערות שרשמת בה.'))return;
     await api('POST','/api/stipends/delete_group',{kollel:stipKollel,kind:stipView,period:per}); await loadStip(); toast('הרשימה נמחקה'); renderStip();});
+  view.querySelectorAll('.stusd').forEach(b=>b.onclick=async()=>{const r=STIP.find(x=>x.id==b.dataset.id);if(!r)return;const v=+r.usd?0:100;
+    await api('PUT','/api/stipends/'+r.id,{usd:v});r.usd=v;renderStip();});
   view.querySelectorAll('.stcsv').forEach(b=>b.onclick=()=>{
     const per=b.dataset.per, g=rows.filter(r=>r.period===per).sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
     const qv=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-    const csv=['#,שם האברך,מהדוח,תוספת,סה"כ,הערה,פירוט'].concat(g.map((r,i)=>[i+1,r.name,Math.round(+r.amount||0),Math.round(+r.extra||0),Math.round(tot(r)),r.note||'',r.details||''].map(qv).join(','))).join('\n');
+    const csv=['#,שם האברך,מהדוח,תוספת,סה"כ,100$ לאשה,הערה,פירוט'].concat(g.map((r,i)=>[i+1,r.name,Math.round(+r.amount||0),Math.round(+r.extra||0),Math.round(tot(r)),+r.usd?('$'+Math.round(+r.usd)):'',r.note||'',r.details||''].map(qv).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download=('מלגות '+stipLabel(stipView,per)+' '+stipKollel).replace(/[\\/:*?"<>|]/g,'-')+'.csv';document.body.appendChild(a);a.click();a.remove();});
   const pdf=document.getElementById('stpdf');
   if(pdf)pdf.onchange=async()=>{const f=pdf.files[0]; if(!f)return; toast('קורא את הדוח…');

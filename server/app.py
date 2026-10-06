@@ -441,6 +441,9 @@ def ensure_schema():
     # נרשם, וכל דיווח חוזר של אותו תשלום יצר שורה נוספת.
     try: con.execute("ALTER TABLE stipends ADD COLUMN got INTEGER DEFAULT 0")   # ✓ קיבל (וי)
     except Exception: pass
+    # מאיר: "ברשימת מזומנים תוסיף עוד טור שנקרא 100$ לאשה" — סכום בדולרים לצד המזומנים בש"ח
+    try: con.execute("ALTER TABLE stipends ADD COLUMN usd REAL DEFAULT 0")
+    except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN tid TEXT")
     except Exception: pass
     # מאיר: "אם הכנסתי פה שזה פרנס לילה — שיפתח לי חלון לשאול איזה לילה,
@@ -2944,6 +2947,34 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  mayor meeting error:', e)
+
+    # מאיר: "במלגות חג סוכות של כולל חצות תוסיף ברשימת מזומנים עוד טור שנקרא 100$ לאשה,
+    # ושם תעשה אצל כולם שקיבלו 100$ חוץ מפיליפס, גם את משה אלוש תוסיף שם… גם לאברך שלא
+    # קיבל מזומנים בכל המועדים האלו… תוסיף ב-100 דולר שם את משה מרשט ואת דויטש אמא"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='cash_usd100_v1'").fetchone():
+            per = 'חלוקת מזומנים סוכות תשפ"ז'
+            rows = con.execute("SELECT id,name FROM stipends WHERE kollel='חצות' AND kind='holiday' AND period=?", (per,)).fetchall()
+            if rows:
+                n = 0
+                for r in rows:
+                    if 'פיליפס' in (r['name'] or ''):
+                        continue
+                    con.execute("UPDATE stipends SET usd=100, updated=? WHERE id=?", (now_iso(), r['id'])); n += 1
+                have = {(r['name'] or '').strip() for r in rows}
+                for nm in ('מרשט משה', 'דויטש אמא'):
+                    alt = ' '.join(reversed(nm.split()))
+                    if nm in have or alt in have:
+                        con.execute("UPDATE stipends SET usd=100, updated=? WHERE kollel='חצות' AND kind='holiday' AND period=? AND name IN (?,?)", (now_iso(), per, nm, alt))
+                        continue
+                    con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created,got,usd) "
+                                "VALUES('חצות','holiday',?,?,0,0,'','ערב סוכות — · הילולת רבינו — · הושענא רבה —','','ידני',?,0,100)",
+                                (per, nm, today_iso())); n += 1
+                print('  100$ לאשה: %d אברכים' % n)
+            con.execute("INSERT INTO seed_flags(name) VALUES('cash_usd100_v1')")
+            con.commit()
+    except Exception as e:
+        print('  usd100 error:', e)
 
     # מפת בית הכנסת — מאיר: "בדיוק אותו מבנה והושבה כמו בצילום". השמות שבצילום הם
     # הבסיס: מקום שאין עליו חבר מהרשימה מקבל את השם מהצילום כתווית (ניתן לעריכה).
@@ -15079,12 +15110,12 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); sid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('amount', 'extra', 'note', 'name', 'details', 'got'):
+            for k in ('amount', 'extra', 'note', 'name', 'details', 'got', 'usd'):
                 if k in b:
                     v = b[k]
                     if k == 'got':
                         v = 1 if b[k] else 0
-                    elif k in ('amount', 'extra'):
+                    elif k in ('amount', 'extra', 'usd'):
                         try: v = float(str(v).replace(',', '') or 0)
                         except ValueError: v = 0.0
                     sets.append(k + '=?'); vals.append(v)
