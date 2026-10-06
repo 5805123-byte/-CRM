@@ -26,6 +26,8 @@ import urllib.request
 
 DEF_BASE = 'https://api.ezcount.co.il'
 DEF_TYPE = 320                 # קבלה
+UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'
+LAST = {'at': '', 'ok': None, 'msg': ''}      # הקריאה האחרונה ל-createDoc — מוצגת ב-🩺
 
 # אמצעי התשלום כפי שהוא נרשם אצלנו -> קוד התשלום ב-EZcount
 PAY_CASH, PAY_CHEQUE, PAY_TRANSFER, PAY_CARD = 1, 2, 3, 4
@@ -33,6 +35,11 @@ PAY_CASH, PAY_CHEQUE, PAY_TRANSFER, PAY_CARD = 1, 2, 3, 4
 
 def _env(k, d=''):
     return (os.environ.get(k) or d).strip()
+
+
+def _now():
+    import datetime
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
 
 def configured():
@@ -56,8 +63,12 @@ def _post(path, payload, timeout=30):
     """קריאה ל-API. מחזירה (הצלחה, גוף/שגיאה בעברית).
     שגיאה של EZcount מוחזרת כלשונה, כדי שיהיה ברור מה בדיוק חסר."""
     data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    # מאיר ראה "error code: 1010" בטקסט פשוט (לא JSON) — זו חסימה של Cloudflare מול
+    # User-Agent של סקריפט (Python-urllib), לא תשובה של EZcount. לכן כותרות כמו דפדפן.
     req = urllib.request.Request(_base() + path, data=data,
-                                 headers={'Content-Type': 'application/json'})
+                                 headers={'Content-Type': 'application/json; charset=utf-8',
+                                          'Accept': 'application/json, text/plain, */*',
+                                          'User-Agent': UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read().decode('utf-8', 'replace')
@@ -167,7 +178,9 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
         ok, res = _post('/api/createDoc', body)
         if not ok:
             print('  EZcount createDoc נכשל:', first_err, '|', res)
+            LAST.update(at=_now(), ok=False, msg=str(first_err)[:200])
             return False, first_err
+    LAST.update(at=_now(), ok=True, msg='קבלה %s הופקה' % (res.get('docnum') or res.get('doc_number') or ''))
     return True, {
         'docnum': str(res.get('docnum') or res.get('doc_number') or res.get('doc_uuid') or ''),
         'doc_url': res.get('pdf_link') or res.get('doc_url') or '',
@@ -180,7 +193,7 @@ def fetch_pdf(url, timeout=30):
     if not (url or '').startswith('http'):
         return None
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'kollel-crm'}), timeout=timeout) as r:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=timeout) as r:
             data = r.read()
         return data if data[:4] == b'%PDF' else None
     except Exception:

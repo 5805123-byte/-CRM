@@ -18460,6 +18460,12 @@ def health_report():
             import ezcount as _ez
             if _ez.configured():
                 _ok2, _m2 = _ez.check()
+                # גם תוצאת ההפקה האחרונה בפועל (createDoc) — זו הבדיקה האמיתית
+                L = getattr(_ez, 'LAST', {}) or {}
+                if L.get('at'):
+                    _m2 += ' · הפקה אחרונה %s: %s' % (L['at'], ('✓ ' if L.get('ok') else '✗ ') + (L.get('msg') or ''))
+                    if L.get('ok'):
+                        _ok2 = True
                 add('קבלות (EZcount)', 'ok' if _ok2 else 'bad', _m2)
             else:
                 add('קבלות (EZcount)', 'warn',
