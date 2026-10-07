@@ -12780,7 +12780,7 @@ function ymVoiceHTML(st){
       <button class="btn sm ghost" id="ym_gsave">💾 שמור הוראה</button>
       <div id="ym_sampleout"></div>
       <div class="hintxt">כל הודעה נוצרת בנפרד ב-Gemini (עם השם והסכום של הנמען), מומרת לקובץ שמע ומועלית לימות. אם Gemini נכשל או עמוס — ההודעה יוצאת בקול של ימות, ולא נופלת.</div>`:''}
-    <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>🗣️ ${gem?'קול הגיבוי של ימות':'קול ההקראה'}</span><select id="ym_voice">${V.map(([k,l])=>`<option value="${esc(k)}" ${k===(st.voice||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+    <div class="ymflt"><span class="hintxt" style="flex:1">${gem?'אם Gemini נכשל — ההודעה יוצאת בקול הרגיל של ימות.':'🤖 הקול הרגיל של ימות (ימות ביטלו את בחירת הקולות).'}</span>
       <button class="btn sm ghost" id="ym_say">👂 איך זה יוקרא?</button></div>
     <div id="ym_sayout"></div>
     <details class="ympron"><summary>📖 מילון הגייה — מילים שמבוטאות לא נכון</summary>
@@ -12789,7 +12789,7 @@ function ymVoiceHTML(st){
       <button class="btn sm" id="ym_pronsave">💾 שמור מילון</button></details>
     <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></div>`;}
 function ymWireVoice(first){
-  const g=id=>document.getElementById(id); if(!g('ym_voice'))return;
+  const g=id=>document.getElementById(id); if(!g('ym_say'))return;
   view.querySelectorAll('.ymeng .ymc').forEach(b=>b.onclick=async()=>{const e=b.dataset.eng;const r=await api('POST','/api/yemot/voice',{engine:e});
     if(r&&r.ok){ymStatus.engine=e;renderCommYm();}});
   const gv=g('ym_gvoice'); if(gv)gv.onchange=async()=>{await api('POST','/api/yemot/voice',{gvoice:gv.value});ymStatus.gvoice=gv.value;toast('הקול נשמר ✓');};
@@ -12800,9 +12800,7 @@ function ymWireVoice(first){
     sp.disabled=false;sp.textContent=t0;
     g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio><div class="hintxt">${esc(r.text)}</div><div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz).</div></div>`
       :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};
-  g('ym_voice').onchange=async()=>{const v=g('ym_voice').value;const r=await api('POST','/api/yemot/voice',{voice:v});
-    if(r&&r.ok){ymStatus.voice=v;toast('הקול נשמר ✓ — נסה "שלח בדיקה אליי"');}else toast((r&&r.error)||'לא נשמר');};
-  g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{voice:ymStatus.voice||'',pron:p});
+  g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{pron:p});
     if(r&&r.ok){ymStatus.pron=p;toast('המילון נשמר ✓');}else toast('לא נשמר');};
   g('ym_say').onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,pron:g('ym_pron').value});

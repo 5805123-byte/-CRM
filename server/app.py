@@ -13354,7 +13354,9 @@ def ym_worker(job_id):
             if not job:
                 return
             con.execute("UPDATE ym_job SET status='sending' WHERE id=?", (job_id,)); con.commit()
-            ym_voice = kv_get(con, 'ym_voice', '')
+            # מאיר: "ימות המשיח ביטלו את הקולות שלהם ויש רק קול אחד כברירת מחדל, אז תבטל את
+            # שינוי קול בימות" — לא שולחים tts_voice בכלל
+            ym_voice = ''
             ym_pron = kv_get(con, 'ym_pron', '')
             # מאיר: "נעשה דרך AI סטודיו של גימני עם ה-API" — קול אנושי (אם נבחר ומוגדר מפתח)
             ym_engine = kv_get(con, 'ym_engine', '')
@@ -16806,11 +16808,7 @@ class H(BaseHTTPRequestHandler):
             # הקול שימות מקריא בו, ומילון ההגייה ("מילה=איך לומר")
             import yemot as _ym
             con = db()
-            if 'voice' in b:
-                v = str(b.get('voice') or '')
-                if v not in [x[0] for x in _ym.VOICES]:
-                    con.close(); return self._send(200, {'ok': False, 'error': 'קול לא מוכר'})
-                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_voice',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (v,))
+            con.execute("DELETE FROM app_kv WHERE k='ym_voice'")      # בחירת קול בימות בוטלה
             if 'pron' in b:
                 con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (str(b.get('pron') or '')[:5000],))
             for key, kvk, lim in (('engine', 'ym_engine', 20), ('gvoice', 'ym_gvoice', 40), ('gstyle', 'ym_gstyle', 600)):
