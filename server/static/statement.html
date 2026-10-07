@@ -92,6 +92,7 @@
 <body>
 <div class="bar">
   <label>שנת מס <select id="yr"></select></label>
+  <label title="קבלה מרוכזת של כמה שנים">עד <select id="yr2"></select></label>
   <span id="adrwrap" style="display:contents"><input id="adr" class="wide" placeholder="כתובת התורם לקבלה (street, city, state, zip)">
   <button class="g" id="adrsave">💾 שמור כתובת בכרטיס</button></span>
   <button class="g" id="adredit" style="display:none" title="הכתובת נלקחת מהכרטיס — כאן אפשר לתקן אותה">✏️ כתובת</button>
@@ -115,14 +116,14 @@
 </details>
 <div class="scroller"><div class="sheet"><div class="content">
   <div class="head">
-    <div class="ttl">Receipt<small>Contributions for tax year <span class="yr2"></span></small></div>
+    <div class="ttl">Receipt<small>Contributions for tax <span class="yrw">year</span> <span class="yr2"></span></small></div>
     <div class="meta"><div>No. <b class="no" id="r_num">—</b></div><div>Date: <b id="r_date"></b></div></div>
   </div>
   <div class="org"><span><b>Kollel Chatzos</b> · Cong. Zikhron Avos · 501(c)(3)</span><span>Tax ID (EIN) <b>20-0447034</b></span></div>
   <div class="to"><div class="lbl">Received from</div><div class="nm" id="r_name">Friend</div><div class="ad" id="r_addr" style="display:none"></div></div>
   <table id="tbl"><thead><tr><th>Date</th><th>Designation</th><th>Method</th><th class="r">Amount</th></tr></thead><tbody id="rows"></tbody></table>
   <div class="total" id="totbox"><span class="lbl">Total received in <span class="yr2"></span></span><span class="val" id="r_total">$0.00</span></div>
-  <div class="stmt">This receipt covers all contributions received from you during the calendar year <span class="yr2"></span>.
+  <div class="stmt">This receipt covers all contributions received from you during the calendar <span class="yrw">year</span> <span class="yr2"></span>.
     <b>No goods or services were provided in exchange for these contributions.</b> Contributions are tax-deductible to the
     extent allowed by law. Please keep this receipt for your records.</div>
   <div class="bless">A tremendous zechus — a full partner in the Torah of the Chatzos hours.
@@ -150,32 +151,40 @@ async function load(year){
   const r = await fetch('/api/statement?donor=' + encodeURIComponent(DID) + (year ? '&year=' + year : '')).then(x => x.json()).catch(() => null);
   if (!r || r.error) { $('warn').style.display = ''; $('warn').textContent = 'לא נמצא תורם'; return; }
   CUR = r;
-  document.title = 'Receipt ' + r.num + ' — ' + r.name + ' ' + r.year;
+  const YL = r.year_label || r.year;
+  document.title = 'Receipt ' + r.num + ' — ' + r.name + ' ' + YL;
   // הקובץ עצמו נוצר בשרת על הבלאנק המלא — מאיר: "שלא יהיה לבן בקצוות בכלל"
   $('dlpdf').href = '/statement.pdf?donor=' + encodeURIComponent(DID) + '&year=' + r.year + '&dl=1';
   $('r_num').textContent = r.num; $('r_date').textContent = nice(r.date);
-  document.querySelectorAll('.yr2').forEach(e => e.textContent = r.year);
+  document.querySelectorAll('.yr2').forEach(e => e.textContent = YL);
+  document.querySelectorAll('.yrw').forEach(e => e.textContent = r.multi ? 'years' : 'year');
   $('r_name').textContent = r.name;
   if (!$('adr').value) $('adr').value = r.addr || ''; paintAddr();
   // הכתובת נלקחת מהכרטיס; שדה ההקלדה מופיע רק כשאין כתובת בכרטיס (או בלחיצה על ✏️)
   const hasAddr = !!(r.addr || '').trim();
   $('adrwrap').style.display = hasAddr ? 'none' : 'contents'; $('adredit').style.display = hasAddr ? '' : 'none';
   $('adredit').onclick = () => { $('adrwrap').style.display = 'contents'; $('adredit').style.display = 'none'; $('adr').focus(); };
-  const ys = [...new Set([...(r.years||[]), String(new Date().getFullYear()), String(new Date().getFullYear()-1), r.year])].sort().reverse();
-  $('yr').innerHTML = ys.map(y => `<option ${y===r.year?'selected':''}>${y}</option>`).join('');
+  const y1 = r.y1 || r.year, y2 = r.y2 || r.year;
+  const ys = [...new Set([...(r.years||[]), String(new Date().getFullYear()), String(new Date().getFullYear()-1), y1, y2])].sort().reverse();
+  $('yr').innerHTML = ys.map(y => `<option ${y===y1?'selected':''}>${y}</option>`).join('');
+  $('yr2').innerHTML = ys.map(y => `<option ${y===y2?'selected':''}>${y}</option>`).join('');
   const rows = r.items || [];
-  $('tbl').classList.toggle('many', rows.length > 12);
-  $('rows').innerHTML = rows.map(i => `<tr><td>${shortD(i.date)}</td><td>${purposeEn(i.category)}</td><td class="meth">${methodEn(i.method)}</td><td class="r">${money(i.amount)}</td></tr>`).join('')
-    || `<tr><td colspan="4" class="none">No contributions recorded for ${r.year}.</td></tr>`;
+  // כמה שנים — שורה אחת לכל שנה+ייעוד ("Jan – Dec 2023 · Monthly Support · 12 × $101.00")
+  const shown = r.multi ? (r.lines || []) : rows;
+  $('tbl').classList.toggle('many', shown.length > 12);
+  $('rows').innerHTML = (r.multi
+      ? shown.map(i => `<tr><td>${i.date_label}</td><td>${i.designation}</td><td class="meth">${i.method}</td><td class="r">${money(i.amount)}</td></tr>`)
+      : shown.map(i => `<tr><td>${shortD(i.date)}</td><td>${purposeEn(i.category)}</td><td class="meth">${methodEn(i.method)}</td><td class="r">${money(i.amount)}</td></tr>`)).join('')
+    || `<tr><td colspan="4" class="none">No contributions recorded for ${YL}.</td></tr>`;
   $('r_total').textContent = money(r.total);
   $('mlist').innerHTML = rows.map(i => `<div><span>${shortD(i.date)} · ${purposeEn(i.category)} · ${money(i.amount)}</span><button data-id="${i.id}" title="מחק מהכרטיס">🗑</button></div>`).join('');
   $('mlist').querySelectorAll('button').forEach(b => b.onclick = async () => {
     if (!confirm('למחוק את התרומה הזאת מהכרטיס?')) return;
-    await fetch('/api/donation/' + b.dataset.id, {method:'DELETE'}); load($('yr').value);
+    await fetch('/api/donation/' + b.dataset.id, {method:'DELETE'}); load(curRange());
   });
-  if (!$('r_from').value) { $('r_from').value = r.year + '-01'; $('r_to').value = r.year + '-12'; $('m_date').value = r.year + '-01-01'; }
+  if (!$('r_from').value) { $('r_from').value = y1 + '-01'; $('r_to').value = y2 + '-12'; $('m_date').value = y1 + '-01-01'; }
   const w = [];
-  if (!rows.length) { w.push('אין תרומות משנת ' + r.year + ' בכרטיס — מלא אותן ידנית למטה (✍️), או בחר שנה אחרת.'); $('manual').open = true; }
+  if (!rows.length) { w.push('אין תרומות מ-' + YL + ' בכרטיס — מלא אותן ידנית למטה (✍️), או בחר שנה אחרת.'); $('manual').open = true; }
   if (!(r.addr||'').trim()) w.push('אין כתובת בכרטיס — הקלד את הכתובת בשדה למעלה (היא נכנסת לקבלה מיד), ואפשר לשמור אותה בכרטיס.');
   const nonusd = rows.filter(i => i.cur === '₪').length;
   if (nonusd) w.push(nonusd + ' תרומות בשקלים מופיעות כאן כסכום בדולרים — בדוק לפני הדפסה.');
@@ -189,7 +198,7 @@ $('m_add').onclick = async () => {
   const d = $('m_date').value, a = parseFloat($('m_amt').value.replace(/[^\d.]/g,''));
   if (!d || !a) { alert('צריך תאריך וסכום'); return; }
   $('m_add').disabled = true; await addDon(d, a, $('m_cat').value, $('m_meth').value); $('m_add').disabled = false; $('m_amt').value = '';
-  load(d.slice(0,4));
+  load(curRange());
 };
 $('r_add').onclick = async () => {
   const a = parseFloat($('r_amt').value.replace(/[^\d.]/g,'')), f = $('r_from').value, t = $('r_to').value;
@@ -200,7 +209,7 @@ $('r_add').onclick = async () => {
   if (!confirm('להוסיף ' + months.length + ' תשלומים של $' + a + ' לכרטיס?')) return;
   $('r_add').disabled = true;
   for (const d of months) await addDon(d, a, $('m_cat').value, $('m_meth').value);
-  $('r_add').disabled = false; load(f.slice(0,4));
+  $('r_add').disabled = false; load(curRange());
 };
 $('sendpdf').onclick = async () => {
   const b = $('sendpdf'), y = CUR ? CUR.year : ($('yr').value || ''); b.disabled = true; const t0 = b.textContent; b.textContent = 'מכין את הקובץ…';
@@ -214,7 +223,9 @@ $('sendpdf').onclick = async () => {
   } catch (e) { if (!(e && e.name === 'AbortError')) window.open(url, '_blank'); }
   b.disabled = false; b.textContent = t0;
 };
-$('yr').onchange = () => load($('yr').value);
+function curRange(){ const a = $('yr').value, b = $('yr2').value || a; return a === b ? a : (a < b ? a + '-' + b : b + '-' + a); }
+$('yr').onchange = () => { if ($('yr2').value < $('yr').value) $('yr2').value = $('yr').value; load(curRange()); };
+$('yr2').onchange = () => load(curRange());
 $('adr').oninput = paintAddr;
 $('adrsave').onclick = async () => {
   const a = $('adr').value.trim(); if (!a || !DID) return;

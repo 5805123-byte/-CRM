@@ -8158,9 +8158,16 @@ def statement_data(con, did, year=''):
     years = sorted({(r['date'] or '')[:4] for r in rows if (r['date'] or '')[:4].isdigit()}, reverse=True)
     if not year:
         year = years[0] if years else today_iso()[:4]
+    # מאיר: "קבלה מרוכזת של כל השנים האלו — 2023, 2024, 2025" — year יכול להיות טווח "2023-2025"
+    mm = re.match(r'^(\d{4})(?:\D+(\d{4}))?$', str(year))
+    y1 = mm.group(1) if mm else str(year)[:4]
+    y2 = (mm.group(2) if mm and mm.group(2) else y1)
+    if y2 < y1:
+        y1, y2 = y2, y1
+    year = y1 if y1 == y2 else '%s-%s' % (y1, y2)
     items = []
     for r in rows:
-        if (r['date'] or '')[:4] != year or not int(r.get('paid') or 0):
+        if not (y1 <= (r['date'] or '')[:4] <= y2) or not int(r.get('paid') or 0):
             continue
         try: a = float(re.sub(r'[^\d.]', '', str(r['amount'] or '')) or 0)
         except ValueError: a = 0
@@ -8181,10 +8188,32 @@ def statement_data(con, did, year=''):
         num = max(RECEIPT_START, int(mx or 0) + 1)
         con.execute("INSERT OR IGNORE INTO receipts(rkey,num,created) VALUES(?,?,?)", (key, num, today_iso()))
         con.commit()
+    multi = y1 != y2
     return {'donor_id': did, 'name': name, 'addr': ', '.join(x for x in ad if x),
             'email': (d['email'] or '').strip(), 'year': year, 'years': years,
-            'items': items, 'total': round(sum(i['amount'] for i in items), 2),
+            'y1': y1, 'y2': y2, 'multi': multi, 'year_label': (y1 + '–' + y2) if multi else y1,
+            'items': items, 'lines': statement_lines(items) if multi else [],
+            'total': round(sum(i['amount'] for i in items), 2),
             'num': num, 'date': today_iso()}
+
+
+def statement_lines(items):
+    """קבלה של כמה שנים — שורה אחת לכל שנה+ייעוד+אמצעי, למשל "Jan – Dec 2023 · Monthly Support ·
+    12 × $101.00", כדי ש-36 תשלומים ייכנסו בעמוד אחד."""
+    groups = {}
+    for it in items:
+        k = ((it['date'] or '')[:4], _st_map(_ST_PURPOSE, it['category'], 'General Donation'), _st_map(_ST_METHOD, it['method'], ''))
+        groups.setdefault(k, []).append(it)
+    out = []
+    for (yr, purp, meth), lst in sorted(groups.items()):
+        lst.sort(key=lambda x: x['date'] or '')
+        mons = [datetime.date.fromisoformat(x['date'][:10]).strftime('%b') for x in lst if re.match(r'\d{4}-\d{2}-\d{2}', x['date'] or '')]
+        dl = ('%s – %s %s' % (mons[0], mons[-1], yr)) if len(mons) > 1 and mons[0] != mons[-1] else ((mons[0] + ' ' + yr) if mons else yr)
+        amts = {round(x['amount'], 2) for x in lst}
+        det = ('%d × $%s' % (len(lst), format(list(amts)[0], ',.2f'))) if len(amts) == 1 and len(lst) > 1 else ('%d payments' % len(lst) if len(lst) > 1 else '')
+        out.append({'date_label': dl, 'designation': purp + ((' · ' + det) if det else ''), 'method': meth,
+                    'amount': round(sum(x['amount'] for x in lst), 2), 'year': yr, 'count': len(lst)})
+    return out
 
 
 _ST_PURPOSE = [(r'יששכר|זבולון|zevulun|yissachar', 'Yissachar–Zevulun Partnership'),
@@ -8484,7 +8513,8 @@ def statement_file(con, did, year, fmt='pdf'):
     # ---- כותרת: RECEIPT + מספר ותאריך ----
     ft = font(4.2 * u, False); sp = .7 * u
     spaced('RECEIPT', ft, x0, y, GOLD, sp)
-    fs = font(1.6 * u); sub = 'CONTRIBUTIONS FOR TAX YEAR ' + info['year']
+    YL = info.get('year_label') or info['year']
+    fs = font(1.6 * u); sub = ('CONTRIBUTIONS FOR TAX YEARS ' if info.get('multi') else 'CONTRIBUTIONS FOR TAX YEAR ') + YL
     spaced(sub, fs, x0, y + 4.2 * u + .6 * u, DEEP, .3 * u)
     fm, fmb, fno = font(1.75 * u), font(1.75 * u, True), font(2.6 * u, True)
     t1 = 'No. '; dr.text((x1 - wid(t1, fm) - wid(str(info['num']), fno), y + .2 * u), t1, font=fm, fill=SOFT)
@@ -8515,9 +8545,10 @@ def statement_file(con, did, year, fmt='pdf'):
         dr.text((xx, yy), info['addr'], font=fa, fill=SOFT)
     y += box_h + int(2 * u)
     # ---- טבלה ----
-    many = len(info['items']) > 12
+    rows_ = info['lines'] if info.get('multi') else info['items']
+    many = len(rows_) > 12
     fh = font(1.35 * u); fr = font((1.6 if many else 1.8) * u)
-    cols = [x0 + int(.8 * u), x0 + int(cw * .27), x0 + int(cw * .57), x1 - int(.8 * u)]
+    cols = [x0 + int(.8 * u), x0 + int(cw * (.25 if info.get('multi') else .27)), x0 + int(cw * (.66 if info.get('multi') else .57)), x1 - int(.8 * u)]
     for i, h in enumerate(['DATE', 'DESIGNATION', 'METHOD']):
         spaced(h, fh, cols[i], y, SOFT, .25 * u)
     spaced('AMOUNT', fh, cols[3] - spaced_w('AMOUNT', fh, .25 * u), y, SOFT, .25 * u)
@@ -8525,14 +8556,18 @@ def statement_file(con, did, year, fmt='pdf'):
     dr.line([(x0, y), (x1, y)], fill=LINE, width=max(2, int(.2 * u)))
     rh = int(((.4 if many else .7) * 2 + (1.6 if many else 1.8) * 1.25) * u)
     if not info['items']:
-        fi = font(1.9 * u); t = 'No contributions recorded for %s.' % info['year']
+        fi = font(1.9 * u); t = 'No contributions recorded for %s.' % YL
         dr.text((x0 + (cw - wid(t, fi)) / 2, y + int(2 * u)), t, font=fi, fill=SOFT); y += int(6 * u)
-    for it in info['items']:
+    for it in rows_:
         ty = y + int((.4 if many else .7) * u)
-        dd = datetime.date.fromisoformat(it['date'][:10]).strftime('%b %-d, %Y') if re.match(r'\d{4}-\d{2}-\d{2}', it['date'] or '') else (it['date'] or '')
+        if info.get('multi'):
+            dd, des, met = it['date_label'], it['designation'], it['method']
+        else:
+            dd = datetime.date.fromisoformat(it['date'][:10]).strftime('%b %-d, %Y') if re.match(r'\d{4}-\d{2}-\d{2}', it['date'] or '') else (it['date'] or '')
+            des, met = _st_map(_ST_PURPOSE, it['category'], 'General Donation'), _st_map(_ST_METHOD, it['method'], '')
         dr.text((cols[0], ty), dd, font=fr, fill=INK)
-        dr.text((cols[1], ty), _st_map(_ST_PURPOSE, it['category'], 'General Donation'), font=fr, fill=INK)
-        dr.text((cols[2], ty), _st_map(_ST_METHOD, it['method'], ''), font=fr, fill=SOFT)
+        dr.text((cols[1], ty), des, font=fr, fill=INK)
+        dr.text((cols[2], ty), met, font=fr, fill=SOFT)
         amt = '$' + format(it['amount'], ',.2f')
         dr.text((cols[3] - wid(amt, fr), ty), amt, font=fr, fill=INK)
         y += rh
@@ -8544,12 +8579,12 @@ def statement_file(con, did, year, fmt='pdf'):
     ftl, ftv = font(1.5 * u), font(3.6 * u, True)
     tot = '$' + format(info['total'], ',.2f')
     dr.text((x1 - int(1.6 * u) - wid(tot, ftv), y + int(1.0 * u)), tot, font=ftv, fill=DEEP)
-    lbl = 'TOTAL RECEIVED IN ' + info['year']
+    lbl = 'TOTAL RECEIVED IN ' + YL
     spaced(lbl, ftl, x1 - int(1.6 * u) - wid(tot, ftv) - int(2 * u) - spaced_w(lbl, ftl, .3 * u), y + th - int(1.2 * u) - int(1.5 * u * 1.1), SOFT, .3 * u)
     y += th + int(1.8 * u)
     # ---- ההצהרה ----
     fp, fpb = font(1.7 * u), font(1.7 * u, True)
-    parts = [('This receipt covers all contributions received from you during the calendar year %s. ' % info['year'], fp, INK),
+    parts = [(('This receipt covers all contributions received from you during the calendar years %s. ' if info.get('multi') else 'This receipt covers all contributions received from you during the calendar year %s. ') % YL, fp, INK),
              ('No goods or services were provided in exchange for these contributions. ', fpb, DEEP),
              ('Contributions are tax-deductible to the extent allowed by law. Please keep this receipt for your records.', fp, INK)]
     lh = int(1.7 * u * 1.55); x = x0; line_y = y
@@ -13766,7 +13801,7 @@ class H(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
             except ValueError: did = 0
-            year = re.sub(r'\D', '', (qs.get('year') or [''])[0])[:4]
+            year = (re.sub(r'[^\d\-]', '', (qs.get('year') or [''])[0]) or '')[:9]
             con = db()
             try: info = statement_data(con, did, year)
             finally: con.close()
@@ -13778,7 +13813,7 @@ class H(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
             except ValueError: did = 0
-            year = re.sub(r'\D', '', (qs.get('year') or [''])[0])[:4]
+            year = (re.sub(r'[^\d\-]', '', (qs.get('year') or [''])[0]) or '')[:9]
             fmt = 'pdf' if self.path.split('?')[0].endswith('.pdf') else 'jpg'
             con = db()
             try: data, fname = statement_file(con, did, year, fmt)
