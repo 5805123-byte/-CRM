@@ -210,6 +210,81 @@ def send_sms(phone, text, from_=''):
     return call('SendSms', p)
 
 
+def download(path, timeout=40):
+    """תוכן קובץ במערכת (DownloadFile) — טקסט גולמי, לא JSON. נרשם בלוג."""
+    if not configured():
+        return False, 'ימות המשיח לא מוגדר ב-Render'
+    params = {'path': path}
+    t0 = time.time()
+    req = urllib.request.Request(_base() + 'DownloadFile?' + urllib.parse.urlencode(dict(params, token=_token())),
+                                 headers={'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode('utf-8', 'replace')
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode('utf-8', 'replace')
+    except Exception as e:
+        _trace('DownloadFile', params, False, str(e), (time.time() - t0) * 1000)
+        return False, 'הורדת הקובץ נכשלה: %s' % e
+    ms = (time.time() - t0) * 1000
+    st = ''
+    if raw.lstrip().startswith('{'):
+        try:
+            st = str(json.loads(raw).get('responseStatus') or '').upper()
+        except Exception:
+            st = ''
+    if st and st != 'OK':
+        _trace('DownloadFile', params, False, raw, ms)
+        try:
+            msg = json.loads(raw).get('message') or raw[:160]
+        except Exception:
+            msg = raw[:160]
+        return False, 'ימות המשיח: %s' % msg
+    _trace('DownloadFile', params, True, raw, ms)
+    return True, raw
+
+
+def norm_ext(path):
+    """'5' / '/5' / 'ivr2:5' / 'ivr2:/5/' -> 'ivr2:/5'"""
+    p = (path or '').strip().replace('\\', '/')
+    p = re.sub(r'^ivr2:', '', p).strip('/')
+    return 'ivr2:/' + p if p else ''
+
+
+def update_billing(ext_path, amounts):
+    """מאיר: "סכום לחיוב מותאם לכל לקוח… BillingSum.ini בשלוחה, ובתוכו לכל זיהוי=סכום.
+    לפני ששולחים הודעה תעדכן בקובץ הזה" — קוראים את הקובץ הקיים, מעדכנים רק את
+    הטלפונים של המשלוח (שאר השורות נשארות), ומעלים בחזרה. לא נוגעים בהגדרות השלוחה."""
+    ext = norm_ext(ext_path)
+    if not ext:
+        return False, 'לא הוגדרה שלוחת הסליקה'
+    fpath = ext + '/BillingSum.ini'
+    ok, txt = download(fpath)
+    if not ok:
+        if re.search(r'not exist|not found|does not|no such|לא קיים|לא נמצא', str(txt), re.I):
+            txt = ''                         # אין עדיין קובץ — נוצר עכשיו
+        else:
+            return False, 'לא הצלחתי לקרוא את BillingSum.ini, ולכן לא נגעתי בו — ' + str(txt)
+    lines, idx = [], {}
+    for ln in (txt or '').replace('\r', '').split('\n'):
+        if not ln.strip():
+            continue
+        k = ln.split('=', 1)[0].strip()
+        if '=' in ln and k:
+            idx[k] = len(lines)
+        lines.append(ln)
+    for ph, amt in amounts.items():
+        row = '%s=%s' % (ph, amt)
+        if ph in idx:
+            lines[idx[ph]] = row
+        else:
+            idx[ph] = len(lines); lines.append(row)
+    ok, res = call('UploadTextFile', {'what': fpath, 'contents': '\n'.join(lines)})
+    if not ok:
+        return False, 'עדכון BillingSum.ini נכשל — ' + str(res)
+    return True, {'file': fpath, 'updated': len(amounts), 'lines': len(lines)}
+
+
 def campaign_status(cid):
     """מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו" — מצב הקמפיין
     שהשיחה יצרה (campaignId שחוזר מ-CallExtensionBridging)."""

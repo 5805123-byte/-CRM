@@ -445,6 +445,11 @@ def ensure_schema():
     for col, typ in (('campaign', 'TEXT'), ('answered', 'INTEGER'), ('secs', 'INTEGER'), ('call_status', 'TEXT'), ('checked_at', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
         except Exception: pass
+    # סליקת אשראי בהקשה 1 — הסכום של כל נמען נכתב ל-BillingSum.ini לפני השיחות
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN amount TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE ym_job ADD COLUMN bill_path TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -13163,7 +13168,7 @@ def ym_recipients(con, recs):
             ph = _ym.norm_phone(r.get('phone') or '')
             if ph and ph not in seen:
                 seen.add(ph)
-                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph})
+                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph, 'amount': ym_amt(r.get('amount'))})
             continue
         k = 'd' if (r.get('k') == 'd') else 'm'
         try:
@@ -13186,8 +13191,27 @@ def ym_recipients(con, recs):
         if key in seen:
             continue
         seen.add(key)
-        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph})
+        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph, 'amount': ym_amt(r.get('amount'))})
     return out
+
+
+def ym_bill_kv():
+    try:
+        con = db(); v = kv_get(con, 'ym_bill_path', ''); con.close(); return v
+    except Exception:
+        return ''
+
+
+def ym_amt(v):
+    """סכום נקי לקובץ ולהקראה: '1,250.00 ₪' -> '1250'"""
+    t = re.sub(r'[^\d.]', '', str(v or ''))
+    try:
+        f = float(t) if t else 0
+    except ValueError:
+        return ''
+    if f <= 0:
+        return ''
+    return str(int(f)) if f == int(f) else ('%.2f' % f)
 
 
 def ym_save_trace(con, items, job=0, msg=0, phone=''):
@@ -13240,6 +13264,21 @@ def ym_worker(job_id):
             if not job:
                 return
             con.execute("UPDATE ym_job SET status='sending' WHERE id=?", (job_id,)); con.commit()
+            if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
+                amts = {}
+                for m in con.execute("SELECT phone, amount FROM ym_msg WHERE job=? AND status='queued'", (job_id,)).fetchall():
+                    if m['phone'] and m['amount']:
+                        amts[m['phone']] = m['amount']
+                _ym.begin_trace()
+                okb, resb = _ym.update_billing(job['bill_path'], amts)
+                ym_save_trace(con, _ym.end_trace(), job_id, 0, '')
+                if not okb:
+                    # בלי סכומים נכונים בקובץ — לא מתקשרים בכלל (שלא יחויב סכום של מישהו אחר)
+                    con.execute("UPDATE ym_msg SET status='failed', error=? WHERE job=? AND status='queued'", (str(resb)[:200], job_id))
+                    con.execute("UPDATE ym_job SET status='error', label=?, failed=total WHERE id=?", (str(resb)[:200], job_id))
+                    con.commit()
+                    return
+                con.commit()
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 _ym.begin_trace()
                 if not m['phone']:
@@ -15679,12 +15718,13 @@ class H(BaseHTTPRequestHandler):
             con.close()
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
-                                    'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID'))})
+                                    'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
+                                    'bill_path': ym_bill_kv()})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
-            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             if not job:
                 return self._send(404, {'ok': False})
@@ -16599,12 +16639,30 @@ class H(BaseHTTPRequestHandler):
                 recs = ym_recipients(con, b.get('recipients') or [])
             if not recs:
                 con.close(); return self._send(200, {'ok': False, 'error': 'לא נבחרו נמענים'})
-            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label) VALUES(?,?,?,?,?,'queued',?,?)",
-                        (now_iso(), ch, text, amount, len(recs), 1 if b.get('test') else 0, (b.get('label') or '').strip()[:80]))
+            # מאיר: "בהודעה שנשלחת בשיחה מקישים 1 ועוברים לשלוחת סליקת אשראי… לפני ששולחים
+            # הודעה תעדכן בקובץ BillingSum.ini" — הסכום של כל נמען נכתב לשם לפני השיחות
+            bill_path = ''
+            if ch == 'voice' and b.get('billing'):
+                import yemot as _ym2
+                bill_path = _ym2.norm_ext(b.get('bill_path') or kv_get(con, 'ym_bill_path', ''))
+                if not bill_path:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'חסרה שלוחת הסליקה (למשל 5 או 1/2)'})
+                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_bill_path',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (bill_path,))
+                gamt = ym_amt(amount)
+                if b.get('test'):
+                    recs[0]['amount'] = ym_amt(b.get('test_amount')) or gamt
+                for r in recs:
+                    r['amount'] = r.get('amount') or gamt
+                miss = [r['name'] or r['phone'] for r in recs if not r.get('amount')]
+                if miss:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'חסר סכום לחיוב אצל: ' + ', '.join(miss[:8])})
+            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,?,'queued',?,?,?)",
+                        (now_iso(), ch, text, amount, len(recs), 1 if b.get('test') else 0, (b.get('label') or '').strip()[:80], bill_path))
             jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
             for r in recs:
-                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status) VALUES(?,?,?,?,?,?,'queued')",
-                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], amount)))
+                ra = r.get('amount') or ym_amt(amount) or amount
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued',?)",
+                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra), r.get('amount') or ''))
             con.commit(); con.close()
             import threading as _thr
             _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()

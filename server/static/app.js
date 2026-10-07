@@ -12506,6 +12506,9 @@ async function cmHistory(){
 // ואבחר למי לשלוח." הנמענים נלקחים ישירות מרשימת הקהילה (ומהתורמים, בחיפוש) —
 // אין רשימה כפולה לתחזק. כל אחד מקבל הודעה נפרדת עם השם שלו.
 let ymLog=null, ymLogJob=0, ymLogOpen=false;
+// מאיר: "בהודעה שנשלחת בשיחה מקישים 1 ועוברים לשלוחת סליקת אשראי… סכום לחיוב מותאם לכל לקוח"
+let ymBill=false, ymBillPath='';
+try{ymBill=localStorage.getItem('kc_ymbill')==='1';ymBillPath=localStorage.getItem('kc_ymbillp')||'';}catch(e){}
 let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
 try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
 const YM_TPL=[
@@ -12520,7 +12523,7 @@ function ymPhone(p){ // אותו כלל כמו בשרת: טלפון ישראלי
     if(/^0(5\d|7\d)\d{7}$/.test(d)||/^0[2-489]\d{7}$/.test(d))return d;}
   return '';}
 const ymMobile=p=>/^05\d{8}$/.test(p||'');
-function ymFillTxt(t,name){return String(t||'').replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,ymAmt||'').replace(/\s{2,}/g,' ').trim();}
+function ymFillTxt(t,name,amt){return String(t||'').replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,(amt||ymAmt)||'').replace(/\s{2,}/g,' ').trim();}
 async function ymLoadStatus(){const r=await api('GET','/api/yemot/status');ymStatus=r&&r.ok?r:{configured:false,connected:false,jobs:[]};}
 function ymKey(k,id){return k+':'+id;}
 function renderCommYm(){
@@ -12535,7 +12538,9 @@ function renderCommYm(){
   const sel=[...ymRecs.values()];
   const selOk=sel.filter(r=>ymCh==='sms'?ymMobile(r.phone):!!r.phone);
   const first=selOk[0]||sel[0];
-  const prev=ymFillTxt(ymText,first?first.name:'משה כהן');
+  if(!ymBillPath&&st.bill_path)ymBillPath=st.bill_path;
+  const billOn=ymCh==='voice'&&ymBill;
+  const prev=ymFillTxt(ymText,first?first.name:'משה כהן',first&&first.amt);
   const smsLen=prev.length, smsParts=smsLen<=70?1:Math.ceil(smsLen/67);
   const conn=!st.configured
     ?`<div class="ymwarn">⚠️ ימות המשיח עוד לא מחובר. ב-Render ← Environment צריך להוסיף <b>YEMOT_TOKEN</b> — מפתח ה-API של ימות המשיח (מתחיל ב-WU1BUElL.apik_). לא לשלוח אותו בצ'אט או בוואטסאפ.</div>`
@@ -12566,6 +12571,9 @@ function renderCommYm(){
       <div class="ymrow2"><label class="fld"><span>💲 סכום (נכנס במקום {סכום})</span><input id="ym_amt" value="${esc(ymAmt)}" inputmode="decimal" placeholder="למשל 500"></label>
         <span class="hintxt">${ymCh==='sms'?`📤 יוצא ממספר 025803545 · ${smsLen} תווים · ${smsParts} הודעות SMS לכל נמען`:'ההודעה מוקראת בקול. מספרים נשמעים טוב יותר במילים ("חמש מאות").'}</span></div>
       ${ymText?`<div class="ympv"><b>${ymCh==='sms'?'💬':'🔊'} כך זה יישמע${first?' אצל '+esc(first.name):''}:</b> ${esc(prev)}</div>`:''}
+      ${ymCh==='voice'?`<div class="ymbill${billOn?' on':''}"><label class="gvall"><input type="checkbox" id="ym_bill" ${billOn?'checked':''}> 💳 הקשה 1 = סליקת אשראי — לעדכן את הסכום של כל נמען לפני השיחה</label>
+        ${billOn?`<div class="ymrow2"><label class="fld"><span>📂 שלוחת הסליקה בימות (למשל 5 או 1/2)</span><input id="ym_bpath" dir="ltr" value="${esc(ymBillPath)}" placeholder="5"></label>
+          <span class="hintxt">לפני השיחות המערכת מעדכנת <b dir="ltr">BillingSum.ini</b> בשלוחה הזו: טלפון=סכום לכל נמען. שאר השורות בקובץ נשארות, והגדרות השלוחה לא משתנות. סכום לכל נמען — בשלב 3.</span></div>`:''}</div>`:''}
     </div>
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">3️⃣ למי — ${sel.length?`<b>${sel.length} נבחרו</b>`:'אף אחד עדיין'}</div>
@@ -12584,6 +12592,8 @@ function renderCommYm(){
       <div class="ymfree"><div class="lbl">📱 מספרים שלא בקהילה ולא בתורמים</div>
         <div class="mlfrow"><input id="ym_xp" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX (אפשר כמה, מופרדים בפסיק)"><input id="ym_xn" placeholder="שם (רשות — נכנס במקום {שם})"><button class="btn sm" id="ym_xadd">➕ הוסף</button></div>
         ${sel.filter(r=>r.k==='x').map(r=>`<span class="fchip ymd">📱 ${esc(r.name||'בלי שם')} <small dir="ltr">${esc(r.phone)}</small> <button class="fdel" data-rm="${ymKey('x',r.phone)}">✕</button></span>`).join('')}</div>
+      ${billOn&&sel.length?`<div class="ymamts"><div class="lbl">💳 סכום לחיוב לכל נמען${ymAmt?` (ריק = ${esc(ymAmt)})`:''}</div>
+        ${selOk.map(r=>`<div class="ymamt"><span>${esc(r.name||'בלי שם')}</span><span dir="ltr">${esc(r.phone)}</span><input class="ym_ra" data-k="${esc(r.k==='x'?ymKey('x',r.phone):ymKey(r.k,r.id))}" inputmode="decimal" value="${esc(r.amt||'')}" placeholder="${esc(ymAmt||'₪')}"></div>`).join('')}</div>`:''}
     </div>
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">4️⃣ שליחה</div>
@@ -12612,6 +12622,9 @@ function renderCommYm(){
     ymText=t[2];renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);});
   let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
   keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
+  const bc=g('ym_bill'); if(bc)bc.onchange=()=>{ymBill=bc.checked;try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}renderCommYm();};
+  const bp=g('ym_bpath'); if(bp)bp.oninput=()=>{ymBillPath=bp.value.trim();try{localStorage.setItem('kc_ymbillp',ymBillPath);}catch(e){}};
+  view.querySelectorAll('.ym_ra').forEach(i=>i.oninput=()=>{const r=ymRecs.get(i.dataset.k);if(r)r.amt=i.value.trim();});
   g('ym_bad').onclick=()=>{ymFlt=ymFlt==='bad'?'':'bad';renderCommYm();};
   g('ym_onlysel').onclick=()=>{ymFlt=ymFlt==='sel'?'':'sel';renderCommYm();};
   g('ym_none').onclick=()=>{ymRecs.clear();renderCommYm();};
@@ -12633,12 +12646,21 @@ function renderCommYm(){
   g('ym_test').onclick=async()=>{const tp=g('ym_tp').value.trim();if(!ymPhone(tp)){toast('מספר בדיקה לא תקין');return;}
     if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
-    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:''});
+    if(billOn&&!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
+    if(billOn&&!amtNum(ymAmt)&&!(first&&amtNum(first.amt))){toast('חסר סכום לחיוב לבדיקה');return;}
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:'',
+      billing:billOn?1:0,bill_path:ymBillPath,test_amount:(first&&first.amt)||ymAmt});
     if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
   g('ym_go').onclick=async()=>{
-    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?\n\n'+prev,'כן, לשלוח','ביטול'))return;
-    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,recipients:selOk.map(x=>x.k==='x'?{k:'x',phone:x.phone,name:x.name}:{k:x.k,id:x.id})});
+    if(billOn){
+      if(!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
+      const miss=selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt));
+      if(miss.length){await uiAlert('חסר סכום לחיוב אצל:\n'+miss.map(x=>x.name||x.phone).join('\n'));return;}
+    }
+    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,bill_path:ymBillPath,
+      recipients:selOk.map(x=>x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||''}:{k:x.k,id:x.id,amount:x.amt||''})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('המשלוח התחיל ✓');ymTrack(r.job);};
   view.querySelectorAll('.ymjob[data-j]').forEach(x=>x.onclick=async()=>{const r=await api('GET','/api/yemot/job/'+x.dataset.j);if(r&&r.ok){ymJobView=r;renderCommYm();}});
@@ -12660,9 +12682,10 @@ function ymLogHTML(){
   const DESC={GetIVR2Dir:'בדיקת התיקייה של הטלפון',UpdateExtension:'יצירת התיקייה של הטלפון',UploadTextFile:'העלאת ההודעה (TTS)',CallExtensionBridging:'השיחה',SendSms:'SMS',GetSession:'בדיקת חיבור',GetCampaignStatus:'בדיקה אם ענה'};
   return `<div class="ymlog">${rows.map(r=>{let pr={};try{pr=JSON.parse(r.params||'{}');}catch(e){}
     let resp={};try{resp=JSON.parse(r.response||'{}');}catch(e){}
-    const short=r.ok?(resp.message||(resp.campaignId?('campaign '+resp.campaignId):'OK')):(resp.message||String(r.response||'').slice(0,120));
+    const short=r.method==='DownloadFile'&&r.ok?('נקרא · '+String(r.response||'').split('\n').filter(Boolean).length+' שורות'):(r.ok?(resp.message||(resp.campaignId?('campaign '+resp.campaignId):'OK')):(resp.message||String(r.response||'').slice(0,120)));
+    const isBill=/BillingSum\.ini/.test(pr.what||pr.path||'');
     return `<details class="ymlg ${r.ok?'ok':'bad'}"><summary><span class="ymlt">${esc(String(r.at||'').slice(5,16).replace('T',' '))}</span>
-      <b>${r.ok?'✅':'❌'} ${esc(r.method)}</b> <span class="ymld">${esc(DESC[r.method]||'')}</span>
+      <b>${r.ok?'✅':'❌'} ${esc(r.method)}</b> <span class="ymld">${esc(isBill?(r.method==='DownloadFile'?'קריאת BillingSum.ini':'עדכון BillingSum.ini (סכומים)'):(DESC[r.method]||''))}</span>
       ${r.phone?`<span dir="ltr">${esc(r.phone)}</span>`:''} <span class="ymls">${esc(short)}</span> <i>${r.ms||0}ms</i></summary>
       <div class="ymlb"><div class="lbl">📤 מה נשלח</div><pre dir="ltr">${esc(r.method+'?'+Object.entries(pr).map(([k,v])=>k+'='+v).concat(['token=•••']).join('&'))}</pre>
       <div class="lbl">📥 מה ימות ענו</div><pre dir="ltr">${esc(pretty(r.response))}</pre></div></details>`;}).join('')}</div>`;
@@ -12682,7 +12705,7 @@ function ymAns(m){
 function ymJobViewHTML(r){const j=r.job;
   return `<div class="ymjv"><div class="addrow" style="justify-content:space-between"><div class="hintxt" style="flex:1">${esc(j.text||'')}</div>
     ${j.channel==='voice'?`<button class="btn sm ghost" id="ym_chk" data-j="${j.id}">🔄 בדוק אם ענו</button>`:''}</div>
-    ${(r.msgs||[]).map(m=>`<div class="ymjm ${m.status}">${m.status==='sent'?'✅':(m.status==='failed'?'✗':'⏳')} ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span>${m.error?` — ${esc(m.error)}`:''} ${ymAns(m)}</div>`).join('')}</div>`;}
+    ${(r.msgs||[]).map(m=>`<div class="ymjm ${m.status}">${m.status==='sent'?'✅':(m.status==='failed'?'✗':'⏳')} ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span>${m.amount?` · 💳 ₪${esc(m.amount)}`:''}${m.error?` — ${esc(m.error)}`:''} ${ymAns(m)}</div>`).join('')}</div>`;}
 function ymTrack(jid){
   clearInterval(ymPoll);
   const tick=async()=>{const r=await api('GET','/api/yemot/job/'+jid);if(!r||!r.ok)return;ymJob=r;
