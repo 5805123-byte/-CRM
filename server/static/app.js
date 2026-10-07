@@ -12028,6 +12028,7 @@ function renderComm(){
     return;
   }
   if(cmSub==='send') return renderCommSend();
+  if(cmSub==='ym') return renderCommYm();
   const all=MEMBERS;
   const chk=m=>!!m.pending;
   const F=[['','הכל',all.length],
@@ -12052,6 +12053,7 @@ function renderComm(){
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
     <div class="addrow" style="margin:0 2px 8px">
       <button class="btn" id="cm_mail" style="flex:2">✉️ שלח מייל לקהילה — הודעה אישית לכל אחד</button>
+      <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn sm ghost" id="cm_print" style="flex:1">🖨️ הדפסה / PDF</button>
       <button class="btn sm ghost" id="cm_xlsx" style="flex:1">📊 אקסל</button>
     </div>
@@ -12091,6 +12093,7 @@ function renderComm(){
   document.getElementById('cm_newbtn').onclick=addQuick;
   document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
   document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
+  document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
   // מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
   document.getElementById('cm_print').onclick=()=>window.open('/kehila-print'+(cmFlt==='seat'?'?sort=seat':''),'_blank');
@@ -12486,6 +12489,154 @@ async function cmHistory(){
     const r2=await api('GET','/api/mail/batch/'+b.dataset.id);
     const bad=((r2&&r2.rows)||[]).filter(x=>x.status!=='sent');
     box.innerHTML=bad.map(x=>`<div class="mlskr">${esc(x.name||'')} &lt;${esc(x.email)}&gt; — ${esc(x.error||x.status)}</div>`).join('')||'<div class="hintxt">הכל נשלח</div>';});
+}
+
+// ========== 📞 ימות המשיח — הודעה קולית / SMS ==========
+// מאיר: "אני רוצה להתחבר לימות המשיח, שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית
+// או סמס או אימייל על תרומה שהם התחייבו או נדבה או הו"ק שחזרה, לפי הקלדה שלי במערכת…
+// בצורה של ווב קלילה ונוחה, בחלון קהילה… אסנכרן את הפרטים של הקהילה שיש כבר במערכת
+// ואבחר למי לשלוח." הנמענים נלקחים ישירות מרשימת הקהילה (ומהתורמים, בחיפוש) —
+// אין רשימה כפולה לתחזק. כל אחד מקבל הודעה נפרדת עם השם שלו.
+let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
+try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
+const YM_TPL=[
+  ['pledge','🤝 התחייבות','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. אפשר להסדיר בטלפון 02-5803545. תודה רבה, ותזכו למצוות.'],
+  ['nedava','🪙 נדבה','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את הנדבה שהתנדבת בסך {סכום} שקלים. אפשר להסדיר בטלפון 02-5803545. תזכו למצוות.'],
+  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה בבנק. נשמח שתיצור קשר בטלפון 02-5803545 כדי להסדיר. תודה רבה.'],
+  ['free','✍️ חופשי','']];
+function ymPhone(p){ // אותו כלל כמו בשרת: טלפון ישראלי תקין, הראשון שבשדה
+  for(const part of String(p||'').split(/[,;/|]|\s{2,}/)){let d=part.replace(/\D/g,'');
+    if(d.startsWith('00972'))d=d.slice(5);else if(d.startsWith('972'))d=d.slice(3);
+    if(d&&!d.startsWith('0'))d='0'+d;
+    if(/^0(5\d|7\d)\d{7}$/.test(d)||/^0[2-489]\d{7}$/.test(d))return d;}
+  return '';}
+const ymMobile=p=>/^05\d{8}$/.test(p||'');
+function ymFillTxt(t,name){return String(t||'').replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,ymAmt||'').replace(/\s{2,}/g,' ').trim();}
+async function ymLoadStatus(){const r=await api('GET','/api/yemot/status');ymStatus=r&&r.ok?r:{configured:false,connected:false,jobs:[]};}
+function ymKey(k,id){return k+':'+id;}
+function renderCommYm(){
+  chips.innerHTML='';
+  if(ymStatus===null){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">מתחבר לימות המשיח…</div>';
+    ymLoadStatus().then(()=>{if(tab==='comm'&&cmSub==='ym')render();});return;}
+  const st=ymStatus;
+  const all=MEMBERS||[];
+  const good=all.filter(m=>ymPhone(m.phone)), mob=good.filter(m=>ymMobile(ymPhone(m.phone))), bad=all.filter(m=>!ymPhone(m.phone));
+  let list=ymFlt==='bad'?bad:(ymFlt==='sel'?all.filter(m=>ymRecs.has(ymKey('m',m.id))):good);
+  if(ymQ.trim())list=list.filter(m=>matchStr(mName(m)+' '+(m.phone||'')+' '+(m.seat||''),ymQ.trim()));
+  const sel=[...ymRecs.values()];
+  const selOk=sel.filter(r=>ymCh==='sms'?ymMobile(r.phone):!!r.phone);
+  const first=selOk[0]||sel[0];
+  const prev=ymFillTxt(ymText,first?first.name:'משה כהן');
+  const smsLen=prev.length, smsParts=smsLen<=70?1:Math.ceil(smsLen/67);
+  const conn=!st.configured
+    ?`<div class="ymwarn">⚠️ ימות המשיח עוד לא מחובר. ב-Render ← Environment צריך להוסיף <b>YEMOT_TOKEN</b> — מפתח ה-API של ימות המשיח (מתחיל ב-WU1BUElL.apik_). לא לשלוח אותו בצ'אט או בוואטסאפ.</div>`
+    :(st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc(String(st.info.units))}</b> יחידות`:''}</div>`
+                  :`<div class="ymwarn">⚠️ החיבור לימות המשיח נכשל: ${esc(st.error||'')}</div>`);
+  const dhits=ymDQ.trim().length>=2?DB.filter(d=>matchStr([d.last,d.first,d.english,d.phone].join(' '),ymDQ.trim())).slice(0,8):[];
+  const row=m=>{const k=ymKey('m',m.id),on=ymRecs.has(k),ph=ymPhone(m.phone);
+    return `<div class="ymrow${on?' on':''}${ph?'':' nop'}" data-k="m" data-id="${m.id}"><span class="mlck">${on?'✔':''}</span>
+      <span class="ymnm">${esc(mName(m))}${cmSeat(m)?` <i>💺 ${esc(cmSeat(m))}</i>`:''}</span>
+      <span class="ymph" dir="ltr">${ph?esc(ph):(m.phone?`<u>${esc(m.phone)}</u>`:'—')}</span>
+      ${ph&&!ymMobile(ph)?'<span class="ymtag">קווי</span>':''}</div>`;};
+  const jobs=(st.jobs||[]).slice(0,10);
+  view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
+    <div class="rbtitle">📞 הודעה קולית / SMS — ימות המשיח</div>
+    ${conn}
+    <div class="sec ymsec">
+      <div class="rbtitle" style="text-align:right">1️⃣ איך שולחים</div>
+      <div class="ymch">
+        <button class="ymc${ymCh==='voice'?' on':''}" data-ch="voice">📞 הודעה קולית<small>שיחה שמקריאה את הטקסט</small></button>
+        <button class="ymc${ymCh==='sms'?' on':''}" data-ch="sms">💬 SMS<small>הודעה לנייד · נסה קודם בדיקה</small></button>
+        <button class="ymc" data-ch="mail">📧 מייל<small>במסך המיילים של הקהילה</small></button>
+      </div>
+    </div>
+    <div class="sec ymsec">
+      <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
+      <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip" data-t="${k}">${l}</button>`).join('')}</div>
+      <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום שבשדה למטה">${esc(ymText)}</textarea>
+      <div class="ymrow2"><label class="fld"><span>💲 סכום (נכנס במקום {סכום})</span><input id="ym_amt" value="${esc(ymAmt)}" inputmode="decimal" placeholder="למשל 500"></label>
+        <span class="hintxt">${ymCh==='sms'?`${smsLen} תווים · ${smsParts} הודעות SMS לכל נמען`:'ההודעה מוקראת בקול. מספרים נשמעים טוב יותר במילים ("חמש מאות").'}</span></div>
+      ${ymText?`<div class="ympv"><b>${ymCh==='sms'?'💬':'🔊'} כך זה יישמע${first?' אצל '+esc(first.name):''}:</b> ${esc(prev)}</div>`:''}
+    </div>
+    <div class="sec ymsec">
+      <div class="rbtitle" style="text-align:right">3️⃣ למי — ${sel.length?`<b>${sel.length} נבחרו</b>`:'אף אחד עדיין'}</div>
+      <div class="ymsync">🔄 הקהילה מסונכרנת מהמערכת: <b>${all.length}</b> חברים · <b>${good.length}</b> עם טלפון תקין (${mob.length} נייד) ·
+        <button class="lnk" id="ym_bad">${bad.length} בלי טלפון תקין</button></div>
+      <div class="mlfrow">
+        <input id="ym_q" value="${esc(ymQ)}" placeholder="🔍 סנן חברים לפי שם / טלפון / מקום" autocomplete="off">
+        <button class="btn sm" id="ym_all">✅ סמן את כל ${list.filter(m=>ymPhone(m.phone)&&(ymCh!=='sms'||ymMobile(ymPhone(m.phone)))).length} שברשימה</button>
+        <button class="btn sm ghost" id="ym_none">נקה</button>
+        <button class="btn sm ghost${ymFlt==='sel'?' on':''}" id="ym_onlysel">רק הנבחרים</button>
+      </div>
+      <div class="ymlist">${list.map(row).join('')||'<div class="hintxt">אין חברים ברשימה הזו.</div>'}</div>
+      <div class="ymdonor"><input id="ym_dq" value="${esc(ymDQ)}" placeholder="➕ להוסיף תורם — הקלד שם או טלפון" autocomplete="off">
+        <div class="dpres">${dhits.map(d=>{const ph=ymPhone(d.phone);return `<div class="dpr" data-did="${d.id}">${esc(((d.last||'')+' '+(d.first||'')).trim())} <small dir="ltr">${ph?esc(ph):'<u>אין טלפון</u>'}</small></div>`;}).join('')}</div>
+        ${sel.filter(r=>r.k==='d').map(r=>`<span class="fchip ymd">💰 ${esc(r.name)} <small dir="ltr">${esc(r.phone||'—')}</small> <button class="fdel" data-rm="${ymKey('d',r.id)}">✕</button></span>`).join('')}</div>
+    </div>
+    <div class="sec ymsec">
+      <div class="rbtitle" style="text-align:right">4️⃣ שליחה</div>
+      <div class="ymrow2"><label class="fld"><span>📱 בדיקה קודם אליי — מספר</span><input id="ym_tp" dir="ltr" inputmode="tel" value="${esc((()=>{try{return localStorage.getItem('kc_ymtp')||'';}catch(e){return '';}})())}" placeholder="05X-XXXXXXX"></label>
+        <button class="btn sm ghost" id="ym_test">${ymCh==='sms'?'💬':'🔊'} שלח בדיקה אליי</button></div>
+      <button class="btn" id="ym_go" style="width:100%" ${!st.configured||!selOk.length||!ymText.trim()?'disabled':''}>${ymCh==='sms'?'💬 שלח SMS':'📞 שלח הודעה קולית'} ל-${selOk.length} נמענים</button>
+      ${sel.length>selOk.length?`<div class="hintxt">${sel.length-selOk.length} מהנבחרים לא יקבלו: ${ymCh==='sms'?'אין להם נייד תקין':'אין להם טלפון תקין'}.</div>`:''}
+      <div id="ym_prog">${ymJob?ymProgHTML(ymJob):''}</div>
+    </div>
+    ${jobs.length?`<div class="sec ymsec"><div class="rbtitle" style="text-align:right">🕘 משלוחים אחרונים</div>
+      ${jobs.map(j=>`<div class="ymjob" data-j="${j.id}"><span>${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><span>${j.channel==='sms'?'💬 SMS':'📞 קולית'}${j.test?' · בדיקה':''}</span>
+        <span class="ymjt">${esc((j.text||'').slice(0,60))}${(j.text||'').length>60?'…':''}</span><b>${j.sent}/${j.total}</b>${j.failed?`<b class="ymf">✗ ${j.failed}</b>`:''}<i>${esc(j.status)}</i></div>`).join('')}
+      ${ymJobView?ymJobViewHTML(ymJobView):''}</div>`:''}`;
+  // ---- חיווט ----
+  const g=id=>document.getElementById(id);
+  g('ym_back').onclick=()=>{cmSub='list';render();};
+  view.querySelectorAll('.ymc').forEach(b=>b.onclick=()=>{
+    if(b.dataset.ch==='mail'){cmPick=new Set(sel.filter(r=>r.k==='m').map(r=>r.id));cmSub='send';render();window.scrollTo(0,0);return;}
+    ymCh=b.dataset.ch;try{localStorage.setItem('kc_ymch',ymCh);}catch(e){}renderCommYm();});
+  view.querySelectorAll('.ymtpl .chip').forEach(b=>b.onclick=()=>{const t=YM_TPL.find(x=>x[0]===b.dataset.t);
+    if(ymText.trim()&&t[2]&&ymText!==t[2]){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok){ymText=t[2];renderCommYm();}});return;}
+    ymText=t[2];renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);});
+  let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
+  keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
+  g('ym_bad').onclick=()=>{ymFlt=ymFlt==='bad'?'':'bad';renderCommYm();};
+  g('ym_onlysel').onclick=()=>{ymFlt=ymFlt==='sel'?'':'sel';renderCommYm();};
+  g('ym_none').onclick=()=>{ymRecs.clear();renderCommYm();};
+  g('ym_all').onclick=()=>{list.forEach(m=>{const ph=ymPhone(m.phone);if(ph&&(ymCh!=='sms'||ymMobile(ph)))ymRecs.set(ymKey('m',m.id),{k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph});});renderCommYm();};
+  view.querySelectorAll('.ymrow[data-id]').forEach(r=>r.onclick=()=>{const m=all.find(x=>x.id==r.dataset.id);if(!m)return;const k=ymKey('m',m.id);
+    if(ymRecs.has(k))ymRecs.delete(k);else{const ph=ymPhone(m.phone);if(!ph){toast('אין לו טלפון תקין — תקן בכרטיס הקהילה');return;}
+      ymRecs.set(k,{k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph});}
+    renderCommYm();});
+  view.querySelectorAll('.ymdonor .dpr[data-did]').forEach(x=>x.onclick=()=>{const d=DB.find(y=>y.id==x.dataset.did);if(!d)return;const ph=ymPhone(d.phone);
+    if(!ph){toast('לתורם הזה אין טלפון ישראלי תקין');return;}
+    ymRecs.set(ymKey('d',d.id),{k:'d',id:d.id,name:((d.first||'')+' '+(d.last||'')).trim(),phone:ph});ymDQ='';renderCommYm();});
+  view.querySelectorAll('.ymdonor [data-rm]').forEach(b=>b.onclick=()=>{ymRecs.delete(b.dataset.rm);renderCommYm();});
+  g('ym_test').onclick=async()=>{const tp=g('ym_tp').value.trim();if(!ymPhone(tp)){toast('מספר בדיקה לא תקין');return;}
+    if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
+    try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:''});
+    if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
+    toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
+  g('ym_go').onclick=async()=>{
+    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?\n\n'+prev,'כן, לשלוח','ביטול'))return;
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,recipients:selOk.map(x=>({k:x.k,id:x.id}))});
+    if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
+    toast('המשלוח התחיל ✓');ymTrack(r.job);};
+  view.querySelectorAll('.ymjob[data-j]').forEach(x=>x.onclick=async()=>{const r=await api('GET','/api/yemot/job/'+x.dataset.j);if(r&&r.ok){ymJobView=r;renderCommYm();}});
+  const st2=g('ym_stop'); if(st2)st2.onclick=async()=>{await api('POST','/api/yemot/job/'+st2.dataset.j+'/stop',{});toast('נעצר');};
+}
+function ymProgHTML(r){const j=r.job||{},done=(j.sent||0)+(j.failed||0),pct=j.total?Math.round(done*100/j.total):0;
+  const fails=(r.msgs||[]).filter(m=>m.status==='failed');
+  return `<div class="ymprog"><div class="ymbar"><i style="width:${pct}%"></i></div>
+    <div>${j.status==='done'?'✅ הסתיים':(j.status==='stopped'?'⏹ נעצר':'⏳ שולח…')} · נשלחו <b>${j.sent||0}</b> מתוך ${j.total||0}${j.failed?` · <b class="ymf">${j.failed} נכשלו</b>`:''}
+    ${j.status==='sending'||j.status==='queued'?`<button class="btn sm ghost" id="ym_stop" data-j="${j.id}">⏹ עצור</button>`:''}</div>
+    ${fails.length?`<div class="ymfails">${fails.map(m=>`<div>✗ ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span> — ${esc(m.error||'')}</div>`).join('')}</div>`:''}</div>`;}
+function ymJobViewHTML(r){const j=r.job;
+  return `<div class="ymjv"><div class="hintxt">${esc(j.text||'')}</div>${(r.msgs||[]).map(m=>`<div class="ymjm ${m.status}">${m.status==='sent'?'✅':(m.status==='failed'?'✗':'⏳')} ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span>${m.error?` — ${esc(m.error)}`:''}</div>`).join('')}</div>`;}
+function ymTrack(jid){
+  clearInterval(ymPoll);
+  const tick=async()=>{const r=await api('GET','/api/yemot/job/'+jid);if(!r||!r.ok)return;ymJob=r;
+    const box=document.getElementById('ym_prog');if(box)box.innerHTML=ymProgHTML(r);
+    const sb=document.getElementById('ym_stop');if(sb)sb.onclick=async()=>{await api('POST','/api/yemot/job/'+jid+'/stop',{});toast('נעצר');};
+    if(['done','stopped','error'].includes(r.job.status)){clearInterval(ymPoll);await ymLoadStatus();if(tab==='comm'&&cmSub==='ym')renderCommYm();}};
+  tick(); ymPoll=setInterval(tick,2000);
 }
 
 // ========== 🧾 חלון הקבלות ==========

@@ -277,6 +277,14 @@ def ensure_schema():
         donation_id INTEGER, donor_id INTEGER, name TEXT, email TEXT, amount REAL, cur TEXT, date TEXT,
         purpose TEXT, method TEXT, pdf BLOB, created TEXT, sent_at TEXT, sent_to TEXT, note TEXT);
     CREATE UNIQUE INDEX IF NOT EXISTS ix_rdoc_don ON receipt_docs(kind, donation_id);
+    /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
+       לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
+    CREATE TABLE IF NOT EXISTS ym_job(id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, channel TEXT,
+        text TEXT, amount TEXT, total INTEGER DEFAULT 0, sent INTEGER DEFAULT 0, failed INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'queued', test INTEGER DEFAULT 0, label TEXT);
+    CREATE TABLE IF NOT EXISTS ym_msg(id INTEGER PRIMARY KEY AUTOINCREMENT, job INTEGER, kind TEXT, ref_id INTEGER,
+        name TEXT, phone TEXT, text TEXT, status TEXT DEFAULT 'queued', error TEXT, at TEXT);
+    CREATE INDEX IF NOT EXISTS ix_ymmsg_job ON ym_msg(job, status);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
     -- שמאיר יקבע פעם אחת לכל משלם "מי זה ולמה מיועד הכסף" וכל החיובים שלו ייכנסו
@@ -13126,6 +13134,95 @@ def apply_member_q(con, qr, choice):
     return True, mid
 
 
+# ---------- ימות המשיח — הודעה קולית / SMS ----------
+YM_LOCK = threading.Lock()
+
+
+def ym_fill(text, name, amount):
+    """{שם} {סכום} בטקסט — כל נמען שומע/מקבל את שמו."""
+    t = (text or '').replace('{שם}', name or '').replace('{סכום}', amount or '')
+    return re.sub(r'\s{2,}', ' ', t).strip()
+
+
+def ym_recipients(con, recs):
+    """[{'k':'m'|'d','id':..}] -> רשימת נמענים עם שם וטלפון מנורמל (טלפון ראשון תקין)."""
+    import yemot as _ym
+    out, seen = [], set()
+    for r in recs or []:
+        k = 'd' if (r.get('k') == 'd') else 'm'
+        try:
+            rid = int(r.get('id'))
+        except (TypeError, ValueError):
+            continue
+        if k == 'm':
+            row = con.execute("SELECT id,last,first,phone FROM members WHERE id=?", (rid,)).fetchone()
+        else:
+            row = con.execute("SELECT id,last,first,phone FROM donors WHERE id=?", (rid,)).fetchone()
+        if not row:
+            continue
+        nm = ((row['first'] or '') + ' ' + (row['last'] or '')).strip()
+        ph = ''
+        for part in re.split(r'[,;/|]|\s{2,}', str(row['phone'] or '')):
+            ph = _ym.norm_phone(part)
+            if ph:
+                break
+        key = ph or ('%s%d' % (k, rid))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph})
+    return out
+
+
+def ym_worker(job_id):
+    """שולח את ההודעות של משלוח אחד, אחת אחרי השנייה, ומתעד אצל כל חבר/תורם."""
+    import yemot as _ym
+    with YM_LOCK:
+        con = db()
+        try:
+            job = con.execute("SELECT * FROM ym_job WHERE id=?", (job_id,)).fetchone()
+            if not job:
+                return
+            con.execute("UPDATE ym_job SET status='sending' WHERE id=?", (job_id,)); con.commit()
+            for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
+                if not m['phone']:
+                    ok, res = False, 'אין טלפון תקין'
+                elif job['channel'] == 'sms' and not _ym.is_mobile(m['phone']):
+                    ok, res = False, 'SMS רק לנייד — זה מספר קווי'
+                elif job['channel'] == 'sms':
+                    ok, res = _ym.send_sms(m['phone'], m['text'])
+                else:
+                    ok, res = _ym.send_tts(m['phone'], m['text'])
+                con.execute("UPDATE ym_msg SET status=?, error=?, at=? WHERE id=?",
+                            ('sent' if ok else 'failed', '' if ok else str(res)[:200], now_iso(), m['id']))
+                con.execute("UPDATE ym_job SET sent=sent+?, failed=failed+? WHERE id=?", (1 if ok else 0, 0 if ok else 1, job_id))
+                if ok and not job['test']:
+                    lbl = '📞 הודעה קולית' if job['channel'] == 'voice' else '💬 SMS'
+                    try:
+                        if m['kind'] == 'm':
+                            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out','',?)",
+                                        (m['ref_id'], today_iso(), 'ימות המשיח', lbl + ' נשלחה אל ' + m['phone'], m['text'], now_iso()))
+                        elif m['kind'] == 'd':
+                            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
+                                        (m['ref_id'], today_iso(), 'ימות המשיח', lbl + ': ' + (m['text'] or '')[:300]))
+                    except Exception:
+                        pass
+                con.commit()
+                # בלי שליחה מהירה מדי — ימות מגבילים קריאות רצופות
+                time.sleep(0.4)
+                st = con.execute("SELECT status FROM ym_job WHERE id=?", (job_id,)).fetchone()
+                if st and st['status'] == 'stopped':
+                    return
+            con.execute("UPDATE ym_job SET status='done' WHERE id=?", (job_id,)); con.commit()
+        except Exception as e:
+            try:
+                con.execute("UPDATE ym_job SET status='error', label=? WHERE id=?", (str(e)[:200], job_id)); con.commit()
+            except Exception:
+                pass
+        finally:
+            con.close()
+
+
 def log_member_mail(member_id, to, subject, body, msg_id=''):
     """מתייק בכרטיס החבר כל מייל שנשלח אליו — כמו יומן הקשר אצל התורם."""
     if not member_id:
@@ -15490,6 +15587,24 @@ class H(BaseHTTPRequestHandler):
                        '?sort=seat' if by_seat else '', len(rows), n_mail, n_seat,
                        'מספר מקום' if by_seat else 'שם משפחה', today_iso(), ''.join(trs)))
             return self._send(200, page.encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/api/yemot/status':
+            import yemot as _ym
+            ok, res = (_ym.session() if _ym.configured() else (False, ''))
+            con = db()
+            jobs = [dict(r) for r in con.execute("SELECT * FROM ym_job ORDER BY id DESC LIMIT 30")]
+            con.close()
+            return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
+                                    'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
+                                    'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID'))})
+        m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
+        if m:
+            con = db()
+            job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            con.close()
+            if not job:
+                return self._send(404, {'ok': False})
+            return self._send(200, {'ok': True, 'job': dict(job), 'msgs': msgs})
         if self.path.split('?')[0] == '/api/members':
             con = db()
             logs = {r['member_id']: (r['c'], r['last']) for r in con.execute(
@@ -16380,6 +16495,42 @@ class H(BaseHTTPRequestHandler):
             ok = seat_renumber(con, b.get('pos'), b.get('num'))
             con.commit(); con.close()
             return self._send(200, {'ok': ok})
+        if self.path == '/api/yemot/send':
+            # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר ב-Render (YEMOT_TOKEN — מפתח ה-API של ימות)'})
+            ch = 'sms' if b.get('channel') == 'sms' else 'voice'
+            text = (b.get('text') or '').strip()
+            amount = (b.get('amount') or '').strip()
+            if not text:
+                return self._send(200, {'ok': False, 'error': 'חסר טקסט להודעה'})
+            con = db()
+            test_phone = _ym.norm_phone(b.get('test_phone') or '')
+            if b.get('test'):
+                if not test_phone:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'מספר הבדיקה לא תקין'})
+                recs = [{'k': 't', 'id': 0, 'name': (b.get('test_name') or 'בדיקה').strip(), 'phone': test_phone}]
+            else:
+                recs = ym_recipients(con, b.get('recipients') or [])
+            if not recs:
+                con.close(); return self._send(200, {'ok': False, 'error': 'לא נבחרו נמענים'})
+            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label) VALUES(?,?,?,?,?,'queued',?,?)",
+                        (now_iso(), ch, text, amount, len(recs), 1 if b.get('test') else 0, (b.get('label') or '').strip()[:80]))
+            jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for r in recs:
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status) VALUES(?,?,?,?,?,?,'queued')",
+                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], amount)))
+            con.commit(); con.close()
+            import threading as _thr
+            _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': jid, 'total': len(recs), 'no_phone': sum(1 for r in recs if not r['phone'])})
+        m = re.match(r'/api/yemot/job/(\d+)/stop$', self.path)
+        if m:
+            con = db()
+            con.execute("UPDATE ym_job SET status='stopped' WHERE id=? AND status IN ('queued','sending')", (int(m.group(1)),))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/members/merge':
             # מיזוג שני חברים — מהכרטיס במסך הקהילה
             try:
