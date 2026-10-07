@@ -13360,7 +13360,8 @@ def ym_worker(job_id):
             ym_pron = kv_get(con, 'ym_pron', '')
             # מאיר: "נעשה דרך AI סטודיו של גימני עם ה-API" — קול אנושי (אם נבחר ומוגדר מפתח)
             ym_engine = kv_get(con, 'ym_engine', '')
-            ym_gv = kv_get(con, 'ym_gvoice', '') or 'Kore'
+            import gemini_tts as _gt
+            ym_gv = _gt.voice_ok(kv_get(con, 'ym_gvoice', ''))
             ym_gs = kv_get(con, 'ym_gstyle', '')
             ym_gm = kv_get(con, 'ym_gmodel', '')
             if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
@@ -15858,8 +15859,9 @@ class H(BaseHTTPRequestHandler):
             try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
             except Exception: _tpl = {}
             ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl,
-                    kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', '') or 'Kore', kv_get(con, 'ym_gstyle', ''), kv_get(con, 'ym_gmodel', ''))
+                    kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', ''), kv_get(con, 'ym_gstyle', ''), kv_get(con, 'ym_gmodel', ''))
             import gemini_tts as _gt
+            ym_v = ym_v[:4] + (_gt.voice_ok(ym_v[4]),) + ym_v[5:]
             ym_gvl = (_gt.VOICES, _gt.configured(), _gt.DEF_STYLE, _gt.MODELS)
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
@@ -16858,7 +16860,7 @@ class H(BaseHTTPRequestHandler):
             con = db(); pron = kv_get(con, 'ym_pron', ''); con.close()
             txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or '')), pron)
             _ym.begin_trace()
-            ok, wav = _gt.synth(txt, b.get('gvoice') or 'Kore', b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
+            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:
                 return self._send(200, {'ok': False, 'error': str(wav)})

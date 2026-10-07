@@ -12777,7 +12777,7 @@ function ymVoiceHTML(st){
     <div class="ymeng"><button class="ymc${!gem?' on':''}" data-eng="">🤖 הקול של ימות<small>מהיר · כמעט מיידי</small></button>
       <button class="ymc${gem?' on':''}" data-eng="gemini">🧑 קול אנושי — Gemini<small>כמה שניות לכל נמען</small></button></div>
     ${gem?`${st.gemini?'':`<div class="ymwarn">⚠️ חסר מפתח: ב-Render ← Environment להוסיף <b>GEMINI_API_KEY</b> (מ-aistudio.google.com/apikey). עד אז ההודעות יוצאות בקול של ימות.</div>`}
-      <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>🧑 הקול</span><select id="ym_gvoice">${[['f','👩 נשים'],['m','👨 גברים']].map(([gx,gl])=>`<optgroup label="${gl}">${G.filter(v=>(v[2]||'f')===gx).map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gvoice||'Kore')?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>`).join('')}</select></label>
+      <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>👨 הקול</span><select id="ym_gvoice">${G.map(([k,l])=>`<option value="${esc(k)}" ${k===st.gvoice?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
         <label class="fld" style="margin:0;flex:1 1 160px"><span>⚙️ איכות</span><select id="ym_gmodel">${(st.gmodels||[['','Flash']]).map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gmodel||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
         <button class="btn sm" id="ym_sample" ${st.gemini?'':'disabled'}>▶️ השמע דוגמה כאן</button></div>
       <label class="fld"><span>🎭 איך לומר (הוראה ל-Gemini, באנגלית עובד הכי טוב)</span><textarea id="ym_gstyle" dir="ltr" rows="2" placeholder="${esc(st.gstyle_def||'')}">${esc(st.gstyle||'')}</textarea></label>

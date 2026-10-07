@@ -23,18 +23,21 @@ import urllib.request
 import wave
 
 DEF_MODEL = 'gemini-2.5-flash-preview-tts'
-# כל 30 הקולות המובנים של Gemini — שם, תיאור בעברית, מין (f/m) לקיבוץ במסך
-VOICES = [('Kore', 'קורה — יציב וברור', 'f'), ('Aoede', 'איודה — קליל ואוורירי', 'f'), ('Leda', 'לדה — צעיר', 'f'),
-          ('Zephyr', 'זפיר — בהיר', 'f'), ('Sulafat', 'סולפת — חם', 'f'), ('Callirrhoe', 'קליריה — נינוח', 'f'),
-          ('Autonoe', 'אוטונואה — בהיר', 'f'), ('Despina', 'דספינה — חלק', 'f'), ('Erinome', 'ארינומה — צלול', 'f'),
-          ('Laomedeia', 'לאומדיה — עליז', 'f'), ('Achernar', 'אכרנר — רך', 'f'), ('Gacrux', 'גקרוקס — בוגר', 'f'),
-          ('Pulcherrima', 'פולכרימה — נחרץ', 'f'), ('Vindemiatrix', 'וינדמיאטריקס — עדין', 'f'),
-          ('Charon', 'כרון — מסביר', 'm'), ('Orus', 'אורוס — יציב', 'm'), ('Iapetus', 'יאפטוס — צלול', 'm'),
-          ('Algieba', 'אלגיבה — חלק', 'm'), ('Puck', 'פאק — עליז', 'm'), ('Fenrir', 'פנריר — נלהב', 'm'),
-          ('Enceladus', 'אנקלדוס — נושם, שקט', 'm'), ('Umbriel', 'אומבריאל — נינוח', 'm'), ('Algenib', 'אלגניב — מחוספס', 'm'),
-          ('Rasalgethi', 'רסלגתי — מסביר', 'm'), ('Alnilam', 'אלנילם — נחרץ', 'm'), ('Schedar', 'שדר — אחיד', 'm'),
-          ('Achird', 'אכירד — ידידותי', 'm'), ('Zubenelgenubi', 'זובנלגנובי — יומיומי', 'm'),
-          ('Sadachbia', 'סדכביה — חי ותוסס', 'm'), ('Sadaltager', 'סדלטגר — בקיא, סמכותי', 'm')]
+# מאיר: "תשים רק גברים בלבד במערכת" — 16 הקולות הגבריים של Gemini, שם ותיאור בעברית
+VOICES = [('Charon', 'כרון — מסביר'), ('Orus', 'אורוס — יציב'), ('Iapetus', 'יאפטוס — צלול'),
+          ('Algieba', 'אלגיבה — חלק'), ('Puck', 'פאק — עליז'), ('Fenrir', 'פנריר — נלהב'),
+          ('Enceladus', 'אנקלדוס — נושם, שקט'), ('Umbriel', 'אומבריאל — נינוח'), ('Algenib', 'אלגניב — מחוספס'),
+          ('Rasalgethi', 'רסלגתי — מסביר'), ('Alnilam', 'אלנילם — נחרץ'), ('Schedar', 'שדר — אחיד'),
+          ('Achird', 'אכירד — ידידותי'), ('Zubenelgenubi', 'זובנלגנובי — יומיומי'),
+          ('Sadachbia', 'סדכביה — חי ותוסס'), ('Sadaltager', 'סדלטגר — בקיא, סמכותי')]
+DEF_VOICE = 'Charon'
+
+
+def voice_ok(v):
+    """קול שנשמר בעבר ואינו ברשימה (למשל קול נשי) -> קול ברירת המחדל."""
+    return v if v in [k for k, _ in VOICES] else DEF_VOICE
+
+
 # מודל הקול: Flash (ברירת מחדל) או Pro — איכות גבוהה יותר, בערך כפול במחיר
 MODELS = [('', 'Flash — רגיל'), ('gemini-2.5-pro-preview-tts', 'Pro — טבעי יותר (×2 מחיר)')]
 DEF_STYLE = 'Read the following Hebrew text aloud in a warm, calm and respectful voice, at a natural pace:'
@@ -71,7 +74,7 @@ def _to_wav8k(pcm, rate):
     return buf.getvalue()
 
 
-def synth(text, voice='Kore', style='', trace=None, tries=3, model=''):
+def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model=''):
     """-> (הצלחה, WAV או הודעת שגיאה). trace(method, params, ok, raw, ms) — ללוג של ימות."""
     if not configured():
         return False, 'Gemini לא מוגדר ב-Render (GEMINI_API_KEY)'
@@ -79,9 +82,9 @@ def synth(text, voice='Kore', style='', trace=None, tries=3, model=''):
     prompt = ((style or DEF_STYLE).strip() + '\n' + text).strip()
     body = {'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'responseModalities': ['AUDIO'],
-                                 'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice or 'Kore'}}}}}
+                                 'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice_ok(voice)}}}}}
     url = _env('GEMINI_BASE', 'https://generativelanguage.googleapis.com').rstrip('/') + '/v1beta/models/%s:generateContent' % model
-    params = {'model': model, 'voice': voice, 'chars': len(text), 'text': text[:400]}
+    params = {'model': model, 'voice': voice_ok(voice), 'chars': len(text), 'text': text[:400]}
     last = ''
     for attempt in range(tries):
         t0 = time.time()
