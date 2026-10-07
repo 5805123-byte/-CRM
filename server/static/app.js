@@ -12352,6 +12352,34 @@ function openMember(m){
 // שליחת מייל לקהילה — אותו מנוע ואותה צורה כמו אצל התורמים
 function cmAudience(){ return MEMBERS.filter(m=>cmPick.has(m.id)&&mHasMail(m)).sort(byMName); }
 function cmBrowse(){ return cmAdding||!cmPick.size; }
+// ---- קישור תשלום נדרים פלוס במייל "נדרים ונדבות" ----
+// מאיר: "אני רוצה גם במייל כשאני שולח מהמייל של נדר1818" — אותו קישור אישי כמו ב-SMS
+let NEDM=null, cmLinkAmt='';
+try{cmLinkAmt=localStorage.getItem('kc_cmlamt')||'';}catch(e){}
+async function nedLoad(){const r=await api('GET','/api/nedarim/mosads');NEDM=r&&r.ok?r:{mosads:[{id:'5777499',name:'כולל חצות נחלת יהושע (ברסלב-דויטש) ביתר עילית'}],mosad:'5777499'};}
+function cmLinkHTML(){
+  if(NEDM===null){nedLoad().then(()=>{if(tab==='comm'&&cmSub==='send')renderCommSend();});return '<div class="hintxt">טוען את המוסדות…</div>';}
+  const M=NEDM.mosads||[], cur=ymLink.mosad||NEDM.mosad;
+  const first=cmAudience()[0];
+  const L=first?nedLink({k:'m',id:first.id,name:((first.first||'')+' '+(first.last||'')).trim(),phone:ymPhone(first.phone),amt:cmLinkAmt}):'';
+  return `<div class="cmlink"><div class="lbl">🔗 קישור תשלום אישי — נדרים פלוס · <b>{{קישור}}</b> במכתב הופך לכפתור "💳 לתשלום מאובטח"</div>
+    <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 220px"><span>🏛️ מוסד</span><select id="cl_mosad">${M.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?'selected':''}>${esc(m.id)} · ${esc(m.name||'')}</option>`).join('')}</select></label>
+      <label class="fld" style="margin:0"><span>💲 סכום</span><input id="cl_amt" inputmode="decimal" value="${esc(cmLinkAmt)}" placeholder="רשות" style="width:110px"></label></div>
+    <div class="ymlopts"><label class="gvall"><input type="checkbox" id="cl_lock" ${ymLink.amtLock?'checked':''}> 🔒 לנעול את הסכום</label>
+      <label class="gvall"><input type="checkbox" id="cl_prefill" ${ymLink.prefill?'checked':''}> 👤 למלא מראש שם, טלפון, מייל וכתובת של כל חבר (ננעלים בדף)</label></div>
+    ${L?`<div class="ympv">🔗 הקישור של ${esc(mName(first))}: <a class="nllink" href="${esc(L)}" target="_blank" rel="noopener" dir="ltr">${esc(L.slice(0,80))}…</a></div>`:'<div class="hintxt">בחר נמענים כדי לראות את הקישור.</div>'}
+    <div class="hintxt">אפשרויות נוספות (סוג תשלום, תשלומים, קטגוריה) — כמו שנבחרו במסך ימות המשיח.</div></div>`;}
+function cmLinksPayload(){
+  const links={};
+  cmAudience().forEach(m=>{links[m.id]=nedLink({k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:cmLinkAmt});});
+  return {links,link_amount:cmLinkAmt};}
+function cmWireLink(){
+  const g=id=>document.getElementById(id); if(!g('cl_mosad'))return;
+  g('cl_mosad').onchange=async()=>{ymLink.mosad=g('cl_mosad').value;ymLinkSave();await api('POST','/api/nedarim/mosads',{list:NEDM.mosads,current:ymLink.mosad});renderCommSend();};
+  let t; g('cl_amt').oninput=()=>{cmLinkAmt=g('cl_amt').value.trim();try{localStorage.setItem('kc_cmlamt',cmLinkAmt);}catch(e){}clearTimeout(t);t=setTimeout(()=>{renderCommSend();const n=g('cl_amt');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},500);};
+  g('cl_lock').onchange=()=>{ymLink.amtLock=g('cl_lock').checked;ymLinkSave();renderCommSend();};
+  g('cl_prefill').onchange=()=>{ymLink.prefill=g('cl_prefill').checked;ymLinkSave();renderCommSend();};
+}
 function renderCommSend(){
   const list=cmAudience();
   const q2=cmQ.trim();
@@ -12365,7 +12393,7 @@ function renderCommSend(){
       <span class="mlmeta"><b class="mltag">קהילה</b></span>
       <span class="mlad">${em.length?esc(em.join(' · ')):'<u class="mlno">אין כתובת מייל</u>'}</span>
     </div>`;};
-  const vars=MLVARS.filter(([v])=>!/קוויטל|אברך/.test(v));
+  const vars=MLVARS.filter(([v])=>!/קוויטל|אברך/.test(v)).concat(cmSender==='neder'?[['{{קישור}}','כפתור תשלום אישי בנדרים פלוס'],['{{סכום}}','הסכום']]:[]);
   chips.innerHTML='';
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">${cmSender==='neder'?'💰 מייל נדרים ונדבות':'✉️ מייל לקהילה'}</div>
@@ -12402,6 +12430,7 @@ function renderCommSend(){
       <label class="fld"><span>נושא</span><input id="cm_subj" value="${esc(mlSaved('cm_subj',''))}" placeholder="למשל: זמני התפילות לחג"></label>
       <label class="fld"><span>תוכן המכתב</span><textarea id="cm_body" rows="10" placeholder="לכבוד {{תואר}} {{שם}} {{הי&quot;ו}},&#10;&#10;...">${esc(mlSaved('cm_body',''))}</textarea></label>
       <div class="mlvars">${vars.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
+      ${cmSender==='neder'?cmLinkHTML():''}
       <div class="hintxt">לחיצה על סימון מכניסה אותו למכתב: <b>{{תואר}} {{שם}} {{הי"ו}}</b> ← <i>ה"ה</i> <b>נחמן בינדר</b> <i>הי"ו</i>.
         השם נמשך לבד מהכרטיס של כל חבר. שורה ריקה = פסקה חדשה. המערכת בונה את העיצוב בשליחה — אין מה לעצב ביד.</div>
       <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="cm_track" ${mlSaved('cm_track','0')==='1'?'checked':''}>
@@ -12445,7 +12474,8 @@ function renderCommSend(){
     e.value=e.value.slice(0,s)+v+e.value.slice(t2); e.focus(); e.setSelectionRange(s+v.length,s+v.length); mlSave(e.id,e.value);});
   const trk=document.getElementById('cm_track'); if(trk)trk.onchange=()=>mlSave('cm_track',trk.checked?'1':'0');
   const gv=()=>({members:cmAudience().map(m=>m.id),subject:document.getElementById('cm_subj').value.trim(),
-    body:document.getElementById('cm_body').value,sig:'',track:document.getElementById('cm_track').checked,base:location.origin,sender:cmSender});
+    body:document.getElementById('cm_body').value,sig:'',track:document.getElementById('cm_track').checked,base:location.origin,sender:cmSender,
+    ...(cmSender==='neder'?cmLinksPayload():{})});
   document.getElementById('cm_prev').onclick=async()=>{
     const b=gv(); const o=document.getElementById('ml_out');
     if(!b.members.length){toast('אין נמענים');return;}
@@ -12474,6 +12504,7 @@ function renderCommSend(){
     mlWatch();
   };
   const sw=document.getElementById('cm_swsender'); if(sw)sw.onclick=()=>{cmSender=cmSender==='neder'?'main':'neder';renderCommSend();};
+  cmWireLink();
   cmHistory();
   if(MLSETUP===null) mlLoadSetup().then(()=>{ if(tab==='comm'&&cmSub==='send') renderCommSend(); });
   mlWatch(true);
@@ -12514,14 +12545,19 @@ try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
 // [מפתח, תווית, נוסח להודעה קולית (עם "הקישו 1" לסליקה), נוסח ל-SMS (עם {קישור} לנדרים פלוס)]
 // מאיר: "ובהודעה המוכנה תכניס שם כבר אפשרות למעבר לתשלום בכרטיס אשראי — הקישו 1"
 const YM_TPL=[
-  ['pledge','🤝 התחייבות','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. אפשר גם להסדיר בטלפון 02-5803545. תודה רבה, ותזכו למצוות.',
+  ['pledge','🤝 התחייבות','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה, ותזכו למצוות.',
     'שלום {שם}, כאן כולל חצות. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח בכרטיס אשראי: {קישור} תודה רבה ותזכו למצוות.'],
-  ['nedava','🪙 נדבה','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את הנדבה שהתנדבת בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. אפשר גם להסדיר בטלפון 02-5803545. תזכו למצוות.',
+  ['nedava','🪙 נדבה','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את הנדבה שהתנדבת בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. תזכו למצוות.',
     'שלום {שם}, כאן כולל חצות. תזכורת בכבוד לנדבה שהתנדבת בסך {סכום} ש"ח. לתשלום מאובטח בכרטיס אשראי: {קישור} תזכו למצוות.'],
-  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה בבנק. למעבר לתשלום בכרטיס אשראי, הקישו 1. אפשר גם ליצור קשר בטלפון 02-5803545. תודה רבה.',
-    'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה. אפשר להסדיר בכרטיס אשראי כאן: {קישור} או בטלפון 02-5803545. תודה רבה.'],
+  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה בבנק. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה.',
+    'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה. אפשר להסדיר בכרטיס אשראי כאן: {קישור} תודה רבה.'],
   ['free','✍️ חופשי','','']];
-const ymTpl=(t,ch)=>ch==='sms'?t[3]:t[2];
+// מאיר: "תוריד את הטקסט המוכן שאומר שאפשר דרך הטלפון, ואני אכניס נוסח לכל קטגוריה או שדה
+// חופשי, שזה יהיה בראש — ברירת מחדל". נוסח ששמרת לקטגוריה (לכל ערוץ בנפרד) גובר על המובנה.
+let ymTplKey='';
+try{ymTplKey=localStorage.getItem('kc_ymtpl')||'';}catch(e){}
+const ymTplSaved=(k,ch)=>((ymStatus&&ymStatus.tpl)||{})[k+':'+ch];
+const ymTpl=(t,ch)=>{const v=ymTplSaved(t[0],ch);return v!=null?v:(ch==='sms'?t[3]:t[2]);};
 // ---- קישור תשלום ישיר — נדרים פלוס ----
 // מאיר: "יש שם אפשרות לשלוח קישור ישיר נעול עם פרמטרים, למשל השם שלו וכו', ויבחרו אם
 // לנעול על סכום וכו'". לכל נמען נבנה קישור משלו: שם, טלפון, מייל וכתובת ממולאים
@@ -12534,7 +12570,7 @@ function ymRecInfo(r){
   if(r.k==='d'){const d=DB.find(x=>x.id==r.id);if(d)return {email:(splitEmails(d.email)[0]||''),street:d.addr||'',city:d.city||''};}
   return {email:'',street:'',city:''};}
 function nedLink(r){
-  const mosad=(ymLink.mosad||(ymStatus&&ymStatus.mosad)||'').replace(/\D/g,''); if(!mosad)return '';
+  const mosad=(ymLink.mosad||(ymStatus&&ymStatus.mosad)||(NEDM&&NEDM.mosad)||'5777499').replace(/\D/g,''); if(!mosad)return '';
   const p=[['mosad',mosad]];
   const amt=String((r&&r.amt)||ymAmt||'').replace(/[^\d.]/g,'');
   if(amt){p.push(['Amount',amt]);if(ymLink.amtLock)p.push(['AmountLock','1']);}
@@ -12567,7 +12603,7 @@ const ymMMSS=s=>{s=+s||0;return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'
 function ymHead(st){
   const conn=!st.configured
     ?`<div class="ymwarn">⚠️ ימות המשיח עוד לא מחובר. ב-Render ← Environment צריך להוסיף <b>YEMOT_TOKEN</b> — מפתח ה-API של ימות המשיח (מתחיל ב-WU1BUElL.apik_). לא לשלוח אותו בצ'אט או בוואטסאפ.</div>`
-    :(st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc(String(st.info.units))}</b> יחידות`:''}</div>`
+    :(st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc((+st.info.units).toLocaleString('he-IL',{maximumFractionDigits:2}))}</b> יחידות`:''}</div>`
                   :`<div class="ymwarn">⚠️ החיבור לימות המשיח נכשל: ${esc(st.error||'')} — פרטים בלשונית "לוג טכני"</div>`);
   const T=[['send','📤 שליחה'],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['log','📜 לוג טכני']];
   return `<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
@@ -12594,6 +12630,7 @@ function renderCommYm(){
 // ---------------- 📤 שליחה ----------------
 function ymViewSend(){
   const st=ymStatus;
+  if(!ymText.trim()&&ymTplKey){const t=YM_TPL.find(x=>x[0]===ymTplKey);if(t)ymText=ymTpl(t,ymCh);}
   const all=MEMBERS||[];
   const good=all.filter(m=>ymPhone(m.phone)), mob=good.filter(m=>ymMobile(ymPhone(m.phone))), bad=all.filter(m=>!ymPhone(m.phone));
   let list=ymFlt==='bad'?bad:(ymFlt==='sel'?all.filter(m=>ymRecs.has(ymKey('m',m.id))):good);
@@ -12624,11 +12661,15 @@ function ymViewSend(){
     </div>
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
-      <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}</div>
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום">${esc(ymText)}</textarea>
+      ${ymTplKey?(()=>{const t=YM_TPL.find(x=>x[0]===ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),saved=ymTplSaved(t[0],ymCh)!=null;
+        return `<div class="ymtplbar">${ymText.trim()&&ymText!==cur?`<button class="btn sm" id="ym_tplsave">💾 שמור כנוסח הקבוע של "${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</button>`:`<span class="hintxt">${saved?'✓ זה הנוסח הקבוע שלך':'הנוסח המובנה'} ל"${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</span>`}
+          ${saved?`<button class="btn sm ghost" id="ym_tplreset">↩ חזרה לנוסח המובנה</button>`:''}</div>`;})():''}
       <div class="ymrow2"><label class="fld"><span>💲 סכום (נכנס במקום {סכום})</span><input id="ym_amt" value="${esc(ymAmt)}" inputmode="decimal" placeholder="למשל 500"></label>
         <span class="hintxt">${ymCh==='sms'?`📤 יוצא ממספר 025803545 · ${smsLen} תווים · ${smsParts} הודעות SMS לכל נמען`:'ההודעה מוקראת בקול. מספרים נשמעים טוב יותר במילים ("חמש מאות").'}</span></div>
       ${ymText?`<div class="ympv"><b>${ymCh==='sms'?'💬':'🔊'} כך זה יישמע${first?' אצל '+esc(first.name):''}:</b> ${esc(prev)}</div>`:''}
+      ${ymCh==='voice'?ymVoiceHTML(st):''}
       ${ymCh==='voice'?`<div class="ymbill${billOn?' on':''}"><label class="gvall"><input type="checkbox" id="ym_bill" ${billOn?'checked':''}> 💳 הקשה 1 = סליקת אשראי — לעדכן את הסכום של כל נמען לפני השיחה</label>
         ${billOn?`<div class="ymrow2"><label class="fld"><span>📂 שלוחת הסליקה בימות (למשל 5 או 1/2)</span><input id="ym_bpath" dir="ltr" value="${esc(ymBillPath)}" placeholder="5"></label>
           <span class="hintxt">לפני השיחות המערכת מעדכנת <b dir="ltr">BillingSum.ini</b> בשלוחה הזו: טלפון=סכום לכל נמען. שאר השורות בקובץ נשארות, והגדרות השלוחה לא משתנות. סכום לכל נמען — בשלב 3.</span></div>`:''}</div>`:''}
@@ -12666,9 +12707,12 @@ function ymViewSend(){
   const g=id=>document.getElementById(id);
   view.querySelectorAll('.ymc').forEach(b=>b.onclick=()=>{
     if(b.dataset.ch==='mail'){cmPick=new Set(sel.filter(r=>r.k==='m').map(r=>r.id));cmSender='neder';cmSub='send';render();window.scrollTo(0,0);return;}
-    ymCh=b.dataset.ch;try{localStorage.setItem('kc_ymch',ymCh);}catch(e){}renderCommYm();});
+    const t=YM_TPL.find(x=>x[0]===ymTplKey), wasTpl=t&&ymText===ymTpl(t,ymCh);
+    ymCh=b.dataset.ch;try{localStorage.setItem('kc_ymch',ymCh);}catch(e){}
+    if(t&&(wasTpl||!ymText.trim()))ymText=ymTpl(t,ymCh);
+    renderCommYm();});
   view.querySelectorAll('.ymtpl .chip').forEach(b=>b.onclick=()=>{const t=YM_TPL.find(x=>x[0]===b.dataset.t), nt=ymTpl(t,ymCh);
-    const apply=()=>{ymText=nt;if(ymCh==='voice'&&/הקישו 1/.test(nt)&&!ymBill){ymBill=true;try{localStorage.setItem('kc_ymbill','1');}catch(e){}}renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);};
+    const apply=()=>{ymText=nt;ymTplKey=t[0];try{localStorage.setItem('kc_ymtpl',ymTplKey);}catch(e){}if(ymCh==='voice'&&/הקישו 1/.test(nt)&&!ymBill){ymBill=true;try{localStorage.setItem('kc_ymbill','1');}catch(e){}}renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);};
     if(ymText.trim()&&nt&&ymText!==nt){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok)apply();});return;}
     apply();});
   let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
@@ -12716,7 +12760,34 @@ function ymViewSend(){
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('המשלוח התחיל ✓');ymTrack(r.job);};
   ymWireLink(prevLink);
+  ymWireVoice(first);
+  const ts=g('ym_tplsave'); if(ts)ts.onclick=async()=>{const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:ymText});
+    if(r&&r.ok){ymStatus.tpl=r.tpl;toast('הנוסח נשמר — מעכשיו הוא ברירת המחדל ✓');renderCommYm();}else toast('לא נשמר');};
+  const tr=g('ym_tplreset'); if(tr)tr.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח ששמרת ולחזור לנוסח המובנה?'))return;
+    const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:null});if(r&&r.ok){ymStatus.tpl=r.tpl;const t=YM_TPL.find(x=>x[0]===ymTplKey);ymText=t?ymTpl(t,ymCh):ymText;renderCommYm();}};
   ymWireProg();
+}
+// מאיר: "אני גם רוצה להחליף קול, שיהיה יותר אנושי, ויותר נורמלי בלי טעויות"
+function ymVoiceHTML(st){
+  const V=st.voices||[['','ברירת המחדל של ימות']];
+  return `<div class="ymvoice"><div class="ymflt">
+      <label class="fld" style="margin:0;flex:1 1 200px"><span>🗣️ קול ההקראה</span><select id="ym_voice">${V.map(([k,l])=>`<option value="${esc(k)}" ${k===(st.voice||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+      <button class="btn sm ghost" id="ym_say">👂 איך זה יוקרא?</button></div>
+    <div id="ym_sayout"></div>
+    <details class="ympron"><summary>📖 מילון הגייה — מילים שימות מבטא לא נכון</summary>
+      <div class="hintxt">שורה לכל מילה: <b>מילה=איך לומר</b>. למשל <span dir="rtl">חצות=חֲצוֹת</span> או <span dir="rtl">דויטש=דוֹיְטְשׁ</span>. ניקוד או כתיב מלא עוזרים לקול לקרוא נכון.</div>
+      <textarea id="ym_pron" rows="4" placeholder="חצות=חֲצוֹת">${esc(st.pron||'')}</textarea>
+      <button class="btn sm" id="ym_pronsave">💾 שמור מילון</button></details>
+    <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית. הקול נשמר בתיקייה של כל טלפון שנשלחת אליו הודעה.</div></div>`;}
+function ymWireVoice(first){
+  const g=id=>document.getElementById(id); if(!g('ym_voice'))return;
+  g('ym_voice').onchange=async()=>{const v=g('ym_voice').value;const r=await api('POST','/api/yemot/voice',{voice:v});
+    if(r&&r.ok){ymStatus.voice=v;toast('הקול נשמר ✓ — נסה "שלח בדיקה אליי"');}else toast((r&&r.error)||'לא נשמר');};
+  g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{voice:ymStatus.voice||'',pron:p});
+    if(r&&r.ok){ymStatus.pron=p;toast('המילון נשמר ✓');}else toast('לא נשמר');};
+  g('ym_say').onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
+    const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,pron:g('ym_pron').value});
+    g('ym_sayout').innerHTML=r&&r.ok?`<div class="ympv"><b>👂 כך ימות יקריא:</b> ${esc(r.text)}</div>`:'';};
 }
 function ymLinkHTML(linkOn,prevLink){
   const st=ymStatus||{}, M=st.mosads||[], cur=ymLink.mosad||st.mosad||'';

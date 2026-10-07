@@ -155,10 +155,77 @@ def is_mobile(p):
     return bool(re.fullmatch(r'05\d{8}', p or ''))
 
 
-def ensure_phone_dir(phone):
+# ---------- הקול וההקראה ----------
+# מאיר: "אני גם רוצה להחליף קול, שיהיה יותר אנושי, ויותר נורמלי בלי טעויות".
+# בימות יש ארבעה קולות להקראה, בהגדרה tts_voice= ב-ext.ini של השלוחה:
+VOICES = [('', 'ברירת המחדל של ימות'), ('Elik', 'אליק (גבר)'), ('Jacob', 'יעקב (גבר)'),
+          ('Sivan', 'סיון (אישה)'), ('Osnat', 'אסנת (אישה)')]
+_DIG = ['אפס', 'אחת', 'שתיים', 'שלוש', 'ארבע', 'חמש', 'שש', 'שבע', 'שמונה', 'תשע']
+
+
+def num_words(n):
+    """158 -> 'מאה חמישים ושמונה' (לשון זכר, כמו "שקלים")."""
+    try:
+        import receipt_il as _r
+    except Exception:
+        return str(n)
+    n = int(n)
+    if n == 0:
+        return 'אפס'
+    if n >= 1000000:
+        return ' '.join(_DIG[int(c)] for c in str(n))
+    def b1000(x):
+        h, r = divmod(x, 100)
+        hs = _r._H[h] if h else ''
+        rs = _r._below_1000(r) if r else ''
+        if hs and rs:
+            return hs + (' ' if ' ו' in rs else ' ו') + rs   # מאה חמישים ושמונה · מאה ושמונים
+        return hs or rs
+    k, low = divmod(n, 1000)
+    hi = (_r._TH[k] if k in _r._TH else (b1000(k) + ' אלף')) if k else ''
+    lo = b1000(low) if low else ''
+    sep = ' ' if ' ו' in lo else ' ו'
+    return (hi + (sep if hi and lo else '') + lo).strip()
+
+
+def _phone_words(m):
+    d = re.sub(r'\D', '', m.group(0))
+    groups = [d[:3], d[3:6], d[6:]] if d.startswith('05') or d.startswith('07') else [d[:2], d[2:5], d[5:]]
+    return ', '.join(' '.join(_DIG[int(c)] for c in g) for g in groups if g)
+
+
+def speakable(text, pron=''):
+    """הטקסט כפי שימות יקריא אותו: טלפונים ספרה-ספרה בקבוצות, סכומים במילים,
+    ש"ח/₪ -> שקלים, ומילון הגייה של מאיר ("מילה=איך לומר", שורה לכל מילה)."""
+    t = str(text or '')
+    for ln in str(pron or '').replace('\r', '').split('\n'):
+        if '=' in ln:
+            w, say = ln.split('=', 1)
+            w, say = w.strip(), say.strip()
+            if w and say:
+                t = re.sub(r'(?<![\u0590-\u05ffA-Za-z])' + re.escape(w) + r'(?![\u0590-\u05ffA-Za-z])', say, t)
+    t = re.sub(r'(?<!\d)0\d{1,2}-?\d{3}-?\d{4}(?!\d)|(?<!\d)05\d-?\d{7}(?!\d)', _phone_words, t)
+    t = re.sub(r'(\d)\s*(?:ש"ח|ש״ח|ש\'\'ח|₪|שח\b)', r'\1 שקלים', t)
+    t = re.sub(r'₪\s*(\d[\d,]*)', r'\1 שקלים', t)
+    t = re.sub(r'(?<=\d),(?=\d{3}\b)', '', t)
+    t = re.sub(r'\d+(?:\.\d+)?', lambda m: num_words(float(m.group(0))) if float(m.group(0)) < 1000000 else m.group(0), t)
+    t = t.replace('{', '').replace('}', '')
+    return re.sub(r'\s{2,}', ' ', t).strip()
+
+
+def set_voice(phone, voice):
+    """הקול בתיקייה של הטלפון (tts_voice ב-ext.ini שלה)."""
+    if not voice:
+        return True, ''
+    return call('UpdateExtension', {'path': 'ivr2:/Phone/' + phone, 'type': 'playfile', 'tts_voice': voice})
+
+
+def ensure_phone_dir(phone, voice=''):
     """מאיר: "למספרים שעדיין אין להם הודעה, התיקייה של המספר שלהם לא נוצרה עדיין, ולכן
     לא שמעתי את ההודעה" — יוצרים את השלוחה Phone/<טלפון> (השמעת הודעות) ובודקים שקמה."""
     p = {'path': 'ivr2:/Phone/' + phone, 'type': 'playfile'}
+    if voice:
+        p['tts_voice'] = voice
     ok, res = call('UpdateExtension', p)
     if not ok:
         return False, 'יצירת התיקייה של הטלפון נכשלה — ' + str(res)
@@ -168,17 +235,19 @@ def ensure_phone_dir(phone):
     return True, res
 
 
-def next_msg_num(phone):
+def next_msg_num(phone, voice=''):
     """המספר הבא לתיקייה של הטלפון: אחרי ההודעה הכי גבוהה שכבר יש (000 → 001).
-    אם אין עדיין תיקייה לטלפון — יוצרים אותה ומתחילים מ-000."""
+    אם אין עדיין תיקייה לטלפון — יוצרים אותה (עם הקול שנבחר) ומתחילים מ-000."""
     ok, res = call('GetIVR2Dir', {'path': '/Phone/' + phone})
     if not ok:
         if 'does not exist' in str(res).lower():
-            ok2, res2 = ensure_phone_dir(phone)
+            ok2, res2 = ensure_phone_dir(phone, voice)
             if not ok2:
                 return False, res2
             return True, 0
         return False, res
+    if voice and str((res.get('extIni') or {}).get('tts_voice') or '') != voice:
+        set_voice(phone, voice)            # תיקייה קיימת — מעדכנים רק את הקול
     nums = []
     for f in (res.get('files') or []):
         m = re.match(r'^(\d+)\.', str(f.get('name') or ''))
@@ -187,9 +256,9 @@ def next_msg_num(phone):
     return True, (max(nums) + 1 if nums else 0)
 
 
-def send_tts(phone, text, timeout=35):
+def send_tts(phone, text, timeout=35, voice=''):
     """הודעה קולית: מעלה את הטקסט כקובץ TTS לתיקיית הטלפון ומתקשר אליו."""
-    ok, n = next_msg_num(phone)
+    ok, n = next_msg_num(phone, voice)
     if not ok:
         return False, n
     name = '%03d.tts' % n

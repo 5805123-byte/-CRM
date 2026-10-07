@@ -362,6 +362,9 @@ def ensure_schema():
     # pending=1 — יש שאלה אם הוא שייך לקהילה; מאיר עונה כן/לא בשורה
     try: con.execute("ALTER TABLE members ADD COLUMN pending INTEGER DEFAULT 0")
     except Exception: pass
+    for col in ('link', 'amount'):     # קישור תשלום אישי בנדרים פלוס ({{קישור}}) והסכום שלו ({{סכום}})
+        try: con.execute(f"ALTER TABLE mail_queue ADD COLUMN {col} TEXT")
+        except Exception: pass
     try: con.execute("ALTER TABLE mail_batch ADD COLUMN sender TEXT DEFAULT 'main'")   # 'neder' = neder1818@gmail.com
     except Exception: pass
     try: con.execute("ALTER TABLE mail_batch ADD COLUMN audience TEXT DEFAULT 'donors'")
@@ -12540,6 +12543,17 @@ def mail_recipients(con, ids):
     return out, skip
 
 
+def mail_attach_links(to, b):
+    """מאיר: "גם במייל כשאני שולח מהמייל של נדר1818" — הקישור האישי של כל חבר (נבנה במסך)
+    והסכום, ל-{{קישור}} ול-{{סכום}}."""
+    links = b.get('links') or {}
+    amt = str(b.get('link_amount') or '').strip()[:20]
+    for x in to:
+        x['link'] = ym_link_ok(links.get(str(x.get('member_id') or ''))) if links else ''
+        x['amount'] = amt
+    return to
+
+
 def member_recipients(con, ids):
     """נמענים מרשימת הקהילה — אותו מבנה בדיוק כמו mail_recipients לתורמים,
     כדי שאותו מנוע דיוור (הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר) ישרת
@@ -13340,6 +13354,8 @@ def ym_worker(job_id):
             if not job:
                 return
             con.execute("UPDATE ym_job SET status='sending' WHERE id=?", (job_id,)); con.commit()
+            ym_voice = kv_get(con, 'ym_voice', '')
+            ym_pron = kv_get(con, 'ym_pron', '')
             if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
                 amts = {}
                 for m in con.execute("SELECT phone, amount FROM ym_msg WHERE job=? AND status='queued'", (job_id,)).fetchall():
@@ -13365,7 +13381,9 @@ def ym_worker(job_id):
                 elif job['channel'] == 'sms':
                     ok, res = _ym.send_sms(m['phone'], m['text'])
                 else:
-                    ok, res = _ym.send_tts(m['phone'], m['text'])
+                    # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
+                    # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
+                    ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice)
                 tr = _ym.end_trace()
                 if not tr:      # נדחה אצלנו לפני שנשלח לימות — גם זה מופיע בלוג
                     tr = [{'method': 'SendSms' if job['channel'] == 'sms' else 'CallExtensionBridging',
@@ -13471,7 +13489,8 @@ def mail_worker(batch_id):
             who = {'name': r['name'] or '', 'first': r['fname'] or '',
                    'last': r['lname'] or '', 'title': r['title'] or '',
                    'gender': r['gender'] or 'm',
-                   'avreich': r['avreich'] or '', 'kvittel': r['kvittel'] or ''}
+                   'avreich': r['avreich'] or '', 'kvittel': r['kvittel'] or '',
+                   'link': (r['link'] if 'link' in r.keys() else '') or '', 'amount': (r['amount'] if 'amount' in r.keys() else '') or ''}
             pix = ''
             if int(b['track'] if 'track' in b.keys() else 1) and (b['base'] or ''):
                 pix = '%s/o.png?i=%d&t=%s' % ((b['base'] or '').rstrip('/'), r['id'],
@@ -15773,6 +15792,9 @@ class H(BaseHTTPRequestHandler):
                        '?sort=seat' if by_seat else '', len(rows), n_mail, n_seat,
                        'מספר מקום' if by_seat else 'שם משפחה', today_iso(), ''.join(trs)))
             return self._send(200, page.encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/api/nedarim/mosads':
+            con = db(); lst, cur = ned_mosads(con); con.close()
+            return self._send(200, {'ok': True, 'mosads': lst, 'mosad': cur})
         if self.path.split('?')[0] == '/api/yemot/log':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: job = int((qs.get('job') or ['0'])[0])
@@ -15823,6 +15845,9 @@ class H(BaseHTTPRequestHandler):
             ym_save_trace(con, _ym.end_trace())
             con.commit()
             ned_list = ned_mosads(con)
+            try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
+            except Exception: _tpl = {}
+            ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl)
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
@@ -15832,7 +15857,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
                                     'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
-                                    'bill_path': ym_bill_kv(), 'mosads': ned_list[0], 'mosad': ned_list[1]})
+                                    'bill_path': ym_bill_kv(), 'mosads': ned_list[0], 'mosad': ned_list[1],
+                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2]})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
@@ -16748,6 +16774,38 @@ class H(BaseHTTPRequestHandler):
             con.commit()
             out = ned_mosads(con); con.close()
             return self._send(200, {'ok': True, 'mosads': out[0], 'mosad': out[1]})
+        if self.path == '/api/yemot/tpl':
+            # נוסח קבוע לכל קטגוריה ולכל ערוץ — מאיר: "שזה יהיה בראש, ברירת מחדל"
+            key = re.sub(r'[^a-z]', '', str(b.get('key') or ''))[:20]
+            ch = 'sms' if b.get('ch') == 'sms' else 'voice'
+            if not key:
+                return self._send(200, {'ok': False, 'error': 'חסרה קטגוריה'})
+            con = db()
+            try: tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
+            except Exception: tpl = {}
+            if b.get('text') is None:
+                tpl.pop(key + ':' + ch, None)
+            else:
+                tpl[key + ':' + ch] = str(b.get('text'))[:2000]
+            con.execute("INSERT INTO app_kv(k,v) VALUES('ym_tpl',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (json.dumps(tpl, ensure_ascii=False),))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'tpl': tpl})
+        if self.path == '/api/yemot/voice':
+            # הקול שימות מקריא בו, ומילון ההגייה ("מילה=איך לומר")
+            import yemot as _ym
+            v = str(b.get('voice') or '')
+            if v not in [x[0] for x in _ym.VOICES]:
+                return self._send(200, {'ok': False, 'error': 'קול לא מוכר'})
+            con = db()
+            con.execute("INSERT INTO app_kv(k,v) VALUES('ym_voice',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (v,))
+            if 'pron' in b:
+                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (str(b.get('pron') or '')[:5000],))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/yemot/speakable':
+            import yemot as _ym
+            con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
+            return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or '')), pron)})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
             import yemot as _ym
@@ -16837,6 +16895,7 @@ class H(BaseHTTPRequestHandler):
             # members — נמענים מרשימת הקהילה; ids — תורמים. אותו מנוע לשניהם.
             if b.get('members'):
                 to, skip = member_recipients(con, b.get('members'))
+                mail_attach_links(to, b)
             else:
                 to, skip = mail_recipients(con, b.get('ids'))
             secret = mail_secret(con)
@@ -16891,6 +16950,7 @@ class H(BaseHTTPRequestHandler):
             is_members = bool(b.get('members'))
             if is_members:
                 to, skip = member_recipients(con, b.get('members'))
+                mail_attach_links(to, b)
             else:
                 to, skip = mail_recipients(con, b.get('ids'))
             if not to:
@@ -16911,10 +16971,11 @@ class H(BaseHTTPRequestHandler):
             bid = cur.lastrowid
             for x in to:
                 con.execute("INSERT INTO mail_queue(batch,donor_id,member_id,email,name,fname,lname,"
-                            "title,gender,avreich,kvittel) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            "title,gender,avreich,kvittel,link,amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             (bid, x.get('donor_id'), x.get('member_id'), x['email'], x['name'],
                              x.get('first', ''), x.get('last', ''), x.get('title', ''),
-                             x.get('gender', 'm'), x.get('avreich', ''), x.get('kvittel', '')))
+                             x.get('gender', 'm'), x.get('avreich', ''), x.get('kvittel', ''),
+                             x.get('link', ''), x.get('amount', '')))
             # "מייל נדרים ונדבות" (מחלון הקהילה / ימות המשיח) יוצא מ-neder1818@gmail.com
             con.execute("UPDATE mail_batch SET sender=? WHERE id=?", ('neder' if (b.get('sender') == 'neder' and is_members) else 'main', bid))
             con.commit(); con.close()

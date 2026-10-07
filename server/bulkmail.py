@@ -561,6 +561,10 @@ def donate_text():
     return '\n'.join(out) + '\n\n' + DONATE_FOOT
 
 
+PAYBTN = ('<a href="%s" style="display:inline-block;background:#3b357a;color:#ffffff;text-decoration:none;'
+          'font-weight:700;font-size:17px;padding:11px 22px;border-radius:10px;margin:6px 0">💳 %s</a>')
+
+
 def personalize(text, who, html=False, d='rtl'):
     """מחליף את הסימונים שבמכתב בפרטי התורם שמקבל אותו.
 
@@ -653,6 +657,16 @@ def personalize(text, who, html=False, d='rtl'):
             if not html:
                 return '\n'.join(kv)
             return (KVBOX % side) + ''.join(KVLINE % _esc(x) for x in kv) + '</span>'
+        # מאיר: "אני רוצה גם במייל כשאני שולח מהמייל של נדר1818" — קישור תשלום אישי
+        # בנדרים פלוס (נבנה לכל נמען: שם, טלפון, סכום נעול) — ככפתור במייל
+        if key in ('קישור', 'קישור לתשלום', 'link'):
+            url = (who.get('link') or '').strip()
+            if not url:
+                return ''
+            return (PAYBTN % (_esc(url), 'לתשלום מאובטח בכרטיס אשראי')) if html else url
+        if key in ('סכום', 'amount'):
+            v = str(who.get('amount') or '').strip()
+            return _esc(v) if html else v
         if key in simple:
             return (_esc(simple[key]) if html else simple[key])
         return m.group(0)                     # סימון לא מוכר — נשאר כמו שהוא
