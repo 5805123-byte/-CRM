@@ -12663,6 +12663,8 @@ function ymViewSend(){
       <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
       <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}</div>
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום">${esc(ymText)}</textarea>
+      ${ymCh==='voice'?`<div class="ymnik"><button class="btn sm ghost" id="nk_all">✨ נקד את כל הטקסט</button><button class="btn sm ghost" id="nk_sel">✨ נקד רק את מה שסימנתי</button><button class="btn sm ghost" id="nk_clear">✖ הסר ניקוד</button>
+        <span class="hintxt">מסמנים בעכבר מילה או משפט, ולוחצים "נקד רק את מה שסימנתי".</span></div>`:''}
       ${ymTplKey?(()=>{const t=YM_TPL.find(x=>x[0]===ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),saved=ymTplSaved(t[0],ymCh)!=null;
         return `<div class="ymtplbar">${ymText.trim()&&ymText!==cur?`<button class="btn sm" id="ym_tplsave">💾 שמור כנוסח הקבוע של "${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</button>`:`<span class="hintxt">${saved?'✓ זה הנוסח הקבוע שלך':'הנוסח המובנה'} ל"${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</span>`}
           ${saved?`<button class="btn sm ghost" id="ym_tplreset">↩ חזרה לנוסח המובנה</button>`:''}</div>`;})():''}
@@ -12760,7 +12762,8 @@ function ymViewSend(){
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('המשלוח התחיל ✓');ymTrack(r.job);};
   ymWireLink(prevLink);
-  ymWireVoice(first);
+  ymWireVoice(first,sel);
+  ymWireNikud();
   const ts=g('ym_tplsave'); if(ts)ts.onclick=async()=>{const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:ymText});
     if(r&&r.ok){ymStatus.tpl=r.tpl;toast('הנוסח נשמר — מעכשיו הוא ברירת המחדל ✓');renderCommYm();}else toast('לא נשמר');};
   const tr=g('ym_tplreset'); if(tr)tr.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח ששמרת ולחזור לנוסח המובנה?'))return;
@@ -12786,9 +12789,30 @@ function ymVoiceHTML(st){
     <details class="ympron"><summary>📖 מילון הגייה — מילים שמבוטאות לא נכון</summary>
       <div class="hintxt">שורה לכל מילה: <b>מילה=איך לומר</b>. למשל <span dir="rtl">חצות=חֲצוֹת</span> או <span dir="rtl">דויטש=דוֹיְטְשׁ</span>. ניקוד או כתיב מלא עוזרים לקול לקרוא נכון.</div>
       <textarea id="ym_pron" rows="4" placeholder="חצות=חֲצוֹת">${esc(st.pron||'')}</textarea>
-      <button class="btn sm" id="ym_pronsave">💾 שמור מילון</button></details>
+      <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="ym_pronsave">💾 שמור מילון</button>
+        <button class="btn sm ghost" id="ym_pronnames">👪 הצע ניקוד לשמות של הנבחרים</button></div></details>
     <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></div>`;}
-function ymWireVoice(first){
+// מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
+function ymWireNikud(){
+  const g=id=>document.getElementById(id), ta=g('ym_text'); if(!ta||!g('nk_all'))return;
+  const run=async(btn,from,to)=>{const part=ymText.slice(from,to);
+    if(!/[\u05d0-\u05ea]/.test(part)){toast('אין כאן עברית לנקד');return;}
+    btn.disabled=true;const t0=btn.textContent;btn.textContent='⏳ מנקד…';
+    const r=await api('POST','/api/nikud',{text:part});
+    btn.disabled=false;btn.textContent=t0;
+    if(!r||!r.ok){await uiAlert('הניקוד לא הצליח:\n'+((r&&r.error)||'שגיאה')+'\n\nהפרטים בלשונית "לוג טכני".');return;}
+    ymText=ymText.slice(0,from)+r.text+ymText.slice(to);renderCommYm();
+    const n=g('ym_text');if(n){n.focus();n.setSelectionRange(from,from+r.text.length);}
+    toast('נוקד ✓'+(r.provider?' ('+r.provider+')':''));};
+  g('nk_all').onclick=()=>run(g('nk_all'),0,ymText.length);
+  g('nk_sel').onclick=()=>{const a=ta.selectionStart,b=ta.selectionEnd;
+    if(a==null||a===b){toast('סמן קודם בטקסט מילה או משפט');return;}
+    run(g('nk_sel'),a,b);};
+  g('nk_clear').onclick=()=>{const a=ta.selectionStart,b=ta.selectionEnd,has=a!=null&&a!==b;
+    const strip=t=>t.replace(/[\u0591-\u05c7]/g,'');
+    ymText=has?ymText.slice(0,a)+strip(ymText.slice(a,b))+ymText.slice(b):strip(ymText);renderCommYm();};
+}
+function ymWireVoice(first,sel){
   const g=id=>document.getElementById(id); if(!g('ym_say'))return;
   view.querySelectorAll('.ymeng .ymc').forEach(b=>b.onclick=async()=>{const e=b.dataset.eng;const r=await api('POST','/api/yemot/voice',{engine:e});
     if(r&&r.ok){ymStatus.engine=e;renderCommYm();}});
@@ -12802,6 +12826,18 @@ function ymWireVoice(first){
       :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};
   g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{pron:p});
     if(r&&r.ok){ymStatus.pron=p;toast('המילון נשמר ✓');}else toast('לא נשמר');};
+  const pn=g('ym_pronnames'); if(pn)pn.onclick=async()=>{
+    const have=new Set(g('ym_pron').value.split('\n').map(l=>l.split('=')[0].trim()).filter(Boolean));
+    const words=[...new Set((sel||[]).flatMap(r=>String(r.name||'').split(/\s+/)).map(w=>w.replace(/[\u0591-\u05c7]/g,'').trim()).filter(w=>w.length>1&&/[\u05d0-\u05ea]/.test(w)&&!have.has(w)))];
+    if(!words.length){toast((sel||[]).length?'כל השמות כבר במילון':'בחר קודם נמענים בשלב 3');return;}
+    pn.disabled=true;const t0=pn.textContent;pn.textContent='⏳ מנקד '+words.length+' שמות…';
+    const r=await api('POST','/api/nikud/names',{names:words.slice(0,60)});
+    pn.disabled=false;pn.textContent=t0;
+    if(!r||!r.ok){await uiAlert((r&&r.error)||'הניקוד לא הצליח');return;}
+    const lines=Object.entries(r.names||{}).filter(([w,v])=>v&&v!==w).map(([w,v])=>w+'='+v);
+    if(!lines.length){toast('לא נמצא מה להוסיף');return;}
+    const ta=g('ym_pron');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+lines.join('\n');
+    toast(lines.length+' שמות נוספו למילון — בדוק ותקן, ואז "שמור מילון"');};
   g('ym_say').onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,pron:g('ym_pron').value});
     g('ym_sayout').innerHTML=r&&r.ok?`<div class="ympv"><b>👂 כך ימות יקריא:</b> ${esc(r.text)}</div>`:'';};

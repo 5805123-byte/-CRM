@@ -16819,6 +16819,35 @@ class H(BaseHTTPRequestHandler):
                     con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kvk, val))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/nikud':
+            # מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
+            import yemot as _ym, nikud as _nk
+            _ym.begin_trace()
+            ok, out, prov = _nk.vocalize(str(b.get('text') or '')[:4000], trace=_ym._trace)
+            con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
+            return self._send(200, {'ok': ok, 'text': out if ok else '', 'error': '' if ok else out, 'provider': prov})
+        if self.path == '/api/nikud/names':
+            # "לפעמים במשפחות הוא לא אומר נורמלי" — הצעת ניקוד לשמות הנבחרים, למילון ההגייה
+            import yemot as _ym, nikud as _nk
+            names = []
+            for x in (b.get('names') or [])[:60]:
+                x = re.sub(r'\s+', ' ', str(x or '')).strip()
+                if x and x not in names and re.search(r'[\u05d0-\u05ea]', x):
+                    names.append(x)
+            _ym.begin_trace()
+            out, prov = {}, ''
+            ok, txt, prov = _nk.vocalize('\n'.join(names), trace=_ym._trace) if names else (True, '', '')
+            parts = txt.split('\n') if ok else []
+            if ok and len(parts) == len(names):
+                out = {n: v.strip() for n, v in zip(names, parts)}
+            else:
+                for n in names[:30]:
+                    ok1, v1, prov = _nk.vocalize(n, trace=_ym._trace)
+                    if ok1:
+                        out[n] = v1
+            con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
+            return self._send(200, {'ok': bool(out) or not names, 'names': out, 'provider': prov,
+                                    'error': '' if out or not names else 'הניקוד האוטומטי לא זמין כרגע — פרטים בלוג הטכני'})
         if self.path == '/api/yemot/sample':
             # השמעת דוגמה בדפדפן — הקול האנושי של Gemini, בלי להתקשר לאף אחד
             import yemot as _ym, gemini_tts as _gt
