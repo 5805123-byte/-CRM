@@ -12,7 +12,8 @@
 
 הודעה קולית — לפי התיעוד שמאיר הביא מימות המשיח, שלושה שלבים לכל טלפון:
   1. GetIVR2Dir?path=/Phone/<טלפון> — איזו הודעה הכי גבוהה כבר יש לטלפון (000, 001…);
-     אם לטלפון אין עדיין תיקייה: "extension does not exist" — מתחילים מ-000.
+     אם לטלפון אין עדיין תיקייה: "extension does not exist" — יוצרים אותה
+     (UpdateExtension path=ivr2:/Phone/<טלפון> type=playfile), ומתחילים מ-000.
   2. UploadTextFile?what=ivr2:/Phone/<טלפון>/<NNN>.tts&contents=<הטקסט> — ההודעה הבאה.
   3. CallExtensionBridging?phones=<טלפון>&ivrPath=ivr2:/&callsTimeOut=35 — השיחה עצמה.
 אופציונלי:
@@ -27,9 +28,33 @@
 import json
 import os
 import re
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+# מאיר: "אני רוצה שיהיה מקום ללוג שיראו בדיוק מה נשלח לימות המשיח ומה התשובה" —
+# כל קריאה נרשמת (בלי המפתח) ברשימה של ה-thread הנוכחי; app.py שומר אותה במסד
+_TR = threading.local()
+
+
+def begin_trace():
+    _TR.items = []
+
+
+def end_trace():
+    it = getattr(_TR, 'items', None) or []
+    _TR.items = None
+    return it
+
+
+def _trace(method, params, ok, raw, ms):
+    lst = getattr(_TR, 'items', None)
+    if lst is None:
+        return
+    lst.append({'method': method, 'params': {k: v for k, v in (params or {}).items() if k != 'token'},
+                'ok': bool(ok), 'response': (raw or '')[:3000], 'ms': int(ms)})
 
 DEF_BASE = 'https://www.call2all.co.il/ym/api/'
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'
@@ -61,6 +86,7 @@ def call(method, params, timeout=40):
         return False, 'ימות המשיח לא מוגדר ב-Render (YEMOT_TOKEN — מפתח ה-API של ימות)'
     data = dict(params or {})
     data['token'] = _token()
+    t0 = time.time()
     # כמו בתיעוד של ימות — GET עם הפרמטרים בכתובת
     req = urllib.request.Request(_base() + method + '?' + urllib.parse.urlencode(data),
                                  headers={'Accept': 'application/json, text/plain, */*', 'User-Agent': UA})
@@ -70,16 +96,24 @@ def call(method, params, timeout=40):
     except urllib.error.HTTPError as e:
         raw = e.read().decode('utf-8', 'replace')
     except urllib.error.URLError as e:
-        return False, 'אין תקשורת עם ימות המשיח: %s' % getattr(e, 'reason', e)
+        msg = 'אין תקשורת עם ימות המשיח: %s' % getattr(e, 'reason', e)
+        _trace(method, params, False, msg, (time.time() - t0) * 1000)
+        return False, msg
     except Exception as e:
-        return False, 'שגיאה בפנייה לימות המשיח: %s' % e
+        msg = 'שגיאה בפנייה לימות המשיח: %s' % e
+        _trace(method, params, False, msg, (time.time() - t0) * 1000)
+        return False, msg
+    ms = (time.time() - t0) * 1000
     try:
         res = json.loads(raw or '{}')
     except Exception:
+        _trace(method, params, False, raw, ms)
         return False, 'תשובה לא מובנת מימות המשיח: %s' % raw[:160]
     if not isinstance(res, dict):
+        _trace(method, params, False, raw, ms)
         return False, 'תשובה לא מובנת מימות המשיח'
     st = str(res.get('responseStatus') or '').upper()
+    _trace(method, params, st == 'OK', raw, ms)
     if st == 'OK':
         return True, res
     msg = res.get('message') or res.get('error') or res.get('errorMessage') or raw[:160]
@@ -119,12 +153,29 @@ def is_mobile(p):
     return bool(re.fullmatch(r'05\d{8}', p or ''))
 
 
+def ensure_phone_dir(phone):
+    """מאיר: "למספרים שעדיין אין להם הודעה, התיקייה של המספר שלהם לא נוצרה עדיין, ולכן
+    לא שמעתי את ההודעה" — יוצרים את השלוחה Phone/<טלפון> (השמעת הודעות) ובודקים שקמה."""
+    p = {'path': 'ivr2:/Phone/' + phone, 'type': 'playfile'}
+    ok, res = call('UpdateExtension', p)
+    if not ok:
+        return False, 'יצירת התיקייה של הטלפון נכשלה — ' + str(res)
+    ok, res = call('GetIVR2Dir', {'path': '/Phone/' + phone})
+    if not ok:
+        return False, 'התיקייה של הטלפון עדיין לא קיימת אחרי היצירה — ' + str(res)
+    return True, res
+
+
 def next_msg_num(phone):
-    """המספר הבא לתיקייה של הטלפון: אחרי ההודעה הכי גבוהה שכבר יש (000 → 001)."""
+    """המספר הבא לתיקייה של הטלפון: אחרי ההודעה הכי גבוהה שכבר יש (000 → 001).
+    אם אין עדיין תיקייה לטלפון — יוצרים אותה ומתחילים מ-000."""
     ok, res = call('GetIVR2Dir', {'path': '/Phone/' + phone})
     if not ok:
         if 'does not exist' in str(res).lower():
-            return True, 0                    # אין עדיין הודעות לטלפון הזה
+            ok2, res2 = ensure_phone_dir(phone)
+            if not ok2:
+                return False, res2
+            return True, 0
         return False, res
     nums = []
     for f in (res.get('files') or []):

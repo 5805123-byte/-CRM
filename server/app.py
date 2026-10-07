@@ -285,6 +285,9 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS ym_msg(id INTEGER PRIMARY KEY AUTOINCREMENT, job INTEGER, kind TEXT, ref_id INTEGER,
         name TEXT, phone TEXT, text TEXT, status TEXT DEFAULT 'queued', error TEXT, at TEXT);
     CREATE INDEX IF NOT EXISTS ix_ymmsg_job ON ym_msg(job, status);
+    /* מאיר: "מקום ללוג שיראו בדיוק מה נשלח לימות המשיח ומה התשובה" — כל קריאה, בלי המפתח */
+    CREATE TABLE IF NOT EXISTS ym_api(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, job INTEGER, msg INTEGER,
+        phone TEXT, method TEXT, params TEXT, ok INTEGER, response TEXT, ms INTEGER);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
     -- שמאיר יקבע פעם אחת לכל משלם "מי זה ולמה מיועד הכסף" וכל החיובים שלו ייכנסו
@@ -13174,6 +13177,21 @@ def ym_recipients(con, recs):
     return out
 
 
+def ym_save_trace(con, items, job=0, msg=0, phone=''):
+    for it in items or []:
+        try:
+            con.execute("INSERT INTO ym_api(at,job,msg,phone,method,params,ok,response,ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (now_iso(), job, msg, phone, it['method'], json.dumps(it['params'], ensure_ascii=False)[:4000],
+                         1 if it['ok'] else 0, it['response'], it['ms']))
+        except Exception:
+            pass
+    # הלוג לא גדל בלי סוף — 5,000 הקריאות האחרונות
+    try:
+        con.execute("DELETE FROM ym_api WHERE id < (SELECT COALESCE(MAX(id),0)-5000 FROM ym_api)")
+    except Exception:
+        pass
+
+
 def ym_worker(job_id):
     """שולח את ההודעות של משלוח אחד, אחת אחרי השנייה, ומתעד אצל כל חבר/תורם."""
     import yemot as _ym
@@ -13185,6 +13203,7 @@ def ym_worker(job_id):
                 return
             con.execute("UPDATE ym_job SET status='sending' WHERE id=?", (job_id,)); con.commit()
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
+                _ym.begin_trace()
                 if not m['phone']:
                     ok, res = False, 'אין טלפון תקין'
                 elif job['channel'] == 'sms' and not _ym.is_mobile(m['phone']):
@@ -13193,6 +13212,7 @@ def ym_worker(job_id):
                     ok, res = _ym.send_sms(m['phone'], m['text'])
                 else:
                     ok, res = _ym.send_tts(m['phone'], m['text'])
+                ym_save_trace(con, _ym.end_trace(), job_id, m['id'], m['phone'])
                 con.execute("UPDATE ym_msg SET status=?, error=?, at=? WHERE id=?",
                             ('sent' if ok else 'failed', '' if ok else str(res)[:200], now_iso(), m['id']))
                 con.execute("UPDATE ym_job SET sent=sent+?, failed=failed+? WHERE id=?", (1 if ok else 0, 0 if ok else 1, job_id))
@@ -15587,10 +15607,24 @@ class H(BaseHTTPRequestHandler):
                        '?sort=seat' if by_seat else '', len(rows), n_mail, n_seat,
                        'מספר מקום' if by_seat else 'שם משפחה', today_iso(), ''.join(trs)))
             return self._send(200, page.encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/api/yemot/log':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: job = int((qs.get('job') or ['0'])[0])
+            except ValueError: job = 0
+            con = db()
+            if job:
+                rows = [dict(r) for r in con.execute("SELECT * FROM ym_api WHERE job=? ORDER BY id", (job,))]
+            else:
+                rows = [dict(r) for r in con.execute("SELECT * FROM ym_api ORDER BY id DESC LIMIT 300")]
+            con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
+            _ym.begin_trace()
             ok, res = (_ym.session() if _ym.configured() else (False, ''))
             con = db()
+            ym_save_trace(con, _ym.end_trace())
+            con.commit()
             jobs = [dict(r) for r in con.execute("SELECT * FROM ym_job ORDER BY id DESC LIMIT 30")]
             con.close()
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
