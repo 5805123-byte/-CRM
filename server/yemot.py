@@ -285,6 +285,84 @@ def update_billing(ext_path, amounts):
     return True, {'file': fpath, 'updated': len(amounts), 'lines': len(lines)}
 
 
+# ---------- יומן הכניסות והיציאות של ימות ----------
+# מאיר: "יש קובץ ivr2:Log/LogFolderEnterExit-2026-10.ymgr כל חודש ורואים הכל". כל שורה
+# היא כניסה לשלוחה אחת בתוך שיחה: Folder (main = שמיעת הודעות אישיות, 1 = הקישו 1 →
+# סליקה), Phone, EnterDate/EnterTime/ExitTime, TimeTotal (שניות), CallId (מזהה השיחה).
+# שיחה שהמערכת הוציאה (CallExtensionBridging) נרשמת עם IncomingDID ריק.
+def parse_ymgr(text):
+    out = []
+    for ln in (text or '').replace('\r', '').split('\n'):
+        if '#' not in ln:
+            continue
+        rec = {}
+        for part in ln.split('%'):
+            if '#' in part:
+                k, v = part.split('#', 1)
+                rec[k.strip()] = v.strip()
+        if rec.get('Phone') or rec.get('CallId'):
+            out.append(rec)
+    return out
+
+
+def _dt(date_s, time_s):
+    import datetime as _d
+    try:
+        return _d.datetime.strptime('%s %s' % (date_s, time_s), '%d/%m/%Y %H:%M:%S')
+    except ValueError:
+        return None
+
+
+def group_calls(recs):
+    """השורות -> שיחות: לכל CallId — הטלפון, התחלה/סוף, כמה שמע (main), לאיזו שלוחה עבר."""
+    calls = {}
+    order = []
+    for r in recs:
+        cid = r.get('CallId') or ('%s|%s|%s' % (r.get('Phone'), r.get('EnterDate'), r.get('EnterTime')))
+        c = calls.get(cid)
+        if not c:
+            c = {'call_id': cid, 'phone': r.get('Phone') or '', 'date': r.get('EnterDate') or '',
+                 'start': r.get('EnterTime') or '', 'end': r.get('ExitTime') or '',
+                 'incoming': r.get('IncomingDID') or '', 'listen': 0, 'total': 0, 'steps': []}
+            calls[cid] = c; order.append(cid)
+        try:
+            secs = int(r.get('TimeTotal') or 0)
+        except ValueError:
+            secs = 0
+        fol = r.get('Folder') or ''
+        c['total'] += secs
+        if fol == 'main':
+            c['listen'] += secs
+        c['steps'].append({'folder': fol, 'title': r.get('PathTitle') or '', 'start': r.get('EnterTime') or '',
+                           'secs': secs, 'id': r.get('EnterId') or ''})
+        if (r.get('ExitTime') or '') > c['end']:
+            c['end'] = r.get('ExitTime')
+        if (r.get('EnterTime') or '') < c['start']:
+            c['start'] = r.get('EnterTime')
+        if r.get('IncomingDID'):
+            c['incoming'] = r.get('IncomingDID')
+    out = []
+    for cid in order:
+        c = calls[cid]
+        other = [x for x in c['steps'] if x['folder'] not in ('main', '')]
+        c['pressed'] = sorted({x['folder'] for x in other})
+        c['pressed_secs'] = sum(x['secs'] for x in other)
+        c['outgoing'] = not c['incoming']
+        c['dt'] = _dt(c['date'], c['start'])
+        out.append(c)
+    return out
+
+
+def month_calls(ym):
+    """ym = 'YYYY-MM' -> (הצלחה, רשימת שיחות / שגיאה)"""
+    ok, txt = download('ivr2:Log/LogFolderEnterExit-%s.ymgr' % ym)
+    if not ok:
+        if re.search(r'not exist|not found|does not|no such|לא קיים|לא נמצא', str(txt), re.I):
+            return True, []
+        return False, txt
+    return True, group_calls(parse_ymgr(txt))
+
+
 def campaign_status(cid):
     """מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו" — מצב הקמפיין
     שהשיחה יצרה (campaignId שחוזר מ-CallExtensionBridging)."""

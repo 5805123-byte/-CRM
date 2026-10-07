@@ -450,6 +450,10 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE ym_job ADD COLUMN bill_path TEXT")
     except Exception: pass
+    # מהיומן של ימות (LogFolderEnterExit): כמה שמע, אם הקיש 1 וכמה זמן היה בסליקה
+    for col, typ in (('listen_secs', 'INTEGER'), ('pressed', 'TEXT'), ('pressed_secs', 'INTEGER'), ('call_id', 'TEXT'), ('sent_ts', 'TEXT')):
+        try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
+        except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -13230,28 +13234,78 @@ def ym_save_trace(con, items, job=0, msg=0, phone=''):
 
 
 def ym_check_job(job_id):
-    """מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו" — לכל שיחה
-    שיצאה: מצב הקמפיין שלה מימות, ומזה — ענה / לא ענה ומספר השניות. הכל נכנס ללוג."""
+    """מאיר: "יש אפשרות לדעת אם המתקשר ענה לשיחה ולחץ וכו'? יש קובץ
+    ivr2:Log/LogFolderEnterExit-<חודש>.ymgr ורואים הכל" — לכל שיחה שיצאה מחפשים ביומן
+    של ימות את השיחה של אותו טלפון שהתחילה אחרי השליחה: אם יש — ענה, כמה שמע,
+    אם הקיש 1 (סליקה) וכמה זמן. אם עברו 10 דקות ואין כלום — לא ענה."""
     import yemot as _ym
     con = db()
     try:
-        for m in con.execute("SELECT id, phone, campaign FROM ym_msg WHERE job=? AND status='sent' AND COALESCE(campaign,'')<>'' "
-                             "AND answered IS NULL", (job_id,)).fetchall():
-            _ym.begin_trace()
-            ok, res = _ym.campaign_status(m['campaign'])
-            ym_save_trace(con, _ym.end_trace(), job_id, m['id'], m['phone'])
+        msgs = con.execute("SELECT id, phone, sent_ts, at FROM ym_msg WHERE job=? AND status='sent' AND COALESCE(phone,'')<>'' "
+                           "AND COALESCE(call_id,'')=''", (job_id,)).fetchall()
+        if not msgs:
+            return
+        def ts(m):
+            v = m['sent_ts'] or ((m['at'] or '') + ':00')
+            try:
+                return datetime.datetime.strptime(v[:19], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                return None
+        months = sorted({(ts(m) or il_now()).strftime('%Y-%m') for m in msgs})
+        calls = []
+        _ym.begin_trace()
+        for ym in months:
+            ok, res = _ym.month_calls(ym)
             if ok:
-                r = _ym.parse_call_result(res, m['phone'])
-                con.execute("UPDATE ym_msg SET answered=?, secs=?, call_status=?, checked_at=? WHERE id=?",
-                            (None if r['answered'] is None else (1 if r['answered'] else 0), r['secs'], r['status'], now_iso(), m['id']))
+                calls += res
+        ym_save_trace(con, _ym.end_trace(), job_id, 0, '')
+        used = {r['call_id'] for r in con.execute("SELECT call_id FROM ym_msg WHERE COALESCE(call_id,'')<>''")}
+        now = il_now()
+        for m in msgs:
+            t0 = ts(m)
+            if not t0:
+                continue
+            cand = [c for c in calls if c['phone'] == m['phone'] and c['dt'] and c['call_id'] not in used
+                    and (t0 - datetime.timedelta(seconds=90)) <= c['dt'] <= (t0 + datetime.timedelta(minutes=30))]
+            cand.sort(key=lambda c: (not c['outgoing'], c['dt']))
+            if cand:
+                c = cand[0]; used.add(c['call_id'])
+                txt = 'ענה · שמע %s' % ym_mmss(c['listen'])
+                if c['pressed']:
+                    txt += ' · הקיש %s (%s)' % (','.join(c['pressed']), ym_mmss(c['pressed_secs']))
+                con.execute("UPDATE ym_msg SET answered=1, secs=?, listen_secs=?, pressed=?, pressed_secs=?, call_id=?, call_status=?, checked_at=? WHERE id=?",
+                            (c['total'], c['listen'], ','.join(c['pressed']), c['pressed_secs'], c['call_id'], txt, now_iso(), m['id']))
+            elif now > t0 + datetime.timedelta(minutes=10):
+                con.execute("UPDATE ym_msg SET answered=0, call_status=?, checked_at=? WHERE id=?",
+                            ('לא ענה (אין כניסה לשיחה ביומן של ימות)', now_iso(), m['id']))
             else:
-                con.execute("UPDATE ym_msg SET call_status=?, checked_at=? WHERE id=?", (str(res)[:60], now_iso(), m['id']))
-            con.commit()
-            time.sleep(0.3)
+                con.execute("UPDATE ym_msg SET call_status=?, checked_at=? WHERE id=?", ('עוד לא מופיע ביומן', now_iso(), m['id']))
+        con.commit()
     except Exception as e:
         print('  ym check error:', e)
     finally:
         con.close()
+
+
+def ym_mmss(sec):
+    try:
+        sec = int(sec or 0)
+    except ValueError:
+        sec = 0
+    return '%d:%02d' % (sec // 60, sec % 60)
+
+
+def ym_names(con):
+    """טלפון מנורמל -> שם, מהקהילה ומהתורמים (ליומן השיחות)."""
+    import yemot as _ym
+    out = {}
+    for tbl, tag in (('donors', 'תורם'), ('members', 'קהילה')):
+        for r in con.execute("SELECT last, first, phone FROM %s WHERE COALESCE(phone,'')<>''" % tbl):
+            for part in re.split(r'[,;/|]|\s{2,}', str(r['phone'] or '')):
+                ph = _ym.norm_phone(part)
+                if ph:
+                    out[ph] = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
+    return out
 
 
 def ym_worker(job_id):
@@ -13280,6 +13334,7 @@ def ym_worker(job_id):
                     return
                 con.commit()
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
+                con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
                 _ym.begin_trace()
                 if not m['phone']:
                     ok, res = False, 'אין טלפון תקין'
@@ -13319,7 +13374,7 @@ def ym_worker(job_id):
             con.execute("UPDATE ym_job SET status='done' WHERE id=?", (job_id,)); con.commit()
             if job['channel'] == 'voice':
                 # האם ענו וכמה זמן — בודקים אחרי דקה וחצי ושוב אחרי 5 דקות (שיחה שעוד בתור/בצלצול)
-                for dly in (90, 300):
+                for dly in (90, 300, 900):
                     threading.Timer(dly, ym_check_job, args=(job_id,)).start()
         except Exception as e:
             try:
@@ -15701,12 +15756,43 @@ class H(BaseHTTPRequestHandler):
             try: job = int((qs.get('job') or ['0'])[0])
             except ValueError: job = 0
             con = db()
+            where, args = [], []
             if job:
-                rows = [dict(r) for r in con.execute("SELECT * FROM ym_api WHERE job=? ORDER BY id", (job,))]
-            else:
-                rows = [dict(r) for r in con.execute("SELECT * FROM ym_api ORDER BY id DESC LIMIT 300")]
+                where.append('job=?'); args.append(job)
+            if (qs.get('errors') or [''])[0] == '1':
+                where.append('ok=0')
+            qq = re.sub(r'\D', '', (qs.get('q') or [''])[0])
+            if qq:
+                where.append('phone LIKE ?'); args.append('%' + qq + '%')
+            sql = "SELECT * FROM ym_api" + (" WHERE " + " AND ".join(where) if where else '') + " ORDER BY id DESC LIMIT 400"
+            rows = [dict(r) for r in con.execute(sql, args)]
             con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        if self.path.split('?')[0] == '/api/yemot/calls':
+            # יומן השיחות של ימות לחודש — כל שיחה: מי, מתי, כמה שמע, אם הקיש 1
+            import yemot as _ym
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            ym = re.sub(r'[^\d-]', '', (qs.get('month') or [''])[0])[:7] or il_now().strftime('%Y-%m')
+            _ym.begin_trace()
+            ok, res = _ym.month_calls(ym)
+            con = db()
+            ym_save_trace(con, _ym.end_trace()); con.commit()
+            if not ok:
+                con.close(); return self._send(200, {'ok': False, 'error': str(res)})
+            names = ym_names(con)
+            ours = {r['call_id']: dict(r) for r in con.execute("SELECT call_id, job, name, amount FROM ym_msg WHERE COALESCE(call_id,'')<>''")}
+            con.close()
+            out = []
+            for c in res:
+                o = {k: c[k] for k in ('call_id', 'phone', 'date', 'start', 'end', 'incoming', 'listen', 'total', 'pressed', 'pressed_secs', 'outgoing')}
+                o['name'] = names.get(c['phone'], '')
+                o['steps'] = c['steps']
+                if c['call_id'] in ours:
+                    o['job'] = ours[c['call_id']]['job']; o['amount'] = ours[c['call_id']]['amount']
+                    o['name'] = o['name'] or ours[c['call_id']]['name']
+                out.append(o)
+            out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
+            return self._send(200, {'ok': True, 'month': ym, 'calls': out})
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
             _ym.begin_trace()
@@ -15714,7 +15800,11 @@ class H(BaseHTTPRequestHandler):
             con = db()
             ym_save_trace(con, _ym.end_trace())
             con.commit()
-            jobs = [dict(r) for r in con.execute("SELECT * FROM ym_job ORDER BY id DESC LIMIT 30")]
+            jobs = [dict(r) for r in con.execute(
+                "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
+                "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
+                "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.pressed,'')<>'') AS n_pressed "
+                "FROM ym_job j ORDER BY j.id DESC LIMIT 50")]
             con.close()
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
@@ -15724,7 +15814,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
-            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             if not job:
                 return self._send(404, {'ok': False})
@@ -16670,7 +16760,7 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/yemot/job/(\d+)/check$', self.path)
         if m:
             con = db()
-            con.execute("UPDATE ym_msg SET answered=NULL WHERE job=? AND COALESCE(campaign,'')<>''", (int(m.group(1)),))
+            con.execute("UPDATE ym_msg SET answered=NULL, call_id='' WHERE job=? AND status='sent'", (int(m.group(1)),))
             con.commit(); con.close()
             ym_check_job(int(m.group(1)))
             return self._send(200, {'ok': True})
