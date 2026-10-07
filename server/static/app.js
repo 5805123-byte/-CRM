@@ -12777,7 +12777,8 @@ function ymVoiceHTML(st){
     <div class="ymeng"><button class="ymc${!gem?' on':''}" data-eng="">🤖 הקול של ימות<small>מהיר · כמעט מיידי</small></button>
       <button class="ymc${gem?' on':''}" data-eng="gemini">🧑 קול אנושי — Gemini<small>כמה שניות לכל נמען</small></button></div>
     ${gem?`${st.gemini?'':`<div class="ymwarn">⚠️ חסר מפתח: ב-Render ← Environment להוסיף <b>GEMINI_API_KEY</b> (מ-aistudio.google.com/apikey). עד אז ההודעות יוצאות בקול של ימות.</div>`}
-      <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>🧑 הקול</span><select id="ym_gvoice">${G.map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gvoice||'Kore')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+      <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>🧑 הקול</span><select id="ym_gvoice">${[['f','👩 נשים'],['m','👨 גברים']].map(([gx,gl])=>`<optgroup label="${gl}">${G.filter(v=>(v[2]||'f')===gx).map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gvoice||'Kore')?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>`).join('')}</select></label>
+        <label class="fld" style="margin:0;flex:1 1 160px"><span>⚙️ איכות</span><select id="ym_gmodel">${(st.gmodels||[['','Flash']]).map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gmodel||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
         <button class="btn sm" id="ym_sample" ${st.gemini?'':'disabled'}>▶️ השמע דוגמה כאן</button></div>
       <label class="fld"><span>🎭 איך לומר (הוראה ל-Gemini, באנגלית עובד הכי טוב)</span><textarea id="ym_gstyle" dir="ltr" rows="2" placeholder="${esc(st.gstyle_def||'')}">${esc(st.gstyle||'')}</textarea></label>
       <button class="btn sm ghost" id="ym_gsave">💾 שמור הוראה</button>
@@ -12817,10 +12818,11 @@ function ymWireVoice(first,sel){
   view.querySelectorAll('.ymeng .ymc').forEach(b=>b.onclick=async()=>{const e=b.dataset.eng;const r=await api('POST','/api/yemot/voice',{engine:e});
     if(r&&r.ok){ymStatus.engine=e;renderCommYm();}});
   const gv=g('ym_gvoice'); if(gv)gv.onchange=async()=>{await api('POST','/api/yemot/voice',{gvoice:gv.value});ymStatus.gvoice=gv.value;toast('הקול נשמר ✓');};
+  const gm=g('ym_gmodel'); if(gm)gm.onchange=async()=>{await api('POST','/api/yemot/voice',{gmodel:gm.value});ymStatus.gmodel=gm.value;toast('נשמר ✓');};
   const gs=g('ym_gsave'); if(gs)gs.onclick=async()=>{const v=g('ym_gstyle').value;await api('POST','/api/yemot/voice',{gstyle:v});ymStatus.gstyle=v;toast('נשמר ✓');};
   const sp=g('ym_sample'); if(sp)sp.onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     sp.disabled=true;const t0=sp.textContent;sp.textContent='⏳ Gemini מייצר…';
-    const r=await api('POST','/api/yemot/sample',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value});
+    const r=await api('POST','/api/yemot/sample',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value,gmodel:(g('ym_gmodel')||{}).value||''});
     sp.disabled=false;sp.textContent=t0;
     g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio><div class="hintxt">${esc(r.text)}</div><div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz).</div></div>`
       :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};

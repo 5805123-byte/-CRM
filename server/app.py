@@ -13362,6 +13362,7 @@ def ym_worker(job_id):
             ym_engine = kv_get(con, 'ym_engine', '')
             ym_gv = kv_get(con, 'ym_gvoice', '') or 'Kore'
             ym_gs = kv_get(con, 'ym_gstyle', '')
+            ym_gm = kv_get(con, 'ym_gmodel', '')
             if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
                 amts = {}
                 for m in con.execute("SELECT phone, amount FROM ym_msg WHERE job=? AND status='queued'", (job_id,)).fetchall():
@@ -13390,7 +13391,7 @@ def ym_worker(job_id):
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
                     ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice,
-                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True)
+                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm)
                     if ok and isinstance(res, dict):
                         con.execute("UPDATE ym_msg SET engine=? WHERE id=?", (res.get('engine') or '', m['id']))
                 tr = _ym.end_trace()
@@ -15857,9 +15858,9 @@ class H(BaseHTTPRequestHandler):
             try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
             except Exception: _tpl = {}
             ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl,
-                    kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', '') or 'Kore', kv_get(con, 'ym_gstyle', ''))
+                    kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', '') or 'Kore', kv_get(con, 'ym_gstyle', ''), kv_get(con, 'ym_gmodel', ''))
             import gemini_tts as _gt
-            ym_gvl = (_gt.VOICES, _gt.configured(), _gt.DEF_STYLE)
+            ym_gvl = (_gt.VOICES, _gt.configured(), _gt.DEF_STYLE, _gt.MODELS)
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
@@ -15872,7 +15873,7 @@ class H(BaseHTTPRequestHandler):
                                     'bill_path': ym_bill_kv(), 'mosads': ned_list[0], 'mosad': ned_list[1],
                                     'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2],
                                     'engine': ym_v[3], 'gvoice': ym_v[4], 'gstyle': ym_v[5], 'gvoices': ym_gvl[0],
-                                    'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2]})
+                                    'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2], 'gmodels': ym_gvl[3], 'gmodel': ym_v[6]})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
@@ -16811,11 +16812,14 @@ class H(BaseHTTPRequestHandler):
             con.execute("DELETE FROM app_kv WHERE k='ym_voice'")      # בחירת קול בימות בוטלה
             if 'pron' in b:
                 con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (str(b.get('pron') or '')[:5000],))
-            for key, kvk, lim in (('engine', 'ym_engine', 20), ('gvoice', 'ym_gvoice', 40), ('gstyle', 'ym_gstyle', 600)):
+            for key, kvk, lim in (('engine', 'ym_engine', 20), ('gvoice', 'ym_gvoice', 40), ('gstyle', 'ym_gstyle', 600), ('gmodel', 'ym_gmodel', 60)):
                 if key in b:
                     val = str(b.get(key) or '')[:lim]
                     if key == 'engine' and val not in ('', 'gemini'):
                         val = ''
+                    if key == 'gmodel':
+                        import gemini_tts as _gt
+                        val = val if val in [k for k, _ in _gt.MODELS] else ''
                     con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kvk, val))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
@@ -16854,7 +16858,7 @@ class H(BaseHTTPRequestHandler):
             con = db(); pron = kv_get(con, 'ym_pron', ''); con.close()
             txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or '')), pron)
             _ym.begin_trace()
-            ok, wav = _gt.synth(txt, b.get('gvoice') or 'Kore', b.get('gstyle') or '', trace=_ym._trace, tries=1)
+            ok, wav = _gt.synth(txt, b.get('gvoice') or 'Kore', b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:
                 return self._send(200, {'ok': False, 'error': str(wav)})

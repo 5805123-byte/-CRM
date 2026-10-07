@@ -23,11 +23,20 @@ import urllib.request
 import wave
 
 DEF_MODEL = 'gemini-2.5-flash-preview-tts'
-# קולות מובנים של Gemini — שם, ותיאור בעברית לבחירה במסך
-VOICES = [('Kore', 'קורה — אישה, יציב וברור'), ('Aoede', 'איודה — אישה, קליל'), ('Leda', 'לדה — אישה, צעיר'),
-          ('Zephyr', 'זפיר — אישה, בהיר'), ('Sulafat', 'סולפת — אישה, חם'),
-          ('Charon', 'כרון — גבר, מסביר'), ('Orus', 'אורוס — גבר, יציב'), ('Iapetus', 'יאפטוס — גבר, צלול'),
-          ('Algieba', 'אלגיבה — גבר, חלק'), ('Puck', 'פאק — גבר, עליז')]
+# כל 30 הקולות המובנים של Gemini — שם, תיאור בעברית, מין (f/m) לקיבוץ במסך
+VOICES = [('Kore', 'קורה — יציב וברור', 'f'), ('Aoede', 'איודה — קליל ואוורירי', 'f'), ('Leda', 'לדה — צעיר', 'f'),
+          ('Zephyr', 'זפיר — בהיר', 'f'), ('Sulafat', 'סולפת — חם', 'f'), ('Callirrhoe', 'קליריה — נינוח', 'f'),
+          ('Autonoe', 'אוטונואה — בהיר', 'f'), ('Despina', 'דספינה — חלק', 'f'), ('Erinome', 'ארינומה — צלול', 'f'),
+          ('Laomedeia', 'לאומדיה — עליז', 'f'), ('Achernar', 'אכרנר — רך', 'f'), ('Gacrux', 'גקרוקס — בוגר', 'f'),
+          ('Pulcherrima', 'פולכרימה — נחרץ', 'f'), ('Vindemiatrix', 'וינדמיאטריקס — עדין', 'f'),
+          ('Charon', 'כרון — מסביר', 'm'), ('Orus', 'אורוס — יציב', 'm'), ('Iapetus', 'יאפטוס — צלול', 'm'),
+          ('Algieba', 'אלגיבה — חלק', 'm'), ('Puck', 'פאק — עליז', 'm'), ('Fenrir', 'פנריר — נלהב', 'm'),
+          ('Enceladus', 'אנקלדוס — נושם, שקט', 'm'), ('Umbriel', 'אומבריאל — נינוח', 'm'), ('Algenib', 'אלגניב — מחוספס', 'm'),
+          ('Rasalgethi', 'רסלגתי — מסביר', 'm'), ('Alnilam', 'אלנילם — נחרץ', 'm'), ('Schedar', 'שדר — אחיד', 'm'),
+          ('Achird', 'אכירד — ידידותי', 'm'), ('Zubenelgenubi', 'זובנלגנובי — יומיומי', 'm'),
+          ('Sadachbia', 'סדכביה — חי ותוסס', 'm'), ('Sadaltager', 'סדלטגר — בקיא, סמכותי', 'm')]
+# מודל הקול: Flash (ברירת מחדל) או Pro — איכות גבוהה יותר, בערך כפול במחיר
+MODELS = [('', 'Flash — רגיל'), ('gemini-2.5-pro-preview-tts', 'Pro — טבעי יותר (×2 מחיר)')]
 DEF_STYLE = 'Read the following Hebrew text aloud in a warm, calm and respectful voice, at a natural pace:'
 
 
@@ -62,11 +71,11 @@ def _to_wav8k(pcm, rate):
     return buf.getvalue()
 
 
-def synth(text, voice='Kore', style='', trace=None, tries=3):
+def synth(text, voice='Kore', style='', trace=None, tries=3, model=''):
     """-> (הצלחה, WAV או הודעת שגיאה). trace(method, params, ok, raw, ms) — ללוג של ימות."""
     if not configured():
         return False, 'Gemini לא מוגדר ב-Render (GEMINI_API_KEY)'
-    model = _env('GEMINI_TTS_MODEL', DEF_MODEL)
+    model = (model if model in [k for k, _ in MODELS if k] else '') or _env('GEMINI_TTS_MODEL', DEF_MODEL)
     prompt = ((style or DEF_STYLE).strip() + '\n' + text).strip()
     body = {'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'responseModalities': ['AUDIO'],
