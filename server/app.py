@@ -362,6 +362,8 @@ def ensure_schema():
     # pending=1 — יש שאלה אם הוא שייך לקהילה; מאיר עונה כן/לא בשורה
     try: con.execute("ALTER TABLE members ADD COLUMN pending INTEGER DEFAULT 0")
     except Exception: pass
+    try: con.execute("ALTER TABLE mail_batch ADD COLUMN sender TEXT DEFAULT 'main'")   # 'neder' = neder1818@gmail.com
+    except Exception: pass
     try: con.execute("ALTER TABLE mail_batch ADD COLUMN audience TEXT DEFAULT 'donors'")
     except Exception: pass
     # פרטי הפנייה לכל נמען — שם פרטי, משפחה, תואר ולשון זכר/נקבה
@@ -13323,8 +13325,8 @@ def mail_worker(batch_id):
             st.update({'running': False, 'done': True, 'error': 'המשלוח לא נמצא'})
             return
         secret = mail_secret(con)
-        # משלוח לקהילה יוצא מ-neder1818@gmail.com, כל השאר מהכתובת הראשית
-        bulkmail.set_profile('comm' if ((b['audience'] if 'audience' in b.keys() else '') == 'members') else None)
+        # רק "מייל נדרים ונדבות" (ימות המשיח) יוצא מ-neder1818@gmail.com; כל השאר — גם לקהילה — מהכתובת הראשית
+        bulkmail.set_profile('comm' if ((b['sender'] if 'sender' in b.keys() else '') == 'neder') else None)
         c = bulkmail.cfg()
         rows = list(con.execute("SELECT * FROM mail_queue WHERE batch=? AND status='queued' "
                                 "ORDER BY id", (batch_id,)))
@@ -16726,6 +16728,8 @@ class H(BaseHTTPRequestHandler):
                             (bid, x.get('donor_id'), x.get('member_id'), x['email'], x['name'],
                              x.get('first', ''), x.get('last', ''), x.get('title', ''),
                              x.get('gender', 'm'), x.get('avreich', ''), x.get('kvittel', '')))
+            # "מייל נדרים ונדבות" (מחלון הקהילה / ימות המשיח) יוצא מ-neder1818@gmail.com
+            con.execute("UPDATE mail_batch SET sender=? WHERE id=?", ('neder' if (b.get('sender') == 'neder' and is_members) else 'main', bid))
             con.commit(); con.close()
             st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
                        'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,
@@ -18853,16 +18857,16 @@ def health_report():
             gu = (os.environ.get('GMAIL_USER') or '').strip()
             add('חיבור לג׳ימייל', 'ok' if gu else 'bad',
                 gu or 'GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים ב-Render (%s)' % e)
-        # מייל הקהילה / ימות המשיח — מאיר: "שיצא מ-neder1818@gmail.com"
+        # מייל נדרים ונדבות — מאיר: "רק מה שקשור לימות המשיח יצא מ-neder1818"
         try:
             import bulkmail as _bm
             cc = _bm.comm_cfg()
-            add('מייל הקהילה', 'ok' if cc['own_login'] else 'warn',
+            add('מייל נדרים ונדבות', 'ok' if cc['own_login'] else 'warn',
                 ('יוצא מ-%s (התחברות משלה)' % cc['frm']) if cc['own_login'] else
                 ('אמור לצאת מ-%s — חסר COMM_MAIL_PASS ב-Render (סיסמת אפליקציה של החשבון הזה). '
                  'בלעדיה ג׳ימייל ישלח מהכתובת הראשית, אלא אם %s מוגדרת שם כ"שליחת דואר בשם".' % (cc['frm'], cc['frm'])))
         except Exception as e:
-            add('מייל הקהילה', 'bad', str(e)[:120])
+            add('מייל נדרים ונדבות', 'bad', str(e)[:120])
         # קבלות — EZcount
         try:
             import ezcount as _ez
