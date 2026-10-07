@@ -1362,8 +1362,39 @@ function pendFiles(boxId,inputId){
   inp.onchange=()=>{[...inp.files].forEach(f=>arr.push(f));inp.value='';paint();};
   // מאיר: "אני רוצה להקליט לעצמי הודעות במקום להקליד" — כפתור הקלטה ליד "צרף"
   addVoiceBtn(box,f=>{arr.push(f);paint();});
+  // מאיר: "שאוכל להוסיף תמונה ע"י הדבק" — Ctrl+V בטופס (גם בתוך שדה הטקסט) מצרף את
+  // התמונה שבלוח; בטלפון — כפתור "📋 הדבק"
+  const add=f=>{arr.push(f);paint();};
+  const tgt={box,scope:box.closest('.sec')||box.parentElement,add};
+  PASTE_TGTS.push(tgt);
+  if(navigator.clipboard&&navigator.clipboard.read&&!box.querySelector('.pastebtn')){
+    const pb=document.createElement('button'); pb.type='button'; pb.className='filebtn sm pastebtn'; pb.textContent='📋 הדבק תמונה';
+    pb.onclick=async()=>{try{const items=await navigator.clipboard.read();let n=0;
+        for(const it of items){const ty=it.types.find(t=>t.startsWith('image/'));if(!ty)continue;
+          add(pasteFile(await it.getType(ty),ty,n++));}
+        toast(n?'התמונה צורפה ✓':'אין תמונה בלוח — העתק תמונה ואז הדבק');}
+      catch(e){toast('אין גישה ללוח — לחץ בתוך הטופס ו-Ctrl+V');}};
+    box.appendChild(pb);}
   return {arr,add(f){arr.push(f);paint();},reset(){arr.length=0;paint();}};
 }
+const PASTE_TGTS=[];
+function pasteFile(blob,type,i){
+  const ext=(type.split('/')[1]||'png').replace('jpeg','jpg').replace(/[^a-z0-9]/gi,'');
+  const st=new Date().toISOString().slice(0,19).replace(/[-:T]/g,'');
+  return new File([blob],'הדבקה-'+st+(i?'-'+i:'')+'.'+ext,{type});
+}
+document.addEventListener('paste',e=>{
+  const fs=[...((e.clipboardData&&e.clipboardData.files)||[])].filter(f=>/^image\//.test(f.type));
+  if(!fs.length)return;
+  // הטופס שבו נמצא הסמן; אחרת — הטופס הגלוי האחרון שנפתח
+  for(let i=PASTE_TGTS.length-1;i>=0;i--)if(!PASTE_TGTS[i].box.isConnected)PASTE_TGTS.splice(i,1);
+  const vis=PASTE_TGTS.filter(t=>t.box.offsetParent!==null);
+  const t=vis.find(t=>t.scope&&t.scope.contains(e.target))||vis[vis.length-1];
+  if(!t)return;
+  e.preventDefault();
+  fs.forEach((f,i)=>t.add(pasteFile(f,f.type,i)));
+  toast(fs.length>1?(fs.length+' תמונות צורפו ✓'):'התמונה צורפה ✓');
+});
 // ===== הקלטת הודעה קולית בתוך המערכת (MediaRecorder) =====
 // מאיר: "שאני אוכל להקליט הודעה ולהעלות את זה בקובץ כאילו שאני מקליט הודעה,
 // ואז במשימות אני אשמע את ההודעה שלי במקום להקליד." לחיצה — מתחיל להקליט,
