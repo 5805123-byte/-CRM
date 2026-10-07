@@ -70,7 +70,48 @@ _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$')
 OVERRIDE = {}
 
 
+# מאיר: "מיילים של המערכת ששולחת הודעות, שיחות ומיילים [לקהילה] — שיצאו מכתובת
+# neder1818@gmail.com; מיילים אחרים יצאו מהכתובת הראשית". פרופיל 'comm' פעיל רק
+# בתוך ה-thread של משלוח לקהילה. ג'ימייל שולח "מאת" כתובת אחרת רק כשמתחברים
+# אליה עצמה — לכן COMM_MAIL_PASS (סיסמת אפליקציה של neder1818) ב-Render בלבד.
+# בלעדיה: מתחברים בחשבון הראשי ו"מאת" = neder1818 — עובד רק אם היא מוגדרת אצלו
+# כ-"שליחת דואר בשם" (Send mail as), אחרת ג'ימייל מחליף לכתובת הראשית.
+import threading as _thr
+COMM_FROM_DEFAULT = 'neder1818@gmail.com'
+_PROF = _thr.local()
+
+
+def set_profile(name):
+    _PROF.name = name
+
+
+def comm_cfg():
+    frm = (os.environ.get('COMM_MAIL_FROM') or COMM_FROM_DEFAULT).strip()
+    return {'frm': frm, 'user': (os.environ.get('COMM_MAIL_USER') or frm).strip(),
+            'own_login': bool((os.environ.get('COMM_MAIL_PASS') or '').strip())}
+
+
+def _comm_env(k):
+    c = comm_cfg()
+    if k in ('MAIL_FROM', 'MAIL_REPLY_TO'):
+        return c['frm']
+    if c['own_login']:
+        if k == 'MAIL_USER':
+            return c['user']
+        if k == 'MAIL_PASS':
+            return (os.environ.get('COMM_MAIL_PASS') or '').strip().replace(' ', '')
+        if k == 'MAIL_HOST':
+            return 'smtp.gmail.com'
+        if k == 'MAIL_PORT':
+            return '587'
+    return None
+
+
 def _env(k, d=''):
+    if getattr(_PROF, 'name', None) == 'comm':
+        v = _comm_env(k)
+        if v is not None:
+            return v
     o = OVERRIDE.get(k)
     if o not in (None, ''):
         return str(o).strip()
