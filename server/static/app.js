@@ -12592,7 +12592,9 @@ function ymPhone(p){ // אותו כלל כמו בשרת: טלפון ישראלי
     if(/^0(5\d|7\d)\d{7}$/.test(d)||/^0[2-489]\d{7}$/.test(d))return d;}
   return '';}
 const ymMobile=p=>/^05\d{8}$/.test(p||'');
-function ymFillTxt(t,name,amt){return String(t||'').replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,(amt||ymAmt)||'').replace(/\s{2,}/g,' ').trim();}
+function ymFillTxt(t,name,amt){const a=(amt||ymAmt)||'';let x=String(t||'');
+  if(!a)x=x.replace(/\s*(?:בסך|על סך|בסכום של)?\s*\{סכום\}\s*(?:שקלים|ש"ח|₪)?/g,'');   // בלי סכום — בלי "בסך … שקלים"
+  return x.replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,a).replace(/\s{2,}/g,' ').replace(/\s+([,.])/g,'$1').trim();}
 async function ymLoadStatus(){const r=await api('GET','/api/yemot/status');ymStatus=r&&r.ok?r:{configured:false,connected:false,jobs:[]};}
 function ymKey(k,id){return k+':'+id;}
 // מאיר: "תסדר את הממשק של ימות המשיח, שיראו את הלוגים יותר ויותר נוח" — ארבע לשוניות:
@@ -12744,7 +12746,6 @@ function ymViewSend(){
     if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
     if(billOn&&!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
-    if(billOn&&!amtNum(ymAmt)&&!(first&&amtNum(first.amt))){toast('חסר סכום לחיוב לבדיקה');return;}
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:'',
       billing:billOn?1:0,bill_path:ymBillPath,test_amount:(first&&first.amt)||ymAmt,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
     if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
@@ -12753,10 +12754,10 @@ function ymViewSend(){
     if(linkOn&&!prevLink){toast('בחר מוסד לקישור התשלום');return;}
     if(billOn){
       if(!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
-      const miss=selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt));
-      if(miss.length){await uiAlert('חסר סכום לחיוב אצל:\n'+miss.map(x=>x.name||x.phone).join('\n'));return;}
     }
-    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
+    // מאיר: "גם מי שאין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי"
+    const free=billOn?selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt)).length:0;
+    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יעברו לתרומה בכרטיס ויקלידו סכום בעצמם':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,bill_path:ymBillPath,
       recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L}:{k:x.k,id:x.id,amount:x.amt||'',link:L};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}

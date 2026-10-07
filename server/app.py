@@ -13189,8 +13189,11 @@ def ned_mosads(con):
 
 def ym_fill(text, name, amount, link=''):
     """{שם} {סכום} {קישור} בטקסט — כל נמען שומע/מקבל את שמו, וקישור תשלום אישי."""
+    if not amount:
+        # מי שאין לו סכום — בלי "בסך … שקלים" בהודעה (ובהקשה 1 הוא מקליד סכום בעצמו)
+        text = re.sub(r'\s*(?:בסך|על סך|בסכום של)?\s*\{סכום\}\s*(?:שקלים|ש"ח|₪)?', '', text or '')
     t = (text or '').replace('{שם}', name or '').replace('{סכום}', amount or '').replace('{קישור}', link or '')
-    return re.sub(r'\s{2,}', ' ', t).strip()
+    return re.sub(r'\s+([,.])', r'\1', re.sub(r'\s{2,}', ' ', t)).strip()
 
 
 def ym_recipients(con, recs):
@@ -13367,8 +13370,8 @@ def ym_worker(job_id):
             if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
                 amts = {}
                 for m in con.execute("SELECT phone, amount FROM ym_msg WHERE job=? AND status='queued'", (job_id,)).fetchall():
-                    if m['phone'] and m['amount']:
-                        amts[m['phone']] = m['amount']
+                    if m['phone']:
+                        amts[m['phone']] = m['amount'] or ''      # בלי סכום — יקליד בעצמו
                 _ym.begin_trace()
                 okb, resb = _ym.update_billing(job['bill_path'], amts)
                 ym_save_trace(con, _ym.end_trace(), job_id, 0, '')
@@ -16903,9 +16906,6 @@ class H(BaseHTTPRequestHandler):
                     recs[0]['amount'] = ym_amt(b.get('test_amount')) or gamt
                 for r in recs:
                     r['amount'] = r.get('amount') or gamt
-                miss = [r['name'] or r['phone'] for r in recs if not r.get('amount')]
-                if miss:
-                    con.close(); return self._send(200, {'ok': False, 'error': 'חסר סכום לחיוב אצל: ' + ', '.join(miss[:8])})
             con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,?,'queued',?,?,?)",
                         (now_iso(), ch, text, amount, len(recs), 1 if b.get('test') else 0, (b.get('label') or '').strip()[:80], bill_path))
             jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
