@@ -12769,18 +12769,37 @@ function ymViewSend(){
 }
 // מאיר: "אני גם רוצה להחליף קול, שיהיה יותר אנושי, ויותר נורמלי בלי טעויות"
 function ymVoiceHTML(st){
-  const V=st.voices||[['','ברירת המחדל של ימות']];
-  return `<div class="ymvoice"><div class="ymflt">
-      <label class="fld" style="margin:0;flex:1 1 200px"><span>🗣️ קול ההקראה</span><select id="ym_voice">${V.map(([k,l])=>`<option value="${esc(k)}" ${k===(st.voice||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+  const V=st.voices||[['','ברירת המחדל של ימות']], G=st.gvoices||[], gem=st.engine==='gemini';
+  return `<div class="ymvoice">
+    <div class="ymeng"><button class="ymc${!gem?' on':''}" data-eng="">🤖 הקול של ימות<small>מהיר · כמעט מיידי</small></button>
+      <button class="ymc${gem?' on':''}" data-eng="gemini">🧑 קול אנושי — Gemini<small>כמה שניות לכל נמען</small></button></div>
+    ${gem?`${st.gemini?'':`<div class="ymwarn">⚠️ חסר מפתח: ב-Render ← Environment להוסיף <b>GEMINI_API_KEY</b> (מ-aistudio.google.com/apikey). עד אז ההודעות יוצאות בקול של ימות.</div>`}
+      <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>🧑 הקול</span><select id="ym_gvoice">${G.map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gvoice||'Kore')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+        <button class="btn sm" id="ym_sample" ${st.gemini?'':'disabled'}>▶️ השמע דוגמה כאן</button></div>
+      <label class="fld"><span>🎭 איך לומר (הוראה ל-Gemini, באנגלית עובד הכי טוב)</span><textarea id="ym_gstyle" dir="ltr" rows="2" placeholder="${esc(st.gstyle_def||'')}">${esc(st.gstyle||'')}</textarea></label>
+      <button class="btn sm ghost" id="ym_gsave">💾 שמור הוראה</button>
+      <div id="ym_sampleout"></div>
+      <div class="hintxt">כל הודעה נוצרת בנפרד ב-Gemini (עם השם והסכום של הנמען), מומרת לקובץ שמע ומועלית לימות. אם Gemini נכשל או עמוס — ההודעה יוצאת בקול של ימות, ולא נופלת.</div>`:''}
+    <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>🗣️ ${gem?'קול הגיבוי של ימות':'קול ההקראה'}</span><select id="ym_voice">${V.map(([k,l])=>`<option value="${esc(k)}" ${k===(st.voice||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
       <button class="btn sm ghost" id="ym_say">👂 איך זה יוקרא?</button></div>
     <div id="ym_sayout"></div>
-    <details class="ympron"><summary>📖 מילון הגייה — מילים שימות מבטא לא נכון</summary>
+    <details class="ympron"><summary>📖 מילון הגייה — מילים שמבוטאות לא נכון</summary>
       <div class="hintxt">שורה לכל מילה: <b>מילה=איך לומר</b>. למשל <span dir="rtl">חצות=חֲצוֹת</span> או <span dir="rtl">דויטש=דוֹיְטְשׁ</span>. ניקוד או כתיב מלא עוזרים לקול לקרוא נכון.</div>
       <textarea id="ym_pron" rows="4" placeholder="חצות=חֲצוֹת">${esc(st.pron||'')}</textarea>
       <button class="btn sm" id="ym_pronsave">💾 שמור מילון</button></details>
-    <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית. הקול נשמר בתיקייה של כל טלפון שנשלחת אליו הודעה.</div></div>`;}
+    <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></div>`;}
 function ymWireVoice(first){
   const g=id=>document.getElementById(id); if(!g('ym_voice'))return;
+  view.querySelectorAll('.ymeng .ymc').forEach(b=>b.onclick=async()=>{const e=b.dataset.eng;const r=await api('POST','/api/yemot/voice',{engine:e});
+    if(r&&r.ok){ymStatus.engine=e;renderCommYm();}});
+  const gv=g('ym_gvoice'); if(gv)gv.onchange=async()=>{await api('POST','/api/yemot/voice',{gvoice:gv.value});ymStatus.gvoice=gv.value;toast('הקול נשמר ✓');};
+  const gs=g('ym_gsave'); if(gs)gs.onclick=async()=>{const v=g('ym_gstyle').value;await api('POST','/api/yemot/voice',{gstyle:v});ymStatus.gstyle=v;toast('נשמר ✓');};
+  const sp=g('ym_sample'); if(sp)sp.onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
+    sp.disabled=true;const t0=sp.textContent;sp.textContent='⏳ Gemini מייצר…';
+    const r=await api('POST','/api/yemot/sample',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value});
+    sp.disabled=false;sp.textContent=t0;
+    g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio><div class="hintxt">${esc(r.text)}</div><div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz).</div></div>`
+      :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};
   g('ym_voice').onchange=async()=>{const v=g('ym_voice').value;const r=await api('POST','/api/yemot/voice',{voice:v});
     if(r&&r.ok){ymStatus.voice=v;toast('הקול נשמר ✓ — נסה "שלח בדיקה אליי"');}else toast((r&&r.error)||'לא נשמר');};
   g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{voice:ymStatus.voice||'',pron:p});
@@ -12870,7 +12889,7 @@ function ymViewJobs(){
       ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${j.bill_path?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
       ${ms.map(m=>`<tr class="${m.status}"><td>${esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${j.bill_path?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
-        <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
+        <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
         <td>${ymAns(m,j.channel)}</td></tr>`).join('')}</tbody></table></div></div>`;};
   view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
       <div class="ymch3"><span class="ymjd">${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><b>${j.channel==='sms'?'💬 SMS':'📞 קולית'}</b>${j.test?'<span class="ymtag">בדיקה</span>':''}${j.bill_path?'<span class="ymtag">💳 סליקה</span>':''}
@@ -12952,7 +12971,7 @@ function ymLogHTML(){
   const rows=ymLog||[];
   if(!rows.length)return '<div class="hintxt">אין קריאות בלוג.</div>';
   const pretty=t=>{try{return JSON.stringify(JSON.parse(t),null,2);}catch(e){return t||'';}};
-  const DESC={GetIVR2Dir:'בדיקת התיקייה של הטלפון',UpdateExtension:'יצירת התיקייה של הטלפון',UploadTextFile:'העלאת ההודעה (TTS)',CallExtensionBridging:'השיחה',SendSms:'SMS',GetSession:'בדיקת חיבור',GetCampaignStatus:'בדיקה אם ענה',DownloadFile:'קריאת קובץ'};
+  const DESC={GetIVR2Dir:'בדיקת התיקייה של הטלפון',UpdateExtension:'יצירת התיקייה של הטלפון',UploadTextFile:'העלאת ההודעה (TTS)',CallExtensionBridging:'השיחה',SendSms:'SMS',GetSession:'בדיקת חיבור',GetCampaignStatus:'בדיקה אם ענה',DownloadFile:'קריאת קובץ',GeminiTTS:'יצירת קול אנושי (Gemini)',UploadFile:'העלאת קובץ השמע'};
   return `<div class="ymlog">${rows.map(r=>{let pr={};try{pr=JSON.parse(r.params||'{}');}catch(e){}
     let resp={};try{resp=JSON.parse(r.response||'{}');}catch(e){}
     const isBill=/BillingSum\.ini/.test(pr.what||pr.path||''), isLog=/LogFolderEnterExit/.test(pr.path||'');

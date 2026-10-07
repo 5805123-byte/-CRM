@@ -454,7 +454,7 @@ def ensure_schema():
     try: con.execute("ALTER TABLE ym_job ADD COLUMN bill_path TEXT")
     except Exception: pass
     # מהיומן של ימות (LogFolderEnterExit): כמה שמע, אם הקיש 1 וכמה זמן היה בסליקה
-    for col, typ in (('listen_secs', 'INTEGER'), ('pressed', 'TEXT'), ('pressed_secs', 'INTEGER'), ('call_id', 'TEXT'), ('sent_ts', 'TEXT')):
+    for col, typ in (('listen_secs', 'INTEGER'), ('pressed', 'TEXT'), ('pressed_secs', 'INTEGER'), ('call_id', 'TEXT'), ('sent_ts', 'TEXT'), ('engine', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
@@ -13356,6 +13356,10 @@ def ym_worker(job_id):
             con.execute("UPDATE ym_job SET status='sending' WHERE id=?", (job_id,)); con.commit()
             ym_voice = kv_get(con, 'ym_voice', '')
             ym_pron = kv_get(con, 'ym_pron', '')
+            # מאיר: "נעשה דרך AI סטודיו של גימני עם ה-API" — קול אנושי (אם נבחר ומוגדר מפתח)
+            ym_engine = kv_get(con, 'ym_engine', '')
+            ym_gv = kv_get(con, 'ym_gvoice', '') or 'Kore'
+            ym_gs = kv_get(con, 'ym_gstyle', '')
             if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
                 amts = {}
                 for m in con.execute("SELECT phone, amount FROM ym_msg WHERE job=? AND status='queued'", (job_id,)).fetchall():
@@ -13383,7 +13387,10 @@ def ym_worker(job_id):
                 else:
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
-                    ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice)
+                    ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice,
+                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True)
+                    if ok and isinstance(res, dict):
+                        con.execute("UPDATE ym_msg SET engine=? WHERE id=?", (res.get('engine') or '', m['id']))
                 tr = _ym.end_trace()
                 if not tr:      # נדחה אצלנו לפני שנשלח לימות — גם זה מופיע בלוג
                     tr = [{'method': 'SendSms' if job['channel'] == 'sms' else 'CallExtensionBridging',
@@ -15847,7 +15854,10 @@ class H(BaseHTTPRequestHandler):
             ned_list = ned_mosads(con)
             try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
             except Exception: _tpl = {}
-            ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl)
+            ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl,
+                    kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', '') or 'Kore', kv_get(con, 'ym_gstyle', ''))
+            import gemini_tts as _gt
+            ym_gvl = (_gt.VOICES, _gt.configured(), _gt.DEF_STYLE)
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
@@ -15858,12 +15868,14 @@ class H(BaseHTTPRequestHandler):
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
                                     'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
                                     'bill_path': ym_bill_kv(), 'mosads': ned_list[0], 'mosad': ned_list[1],
-                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2]})
+                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2],
+                                    'engine': ym_v[3], 'gvoice': ym_v[4], 'gstyle': ym_v[5], 'gvoices': ym_gvl[0],
+                                    'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2]})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
-            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts,engine FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             if not job:
                 return self._send(404, {'ok': False})
@@ -16793,15 +16805,33 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/yemot/voice':
             # הקול שימות מקריא בו, ומילון ההגייה ("מילה=איך לומר")
             import yemot as _ym
-            v = str(b.get('voice') or '')
-            if v not in [x[0] for x in _ym.VOICES]:
-                return self._send(200, {'ok': False, 'error': 'קול לא מוכר'})
             con = db()
-            con.execute("INSERT INTO app_kv(k,v) VALUES('ym_voice',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (v,))
+            if 'voice' in b:
+                v = str(b.get('voice') or '')
+                if v not in [x[0] for x in _ym.VOICES]:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'קול לא מוכר'})
+                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_voice',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (v,))
             if 'pron' in b:
                 con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (str(b.get('pron') or '')[:5000],))
+            for key, kvk, lim in (('engine', 'ym_engine', 20), ('gvoice', 'ym_gvoice', 40), ('gstyle', 'ym_gstyle', 600)):
+                if key in b:
+                    val = str(b.get(key) or '')[:lim]
+                    if key == 'engine' and val not in ('', 'gemini'):
+                        val = ''
+                    con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kvk, val))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/yemot/sample':
+            # השמעת דוגמה בדפדפן — הקול האנושי של Gemini, בלי להתקשר לאף אחד
+            import yemot as _ym, gemini_tts as _gt
+            con = db(); pron = kv_get(con, 'ym_pron', ''); con.close()
+            txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or '')), pron)
+            _ym.begin_trace()
+            ok, wav = _gt.synth(txt, b.get('gvoice') or 'Kore', b.get('gstyle') or '', trace=_ym._trace, tries=1)
+            con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
+            if not ok:
+                return self._send(200, {'ok': False, 'error': str(wav)})
+            return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt})
         if self.path == '/api/yemot/speakable':
             import yemot as _ym
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
@@ -19115,6 +19145,12 @@ def health_report():
                  'בלעדיה ג׳ימייל ישלח מהכתובת הראשית, אלא אם %s מוגדרת שם כ"שליחת דואר בשם".' % (cc['frm'], cc['frm'])))
         except Exception as e:
             add('מייל נדרים ונדבות', 'bad', str(e)[:120])
+        try:
+            import gemini_tts as _gt2
+            add('קול אנושי (Gemini)', 'ok' if _gt2.configured() else 'warn',
+                'מפתח מוגדר' if _gt2.configured() else 'לא מוגדר — GEMINI_API_KEY ב-Render (רשות, להודעות קוליות בקול אנושי)')
+        except Exception as e:
+            add('קול אנושי (Gemini)', 'bad', str(e)[:120])
         # קבלות — EZcount
         try:
             import ezcount as _ez

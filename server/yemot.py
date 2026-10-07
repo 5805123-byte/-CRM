@@ -256,22 +256,70 @@ def next_msg_num(phone, voice=''):
     return True, (max(nums) + 1 if nums else 0)
 
 
-def send_tts(phone, text, timeout=35, voice=''):
-    """הודעה קולית: מעלה את הטקסט כקובץ TTS לתיקיית הטלפון ומתקשר אליו."""
+def upload_file(path, data, filename='msg.wav', timeout=60):
+    """העלאת קובץ שמע לימות (UploadFile, multipart), עם המרה אוטומטית לפורמט של ימות."""
+    if not configured():
+        return False, 'ימות המשיח לא מוגדר ב-Render'
+    bnd = '----kc%d' % int(time.time() * 1000)
+    parts = []
+    for k, v in (('token', _token()), ('path', path), ('convertAudio', '1')):
+        parts.append(('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (bnd, k, v)).encode('utf-8'))
+    parts.append(('--%s\r\nContent-Disposition: form-data; name="file"; filename="%s"\r\nContent-Type: audio/wav\r\n\r\n' % (bnd, filename)).encode('utf-8'))
+    body = b''.join(parts) + data + ('\r\n--%s--\r\n' % bnd).encode('utf-8')
+    params = {'path': path, 'convertAudio': '1', 'file': '%s (%d KB)' % (filename, len(data) // 1024)}
+    t0 = time.time()
+    req = urllib.request.Request(_base() + 'UploadFile', data=body,
+                                 headers={'Content-Type': 'multipart/form-data; boundary=' + bnd, 'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode('utf-8', 'replace')
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode('utf-8', 'replace')
+    except Exception as e:
+        _trace('UploadFile', params, False, str(e), (time.time() - t0) * 1000)
+        return False, 'העלאת הקובץ נכשלה: %s' % e
+    ms = (time.time() - t0) * 1000
+    try:
+        res = json.loads(raw or '{}')
+    except Exception:
+        _trace('UploadFile', params, False, raw, ms)
+        return False, 'תשובה לא מובנת מימות: %s' % raw[:160]
+    ok = str(res.get('responseStatus') or '').upper() == 'OK'
+    _trace('UploadFile', params, ok, raw, ms)
+    return (True, res) if ok else (False, 'ימות המשיח: %s' % (res.get('message') or raw[:160]))
+
+
+def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True):
+    """הודעה קולית: מעלה את ההודעה לתיקיית הטלפון ומתקשר אליו.
+    engine='gemini' — קול אנושי מ-Gemini (קובץ WAV); אחרת קובץ TTS של ימות."""
     ok, n = next_msg_num(phone, voice)
     if not ok:
         return False, n
-    name = '%03d.tts' % n
-    ok, res = call('UploadTextFile', {'what': 'ivr2:/Phone/%s/%s' % (phone, name), 'contents': text})
-    if not ok:
-        return False, 'העלאת ההודעה נכשלה — ' + str(res)
+    used = 'yemot'
+    if engine == 'gemini':
+        import gemini_tts as _g
+        okg, wav = _g.synth(text, gvoice, gstyle, trace=_trace)
+        if okg:
+            name = '%03d.wav' % n
+            ok, res = upload_file('ivr2:/Phone/%s/%s' % (phone, name), wav, name)
+            if ok:
+                used = 'gemini'
+            elif not fallback:
+                return False, 'העלאת הקול האנושי נכשלה — ' + str(res)
+        elif not fallback:
+            return False, str(wav)
+    if used == 'yemot':
+        name = '%03d.tts' % n
+        ok, res = call('UploadTextFile', {'what': 'ivr2:/Phone/%s/%s' % (phone, name), 'contents': text})
+        if not ok:
+            return False, 'העלאת ההודעה נכשלה — ' + str(res)
     ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': 'ivr2:/', 'callsTimeOut': str(timeout)})
     if not ok:
         return False, 'השיחה לא יצאה — ' + str(res)
     errs = res.get('errors') or {}
     if errs:
         return False, 'השיחה לא יצאה — %s' % json.dumps(errs, ensure_ascii=False)[:160]
-    return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or ''}
+    return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used}
 
 
 def send_sms(phone, text, from_=''):
