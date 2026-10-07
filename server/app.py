@@ -13156,9 +13156,26 @@ def apply_member_q(con, qr, choice):
 YM_LOCK = threading.Lock()
 
 
-def ym_fill(text, name, amount):
-    """{שם} {סכום} בטקסט — כל נמען שומע/מקבל את שמו."""
-    t = (text or '').replace('{שם}', name or '').replace('{סכום}', amount or '')
+NED_LINK_PREFIX = 'https://www.matara.pro/nedarimplus/online/'
+# מאיר: "ויבחרו מוסד וישמור את זה, זה 5777499 — אחד מהמוסדות על שם כולל חצות נחלת יהושע
+# (ברסלב-דויטש) ביתר עילית"
+NED_MOSADS_DEFAULT = [{'id': '5777499', 'name': 'כולל חצות נחלת יהושע (ברסלב-דויטש) ביתר עילית'}]
+
+
+def ned_mosads(con):
+    try:
+        lst = json.loads(kv_get(con, 'nedarim_mosads', '') or '[]')
+    except Exception:
+        lst = []
+    if not lst:
+        lst = list(NED_MOSADS_DEFAULT)
+    cur = kv_get(con, 'nedarim_mosad', '') or lst[0]['id']
+    return lst, cur
+
+
+def ym_fill(text, name, amount, link=''):
+    """{שם} {סכום} {קישור} בטקסט — כל נמען שומע/מקבל את שמו, וקישור תשלום אישי."""
+    t = (text or '').replace('{שם}', name or '').replace('{סכום}', amount or '').replace('{קישור}', link or '')
     return re.sub(r'\s{2,}', ' ', t).strip()
 
 
@@ -13172,7 +13189,7 @@ def ym_recipients(con, recs):
             ph = _ym.norm_phone(r.get('phone') or '')
             if ph and ph not in seen:
                 seen.add(ph)
-                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph, 'amount': ym_amt(r.get('amount'))})
+                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link'))})
             continue
         k = 'd' if (r.get('k') == 'd') else 'm'
         try:
@@ -13195,8 +13212,13 @@ def ym_recipients(con, recs):
         if key in seen:
             continue
         seen.add(key)
-        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph, 'amount': ym_amt(r.get('amount'))})
+        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link'))})
     return out
+
+
+def ym_link_ok(v):
+    v = str(v or '').strip()
+    return v if (v.startswith(NED_LINK_PREFIX) and len(v) < 1500 and not re.search(r'\s', v)) else ''
 
 
 def ym_bill_kv():
@@ -15800,6 +15822,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             ym_save_trace(con, _ym.end_trace())
             con.commit()
+            ned_list = ned_mosads(con)
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
@@ -15809,7 +15832,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
                                     'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
-                                    'bill_path': ym_bill_kv()})
+                                    'bill_path': ym_bill_kv(), 'mosads': ned_list[0], 'mosad': ned_list[1]})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
@@ -16709,6 +16732,22 @@ class H(BaseHTTPRequestHandler):
             ok = seat_renumber(con, b.get('pos'), b.get('num'))
             con.commit(); con.close()
             return self._send(200, {'ok': ok})
+        if self.path == '/api/nedarim/mosads':
+            # רשימת המוסדות בנדרים פלוס לקישורי התשלום, והמוסד שנבחר אחרון
+            lst = []
+            for x in (b.get('list') or []):
+                mid = re.sub(r'\D', '', str(x.get('id') or ''))[:9]
+                if mid and mid not in [y['id'] for y in lst]:
+                    lst.append({'id': mid, 'name': str(x.get('name') or '').strip()[:120]})
+            con = db()
+            if lst:
+                con.execute("INSERT INTO app_kv(k,v) VALUES('nedarim_mosads',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (json.dumps(lst, ensure_ascii=False),))
+            cur = re.sub(r'\D', '', str(b.get('current') or ''))[:9]
+            if cur:
+                con.execute("INSERT INTO app_kv(k,v) VALUES('nedarim_mosad',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (cur,))
+            con.commit()
+            out = ned_mosads(con); con.close()
+            return self._send(200, {'ok': True, 'mosads': out[0], 'mosad': out[1]})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
             import yemot as _ym
@@ -16724,7 +16763,7 @@ class H(BaseHTTPRequestHandler):
             if b.get('test'):
                 if not test_phone:
                     con.close(); return self._send(200, {'ok': False, 'error': 'מספר הבדיקה לא תקין'})
-                recs = [{'k': 't', 'id': 0, 'name': (b.get('test_name') or 'בדיקה').strip(), 'phone': test_phone}]
+                recs = [{'k': 't', 'id': 0, 'name': (b.get('test_name') or 'בדיקה').strip(), 'phone': test_phone, 'link': ym_link_ok(b.get('test_link'))}]
             else:
                 recs = ym_recipients(con, b.get('recipients') or [])
             if not recs:
@@ -16752,7 +16791,7 @@ class H(BaseHTTPRequestHandler):
             for r in recs:
                 ra = r.get('amount') or ym_amt(amount) or amount
                 con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued',?)",
-                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra), r.get('amount') or ''))
+                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or ''), r.get('amount') or ''))
             con.commit(); con.close()
             import threading as _thr
             _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()

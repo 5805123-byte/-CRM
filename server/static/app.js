@@ -12511,11 +12511,44 @@ let ymBill=false, ymBillPath='';
 try{ymBill=localStorage.getItem('kc_ymbill')==='1';ymBillPath=localStorage.getItem('kc_ymbillp')||'';}catch(e){}
 let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
 try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
+// [מפתח, תווית, נוסח להודעה קולית (עם "הקישו 1" לסליקה), נוסח ל-SMS (עם {קישור} לנדרים פלוס)]
+// מאיר: "ובהודעה המוכנה תכניס שם כבר אפשרות למעבר לתשלום בכרטיס אשראי — הקישו 1"
 const YM_TPL=[
-  ['pledge','🤝 התחייבות','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. אפשר להסדיר בטלפון 02-5803545. תודה רבה, ותזכו למצוות.'],
-  ['nedava','🪙 נדבה','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את הנדבה שהתנדבת בסך {סכום} שקלים. אפשר להסדיר בטלפון 02-5803545. תזכו למצוות.'],
-  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה בבנק. נשמח שתיצור קשר בטלפון 02-5803545 כדי להסדיר. תודה רבה.'],
-  ['free','✍️ חופשי','']];
+  ['pledge','🤝 התחייבות','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. אפשר גם להסדיר בטלפון 02-5803545. תודה רבה, ותזכו למצוות.',
+    'שלום {שם}, כאן כולל חצות. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח בכרטיס אשראי: {קישור} תודה רבה ותזכו למצוות.'],
+  ['nedava','🪙 נדבה','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את הנדבה שהתנדבת בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. אפשר גם להסדיר בטלפון 02-5803545. תזכו למצוות.',
+    'שלום {שם}, כאן כולל חצות. תזכורת בכבוד לנדבה שהתנדבת בסך {סכום} ש"ח. לתשלום מאובטח בכרטיס אשראי: {קישור} תזכו למצוות.'],
+  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה בבנק. למעבר לתשלום בכרטיס אשראי, הקישו 1. אפשר גם ליצור קשר בטלפון 02-5803545. תודה רבה.',
+    'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה. אפשר להסדיר בכרטיס אשראי כאן: {קישור} או בטלפון 02-5803545. תודה רבה.'],
+  ['free','✍️ חופשי','','']];
+const ymTpl=(t,ch)=>ch==='sms'?t[3]:t[2];
+// ---- קישור תשלום ישיר — נדרים פלוס ----
+// מאיר: "יש שם אפשרות לשלוח קישור ישיר נעול עם פרמטרים, למשל השם שלו וכו', ויבחרו אם
+// לנעול על סכום וכו'". לכל נמען נבנה קישור משלו: שם, טלפון, מייל וכתובת ממולאים
+// ונעולים (כך עובד דף נדרים פלוס), והסכום שלו — נעול אם בוחרים.
+let ymLink={mosad:'',amtLock:true,pay:'',payLock:false,type:'',groupe:'',groupeLock:false,avour:'',avourLock:false,prefill:true};
+try{Object.assign(ymLink,JSON.parse(localStorage.getItem('kc_ymlink')||'{}'));}catch(e){}
+const ymLinkSave=()=>{try{localStorage.setItem('kc_ymlink',JSON.stringify(ymLink));}catch(e){}};
+function ymRecInfo(r){
+  if(r.k==='m'){const m=(MEMBERS||[]).find(x=>x.id==r.id);if(m)return {email:(String(m.email||'').split(/[,;\s/]+/).find(x=>x.includes('@'))||''),street:m.addr||'',city:m.city||''};}
+  if(r.k==='d'){const d=DB.find(x=>x.id==r.id);if(d)return {email:(splitEmails(d.email)[0]||''),street:d.addr||'',city:d.city||''};}
+  return {email:'',street:'',city:''};}
+function nedLink(r){
+  const mosad=(ymLink.mosad||(ymStatus&&ymStatus.mosad)||'').replace(/\D/g,''); if(!mosad)return '';
+  const p=[['mosad',mosad]];
+  const amt=String((r&&r.amt)||ymAmt||'').replace(/[^\d.]/g,'');
+  if(amt){p.push(['Amount',amt]);if(ymLink.amtLock)p.push(['AmountLock','1']);}
+  if(ymLink.pay){p.push(['Payment',ymLink.pay]);if(ymLink.payLock)p.push(['PaymentLock','1']);}
+  if(ymLink.type==='normal')p.push(['OnlyNormal','1']);else if(ymLink.type==='keva')p.push(['OnlyKeva','1']);
+  if(ymLink.groupe){p.push(['Groupe',ymLink.groupe]);if(ymLink.groupeLock)p.push(['GroupeLock','1']);}
+  if(ymLink.avour){p.push(['Avour',ymLink.avour]);if(ymLink.avourLock)p.push(['AvourLock','1']);}
+  if(ymLink.prefill&&r){
+    if(r.name)p.push(['ClientName',r.name]);
+    if(r.phone)p.push(['Phone',r.phone]);
+    const inf=ymRecInfo(r); if(inf.email)p.push(['Email',inf.email]); if(inf.street)p.push(['Street',inf.street]); if(inf.city)p.push(['City',inf.city]);}
+  p.push(['HideParameters','1']);
+  return 'https://www.matara.pro/nedarimplus/online/?'+p.map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');}
+
 function ymPhone(p){ // אותו כלל כמו בשרת: טלפון ישראלי תקין, הראשון שבשדה
   for(const part of String(p||'').split(/[,;/|]|\s{2,}/)){let d=part.replace(/\D/g,'');
     if(d.startsWith('00972'))d=d.slice(5);else if(d.startsWith('972'))d=d.slice(3);
@@ -12570,7 +12603,9 @@ function ymViewSend(){
   const first=selOk[0]||sel[0];
   if(!ymBillPath&&st.bill_path)ymBillPath=st.bill_path;
   const billOn=ymCh==='voice'&&ymBill;
-  const prev=ymFillTxt(ymText,first?first.name:'משה כהן',first&&first.amt);
+  const linkOn=ymCh==='sms'&&/\{קישור\}/.test(ymText);
+  const prevLink=nedLink(first||{name:'משה כהן',phone:'0501234567'});
+  const prev=ymFillTxt(ymText,first?first.name:'משה כהן',first&&first.amt).replace(/\{קישור\}/g,prevLink);
   const smsLen=prev.length, smsParts=smsLen<=70?1:Math.ceil(smsLen/67);
   const dhits=ymDQ.trim().length>=2?DB.filter(d=>matchStr([d.last,d.first,d.english,d.phone].join(' '),ymDQ.trim())).slice(0,8):[];
   const row=m=>{const k=ymKey('m',m.id),on=ymRecs.has(k),ph=ymPhone(m.phone);
@@ -12598,6 +12633,7 @@ function ymViewSend(){
         ${billOn?`<div class="ymrow2"><label class="fld"><span>📂 שלוחת הסליקה בימות (למשל 5 או 1/2)</span><input id="ym_bpath" dir="ltr" value="${esc(ymBillPath)}" placeholder="5"></label>
           <span class="hintxt">לפני השיחות המערכת מעדכנת <b dir="ltr">BillingSum.ini</b> בשלוחה הזו: טלפון=סכום לכל נמען. שאר השורות בקובץ נשארות, והגדרות השלוחה לא משתנות. סכום לכל נמען — בשלב 3.</span></div>`:''}</div>`:''}
     </div>
+    ${ymCh==='sms'?ymLinkHTML(linkOn,prevLink):''}
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">3️⃣ למי — ${sel.length?`<b>${sel.length} נבחרו</b>`:'אף אחד עדיין'}</div>
       <div class="ymsync">🔄 הקהילה מסונכרנת מהמערכת: <b>${all.length}</b> חברים · <b>${good.length}</b> עם טלפון תקין (${mob.length} נייד) ·
@@ -12615,7 +12651,7 @@ function ymViewSend(){
       <div class="ymfree"><div class="lbl">📱 מספרים שלא בקהילה ולא בתורמים</div>
         <div class="mlfrow"><input id="ym_xp" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX (אפשר כמה, מופרדים בפסיק)"><input id="ym_xn" placeholder="שם (רשות — נכנס במקום {שם})"><button class="btn sm" id="ym_xadd">➕ הוסף</button></div>
         ${sel.filter(r=>r.k==='x').map(r=>`<span class="fchip ymd">📱 ${esc(r.name||'בלי שם')} <small dir="ltr">${esc(r.phone)}</small> <button class="fdel" data-rm="${ymKey('x',r.phone)}">✕</button></span>`).join('')}</div>
-      ${billOn&&sel.length?`<div class="ymamts"><div class="lbl">💳 סכום לחיוב לכל נמען${ymAmt?` (ריק = ${esc(ymAmt)})`:''}</div>
+      ${(billOn||linkOn)&&sel.length?`<div class="ymamts"><div class="lbl">💳 סכום ${billOn?'לחיוב':'בקישור התשלום'} לכל נמען${ymAmt?` (ריק = ${esc(ymAmt)})`:''}</div>
         ${selOk.map(r=>`<div class="ymamt"><span>${esc(r.name||'בלי שם')}</span><span dir="ltr">${esc(r.phone)}</span><input class="ym_ra" data-k="${esc(r.k==='x'?ymKey('x',r.phone):ymKey(r.k,r.id))}" inputmode="decimal" value="${esc(r.amt||'')}" placeholder="${esc(ymAmt||'₪')}"></div>`).join('')}</div>`:''}
     </div>
     <div class="sec ymsec">
@@ -12631,9 +12667,10 @@ function ymViewSend(){
   view.querySelectorAll('.ymc').forEach(b=>b.onclick=()=>{
     if(b.dataset.ch==='mail'){cmPick=new Set(sel.filter(r=>r.k==='m').map(r=>r.id));cmSender='neder';cmSub='send';render();window.scrollTo(0,0);return;}
     ymCh=b.dataset.ch;try{localStorage.setItem('kc_ymch',ymCh);}catch(e){}renderCommYm();});
-  view.querySelectorAll('.ymtpl .chip').forEach(b=>b.onclick=()=>{const t=YM_TPL.find(x=>x[0]===b.dataset.t);
-    if(ymText.trim()&&t[2]&&ymText!==t[2]){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok){ymText=t[2];renderCommYm();}});return;}
-    ymText=t[2];renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);});
+  view.querySelectorAll('.ymtpl .chip').forEach(b=>b.onclick=()=>{const t=YM_TPL.find(x=>x[0]===b.dataset.t), nt=ymTpl(t,ymCh);
+    const apply=()=>{ymText=nt;if(ymCh==='voice'&&/הקישו 1/.test(nt)&&!ymBill){ymBill=true;try{localStorage.setItem('kc_ymbill','1');}catch(e){}}renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);};
+    if(ymText.trim()&&nt&&ymText!==nt){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok)apply();});return;}
+    apply();});
   let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
   keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
   const bc=g('ym_bill'); if(bc)bc.onchange=()=>{ymBill=bc.checked;try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}renderCommYm();};
@@ -12663,10 +12700,11 @@ function ymViewSend(){
     if(billOn&&!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
     if(billOn&&!amtNum(ymAmt)&&!(first&&amtNum(first.amt))){toast('חסר סכום לחיוב לבדיקה');return;}
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:'',
-      billing:billOn?1:0,bill_path:ymBillPath,test_amount:(first&&first.amt)||ymAmt});
+      billing:billOn?1:0,bill_path:ymBillPath,test_amount:(first&&first.amt)||ymAmt,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
     if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
   g('ym_go').onclick=async()=>{
+    if(linkOn&&!prevLink){toast('בחר מוסד לקישור התשלום');return;}
     if(billOn){
       if(!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
       const miss=selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt));
@@ -12674,10 +12712,50 @@ function ymViewSend(){
     }
     if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,bill_path:ymBillPath,
-      recipients:selOk.map(x=>x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||''}:{k:x.k,id:x.id,amount:x.amt||''})});
+      recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L}:{k:x.k,id:x.id,amount:x.amt||'',link:L};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('המשלוח התחיל ✓');ymTrack(r.job);};
+  ymWireLink(prevLink);
   ymWireProg();
+}
+function ymLinkHTML(linkOn,prevLink){
+  const st=ymStatus||{}, M=st.mosads||[], cur=ymLink.mosad||st.mosad||'';
+  return `<div class="sec ymsec ymlink"><div class="rbtitle" style="text-align:right">🔗 קישור תשלום — נדרים פלוס</div>
+    <div class="ymflt"><label class="fld" style="margin:0"><span>🏛️ מוסד</span><select id="nl_mosad">${M.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?'selected':''}>${esc(m.id)} · ${esc(m.name||'')}</option>`).join('')}<option value="+">➕ מוסד אחר…</option></select></label>
+      <button class="btn sm ${linkOn?'ghost':''}" id="nl_ins">${linkOn?'✓ {קישור} בהודעה':'➕ הכנס {קישור} להודעה'}</button></div>
+    <div class="ymlopts">
+      <label class="gvall"><input type="checkbox" id="nl_amtlock" ${ymLink.amtLock?'checked':''}> 🔒 לנעול את הסכום (הסכום של כל נמען, משלב 3 / מהשדה {סכום})</label>
+      <label class="gvall"><input type="checkbox" id="nl_prefill" ${ymLink.prefill?'checked':''}> 👤 למלא מראש את פרטי הנמען — שם, טלפון, מייל וכתובת (ננעלים בדף)</label>
+      <div class="ymflt"><label class="fld" style="margin:0"><span>💳 סוג</span><select id="nl_type"><option value="" ${!ymLink.type?'selected':''}>לפי הגדרות המוסד</option><option value="normal" ${ymLink.type==='normal'?'selected':''}>תשלום רגיל בלבד</option><option value="keva" ${ymLink.type==='keva'?'selected':''}>הוראת קבע באשראי בלבד</option></select></label>
+        <label class="fld" style="margin:0"><span>🔢 תשלומים / חודשים</span><input id="nl_pay" inputmode="numeric" value="${esc(ymLink.pay||'')}" placeholder="—" style="width:90px"></label>
+        <label class="gvall"><input type="checkbox" id="nl_paylock" ${ymLink.payLock?'checked':''}> 🔒</label></div>
+      <div class="ymflt"><label class="fld" style="margin:0;flex:1"><span>🏷️ קטגוריה (מופיעה בנדרים פלוס)</span><input id="nl_groupe" value="${esc(ymLink.groupe||'')}" placeholder="למשל התחייבות / נדבה"></label>
+        <label class="gvall"><input type="checkbox" id="nl_glock" ${ymLink.groupeLock?'checked':''}> 🔒</label></div>
+      <div class="ymflt"><label class="fld" style="margin:0;flex:1"><span>📝 הערה</span><input id="nl_avour" value="${esc(ymLink.avour||'')}" placeholder="רשות"></label>
+        <label class="gvall"><input type="checkbox" id="nl_alock" ${ymLink.avourLock?'checked':''}> 🔒</label></div>
+    </div>
+    ${prevLink?`<div class="ympv"><b>🔗 הקישור${linkOn?' של הנמען הראשון':''}:</b> <a href="${esc(prevLink)}" target="_blank" rel="noopener" dir="ltr" class="nllink">${esc(prevLink.length>90?prevLink.slice(0,90)+'…':prevLink)}</a>
+      <button class="btn sm ghost" id="nl_copy">📋 העתק</button></div>`:'<div class="hintxt">בחר מוסד כדי לבנות קישור.</div>'}
+  </div>`;}
+function ymWireLink(prevLink){
+  const g=id=>document.getElementById(id); if(!g('nl_mosad'))return;
+  const set=(k,v)=>{ymLink[k]=v;ymLinkSave();renderCommYm();};
+  g('nl_mosad').onchange=async()=>{let v=g('nl_mosad').value;
+    if(v==='+'){const id=((await uiPrompt('מספר המוסד בנדרים פלוס (7 ספרות):',''))||'').replace(/\D/g,'');if(!id){renderCommYm();return;}
+      const nm=(await uiPrompt('שם המוסד (לזיהוי ברשימה):',''))||'';
+      const L=(ymStatus.mosads||[]).concat([{id,name:nm}]);
+      const r=await api('POST','/api/nedarim/mosads',{list:L,current:id});if(r&&r.ok){ymStatus.mosads=r.mosads;ymStatus.mosad=r.mosad;}v=id;}
+    else{const r=await api('POST','/api/nedarim/mosads',{list:ymStatus.mosads||[],current:v});if(r&&r.ok)ymStatus.mosad=r.mosad;}
+    set('mosad',v);};
+  g('nl_ins').onclick=()=>{if(!/\{קישור\}/.test(ymText)){ymText=(ymText.trim()?ymText.trim()+' ':'')+'{קישור}';}renderCommYm();};
+  g('nl_amtlock').onchange=()=>set('amtLock',g('nl_amtlock').checked);
+  g('nl_prefill').onchange=()=>set('prefill',g('nl_prefill').checked);
+  g('nl_type').onchange=()=>set('type',g('nl_type').value);
+  g('nl_paylock').onchange=()=>set('payLock',g('nl_paylock').checked);
+  g('nl_glock').onchange=()=>set('groupeLock',g('nl_glock').checked);
+  g('nl_alock').onchange=()=>set('avourLock',g('nl_alock').checked);
+  [['nl_pay','pay'],['nl_groupe','groupe'],['nl_avour','avour']].forEach(([id,k])=>{const e=g(id);let t;e.oninput=()=>{ymLink[k]=e.value.trim();ymLinkSave();clearTimeout(t);t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},500);};});
+  const cp=g('nl_copy'); if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(prevLink);toast('הקישור הועתק ✓');}catch(e){toast('לא הצלחתי להעתיק');}};
 }
 function ymWireProg(){
   const st2=document.getElementById('ym_stop'); if(st2)st2.onclick=async()=>{await api('POST','/api/yemot/job/'+st2.dataset.j+'/stop',{});toast('נעצר');};

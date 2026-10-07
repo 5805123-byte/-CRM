@@ -1819,7 +1819,7 @@
   .ymtpl{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
   #ym_text{width:100%;box-sizing:border-box;font-family:inherit;font-size:1rem;line-height:1.5;padding:9px;border-radius:10px;border:1px solid var(--line)}
   .ymrow2{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:6px}.ymrow2 .fld{flex:1 1 180px;margin:0}
-  .ympv{margin-top:8px;padding:8px 10px;border-radius:10px;background:#f4f2fb;font-size:.92rem;line-height:1.5}
+  .ympv{overflow-wrap:anywhere;word-break:break-word;margin-top:8px;padding:8px 10px;border-radius:10px;background:#f4f2fb;font-size:.92rem;line-height:1.5}
   .ymsync{font-size:.88rem;color:var(--muted);margin-bottom:6px}
   .lnk{font-family:inherit;background:none;border:none;color:var(--no);text-decoration:underline;cursor:pointer;padding:0;font-size:inherit}
   .ymlist{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:6px}
@@ -1843,6 +1843,10 @@
   .ymfree{margin-top:10px}.ymfree .lbl{font-size:.82rem;color:var(--muted);margin-bottom:4px}.ymfree input{flex:1 1 140px;min-width:0}
   .ymans{font-size:.78rem;border-radius:99px;padding:0 7px;background:#f1efe8;color:var(--muted)}.ymans.yes{background:var(--yes-soft);color:var(--yes)}.ymans.no{background:var(--no-soft);color:var(--no)}
   .ymflt{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px}.ymflt input:not([type=checkbox]){flex:1 1 150px;min-width:0}.ymflt .fld{flex:0 0 auto}.ymflt .btn{flex:0 0 auto}.ymflt .gvall{display:flex;gap:6px;align-items:center;width:auto;margin:0}.ymflt .gvall input{width:auto;margin:0}
+  .ymlopts{display:flex;flex-direction:column;gap:6px;margin-top:6px}.ymlopts .gvall{display:flex;gap:6px;align-items:center;width:auto;margin:0;font-size:.88rem}.ymlopts .gvall input{width:auto;margin:0}
+  .nllink{word-break:break-all;font-size:.8rem}
+  .ymlink{overflow:hidden}.ymlink .ymflt .fld{min-width:0;flex:1 1 180px}.ymlink select,.ymlink input:not([type=checkbox]){max-width:100%;width:100%;box-sizing:border-box}
+  .ymlink #nl_pay{width:90px;flex:0 0 auto}.ymlink .ympv{overflow-wrap:anywhere}
   .ymtabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 2px}
   .ymtab{flex:1 1 120px;font-family:inherit;font-weight:800;font-size:.92rem;padding:9px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer}
   .ymtab.on{background:var(--accent);color:#fff;border-color:transparent}
