@@ -439,6 +439,10 @@ def ensure_schema():
     for col in ('url', 'src'):
         try: con.execute(f"ALTER TABLE receipt_docs ADD COLUMN {col} TEXT")
         except Exception: pass
+    # ימות המשיח — מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו"
+    for col, typ in (('campaign', 'TEXT'), ('answered', 'INTEGER'), ('secs', 'INTEGER'), ('call_status', 'TEXT'), ('checked_at', 'TEXT')):
+        try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
+        except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -13152,6 +13156,13 @@ def ym_recipients(con, recs):
     import yemot as _ym
     out, seen = [], set()
     for r in recs or []:
+        if r.get('k') == 'x':
+            # מאיר: "שיוכלו לשלוח שיחות והודעות גם למספר שלא מופיע בקהילה"
+            ph = _ym.norm_phone(r.get('phone') or '')
+            if ph and ph not in seen:
+                seen.add(ph)
+                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph})
+            continue
         k = 'd' if (r.get('k') == 'd') else 'm'
         try:
             rid = int(r.get('id'))
@@ -13192,6 +13203,31 @@ def ym_save_trace(con, items, job=0, msg=0, phone=''):
         pass
 
 
+def ym_check_job(job_id):
+    """מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו" — לכל שיחה
+    שיצאה: מצב הקמפיין שלה מימות, ומזה — ענה / לא ענה ומספר השניות. הכל נכנס ללוג."""
+    import yemot as _ym
+    con = db()
+    try:
+        for m in con.execute("SELECT id, phone, campaign FROM ym_msg WHERE job=? AND status='sent' AND COALESCE(campaign,'')<>'' "
+                             "AND answered IS NULL", (job_id,)).fetchall():
+            _ym.begin_trace()
+            ok, res = _ym.campaign_status(m['campaign'])
+            ym_save_trace(con, _ym.end_trace(), job_id, m['id'], m['phone'])
+            if ok:
+                r = _ym.parse_call_result(res, m['phone'])
+                con.execute("UPDATE ym_msg SET answered=?, secs=?, call_status=?, checked_at=? WHERE id=?",
+                            (None if r['answered'] is None else (1 if r['answered'] else 0), r['secs'], r['status'], now_iso(), m['id']))
+            else:
+                con.execute("UPDATE ym_msg SET call_status=?, checked_at=? WHERE id=?", (str(res)[:60], now_iso(), m['id']))
+            con.commit()
+            time.sleep(0.3)
+    except Exception as e:
+        print('  ym check error:', e)
+    finally:
+        con.close()
+
+
 def ym_worker(job_id):
     """שולח את ההודעות של משלוח אחד, אחת אחרי השנייה, ומתעד אצל כל חבר/תורם."""
     import yemot as _ym
@@ -13212,9 +13248,15 @@ def ym_worker(job_id):
                     ok, res = _ym.send_sms(m['phone'], m['text'])
                 else:
                     ok, res = _ym.send_tts(m['phone'], m['text'])
-                ym_save_trace(con, _ym.end_trace(), job_id, m['id'], m['phone'])
-                con.execute("UPDATE ym_msg SET status=?, error=?, at=? WHERE id=?",
-                            ('sent' if ok else 'failed', '' if ok else str(res)[:200], now_iso(), m['id']))
+                tr = _ym.end_trace()
+                if not tr:      # נדחה אצלנו לפני שנשלח לימות — גם זה מופיע בלוג
+                    tr = [{'method': 'SendSms' if job['channel'] == 'sms' else 'CallExtensionBridging',
+                           'params': {'phones': m['phone'] or '—', 'note': 'לא נשלח לימות'}, 'ok': False,
+                           'response': json.dumps({'responseStatus': 'NOT_SENT', 'message': str(res)}, ensure_ascii=False), 'ms': 0}]
+                ym_save_trace(con, tr, job_id, m['id'], m['phone'])
+                cid = res.get('campaignId', '') if (ok and isinstance(res, dict)) else ''
+                con.execute("UPDATE ym_msg SET status=?, error=?, at=?, campaign=? WHERE id=?",
+                            ('sent' if ok else 'failed', '' if ok else str(res)[:200], now_iso(), cid, m['id']))
                 con.execute("UPDATE ym_job SET sent=sent+?, failed=failed+? WHERE id=?", (1 if ok else 0, 0 if ok else 1, job_id))
                 if ok and not job['test']:
                     lbl = '📞 הודעה קולית' if job['channel'] == 'voice' else '💬 SMS'
@@ -13234,6 +13276,10 @@ def ym_worker(job_id):
                 if st and st['status'] == 'stopped':
                     return
             con.execute("UPDATE ym_job SET status='done' WHERE id=?", (job_id,)); con.commit()
+            if job['channel'] == 'voice':
+                # האם ענו וכמה זמן — בודקים אחרי דקה וחצי ושוב אחרי 5 דקות (שיחה שעוד בתור/בצלצול)
+                for dly in (90, 300):
+                    threading.Timer(dly, ym_check_job, args=(job_id,)).start()
         except Exception as e:
             try:
                 con.execute("UPDATE ym_job SET status='error', label=? WHERE id=?", (str(e)[:200], job_id)); con.commit()
@@ -15634,7 +15680,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
-            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             if not job:
                 return self._send(404, {'ok': False})
@@ -16559,6 +16605,13 @@ class H(BaseHTTPRequestHandler):
             import threading as _thr
             _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid, 'total': len(recs), 'no_phone': sum(1 for r in recs if not r['phone'])})
+        m = re.match(r'/api/yemot/job/(\d+)/check$', self.path)
+        if m:
+            con = db()
+            con.execute("UPDATE ym_msg SET answered=NULL WHERE job=? AND COALESCE(campaign,'')<>''", (int(m.group(1)),))
+            con.commit(); con.close()
+            ym_check_job(int(m.group(1)))
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/yemot/job/(\d+)/stop$', self.path)
         if m:
             con = db()

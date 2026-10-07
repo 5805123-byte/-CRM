@@ -17,7 +17,7 @@
   2. UploadTextFile?what=ivr2:/Phone/<טלפון>/<NNN>.tts&contents=<הטקסט> — ההודעה הבאה.
   3. CallExtensionBridging?phones=<טלפון>&ivrPath=ivr2:/&callsTimeOut=35 — השיחה עצמה.
 אופציונלי:
-    YEMOT_SMS_FROM    שם/מספר השולח ב-SMS (חייב להיות מאושר בימות)
+    YEMOT_SMS_FROM    מספר השולח ב-SMS (ברירת מחדל 025803545 — מאושר בימות)
     YEMOT_CALLER_ID   המספר שיוצג בשיחה הקולית
     YEMOT_TTS_VOICE   קול ההקראה (למשל ymMale / ymFemale)
     YEMOT_BASE        כתובת ה-API (ברירת מחדל https://www.call2all.co.il/ym/api/)
@@ -57,6 +57,8 @@ def _trace(method, params, ok, raw, ms):
                 'ok': bool(ok), 'response': (raw or '')[:3000], 'ms': int(ms)})
 
 DEF_BASE = 'https://www.call2all.co.il/ym/api/'
+# מאיר: "שרק כשהוא שולח SMS יצא עם זיהוי של 025803545 (זה מאושר כבר בימות המשיח)"
+SMS_FROM_DEFAULT = '025803545'
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'
 
 
@@ -204,8 +206,57 @@ def send_tts(phone, text, timeout=35):
 
 
 def send_sms(phone, text, from_=''):
-    p = {'phones': phone, 'message': text}
-    f = (from_ or _env('YEMOT_SMS_FROM')).strip()
-    if f:
-        p['from'] = f
+    p = {'phones': phone, 'message': text, 'from': (from_ or _env('YEMOT_SMS_FROM') or SMS_FROM_DEFAULT).strip()}
     return call('SendSms', p)
+
+
+def campaign_status(cid):
+    """מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו" — מצב הקמפיין
+    שהשיחה יצרה (campaignId שחוזר מ-CallExtensionBridging)."""
+    return call('GetCampaignStatus', {'campaignId': cid})
+
+
+_ANS = re.compile(r'answer|ענה|connected|completed|success', re.I)
+_NOANS = re.compile(r'no.?answer|noanswer|busy|failed|לא.?ענה|תפוס|cancel|reject|congestion|unavailable', re.I)
+_SECS = re.compile(r'^(duration|billsec|billSec|seconds|secs|talkTime|talk_time|callDuration|call_duration|answeredSeconds|time)$', re.I)
+
+
+def parse_call_result(res, phone=''):
+    """מחפש בתשובה (בכל מבנה) את הרשומה של הטלפון: האם ענה, וכמה שניות היה על הקו.
+    מחזיר {'answered': True/False/None, 'secs': int/None, 'status': str}."""
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            vals = ' '.join(str(v) for v in o.values() if isinstance(v, (str, int)))
+            if not phone or phone[-9:] in re.sub(r'\D', '', vals):
+                found.append(o)
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(res)
+    out = {'answered': None, 'secs': None, 'status': ''}
+    for d in found[::-1]:                        # הרשומה הפנימית ביותר קודם
+        for k, v in d.items():
+            if isinstance(v, (dict, list)):
+                continue
+            if out['secs'] is None and _SECS.match(str(k)):
+                try:
+                    out['secs'] = int(float(str(v).replace(',', '.')))
+                except ValueError:
+                    pass
+            if not out['status'] and re.search(r'status|result|state|מצב', str(k), re.I) and str(v).strip():
+                out['status'] = str(v)[:60]
+            if out['answered'] is None and re.search(r'answered|isAnswer', str(k), re.I):
+                sv = str(v).lower()
+                out['answered'] = sv in ('1', 'true', 'yes', 'כן')
+    if out['answered'] is None and out['status']:
+        if _NOANS.search(out['status']):
+            out['answered'] = False
+        elif _ANS.search(out['status']):
+            out['answered'] = True
+    if out['answered'] is None and out['secs']:
+        out['answered'] = out['secs'] > 0
+    return out

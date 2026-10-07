@@ -12556,7 +12556,7 @@ function renderCommYm(){
       <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip" data-t="${k}">${l}</button>`).join('')}</div>
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום שבשדה למטה">${esc(ymText)}</textarea>
       <div class="ymrow2"><label class="fld"><span>💲 סכום (נכנס במקום {סכום})</span><input id="ym_amt" value="${esc(ymAmt)}" inputmode="decimal" placeholder="למשל 500"></label>
-        <span class="hintxt">${ymCh==='sms'?`${smsLen} תווים · ${smsParts} הודעות SMS לכל נמען`:'ההודעה מוקראת בקול. מספרים נשמעים טוב יותר במילים ("חמש מאות").'}</span></div>
+        <span class="hintxt">${ymCh==='sms'?`📤 יוצא ממספר 025803545 · ${smsLen} תווים · ${smsParts} הודעות SMS לכל נמען`:'ההודעה מוקראת בקול. מספרים נשמעים טוב יותר במילים ("חמש מאות").'}</span></div>
       ${ymText?`<div class="ympv"><b>${ymCh==='sms'?'💬':'🔊'} כך זה יישמע${first?' אצל '+esc(first.name):''}:</b> ${esc(prev)}</div>`:''}
     </div>
     <div class="sec ymsec">
@@ -12573,6 +12573,9 @@ function renderCommYm(){
       <div class="ymdonor"><input id="ym_dq" value="${esc(ymDQ)}" placeholder="➕ להוסיף תורם — הקלד שם או טלפון" autocomplete="off">
         <div class="dpres">${dhits.map(d=>{const ph=ymPhone(d.phone);return `<div class="dpr" data-did="${d.id}">${esc(((d.last||'')+' '+(d.first||'')).trim())} <small dir="ltr">${ph?esc(ph):'<u>אין טלפון</u>'}</small></div>`;}).join('')}</div>
         ${sel.filter(r=>r.k==='d').map(r=>`<span class="fchip ymd">💰 ${esc(r.name)} <small dir="ltr">${esc(r.phone||'—')}</small> <button class="fdel" data-rm="${ymKey('d',r.id)}">✕</button></span>`).join('')}</div>
+      <div class="ymfree"><div class="lbl">📱 מספרים שלא בקהילה ולא בתורמים</div>
+        <div class="mlfrow"><input id="ym_xp" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX (אפשר כמה, מופרדים בפסיק)"><input id="ym_xn" placeholder="שם (רשות — נכנס במקום {שם})"><button class="btn sm" id="ym_xadd">➕ הוסף</button></div>
+        ${sel.filter(r=>r.k==='x').map(r=>`<span class="fchip ymd">📱 ${esc(r.name||'בלי שם')} <small dir="ltr">${esc(r.phone)}</small> <button class="fdel" data-rm="${ymKey('x',r.phone)}">✕</button></span>`).join('')}</div>
     </div>
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">4️⃣ שליחה</div>
@@ -12612,7 +12615,13 @@ function renderCommYm(){
   view.querySelectorAll('.ymdonor .dpr[data-did]').forEach(x=>x.onclick=()=>{const d=DB.find(y=>y.id==x.dataset.did);if(!d)return;const ph=ymPhone(d.phone);
     if(!ph){toast('לתורם הזה אין טלפון ישראלי תקין');return;}
     ymRecs.set(ymKey('d',d.id),{k:'d',id:d.id,name:((d.first||'')+' '+(d.last||'')).trim(),phone:ph});ymDQ='';renderCommYm();});
-  view.querySelectorAll('.ymdonor [data-rm]').forEach(b=>b.onclick=()=>{ymRecs.delete(b.dataset.rm);renderCommYm();});
+  view.querySelectorAll('.ymdonor [data-rm],.ymfree [data-rm]').forEach(b=>b.onclick=()=>{ymRecs.delete(b.dataset.rm);renderCommYm();});
+  const xa=g('ym_xadd'); if(xa){const addX=()=>{const raw=g('ym_xp').value, nm=g('ym_xn').value.trim();let n=0,badN=[];
+      raw.split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>{const ph=ymPhone(x);if(!ph){badN.push(x);return;}
+        ymRecs.set(ymKey('x',ph),{k:'x',id:0,name:nm,phone:ph});n++;});
+      if(badN.length)toast('לא תקין: '+badN.join(', '));else if(!n)toast('הקלד מספר טלפון');
+      if(n)renderCommYm();};
+    xa.onclick=addX; g('ym_xp').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addX();}};}
   g('ym_test').onclick=async()=>{const tp=g('ym_tp').value.trim();if(!ymPhone(tp)){toast('מספר בדיקה לא תקין');return;}
     if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
@@ -12621,11 +12630,13 @@ function renderCommYm(){
     toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
   g('ym_go').onclick=async()=>{
     if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?\n\n'+prev,'כן, לשלוח','ביטול'))return;
-    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,recipients:selOk.map(x=>({k:x.k,id:x.id}))});
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,recipients:selOk.map(x=>x.k==='x'?{k:'x',phone:x.phone,name:x.name}:{k:x.k,id:x.id})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('המשלוח התחיל ✓');ymTrack(r.job);};
   view.querySelectorAll('.ymjob[data-j]').forEach(x=>x.onclick=async()=>{const r=await api('GET','/api/yemot/job/'+x.dataset.j);if(r&&r.ok){ymJobView=r;renderCommYm();}});
   const st2=g('ym_stop'); if(st2)st2.onclick=async()=>{await api('POST','/api/yemot/job/'+st2.dataset.j+'/stop',{});toast('נעצר');};
+  const ck=g('ym_chk'); if(ck)ck.onclick=async()=>{ck.disabled=true;toast('בודק מול ימות המשיח…');await api('POST','/api/yemot/job/'+ck.dataset.j+'/check',{});
+    const r=await api('GET','/api/yemot/job/'+ck.dataset.j);if(r&&r.ok)ymJobView=r;if(ymLogOpen){ymLogJob=+ck.dataset.j;await ymLoadLog();}renderCommYm();};
   const lb=g('ym_log'); if(lb)lb.onclick=async()=>{ymLogOpen=!ymLogOpen;if(ymLogOpen)await ymLoadLog();renderCommYm();};
   const lr=g('ym_logr'); if(lr)lr.onclick=async()=>{await ymLoadLog();renderCommYm();};
   const la=g('ym_logall'); if(la)la.onclick=async()=>{ymLogJob=0;await ymLoadLog();renderCommYm();};
@@ -12638,7 +12649,7 @@ function ymLogHTML(){
   const rows=ymLog||[];
   if(!rows.length)return '<div class="hintxt">אין עדיין קריאות בלוג.</div>';
   const pretty=t=>{try{return JSON.stringify(JSON.parse(t),null,2);}catch(e){return t||'';}};
-  const DESC={GetIVR2Dir:'בדיקת התיקייה של הטלפון',UpdateExtension:'יצירת התיקייה של הטלפון',UploadTextFile:'העלאת ההודעה (TTS)',CallExtensionBridging:'השיחה',SendSms:'SMS',GetSession:'בדיקת חיבור'};
+  const DESC={GetIVR2Dir:'בדיקת התיקייה של הטלפון',UpdateExtension:'יצירת התיקייה של הטלפון',UploadTextFile:'העלאת ההודעה (TTS)',CallExtensionBridging:'השיחה',SendSms:'SMS',GetSession:'בדיקת חיבור',GetCampaignStatus:'בדיקה אם ענה'};
   return `<div class="ymlog">${rows.map(r=>{let pr={};try{pr=JSON.parse(r.params||'{}');}catch(e){}
     let resp={};try{resp=JSON.parse(r.response||'{}');}catch(e){}
     const short=r.ok?(resp.message||(resp.campaignId?('campaign '+resp.campaignId):'OK')):(resp.message||String(r.response||'').slice(0,120));
@@ -12654,8 +12665,16 @@ function ymProgHTML(r){const j=r.job||{},done=(j.sent||0)+(j.failed||0),pct=j.to
     <div>${j.status==='done'?'✅ הסתיים':(j.status==='stopped'?'⏹ נעצר':'⏳ שולח…')} · נשלחו <b>${j.sent||0}</b> מתוך ${j.total||0}${j.failed?` · <b class="ymf">${j.failed} נכשלו</b>`:''}
     ${j.status==='sending'||j.status==='queued'?`<button class="btn sm ghost" id="ym_stop" data-j="${j.id}">⏹ עצור</button>`:''}</div>
     ${fails.length?`<div class="ymfails">${fails.map(m=>`<div>✗ ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span> — ${esc(m.error||'')}</div>`).join('')}</div>`:''}</div>`;}
+function ymAns(m){
+  if(m.status!=='sent'||!m.campaign)return '';
+  const t=m.secs!=null&&m.secs!==''?(Math.floor(m.secs/60)+':'+String(m.secs%60).padStart(2,'0')):'';
+  if(m.answered===1||m.answered===true)return `<span class="ymans yes">📞 ענה${t?' · '+t+' דק׳':''}</span>`;
+  if(m.answered===0||m.answered===false)return `<span class="ymans no">📵 לא ענה${m.call_status?' ('+esc(m.call_status)+')':''}</span>`;
+  return `<span class="ymans">${m.checked_at?('❔ '+esc(m.call_status||'אין עדיין מידע')):'⏳ ממתין לבדיקה'}</span>`;}
 function ymJobViewHTML(r){const j=r.job;
-  return `<div class="ymjv"><div class="hintxt">${esc(j.text||'')}</div>${(r.msgs||[]).map(m=>`<div class="ymjm ${m.status}">${m.status==='sent'?'✅':(m.status==='failed'?'✗':'⏳')} ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span>${m.error?` — ${esc(m.error)}`:''}</div>`).join('')}</div>`;}
+  return `<div class="ymjv"><div class="addrow" style="justify-content:space-between"><div class="hintxt" style="flex:1">${esc(j.text||'')}</div>
+    ${j.channel==='voice'?`<button class="btn sm ghost" id="ym_chk" data-j="${j.id}">🔄 בדוק אם ענו</button>`:''}</div>
+    ${(r.msgs||[]).map(m=>`<div class="ymjm ${m.status}">${m.status==='sent'?'✅':(m.status==='failed'?'✗':'⏳')} ${esc(m.name||'')} <span dir="ltr">${esc(m.phone||'')}</span>${m.error?` — ${esc(m.error)}`:''} ${ymAns(m)}</div>`).join('')}</div>`;}
 function ymTrack(jid){
   clearInterval(ymPoll);
   const tick=async()=>{const r=await api('GET','/api/yemot/job/'+jid);if(!r||!r.ok)return;ymJob=r;
