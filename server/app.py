@@ -20076,6 +20076,11 @@ def nd_sync(con):
     except Exception as e:
         res['תורמים'] = 'שגיאה: %s' % str(e)[:80]
     ks = _nd.kevas()
+    try:
+        flags = _nd.keva_flags()
+    except Exception as e:
+        flags = None
+        res['רשימה מלאה'] = 'לא נמשכה: %s' % str(e)[:60]
     con.execute("UPDATE nd_keva SET active=0")
     for k in ks:
         phs = _phones_of(k['phone'])
@@ -20091,7 +20096,12 @@ def nd_sync(con):
                          member_id=excluded.member_id, active=1, synced=excluded.synced, error=excluded.error""",
                     (k['id'], k['torem'], k['name'], ';'.join(phs), k['mail'], k['amount'], k['groupe'], k['itra'],
                      k['next'], k['last4'], k['city'], mid, now, k.get('error') or ''))
-    res['הוראות קבע'] = len(ks)
+        # לא פעילה (הסתיימו התשלומים / הוקפאה) — לא נספרת, לא בטלפון ולא ב"חזרו"
+        f = (flags or {}).get(k['id'])
+        itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
+        if (f and not f['enabled']) or itra == '0':
+            con.execute("UPDATE nd_keva SET active=0 WHERE id=?", (k['id'],))
+    res['הוראות קבע'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0]
     res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
     res['חזרו'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchone()[0]
     con.commit()

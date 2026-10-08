@@ -98,6 +98,32 @@ def kevas():
     return out
 
 
+def keva_flags():
+    """פעילה / לא פעילה לכל הוראה (GetKevaJson — הרשימה המלאה עם Enabled ויתרת חיובים).
+    מאיר: "הוראות קבע שחזרו — לא לכלול את אלה שכבר לא פעילות (למשל שנגמרו התשלומים)".
+    מוגבל ל-20 פניות בשעה — נקרא פעם בסנכרון. מחזיר {KevaId: {'enabled': 0/1, 'itra': '...'}}."""
+    out, last = {}, ''
+    for _ in range(10):
+        p = {'MaxId': 2000}
+        if last:
+            p['LastId'] = last
+        ok, res = call('GetKevaJson', p, timeout=90)
+        if not ok:
+            raise RuntimeError('נדרים פלוס (רשימה מלאה): %s' % (LAST.get('error') or res))
+        rows = res if isinstance(res, list) else ((res.get('data') or res.get('Data') or []) if isinstance(res, dict) else [])
+        for r in rows:
+            kid = str(r.get('KevaId') or '').strip().lstrip('-')
+            if kid:
+                out[kid] = {'enabled': 1 if str(r.get('Enabled', '1')).strip() in ('1', 'true', 'True') else 0,
+                            'itra': str(r.get('Itra') or '').strip(), 'error': str(r.get('ErrorText') or '').strip()}
+        if len(rows) < 2000:
+            break
+        last = str(rows[-1].get('KevaId') or '').lstrip('-')
+        if not last:
+            break
+    return out
+
+
 def tormim():
     """רשימת התורמים (ייצוא CSV) — מזהה, שם וטלפונים. העמודות מזוהות לפי הכותרת;
     מספר זהות לא נשמר."""
