@@ -13,14 +13,23 @@ const GREGYEAR=String(new Date().getFullYear());
 function gregLabel(dateStr){if(!dateStr)return '';const m=String(dateStr).match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
   if(!m)return String(dateStr);
   return (m[3]?(+m[3]+' ב'):'')+GMON[+m[2]]+' '+m[1];}
+// מאיר: "זה כותב לי 1094 שקל ועשיתי שזה דולר, אבל הוא התחייב כל חודש 3,300 שקל ולא דולר".
+// מטבע התרומה עצמה, והסכום שלה במטבע של התורם: אם המטבע שונה — שווה הערך שנרשם (eq),
+// ואם לא נרשם — null (לא סופרים דולרים כאילו היו שקלים)
+function donCur(x,dc){const c=String((x&&x.cur)||'').trim();return c==='₪'?'₪':(c==='$'?'$':dc);}
+function donIn(x,d){const dc=curSym(d);if(donCur(x,dc)===dc)return amtNum(x.amount);
+  const e=amtNum(x.eq);return e>0?e:null;}
 function donorTotals(d){
-  let all=0,year=0,pending=0;
-  (d.donations||[]).forEach(x=>{const a=amtNum(x.amount);all+=a;if((x.date||'').slice(0,4)===GREGYEAR)year+=a;});
+  let all=0,year=0,pending=0;const unconv={};
+  (d.donations||[]).forEach(x=>{const a=donIn(x,d);
+    if(a===null){const c=donCur(x,curSym(d));unconv[c]=(unconv[c]||0)+amtNum(x.amount);return;}
+    all+=a;if((x.date||'').slice(0,4)===GREGYEAR)year+=a;});
   // מאיר: "למה כתוב יש לו חוב 8000 דולר, זה שקלים" — פרנס בשקלים אינו מצטרף לסכום בדולרים
   const cur=curSym(d), other={};
   (d.parnes||[]).forEach(x=>{const a=amtNum(x.amount);if(+x.paid)all+=a;else if(x.status!=='suggested'){const c=pCur(x,d);if(c===cur)pending+=a;else other[c]=(other[c]||0)+a;}});   // נגבה→all · התחייבות→pending · הצעה עתידית→לא נספרת
   const pendingOther=Object.keys(other).map(c=>c+Math.round(other[c]).toLocaleString('en-US')).join(' + ');
-  return {all,year,pending,pendingOther};
+  const foreign=Object.keys(unconv).map(c=>c+Math.round(unconv[c]).toLocaleString('en-US')).join(' + ');
+  return {all,year,pending,pendingOther,foreign};
 }
 // חישוב יששכר־זבולון: התחייבות חודשית (סך האברכים) מול מה ששולם בפועל בחודשים שכבר שילם = החוב
 // אברך שמוחזק "ביחד" — הסכום הרשום הוא הסכום המשותף לכל המחזיקים.
@@ -4096,9 +4105,11 @@ function monthLedger(d,thruYM){
       if(m.length===7&&m.slice(0,4)===yr&&(!first||m<first))first=m;});
   if(!first)first=yr+'-01';
   // מה נכנס בכל חודש — בלי החלק שסגר חוב של שנה קודמת
-  const got={};
-  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);
-    if(m.length===7)got[m]=(got[m]||0)+amtNum(x.amount)-amtNum(x.prev_year);});
+  const got={}, unconv=[];
+  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);if(m.length!==7)return;
+    const a=donIn(x,d);
+    if(a===null){if(m>=first)unconv.push(x);return;}        // במטבע אחר, בלי שווה ערך — לא נספר
+    got[m]=(got[m]||0)+a-amtNum(x.prev_year);});
   const dec={};
   declinedGroups(d).forEach(r=>{const m=r.iso.slice(0,7);dec[m]=(dec[m]||0)+r.a;});
   const due1=m=>rows.reduce((s,r)=>{
@@ -4119,7 +4130,7 @@ function monthLedger(d,thruYM){
   // כדי שיהיה ברור למה החוב קטן מסכום החודשים שכתוב עליהם "לא כוסה"
   const miss=out.reduce((s,r)=>s+Math.max(0,r.due-r.got),0);
   const over=out.reduce((s,r)=>s+Math.max(0,r.got-r.due),0);
-  return {rows:out, first, thru, due:Math.round(totDue), got:Math.round(totGot),
+  return {rows:out, first, thru, due:Math.round(totDue), got:Math.round(totGot), unconv,
           miss:Math.round(miss), over:Math.round(over),
           debt:Math.max(0,Math.round(totDue-totGot)),
           ahead:Math.max(0,Math.round(totGot-totDue)),
@@ -4205,12 +4216,15 @@ function debtBarHTML(d){
   // מאיר: "אל תסתכל על כל חודש אלא בכללי מה היה מאז שהתחייב — כמה נכנס
   // וכמה חסר". שלוש שורות וזהו: מאז מתי, הסיכום, וכפתור לחיובים שחזרו.
   const jn=(L&&L.joint&&L.joint.length)?L.joint.join(', '):'';
-  return `<details class="decbox debtbox"><summary>🔴 ${jn?'חייבים יחד':'חייב'} ${f(tot)}</summary>
+  const nUc=(L&&L.unconv&&L.unconv.length)||0;
+  return `<details class="decbox debtbox" ${nUc?'open':''}><summary>🔴 ${jn?'חייבים יחד':'חייב'} ${f(tot)}${nUc?` <small>· 💱 ${nUc===1?'תרומה במטבע אחר — כמה זה ב-'+cur+'?':nUc+' תרומות במטבע אחר — כמה זה ב-'+cur+'?'}</small>`:''}</summary>
     ${jn?`<div class="hintxt" style="margin:2px 0 4px">🤝 חשבון משותף עם ${esc(jn)} — ההתחייבות היא הסכום המלא של האברך, והתרומות של כולכם נספרות יחד.</div>`:''}
     ${L?`<div class="dbtot"><span>מאז ${esc(fmtMonth(L.first))}</span>
       <span>התחייב <b>${f(L.due)}</b></span>
       <span>נתן <b>${f(L.got)}</b></span>
       <span>חסר <b class="dbno">${f(L.debt)}</b></span></div>`:''}
+    ${L&&L.unconv&&L.unconv.length?L.unconv.map(x=>`<div class="dbtot eqask"><span>💱 ${donCur(x,cur)}${Math.round(amtNum(x.amount)).toLocaleString('en-US')} מ-${esc(gregLabel(x.date))} — כמה זה ב-${cur}? (עד שירשם, לא נספר מול ההתחייבות)</span>
+      <span><input class="eqin" data-id="${x.id}" inputmode="decimal" placeholder="${cur}" style="width:90px"> <button class="btn sm eqsave" data-id="${x.id}">💾</button></span></div>`).join(''):''}
     ${openPrev>0.5?`<div class="dbtot"><span>📌 מלפני ${GREGYEAR}${d.debt_open_note?(' · '+esc(d.debt_open_note)):''}</span>
       ${prevPaid>0.5?`<span>שולם <b>${f(prevPaid)}</b></span>`:''}
       <span>חסר <b class="dbno">${f(openPrev)}</b></span></div>`:''}
@@ -4580,7 +4594,7 @@ function cardDetails(d,body){
         <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
-    ${(dt.all||dt.year||dt.pending)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${dt.all}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${dt.year}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
+    ${(dt.all||dt.year||dt.pending||dt.foreign)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${Math.round(dt.all).toLocaleString('en-US')}${dt.foreign?' + '+dt.foreign:''}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${Math.round(dt.year).toLocaleString('en-US')}${dt.foreign?' + '+dt.foreign:''}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
@@ -5975,7 +5989,7 @@ function dnCatOpts(cur){
     +`<option value="__new__">➕ ייעוד חדש…</option>`;
 }
 function dnRow(x,cur){cur=cur||'$';
-  return `<div class="dncrow"><div class="dnci"><b>${cur}${esc(x.amount)}</b>${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${x.receipt_num?`<span class="rcptmini">🧾 קבלה ${esc(x.receipt_num)} נשלחה</span>`:''}${dnNote(x)}</div>`+
+  return `<div class="dncrow"><div class="dnci"><b>${donCur(x,cur)}${esc(x.amount)}</b>${donCur(x,cur)!==cur&&amtNum(x.eq)>0?` <small class="dnmeta">(= ${cur}${esc(x.eq)})</small>`:''}${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${x.receipt_num?`<span class="rcptmini">🧾 קבלה ${esc(x.receipt_num)} נשלחה</span>`:''}${dnNote(x)}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה להדפסה">🧾</button><button class="dnsend" data-id="${x.id}" title="שלח קבלה במייל לתורם (EZcount)">📧</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     (needThanks(x)?`<div class="thxrow"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו':'🙏 להודות'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
@@ -5986,6 +6000,8 @@ function dnRow(x,cur){cur=cur||'$';
       <div class="fbrow"><label class="fld"><span>אמצעי</span><input class="de_method" list="dnmeths" value="${esc(x.method||'')}"></label>
         <label class="fld"><span>סטטוס</span><select class="de_paid"><option value="1" ${+x.paid?'selected':''}>✓ שולם</option><option value="0" ${+x.paid?'':'selected'}>לא שולם</option></select></label></div>
       <label class="fld"><span>📅 תאריך מדויק${(x.date||'').length===7?' — חסר יום, אפשר להשלים':''}</span><input type="date" class="de_date" value="${esc((x.date||'').length===10?x.date:'')}"></label>
+      <div class="fbrow"><label class="fld"><span>💱 מטבע התרומה</span><select class="de_cur">${curOpts(donCur(x,cur))}</select></label>
+        <label class="fld"><span>שווה ערך ב-${cur} (כשהמטבע שונה — לחישוב מול ההתחייבות)</span><input class="de_eq" inputmode="decimal" value="${esc(x.eq||'')}" placeholder="למשל 3300"></label></div>
       <button class="btn sm de_save" data-id="${x.id}">שמור שינויים</button>
     </div>`+
     `<div class="fbedit hidden" data-fb="${x.id}">
@@ -6027,7 +6043,8 @@ function renderDonations(d){
     x.category=cat;
     x.method=box.querySelector('.de_method').value.trim(); x.paid=+box.querySelector('.de_paid').value;
     const nd=box.querySelector('.de_date').value; if(nd)x.date=nd;
-    await api('PUT','/api/donation/'+x.id,{amount:x.amount,category:x.category,method:x.method,paid:x.paid,date:x.date});
+    x.cur=box.querySelector('.de_cur').value; x.eq=x.cur===curSym(d)?'':box.querySelector('.de_eq').value.trim();
+    await api('PUT','/api/donation/'+x.id,{amount:x.amount,category:x.category,method:x.method,paid:x.paid,date:x.date,cur:x.cur,eq:x.eq});
     if(x.category&&!(CAMPAIGNS||[]).includes(x.category)&&!['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'].includes(x.category)){api('POST','/api/campaigns',{name:x.category});CAMPAIGNS.unshift(x.category);}
     renderDonations(d);toast('עודכן ✓');
   });
@@ -7155,13 +7172,14 @@ function plCollected(d,p){
   // הצדדים שולחים ביחד) ולא לפי החלק היחסי — אחרת שני חיובים זהים
   // מהייבוא באותו חודש נספרים כפול, בלי קשר לשותפות
   const cap=via?(amtNum(p.via_total)||per):per;
-  if(cap<=0.5)return share*rows.reduce((a,x)=>a+amtNum(x.amount),0);
+  const inC=x=>{const v=donIn(x,src);return v===null?0:v;};      // במטבע אחר בלי שווה ערך — לא נספר
+  if(cap<=0.5)return share*rows.reduce((a,x)=>a+inC(x),0);
   // תוכנית תשלומים היא חודשית: חודש אחד = תשלום אחד לכל היותר. אצל
   // אברמוביץ יש בכמה חודשים שני חיובים זהים מהייבוא, ובלי התקרה הזו
   // הם נספרו כשני תשלומים והמניין יצא גבוה מהאמת.
   const by={};
   rows.forEach(x=>{const m=String(x.date||'').slice(0,7)||'?';
-    by[m]=(by[m]||0)+amtNum(x.amount);});
+    by[m]=(by[m]||0)+inC(x);});
   return share*Object.keys(by).reduce((a,m)=>a+Math.min(cap, by[m]), 0);
 }
 // מי משלם דרך הכרטיס הזה עבור התחייבות של תורם אחר — כדי שיראה כאן
@@ -14360,5 +14378,14 @@ function renderReceipts(){
   });
 }
 
+// 💱 שווה ערך לתרומה במטבע אחר — מתוך תיבת החוב בכרטיס התורם
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.eqsave');if(!b)return;
+  e.preventDefault();const id=+b.dataset.id, inp=document.querySelector('.eqin[data-id="'+id+'"]'), v=amtNum(inp&&inp.value);
+  if(!v){toast('כתוב כמה זה');if(inp)inp.focus();return;}
+  const d=DB.find(o=>(o.donations||[]).some(x=>x.id==id)); if(!d)return;
+  const x=d.donations.find(y=>y.id==id); b.disabled=true;
+  const r=await api('PUT','/api/donation/'+id,{eq:String(v)});
+  if(!r||!r.ok){b.disabled=false;toast('לא נשמר');return;}
+  x.eq=String(v); toast('💱 נרשם — נספר עכשיו מול ההתחייבות ✓'); openDonor(d);});
 netInit();
 load();

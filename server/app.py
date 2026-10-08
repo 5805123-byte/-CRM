@@ -494,8 +494,10 @@ def ensure_schema():
     # ונזקף כנגד ההתחייבות הקודמת, אחרת השנה נראית משולמת יותר מהאמת.
     # receipt_num / receipt_at — מספר הקבלה שהופקה ב-EZcount ומתי נשלחה,
     # כדי שלא תישלח קבלה כפולה על אותה תרומה
+    # eq — שווה הערך במטבע של התורם, לתרומה במטבע אחר. מאיר: "זה כותב לי 1094 שקל ועשיתי שזה
+    # דולר, אבל הוא התחייב כל חודש 3,300 שקל ולא דולר"
     for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur', 'prev_year',
-                'prev_note', 'receipt_num', 'receipt_at', 'receipt_url'):
+                'prev_note', 'receipt_num', 'receipt_at', 'receipt_url', 'eq'):
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
@@ -17133,7 +17135,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('date','amount','category','method','note','cur','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked','parnes_id'):
+            for k in ('date','amount','category','method','note','cur','eq','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked','parnes_id'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
             if (b.get('category') or '').strip() and 'note' not in b:
