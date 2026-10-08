@@ -301,6 +301,13 @@ def ensure_schema():
         keva_id TEXT, member_id INTEGER, amount REAL, ok INTEGER, message TEXT, transaction_id TEXT,
         confirmation TEXT, last4 TEXT, job INTEGER, via TEXT);
     CREATE INDEX IF NOT EXISTS ix_ndch_call ON nd_charge(call_id);
+    /* חובות והתחייבויות של הקהילה בלבד — מאיר: "שיהיה מערכת חובות והתחייבויות של הקהילה
+       בלבד… שיראו שם הוראות קבע שחזרו… להעלות חובות ידנית ע"י קבצים… וככה המערכת לשליחת
+       התראות תעבוד מסודר". נפרד לגמרי מהחובות של התורמים. kind: debt / pledge / hok. */
+    CREATE TABLE IF NOT EXISTS cm_debt(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, kind TEXT,
+        title TEXT, amount REAL, paid REAL DEFAULT 0, due TEXT, status TEXT DEFAULT 'open', source TEXT, ref TEXT,
+        note TEXT, created TEXT, updated TEXT, closed_at TEXT);
+    CREATE INDEX IF NOT EXISTS ix_cmdebt_m ON cm_debt(member_id, status);
     CREATE TABLE IF NOT EXISTS nd_map(keva_id TEXT PRIMARY KEY, member_id INTEGER, at TEXT);
     CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
@@ -15988,6 +15995,19 @@ class H(BaseHTTPRequestHandler):
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
             ivr_log(P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/cm/debts':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            st = (qs.get('status') or ['open'])[0]
+            con = db()
+            try:
+                w = "" if st == 'all' else " WHERE d.status=?"
+                rows = [dict(r) for r in con.execute(
+                    "SELECT d.*, m.last ml, m.first mf, m.phone mphone FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" + w +
+                    " ORDER BY d.status, COALESCE(NULLIF(d.due,''),d.created) DESC, d.id DESC", (() if st == 'all' else (st,)))]
+                tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2]})
         if self.path.split('?')[0] == '/api/nd/kevas':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             bad = (qs.get('bad') or ['0'])[0] == '1'
@@ -18337,6 +18357,87 @@ class H(BaseHTTPRequestHandler):
             sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        if self.path == '/api/cm/debts':
+            mid = int(b.get('member_id') or 0)
+            a = round(_amt2(b.get('amount')), 2)
+            if not mid or a <= 0:
+                return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה או סכום'})
+            con = db()
+            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated) VALUES(?,?,?,?,0,?,'open',?,?,?,?)",
+                        (mid, b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt', str(b.get('title') or '')[:200], a,
+                         str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/cm/debts/(\d+)$', self.path)
+        if m:
+            did = int(m.group(1)); act = b.get('action')
+            con = db()
+            d = con.execute("SELECT * FROM cm_debt WHERE id=?", (did,)).fetchone()
+            if not d:
+                con.close(); return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+            if act == 'paid':
+                con.execute("UPDATE cm_debt SET paid=amount, status='paid', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
+            elif act == 'partial':
+                p = round(_amt2(b.get('amount')), 2)
+                np_ = round((d['paid'] or 0) + p, 2)
+                done = np_ >= (d['amount'] or 0) - 0.009
+                con.execute("UPDATE cm_debt SET paid=?, status=?, closed_at=?, updated=? WHERE id=?",
+                            (min(np_, d['amount'] or 0), 'paid' if done else 'open', now_iso() if done else None, now_iso(), did))
+            elif act == 'cancel':
+                con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
+            elif act == 'reopen':
+                con.execute("UPDATE cm_debt SET status='open', closed_at=NULL, updated=? WHERE id=?", (now_iso(), did))
+            elif act == 'edit':
+                con.execute("UPDATE cm_debt SET title=?, amount=?, due=?, kind=?, note=?, updated=? WHERE id=?",
+                            (str(b.get('title', d['title']) or '')[:200], round(_amt2(b.get('amount', d['amount'])), 2),
+                             str(b.get('due', d['due']) or '')[:10], b.get('kind', d['kind']), str(b.get('note', d['note']) or '')[:300], now_iso(), did))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/cm/debts/import':
+            # העלאת חובות מקובץ (אקסל / CSV) או מהדבקה — קודם תצוגה עם זיהוי, ואז שמירה
+            import yemot as _ym
+            con = db()
+            try:
+                if b.get('commit'):
+                    n = 0
+                    for r in b.get('rows') or []:
+                        mid = int(r.get('member_id') or 0); a = round(_amt2(r.get('amount')), 2)
+                        if not mid or a <= 0:
+                            continue
+                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated) VALUES(?,?,?,?,0,?,'open',?,?,?,?)",
+                                    (mid, r.get('kind') if r.get('kind') in ('debt', 'pledge') else 'debt', str(r.get('title') or '')[:200], a,
+                                     str(r.get('due') or '')[:10], 'קובץ', str(b.get('filename') or '')[:80], now_iso(), now_iso()))
+                        n += 1
+                    con.commit()
+                    return self._send(200, {'ok': True, 'added': n})
+                raw = []
+                if b.get('file_b64'):
+                    data = base64.b64decode(b['file_b64'].split(',')[-1])
+                    fn = str(b.get('filename') or '').lower()
+                    if fn.endswith(('.xlsx', '.xlsm')):
+                        import openpyxl
+                        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+                        raw = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+                    else:
+                        txt = data.decode('utf-8-sig', 'replace')
+                        if txt.count('\ufffd') > 5:
+                            txt = data.decode('cp1255', 'replace')
+                        raw = list(csv.reader(io.StringIO(txt)))
+                elif b.get('text'):
+                    raw = [re.split(r'\t|,|;', ln) for ln in str(b['text']).splitlines()]
+                rows = _cm_rows_from_table(raw)
+                midx, nidx = nd_member_index(con), nd_name_index(con)
+                for r in rows:
+                    ids = midx.get(_ym.norm_phone(r['phone'])) if r['phone'] else None
+                    r['member_id'] = (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, r['name'])
+                    if r['member_id']:
+                        mm = con.execute("SELECT last,first FROM members WHERE id=?", (r['member_id'],)).fetchone()
+                        r['member_name'] = ((mm['last'] or '') + ' ' + (mm['first'] or '')).strip() if mm else ''
+                return self._send(200, {'ok': True, 'rows': rows})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'הקובץ לא נקרא: %s' % str(e)[:150]})
+            finally:
+                con.close()
         m = re.match(r'/api/nd/keva/(\d+)/member$', self.path)
         if m:
             mid = int(b.get('member_id') or 0) or None
@@ -20070,6 +20171,88 @@ def nd_member_index(con):
     return idx
 
 
+def cm_debt_pay(con, member_id, amount, note=''):
+    """תשלום של חבר קהילה סוגר את החובות הפתוחים שלו — הישן קודם. מחזיר כמה כוסה."""
+    left = round(float(amount or 0), 2)
+    used = 0.0
+    for d in con.execute("SELECT id,amount,paid FROM cm_debt WHERE member_id=? AND status='open' ORDER BY COALESCE(NULLIF(due,''),created),id",
+                         (member_id,)).fetchall():
+        if left <= 0:
+            break
+        open_amt = round((d['amount'] or 0) - (d['paid'] or 0), 2)
+        if open_amt <= 0:
+            continue
+        take = min(open_amt, left)
+        paid = round((d['paid'] or 0) + take, 2)
+        done = paid >= round(d['amount'] or 0, 2) - 0.009
+        con.execute("UPDATE cm_debt SET paid=?, status=?, updated=?, closed_at=?, "
+                    "note=CASE WHEN COALESCE(note,'')='' THEN ? ELSE note||' · '||? END WHERE id=?",
+                    (paid, 'paid' if done else 'open', now_iso(), now_iso() if done else None, note, note, d['id']))
+        left = round(left - take, 2)
+        used += take
+    return used
+
+
+def cm_debts_from_keva(con):
+    """הוראת קבע של חבר קהילה שחזרה ← חוב פתוח ("הו\"ק חזרה"). עברה / עודכנה ← החוב נסגר."""
+    opened = closed = 0
+    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active FROM nd_keva").fetchall():
+        d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (k['id'],)).fetchone()
+        bad = k['active'] and (k['error'] or '').strip() and k['member_id']
+        # חוב שכבר נסגר (שולם בטלפון / ידנית) על אותה הוראה ב-25 הימים האחרונים — לא נפתח שוב
+        recent = con.execute("SELECT 1 FROM cm_debt WHERE kind='hok' AND ref=? AND created>=?",
+                             (k['id'], (il_now() - datetime.timedelta(days=25)).strftime('%Y-%m-%d'))).fetchone()
+        if bad and not d and not recent:
+            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,ref,note,created,updated) "
+                        "VALUES(?,?,?,?,0,?,'open','נדרים פלוס',?,?,?,?)",
+                        (k['member_id'], 'hok', 'הוראת קבע שחזרה' + ((' · ' + k['groupe']) if k['groupe'] else ''),
+                         _ivr_amt(k['amount']) or 0, today_iso(), k['id'], '%s · כרטיס ****%s' % (k['error'], k['last4'] or ''),
+                         now_iso(), now_iso()))
+            opened += 1
+        elif d and not bad:
+            con.execute("UPDATE cm_debt SET status='paid', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · הוראת הקבע עברה / עודכנה') WHERE id=?",
+                        (now_iso(), now_iso(), d['id']))
+            closed += 1
+        elif d and bad:
+            con.execute("UPDATE cm_debt SET member_id=?, note=? WHERE id=?",
+                        (k['member_id'], '%s · כרטיס ****%s' % (k['error'], k['last4'] or ''), d['id']))
+    return opened, closed
+
+
+def _cm_rows_from_table(rows):
+    """שורות גולמיות (מאקסל / CSV / הדבקה) ← [{name, phone, amount, title, due, kind}].
+    עמודות מזוהות לפי הכותרת; בלי כותרת — לפי התוכן (טלפון, סכום, השאר שם)."""
+    import yemot as _ym
+    rows = [[str(c if c is not None else '').strip() for c in r] for r in rows if any(str(c or '').strip() for c in r)]
+    if not rows:
+        return []
+    head = rows[0]
+    H = lambda *ks: next((i for i, h in enumerate(head) if any(k in h for k in ks)), -1)
+    ci = {'last': H('משפחה'), 'first': H('פרטי'), 'name': H('שם'), 'phone': H('טלפון', 'נייד', 'פלאפון', 'Phone'),
+          'amount': H('סכום', 'חוב', 'יתרה', 'Amount', 'סה"כ'), 'title': H('עבור', 'ייעוד', 'פירוט', 'תיאור', 'הערה'),
+          'due': H('תאריך', 'מועד'), 'kind': H('סוג')}
+    has_head = sum(1 for v in ci.values() if v >= 0) >= 2
+    out = []
+    for r in (rows[1:] if has_head else rows):
+        g = lambda k: (r[ci[k]] if ci[k] >= 0 and ci[k] < len(r) else '')
+        if has_head:
+            nm = ' '.join(x for x in (g('last'), g('first')) if x) or g('name')
+            ph, am, ti, du, ki = g('phone'), g('amount'), g('title'), g('due'), g('kind')
+        else:
+            ph = next((c for c in r if _ym.norm_phone(c)), '')
+            am = next((c for c in r if re.fullmatch(r'[₪$]?\s*\d[\d,]*(\.\d+)?\s*[₪$]?', c) and not _ym.norm_phone(c)), '')
+            rest = [c for c in r if c not in (ph, am) and c]
+            nm = rest[0] if rest else ''
+            ti = ' '.join(rest[1:]) if len(rest) > 1 else ''
+            du = ki = ''
+        a = _amt2(am)
+        if not (nm or ph) or a <= 0:
+            continue
+        kind = 'pledge' if re.search(r'התחייב|נדר', ki + ti) else 'debt'
+        out.append({'name': nm, 'phone': _ym.norm_phone(ph) or ph, 'amount': a, 'title': ti, 'due': du, 'kind': kind})
+    return out
+
+
 def _nd_toks(s):
     t = re.sub(r'[^\u05d0-\u05eaa-z\s]', ' ', str(s or '').lower().translate(_KV_STRIP))
     return [w for w in t.split() if len(w) > 1 and w not in ('הרב', 'רב', 'ר', 'משפחת', 'מר', 'גב', 'הר')]
@@ -20149,6 +20332,9 @@ def nd_sync(con):
     res['הוראות קבע'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0]
     res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
     res['חזרו'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchone()[0]
+    o, c = cm_debts_from_keva(con)
+    if o or c:
+        res['חובות קהילה'] = 'נפתחו %d · נסגרו %d' % (o, c)
     con.commit()
     return res
 
@@ -20352,6 +20538,8 @@ def ivr_answer(P):
                         (k['member_id'] or mid, today_iso(), 'תשלום',
                          ('💳 שילם ₪%g בטלפון מהוראת הקבע (כרטיס ****%s) · אישור %s' % (amt, l4, conf)) if ok
                          else ('🔴 ניסיון תשלום ₪%g בטלפון נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
+            if ok:
+                cm_debt_pay(con, k['member_id'] or mid, amt, 'שולם בטלפון %s (אישור %s)' % (today_iso(), conf))
         con.commit()
         if ok:
             return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
