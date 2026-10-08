@@ -4710,7 +4710,7 @@ function cardDetails(d,body){
   // הסימון הקטן: לא נשלחה → שליחה במייל; נשלחה → צפייה
   body.querySelectorAll('.rcmini[data-rc]').forEach(b=>b.onclick=async()=>{
     const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
-    if(x.rc_sent){window.open('/api/receipts/'+x.rc_id+'.pdf','_blank');return;}
+    if(x.rc_sent){window.open('/api/receipts/'+x.rc_id+'.pdf?v='+Date.now(),'_blank');return;}
     const r=await rcSendFlow({id:x.rc_id,num:x.rc_num,donor_id:d.id,email:d.email,name:(d.last||'')+' '+(d.first||'')});
     if(r){x.rc_sent=r.sent_at||new Date().toISOString().slice(0,10);cardDetails(d,body);}
   });
@@ -14128,7 +14128,7 @@ function rcMaybeReload(){
 // (מאיר קיבל דף "not found" כשהקובץ לא התקבל מאיזיקאונט)
 async function rcOpenDoc(doc){
   if(!doc)return;
-  if(doc.has_pdf){window.open('/api/receipts/'+doc.id+'.pdf','_blank');return;}
+  if(doc.has_pdf){window.open('/api/receipts/'+doc.id+'.pdf?v='+Date.now(),'_blank');return;}
   if(doc.url){window.open(doc.url,'_blank');return;}
   await uiAlert('קבלה '+doc.num+' הופקה באיזיקאונט ונרשמה כאן, אבל הקובץ שלה לא התקבל מאיזיקאונט.\nלראות אותה: באתר איזיקאונט ← מסמכים. כדי לשלוח מהמערכת: הורד משם את ה-PDF וצרף אותו בחלון הקבלות ("📎 צרף את ה-PDF מאיזיקאונט").');
 }
@@ -14302,7 +14302,7 @@ function renderReceipts(){
       <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>
       <span class="rcact">${(r.src==='ez'&&!r.has_pdf)
         ? `${r.url?`<a class="btn sm ghost" href="${esc(r.url)}" target="_blank" title="לפתוח את הקבלה אצל איזיקאונט">👁 באיזיקאונט</a>`:''}<button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
-        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>${r.src==='ez'?'':`<button class="btn sm ghost rcredo" data-id="${r.id}" title="לבנות את הקבלה מחדש לפי מה שרשום עכשיו בתרומה — תאריך, סכום, עבור מה (אותו מספר קבלה)">🔄 הפק מחדש</button>`}`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
+        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?v=${Date.now()}" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1&v=${Date.now()}" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>${r.src==='ez'?'':`<button class="btn sm ghost rcredo" data-id="${r.id}" title="לבנות את הקבלה מחדש לפי מה שרשום עכשיו בתרומה — תאריך, סכום, עבור מה (אותו מספר קבלה)">🔄 הפק מחדש</button>`}`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
     </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
   view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;
   // ---- חיווט ----

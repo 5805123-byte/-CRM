@@ -16269,6 +16269,11 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 data, fname = receipt_pdf(con, int(m.group(1)))
+                # תאריך התרומה בשם הקובץ — בטאבלט הקובץ יורד לתיקיית ההורדות, ובשם זהה נפתח שם
+                # העותק הישן במקום החדש (מאיר: "עשיתי הפק מחדש וזה עדיין רושם את התאריך של היום")
+                _dr = con.execute("SELECT date FROM receipt_docs WHERE id=?", (int(m.group(1)),)).fetchone()
+                if fname and _dr and re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(_dr['date'] or '')):
+                    fname = re.sub(r'\.pdf$', '', fname) + ' ' + _dr['date'] + '.pdf'
             except Exception as e:
                 con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
             con.close()
