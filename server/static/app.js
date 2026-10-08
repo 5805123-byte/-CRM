@@ -6292,7 +6292,7 @@ const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל
    מאיר: "גם בכרטיס תורם שאפשר לחייב אותו במיידי וגם בדף ייעודי… שיהיה ממשק נוח בעברית",
    "יותר להפשיט… נוח וזורם וקליל". בנק ווסט מריץ את הוראות הקבע; כאן רואים, כותבים
    "עבור מה", מחייבים עכשיו כרטיס שמור, משהים ומשנים סכום / תאריך. */
-let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null;
+let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null, bqEditFor=null, bqHist={};
 const BQ_FOR=()=>[...new Set(RCATS.filter(Boolean).concat(['הכנסת כלה','מזדמן']))];
 const bqMoney=a=>'$'+(+a||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const bqDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
@@ -6339,9 +6339,9 @@ function bqSchedRow(r){const op=bqOpen==='s'+r.id;
       <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך לתורם</small>'}${bqForTxt(r)?`<span class="bqfor">${esc(bqForTxt(r))}</span>`:''}</span>
       <span class="bqamt"><b>${bqMoney(r.amount)}</b><small>${r.active?('הבא '+esc(bqDate(r.next_run))):'מושהה'}${r.num_left?(' · נשארו '+r.num_left):''}</small></span></button>
     ${op?`<div class="bqrb">
-      ${r.known_for&&!r.for_cat?`<div class="hintxt">🎯 בכרטיס התורם רשום: <b>${esc(r.known_for)}</b> — החיובים נרשמים על זה. לשנות רק להוראה הזו — בחר למטה.</div>`:''}
-      <div class="bq2"><label class="fld"><span>🎯 עבור מה${r.known_for&&!r.for_cat?' (אחר)':''}</span><select id="bqs_cat">${bqForOpts(r.for_cat||'')}</select></label>
-        <label class="fld"><span>פירוט (מופיע בכרטיס)</span><input id="bqs_note" value="${esc(r.for_note||'')}" placeholder="למשל: לע״נ אביו"></label></div>
+      ${bqEditFor===r.id?`<div class="bq2"><label class="fld"><span>🎯 עבור מה${r.known_for&&!r.for_cat?' (בכרטיס: '+esc(r.known_for)+')':''}</span><select id="bqs_cat">${bqForOpts(r.for_cat||'')}</select></label>
+        <label class="fld"><span>פירוט (מופיע בכרטיס)</span><input id="bqs_note" value="${esc(r.for_note||'')}" placeholder="למשל: לע״נ אביו"></label></div>`
+      :`<div class="bqforline"><span>${bqForTxt(r)?'':'🎯 <i>עבור מה — לא נקבע</i>'}</span><button class="btn sm ghost" data-bqa="editfor" data-id="${r.id}" title="לתקן או להוסיף עבור מה">✎ עבור מה</button></div>`}
       <div class="bq2"><label class="fld"><span>💲 סכום</span><input id="bqs_amt" inputmode="decimal" value="${esc(r.amount)}"></label>
         <label class="fld"><span>📅 החיוב הבא</span><input id="bqs_next" type="date" value="${esc(r.next_run||'')}"></label></div>
       <div class="hintxt">${esc(r.card_type||'')} •••• ${esc(r.last4||'')}${r.exp_m?(' · תוקף '+String(r.exp_m).padStart(2,'0')+'/'+String(r.exp_y).slice(-2)):''} · ${esc(r.title||'')}</div>
@@ -6349,8 +6349,23 @@ function bqSchedRow(r){const op=bqOpen==='s'+r.id;
       <div class="bqacts"><button class="btn sm" data-bqa="save" data-id="${r.id}">💾 שמור</button>
         <button class="btn sm bqgo" data-bqa="now" data-id="${r.id}">⚡ חייב עכשיו</button>
         <button class="btn sm ghost" data-bqa="${r.active?'pause':'resume'}" data-id="${r.id}">${r.active?'⏸ השהה':'▶ חדש'}</button>
-        ${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס</button>`:''}</div>
+        ${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס</button>`:''}
+        <button class="btn sm ghost" data-bqa="hist" data-id="${r.id}">📜 ${bqHist[r.id]?'סגור היסטוריה':'היסטוריה בבנק ווסט'}</button></div>
+      ${bqHist[r.id]?bqHistHTML(r,bqHist[r.id]):''}
     </div>`:''}</div>`;}
+// ההיסטוריה של התורם בבנק ווסט — מאיר: "מה נתן וכמה ומתי כמו בבנק ווסט, ומשלוח קבלה"
+function bqHistHTML(r,h){
+  if(h.loading)return '<div class="hintxt">טוען מבנק ווסט…</div>';
+  const rows=h.rows||[];
+  const yrs=Object.entries(h.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${bqMoney(v)}</b></span>`).join('');
+  return `<div class="bqhist"><div class="bqhsum"><b>${h.n_ok||0} חיובים שעברו · ${bqMoney(h.sum_ok)}</b>${h.since?` · מאז ${esc(bqDate(h.since))}`:''}<div class="bqhyrs">${yrs}</div>
+      <small class="hintxt">מה שבנק ווסט שמרו אצלם מ-${esc(bqDate(h.hist_from))}. חיוב שעבר ולא "בכרטיס" — אפשר לרשום ולהפיק קבלה.</small></div>
+    ${rows.map(t=>{const s=BQ_ST[t.status]||[t.status||'?','off'],ok=s[1]==='ok';
+      return `<div class="bqpay"><span><b>${esc(bqDate(t.created))}</b> · ${bqMoney(t.amount)} · <span class="bqst ${s[1]}">${esc(s[0])}</span>${t.card?` · ${esc(t.card)}`:''}${t.type&&t.type!=='charge'?` · ${esc(t.type)}`:''}${t.error?` · <span class="bqwhy">${esc(t.error)}</span>`:''}</span>
+        <span class="bqacts">${ok?(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-bqrc="send" data-rc="${t.rc_id}" data-sid="${r.id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
+          :(t.don_id?`<button class="btn sm ghost" data-bqrc="issue" data-don="${t.don_id}" data-sid="${r.id}" data-amt="${esc(t.amount)}">🧾 קבלה</button>`
+          :`<button class="btn sm ghost" data-bqrc="post" data-tx="${t.id}" data-sid="${r.id}" title="לרשום בכרטיס התורם ואז קבלה">➕ רשום בכרטיס</button>`)):''}</span></div>`;}).join('')||'<div class="hintxt">אין עסקאות שמורות לתורם הזה.</div>'}</div>`;}
+async function bqHistLoad(sid){bqHist[sid]={loading:true};renderBQ(false);const h=await api('GET','/api/bq/sched/'+sid+'/history');bqHist[sid]=(h&&h.ok)?h:{rows:[],error:(h&&h.error)||''};renderBQ(false);}
 function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?','off'], bad=BQ_BAD.includes(r.status);
   const ok=s[1]==='ok', who=r.donor_name||r.name||'?';
   return `<div class="bqrow ${op?'op':''}"><button class="bqrh" data-op="t${r.id}">
@@ -6468,10 +6483,26 @@ function bqWire(box){const g=id=>document.getElementById(id);
         else{go.disabled=false;await uiAlert('הוראת הקבע לא נוצרה:\n'+((r&&r.error)||'שגיאה'));}
       }};
   }
+  // קבלות מתוך ההיסטוריה — אותו תהליך כמו בכרטיס התורם: מאשרים, שואלים אם לשלוח במייל
+  box.querySelectorAll('[data-bqrc]').forEach(b=>b.onclick=async()=>{const k=b.dataset.bqrc,sid=+b.dataset.sid,h=bqHist[sid]||{};
+    const askMail=async()=>{let em=(h.email||'').trim(),send=false;
+      if(em)send=await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן, לשלוח','לא, רק להפיק');
+      else{const v=await uiPrompt('אין מייל בכרטיס. לשלוח את הקבלה במייל? הקלד כתובת (ריק = רק להפיק)','');em=(v||'').trim();if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return null;}send=!!em;}
+      return {em,send};};
+    if(k==='post'){const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/post',{});if(r&&r.ok){toast('נרשם בכרטיס ✓');bqHistLoad(sid);}else await uiAlert('לא נרשם:\n'+((r&&r.error)||'שגיאה'));return;}
+    if(k==='issue'){if(!await uiConfirm('להפיק קבלה לארה"ב על '+bqMoney(b.dataset.amt)+'?'))return;const m=await askMail();if(!m)return;
+      b.disabled=true;toast('מפיק קבלה…');const r=await api('POST','/api/receipts/issue',{donation_id:+b.dataset.don,kind:'us',email:m.em,send:m.send?1:0});
+      if(!r||!r.ok){b.disabled=false;await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה'));return;}
+      toast(m.send?(r.send_error?('הקבלה הופקה, אך לא נשלחה: '+r.send_error):'הקבלה הופקה ונשלחה ✓'):'הקבלה הופקה ✓');RCPTS=null;bqHistLoad(sid);return;}
+    if(k==='send'){let em=(h.email||'').trim();if(!em){em=((await uiPrompt('לאיזו כתובת מייל לשלוח?',''))||'').trim();if(!em)return;}
+      if(!await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן','ביטול'))return;
+      const r=await api('POST','/api/receipts/'+b.dataset.rc+'/send',{email:em});if(r&&r.ok)toast('נשלח ✓');else await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));bqHistLoad(sid);return;}});
   box.querySelectorAll('[data-bqa]').forEach(b=>b.onclick=async()=>{const a=b.dataset.bqa,id=+b.dataset.id;
     if(a==='card'){openDonor(DB.find(x=>x.id==b.dataset.did));return;}
     const r0=bqRows.find(x=>x.id==id)||{};
-    if(a==='save'){const body={for_cat:g('bqs_cat').value,for_note:g('bqs_note').value.trim()};
+    if(a==='editfor'){bqEditFor=id;renderBQ(false);return;}
+    if(a==='hist'){if(bqHist[id]){delete bqHist[id];renderBQ(false);}else bqHistLoad(id);return;}
+    if(a==='save'){const body={};if(g('bqs_cat')){body.for_cat=g('bqs_cat').value;body.for_note=g('bqs_note').value.trim();}
       const am=amtNum(g('bqs_amt').value);if(am&&am!==+r0.amount)body.amount=am;
       const nx=g('bqs_next').value;if(nx&&nx!==r0.next_run)body.next_run_date=nx;
       const dn=g('bqs_donor');if(dn&&dn.value.trim()){const did=bqPickDonor(dn.value);if(!did){toast('בחר תורם מהרשימה');return;}body.donor_id=did;}

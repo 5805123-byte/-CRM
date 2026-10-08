@@ -16383,6 +16383,43 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        m = re.match(r'/api/bq/sched/(\d+)/history$', self.path.split('?')[0])
+        if m:
+            # מאיר: "בלשונית של חיוב קבוע של תורם — כפתור לראות את כל ההיסטוריה הקיימת בבנק ווסט
+            # לגביו. מה נתן וכמה ומתי, ומשלוח קבלה". כל העסקאות של הלקוח הזה בבנק ווסט (גם מהוראות
+            # אחרות וחיובים חד-פעמיים), עם התרומה בכרטיס והקבלה אם הופקה.
+            con = db()
+            try:
+                sc = con.execute("SELECT customer_id,donor_id FROM bq_sched WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not sc:
+                    return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
+                w, args = ["t.schedule_id=?"], [int(m.group(1))]
+                if sc['customer_id']:
+                    w.append("t.customer_id=?"); args.append(sc['customer_id'])
+                if sc['donor_id']:
+                    w.append("t.donor_id=?"); args.append(sc['donor_id'])
+                rows = [dict(r) for r in con.execute(
+                    "SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.card,t.donor_id,t.email,"
+                    "(SELECT COUNT(*) FROM recon r WHERE r.tid='BQ'||t.ref AND r.processed=1) AS in_card,"
+                    "(SELECT dn.id FROM donations dn WHERE dn.tid='BQ'||t.ref ORDER BY dn.id LIMIT 1) AS don_id,"
+                    "(SELECT rd.id FROM receipt_docs rd WHERE rd.donation_id=(SELECT dn.id FROM donations dn WHERE dn.tid='BQ'||t.ref ORDER BY dn.id LIMIT 1) ORDER BY rd.id DESC LIMIT 1) AS rc_id,"
+                    "(SELECT rd.num FROM receipt_docs rd WHERE rd.donation_id=(SELECT dn.id FROM donations dn WHERE dn.tid='BQ'||t.ref ORDER BY dn.id LIMIT 1) ORDER BY rd.id DESC LIMIT 1) AS rc_num,"
+                    "(SELECT rd.sent_at FROM receipt_docs rd WHERE rd.donation_id=(SELECT dn.id FROM donations dn WHERE dn.tid='BQ'||t.ref ORDER BY dn.id LIMIT 1) ORDER BY rd.id DESC LIMIT 1) AS rc_sent "
+                    "FROM bq_tx t WHERE " + " OR ".join(w) + " ORDER BY t.created DESC LIMIT 600", args)]
+                import banquest as _bq
+                okr = [r for r in rows if r['status'] in _bq.OK_ST and (r['type'] or 'charge') in ('', 'charge')]
+                years = {}
+                for r in okr:
+                    years[(r['created'] or '')[:4]] = round(years.get((r['created'] or '')[:4], 0) + (r['amount'] or 0), 2)
+                em = ''
+                if sc['donor_id']:
+                    d = con.execute("SELECT email FROM donors WHERE id=?", (sc['donor_id'],)).fetchone()
+                    em = (emails_of(d['email'] if d else '') or [''])[0]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'n_ok': len(okr), 'sum_ok': round(sum(r['amount'] or 0 for r in okr), 2),
+                                    'since': min((r['created'] or '' for r in okr), default=''), 'years': years, 'email': em,
+                                    'hist_from': BQ_HIST_FROM})
         m = re.match(r'/api/bq/donor/(\d+)$', self.path.split('?')[0])
         if m:
             did = int(m.group(1))
