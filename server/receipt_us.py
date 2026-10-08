@@ -173,7 +173,8 @@ def receipt_file(con, don_id, fmt, STATIC, RECEIPT_START, today_iso):
     num = str(info['num'])
     x = spaced('Receipt No. ', fm, x0, y + int(.75 * u), SOFT, .06 * u)
     spaced(num, fno, x, y, GOLD, .1 * u)
-    dstr = nice_date(info['issued'])
+    # מאיר: "רשמתי תאריך 9.9 וזה רושם לי להיום" — תאריך התרומה (מתי הכסף הועבר), כמו בדף הקבלה
+    dstr = nice_date(info.get('date') or info['issued'])
     fmb = font(1.85 * u, True)
     tw = spaced_w('Date: ', fm, .06 * u) + spaced_w(dstr, fmb, .06 * u)
     x = spaced('Date: ', fm, x1 - int(tw), y + int(.75 * u), SOFT, .06 * u)

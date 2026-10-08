@@ -22633,8 +22633,36 @@ def _authnet_loop():
         time.sleep(every)
 
 
+def us_receipt_redate():
+    """פעם אחת: קבלות אמריקאיות שכבר הופקו נשאו את תאריך ההפקה במקום תאריך התרומה (מאיר:
+    "רשמתי תאריך 9.9 וזה רושם לי להיום"). מפיקים מחדש את הקובץ — אותו מספר קבלה, תאריך התרומה."""
+    con = db()
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='us_receipt_date_v1'").fetchone():
+            return
+        n = 0
+        for r in con.execute("SELECT id,donation_id FROM receipt_docs WHERE kind='us' AND COALESCE(src,'own')='own' "
+                             "AND donation_id IS NOT NULL AND COALESCE(date,'')<>'' AND date<>SUBSTR(COALESCE(created,''),1,10)").fetchall():
+            try:
+                _i, pdf, _f = receipt_build(con, 'us', r['donation_id'])
+                con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (pdf, r['id']))
+                n += 1
+            except Exception as e:
+                print('  receipt redate', r['id'], e)
+        con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('us_receipt_date_v1')")
+        con.commit()
+        if n:
+            print('  קבלות אמריקאיות עם תאריך התרומה: הופקו מחדש %d' % n)
+    finally:
+        con.close()
+
+
 def serve():
     ensure_schema()
+    try:
+        us_receipt_redate()
+    except Exception as e:
+        print('  receipt redate error:', e)
     load_mail_cfg()
     import threading
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
