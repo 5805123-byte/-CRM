@@ -6295,7 +6295,7 @@ const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל
    מאיר: "גם בכרטיס תורם שאפשר לחייב אותו במיידי וגם בדף ייעודי… שיהיה ממשק נוח בעברית",
    "יותר להפשיט… נוח וזורם וקליל". בנק ווסט מריץ את הוראות הקבע; כאן רואים, כותבים
    "עבור מה", מחייבים עכשיו כרטיס שמור, משהים ומשנים סכום / תאריך. */
-let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null, bqEditFor=null, bqHist={}, bqSwap=null;
+let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null, bqEditFor=null, bqHist={}, bqSwap=null, bqDay=null;
 const BQ_FOR=()=>[...new Set(RCATS.filter(Boolean).concat(['הכנסת כלה','מזדמן']))];
 const bqMoney=a=>'$'+(+a||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const bqDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
@@ -6327,6 +6327,10 @@ async function renderBQ(reload=true){
     <div class="bqbar"><button class="btn sm" id="bq_once">⚡ חיוב חד-פעמי</button><button class="btn sm ghost" id="bq_rec">🔁 הוראת קבע חדשה</button>
       <button class="btn sm ghost" id="bq_sync" title="${esc(sx.error?('שגיאה: '+sx.error):(sx.last_ok?('סנכרון אחרון '+sx.last_ok):''))}">🔄 ${sx.running?'מסנכרן…':'סנכרון'}</button>
       ${sx.error?`<span class="bqerr">⚠️ ${esc(sx.error)}</span>`:''}</div>
+    <button class="bqday ${bqDay?'on':''}" id="bq_day" title="כל החיובים של היום — מי תרם וכמה. אפשר לבחור יום אחר או טווח תאריכים">
+      <span>📅 היום: <b>${bqMoney(st.today_sum)}</b> · ${st.today_n||0} חיובים${st.today_bad?` · <span class="bqst bad">${st.today_bad} נדחו</span>`:''}</span>
+      <small>אתמול: ${bqMoney(st.yest_sum)} · ${st.yest_n||0} ${bqDay?'▲':'▼'}</small></button>
+    ${bqDay?bqDayHTML():''}
     ${bqNew?bqFormHTML():''}
     <div class="bqtabs"><button class="bqt ${bqTab==='rec'?'on':''}" data-bqt="rec">קבועים <small>${st.n_active||0}</small></button>
       <button class="bqt ${bqTab==='bad'?'on':''}" data-bqt="bad">חזרו</button>
@@ -6336,6 +6340,31 @@ async function renderBQ(reload=true){
     ${bqTab==='hist'?`<div class="hintxt">היסטוריה לבדיקה בלבד. רק עסקאות מ-${esc(bqDate(st.post_from))} נרשמות לבד בכרטיסי התורמים, כדי שלא יהיו כפילויות. ✓ = רשום בכרטיס.</div>`:''}`;
   bqWire(box);
 }
+// מאיר: "לראות למעלה את החיובים שנעשו באותו יום מרוכז… וכשאכנס אראה את הרשימה המדויקת של סכום
+// ומי תרם… אתמול או יום אחר, מתאריך עד תאריך — כמו בבנק ווסט"
+const bqDayName=d=>{try{return new Date(d+'T12:00:00').toLocaleDateString('he-IL',{weekday:'long'});}catch(e){return '';}};
+function bqDayHTML(){const D=bqDay, R=(D.data&&D.data.rows)||[], days=(D.data&&D.data.days)||{}, T=(D.data&&D.data.total)||{};
+  const td=(bqStat&&bqStat.today)||todayStr(), sh=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toISOString().slice(0,10);};
+  const Q=[['היום',td,td],['אתמול',sh(td,-1),sh(td,-1)],['7 ימים',sh(td,-6),td],['החודש',td.slice(0,8)+'01',td],['חודש קודם',sh(td.slice(0,8)+'01',-1).slice(0,8)+'01',sh(td.slice(0,8)+'01',-1)]];
+  const byDay={};R.forEach(r=>(byDay[r.at.slice(0,10)]=byDay[r.at.slice(0,10)]||[]).push(r));
+  const one=D.from===D.to;
+  const line=r=>{const s=BQ_ST[r.status]||[r.status||'?','off'],ref=['refund','credit'].includes(r.type);
+    return `<div class="bqdrow ${s[1]}"><span class="bqdt">${esc(r.at.slice(11,16))}</span>
+      <span class="bqdw"><b>${esc(r.donor_name||r.name||'?')}</b><small>${r.schedule_id?'🔁 הו״ק':'⚡ חד-פעמי'}${r.card?' · '+esc(r.card):''}${r.description?' · '+esc(r.description):''}${s[1]==='bad'&&r.error?' · <span class="bqwhy">'+esc(r.error)+'</span>':''}</small></span>
+      <span class="bqda"><b>${ref?'−':''}${bqMoney(r.amount)}</b><small class="bqst ${s[1]}">${esc(ref?'החזר':s[0])}</small></span></div>`;};
+  return `<div class="bqdaybox">
+    <div class="bqdq">${Q.map(([l,a,b])=>`<button class="chip ${D.from===a&&D.to===b?'on':''}" data-bqdq="${a}|${b}">${l}</button>`).join('')}</div>
+    <div class="bqdr"><label class="fld"><span>מתאריך</span><input type="date" id="bqd_from" value="${esc(D.from)}"></label>
+      <label class="fld"><span>עד תאריך</span><input type="date" id="bqd_to" value="${esc(D.to)}"></label></div>
+    ${D.loading?'<div class="hintxt">טוען…</div>':`
+    <div class="bqdtot"><span>${one?esc(bqDayName(D.from))+' '+esc(bqDate(D.from)):esc(bqDate(D.from))+' – '+esc(bqDate(D.to))}</span>
+      <span>נגבו <b>${bqMoney(T.sum)}</b> · ${T.n||0} חיובים${T.bad?` · <span class="bqst bad">${T.bad} נדחו (${bqMoney(T.bad_sum)})</span>`:''}</span></div>
+    ${Object.keys(byDay).sort().reverse().map(d=>`${one?'':`<div class="bqdhd"><b>${esc(bqDayName(d))} ${esc(bqDate(d))}</b><span>${bqMoney((days[d]||{}).sum)} · ${(days[d]||{}).n||0} חיובים${(days[d]||{}).bad?' · '+days[d].bad+' נדחו':''}</span></div>`}
+      ${byDay[d].map(line).join('')}`).join('')||'<div class="hintxt">אין חיובים בתאריכים האלה.</div>'}
+    <div class="hintxt">לפי שעון בנק ווסט (ניו יורק) · מעודכן עד הסנכרון האחרון${bqStat&&bqStat.stat&&bqStat.stat.last_ok?' ('+esc(bqStat.stat.last_ok)+')':''} — 🔄 סנכרון למשיכת החדשים.</div>`}</div>`;}
+async function bqDayLoad(a,b){bqDay={from:a,to:b||a,loading:true};renderBQ(false);
+  const r=await api('GET','/api/bq/days?from='+a+'&to='+(b||a));
+  if(bqDay&&bqDay.from===a){bqDay.data=r&&r.ok?r:{rows:[],days:{},total:{}};bqDay.loading=false;renderBQ(false);}}
 function bqSchedRow(r){const op=bqOpen==='s'+r.id;
   const who=r.donor_name||r.bq_name||r.title||'?';
   return `<div class="bqrow ${op?'op':''}"><button class="bqrh" data-op="s${r.id}">
@@ -6450,13 +6479,18 @@ function bqWire(box){const g=id=>document.getElementById(id);
   box.querySelectorAll('.bqrh').forEach(b=>b.onclick=()=>{bqOpen=bqOpen===b.dataset.op?null:b.dataset.op;renderBQ(false);});
   let qt;const q=g('bq_q');if(q)q.oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>{bqQ=q.value.trim();renderBQ().then(()=>{const n=g('bq_q');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}});},350);};
   if(!document.getElementById('bq_dl'))box.insertAdjacentHTML('beforeend',bqDonorDL());
+  g('bq_day').onclick=()=>{if(bqDay){bqDay=null;renderBQ(false);}else{const t=(bqStat&&bqStat.today)||todayStr();bqDayLoad(t,t);}};
+  box.querySelectorAll('[data-bqdq]').forEach(b=>b.onclick=()=>{const[a,c]=b.dataset.bqdq.split('|');bqDayLoad(a,c);});
+  const df=g('bqd_from'),dt=g('bqd_to');
+  if(df)df.onchange=()=>{if(df.value)bqDayLoad(df.value,dt.value&&dt.value>=df.value?dt.value:df.value);};
+  if(dt)dt.onchange=()=>{if(dt.value)bqDayLoad(df.value&&df.value<=dt.value?df.value:dt.value,dt.value);};
   g('bq_once').onclick=()=>bqOpenForm('once');
   g('bq_rec').onclick=()=>bqOpenForm('rec');
   g('bq_sync').onclick=async()=>{const b=g('bq_sync');b.disabled=true;b.textContent='🔄 מסנכרן…';
     const r=await api('POST','/api/bq/sync',{});
     if(r&&r.ok){const x=r.result||{};toast('סונכרן ✓ '+Object.entries(x).map(([k,v])=>k+' '+v).join(' · '));}
     else await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));
-    renderBQ();};
+    if(bqDay){await renderBQ();bqDayLoad(bqDay.from,bqDay.to);}else renderBQ();};
   if(bqNew){
     g('bqf_x').onclick=()=>{bqNew=null;renderBQ(false);};
     const w=g('bqf_who');if(w)w.onchange=()=>{bqFormKeep();const did=bqPickDonor(w.value);if(did)bqOpenForm(bqNew.kind,did);};

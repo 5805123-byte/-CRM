@@ -2012,6 +2012,18 @@
   .netbar.wait{background:var(--accent,#403a86)}
   @media print{.netbar{display:none!important}}
   /* תזכורות בכרטיס */
+  .bqday{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;margin:8px 0;padding:10px 12px;border:1px solid var(--accent);border-radius:12px;background:#f5f3fb;cursor:pointer;font:inherit;font-size:15px;text-align:right}
+  .bqday.on{border-width:2px}.bqday small{color:var(--muted,#888)}
+  .bqdaybox{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;display:grid;gap:8px}
+  .bqdq{display:flex;flex-wrap:wrap;gap:6px}
+  .bqdr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .bqdtot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:8px 10px;border-radius:10px;background:var(--soft,#faf7f0);font-size:15px}
+  .bqdhd{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 10px;border-bottom:2px solid var(--line);padding:6px 2px 3px;margin-top:4px}
+  .bqdrow{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:5px 2px}
+  .bqdrow.bad{background:#fdf3f0}
+  .bqdt{flex:none;font-size:12px;color:var(--muted,#888);direction:ltr}
+  .bqdw{flex:1;min-width:0;display:grid;overflow-wrap:anywhere}.bqdw small{color:var(--muted,#888);font-size:12px}
+  .bqda{flex:none;display:grid;text-align:left}
   .lgnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0;font-size:18px}
   .lgcols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:760px){.lgcols{grid-template-columns:1fr}}

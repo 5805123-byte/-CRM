@@ -16561,6 +16561,21 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, info)
+        if self.path.split('?')[0] == '/api/bq/days':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            ok = lambda v: v if re.fullmatch(r'\d{4}-\d{2}-\d{2}', v or '') else ''
+            tdy = bq_local(datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M'))[:10]
+            d1 = ok((qs.get('from') or [''])[0]) or tdy
+            d2 = ok((qs.get('to') or [''])[0]) or d1
+            if d2 < d1:
+                d1, d2 = d2, d1
+            con = db()
+            try:
+                out = bq_days(con, d1, d2)
+            finally:
+                con.close()
+            out.update(ok=True, **{'from': d1, 'to': d2, 'today': tdy, 'stat': dict(BQSTAT)})
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/bq/status':
             import banquest as _bq
             con = db()
@@ -16575,6 +16590,12 @@ class H(BaseHTTPRequestHandler):
                         'month_bad': con.execute("SELECT COUNT(*) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,)).fetchone()[0],
                         'n_tx': con.execute("SELECT COUNT(*) FROM bq_tx").fetchone()[0],
                         'token_key': _bq.token_key(), 'token_js': _bq.token_js()}
+                # 📅 היום ואתמול — לפי שעון בנק ווסט
+                tdy = bq_local(datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M'))[:10]
+                yst = (datetime.date.fromisoformat(tdy) - datetime.timedelta(days=1)).isoformat()
+                dd = bq_days(con, yst, tdy)['days']
+                info.update(today=tdy, yesterday=yst, today_sum=(dd.get(tdy) or {}).get('sum', 0), today_n=(dd.get(tdy) or {}).get('n', 0),
+                            today_bad=(dd.get(tdy) or {}).get('bad', 0), yest_sum=(dd.get(yst) or {}).get('sum', 0), yest_n=(dd.get(yst) or {}).get('n', 0))
             finally:
                 con.close()
             return self._send(200, info)
@@ -21315,6 +21336,52 @@ def bq_sched_rows(con, donor_id=None):
         x['known_for'] = donor_known_purpose(con, x.get('donor_id'))
         out.append(x)
     return out
+
+
+def bq_local(created):
+    """זמן העסקה כמו שבנק ווסט מציגים אותו: בנק ווסט שומרים ב-UTC, ואצלם היום מתחלק לפי שעון
+    ניו יורק (אפשר לשנות ב-BANQUEST_TZ)."""
+    s = str(created or '')[:19]
+    if len(s) < 16:
+        return s
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.datetime.strptime(s[:16], '%Y-%m-%d %H:%M').replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(ZoneInfo(os.environ.get('BANQUEST_TZ') or 'America/New_York')).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        return s[:16]
+
+
+def bq_days(con, d1, d2):
+    """מאיר: "את החיובים שנעשו באותו יום מרוכז… סה"כ, וכשאכנס אראה את הרשימה המדויקת של סכום ומי
+    תרם… מתאריך עד תאריך — כמו בבנק ווסט". כל העסקאות בטווח, עם סיכום לכל יום."""
+    import banquest as _bq
+    lo = (datetime.date.fromisoformat(d1) - datetime.timedelta(days=1)).isoformat()
+    hi = (datetime.date.fromisoformat(d2) + datetime.timedelta(days=2)).isoformat()
+    rows, days = [], {}
+    tot = {'sum': 0.0, 'n': 0, 'bad': 0, 'bad_sum': 0.0}
+    for r in con.execute("SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.name,t.card,"
+                         "t.donor_id,d.last dl,d.first dfi FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id "
+                         "WHERE t.created>=? AND t.created<? ORDER BY t.created DESC", (lo, hi)):
+        x = dict(r)
+        x['at'] = bq_local(x['created'])
+        day = x['at'][:10]
+        if not (d1 <= day <= d2):
+            continue
+        x['donor_name'] = ((x.pop('dl') or '') + ' ' + (x.pop('dfi') or '')).strip()
+        st, ty = (x['status'] or '').lower(), (x['type'] or '').lower()
+        dd = days.setdefault(day, {'sum': 0.0, 'n': 0, 'bad': 0, 'bad_sum': 0.0})
+        if st in _bq.OK_ST and ty in ('', 'charge', 'sale', 'refund', 'credit'):
+            v = -(x['amount'] or 0) if ty in ('refund', 'credit') else (x['amount'] or 0)
+            for a in (dd, tot):
+                a['sum'] += v; a['n'] += 1
+        elif st in _bq.BAD_ST:
+            for a in (dd, tot):
+                a['bad'] += 1; a['bad_sum'] += x['amount'] or 0
+        rows.append(x)
+    for a in list(days.values()) + [tot]:
+        a['sum'] = round(a['sum'], 2); a['bad_sum'] = round(a['bad_sum'], 2)
+    return {'rows': rows, 'days': days, 'total': tot}
 
 
 def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
