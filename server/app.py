@@ -290,6 +290,17 @@ def ensure_schema():
         phone TEXT, number TEXT, active INTEGER, donor_id INTEGER, manual INTEGER DEFAULT 0, synced TEXT);
     CREATE TABLE IF NOT EXISTS bq_pm(id INTEGER PRIMARY KEY, customer_id INTEGER, card_type TEXT, last4 TEXT,
         exp_m INTEGER, exp_y INTEGER, is_default INTEGER, name TEXT);
+    /* נדרים פלוס — מאיר: "התורמים של נדרים פלוס זה בעצם הקהילה בממשק". לא נוגע
+       ברשימת התורמים: כל תורם / הוראת קבע מקושרים לחבר קהילה לפי הטלפון. בלי ת"ז. */
+    CREATE TABLE IF NOT EXISTS nd_torem(id TEXT PRIMARY KEY, name TEXT, phones TEXT, mail TEXT, city TEXT,
+        member_id INTEGER, synced TEXT);
+    CREATE TABLE IF NOT EXISTS nd_keva(id TEXT PRIMARY KEY, torem_id TEXT, name TEXT, phone TEXT, mail TEXT,
+        amount TEXT, groupe TEXT, itra TEXT, next_date TEXT, last4 TEXT, city TEXT, member_id INTEGER,
+        active INTEGER DEFAULT 1, synced TEXT);
+    CREATE TABLE IF NOT EXISTS nd_charge(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, call_id TEXT, phone TEXT,
+        keva_id TEXT, member_id INTEGER, amount REAL, ok INTEGER, message TEXT, transaction_id TEXT,
+        confirmation TEXT, last4 TEXT, job INTEGER, via TEXT);
+    CREATE INDEX IF NOT EXISTS ix_ndch_call ON nd_charge(call_id);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
        לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
     CREATE TABLE IF NOT EXISTS ym_job(id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, channel TEXT,
@@ -15959,6 +15970,36 @@ class H(BaseHTTPRequestHandler):
             out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
             return self._send(200, {'ok': True, 'month': ym, 'calls': out})
         # בנק ווסט חי — הסטטוס, הוראות הקבע והעסקאות לדף החיובים ולכרטיס התורם
+        m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?$', self.path.split('?')[0])
+        if m:
+            # שלוחת התשלום בטלפון (type=api) — ימות המשיח פונים לכאן בכל שלב בשיחה.
+            # הקוד הסודי בנתיב (ימות מוסיפים את הפרמטרים שלהם אחרי ?)
+            P = {k: v[-1] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query, keep_blank_values=True).items()}
+            if m.group(1):
+                P['k'] = m.group(1)
+            try:
+                ans = ivr_answer(P)
+            except Exception as e:
+                print('  ivr error:', e)
+                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
+            ivr_log(P, ans)
+            return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/nd/status':
+            import nedarim as _nd
+            con = db()
+            try:
+                host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
+                link = 'https://%s/api/yemot/ivr/%s' % (host, ivr_key(con))
+                info = {'ok': True, 'configured': _nd.configured(), 'mosad': _nd.mosad(), 'stat': dict(NDSTAT), 'link': link,
+                        'n_keva': con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0],
+                        'n_linked': con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0],
+                        'n_torem': con.execute("SELECT COUNT(*) FROM nd_torem").fetchone()[0],
+                        'charges': [dict(r) for r in con.execute(
+                            "SELECT c.at,c.phone,c.amount,c.ok,c.message,c.confirmation,c.last4,c.via,m.last ml,m.first mf "
+                            "FROM nd_charge c LEFT JOIN members m ON m.id=c.member_id ORDER BY c.id DESC LIMIT 30")]}
+            finally:
+                con.close()
+            return self._send(200, info)
         if self.path.split('?')[0] == '/api/bq/status':
             import banquest as _bq
             con = db()
@@ -18279,6 +18320,14 @@ class H(BaseHTTPRequestHandler):
             sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        if self.path == '/api/nd/sync':
+            import nedarim as _nd
+            if not _nd.configured():
+                return self._send(200, {'ok': False, 'error': 'נדרים פלוס לא מוגדר ב-Render (NEDARIM_API_KEY)'})
+            try:
+                return self._send(200, {'ok': True, 'result': nd_run()})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:250]})
         if self.path == '/api/bq/sync':
             import banquest as _bq
             if not _bq.configured():
@@ -19934,6 +19983,235 @@ def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
     return out
 
 
+# ---------------- נדרים פלוס + שלוחת תשלום בטלפון (ימות המשיח, type=api) ----------------
+NDSTAT = {'last': '', 'last_ok': '', 'result': '', 'error': '', 'running': False}
+
+
+def _phones_of(s):
+    import yemot as _ym
+    out = []
+    for x in re.split(r'[,;/|\n]+|\s{2,}', str(s or '')):
+        ph = _ym.norm_phone(x)
+        if ph and ph not in out:
+            out.append(ph)
+    return out
+
+
+def nd_member_index(con):
+    idx = {}
+    for m in con.execute("SELECT id,phone FROM members WHERE COALESCE(active,1)=1"):
+        for ph in _phones_of(m['phone']):
+            idx.setdefault(ph, set()).add(m['id'])
+    return idx
+
+
+def nd_sync(con):
+    """משיכת הוראות הקבע והתורמים מנדרים פלוס, וקישור לחברי הקהילה לפי טלפון."""
+    import nedarim as _nd
+    now = now_iso()
+    midx = nd_member_index(con)
+    pick = lambda phs: next((list(midx[p])[0] for p in phs if p in midx and len(midx[p]) == 1), None)
+    res = {}
+    try:
+        ts = _nd.tormim()
+        for t in ts:
+            phs = _phones_of(' ; '.join(t['phones']))
+            con.execute("""INSERT INTO nd_torem(id,name,phones,mail,city,member_id,synced) VALUES(?,?,?,?,?,?,?)
+                           ON CONFLICT(id) DO UPDATE SET name=excluded.name, phones=excluded.phones, mail=excluded.mail,
+                             city=excluded.city, member_id=excluded.member_id, synced=excluded.synced""",
+                        (t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs), now))
+        res['תורמים'] = len(ts)
+    except Exception as e:
+        res['תורמים'] = 'שגיאה: %s' % str(e)[:80]
+    ks = _nd.kevas()
+    con.execute("UPDATE nd_keva SET active=0")
+    for k in ks:
+        phs = _phones_of(k['phone'])
+        tm = con.execute("SELECT member_id,phones FROM nd_torem WHERE id=?", (k['torem'],)).fetchone() if k['torem'] else None
+        if tm and tm['phones']:
+            phs += [p for p in tm['phones'].split(';') if p and p not in phs]
+        mid = (tm['member_id'] if tm else None) or pick(phs)
+        con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?)
+                       ON CONFLICT(id) DO UPDATE SET torem_id=excluded.torem_id, name=excluded.name, phone=excluded.phone,
+                         mail=excluded.mail, amount=excluded.amount, groupe=excluded.groupe, itra=excluded.itra,
+                         next_date=excluded.next_date, last4=excluded.last4, city=excluded.city,
+                         member_id=excluded.member_id, active=1, synced=excluded.synced""",
+                    (k['id'], k['torem'], k['name'], ';'.join(phs), k['mail'], k['amount'], k['groupe'], k['itra'],
+                     k['next'], k['last4'], k['city'], mid, now))
+    res['הוראות קבע'] = len(ks)
+    res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
+    con.commit()
+    return res
+
+
+def nd_run():
+    import nedarim as _nd
+    if not _nd.configured() or NDSTAT['running']:
+        return None
+    NDSTAT['running'] = True
+    try:
+        con = db()
+        res = nd_sync(con)
+        con.close()
+        NDSTAT.update(last=now_iso(), last_ok=now_iso(), error='', result=' · '.join('%s %s' % kv for kv in res.items()))
+        return res
+    except Exception as e:
+        NDSTAT.update(last=now_iso(), error=str(e)[:250])
+        raise
+    finally:
+        NDSTAT['running'] = False
+
+
+def _nd_loop():
+    import time
+    time.sleep(60)
+    while True:
+        try:
+            nd_run()
+        except Exception as e:
+            print('  nedarim sync error:', e)
+        time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 10800)))
+
+
+def ivr_key(con):
+    k = kv_get(con, 'ivr_key', '')
+    if not k:
+        import secrets
+        k = secrets.token_urlsafe(12).replace('-', 'x').replace('_', 'y')
+        con.execute("INSERT INTO app_kv(k,v) VALUES('ivr_key',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k,))
+        con.commit()
+    return k
+
+
+def _ivr_t(s):
+    """טקסט להקראה בימות — בלי נקודה, מקף, & ו-= (הם מפרידים בפקודה)."""
+    return re.sub(r'\s+', ' ', re.sub(r'[.\-&=_*#]', ' ', str(s or ''))).strip()
+
+
+def _ivr_amt(v):
+    try:
+        a = float(str(v or '').replace(',', '').strip())
+    except ValueError:
+        return 0
+    return round(a, 2) if 0 < a <= 100000 else 0
+
+
+def ivr_answer(P):
+    """שלוחת התשלום בטלפון. מאיר: "שיהיה אפשרות לשלם דרך TashlumBodedNew — נעשה דרך
+    הטלפון שיחייב דרך ההוראת קבע שלו". ימות שולחים בכל פנייה את כל מה שנאסף בשיחה עד
+    עכשיו, ולכן התשובה נקבעת לפי הפרמטרים שכבר קיימים: בחירת כרטיס → סכום → אישור →
+    חיוב. מי שאין לו הוראת קבע עובר לסליקה הרגילה בהקשת כרטיס."""
+    import yemot as _ym, nedarim as _nd
+    END = '&go_to_folder=hangup'
+    con = db()
+    try:
+        if (P.get('k') or '') != ivr_key(con):
+            return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
+        if P.get('hangup') == 'yes':
+            return 'noop=hangup'
+        phone = _ym.norm_phone(P.get('ApiPhone') or '')
+        call_id = str(P.get('ApiCallId') or '')[:60]
+        mids = nd_member_index(con).get(phone) or set()
+        mid = next(iter(mids)) if len(mids) == 1 else None
+        # הסכום — מההודעה האחרונה שנשלחה למספר הזה (14 יום), אם הייתה
+        last = con.execute("SELECT amount,job FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
+                           "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
+        job_amt = _ivr_amt(last['amount']) if last else 0
+        job = last['job'] if last else 0
+
+        def fallback(amt=0):
+            # סליקה רגילה בנדרים פלוס — הקשת כרטיס (הערך השמיני: מספר המוסד)
+            return 'credit_card=nedarim_plus,%s,,1,1,,,%s' % (('%g' % amt) if amt else '', _nd.mosad())
+
+        if 'CreditCard_CODE' in P:
+            con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'כרטיס')",
+                        (now_iso(), call_id, phone, '', mid, _ivr_amt(P.get('Amt')) or job_amt, 1 if P['CreditCard_CODE'] not in ('GoBack', '') else 0,
+                         str(P.get('CreditCard_CODE') or '')[:80], '', '', '', job))
+            con.commit()
+            if P['CreditCard_CODE'] == 'GoBack':
+                return 'id_list_message=t-' + _ivr_t('התשלום בוטל') + END
+            return 'id_list_message=t-' + _ivr_t('תודה רבה ותזכו למצוות') + END
+        if 'Other' in P:
+            return fallback(_ivr_amt(P.get('Amt')) or job_amt) if P['Other'] == '1' else ('id_list_message=t-' + _ivr_t('תודה רבה') + END)
+        ks = [dict(r) for r in con.execute("SELECT * FROM nd_keva WHERE active=1 AND ';'||phone||';' LIKE ? ORDER BY id",
+                                            ('%;' + phone + ';%',))] if phone else []
+        if not ks:
+            return fallback(job_amt)
+        # בחירת כרטיס — כשיש כמה הוראות על אותו טלפון
+        if len(ks) > 1:
+            if 'Card' not in P:
+                parts = ['t-' + _ivr_t('נמצאו כמה הוראות קבע')]
+                for i, k in enumerate(ks[:9], 1):
+                    parts += ['t-' + _ivr_t('לכרטיס המסתיים בספרות'), 'd-' + (re.sub(r'\D', '', k['last4'] or '') or '0'), 't-' + _ivr_t('הקישו'), 'n-%d' % i]
+                return 'read=' + '.'.join(parts) + '=Card,no,1,1,10,NO,yes,yes,,%s,2,,,,no' % ''.join(str(i) for i in range(1, min(len(ks), 9) + 1))
+            try:
+                k = ks[int(P['Card']) - 1]
+            except (ValueError, IndexError):
+                k = ks[0]
+        else:
+            k = ks[0]
+        l4 = re.sub(r'\D', '', k['last4'] or '') or '0'
+        # הסכום
+        amt = _ivr_amt(P.get('Amt'))
+        if not amt:
+            if job_amt and P.get('Choice') != '2':
+                if 'Choice' not in P:
+                    return ('read=t-' + _ivr_t('נמצאה הוראת קבע בכרטיס המסתיים בספרות') + '.d-' + l4 + '.t-' + _ivr_t('לחיוב של') +
+                            '.n-%g' % job_amt + '.t-' + _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') +
+                            '=Choice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+                amt = job_amt
+            else:
+                return ('read=t-' + _ivr_t('הקישו את הסכום לתשלום בשקלים ובסיום סולמית') + '=Amt,no,5,1,15,Number,yes,yes,,,2,,,,')
+        # אישור לפני חיוב
+        if 'Ok' not in P:
+            return ('read=t-' + _ivr_t('לאישור חיוב של') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים בכרטיס המסתיים בספרות') +
+                    '.d-' + l4 + '.t-' + _ivr_t('הקישו 1, לביטול הקישו 2') + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+        if P['Ok'] != '1':
+            return 'id_list_message=t-' + _ivr_t('החיוב בוטל, לא חויבתם') + END
+        # כבר חויב בשיחה הזו (פנייה חוזרת) — לא מחייבים שוב
+        done = con.execute("SELECT confirmation,amount FROM nd_charge WHERE call_id=? AND ok=1 AND keva_id<>''", (call_id,)).fetchone() if call_id else None
+        if done:
+            return ('id_list_message=t-' + _ivr_t('התשלום התקבל בהצלחה, מספר אישור') + '.d-' + (re.sub(r'\D', '', done['confirmation'] or '') or '0') +
+                    '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
+        jl = con.execute("SELECT label FROM ym_job WHERE id=?", (job,)).fetchone() if job else None
+        ok, res = _nd.tashlum_boded(k['id'], amt, comments='תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
+                                    ajax=('ivr-' + call_id) if call_id else '')
+        r = res if isinstance(res, dict) else {}
+        msg = str(r.get('Message') or ('' if ok else res) or '')[:200]
+        conf = str(r.get('Confirmation') or '')
+        con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'הוראת קבע')",
+                    (now_iso(), call_id, phone, k['id'], k['member_id'] or mid, amt, 1 if ok else 0, msg,
+                     str(r.get('TransactionId') or r.get('ID') or ''), conf, l4, job))
+        if k['member_id'] or mid:
+            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                        (k['member_id'] or mid, today_iso(), 'תשלום',
+                         ('💳 שילם ₪%g בטלפון מהוראת הקבע (כרטיס ****%s) · אישור %s' % (amt, l4, conf)) if ok
+                         else ('🔴 ניסיון תשלום ₪%g בטלפון נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
+        con.commit()
+        if ok:
+            return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
+                    '.d-' + (re.sub(r'\D', '', conf) or '0') + '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
+        return ('read=t-' + _ivr_t('החיוב לא עבר') + '.t-' + (_ivr_t(msg)[:120] or _ivr_t('סירוב')) +
+                '.t-' + _ivr_t('לתשלום בכרטיס אחר הקישו 1, לסיום הקישו 2') + '=Other,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+    finally:
+        con.close()
+
+
+def ivr_log(P, ans):
+    try:
+        con = db()
+        safe = {k: v for k, v in P.items() if k != 'k'}
+        con.execute("INSERT INTO ym_api(at,job,msg,phone,method,params,ok,response,ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (now_iso(), 0, 0, str(P.get('ApiPhone') or '')[:20], 'IVR ← שלוחת תשלום',
+                     json.dumps(safe, ensure_ascii=False)[:4000], 1, ans[:2000], 0))
+        con.commit(); con.close()
+    except Exception:
+        pass
+
+
 def _authnet_loop():
     """רשת הביטחון של החיבור ל-Authorize.net. ה-Webhook מביא כל חיוב תוך שניות,
     והסריקה הזו רצה כל שעה ואוספת כל מה שאולי לא הגיע — הודעה שאבדה, שרת
@@ -19975,6 +20253,7 @@ def serve():
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
     threading.Thread(target=_authnet_loop, daemon=True).start()
     threading.Thread(target=_bq_loop, daemon=True).start()
+    threading.Thread(target=_nd_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

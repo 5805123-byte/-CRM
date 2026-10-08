@@ -12830,7 +12830,7 @@ function ymHead(st){
     ?`<div class="ymwarn">⚠️ ימות המשיח עוד לא מחובר. ב-Render ← Environment צריך להוסיף <b>YEMOT_TOKEN</b> — מפתח ה-API של ימות המשיח (מתחיל ב-WU1BUElL.apik_). לא לשלוח אותו בצ'אט או בוואטסאפ.</div>`
     :(st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc((+st.info.units).toLocaleString('he-IL',{maximumFractionDigits:2}))}</b> יחידות`:''}</div>`
                   :`<div class="ymwarn">⚠️ החיבור לימות המשיח נכשל: ${esc(st.error||'')} — פרטים בלשונית "לוג טכני"</div>`);
-  const T=[['send','📤 שליחה'],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['log','📜 לוג טכני']];
+  const T=[['send','📤 שליחה'],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['log','📜 לוג טכני']];
   return `<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">📞 ימות המשיח — הודעה קולית / SMS</div>${conn}
     <div class="ymtabs">${T.map(([k,l])=>`<button class="ymtab${ymView===k?' on':''}" data-v="${k}">${l}</button>`).join('')}</div>`;
@@ -12849,8 +12849,40 @@ function renderCommYm(){
     ymLoadStatus().then(()=>{if(tab==='comm'&&cmSub==='ym')render();});return;}
   if(ymView==='jobs')return ymViewJobs();
   if(ymView==='calls')return ymViewCalls();
+  if(ymView==='pay')return ymViewPay();
   if(ymView==='log'){if(ymLog===null){ymLoadLog().then(()=>{if(tab==='comm'&&cmSub==='ym')renderCommYm();});}return ymViewLog();}
   return ymViewSend();
+}
+// ---------------- 💳 תשלום בטלפון (שלוחת API + נדרים פלוס) ----------------
+// מאיר: "שיהיה אפשרות לשלם דרך TashlumBodedNew — דרך הטלפון שיחייב דרך ההוראת קבע שלו".
+let ndStat=null;
+async function ymViewPay(){
+  if(!ndStat){view.innerHTML=ymHead(ymStatus)+'<div class="hintxt" style="padding:16px">טוען…</div>';ymWireHead();
+    ndStat=await api('GET','/api/nd/status')||{};if(tab!=='comm'||ymView!=='pay')return;}
+  const st=ndStat, sx=st.stat||{};
+  const ini=`type=api\napi_link=${st.link||''}\napi_hangup_send=no`;
+  view.innerHTML=ymHead(ymStatus)+`<div class="sec ymsec">
+    <div class="rbtitle" style="text-align:right">💳 תשלום מהוראת הקבע בטלפון — נדרים פלוס</div>
+    ${st.configured?`<div class="ymok">🔗 נדרים פלוס מחובר (מוסד ${esc(st.mosad||'')}) · ${st.n_keva||0} הוראות קבע · ${st.n_linked||0} מקושרות לחברי קהילה · ${st.n_torem||0} תורמים
+        ${sx.error?`<br>⚠️ ${esc(sx.error)}`:(sx.last_ok?`<br><small>סנכרון אחרון ${esc(sx.last_ok)}</small>`:'')}</div>`
+      :`<div class="ymwarn">⚠️ חסר ב-Render: <b>NEDARIM_API_KEY</b> (המפתח שמתחיל ב-npk_).</div>`}
+    <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="nd_sync">🔄 סנכרון מנדרים פלוס</button></div>
+    <div class="hintxt" style="margin-top:8px"><b>ההגדרות לשלוחה בימות</b> (השלוחה שמקישים אליה 1) — להעתיק כמו שהן:</div>
+    <pre class="ndini" id="nd_ini" dir="ltr">${esc(ini)}</pre>
+    <div class="addrow"><button class="btn sm" id="nd_copy">📋 העתק</button></div>
+    <div class="hintxt">המתקשר מזוהה לפי הטלפון. יש לו הוראת קבע ← שומע את 4 הספרות של הכרטיס, מאשר סכום (מההודעה שנשלחה, או מקיש סכום), מאשר שוב ← חיוב מיידי בכרטיס של ההוראה (נרשם בהיסטוריית ההוראה, בלי לשנות אותה). אין לו הוראה ← סליקה רגילה בהקשת כרטיס. הקוד בקישור סודי — לא לשתף.</div>
+    <div class="rbtitle" style="text-align:right;margin-top:12px">📜 תשלומים אחרונים בטלפון</div>
+    <div class="ndlist">${(st.charges||[]).map(c=>`<div class="ndrow"><span>${esc((c.at||'').slice(5,16))}</span>
+        <b>${esc(((c.ml||'')+' '+(c.mf||'')).trim()||c.phone||'')}</b><span>₪${esc(c.amount)}</span>
+        <span class="${c.ok?'ndok':'ndbad'}">${c.ok?('✓ '+(c.via||'')+(c.confirmation?(' · אישור '+esc(c.confirmation)):'')):('✗ '+esc(c.message||''))}</span>
+        ${c.last4?`<small>****${esc(c.last4)}</small>`:''}</div>`).join('')||'<div class="hintxt">עוד אין תשלומים.</div>'}</div></div>`;
+  ymWireHead();
+  const g=id=>document.getElementById(id);
+  g('nd_copy').onclick=()=>{const t=g('nd_ini').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק ✓'),()=>{const r=document.createRange();r.selectNodeContents(g('nd_ini'));getSelection().removeAllRanges();getSelection().addRange(r);toast('סמן והעתק (Ctrl+C)');});};
+  g('nd_sync').onclick=async()=>{const b=g('nd_sync');b.disabled=true;b.textContent='🔄 מסנכרן…';
+    const r=await api('POST','/api/nd/sync',{});
+    if(r&&r.ok)toast('סונכרן ✓ '+Object.entries(r.result||{}).map(([k,v])=>k+' '+v).join(' · '));else await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));
+    ndStat=null;ymViewPay();};
 }
 // ---------------- 📤 שליחה ----------------
 function ymViewSend(){
