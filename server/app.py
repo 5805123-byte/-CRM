@@ -16652,10 +16652,25 @@ class H(BaseHTTPRequestHandler):
             con = db()
             logs = {r['member_id']: (r['c'], r['last']) for r in con.execute(
                 "SELECT member_id, COUNT(*) c, MAX(date) last FROM member_log GROUP BY member_id")}
+            # מאיר: "למה לא כתוב אצל כל אחד מהקהילה לגבי ההוראת קבע שלו" — סיכום נדרים פלוס לכל חבר
+            kv = {}
+            try:
+                for k in con.execute("SELECT member_id, amount, groupe, error, active FROM nd_keva WHERE member_id IS NOT NULL AND (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%')"):
+                    x = kv.setdefault(k['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
+                    if k['active']:
+                        x['amt'] = round(x['amt'] + _amt2(k['amount']), 2); x['n'] += 1
+                        x['groupe'] = x['groupe'] or (k['groupe'] or '')
+                        x['bad'] = x['bad'] or (1 if (k['error'] or '').strip() else 0)
+                for t in con.execute("SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 GROUP BY member_id"):
+                    x = kv.setdefault(t['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
+                    x.update(tx=t['c'], tx_sum=round(t['s'] or 0, 2), tx_last=(t['last'] or '')[:10])
+            except Exception:
+                pass
             rows = []
             for r in con.execute("SELECT * FROM members WHERE COALESCE(active,1)<>0 ORDER BY last, first"):
                 d = dict(r)
                 d['mails'], d['last_mail'] = logs.get(r['id'], (0, ''))
+                d['nd'] = kv.get(r['id'])
                 rows.append(d)
             con.close()
             return self._send(200, {'rows': rows})
@@ -21145,16 +21160,19 @@ def nd_history_sync(con):
     חיוב אוטומטי של הוראת קבע (KevaId חיובי) לא נחשב תשלום על הודעה; תשלום בודד שצורף להוראה
     (KevaId שלילי) ועסקה רגילה — כן."""
     import nedarim as _nd, yemot as _ym
+    # מאיר: "היסטוריית תשלומים מההתחלה, מה שיש בנדרים פלוס" — פעם אחת מושכים הכל מההתחלה
+    # (בלי כפילויות: מזהה העסקה הוא המפתח). רק עסקאות מ-45 הימים האחרונים סוגרות חובות והודעות.
+    if not con.execute("SELECT 1 FROM seed_flags WHERE name='nd_hist_full_v1'").fetchone():
+        con.execute("DELETE FROM app_kv WHERE k='nd_hist_last'")
+        con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_hist_full_v1')")
+        con.commit()
     last = kv_get(con, 'nd_hist_last', '')
     rows, top = _nd.history(last)
-    first = not last
     cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
     midx, nidx = nd_member_index(con), nd_name_index(con)
     new = marked = 0
     for t in rows:
         iso = _nd_iso(t['time'])
-        if first and iso[:10] < cutoff:
-            continue
         a = _ivr_amt(t['amount'])
         ph = _ym.norm_phone(t['phone'])
         ids = midx.get(ph) if ph else None
@@ -21166,7 +21184,7 @@ def nd_history_sync(con):
             continue
         new += 1
         auto = t['keva'] and not t['keva'].startswith('-')
-        if a <= 0 or auto or not ph:
+        if a <= 0 or auto or not ph or iso[:10] < cutoff:
             continue
         # כבר נרשם מהשלוחה בטלפון (אותו מזהה עסקה) — לא שוב
         if con.execute("SELECT 1 FROM nd_charge WHERE transaction_id=? AND ok=1", (t['id'],)).fetchone():

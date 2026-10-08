@@ -12395,7 +12395,8 @@ function renderComm(){
     ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
     <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
     <div class="list cmlist">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
-      <span class="cmnm">${esc(mName(m))}${m.mails?`<small class="cmmails" title="מיילים שנשלחו">📤${m.mails}</small>`:''}</span>
+      <button class="cmnm cmopen" data-id="${m.id}" title="פתח את הכרטיס — הוראת קבע, תרומות, חיוב, קבלות, תזכורות">${esc(mName(m))}${m.mails?`<small class="cmmails" title="מיילים שנשלחו">📤${m.mails}</small>`:''}</button>
+      ${m.nd&&(m.nd.n||m.nd.tx)?`<button class="cmi cmnd${m.nd.bad?' bad':''}" data-id="${m.id}" title="נדרים פלוס${m.nd.tx?' · '+m.nd.tx+' תשלומים, אחרון '+ndDate(m.nd.tx_last):''}">💳 ${m.nd.n?ndMoney(m.nd.amt)+' לחודש'+(m.nd.groupe?' · '+esc(m.nd.groupe):''):'בלי הוראה פעילה'}${m.nd.bad?' · 🔴 חזרה':''}</button>`:''}
       ${m.phone?`<span class="cmi" dir="ltr">📞 ${esc(m.phone)}</span>`:''}
       ${cmSeat(m)?`<button class="cmi cmseat2" data-id="${m.id}" title="מקום בבית הכנסת — לחץ לראות שינויים">💺 ${esc(cmSeat(m))}</button>`:''}
       ${mHasMail(m)?`<span class="cmi cmem" dir="ltr">✉️ ${esc(mEmails(m).join(' · '))}</span>`:'<span class="cmi cmno">אין מייל</span>'}
@@ -12405,6 +12406,8 @@ function renderComm(){
   // או טלפון או מחיקה או מיזוג, אבל לא לעשות מזה סיפור של כרטיס כמו אצל התורמים"
   wireSeatMap();
   view.querySelectorAll('.cmseat2[data-id]').forEach(b=>b.onclick=()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);if(m)openSeatHistory(m);});
+  // מאיר: "למה לא כתוב אצל כל אחד בכרטיס שלו את ההוראת קבע, היסטוריית תשלומים…" — לחיצה על השם / 💳 פותחת את הכרטיס
+  view.querySelectorAll('.cmopen,.cmnd').forEach(b=>b.onclick=()=>{const m=MEMBERS.find(x=>x.id==b.dataset.id);if(m)openMember(m);});
   view.querySelectorAll('.cmpen').forEach(b=>b.onclick=()=>{cmEditId=cmEditId==b.dataset.id?null:+b.dataset.id;cmMergeId=null;render();
     const i=view.querySelector('.cmed .ce_phone'); if(i&&cmEditId)i.focus();});
   wireCmEdit();
@@ -12885,7 +12888,7 @@ async function cmNdPaint(m,showAll){
     .sort((a,b)=>String(b.iso||'').localeCompare(String(a.iso||'')));
   const lim=showAll?rows.length:8;
   box.innerHTML=`${kevaHTML}
-    ${rows.length?`<div class="bqhsum" style="margin-top:8px"><b>${rows.filter(x=>+x.amount>0).length} תרומות · ${ndMoney(r.sum)}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div></div>
+    ${rows.length?`<div class="bqhsum" style="margin-top:8px"><b>${rows.filter(x=>+x.amount>0).length} תרומות · ${ndMoney(rows.reduce((t,x)=>t+(+x.amount>0?+x.amount:0),0))}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div></div>
       <div class="bqpays">${rows.slice(0,lim).map(t=>`<div class="bqpay"><span><b>${esc(ndDate(t.iso))}</b> · ${ndMoney(t.amount)}${t.what?` · ${esc(t.what)}`:''} · <small>${t.auto?'הוראת קבע':'חד-פעמי'}${t.conf?' · אישור '+esc(t.conf):''}</small></span>
         <span class="bqacts">${t.pending||!(+t.amount>0)?'':(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
           :`<button class="btn sm ghost" data-ndrc="${esc(t.id)}" data-amt="${esc(t.amount)}" data-date="${esc((t.iso||'').slice(0,10))}" data-what="${esc(t.what.split(' · ')[0]||'')}">🧾 קבלה</button>`)}</span></div>`).join('')}</div>
