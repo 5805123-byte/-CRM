@@ -17235,10 +17235,13 @@ class H(BaseHTTPRequestHandler):
             bill_path = ''
             if ch == 'voice' and b.get('billing'):
                 import yemot as _ym2
-                bill_path = _ym2.norm_ext(b.get('bill_path') or kv_get(con, 'ym_bill_path', ''))
-                if not bill_path:
-                    con.close(); return self._send(200, {'ok': False, 'error': 'חסרה שלוחת הסליקה (למשל 5 או 1/2)'})
-                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_bill_path',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (bill_path,))
+                # מאיר: "עדיין משתמשים ב-BillingSum? או שהכל עובר דרך השרת" — בשלוחת API (ברירת
+                # המחדל) הסכום נשמר כאן לכל נמען והשלוחה שואלת את השרת בזמן השיחה; הקובץ לא נוגעים בו
+                if b.get('bill_mode') == 'file':
+                    bill_path = _ym2.norm_ext(b.get('bill_path') or kv_get(con, 'ym_bill_path', ''))
+                    if not bill_path:
+                        con.close(); return self._send(200, {'ok': False, 'error': 'חסרה שלוחת הסליקה (למשל 5 או 1/2)'})
+                    con.execute("INSERT INTO app_kv(k,v) VALUES('ym_bill_path',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (bill_path,))
                 gamt = ym_amt(amount)
                 if b.get('test'):
                     recs[0]['amount'] = ym_amt(b.get('test_amount')) or gamt
@@ -20583,8 +20586,7 @@ def ivr_answer(P):
             else:
                 parts = ['t-' + _ivr_t('לתשלום מאחת מהוראות הקבע שלכם הקישו 1')]
             parts.append('t-' + _ivr_t('לתשלום בכרטיס אשראי אחר הקישו 2'))
-            parts.append('t-' + _ivr_t('לעדכון כרטיס אשראי חדש בהוראת הקבע הקישו 3'))
-            return 'read=' + '.'.join(parts) + '=Way,no,1,1,10,NO,yes,yes,,123,2,,,,no'
+            return 'read=' + '.'.join(parts) + '=Way,no,1,1,10,NO,yes,yes,,12,2,,,,no'
         if P['Way'] == '2':
             return fallback(job_amt)
         if P['Way'] == '3':

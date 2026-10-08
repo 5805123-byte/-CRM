@@ -12872,8 +12872,8 @@ async function cmHistory(){
 // אין רשימה כפולה לתחזק. כל אחד מקבל הודעה נפרדת עם השם שלו.
 let ymLog=null, ymLogJob=0, ymLogOpen=false;
 // מאיר: "בהודעה שנשלחת בשיחה מקישים 1 ועוברים לשלוחת סליקת אשראי… סכום לחיוב מותאם לכל לקוח"
-let ymBill=false, ymBillPath='';
-try{ymBill=localStorage.getItem('kc_ymbill')==='1';ymBillPath=localStorage.getItem('kc_ymbillp')||'';}catch(e){}
+let ymBill=false, ymBillPath='', ymBillMode='api';
+try{ymBill=localStorage.getItem('kc_ymbill')==='1';ymBillPath=localStorage.getItem('kc_ymbillp')||'';ymBillMode=localStorage.getItem('kc_ymbillm')||'api';}catch(e){}
 let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
 try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
 // [מפתח, תווית, נוסח להודעה קולית (עם "הקישו 1" לסליקה), נוסח ל-SMS (עם {קישור} לנדרים פלוס)]
@@ -13074,8 +13074,10 @@ function ymViewSend(){
       ${ymText?`<div class="ympv"><b>${ymCh==='sms'?'💬':'🔊'} כך זה יישמע${first?' אצל '+esc(first.name):''}:</b> ${esc(prev)}</div>`:''}
       ${ymCh==='voice'?ymVoiceHTML(st):''}
       ${ymCh==='voice'?`<div class="ymbill${billOn?' on':''}"><label class="gvall"><input type="checkbox" id="ym_bill" ${billOn?'checked':''}> 💳 הקשה 1 = סליקת אשראי — לעדכן את הסכום של כל נמען לפני השיחה</label>
-        ${billOn?`<div class="ymrow2"><label class="fld"><span>📂 שלוחת הסליקה בימות (למשל 5 או 1/2)</span><input id="ym_bpath" dir="ltr" value="${esc(ymBillPath)}" placeholder="5"></label>
-          <span class="hintxt">לפני השיחות המערכת מעדכנת <b dir="ltr">BillingSum.ini</b> בשלוחה הזו: טלפון=סכום לכל נמען. שאר השורות בקובץ נשארות, והגדרות השלוחה לא משתנות. סכום לכל נמען — בשלב 3.</span></div>`:''}</div>`:''}
+        ${billOn?`<div class="bqseg" style="margin:6px 0"><button class="${ymBillMode==='api'?'on':''}" data-bm="api">🖥️ דרך השרת (שלוחת API)</button><button class="${ymBillMode==='file'?'on':''}" data-bm="file">📄 קובץ BillingSum.ini</button></div>
+          ${ymBillMode==='api'?`<span class="hintxt">הסכום של כל נמען נשמר במערכת, ושלוחת התשלום (type=api) שואלת את השרת בזמן השיחה — לא צריך את BillingSum.ini. סכום לכל נמען — בשלב 3.</span>`
+          :`<div class="ymrow2"><label class="fld"><span>📂 שלוחת הסליקה בימות (למשל 5 או 1/2)</span><input id="ym_bpath" dir="ltr" value="${esc(ymBillPath)}" placeholder="5"></label>
+          <span class="hintxt">רק לשלוחה רגילה (לא API): לפני השיחות המערכת מעדכנת <b dir="ltr">BillingSum.ini</b> בשלוחה הזו: טלפון=סכום לכל נמען. שאר השורות בקובץ נשארות. סכום לכל נמען — בשלב 3.</span></div>`}`:''}</div>`:''}
     </div>
     ${ymCh==='sms'?ymLinkHTML(linkOn,prevLink):''}
     <div class="sec ymsec">
@@ -13120,6 +13122,7 @@ function ymViewSend(){
     apply();});
   let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
   keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
+  view.querySelectorAll('[data-bm]').forEach(b=>b.onclick=()=>{ymBillMode=b.dataset.bm;try{localStorage.setItem('kc_ymbillm',ymBillMode);}catch(e){}renderCommYm();});
   const bc=g('ym_bill'); if(bc)bc.onchange=()=>{ymBill=bc.checked;try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}renderCommYm();};
   const bp=g('ym_bpath'); if(bp)bp.oninput=()=>{ymBillPath=bp.value.trim();try{localStorage.setItem('kc_ymbillp',ymBillPath);}catch(e){}};
   view.querySelectorAll('.ym_ra').forEach(i=>i.oninput=()=>{const r=ymRecs.get(i.dataset.k);if(r)r.amt=i.value.trim();});
@@ -13144,20 +13147,18 @@ function ymViewSend(){
   g('ym_test').onclick=async()=>{const tp=g('ym_tp').value.trim();if(!ymPhone(tp)){toast('מספר בדיקה לא תקין');return;}
     if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
-    if(billOn&&!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
+    if(billOn&&ymBillMode==='file'&&!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:'',
-      billing:billOn?1:0,bill_path:ymBillPath,test_amount:(first&&first.amt)||ymAmt,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
+      billing:billOn?1:0,bill_mode:ymBillMode,bill_path:ymBillPath,test_amount:(first&&first.amt)||ymAmt,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
     if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
   g('ym_go').onclick=async()=>{
     if(linkOn&&!prevLink){toast('בחר מוסד לקישור התשלום');return;}
-    if(billOn){
-      if(!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
-    }
+    if(billOn&&ymBillMode==='file'&&!(ymBillPath||'').trim()){toast('חסרה שלוחת הסליקה');return;}
     // מאיר: "גם מי שאין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי"
     const free=billOn?selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt)).length:0;
-    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם (billing_sum_default=menu)':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
-    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,bill_path:ymBillPath,
+    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?(ymBillMode==='file'?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'\n💳 הסכום של כל נמען נשמר בשרת — שלוחת התשלום תיקח אותו משם'):'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,bill_mode:ymBillMode,bill_path:ymBillPath,
       recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L}:{k:x.k,id:x.id,amount:x.amt||'',link:L};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('המשלוח התחיל ✓');ymTrack(r.job);};
