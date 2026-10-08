@@ -150,7 +150,8 @@ def receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_f
         amt = float(re.sub(r'[^\d.]', '', str(row['amount'] or '')) or 0)
     except ValueError:
         amt = 0.0
-    date = (row['date'] or today_iso())[:10]
+    from receipt_us import iso_day
+    date = iso_day(row['date']) or today_iso()
     try:
         heb = greg_to_heb_full(date)
     except Exception:

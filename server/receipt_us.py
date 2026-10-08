@@ -70,21 +70,28 @@ def money(a):
     return '$' + format(n, ',.2f')
 
 
-def nice_date(s):
+def iso_day(s):
+    """תאריך תרומה בכל צורה שנשמרה ← YYYY-MM-DD, או '' אם לא מובן. מאיר: "עשיתי הפק מחדש וזה
+    עדיין רושם את התאריך של היום" — 2026-9-9 (בלי אפסים) לא נקרא ונפל להיום."""
     s = str(s or '').strip()
-    d = None
+    m = re.match(r'^(\d{4})[./-](\d{1,2})[./-](\d{1,2})', s)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    else:
+        m = re.match(r'^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', s)      # 9.9.2026 — יום.חודש.שנה
+        if not m:
+            return ''
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        y += 2000 if y < 100 else 0
     try:
-        d = datetime.date.fromisoformat(s[:10])
-    except (TypeError, ValueError):
-        # 09.09.2026 / 9/9/2026 — יום.חודש.שנה כמו בכרטיס
-        m = re.match(r'^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', s)
-        if m:
-            y = int(m.group(3)); y += 2000 if y < 100 else 0
-            try:
-                d = datetime.date(y, int(m.group(2)), int(m.group(1)))
-            except ValueError:
-                d = None
-    return (d or datetime.date.today()).strftime('%B %-d, %Y')
+        return datetime.date(y, mo, d).isoformat()
+    except ValueError:
+        return ''
+
+
+def nice_date(s):
+    d = iso_day(s)
+    return (datetime.date.fromisoformat(d) if d else datetime.date.today()).strftime('%B %-d, %Y')
 
 
 def receipt_data(con, don_id, RECEIPT_START, today_iso):
@@ -112,7 +119,7 @@ def receipt_data(con, don_id, RECEIPT_START, today_iso):
     except ValueError:
         amt = 0.0
     return {'donation_id': don_id, 'donor_id': row['donor_id'], 'name': name, 'addr': addr, 'email': email,
-            'amount': amt, 'date': (row['date'] or today_iso())[:10], 'issued': today_iso(),
+            'amount': amt, 'date': iso_day(row['date']) or today_iso(), 'issued': today_iso(),
             'purpose': purpose_en(row['category']), 'method': method_en(row['method']), 'num': num}
 
 

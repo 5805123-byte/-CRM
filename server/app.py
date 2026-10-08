@@ -17135,6 +17135,9 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); pid = int(m.group(1))
             con = db(); sets = []; vals = []
+            if b.get('date') and len(str(b['date'])) > 7:
+                from receipt_us import iso_day as _isod
+                b['date'] = _isod(b['date']) or b['date']      # 2026-9-9 / 9.9.2026 ← 2026-09-09
             for k in ('date','amount','category','method','note','cur','eq','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked','parnes_id'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
@@ -17727,8 +17730,16 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'הקבלה או התרומה שלה לא נמצאו'})
                 if (r['src'] or 'own') == 'ez':
                     return self._send(200, {'ok': False, 'error': 'קבלת איזיקאונט — מבטלים ומפיקים מחדש באתר איזיקאונט'})
-                if not con.execute("SELECT 1 FROM donations WHERE id=?", (r['donation_id'],)).fetchone():
+                dn = con.execute("SELECT id,date FROM donations WHERE id=?", (r['donation_id'],)).fetchone()
+                if not dn:
                     return self._send(200, {'ok': False, 'error': 'התרומה של הקבלה נמחקה מהכרטיס'})
+                from receipt_us import iso_day as _isod
+                iso = _isod(dn['date'])
+                if not iso:
+                    # לא מדפיסים בשקט את התאריך של היום — אומרים מה רשום בתרומה
+                    return self._send(200, {'ok': False, 'error': 'תאריך התרומה לא מובן ("%s"). תקן אותו בכרטיס התורם ← ✏️ ערוך ← 📅 תאריך מדויק, ואז הפק מחדש.' % (dn['date'] or 'ריק')})
+                if iso != dn['date']:
+                    con.execute("UPDATE donations SET date=? WHERE id=?", (iso, dn['id']))
                 info, pdf, _f = receipt_build(con, r['kind'], r['donation_id'])
                 con.execute("UPDATE receipt_docs SET pdf=?, name=?, amount=?, date=?, purpose=?, method=? WHERE id=?",
                             (pdf, info['name'], info['amount'], info['date'], info.get('purpose') or '', info.get('method') or '', r['id']))
@@ -20583,6 +20594,9 @@ class H(BaseHTTPRequestHandler):
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/donation':
+            if b.get('date') and len(str(b['date'])) > 7:
+                from receipt_us import iso_day as _isod
+                b['date'] = _isod(b['date']) or b['date']
             con = db(); cur = con.cursor()
             # ההפך: החיוב כבר נכנס מאוטרייז ("לא סווג"), ועכשיו מאיר רושם אותו ביד
             # (למשל בקמפיין) — במקום שורה שנייה, השורה שנכנסה מקבלת את הייעוד.
@@ -22684,6 +22698,32 @@ def _authnet_loop():
         time.sleep(every)
 
 
+def donation_dates_fix():
+    """פעם אחת: תאריכי תרומה שנשמרו בלי אפסים (2026-9-9) או כיום.חודש.שנה — לצורה אחת, כדי
+    שהקבלות והחשבונות יקראו אותם (אחרת הקבלה הדפיסה את היום)."""
+    from receipt_us import iso_day
+    con = db()
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='donation_dates_v1'").fetchone():
+            return
+        n = 0
+        for r in con.execute("SELECT id,date FROM donations WHERE COALESCE(date,'')<>'' AND LENGTH(date)>7").fetchall():
+            v = str(r['date'])
+            if re.fullmatch(r'\d{4}-\d{2}-\d{2}', v[:10]) and (len(v) == 10 or not v[10:11].isdigit()):
+                continue
+            iso = iso_day(v)
+            if iso and iso != v:
+                con.execute("UPDATE donations SET date=? WHERE id=?", (iso, r['id']))
+                con.execute("UPDATE receipt_docs SET date=? WHERE donation_id=? AND COALESCE(src,'own')='own'", ('', r['id']))
+                n += 1
+        con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('donation_dates_v1')")
+        con.commit()
+        if n:
+            print('  תאריכי תרומות תוקנו לצורה אחידה: %d' % n)
+    finally:
+        con.close()
+
+
 def us_receipt_redate():
     """פעם אחת: קבלות אמריקאיות שכבר הופקו נשאו את תאריך ההפקה במקום תאריך התרומה (מאיר:
     "רשמתי תאריך 9.9 וזה רושם לי להיום"). מפיקים מחדש את הקובץ — אותו מספר קבלה, תאריך התרומה."""
@@ -22710,6 +22750,10 @@ def us_receipt_redate():
 
 def serve():
     ensure_schema()
+    try:
+        donation_dates_fix()
+    except Exception as e:
+        print('  donation dates fix error:', e)
     try:
         us_receipt_redate()
     except Exception as e:
