@@ -12980,7 +12980,7 @@ function ymViewSend(){
     }
     // מאיר: "גם מי שאין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי"
     const free=billOn?selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt)).length:0;
-    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+(free?'\n⚠️ '+free+' בלי סכום — כרגע אם יקישו 1 השלוחה תגיד להם "לא מוגדר סכום עבורכם"':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
+    if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 לפני השיחות יעודכן BillingSum.ini בשלוחה '+ymBillPath:'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם (billing_sum_default=menu)':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,bill_path:ymBillPath,
       recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L}:{k:x.k,id:x.id,amount:x.amt||'',link:L};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
