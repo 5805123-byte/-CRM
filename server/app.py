@@ -315,6 +315,11 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS nd_tx(id TEXT PRIMARY KEY, time TEXT, iso TEXT, phone TEXT, name TEXT, amount REAL,
         keva TEXT, groupe TEXT, comments TEXT, conf TEXT, last4 TEXT, type TEXT, member_id INTEGER, msg_id INTEGER, used TEXT);
     CREATE TABLE IF NOT EXISTS nd_map(keva_id TEXT PRIMARY KEY, member_id INTEGER, at TEXT);
+    /* תרומות של חבר קהילה שלא עברו בנדרים פלוס — מאיר: "מקום להכניס תרומה שלו במזומן או דרך
+       אחרת, ועבור מה זה נתרם… שיהיה כתוב אצלו בכרטיס את התרומה שלו ואיך שילם" */
+    CREATE TABLE IF NOT EXISTS cm_don(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, date TEXT, amount REAL,
+        method TEXT, purpose TEXT, note TEXT, created TEXT, by_role TEXT);
+    CREATE INDEX IF NOT EXISTS ix_cmdon_m ON cm_don(member_id);
     /* תזכורות של הקהילה — מאיר: "תזכורות לקהילה, שהגבאי לא יראה את התזכורות שלנו" */
     CREATE TABLE IF NOT EXISTS cm_task(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, due TEXT, at_time TEXT,
         note TEXT, done INTEGER DEFAULT 0, created TEXT, done_at TEXT);
@@ -13261,7 +13266,7 @@ def donor_suggest(con, name, limit=6):
     return [x[1] for x in out[:limit]]
 
 
-def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', send=False, key=''):
+def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', send=False, key='', method=''):
     """קבלה ישראלית לחבר קהילה — מאיר: "בכרטיס של חבר הקהילה… גם להוציא קבלות משם". בלי שורת
     תרומה (הקהילה נפרדת מהתורמים): דרך איזיקאונט אם מוגדר, אחרת בעיצוב שלנו. key — מזהה
     העסקה בנדרים פלוס, כדי שלא תופק פעמיים על אותה עסקה."""
@@ -13284,7 +13289,7 @@ def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', 
     if ez_ready():
         import ezcount as _ez
         ok, res = _ez.send_receipt(name=name, email=email if send else '', amount=amt, currency='ILS', date=date, purpose=purpose,
-                                   method='אשראי', note='', address=addr, phone=(m['phone'] or '').strip(), require_email=False)
+                                   method=method or 'אשראי', note='', address=addr, phone=(m['phone'] or '').strip(), require_email=False)
         if not ok:
             return None, str(res)
         docnum = str(res.get('docnum') or '')
@@ -13296,8 +13301,8 @@ def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', 
             num = 0
         sent = now_iso() if (send and email and res.get('sent')) else None
         con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,sent_at,sent_to,note,url,src) "
-                    "VALUES('il',?,NULL,NULL,?,?,?,'₪',?,?,'אשראי',?,?,?,?,?,?,'ez')",
-                    (num, name, email, amt, date, purpose, pdf, now_iso(), sent, email if sent else None, note + ' · איזיקאונט ' + docnum, url))
+                    "VALUES('il',?,NULL,NULL,?,?,?,'₪',?,?,?,?,?,?,?,?,?,'ez')",
+                    (num, name, email, amt, date, purpose, method or 'אשראי', pdf, now_iso(), sent, email if sent else None, note + ' · איזיקאונט ' + docnum, url))
         rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
         con.commit()
         return receipt_doc(con, rid), ''
@@ -13315,12 +13320,12 @@ def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', 
     except Exception:
         heb = ''
     info = {'donation_id': None, 'donor_id': None, 'name': name, 'tz': '', 'addr': addr, 'amount': amt,
-            'words': _il.amount_words(amt), 'date': date, 'date_heb': heb, 'method': 'כרטיס אשראי', 'ref': key,
+            'words': _il.amount_words(amt), 'date': date, 'date_heb': heb, 'method': method or 'כרטיס אשראי', 'ref': '' if key.startswith('cm') else key,
             'purpose': purpose, 'num': num, 'org': _il.org_settings(con, kv_get), 'issued': today_iso(), 'email': email}
     pdf, _f = _il.receipt_file(con, 0, 'pdf', STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full, info=info)
     con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note,src) "
-                "VALUES('il',?,NULL,NULL,?,?,?,'₪',?,?,'כרטיס אשראי',?,?,?,'own')",
-                (num, name, email, amt, date, purpose, pdf, now_iso(), note))
+                "VALUES('il',?,NULL,NULL,?,?,?,'₪',?,?,?,?,?,?,'own')",
+                (num, name, email, amt, date, purpose, method or 'כרטיס אשראי', pdf, now_iso(), note))
     rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
     con.commit()
     return receipt_doc(con, rid), ''
@@ -13357,7 +13362,14 @@ def member_nd(con, mid):
     debts = [dict(r) for r in con.execute("SELECT * FROM cm_debt WHERE member_id=? AND (status='open' OR (status='paid' AND COALESCE(closed_at,'')>=?)) "
                                            "ORDER BY status='paid', COALESCE(NULLIF(due,''),created)", (mid, (il_now() - datetime.timedelta(days=120)).strftime('%Y-%m-%d')))]
     tasks = [dict(r) for r in con.execute("SELECT * FROM cm_task WHERE member_id=? ORDER BY done, due", (mid,))]
-    return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years,
+    dons = [dict(r) for r in con.execute(
+        "SELECT d.*, (SELECT rd.id FROM receipt_docs rd WHERE rd.note LIKE '%nd:cm'||d.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_id,"
+        "(SELECT rd.num FROM receipt_docs rd WHERE rd.note LIKE '%nd:cm'||d.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_num,"
+        "(SELECT rd.sent_at FROM receipt_docs rd WHERE rd.note LIKE '%nd:cm'||d.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_sent "
+        "FROM cm_don d WHERE d.member_id=? ORDER BY d.date DESC, d.id DESC", (mid,))]
+    for d in dons:
+        years[(d['date'] or '')[:4]] = round(years.get((d['date'] or '')[:4], 0) + (d['amount'] or 0), 2)
+    return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years, 'dons': dons,
             'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0), 2),
             'since': min((t['iso'] or '' for t in txs if t['iso']), default=''),
             'debts': debts, 'tasks': tasks, 'email': (emails_of(m['email'])[0] if m['email'] else ''),
@@ -16669,7 +16681,9 @@ class H(BaseHTTPRequestHandler):
                         x['amt'] = round(x['amt'] + _ivr_amt(k['amount']), 2); x['n'] += 1
                         x['groupe'] = x['groupe'] or (k['groupe'] or '')
                         x['bad'] = x['bad'] or (1 if (k['error'] or '').strip() else 0)
-                for t in con.execute("SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 GROUP BY member_id"):
+                for t in con.execute("SELECT member_id, SUM(c) c, SUM(s) s, MAX(last) last FROM ("
+                                     "SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 GROUP BY member_id "
+                                     "UNION ALL SELECT member_id, COUNT(*), SUM(amount), MAX(date) FROM cm_don GROUP BY member_id) GROUP BY member_id"):
                     x = kv.setdefault(t['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
                     x.update(tx=t['c'], tx_sum=round(t['s'] or 0, 2), tx_last=(t['last'] or '')[:10])
             except Exception:
@@ -19201,7 +19215,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 doc, err = receipt_issue_member(con, int(m.group(1)), b.get('amount'), b.get('date') or '', b.get('purpose') or '',
-                                                b.get('email') or '', bool(b.get('send')), str(b.get('key') or '').strip())
+                                                b.get('email') or '', bool(b.get('send')), str(b.get('key') or '').strip(), str(b.get('method') or '').strip())
                 if not doc:
                     return self._send(200, {'ok': False, 'error': err})
                 send_error = ''
@@ -19215,6 +19229,39 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             bump_data()
             return self._send(200, {'ok': True, 'doc': doc, 'send_error': send_error})
+        m = re.match(r'/api/members/(\d+)/donation$', self.path)
+        if m:
+            mid = int(m.group(1)); a = round(_amt2(re.sub(r'[^\d.,]', '', str(b.get('amount') or ''))), 2)
+            if a <= 0:
+                return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+            meth = str(b.get('method') or 'מזומן').strip()[:40]
+            pur = str(b.get('purpose') or '').strip()[:120]
+            dt = str(b.get('date') or today_iso())[:10]
+            con = db()
+            try:
+                con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
+                            (mid, dt, a, meth, pur, str(b.get('note') or '').strip()[:300], now_iso(), getattr(self, 'role', '') or ''))
+                did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                cm_debt_log(con, mid, 'don%d' % did, '💵 תרומה ₪%g ב%s%s' % (a, meth, (' עבור ' + pur) if pur else ''))
+                used = cm_debt_pay(con, mid, a, 'שולם ב%s %s' % (meth, dt)) if b.get('pay_debt') else 0
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': did, 'debt_paid': used})
+        m = re.match(r'/api/members/donation/(\d+)$', self.path)
+        if m:
+            con = db()
+            try:
+                d = con.execute("SELECT * FROM cm_don WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not d:
+                    return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+                if b.get('action') == 'delete':
+                    con.execute("DELETE FROM cm_don WHERE id=?", (d['id'],))
+                    cm_debt_log(con, d['member_id'], 'don%d' % d['id'], '🗑️ נמחקה תרומה ₪%g (%s) מ-%s' % (d['amount'] or 0, d['method'] or '', d['date'] or ''))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/cm/tasks':
             mid = int(b.get('member_id') or 0)
             note = str(b.get('note') or '').strip()
@@ -21034,8 +21081,9 @@ def cm_debts_from_keva(con):
                         (now_iso(), now_iso(), d['id']))
             closed += 1
         elif d and bad:
-            con.execute("UPDATE cm_debt SET member_id=?, note=? WHERE id=?",
-                        (k['member_id'], '%s · כרטיס ****%s' % (k['error'], k['last4'] or ''), d['id']))
+            # מאיר: "₪0" — חוב שנפתח כשהסכום לא נקרא, מקבל את הסכום של ההוראה (רק אם עוד לא שולם ממנו)
+            con.execute("UPDATE cm_debt SET member_id=?, note=?, amount=CASE WHEN COALESCE(amount,0)=0 AND COALESCE(paid,0)=0 THEN ? ELSE amount END WHERE id=?",
+                        (k['member_id'], '%s · כרטיס ****%s' % (k['error'], k['last4'] or ''), _ivr_amt(k['amount']) or 0, d['id']))
     return opened, closed
 
 
