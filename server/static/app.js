@@ -13332,6 +13332,10 @@ function ymTrack(jid){
 }
 // ---------------- 📊 משלוחים ותוצאות ----------------
 function ymAns(m,ch){
+  // מאיר: "אם שלחנו הודעה עם סכום והוא שילם… המערכת צריכה להתעדכן שהוא שילם"
+  const paid=m.paid_at?`<span class="ymans paid">💳 שילם ₪${esc(m.paid_amount)} · ${esc(m.paid_via||'')} · ${esc(String(m.paid_at).slice(5,16))}</span>`:'';
+  return ymAns0(m,ch)+paid;}
+function ymAns0(m,ch){
   if(ch==='sms')return m.status==='sent'?'<span class="ymans yes">💬 נשלח</span>':'';
   if(m.status!=='sent')return '';
   if(m.answered===1)return `<span class="ymans yes">📞 ענה · שמע ${ymMMSS(m.listen_secs)}</span>${m.pressed?`<span class="ymans pr">1️⃣ הקיש ${esc(m.pressed)} · ${ymMMSS(m.pressed_secs)}</span>`:''}`;
@@ -13340,6 +13344,7 @@ function ymAns(m,ch){
 function ymJobChips(j){
   const c=[`<span class="ymch2">📤 ${j.sent}/${j.total}</span>`];
   if(j.channel==='voice'){if(j.n_ans)c.push(`<span class="ymch2 yes">📞 ענו ${j.n_ans}</span>`);if(j.n_pressed)c.push(`<span class="ymch2 pr">1️⃣ הקישו ${j.n_pressed}</span>`);if(j.n_noans)c.push(`<span class="ymch2 no">📵 לא ענו ${j.n_noans}</span>`);}
+  if(j.n_paid)c.push(`<span class="ymch2 paid">💳 שילמו ${j.n_paid} · ₪${(+j.paid_sum||0).toLocaleString('he-IL')}</span>`);
   if(j.failed)c.push(`<span class="ymch2 no">✗ נכשלו ${j.failed}</span>`);
   return c.join('');}
 function ymViewJobs(){

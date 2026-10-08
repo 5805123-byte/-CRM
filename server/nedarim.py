@@ -187,3 +187,31 @@ def update_link(keva_id):
 def link_status(keva_id):
     ok, res = call('GetKevaUpdateLinkStatus', {'KevaId': str(keva_id).lstrip('-')})
     return (res if ok and isinstance(res, dict) else {})
+
+
+def history(last_id='', loops=8):
+    """עסקאות האשראי (GetHistoryJson) מ-last_id והלאה, בלי מספר זהות. מוגבל ל-20 פניות
+    בשעה — נקרא בסנכרון ואחרי תשלום בטלפון. מחזיר (רשימה, המזהה הגבוה ביותר)."""
+    out, last = [], str(last_id or '')
+    for _ in range(loops):
+        p = {'MaxId': 2000}
+        if last:
+            p['LastId'] = last
+        ok, res = call('GetHistoryJson', p, timeout=90)
+        if not ok:
+            raise RuntimeError('נדרים פלוס (היסטוריה): %s' % (LAST.get('error') or res))
+        rows = res if isinstance(res, list) else ((res.get('data') or res.get('Data') or []) if isinstance(res, dict) else [])
+        for r in rows:
+            tid = str(r.get('TransactionId') or '').strip()
+            if not tid:
+                continue
+            out.append({'id': tid, 'time': str(r.get('TransactionTime') or '').strip(),
+                        'phone': str(r.get('Phone') or '').strip(), 'name': str(r.get('ClientName') or '').strip(),
+                        'amount': str(r.get('Amount') or '').strip(), 'currency': str(r.get('Currency') or '1').strip(),
+                        'keva': str(r.get('KevaId') or '').strip(), 'groupe': str(r.get('Groupe') or '').strip(),
+                        'comments': str(r.get('Comments') or '').strip(), 'conf': str(r.get('Confirmation') or '').strip(),
+                        'last4': str(r.get('LastNum') or '').strip(), 'type': str(r.get('TransactionType') or '').strip()})
+            last = tid
+        if len(rows) < 2000:
+            break
+    return out, last

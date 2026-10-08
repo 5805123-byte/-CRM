@@ -312,6 +312,8 @@ def ensure_schema():
        לשלוח עדיין צינתוק". נשמרת כאן, אפשר להשמיע / להוריד / להעלות לשלוחה בימות מתי שרוצים. */
     CREATE TABLE IF NOT EXISTS ym_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, title TEXT, text TEXT,
         voice TEXT, wav BLOB, secs REAL, path TEXT, uploaded_at TEXT);
+    CREATE TABLE IF NOT EXISTS nd_tx(id TEXT PRIMARY KEY, time TEXT, iso TEXT, phone TEXT, name TEXT, amount REAL,
+        keva TEXT, groupe TEXT, comments TEXT, conf TEXT, last4 TEXT, type TEXT, member_id INTEGER, msg_id INTEGER, used TEXT);
     CREATE TABLE IF NOT EXISTS nd_map(keva_id TEXT PRIMARY KEY, member_id INTEGER, at TEXT);
     CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
@@ -483,6 +485,10 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE nd_keva ADD COLUMN error TEXT")
     except Exception: pass
+    # מאיר: "אם שלחנו הודעה עם סכום והוא שילם — המערכת צריכה להתעדכן שהוא שילם"
+    for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT')):
+        try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
+        except Exception: pass
     # ימות המשיח — מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו"
     for col, typ in (('campaign', 'TEXT'), ('answered', 'INTEGER'), ('secs', 'INTEGER'), ('call_status', 'TEXT'), ('checked_at', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
@@ -16161,7 +16167,9 @@ class H(BaseHTTPRequestHandler):
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
-                "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.pressed,'')<>'') AS n_pressed "
+                "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.pressed,'')<>'') AS n_pressed, "
+                "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.paid_at,'')<>'') AS n_paid, "
+                "(SELECT COALESCE(SUM(m.paid_amount),0) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.paid_at,'')<>'') AS paid_sum "
                 "FROM ym_job j ORDER BY j.id DESC LIMIT 50")]
             con.close()
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
@@ -20365,6 +20373,89 @@ def _cm_rows_from_table(rows):
     return out
 
 
+def ym_mark_paid(con, phone, amount, via, at=None, before=None):
+    """ההודעה האחרונה עם סכום שנשלחה למספר (30 יום) ועוד לא סומנה — שולמה. מחזיר את מזהה ההודעה."""
+    if not phone:
+        return None
+    at = at or il_now().strftime('%Y-%m-%d %H:%M:%S')
+    since = (il_now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+    m = con.execute("SELECT id FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(paid_at,'')='' AND COALESCE(sent_ts,'')>=? "
+                    "AND COALESCE(sent_ts,'')<=? ORDER BY id DESC LIMIT 1", (phone, since, before or '9999')).fetchone()
+    if not m:
+        return None
+    con.execute("UPDATE ym_msg SET paid_amount=?, paid_at=?, paid_via=? WHERE id=?", (round(float(amount or 0), 2), at, via, m['id']))
+    return m['id']
+
+
+def _nd_iso(t):
+    m = re.match(r'(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?', t or '')
+    if not m:
+        return ''
+    return '%s-%02d-%02d %02d:%s:%s' % (m.group(3), int(m.group(2)), int(m.group(1)), int(m.group(4) or 0), m.group(5) or '00', m.group(6) or '00')
+
+
+def nd_history_sync(con):
+    """עסקאות חדשות בנדרים פלוס ← מי ששילם על הודעה שנשלחה אליו מסומן "שילם", והחוב שלו נסגר.
+    חיוב אוטומטי של הוראת קבע (KevaId חיובי) לא נחשב תשלום על הודעה; תשלום בודד שצורף להוראה
+    (KevaId שלילי) ועסקה רגילה — כן."""
+    import nedarim as _nd, yemot as _ym
+    last = kv_get(con, 'nd_hist_last', '')
+    rows, top = _nd.history(last)
+    first = not last
+    cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
+    midx, nidx = nd_member_index(con), nd_name_index(con)
+    new = marked = 0
+    for t in rows:
+        iso = _nd_iso(t['time'])
+        if first and iso[:10] < cutoff:
+            continue
+        a = _ivr_amt(t['amount'])
+        ph = _ym.norm_phone(t['phone'])
+        ids = midx.get(ph) if ph else None
+        mid = (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, t['name'])
+        c = con.execute("INSERT OR IGNORE INTO nd_tx(id,time,iso,phone,name,amount,keva,groupe,comments,conf,last4,type,member_id) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (t['id'], t['time'], iso, ph, t['name'], a, t['keva'], t['groupe'], t['comments'], t['conf'], t['last4'], t['type'], mid))
+        if not c.rowcount:
+            continue
+        new += 1
+        auto = t['keva'] and not t['keva'].startswith('-')
+        if a <= 0 or auto or not ph:
+            continue
+        # כבר נרשם מהשלוחה בטלפון (אותו מזהה עסקה) — לא שוב
+        if con.execute("SELECT 1 FROM nd_charge WHERE transaction_id=? AND ok=1", (t['id'],)).fetchone():
+            continue
+        msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None)
+        if msg:
+            con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, t['id']))
+            marked += 1
+        if mid:
+            cm_debt_pay(con, mid, a, 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf']))
+    if top:
+        con.execute("INSERT INTO app_kv(k,v) VALUES('nd_hist_last',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (top,))
+    con.commit()
+    return new, marked
+
+
+ND_HIST_AT = {'t': 0}
+
+
+def nd_history_soon():
+    """אחרי תשלום בטלפון — בדיקה מהירה בהיסטוריה (לא יותר מפעם ב-4 דקות, בגלל המגבלה של נדרים)."""
+    import time as _t
+    if _t.time() - ND_HIST_AT['t'] < 240:
+        return
+    ND_HIST_AT['t'] = _t.time()
+
+    def run():
+        _t.sleep(45)
+        try:
+            con = db(); nd_history_sync(con); con.close(); bump_data()
+        except Exception as e:
+            print('  nd history error:', e)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _nd_toks(s):
     t = re.sub(r'[^\u05d0-\u05eaa-z\s]', ' ', str(s or '').lower().translate(_KV_STRIP))
     return [w for w in t.split() if len(w) > 1 and w not in ('הרב', 'רב', 'ר', 'משפחת', 'מר', 'גב', 'הר')]
@@ -20447,6 +20538,13 @@ def nd_sync(con):
     o, c = cm_debts_from_keva(con)
     if o or c:
         res['חובות קהילה'] = 'נפתחו %d · נסגרו %d' % (o, c)
+    try:
+        hn, hm = nd_history_sync(con)
+        res['עסקאות חדשות'] = hn
+        if hm:
+            res['שילמו על הודעה'] = hm
+    except Exception as e:
+        res['היסטוריה'] = 'לא נמשכה: %s' % str(e)[:60]
     con.commit()
     return res
 
@@ -20554,20 +20652,31 @@ def ivr_answer(P):
         mid = next(iter(mids)) if len(mids) == 1 else None
         # הסכום — מההודעה האחרונה שנשלחה למספר הזה (14 יום), אם הייתה
         last = con.execute("SELECT amount,job FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
-                           "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
+                           "AND COALESCE(paid_at,'')='' ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
         job_amt = _ivr_amt(last['amount']) if last else 0
         job = last['job'] if last else 0
 
         def fallback(amt=0):
-            # סליקה רגילה בנדרים פלוס — הקשת כרטיס (הערך השמיני: מספר המוסד)
-            return 'credit_card=nedarim_plus,%s,,1,1,,,%s' % (('%g' % amt) if amt else '', _nd.mosad())
+            # סליקה רגילה בנדרים פלוס — הקשת כרטיס (הערך השמיני: מספר המוסד).
+            # מאיר: "בטלפון לא לנעול סכום" — קודם בוחרים: הסכום מההודעה או סכום אחר
+            a = _ivr_amt(P.get('Amt'))
+            if not a:
+                if amt and P.get('CChoice') != '2':
+                    if 'CChoice' not in P:
+                        return ('read=t-' + _ivr_t('לתשלום בכרטיס אשראי של') + '.n-%g' % amt + '.t-' +
+                                _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') + '=CChoice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+                    a = amt
+                else:
+                    return 'read=t-' + _ivr_t('הקישו את הסכום לתשלום בשקלים ובסיום סולמית') + '=Amt,no,5,1,15,Number,yes,yes,,,2,,,,'
+            return 'credit_card=nedarim_plus,%g,,1,1,,,%s' % (a, _nd.mosad())
 
         if 'CreditCard_CODE' in P:
             con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'כרטיס')",
-                        (now_iso(), call_id, phone, '', mid, _ivr_amt(P.get('Amt')) or job_amt, 1 if P['CreditCard_CODE'] not in ('GoBack', '') else 0,
+                        (now_iso(), call_id, phone, '', mid, _ivr_amt(P.get('Amt')) or job_amt, 0,
                          str(P.get('CreditCard_CODE') or '')[:80], '', '', '', job))
             con.commit()
+            nd_history_soon()      # נדרים פלוס יאשרו את התשלום, וההודעה תסומן "שילם"
             if P['CreditCard_CODE'] == 'GoBack':
                 return 'id_list_message=t-' + _ivr_t('התשלום בוטל') + END
             return 'id_list_message=t-' + _ivr_t('תודה רבה ותזכו למצוות') + END
@@ -20651,6 +20760,8 @@ def ivr_answer(P):
                          else ('🔴 ניסיון תשלום ₪%g בטלפון נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
             if ok:
                 cm_debt_pay(con, k['member_id'] or mid, amt, 'שולם בטלפון %s (אישור %s)' % (today_iso(), conf))
+        if ok:
+            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון')
         con.commit()
         if ok:
             return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
