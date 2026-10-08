@@ -277,6 +277,19 @@ def ensure_schema():
         donation_id INTEGER, donor_id INTEGER, name TEXT, email TEXT, amount REAL, cur TEXT, date TEXT,
         purpose TEXT, method TEXT, pdf BLOB, created TEXT, sent_at TEXT, sent_to TEXT, note TEXT);
     CREATE UNIQUE INDEX IF NOT EXISTS ix_rdoc_don ON receipt_docs(kind, donation_id);
+    /* בנק ווסט חי (accept.blue) — מאיר: "שיהיה שם הכל כמו בבנק ווסט". העסקאות מתחילת
+       2026 נשמרות לבדיקה (עבר / נדחה); רק מ-BQ_POST_FROM והלאה הן נרשמות כתרומות. */
+    CREATE TABLE IF NOT EXISTS bq_tx(id INTEGER PRIMARY KEY, ref INTEGER, created TEXT, settled TEXT,
+        amount REAL, status TEXT, error TEXT, type TEXT, schedule_id INTEGER, description TEXT,
+        customer_id INTEGER, email TEXT, name TEXT, card TEXT, donor_id INTEGER, posted INTEGER DEFAULT 0, raw TEXT);
+    CREATE INDEX IF NOT EXISTS ix_bqtx_created ON bq_tx(created);
+    CREATE TABLE IF NOT EXISTS bq_sched(id INTEGER PRIMARY KEY, customer_id INTEGER, title TEXT, amount REAL,
+        freq TEXT, next_run TEXT, prev_run TEXT, num_left INTEGER, active INTEGER, status TEXT, pm_id INTEGER,
+        receipt_email TEXT, tx_count INTEGER, created TEXT, donor_id INTEGER, for_cat TEXT, for_note TEXT, synced TEXT);
+    CREATE TABLE IF NOT EXISTS bq_cust(id INTEGER PRIMARY KEY, identifier TEXT, first TEXT, last TEXT, email TEXT,
+        phone TEXT, number TEXT, active INTEGER, donor_id INTEGER, manual INTEGER DEFAULT 0, synced TEXT);
+    CREATE TABLE IF NOT EXISTS bq_pm(id INTEGER PRIMARY KEY, customer_id INTEGER, card_type TEXT, last4 TEXT,
+        exp_m INTEGER, exp_y INTEGER, is_default INTEGER, name TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
        לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
     CREATE TABLE IF NOT EXISTS ym_job(id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, channel TEXT,
@@ -9527,7 +9540,7 @@ def banquest_post(con, source, only_tids=None):
     dinfo = {r['id']: ((r['tier'] or ''), (r['category'] or ''))
              for r in con.execute("SELECT id,tier,category FROM donors")}
     allr = []
-    for r in con.execute("SELECT tid,donor_id,amount,date,recurring,note FROM recon "
+    for r in con.execute("SELECT tid,donor_id,amount,date,recurring,note,category FROM recon "
                          "WHERE source=? AND COALESCE(processed,0)=0 "
                          "AND COALESCE(status,'settled')='settled' AND donor_id IS NOT NULL" + (" AND tid IN (%s)" % ",".join("?" * len(only_tids)) if only_tids else ""), [source] + list(only_tids or [])):
         d = dict(r)
@@ -9586,6 +9599,9 @@ def banquest_post(con, source, only_tids=None):
                 merged += 1
                 continue
             cat, why, chk = _guess(did, a, r['recurring'])
+            if (r.get('category') or '').strip():
+                # מאיר: "שיהיה כתוב… על מה כל תשלום שלו" — "עבור מה" שנכתב בדף החיובים
+                cat, why, chk = r['category'].strip(), 'עבור מה מהחיוב', False
             note = (r['note'] or '').strip()
             if chk:
                 note = (note + ' · ' if note else '') + 'לא סווג — לבדוק עבור מה'
@@ -15942,6 +15958,51 @@ class H(BaseHTTPRequestHandler):
                 out.append(o)
             out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
             return self._send(200, {'ok': True, 'month': ym, 'calls': out})
+        # בנק ווסט חי — הסטטוס, הוראות הקבע והעסקאות לדף החיובים ולכרטיס התורם
+        if self.path.split('?')[0] == '/api/bq/status':
+            import banquest as _bq
+            con = db()
+            try:
+                mon = today_iso()[:7]
+                okst = ','.join("'%s'" % x for x in _bq.OK_ST)
+                badst = ','.join("'%s'" % x for x in _bq.BAD_ST)
+                info = {'ok': True, 'configured': _bq.configured(), 'stat': dict(BQSTAT), 'post_from': BQ_POST_FROM,
+                        'hist_from': BQ_HIST_FROM,
+                        'n_active': con.execute("SELECT COUNT(*) FROM bq_sched WHERE active=1").fetchone()[0],
+                        'month_sum': con.execute("SELECT COALESCE(SUM(amount),0) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s) AND COALESCE(type,'') IN ('','charge')" % okst, (mon,)).fetchone()[0],
+                        'month_bad': con.execute("SELECT COUNT(*) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,)).fetchone()[0],
+                        'n_tx': con.execute("SELECT COUNT(*) FROM bq_tx").fetchone()[0]}
+            finally:
+                con.close()
+            return self._send(200, info)
+        if self.path.split('?')[0] == '/api/bq/list':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            kind = (qs.get('kind') or ['rec'])[0]
+            qq = ((qs.get('q') or [''])[0]).strip()[:60]
+            con = db()
+            try:
+                if kind == 'rec':
+                    rows = bq_sched_rows(con)
+                    if qq:
+                        rows = [r for r in rows if qq.lower() in ' '.join(str(r.get(k) or '') for k in ('donor_name', 'bq_name', 'title', 'for_cat', 'for_note', 'last4', 'amount')).lower()]
+                else:
+                    rows = bq_tx_rows(con, 'bad' if kind == 'bad' else 'hist', q=qq)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
+        m = re.match(r'/api/bq/donor/(\d+)$', self.path.split('?')[0])
+        if m:
+            did = int(m.group(1))
+            con = db()
+            try:
+                sch = bq_sched_rows(con, did)
+                txs = bq_tx_rows(con, 'hist', donor_id=did, limit=12)
+                cids = {r['customer_id'] for r in con.execute("SELECT id customer_id FROM bq_cust WHERE donor_id=?", (did,))}
+                cids |= {x['customer_id'] for x in sch if x.get('customer_id')}
+                pms = [dict(r) for r in con.execute("SELECT * FROM bq_pm WHERE customer_id IN (%s) ORDER BY is_default DESC" % ','.join('?' * len(cids)), list(cids))] if cids else []
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'schedules': sch, 'tx': txs, 'pms': pms, 'customers': sorted(cids)})
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
             _ym.begin_trace()
@@ -18217,6 +18278,144 @@ class H(BaseHTTPRequestHandler):
             sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        if self.path == '/api/bq/sync':
+            import banquest as _bq
+            if not _bq.configured():
+                return self._send(200, {'ok': False, 'error': 'בנק ווסט לא מוגדר ב-Render (BANQUEST_KEY / BANQUEST_PIN)'})
+            if BQSTAT['running']:
+                return self._send(200, {'ok': False, 'error': 'סנכרון כבר רץ — עוד רגע'})
+            try:
+                res = bq_run(full=bool(b.get('full')))
+                return self._send(200, {'ok': True, 'result': res})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:250]})
+        m = re.match(r'/api/bq/sched/(\d+)$', self.path)
+        if m:
+            # מאיר: "אפשרות לכתוב הערות, תשלומים, שינוי תאריך חיוב… עבור מה"
+            import banquest as _bq
+            sid = int(m.group(1))
+            con = db()
+            row = con.execute("SELECT * FROM bq_sched WHERE id=?", (sid,)).fetchone()
+            if not row:
+                con.close(); return self._send(200, {'ok': False, 'error': 'הוראת הקבע לא נמצאה'})
+            for k in ('for_cat', 'for_note'):
+                if k in b:
+                    con.execute("UPDATE bq_sched SET %s=? WHERE id=?" % k, (str(b.get(k) or '')[:200], sid))
+            if 'donor_id' in b:
+                did = int(b.get('donor_id') or 0) or None
+                con.execute("UPDATE bq_sched SET donor_id=? WHERE id=?", (did, sid))
+                con.execute("UPDATE bq_cust SET donor_id=?, manual=1 WHERE id=?", (did, row['customer_id']))
+            upd = {}
+            if b.get('amount') not in (None, ''):
+                upd['amount'] = round(_amt2(b.get('amount')), 2)
+            if b.get('next_run_date'):
+                upd['next_run_date'] = str(b['next_run_date'])[:10]
+            if 'active' in b:
+                upd['active'] = bool(b.get('active'))
+            if 'num_left' in b and str(b.get('num_left')).strip() != '':
+                upd['num_left'] = int(b.get('num_left') or 0)
+            err = ''
+            if upd:
+                code, res = _bq.update_schedule(sid, **upd)
+                if code == 200 and isinstance(res, dict):
+                    con.execute("UPDATE bq_sched SET amount=?, next_run=?, active=?, num_left=? WHERE id=?",
+                                (float(res.get('amount') or row['amount'] or 0), res.get('next_run_date') or row['next_run'],
+                                 1 if res.get('active', row['active']) else 0, int(res.get('num_left') or 0), sid))
+                else:
+                    err = 'בנק ווסט לא עדכן: ' + (_bq.LAST.get('error') or str(code))
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': not err, 'error': err})
+        if self.path == '/api/bq/charge':
+            # ⚡ חיוב מיידי של כרטיס שמור — מאיר: "בכרטיס תורם שאפשר לחייב אותו במיידי"
+            import banquest as _bq
+            pm = int(b.get('pm_id') or 0)
+            amt = round(_amt2(b.get('amount')), 2)
+            if not pm or amt <= 0:
+                return self._send(200, {'ok': False, 'error': 'חסר כרטיס או סכום'})
+            con = db()
+            p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone()
+            cu = con.execute("SELECT * FROM bq_cust WHERE id=?", (p['customer_id'],)).fetchone() if p else None
+            if not p:
+                con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נמצא — לחץ 🔄 סנכרון'})
+            fc, fn = str(b.get('for_cat') or '').strip(), str(b.get('for_note') or '').strip()
+            desc = ' · '.join(x for x in (fc, fn) if x)
+            code, res = _bq.charge_pm(pm, amt, description=desc, customer_id=p['customer_id'],
+                                      email=(cu['email'] if cu else '') or '', send_receipt=True)
+            if code != 200 or not isinstance(res, dict):
+                con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
+            st = (res.get('status') or '').lower()
+            tr = res.get('transaction') or {}
+            ok = st in ('approved', 'partially approved') or (res.get('status_code') or '') == 'A'
+            did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
+            if tr.get('id'):
+                t = _bq.tx_row(tr)
+                t.update(donor_id=did, description=t['description'] or desc)
+                if not t['status']:
+                    t['status'] = 'captured' if ok else 'declined'
+                con.execute("""INSERT OR IGNORE INTO bq_tx(id,ref,created,settled,amount,status,error,type,schedule_id,description,
+                                 customer_id,email,name,card,donor_id,posted,raw) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)""",
+                            (t['id'], t['ref'] or res.get('reference_number') or 0, t['created'] or now_iso(), t['settled'], t['amount'] or amt,
+                             t['status'], t['error'] or (res.get('error_message') or ''), t['type'] or 'charge', 0, t['description'],
+                             p['customer_id'], t['email'], t['name'] or (cu['identifier'] if cu else ''), t['card'] or ('%s %s' % (p['card_type'], p['last4'])).strip(),
+                             did, json.dumps(t, ensure_ascii=False)))
+                if ok and did:
+                    t['ref'] = t['ref'] or int(res.get('reference_number') or 0)
+                    t['amount'] = t['amount'] or amt
+                    # "עבור מה" של חיוב מיידי — נכנס כייעוד התרומה
+                    t2 = dict(t, schedule_id=0)
+                    if bq_post_tx(con, t2, force=True):
+                        con.execute("UPDATE recon SET category=? WHERE tid=?", (fc, 'BQ%d' % (t['ref'] or t['id'])))
+                        banquest_post(con, BQ_SRC)
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': ok, 'status': res.get('status'), 'error': '' if ok else (res.get('error_message') or res.get('status') or 'נדחה'),
+                                    'ref': res.get('reference_number'), 'auth': res.get('auth_code')})
+        if self.path == '/api/bq/sched/new':
+            # 🔁 הוראת קבע חדשה על כרטיס שמור
+            import banquest as _bq
+            pm = int(b.get('pm_id') or 0)
+            amt = round(_amt2(b.get('amount')), 2)
+            con = db()
+            p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone()
+            if not p or amt <= 0:
+                con.close(); return self._send(200, {'ok': False, 'error': 'חסר כרטיס או סכום'})
+            cu = con.execute("SELECT * FROM bq_cust WHERE id=?", (p['customer_id'],)).fetchone()
+            fc, fn = str(b.get('for_cat') or '').strip(), str(b.get('for_note') or '').strip()
+            title = ' · '.join(x for x in (fc, fn) if x) or 'תרומה חודשית — כולל חצות'
+            code, res = _bq.create_schedule(p['customer_id'], title, amt, pm, next_run_date=str(b.get('next_run_date') or '')[:10],
+                                            num_left=int(b.get('num_left') or 0), receipt_email=(cu['email'] if cu else '') or '')
+            if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'לא נוצרה'})
+            did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
+            con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
+                             receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
+                        (res['id'], p['customer_id'], title, amt, res.get('frequency') or 'monthly', res.get('next_run_date') or '',
+                         int(res.get('num_left') or 0), res.get('status') or 'active', pm, res.get('receipt_email') or '',
+                         today_iso(), did, fc, fn, now_iso()))
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'id': res['id']})
+        m = re.match(r'/api/bq/tx/(\d+)/post$', self.path)
+        if m:
+            # "רשום בכרטיס" — עסקה ישנה שעברה ולא נמצאה בכרטיס, ברישום ידני ומכוון
+            con = db()
+            r = con.execute("SELECT raw,donor_id FROM bq_tx WHERE id=?", (int(m.group(1)),)).fetchone()
+            if not r:
+                con.close(); return self._send(200, {'ok': False, 'error': 'העסקה לא נמצאה'})
+            t = json.loads(r['raw'] or '{}')
+            t['donor_id'] = int(b.get('donor_id') or 0) or r['donor_id']
+            if not t.get('donor_id'):
+                con.close(); return self._send(200, {'ok': False, 'error': 'בחר תורם לעסקה'})
+            con.execute("UPDATE bq_tx SET donor_id=? WHERE id=?", (t['donor_id'], int(m.group(1))))
+            ok = bq_post_tx(con, t, force=True)
+            if ok:
+                if b.get('for_cat'):
+                    con.execute("UPDATE recon SET category=? WHERE tid=?", (str(b['for_cat'])[:80], 'BQ%d' % (t.get('ref') or t.get('id'))))
+                banquest_post(con, BQ_SRC)
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': ok, 'error': '' if ok else 'כבר רשום, או שהעסקה לא עברה'})
         if self.path == '/api/authorize/sync':
             # "משוך עכשיו" מהמסך — סורק את הימים האחרונים ומכניס מה שחסר
             try:
@@ -19315,6 +19514,19 @@ def health_report():
                 '%d MB מתוך %d' % (rss, lim))
         except Exception:
             pass
+        # בנק ווסט חי (accept.blue)
+        try:
+            import banquest as _bqh
+            if not _bqh.configured():
+                add('חיבור לבנק ווסט', 'warn', 'לא מוגדר — חסרים BANQUEST_KEY ו-BANQUEST_PIN ב-Render')
+            elif BQSTAT.get('error'):
+                add('חיבור לבנק ווסט', 'bad', '%s — %s' % (BQSTAT.get('last') or '', BQSTAT['error']))
+            elif BQSTAT.get('last_ok'):
+                add('חיבור לבנק ווסט', 'ok', 'סנכרון אחרון %s · %s' % (BQSTAT['last_ok'], BQSTAT.get('result') or ''))
+            else:
+                add('חיבור לבנק ווסט', 'ok', 'מוגדר · הסנכרון הראשון ירוץ בעוד רגע')
+        except Exception:
+            pass
         # החיבור החי ל-Authorize.net
         try:
             import authorize_sync as _an
@@ -19415,6 +19627,258 @@ def _intake_daily_loop():
         first = False
         time.sleep(every)
 
+# ---------------- בנק ווסט חי (accept.blue) ----------------
+BQ_SRC = 'Banquest אונליין'
+# מאיר: "שהיסטוריה תהיה שמורה בדף הזה מתחילת 2026 … במאה אחוזים שלא יהיו כפילויות".
+# ההיסטוריה (BQ_HIST_FROM) רק לבדיקה; תרומות נרשמות רק מהיום שאחרי הייבוא האחרון.
+BQ_HIST_FROM = '2026-01-01'
+BQ_POST_FROM = '2026-09-24'
+BQSTAT = {'last': '', 'last_ok': '', 'result': '', 'error': '', 'running': False}
+
+
+def _bq_ne(s):
+    return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+
+
+def bq_donor_index(con):
+    """מפתחות לזיהוי תורם — מייל, שם לועזי, ושם ששויך כבר בחיוב קודם של בנק ווסט."""
+    bye, byeng, bylast, byprev = {}, {}, {}, {}
+    for d in con.execute("SELECT id,english,business,email FROM donors"):
+        for e in emails_of(d['email'] or ''):
+            bye.setdefault(e.lower(), set()).add(d['id'])
+        for v in (d['english'], d['business']):
+            if (v or '').strip():
+                byeng.setdefault(_bq_ne(v), d['id'])
+        toks = (d['english'] or '').split()
+        if toks:
+            bylast.setdefault(_bq_ne(toks[-1]), []).append((d['id'], _bq_ne(toks[0])))
+    for r in con.execute("SELECT first,last,donor_id FROM recon WHERE donor_id IS NOT NULL ORDER BY rowid DESC"):
+        byprev.setdefault(_bq_ne((r['first'] or '') + (r['last'] or '')), r['donor_id'])
+    return bye, byeng, bylast, byprev
+
+
+def bq_match(idx, name, email=''):
+    bye, byeng, bylast, byprev = idx
+    ids = bye.get((email or '').strip().lower()) or set()
+    if len(ids) == 1:
+        return next(iter(ids))
+    k = _bq_ne(name)
+    did = byprev.get(k) or byeng.get(k)
+    if did or len(k) <= 3:
+        return did
+    toks = (name or '').split()
+    cand = bylast.get(_bq_ne(toks[-1]), []) if toks else []
+    fn = _bq_ne(toks[0]) if len(toks) > 1 else ''
+    okc = [i for i, f in cand if f and fn and (f == fn or f[:1] == fn[:1])] if fn else [i for i, _f in cand]
+    return okc[0] if len(set(okc)) == 1 else None
+
+
+def _bq_dmy(iso):
+    try:
+        return datetime.date.fromisoformat(iso[:10]).strftime('%d-%b-%Y')
+    except ValueError:
+        return ''
+
+
+def bq_post_tx(con, t, force=False):
+    """עסקה שעברה → שורת חיוב (recon) שנרשמת בכרטיס התורם דרך banquest_post, עם
+    כל בדיקות הכפילות שלו. force — רישום ידני של עסקה ישנה ("רשום בכרטיס")."""
+    if not t['donor_id'] or t['amount'] <= 0 or t['status'] in banquest_bad() or t['type'] not in ('', 'charge'):
+        return False
+    iso = (t['created'] or '')[:10]
+    if not force and iso < BQ_POST_FROM:
+        return False
+    tid = 'BQ%d' % (t['ref'] or t['id'])
+    if con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone():
+        return False
+    # רשת ביטחון: אותה עסקה שכבר נכנסה מקובץ (מספר אחר) — אותו שם, סכום ויום (±1)
+    try:
+        d0 = datetime.date.fromisoformat(iso)
+        days = {_bq_dmy((d0 + datetime.timedelta(days=k)).isoformat()) for k in (-1, 0, 1)}
+    except ValueError:
+        days = set()
+    nk = _bq_ne(t['name'])
+    for r in con.execute("SELECT first,last,amount,date FROM recon WHERE source LIKE '%Banquest%' AND source<>?", (BQ_SRC,)):
+        if r['date'] in days and _amt2(r['amount']) == round(t['amount'], 2) and _bq_ne((r['first'] or '') + (r['last'] or '')) == nk:
+            return False
+    sch = con.execute("SELECT for_cat,for_note FROM bq_sched WHERE id=?", (t['schedule_id'],)).fetchone() if t['schedule_id'] else None
+    cat = ((sch['for_cat'] if sch else '') or '').strip()
+    note = ' · '.join(x for x in (((sch['for_note'] if sch else '') or '').strip(), (t.get('description') or '').strip(), t['card']) if x)
+    con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,
+                       recurring,donor_id,category,processed,source,status,note)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,'settled',?)""",
+                (tid, t['first'], t['last'] or t['name'], '%.2f' % t['amount'], _bq_dmy(iso), t.get('addr', ''),
+                 t.get('city', ''), t.get('state', ''), t.get('zip', ''), t.get('phone', ''), t['email'],
+                 1 if t['schedule_id'] else 0, t['donor_id'], cat, BQ_SRC, note))
+    con.execute("UPDATE bq_tx SET posted=1 WHERE id=?", (t['id'],))
+    return True
+
+
+def banquest_bad():
+    import banquest as _bq
+    return _bq.BAD_ST
+
+
+def bq_sync(con, full=False):
+    """משיכה מבנק ווסט: לקוחות, כרטיסים, הוראות קבע, ועסקאות. בלי כפילויות — אפשר
+    להריץ שוב ושוב. מחזיר סיכום."""
+    import banquest as _bq
+    now = now_iso()
+    idx = bq_donor_index(con)
+    res = {}
+    # לקוחות
+    cs = _bq.customers()
+    for c in cs:
+        nm = ' '.join(x for x in ((c.get('first_name') or '').strip(), (c.get('last_name') or '').strip()) if x) or (c.get('identifier') or '')
+        old = con.execute("SELECT donor_id,manual FROM bq_cust WHERE id=?", (c['id'],)).fetchone()
+        did = old['donor_id'] if (old and (old['manual'] or old['donor_id'])) else bq_match(idx, nm, c.get('email') or '')
+        con.execute("""INSERT INTO bq_cust(id,identifier,first,last,email,phone,number,active,donor_id,manual,synced)
+                       VALUES(?,?,?,?,?,?,?,?,?,COALESCE((SELECT manual FROM bq_cust WHERE id=?),0),?)
+                       ON CONFLICT(id) DO UPDATE SET identifier=excluded.identifier, first=excluded.first, last=excluded.last,
+                         email=excluded.email, phone=excluded.phone, number=excluded.number, active=excluded.active,
+                         donor_id=excluded.donor_id, synced=excluded.synced""",
+                    (c['id'], c.get('identifier') or '', c.get('first_name') or '', c.get('last_name') or '',
+                     c.get('email') or '', c.get('phone') or '', c.get('customer_number') or '',
+                     1 if c.get('active', True) else 0, did, c['id'], now))
+    res['לקוחות'] = len(cs)
+    # כרטיסים שמורים
+    pms = _bq.payment_methods()
+    for p in pms:
+        con.execute("""INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (p['id'], p.get('customer_id') or 0, p.get('card_type') or p.get('payment_method_type') or '',
+                     p.get('last4') or '', p.get('expiry_month') or 0, p.get('expiry_year') or 0,
+                     1 if p.get('is_default') else 0, p.get('name') or ''))
+    res['כרטיסים'] = len(pms)
+    # הוראות קבע — "עבור מה" שנכתב אצלנו נשמר
+    ss = _bq.schedules()
+    for x in ss:
+        cu = con.execute("SELECT donor_id FROM bq_cust WHERE id=?", (x.get('customer_id') or 0,)).fetchone()
+        con.execute("""INSERT INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
+                         receipt_email,tx_count,created,donor_id,for_cat,for_note,synced)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'','',?)
+                       ON CONFLICT(id) DO UPDATE SET customer_id=excluded.customer_id, title=excluded.title,
+                         amount=excluded.amount, freq=excluded.freq, next_run=excluded.next_run, prev_run=excluded.prev_run,
+                         num_left=excluded.num_left, active=excluded.active, status=excluded.status, pm_id=excluded.pm_id,
+                         receipt_email=excluded.receipt_email, tx_count=excluded.tx_count,
+                         donor_id=COALESCE(bq_sched.donor_id, excluded.donor_id), synced=excluded.synced""",
+                    (x['id'], x.get('customer_id') or 0, x.get('title') or '', float(x.get('amount') or 0),
+                     x.get('frequency') or '', x.get('next_run_date') or '', x.get('prev_run_date') or '',
+                     int(x.get('num_left') or 0), 1 if x.get('active') else 0, x.get('status') or '',
+                     x.get('payment_method_id') or 0, x.get('receipt_email') or '', int(x.get('transaction_count') or 0),
+                     (x.get('created_at') or '')[:10], (cu['donor_id'] if cu else None), now))
+    res['הוראות קבע'] = len(ss)
+    # עסקאות — בפעם הראשונה מתחילת 2026, אחר כך 5 הימים האחרונים
+    first = full or not kv_get(con, 'bq_hist_done', '')
+    dfrom = BQ_HIST_FROM if first else (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
+    txs = [_bq.tx_row(t) for t in _bq.transactions(dfrom)]
+    new = posted = 0
+    for t in txs:
+        if not t['id']:
+            continue
+        cu = con.execute("SELECT donor_id FROM bq_cust WHERE id=?", (t['customer_id'],)).fetchone() if t['customer_id'] else None
+        old = con.execute("SELECT donor_id,posted FROM bq_tx WHERE id=?", (t['id'],)).fetchone()
+        t['donor_id'] = (old['donor_id'] if old and old['donor_id'] else None) or (cu['donor_id'] if cu else None) \
+            or bq_match(idx, t['name'], t['email'])
+        con.execute("""INSERT INTO bq_tx(id,ref,created,settled,amount,status,error,type,schedule_id,description,customer_id,
+                         email,name,card,donor_id,posted,raw) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)
+                       ON CONFLICT(id) DO UPDATE SET settled=excluded.settled, status=excluded.status, error=excluded.error,
+                         donor_id=COALESCE(bq_tx.donor_id, excluded.donor_id)""",
+                    (t['id'], t['ref'], t['created'], t['settled'], t['amount'], t['status'], t['error'], t['type'],
+                     t['schedule_id'], t['description'], t['customer_id'], t['email'], t['name'], t['card'],
+                     t['donor_id'], json.dumps(t, ensure_ascii=False)))
+        if not old:
+            new += 1
+        if bq_post_tx(con, t):
+            posted += 1
+    con.commit()
+    if first:
+        con.execute("INSERT INTO app_kv(k,v) VALUES('bq_hist_done',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (now,))
+    res['עסקאות'] = len(txs)
+    res['חדשות'] = new
+    if posted:
+        try:
+            link_by_identity(con)
+        except Exception:
+            pass
+        ins, merged, had, unk, _by = banquest_post(con, BQ_SRC)
+        res['נרשמו בכרטיסים'] = ins + merged
+        res['היו כבר'] = had
+    con.commit()
+    return res
+
+
+def bq_run(full=False):
+    import banquest as _bq
+    if not _bq.configured() or BQSTAT['running']:
+        return None
+    BQSTAT['running'] = True
+    try:
+        con = db()
+        res = bq_sync(con, full=full)
+        con.close()
+        BQSTAT.update(last=now_iso(), last_ok=now_iso(), error='',
+                      result=' · '.join('%s %s' % (k, v) for k, v in res.items()))
+        bump_data()
+        return res
+    except Exception as e:
+        BQSTAT.update(last=now_iso(), error=str(e)[:250])
+        raise
+    finally:
+        BQSTAT['running'] = False
+
+
+def _bq_loop():
+    """כל שעה: מה שבנק ווסט חייב (הוראות קבע בלילה, חיובים ידניים) נכנס למערכת."""
+    import time
+    time.sleep(40)
+    while True:
+        try:
+            bq_run()
+        except Exception as e:
+            print('  banquest sync error:', e)
+        time.sleep(max(900, int(os.environ.get('BANQUEST_SECONDS') or 3600)))
+
+
+def bq_sched_rows(con, donor_id=None):
+    q = ("SELECT s.*, c.identifier, c.first cf, c.last cl, c.email cemail, p.card_type, p.last4, p.exp_m, p.exp_y, "
+         "d.last dl, d.first dfi FROM bq_sched s LEFT JOIN bq_cust c ON c.id=s.customer_id "
+         "LEFT JOIN bq_pm p ON p.id=s.pm_id LEFT JOIN donors d ON d.id=s.donor_id")
+    args = ()
+    if donor_id:
+        q += " WHERE s.donor_id=?"; args = (donor_id,)
+    out = []
+    for r in con.execute(q + " ORDER BY s.active DESC, s.next_run", args):
+        x = dict(r)
+        x['donor_name'] = ((x.pop('dl') or '') + ' ' + (x.pop('dfi') or '')).strip()
+        x['bq_name'] = ' '.join(v for v in ((x.pop('cf') or '').strip(), (x.pop('cl') or '').strip()) if v) or (x.get('identifier') or x.get('title') or '')
+        out.append(x)
+    return out
+
+
+def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
+    w, args = [], []
+    if kind == 'bad':
+        w.append("t.status IN (%s)" % ','.join('?' * len(banquest_bad()))); args += list(banquest_bad())
+        w.append("t.created >= ?"); args.append((datetime.date.today() - datetime.timedelta(days=45)).isoformat())
+    if donor_id:
+        w.append("t.donor_id=?"); args.append(donor_id)
+    if q:
+        w.append("(t.name LIKE ? OR t.email LIKE ? OR t.card LIKE ? OR CAST(t.amount AS TEXT) LIKE ? OR d.last LIKE ? OR d.english LIKE ?)")
+        args += ['%' + q + '%'] * 6
+    sql = ("SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.customer_id,"
+           "t.email,t.name,t.card,t.donor_id,t.posted,d.last dl,d.first dfi,"
+           "(SELECT COUNT(*) FROM recon r WHERE r.tid='BQ'||t.ref AND r.processed=1) AS in_card "
+           "FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id" + (" WHERE " + " AND ".join(w) if w else '') +
+           " ORDER BY t.created DESC LIMIT ?")
+    out = []
+    for r in con.execute(sql, args + [limit]):
+        x = dict(r)
+        x['donor_name'] = ((x.pop('dl') or '') + ' ' + (x.pop('dfi') or '')).strip()
+        out.append(x)
+    return out
+
+
 def _authnet_loop():
     """רשת הביטחון של החיבור ל-Authorize.net. ה-Webhook מביא כל חיוב תוך שניות,
     והסריקה הזו רצה כל שעה ואוספת כל מה שאולי לא הגיע — הודעה שאבדה, שרת
@@ -19455,6 +19919,7 @@ def serve():
     import threading
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
     threading.Thread(target=_authnet_loop, daemon=True).start()
+    threading.Thread(target=_bq_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

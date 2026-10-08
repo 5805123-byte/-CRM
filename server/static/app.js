@@ -4500,6 +4500,7 @@ function cardDetails(d,body){
     ${renewBanner(d)}
     ${reconPendHTML(d)}
     <div id="ulmine"></div>
+    <div id="bqdonor"></div>
     ${catTotalsHTML(d)}
     ${give}
     ${(d.parnes||[]).length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)${(d.parnes||[]).some(p=>p.status==='suggested')?' <small class="suggn">· יש הצעה לשנה הבאה</small>':''}</summary><div id="parnes"></div></details>`:''}
@@ -4618,6 +4619,7 @@ function cardDetails(d,body){
     cardDetails(d,body);
     await rcOpenDoc(r.doc);
   });
+  bqDonorBlock(d,body);
   // הסימון הקטן: לא נשלחה → שליחה במייל; נשלחה → צפייה
   body.querySelectorAll('.rcmini[data-rc]').forEach(b=>b.onclick=async()=>{
     const x=(d.donations||[]).find(y=>y.id==b.dataset.did); if(!x)return;
@@ -6225,6 +6227,179 @@ function monthsBox(el){
 function ledScroll(el){ if(el&&el.innerHTML)setTimeout(()=>el.scrollIntoView({block:'start',behavior:'smooth'}),40); }
 const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל',refund:'הוחזר',
   held:'מעוכב',pending:'🕒 ממתין'};
+/* ---------- 🏦 בנק ווסט חי (accept.blue) ----------
+   מאיר: "גם בכרטיס תורם שאפשר לחייב אותו במיידי וגם בדף ייעודי… שיהיה ממשק נוח בעברית",
+   "יותר להפשיט… נוח וזורם וקליל". בנק ווסט מריץ את הוראות הקבע; כאן רואים, כותבים
+   "עבור מה", מחייבים עכשיו כרטיס שמור, משהים ומשנים סכום / תאריך. */
+let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null;
+const BQ_FOR=()=>[...new Set(RCATS.filter(Boolean).concat(['הכנסת כלה','מזדמן']))];
+const bqMoney=a=>'$'+(+a||0).toLocaleString('en-US',{maximumFractionDigits:2});
+const bqDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
+const BQ_BAD=['declined','error','blocked','expired','returned','cancelled'];
+const BQ_ST={settled:['עבר','ok'],captured:['עבר','ok'],approved:['עבר','ok'],pending:['ממתין','wait'],queued:['ממתין','wait'],
+  originated:['ממתין','wait'],declined:['נדחה','bad'],error:['שגיאה','bad'],blocked:['נחסם','bad'],expired:['פג','bad'],
+  returned:['חזר','bad'],cancelled:['בוטל','off'],voided:['בוטל','off']};
+function bqForOpts(cur){const L=BQ_FOR();if(cur&&!L.includes(cur))L.unshift(cur);
+  return '<option value="">— עבור מה —</option>'+L.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');}
+function bqForTxt(r){const t=[r.for_cat,r.for_note].filter(Boolean).join(' · ');return t?('עבור: '+t):'עבור: — לחץ להוסיף';}
+async function bqLoad(){
+  const [st,ls]=await Promise.all([api('GET','/api/bq/status'),api('GET','/api/bq/list?kind='+bqTab+'&q='+encodeURIComponent(bqQ))]);
+  bqStat=st||{}; bqRows=(ls&&ls.rows)||[];
+}
+async function renderBQ(reload=true){
+  const box=document.getElementById('bqbox'); if(!box)return;
+  if(reload||!bqStat){if(!bqStat)box.innerHTML='<div class="hintxt">טוען את בנק ווסט…</div>';await bqLoad();}
+  if(!document.getElementById('bqbox'))return;
+  const st=bqStat||{};
+  if(!st.configured){box.innerHTML=`<div class="bqhead"><b>🏦 בנק ווסט — חיובי אשראי</b></div>
+    <div class="hintxt">החיבור עוד לא מוגדר: ב-Render ← Environment צריך BANQUEST_KEY ו-BANQUEST_PIN.</div>`;return;}
+  const sx=st.stat||{}, mon=new Date().toLocaleDateString('he-IL',{month:'long'});
+  const row=r=>bqTab==='rec'?bqSchedRow(r):bqTxRow(r);
+  box.innerHTML=`<div class="bqhead"><b>🏦 בנק ווסט — חיובי אשראי</b>
+      <span class="bqmon">${esc(mon)}: נגבו <b>${bqMoney(st.month_sum)}</b>${st.month_bad?` · <a data-bqt="bad">${st.month_bad} חזרו</a>`:''}</span></div>
+    <div class="bqbar"><button class="btn sm" id="bq_once">⚡ חיוב חד-פעמי</button><button class="btn sm ghost" id="bq_rec">🔁 הוראת קבע חדשה</button>
+      <button class="btn sm ghost" id="bq_sync" title="${esc(sx.error?('שגיאה: '+sx.error):(sx.last_ok?('סנכרון אחרון '+sx.last_ok):''))}">🔄 ${sx.running?'מסנכרן…':'סנכרון'}</button>
+      ${sx.error?`<span class="bqerr">⚠️ ${esc(sx.error)}</span>`:''}</div>
+    ${bqNew?bqFormHTML():''}
+    <div class="bqtabs"><button class="bqt ${bqTab==='rec'?'on':''}" data-bqt="rec">קבועים <small>${st.n_active||0}</small></button>
+      <button class="bqt ${bqTab==='bad'?'on':''}" data-bqt="bad">חזרו</button>
+      <button class="bqt ${bqTab==='hist'?'on':''}" data-bqt="hist">היסטוריה <small>מ-${esc(bqDate(st.hist_from))}</small></button></div>
+    <input class="bqsearch" id="bq_q" placeholder="חיפוש — שם, 4 ספרות, סכום…" value="${esc(bqQ)}">
+    <div class="bqlist">${bqRows.map(row).join('')||'<div class="hintxt">'+(st.n_tx||bqTab==='rec'?'אין כאן כלום':'עוד לא נמשכו עסקאות — לחץ 🔄 סנכרון')+'</div>'}</div>
+    ${bqTab==='hist'?`<div class="hintxt">היסטוריה לבדיקה בלבד. רק עסקאות מ-${esc(bqDate(st.post_from))} נרשמות לבד בכרטיסי התורמים, כדי שלא יהיו כפילויות. ✓ = רשום בכרטיס.</div>`:''}`;
+  bqWire(box);
+}
+function bqSchedRow(r){const op=bqOpen==='s'+r.id;
+  const who=r.donor_name||r.bq_name||r.title||'?';
+  return `<div class="bqrow ${op?'op':''}"><button class="bqrh" data-op="s${r.id}">
+      <span class="bqdot ${r.active?'ok':'off'}"></span>
+      <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך לתורם</small>'}<span class="bqfor">${esc(bqForTxt(r))}</span></span>
+      <span class="bqamt"><b>${bqMoney(r.amount)}</b><small>${r.active?('הבא '+esc(bqDate(r.next_run))):'מושהה'}${r.num_left?(' · נשארו '+r.num_left):''}</small></span></button>
+    ${op?`<div class="bqrb">
+      <div class="bq2"><label class="fld"><span>🎯 עבור מה</span><select id="bqs_cat">${bqForOpts(r.for_cat||'')}</select></label>
+        <label class="fld"><span>פירוט (מופיע בכרטיס)</span><input id="bqs_note" value="${esc(r.for_note||'')}" placeholder="למשל: לע״נ אביו"></label></div>
+      <div class="bq2"><label class="fld"><span>💲 סכום</span><input id="bqs_amt" inputmode="decimal" value="${esc(r.amount)}"></label>
+        <label class="fld"><span>📅 החיוב הבא</span><input id="bqs_next" type="date" value="${esc(r.next_run||'')}"></label></div>
+      <div class="hintxt">${esc(r.card_type||'')} •••• ${esc(r.last4||'')}${r.exp_m?(' · תוקף '+String(r.exp_m).padStart(2,'0')+'/'+String(r.exp_y).slice(-2)):''} · ${esc(r.title||'')}</div>
+      ${r.donor_name?'':`<label class="fld"><span>👤 שייך לתורם</span><input id="bqs_donor" list="bq_dl" placeholder="הקלד שם תורם…"></label>`}
+      <div class="bqacts"><button class="btn sm" data-bqa="save" data-id="${r.id}">💾 שמור</button>
+        <button class="btn sm bqgo" data-bqa="now" data-id="${r.id}">⚡ חייב עכשיו</button>
+        <button class="btn sm ghost" data-bqa="${r.active?'pause':'resume'}" data-id="${r.id}">${r.active?'⏸ השהה':'▶ חדש'}</button>
+        ${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס</button>`:''}</div>
+    </div>`:''}</div>`;}
+function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?','off'], bad=BQ_BAD.includes(r.status);
+  const ok=s[1]==='ok', who=r.donor_name||r.name||'?';
+  return `<div class="bqrow ${op?'op':''}"><button class="bqrh" data-op="t${r.id}">
+      <span class="bqdot ${s[1]}"></span>
+      <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך</small>'}
+        <span class="bqfor">${esc(bqDate(r.created))} · ${esc(r.card||'')}${r.description?(' · '+esc(r.description)):''}</span>
+        ${bad&&r.error?`<span class="bqwhy">${esc(r.error)}</span>`:''}</span>
+      <span class="bqamt"><b>${bqMoney(r.amount)}</b><small class="bqst ${s[1]}">${esc(s[0])}${ok?(r.in_card?' · ✓ בכרטיס':' · ⚠️ לא בכרטיס'):''}</small></span></button>
+    ${op?`<div class="bqrb"><div class="hintxt">עסקה ${esc(r.ref||r.id)} · ${esc(r.created||'')}${r.email?(' · '+esc(r.email)):''}</div>
+      ${ok&&!r.in_card?`<div class="bq2"><label class="fld"><span>👤 תורם</span><input id="bqt_donor" list="bq_dl" value="${esc(r.donor_name||'')}" placeholder="הקלד שם תורם…"></label>
+        <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
+        <div class="bqacts"><button class="btn sm" data-bqa="post" data-id="${r.id}">➕ רשום בכרטיס</button></div>
+        <div class="hintxt">רישום ידני ומכוון. לפני הרישום המערכת בודקת שאין כבר תרומה כזו בכרטיס.</div>`:''}
+      ${r.donor_id?`<div class="bqacts"><button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button></div>`:''}
+    </div>`:''}</div>`;}
+function bqDonorDL(){return `<datalist id="bq_dl">${DB.slice(0,4000).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('')}</datalist>`;}
+function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
+  const t=(v||'').trim();if(!t)return 0;const hit=DB.filter(d=>((d.last||'')+' '+(d.first||'')).trim()===t);return hit.length===1?hit[0].id:0;}
+// ---- חיוב חדש: חד-פעמי / הוראת קבע, על כרטיס שמור של תורם ----
+function bqFormHTML(){const f=bqNew, d=f.did?DB.find(x=>x.id==f.did):null;
+  const pms=f.pms||[];
+  return `<div class="bqform"><div class="bqfh"><b>${f.kind==='once'?'⚡ חיוב חד-פעמי':'🔁 הוראת קבע חדשה'}</b><button class="btn sm ghost" id="bqf_x">✕</button></div>
+    <label class="fld"><span>👤 תורם</span><input id="bqf_who" list="bq_dl" value="${d?esc(((d.last||'')+' '+(d.first||'')).trim()+' #'+d.id):''}" placeholder="הקלד שם תורם…"></label>
+    ${d?(pms.length?`<label class="fld"><span>💳 כרטיס שמור בבנק ווסט</span><select id="bqf_pm">${pms.map(p=>`<option value="${p.id}">${esc(p.card_type||'')} •••• ${esc(p.last4||'')}${p.exp_m?(' · '+String(p.exp_m).padStart(2,'0')+'/'+String(p.exp_y).slice(-2)):''}</option>`).join('')}</select></label>`
+      :`<div class="bqwarn">${f.loading?'טוען כרטיסים…':'לתורם הזה אין כרטיס שמור בבנק ווסט (או שהוא עוד לא שויך). הכנסת כרטיס חדש דרך טופס מאובטח — בשלב הבא.'}</div>`):''}
+    <div class="bq2"><label class="fld"><span>💲 סכום ($)</span><input id="bqf_amt" inputmode="decimal" value="${esc(f.amt||'')}" placeholder="0"></label>
+      <label class="fld"><span>🎯 עבור מה</span><select id="bqf_cat">${bqForOpts(f.cat||'')}</select></label></div>
+    <label class="fld"><span>פירוט (לא חובה)</span><input id="bqf_note" value="${esc(f.note||'')}" placeholder="למשל: לע״נ אביו"></label>
+    ${f.kind==='rec'?`<div class="bq2"><label class="fld"><span>📅 חיוב ראשון</span><input id="bqf_next" type="date" value="${esc(f.next||'')}"></label>
+      <label class="fld"><span>🔢 כמה תשלומים (0 = בלי הגבלה)</span><input id="bqf_n" inputmode="numeric" value="${esc(f.n||'0')}"></label></div>`:''}
+    <div class="bqacts"><button class="btn sm ${f.kind==='once'?'bqgo':''}" id="bqf_go" ${d&&pms.length?'':'disabled'}>${f.kind==='once'?'⚡ חייב עכשיו':'💾 צור הוראת קבע'}</button></div>
+    <div class="hintxt">${f.kind==='once'?'התורם מקבל מבנק ווסט את אישור העסקה הרגיל. התרומה נרשמת בכרטיס שלו עם "עבור מה".':'בנק ווסט יריץ את החיובים בעצמו; כל חיוב ייכנס לכרטיס עם "עבור מה".'}</div></div>`;}
+async function bqOpenForm(kind,did){
+  bqNew={kind,did:did||0,pms:[],loading:!!did};renderBQ(false);
+  if(did){const r=await api('GET','/api/bq/donor/'+did);if(bqNew&&bqNew.did==did){bqNew.pms=(r&&r.pms)||[];bqNew.loading=false;renderBQ(false);}}
+}
+function bqFormKeep(){if(!bqNew)return;const g=id=>document.getElementById(id);
+  ['amt:bqf_amt','cat:bqf_cat','note:bqf_note','next:bqf_next','n:bqf_n'].forEach(x=>{const[k,id]=x.split(':');if(g(id))bqNew[k]=g(id).value;});}
+function bqWire(box){const g=id=>document.getElementById(id);
+  box.querySelectorAll('[data-bqt]').forEach(b=>b.onclick=()=>{bqTab=b.dataset.bqt;bqOpen=null;renderBQ();});
+  box.querySelectorAll('.bqrh').forEach(b=>b.onclick=()=>{bqOpen=bqOpen===b.dataset.op?null:b.dataset.op;renderBQ(false);});
+  let qt;const q=g('bq_q');if(q)q.oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>{bqQ=q.value.trim();renderBQ().then(()=>{const n=g('bq_q');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}});},350);};
+  if(!document.getElementById('bq_dl'))box.insertAdjacentHTML('beforeend',bqDonorDL());
+  g('bq_once').onclick=()=>bqOpenForm('once');
+  g('bq_rec').onclick=()=>bqOpenForm('rec');
+  g('bq_sync').onclick=async()=>{const b=g('bq_sync');b.disabled=true;b.textContent='🔄 מסנכרן…';
+    const r=await api('POST','/api/bq/sync',{});
+    if(r&&r.ok){const x=r.result||{};toast('סונכרן ✓ '+Object.entries(x).map(([k,v])=>k+' '+v).join(' · '));}
+    else await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));
+    renderBQ();};
+  if(bqNew){
+    g('bqf_x').onclick=()=>{bqNew=null;renderBQ(false);};
+    const w=g('bqf_who');if(w)w.onchange=()=>{bqFormKeep();const did=bqPickDonor(w.value);if(did)bqOpenForm(bqNew.kind,did);};
+    const go=g('bqf_go');if(go)go.onclick=async()=>{bqFormKeep();const f=bqNew,d=DB.find(x=>x.id==f.did);
+      const amt=amtNum(f.amt);if(!amt){toast('חסר סכום');return;}
+      const pm=+g('bqf_pm').value;const nm=d?((d.last||'')+' '+(d.first||'')).trim():'';
+      const forT=[f.cat,f.note].filter(Boolean).join(' · ');
+      if(f.kind==='once'){
+        if(!await uiConfirm('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?','⚡ כן, לחייב','ביטול'))return;
+        go.disabled=true;go.textContent='מחייב…';
+        const r=await api('POST','/api/bq/charge',{pm_id:pm,amount:amt,for_cat:f.cat||'',for_note:f.note||'',donor_id:f.did});
+        if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));bqNew=null;await load();render();}
+        else{go.disabled=false;go.textContent='⚡ חייב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}
+      }else{
+        if(!await uiConfirm('ליצור הוראת קבע ל'+nm+': '+bqMoney(amt)+' כל חודש'+(+f.n?(' × '+f.n):'')+(forT?(' עבור '+forT):'')+'?','💾 כן, ליצור','ביטול'))return;
+        go.disabled=true;
+        const r=await api('POST','/api/bq/sched/new',{pm_id:pm,amount:amt,for_cat:f.cat||'',for_note:f.note||'',next_run_date:f.next||'',num_left:+f.n||0,donor_id:f.did});
+        if(r&&r.ok){toast('🔁 הוראת הקבע נוצרה בבנק ווסט ✓');bqNew=null;bqTab='rec';renderBQ();}
+        else{go.disabled=false;await uiAlert('הוראת הקבע לא נוצרה:\n'+((r&&r.error)||'שגיאה'));}
+      }};
+  }
+  box.querySelectorAll('[data-bqa]').forEach(b=>b.onclick=async()=>{const a=b.dataset.bqa,id=+b.dataset.id;
+    if(a==='card'){openDonor(DB.find(x=>x.id==b.dataset.did));return;}
+    const r0=bqRows.find(x=>x.id==id)||{};
+    if(a==='save'){const body={for_cat:g('bqs_cat').value,for_note:g('bqs_note').value.trim()};
+      const am=amtNum(g('bqs_amt').value);if(am&&am!==+r0.amount)body.amount=am;
+      const nx=g('bqs_next').value;if(nx&&nx!==r0.next_run)body.next_run_date=nx;
+      const dn=g('bqs_donor');if(dn&&dn.value.trim()){const did=bqPickDonor(dn.value);if(!did){toast('בחר תורם מהרשימה');return;}body.donor_id=did;}
+      if((body.amount||body.next_run_date)&&!await uiConfirm('לעדכן בבנק ווסט'+(body.amount?(' סכום '+bqMoney(body.amount)):'')+(body.next_run_date?(' · חיוב הבא '+bqDate(body.next_run_date)):'')+'?','כן, לעדכן','ביטול'))return;
+      const r=await api('POST','/api/bq/sched/'+id,body);
+      if(r&&r.ok){toast('נשמר ✓');renderBQ();}else await uiAlert('לא נשמר:\n'+((r&&r.error)||'שגיאה'));return;}
+    if(a==='pause'||a==='resume'){
+      if(!await uiConfirm(a==='pause'?'להשהות את הוראת הקבע בבנק ווסט?':'לחדש את הוראת הקבע בבנק ווסט?','כן','ביטול'))return;
+      const r=await api('POST','/api/bq/sched/'+id,{active:a==='resume'});
+      if(r&&r.ok){toast(a==='pause'?'⏸ הושהתה':'▶ חודשה');renderBQ();}else await uiAlert('לא עודכן:\n'+((r&&r.error)||'שגיאה'));return;}
+    if(a==='now'){const amt=amtNum(g('bqs_amt').value)||+r0.amount, forT=[g('bqs_cat').value,g('bqs_note').value.trim()].filter(Boolean).join(' · ');
+      if(!await uiConfirm('לחייב עכשיו '+bqMoney(amt)+' מכרטיס •••• '+(r0.last4||'')+' ('+(r0.donor_name||r0.bq_name||'')+')'+(forT?(' עבור '+forT):'')+'?\nזה חיוב נוסף, מחוץ להוראת הקבע.','⚡ כן, לחייב','ביטול'))return;
+      b.disabled=true;
+      const r=await api('POST','/api/bq/charge',{pm_id:r0.pm_id,amount:amt,for_cat:g('bqs_cat').value,for_note:g('bqs_note').value.trim(),donor_id:r0.donor_id||0});
+      b.disabled=false;
+      if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));await load();render();}else await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));return;}
+    if(a==='post'){const did=bqPickDonor(g('bqt_donor').value)||r0.donor_id;if(!did){toast('בחר תורם מהרשימה');return;}
+      const r=await api('POST','/api/bq/tx/'+id+'/post',{donor_id:did,for_cat:g('bqt_cat').value});
+      if(r&&r.ok){toast('נרשם בכרטיס ✓');await load();render();}else await uiAlert((r&&r.error)||'לא נרשם');return;}
+  });
+}
+// ---- בכרטיס התורם: הוראות הקבע שלו, חיוב עכשיו, והחיובים האחרונים ----
+async function bqDonorBlock(d,body){
+  const box=body.querySelector('#bqdonor'); if(!box)return;
+  const r=await api('GET','/api/bq/donor/'+d.id); if(!r||!r.ok)return;
+  const sch=r.schedules||[], tx=r.tx||[], pms=r.pms||[];
+  if(!sch.length&&!tx.length&&!pms.length)return;
+  box.innerHTML=`<div class="bqcard"><div class="bqfh"><b>🏦 בנק ווסט</b>
+      <span>${pms.length?`<button class="btn sm bqgo" id="bqd_once">⚡ חיוב חד-פעמי</button> <button class="btn sm ghost" id="bqd_rec">🔁 הוראת קבע</button>`:''}</span></div>
+    ${sch.map(s=>`<div class="bqplan"><span><b>${bqMoney(s.amount)}</b> ${s.active?('· הבא '+esc(bqDate(s.next_run))):'· <i>מושהה</i>'} · •••• ${esc(s.last4||'')}${s.num_left?(' · נשארו '+s.num_left):''}
+      <span class="bqfor">${esc(bqForTxt(s))}</span></span></div>`).join('')}
+    ${tx.length?`<div class="bqpays">${tx.slice(0,5).map(t=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay"><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}</span>
+      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span></div>`;}).join('')}</div>`:''}</div>`;
+  const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='charges'));render();setTimeout(()=>bqOpenForm(k,d.id),300);};
+  const a=box.querySelector('#bqd_once'), b2=box.querySelector('#bqd_rec');
+  if(a)a.onclick=go('once'); if(b2)b2.onclick=go('rec');
+}
 function renderCharges(){
   const all=[];
   DB.forEach(d=>(d.transactions||[]).forEach(t=>all.push({t,d})));
@@ -6238,7 +6413,8 @@ function renderCharges(){
   rows=rows.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.t.category||'')));
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
-  view.innerHTML=`<div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
+  view.innerHTML=`<div id="bqbox" class="bqbox"></div>
+    <div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_anet" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_audit" style="width:100%">🔍 בדיקת סתירות — אקסל מול חיובים בפועל</button></div>
@@ -6249,6 +6425,7 @@ function renderCharges(){
     (rows.length?`<div class="cnt">${rows.length} חיובים</div><div class="list">`:'<div class="list hidden">')+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  renderBQ();
   renderLedger();
   const can=document.getElementById('ch_anet');
   if(can)can.onclick=async()=>{
