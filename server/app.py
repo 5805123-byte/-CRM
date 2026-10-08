@@ -20139,6 +20139,18 @@ def ivr_answer(P):
                                             ('%;' + phone + ';%',))] if phone else []
         if not ks:
             return fallback(job_amt)
+        # מאיר: "מי שיש לו הוראת קבע — אפשרות לשלם דרך ההוראת קבע, ואפשרות לשלם בכרטיס
+        # אשראי אחר, בלי קשר להוראת קבע"
+        if 'Way' not in P:
+            if len(ks) == 1:
+                l40 = re.sub(r'\D', '', ks[0]['last4'] or '') or '0'
+                parts = ['t-' + _ivr_t('לתשלום מהוראת הקבע בכרטיס המסתיים בספרות'), 'd-' + l40, 't-' + _ivr_t('הקישו 1')]
+            else:
+                parts = ['t-' + _ivr_t('לתשלום מאחת מהוראות הקבע שלכם הקישו 1')]
+            parts.append('t-' + _ivr_t('לתשלום בכרטיס אשראי אחר הקישו 2'))
+            return 'read=' + '.'.join(parts) + '=Way,no,1,1,10,NO,yes,yes,,12,2,,,,no'
+        if P['Way'] == '2':
+            return fallback(job_amt)
         # בחירת כרטיס — כשיש כמה הוראות על אותו טלפון
         if len(ks) > 1:
             if 'Card' not in P:
@@ -20158,7 +20170,7 @@ def ivr_answer(P):
         if not amt:
             if job_amt and P.get('Choice') != '2':
                 if 'Choice' not in P:
-                    return ('read=t-' + _ivr_t('נמצאה הוראת קבע בכרטיס המסתיים בספרות') + '.d-' + l4 + '.t-' + _ivr_t('לחיוב של') +
+                    return ('read=t-' + _ivr_t('לחיוב של') +
                             '.n-%g' % job_amt + '.t-' + _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') +
                             '=Choice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
                 amt = job_amt
