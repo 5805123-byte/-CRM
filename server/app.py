@@ -3674,6 +3674,30 @@ def ensure_schema():
     except Exception as e:
         print('  tukachinsky ez error:', e)
 
+    # הקבלות השנתיות שכבר הופקו (למשל ללטיניק — 2023, 2024, 2025, 2026) לא נשמרו בחלון
+    # הקבלות. כל קבלה שנתית שקיבלה מספר נכנסת עכשיו לחו"ל; טווח רב-שנתי שהוא רק שלב
+    # בבחירה (בתוך טווח רחב יותר של אותו תורם) מדולג.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='statement_docs_backfill_v1'").fetchone():
+            keys = {}
+            for r in con.execute("SELECT rkey FROM receipts WHERE rkey LIKE 'y%'").fetchall():
+                mk = re.match(r'^y(\d+)-(\d{4})(?:-(\d{4}))?$', r['rkey'] or '')
+                if mk:
+                    keys.setdefault(int(mk.group(1)), []).append((mk.group(2), mk.group(3) or mk.group(2)))
+            n = 0
+            for did, rngs in list(keys.items())[:60]:
+                for a, b in rngs:
+                    if a != b and any(c <= a and b <= e and (c, e) != (a, b) and c != e for c, e in rngs):
+                        continue
+                    if statement_save(con, did, a if a == b else '%s-%s' % (a, b)):
+                        n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('statement_docs_backfill_v1')")
+            con.commit()
+            if n:
+                print('  קבלות שנתיות נשמרו בחלון הקבלות: %d' % n)
+    except Exception as e:
+        print('  statement backfill error:', e)
+
     # מיזוג אוטורייז — אותו היגיון כמו בנק ווסט. חיובי פרנס לילה ($480) לא נכנסים כאן:
     # הם דורשים בחירת יום עברי, ולכן נשארים לאישור בדף החיובים.
     try:
@@ -12927,6 +12951,32 @@ def receipt_issue_own(con, don_id, kind):
     return receipt_doc(con, rid)
 
 
+def statement_save(con, did, year, pdf=None):
+    """מאיר: "למה לא רואים בקבלות חו"ל את הקבלות שהוצאתי ללטיניק?" — קבלה שנתית / רב-שנתית
+    (statement) שהופקה כקובץ נשמרת גם בחלון הקבלות (חו"ל), אחת לכל תורם+שנה (לפי המספר
+    הקבוע שלה). הפקה חוזרת מעדכנת את ה-PDF באותה שורה. בלי תרומות באותה שנה — לא נשמרת."""
+    info = statement_data(con, did, year)
+    if not info or not info['items']:
+        return None
+    if pdf is None:
+        pdf, _ = statement_file(con, did, info['year'], 'pdf')
+    note = 'קבלה שנתית %s' % info['year_label']
+    purpose = ('מרוכזת %s' if info['multi'] else 'שנתית %s') % info['year_label']
+    ex = con.execute("SELECT id FROM receipt_docs WHERE kind='us' AND src='statement' AND num=? AND donor_id=?",
+                     (info['num'], did)).fetchone()
+    if ex:
+        con.execute("UPDATE receipt_docs SET pdf=?, amount=?, name=?, purpose=?, note=? WHERE id=?",
+                    (pdf, info['total'], info['name'], purpose, note, ex['id']))
+        rid = ex['id']
+    else:
+        con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note,src) "
+                    "VALUES('us',?,NULL,?,?,?,?,'$',?,?,'',?,?,?,'statement')",
+                    (info['num'], did, info['name'], info.get('email') or '', info['total'], today_iso(), purpose, pdf, now_iso(), note))
+        rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    con.commit()
+    return rid
+
+
 def receipt_pdf(con, rid):
     r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -12941,6 +12991,11 @@ def receipt_pdf(con, rid):
         pdf = _ez.fetch_pdf(r['url'] or '')
         if not pdf:
             return None, None
+        con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (pdf, rid)); con.commit()
+        return pdf, fname
+    if (r['src'] or '') == 'statement':
+        my = re.search(r'(\d{4}(?:\D\d{4})?)', r['note'] or '')
+        pdf, _ = statement_file(con, r['donor_id'], (my.group(1).replace('–', '-') if my else ''), 'pdf')
         con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (pdf, rid)); con.commit()
         return pdf, fname
     info, pdf, fname2 = receipt_build(con, r['kind'], r['donation_id'])
@@ -12991,6 +13046,13 @@ def receipt_send(con, rid, email=''):
         body = ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
                 "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
                 % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
+    elif (r['src'] or '') == 'statement':
+        ylab = re.sub(r'^\D+', '', r['purpose'] or '') or str(dd.year)
+        subject = 'Donation Receipt %s (No. %d) — Kollel Chatzos' % (ylab, r['num'])
+        body = ('Dear %s,\n\nAttached is your official receipt (No. %d) for your contributions during %s, totaling $%s.\n'
+                'No goods or services were provided in exchange for these contributions.\n\n'
+                'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
+                % (r['name'], r['num'], ylab, format(amt, ',.2f')))
     else:
         subject = 'Donation Receipt No. %d — Kollel Chatzos' % r['num']
         body = ('Dear %s,\n\nAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
@@ -14152,6 +14214,9 @@ class H(BaseHTTPRequestHandler):
             try: data, fname = statement_file(con, did, year, fmt)
             except Exception as e:
                 con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            if fmt == 'pdf':
+                try: statement_save(con, did, year, data)       # נשמרת גם בחלון הקבלות (חו"ל)
+                except Exception as e: print('  statement save error:', e)
             con.close()
             self.send_response(200)
             self.send_header('Content-Type', 'application/pdf' if fmt == 'pdf' else 'image/jpeg')
