@@ -2975,6 +2975,23 @@ def ensure_schema():
     except Exception as e:
         print('  karmi wedding error:', e)
 
+    # בר המצווה של אלחנן חסידי — מאיר: "תרשום ביומן" (ההזמנה: יום שני ח' חשוון תשפ"ז,
+    # 19.10.26, אולמי "פלטינום" (ארמונות הגפן), רחוב בנין דוד 3, ביתר עילית; קבלת פנים 19:30).
+    # אם יוסף חיים חסידי הוא תורם — השמחה נרשמת אצלו, אחרת כמשימה כללית.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_chasidi_barmitzva_v1'").fetchone():
+            note = 'בר המצווה של אלחנן חסידי (בן יוסף חיים ומרים חסידי) · ח\' חשוון תשפ"ז · קבלת פנים 19:30'
+            if not con.execute("SELECT 1 FROM tasks WHERE kind='event' AND due_date='2026-10-19' AND note LIKE '%חסידי%'").fetchone():
+                ds = con.execute("SELECT id FROM donors WHERE last='חסידי' AND first LIKE '%יוסף%'").fetchall()
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                            (ds[0]['id'] if len(ds) == 1 else None, '2026-10-19', 'event', note, '', '19:30',
+                             'אולמי "פלטינום" (ארמונות הגפן), בנין דוד 3, ביתר עילית'))
+                print('  בר מצווה חסידי: נרשם כשמחה ב-19.10.2026')
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_chasidi_barmitzva_v1')")
+            con.commit()
+    except Exception as e:
+        print('  chasidi bar mitzva error:', e)
+
     # מאיר: "תכתוב לי יום חמישי בשעה ארבע וחצי, פגישה אצל ראש העיר ביומן" (נאמר ביום
     # שלישי 06.10.2026 → יום חמישי 08.10.2026, 16:30)
     try:
