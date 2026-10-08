@@ -12674,7 +12674,7 @@ function smGridHTML(){
 }
 function smSectionHTML(){
   return `<div class="sec smsec"><div class="smhd"><button class="btn sm ghost" id="sm_tog">${smOpen?'▾':'▸'} 🗺️ מפת בית הכנסת</button>
-    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_fit" title="להתאים לרוחב המסך">↔️</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><a class="btn sm ghost" href="/seat-map-original.png" download="מפת-בית-הכנסת.png">⬇️ הורדה</a></span>`:''}</div>
+    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_fit" title="להתאים לרוחב המסך">↔️</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><button class="btn sm ghost" id="sm_dl" title="תמונה של המפה כמו שהיא עכשיו, עם כל העדכונים">⬇️ הורדה</button></span>`:''}</div>
     ${smOpen?(SEATS?`<div class="smwrap">${smGridHTML()}</div><div class="hintxt">לחיצה על מקום: להושיב חבר, לפנות, לשנות מספר או לכתוב שם חופשי. כל שינוי נרשם עם תאריך אצל מי שהמקום שלו השתנה (לחיצה על 💺 בשורה שלו).</div>`:'<div class="hintxt">טוען את המפה…</div>'):''}</div>`;
 }
 function wireSeatMap(){
@@ -12687,8 +12687,34 @@ function wireSeatMap(){
   const pl=document.getElementById('sm_plus'); if(pl)pl.onclick=()=>z(.15);
   const ft=document.getElementById('sm_fit'); if(ft)ft.onclick=()=>{smMult=1;try{localStorage.setItem('kc_smm','1');}catch(e){}smFit();};
   const pr=document.getElementById('sm_print'); if(pr)pr.onclick=()=>window.open('/seat-map-print','_blank');
+  const dl=document.getElementById('sm_dl'); if(dl)dl.onclick=()=>smDownload(dl);
   view.querySelectorAll('.sms[data-pos]').forEach(el=>el.onclick=()=>openSeat(el.dataset.pos,el.dataset.num));
   if(smOpen&&!SEATS){smLoad().then(()=>{if(tab==='comm')render();});}
+}
+// מאיר: "כשאני מוריד את המפה זה מוריד לי בלי העדכונים" — ההורדה הייתה של הקובץ המקורי. עכשיו
+// מצלמים את המפה החיה (כל השמות והמספרים העדכניים) בגודל מלא, בלי הזום של המסך
+let _h2c=null;
+function smH2C(){return _h2c||(_h2c=new Promise((ok,no)=>{if(window.html2canvas)return ok(window.html2canvas);
+  const sc=document.createElement('script');sc.src='/html2canvas.min.js';   // html2canvas 1.4.1 (MIT) — שמור אצלנו, בלי תלות באתר חיצוני
+  sc.onload=()=>ok(window.html2canvas);sc.onerror=()=>{_h2c=null;no(new Error('load'));};document.head.appendChild(sc);}));}
+async function smDownload(btn){
+  const g=view.querySelector('.smgrid'); if(!g){toast('פתח קודם את המפה');return;}
+  const t0=btn.textContent; btn.disabled=true; btn.textContent='⏳ מכין תמונה…';
+  try{
+    const h2c=await smH2C();
+    const box=document.createElement('div');
+    box.style.cssText='position:fixed;left:-100000px;top:0;padding:24px;background:#fff;direction:rtl';
+    const ttl=document.createElement('div'); ttl.textContent='מפת בית הכנסת — '+fmtGreg(todayStr());
+    ttl.style.cssText='font:800 22px Heebo,Arial,sans-serif;text-align:center;margin-bottom:14px;color:#2A2740';
+    const c=g.cloneNode(true); c.style.zoom=1; c.querySelectorAll('.smpen').forEach(e=>e.remove());
+    box.appendChild(ttl); box.appendChild(c); document.body.appendChild(box);
+    await new Promise(r=>setTimeout(r,60));
+    const cv=await h2c(box,{scale:2,backgroundColor:'#ffffff',logging:false,useCORS:true});
+    box.remove();
+    const a=document.createElement('a'); a.download='מפת-בית-הכנסת-'+todayStr()+'.png'; a.href=cv.toDataURL('image/png');
+    document.body.appendChild(a); a.click(); a.remove(); toast('המפה ירדה ✓');
+  }catch(e){await uiAlert('לא הצלחתי ליצור את התמונה. אפשר להשתמש ב"🖨️ הדפסה / PDF" ושם לבחור "שמור כ-PDF".');}
+  btn.disabled=false; btn.textContent=t0;
 }
 // עריכת מקום אחד — חלון קטן
 function openSeat(pos,num){
