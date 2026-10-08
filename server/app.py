@@ -502,9 +502,11 @@ def ensure_schema():
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='nd_zero_hok_cleanup_v1'").fetchone():
             con.execute("DELETE FROM cm_debt WHERE kind='hok' AND status='open' AND COALESCE(amount,0)=0 AND COALESCE(paid,0)=0")
-            con.execute("UPDATE nd_keva SET active=0, off='לא פעילה (אין סכום לחיוב)', error='' "
-                        "WHERE error LIKE '%לא פעיל%' OR error LIKE '%אין סכום%'")
+            con.execute("DELETE FROM nd_keva WHERE error LIKE '%לא פעיל%' OR error LIKE '%אין סכום%'")
             con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_zero_hok_cleanup_v1')")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='nd_inactive_drop_v1'").fetchone():
+            con.execute("DELETE FROM nd_keva WHERE off='לא פעילה (אין סכום לחיוב)'")
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_inactive_drop_v1')")
     except Exception:
         pass
     # מוסד נוסף בנדרים פלוס — לכל הוראה ועסקה: מאיזה מוסד (ריק = הראשי)
@@ -13357,9 +13359,10 @@ def member_nd(con, mid):
     if not m:
         return None
     phs = _phones_of(m['phone'])
-    kevas = [dict(r) for r in con.execute("SELECT k.*, l.link, l.sent_at FROM nd_keva k LEFT JOIN nd_link l ON l.keva_id=k.id "
-                                           "WHERE k.member_id=? ORDER BY k.active DESC, k.id", (mid,))]
-    kids = [k['id'] for k in kevas]
+    kall = [dict(r) for r in con.execute("SELECT k.*, l.link, l.sent_at FROM nd_keva k LEFT JOIN nd_link l ON l.keva_id=k.id "
+                                          "WHERE k.member_id=? ORDER BY k.active DESC, k.id", (mid,))]
+    kids = [k['id'] for k in kall]          # ההיסטוריה של ההוראות הישנות עדיין שלו
+    kevas = [k for k in kall if k['active']]   # בכרטיס — רק הוראות פעילות
     w, args = ["t.member_id=?"], [mid]
     if phs:
         w.append("t.phone IN (%s)" % ','.join('?' * len(phs))); args += phs
@@ -16486,16 +16489,6 @@ class H(BaseHTTPRequestHandler):
                     "m.last ml,m.first mf,l.link,l.sent_at,l.sent_to FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
                     "LEFT JOIN nd_link l ON l.keva_id=k.id WHERE k.active=1" + (" AND COALESCE(k.error,'')<>''" if bad else '') +
                     " ORDER BY k.name")]
-            finally:
-                con.close()
-            return self._send(200, {'ok': True, 'rows': rows})
-        if self.path.split('?')[0] == '/api/nd/zero':
-            # 🧹 הוראות בלי סכום ("לא פעיל - אין סכום לחיוב") — למחיקה מנדרים פלוס, אחרי אישור
-            con = db()
-            try:
-                rows = [dict(r) for r in con.execute(
-                    "SELECT k.id,k.name,k.phone,k.groupe,k.last4,k.kind,k.bank,k.mosad,m.last ml,m.first mf FROM nd_keva k "
-                    "LEFT JOIN members m ON m.id=k.member_id WHERE k.off='לא פעילה (אין סכום לחיוב)' ORDER BY k.name")]
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
@@ -21548,7 +21541,7 @@ def nd_sync(con):
             ex = con.execute("SELECT id FROM nd_keva WHERE id=?", (kid,)).fetchone()
             if ex:
                 con.execute("UPDATE nd_keva SET active=0, off='מוקפאת' WHERE id=? AND COALESCE(off,'') NOT LIKE 'הוחלפה%'", (kid,))
-            elif f.get('name') or f.get('phone'):
+            elif False:     # הוראות לא פעילות לא נכנסות למערכת (מאיר)
                 phs = _phones_of(f.get('phone'))
                 mid = manual.get(kid) or pick(phs) or nd_match_name(nidx, f.get('name') or '')
                 con.execute("INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad,off) "
@@ -21861,8 +21854,9 @@ def _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now):
                      k['next'], k['last4'], k['city'], mid, now, k.get('error') or '', k.get('mosad') or ''))
         # מאיר: "הו"ק על 0 שקלים… לא חזר להם שום הו"ק" — נדרים מסמנים הוראה בלי סכום "לא פעיל - אין סכום
         # לחיוב". זו לא חזרה: ההוראה לא פעילה, בלי שגיאה, ולא נפתח עליה חוב
+        # מאיר: "הו"ק שלא פעילה אל תתייחס אליה בכלל, ואל תשים לנו את זה במערכת" — לא נשמרת
         if re.search(r'לא פעיל|אין סכום', k.get('error') or '') or not _ivr_amt(k.get('amount')):
-            con.execute("UPDATE nd_keva SET active=0, off='לא פעילה (אין סכום לחיוב)', error='' WHERE id=?", (k['id'],))
+            con.execute("DELETE FROM nd_keva WHERE id=?", (k['id'],))
             continue
         f = (flags or {}).get(k['id'])
         itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
@@ -21966,7 +21960,7 @@ def ivr_kevas(con, phone, mids=()):
     if not phone:
         return []
     mids = [int(m) for m in (mids or ()) if m]
-    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%') AND "
+    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND active=1 AND "
          "(';'||phone||';' LIKE ?" + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ") "
          "ORDER BY active DESC, CASE WHEN COALESCE(error,'')='' THEN 0 ELSE 1 END, id")
     return [dict(r) for r in con.execute(q, ['%;' + phone + ';%'] + mids)]

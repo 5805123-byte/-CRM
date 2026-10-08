@@ -12947,10 +12947,7 @@ async function cmNdPaint(m,showAll,boxId){
   const yrs=Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${ndMoney(v)}</b></span>`).join('');
   // הוראות ישנות (הוחלפו / הסתיימו / מושבתות) — בשורה קטנה אחת, לא כמו הוראה פעילה
   const KA=K.filter(k=>k.active), KO=K.filter(k=>!k.active);
-  const KF=KO.filter(k=>/מוקפאת/.test(k.off||'')), KX=KO.filter(k=>!/מוקפאת/.test(k.off||''));
-  const oldHTML=KF.map(k=>`<div class="bqplan frozen"><span>⏸ <b>מוקפאת</b> · ${ndMoney(k.amount)} לחודש${k.groupe?' · '+esc(k.groupe):''} · ${k.kind==='bank'?'🏦 '+esc(k.bank||'בנקאית'):'💳 ****'+esc(k.last4||'')}</span>
-      <span class="bqacts"><button class="btn sm" data-ndact="activate" data-id="${esc(k.id)}">▶ הפעלה</button></span></div>`).join('')
-    +(KX.length?`<div class="hintxt">הוראות ישנות: ${KX.map(k=>ndMoney(k.amount)+(k.groupe?' '+esc(k.groupe):'')+' ****'+esc(k.last4||'')+(k.off?' — '+esc(k.off):'')).join(' · ')}</div>`:'');
+  const oldHTML='';   // מאיר: "הו"ק שלא פעילה אל תתייחס אליה בכלל" — לא מוצגת
   const kevaHTML=(KA.length?KA.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ${k.kind==='bank'?'🏦 בנקאית'+(k.bank?' '+esc(k.bank):''):'💳 ****'+esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
       ${k.active?'':`<span class="ndbad">לא פעילה${k.off?': '+esc(k.off):''}</span>`}${k.error?`<span class="ndbad">🔴 חזרה: ${esc(k.error)}</span>`:''}</span>
       <span class="bqacts"><button class="btn sm ghost" data-ndact="edit" data-id="${esc(k.id)}" title="שינוי סכום / תאריך חיוב / עבור מה">✎ שינוי</button>
@@ -13368,7 +13365,6 @@ async function ymViewPay(){
     <pre class="ndini" id="nd_hook" dir="ltr">${esc(st.hook)}</pre>
     <div class="addrow"><button class="btn sm" id="nd_hookcopy">📋 העתק</button>${st.hook_last?`<span class="hintxt">עדכון אחרון: ${esc(st.hook_last)}</span>`:'<span class="hintxt">עוד לא הגיע עדכון</span>'}</div>`:''}
     <div class="hintxt">המתקשר מזוהה לפי הטלפון. יש לו הוראת קבע ← שומע את 4 הספרות של הכרטיס, מאשר סכום (מההודעה שנשלחה, או מקיש סכום), מאשר שוב ← חיוב מיידי בכרטיס של ההוראה (נרשם בהיסטוריית ההוראה, בלי לשנות אותה). אין לו הוראה ← סליקה רגילה בהקשת כרטיס. הקוד בקישור סודי — לא לשתף.</div>
-    ${ROLE==='admin'?'<div id="nd_zero"></div>':''}
     <div class="rbtitle" style="text-align:right;margin-top:12px">🔴 הוראות קבע שחזרו (${(ndBad||[]).length})</div>
     <div class="hintxt">נדרים פלוס נותנים לכל הוראה קישור מאובטח (14 יום) שבו התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת. נשלח ב-SMS מ-025803545.</div>
     ${(ndBad||[]).length?`<div class="addrow"><button class="btn sm" id="nd_sendall">📲 שלח קישור לכל מי שחזר</button></div>`:''}
@@ -13387,18 +13383,6 @@ async function ymViewPay(){
         ${c.last4?`<small>****${esc(c.last4)}</small>`:''}</div>`).join('')||'<div class="hintxt">עוד אין תשלומים.</div>'}</div></div>`;
   ymWireHead();
   const g=id=>document.getElementById(id);
-  // 🧹 הוראות בלי סכום — מאיר: "צריך למחוק את זה בנדרים". מחיקה באשראי היא לצמיתות, ולכן רק אחרי אישור
-  const zb=g('nd_zero'); if(zb)api('GET','/api/nd/zero').then(r=>{const R=(r&&r.rows)||[];if(!R.length||!g('nd_zero'))return;
-    zb.innerHTML=`<details class="cmdonadd"><summary>🧹 ${R.length} הוראות בלי סכום ("לא פעיל - אין סכום לחיוב") — למחיקה מנדרים פלוס</summary>
-      <div class="hintxt">אלה לא חזרות — הוראות שנשארו בנדרים בלי סכום. סמן מה למחוק. ⚠️ מחיקה של הוראת אשראי בנדרים פלוס היא לצמיתות; בנקאית אפשר לשחזר אצלם.</div>
-      ${R.map(k=>`<label class="ndrow"><input type="checkbox" class="ndz" value="${esc(k.id)}" checked> <b>${esc(((k.ml||'')+' '+(k.mf||'')).trim()||k.name||'')}</b>
-        ${k.ml?`<small>(${esc(k.name||'')})</small>`:''}${k.groupe?` · ${esc(k.groupe)}`:''} · ${k.kind==='bank'?'🏦 '+esc(k.bank||'בנקאית'):'💳 ****'+esc(k.last4||'')}<small dir="ltr">${esc((k.phone||'').split(';')[0])}</small></label>`).join('')}
-      <div class="addrow"><button class="btn sm ghost danger" id="nd_zgo">🗑️ מחק בנדרים פלוס את המסומנות</button></div></details>`;
-    g('nd_zgo').onclick=async()=>{const ids=[...zb.querySelectorAll('.ndz:checked')].map(x=>x.value);if(!ids.length){toast('לא סומן כלום');return;}
-      if(!await uiConfirm('למחוק בנדרים פלוס '+ids.length+' הוראות בלי סכום?\n\n⚠️ הוראת אשראי נמחקת אצלם לצמיתות.','🗑️ כן, למחוק','ביטול'))return;
-      const b=g('nd_zgo');b.disabled=true;let ok=0,bad=[];
-      for(const id of ids){b.textContent='מוחק… '+(ok+bad.length+1)+'/'+ids.length;const r=await api('POST','/api/nd/keva/'+encodeURIComponent(id)+'/action',{action:'delete'});if(r&&r.ok)ok++;else bad.push(id+': '+((r&&r.error)||'שגיאה'));}
-      await uiAlert('נמחקו '+ok+' הוראות בנדרים פלוס.'+(bad.length?'\n\nלא נמחקו:\n'+bad.slice(0,10).join('\n'):''));ndStat=null;ymViewPay();};});
   const hc=g('nd_hookcopy'); if(hc)hc.onclick=()=>{const t=g('nd_hook').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק ✓'),()=>uiAlert(t));};
   g('nd_copy').onclick=()=>{const t=g('nd_ini').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק ✓'),()=>{const r=document.createRange();r.selectNodeContents(g('nd_ini'));getSelection().removeAllRanges();getSelection().addRange(r);toast('סמן והעתק (Ctrl+C)');});};
   g('nd_sync').onclick=async()=>{const b=g('nd_sync');b.disabled=true;b.textContent='🔄 מסנכרן…';
