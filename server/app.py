@@ -20655,6 +20655,16 @@ def ivr_answer(P):
                            "AND COALESCE(paid_at,'')='' ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
         job_amt = _ivr_amt(last['amount']) if last else 0
         job = last['job'] if last else 0
+        ks = [dict(r) for r in con.execute("SELECT * FROM nd_keva WHERE active=1 AND ';'||phone||';' LIKE ? ORDER BY id",
+                                            ('%;' + phone + ';%',))] if phone else []
+        # מאיר: "אם אין חוב במערכת — לא יהיה התפריט ומייד יעבור להקשת סכום". הסכום המוצע
+        # ("X שקלים הקישו 1, לסכום אחר 2") = הודעה עם סכום שעוד לא שולמה, אחרת החוב הפתוח
+        # של חבר הקהילה. אין כזה — ישר להקשת סכום. הוראת הקבע מוצעת תמיד למי שיש לו.
+        if not job_amt:
+            dm = mid or next((k['member_id'] for k in ks if k.get('member_id')), None)
+            if dm:
+                ob = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id=? AND status='open'", (dm,)).fetchone()[0]
+                job_amt = _ivr_amt(ob)
 
         def fallback(amt=0):
             # סליקה רגילה בנדרים פלוס — הקשת כרטיס (הערך השמיני: מספר המוסד).
@@ -20682,8 +20692,6 @@ def ivr_answer(P):
             return 'id_list_message=t-' + _ivr_t('תודה רבה ותזכו למצוות') + END
         if 'Other' in P:
             return fallback(_ivr_amt(P.get('Amt')) or job_amt) if P['Other'] == '1' else ('id_list_message=t-' + _ivr_t('תודה רבה') + END)
-        ks = [dict(r) for r in con.execute("SELECT * FROM nd_keva WHERE active=1 AND ';'||phone||';' LIKE ? ORDER BY id",
-                                            ('%;' + phone + ';%',))] if phone else []
         if not ks:
             return fallback(job_amt)
         # מאיר: "מי שיש לו הוראת קבע — אפשרות לשלם דרך ההוראת קבע, ואפשרות לשלם בכרטיס
