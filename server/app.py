@@ -9961,7 +9961,10 @@ def _cert_join1(rows):
                 ws = take + ws
         # אף פעם לא שורה עם מילה אחת — תואר בודד נצמד לשורה שמעליו,
         # וכך גם סיומת ברכה בודדת ("אמן") נצמדת לברכה שמעליה
-        if role == 'ttl' and len(ws) == 1 and out and out[-1][1] in ('names', 'ttl'):
+        # מאיר: "המילה החתן מעל השם שלו… ואת המילה הכלה בשורה נפרדת ומתחתיה השם שלה" —
+        # החתן / הכלה הם תמיד שורה משלהם, גם כשהם מילה אחת
+        if role == 'ttl' and len(ws) == 1 and out and out[-1][1] in ('names', 'ttl') \
+                and not _CERT_BRIDE.match(ws[0]):
             out[-1] = (out[-1][0] + ' ' + ws[0], out[-1][1])
             continue
         if role == 'req' and len(ws) == 1 and out and out[-1][1] == 'req':
@@ -9971,6 +9974,7 @@ def _cert_join1(rows):
     return [r for r in out if r[0] or r[1] == 'names']
 
 
+_CERT_BRIDE = re.compile(r'^ו?ה?(חתן|כלה)$')
 _CERT_TITLE = re.compile(r'^(ו?ה?חתן|ו?ה?כלה|הבחור|הבתולה|האברך|הילד|הילדה|הנער|הנערה|'
                          r'האשה|מרת|מר|הרב|רבי|ר["\'״׳]?|הר["\'״׳]ר|הרר|מוה["\'״׳]ר|'
                          r'הרה["\'״׳][גחצקי]|הגה["\'״׳]צ|מרן|ה["\'״׳]ה)$')
@@ -10727,7 +10731,12 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             return [(t, z * f, h) for t, z, h in ln]
 
         rl = []                       # התפקיד של כל שורה שנוצרה
+        prev_raw = prev_role = ''
         for raw, role in src:
+            # מאיר: "המילה החתן מעל השם שלו, והשם שלו ושל אמא שלו באותה שורה" —
+            # אחרי החתן / הכלה שורת השם לא נשברת לפני "בן"/"בת", אלא מוקטנת
+            keep = prev_role == 'ttl' and bool(_CERT_BRIDE.match(prev_raw.strip()))
+            prev_raw, prev_role = raw, role
             ws = (sized(raw, px, heavy, role) if is_name
                   else [(w, px, heavy) for w in raw.split()])
             if not ws:
@@ -10740,7 +10749,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                 full = _join(ws)
                 wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
                 if wpx > bw:
-                    if len(ws) <= 1:
+                    if len(ws) <= 1 or keep:
                         f = bw / wpx
                         lines.append(_fitline([(t, z * f, h) for t, z, h in full], dr))
                         rl.append(role); continue

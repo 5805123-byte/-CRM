@@ -58,6 +58,8 @@
      שלא נשברת נעצרת בשולי המסגרת ומתכווצת חזרה, ולכן ההגדלה לא עשתה
      כלום. עכשיו היא נשברת בצורה מאוזנת וגדלה עד שהיא ממלאת את הדף. */
   .nline{display:block;white-space:normal;text-wrap:balance}
+  /* מאיר: "השם שלו ושל אמא שלו יהיה באותה שורה" — אחרי החתן / הכלה השורה לא נשברת, רק מוקטנת */
+  .nline.nkeep{white-space:nowrap}
   .nrow{display:block}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
@@ -124,7 +126,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v473";
+const BUILD = "v474";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -363,7 +365,8 @@ function joinSingles(rows){
       while(prev.ws.length>1 && SMALLWORD.test(prev.ws[prev.ws.length-1])) take.unshift(prev.ws.pop());
       if(take.length) ws=take.concat(ws);
     }
-    if(role==='ttl' && ws.length===1 && prev && (prev.role==='names'||prev.role==='ttl')){
+    // מאיר: "המילה החתן מעל השם… ואת המילה הכלה בשורה נפרדת ומתחתיה השם שלה"
+    if(role==='ttl' && ws.length===1 && prev && (prev.role==='names'||prev.role==='ttl') && !/^ו?ה?(חתן|כלה)$/.test(ws[0])){
       prev.ws=prev.ws.concat(ws); return;
     }
     // סיומת ברכה בודדת ("אמן") נצמדת לברכה שמעליה
@@ -375,7 +378,7 @@ function joinSingles(rows){
   return out.filter(r=>r.ws.length);
 }
 function rowsHTML(rows){
-  return rows.map(r=>{
+  return rows.map((r,i)=>{
     // פתיח שכולו אירוע ("ליום הולדתו" לפני השם) — שורת אירוע
     if(r.role==='lead' && evtLen(r.ws)===r.ws.length) return `<span class="nrow nevt">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     if(r.role==='lead') return `<span class="nrow nlead">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
@@ -387,7 +390,8 @@ function rowsHTML(rows){
         +(n<r.ws.length?`<span class="nrow nreq">${r.ws.slice(n).map(w=>esc(w)).join(' ')}</span>`:'');
       return `<span class="nrow nreq">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     }
-    return `<span class="nline">${fmtWords(r.ws)}</span>`;
+    const keep=i>0&&rows[i-1].role==='ttl'&&/^ו?ה?(חתן|כלה)$/.test(rows[i-1].ws.join(' '));
+    return `<span class="nline${keep?' nkeep':''}">${fmtWords(r.ws)}</span>`;
   }).join('');
 }
 function bodyPart(ws, lead){ return rowsHTML(joinSingles(bodyRows(ws, lead))); }
