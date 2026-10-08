@@ -14275,7 +14275,7 @@ function renderReceipts(){
       <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>
       <span class="rcact">${(r.src==='ez'&&!r.has_pdf)
         ? `${r.url?`<a class="btn sm ghost" href="${esc(r.url)}" target="_blank" title="לפתוח את הקבלה אצל איזיקאונט">👁 באיזיקאונט</a>`:''}<button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
-        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
+        : `<a class="btn sm ghost" href="/api/receipts/${r.id}.pdf" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>${r.src==='ez'?'':`<button class="btn sm ghost rcredo" data-id="${r.id}" title="לבנות את הקבלה מחדש לפי מה שרשום עכשיו בתרומה — תאריך, סכום, עבור מה (אותו מספר קבלה)">🔄 הפק מחדש</button>`}`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
     </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
   view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;
   // ---- חיווט ----
@@ -14335,6 +14335,20 @@ function renderReceipts(){
     const d=DB.find(x=>x.id==r.donor_id);
     const res=await rcSendFlow({id:r.id,num:r.kind==='il'?String(r.num).padStart(4,'0'):r.num,donor_id:r.donor_id,email:(d&&d.email)||r.email||'',name:r.name});
     if(res){const x=d&&(d.donations||[]).find(y=>y.id==r.donation_id);if(x)x.rc_sent=res.sent_at;await rcLoad(true);renderReceipts();}
+  });
+  view.querySelectorAll('.rcredo').forEach(b=>b.onclick=async()=>{
+    const r=all.find(x=>x.id==+b.dataset.id); if(!r)return;
+    if(!await uiConfirm('להפיק מחדש את קבלה '+r.num+' של '+r.name+'?\nהקבלה הקודמת מתבטלת, והחדשה נבנית לפי מה שרשום עכשיו בתרומה בכרטיס (תאריך, סכום, עבור מה) — באותו מספר קבלה.\nכדי לשנות תאריך — קודם מתקנים אותו בתרומה בכרטיס התורם.','🔄 כן, להפיק מחדש','ביטול'))return;
+    b.disabled=true;
+    const res=await api('POST','/api/receipts/'+r.id+'/redo',{});
+    if(!res||!res.ok){b.disabled=false;await uiAlert('לא הופקה מחדש:\n'+((res&&res.error)||'שגיאה'));return;}
+    await rcLoad(true); renderReceipts();
+    const dt=res.doc&&res.doc.date?rcDate(res.doc.date):'';
+    if(r.sent_at){if(await uiConfirm('הקבלה הופקה מחדש'+(dt?' בתאריך '+dt:'')+' ✓\nהקבלה הקודמת כבר נשלחה ל'+(r.sent_to||r.name)+'. לשלוח לו עכשיו את החדשה?','📧 כן, לשלוח','לא עכשיו')){
+      const d=DB.find(x=>x.id==r.donor_id);
+      const s2=await rcSendFlow({id:r.id,num:r.kind==='il'?String(r.num).padStart(4,'0'):r.num,donor_id:r.donor_id,email:(d&&d.email)||r.email||r.sent_to||'',name:r.name});
+      if(s2){await rcLoad(true);renderReceipts();}}}
+    else toast('🔄 הקבלה הופקה מחדש'+(dt?' · '+dt:''));
   });
   view.querySelectorAll('.rcdel').forEach(b=>b.onclick=async()=>{
     const r=all.find(x=>x.id==+b.dataset.id); if(!r)return;

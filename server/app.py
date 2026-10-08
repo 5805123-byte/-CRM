@@ -17687,6 +17687,28 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (data, int(m.group(1))))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/receipts/(\d+)/redo$', self.path)
+        if m:
+            # 🔄 מאיר: "תבטל את הקבלה הזו ותעשה לו חדש שיהיה עם התאריך שאני מכניס במערכת" — הקבלה
+            # נבנית מחדש מהתרומה כפי שהיא עכשיו בכרטיס (תאריך, סכום, עבור מה, אמצעי, שם), באותו מספר
+            con = db()
+            try:
+                r = con.execute("SELECT id,kind,donation_id,src FROM receipt_docs WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not r or not r['donation_id']:
+                    return self._send(200, {'ok': False, 'error': 'הקבלה או התרומה שלה לא נמצאו'})
+                if (r['src'] or 'own') == 'ez':
+                    return self._send(200, {'ok': False, 'error': 'קבלת איזיקאונט — מבטלים ומפיקים מחדש באתר איזיקאונט'})
+                if not con.execute("SELECT 1 FROM donations WHERE id=?", (r['donation_id'],)).fetchone():
+                    return self._send(200, {'ok': False, 'error': 'התרומה של הקבלה נמחקה מהכרטיס'})
+                info, pdf, _f = receipt_build(con, r['kind'], r['donation_id'])
+                con.execute("UPDATE receipt_docs SET pdf=?, name=?, amount=?, date=?, purpose=?, method=? WHERE id=?",
+                            (pdf, info['name'], info['amount'], info['date'], info.get('purpose') or '', info.get('method') or '', r['id']))
+                con.commit()
+                doc = receipt_doc(con, r['id'])
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'doc': doc})
         m = re.match(r'/api/receipts/(\d+)/delete$', self.path)
         if m:
             # ביטול קבלה שהופקה בטעות — רק אם עדיין לא נשלחה. המספר הסידורי נשאר תפוס.
