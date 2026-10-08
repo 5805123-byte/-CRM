@@ -6306,7 +6306,8 @@ function bqForOpts(cur){const L=BQ_FOR();if(cur&&!L.includes(cur))L.unshift(cur)
 // רק אם נכנסים לכרטיס שלו". ברשימה: מה שנקבע להוראה, ואם לא — מה שרשום בכרטיס. אחרת כלום.
 function bqForTxt(r){const t=[r.for_cat,r.for_note].filter(Boolean).join(' · ');return t?('עבור: '+t):(r.known_for?('עבור: '+r.known_for):'');}
 async function bqLoad(){
-  const [st,ls]=await Promise.all([api('GET','/api/bq/status'),api('GET','/api/bq/list?kind='+bqTab+'&q='+encodeURIComponent(bqQ))]);
+  // מאיר: "שורת חיפוש בחיובים לא עובדת" — תיבת החיפוש שלמעלה מסננת גם את רשימת בנק ווסט
+  const [st,ls]=await Promise.all([api('GET','/api/bq/status'),api('GET','/api/bq/list?kind='+bqTab+'&q='+encodeURIComponent(bqQ||(q||'').trim()))]);
   bqStat=st||{}; bqRows=(ls&&ls.rows)||[];
 }
 async function renderBQ(reload=true){
@@ -6327,7 +6328,7 @@ async function renderBQ(reload=true){
     <div class="bqtabs"><button class="bqt ${bqTab==='rec'?'on':''}" data-bqt="rec">קבועים <small>${st.n_active||0}</small></button>
       <button class="bqt ${bqTab==='bad'?'on':''}" data-bqt="bad">חזרו</button>
       <button class="bqt ${bqTab==='hist'?'on':''}" data-bqt="hist">היסטוריה <small>מ-${esc(bqDate(st.hist_from))}</small></button></div>
-    <input class="bqsearch" id="bq_q" placeholder="חיפוש — שם, 4 ספרות, סכום…" value="${esc(bqQ)}">
+    <input class="bqsearch" id="bq_q" placeholder="${(q||'').trim()&&!bqQ?'מסונן לפי החיפוש שלמעלה: '+esc(q.trim()):'חיפוש — שם, 4 ספרות, סכום…'}" value="${esc(bqQ)}">
     <div class="bqlist">${bqRows.map(row).join('')||'<div class="hintxt">'+(st.n_tx||bqTab==='rec'?'אין כאן כלום':'עוד לא נמשכו עסקאות — לחץ 🔄 סנכרון')+'</div>'}</div>
     ${bqTab==='hist'?`<div class="hintxt">היסטוריה לבדיקה בלבד. רק עסקאות מ-${esc(bqDate(st.post_from))} נרשמות לבד בכרטיסי התורמים, כדי שלא יהיו כפילויות. ✓ = רשום בכרטיס.</div>`:''}`;
   bqWire(box);
