@@ -770,6 +770,9 @@ function putLog(d,c){
   if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
 }
 function checkReminders(){
+  if(ROLE==='comm'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
+      if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
+      ban.textContent='🔔 '+due.length+' תזכורות קהילה ממתינות — לחץ לטיפול';ban.classList.add('show');ban.onclick=()=>openCmRems();});return;}
   const due=dueTasks(),up=upcomingReminders(),ban=document.getElementById('rembanner');
   if(!due.length&&!up.length){ban.classList.remove('show');ban.textContent='';return;}
   ban.textContent=`🔔 ${due.length?(due.length+' תזכורות ממתינות'):''}${due.length&&up.length?' · ':''}${up.length?('⏰ '+up.length+' מתקרבות'):''} — לחץ לטיפול`;ban.classList.add('show');
@@ -780,7 +783,7 @@ function checkReminders(){
   if(fresh.length){remNotify(fresh);openRemPopup();return;}
   if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
 }
-setInterval(()=>{try{if(DB&&DB.length)checkReminders();}catch(e){}},60*1000);
+setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm')checkReminders();}catch(e){}},60*1000);
 function openRemPopup(){
   const due=dueTasks(),up=upcomingReminders(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
   if(!due.length&&!up.length){remov.classList.remove('show');return;}
@@ -12383,6 +12386,7 @@ function renderComm(){
       <button class="btn" id="cm_mailn" style="flex:2" title="יוצא מ-neder1818@gmail.com">💰 מייל נדרים ונדבות</button>
       <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn" id="cm_debts" style="flex:2">💰 חובות והתחייבויות</button>
+      <button class="btn" id="cm_rems" style="flex:2">🔔 תזכורות קהילה${CMREMS&&CMREMS.length?` <b>${CMREMS.filter(t=>t.due<=todayStr()).length||CMREMS.length}</b>`:''}</button>
       <button class="btn sm ghost" id="cm_print" style="flex:1">🖨️ הדפסה / PDF</button>
       <button class="btn sm ghost" id="cm_xlsx" style="flex:1">📊 אקסל</button>
     </div>
@@ -12425,6 +12429,8 @@ function renderComm(){
   document.getElementById('cm_mailn').onclick=()=>{cmSender='neder';cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_rems').onclick=()=>openCmRems();
+  if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
   // מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
   document.getElementById('cm_print').onclick=()=>window.open('/kehila-print'+(cmFlt==='seat'?'?sort=seat':''),'_blank');
@@ -12757,7 +12763,10 @@ function openMember(m){
       <button class="btn" id="cm_save" style="flex:2">💾 ${isNew?'הוסף לקהילה':'שמור'}</button>
       ${isNew?'':`<button class="btn ghost" id="cm_send1" style="flex:1"${mHasMail(m)?'':' disabled title="אין כתובת מייל"'}>✉️ שלח לו מייל</button>`}
     </div>
-    ${isNew?'':`<div class="sec"><div class="rbtitle">💰 חובות ובקשות תשלום</div><div id="cm_debtsbox" class="hintxt">טוען…</div></div>
+    ${isNew?'':`<div class="sec"><div class="rbtitle">💳 נדרים פלוס — הוראת קבע ותרומות</div><div id="cm_ndbox" class="hintxt">טוען…</div></div>
+    <div class="sec"><div class="rbtitle">⏰ תזכורות (קהילה)</div><div id="cm_tasksbox" class="hintxt">טוען…</div>
+      <div class="addrow" style="margin-top:6px;flex-wrap:wrap"><input id="cm_tdue" type="date" value="${todayStr()}" style="flex:1;min-width:130px"><input id="cm_tnote" placeholder="מה להזכיר? (למשל: לברר על עליית הסכום)" style="flex:3;min-width:160px"><button class="btn sm ghost" id="cm_tadd" style="flex:1">➕ תזכורת</button></div></div>
+    <div class="sec"><div class="rbtitle">💰 חובות ובקשות תשלום</div><div id="cm_debtsbox" class="hintxt">טוען…</div></div>
     <div class="sec"><div class="rbtitle">📧 יומן — מה נשלח אליו</div><div id="cm_log" class="hintxt">טוען…</div>
       <div class="addrow" style="margin-top:8px"><input id="cm_lognote" placeholder="הערה / שיחה — רישום ידני" style="flex:3"><button class="btn sm ghost" id="cm_logadd" style="flex:1">➕ רשום</button></div></div>
     <div class="sec"><div class="rbtitle">🔀 מיזוג עם חבר אחר</div>
@@ -12766,6 +12775,10 @@ function openMember(m){
     <div class="addrow" style="margin-top:14px"><button class="btn sm ghost danger" id="cm_del" style="flex:1">🗑️ הסר מרשימת הקהילה</button></div>`}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  if(!isNew){cmNdPaint(m);cmTasksPaint(m);
+    document.getElementById('cm_tadd').onclick=async()=>{const n=document.getElementById('cm_tnote').value.trim();if(!n){toast('כתוב מה להזכיר');return;}
+      const r=await api('POST','/api/cm/tasks',{member_id:m.id,due:document.getElementById('cm_tdue').value,note:n});
+      if(r&&r.ok){document.getElementById('cm_tnote').value='';toast('נשמר ✓');CMREMS=null;cmTasksPaint(m);}else toast((r&&r.error)||'לא נשמר');};}
   if(!isNew)(async()=>{const r=await api('GET','/api/cm/debts?status=open'),box=document.getElementById('cm_debtsbox');if(!box)return;
     const L=((r&&r.rows)||[]).filter(d=>d.member_id==m.id).map(d=>[CD_KIND[d.kind]?CD_KIND[d.kind][0]:'חוב',d.title,cdOpen(d)])
       .concat(((r&&r.reqs)||[]).filter(d=>d.member_id==m.id).map(d=>['📞 הודעה',d.jlabel||'',+d.amount||0]));
@@ -12824,6 +12837,84 @@ function openMember(m){
       await api('POST','/api/members/'+m.id+'/log',{summary:t,channel:'הערה'}); document.getElementById('cm_lognote').value=''; paintLog(); toast('נרשם ✓');
     };
   }
+}
+// ===== הכרטיס של חבר הקהילה: נדרים פלוס =====
+// מאיר: "אצל כל חבר קהילה יראו בכרטיס שלו את ההוראת קבע שלו, כמה הוא נותן כל חודש, תיעוד של
+// כל התרומות שלו — עבור מה וכמה, אפשרות העברת תרומה (חיוב חי דרך נדרים פלוס) וקבלות משם"
+const ndMoney=a=>'₪'+(+a||0).toLocaleString('he-IL',{maximumFractionDigits:2});
+const ndDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
+async function cmNdPaint(m,showAll){
+  const box=document.getElementById('cm_ndbox'); if(!box)return;
+  const r=await api('GET','/api/members/'+m.id+'/nd'); if(!r||!r.ok){box.textContent='לא נטען';return;}
+  const K=r.kevas||[], T=r.tx||[], C=r.charges||[];
+  const yrs=Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${ndMoney(v)}</b></span>`).join('');
+  const kevaHTML=K.length?K.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ****${esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
+      ${k.active?'':`<span class="ndbad">לא פעילה${k.off?': '+esc(k.off):''}</span>`}${k.error?`<span class="ndbad">🔴 חזרה: ${esc(k.error)}</span>`:''}</span>
+      <span class="bqacts"><button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
+        <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button></span></div>`).join('')
+    :'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>';
+  const rows=T.map(t=>({id:t.id,iso:t.iso,amount:t.amount,what:[t.groupe,t.comments].filter(Boolean).join(' · '),auto:!!(t.keva&&!String(t.keva).startsWith('-')),conf:t.conf,rc_id:t.rc_id,rc_num:t.rc_num,rc_sent:t.rc_sent,pending:false}))
+    .concat(C.map(c=>({id:c.transaction_id,iso:(c.at||'').slice(0,10),amount:c.amount,what:'חיוב מהמערכת (טרם הופיע בהיסטוריה של נדרים פלוס)',auto:false,conf:c.confirmation,pending:true})))
+    .sort((a,b)=>String(b.iso||'').localeCompare(String(a.iso||'')));
+  const lim=showAll?rows.length:8;
+  box.innerHTML=`${kevaHTML}
+    ${rows.length?`<div class="bqhsum" style="margin-top:8px"><b>${rows.filter(x=>+x.amount>0).length} תרומות · ${ndMoney(r.sum)}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div></div>
+      <div class="bqpays">${rows.slice(0,lim).map(t=>`<div class="bqpay"><span><b>${esc(ndDate(t.iso))}</b> · ${ndMoney(t.amount)}${t.what?` · ${esc(t.what)}`:''} · <small>${t.auto?'הוראת קבע':'חד-פעמי'}${t.conf?' · אישור '+esc(t.conf):''}</small></span>
+        <span class="bqacts">${t.pending||!(+t.amount>0)?'':(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
+          :`<button class="btn sm ghost" data-ndrc="${esc(t.id)}" data-amt="${esc(t.amount)}" data-date="${esc((t.iso||'').slice(0,10))}" data-what="${esc(t.what.split(' · ')[0]||'')}">🧾 קבלה</button>`)}</span></div>`).join('')}</div>
+      ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
+      :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
+  const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true);
+  box.querySelectorAll('[data-ndchg]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.ndchg);
+    const v=await uiPrompt('כמה לחייב עכשיו (₪) מהכרטיס ****'+(k?k.last4:'')+'?','');const a=amtNum(v);if(!a)return;
+    const w=await uiPrompt('עבור מה? (יופיע אצלו בנדרים פלוס ובכרטיס)',k&&k.groupe?k.groupe:'');if(w===null)return;
+    if(!await uiConfirm('לחייב עכשיו את '+mName(m)+' ב-'+ndMoney(a)+(w?(' עבור '+w):'')+'?\nהחיוב מיידי בכרטיס השמור בהוראת הקבע, בלי לשנות את ההוראה.','⚡ כן, לחייב','ביטול'))return;
+    b.disabled=true;b.textContent='מחייב…';const r=await api('POST','/api/nd/keva/'+b.dataset.ndchg+'/charge',{amount:a,groupe:w||'',member_id:m.id});
+    if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.confirmation||''));cmNdPaint(m);}else{b.disabled=false;b.textContent='⚡ חיוב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}});
+  box.querySelectorAll('[data-ndsendm]').forEach(b=>b.onclick=async()=>{
+    if(!await uiConfirm('לשלוח לו SMS עם קישור מאובטח לעדכון הכרטיס בהוראת הקבע?','📲 כן','ביטול'))return;
+    b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsendm+'/link',{send:1});
+    if(r&&r.ok&&r.sent_to)toast('נשלח ל-'+r.sent_to+' ✓');else if(r&&r.ok)await uiAlert('אין נייד להוראה הזו. הקישור:\n'+r.link);else await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));b.disabled=false;});
+  // קבלה — אותו תהליך כמו אצל התורמים: מאשרים, שואלים אם לשלוח במייל
+  box.querySelectorAll('[data-ndrc]').forEach(b=>b.onclick=async()=>{
+    if(!await uiConfirm('להפיק קבלה ישראלית על '+ndMoney(b.dataset.amt)+' מ-'+ndDate(b.dataset.date)+'?'))return;
+    let em=(r.email||'').trim(),send=false;
+    if(em)send=await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן, לשלוח','לא, רק להפיק');
+    else{const v=await uiPrompt('אין מייל בכרטיס. לשלוח את הקבלה במייל? הקלד כתובת (ריק = רק להפיק)','');em=(v||'').trim();if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return;}send=!!em;}
+    b.disabled=true;toast('מפיק קבלה…');
+    const rr=await api('POST','/api/members/'+m.id+'/receipt',{amount:b.dataset.amt,date:b.dataset.date,purpose:b.dataset.what,email:em,send:send?1:0,key:b.dataset.ndrc});
+    if(!rr||!rr.ok){b.disabled=false;await uiAlert('הקבלה לא הופקה:\n'+((rr&&rr.error)||'שגיאה'));return;}
+    toast(send?(rr.send_error?('הקבלה הופקה, אך לא נשלחה: '+rr.send_error):'הקבלה הופקה ונשלחה ✓'):'הקבלה הופקה ✓');RCPTS=null;cmNdPaint(m,showAll);});
+  box.querySelectorAll('[data-ndrcsend]').forEach(b=>b.onclick=async()=>{let em=(r.email||'').trim();
+    if(!em){em=((await uiPrompt('לאיזו כתובת מייל לשלוח?',''))||'').trim();if(!em)return;}
+    if(!await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן','ביטול'))return;
+    const rr=await api('POST','/api/receipts/'+b.dataset.ndrcsend+'/send',{email:em});if(rr&&rr.ok)toast('נשלח ✓');else await uiAlert('לא נשלח:\n'+((rr&&rr.error)||'שגיאה'));cmNdPaint(m,showAll);});
+}
+// ===== תזכורות הקהילה — נפרדות מהתזכורות של התורמים =====
+// מאיר: "אם הגבאי נכנס לקהילה, שיהיה לו תזכורות לקהילה, שהוא לא יראה את התזכורות שלנו"
+let CMREMS=null;
+async function cmRemsLoad(){const r=await api('GET','/api/cm/tasks');CMREMS=(r&&r.rows)||[];return CMREMS;}
+async function cmTasksPaint(m){
+  const box=document.getElementById('cm_tasksbox'); if(!box)return;
+  const r=await api('GET','/api/members/'+m.id+'/nd'); const T=(r&&r.tasks)||[];
+  box.innerHTML=T.length?T.map(t=>`<div class="cdline ${t.done?'done':''}"><span>${t.done?'✅':(t.due<=todayStr()?'🔔':'⏰')} <b>${esc(ndDate(t.due))}</b> · ${esc(t.note||'')}</span>
+      <span class="bqacts">${t.done?`<button class="btn sm ghost" data-cmt="reopen" data-id="${t.id}">↩</button>`:`<button class="btn sm ghost" data-cmt="done" data-id="${t.id}" title="בוצע">✓</button>`}<button class="btn sm ghost" data-cmt="delete" data-id="${t.id}" title="מחק">🗑️</button></span></div>`).join('')
+    :'<div class="hintxt">אין תזכורות.</div>';
+  box.querySelectorAll('[data-cmt]').forEach(b=>b.onclick=async()=>{await api('POST','/api/cm/tasks/'+b.dataset.id,{action:b.dataset.cmt});CMREMS=null;cmTasksPaint(m);});
+}
+async function openCmRems(){
+  await cmRemsLoad();
+  const remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
+  const td=todayStr(), due=CMREMS.filter(t=>t.due<=td), up=CMREMS.filter(t=>t.due>td);
+  const row=t=>`<div class="remitem ${t.due<=td?'over':'soon'}"><div class="ri"><b>${esc(((t.ml||'')+' '+(t.mf||'')).trim()||'—')}</b> <small>${esc(ndDate(t.due))}</small><br>${esc(t.note||'')}${t.mphone?` <small dir="ltr">${esc(t.mphone)}</small>`:''}</div>
+    <button class="btn sm" data-cmr="done" data-id="${t.id}">בוצע ✓</button><button class="no" data-cmr="snooze" data-id="${t.id}">דחה מחר</button></div>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔔 תזכורות הקהילה</h2>
+    ${due.length?`<div class="hintxt">הגיע זמנן (${due.length})</div>${due.map(row).join('')}`:''}
+    ${up.length?`<h2 style="margin-top:14px">⏰ מתקרב (${up.length})</h2>${up.map(row).join('')}`:''}
+    ${CMREMS.length?'':'<div class="hintxt">אין תזכורות פתוחות. מוסיפים תזכורת בכרטיס של חבר הקהילה.</div>'}`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-cmr]').forEach(b=>b.onclick=async()=>{await api('POST','/api/cm/tasks/'+b.dataset.id,{action:b.dataset.cmr});CMREMS=null;openCmRems();if(tab==='comm')render();});
 }
 // שליחת מייל לקהילה — אותו מנוע ואותה צורה כמו אצל התורמים
 function cmAudience(){ return MEMBERS.filter(m=>cmPick.has(m.id)&&mHasMail(m)).sort(byMName); }
@@ -13014,7 +13105,7 @@ async function cmHistory(){
 // אין רשימה כפולה לתחזק. כל אחד מקבל הודעה נפרדת עם השם שלו.
 let ymLog=null, ymLogJob=0, ymLogOpen=false;
 // מאיר: "בהודעה שנשלחת בשיחה מקישים 1 ועוברים לשלוחת סליקת אשראי… סכום לחיוב מותאם לכל לקוח"
-let ymBill=false;
+let ymBill=false, ymVoiceOpen=false;
 try{ymBill=localStorage.getItem('kc_ymbill')==='1';}catch(e){}
 let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
 try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
@@ -13327,7 +13418,11 @@ function ymViewSend(){
 // מאיר: "אני גם רוצה להחליף קול, שיהיה יותר אנושי, ויותר נורמלי בלי טעויות"
 function ymVoiceHTML(st){
   const V=st.voices||[['','ברירת המחדל של ימות']], G=st.gvoices||[], gem=st.engine==='gemini';
-  return `<div class="ymvoice">
+  // מאיר: "כל המלל הזה מיותר… פשוט מאוד לשלוח הודעה. כבר מוגדר אצלנו שזה אורוס וג'ימיני. אם אני
+  // רוצה לשנות — כפתור, ואני אשנה" — שורה אחת עם מה שמוגדר; כל ההגדרות וההסברים מקופלים
+  const gv=(G.find(([k])=>k===st.gvoice)||[])[1]||'', gm=((st.gmodels||[]).find(([k])=>k===(st.gmodel||''))||[])[1]||'';
+  const sum=gem?('🧑 קול אנושי — Gemini'+(gv?' · '+gv.split(' — ')[0]:'')+(gm?' · '+gm.split(' — ')[0]:'')):'🤖 הקול של ימות';
+  return `<details class="ymvoice ympron" id="ym_voicebox"${ymVoiceOpen?' open':''}><summary>🔊 ${esc(sum)} <span class="ymchg">⚙️ שינוי</span></summary>
     <div class="ymeng"><button class="ymc${!gem?' on':''}" data-eng="">🤖 הקול של ימות<small>מהיר · כמעט מיידי</small></button>
       <button class="ymc${gem?' on':''}" data-eng="gemini">🧑 קול אנושי — Gemini<small>כמה שניות לכל נמען</small></button></div>
     ${gem?`${st.gemini?'':`<div class="ymwarn">⚠️ חסר מפתח: ב-Render ← Environment להוסיף <b>GEMINI_API_KEY</b> (מ-aistudio.google.com/apikey). עד אז ההודעות יוצאות בקול של ימות.</div>`}
@@ -13348,7 +13443,7 @@ function ymVoiceHTML(st){
       <textarea id="ym_pron" rows="4" placeholder="חצות=חֲצוֹת">${esc(st.pron||'')}</textarea>
       <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="ym_pronsave">💾 שמור מילון</button>
         <button class="btn sm ghost" id="ym_pronnames">👪 הצע ניקוד לשמות של הנבחרים</button></div></details>
-    <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></div>`;}
+    <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></details>`;}
 // מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
 function ymWireNikud(){
   const g=id=>document.getElementById(id), ta=g('ym_text'); if(!ta||!g('nk_all'))return;
@@ -13371,6 +13466,7 @@ function ymWireNikud(){
 }
 function ymWireVoice(first,sel){
   const g=id=>document.getElementById(id); if(!g('ym_say'))return;
+  const vb=g('ym_voicebox'); if(vb)vb.ontoggle=()=>{ymVoiceOpen=vb.open;};
   view.querySelectorAll('.ymeng .ymc').forEach(b=>b.onclick=async()=>{const e=b.dataset.eng;const r=await api('POST','/api/yemot/voice',{engine:e});
     if(r&&r.ok){ymStatus.engine=e;renderCommYm();}});
   const gv=g('ym_gvoice'); if(gv)gv.onchange=async()=>{await api('POST','/api/yemot/voice',{gvoice:gv.value});ymStatus.gvoice=gv.value;toast('הקול נשמר ✓');};

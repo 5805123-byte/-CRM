@@ -315,6 +315,9 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS nd_tx(id TEXT PRIMARY KEY, time TEXT, iso TEXT, phone TEXT, name TEXT, amount REAL,
         keva TEXT, groupe TEXT, comments TEXT, conf TEXT, last4 TEXT, type TEXT, member_id INTEGER, msg_id INTEGER, used TEXT);
     CREATE TABLE IF NOT EXISTS nd_map(keva_id TEXT PRIMARY KEY, member_id INTEGER, at TEXT);
+    /* תזכורות של הקהילה — מאיר: "תזכורות לקהילה, שהגבאי לא יראה את התזכורות שלנו" */
+    CREATE TABLE IF NOT EXISTS cm_task(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, due TEXT, at_time TEXT,
+        note TEXT, done INTEGER DEFAULT 0, created TEXT, done_at TEXT);
     CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
        לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
@@ -13244,6 +13247,107 @@ def donor_suggest(con, name, limit=6):
     return [x[1] for x in out[:limit]]
 
 
+def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', send=False, key=''):
+    """קבלה ישראלית לחבר קהילה — מאיר: "בכרטיס של חבר הקהילה… גם להוציא קבלות משם". בלי שורת
+    תרומה (הקהילה נפרדת מהתורמים): דרך איזיקאונט אם מוגדר, אחרת בעיצוב שלנו. key — מזהה
+    העסקה בנדרים פלוס, כדי שלא תופק פעמיים על אותה עסקה."""
+    m = con.execute("SELECT * FROM members WHERE id=?", (member_id,)).fetchone()
+    if not m:
+        return None, 'חבר הקהילה לא נמצא'
+    amt = round(_amt2(amount), 2)
+    if amt <= 0:
+        return None, 'סכום לא תקין'
+    name = ((m['last'] or '') + ' ' + (m['first'] or '')).strip()
+    date = (date or today_iso())[:10]
+    purpose = (purpose or '').strip() or 'תרומה'
+    note = 'member:%d' % member_id + ((' nd:' + key) if key else '')
+    if key:
+        ex = con.execute("SELECT id FROM receipt_docs WHERE kind='il' AND note LIKE ?", ('%nd:' + key + '%',)).fetchone()
+        if ex:
+            return receipt_doc(con, ex['id']), ''
+    email = (email or '').strip() or (emails_of(m['email'])[0] if m['email'] else '')
+    addr = ', '.join(x for x in (str(m['addr'] or '').strip(), str(m['city'] or '').strip()) if x)
+    if ez_ready():
+        import ezcount as _ez
+        ok, res = _ez.send_receipt(name=name, email=email if send else '', amount=amt, currency='ILS', date=date, purpose=purpose,
+                                   method='אשראי', note='', address=addr, phone=(m['phone'] or '').strip(), require_email=False)
+        if not ok:
+            return None, str(res)
+        docnum = str(res.get('docnum') or '')
+        url = res.get('doc_url') or ''
+        pdf = _ez.fetch_pdf(url) if url else None
+        try:
+            num = int(re.sub(r'\D', '', docnum) or 0)
+        except ValueError:
+            num = 0
+        sent = now_iso() if (send and email and res.get('sent')) else None
+        con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,sent_at,sent_to,note,url,src) "
+                    "VALUES('il',?,NULL,NULL,?,?,?,'₪',?,?,'אשראי',?,?,?,?,?,?,'ez')",
+                    (num, name, email, amt, date, purpose, pdf, now_iso(), sent, email if sent else None, note + ' · איזיקאונט ' + docnum, url))
+        rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+        con.commit()
+        return receipt_doc(con, rid), ''
+    import receipt_il as _il
+    rkey = 'il:m%d:%s' % (member_id, key or (date + ':' + str(amt)))
+    r = con.execute("SELECT num FROM receipts WHERE rkey=?", (rkey,)).fetchone()
+    if r:
+        num = int(r['num'])
+    else:
+        mx = con.execute("SELECT MAX(num) m FROM receipts WHERE rkey LIKE 'il:%'").fetchone()['m']
+        num = max(RECEIPT_IL_START, int(mx or 0) + 1)
+        con.execute("INSERT OR IGNORE INTO receipts(rkey,num,created) VALUES(?,?,?)", (rkey, num, today_iso()))
+    try:
+        heb = greg_to_heb_full(date)
+    except Exception:
+        heb = ''
+    info = {'donation_id': None, 'donor_id': None, 'name': name, 'tz': '', 'addr': addr, 'amount': amt,
+            'words': _il.amount_words(amt), 'date': date, 'date_heb': heb, 'method': 'כרטיס אשראי', 'ref': key,
+            'purpose': purpose, 'num': num, 'org': _il.org_settings(con, kv_get), 'issued': today_iso(), 'email': email}
+    pdf, _f = _il.receipt_file(con, 0, 'pdf', STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full, info=info)
+    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,note,src) "
+                "VALUES('il',?,NULL,NULL,?,?,?,'₪',?,?,'כרטיס אשראי',?,?,?,'own')",
+                (num, name, email, amt, date, purpose, pdf, now_iso(), note))
+    rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    con.commit()
+    return receipt_doc(con, rid), ''
+
+
+def member_nd(con, mid):
+    """כל מה שיש לחבר הקהילה בנדרים פלוס: הוראות הקבע, כל העסקאות (אוטומטיות ובודדות),
+    סיכום לפי שנה, הקבלות שהופקו, החובות הפתוחים והתזכורות."""
+    m = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone()
+    if not m:
+        return None
+    phs = _phones_of(m['phone'])
+    kevas = [dict(r) for r in con.execute("SELECT k.*, l.link, l.sent_at FROM nd_keva k LEFT JOIN nd_link l ON l.keva_id=k.id "
+                                           "WHERE k.member_id=? ORDER BY k.active DESC, k.id", (mid,))]
+    kids = [k['id'] for k in kevas]
+    w, args = ["t.member_id=?"], [mid]
+    if phs:
+        w.append("t.phone IN (%s)" % ','.join('?' * len(phs))); args += phs
+    if kids:
+        w.append("LTRIM(COALESCE(t.keva,''),'-') IN (%s)" % ','.join('?' * len(kids))); args += kids
+    txs = [dict(r) for r in con.execute(
+        "SELECT t.*, (SELECT rd.id FROM receipt_docs rd WHERE rd.note LIKE '%nd:'||t.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_id,"
+        "(SELECT rd.num FROM receipt_docs rd WHERE rd.note LIKE '%nd:'||t.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_num,"
+        "(SELECT rd.sent_at FROM receipt_docs rd WHERE rd.note LIKE '%nd:'||t.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_sent "
+        "FROM nd_tx t WHERE " + " OR ".join(w) + " ORDER BY t.iso DESC LIMIT 600", args)]
+    # חיובים מהממשק / מהטלפון שעוד לא הופיעו בהיסטוריה של נדרים פלוס
+    charges = [dict(r) for r in con.execute("SELECT * FROM nd_charge WHERE member_id=? AND ok=1 AND transaction_id<>'' "
+                                             "AND transaction_id NOT IN (SELECT id FROM nd_tx) ORDER BY id DESC LIMIT 50", (mid,))]
+    years = {}
+    for t in txs:
+        if (t['amount'] or 0) > 0:
+            years[(t['iso'] or '')[:4]] = round(years.get((t['iso'] or '')[:4], 0) + t['amount'], 2)
+    debts = [dict(r) for r in con.execute("SELECT * FROM cm_debt WHERE member_id=? AND status='open' ORDER BY COALESCE(NULLIF(due,''),created)", (mid,))]
+    tasks = [dict(r) for r in con.execute("SELECT * FROM cm_task WHERE member_id=? ORDER BY done, due", (mid,))]
+    return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years,
+            'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0), 2),
+            'since': min((t['iso'] or '' for t in txs if t['iso']), default=''),
+            'debts': debts, 'tasks': tasks, 'email': (emails_of(m['email'])[0] if m['email'] else ''),
+            'linked_by': 'ידני' if con.execute("SELECT 1 FROM nd_map WHERE member_id=?", (mid,)).fetchone() else ''}
+
+
 def receipt_send(con, rid, email=''):
     """שולח את הקבלה (PDF מצורף) למייל של התורם, ומסמן שנשלחה."""
     r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
@@ -13314,11 +13418,11 @@ def receipt_autosend(con, doc, email=''):
     מחזיר (doc מעודכן, שגיאת שליחה או '')."""
     if not doc or doc.get('sent_at'):
         return doc, ''
-    d = con.execute("SELECT email FROM donors WHERE id=?", (doc['donor_id'],)).fetchone()
-    to = (email or '').strip() or (emails_of(d['email'])[0] if d and d['email'] else '')
+    d = con.execute("SELECT email FROM donors WHERE id=?", (doc['donor_id'],)).fetchone() if doc.get('donor_id') else None
+    to = (email or '').strip() or (emails_of(d['email'])[0] if d and d['email'] else '') or (doc.get('email') or '').strip()
     if not to:
         return doc, ''
-    if email:
+    if email and doc.get('donor_id'):
         con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (email.strip(), doc['donor_id']))
         con.commit()
     try:
@@ -14064,6 +14168,16 @@ class H(BaseHTTPRequestHandler):
             return False
         self.role = role
         allow = AUTH_ROLE_PATHS.get(role)
+        # הגבאי: קבלות של חברי הקהילה בלבד (צפייה ושליחה) — לא רשימת הקבלות של התורמים
+        mrc = re.match(r'/api/receipts/(\d+)(\.pdf|/send)$', path) if role == 'comm' else None
+        if mrc:
+            con = db()
+            try:
+                ok_rc = con.execute("SELECT 1 FROM receipt_docs WHERE id=? AND donor_id IS NULL AND note LIKE 'member:%'", (int(mrc.group(1)),)).fetchone()
+            finally:
+                con.close()
+            if ok_rc:
+                return True
         if allow is not None and (not any(path.startswith(x) for x in allow)
                                   or (role == 'parnes' and self.command == 'DELETE' and path.startswith('/api/donor'))):
             fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
@@ -16388,6 +16502,24 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        m = re.match(r'/api/members/(\d+)/nd$', self.path.split('?')[0])
+        if m:
+            con = db()
+            try:
+                out = member_nd(con, int(m.group(1)))
+            finally:
+                con.close()
+            return self._send(200, out or {'ok': False, 'error': 'לא נמצא'})
+        if self.path.split('?')[0] == '/api/cm/tasks':
+            # תזכורות הקהילה — לגבאי (ולמסך הקהילה): פתוחות, עם שם החבר
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute(
+                    "SELECT t.*, m.last ml, m.first mf, m.phone mphone FROM cm_task t LEFT JOIN members m ON m.id=t.member_id "
+                    "WHERE COALESCE(t.done,0)=0 ORDER BY t.due, t.at_time, t.id")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'today': today_iso()})
         m = re.match(r'/api/bq/sched/(\d+)/history$', self.path.split('?')[0])
         if m:
             # מאיר: "בלשונית של חיוב קבוע של תורם — כפתור לראות את כל ההיסטוריה הקיימת בבנק ווסט
@@ -18950,6 +19082,88 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sent': n, 'no_mobile': nomob, 'failed': fail})
+        m = re.match(r'/api/nd/keva/(\d+)/charge$', self.path)
+        if m:
+            # ⚡ חיוב מיידי מהוראת הקבע של חבר הקהילה (TashlumBodedNew, Join) — מאיר: "העברת תרומה…
+            # חיובים כאילו חיים דרך נדרים פלוס". נרשם בכרטיס, סוגר חוב פתוח, ומסמן הודעה ששולמה.
+            import nedarim as _nd
+            kid = m.group(1)
+            amt = round(_amt2(b.get('amount')), 2)
+            if amt <= 0:
+                return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+            con = db()
+            try:
+                k = con.execute("SELECT * FROM nd_keva WHERE id=?", (kid,)).fetchone()
+                if not k:
+                    return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
+                mid = int(b.get('member_id') or 0) or k['member_id']
+                groupe = str(b.get('groupe') or '').strip()
+                ok, res = _nd.tashlum_boded(kid, amt, groupe=groupe, comments=('חיוב מהמערכת' + ((' · ' + str(b.get('note') or '').strip()) if b.get('note') else '')),
+                                            ajax='crm-%s-%d' % (kid, int(time.time())))
+                r = res if isinstance(res, dict) else {}
+                msg = str(r.get('Message') or ('' if ok else res) or '')[:200]
+                conf = str(r.get('Confirmation') or '')
+                tid = str(r.get('TransactionId') or r.get('ID') or '')
+                l4 = re.sub(r'\D', '', k['last4'] or '')
+                con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,0,'ממשק')",
+                            (now_iso(), '', (k['phone'] or '').split(';')[0], kid, mid, amt, 1 if ok else 0, msg, tid, conf, l4))
+                if mid:
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                (mid, today_iso(), 'תשלום',
+                                 ('💳 חויב ₪%g מהוראת הקבע (כרטיס ****%s)%s · אישור %s' % (amt, l4, (' עבור ' + groupe) if groupe else '', conf)) if ok
+                                 else ('🔴 חיוב ₪%g מהוראת הקבע נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
+                    if ok:
+                        cm_debt_pay(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf)
+                        ym_mark_paid(con, (k['phone'] or '').split(';')[0], amt, 'חיוב מהמערכת')
+                con.commit()
+            finally:
+                con.close()
+            if ok:
+                nd_history_soon()
+            return self._send(200, {'ok': bool(ok), 'error': '' if ok else (msg or 'נדרים פלוס לא אישרו'), 'confirmation': conf, 'transaction_id': tid})
+        m = re.match(r'/api/members/(\d+)/receipt$', self.path)
+        if m:
+            con = db()
+            try:
+                doc, err = receipt_issue_member(con, int(m.group(1)), b.get('amount'), b.get('date') or '', b.get('purpose') or '',
+                                                b.get('email') or '', bool(b.get('send')), str(b.get('key') or '').strip())
+                if not doc:
+                    return self._send(200, {'ok': False, 'error': err})
+                send_error = ''
+                if b.get('send'):
+                    doc, send_error = receipt_autosend(con, doc, (b.get('email') or '').strip() or (doc.get('email') or ''))
+                    if doc and doc.get('sent_at') and b.get('email'):
+                        pass
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'ההפקה נכשלה: %s' % str(e)[:200]})
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'doc': doc, 'send_error': send_error})
+        if self.path == '/api/cm/tasks':
+            mid = int(b.get('member_id') or 0)
+            note = str(b.get('note') or '').strip()
+            if not mid or not note:
+                return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה או תוכן'})
+            con = db()
+            con.execute("INSERT INTO cm_task(member_id,due,at_time,note,done,created) VALUES(?,?,?,?,0,?)",
+                        (mid, (b.get('due') or today_iso())[:10], str(b.get('at_time') or '')[:5], note[:300], now_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/cm/tasks/(\d+)$', self.path)
+        if m:
+            act = b.get('action'); con = db()
+            if act == 'done':
+                con.execute("UPDATE cm_task SET done=1, done_at=? WHERE id=?", (now_iso(), int(m.group(1))))
+            elif act == 'snooze':
+                con.execute("UPDATE cm_task SET due=? WHERE id=?", ((datetime.date.today() + datetime.timedelta(days=1)).isoformat(), int(m.group(1))))
+            elif act == 'delete':
+                con.execute("DELETE FROM cm_task WHERE id=?", (int(m.group(1)),))
+            elif act == 'reopen':
+                con.execute("UPDATE cm_task SET done=0, done_at=NULL WHERE id=?", (int(m.group(1)),))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/nd/sync':
             import nedarim as _nd
             if not _nd.configured():

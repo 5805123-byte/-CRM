@@ -163,10 +163,11 @@ def receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_f
             'email': (d['email'] or '').strip() if d else ''}
 
 
-def receipt_file(con, don_id, fmt, STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full):
-    """הקבלה על הבלאנק — PDF של עמוד אחד או JPG. עברית מימין לשמאל (raqm)."""
+def receipt_file(con, don_id, fmt, STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full, info=None):
+    """הקבלה על הבלאנק — PDF של עמוד אחד או JPG. עברית מימין לשמאל (raqm).
+    info — נתוני קבלה מוכנים (קבלה לחבר קהילה, בלי שורת תרומה)."""
     from PIL import Image, ImageDraw, ImageFont
-    info = receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
+    info = info or receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
     if not info:
         raise ValueError('donation')
     im = Image.open(os.path.join(STATIC, 'letterhead.jpg')).convert('RGB')
