@@ -12493,6 +12493,12 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 # בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
 AUTH_DAYS = 365
 AUTH_PUBLIC = ('/api/login', '/api/logout', '/api/me', '/api/yemot/ivr', '/unsub', '/api/authorize/webhook', '/api/health')
+# כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
+#     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
+#     GOOGLE_LOGIN_ADMIN   מיילים שנכנסים להכל (ברירת מחדל: 5805123@gmail.com), מופרדים בפסיק
+#     GOOGLE_LOGIN_COMM    מיילים שנכנסים לקהילה בלבד (גבי)
+GOOGLE_ADMIN_DEFAULT = '5805123@gmail.com'
+GOOGLE_TOKENINFO = 'https://oauth2.googleapis.com/tokeninfo'
 # מה שלשונית הקהילה צריכה — ורק זה. כל השאר (תורמים, חיובים, קבלות…) חסום לסיסמת הקהילה
 AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/', '/api/nd/', '/api/nikud',
              '/api/nedarim/mosads', '/api/seats', '/seat-map-print', '/seat_layout.json', '/seat-map-original.png',
@@ -12544,6 +12550,42 @@ def auth_role_of(cookie):
     except ValueError:
         return ''
     return role
+
+
+def google_client_id():
+    return (os.environ.get('GOOGLE_CLIENT_ID') or '').strip()
+
+
+def _emails(env, default=''):
+    return {e.strip().lower() for e in (os.environ.get(env) or default).split(',') if e.strip()}
+
+
+def auth_check_google(credential):
+    """אימות ה-ID token של גוגל אצל גוגל (tokeninfo) — חתימה, תוקף וקהל. -> (תפקיד, מייל / שגיאה)."""
+    cid = google_client_id()
+    if not cid:
+        return '', 'כניסה עם גוגל לא מוגדרת'
+    tok = str(credential or '').strip()
+    if not tok or len(tok) > 4096 or not re.fullmatch(r'[A-Za-z0-9._\-]+', tok):
+        return '', 'אסימון לא תקין'
+    url = (os.environ.get('GOOGLE_TOKENINFO') or GOOGLE_TOKENINFO) + '?' + urllib.parse.urlencode({'id_token': tok})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'KollelChatzosCRM/1.0'}), timeout=20) as r:
+            info = json.loads(r.read().decode('utf-8', 'replace'))
+    except urllib.error.HTTPError as e:
+        return '', 'גוגל לא אישרו את הכניסה (%s)' % e.code
+    except Exception as e:
+        return '', 'לא הצלחתי לפנות לגוגל: %s' % str(e)[:80]
+    if not isinstance(info, dict) or info.get('aud') != cid or str(info.get('email_verified')).lower() != 'true':
+        return '', 'האסימון לא שייך למערכת הזו'
+    if info.get('iss') not in ('accounts.google.com', 'https://accounts.google.com'):
+        return '', 'מנפיק לא מוכר'
+    em = str(info.get('email') or '').strip().lower()
+    if em in _emails('GOOGLE_LOGIN_ADMIN', GOOGLE_ADMIN_DEFAULT):
+        return 'admin', em
+    if em in _emails('GOOGLE_LOGIN_COMM'):
+        return 'comm', em
+    return '', 'החשבון %s לא מורשה להיכנס' % em
 
 
 def auth_check_password(pw, ip):
@@ -13969,7 +14011,7 @@ class H(BaseHTTPRequestHandler):
         """כניסה בסיסמה. מחזיר True אם אפשר להמשיך; אחרת כבר נשלחה תשובה (401 / 403).
         קבצי המסך עצמם (index.html, app.js…) פתוחים — מסך הכניסה נמצא בהם; הנתונים לא."""
         path = self.path.split('?')[0]
-        if path in ('/api/login', '/api/logout', '/api/me'):
+        if path in ('/api/login', '/api/login/google', '/api/logout', '/api/me'):
             return self._auth_routes(path)
         if not auth_on():
             self.role = 'admin'
@@ -14001,7 +14043,7 @@ class H(BaseHTTPRequestHandler):
     def _auth_routes(self, path):
         if path == '/api/me':
             role = 'admin' if not auth_on() else auth_role_of(self.headers.get('Cookie'))
-            return self._send(200, {'ok': True, 'auth_on': auth_on(), 'role': role,
+            return self._send(200, {'ok': True, 'auth_on': auth_on(), 'role': role, 'google': google_client_id(),
                                     'comm_set': bool((os.environ.get('CRM_PASS_COMM') or '').strip())}) or False
         if path == '/api/logout':
             self.send_response(200)
@@ -14014,7 +14056,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(405, {'ok': False}) or False
         if not auth_on():
             return self._send(200, {'ok': True, 'role': 'admin'}) or False
-        role = auth_check_password(self._body().get('password'), self._ip())
+        if path == '/api/login/google':
+            role, em = auth_check_google(self._body().get('credential'))
+            if not role:
+                return self._send(401, {'ok': False, 'error': em}) or False
+        else:
+            role = auth_check_password(self._body().get('password'), self._ip())
         if role == 'wait':
             return self._send(429, {'ok': False, 'error': 'יותר מדי ניסיונות — נסה שוב בעוד דקה'}) or False
         if not role:
@@ -20044,7 +20091,8 @@ def health_report():
             pass
         # כניסה בסיסמה — מאיר: "עכשיו שהמערכת אשראי עובדת, אנחנו חייבים לעשות סיסמה"
         add('כניסה בסיסמה', 'ok' if auth_on() else 'bad',
-            ('מוגדרת · סיסמת קהילה %s' % ('מוגדרת (CRM_PASS_COMM)' if (os.environ.get('CRM_PASS_COMM') or '').strip() else 'לא מוגדרת — להוסיף CRM_PASS_COMM ב-Render'))
+            ('מוגדרת · סיסמת קהילה %s · כניסה עם גוגל %s' % ('מוגדרת (CRM_PASS_COMM)' if (os.environ.get('CRM_PASS_COMM') or '').strip() else 'לא מוגדרת — להוסיף CRM_PASS_COMM ב-Render',
+                                                           ('מוגדרת (%s)' % ', '.join(sorted(_emails('GOOGLE_LOGIN_ADMIN', GOOGLE_ADMIN_DEFAULT) | _emails('GOOGLE_LOGIN_COMM')))) if google_client_id() else 'לא מוגדרת (GOOGLE_CLIENT_ID)'))
             if auth_on() else 'המערכת פתוחה בלי סיסמה! ב-Render ← Environment להוסיף CRM_PASS (סיסמת המערכת) ו-CRM_PASS_COMM (סיסמה לקהילה בלבד)')
         # תעודות פרנס — נכשלו בעבר כי Pillow לא הותקן
         try:

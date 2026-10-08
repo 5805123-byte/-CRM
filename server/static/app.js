@@ -1214,8 +1214,19 @@ function showLogin(msg){
   o.innerHTML=`<form class="loginbox" id="loginf"><img src="/logo.png" alt="" style="width:64px;height:auto"><h2>כולל חצות</h2>
     <div class="hintxt">${esc(msg||'הקלד את הסיסמה כדי להיכנס')}</div>
     <input type="password" id="login_pw" placeholder="סיסמה" autocomplete="current-password" dir="ltr" autofocus>
-    <button class="btn" type="submit">🔓 כניסה</button><div class="loginerr" id="login_err"></div></form>`;
+    <button class="btn" type="submit">🔓 כניסה</button><div class="loginerr" id="login_err"></div>
+    <div id="login_g" class="login_g" hidden><div class="hintxt">— או —</div><div id="login_gbtn"></div></div></form>`;
   document.body.appendChild(o);
+  // כניסה עם חשבון גוגל (אם הוגדר GOOGLE_CLIENT_ID) — הכפתור של גוגל; האסימון נבדק בשרת מול גוגל
+  fetch('/api/me').then(r=>r.json()).then(me=>{if(!me||!me.google)return;
+    const sc=document.createElement('script');sc.src='https://accounts.google.com/gsi/client';sc.async=true;
+    sc.onload=()=>{try{google.accounts.id.initialize({client_id:me.google,callback:async res=>{
+        const err=document.getElementById('login_err');err.textContent='';
+        let r=null;try{r=await (await fetch('/api/login/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:res.credential})})).json();}catch(x){}
+        if(r&&r.ok){location.reload();return;} err.textContent=(r&&r.error)||'הכניסה עם גוגל לא הצליחה';}});
+      google.accounts.id.renderButton(document.getElementById('login_gbtn'),{theme:'outline',size:'large',text:'signin_with',locale:'he',width:300});
+      document.getElementById('login_g').hidden=false;}catch(e){}};
+    document.head.appendChild(sc);}).catch(()=>{});
   const f=document.getElementById('loginf'), err=document.getElementById('login_err');
   f.onsubmit=async e=>{e.preventDefault();const pw=document.getElementById('login_pw').value;if(!pw)return;
     f.querySelector('button').disabled=true;err.textContent='';
