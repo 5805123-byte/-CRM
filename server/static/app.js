@@ -1204,10 +1204,44 @@ function netInit(){
   sw.ready.then(()=>{ping();sync();});
   setInterval(()=>{ if(navigator.onLine&&PENDING)sync(); },30000);
 }
+// ===== כניסה בסיסמה =====
+// מאיר: "חייבים לעשות סיסמה למערכת הכללית… והלשונית של קהילה אוכל לתת לגבי, גישה רק לקהילה,
+// עם סיסמה נפרדת". הסיסמאות ב-Render (CRM_PASS / CRM_PASS_COMM). השרת מחזיר 401 — מסך כניסה.
+let ROLE='admin', AUTH_ON=false, _loginShown=false;
+function showLogin(msg){
+  if(_loginShown)return; _loginShown=true;
+  const o=document.createElement('div'); o.id='loginov'; o.className='loginov';
+  o.innerHTML=`<form class="loginbox" id="loginf"><img src="/logo.png" alt="" style="width:64px;height:auto"><h2>כולל חצות</h2>
+    <div class="hintxt">${esc(msg||'הקלד את הסיסמה כדי להיכנס')}</div>
+    <input type="password" id="login_pw" placeholder="סיסמה" autocomplete="current-password" dir="ltr" autofocus>
+    <button class="btn" type="submit">🔓 כניסה</button><div class="loginerr" id="login_err"></div></form>`;
+  document.body.appendChild(o);
+  const f=document.getElementById('loginf'), err=document.getElementById('login_err');
+  f.onsubmit=async e=>{e.preventDefault();const pw=document.getElementById('login_pw').value;if(!pw)return;
+    f.querySelector('button').disabled=true;err.textContent='';
+    let r=null;try{r=await (await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})})).json();}catch(x){}
+    if(r&&r.ok){location.reload();return;}
+    err.textContent=(r&&r.error)||'לא הצליח — נסה שוב';f.querySelector('button').disabled=false;};
+  setTimeout(()=>{const i=document.getElementById('login_pw');if(i)i.focus();},50);
+}
+function applyRole(){
+  // סיסמת הקהילה: רק לשונית הקהילה. הכותרת, החיפוש והלשוניות האחרות — מוסתרים
+  if(ROLE!=='comm')return;
+  document.querySelectorAll('.tab').forEach(b=>{if(b.dataset.tab!=='comm')b.classList.add('hidden');});
+  const h=document.querySelector('.brand h1'); if(h)h.textContent='כולל חצות — קהילה';
+  const hb=document.getElementById('healthbtn'); if(hb)hb.hidden=true;
+  const st=document.getElementById('stat'); if(st)st.textContent='';
+  tab='comm';
+}
+async function logout(){try{await fetch('/api/logout',{method:'POST'});}catch(e){}
+  // העותק של הנתונים שנשמר למצב בלי רשת — נמחק ביציאה, שלא יישאר על המכשיר
+  try{for(const k of await caches.keys())if(/data/i.test(k))await caches.delete(k);}catch(e){}try{localStorage.removeItem('kc_tab');localStorage.removeItem('kc_donor');}catch(e){}location.reload();}
 async function api(m,u,b){
   const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
   // נשמר בתור עד שהחיבור יחזור — המסך ממשיך כרגיל
   if(r.headers.get('X-KC-Queued')==='1'&&!OFFLINE){OFFLINE=true;netPaint();}
+  if(r.status===401){showLogin();}
+  if(r.status===403){toast('הסיסמה הזו פותחת רק את הקהילה');}
   return r.json();
 }
 function isAudioFile(f){return (f.mime||'').indexOf('audio')>=0||/\.(ogg|opus|m4a|mp3|wav|aac|amr|webm)$/i.test(f.name||'');}
@@ -1448,19 +1482,26 @@ async function load(){
     const h={};
     if(_ETAG&&_LASTDATA)h['If-None-Match']=_ETAG;
     const r=await fetch('/api/data',{headers:h});
+    if(r.status===401){showLogin();return;}
+    if(r.headers.get('X-KC-Auth')==='1')AUTH_ON=true;
     if(r.status===304&&_LASTDATA){ d=_LASTDATA; OFFLINE=false; }
     else { d=await r.json(); _LASTDATA=d;
       // כשאין רשת, ה-service worker מגיש את העותק האחרון ומסמן זאת
       OFFLINE=r.headers.get('X-KC-Offline')==='1';
       _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
   }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }
+  if(!d)return;
+  if(d.role==='comm'){ROLE='comm';AUTH_ON=true;}
   netPaint();
   DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; CAMPFLAGS = d.campaign_flags || {}; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
+  applyRole();
+  // מאיר (הכל) וגבי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
+  if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{const st=ROLE==='comm'?'comm':localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון

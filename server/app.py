@@ -12481,7 +12481,93 @@ MAIL_CFG_KEYS = {'mail_host': 'MAIL_HOST', 'mail_port': 'MAIL_PORT',
                  # מאיר: "פעם בחודש לשלוח 500 ביחד" — התקרה הייתה 400
                  # והמשלוח היה נעצר באמצע. ניתן לשינוי מהמסך.
                  'mail_cap': 'MAIL_DAILY_CAP', 'mail_gap': 'MAIL_GAP_SEC'}
-SECRET_KV = ('mail_pass', 'mail_gpass')   # לא יוצא מהשרת. לא בגיבוי, לא ב-API.
+SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהשרת. לא בגיבוי, לא ב-API.
+
+
+# ===== כניסה בסיסמה =====
+# מאיר: "עכשיו שהמערכת אשראי עובדת, אנחנו חייבים לעשות סיסמה למערכת הכללית, ואני רוצה
+# שהלשונית של קהילה אני אוכל לתת אותה לגבי, שיהיה לו גישה רק לקהילה, עם סיסמה נפרדת."
+# הסיסמאות — ב-Render בלבד (לא בקוד, לא במסד ולא בהודעות):
+#     CRM_PASS        סיסמת המערכת (הכל)
+#     CRM_PASS_COMM   סיסמת הקהילה — נכנסים ורואים רק את לשונית הקהילה
+# בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
+AUTH_DAYS = 365
+AUTH_PUBLIC = ('/api/login', '/api/logout', '/api/me', '/api/yemot/ivr', '/unsub', '/api/authorize/webhook', '/api/health')
+# מה שלשונית הקהילה צריכה — ורק זה. כל השאר (תורמים, חיובים, קבלות…) חסום לסיסמת הקהילה
+AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/', '/api/nd/', '/api/nikud',
+             '/api/nedarim/mosads', '/api/seats', '/seat-map-print', '/seat_layout.json', '/seat-map-original.png',
+             '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits')
+_AUTH_FAIL = {}      # ip -> [כישלונות, זמן אחרון] — האטה אחרי ניסיונות שגויים
+_AUTH_LOCK = threading.Lock()
+
+
+def auth_on():
+    return bool((os.environ.get('CRM_PASS') or '').strip())
+
+
+def _sess_secret():
+    con = db()
+    try:
+        k = kv_get(con, 'sess_secret', '')
+        if not k:
+            k = os.urandom(32).hex()
+            kv_set(con, 'sess_secret', k)
+            con.commit()
+        return k.encode('ascii')
+    finally:
+        con.close()
+
+
+def auth_token(role):
+    exp = int(time.time()) + AUTH_DAYS * 86400
+    body = '%s.%d.%s' % (role, exp, os.urandom(6).hex())
+    sig = hmac.new(_sess_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:40]
+    return body + '.' + sig
+
+
+def auth_role_of(cookie):
+    """התפקיד מהעוגייה: 'admin' / 'comm', או '' אם אין / פג / מזויף."""
+    m = re.search(r'(?:^|;\s*)kc_s=([A-Za-z0-9.]+)', cookie or '')
+    if not m:
+        return ''
+    parts = m.group(1).split('.')
+    if len(parts) != 4:
+        return ''
+    role, exp, nonce, sig = parts
+    body = '.'.join(parts[:3])
+    want = hmac.new(_sess_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:40]
+    if not hmac.compare_digest(sig, want) or role not in ('admin', 'comm'):
+        return ''
+    try:
+        if int(exp) < time.time():
+            return ''
+    except ValueError:
+        return ''
+    return role
+
+
+def auth_check_password(pw, ip):
+    """-> תפקיד או ''. אחרי 8 כישלונות מאותה כתובת — המתנה של דקה."""
+    now = time.time()
+    with _AUTH_LOCK:
+        f = _AUTH_FAIL.get(ip) or [0, 0]
+        if f[0] >= 8 and now - f[1] < 60:
+            return 'wait'
+    pw = (pw or '').strip().encode('utf-8')
+    role = ''
+    for env, r in (('CRM_PASS', 'admin'), ('CRM_PASS_COMM', 'comm')):
+        want = (os.environ.get(env) or '').strip().encode('utf-8')
+        if want and hmac.compare_digest(pw, want):
+            role = r
+            break
+    with _AUTH_LOCK:
+        if role:
+            _AUTH_FAIL.pop(ip, None)
+        else:
+            f = _AUTH_FAIL.get(ip) or [0, 0]
+            _AUTH_FAIL[ip] = [f[0] + 1, now]
+    return role
+
 
 
 def load_mail_cfg(con=None):
@@ -13838,6 +13924,7 @@ class H(BaseHTTPRequestHandler):
         gz = c['gz'] and 'gzip' in (self.headers.get('Accept-Encoding') or '')
         data = c['gz'] if gz else c['raw']
         self.send_response(200)
+        self.send_header('X-KC-Auth', '1' if auth_on() else '0')
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         if gz:
             self.send_header('Content-Encoding', 'gzip')
@@ -13871,8 +13958,85 @@ class H(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _ip(self):
+        return (self.headers.get('X-Forwarded-For') or '').split(',')[0].strip() or self.client_address[0]
+
+    def _set_cookie(self, val, max_age):
+        secure = '; Secure' if (self.headers.get('X-Forwarded-Proto') or '').lower() == 'https' else ''
+        self.send_header('Set-Cookie', 'kc_s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax%s' % (val, max_age, secure))
+
+    def _gate(self):
+        """כניסה בסיסמה. מחזיר True אם אפשר להמשיך; אחרת כבר נשלחה תשובה (401 / 403).
+        קבצי המסך עצמם (index.html, app.js…) פתוחים — מסך הכניסה נמצא בהם; הנתונים לא."""
+        path = self.path.split('?')[0]
+        if path in ('/api/login', '/api/logout', '/api/me'):
+            return self._auth_routes(path)
+        if not auth_on():
+            self.role = 'admin'
+            return True
+        if any(path.startswith(x) for x in AUTH_PUBLIC):
+            self.role = ''
+            return True
+        role = auth_role_of(self.headers.get('Cookie'))
+        if not role:
+            fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
+            if self.command == 'GET' and fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'):
+                self.role = ''
+                return True
+            if path.startswith('/api/'):
+                self._send(401, {'ok': False, 'error': 'auth', 'detail': 'נדרשת כניסה בסיסמה'})
+            else:
+                self._send(401, ('<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/">'
+                                 '<body style="font-family:sans-serif;direction:rtl;padding:30px">🔒 נדרשת כניסה בסיסמה… <a href="/">למסך הכניסה</a></body>').encode('utf-8'), 'text/html')
+            return False
+        self.role = role
+        if role == 'comm' and not any(path.startswith(x) for x in AUTH_COMM):
+            fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
+            if self.command == 'GET' and fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'):
+                return True
+            self._send(403, {'ok': False, 'error': 'forbidden', 'detail': 'הסיסמה הזו פותחת רק את לשונית הקהילה'})
+            return False
+        return True
+
+    def _auth_routes(self, path):
+        if path == '/api/me':
+            role = 'admin' if not auth_on() else auth_role_of(self.headers.get('Cookie'))
+            return self._send(200, {'ok': True, 'auth_on': auth_on(), 'role': role,
+                                    'comm_set': bool((os.environ.get('CRM_PASS_COMM') or '').strip())}) or False
+        if path == '/api/logout':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self._set_cookie('x', 0)
+            data = b'{"ok": true}'
+            self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+            return False
+        if self.command != 'POST':
+            return self._send(405, {'ok': False}) or False
+        if not auth_on():
+            return self._send(200, {'ok': True, 'role': 'admin'}) or False
+        role = auth_check_password(self._body().get('password'), self._ip())
+        if role == 'wait':
+            return self._send(429, {'ok': False, 'error': 'יותר מדי ניסיונות — נסה שוב בעוד דקה'}) or False
+        if not role:
+            time.sleep(0.6)
+            return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self._set_cookie(auth_token(role), AUTH_DAYS * 86400)
+        data = json.dumps({'ok': True, 'role': role}).encode('utf-8')
+        self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+        return False
+
     def do_GET(self):
+        if not self._gate():
+            return
         if self.path == '/api/data':
+            if getattr(self, 'role', '') == 'comm':
+                # סיסמת הקהילה — בלי התורמים בכלל. רק מה שהמסך צריך כדי לעלות
+                return self._send(200, {'donors': [], 'mail_names': None, 'unlinked_prayers': [], 'general_tasks': [], 'campaigns': [],
+                                        'campaign_flags': {}, 'building_items': [], 'not_dupes': [], 'task_kinds': [], 'pay_channels': [],
+                                        'contact_kinds': [], 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()),
+                                        'kv_default': list(kvittel_default_month()), 'role': 'comm'})
             global _DATA_CACHE
 
             def _fresh():
@@ -16361,6 +16525,8 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_PUT(self):
+        if not self._gate():
+            return
         bump_data()
         m = re.match(r'/api/members/(\d+)$', self.path)
         if m:
@@ -16668,6 +16834,8 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
+        if not self._gate():
+            return
         # התעודה כתמונה, לפי הפריסה שנמדדה על המסך. נשלחת ב-POST ולא בכתובת,
         # כי הפריסה ארוכה מכדי להיכנס לכתובת אינטרנט. אינה משנה נתונים, ולכן
         # לפני bump_data — שלא תבטל את המטמון בכל הקשה במסך התעודה.
@@ -19717,6 +19885,8 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_DELETE(self):
+        if not self._gate():
+            return
         bump_data()
         m = re.match(r'/api/members/(\d+)$', self.path)
         if m:
@@ -19872,6 +20042,10 @@ def health_report():
                 + (' · הכרטיס הוותיק ביותר נפתח %s' % oldest if oldest else ''))
         except Exception:
             pass
+        # כניסה בסיסמה — מאיר: "עכשיו שהמערכת אשראי עובדת, אנחנו חייבים לעשות סיסמה"
+        add('כניסה בסיסמה', 'ok' if auth_on() else 'bad',
+            ('מוגדרת · סיסמת קהילה %s' % ('מוגדרת (CRM_PASS_COMM)' if (os.environ.get('CRM_PASS_COMM') or '').strip() else 'לא מוגדרת — להוסיף CRM_PASS_COMM ב-Render'))
+            if auth_on() else 'המערכת פתוחה בלי סיסמה! ב-Render ← Environment להוסיף CRM_PASS (סיסמת המערכת) ו-CRM_PASS_COMM (סיסמה לקהילה בלבד)')
         # תעודות פרנס — נכשלו בעבר כי Pillow לא הותקן
         try:
             import PIL
