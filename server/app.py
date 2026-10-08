@@ -308,6 +308,10 @@ def ensure_schema():
         title TEXT, amount REAL, paid REAL DEFAULT 0, due TEXT, status TEXT DEFAULT 'open', source TEXT, ref TEXT,
         note TEXT, created TEXT, updated TEXT, closed_at TEXT);
     CREATE INDEX IF NOT EXISTS ix_cmdebt_m ON cm_debt(member_id, status);
+    /* הקלטה קולית מוכנה מראש ב-Gemini — מאיר: "שיהיה אפשרות ליצור הקלטה קולית בג'ימיני ולא
+       לשלוח עדיין צינתוק". נשמרת כאן, אפשר להשמיע / להוריד / להעלות לשלוחה בימות מתי שרוצים. */
+    CREATE TABLE IF NOT EXISTS ym_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, title TEXT, text TEXT,
+        voice TEXT, wav BLOB, secs REAL, path TEXT, uploaded_at TEXT);
     CREATE TABLE IF NOT EXISTS nd_map(keva_id TEXT PRIMARY KEY, member_id INTEGER, at TEXT);
     CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
@@ -16082,6 +16086,26 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'schedules': sch, 'tx': txs, 'pms': pms, 'customers': sorted(cids)})
+        if self.path.split('?')[0] == '/api/yemot/records':
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT id,created,title,text,voice,secs,path,uploaded_at FROM ym_rec ORDER BY id DESC LIMIT 40")]
+                fold = kv_get(con, 'ym_rec_folder', '')
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'folder': fold})
+        m = re.match(r'/api/yemot/record/(\d+)\.wav$', self.path.split('?')[0])
+        if m:
+            con = db(); r = con.execute("SELECT wav,title FROM ym_rec WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
+            if not r:
+                return self._send(404, {'error': 'not found'})
+            data = bytes(r['wav'])
+            self.send_response(200)
+            self.send_header('Content-Type', 'audio/wav')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s.wav" % urllib.parse.quote((r['title'] or 'recording')[:40]))
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
             _ym.begin_trace()
@@ -17088,6 +17112,52 @@ class H(BaseHTTPRequestHandler):
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             return self._send(200, {'ok': bool(out) or not names, 'names': out, 'provider': prov,
                                     'error': '' if out or not names else 'הניקוד האוטומטי לא זמין כרגע — פרטים בלוג הטכני'})
+        if self.path == '/api/yemot/record':
+            # 🎙️ יצירת הקלטה בלבד — בלי לחייג ובלי צינתוק
+            import yemot as _ym, gemini_tts as _gt
+            txt0 = str(b.get('text') or '').strip()
+            if not txt0:
+                return self._send(200, {'ok': False, 'error': 'חסר טקסט'})
+            con = db(); pron = kv_get(con, 'ym_pron', ''); gm = kv_get(con, 'ym_gmodel', ''); con.close()
+            # הודעה כללית — בלי שם וסכום אישיים
+            txt = _ym.speakable(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron)
+            _ym.begin_trace()
+            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
+                                model=str(b.get('gmodel') or gm or ''))
+            con = db(); ym_save_trace(con, _ym.end_trace())
+            if not ok:
+                con.commit(); con.close()
+                return self._send(200, {'ok': False, 'error': str(wav)})
+            title = str(b.get('title') or '').strip()[:80] or txt0[:40]
+            con.execute("INSERT INTO ym_rec(created,title,text,voice,wav,secs) VALUES(?,?,?,?,?,?)",
+                        (now_iso(), title, txt, _gt.voice_ok(b.get('gvoice') or ''), wav, round(max(0, len(wav) - 44) / 16000.0, 1)))
+            rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'id': rid, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt})
+        m = re.match(r'/api/yemot/record/(\d+)/(upload|delete)$', self.path)
+        if m:
+            import yemot as _ym
+            rid = int(m.group(1))
+            con = db()
+            r = con.execute("SELECT * FROM ym_rec WHERE id=?", (rid,)).fetchone()
+            if not r:
+                con.close(); return self._send(200, {'ok': False, 'error': 'ההקלטה לא נמצאה'})
+            if m.group(2) == 'delete':
+                con.execute("DELETE FROM ym_rec WHERE id=?", (rid,)); con.commit(); con.close()
+                return self._send(200, {'ok': True})
+            folder = '/' + re.sub(r'[^0-9/]', '', str(b.get('folder') or '')).strip('/')
+            name = re.sub(r'[^0-9A-Za-z_-]', '', str(b.get('name') or '000')) or '000'
+            if folder == '/':
+                con.close(); return self._send(200, {'ok': False, 'error': 'חסרה שלוחה (למשל 2 או 3/1)'})
+            path = 'ivr2:%s/%s.wav' % (folder, name)
+            _ym.begin_trace()
+            ok, res = _ym.upload_file(path, bytes(r['wav']), name + '.wav')
+            ym_save_trace(con, _ym.end_trace())
+            if ok:
+                con.execute("UPDATE ym_rec SET path=?, uploaded_at=? WHERE id=?", (path, now_iso(), rid))
+                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_rec_folder',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (folder,))
+            con.commit(); con.close()
+            return self._send(200, {'ok': bool(ok), 'path': path, 'error': '' if ok else str(res)})
         if self.path == '/api/yemot/sample':
             # השמעת דוגמה בדפדפן — הקול האנושי של Gemini, בלי להתקשר לאף אחד
             import yemot as _ym, gemini_tts as _gt

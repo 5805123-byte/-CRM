@@ -13178,10 +13178,12 @@ function ymVoiceHTML(st){
     ${gem?`${st.gemini?'':`<div class="ymwarn">⚠️ חסר מפתח: ב-Render ← Environment להוסיף <b>GEMINI_API_KEY</b> (מ-aistudio.google.com/apikey). עד אז ההודעות יוצאות בקול של ימות.</div>`}
       <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 200px"><span>👨 הקול</span><select id="ym_gvoice">${G.map(([k,l])=>`<option value="${esc(k)}" ${k===st.gvoice?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
         <label class="fld" style="margin:0;flex:1 1 160px"><span>⚙️ איכות</span><select id="ym_gmodel">${(st.gmodels||[['','Flash']]).map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gmodel||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
-        <button class="btn sm" id="ym_sample" ${st.gemini?'':'disabled'}>▶️ השמע דוגמה כאן</button></div>
+        <button class="btn sm" id="ym_sample" ${st.gemini?'':'disabled'}>▶️ השמע דוגמה כאן</button>
+        <button class="btn sm ghost" id="ym_recnew" ${st.gemini?'':'disabled'} title="יוצר קובץ שמע ושומר אותו — בלי לחייג ובלי צינתוק">🎙️ צור הקלטה ושמור</button></div>
       <label class="fld"><span>🎭 איך לומר (הוראה ל-Gemini, באנגלית עובד הכי טוב)</span><textarea id="ym_gstyle" dir="ltr" rows="2" placeholder="${esc(st.gstyle_def||'')}">${esc(st.gstyle||'')}</textarea></label>
       <button class="btn sm ghost" id="ym_gsave">💾 שמור הוראה</button>
       <div id="ym_sampleout"></div>
+      <details class="ympron" id="ym_recbox"><summary>🎙️ הקלטות שמורות — מוכנות לשלוחה / לצינתוק</summary><div id="ym_recs" class="hintxt">טוען…</div></details>
       <div class="hintxt">כל הודעה נוצרת בנפרד ב-Gemini (עם השם והסכום של הנמען), מומרת לקובץ שמע ומועלית לימות. אם Gemini נכשל או עמוס — ההודעה יוצאת בקול של ימות, ולא נופלת.</div>`:''}
     <div class="ymflt"><span class="hintxt" style="flex:1">${gem?'אם Gemini נכשל — ההודעה יוצאת בקול הרגיל של ימות.':'🤖 הקול הרגיל של ימות (ימות ביטלו את בחירת הקולות).'}</span>
       <button class="btn sm ghost" id="ym_say">👂 איך זה יוקרא?</button></div>
@@ -13225,6 +13227,30 @@ function ymWireVoice(first,sel){
     sp.disabled=false;sp.textContent=t0;
     g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio><div class="hintxt">${esc(r.text)}</div><div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz).</div></div>`
       :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};
+  // 🎙️ הקלטה בלבד — מאיר: "ליצור הקלטה קולית בג'ימיני ולא לשלוח עדיין צינתוק"
+  const ymRecList=async()=>{const box=g('ym_recs');if(!box)return;const r=await api('GET','/api/yemot/records');const R=(r&&r.rows)||[];
+    box.innerHTML=R.length?R.map(x=>`<div class="ymrec"><b>${esc(x.title||'הקלטה')}</b> <small>${esc((x.created||'').slice(5,16))} · ${x.secs||''} שנ׳ · ${esc(x.voice||'')}</small>
+      <audio controls preload="none" src="/api/yemot/record/${x.id}.wav" style="width:100%;height:34px"></audio>
+      <div class="bqacts"><a class="btn sm ghost" href="/api/yemot/record/${x.id}.wav" download>⬇️ הורד</a>
+        <button class="btn sm ghost" data-recup="${x.id}">⬆️ העלה לשלוחה</button><button class="btn sm ghost" data-recdel="${x.id}">🗑</button>
+        ${x.path?`<small class="ndok">✓ בשלוחה ${esc(x.path.replace('ivr2:',''))}</small>`:''}</div></div>`).join('')
+      :'עוד אין הקלטות. כתוב את הנוסח ולחץ "🎙️ צור הקלטה ושמור".';
+    box.querySelectorAll('[data-recup]').forEach(b=>b.onclick=async()=>{
+      const f=await uiPrompt('לאיזו שלוחה בימות להעלות? (למשל 2 או 5/1 — השלוחה שהצינתוק יפנה אליה)',(r&&r.folder||'').replace(/^\//,''));if(!f)return;
+      const n=await uiPrompt('שם הקובץ בשלוחה (000 = הקובץ הראשון שיושמע)','000');if(n==null)return;
+      if(!await uiConfirm('להעלות לשלוחה /'+f.replace(/^\//,'')+' בשם '+(n||'000')+'.wav?\nקובץ קיים באותו שם יוחלף.','⬆️ כן, להעלות','ביטול'))return;
+      const u=await api('POST','/api/yemot/record/'+b.dataset.recup+'/upload',{folder:f,name:n||'000'});
+      if(u&&u.ok)toast('הועלה ל-'+u.path.replace('ivr2:','')+' ✓');else await uiAlert('לא הועלה:\n'+((u&&u.error)||'שגיאה'));ymRecList();});
+    box.querySelectorAll('[data-recdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את ההקלטה?','מחק','ביטול'))return;
+      await api('POST','/api/yemot/record/'+b.dataset.recdel+'/delete',{});ymRecList();});};
+  const rb=g('ym_recbox');if(rb)rb.ontoggle=()=>{if(rb.open)ymRecList();};
+  const rn=g('ym_recnew');if(rn)rn.onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את הנוסח');return;}
+    const title=await uiPrompt('שם להקלטה (כדי למצוא אותה אחר כך)',ymText.trim().slice(0,30));if(title==null)return;
+    rn.disabled=true;const t0=rn.textContent;rn.textContent='⏳ Gemini מקליט…';
+    const r=await api('POST','/api/yemot/record',{text:ymText,title,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value,gmodel:(g('ym_gmodel')||{}).value||''});
+    rn.disabled=false;rn.textContent=t0;
+    if(!r||!r.ok){await uiAlert('ההקלטה לא נוצרה:\n'+((r&&r.error)||'שגיאה'));return;}
+    toast('🎙️ ההקלטה נשמרה ✓ — לא נשלח כלום');const bx=g('ym_recbox');if(bx){bx.open=true;ymRecList();}};
   g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{pron:p});
     if(r&&r.ok){ymStatus.pron=p;toast('המילון נשמר ✓');}else toast('לא נשמר');};
   const pn=g('ym_pronnames'); if(pn)pn.onclick=async()=>{
