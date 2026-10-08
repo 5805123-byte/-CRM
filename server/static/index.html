@@ -2012,6 +2012,13 @@
   .netbar.wait{background:var(--accent,#403a86)}
   @media print{.netbar{display:none!important}}
   /* תזכורות בכרטיס */
+  .enrbar{display:flex;gap:6px;margin:8px 0}
+  .enrlist{display:grid;gap:8px}
+  .enritem{border:1px solid var(--line);border-radius:10px;padding:8px 11px;display:grid;gap:4px}
+  .enrval{display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:14px}
+  .enrval input{margin-top:3px;flex:none}
+  .enrval span{display:grid;min-width:0;overflow-wrap:anywhere}
+  .enrval small{color:var(--muted,#888);font-size:12px}
   .remitem{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:6px}
   .remitem.over{border-color:var(--no);background:var(--no-soft)}
   .remitem .ri{flex:1;font-size:.9rem}.remitem .ri b{font-weight:800}

@@ -17879,8 +17879,17 @@ class H(BaseHTTPRequestHandler):
                         upd['city'] = str(it['city'])[:60]; what.append('עיר ' + upd['city'])
                     if upd:
                         con.execute("UPDATE members SET " + ','.join('%s=?' % k for k in upd) + ", updated=? WHERE id=?", list(upd.values()) + [now_iso(), mid])
-                        cm_debt_log(con, mid, 'enrich', '📇 הושלמו פרטים מנדרים פלוס: ' + ' · '.join(what))
+                        con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                    (mid, today_iso(), 'נדרים פלוס', ('📇 הושלמו פרטים מנדרים פלוס: ' + ' · '.join(what))[:300], '', 'note', '', now_iso()))
                         n += 1
+                # מה שהוריד ממנו סימון ("זה לא הוא") — לא יוצע שוב
+                sk = [str(x) for x in (b.get('skip') or []) if isinstance(x, str) and x.count('|') >= 2]
+                if sk:
+                    try:
+                        old = json.loads(kv_get(con, 'enrich_skip', '[]') or '[]')
+                    except ValueError:
+                        old = []
+                    kv_set(con, 'enrich_skip', json.dumps(sorted(set(old) | set(s[:300] for s in sk)), ensure_ascii=False))
                 con.commit()
             finally:
                 con.close()
@@ -21904,6 +21913,8 @@ def member_enrich_suggest(con):
     acc = {}
     def add(mid, field, val, src):
         val = re.sub(r'\s+', ' ', str(val or '')).strip()
+        if field == 'phone':
+            val = _ym.norm_phone(val)
         if not mid or not val:
             return
         acc.setdefault(mid, {}).setdefault(field, {}).setdefault(val, set()).add(src)
@@ -21923,6 +21934,14 @@ def member_enrich_suggest(con):
         add(k['member_id'], 'city', k['city'], src)
     for t in con.execute("SELECT member_id,name,phone FROM nd_tx WHERE member_id IS NOT NULL AND COALESCE(phone,'')<>'' GROUP BY member_id,phone"):
         add(t['member_id'], 'phone', t['phone'], 'תשלום: ' + (t['name'] or ''))
+    try:
+        skip = set(json.loads(kv_get(con, 'enrich_skip', '[]') or '[]'))
+    except ValueError:
+        skip = set()
+    for mid in list(acc):
+        for f in acc[mid]:
+            for v in [v for v in acc[mid][f] if '%s|%s|%s' % (mid, f, v) in skip]:
+                del acc[mid][f][v]
     out = []
     for m in con.execute("SELECT id,last,first,phone,email,addr,city FROM members WHERE COALESCE(active,1)<>0"):
         a = acc.get(m['id'])

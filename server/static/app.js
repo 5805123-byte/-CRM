@@ -12429,6 +12429,7 @@ function renderComm(){
     ${smSectionHTML()}
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
     ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
+    ${CMENR&&CMENR.length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_enr" style="width:100%">📇 ל-${CMENR.length} חברים יש בנדרים פלוס טלפון / מייל / כתובת שאין אצלנו — לבדוק ולהשלים</button></div>`:''}
     <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
     <div class="list cmlist">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
       <button class="cmnm cmopen" data-id="${m.id}" title="פתח את הכרטיס — הוראת קבע, תרומות, חיוב, קבלות, תזכורות">${esc(mName(m))}${m.mails?`<small class="cmmails" title="מיילים שנשלחו">📤${m.mails}</small>`:''}</button>
@@ -12471,6 +12472,8 @@ function renderComm(){
   document.getElementById('cm_rems').onclick=()=>openCmRems();
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
+  const enb=document.getElementById('cm_enr'); if(enb)enb.onclick=()=>openCmEnrich();
+  if(CMENR===null){CMENR=[];api('GET','/api/members/enrich').then(r=>{CMENR=(r&&r.ok&&r.rows)||[];if(tab==='comm'&&CMENR.length&&!document.getElementById('cm_enr'))render();});}
   // מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
   document.getElementById('cm_print').onclick=()=>window.open('/kehila-print'+(cmFlt==='seat'?'?sort=seat':''),'_blank');
   document.getElementById('cm_xlsx').onclick=()=>{location.href='/api/members.xlsx'+(cmFlt==='seat'?'?sort=seat':'');};
@@ -13077,6 +13080,40 @@ async function cmTasksPaint(m){
       <span class="bqacts">${t.done?`<button class="btn sm ghost" data-cmt="reopen" data-id="${t.id}">↩</button>`:`<button class="btn sm ghost" data-cmt="done" data-id="${t.id}" title="בוצע">✓</button>`}<button class="btn sm ghost" data-cmt="delete" data-id="${t.id}" title="מחק">🗑️</button></span></div>`).join('')
     :'<div class="hintxt">אין תזכורות.</div>';
   box.querySelectorAll('[data-cmt]').forEach(b=>b.onclick=async()=>{await api('POST','/api/cm/tasks/'+b.dataset.id,{action:b.dataset.cmt});CMREMS=null;cmTasksPaint(m);});
+}
+// מאיר: "תעבור לראות מי מהרשימה של הקהילה שיש לו פרטים שם בחשבון השני… טפסים או כניסה למקווה".
+// רק הצעות: כל ערך עם המקור שלו בנדרים, מסמנים מה נכון ורק אז זה נכנס לכרטיס.
+let CMENR=null;
+const ENR_F={phone:'📞 טלפון',email:'✉️ מייל',addr:'🏠 כתובת',city:'🏙 עיר'};
+function openCmEnrich(){
+  const remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
+  const rows=CMENR||[];
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>📇 השלמת פרטים מנדרים פלוס</h2>
+    <div class="hintxt">פרטים שנמצאו בנדרים פלוס (כרטיסי תורם, הוראות קבע ותשלומים — מכל החשבונות) ואין אצלנו. בדוק שהשם בנדרים הוא באמת אותו אדם, הורד סימון ממה שלא נכון, ולחץ "החל". טלפון ומייל נוספים לקיימים; כתובת ועיר — רק כשאין. מה שלא מסומן לא יוצע שוב.</div>
+    <div class="enrbar"><button class="btn sm ghost" id="enr_all">סמן הכל</button><button class="btn sm ghost" id="enr_none">נקה הכל</button></div>
+    <div class="enrlist">${rows.map(r=>`<div class="enritem"><b>${esc(r.name)}</b>${r.have.phone||r.have.email?`<small class="hintxt"> · יש: ${esc([r.have.phone,r.have.email].filter(Boolean).join(' · '))}</small>`:''}
+      ${Object.entries(r.add).map(([f,vals])=>vals.map((v,i)=>`<label class="enrval"><input type="checkbox" checked data-mid="${r.member_id}" data-f="${f}" data-i="${i}">
+        <span>${ENR_F[f]||f}: <b dir="auto">${esc(v.value)}</b><small>${esc(v.src.join(' · '))}</small></span></label>`).join('')).join('')}</div>`).join('')||'<div class="hintxt">אין מה להשלים ✓</div>'}</div>
+    ${rows.length?'<button class="btn" id="enr_go" style="width:100%;margin-top:10px">✅ החל על המסומנים</button>':''}`;
+  remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const boxes=()=>[...rs.querySelectorAll('.enrval input')];
+  const ea=document.getElementById('enr_all'),en=document.getElementById('enr_none');
+  if(ea)ea.onclick=()=>boxes().forEach(c=>c.checked=true); if(en)en.onclick=()=>boxes().forEach(c=>c.checked=false);
+  const go=document.getElementById('enr_go'); if(!go)return;
+  go.onclick=async()=>{const by={};
+    boxes().filter(c=>c.checked).forEach(c=>{const r=rows.find(x=>x.member_id==c.dataset.mid);const v=r.add[c.dataset.f][+c.dataset.i].value;
+      const it=by[r.member_id]||(by[r.member_id]={member_id:r.member_id,phone:[],email:[]});
+      if(c.dataset.f==='phone'||c.dataset.f==='email')it[c.dataset.f].push(v);else if(!it[c.dataset.f])it[c.dataset.f]=v;});
+    const items=Object.values(by);
+    const skip=boxes().filter(c=>!c.checked).map(c=>{const r=rows.find(x=>x.member_id==c.dataset.mid);return r.member_id+'|'+c.dataset.f+'|'+r.add[c.dataset.f][+c.dataset.i].value;});
+    if(!items.length&&!skip.length)return;
+    if(!await uiConfirm((items.length?'להשלים פרטים ל-'+items.length+' חברי קהילה?':'לא סומן כלום להשלמה.')+(skip.length?'\n'+skip.length+' פרטים שלא סומנו לא יוצעו שוב.':''),'✅ כן','ביטול'))return;
+    go.disabled=true;go.textContent='שומר…';
+    const r=await api('POST','/api/members/enrich',{items,skip});
+    if(!r||!r.ok){go.disabled=false;go.textContent='✅ החל על המסומנים';await uiAlert('לא נשמר:\n'+((r&&r.error)||'שגיאה'));return;}
+    toast('📇 הושלמו פרטים ל-'+(r.updated||0)+' חברים ✓');remov.classList.remove('show');
+    CMENR=null;await cmLoad(true);if(tab==='comm')render();};
 }
 async function openCmRems(){
   await cmRemsLoad();
