@@ -12912,11 +12912,14 @@ async function cmNdPaint(m,showAll,boxId){
   const r=await api('GET','/api/members/'+m.id+'/nd'); if(!r||!r.ok){box.textContent='לא נטען';return;}
   const K=r.kevas||[], T=r.tx||[], C=r.charges||[], DN=r.dons||[], hasDebt=(r.debts||[]).some(d=>d.status==='open');
   const yrs=Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${ndMoney(v)}</b></span>`).join('');
-  const kevaHTML=K.length?K.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ****${esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
+  // הוראות ישנות (הוחלפו / הסתיימו / מושבתות) — בשורה קטנה אחת, לא כמו הוראה פעילה
+  const KA=K.filter(k=>k.active), KO=K.filter(k=>!k.active);
+  const oldHTML=KO.length?`<div class="hintxt">הוראות ישנות: ${KO.map(k=>ndMoney(k.amount)+(k.groupe?' '+esc(k.groupe):'')+' ****'+esc(k.last4||'')+(k.off?' — '+esc(k.off):'')).join(' · ')}</div>`:'';
+  const kevaHTML=(KA.length?KA.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ****${esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
       ${k.active?'':`<span class="ndbad">לא פעילה${k.off?': '+esc(k.off):''}</span>`}${k.error?`<span class="ndbad">🔴 חזרה: ${esc(k.error)}</span>`:''}</span>
       <span class="bqacts"><button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
         <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button></span></div>`).join('')
-    :'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>';
+    :(KO.length?'':'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>'))+oldHTML;
   const rows=T.map(t=>({id:t.id,iso:t.iso,amount:t.amount,what:[t.groupe,t.comments].filter(Boolean).join(' · '),auto:!!(t.keva&&!String(t.keva).startsWith('-')),conf:t.conf,rc_id:t.rc_id,rc_num:t.rc_num,rc_sent:t.rc_sent,pending:false}))
     .concat(C.map(c=>({id:c.transaction_id,iso:(c.at||'').slice(0,10),amount:c.amount,what:'חיוב מהמערכת (טרם הופיע בהיסטוריה של נדרים פלוס)',auto:false,conf:c.confirmation,pending:true})))
     // מאיר: "מקום להכניס תרומה שלו במזומן או דרך אחרת, ועבור מה זה נתרם" — באותה היסטוריה

@@ -21372,6 +21372,9 @@ def nd_sync(con):
             k['mosad'] = '' if acct['main'] else acct['mosad']
         _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now)
     flags = all_flags
+    rp = nd_mark_replaced(con)
+    if rp:
+        res['הוחלפו בהוראה חדשה'] = rp
     res['הוראות קבע'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0]
     res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
     res['חזרו'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchone()[0]
@@ -21387,6 +21390,43 @@ def nd_sync(con):
         res['היסטוריה'] = 'לא נמשכה: %s' % str(e)[:60]
     con.commit()
     return res
+
+
+def nd_mark_replaced(con):
+    """מאיר: "הקים הו"ק חדשה היום — המערכת אמורה לזהות שהוא עשה הו"ק חדשה על הסכום הזה ולמחוק את
+    הישן". הוראה שחזרה, כשלאותו חבר יש הוראה חדשה יותר (מזהה גבוה יותר) תקינה לאותה מטרה — או
+    באותו סכום כשאין מטרה — היא הוחלפה: לא פעילה, לא ב"חזרו", והחוב שלה נסגר."""
+    norm = lambda x: re.sub(r'\s+', ' ', str(x or '')).strip()
+    ks = [dict(r) for r in con.execute("SELECT id,member_id,amount,groupe,error,last4,active FROM nd_keva WHERE member_id IS NOT NULL AND active=1")]
+    n = 0
+    for old in ks:
+        if not (old['error'] or '').strip():
+            continue
+        try:
+            oid = int(old['id'])
+        except ValueError:
+            continue
+        for new in ks:
+            if new['member_id'] != old['member_id'] or new['id'] == old['id'] or (new['error'] or '').strip():
+                continue
+            try:
+                if int(new['id']) <= oid:
+                    continue
+            except ValueError:
+                continue
+            same = (norm(old['groupe']) and norm(old['groupe']) == norm(new['groupe'])) or \
+                   (not norm(old['groupe']) and not norm(new['groupe']) and _ivr_amt(old['amount']) == _ivr_amt(new['amount']))
+            if same:
+                con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?", ('הוחלפה בהוראה חדשה (****%s)' % (new['last4'] or ''), old['id']))
+                d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (old['id'],)).fetchone()
+                if d:
+                    con.execute("UPDATE cm_debt SET status='paid', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · הוחלפה בהוראת קבע חדשה ****'||?) WHERE id=?",
+                                (now_iso(), now_iso(), new['last4'] or '', d['id']))
+                    cm_debt_log(con, old['member_id'], d['id'], '✅ סודר: הוראת קבע חדשה (****%s) במקום זו שחזרה (****%s)%s' %
+                                (new['last4'] or '', old['last4'] or '', (' · ' + old['groupe']) if old['groupe'] else ''))
+                n += 1
+                break
+    return n
 
 
 def _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now):
