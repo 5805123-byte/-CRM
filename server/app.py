@@ -491,6 +491,9 @@ def ensure_schema():
     # למה הוראה לא פעילה — "מושבתת" (בנדרים פלוס) / "הסתיימו התשלומים" (יתרת חיובים 0)
     try: con.execute("ALTER TABLE nd_keva ADD COLUMN off TEXT")
     except Exception: pass
+    # מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — ערוץ התזכורת לכל חוב
+    try: con.execute("ALTER TABLE cm_debt ADD COLUMN channel TEXT")
+    except Exception: pass
     # מאיר: "אם שלחנו הודעה עם סכום והוא שילם — המערכת צריכה להתעדכן שהוא שילם"
     # req_off — בקשת התשלום שבהודעה בוטלה במסך החובות (לא תוצע יותר בטלפון)
     for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT'), ('req_off', 'TEXT')):
@@ -12812,9 +12815,10 @@ def mail_attach_links(to, b):
     והסכום, ל-{{קישור}} ול-{{סכום}}."""
     links = b.get('links') or {}
     amt = str(b.get('link_amount') or '').strip()[:20]
+    amts = b.get('amounts') or {}          # סכום לכל חבר (תזכורות חובות) — גובר על הסכום הכללי
     for x in to:
         x['link'] = ym_link_ok(links.get(str(x.get('member_id') or ''))) if links else ''
-        x['amount'] = amt
+        x['amount'] = str(amts.get(str(x.get('member_id') or '')) or amt).strip()[:20]
     return to
 
 
@@ -16397,7 +16401,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 w = "" if st == 'all' else " WHERE d.status=?"
                 rows = [dict(r) for r in con.execute(
-                    "SELECT d.*, m.last ml, m.first mf, m.phone mphone FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" + w +
+                    "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" + w +
                     " ORDER BY d.status, COALESCE(NULLIF(d.due,''),d.created) DESC, d.id DESC", (() if st == 'all' else (st,)))]
                 tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
                 reqs = ym_req_rows(con, st)
@@ -18928,9 +18932,9 @@ class H(BaseHTTPRequestHandler):
             if not mid or a <= 0:
                 return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה או סכום'})
             con = db()
-            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated) VALUES(?,?,?,?,0,?,'open',?,?,?,?)",
+            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?)",
                         (mid, b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt', str(b.get('title') or '')[:200], a,
-                         str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso()))
+                         str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(), cm_default_channel(con, mid)))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/cm/debts/(\d+)$', self.path)
@@ -18954,6 +18958,8 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE cm_debt SET status='open', closed_at=NULL, updated=? WHERE id=?", (now_iso(), did))
             elif act == 'delete':
                 con.execute("DELETE FROM cm_debt WHERE id=?", (did,))
+            elif act == 'channel':
+                con.execute("UPDATE cm_debt SET channel=?, updated=? WHERE id=?", (b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else '', now_iso(), did))
             elif act == 'edit':
                 con.execute("UPDATE cm_debt SET title=?, amount=?, due=?, kind=?, note=?, updated=? WHERE id=?",
                             (str(b.get('title', d['title']) or '')[:200], round(_amt2(b.get('amount', d['amount'])), 2),
@@ -18998,9 +19004,10 @@ class H(BaseHTTPRequestHandler):
                         mid = int(r.get('member_id') or 0); a = round(_amt2(r.get('amount')), 2)
                         if not mid or a <= 0:
                             continue
-                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated) VALUES(?,?,?,?,0,?,'open',?,?,?,?)",
+                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?)",
                                     (mid, r.get('kind') if r.get('kind') in ('debt', 'pledge') else 'debt', str(r.get('title') or '')[:200], a,
-                                     str(r.get('due') or '')[:10], 'קובץ', str(b.get('filename') or '')[:80], now_iso(), now_iso()))
+                                     str(r.get('due') or '')[:10], 'קובץ', str(b.get('filename') or '')[:80], now_iso(), now_iso(),
+                                     r.get('channel') if r.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid)))
                         n += 1
                     con.commit()
                     return self._send(200, {'ok': True, 'added': n})
@@ -19012,6 +19019,16 @@ class H(BaseHTTPRequestHandler):
                         import openpyxl
                         wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
                         raw = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+                    elif fn.endswith('.pdf') or data[:5] == b'%PDF-':
+                        # PyMuPDF קורא עברית נכון ברוב הקבצים; pypdf — גיבוי
+                        try:
+                            import pymupdf as _mu
+                            txt = '\n'.join(pg.get_text() for pg in _mu.open(stream=data, filetype='pdf'))
+                        except Exception:
+                            from pypdf import PdfReader
+                            txt = '\n'.join((pg.extract_text() or '') for pg in PdfReader(io.BytesIO(data)).pages)
+                        raw = None
+                        rows_pdf = _cm_rows_from_pdf(txt)
                     else:
                         txt = data.decode('utf-8-sig', 'replace')
                         if txt.count('\ufffd') > 5:
@@ -19021,11 +19038,24 @@ class H(BaseHTTPRequestHandler):
                         raw = list(csv.reader(io.StringIO(txt, newline=''), delimiter=max((',', ';', '\t'), key=fl.count)))
                 elif b.get('text'):
                     raw = [re.split(r'\t|,|;', ln) for ln in str(b['text']).splitlines()]
-                rows = _cm_rows_from_table(raw)
+                rows = _cm_rows_from_table(raw) if raw is not None else rows_pdf
                 midx, nidx = nd_member_index(con), nd_name_index(con)
                 for r in rows:
                     ids = midx.get(_ym.norm_phone(r['phone'])) if r['phone'] else None
                     r['member_id'] = (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, r['name'])
+                    if raw is None:
+                        # שם פרטי של שתי מילים ("אבלסון כרמי שלום") — אם שלוש מילים מתאימות לחבר, הן השם
+                        heb = r.pop('heb', []) or []
+                        m3 = nd_match_name(nidx, ' '.join(heb[:3])) if len(heb) >= 3 else None
+                        # רק אם המילה השלישית באמת חלק מהשם של החבר (לא "עליית")
+                        if m3 and not any(mid == m3 and _nd_toks(heb[2])[:1] and _nd_toks(heb[2])[0] in (ln | fn) for mid, ln, fn in nidx):
+                            m3 = None
+                        if m3:
+                            r['member_id'] = m3; r['name'] = ' '.join(heb[:3])
+                            r['title'] = re.sub(r'^\s*' + re.escape(heb[2]) + r'\s*', '', r['title']).strip()
+                        if not r['member_id']:
+                            # טקסט מ-PDF יוצא לפעמים הפוך (סוף→התחלה) — מנסים גם ככה, וגם עם מילה אחת פחות
+                            r['member_id'] = nd_match_name(nidx, r['name'][::-1]) or nd_match_name(nidx, ' '.join(r['name'].split()[:1]))
                     if r['member_id']:
                         mm = con.execute("SELECT last,first FROM members WHERE id=?", (r['member_id'],)).fetchone()
                         r['member_name'] = ((mm['last'] or '') + ' ' + (mm['first'] or '')).strip() if mm else ''
@@ -20967,6 +20997,50 @@ def _cm_rows_from_table(rows):
         kind = 'pledge' if re.search(r'התחייב|נדר', ki + ti) else 'debt'
         out.append({'name': nm, 'phone': _ym.norm_phone(ph) or ph, 'amount': a, 'title': ti, 'due': du, 'kind': kind})
     return out
+
+
+def _cm_rows_from_pdf(txt):
+    """רשימת התחייבויות מ-PDF — מאיר: "קבצי PDF של רשימת התחייבויות של קהילה… כתוב שם עבור מה
+    זה ואת הסכום". pypdf מוציא שורות כמו "1אבלסון מאיר500✓" או "כהן דוד — עליית שישי — 180 ₪":
+    השם = המילים העבריות הראשונות, הסכום = המספר האחרון שאינו טלפון, "עבור מה" = מה שביניהם."""
+    import yemot as _ym
+    out = []
+    for ln in (txt or '').splitlines():
+        ln = ln.strip()
+        if not ln or not re.search(r'[א-ת]', ln):
+            continue
+        ln = re.sub(r'(?<=[א-ת])(?=\d)', ' ', re.sub(r'(?<=\d)(?=[א-ת])', ' ', ln))   # "מאיר500" → "מאיר 500"
+        ph = next((w for w in re.findall(r'\+?\d[\d\-]{7,}\d', ln) if _ym.norm_phone(w)), '')
+        nums = [m for m in re.finditer(r'(?<![\d\-])\d[\d,]*(?:\.\d+)?(?![\d\-])', ln) if not (ph and m.group(0) in ph) and 0 < _amt2(m.group(0)) <= 1000000]
+        if not nums:
+            continue
+        # הסכום הוא המספר הגדול בשורה; מספר סידורי ומספר מקום קטנים ממנו
+        am = max(nums, key=lambda m: _amt2(m.group(0)))      # הסכום הוא המספר הגדול (מספר מקום / סידורי קטנים)
+        a = _amt2(am.group(0))
+        body = re.sub(r'[₪$✓✔×xX]|ש["״\']?ח|שקל(?:ים)?', ' ', ln[:am.start()] + ' ' + ln[am.end():])
+        if ph:
+            body = body.replace(ph, ' ')
+        words = [w for w in re.split(r'[\s,;:|·—–\-]+', body) if w and not re.fullmatch(r'\d[\d,.]*', w)]
+        if not words:
+            continue
+        heb = [w for w in words if re.search(r'[א-ת]', w)]
+        nm = ' '.join(heb[:2]) if len(heb) >= 2 else ' '.join(heb[:1])
+        ti = ' '.join(w for w in words if w not in heb[:2]).strip()
+        out.append({'name': nm, 'phone': _ym.norm_phone(ph) or '', 'amount': round(a, 2), 'title': ti[:120], 'due': '', 'kind': 'pledge',
+                    'heb': heb[:4]})
+    return out
+
+
+def cm_default_channel(con, mid):
+    """ערוץ ברירת מחדל לתזכורת: מייל אם יש, אחרת SMS לנייד, אחרת שיחה."""
+    import yemot as _ym
+    m = con.execute("SELECT email,phone FROM members WHERE id=?", (mid,)).fetchone()
+    if not m:
+        return 'voice'
+    if emails_of(m['email'] or ''):
+        return 'email'
+    ph = next((p for p in _phones_of(m['phone'])), '')
+    return 'sms' if _ym.is_mobile(ph) else 'voice'
 
 
 YM_REQ_DAYS = 14     # כמה ימים הודעה עם סכום מוצעת בשלוחת התשלום

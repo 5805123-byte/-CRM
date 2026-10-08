@@ -12470,7 +12470,7 @@ async function renderCommDebts(){
       :`<div class="cdsum"><span>פתוח: <b>${cdMoney(D.open_sum)}</b></span><span>${D.open_n||0} חובות · ${D.open_members||0} חברים</span>
         ${cdSt==='open'&&reqOpen.length?`<span>📞 מהודעות (${D.req_days||14} יום): <b>${cdMoney(reqOpen.reduce((s,r)=>s+(+r.amount||0),0))}</b> · ${reqOpen.length}</span>`:''}</div>`}
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
-      <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
+      <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
       <button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}" download style="text-decoration:none">📊 אקסל</a></div>
@@ -12478,14 +12478,17 @@ async function renderCommDebts(){
     <div class="bqtabs">${[['open','פתוחים'],['paid','שולמו'],['all','הכל']].map(([k,l])=>`<button class="bqt ${cdSt===k?'on':''}" data-cdst="${k}">${l}</button>`).join('')}</div>
     <div class="bqseg">${KF.map(([k,l])=>`<button class="${cdKind===k?'on':''}" data-cdk="${k}">${l} <small>${all.filter(d=>!k||d.kind===k).length}</small></button>`).join('')}</div>
     ${cdSt==='open'&&rows.some(d=>!d._req)?`<div class="bqbar"><button class="btn sm ghost" id="cd_selall">${selRows.length===rows.filter(d=>!d._req&&d.status==='open').length&&selRows.length?'✕ בטל סימון':'☑ סמן הכל'}</button>
-      <button class="btn sm" id="cd_ym" ${selRows.length?'':'disabled'}>📞 שלח תזכורת בימות (${selRows.length})</button>
-      <span class="hintxt">${selRows.length?('סה"כ '+cdMoney(selRows.reduce((s,d)=>s+cdOpen(d),0))):'סמן חובות כדי לשלוח תזכורת עם הסכום של כל אחד'}</span></div>`:''}
+      ${(()=>{const n=k=>selRows.filter(d=>(d.channel||'sms')===k).length;return `<button class="btn sm" data-cdsend="voice" ${n('voice')?'':'disabled'}>📞 שיחה (${n('voice')})</button>
+      <button class="btn sm" data-cdsend="sms" ${n('sms')?'':'disabled'}>💬 SMS (${n('sms')})</button>
+      <button class="btn sm" data-cdsend="email" ${n('email')?'':'disabled'}>✉️ מייל (${n('email')})</button>`;})()}
+      <span class="hintxt">${selRows.length?('סה"כ '+cdMoney(selRows.reduce((s,d)=>s+cdOpen(d),0))+' · כל אחד בערוץ שסומן לו (📞/💬/✉️ בשורה)'):'סמן חובות, ובחר בכל שורה איך להזכיר: 📞 שיחה · 💬 SMS · ✉️ מייל'}</span></div>`:''}
     <div class="cdlist">${rows.map(d=>{if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['חוב',''],o=cdOpen(d);
       return `<div class="cdrow ${d.status}">
         ${d.status==='open'?`<input type="checkbox" class="cdck" data-id="${d.id}" ${cdSel.has(d.id)?'checked':''}>`:'<span></span>'}
         <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(((d.ml||'')+' '+(d.mf||'')).trim()||'—')}</b> <span class="cdk ${k[1]}">${k[0]}</span>
           <span class="cdtitle">${esc(d.title||'')}</span>
-          <small class="cdmeta">${d.due?esc(d.due)+' · ':''}${esc(d.source||'')}${d.note?(' · '+esc(d.note)):''}${d.mphone?` · <span dir="ltr">${esc(d.mphone)}</span>`:''}</small></div>
+          <small class="cdmeta">${d.due?esc(d.due)+' · ':''}${esc(d.source||'')}${d.note?(' · '+esc(d.note)):''}${d.mphone?` · <span dir="ltr">${esc(d.mphone)}</span>`:''}</small>
+          ${d.status==='open'?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${(d.channel||'sms')===k?'on':''}" data-cdch="${k}" data-id="${d.id}" title="${l}${k==='email'&&!d.memail?' — אין מייל':''}${k==='sms'&&!ymMobile(ymPhone(d.mphone))?' — אין נייד':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(d.status==='open'?o:d.amount)}</b>${d.paid>0&&d.status==='open'?`<small>שולם ${cdMoney(d.paid)} מ-${cdMoney(d.amount)}</small>`:''}
           ${d.status==='paid'?'<small class="ndok">✓ שולם</small>':(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
         <div class="bqacts">${d.status==='open'?`<button class="btn sm ghost" data-cda="paid" data-id="${d.id}" title="שולם במלואו">✓</button>
@@ -12566,15 +12569,26 @@ function cdWire(){const g=id=>document.getElementById(id);
     if(a==='edit'){const d=(cdData.rows||[]).find(x=>x.id===id);const v=await uiPrompt('הסכום הכולל של החוב (₪):',d?String(d.amount):'');if(!amtNum(v))return;body.amount=amtNum(v);}
     const r=await api('POST','/api/cm/debts/'+id,body);if(r&&r.ok){cdSel.delete(id);cdData=null;renderCommDebts();}else toast('לא עודכן');});
   // 📞 תזכורת בימות — כל נמען עם הסכום הפתוח שלו, בנוסח המתאים
-  const ym=g('cd_ym');if(ym)ym.onclick=()=>{const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open');
+  // מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — הערוץ נשמר בשורה
+  view.querySelectorAll('[data-cdch]').forEach(b=>b.onclick=async()=>{const r=await api('POST','/api/cm/debts/'+b.dataset.id,{action:'channel',channel:b.dataset.cdch});
+    if(r&&r.ok){const d=(cdData.rows||[]).find(x=>x.id==+b.dataset.id);if(d)d.channel=b.dataset.cdch;renderCommDebts();}else toast('לא נשמר');});
+  // שליחה לפי הערוץ: שיחה / SMS דרך ימות (עם הסכום של כל אחד), מייל דרך "נדרים ונדבות"
+  view.querySelectorAll('[data-cdsend]').forEach(btn=>btn.onclick=()=>{const ch=btn.dataset.cdsend;
+    const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open'&&(d.channel||'sms')===ch);
     const by=new Map();sel.forEach(d=>{const x=by.get(d.member_id)||{amt:0,hok:false};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';by.set(d.member_id,x);});
+    if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
+      by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
+      if(!cmPick.size){toast('לאף אחד מהנבחרים אין מייל');return;}
+      cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);
+      toast(cmPick.size+' נמענים במייל, עם הסכום של כל אחד ב-{{סכום}} ובקישור'+(nomail?(' · '+nomail+' בלי מייל'):''));return;}
     ymRecs=new Map();let noph=0,hok=0;
-    by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);const ph=m&&ymPhone(m.phone);if(!ph){noph++;return;}if(x.hok)hok++;
+    by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);const ph=m&&ymPhone(m.phone);if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}if(x.hok)hok++;
       ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100)});});
-    ymCh='voice';ymBill=true;try{localStorage.setItem('kc_ymbill','1');}catch(e){}
+    if(!ymRecs.size){toast(ch==='sms'?'לאף אחד מהנבחרים אין נייד':'לאף אחד מהנבחרים אין טלפון');return;}
+    ymCh=ch;ymBill=ch==='voice';try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}
     ymTplKey=hok>ymRecs.size/2?'hok':'pledge';const t=YM_TPL.find(x=>x[0]===ymTplKey);if(t)ymText=ymTpl(t,ymCh);
     cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);
-    toast(ymRecs.size+' נמענים עם הסכום של כל אחד'+(noph?(' · '+noph+' בלי טלפון'):''));};
+    toast(ymRecs.size+' נמענים עם הסכום של כל אחד'+(noph?(' · '+noph+(ch==='sms'?' בלי נייד':' בלי טלפון')):''));});
 }
 // ===== מפת בית הכנסת =====
 // מאיר: "תשים את המפה ששלחתי לך עם המקומות, שיהיה למעלה בדף של הקהילה להורדה או
@@ -12921,14 +12935,14 @@ function cmAudience(){ return MEMBERS.filter(m=>cmPick.has(m.id)&&mHasMail(m)).s
 function cmBrowse(){ return cmAdding||!cmPick.size; }
 // ---- קישור תשלום נדרים פלוס במייל "נדרים ונדבות" ----
 // מאיר: "אני רוצה גם במייל כשאני שולח מהמייל של נדר1818" — אותו קישור אישי כמו ב-SMS
-let NEDM=null, cmLinkAmt='';
+let NEDM=null, cmLinkAmt='', cmAmts={};
 try{cmLinkAmt=localStorage.getItem('kc_cmlamt')||'';}catch(e){}
 async function nedLoad(){const r=await api('GET','/api/nedarim/mosads');NEDM=r&&r.ok?r:{mosads:[{id:'5777499',name:'כולל חצות נחלת יהושע (ברסלב-דויטש) ביתר עילית'}],mosad:'5777499'};}
 function cmLinkHTML(){
   if(NEDM===null){nedLoad().then(()=>{if(tab==='comm'&&cmSub==='send')renderCommSend();});return '<div class="hintxt">טוען את המוסדות…</div>';}
   const M=NEDM.mosads||[], cur=ymLink.mosad||NEDM.mosad;
   const first=cmAudience()[0];
-  const L=first?nedLink({k:'m',id:first.id,name:((first.first||'')+' '+(first.last||'')).trim(),phone:ymPhone(first.phone),amt:cmLinkAmt}):'';
+  const L=first?nedLink({k:'m',id:first.id,name:((first.first||'')+' '+(first.last||'')).trim(),phone:ymPhone(first.phone),amt:cmAmts[first.id]||cmLinkAmt}):'';
   return `<div class="cmlink"><div class="lbl">🔗 קישור תשלום אישי — נדרים פלוס · <b>{{קישור}}</b> במכתב הופך לכפתור "💳 לתשלום מאובטח"</div>
     <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 220px"><span>🏛️ מוסד</span><select id="cl_mosad">${M.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?'selected':''}>${esc(m.id)} · ${esc(m.name||'')}</option>`).join('')}</select></label>
       <label class="fld" style="margin:0"><span>💲 סכום</span><input id="cl_amt" inputmode="decimal" value="${esc(cmLinkAmt)}" placeholder="רשות" style="width:110px"></label></div>
@@ -12938,8 +12952,8 @@ function cmLinkHTML(){
     <div class="hintxt">אפשרויות נוספות (סוג תשלום, תשלומים, קטגוריה) — כמו שנבחרו במסך ימות המשיח.</div></div>`;}
 function cmLinksPayload(){
   const links={};
-  cmAudience().forEach(m=>{links[m.id]=nedLink({k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:cmLinkAmt});});
-  return {links,link_amount:cmLinkAmt};}
+  cmAudience().forEach(m=>{links[m.id]=nedLink({k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:cmAmts[m.id]||cmLinkAmt});});
+  return {links,link_amount:cmLinkAmt,amounts:cmAmts};}
 function cmWireLink(){
   const g=id=>document.getElementById(id); if(!g('cl_mosad'))return;
   g('cl_mosad').onchange=async()=>{ymLink.mosad=g('cl_mosad').value;ymLinkSave();await api('POST','/api/nedarim/mosads',{list:NEDM.mosads,current:ymLink.mosad});renderCommSend();};
