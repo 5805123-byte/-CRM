@@ -1517,7 +1517,7 @@ async function load(){
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   applyRole();
   // מאיר (הכל) והגבאי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
-  if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
+  if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה (הכניסה פגה לבד אחרי 48 שעות)';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.\n(גם בלי לצאת, הכניסה פגה לבד אחרי 48 שעות)','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
   // שחזור הלשונית שבה הייתי לפני הרענון
   try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();

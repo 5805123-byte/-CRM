@@ -12494,7 +12494,8 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 # מאיר: "שיהיה לו לינק מיוחד רק לדף פרנס יום… ולקהילה קישור מיוחד לגבאי עם הסיסמא, שולט
 # רק על זה ולא יכול להיכנס לדפים אחרים". כל קישור מקבל רק את הסיסמה שלו.
 # בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
-AUTH_DAYS = 365
+# מאיר: "כל 48 שעות שזה יבקש שוב את הסיסמא או חיבור דרך גוגל — גם אצלי בטאבלט או מחשב כרום"
+AUTH_HOURS = 48
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health')   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -12535,7 +12536,7 @@ def _sess_secret():
 
 
 def auth_token(role):
-    exp = int(time.time()) + AUTH_DAYS * 86400
+    exp = int(time.time()) + AUTH_HOURS * 3600
     body = '%s.%d.%s' % (role, exp, os.urandom(6).hex())
     sig = hmac.new(_sess_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:40]
     return body + '.' + sig
@@ -12628,6 +12629,10 @@ def auth_check_password(pw, ip, portal='admin'):
     env, r = {'comm': ('CRM_PASS_COMM', 'comm'), 'parnes': ('CRM_PASS_PARNES', 'parnes')}.get(portal, ('CRM_PASS', 'admin'))
     want = (os.environ.get(env) or '').strip().encode('utf-8')
     role = r if (want and pw and hmac.compare_digest(pw, want)) else ''
+    # מאיר: "שאני כן אוכל להיכנס עם סיסמא שלי להכל" — סיסמת המערכת פותחת הכל גם בקישורים המיוחדים
+    if not role and portal != 'admin':
+        want = (os.environ.get('CRM_PASS') or '').strip().encode('utf-8')
+        role = 'admin' if (want and pw and hmac.compare_digest(pw, want)) else ''
     with _AUTH_LOCK:
         if role:
             _AUTH_FAIL.pop(ip, None)
@@ -14100,7 +14105,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self._set_cookie(auth_token(role), AUTH_DAYS * 86400)
+        self._set_cookie(auth_token(role), AUTH_HOURS * 3600)
         data = json.dumps({'ok': True, 'role': role}).encode('utf-8')
         self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
         return False
