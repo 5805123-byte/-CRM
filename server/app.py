@@ -301,6 +301,7 @@ def ensure_schema():
         keva_id TEXT, member_id INTEGER, amount REAL, ok INTEGER, message TEXT, transaction_id TEXT,
         confirmation TEXT, last4 TEXT, job INTEGER, via TEXT);
     CREATE INDEX IF NOT EXISTS ix_ndch_call ON nd_charge(call_id);
+    CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
        לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
     CREATE TABLE IF NOT EXISTS ym_job(id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, channel TEXT,
@@ -468,6 +469,8 @@ def ensure_schema():
     for col in ('url', 'src'):
         try: con.execute(f"ALTER TABLE receipt_docs ADD COLUMN {col} TEXT")
         except Exception: pass
+    try: con.execute("ALTER TABLE nd_keva ADD COLUMN error TEXT")
+    except Exception: pass
     # ימות המשיח — מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו"
     for col, typ in (('campaign', 'TEXT'), ('answered', 'INTEGER'), ('secs', 'INTEGER'), ('call_status', 'TEXT'), ('checked_at', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
@@ -15984,6 +15987,19 @@ class H(BaseHTTPRequestHandler):
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
             ivr_log(P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/nd/kevas':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            bad = (qs.get('bad') or ['0'])[0] == '1'
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute(
+                    "SELECT k.id,k.name,k.phone,k.amount,k.groupe,k.itra,k.next_date,k.last4,k.error,k.member_id,"
+                    "m.last ml,m.first mf,l.link,l.sent_at,l.sent_to FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
+                    "LEFT JOIN nd_link l ON l.keva_id=k.id WHERE k.active=1" + (" AND COALESCE(k.error,'')<>''" if bad else '') +
+                    " ORDER BY k.name")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/nd/status':
             import nedarim as _nd
             con = db()
@@ -18320,6 +18336,42 @@ class H(BaseHTTPRequestHandler):
             sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        m = re.match(r'/api/nd/keva/(\d+)/link$', self.path)
+        if m:
+            con = db()
+            try:
+                if b.get('send'):
+                    ok, link, to = nd_send_link(con, m.group(1))
+                    return self._send(200, {'ok': ok, 'link': link if ok else '', 'sent_to': to, 'error': '' if ok else link})
+                import nedarim as _nd
+                ok, link = _nd.update_link(m.group(1))
+                if ok:
+                    con.execute("INSERT INTO nd_link(keva_id,link,created) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET link=excluded.link",
+                                (m.group(1), link, now_iso()))
+                    con.commit()
+                return self._send(200, {'ok': ok, 'link': link if ok else '', 'error': '' if ok else link})
+            finally:
+                con.close()
+        if self.path == '/api/nd/links/send_bad':
+            # לכל מי שהוראת הקבע שלו חזרה ויש לו נייד — קישור לעדכון כרטיס
+            con = db()
+            n = fail = nomob = 0
+            try:
+                for k in con.execute("SELECT id FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchall():
+                    sent = con.execute("SELECT sent_at FROM nd_link WHERE keva_id=? AND COALESCE(sent_at,'')>=?",
+                                       (k['id'], (il_now() - datetime.timedelta(days=3)).strftime('%Y-%m-%d'))).fetchone()
+                    if sent and not b.get('again'):
+                        continue
+                    ok, _l, to = nd_send_link(con, k['id'])
+                    if ok and to:
+                        n += 1
+                    elif ok:
+                        nomob += 1
+                    else:
+                        fail += 1
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'sent': n, 'no_mobile': nomob, 'failed': fail})
         if self.path == '/api/nd/sync':
             import nedarim as _nd
             if not _nd.configured():
@@ -20031,16 +20083,17 @@ def nd_sync(con):
         if tm and tm['phones']:
             phs += [p for p in tm['phones'].split(';') if p and p not in phs]
         mid = (tm['member_id'] if tm else None) or pick(phs)
-        con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?)
+        con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
                        ON CONFLICT(id) DO UPDATE SET torem_id=excluded.torem_id, name=excluded.name, phone=excluded.phone,
                          mail=excluded.mail, amount=excluded.amount, groupe=excluded.groupe, itra=excluded.itra,
                          next_date=excluded.next_date, last4=excluded.last4, city=excluded.city,
-                         member_id=excluded.member_id, active=1, synced=excluded.synced""",
+                         member_id=excluded.member_id, active=1, synced=excluded.synced, error=excluded.error""",
                     (k['id'], k['torem'], k['name'], ';'.join(phs), k['mail'], k['amount'], k['groupe'], k['itra'],
-                     k['next'], k['last4'], k['city'], mid, now))
+                     k['next'], k['last4'], k['city'], mid, now, k.get('error') or ''))
     res['הוראות קבע'] = len(ks)
     res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
+    res['חזרו'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchone()[0]
     con.commit()
     return res
 
@@ -20072,6 +20125,38 @@ def _nd_loop():
         except Exception as e:
             print('  nedarim sync error:', e)
         time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 10800)))
+
+
+def nd_send_link(con, keva_id, phone=''):
+    """מאיר: "יש כאלה שהוראת קבע שלהם חזרה… אני רוצה לעשות שיעדכן אשראי חדש". קישור
+    מאובטח של נדרים פלוס ב-SMS — התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת.
+    מחזיר (הצלחה, קישור / שגיאה, נשלח-ל)."""
+    import nedarim as _nd, yemot as _ym
+    k = con.execute("SELECT * FROM nd_keva WHERE id=?", (str(keva_id),)).fetchone()
+    if not k:
+        return False, 'ההוראה לא נמצאה', ''
+    ok, link = _nd.update_link(k['id'])
+    if not ok:
+        return False, link, ''
+    con.execute("INSERT INTO nd_link(keva_id,link,created) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET link=excluded.link",
+                (k['id'], link, now_iso()))
+    to = _ym.norm_phone(phone) if phone else next((p for p in (k['phone'] or '').split(';') if _ym.is_mobile(p)), '')
+    if not to or not _ym.is_mobile(to):
+        con.commit()
+        return True, link, ''
+    first = ((k['name'] or '').split() or [''])[-1]
+    txt = 'שלום %s, הוראת הקבע שלך לכולל חצות לא עברה. לעדכון כרטיס אשראי בדף מאובטח: %s תודה רבה ותזכו למצוות' % (first, link) \
+        if (k['error'] or '').strip() else 'שלום %s, לעדכון כרטיס האשראי בהוראת הקבע לכולל חצות, בדף מאובטח: %s תודה רבה' % (first, link)
+    _ym.begin_trace()
+    oks, r = _ym.send_sms(to, txt)
+    ym_save_trace(con, _ym.end_trace(), 0, 0, to)
+    if oks:
+        con.execute("UPDATE nd_link SET sent_at=?, sent_to=? WHERE keva_id=?", (now_iso(), to, k['id']))
+        if k['member_id']:
+            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                        (k['member_id'], today_iso(), 'SMS', '📲 נשלח קישור לעדכון כרטיס בהוראת הקבע', txt, 'out', '', now_iso()))
+    con.commit()
+    return bool(oks), link if oks else ('ה-SMS לא נשלח: %s' % r), to if oks else ''
 
 
 def ivr_key(con):
@@ -20148,9 +20233,19 @@ def ivr_answer(P):
             else:
                 parts = ['t-' + _ivr_t('לתשלום מאחת מהוראות הקבע שלכם הקישו 1')]
             parts.append('t-' + _ivr_t('לתשלום בכרטיס אשראי אחר הקישו 2'))
-            return 'read=' + '.'.join(parts) + '=Way,no,1,1,10,NO,yes,yes,,12,2,,,,no'
+            parts.append('t-' + _ivr_t('לעדכון כרטיס אשראי חדש בהוראת הקבע הקישו 3'))
+            return 'read=' + '.'.join(parts) + '=Way,no,1,1,10,NO,yes,yes,,123,2,,,,no'
         if P['Way'] == '2':
             return fallback(job_amt)
+        if P['Way'] == '3':
+            # קישור מאובטח ב-SMS — הכרטיס לא עובר בטלפון ולא אצלנו
+            if not _ym.is_mobile(phone):
+                return 'id_list_message=t-' + _ivr_t('לא ניתן לשלוח הודעה למספר קווי, אנא התקשרו מהנייד או פנו למשרד') + END
+            bad = [k for k in ks if (k.get('error') or '').strip()] or ks
+            okl, _l, _to = nd_send_link(con, bad[0]['id'], phone)
+            if okl:
+                return 'id_list_message=t-' + _ivr_t('שלחנו לכם הודעה עם קישור מאובטח לעדכון הכרטיס, תודה רבה') + END
+            return 'id_list_message=t-' + _ivr_t('לא הצלחנו לשלוח את הקישור כרגע, אנא נסו שוב מאוחר יותר') + END
         # בחירת כרטיס — כשיש כמה הוראות על אותו טלפון
         if len(ks) > 1:
             if 'Card' not in P:

@@ -93,6 +93,7 @@ def kevas():
                     'next': str(r.get('9') or r.get('NextDate') or '').strip(),
                     'last4': str(r.get('11') or r.get('LastNum') or '').strip(),
                     'torem': str(r.get('ToremId') or '').strip(),
+                    'error': str(r.get('10') or r.get('ErrorText') or '').strip(),
                     'city': str(r.get('City') or '').strip()})
     return out
 
@@ -142,3 +143,17 @@ def tashlum_boded(keva_id, amount, groupe='', comments='', ajax='', currency=1):
     if ajax:
         p['AjaxId'] = str(ajax)[:60]
     return call('TashlumBodedNew', p, post=True, timeout=60)
+
+
+def update_link(keva_id):
+    """קישור אישי מאובטח של נדרים פלוס שבו התורם מזין כרטיס חדש להוראת הקבע (14 יום).
+    מספר הכרטיס לא עובר אצלנו. קריאה חוזרת מחזירה את הקישור הקיים."""
+    ok, res = call('CreateKevaUpdateLink', {'KevaId': str(keva_id).lstrip('-')})
+    if ok and isinstance(res, dict) and res.get('Link'):
+        return True, res['Link']
+    return False, (res.get('Message') if isinstance(res, dict) else str(res)) or LAST.get('error') or 'לא נוצר קישור'
+
+
+def link_status(keva_id):
+    ok, res = call('GetKevaUpdateLinkStatus', {'KevaId': str(keva_id).lstrip('-')})
+    return (res if ok and isinstance(res, dict) else {})

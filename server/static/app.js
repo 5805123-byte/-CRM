@@ -12855,10 +12855,11 @@ function renderCommYm(){
 }
 // ---------------- 💳 תשלום בטלפון (שלוחת API + נדרים פלוס) ----------------
 // מאיר: "שיהיה אפשרות לשלם דרך TashlumBodedNew — דרך הטלפון שיחייב דרך ההוראת קבע שלו".
-let ndStat=null;
+let ndStat=null, ndBad=null;
 async function ymViewPay(){
   if(!ndStat){view.innerHTML=ymHead(ymStatus)+'<div class="hintxt" style="padding:16px">טוען…</div>';ymWireHead();
-    ndStat=await api('GET','/api/nd/status')||{};if(tab!=='comm'||ymView!=='pay')return;}
+    const [a,b2]=await Promise.all([api('GET','/api/nd/status'),api('GET','/api/nd/kevas?bad=1')]);
+    ndStat=a||{};ndBad=(b2&&b2.rows)||[];if(tab!=='comm'||ymView!=='pay')return;}
   const st=ndStat, sx=st.stat||{};
   const ini=`type=api\napi_link=${st.link||''}\napi_hangup_send=no`;
   view.innerHTML=ymHead(ymStatus)+`<div class="sec ymsec">
@@ -12871,6 +12872,16 @@ async function ymViewPay(){
     <pre class="ndini" id="nd_ini" dir="ltr">${esc(ini)}</pre>
     <div class="addrow"><button class="btn sm" id="nd_copy">📋 העתק</button></div>
     <div class="hintxt">המתקשר מזוהה לפי הטלפון. יש לו הוראת קבע ← שומע את 4 הספרות של הכרטיס, מאשר סכום (מההודעה שנשלחה, או מקיש סכום), מאשר שוב ← חיוב מיידי בכרטיס של ההוראה (נרשם בהיסטוריית ההוראה, בלי לשנות אותה). אין לו הוראה ← סליקה רגילה בהקשת כרטיס. הקוד בקישור סודי — לא לשתף.</div>
+    <div class="rbtitle" style="text-align:right;margin-top:12px">🔴 הוראות קבע שחזרו (${(ndBad||[]).length})</div>
+    <div class="hintxt">נדרים פלוס נותנים לכל הוראה קישור מאובטח (14 יום) שבו התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת. נשלח ב-SMS מ-025803545. גם בטלפון, בשלוחת התשלום, יש "לעדכון כרטיס הקישו 3".</div>
+    ${(ndBad||[]).length?`<div class="addrow"><button class="btn sm" id="nd_sendall">📲 שלח קישור לכל מי שחזר</button></div>`:''}
+    <div class="ndlist">${(ndBad||[]).map(k=>`<div class="ndrow"><b>${esc(((k.ml||'')+' '+(k.mf||'')).trim()||k.name||'')}</b>
+        ${k.ml?`<small>(${esc(k.name||'')})</small>`:'<small class="ndbad">לא מקושר לקהילה</small>'}
+        <span>₪${esc(k.amount||'')}</span><small>****${esc(k.last4||'')}</small>
+        <span class="ndbad">${esc(k.error||'')}</span>
+        <small dir="ltr">${esc((k.phone||'').split(';')[0]||'')}</small>
+        ${k.sent_at?`<small class="ndok">📲 נשלח ${esc(k.sent_at.slice(5,16))}</small>`:''}
+        <span class="bqacts"><button class="btn sm ghost" data-ndsend="${esc(k.id)}">📲 SMS</button><button class="btn sm ghost" data-ndcopy="${esc(k.id)}">🔗 קישור</button></span></div>`).join('')||'<div class="hintxt">אין הוראות שחזרו 🎉</div>'}</div>
     <div class="rbtitle" style="text-align:right;margin-top:12px">📜 תשלומים אחרונים בטלפון</div>
     <div class="ndlist">${(st.charges||[]).map(c=>`<div class="ndrow"><span>${esc((c.at||'').slice(5,16))}</span>
         <b>${esc(((c.ml||'')+' '+(c.mf||'')).trim()||c.phone||'')}</b><span>₪${esc(c.amount)}</span>
@@ -12883,6 +12894,21 @@ async function ymViewPay(){
     const r=await api('POST','/api/nd/sync',{});
     if(r&&r.ok)toast('סונכרן ✓ '+Object.entries(r.result||{}).map(([k,v])=>k+' '+v).join(' · '));else await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));
     ndStat=null;ymViewPay();};
+  const sa=g('nd_sendall'); if(sa)sa.onclick=async()=>{
+    if(!await uiConfirm('לשלוח SMS עם קישור לעדכון כרטיס ל-'+ndBad.length+' שהוראת הקבע שלהם חזרה?\n(מי שקיבל ב-3 הימים האחרונים לא יקבל שוב)','📲 כן, לשלוח','ביטול'))return;
+    sa.disabled=true;sa.textContent='שולח…';
+    const r=await api('POST','/api/nd/links/send_bad',{});
+    toast(r&&r.ok?('נשלחו '+r.sent+(r.no_mobile?(' · '+r.no_mobile+' בלי נייד'):'')+(r.failed?(' · '+r.failed+' נכשלו'):'')):'השליחה נכשלה');
+    ndStat=null;ymViewPay();};
+  view.querySelectorAll('[data-ndsend]').forEach(b=>b.onclick=async()=>{
+    if(!await uiConfirm('לשלוח SMS עם קישור לעדכון כרטיס?','📲 כן','ביטול'))return;
+    b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsend+'/link',{send:1});
+    if(r&&r.ok&&r.sent_to)toast('נשלח ל-'+r.sent_to+' ✓');else if(r&&r.ok)await uiAlert('אין נייד להוראה הזו. הקישור:\n'+r.link);else await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));
+    ndStat=null;ymViewPay();});
+  view.querySelectorAll('[data-ndcopy]').forEach(b=>b.onclick=async()=>{
+    const r=await api('POST','/api/nd/keva/'+b.dataset.ndcopy+'/link',{});
+    if(!r||!r.ok){await uiAlert('לא נוצר קישור:\n'+((r&&r.error)||'שגיאה'));return;}
+    try{await navigator.clipboard.writeText(r.link);toast('הקישור הועתק ✓');}catch(e){await uiAlert(r.link);}});
 }
 // ---------------- 📤 שליחה ----------------
 function ymViewSend(){
