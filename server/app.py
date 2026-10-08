@@ -19657,6 +19657,18 @@ class H(BaseHTTPRequestHandler):
                 upd['num_left'] = int(b.get('num_left') or 0)
             err = ''
             new_id = 0
+            if not b.get('pm_id') and b.get('source'):
+                # הכרטיס שחויב עכשיו נשמר להוראת הקבע (מאיר ענה "כן, לכל חודש")
+                src = str(b.get('source') or '')
+                if not re.fullmatch(r'(tkn|ref)-[A-Za-z0-9_\-]+', src):
+                    con.close(); return self._send(200, {'ok': False, 'error': 'מקור כרטיס לא תקין'})
+                code, res = _bq.create_pm(row['customer_id'], src, b.get('exp_m'), b.get('exp_y'), is_default=False)
+                if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                    con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נשמר בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
+                con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                            (res['id'], row['customer_id'], res.get('card_type') or '', res.get('last4') or '',
+                             res.get('expiry_month') or b.get('exp_m') or 0, res.get('expiry_year') or b.get('exp_y') or 0, 0, res.get('name') or ''))
+                b['pm_id'] = res['id']
             if b.get('pm_id'):
                 # 💳 החלפת כרטיס — מאיר: "הביא לי כרטיס חדש… ושזה יישמר לכל חודש לחיוב"
                 pm = int(b.get('pm_id') or 0)
@@ -19708,6 +19720,23 @@ class H(BaseHTTPRequestHandler):
             row = con.execute("SELECT * FROM bq_sched WHERE id=?", (int(m.group(1)),)).fetchone()
             if not row or not nonce:
                 con.close(); return self._send(200, {'ok': False, 'error': 'הוראת הקבע או פרטי הכרטיס לא נמצאו'})
+            amt = round(_amt2(b.get('amount')), 2)
+            if amt > 0:
+                # חיוב מיידי ישר מהכרטיס שהוקלד (כמו בבנק ווסט) — מהיר, וזה חיוב של בעל הכרטיס.
+                # הכרטיס נשמר להוראה רק אם מאיר עונה "כן, לכל חודש" (source שחוזר כאן)
+                cu = con.execute("SELECT * FROM bq_cust WHERE id=?", (row['customer_id'],)).fetchone()
+                fc, fn = (row['for_cat'] or '').strip(), (row['for_note'] or '').strip()
+                desc = ' · '.join(x for x in (fc, fn) if x)
+                code, res = _bq.charge_source('nonce-' + nonce, amt, description=desc, customer_id=row['customer_id'],
+                                              email=(cu['email'] if cu else '') or '', exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=True)
+                if code != 200 or not isinstance(res, dict):
+                    con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
+                out = bq_record_charge(con, res, amt, desc, fc, row['donor_id'], row['customer_id'],
+                                       ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''))
+                con.commit(); con.close()
+                bump_data()
+                out.update(charged=True, src=bq_card_src(res) if out['ok'] else '', last4=res.get('last_4') or b.get('last4') or '')
+                return self._send(200, out)
             code, res = _bq.create_pm(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
                                       name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20], is_default=False)
             if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
@@ -19743,10 +19772,33 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
             cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
             em = (emails_of(d['email'] or '') or [''])[0]
+            eng = (d['english'] or '').strip()
+            nm = eng or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+            toks = eng.split()
+            if b.get('kind') == 'once':
+                # ⚡ מאיר: "שולח הרבה זמן לבנק ווסט, אני רוצה שזה יהיה מהר ומיד כמו בבנק ווסט" — וגם
+                # "Transaction type not allowed from this source" על כרטיס ששמרנו רגע לפני. כמו בבנק ווסט:
+                # חיוב אחד ישר מהכרטיס שהוקלד (חיוב של בעל הכרטיס), והכרטיס נשמר אחר כך ברקע.
+                amt = round(_amt2(b.get('amount')), 2)
+                if amt <= 0:
+                    con.commit(); con.close(); return self._send(200, {'ok': False, 'donor_id': did, 'error': 'חסר סכום'})
+                fc, fn = str(b.get('for_cat') or '').strip(), str(b.get('for_note') or '').strip()
+                desc = ' · '.join(x for x in (fc, fn) if x)
+                code, res = _bq.charge_source('nonce-' + nonce, amt, description=desc, customer_id=cu['id'] if cu else 0, email=em,
+                                              exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=True)
+                if code != 200 or not isinstance(res, dict):
+                    con.commit(); con.close()
+                    return self._send(200, {'ok': False, 'donor_id': did, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
+                out = bq_record_charge(con, res, amt, desc, fc, did, cu['id'] if cu else 0,
+                                       ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), nm)
+                con.commit(); con.close()
+                src = bq_card_src(res) if out['ok'] else ''
+                if src:
+                    bq_save_card_bg(cu['id'] if cu else 0, src, b.get('exp_m'), b.get('exp_y'), did,
+                                    None if cu else (nm, ' '.join(toks[:-1]) if len(toks) > 1 else '', toks[-1] if toks else '', em, d['phone'] or ''))
+                bump_data()
+                return self._send(200, out)
             if not cu:
-                eng = (d['english'] or '').strip()
-                nm = eng or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
-                toks = eng.split()
                 code, res = _bq.create_customer(nm, first=(' '.join(toks[:-1]) if len(toks) > 1 else ''),
                                                 last=(toks[-1] if toks else ''), email=em, phone=d['phone'] or '', number=did)
                 if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
@@ -19790,33 +19842,12 @@ class H(BaseHTTPRequestHandler):
                                       email=(cu['email'] if cu else '') or '', send_receipt=True)
             if code != 200 or not isinstance(res, dict):
                 con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
-            st = (res.get('status') or '').lower()
-            tr = res.get('transaction') or {}
-            ok = st in ('approved', 'partially approved') or (res.get('status_code') or '') == 'A'
             did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
-            if tr.get('id'):
-                t = _bq.tx_row(tr)
-                t.update(donor_id=did, description=t['description'] or desc)
-                if not t['status']:
-                    t['status'] = 'captured' if ok else 'declined'
-                con.execute("""INSERT OR IGNORE INTO bq_tx(id,ref,created,settled,amount,status,error,type,schedule_id,description,
-                                 customer_id,email,name,card,donor_id,posted,raw) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)""",
-                            (t['id'], t['ref'] or res.get('reference_number') or 0, t['created'] or now_iso(), t['settled'], t['amount'] or amt,
-                             t['status'], t['error'] or (res.get('error_message') or ''), t['type'] or 'charge', 0, t['description'],
-                             p['customer_id'], t['email'], t['name'] or (cu['identifier'] if cu else ''), t['card'] or ('%s %s' % (p['card_type'], p['last4'])).strip(),
-                             did, json.dumps(t, ensure_ascii=False)))
-                if ok and did:
-                    t['ref'] = t['ref'] or int(res.get('reference_number') or 0)
-                    t['amount'] = t['amount'] or amt
-                    # "עבור מה" של חיוב מיידי — נכנס כייעוד התרומה
-                    t2 = dict(t, schedule_id=0)
-                    if bq_post_tx(con, t2, force=True):
-                        con.execute("UPDATE recon SET category=? WHERE tid=?", (fc, 'BQ%d' % (t['ref'] or t['id'])))
-                        banquest_post(con, BQ_SRC)
+            out = bq_record_charge(con, res, amt, desc, fc, did, p['customer_id'],
+                                   ('%s %s' % (p['card_type'], p['last4'])).strip(), (cu['identifier'] if cu else ''))
             con.commit(); con.close()
             bump_data()
-            return self._send(200, {'ok': ok, 'status': res.get('status'), 'error': '' if ok else (res.get('error_message') or res.get('status') or 'נדחה'),
-                                    'ref': res.get('reference_number'), 'auth': res.get('auth_code'), 'donor_id': did})
+            return self._send(200, out)
         if self.path == '/api/bq/sched/new':
             # 🔁 הוראת קבע חדשה על כרטיס שמור
             import banquest as _bq
@@ -21133,6 +21164,79 @@ def _bq_dmy(iso):
         return datetime.date.fromisoformat(iso[:10]).strftime('%d-%b-%Y')
     except ValueError:
         return ''
+
+
+def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', name=''):
+    """תשובת חיוב מבנק ווסט → עסקה אצלנו, ואם עבר ויש תורם — תרומה בכרטיס שלו עם "עבור מה".
+    רק העסקה הזו נרשמת (לא כל מה שממתין), כדי שהתשובה תחזור מיד."""
+    import banquest as _bq
+    st = (res.get('status') or '').lower()
+    tr = res.get('transaction') or {}
+    ok = st in ('approved', 'partially approved') or (res.get('status_code') or '') == 'A'
+    if tr.get('id'):
+        t = _bq.tx_row(tr)
+        t.update(donor_id=did, description=t['description'] or desc)
+        if not t['status']:
+            t['status'] = 'captured' if ok else 'declined'
+        con.execute("""INSERT OR IGNORE INTO bq_tx(id,ref,created,settled,amount,status,error,type,schedule_id,description,
+                         customer_id,email,name,card,donor_id,posted,raw) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)""",
+                    (t['id'], t['ref'] or res.get('reference_number') or 0, t['created'] or datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                     t['settled'], t['amount'] or amt, t['status'], t['error'] or (res.get('error_message') or ''), t['type'] or 'charge', 0,
+                     t['description'], customer_id or t['customer_id'], t['email'], t['name'] or name,
+                     t['card'] or card_label or ('%s %s' % (res.get('card_type') or '', res.get('last_4') or '')).strip(), did, json.dumps(t, ensure_ascii=False)))
+        if ok and did:
+            t['ref'] = t['ref'] or int(res.get('reference_number') or 0)
+            t['amount'] = t['amount'] or amt
+            # "עבור מה" של חיוב מיידי — נכנס כייעוד התרומה
+            if bq_post_tx(con, dict(t, schedule_id=0), force=True):
+                tid = 'BQ%d' % (t['ref'] or t['id'])
+                con.execute("UPDATE recon SET category=? WHERE tid=?", (fc, tid))
+                banquest_post(con, BQ_SRC, only_tids=[tid])
+    return {'ok': ok, 'status': res.get('status'), 'error': '' if ok else (res.get('error_message') or res.get('status') or 'נדחה'),
+            'ref': res.get('reference_number'), 'auth': res.get('auth_code'), 'donor_id': did}
+
+
+def bq_card_src(res):
+    """מקור לשמירת הכרטיס אחרי חיוב (save_card): ה-card_ref שבנק ווסט מחזירים, או מספר העסקה."""
+    ref = str(res.get('card_ref') or '').strip()
+    if ref and not re.match(r'^(tkn|ref|pm|nonce)-', ref):
+        ref = 'tkn-' + ref
+    return ref or ('ref-%s' % res.get('reference_number') if res.get('reference_number') else '')
+
+
+def bq_save_card_bg(customer_id, src, exp_m, exp_y, donor_id=None, new_cust=None):
+    """שמירת הכרטיס בבנק ווסט ברקע, אחרי שהחיוב כבר עבר — כדי שהתשובה למסך תהיה מיידית.
+    new_cust: (שם, פרטי, משפחה, מייל, טלפון) כשאין עדיין לקוח בבנק ווסט."""
+    def run():
+        import banquest as _bq
+        con = db()
+        try:
+            cid = customer_id
+            if not cid and new_cust:
+                nm, fi, la, em, ph = new_cust
+                code, res = _bq.create_customer(nm, first=fi, last=la, email=em, phone=ph, number=donor_id or '')
+                if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                    print('  banquest: customer not created', _bq.LAST.get('error'))
+                    return
+                cid = res['id']
+                con.execute("INSERT OR REPLACE INTO bq_cust(id,identifier,first,last,email,phone,number,active,donor_id,manual,synced) "
+                            "VALUES(?,?,?,?,?,?,?,1,?,1,?)", (cid, nm, res.get('first_name') or '', res.get('last_name') or '',
+                                                            em, ph, str(donor_id or ''), donor_id, now_iso()))
+                con.commit()
+            code, res = _bq.create_pm(cid, src, exp_m, exp_y)
+            if code in (200, 201) and isinstance(res, dict) and res.get('id'):
+                con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                            (res['id'], cid, res.get('card_type') or '', res.get('last4') or '', res.get('expiry_month') or exp_m or 0,
+                             res.get('expiry_year') or exp_y or 0, 1, res.get('name') or ''))
+                con.commit()
+                bump_data()
+            else:
+                print('  banquest: card not saved', _bq.LAST.get('error'))
+        except Exception as e:
+            print('  banquest: card save error', e)
+        finally:
+            con.close()
+    threading.Thread(target=run, daemon=True).start()
 
 
 def bq_post_tx(con, t, force=False):

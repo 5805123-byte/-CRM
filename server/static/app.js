@@ -6513,7 +6513,7 @@ function bqWire(box){const g=id=>document.getElementById(id);
         const r=await api('POST','/api/bq/newcard',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||'',
           kind:f.kind,amount:amt,for_cat:f.cat||'',for_note:f.note||'',donor_id:f.newDonor?0:f.did,next_run_date:f.next||'',num_left:+f.n||0,
           new:f.newDonor?{last:f.n_last||'',first:f.n_first||'',english:f.n_eng||'',email:f.n_email||'',phone:f.n_phone||''}:null});
-        if(r&&r.ok){toast(f.kind==='once'?('✅ החיוב עבר · אישור '+(r.auth||r.ref||'')):'🔁 הוראת הקבע נוצרה ✓');bqNew=null;try{bqHT.resetForm();}catch(e){}await load();render();}
+        if(r&&r.ok){toast(f.kind==='once'?('✅ החיוב עבר · אישור '+(r.auth||r.ref||'')):'🔁 הוראת הקבע נוצרה ✓');bqNew=null;try{bqHT.resetForm();}catch(e){}renderBQ();load().then(render);}
         else{go.disabled=false;go.textContent=f.kind==='once'?'⚡ חייב עכשיו':'💾 צור הוראת קבע';
           if(r&&r.donor_id&&f.newDonor){f.newDonor=false;f.did=r.donor_id;await load();}
           await uiAlert((f.kind==='once'?'החיוב לא עבר':'הוראת הקבע לא נוצרה')+':\n'+((r&&r.error)||'שגיאה'));}
@@ -6523,7 +6523,7 @@ function bqWire(box){const g=id=>document.getElementById(id);
         if(!await uiConfirm('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?','⚡ כן, לחייב','ביטול'))return;
         go.disabled=true;go.textContent='מחייב…';
         const r=await api('POST','/api/bq/charge',{pm_id:pm,amount:amt,for_cat:f.cat||'',for_note:f.note||'',donor_id:f.did});
-        if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));bqNew=null;await load();render();}
+        if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));bqNew=null;renderBQ();load().then(render);}
         else{go.disabled=false;go.textContent='⚡ חייב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}
       }else{
         if(!await uiConfirm('ליצור הוראת קבע ל'+nm+': '+bqMoney(amt)+' כל חודש'+(+f.n?(' × '+f.n):'')+(forT?(' עבור '+forT):'')+'?','💾 כן, ליצור','ביטול'))return;
@@ -6561,21 +6561,20 @@ function bqWire(box){const g=id=>document.getElementById(id);
       b.disabled=true;b.textContent='שולח לבנק ווסט…';
       let tk;try{tk=await bqHT.getNonceToken();}catch(e){b.disabled=false;b.textContent='💳 המשך';
         toast('פרטי הכרטיס לא תקינים'+((e&&e.fieldErrors&&e.fieldErrors.length)?(': '+e.fieldErrors.join(', ')):''));return;}
-      const c=await api('POST','/api/bq/sched/'+id+'/card',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||''});
-      if(!c||!c.ok){b.disabled=false;b.textContent='💳 המשך';await uiAlert('הכרטיס לא נשמר:\n'+((c&&c.error)||'שגיאה'));return;}
+      // עם סכום: חיוב אחד ישר מהכרטיס שהוקלד (מהיר, כמו בבנק ווסט); בלי סכום — רק שמירת הכרטיס
+      const c=await api('POST','/api/bq/sched/'+id+'/card',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||'',amount:amt||0});
+      if(!c||!c.ok){b.disabled=false;b.textContent='💳 המשך';try{bqHT.resetForm();}catch(e){}
+        await uiAlert((amt?'החיוב מהכרטיס החדש לא עבר:\n':'הכרטיס לא נשמר:\n')+((c&&c.error)||'שגיאה')+(amt?'\n\nהכרטיס הישן נשאר בהוראת הקבע.':''));return;}
       try{bqHT.resetForm();}catch(e){}
       const l4=c.last4||tk.last4||'';
-      if(amt){
-        const r=await api('POST','/api/bq/charge',{pm_id:c.pm_id,amount:amt,for_cat:r0.for_cat||'',for_note:r0.for_note||'',donor_id:r0.donor_id||0});
-        if(r&&r.ok)toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));
-        else{await uiAlert('החיוב מהכרטיס החדש לא עבר:\n'+((r&&r.error)||'שגיאה')+'\n\nהכרטיס הישן נשאר בהוראת הקבע.');bqSwap=null;renderBQ();return;}
-      }
+      if(c.charged)toast('✅ החיוב עבר · אישור '+(c.auth||c.ref||''));
+      if(c.charged&&!c.src){await uiAlert('החיוב עבר ✓\nבנק ווסט לא החזירו פרטים לשמירת הכרטיס, ולכן הוראת הקבע נשארה על הכרטיס הישן.');bqSwap=null;renderBQ();load().then(render);return;}
       if(await uiConfirm('לשמור את הכרטיס החדש •••• '+l4+' לחיוב כל חודש?\nהוראת הקבע ('+bqMoney(r0.amount)+', הבא '+bqDate(r0.next_run)+') תחויב מעכשיו מהכרטיס הזה במקום •••• '+(r0.last4||'')+'.','💾 כן, לשמור לכל חודש','לא, רק הפעם')){
-        const u=await api('POST','/api/bq/sched/'+id,{pm_id:c.pm_id});
+        const u=await api('POST','/api/bq/sched/'+id,c.charged?{source:c.src,exp_m:tk.expiryMonth,exp_y:tk.expiryYear}:{pm_id:c.pm_id});
         if(u&&u.ok&&!u.error)toast('💾 הוראת הקבע תחויב מעכשיו מ-•••• '+l4);
         else await uiAlert(u&&u.ok?u.error:('הכרטיס לא הוחלף בהוראת הקבע:\n'+((u&&u.error)||'שגיאה')));
       }
-      bqSwap=null;await load();render();return;}
+      bqSwap=null;renderBQ();load().then(render);return;}
     if(a==='hist'){if(bqHist[id]){delete bqHist[id];renderBQ(false);}else bqHistLoad(id);return;}
     if(a==='save'){const body={};if(g('bqs_cat')){body.for_cat=g('bqs_cat').value;body.for_note=g('bqs_note').value.trim();}
       const am=amtNum(g('bqs_amt').value);if(am&&am!==+r0.amount)body.amount=am;
@@ -6593,7 +6592,7 @@ function bqWire(box){const g=id=>document.getElementById(id);
       b.disabled=true;
       const r=await api('POST','/api/bq/charge',{pm_id:r0.pm_id,amount:amt,for_cat:g('bqs_cat').value,for_note:g('bqs_note').value.trim(),donor_id:r0.donor_id||0});
       b.disabled=false;
-      if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));await load();render();}else await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));return;}
+      if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));renderBQ();load().then(render);}else await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));return;}
     if(a==='post'){const did=bqPickDonor(g('bqt_donor').value)||r0.donor_id;if(!did){toast('בחר תורם מהרשימה');return;}
       const r=await api('POST','/api/bq/tx/'+id+'/post',{donor_id:did,for_cat:g('bqt_cat').value});
       if(r&&r.ok){toast('נרשם בכרטיס ✓');await load();render();}else await uiAlert((r&&r.error)||'לא נרשם');return;}
