@@ -12440,7 +12440,7 @@ function renderComm(){
 // מאיר: "שיהיה מערכת חובות והתחייבויות של הקהילה בלבד… תסנכרן נדרים פלוס כל כמה זמן, שיראו
 // שם הוראות קבע שחזרו… להעלות חובות ידנית ע"י העלאת קבצים… וככה המערכת לשליחת התראות
 // תעבוד באופן מסודר". נפרד מהחובות של התורמים. תשלום בטלפון סוגר את החוב לבד.
-let cdData=null, cdSt='open', cdKind='', cdSel=new Set(), cdAdd=false, cdImp=null, cdMember=0;
+let cdData=null, cdSt='open', cdKind='', cdSel=new Set(), cdAdd=false, cdImp=null, cdMember=0, cdRem=null;   // cdRem: {ids,ch} — החובות שהתזכורת עליהם בדרך
 const CD_KIND={debt:['חוב','cdk-debt'],pledge:['התחייבות','cdk-pl'],hok:['הו"ק חזרה','cdk-hok']};
 const cdOpen=d=>Math.max(0,(+d.amount||0)-(+d.paid||0));
 const cdMoney=a=>'₪'+(+a||0).toLocaleString('he-IL',{maximumFractionDigits:2});
@@ -12474,6 +12474,9 @@ async function renderCommDebts(){
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
       <button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}" download style="text-decoration:none">📊 אקסל</a></div>
+    <div class="cdquick"><input id="cdq_m" list="cd_mdl" placeholder="➕ חבר קהילה…" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}">
+      <input id="cdq_a" inputmode="decimal" placeholder="₪ סכום"><input id="cdq_t" placeholder="עבור מה (עליית שישי, מקום תשפ״ז…)">
+      <select id="cdq_k"><option value="pledge">התחייבות</option><option value="debt">חוב</option></select><button class="btn sm" id="cdq_go">הוסף</button></div>
     ${cdAdd?cdAddHTML():''}${cdImp?cdImpHTML():''}
     <div class="bqtabs">${[['open','פתוחים'],['paid','שולמו'],['all','הכל']].map(([k,l])=>`<button class="bqt ${cdSt===k?'on':''}" data-cdst="${k}">${l}</button>`).join('')}</div>
     <div class="bqseg">${KF.map(([k,l])=>`<button class="${cdKind===k?'on':''}" data-cdk="${k}">${l} <small>${all.filter(d=>!k||d.kind===k).length}</small></button>`).join('')}</div>
@@ -12488,6 +12491,7 @@ async function renderCommDebts(){
         <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(((d.ml||'')+' '+(d.mf||'')).trim()||'—')}</b> <span class="cdk ${k[1]}">${k[0]}</span>
           <span class="cdtitle">${esc(d.title||'')}</span>
           <small class="cdmeta">${d.due?esc(d.due)+' · ':''}${esc(d.source||'')}${d.note?(' · '+esc(d.note)):''}${d.mphone?` · <span dir="ltr">${esc(d.mphone)}</span>`:''}</small>
+          ${d.reminded_at?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(d.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[d.reminded_via]||d.reminded_via||'')}${+d.n_reminded>1?' (×'+d.n_reminded+')':''}</small>`:''}
           ${d.status==='open'?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${(d.channel||'sms')===k?'on':''}" data-cdch="${k}" data-id="${d.id}" title="${l}${k==='email'&&!d.memail?' — אין מייל':''}${k==='sms'&&!ymMobile(ymPhone(d.mphone))?' — אין נייד':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(d.status==='open'?o:d.amount)}</b>${d.paid>0&&d.status==='open'?`<small>שולם ${cdMoney(d.paid)} מ-${cdMoney(d.amount)}</small>`:''}
           ${d.status==='paid'?'<small class="ndok">✓ שולם</small>':(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
@@ -12540,6 +12544,12 @@ function cdWire(){const g=id=>document.getElementById(id);
   const sa=g('cd_selall');if(sa)sa.onclick=()=>{const op=(cdData.rows||[]).filter(d=>d.status==='open'&&(!cdKind||d.kind===cdKind));
     const allOn=op.every(d=>cdSel.has(d.id));op.forEach(d=>allOn?cdSel.delete(d.id):cdSel.add(d.id));renderCommDebts();};
   g('cd_add').onclick=()=>{cdAdd=!cdAdd;renderCommDebts();};
+  // מאיר: "שהגבאי או אני נוכל להוסיף לרשימה ידנית, כמו שאפשר להוסיף עוד אברך" — שורה אחת, Enter שומר
+  const qa=async()=>{const mid=cdPick(g('cdq_m').value),a=amtNum(g('cdq_a').value);
+    if(!mid){toast('בחר חבר קהילה מהרשימה');g('cdq_m').focus();return;} if(!a){toast('חסר סכום');g('cdq_a').focus();return;}
+    const r=await api('POST','/api/cm/debts',{member_id:mid,kind:g('cdq_k').value,amount:a,title:g('cdq_t').value.trim(),due:todayStr()});
+    if(r&&r.ok){toast('נוסף ✓');cdData=null;await renderCommDebts();const n=g('cdq_m');if(n&&!cdMember){n.value='';n.focus();}}else toast((r&&r.error)||'לא נשמר');};
+  g('cdq_go').onclick=qa; ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
   g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[]};renderCommDebts();};
   g('cd_nd').onclick=async()=>{const b=g('cd_nd');b.disabled=true;b.textContent='🔄 מסנכרן…';
     const r=await api('POST','/api/nd/sync',{});if(r&&r.ok)toast('סונכרן ✓ '+Object.entries(r.result||{}).map(([k,v])=>k+' '+v).join(' · '));else await uiAlert((r&&r.error)||'הסנכרון נכשל');
@@ -12575,6 +12585,7 @@ function cdWire(){const g=id=>document.getElementById(id);
   // שליחה לפי הערוץ: שיחה / SMS דרך ימות (עם הסכום של כל אחד), מייל דרך "נדרים ונדבות"
   view.querySelectorAll('[data-cdsend]').forEach(btn=>btn.onclick=()=>{const ch=btn.dataset.cdsend;
     const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open'&&(d.channel||'sms')===ch);
+    cdRem={ids:sel.map(d=>d.id),ch};
     const by=new Map();sel.forEach(d=>{const x=by.get(d.member_id)||{amt:0,hok:false};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';by.set(d.member_id,x);});
     if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
       by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
@@ -12793,11 +12804,13 @@ function openMember(m){
     document.getElementById('cm_tadd').onclick=async()=>{const n=document.getElementById('cm_tnote').value.trim();if(!n){toast('כתוב מה להזכיר');return;}
       const r=await api('POST','/api/cm/tasks',{member_id:m.id,due:document.getElementById('cm_tdue').value,note:n});
       if(r&&r.ok){document.getElementById('cm_tnote').value='';toast('נשמר ✓');CMREMS=null;cmTasksPaint(m);}else toast((r&&r.error)||'לא נשמר');};}
-  if(!isNew)(async()=>{const r=await api('GET','/api/cm/debts?status=open'),box=document.getElementById('cm_debtsbox');if(!box)return;
-    const L=((r&&r.rows)||[]).filter(d=>d.member_id==m.id).map(d=>[CD_KIND[d.kind]?CD_KIND[d.kind][0]:'חוב',d.title,cdOpen(d)])
-      .concat(((r&&r.reqs)||[]).filter(d=>d.member_id==m.id).map(d=>['📞 הודעה',d.jlabel||'',+d.amount||0]));
-    box.innerHTML=(L.length?L.map(x=>`<div class="cdline"><span>${esc(x[0])}${x[1]?' · '+esc(x[1]):''}</span><b>${cdMoney(x[2])}</b></div>`).join('')
+  if(!isNew)(async()=>{const [r,nd]=await Promise.all([api('GET','/api/cm/debts?status=open'),api('GET','/api/members/'+m.id+'/nd')]),box=document.getElementById('cm_debtsbox');if(!box)return;
+    const D=(nd&&nd.debts)||[], OP=D.filter(d=>d.status==='open'), PD=D.filter(d=>d.status==='paid');
+    const L=OP.map(d=>[CD_KIND[d.kind]?CD_KIND[d.kind][0]:'חוב',d.title,cdOpen(d),d.reminded_at?('🔔 הוזכר '+ndDate(d.reminded_at)+' ב'+({voice:'שיחה',sms:'SMS',email:'מייל'}[d.reminded_via]||'')):''])
+      .concat(((r&&r.reqs)||[]).filter(d=>d.member_id==m.id).map(d=>['📞 הודעה',d.jlabel||'',+d.amount||0,'']));
+    box.innerHTML=(L.length?L.map(x=>`<div class="cdline"><span>${esc(x[0])}${x[1]?' · '+esc(x[1]):''}${x[3]?` <small class="cdrem">${esc(x[3])}</small>`:''}</span><b>${cdMoney(x[2])}</b></div>`).join('')
       +`<div class="cdline"><span>סה"כ פתוח</span><b>${cdMoney(L.reduce((s,x)=>s+x[2],0))}</b></div>`:'אין חובות פתוחים 🎉')
+      +(PD.length?`<div class="hintxt" style="margin-top:6px">✅ שולם וסודר (120 יום אחרונים):</div>`+PD.map(d=>`<div class="cdline done"><span>✅ ${esc(d.title||'חוב')} · ${esc(ndDate(d.closed_at||''))}</span><b>${cdMoney(d.amount)}</b></div>`).join(''):'')
       +`<div class="addrow" style="margin-top:6px"><button class="btn sm ghost" id="cm_debtsgo">💰 ניהול החובות שלו — מחיקה, שינוי, הוספה</button></div>`;
     document.getElementById('cm_debtsgo').onclick=()=>{remov.classList.remove('show');cdMember=m.id;cdKind='';cdSt='open';cdData=null;cmSub='debts';
       if(tab!=='comm'){tab='comm';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='comm'));}
@@ -13080,8 +13093,10 @@ function renderCommSend(){
     if(!(MLSETUP&&MLSETUP.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
     const who=b.members.length===1?('ל־'+mName(cmAudience()[0])+' בלבד'):('ל־'+b.members.length+' חברי הקהילה שסימנת');
     if(!await uiConfirm('לשלוח '+who+'?\n\nיוצא מ: '+(cmSender==='neder'?'neder1818@gmail.com (נדרים ונדבות)':'הכתובת הראשית של הכולל')+'\nכל אחד מקבל הודעה נפרדת משלו, בשמו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
+    if(cdRem&&cdRem.ch==='email')b.debt_ids=cdRem.ids;
     const r=await api('POST','/api/mail/send',b);
     if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    if(b.debt_ids){cdRem=null;cdData=null;}
     mlWatch();
   };
   const sw=document.getElementById('cm_swsender'); if(sw)sw.onclick=()=>{cmSender=cmSender==='neder'?'main':'neder';renderCommSend();};
@@ -13416,10 +13431,12 @@ function ymViewSend(){
     // מאיר: "גם מי שאין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי"
     const free=billOn?selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt)).length:0;
     if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 הסכום של כל נמען נשמר בשרת — שלוחת התשלום תיקח אותו משם':'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
-    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,
+    const dids=cdRem&&cdRem.ch===ymCh?cdRem.ids:[];
+    const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,debt_ids:dids,
       recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L}:{k:x.k,id:x.id,amount:x.amt||'',link:L};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
-    toast('המשלוח התחיל ✓');ymTrack(r.job);};
+    if(dids.length){cdRem=null;cdData=null;}
+    toast('המשלוח התחיל ✓'+(dids.length?' · נרשם בכרטיסים':''));ymTrack(r.job);};
   ymWireLink(prevLink);
   ymWireVoice(first,sel);
   ymWireNikud();

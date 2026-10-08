@@ -494,6 +494,12 @@ def ensure_schema():
     # מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — ערוץ התזכורת לכל חוב
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN channel TEXT")
     except Exception: pass
+    # מתי ואיך הזכרנו לו — מאיר: "שיהיה כתוב אצלו בכרטיס מה עשינו"
+    for col in ('reminded_at', 'reminded_via'):
+        try: con.execute(f"ALTER TABLE cm_debt ADD COLUMN {col} TEXT")
+        except Exception: pass
+    try: con.execute("ALTER TABLE cm_debt ADD COLUMN n_reminded INTEGER DEFAULT 0")
+    except Exception: pass
     # מאיר: "אם שלחנו הודעה עם סכום והוא שילם — המערכת צריכה להתעדכן שהוא שילם"
     # req_off — בקשת התשלום שבהודעה בוטלה במסך החובות (לא תוצע יותר בטלפון)
     for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT'), ('req_off', 'TEXT')):
@@ -13343,7 +13349,8 @@ def member_nd(con, mid):
     for t in txs:
         if (t['amount'] or 0) > 0:
             years[(t['iso'] or '')[:4]] = round(years.get((t['iso'] or '')[:4], 0) + t['amount'], 2)
-    debts = [dict(r) for r in con.execute("SELECT * FROM cm_debt WHERE member_id=? AND status='open' ORDER BY COALESCE(NULLIF(due,''),created)", (mid,))]
+    debts = [dict(r) for r in con.execute("SELECT * FROM cm_debt WHERE member_id=? AND (status='open' OR (status='paid' AND COALESCE(closed_at,'')>=?)) "
+                                           "ORDER BY status='paid', COALESCE(NULLIF(due,''),created)", (mid, (il_now() - datetime.timedelta(days=120)).strftime('%Y-%m-%d')))]
     tasks = [dict(r) for r in con.execute("SELECT * FROM cm_task WHERE member_id=? ORDER BY done, due", (mid,))]
     return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years,
             'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0), 2),
@@ -17713,6 +17720,10 @@ class H(BaseHTTPRequestHandler):
                 ra = r.get('amount') or ym_amt(amount) or amount
                 con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued',?)",
                             (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or ''), r.get('amount') or ''))
+            if not b.get('test') and b.get('debt_ids'):
+                cm_debts_reminded(con, b.get('debt_ids'), ch)
+                # תזכורת על חוב קיים אינה בקשת תשלום נוספת — החוב עצמו הוא הבקשה (אחרת הסכום נספר פעמיים)
+                con.execute("UPDATE ym_msg SET req_off='debt' WHERE job=?", (jid,))
             con.commit(); con.close()
             import threading as _thr
             _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
@@ -17841,6 +17852,8 @@ class H(BaseHTTPRequestHandler):
                              x.get('link', ''), x.get('amount', '')))
             # "מייל נדרים ונדבות" (מחלון הקהילה / ימות המשיח) יוצא מ-neder1818@gmail.com
             con.execute("UPDATE mail_batch SET sender=? WHERE id=?", ('neder' if (b.get('sender') == 'neder' and is_members) else 'main', bid))
+            if is_members and b.get('debt_ids'):
+                cm_debts_reminded(con, b.get('debt_ids'), 'email')
             con.commit(); con.close()
             st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
                        'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,
@@ -18934,7 +18947,10 @@ class H(BaseHTTPRequestHandler):
             con = db()
             con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?)",
                         (mid, b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt', str(b.get('title') or '')[:200], a,
-                         str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(), cm_default_channel(con, mid)))
+                         str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(),
+                         b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid)))
+            cm_debt_log(con, mid, con.execute("SELECT last_insert_rowid()").fetchone()[0],
+                        '➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', str(b.get('title') or '').strip() or '—', a))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/cm/debts/(\d+)$', self.path)
@@ -18946,6 +18962,7 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(200, {'ok': False, 'error': 'לא נמצא'})
             if act == 'paid':
                 con.execute("UPDATE cm_debt SET paid=amount, status='paid', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
+                cm_debt_log(con, d['member_id'], did, '✅ סומן ששולם: %s ₪%g' % (d['title'] or 'חוב', round((d['amount'] or 0) - (d['paid'] or 0), 2)))
             elif act == 'partial':
                 p = round(_amt2(b.get('amount')), 2)
                 np_ = round((d['paid'] or 0) + p, 2)
@@ -18954,6 +18971,7 @@ class H(BaseHTTPRequestHandler):
                             (min(np_, d['amount'] or 0), 'paid' if done else 'open', now_iso() if done else None, now_iso(), did))
             elif act == 'cancel':
                 con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
+                cm_debt_log(con, d['member_id'], did, '✕ בוטל: %s ₪%g' % (d['title'] or 'חוב', d['amount'] or 0))
             elif act == 'reopen':
                 con.execute("UPDATE cm_debt SET status='open', closed_at=NULL, updated=? WHERE id=?", (now_iso(), did))
             elif act == 'delete':
@@ -20917,11 +20935,37 @@ def nd_member_index(con):
     return idx
 
 
+def cm_debt_log(con, member_id, debt_id, summary, body=''):
+    """שורה ביומן של חבר הקהילה על חוב / התחייבות (נוסף, הוזכר, שולם, בוטל)."""
+    if not member_id:
+        return
+    try:
+        con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                    (member_id, today_iso(), 'חובות', summary[:300], (body or '')[:1000], 'note', 'debt:%s' % debt_id, now_iso()))
+    except Exception:
+        pass
+
+
+def cm_debts_reminded(con, debt_ids, via):
+    """התזכורת יצאה (שיחה / SMS / מייל) — נרשם על כל חוב וביומן של החבר."""
+    ids = [int(x) for x in (debt_ids or []) if str(x).isdigit()]
+    if not ids:
+        return 0
+    VIA = {'voice': '📞 שיחה', 'sms': '💬 SMS', 'email': '✉️ מייל'}
+    n = 0
+    for d in con.execute("SELECT id,member_id,title,amount,paid FROM cm_debt WHERE status='open' AND id IN (%s)" % ','.join('?' * len(ids)), ids).fetchall():
+        con.execute("UPDATE cm_debt SET reminded_at=?, reminded_via=?, n_reminded=COALESCE(n_reminded,0)+1, updated=? WHERE id=?",
+                    (now_iso(), via, now_iso(), d['id']))
+        cm_debt_log(con, d['member_id'], d['id'], '🔔 נשלחה תזכורת ב%s על %s ₪%g' % (VIA.get(via, via), d['title'] or 'חוב', round((d['amount'] or 0) - (d['paid'] or 0), 2)))
+        n += 1
+    return n
+
+
 def cm_debt_pay(con, member_id, amount, note=''):
     """תשלום של חבר קהילה סוגר את החובות הפתוחים שלו — הישן קודם. מחזיר כמה כוסה."""
     left = round(float(amount or 0), 2)
     used = 0.0
-    for d in con.execute("SELECT id,amount,paid FROM cm_debt WHERE member_id=? AND status='open' ORDER BY COALESCE(NULLIF(due,''),created),id",
+    for d in con.execute("SELECT id,amount,paid,title FROM cm_debt WHERE member_id=? AND status='open' ORDER BY COALESCE(NULLIF(due,''),created),id",
                          (member_id,)).fetchall():
         if left <= 0:
             break
@@ -20934,6 +20978,10 @@ def cm_debt_pay(con, member_id, amount, note=''):
         con.execute("UPDATE cm_debt SET paid=?, status=?, updated=?, closed_at=?, "
                     "note=CASE WHEN COALESCE(note,'')='' THEN ? ELSE note||' · '||? END WHERE id=?",
                     (paid, 'paid' if done else 'open', now_iso(), now_iso() if done else None, note, note, d['id']))
+        # מאיר: "אם הוא שילם בנדרים — שיראו בכרטיס שלו שזה סודר כבר ושולם, ויימחק מחובות"
+        ttl = (d['title'] or '').strip() or 'חוב'
+        cm_debt_log(con, member_id, d['id'], ('✅ שולם וסודר: %s ₪%g' % (ttl, d['amount'] or 0)) if done
+                    else ('💳 שולם חלקית: %s ₪%g מתוך ₪%g' % (ttl, take, d['amount'] or 0)), note)
         left = round(left - take, 2)
         used += take
     return used
@@ -21053,7 +21101,7 @@ def ym_req_rows(con, st='open'):
     days = YM_REQ_DAYS if st == 'open' else 90
     since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
     w = {'open': " AND COALESCE(m.paid_at,'')='' AND COALESCE(m.req_off,'')=''",
-         'paid': " AND COALESCE(m.paid_at,'')<>''", 'canceled': " AND COALESCE(m.req_off,'')<>''"}.get(st, '')
+         'paid': " AND COALESCE(m.paid_at,'')<>''", 'canceled': " AND COALESCE(m.req_off,'')<>''"}.get(st, '') + " AND COALESCE(m.req_off,'')<>'debt'"
     rows = [dict(r) for r in con.execute(
         "SELECT m.id,m.kind,m.ref_id,m.name,m.phone,m.amount,m.sent_ts,m.paid_at,m.paid_amount,m.paid_via,m.req_off,m.job,"
         "j.label jlabel FROM ym_msg m LEFT JOIN ym_job j ON j.id=m.job WHERE m.status='sent' AND CAST(COALESCE(m.amount,'0') AS REAL)>0 "
