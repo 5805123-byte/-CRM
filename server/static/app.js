@@ -12334,7 +12334,7 @@ function renderComm(){
 // מאיר: "שיהיה מערכת חובות והתחייבויות של הקהילה בלבד… תסנכרן נדרים פלוס כל כמה זמן, שיראו
 // שם הוראות קבע שחזרו… להעלות חובות ידנית ע"י העלאת קבצים… וככה המערכת לשליחת התראות
 // תעבוד באופן מסודר". נפרד מהחובות של התורמים. תשלום בטלפון סוגר את החוב לבד.
-let cdData=null, cdSt='open', cdKind='', cdSel=new Set(), cdAdd=false, cdImp=null;
+let cdData=null, cdSt='open', cdKind='', cdSel=new Set(), cdAdd=false, cdImp=null, cdMember=0;
 const CD_KIND={debt:['חוב','cdk-debt'],pledge:['התחייבות','cdk-pl'],hok:['הו"ק חזרה','cdk-hok']};
 const cdOpen=d=>Math.max(0,(+d.amount||0)-(+d.paid||0));
 const cdMoney=a=>'₪'+(+a||0).toLocaleString('he-IL',{maximumFractionDigits:2});
@@ -12344,14 +12344,25 @@ const cdPick=v=>{const m=/#(\d+)\s*$/.exec(v||'');return m?+m[1]:0;};
 async function renderCommDebts(){
   chips.innerHTML='';
   if(!cdData){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען חובות…</div>';await cdLoad();if(tab!=='comm'||cmSub!=='debts')return;}
-  const D=cdData, all=D.rows||[];
+  const D=cdData;
+  // מאיר: "אני רוצה מקום שיהיה אפשר לראות את כל החובות שלו במערכת, ולמחוק" — החובות, וגם
+  // ההודעות שנשלחו עם סכום (מה שהטלפון מציע לשלם), באותה רשימה
+  const reqs=(D.reqs||[]).map(r=>({...r,_req:1,kind:'msg',title:r.jlabel||'בקשת תשלום בהודעה',mphone:r.phone,due:(r.sent_ts||'').slice(0,10)}));
+  let all=(D.rows||[]).concat(reqs);
+  if(cdMember)all=all.filter(d=>d.member_id==cdMember);
   let rows=all.filter(d=>!cdKind||d.kind===cdKind);
-  if((q||'').trim())rows=rows.filter(d=>matchStr([d.ml,d.mf,d.title,d.note,d.mphone,d.amount].join(' '),q.trim()));
-  const selRows=rows.filter(d=>cdSel.has(d.id)&&d.status==='open');
-  const KF=[['','הכל'],['hok','🔴 הו"ק חזרה'],['debt','חוב'],['pledge','התחייבות']];
+  if((q||'').trim())rows=rows.filter(d=>matchStr([d.ml,d.mf,d.name,d.title,d.note,d.mphone,d.amount].join(' '),q.trim()));
+  if(cdMember||cdKind==='msg'||cdSt!=='open')rows.sort((a,b)=>String(b.due||b.created||'').localeCompare(String(a.due||a.created||'')));
+  const selRows=rows.filter(d=>!d._req&&cdSel.has(d.id)&&d.status==='open');
+  const KF=[['','הכל'],['hok','🔴 הו"ק חזרה'],['debt','חוב'],['pledge','התחייבות'],['msg','📞 מהודעות']];
+  const reqOpen=reqs.filter(r=>r.status==='open'), cm=cdMember&&(MEMBERS||[]).find(x=>x.id==cdMember);
+  const memOpen=cdMember?all.filter(d=>d.status==='open').reduce((s,d)=>s+(d._req?(+d.amount||0):cdOpen(d)),0):0;
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cd_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">💰 חובות והתחייבויות — הקהילה</div>
-    <div class="cdsum"><span>פתוח: <b>${cdMoney(D.open_sum)}</b></span><span>${D.open_n||0} חובות · ${D.open_members||0} חברים</span></div>
+    ${cdMember?`<div class="cdmem"><b>👤 ${esc(cm?mName(cm):'#'+cdMember)}</b> — כל החובות · פתוח <b>${cdMoney(memOpen)}</b>
+        <button class="btn sm ghost" id="cd_allm">✕ הצג את כל הקהילה</button></div>`
+      :`<div class="cdsum"><span>פתוח: <b>${cdMoney(D.open_sum)}</b></span><span>${D.open_n||0} חובות · ${D.open_members||0} חברים</span>
+        ${cdSt==='open'&&reqOpen.length?`<span>📞 מהודעות (${D.req_days||14} יום): <b>${cdMoney(reqOpen.reduce((s,r)=>s+(+r.amount||0),0))}</b> · ${reqOpen.length}</span>`:''}</div>`}
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
@@ -12360,26 +12371,39 @@ async function renderCommDebts(){
     ${cdAdd?cdAddHTML():''}${cdImp?cdImpHTML():''}
     <div class="bqtabs">${[['open','פתוחים'],['paid','שולמו'],['all','הכל']].map(([k,l])=>`<button class="bqt ${cdSt===k?'on':''}" data-cdst="${k}">${l}</button>`).join('')}</div>
     <div class="bqseg">${KF.map(([k,l])=>`<button class="${cdKind===k?'on':''}" data-cdk="${k}">${l} <small>${all.filter(d=>!k||d.kind===k).length}</small></button>`).join('')}</div>
-    ${cdSt==='open'&&rows.length?`<div class="bqbar"><button class="btn sm ghost" id="cd_selall">${selRows.length===rows.filter(d=>d.status==='open').length&&selRows.length?'✕ בטל סימון':'☑ סמן הכל'}</button>
+    ${cdSt==='open'&&rows.some(d=>!d._req)?`<div class="bqbar"><button class="btn sm ghost" id="cd_selall">${selRows.length===rows.filter(d=>!d._req&&d.status==='open').length&&selRows.length?'✕ בטל סימון':'☑ סמן הכל'}</button>
       <button class="btn sm" id="cd_ym" ${selRows.length?'':'disabled'}>📞 שלח תזכורת בימות (${selRows.length})</button>
       <span class="hintxt">${selRows.length?('סה"כ '+cdMoney(selRows.reduce((s,d)=>s+cdOpen(d),0))):'סמן חובות כדי לשלוח תזכורת עם הסכום של כל אחד'}</span></div>`:''}
-    <div class="cdlist">${rows.map(d=>{const k=CD_KIND[d.kind]||['חוב',''],o=cdOpen(d);
+    <div class="cdlist">${rows.map(d=>{if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['חוב',''],o=cdOpen(d);
       return `<div class="cdrow ${d.status}">
         ${d.status==='open'?`<input type="checkbox" class="cdck" data-id="${d.id}" ${cdSel.has(d.id)?'checked':''}>`:'<span></span>'}
-        <div class="cdmain"><b>${esc(((d.ml||'')+' '+(d.mf||'')).trim()||'—')}</b> <span class="cdk ${k[1]}">${k[0]}</span>
+        <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(((d.ml||'')+' '+(d.mf||'')).trim()||'—')}</b> <span class="cdk ${k[1]}">${k[0]}</span>
           <span class="cdtitle">${esc(d.title||'')}</span>
           <small class="cdmeta">${d.due?esc(d.due)+' · ':''}${esc(d.source||'')}${d.note?(' · '+esc(d.note)):''}${d.mphone?` · <span dir="ltr">${esc(d.mphone)}</span>`:''}</small></div>
         <div class="cdamt"><b>${cdMoney(d.status==='open'?o:d.amount)}</b>${d.paid>0&&d.status==='open'?`<small>שולם ${cdMoney(d.paid)} מ-${cdMoney(d.amount)}</small>`:''}
           ${d.status==='paid'?'<small class="ndok">✓ שולם</small>':(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
         <div class="bqacts">${d.status==='open'?`<button class="btn sm ghost" data-cda="paid" data-id="${d.id}" title="שולם במלואו">✓</button>
           <button class="btn sm ghost" data-cda="partial" data-id="${d.id}" title="תשלום חלקי">½</button>
+          <button class="btn sm ghost" data-cda="edit" data-id="${d.id}" title="שנה סכום">✎</button>
           <button class="btn sm ghost" data-cda="cancel" data-id="${d.id}" title="בטל">✕</button>`
-          :`<button class="btn sm ghost" data-cda="reopen" data-id="${d.id}" title="פתח מחדש">↩</button>`}</div></div>`;}).join('')||'<div class="empty">אין כאן חובות</div>'}</div>
+          :`<button class="btn sm ghost" data-cda="reopen" data-id="${d.id}" title="פתח מחדש">↩</button>`}
+          <button class="btn sm ghost" data-cda="delete" data-id="${d.id}" title="מחק לגמרי">🗑️</button></div></div>`;}).join('')||'<div class="empty">אין כאן חובות</div>'}</div>
     ${cdMemberDL()}`;
   cdWire();
 }
+function cdReqRow(d){
+  const nm=((d.ml||'')+' '+(d.mf||'')).trim()||d.name||d.phone||'—';
+  return `<div class="cdrow ${d.status}"><span></span>
+    <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(nm)}</b> <span class="cdk cdk-msg">📞 הודעה</span>
+      <span class="cdtitle">${esc(d.title||'')}</span>
+      <small class="cdmeta">נשלחה ${esc((d.sent_ts||'').slice(0,16))}${d.phone?` · <span dir="ltr">${esc(d.phone)}</span>`:''}${d.status==='open'?' · מוצע בשלוחת התשלום':''}</small></div>
+    <div class="cdamt"><b>${cdMoney(d.amount)}</b>${d.status==='paid'?`<small class="ndok">✓ שולם ${cdMoney(d.paid_amount)}${d.paid_via?' · '+esc(d.paid_via):''}</small>`:(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
+    <div class="bqacts">${d.status==='open'?`<button class="btn sm ghost" data-cdr="paid" data-id="${d.id}" title="שולם">✓</button>
+      <button class="btn sm ghost" data-cdr="amount" data-id="${d.id}" title="שנה סכום">✎</button>
+      <button class="btn sm ghost" data-cdr="cancel" data-id="${d.id}" title="מחק — לא יוצע יותר בטלפון">🗑️</button>`
+      :`<button class="btn sm ghost" data-cdr="reopen" data-id="${d.id}" title="פתח מחדש">↩</button>`}</div></div>`;}
 function cdAddHTML(){return `<div class="bqform"><div class="bqfh"><b>➕ חוב / התחייבות ידני</b><button class="btn sm ghost" id="cda_x">✕</button></div>
-  <div class="bq2"><label class="fld"><span>👤 חבר קהילה</span><input id="cda_m" list="cd_mdl" placeholder="הקלד שם…"></label>
+  <div class="bq2"><label class="fld"><span>👤 חבר קהילה</span><input id="cda_m" list="cd_mdl" placeholder="הקלד שם…" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}"></label>
     <label class="fld"><span>סוג</span><select id="cda_k"><option value="debt">חוב</option><option value="pledge">התחייבות</option></select></label></div>
   <div class="bq2"><label class="fld"><span>💲 סכום (₪)</span><input id="cda_a" inputmode="decimal"></label>
     <label class="fld"><span>📅 תאריך / מועד</span><input id="cda_d" type="date" value="${todayStr()}"></label></div>
@@ -12394,7 +12418,13 @@ function cdImpHTML(){const R=cdImp.rows||[];
       <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${R.filter(r=>r.member_id).length} חובות</button>
         <span class="hintxt">שורה בלי חבר קהילה לא תישמר.</span></div>`:''}</div>`;}
 function cdWire(){const g=id=>document.getElementById(id);
-  g('cd_back').onclick=()=>{cmSub='list';render();};
+  g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
+  const am=g('cd_allm');if(am)am.onclick=()=>{cdMember=0;renderCommDebts();};
+  view.querySelectorAll('.cdname[data-cdm]').forEach(b=>{if(!b.dataset.cdm||cdMember)return;b.onclick=()=>{cdMember=+b.dataset.cdm;cdKind='';renderCommDebts();window.scrollTo(0,0);};});
+  view.querySelectorAll('[data-cdr]').forEach(b=>b.onclick=async()=>{const a=b.dataset.cdr,body={action:a};
+    if(a==='amount'){const v=await uiPrompt('הסכום החדש (₪):','');if(!amtNum(v))return;body.amount=amtNum(v);}
+    if(a==='cancel'&&!await uiConfirm('למחוק את בקשת התשלום?\nהיא לא תוצע יותר בשלוחת התשלום בטלפון.','🗑️ כן, למחוק','לא'))return;
+    const r=await api('POST','/api/ym/req/'+b.dataset.id,body);if(r&&r.ok){cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא עודכן');});
   view.querySelectorAll('[data-cdst]').forEach(b=>b.onclick=async()=>{cdSt=b.dataset.cdst;cdData=null;cdSel.clear();renderCommDebts();});
   view.querySelectorAll('[data-cdk]').forEach(b=>b.onclick=()=>{cdKind=b.dataset.cdk;renderCommDebts();});
   view.querySelectorAll('.cdck').forEach(c=>c.onchange=()=>{c.checked?cdSel.add(+c.dataset.id):cdSel.delete(+c.dataset.id);renderCommDebts();});
@@ -12426,6 +12456,8 @@ function cdWire(){const g=id=>document.getElementById(id);
   view.querySelectorAll('[data-cda]').forEach(b=>b.onclick=async()=>{const a=b.dataset.cda,id=+b.dataset.id,body={action:a};
     if(a==='partial'){const v=await uiPrompt('כמה שולם?','');if(!amtNum(v))return;body.amount=amtNum(v);}
     if(a==='cancel'&&!await uiConfirm('לבטל את החוב?','כן, לבטל','לא'))return;
+    if(a==='delete'&&!await uiConfirm('למחוק את החוב לגמרי? (לא יישאר ברשימה, גם לא ב"הכל")','🗑️ כן, למחוק','לא'))return;
+    if(a==='edit'){const d=(cdData.rows||[]).find(x=>x.id===id);const v=await uiPrompt('הסכום הכולל של החוב (₪):',d?String(d.amount):'');if(!amtNum(v))return;body.amount=amtNum(v);}
     const r=await api('POST','/api/cm/debts/'+id,body);if(r&&r.ok){cdSel.delete(id);cdData=null;renderCommDebts();}else toast('לא עודכן');});
   // 📞 תזכורת בימות — כל נמען עם הסכום הפתוח שלו, בנוסח המתאים
   const ym=g('cd_ym');if(ym)ym.onclick=()=>{const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open');
@@ -12625,7 +12657,8 @@ function openMember(m){
       <button class="btn" id="cm_save" style="flex:2">💾 ${isNew?'הוסף לקהילה':'שמור'}</button>
       ${isNew?'':`<button class="btn ghost" id="cm_send1" style="flex:1"${mHasMail(m)?'':' disabled title="אין כתובת מייל"'}>✉️ שלח לו מייל</button>`}
     </div>
-    ${isNew?'':`<div class="sec"><div class="rbtitle">📧 יומן — מה נשלח אליו</div><div id="cm_log" class="hintxt">טוען…</div>
+    ${isNew?'':`<div class="sec"><div class="rbtitle">💰 חובות ובקשות תשלום</div><div id="cm_debtsbox" class="hintxt">טוען…</div></div>
+    <div class="sec"><div class="rbtitle">📧 יומן — מה נשלח אליו</div><div id="cm_log" class="hintxt">טוען…</div>
       <div class="addrow" style="margin-top:8px"><input id="cm_lognote" placeholder="הערה / שיחה — רישום ידני" style="flex:3"><button class="btn sm ghost" id="cm_logadd" style="flex:1">➕ רשום</button></div></div>
     <div class="sec"><div class="rbtitle">🔀 מיזוג עם חבר אחר</div>
       <div class="hintxt">אותו אדם שנכנס פעמיים (למשל "שייר רפאל" ו"שר רפאל")? הקלד את השם השני — הכרטיס הזה נשאר, ומקבל ממנו כל מה שחסר.</div>
@@ -12633,6 +12666,15 @@ function openMember(m){
     <div class="addrow" style="margin-top:14px"><button class="btn sm ghost danger" id="cm_del" style="flex:1">🗑️ הסר מרשימת הקהילה</button></div>`}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  if(!isNew)(async()=>{const r=await api('GET','/api/cm/debts?status=open'),box=document.getElementById('cm_debtsbox');if(!box)return;
+    const L=((r&&r.rows)||[]).filter(d=>d.member_id==m.id).map(d=>[CD_KIND[d.kind]?CD_KIND[d.kind][0]:'חוב',d.title,cdOpen(d)])
+      .concat(((r&&r.reqs)||[]).filter(d=>d.member_id==m.id).map(d=>['📞 הודעה',d.jlabel||'',+d.amount||0]));
+    box.innerHTML=(L.length?L.map(x=>`<div class="cdline"><span>${esc(x[0])}${x[1]?' · '+esc(x[1]):''}</span><b>${cdMoney(x[2])}</b></div>`).join('')
+      +`<div class="cdline"><span>סה"כ פתוח</span><b>${cdMoney(L.reduce((s,x)=>s+x[2],0))}</b></div>`:'אין חובות פתוחים 🎉')
+      +`<div class="addrow" style="margin-top:6px"><button class="btn sm ghost" id="cm_debtsgo">💰 ניהול החובות שלו — מחיקה, שינוי, הוספה</button></div>`;
+    document.getElementById('cm_debtsgo').onclick=()=>{remov.classList.remove('show');cdMember=m.id;cdKind='';cdSt='open';cdData=null;cmSub='debts';
+      if(tab!=='comm'){tab='comm';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='comm'));}
+      render();window.scrollTo(0,0);};})();
   const vals=()=>({last:document.getElementById('cm_last').value.trim(),first:document.getElementById('cm_first').value.trim(),
     seat:document.getElementById('cm_seat').value.trim(),phone:document.getElementById('cm_phone').value.trim(),
     email:document.getElementById('cm_email').value.trim(),addr:document.getElementById('cm_addr').value.trim(),

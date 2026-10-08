@@ -489,7 +489,8 @@ def ensure_schema():
     try: con.execute("ALTER TABLE nd_keva ADD COLUMN off TEXT")
     except Exception: pass
     # מאיר: "אם שלחנו הודעה עם סכום והוא שילם — המערכת צריכה להתעדכן שהוא שילם"
-    for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT')):
+    # req_off — בקשת התשלום שבהודעה בוטלה במסך החובות (לא תוצע יותר בטלפון)
+    for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT'), ('req_off', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
         except Exception: pass
     # ימות המשיח — מאיר: "שיוכלו לראות אם המספר ענה להודעה וכמה זמן הוא היה על הקו"
@@ -16055,9 +16056,11 @@ class H(BaseHTTPRequestHandler):
                     "SELECT d.*, m.last ml, m.first mf, m.phone mphone FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" + w +
                     " ORDER BY d.status, COALESCE(NULLIF(d.due,''),d.created) DESC, d.id DESC", (() if st == 'all' else (st,)))]
                 tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
+                reqs = ym_req_rows(con, st)
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2]})
+            return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2],
+                                    'reqs': reqs, 'req_days': YM_REQ_DAYS})
         if self.path.split('?')[0] == '/api/nd/kevas':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             bad = (qs.get('bad') or ['0'])[0] == '1'
@@ -16094,7 +16097,9 @@ class H(BaseHTTPRequestHandler):
                     k['ivr'] = k['id'] in use
                     k['by'] = 'טלפון' if (';' + (k['phone'] or '') + ';').find(';' + phone + ';') >= 0 else 'חבר הקהילה'
                 tor = [dict(r) for r in con.execute("SELECT id,name,phones,member_id FROM nd_torem WHERE ';'||phones||';' LIKE ?", (like,))]
-                msg = con.execute("SELECT amount,sent_ts,paid_at FROM ym_msg WHERE phone=? AND status='sent' ORDER BY id DESC LIMIT 1", (phone,)).fetchone()
+                msg = con.execute("SELECT amount,sent_ts,paid_at FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' "
+                                  "AND CAST(COALESCE(amount,'0') AS REAL)>0 AND COALESCE(sent_ts,'')>=? ORDER BY id DESC LIMIT 1",
+                                  (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone()
                 debt = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id IN (%s) AND status='open'" % ','.join('?' * len(mids)), mids).fetchone()[0] if mids else 0
                 key = ivr_key(con)
                 n_all = con.execute("SELECT COUNT(*) FROM nd_keva").fetchone()[0]
@@ -18542,11 +18547,40 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
             elif act == 'reopen':
                 con.execute("UPDATE cm_debt SET status='open', closed_at=NULL, updated=? WHERE id=?", (now_iso(), did))
+            elif act == 'delete':
+                con.execute("DELETE FROM cm_debt WHERE id=?", (did,))
             elif act == 'edit':
                 con.execute("UPDATE cm_debt SET title=?, amount=?, due=?, kind=?, note=?, updated=? WHERE id=?",
                             (str(b.get('title', d['title']) or '')[:200], round(_amt2(b.get('amount', d['amount'])), 2),
                              str(b.get('due', d['due']) or '')[:10], b.get('kind', d['kind']), str(b.get('note', d['note']) or '')[:300], now_iso(), did))
             con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/ym/req/(\d+)$', self.path)
+        if m:
+            # בקשת תשלום מהודעה: ✓ שולם (ידני) / ✕ בטל — לא תוצע בטלפון / ↩ פתח מחדש / ✎ סכום
+            rid = int(m.group(1)); act = b.get('action')
+            con = db()
+            try:
+                r = con.execute("SELECT * FROM ym_msg WHERE id=?", (rid,)).fetchone()
+                if not r:
+                    return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+                if act == 'paid':
+                    con.execute("UPDATE ym_msg SET paid_amount=?, paid_at=?, paid_via='סומן ידנית', req_off=NULL WHERE id=?",
+                                (_ivr_amt(b.get('amount')) or _ivr_amt(r['amount']), il_now().strftime('%Y-%m-%d %H:%M:%S'), rid))
+                elif act == 'cancel':
+                    con.execute("UPDATE ym_msg SET req_off=? WHERE id=?", (now_iso(), rid))
+                elif act == 'reopen':
+                    con.execute("UPDATE ym_msg SET req_off=NULL, paid_at=NULL, paid_amount=NULL, paid_via=NULL WHERE id=?", (rid,))
+                elif act == 'amount':
+                    a = _ivr_amt(b.get('amount'))
+                    if not a:
+                        return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+                    con.execute("UPDATE ym_msg SET amount=? WHERE id=?", ('%g' % a, rid))
+                else:
+                    return self._send(200, {'ok': False, 'error': 'פעולה לא מוכרת'})
+                con.commit()
+            finally:
+                con.close()
             return self._send(200, {'ok': True})
         if self.path == '/api/cm/debts/import':
             # העלאת חובות מקובץ (אקסל / CSV) או מהדבקה — קודם תצוגה עם זיהוי, ואז שמירה
@@ -20412,13 +20446,41 @@ def _cm_rows_from_table(rows):
     return out
 
 
+YM_REQ_DAYS = 14     # כמה ימים הודעה עם סכום מוצעת בשלוחת התשלום
+
+
+def ym_req_rows(con, st='open'):
+    """בקשות תשלום מהודעות — הודעה שנשלחה עם סכום. מאיר: "אני רוצה מקום שיהיה אפשר לראות את
+    כל החובות שלו במערכת, ולמחוק". פתוחה = עוד לא שולמה ולא בוטלה, ב-14 הימים שבהם הטלפון מציע
+    אותה. שולמו / הכל — 90 יום אחורה."""
+    days = YM_REQ_DAYS if st == 'open' else 90
+    since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+    w = {'open': " AND COALESCE(m.paid_at,'')='' AND COALESCE(m.req_off,'')=''",
+         'paid': " AND COALESCE(m.paid_at,'')<>''", 'canceled': " AND COALESCE(m.req_off,'')<>''"}.get(st, '')
+    rows = [dict(r) for r in con.execute(
+        "SELECT m.id,m.kind,m.ref_id,m.name,m.phone,m.amount,m.sent_ts,m.paid_at,m.paid_amount,m.paid_via,m.req_off,m.job,"
+        "j.label jlabel FROM ym_msg m LEFT JOIN ym_job j ON j.id=m.job WHERE m.status='sent' AND CAST(COALESCE(m.amount,'0') AS REAL)>0 "
+        "AND COALESCE(m.sent_ts,'')>=?" + w + " ORDER BY m.id DESC", (since,))]
+    midx = nd_member_index(con)
+    names = {r['id']: (r['last'], r['first']) for r in con.execute("SELECT id,last,first FROM members")}
+    for r in rows:
+        mid = r['ref_id'] if r['kind'] == 'm' and r['ref_id'] in names else None
+        if not mid:
+            ms = midx.get(r['phone'] or '') or set()
+            mid = next(iter(ms)) if len(ms) == 1 else None
+        r['member_id'] = mid
+        r['ml'], r['mf'] = names.get(mid, ('', '')) if mid else ('', '')
+        r['status'] = 'canceled' if r['req_off'] else ('paid' if r['paid_at'] else 'open')
+    return rows
+
+
 def ym_mark_paid(con, phone, amount, via, at=None, before=None):
     """ההודעה האחרונה עם סכום שנשלחה למספר (30 יום) ועוד לא סומנה — שולמה. מחזיר את מזהה ההודעה."""
     if not phone:
         return None
     at = at or il_now().strftime('%Y-%m-%d %H:%M:%S')
     since = (il_now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
-    m = con.execute("SELECT id FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(paid_at,'')='' AND COALESCE(sent_ts,'')>=? "
+    m = con.execute("SELECT id FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' AND COALESCE(sent_ts,'')>=? "
                     "AND COALESCE(sent_ts,'')<=? ORDER BY id DESC LIMIT 1", (phone, since, before or '9999')).fetchone()
     if not m:
         return None
@@ -20706,7 +20768,8 @@ def ivr_answer(P):
         mid = next(iter(mids)) if len(mids) == 1 else None
         # הסכום — מההודעה האחרונה שנשלחה למספר הזה (14 יום), אם הייתה
         last = con.execute("SELECT amount,job FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
-                           "AND COALESCE(paid_at,'')='' ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
+                           "AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' AND CAST(COALESCE(amount,'0') AS REAL)>0 "
+                           "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
         job_amt = _ivr_amt(last['amount']) if last else 0
         job = last['job'] if last else 0
         ks = ivr_kevas(con, phone, mids)
