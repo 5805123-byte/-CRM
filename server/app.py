@@ -20134,6 +20134,9 @@ def bq_post_tx(con, t, force=False):
             return False
     sch = con.execute("SELECT for_cat,for_note FROM bq_sched WHERE id=?", (t['schedule_id'],)).fetchone() if t['schedule_id'] else None
     cat = ((sch['for_cat'] if sch else '') or '').strip()
+    if not cat and t['donor_id']:
+        # לא נקבע "עבור מה" להוראה — לוקחים את מה שכבר רשום בכרטיס התורם
+        cat = donor_known_purpose(con, t['donor_id']).split('·')[0].strip()
     note = ' · '.join(x for x in (((sch['for_note'] if sch else '') or '').strip(), (t.get('description') or '').strip(), t['card']) if x)
     con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,
                        recurring,donor_id,category,processed,source,status,note)
@@ -20271,6 +20274,29 @@ def _bq_loop():
         time.sleep(max(900, int(os.environ.get('BANQUEST_SECONDS') or 3600)))
 
 
+def donor_known_purpose(con, donor_id):
+    """"עבור מה" שכבר רשום בכרטיס התורם — כמו בראש הכרטיס (purposeText): יששכר־זבולון,
+    ההתחייבויות החודשיות, והייעוד שנקבע ידנית. מאיר: "אצל רוב התורמים כתוב כבר במערכת
+    עבור מה זה התרומה הקבועה"."""
+    if not donor_id:
+        return ''
+    parts = []
+    if con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1 AND category LIKE '%יששכר%' "
+                   "AND COALESCE(status,'')<>'הופסק' LIMIT 1", (donor_id,)).fetchone() \
+            or con.execute("SELECT 1 FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0 LIMIT 1", (donor_id,)).fetchone():
+        parts.append('יששכר־זבולון')
+    for r in con.execute("SELECT category FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1 AND COALESCE(status,'')<>'הופסק' ORDER BY id", (donor_id,)):
+        c = (r['category'] or '').strip()
+        if c and c not in parts:
+            parts.append(c)
+    d = con.execute("SELECT purpose FROM donors WHERE id=?", (donor_id,)).fetchone()
+    for c in ((d['purpose'] if d else '') or '').split('·'):
+        c = c.strip()
+        if c and c not in parts:
+            parts.append(c)
+    return ' · '.join(parts)
+
+
 def bq_sched_rows(con, donor_id=None):
     q = ("SELECT s.*, c.identifier, c.first cf, c.last cl, c.email cemail, p.card_type, p.last4, p.exp_m, p.exp_y, "
          "d.last dl, d.first dfi FROM bq_sched s LEFT JOIN bq_cust c ON c.id=s.customer_id "
@@ -20283,6 +20309,7 @@ def bq_sched_rows(con, donor_id=None):
         x = dict(r)
         x['donor_name'] = ((x.pop('dl') or '') + ' ' + (x.pop('dfi') or '')).strip()
         x['bq_name'] = ' '.join(v for v in ((x.pop('cf') or '').strip(), (x.pop('cl') or '').strip()) if v) or (x.get('identifier') or x.get('title') or '')
+        x['known_for'] = donor_known_purpose(con, x.get('donor_id'))
         out.append(x)
     return out
 

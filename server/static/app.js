@@ -6241,7 +6241,9 @@ const BQ_ST={settled:['עבר','ok'],captured:['עבר','ok'],approved:['עבר'
   returned:['חזר','bad'],cancelled:['בוטל','off'],voided:['בוטל','off']};
 function bqForOpts(cur){const L=BQ_FOR();if(cur&&!L.includes(cur))L.unshift(cur);
   return '<option value="">— עבור מה —</option>'+L.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');}
-function bqForTxt(r){const t=[r.for_cat,r.for_note].filter(Boolean).join(' · ');return t?('עבור: '+t):'עבור: — לחץ להוסיף';}
+// מאיר: "אצל רוב התורמים כתוב כבר במערכת עבור מה… לא צריך להיות כתוב כאן 'לחץ להוסיף' —
+// רק אם נכנסים לכרטיס שלו". ברשימה: מה שנקבע להוראה, ואם לא — מה שרשום בכרטיס. אחרת כלום.
+function bqForTxt(r){const t=[r.for_cat,r.for_note].filter(Boolean).join(' · ');return t?('עבור: '+t):(r.known_for?('עבור: '+r.known_for):'');}
 async function bqLoad(){
   const [st,ls]=await Promise.all([api('GET','/api/bq/status'),api('GET','/api/bq/list?kind='+bqTab+'&q='+encodeURIComponent(bqQ))]);
   bqStat=st||{}; bqRows=(ls&&ls.rows)||[];
@@ -6273,10 +6275,11 @@ function bqSchedRow(r){const op=bqOpen==='s'+r.id;
   const who=r.donor_name||r.bq_name||r.title||'?';
   return `<div class="bqrow ${op?'op':''}"><button class="bqrh" data-op="s${r.id}">
       <span class="bqdot ${r.active?'ok':'off'}"></span>
-      <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך לתורם</small>'}<span class="bqfor">${esc(bqForTxt(r))}</span></span>
+      <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך לתורם</small>'}${bqForTxt(r)?`<span class="bqfor">${esc(bqForTxt(r))}</span>`:''}</span>
       <span class="bqamt"><b>${bqMoney(r.amount)}</b><small>${r.active?('הבא '+esc(bqDate(r.next_run))):'מושהה'}${r.num_left?(' · נשארו '+r.num_left):''}</small></span></button>
     ${op?`<div class="bqrb">
-      <div class="bq2"><label class="fld"><span>🎯 עבור מה</span><select id="bqs_cat">${bqForOpts(r.for_cat||'')}</select></label>
+      ${r.known_for&&!r.for_cat?`<div class="hintxt">🎯 בכרטיס התורם רשום: <b>${esc(r.known_for)}</b> — החיובים נרשמים על זה. לשנות רק להוראה הזו — בחר למטה.</div>`:''}
+      <div class="bq2"><label class="fld"><span>🎯 עבור מה${r.known_for&&!r.for_cat?' (אחר)':''}</span><select id="bqs_cat">${bqForOpts(r.for_cat||'')}</select></label>
         <label class="fld"><span>פירוט (מופיע בכרטיס)</span><input id="bqs_note" value="${esc(r.for_note||'')}" placeholder="למשל: לע״נ אביו"></label></div>
       <div class="bq2"><label class="fld"><span>💲 סכום</span><input id="bqs_amt" inputmode="decimal" value="${esc(r.amount)}"></label>
         <label class="fld"><span>📅 החיוב הבא</span><input id="bqs_next" type="date" value="${esc(r.next_run||'')}"></label></div>
@@ -6438,7 +6441,7 @@ async function bqDonorBlock(d,body){
   box.innerHTML=`<div class="bqcard"><div class="bqfh"><b>🏦 בנק ווסט</b>
       <span>${pms.length?`<button class="btn sm bqgo" id="bqd_once">⚡ חיוב חד-פעמי</button> <button class="btn sm ghost" id="bqd_rec">🔁 הוראת קבע</button>`:''}</span></div>
     ${sch.map(s=>`<div class="bqplan"><span><b>${bqMoney(s.amount)}</b> ${s.active?('· הבא '+esc(bqDate(s.next_run))):'· <i>מושהה</i>'} · •••• ${esc(s.last4||'')}${s.num_left?(' · נשארו '+s.num_left):''}
-      <span class="bqfor">${esc(bqForTxt(s))}</span></span></div>`).join('')}
+      ${s.for_cat||s.for_note?`<span class="bqfor">עבור: ${esc([s.for_cat,s.for_note].filter(Boolean).join(' · '))}</span>`:''}</span></div>`).join('')}
     ${tx.length?`<div class="bqpays">${tx.slice(0,5).map(t=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay"><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}</span>
       <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span></div>`;}).join('')}</div>`:''}</div>`;
   const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
