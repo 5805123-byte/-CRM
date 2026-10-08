@@ -371,6 +371,16 @@ def enable_keva(keva_id):
     return _txt_ok(ok, txt)
 
 
+def delete_keva(keva_id):
+    """🗑️ מחיקת הוראת קבע באשראי (DeleteKeva) — לצמיתות."""
+    return _txt_ok(*call('DeleteKeva', {'KevaId': str(keva_id), 'MosadNumber': mosad()}, raw=True))
+
+
+def masav_delete(masav_id):
+    """🗑️ מחיקת הוראה בנקאית (DeleteMasavKeva) — מחיקה רכה, אפשר לשחזר בנדרים פלוס."""
+    return _txt_ok(*call('DeleteMasavKeva', {'MasavId': str(masav_id)}, masav=True, raw=True))
+
+
 def keva_detail(keva_id):
     ok, res = call('GetKevaId', {'KevaId': str(keva_id)})
     return res if ok and isinstance(res, dict) else {}

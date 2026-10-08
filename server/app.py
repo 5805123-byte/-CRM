@@ -499,6 +499,14 @@ def ensure_schema():
     # למה הוראה לא פעילה — "מושבתת" (בנדרים פלוס) / "הסתיימו התשלומים" (יתרת חיובים 0)
     try: con.execute("ALTER TABLE nd_keva ADD COLUMN off TEXT")
     except Exception: pass
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='nd_zero_hok_cleanup_v1'").fetchone():
+            con.execute("DELETE FROM cm_debt WHERE kind='hok' AND status='open' AND COALESCE(amount,0)=0 AND COALESCE(paid,0)=0")
+            con.execute("UPDATE nd_keva SET active=0, off='לא פעילה (אין סכום לחיוב)', error='' "
+                        "WHERE error LIKE '%לא פעיל%' OR error LIKE '%אין סכום%'")
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_zero_hok_cleanup_v1')")
+    except Exception:
+        pass
     # מוסד נוסף בנדרים פלוס — לכל הוראה ועסקה: מאיזה מוסד (ריק = הראשי)
     for tb in ('nd_keva', 'nd_tx'):
         try: con.execute(f"ALTER TABLE {tb} ADD COLUMN mosad TEXT")
@@ -16481,6 +16489,16 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        if self.path.split('?')[0] == '/api/nd/zero':
+            # 🧹 הוראות בלי סכום ("לא פעיל - אין סכום לחיוב") — למחיקה מנדרים פלוס, אחרי אישור
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute(
+                    "SELECT k.id,k.name,k.phone,k.groupe,k.last4,k.kind,k.bank,k.mosad,m.last ml,m.first mf FROM nd_keva k "
+                    "LEFT JOIN members m ON m.id=k.member_id WHERE k.off='לא פעילה (אין סכום לחיוב)' ORDER BY k.name")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/nd/lookup':
             # 🔎 בדיקת מספר מתקשר — מה השלוחה מוצאת לו ולמה (בלי לחייב שום דבר)
             import yemot as _ym
@@ -19281,6 +19299,15 @@ class H(BaseHTTPRequestHandler):
                                         "groupe=COALESCE(?,groupe) WHERE id=?", ('%g' % amt if amt else None, nd_, nd_, grp, kid))
                         what = '✎ עודכנה הוראת הקבע' + (' · סכום ₪%g' % amt if amt else '') + (' · חיוב הבא ' + nd_ if nd_ else '') + \
                                (' · יום ' + str(b.get('day')) if b.get('day') else '') + (' · עבור ' + grp if grp else '')
+                    elif act == 'delete':
+                        # מחיקה — רק בסיסמת המערכת (לא הגבאי), ורק אחרי אישור במסך
+                        if getattr(self, 'role', 'admin') != 'admin':
+                            return self._send(403, {'ok': False, 'error': 'מחיקה בנדרים פלוס — רק בסיסמת המערכת'})
+                        ok, msg = _nd.masav_delete(rid) if bank else _nd.delete_keva(rid)
+                        if ok:
+                            con.execute("UPDATE nd_keva SET active=0, off='נמחקה בנדרים פלוס', error='' WHERE id=?", (kid,))
+                            con.execute("DELETE FROM cm_debt WHERE kind='hok' AND ref=? AND status='open' AND COALESCE(paid,0)=0", (kid,))
+                        what = '🗑️ נמחקה הוראת הקבע בנדרים פלוס'
                     elif act in ('month_next', 'month_prev') and bank:
                         ok, msg = _nd.masav_status(rid, 9 if act == 'month_next' else 8)
                         what = '⏭ הגביה נדחתה לחודש הבא' if act == 'month_next' else '⏮ הגביה הוקדמה לחודש קודם'
@@ -21201,7 +21228,8 @@ def cm_debts_from_keva(con):
     opened = closed = 0
     for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active FROM nd_keva").fetchall():
         d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (k['id'],)).fetchone()
-        bad = k['active'] and (k['error'] or '').strip() and k['member_id']
+        bad = k['active'] and (k['error'] or '').strip() and k['member_id'] and _ivr_amt(k['amount']) > 0 \
+            and not re.search(r'לא פעיל|אין סכום', k['error'] or '')
         # חוב שכבר נסגר (שולם בטלפון / ידנית) על אותה הוראה ב-25 הימים האחרונים — לא נפתח שוב
         recent = con.execute("SELECT 1 FROM cm_debt WHERE kind='hok' AND ref=? AND created>=?",
                              (k['id'], (il_now() - datetime.timedelta(days=25)).strftime('%Y-%m-%d'))).fetchone()
@@ -21213,6 +21241,11 @@ def cm_debts_from_keva(con):
                          now_iso(), now_iso()))
             opened += 1
         elif d and not bad:
+            dd = con.execute("SELECT amount,paid FROM cm_debt WHERE id=?", (d['id'],)).fetchone()
+            if not (dd['amount'] or 0) and not (dd['paid'] or 0):
+                # חוב ₪0 שנפתח בטעות על הוראה לא פעילה — נמחק, לא "שולם"
+                con.execute("DELETE FROM cm_debt WHERE id=?", (d['id'],))
+                continue
             con.execute("UPDATE cm_debt SET status='paid', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · הוראת הקבע עברה / עודכנה') WHERE id=?",
                         (now_iso(), now_iso(), d['id']))
             closed += 1
@@ -21826,7 +21859,11 @@ def _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now):
                          member_id=excluded.member_id, active=1, synced=excluded.synced, error=excluded.error, mosad=excluded.mosad""",
                     (k['id'], k['torem'], k['name'], ';'.join(phs), k['mail'], k['amount'], k['groupe'], k['itra'],
                      k['next'], k['last4'], k['city'], mid, now, k.get('error') or '', k.get('mosad') or ''))
-        # לא פעילה (הסתיימו התשלומים / הוקפאה) — לא נספרת, לא בטלפון ולא ב"חזרו"
+        # מאיר: "הו"ק על 0 שקלים… לא חזר להם שום הו"ק" — נדרים מסמנים הוראה בלי סכום "לא פעיל - אין סכום
+        # לחיוב". זו לא חזרה: ההוראה לא פעילה, בלי שגיאה, ולא נפתח עליה חוב
+        if re.search(r'לא פעיל|אין סכום', k.get('error') or '') or not _ivr_amt(k.get('amount')):
+            con.execute("UPDATE nd_keva SET active=0, off='לא פעילה (אין סכום לחיוב)', error='' WHERE id=?", (k['id'],))
+            continue
         f = (flags or {}).get(k['id'])
         itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
         if (f and not f['enabled']) or itra == '0':
