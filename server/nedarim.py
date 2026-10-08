@@ -10,12 +10,19 @@
 אופציונלי:
     NEDARIM_MOSAD     מספר המוסד (ברירת מחדל 5777499)
     NEDARIM_BASE      כתובת אחרת לבדיקות
+מוסד נוסף — מאיר: "יש לי עוד מספר מוסד בנדרים פלוס שהייתי רוצה שתמשוך משם":
+    NEDARIM_MOSAD2    מספר המוסד השני
+    NEDARIM_API_KEY2  מפתח ה-API של המוסד השני (נוצר בתוך המוסד השני)
+    NEDARIM_NAME2     שם קצר לתצוגה (רשות)   — וכך גם 3
 מספרי זהות שחוזרים מנדרים פלוס לא נשמרים במערכת.
 """
+import contextlib
 import csv
 import io
 import json
 import os
+import threading
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -31,17 +38,60 @@ def _env(k):
     return (os.environ.get(k) or '').strip()
 
 
+_CUR = threading.local()
+
+
+def accounts():
+    """כל המוסדות שמוגדרים ב-Render: הראשי, ואחריו 2, 3. כל אחד עם המפתח שלו."""
+    out = []
+    if _env('NEDARIM_API_KEY'):
+        out.append({'mosad': _env('NEDARIM_MOSAD') or MOSAD_DEFAULT, 'key': _env('NEDARIM_API_KEY'),
+                    'name': _env('NEDARIM_NAME') or 'כולל חצות', 'main': True})
+    for i in ('2', '3'):
+        if _env('NEDARIM_MOSAD' + i) and _env('NEDARIM_API_KEY' + i):
+            out.append({'mosad': _env('NEDARIM_MOSAD' + i), 'key': _env('NEDARIM_API_KEY' + i),
+                        'name': _env('NEDARIM_NAME' + i) or ('מוסד ' + _env('NEDARIM_MOSAD' + i)), 'main': False})
+    return out
+
+
+def account_for(mosad_id):
+    """המוסד של הוראה / עסקה (ריק = הראשי)."""
+    acc = accounts()
+    return next((a for a in acc if a['mosad'] == str(mosad_id or '')), acc[0] if acc else None)
+
+
+@contextlib.contextmanager
+def use(acct):
+    """כל הפניות בתוך הבלוק הולכות למוסד הזה."""
+    prev = getattr(_CUR, 'a', None)
+    _CUR.a = acct
+    try:
+        yield acct
+    finally:
+        _CUR.a = prev
+
+
+def _cur():
+    return getattr(_CUR, 'a', None)
+
+
 def configured():
     return bool(_env('NEDARIM_API_KEY'))
 
 
 def mosad():
-    return _env('NEDARIM_MOSAD') or MOSAD_DEFAULT
+    a = _cur()
+    return (a['mosad'] if a else '') or _env('NEDARIM_MOSAD') or MOSAD_DEFAULT
+
+
+def _key():
+    a = _cur()
+    return (a['key'] if a else '') or _env('NEDARIM_API_KEY')
 
 
 def call(action, params=None, post=False, timeout=45, raw=False):
     """פנייה אחת. מחזיר (הצלחה, JSON / טקסט). הודעת השגיאה נשמרת ב-LAST — בלי המפתח."""
-    p = dict(params or {}, Action=action, MosadId=mosad(), ApiPassword=_env('NEDARIM_API_KEY'))
+    p = dict(params or {}, Action=action, MosadId=mosad(), ApiPassword=_key())
     url = _env('NEDARIM_BASE') or BASE
     data = urllib.parse.urlencode(p).encode('utf-8')
     req = (urllib.request.Request(url, data=data, headers={'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded'})
@@ -71,6 +121,15 @@ def call(action, params=None, post=False, timeout=45, raw=False):
     return ok, out
 
 
+def _num(v):
+    """סכום כמספר נקי ("₪1,200.00" → "1200") — נדרים פלוס מחזירים אותו מעוצב לתצוגה."""
+    m = re.search(r'-?\d[\d,]*(?:\.\d+)?', str(v or ''))
+    if not m:
+        return ''
+    x = m.group(0).replace(',', '')
+    return x[:-3] if x.endswith('.00') else x
+
+
 def kevas():
     """הוראות הקבע באשראי — כמו בממשק (מוקפאות מוסתרות). כל שורה: מזהה, שם, טלפון,
     סכום, קטגוריה, 4 ספרות, תאריך חיוב הבא. בלי מספר זהות."""
@@ -87,7 +146,7 @@ def kevas():
             continue
         out.append({'id': kid, 'name': str(r.get('2') or r.get('ClientName') or '').strip(),
                     'phone': str(r.get('Phone') or '').strip(), 'mail': str(r.get('Mail') or '').strip(),
-                    'amount': str(r.get('4') or r.get('Amount') or '').strip(),
+                    'amount': _num(r.get('4') or r.get('Amount')),
                     'groupe': str(r.get('5') or r.get('Groupe') or '').strip(),
                     'itra': str(r.get('7') or r.get('Itra') or '').strip(),
                     'next': str(r.get('9') or r.get('NextDate') or '').strip(),
@@ -115,7 +174,9 @@ def keva_flags():
             kid = str(r.get('KevaId') or '').strip().lstrip('-')
             if kid:
                 out[kid] = {'enabled': 1 if str(r.get('Enabled', '1')).strip() in ('1', 'true', 'True') else 0,
-                            'itra': str(r.get('Itra') or '').strip(), 'error': str(r.get('ErrorText') or '').strip()}
+                            'itra': str(r.get('Itra') or '').strip(), 'error': str(r.get('ErrorText') or '').strip(),
+                            'amount': _num(r.get('Amount')), 'groupe': str(r.get('Groupe') or '').strip(),
+                            'next': str(r.get('NextDate') or '').strip(), 'last4': str(r.get('LastNum') or '').strip()}
         if len(rows) < 2000:
             break
         last = str(rows[-1].get('KevaId') or '').lstrip('-')
@@ -207,7 +268,7 @@ def history(last_id='', loops=8):
                 continue
             out.append({'id': tid, 'time': str(r.get('TransactionTime') or '').strip(),
                         'phone': str(r.get('Phone') or '').strip(), 'name': str(r.get('ClientName') or '').strip(),
-                        'amount': str(r.get('Amount') or '').strip(), 'currency': str(r.get('Currency') or '1').strip(),
+                        'amount': _num(r.get('Amount')), 'currency': str(r.get('Currency') or '1').strip(),
                         'keva': str(r.get('KevaId') or '').strip(), 'groupe': str(r.get('Groupe') or '').strip(),
                         'comments': str(r.get('Comments') or '').strip(), 'conf': str(r.get('Confirmation') or '').strip(),
                         'last4': str(r.get('LastNum') or '').strip(), 'type': str(r.get('TransactionType') or '').strip()})

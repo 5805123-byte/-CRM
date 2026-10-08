@@ -12871,7 +12871,7 @@ function openMember(m){
 // ===== הכרטיס של חבר הקהילה: נדרים פלוס =====
 // מאיר: "אצל כל חבר קהילה יראו בכרטיס שלו את ההוראת קבע שלו, כמה הוא נותן כל חודש, תיעוד של
 // כל התרומות שלו — עבור מה וכמה, אפשרות העברת תרומה (חיוב חי דרך נדרים פלוס) וקבלות משם"
-const ndMoney=a=>'₪'+(+a||0).toLocaleString('he-IL',{maximumFractionDigits:2});
+const ndMoney=a=>'₪'+amtNum(a).toLocaleString('he-IL',{maximumFractionDigits:2});
 const ndDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
 async function cmNdPaint(m,showAll){
   const box=document.getElementById('cm_ndbox'); if(!box)return;
@@ -13240,7 +13240,7 @@ async function ymViewPay(){
   const ini=`type=api\napi_link=${st.link||''}\napi_hangup_send=no`;
   view.innerHTML=ymHead(ymStatus)+`<div class="sec ymsec">
     <div class="rbtitle" style="text-align:right">💳 תשלום מהוראת הקבע בטלפון — נדרים פלוס</div>
-    ${st.configured?`<div class="ymok">🔗 נדרים פלוס מחובר (מוסד ${esc(st.mosad||'')}) · ${st.n_keva||0} הוראות קבע · ${st.n_linked||0} מקושרות לחברי קהילה · ${st.n_torem||0} תורמים
+    ${st.configured?`<div class="ymok">🔗 נדרים פלוס מחובר — ${(st.accounts||[]).length>1?(st.accounts.map(x=>'מוסד '+esc(x.mosad)+(x.main?'':' ('+esc(x.name)+')')+': '+x.n_keva+' הוראות').join(' · ')):('מוסד '+esc(st.mosad||''))} · ${st.n_keva||0} הוראות קבע · ${st.n_linked||0} מקושרות לחברי קהילה · ${st.n_torem||0} תורמים
         ${sx.error?`<br>⚠️ ${esc(sx.error)}`:(sx.last_ok?`<br><small>סנכרון אחרון ${esc(sx.last_ok)}</small>`:'')}</div>`
       :`<div class="ymwarn">⚠️ חסר ב-Render: <b>NEDARIM_API_KEY</b> (המפתח שמתחיל ב-npk_).</div>`}
     <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="nd_sync">🔄 סנכרון מנדרים פלוס</button></div>

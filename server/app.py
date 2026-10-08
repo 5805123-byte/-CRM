@@ -491,6 +491,10 @@ def ensure_schema():
     # למה הוראה לא פעילה — "מושבתת" (בנדרים פלוס) / "הסתיימו התשלומים" (יתרת חיובים 0)
     try: con.execute("ALTER TABLE nd_keva ADD COLUMN off TEXT")
     except Exception: pass
+    # מוסד נוסף בנדרים פלוס — לכל הוראה ועסקה: מאיזה מוסד (ריק = הראשי)
+    for tb in ('nd_keva', 'nd_tx'):
+        try: con.execute(f"ALTER TABLE {tb} ADD COLUMN mosad TEXT")
+        except Exception: pass
     # מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — ערוץ התזכורת לכל חוב
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN channel TEXT")
     except Exception: pass
@@ -13344,7 +13348,8 @@ def member_nd(con, mid):
         "FROM nd_tx t WHERE " + " OR ".join(w) + " ORDER BY t.iso DESC LIMIT 600", args)]
     # חיובים מהממשק / מהטלפון שעוד לא הופיעו בהיסטוריה של נדרים פלוס
     charges = [dict(r) for r in con.execute("SELECT * FROM nd_charge WHERE member_id=? AND ok=1 AND transaction_id<>'' "
-                                             "AND transaction_id NOT IN (SELECT id FROM nd_tx) ORDER BY id DESC LIMIT 50", (mid,))]
+                                             "AND transaction_id NOT IN (SELECT id FROM nd_tx) "
+                                             "AND transaction_id NOT IN (SELECT SUBSTR(id, INSTR(id, ':')+1) FROM nd_tx WHERE id LIKE '%:%') ORDER BY id DESC LIMIT 50", (mid,))]
     years = {}
     for t in txs:
         if (t['amount'] or 0) > 0:
@@ -16472,6 +16477,9 @@ class H(BaseHTTPRequestHandler):
                 host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
                 link = 'https://%s/api/yemot/ivr/%s' % (host, ivr_key(con))
                 info = {'ok': True, 'configured': _nd.configured(), 'mosad': _nd.mosad(), 'stat': dict(NDSTAT), 'link': link,
+                        'accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main'],
+                                      'n_keva': con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(mosad,'')=?", ('' if x['main'] else x['mosad'],)).fetchone()[0]}
+                                     for x in _nd.accounts()],
                         'n_keva': con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0],
                         'n_linked': con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0],
                         'n_torem': con.execute("SELECT COUNT(*) FROM nd_torem").fetchone()[0],
@@ -16658,7 +16666,7 @@ class H(BaseHTTPRequestHandler):
                 for k in con.execute("SELECT member_id, amount, groupe, error, active FROM nd_keva WHERE member_id IS NOT NULL AND (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%')"):
                     x = kv.setdefault(k['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
                     if k['active']:
-                        x['amt'] = round(x['amt'] + _amt2(k['amount']), 2); x['n'] += 1
+                        x['amt'] = round(x['amt'] + _ivr_amt(k['amount']), 2); x['n'] += 1
                         x['groupe'] = x['groupe'] or (k['groupe'] or '')
                         x['bad'] = x['bad'] or (1 if (k['error'] or '').strip() else 0)
                 for t in con.execute("SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 GROUP BY member_id"):
@@ -19117,7 +19125,9 @@ class H(BaseHTTPRequestHandler):
                     ok, link, to = nd_send_link(con, m.group(1))
                     return self._send(200, {'ok': ok, 'link': link if ok else '', 'sent_to': to, 'error': '' if ok else link})
                 import nedarim as _nd
-                ok, link = _nd.update_link(m.group(1))
+                km = con.execute("SELECT mosad FROM nd_keva WHERE id=?", (m.group(1),)).fetchone()
+                with _nd.use(_nd.account_for(km['mosad'] if km else '')):
+                    ok, link = _nd.update_link(m.group(1))
                 if ok:
                     con.execute("INSERT INTO nd_link(keva_id,link,created) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET link=excluded.link",
                                 (m.group(1), link, now_iso()))
@@ -19161,7 +19171,8 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
                 mid = int(b.get('member_id') or 0) or k['member_id']
                 groupe = str(b.get('groupe') or '').strip()
-                ok, res = _nd.tashlum_boded(kid, amt, groupe=groupe, comments=('חיוב מהמערכת' + ((' · ' + str(b.get('note') or '').strip()) if b.get('note') else '')),
+                with _nd.use(_nd.account_for(k['mosad'] if 'mosad' in k.keys() else '')):
+                    ok, res = _nd.tashlum_boded(kid, amt, groupe=groupe, comments=('חיוב מהמערכת' + ((' · ' + str(b.get('note') or '').strip()) if b.get('note') else '')),
                                             ajax='crm-%s-%d' % (kid, int(time.time())))
                 r = res if isinstance(res, dict) else {}
                 msg = str(r.get('Message') or ('' if ok else res) or '')[:200]
@@ -21166,10 +21177,29 @@ def nd_history_sync(con):
         con.execute("DELETE FROM app_kv WHERE k='nd_hist_last'")
         con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_hist_full_v1')")
         con.commit()
-    last = kv_get(con, 'nd_hist_last', '')
-    rows, top = _nd.history(last)
     cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
     midx, nidx = nd_member_index(con), nd_name_index(con)
+    new = marked = 0
+    for acct in _nd.accounts():
+        # כל מוסד עם הסמן שלו; עסקה ממוסד נוסף מקבלת את מספר המוסד
+        kk = 'nd_hist_last' if acct['main'] else 'nd_hist_last:' + acct['mosad']
+        with _nd.use(acct):
+            try:
+                rows, top = _nd.history(kv_get(con, kk, ''))
+            except Exception:
+                if acct['main']:
+                    raise
+                continue
+        n1, m1 = _nd_hist_rows(con, rows, '' if acct['main'] else acct['mosad'], cutoff, midx, nidx)
+        new += n1; marked += m1
+        if top:
+            con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, top))
+        con.commit()
+    return new, marked
+
+
+def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
+    import yemot as _ym
     new = marked = 0
     for t in rows:
         iso = _nd_iso(t['time'])
@@ -21177,9 +21207,10 @@ def nd_history_sync(con):
         ph = _ym.norm_phone(t['phone'])
         ids = midx.get(ph) if ph else None
         mid = (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, t['name'])
-        c = con.execute("INSERT OR IGNORE INTO nd_tx(id,time,iso,phone,name,amount,keva,groupe,comments,conf,last4,type,member_id) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (t['id'], t['time'], iso, ph, t['name'], a, t['keva'], t['groupe'], t['comments'], t['conf'], t['last4'], t['type'], mid))
+        tid = ((mosad + ':') if mosad else '') + t['id']
+        c = con.execute("INSERT OR IGNORE INTO nd_tx(id,time,iso,phone,name,amount,keva,groupe,comments,conf,last4,type,member_id,mosad) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (tid, t['time'], iso, ph, t['name'], a, t['keva'], t['groupe'], t['comments'], t['conf'], t['last4'], t['type'], mid, mosad))
         if not c.rowcount:
             continue
         new += 1
@@ -21191,13 +21222,10 @@ def nd_history_sync(con):
             continue
         msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None)
         if msg:
-            con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, t['id']))
+            con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, tid))
             marked += 1
         if mid:
             cm_debt_pay(con, mid, a, 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf']))
-    if top:
-        con.execute("INSERT INTO app_kv(k,v) VALUES('nd_hist_last',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (top,))
-    con.commit()
     return new, marked
 
 
@@ -21258,45 +21286,44 @@ def nd_sync(con):
     manual = {r['keva_id']: r['member_id'] for r in con.execute("SELECT keva_id,member_id FROM nd_map")}
     pick = lambda phs: next((list(midx[p])[0] for p in phs if p in midx and len(midx[p]) == 1), None)
     res = {}
-    try:
-        ts = _nd.tormim()
-        for t in ts:
-            phs = _phones_of(' ; '.join(t['phones']))
-            con.execute("""INSERT INTO nd_torem(id,name,phones,mail,city,member_id,synced) VALUES(?,?,?,?,?,?,?)
-                           ON CONFLICT(id) DO UPDATE SET name=excluded.name, phones=excluded.phones, mail=excluded.mail,
-                             city=excluded.city, member_id=excluded.member_id, synced=excluded.synced""",
-                        (t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs) or nd_match_name(nidx, t['name']), now))
-        res['תורמים'] = len(ts)
-    except Exception as e:
-        res['תורמים'] = 'שגיאה: %s' % str(e)[:80]
-    ks = _nd.kevas()
-    try:
-        flags = _nd.keva_flags()
-    except Exception as e:
-        flags = None
-        res['רשימה מלאה'] = 'לא נמשכה: %s' % str(e)[:60]
+    accts = _nd.accounts()
     con.execute("UPDATE nd_keva SET active=0, off=''")
-    for k in ks:
-        phs = _phones_of(k['phone'])
-        tm = con.execute("SELECT member_id,phones FROM nd_torem WHERE id=?", (k['torem'],)).fetchone() if k['torem'] else None
-        if tm and tm['phones']:
-            phs += [p for p in tm['phones'].split(';') if p and p not in phs]
-        # קישור: ידני (נבחר במסך) ← טלפון ← כרטיס התורם בנדרים ← שם
-        mid = manual.get(k['id']) or pick(phs) or (tm['member_id'] if tm else None) or nd_match_name(nidx, k['name'])
-        con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
-                       ON CONFLICT(id) DO UPDATE SET torem_id=excluded.torem_id, name=excluded.name, phone=excluded.phone,
-                         mail=excluded.mail, amount=excluded.amount, groupe=excluded.groupe, itra=excluded.itra,
-                         next_date=excluded.next_date, last4=excluded.last4, city=excluded.city,
-                         member_id=excluded.member_id, active=1, synced=excluded.synced, error=excluded.error""",
-                    (k['id'], k['torem'], k['name'], ';'.join(phs), k['mail'], k['amount'], k['groupe'], k['itra'],
-                     k['next'], k['last4'], k['city'], mid, now, k.get('error') or ''))
-        # לא פעילה (הסתיימו התשלומים / הוקפאה) — לא נספרת, לא בטלפון ולא ב"חזרו"
-        f = (flags or {}).get(k['id'])
-        itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
-        if (f and not f['enabled']) or itra == '0':
-            con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?",
-                        ('מושבתת בנדרים פלוס' if f and not f['enabled'] else 'הסתיימו התשלומים (יתרה 0)', k['id']))
+    all_flags = {}
+    for acct in accts:
+        # מאיר: "יש לי עוד מספר מוסד בנדרים פלוס שהייתי רוצה שתמשוך משם" — כל מוסד עם המפתח שלו;
+        # מזהי התורמים של מוסד נוסף מקבלים קידומת, שלא יתנגשו בראשי
+        tag = '' if acct['main'] else acct['mosad'] + ':'
+        lbl = '' if acct['main'] else ' (%s)' % acct['name']
+        with _nd.use(acct):
+            try:
+                ts = _nd.tormim()
+                for t in ts:
+                    phs = _phones_of(' ; '.join(t['phones']))
+                    con.execute("""INSERT INTO nd_torem(id,name,phones,mail,city,member_id,synced) VALUES(?,?,?,?,?,?,?)
+                                   ON CONFLICT(id) DO UPDATE SET name=excluded.name, phones=excluded.phones, mail=excluded.mail,
+                                     city=excluded.city, member_id=excluded.member_id, synced=excluded.synced""",
+                                (tag + t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs) or nd_match_name(nidx, t['name']), now))
+                res['תורמים' + lbl] = len(ts)
+            except Exception as e:
+                res['תורמים' + lbl] = 'שגיאה: %s' % str(e)[:80]
+            try:
+                ks = _nd.kevas()
+            except Exception as e:
+                if acct['main']:
+                    raise
+                res['הוראות קבע' + lbl] = 'שגיאה: %s' % str(e)[:80]
+                continue
+            try:
+                flags = _nd.keva_flags()
+            except Exception as e:
+                flags = None
+                res['רשימה מלאה' + lbl] = 'לא נמשכה: %s' % str(e)[:60]
+        all_flags.update(flags or {})
+        for k in ks:
+            k['torem'] = (tag + k['torem']) if k['torem'] else ''
+            k['mosad'] = '' if acct['main'] else acct['mosad']
+        _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now)
+    flags = all_flags
     res['הוראות קבע'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0]
     res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
     res['חזרו'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchone()[0]
@@ -21312,6 +21339,37 @@ def nd_sync(con):
         res['היסטוריה'] = 'לא נמשכה: %s' % str(e)[:60]
     con.commit()
     return res
+
+
+def _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now):
+    """שמירת הוראות הקבע של מוסד אחד וקישורן לחברי הקהילה."""
+    for k in ks:
+        # מאיר: "למה כתוב 0 לחודש אצל כולם" — הסכום מהרשימה המלאה (GetKevaJson) כשהעמודה בתצוגה ריקה / לא מספר
+        f0 = (flags or {}).get(k['id']) or {}
+        for fk in ('amount', 'groupe', 'next', 'last4'):
+            if not str(k.get(fk) or '').strip() or (fk == 'amount' and not _ivr_amt(k.get(fk))):
+                if f0.get(fk):
+                    k[fk] = f0[fk]
+        phs = _phones_of(k['phone'])
+        tm = con.execute("SELECT member_id,phones FROM nd_torem WHERE id=?", (k['torem'],)).fetchone() if k['torem'] else None
+        if tm and tm['phones']:
+            phs += [p for p in tm['phones'].split(';') if p and p not in phs]
+        # קישור: ידני (נבחר במסך) ← טלפון ← כרטיס התורם בנדרים ← שם
+        mid = manual.get(k['id']) or pick(phs) or (tm['member_id'] if tm else None) or nd_match_name(nidx, k['name'])
+        con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)
+                       ON CONFLICT(id) DO UPDATE SET torem_id=excluded.torem_id, name=excluded.name, phone=excluded.phone,
+                         mail=excluded.mail, amount=excluded.amount, groupe=excluded.groupe, itra=excluded.itra,
+                         next_date=excluded.next_date, last4=excluded.last4, city=excluded.city,
+                         member_id=excluded.member_id, active=1, synced=excluded.synced, error=excluded.error, mosad=excluded.mosad""",
+                    (k['id'], k['torem'], k['name'], ';'.join(phs), k['mail'], k['amount'], k['groupe'], k['itra'],
+                     k['next'], k['last4'], k['city'], mid, now, k.get('error') or '', k.get('mosad') or ''))
+        # לא פעילה (הסתיימו התשלומים / הוקפאה) — לא נספרת, לא בטלפון ולא ב"חזרו"
+        f = (flags or {}).get(k['id'])
+        itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
+        if (f and not f['enabled']) or itra == '0':
+            con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?",
+                        ('מושבתת בנדרים פלוס' if f and not f['enabled'] else 'הסתיימו התשלומים (יתרה 0)', k['id']))
 
 
 def nd_run():
@@ -21351,7 +21409,8 @@ def nd_send_link(con, keva_id, phone=''):
     k = con.execute("SELECT * FROM nd_keva WHERE id=?", (str(keva_id),)).fetchone()
     if not k:
         return False, 'ההוראה לא נמצאה', ''
-    ok, link = _nd.update_link(k['id'])
+    with _nd.use(_nd.account_for(k['mosad'] if 'mosad' in k.keys() else '')):
+        ok, link = _nd.update_link(k['id'])
     if not ok:
         return False, link, ''
     con.execute("INSERT INTO nd_link(keva_id,link,created) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET link=excluded.link",
@@ -21391,8 +21450,10 @@ def _ivr_t(s):
 
 
 def _ivr_amt(v):
+    # נדרים פלוס מחזירים סכום כטקסט מעוצב ("₪100", "100.00 ש\"ח") — לוקחים את המספר שבתוכו
+    m = re.search(r'\d[\d,]*(?:\.\d+)?', str(v or ''))
     try:
-        a = float(str(v or '').replace(',', '').strip())
+        a = float(m.group(0).replace(',', '')) if m else 0
     except ValueError:
         return 0
     return round(a, 2) if 0 < a <= 100000 else 0
@@ -21531,7 +21592,8 @@ def ivr_answer(P):
             return ('id_list_message=t-' + _ivr_t('התשלום התקבל בהצלחה, מספר אישור') + '.d-' + (re.sub(r'\D', '', done['confirmation'] or '') or '0') +
                     '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
         jl = con.execute("SELECT label FROM ym_job WHERE id=?", (job,)).fetchone() if job else None
-        ok, res = _nd.tashlum_boded(k['id'], amt, comments='תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
+        with _nd.use(_nd.account_for(k.get('mosad') or '')):
+            ok, res = _nd.tashlum_boded(k['id'], amt, comments='תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
                                     ajax=('ivr-' + call_id) if call_id else '')
         r = res if isinstance(res, dict) else {}
         msg = str(r.get('Message') or ('' if ok else res) or '')[:200]
