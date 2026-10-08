@@ -1205,7 +1205,7 @@ function netInit(){
   setInterval(()=>{ if(navigator.onLine&&PENDING)sync(); },30000);
 }
 // ===== כניסה בסיסמה =====
-// מאיר: "חייבים לעשות סיסמה למערכת הכללית… והלשונית של קהילה אוכל לתת לגבי, גישה רק לקהילה,
+// מאיר: "חייבים לעשות סיסמה למערכת הכללית… והלשונית של קהילה אוכל לתת לגבאי, גישה רק לקהילה,
 // עם סיסמה נפרדת". הסיסמאות ב-Render (CRM_PASS / CRM_PASS_COMM). השרת מחזיר 401 — מסך כניסה.
 let ROLE='admin', AUTH_ON=false, _loginShown=false;
 function showLogin(msg){
@@ -1509,7 +1509,7 @@ async function load(){
   GLAST = (function(){const c=[...Array(12)].map((_,i)=>DB.filter(x=>x.months&&(x.months[i]==='p'||x.months[i]==='c')).length);const mx=Math.max(1,...c);let l=0;for(let i=0;i<12;i++)if(c[i]>=0.3*mx)l=i;return l;})();
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   applyRole();
-  // מאיר (הכל) וגבי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
+  // מאיר (הכל) והגבאי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
   if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
   // שחזור הלשונית שבה הייתי לפני הרענון
   try{const st=ROLE==='comm'?'comm':localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
