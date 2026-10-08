@@ -17704,6 +17704,18 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE receipt_docs SET pdf=? WHERE id=?", (data, int(m.group(1))))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/donor/(\d+)/plcur$', self.path)
+        if m:
+            # מטבע ההתחייבויות של התורם (₪ / $) — כל ההתחייבויות והאברכים הפעילים שלו
+            cur = b.get('cur')
+            if cur not in ('₪', '$'):
+                return self._send(200, {'ok': False, 'error': 'מטבע לא תקין'})
+            con = db()
+            con.execute("UPDATE pledges SET cur=? WHERE donor_id=?", (cur, int(m.group(1))))
+            con.execute("UPDATE partners SET cur=? WHERE donor_id=? AND COALESCE(active,1)<>0", (cur, int(m.group(1))))
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/receipts/(\d+)/redo$', self.path)
         if m:
             # 🔄 מאיר: "תבטל את הקבלה הזו ותעשה לו חדש שיהיה עם התאריך שאני מכניס במערכת" — הקבלה

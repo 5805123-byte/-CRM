@@ -17,12 +17,20 @@ function gregLabel(dateStr){if(!dateStr)return '';const m=String(dateStr).match(
 // מטבע התרומה עצמה, והסכום שלה במטבע של התורם: אם המטבע שונה — שווה הערך שנרשם (eq),
 // ואם לא נרשם — null (לא סופרים דולרים כאילו היו שקלים)
 function donCur(x,dc){const c=String((x&&x.cur)||'').trim();return c==='₪'?'₪':(c==='$'?'$':dc);}
-function donIn(x,d){const dc=curSym(d);if(donCur(x,dc)===dc)return amtNum(x.amount);
+// מטבע ההתחייבויות של התורם — מאיר: "צריך להיות אייקון של שקל או דולר גם איפה שכתוב על
+// ההתחייבות שלו". מה שנקבע להתחייבויות (₪/$), ואם לא נקבע — לפי אזור התורם
+function cmCur(d){const cs=new Set();
+  (d.pledges||[]).forEach(p=>{const c=String(p.cur||'').trim();if((c==='₪'||c==='$')&&(+p.monthly||String(p.permo||'').trim()))cs.add(c);});
+  (d.partners||[]).filter(p=>p.active!=0).forEach(p=>{const c=String(p.cur||'').trim();if(c==='₪'||c==='$')cs.add(c);});
+  return cs.size===1?[...cs][0]:curSym(d);}
+function donIn(x,d){const dc=cmCur(d);if(donCur(x,dc)===dc)return amtNum(x.amount);
   const e=amtNum(x.eq);return e>0?e:null;}
+function totMix(c,n,foreign){const m=c+Math.round(n).toLocaleString('en-US');
+  return foreign?(Math.round(n)?m+' + '+foreign:foreign):m;}
 function donorTotals(d){
   let all=0,year=0,pending=0;const unconv={};
   (d.donations||[]).forEach(x=>{const a=donIn(x,d);
-    if(a===null){const c=donCur(x,curSym(d));unconv[c]=(unconv[c]||0)+amtNum(x.amount);return;}
+    if(a===null){const c=donCur(x,cmCur(d));unconv[c]=(unconv[c]||0)+amtNum(x.amount);return;}
     all+=a;if((x.date||'').slice(0,4)===GREGYEAR)year+=a;});
   // מאיר: "למה כתוב יש לו חוב 8000 דולר, זה שקלים" — פרנס בשקלים אינו מצטרף לסכום בדולרים
   const cur=curSym(d), other={};
@@ -3074,7 +3082,7 @@ function prevMonth(ym){
 function acctLine(d){
   let a=null; try{a=purposeAlloc(d);}catch(e){return '';}
   if(!a||!a.rows.length)return '';
-  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const cur=cmCur(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   const gap=Math.round(a.exp-a.got);
   const from=fmtMonth(a.first), to=fmtMonth(a.thru);
   // פירוט רק על מה שחסר — שורה שנסגרה במלואה אינה מוסיפה מידע
@@ -3178,7 +3186,7 @@ function izGapNote(d){
   const shown=izRowAmt(d)+izStreamOther(d);
   if(Math.abs(real-shown)<1.5)return '';
   if(String(d.gap_ok||'')===String(Math.round(real)))return '';
-  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const cur=cmCur(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   return `<div class="cmgap">⚠️ בפועל נגבה <b>${f(real)}</b> כל חודש, וכאן רשום ${f(shown)}`
     +(real>shown?' — כנראה חסרים אברכים ברשימה':' — כנראה נשאר חוב או שההתחייבות ירדה')
     +`<div class="cmgap-b noprint">`
@@ -3321,7 +3329,7 @@ function commitRows(d){
   return rows;
 }
 function commitHTML(d){
-  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const cur=cmCur(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   const rows=commitRows(d), av=(d.partners||[]).filter(p=>p.active!=0);
   const tier=TIERS[d.tier]?(d.tier==='יששכר_זבולון'?'יששכר־זבולון':('קוויטל '+TIERS[d.tier][0])):'';
   // בסיכום למעלה נספר רק מה שנרשם ביד ועדיין בתוקף
@@ -3349,7 +3357,7 @@ function commitHTML(d){
     // הסיקה מהגבייה הוא הצעה בלבד, ומה שנכתב כאן גובר עליו.
     const ask=r.conf<=0;                       // סכום שלא נרשם ביד — לא חוב
     const amt=(r.pid||r.iz)
-      ? `<input class="cmamt" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
+      ? `<span class="cmcursym">${cur}</span><input class="cmamt" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" value="${esc(r.amt||'')}" inputmode="decimal" placeholder="0">`
         + `<button class="btn sm cmsave noprint" ${r.iz?'data-iz="1"':''} data-pid="${r.pid||''}" title="שמור את השורה">💾</button>`
       : `<b class="cmfix">${r.amt?f(r.amt):'—'}</b>`;
     const tag=r.ended?'הסתיים':(ask?(r.conf<0?'בלי סכום':'לא אושר')
@@ -3490,6 +3498,7 @@ function commitHTML(d){
           <span class="cm_mergetxt"></span></label></div>
       <div class="hintxt cm_calc"></div></div>`;
   return `<div class="cmbox"><div class="cmbox-t">📋 ההתחייבויות שלו
+      <button class="cmcur noprint" data-did="${d.id}" title="מטבע ההתחייבויות — לחץ כדי להחליף ל-${cur==='₪'?'דולר':'שקל'}">${cur==='₪'?'₪ שקל':'$ דולר'}</button>
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
       ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
     ${viaInHTML}
@@ -4203,7 +4212,7 @@ function nextMonth(ym){
 }
 function debtBarHTML(d){
   let L=null; try{L=monthLedger(d);}catch(e){}
-  const cur=curSym(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
+  const cur=cmCur(d), f=n=>cur+Math.round(n).toLocaleString('en-US');
   const man=amtSigned(d.debt_open);           // התחייבות שנשארה מלפני 2026
   let prevPaid=0;
   (d.donations||[]).forEach(x=>{ if(String(x.date||'').slice(0,4)===GREGYEAR+'')
@@ -4429,7 +4438,7 @@ function cardDetails(d,body){
   const sel=cl.map(c=>`<option ${c===(d.category||'')?'selected':''} value="${esc(c)}">${esc(catLabel(c))}</option>`).join('');
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
   const gc=gaps(d.months,d).length;
-  const dt=donorTotals(d), curd=curSym(d);
+  const dt=donorTotals(d), curd=cmCur(d);
   // פירוט מה תרם ועבור מה — ישירות במסך הראשי
   const gitems=[];
   // מאיר: "אל תכניס ככה למשימות של תורם בדף ראשי שלו, רק תשמור את זה בפרנס
@@ -4594,7 +4603,7 @@ function cardDetails(d,body){
         <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
-    ${(dt.all||dt.year||dt.pending||dt.foreign)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${curd}${Math.round(dt.all).toLocaleString('en-US')}${dt.foreign?' + '+dt.foreign:''}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${curd}${Math.round(dt.year).toLocaleString('en-US')}${dt.foreign?' + '+dt.foreign:''}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
+    ${(dt.all||dt.year||dt.pending||dt.foreign)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${totMix(curd,dt.all,dt.foreign)}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${totMix(curd,dt.year,dt.foreign)}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
         +((CAMPAIGNS||[]).length?('<optgroup label="🎯 מגביות/ייעודים">'+CAMPAIGNS.filter(c=>!RCATS.includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'</optgroup>'):'')
@@ -14378,6 +14387,15 @@ function renderReceipts(){
   });
 }
 
+// ₪ / $ של ההתחייבויות — כל ההתחייבויות והאברכים של התורם עוברים למטבע שנבחר
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.cmcur');if(!b)return;
+  e.preventDefault();const d=DB.find(o=>o.id==b.dataset.did);if(!d)return;
+  const now=cmCur(d), to=now==='₪'?'$':'₪';
+  if(!await uiConfirm('להחליף את מטבע ההתחייבויות של '+((d.last||'')+' '+(d.first||'')).trim()+' ל'+(to==='₪'?'שקל (₪)':'דולר ($)')+'?\nהסכומים עצמם לא משתנים — רק המטבע שלהם. ההתחייבות והחוב יחושבו ב'+(to==='₪'?'שקלים':'דולרים')+'.','💱 כן, להחליף','ביטול'))return;
+  const r=await api('POST','/api/donor/'+d.id+'/plcur',{cur:to});
+  if(!r||!r.ok){toast('לא נשמר');return;}
+  (d.pledges||[]).forEach(p=>p.cur=to);(d.partners||[]).forEach(p=>{if(p.active!=0)p.cur=to;});
+  toast('💱 ההתחייבויות ב'+(to==='₪'?'שקלים':'דולרים')+' ✓');openDonor(d);});
 // 💱 שווה ערך לתרומה במטבע אחר — מתוך תיבת החוב בכרטיס התורם
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.eqsave');if(!b)return;
   e.preventDefault();const id=+b.dataset.id, inp=document.querySelector('.eqin[data-id="'+id+'"]'), v=amtNum(inp&&inp.value);
