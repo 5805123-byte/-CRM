@@ -12941,12 +12941,13 @@ async function cmNdPaint(m,showAll,boxId){
   // הוראות ישנות (הוחלפו / הסתיימו / מושבתות) — בשורה קטנה אחת, לא כמו הוראה פעילה
   const KA=K.filter(k=>k.active), KO=K.filter(k=>!k.active);
   const oldHTML=KO.length?`<div class="hintxt">הוראות ישנות: ${KO.map(k=>ndMoney(k.amount)+(k.groupe?' '+esc(k.groupe):'')+' ****'+esc(k.last4||'')+(k.off?' — '+esc(k.off):'')).join(' · ')}</div>`:'';
-  const kevaHTML=(KA.length?KA.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ****${esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
+  const kevaHTML=(KA.length?KA.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ${k.kind==='bank'?'🏦 בנקאית'+(k.bank?' '+esc(k.bank):''):'💳 ****'+esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
       ${k.active?'':`<span class="ndbad">לא פעילה${k.off?': '+esc(k.off):''}</span>`}${k.error?`<span class="ndbad">🔴 חזרה: ${esc(k.error)}</span>`:''}</span>
-      <span class="bqacts"><button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
-        <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button></span></div>`).join('')
+      <span class="bqacts">${k.kind==='bank'?`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="תשלום בודד מהחשבון — נשלח לבנק בשידור הקרוב">🏦 גבייה בבנק</button>`
+        :`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
+        <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button>`}</span></div>`).join('')
     :(KO.length?'':'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>'))+oldHTML;
-  const rows=T.map(t=>({id:t.id,iso:t.iso,amount:t.amount,what:[t.groupe,t.comments].filter(Boolean).join(' · '),auto:!!(t.keva&&!String(t.keva).startsWith('-')),conf:t.conf,rc_id:t.rc_id,rc_num:t.rc_num,rc_sent:t.rc_sent,pending:false}))
+  const rows=T.map(t=>{const bk=/^M/.test(String(t.keva||''));return {id:t.id,iso:t.iso,amount:t.amount,what:(bk?[t.groupe]:[t.groupe,t.comments]).filter(Boolean).join(' · '),auto:!!(t.keva&&!String(t.keva).startsWith('-')),bank:bk,btype:t.type||'',conf:t.conf,rc_id:t.rc_id,rc_num:t.rc_num,rc_sent:t.rc_sent,pending:false};})
     .concat(C.map(c=>({id:c.transaction_id,iso:(c.at||'').slice(0,10),amount:c.amount,what:'חיוב מהמערכת (טרם הופיע בהיסטוריה של נדרים פלוס)',auto:false,conf:c.confirmation,pending:true})))
     // מאיר: "מקום להכניס תרומה שלו במזומן או דרך אחרת, ועבור מה זה נתרם" — באותה היסטוריה
     .concat(DN.map(d=>({id:'cm'+d.id,don:d.id,iso:d.date,amount:d.amount,what:d.purpose||'',meth:d.method||'',note:d.note||'',rc_id:d.rc_id,rc_num:d.rc_num,rc_sent:d.rc_sent})))
@@ -12960,7 +12961,7 @@ async function cmNdPaint(m,showAll,boxId){
         <button class="btn sm cdn_go">💾 רשום</button></div></details>`;
   box.innerHTML=`${kevaHTML}${addHTML}
     ${rows.length?`<div class="bqhsum" style="margin-top:8px"><b>${rows.filter(x=>+x.amount>0).length} תרומות · ${ndMoney(rows.reduce((t,x)=>t+(+x.amount>0?+x.amount:0),0))}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div></div>
-      <div class="bqpays">${rows.slice(0,lim).map(t=>`<div class="bqpay"><span><b>${esc(ndDate(t.iso))}</b> · ${ndMoney(t.amount)}${t.what?` · ${esc(t.what)}`:''} · <small>${t.don?('💵 '+esc(t.meth)+(t.note?' · '+esc(t.note):'')):(t.auto?'הוראת קבע':'חד-פעמי')+' · נדרים פלוס'}${t.conf?' · אישור '+esc(t.conf):''}</small>${t.don?` <button class="fdel" data-cdndel="${t.don}" title="מחק את הרישום">✕</button>`:''}</span>
+      <div class="bqpays">${rows.slice(0,lim).map(t=>`<div class="bqpay"><span><b>${esc(ndDate(t.iso))}</b> · ${ndMoney(t.amount)}${t.what?` · ${esc(t.what)}`:''} · <small>${t.don?('💵 '+esc(t.meth)+(t.note?' · '+esc(t.note):'')):(t.bank?('🏦 הוראה בנקאית'+(t.btype?' · '+esc(t.btype):'')):(t.auto?'הוראת קבע':'חד-פעמי')+' · נדרים פלוס')}${t.conf?' · אישור '+esc(t.conf):''}</small>${t.don?` <button class="fdel" data-cdndel="${t.don}" title="מחק את הרישום">✕</button>`:''}</span>
         <span class="bqacts">${t.pending||!(+t.amount>0)?'':(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
           :`<button class="btn sm ghost" data-ndrc="${esc(t.id)}" data-amt="${esc(t.amount)}" data-date="${esc((t.iso||'').slice(0,10))}" data-what="${esc(t.what.split(' · ')[0]||'')}" data-meth="${esc(t.meth||'')}">🧾 קבלה</button>`)}</span></div>`).join('')}</div>
       ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
@@ -12972,12 +12973,12 @@ async function cmNdPaint(m,showAll,boxId){
     if(r2&&r2.ok){toast('נרשם ✓'+(r2.debt_paid?(' · קוזז '+ndMoney(r2.debt_paid)+' מהחוב'):''));cmNdPaint(m,showAll,boxId);if(r2.debt_paid)cdData=null;}else toast((r2&&r2.error)||'לא נשמר');};
   box.querySelectorAll('[data-cdndel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את רישום התרומה?','🗑️ כן','לא'))return;
     await api('POST','/api/members/donation/'+b.dataset.cdndel,{action:'delete'});cmNdPaint(m,showAll,boxId);});
-  box.querySelectorAll('[data-ndchg]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.ndchg);
-    const v=await uiPrompt('כמה לחייב עכשיו (₪) מהכרטיס ****'+(k?k.last4:'')+'?','');const a=amtNum(v);if(!a)return;
+  box.querySelectorAll('[data-ndchg]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.ndchg),bank=k&&k.kind==='bank';
+    const v=await uiPrompt(bank?('כמה לגבות (₪) מההוראה הבנקאית'+(k.bank?' ('+k.bank+')':'')+'?\nהחיוב נשלח לבנק בשידור הקרוב — לא מיידי.'):('כמה לחייב עכשיו (₪) מהכרטיס ****'+(k?k.last4:'')+'?'),'');const a=amtNum(v);if(!a)return;
     const w=await uiPrompt('עבור מה? (יופיע אצלו בנדרים פלוס ובכרטיס)',k&&k.groupe?k.groupe:'');if(w===null)return;
-    if(!await uiConfirm('לחייב עכשיו את '+mName(m)+' ב-'+ndMoney(a)+(w?(' עבור '+w):'')+'?\nהחיוב מיידי בכרטיס השמור בהוראת הקבע, בלי לשנות את ההוראה.','⚡ כן, לחייב','ביטול'))return;
+    if(!await uiConfirm('לחייב עכשיו את '+mName(m)+' ב-'+ndMoney(a)+(w?(' עבור '+w):'')+'?\n'+(bank?'הגבייה נשלחת לבנק בשידור הקרוב, בלי לשנות את ההוראה.':'החיוב מיידי בכרטיס השמור בהוראת הקבע, בלי לשנות את ההוראה.'),bank?'🏦 כן, לגבות':'⚡ כן, לחייב','ביטול'))return;
     b.disabled=true;b.textContent='מחייב…';const r=await api('POST','/api/nd/keva/'+b.dataset.ndchg+'/charge',{amount:a,groupe:w||'',member_id:m.id});
-    if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.confirmation||''));cmNdPaint(m,false,boxId);}else{b.disabled=false;b.textContent='⚡ חיוב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}});
+    if(r&&r.ok){toast(r.bank?'🏦 נשלח לגבייה בבנק ✓ (ייגבה בשידור הקרוב)':('✅ החיוב עבר · אישור '+(r.confirmation||'')));cmNdPaint(m,false,boxId);}else{b.disabled=false;b.textContent='⚡ חיוב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}});
   box.querySelectorAll('[data-ndsendm]').forEach(b=>b.onclick=async()=>{
     if(!await uiConfirm('לשלוח לו SMS עם קישור מאובטח לעדכון הכרטיס בהוראת הקבע?','📲 כן','ביטול'))return;
     b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsendm+'/link',{send:1});

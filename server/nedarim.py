@@ -29,6 +29,8 @@ import urllib.parse
 import urllib.request
 
 BASE = 'https://matara.pro/nedarimplus/Reports/Manage3.aspx'
+# הוראות קבע בנקאיות (מס"ב) — דף אחר באותו שרת. מאיר: "יש כאלו שיש להם הוראת קבע בנקאית"
+MASAV = 'https://matara.pro/nedarimplus/Reports/Masav3.aspx'
 MOSAD_DEFAULT = '5777499'
 UA = 'KollelChatzosCRM/1.0'
 LAST = {'at': '', 'ok': None, 'error': '', 'action': ''}
@@ -89,10 +91,12 @@ def _key():
     return (a['key'] if a else '') or _env('NEDARIM_API_KEY')
 
 
-def call(action, params=None, post=False, timeout=45, raw=False):
+def call(action, params=None, post=False, timeout=45, raw=False, masav=False):
     """פנייה אחת. מחזיר (הצלחה, JSON / טקסט). הודעת השגיאה נשמרת ב-LAST — בלי המפתח."""
     p = dict(params or {}, Action=action, MosadId=mosad(), ApiPassword=_key())
-    url = _env('NEDARIM_BASE') or BASE
+    if masav:
+        p['MosadNumber'] = p['MosadId']      # בדף המס"ב חלק מהפעולות קוראות לזה MosadNumber
+    url = _env('NEDARIM_MASAV_BASE' if masav else 'NEDARIM_BASE') or (MASAV if masav else BASE)
     data = urllib.parse.urlencode(p).encode('utf-8')
     req = (urllib.request.Request(url, data=data, headers={'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded'})
            if post else urllib.request.Request(url + '?' + data.decode('ascii'), headers={'User-Agent': UA}))
@@ -248,6 +252,82 @@ def update_link(keva_id):
 def link_status(keva_id):
     ok, res = call('GetKevaUpdateLinkStatus', {'KevaId': str(keva_id).lstrip('-')})
     return (res if ok and isinstance(res, dict) else {})
+
+
+def _rows(res):
+    if isinstance(res, list):
+        return res
+    if isinstance(res, dict):
+        return res.get('data') or res.get('Data') or res.get('rows') or []
+    return []
+
+
+def masav_kevas():
+    """הוראות הקבע הבנקאיות (GetMasavKevaNew): מזהה, שם, פרטי חשבון, חיוב הבא, יתרה, סכום, קטגוריה.
+    מספר החשבון לא נשמר — רק הבנק ו-3 הספרות האחרונות לתצוגה."""
+    ok, res = call('GetMasavKevaNew', masav=True, timeout=90)
+    if not ok:
+        raise RuntimeError('נדרים פלוס (הוראות בנקאיות): %s' % (LAST.get('error') or str(res)[:120]))
+    out = []
+    for r in _rows(res):
+        if not isinstance(r, dict):
+            continue
+        kid = str(r.get('DT_RowId') or r.get('ID') or '').strip().lstrip('-')
+        if not kid:
+            continue
+        acct = re.sub(r'<[^>]+>', ' ', str(r.get('3') or ''))
+        digits = re.findall(r'\d+', acct)
+        bank = ('בנק %s ' % digits[0] if digits else '') + ('***' + digits[-1][-3:] if len(digits) > 1 else '')
+        out.append({'id': kid, 'name': str(r.get('2') or '').strip(), 'bank': bank.strip(),
+                    'next': str(r.get('4') or '').strip(), 'itra': str(r.get('5') or '').strip(),
+                    'amount': _num(r.get('6')), 'groupe': str(r.get('7') or '').strip(), 'note': str(r.get('8') or '').strip()})
+    return out
+
+
+def masav_detail(masav_id):
+    """פרטי הוראה בנקאית אחת (GetMasavId) — בשביל הטלפון והסטטוס. ת"ז ומספר חשבון לא נשמרים."""
+    ok, res = call('GetMasavId', {'MasavId': str(masav_id)}, masav=True)
+    if not ok or not isinstance(res, dict):
+        return {}
+    return {'phone': str(res.get('ClientPhone') or '').strip(), 'mail': str(res.get('ClientMail') or '').strip(),
+            'status': str(res.get('StatusText') or res.get('Status') or '').strip(),
+            'deleted': str(res.get('Deleted') or '0').strip() == '1', 'next': str(res.get('FullNextDate') or '').strip(),
+            'amount': _num(res.get('Amount')), 'groupe': str(res.get('Groupe') or '').strip()}
+
+
+def masav_history(date_from, date_to):
+    """חיובי ההוראות הבנקאיות (GetMasavHistoryNew) בין שני תאריכים (dd/mm/yyyy): שידורים, החזרות, עמלות."""
+    ok, res = call('GetMasavHistoryNew', {'From': date_from, 'To': date_to}, masav=True, timeout=120)
+    if not ok:
+        raise RuntimeError('נדרים פלוס (הסטוריית מס"ב): %s' % (LAST.get('error') or str(res)[:120]))
+    out = []
+    for r in _rows(res):
+        if not isinstance(r, dict):
+            continue
+        rid = str(r.get('DT_RowId') or '').strip()
+        if not rid or rid.upper().startswith('B'):        # B… = חיוב בודד שעוד לא שודר
+            continue
+        m = re.search(r'-?\d[\d,]*(?:\.\d+)?', str(r.get('5') or ''))
+        out.append({'id': rid, 'keva': str(r.get('2') or '').strip(), 'name': str(r.get('3') or '').strip(),
+                    'date': str(r.get('4') or '').strip(), 'amount': float(m.group(0).replace(',', '')) if m else 0.0,
+                    'type': str(r.get('6') or '').strip(), 'groupe': str(r.get('8') or '').strip()})
+    return out
+
+
+def masav_boded(masav_id, amount, date, ajax=''):
+    """תשלום בודד מהוראה בנקאית (MasavBoded) — נשלח לבנק בשידור הקרוב, לא מיידי."""
+    p = {'MasavId': str(masav_id), 'Amount': ('%.2f' % float(amount)).rstrip('0').rstrip('.'), 'Date': date}
+    if ajax:
+        p['AjaxId'] = str(ajax)[:60]
+    ok, txt = call('MasavBoded', p, post=True, masav=True, timeout=60, raw=True)
+    if not ok:
+        return False, txt
+    try:
+        res = json.loads(txt)
+    except ValueError:
+        res = {'Result': 'Error' if 'error' in txt.lower() or 'שגיאה' in txt else 'OK', 'Message': txt.strip()[:200]}
+    good = str(res.get('Result') or res.get('Status') or '').lower() in ('ok', 'success') if isinstance(res, dict) else False
+    return good, res
 
 
 def history(last_id='', loops=8):

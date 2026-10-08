@@ -500,6 +500,10 @@ def ensure_schema():
     for tb in ('nd_keva', 'nd_tx'):
         try: con.execute(f"ALTER TABLE {tb} ADD COLUMN mosad TEXT")
         except Exception: pass
+    # הוראה בנקאית (מס"ב): kind='bank', bank = "בנק 12 ***345" לתצוגה בלבד (בלי מספר החשבון)
+    for col in ('kind', 'bank'):
+        try: con.execute(f"ALTER TABLE nd_keva ADD COLUMN {col} TEXT")
+        except Exception: pass
     # מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — ערוץ התזכורת לכל חוב
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN channel TEXT")
     except Exception: pass
@@ -19119,7 +19123,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'הקובץ לא נקרא: %s' % str(e)[:150]})
             finally:
                 con.close()
-        m = re.match(r'/api/nd/keva/(\d+)/member$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/member$', self.path)
         if m:
             mid = int(b.get('member_id') or 0) or None
             con = db()
@@ -19131,7 +19135,7 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE nd_keva SET member_id=? WHERE id=?", (mid, m.group(1)))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
-        m = re.match(r'/api/nd/keva/(\d+)/link$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/link$', self.path)
         if m:
             con = db()
             try:
@@ -19169,7 +19173,7 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sent': n, 'no_mobile': nomob, 'failed': fail})
-        m = re.match(r'/api/nd/keva/(\d+)/charge$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/charge$', self.path)
         if m:
             # ⚡ חיוב מיידי מהוראת הקבע של חבר הקהילה (TashlumBodedNew, Join) — מאיר: "העברת תרומה…
             # חיובים כאילו חיים דרך נדרים פלוס". נרשם בכרטיס, סוגר חוב פתוח, ומסמן הודעה ששולמה.
@@ -19185,7 +19189,13 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
                 mid = int(b.get('member_id') or 0) or k['member_id']
                 groupe = str(b.get('groupe') or '').strip()
+                is_bank = (k['kind'] if 'kind' in k.keys() else '') == 'bank'
                 with _nd.use(_nd.account_for(k['mosad'] if 'mosad' in k.keys() else '')):
+                  if is_bank:
+                    # מס"ב: החיוב נשלח לבנק בשידור הקרוב (לא מיידי) — מזהה ההוראה בלי הקידומת
+                    ok, res = _nd.masav_boded(re.sub(r'^M(?:\d+:)?', '', kid), amt, il_now().strftime('%d/%m/%Y'),
+                                              ajax='crm-%s-%d' % (kid, int(time.time() * 1000)))
+                  else:
                     ok, res = _nd.tashlum_boded(kid, amt, groupe=groupe, comments=('חיוב מהמערכת' + ((' · ' + str(b.get('note') or '').strip()) if b.get('note') else '')),
                                             ajax='crm-%s-%d' % (kid, int(time.time())))
                 r = res if isinstance(res, dict) else {}
@@ -19199,9 +19209,11 @@ class H(BaseHTTPRequestHandler):
                 if mid:
                     con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
                                 (mid, today_iso(), 'תשלום',
-                                 ('💳 חויב ₪%g מהוראת הקבע (כרטיס ****%s)%s · אישור %s' % (amt, l4, (' עבור ' + groupe) if groupe else '', conf)) if ok
+                                 (('🏦 נשלח לגבייה בבנק ₪%g מההוראה הבנקאית (%s)%s — ייגבה בשידור הקרוב' % (amt, k['bank'] or '', (' עבור ' + groupe) if groupe else ''))
+                                  if is_bank else ('💳 חויב ₪%g מהוראת הקבע (כרטיס ****%s)%s · אישור %s' % (amt, l4, (' עבור ' + groupe) if groupe else '', conf))) if ok
                                  else ('🔴 חיוב ₪%g מהוראת הקבע נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
-                    if ok:
+                    # בבנקאית הכסף עוד לא נגבה (ויכול לחזור) — החוב נסגר כשהחיוב מופיע בהסטוריה
+                    if ok and not is_bank:
                         cm_debt_pay(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf)
                         ym_mark_paid(con, (k['phone'] or '').split(';')[0], amt, 'חיוב מהמערכת')
                 con.commit()
@@ -19209,7 +19221,8 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             if ok:
                 nd_history_soon()
-            return self._send(200, {'ok': bool(ok), 'error': '' if ok else (msg or 'נדרים פלוס לא אישרו'), 'confirmation': conf, 'transaction_id': tid})
+            return self._send(200, {'ok': bool(ok), 'error': '' if ok else (msg or 'נדרים פלוס לא אישרו'), 'confirmation': conf, 'transaction_id': tid,
+                                    'bank': bool(is_bank)})
         m = re.match(r'/api/members/(\d+)/receipt$', self.path)
         if m:
             con = db()
@@ -21371,7 +21384,20 @@ def nd_sync(con):
             k['torem'] = (tag + k['torem']) if k['torem'] else ''
             k['mosad'] = '' if acct['main'] else acct['mosad']
         _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now)
+        # הוראות קבע בנקאיות של אותו מוסד
+        try:
+            with _nd.use(acct):
+                nb = nd_sync_masav(con, acct, manual, pick, nidx, now)
+            res['הוראות בנקאיות' + lbl] = nb
+        except Exception as e:
+            res['הוראות בנקאיות' + lbl] = 'שגיאה: %s' % str(e)[:80]
     flags = all_flags
+    try:
+        bh = nd_masav_history(con)
+        if bh:
+            res['חיובים בנקאיים חדשים'] = bh
+    except Exception as e:
+        res['הסטוריה בנקאית'] = 'לא נמשכה: %s' % str(e)[:60]
     rp = nd_mark_replaced(con)
     if rp:
         res['הוחלפו בהוראה חדשה'] = rp
@@ -21390,6 +21416,80 @@ def nd_sync(con):
         res['היסטוריה'] = 'לא נמשכה: %s' % str(e)[:60]
     con.commit()
     return res
+
+
+def nd_sync_masav(con, acct, manual, pick, nidx, now):
+    """הוראות הקבע הבנקאיות (מס"ב) — נשמרות עם ההוראות באשראי (מזהה עם קידומת M), ומקושרות
+    לחברי הקהילה: הטלפון מגיע מפרטי ההוראה (פנייה אחת להוראה חדשה, עד 60 בכל סנכרון), אחרת לפי שם."""
+    import nedarim as _nd
+    mos = '' if acct['main'] else acct['mosad']
+    ks = _nd.masav_kevas()
+    budget = 60
+    for k in ks:
+        kid = ('M' + k['id']) if not mos else ('M%s:%s' % (mos, k['id']))
+        old = con.execute("SELECT phone,mail FROM nd_keva WHERE id=?", (kid,)).fetchone()
+        phone, mail = (old['phone'] if old else ''), (old['mail'] if old else '')
+        if not (old and (phone or '').strip()) and budget > 0:
+            budget -= 1
+            try:
+                d = _nd.masav_detail(k['id'])
+            except Exception:
+                d = {}
+            if d.get('deleted'):
+                continue
+            phone, mail = d.get('phone') or '', d.get('mail') or ''
+        row = {'id': kid, 'torem': '', 'name': k['name'], 'phone': phone or '', 'mail': mail or '', 'amount': k['amount'],
+               'groupe': k['groupe'], 'itra': k['itra'], 'next': k['next'], 'last4': '', 'city': '', 'error': '', 'mosad': mos}
+        _nd_sync_kevas(con, [row], None, manual, pick, nidx, now)
+        con.execute("UPDATE nd_keva SET kind='bank', bank=? WHERE id=?", (k['bank'], kid))
+    return len(ks)
+
+
+def nd_masav_history(con):
+    """חיובי ההוראות הבנקאיות לכל מוסד: בפעם הראשונה מ-2015, ואחר כך 45 יום אחורה (כדי לתפוס החזרות).
+    החזרה אחרונה בלי חיוב מוצלח אחריה = "חזרה" על ההוראה (וממנה חוב הו"ק, כמו באשראי)."""
+    import nedarim as _nd
+    midx, nidx = nd_member_index(con), nd_name_index(con)
+    new = 0
+    for acct in _nd.accounts():
+        mos = '' if acct['main'] else acct['mosad']
+        kk = 'nd_masav_from' + ('' if acct['main'] else ':' + mos)
+        last = kv_get(con, kk, '')
+        start = (datetime.date.fromisoformat(last) - datetime.timedelta(days=45)) if last else datetime.date(2015, 1, 1)
+        end = il_now().date()
+        rows = []
+        with _nd.use(acct):
+            cur = start
+            while cur <= end:                    # חלונות של שנה, שהתשובה לא תהיה ענקית
+                to = min(end, cur + datetime.timedelta(days=365))
+                rows += _nd.masav_history(cur.strftime('%d/%m/%Y'), to.strftime('%d/%m/%Y'))
+                cur = to + datetime.timedelta(days=1)
+        pre = 'M' if not mos else 'M%s:' % mos
+        for t in rows:
+            kid = pre + t['keva'] if t['keva'] else ''
+            k = con.execute("SELECT member_id,phone FROM nd_keva WHERE id=?", (kid,)).fetchone() if kid else None
+            mid = (k['member_id'] if k else None) or nd_match_name(nidx, t['name'])
+            iso = _nd_iso(t['date'])
+            c = con.execute("INSERT OR IGNORE INTO nd_tx(id,time,iso,phone,name,amount,keva,groupe,comments,conf,last4,type,member_id,mosad) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (pre + 'H' + t['id'], t['date'], iso, (k['phone'] or '').split(';')[0] if k else '', t['name'], t['amount'], kid,
+                             t['groupe'], 'הוראה בנקאית', '', '', t['type'], mid, mos))
+            new += 1 if c.rowcount else 0
+        # חזרה בנקאית: השורה האחרונה של ההוראה (45 יום) היא החזרה
+        lastrow = {}
+        for t in sorted(rows, key=lambda x: _nd_iso(x['date'])):
+            if t['keva']:
+                lastrow[pre + t['keva']] = t
+        cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
+        for kid, t in lastrow.items():
+            ret = 'החזר' in t['type'] or t['amount'] < 0
+            if ret and _nd_iso(t['date'])[:10] >= cutoff:
+                con.execute("UPDATE nd_keva SET error=? WHERE id=? AND kind='bank'", ('חזרה בנקאית %s: %s' % (t['date'][:10], t['type']), kid))
+            else:
+                con.execute("UPDATE nd_keva SET error='' WHERE id=? AND kind='bank'", (kid,))
+        con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, end.isoformat()))
+        con.commit()
+    return new
 
 
 def nd_mark_replaced(con):
@@ -21555,7 +21655,7 @@ def ivr_kevas(con, phone, mids=()):
     if not phone:
         return []
     mids = [int(m) for m in (mids or ()) if m]
-    q = ("SELECT * FROM nd_keva WHERE (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%') AND "
+    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%') AND "
          "(';'||phone||';' LIKE ?" + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ") "
          "ORDER BY active DESC, CASE WHEN COALESCE(error,'')='' THEN 0 ELSE 1 END, id")
     return [dict(r) for r in con.execute(q, ['%;' + phone + ';%'] + mids)]
