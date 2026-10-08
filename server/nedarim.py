@@ -133,7 +133,11 @@ def tormim():
     t = txt.strip()
     if t.startswith('{'):
         raise RuntimeError('נדרים פלוס (תורמים): %s' % t[:160])
-    rd = list(csv.reader(io.StringIO(t)))
+    # שורות שמסתיימות ב-\r בלבד (או \r\n) — מנרמלים לפני הקריאה, אחרת csv נעצר
+    t = t.replace('\r\n', '\n').replace('\r', '\n')
+    first = t.split('\n', 1)[0]
+    delim = max((',', ';', '\t'), key=first.count)
+    rd = list(csv.reader(io.StringIO(t, newline=''), delimiter=delim))
     if len(rd) < 2:
         return []
     head = [h.strip() for h in rd[0]]
@@ -148,7 +152,7 @@ def tormim():
     c_city = col('עיר', 'City')
     out = []
     for r in rd[1:]:
-        g = lambda cs: next((r[i].strip() for i in cs if i < len(r) and r[i].strip()), '')
+        g = lambda cs: next((' '.join(r[i].split()) for i in cs if i < len(r) and r[i].strip()), '')
         tid = g(c_id[:1])
         if not tid:
             continue

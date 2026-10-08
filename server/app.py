@@ -18492,7 +18492,9 @@ class H(BaseHTTPRequestHandler):
                         txt = data.decode('utf-8-sig', 'replace')
                         if txt.count('\ufffd') > 5:
                             txt = data.decode('cp1255', 'replace')
-                        raw = list(csv.reader(io.StringIO(txt)))
+                        txt = txt.replace('\r\n', '\n').replace('\r', '\n')
+                        fl = txt.split('\n', 1)[0]
+                        raw = list(csv.reader(io.StringIO(txt, newline=''), delimiter=max((',', ';', '\t'), key=fl.count)))
                 elif b.get('text'):
                     raw = [re.split(r'\t|,|;', ln) for ln in str(b['text']).splitlines()]
                 rows = _cm_rows_from_table(raw)
