@@ -326,6 +326,16 @@ def ensure_schema():
     /* תזכורות של הקהילה — מאיר: "תזכורות לקהילה, שהגבאי לא יראה את התזכורות שלנו" */
     CREATE TABLE IF NOT EXISTS cm_task(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, due TEXT, at_time TEXT,
         note TEXT, done INTEGER DEFAULT 0, created TEXT, done_at TEXT);
+    /* קופת בית הכנסת — מאיר: "לגבאי… הוצאות והכנסות לפי כל חודש שהוא יכניס ידנית… מזומנים או
+       אופציה אחרת שזה לא חיוב אשראי, ושלא יירשם בשום מקום אחר — לא אצל הקהילה ולא אצל תורמים".
+       טבלה נפרדת לגמרי: לא נוגעת בתרומות, בחברים, בקבלות או בחובות. */
+    CREATE TABLE IF NOT EXISTS cm_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT, kind TEXT, date TEXT,
+        amount REAL, purpose TEXT, method TEXT, note TEXT, created TEXT, updated TEXT);
+    CREATE INDEX IF NOT EXISTS ix_cm_ledger_month ON cm_ledger(month);
+    /* משימות הצוות — ראש הכולל, שמעון ברלב, אברהם רובינפלד: "כל אחד יכול לרשום לשני משימות
+       שעליו לבצע בעצמו או שהשני יעשה" */
+    CREATE TABLE IF NOT EXISTS cm_job(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, note TEXT, to_who TEXT,
+        by_who TEXT, due TEXT, status TEXT DEFAULT 'open', created TEXT, done_at TEXT, done_by TEXT);
     CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
        לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
@@ -16599,6 +16609,32 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'לא נמצא'})
+        if self.path.split('?')[0] == '/api/cm/ledger':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            mon = (qs.get('month') or [''])[0][:7]
+            if not re.fullmatch(r'\d{4}-\d{2}', mon):
+                mon = today_iso()[:7]
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT * FROM cm_ledger WHERE month=? ORDER BY date, id", (mon,))]
+                months = [dict(r) for r in con.execute(
+                    "SELECT month, SUM(CASE WHEN kind='in' THEN amount ELSE 0 END) inc, "
+                    "SUM(CASE WHEN kind='out' THEN amount ELSE 0 END) exp, COUNT(*) n FROM cm_ledger GROUP BY month ORDER BY month DESC")]
+            finally:
+                con.close()
+            inc = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'in'), 2)
+            exp = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'out'), 2)
+            return self._send(200, {'ok': True, 'month': mon, 'rows': rows, 'inc': inc, 'exp': exp,
+                                    'net': round(inc - exp, 2), 'months': months})
+        if self.path.split('?')[0] == '/api/cm/jobs':
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute(
+                    "SELECT * FROM cm_job ORDER BY status='done', CASE WHEN COALESCE(due,'')='' THEN '9999' ELSE due END, id DESC")]
+                team = cm_team(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'team': team, 'today': today_iso()})
         if self.path.split('?')[0] == '/api/cm/tasks':
             # תזכורות הקהילה — לגבאי (ולמסך הקהילה): פתוחות, עם שם החבר
             con = db()
@@ -19466,6 +19502,71 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/cm/ledger' or re.match(r'/api/cm/ledger/\d+$', self.path):
+            # קופת בית הכנסת — הוספה / תיקון / מחיקה. לא נרשם בשום מקום אחר.
+            lid = int(self.path.rsplit('/', 1)[1]) if self.path != '/api/cm/ledger' else 0
+            con = db()
+            try:
+                if lid and b.get('action') == 'delete':
+                    con.execute("DELETE FROM cm_ledger WHERE id=?", (lid,))
+                    con.commit()
+                    return self._send(200, {'ok': True})
+                amt = round(_amt2(b.get('amount')), 2)
+                kind = 'out' if b.get('kind') == 'out' else 'in'
+                purpose = str(b.get('purpose') or '').strip()[:200]
+                if amt <= 0:
+                    return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+                if not purpose:
+                    return self._send(200, {'ok': False, 'error': 'חסר עבור מה'})
+                date = str(b.get('date') or '')[:10]
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+                    date = today_iso()
+                mon = str(b.get('month') or '')[:7]
+                if not re.fullmatch(r'\d{4}-\d{2}', mon):
+                    mon = date[:7]
+                vals = (mon, kind, date, amt, purpose, str(b.get('method') or '').strip()[:40], str(b.get('note') or '').strip()[:500])
+                if lid:
+                    con.execute("UPDATE cm_ledger SET month=?,kind=?,date=?,amount=?,purpose=?,method=?,note=?,updated=? WHERE id=?",
+                                vals + (now_iso(), lid))
+                else:
+                    con.execute("INSERT INTO cm_ledger(month,kind,date,amount,purpose,method,note,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
+                                vals + (now_iso(), now_iso()))
+                    lid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': lid})
+        if self.path == '/api/cm/jobs' or re.match(r'/api/cm/jobs/\d+$', self.path):
+            jid = int(self.path.rsplit('/', 1)[1]) if self.path != '/api/cm/jobs' else 0
+            act = b.get('action') or ('edit' if jid else 'add')
+            con = db()
+            try:
+                team = cm_team(con)
+                who = lambda v: (str(v or '').strip() if str(v or '').strip() in team else '')
+                if act in ('add', 'edit'):
+                    title = str(b.get('title') or '').strip()[:300]
+                    to = who(b.get('to_who'))
+                    if not title or not to:
+                        return self._send(200, {'ok': False, 'error': 'חסרה משימה או למי היא'})
+                    due = str(b.get('due') or '')[:10]
+                    due = due if re.fullmatch(r'\d{4}-\d{2}-\d{2}', due) else ''
+                    note = str(b.get('note') or '').strip()[:1000]
+                    if jid:
+                        con.execute("UPDATE cm_job SET title=?, note=?, to_who=?, due=? WHERE id=?", (title, note, to, due, jid))
+                    else:
+                        con.execute("INSERT INTO cm_job(title,note,to_who,by_who,due,status,created) VALUES(?,?,?,?,?,'open',?)",
+                                    (title, note, to, who(b.get('by_who')) or to, due, now_iso()))
+                        jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                elif act == 'done':
+                    con.execute("UPDATE cm_job SET status='done', done_at=?, done_by=? WHERE id=?", (now_iso(), who(b.get('by_who')), jid))
+                elif act == 'reopen':
+                    con.execute("UPDATE cm_job SET status='open', done_at=NULL, done_by=NULL WHERE id=?", (jid,))
+                elif act == 'delete':
+                    con.execute("DELETE FROM cm_job WHERE id=?", (jid,))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': jid})
         if self.path == '/api/cm/tasks':
             mid = int(b.get('member_id') or 0)
             note = str(b.get('note') or '').strip()
@@ -21902,6 +22003,20 @@ def nd_hook(con, d):
         con.commit()
         return 'refusal'
     return 'ignored'
+
+
+CM_TEAM = ['ראש הכולל', 'שמעון ברלב', 'אברהם רובינפלד']
+
+
+def cm_team(con):
+    """מי מחלק ביניהם את משימות הצוות. ברירת מחדל: שלושת השמות שמאיר נתן."""
+    try:
+        t = json.loads(kv_get(con, 'cm_team', '') or 'null')
+        if isinstance(t, list) and t:
+            return [str(x) for x in t]
+    except ValueError:
+        pass
+    return list(CM_TEAM)
 
 
 def member_enrich_suggest(con):

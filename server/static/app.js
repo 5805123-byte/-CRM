@@ -12395,6 +12395,8 @@ function renderComm(){
   if(cmSub==='send') return renderCommSend();
   if(cmSub==='debts') return renderCommDebts();
   if(cmSub==='ym') return renderCommYm();
+  if(cmSub==='ledger') return renderCommLedger();
+  if(cmSub==='jobs') return renderCommJobs();
   const all=MEMBERS;
   const chk=m=>!!m.pending;
   const F=[['','הכל',all.length],
@@ -12422,6 +12424,8 @@ function renderComm(){
       <button class="btn" id="cm_mailn" style="flex:2" title="יוצא מ-neder1818@gmail.com">💰 מייל נדרים ונדבות</button>
       <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn" id="cm_debts" style="flex:2">💰 חובות והתחייבויות</button>
+      <button class="btn" id="cm_ledger" style="flex:2">📒 הכנסות והוצאות</button>
+      <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
       <button class="btn" id="cm_rems" style="flex:2">🔔 תזכורות קהילה${CMREMS&&CMREMS.length?` <b>${CMREMS.filter(t=>t.due<=todayStr()).length||CMREMS.length}</b>`:''}</button>
       <button class="btn sm ghost" id="cm_print" style="flex:1">🖨️ הדפסה / PDF</button>
       <button class="btn sm ghost" id="cm_xlsx" style="flex:1">📊 אקסל</button>
@@ -12469,6 +12473,9 @@ function renderComm(){
   document.getElementById('cm_mailn').onclick=()=>{cmSender='neder';cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_ledger').onclick=()=>{cmSub='ledger';LG=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
+  if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
   document.getElementById('cm_rems').onclick=()=>openCmRems();
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
@@ -12487,6 +12494,121 @@ const CD_KIND={debt:['חוב','cdk-debt'],pledge:['התחייבות','cdk-pl'],h
 const cdOpen=d=>Math.max(0,(+d.amount||0)-(+d.paid||0));
 const cdMoney=a=>'₪'+(+a||0).toLocaleString('he-IL',{maximumFractionDigits:2});
 async function cdLoad(){cdData=await api('GET','/api/cm/debts?status='+cdSt)||{rows:[]};}
+// ---- 📒 קופת בית הכנסת: הכנסות והוצאות לפי חודש לועזי ----
+// מאיר: "לגבאי… הוצאות והכנסות לפי כל חודש שהוא יכניס ידנית… מזומנים או אופציה אחרת שזה לא
+// חיוב אשראי, ושלא יירשם בשום מקום אחר… כל חודש לועזי שזה יפתח רשימה חדשה ויהיה סיכום"
+let LG=null, lgMonth='', lgEdit=0;
+const GMONTHS=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+const lgMonthName=m=>{const[y,mm]=(m||'').split('-');return (GMONTHS[(+mm||1)-1]||'')+' '+(y||'');};
+const lgShift=(m,d)=>{let[y,mm]=m.split('-').map(Number);mm+=d;if(mm<1){mm=12;y--;}if(mm>12){mm=1;y++;}return y+'-'+String(mm).padStart(2,'0');};
+const LG_METHODS=['מזומן','צ׳ק','העברה בנקאית','ביט / פייבוקס','אחר'];
+async function lgLoad(){if(!lgMonth)lgMonth=todayStr().slice(0,7);LG=await api('GET','/api/cm/ledger?month='+lgMonth)||{rows:[],months:[]};}
+function lgSide(kind){const L=LG, rows=(L.rows||[]).filter(r=>r.kind===kind), inc=kind==='in';
+  const tot=rows.reduce((t,r)=>t+(+r.amount||0),0), mopt=v=>LG_METHODS.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');
+  const row=r=>lgEdit===r.id?`<div class="lgrow ed"><div class="lgf"><input type="date" id="lge_date" value="${esc(r.date||'')}"><input id="lge_amt" inputmode="decimal" value="${esc(r.amount)}" placeholder="סכום"></div>
+      <input id="lge_for" value="${esc(r.purpose||'')}" placeholder="עבור מה"><div class="lgf"><select id="lge_meth"><option value="">אמצעי</option>${mopt(r.method||'')}</select><input id="lge_note" value="${esc(r.note||'')}" placeholder="הערות"></div>
+      <div class="bqacts"><button class="btn sm" data-lg="save" data-id="${r.id}" data-k="${kind}">💾 שמור</button><button class="btn sm ghost" data-lg="cancel">ביטול</button><button class="btn sm ghost" data-lg="del" data-id="${r.id}">🗑 מחק</button></div></div>`
+    :`<div class="lgrow"><span class="lgd">${esc(ndDate(r.date))}</span><span class="lgw"><span><b>${esc(r.purpose||'')}</b>${r.method?` <small class="lgm">${esc(r.method)}</small>`:''}</span>${r.note?`<small>${esc(r.note)}</small>`:''}</span>
+      <b class="lga">${cdMoney(r.amount)}</b><button class="cmpen" data-lg="edit" data-id="${r.id}" title="תיקון / מחיקה">✎</button></div>`;
+  return `<div class="lgcol ${inc?'in':'out'}"><h3>${inc?'⬇️ הכנסות':'⬆️ הוצאות'}</h3>
+    <div class="lgadd"><div class="lgf"><input id="lg_${kind}_amt" inputmode="decimal" placeholder="סכום ₪"><input type="date" id="lg_${kind}_date" value="${esc(lgMonth===todayStr().slice(0,7)?todayStr():lgMonth+'-01')}"></div>
+      <input id="lg_${kind}_for" placeholder="${inc?'עבור מה — למשל: מזומן מהקופה, עלייה לתורה…':'עבור מה — למשל: חשמל, ניקיון, קידוש…'}">
+      <div class="lgf"><select id="lg_${kind}_meth">${inc?'':'<option value="">אמצעי</option>'}${mopt(inc?'מזומן':'')}</select><input id="lg_${kind}_note" placeholder="הערות (לא חובה)"></div>
+      <button class="btn sm" data-lg="add" data-k="${kind}">➕ הוסף ${inc?'הכנסה':'הוצאה'}</button></div>
+    <div class="lglist">${rows.map(row).join('')||'<div class="hintxt">עוד אין '+(inc?'הכנסות':'הוצאות')+' בחודש הזה.</div>'}</div>
+    <div class="lgtot">סה״כ ${inc?'הכנסות':'הוצאות'} ב${esc(lgMonthName(lgMonth))}: <b>${cdMoney(tot)}</b></div></div>`;}
+async function renderCommLedger(){
+  chips.innerHTML='';
+  if(!LG){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען…</div>';await lgLoad();if(tab!=='comm'||cmSub!=='ledger')return;}
+  const L=LG, past=(L.months||[]).filter(m=>m.month!==lgMonth);
+  view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="lg_back">← חזרה לרשימת הקהילה</button><button class="btn sm ghost" id="lg_print">🖨️ הדפסה</button></div>
+    <div class="rbtitle">📒 הכנסות והוצאות בית הכנסת</div>
+    <div class="hintxt">רישום ידני של הקופה — מזומן, צ׳ק, העברה וכו׳. מה שנכתב כאן לא נרשם בשום מקום אחר: לא בכרטיסי התורמים ולא בקהילה.</div>
+    <div class="lgnav"><button class="btn sm ghost" id="lg_prev">→ ${esc(lgMonthName(lgShift(lgMonth,-1)))}</button><b>${esc(lgMonthName(lgMonth))}</b><button class="btn sm ghost" id="lg_next">${esc(lgMonthName(lgShift(lgMonth,1)))} ←</button></div>
+    <div class="lgcols">${lgSide('in')}${lgSide('out')}</div>
+    <div class="lgsum"><span>⬇️ נכנס: <b>${cdMoney(L.inc)}</b></span><span>⬆️ יצא: <b>${cdMoney(L.exp)}</b></span><span class="${(+L.net||0)<0?'neg':''}">יתרה לחודש: <b>${cdMoney(L.net)}</b></span></div>
+    ${past.length?`<div class="lgmonths"><div class="hintxt">חודשים קודמים</div>${past.map(m=>`<button class="lgmon" data-lgm="${m.month}"><b>${esc(lgMonthName(m.month))}</b><span>⬇️ ${cdMoney(m.inc)} · ⬆️ ${cdMoney(m.exp)} · יתרה ${cdMoney((m.inc||0)-(m.exp||0))}</span></button>`).join('')}</div>`:''}`;
+  const g=id=>document.getElementById(id);
+  g('lg_back').onclick=()=>{cmSub='list';render();};
+  const go=m=>{lgMonth=m;lgEdit=0;LG=null;renderCommLedger();};
+  g('lg_prev').onclick=()=>go(lgShift(lgMonth,-1)); g('lg_next').onclick=()=>go(lgShift(lgMonth,1));
+  view.querySelectorAll('[data-lgm]').forEach(b=>b.onclick=()=>{go(b.dataset.lgm);window.scrollTo(0,0);});
+  g('lg_print').onclick=()=>lgPrint();
+  view.querySelectorAll('[data-lg]').forEach(b=>b.onclick=async()=>{const a=b.dataset.lg,k=b.dataset.k,id=+b.dataset.id;
+    if(a==='edit'){lgEdit=id;renderCommLedger();return;}
+    if(a==='cancel'){lgEdit=0;renderCommLedger();return;}
+    if(a==='del'){if(!await uiConfirm('למחוק את השורה?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/cm/ledger/'+id,{action:'delete'});lgEdit=0;LG=null;renderCommLedger();return;}
+    const P=a==='add'?'lg_'+k+'_':'lge_';
+    const body={kind:k,amount:amtNum(g(P+'amt').value),purpose:g(P+'for').value.trim(),method:g(P+'meth').value,note:g(P+'note').value.trim(),date:g(P+'date').value};
+    if(!body.amount){toast('חסר סכום');g(P+'amt').focus();return;}
+    if(!body.purpose){toast('חסר עבור מה');g(P+'for').focus();return;}
+    if(a==='add'&&body.date&&body.date.slice(0,7)!==lgMonth)body.month=lgMonth;   // נרשם בחודש שפתוח במסך
+    b.disabled=true;
+    const r=await api('POST','/api/cm/ledger'+(a==='save'?'/'+id:''),body);
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
+    toast(a==='save'?'נשמר ✓':(k==='in'?'⬇️ ההכנסה נרשמה ✓':'⬆️ ההוצאה נרשמה ✓'));lgEdit=0;LG=null;await renderCommLedger();
+    const f=g('lg_'+k+'_amt');if(a==='add'&&f)f.focus();});
+}
+function lgPrint(){const L=LG||{rows:[]},w=window.open('','_blank');if(!w)return;
+  const tb=k=>{const rs=(L.rows||[]).filter(r=>r.kind===k);return `<h2>${k==='in'?'הכנסות':'הוצאות'}</h2><table><tr><th>תאריך</th><th>עבור מה</th><th>אמצעי</th><th>הערות</th><th>סכום</th></tr>
+    ${rs.map(r=>`<tr><td>${esc(ndDate(r.date))}</td><td>${esc(r.purpose||'')}</td><td>${esc(r.method||'')}</td><td>${esc(r.note||'')}</td><td>${cdMoney(r.amount)}</td></tr>`).join('')}
+    <tr class="t"><td colspan="4">סה״כ</td><td>${cdMoney(k==='in'?L.inc:L.exp)}</td></tr></table>`;};
+  w.document.write(`<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>הכנסות והוצאות ${esc(lgMonthName(lgMonth))}</title>
+    <style>body{font-family:Arial,sans-serif;margin:24px}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #bbb;padding:5px 7px;text-align:right;font-size:13px}th{background:#f1ede4}.t td{font-weight:bold;background:#faf8f3}</style></head>
+    <body><h1>בית הכנסת — הכנסות והוצאות · ${esc(lgMonthName(lgMonth))}</h1>${tb('in')}${tb('out')}<h2>יתרה לחודש: ${cdMoney(L.net)}</h2><script>print()<\/script></body></html>`);
+  w.document.close();}
+// ---- ✅ משימות הצוות: ראש הכולל, שמעון ברלב, אברהם רובינפלד ----
+// מאיר: "כל אחד יכול לרשום לשני משימות שעליו לבצע בעצמו או שהשני יעשה"
+let CMJOBS=null, jobMe='', jobView='', jobEdit=0, jobDone={};
+try{jobMe=localStorage.getItem('kc_jobme')||'';}catch(e){}
+async function jobsLoad(){CMJOBS=await api('GET','/api/cm/jobs')||{rows:[],team:[]};}
+async function renderCommJobs(){
+  chips.innerHTML='';
+  if(!CMJOBS){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען משימות…</div>';await jobsLoad();if(tab!=='comm'||cmSub!=='jobs')return;}
+  const T=CMJOBS.team||[], R=CMJOBS.rows||[], td=CMJOBS.today||todayStr();
+  if(jobMe&&!T.includes(jobMe))jobMe='';
+  const opts=v=>T.map(x=>`<option ${x===v?'selected':''}>${esc(x)}</option>`).join('');
+  const item=j=>jobEdit===j.id?`<div class="jobit ed"><input id="jbe_t" value="${esc(j.title)}"><div class="lgf"><select id="jbe_to">${opts(j.to_who)}</select><input type="date" id="jbe_due" value="${esc(j.due||'')}"></div>
+      <input id="jbe_n" value="${esc(j.note||'')}" placeholder="הערות"><div class="bqacts"><button class="btn sm" data-jb="save" data-id="${j.id}">💾 שמור</button><button class="btn sm ghost" data-jb="cancel">ביטול</button><button class="btn sm ghost" data-jb="delete" data-id="${j.id}">🗑 מחק</button></div></div>`
+    :`<div class="jobit ${j.status==='done'?'done':''} ${j.status!=='done'&&j.due&&j.due<td?'late':''}">
+      <button class="jobck" data-jb="${j.status==='done'?'reopen':'done'}" data-id="${j.id}" title="${j.status==='done'?'להחזיר לפתוחות':'סמן כבוצע'}">${j.status==='done'?'✔':''}</button>
+      <span class="jobw"><b>${esc(j.title)}</b>${j.note?`<small>${esc(j.note)}</small>`:''}
+        <small class="jobmeta">${j.by_who&&j.by_who!==j.to_who?'✍️ מאת '+esc(j.by_who)+' · ':''}${j.due?'📅 '+esc(ndDate(j.due))+(j.status!=='done'&&j.due<td?' — באיחור':'')+' · ':''}${j.status==='done'?'בוצע '+esc(ndDate((j.done_at||'').slice(0,10))):'נרשם '+esc(ndDate((j.created||'').slice(0,10)))}</small></span>
+      <button class="cmpen" data-jb="edit" data-id="${j.id}" title="תיקון / מחיקה">✎</button></div>`;
+  const who=jobView?[jobView]:T;
+  view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="jb_back">← חזרה לרשימת הקהילה</button></div>
+    <div class="rbtitle">✅ משימות הצוות</div>
+    <div class="jobme">מי אתה? ${T.map(x=>`<button class="chip ${jobMe===x?'on':''}" data-jme="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <div class="jobadd"><input id="jb_t" placeholder="➕ משימה חדשה — מה צריך לעשות?">
+      <div class="lgf"><label class="fld"><span>למי</span><select id="jb_to">${opts(jobMe||T[0])}</select></label><label class="fld"><span>עד מתי (לא חובה)</span><input type="date" id="jb_due"></label></div>
+      <input id="jb_n" placeholder="הערות (לא חובה)"><button class="btn sm" id="jb_add">➕ הוסף משימה</button></div>
+    <div class="jobfl"><button class="chip ${jobView?'':'on'}" data-jv="">כולם</button>${T.map(x=>`<button class="chip ${jobView===x?'on':''}" data-jv="${esc(x)}">${esc(x)} <b>${R.filter(j=>j.to_who===x&&j.status!=='done').length}</b></button>`).join('')}</div>
+    <div class="jobcols">${who.map(x=>{const op=R.filter(j=>j.to_who===x&&j.status!=='done'),dn=R.filter(j=>j.to_who===x&&j.status==='done');
+      return `<div class="jobcol"><h3>👤 ${esc(x)}${x===jobMe?' <small>(אני)</small>':''} <small>· ${op.length} פתוחות</small></h3>
+        ${op.map(item).join('')||'<div class="hintxt">אין משימות פתוחות ✓</div>'}
+        ${dn.length?`<button class="btn sm ghost jobdn" data-jd="${esc(x)}">✔ בוצעו (${dn.length}) ${jobDone[x]?'▲':'▼'}</button>${jobDone[x]?dn.slice(0,30).map(item).join(''):''}`:''}</div>`;}).join('')}</div>`;
+  const g=id=>document.getElementById(id);
+  g('jb_back').onclick=()=>{cmSub='list';render();};
+  view.querySelectorAll('[data-jme]').forEach(b=>b.onclick=()=>{jobMe=b.dataset.jme;try{localStorage.setItem('kc_jobme',jobMe);}catch(e){}renderCommJobs();});
+  view.querySelectorAll('[data-jv]').forEach(b=>b.onclick=()=>{jobView=b.dataset.jv;renderCommJobs();});
+  view.querySelectorAll('[data-jd]').forEach(b=>b.onclick=()=>{jobDone[b.dataset.jd]=!jobDone[b.dataset.jd];renderCommJobs();});
+  g('jb_add').onclick=async()=>{const t=g('jb_t').value.trim();if(!t){toast('מה המשימה?');g('jb_t').focus();return;}
+    if(!jobMe){toast('בחר קודם למעלה מי אתה');return;}
+    const r=await api('POST','/api/cm/jobs',{title:t,to_who:g('jb_to').value,by_who:jobMe,due:g('jb_due').value,note:g('jb_n').value.trim()});
+    if(!r||!r.ok){await uiAlert((r&&r.error)||'לא נשמר');return;}
+    toast('✅ המשימה נרשמה ל'+g('jb_to').value);CMJOBS=null;await renderCommJobs();const f=g('jb_t');if(f)f.focus();};
+  g('jb_t').onkeydown=e=>{if(e.key==='Enter')g('jb_add').click();};
+  view.querySelectorAll('[data-jb]').forEach(b=>b.onclick=async()=>{const a=b.dataset.jb,id=+b.dataset.id;
+    if(a==='edit'){jobEdit=id;renderCommJobs();return;}
+    if(a==='cancel'){jobEdit=0;renderCommJobs();return;}
+    let body={action:a,by_who:jobMe};
+    if(a==='delete'&&!await uiConfirm('למחוק את המשימה?','🗑 כן, למחוק','ביטול'))return;
+    if(a==='save'){const t=g('jbe_t').value.trim();if(!t){toast('מה המשימה?');return;}body={action:'edit',title:t,to_who:g('jbe_to').value,due:g('jbe_due').value,note:g('jbe_n').value.trim()};}
+    b.disabled=true;
+    const r=await api('POST','/api/cm/jobs/'+id,body);
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
+    if(a==='done')toast('✔ בוצע');jobEdit=0;CMJOBS=null;renderCommJobs();});
+}
 function cdMemberDL(){return `<datalist id="cd_mdl">${(MEMBERS||[]).map(m=>`<option value="${esc(mName(m))} #${m.id}">`).join('')}</datalist>`;}
 const cdPick=v=>{const m=/#(\d+)\s*$/.exec(v||'');return m?+m[1]:0;};
 async function renderCommDebts(){
