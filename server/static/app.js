@@ -14138,6 +14138,26 @@ function rcPreview(id,cap){return new Promise(res=>{
   o.innerHTML=`<div class="confirmbox rcprev"><div class="cm">${esc(cap||'')}</div><img src="/api/receipts/${id}.png?v=${Date.now()}" alt="" style="width:100%;border:1px solid var(--line);border-radius:8px;margin:8px 0">
     <div class="cbtns"><a class="btn ghost" href="/api/receipts/${id}.pdf?v=${Date.now()}" target="_blank">👁 PDF</a><button class="btn cyes">סגור</button></div></div>`;
   document.body.appendChild(o);o.querySelector('.cyes').onclick=()=>{o.remove();res();};});}
+// "עבור" בקבלה הידנית — מאיר: "זה לא נותן לי את כל הבחירות… $330 בשביל סוכות, הוא לא נותן
+// לי לכתוב". קודם ההתחייבויות של התורם עצמו, אחר כך הייעודים והקמפיינים, ו"אחר" לכתיבה חופשית
+function rcPurOpts(d){const seen=new Set(),o=[],add=(v,l)=>{v=String(v||'').trim();if(!v||seen.has(v))return;seen.add(v);o.push(`<option value="${esc(v)}">${esc(l||v)}</option>`);};
+  const mine=[];
+  (d.pledges||[]).filter(p=>String(p.category||'').trim()&&p.status!=='נתן').forEach(p=>{const c=String(p.cur||'').trim()||cmCur(d);
+    mine.push([p.category,p.category+(amtNum(p.amount)?' — התחייב '+c+Math.round(amtNum(p.amount)).toLocaleString('en-US'):'')]);});
+  if((d.partners||[]).some(p=>p.active!=0))mine.push(['יששכר־זבולון','יששכר־זבולון']);
+  let h='<option value="">— עבור מה —</option>';
+  if(mine.length){mine.forEach(([v,l])=>add(v,l));h+='<optgroup label="ההתחייבויות שלו">'+o.splice(0).join('')+'</optgroup>';}
+  RCATS.filter(Boolean).concat(['תרומה']).forEach(c=>add(c));
+  (CAMPAIGNS||[]).forEach(c=>add(c));
+  h+='<optgroup label="ייעודים וקמפיינים">'+o.join('')+'</optgroup>';
+  return h+'<option value="__new__">➕ אחר — לכתוב…</option>';}
+// כמו purpose_en בשרת (receipt_us.py) — רק כדי להציע את הנוסח האנגלי בטופס
+function purposeEnJS(p){p=String(p||'').trim();const M=[[/יששכר|זבולון|zevulun|yissachar/i,'Yissachar–Zevulun Partnership in Torah'],[/פרנס.?לילה|לימוד.?לילה/,'Sponsorship of a Night of Torah Study'],
+  [/נר.?למאור/,'Ner LaMaor'],[/חדר.?קפה/,'Refreshments for the Kollel'],[/ארוחת.?בוקר/,'Breakfast for the Kollel'],[/קמחא/,'Kimcha D’Pischa'],[/מתנות.?לאביונים/,'Matanos LaEvyonim'],
+  [/הכנסת.?כלה/,'Hachnosas Kallah'],[/בנין|בניין/,'Building Fund'],[/קוויטל/,'Kvittel'],[/סוכות|סכות/,'Sukkos'],[/ראש.?השנה/,'Rosh Hashanah'],[/יום.?כיפור/,'Yom Kippur'],
+  [/הושענא/,'Hoshana Rabbah'],[/חנוכה/,'Chanukah'],[/פורים/,'Purim'],[/פסח/,'Pesach'],[/שבועות/,'Shavuos'],[/ל.?ג.?בעומר/,'Lag BaOmer']];
+  for(const[re,en]of M)if(re.test(p))return en;
+  return (!p||/[\u0590-\u05FF]/.test(p))?'General Donation':p;}
 function rcMoney(r){const n=+r.amount||0;return (r.kind==='il'?'₪':'$')+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function rcDate(s){const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?(m[3]+'.'+m[2]+'.'+m[1]):'';}
 // שליחת קבלה במייל — משותף לחלון הקבלות ולכרטיס התורם. מחזיר את הקבלה המעודכנת או null
@@ -14292,7 +14312,10 @@ function renderReceipts(){
           <div class="two"><label class="fld"><span>💲 סכום (${sym})</span><input id="rc_amt" inputmode="decimal" placeholder="0"></label>
             <label class="fld"><span>📅 תאריך התרומה</span><input id="rc_date" type="date" value="${todayStr()}"></label></div>
           <div class="two"><label class="fld"><span>💳 אמצעי תשלום</span><input id="rc_meth" list="rc_meths" placeholder="העברה בנקאית / מזומן / צ'ק…"><datalist id="rc_meths"><option value="העברה בנקאית"><option value="מזומן"><option value="צ'ק"><option value="כרטיס אשראי"><option value="נדרים פלוס"><option value="הוראת קבע"><option value="Zelle"><option value="PayPal"><option value="Check"><option value="Credit Card"></datalist></label>
-            <label class="fld"><span>🎯 עבור</span><input id="rc_pur" list="rc_purs" placeholder="תרומה / יששכר־זבולון / פרנס לילה…"><datalist id="rc_purs">${RCATS.filter(Boolean).map(c=>`<option value="${esc(c)}">`).join('')}<option value="תרומה"></datalist></label></div>
+            <label class="fld"><span>🎯 עבור</span><select id="rc_pur">${rcPurOpts(d)}</select></label></div>
+          <div class="addrow hidden" id="rc_purnewrow"><input id="rc_purnew" placeholder="עבור מה? — למשל: סוכות, דינר, הכנסת ספר תורה…"></div>
+          ${rcKind==='us'?`<label class="fld"><span>🇺🇸 כך ייכתב על הקבלה (באנגלית) — אפשר לשנות</span><input id="rc_pen" dir="ltr" placeholder="General Donation"></label>`:''}
+          ${cmCur(d)!==sym?`<label class="fld"><span>💱 שווה ערך ב-${cmCur(d)} — לחשבון ההתחייבות שלו (לא חובה)</span><input id="rc_eq" inputmode="decimal" placeholder="למשל 1000"></label>`:''}
           <label class="fld"><span>📝 הערה (למשל אסמכתא)</span><input id="rc_note" placeholder="אסמכתא 12345"></label>
           <label class="gvall"><input type="checkbox" id="rc_send" ${em?'checked':''} ${em?'':'disabled'}> 📧 לשלוח את הקבלה במייל לתורם אחרי ההפקה${em?'':' (אין מייל בכרטיס)'}</label>
           <div class="addrow"><button class="btn sm" id="rc_newok">🧾 שמור את התרומה והפק קבלה</button></div></details></div>`;
@@ -14337,14 +14360,25 @@ function renderReceipts(){
     else toast('קבלה '+r.doc.num+' הופקה'+(r.doc.sent_at?' ונשלחה':'')+' ✓');
     renderReceipts(); await rcOpenDoc(r.doc);
   });
+  const rp=document.getElementById('rc_pur');
+  if(rp){const pen=document.getElementById('rc_pen'),nr=document.getElementById('rc_purnewrow'),pn=document.getElementById('rc_purnew');
+    const upd=()=>{const v=rp.value==='__new__'?(pn.value||''):rp.value;if(nr)nr.classList.toggle('hidden',rp.value!=='__new__');
+      if(pen){pen.placeholder=purposeEnJS(v);if(pen.dataset.auto!=='0')pen.value='';}};
+    rp.onchange=()=>{upd();if(rp.value==='__new__'&&pn)pn.focus();}; if(pn)pn.oninput=upd;
+    if(pen)pen.oninput=()=>{pen.dataset.auto=pen.value?'0':'1';}; upd();}
   const ok=document.getElementById('rc_newok'); if(ok)ok.onclick=async()=>{
     const amt=document.getElementById('rc_amt').value.trim();
     if(!amtNum(amt)){toast('חסר סכום');document.getElementById('rc_amt').focus();return;}
     const sendIt=!!(document.getElementById('rc_send')&&document.getElementById('rc_send').checked);
+    const pv=document.getElementById('rc_pur').value, pur=pv==='__new__'?document.getElementById('rc_purnew').value.trim():pv;
+    if(pv==='__new__'&&!pur){toast('כתוב עבור מה');document.getElementById('rc_purnew').focus();return;}
     if(!await uiConfirm('להפיק קבלה על '+(rcKind==='il'?'₪':'$')+amt+(sendIt?' ולשלוח אותה במייל לתורם':' (בלי שליחה במייל)')+'?'))return;
     ok.disabled=true; toast('שומר ומפיק…');
+    const pen=document.getElementById('rc_pen'), eqi=document.getElementById('rc_eq');
     const r=await api('POST','/api/receipts/new',{donor_id:rcDonor,kind:rcKind,amount:amt,date:document.getElementById('rc_date').value,send:sendIt?1:0,
-      method:document.getElementById('rc_meth').value.trim(),purpose:document.getElementById('rc_pur').value.trim(),note:document.getElementById('rc_note').value.trim()});
+      method:document.getElementById('rc_meth').value.trim(),purpose:pur,note:document.getElementById('rc_note').value.trim(),
+      purpose_en:pen?(pen.value.trim()||pen.placeholder):'',eq:eqi?eqi.value.trim():''});
+    if(r&&r.ok&&pur&&!(CAMPAIGNS||[]).includes(pur)&&!RCATS.includes(pur)&&pv==='__new__'){api('POST','/api/campaigns',{name:pur});CAMPAIGNS.unshift(pur);}
     ok.disabled=false;
     if(!r||!r.ok){await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return;}
     await Promise.all([rcLoad(true),load()]);

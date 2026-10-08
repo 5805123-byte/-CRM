@@ -34,7 +34,16 @@ PMAP = [(r'יששכר|זבולון|zevulun|yissachar', 'Yissachar–Zevulun Part
         (r'מתנות.?לאביונים|matanos', 'Matanos LaEvyonim'),
         (r'הכנסת.?כלה|kalla', 'Hachnosas Kallah'),
         (r'בנין|בניין|building', 'Building Fund'),
-        (r'קוויטל|kvittel', 'Kvittel')]
+        (r'קוויטל|kvittel', 'Kvittel'),
+        (r'סוכות|סכות|sukk?o[ts]', 'Sukkos'),
+        (r'ראש.?השנה|rosh\s?hashan', 'Rosh Hashanah'),
+        (r'יום.?כיפור|yom\s?kip', 'Yom Kippur'),
+        (r'הושענא|hoshana', 'Hoshana Rabbah'),
+        (r'חנוכה|chanuk|hanuk', 'Chanukah'),
+        (r'פורים|purim', 'Purim'),
+        (r'פסח', 'Pesach'),
+        (r'שבועות|shavu', 'Shavuos'),
+        (r'ל.?ג.?בעומר|lag\s?ba', 'Lag BaOmer')]
 MMAP = [(r'אשראי|credit|אותורייז|authorize|banquest|בנק ווסט|card', 'Credit Card'),
         (r"צק|צ׳ק|צ'ק|check|cheque", 'Check'),
         (r'מזומן|cash', 'Cash'),
@@ -120,7 +129,7 @@ def receipt_data(con, don_id, RECEIPT_START, today_iso):
         amt = 0.0
     return {'donation_id': don_id, 'donor_id': row['donor_id'], 'name': name, 'addr': addr, 'email': email,
             'amount': amt, 'date': iso_day(row['date']) or today_iso(), 'issued': today_iso(),
-            'purpose': purpose_en(row['category']), 'method': method_en(row['method']), 'num': num}
+            'purpose': ((row['purpose_en'] if 'purpose_en' in row.keys() else '') or '').strip() or purpose_en(row['category']), 'method': method_en(row['method']), 'num': num}
 
 
 def receipt_file(con, don_id, fmt, STATIC, RECEIPT_START, today_iso):

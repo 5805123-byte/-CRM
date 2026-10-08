@@ -497,7 +497,7 @@ def ensure_schema():
     # eq — שווה הערך במטבע של התורם, לתרומה במטבע אחר. מאיר: "זה כותב לי 1094 שקל ועשיתי שזה
     # דולר, אבל הוא התחייב כל חודש 3,300 שקל ולא דולר"
     for col in ('fb_channel', 'fb_date', 'fb_followup', 'fb_note', 'cur', 'prev_year',
-                'prev_note', 'receipt_num', 'receipt_at', 'receipt_url', 'eq'):
+                'prev_note', 'receipt_num', 'receipt_at', 'receipt_url', 'eq', 'purpose_en'):
         try: con.execute(f"ALTER TABLE donations ADD COLUMN {col} TEXT")
         except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN paid INTEGER DEFAULT 0")
@@ -17692,9 +17692,14 @@ class H(BaseHTTPRequestHandler):
             con = db()
             if not con.execute("SELECT 1 FROM donors WHERE id=?", (donor_id,)).fetchone():
                 con.close(); return self._send(404, {'ok': False, 'error': 'התורם לא נמצא'})
-            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,?,1)",
-                        (donor_id, (b.get('date') or today_iso())[:10], amount, (b.get('purpose') or '').strip(),
-                         (b.get('method') or '').strip(), (b.get('note') or '').strip(), cur))
+            # מאיר: "אני רוצה לבחור למשל $330 בשביל סוכות… זה מה שהוא התחייב לסוכות, אלף שקל" —
+            # purpose_en: איך "עבור" נכתב על הקבלה באנגלית; eq: שווה הערך במטבע ההתחייבות
+            from receipt_us import iso_day as _isod
+            eq = re.sub(r'[^\d.]', '', str(b.get('eq') or ''))
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid,purpose_en,eq) VALUES(?,?,?,?,?,?,?,1,?,?)",
+                        (donor_id, _isod(b.get('date')) or today_iso(), amount, (b.get('purpose') or '').strip(),
+                         (b.get('method') or '').strip(), (b.get('note') or '').strip(), cur,
+                         str(b.get('purpose_en') or '').strip()[:120], eq))
             did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
             con.commit()
             send = bool(b.get('send'))
