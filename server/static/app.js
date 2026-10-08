@@ -1208,17 +1208,23 @@ function netInit(){
 // מאיר: "חייבים לעשות סיסמה למערכת הכללית… והלשונית של קהילה אוכל לתת לגבאי, גישה רק לקהילה,
 // עם סיסמה נפרדת". הסיסמאות ב-Render (CRM_PASS / CRM_PASS_COMM). השרת מחזיר 401 — מסך כניסה.
 let ROLE='admin', AUTH_ON=false, _loginShown=false;
+// הקישורים המיוחדים — /kehila (הגבאי) ו-/parnes (פרנס יום וקוויטל). כל קישור מבקש את הסיסמה שלו.
+const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':'admin');
+const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',admin:'/'};
+const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel']};
+const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל'};
 function showLogin(msg){
   if(_loginShown)return; _loginShown=true;
   const o=document.createElement('div'); o.id='loginov'; o.className='loginov';
-  o.innerHTML=`<form class="loginbox" id="loginf"><img src="/logo.png" alt="" style="width:64px;height:auto"><h2>כולל חצות</h2>
-    <div class="hintxt">${esc(msg||'הקלד את הסיסמה כדי להיכנס')}</div>
+  o.innerHTML=`<form class="loginbox" id="loginf"><img src="/logo.png" alt="" style="width:64px;height:auto"><h2>${esc(ROLE_TITLE[PORTAL]||'כולל חצות')}</h2>
+    <div class="hintxt">${esc(msg||(PORTAL==='admin'?'הקלד את הסיסמה כדי להיכנס':'הקלד את הסיסמה שקיבלת'))}</div>
     <input type="password" id="login_pw" placeholder="סיסמה" autocomplete="current-password" dir="ltr" autofocus>
     <button class="btn" type="submit">🔓 כניסה</button><div class="loginerr" id="login_err"></div>
     <div id="login_g" class="login_g" hidden><div class="hintxt">— או —</div><div id="login_gbtn"></div></div></form>`;
   document.body.appendChild(o);
   // כניסה עם חשבון גוגל (אם הוגדר GOOGLE_CLIENT_ID) — הכפתור של גוגל; האסימון נבדק בשרת מול גוגל
-  fetch('/api/me').then(r=>r.json()).then(me=>{if(!me||!me.google)return;
+  // מאיר: "את גוגל אני בלבד מאשר" — כפתור גוגל רק בכניסה הראשית
+  if(PORTAL==='admin')fetch('/api/me').then(r=>r.json()).then(me=>{if(!me||!me.google)return;
     const sc=document.createElement('script');sc.src='https://accounts.google.com/gsi/client';sc.async=true;
     sc.onload=()=>{try{google.accounts.id.initialize({client_id:me.google,callback:async res=>{
         const err=document.getElementById('login_err');err.textContent='';
@@ -1230,19 +1236,20 @@ function showLogin(msg){
   const f=document.getElementById('loginf'), err=document.getElementById('login_err');
   f.onsubmit=async e=>{e.preventDefault();const pw=document.getElementById('login_pw').value;if(!pw)return;
     f.querySelector('button').disabled=true;err.textContent='';
-    let r=null;try{r=await (await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})})).json();}catch(x){}
+    let r=null;try{r=await (await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw,portal:PORTAL})})).json();}catch(x){}
     if(r&&r.ok){location.reload();return;}
     err.textContent=(r&&r.error)||'לא הצליח — נסה שוב';f.querySelector('button').disabled=false;};
   setTimeout(()=>{const i=document.getElementById('login_pw');if(i)i.focus();},50);
 }
 function applyRole(){
-  // סיסמת הקהילה: רק לשונית הקהילה. הכותרת, החיפוש והלשוניות האחרות — מוסתרים
-  if(ROLE!=='comm')return;
-  document.querySelectorAll('.tab').forEach(b=>{if(b.dataset.tab!=='comm')b.classList.add('hidden');});
-  const h=document.querySelector('.brand h1'); if(h)h.textContent='כולל חצות — קהילה';
+  // סיסמה מוגבלת: רק הלשוניות שלה. הכותרת משתנה, בדיקת המערכת מוסתרת, והכתובת — הקישור המיוחד
+  const tabs=ROLE_TABS[ROLE]; if(!tabs)return;
+  document.querySelectorAll('.tab').forEach(b=>{if(!tabs.includes(b.dataset.tab))b.classList.add('hidden');});
+  const h=document.querySelector('.brand h1'); if(h)h.textContent=ROLE_TITLE[ROLE]||h.textContent;
   const hb=document.getElementById('healthbtn'); if(hb)hb.hidden=true;
   const st=document.getElementById('stat'); if(st)st.textContent='';
-  tab='comm';
+  if(!tabs.includes(tab))tab=tabs[0];
+  try{if(location.pathname!==PORTAL_PATH[ROLE])history.replaceState(null,'',PORTAL_PATH[ROLE]);}catch(e){}
 }
 async function logout(){try{await fetch('/api/logout',{method:'POST'});}catch(e){}
   // העותק של הנתונים שנשמר למצב בלי רשת — נמחק ביציאה, שלא יישאר על המכשיר
@@ -1252,7 +1259,7 @@ async function api(m,u,b){
   // נשמר בתור עד שהחיבור יחזור — המסך ממשיך כרגיל
   if(r.headers.get('X-KC-Queued')==='1'&&!OFFLINE){OFFLINE=true;netPaint();}
   if(r.status===401){showLogin();}
-  if(r.status===403){toast('הסיסמה הזו פותחת רק את הקהילה');}
+  if(r.status===403){toast(ROLE==='parnes'?'הסיסמה הזו פותחת רק את פרנס יום והקוויטל':'הסיסמה הזו פותחת רק את הקהילה');}
   return r.json();
 }
 function isAudioFile(f){return (f.mime||'').indexOf('audio')>=0||/\.(ogg|opus|m4a|mp3|wav|aac|amr|webm)$/i.test(f.name||'');}
@@ -1502,7 +1509,7 @@ async function load(){
       _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
   }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }
   if(!d)return;
-  if(d.role==='comm'){ROLE='comm';AUTH_ON=true;}
+  if(d.role==='comm'||d.role==='parnes'){ROLE=d.role;AUTH_ON=true;}
   netPaint();
   DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; CAMPFLAGS = d.campaign_flags || {}; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
@@ -1512,7 +1519,7 @@ async function load(){
   // מאיר (הכל) והגבאי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
   if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{const st=ROLE==='comm'?'comm':localStorage.getItem('kc_tab');const valid=['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -2668,6 +2675,8 @@ function openDonor(d,startTab){
   document.getElementById('cx').onclick=async()=>{await flushPrayers();
     ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}
     restoreScroll();};
+  // העובד של פרנס יום וקוויטל — בכרטיס רק הראשי (ימי הפרנס) והקוויטל; פרטים, קשר ומשימות לא
+  if(ROLE==='parnes'){sheet.querySelectorAll('.ctab').forEach(b=>{if(!['details','kvittel'].includes(b.dataset.c))b.remove();});if(!['details','kvittel'].includes(cardTab))cardTab='details';}
   sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=async()=>{await flushPrayers();cardTab=b.dataset.c;renderCard(d);});
   const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='details';renderCard(d);};
   renderCard(d);

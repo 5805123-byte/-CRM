@@ -12488,11 +12488,14 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 # מאיר: "עכשיו שהמערכת אשראי עובדת, אנחנו חייבים לעשות סיסמה למערכת הכללית, ואני רוצה
 # שהלשונית של קהילה אני אוכל לתת אותה לגבאי, שיהיה לו גישה רק לקהילה, עם סיסמה נפרדת."
 # הסיסמאות — ב-Render בלבד (לא בקוד, לא במסד ולא בהודעות):
-#     CRM_PASS        סיסמת המערכת (הכל)
-#     CRM_PASS_COMM   סיסמת הקהילה — נכנסים ורואים רק את לשונית הקהילה
+#     CRM_PASS          סיסמת המערכת (הכל) — נכנסים בכתובת הראשית, או עם גוגל
+#     CRM_PASS_COMM     סיסמת הגבאי — נכנסים בקישור /kehila ורואים רק את הקהילה
+#     CRM_PASS_PARNES   סיסמת העובד — נכנסים בקישור /parnes ורואים רק פרנס יום וקוויטל
+# מאיר: "שיהיה לו לינק מיוחד רק לדף פרנס יום… ולקהילה קישור מיוחד לגבאי עם הסיסמא, שולט
+# רק על זה ולא יכול להיכנס לדפים אחרים". כל קישור מקבל רק את הסיסמה שלו.
 # בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
 AUTH_DAYS = 365
-AUTH_PUBLIC = ('/api/login', '/api/logout', '/api/me', '/api/yemot/ivr', '/unsub', '/api/authorize/webhook', '/api/health')
+AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health')   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
 #     GOOGLE_LOGIN_ADMIN   מיילים שנכנסים להכל (ברירת מחדל: 5805123@gmail.com), מופרדים בפסיק
@@ -12503,6 +12506,13 @@ GOOGLE_TOKENINFO = 'https://oauth2.googleapis.com/tokeninfo'
 AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/', '/api/nd/', '/api/nikud',
              '/api/nedarim/mosads', '/api/seats', '/seat-map-print', '/seat_layout.json', '/seat-map-original.png',
              '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits')
+# העובד של פרנס יום וקוויטל — הלוח, הימים, התעודות, שמות הקוויטל וההדפסה. בלי תרומות,
+# טלפונים ומיילים (ראה _data_parnes), ובלי מחיקת כרטיסים
+AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/hebmonth', '/api/prayer', '/api/donor',
+               '/cert.png', '/cert.jpg', '/api/task', '/api/intake')
+AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES}
+PORTALS = {'/kehila': 'comm', '/parnes': 'parnes'}
+PARNES_DONOR_FIELDS = ('kv_skip', 'kv_year', 'kv_month', 'tier', 'last', 'first', 'english')
 _AUTH_FAIL = {}      # ip -> [כישלונות, זמן אחרון] — האטה אחרי ניסיונות שגויים
 _AUTH_LOCK = threading.Lock()
 
@@ -12542,7 +12552,7 @@ def auth_role_of(cookie):
     role, exp, nonce, sig = parts
     body = '.'.join(parts[:3])
     want = hmac.new(_sess_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:40]
-    if not hmac.compare_digest(sig, want) or role not in ('admin', 'comm'):
+    if not hmac.compare_digest(sig, want) or role not in ('admin', 'comm', 'parnes'):
         return ''
     try:
         if int(exp) < time.time():
@@ -12558,6 +12568,24 @@ def google_client_id():
 
 def _emails(env, default=''):
     return {e.strip().lower() for e in (os.environ.get(env) or default).split(',') if e.strip()}
+
+
+def _data_parnes():
+    """הנתונים לעובד של פרנס יום וקוויטל: כל התורמים, אבל רק מה שהלוח והקוויטל צריכים —
+    שם, דרגת קוויטל, ימי הפרנס ושמות הקוויטל. בלי טלפון, מייל, כתובת, תרומות וחובות."""
+    donors, unlinked, general_tasks = get_all()
+    keep = ('id', 'last', 'first', 'english', 'business', 'region', 'country', 'tier', 'category', 'parnes', 'prayers',
+            'kv_skip', 'kv_year', 'kv_month', 'created', 'gender')
+    out = []
+    for d in donors:
+        x = {k: d.get(k) for k in keep if k in d}
+        x['tasks'] = [t for t in (d.get('tasks') or []) if (t.get('kind') or '') == 'parnes']
+        x['pledges'] = []; x['donations'] = []; x['contacts'] = []; x['partners'] = []; x['transactions'] = []; x['building'] = []; x['files'] = []
+        out.append(x)
+    return {'donors': out, 'mail_names': None, 'unlinked_prayers': unlinked, 'general_tasks': [], 'campaigns': [],
+            'campaign_flags': {}, 'building_items': [], 'not_dupes': [], 'task_kinds': [], 'pay_channels': [],
+            'contact_kinds': [], 'heb_year': current_heb_year(), 'heb_today': greg_to_heb_full(today_iso()),
+            'kv_default': list(kvittel_default_month()), 'role': 'parnes'}
 
 
 def auth_check_google(credential):
@@ -12588,20 +12616,18 @@ def auth_check_google(credential):
     return '', 'החשבון %s לא מורשה להיכנס' % em
 
 
-def auth_check_password(pw, ip):
-    """-> תפקיד או ''. אחרי 8 כישלונות מאותה כתובת — המתנה של דקה."""
+def auth_check_password(pw, ip, portal='admin'):
+    """-> תפקיד או ''. כל קישור בודק רק את הסיסמה שלו: הראשי — CRM_PASS, /kehila —
+    CRM_PASS_COMM, /parnes — CRM_PASS_PARNES. אחרי 8 כישלונות מאותה כתובת — המתנה של דקה."""
     now = time.time()
     with _AUTH_LOCK:
         f = _AUTH_FAIL.get(ip) or [0, 0]
         if f[0] >= 8 and now - f[1] < 60:
             return 'wait'
     pw = (pw or '').strip().encode('utf-8')
-    role = ''
-    for env, r in (('CRM_PASS', 'admin'), ('CRM_PASS_COMM', 'comm')):
-        want = (os.environ.get(env) or '').strip().encode('utf-8')
-        if want and hmac.compare_digest(pw, want):
-            role = r
-            break
+    env, r = {'comm': ('CRM_PASS_COMM', 'comm'), 'parnes': ('CRM_PASS_PARNES', 'parnes')}.get(portal, ('CRM_PASS', 'admin'))
+    want = (os.environ.get(env) or '').strip().encode('utf-8')
+    role = r if (want and pw and hmac.compare_digest(pw, want)) else ''
     with _AUTH_LOCK:
         if role:
             _AUTH_FAIL.pop(ip, None)
@@ -14022,7 +14048,7 @@ class H(BaseHTTPRequestHandler):
         role = auth_role_of(self.headers.get('Cookie'))
         if not role:
             fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
-            if self.command == 'GET' and fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'):
+            if self.command == 'GET' and (path in PORTALS or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
                 self.role = ''
                 return True
             if path.startswith('/api/'):
@@ -14032,11 +14058,14 @@ class H(BaseHTTPRequestHandler):
                                  '<body style="font-family:sans-serif;direction:rtl;padding:30px">🔒 נדרשת כניסה בסיסמה… <a href="/">למסך הכניסה</a></body>').encode('utf-8'), 'text/html')
             return False
         self.role = role
-        if role == 'comm' and not any(path.startswith(x) for x in AUTH_COMM):
+        allow = AUTH_ROLE_PATHS.get(role)
+        if allow is not None and (not any(path.startswith(x) for x in allow)
+                                  or (role == 'parnes' and self.command == 'DELETE' and path.startswith('/api/donor'))):
             fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
-            if self.command == 'GET' and fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'):
+            if self.command == 'GET' and (path in PORTALS or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
                 return True
-            self._send(403, {'ok': False, 'error': 'forbidden', 'detail': 'הסיסמה הזו פותחת רק את לשונית הקהילה'})
+            self._send(403, {'ok': False, 'error': 'forbidden',
+                             'detail': 'הסיסמה הזו פותחת רק את %s' % ('לשונית הקהילה' if role == 'comm' else 'פרנס יום וקוויטל')})
             return False
         return True
 
@@ -14044,7 +14073,8 @@ class H(BaseHTTPRequestHandler):
         if path == '/api/me':
             role = 'admin' if not auth_on() else auth_role_of(self.headers.get('Cookie'))
             return self._send(200, {'ok': True, 'auth_on': auth_on(), 'role': role, 'google': google_client_id(),
-                                    'comm_set': bool((os.environ.get('CRM_PASS_COMM') or '').strip())}) or False
+                                    'comm_set': bool((os.environ.get('CRM_PASS_COMM') or '').strip()),
+                                    'parnes_set': bool((os.environ.get('CRM_PASS_PARNES') or '').strip())}) or False
         if path == '/api/logout':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -14061,7 +14091,8 @@ class H(BaseHTTPRequestHandler):
             if not role:
                 return self._send(401, {'ok': False, 'error': em}) or False
         else:
-            role = auth_check_password(self._body().get('password'), self._ip())
+            b = self._body()
+            role = auth_check_password(b.get('password'), self._ip(), b.get('portal') if b.get('portal') in ('comm', 'parnes') else 'admin')
         if role == 'wait':
             return self._send(429, {'ok': False, 'error': 'יותר מדי ניסיונות — נסה שוב בעוד דקה'}) or False
         if not role:
@@ -14077,7 +14108,12 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._gate():
             return
+        if self.path.split('?')[0] in PORTALS:
+            # הקישורים המיוחדים — אותו מסך, והוא יודע לפי הכתובת איזו סיסמה לבקש
+            return self._send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html')
         if self.path == '/api/data':
+            if getattr(self, 'role', '') == 'parnes':
+                return self._send(200, _data_parnes())
             if getattr(self, 'role', '') == 'comm':
                 # סיסמת הקהילה — בלי התורמים בכלל. רק מה שהמסך צריך כדי לעלות
                 return self._send(200, {'donors': [], 'mail_names': None, 'unlinked_prayers': [], 'general_tasks': [], 'campaigns': [],
@@ -16623,6 +16659,8 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); did = int(m.group(1))
             fields = {k: v for k, v in b.items() if k in DONOR_FIELDS}
+            if getattr(self, 'role', '') == 'parnes':
+                fields = {k: v for k, v in fields.items() if k in PARNES_DONOR_FIELDS}
             if 'zip' in fields:
                 fields['zip'] = norm_zip(fields['zip'], fields.get('region', b.get('region', '')))
             # מאיר: "בארצות הברית קודם המספר אחר כך שם רחוב" — גם כתובת
@@ -20091,9 +20129,11 @@ def health_report():
             pass
         # כניסה בסיסמה — מאיר: "עכשיו שהמערכת אשראי עובדת, אנחנו חייבים לעשות סיסמה"
         add('כניסה בסיסמה', 'ok' if auth_on() else 'bad',
-            ('מוגדרת · סיסמת קהילה %s · כניסה עם גוגל %s' % ('מוגדרת (CRM_PASS_COMM)' if (os.environ.get('CRM_PASS_COMM') or '').strip() else 'לא מוגדרת — להוסיף CRM_PASS_COMM ב-Render',
+            ('מוגדרת · גבאי (/kehila) %s · פרנס יום וקוויטל (/parnes) %s · כניסה עם גוגל %s' % (
+                'מוגדר (CRM_PASS_COMM)' if (os.environ.get('CRM_PASS_COMM') or '').strip() else 'לא מוגדר — להוסיף CRM_PASS_COMM ב-Render',
+                'מוגדר (CRM_PASS_PARNES)' if (os.environ.get('CRM_PASS_PARNES') or '').strip() else 'לא מוגדר — להוסיף CRM_PASS_PARNES ב-Render',
                                                            ('מוגדרת (%s)' % ', '.join(sorted(_emails('GOOGLE_LOGIN_ADMIN', GOOGLE_ADMIN_DEFAULT) | _emails('GOOGLE_LOGIN_COMM')))) if google_client_id() else 'לא מוגדרת (GOOGLE_CLIENT_ID)'))
-            if auth_on() else 'המערכת פתוחה בלי סיסמה! ב-Render ← Environment להוסיף CRM_PASS (סיסמת המערכת) ו-CRM_PASS_COMM (סיסמה לקהילה בלבד)')
+            if auth_on() else 'המערכת פתוחה בלי סיסמה! ב-Render ← Environment להוסיף CRM_PASS (סיסמת המערכת), CRM_PASS_COMM (גבאי — /kehila) ו-CRM_PASS_PARNES (פרנס יום וקוויטל — /parnes)')
         # תעודות פרנס — נכשלו בעבר כי Pillow לא הותקן
         try:
             import PIL
