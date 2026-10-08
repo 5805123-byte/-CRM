@@ -19730,7 +19730,7 @@ class H(BaseHTTPRequestHandler):
                 code, res = _bq.charge_source('nonce-' + nonce, amt, description=desc, customer_id=row['customer_id'],
                                               email=(cu['email'] if cu else '') or '', exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=True)
                 if code != 200 or not isinstance(res, dict):
-                    con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
+                    con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
                 out = bq_record_charge(con, res, amt, desc, fc, row['donor_id'], row['customer_id'],
                                        ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''))
                 con.commit(); con.close()
@@ -19788,7 +19788,7 @@ class H(BaseHTTPRequestHandler):
                                               exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=True)
                 if code != 200 or not isinstance(res, dict):
                     con.commit(); con.close()
-                    return self._send(200, {'ok': False, 'donor_id': did, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
+                    return self._send(200, {'ok': False, 'donor_id': did, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
                 out = bq_record_charge(con, res, amt, desc, fc, did, cu['id'] if cu else 0,
                                        ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), nm)
                 con.commit(); con.close()
@@ -19841,7 +19841,7 @@ class H(BaseHTTPRequestHandler):
             code, res = _bq.charge_pm(pm, amt, description=desc, customer_id=p['customer_id'],
                                       email=(cu['email'] if cu else '') or '', send_receipt=True)
             if code != 200 or not isinstance(res, dict):
-                con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'החיוב נכשל'})
+                con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
             did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
             out = bq_record_charge(con, res, amt, desc, fc, did, p['customer_id'],
                                    ('%s %s' % (p['card_type'], p['last4'])).strip(), (cu['identifier'] if cu else ''))
@@ -21166,6 +21166,17 @@ def _bq_dmy(iso):
         return ''
 
 
+def bq_hint(err):
+    """הסבר בעברית לשגיאות של בנק ווסט שנובעות מההגדרות ולא מהכרטיס."""
+    e = str(err or '')
+    if 'not allowed from this source' in e.lower():
+        # מאיר: "אני בחשבון אחר באמת, עשיתי על זה CRM" — מפתח הטופס מחשבון אחד ומפתח ה-API מחשבון אחר
+        e += ('\n\nזו לא בעיה בכרטיס. בנק ווסט לא מתירים את העסקה מהמפתחות שלנו. בדרך כלל מפתח הטופס '
+              '(BANQUEST_TOKEN_KEY, מתחיל ב-pk_) נוצר בחשבון בנק ווסט אחר מזה של מפתח ה-API (BANQUEST_KEY). '
+              'שני המפתחות צריכים להיות מאותו חשבון. אם הם מאותו חשבון, צריך לבקש מבנק ווסט להתיר Charge במפתח ה-API.')
+    return e
+
+
 def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', name=''):
     """תשובת חיוב מבנק ווסט → עסקה אצלנו, ואם עבר ויש תורם — תרומה בכרטיס שלו עם "עבור מה".
     רק העסקה הזו נרשמת (לא כל מה שממתין), כדי שהתשובה תחזור מיד."""
@@ -21192,7 +21203,7 @@ def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', n
                 tid = 'BQ%d' % (t['ref'] or t['id'])
                 con.execute("UPDATE recon SET category=? WHERE tid=?", (fc, tid))
                 banquest_post(con, BQ_SRC, only_tids=[tid])
-    return {'ok': ok, 'status': res.get('status'), 'error': '' if ok else (res.get('error_message') or res.get('status') or 'נדחה'),
+    return {'ok': ok, 'status': res.get('status'), 'error': '' if ok else bq_hint(res.get('error_message') or res.get('status') or 'נדחה'),
             'ref': res.get('reference_number'), 'auth': res.get('auth_code'), 'donor_id': did}
 
 
