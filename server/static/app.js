@@ -6295,7 +6295,7 @@ const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל
    מאיר: "גם בכרטיס תורם שאפשר לחייב אותו במיידי וגם בדף ייעודי… שיהיה ממשק נוח בעברית",
    "יותר להפשיט… נוח וזורם וקליל". בנק ווסט מריץ את הוראות הקבע; כאן רואים, כותבים
    "עבור מה", מחייבים עכשיו כרטיס שמור, משהים ומשנים סכום / תאריך. */
-let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null, bqEditFor=null, bqHist={};
+let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null, bqEditFor=null, bqHist={}, bqSwap=null;
 const BQ_FOR=()=>[...new Set(RCATS.filter(Boolean).concat(['הכנסת כלה','מזדמן']))];
 const bqMoney=a=>'$'+(+a||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const bqDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
@@ -6352,11 +6352,22 @@ function bqSchedRow(r){const op=bqOpen==='s'+r.id;
       ${r.donor_name?'':`<label class="fld"><span>👤 שייך לתורם</span><input id="bqs_donor" list="bq_dl" placeholder="הקלד שם תורם…"></label>`}
       <div class="bqacts"><button class="btn sm" data-bqa="save" data-id="${r.id}">💾 שמור</button>
         <button class="btn sm bqgo" data-bqa="now" data-id="${r.id}">⚡ חייב עכשיו</button>
+        <button class="btn sm ghost" data-bqa="swap" data-id="${r.id}" title="כרטיס חדש — חיוב מיידי ושמירה לחיוב החודשי">💳 ${bqSwap===r.id?'סגור':'החלפת כרטיס'}</button>
         <button class="btn sm ghost" data-bqa="${r.active?'pause':'resume'}" data-id="${r.id}">${r.active?'⏸ השהה':'▶ חדש'}</button>
         ${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס</button>`:''}
         <button class="btn sm ghost" data-bqa="hist" data-id="${r.id}">📜 ${bqHist[r.id]?'סגור היסטוריה':'היסטוריה בבנק ווסט'}</button></div>
+      ${bqSwap===r.id?bqSwapHTML(r):''}
       ${bqHist[r.id]?bqHistHTML(r,bqHist[r.id]):''}
     </div>`:''}</div>`;}
+// מאיר: "אפשרות של החלפת כרטיס… הביא לי כרטיס חדש, ואני רוצה לחייב מיידית ושזה יישמר לכל חודש
+// לחיוב, ושזה ישאל לשמור לכל חודש? כמו בבנק ווסט"
+function bqSwapHTML(r){const st=bqStat||{};
+  if(!st.token_key)return `<div class="bqwarn">כדי להכניס כרטיס חדש צריך ב-Render את BANQUEST_TOKEN_KEY — מפתח מסוג Tokenization (מתחיל ב-pk_) מבנק ווסט: Control Panel ← Sources ← Create Key ← Source Key Type: Tokenization.</div>`;
+  return `<div class="bqform bqswap"><div class="bqfh"><b>💳 כרטיס חדש במקום •••• ${esc(r.last4||'')}</b></div>
+    <div class="fld"><span>הכרטיס החדש — טופס מאובטח של בנק ווסט</span><div id="bqf_card" class="bqcardframe"></div></div>
+    <label class="fld"><span>⚡ לחייב עכשיו מהכרטיס החדש ($) — ריק = בלי חיוב עכשיו</span><input id="bqw_amt" inputmode="decimal" value="${esc(r.amount||'')}"></label>
+    <div class="bqacts"><button class="btn sm bqgo" data-bqa="swapgo" data-id="${r.id}">💳 המשך</button></div>
+    <div class="hintxt">🔒 מספר הכרטיס נכנס ישר לבנק ווסט ולא נשמר אצלנו. אחרי החיוב המערכת תשאל אם לשמור את הכרטיס לחיוב החודשי.</div></div>`;}
 // ההיסטוריה של התורם בבנק ווסט — מאיר: "מה נתן וכמה ומתי כמו בבנק ווסט, ומשלוח קבלה"
 function bqHistHTML(r,h){
   if(h.loading)return '<div class="hintxt">טוען מבנק ווסט…</div>';
@@ -6487,6 +6498,7 @@ function bqWire(box){const g=id=>document.getElementById(id);
         else{go.disabled=false;await uiAlert('הוראת הקבע לא נוצרה:\n'+((r&&r.error)||'שגיאה'));}
       }};
   }
+  if(bqSwap&&!bqNew)bqMountCard();
   // קבלות מתוך ההיסטוריה — אותו תהליך כמו בכרטיס התורם: מאשרים, שואלים אם לשלוח במייל
   box.querySelectorAll('[data-bqrc]').forEach(b=>b.onclick=async()=>{const k=b.dataset.bqrc,sid=+b.dataset.sid,h=bqHist[sid]||{};
     const askMail=async()=>{let em=(h.email||'').trim(),send=false;
@@ -6505,6 +6517,30 @@ function bqWire(box){const g=id=>document.getElementById(id);
     if(a==='card'){openDonor(DB.find(x=>x.id==b.dataset.did));return;}
     const r0=bqRows.find(x=>x.id==id)||{};
     if(a==='editfor'){bqEditFor=id;renderBQ(false);return;}
+    if(a==='swap'){bqSwap=bqSwap===id?null:id;if(bqSwap)bqNew=null;renderBQ(false);return;}
+    if(a==='swapgo'){
+      if(!bqHT){toast('הטופס המאובטח עוד לא נטען');return;}
+      const who=r0.donor_name||r0.bq_name||'', amt=amtNum(g('bqw_amt').value);
+      const forT=[r0.for_cat,r0.for_note].filter(Boolean).join(' · ')||r0.known_for||'';
+      if(amt&&!await uiConfirm('לחייב עכשיו את '+who+' '+bqMoney(amt)+' מהכרטיס החדש'+(forT?(' עבור '+forT):'')+'?','⚡ כן, לחייב','ביטול'))return;
+      b.disabled=true;b.textContent='שולח לבנק ווסט…';
+      let tk;try{tk=await bqHT.getNonceToken();}catch(e){b.disabled=false;b.textContent='💳 המשך';
+        toast('פרטי הכרטיס לא תקינים'+((e&&e.fieldErrors&&e.fieldErrors.length)?(': '+e.fieldErrors.join(', ')):''));return;}
+      const c=await api('POST','/api/bq/sched/'+id+'/card',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||''});
+      if(!c||!c.ok){b.disabled=false;b.textContent='💳 המשך';await uiAlert('הכרטיס לא נשמר:\n'+((c&&c.error)||'שגיאה'));return;}
+      try{bqHT.resetForm();}catch(e){}
+      const l4=c.last4||tk.last4||'';
+      if(amt){
+        const r=await api('POST','/api/bq/charge',{pm_id:c.pm_id,amount:amt,for_cat:r0.for_cat||'',for_note:r0.for_note||'',donor_id:r0.donor_id||0});
+        if(r&&r.ok)toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));
+        else{await uiAlert('החיוב מהכרטיס החדש לא עבר:\n'+((r&&r.error)||'שגיאה')+'\n\nהכרטיס הישן נשאר בהוראת הקבע.');bqSwap=null;renderBQ();return;}
+      }
+      if(await uiConfirm('לשמור את הכרטיס החדש •••• '+l4+' לחיוב כל חודש?\nהוראת הקבע ('+bqMoney(r0.amount)+', הבא '+bqDate(r0.next_run)+') תחויב מעכשיו מהכרטיס הזה במקום •••• '+(r0.last4||'')+'.','💾 כן, לשמור לכל חודש','לא, רק הפעם')){
+        const u=await api('POST','/api/bq/sched/'+id,{pm_id:c.pm_id});
+        if(u&&u.ok&&!u.error)toast('💾 הוראת הקבע תחויב מעכשיו מ-•••• '+l4);
+        else await uiAlert(u&&u.ok?u.error:('הכרטיס לא הוחלף בהוראת הקבע:\n'+((u&&u.error)||'שגיאה')));
+      }
+      bqSwap=null;await load();render();return;}
     if(a==='hist'){if(bqHist[id]){delete bqHist[id];renderBQ(false);}else bqHistLoad(id);return;}
     if(a==='save'){const body={};if(g('bqs_cat')){body.for_cat=g('bqs_cat').value;body.for_note=g('bqs_note').value.trim();}
       const am=amtNum(g('bqs_amt').value);if(am&&am!==+r0.amount)body.amount=am;

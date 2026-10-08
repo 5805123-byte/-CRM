@@ -219,6 +219,7 @@ def tormim():
     c_ph = col('טלפון', 'Phone', 'נייד', 'פלאפון')
     c_mail = col('מייל', 'Mail', 'Email', 'דוא')
     c_city = col('עיר', 'City')
+    c_addr = [i for i in col('כתובת', 'רחוב', 'Adresse', 'Address') if i not in c_city]
     out = []
     for r in rd[1:]:
         g = lambda cs: next((' '.join(r[i].split()) for i in cs if i < len(r) and r[i].strip()), '')
@@ -227,7 +228,7 @@ def tormim():
             continue
         nm = ' '.join(x for x in (g(c_last), g(c_first)) if x) or g(c_name)
         phones = [r[i].strip() for i in c_ph if i < len(r) and r[i].strip()]
-        out.append({'id': tid, 'name': nm, 'phones': phones, 'mail': g(c_mail), 'city': g(c_city)})
+        out.append({'id': tid, 'name': nm, 'phones': phones, 'mail': g(c_mail), 'city': g(c_city), 'addr': g(c_addr[:1])})
     return out
 
 

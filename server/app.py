@@ -509,6 +509,8 @@ def ensure_schema():
             con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_inactive_drop_v1')")
     except Exception:
         pass
+    try: con.execute("ALTER TABLE nd_torem ADD COLUMN addr TEXT")
+    except Exception: pass
     # מוסד נוסף בנדרים פלוס — לכל הוראה ועסקה: מאיזה מוסד (ריק = הראשי)
     for tb in ('nd_keva', 'nd_tx'):
         try: con.execute(f"ALTER TABLE {tb} ADD COLUMN mosad TEXT")
@@ -16752,6 +16754,13 @@ class H(BaseHTTPRequestHandler):
                 rows.append(d)
             con.close()
             return self._send(200, {'rows': rows})
+        if self.path.split('?')[0] == '/api/members/enrich':
+            con = db()
+            try:
+                rows = member_enrich_suggest(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/members/questions':
             con = db()
             rows = []
@@ -17847,6 +17856,36 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE ym_job SET status='stopped' WHERE id=? AND status IN ('queued','sending')", (int(m.group(1)),))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/members/enrich':
+            # החלת ההשלמות שאושרו: טלפון ומייל נוספים לקיימים (/), כתובת ועיר רק אם ריקים
+            import yemot as _ym
+            con = db(); n = 0
+            try:
+                for it in b.get('items') or []:
+                    mid = int(it.get('member_id') or 0)
+                    m = con.execute("SELECT phone,email,addr,city FROM members WHERE id=?", (mid,)).fetchone()
+                    if not m:
+                        continue
+                    upd, what = {}, []
+                    phs = [p for p in (it.get('phone') or []) if _ym.norm_phone(p) and _ym.norm_phone(p) not in _phones_of(m['phone'])]
+                    if phs:
+                        upd['phone'] = ' / '.join([x for x in [(m['phone'] or '').strip()] if x] + phs); what.append('טלפון ' + ', '.join(phs))
+                    ems = [e for e in (it.get('email') or []) if '@' in e and e.lower() not in {x.lower() for x in emails_of(m['email'] or '')}]
+                    if ems:
+                        upd['email'] = ' / '.join([x for x in [(m['email'] or '').strip()] if x] + ems); what.append('מייל ' + ', '.join(ems))
+                    if it.get('addr') and not (m['addr'] or '').strip():
+                        upd['addr'] = str(it['addr'])[:120]; what.append('כתובת ' + upd['addr'])
+                    if it.get('city') and not (m['city'] or '').strip():
+                        upd['city'] = str(it['city'])[:60]; what.append('עיר ' + upd['city'])
+                    if upd:
+                        con.execute("UPDATE members SET " + ','.join('%s=?' % k for k in upd) + ", updated=? WHERE id=?", list(upd.values()) + [now_iso(), mid])
+                        cm_debt_log(con, mid, 'enrich', '📇 הושלמו פרטים מנדרים פלוס: ' + ' · '.join(what))
+                        n += 1
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'updated': n})
         if self.path == '/api/members/merge':
             # מיזוג שני חברים — מהכרטיס במסך הקהילה
             try:
@@ -19486,6 +19525,37 @@ class H(BaseHTTPRequestHandler):
             if 'num_left' in b and str(b.get('num_left')).strip() != '':
                 upd['num_left'] = int(b.get('num_left') or 0)
             err = ''
+            new_id = 0
+            if b.get('pm_id'):
+                # 💳 החלפת כרטיס — מאיר: "הביא לי כרטיס חדש… ושזה יישמר לכל חודש לחיוב"
+                pm = int(b.get('pm_id') or 0)
+                p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone()
+                if not p or p['customer_id'] != row['customer_id']:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס החדש לא נמצא אצל הלקוח הזה'})
+                code, res = _bq.update_schedule(sid, payment_method_id=pm)
+                if code == 200 and isinstance(res, dict) and int(res.get('payment_method_id') or pm) == pm:
+                    con.execute("UPDATE bq_sched SET pm_id=? WHERE id=?", (pm, sid))
+                else:
+                    # בנק ווסט לא מחליפים כרטיס בהוראה קיימת — פותחים הוראה זהה על הכרטיס החדש
+                    # ומשהים את הישנה, כך שאין חודש בלי חיוב ואין חיוב כפול
+                    code, res = _bq.create_schedule(row['customer_id'], row['title'], row['amount'], pm,
+                                                    next_run_date=row['next_run'] or '', num_left=int(row['num_left'] or 0),
+                                                    receipt_email=row['receipt_email'] or '')
+                    if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                        con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא הוחלף בהוראת הקבע: ' + (_bq.LAST.get('error') or str(code))})
+                    new_id = int(res['id'])
+                    con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
+                                     receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
+                                (new_id, row['customer_id'], row['title'], float(res.get('amount') or row['amount'] or 0),
+                                 res.get('frequency') or row['freq'] or 'monthly', res.get('next_run_date') or row['next_run'] or '',
+                                 int(res.get('num_left') or 0), res.get('status') or 'active', pm, res.get('receipt_email') or '',
+                                 today_iso(), row['donor_id'], row['for_cat'] or '', row['for_note'] or '', now_iso()))
+                    c2, _r2 = _bq.update_schedule(sid, active=False)
+                    if c2 == 200:
+                        con.execute("UPDATE bq_sched SET active=0 WHERE id=?", (sid,))
+                    else:
+                        err = 'נפתחה הוראה על הכרטיס החדש, אבל הישנה לא הושהתה — השהה אותה ידנית כדי שלא יהיה חיוב כפול'
+                    sid = new_id
             if upd:
                 code, res = _bq.update_schedule(sid, **upd)
                 if code == 200 and isinstance(res, dict):
@@ -19496,7 +19566,27 @@ class H(BaseHTTPRequestHandler):
                     err = 'בנק ווסט לא עדכן: ' + (_bq.LAST.get('error') or str(code))
             con.commit(); con.close()
             bump_data()
-            return self._send(200, {'ok': not err, 'error': err})
+            return self._send(200, {'ok': not err or bool(new_id), 'error': err, 'new_id': new_id})
+        m = re.match(r'/api/bq/sched/(\d+)/card$', self.path)
+        if m:
+            # 💳 כרטיס חדש ללקוח של הוראת הקבע (מהטופס המאובטח — המספר לא מגיע אלינו).
+            # רק שומרים את הכרטיס; החיוב המיידי וההחלפה בהוראה — כל אחד באישור נפרד.
+            import banquest as _bq
+            nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
+            con = db()
+            row = con.execute("SELECT * FROM bq_sched WHERE id=?", (int(m.group(1)),)).fetchone()
+            if not row or not nonce:
+                con.close(); return self._send(200, {'ok': False, 'error': 'הוראת הקבע או פרטי הכרטיס לא נמצאו'})
+            code, res = _bq.create_pm(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
+                                      name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20], is_default=False)
+            if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נשמר בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
+            con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                        (res['id'], row['customer_id'], res.get('card_type') or b.get('card_type') or '', res.get('last4') or b.get('last4') or '',
+                         res.get('expiry_month') or b.get('exp_m') or 0, res.get('expiry_year') or b.get('exp_y') or 0, 0, res.get('name') or ''))
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'pm_id': res['id'], 'last4': res.get('last4') or b.get('last4') or ''})
         if self.path == '/api/bq/newcard':
             # ➕ כרטיס חדש מהטופס המאובטח של בנק ווסט (nonce — מספר הכרטיס לא מגיע אלינו).
             # מאיר: "על כל תרומה של תורם חדש, גם חד-פעמי, יוקם כרטיס". כאן: תורם (קיים או
@@ -21467,24 +21557,37 @@ def nd_name_index(con):
     """מאיר: "כתוב לא מקושר לקהילה והוא כן מופיע בקהילה… שיבדוק לפי שם". שם משפחה + שם
     פרטי של כל חבר קהילה, בלי תלות בסדר ובאותיות סופיות."""
     out = []
-    for m in con.execute("SELECT id,last,first FROM members WHERE COALESCE(active,1)=1"):
+    for m in con.execute("SELECT id,last,first,notes FROM members WHERE COALESCE(active,1)=1"):
         ln, fn = _nd_toks(m['last']), _nd_toks(m['first'])
         if ln:
             out.append((m['id'], set(ln), set(fn)))
+        # "נדרים פלוס: שושנה בוטשאן" בהערות — השם שבו הוא רשום שם (אישה / בן משפחה)
+        for al in re.findall(r'נדרים\s*פלוס\s*:\s*([^\n·;,|()]+)', m['notes'] or ''):
+            t = _nd_toks(al)
+            if len(t) >= 2:
+                out.append((m['id'], set(t), set()))
     return out
 
 
-def nd_match_name(nidx, name):
+def nd_match_name(nidx, name, family=False):
     """התאמה יחידה בלבד: כל מילות שם המשפחה, ולפחות מילה אחת מהשם הפרטי (אם יש),
-    מופיעות בשם שבנדרים פלוס."""
+    מופיעות בשם שבנדרים פלוס.
+    family — להוראות קבע: מאיר: "כתוב שלבוטשאן אין הו"ק פעילה, יש לו הו"ק ע"ש שושנה בוטשאן".
+    הוראה על שם האישה / בן משפחה — כשרק חבר קהילה אחד נושא את שם המשפחה הזה."""
     w = set(_nd_toks(name))
     if not w:
         return None
-    hit = [mid for mid, ln, fn in nidx if ln <= w and (not fn or fn & w)]
+    hit = list({mid for mid, ln, fn in nidx if ln <= w and (not fn or fn & w)})
     if len(hit) == 1:
         return hit[0]
-    full = [mid for mid, ln, fn in nidx if (ln | fn) == w]
-    return full[0] if len(full) == 1 else None
+    full = list({mid for mid, ln, fn in nidx if (ln | fn) == w})
+    if len(full) == 1:
+        return full[0]
+    if family and not hit:
+        sur = list({mid for mid, ln, fn in nidx if ln <= w and w - ln})
+        if len(sur) == 1:
+            return sur[0]
+    return None
 
 
 def nd_sync(con):
@@ -21509,10 +21612,10 @@ def nd_sync(con):
                 ts = _nd.tormim()
                 for t in ts:
                     phs = _phones_of(' ; '.join(t['phones']))
-                    con.execute("""INSERT INTO nd_torem(id,name,phones,mail,city,member_id,synced) VALUES(?,?,?,?,?,?,?)
+                    con.execute("""INSERT INTO nd_torem(id,name,phones,mail,city,member_id,synced,addr) VALUES(?,?,?,?,?,?,?,?)
                                    ON CONFLICT(id) DO UPDATE SET name=excluded.name, phones=excluded.phones, mail=excluded.mail,
-                                     city=excluded.city, member_id=excluded.member_id, synced=excluded.synced""",
-                                (tag + t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs) or nd_match_name(nidx, t['name']), now))
+                                     city=excluded.city, member_id=excluded.member_id, synced=excluded.synced, addr=excluded.addr""",
+                                (tag + t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs) or nd_match_name(nidx, t['name']), now, t.get('addr') or ''))
                 res['תורמים' + lbl] = len(ts)
             except Exception as e:
                 res['תורמים' + lbl] = 'שגיאה: %s' % str(e)[:80]
@@ -21792,6 +21895,60 @@ def nd_hook(con, d):
     return 'ignored'
 
 
+def member_enrich_suggest(con):
+    """מאיר: "תעבור לראות מי מהרשימה של הקהילה שיש לו פרטים שם בחשבון השני — אנשים מילאו טפסים
+    או כניסה למקווה". לכל חבר קהילה: טלפון / מייל / כתובת / עיר שיש בנדרים פלוס (כרטיסי תורם,
+    הוראות קבע, תשלומים — מכל המוסדות) ואין אצלנו. רק הצעות; שום דבר לא משתנה בלי אישור."""
+    import yemot as _ym
+    names = {}
+    acc = {}
+    def add(mid, field, val, src):
+        val = re.sub(r'\s+', ' ', str(val or '')).strip()
+        if not mid or not val:
+            return
+        acc.setdefault(mid, {}).setdefault(field, {}).setdefault(val, set()).add(src)
+    for t in con.execute("SELECT id,name,phones,mail,city,addr,member_id FROM nd_torem WHERE member_id IS NOT NULL"):
+        src = 'כרטיס תורם' + (' (מוסד %s)' % t['id'].split(':')[0] if ':' in (t['id'] or '') else '') + ': ' + (t['name'] or '')
+        for ph in (t['phones'] or '').split(';'):
+            add(t['member_id'], 'phone', ph, src)
+        for em in emails_of(t['mail'] or ''):
+            add(t['member_id'], 'email', em.lower(), src)
+        add(t['member_id'], 'addr', t['addr'], src); add(t['member_id'], 'city', t['city'], src)
+    for k in con.execute("SELECT member_id,name,phone,mail,city FROM nd_keva WHERE member_id IS NOT NULL"):
+        src = 'הוראת קבע: ' + (k['name'] or '')
+        for ph in (k['phone'] or '').split(';'):
+            add(k['member_id'], 'phone', ph, src)
+        for em in emails_of(k['mail'] or ''):
+            add(k['member_id'], 'email', em.lower(), src)
+        add(k['member_id'], 'city', k['city'], src)
+    for t in con.execute("SELECT member_id,name,phone FROM nd_tx WHERE member_id IS NOT NULL AND COALESCE(phone,'')<>'' GROUP BY member_id,phone"):
+        add(t['member_id'], 'phone', t['phone'], 'תשלום: ' + (t['name'] or ''))
+    out = []
+    for m in con.execute("SELECT id,last,first,phone,email,addr,city FROM members WHERE COALESCE(active,1)<>0"):
+        a = acc.get(m['id'])
+        if not a:
+            continue
+        have_ph = set(_phones_of(m['phone']))
+        have_em = {e.lower() for e in emails_of(m['email'] or '')}
+        sug = {}
+        ph = [(v, sorted(s)) for v, s in (a.get('phone') or {}).items() if _ym.norm_phone(v) and _ym.norm_phone(v) not in have_ph]
+        if ph:
+            sug['phone'] = ph
+        em = [(v, sorted(s)) for v, s in (a.get('email') or {}).items() if v not in have_em and '@' in v]
+        if em:
+            sug['email'] = em
+        if not (m['addr'] or '').strip() and a.get('addr'):
+            sug['addr'] = [(v, sorted(s)) for v, s in a['addr'].items()]
+        if not (m['city'] or '').strip() and a.get('city'):
+            sug['city'] = [(v, sorted(s)) for v, s in a['city'].items()]
+        if sug:
+            out.append({'member_id': m['id'], 'name': ((m['last'] or '') + ' ' + (m['first'] or '')).strip(),
+                        'have': {'phone': m['phone'] or '', 'email': m['email'] or '', 'addr': m['addr'] or '', 'city': m['city'] or ''},
+                        'add': {f: [{'value': v, 'src': s[:3]} for v, s in lst] for f, lst in sug.items()}})
+    out.sort(key=lambda x: x['name'])
+    return out
+
+
 def nd_mark_replaced(con):
     """מאיר: "הקים הו"ק חדשה היום — המערכת אמורה לזהות שהוא עשה הו"ק חדשה על הסכום הזה ולמחוק את
     הישן". הוראה שחזרה, כשלאותו חבר יש הוראה חדשה יותר (מזהה גבוה יותר) תקינה לאותה מטרה — או
@@ -21843,7 +22000,7 @@ def _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now):
         if tm and tm['phones']:
             phs += [p for p in tm['phones'].split(';') if p and p not in phs]
         # קישור: ידני (נבחר במסך) ← טלפון ← כרטיס התורם בנדרים ← שם
-        mid = manual.get(k['id']) or pick(phs) or (tm['member_id'] if tm else None) or nd_match_name(nidx, k['name'])
+        mid = manual.get(k['id']) or pick(phs) or (tm['member_id'] if tm else None) or nd_match_name(nidx, k['name'], family=True)
         con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)
                        ON CONFLICT(id) DO UPDATE SET torem_id=excluded.torem_id, name=excluded.name, phone=excluded.phone,
