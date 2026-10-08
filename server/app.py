@@ -15971,7 +15971,8 @@ class H(BaseHTTPRequestHandler):
                         'n_active': con.execute("SELECT COUNT(*) FROM bq_sched WHERE active=1").fetchone()[0],
                         'month_sum': con.execute("SELECT COALESCE(SUM(amount),0) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s) AND COALESCE(type,'') IN ('','charge')" % okst, (mon,)).fetchone()[0],
                         'month_bad': con.execute("SELECT COUNT(*) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,)).fetchone()[0],
-                        'n_tx': con.execute("SELECT COUNT(*) FROM bq_tx").fetchone()[0]}
+                        'n_tx': con.execute("SELECT COUNT(*) FROM bq_tx").fetchone()[0],
+                        'token_key': _bq.token_key(), 'token_js': _bq.token_js()}
             finally:
                 con.close()
             return self._send(200, info)
@@ -18326,6 +18327,60 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             bump_data()
             return self._send(200, {'ok': not err, 'error': err})
+        if self.path == '/api/bq/newcard':
+            # ➕ כרטיס חדש מהטופס המאובטח של בנק ווסט (nonce — מספר הכרטיס לא מגיע אלינו).
+            # מאיר: "על כל תרומה של תורם חדש, גם חד-פעמי, יוקם כרטיס". כאן: תורם (קיים או
+            # חדש) ← לקוח בבנק ווסט ← כרטיס שמור, ומשם ממשיכים לחיוב / להוראת קבע הרגילים.
+            import banquest as _bq
+            nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
+            if not nonce:
+                return self._send(200, {'ok': False, 'error': 'פרטי הכרטיס לא התקבלו מהטופס המאובטח'})
+            con = db()
+            did = int(b.get('donor_id') or 0)
+            nd = b.get('new') or {}
+            if not did:
+                last, first = str(nd.get('last') or '').strip()[:60], str(nd.get('first') or '').strip()[:60]
+                if not (last or first or nd.get('english')):
+                    con.close(); return self._send(200, {'ok': False, 'error': 'חסר שם לתורם החדש'})
+                con.execute("INSERT INTO donors(last,first,english,email,phone,created,source) VALUES(?,?,?,?,?,?,?)",
+                            (last, first, str(nd.get('english') or '').strip()[:80], str(nd.get('email') or '').strip()[:120],
+                             str(nd.get('phone') or '').strip()[:40], today_iso(), 'בנק ווסט — חיוב חדש'))
+                did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+            if not d:
+                con.close(); return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+            cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
+            em = (emails_of(d['email'] or '') or [''])[0]
+            if not cu:
+                eng = (d['english'] or '').strip()
+                nm = eng or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+                toks = eng.split()
+                code, res = _bq.create_customer(nm, first=(' '.join(toks[:-1]) if len(toks) > 1 else ''),
+                                                last=(toks[-1] if toks else ''), email=em, phone=d['phone'] or '', number=did)
+                if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                    con.close(); return self._send(200, {'ok': False, 'error': 'לא נפתח לקוח בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
+                con.execute("INSERT OR REPLACE INTO bq_cust(id,identifier,first,last,email,phone,number,active,donor_id,manual,synced) "
+                            "VALUES(?,?,?,?,?,?,?,1,?,1,?)", (res['id'], nm, res.get('first_name') or '', res.get('last_name') or '',
+                                                            em, d['phone'] or '', str(did), did, now_iso()))
+                cid = res['id']
+            else:
+                cid = cu['id']
+            code, res = _bq.create_pm(cid, 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
+                                      name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20])
+            if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                con.commit(); con.close()
+                return self._send(200, {'ok': False, 'donor_id': did, 'error': 'הכרטיס לא נשמר בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
+            con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                        (res['id'], cid, res.get('card_type') or b.get('card_type') or '', res.get('last4') or b.get('last4') or '',
+                         res.get('expiry_month') or b.get('exp_m') or 0, res.get('expiry_year') or b.get('exp_y') or 0, 1, res.get('name') or ''))
+            con.commit(); con.close()
+            bump_data()
+            if b.get('kind') == 'save':
+                return self._send(200, {'ok': True, 'donor_id': did, 'pm_id': res['id']})
+            # ממשיכים לחיוב המיידי / להוראת הקבע עם הכרטיס שנשמר עכשיו
+            b['pm_id'], b['donor_id'] = res['id'], did
+            self.path = '/api/bq/sched/new' if b.get('kind') == 'rec' else '/api/bq/charge'
         if self.path == '/api/bq/charge':
             # ⚡ חיוב מיידי של כרטיס שמור — מאיר: "בכרטיס תורם שאפשר לחייב אותו במיידי"
             import banquest as _bq
@@ -18370,7 +18425,7 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             bump_data()
             return self._send(200, {'ok': ok, 'status': res.get('status'), 'error': '' if ok else (res.get('error_message') or res.get('status') or 'נדחה'),
-                                    'ref': res.get('reference_number'), 'auth': res.get('auth_code')})
+                                    'ref': res.get('reference_number'), 'auth': res.get('auth_code'), 'donor_id': did})
         if self.path == '/api/bq/sched/new':
             # 🔁 הוראת קבע חדשה על כרטיס שמור
             import banquest as _bq
@@ -18395,7 +18450,7 @@ class H(BaseHTTPRequestHandler):
                          today_iso(), did, fc, fn, now_iso()))
             con.commit(); con.close()
             bump_data()
-            return self._send(200, {'ok': True, 'id': res['id']})
+            return self._send(200, {'ok': True, 'id': res['id'], 'donor_id': did})
         m = re.match(r'/api/bq/tx/(\d+)/post$', self.path)
         if m:
             # "רשום בכרטיס" — עסקה ישנה שעברה ולא נמצאה בכרטיס, ברישום ידני ומכוון

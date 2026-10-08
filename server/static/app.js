@@ -6247,9 +6247,9 @@ async function bqLoad(){
   bqStat=st||{}; bqRows=(ls&&ls.rows)||[];
 }
 async function renderBQ(reload=true){
-  const box=document.getElementById('bqbox'); if(!box)return;
+  let box=document.getElementById('bqbox'); if(!box)return;
   if(reload||!bqStat){if(!bqStat)box.innerHTML='<div class="hintxt">טוען את בנק ווסט…</div>';await bqLoad();}
-  if(!document.getElementById('bqbox'))return;
+  box=document.getElementById('bqbox'); if(!box)return;     // הדף אולי צויר מחדש בזמן הטעינה
   const st=bqStat||{};
   if(!st.configured){box.innerHTML=`<div class="bqhead"><b>🏦 בנק ווסט — חיובי אשראי</b></div>
     <div class="hintxt">החיבור עוד לא מוגדר: ב-Render ← Environment צריך BANQUEST_KEY ו-BANQUEST_PIN.</div>`;return;}
@@ -6307,24 +6307,50 @@ function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
   const t=(v||'').trim();if(!t)return 0;const hit=DB.filter(d=>((d.last||'')+' '+(d.first||'')).trim()===t);return hit.length===1?hit[0].id:0;}
 // ---- חיוב חדש: חד-פעמי / הוראת קבע, על כרטיס שמור של תורם ----
 function bqFormHTML(){const f=bqNew, d=f.did?DB.find(x=>x.id==f.did):null;
-  const pms=f.pms||[];
+  const pms=f.pms||[], st=bqStat||{};
+  const newCard=f.newDonor||!pms.length||f.pm==='new';
+  const cardBox=newCard?(st.token_key?`<div class="fld"><span>💳 כרטיס חדש — טופס מאובטח של בנק ווסט</span><div id="bqf_card" class="bqcardframe"></div>
+      <div class="hintxt">🔒 מספר הכרטיס נכנס ישר לבנק ווסט ולא עובר ולא נשמר אצלנו. הכרטיס יישמר אצלם לחיובים הבאים.</div></div>`
+    :`<div class="bqwarn">כדי להכניס כרטיס חדש צריך ב-Render את BANQUEST_TOKEN_KEY — מפתח מסוג Tokenization (מתחיל ב-pk_) מבנק ווסט: Control Panel ← Sources ← Create Key ← Source Key Type: Tokenization.</div>`):'';
   return `<div class="bqform"><div class="bqfh"><b>${f.kind==='once'?'⚡ חיוב חד-פעמי':'🔁 הוראת קבע חדשה'}</b><button class="btn sm ghost" id="bqf_x">✕</button></div>
-    <label class="fld"><span>👤 תורם</span><input id="bqf_who" list="bq_dl" value="${d?esc(((d.last||'')+' '+(d.first||'')).trim()+' #'+d.id):''}" placeholder="הקלד שם תורם…"></label>
-    ${d?(pms.length?`<label class="fld"><span>💳 כרטיס שמור בבנק ווסט</span><select id="bqf_pm">${pms.map(p=>`<option value="${p.id}">${esc(p.card_type||'')} •••• ${esc(p.last4||'')}${p.exp_m?(' · '+String(p.exp_m).padStart(2,'0')+'/'+String(p.exp_y).slice(-2)):''}</option>`).join('')}</select></label>`
-      :`<div class="bqwarn">${f.loading?'טוען כרטיסים…':'לתורם הזה אין כרטיס שמור בבנק ווסט (או שהוא עוד לא שויך). הכנסת כרטיס חדש דרך טופס מאובטח — בשלב הבא.'}</div>`):''}
+    <div class="bqseg"><button class="${f.newDonor?'':'on'}" data-bqw="old">תורם קיים</button><button class="${f.newDonor?'on':''}" data-bqw="new">➕ תורם חדש</button></div>
+    ${f.newDonor?`<div class="bq2"><label class="fld"><span>שם משפחה</span><input id="bqn_last" value="${esc(f.n_last||'')}"></label>
+        <label class="fld"><span>שם פרטי</span><input id="bqn_first" value="${esc(f.n_first||'')}"></label></div>
+      <div class="bq2"><label class="fld"><span>שם באנגלית (כמו על הכרטיס)</span><input id="bqn_eng" dir="ltr" value="${esc(f.n_eng||'')}"></label>
+        <label class="fld"><span>📧 מייל (לאישור העסקה)</span><input id="bqn_email" dir="ltr" value="${esc(f.n_email||'')}"></label></div>
+      <label class="fld"><span>📞 טלפון</span><input id="bqn_phone" dir="ltr" value="${esc(f.n_phone||'')}"></label>
+      <div class="hintxt">התורם נכנס לרשימת התורמים יחד עם החיוב.</div>`
+    :`<label class="fld"><span>👤 תורם</span><input id="bqf_who" list="bq_dl" value="${d?esc(((d.last||'')+' '+(d.first||'')).trim()+' #'+d.id):''}" placeholder="הקלד שם תורם…"></label>
+      ${d&&f.loading?'<div class="hintxt">טוען כרטיסים…</div>':''}
+      ${d&&!f.loading&&pms.length?`<label class="fld"><span>💳 כרטיס</span><select id="bqf_pm">${pms.map(p=>`<option value="${p.id}" ${String(f.pm)===String(p.id)?'selected':''}>${esc(p.card_type||'')} •••• ${esc(p.last4||'')}${p.exp_m?(' · '+String(p.exp_m).padStart(2,'0')+'/'+String(p.exp_y).slice(-2)):''}</option>`).join('')}<option value="new" ${f.pm==='new'?'selected':''}>➕ כרטיס חדש</option></select></label>`:''}`}
+    ${(f.newDonor||(d&&!f.loading))?cardBox:''}
     <div class="bq2"><label class="fld"><span>💲 סכום ($)</span><input id="bqf_amt" inputmode="decimal" value="${esc(f.amt||'')}" placeholder="0"></label>
       <label class="fld"><span>🎯 עבור מה</span><select id="bqf_cat">${bqForOpts(f.cat||'')}</select></label></div>
     <label class="fld"><span>פירוט (לא חובה)</span><input id="bqf_note" value="${esc(f.note||'')}" placeholder="למשל: לע״נ אביו"></label>
     ${f.kind==='rec'?`<div class="bq2"><label class="fld"><span>📅 חיוב ראשון</span><input id="bqf_next" type="date" value="${esc(f.next||'')}"></label>
       <label class="fld"><span>🔢 כמה תשלומים (0 = בלי הגבלה)</span><input id="bqf_n" inputmode="numeric" value="${esc(f.n||'0')}"></label></div>`:''}
-    <div class="bqacts"><button class="btn sm ${f.kind==='once'?'bqgo':''}" id="bqf_go" ${d&&pms.length?'':'disabled'}>${f.kind==='once'?'⚡ חייב עכשיו':'💾 צור הוראת קבע'}</button></div>
+    <div class="bqacts"><button class="btn sm ${f.kind==='once'?'bqgo':''}" id="bqf_go" ${(f.newDonor||d)&&!f.loading&&(!newCard||st.token_key)?'':'disabled'}>${f.kind==='once'?'⚡ חייב עכשיו':'💾 צור הוראת קבע'}</button></div>
     <div class="hintxt">${f.kind==='once'?'התורם מקבל מבנק ווסט את אישור העסקה הרגיל. התרומה נרשמת בכרטיס שלו עם "עבור מה".':'בנק ווסט יריץ את החיובים בעצמו; כל חיוב ייכנס לכרטיס עם "עבור מה".'}</div></div>`;}
+// הטופס המאובטח של בנק ווסט (Hosted Tokenization v0.3) — iframe שלהם בתוך הדף שלנו
+let bqHT=null, bqHTjs=null;
+function bqLoadJS(src){if(bqHTjs)return bqHTjs;bqHTjs=new Promise((ok,no)=>{const sc=document.createElement('script');sc.src=src;sc.onload=ok;sc.onerror=()=>{bqHTjs=null;no(new Error('הטופס המאובטח של בנק ווסט לא נטען'));};document.head.appendChild(sc);});return bqHTjs;}
+async function bqMountCard(){const el=document.getElementById('bqf_card');const st=bqStat||{};if(!el||!st.token_key)return;
+  try{await bqLoadJS(st.token_js);}catch(e){el.innerHTML='<div class="bqwarn">'+esc(e.message)+'</div>';return;}
+  if(!document.getElementById('bqf_card'))return;
+  const styles={card:'border:1px solid #E7E0D2;border-radius:8px;padding:6px',expiryMonth:'border:1px solid #E7E0D2;border-radius:8px',
+    expiryYear:'border:1px solid #E7E0D2;border-radius:8px',cvv2:'border:1px solid #E7E0D2;border-radius:8px',avsZip:'border:1px solid #E7E0D2;border-radius:8px',labelType:'static-top'};
+  try{if(bqHT)bqHT.setOptions({target:'#bqf_card'});
+    else bqHT=new window.HostedTokenization(st.token_key,{target:'#bqf_card',showZip:true,showFieldErrors:true,styles});}
+  catch(e){el.innerHTML='<div class="bqwarn">הטופס המאובטח לא נפתח: '+esc(e.message||String(e))+'</div>';}
+}
 async function bqOpenForm(kind,did){
-  bqNew={kind,did:did||0,pms:[],loading:!!did};renderBQ(false);
+  const keep=bqNew&&bqNew.kind===kind?bqNew:{};
+  bqNew=Object.assign({},keep,{kind,did:did||0,pms:[],loading:!!did,pm:'',newDonor:false});renderBQ(false);
   if(did){const r=await api('GET','/api/bq/donor/'+did);if(bqNew&&bqNew.did==did){bqNew.pms=(r&&r.pms)||[];bqNew.loading=false;renderBQ(false);}}
 }
 function bqFormKeep(){if(!bqNew)return;const g=id=>document.getElementById(id);
-  ['amt:bqf_amt','cat:bqf_cat','note:bqf_note','next:bqf_next','n:bqf_n'].forEach(x=>{const[k,id]=x.split(':');if(g(id))bqNew[k]=g(id).value;});}
+  ['amt:bqf_amt','cat:bqf_cat','note:bqf_note','next:bqf_next','n:bqf_n','pm:bqf_pm','n_last:bqn_last','n_first:bqn_first','n_eng:bqn_eng','n_email:bqn_email','n_phone:bqn_phone']
+    .forEach(x=>{const[k,id]=x.split(':');if(g(id))bqNew[k]=g(id).value;});}
 function bqWire(box){const g=id=>document.getElementById(id);
   box.querySelectorAll('[data-bqt]').forEach(b=>b.onclick=()=>{bqTab=b.dataset.bqt;bqOpen=null;renderBQ();});
   box.querySelectorAll('.bqrh').forEach(b=>b.onclick=()=>{bqOpen=bqOpen===b.dataset.op?null:b.dataset.op;renderBQ(false);});
@@ -6340,10 +6366,30 @@ function bqWire(box){const g=id=>document.getElementById(id);
   if(bqNew){
     g('bqf_x').onclick=()=>{bqNew=null;renderBQ(false);};
     const w=g('bqf_who');if(w)w.onchange=()=>{bqFormKeep();const did=bqPickDonor(w.value);if(did)bqOpenForm(bqNew.kind,did);};
-    const go=g('bqf_go');if(go)go.onclick=async()=>{bqFormKeep();const f=bqNew,d=DB.find(x=>x.id==f.did);
+    box.querySelectorAll('[data-bqw]').forEach(b=>b.onclick=()=>{bqFormKeep();bqNew.newDonor=b.dataset.bqw==='new';if(bqNew.newDonor){bqNew.did=0;bqNew.pms=[];}renderBQ(false);});
+    const ps=g('bqf_pm');if(ps)ps.onchange=()=>{bqFormKeep();renderBQ(false);};
+    bqMountCard();
+    const go=g('bqf_go');if(go)go.onclick=async()=>{bqFormKeep();const f=bqNew,d=f.newDonor?null:DB.find(x=>x.id==f.did);
       const amt=amtNum(f.amt);if(!amt){toast('חסר סכום');return;}
-      const pm=+g('bqf_pm').value;const nm=d?((d.last||'')+' '+(d.first||'')).trim():'';
+      const newCard=f.newDonor||!(f.pms||[]).length||f.pm==='new';
+      if(f.newDonor&&!(f.n_last||f.n_first||f.n_eng)){toast('חסר שם לתורם החדש');return;}
+      const nm=d?((d.last||'')+' '+(d.first||'')).trim():[f.n_last,f.n_first].filter(Boolean).join(' ')||f.n_eng;
       const forT=[f.cat,f.note].filter(Boolean).join(' · ');
+      if(newCard){
+        if(!bqHT){toast('הטופס המאובטח עוד לא נטען');return;}
+        if(!await uiConfirm((f.kind==='once'?'לחייב עכשיו את ':'ליצור הוראת קבע ל')+nm+' '+bqMoney(amt)+(f.kind==='rec'?' כל חודש':'')+(forT?(' עבור '+forT):'')+'?\nהכרטיס החדש יישמר בבנק ווסט.','כן','ביטול'))return;
+        go.disabled=true;go.textContent='שולח לבנק ווסט…';
+        let tk;try{tk=await bqHT.getNonceToken();}catch(e){go.disabled=false;go.textContent=f.kind==='once'?'⚡ חייב עכשיו':'💾 צור הוראת קבע';
+          toast('פרטי הכרטיס לא תקינים'+((e&&e.fieldErrors&&e.fieldErrors.length)?(': '+e.fieldErrors.join(', ')):''));return;}
+        const r=await api('POST','/api/bq/newcard',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||'',
+          kind:f.kind,amount:amt,for_cat:f.cat||'',for_note:f.note||'',donor_id:f.newDonor?0:f.did,next_run_date:f.next||'',num_left:+f.n||0,
+          new:f.newDonor?{last:f.n_last||'',first:f.n_first||'',english:f.n_eng||'',email:f.n_email||'',phone:f.n_phone||''}:null});
+        if(r&&r.ok){toast(f.kind==='once'?('✅ החיוב עבר · אישור '+(r.auth||r.ref||'')):'🔁 הוראת הקבע נוצרה ✓');bqNew=null;try{bqHT.resetForm();}catch(e){}await load();render();}
+        else{go.disabled=false;go.textContent=f.kind==='once'?'⚡ חייב עכשיו':'💾 צור הוראת קבע';
+          if(r&&r.donor_id&&f.newDonor){f.newDonor=false;f.did=r.donor_id;await load();}
+          await uiAlert((f.kind==='once'?'החיוב לא עבר':'הוראת הקבע לא נוצרה')+':\n'+((r&&r.error)||'שגיאה'));}
+        return;}
+      const pm=+f.pm||+(g('bqf_pm')||{}).value;
       if(f.kind==='once'){
         if(!await uiConfirm('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?','⚡ כן, לחייב','ביטול'))return;
         go.disabled=true;go.textContent='מחייב…';

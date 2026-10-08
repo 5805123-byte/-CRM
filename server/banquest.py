@@ -15,6 +15,7 @@
 import base64
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -160,6 +161,60 @@ def charge_pm(pm_id, amount, description='', customer_id=0, email='', send_recei
         body['customer'] = cust
     if custom:
         body['custom_fields'] = custom
+    return call('POST', 'transactions/charge', body)
+
+
+def token_key():
+    """מפתח Tokenization (מתחיל ב-pk_) — לטופס הכרטיס המאובטח בדפדפן. מפתח ציבורי לפי
+    בנק ווסט, אבל גם הוא נכנס רק ב-Render: BANQUEST_TOKEN_KEY."""
+    return _env('BANQUEST_TOKEN_KEY')
+
+
+def token_js():
+    return _env('BANQUEST_TOKEN_JS') or ('https://tokenization.sandbox.accept.blue/tokenization/v0.3'
+                                          if 'sandbox' in base() else 'https://tokenization.accept.blue/tokenization/v0.3')
+
+
+def create_customer(name, first='', last='', email='', phone='', number=''):
+    body = {'identifier': (name or 'Donor')[:255], 'first_name': first[:255], 'last_name': last[:255]}
+    if email:
+        body['email'] = email
+    if phone:
+        body['phone'] = re.sub(r'[()]', '', phone)[:50]
+    if number:
+        body['customer_number'] = str(number)[:255]
+    return call('POST', 'customers', body)
+
+
+def create_pm(customer_id, source, exp_m=0, exp_y=0, name='', avs_zip='', is_default=True):
+    """כרטיס שמור ללקוח מתוך nonce של הטופס המאובטח (או ref- של עסקה)."""
+    body = {'source': source, 'is_default': bool(is_default)}
+    if exp_m and exp_y:
+        body.update(expiry_month=int(exp_m), expiry_year=int(exp_y))
+    if name:
+        body['name'] = name[:255]
+    if avs_zip:
+        body['avs_zip'] = avs_zip[:50]
+    return call('POST', 'customers/%d/payment-methods' % int(customer_id), body)
+
+
+def charge_source(source, amount, description='', customer_id=0, email='', exp_m=0, exp_y=0, name='', avs_zip='',
+                  save_card=False):
+    body = {'amount': round(float(amount), 2), 'source': source, 'save_card': bool(save_card),
+            'transaction_details': {'description': (description or '')[:255]}}
+    if exp_m and exp_y:
+        body.update(expiry_month=int(exp_m), expiry_year=int(exp_y))
+    if name:
+        body['name'] = name[:255]
+    if avs_zip:
+        body['avs_zip'] = avs_zip[:50]
+    cust = {}
+    if customer_id:
+        cust['customer_id'] = int(customer_id)
+    if email:
+        cust.update(email=email, send_receipt=True)
+    if cust:
+        body['customer'] = cust
     return call('POST', 'transactions/charge', body)
 
 
