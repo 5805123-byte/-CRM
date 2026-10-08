@@ -418,10 +418,76 @@ def masav_edit(masav_id, amount=None, day=None, groupe=None, tashlumim=None):
     return _txt_ok(*call('EditMasavKeva', p, post=True, masav=True, raw=True))
 
 
+def error_logs(last_id='', loops=5):
+    """יומן הסירובים (GetErrorLogsJson) מ-last_id והלאה: סירובי אשראי וסירובי הוראות קבע שכבר נרשמו.
+    בלי ת"ז ובלי תוקף. מחזיר (רשימה, המזהה הגבוה)."""
+    out, last = [], str(last_id or '')
+    for _ in range(loops):
+        p = {'MaxId': 2000}
+        if last:
+            p['LastId'] = last
+        ok, res = call('GetErrorLogsJson', p, timeout=90)
+        if not ok:
+            raise RuntimeError('נדרים פלוס (סירובים): %s' % (LAST.get('error') or str(res)[:120]))
+        rows = _rows(res)
+        for r in rows:
+            rid = str(r.get('ID') or '').strip()
+            if not rid:
+                continue
+            out.append({'id': rid, 'date': str(r.get('ErrorDate') or '').strip(), 'error': str(r.get('Error') or '').strip(),
+                        'amount': _num(r.get('Amount')), 'last4': str(r.get('LastNum') or '').strip(),
+                        'name': str(r.get('ClientName') or '').strip(), 'phone': str(r.get('Phone') or '').strip(),
+                        'keva': str(r.get('KevaId') or '').strip(), 'groupe': str(r.get('Groupe') or '').strip(),
+                        'done': str(r.get('Done') or '0').strip() == '1'})
+            last = rid
+        if len(rows) < 2000:
+            break
+    return out, last
+
+
+ACH_TYPES = {'מזומן': 1, 'צ׳ק': 2, "צ'ק": 2, 'העברה בנקאית': 3, 'אשראי (לא בנדרים)': 4}
+
+
+def zeout_for(keva_id, bank=False):
+    """מספר הזהות מתוך ההוראה בנדרים פלוס — רק כדי להעביר אותו בחזרה לנדרים (הכנסה חיצונית). לא נשמר."""
+    if bank:
+        ok, d = call('GetMasavId', {'MasavId': str(keva_id)}, masav=True)
+        return str(d.get('ClientZeout') or '').strip() if ok and isinstance(d, dict) else ''
+    return str(keva_detail(keva_id).get('KevaZeout') or '').strip()
+
+
+def save_achnasot(zeout, amount, date, method, groupe='', avour='', ref='', name=''):
+    """💵 הכנסה חיצונית (SaveAchnasot) — מזומן / צ'ק / העברה / אחר, כדי שנדרים פלוס יפיקו עליה קבלה."""
+    t = ACH_TYPES.get(method, 6)
+    p = {'Type': t, 'Zeout': zeout, 'Amount': ('%.2f' % float(amount)).rstrip('0').rstrip('.'), 'Date': date, 'Currency': 1,
+         'Groupe': groupe[:200], 'Avour': avour[:300], 'MosadNumber': mosad()}
+    if t == 2:
+        p.update(Asmahta=ref or '0', Asmahta2='00-000-000000')
+    elif t == 3:
+        p.update(Asmahta=ref or '0', Asmahta2='00-000-000000')
+    elif t == 4:
+        p.update(Asmahta='אשראי', Asmahta2=(ref or '0000')[-4:])
+    elif t == 6:
+        p.update(Asmahta=method[:40] or 'אחר', Asmahta2=ref or '-')
+    if name:
+        p['SpecialName'] = name[:80]
+    ok, res = call('SaveAchnasot', p, post=True)
+    if ok and isinstance(res, dict) and res.get('ID'):
+        return True, str(res['ID'])
+    return False, (res.get('Message') if isinstance(res, dict) else str(res)) or LAST.get('error') or 'לא נשמר'
+
+
+def invoice_achnasot(ach_id, tamal_type=405):
+    """🧾 הפקת קבלה של נדרים פלוס על הכנסה חיצונית (CreateInvoice, Type=Achnasot; 405 = קבלת תרומה)."""
+    ok, res = call('CreateInvoice', {'ID': str(ach_id), 'Type': 'Achnasot', 'TamalType': str(tamal_type)}, page='tamal')
+    return ok, (res.get('Message') if isinstance(res, dict) else str(res)) or ''
+
+
 def show_invoice(transaction_id):
     """🧾 קישור לקבלה שנדרים פלוס הפיקו לעסקת אשראי (ShowInvoice). מאיר: "הם מוציאים קבלות לבד —
     מי שתורם בנדרים פלוס מקבל מהם קבלה אוטומטית". לעסקאות בנקאיות אין קישור (הן באיזיקאונט)."""
-    ok, res = call('ShowInvoice', {'TransactionId': str(transaction_id)}, page='tamal')
+    key = 'AchnasotId' if str(transaction_id).startswith('A') else 'TransactionId'
+    ok, res = call('ShowInvoice', {key: str(transaction_id).lstrip('A')}, page='tamal')
     msg = str(res.get('Message') or '') if isinstance(res, dict) else str(res)
     if ok and msg.startswith('http'):
         return True, msg

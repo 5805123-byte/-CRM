@@ -319,6 +319,9 @@ def ensure_schema():
        אחרת, ועבור מה זה נתרם… שיהיה כתוב אצלו בכרטיס את התרומה שלו ואיך שילם" */
     CREATE TABLE IF NOT EXISTS cm_don(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, date TEXT, amount REAL,
         method TEXT, purpose TEXT, note TEXT, created TEXT, by_role TEXT);
+    /* יומן הסירובים של נדרים פלוס (GetErrorLogsJson + Webhook) — בלי ת"ז ובלי תוקף */
+    CREATE TABLE IF NOT EXISTS nd_err(id TEXT PRIMARY KEY, date TEXT, iso TEXT, error TEXT, amount REAL, last4 TEXT, name TEXT,
+        phone TEXT, keva TEXT, groupe TEXT, member_id INTEGER, mosad TEXT, done INTEGER, src TEXT);
     CREATE INDEX IF NOT EXISTS ix_cmdon_m ON cm_don(member_id);
     /* תזכורות של הקהילה — מאיר: "תזכורות לקהילה, שהגבאי לא יראה את התזכורות שלנו" */
     CREATE TABLE IF NOT EXISTS cm_task(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER, due TEXT, at_time TEXT,
@@ -507,6 +510,10 @@ def ensure_schema():
     # מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — ערוץ התזכורת לכל חוב
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN channel TEXT")
     except Exception: pass
+    # תרומה ידנית שנרשמה גם בנדרים פלוס (הכנסה חיצונית) — מזהה ההכנסה שם, ואם הופקה קבלה
+    for col in ('nd_id', 'nd_rc'):
+        try: con.execute(f"ALTER TABLE cm_don ADD COLUMN {col} TEXT")
+        except Exception: pass
     # מתי ואיך הזכרנו לו — מאיר: "שיהיה כתוב אצלו בכרטיס מה עשינו"
     for col in ('reminded_at', 'reminded_via'):
         try: con.execute(f"ALTER TABLE cm_debt ADD COLUMN {col} TEXT")
@@ -12521,7 +12528,7 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 # בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
 # מאיר: "כל 48 שעות שזה יבקש שוב את הסיסמא או חיבור דרך גוגל — גם אצלי בטאבלט או מחשב כרום"
 AUTH_HOURS = 48
-AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health')   # תחיליות; הכניסה עצמה מטופלת לפני
+AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/')   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
 #     GOOGLE_LOGIN_ADMIN   מיילים שנכנסים להכל (ברירת מחדל: 5805123@gmail.com), מופרדים בפסיק
@@ -13373,7 +13380,13 @@ def member_nd(con, mid):
         "FROM cm_don d WHERE d.member_id=? ORDER BY d.date DESC, d.id DESC", (mid,))]
     for d in dons:
         years[(d['date'] or '')[:4]] = round(years.get((d['date'] or '')[:4], 0) + (d['amount'] or 0), 2)
-    return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years, 'dons': dons,
+    ew, ea = ["e.member_id=?"], [mid]
+    if phs:
+        ew.append("e.phone IN (%s)" % ','.join('?' * len(phs))); ea += phs
+    if kids:
+        ew.append("e.keva IN (%s)" % ','.join('?' * len(kids))); ea += kids
+    errs = [dict(r) for r in con.execute("SELECT * FROM nd_err e WHERE " + " OR ".join(ew) + " ORDER BY e.iso DESC LIMIT 40", ea)]
+    return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years, 'dons': dons, 'errs': errs,
             'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0), 2),
             'since': min((t['iso'] or '' for t in txs if t['iso']), default=''),
             'debts': debts, 'tasks': tasks, 'email': (emails_of(m['email'])[0] if m['email'] else ''),
@@ -16510,7 +16523,9 @@ class H(BaseHTTPRequestHandler):
             try:
                 host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
                 link = 'https://%s/api/yemot/ivr/%s' % (host, ivr_key(con))
-                info = {'ok': True, 'configured': _nd.configured(), 'mosad': _nd.mosad(), 'stat': dict(NDSTAT), 'link': link,
+                hook = 'https://%s/api/nd/hook/%s' % (host, nd_hook_key(con))
+                info = {'ok': True, 'configured': _nd.configured(), 'mosad': _nd.mosad(), 'stat': dict(NDSTAT), 'link': link, 'hook': hook,
+                        'hook_last': kv_get(con, 'nd_hook_last', ''),
                         'accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main'],
                                       'n_keva': con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(mosad,'')=?", ('' if x['main'] else x['mosad'],)).fetchone()[0]}
                                      for x in _nd.accounts()],
@@ -19212,6 +19227,22 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sent': n, 'no_mobile': nomob, 'failed': fail})
+        m = re.match(r'/api/nd/hook/([A-Za-z0-9]+)$', self.path.split('?')[0])
+        if m:
+            con = db()
+            try:
+                if m.group(1) != nd_hook_key(con):
+                    return self._send(403, {'ok': False})
+                try:
+                    res = nd_hook(con, b)
+                except Exception as e:
+                    res = 'error: %s' % str(e)[:80]
+                con.execute("INSERT INTO app_kv(k,v) VALUES('nd_hook_last',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", ('%s · %s' % (now_iso(), res),))
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/nd/keva/(M?[\d:]+)/action$', self.path)
         if m:
             # ⏸ הקפאה / ▶ הפעלה / ✎ שינוי סכום ותאריך / ⏭ דחייה בחודש — אשראי ובנקאית
@@ -19347,9 +19378,12 @@ class H(BaseHTTPRequestHandler):
                 cm_debt_log(con, mid, 'don%d' % did, '💵 תרומה ₪%g ב%s%s' % (a, meth, (' עבור ' + pur) if pur else ''))
                 used = cm_debt_pay(con, mid, a, 'שולם ב%s %s' % (meth, dt)) if b.get('pay_debt') else 0
                 con.commit()
+                nd_msg = ''
+                if b.get('nd'):
+                    nd_msg = cm_don_to_nd(con, did)
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'id': did, 'debt_paid': used})
+            return self._send(200, {'ok': True, 'id': did, 'debt_paid': used, 'nd': nd_msg})
         m = re.match(r'/api/members/donation/(\d+)$', self.path)
         if m:
             con = db()
@@ -21502,6 +21536,12 @@ def nd_sync(con):
             res['חיובים בנקאיים חדשים'] = bh
     except Exception as e:
         res['הסטוריה בנקאית'] = 'לא נמשכה: %s' % str(e)[:60]
+    try:
+        ne = nd_errors_sync(con)
+        if ne:
+            res['סירובים חדשים ביומן'] = ne
+    except Exception as e:
+        res['יומן סירובים'] = 'לא נמשך: %s' % str(e)[:60]
     rp = nd_mark_replaced(con)
     if rp:
         res['הוחלפו בהוראה חדשה'] = rp
@@ -21594,6 +21634,136 @@ def nd_masav_history(con):
         con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, end.isoformat()))
         con.commit()
     return new
+
+
+def cm_don_to_nd(con, did):
+    """התרומה שנרשמה ידנית נרשמת גם בנדרים פלוס כהכנסה חיצונית, ונדרים מפיקים עליה קבלה ושולחים
+    לתורם (מאיר: "הם מוציאים קבלות לבד"). צריך את מספר הזהות שלו — נלקח מהוראת הקבע שלו בנדרים
+    פלוס ברגע השליחה, ולא נשמר אצלנו. בלי הוראה — אין מאיפה, ומודיעים."""
+    import nedarim as _nd
+    d = con.execute("SELECT * FROM cm_don WHERE id=?", (did,)).fetchone()
+    if not d:
+        return 'לא נמצא'
+    k = con.execute("SELECT id,kind,mosad FROM nd_keva WHERE member_id=? ORDER BY active DESC, CASE WHEN COALESCE(mosad,'')='' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+                    (d['member_id'],)).fetchone()
+    if not k:
+        return 'אין לו הוראת קבע בנדרים פלוס — אין מספר זהות לרישום שם. נרשם אצלנו בלבד.'
+    bank = (k['kind'] or '') == 'bank'
+    with _nd.use(_nd.account_for(k['mosad'] or '')):
+        z = _nd.zeout_for(re.sub(r'^M(?:\d+:)?', '', k['id']) if bank else k['id'], bank)
+        if not z:
+            return 'לא הצלחתי למשוך את פרטי התורם מנדרים פלוס. נרשם אצלנו בלבד.'
+        dt = (d['date'] or today_iso())[:10]
+        ok, aid = _nd.save_achnasot(z, d['amount'], '%s/%s/%s' % (dt[8:10], dt[5:7], dt[:4]), d['method'] or 'מזומן',
+                                    groupe=d['purpose'] or '', avour=d['note'] or '', ref='')
+        if not ok:
+            return 'נדרים פלוס לא קיבלו: %s' % aid
+        rc_ok, rc_msg = _nd.invoice_achnasot(aid)
+    con.execute("UPDATE cm_don SET nd_id=?, nd_rc=? WHERE id=?", (aid, '1' if rc_ok else '', did))
+    cm_debt_log(con, d['member_id'], 'don%d' % did, '📤 נרשם בנדרים פלוס (הכנסה %s)%s' % (aid, ' · הם הפיקו קבלה' if rc_ok else ' · הקבלה לא הופקה: ' + str(rc_msg)[:80]))
+    con.commit()
+    return 'נרשם בנדרים פלוס' + (' והם הפיקו קבלה ✓' if rc_ok else ' (הקבלה לא הופקה: %s)' % str(rc_msg)[:80])
+
+
+def nd_errors_sync(con):
+    """יומן הסירובים מכל מוסד, מהמזהה האחרון שנשמר. מקושר לחבר הקהילה לפי ההוראה / טלפון / שם."""
+    import nedarim as _nd, yemot as _ym
+    midx, nidx = nd_member_index(con), nd_name_index(con)
+    new = 0
+    for acct in _nd.accounts():
+        mos = '' if acct['main'] else acct['mosad']
+        kk = 'nd_err_last' + ('' if acct['main'] else ':' + mos)
+        with _nd.use(acct):
+            rows, top = _nd.error_logs(kv_get(con, kk, ''))
+        for r in rows:
+            k = con.execute("SELECT member_id FROM nd_keva WHERE id=?", (r['keva'],)).fetchone() if r['keva'] else None
+            ph = _ym.norm_phone(r['phone'])
+            ids = midx.get(ph) if ph else None
+            mid = (k['member_id'] if k else None) or (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, r['name'])
+            c = con.execute("INSERT OR IGNORE INTO nd_err(id,date,iso,error,amount,last4,name,phone,keva,groupe,member_id,mosad,done,src) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'log')",
+                            ((mos + ':' if mos else '') + r['id'], r['date'], _nd_iso(r['date']), r['error'][:300], _ivr_amt(r['amount']),
+                             r['last4'], r['name'], ph, r['keva'], r['groupe'], mid, mos, 1 if r['done'] else 0))
+            new += 1 if c.rowcount else 0
+        if top:
+            con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, top))
+        con.commit()
+    return new
+
+
+def nd_hook_key(con):
+    k = kv_get(con, 'nd_hook_key', '')
+    if not k:
+        import secrets
+        k = secrets.token_urlsafe(14).replace('-', 'x').replace('_', 'y')
+        con.execute("INSERT INTO app_kv(k,v) VALUES('nd_hook_key',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k,))
+        con.commit()
+    return k
+
+
+ND_SOON = {'t': 0}
+
+
+def nd_sync_soon(delay=90):
+    """הוראה חדשה הוקמה (Webhook) — סנכרון מלא בעוד דקה וחצי, לא יותר מפעם ב-10 דקות."""
+    if time.time() - ND_SOON['t'] < 600:
+        return
+    ND_SOON['t'] = time.time()
+    def go():
+        time.sleep(delay)
+        try:
+            nd_run()
+        except Exception:
+            pass
+    threading.Thread(target=go, daemon=True).start()
+
+
+def nd_hook(con, d):
+    """⚡ עדכון מיידי מנדרים פלוס (Webhook): עסקה שעברה / הוראה חדשה / סירוב. ת"ז ותוקף לא נשמרים.
+    מאיר: "תחבר הכל" — במקום לחכות לסנכרון של 3 שעות, התשלום מופיע בכרטיס ברגע שנעשה."""
+    import nedarim as _nd, yemot as _ym
+    if not isinstance(d, dict):
+        return 'ignored'
+    mos_in = str(d.get('MosadNumber') or d.get('MosadId') or '').strip()
+    acct = next((a for a in _nd.accounts() if a['mosad'] == mos_in), None) if mos_in else (_nd.accounts() or [None])[0]
+    if not acct:
+        return 'unknown mosad'
+    mos = '' if acct['main'] else acct['mosad']
+    midx, nidx = nd_member_index(con), nd_name_index(con)
+    tid = str(d.get('TransactionId') or '').strip()
+    kid = str(d.get('KevaId') or '').strip()
+    err = str(d.get('ErrorText') or d.get('Error') or d.get('ErrorMessage') or '').strip()
+    if tid and str(d.get('Confirmation') or '').strip() and not err:
+        typ = str(d.get('TransactionType') or '')
+        keva = (kid if ('הו' in typ or 'קבע' in typ) else ('-' + kid)) if kid else ''
+        t = {'id': tid, 'time': str(d.get('TransactionTime') or ''), 'phone': str(d.get('Phone') or ''), 'name': str(d.get('ClientName') or ''),
+             'amount': _nd._num(d.get('Amount')), 'keva': keva, 'groupe': str(d.get('Groupe') or ''), 'comments': str(d.get('Comments') or ''),
+             'conf': str(d.get('Confirmation') or ''), 'last4': str(d.get('LastNum') or ''), 'type': typ}
+        cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
+        n, _m = _nd_hist_rows(con, [t], mos, cutoff, midx, nidx)
+        con.commit()
+        return 'payment %s' % ('new' if n else 'known')
+    if kid and not tid and str(d.get('NextDate') or '').strip() and not err:
+        nd_sync_soon()
+        return 'new keva'
+    if err:
+        ph = _ym.norm_phone(str(d.get('Phone') or ''))
+        k = con.execute("SELECT member_id FROM nd_keva WHERE id=?", (kid,)).fetchone() if kid else None
+        ids = midx.get(ph) if ph else None
+        mid = (k['member_id'] if k else None) or (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, str(d.get('ClientName') or ''))
+        con.execute("INSERT OR IGNORE INTO nd_err(id,date,iso,error,amount,last4,name,phone,keva,groupe,member_id,mosad,done,src) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,'hook')",
+                    ('hook:%d' % int(time.time() * 1000), str(d.get('ErrorDate') or d.get('TransactionTime') or now_iso()), now_iso(), err[:300],
+                     _ivr_amt(d.get('Amount')), str(d.get('LastNum') or ''), str(d.get('ClientName') or ''), ph, kid, str(d.get('Groupe') or ''), mid, mos))
+        if kid:
+            con.execute("UPDATE nd_keva SET error=? WHERE id=?", (err[:200], kid))
+        if mid:
+            cm_debt_log(con, mid, 'err', '🔴 סירוב בנדרים פלוס: ₪%s · %s' % (_nd._num(d.get('Amount')) or '?', err[:120]))
+        if kid:
+            cm_debts_from_keva(con)
+        con.commit()
+        return 'refusal'
+    return 'ignored'
 
 
 def nd_mark_replaced(con):

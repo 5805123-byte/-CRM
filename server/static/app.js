@@ -12943,7 +12943,7 @@ async function cmNdPaint(m,showAll,boxId){
   boxId=boxId||'cm_ndbox';
   const box=document.getElementById(boxId); if(!box)return;
   const r=await api('GET','/api/members/'+m.id+'/nd'); if(!r||!r.ok){box.textContent='לא נטען';return;}
-  const K=r.kevas||[], T=r.tx||[], C=r.charges||[], DN=r.dons||[], hasDebt=(r.debts||[]).some(d=>d.status==='open');
+  const K=r.kevas||[], T=r.tx||[], C=r.charges||[], DN=r.dons||[], ER=r.errs||[], hasDebt=(r.debts||[]).some(d=>d.status==='open');
   const yrs=Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${ndMoney(v)}</b></span>`).join('');
   // הוראות ישנות (הוחלפו / הסתיימו / מושבתות) — בשורה קטנה אחת, לא כמו הוראה פעילה
   const KA=K.filter(k=>k.active), KO=K.filter(k=>!k.active);
@@ -12963,7 +12963,7 @@ async function cmNdPaint(m,showAll,boxId){
   const rows=T.map(t=>{const bk=/^M/.test(String(t.keva||''));return {id:t.id,iso:t.iso,amount:t.amount,what:(bk?[t.groupe]:[t.groupe,t.comments]).filter(Boolean).join(' · '),auto:!!(t.keva&&!String(t.keva).startsWith('-')),bank:bk,btype:t.type||'',conf:t.conf,rc_id:t.rc_id,rc_num:t.rc_num,rc_sent:t.rc_sent,pending:false};})
     .concat(C.map(c=>({id:c.transaction_id,iso:(c.at||'').slice(0,10),amount:c.amount,what:'חיוב מהמערכת (טרם הופיע בהיסטוריה של נדרים פלוס)',auto:false,conf:c.confirmation,pending:true})))
     // מאיר: "מקום להכניס תרומה שלו במזומן או דרך אחרת, ועבור מה זה נתרם" — באותה היסטוריה
-    .concat(DN.map(d=>({id:'cm'+d.id,don:d.id,iso:d.date,amount:d.amount,what:d.purpose||'',meth:d.method||'',note:d.note||'',rc_id:d.rc_id,rc_num:d.rc_num,rc_sent:d.rc_sent})))
+    .concat(DN.map(d=>({id:'cm'+d.id,don:d.id,iso:d.date,amount:d.amount,what:d.purpose||'',meth:d.method||'',note:d.note||'',rc_id:d.rc_id,rc_num:d.rc_num,rc_sent:d.rc_sent,nd_id:d.nd_id,nd_rc:d.nd_rc})))
     .sort((a,b)=>String(b.iso||'').localeCompare(String(a.iso||'')));
   const lim=showAll?rows.length:8;
   const addHTML=`<details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
@@ -12971,19 +12971,23 @@ async function cmNdPaint(m,showAll,boxId){
         <select class="cdn_m">${CM_METH.map(x=>`<option>${esc(x)}</option>`).join('')}</select>
         <input class="cdn_p" placeholder="עבור מה (עליית שישי, דמי חבר, נדבה…)">
         ${hasDebt?`<label class="gvall" style="flex:1 1 100%"><input type="checkbox" class="cdn_pay" checked> לקזז מהחוב / ההתחייבות הפתוחה שלו</label>`:''}
+        ${K.length?`<label class="gvall" style="flex:1 1 100%"><input type="checkbox" class="cdn_nd" checked> 📤 לרשום גם בנדרים פלוס — והם יפיקו וישלחו לו קבלה</label>`:''}
         <button class="btn sm cdn_go">💾 רשום</button></div></details>`;
-  box.innerHTML=`${kevaHTML}${addHTML}
+  const errHTML=ER.length?`<details class="cmdonadd"><summary>🔴 סירובים בנדרים פלוס (${ER.length})</summary>${ER.map(e=>`<div class="bqpay"><span><b>${esc(ndDate(e.iso||''))}</b> · ${ndMoney(e.amount)}${e.groupe?' · '+esc(e.groupe):''}${e.last4?' · ****'+esc(e.last4):''} · <span class="ndbad">${esc(e.error||'')}</span>${+e.done?' <small class="ndok">טופל</small>':''}</span></div>`).join('')}</details>`:'';
+  box.innerHTML=`${kevaHTML}${errHTML}${addHTML}
     ${rows.length?`<div class="bqhsum" style="margin-top:8px"><b>${rows.filter(x=>+x.amount>0).length} תרומות · ${ndMoney(rows.reduce((t,x)=>t+(+x.amount>0?+x.amount:0),0))}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div></div>
       <div class="bqpays">${rows.slice(0,lim).map(t=>`<div class="bqpay"><span><b>${esc(ndDate(t.iso))}</b> · ${ndMoney(t.amount)}${t.what?` · ${esc(t.what)}`:''} · <small>${t.don?('💵 '+esc(t.meth)+(t.note?' · '+esc(t.note):'')):(t.bank?('🏦 הוראה בנקאית'+(t.btype?' · '+esc(t.btype):'')):(t.auto?'הוראת קבע':'חד-פעמי')+' · נדרים פלוס')}${t.conf?' · אישור '+esc(t.conf):''}</small>${t.don?` <button class="fdel" data-cdndel="${t.don}" title="מחק את הרישום">✕</button>`:''}</span>
-        <span class="bqacts">${t.pending||!(+t.amount>0)?'':(!t.don?(t.bank?'':`<button class="btn sm ghost" data-ndinv="${esc(t.id)}" title="נדרים פלוס שלחו לו קבלה אוטומטית — הצגה">🧾 הקבלה מנדרים</button>`):t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
-          :`<button class="btn sm ghost" data-ndrc="${esc(t.id)}" data-amt="${esc(t.amount)}" data-date="${esc((t.iso||'').slice(0,10))}" data-what="${esc(t.what.split(' · ')[0]||'')}" data-meth="${esc(t.meth||'')}">🧾 קבלה</button>`)}</span></div>`).join('')}</div>
+        <span class="bqacts">${t.don&&t.nd_id?`<small class="ndok">📤 בנדרים</small>${t.nd_rc?`<button class="btn sm ghost" data-ndinv="A${esc(t.nd_id)}" title="הקבלה שנדרים פלוס הפיקו">🧾 הקבלה מנדרים</button>`:''}`:''}${t.don&&t.nd_id?'':(t.pending||!(+t.amount>0)?'':(!t.don?(t.bank?'':`<button class="btn sm ghost" data-ndinv="${esc(t.id)}" title="נדרים פלוס שלחו לו קבלה אוטומטית — הצגה">🧾 הקבלה מנדרים</button>`):t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
+          :`<button class="btn sm ghost" data-ndrc="${esc(t.id)}" data-amt="${esc(t.amount)}" data-date="${esc((t.iso||'').slice(0,10))}" data-what="${esc(t.what.split(' · ')[0]||'')}" data-meth="${esc(t.meth||'')}">🧾 קבלה</button>`))}</span></div>`).join('')}</div>
       ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
       :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
   const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true,boxId);
   const q=c=>box.querySelector('.'+c);
   q('cdn_go').onclick=async()=>{const a=amtNum(q('cdn_a').value);if(!a){toast('חסר סכום');q('cdn_a').focus();return;}
-    const r2=await api('POST','/api/members/'+m.id+'/donation',{date:q('cdn_d').value,amount:a,method:q('cdn_m').value,purpose:q('cdn_p').value.trim(),pay_debt:q('cdn_pay')&&q('cdn_pay').checked?1:0});
-    if(r2&&r2.ok){toast('נרשם ✓'+(r2.debt_paid?(' · קוזז '+ndMoney(r2.debt_paid)+' מהחוב'):''));cmNdPaint(m,showAll,boxId);if(r2.debt_paid)cdData=null;}else toast((r2&&r2.error)||'לא נשמר');};
+    const toNd=q('cdn_nd')&&q('cdn_nd').checked;
+    const r2=await api('POST','/api/members/'+m.id+'/donation',{date:q('cdn_d').value,amount:a,method:q('cdn_m').value,purpose:q('cdn_p').value.trim(),pay_debt:q('cdn_pay')&&q('cdn_pay').checked?1:0,nd:toNd?1:0});
+    if(r2&&r2.ok&&r2.nd&&!/^נרשם בנדרים/.test(r2.nd))await uiAlert('נרשם אצלנו ✓\n'+r2.nd);
+    if(r2&&r2.ok){toast('נרשם ✓'+(r2.debt_paid?(' · קוזז '+ndMoney(r2.debt_paid)+' מהחוב'):'')+(r2.nd&&/^נרשם בנדרים/.test(r2.nd)?' · '+r2.nd:''));cmNdPaint(m,showAll,boxId);if(r2.debt_paid)cdData=null;}else toast((r2&&r2.error)||'לא נשמר');};
   box.querySelectorAll('[data-cdndel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את רישום התרומה?','🗑️ כן','לא'))return;
     await api('POST','/api/members/donation/'+b.dataset.cdndel,{action:'delete'});cmNdPaint(m,showAll,boxId);});
   // מאיר: "תתחיל מהקפאה הפעלה" — ⏸ / ▶ / ✎ / ⏭ ישירות מול נדרים פלוס
@@ -13359,6 +13363,10 @@ async function ymViewPay(){
     <div class="hintxt" style="margin-top:8px"><b>ההגדרות לשלוחה בימות</b> (השלוחה שמקישים אליה 1) — להעתיק כמו שהן:</div>
     <pre class="ndini" id="nd_ini" dir="ltr">${esc(ini)}</pre>
     <div class="addrow"><button class="btn sm" id="nd_copy">📋 העתק</button></div>
+    ${st.hook?`<div class="hintxt" style="margin-top:10px"><b>⚡ עדכון מיידי מנדרים פלוס (Webhook)</b> — כל תשלום, הוראה חדשה וסירוב מגיעים לכאן מיד, בלי לחכות לסנכרון.
+      בנדרים פלוס: <b>הגדרות ← API ← Webhook</b> — להדביק את הכתובת הזו בשדה <b>"עדכוני עסקאות"</b>, בשדה <b>"הקמת הוראת קבע"</b> ובשדה <b>"סירובים"</b>, ולשמור. אם יש מוסד שני — אותה כתובת גם שם.</div>
+    <pre class="ndini" id="nd_hook" dir="ltr">${esc(st.hook)}</pre>
+    <div class="addrow"><button class="btn sm" id="nd_hookcopy">📋 העתק</button>${st.hook_last?`<span class="hintxt">עדכון אחרון: ${esc(st.hook_last)}</span>`:'<span class="hintxt">עוד לא הגיע עדכון</span>'}</div>`:''}
     <div class="hintxt">המתקשר מזוהה לפי הטלפון. יש לו הוראת קבע ← שומע את 4 הספרות של הכרטיס, מאשר סכום (מההודעה שנשלחה, או מקיש סכום), מאשר שוב ← חיוב מיידי בכרטיס של ההוראה (נרשם בהיסטוריית ההוראה, בלי לשנות אותה). אין לו הוראה ← סליקה רגילה בהקשת כרטיס. הקוד בקישור סודי — לא לשתף.</div>
     <div class="rbtitle" style="text-align:right;margin-top:12px">🔴 הוראות קבע שחזרו (${(ndBad||[]).length})</div>
     <div class="hintxt">נדרים פלוס נותנים לכל הוראה קישור מאובטח (14 יום) שבו התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת. נשלח ב-SMS מ-025803545.</div>
@@ -13378,6 +13386,7 @@ async function ymViewPay(){
         ${c.last4?`<small>****${esc(c.last4)}</small>`:''}</div>`).join('')||'<div class="hintxt">עוד אין תשלומים.</div>'}</div></div>`;
   ymWireHead();
   const g=id=>document.getElementById(id);
+  const hc=g('nd_hookcopy'); if(hc)hc.onclick=()=>{const t=g('nd_hook').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק ✓'),()=>uiAlert(t));};
   g('nd_copy').onclick=()=>{const t=g('nd_ini').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק ✓'),()=>{const r=document.createRange();r.selectNodeContents(g('nd_ini'));getSelection().removeAllRanges();getSelection().addRange(r);toast('סמן והעתק (Ctrl+C)');});};
   g('nd_sync').onclick=async()=>{const b=g('nd_sync');b.disabled=true;b.textContent='🔄 מסנכרן…';
     const r=await api('POST','/api/nd/sync',{});
