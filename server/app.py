@@ -301,6 +301,7 @@ def ensure_schema():
         keva_id TEXT, member_id INTEGER, amount REAL, ok INTEGER, message TEXT, transaction_id TEXT,
         confirmation TEXT, last4 TEXT, job INTEGER, via TEXT);
     CREATE INDEX IF NOT EXISTS ix_ndch_call ON nd_charge(call_id);
+    CREATE TABLE IF NOT EXISTS nd_map(keva_id TEXT PRIMARY KEY, member_id INTEGER, at TEXT);
     CREATE TABLE IF NOT EXISTS nd_link(keva_id TEXT PRIMARY KEY, link TEXT, created TEXT, sent_at TEXT, sent_to TEXT, used TEXT);
     /* ימות המשיח — מאיר: "שבני הקהילה או תורמים יוכלו לקבל הודעה טלפונית או סמס…
        לפי הקלדה שלי במערכת". משלוח = job; כל נמען = שורה ב-ym_msg עם הסטטוס שלו. */
@@ -18336,6 +18337,18 @@ class H(BaseHTTPRequestHandler):
             sp = apply_pay_split(con)        # תורם שמתחלק עם שותף — הסכום נחתך מיד
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'linked': n, 'split': sp})
+        m = re.match(r'/api/nd/keva/(\d+)/member$', self.path)
+        if m:
+            mid = int(b.get('member_id') or 0) or None
+            con = db()
+            if mid:
+                con.execute("INSERT INTO nd_map(keva_id,member_id,at) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET member_id=excluded.member_id",
+                            (m.group(1), mid, now_iso()))
+            else:
+                con.execute("DELETE FROM nd_map WHERE keva_id=?", (m.group(1),))
+            con.execute("UPDATE nd_keva SET member_id=? WHERE id=?", (mid, m.group(1)))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/nd/keva/(\d+)/link$', self.path)
         if m:
             con = db()
@@ -20057,11 +20070,42 @@ def nd_member_index(con):
     return idx
 
 
+def _nd_toks(s):
+    t = re.sub(r'[^\u05d0-\u05eaa-z\s]', ' ', str(s or '').lower().translate(_KV_STRIP))
+    return [w for w in t.split() if len(w) > 1 and w not in ('הרב', 'רב', 'ר', 'משפחת', 'מר', 'גב', 'הר')]
+
+
+def nd_name_index(con):
+    """מאיר: "כתוב לא מקושר לקהילה והוא כן מופיע בקהילה… שיבדוק לפי שם". שם משפחה + שם
+    פרטי של כל חבר קהילה, בלי תלות בסדר ובאותיות סופיות."""
+    out = []
+    for m in con.execute("SELECT id,last,first FROM members WHERE COALESCE(active,1)=1"):
+        ln, fn = _nd_toks(m['last']), _nd_toks(m['first'])
+        if ln:
+            out.append((m['id'], set(ln), set(fn)))
+    return out
+
+
+def nd_match_name(nidx, name):
+    """התאמה יחידה בלבד: כל מילות שם המשפחה, ולפחות מילה אחת מהשם הפרטי (אם יש),
+    מופיעות בשם שבנדרים פלוס."""
+    w = set(_nd_toks(name))
+    if not w:
+        return None
+    hit = [mid for mid, ln, fn in nidx if ln <= w and (not fn or fn & w)]
+    if len(hit) == 1:
+        return hit[0]
+    full = [mid for mid, ln, fn in nidx if (ln | fn) == w]
+    return full[0] if len(full) == 1 else None
+
+
 def nd_sync(con):
     """משיכת הוראות הקבע והתורמים מנדרים פלוס, וקישור לחברי הקהילה לפי טלפון."""
     import nedarim as _nd
     now = now_iso()
     midx = nd_member_index(con)
+    nidx = nd_name_index(con)
+    manual = {r['keva_id']: r['member_id'] for r in con.execute("SELECT keva_id,member_id FROM nd_map")}
     pick = lambda phs: next((list(midx[p])[0] for p in phs if p in midx and len(midx[p]) == 1), None)
     res = {}
     try:
@@ -20071,7 +20115,7 @@ def nd_sync(con):
             con.execute("""INSERT INTO nd_torem(id,name,phones,mail,city,member_id,synced) VALUES(?,?,?,?,?,?,?)
                            ON CONFLICT(id) DO UPDATE SET name=excluded.name, phones=excluded.phones, mail=excluded.mail,
                              city=excluded.city, member_id=excluded.member_id, synced=excluded.synced""",
-                        (t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs), now))
+                        (t['id'], t['name'], ';'.join(phs), t['mail'], t['city'], pick(phs) or nd_match_name(nidx, t['name']), now))
         res['תורמים'] = len(ts)
     except Exception as e:
         res['תורמים'] = 'שגיאה: %s' % str(e)[:80]
@@ -20087,7 +20131,8 @@ def nd_sync(con):
         tm = con.execute("SELECT member_id,phones FROM nd_torem WHERE id=?", (k['torem'],)).fetchone() if k['torem'] else None
         if tm and tm['phones']:
             phs += [p for p in tm['phones'].split(';') if p and p not in phs]
-        mid = (tm['member_id'] if tm else None) or pick(phs)
+        # קישור: ידני (נבחר במסך) ← טלפון ← כרטיס התורם בנדרים ← שם
+        mid = manual.get(k['id']) or pick(phs) or (tm['member_id'] if tm else None) or nd_match_name(nidx, k['name'])
         con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
                        ON CONFLICT(id) DO UPDATE SET torem_id=excluded.torem_id, name=excluded.name, phone=excluded.phone,

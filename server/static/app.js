@@ -12876,7 +12876,8 @@ async function ymViewPay(){
     <div class="hintxt">נדרים פלוס נותנים לכל הוראה קישור מאובטח (14 יום) שבו התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת. נשלח ב-SMS מ-025803545. גם בטלפון, בשלוחת התשלום, יש "לעדכון כרטיס הקישו 3".</div>
     ${(ndBad||[]).length?`<div class="addrow"><button class="btn sm" id="nd_sendall">📲 שלח קישור לכל מי שחזר</button></div>`:''}
     <div class="ndlist">${(ndBad||[]).map(k=>`<div class="ndrow"><b>${esc(((k.ml||'')+' '+(k.mf||'')).trim()||k.name||'')}</b>
-        ${k.ml?`<small>(${esc(k.name||'')})</small>`:'<small class="ndbad">לא מקושר לקהילה</small>'}
+        ${k.ml?`<small>(${esc(k.name||'')})</small>`:`<span class="ndlink"><small class="ndbad">לא מקושר לקהילה</small>
+          <input list="nd_mdl" data-ndm="${esc(k.id)}" placeholder="שייך לחבר קהילה…"><button class="btn sm ghost" data-ndmok="${esc(k.id)}">שייך</button></span>`}
         <span>₪${esc(k.amount||'')}</span><small>****${esc(k.last4||'')}</small>
         <span class="ndbad">${esc(k.error||'')}</span>
         <small dir="ltr">${esc((k.phone||'').split(';')[0]||'')}</small>
@@ -12900,6 +12901,12 @@ async function ymViewPay(){
     const r=await api('POST','/api/nd/links/send_bad',{});
     toast(r&&r.ok?('נשלחו '+r.sent+(r.no_mobile?(' · '+r.no_mobile+' בלי נייד'):'')+(r.failed?(' · '+r.failed+' נכשלו'):'')):'השליחה נכשלה');
     ndStat=null;ymViewPay();};
+  if(!g('nd_mdl'))view.insertAdjacentHTML('beforeend',`<datalist id="nd_mdl">${(MEMBERS||[]).map(m=>`<option value="${esc(mName(m))} #${m.id}">`).join('')}</datalist>`);
+  view.querySelectorAll('[data-ndmok]').forEach(b=>b.onclick=async()=>{
+    const inp=view.querySelector('[data-ndm="'+b.dataset.ndmok+'"]'), mm=/#(\d+)\s*$/.exec(inp?inp.value:'');
+    if(!mm){toast('בחר חבר קהילה מהרשימה');return;}
+    const r=await api('POST','/api/nd/keva/'+b.dataset.ndmok+'/member',{member_id:+mm[1]});
+    if(r&&r.ok){toast('שויך ✓');ndStat=null;ymViewPay();}else toast('לא נשמר');});
   view.querySelectorAll('[data-ndsend]').forEach(b=>b.onclick=async()=>{
     if(!await uiConfirm('לשלוח SMS עם קישור לעדכון כרטיס?','📲 כן','ביטול'))return;
     b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsend+'/link',{send:1});
