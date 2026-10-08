@@ -12355,7 +12355,8 @@ async function renderCommDebts(){
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
-      <button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button></div>
+      <button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>
+      <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}" download style="text-decoration:none">📊 אקסל</a></div>
     ${cdAdd?cdAddHTML():''}${cdImp?cdImpHTML():''}
     <div class="bqtabs">${[['open','פתוחים'],['paid','שולמו'],['all','הכל']].map(([k,l])=>`<button class="bqt ${cdSt===k?'on':''}" data-cdst="${k}">${l}</button>`).join('')}</div>
     <div class="bqseg">${KF.map(([k,l])=>`<button class="${cdKind===k?'on':''}" data-cdk="${k}">${l} <small>${all.filter(d=>!k||d.kind===k).length}</small></button>`).join('')}</div>

@@ -15999,6 +15999,43 @@ class H(BaseHTTPRequestHandler):
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
             ivr_log(P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/cm/debts.xlsx':
+            # מאיר: "תוכל להביא לי את זה בקובץ, שאראה אם זה נכנס למערכת" — כל החובות לאקסל
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.utils import get_column_letter
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            st = (qs.get('status') or ['all'])[0]
+            con = db()
+            try:
+                rows = con.execute("SELECT d.*, m.last ml, m.first mf, m.phone mphone FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" +
+                                   ("" if st == 'all' else " WHERE d.status=?") + " ORDER BY m.last, m.first, d.id",
+                                   (() if st == 'all' else (st,))).fetchall()
+            finally:
+                con.close()
+            KN = {'debt': 'חוב', 'pledge': 'התחייבות', 'hok': 'הו"ק חזרה'}
+            SN = {'open': 'פתוח', 'paid': 'שולם', 'canceled': 'בוטל'}
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'חובות הקהילה'
+            ws.sheet_view.rightToLeft = True
+            hdr = ['#', 'שם משפחה', 'שם פרטי', 'טלפון', 'סוג', 'עבור מה', 'סכום', 'שולם', 'יתרה', 'מצב', 'תאריך', 'מקור', 'הערה', 'נוצר']
+            ws.append(hdr)
+            for c in ws[1]:
+                c.font = Font(bold=True); c.fill = PatternFill('solid', fgColor='EEEEEE'); c.alignment = Alignment(horizontal='right')
+            for i, d in enumerate(rows, 1):
+                a, pd = float(d['amount'] or 0), float(d['paid'] or 0)
+                ws.append([i, d['ml'] or '', d['mf'] or '', d['mphone'] or '', KN.get(d['kind'], d['kind'] or ''), d['title'] or '',
+                           a, pd, round(a - pd, 2) if d['status'] == 'open' else 0, SN.get(d['status'], d['status'] or ''),
+                           d['due'] or '', d['source'] or '', d['note'] or '', (d['created'] or '')[:16]])
+            for i, w in enumerate([5, 16, 14, 16, 12, 28, 10, 10, 10, 9, 12, 12, 40, 17], 1):
+                ws.column_dimensions[get_column_letter(i)].width = w
+            ws.freeze_panes = 'A2'
+            bio = io.BytesIO(); wb.save(bio); data = bio.getvalue()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s" % urllib.parse.quote('חובות הקהילה.xlsx'))
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/cm/debts':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             st = (qs.get('status') or ['open'])[0]
