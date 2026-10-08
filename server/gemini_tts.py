@@ -123,6 +123,14 @@ def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model=''):
         last = 'Gemini %s: %s' % (code or '', msg)
         if trace:
             trace('GeminiTTS', params, False, raw[:1500], ms)
+        # המודל הוצא משימוש ("no longer available… use models/X") — עוברים לחדש שגוגל מציינים
+        import nikud as _nk
+        nm = _nk.newer_model(code, raw)
+        if nm and nm != model and attempt < tries - 1:
+            model = nm
+            params = dict(params, model=model)
+            url = url.rsplit('/models/', 1)[0] + '/models/%s:generateContent' % model
+            continue
         if code in (429, 500, 503) and attempt < tries - 1:
             wait = 8 * (attempt + 1)
             m = re.search(r'"retryDelay":\s*"(\d+)s"', raw)

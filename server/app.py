@@ -497,7 +497,7 @@ def ensure_schema():
     for col, typ in (('campaign', 'TEXT'), ('answered', 'INTEGER'), ('secs', 'INTEGER'), ('call_status', 'TEXT'), ('checked_at', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
         except Exception: pass
-    # סליקת אשראי בהקשה 1 — הסכום של כל נמען נכתב ל-BillingSum.ini לפני השיחות
+    # הסכום לתשלום של כל נמען (שלוחת התשלום שואלת את השרת)
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN amount TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE ym_job ADD COLUMN bill_path TEXT")
@@ -13378,13 +13378,6 @@ def ym_link_ok(v):
     return v if (v.startswith(NED_LINK_PREFIX) and len(v) < 1500 and not re.search(r'\s', v)) else ''
 
 
-def ym_bill_kv():
-    try:
-        con = db(); v = kv_get(con, 'ym_bill_path', ''); con.close(); return v
-    except Exception:
-        return ''
-
-
 def ym_amt(v):
     """סכום נקי לקובץ ולהקראה: '1,250.00 ₪' -> '1250'"""
     t = re.sub(r'[^\d.]', '', str(v or ''))
@@ -13507,21 +13500,6 @@ def ym_worker(job_id):
             ym_gv = _gt.voice_ok(kv_get(con, 'ym_gvoice', ''))
             ym_gs = kv_get(con, 'ym_gstyle', '')
             ym_gm = kv_get(con, 'ym_gmodel', '')
-            if job['channel'] == 'voice' and (job['bill_path'] if 'bill_path' in job.keys() else ''):
-                amts = {}
-                for m in con.execute("SELECT phone, amount FROM ym_msg WHERE job=? AND status='queued'", (job_id,)).fetchall():
-                    if m['phone']:
-                        amts[m['phone']] = m['amount'] or ''      # בלי סכום — יקליד בעצמו
-                _ym.begin_trace()
-                okb, resb = _ym.update_billing(job['bill_path'], amts)
-                ym_save_trace(con, _ym.end_trace(), job_id, 0, '')
-                if not okb:
-                    # בלי סכומים נכונים בקובץ — לא מתקשרים בכלל (שלא יחויב סכום של מישהו אחר)
-                    con.execute("UPDATE ym_msg SET status='failed', error=? WHERE job=? AND status='queued'", (str(resb)[:200], job_id))
-                    con.execute("UPDATE ym_job SET status='error', label=?, failed=total WHERE id=?", (str(resb)[:200], job_id))
-                    con.commit()
-                    return
-                con.commit()
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
                 _ym.begin_trace()
@@ -16217,7 +16195,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
                                     'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
-                                    'bill_path': ym_bill_kv(), 'mosads': ned_list[0], 'mosad': ned_list[1],
+                                    'mosads': ned_list[0], 'mosad': ned_list[1],
                                     'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2],
                                     'engine': ym_v[3], 'gvoice': ym_v[4], 'gstyle': ym_v[5], 'gvoices': ym_gvl[0],
                                     'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2], 'gmodels': ym_gvl[3], 'gmodel': ym_v[6]})
@@ -17280,18 +17258,10 @@ class H(BaseHTTPRequestHandler):
                 recs = ym_recipients(con, b.get('recipients') or [])
             if not recs:
                 con.close(); return self._send(200, {'ok': False, 'error': 'לא נבחרו נמענים'})
-            # מאיר: "בהודעה שנשלחת בשיחה מקישים 1 ועוברים לשלוחת סליקת אשראי… לפני ששולחים
-            # הודעה תעדכן בקובץ BillingSum.ini" — הסכום של כל נמען נכתב לשם לפני השיחות
+            # הקשה 1 = תשלום בשלוחת ה-API: הסכום של כל נמען נשמר כאן, והשלוחה שואלת את השרת
+            # בזמן השיחה. מאיר: "תוריד לגמרי שימוש ב-BillingSum.ini — לא משתמשים בזה יותר בכלל"
             bill_path = ''
             if ch == 'voice' and b.get('billing'):
-                import yemot as _ym2
-                # מאיר: "עדיין משתמשים ב-BillingSum? או שהכל עובר דרך השרת" — בשלוחת API (ברירת
-                # המחדל) הסכום נשמר כאן לכל נמען והשלוחה שואלת את השרת בזמן השיחה; הקובץ לא נוגעים בו
-                if b.get('bill_mode') == 'file':
-                    bill_path = _ym2.norm_ext(b.get('bill_path') or kv_get(con, 'ym_bill_path', ''))
-                    if not bill_path:
-                        con.close(); return self._send(200, {'ok': False, 'error': 'חסרה שלוחת הסליקה (למשל 5 או 1/2)'})
-                    con.execute("INSERT INTO app_kv(k,v) VALUES('ym_bill_path',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (bill_path,))
                 gamt = ym_amt(amount)
                 if b.get('test'):
                     recs[0]['amount'] = ym_amt(b.get('test_amount')) or gamt

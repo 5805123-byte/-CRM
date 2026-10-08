@@ -367,53 +367,6 @@ def norm_ext(path):
     return 'ivr2:/' + p if p else ''
 
 
-def update_billing(ext_path, amounts):
-    """מאיר: "סכום לחיוב מותאם לכל לקוח… BillingSum.ini בשלוחה, ובתוכו לכל זיהוי=סכום.
-    לפני ששולחים הודעה תעדכן בקובץ הזה" — קוראים את הקובץ הקיים, מעדכנים רק את
-    הטלפונים של המשלוח (שאר השורות נשארות), ומעלים בחזרה. לא נוגעים בהגדרות השלוחה."""
-    ext = norm_ext(ext_path)
-    if not ext:
-        return False, 'לא הוגדרה שלוחת הסליקה'
-    fpath = ext + '/BillingSum.ini'
-    ok, txt = download(fpath)
-    if not ok:
-        if re.search(r'not exist|not found|does not|no such|לא קיים|לא נמצא', str(txt), re.I):
-            txt = ''                         # אין עדיין קובץ — נוצר עכשיו
-        else:
-            return False, 'לא הצלחתי לקרוא את BillingSum.ini, ולכן לא נגעתי בו — ' + str(txt)
-    lines, idx = [], {}
-    for ln in (txt or '').replace('\r', '').split('\n'):
-        if not ln.strip():
-            continue
-        k = ln.split('=', 1)[0].strip()
-        if '=' in ln and k:
-            idx[k] = len(lines)
-        lines.append(ln)
-    # מאיר: "גם מי שלא מוגדר בקהילה או אין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי".
-    # בלי סכום — מוחקים את השורה הישנה שלו (שלא יחויב סכום ממשלוח קודם) והוא יקליד סכום בעצמו.
-    drop = set()
-    for ph, amt in amounts.items():
-        if not amt:
-            if ph in idx:
-                drop.add(idx[ph])
-            continue
-        row = '%s=%s' % (ph, amt)
-        if ph in idx:
-            lines[idx[ph]] = row
-        else:
-            idx[ph] = len(lines); lines.append(row)
-    lines = [ln for i, ln in enumerate(lines) if i not in drop]
-    ok, res = call('UploadTextFile', {'what': fpath, 'contents': '\n'.join(lines)})
-    if not ok:
-        return False, 'עדכון BillingSum.ini נכשל — ' + str(res)
-    return True, {'file': fpath, 'updated': sum(1 for a in amounts.values() if a), 'free': sum(1 for a in amounts.values() if not a), 'lines': len(lines)}
-
-
-# ---------- יומן הכניסות והיציאות של ימות ----------
-# מאיר: "יש קובץ ivr2:Log/LogFolderEnterExit-2026-10.ymgr כל חודש ורואים הכל". כל שורה
-# היא כניסה לשלוחה אחת בתוך שיחה: Folder (main = שמיעת הודעות אישיות, 1 = הקישו 1 →
-# סליקה), Phone, EnterDate/EnterTime/ExitTime, TimeTotal (שניות), CallId (מזהה השיחה).
-# שיחה שהמערכת הוציאה (CallExtensionBridging) נרשמת עם IncomingDID ריק.
 def parse_ymgr(text):
     out = []
     for ln in (text or '').replace('\r', '').split('\n'):

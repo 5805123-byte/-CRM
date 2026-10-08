@@ -58,20 +58,38 @@ def _opt(o):
     return ''
 
 
-def _dicta_join(res):
+def _dicta_join(res, text=''):
+    """מחבר את התשובה של דיקטה לטקסט מנוקד. יש שתי צורות: הישנה ([{word, options}]) והחדשה
+    ({"data": [{"nakdan": {"word", "options": [{"w": ...}]}}]}). כדי לא להיות תלויים בצורה של
+    הרווחים והסימנים, כל מילה מנוקדת מוצבת במקומה בטקסט המקורי — רק אם בלי הניקוד היא זהה."""
     items = res.get('data') if isinstance(res, dict) else res
     if not isinstance(items, list):
         return ''
-    out = []
+    pairs = []
     for it in items:
         if not isinstance(it, dict):
             continue
-        w = it.get('word') or ''
-        opts = it.get('options') or it.get('nakdan') or []
-        if it.get('sep') or not opts:
-            out.append(w)
-        else:
-            out.append((_opt(opts) or w).replace('|', ''))
+        nk = it.get('nakdan') if isinstance(it.get('nakdan'), dict) else it
+        w = nk.get('word') or nk.get('str') or it.get('word') or ''
+        if nk.get('sep') or it.get('sep'):
+            continue
+        opts = nk.get('options')
+        if opts is None and not isinstance(it.get('nakdan'), dict):
+            opts = it.get('nakdan')
+        v = (_opt(opts) or '').replace('|', '')
+        if w and v:
+            pairs.append((w, v))
+    if not text:
+        return ''.join(v for _, v in pairs)
+    out, pos = [], 0
+    for w, v in pairs:
+        i = text.find(w, pos)
+        if i < 0:
+            continue
+        out.append(text[pos:i])
+        out.append(v if strip(v) == w else w)
+        pos = i + len(w)
+    out.append(text[pos:])
     return ''.join(out)
 
 
@@ -85,13 +103,14 @@ def dicta(text, trace=None):
         ok = False
         if code == 200:
             try:
-                out = _dicta_join(json.loads(raw))
-                ok = bool(out) and _same(out, text)
+                out = _dicta_join(json.loads(raw), text)
+                ok = bool(out) and _same(out, text) and bool(_NIQ.search(out))
                 if ok:
                     if trace:
                         trace('Nakdan', {'url': u, 'chars': len(text), 'text': text[:200]}, True, json.dumps({'responseStatus': 'OK', 'message': out[:300]}, ensure_ascii=False), ms)
                     return True, out
-                last = 'דיקטה החזירה טקסט שונה מהמקור' if out else 'תשובה לא מובנת מדיקטה'
+                last = ('דיקטה החזירה טקסט בלי ניקוד' if out and _same(out, text) else
+                        'דיקטה החזירה טקסט שונה מהמקור' if out else 'תשובה לא מובנת מדיקטה')
             except Exception as e:
                 last = 'תשובה לא מובנת מדיקטה: %s' % str(e)[:80]
         else:
@@ -101,21 +120,39 @@ def dicta(text, trace=None):
     return False, last
 
 
+DEF_TEXT_MODEL = 'gemini-3.8-flash'
+
+
+def newer_model(code, raw):
+    """מודל שגוגל הוציאו משימוש עונה 404 עם "Please update your code to use models/X" — מחזיר את X."""
+    if code not in (400, 404):
+        return ''
+    m = re.search(r'use (?:the )?models/([\w.\-]+?)(?=[\s,;)]|\.\s|\.?$|\.?["\'])', raw or '')
+    return m.group(1) if m else ''
+
+
 def gemini(text, trace=None):
     key = (os.environ.get('GEMINI_API_KEY') or '').strip()
     if not key:
         return False, 'אין GEMINI_API_KEY'
-    model = (os.environ.get('GEMINI_TEXT_MODEL') or 'gemini-2.5-flash').strip()
+    model = (os.environ.get('GEMINI_TEXT_MODEL') or DEF_TEXT_MODEL).strip()
     base = (os.environ.get('GEMINI_BASE') or 'https://generativelanguage.googleapis.com').rstrip('/')
     prompt = ('הוסף ניקוד מלא ומדויק לטקסט העברי הבא, כפי שהוא נקרא בעברית ישראלית מדוברת. '
               'אל תשנה, אל תוסיף ואל תוריד אף מילה, אות או סימן פיסוק. השאר כמו שהם מספרים, אותיות לועזיות '
               'וכל דבר בסוגריים מסולסלים כמו {שם}. החזר רק את הטקסט המנוקד, בלי שום הסבר.\n\n' + text)
     body = {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0}}
     code, raw, ms = _post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': key}, timeout=60)
+    nm = newer_model(code, raw)
+    if nm and nm != model:
+        # גוגל הוציאו את המודל משימוש ("no longer available… use models/X") — עוברים לחדש
+        if trace:
+            trace('GeminiNikud', {'model': model}, False, raw[:800], ms)
+        model = nm
+        code, raw, ms = _post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': key}, timeout=60)
     if code == 200:
         try:
-            out = json.loads(raw)['candidates'][0]['content']['parts'][0]['text'].strip()
-            if _same(out, text):
+            out = ''.join(p.get('text', '') for p in json.loads(raw)['candidates'][0]['content']['parts'] if not p.get('thought')).strip()
+            if _same(out, text) and _NIQ.search(out):
                 if trace:
                     trace('GeminiNikud', {'model': model, 'chars': len(text), 'text': text[:200]}, True, json.dumps({'responseStatus': 'OK', 'message': out[:300]}, ensure_ascii=False), ms)
                 return True, out
