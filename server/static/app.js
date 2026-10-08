@@ -6462,8 +6462,9 @@ async function bqMountCard(){const el=document.getElementById('bqf_card');const 
   if(!document.getElementById('bqf_card'))return;
   const styles={card:'border:1px solid #E7E0D2;border-radius:8px;padding:6px',expiryMonth:'border:1px solid #E7E0D2;border-radius:8px',
     expiryYear:'border:1px solid #E7E0D2;border-radius:8px',cvv2:'border:1px solid #E7E0D2;border-radius:8px',avsZip:'border:1px solid #E7E0D2;border-radius:8px',labelType:'static-top'};
+  // מאיר: "בנק ווסט מבקש מיקוד ועד עכשיו לא היינו צריכים מיקוד — שלא יצטרכו"
   try{if(bqHT)bqHT.setOptions({target:'#bqf_card'});
-    else bqHT=new window.HostedTokenization(st.token_key,{target:'#bqf_card',showZip:true,showFieldErrors:true,styles});}
+    else bqHT=new window.HostedTokenization(st.token_key,{target:'#bqf_card',showZip:false,showFieldErrors:true,styles});}
   catch(e){el.innerHTML='<div class="bqwarn">הטופס המאובטח לא נפתח: '+esc(e.message||String(e))+'</div>';}
 }
 async function bqOpenForm(kind,did){
