@@ -16263,6 +16263,29 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 mail_ok = False
             return self._send(200, {'ok': True, 'rows': rows, 'mail': mail_ok, 'ez': ez_ready()})
+        m = re.match(r'/api/receipts/(\d+)\.png$', self.path.split('?')[0])
+        if m:
+            # תמונה של העמוד הראשון של הקובץ השמור — רואים בתוך האפליקציה בדיוק מה שבקבלה,
+            # בלי אפליקציית ה-PDF של הטאבלט ובלי עותקים ישנים בתיקיית ההורדות
+            con = db()
+            try:
+                data, _fn = receipt_pdf(con, int(m.group(1)))
+            finally:
+                con.close()
+            if not data:
+                return self._send(404, {'ok': False, 'error': 'not found'})
+            try:
+                import pymupdf as _pm
+            except ImportError:
+                import fitz as _pm
+            pg = _pm.open(stream=data, filetype='pdf')[0]
+            png = pg.get_pixmap(matrix=_pm.Matrix(1.3, 1.3)).tobytes('png')
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(len(png)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers(); self.wfile.write(png)
+            return
         m = re.match(r'/api/receipts/(\d+)\.pdf$', self.path.split('?')[0])
         if m:
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -17750,10 +17773,14 @@ class H(BaseHTTPRequestHandler):
                             (pdf, info['name'], info['amount'], info['date'], info.get('purpose') or '', info.get('method') or '', r['id']))
                 con.commit()
                 doc = receipt_doc(con, r['id'])
+                import receipt_us as _rus
+                printed = _rus.nice_date(info['date']) if r['kind'] == 'us' else info['date']
             finally:
                 con.close()
             bump_data()
-            return self._send(200, {'ok': True, 'doc': doc})
+            # מה בדיוק הודפס, ומאיזו גרסה של השרת — כדי לדעת אם הבעיה בקובץ או בצפייה בו
+            return self._send(200, {'ok': True, 'doc': doc, 'printed': printed, 'raw_date': dn['date'],
+                                    'ver': (os.environ.get('RENDER_GIT_COMMIT') or '')[:7]})
         m = re.match(r'/api/receipts/(\d+)/delete$', self.path)
         if m:
             # ביטול קבלה שהופקה בטעות — רק אם עדיין לא נשלחה. המספר הסידורי נשאר תפוס.
