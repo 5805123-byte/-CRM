@@ -485,6 +485,9 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE nd_keva ADD COLUMN error TEXT")
     except Exception: pass
+    # למה הוראה לא פעילה — "מושבתת" (בנדרים פלוס) / "הסתיימו התשלומים" (יתרת חיובים 0)
+    try: con.execute("ALTER TABLE nd_keva ADD COLUMN off TEXT")
+    except Exception: pass
     # מאיר: "אם שלחנו הודעה עם סכום והוא שילם — המערכת צריכה להתעדכן שהוא שילם"
     for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
@@ -16068,6 +16071,40 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        if self.path.split('?')[0] == '/api/nd/lookup':
+            # 🔎 בדיקת מספר מתקשר — מה השלוחה מוצאת לו ולמה (בלי לחייב שום דבר)
+            import yemot as _ym
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            raw = (qs.get('phone') or [''])[0]
+            phone = _ym.norm_phone(raw)
+            con = db()
+            try:
+                if not phone:
+                    return self._send(200, {'ok': False, 'error': 'מספר לא תקין'})
+                mids = sorted(nd_member_index(con).get(phone) or set())
+                mem = [dict(r) for r in con.execute("SELECT id,last,first,phone FROM members WHERE id IN (%s)" % ','.join('?' * len(mids)), mids)] if mids else []
+                like = '%;' + phone + ';%'
+                allk = [dict(r) for r in con.execute(
+                    "SELECT k.id,k.name,k.phone,k.amount,k.last4,k.error,k.active,k.off,k.itra,k.member_id,m.last ml,m.first mf "
+                    "FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id WHERE ';'||k.phone||';' LIKE ?" +
+                    (" OR k.member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + " ORDER BY k.active DESC,k.id",
+                    [like] + mids)]
+                use = {k['id'] for k in ivr_kevas(con, phone, mids)}
+                for k in allk:
+                    k['ivr'] = k['id'] in use
+                    k['by'] = 'טלפון' if (';' + (k['phone'] or '') + ';').find(';' + phone + ';') >= 0 else 'חבר הקהילה'
+                tor = [dict(r) for r in con.execute("SELECT id,name,phones,member_id FROM nd_torem WHERE ';'||phones||';' LIKE ?", (like,))]
+                msg = con.execute("SELECT amount,sent_ts,paid_at FROM ym_msg WHERE phone=? AND status='sent' ORDER BY id DESC LIMIT 1", (phone,)).fetchone()
+                debt = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id IN (%s) AND status='open'" % ','.join('?' * len(mids)), mids).fetchone()[0] if mids else 0
+                key = ivr_key(con)
+                n_all = con.execute("SELECT COUNT(*) FROM nd_keva").fetchone()[0]
+                n_off = con.execute("SELECT off,COUNT(*) n FROM nd_keva WHERE active=0 GROUP BY off").fetchall()
+            finally:
+                con.close()
+            first = ivr_answer({'k': key, 'ApiPhone': phone})
+            return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
+                                    'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
+                                    'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
         if self.path.split('?')[0] == '/api/nd/status':
             import nedarim as _nd
             con = db()
@@ -20278,8 +20315,10 @@ def _phones_of(s):
     out = []
     for x in re.split(r'[,;/|\n]+|\s{2,}', str(s or '')):
         ph = _ym.norm_phone(x)
-        if ph and ph not in out:
-            out.append(ph)
+        # כמה מספרים באותו שדה עם רווח אחד ביניהם / עם מילים ("נייד 058…")
+        for c in ([ph] if ph else [_ym.norm_phone(y) for y in re.findall(r'\+?\d[\d\-]{7,}\d', x)]):
+            if c and c not in out:
+                out.append(c)
     return out
 
 
@@ -20511,7 +20550,7 @@ def nd_sync(con):
     except Exception as e:
         flags = None
         res['רשימה מלאה'] = 'לא נמשכה: %s' % str(e)[:60]
-    con.execute("UPDATE nd_keva SET active=0")
+    con.execute("UPDATE nd_keva SET active=0, off=''")
     for k in ks:
         phs = _phones_of(k['phone'])
         tm = con.execute("SELECT member_id,phones FROM nd_torem WHERE id=?", (k['torem'],)).fetchone() if k['torem'] else None
@@ -20531,7 +20570,8 @@ def nd_sync(con):
         f = (flags or {}).get(k['id'])
         itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
         if (f and not f['enabled']) or itra == '0':
-            con.execute("UPDATE nd_keva SET active=0 WHERE id=?", (k['id'],))
+            con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?",
+                        ('מושבתת בנדרים פלוס' if f and not f['enabled'] else 'הסתיימו התשלומים (יתרה 0)', k['id']))
     res['הוראות קבע'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1").fetchone()[0]
     res['מקושרות לקהילה'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND member_id IS NOT NULL").fetchone()[0]
     res['חזרו'] = con.execute("SELECT COUNT(*) FROM nd_keva WHERE active=1 AND COALESCE(error,'')<>''").fetchone()[0]
@@ -20633,6 +20673,20 @@ def _ivr_amt(v):
     return round(a, 2) if 0 < a <= 100000 else 0
 
 
+def ivr_kevas(con, phone, mids=()):
+    """ההוראות של המתקשר: לפי הטלפון שבהוראה / בכרטיס התורם בנדרים, וגם לפי חבר הקהילה
+    שהטלפון שלו (הוראה שמקושרת אליו בשם או ידנית). מאיר: "תמיד אמור להיות אפשרות לחיוב
+    דרך ההוראת קבע למי שיש לו" — גם הוראה שהסתיימו בה התשלומים (הכרטיס עדיין שמור);
+    רק הוראה שמושבתת בנדרים פלוס לא מוצעת."""
+    if not phone:
+        return []
+    mids = [int(m) for m in (mids or ()) if m]
+    q = ("SELECT * FROM nd_keva WHERE (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%') AND "
+         "(';'||phone||';' LIKE ?" + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ") "
+         "ORDER BY active DESC, CASE WHEN COALESCE(error,'')='' THEN 0 ELSE 1 END, id")
+    return [dict(r) for r in con.execute(q, ['%;' + phone + ';%'] + mids)]
+
+
 def ivr_answer(P):
     """שלוחת התשלום בטלפון. מאיר: "שיהיה אפשרות לשלם דרך TashlumBodedNew — נעשה דרך
     הטלפון שיחייב דרך ההוראת קבע שלו". ימות שולחים בכל פנייה את כל מה שנאסף בשיחה עד
@@ -20655,8 +20709,7 @@ def ivr_answer(P):
                            "AND COALESCE(paid_at,'')='' ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
         job_amt = _ivr_amt(last['amount']) if last else 0
         job = last['job'] if last else 0
-        ks = [dict(r) for r in con.execute("SELECT * FROM nd_keva WHERE active=1 AND ';'||phone||';' LIKE ? ORDER BY id",
-                                            ('%;' + phone + ';%',))] if phone else []
+        ks = ivr_kevas(con, phone, mids)
         # מאיר: "אם אין חוב במערכת — לא יהיה התפריט ומייד יעבור להקשת סכום". הסכום המוצע
         # ("X שקלים הקישו 1, לסכום אחר 2") = הודעה עם סכום שעוד לא שולמה, אחרת החוב הפתוח
         # של חבר הקהילה. אין כזה — ישר להקשת סכום. הוראת הקבע מוצעת תמיד למי שיש לו.

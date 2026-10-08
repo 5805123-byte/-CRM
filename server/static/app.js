@@ -12979,12 +12979,15 @@ async function ymViewPay(){
         ${sx.error?`<br>⚠️ ${esc(sx.error)}`:(sx.last_ok?`<br><small>סנכרון אחרון ${esc(sx.last_ok)}</small>`:'')}</div>`
       :`<div class="ymwarn">⚠️ חסר ב-Render: <b>NEDARIM_API_KEY</b> (המפתח שמתחיל ב-npk_).</div>`}
     <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="nd_sync">🔄 סנכרון מנדרים פלוס</button></div>
+    <div class="addrow" style="gap:6px;flex-wrap:wrap;margin-top:6px"><input id="nd_lkp" dir="ltr" inputmode="tel" placeholder="05XXXXXXXX" style="max-width:150px">
+      <button class="btn sm ghost" id="nd_lkpb">🔎 בדיקת מספר מתקשר</button></div>
+    <div id="nd_lkpo"></div>
     <div class="hintxt" style="margin-top:8px"><b>ההגדרות לשלוחה בימות</b> (השלוחה שמקישים אליה 1) — להעתיק כמו שהן:</div>
     <pre class="ndini" id="nd_ini" dir="ltr">${esc(ini)}</pre>
     <div class="addrow"><button class="btn sm" id="nd_copy">📋 העתק</button></div>
     <div class="hintxt">המתקשר מזוהה לפי הטלפון. יש לו הוראת קבע ← שומע את 4 הספרות של הכרטיס, מאשר סכום (מההודעה שנשלחה, או מקיש סכום), מאשר שוב ← חיוב מיידי בכרטיס של ההוראה (נרשם בהיסטוריית ההוראה, בלי לשנות אותה). אין לו הוראה ← סליקה רגילה בהקשת כרטיס. הקוד בקישור סודי — לא לשתף.</div>
     <div class="rbtitle" style="text-align:right;margin-top:12px">🔴 הוראות קבע שחזרו (${(ndBad||[]).length})</div>
-    <div class="hintxt">נדרים פלוס נותנים לכל הוראה קישור מאובטח (14 יום) שבו התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת. נשלח ב-SMS מ-025803545. גם בטלפון, בשלוחת התשלום, יש "לעדכון כרטיס הקישו 3".</div>
+    <div class="hintxt">נדרים פלוס נותנים לכל הוראה קישור מאובטח (14 יום) שבו התורם מזין בעצמו כרטיס חדש, וההוראה מתעדכנת. נשלח ב-SMS מ-025803545.</div>
     ${(ndBad||[]).length?`<div class="addrow"><button class="btn sm" id="nd_sendall">📲 שלח קישור לכל מי שחזר</button></div>`:''}
     <div class="ndlist">${(ndBad||[]).map(k=>`<div class="ndrow"><b>${esc(((k.ml||'')+' '+(k.mf||'')).trim()||k.name||'')}</b>
         ${k.ml?`<small>(${esc(k.name||'')})</small>`:`<span class="ndlink"><small class="ndbad">לא מקושר לקהילה</small>
@@ -13006,6 +13009,22 @@ async function ymViewPay(){
     const r=await api('POST','/api/nd/sync',{});
     if(r&&r.ok)toast('סונכרן ✓ '+Object.entries(r.result||{}).map(([k,v])=>k+' '+v).join(' · '));else await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));
     ndStat=null;ymViewPay();};
+  const lk=async()=>{const v=g('nd_lkp').value.trim();if(!v)return;const o=g('nd_lkpo');o.innerHTML='<div class="hintxt">בודק…</div>';
+    const r=await api('GET','/api/nd/lookup?phone='+encodeURIComponent(v));
+    if(!r||!r.ok){o.innerHTML=`<div class="ymwarn">${esc((r&&r.error)||'שגיאה')}</div>`;return;}
+    const nm=k=>((k.ml||'')+' '+(k.mf||'')).trim();
+    const first=(r.first||'').startsWith('read=t-לתשלום מהוראת')||(r.first||'').startsWith('read=t-לתשלום מאחת')?'✅ השלוחה מציעה תשלום מהוראת הקבע':'❌ השלוחה לא מוצאת הוראת קבע — עוברת לכרטיס אשראי';
+    o.innerHTML=`<div class="ndlkp"><b>${first}</b>
+      <div>📞 ${esc(r.phone)} · חבר קהילה: ${r.members.length?r.members.map(m=>esc(((m.last||'')+' '+(m.first||'')).trim())+' #'+m.id).join(', '):'<span class="ndbad">לא נמצא לפי טלפון</span>'}</div>
+      <div>תורם בנדרים לפי הטלפון: ${r.tormim.length?r.tormim.map(t=>esc(t.name)).join(', '):'—'}</div>
+      <div>הוראות קבע (${r.kevas.length}):</div>
+      ${r.kevas.map(k=>`<div class="ndrow"><b>${esc(k.name||'')}</b>${nm(k)?`<small>→ ${esc(nm(k))}</small>`:''}<span>₪${esc(k.amount||'')}</span><small>****${esc(k.last4||'')}</small>
+        <small>לפי ${esc(k.by)}</small>${k.active?'':`<span class="ndbad">לא פעילה: ${esc(k.off||'לא הופיעה בסנכרון')}</span>`}${k.error?`<span class="ndbad">${esc(k.error)}</span>`:''}
+        <span class="${k.ivr?'ndok':'ndbad'}">${k.ivr?'✓ מוצעת בטלפון':'✗ לא מוצעת'}</span></div>`).join('')||'<div class="hintxt">לא נמצאה הוראת קבע עם המספר הזה ולא דרך חבר קהילה. אם יש לו הוראה — שייך אותה לחבר הקהילה, או עדכן את הטלפון בנדרים פלוס / בכרטיס החבר.</div>'}
+      <div>סכום מוצע בטלפון: ${r.msg&&!r.msg.paid_at&&+r.msg.amount?('₪'+esc(r.msg.amount)+' (הודעה מ-'+esc((r.msg.sent_ts||'').slice(0,10))+')'):(+r.debt?('₪'+esc(r.debt)+' (חוב פתוח)'):'אין — מקישים סכום')}</div>
+      <small dir="ltr" style="opacity:.7">${esc(r.first||'')}</small>
+      <div><small>בסנכרון: ${r.n_all} הוראות${Object.keys(r.off||{}).length?' · לא פעילות: '+Object.entries(r.off).map(([a,b])=>esc(a)+' '+b).join(' · '):''}</small></div></div>`;};
+  g('nd_lkpb').onclick=lk; g('nd_lkp').onkeydown=e=>{if(e.key==='Enter')lk();};
   const sa=g('nd_sendall'); if(sa)sa.onclick=async()=>{
     if(!await uiConfirm('לשלוח SMS עם קישור לעדכון כרטיס ל-'+ndBad.length+' שהוראת הקבע שלהם חזרה?\n(מי שקיבל ב-3 הימים האחרונים לא יקבל שוב)','📲 כן, לשלוח','ביטול'))return;
     sa.disabled=true;sa.textContent='שולח…';
