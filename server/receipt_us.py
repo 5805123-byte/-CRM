@@ -71,11 +71,20 @@ def money(a):
 
 
 def nice_date(s):
+    s = str(s or '').strip()
+    d = None
     try:
-        d = datetime.date.fromisoformat(str(s)[:10])
+        d = datetime.date.fromisoformat(s[:10])
     except (TypeError, ValueError):
-        d = datetime.date.today()
-    return d.strftime('%B %-d, %Y')
+        # 09.09.2026 / 9/9/2026 — יום.חודש.שנה כמו בכרטיס
+        m = re.match(r'^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', s)
+        if m:
+            y = int(m.group(3)); y += 2000 if y < 100 else 0
+            try:
+                d = datetime.date(y, int(m.group(2)), int(m.group(1)))
+            except ValueError:
+                d = None
+    return (d or datetime.date.today()).strftime('%B %-d, %Y')
 
 
 def receipt_data(con, don_id, RECEIPT_START, today_iso):

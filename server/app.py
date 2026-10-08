@@ -13258,6 +13258,21 @@ def receipt_pdf(con, rid):
         return None, None
     safe = re.sub(r'[^\w֐-׿ .-]+', '', r['name'] or '')[:40].strip() or 'donor'
     fname = ('קבלה-%04d-%s.pdf' % (r['num'], safe)) if r['kind'] == 'il' else ('Receipt-%d-%s.pdf' % (r['num'], safe))
+    if r['pdf'] and (r['src'] or 'own') == 'own' and r['donation_id'] and r['kind'] in ('us', 'il'):
+        # מאיר: "עשיתי 9 לתשיעי וכתוב 9 לתשיעי, וכשאני לוחץ על PDF זה כותב לי 8 לאוקטובר" — תרומה
+        # שתוקנה בכרטיס אחרי שהקבלה הופקה: הקובץ נבנה מחדש לפי מה שרשום עכשיו (אותו מספר)
+        dn = con.execute("SELECT date,amount,category,method FROM donations WHERE id=?", (r['donation_id'],)).fetchone()
+        if dn:
+            try:
+                amt = float(re.sub(r'[^\d.]', '', str(dn['amount'] or '')) or 0)
+            except ValueError:
+                amt = 0.0
+            if str(dn['date'] or '')[:10] != str(r['date'] or '')[:10] or abs(amt - float(r['amount'] or 0)) > 0.005:
+                info, pdf, fname2 = receipt_build(con, r['kind'], r['donation_id'])
+                con.execute("UPDATE receipt_docs SET pdf=?, name=?, amount=?, date=?, purpose=?, method=? WHERE id=?",
+                            (pdf, info['name'], info['amount'], info['date'], info.get('purpose') or '', info.get('method') or '', rid))
+                con.commit()
+                return pdf, fname2
     if r['pdf']:
         return bytes(r['pdf']), fname
     if (r['src'] or '') == 'ez':
