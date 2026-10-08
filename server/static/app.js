@@ -12940,10 +12940,16 @@ async function cmNdPaint(m,showAll,boxId){
   const yrs=Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${ndMoney(v)}</b></span>`).join('');
   // הוראות ישנות (הוחלפו / הסתיימו / מושבתות) — בשורה קטנה אחת, לא כמו הוראה פעילה
   const KA=K.filter(k=>k.active), KO=K.filter(k=>!k.active);
-  const oldHTML=KO.length?`<div class="hintxt">הוראות ישנות: ${KO.map(k=>ndMoney(k.amount)+(k.groupe?' '+esc(k.groupe):'')+' ****'+esc(k.last4||'')+(k.off?' — '+esc(k.off):'')).join(' · ')}</div>`:'';
+  const KF=KO.filter(k=>/מוקפאת/.test(k.off||'')), KX=KO.filter(k=>!/מוקפאת/.test(k.off||''));
+  const oldHTML=KF.map(k=>`<div class="bqplan frozen"><span>⏸ <b>מוקפאת</b> · ${ndMoney(k.amount)} לחודש${k.groupe?' · '+esc(k.groupe):''} · ${k.kind==='bank'?'🏦 '+esc(k.bank||'בנקאית'):'💳 ****'+esc(k.last4||'')}</span>
+      <span class="bqacts"><button class="btn sm" data-ndact="activate" data-id="${esc(k.id)}">▶ הפעלה</button></span></div>`).join('')
+    +(KX.length?`<div class="hintxt">הוראות ישנות: ${KX.map(k=>ndMoney(k.amount)+(k.groupe?' '+esc(k.groupe):'')+' ****'+esc(k.last4||'')+(k.off?' — '+esc(k.off):'')).join(' · ')}</div>`:'');
   const kevaHTML=(KA.length?KA.map(k=>`<div class="bqplan"><span><b>${ndMoney(k.amount)}</b> לחודש${k.groupe?` · עבור <b>${esc(k.groupe)}</b>`:''} · ${k.kind==='bank'?'🏦 בנקאית'+(k.bank?' '+esc(k.bank):''):'💳 ****'+esc(k.last4||'')}${k.next_date?` · הבא ${esc(k.next_date)}`:''}${k.itra?` · נשארו ${esc(k.itra)}`:''}
       ${k.active?'':`<span class="ndbad">לא פעילה${k.off?': '+esc(k.off):''}</span>`}${k.error?`<span class="ndbad">🔴 חזרה: ${esc(k.error)}</span>`:''}</span>
-      <span class="bqacts">${k.kind==='bank'?`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="תשלום בודד מהחשבון — נשלח לבנק בשידור הקרוב">🏦 גבייה בבנק</button>`
+      <span class="bqacts"><button class="btn sm ghost" data-ndact="edit" data-id="${esc(k.id)}" title="שינוי סכום / תאריך חיוב / עבור מה">✎ שינוי</button>
+        <button class="btn sm ghost" data-ndact="freeze" data-id="${esc(k.id)}" title="השהיית הגבייה — אפשר להפעיל שוב בכל עת">⏸ הקפאה</button>
+        ${k.kind==='bank'?`<button class="btn sm ghost" data-ndact="month_next" data-id="${esc(k.id)}" title="דחיית הגביה בחודש">⏭ חודש הבא</button>`:''}
+        ${k.kind==='bank'?`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="תשלום בודד מהחשבון — נשלח לבנק בשידור הקרוב">🏦 גבייה בבנק</button>`
         :`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
         <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button>`}</span></div>`).join('')
     :(KO.length?'':'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>'))+oldHTML;
@@ -12962,7 +12968,7 @@ async function cmNdPaint(m,showAll,boxId){
   box.innerHTML=`${kevaHTML}${addHTML}
     ${rows.length?`<div class="bqhsum" style="margin-top:8px"><b>${rows.filter(x=>+x.amount>0).length} תרומות · ${ndMoney(rows.reduce((t,x)=>t+(+x.amount>0?+x.amount:0),0))}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div></div>
       <div class="bqpays">${rows.slice(0,lim).map(t=>`<div class="bqpay"><span><b>${esc(ndDate(t.iso))}</b> · ${ndMoney(t.amount)}${t.what?` · ${esc(t.what)}`:''} · <small>${t.don?('💵 '+esc(t.meth)+(t.note?' · '+esc(t.note):'')):(t.bank?('🏦 הוראה בנקאית'+(t.btype?' · '+esc(t.btype):'')):(t.auto?'הוראת קבע':'חד-פעמי')+' · נדרים פלוס')}${t.conf?' · אישור '+esc(t.conf):''}</small>${t.don?` <button class="fdel" data-cdndel="${t.don}" title="מחק את הרישום">✕</button>`:''}</span>
-        <span class="bqacts">${t.pending||!(+t.amount>0)?'':(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
+        <span class="bqacts">${t.pending||!(+t.amount>0)?'':(!t.don?(t.bank?'':`<button class="btn sm ghost" data-ndinv="${esc(t.id)}" title="נדרים פלוס שלחו לו קבלה אוטומטית — הצגה">🧾 הקבלה מנדרים</button>`):t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-ndrcsend="${t.rc_id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
           :`<button class="btn sm ghost" data-ndrc="${esc(t.id)}" data-amt="${esc(t.amount)}" data-date="${esc((t.iso||'').slice(0,10))}" data-what="${esc(t.what.split(' · ')[0]||'')}" data-meth="${esc(t.meth||'')}">🧾 קבלה</button>`)}</span></div>`).join('')}</div>
       ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
       :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
@@ -12973,6 +12979,24 @@ async function cmNdPaint(m,showAll,boxId){
     if(r2&&r2.ok){toast('נרשם ✓'+(r2.debt_paid?(' · קוזז '+ndMoney(r2.debt_paid)+' מהחוב'):''));cmNdPaint(m,showAll,boxId);if(r2.debt_paid)cdData=null;}else toast((r2&&r2.error)||'לא נשמר');};
   box.querySelectorAll('[data-cdndel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את רישום התרומה?','🗑️ כן','לא'))return;
     await api('POST','/api/members/donation/'+b.dataset.cdndel,{action:'delete'});cmNdPaint(m,showAll,boxId);});
+  // מאיר: "תתחיל מהקפאה הפעלה" — ⏸ / ▶ / ✎ / ⏭ ישירות מול נדרים פלוס
+  box.querySelectorAll('[data-ndact]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.id),a=b.dataset.ndact,bank=k&&k.kind==='bank';if(!k)return;
+    const desc=ndMoney(k.amount)+(k.groupe?' '+k.groupe:'')+(bank?' (בנקאית)':' ****'+(k.last4||''));const body={action:a};
+    if(a==='freeze'&&!await uiConfirm('להקפיא את הוראת הקבע '+desc+'?\nהגבייה תיעצר עד שתפעיל אותה שוב.','⏸ כן, להקפיא','ביטול'))return;
+    if(a==='activate'&&!await uiConfirm('להפעיל שוב את הוראת הקבע '+desc+'?'+(bank?'\n⚠️ בבנקאית: להפעיל רק הוראה שהבנק אישר, אחרת יש עמלות חזרה.':''),'▶ כן, להפעיל','ביטול'))return;
+    if(a==='month_next'&&!await uiConfirm('לדחות את הגביה של '+desc+' בחודש?','⏭ כן','ביטול'))return;
+    if(a==='edit'){const v=await uiPrompt('סכום חודשי חדש (₪) — ריק = בלי שינוי',String(amtNum(k.amount)||''));if(v===null)return;
+      if(amtNum(v)&&amtNum(v)!==amtNum(k.amount))body.amount=amtNum(v);
+      if(bank){const d=await uiPrompt('יום גביה בחודש (1 / 5 / 10 / 15 / 20 / 25 / 28) — ריק = בלי שינוי','');if(d===null)return;if(d.trim()){if(!/^(1|5|10|15|20|25|28)$/.test(d.trim())){toast('יום גביה לא תקין');return;}body.day=d.trim();}}
+      else{const d=await uiPrompt('תאריך החיוב הבא (dd/mm/yyyy) — ריק = בלי שינוי',k.next_date||'');if(d===null)return;if(d.trim()&&d.trim()!==(k.next_date||''))body.next_date=d.trim();}
+      const g2=await uiPrompt('עבור מה — ריק = בלי שינוי',k.groupe||'');if(g2===null)return;if(g2.trim()&&g2.trim()!==(k.groupe||''))body.groupe=g2.trim();
+      if(!body.amount&&!body.next_date&&!body.day&&!body.groupe){toast('לא שונה כלום');return;}
+      if(!await uiConfirm('לעדכן בנדרים פלוס את ההוראה '+desc+'?'+(body.amount?'\nסכום: '+ndMoney(body.amount):'')+(body.next_date?'\nחיוב הבא: '+body.next_date:'')+(body.day?'\nיום גביה: '+body.day:'')+(body.groupe?'\nעבור: '+body.groupe:''),'✎ כן, לעדכן','ביטול'))return;}
+    b.disabled=true;const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/action',body);b.disabled=false;
+    if(r&&r.ok){toast({freeze:'⏸ הוקפאה ✓',activate:'▶ הופעלה ✓'+(r.message?' · '+r.message:''),edit:'✎ עודכן בנדרים פלוס ✓',month_next:'⏭ נדחה בחודש ✓'}[a]||'✓');cmNdPaint(m,showAll,boxId);}
+    else await uiAlert('נדרים פלוס לא ביצעו:\n'+((r&&r.error)||'שגיאה'));});
+  box.querySelectorAll('[data-ndinv]').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await api('GET','/api/nd/invoice/'+encodeURIComponent(b.dataset.ndinv));b.disabled=false;
+    if(r&&r.ok&&r.link)window.open(r.link,'_blank');else await uiAlert('לא נמצאה קבלה בנדרים פלוס לעסקה הזו:\n'+((r&&r.error)||''));});
   box.querySelectorAll('[data-ndchg]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.ndchg),bank=k&&k.kind==='bank';
     const v=await uiPrompt(bank?('כמה לגבות (₪) מההוראה הבנקאית'+(k.bank?' ('+k.bank+')':'')+'?\nהחיוב נשלח לבנק בשידור הקרוב — לא מיידי.'):('כמה לחייב עכשיו (₪) מהכרטיס ****'+(k?k.last4:'')+'?'),'');const a=amtNum(v);if(!a)return;
     const w=await uiPrompt('עבור מה? (יופיע אצלו בנדרים פלוס ובכרטיס)',k&&k.groupe?k.groupe:'');if(w===null)return;

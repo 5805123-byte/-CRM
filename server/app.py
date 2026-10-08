@@ -16537,6 +16537,14 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        m = re.match(r'/api/nd/invoice/([\w:]+)$', self.path.split('?')[0])
+        if m:
+            import nedarim as _nd
+            tid = m.group(1)
+            mos, _, raw = tid.rpartition(':')
+            with _nd.use(_nd.account_for(mos)):
+                ok, link = _nd.show_invoice(raw)
+            return self._send(200, {'ok': ok, 'link': link if ok else '', 'error': '' if ok else link})
         m = re.match(r'/api/members/(\d+)/nd$', self.path.split('?')[0])
         if m:
             con = db()
@@ -19173,6 +19181,56 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sent': n, 'no_mobile': nomob, 'failed': fail})
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/action$', self.path)
+        if m:
+            # ⏸ הקפאה / ▶ הפעלה / ✎ שינוי סכום ותאריך / ⏭ דחייה בחודש — אשראי ובנקאית
+            import nedarim as _nd
+            kid, act = m.group(1), str(b.get('action') or '')
+            con = db()
+            try:
+                k = con.execute("SELECT * FROM nd_keva WHERE id=?", (kid,)).fetchone()
+                if not k:
+                    return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
+                bank = (k['kind'] or '') == 'bank'
+                rid = re.sub(r'^M(?:\d+:)?', '', kid) if bank else kid
+                amt = round(_amt2(re.sub(r'[^\d.,]', '', str(b.get('amount') or ''))), 2) if b.get('amount') not in (None, '') else None
+                with _nd.use(_nd.account_for(k['mosad'] or '')):
+                    if act == 'freeze':
+                        ok, msg = _nd.masav_status(rid, 7) if bank else _nd.disable_keva(rid)
+                        if ok:
+                            con.execute("UPDATE nd_keva SET active=0, off='מוקפאת' WHERE id=?", (kid,))
+                        what = '⏸ הוקפאה הוראת הקבע'
+                    elif act == 'activate':
+                        ok, msg = _nd.masav_status(rid, 1, 'אני מאשר') if bank else _nd.enable_keva(rid)
+                        if ok:
+                            con.execute("UPDATE nd_keva SET active=1, off='' WHERE id=?", (kid,))
+                        what = '▶ הופעלה הוראת הקבע'
+                    elif act == 'edit':
+                        nd_ = str(b.get('next_date') or '').strip()
+                        if re.fullmatch(r'\d{4}-\d{2}-\d{2}', nd_):
+                            nd_ = '%s/%s/%s' % (nd_[8:10], nd_[5:7], nd_[:4])
+                        grp = b.get('groupe') if b.get('groupe') not in (None,) else None
+                        if bank:
+                            ok, msg = _nd.masav_edit(rid, amount=amt, day=str(b.get('day') or '').strip() or None, groupe=grp)
+                        else:
+                            ok, msg = _nd.update_keva(rid, amount=amt, next_date=nd_ or None, groupe=grp)
+                        if ok:
+                            con.execute("UPDATE nd_keva SET amount=COALESCE(?,amount), next_date=CASE WHEN ?<>'' THEN ? ELSE next_date END, "
+                                        "groupe=COALESCE(?,groupe) WHERE id=?", ('%g' % amt if amt else None, nd_, nd_, grp, kid))
+                        what = '✎ עודכנה הוראת הקבע' + (' · סכום ₪%g' % amt if amt else '') + (' · חיוב הבא ' + nd_ if nd_ else '') + \
+                               (' · יום ' + str(b.get('day')) if b.get('day') else '') + (' · עבור ' + grp if grp else '')
+                    elif act in ('month_next', 'month_prev') and bank:
+                        ok, msg = _nd.masav_status(rid, 9 if act == 'month_next' else 8)
+                        what = '⏭ הגביה נדחתה לחודש הבא' if act == 'month_next' else '⏮ הגביה הוקדמה לחודש קודם'
+                    else:
+                        return self._send(200, {'ok': False, 'error': 'פעולה לא מוכרת'})
+                if k['member_id']:
+                    cm_debt_log(con, k['member_id'], 'keva:' + kid, ('%s (%s₪%s%s)' % (what, 'בנקאית · ' if bank else '', k['amount'] or '', (' · ' + k['groupe']) if k['groupe'] else ''))
+                                if ok else '🔴 %s נכשל: %s' % (what.split(' ', 1)[-1], msg))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': bool(ok), 'error': '' if ok else (msg or 'נדרים פלוס לא אישרו'), 'message': msg})
         m = re.match(r'/api/nd/keva/(M?[\d:]+)/charge$', self.path)
         if m:
             # ⚡ חיוב מיידי מהוראת הקבע של חבר הקהילה (TashlumBodedNew, Join) — מאיר: "העברת תרומה…
@@ -21384,6 +21442,21 @@ def nd_sync(con):
             k['torem'] = (tag + k['torem']) if k['torem'] else ''
             k['mosad'] = '' if acct['main'] else acct['mosad']
         _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now)
+        # הוראה מוקפאת לא מופיעה ב-GetKevaNew — לפי הרשימה המלאה היא נשמרת "מוקפאת", כדי שאפשר יהיה להפעיל אותה
+        seen = {k['id'] for k in ks}
+        for kid, f in (flags or {}).items():
+            if kid in seen or f.get('enabled'):
+                continue
+            ex = con.execute("SELECT id FROM nd_keva WHERE id=?", (kid,)).fetchone()
+            if ex:
+                con.execute("UPDATE nd_keva SET active=0, off='מוקפאת' WHERE id=? AND COALESCE(off,'') NOT LIKE 'הוחלפה%'", (kid,))
+            elif f.get('name') or f.get('phone'):
+                phs = _phones_of(f.get('phone'))
+                mid = manual.get(kid) or pick(phs) or nd_match_name(nidx, f.get('name') or '')
+                con.execute("INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad,off) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,?,'',?,'מוקפאת')",
+                            (kid, '', f.get('name') or '', ';'.join(phs), '', f.get('amount') or '', f.get('groupe') or '', f.get('itra') or '',
+                             f.get('next') or '', f.get('last4') or '', '', mid, now, '' if acct['main'] else acct['mosad']))
         # הוראות קבע בנקאיות של אותו מוסד
         try:
             with _nd.use(acct):
@@ -21557,7 +21630,7 @@ def _nd_sync_kevas(con, ks, flags, manual, pick, nidx, now):
         itra = (f['itra'] if f and f.get('itra') else k['itra'] or '').strip()
         if (f and not f['enabled']) or itra == '0':
             con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?",
-                        ('מושבתת בנדרים פלוס' if f and not f['enabled'] else 'הסתיימו התשלומים (יתרה 0)', k['id']))
+                        ('מוקפאת' if f and not f['enabled'] else 'הסתיימו התשלומים (יתרה 0)', k['id']))
 
 
 def nd_run():

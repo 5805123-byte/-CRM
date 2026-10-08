@@ -31,6 +31,7 @@ import urllib.request
 BASE = 'https://matara.pro/nedarimplus/Reports/Manage3.aspx'
 # הוראות קבע בנקאיות (מס"ב) — דף אחר באותו שרת. מאיר: "יש כאלו שיש להם הוראת קבע בנקאית"
 MASAV = 'https://matara.pro/nedarimplus/Reports/Masav3.aspx'
+TAMAL = 'https://matara.pro/nedarimplus/Reports/Tamal3.aspx'     # קבלות של נדרים פלוס
 MOSAD_DEFAULT = '5777499'
 UA = 'KollelChatzosCRM/1.0'
 LAST = {'at': '', 'ok': None, 'error': '', 'action': ''}
@@ -91,12 +92,14 @@ def _key():
     return (a['key'] if a else '') or _env('NEDARIM_API_KEY')
 
 
-def call(action, params=None, post=False, timeout=45, raw=False, masav=False):
+def call(action, params=None, post=False, timeout=45, raw=False, masav=False, page=''):
     """פנייה אחת. מחזיר (הצלחה, JSON / טקסט). הודעת השגיאה נשמרת ב-LAST — בלי המפתח."""
     p = dict(params or {}, Action=action, MosadId=mosad(), ApiPassword=_key())
     if masav:
         p['MosadNumber'] = p['MosadId']      # בדף המס"ב חלק מהפעולות קוראות לזה MosadNumber
-    url = _env('NEDARIM_MASAV_BASE' if masav else 'NEDARIM_BASE') or (MASAV if masav else BASE)
+    url = (_env('NEDARIM_TAMAL_BASE') or TAMAL) if page == 'tamal' else (_env('NEDARIM_MASAV_BASE' if masav else 'NEDARIM_BASE') or (MASAV if masav else BASE))
+    if page == 'tamal':
+        p['MosadNumber'] = p['MosadId']
     data = urllib.parse.urlencode(p).encode('utf-8')
     req = (urllib.request.Request(url, data=data, headers={'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded'})
            if post else urllib.request.Request(url + '?' + data.decode('ascii'), headers={'User-Agent': UA}))
@@ -180,7 +183,8 @@ def keva_flags():
                 out[kid] = {'enabled': 1 if str(r.get('Enabled', '1')).strip() in ('1', 'true', 'True') else 0,
                             'itra': str(r.get('Itra') or '').strip(), 'error': str(r.get('ErrorText') or '').strip(),
                             'amount': _num(r.get('Amount')), 'groupe': str(r.get('Groupe') or '').strip(),
-                            'next': str(r.get('NextDate') or '').strip(), 'last4': str(r.get('LastNum') or '').strip()}
+                            'next': str(r.get('NextDate') or '').strip(), 'last4': str(r.get('LastNum') or '').strip(),
+                            'name': str(r.get('ClientName') or '').strip(), 'phone': str(r.get('Phone') or '').strip()}
         if len(rows) < 2000:
             break
         last = str(rows[-1].get('KevaId') or '').lstrip('-')
@@ -328,6 +332,100 @@ def masav_boded(masav_id, amount, date, ajax=''):
         res = {'Result': 'Error' if 'error' in txt.lower() or 'שגיאה' in txt else 'OK', 'Message': txt.strip()[:200]}
     good = str(res.get('Result') or res.get('Status') or '').lower() in ('ok', 'success') if isinstance(res, dict) else False
     return good, res
+
+
+# ---------- פעולות על הוראה: הקפאה / הפעלה / עריכה ----------
+# מאיר: "תחבר הכל, ותתחיל מהקפאה הפעלה". ת"ז ומספר חשבון שעוברים בעריכה נלקחים מנדרים פלוס
+# ברגע השליחה ומוחזרים אליהם כמו שהם — לא נשמרים אצלנו.
+
+def _txt_ok(ok, txt):
+    """תשובה שהיא טקסט ("OK" / שגיאה) או JSON עם Result."""
+    if not ok:
+        return False, str(txt)[:200]
+    t = (txt or '').strip()
+    try:
+        j = json.loads(t)
+        if isinstance(j, dict):
+            good = str(j.get('Result') or j.get('Status') or '').lower() in ('ok', 'success')
+            return good, str(j.get('Message') or ('' if good else t))[:200]
+    except ValueError:
+        pass
+    return t.upper().startswith('OK'), t[:200]
+
+
+def disable_keva(keva_id):
+    """⏸ הקפאת הוראת קבע באשראי (DisableKeva)."""
+    return _txt_ok(*call('DisableKeva', {'KevaId': str(keva_id), 'MosadNumber': mosad()}, raw=True))
+
+
+def enable_keva(keva_id):
+    """▶ הפעלת הוראה מוקפאת (EnableKevaNew). מחזיר גם את תאריך החיוב הבא."""
+    ok, txt = call('EnableKevaNew', {'KevaId': str(keva_id), 'MosadNumber': mosad()}, raw=True)
+    if ok:
+        try:
+            j = json.loads((txt or '').strip())
+            if isinstance(j, dict) and j.get('NextDate'):
+                return True, 'החיוב הבא %s' % j['NextDate']
+        except ValueError:
+            pass
+    return _txt_ok(ok, txt)
+
+
+def keva_detail(keva_id):
+    ok, res = call('GetKevaId', {'KevaId': str(keva_id)})
+    return res if ok and isinstance(res, dict) else {}
+
+
+def update_keva(keva_id, amount=None, next_date=None, groupe=None, tashlumim=None):
+    """✎ שינוי סכום / תאריך חיוב / קטגוריה בהוראת אשראי (UpdateKevaNew). שאר השדות נשלחים כמו
+    שהם בנדרים פלוס (נמשכים רגע לפני), כדי שלא יימחקו. הכרטיס נשאר — 4 הספרות והתוקף שלו."""
+    d = keva_detail(keva_id)
+    if not d or not d.get('KevaLastNum'):
+        return False, 'לא הצלחתי למשוך את פרטי ההוראה מנדרים פלוס'
+    tok = re.sub(r'\D', '', str(d.get('KevaTokef') or ''))
+    p = {'KevaId': str(keva_id), 'MosadNumber': mosad(),
+         'Zeout': d.get('KevaZeout') or '', 'ClientName': d.get('KevaName') or '', 'Adresse': d.get('KevaAdresse') or '',
+         'City': d.get('KevaCity') or '', 'Phone': d.get('KevaPhone') or '', 'Mail': d.get('KevaMail') or '',
+         'Tashlumim': d.get('KevaTashlumim') or '' if tashlumim is None else str(tashlumim),
+         'Groupe': (d.get('KevaGroupe') or '') if groupe is None else groupe, 'Avour': d.get('KevaAvour') or '',
+         'NextDate': next_date or d.get('KevaNextDate') or '', 'Frequency': d.get('KevaFrequency') or '1',
+         'Amount': ('%.2f' % float(amount)).rstrip('0').rstrip('.') if amount else _num(d.get('KevaAmount')),
+         'CreditCard': str(d.get('KevaLastNum') or ''), 'Tokef': (tok[:2] + '/' + tok[2:4]) if len(tok) >= 4 else str(d.get('KevaTokef') or '')}
+    return _txt_ok(*call('UpdateKevaNew', p, post=True, raw=True))
+
+
+def masav_status(masav_id, status, comments=''):
+    """שינוי סטטוס הוראה בנקאית (SetMasavStatus): 7 הקפאה · 1 הפעלה ("אני מאשר") · 9 / 8 חודש הבא / קודם."""
+    p = {'MasavId': str(masav_id), 'StatusNumber': str(status)}
+    if comments:
+        p['Comments'] = comments
+    return _txt_ok(*call('SetMasavStatus', p, masav=True, raw=True))
+
+
+def masav_edit(masav_id, amount=None, day=None, groupe=None, tashlumim=None):
+    """✎ שינוי סכום / יום גביה / קטגוריה בהוראה בנקאית (EditMasavKeva). פרטי החשבון והת"ז נמשכים
+    מנדרים פלוס רגע לפני ונשלחים בחזרה כמו שהם."""
+    ok, d = call('GetMasavId', {'MasavId': str(masav_id)}, masav=True)
+    if not ok or not isinstance(d, dict) or not d.get('Account'):
+        return False, 'לא הצלחתי למשוך את פרטי ההוראה הבנקאית'
+    nd = str(day or d.get('NextDate') or '').strip()
+    p = {'KevaId': str(masav_id), 'ClientName': d.get('ClientName') or '', 'ClientAdresse': d.get('ClientAdresse') or '',
+         'ClientZeout': d.get('ClientZeout') or '', 'ClientPhone': d.get('ClientPhone') or '', 'ClientMail': d.get('ClientMail') or '',
+         'NextDate': nd, 'Amount': ('%.2f' % float(amount)).rstrip('0').rstrip('.') if amount else _num(d.get('Amount')),
+         'Tashlumim': (d.get('Tashlumim') or '') if tashlumim is None else str(tashlumim),
+         'Groupe': (d.get('Groupe') or '') if groupe is None else groupe, 'Comments': d.get('Comments') or '',
+         'Bank': d.get('Bank') or '', 'Agency': d.get('Agency') or '', 'Account': d.get('Account') or ''}
+    return _txt_ok(*call('EditMasavKeva', p, post=True, masav=True, raw=True))
+
+
+def show_invoice(transaction_id):
+    """🧾 קישור לקבלה שנדרים פלוס הפיקו לעסקת אשראי (ShowInvoice). מאיר: "הם מוציאים קבלות לבד —
+    מי שתורם בנדרים פלוס מקבל מהם קבלה אוטומטית". לעסקאות בנקאיות אין קישור (הן באיזיקאונט)."""
+    ok, res = call('ShowInvoice', {'TransactionId': str(transaction_id)}, page='tamal')
+    msg = str(res.get('Message') or '') if isinstance(res, dict) else str(res)
+    if ok and msg.startswith('http'):
+        return True, msg
+    return False, msg or LAST.get('error') or 'לא נמצאה קבלה'
 
 
 def history(last_id='', loops=8):
