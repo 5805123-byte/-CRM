@@ -16431,13 +16431,21 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 sch = bq_sched_rows(con, did)
-                txs = bq_tx_rows(con, 'hist', donor_id=did, limit=12)
+                # מאיר: "למה זה מראה היסטוריה בכרטיס תורם רק של החודש האחרון?" — כל מה שבנק ווסט שמרו
+                txs = bq_tx_rows(con, 'hist', donor_id=did, limit=600)
+                import banquest as _bq
+                okr = [t for t in txs if t['status'] in _bq.OK_ST and (t['type'] or 'charge') in ('', 'charge')]
+                years = {}
+                for t in okr:
+                    years[(t['created'] or '')[:4]] = round(years.get((t['created'] or '')[:4], 0) + (t['amount'] or 0), 2)
                 cids = {r['customer_id'] for r in con.execute("SELECT id customer_id FROM bq_cust WHERE donor_id=?", (did,))}
                 cids |= {x['customer_id'] for x in sch if x.get('customer_id')}
                 pms = [dict(r) for r in con.execute("SELECT * FROM bq_pm WHERE customer_id IN (%s) ORDER BY is_default DESC" % ','.join('?' * len(cids)), list(cids))] if cids else []
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'schedules': sch, 'tx': txs, 'pms': pms, 'customers': sorted(cids)})
+            return self._send(200, {'ok': True, 'schedules': sch, 'tx': txs, 'pms': pms, 'customers': sorted(cids),
+                                    'n_ok': len(okr), 'sum_ok': round(sum(t['amount'] or 0 for t in okr), 2),
+                                    'since': min((t['created'] or '' for t in okr), default=''), 'years': years, 'hist_from': BQ_HIST_FROM})
         if self.path.split('?')[0] == '/api/yemot/records':
             con = db()
             try:

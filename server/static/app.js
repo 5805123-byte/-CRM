@@ -6535,8 +6535,12 @@ async function bqDonorBlock(d,body){
       <span>${pms.length?`<button class="btn sm bqgo" id="bqd_once">⚡ חיוב חד-פעמי</button> <button class="btn sm ghost" id="bqd_rec">🔁 הוראת קבע</button>`:''}</span></div>
     ${sch.map(s=>`<div class="bqplan"><span><b>${bqMoney(s.amount)}</b> ${s.active?('· הבא '+esc(bqDate(s.next_run))):'· <i>מושהה</i>'} · •••• ${esc(s.last4||'')}${s.num_left?(' · נשארו '+s.num_left):''}
       ${s.for_cat||s.for_note?`<span class="bqfor">עבור: ${esc([s.for_cat,s.for_note].filter(Boolean).join(' · '))}</span>`:''}</span></div>`).join('')}
-    ${tx.length?`<div class="bqpays">${tx.slice(0,5).map(t=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay"><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}</span>
-      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span></div>`;}).join('')}</div>`:''}</div>`;
+    ${tx.length?`<div class="bqhsum"><b>${r.n_ok||0} חיובים שעברו · ${bqMoney(r.sum_ok)}</b>${r.since?` · מאז ${esc(bqDate(r.since))}`:''}
+        <div class="bqhyrs">${Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${bqMoney(v)}</b></span>`).join('')}</div></div>
+      <div class="bqpays" id="bqd_pays">${tx.map((t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay" ${i>=8?'hidden':''}><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
+      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span></div>`;}).join('')}</div>
+      ${tx.length>8?`<button class="btn sm ghost" id="bqd_more">📜 הצג את כל ההיסטוריה (${tx.length})</button>`:''}`:''}</div>`;
+  const more=box.querySelector('#bqd_more'); if(more)more.onclick=()=>{box.querySelectorAll('#bqd_pays .bqpay[hidden]').forEach(e=>e.hidden=false);more.remove();};
   const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
     document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='charges'));render();setTimeout(()=>bqOpenForm(k,d.id),300);};
   const a=box.querySelector('#bqd_once'), b2=box.querySelector('#bqd_rec');
