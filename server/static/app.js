@@ -12674,7 +12674,7 @@ function smGridHTML(){
 }
 function smSectionHTML(){
   return `<div class="sec smsec"><div class="smhd"><button class="btn sm ghost" id="sm_tog">${smOpen?'▾':'▸'} 🗺️ מפת בית הכנסת</button>
-    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_fit" title="להתאים לרוחב המסך">↔️</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><button class="btn sm ghost" id="sm_dl" title="תמונה של המפה כמו שהיא עכשיו, עם כל העדכונים">⬇️ הורדה</button></span>`:''}</div>
+    ${smOpen?`<span class="smtools"><button class="btn sm ghost" id="sm_minus" title="הקטנה">➖</button><button class="btn sm ghost" id="sm_plus" title="הגדלה">➕</button><button class="btn sm ghost" id="sm_fit" title="להתאים לרוחב המסך">↔️</button><button class="btn sm ghost" id="sm_print">🖨️ הדפסה / PDF</button><button class="btn sm ghost" id="sm_dl" title="תמונה של המפה כמו שהיא עכשיו, עם כל העדכונים">⬇️ הורדה</button><button class="btn sm ghost" id="sm_doc" title="רשימת המקומות והתשלומים">📄 ${SMDOC&&SMDOC.has?'רשימת תשלומים':'העלאת רשימת תשלומים'}</button>${SMDOC&&SMDOC.has?`<label class="btn sm ghost" title="להחליף בקובץ חדש" style="cursor:pointer">📎<input type="file" id="sm_docup" accept=".pdf,application/pdf,image/*" hidden></label>`:'<input type="file" id="sm_docup" accept=".pdf,application/pdf,image/*" hidden>'}</span>`:''}</div>
     ${smOpen?(SEATS?`<div class="smwrap">${smGridHTML()}</div><div class="hintxt">לחיצה על מקום: להושיב חבר, לפנות, לשנות מספר או לכתוב שם חופשי. כל שינוי נרשם עם תאריך אצל מי שהמקום שלו השתנה (לחיצה על 💺 בשורה שלו).</div>`:'<div class="hintxt">טוען את המפה…</div>'):''}</div>`;
 }
 function wireSeatMap(){
@@ -12688,12 +12688,19 @@ function wireSeatMap(){
   const ft=document.getElementById('sm_fit'); if(ft)ft.onclick=()=>{smMult=1;try{localStorage.setItem('kc_smm','1');}catch(e){}smFit();};
   const pr=document.getElementById('sm_print'); if(pr)pr.onclick=()=>window.open('/seat-map-print','_blank');
   const dl=document.getElementById('sm_dl'); if(dl)dl.onclick=()=>smDownload(dl);
+  // 📄 רשימת המקומות והתשלומים — פתיחה בלחיצה; 📎 מחליף בקובץ חדש
+  if(SMDOC===null&&smOpen){SMDOC={};api('GET','/api/seats/doc?info=1').then(r=>{SMDOC=r||{};if(tab==='comm')render();});}
+  const sd=document.getElementById('sm_doc'), su=document.getElementById('sm_docup');
+  if(sd)sd.onclick=()=>{if(SMDOC&&SMDOC.has)window.open('/api/seats/doc?t='+encodeURIComponent(SMDOC.at||''),'_blank');else if(su)su.click();};
+  if(su)su.onchange=()=>{const f=su.files[0];if(!f)return;if(f.size>15*1024*1024){toast('קובץ גדול מדי');return;}
+    const rd=new FileReader();rd.onload=async()=>{const r=await api('POST','/api/seats/doc',{name:f.name,mime:f.type||'application/pdf',data:rd.result});
+      if(r&&r.ok){toast('הקובץ נשמר ✓');SMDOC=null;render();}else toast((r&&r.error)||'לא נשמר');};rd.readAsDataURL(f);};
   view.querySelectorAll('.sms[data-pos]').forEach(el=>el.onclick=()=>openSeat(el.dataset.pos,el.dataset.num));
   if(smOpen&&!SEATS){smLoad().then(()=>{if(tab==='comm')render();});}
 }
 // מאיר: "כשאני מוריד את המפה זה מוריד לי בלי העדכונים" — ההורדה הייתה של הקובץ המקורי. עכשיו
 // מצלמים את המפה החיה (כל השמות והמספרים העדכניים) בגודל מלא, בלי הזום של המסך
-let _h2c=null;
+let _h2c=null, SMDOC=null;
 function smH2C(){return _h2c||(_h2c=new Promise((ok,no)=>{if(window.html2canvas)return ok(window.html2canvas);
   const sc=document.createElement('script');sc.src='/html2canvas.min.js';   // html2canvas 1.4.1 (MIT) — שמור אצלנו, בלי תלות באתר חיצוני
   sc.onload=()=>ok(window.html2canvas);sc.onerror=()=>{_h2c=null;no(new Error('load'));};document.head.appendChild(sc);}));}

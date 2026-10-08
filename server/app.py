@@ -16228,6 +16228,24 @@ class H(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
             self.end_headers(); self.wfile.write(data)
             return
+        if self.path.split('?')[0] == '/api/seats/doc':
+            # 📄 רשימת המקומות והתשלומים (PDF) — מאיר: "כפתור בתוך המפה לראות קובץ זה, בלי הרבה בלגן".
+            # נשמר במסד (לא בקוד ולא כקובץ פתוח), מאחורי הסיסמה
+            con = db()
+            r = con.execute("SELECT name,mime,data,created FROM files WHERE kind='seat_doc' ORDER BY id DESC LIMIT 1").fetchone()
+            con.close()
+            if 'info=1' in self.path:
+                return self._send(200, {'ok': True, 'has': bool(r), 'name': r['name'] if r else '', 'at': r['created'] if r else ''})
+            if not r:
+                return self._send(404, {'ok': False, 'error': 'עוד לא הועלה קובץ'})
+            from urllib.parse import quote as _q
+            self.send_response(200)
+            self.send_header('Content-Type', r['mime'] or 'application/pdf')
+            self.send_header('Content-Disposition', "inline; filename*=UTF-8''" + _q(r['name'] or 'seats.pdf'))
+            self.send_header('Content-Length', str(len(r['data'])))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers(); self.wfile.write(r['data'])
+            return
         if self.path.split('?')[0] == '/api/seats':
             con = db()
             seats, meta, renum = seats_state(con)
@@ -17387,6 +17405,19 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(400, {'error': 'bad choice'})
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'member_id': mid})
+        if self.path == '/api/seats/doc':
+            try:
+                data = base64.b64decode(str(b.get('data') or '').split(',')[-1])
+            except Exception:
+                data = b''
+            if not data or len(data) > 15 * 1024 * 1024:
+                return self._send(200, {'ok': False, 'error': 'קובץ ריק או גדול מדי'})
+            con = db()
+            con.execute("DELETE FROM files WHERE kind='seat_doc'")      # תמיד הגרסה האחרונה בלבד
+            con.execute("INSERT INTO files(kind,ref_id,name,mime,data,created) VALUES('seat_doc',0,?,?,?,?)",
+                        (str(b.get('name') or 'רשימת מקומות.pdf')[:120], str(b.get('mime') or 'application/pdf')[:80], data, now_iso()))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/seats/assign':
             # מהמפה: להושיב חבר / לפנות / תווית חופשית
             con = db()
