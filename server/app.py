@@ -16787,7 +16787,8 @@ class H(BaseHTTPRequestHandler):
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
                                      "WHERE COALESCE(t.amount,0)>0 ORDER BY t.iso DESC LIMIT 6000"):
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
-                    if re.search(r'מקו?וה', ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))):
+                    # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
+                    if re.search(r'מקו?וה|מזגנ|טעינ', ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))):
                         continue
                     kv = str(t['keva'] or '')
                     src = 'bank' if kv.startswith('M') else ('hok' if kv and not kv.startswith('-') else 'nd')
