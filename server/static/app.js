@@ -1539,7 +1539,7 @@ async function load(){
   // מאיר (הכל) והגבאי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
   if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה (הכניסה פגה לבד אחרי 48 שעות)';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.\n(גם בלי לצאת, הכניסה פגה לבד אחרי 48 שעות)','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1559,7 +1559,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
 const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',stip:'חיפוש אברך…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
-  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',camp:'חיפוש שם, משפחה או סכום…',
+  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',gifts:'חיפוש תרומה — שם תורם / סכום / עבור מה / אסמכתא…',camp:'חיפוש שם, משפחה או סכום…',
   old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
 function render(){
   const qi=document.getElementById('q');
@@ -1581,6 +1581,7 @@ function render(){
   if(tab==='kvittel') return renderKvittel();
   if(tab==='parnes') return renderParnes();
   if(tab==='charges') return renderCharges();
+  if(tab==='gifts') return renderGifts();
   if(tab==='avreich') return renderAvreich();
   if(tab==='stip') return renderStip();
   if(tab==='debts') return renderDebts();
@@ -12675,6 +12676,95 @@ async function renderCommJobs(){
     const r=await api('POST','/api/cm/jobs/'+id,body);
     if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
     if(a==='done')toast('✔ בוצע');jobEdit=0;CMJOBS=null;renderCommJobs();});
+}
+// ---- 💵 כל התרומות לפי תאריך ----
+// מאיר: "איפה כתוב כל התרומות שנכנסו לפי סדר התאריכים, של בנק ווסט ואוטרייז וצ'קים וזל וצ'ייס,
+// כל מה שהכנסנו ידנית ולא ידנית… ואפשרות לשנות את זה שם אם זה ידני, לא מהאשראי שעבר פה אצלנו".
+// אותה טבלת תרומות של כרטיסי התורמים — כל תרומה שנכנסת (מכל מקור) מופיעה כאן מעצמה.
+let gfFam='', gfFrom='', gfTo='', gfCur='', gfEdit=0, gfNew=false, gfLim=300;
+const GF_FAM=[['bq','🏦 בנק ווסט'],['az','💳 אוטרייז'],['chk','✉️ צ׳קים'],['zelle','⚡ Zelle'],['chase','🏛 Chase'],['bank','🏦 העברה בנקאית'],
+  ['daf','🎁 דונרס / קרנות'],['nd','💚 נדרים פלוס'],['cash','💵 מזומן'],['other','• אחר']];
+function gfFamOf(x){const m=String(x.method||'')+' '+String(x.tid||'').slice(0,2);
+  if(/banquest|בנק ווסט|^BQ| BQ/i.test(m))return 'bq';
+  if(/authorize|אוטרייז|אותורייז|אוטורייז/i.test(m))return 'az';
+  if(/zelle|זל(?!ז)/i.test(m))return 'zelle';
+  if(/chase|צ.?ייס/i.test(m))return 'chase';
+  if(/צ.?ק|check|cheque|המחאה/i.test(m))return 'chk';
+  if(/דונרס|donors|ojc|daf|קרן|fidelity|schwab|matbia|מתביע/i.test(m))return 'daf';
+  if(/נדרים|nedarim/i.test(m))return 'nd';
+  if(/מזומן|cash/i.test(m))return 'cash';
+  if(/העברה|bank|wire|קפיטל|capital|בנק/i.test(m))return 'bank';
+  return 'other';}
+// חיוב אשראי שעבר אצלנו (בנק ווסט / אוטרייז, עם מזהה עסקה) — נעול; מתקנים אותו רק דרך ביטול/החזר
+const gfLocked=x=>!!String(x.tid||'').trim()&&['bq','az'].includes(gfFamOf(x));
+function gfRows(){const out=[];
+  DB.forEach(d=>(d.donations||[]).forEach(x=>{const dt=String(x.date||'');if(!dt)return;
+    out.push({x,d,dt,c:donCur(x,curSym(d)),fam:gfFamOf(x),nm:((d.last||'')+' '+(d.first||'')).trim()});}));
+  out.sort((a,b)=>b.dt.localeCompare(a.dt)||(b.x.id-a.x.id));return out;}
+function renderGifts(){
+  const all=gfRows();
+  let rows=all.filter(r=>(!gfFam||r.fam===gfFam)&&(!gfCur||r.c===gfCur)&&(!gfFrom||r.dt.slice(0,10)>=gfFrom)&&(!gfTo||r.dt.slice(0,10)<=gfTo));
+  if((q||'').trim())rows=rows.filter(r=>matchQ([r.nm,r.d.english,r.x.amount,r.x.category,r.x.method,r.x.note,r.x.tid].join(' ')));
+  const famN={};all.forEach(r=>famN[r.fam]=(famN[r.fam]||0)+1);
+  chips.innerHTML=`<button class="chip ${gfFam?'':'on'}" data-gf="">הכל <b>${all.length}</b></button>`+GF_FAM.filter(([k])=>famN[k]).map(([k,l])=>`<button class="chip ${gfFam===k?'on':''}" data-gf="${k}">${l} <b>${famN[k]}</b></button>`).join('');
+  chips.querySelectorAll('[data-gf]').forEach(b=>b.onclick=()=>{gfFam=b.dataset.gf;gfLim=300;render();});
+  const sum=list=>{const t={};list.forEach(r=>t[r.c]=(t[r.c]||0)+amtNum(r.x.amount));return Object.keys(t).sort().map(c=>c+Math.round(t[c]).toLocaleString('en-US')).join(' + ')||'—';};
+  const months={};rows.forEach(r=>(months[r.dt.slice(0,7)]=months[r.dt.slice(0,7)]||[]).push(r));
+  const famL=k=>(GF_FAM.find(f=>f[0]===k)||['',''])[1];
+  const row=r=>{const x=r.x,lk=gfLocked(x);
+    if(gfEdit===x.id)return `<div class="gfrow ed"><div class="gfedt"><b>${esc(r.nm)}</b>
+      <div class="lgf"><input type="date" id="gfe_date" value="${esc(x.date.length===10?x.date:'')}"><div class="curwrap"><select id="gfe_cur">${curOpts(r.c)}</select><input id="gfe_amt" inputmode="decimal" value="${esc(x.amount)}"></div></div>
+      <div class="lgf"><select id="gfe_cat">${dnCatOpts(x.category||'')}</select><input id="gfe_meth" list="gf_meths" value="${esc(x.method||'')}" placeholder="אמצעי תשלום"></div>
+      <input id="gfe_note" value="${esc(x.note||'')}" placeholder="הערה / אסמכתא">
+      <div class="bqacts"><button class="btn sm" data-gfa="save" data-id="${x.id}">💾 שמור</button><button class="btn sm ghost" data-gfa="cancel">ביטול</button><button class="btn sm ghost" data-gfa="del" data-id="${x.id}">🗑 מחק</button></div></div></div>`;
+    return `<div class="gfrow ${+x.paid||x.paid===undefined?'':'unpaid'}"><span class="gfd">${esc(rcDate(x.date)||gregLabel(x.date))}</span>
+      <button class="gfnm" data-gfd="${r.d.id}" title="לפתוח את כרטיס התורם">${esc(r.nm)}</button>
+      <b class="gfa">${r.c}${Math.round(amtNum(x.amount)*100)%100?amtNum(x.amount).toLocaleString('en-US',{minimumFractionDigits:2}):Math.round(amtNum(x.amount)).toLocaleString('en-US')}</b>
+      <span class="gfw">${esc(x.category||'')}${x.note?`<small>${esc(x.note)}</small>`:''}</span>
+      <span class="gfm">${famL(r.fam)}${x.method&&!['bq','az'].includes(r.fam)&&!famL(r.fam).toLowerCase().includes(String(x.method).trim().toLowerCase())?` <small>${esc(x.method)}</small>`:''}${+x.paid===0?' <small class="bqst bad">לא שולם</small>':''}</span>
+      ${lk?'<span class="gflock" title="חיוב אשראי שעבר אצלנו — מתקנים דרך ↩️ ביטול / החזר בדף החיובים">🔒</span>':`<button class="cmpen" data-gfa="edit" data-id="${x.id}" title="תיקון / מחיקה">✎</button>`}</div>`;};
+  const keys=Object.keys(months).sort().reverse();let shown=0;
+  const body=keys.map(m=>{if(shown>=gfLim)return '';const L=months[m].slice(0,Math.max(0,gfLim-shown));shown+=L.length;
+    return `<div class="gfmon"><div class="gfmh"><b>${esc(fmtMonth(m))}</b><span>${sum(months[m])} · ${months[m].length} תרומות</span></div>${L.map(row).join('')}</div>`;}).join('');
+  view.innerHTML=`<div class="rbtitle">💵 כל התרומות — לפי תאריך</div>
+    <div class="hintxt">כל מה שנכנס בכרטיסי התורמים, מכל מקור: בנק ווסט, אוטרייז, צ׳קים, Zelle, Chase, העברות, ידני. 🔒 = חיוב אשראי שעבר אצלנו (מתקנים בדף החיובים, ↩️ ביטול / החזר); את כל השאר אפשר לתקן כאן ✎.</div>
+    <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="gf_from" value="${esc(gfFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="gf_to" value="${esc(gfTo)}"></label>
+      <label class="fld"><span>מטבע</span><select id="gf_cur"><option value="">הכל</option>${['$','₪'].map(c=>`<option ${gfCur===c?'selected':''}>${c}</option>`).join('')}</select></label>
+      <button class="btn sm" id="gf_new">➕ תרומה חדשה</button></div>
+    ${gfNew?`<div class="gfnewbox"><b>➕ תרומה חדשה</b>
+      <input id="gfn_who" list="bq_dl" placeholder="תורם — הקלד שם ובחר מהרשימה…">
+      <div class="lgf"><input type="date" id="gfn_date" value="${todayStr()}"><div class="curwrap"><select id="gfn_cur">${curOpts('$')}</select><input id="gfn_amt" inputmode="decimal" placeholder="סכום"></div></div>
+      <div class="lgf"><select id="gfn_cat">${dnCatOpts('')}</select><input id="gfn_meth" list="gf_meths" placeholder="אמצעי — צ׳ק / Zelle / Chase / מזומן…"></div>
+      <input id="gfn_note" placeholder="הערה / אסמכתא (לא חובה)">
+      <div class="bqacts"><button class="btn sm" id="gfn_ok">💾 שמור — נכנס גם לכרטיס התורם</button><button class="btn sm ghost" id="gfn_x">ביטול</button></div></div>`:''}
+    <div class="gfsum">${rows.length} תרומות${gfFam||gfFrom||gfTo||gfCur||(q||'').trim()?' (מסונן)':''} · סה״כ <b>${sum(rows)}</b></div>
+    <div class="gflist">${body||'<div class="empty">אין תרומות שמתאימות לסינון.</div>'}</div>
+    ${rows.length>gfLim?`<button class="btn sm ghost" id="gf_more" style="width:100%">📜 הצג עוד (${rows.length-gfLim})</button>`:''}
+    <datalist id="gf_meths">${['צ׳ק','Zelle','Chase','העברה בנקאית','מזומן','דונרס','OJC','נדרים פלוס','Banquest','Authorize'].map(m=>`<option value="${esc(m)}">`).join('')}</datalist>
+    ${document.getElementById('bq_dl')?'':bqDonorDL()}`;
+  const g=id=>document.getElementById(id);
+  g('gf_from').onchange=()=>{gfFrom=g('gf_from').value;render();}; g('gf_to').onchange=()=>{gfTo=g('gf_to').value;render();};
+  g('gf_cur').onchange=()=>{gfCur=g('gf_cur').value;render();};
+  g('gf_new').onclick=()=>{gfNew=!gfNew;render();if(gfNew&&g('gfn_who'))g('gfn_who').focus();};
+  const mo=g('gf_more');if(mo)mo.onclick=()=>{gfLim+=300;render();};
+  view.querySelectorAll('[data-gfd]').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.gfd)));
+  if(gfNew){g('gfn_x').onclick=()=>{gfNew=false;render();};
+    const wh=g('gfn_who');wh.onchange=()=>{const d=DB.find(x=>x.id==bqPickDonor(wh.value));if(d)g('gfn_cur').value=curSym(d);};
+    g('gfn_ok').onclick=async()=>{const did=bqPickDonor(wh.value);if(!did){toast('בחר תורם מהרשימה');wh.focus();return;}
+      const amt=amtNum(g('gfn_amt').value);if(!amt){toast('חסר סכום');g('gfn_amt').focus();return;}
+      const d=DB.find(x=>x.id==did), body={donor_id:did,date:g('gfn_date').value||todayStr(),amount:String(amt),cur:g('gfn_cur').value,category:g('gfn_cat').value.replace('__new__',''),method:g('gfn_meth').value.trim(),note:g('gfn_note').value.trim(),paid:1};
+      const r=await api('POST','/api/donation',body);if(!r||!r.ok){await uiAlert('לא נשמר');return;}
+      toast('💵 נרשם ✓ — גם בכרטיס של '+((d.last||'')+' '+(d.first||'')).trim());gfNew=false;await load();render();};}
+  view.querySelectorAll('[data-gfa]').forEach(b=>b.onclick=async()=>{const a=b.dataset.gfa,id=+b.dataset.id;
+    if(a==='edit'){gfEdit=id;render();return;} if(a==='cancel'){gfEdit=0;render();return;}
+    const r0=all.find(r=>r.x.id===id);if(!r0)return;
+    if(a==='del'){if(!await uiConfirm('למחוק את התרומה של '+r0.nm+' '+r0.c+r0.x.amount+' מ-'+rcDate(r0.x.date)+'?\nהיא תימחק גם מכרטיס התורם.','🗑 כן, למחוק','ביטול'))return;
+      await api('DELETE','/api/donation/'+id);r0.d.donations=r0.d.donations.filter(x=>x.id!==id);gfEdit=0;toast('נמחק');render();return;}
+    const amt=amtNum(g('gfe_amt').value);if(!amt){toast('חסר סכום');return;}
+    let cat=g('gfe_cat').value;if(cat==='__new__')cat=r0.x.category||'';
+    const body={date:g('gfe_date').value||r0.x.date,amount:String(amt),cur:g('gfe_cur').value,category:cat,method:g('gfe_meth').value.trim(),note:g('gfe_note').value.trim()};
+    const r=await api('PUT','/api/donation/'+id,body);if(!r||!r.ok){toast('לא נשמר');return;}
+    Object.assign(r0.x,body);gfEdit=0;toast('נשמר ✓');render();});
 }
 function cdMemberDL(){return `<datalist id="cd_mdl">${(MEMBERS||[]).map(m=>`<option value="${esc(mName(m))} #${m.id}">`).join('')}</datalist>`;}
 const cdPick=v=>{const m=/#(\d+)\s*$/.exec(v||'');return m?+m[1]:0;};

@@ -2015,6 +2015,23 @@
   .cmcur{border:1px solid var(--accent);background:#fff;color:var(--accent);border-radius:999px;padding:1px 9px;font:inherit;font-size:13px;font-weight:bold;cursor:pointer;margin-inline-start:6px}
   .cmcursym{font-weight:bold;color:var(--accent);margin-inline-end:2px}
   .rcprev{max-width:min(720px,94vw);max-height:92vh;overflow:auto}
+  .gfbar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:8px 0}
+  .gfbar .fld{min-width:130px;flex:1}
+  .gfnewbox{border:2px solid var(--accent);border-radius:12px;padding:10px;display:grid;gap:6px;margin-bottom:8px}
+  .gfnewbox input,.gfnewbox select,.gfedt input,.gfedt select{width:100%;min-width:0;box-sizing:border-box}
+  .gfsum{margin:6px 2px;font-size:15px}
+  .gfmon{margin-bottom:10px}
+  .gfmh{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 10px;padding:7px 10px;border-radius:10px;background:var(--soft,#faf7f0);position:sticky;top:0;z-index:1}
+  .gfrow{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:6px 4px;flex-wrap:wrap}
+  .gfrow.unpaid{background:#fdf3f0}
+  .gfrow.ed{display:block}
+  .gfedt{display:grid;gap:6px;border:1px solid var(--accent);border-radius:10px;padding:8px}
+  .gfd{flex:none;font-size:12px;color:var(--muted,#888);width:70px}
+  .gfnm{flex:1 1 140px;min-width:0;text-align:right;background:none;border:0;font:inherit;font-weight:bold;cursor:pointer;color:var(--ink,#222);padding:0}
+  .gfa{flex:none;min-width:70px;text-align:left}
+  .gfw{flex:1 1 140px;min-width:0;display:grid;overflow-wrap:anywhere}.gfw small{color:var(--muted,#888);font-size:12px}
+  .gfm{flex:0 1 auto;font-size:13px}.gfm small{color:var(--muted,#888)}
+  .gflock{flex:none;opacity:.6}
   .bqday{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;margin:8px 0;padding:10px 12px;border:1px solid var(--accent);border-radius:12px;background:#f5f3fb;cursor:pointer;font:inherit;font-size:15px;text-align:right}
   .bqday.on{border-width:2px}.bqday small{color:var(--muted,#888)}
   .bqdaybox{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;display:grid;gap:8px}
@@ -2325,6 +2342,7 @@
       <button class="tab" data-tab="kvittel">קוויטל</button>
       <button class="tab" data-tab="parnes">פרנס יום</button>
       <button class="tab" data-tab="charges">💳 חיובים</button>
+      <button class="tab" data-tab="gifts">💵 תרומות</button>
       <button class="tab" data-tab="rcpt">🧾 קבלות</button>
       <button class="tab" data-tab="avreich">🤝 יששכר־זבולון</button>
       <button class="tab" data-tab="stip">🎓 אברכים</button>
