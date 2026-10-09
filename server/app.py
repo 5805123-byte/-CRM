@@ -9667,6 +9667,9 @@ def banquest_post(con, source, only_tids=None):
             pl = open_pledge_for(con, did, a)
             if pl and pl['category']:
                 return pl['category'], 'התחייבות', False
+        c = donor_purpose_for(con, did, a)
+        if c:
+            return c, 'לפי מה שנקבע לתורם', False
         return '', 'לא סווג', True
 
     for (did, ym, a), lst in need.items():
@@ -19838,7 +19841,7 @@ class H(BaseHTTPRequestHandler):
                         con.close()
                         return self._send(200, dict(out, ok=False, error='הכרטיס נשמר, אבל החיוב לא עבר: ' + bq_hint(_bq.LAST.get('error') or 'שגיאה') + '\nהוראת הקבע לא שונתה.'))
                     ch = bq_record_charge(con, cres, amt, desc, fc, row['donor_id'], row['customer_id'],
-                                          ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''))
+                                          ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''), sched_id=row['id'])
                     con.commit()
                     if not ch['ok']:
                         con.close()
@@ -19860,7 +19863,7 @@ class H(BaseHTTPRequestHandler):
                 if code != 200 or not isinstance(res, dict):
                     con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
                 out = bq_record_charge(con, res, amt, desc, fc, row['donor_id'], row['customer_id'],
-                                       ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''))
+                                       ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''), sched_id=row['id'])
                 con.commit(); con.close()
                 bump_data()
                 out.update(charged=True, src=bq_card_src(res) if out['ok'] else '', last4=res.get('last_4') or b.get('last4') or '')
@@ -19975,7 +19978,8 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
             did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
             out = bq_record_charge(con, res, amt, desc, fc, did, p['customer_id'],
-                                   ('%s %s' % (p['card_type'], p['last4'])).strip(), (cu['identifier'] if cu else ''))
+                                   ('%s %s' % (p['card_type'], p['last4'])).strip(), (cu['identifier'] if cu else ''),
+                                   sched_id=int(b.get('sched_id') or 0))
             con.commit(); con.close()
             bump_data()
             return self._send(200, out)
@@ -21436,7 +21440,7 @@ def bq_hint(err):
     return e
 
 
-def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', name=''):
+def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', name='', sched_id=0):
     """תשובת חיוב מבנק ווסט → עסקה אצלנו, ואם עבר ויש תורם — תרומה בכרטיס שלו עם "עבור מה".
     רק העסקה הזו נרשמת (לא כל מה שממתין), כדי שהתשובה תחזור מיד."""
     import banquest as _bq
@@ -21460,7 +21464,10 @@ def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', n
             # "עבור מה" של חיוב מיידי — נכנס כייעוד התרומה
             if bq_post_tx(con, dict(t, schedule_id=0), force=True):
                 tid = 'BQ%d' % (t['ref'] or t['id'])
-                con.execute("UPDATE recon SET category=? WHERE tid=?", (fc, tid))
+                # "עבור מה" שנבחר בחיוב; אם לא נבחר — לפי מה שנקבע לתורם / להוראת הקבע (לא ריק שדורס)
+                fc = fc or donor_purpose_for(con, did, t['amount'] or amt, sched_id)
+                if fc:
+                    con.execute("UPDATE recon SET category=? WHERE tid=?", (fc, tid))
                 banquest_post(con, BQ_SRC, only_tids=[tid])
     return {'ok': ok, 'status': res.get('status'), 'error': '' if ok else bq_hint(res.get('error_message') or res.get('status') or 'נדחה'),
             'ref': res.get('reference_number'), 'auth': res.get('auth_code'), 'donor_id': did}
@@ -21535,8 +21542,10 @@ def bq_post_tx(con, t, force=False):
     sch = con.execute("SELECT for_cat,for_note FROM bq_sched WHERE id=?", (t['schedule_id'],)).fetchone() if t['schedule_id'] else None
     cat = ((sch['for_cat'] if sch else '') or '').strip()
     if not cat and t['donor_id']:
-        # לא נקבע "עבור מה" להוראה — לוקחים את מה שכבר רשום בכרטיס התורם
-        cat = donor_known_purpose(con, t['donor_id']).split('·')[0].strip()
+        # לא נקבע "עבור מה" להוראה — לפי מה שנקבע לתורם (כלל, התחייבות, אברכים באותו סכום)
+        cat = donor_purpose_for(con, t['donor_id'], t['amount'], t['schedule_id'])
+        if not cat and t['schedule_id']:
+            cat = donor_known_purpose(con, t['donor_id']).split('·')[0].strip()
     note = ' · '.join(x for x in (((sch['for_note'] if sch else '') or '').strip(), (t.get('description') or '').strip(), t['card']) if x)
     con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,
                        recurring,donor_id,category,processed,source,status,note)
@@ -21672,6 +21681,65 @@ def _bq_loop():
         except Exception as e:
             print('  banquest sync error:', e)
         time.sleep(max(900, int(os.environ.get('BANQUEST_SECONDS') or 3600)))
+
+
+def donor_purpose_for(con, donor_id, amount, sched_id=0):
+    """ייעוד אוטומטי לחיוב שנכנס (בנק ווסט / אוטרייז) — רק לפי מה שמאיר כבר קבע לתורם. מאיר:
+    "דניאל יעקבסון — זה לא כתב ש-1000 זה בשביל יששכר זבולון והייתי צריך לייעד ידנית. כבר קבענו
+    בשביל מה זה ה-1000, אז למה זה שואל אותי שוב?" לפי הסדר: "עבור מה" של הוראת הקבע, כלל קבוע
+    של התורם לסכום, התחייבות חודשית / אברכי יששכר־זבולון באותו סכום, ובהוראת קבע — הייעוד
+    היחיד שרשום לו. בלי ניחוש מעבר לזה ("מה שלא רשמתי בייעוד ידני אל תשייך אוטומטי")."""
+    if not donor_id:
+        return ''
+    try:
+        a = round(float(amount or 0), 2)
+    except (TypeError, ValueError):
+        return ''
+    if a <= 0:
+        return ''
+    eq = lambda x: abs(_amt2(x) - a) < 0.005
+    if sched_id:
+        r = con.execute("SELECT for_cat FROM bq_sched WHERE id=?", (sched_id,)).fetchone()
+        if r and (r['for_cat'] or '').strip():
+            return r['for_cat'].strip()
+    try:
+        r = con.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?", (donor_id, a)).fetchone()
+        if r and (r['category'] or '').strip():
+            return r['category'].strip()
+    except Exception:
+        pass
+    r = con.execute("SELECT auto_cat FROM donors WHERE id=?", (donor_id,)).fetchone()
+    for k in autocat_rules(r['auto_cat'] if r else ''):
+        if abs(k['amt'] - a) < 0.005:
+            return k['cat']
+    pa = [x for x in con.execute("SELECT amount,share FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (donor_id,))]
+    vals = [_amt2(x['share']) if str(x['share'] or '').strip() else _amt2(x['amount']) for x in pa]
+    if vals and (abs(sum(vals) - a) < 0.005 or any(abs(v - a) < 0.005 for v in vals)):
+        return 'יששכר־זבולון'
+    for p in con.execute("SELECT category,amount,permo FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                         "AND COALESCE(status,'')<>'הופסק' AND COALESCE(confirmed,1)>0 ORDER BY id", (donor_id,)):
+        c = (p['category'] or '').strip()
+        if c and (eq(p['amount']) or (str(p['permo'] or '').strip() and eq(p['permo']))):
+            return 'יששכר־זבולון' if 'יששכר' in c else c
+    if sched_id:
+        kp = [x.strip() for x in donor_known_purpose(con, donor_id).split('·') if x.strip()]
+        if len(kp) == 1:
+            return kp[0]
+    return ''
+
+
+def autofill_purposes(con, donor_id=None):
+    """תרומות בלי ייעוד (גם אלה שסומנו "לא סווג — לבדוק עבור מה") שהסכום שלהן תואם למה
+    שנקבע לתורם — מקבלות את הייעוד. לא דורס ייעוד שכבר נכתב."""
+    n = 0
+    q = "SELECT id,donor_id,amount,note FROM donations WHERE COALESCE(TRIM(category),'')='' AND donor_id IS NOT NULL"
+    for d in con.execute(q + (" AND donor_id=?" if donor_id else ''), ((donor_id,) if donor_id else ())).fetchall():
+        c = donor_purpose_for(con, d['donor_id'], _amt2(d['amount']))
+        if c:
+            note = re.sub(r'\s*·?\s*לא סווג — לבדוק עבור מה', '', d['note'] or '').strip(' ·')
+            con.execute("UPDATE donations SET category=?, note=? WHERE id=?", (c, note, d['id']))
+            n += 1
+    return n
 
 
 def donor_known_purpose(con, donor_id):
@@ -22996,6 +23064,17 @@ def us_receipt_redate():
 
 def serve():
     ensure_schema()
+    try:
+        con = db()
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='purpose_autofill_v1'").fetchone():
+            n = autofill_purposes(con)
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('purpose_autofill_v1')")
+            con.commit()
+            if n:
+                print('  ייעוד אוטומטי לתרומות שלא סווגו (לפי מה שנקבע לתורם): %d' % n)
+        con.close()
+    except Exception as e:
+        print('  purpose autofill error:', e)
     try:
         donation_dates_fix()
     except Exception as e:

@@ -6659,10 +6659,10 @@ function bqWire(box){const g=id=>document.getElementById(id);
       if(!await uiConfirm(a==='pause'?'להשהות את הוראת הקבע בבנק ווסט?':'לחדש את הוראת הקבע בבנק ווסט?','כן','ביטול'))return;
       const r=await api('POST','/api/bq/sched/'+id,{active:a==='resume'});
       if(r&&r.ok){toast(a==='pause'?'⏸ הושהתה':'▶ חודשה');renderBQ();}else await uiAlert('לא עודכן:\n'+((r&&r.error)||'שגיאה'));return;}
-    if(a==='now'){const amt=amtNum(g('bqs_amt').value)||+r0.amount, forT=[g('bqs_cat').value,g('bqs_note').value.trim()].filter(Boolean).join(' · ');
+    if(a==='now'){const amt=amtNum(g('bqs_amt').value)||+r0.amount, forT=(g('bqs_cat')?[g('bqs_cat').value,g('bqs_note').value.trim()]:[r0.for_cat,r0.for_note]).filter(Boolean).join(' · ')||r0.known_for||'';
       if(!await uiConfirm('לחייב עכשיו '+bqMoney(amt)+' מכרטיס •••• '+(r0.last4||'')+' ('+(r0.donor_name||r0.bq_name||'')+')'+(forT?(' עבור '+forT):'')+'?\nזה חיוב נוסף, מחוץ להוראת הקבע.','⚡ כן, לחייב','ביטול'))return;
       b.disabled=true;
-      const r=await api('POST','/api/bq/charge',{pm_id:r0.pm_id,amount:amt,for_cat:g('bqs_cat').value,for_note:g('bqs_note').value.trim(),donor_id:r0.donor_id||0});
+      const r=await api('POST','/api/bq/charge',{pm_id:r0.pm_id,amount:amt,for_cat:g('bqs_cat')?g('bqs_cat').value:(r0.for_cat||''),for_note:g('bqs_note')?g('bqs_note').value.trim():(r0.for_note||''),donor_id:r0.donor_id||0,sched_id:r0.id});
       b.disabled=false;
       if(r&&r.ok){toast('✅ החיוב עבר · אישור '+(r.auth||r.ref||''));renderBQ();load().then(render);}else await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));return;}
     if(a==='post'){const did=bqPickDonor(g('bqt_donor').value)||r0.donor_id;if(!did){toast('בחר תורם מהרשימה');return;}
