@@ -523,6 +523,10 @@ def ensure_schema():
         pass
     try: con.execute("ALTER TABLE bq_tx ADD COLUMN refunded REAL DEFAULT 0")   # כמה הוחזר מהמערכת שלנו
     except Exception: pass
+    # מצב "סודר" של חיוב שנדחה, כשמאיר מתקן ידנית: no / yes / partial (ריק = אוטומטי לפי סכום)
+    for col, ddl in (('fix_state', 'TEXT'), ('fix_amt', 'REAL'), ('fix_note', 'TEXT')):
+        try: con.execute("ALTER TABLE bq_tx ADD COLUMN %s %s" % (col, ddl))
+        except Exception: pass
     try: con.execute("ALTER TABLE nd_torem ADD COLUMN addr TEXT")
     except Exception: pass
     # מוסד נוסף בנדרים פלוס — לכל הוראה ועסקה: מאיזה מוסד (ריק = הראשי)
@@ -16641,8 +16645,9 @@ class H(BaseHTTPRequestHandler):
                         'hist_from': BQ_HIST_FROM,
                         'n_active': con.execute("SELECT COUNT(*) FROM bq_sched WHERE active=1").fetchone()[0],
                         'month_sum': con.execute("SELECT COALESCE(SUM(amount),0) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s) AND COALESCE(type,'') IN ('','charge')" % okst, (mon,)).fetchone()[0],
-                        'month_bad': (lambda br: len(br) - len(bq_fixed_map(con, br)))([dict(r) for r in con.execute(
-                            "SELECT id,created,amount,customer_id,donor_id FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,))]),
+                        'month_bad': sum(1 for r in bq_fix_annotate(con, [dict(r) for r in con.execute(
+                            "SELECT id,created,amount,status,customer_id,donor_id,fix_state,fix_amt,fix_note FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,))])
+                                         if r['fix']['state'] != 'fixed'),
                         'n_tx': con.execute("SELECT COUNT(*) FROM bq_tx").fetchone()[0],
                         'token_key': _bq.token_key(), 'token_js': _bq.token_js()}
                 # 📅 היום ואתמול — לפי שעון בנק ווסט
@@ -16667,13 +16672,9 @@ class H(BaseHTTPRequestHandler):
                 else:
                     rows = bq_tx_rows(con, 'bad' if kind == 'bad' else 'hist', q=qq)
                     if kind == 'bad':
-                        fx = bq_fixed_map(con, rows)
-                        for r in rows:
-                            h = fx.get(r['id'])
-                            if h:
-                                r.update(fixed_at=h['created'], fixed_amount=h['amount'], fixed_ref=h['ref'] or h['id'])
-                        # מה שעדיין לא סודר — למעלה; מה שעבר בסוף — למטה
-                        rows.sort(key=lambda r: 1 if r.get('fixed_at') else 0)     # יציב — בתוך כל קבוצה נשאר מהחדש לישן
+                        bq_fix_annotate(con, rows)
+                        # מה שעדיין לא סודר — למעלה, סודר חלקית — אחריו, מה שעבר בסוף — למטה (יציב: מהחדש לישן)
+                        rows.sort(key=lambda r: {'open': 0, 'partial': 1, 'fixed': 2}.get((r.get('fix') or {}).get('state'), 0))
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
@@ -16773,7 +16774,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 sch = bq_sched_rows(con, did)
                 # מאיר: "למה זה מראה היסטוריה בכרטיס תורם רק של החודש האחרון?" — כל מה שבנק ווסט שמרו
-                txs = bq_tx_rows(con, 'hist', donor_id=did, limit=600)
+                txs = bq_fix_annotate(con, bq_tx_rows(con, 'hist', donor_id=did, limit=600))
                 import banquest as _bq
                 okr = [t for t in txs if t['status'] in _bq.OK_ST and (t['type'] or 'charge') in ('', 'charge')]
                 years = {}
@@ -20003,6 +20004,21 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             bump_data()
             return self._send(200, {'ok': True, 'id': res['id'], 'donor_id': did})
+        m = re.match(r'/api/bq/tx/(\d+)/fix$', self.path)
+        if m:
+            # ✎ מצב "סודר" ידני לחיוב שנדחה: auto (לפי הסכום) / no / yes / partial
+            st = str(b.get('state') or 'auto')
+            if st not in ('auto', 'no', 'yes', 'partial'):
+                return self._send(200, {'ok': False, 'error': 'מצב לא מוכר'})
+            amt = round(_amt2(b.get('amount')), 2) if st == 'partial' else None
+            if st == 'partial' and not amt:
+                return self._send(200, {'ok': False, 'error': 'כמה נגבה בסוף?'})
+            con = db()
+            con.execute("UPDATE bq_tx SET fix_state=?, fix_amt=?, fix_note=? WHERE id=?",
+                        ('' if st == 'auto' else st, amt, str(b.get('note') or '').strip()[:200], int(m.group(1))))
+            con.commit(); con.close()
+            bump_data()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/bq/tx/(\d+)/refund$', self.path)
         if m:
             # ↩️ מאיר: "אם אני רוצה לבטל חיוב של מישהו שעשיתי בטעות או להחזיר לו חלק מהכסף — שאוכל
@@ -21772,6 +21788,28 @@ def bq_fixed_map(con, bad_rows):
     return out
 
 
+def bq_fix_annotate(con, rows):
+    """לכל חיוב שנדחה ברשימה: fix = {state: open/fixed/partial, ...} — אוטומטי לפי סכום, או מה
+    שמאיר קבע ידנית (✎). מאיר: "אם אני שם לב שכתוב סודר והאמת שלא סודר… עיפרון לתקן"."""
+    import banquest as _bq
+    bad = [r for r in rows if (r.get('status') or '') in _bq.BAD_ST]
+    auto = bq_fixed_map(con, [r for r in bad if not (r.get('fix_state') or '')])
+    for r in bad:
+        st = (r.get('fix_state') or '').strip()
+        if st == 'no':
+            r['fix'] = {'state': 'open', 'manual': 1, 'note': r.get('fix_note') or ''}
+        elif st == 'yes':
+            r['fix'] = {'state': 'fixed', 'manual': 1, 'note': r.get('fix_note') or ''}
+        elif st == 'partial':
+            r['fix'] = {'state': 'partial', 'manual': 1, 'got': r.get('fix_amt') or 0, 'note': r.get('fix_note') or ''}
+        elif r['id'] in auto:
+            h = auto[r['id']]
+            r['fix'] = {'state': 'fixed', 'manual': 0, 'at': h['created'], 'amount': h['amount'], 'ref': h['ref'] or h['id']}
+        else:
+            r['fix'] = {'state': 'open', 'manual': 0}
+    return rows
+
+
 def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
     w, args = [], []
     if kind == 'bad':
@@ -21783,7 +21821,7 @@ def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
         w.append("(t.name LIKE ? OR t.email LIKE ? OR t.card LIKE ? OR CAST(t.amount AS TEXT) LIKE ? OR d.last LIKE ? OR d.english LIKE ?)")
         args += ['%' + q + '%'] * 6
     sql = ("SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.customer_id,"
-           "t.email,t.name,t.card,t.donor_id,t.posted,COALESCE(t.refunded,0) refunded,d.last dl,d.first dfi,"
+           "t.email,t.name,t.card,t.donor_id,t.posted,COALESCE(t.refunded,0) refunded,t.fix_state,t.fix_amt,t.fix_note,d.last dl,d.first dfi,"
            "(SELECT COUNT(*) FROM recon r WHERE r.tid='BQ'||t.ref AND r.processed=1) AS in_card "
            "FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id" + (" WHERE " + " AND ".join(w) if w else '') +
            " ORDER BY t.created DESC LIMIT ?")
