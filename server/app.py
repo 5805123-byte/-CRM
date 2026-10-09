@@ -17169,7 +17169,7 @@ class H(BaseHTTPRequestHandler):
             if b.get('date') and len(str(b['date'])) > 7:
                 from receipt_us import iso_day as _isod
                 b['date'] = _isod(b['date']) or b['date']      # 2026-9-9 / 9.9.2026 ← 2026-09-09
-            for k in ('date','amount','category','method','note','cur','eq','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked','parnes_id'):
+            for k in ('date','amount','category','method','note','cur','eq','purpose_en','prev_year','prev_note','fb_channel','fb_date','fb_followup','fb_note','paid','thanked','parnes_id'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # ברגע שנקבע ייעוד — ההערה "לא סווג — לבדוק עבור מה" כבר לא נכונה
             if (b.get('category') or '').strip() and 'note' not in b:

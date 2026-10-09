@@ -4116,7 +4116,11 @@ function monthLedger(d,thruYM){
   if(!first)first=yr+'-01';
   // מה נכנס בכל חודש — בלי החלק שסגר חוב של שנה קודמת
   const got={}, unconv=[];
-  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);if(m.length!==7)return;
+  // מאיר: "זה סופר את מה שהוא הכניס לסוכות, וציינתי שזה לסוכות תשפ"ז" — תרומה לקמפיין היא כסף
+  // נפרד ולא נספרת מול ההתחייבות החודשית (אלא אם הקמפיין עצמו הוא אחת משורות ההתחייבות)
+  const rowCats=new Set(rows.map(r=>String(r.what||'').trim()));
+  const sepCat=x=>{const c=String(x.category||'').trim();return !!c&&!rowCats.has(c)&&campIsReal(c);};
+  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);if(m.length!==7||sepCat(x))return;
     const a=donIn(x,d);
     if(a===null){if(m>=first)unconv.push(x);return;}        // במטבע אחר, בלי שווה ערך — לא נספר
     got[m]=(got[m]||0)+a-amtNum(x.prev_year);});
@@ -5185,6 +5189,11 @@ function cardDetails(d,body){
       // שסגר את החוב הישן, ולא סכום שחוזר בכל חודש
       const prevI=document.getElementById('dn_prev');
       let prevLeft=prevI?amtNum(prevI.value):0;
+      const same=dates.length===1?await campDupAsk(d,cat):null;
+      if(same){
+        const upd={amount:amt,category:cat,method,date:dates[0],note:note||same.note||'',cur:dcur||same.cur||'',paid:1};
+        await api('PUT','/api/donation/'+same.id,upd);Object.assign(same,upd);made++;dates.length=0;
+      }
       for(const dt of dates){
         const py=prevLeft>0.5?String(Math.min(prevLeft,amtNum(amt))):'';
         if(py)prevLeft-=amtNum(py);
@@ -12677,6 +12686,16 @@ async function renderCommJobs(){
     if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
     if(a==='done')toast('✔ בוצע');jobEdit=0;CMJOBS=null;renderCommJobs();});
 }
+// מאיר: "שזה לא יירשם כפול ברשימת סוכות תשפ"ז, כי שם כבר כתבתי נגבה" — תרומה לקמפיין, כשכבר
+// רשומה לאותו תורם תרומה לאותו קמפיין: אותה תרומה (מעדכנים את הרישום) או תרומה נוספת?
+async function campDupAsk(d,cat){cat=String(cat||'').trim();
+  if(!d||!cat||!campIsReal(cat))return null;
+  const ex=(d.donations||[]).filter(x=>String(x.category||'').trim()===cat);
+  if(!ex.length)return null;
+  const nm=((d.last||'')+' '+(d.first||'')).trim(), dc=curSym(d);
+  const same=await uiConfirm('כבר רשום אצל '+nm+' ל"'+cat+'": '+ex.map(x=>donCur(x,dc)+Math.round(amtNum(x.amount)).toLocaleString('en-US')+(x.date?' ('+rcDate(x.date)+')':'')).join(', ')
+    +'.\n\nזו אותה תרומה — רק לעדכן את הרישום הקיים (סכום, מטבע, תאריך)?\nאו תרומה נוספת לקמפיין?','🔁 אותה תרומה — לעדכן','➕ תרומה נוספת');
+  return same?ex[ex.length-1]:null;}
 // ---- 💵 כל התרומות לפי תאריך ----
 // מאיר: "איפה כתוב כל התרומות שנכנסו לפי סדר התאריכים, של בנק ווסט ואוטרייז וצ'קים וזל וצ'ייס,
 // כל מה שהכנסנו ידנית ולא ידנית… ואפשרות לשנות את זה שם אם זה ידני, לא מהאשראי שעבר פה אצלנו".
@@ -12753,7 +12772,8 @@ function renderGifts(){
     g('gfn_ok').onclick=async()=>{const did=bqPickDonor(wh.value);if(!did){toast('בחר תורם מהרשימה');wh.focus();return;}
       const amt=amtNum(g('gfn_amt').value);if(!amt){toast('חסר סכום');g('gfn_amt').focus();return;}
       const d=DB.find(x=>x.id==did), body={donor_id:did,date:g('gfn_date').value||todayStr(),amount:String(amt),cur:g('gfn_cur').value,category:g('gfn_cat').value.replace('__new__',''),method:g('gfn_meth').value.trim(),note:g('gfn_note').value.trim(),paid:1};
-      const r=await api('POST','/api/donation',body);if(!r||!r.ok){await uiAlert('לא נשמר');return;}
+      const same=await campDupAsk(d,body.category);
+      const r=same?await api('PUT','/api/donation/'+same.id,body):await api('POST','/api/donation',body);if(!r||!r.ok){await uiAlert('לא נשמר');return;}
       toast('💵 נרשם ✓ — גם בכרטיס של '+((d.last||'')+' '+(d.first||'')).trim());gfNew=false;await load();render();};}
   view.querySelectorAll('[data-gfa]').forEach(b=>b.onclick=async()=>{const a=b.dataset.gfa,id=+b.dataset.id;
     if(a==='edit'){gfEdit=id;render();return;} if(a==='cancel'){gfEdit=0;render();return;}
@@ -14471,9 +14491,15 @@ function renderReceipts(){
     if(!await uiConfirm('להפיק קבלה על '+(rcKind==='il'?'₪':'$')+amt+(sendIt?' ולשלוח אותה במייל לתורם':' (בלי שליחה במייל)')+'?'))return;
     ok.disabled=true; toast('שומר ומפיק…');
     const pen=document.getElementById('rc_pen'), eqi=document.getElementById('rc_eq');
-    const r=await api('POST','/api/receipts/new',{donor_id:rcDonor,kind:rcKind,amount:amt,date:document.getElementById('rc_date').value,send:sendIt?1:0,
+    const rd=DB.find(x=>x.id==rcDonor), same=await campDupAsk(rd,pur);
+    const nb={donor_id:rcDonor,kind:rcKind,amount:amt,date:document.getElementById('rc_date').value,send:sendIt?1:0,
       method:document.getElementById('rc_meth').value.trim(),purpose:pur,note:document.getElementById('rc_note').value.trim(),
-      purpose_en:pen?(pen.value.trim()||pen.placeholder):'',eq:eqi?eqi.value.trim():''});
+      purpose_en:pen?(pen.value.trim()||pen.placeholder):'',eq:eqi?eqi.value.trim():''};
+    let r;
+    if(same){   // אותה תרומה שכבר נרשמה בקמפיין — מעדכנים אותה ומפיקים עליה את הקבלה, בלי שורה שנייה
+      await api('PUT','/api/donation/'+same.id,{amount:String(amtNum(amt)),cur:rcKind==='il'?'₪':'$',date:nb.date,method:nb.method,note:nb.note||same.note||'',category:pur,eq:nb.eq,purpose_en:nb.purpose_en,paid:1});
+      r=await api('POST','/api/receipts/issue',{donation_id:same.id,kind:rcKind,send:nb.send});
+    }else r=await api('POST','/api/receipts/new',nb);
     if(r&&r.ok&&pur&&!(CAMPAIGNS||[]).includes(pur)&&!RCATS.includes(pur)&&pv==='__new__'){api('POST','/api/campaigns',{name:pur});CAMPAIGNS.unshift(pur);}
     ok.disabled=false;
     if(!r||!r.ok){await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return;}
