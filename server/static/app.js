@@ -787,7 +787,7 @@ function putLog(d,c){
   if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
 }
 function checkReminders(){
-  if(ROLE==='comm'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
+  if(ROLE==='comm'||ROLE==='gabbai'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
       if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
       ban.textContent='🔔 '+due.length+' תזכורות קהילה ממתינות — לחץ לטיפול';ban.classList.add('show');ban.onclick=()=>openCmRems();});return;}
   const due=dueTasks(),up=upcomingReminders(),ban=document.getElementById('rembanner');
@@ -800,7 +800,7 @@ function checkReminders(){
   if(fresh.length){remNotify(fresh);openRemPopup();return;}
   if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
 }
-setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm')checkReminders();}catch(e){}},60*1000);
+setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm'||ROLE==='gabbai')checkReminders();}catch(e){}},60*1000);
 function openRemPopup(){
   const due=dueTasks(),up=upcomingReminders(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
   if(!due.length&&!up.length){remov.classList.remove('show');return;}
@@ -1229,10 +1229,12 @@ function netInit(){
 // עם סיסמה נפרדת". הסיסמאות ב-Render (CRM_PASS / CRM_PASS_COMM). השרת מחזיר 401 — מסך כניסה.
 let ROLE='admin', AUTH_ON=false, _loginShown=false;
 // הקישורים המיוחדים — /kehila (הגבאי) ו-/parnes (פרנס יום וקוויטל). כל קישור מבקש את הסיסמה שלו.
-const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':'admin');
-const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',admin:'/'};
-const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel']};
-const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל'};
+// מאיר: "בשביל הגבאים שייפתח להם הדף של הקהילה ושל פרנס יום… באותה סיסמא" — /gabbai
+const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':(location.pathname==='/gabbai'?'gabbai':'admin'));
+const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
+const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel']};
+const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};
+const ROLE_ONLY={comm:'הקהילה',parnes:'פרנס יום והקוויטל',gabbai:'הקהילה, פרנס יום והקוויטל'};
 function showLogin(msg){
   if(_loginShown)return; _loginShown=true;
   const o=document.createElement('div'); o.id='loginov'; o.className='loginov';
@@ -1279,7 +1281,7 @@ async function api(m,u,b){
   // נשמר בתור עד שהחיבור יחזור — המסך ממשיך כרגיל
   if(r.headers.get('X-KC-Queued')==='1'&&!OFFLINE){OFFLINE=true;netPaint();}
   if(r.status===401){showLogin();}
-  if(r.status===403){toast(ROLE==='parnes'?'הסיסמה הזו פותחת רק את פרנס יום והקוויטל':'הסיסמה הזו פותחת רק את הקהילה');}
+  if(r.status===403){toast('הסיסמה הזו פותחת רק את '+(ROLE_ONLY[ROLE]||'חלק מהמערכת'));}
   return r.json();
 }
 function isAudioFile(f){return (f.mime||'').indexOf('audio')>=0||/\.(ogg|opus|m4a|mp3|wav|aac|amr|webm)$/i.test(f.name||'');}
@@ -1529,7 +1531,7 @@ async function load(){
       _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
   }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }
   if(!d)return;
-  if(d.role==='comm'||d.role==='parnes'){ROLE=d.role;AUTH_ON=true;}
+  if(d.role==='comm'||d.role==='parnes'||d.role==='gabbai'){ROLE=d.role;AUTH_ON=true;}
   netPaint();
   DB = d.donors; MAILNAMES = d.mail_names || null; UNLINKED = d.unlinked_prayers || []; GTASKS = d.general_tasks || []; CAMPAIGNS = d.campaigns || []; CAMPFLAGS = d.campaign_flags || {}; BUILDING_ITEMS = d.building_items || []; TASKKINDS_C = d.task_kinds || []; CHAN_C = d.pay_channels || []; CLK_C = d.contact_kinds || []; _NMIDX = null; HEBYEAR = hq(d.heb_year) || ''; HEBTODAY = hq(d.heb_today) || '';
   NOTDUPE = new Set((d.not_dupes||[]).map(p=>ndKey(p[0],p[1])));
@@ -2697,7 +2699,7 @@ function openDonor(d,startTab){
     ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}
     restoreScroll();};
   // העובד של פרנס יום וקוויטל — בכרטיס רק הראשי (ימי הפרנס) והקוויטל; פרטים, קשר ומשימות לא
-  if(ROLE==='parnes'){sheet.querySelectorAll('.ctab').forEach(b=>{if(!['details','kvittel'].includes(b.dataset.c))b.remove();});if(!['details','kvittel'].includes(cardTab))cardTab='details';}
+  if(ROLE==='parnes'||ROLE==='gabbai'){sheet.querySelectorAll('.ctab').forEach(b=>{if(!['details','kvittel'].includes(b.dataset.c))b.remove();});if(!['details','kvittel'].includes(cardTab))cardTab='details';}
   sheet.querySelectorAll('.ctab').forEach(b=>b.onclick=async()=>{await flushPrayers();cardTab=b.dataset.c;renderCard(d);});
   const izh=document.getElementById('izHeadLink');if(izh)izh.onclick=()=>{cardTab='details';renderCard(d);};
   renderCard(d);
