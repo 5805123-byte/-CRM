@@ -16635,7 +16635,8 @@ class H(BaseHTTPRequestHandler):
                         'hist_from': BQ_HIST_FROM,
                         'n_active': con.execute("SELECT COUNT(*) FROM bq_sched WHERE active=1").fetchone()[0],
                         'month_sum': con.execute("SELECT COALESCE(SUM(amount),0) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s) AND COALESCE(type,'') IN ('','charge')" % okst, (mon,)).fetchone()[0],
-                        'month_bad': con.execute("SELECT COUNT(*) FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,)).fetchone()[0],
+                        'month_bad': (lambda br: len(br) - len(bq_fixed_map(con, br)))([dict(r) for r in con.execute(
+                            "SELECT id,created,amount,customer_id,donor_id FROM bq_tx WHERE SUBSTR(created,1,7)=? AND status IN (%s)" % badst, (mon,))]),
                         'n_tx': con.execute("SELECT COUNT(*) FROM bq_tx").fetchone()[0],
                         'token_key': _bq.token_key(), 'token_js': _bq.token_js()}
                 # 📅 היום ואתמול — לפי שעון בנק ווסט
@@ -16659,6 +16660,14 @@ class H(BaseHTTPRequestHandler):
                         rows = [r for r in rows if qq.lower() in ' '.join(str(r.get(k) or '') for k in ('donor_name', 'bq_name', 'title', 'for_cat', 'for_note', 'last4', 'amount')).lower()]
                 else:
                     rows = bq_tx_rows(con, 'bad' if kind == 'bad' else 'hist', q=qq)
+                    if kind == 'bad':
+                        fx = bq_fixed_map(con, rows)
+                        for r in rows:
+                            h = fx.get(r['id'])
+                            if h:
+                                r.update(fixed_at=h['created'], fixed_amount=h['amount'], fixed_ref=h['ref'] or h['id'])
+                        # מה שעדיין לא סודר — למעלה; מה שעבר בסוף — למטה
+                        rows.sort(key=lambda r: 1 if r.get('fixed_at') else 0)     # יציב — בתוך כל קבוצה נשאר מהחדש לישן
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
@@ -21726,6 +21735,34 @@ def bq_days(con, d1, d2):
     for a in list(days.values()) + [tot]:
         a['sum'] = round(a['sum'], 2); a['bad_sum'] = round(a['bad_sum'], 2)
     return {'rows': rows, 'days': days, 'total': tot}
+
+
+def bq_fixed_map(con, bad_rows):
+    """מאיר: "אם החיוב שלו בסוף כן עבר בחודש הזה — שאראה את זה בחלונית שכתוב נדחה… תלך לפי
+    הסכום". לכל חיוב שנדחה: חיוב שעבר אחריו (עד 45 יום), לאותו לקוח / תורם, באותו סכום."""
+    import banquest as _bq
+    out = {}
+    okst = ','.join("'%s'" % x for x in _bq.OK_ST)
+    for r in bad_rows:
+        if not r.get('created'):
+            continue
+        try:
+            hi = (datetime.date.fromisoformat(str(r['created'])[:10]) + datetime.timedelta(days=45)).isoformat() + ' 99'
+        except ValueError:
+            continue
+        who, args = [], []
+        if r.get('customer_id'):
+            who.append('customer_id=?'); args.append(r['customer_id'])
+        if r.get('donor_id'):
+            who.append('donor_id=?'); args.append(r['donor_id'])
+        if not who:
+            continue
+        hit = con.execute("SELECT id,ref,created,amount FROM bq_tx WHERE (%s) AND status IN (%s) AND COALESCE(type,'') IN ('','charge') "
+                          "AND ROUND(amount,2)=ROUND(?,2) AND created>? AND created<=? ORDER BY created LIMIT 1" % (' OR '.join(who), okst),
+                          args + [r.get('amount') or 0, r['created'], hi]).fetchone()
+        if hit:
+            out[r['id']] = dict(hit)
+    return out
 
 
 def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):

@@ -6455,14 +6455,16 @@ function bqRefBtn(t,who){const s=BQ_ST[t.status]||['','off'],left=(+t.amount||0)
   if(s[1]!=='ok'||!['','charge'].includes(t.type||'')||left<=0.005)return done;
   return done+` <button class="btn sm ghost bqrefb" data-tx="${t.id}" data-left="${left.toFixed(2)}" data-amt="${esc(t.amount)}" data-st="${esc(t.status)}" data-who="${esc(who||t.donor_name||t.name||'')}" data-card="${esc(t.card||'')}" data-did="${t.donor_id||''}" title="ביטול החיוב או החזר של חלק ממנו לכרטיס">↩️ ביטול / החזר</button>`;}
 async function bqHistLoad(sid){bqHist[sid]={loading:true};renderBQ(false);const h=await api('GET','/api/bq/sched/'+sid+'/history');bqHist[sid]=(h&&h.ok)?h:{rows:[],error:(h&&h.error)||''};renderBQ(false);}
+const bqLocalDate=s=>String(s||'').slice(0,10);
 function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?','off'], bad=BQ_BAD.includes(r.status);
-  const ok=s[1]==='ok', who=r.donor_name||r.name||'?';
-  return `<div class="bqrow ${op?'op':''}"><button class="bqrh" data-op="t${r.id}">
-      <span class="bqdot ${s[1]}"></span>
+  const ok=s[1]==='ok', who=r.donor_name||r.name||'?', fixed=bad&&r.fixed_at;
+  return `<div class="bqrow ${op?'op':''} ${fixed?'fixed':''}"><button class="bqrh" data-op="t${r.id}">
+      <span class="bqdot ${fixed?'ok':s[1]}"></span>
       <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך</small>'}
         <span class="bqfor">${esc(bqDate(r.created))} · ${esc(r.card||'')}${r.description?(' · '+esc(r.description)):''}</span>
-        ${bad&&r.error?`<span class="bqwhy">${esc(r.error)}</span>`:''}</span>
-      <span class="bqamt"><b>${bqMoney(r.amount)}</b><small class="bqst ${s[1]}">${esc(s[0])}${ok?(r.in_card?' · ✓ בכרטיס':' · ⚠️ לא בכרטיס'):''}</small></span></button>
+        ${bad&&r.error?`<span class="bqwhy">${esc(r.error)}</span>`:''}
+        ${fixed?`<span class="bqfixed">✅ בסוף חויב בהצלחה ב-${esc(bqDate(bqLocalDate(r.fixed_at)))} · ${bqMoney(r.fixed_amount)} — מסודר</span>`:''}</span>
+      <span class="bqamt"><b>${bqMoney(r.amount)}</b><small class="bqst ${fixed?'ok':s[1]}">${fixed?'סודר':esc(s[0])}${ok?(r.in_card?' · ✓ בכרטיס':' · ⚠️ לא בכרטיס'):''}</small></span></button>
     ${op?`<div class="bqrb"><div class="hintxt">עסקה ${esc(r.ref||r.id)} · ${esc(r.created||'')}${r.email?(' · '+esc(r.email)):''}</div>
       ${ok&&!r.in_card?`<div class="bq2"><label class="fld"><span>👤 תורם</span><input id="bqt_donor" list="bq_dl" value="${esc(r.donor_name||'')}" placeholder="הקלד שם תורם…"></label>
         <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
