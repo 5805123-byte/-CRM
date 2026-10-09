@@ -551,9 +551,12 @@ def ensure_schema():
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN n_reminded INTEGER DEFAULT 0")
     except Exception: pass
     # מאיר: "שהגבאי יוכל לסמן ששולם או חלקית, ודרך מה, והערות" — ואיזו שעה זה בוצע (closed_at / updated)
-    for col in ('paid_via', 'paid_note'):
+    for col in ('paid_via', 'paid_note', 'name', 'phone'):     # name/phone — שורה שעוד לא שויכה לחבר קהילה
         try: con.execute(f"ALTER TABLE cm_debt ADD COLUMN {col} TEXT")
         except Exception: pass
+    # מאיר: "אם הוא חד פעמי ולא בקהילה — שלא יתווסף לקהילה, אבל ברשימה הוא חייב להיות"
+    try: con.execute("ALTER TABLE cm_debt ADD COLUMN once INTEGER DEFAULT 0")
+    except Exception: pass
     # "עבור מה" שהגבאי הוסיף לתשלום בנדרים פלוס (רשות) — לא נוגע במה שבנדרים
     try: con.execute("ALTER TABLE nd_tx ADD COLUMN for_local TEXT")
     except Exception: pass
@@ -12960,6 +12963,26 @@ def member_recipients(con, ids):
     return out, skip
 
 
+def cm_name_cands(con, name, n=3):
+    """חברי קהילה ששמם דומה (טעות איות, סדר הפוך, שם פרטי חסר) — להצעה "האם זה…?"."""
+    import difflib
+    w = ' '.join(_nd_toks(name))
+    if not w:
+        return []
+    sc = []
+    for m in con.execute("SELECT id,last,first FROM members WHERE COALESCE(active,1)=1"):
+        full = ' '.join(_nd_toks((m['last'] or '') + ' ' + (m['first'] or '')))
+        rev = ' '.join(_nd_toks((m['first'] or '') + ' ' + (m['last'] or '')))
+        last = ' '.join(_nd_toks(m['last'] or ''))
+        r = max(difflib.SequenceMatcher(None, w, full).ratio(), difflib.SequenceMatcher(None, w, rev).ratio(),
+                # רק שם משפחה ברשימה (קירשבוים) — משווים לשם המשפחה שלו
+                0.95 * difflib.SequenceMatcher(None, w, last).ratio() if last and ' ' not in w else 0)
+        if r >= 0.72:
+            sc.append((r, m['id'], ((m['last'] or '') + ' ' + (m['first'] or '')).strip()))
+    sc.sort(reverse=True)
+    return [{'id': i, 'name': nm} for _r, i, nm in sc[:n]]
+
+
 def merge_members(con, keep_id, drop_id):
     """מיזוג שני כרטיסים בקהילה לאחד. מאיר: "שייר רפאל זה שר רפאל. תמזג אותם."
     הכרטיס שנשאר מקבל כל מה שחסר לו מהשני (מייל, טלפון, כתובת, מקום, הערות),
@@ -12990,8 +13013,15 @@ def merge_members(con, keep_id, drop_id):
     con.execute("UPDATE members SET %s, updated=? WHERE id=?" % ', '.join('%s=?' % f for f in sets),
                 list(sets.values()) + [now_iso(), keep_id])
     con.execute("UPDATE member_log SET member_id=? WHERE member_id=?", (keep_id, drop_id))
+    # כל מה שקשור לכפול עובר לכרטיס שנשאר — חובות, תרומות, נדרים פלוס, תזכורות, קבלות
+    for t in ('mail_queue', 'cm_debt', 'cm_don', 'cm_task', 'nd_tx', 'nd_keva', 'nd_torem', 'nd_map', 'nd_err', 'nd_charge'):
+        try:
+            con.execute("UPDATE %s SET member_id=? WHERE member_id=?" % t, (keep_id, drop_id))
+        except Exception:
+            pass
     try:
-        con.execute("UPDATE mail_queue SET member_id=? WHERE member_id=?", (keep_id, drop_id))
+        con.execute("UPDATE receipt_docs SET note='member:%d'||SUBSTR(note,%d) WHERE note='member:%d' OR note LIKE 'member:%d %%'"
+                    % (keep_id, len('member:%d' % drop_id) + 1, drop_id, drop_id))
     except Exception:
         pass
     con.execute("DELETE FROM members WHERE id=?", (drop_id,))
@@ -16589,6 +16619,13 @@ class H(BaseHTTPRequestHandler):
                 rows = [dict(r) for r in con.execute(
                     "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" + w +
                     " ORDER BY d.status, COALESCE(NULLIF(d.due,''),d.created) DESC, d.id DESC", (() if st == 'all' else (st,)))]
+                cc = {}
+                for r in rows:
+                    # לא שויך ולא חד פעמי — "האם זה…?" לפי דמיון השם (קירשבוים → קירשנבוים)
+                    if not r.get('member_id') and not r.get('once') and r.get('status') == 'open' and (r.get('name') or '').strip():
+                        if r['name'] not in cc:
+                            cc[r['name']] = cm_name_cands(con, r['name'])
+                        r['cands'] = cc[r['name']]
                 tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
                 reqs = ym_req_rows(con, st)
             finally:
@@ -19355,6 +19392,38 @@ class H(BaseHTTPRequestHandler):
                         '➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', str(b.get('title') or '').strip() or '—', a))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/cm/debts/link':
+            # 🔗 שורות שנכנסו בלי חבר קהילה — לשייך לחבר קיים (גם כשהשם נכתב בטעות) או לפתוח חבר חדש
+            ids = [int(x) for x in (b.get('ids') or []) if str(x).isdigit()]
+            con = db()
+            try:
+                if 'once' in b:
+                    # 👤 חד פעמי — נשאר ברשימה בשם שלו, בלי לפתוח לו כרטיס בקהילה
+                    if ids:
+                        con.execute("UPDATE cm_debt SET once=?, updated=? WHERE id IN (%s)" % ','.join('?' * len(ids)),
+                                    [1 if b.get('once') else 0, now_iso()] + ids)
+                        con.commit()
+                    return self._send(200, {'ok': True})
+                mid = int(b.get('member_id') or 0)
+                if not mid and b.get('new'):
+                    nw = b['new']
+                    last = str(nw.get('last') or '').strip()[:60]
+                    if not last:
+                        return self._send(200, {'ok': False, 'error': 'חסר שם משפחה'})
+                    mid = con.execute("INSERT INTO members(last,first,phone,category,source,active,created,updated) VALUES(?,?,?,'קהילה','מרשימת חובות',1,?,?)",
+                                      (last, str(nw.get('first') or '').strip()[:60], str(nw.get('phone') or '').strip()[:30], now_iso(), now_iso())).lastrowid
+                if not mid or not ids:
+                    return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה'})
+                ph = ' / '.join(x['phone'] for x in con.execute("SELECT DISTINCT phone FROM cm_debt WHERE id IN (%s) AND COALESCE(phone,'')<>''" % ','.join('?' * len(ids)), ids))
+                con.execute("UPDATE cm_debt SET member_id=?, name='', phone='', once=0, updated=? WHERE id IN (%s)" % ','.join('?' * len(ids)), [mid, now_iso()] + ids)
+                if ph:
+                    m0 = con.execute("SELECT phone FROM members WHERE id=?", (mid,)).fetchone()
+                    if m0 and not (m0['phone'] or '').strip():
+                        con.execute("UPDATE members SET phone=? WHERE id=?", (ph, mid))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'member_id': mid})
         m = re.match(r'/api/cm/debts/(\d+)$', self.path)
         if m:
             did = int(m.group(1)); act = b.get('action')
@@ -19439,21 +19508,24 @@ class H(BaseHTTPRequestHandler):
                     src = 'הדבקה' if (b.get('filename') or '') in ('', 'הדבקה') else 'קובץ'
                     for r in b.get('rows') or []:
                         mid = int(r.get('member_id') or 0); a = round(_amt2(r.get('amount')), 2)
-                        if not mid or a <= 0 or r.get('skip'):
+                        nm_ = str(r.get('name') or '').strip()[:80]; ph_ = str(r.get('phone') or '').strip()[:30]
+                        # מאיר: "גם שורה בלי חבר קהילה תכניס" — נשמרת עם השם, ומשייכים אחר כך (🔗)
+                        if r.get('skip') or (not mid and not (nm_ or ph_)) or a < 0:
                             continue
-                        p = round(min(_amt2(r.get('paid')), a), 2)
+                        p = round(min(_amt2(r.get('paid')), a), 2) if a > 0 else 0
                         via = str(r.get('via') or '').strip()[:60]
-                        done = p >= a - 0.009
+                        done = a > 0 and p >= a - 0.009
                         kind = r.get('kind') if r.get('kind') in ('debt', 'pledge') else 'debt'
                         title = str(r.get('title') or '')[:200]
-                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,closed_at,paid_via) "
-                                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                    (mid, kind, title, a, p, str(r.get('due') or '')[:10], 'paid' if done else 'open', src,
+                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,closed_at,paid_via,name,phone,once) "
+                                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                    (mid or None, kind, title, a, p, str(r.get('due') or '')[:10], 'paid' if done else 'open', src,
                                      str(b.get('filename') or '')[:80], now_iso(), now_iso(),
-                                     r.get('channel') if r.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid),
-                                     now_iso() if done else None, via))
+                                     r.get('channel') if r.get('channel') in ('voice', 'sms', 'email') else (cm_default_channel(con, mid) if mid else 'sms'),
+                                     now_iso() if done else None, via, '' if mid else nm_, '' if mid else ph_,
+                                     0 if mid else (1 if r.get('once') else 0)))
                         did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-                        if p > 0:
+                        if p > 0 and mid:
                             npaid += 1
                             if 'נדרים' not in via:
                                 from receipt_us import iso_day as _isod
@@ -19513,6 +19585,9 @@ class H(BaseHTTPRequestHandler):
                     if r['member_id']:
                         mm = con.execute("SELECT last,first FROM members WHERE id=?", (r['member_id'],)).fetchone()
                         r['member_name'] = ((mm['last'] or '') + ' ' + (mm['first'] or '')).strip() if mm else ''
+                    else:
+                        # מאיר: "יש כאלו שיש טעות באיות" — הצעות לפי דמיון השם
+                        r['cands'] = cm_name_cands(con, r['name'])
                 return self._send(200, {'ok': True, 'rows': rows})
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': 'הקובץ לא נקרא: %s' % str(e)[:150]})
@@ -22169,7 +22244,8 @@ def _cm_rows_from_table(rows):
             ti = ' '.join(rest[1:]) if len(rest) > 1 else ''
             du = ki = ''
         a = _amt2(am)
-        if not (nm or ph) or a <= 0:
+        # מאיר: "גם כשאין סכום — תשאיר ריק, אבל תכניס, שנוכל למלא בהמשך" (בקובץ עם כותרות)
+        if not (nm or ph) or (a <= 0 and (not has_head or re.search(r'\d', am or ''))):
             continue
         kind = 'pledge' if re.search(r'התחייב|נדר|עלי', ki + ti) else 'debt'
         # שולם: סכום, או "כן / ✓ / שולם" = הכל

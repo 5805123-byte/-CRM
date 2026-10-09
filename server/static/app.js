@@ -13030,12 +13030,12 @@ function cdMailNow(g){const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m||!mHasMai
 function cdItemHTML(d){if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['חוב',''],o=cdOpen(d);
       return `<div class="cdrow ${d.status}">
         ${d.status==='open'?`<input type="checkbox" class="cdck" data-id="${d.id}" ${cdSel.has(d.id)?'checked':''}>`:'<span></span>'}
-        <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(((d.ml||'')+' '+(d.mf||'')).trim()||'—')}</b> <span class="cdk ${k[1]}">${k[0]}</span>
+        <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(((d.ml||'')+' '+(d.mf||'')).trim()||d.name||'—')}</b>${d.member_id?'':d.once?' <small class="cdonce">👤 חד פעמי</small>':' <small class="bqno">לא שויך</small>'} <span class="cdk ${k[1]}">${k[0]}</span>
           <span class="cdtitle">${esc(d.title||'')}</span>
           <small class="cdmeta">${d.due?esc(d.due)+' · ':''}${esc(d.source||'')}${d.note?(' · '+esc(d.note)):''}${d.mphone?` · <span dir="ltr">${esc(d.mphone)}</span>`:''}</small>
           ${d.reminded_at?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(d.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[d.reminded_via]||d.reminded_via||'')}${+d.n_reminded>1?' (×'+d.n_reminded+')':''}</small>`:''}
           ${d.status==='open'?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${(d.channel||'sms')===k?'on':''}" data-cdch="${k}" data-id="${d.id}" title="${l}${k==='email'&&!d.memail?' — אין מייל':''}${k==='sms'&&!ymMobile(ymPhone(d.mphone))?' — אין נייד':''}">${i}</button>`).join('')}</span>`:''}</div>
-        <div class="cdamt"><b>${cdMoney(d.status==='open'?o:d.amount)}</b>${d.paid>0&&d.status==='open'?`<small>שולם ${cdMoney(d.paid)} מ-${cdMoney(d.amount)}</small>`:''}
+        <div class="cdamt">${!(+d.amount)?`<button class="btn sm ghost cdnoamt" data-cda="edit" data-id="${d.id}" title="להכניס סכום">✎ סכום חסר</button>`:`<b>${cdMoney(d.status==='open'?o:d.amount)}</b>`}${d.paid>0&&d.status==='open'?`<small>שולם ${cdMoney(d.paid)} מ-${cdMoney(d.amount)}</small>`:''}
           ${d.status==='paid'?'<small class="ndok">✓ שולם</small>':(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
         <div class="bqacts">${d.status==='open'?`<button class="btn sm ghost" data-cda="paid" data-id="${d.id}" title="שולם במלואו">✓</button>
           <button class="btn sm ghost" data-cda="partial" data-id="${d.id}" title="תשלום חלקי">½</button>
@@ -13047,7 +13047,7 @@ let CD_GROUPS=new Map();
 function cdGroupsHTML(rows){
   const G=new Map();CD_GROUPS=G;
   rows.forEach(d=>{const key=d.member_id?('m'+d.member_id):('p'+(d.mphone||d.phone||d.name||d.id));
-    if(!G.has(key))G.set(key,{key,mid:d.member_id||0,name:((d.ml||'')+' '+(d.mf||'')).trim()||d.name||'—',phone:d.mphone||d.phone||'',email:d.memail||'',items:[]});
+    if(!G.has(key))G.set(key,{key,mid:d.member_id||0,name:((d.ml||'')+' '+(d.mf||'')).trim()||d.name||'—',phone:d.mphone||d.phone||'',email:d.memail||'',cands:d.cands||[],items:[]});
     G.get(key).items.push(d);});
   if(!G.size)return '<div class="empty">אין כאן חובות</div>';
   return [...G.values()].map(g=>{
@@ -13064,6 +13064,8 @@ function cdGroupsHTML(rows){
           ${deb.length?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${ch===k?'on':''}" data-cdgch="${k}" data-ids="${deb.map(d=>d.id).join(',')}" title="${l}${k==='email'&&!g.email?' — אין מייל':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(tot)}</b>${op.length>1?`<small>${op.length} פריטים</small>`:''}</div>
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
+        ${!g.mid&&deb.length?(deb.every(d=>+d.once)?`<span class="cdnow"><small class="cdonce" title="נשאר ברשימה, בלי כרטיס בקהילה">👤 חד פעמי — לא בקהילה</small><button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="בכל זאת לשייך לחבר קיים">🔗</button><button class="btn sm ghost" data-cdonce="0" data-gk="${esc(g.key)}" title="לבטל את הסימון חד פעמי">↩</button></span>`
+          :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="השם נכתב אחרת / בטעות — לשייך לחבר קיים">🔗 שייך לחבר קהילה</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`):''}
         ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו">שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
       <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;}).join('');}
 function cdReqRow(d){
@@ -13087,17 +13089,20 @@ function cdAddHTML(){return `<div class="bqform"><div class="bqfh"><b>➕ חוב
 // מאיר: "להכניס אנשים שכן שילמו על משהו מסוים — במרוכז, ושיירשם בכרטיס שלהם… ושזה יישמר
 // בהיסטוריה וגם בתרומות". mode: 'debt' — חובות / התחייבויות (אפשר עם עמודת "שולם"), 'paid' — כולם שילמו
 function cdImpHTML(){const R=cdImp.rows||[], paid=cdImp.mode==='paid';
-  const okN=R.filter(r=>r.member_id&&!r.skip).length, pn=R.filter(r=>r.member_id&&!r.skip&&(paid||+r.paid>0)).length;
+  const okN=R.filter(r=>!r.skip).length, pn=R.filter(r=>r.member_id&&!r.skip&&(paid||+r.paid>0)).length, unl=R.filter(r=>!r.member_id&&!r.skip).length;
   return `<div class="bqform"><div class="bqfh"><b>${paid?'✅ תשלומים במרוכז':'📎 '+esc(cdImp.filename||'הדבקה')} — ${R.length} שורות</b><button class="btn sm ghost" id="cdi_x">✕</button></div>
     ${cdImp.paste?`<textarea id="cdi_txt" rows="6" placeholder="${paid?'שורה לכל תשלום: שם ; סכום ; עבור מה ; איך שולם\nלמשל: כהן משה ; 500 ; חתן תורה תשפ״ז ; מזומן':'שורה לכל חוב: שם ; סכום ; עבור מה (אפשר שורת כותרת: שם;סכום;עבור;שולם;איך שולם)'}"></textarea>
       <div class="bqacts"><button class="btn sm" id="cdi_parse">🔍 זהה</button></div>`:''}
     ${R.length?`${paid?'':`<label class="fld" style="max-width:260px"><span>סוג לכל השורות</span><select id="cdi_kind"><option value="">לפי השורה</option><option value="pledge">התחייבות</option><option value="debt">חוב</option></select></label>`}
-      <div class="cdimp">${R.map((r,i)=>`<div class="cdirow ${r.member_id?'':'nom'} ${r.skip?'skip':''}"><span><b>${esc(r.name||r.phone||'')}</b> <small dir="ltr">${esc(r.phone||'')}</small></span>
+      <div class="cdimp">${R.map((r,i)=>`<div class="cdirow ${r.member_id?'':'nom'} ${r.skip?'skip':''}">
+      <span>${r.member_id?`<b title="${esc('ברשימה: '+(r.name||r.phone||''))}">${esc(r.member_name||r.name||'')}</b> <button class="cdichg" data-cdichg="${i}" title="לא הוא? להחליף">✎</button>`
+        :`<b>${esc(r.name||r.phone||'')}</b> <small class="bqno">${r.once?'':'⚠️ לא זוהה'}</small>`} <small dir="ltr">${esc(r.phone||'')}</small></span>
       <span>${cdMoney(r.amount)}${!paid&&+r.paid>0?`<small class="ndok"> · שולם ${cdMoney(r.paid)}${r.via?' '+esc(r.via):''}</small>`:''}${paid&&r.via?` <small>${esc(r.via)}</small>`:''}</span><span class="cdtitle">${esc(r.title||'')}</span>
-      <input list="cd_mdl" data-cdi="${i}" value="${r.member_id?esc((r.member_name||'')+' #'+r.member_id):''}" placeholder="⚠️ לא זוהה — בחר חבר קהילה">
-      <button class="btn sm ghost" data-cdiskip="${i}" title="${r.skip?'להחזיר':'לדלג על השורה'}">${r.skip?'↩':'✕'}</button></div>`).join('')}</div>
+      <button class="btn sm ghost" data-cdiskip="${i}" title="${r.skip?'להחזיר':'לדלג על השורה'}">${r.skip?'↩':'✕'}</button>
+      ${!r.member_id||r._chg?`<span class="cdicand">${!r.member_id&&(r.cands||[]).length?`האם זה: ${r.cands.map(c=>`<button class="btn sm ghost" data-cdicand="${i}" data-mid="${c.id}" data-nm="${esc(c.name)}">${esc(c.name)}</button>`).join('')} · `:''}${!r.member_id?`<button class="btn sm ghost ${r.once?'on':''}" data-cdionce="${i}" title="לא בקהילה — נשמר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי${r.once?' ✓':''}</button> · `:''}<input list="cd_mdl" data-cdi="${i}" value="" placeholder="🔍 חבר אחר…"></span>`:''}
+      ${!(+r.amount)?'<small class="bqno">בלי סכום — ימולא אחר כך</small>':''}</div>`).join('')}</div>
       <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${okN} ${paid?'תשלומים':'שורות'}</button>
-        <span class="hintxt">שורה בלי חבר קהילה לא תישמר.${pn?' '+pn+' ששולמו — נרשמים בכרטיס כתרומה ועוברים להיסטוריה.':''}</span></div>`:''}</div>`;}
+        <span class="hintxt">${unl?unl+' בלי חבר קהילה — נשמרים עם השם; אחר כך אפשר לשייך (🔗), לפתוח חבר חדש (➕), או להשאיר חד פעמי (👤).':''}${pn?' '+pn+' ששולמו — נרשמים בכרטיס כתרומה ועוברים להיסטוריה.':''}</span></div>`:''}</div>`;}
 function cdWire(){const g=id=>document.getElementById(id);
   g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
   const am=g('cd_allm');if(am)am.onclick=()=>{cdMember=0;renderCommDebts();};
@@ -13140,14 +13145,41 @@ function cdWire(){const g=id=>document.getElementById(id);
       const r=await api('POST','/api/cm/debts/import',{text:t});
       if(!r||!r.ok){await uiAlert((r&&r.error)||'לא זוהה');return;}cdImp={filename:'הדבקה',rows:r.rows||[],mode};renderCommDebts();
       if(!(r.rows||[]).length)toast('לא זוהו שורות עם שם וסכום');};
-    view.querySelectorAll('[data-cdi]').forEach(i=>i.onchange=()=>{const r=cdImp.rows[+i.dataset.cdi];r.member_id=cdPick(i.value)||null;});
+    view.querySelectorAll('[data-cdi]').forEach(i=>i.onchange=()=>{const r=cdImp.rows[+i.dataset.cdi],mid=cdPick(i.value);if(!mid)return;
+      const m=(MEMBERS||[]).find(x=>x.id===mid);r.member_id=mid;r.member_name=m?mName(m):i.value;r._chg=false;r.once=false;renderCommDebts();});
+    view.querySelectorAll('[data-cdichg]').forEach(b=>b.onclick=()=>{const r=cdImp.rows[+b.dataset.cdichg];r._chg=!r._chg;renderCommDebts();});
     view.querySelectorAll('[data-cdiskip]').forEach(b=>b.onclick=()=>{const r=cdImp.rows[+b.dataset.cdiskip];r.skip=!r.skip;renderCommDebts();});
+    view.querySelectorAll('[data-cdicand]').forEach(b=>b.onclick=()=>{const r=cdImp.rows[+b.dataset.cdicand];r.member_id=+b.dataset.mid;r.member_name=b.dataset.nm;r.once=false;renderCommDebts();});
+    view.querySelectorAll('[data-cdionce]').forEach(b=>b.onclick=()=>{const r=cdImp.rows[+b.dataset.cdionce];r.once=!r.once;renderCommDebts();});
     const ok=g('cdi_ok');if(ok)ok.onclick=async()=>{const paid=cdImp.mode==='paid',kd=(g('cdi_kind')||{}).value||'';
-      const R=cdImp.rows.filter(r=>r.member_id&&!r.skip).map(r=>Object.assign({},r,paid?{paid:r.amount,kind:'pledge'}:(kd?{kind:kd}:{})));
+      const R=cdImp.rows.filter(r=>!r.skip).map(r=>Object.assign({},r,paid?{paid:r.amount,kind:'pledge'}:(kd?{kind:kd}:{})));
       const np=R.filter(r=>+r.paid>0).length;
       if(!await uiConfirm('לשמור '+R.length+(paid?' תשלומים':' שורות')+'?'+(np?'\n'+np+' ששולמו — יירשמו בכרטיס של כל אחד כתרומה, ויעברו להיסטוריה.':''),'💾 כן','ביטול'))return;
       const r=await api('POST','/api/cm/debts/import',{commit:1,rows:R,filename:cdImp.filename});
       if(r&&r.ok){toast('נשמרו '+r.added+' ✓'+(r.paid?' · '+r.paid+' ששולמו':''));cdImp=null;cdData=null;cdHist=null;CGF=null;renderCommDebts();}else toast('לא נשמר');};}
+  // 🔗 שורות שנכנסו בלי חבר — לשייך לקיים (גם בטעות איות) או לפתוח חבר חדש
+  view.querySelectorAll('[data-cdlink]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdlink);if(!g)return;
+    const ids=g.items.filter(d=>!d._req).map(d=>d.id);
+    const v=await uiPrompt('לאיזה חבר קהילה לשייך את "'+g.name+'"? הקלד שם ובחר מהרשימה','');if(!v)return;
+    let mid=cdPick(v);if(!mid){const hits=(MEMBERS||[]).filter(m=>matchStr(mName(m),v.trim()));if(hits.length===1)mid=hits[0].id;}
+    if(!mid){toast('לא נמצא חבר אחד בשם הזה — נסה שם מדויק יותר');return;}
+    const m=(MEMBERS||[]).find(x=>x.id===mid);
+    if(!await uiConfirm('לשייך את "'+g.name+'" ('+ids.length+' שורות) ל'+mName(m)+'?','🔗 כן, לשייך','ביטול'))return;
+    const r=await api('POST','/api/cm/debts/link',{ids,member_id:mid});if(r&&r.ok){toast('שויך ✓');cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא שויך');});
+  view.querySelectorAll('[data-cdlnk1]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdlnk1);if(!g)return;
+    const ids=g.items.filter(d=>!d._req).map(d=>d.id);
+    if(!await uiConfirm('לשייך את "'+g.name+'" ('+ids.length+' שורות) ל'+b.dataset.nm+'?','🔗 כן, לשייך','ביטול'))return;
+    const r=await api('POST','/api/cm/debts/link',{ids,member_id:+b.dataset.mid});if(r&&r.ok){toast('שויך ✓');cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא שויך');});
+  view.querySelectorAll('[data-cdonce]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
+    const ids=g.items.filter(d=>!d._req).map(d=>d.id);
+    const r=await api('POST','/api/cm/debts/link',{ids,once:+b.dataset.cdonce});
+    if(r&&r.ok){toast(+b.dataset.cdonce?'👤 סומן חד פעמי — נשאר ברשימה, לא נוסף לקהילה':'↩ בוטל הסימון');cdData=null;renderCommDebts();}else toast('לא נשמר');});
+  view.querySelectorAll('[data-cdnew]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdnew);if(!g)return;
+    const ids=g.items.filter(d=>!d._req).map(d=>d.id), parts=String(g.name||'').trim().split(/\s+/);
+    const v=await uiPrompt('פתיחת חבר קהילה חדש — שם משפחה ואז שם פרטי:',parts.join(' '));if(!v||!v.trim())return;
+    const w=v.trim().split(/\s+/);
+    const r=await api('POST','/api/cm/debts/link',{ids,new:{last:w[0],first:w.slice(1).join(' '),phone:g.phone||''}});
+    if(r&&r.ok){toast('➕ נפתח חבר חדש ושויך ✓');await cmLoad(true);cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא נשמר');});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();
