@@ -550,6 +550,13 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN n_reminded INTEGER DEFAULT 0")
     except Exception: pass
+    # מאיר: "שהגבאי יוכל לסמן ששולם או חלקית, ודרך מה, והערות" — ואיזו שעה זה בוצע (closed_at / updated)
+    for col in ('paid_via', 'paid_note'):
+        try: con.execute(f"ALTER TABLE cm_debt ADD COLUMN {col} TEXT")
+        except Exception: pass
+    # "עבור מה" שהגבאי הוסיף לתשלום בנדרים פלוס (רשות) — לא נוגע במה שבנדרים
+    try: con.execute("ALTER TABLE nd_tx ADD COLUMN for_local TEXT")
+    except Exception: pass
     # מאיר: "אם שלחנו הודעה עם סכום והוא שילם — המערכת צריכה להתעדכן שהוא שילם"
     # req_off — בקשת התשלום שבהודעה בוטלה במסך החובות (לא תוצע יותר בטלפון)
     for col, typ in (('paid_amount', 'REAL'), ('paid_at', 'TEXT'), ('paid_via', 'TEXT'), ('req_off', 'TEXT')):
@@ -16733,6 +16740,30 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'לא נמצא'})
+        if self.path.split('?')[0] == '/api/cm/gifts':
+            # 💵 כל התרומות של הקהילה — מאיר: "חלון בקהילה של כל התרומות ביחד מרוכזות, כמו שעשית לי
+            # בתורמים". נדרים פלוס (חד-פעמי, הו"ק, הוראה בנקאית) + תרומות ידניות (מזומן וכו')
+            con = db()
+            try:
+                rows = []
+                for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,"
+                                     "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
+                                     "WHERE COALESCE(t.amount,0)>0 ORDER BY t.iso DESC LIMIT 6000"):
+                    kv = str(t['keva'] or '')
+                    src = 'bank' if kv.startswith('M') else ('hok' if kv and not kv.startswith('-') else 'nd')
+                    rows.append({'src': src, 'id': t['id'], 'date': (t['iso'] or '')[:10], 'time': t['time'] or '', 'amount': t['amount'] or 0,
+                                 'member_id': t['member_id'], 'name': ((t['ml'] or '') + ' ' + (t['mf'] or '')).strip() or (t['name'] or ''),
+                                 'linked': bool(t['member_id']), 'purpose': (t['for_local'] or '').strip() or (t['groupe'] or '').strip(),
+                                 'nd_purpose': t['groupe'] or '', 'note': t['comments'] or '', 'conf': t['conf'] or '',
+                                 'method': {'bank': 'הוראה בנקאית', 'hok': 'הו"ק אשראי', 'nd': 'נדרים פלוס'}[src]})
+                for d in con.execute("SELECT d.*, m.last ml, m.first mf FROM cm_don d LEFT JOIN members m ON m.id=d.member_id ORDER BY d.date DESC, d.id DESC"):
+                    rows.append({'src': 'man', 'id': d['id'], 'date': (d['date'] or '')[:10], 'time': d['created'] or '', 'amount': d['amount'] or 0,
+                                 'member_id': d['member_id'], 'name': ((d['ml'] or '') + ' ' + (d['mf'] or '')).strip(), 'linked': True,
+                                 'purpose': d['purpose'] or '', 'note': d['note'] or '', 'method': d['method'] or 'ידני', 'nd_id': d['nd_id'] or ''})
+                rows.sort(key=lambda r: (r['date'], str(r['time'])), reverse=True)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/cm/ledger':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             mon = (qs.get('month') or [''])[0][:7]
@@ -19328,15 +19359,28 @@ class H(BaseHTTPRequestHandler):
             d = con.execute("SELECT * FROM cm_debt WHERE id=?", (did,)).fetchone()
             if not d:
                 con.close(); return self._send(200, {'ok': False, 'error': 'לא נמצא'})
-            if act == 'paid':
-                con.execute("UPDATE cm_debt SET paid=amount, status='paid', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
-                cm_debt_log(con, d['member_id'], did, '✅ סומן ששולם: %s ₪%g' % (d['title'] or 'חוב', round((d['amount'] or 0) - (d['paid'] or 0), 2)))
-            elif act == 'partial':
-                p = round(_amt2(b.get('amount')), 2)
+            if act in ('paid', 'partial'):
+                # מאיר: "אם הוא שילם דרך מזומן או משהו אחר — שהגבאי יוכל לסמן ששולם או חלקית ודרך מה
+                # והערות". התשלום נכנס גם לכרטיס של החבר (תרומה ידנית), אלא אם שולם בנדרים פלוס —
+                # שם הוא כבר נרשם מהסנכרון
+                left = round((d['amount'] or 0) - (d['paid'] or 0), 2)
+                p = left if act == 'paid' else round(_amt2(b.get('amount')), 2)
+                if p <= 0:
+                    con.close(); return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+                via = str(b.get('via') or '').strip()[:60]
+                note = str(b.get('note') or '').strip()[:300]
                 np_ = round((d['paid'] or 0) + p, 2)
                 done = np_ >= (d['amount'] or 0) - 0.009
-                con.execute("UPDATE cm_debt SET paid=?, status=?, closed_at=?, updated=? WHERE id=?",
-                            (min(np_, d['amount'] or 0), 'paid' if done else 'open', now_iso() if done else None, now_iso(), did))
+                con.execute("UPDATE cm_debt SET paid=?, status=?, closed_at=?, updated=?, paid_via=?, "
+                            "paid_note=CASE WHEN COALESCE(paid_note,'')='' THEN ? ELSE paid_note||' · '||? END WHERE id=?",
+                            (min(np_, d['amount'] or 0), 'paid' if done else 'open', now_iso() if done else None, now_iso(), via,
+                             note, note, did))
+                if via and 'נדרים' not in via and b.get('record', 1) and d['member_id']:
+                    con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
+                                (d['member_id'], today_iso(), p, via, d['title'] or '', (note + ' · ' if note else '') + 'על החוב',
+                                 now_iso(), getattr(self, 'role', '') or ''))
+                cm_debt_log(con, d['member_id'], did, '%s %s ₪%g%s%s' % ('✅ שולם' if done else '½ שולם חלקית', d['title'] or 'חוב', p,
+                                                                       (' · ' + via) if via else '', (' · ' + note) if note else ''))
             elif act == 'cancel':
                 con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=? WHERE id=?", (now_iso(), now_iso(), did))
                 cm_debt_log(con, d['member_id'], did, '✕ בוטל: %s ₪%g' % (d['title'] or 'חוב', d['amount'] or 0))
@@ -19676,6 +19720,29 @@ class H(BaseHTTPRequestHandler):
                 if b.get('action') == 'delete':
                     con.execute("DELETE FROM cm_don WHERE id=?", (d['id'],))
                     cm_debt_log(con, d['member_id'], 'don%d' % d['id'], '🗑️ נמחקה תרומה ₪%g (%s) מ-%s' % (d['amount'] or 0, d['method'] or '', d['date'] or ''))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/cm/gifts/(nd|man)/([\w:\-]+)$', self.path)
+        if m:
+            # עבור מה (רשות) לתשלום בנדרים פלוס; תיקון / מחיקה של תרומה ידנית
+            src, gid = m.group(1), m.group(2)
+            con = db()
+            try:
+                if src == 'nd':
+                    con.execute("UPDATE nd_tx SET for_local=? WHERE id=?", (str(b.get('purpose') or '').strip()[:120], gid))
+                elif b.get('action') == 'delete':
+                    con.execute("DELETE FROM cm_don WHERE id=?", (int(gid),))
+                else:
+                    r = con.execute("SELECT * FROM cm_don WHERE id=?", (int(gid),)).fetchone()
+                    if not r:
+                        return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+                    from receipt_us import iso_day as _isod
+                    con.execute("UPDATE cm_don SET date=?, amount=?, method=?, purpose=?, note=? WHERE id=?",
+                                (_isod(b.get('date')) or r['date'], round(_amt2(b.get('amount', r['amount'])), 2) or r['amount'],
+                                 str(b.get('method', r['method']) or '')[:60], str(b.get('purpose', r['purpose']) or '')[:120],
+                                 str(b.get('note', r['note']) or '')[:300], int(gid)))
                 con.commit()
             finally:
                 con.close()
@@ -22222,15 +22289,16 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
             continue
         new += 1
         auto = t['keva'] and not t['keva'].startswith('-')
-        if a <= 0 or auto or not ph or iso[:10] < cutoff:
+        if a <= 0 or auto or iso[:10] < cutoff:
             continue
         # כבר נרשם מהשלוחה בטלפון (אותו מזהה עסקה) — לא שוב
         if con.execute("SELECT 1 FROM nd_charge WHERE transaction_id=? AND ok=1", (t['id'],)).fetchone():
             continue
-        msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None)
+        msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None) if ph else None
         if msg:
             con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, tid))
             marked += 1
+        # חבר קהילה בלי טלפון ברישום — גם אצלו התשלום סוגר את החוב
         if mid:
             cm_debt_pay(con, mid, a, 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf']))
     return new, marked

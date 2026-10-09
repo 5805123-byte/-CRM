@@ -97,6 +97,7 @@
 .cdgrp{border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:8px;overflow:hidden}
 .cdgh{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;background:var(--ground);border-bottom:1px solid var(--line)}
 .cdgh .cdmain{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center}.cdgh .cdamt b{font-size:1.05rem}
+.cdgh .cdnow{grid-column:2/-1;justify-self:start}
 .cdgitems .cdrow{border:none;border-radius:0;margin:0;border-bottom:1px dashed var(--line);grid-template-columns:minmax(0,1fr) auto;padding:6px 10px}.cdgitems .cdrow:last-child{border-bottom:none}
 .cdgitems .cdrow>span:first-child{display:none}.cdgitems .cdrow .bqacts{grid-column:1/-1;justify-content:flex-start}
 .cdgitems .cdrow>.cdck,.cdgitems .cdrow>input[type=checkbox],.cdgitems .cdname,.cdgitems .cdch,.cdgitems .cdrem,.cdgitems .cdmeta [dir=ltr]{display:none}
@@ -2036,6 +2037,14 @@
   .bqfixed{display:block;color:#2e7d4f;font-weight:bold;font-size:13px}
   .bqfixed.part{color:#b26a00}.bqfixed.no{color:#b8452f}
   .bqfixopts{display:grid;gap:6px;margin:10px 0}
+  .cdhist{margin-top:14px;text-align:center}
+  .cdhistb{background:none;border:0;color:var(--muted,#888);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline}
+  .cdhlist{display:grid;gap:2px;text-align:right;margin-top:6px;opacity:.85}
+  .cdhrow{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:4px 2px;font-size:14px}
+  .cdhd{flex:none;font-size:12px;color:var(--muted,#888);direction:ltr;width:112px}
+  .cdhw{flex:1;min-width:0;display:grid;overflow-wrap:anywhere}.cdhw small{color:var(--muted,#888);font-size:12px}
+  .cdnow{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--muted,#888)}
+  .cdpay{display:grid;gap:8px;margin:10px 0;text-align:right}
   .bqday{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;margin:8px 0;padding:10px 12px;border:1px solid var(--accent);border-radius:12px;background:#f5f3fb;cursor:pointer;font:inherit;font-size:15px;text-align:right}
   .bqday.on{border-width:2px}.bqday small{color:var(--muted,#888)}
   .bqdaybox{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;display:grid;gap:8px}
