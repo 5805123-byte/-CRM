@@ -801,6 +801,8 @@ function checkReminders(){
   if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
 }
 setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm'||ROLE==='gabbai')checkReminders();}catch(e){}},60*1000);
+// מסך שנשאר פתוח — אחרי 48 שעות מבקש כניסה מחדש גם בלי פעולה וגם בלי רשת
+setInterval(()=>{if(authExpired()&&!_loginShown){view.innerHTML='';showLogin('עברו 48 שעות — צריך להיכנס שוב');}},60*1000);
 function openRemPopup(){
   const due=dueTasks(),up=upcomingReminders(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
   if(!due.length&&!up.length){remov.classList.remove('show');return;}
@@ -1251,7 +1253,7 @@ function showLogin(msg){
     sc.onload=()=>{try{google.accounts.id.initialize({client_id:me.google,callback:async res=>{
         const err=document.getElementById('login_err');err.textContent='';
         let r=null;try{r=await (await fetch('/api/login/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:res.credential})})).json();}catch(x){}
-        if(r&&r.ok){location.reload();return;} err.textContent=(r&&r.error)||'הכניסה עם גוגל לא הצליחה';}});
+        if(r&&r.ok){authExpSet(r.exp);location.reload();return;} err.textContent=(r&&r.error)||'הכניסה עם גוגל לא הצליחה';}});
       google.accounts.id.renderButton(document.getElementById('login_gbtn'),{theme:'outline',size:'large',text:'signin_with',locale:'he',width:300});
       document.getElementById('login_g').hidden=false;}catch(e){}};
     document.head.appendChild(sc);}).catch(()=>{});
@@ -1259,7 +1261,7 @@ function showLogin(msg){
   f.onsubmit=async e=>{e.preventDefault();const pw=document.getElementById('login_pw').value;if(!pw)return;
     f.querySelector('button').disabled=true;err.textContent='';
     let r=null;try{r=await (await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw,portal:PORTAL})})).json();}catch(x){}
-    if(r&&r.ok){location.reload();return;}
+    if(r&&r.ok){authExpSet(r.exp);location.reload();return;}
     err.textContent=(r&&r.error)||'לא הצליח — נסה שוב';f.querySelector('button').disabled=false;};
   setTimeout(()=>{const i=document.getElementById('login_pw');if(i)i.focus();},50);
 }
@@ -1273,7 +1275,11 @@ function applyRole(){
   if(!tabs.includes(tab))tab=tabs[0];
   try{if(location.pathname!==PORTAL_PATH[ROLE])history.replaceState(null,'',PORTAL_PATH[ROLE]);}catch(e){}
 }
-async function logout(){try{await fetch('/api/logout',{method:'POST'});}catch(e){}
+// מאיר: "גם בטאבלט שזה יבקש כניסה מחדש כל 48 שעות" — מתי הכניסה פגה נשמר במכשיר, כדי שגם בלי
+// רשת (כשמוצג העותק השמור של הנתונים) תתבקש כניסה מחדש אחרי 48 שעות
+function authExpSet(sec){try{if(+sec>0)localStorage.setItem('kc_exp',String(+sec*1000));else localStorage.removeItem('kc_exp');}catch(e){}}
+function authExpired(){try{const v=+localStorage.getItem('kc_exp');return v>0&&Date.now()>v;}catch(e){return false;}}
+async function logout(){authExpSet(0);try{await fetch('/api/logout',{method:'POST'});}catch(e){}
   // העותק של הנתונים שנשמר למצב בלי רשת — נמחק ביציאה, שלא יישאר על המכשיר
   try{for(const k of await caches.keys())if(/data/i.test(k))await caches.delete(k);}catch(e){}try{localStorage.removeItem('kc_tab');localStorage.removeItem('kc_donor');}catch(e){}location.reload();}
 async function api(m,u,b){
@@ -1528,6 +1534,8 @@ async function load(){
     else { d=await r.json(); _LASTDATA=d;
       // כשאין רשת, ה-service worker מגיש את העותק האחרון ומסמן זאת
       OFFLINE=r.headers.get('X-KC-Offline')==='1';
+      if(OFFLINE&&authExpired()){_LASTDATA=null;showLogin('עברו 48 שעות — צריך להיכנס שוב (נדרש חיבור לאינטרנט)');return;}
+      if(!OFFLINE&&!window._expSynced){window._expSynced=1;fetch('/api/me').then(x=>x.json()).then(me=>{if(me&&me.auth_on)authExpSet(me.exp);else authExpSet(0);}).catch(()=>{});}
       _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
   }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }
   if(!d)return;

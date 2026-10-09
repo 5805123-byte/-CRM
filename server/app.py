@@ -12632,6 +12632,17 @@ def auth_role_of(cookie):
     return role
 
 
+def auth_exp_of(cookie):
+    """מתי פגה הכניסה (שניות) — כדי שגם טאבלט בלי רשת יבקש כניסה מחדש אחרי 48 שעות."""
+    if not auth_role_of(cookie):
+        return 0
+    m = re.search(r'(?:^|;\s*)kc_s=([A-Za-z0-9.]+)', cookie or '')
+    try:
+        return int(m.group(1).split('.')[1])
+    except Exception:
+        return 0
+
+
 def google_client_id():
     return (os.environ.get('GOOGLE_CLIENT_ID') or '').strip()
 
@@ -14292,6 +14303,7 @@ class H(BaseHTTPRequestHandler):
         if path == '/api/me':
             role = 'admin' if not auth_on() else auth_role_of(self.headers.get('Cookie'))
             return self._send(200, {'ok': True, 'auth_on': auth_on(), 'role': role, 'google': google_client_id(),
+                                    'exp': auth_exp_of(self.headers.get('Cookie')) if auth_on() else 0,
                                     'comm_set': bool((os.environ.get('CRM_PASS_COMM') or '').strip()),
                                     'parnes_set': bool((os.environ.get('CRM_PASS_PARNES') or '').strip()),
                                     'gabbai_set': bool((os.environ.get('CRM_PASS_GABBAI') or '').strip())}) or False
@@ -14321,7 +14333,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self._set_cookie(auth_token(role), AUTH_HOURS * 3600)
-        data = json.dumps({'ok': True, 'role': role}).encode('utf-8')
+        data = json.dumps({'ok': True, 'role': role, 'exp': int(time.time()) + AUTH_HOURS * 3600}).encode('utf-8')
         self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
         return False
 
