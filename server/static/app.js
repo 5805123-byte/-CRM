@@ -1547,7 +1547,19 @@ async function load(){
   document.getElementById('stat').textContent = DB.length + ' תורמים';
   applyRole();
   // מאיר (הכל) והגבאי (קהילה) — כפתור יציאה קטן, רק כשיש סיסמה
-  if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה (הכניסה פגה לבד אחרי 48 שעות)';b.textContent='🔒';b.onclick=async()=>{if(await uiConfirm('לצאת מהמערכת? בכניסה הבאה תתבקש סיסמה.\n(גם בלי לצאת, הכניסה פגה לבד אחרי 48 שעות)','🔒 יציאה','ביטול'))logout();};document.querySelector('.brand').appendChild(b);}
+  if(AUTH_ON&&!document.getElementById('logoutbtn')){const b=document.createElement('button');b.id='logoutbtn';b.className='healthbtn';b.title='יציאה (הכניסה פגה לבד אחרי 48 שעות)';b.textContent='🔒';b.onclick=async()=>{
+    // מאיר: "מי שיש את זה אצלו במכשיר — שזה יבקש ממנו סיסמה" — בכניסה הראשית אפשר לנתק את כל המכשירים
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm">🔒 יציאה מהמערכת<br><small>גם בלי לצאת, הכניסה פגה לבד אחרי 48 שעות.</small></div>
+      <div class="bqfixopts"><button class="btn" data-lo="me">🔒 לצאת רק מהמכשיר הזה</button>
+      ${ROLE==='admin'?'<button class="btn ghost" data-lo="all">🔒 לנתק את כל המכשירים (כולל הגבאים) — כולם יתבקשו להיכנס מחדש</button>':''}</div>
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+    document.body.appendChild(o);
+    o.querySelector('.cno').onclick=()=>o.remove();
+    o.querySelector('[data-lo="me"]').onclick=()=>{o.remove();logout();};
+    const al=o.querySelector('[data-lo="all"]');
+    if(al)al.onclick=async()=>{o.remove();if(!await uiConfirm('לנתק עכשיו את כל המכשירים — גם שלך וגם של הגבאים?\nכל אחד יתבקש להיכנס מחדש בסיסמה (או בגוגל).','🔒 כן, לנתק את כולם','ביטול'))return;
+      const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   // שחזור הלשונית שבה הייתי לפני הרענון
   try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();

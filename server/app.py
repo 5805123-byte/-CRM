@@ -12604,6 +12604,19 @@ def _sess_secret():
         con.close()
 
 
+def auth_logout_all(con=None):
+    """ניתוק כל המכשירים: סוד חתימה חדש — כל עוגיית כניסה קיימת כבר לא תקפה, וכל מכשיר
+    מתבקש להיכנס מחדש (סיסמה או גוגל). מאיר: "גם עכשיו מי שיש את זה אצלו במכשיר — שיבקש סיסמה"."""
+    own = con is None
+    con = con or db()
+    try:
+        kv_set(con, 'sess_secret', os.urandom(32).hex())
+        con.commit()
+    finally:
+        if own:
+            con.close()
+
+
 def auth_token(role):
     exp = int(time.time()) + AUTH_HOURS * 3600
     body = '%s.%d.%s' % (role, exp, os.urandom(6).hex())
@@ -14257,7 +14270,7 @@ class H(BaseHTTPRequestHandler):
         """כניסה בסיסמה. מחזיר True אם אפשר להמשיך; אחרת כבר נשלחה תשובה (401 / 403).
         קבצי המסך עצמם (index.html, app.js…) פתוחים — מסך הכניסה נמצא בהם; הנתונים לא."""
         path = self.path.split('?')[0]
-        if path in ('/api/login', '/api/login/google', '/api/logout', '/api/me'):
+        if path in ('/api/login', '/api/login/google', '/api/logout', '/api/logout_all', '/api/me'):
             return self._auth_routes(path)
         if not auth_on():
             self.role = 'admin'
@@ -14307,6 +14320,17 @@ class H(BaseHTTPRequestHandler):
                                     'comm_set': bool((os.environ.get('CRM_PASS_COMM') or '').strip()),
                                     'parnes_set': bool((os.environ.get('CRM_PASS_PARNES') or '').strip()),
                                     'gabbai_set': bool((os.environ.get('CRM_PASS_GABBAI') or '').strip())}) or False
+        if path == '/api/logout_all':
+            # 🔒 ניתוק כל המכשירים — רק בסיסמת המערכת / גוגל של מאיר
+            if self.command != 'POST' or (auth_on() and auth_role_of(self.headers.get('Cookie')) != 'admin'):
+                return self._send(403, {'ok': False, 'error': 'רק בכניסה הראשית'}) or False
+            auth_logout_all()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self._set_cookie('x', 0)
+            data = b'{"ok": true}'
+            self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+            return False
         if path == '/api/logout':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -23076,6 +23100,16 @@ def us_receipt_redate():
 
 def serve():
     ensure_schema()
+    try:
+        con = db()
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='logout_all_v1'").fetchone():
+            auth_logout_all(con)
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('logout_all_v1')")
+            con.commit()
+            print('  כל המכשירים נותקו — כניסה מחדש בסיסמה או בגוגל')
+        con.close()
+    except Exception as e:
+        print('  logout-all error:', e)
     try:
         con = db()
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='purpose_autofill_v1'").fetchone():
