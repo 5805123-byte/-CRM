@@ -12955,6 +12955,7 @@ async function renderCommDebts(){
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
+      <button class="btn sm ghost" id="cd_paidbulk" title="הכנסת כמה אנשים ששילמו — נרשם בכרטיס, בהיסטוריה ובתרומות">✅ תשלומים במרוכז</button>
       <button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}" download style="text-decoration:none">📊 אקסל</a></div>
     <div class="cdquick"><input id="cdq_m" list="cd_mdl" placeholder="➕ חבר קהילה…" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}">
@@ -13083,14 +13084,20 @@ function cdAddHTML(){return `<div class="bqform"><div class="bqfh"><b>➕ חוב
     <label class="fld"><span>📅 תאריך / מועד</span><input id="cda_d" type="date" value="${todayStr()}"></label></div>
   <label class="fld"><span>🎯 עבור מה</span><input id="cda_t" placeholder="למשל: מקום בבית הכנסת תשפ״ז / נדר בעלייה לתורה"></label>
   <div class="bqacts"><button class="btn sm" id="cda_ok">💾 שמור</button></div></div>`;}
-function cdImpHTML(){const R=cdImp.rows||[];
-  return `<div class="bqform"><div class="bqfh"><b>📎 ${esc(cdImp.filename||'הדבקה')} — ${R.length} שורות</b><button class="btn sm ghost" id="cdi_x">✕</button></div>
-    ${cdImp.paste?`<textarea id="cdi_txt" rows="5" placeholder="הדבק מאקסל: שם · טלפון · סכום · עבור מה (שורה לכל חוב)"></textarea><div class="bqacts"><button class="btn sm" id="cdi_parse">🔍 זהה</button></div>`:''}
-    ${R.length?`<div class="cdimp">${R.map((r,i)=>`<div class="cdirow ${r.member_id?'':'nom'}"><span><b>${esc(r.name||r.phone||'')}</b> <small dir="ltr">${esc(r.phone||'')}</small></span>
-      <span>${cdMoney(r.amount)}</span><span class="cdtitle">${esc(r.title||'')}</span>
-      <input list="cd_mdl" data-cdi="${i}" value="${r.member_id?esc((r.member_name||'')+' #'+r.member_id):''}" placeholder="⚠️ לא זוהה — בחר חבר קהילה"></div>`).join('')}</div>
-      <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${R.filter(r=>r.member_id).length} חובות</button>
-        <span class="hintxt">שורה בלי חבר קהילה לא תישמר.</span></div>`:''}</div>`;}
+// מאיר: "להכניס אנשים שכן שילמו על משהו מסוים — במרוכז, ושיירשם בכרטיס שלהם… ושזה יישמר
+// בהיסטוריה וגם בתרומות". mode: 'debt' — חובות / התחייבויות (אפשר עם עמודת "שולם"), 'paid' — כולם שילמו
+function cdImpHTML(){const R=cdImp.rows||[], paid=cdImp.mode==='paid';
+  const okN=R.filter(r=>r.member_id&&!r.skip).length, pn=R.filter(r=>r.member_id&&!r.skip&&(paid||+r.paid>0)).length;
+  return `<div class="bqform"><div class="bqfh"><b>${paid?'✅ תשלומים במרוכז':'📎 '+esc(cdImp.filename||'הדבקה')} — ${R.length} שורות</b><button class="btn sm ghost" id="cdi_x">✕</button></div>
+    ${cdImp.paste?`<textarea id="cdi_txt" rows="6" placeholder="${paid?'שורה לכל תשלום: שם ; סכום ; עבור מה ; איך שולם\nלמשל: כהן משה ; 500 ; חתן תורה תשפ״ז ; מזומן':'שורה לכל חוב: שם ; סכום ; עבור מה (אפשר שורת כותרת: שם;סכום;עבור;שולם;איך שולם)'}"></textarea>
+      <div class="bqacts"><button class="btn sm" id="cdi_parse">🔍 זהה</button></div>`:''}
+    ${R.length?`${paid?'':`<label class="fld" style="max-width:260px"><span>סוג לכל השורות</span><select id="cdi_kind"><option value="">לפי השורה</option><option value="pledge">התחייבות</option><option value="debt">חוב</option></select></label>`}
+      <div class="cdimp">${R.map((r,i)=>`<div class="cdirow ${r.member_id?'':'nom'} ${r.skip?'skip':''}"><span><b>${esc(r.name||r.phone||'')}</b> <small dir="ltr">${esc(r.phone||'')}</small></span>
+      <span>${cdMoney(r.amount)}${!paid&&+r.paid>0?`<small class="ndok"> · שולם ${cdMoney(r.paid)}${r.via?' '+esc(r.via):''}</small>`:''}${paid&&r.via?` <small>${esc(r.via)}</small>`:''}</span><span class="cdtitle">${esc(r.title||'')}</span>
+      <input list="cd_mdl" data-cdi="${i}" value="${r.member_id?esc((r.member_name||'')+' #'+r.member_id):''}" placeholder="⚠️ לא זוהה — בחר חבר קהילה">
+      <button class="btn sm ghost" data-cdiskip="${i}" title="${r.skip?'להחזיר':'לדלג על השורה'}">${r.skip?'↩':'✕'}</button></div>`).join('')}</div>
+      <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${okN} ${paid?'תשלומים':'שורות'}</button>
+        <span class="hintxt">שורה בלי חבר קהילה לא תישמר.${pn?' '+pn+' ששולמו — נרשמים בכרטיס כתרומה ועוברים להיסטוריה.':''}</span></div>`:''}</div>`;}
 function cdWire(){const g=id=>document.getElementById(id);
   g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
   const am=g('cd_allm');if(am)am.onclick=()=>{cdMember=0;renderCommDebts();};
@@ -13111,7 +13118,8 @@ function cdWire(){const g=id=>document.getElementById(id);
     const r=await api('POST','/api/cm/debts',{member_id:mid,kind:g('cdq_k').value,amount:a,title:g('cdq_t').value.trim(),due:todayStr()});
     if(r&&r.ok){toast('נוסף ✓');cdData=null;await renderCommDebts();const n=g('cdq_m');if(n&&!cdMember){n.value='';n.focus();}}else toast((r&&r.error)||'לא נשמר');};
   g('cdq_go').onclick=qa; ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
-  g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[]};renderCommDebts();};
+  g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[],mode:'debt'};renderCommDebts();};
+  g('cd_paidbulk').onclick=()=>{cdImp={paste:1,rows:[],mode:'paid'};renderCommDebts();};
   g('cd_nd').onclick=async()=>{const b=g('cd_nd');b.disabled=true;b.textContent='🔄 מסנכרן…';
     const r=await api('POST','/api/nd/sync',{});if(r&&r.ok)toast('סונכרן ✓ '+Object.entries(r.result||{}).map(([k,v])=>k+' '+v).join(' · '));else await uiAlert((r&&r.error)||'הסנכרון נכשל');
     cdData=null;renderCommDebts();};
@@ -13126,13 +13134,20 @@ function cdWire(){const g=id=>document.getElementById(id);
       const r=await api('POST','/api/cm/debts',{member_id:mid,kind:g('cda_k').value,amount:a,due:g('cda_d').value,title:g('cda_t').value.trim()});
       if(r&&r.ok){toast('נשמר ✓');cdAdd=false;cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא נשמר');};}
   if(cdImp){g('cdi_x').onclick=()=>{cdImp=null;renderCommDebts();};
-    const ps=g('cdi_parse');if(ps)ps.onclick=async()=>{const r=await api('POST','/api/cm/debts/import',{text:g('cdi_txt').value});
-      if(!r||!r.ok){await uiAlert((r&&r.error)||'לא זוהה');return;}cdImp={filename:'הדבקה',rows:r.rows||[]};renderCommDebts();};
+    const ps=g('cdi_parse');if(ps)ps.onclick=async()=>{let t=g('cdi_txt').value;const mode=cdImp.mode;
+      // בתשלומים במרוכז — בלי כותרת: שם ; סכום ; עבור מה ; איך שולם
+      if(mode==='paid'&&!/שם|סכום/.test(t.split('\n')[0]||''))t='שם;סכום;עבור;איך שולם\n'+t;
+      const r=await api('POST','/api/cm/debts/import',{text:t});
+      if(!r||!r.ok){await uiAlert((r&&r.error)||'לא זוהה');return;}cdImp={filename:'הדבקה',rows:r.rows||[],mode};renderCommDebts();
+      if(!(r.rows||[]).length)toast('לא זוהו שורות עם שם וסכום');};
     view.querySelectorAll('[data-cdi]').forEach(i=>i.onchange=()=>{const r=cdImp.rows[+i.dataset.cdi];r.member_id=cdPick(i.value)||null;});
-    const ok=g('cdi_ok');if(ok)ok.onclick=async()=>{const R=cdImp.rows.filter(r=>r.member_id);
-      if(!await uiConfirm('לשמור '+R.length+' חובות?','💾 כן','ביטול'))return;
+    view.querySelectorAll('[data-cdiskip]').forEach(b=>b.onclick=()=>{const r=cdImp.rows[+b.dataset.cdiskip];r.skip=!r.skip;renderCommDebts();});
+    const ok=g('cdi_ok');if(ok)ok.onclick=async()=>{const paid=cdImp.mode==='paid',kd=(g('cdi_kind')||{}).value||'';
+      const R=cdImp.rows.filter(r=>r.member_id&&!r.skip).map(r=>Object.assign({},r,paid?{paid:r.amount,kind:'pledge'}:(kd?{kind:kd}:{})));
+      const np=R.filter(r=>+r.paid>0).length;
+      if(!await uiConfirm('לשמור '+R.length+(paid?' תשלומים':' שורות')+'?'+(np?'\n'+np+' ששולמו — יירשמו בכרטיס של כל אחד כתרומה, ויעברו להיסטוריה.':''),'💾 כן','ביטול'))return;
       const r=await api('POST','/api/cm/debts/import',{commit:1,rows:R,filename:cdImp.filename});
-      if(r&&r.ok){toast('נשמרו '+r.added+' ✓');cdImp=null;cdData=null;renderCommDebts();}else toast('לא נשמר');};}
+      if(r&&r.ok){toast('נשמרו '+r.added+' ✓'+(r.paid?' · '+r.paid+' ששולמו':''));cdImp=null;cdData=null;cdHist=null;CGF=null;renderCommDebts();}else toast('לא נשמר');};}
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();

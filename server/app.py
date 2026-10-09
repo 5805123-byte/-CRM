@@ -16749,6 +16749,9 @@ class H(BaseHTTPRequestHandler):
                 for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
                                      "WHERE COALESCE(t.amount,0)>0 ORDER BY t.iso DESC LIMIT 6000"):
+                    # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
+                    if re.search(r'מקו?וה', ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))):
+                        continue
                     kv = str(t['keva'] or '')
                     src = 'bank' if kv.startswith('M') else ('hok' if kv and not kv.startswith('-') else 'nd')
                     rows.append({'src': src, 'id': t['id'], 'date': (t['iso'] or '')[:10], 'time': t['time'] or '', 'amount': t['amount'] or 0,
@@ -19429,18 +19432,39 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 if b.get('commit'):
-                    n = 0
+                    # מאיר: "להכניס אנשים שכן שילמו על משהו מסוים — במרוכז, ושיירשם בכרטיס שלהם ששילמו סך כך
+                    # וכך לייעוד פלוני, ושזה יישמר בהיסטוריה וגם בתרומות". שורה ששולמה (כולה / חלקה):
+                    # החוב נסגר (או קטן), והתשלום נרשם כתרומה בכרטיס — אלא אם שולם בנדרים פלוס
+                    n = npaid = 0
+                    src = 'הדבקה' if (b.get('filename') or '') in ('', 'הדבקה') else 'קובץ'
                     for r in b.get('rows') or []:
                         mid = int(r.get('member_id') or 0); a = round(_amt2(r.get('amount')), 2)
-                        if not mid or a <= 0:
+                        if not mid or a <= 0 or r.get('skip'):
                             continue
-                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?)",
-                                    (mid, r.get('kind') if r.get('kind') in ('debt', 'pledge') else 'debt', str(r.get('title') or '')[:200], a,
-                                     str(r.get('due') or '')[:10], 'קובץ', str(b.get('filename') or '')[:80], now_iso(), now_iso(),
-                                     r.get('channel') if r.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid)))
+                        p = round(min(_amt2(r.get('paid')), a), 2)
+                        via = str(r.get('via') or '').strip()[:60]
+                        done = p >= a - 0.009
+                        kind = r.get('kind') if r.get('kind') in ('debt', 'pledge') else 'debt'
+                        title = str(r.get('title') or '')[:200]
+                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,closed_at,paid_via) "
+                                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                    (mid, kind, title, a, p, str(r.get('due') or '')[:10], 'paid' if done else 'open', src,
+                                     str(b.get('filename') or '')[:80], now_iso(), now_iso(),
+                                     r.get('channel') if r.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid),
+                                     now_iso() if done else None, via))
+                        did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                        if p > 0:
+                            npaid += 1
+                            if 'נדרים' not in via:
+                                from receipt_us import iso_day as _isod
+                                con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
+                                            (mid, _isod(r.get('due')) or today_iso(), p, via or 'לא צוין', title,
+                                             'מרשימה' + ((': ' + str(b.get('filename'))[:60]) if b.get('filename') and b.get('filename') != 'הדבקה' else ''),
+                                             now_iso(), getattr(self, 'role', '') or ''))
+                            cm_debt_log(con, mid, did, '%s %s ₪%g%s' % ('✅ שולם' if done else '½ שולם חלקית', title or 'חוב', p, (' · ' + via) if via else ''))
                         n += 1
                     con.commit()
-                    return self._send(200, {'ok': True, 'added': n})
+                    return self._send(200, {'ok': True, 'added': n, 'paid': npaid})
                 raw = []
                 if b.get('file_b64'):
                     data = base64.b64decode(b['file_b64'].split(',')[-1])
@@ -22123,15 +22147,20 @@ def _cm_rows_from_table(rows):
     head = rows[0]
     H = lambda *ks: next((i for i, h in enumerate(head) if any(k in h for k in ks)), -1)
     ci = {'last': H('משפחה'), 'first': H('פרטי'), 'name': H('שם'), 'phone': H('טלפון', 'נייד', 'פלאפון', 'Phone'),
-          'amount': H('סכום', 'חוב', 'יתרה', 'Amount', 'סה"כ'), 'title': H('עבור', 'ייעוד', 'פירוט', 'תיאור', 'הערה'),
-          'due': H('תאריך', 'מועד'), 'kind': H('סוג')}
+          'amount': H('סכום', 'חוב', 'יתרה', 'Amount', 'סה"כ'), 'title': H('עבור', 'ייעוד', 'פירוט', 'תיאור', 'הערה', 'עליה', 'עלייה'),
+          'due': H('תאריך', 'מועד'), 'kind': H('סוג'), 'paid': H('שולם', 'שילם'), 'via': H('איך', 'אמצעי', 'דרך')}
+    # "שולם" ו"איך שולם" — שתי עמודות שונות (הראשונה סכום/כן, השנייה האמצעי)
+    if ci['paid'] >= 0 and ci['via'] == ci['paid']:
+        ci['paid'] = next((i for i, h in enumerate(head) if ('שולם' in h or 'שילם' in h) and i != ci['via']), -1)
     has_head = sum(1 for v in ci.values() if v >= 0) >= 2
     out = []
     for r in (rows[1:] if has_head else rows):
         g = lambda k: (r[ci[k]] if ci[k] >= 0 and ci[k] < len(r) else '')
+        pd = vi = ''
         if has_head:
             nm = ' '.join(x for x in (g('last'), g('first')) if x) or g('name')
             ph, am, ti, du, ki = g('phone'), g('amount'), g('title'), g('due'), g('kind')
+            pd, vi = g('paid'), g('via')
         else:
             ph = next((c for c in r if _ym.norm_phone(c)), '')
             am = next((c for c in r if re.fullmatch(r'[₪$]?\s*\d[\d,]*(\.\d+)?\s*[₪$]?', c) and not _ym.norm_phone(c)), '')
@@ -22142,8 +22171,11 @@ def _cm_rows_from_table(rows):
         a = _amt2(am)
         if not (nm or ph) or a <= 0:
             continue
-        kind = 'pledge' if re.search(r'התחייב|נדר', ki + ti) else 'debt'
-        out.append({'name': nm, 'phone': _ym.norm_phone(ph) or ph, 'amount': a, 'title': ti, 'due': du, 'kind': kind})
+        kind = 'pledge' if re.search(r'התחייב|נדר|עלי', ki + ti) else 'debt'
+        # שולם: סכום, או "כן / ✓ / שולם" = הכל
+        p = _amt2(pd) if re.search(r'\d', pd or '') else (a if re.search(r'^(כן|✓|✔|v|x|שולם|שילם)', (pd or '').strip(), re.I) else 0)
+        out.append({'name': nm, 'phone': _ym.norm_phone(ph) or ph, 'amount': a, 'title': ti, 'due': du, 'kind': kind,
+                    'paid': round(min(p, a), 2), 'via': (vi or '').strip()})
     return out
 
 
