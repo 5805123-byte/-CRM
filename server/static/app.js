@@ -6445,6 +6445,9 @@ function bqHistHTML(r,h){
         <span class="bqacts">${bqRefBtn(t,r.donor_name||r.bq_name||'')}${ok?(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-bqrc="send" data-rc="${t.rc_id}" data-sid="${r.id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
           :(t.don_id?`<button class="btn sm ghost" data-bqrc="issue" data-don="${t.don_id}" data-sid="${r.id}" data-amt="${esc(t.amount)}">🧾 קבלה</button>`
           :`<button class="btn sm ghost" data-bqrc="post" data-tx="${t.id}" data-sid="${r.id}" title="לרשום בכרטיס התורם ואז קבלה">➕ רשום בכרטיס</button>`)):''}</span></div>`;}).join('')||'<div class="hintxt">אין עסקאות שמורות לתורם הזה.</div>'}</div>`;}
+// כרטיס שתוקפו עבר (תוקף 08/26 — עובד עד סוף אוגוסט 2026)
+function bqExpired(s){let y=+s.exp_y||0,m=+s.exp_m||0;if(!y||!m)return false;if(y<100)y+=2000;
+  const t=todayStr();return (y+'-'+String(m).padStart(2,'0'))<t.slice(0,7);}
 // ↩️ ביטול / החזר — מאיר: "אם אני רוצה לבטל חיוב של מישהו שעשיתי בטעות או להחזיר לו חלק מהכסף,
 // שאוכל לעשות את זה בכרטיס שלו אצלנו"
 function bqRefBtn(t,who){const s=BQ_ST[t.status]||['','off'],left=(+t.amount||0)-(+t.refunded||0);
@@ -6648,8 +6651,10 @@ async function bqDonorBlock(d,body){
   if(!sch.length&&!tx.length&&!pms.length)return;
   box.innerHTML=`<div class="bqcard"><div class="bqfh"><b>🏦 בנק ווסט</b>
       <span>${pms.length?`<button class="btn sm bqgo" id="bqd_once">⚡ חיוב חד-פעמי</button> <button class="btn sm ghost" id="bqd_rec">🔁 הוראת קבע</button>`:''}</span></div>
-    ${sch.map(s=>`<div class="bqplan"><span><b>${bqMoney(s.amount)}</b> ${s.active?('· הבא '+esc(bqDate(s.next_run))):'· <i>מושהה</i>'} · •••• ${esc(s.last4||'')}${s.num_left?(' · נשארו '+s.num_left):''}
-      ${s.for_cat||s.for_note?`<span class="bqfor">עבור: ${esc([s.for_cat,s.for_note].filter(Boolean).join(' · '))}</span>`:''}</span></div>`).join('')}
+    ${sch.map(s=>`<div class="bqplan"><span><b>${bqMoney(s.amount)}</b> ${s.active?('· הבא '+esc(bqDate(s.next_run))):'· <i>מושהה</i>'} · •••• ${esc(s.last4||'')}${s.exp_m?(' · תוקף '+String(s.exp_m).padStart(2,'0')+'/'+String(s.exp_y).slice(-2)):''}${bqExpired(s)?' <b class="bqst bad">⚠️ פג תוקף — צריך כרטיס חדש</b>':''}${s.num_left?(' · נשארו '+s.num_left):''}
+      ${s.for_cat||s.for_note?`<span class="bqfor">עבור: ${esc([s.for_cat,s.for_note].filter(Boolean).join(' · '))}</span>`:''}</span>
+      <span class="bqacts"><button class="btn sm bqgo" data-bqgs="${s.id}" data-swap="1" title="כרטיס חדש להוראת הקבע — חיוב מיידי ושמירה לכל חודש">💳 החלפת כרטיס</button>
+        <button class="btn sm ghost" data-bqgs="${s.id}" title="לפתוח את הוראת הקבע בדף החיובים — סכום, תאריך, עבור מה, השהיה">↗ בדף החיובים</button></span></div>`).join('')}
     ${tx.length?`<div class="bqhsum"><b>${r.n_ok||0} חיובים שעברו · ${bqMoney(r.sum_ok)}</b>${r.since?` · מאז ${esc(bqDate(r.since))}`:''}
         <div class="bqhyrs">${Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${bqMoney(v)}</b></span>`).join('')}</div></div>
       <div class="bqpays" id="bqd_pays">${tx.map((t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay" ${i>=8?'hidden':''}><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
@@ -6658,6 +6663,16 @@ async function bqDonorBlock(d,body){
   const more=box.querySelector('#bqd_more'); if(more)more.onclick=()=>{box.querySelectorAll('#bqd_pays .bqpay[hidden]').forEach(e=>e.hidden=false);more.remove();};
   const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
     document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='charges'));render();setTimeout(()=>bqOpenForm(k,d.id),300);};
+  // מאיר: "בכרטיס תורם כשאני רוצה להחליף לו כרטיס — קישור לדף חיובים בשם שלו, ושם להכניס את הנתונים"
+  box.querySelectorAll('[data-bqgs]').forEach(b=>b.onclick=()=>{const sid=+b.dataset.bqgs, sw=!!b.dataset.swap;
+    const cx=document.getElementById('cx');if(cx)cx.click();
+    tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='charges'));
+    bqTab='rec';bqQ='';bqNew=null;bqOpen='s'+sid;bqSwap=sw?sid:null;
+    const qi=document.getElementById('q');if(qi)qi.value='';q='';
+    render();
+    let n=0;const t=setInterval(()=>{const el=document.querySelector('.bqrh[data-op="s'+sid+'"]');
+      if(el||++n>40){clearInterval(t);if(el)el.closest('.bqrow').scrollIntoView({behavior:'smooth',block:'start'});}},150);});
   const a=box.querySelector('#bqd_once'), b2=box.querySelector('#bqd_rec');
   if(a)a.onclick=go('once'); if(b2)b2.onclick=go('rec');
 }
