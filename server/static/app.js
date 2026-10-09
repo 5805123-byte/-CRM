@@ -6432,9 +6432,15 @@ function bqHistHTML(r,h){
       <small class="hintxt">מה שבנק ווסט שמרו אצלם מ-${esc(bqDate(h.hist_from))}. חיוב שעבר ולא "בכרטיס" — אפשר לרשום ולהפיק קבלה.</small></div>
     ${rows.map(t=>{const s=BQ_ST[t.status]||[t.status||'?','off'],ok=s[1]==='ok';
       return `<div class="bqpay"><span><b>${esc(bqDate(t.created))}</b> · ${bqMoney(t.amount)} · <span class="bqst ${s[1]}">${esc(s[0])}</span>${t.card?` · ${esc(t.card)}`:''}${t.type&&t.type!=='charge'?` · ${esc(t.type)}`:''}${t.error?` · <span class="bqwhy">${esc(t.error)}</span>`:''}</span>
-        <span class="bqacts">${ok?(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-bqrc="send" data-rc="${t.rc_id}" data-sid="${r.id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
+        <span class="bqacts">${bqRefBtn(t,r.donor_name||r.bq_name||'')}${ok?(t.rc_id?`<a class="btn sm ghost" href="/api/receipts/${t.rc_id}.pdf" target="_blank">🧾 ${esc(t.rc_num||'')}</a><button class="btn sm ghost" data-bqrc="send" data-rc="${t.rc_id}" data-sid="${r.id}">📧 ${t.rc_sent?'שלח שוב':'שלח'}</button>`
           :(t.don_id?`<button class="btn sm ghost" data-bqrc="issue" data-don="${t.don_id}" data-sid="${r.id}" data-amt="${esc(t.amount)}">🧾 קבלה</button>`
           :`<button class="btn sm ghost" data-bqrc="post" data-tx="${t.id}" data-sid="${r.id}" title="לרשום בכרטיס התורם ואז קבלה">➕ רשום בכרטיס</button>`)):''}</span></div>`;}).join('')||'<div class="hintxt">אין עסקאות שמורות לתורם הזה.</div>'}</div>`;}
+// ↩️ ביטול / החזר — מאיר: "אם אני רוצה לבטל חיוב של מישהו שעשיתי בטעות או להחזיר לו חלק מהכסף,
+// שאוכל לעשות את זה בכרטיס שלו אצלנו"
+function bqRefBtn(t,who){const s=BQ_ST[t.status]||['','off'],left=(+t.amount||0)-(+t.refunded||0);
+  const done=+t.refunded>0.005?` <small class="bqst off">↩️ הוחזר ${bqMoney(t.refunded)}</small>`:'';
+  if(s[1]!=='ok'||!['','charge'].includes(t.type||'')||left<=0.005)return done;
+  return done+` <button class="btn sm ghost bqrefb" data-tx="${t.id}" data-left="${left.toFixed(2)}" data-amt="${esc(t.amount)}" data-st="${esc(t.status)}" data-who="${esc(who||t.donor_name||t.name||'')}" data-card="${esc(t.card||'')}" data-did="${t.donor_id||''}" title="ביטול החיוב או החזר של חלק ממנו לכרטיס">↩️ ביטול / החזר</button>`;}
 async function bqHistLoad(sid){bqHist[sid]={loading:true};renderBQ(false);const h=await api('GET','/api/bq/sched/'+sid+'/history');bqHist[sid]=(h&&h.ok)?h:{rows:[],error:(h&&h.error)||''};renderBQ(false);}
 function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?','off'], bad=BQ_BAD.includes(r.status);
   const ok=s[1]==='ok', who=r.donor_name||r.name||'?';
@@ -6449,7 +6455,7 @@ function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?
         <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
         <div class="bqacts"><button class="btn sm" data-bqa="post" data-id="${r.id}">➕ רשום בכרטיס</button></div>
         <div class="hintxt">רישום ידני ומכוון. לפני הרישום המערכת בודקת שאין כבר תרומה כזו בכרטיס.</div>`:''}
-      ${r.donor_id?`<div class="bqacts"><button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button></div>`:''}
+      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}</div>
     </div>`:''}</div>`;}
 function bqDonorDL(){return `<datalist id="bq_dl">${DB.slice(0,4000).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('')}</datalist>`;}
 function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
@@ -6637,7 +6643,7 @@ async function bqDonorBlock(d,body){
     ${tx.length?`<div class="bqhsum"><b>${r.n_ok||0} חיובים שעברו · ${bqMoney(r.sum_ok)}</b>${r.since?` · מאז ${esc(bqDate(r.since))}`:''}
         <div class="bqhyrs">${Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${bqMoney(v)}</b></span>`).join('')}</div></div>
       <div class="bqpays" id="bqd_pays">${tx.map((t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay" ${i>=8?'hidden':''}><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
-      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span></div>`;}).join('')}</div>
+      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span>${bqRefBtn(t,d.last+' '+(d.first||''))}</div>`;}).join('')}</div>
       ${tx.length>8?`<button class="btn sm ghost" id="bqd_more">📜 הצג את כל ההיסטוריה (${tx.length})</button>`:''}`:''}</div>`;
   const more=box.querySelector('#bqd_more'); if(more)more.onclick=()=>{box.querySelectorAll('#bqd_pays .bqpay[hidden]').forEach(e=>e.hidden=false);more.remove();};
   const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
@@ -14429,6 +14435,24 @@ function renderReceipts(){
   });
 }
 
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqrefb');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const left=+b.dataset.left, who=b.dataset.who||'', unsettled=b.dataset.st!=='settled';
+  const v=await uiPrompt('↩️ '+who+' — חיוב של '+bqMoney(b.dataset.amt)+(b.dataset.card?' ('+b.dataset.card+')':'')+'\nכמה להחזיר לכרטיס? הסכום המלא: '+bqMoney(left)+'\n(להשאיר את הסכום המלא = ביטול כל החיוב)',left.toFixed(2));
+  if(v===null||v===undefined||String(v).trim()==='')return;
+  const amt=amtNum(v); if(!amt||amt>left+0.005){toast('אפשר להחזיר עד '+bqMoney(left));return;}
+  const full=Math.abs(amt-left)<0.005;
+  const why=(await uiPrompt('סיבה (לא חובה) — נרשמת ביומן של התורם:',full?'חיוב בטעות':''))||'';
+  if(!await uiConfirm((full?(unsettled?'לבטל את כל החיוב של ':'להחזיר את כל החיוב של '):'להחזיר ל')+who+' '+bqMoney(amt)+(full?'':' מתוך '+bqMoney(left))+'?\nהכסף חוזר לכרטיס שלו'+(b.dataset.card?' ('+b.dataset.card+')':'')+'. התרומה בכרטיס אצלנו '+(full?'תימחק':'תוקטן')+' בהתאם.','↩️ כן, '+(full?'לבטל':'להחזיר'),'ביטול'))return;
+  b.disabled=true;b.textContent='שולח לבנק ווסט…';
+  const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/refund',{amount:amt,reason:why.trim()});
+  if(!r||!r.ok){b.disabled=false;b.textContent='↩️ ביטול / החזר';await uiAlert('לא בוצע:\n'+((r&&r.error)||'שגיאה'));return;}
+  toast(r.kind==='void'?'↩️ החיוב בוטל ✓':'↩️ הוחזרו '+bqMoney(r.amount)+' לכרטיס ✓');
+  if(r.warn)await uiAlert(r.warn);
+  const did=+b.dataset.did, inCard=!!b.closest('#bqdonor');
+  bqHist={};await load();render();
+  if(did&&inCard){const d=DB.find(x=>x.id===did);if(d)openDonor(d);}
+});
 // ₪ / $ של ההתחייבויות — כל ההתחייבויות והאברכים של התורם עוברים למטבע שנבחר
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.cmcur');if(!b)return;
   e.preventDefault();const d=DB.find(o=>o.id==b.dataset.did);if(!d)return;

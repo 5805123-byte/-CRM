@@ -218,6 +218,19 @@ def charge_source(source, amount, description='', customer_id=0, email='', exp_m
     return call('POST', 'transactions/charge', body)
 
 
+def void_tx(ref):
+    """ביטול עסקה שעוד לא נסגרה (באותו יום, לפני ה-batch) — כל הסכום."""
+    return call('POST', 'transactions/void', {'reference_number': int(ref)})
+
+
+def refund_tx(ref, amount=None):
+    """החזר לכרטיס על עסקה שנסגרה — כל הסכום, או חלק ממנו (amount)."""
+    body = {'reference_number': int(ref)}
+    if amount:
+        body['amount'] = round(float(amount), 2)
+    return call('POST', 'transactions/refund', body)
+
+
 def update_schedule(sid, **fields):
     body = {k: v for k, v in fields.items() if v is not None}
     return call('PATCH', 'recurring-schedules/%d' % int(sid), body)

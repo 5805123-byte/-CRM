@@ -521,6 +521,8 @@ def ensure_schema():
             con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('nd_inactive_drop_v1')")
     except Exception:
         pass
+    try: con.execute("ALTER TABLE bq_tx ADD COLUMN refunded REAL DEFAULT 0")   # כמה הוחזר מהמערכת שלנו
+    except Exception: pass
     try: con.execute("ALTER TABLE nd_torem ADD COLUMN addr TEXT")
     except Exception: pass
     # מוסד נוסף בנדרים פלוס — לכל הוראה ועסקה: מאיזה מוסד (ריק = הראשי)
@@ -16728,7 +16730,7 @@ class H(BaseHTTPRequestHandler):
                 if sc['donor_id']:
                     w.append("t.donor_id=?"); args.append(sc['donor_id'])
                 rows = [dict(r) for r in con.execute(
-                    "SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.card,t.donor_id,t.email,"
+                    "SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.card,t.donor_id,t.email,COALESCE(t.refunded,0) refunded,"
                     "(SELECT COUNT(*) FROM recon r WHERE r.tid='BQ'||t.ref AND r.processed=1) AS in_card,"
                     "(SELECT dn.id FROM donations dn WHERE dn.tid='BQ'||t.ref ORDER BY dn.id LIMIT 1) AS don_id,"
                     "(SELECT rd.id FROM receipt_docs rd WHERE rd.donation_id=(SELECT dn.id FROM donations dn WHERE dn.tid='BQ'||t.ref ORDER BY dn.id LIMIT 1) ORDER BY rd.id DESC LIMIT 1) AS rc_id,"
@@ -19973,6 +19975,14 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             bump_data()
             return self._send(200, {'ok': True, 'id': res['id'], 'donor_id': did})
+        m = re.match(r'/api/bq/tx/(\d+)/refund$', self.path)
+        if m:
+            # ↩️ מאיר: "אם אני רוצה לבטל חיוב של מישהו שעשיתי בטעות או להחזיר לו חלק מהכסף — שאוכל
+            # לעשות את זה בכרטיס שלו אצלנו". ביטול (לפני שהחיוב נסגר) או החזר מלא/חלקי לכרטיס
+            out = bq_refund(int(m.group(1)), b.get('amount'), str(b.get('reason') or '').strip()[:200])
+            if out.get('ok'):
+                bump_data()
+            return self._send(200, out)
         m = re.match(r'/api/bq/tx/(\d+)/post$', self.path)
         if m:
             # "רשום בכרטיס" — עסקה ישנה שעברה ולא נמצאה בכרטיס, ברישום ידני ומכוון
@@ -21269,6 +21279,75 @@ def _bq_dmy(iso):
         return ''
 
 
+def bq_refund(tx_id, amount=None, reason=''):
+    """ביטול / החזר של עסקת בנק ווסט, ועדכון התרומה בכרטיס התורם. עסקה שעוד לא נסגרה ומוחזרת
+    במלואה — מבוטלת (void, בלי עמלה); אחרת — החזר לכרטיס (refund), גם חלקי."""
+    import banquest as _bq
+    con = db()
+    try:
+        t = con.execute("SELECT * FROM bq_tx WHERE id=?", (tx_id,)).fetchone()
+        if not t:
+            return {'ok': False, 'error': 'העסקה לא נמצאה'}
+        if (t['status'] or '') not in _bq.OK_ST or (t['type'] or 'charge') not in ('', 'charge'):
+            return {'ok': False, 'error': 'אפשר לבטל או להחזיר רק חיוב שעבר'}
+        ref = int(t['ref'] or t['id'])
+        total = round(float(t['amount'] or 0), 2)
+        done = round(float(t['refunded'] or 0), 2)
+        left = round(total - done, 2)
+        if left <= 0.005:
+            return {'ok': False, 'error': 'החיוב הזה כבר הוחזר במלואו'}
+        amt = round(_amt2(amount), 2) if str(amount or '').strip() else left
+        if amt <= 0 or amt > left + 0.005:
+            return {'ok': False, 'error': 'אפשר להחזיר עד %s' % ('$%.2f' % left)}
+        full = abs(amt - left) < 0.005 and done < 0.005
+        kind, res = '', None
+        if full and (t['status'] or '') != 'settled':
+            code, res = _bq.void_tx(ref)
+            ok = code == 200 and isinstance(res, dict) and ((res.get('status') or '').lower() in ('approved',) or res.get('status_code') == 'A')
+            kind = 'void' if ok else ''
+        if not kind:
+            code, res = _bq.refund_tx(ref, None if full else amt)
+            ok = code == 200 and isinstance(res, dict) and ((res.get('status') or '').lower() in ('approved',) or res.get('status_code') == 'A')
+            if not ok:
+                err = (res.get('error_message') if isinstance(res, dict) else '') or _bq.LAST.get('error') or 'נדחה'
+                if (t['status'] or '') != 'settled' and not full:
+                    err += '\n\nהחיוב עוד לא נסגר בבנק ווסט (נסגר בלילה). עכשיו אפשר רק לבטל את כולו, או להחזיר חלק ממנו מחר.'
+                return {'ok': False, 'error': bq_hint(err)}
+            kind = 'refund'
+        newdone = round(done + amt, 2)
+        con.execute("UPDATE bq_tx SET refunded=?%s WHERE id=?" % (", status='voided'" if kind == 'void' else ''), (newdone, tx_id))
+        tr = (res or {}).get('transaction') if isinstance(res, dict) else None
+        if kind == 'refund' and tr and tr.get('id'):
+            r2 = _bq.tx_row(tr)
+            con.execute("""INSERT OR IGNORE INTO bq_tx(id,ref,created,settled,amount,status,error,type,schedule_id,description,
+                             customer_id,email,name,card,donor_id,posted,raw) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+                        (r2['id'], r2['ref'] or res.get('reference_number') or 0, r2['created'] or datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                         r2['settled'], r2['amount'] or amt, r2['status'] or 'captured', '', 'refund', 0,
+                         'החזר על %d%s' % (ref, (' · ' + reason) if reason else ''), t['customer_id'], t['email'], t['name'], t['card'],
+                         t['donor_id'], json.dumps(r2, ensure_ascii=False)))
+        # התרומה בכרטיס: יורד הסכום שהוחזר; בוטלה כולה — נמחקת (אם אין עליה קבלה)
+        warn = ''
+        dn = con.execute("SELECT * FROM donations WHERE tid=?", ('BQ%d' % ref,)).fetchone()
+        what = ('בוטל החיוב' if kind == 'void' else ('הוחזר' if full else 'הוחזר חלקית')) + ' $%s' % format(amt, ',.2f')
+        if dn:
+            rest = round(_amt2(dn['amount']) - amt, 2)
+            rc = con.execute("SELECT num FROM receipt_docs WHERE donation_id=?", (dn['id'],)).fetchone()
+            note = ((dn['note'] or '') + ' · ↩️ ' + what + ' ב-' + datetime.date.fromisoformat(today_iso()).strftime('%d.%m.%Y') + ((' — ' + reason) if reason else '')).strip(' ·')
+            if rest <= 0.005 and not rc:
+                con.execute("DELETE FROM donations WHERE id=?", (dn['id'],))
+            else:
+                con.execute("UPDATE donations SET amount=?, note=? WHERE id=?", ('%.2f' % max(0, rest), note, dn['id']))
+                if rc:
+                    warn = 'על התרומה הזו הופקה קבלה %s — כדאי להפיק אותה מחדש (🔄) או לבטל אותה.' % rc['num']
+        if t['donor_id']:
+            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
+                        (t['donor_id'], today_iso(), 'בנק ווסט', '↩️ %s מתוך $%s (חיוב %d)%s' % (what, format(total, ',.2f'), ref, (' — ' + reason) if reason else '')))
+        con.commit()
+        return {'ok': True, 'kind': kind, 'amount': amt, 'left': round(total - newdone, 2), 'warn': warn}
+    finally:
+        con.close()
+
+
 def bq_hint(err):
     """הסבר בעברית לשגיאות של בנק ווסט שנובעות מההגדרות ולא מהכרטיס."""
     e = str(err or '')
@@ -21579,7 +21658,7 @@ def bq_days(con, d1, d2):
     rows, days = [], {}
     tot = {'sum': 0.0, 'n': 0, 'bad': 0, 'bad_sum': 0.0}
     for r in con.execute("SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.name,t.card,"
-                         "t.donor_id,d.last dl,d.first dfi FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id "
+                         "t.donor_id,COALESCE(t.refunded,0) refunded,d.last dl,d.first dfi FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id "
                          "WHERE t.created>=? AND t.created<? ORDER BY t.created DESC", (lo, hi)):
         x = dict(r)
         x['at'] = bq_local(x['created'])
@@ -21613,7 +21692,7 @@ def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
         w.append("(t.name LIKE ? OR t.email LIKE ? OR t.card LIKE ? OR CAST(t.amount AS TEXT) LIKE ? OR d.last LIKE ? OR d.english LIKE ?)")
         args += ['%' + q + '%'] * 6
     sql = ("SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.customer_id,"
-           "t.email,t.name,t.card,t.donor_id,t.posted,d.last dl,d.first dfi,"
+           "t.email,t.name,t.card,t.donor_id,t.posted,COALESCE(t.refunded,0) refunded,d.last dl,d.first dfi,"
            "(SELECT COUNT(*) FROM recon r WHERE r.tid='BQ'||t.ref AND r.processed=1) AS in_card "
            "FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id" + (" WHERE " + " AND ".join(w) if w else '') +
            " ORDER BY t.created DESC LIMIT ?")
