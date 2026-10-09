@@ -12560,8 +12560,7 @@ function renderComm(){
   if(cmFlt==='seat')list.sort((a,b)=>(parseInt(a.seat)||9999)-(parseInt(b.seat)||9999)||byMName(a,b));
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
     <div class="addrow" style="margin:0 2px 8px">
-      <button class="btn" id="cm_mail" style="flex:2">✉️ מייל לקהילה</button>
-      <button class="btn" id="cm_mailn" style="flex:2" title="יוצא מ-neder1818@gmail.com">💰 מייל נדרים ונדבות</button>
+      <button class="btn" id="cm_mail" style="flex:2" title="מחצות או מנדר 18 — בוחרים בפנים">✉️ משלוח מיילים</button>
       <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn" id="cm_debts" style="flex:2">💰 חובות והתחייבויות</button>
       <button class="btn" id="cm_gifts" style="flex:2">💵 תרומות הקהילה</button>
@@ -12611,7 +12610,6 @@ function renderComm(){
   document.getElementById('cm_newbtn').onclick=addQuick;
   document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
   document.getElementById('cm_mail').onclick=()=>{cmSender='main';cmSub='send';render();window.scrollTo(0,0);};
-  document.getElementById('cm_mailn').onclick=()=>{cmSender='neder';cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_ledger').onclick=()=>{cmSub='ledger';LG=null;render();window.scrollTo(0,0);};
@@ -13722,9 +13720,10 @@ function renderCommSend(){
   const vars=MLVARS.filter(([v])=>!/קוויטל|אברך/.test(v)).concat(cmSender==='neder'?[['{{קישור}}','כפתור תשלום אישי בנדרים פלוס'],['{{סכום}}','הסכום']]:[]);
   chips.innerHTML='';
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_back">← חזרה לרשימת הקהילה</button></div>
-    <div class="rbtitle">${cmSender==='neder'?'💰 מייל נדרים ונדבות':'✉️ מייל לקהילה'}</div>
-    <div class="cmsender ${cmSender}"><span>📤 יוצא מ: <b dir="ltr">${cmSender==='neder'?'neder1818@gmail.com':'הכתובת הראשית של הכולל'}</b></span>
-      <button class="btn sm ghost" id="cm_swsender">${cmSender==='neder'?'↔ להחליף למייל לקהילה':'↔ להחליף למייל נדרים ונדבות'}</button></div>
+    <div class="rbtitle">✉️ משלוח מיילים</div>
+    <div class="cmsender ${cmSender}"><span>📤 יוצא מ:</span>
+      <span class="bqseg cmsseg"><button class="${cmSender!=='neder'?'on':''}" data-cmsnd="main" title="הכתובת הראשית של הכולל">✉️ מחצות</button><button class="${cmSender==='neder'?'on':''}" data-cmsnd="neder" title="neder1818@gmail.com — נדרים ונדבות, עם כפתור תשלום אישי">💰 מנדר 18</button></span>
+      <small dir="ltr">${cmSender==='neder'?'neder1818@gmail.com':''}</small></div>
     ${mlSetupHTML()}
     <div class="hintxt mlnobcc">כל חבר מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף אחד אינו רואה את הכתובות של האחרים. בדיוק כמו אצל התורמים.</div>
     <div class="sec">
@@ -13831,7 +13830,7 @@ function renderCommSend(){
     if(b.debt_ids){cdRem=null;cdData=null;}
     mlWatch();
   };
-  const sw=document.getElementById('cm_swsender'); if(sw)sw.onclick=()=>{cmSender=cmSender==='neder'?'main':'neder';renderCommSend();};
+  view.querySelectorAll('[data-cmsnd]').forEach(b=>b.onclick=()=>{if(cmSender===b.dataset.cmsnd)return;cmSender=b.dataset.cmsnd;renderCommSend();});
   cmWireLink();
   cmHistory();
   if(MLSETUP===null) mlLoadSetup().then(()=>{ if(tab==='comm'&&cmSub==='send') renderCommSend(); });
