@@ -13478,8 +13478,9 @@ def receipt_send(con, rid, email=''):
     if res.get('ok'):
         con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=? WHERE id=?", (now_iso(), to, rid))
         con.commit()
-        # מאיר: "בדרך כלל אני גם מקבל אימייל של קבלה" — עותק למשרד על כל קבלה שנשלחת
-        office = (os.environ.get('RECEIPT_COPY_TO') or os.environ.get('GMAIL_USER') or '').strip()
+        # עותק למשרד — מאיר ביקש לבטל ("תבטל את העותק למשרד"). נשלח רק אם הוגדר במפורש
+        # RECEIPT_COPY_TO ב-Render; בלי זה — לא נשלח עותק בכלל
+        office = (os.environ.get('RECEIPT_COPY_TO') or '').strip()
         if office and office.lower() != to.lower():
             try:
                 mailer.send(office, 'עותק: ' + subject + ' → ' + to, 'עותק למשרד של הקבלה שנשלחה אל %s.\n\n%s' % (to, body),
