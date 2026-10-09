@@ -19773,33 +19773,10 @@ class H(BaseHTTPRequestHandler):
                 b['pm_id'] = res['id']
             if b.get('pm_id'):
                 # 💳 החלפת כרטיס — מאיר: "הביא לי כרטיס חדש… ושזה יישמר לכל חודש לחיוב"
-                pm = int(b.get('pm_id') or 0)
-                p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone()
-                if not p or p['customer_id'] != row['customer_id']:
-                    con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס החדש לא נמצא אצל הלקוח הזה'})
-                code, res = _bq.update_schedule(sid, payment_method_id=pm)
-                if code == 200 and isinstance(res, dict) and int(res.get('payment_method_id') or pm) == pm:
-                    con.execute("UPDATE bq_sched SET pm_id=? WHERE id=?", (pm, sid))
-                else:
-                    # בנק ווסט לא מחליפים כרטיס בהוראה קיימת — פותחים הוראה זהה על הכרטיס החדש
-                    # ומשהים את הישנה, כך שאין חודש בלי חיוב ואין חיוב כפול
-                    code, res = _bq.create_schedule(row['customer_id'], row['title'], row['amount'], pm,
-                                                    next_run_date=row['next_run'] or '', num_left=int(row['num_left'] or 0),
-                                                    receipt_email=row['receipt_email'] or '')
-                    if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
-                        con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא הוחלף בהוראת הקבע: ' + (_bq.LAST.get('error') or str(code))})
-                    new_id = int(res['id'])
-                    con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
-                                     receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
-                                (new_id, row['customer_id'], row['title'], float(res.get('amount') or row['amount'] or 0),
-                                 res.get('frequency') or row['freq'] or 'monthly', res.get('next_run_date') or row['next_run'] or '',
-                                 int(res.get('num_left') or 0), res.get('status') or 'active', pm, res.get('receipt_email') or '',
-                                 today_iso(), row['donor_id'], row['for_cat'] or '', row['for_note'] or '', now_iso()))
-                    c2, _r2 = _bq.update_schedule(sid, active=False)
-                    if c2 == 200:
-                        con.execute("UPDATE bq_sched SET active=0 WHERE id=?", (sid,))
-                    else:
-                        err = 'נפתחה הוראה על הכרטיס החדש, אבל הישנה לא הושהתה — השהה אותה ידנית כדי שלא יהיה חיוב כפול'
+                new_id, err, fatal = bq_sched_set_pm(con, row, int(b.get('pm_id') or 0))
+                if fatal:
+                    con.close(); return self._send(200, {'ok': False, 'error': fatal})
+                if new_id:
                     sid = new_id
             if upd:
                 code, res = _bq.update_schedule(sid, **upd)
@@ -19823,6 +19800,39 @@ class H(BaseHTTPRequestHandler):
             if not row or not nonce:
                 con.close(); return self._send(200, {'ok': False, 'error': 'הוראת הקבע או פרטי הכרטיס לא נמצאו'})
             amt = round(_amt2(b.get('amount')), 2)
+            if b.get('save'):
+                # מאיר: "כתוב לי שכן עבר לו החיוב אבל לא שמר" — הדרך הבטוחה: קודם הכרטיס נשמר אצל
+                # הלקוח בבנק ווסט (מה-nonce), אחר כך החיוב מהכרטיס השמור, ואז הוא עובר להוראת הקבע
+                code, res = _bq.create_pm(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'), is_default=True)
+                if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+                    con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נשמר בבנק ווסט (לא חויב כלום): ' + bq_hint(_bq.LAST.get('error') or str(code))})
+                pm = int(res['id'])
+                con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                            (pm, row['customer_id'], res.get('card_type') or b.get('card_type') or '', res.get('last4') or b.get('last4') or '',
+                             res.get('expiry_month') or b.get('exp_m') or 0, res.get('expiry_year') or b.get('exp_y') or 0, 1, res.get('name') or ''))
+                con.commit()
+                out = {'ok': True, 'charged': False, 'pm_id': pm, 'last4': res.get('last4') or b.get('last4') or ''}
+                if amt > 0:
+                    cu = con.execute("SELECT * FROM bq_cust WHERE id=?", (row['customer_id'],)).fetchone()
+                    fc, fn = (row['for_cat'] or '').strip(), (row['for_note'] or '').strip()
+                    desc = ' · '.join(x for x in (fc, fn) if x)
+                    code, cres = _bq.charge_pm(pm, amt, description=desc, customer_id=row['customer_id'],
+                                               email=(cu['email'] if cu else '') or '', send_receipt=True, cit=True)
+                    if code != 200 or not isinstance(cres, dict):
+                        con.close()
+                        return self._send(200, dict(out, ok=False, error='הכרטיס נשמר, אבל החיוב לא עבר: ' + bq_hint(_bq.LAST.get('error') or 'שגיאה') + '\nהוראת הקבע לא שונתה.'))
+                    ch = bq_record_charge(con, cres, amt, desc, fc, row['donor_id'], row['customer_id'],
+                                          ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), (cu['identifier'] if cu else ''))
+                    con.commit()
+                    if not ch['ok']:
+                        con.close()
+                        return self._send(200, dict(out, ok=False, error='החיוב מהכרטיס החדש לא עבר: ' + ch['error'] + '\nהוראת הקבע לא שונתה.'))
+                    out.update(charged=True, ref=ch.get('ref'), auth=ch.get('auth'))
+                new_id, warn, fatal = bq_sched_set_pm(con, row, pm)
+                con.commit(); con.close()
+                bump_data()
+                out.update(attached=not fatal, attach_error=fatal or warn, new_id=new_id)
+                return self._send(200, out)
             if amt > 0:
                 # חיוב מיידי ישר מהכרטיס שהוקלד (כמו בבנק ווסט) — מהיר, וזה חיוב של בעל הכרטיס.
                 # הכרטיס נשמר להוראה רק אם מאיר עונה "כן, לכל חודש" (source שחוזר כאן)
@@ -19830,7 +19840,7 @@ class H(BaseHTTPRequestHandler):
                 fc, fn = (row['for_cat'] or '').strip(), (row['for_note'] or '').strip()
                 desc = ' · '.join(x for x in (fc, fn) if x)
                 code, res = _bq.charge_source('nonce-' + nonce, amt, description=desc, customer_id=row['customer_id'],
-                                              email=(cu['email'] if cu else '') or '', exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=True)
+                                              email=(cu['email'] if cu else '') or '', exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=False)
                 if code != 200 or not isinstance(res, dict):
                     con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
                 out = bq_record_charge(con, res, amt, desc, fc, row['donor_id'], row['customer_id'],
@@ -19897,7 +19907,8 @@ class H(BaseHTTPRequestHandler):
                 src = bq_card_src(res) if out['ok'] else ''
                 if src:
                     bq_save_card_bg(cu['id'] if cu else 0, src, b.get('exp_m'), b.get('exp_y'), did,
-                                    None if cu else (nm, ' '.join(toks[:-1]) if len(toks) > 1 else '', toks[-1] if toks else '', em, d['phone'] or ''))
+                                    None if cu else (nm, ' '.join(toks[:-1]) if len(toks) > 1 else '', toks[-1] if toks else '', em, d['phone'] or ''),
+                                    alt=('ref-%s' % res.get('reference_number')) if res.get('reference_number') else '')
                 bump_data()
                 return self._send(200, out)
             if not cu:
@@ -21279,6 +21290,38 @@ def _bq_dmy(iso):
         return ''
 
 
+def bq_sched_set_pm(con, row, pm):
+    """הכרטיס pm (שכבר שמור אצל הלקוח בבנק ווסט) עובר להוראת הקבע row. אם בנק ווסט לא מחליפים
+    כרטיס בהוראה קיימת — נפתחת הוראה זהה על הכרטיס החדש והישנה מושהית (אין חודש בלי חיוב ואין
+    חיוב כפול). מחזיר (מזהה הוראה חדשה או 0, אזהרה, שגיאה שעוצרת)."""
+    import banquest as _bq
+    sid = row['id']
+    p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone()
+    if not p or p['customer_id'] != row['customer_id']:
+        return 0, '', 'הכרטיס החדש לא נמצא אצל הלקוח הזה'
+    code, res = _bq.update_schedule(sid, payment_method_id=pm)
+    if code == 200 and isinstance(res, dict) and int(res.get('payment_method_id') or pm) == pm:
+        con.execute("UPDATE bq_sched SET pm_id=? WHERE id=?", (pm, sid))
+        return 0, '', ''
+    code, res = _bq.create_schedule(row['customer_id'], row['title'], row['amount'], pm,
+                                    next_run_date=row['next_run'] or '', num_left=int(row['num_left'] or 0),
+                                    receipt_email=row['receipt_email'] or '')
+    if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+        return 0, '', 'הכרטיס לא הוחלף בהוראת הקבע: ' + (_bq.LAST.get('error') or str(code))
+    new_id = int(res['id'])
+    con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
+                     receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
+                (new_id, row['customer_id'], row['title'], float(res.get('amount') or row['amount'] or 0),
+                 res.get('frequency') or row['freq'] or 'monthly', res.get('next_run_date') or row['next_run'] or '',
+                 int(res.get('num_left') or 0), res.get('status') or 'active', pm, res.get('receipt_email') or '',
+                 today_iso(), row['donor_id'], row['for_cat'] or '', row['for_note'] or '', now_iso()))
+    c2, _r2 = _bq.update_schedule(sid, active=False)
+    if c2 == 200:
+        con.execute("UPDATE bq_sched SET active=0 WHERE id=?", (sid,))
+        return new_id, '', ''
+    return new_id, 'נפתחה הוראה על הכרטיס החדש, אבל הישנה לא הושהתה — השהה אותה ידנית כדי שלא יהיה חיוב כפול', ''
+
+
 def bq_refund(tx_id, amount=None, reason=''):
     """ביטול / החזר של עסקת בנק ווסט, ועדכון התרומה בכרטיס התורם. עסקה שעוד לא נסגרה ומוחזרת
     במלואה — מבוטלת (void, בלי עמלה); אחרת — החזר לכרטיס (refund), גם חלקי."""
@@ -21397,7 +21440,7 @@ def bq_card_src(res):
     return ref or ('ref-%s' % res.get('reference_number') if res.get('reference_number') else '')
 
 
-def bq_save_card_bg(customer_id, src, exp_m, exp_y, donor_id=None, new_cust=None):
+def bq_save_card_bg(customer_id, src, exp_m, exp_y, donor_id=None, new_cust=None, alt=''):
     """שמירת הכרטיס בבנק ווסט ברקע, אחרי שהחיוב כבר עבר — כדי שהתשובה למסך תהיה מיידית.
     new_cust: (שם, פרטי, משפחה, מייל, טלפון) כשאין עדיין לקוח בבנק ווסט."""
     def run():
@@ -21417,6 +21460,8 @@ def bq_save_card_bg(customer_id, src, exp_m, exp_y, donor_id=None, new_cust=None
                                                             em, ph, str(donor_id or ''), donor_id, now_iso()))
                 con.commit()
             code, res = _bq.create_pm(cid, src, exp_m, exp_y)
+            if not (code in (200, 201) and isinstance(res, dict) and res.get('id')) and alt and alt != src:
+                code, res = _bq.create_pm(cid, alt, exp_m, exp_y)      # card_ref לא עבר — מספר העסקה
             if code in (200, 201) and isinstance(res, dict) and res.get('id'):
                 con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
                             (res['id'], cid, res.get('card_type') or '', res.get('last4') or '', res.get('expiry_month') or exp_m or 0,

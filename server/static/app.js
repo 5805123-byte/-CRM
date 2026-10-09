@@ -6432,7 +6432,7 @@ function bqSwapHTML(r){const st=bqStat||{};
     <div class="fld"><span>הכרטיס החדש — טופס מאובטח של בנק ווסט</span><div id="bqf_card" class="bqcardframe"></div></div>
     <label class="fld"><span>⚡ לחייב עכשיו מהכרטיס החדש ($) — ריק = בלי חיוב עכשיו</span><input id="bqw_amt" inputmode="decimal" value="${esc(r.amount||'')}"></label>
     <div class="bqacts"><button class="btn sm bqgo" data-bqa="swapgo" data-id="${r.id}">💳 המשך</button></div>
-    <div class="hintxt">🔒 מספר הכרטיס נכנס ישר לבנק ווסט ולא נשמר אצלנו. אחרי החיוב המערכת תשאל אם לשמור את הכרטיס לחיוב החודשי.</div></div>`;}
+    <div class="hintxt">🔒 מספר הכרטיס נכנס ישר לבנק ווסט ולא נשמר אצלנו. המערכת תשאל אם לשמור את הכרטיס לחיוב החודשי — ואז הוא נשמר קודם, מחויב, ועובר להוראת הקבע.</div></div>`;}
 // ההיסטוריה של התורם בבנק ווסט — מאיר: "מה נתן וכמה ומתי כמו בבנק ווסט, ומשלוח קבלה"
 function bqHistHTML(r,h){
   if(h.loading)return '<div class="hintxt">טוען מבנק ווסט…</div>';
@@ -6602,23 +6602,24 @@ function bqWire(box){const g=id=>document.getElementById(id);
       if(!bqHT){toast('הטופס המאובטח עוד לא נטען');return;}
       const who=r0.donor_name||r0.bq_name||'', amt=amtNum(g('bqw_amt').value);
       const forT=[r0.for_cat,r0.for_note].filter(Boolean).join(' · ')||r0.known_for||'';
-      if(amt&&!await uiConfirm('לחייב עכשיו את '+who+' '+bqMoney(amt)+' מהכרטיס החדש'+(forT?(' עבור '+forT):'')+'?','⚡ כן, לחייב','ביטול'))return;
+      // מאיר: "כתוב לי שכן עבר לו החיוב אבל לא שמר" — שואלים לפני החיוב, כדי שהכרטיס יישמר קודם
+      // (מה-nonce, הדרך הבטוחה) ורק אחר כך יחויב ויעבור להוראת הקבע
+      const save=await uiConfirm('לשמור את הכרטיס החדש לחיוב כל חודש?\nהוראת הקבע של '+who+' ('+bqMoney(r0.amount)+', הבא '+bqDate(r0.next_run)+') תחויב מעכשיו מהכרטיס החדש במקום •••• '+(r0.last4||'')+'.','💾 כן, לשמור לכל חודש','לא, רק חיוב הפעם');
+      if(!save&&!amt){toast('לא נבחר חיוב ולא שמירה — לא נעשה כלום');return;}
+      if(amt&&!await uiConfirm('לחייב עכשיו את '+who+' '+bqMoney(amt)+' מהכרטיס החדש'+(forT?(' עבור '+forT):'')+'?'+(save?'\nאחר כך הכרטיס יעבור להוראת הקבע.':'\nהכרטיס לא יישמר.'),'⚡ כן, לחייב','ביטול'))return;
       b.disabled=true;b.textContent='שולח לבנק ווסט…';
       let tk;try{tk=await bqHT.getNonceToken();}catch(e){b.disabled=false;b.textContent='💳 המשך';
         toast('פרטי הכרטיס לא תקינים'+((e&&e.fieldErrors&&e.fieldErrors.length)?(': '+e.fieldErrors.join(', ')):''));return;}
-      // עם סכום: חיוב אחד ישר מהכרטיס שהוקלד (מהיר, כמו בבנק ווסט); בלי סכום — רק שמירת הכרטיס
-      const c=await api('POST','/api/bq/sched/'+id+'/card',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||'',amount:amt||0});
-      if(!c||!c.ok){b.disabled=false;b.textContent='💳 המשך';try{bqHT.resetForm();}catch(e){}
-        await uiAlert((amt?'החיוב מהכרטיס החדש לא עבר:\n':'הכרטיס לא נשמר:\n')+((c&&c.error)||'שגיאה')+(amt?'\n\nהכרטיס הישן נשאר בהוראת הקבע.':''));return;}
+      const c=await api('POST','/api/bq/sched/'+id+'/card',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||'',amount:amt||0,save:save?1:0});
       try{bqHT.resetForm();}catch(e){}
+      if(!c||!c.ok){b.disabled=false;b.textContent='💳 המשך';
+        await uiAlert(((c&&c.error)||'שגיאה')+(c&&c.pm_id?'':'\n\nהכרטיס הישן נשאר בהוראת הקבע.'));if(c&&c.pm_id){bqSwap=null;renderBQ();load().then(render);}return;}
       const l4=c.last4||tk.last4||'';
-      if(c.charged)toast('✅ החיוב עבר · אישור '+(c.auth||c.ref||''));
-      if(c.charged&&!c.src){await uiAlert('החיוב עבר ✓\nבנק ווסט לא החזירו פרטים לשמירת הכרטיס, ולכן הוראת הקבע נשארה על הכרטיס הישן.');bqSwap=null;renderBQ();load().then(render);return;}
-      if(await uiConfirm('לשמור את הכרטיס החדש •••• '+l4+' לחיוב כל חודש?\nהוראת הקבע ('+bqMoney(r0.amount)+', הבא '+bqDate(r0.next_run)+') תחויב מעכשיו מהכרטיס הזה במקום •••• '+(r0.last4||'')+'.','💾 כן, לשמור לכל חודש','לא, רק הפעם')){
-        const u=await api('POST','/api/bq/sched/'+id,c.charged?{source:c.src,exp_m:tk.expiryMonth,exp_y:tk.expiryYear}:{pm_id:c.pm_id});
-        if(u&&u.ok&&!u.error)toast('💾 הוראת הקבע תחויב מעכשיו מ-•••• '+l4);
-        else await uiAlert(u&&u.ok?u.error:('הכרטיס לא הוחלף בהוראת הקבע:\n'+((u&&u.error)||'שגיאה')));
-      }
+      const msg=[c.charged?'✅ החיוב עבר'+(c.auth||c.ref?' · אישור '+(c.auth||c.ref):''):'',
+        save?(c.attached?'💾 הוראת הקבע תחויב מעכשיו מ-•••• '+l4:''):''].filter(Boolean).join('\n');
+      if(save&&(!c.attached||c.attach_error))await uiAlert((msg?msg+'\n\n':'')+'⚠️ '+(c.attach_error||'הכרטיס נשמר אצל התורם בבנק ווסט, אבל לא הועבר להוראת הקבע.'));
+      else if(save)await uiAlert(msg||'💾 נשמר');
+      else toast(msg);
       bqSwap=null;renderBQ();load().then(render);return;}
     if(a==='hist'){if(bqHist[id]){delete bqHist[id];renderBQ(false);}else bqHistLoad(id);return;}
     if(a==='save'){const body={};if(g('bqs_cat')){body.for_cat=g('bqs_cat').value;body.for_note=g('bqs_note').value.trim();}

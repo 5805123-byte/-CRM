@@ -146,11 +146,12 @@ def tx_row(t):
 
 # ---------- פעולות ----------
 
-def charge_pm(pm_id, amount, description='', customer_id=0, email='', send_receipt=True, custom=None):
-    """חיוב מיידי של כרטיס שמור (pm-…). בנק ווסט שולח לתורם את אישור העסקה שלו."""
+def charge_pm(pm_id, amount, description='', customer_id=0, email='', send_receipt=True, custom=None, cit=False):
+    """חיוב מיידי של כרטיס שמור (pm-…). בנק ווסט שולח לתורם את אישור העסקה שלו.
+    cit — החיוב הראשון בכרטיס שהתורם נתן עכשיו (חיוב של בעל הכרטיס, לא של העסק)."""
     body = {'amount': round(float(amount), 2), 'source': 'pm-%d' % int(pm_id),
             'transaction_details': {'description': (description or '')[:255]},
-            'transaction_flags': {'is_customer_initiated': False}}
+            'transaction_flags': {'is_customer_initiated': bool(cit)}}
     cust = {}
     if customer_id:
         cust['customer_id'] = int(customer_id)
