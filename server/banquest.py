@@ -199,6 +199,38 @@ def create_pm(customer_id, source, exp_m=0, exp_y=0, name='', avs_zip='', is_def
     return call('POST', 'customers/%d/payment-methods' % int(customer_id), body)
 
 
+def create_pm_or_existing(customer_id, source, exp_m=0, exp_y=0, name='', avs_zip='', is_default=True, last4=''):
+    """כמו create_pm. מאיר קיבל "409 Invalid state error" — הכרטיס הזה כבר שמור אצל הלקוח (מניסיון
+    קודם), ובנק ווסט לא שומרים אותו פעמיים. אז לוקחים את הכרטיס השמור שמתאים (4 ספרות + תוקף)."""
+    code, res = create_pm(customer_id, source, exp_m, exp_y, name=name, avs_zip=avs_zip, is_default=is_default)
+    if code in (200, 201) and isinstance(res, dict) and res.get('id'):
+        return code, res
+    err = (LAST.get('error') or '').lower()
+    if code != 409 and 'invalid state' not in err and 'already' not in err and 'duplicate' not in err:
+        return code, res
+    keep = dict(LAST)
+    c2, lst = call('GET', 'customers/%d/payment-methods' % int(customer_id), query={'limit': 100})
+    if c2 != 200 or not isinstance(lst, list):
+        LAST.update(keep)
+        return code, res
+    yy = lambda v: (int(v) % 100) if str(v or '').strip().isdigit() else -1
+    cand = [p for p in lst if isinstance(p, dict) and p.get('id')
+            and (not last4 or str(p.get('last4') or '') == str(last4))
+            and (not exp_m or int(p.get('expiry_month') or 0) == int(exp_m))
+            and (not exp_y or yy(p.get('expiry_year')) == yy(exp_y))]
+    if not cand and last4:
+        same4 = [p for p in lst if isinstance(p, dict) and p.get('id') and str(p.get('last4') or '') == str(last4)]
+        cand = same4 if len(same4) == 1 else []
+    if len(cand) >= 1 and (last4 or len(cand) == 1):
+        hit = sorted(cand, key=lambda p: int(p['id']))[-1]
+        hit = dict(hit, existing=True)
+        if is_default and not hit.get('is_default'):
+            call('PATCH', 'payment-methods/%d' % int(hit['id']), {'is_default': True})
+        return 200, hit
+    LAST.update(keep)
+    return code, res
+
+
 def charge_source(source, amount, description='', customer_id=0, email='', exp_m=0, exp_y=0, name='', avs_zip='',
                   save_card=False):
     body = {'amount': round(float(amount), 2), 'source': source, 'save_card': bool(save_card),

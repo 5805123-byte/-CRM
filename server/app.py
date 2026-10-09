@@ -19764,7 +19764,7 @@ class H(BaseHTTPRequestHandler):
                 src = str(b.get('source') or '')
                 if not re.fullmatch(r'(tkn|ref)-[A-Za-z0-9_\-]+', src):
                     con.close(); return self._send(200, {'ok': False, 'error': 'מקור כרטיס לא תקין'})
-                code, res = _bq.create_pm(row['customer_id'], src, b.get('exp_m'), b.get('exp_y'), is_default=False)
+                code, res = _bq.create_pm_or_existing(row['customer_id'], src, b.get('exp_m'), b.get('exp_y'), is_default=False, last4=b.get('last4') or '')
                 if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
                     con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נשמר בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
                 con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
@@ -19803,7 +19803,7 @@ class H(BaseHTTPRequestHandler):
             if b.get('save'):
                 # מאיר: "כתוב לי שכן עבר לו החיוב אבל לא שמר" — הדרך הבטוחה: קודם הכרטיס נשמר אצל
                 # הלקוח בבנק ווסט (מה-nonce), אחר כך החיוב מהכרטיס השמור, ואז הוא עובר להוראת הקבע
-                code, res = _bq.create_pm(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'), is_default=True)
+                code, res = _bq.create_pm_or_existing(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'), is_default=True, last4=b.get('last4') or '')
                 if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
                     con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נשמר בבנק ווסט (לא חויב כלום): ' + bq_hint(_bq.LAST.get('error') or str(code))})
                 pm = int(res['id'])
@@ -19849,8 +19849,9 @@ class H(BaseHTTPRequestHandler):
                 bump_data()
                 out.update(charged=True, src=bq_card_src(res) if out['ok'] else '', last4=res.get('last_4') or b.get('last4') or '')
                 return self._send(200, out)
-            code, res = _bq.create_pm(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
-                                      name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20], is_default=False)
+            code, res = _bq.create_pm_or_existing(row['customer_id'], 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
+                                                  name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20], is_default=False,
+                                                  last4=b.get('last4') or '')
             if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
                 con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נשמר בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
             con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
@@ -19922,8 +19923,9 @@ class H(BaseHTTPRequestHandler):
                 cid = res['id']
             else:
                 cid = cu['id']
-            code, res = _bq.create_pm(cid, 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
-                                      name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20])
+            code, res = _bq.create_pm_or_existing(cid, 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'),
+                                                  name=str(b.get('card_name') or '')[:120], avs_zip=str(b.get('zip') or '')[:20],
+                                                  last4=b.get('last4') or '')
             if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
                 con.commit(); con.close()
                 return self._send(200, {'ok': False, 'donor_id': did, 'error': 'הכרטיס לא נשמר בבנק ווסט: ' + (_bq.LAST.get('error') or str(code))})
@@ -21459,7 +21461,7 @@ def bq_save_card_bg(customer_id, src, exp_m, exp_y, donor_id=None, new_cust=None
                             "VALUES(?,?,?,?,?,?,?,1,?,1,?)", (cid, nm, res.get('first_name') or '', res.get('last_name') or '',
                                                             em, ph, str(donor_id or ''), donor_id, now_iso()))
                 con.commit()
-            code, res = _bq.create_pm(cid, src, exp_m, exp_y)
+            code, res = _bq.create_pm_or_existing(cid, src, exp_m, exp_y)
             if not (code in (200, 201) and isinstance(res, dict) and res.get('id')) and alt and alt != src:
                 code, res = _bq.create_pm(cid, alt, exp_m, exp_y)      # card_ref לא עבר — מספר העסקה
             if code in (200, 201) and isinstance(res, dict) and res.get('id'):
