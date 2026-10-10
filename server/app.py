@@ -18085,6 +18085,9 @@ class H(BaseHTTPRequestHandler):
             con = db(); pron = kv_get(con, 'ym_pron', ''); con.close()
             txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)
             _ym.begin_trace()
+            if not b.get('gvoice'):
+                # 🔊 מהחובות — בקול ובסגנון ששמרת
+                con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
             ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:

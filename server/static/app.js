@@ -13065,7 +13065,7 @@ function cdGroupsHTML(rows){
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
         ${!g.mid&&deb.length?(deb.every(d=>+d.once)?`<span class="cdnow"><small class="cdonce" title="נשאר ברשימה, בלי כרטיס בקהילה">👤 חד פעמי — לא בקהילה</small><button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="בכל זאת לשייך לחבר קיים">🔗</button><button class="btn sm ghost" data-cdonce="0" data-gk="${esc(g.key)}" title="לבטל את הסימון חד פעמי">↩</button></span>`
           :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="השם נכתב אחרת / בטעות — לשייך לחבר קיים">🔗 שייך לחבר קהילה</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`):''}
-        ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו">שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
+        ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו"><button class="btn sm ghost" data-cdhear="${esc(g.key)}" title="לשמוע איך ההודעה הקולית תישמע אצלו — בלי להתקשר">🔊</button> שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
       <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;}).join('');}
 function cdReqRow(d){
   const nm=((d.ml||'')+' '+(d.mf||'')).trim()||d.name||d.phone||'—';
@@ -13179,6 +13179,18 @@ function cdWire(){const g=id=>document.getElementById(id);
     const w=v.trim().split(/\s+/);
     const r=await api('POST','/api/cm/debts/link',{ids,new:{last:w[0],first:w.slice(1).join(' '),phone:g.phone||''}});
     if(r&&r.ok){toast('➕ נפתח חבר חדש ושויך ✓');await cmLoad(true);cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא נשמר');});
+  // 🔊 מאיר: "אני רוצה לשמוע איך נשמע" — דוגמה בדפדפן, בלי להתקשר לאף אחד
+  view.querySelectorAll('[data-cdhear]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdhear);if(!g)return;
+    const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m)return;if(!ymStatus)await ymLoadStatus();
+    const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
+    const t=YM_TPL.find(x=>x[0]===(deb.some(d=>d.kind==='hok')?'hok':'pledge'));
+    b.disabled=true;b.textContent='⏳';
+    const r=await api('POST','/api/yemot/sample',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
+    b.disabled=false;b.textContent='🔊';
+    if(!r||!r.ok){const sp=await api('POST','/api/yemot/speakable',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
+      await uiAlert('לא הצלחתי להשמיע ('+((r&&r.error)||'שגיאה')+').\nזה הטקסט שיוקרא לו:\n\n'+((sp&&sp.text)||''));return;}
+    const au=new Audio('data:audio/wav;base64,'+r.wav);try{au.play();}catch(e){}
+    await uiAlert('🔊 כך זה יישמע אצלו:\n\n'+r.text);try{au.pause();}catch(e){}});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();
