@@ -13000,6 +13000,9 @@ async function cdPayDialog(d,full){
       const out={amount:a,via:v.value,note:o.querySelector('#cp_n').value.trim(),record:r.checked&&v.value!=='נדרים פלוס'?1:0};o.remove();res(out);};
     setTimeout(()=>{const f=o.querySelector('#cp_a')||o.querySelector('#cp_n');if(f)f.focus();},50);});}
 // 📞 / 💬 עכשיו — הודעה לחבר אחד, עם הסכום הפתוח שלו, בלי לעבור למסך המשלוח
+// "עבור מה" של החובות הפתוחים (למשל "שלושה חודשים חלב") — נכנס בהודעה במקום {עבור}
+function cdForTxt(deb){const T=[...new Set((deb||[]).filter(d=>d.kind!=='hok').map(d=>String(d.title||'').trim()).filter(Boolean))];
+  return T.length>1?T.slice(0,-1).join(', ')+' ו'+T[T.length-1]:(T[0]||'');}
 async function cdSendNow(g,ch){
   const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
   const ph=ymPhone(m.phone);
@@ -13007,13 +13010,13 @@ async function cdSendNow(g,ch){
   if(!ymStatus)await ymLoadStatus();
   const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
   const key=deb.some(d=>d.kind==='hok')?'hok':'pledge', t=YM_TPL.find(x=>x[0]===key);
-  const text=ymTpl(t,ch), nm=((m.first||'')+' '+(m.last||'')).trim();
+  const text=ymTpl(t,ch), nm=((m.first||'')+' '+(m.last||'')).trim(), fr=cdForTxt(deb);
   const rec={k:'m',id:m.id,name:nm,phone:ph,amt:String(amt)};
   const link=ch==='sms'&&/\{קישור\}/.test(text)?nedLink(rec):'';
-  const prev=text.replace(/\{שם\}/g,nm).replace(/\{סכום\}/g,String(amt)).replace(/\{קישור\}/g,link||'');
+  const prev=ymFillTxt(text,nm,String(amt),fr||' ').replace(/\{קישור\}/g,link||'');
   if(!await uiConfirm((ch==='sms'?'לשלוח SMS עכשיו ל':'להתקשר עכשיו (הודעה קולית) ל')+nm+' ('+ph+')?\n\n'+prev,ch==='sms'?'💬 כן, לשלוח':'📞 כן, להתקשר','ביטול'))return;
   const r=await api('POST','/api/yemot/send',{channel:ch,text,amount:'',billing:ch==='voice'?1:0,debt_ids:deb.map(d=>d.id),
-    recipients:[{k:'m',id:m.id,amount:String(amt),link}]});
+    recipients:[{k:'m',id:m.id,amount:String(amt),link,for:fr}]});
   if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));return;}
   toast(ch==='sms'?'💬 ה-SMS נשלח ✓':'📞 השיחה יוצאת ✓');cdData=null;renderCommDebts();}
 function cdMailNow(g){const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m||!mHasMail(m)){toast('אין לו מייל');return;}
@@ -13199,7 +13202,7 @@ function cdWire(){const g=id=>document.getElementById(id);
   view.querySelectorAll('[data-cdsend]').forEach(btn=>btn.onclick=()=>{const ch=btn.dataset.cdsend;
     const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open'&&(d.channel||'sms')===ch);
     cdRem={ids:sel.map(d=>d.id),ch};
-    const by=new Map();sel.forEach(d=>{const x=by.get(d.member_id)||{amt:0,hok:false};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';by.set(d.member_id,x);});
+    const by=new Map();sel.forEach(d=>{const x=by.get(d.member_id)||{amt:0,hok:false,ds:[]};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';x.ds.push(d);by.set(d.member_id,x);});
     if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
       by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
       if(!cmPick.size){toast('לאף אחד מהנבחרים אין מייל');return;}
@@ -13207,7 +13210,7 @@ function cdWire(){const g=id=>document.getElementById(id);
       toast(cmPick.size+' נמענים במייל, עם הסכום של כל אחד ב-{{סכום}} ובקישור'+(nomail?(' · '+nomail+' בלי מייל'):''));return;}
     ymRecs=new Map();let noph=0,hok=0;
     by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);const ph=m&&ymPhone(m.phone);if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}if(x.hok)hok++;
-      ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100)});});
+      ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds)});});
     if(!ymRecs.size){toast(ch==='sms'?'לאף אחד מהנבחרים אין נייד':'לאף אחד מהנבחרים אין טלפון');return;}
     ymCh=ch;ymBill=ch==='voice';try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}
     ymTplKey=hok>ymRecs.size/2?'hok':'pledge';const t=YM_TPL.find(x=>x[0]===ymTplKey);if(t)ymText=ymTpl(t,ymCh);
@@ -13869,7 +13872,7 @@ let ymLog=null, ymLogJob=0, ymLogOpen=false;
 // מאיר: "בהודעה שנשלחת בשיחה מקישים 1 ועוברים לשלוחת סליקת אשראי… סכום לחיוב מותאם לכל לקוח"
 let ymBill=false, ymVoiceOpen=false;
 try{ymBill=localStorage.getItem('kc_ymbill')==='1';}catch(e){}
-let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
+let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymFor='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
 try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
 // [מפתח, תווית, נוסח להודעה קולית (עם "הקישו 1" לסליקה), נוסח ל-SMS (עם {קישור} לנדרים פלוס)]
 // מאיר: "ובהודעה המוכנה תכניס שם כבר אפשרות למעבר לתשלום בכרטיס אשראי — הקישו 1"
@@ -13921,7 +13924,11 @@ function ymPhone(p){ // אותו כלל כמו בשרת: טלפון ישראלי
     if(/^0(5\d|7\d)\d{7}$/.test(d)||/^0[2-489]\d{7}$/.test(d))return d;}
   return '';}
 const ymMobile=p=>/^05\d{8}$/.test(p||'');
-function ymFillTxt(t,name,amt){const a=(amt||ymAmt)||'';let x=String(t||'');
+function ymFillTxt(t,name,amt,fr){const a=(amt||ymAmt)||'';let x=String(t||'');
+  const f=String(fr||ymFor||'').trim().replace(/^(?:עבור|בעבור)\s+/,'');   // כמו ym_fill בשרת
+  if(f&&!/\{עבור\}/.test(x))x=x.replace(/(\{סכום\}(?:\s*(?:שקלים|ש"ח|₪))?)/,'$1 עבור {עבור}');
+  if(!f)x=x.replace(/\s*(?:עבור|בעבור)?\s*\{עבור\}/g,'');
+  x=x.replace(/\{עבור\}/g,f);
   if(!a)x=x.replace(/\s*(?:בסך|על סך|בסכום של)?\s*\{סכום\}\s*(?:שקלים|ש"ח|₪)?/g,'');   // בלי סכום — בלי "בסך … שקלים"
   return x.replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,a).replace(/\s{2,}/g,' ').replace(/\s+([,.])/g,'$1').trim();}
 async function ymLoadStatus(){const r=await api('GET','/api/yemot/status');ymStatus=r&&r.ok?r:{configured:false,connected:false,jobs:[]};}
@@ -14061,7 +14068,7 @@ function ymViewSend(){
   const billOn=ymCh==='voice'&&ymBill;
   const linkOn=ymCh==='sms'&&/\{קישור\}/.test(ymText);
   const prevLink=nedLink(first||{name:'משה כהן',phone:'0501234567'});
-  const prev=ymFillTxt(ymText,first?first.name:'משה כהן',first&&first.amt).replace(/\{קישור\}/g,prevLink);
+  const prev=ymFillTxt(ymText,first?first.name:'משה כהן',first&&first.amt,first&&first.fr).replace(/\{קישור\}/g,prevLink);
   const smsLen=prev.length, smsParts=smsLen<=70?1:Math.ceil(smsLen/67);
   const dhits=ymDQ.trim().length>=2?DB.filter(d=>matchStr([d.last,d.first,d.english,d.phone].join(' '),ymDQ.trim())).slice(0,8):[];
   const row=m=>{const k=ymKey('m',m.id),on=ymRecs.has(k),ph=ymPhone(m.phone);
@@ -14081,13 +14088,14 @@ function ymViewSend(){
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
       <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}</div>
-      <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום">${esc(ymText)}</textarea>
+      <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום, {עבור} = עבור מה">${esc(ymText)}</textarea>
       ${ymCh==='voice'?`<div class="ymnik"><button class="btn sm ghost" id="nk_all">✨ נקד את כל הטקסט</button><button class="btn sm ghost" id="nk_sel">✨ נקד רק את מה שסימנתי</button><button class="btn sm ghost" id="nk_clear">✖ הסר ניקוד</button>
         <span class="hintxt">מסמנים בעכבר מילה או משפט, ולוחצים "נקד רק את מה שסימנתי".</span></div>`:''}
       ${ymTplKey?(()=>{const t=YM_TPL.find(x=>x[0]===ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),saved=ymTplSaved(t[0],ymCh)!=null;
         return `<div class="ymtplbar">${ymText.trim()&&ymText!==cur?`<button class="btn sm" id="ym_tplsave">💾 שמור כנוסח הקבוע של "${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</button>`:`<span class="hintxt">${saved?'✓ זה הנוסח הקבוע שלך':'הנוסח המובנה'} ל"${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</span>`}
           ${saved?`<button class="btn sm ghost" id="ym_tplreset">↩ חזרה לנוסח המובנה</button>`:''}</div>`;})():''}
       <div class="ymrow2"><label class="fld"><span>💲 סכום (נכנס במקום {סכום})</span><input id="ym_amt" value="${esc(ymAmt)}" inputmode="decimal" placeholder="למשל 500"></label>
+        <label class="fld"><span>📝 עבור מה (נכנס אחרי הסכום, או במקום {עבור})</span><input id="ym_for" value="${esc(ymFor)}" placeholder="${sel.some(r=>r.fr)?'מהחוב של כל אחד':'למשל שלושה חודשים חלב'}"></label>
         <span class="hintxt">${ymCh==='sms'?`📤 יוצא ממספר 025803545 · ${smsLen} תווים · ${smsParts} הודעות SMS לכל נמען`:'ההודעה מוקראת בקול. מספרים נשמעים טוב יותר במילים ("חמש מאות").'}</span></div>
       ${ymText?`<div class="ympv"><b>${ymCh==='sms'?'💬':'🔊'} כך זה יישמע${first?' אצל '+esc(first.name):''}:</b> ${esc(prev)}</div>`:''}
       ${ymCh==='voice'?ymVoiceHTML(st):''}
@@ -14136,7 +14144,7 @@ function ymViewSend(){
     if(ymText.trim()&&nt&&ymText!==nt){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok)apply();});return;}
     apply();});
   let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
-  keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
+  keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_for',v=>ymFor=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
   const bc=g('ym_bill'); if(bc)bc.onchange=()=>{ymBill=bc.checked;try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}renderCommYm();};
   view.querySelectorAll('.ym_ra').forEach(i=>i.oninput=()=>{const r=ymRecs.get(i.dataset.k);if(r)r.amt=i.value.trim();});
   g('ym_bad').onclick=()=>{ymFlt=ymFlt==='bad'?'':'bad';renderCommYm();};
@@ -14161,7 +14169,7 @@ function ymViewSend(){
     if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,test:1,test_phone:tp,test_name:first?first.name:'',
-      billing:billOn?1:0,test_amount:(first&&first.amt)||ymAmt,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
+      billing:billOn?1:0,test_amount:(first&&first.amt)||ymAmt,test_for:(first&&first.fr)||ymFor,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
     if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
   g('ym_go').onclick=async()=>{
@@ -14171,7 +14179,7 @@ function ymViewSend(){
     if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 הסכום של כל נמען נשמר בשרת — שלוחת התשלום תיקח אותו משם':'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
     const dids=cdRem&&cdRem.ch===ymCh?cdRem.ids:[];
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,debt_ids:dids,
-      recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L}:{k:x.k,id:x.id,amount:x.amt||'',link:L};})});
+      recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L,for:x.fr||ymFor}:{k:x.k,id:x.id,amount:x.amt||'',link:L,for:x.fr||ymFor};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     if(dids.length){cdRem=null;cdData=null;}
     toast('המשלוח התחיל ✓'+(dids.length?' · נרשם בכרטיסים':''));ymTrack(r.job);};
@@ -14243,7 +14251,7 @@ function ymWireVoice(first,sel){
   const gs=g('ym_gsave'); if(gs)gs.onclick=async()=>{const v=g('ym_gstyle').value;await api('POST','/api/yemot/voice',{gstyle:v});ymStatus.gstyle=v;toast('נשמר ✓');};
   const sp=g('ym_sample'); if(sp)sp.onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     sp.disabled=true;const t0=sp.textContent;sp.textContent='⏳ Gemini מייצר…';
-    const r=await api('POST','/api/yemot/sample',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value,gmodel:(g('ym_gmodel')||{}).value||''});
+    const r=await api('POST','/api/yemot/sample',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,for:(first&&first.fr)||ymFor,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value,gmodel:(g('ym_gmodel')||{}).value||''});
     sp.disabled=false;sp.textContent=t0;
     g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio><div class="hintxt">${esc(r.text)}</div><div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz).</div></div>`
       :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};
@@ -14286,7 +14294,7 @@ function ymWireVoice(first,sel){
     const ta=g('ym_pron');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+lines.join('\n');
     toast(lines.length+' שמות נוספו למילון — בדוק ותקן, ואז "שמור מילון"');};
   g('ym_say').onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
-    const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,pron:g('ym_pron').value});
+    const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,for:(first&&first.fr)||ymFor,pron:g('ym_pron').value});
     g('ym_sayout').innerHTML=r&&r.ok?`<div class="ympv"><b>👂 כך ימות יקריא:</b> ${esc(r.text)}</div>`:'';};
 }
 function ymLinkHTML(linkOn,prevLink){

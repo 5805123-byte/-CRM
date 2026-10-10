@@ -13751,8 +13751,17 @@ def ned_mosads(con):
     return lst, cur
 
 
-def ym_fill(text, name, amount, link=''):
-    """{שם} {סכום} {קישור} בטקסט — כל נמען שומע/מקבל את שמו, וקישור תשלום אישי."""
+def ym_fill(text, name, amount, link='', for_=''):
+    """{שם} {סכום} {קישור} {עבור} בטקסט — כל נמען שומע/מקבל את שמו, וקישור תשלום אישי."""
+    # מאיר: "כל פעם שאני כותב עבור מה בהתחייבות — שהוא ישמע את זה בהודעה" (למשל "שלושה חודשים חלב").
+    # בנוסח בלי {עבור} — נכנס אחרי הסכום; בלי "עבור מה" — המילה "עבור" יורדת
+    for_ = re.sub(r'^\s*(?:עבור|בעבור)\s+', '', str(for_ or '').strip())[:120]
+    text = text or ''
+    if for_ and '{עבור}' not in text:
+        text = re.sub(r'(\{סכום\}(?:\s*(?:שקלים|ש"ח|₪))?)', r'\1 עבור {עבור}', text, count=1)
+    if not for_:
+        text = re.sub(r'\s*(?:עבור|בעבור)?\s*\{עבור\}', '', text)
+    text = text.replace('{עבור}', for_)
     if not amount:
         # מי שאין לו סכום — בלי "בסך … שקלים" בהודעה (ובהקשה 1 הוא מקליד סכום בעצמו)
         text = re.sub(r'\s*(?:בסך|על סך|בסכום של)?\s*\{סכום\}\s*(?:שקלים|ש"ח|₪)?', '', text or '')
@@ -13770,7 +13779,7 @@ def ym_recipients(con, recs):
             ph = _ym.norm_phone(r.get('phone') or '')
             if ph and ph not in seen:
                 seen.add(ph)
-                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link'))})
+                out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link')), 'for': str(r.get('for') or '')[:120]})
             continue
         k = 'd' if (r.get('k') == 'd') else 'm'
         try:
@@ -13793,7 +13802,7 @@ def ym_recipients(con, recs):
         if key in seen:
             continue
         seen.add(key)
-        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link'))})
+        out.append({'k': k, 'id': rid, 'name': nm, 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link')), 'for': str(r.get('for') or '')[:120]})
     return out
 
 
@@ -18074,7 +18083,7 @@ class H(BaseHTTPRequestHandler):
             # השמעת דוגמה בדפדפן — הקול האנושי של Gemini, בלי להתקשר לאף אחד
             import yemot as _ym, gemini_tts as _gt
             con = db(); pron = kv_get(con, 'ym_pron', ''); con.close()
-            txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or '')), pron)
+            txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)
             _ym.begin_trace()
             ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
@@ -18084,7 +18093,7 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/yemot/speakable':
             import yemot as _ym
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
-            return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or '')), pron)})
+            return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
             import yemot as _ym
@@ -18100,7 +18109,7 @@ class H(BaseHTTPRequestHandler):
             if b.get('test'):
                 if not test_phone:
                     con.close(); return self._send(200, {'ok': False, 'error': 'מספר הבדיקה לא תקין'})
-                recs = [{'k': 't', 'id': 0, 'name': (b.get('test_name') or 'בדיקה').strip(), 'phone': test_phone, 'link': ym_link_ok(b.get('test_link'))}]
+                recs = [{'k': 't', 'id': 0, 'name': (b.get('test_name') or 'בדיקה').strip(), 'phone': test_phone, 'link': ym_link_ok(b.get('test_link')), 'for': str(b.get('test_for') or '')[:120]}]
             else:
                 recs = ym_recipients(con, b.get('recipients') or [])
             if not recs:
@@ -18120,7 +18129,7 @@ class H(BaseHTTPRequestHandler):
             for r in recs:
                 ra = r.get('amount') or ym_amt(amount) or amount
                 con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued',?)",
-                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or ''), r.get('amount') or ''))
+                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or '', r.get('for') or b.get('for') or ''), r.get('amount') or ''))
             if not b.get('test') and b.get('debt_ids'):
                 cm_debts_reminded(con, b.get('debt_ids'), ch)
                 # תזכורת על חוב קיים אינה בקשת תשלום נוספת — החוב עצמו הוא הבקשה (אחרת הסכום נספר פעמיים)
