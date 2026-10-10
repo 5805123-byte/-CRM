@@ -12559,7 +12559,7 @@ function renderComm(){
   list=list.filter(m=>matchQ(mName(m)+' '+(m.phone||'')+' '+(m.email||'')+' '+(m.addr||'')+' '+(m.city||'')+' '+(m.seat||'')+' '+(m.notes||'')));
   if(cmFlt==='seat')list.sort((a,b)=>(parseInt(a.seat)||9999)-(parseInt(b.seat)||9999)||byMName(a,b));
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
-    <div class="addrow" style="margin:0 2px 8px">
+    <div class="addrow cmtools" style="margin:0 2px 8px;flex-wrap:wrap">
       <button class="btn" id="cm_mail" style="flex:2" title="מחצות או מנדר 18 — בוחרים בפנים">✉️ משלוח מיילים</button>
       <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn" id="cm_debts" style="flex:2">💰 חובות והתחייבויות</button>

@@ -1400,6 +1400,7 @@
   .vmrow audio{width:100%;height:36px}
   .vmnew{background:var(--accent);color:#fff;border-radius:6px;padding:0 6px;font-size:.75rem;font-weight:700}
   .cmvmnew{background:#fff4d6;color:#7a5a12;border-color:#e2c46a}
+  .cmtools .btn{min-width:calc(33% - 8px)}
   .cmcnt{display:flex;align-items:center;justify-content:space-between}
   .cmfile{display:inline-flex;gap:2px}
   .cmfile button{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:1px 5px;font-size:.8rem;line-height:1.3;cursor:pointer;opacity:.75}
@@ -2110,9 +2111,9 @@
   .enrbar{display:flex;gap:6px;margin:8px 0}
   .enrlist{display:grid;gap:8px}
   .enritem{border:1px solid var(--line);border-radius:10px;padding:8px 11px;display:grid;gap:4px}
-  .enrval{display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:14px}
-  .enrval input{margin-top:3px;flex:none}
-  .enrval span{display:grid;min-width:0;overflow-wrap:anywhere}
+  .enrval{display:flex!important;flex-direction:row;gap:8px;align-items:flex-start;cursor:pointer;font-size:14px;width:100%}
+  .enrval input{margin-top:3px;flex:0 0 18px!important;width:18px!important;height:18px;min-width:0}
+  .enrval span{display:grid;flex:1 1 auto;min-width:0;overflow-wrap:anywhere;text-align:right}
   .enrval small{color:var(--muted,#888);font-size:12px}
   .remitem{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:6px}
   .remitem.over{border-color:var(--no);background:var(--no-soft)}

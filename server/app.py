@@ -22896,6 +22896,9 @@ def member_enrich_suggest(con):
         val = re.sub(r'\s+', ' ', str(val or '')).strip()
         if field == 'phone':
             val = _ym.norm_phone(val)
+            # מספר "ממלא מקום" בנדרים (0500000000, 0521111111, 0501234567) — לא טלפון אמיתי
+            if val and (re.search(r'(\d)\1{5,}', val[3:]) or val[3:] in ('1234567', '7654321')):
+                val = ''
         if not mid or not val:
             return
         acc.setdefault(mid, {}).setdefault(field, {}).setdefault(val, set()).add(src)
