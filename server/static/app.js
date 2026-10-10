@@ -13007,12 +13007,60 @@ function cdForTxt(deb){const T=[...new Set((deb||[]).filter(d=>d.kind!=='hok').m
 // ✎ תיקון הגייה — נשמר במילון ההגייה, וכל הודעה קולית מעכשיו (לכולם) נשמעת כך
 async function ymPronFix(word){
   const w=await uiPrompt('איזו מילה נשמעת לא נכון? (כמו שהיא כתובה)',String(word||'').trim());if(!w||!w.trim())return false;
+  // מאיר: "שאני אעשה הקלטה שלי איך אומרים את זה, ולפעם הבאה זה כבר לא יעשה טעויות"
+  if(await uiConfirm('איך לתקן את "'+w.trim()+'"?\n\n🎙️ הכי מדויק: אתה אומר את המילה פעם אחת, וההקלטה שלך נכנסת לכל הודעה קולית במקום ההקראה.\n✍️ או לכתוב איך אומרים (ניקוד / כתיב).','🎙️ להקליט בקול שלי','✍️ לכתוב'))
+    return await ymRecWord(w.trim());
   let sug=w.trim();try{const n=await api('POST','/api/nikud',{text:w.trim()});if(n&&n.ok&&n.text)sug=n.text.trim();}catch(e){}
   const say=await uiPrompt('איך לומר "'+w.trim()+'"?\nאפשר עם ניקוד (וַיְסְפִּישׁ), או לכתוב כמו שזה נשמע (וייספיש). ריק = למחוק את התיקון.',sug);if(say===null)return false;
   const r=await api('POST','/api/yemot/pron_add',{word:w.trim(),say:say.trim()});
   if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return false;}
   if(ymStatus)ymStatus.pron=r.pron;
   toast(say.trim()&&say.trim()!==w.trim()?'✓ נשמר — "'+w.trim()+'" יוקרא מעכשיו כך בכל ההודעות':'✓ התיקון נמחק');return true;}
+// 🎙️ הקלטת מילה אחת (שם משפחה) — נשמרת כ-WAV של 8kHz (איכות טלפון), חתוכה מהשקט שבצדדים
+function ymRecWord(word){return new Promise(res=>{
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">🎙️ הקלטה: "${esc(word)}"</div>
+    <div class="cm">לוחצים "התחל", אומרים את המילה פעם אחת ברור, ולוחצים "עצור".</div>
+    <div class="cbtns" style="flex-wrap:wrap"><button class="btn rwgo">⏺ התחל הקלטה</button></div>
+    <div class="rwout"></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes" disabled>💾 שמור</button></div></div>`;
+  document.body.appendChild(o);
+  let rec=null,stream=null,wav=null;const go=o.querySelector('.rwgo'),out=o.querySelector('.rwout'),ok=o.querySelector('.cyes');
+  const stop=()=>{try{stream&&stream.getTracks().forEach(t=>t.stop());}catch(e){}};
+  const done=v=>{stop();o.remove();res(v);};
+  o.querySelector('.cno').onclick=()=>done(false);
+  go.onclick=async()=>{
+    if(rec&&rec.state==='recording'){rec.stop();return;}
+    try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){await uiAlert('אין גישה למיקרופון — צריך לאשר לדפדפן להשתמש במיקרופון.');return;}
+    const ch=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data);};
+    rec.onstop=async()=>{stop();go.textContent='⏺ להקליט שוב';out.innerHTML='<div class="hintxt">מעבד…</div>';
+      try{wav=await ymToWav8k(new Blob(ch));}catch(e){wav=null;}
+      if(!wav){out.innerHTML='<div class="ymwarn">לא נקלט קול — נסה שוב, קרוב יותר לטלפון.</div>';ok.disabled=true;return;}
+      out.innerHTML=`<audio controls autoplay src="data:audio/wav;base64,${wav}" style="width:100%"></audio><div class="hintxt">ככה זה יישמע בשיחה. טוב? לוחצים "שמור".</div>`;ok.disabled=false;};
+    rec.start();go.textContent='⏹ עצור';out.innerHTML='<div class="hintxt">🔴 מקליט… אמור "'+esc(word)+'"</div>';ok.disabled=true;
+    setTimeout(()=>{if(rec&&rec.state==='recording')rec.stop();},6000);};
+  ok.onclick=async()=>{if(!wav)return;ok.disabled=true;ok.textContent='שומר…';
+    const r=await api('POST','/api/yemot/pron_rec',{word,wav});
+    if(!r||!r.ok){ok.disabled=false;ok.textContent='💾 שמור';await uiAlert((r&&r.error)||'לא נשמר');return;}
+    if(ymStatus){ymStatus.pron=r.pron;ymStatus.recs=r.words;}
+    toast('✓ נשמר — "'+word+'" ייאמר מעכשיו בקול שלך בכל ההודעות הקוליות');done(true);};
+});}
+async function ymToWav8k(blob){
+  const AC=window.AudioContext||window.webkitAudioContext;const ac=new AC();
+  const buf=await ac.decodeAudioData(await blob.arrayBuffer());try{ac.close();}catch(e){}
+  const n=Math.ceil(buf.duration*8000);if(n<800)return null;
+  const off=new OfflineAudioContext(1,n,8000);const src=off.createBufferSource();src.buffer=buf;src.connect(off.destination);src.start();
+  const d=(await off.startRendering()).getChannelData(0);
+  let pk=0;for(const v of d)pk=Math.max(pk,Math.abs(v));if(pk<0.02)return null;
+  const th=pk*0.08;let a=0,b=d.length-1;while(a<b&&Math.abs(d[a])<th)a++;while(b>a&&Math.abs(d[b])<th)b--;
+  a=Math.max(0,a-400);b=Math.min(d.length-1,b+640);          // 50ms לפני, 80ms אחרי
+  const k=0.9/pk,len=b-a+1,dv=new DataView(new ArrayBuffer(44+len*2));
+  const S=(o,t)=>{for(let i=0;i<t.length;i++)dv.setUint8(o+i,t.charCodeAt(i));};
+  S(0,'RIFF');dv.setUint32(4,36+len*2,true);S(8,'WAVE');S(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);
+  dv.setUint32(24,8000,true);dv.setUint32(28,16000,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);S(36,'data');dv.setUint32(40,len*2,true);
+  for(let i=0;i<len;i++){const v=Math.max(-1,Math.min(1,d[a+i]*k));dv.setInt16(44+i*2,v<0?v*0x8000:v*0x7fff,true);}
+  const u=new Uint8Array(dv.buffer);let bin='';for(let i=0;i<u.length;i+=0x8000)bin+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));
+  return btoa(bin);}
 async function cdSendNow(g,ch){
   const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
   const ph=ymPhone(m.phone);
@@ -14287,7 +14335,8 @@ function ymVoiceHTML(st){
       <div class="hintxt">שורה לכל מילה: <b>מילה=איך לומר</b>. למשל <span dir="rtl">חצות=חֲצוֹת</span> או <span dir="rtl">דויטש=דוֹיְטְשׁ</span>. ניקוד או כתיב מלא עוזרים לקול לקרוא נכון.</div>
       <textarea id="ym_pron" rows="4" placeholder="חצות=חֲצוֹת">${esc(st.pron||'')}</textarea>
       <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="ym_pronsave">💾 שמור מילון</button>
-        <button class="btn sm ghost" id="ym_pronnames">👪 הצע ניקוד לשמות של הנבחרים</button></div></details>
+        <button class="btn sm ghost" id="ym_pronnames">👪 הצע ניקוד לשמות של הנבחרים</button><button class="btn sm ghost" id="ym_recnew">🎙️ להקליט מילה בקול שלי</button></div>
+      ${(st.recs||[]).length?`<div class="hintxt">🎙️ מילים בקול שלך (נכנסות להודעה במקום ההקראה): ${st.recs.map(w=>`<span class="chip">${esc(w)} <button class="fdel" data-recdel="${esc(w)}" title="למחוק את ההקלטה">✕</button></span>`).join(' ')}</div>`:''}</details>
     <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></details>`;}
 // מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
 function ymWireNikud(){
@@ -14349,6 +14398,9 @@ function ymWireVoice(first,sel){
     toast('🎙️ ההקלטה נשמרה ✓ — לא נשלח כלום');const bx=g('ym_recbox');if(bx){bx.open=true;ymRecList();}};
   g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{pron:p});
     if(r&&r.ok){ymStatus.pron=p;toast('המילון נשמר ✓');}else toast('לא נשמר');};
+  const rwn=g('ym_recnew'); if(rwn)rwn.onclick=async()=>{const w=await uiPrompt('איזו מילה להקליט? (כמו שהיא כתובה, למשל שם משפחה)','');if(!w||!w.trim())return;if(await ymRecWord(w.trim()))renderCommYm();};
+  view.querySelectorAll('[data-recdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את ההקלטה של "'+b.dataset.recdel+'"?','🗑️ כן','לא'))return;
+    const r=await api('POST','/api/yemot/pron_rec',{word:b.dataset.recdel,delete:1});if(r&&r.ok){ymStatus.recs=r.words;renderCommYm();}});
   const pn=g('ym_pronnames'); if(pn)pn.onclick=async()=>{
     const have=new Set(g('ym_pron').value.split('\n').map(l=>l.split('=')[0].trim()).filter(Boolean));
     const words=[...new Set((sel||[]).flatMap(r=>String(r.name||'').split(/\s+/)).map(w=>w.replace(/[\u0591-\u05c7]/g,'').trim()).filter(w=>w.length>1&&/[\u05d0-\u05ea]/.test(w)&&!have.has(w)))];

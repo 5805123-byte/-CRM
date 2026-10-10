@@ -140,3 +140,49 @@ def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model=''):
             continue
         break
     return False, last
+
+
+def _frames(wav):
+    """WAV -> (קצב, בתים של PCM 16 ביט מונו)."""
+    with wave.open(io.BytesIO(wav), 'rb') as w:
+        return w.getframerate(), w.readframes(w.getnframes())
+
+
+def synth_spliced(text, recs, voice=DEF_VOICE, style='', trace=None, tries=3, model=''):
+    """מאיר: "שאני אעשה הקלטה שלי איך אומרים את זה, ולפעם הבאה זה כבר לא יעשה טעויות".
+    recs = {מילה: WAV בקול של מאיר (8kHz)}. הטקסט נחתך סביב המילים המוקלטות: כל קטע מוקרא
+    בנפרד, וההקלטה נכנסת באמצע. בלי מילה מוקלטת בטקסט — synth רגיל."""
+    import re
+    words = sorted((w for w in (recs or {}) if w), key=len, reverse=True)
+    if not words:
+        return synth(text, voice, style, trace, tries, model)
+    rx = re.compile(r'(?<![\u0590-\u05ffA-Za-z])(' + '|'.join(re.escape(w) for w in words) + r')(?![\u0590-\u05ffA-Za-z])')
+    parts = rx.split(text or '')
+    if len(parts) == 1:
+        return synth(text, voice, style, trace, tries, model)
+    pcm, rate = [], 8000
+    gap = b'\0\0' * int(rate * 0.06)
+    for i, seg in enumerate(parts):
+        if i % 2:          # מילה מוקלטת
+            try:
+                r, fr = _frames(recs[seg])
+            except Exception:
+                return synth(text, voice, style, trace, tries, model)
+            if r != rate:
+                return synth(text, voice, style, trace, tries, model)
+            pcm += [gap, fr, gap]
+            continue
+        if not re.search(r'[\u0590-\u05ffA-Za-z0-9]', seg):
+            continue
+        ok, w = synth(seg.strip(' ,'), voice, style, trace, tries, model)
+        if not ok:
+            return False, w
+        r, fr = _frames(w)
+        if r != rate:
+            return synth(text, voice, style, trace, tries, model)
+        pcm.append(fr)
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes(b''.join(pcm))
+    return True, buf.getvalue()

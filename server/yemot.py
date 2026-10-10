@@ -313,16 +313,19 @@ def upload_file(path, data, filename='msg.wav', timeout=60):
     return (True, res) if ok else (False, 'ימות המשיח: %s' % (res.get('message') or raw[:160]))
 
 
-def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True, gmodel=''):
+def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True, gmodel='', recs=None):
     """הודעה קולית: מעלה את ההודעה לתיקיית הטלפון ומתקשר אליו.
     engine='gemini' — קול אנושי מ-Gemini (קובץ WAV); אחרת קובץ TTS של ימות."""
     ok, n = next_msg_num(phone, voice)
     if not ok:
         return False, n
     used = 'yemot'
+    import gemini_tts as _g
+    # מילה שמאיר הקליט בקולו (שם משפחה) — רק בקול של Gemini אפשר לשלב אותה בהודעה
+    if engine != 'gemini' and recs and _g.configured() and any(w in (text or '') for w in recs):
+        engine = 'gemini'
     if engine == 'gemini':
-        import gemini_tts as _g
-        okg, wav = _g.synth(text, gvoice, gstyle, trace=_trace, model=gmodel)
+        okg, wav = _g.synth_spliced(text, recs or {}, gvoice, gstyle, trace=_trace, model=gmodel)
         if okg:
             name = '%03d.wav' % n
             ok, res = upload_file('ivr2:/Phone/%s/%s' % (phone, name), wav, name)

@@ -351,6 +351,8 @@ def ensure_schema():
     /* מאיר: "שבסוף ההודעה הוא יוכל להשאיר הודעה, ואני אקבל כל הודעה פה במערכת" — תא קולי */
     CREATE TABLE IF NOT EXISTS ym_vm(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, at TEXT,
         member_id INTEGER, size INTEGER, heard INTEGER DEFAULT 0, done INTEGER DEFAULT 0, note TEXT, audio BLOB, found TEXT);
+    /* מילה (שם משפחה) בקול של מאיר — נכנסת להודעה הקולית במקום ההקראה */
+    CREATE TABLE IF NOT EXISTS ym_pron_rec(word TEXT PRIMARY KEY, wav BLOB, at TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
     -- שמאיר יקבע פעם אחת לכל משלם "מי זה ולמה מיועד הכסף" וכל החיובים שלו ייכנסו
@@ -13754,6 +13756,10 @@ def ned_mosads(con):
     return lst, cur
 
 
+def ym_recs(con):
+    return {r['word']: bytes(r['wav']) for r in con.execute("SELECT word,wav FROM ym_pron_rec") if r['wav']}
+
+
 def ym_fill(text, name, amount, link='', for_=''):
     """{שם} {סכום} {קישור} {עבור} בטקסט — כל נמען שומע/מקבל את שמו, וקישור תשלום אישי."""
     # מאיר: "כל פעם שאני כותב עבור מה בהתחייבות — שהוא ישמע את זה בהודעה" (למשל "שלושה חודשים חלב").
@@ -13936,6 +13942,7 @@ def ym_worker(job_id):
             ym_gv = _gt.voice_ok(kv_get(con, 'ym_gvoice', ''))
             ym_gs = kv_get(con, 'ym_gstyle', '')
             ym_gm = kv_get(con, 'ym_gmodel', '')
+            ym_rc = ym_recs(con)
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
                 _ym.begin_trace()
@@ -13949,7 +13956,7 @@ def ym_worker(job_id):
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
                     ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice,
-                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm)
+                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm, recs=ym_rc)
                     if ok and isinstance(res, dict):
                         con.execute("UPDATE ym_msg SET engine=? WHERE id=?", (res.get('engine') or '', m['id']))
                 tr = _ym.end_trace()
@@ -16984,6 +16991,7 @@ class H(BaseHTTPRequestHandler):
             ned_list = ned_mosads(con)
             try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
             except Exception: _tpl = {}
+            ym_rw = [r['word'] for r in con.execute("SELECT word FROM ym_pron_rec ORDER BY word")]
             ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl,
                     kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', ''), kv_get(con, 'ym_gstyle', ''), kv_get(con, 'ym_gmodel', ''))
             import gemini_tts as _gt
@@ -17001,7 +17009,7 @@ class H(BaseHTTPRequestHandler):
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
                                     'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
                                     'mosads': ned_list[0], 'mosad': ned_list[1],
-                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2],
+                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2], 'recs': ym_rw,
                                     'engine': ym_v[3], 'gvoice': ym_v[4], 'gstyle': ym_v[5], 'gvoices': ym_gvl[0],
                                     'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2], 'gmodels': ym_gvl[3], 'gmodel': ym_v[6]})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
@@ -18069,6 +18077,35 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/yemot/pron_rec':
+            # 🎙️ מילה בקול של מאיר (WAV 8kHz מהדפדפן) — מעכשיו נכנסת לכל הודעה קולית
+            w = re.sub(r'\s+', ' ', str(b.get('word') or '')).strip()[:60]
+            if not w:
+                return self._send(200, {'ok': False, 'error': 'חסרה מילה'})
+            con = db()
+            try:
+                if b.get('delete'):
+                    con.execute("DELETE FROM ym_pron_rec WHERE word=?", (w,))
+                else:
+                    try:
+                        data = base64.b64decode(str(b.get('wav') or ''))
+                        import gemini_tts as _gt
+                        rate, fr = _gt._frames(data)
+                    except Exception:
+                        return self._send(200, {'ok': False, 'error': 'ההקלטה לא נקלטה'})
+                    if rate != 8000 or len(fr) < 1600 or len(fr) > 8000 * 2 * 6:
+                        return self._send(200, {'ok': False, 'error': 'ההקלטה קצרה מדי או ארוכה מדי (עד 6 שניות)'})
+                    con.execute("INSERT INTO ym_pron_rec(word,wav,at) VALUES(?,?,?) ON CONFLICT(word) DO UPDATE SET wav=excluded.wav, at=excluded.at",
+                                (w, sqlite3.Binary(data), now_iso()))
+                    # ההקלטה גוברת — שורה במילון ההגייה לאותה מילה הייתה משנה את הטקסט לפני השילוב
+                    lines = [l for l in kv_get(con, 'ym_pron', '').replace('\r', '').split('\n') if l.strip() and l.split('=', 1)[0].strip() != w]
+                    kv_set(con, 'ym_pron', '\n'.join(lines))
+                con.commit()
+                words = [r['word'] for r in con.execute("SELECT word FROM ym_pron_rec ORDER BY word")]
+                pron = kv_get(con, 'ym_pron', '')
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'words': words, 'pron': pron})
         if self.path == '/api/yemot/pron_add':
             # מאיר: "טעויות בהקראה של שם המשפחה — לתקן ושיישמר להבא לאחרים". שורה במילון ההגייה
             # (מילה=איך לומר); אותה מילה שכבר במילון — מתעדכנת
@@ -18123,8 +18160,9 @@ class H(BaseHTTPRequestHandler):
             # הודעה כללית — בלי שם וסכום אישיים
             txt = _ym.speakable(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron)
             _ym.begin_trace()
-            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
-                                model=str(b.get('gmodel') or gm or ''))
+            con = db(); _rc = ym_recs(con); con.close()
+            ok, wav = _gt.synth_spliced(txt, _rc, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
+                                        model=str(b.get('gmodel') or gm or ''))
             con = db(); ym_save_trace(con, _ym.end_trace())
             if not ok:
                 con.commit(); con.close()
@@ -18168,7 +18206,8 @@ class H(BaseHTTPRequestHandler):
             if not b.get('gvoice'):
                 # 🔊 מהחובות — בקול ובסגנון ששמרת
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
-            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
+            con = db(); _rc = ym_recs(con); con.close()
+            ok, wav = _gt.synth_spliced(txt, _rc, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:
                 return self._send(200, {'ok': False, 'error': str(wav)})
