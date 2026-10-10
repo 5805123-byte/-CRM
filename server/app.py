@@ -16794,7 +16794,7 @@ class H(BaseHTTPRequestHandler):
                 rows = []
                 for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
-                                     "WHERE COALESCE(t.amount,0)>0 ORDER BY t.iso DESC LIMIT 6000"):
+                                     "WHERE COALESCE(t.amount,0)>=10 ORDER BY t.iso DESC LIMIT 6000"):   # מאיר: פחות מ-10 ₪ — לא ברשימה
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
                     # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
                     if re.search(r'מקו?וה|מזגנ|טעינ', ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))):
@@ -16806,7 +16806,7 @@ class H(BaseHTTPRequestHandler):
                                  'linked': bool(t['member_id']), 'purpose': (t['for_local'] or '').strip() or (t['groupe'] or '').strip(),
                                  'nd_purpose': t['groupe'] or '', 'note': t['comments'] or '', 'conf': t['conf'] or '',
                                  'method': {'bank': 'הוראה בנקאית', 'hok': 'הו"ק אשראי', 'nd': 'נדרים פלוס'}[src]})
-                for d in con.execute("SELECT d.*, m.last ml, m.first mf FROM cm_don d LEFT JOIN members m ON m.id=d.member_id ORDER BY d.date DESC, d.id DESC"):
+                for d in con.execute("SELECT d.*, m.last ml, m.first mf FROM cm_don d LEFT JOIN members m ON m.id=d.member_id WHERE COALESCE(d.amount,0)>=10 ORDER BY d.date DESC, d.id DESC"):
                     rows.append({'src': 'man', 'id': d['id'], 'date': (d['date'] or '')[:10], 'time': d['created'] or '', 'amount': d['amount'] or 0,
                                  'member_id': d['member_id'], 'name': ((d['ml'] or '') + ' ' + (d['mf'] or '')).strip(), 'linked': True,
                                  'purpose': d['purpose'] or '', 'note': d['note'] or '', 'method': d['method'] or 'ידני', 'nd_id': d['nd_id'] or ''})
