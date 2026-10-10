@@ -18239,8 +18239,10 @@ class H(BaseHTTPRequestHandler):
             import yemot as _ym
             con = db(); n = 0
             try:
+                shared = nd_shared_phones(con)
                 for it in b.get('items') or []:
                     mid = int(it.get('member_id') or 0)
+                    it['phone'] = [p for p in (it.get('phone') or []) if _ym.norm_phone(p) not in shared]
                     m = con.execute("SELECT phone,email,addr,city FROM members WHERE id=?", (mid,)).fetchone()
                     if not m:
                         continue
@@ -22885,6 +22887,57 @@ def cm_team(con):
     return list(CM_TEAM)
 
 
+def nd_shared_phones(con):
+    """מספרים שאינם של אדם — מאיר: "הדבקת עוד טלפון של מערכת, לא תקין ולא שלהם בכלל" (למשל 089944123).
+    מספר שמופיע בנדרים אצל 3 אנשים שונים ויותר (מספר של מערכת התשלום בטלפון / של המוסד), והמספרים שלנו."""
+    import yemot as _ym
+    who = {}
+    def put(ph, key):
+        for p in _phones_of(ph):
+            who.setdefault(p, set()).add(key)
+    for t in con.execute("SELECT DISTINCT phone, COALESCE(member_id, name) w FROM nd_tx WHERE COALESCE(phone,'')<>''"):
+        put(t['phone'], str(t['w'] or '').strip())
+    for t in con.execute("SELECT phones, COALESCE(member_id, name, id) w FROM nd_torem WHERE COALESCE(phones,'')<>''"):
+        put((t['phones'] or '').replace(';', ' / '), str(t['w'] or '').strip())
+    for k in con.execute("SELECT phone, COALESCE(member_id, name) w FROM nd_keva WHERE COALESCE(phone,'')<>''"):
+        put((k['phone'] or '').replace(';', ' / '), str(k['w'] or '').strip())
+    out = {p for p, w in who.items() if len(w) >= 3}
+    for e in (_ym.SMS_FROM_DEFAULT, os.environ.get('YEMOT_SMS_FROM', ''), os.environ.get('YEMOT_CALLER_ID', '')):
+        if _ym.norm_phone(e):
+            out.add(_ym.norm_phone(e))
+    return out
+
+
+def enrich_shared_fix():
+    """מספרים משותפים שכבר נכנסו לכרטיסים דרך "השלמת פרטים מנדרים פלוס" — יוצאים מהם (רק מה שהשלמה הכניסה)."""
+    import yemot as _ym
+    con = db()
+    try:
+        bad = nd_shared_phones(con)
+        if not bad:
+            return 0
+        n = 0
+        for r in con.execute("SELECT DISTINCT l.member_id, m.phone FROM member_log l JOIN members m ON m.id=l.member_id "
+                             "WHERE l.summary LIKE '📇 הושלמו פרטים מנדרים פלוס%' AND l.summary LIKE '%טלפון%'").fetchall():
+            added = set()
+            for l in con.execute("SELECT summary FROM member_log WHERE member_id=? AND summary LIKE '📇 הושלמו פרטים מנדרים פלוס%'", (r['member_id'],)):
+                added |= set(_phones_of(re.sub(r'.*?טלפון', '', l['summary'] or '').split('·')[0]))
+            drop = added & bad
+            if not drop:
+                continue
+            parts = [x.strip() for x in re.split(r'\s*/\s*', r['phone'] or '') if x.strip()]
+            keep = [x for x in parts if not (set(_phones_of(x)) & drop)]
+            if keep != parts:
+                con.execute("UPDATE members SET phone=?, updated=? WHERE id=?", (' / '.join(keep), now_iso(), r['member_id']))
+                con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                            (r['member_id'], today_iso(), 'נדרים פלוס', '🧹 הוסר מספר שאינו שלו (מספר משותף בנדרים פלוס): ' + ', '.join(sorted(drop)), '', 'note', '', now_iso()))
+                n += 1
+        con.commit()
+        return n
+    finally:
+        con.close()
+
+
 def member_enrich_suggest(con):
     """מאיר: "תעבור לראות מי מהרשימה של הקהילה שיש לו פרטים שם בחשבון השני — אנשים מילאו טפסים
     או כניסה למקווה". לכל חבר קהילה: טלפון / מייל / כתובת / עיר שיש בנדרים פלוס (כרטיסי תורם,
@@ -22892,10 +22945,13 @@ def member_enrich_suggest(con):
     import yemot as _ym
     names = {}
     acc = {}
+    shared = nd_shared_phones(con)
     def add(mid, field, val, src):
         val = re.sub(r'\s+', ' ', str(val or '')).strip()
         if field == 'phone':
             val = _ym.norm_phone(val)
+            if val in shared:
+                val = ''
             # מספר "ממלא מקום" בנדרים (0500000000, 0521111111, 0501234567) — לא טלפון אמיתי
             if val and (re.search(r'(\d)\1{5,}', val[3:]) or val[3:] in ('1234567', '7654321')):
                 val = ''
@@ -23473,6 +23529,12 @@ def serve():
         us_receipt_redate()
     except Exception as e:
         print('  receipt redate error:', e)
+    try:
+        n = enrich_shared_fix()
+        if n:
+            print('  shared phones removed from %d members' % n)
+    except Exception as e:
+        print('  shared phones fix error:', e)
     load_mail_cfg()
     import threading
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
