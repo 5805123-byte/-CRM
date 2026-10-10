@@ -385,6 +385,32 @@ def download(path, timeout=40):
     return True, raw
 
 
+def download_bin(path, timeout=60):
+    """קובץ שמע מהמערכת (DownloadFile) — בתים, לא טקסט. (False, הודעה) אם ימות החזירו שגיאה."""
+    if not configured():
+        return False, 'ימות המשיח לא מוגדר ב-Render'
+    params = {'path': path}
+    t0 = time.time()
+    req = urllib.request.Request(_base() + 'DownloadFile?' + urllib.parse.urlencode(dict(params, token=_token())),
+                                 headers={'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read()
+    except Exception as e:
+        _trace('DownloadFile', params, False, str(e), (time.time() - t0) * 1000)
+        return False, 'הורדת הקובץ נכשלה: %s' % e
+    ms = (time.time() - t0) * 1000
+    if data[:1] == b'{':
+        try:
+            res = json.loads(data.decode('utf-8', 'replace'))
+            _trace('DownloadFile', params, False, data[:300].decode('utf-8', 'replace'), ms)
+            return False, 'ימות המשיח: %s' % (res.get('message') or 'שגיאה')
+        except Exception:
+            pass
+    _trace('DownloadFile', params, True, '(%d KB)' % (len(data) // 1024), ms)
+    return True, data
+
+
 def norm_ext(path):
     """'5' / '/5' / 'ivr2:5' / 'ivr2:/5/' -> 'ivr2:/5'"""
     p = (path or '').strip().replace('\\', '/')

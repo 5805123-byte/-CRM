@@ -348,6 +348,9 @@ def ensure_schema():
     /* מאיר: "מקום ללוג שיראו בדיוק מה נשלח לימות המשיח ומה התשובה" — כל קריאה, בלי המפתח */
     CREATE TABLE IF NOT EXISTS ym_api(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, job INTEGER, msg INTEGER,
         phone TEXT, method TEXT, params TEXT, ok INTEGER, response TEXT, ms INTEGER);
+    /* מאיר: "שבסוף ההודעה הוא יוכל להשאיר הודעה, ואני אקבל כל הודעה פה במערכת" — תא קולי */
+    CREATE TABLE IF NOT EXISTS ym_vm(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, at TEXT,
+        member_id INTEGER, size INTEGER, heard INTEGER DEFAULT 0, done INTEGER DEFAULT 0, note TEXT, audio BLOB, found TEXT);
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
     -- שמאיר יקבע פעם אחת לכל משלם "מי זה ולמה מיועד הכסף" וכל החיובים שלו ייכנסו
@@ -16568,7 +16571,7 @@ class H(BaseHTTPRequestHandler):
             out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
             return self._send(200, {'ok': True, 'month': ym, 'calls': out})
         # בנק ווסט חי — הסטטוס, הוראות הקבע והעסקאות לדף החיובים ולכרטיס התורם
-        m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?$', self.path.split('?')[0])
+        m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?(/rec)?$', self.path.split('?')[0])
         if m:
             # שלוחת התשלום בטלפון (type=api) — ימות המשיח פונים לכאן בכל שלב בשיחה.
             # הקוד הסודי בנתיב (ימות מוסיפים את הפרמטרים שלהם אחרי ?)
@@ -16576,12 +16579,55 @@ class H(BaseHTTPRequestHandler):
             if m.group(1):
                 P['k'] = m.group(1)
             try:
-                ans = ivr_answer(P)
+                ans = ivr_rec(P) if m.group(2) else ivr_answer(P)
             except Exception as e:
                 print('  ivr error:', e)
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
             ivr_log(P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/yemot/vm':
+            # 📥 הודעות שהשאירו בטלפון
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                if (qs.get('sync') or [''])[0] == '1':
+                    try: vm_sync(con)
+                    except Exception as e: print('  vm sync error:', e)
+                rows = [dict(r) for r in con.execute(
+                    "SELECT v.id,v.name,v.phone,v.at,v.member_id,v.size,v.heard,v.done,v.note,m.last ml,m.first mf, "
+                    "(SELECT y.name FROM ym_msg y WHERE y.phone=v.phone ORDER BY y.id DESC LIMIT 1) yname "
+                    "FROM ym_vm v LEFT JOIN members m ON m.id=v.member_id WHERE v.done<2 ORDER BY v.at DESC, v.id DESC LIMIT 300")]
+                host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
+                link = 'https://%s/api/yemot/ivr/%s/rec' % (host, ivr_key(con))
+                on = kv_get(con, 'ym_vm_on', '') == '1'
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'new': sum(1 for r in rows if not r['heard'] and not r['done']),
+                                    'link': link, 'on': on, 'dir': VM_DIR})
+        m = re.match(r'/api/yemot/vm/(\d+)\.wav$', self.path.split('?')[0])
+        if m:
+            import yemot as _ym
+            con = db()
+            try:
+                r = con.execute("SELECT name,audio FROM ym_vm WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not r:
+                    return self._send(404, {'ok': False})
+                data = r['audio']
+                if not data:
+                    ok, data = _ym.download_bin('ivr2:%s/%s' % (VM_DIR, r['name']))
+                    if not ok:
+                        return self._send(502, {'ok': False, 'error': data})
+                    con.execute("UPDATE ym_vm SET audio=? WHERE id=?", (sqlite3.Binary(data), int(m.group(1))))
+                    con.commit()
+            finally:
+                con.close()
+            data = bytes(data)
+            self.send_response(200)
+            self.send_header('Content-Type', 'audio/mpeg' if r['name'].lower().endswith('.mp3') else 'audio/wav')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'private, max-age=86400')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/cm/debts.xlsx':
             # מאיר: "תוכל להביא לי את זה בקובץ, שאראה אם זה נכנס למערכת" — כל החובות לאקסל
             import openpyxl
@@ -18003,6 +18049,25 @@ class H(BaseHTTPRequestHandler):
                         val = val if val in [k for k, _ in _gt.MODELS] else ''
                     con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kvk, val))
             con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/yemot/vm/(\d+)$', self.path)
+        if m:
+            vid = int(m.group(1)); act = b.get('action')
+            con = db()
+            try:
+                if act == 'heard':
+                    con.execute("UPDATE ym_vm SET heard=1 WHERE id=?", (vid,))
+                elif act in ('done', 'undone'):
+                    con.execute("UPDATE ym_vm SET done=?, heard=1 WHERE id=?", (1 if act == 'done' else 0, vid))
+                elif act == 'delete':
+                    con.execute("UPDATE ym_vm SET done=2, audio=NULL WHERE id=?", (vid,))
+                elif act == 'note':
+                    con.execute("UPDATE ym_vm SET note=? WHERE id=?", (str(b.get('note') or '')[:500], vid))
+                elif act == 'member':
+                    con.execute("UPDATE ym_vm SET member_id=? WHERE id=?", (int(b.get('member_id') or 0) or None, vid))
+                con.commit()
+            finally:
+                con.close()
             return self._send(200, {'ok': True})
         if self.path == '/api/yemot/pron_add':
             # מאיר: "טעויות בהקראה של שם המשפחה — לתקן ושיישמר להבא לאחרים". שורה במילון ההגייה
@@ -23206,6 +23271,78 @@ def ivr_answer(P):
         con.close()
 
 
+VM_DIR = '/KCmsg'      # התיקייה בימות שבה נשמרות ההודעות שהשאירו
+
+
+def ivr_rec(P):
+    """📥 שלוחת "השאירו הודעה" (type=api, הכתובת של שלוחת התשלום + /rec). ההקלטה נשמרת בימות
+    בתיקייה KCmsg בשם <טלפון>_<תאריך-שעה>, והמערכת מושכת אותה ל"הודעות שהשאירו"."""
+    import yemot as _ym
+    END = '&go_to_folder=hangup'
+    con = db()
+    try:
+        if (P.get('k') or '') != ivr_key(con):
+            return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
+        kv_set(con, 'ym_vm_on', '1'); con.commit()
+        phone = _ym.norm_phone(P.get('ApiPhone') or '') or re.sub(r'\D', '', str(P.get('ApiPhone') or ''))[:12] or 'x'
+        if 'VmRec' in P or P.get('hangup') == 'yes':
+            threading.Thread(target=vm_sync_bg, daemon=True).start()
+            return 'id_list_message=t-' + _ivr_t('ההודעה נשמרה, תודה רבה') + END if 'VmRec' in P else 'noop=hangup'
+        fname = '%s_%s' % (phone, il_now().strftime('%Y%m%d%H%M%S'))
+        return ('read=t-' + _ivr_t('השאירו הודעה אחרי הצליל ובסיום הקישו סולמית') +
+                '=VmRec,no,record,%s,%s,no,yes,no,1,180' % (VM_DIR, fname))
+    finally:
+        con.close()
+
+
+def vm_sync(con):
+    """ההודעות בתיקייה KCmsg בימות → ym_vm (רק חדשות; השמע נמשך כשמקשיבים)."""
+    import yemot as _ym
+    if not _ym.configured():
+        return 0
+    ok, res = _ym.call('GetIVR2Dir', {'path': VM_DIR})
+    if not ok:
+        return 0
+    idx = None
+    n = 0
+    for f in (res.get('files') or []):
+        nm = str(f.get('name') or '')
+        if not re.search(r'\.(wav|mp3|ogg)$', nm, re.I) or con.execute("SELECT 1 FROM ym_vm WHERE name=?", (nm,)).fetchone():
+            continue
+        mm = re.match(r'^(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})', nm)
+        phone = mm.group(1) if mm else ''
+        at = ('%s-%s-%s %s:%s:%s' % mm.groups()[1:]) if mm else (str(f.get('mtime') or f.get('date') or '') or now_iso())
+        if idx is None:
+            idx = nd_member_index(con)
+        mids = (idx.get(_ym.norm_phone(phone)) or set()) if phone else set()
+        con.execute("INSERT INTO ym_vm(name,phone,at,member_id,size,found) VALUES(?,?,?,?,?,?)",
+                    (nm, phone, at, next(iter(mids)) if len(mids) == 1 else None, int(f.get('size') or 0), now_iso()))
+        n += 1
+    con.commit()
+    return n
+
+
+def vm_sync_bg():
+    try:
+        time.sleep(4)          # ימות מסיימים לשמור את הקובץ
+        con = db(); vm_sync(con); con.close()
+    except Exception as e:
+        print('  vm sync error:', e)
+
+
+def _vm_loop():
+    # כל 10 דקות — רק אחרי שהשלוחה כבר הופעלה פעם אחת
+    while True:
+        time.sleep(600)
+        try:
+            con = db()
+            if kv_get(con, 'ym_vm_on', '') == '1':
+                vm_sync(con)
+            con.close()
+        except Exception as e:
+            print('  vm loop error:', e)
+
+
 def ivr_log(P, ans):
     try:
         con = db()
@@ -23339,6 +23476,7 @@ def serve():
     threading.Thread(target=_authnet_loop, daemon=True).start()
     threading.Thread(target=_bq_loop, daemon=True).start()
     threading.Thread(target=_nd_loop, daemon=True).start()
+    threading.Thread(target=_vm_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

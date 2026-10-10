@@ -12571,6 +12571,7 @@ function renderComm(){
     ${smSectionHTML()}
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
     ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
+    ${CMVM&&CMVM.new?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm cmvmnew" id="cm_vm" style="width:100%">📥 ${CMVM.new} ${CMVM.new>1?'הודעות חדשות שהשאירו':'הודעה חדשה שהשאירו'} בטלפון — לשמוע</button></div>`:''}
     ${CMENR&&CMENR.length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_enr" style="width:100%">📇 ל-${CMENR.length} חברים יש בנדרים פלוס טלפון / מייל / כתובת שאין אצלנו — לבדוק ולהשלים</button></div>`:''}
     <div class="cnt cmcnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}<span class="cmfile"><button id="cm_print" title="הדפסה / PDF של רשימת הקהילה">🖨️</button><button id="cm_xlsx" title="הורדת קובץ אקסל של רשימת הקהילה">📊</button></span></div>
     <div class="list cmlist">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
@@ -12607,6 +12608,8 @@ function renderComm(){
   };
   document.getElementById('cm_newbtn').onclick=addQuick;
   document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
+  if(CMVM===null){CMVM={rows:[],new:0};cmVmLoad(false).then(()=>{if(tab==='comm'&&cmSub==='list'&&CMVM.new)render();});}
+  const vmb=document.getElementById('cm_vm');if(vmb)vmb.onclick=()=>{ymView='vm';cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_mail').onclick=()=>{cmSender='main';cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;render();window.scrollTo(0,0);};
@@ -13965,7 +13968,7 @@ function ymHead(st){
     ?`<div class="ymwarn">⚠️ ימות המשיח עוד לא מחובר. ב-Render ← Environment צריך להוסיף <b>YEMOT_TOKEN</b> — מפתח ה-API של ימות המשיח (מתחיל ב-WU1BUElL.apik_). לא לשלוח אותו בצ'אט או בוואטסאפ.</div>`
     :(st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc((+st.info.units).toLocaleString('he-IL',{maximumFractionDigits:2}))}</b> יחידות`:''}</div>`
                   :`<div class="ymwarn">⚠️ החיבור לימות המשיח נכשל: ${esc(st.error||'')} — פרטים בלשונית "לוג טכני"</div>`);
-  const T=[['send','📤 שליחה'],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['log','📜 לוג טכני']];
+  const T=[['send','📤 שליחה'],['vm','📥 הודעות שהשאירו'+(CMVM&&CMVM.new?' ('+CMVM.new+')':'')],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['log','📜 לוג טכני']];
   return `<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">📞 ימות המשיח — הודעה קולית / SMS</div>${conn}
     <div class="ymtabs">${T.map(([k,l])=>`<button class="ymtab${ymView===k?' on':''}" data-v="${k}">${l}</button>`).join('')}</div>`;
@@ -13985,8 +13988,53 @@ function renderCommYm(){
   if(ymView==='jobs')return ymViewJobs();
   if(ymView==='calls')return ymViewCalls();
   if(ymView==='pay')return ymViewPay();
+  if(ymView==='vm')return ymViewVm();
   if(ymView==='log'){if(ymLog===null){ymLoadLog().then(()=>{if(tab==='comm'&&cmSub==='ym')renderCommYm();});}return ymViewLog();}
   return ymViewSend();
+}
+// ---------------- 📥 הודעות שהשאירו ----------------
+// מאיר: "שבסוף ההודעה הוא יוכל להשאיר הודעה למערכת, ואני אקבל כל הודעה פה במערכת"
+let CMVM=null, vmShowDone=false;
+async function cmVmLoad(sync){const r=await api('GET','/api/yemot/vm'+(sync?'?sync=1':''));CMVM=r&&r.ok?r:{rows:[],new:0};return CMVM;}
+async function ymViewVm(){
+  if(!CMVM||!CMVM._synced){view.innerHTML=ymHead(ymStatus)+'<div class="hintxt" style="padding:16px">בודק הודעות חדשות בימות…</div>';ymWireHead();
+    await cmVmLoad(true);CMVM._synced=1;if(tab!=='comm'||ymView!=='vm')return;}
+  const V=CMVM, R=(V.rows||[]).filter(x=>vmShowDone||!x.done), nDone=(V.rows||[]).filter(x=>x.done).length;
+  const ini=`type=api\napi_link=${V.link||''}\napi_hangup_send=yes`;
+  const who=x=>((x.ml||'')+' '+(x.mf||'')).trim()||x.yname||'';
+  view.innerHTML=ymHead(ymStatus)+`<div class="sec ymsec">
+    <div class="rbtitle" style="text-align:right">📥 הודעות שהשאירו בטלפון${V.new?` · <b>${V.new} חדשות</b>`:''}</div>
+    <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="vm_ref">🔄 בדוק עכשיו</button>${nDone?`<button class="btn sm ghost" id="vm_done">${vmShowDone?'הסתר':'הצג'} את מה שטופל (${nDone})</button>`:''}</div>
+    <div class="vmlist">${R.map(x=>`<div class="vmrow${x.heard?'':' new'}${x.done?' done':''}">
+      <div class="vmh"><b>${esc(who(x)||'מספר לא מזוהה')}</b> <small dir="ltr">${esc(x.phone||'')}</small> <small>${esc(ndDate((x.at||'').slice(0,10)))} ${esc((x.at||'').slice(11,16))}</small>${x.heard?'':' <span class="vmnew">חדש</span>'}</div>
+      <audio controls preload="none" src="/api/yemot/vm/${x.id}.wav" data-vmid="${x.id}"></audio>
+      ${x.note?`<div class="hintxt">📝 ${esc(x.note)}</div>`:''}
+      <div class="bqacts">${x.member_id?`<button class="btn sm ghost" data-vmcard="${x.member_id}" title="הכרטיס שלו">📂</button>`:''}
+        <button class="btn sm ghost" data-vmnote="${x.id}" title="הערה">📝</button>
+        ${x.done?`<button class="btn sm ghost" data-vma="undone" data-id="${x.id}">↩ לא טופל</button>`:`<button class="btn sm" data-vma="done" data-id="${x.id}">✓ טופל</button>`}
+        <button class="btn sm ghost" data-vma="delete" data-id="${x.id}" title="למחוק">🗑️</button></div></div>`).join('')
+      ||`<div class="hintxt">${V.on?'אין הודעות חדשות.':'עוד לא הגיעה אף הודעה — צריך קודם להגדיר את השלוחה בימות (למטה).'}</div>`}</div>
+    <details class="cmdonadd" ${V.on?'':'open'}><summary>⚙️ איך מפעילים (פעם אחת, בימות המשיח)</summary>
+      <div class="hintxt">1. בימות המשיח פותחים <b>שלוחה חדשה</b> — באותה רמה של שלוחת התשלום שמקישים אליה 1 (למשל שלוחה <b>2</b>), ומדביקים בהגדרות שלה:</div>
+      <pre class="ndini" id="vm_ini" dir="ltr">${esc(ini)}</pre>
+      <div class="addrow"><button class="btn sm" id="vm_copy">📋 העתק</button></div>
+      <div class="hintxt">2. בנוסח של ההודעה הקולית (לשונית 📤 שליחה) מוסיפים בסוף: <b>"להשארת הודעה הקישו 2"</b> (או המספר של השלוחה שפתחת).<br>
+      3. מי שמקיש שומע "השאירו הודעה אחרי הצליל", מדבר, ומנתק או מקיש סולמית. ההודעה נשמרת בימות בתיקייה ${esc(V.dir||'')} ומגיעה לכאן תוך דקות (או מיד ב"🔄 בדוק עכשיו"), עם השם שלו אם הטלפון מוכר.</div></details>
+  </div>`;
+  ymWireHead();const g=id=>document.getElementById(id);
+  g('vm_ref').onclick=async()=>{CMVM=null;ymViewVm();};
+  const dn=g('vm_done');if(dn)dn.onclick=()=>{vmShowDone=!vmShowDone;ymViewVm();};
+  g('vm_copy').onclick=()=>{navigator.clipboard.writeText(ini).then(()=>toast('הועתק ✓'),()=>toast('לא הועתק'));};
+  const act=async(id,body)=>{await api('POST','/api/yemot/vm/'+id,body);};
+  view.querySelectorAll('audio[data-vmid]').forEach(a=>a.onplay=()=>{const x=(CMVM.rows||[]).find(y=>y.id==a.dataset.vmid);if(x&&!x.heard){x.heard=1;CMVM.new=Math.max(0,(CMVM.new||0)-1);act(x.id,{action:'heard'});}});
+  view.querySelectorAll('[data-vma]').forEach(b=>b.onclick=async()=>{const a=b.dataset.vma,id=+b.dataset.id;
+    if(a==='delete'&&!await uiConfirm('למחוק את ההודעה?','🗑️ כן','לא'))return;
+    await act(id,{action:a});const x=(CMVM.rows||[]).find(y=>y.id===id);
+    if(x){if(a==='delete')CMVM.rows=CMVM.rows.filter(y=>y.id!==id);else{x.done=a==='done'?1:0;x.heard=1;}CMVM.new=(CMVM.rows||[]).filter(y=>!y.heard&&!y.done).length;}
+    ymViewVm();});
+  view.querySelectorAll('[data-vmnote]').forEach(b=>b.onclick=async()=>{const x=(CMVM.rows||[]).find(y=>y.id==b.dataset.vmnote);if(!x)return;
+    const v=await uiPrompt('הערה להודעה (מה ביקש / מה עשית):',x.note||'');if(v===null)return;x.note=v.trim();await act(x.id,{action:'note',note:x.note});ymViewVm();});
+  view.querySelectorAll('[data-vmcard]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(y=>y.id==b.dataset.vmcard);if(m)openMember(m);});
 }
 // ---------------- 💳 תשלום בטלפון (שלוחת API + נדרים פלוס) ----------------
 // מאיר: "שיהיה אפשרות לשלם דרך TashlumBodedNew — דרך הטלפון שיחייב דרך ההוראת קבע שלו".
