@@ -12566,7 +12566,6 @@ function renderComm(){
       <button class="btn" id="cm_gifts" style="flex:2">💵 תרומות הקהילה</button>
       <button class="btn" id="cm_ledger" style="flex:2">📒 הכנסות והוצאות</button>
       <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
-      <button class="btn" id="cm_rems" style="flex:2">🔔 תזכורות קהילה${CMREMS&&CMREMS.length?` <b>${CMREMS.filter(t=>t.due<=todayStr()).length||CMREMS.length}</b>`:''}</button>
     </div>
     ${smSectionHTML()}
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
@@ -12617,7 +12616,6 @@ function renderComm(){
   document.getElementById('cm_gifts').onclick=()=>{cmSub='cgifts';CGF=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
-  document.getElementById('cm_rems').onclick=()=>openCmRems();
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
   const enb=document.getElementById('cm_enr'); if(enb)enb.onclick=()=>openCmEnrich();
