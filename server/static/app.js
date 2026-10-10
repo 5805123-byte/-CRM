@@ -13044,11 +13044,17 @@ function ymRecWord(word){return new Promise(res=>{
     if(rec&&rec.state==='recording'){rec.stop();return;}
     try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){await uiAlert('אין גישה למיקרופון — צריך לאשר לדפדפן להשתמש במיקרופון.');return;}
     const ch=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data);};
-    rec.onstop=async()=>{stop();go.textContent='⏺ להקליט שוב';out.innerHTML='<div class="hintxt">⏳ מקשיב להקלטה…</div>';
-      let wav=null;try{wav=await ymToWav8k(new Blob(ch));}catch(e){}
-      if(!wav){out.innerHTML='<div class="ymwarn">לא נקלט קול — נסה שוב, קרוב יותר לטלפון.</div>';return;}
-      const r=await api('POST','/api/yemot/pron_hear',{word,wav});
-      if(!r||!r.ok){out.innerHTML=`<div class="ymwarn">${esc((r&&r.error)||'לא הובן')}</div>`;return;}
+    rec.onstop=async()=>{stop();go.textContent='⏺ להקליט שוב';out.innerHTML='<div class="hintxt">⏳ מעבד את ההקלטה…</div>';
+      // מאיר: "כותב מקשיב להקלטה יותר מדי זמן" — לכל שלב יש זמן מקסימלי, ואם לא הצליח: כותבים ידנית
+      const lim=(p,ms)=>Promise.race([p,new Promise(r=>setTimeout(()=>r('__t'),ms))]);
+      const manual=msg=>{got={nikud:'',latin:''};showGot();out.insertAdjacentHTML('afterbegin',`<div class="ymwarn">${esc(msg)}<br>אפשר להקליט שוב, או לכתוב בשורה הלועזית איך אומרים (למשל KLETS-kin) וללחוץ "לשמוע".</div>`);
+        const h=out.querySelector('.hintxt');if(h)h.remove();};
+      let wav=null;try{wav=await lim(ymToWav8k(new Blob(ch,{type:rec.mimeType||''})),10000);}catch(e){}
+      if(wav==='__t'||!wav){out.innerHTML='<div class="ymwarn">'+(wav==='__t'?'עיבוד ההקלטה נתקע':'לא נקלט קול')+' — נסה שוב, קרוב יותר למיקרופון.</div>';return;}
+      out.innerHTML='<div class="hintxt">⏳ Gemini מקשיב להקלטה… (עד חצי דקה)</div>';
+      let r=null;try{r=await lim(api('POST','/api/yemot/pron_hear',{word,wav}),35000);}catch(e){}
+      if(r==='__t'){manual('Gemini לא ענה בזמן.');return;}
+      if(!r||!r.ok){manual((r&&r.error)||'לא הובן');return;}
       got=r;showGot();};
     rec.start();go.textContent='⏹ עצור';out.innerHTML='<div class="hintxt">🔴 מקליט… אמור "'+esc(word)+'"</div>';ok.disabled=true;
     setTimeout(()=>{if(rec&&rec.state==='recording')rec.stop();},6000);};

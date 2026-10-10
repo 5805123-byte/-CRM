@@ -172,13 +172,19 @@ def transcribe_word(wav, word, trace=None):
     body = {'contents': [{'parts': [{'text': ask}, {'inlineData': {'mimeType': 'audio/wav', 'data': base64.b64encode(wav).decode('ascii')}}]}],
             'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0}}
     base = _env('GEMINI_BASE', 'https://generativelanguage.googleapis.com').rstrip('/')
-    for _try in range(2):
-        code, raw, ms = _nk._post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': _env('GEMINI_API_KEY')}, timeout=60)
+    # מהר — המסך מחכה (עד ~30 שניות); מודל שלא קיים / נכשל → מודל גיבוי
+    tried = []
+    for _try in range(3):
+        tried.append(model)
+        code, raw, ms = _nk._post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': _env('GEMINI_API_KEY')}, timeout=14)
+        if code == 200:
+            break
+        if trace:
+            trace('GeminiHear', {'model': model, 'word': word}, False, (raw or '')[:800], ms)
         nm = _nk.newer_model(code, raw)
-        if nm and nm != model:
-            model = nm
-            continue
-        break
+        model = nm if nm and nm not in tried else next((m for m in ('gemini-2.5-flash', 'gemini-2.0-flash') if m not in tried), '')
+        if not model:
+            break
     try:
         res = json.loads(raw)
         txt = res['candidates'][0]['content']['parts'][0]['text']
