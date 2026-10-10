@@ -74,13 +74,12 @@ def _to_wav8k(pcm, rate):
     return buf.getvalue()
 
 
-def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model='', hints=None):
+def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model=''):
     """-> (הצלחה, WAV או הודעת שגיאה). trace(method, params, ok, raw, ms) — ללוג של ימות."""
     if not configured():
         return False, 'Gemini לא מוגדר ב-Render (GEMINI_API_KEY)'
     model = (model if model in [k for k, _ in MODELS if k] else '') or _env('GEMINI_TTS_MODEL', DEF_MODEL)
-    # הנחיית ההגייה לפני ההוראה "הקרא את הטקסט הבא" — כדי שלא תוקרא
-    prompt = (hint_text(hints) + '\n' + (style or DEF_STYLE).strip() + '\n' + text).strip()
+    prompt = ((style or DEF_STYLE).strip() + '\n' + text).strip()
     body = {'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'responseModalities': ['AUDIO'],
                                  'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice_ok(voice)}}}}}
@@ -141,61 +140,3 @@ def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model='', hints=
             continue
         break
     return False, last
-
-
-
-def _frames(wav):
-    """WAV -> (קצב, בתים של PCM 16 ביט מונו)."""
-    with wave.open(io.BytesIO(wav), 'rb') as w:
-        return w.getframerate(), w.readframes(w.getnframes())
-
-
-def hint_text(hints):
-    """מאיר: "שזה יהיה קול של ג'ימיני, רק עם הגייה נכונה" — הנחיית הגייה לפני הטקסט (לא מוקראת)."""
-    hs = [h for h in (hints or []) if h.get('latin')]
-    if not hs:
-        return ''
-    return ('Pronunciation guide (do not read this line aloud): ' +
-            '; '.join('%s is pronounced "%s"' % (h.get('nikud') or h['word'], h['latin']) for h in hs) + '.')
-
-
-def transcribe_word(wav, word, trace=None):
-    """הקלטה של מילה אחת (שם משפחה) -> איך אומרים אותה: ניקוד מלא + תעתיק לטיני עם הטעמה.
-    ההקלטה משמשת רק ללמוד את ההגייה — ההודעה עצמה נשארת בקול של Gemini."""
-    import nikud as _nk
-    if not configured():
-        return False, 'Gemini לא מוגדר ב-Render (GEMINI_API_KEY)'
-    model = (os.environ.get('GEMINI_TEXT_MODEL') or _nk.DEF_TEXT_MODEL).strip()
-    ask = ('This audio is one Hebrew word, a family name written "%s". Listen carefully to exactly how the speaker pronounces it '
-           '(vowels, stress). Reply with JSON only: {"nikud": the word written in Hebrew letters with full niqqud exactly as pronounced, '
-           '"latin": simple English transliteration split into syllables with hyphens and the stressed syllable in CAPITALS}.') % word
-    body = {'contents': [{'parts': [{'text': ask}, {'inlineData': {'mimeType': 'audio/wav', 'data': base64.b64encode(wav).decode('ascii')}}]}],
-            'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0}}
-    base = _env('GEMINI_BASE', 'https://generativelanguage.googleapis.com').rstrip('/')
-    # מהר — המסך מחכה (עד ~30 שניות); מודל שלא קיים / נכשל → מודל גיבוי
-    tried = []
-    for _try in range(3):
-        tried.append(model)
-        code, raw, ms = _nk._post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': _env('GEMINI_API_KEY')}, timeout=14)
-        if code == 200:
-            break
-        if trace:
-            trace('GeminiHear', {'model': model, 'word': word}, False, (raw or '')[:800], ms)
-        nm = _nk.newer_model(code, raw)
-        model = nm if nm and nm not in tried else next((m for m in ('gemini-2.5-flash', 'gemini-2.0-flash') if m not in tried), '')
-        if not model:
-            break
-    try:
-        res = json.loads(raw)
-        txt = res['candidates'][0]['content']['parts'][0]['text']
-        o = json.loads(re.search(r'\{.*\}', txt, re.S).group(0))
-        out = {'nikud': str(o.get('nikud') or '').strip()[:60], 'latin': str(o.get('latin') or '').strip()[:60]}
-        if trace:
-            trace('GeminiHear', {'model': model, 'word': word}, True, json.dumps(dict(out, responseStatus='OK'), ensure_ascii=False), ms)
-        if not out['latin']:
-            return False, 'לא הבנתי את ההקלטה — נסה שוב'
-        return True, out
-    except Exception:
-        if trace:
-            trace('GeminiHear', {'model': model, 'word': word}, False, (raw or '')[:800], ms)
-        return False, 'Gemini לא הבין את ההקלטה (%s)' % (code or '')
