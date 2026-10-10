@@ -12567,14 +12567,12 @@ function renderComm(){
       <button class="btn" id="cm_ledger" style="flex:2">📒 הכנסות והוצאות</button>
       <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
       <button class="btn" id="cm_rems" style="flex:2">🔔 תזכורות קהילה${CMREMS&&CMREMS.length?` <b>${CMREMS.filter(t=>t.due<=todayStr()).length||CMREMS.length}</b>`:''}</button>
-      <button class="btn sm ghost" id="cm_print" style="flex:1">🖨️ הדפסה / PDF</button>
-      <button class="btn sm ghost" id="cm_xlsx" style="flex:1">📊 אקסל</button>
     </div>
     ${smSectionHTML()}
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
     ${(MQ||[]).filter(x=>x.status==='open').length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_nq" style="width:100%">🧾 ${(MQ||[]).filter(x=>x.status==='open').length} שאלות שיוך מנדרים פלוס — למי שייך כל אחד?</button></div>`:''}
     ${CMENR&&CMENR.length?`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_enr" style="width:100%">📇 ל-${CMENR.length} חברים יש בנדרים פלוס טלפון / מייל / כתובת שאין אצלנו — לבדוק ולהשלים</button></div>`:''}
-    <div class="cnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}</div>
+    <div class="cnt cmcnt">${list.length} חברים${cmFlt||q?' (מסונן)':''}<span class="cmfile"><button id="cm_print" title="הדפסה / PDF של רשימת הקהילה">🖨️</button><button id="cm_xlsx" title="הורדת קובץ אקסל של רשימת הקהילה">📊</button></span></div>
     <div class="list cmlist">${list.map(m=>cmEditId===m.id?cmEditHTML(m):`<div class="cmrow" data-id="${m.id}">
       <button class="cmnm cmopen" data-id="${m.id}" title="פתח את הכרטיס — הוראת קבע, תרומות, חיוב, קבלות, תזכורות">${esc(mName(m))}${m.mails?`<small class="cmmails" title="מיילים שנשלחו">📤${m.mails}</small>`:''}</button>
       ${m.nd&&(m.nd.n||m.nd.tx)?`<button class="cmi cmnd${m.nd.bad?' bad':''}" data-id="${m.id}" title="נדרים פלוס${m.nd.tx?' · '+m.nd.tx+' תשלומים, אחרון '+ndDate(m.nd.tx_last):''}">💳 ${m.nd.n?ndMoney(m.nd.amt)+' לחודש'+(m.nd.groupe?' · '+esc(m.nd.groupe):''):'בלי הוראה פעילה'}${m.nd.bad?' · 🔴 חזרה':''}</button>`:''}
