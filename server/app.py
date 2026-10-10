@@ -17992,7 +17992,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             con.execute("DELETE FROM app_kv WHERE k='ym_voice'")      # בחירת קול בימות בוטלה
             if 'pron' in b:
-                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (str(b.get('pron') or '')[:5000],))
+                con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (str(b.get('pron') or '')[:60000],))
             for key, kvk, lim in (('engine', 'ym_engine', 20), ('gvoice', 'ym_gvoice', 40), ('gstyle', 'ym_gstyle', 600), ('gmodel', 'ym_gmodel', 60)):
                 if key in b:
                     val = str(b.get(key) or '')[:lim]
@@ -18004,6 +18004,21 @@ class H(BaseHTTPRequestHandler):
                     con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kvk, val))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/yemot/pron_add':
+            # מאיר: "טעויות בהקראה של שם המשפחה — לתקן ושיישמר להבא לאחרים". שורה במילון ההגייה
+            # (מילה=איך לומר); אותה מילה שכבר במילון — מתעדכנת
+            w = re.sub(r'\s+', ' ', str(b.get('word') or '')).strip()[:60]
+            say = re.sub(r'\s+', ' ', str(b.get('say') or '')).strip()[:120]
+            if not w or '=' in w or '=' in say:
+                return self._send(200, {'ok': False, 'error': 'חסרה מילה'})
+            con = db()
+            lines = [l for l in kv_get(con, 'ym_pron', '').replace('\r', '').split('\n') if l.strip() and l.split('=', 1)[0].strip() != w]
+            if say and say != w:
+                lines.append(w + '=' + say)
+            pron = '\n'.join(lines)
+            con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (pron[:60000],))
+            con.commit(); con.close()
+            return self._send(200, {'ok': True, 'pron': pron})
         if self.path == '/api/nikud':
             # מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
             import yemot as _ym, nikud as _nk

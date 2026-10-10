@@ -13003,6 +13003,15 @@ async function cdPayDialog(d,full){
 // "עבור מה" של החובות הפתוחים (למשל "שלושה חודשים חלב") — נכנס בהודעה במקום {עבור}
 function cdForTxt(deb){const T=[...new Set((deb||[]).filter(d=>d.kind!=='hok').map(d=>String(d.title||'').trim()).filter(Boolean))];
   return T.length>1?T.slice(0,-1).join(', ')+' ו'+T[T.length-1]:(T[0]||'');}
+// ✎ תיקון הגייה — נשמר במילון ההגייה, וכל הודעה קולית מעכשיו (לכולם) נשמעת כך
+async function ymPronFix(word){
+  const w=await uiPrompt('איזו מילה נשמעת לא נכון? (כמו שהיא כתובה)',String(word||'').trim());if(!w||!w.trim())return false;
+  let sug=w.trim();try{const n=await api('POST','/api/nikud',{text:w.trim()});if(n&&n.ok&&n.text)sug=n.text.trim();}catch(e){}
+  const say=await uiPrompt('איך לומר "'+w.trim()+'"?\nאפשר עם ניקוד (וַיְסְפִּישׁ), או לכתוב כמו שזה נשמע (וייספיש). ריק = למחוק את התיקון.',sug);if(say===null)return false;
+  const r=await api('POST','/api/yemot/pron_add',{word:w.trim(),say:say.trim()});
+  if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return false;}
+  if(ymStatus)ymStatus.pron=r.pron;
+  toast(say.trim()&&say.trim()!==w.trim()?'✓ נשמר — "'+w.trim()+'" יוקרא מעכשיו כך בכל ההודעות':'✓ התיקון נמחק');return true;}
 async function cdSendNow(g,ch){
   const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
   const ph=ymPhone(m.phone);
@@ -13188,9 +13197,10 @@ function cdWire(){const g=id=>document.getElementById(id);
     const r=await api('POST','/api/yemot/sample',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
     b.disabled=false;b.textContent='🔊';
     if(!r||!r.ok){const sp=await api('POST','/api/yemot/speakable',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
-      await uiAlert('לא הצלחתי להשמיע ('+((r&&r.error)||'שגיאה')+').\nזה הטקסט שיוקרא לו:\n\n'+((sp&&sp.text)||''));return;}
+      if(await uiConfirm('לא הצלחתי להשמיע ('+((r&&r.error)||'שגיאה')+').\nזה הטקסט שיוקרא לו:\n\n'+((sp&&sp.text)||''),'✎ לתקן הגייה','סגור'))await ymPronFix(m.last||'');return;}
     const au=new Audio('data:audio/wav;base64,'+r.wav);try{au.play();}catch(e){}
-    await uiAlert('🔊 כך זה יישמע אצלו:\n\n'+r.text);try{au.pause();}catch(e){}});
+    const fix=await uiConfirm('🔊 כך זה יישמע אצלו:\n\n'+r.text+'\n\nמילה נשמעת לא נכון (למשל שם המשפחה)?','✎ לתקן הגייה','סגור');try{au.pause();}catch(e){}
+    if(fix&&await ymPronFix(m.last||''))b.click();});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();
