@@ -1958,20 +1958,22 @@ async function mkSchedOpen(){
 let SCH=null, schBusy=false, schTimer=null;
 // מאיר: "את דף מתוזמנים תכניס לקהילה" — 🕍 קהילה ← ⏰ מתוזמנים
 const schOn=()=>tab==='comm'&&cmSub==='sched';
-async function schLoad(){schBusy=true;const r=await api('GET','/api/yemot/sched');schBusy=false;SCH=r&&r.ok?r:{ok:false};if(schOn())renderSched();}
+async function schLoad(){schBusy=true;const r=await api('GET','/api/yemot/sched');schBusy=false;SCH=r&&r.ok?r:{ok:false};if(schOn())renderSched();else{const sb=document.getElementById('cm_schbox');if(sb&&tab==='comm')renderSched(sb);}}
 const schWhen=v=>v?mkDTLabel(String(v).replace(' ','T')):'';
-function renderSched(){
-  chips.innerHTML='<button class="chip" id="schback">← לרשימת הקהילה</button>';
-  document.getElementById('schback').onclick=()=>{cmSub='list';render();};
-  clearTimeout(schTimer); schTimer=setTimeout(()=>{if(schOn()&&!document.querySelector('.mkov,.confirmov'))schLoad();},30000);
-  if(SCH===null){view.innerHTML='<div class="mkw"><div class="mklist">'+'<div class="mkskel"></div>'.repeat(4)+'</div></div>';if(!schBusy)schLoad();return;}
-  if(!SCH.ok){view.innerHTML='<div class="mkempty"><b>⚠️</b>לא נטען</div>';return;}
+function renderSched(box){
+  // מאיר: "תחת הדף של קהילה" — מוצג גם בתחתית הדף של הקהילה (box), ולא רק כדף נפרד
+  const V=box||view;
+  if(!box){chips.innerHTML='<button class="chip" id="schback">← לרשימת הקהילה</button>';
+  document.getElementById('schback').onclick=()=>{cmSub='list';render();};}
+  clearTimeout(schTimer); schTimer=setTimeout(()=>{if((schOn()||document.getElementById('cm_schbox'))&&!document.querySelector('.mkov,.confirmov'))schLoad();},30000);
+  if(SCH===null){V.innerHTML='<div class="mkw"><div class="mklist">'+'<div class="mkskel"></div>'.repeat(4)+'</div></div>';if(!schBusy)schLoad();return;}
+  if(!SCH.ok){V.innerHTML='<div class="mkempty"><b>⚠️</b>לא נטען</div>';return;}
   const S=SCH, ch=c=>c==='sms'?'💬 SMS':c==='voice'?'📞 שיחה':c==='email'?'✉️ מייל':c;
   const late=S.retries.filter(x=>x.late).length;
   const sec=(icon,title,sub,n,body)=>`<div class="mksec" style="margin-top:18px">${icon} ${title} <span class="mktag ${n?'ok':'mu'}">${n}</span> <small>${sub}</small></div>${body}`;
   const empty=t=>`<div class="mksub" style="padding:6px 4px">${t}</div>`;
   const row=(inner,acts,id)=>`<div class="mkrow schrow" ${id||''}><div class="mknm">${inner}</div><div class="mkact">${acts}</div></div>`;
-  view.innerHTML=`<div class="mkw">
+  V.innerHTML=`<div class="mkw">
     <div class="mkhero"><h2>⏰ מתוזמנים<small>כל מה שעוד אמור לצאת — הודעות, ניסיון חוזר למי שלא ענה, מיילים. עכשיו ${esc(schWhen(S.now))}${S.call_ok?'':' · ⏸ עכשיו לא שולחים (שבת / חג / לילה) — ממשיכים ב'+esc(schWhen(S.next_ok))}</small></h2>
       <div class="mkstat"><b>${S.scheduled.length}</b><span>מתוזמנות</span></div>
       <div class="mkstat"><b>${S.retries.length}</b><span>ניסיון חוזר</span></div>
@@ -1998,9 +2000,9 @@ function renderSched(){
         `<b>${esc(m.subject||m.name||'משלוח #'+m.id)}</b><div class="mksub">${m.queued} מחכים · ${m.sent} נשלחו · נפתח ${esc(schWhen(m.created))}</div>`,
         `<button class="mkbtn gh" data-mailstop="1">⏹ לעצור משלוח מיילים</button>`)).join('')}</div>`):''}
   </div>`;
-  document.getElementById('schre').onclick=()=>{SCH=null;renderSched();};
+  document.getElementById('schre').onclick=()=>{SCH=null;renderSched(box);};
   const post=async(u,b)=>{const r=await api('POST',u,b||{});if(!r||!r.ok){uiAlert((r&&r.error)||'שגיאה');return null;}return r;};
-  view.querySelectorAll('[data-j]').forEach(b=>b.onclick=async()=>{const id=b.dataset.j,a=b.dataset.a,j=S.scheduled.find(x=>x.job==id)||{recips:[],send_at:'',text:''};
+  V.querySelectorAll('[data-j]').forEach(b=>b.onclick=async()=>{const id=b.dataset.j,a=b.dataset.a,j=S.scheduled.find(x=>x.job==id)||{recips:[],send_at:'',text:''};
     if(a==='cancel'&&!await uiConfirm('לבטל את ההודעה המתוזמנת?','✕ לבטל','לא'))return;
     if(a==='time'){const v=await uiPrompt('מתי לשלוח? (למשל '+S.now.slice(0,10)+' 20:00)',j.send_at);if(!v)return;
       const r=await post('/api/yemot/sched/job/'+id+'/time',{send_at:v});if(r){toast('🕒 '+schWhen(r.send_at)+(r.moved?' (נדחה לשעה מתאימה)':''));schLoad();}return;}
@@ -2008,13 +2010,13 @@ function renderSched(){
       if(await post('/api/yemot/sched/job/'+id+'/text',{text:v})){toast('✎ עודכן');schLoad();}return;}
     b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
     if(await post('/api/yemot/sched/job/'+id+'/'+a)){toast(a==='now'?'▶️ יוצאת עכשיו':'בוטלה');}schLoad();});
-  view.querySelectorAll('[data-m]').forEach(b=>b.onclick=async()=>{const id=b.dataset.m,a=b.dataset.a;
+  V.querySelectorAll('[data-m]').forEach(b=>b.onclick=async()=>{const id=b.dataset.m,a=b.dataset.a;
     if(a==='noretry'&&!await uiConfirm('לא לנסות להתקשר אליו שוב?','✕ לא לנסות','ביטול'))return;
     b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
     if(await post('/api/yemot/sched/msg/'+id+'/'+a)){toast(a==='retry_now'?'📞 מתקשר עכשיו':'לא ינסה שוב');}schLoad();});
-  view.querySelectorAll('[data-stop]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לעצור את המשלוח? מי שעוד לא קיבל — לא יקבל.','⏹ לעצור','ביטול'))return;
+  V.querySelectorAll('[data-stop]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לעצור את המשלוח? מי שעוד לא קיבל — לא יקבל.','⏹ לעצור','ביטול'))return;
     await post('/api/yemot/job/'+b.dataset.stop+'/stop');toast('נעצר');schLoad();});
-  view.querySelectorAll('[data-mailstop]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לעצור את שליחת המיילים?','⏹ לעצור','ביטול'))return;
+  V.querySelectorAll('[data-mailstop]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לעצור את שליחת המיילים?','⏹ לעצור','ביטול'))return;
     await post('/api/mail/stop');toast('נעצר');schLoad();});
   const ck=document.getElementById('schchk'); if(ck)ck.onclick=async()=>{ck.disabled=true;ck.innerHTML='<span class="mkspin"></span> בודק…';
     await post('/api/yemot/sched/check');setTimeout(schLoad,8000);};
@@ -13279,7 +13281,7 @@ function renderComm(){
   // מאיר: "נתן תתן צריך להיות תחת לשונית קהילה… גם תרומות וגם כל מה שיש בקהילה, אבל לא לערב את התרומות"
   document.getElementById('cm_natan').onclick=()=>{cmSub='debts';cdFund='natan';cdData=null;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;render();window.scrollTo(0,0);};
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
-  document.getElementById('cm_sch').onclick=()=>{cmSub='sched';SCH=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_sch').onclick=()=>{const sb=document.getElementById('cm_schbox');if(sb){SCH=null;renderSched(sb);sb.scrollIntoView({behavior:'smooth',block:'start'});}else{cmSub='sched';render();}};
   document.getElementById('cm_zm').onclick=()=>{cmSub='zmanim';render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
@@ -13289,6 +13291,8 @@ function renderComm(){
   // מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
   document.getElementById('cm_print').onclick=()=>window.open('/kehila-print'+(cmFlt==='seat'?'?sort=seat':''),'_blank');
   document.getElementById('cm_xlsx').onclick=()=>{location.href='/api/members.xlsx'+(cmFlt==='seat'?'?sort=seat':'');};
+  // ⏰ מתוזמנים — בתחתית הדף של הקהילה
+  const sb=document.createElement('div');sb.id='cm_schbox';sb.style.marginTop='26px';view.appendChild(sb);renderSched(sb);
 }
 // ===== 💰 חובות והתחייבויות — של הקהילה בלבד =====
 // מאיר: "שיהיה מערכת חובות והתחייבויות של הקהילה בלבד… תסנכרן נדרים פלוס כל כמה זמן, שיראו
