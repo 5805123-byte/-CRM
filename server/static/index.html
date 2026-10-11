@@ -587,6 +587,8 @@
   .mkdf .grow{flex:1 1 auto}.mktpl{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
   .mkx{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:.85rem;padding:2px 6px;border-radius:6px}.mkx:hover{background:var(--ground);color:var(--ink)}
   .mkchan{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mkchan button{border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px;font:inherit;font-weight:800;cursor:pointer}
+  .mkrow.schrow{grid-template-columns:1fr auto;cursor:default}.mkrow.schrow .mkact{flex-wrap:wrap;justify-content:flex-end}.mkrow.schrow .mknm b{white-space:normal}
+  @media (max-width:640px){.mkrow.schrow{grid-template-columns:1fr}.mkrow.schrow .mkact{justify-content:flex-start}}
   .mkchan button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
   @media (max-width:600px){.zml{flex-wrap:wrap}.zml .zlab{flex-basis:100%!important}}   /* זמני תפילות בטלפון — השם בשורה מלאה */
   .avsort-th{cursor:pointer;user-select:none}
@@ -2463,6 +2465,7 @@
       <button class="tab" data-tab="camp">קמפיינים</button>
       <button class="tab" data-tab="mikveh">🛁 מקווה</button>
       <button class="tab" data-tab="zmanim">🕰️ זמני תפילות</button>
+      <button class="tab" data-tab="sched">⏰ מתוזמנים</button>
       <button class="tab hidden" data-tab="old">🧹 תורמים ישנים</button>
       <button class="tab hidden danger" data-tab="review">📋 לבדיקה</button>
       <button class="tab hidden danger" data-tab="dups">🧾 תשלומים כפולים</button>

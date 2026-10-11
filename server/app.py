@@ -14078,6 +14078,63 @@ def ym_retry_scan():
         con.close()
 
 
+def ym_sched_view(con, role='admin'):
+    """⏰ מאיר: "מקום לראות את כל הדברים המתוזמנים — שיחות שאמורות להישלח, שיחות לאנשים שלא ענו —
+    לנהל ולבדוק". הכל במקום אחד: מתוזמנות, יוצאות עכשיו, ניסיון חוזר למי שלא ענה, ממתינות לבדיקה, מיילים בתור."""
+    now = il_now()
+    since = (now - datetime.timedelta(days=3)).strftime('%Y-%m-%d')
+    out = {'now': now.strftime('%Y-%m-%d %H:%M'), 'call_ok': ym_call_ok(now),
+           'next_ok': ym_next_ok(now).strftime('%Y-%m-%d %H:%M')}
+    def recips(jid, lim=6):
+        rr = [dict(r) for r in con.execute("SELECT id,name,phone,text,status FROM ym_msg WHERE job=? ORDER BY id LIMIT ?", (jid, lim))]
+        return rr
+    out['scheduled'] = []
+    for j in con.execute("SELECT * FROM ym_job WHERE status='scheduled' ORDER BY send_at, id"):
+        out['scheduled'].append({'job': j['id'], 'channel': j['channel'], 'label': j['label'] or '', 'send_at': j['send_at'] or '',
+                                 'created': j['created'] or '', 'total': j['total'] or 0, 'text': j['text'] or '', 'recips': recips(j['id'])})
+    out['sending'] = []
+    for j in con.execute("SELECT * FROM ym_job WHERE status IN ('queued','sending') ORDER BY id DESC LIMIT 20"):
+        # משלוח שנפתח לפני יותר מחצי שעה ולא יצא ממנו כלום — תקוע (למשל אחרי תקלה / הפעלה מחדש של השרת)
+        stuck = j['status'] == 'queued' and not (j['sent'] or 0) and not (j['failed'] or 0) and (j['created'] or '') < \
+            (il_now() - datetime.timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M')
+        out['sending'].append({'job': j['id'], 'channel': j['channel'], 'label': j['label'] or '', 'created': j['created'] or '',
+                               'total': j['total'] or 0, 'sent': j['sent'] or 0, 'failed': j['failed'] or 0, 'status': j['status'],
+                               'stuck': stuck})
+    # ניסיון חוזר — מי שלא ענה (נבדק: answered=0), שעוד לא קיבל ניסיון שני
+    out['retries'] = []
+    for m in con.execute(
+            "SELECT m.id,m.job,m.name,m.phone,m.sent_ts,m.retry_at,m.amount,m.text,j.label,j.test FROM ym_msg m JOIN ym_job j ON j.id=m.job "
+            "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND m.answered=0 AND m.retry_of IS NULL "
+            "AND m.retried IS NULL AND COALESCE(m.paid_at,'')='' AND COALESCE(m.sent_ts,'')>=? ORDER BY m.sent_ts", (since,)):
+        try:
+            due = datetime.datetime.strptime((m['sent_ts'] or '')[:19], '%Y-%m-%d %H:%M:%S') + YM_RETRY_AFTER
+        except ValueError:
+            due = now
+        if m['retry_at']:
+            try:
+                due = max(due, datetime.datetime.strptime(m['retry_at'][:16], '%Y-%m-%d %H:%M'))
+            except ValueError:
+                pass
+        if not ym_call_ok(due):
+            due = ym_next_ok(due)
+        out['retries'].append({'msg': m['id'], 'job': m['job'], 'name': m['name'] or '', 'phone': m['phone'] or '',
+                               'sent_ts': m['sent_ts'] or '', 'due': due.strftime('%Y-%m-%d %H:%M'), 'late': due <= now,
+                               'label': m['label'] or '', 'text': (m['text'] or '')[:300], 'amount': m['amount'] or ''})
+    # עוד לא נבדק אם ענו (נבדק ביומן של ימות כמה דקות אחרי השיחה)
+    out['checking'] = [dict(r) for r in con.execute(
+        "SELECT m.id msg, m.job, m.name, m.phone, m.sent_ts, j.label FROM ym_msg m JOIN ym_job j ON j.id=m.job "
+        "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND m.answered IS NULL AND COALESCE(m.sent_ts,'')>=? "
+        "ORDER BY m.sent_ts DESC LIMIT 100", (since,))]
+    out['mail'] = []
+    if role == 'admin':
+        for b in con.execute("SELECT b.id, b.name, b.subject, b.created, b.status, "
+                             "(SELECT COUNT(*) FROM mail_queue q WHERE q.batch=b.id AND q.status='queued') queued, "
+                             "(SELECT COUNT(*) FROM mail_queue q WHERE q.batch=b.id AND q.status='sent') sent "
+                             "FROM mail_batch b WHERE EXISTS(SELECT 1 FROM mail_queue q WHERE q.batch=b.id AND q.status='queued') ORDER BY b.id"):
+            out['mail'].append(dict(b))
+    return out
+
+
 def ym_sched_scan():
     """הודעות מתוזמנות (מלשונית המקווה) שהגיע זמנן — יוצאות עכשיו."""
     con = db()
@@ -17069,6 +17126,14 @@ class H(BaseHTTPRequestHandler):
             except ValueError:
                 rows = None
             return self._send(200, {'ok': True, 'templates': rows if rows is not None else MK_TEMPLATES, 'default': rows is None})
+        if self.path.split('?')[0] == '/api/yemot/sched':
+            con = db()
+            try:
+                out = ym_sched_view(con, getattr(self, 'role', 'admin') or 'admin')
+            finally:
+                con.close()
+            out['ok'] = True
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/mikveh/scheduled':
             con = db()
             try:
@@ -18870,6 +18935,66 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE ym_msg SET answered=NULL, call_id='' WHERE job=? AND status='sent'", (int(m.group(1)),))
             con.commit(); con.close()
             ym_check_job(int(m.group(1)))
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/yemot/sched/(job|msg)/(\d+)/(now|cancel|time|text|noretry|retry_now)$', self.path)
+        if m:
+            # ⏰ ניהול המתוזמנים
+            kind, xid, act = m.group(1), int(m.group(2)), m.group(3)
+            import threading as _thr
+            con = db()
+            try:
+                if kind == 'job':
+                    j = con.execute("SELECT * FROM ym_job WHERE id=?", (xid,)).fetchone()
+                    if not j or not (j['status'] == 'scheduled' or (j['status'] == 'queued' and act in ('now', 'cancel'))):
+                        return self._send(200, {'ok': False, 'error': 'כבר לא מתוזמנת (אולי כבר יצאה)'})
+                    if act == 'cancel':
+                        con.execute("UPDATE ym_job SET status='cancelled' WHERE id=?", (xid,))
+                        con.execute("UPDATE ym_msg SET status='cancelled' WHERE job=? AND status='queued'", (xid,))
+                    elif act == 'now':
+                        con.execute("UPDATE ym_job SET status='queued', send_at=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M'), xid))
+                    elif act == 'time':
+                        v = str(b.get('send_at') or '').replace('T', ' ')[:16]
+                        try:
+                            want = datetime.datetime.strptime(v, '%Y-%m-%d %H:%M')
+                        except ValueError:
+                            return self._send(200, {'ok': False, 'error': 'שעה לא תקינה'})
+                        v = ym_next_ok(want).strftime('%Y-%m-%d %H:%M')
+                        con.execute("UPDATE ym_job SET send_at=? WHERE id=?", (v, xid))
+                        con.commit()
+                        return self._send(200, {'ok': True, 'send_at': v, 'moved': v != want.strftime('%Y-%m-%d %H:%M')})
+                    elif act == 'text':
+                        t = str(b.get('text') or '').strip()[:1000]
+                        if not t:
+                            return self._send(200, {'ok': False, 'error': 'חסר טקסט'})
+                        if (j['total'] or 0) > 1:
+                            return self._send(200, {'ok': False, 'error': 'במשלוח לכמה נמענים אי אפשר לערוך מכאן (כל אחד קיבל נוסח אישי)'})
+                        con.execute("UPDATE ym_job SET text=? WHERE id=?", (t, xid))
+                        con.execute("UPDATE ym_msg SET text=? WHERE job=? AND status='queued'", (t, xid))
+                    else:
+                        return self._send(400, {'ok': False})
+                    con.commit()
+                    if act == 'now':
+                        _thr.Thread(target=ym_worker, args=(xid, False), daemon=True).start()
+                    return self._send(200, {'ok': True})
+                r = con.execute("SELECT * FROM ym_msg WHERE id=?", (xid,)).fetchone()
+                if not r:
+                    return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+                if act == 'noretry':
+                    con.execute("UPDATE ym_msg SET retried=0, retry_note=? WHERE id=?", ('בוטל ידנית', xid))
+                    con.commit()
+                    return self._send(200, {'ok': True})
+                if act == 'retry_now':
+                    if r['retried'] is not None or r['status'] != 'sent':
+                        return self._send(200, {'ok': False, 'error': 'כבר טופל'})
+                    nj = ym_redial(con, r['job'], [r], '📞 חיוג חוזר')
+                    return self._send(200, {'ok': True, 'job': nj})
+                return self._send(400, {'ok': False})
+            finally:
+                con.close()
+        if self.path == '/api/yemot/sched/check':
+            # לבדוק עכשיו ביומן של ימות מי ענה (בלי לחכות לסריקה של כל 5 דקות)
+            import threading as _thr
+            _thr.Thread(target=ym_retry_scan, daemon=True).start()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/yemot/job/(\d+)/redial$', self.path)
         if m:

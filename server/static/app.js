@@ -1237,7 +1237,7 @@ let ROLE='admin', AUTH_ON=false, _loginShown=false;
 // מאיר: "בשביל הגבאים שייפתח להם הדף של הקהילה ושל פרנס יום… באותה סיסמא" — /gabbai
 const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':(location.pathname==='/gabbai'?'gabbai':'admin'));
 const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
-const ROLE_TABS={comm:['comm','zmanim'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','zmanim']};
+const ROLE_TABS={comm:['comm','zmanim','sched'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','zmanim','sched']};
 const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};
 const ROLE_ONLY={comm:'הקהילה',parnes:'פרנס יום והקוויטל',gabbai:'הקהילה, פרנס יום והקוויטל'};
 function showLogin(msg){
@@ -1565,7 +1565,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','zmanim'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','zmanim','sched'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1616,6 +1616,7 @@ function render(){
   if(tab==='camp') return renderCamp();
   if(tab==='mikveh') return renderMikveh();
   if(tab==='zmanim') return renderZmanim();
+  if(tab==='sched') return renderSched();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
   if(tab==='unlinked') return renderUnlinked();
@@ -1951,6 +1952,70 @@ async function mkSchedOpen(){
     if(!x||!x.ok)uiAlert((x&&x.error)||'שגיאה'); else toast(a==='now'?'▶️ יוצאת עכשיו':'ההודעה בוטלה');
     mkSchedOpen(); mkSchedCount();});
   remov.classList.add('show');
+}
+
+/* ---------- ⏰ מתוזמנים ----------
+   מאיר: "יש מקום לראות את כל הדברים המתוזמנים, למשל שיחות שאמורות להישלח, או שיחות מתוזמנות
+   אחרות לאנשים שלא ענו — אני רוצה לנהל את זה ולבדוק". הכל במקום אחד, עם פעולות. מתרענן כל חצי דקה. */
+let SCH=null, schBusy=false, schTimer=null;
+async function schLoad(){schBusy=true;const r=await api('GET','/api/yemot/sched');schBusy=false;SCH=r&&r.ok?r:{ok:false};if(tab==='sched')renderSched();}
+const schWhen=v=>v?mkDTLabel(String(v).replace(' ','T')):'';
+function renderSched(){
+  clearTimeout(schTimer); schTimer=setTimeout(()=>{if(tab==='sched'&&!document.querySelector('.mkov,.confirmov'))schLoad();},30000);
+  if(SCH===null){view.innerHTML='<div class="mkw"><div class="mklist">'+'<div class="mkskel"></div>'.repeat(4)+'</div></div>';if(!schBusy)schLoad();return;}
+  if(!SCH.ok){view.innerHTML='<div class="mkempty"><b>⚠️</b>לא נטען</div>';return;}
+  const S=SCH, ch=c=>c==='sms'?'💬 SMS':c==='voice'?'📞 שיחה':c==='email'?'✉️ מייל':c;
+  const late=S.retries.filter(x=>x.late).length;
+  const sec=(icon,title,sub,n,body)=>`<div class="mksec" style="margin-top:18px">${icon} ${title} <span class="mktag ${n?'ok':'mu'}">${n}</span> <small>${sub}</small></div>${body}`;
+  const empty=t=>`<div class="mksub" style="padding:6px 4px">${t}</div>`;
+  const row=(inner,acts,id)=>`<div class="mkrow schrow" ${id||''}><div class="mknm">${inner}</div><div class="mkact">${acts}</div></div>`;
+  view.innerHTML=`<div class="mkw">
+    <div class="mkhero"><h2>⏰ מתוזמנים<small>כל מה שעוד אמור לצאת — הודעות, ניסיון חוזר למי שלא ענה, מיילים. עכשיו ${esc(schWhen(S.now))}${S.call_ok?'':' · ⏸ עכשיו לא שולחים (שבת / חג / לילה) — ממשיכים ב'+esc(schWhen(S.next_ok))}</small></h2>
+      <div class="mkstat"><b>${S.scheduled.length}</b><span>מתוזמנות</span></div>
+      <div class="mkstat"><b>${S.retries.length}</b><span>ניסיון חוזר</span></div>
+      <div class="mkstat"><b>${S.checking.length}</b><span>לבדיקה</span></div>
+      <button class="mkibtn" id="schre">🔄 רענון</button></div>
+    ${sec('📅','הודעות מתוזמנות','יוצאות בשעה שנבחרה',S.scheduled.length,
+      S.scheduled.length?`<div class="mklist">${S.scheduled.map(j=>row(
+        `<b>${ch(j.channel)} · ${esc(schWhen(j.send_at))}</b>
+         <div class="mksub">${j.label?'<span class="mktag mu">'+esc(j.label)+'</span>':''}${j.recips.map(r=>esc(r.name||'')+' <span dir="ltr">'+esc(r.phone||'')+'</span>').join(' · ')}${j.total>j.recips.length?' · ועוד '+(j.total-j.recips.length):''}</div>
+         <div class="mkphone" style="margin-top:6px;padding:8px"><div class="mkbubble${j.channel==='sms'?'':' v'}" style="font-size:.88rem">${esc((j.recips[0]&&j.recips[0].text)||j.text)}</div></div>`,
+        `<button class="mkbtn" data-j="${j.job}" data-a="now">▶️ עכשיו</button><button class="mkbtn gh" data-j="${j.job}" data-a="time">🕒 שעה אחרת</button>${j.total<=1?`<button class="mkbtn gh" data-j="${j.job}" data-a="text">✎ טקסט</button>`:''}<button class="mkbtn gh" data-j="${j.job}" data-a="cancel">✕ ביטול</button>`)).join('')}</div>`:empty('אין הודעות מתוזמנות'))}
+    ${S.sending.length?sec('📤','יוצאות עכשיו','משלוחים באמצע',S.sending.length,`<div class="mklist">${S.sending.map(j=>row(
+        `<b>${ch(j.channel)} · ${esc(j.label||'משלוח #'+j.job)}</b><div class="mksub">${j.stuck?'<span class="mktag bad">⚠️ תקוע — לא יצא</span>':'<span class="mkspin" style="color:var(--accent);width:12px;height:12px"></span>'} ${j.sent+j.failed} מתוך ${j.total} · ${j.sent} יצאו${j.failed?' · '+j.failed+' נכשלו':''} · נפתח ${esc(schWhen(j.created))}</div>`,
+        j.stuck?`<button class="mkbtn" data-j="${j.job}" data-a="now">▶️ לשלוח עכשיו</button><button class="mkbtn gh" data-j="${j.job}" data-a="cancel">✕ ביטול</button>`
+        :`<button class="mkbtn gh" data-stop="${j.job}">⏹ לעצור</button>`)).join('')}</div>`):''}
+    ${sec('🔁','ניסיון חוזר — מי שלא ענה','שיחה נוספת אחת, שעתיים אחרי — לא בשבת / בלילה',S.retries.length,
+      S.retries.length?`${late?`<div class="mksub" style="margin-bottom:6px">⏳ ${late} כבר בתור — ייצאו בסריקה הקרובה (עד 5 דקות)</div>`:''}<div class="mklist">${S.retries.map(r=>row(
+        `<b>${esc(r.name||'—')}</b>
+         <div class="mksub"><span dir="ltr">${esc(r.phone)}</span><span>📞 לא ענה ${esc(schWhen(r.sent_ts))}</span><span>🔁 ${r.late?'בתור עכשיו':'ינסה שוב '+esc(schWhen(r.due))}</span>${r.label?'<span class="mktag mu">'+esc(r.label)+'</span>':''}${r.amount?'<span>₪'+esc(r.amount)+'</span>':''}</div>`,
+        `<button class="mkbtn" data-m="${r.msg}" data-a="retry_now">📞 עכשיו</button><button class="mkbtn gh" data-m="${r.msg}" data-a="noretry">✕ לא לנסות שוב</button>`)).join('')}</div>`:empty('אין כרגע מי שמחכה לניסיון חוזר'))}
+    ${sec('🔍','ממתינות לבדיקה אם ענו','נבדק ביומן של ימות כמה דקות אחרי השיחה',S.checking.length,
+      S.checking.length?`<div style="margin-bottom:6px"><button class="mkbtn gh" id="schchk">🔍 לבדוק עכשיו</button></div><div class="mksub" style="line-height:1.9">${S.checking.slice(0,40).map(r=>esc(r.name||r.phone)+' ('+esc(schWhen(r.sent_ts))+')').join(' · ')}${S.checking.length>40?' · …':''}</div>`:empty('הכל נבדק'))}
+    ${S.mail.length?sec('✉️','מיילים בתור','יוצאים בהדרגה (מגבלת שליחה יומית)',S.mail.length,`<div class="mklist">${S.mail.map(m=>row(
+        `<b>${esc(m.subject||m.name||'משלוח #'+m.id)}</b><div class="mksub">${m.queued} מחכים · ${m.sent} נשלחו · נפתח ${esc(schWhen(m.created))}</div>`,
+        `<button class="mkbtn gh" data-mailstop="1">⏹ לעצור משלוח מיילים</button>`)).join('')}</div>`):''}
+  </div>`;
+  document.getElementById('schre').onclick=()=>{SCH=null;renderSched();};
+  const post=async(u,b)=>{const r=await api('POST',u,b||{});if(!r||!r.ok){uiAlert((r&&r.error)||'שגיאה');return null;}return r;};
+  view.querySelectorAll('[data-j]').forEach(b=>b.onclick=async()=>{const id=b.dataset.j,a=b.dataset.a,j=S.scheduled.find(x=>x.job==id)||{recips:[],send_at:'',text:''};
+    if(a==='cancel'&&!await uiConfirm('לבטל את ההודעה המתוזמנת?','✕ לבטל','לא'))return;
+    if(a==='time'){const v=await uiPrompt('מתי לשלוח? (למשל '+S.now.slice(0,10)+' 20:00)',j.send_at);if(!v)return;
+      const r=await post('/api/yemot/sched/job/'+id+'/time',{send_at:v});if(r){toast('🕒 '+schWhen(r.send_at)+(r.moved?' (נדחה לשעה מתאימה)':''));schLoad();}return;}
+    if(a==='text'){const v=await uiPrompt('הטקסט של ההודעה',(j.recips[0]&&j.recips[0].text)||j.text);if(!v)return;
+      if(await post('/api/yemot/sched/job/'+id+'/text',{text:v})){toast('✎ עודכן');schLoad();}return;}
+    b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
+    if(await post('/api/yemot/sched/job/'+id+'/'+a)){toast(a==='now'?'▶️ יוצאת עכשיו':'בוטלה');}schLoad();});
+  view.querySelectorAll('[data-m]').forEach(b=>b.onclick=async()=>{const id=b.dataset.m,a=b.dataset.a;
+    if(a==='noretry'&&!await uiConfirm('לא לנסות להתקשר אליו שוב?','✕ לא לנסות','ביטול'))return;
+    b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
+    if(await post('/api/yemot/sched/msg/'+id+'/'+a)){toast(a==='retry_now'?'📞 מתקשר עכשיו':'לא ינסה שוב');}schLoad();});
+  view.querySelectorAll('[data-stop]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לעצור את המשלוח? מי שעוד לא קיבל — לא יקבל.','⏹ לעצור','ביטול'))return;
+    await post('/api/yemot/job/'+b.dataset.stop+'/stop');toast('נעצר');schLoad();});
+  view.querySelectorAll('[data-mailstop]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לעצור את שליחת המיילים?','⏹ לעצור','ביטול'))return;
+    await post('/api/mail/stop');toast('נעצר');schLoad();});
+  const ck=document.getElementById('schchk'); if(ck)ck.onclick=async()=>{ck.disabled=true;ck.innerHTML='<span class="mkspin"></span> בודק…';
+    await post('/api/yemot/sched/check');setTimeout(schLoad,8000);};
 }
 
 /* ---------- 🕰️ זמני תפילות ----------
