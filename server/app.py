@@ -570,6 +570,10 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE cm_don ADD COLUMN fund TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "נתן תתן… הוספה ידנית למי שהבטיח או למי שתרם" — תרומה של מי שלא בקהילה (בשם בלבד)
+    for col in ('name', 'phone'):
+        try: con.execute(f"ALTER TABLE cm_don ADD COLUMN {col} TEXT")
+        except Exception: pass
     try: con.execute("ALTER TABLE ym_vm ADD COLUMN transcript TEXT")
     except Exception: pass
     # "עבור מה" שהגבאי הוסיף לתשלום בנדרים פלוס (רשות) — לא נוגע במה שבנדרים
@@ -7685,6 +7689,16 @@ def ensure_schema():
             print('  שיחות קצרות מ-30 שניות שהוסרו מיומן הקשר: %d' % gone)
     except Exception as e:
         print('  שגיאת ניקוי שיחות קצרות:', e)
+
+    # מאיר: "תכניס לנתן תתן את הרשימה עם העדכון הזה — מי חייב ומי כבר נתן"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='natan_sukkot87_v1'").fetchone():
+            n_, p_ = natan_seed_sukkot87(con)
+            con.execute("INSERT INTO seed_flags(name) VALUES('natan_sukkot87_v1')")
+            con.commit()
+            print('  נתן תתן — מגבית סוכות תשפ"ז: נטענו %d התחייבויות (%d שולמו)' % (n_, p_))
+    except Exception as e:
+        print('  natan seed error:', e)
 
     con.commit(); con.close()
 
@@ -17290,14 +17304,19 @@ class H(BaseHTTPRequestHandler):
                 nm = natan_mosad(con)
                 # נתן תתן — רק החשבון שלו; הקהילה — בלי החשבון של נתן תתן
                 # הקהילה — רק החשבון של הכולל (החשבון של המקווה ושל נתן תתן נפרדים)
-                mw = (" AND COALESCE(t.mosad,'')=?" if gf else " AND (COALESCE(t.mosad,'')='' OR ?='')")
-                for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,"
+                # נתן תתן — החשבון שלה, וגם תשלום בחשבון של הכולל שכתוב עליו "נתן תתן" (למשל "אשראי כולל
+                # חצות" במגבית) — הוא עובר לנתן תתן ולא נספר בקהילה
+                mw = " AND (COALESCE(t.mosad,'')=? OR COALESCE(t.mosad,'')='')"
+                for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,t.mosad,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
                                      "WHERE COALESCE(t.amount,0)>=10 AND t.donor_id IS NULL" + (mw if gf else " AND COALESCE(t.mosad,'')=''") + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
                                      ((nm or '-',) if gf else ())):
+                    tx_ = ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
                     # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
-                    if re.search(r'מקו?וה|מזגנ|טעינ', ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))):
+                    if re.search(r'מקו?וה|מזגנ|טעינ', tx_):
+                        continue
+                    if not (t['mosad'] or '') and bool(ND_NATAN_RX.search(tx_)) != bool(gf):
                         continue
                     kv = str(t['keva'] or '')
                     src = 'bank' if kv.startswith('M') else ('hok' if kv and not kv.startswith('-') else 'nd')
@@ -17308,12 +17327,13 @@ class H(BaseHTTPRequestHandler):
                                  'method': {'bank': 'הוראה בנקאית', 'hok': 'הו"ק אשראי', 'nd': 'נדרים פלוס'}[src]})
                 for d in con.execute("SELECT d.*, m.last ml, m.first mf FROM cm_don d LEFT JOIN members m ON m.id=d.member_id WHERE COALESCE(d.amount,0)>=10 AND COALESCE(d.fund,'')=? ORDER BY d.date DESC, d.id DESC", (gf,)):
                     rows.append({'src': 'man', 'id': d['id'], 'date': (d['date'] or '')[:10], 'time': d['created'] or '', 'amount': d['amount'] or 0,
-                                 'member_id': d['member_id'], 'name': ((d['ml'] or '') + ' ' + (d['mf'] or '')).strip(), 'linked': True,
+                                 'member_id': d['member_id'], 'name': ((d['ml'] or '') + ' ' + (d['mf'] or '')).strip() or (d['name'] or ''), 'linked': bool(d['member_id']),
                                  'purpose': d['purpose'] or '', 'note': d['note'] or '', 'method': d['method'] or 'ידני', 'nd_id': d['nd_id'] or ''})
                 rows.sort(key=lambda r: (r['date'], str(r['time'])), reverse=True)
+                st_ = natan_status(con) if gf else None
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'rows': rows})
+            return self._send(200, {'ok': True, 'rows': rows, 'natan': st_})
         if self.path.split('?')[0] == '/api/cm/ledger':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             mon = (qs.get('month') or [''])[0][:7]
@@ -18545,10 +18565,55 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/cm/don_free':
+            # 💵 תרומה ידנית בשם בלבד (מי שלא בקהילה) — כרגע רק לקופת נתן תתן
+            nm_ = str(b.get('name') or '').strip()[:80]
+            a = round(_amt2(re.sub(r'[^\d.,]', '', str(b.get('amount') or ''))), 2)
+            if not nm_ or a <= 0:
+                return self._send(200, {'ok': False, 'error': 'חסר שם או סכום'})
+            fnd = 'natan' if b.get('fund') == 'natan' else ''
+            meth = str(b.get('method') or 'מזומן').strip()[:40]
+            pur = str(b.get('purpose') or '').strip()[:120]
+            dt = str(b.get('date') or today_iso())[:10]
+            con = db()
+            try:
+                con.execute("INSERT INTO cm_don(member_id,name,date,amount,method,purpose,note,created,by_role,fund) VALUES(NULL,?,?,?,?,?,?,?,?,?)",
+                            (nm_, dt, a, meth, pur, str(b.get('note') or '').strip()[:300], now_iso(), getattr(self, 'role', '') or '', fnd))
+                did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                used = 0
+                if b.get('pay_debt'):
+                    # סוגר התחייבות פתוחה באותו שם, באותה קופה
+                    left = a
+                    for d in con.execute("SELECT * FROM cm_debt WHERE member_id IS NULL AND name=? AND status='open' AND COALESCE(fund,'')=? ORDER BY id", (nm_, fnd)).fetchall():
+                        if left <= 0:
+                            break
+                        op = round((d['amount'] or 0) - (d['paid'] or 0), 2)
+                        p_ = min(op, left); left = round(left - p_, 2); used += p_
+                        done = (d['paid'] or 0) + p_ >= (d['amount'] or 0) - 0.009
+                        con.execute("UPDATE cm_debt SET paid=?, status=?, closed_at=?, updated=?, paid_via=? WHERE id=?",
+                                    (round((d['paid'] or 0) + p_, 2), 'paid' if done else 'open', now_iso() if done else None, now_iso(), meth, d['id']))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': did, 'debt_paid': used})
+        if self.path == '/api/cm/natan_sync':
+            import nedarim as _nd
+            if not _nd.configured():
+                return self._send(200, {'ok': False, 'error': 'נדרים פלוס לא מוגדר ב-Render'})
+            con = db()
+            try:
+                n, err = nd_history_natan(con)
+                st_ = natan_status(con)
+            finally:
+                con.close()
+            if not err:
+                bump_data()
+            return self._send(200, {'ok': not err, 'new': n, 'error': err, 'natan': st_})
         if self.path == '/api/cm/natan_mosad':
             # מאיר: "לנתן תתן יש חשבון נפרד בנדרים פלוס" — איזה מהחשבונות שב-Render הוא של נתן תתן
             con = db()
-            kv_set(con, 'natan_mosad', re.sub(r'\D', '', str(b.get('mosad') or ''))[:12]); con.commit()
+            mo_ = re.sub(r'\D', '', str(b.get('mosad') or ''))[:12]
+            kv_set(con, 'natan_mosad', mo_); kv_set(con, 'natan_mosad_off', '' if mo_ else '1'); con.commit()
             v = natan_mosad(con); con.close()
             return self._send(200, {'ok': True, 'mosad': v})
         if self.path == '/api/yemot/pron_en':
@@ -20265,16 +20330,29 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/cm/debts':
             mid = int(b.get('member_id') or 0)
             a = round(_amt2(b.get('amount')), 2)
-            if not mid or a <= 0:
-                return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה או סכום'})
+            # מאיר (נתן תתן): "הוספה ידנית למי שהבטיח או למי שתרם" — גם מי שלא בקהילה, בשם (וטלפון)
+            nm_ = '' if mid else str(b.get('name') or '').strip()[:80]
+            ph_ = '' if mid else str(b.get('phone') or '').strip()[:30]
+            if (not mid and not nm_) or a <= 0:
+                return self._send(200, {'ok': False, 'error': 'חסר שם או סכום'})
+            fnd = 'natan' if b.get('fund') == 'natan' else ''
+            gave = b.get('kind') == 'paid'            # ✅ כבר נתן — נרשם כהתחייבות ששולמה + תרומה
+            via = str(b.get('via') or 'מזומן').strip()[:60]
+            ttl = str(b.get('title') or '')[:200]
             con = db()
-            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,fund) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?,?)",
-                        (mid, b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt', str(b.get('title') or '')[:200], a,
-                         str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(),
-                         b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid),
-                         'natan' if b.get('fund') == 'natan' else ''))
-            cm_debt_log(con, mid, con.execute("SELECT last_insert_rowid()").fetchone()[0],
-                        '➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', str(b.get('title') or '').strip() or '—', a))
+            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,fund,name,phone,closed_at,paid_via) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (mid or None, 'pledge' if gave else (b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt'), ttl, a,
+                         a if gave else 0, str(b.get('due') or '')[:10], 'paid' if gave else 'open', 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(),
+                         b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else (cm_default_channel(con, mid) if mid else 'sms'),
+                         fnd, nm_, ph_, now_iso() if gave else None, via if gave else None))
+            did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            if gave and 'נדרים' not in via:
+                con.execute("INSERT INTO cm_don(member_id,name,phone,date,amount,method,purpose,note,created,by_role,fund) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            (mid or None, nm_, ph_, str(b.get('due') or today_iso())[:10], a, via, ('קופת נתן תתן — ' if fnd else '') + ttl, 'נרשם ידנית',
+                             now_iso(), getattr(self, 'role', '') or '', fnd))
+            cm_debt_log(con, mid, did, ('✅ נתן ₪%g%s: %s' % (a, (' ב' + via) if via else '', ttl.strip() or '—')) if gave else
+                        ('➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', ttl.strip() or '—', a)))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         if self.path == '/api/cm/debts/link':
@@ -20282,6 +20360,13 @@ class H(BaseHTTPRequestHandler):
             ids = [int(x) for x in (b.get('ids') or []) if str(x).isdigit()]
             con = db()
             try:
+                if 'phone' in b:
+                    # 📱 טלפון למי שלא בקהילה — כדי שאפשר יהיה להזכיר לו בשיחה / SMS
+                    if ids:
+                        con.execute("UPDATE cm_debt SET phone=?, updated=? WHERE member_id IS NULL AND id IN (%s)" % ','.join('?' * len(ids)),
+                                    [str(b.get('phone') or '').strip()[:30], now_iso()] + ids)
+                        con.commit()
+                    return self._send(200, {'ok': True})
                 if 'once' in b:
                     # 👤 חד פעמי — נשאר ברשימה בשם שלו, בלי לפתוח לו כרטיס בקהילה
                     if ids:
@@ -20300,6 +20385,9 @@ class H(BaseHTTPRequestHandler):
                 if not mid or not ids:
                     return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה'})
                 ph = ' / '.join(x['phone'] for x in con.execute("SELECT DISTINCT phone FROM cm_debt WHERE id IN (%s) AND COALESCE(phone,'')<>''" % ','.join('?' * len(ids)), ids))
+                # תרומה שנרשמה בשם בלבד (מי שלא היה בקהילה) — עוברת לכרטיס שלו יחד עם החוב
+                for x in con.execute("SELECT DISTINCT name, COALESCE(fund,'') f FROM cm_debt WHERE id IN (%s) AND member_id IS NULL AND COALESCE(name,'')<>''" % ','.join('?' * len(ids)), ids).fetchall():
+                    con.execute("UPDATE cm_don SET member_id=?, name='' WHERE member_id IS NULL AND name=? AND COALESCE(fund,'')=?", (mid, x['name'], x['f']))
                 con.execute("UPDATE cm_debt SET member_id=?, name='', phone='', once=0, updated=? WHERE id IN (%s)" % ','.join('?' * len(ids)), [mid, now_iso()] + ids)
                 if ph:
                     m0 = con.execute("SELECT phone FROM members WHERE id=?", (mid,)).fetchone()
@@ -20332,9 +20420,9 @@ class H(BaseHTTPRequestHandler):
                             "paid_note=CASE WHEN COALESCE(paid_note,'')='' THEN ? ELSE paid_note||' · '||? END WHERE id=?",
                             (min(np_, d['amount'] or 0), 'paid' if done else 'open', now_iso() if done else None, now_iso(), via,
                              note, note, did))
-                if via and 'נדרים' not in via and b.get('record', 1) and d['member_id']:
-                    con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role,fund) VALUES(?,?,?,?,?,?,?,?,?)",
-                                (d['member_id'], today_iso(), p, via, ('קופת נתן תתן — ' if (d['fund'] or '') == 'natan' else '') + (d['title'] or ''), (note + ' · ' if note else '') + 'על החוב',
+                if via and 'נדרים' not in via and b.get('record', 1) and (d['member_id'] or (d['name'] or '').strip()):
+                    con.execute("INSERT INTO cm_don(member_id,name,date,amount,method,purpose,note,created,by_role,fund) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                                (d['member_id'], '' if d['member_id'] else d['name'], today_iso(), p, via, ('קופת נתן תתן — ' if (d['fund'] or '') == 'natan' else '') + (d['title'] or ''), (note + ' · ' if note else '') + 'על החוב',
                                  now_iso(), getattr(self, 'role', '') or '', d['fund'] or ''))
                 cm_debt_log(con, d['member_id'], did, '%s %s ₪%g%s%s' % ('✅ שולם' if done else '½ שולם חלקית', d['title'] or 'חוב', p,
                                                                        (' · ' + via) if via else '', (' · ' + note) if note else ''))
@@ -23059,8 +23147,34 @@ def cm_debts_reminded(con, debt_ids, via):
 
 
 def natan_mosad(con):
-    """מספר המוסד בנדרים פלוס של קופת נתן תתן (נבחר בלשונית נתן תתן). ריק = לא הוגדר."""
-    return re.sub(r'\D', '', kv_get(con, 'natan_mosad', '') or '')
+    """מספר המוסד בנדרים פלוס של קופת נתן תתן (נבחר בלשונית נתן תתן). ריק = לא הוגדר.
+    מאיר: "למה לא רואים את התרומות שנכנסו בנדרים פלוס בקופת נתן תתן" — כשלא נבחר חשבון, החשבון
+    הנוסף ב-Render שהשם שלו (NEDARIM_NAME2/3) הוא נתן תתן נבחר לבד."""
+    v = re.sub(r'\D', '', kv_get(con, 'natan_mosad', '') or '')
+    if v or kv_get(con, 'natan_mosad_off', ''):
+        return v
+    try:
+        import nedarim as _nd
+        hit = [a['mosad'] for a in _nd.accounts() if not a['main'] and re.search(r'נתן|natan', a['name'] or '', re.I)]
+        return re.sub(r'\D', '', hit[0]) if len(hit) == 1 else ''
+    except Exception:
+        return ''
+
+
+ND_NATAN_RX = re.compile(r'נתן\s*תתן')
+
+
+def natan_status(con):
+    """מצב החיבור של נתן תתן לנדרים פלוס — מוצג בלשונית, כדי שיהיה ברור למה לא רואים תשלומים."""
+    import nedarim as _nd
+    nm = natan_mosad(con)
+    acc = [a for a in _nd.accounts() if not a['main']]
+    a = next((x for x in acc if re.sub(r'\D', '', x['mosad']) == nm), None) if nm else None
+    return {'mosad': nm, 'name': a['name'] if a else '', 'in_render': bool(a), 'auto': bool(nm) and not re.sub(r'\D', '', kv_get(con, 'natan_mosad', '') or ''),
+            'accounts': [{'mosad': x['mosad'], 'name': x['name']} for x in acc],
+            'n_tx': con.execute("SELECT COUNT(*) FROM nd_tx WHERE COALESCE(mosad,'')=?", (nm,)).fetchone()[0] if nm else 0,
+            'last_tx': (con.execute("SELECT MAX(iso) FROM nd_tx WHERE COALESCE(mosad,'')=?", (nm,)).fetchone()[0] or '') if nm else '',
+            'synced_at': kv_get(con, 'nd_hist_at:' + nm, '') if nm else '', 'error': kv_get(con, 'nd_hist_err:' + nm, '') if nm else ''}
 
 
 def fund_of_mosad(con, mosad):
@@ -23418,6 +23532,106 @@ def nd_donor_import(con, did=None):
 
 
 # מאיר ביקש במפורש את שלושת אלה — קישור אוטומטי פעם אחת (שם מלא, התאמה יחידה בלבד). השאר — מהכרטיס
+# מגבית "נתן תתן" – סוכות תשפ"ז, מעודכן ל-11.10.2026 (מה-PDF של מאיר). סה"כ 60,636 · שולם 43,106 · יתרה 17,530
+NATAN_87_TITLE = 'מגבית נתן תתן — סוכות תשפ"ז'
+NATAN_87_DATE = '2026-10-11'
+# טרם שילמו: שם, יתרה, הערה
+NATAN_87_OPEN = [
+    ('אינהורן', 500, ''), ('אלחדד שמעון', 1800, ''), ('בינדר שמואל', 520, ''), ('ברגר נחמן', 300, ''),
+    ('גבאי שמעון', 360, ''), ('גלעד שמשון', 360, ''), ('דנברג', 1000, ''), ('המר בנימין', 400, ''),
+    ('לאנג אלי', 1000, ''), ('לודמיר שלמה', 500, ''), ('לוי יהודה', 160, 'שולם 200, נותרו 160'),
+    ('ליפשיץ מוישי', 500, ''), ('מלכי משה', 360, ''), ('מרשטט משה', 360, ''), ('משמרתי', 360, ''),
+    ('פקשר משפחה', 1000, 'שולם 300+300+360 באשראי'), ('צוקר יהודה', 360, ''), ('קוסטנטינר יעקב', 600, ''),
+    ('קוסמן חיים', 1000, ''), ('קוסמן משפחה', 840, 'שולם 960, נותרו 840'), ('קליין צפתי', 360, ''),
+    ('קלצקין אברהם', 1500, 'שולם 300 מזומן, נותרו 1,500'), ('קניג – מלכה', 1000, ''), ('קרליבך שמואל', 360, ''),
+    ('רובינפלד', 360, 'העברה לבנק'), ('רוזן', 200, ''), ('שאול – חבר של ויסדרייך', 400, ''),
+    ('שור אליהו', 210, 'שולם 150 באשראי, נותרו 210'), ('שטרית – החתן', 500, ''), ('שלזינגר צבי', 360, ''),
+    ('ליברמן', 0, 'לבירור — לא נמסר סכום'),
+]
+# שילמו: שם, סכום, אופן תשלום, מקבל ✓
+NATAN_87_PAID = [
+    ('אבלסון כרמי', 200, 'אשראי', 1), ('אולמן שמעון', 1800, 'אשראי', 0), ('אלחדד שמואל', 360, 'מזומן אלחנן', 0),
+    ('אלישע משה', 550, 'אשראי', 0), ('אנשין דוד', 360, 'אשראי כולל חצות', 1), ('אנשין משה', 1800, 'אשראי', 0),
+    ('בינדר נחמן', 520, 'אשראי', 1), ('בלוי שמרי', 300, 'מזומן אלחנן', 0), ('בלוי שמרי – חוויה', 1800, 'מזומן אלחנן', 0),
+    ('בנדר שמעון', 1000, 'אשראי', 1), ('ברים בערי', 400, 'אשראי', 1), ('ברלב שמעון', 1000, 'מזומן אלחנן', 1),
+    ('גבאי דוד נתן', 360, 'אשראי', 1), ('גוטמן אליהו', 1202, 'אשראי', 0), ('גטר נחמן', 1800, 'אשראי', 1),
+    ('גליק נחמן', 400, 'אשראי', 0), ('גרוסמן לוי יצחק', 148, 'אשראי', 0), ('גרינבלט', 1800, 'מזומן אלחנן', 0),
+    ('דהן יעקב', 52, 'אשראי', 0), ('דוידזון', 200, 'אשראי', 0), ('דויטש נחמן', 400, 'אשראי', 0),
+    ('דושינסקי', 120, 'מזומן אלחנן', 0), ('הוניגמן', 50, 'אשראי', 0), ('הורביץ יואל', 2000, 'אשראי', 0),
+    ('הורביץ נחמן', 300, 'מזומן אלחנן', 1), ('הכט', 416, 'מזומן אלחנן', 1), ('הרמן נחמן', 148, 'אשראי', 0),
+    ('הרשקוביץ', 136, 'אשראי', 0), ('וינגוט שלמה', 150, 'אשראי', 0), ('ויסטרייך', 450, 'אשראי', 0),
+    ('טווערסקי', 150, 'מזומן אלחנן', 0), ('טיקוצינסקי משפחה', 1800, 'אשראי', 0), ('טנג\'י', 360, 'מזומן אלחנן', 1),
+    ('יגלניק אברהם', 360, 'אשראי', 1), ('כהן בצלאל', 360, 'אשראי', 0), ('כללי – ערב יום כיפור', 2420, 'מזומן אלחנן', 0),
+    ('לודמיר אברימי', 1000, 'מזומן אלחנן', 1), ('לוי יהודה', 200, 'מזומן אלחנן', 1), ('לוינזון נחמן', 380, 'אשראי', 1),
+    ('לוצקין', 120, 'מזומן אלחנן', 0), ('לרר אלחנן', 1800, 'אשראי', 0), ('מאור יהונתן', 360, 'אשראי', 0),
+    ('מרגליות ישראל', 400, 'מזומן אלחנן', 1), ('נעימי מרדכי', 300, 'מזומן אלחנן', 1), ('סופר נתן', 360, 'אשראי', 1),
+    ('עקשטיין גמליאל', 360, 'אשראי', 0), ('פוליטי', 240, 'אשראי', 0), ('פרידמן צמח דוד', 400, 'אשראי', 1),
+    ('צפדיה', 52, 'אשראי', 0), ('קאליש נתי', 360, 'אשראי', 1), ('קוסמן משפחה', 960, 'אשראי / ביט / מזומן', 1),
+    ('קוריץ יונה', 1000, 'מזומן אלחנן', 0), ('קירשנבוים', 120, 'אשראי כולל חצות', 0), ('קליגר נחמן', 500, 'מזומן אלחנן', 1),
+    ('קליין בצלאל', 360, 'אשראי', 1), ('קליין שמעלקא', 1000, 'מזומן אלחנן', 0), ('קלצקי אברהם יצחק', 1000, 'אשראי', 1),
+    ('קלצקין אברהם', 300, 'מזומן אלחנן', 0), ('קלצקין וועלוי', 360, 'מזומן אלחנן', 1), ('קניג נחמן', 110, 'אשראי', 0),
+    ('קניג – מרדכי', 500, 'אשראי', 1), ('קעניג יעקב', 450, 'אשראי', 1), ('קרליבך נחמן', 280, 'מזומן אלחנן', 0),
+    ('רוזנפלד יצחק', 300, 'אשראי', 0), ('רוט אושי', 250, 'אשראי', 0), ('רוטמן – הבר מצווה', 1800, 'אשראי', 0),
+    ('רונין יהודה', 102, 'אשראי', 0), ('שור אליהו', 150, 'אשראי', 0), ('שטרית', 360, 'אשראי כולל חצות', 1),
+    ('שטרן צבי', 500, 'אשראי', 0), ('שיינפלד יצחק', 500, 'אשראי כולל חצות', 0), ('שמרלר מנחם', 200, 'אשראי', 0),
+]
+
+
+def _natan_via(m):
+    """אשראי — כבר נרשם בנדרים פלוס (מהסנכרון), אז לא נרשם שוב כתרומה ידנית."""
+    if 'אשראי' in m:
+        return ('אשראי כולל חצות — נדרים פלוס' if 'כולל' in m else ('אשראי — נדרים פלוס' if m == 'אשראי' else m + ' (נדרים פלוס)'))
+    return 'מזומן (אלחנן)' if m == 'מזומן אלחנן' else m
+
+
+def natan_seed_sukkot87(con):
+    """פעם אחת: הרשימה של מגבית נתן תתן לקופה של נתן תתן — מי שחייב (פתוח, אפשר להזכיר לו כמו
+    בקהילה) ומי שכבר נתן (סגור, בהיסטוריה). מי ששילם חלק — התחייבות אחת עם מה ששולם."""
+    if con.execute("SELECT 1 FROM cm_debt WHERE fund='natan' AND title=?", (NATAN_87_TITLE,)).fetchone():
+        return 0, 0
+    nidx = nd_name_index(con)
+
+    def who(nm):
+        # "בלוי שמרי – חוויה" / "קניג – מלכה": קודם השם המלא, ואחר כך מה שלפני המקף
+        for t in (nm.replace('–', ' '), nm.split('–')[0]):
+            mid = nd_match_name(nidx, t)
+            if mid:
+                return mid
+        return None
+    paid = {}
+    for nm, a, m, ok in NATAN_87_PAID:
+        paid.setdefault(nm, []).append((a, m, ok))
+    rows = []
+    for nm, bal, note in NATAN_87_OPEN:
+        p = paid.pop(nm, None) if 'שולם' in note else None
+        pa = sum(x[0] for x in p) if p else 0
+        rows.append((nm, bal + pa, pa, _natan_via(p[0][1]) if p else '', note, p[0][2] if p else 0))
+    for nm, L in paid.items():
+        for a, m, ok in L:
+            rows.append((nm, a, a, _natan_via(m), '', ok))
+    n = npaid = 0
+    for nm, amt, pa, via, note, ok in rows:
+        mid = who(nm) if not nm.startswith('כללי') else None
+        done = amt > 0 and pa >= amt
+        pn = ' · '.join(x for x in (note, 'מקבל ✓' if ok else '') if x)
+        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,closed_at,paid_via,paid_note,name,phone,once,fund) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (mid, 'pledge', NATAN_87_TITLE, amt, pa, NATAN_87_DATE, 'paid' if done else 'open', 'רשימת המגבית',
+                     note, now_iso(), now_iso(), cm_default_channel(con, mid) if mid else 'sms', now_iso() if done else None,
+                     via, pn, '' if mid else nm, '', 0 if mid or not nm.startswith('כללי') else 1, 'natan'))
+        did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+        if pa > 0:
+            npaid += 1
+            if 'נדרים' not in via:
+                con.execute("INSERT INTO cm_don(member_id,name,date,amount,method,purpose,note,created,by_role,fund) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (mid, '' if mid else nm, NATAN_87_DATE, pa, via, 'קופת נתן תתן — ' + NATAN_87_TITLE, 'מרשימת המגבית',
+                             now_iso(), 'מערכת', 'natan'))
+        cm_debt_log(con, mid, did, '%s %s ₪%g%s' % ('✅ שולם' if done else '🎁 התחייבות לנתן תתן', NATAN_87_TITLE, pa if done else amt,
+                                                   (' · ' + via) if done and via else ((' · שולם ₪%g' % pa) if pa else '')))
+        n += 1
+    return n, npaid
+
+
 ND_DONOR_SEED = [('מרדכי', 'ליפשיץ'), ('עדן', 'בידני'), ('אהוב', 'האופק')]
 
 
@@ -23469,10 +23683,16 @@ def nd_history_sync(con):
         with _nd.use(acct):
             try:
                 rows, top = _nd.history(kv_get(con, kk, ''))
-            except Exception:
+            except Exception as e:
                 if acct['main']:
                     raise
+                # חשבון נוסף (נתן תתן / מקווה) — השגיאה נשמרת ומוצגת בלשונית, במקום להיעלם בשקט
+                kv_set(con, 'nd_hist_err:' + acct['mosad'], '%s · %s' % (il_now().strftime('%d/%m %H:%M'), str(e)[:200]))
+                con.commit()
                 continue
+        if not acct['main']:
+            kv_set(con, 'nd_hist_err:' + acct['mosad'], '')
+            kv_set(con, 'nd_hist_at:' + acct['mosad'], il_now().strftime('%Y-%m-%d %H:%M'))
         n1, m1 = _nd_hist_rows(con, rows, '' if acct['main'] else acct['mosad'], cutoff, midx, nidx)
         new += n1; marked += m1
         if top:
@@ -23485,6 +23705,30 @@ def nd_history_sync(con):
     except Exception as e:
         print('  nd donor import error:', e)
     return new, marked
+
+
+def nd_history_natan(con):
+    """🔄 סנכרון מהיר רק לחשבון של נתן תתן (מהלשונית שלה). מחזיר (חדשות, שגיאה)."""
+    import nedarim as _nd
+    nm = natan_mosad(con)
+    acct = next((a for a in _nd.accounts() if not a['main'] and re.sub(r'\D', '', a['mosad']) == nm), None) if nm else None
+    if not acct:
+        return 0, 'החשבון של נתן תתן לא מוגדר ב-Render (NEDARIM_MOSAD3 / NEDARIM_API_KEY3)' if not nm else 'המוסד %s לא נמצא ב-Render' % nm
+    kk = 'nd_hist_last:' + acct['mosad']
+    with _nd.use(acct):
+        try:
+            rows, top = _nd.history(kv_get(con, kk, ''))
+        except Exception as e:
+            kv_set(con, 'nd_hist_err:' + acct['mosad'], '%s · %s' % (il_now().strftime('%d/%m %H:%M'), str(e)[:200])); con.commit()
+            return 0, str(e)[:200]
+    cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
+    n1, _m = _nd_hist_rows(con, rows, acct['mosad'], cutoff, nd_member_index(con), nd_name_index(con))
+    if top:
+        kv_set(con, kk, top)
+    kv_set(con, 'nd_hist_err:' + acct['mosad'], '')
+    kv_set(con, 'nd_hist_at:' + acct['mosad'], il_now().strftime('%Y-%m-%d %H:%M'))
+    con.commit()
+    return n1, ''
 
 
 def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
