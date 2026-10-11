@@ -1657,7 +1657,7 @@ function renderMikveh(){
     ${rows.length?`<div style="overflow-x:auto"><table class="avtable"><thead><tr><th>#</th><th>שם</th><th>טלפון</th><th>קבוצה</th><th>מנוי עד</th><th>כניסה אחרונה</th><th></th></tr></thead><tbody>
       ${rows.map(c=>`<tr data-id="${esc(c.id)}">
         <td>${esc(c.code||'')}</td>
-        <td><b>${esc(mkName(c))}</b>${c.parent?' <span class="pill occ" title="בן של לקוח אחר">בן</span>':''}${c.sons?` <span class="pill occ">${c.sons} בנים</span>`:''}${c.blocked?` <span class="pill fresh" title="${esc(c.block_reason)}">חסום</span>`:''}
+        <td><a href="#" class="mkopen"><b>${esc(mkName(c))}</b></a>${c.parent?' <span class="pill occ" title="בן של לקוח אחר">בן</span>':''}${c.sons?` <span class="pill occ">${c.sons} בנים</span>`:''}${c.blocked?` <span class="pill fresh" title="${esc(c.block_reason)}">חסום</span>`:''}
           ${c.member?`<br><a href="#" class="mkmem" data-mid="${c.member.id}">🕍 ${esc(c.member.name)}</a>`:''}</td>
         <td dir="ltr">${esc(c.phone||'')}</td>
         <td><select class="avsortsel mkg" style="padding:5px 6px">${gopts(c.group)}</select></td>
@@ -1672,20 +1672,67 @@ function renderMikveh(){
   const byId=id=>MK.clients.find(c=>c.id===id);
   view.querySelectorAll('.mkmem').forEach(a=>a.onclick=async e=>{e.preventDefault();
     const ms=await cmLoad(); const m=ms.find(x=>x.id==+a.dataset.mid); if(m)openMember(m); else toast('חבר הקהילה לא נמצא');});
+  view.querySelectorAll('.mkopen').forEach(a=>a.onclick=e=>{e.preventDefault();mkOpen(byId(a.closest('tr').dataset.id));});
   view.querySelectorAll('.mkmsg').forEach(b=>b.onclick=()=>{const c=byId(b.closest('tr').dataset.id);
-    mkNotify(c,`שלום ${c.first||''}, `.replace(' ,',','));});
+    mkNotify(c,`שלום ${c.first||''}, `);});
   view.querySelectorAll('.mkg').forEach(sel=>sel.onchange=async()=>{
     const c=byId(sel.closest('tr').dataset.id), g=G[sel.value];
     if(!g){sel.value=c.group;return;}
-    const from=(G[c.group]&&G[c.group].name)||'—';
-    if(!await uiConfirm(`להעביר את ${mkName(c)} במקווה\nמ"${from}" ל"${g.name}"?`,'✓ להעביר','ביטול')){sel.value=c.group;return;}
     sel.disabled=true;
-    const r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});
+    const ok=await mkSetGroup(c,g);
     sel.disabled=false;
-    if(!r||!r.ok){sel.value=c.group;return uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'שגיאה'));}
-    c.group=g.id; toast('✓ עודכן במקווה: '+g.name); renderMikveh();
-    if(c.phone)mkNotify(c,`שלום ${c.first||''}, עודכנת במקווה לקבוצה: ${g.name.replace(/^\s*\d+\.\s*/,'')}.`);
+    if(!ok)sel.value=c.group;
   });
+}
+const mkGName=g=>(g&&g.name||'').replace(/^\s*\d+\.\s*/,'').trim();
+const mkMoney=a=>a==null?'':'₪'+(a/100).toLocaleString('he-IL',{maximumFractionDigits:2});
+// העברת קבוצה: אישור → עדכון במקווה → חלון הודעה מוכן (אפשר לוותר)
+async function mkSetGroup(c,g){
+  const G={}; MK.groups.forEach(x=>G[x.id]=x);
+  if(!await uiConfirm(`להעביר את ${mkName(c)} במקווה\nמ"${(G[c.group]&&G[c.group].name)||'—'}" ל"${g.name}"?`,'✓ להעביר','ביטול'))return false;
+  const r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});
+  if(!r||!r.ok){uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'שגיאה'));return false;}
+  c.group=g.id; toast('✓ עודכן במקווה: '+g.name);
+  if(tab==='mikveh')renderMikveh();
+  if(c.phone)mkNotify(c,`שלום ${c.first||''}, עודכנת במקווה לקבוצה: ${mkGName(g)}.`);
+  else uiAlert('עודכן במקווה. אין טלפון ללקוח במקווה — אי אפשר לשלוח לו הודעה.');
+  return true;
+}
+// כרטיס לקוח: הפרטים, הקבוצות כלחצנים (לחיצה אחת = העברה), והודעה
+function mkOpen(c){
+  if(!c)return;
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const G={}; MK.groups.forEach(x=>G[x.id]=x);
+  const now=new Date(), past=s=>s&&new Date(s)<now;
+  const line=(l,v,cls)=>v?`<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="color:var(--muted)">${l}</span><b${cls?` style="color:${cls}"`:''}>${v}</b></div>`:'';
+  const bal=c.balance!=null?mkMoney(c.balance):(c.last_balance!=null?mkMoney(c.last_balance)+' (אחרונה)':'');
+  const draw=()=>{
+    rs.innerHTML=`<button class="x" id="rx">✕</button>
+      <h2>🛁 ${esc(mkName(c))}</h2>
+      <div style="margin:6px 0 12px">
+        ${line('מספר לקוח',esc(c.code||''))}
+        ${line('טלפון',c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'— אין —')}
+        ${line('קבוצה',esc((G[c.group]&&G[c.group].name)||'— קבוצה שנמחקה —'))}
+        ${line('מנוי עד',esc(mkDate(c.sub_end)),past(c.sub_end)?'#a8321f':'')}
+        ${line('רישיון עד',esc(mkDate(c.lic_exp)),past(c.lic_exp)?'#a8321f':'')}
+        ${line('כניסה אחרונה',esc(mkWhen(c.last_in)))}
+        ${line('יתרה',esc(bal))}
+        ${line('טביעת אצבע',c.finger?'✓ רשומה':'')}
+        ${c.blocked?line('חסום',esc(c.block_reason||'כן'),'#a8321f'):''}
+        ${c.member?line('חבר קהילה',`<a href="#" id="mkmem1">🕍 ${esc(c.member.name)}</a>`):''}
+      </div>
+      <div style="font-weight:800;margin:10px 0 6px">🔄 להעביר לקבוצה</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${MK.groups.map(g=>`<button class="chip${g.id===c.group?' on':''}" data-g="${esc(g.id)}"${g.id===c.group?' disabled':''}>${g.color?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(g.color)};margin-inline-end:5px"></span>`:''}${esc(g.name)}</button>`).join('')}</div>
+      <div class="cbtns" style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn" id="mkmsg1"${c.phone?'':' disabled'}>📞 לשלוח הודעה</button></div>`;
+    document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    const mm=document.getElementById('mkmem1');
+    if(mm)mm.onclick=async e=>{e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==c.member.id);if(m){remov.classList.remove('show');openMember(m);}};
+    document.getElementById('mkmsg1').onclick=()=>mkNotify(c,`שלום ${c.first||''}, `);
+    rs.querySelectorAll('[data-g]').forEach(b=>b.onclick=async()=>{const g=G[b.dataset.g];
+      if(await mkSetGroup(c,g))draw();});
+  };
+  draw(); remov.classList.add('show');
 }
 // הודעה ללקוח — SMS או קולית, דרך ימות המשיח. נפתח עם נוסח מוכן, אפשר לשנות לפני השליחה
 function mkNotify(c,txt){

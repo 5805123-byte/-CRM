@@ -189,7 +189,9 @@ def slim(c):
             'email': c.get('email') or '', 'group': c.get('groupId') or '', 'type': c.get('type'),
             'parent': c.get('parentId') or '', 'sub_end': c.get('subscriptionEndDate') or '',
             'sub_start': c.get('subscriptionStartDate') or '', 'last_in': c.get('lastEntrance') or '',
-            'lic_exp': c.get('licenceExp') or '', 'balance': c.get('balance'), 'blocked': bool(c.get('isBlocked')),
+            'lic_exp': c.get('licenceExp') or '', 'balance': c.get('balance'), 'last_balance': c.get('lastBalance'),
+            'temp_balance': c.get('tempBalance'), 'finger': bool(c.get('hasFingerPrint')),
+            'pay_method': bool(c.get('hasPaymentMethod')), 'blocked': bool(c.get('isBlocked')),
             'block_reason': c.get('blockReason') or '', 'remark': c.get('remark') or '',
             'message': c.get('message') or '', 'sons': len(c.get('sons') or [])}
 
@@ -211,8 +213,16 @@ def client(cid):
     code, res = call('GET', 'Client/%s' % cid)
     if code == 200 and isinstance(res, dict) and res.get('id'):
         return res
+    # אין קריאה ללקוח בודד — לוקחים אותו מהרשימה. ברשימה (GET /Client) חסרים שדות של
+    # הלקוח עצמו: clubId / externalClubId ריקים, createdAt הוא שעת הבקשה ויש שדה נוסף
+    # (hasPaymentMethod). מתקנים כדי לא לדרוס במקווה מועדון / תאריך פתיחה.
     for c in clients(fresh=True):
         if str(c.get('id')) == str(cid):
+            c = dict(c)
+            c.pop('hasPaymentMethod', None)
+            c.pop('createdAt', None)
+            c['clubId'] = c.get('clubId') or _TOK.get('club_id') or None
+            c['externalClubId'] = c.get('externalClubId') or int(club())
             return c
     raise RuntimeError('הלקוח לא נמצא במקווה')
 
