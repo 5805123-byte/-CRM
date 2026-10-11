@@ -20135,7 +20135,7 @@ class H(BaseHTTPRequestHandler):
                     fc, fn = (row['for_cat'] or '').strip(), (row['for_note'] or '').strip()
                     desc = ' · '.join(x for x in (fc, fn) if x)
                     code, cres = _bq.charge_pm(pm, amt, description=desc, customer_id=row['customer_id'],
-                                               email=(cu['email'] if cu else '') or '', send_receipt=True, cit=True)
+                                               email=bq_email_for(con, row, cu), send_receipt=True, cit=True)
                     if code != 200 or not isinstance(cres, dict):
                         con.close()
                         return self._send(200, dict(out, ok=False, error='הכרטיס נשמר, אבל החיוב לא עבר: ' + bq_hint(_bq.LAST.get('error') or 'שגיאה') + '\nהוראת הקבע לא שונתה.'))
@@ -20158,7 +20158,7 @@ class H(BaseHTTPRequestHandler):
                 fc, fn = (row['for_cat'] or '').strip(), (row['for_note'] or '').strip()
                 desc = ' · '.join(x for x in (fc, fn) if x)
                 code, res = _bq.charge_source('nonce-' + nonce, amt, description=desc, customer_id=row['customer_id'],
-                                              email=(cu['email'] if cu else '') or '', exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=False)
+                                              email=bq_email_for(con, row, cu), exp_m=b.get('exp_m'), exp_y=b.get('exp_y'), save_card=False)
                 if code != 200 or not isinstance(res, dict):
                     con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
                 out = bq_record_charge(con, res, amt, desc, fc, row['donor_id'], row['customer_id'],
@@ -20202,7 +20202,7 @@ class H(BaseHTTPRequestHandler):
             if not d:
                 con.close(); return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
             cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
-            em = (emails_of(d['email'] or '') or [''])[0]
+            em = (emails_of(d['email'] or '') or [''])[0] or ((cu['email'] or '').strip() if cu else '')
             eng = (d['english'] or '').strip()
             nm = eng or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
             toks = eng.split()
@@ -20271,8 +20271,9 @@ class H(BaseHTTPRequestHandler):
                 con.close(); return self._send(200, {'ok': False, 'error': 'הכרטיס לא נמצא — לחץ 🔄 סנכרון'})
             fc, fn = str(b.get('for_cat') or '').strip(), str(b.get('for_note') or '').strip()
             desc = ' · '.join(x for x in (fc, fn) if x)
+            _row = {'receipt_email': '', 'donor_id': int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)}
             code, res = _bq.charge_pm(pm, amt, description=desc, customer_id=p['customer_id'],
-                                      email=(cu['email'] if cu else '') or '', send_receipt=True)
+                                      email=bq_email_for(con, _row, cu), send_receipt=True)
             if code != 200 or not isinstance(res, dict):
                 con.close(); return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
             did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
@@ -20295,7 +20296,7 @@ class H(BaseHTTPRequestHandler):
             fc, fn = str(b.get('for_cat') or '').strip(), str(b.get('for_note') or '').strip()
             title = ' · '.join(x for x in (fc, fn) if x) or 'תרומה חודשית — כולל חצות'
             code, res = _bq.create_schedule(p['customer_id'], title, amt, pm, next_run_date=str(b.get('next_run_date') or '')[:10],
-                                            num_left=int(b.get('num_left') or 0), receipt_email=(cu['email'] if cu else '') or '')
+                                            num_left=int(b.get('num_left') or 0), receipt_email=bq_email_for(con, {'receipt_email': '', 'donor_id': int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)}, cu))
             if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
                 con.close(); return self._send(200, {'ok': False, 'error': _bq.LAST.get('error') or 'לא נוצרה'})
             did = int(b.get('donor_id') or 0) or (cu['donor_id'] if cu else None)
@@ -21737,6 +21738,27 @@ def bq_hint(err):
               '(BANQUEST_TOKEN_KEY, מתחיל ב-pk_) נוצר בחשבון בנק ווסט אחר מזה של מפתח ה-API (BANQUEST_KEY). '
               'שני המפתחות צריכים להיות מאותו חשבון. אם הם מאותו חשבון, צריך לבקש מבנק ווסט להתיר Charge במפתח ה-API.')
     return e
+
+
+def bq_email_for(con, row, cu):
+    """לאן בנק ווסט ישלח את הקבלה של החיוב. מאיר: "אני תמיד מקבל אימייל מבנק ווסט על כל תרומה —
+    ועל יהושע פרידמן לא קיבלתי": בחיוב בלי מייל בנק ווסט לא שולח קבלה (וגם לא את העותק אליך).
+    לקוח בבנק ווסט → מייל הקבלות של הוראת הקבע → המייל של התורם אצלנו."""
+    em = ((cu['email'] if cu else '') or '').strip()
+    if not em and row is not None:
+        try:
+            em = (row['receipt_email'] or '').strip()
+        except (IndexError, KeyError):
+            em = ''
+    if not em:
+        try:
+            did = (row['donor_id'] if row is not None else None) or (cu['donor_id'] if cu else None)
+        except (IndexError, KeyError):
+            did = None
+        if did:
+            d = con.execute("SELECT email FROM donors WHERE id=?", (did,)).fetchone()
+            em = (emails_of(d['email'] or '') or [''])[0] or ((cu['email'] or '').strip() if cu else '') if d else ''
+    return em
 
 
 def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', name='', sched_id=0):
