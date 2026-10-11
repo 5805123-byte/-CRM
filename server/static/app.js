@@ -12696,9 +12696,10 @@ async function renderCommGifts(){
   if(cgNew){g('cgn_x').onclick=()=>{cgNew=false;renderCommGifts();};
     g('cgn_ok').onclick=async()=>{const mid=cdPick(g('cgn_who').value);if(!mid){toast('בחר חבר קהילה מהרשימה');g('cgn_who').focus();return;}
       const a=amtNum(g('cgn_amt').value);if(!a){toast('חסר סכום');g('cgn_amt').focus();return;}
+      const ob=g('cgn_ok');if(ob.disabled)return;ob.disabled=true;ob.textContent='שומר…';
       const r=await api('POST','/api/members/'+mid+'/donation',{date:g('cgn_date').value||todayStr(),amount:a,method:g('cgn_meth').value.trim()||'מזומן',
         purpose:g('cgn_pur').value.trim(),note:g('cgn_note').value.trim(),pay_debt:g('cgn_pay').checked?1:0});
-      if(!r||!r.ok){await uiAlert((r&&r.error)||'לא נשמר');return;}
+      if(!r||!r.ok){ob.disabled=false;ob.textContent='💾 שמור';await uiAlert((r&&r.error)||'לא נשמר');return;}
       toast('💵 נרשם ✓ — גם בכרטיס שלו');cgNew=false;CGF=null;cdData=null;renderCommGifts();};}
   view.querySelectorAll('[data-cga]').forEach(b=>b.onclick=async()=>{const a=b.dataset.cga,k=b.dataset.k;
     if(a==='cancel'){cgEdit='';renderCommGifts();return;}
@@ -13596,10 +13597,11 @@ async function cmNdPaint(m,showAll,boxId){
   const rcb=box.querySelector('.cmrcon'); if(rcb)rcb.onclick=()=>{CM_RC_ON=rcOn?0:m.id;cmNdPaint(m,showAll,boxId);};
   const q=c=>box.querySelector('.'+c);
   q('cdn_go').onclick=async()=>{const a=amtNum(q('cdn_a').value);if(!a){toast('חסר סכום');q('cdn_a').focus();return;}
+    if(q('cdn_go').disabled)return;q('cdn_go').disabled=true;
     const toNd=q('cdn_nd')&&q('cdn_nd').checked;
     const r2=await api('POST','/api/members/'+m.id+'/donation',{date:q('cdn_d').value,amount:a,method:q('cdn_m').value,purpose:q('cdn_p').value.trim(),pay_debt:q('cdn_pay')&&q('cdn_pay').checked?1:0,nd:toNd?1:0});
     if(r2&&r2.ok&&r2.nd&&!/^נרשם בנדרים/.test(r2.nd))await uiAlert('נרשם אצלנו ✓\n'+r2.nd);
-    if(r2&&r2.ok){toast('נרשם ✓'+(r2.debt_paid?(' · קוזז '+ndMoney(r2.debt_paid)+' מהחוב'):'')+(r2.nd&&/^נרשם בנדרים/.test(r2.nd)?' · '+r2.nd:''));cmNdPaint(m,showAll,boxId);if(r2.debt_paid)cdData=null;}else toast((r2&&r2.error)||'לא נשמר');};
+    if(r2&&r2.ok){toast('נרשם ✓'+(r2.debt_paid?(' · קוזז '+ndMoney(r2.debt_paid)+' מהחוב'):'')+(r2.nd&&/^נרשם בנדרים/.test(r2.nd)?' · '+r2.nd:''));cmNdPaint(m,showAll,boxId);if(r2.debt_paid)cdData=null;}else{q('cdn_go').disabled=false;toast((r2&&r2.error)||'לא נשמר');}};
   box.querySelectorAll('[data-cdndel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את רישום התרומה?','🗑️ כן','לא'))return;
     await api('POST','/api/members/donation/'+b.dataset.cdndel,{action:'delete'});cmNdPaint(m,showAll,boxId);});
   // מאיר: "תתחיל מהקפאה הפעלה" — ⏸ / ▶ / ✎ / ⏭ ישירות מול נדרים פלוס

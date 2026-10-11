@@ -19656,8 +19656,11 @@ class H(BaseHTTPRequestHandler):
                         did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
                         if p > 0 and mid:
                             npaid += 1
-                            if 'נדרים' not in via:
-                                from receipt_us import iso_day as _isod
+                            from receipt_us import iso_day as _isod
+                            _dd = _isod(r.get('due')) or today_iso()
+                            # אותה רשימה שהודבקה פעמיים — התשלום לא נרשם פעמיים בתרומות
+                            if 'נדרים' not in via and not con.execute("SELECT 1 FROM cm_don WHERE member_id=? AND date=? AND amount=? AND COALESCE(purpose,'')=?",
+                                                                      (mid, _dd, p, title)).fetchone():
                                 con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
                                             (mid, _isod(r.get('due')) or today_iso(), p, via or 'לא צוין', title,
                                              'מרשימה' + ((': ' + str(b.get('filename'))[:60]) if b.get('filename') and b.get('filename') != 'הדבקה' else ''),
@@ -19926,6 +19929,13 @@ class H(BaseHTTPRequestHandler):
             dt = str(b.get('date') or today_iso())[:10]
             con = db()
             try:
+                # מאיר: "למה נשמר פעמיים? רשמתי ידנית פעם אחת" — לחיצה כפולה / שליחה חוזרת אחרי ניתוק:
+                # אותה תרומה בדיוק שנרשמה ב-10 הדקות האחרונות לא נרשמת שוב
+                dup = con.execute("SELECT id FROM cm_don WHERE member_id=? AND date=? AND amount=? AND COALESCE(method,'')=? AND COALESCE(purpose,'')=? "
+                                  "AND created>=? ORDER BY id DESC LIMIT 1",
+                                  (mid, dt, a, meth, pur, (il_now() - datetime.timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M'))).fetchone()
+                if dup:
+                    return self._send(200, {'ok': True, 'id': dup['id'], 'debt_paid': 0, 'nd': '', 'dup': True})
                 con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
                             (mid, dt, a, meth, pur, str(b.get('note') or '').strip()[:300], now_iso(), getattr(self, 'role', '') or ''))
                 did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
