@@ -1740,8 +1740,9 @@ function mkOpen(c){
       </div>
       <div style="font-weight:800;margin:10px 0 6px">🔄 להעביר לקבוצה</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">${MK.groups.map(g=>`<button class="chip${g.id===c.group?' on':''}" data-g="${esc(g.id)}"${g.id===c.group?' disabled':''}>${g.color?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(g.color)};margin-inline-end:5px"></span>`:''}${esc(g.name)}</button>`).join('')}</div>
-      <div class="cbtns" style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn" id="mkmsg1"${c.phone?'':' disabled'}>📞 לשלוח הודעה</button></div>`;
+      <div class="cbtns" style="display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="mkmsg1"${c.phone?'':' disabled'}>📞 לשלוח הודעה</button>
+        <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>`;
     document.getElementById('rx').onclick=()=>remov.classList.remove('show');
     const mm=document.getElementById('mkmem1');
     if(mm)mm.onclick=async e=>{e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==c.member.id);if(m){remov.classList.remove('show');openMember(m);}};
@@ -1761,16 +1762,34 @@ function mkNotify(c,txt){
   const ta=o.querySelector('textarea');
   o.querySelector('.cno').onclick=()=>o.remove();
   o.onclick=e=>{if(e.target===o)o.remove();};
-  o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=async()=>{
+  // מאיר: "שלוחצים על שליחת הודעה שלא יחכה, שיהיה יותר מקצועי ומהיר" — החלון נסגר מיד,
+  // ההודעה יוצאת ברקע, וכשהיא יצאה (או נכשלה) קופצת הודעה קטנה. Ctrl+Enter = SMS
+  o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{
     const text=ta.value.trim(); if(!text)return toast('חסר טקסט');
-    o.querySelectorAll('button').forEach(x=>x.disabled=true);
-    const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:mkName(c),text,channel:b.dataset.ch});
-    o.remove();
-    if(r&&r.ok)toast(b.dataset.ch==='sms'?'💬 ה-SMS יוצא':'📞 ההודעה הקולית יוצאת');
-    else uiAlert('ההודעה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));
+    o.remove(); mkSend(c,text,b.dataset.ch);
   });
+  ta.onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();o.querySelector('[data-ch="sms"]').click();}
+    if(e.key==='Escape')o.remove();};
   setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
 }
+async function mkSend(c,text,ch){
+  const what=ch==='sms'?'💬 SMS':'📞 הודעה קולית', who=mkName(c);
+  toast(what+' ל'+who+' — יוצא…');
+  c.sent={ch,st:'sending',at:new Date()}; mkCardRefresh(c);
+  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch});
+  if(!r||!r.ok){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא נשלחה:\n'+((r&&r.error)||'שגיאה'));}
+  for(let i=0;i<40;i++){                       // עד דקה — בדרך כלל יוצא תוך שניות
+    await new Promise(res=>setTimeout(res,1500));
+    const s2=await api('GET','/api/mikveh/notify/'+r.job);
+    if(s2&&s2.status==='sent'){c.sent.st='sent';mkCardRefresh(c);return toast('✓ '+what+' יצאה ל'+who);}
+    if(s2&&s2.status==='failed'){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא יצאה:\n'+(s2.error||'שגיאה'));}
+  }
+}
+// הכרטיס פתוח על אותו לקוח — מעדכנים בו את שורת "הודעה אחרונה"
+function mkCardRefresh(c){const el=document.getElementById('mksent');if(!el||el.dataset.id!==c.id)return;el.innerHTML=mkSentTxt(c);}
+const mkSentTxt=c=>{const s=c.sent;if(!s)return '';
+  const w=(s.ch==='sms'?'💬 SMS':'📞 קולית')+' · '+s.at.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+  return s.st==='sent'?'✓ '+w+' — יצאה':s.st==='failed'?'✗ '+w+' — לא יצאה':'⏳ '+w+' — יוצאת…';};
 
 /* ---------- תורמים ---------- */
 function amtNum(a){const n=parseFloat(String(a||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;}

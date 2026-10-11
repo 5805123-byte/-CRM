@@ -14079,10 +14079,12 @@ def mk_phone_members(con):
     return out
 
 
-def ym_worker(job_id):
-    """שולח את ההודעות של משלוח אחד, אחת אחרי השנייה, ומתעד אצל כל חבר/תורם."""
+def ym_worker(job_id, wait=True):
+    """שולח את ההודעות של משלוח אחד, אחת אחרי השנייה, ומתעד אצל כל חבר/תורם.
+    wait=False — הודעה בודדת (מהמקווה) לא מחכה בתור מאחורי משלוח גדול שרץ עכשיו."""
     import yemot as _ym
-    with YM_LOCK:
+    import contextlib as _cl
+    with (YM_LOCK if wait else _cl.nullcontext()):
         con = db()
         try:
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (job_id,)).fetchone()
@@ -16935,6 +16937,15 @@ class H(BaseHTTPRequestHandler):
             for r in rows:
                 r['member'] = pm.get(_ym.norm_phone(r['phone']) or '-') if r['phone'] else None
             return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
+        m = re.match(r'/api/mikveh/notify/(\d+)$', self.path)
+        if m:
+            # מצב ההודעה שנשלחה מלשונית המקווה — המסך שואל עד שהיא יוצאת
+            con = db()
+            try:
+                r = con.execute("SELECT status, error, at FROM ym_msg WHERE job=? ORDER BY id LIMIT 1", (int(m.group(1)),)).fetchone()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'status': r['status'] if r else '', 'error': (r['error'] or '') if r else '', 'at': (r['at'] or '') if r else ''})
         if self.path.split('?')[0] == '/api/mikveh/get':
             # רק קריאה (GET), רק למנהל — כדי לבדוק נתיבים של המקווה מהשרת, בלי לשנות שם כלום
             import mikveh as _mk
@@ -18471,7 +18482,8 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             import threading as _thr        # do_POST מייבא threading מקומית במקום אחר — בלי זה: UnboundLocalError (502)
-            _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+            # מאיר: "שלוחצים על שליחת הודעה שלא יחכה" — יוצאת מיד, גם כשמשלוח גדול באמצע
+            _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
