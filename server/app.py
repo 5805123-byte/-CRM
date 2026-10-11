@@ -16990,11 +16990,12 @@ class H(BaseHTTPRequestHandler):
                 gf = 'natan' if (qs.get('fund') or [''])[0] == 'natan' else ''
                 nm = natan_mosad(con)
                 # נתן תתן — רק החשבון שלו; הקהילה — בלי החשבון של נתן תתן
-                mw = (" AND COALESCE(t.mosad,'')=?" if gf else " AND COALESCE(t.mosad,'')<>?")
+                # הקהילה — רק החשבון של הכולל (החשבון של המקווה ושל נתן תתן נפרדים)
+                mw = (" AND COALESCE(t.mosad,'')=?" if gf else " AND (COALESCE(t.mosad,'')='' OR ?='')")
                 for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
-                                     "WHERE COALESCE(t.amount,0)>=10" + (mw if (nm or gf) else '') + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
-                                     ((nm or '-',) if (nm or gf) else ())):
+                                     "WHERE COALESCE(t.amount,0)>=10" + (mw if gf else " AND COALESCE(t.mosad,'')=''") + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
+                                     ((nm or '-',) if gf else ())):
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
                     # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
                     if re.search(r'מקו?וה|מזגנ|טעינ', ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))):
@@ -20017,7 +20018,8 @@ class H(BaseHTTPRequestHandler):
                                  else ('🔴 חיוב ₪%g מהוראת הקבע נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
                     # בבנקאית הכסף עוד לא נגבה (ויכול לחזור) — החוב נסגר כשהחיוב מופיע בהסטוריה
                     if ok and not is_bank:
-                        cm_debt_pay(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf, fund=fund_of_mosad(con, k['mosad'] if 'mosad' in k.keys() else ''))
+                        cm_debt_pay_explicit(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf, groupe,
+                                             fund=fund_of_mosad(con, k['mosad'] if 'mosad' in k.keys() else ''))
                         ym_mark_paid(con, (k['phone'] or '').split(';')[0], amt, 'חיוב מהמערכת')
                 con.commit()
             finally:
@@ -22430,7 +22432,7 @@ def fund_of_mosad(con, mosad):
     return 'natan' if nm and re.sub(r'\D', '', str(mosad or '')) == nm else ''
 
 
-def cm_debt_pay(con, member_id, amount, note='', fund=''):
+def cm_debt_pay(con, member_id, amount, note='', fund='', only=None):
     """תשלום של חבר קהילה סוגר את החובות הפתוחים שלו — הישן קודם, רק באותה קופה. מחזיר כמה כוסה."""
     left = round(float(amount or 0), 2)
     used = 0.0
@@ -22438,6 +22440,8 @@ def cm_debt_pay(con, member_id, amount, note='', fund=''):
                          (member_id, fund or '')).fetchall():
         if left <= 0:
             break
+        if only is not None and d['id'] not in only:
+            continue
         open_amt = round((d['amount'] or 0) - (d['paid'] or 0), 2)
         if open_amt <= 0:
             continue
@@ -22456,10 +22460,70 @@ def cm_debt_pay(con, member_id, amount, note='', fund=''):
     return used
 
 
+def debt_title_hit(title, text):
+    """מאיר: "אל תכניס לחוב מה שנכנס עוד תרומה, אם זה לא מצוין במפורש שזה עבור החוב או העלייה" —
+    האם בטקסט של התשלום (עבור / הערות) כתוב על מה החוב: כל הכותרת, או שתי מילים ממנה."""
+    norm = lambda x: re.sub(r'\s+', ' ', re.sub(r'[,.;:()\[\]\-–—/|]+', ' ', re.sub(r'["\'״׳`]+', '', str(x or '')))).strip()
+    t, x = norm(title), norm(text)
+    if not t or not x:
+        return False
+    if t in x:
+        return True
+    ws = [w for w in t.split() if len(w) >= 3 and w not in ('עבור', 'תרומה', 'נדבה', 'חוב', 'התחייבות')]
+    return len(ws) >= 2 and sum(1 for w in set(ws) if w in x.split()) >= 2
+
+
+def cm_debt_pay_explicit(con, member_id, amount, note, text, fund=''):
+    """תשלום מנדרים פלוס סוגר רק חוב שכתוב עליו בתשלום במפורש (לפי "עבור מה")."""
+    ids = [d['id'] for d in con.execute("SELECT id,title FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')=?",
+                                        (member_id, fund or '')).fetchall() if debt_title_hit(d['title'], text)]
+    if not ids:
+        return 0
+    return cm_debt_pay(con, member_id, amount, note, fund=fund, only=ids)
+
+
+def debt_autopay_revert():
+    """מאיר: "אתה לוקח הוראת קבע שיש לו למקווה ומכניס לחוב… תחזיר את יותם קוסמן ל-500". תשלומים מנדרים
+    פלוס שנרשמו על חוב אוטומטית — ממוסד אחר (המקווה), או בלי שכתוב עליהם על מה החוב — יוצאים מהחוב."""
+    con = db()
+    n = 0
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='debt_autopay_revert_v1'").fetchone():
+            return 0
+        for d in con.execute("SELECT * FROM cm_debt WHERE note LIKE '%שולם בנדרים פלוס%'").fetchall():
+            segs = [x.strip() for x in (d['note'] or '').split(' · ')]
+            keep, back = [], 0.0
+            for sg in segs:
+                m = re.match(r'שולם בנדרים פלוס (\S+) \(אישור (\w*)\)$', sg)
+                if not m:
+                    keep.append(sg); continue
+                t = con.execute("SELECT * FROM nd_tx WHERE conf=? AND COALESCE(conf,'')<>'' ORDER BY iso DESC LIMIT 1", (m.group(2),)).fetchone()
+                ok = bool(t) and fund_of_mosad(con, t['mosad']) == (d['fund'] or '') and (not (t['mosad'] or '') or (d['fund'] or '') == 'natan') and (
+                    debt_title_hit(d['title'], (t['groupe'] or '') + ' ' + (t['comments'] or '')) or
+                    bool(t['msg_id'] and con.execute("SELECT 1 FROM ym_msg WHERE id=? AND req_off='debt'", (t['msg_id'],)).fetchone()))
+                if ok:
+                    keep.append(sg); continue
+                back += float((t['amount'] if t else 0) or 0)
+            if back <= 0:
+                continue
+            paid = max(0.0, round((d['paid'] or 0) - back, 2))
+            done = paid >= (d['amount'] or 0) - 0.009
+            con.execute("UPDATE cm_debt SET paid=?, status=?, closed_at=?, note=?, updated=? WHERE id=?",
+                        (paid, 'paid' if done else 'open', d['closed_at'] if done else None, ' · '.join(keep), now_iso(), d['id']))
+            cm_debt_log(con, d['member_id'], d['id'], '↩ בוטל קיזוז אוטומטי מנדרים פלוס (לא היה כתוב שזה עבור החוב): ₪%g — פתוח ₪%g' %
+                        (round((d['paid'] or 0) - paid, 2), round((d['amount'] or 0) - paid, 2)))
+            n += 1
+        con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('debt_autopay_revert_v1')")
+        con.commit()
+        return n
+    finally:
+        con.close()
+
+
 def cm_debts_from_keva(con):
     """הוראת קבע של חבר קהילה שחזרה ← חוב פתוח ("הו\"ק חזרה"). עברה / עודכנה ← החוב נסגר."""
     opened = closed = 0
-    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active FROM nd_keva").fetchall():
+    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active FROM nd_keva WHERE COALESCE(mosad,'')=''").fetchall():
         d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (k['id'],)).fetchone()
         bad = k['active'] and (k['error'] or '').strip() and k['member_id'] and _ivr_amt(k['amount']) > 0 \
             and not re.search(r'לא פעיל|אין סכום', k['error'] or '')
@@ -22679,13 +22743,22 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         # כבר נרשם מהשלוחה בטלפון (אותו מזהה עסקה) — לא שוב
         if con.execute("SELECT 1 FROM nd_charge WHERE transaction_id=? AND ok=1", (t['id'],)).fetchone():
             continue
+        # מאיר: "יש חשבון נפרד למקווה ויש חשבון לנדרים נדבות — אל תערב". רק החשבון של הכולל (והחשבון
+        # של נתן תתן, לקופה שלה) נוגע בחובות; ורק תשלום שכתוב עליו במפורש על מה החוב
+        fund = fund_of_mosad(con, mosad)
+        if mosad and fund != 'natan':
+            continue
         msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None) if ph else None
         if msg:
             con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, tid))
             marked += 1
-        # חבר קהילה בלי טלפון ברישום — גם אצלו התשלום סוגר את החוב
         if mid:
-            cm_debt_pay(con, mid, a, 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf']), fund=fund_of_mosad(con, mosad))
+            note_ = 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf'])
+            rm = con.execute("SELECT req_off FROM ym_msg WHERE id=?", (msg,)).fetchone() if msg else None
+            if rm and (rm['req_off'] or '') == 'debt':
+                cm_debt_pay(con, mid, a, note_, fund=fund)       # שילם על התזכורת שנשלחה לו על החוב
+            else:
+                cm_debt_pay_explicit(con, mid, a, note_, ' '.join(str(t.get(k) or '') for k in ('groupe', 'comments')), fund=fund)
     return new, marked
 
 
@@ -23712,6 +23785,12 @@ def serve():
         us_receipt_redate()
     except Exception as e:
         print('  receipt redate error:', e)
+    try:
+        n = debt_autopay_revert()
+        if n:
+            print('  debt auto-pay reverted on %d debts' % n)
+    except Exception as e:
+        print('  debt autopay revert error:', e)
     try:
         pron_hint_drop()
     except Exception as e:
