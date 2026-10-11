@@ -597,6 +597,9 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE ym_job ADD COLUMN retry_of INTEGER")
     except Exception: pass
+    # מאיר (מקווה): "אופציה לשלוח מאוחר יותר" — send_at בשעון ישראל, status='scheduled' עד אז
+    try: con.execute("ALTER TABLE ym_job ADD COLUMN send_at TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -14035,6 +14038,30 @@ def ym_retry_scan():
         con.close()
 
 
+def ym_sched_scan():
+    """הודעות מתוזמנות (מלשונית המקווה) שהגיע זמנן — יוצאות עכשיו."""
+    con = db()
+    try:
+        now = il_now().strftime('%Y-%m-%d %H:%M')
+        due = [r[0] for r in con.execute("SELECT id FROM ym_job WHERE status='scheduled' AND COALESCE(send_at,'')<>'' AND send_at<=?", (now,))]
+        for jid in due:
+            con.execute("UPDATE ym_job SET status='queued' WHERE id=? AND status='scheduled'", (jid,))
+        con.commit()
+    finally:
+        con.close()
+    for jid in due:
+        threading.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
+
+
+def _ym_sched_loop():
+    while True:
+        time.sleep(30)
+        try:
+            ym_sched_scan()
+        except Exception as e:
+            print('  ym sched loop error:', e)
+
+
 def _ym_retry_loop():
     while True:
         time.sleep(300)
@@ -14065,6 +14092,16 @@ def ym_names(con):
                 if ph:
                     out[ph] = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
     return out
+
+
+# נוסחים מוכנים ללשונית המקווה (עד שמאיר שומר רשימה משלו). {שם} וכו' מתמלאים לפי הלקוח
+MK_TEMPLATES = [
+    {'id': 'group', 'name': 'קבוצה עודכנה', 'text': 'שלום {שם}, עודכנת במקווה לקבוצה: {קבוצה}.'},
+    {'id': 'welcome', 'name': 'ברוך הבא', 'text': 'שלום {שם}, ברוך הבא למקווה! נרשמת לקבוצה: {קבוצה}. מספר הלקוח שלך: {מספר לקוח}.'},
+    {'id': 'sub', 'name': 'המנוי מסתיים', 'text': 'שלום {שם}, המנוי שלך במקווה מסתיים ב-{מנוי עד}. לחידוש המנוי אפשר לפנות אלינו.'},
+    {'id': 'lic', 'name': 'הרישיון מסתיים', 'text': 'שלום {שם}, תוקף הרישיון שלך במקווה מסתיים ב-{רישיון עד}. כדי להמשיך להיכנס יש לחדש אותו.'},
+    {'id': 'free', 'name': 'הודעה חופשית', 'text': 'שלום {שם}, '},
+]
 
 
 def mk_phone_members(con):
@@ -16937,6 +16974,26 @@ class H(BaseHTTPRequestHandler):
             for r in rows:
                 r['member'] = pm.get(_ym.norm_phone(r['phone']) or '-') if r['phone'] else None
             return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
+        if self.path.split('?')[0] == '/api/mikveh/templates':
+            con = db()
+            try:
+                raw = kv_get(con, 'mk_templates', '')
+            finally:
+                con.close()
+            try:
+                rows = json.loads(raw) if raw else None
+            except ValueError:
+                rows = None
+            return self._send(200, {'ok': True, 'templates': rows if rows is not None else MK_TEMPLATES, 'default': rows is None})
+        if self.path.split('?')[0] == '/api/mikveh/scheduled':
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute(
+                    "SELECT j.id, j.channel, j.send_at, j.created, m.name, m.phone, m.text FROM ym_job j "
+                    "JOIN ym_msg m ON m.job=j.id WHERE j.label='מקווה' AND j.status='scheduled' ORDER BY j.send_at")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         m = re.match(r'/api/mikveh/notify/(\d+)$', self.path)
         if m:
             # מצב ההודעה שנשלחה מלשונית המקווה — המסך שואל עד שהיא יוצאת
@@ -18470,11 +18527,26 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'אין טלפון תקין ללקוח'})
             if ch == 'sms' and not _ym.is_mobile(phone):
                 return self._send(200, {'ok': False, 'error': 'SMS רק לנייד — זה מספר קווי'})
+            # "אופציה לשלוח מאוחר יותר" — בשעה שנבחרה (שעון ישראל); לא בשבת / חג (נדחה למוצאי)
+            send_at = str(b.get('send_at') or '').strip().replace('T', ' ')[:16]
+            moved = False
+            if send_at:
+                try:
+                    want = datetime.datetime.strptime(send_at, '%Y-%m-%d %H:%M')
+                except ValueError:
+                    return self._send(200, {'ok': False, 'error': 'שעת השליחה לא תקינה'})
+                nowl = il_now().replace(tzinfo=None)
+                if want <= nowl + datetime.timedelta(minutes=1):
+                    send_at = ''                      # השעה כבר עברה — יוצא עכשיו
+                else:
+                    ok_dt = ym_next_ok(want)
+                    moved = ok_dt != want
+                    send_at = ok_dt.strftime('%Y-%m-%d %H:%M')
             con = db()
             try:
                 mem = mk_phone_members(con).get(phone)
-                con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,1,'queued',0,?,'')",
-                            (now_iso(), ch, text, '', 'מקווה'))
+                con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,1,?,0,?,'',?)",
+                            (now_iso(), ch, text, '', 'scheduled' if send_at else 'queued', 'מקווה', send_at))
                 jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
                 con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued','')",
                             (jid, 'm' if mem else 't', mem['id'] if mem else 0, name, phone, text))
@@ -18482,9 +18554,45 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             import threading as _thr        # do_POST מייבא threading מקומית במקום אחר — בלי זה: UnboundLocalError (502)
+            if send_at:
+                return self._send(200, {'ok': True, 'job': jid, 'send_at': send_at, 'moved': moved})
             # מאיר: "שלוחצים על שליחת הודעה שלא יחכה" — יוצאת מיד, גם כשמשלוח גדול באמצע
             _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid})
+        if self.path == '/api/mikveh/templates':
+            # "נוסחים מוכנים, שמירת נוסחים" — רשימה אחת לכל המערכת
+            rows = []
+            for t in (b.get('templates') or [])[:60]:
+                name, text = str(t.get('name') or '').strip()[:60], str(t.get('text') or '').strip()[:1000]
+                if name and text:
+                    rows.append({'id': re.sub(r'[^\w-]', '', str(t.get('id') or ''))[:40] or hashlib.md5((name + text).encode('utf-8')).hexdigest()[:10],
+                                 'name': name, 'text': text})
+            con = db()
+            try:
+                kv_set(con, 'mk_templates', json.dumps(rows, ensure_ascii=False)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'templates': rows})
+        m = re.match(r'/api/mikveh/scheduled/(\d+)/(cancel|now)$', self.path)
+        if m:
+            jid, act = int(m.group(1)), m.group(2)
+            con = db()
+            try:
+                j = con.execute("SELECT status FROM ym_job WHERE id=? AND label='מקווה'", (jid,)).fetchone()
+                if not j or j['status'] != 'scheduled':
+                    return self._send(200, {'ok': False, 'error': 'ההודעה כבר לא מתוזמנת (אולי כבר יצאה)'})
+                if act == 'cancel':
+                    con.execute("UPDATE ym_job SET status='cancelled' WHERE id=?", (jid,))
+                    con.execute("UPDATE ym_msg SET status='cancelled' WHERE job=?", (jid,))
+                else:
+                    con.execute("UPDATE ym_job SET status='queued', send_at=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M'), jid))
+                con.commit()
+            finally:
+                con.close()
+            if act == 'now':
+                import threading as _thr
+                _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
+            return self._send(200, {'ok': True})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
             import yemot as _ym
@@ -24032,6 +24140,7 @@ def serve():
     threading.Thread(target=_nd_loop, daemon=True).start()
     threading.Thread(target=_vm_loop, daemon=True).start()
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
+    threading.Thread(target=_ym_sched_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

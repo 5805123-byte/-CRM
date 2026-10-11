@@ -1651,7 +1651,8 @@ function renderMikveh(){
       <select id="mkgrp" class="avsortsel"><option value="">כל הקבוצות (${MK.clients.length})</option>
         ${MK.groups.map(g=>`<option value="${esc(g.id)}"${g.id===mkGrp?' selected':''}>${esc(g.name)} (${cnt[g.id]||0})</option>`).join('')}</select>
       <select id="mksort" class="avsortsel">${[['name','לפי שם'],['code','לפי מספר לקוח'],['last','לפי כניסה אחרונה']].map(([k,l])=>`<option value="${k}"${mkSort===k?' selected':''}>${l}</option>`).join('')}</select>
-      <button class="btn sm ghost" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button></div>
+      <button class="btn sm ghost" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button>
+      <button class="btn sm ghost hidden" id="mksched">⏰ מתוזמנות</button></div>
     <div class="st" id="mkcount" style="margin:4px 0 8px"></div>
     <div style="overflow-x:auto"><table class="avtable"><thead><tr><th class="mkhide">#</th><th>שם</th><th>טלפון</th><th>קבוצה</th><th class="mkhide">מנוי עד</th><th class="mkhide">כניסה אחרונה</th><th></th></tr></thead><tbody id="mkbody"></tbody></table></div>
     <div class="empty hidden" id="mknone">אין לקוחות שמתאימים</div>`;
@@ -1659,6 +1660,7 @@ function renderMikveh(){
   qi.oninput=()=>{mkQ=q=qi.value.trim();const tq=document.getElementById('q');if(tq)tq.value=qi.value;mkPaint();};
   document.getElementById('mkgrp').onchange=e=>{mkGrp=e.target.value;mkPaint();};
   document.getElementById('mksort').onchange=e=>{mkSort=e.target.value;mkPaint();};
+  document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mkfresh').onclick=()=>{MK=null;view.innerHTML='<div class="empty">⏳ טוען מהמקווה…</div>';mkLoad(true);};
   const byId=id=>MK.clients.find(c=>c.id===id);
   document.getElementById('mkbody').onclick=async e=>{
@@ -1666,7 +1668,7 @@ function renderMikveh(){
     const c=byId(tr.dataset.id); if(!c)return;
     const mem=e.target.closest('.mkmem');
     if(mem){e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==+mem.dataset.mid);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');return;}
-    if(e.target.closest('.mkmsg')){if(c.phone)mkNotify(c,`שלום ${c.first||''}, `);return;}
+    if(e.target.closest('.mkmsg')){if(c.phone)mkNotify(c,'free');return;}
     e.preventDefault(); mkOpen(c);          // לחיצה על השורה / על הקבוצה — כרטיס הלקוח
   };
   mkPaint();
@@ -1711,7 +1713,7 @@ async function mkSetGroup(c,g){
   if(!r||!r.ok){uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'שגיאה'));return false;}
   c.group=g.id; toast('✓ עודכן במקווה: '+g.name);
   if(tab==='mikveh')mkPaint();
-  if(c.phone)mkNotify(c,`שלום ${c.first||''}, עודכנת במקווה לקבוצה: ${mkGName(g)}.`);
+  if(c.phone)mkNotify(c,'group',{group:g.id});
   else uiAlert('עודכן במקווה. אין טלפון ללקוח במקווה — אי אפשר לשלוח לו הודעה.');
   return true;
 }
@@ -1746,38 +1748,105 @@ function mkOpen(c){
     document.getElementById('rx').onclick=()=>remov.classList.remove('show');
     const mm=document.getElementById('mkmem1');
     if(mm)mm.onclick=async e=>{e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==c.member.id);if(m){remov.classList.remove('show');openMember(m);}};
-    document.getElementById('mkmsg1').onclick=()=>mkNotify(c,`שלום ${c.first||''}, `);
+    document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     rs.querySelectorAll('[data-g]').forEach(b=>b.onclick=async()=>{const g=G[b.dataset.g];
       if(await mkSetGroup(c,g))draw();});
   };
   draw(); remov.classList.add('show');
 }
-// הודעה ללקוח — SMS או קולית, דרך ימות המשיח. נפתח עם נוסח מוכן, אפשר לשנות לפני השליחה
-function mkNotify(c,txt){
+// הודעה ללקוח — SMS או קולית, דרך ימות המשיח.
+// מאיר: "שיהיה יותר משוכלל, נוסחים מוכנים, שמירת נוסחים, אופציה לשלוח מאוחר יותר".
+// הנוסח נכתב עם {שם} / {קבוצה}… ומתמלא לפי הלקוח; מתחת רואים בדיוק מה ייצא.
+let MKTPL=null;
+const MK_PH=[['שם','שם פרטי'],['שם מלא','שם מלא'],['קבוצה','קבוצה'],['מספר לקוח','מספר לקוח'],['מנוי עד','מנוי עד'],['רישיון עד','רישיון עד']];
+async function mkTplLoad(){if(MKTPL)return MKTPL;const r=await api('GET','/api/mikveh/templates');MKTPL=(r&&r.templates)||[];return MKTPL;}
+async function mkTplSave(list){const r=await api('POST','/api/mikveh/templates',{templates:list});
+  if(r&&r.ok){MKTPL=r.templates;return true;} uiAlert('הנוסח לא נשמר:\n'+((r&&r.error)||'שגיאה'));return false;}
+function mkFill(t,c,ctx){
+  const G={}; (MK&&MK.groups||[]).forEach(g=>G[g.id]=g);
+  const v={'שם':c.first||mkName(c),'שם מלא':mkName(c),'קבוצה':mkGName(G[(ctx&&ctx.group)||c.group]),'מספר לקוח':String(c.code||''),
+    'מנוי עד':mkDate(c.sub_end),'רישיון עד':mkDate(c.lic_exp),'טלפון':c.phone||''};
+  return String(t||'').replace(/\{([^{}]+)\}/g,(m,k)=>k in v?v[k]:m);
+}
+const mkLocalDT=d=>{const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes());};
+const mkDTLabel=v=>{const d=new Date(v);if(isNaN(d))return v;
+  const t=new Date(),tm=new Date(t.getFullYear(),t.getMonth(),t.getDate()+1);
+  const day=d.toDateString()===t.toDateString()?'היום':d.toDateString()===tm.toDateString()?'מחר':d.toLocaleDateString('he-IL',{weekday:'short',day:'numeric',month:'numeric'});
+  return day+' '+d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});};
+async function mkNotify(c,tplId,ctx){
+  const tpls=await mkTplLoad();
+  let cur=tpls.find(t=>t.id===tplId)||tpls.find(t=>t.id==='free')||tpls[0]||{id:'',name:'',text:'שלום {שם}, '};
+  let later=false;
   const o=document.createElement('div');o.className='confirmov';
-  o.innerHTML=`<div class="confirmbox"><div class="cm">📞 הודעה ל${esc(mkName(c))}<div class="cmsub" dir="ltr">${esc(c.phone||'')}</div></div>
-    <textarea class="cinp" rows="4" style="resize:vertical">${esc(txt||'')}</textarea>
+  o.innerHTML=`<div class="confirmbox" style="max-width:480px;max-height:92vh;overflow-y:auto">
+    <div class="cm" style="margin-bottom:10px">📞 הודעה ל${esc(mkName(c))}<div class="cmsub" dir="ltr">${esc(c.phone||'')}</div></div>
+    <div style="font-size:.82rem;font-weight:800;color:var(--muted);margin-bottom:4px">נוסח</div>
+    <div id="mkt" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px"></div>
+    <textarea class="cinp" id="mkta" rows="3" style="resize:vertical;margin:0 0 6px"></textarea>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${MK_PH.map(([k,l])=>`<button class="chip" data-ph="${esc(k)}" style="padding:3px 8px;font-size:.75rem">+ ${esc(l)}</button>`).join('')}</div>
+    <div style="font-size:.82rem;font-weight:800;color:var(--muted)">כך זה ייצא</div>
+    <div id="mkpv" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:4px 0 8px;white-space:pre-wrap;font-weight:600"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn sm ghost" id="mksave">💾 לשמור נוסח</button><button class="btn sm ghost" id="mkdel">🗑️ למחוק נוסח</button>
+      <button class="btn sm ghost" id="mklater">⏰ לשלוח מאוחר יותר</button></div>
+    <div id="mklt" class="hidden" style="background:var(--gold-soft);border-radius:10px;padding:8px;margin-bottom:10px">
+      <input type="datetime-local" id="mkdt" class="cinp" style="margin:0 0 6px">
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${[['h1','בעוד שעה'],['ev','הערב 20:00'],['tm','מחר 09:00'],['tm2','מחר 20:00']].map(([k,l])=>`<button class="chip" data-q="${k}" style="padding:3px 9px;font-size:.78rem">${l}</button>`).join('')}</div>
+      <div class="cmsub" style="margin-top:6px">בשבת, בחג ובשעות הלילה לא נשלח — יידחה לבד לשעה המתאימה הבאה</div></div>
     <div class="cbtns"><button class="btn ghost cno">לא עכשיו</button><button class="btn" data-ch="sms">💬 SMS</button><button class="btn" data-ch="voice">📞 קולית</button></div></div>`;
   document.body.appendChild(o);
-  const ta=o.querySelector('textarea');
+  const ta=o.querySelector('#mkta'), pv=o.querySelector('#mkpv'), dt=o.querySelector('#mkdt');
+  const paintT=()=>{o.querySelector('#mkt').innerHTML=(MKTPL||[]).map(t=>`<button class="chip${t.id===cur.id?' on':''}" data-t="${esc(t.id)}" style="padding:4px 10px">${esc(t.name)}</button>`).join('');
+    o.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{cur=MKTPL.find(t=>t.id===b.dataset.t)||cur;ta.value=cur.text;paintT();upd();});
+    o.querySelector('#mkdel').disabled=!MKTPL.some(t=>t.id===cur.id);};
+  const upd=()=>{pv.textContent=mkFill(ta.value,c,ctx).trim()||'—';
+    const when=later&&dt.value?' · '+mkDTLabel(dt.value):'';
+    o.querySelector('[data-ch="sms"]').textContent=(later?'⏰ ':'💬 ')+'SMS'+when;
+    o.querySelector('[data-ch="voice"]').textContent=(later?'⏰ ':'📞 ')+'קולית'+when;};
+  ta.value=cur.text; paintT(); upd();
+  ta.oninput=upd;
+  o.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{const t='{'+b.dataset.ph+'}',a=ta.selectionStart??ta.value.length,e=ta.selectionEnd??a;
+    ta.value=ta.value.slice(0,a)+t+ta.value.slice(e);ta.focus();ta.setSelectionRange(a+t.length,a+t.length);upd();});
+  o.querySelector('#mksave').onclick=async()=>{
+    const text=ta.value.trim(); if(!text)return toast('חסר טקסט');
+    const name=await uiPrompt('שם הנוסח (אותו שם — מעדכן את הנוסח הקיים)',cur.name||'');
+    if(!name)return;
+    const list=(MKTPL||[]).slice(), ex=list.find(t=>t.name===name);
+    if(ex)ex.text=text; else list.push({id:'t'+Date.now().toString(36),name,text});
+    if(await mkTplSave(list)){cur=MKTPL.find(t=>t.name===name)||cur;paintT();toast('💾 הנוסח נשמר');}};
+  o.querySelector('#mkdel').onclick=async()=>{
+    if(!await uiConfirm('למחוק את הנוסח "'+cur.name+'"?','🗑️ למחוק','ביטול'))return;
+    if(await mkTplSave(MKTPL.filter(t=>t.id!==cur.id))){cur=MKTPL[0]||{id:'',name:'',text:ta.value};paintT();toast('הנוסח נמחק');}};
+  o.querySelector('#mklater').onclick=()=>{later=!later;o.querySelector('#mklt').classList.toggle('hidden',!later);
+    o.querySelector('#mklater').classList.toggle('on',later);
+    if(later&&!dt.value){const d=new Date(Date.now()+3600e3);d.setMinutes(Math.ceil(d.getMinutes()/5)*5,0,0);dt.value=mkLocalDT(d);}
+    dt.min=mkLocalDT(new Date());upd();};
+  dt.oninput=upd;
+  o.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const d=new Date();
+    if(b.dataset.q==='h1'){d.setTime(Date.now()+3600e3);d.setMinutes(Math.ceil(d.getMinutes()/5)*5,0,0);}
+    else if(b.dataset.q==='ev'){d.setHours(20,0,0,0);if(d<new Date())d.setDate(d.getDate()+1);}
+    else{d.setDate(d.getDate()+1);d.setHours(b.dataset.q==='tm'?9:20,0,0,0);}
+    dt.value=mkLocalDT(d);upd();});
   o.querySelector('.cno').onclick=()=>o.remove();
   o.onclick=e=>{if(e.target===o)o.remove();};
-  // מאיר: "שלוחצים על שליחת הודעה שלא יחכה, שיהיה יותר מקצועי ומהיר" — החלון נסגר מיד,
-  // ההודעה יוצאת ברקע, וכשהיא יצאה (או נכשלה) קופצת הודעה קטנה. Ctrl+Enter = SMS
+  // "שלוחצים על שליחת הודעה שלא יחכה" — החלון נסגר מיד וההודעה יוצאת ברקע. Ctrl+Enter = SMS
   o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{
-    const text=ta.value.trim(); if(!text)return toast('חסר טקסט');
-    o.remove(); mkSend(c,text,b.dataset.ch);
+    const text=mkFill(ta.value,c,ctx).trim(); if(!text)return toast('חסר טקסט');
+    if(later&&!dt.value)return toast('לבחור מתי לשלוח');
+    o.remove(); mkSend(c,text,b.dataset.ch,later?dt.value:'');
   });
   ta.onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();o.querySelector('[data-ch="sms"]').click();}
     if(e.key==='Escape')o.remove();};
   setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
 }
-async function mkSend(c,text,ch){
+async function mkSend(c,text,ch,when){
   const what=ch==='sms'?'💬 SMS':'📞 הודעה קולית', who=mkName(c);
-  toast(what+' ל'+who+' — יוצא…');
-  c.sent={ch,st:'sending',at:new Date()}; mkCardRefresh(c);
-  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch});
+  toast(what+' ל'+who+(when?' — מתוזמנת':' — יוצא…'));
+  c.sent={ch,st:when?'sched':'sending',at:when?new Date(when):new Date()}; mkCardRefresh(c);
+  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch,send_at:when||''});
   if(!r||!r.ok){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא נשלחה:\n'+((r&&r.error)||'שגיאה'));}
+  if(r.send_at){c.sent.at=new Date(r.send_at.replace(' ','T'));mkCardRefresh(c);mkSchedCount();
+    return toast('⏰ '+what+' ל'+who+' תצא '+mkDTLabel(r.send_at.replace(' ','T'))+(r.moved?' (נדחה לשעה מתאימה — שבת / חג / לילה)':''));}
   for(let i=0;i<40;i++){                       // עד דקה — בדרך כלל יוצא תוך שניות
     await new Promise(res=>setTimeout(res,1500));
     const s2=await api('GET','/api/mikveh/notify/'+r.job);
@@ -1789,7 +1858,30 @@ async function mkSend(c,text,ch){
 function mkCardRefresh(c){const el=document.getElementById('mksent');if(!el||el.dataset.id!==c.id)return;el.innerHTML=mkSentTxt(c);}
 const mkSentTxt=c=>{const s=c.sent;if(!s)return '';
   const w=(s.ch==='sms'?'💬 SMS':'📞 קולית')+' · '+s.at.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+  if(s.st==='sched')return '⏰ '+(s.ch==='sms'?'💬 SMS':'📞 קולית')+' — תצא '+mkDTLabel(s.at);
   return s.st==='sent'?'✓ '+w+' — יצאה':s.st==='failed'?'✗ '+w+' — לא יצאה':'⏳ '+w+' — יוצאת…';};
+// ההודעות שמחכות לשעה שלהן — רואים, מבטלים או שולחים עכשיו
+async function mkSchedCount(){const b=document.getElementById('mksched');if(!b)return;
+  const r=await api('GET','/api/mikveh/scheduled');const n=(r&&r.rows||[]).length;
+  b.textContent='⏰ מתוזמנות'+(n?' ('+n+')':'');b.classList.toggle('hidden',!n);}
+async function mkSchedOpen(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const r=await api('GET','/api/mikveh/scheduled'); const rows=(r&&r.rows)||[];
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>⏰ הודעות מתוזמנות</h2>
+    ${rows.length?rows.map(x=>`<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0" data-j="${x.id}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(x.name||'')} <span dir="ltr" style="color:var(--muted);font-weight:600">${esc(x.phone||'')}</span></b>
+        <span class="pill py">${x.channel==='sms'?'💬 SMS':'📞 קולית'} · ${esc(mkDTLabel(String(x.send_at||'').replace(' ','T')))}</span></div>
+      <div style="margin:6px 0;white-space:pre-wrap">${esc(x.text||'')}</div>
+      <div style="display:flex;gap:6px"><button class="btn sm" data-a="now">▶️ לשלוח עכשיו</button><button class="btn sm ghost" data-a="cancel">✕ לבטל</button></div></div>`).join('')
+      :'<div class="empty">אין הודעות מתוזמנות</div>'}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-j] [data-a]').forEach(b=>b.onclick=async()=>{const jid=b.closest('[data-j]').dataset.j,a=b.dataset.a;
+    if(a==='cancel'&&!await uiConfirm('לבטל את ההודעה?','✕ לבטל','לא'))return;
+    const x=await api('POST','/api/mikveh/scheduled/'+jid+'/'+a,{});
+    if(!x||!x.ok)uiAlert((x&&x.error)||'שגיאה'); else toast(a==='now'?'▶️ יוצאת עכשיו':'ההודעה בוטלה');
+    mkSchedOpen(); mkSchedCount();});
+  remov.classList.add('show');
+}
 
 /* ---------- תורמים ---------- */
 function amtNum(a){const n=parseFloat(String(a||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;}
