@@ -74,12 +74,20 @@ def _to_wav8k(pcm, rate):
     return buf.getvalue()
 
 
-def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model=''):
+def hint_text(hints):
+    """מאיר: "לתקן לפי איות באנגלית" — [(מילה, איך אומרים)] -> שורת הנחיה לפני ההוראה (לא מוקראת)."""
+    hs = [(w, l) for w, l in (hints or []) if w and l]
+    if not hs:
+        return ''
+    return ('Pronunciation guide, do not read it aloud: ' + '; '.join('the Hebrew word %s is pronounced "%s"' % (w, l) for w, l in hs) + '.')
+
+
+def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model='', hints=None):
     """-> (הצלחה, WAV או הודעת שגיאה). trace(method, params, ok, raw, ms) — ללוג של ימות."""
     if not configured():
         return False, 'Gemini לא מוגדר ב-Render (GEMINI_API_KEY)'
     model = (model if model in [k for k, _ in MODELS if k] else '') or _env('GEMINI_TTS_MODEL', DEF_MODEL)
-    prompt = ((style or DEF_STYLE).strip() + '\n' + text).strip()
+    prompt = (hint_text(hints) + '\n' + (style or DEF_STYLE).strip() + '\n' + text).strip()
     body = {'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'responseModalities': ['AUDIO'],
                                  'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice_ok(voice)}}}}}

@@ -13008,6 +13008,15 @@ async function cdPayDialog(d,full){
 // "עבור מה" של החובות הפתוחים (למשל "שלושה חודשים חלב") — נכנס בהודעה במקום {עבור}
 function cdForTxt(deb){const T=[...new Set((deb||[]).filter(d=>d.kind!=='hok').map(d=>String(d.title||'').trim()).filter(Boolean))];
   return T.length>1?T.slice(0,-1).join(', ')+' ו'+T[T.length-1]:(T[0]||'');}
+// ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
+async function ymPronEn(word){
+  const w=await uiPrompt('איזו מילה נשמעת לא נכון? (בעברית, כמו שהיא כתובה בהודעה — למשל כולל)',word||'');if(!w||!w.trim())return false;
+  const cur=((ymStatus&&ymStatus.pron_en)||[]).find(x=>x[0]===w.trim());
+  const say=await uiPrompt('איך אומרים "'+w.trim()+'" — באותיות אנגליות.\nאת ההברה המודגשת באותיות גדולות, למשל: KOH-lel\n(ריק = למחוק את התיקון)',cur?cur[1]:'');if(say===null)return false;
+  const r=await api('POST','/api/yemot/pron_en',{word:w.trim(),say:say.trim()});
+  if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return false;}
+  if(ymStatus)ymStatus.pron_en=r.pron_en;
+  toast(say.trim()?'✓ נשמר — משמיע שוב…':'✓ התיקון נמחק');return true;}
 async function cdSendNow(g,ch){
   const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
   const ph=ymPhone(m.phone);
@@ -13195,7 +13204,8 @@ function cdWire(){const g=id=>document.getElementById(id);
     if(!r||!r.ok){const sp=await api('POST','/api/yemot/speakable',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
       await uiAlert('לא הצלחתי להשמיע ('+((r&&r.error)||'שגיאה')+').\nזה הטקסט שיוקרא לו:\n\n'+((sp&&sp.text)||''));return;}
     const au=new Audio('data:audio/wav;base64,'+r.wav);try{au.play();}catch(e){}
-    await uiAlert('🔊 כך זה יישמע אצלו:\n\n'+r.text);try{au.pause();}catch(e){}});
+    const fix=await uiConfirm('🔊 כך זה יישמע אצלו:\n\n'+r.text,'✎ מילה נשמעת לא נכון','סגור');try{au.pause();}catch(e){}
+    if(fix&&await ymPronEn())b.click();});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();
@@ -14281,7 +14291,8 @@ function ymVoiceHTML(st){
       <div class="hintxt">שורה לכל מילה: <b>מילה=איך לומר</b>. למשל <span dir="rtl">חצות=חֲצוֹת</span> או <span dir="rtl">דויטש=דוֹיְטְשׁ</span>. ניקוד או כתיב מלא עוזרים לקול לקרוא נכון.</div>
       <textarea id="ym_pron" rows="4" placeholder="חצות=חֲצוֹת">${esc(st.pron||'')}</textarea>
       <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="ym_pronsave">💾 שמור מילון</button>
-        <button class="btn sm ghost" id="ym_pronnames">👪 הצע ניקוד לשמות של הנבחרים</button></div></details>
+        <button class="btn sm ghost" id="ym_pronnames">👪 הצע ניקוד לשמות של הנבחרים</button><button class="btn sm ghost" id="ym_pronen">✎ תיקון הגייה באנגלית</button></div>
+      ${(st.pron_en||[]).length?`<div class="hintxt">✎ תיקוני הגייה (בקול של Gemini): ${st.pron_en.map(([w,l])=>`<span class="chip">${esc(w)} = <span dir="ltr">${esc(l)}</span> <button class="fdel" data-pendel="${esc(w)}" title="למחוק">✕</button></span>`).join(' ')}</div>`:''}</details>
     <div class="hintxt">סכומים נקראים במילים ("מאה חמישים ושמונה שקלים") וטלפונים ספרה-ספרה בקבוצות — אוטומטית.</div></details>`;}
 // מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
 function ymWireNikud(){
@@ -14343,6 +14354,8 @@ function ymWireVoice(first,sel){
     toast('🎙️ ההקלטה נשמרה ✓ — לא נשלח כלום');const bx=g('ym_recbox');if(bx){bx.open=true;ymRecList();}};
   g('ym_pronsave').onclick=async()=>{const p=g('ym_pron').value;const r=await api('POST','/api/yemot/voice',{pron:p});
     if(r&&r.ok){ymStatus.pron=p;toast('המילון נשמר ✓');}else toast('לא נשמר');};
+  const pe=g('ym_pronen'); if(pe)pe.onclick=async()=>{if(await ymPronEn())renderCommYm();};
+  view.querySelectorAll('[data-pendel]').forEach(b=>b.onclick=async()=>{const r=await api('POST','/api/yemot/pron_en',{word:b.dataset.pendel,say:''});if(r&&r.ok){ymStatus.pron_en=r.pron_en;renderCommYm();}});
   const pn=g('ym_pronnames'); if(pn)pn.onclick=async()=>{
     const have=new Set(g('ym_pron').value.split('\n').map(l=>l.split('=')[0].trim()).filter(Boolean));
     const words=[...new Set((sel||[]).flatMap(r=>String(r.name||'').split(/\s+/)).map(w=>w.replace(/[\u0591-\u05c7]/g,'').trim()).filter(w=>w.length>1&&/[\u05d0-\u05ea]/.test(w)&&!have.has(w)))];

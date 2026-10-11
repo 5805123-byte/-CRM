@@ -13771,6 +13771,22 @@ def pron_hint_drop():
         con.close()
 
 
+def pron_en_list(con):
+    """תיקוני הגייה באנגלית — שורה לכל מילה: "כולל=KOH-lel"."""
+    out = []
+    for l in kv_get(con, 'ym_pron_en', '').replace('\r', '').split('\n'):
+        if '=' in l:
+            w, say = l.split('=', 1)
+            if w.strip() and say.strip():
+                out.append((w.strip(), say.strip()))
+    return out
+
+
+def pron_en_for(lst, text):
+    t = text or ''
+    return [(w, l) for w, l in lst if re.search(r'(?<![\u0590-\u05ff])[בלוהמשכ]{0,2}' + re.escape(w) + r'(?![\u0590-\u05ff])', t)]
+
+
 def ym_fill(text, name, amount, link='', for_=''):
     """{שם} {סכום} {קישור} {עבור} בטקסט — כל נמען שומע/מקבל את שמו, וקישור תשלום אישי."""
     # מאיר: "כל פעם שאני כותב עבור מה בהתחייבות — שהוא ישמע את זה בהודעה" (למשל "שלושה חודשים חלב").
@@ -13953,6 +13969,7 @@ def ym_worker(job_id):
             ym_gv = _gt.voice_ok(kv_get(con, 'ym_gvoice', ''))
             ym_gs = kv_get(con, 'ym_gstyle', '')
             ym_gm = kv_get(con, 'ym_gmodel', '')
+            ym_en = pron_en_list(con)
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
                 _ym.begin_trace()
@@ -13966,7 +13983,8 @@ def ym_worker(job_id):
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
                     ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice,
-                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm)
+                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
+                                           hints=pron_en_for(ym_en, m['text']))
                     if ok and isinstance(res, dict):
                         con.execute("UPDATE ym_msg SET engine=? WHERE id=?", (res.get('engine') or '', m['id']))
                 tr = _ym.end_trace()
@@ -17001,6 +17019,7 @@ class H(BaseHTTPRequestHandler):
             ned_list = ned_mosads(con)
             try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
             except Exception: _tpl = {}
+            ym_en = pron_en_list(con)
             ym_v = (kv_get(con, 'ym_voice', ''), kv_get(con, 'ym_pron', ''), _tpl,
                     kv_get(con, 'ym_engine', ''), kv_get(con, 'ym_gvoice', ''), kv_get(con, 'ym_gstyle', ''), kv_get(con, 'ym_gmodel', ''))
             import gemini_tts as _gt
@@ -17018,7 +17037,7 @@ class H(BaseHTTPRequestHandler):
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
                                     'sms_from': bool(os.environ.get('YEMOT_SMS_FROM')), 'caller_id': bool(os.environ.get('YEMOT_CALLER_ID')),
                                     'mosads': ned_list[0], 'mosad': ned_list[1],
-                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2],
+                                    'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2], 'pron_en': ym_en,
                                     'engine': ym_v[3], 'gvoice': ym_v[4], 'gstyle': ym_v[5], 'gvoices': ym_gvl[0],
                                     'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2], 'gmodels': ym_gvl[3], 'gmodel': ym_v[6]})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
@@ -18086,6 +18105,16 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/yemot/pron_en':
+            # ✎ מאיר: "לתקן את זה לפי איות באנגלית" — מילה=איך אומרים (ריק = מחיקה)
+            w = re.sub(r'\s+', ' ', str(b.get('word') or '')).strip().replace('=', '')[:40]
+            say = re.sub(r'\s+', ' ', str(b.get('say') or '')).strip().replace('=', '').replace('"', '')[:60]
+            if not w:
+                return self._send(200, {'ok': False, 'error': 'חסרה מילה'})
+            con = db()
+            lst = [(x, y) for x, y in pron_en_list(con) if x != w] + ([(w, say)] if say else [])
+            kv_set(con, 'ym_pron_en', '\n'.join('%s=%s' % p for p in lst)); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'pron_en': lst})
         if self.path == '/api/nikud':
             # מאיר: "אפשרות לנקד אוטומטי בתוך הטקסט — כל הטקסט, או מילה, או משפט מסוים בלבד"
             import yemot as _ym, nikud as _nk
@@ -18125,8 +18154,9 @@ class H(BaseHTTPRequestHandler):
             # הודעה כללית — בלי שם וסכום אישיים
             txt = _ym.speakable(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron)
             _ym.begin_trace()
+            con = db(); _en = pron_en_list(con); con.close()
             ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
-                                model=str(b.get('gmodel') or gm or ''))
+                                model=str(b.get('gmodel') or gm or ''), hints=pron_en_for(_en, txt))
             con = db(); ym_save_trace(con, _ym.end_trace())
             if not ok:
                 con.commit(); con.close()
@@ -18170,7 +18200,9 @@ class H(BaseHTTPRequestHandler):
             if not b.get('gvoice'):
                 # 🔊 מהחובות — בקול ובסגנון ששמרת
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
-            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''))
+            con = db(); _en = pron_en_list(con); con.close()
+            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''),
+                                hints=pron_en_for(_en, txt))
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:
                 return self._send(200, {'ok': False, 'error': str(wav)})
