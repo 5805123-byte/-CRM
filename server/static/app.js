@@ -12615,7 +12615,7 @@ function renderComm(){
   const vmb=document.getElementById('cm_vm');if(vmb)vmb.onclick=()=>{ymView='vm';cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_mail').onclick=()=>{cmSender='main';cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
-  document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;cdFund='';render();window.scrollTo(0,0);};
   document.getElementById('cm_ledger').onclick=()=>{cmSub='ledger';LG=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_gifts').onclick=()=>{cmSub='cgifts';CGF=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
@@ -12933,7 +12933,7 @@ function renderGifts(){
 function cdMemberDL(){return `<datalist id="cd_mdl">${(MEMBERS||[]).map(m=>`<option value="${esc(mName(m))} #${m.id}">`).join('')}</datalist>`;}
 const cdPick=v=>{const m=/#(\d+)\s*$/.exec(v||'');return m?+m[1]:0;};
 // מאיר: "התחייבויות של קופת נתן תתן — קטגוריה אחרת, לשונית למעלה בחובות והתחייבויות"
-let cdFund='';try{cdFund=localStorage.getItem('kc_cdfund')||'';}catch(e){}
+let cdFund='';      // מאיר: "ברירת מחדל שייפתח על הקהילה"
 const CD_FUNDS=[['','🕍 הקהילה'],['natan','🎁 קופת נתן תתן']];
 async function renderCommDebts(){
   chips.innerHTML='';
@@ -13124,7 +13124,7 @@ function cdImpHTML(){const R=cdImp.rows||[], paid=cdImp.mode==='paid';
       <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${okN} ${paid?'תשלומים':'שורות'}</button>
         <span class="hintxt">${unl?unl+' בלי חבר קהילה — נשמרים עם השם; אחר כך אפשר לשייך (🔗), לפתוח חבר חדש (➕), או להשאיר חד פעמי (👤).':''}${pn?' '+pn+' ששולמו — נרשמים בכרטיס כתרומה ועוברים להיסטוריה.':''}</span></div>`:''}</div>`;}
 function cdWire(){const g=id=>document.getElementById(id);
-  view.querySelectorAll('[data-cdfund]').forEach(b=>b.onclick=()=>{cdFund=b.dataset.cdfund;try{localStorage.setItem('kc_cdfund',cdFund);}catch(e){}cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;renderCommDebts();});
+  view.querySelectorAll('[data-cdfund]').forEach(b=>b.onclick=()=>{cdFund=b.dataset.cdfund;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;renderCommDebts();});
   g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
   const am=g('cd_allm');if(am)am.onclick=()=>{cdMember=0;renderCommDebts();};
   view.querySelectorAll('.cdname[data-cdm]').forEach(b=>{if(!b.dataset.cdm||cdMember)return;b.onclick=()=>{cdMember=+b.dataset.cdm;cdKind='';renderCommDebts();window.scrollTo(0,0);};});
