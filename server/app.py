@@ -561,6 +561,9 @@ def ensure_schema():
     # מאיר: "אם הוא חד פעמי ולא בקהילה — שלא יתווסף לקהילה, אבל ברשימה הוא חייב להיות"
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN once INTEGER DEFAULT 0")
     except Exception: pass
+    # מאיר: "רשימה של התחייבויות של קופת נתן תתן — שזה ייכנס לקטגוריה אחרת". '' = הקהילה, 'natan' = נתן תתן
+    try: con.execute("ALTER TABLE cm_debt ADD COLUMN fund TEXT DEFAULT ''")
+    except Exception: pass
     # "עבור מה" שהגבאי הוסיף לתשלום בנדרים פלוס (רשות) — לא נוגע במה שבנדרים
     try: con.execute("ALTER TABLE nd_tx ADD COLUMN for_local TEXT")
     except Exception: pass
@@ -16776,9 +16779,10 @@ class H(BaseHTTPRequestHandler):
             st = (qs.get('status') or ['all'])[0]
             con = db()
             try:
-                rows = con.execute("SELECT d.*, m.last ml, m.first mf, m.phone mphone FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" +
-                                   ("" if st == 'all' else " WHERE d.status=?") + " ORDER BY m.last, m.first, d.id",
-                                   (() if st == 'all' else (st,))).fetchall()
+                fd = 'natan' if (qs.get('fund') or [''])[0] == 'natan' else ''
+                rows = con.execute("SELECT d.*, m.last ml, m.first mf, m.phone mphone FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id WHERE COALESCE(d.fund,'')=?" +
+                                   ("" if st == 'all' else " AND d.status=?") + " ORDER BY m.last, m.first, d.id",
+                                   ((fd,) if st == 'all' else (fd, st))).fetchall()
             finally:
                 con.close()
             KN = {'debt': 'חוב', 'pledge': 'התחייבות', 'hok': 'הו"ק חזרה'}
@@ -16800,7 +16804,7 @@ class H(BaseHTTPRequestHandler):
             bio = io.BytesIO(); wb.save(bio); data = bio.getvalue()
             self.send_response(200)
             self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s" % urllib.parse.quote('חובות הקהילה.xlsx'))
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s" % urllib.parse.quote('התחייבויות נתן תתן.xlsx' if fd == 'natan' else 'חובות הקהילה.xlsx'))
             self.send_header('Content-Length', str(len(data)))
             self.end_headers(); self.wfile.write(data)
             return
@@ -16865,7 +16869,7 @@ class H(BaseHTTPRequestHandler):
                 msg = con.execute("SELECT amount,sent_ts,paid_at FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' "
                                   "AND CAST(COALESCE(amount,'0') AS REAL)>0 AND COALESCE(sent_ts,'')>=? ORDER BY id DESC LIMIT 1",
                                   (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone()
-                debt = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id IN (%s) AND status='open'" % ','.join('?' * len(mids)), mids).fetchone()[0] if mids else 0
+                debt = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id IN (%s) AND status='open' AND COALESCE(fund,'')=''" % ','.join('?' * len(mids)), mids).fetchone()[0] if mids else 0
                 key = ivr_key(con)
                 n_all = con.execute("SELECT COUNT(*) FROM nd_keva").fetchone()[0]
                 n_off = con.execute("SELECT off,COUNT(*) n FROM nd_keva WHERE active=0 GROUP BY off").fetchall()
@@ -19617,10 +19621,11 @@ class H(BaseHTTPRequestHandler):
             if not mid or a <= 0:
                 return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה או סכום'})
             con = db()
-            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?)",
+            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,fund) VALUES(?,?,?,?,0,?,'open',?,?,?,?,?,?)",
                         (mid, b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt', str(b.get('title') or '')[:200], a,
                          str(b.get('due') or '')[:10], 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(),
-                         b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid)))
+                         b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else cm_default_channel(con, mid),
+                         'natan' if b.get('fund') == 'natan' else ''))
             cm_debt_log(con, mid, con.execute("SELECT last_insert_rowid()").fetchone()[0],
                         '➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', str(b.get('title') or '').strip() or '—', a))
             con.commit(); con.close()
@@ -19682,7 +19687,7 @@ class H(BaseHTTPRequestHandler):
                              note, note, did))
                 if via and 'נדרים' not in via and b.get('record', 1) and d['member_id']:
                     con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
-                                (d['member_id'], today_iso(), p, via, d['title'] or '', (note + ' · ' if note else '') + 'על החוב',
+                                (d['member_id'], today_iso(), p, via, ('קופת נתן תתן — ' if (d['fund'] or '') == 'natan' else '') + (d['title'] or ''), (note + ' · ' if note else '') + 'על החוב',
                                  now_iso(), getattr(self, 'role', '') or ''))
                 cm_debt_log(con, d['member_id'], did, '%s %s ₪%g%s%s' % ('✅ שולם' if done else '½ שולם חלקית', d['title'] or 'חוב', p,
                                                                        (' · ' + via) if via else '', (' · ' + note) if note else ''))
@@ -19750,13 +19755,13 @@ class H(BaseHTTPRequestHandler):
                         done = a > 0 and p >= a - 0.009
                         kind = r.get('kind') if r.get('kind') in ('debt', 'pledge') else 'debt'
                         title = str(r.get('title') or '')[:200]
-                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,closed_at,paid_via,name,phone,once) "
-                                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,closed_at,paid_via,name,phone,once,fund) "
+                                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                     (mid or None, kind, title, a, p, str(r.get('due') or '')[:10], 'paid' if done else 'open', src,
                                      str(b.get('filename') or '')[:80], now_iso(), now_iso(),
                                      r.get('channel') if r.get('channel') in ('voice', 'sms', 'email') else (cm_default_channel(con, mid) if mid else 'sms'),
                                      now_iso() if done else None, via, '' if mid else nm_, '' if mid else ph_,
-                                     0 if mid else (1 if r.get('once') else 0)))
+                                     0 if mid else (1 if r.get('once') else 0), 'natan' if b.get('fund') == 'natan' else ''))
                         did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
                         if p > 0 and mid:
                             npaid += 1
@@ -19766,7 +19771,7 @@ class H(BaseHTTPRequestHandler):
                             if 'נדרים' not in via and not con.execute("SELECT 1 FROM cm_don WHERE member_id=? AND date=? AND amount=? AND COALESCE(purpose,'')=?",
                                                                       (mid, _dd, p, title)).fetchone():
                                 con.execute("INSERT INTO cm_don(member_id,date,amount,method,purpose,note,created,by_role) VALUES(?,?,?,?,?,?,?,?)",
-                                            (mid, _isod(r.get('due')) or today_iso(), p, via or 'לא צוין', title,
+                                            (mid, _dd, p, via or 'לא צוין', ('קופת נתן תתן — ' if b.get('fund') == 'natan' else '') + title,
                                              'מרשימה' + ((': ' + str(b.get('filename'))[:60]) if b.get('filename') and b.get('filename') != 'הדבקה' else ''),
                                              now_iso(), getattr(self, 'role', '') or ''))
                             cm_debt_log(con, mid, did, '%s %s ₪%g%s' % ('✅ שולם' if done else '½ שולם חלקית', title or 'חוב', p, (' · ' + via) if via else ''))
@@ -22400,7 +22405,7 @@ def cm_debt_pay(con, member_id, amount, note=''):
     """תשלום של חבר קהילה סוגר את החובות הפתוחים שלו — הישן קודם. מחזיר כמה כוסה."""
     left = round(float(amount or 0), 2)
     used = 0.0
-    for d in con.execute("SELECT id,amount,paid,title FROM cm_debt WHERE member_id=? AND status='open' ORDER BY COALESCE(NULLIF(due,''),created),id",
+    for d in con.execute("SELECT id,amount,paid,title FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')='' ORDER BY COALESCE(NULLIF(due,''),created),id",
                          (member_id,)).fetchall():
         if left <= 0:
             break
@@ -23360,7 +23365,7 @@ def ivr_answer(P):
         if not job_amt:
             dm = mid or next((k['member_id'] for k in ks if k.get('member_id')), None)
             if dm:
-                ob = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id=? AND status='open'", (dm,)).fetchone()[0]
+                ob = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')=''", (dm,)).fetchone()[0]
                 job_amt = _ivr_amt(ob)
 
         def fallback(amt=0):
