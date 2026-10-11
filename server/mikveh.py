@@ -178,14 +178,30 @@ def groups(fresh=False):
     if not fresh and _GR['rows'] is not None and time.time() - _GR['at'] < 600:
         return _GR['rows']
     out = []
+    hid = set()
     for g in _items(get('Group')):
         if g.get('isDeleted'):
+            continue
+        # מאיר: "תסתיר מהמערכת את משתמש מזדמן ואת קבוצת מזדמן" — הקבוצה הכללית של המקווה (type=2)
+        if g.get('type') == 2 or (g.get('name') or '').strip().startswith('['):
+            hid.add(g.get('id'))
             continue
         out.append({'id': g.get('id'), 'name': (g.get('name') or '').strip(), 'color': g.get('color') or '',
                     'price': (g.get('subscriptionPrice') or 0) / 100.0 if g.get('subscriptionPrice') is not None else None})
     out.sort(key=lambda g: g['name'])
-    _GR.update(at=time.time(), rows=out)
+    _GR.update(at=time.time(), rows=out, hidden=hid)
     return out
+
+
+def hidden_groups():
+    if _GR['rows'] is None:
+        groups()
+    return _GR.get('hidden') or set()
+
+
+def visible(c):
+    """לא מציגים את "[משתמש מזדמן]" ואת מי שבקבוצת המזדמנים הכללית."""
+    return c.get('groupId') not in hidden_groups() and not (c.get('firstName') or '').strip().startswith('[')
 
 
 def slim(c):

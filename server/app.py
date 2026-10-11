@@ -17046,7 +17046,7 @@ class H(BaseHTTPRequestHandler):
             fresh = 'fresh=1' in self.path
             try:
                 gr = _mk.groups()
-                rows = [_mk.slim(c) for c in _mk.clients(fresh=fresh)]
+                rows = [_mk.slim(c) for c in _mk.clients(fresh=fresh) if _mk.visible(c)]
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
             con = db()
@@ -18711,16 +18711,25 @@ class H(BaseHTTPRequestHandler):
             row = _mk.slim(res)
             if row['group'] != gid:
                 return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל הקבוצה לא השתנתה'})
-            con = db()
-            try:
-                import yemot as _ym
-                mid = mk_phone_members(con).get(_ym.norm_phone(row['phone']) or '-') if row['phone'] else None
-                if mid:
-                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out','',?)",
-                                (mid['id'], today_iso(), 'מקווה', '🛁 קבוצה במקווה עודכנה: ' + gname, '', now_iso()))
-                    con.commit()
-            finally:
-                con.close()
+            # מאיר: "לפעמים לוקח פחות משנייה ולפעמים הרבה זמן, ובעצם הוא כן מתעדכן באותו שנייה במקווה…
+            # הוא צריך לעדכן וזהו". הרישום ביומן של חבר הקהילה חיכה לתורו בבסיס הנתונים (כשסנכרון
+            # ברקע כותב, עד דקה) — לפני התשובה. עכשיו: עונים מיד, והרישום נעשה ברקע.
+            def _log(phone=row['phone'], gname=gname):
+                try:
+                    import yemot as _ym
+                    con = db()
+                    try:
+                        mid = mk_phone_members(con).get(_ym.norm_phone(phone) or '-') if phone else None
+                        if mid:
+                            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out','',?)",
+                                        (mid['id'], today_iso(), 'מקווה', '🛁 קבוצה במקווה עודכנה: ' + gname, '', now_iso()))
+                            con.commit()
+                    finally:
+                        con.close()
+                except Exception as e:
+                    print('  mikveh log error:', e)
+            import threading as _thr
+            _thr.Thread(target=_log, daemon=True).start()
             return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'ms': dict(_mk.TIMES)})
         if self.path == '/api/mikveh/notify':
             # "ולשלוח לו הודעה במיידי דרך הטלפון שזה עודכן" — ידני, הודעה אחת, דרך ימות המשיח

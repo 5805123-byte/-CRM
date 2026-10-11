@@ -1739,8 +1739,15 @@ async function mkSetGroup(c,g,on){
   const t0=Date.now(); let tick=null;
   c._busy='מעביר ל'+mkGName(g)+'…'; mkRowRefresh(c);
   on('busy',0); tick=setInterval(()=>on('busy',Math.floor((Date.now()-t0)/1000)),1000);
-  let r=null;
-  try{r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});}catch(e){r=null;}   // 502 / ניתוק — תשובה שאינה JSON
+  let r=null, done=false;
+  // מה שקובע הוא המקווה עצמו: אם אחרי 4 שניות עוד אין תשובה — בודקים שם כל 3 שניות, ו-✓ ברגע שהקבוצה התחלפה
+  const viaCheck=new Promise(res=>{const tryIt=async()=>{if(done)return;
+      try{const v=await api('GET','/api/mikveh/client?id='+encodeURIComponent(c.id));
+        if(!done&&v&&v.ok&&v.client&&v.client.group===g.id)return res({ok:true,checked:true});}catch(e){}
+      if(!done)setTimeout(tryIt,3000);};
+    setTimeout(tryIt,4000);});
+  const viaPost=api('POST','/api/mikveh/group',{id:c.id,group:g.id}).catch(()=>null);   // 502 / ניתוק — תשובה שאינה JSON
+  r=await Promise.race([viaPost,viaCheck]); done=true;
   if(!r||!r.ok){
     // מאיר: "באתר של המקווה אני רואה שהוא כן עדכן… פשוט השרת לא קורא שזה הצליח" — לפני שמודיעים
     // על כישלון, בודקים במקווה עצמו מה הקבוצה שלו עכשיו
