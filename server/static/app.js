@@ -12568,6 +12568,7 @@ function renderComm(){
       <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn" id="cm_debts" style="flex:2">💰 חובות והתחייבויות</button>
       <button class="btn" id="cm_gifts" style="flex:2">💵 תרומות הקהילה</button>
+      <button class="btn" id="cm_natan" style="flex:2" title="קופה נפרדת — התחייבויות, תרומות ושליחה, בלי לערב עם הקהילה">🎁 קופת נתן תתן</button>
       <button class="btn" id="cm_ledger" style="flex:2">📒 הכנסות והוצאות</button>
       <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
     </div>
@@ -12617,7 +12618,9 @@ function renderComm(){
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;cdFund='';render();window.scrollTo(0,0);};
   document.getElementById('cm_ledger').onclick=()=>{cmSub='ledger';LG=null;render();window.scrollTo(0,0);};
-  document.getElementById('cm_gifts').onclick=()=>{cmSub='cgifts';CGF=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_gifts').onclick=()=>{cmSub='cgifts';cgFund='';CGF=null;render();window.scrollTo(0,0);};
+  // מאיר: "נתן תתן צריך להיות תחת לשונית קהילה… גם תרומות וגם כל מה שיש בקהילה, אבל לא לערב את התרומות"
+  document.getElementById('cm_natan').onclick=()=>{cmSub='debts';cdFund='natan';cdData=null;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;render();window.scrollTo(0,0);};
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
@@ -12641,11 +12644,11 @@ async function cdLoad(){cdData=await api('GET','/api/cm/debts?status='+cdSt)||{r
 // מאיר: "שיהיה שם חלון בקהילה של כל התרומות ביחד מרוכזות, כמו שעשית לי בתורמים, וגם שיוכלו להוסיף
 // עבור מה — אבל שזה לא ינדנד לי להכניס עבור מה, רק רשות". נדרים פלוס (חד-פעמי, הו"ק, הוראה
 // בנקאית) + תרומות ידניות (מזומן, צ׳ק…, וגם מה שסומן ששולם על חוב)
-let CGF=null, cgSrc='', cgFrom='', cgTo='', cgEdit='', cgNew=false, cgLim=300;
+let CGF=null, cgFund='', cgSrc='', cgFrom='', cgTo='', cgEdit='', cgNew=false, cgLim=300;
 const CG_SRC=[['nd','💳 נדרים פלוס'],['hok','🔁 הו״ק אשראי'],['bank','🏦 הוראה בנקאית'],['man','💵 ידני (מזומן וכו׳)']];
 async function renderCommGifts(){
   chips.innerHTML='';
-  if(!CGF){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען תרומות…</div>';const r=await api('GET','/api/cm/gifts');CGF=(r&&r.rows)||[];if(tab!=='comm'||cmSub!=='cgifts')return;}
+  if(!CGF){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען תרומות…</div>';const r=await api('GET','/api/cm/gifts'+(cgFund?'?fund='+cgFund:''));CGF=(r&&r.rows)||[];if(tab!=='comm'||cmSub!=='cgifts')return;}
   const all=CGF;
   let rows=all.filter(r=>(!cgSrc||r.src===cgSrc)&&(!cgFrom||r.date>=cgFrom)&&(!cgTo||r.date<=cgTo));
   if((q||'').trim())rows=rows.filter(r=>matchStr([r.name,r.amount,r.purpose,r.method,r.note,r.conf].join(' '),q.trim()));
@@ -12669,7 +12672,8 @@ async function renderCommGifts(){
   const body=keys.map(m=>{if(shown>=cgLim)return '';const L=months[m].slice(0,Math.max(0,cgLim-shown));shown+=L.length;
     return `<div class="gfmon"><div class="gfmh"><b>${esc(fmtMonth(m)||m)}</b><span>${sum(months[m])} · ${months[m].length} תרומות</span></div>${L.map(row).join('')}</div>`;}).join('');
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cg_back">← חזרה לרשימת הקהילה</button></div>
-    <div class="rbtitle">💵 כל התרומות של הקהילה — לפי תאריך</div>
+    ${cgFund==='natan'?`<div class="rbtitle">🎁 קופת נתן תתן</div>${ntNav('gifts')}<div class="hintxt">רק מה שנכנס לנתן תתן — מהחשבון שלה בנדרים פלוס, ומה שנרשם כאן ידנית. לא מופיע בתרומות הקהילה.</div>`
+      :'<div class="rbtitle">💵 כל התרומות של הקהילה — לפי תאריך</div>'}
     <div class="hintxt">נדרים פלוס (חד-פעמי, הוראות קבע באשראי ובבנק) ותרומות ידניות — מזומן, צ׳ק, וגם מה שסומן ששולם על חוב. "עבור מה" — רשות, אפשר להוסיף ב-✎.</div>
     <div class="bqseg"><button class="${cgSrc?'':'on'}" data-cgs="">הכל <small>${all.length}</small></button>${CG_SRC.filter(([k])=>n[k]).map(([k,l])=>`<button class="${cgSrc===k?'on':''}" data-cgs="${k}">${l} <small>${n[k]}</small></button>`).join('')}</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="cg_from" value="${esc(cgFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="cg_to" value="${esc(cgTo)}"></label>
@@ -12687,7 +12691,7 @@ async function renderCommGifts(){
     <datalist id="cg_meths">${['מזומן','צ׳ק','העברה בנקאית','ביט / פייבוקס','אחר'].map(m=>`<option value="${esc(m)}">`).join('')}</datalist>
     ${cdMemberDL()}`;
   const g=id=>document.getElementById(id);
-  g('cg_back').onclick=()=>{cmSub='list';render();};
+  g('cg_back').onclick=()=>{cmSub='list';render();};ntWireNav();
   view.querySelectorAll('[data-cgs]').forEach(b=>b.onclick=()=>{cgSrc=b.dataset.cgs;cgLim=300;renderCommGifts();});
   g('cg_from').onchange=()=>{cgFrom=g('cg_from').value;renderCommGifts();}; g('cg_to').onchange=()=>{cgTo=g('cg_to').value;renderCommGifts();};
   g('cg_new').onclick=()=>{cgNew=!cgNew;renderCommGifts();if(cgNew&&g('cgn_who'))g('cgn_who').focus();};
@@ -12697,7 +12701,7 @@ async function renderCommGifts(){
     g('cgn_ok').onclick=async()=>{const mid=cdPick(g('cgn_who').value);if(!mid){toast('בחר חבר קהילה מהרשימה');g('cgn_who').focus();return;}
       const a=amtNum(g('cgn_amt').value);if(!a){toast('חסר סכום');g('cgn_amt').focus();return;}
       const ob=g('cgn_ok');if(ob.disabled)return;ob.disabled=true;ob.textContent='שומר…';
-      const r=await api('POST','/api/members/'+mid+'/donation',{date:g('cgn_date').value||todayStr(),amount:a,method:g('cgn_meth').value.trim()||'מזומן',
+      const r=await api('POST','/api/members/'+mid+'/donation',{fund:cgFund,date:g('cgn_date').value||todayStr(),amount:a,method:g('cgn_meth').value.trim()||'מזומן',
         purpose:g('cgn_pur').value.trim(),note:g('cgn_note').value.trim(),pay_debt:g('cgn_pay').checked?1:0});
       if(!r||!r.ok){ob.disabled=false;ob.textContent='💾 שמור';await uiAlert((r&&r.error)||'לא נשמר');return;}
       toast('💵 נרשם ✓ — גם בכרטיס שלו');cgNew=false;CGF=null;cdData=null;renderCommGifts();};}
@@ -12934,7 +12938,11 @@ function cdMemberDL(){return `<datalist id="cd_mdl">${(MEMBERS||[]).map(m=>`<opt
 const cdPick=v=>{const m=/#(\d+)\s*$/.exec(v||'');return m?+m[1]:0;};
 // מאיר: "התחייבויות של קופת נתן תתן — קטגוריה אחרת, לשונית למעלה בחובות והתחייבויות"
 let cdFund='';      // מאיר: "ברירת מחדל שייפתח על הקהילה"
-const CD_FUNDS=[['','🕍 הקהילה'],['natan','🎁 קופת נתן תתן']];
+// ניווט בתוך קופת נתן תתן — התחייבויות / תרומות (קופה נפרדת, בלי לערב עם הקהילה)
+const ntNav=on=>`<div class="bqseg ntnav"><button class="${on==='debts'?'on':''}" data-ntnav="debts">💰 התחייבויות ושליחה</button><button class="${on==='gifts'?'on':''}" data-ntnav="gifts">💵 תרומות לנתן תתן</button></div>`;
+function ntWireNav(){view.querySelectorAll('[data-ntnav]').forEach(b=>b.onclick=()=>{
+  if(b.dataset.ntnav==='gifts'){cmSub='cgifts';cgFund='natan';CGF=null;}else{cmSub='debts';cdFund='natan';cdData=null;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;}
+  render();window.scrollTo(0,0);});}
 async function renderCommDebts(){
   chips.innerHTML='';
   if(!cdData){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען חובות…</div>';await cdLoad();if(tab!=='comm'||cmSub!=='debts')return;}
@@ -12954,8 +12962,7 @@ async function renderCommDebts(){
   const reqOpen=reqs.filter(r=>r.status==='open'), cm=cdMember&&(MEMBERS||[]).find(x=>x.id==cdMember);
   const memOpen=cdMember?all.filter(d=>d.status==='open').reduce((s,d)=>s+(d._req?(+d.amount||0):cdOpen(d)),0):0;
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cd_back">← חזרה לרשימת הקהילה</button></div>
-    <div class="bqseg cdfunds">${CD_FUNDS.map(([k,l])=>`<button class="${cdFund===k?'on':''}" data-cdfund="${k}">${l} <small>${(D.rows||[]).filter(d=>(d.fund||'')===k&&d.status==='open').length}</small></button>`).join('')}</div>
-    <div class="rbtitle">💰 ${cdFund==='natan'?'התחייבויות — קופת נתן תתן':'חובות והתחייבויות — הקהילה'}</div>
+    ${cdFund==='natan'?`<div class="rbtitle">🎁 קופת נתן תתן</div>${ntNav('debts')}`:'<div class="rbtitle">💰 חובות והתחייבויות — הקהילה</div>'}
     ${cdMember?`<div class="cdmem"><b>👤 ${esc(cm?mName(cm):'#'+cdMember)}</b> — כל החובות · פתוח <b>${cdMoney(memOpen)}</b>
         <button class="btn sm ghost" id="cd_allm">✕ הצג את כל הקהילה</button></div>`
       :`<div class="cdsum"><span>פתוח: <b>${cdMoney(cdSt==='open'?fSum:D.open_sum)}</b></span><span>${cdSt==='open'?fo.length:(D.open_n||0)} ${cdFund?'התחייבויות':'חובות'} · ${cdSt==='open'?fMem:(D.open_members||0)} חברים</span>
@@ -12986,22 +12993,11 @@ async function renderCommDebts(){
 let cdHist=null, cdHistOpen=false;
 // 🎁 נתן תתן — החשבון שלה בנדרים פלוס (התשלומים משם סוגרים רק את ההתחייבויות שלה, ולא נכנסים לקהילה),
 // והתרומות שנכנסו אליה: מנדרים פלוס של נתן תתן + מה שסומן ששולם כאן
-let NTG=null, ntgOpen=false, ntAdd=false;
 function cdNatanHTML(D){
   const acc=D.nd_accounts||[], cur=D.natan_mosad||'';
   const sel=acc.length>1?`<label class="fld" style="max-width:420px"><span>🔗 החשבון של נתן תתן בנדרים פלוס</span><select id="nt_mosad"><option value="">— לא נבחר —</option>${acc.filter(a=>!a.main).map(a=>`<option value="${esc(a.mosad)}" ${a.mosad===cur?'selected':''}>${esc(a.name)} · מוסד ${esc(a.mosad)}</option>`).join('')}</select></label>`
     :`<div class="ymwarn">🔗 כדי לסנכרן את החשבון של נתן תתן בנדרים פלוס צריך להוסיף אותו ב-Render ← Environment: <b>NEDARIM_MOSAD3</b> (מספר המוסד), <b>NEDARIM_API_KEY3</b> (המפתח שלה) ו-<b>NEDARIM_NAME3</b> = נתן תתן. את המפתח לא שולחים בצ'אט.</div>`;
-  const R=NTG||[], tot=R.reduce((t,r)=>t+(+r.amount||0),0);
-  return `<div class="cdnatan">${sel}${cur?'':'<div class="hintxt">עד שבוחרים חשבון — תשלומים מנדרים פלוס לא נסגרים כאן אוטומטית; מה שמסמנים ✓ שולם / מדביקים כ"שילמו" — כן.</div>'}
-    <div class="bqbar"><button class="btn sm" id="nt_add">➕ תרומה ידנית לנתן תתן</button></div>
-    ${ntAdd?`<div class="gfnewbox"><b>➕ תרומה לקופת נתן תתן — נרשמת בכרטיס של החבר, לא בתרומות הקהילה</b>
-      <div class="cdquick"><input id="nta_who" list="cd_mdl" placeholder="חבר קהילה…"><input id="nta_amt" inputmode="decimal" placeholder="₪ סכום">
-        <input type="date" id="nta_date" value="${todayStr()}"><select id="nta_meth">${CM_METH.map(x=>`<option>${esc(x)}</option>`).join('')}</select>
-        <input id="nta_pur" placeholder="עבור מה (רשות)">
-        <label class="gvall" style="flex:1 1 100%"><input type="checkbox" id="nta_pay" checked> לקזז מההתחייבות הפתוחה שלו בנתן תתן</label>
-        <button class="btn sm" id="nta_ok">💾 שמור</button><button class="btn sm ghost" id="nta_x">ביטול</button></div></div>`:''}
-    <button class="cdhistb" id="nt_gifts">💵 תרומות לנתן תתן${NTG?` (${R.length} · ${cdMoney(tot)})`:''} ${ntgOpen?'▲':'▼'}</button>
-    ${ntgOpen?(NTG?`<div class="cdhlist">${R.slice(0,400).map(r=>`<div class="cdhrow"><span class="cdhd">${esc(rcDate(r.date))}</span><b>${esc(r.name||'—')}</b> <span>${cdMoney(r.amount)}</span> <span class="cdtitle">${esc(r.purpose||'')}</span> <small>${esc(r.method||'')}${r.conf?' · אישור '+esc(r.conf):''}</small></div>`).join('')||'<div class="hintxt">עוד אין תרומות</div>'}</div>`:'<div class="hintxt">טוען…</div>'):''}</div>`;}
+  return `<div class="cdnatan">${sel}${cur?'':'<div class="hintxt">עד שבוחרים חשבון — תשלומים מנדרים פלוס לא נסגרים כאן אוטומטית; מה שמסמנים ✓ שולם / מדביקים כ"שילמו" — כן.</div>'}</div>`;}
 function cdHistHTML(){
   const btn=`<button class="cdhistb" id="cd_hist">📜 היסטוריה — מה ששולם${cdHist?` (${cdHist.filter(d=>(d.fund||'')===cdFund).length})`:''} ${cdHistOpen?'▲':'▼'}</button>`;
   if(!cdHistOpen)return `<div class="cdhist">${btn}</div>`;
@@ -13145,18 +13141,8 @@ function cdImpHTML(){const R=cdImp.rows||[], paid=cdImp.mode==='paid';
       <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${okN} ${paid?'תשלומים':'שורות'}</button>
         <span class="hintxt">${unl?unl+' בלי חבר קהילה — נשמרים עם השם; אחר כך אפשר לשייך (🔗), לפתוח חבר חדש (➕), או להשאיר חד פעמי (👤).':''}${pn?' '+pn+' ששולמו — נרשמים בכרטיס כתרומה ועוברים להיסטוריה.':''}</span></div>`:''}</div>`;}
 function cdWire(){const g=id=>document.getElementById(id);
-  const ntm=g('nt_mosad');if(ntm)ntm.onchange=async()=>{const r=await api('POST','/api/cm/natan_mosad',{mosad:ntm.value});if(r&&r.ok){cdData.natan_mosad=r.mosad;NTG=null;toast(r.mosad?'✓ נשמר — תשלומים מהחשבון הזה נכנסים לנתן תתן':'בוטל');renderCommDebts();}};
-  const nta=g('nt_add');if(nta)nta.onclick=()=>{ntAdd=!ntAdd;renderCommDebts();const w=g('nta_who');if(w)w.focus();};
-  if(ntAdd&&g('nta_ok')){g('nta_x').onclick=()=>{ntAdd=false;renderCommDebts();};
-    g('nta_ok').onclick=async()=>{const ob=g('nta_ok');if(ob.disabled)return;const mid=cdPick(g('nta_who').value);if(!mid){toast('בחר חבר קהילה מהרשימה');g('nta_who').focus();return;}
-      const a=amtNum(g('nta_amt').value);if(!a){toast('חסר סכום');g('nta_amt').focus();return;}
-      ob.disabled=true;ob.textContent='שומר…';
-      const r=await api('POST','/api/members/'+mid+'/donation',{fund:'natan',date:g('nta_date').value||todayStr(),amount:a,method:g('nta_meth').value.trim()||'מזומן',
-        purpose:g('nta_pur').value.trim()||'קופת נתן תתן',pay_debt:g('nta_pay').checked?1:0});
-      if(!r||!r.ok){ob.disabled=false;ob.textContent='💾 שמור';await uiAlert((r&&r.error)||'לא נשמר');return;}
-      toast('🎁 נרשם בנתן תתן ✓'+(r.debt_paid?' · קוזז '+cdMoney(r.debt_paid):''));ntAdd=false;NTG=null;cdData=null;renderCommDebts();};}
-  const ntg=g('nt_gifts');if(ntg)ntg.onclick=async()=>{ntgOpen=!ntgOpen;renderCommDebts();if(ntgOpen&&!NTG){const r=await api('GET','/api/cm/gifts?fund=natan');NTG=(r&&r.rows)||[];renderCommDebts();}};
-  view.querySelectorAll('[data-cdfund]').forEach(b=>b.onclick=()=>{cdFund=b.dataset.cdfund;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;renderCommDebts();});
+  const ntm=g('nt_mosad');if(ntm)ntm.onchange=async()=>{const r=await api('POST','/api/cm/natan_mosad',{mosad:ntm.value});if(r&&r.ok){cdData.natan_mosad=r.mosad;toast(r.mosad?'✓ נשמר — תשלומים מהחשבון הזה נכנסים לנתן תתן':'בוטל');renderCommDebts();}};
+  ntWireNav();
   g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
   const am=g('cd_allm');if(am)am.onclick=()=>{cdMember=0;renderCommDebts();};
   view.querySelectorAll('.cdname[data-cdm]').forEach(b=>{if(!b.dataset.cdm||cdMember)return;b.onclick=()=>{cdMember=+b.dataset.cdm;cdKind='';renderCommDebts();window.scrollTo(0,0);};});
@@ -13209,7 +13195,7 @@ function cdWire(){const g=id=>document.getElementById(id);
       const np=R.filter(r=>+r.paid>0).length;
       if(!await uiConfirm('לשמור '+R.length+(paid?' תשלומים':' שורות')+'?'+(np?'\n'+np+' ששולמו — יירשמו בכרטיס של כל אחד כתרומה, ויעברו להיסטוריה.':''),'💾 כן','ביטול'))return;
       const r=await api('POST','/api/cm/debts/import',{commit:1,rows:R,filename:cdImp.filename,fund:cdFund});
-      if(r&&r.ok){toast('נשמרו '+r.added+' ✓'+(r.paid?' · '+r.paid+' ששולמו':''));cdImp=null;cdData=null;cdHist=null;CGF=null;NTG=null;renderCommDebts();}else toast('לא נשמר');};}
+      if(r&&r.ok){toast('נשמרו '+r.added+' ✓'+(r.paid?' · '+r.paid+' ששולמו':''));cdImp=null;cdData=null;cdHist=null;CGF=null;renderCommDebts();}else toast('לא נשמר');};}
   // 🔗 שורות שנכנסו בלי חבר — לשייך לקיים (גם בטעות איות) או לפתוח חבר חדש
   view.querySelectorAll('[data-cdlink]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdlink);if(!g)return;
     const ids=g.items.filter(d=>!d._req).map(d=>d.id);
@@ -13255,7 +13241,7 @@ function cdWire(){const g=id=>document.getElementById(id);
     if(a==='cancel'&&!await uiConfirm('לבטל את החוב?','כן, לבטל','לא'))return;
     if(a==='delete'&&!await uiConfirm('למחוק את החוב לגמרי? (לא יישאר ברשימה, גם לא ב"הכל")','🗑️ כן, למחוק','לא'))return;
     if(a==='edit'){const d=(cdData.rows||[]).find(x=>x.id===id);const v=await uiPrompt('הסכום הכולל של החוב (₪):',d?String(d.amount):'');if(!amtNum(v))return;body.amount=amtNum(v);}
-    const r=await api('POST','/api/cm/debts/'+id,body);if(r&&r.ok){cdSel.delete(id);cdData=null;cdHist=null;NTG=null;if(a==='paid')toast('✓ סומן ששולם — עבר להיסטוריה');renderCommDebts();if(cdHistOpen){const h=await api('GET','/api/cm/debts?status=paid');cdHist=(h&&h.rows||[]).sort((x,y)=>String(y.closed_at||y.updated||'').localeCompare(String(x.closed_at||x.updated||'')));renderCommDebts();}}else toast((r&&r.error)||'לא עודכן');});
+    const r=await api('POST','/api/cm/debts/'+id,body);if(r&&r.ok){cdSel.delete(id);cdData=null;cdHist=null;if(a==='paid')toast('✓ סומן ששולם — עבר להיסטוריה');renderCommDebts();if(cdHistOpen){const h=await api('GET','/api/cm/debts?status=paid');cdHist=(h&&h.rows||[]).sort((x,y)=>String(y.closed_at||y.updated||'').localeCompare(String(x.closed_at||x.updated||'')));renderCommDebts();}}else toast((r&&r.error)||'לא עודכן');});
   // 📞 תזכורת בימות — כל נמען עם הסכום הפתוח שלו, בנוסח המתאים
   view.querySelectorAll('.cdgck').forEach(c=>c.onchange=()=>{c.dataset.ids.split(',').map(Number).forEach(id=>c.checked?cdSel.add(id):cdSel.delete(id));renderCommDebts();});
   view.querySelectorAll('[data-cdgch]').forEach(b=>b.onclick=async()=>{const ids=b.dataset.ids.split(',').map(Number),ch=b.dataset.cdgch;
