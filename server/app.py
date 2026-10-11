@@ -603,6 +603,14 @@ def ensure_schema():
     # מאיר (מקווה): "אופציה לשלוח מאוחר יותר" — send_at בשעון ישראל, status='scheduled' עד אז
     try: con.execute("ALTER TABLE ym_job ADD COLUMN send_at TEXT")
     except Exception: pass
+    # מאיר: "זה רק היה דוגמא, תמחק את הנתונים האלה, מכניסים הכל מחדש" — פעם אחת: לוחות ותבניות שנשמרו עד עכשיו
+    try:
+        if not con.execute("SELECT 1 FROM app_kv WHERE k='zm_reset_1'").fetchone():
+            con.execute("DELETE FROM zm_event")
+            con.execute("DELETE FROM app_kv WHERE k='zm_templates'")
+            con.execute("INSERT INTO app_kv(k,v) VALUES('zm_reset_1','1')")
+    except Exception:
+        pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -16981,7 +16989,8 @@ class H(BaseHTTPRequestHandler):
                     segs = zm_say(con, o) if o else []
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'text': ' '.join(segs)})
+            return self._send(200, {'ok': True, 'text': ' '.join('[%s]' % x[3:] if x.startswith('z-T') else x for x in segs),
+                                    'ivr': '.'.join(x if x.startswith('z-') else 't-' + x for x in segs)})
         if self.path.split('?')[0] == '/api/mikveh/status':
             # מאיר: "צריך לחבר את מערכת המקווה" — בדיקה חיה: כניסה + פרטי המועדון
             import mikveh as _mk
@@ -23855,6 +23864,7 @@ def _zm_fill(o, st):
     for ln in o.get('lines') or []:
         d = ds[min(ln.get('day') or 0, len(ds) - 1)] if ds else zm_today().isoformat()
         ln['show'] = _z.show(ln.get('time'), datetime.date.fromisoformat(d), st)
+        ln['h24'] = _z.h24(ln.get('time'), ln.get('label'), datetime.date.fromisoformat(d), st)
     return o
 
 
@@ -23929,9 +23939,12 @@ def zm_say(con, o, today=None):
             nm = _z.day_name(ds[di])
             segs.append(zm_speak(con, 'בשבת' if nm == 'שבת' else 'ב' + nm))
             last_day = di
-        shown = ln.get('show') or ln.get('time') or ''
-        when = ('בשעה ' + _z.say_time(shown)) if _z._HM.match(shown) else shown
-        segs.append(zm_speak(con, (ln.get('label') or '') + ', ' + when))
+        # מאיר: "שישמיע שעה z-T13:00 (כמו שמופיע בתיעוד)" — השעה בהקראה של ימות עצמם
+        if ln.get('h24'):
+            segs.append(zm_speak(con, (ln.get('label') or '') + ' בשעה'))
+            segs.append('z-T' + ln['h24'])
+        else:
+            segs.append(zm_speak(con, (ln.get('label') or '') + ', ' + (ln.get('show') or ln.get('time') or '')))
     if o.get('note'):
         segs.append(zm_speak(con, o['note']))
     return [x for x in segs if x]
@@ -23939,6 +23952,8 @@ def zm_say(con, o, today=None):
 
 def zm_say_weekday(con):
     o = zm_weekday(con)
+    if not o['lines']:
+        return []
     o['title'] = 'ימי החול, היום'
     return zm_say(con, o)
 
@@ -23971,7 +23986,7 @@ def zm_ivr(P):
         if not segs:
             segs = [_ivr_t('עדיין לא עודכנו זמני תפילות')]
         menu = ['לשמיעה חוזרת הקישו 1']
-        if page != 'w':
+        if page != 'w' and zm_weekday(con)['lines']:
             menu.append('לזמני ימי החול הקישו 2')
         if evs:
             nxt = evs[((page + 1) if isinstance(page, int) else 0) % len(evs)]
@@ -23979,7 +23994,7 @@ def zm_ivr(P):
                 menu.append('ל' + zm_speak(con, nxt['title']) + ' הקישו 3')
         menu.append('לסיום הקישו 0')
         allowed = '0123'
-        msg = '.'.join('t-' + x for x in segs + [_ivr_t(', '.join(menu))])
+        msg = '.'.join(x if x.startswith('z-') else 't-' + x for x in segs + [_ivr_t(', '.join(menu))])
         return 'read=' + msg + '=Z%d,no,1,1,8,NO,yes,no,,%s,1,,,,no' % (n + 1, allowed)
     finally:
         con.close()
