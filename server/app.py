@@ -16750,10 +16750,11 @@ class H(BaseHTTPRequestHandler):
                 host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
                 link = 'https://%s/api/yemot/ivr/%s/rec' % (host, ivr_key(con))
                 on = kv_get(con, 'ym_vm_on', '') == '1'
+                vm_dir_v = vm_dir(con)
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows, 'new': sum(1 for r in rows if not r['heard'] and not r['done']),
-                                    'link': link, 'on': on, 'dir': VM_DIR})
+                                    'link': link, 'on': on, 'dir': vm_dir_v})
         m = re.match(r'/api/yemot/vm/(\d+)\.wav$', self.path.split('?')[0])
         if m:
             import yemot as _ym
@@ -16764,7 +16765,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(404, {'ok': False})
                 data = r['audio']
                 if not data:
-                    ok, data = _ym.download_bin('ivr2:%s/%s' % (VM_DIR, r['name']))
+                    ok, data = _ym.download_bin('ivr2:%s/%s' % (vm_dir(con), r['name']))
                     if not ok:
                         return self._send(502, {'ok': False, 'error': data})
                     con.execute("UPDATE ym_vm SET audio=? WHERE id=?", (sqlite3.Binary(data), int(m.group(1))))
@@ -23625,16 +23626,29 @@ def ivr_rec(P):
     try:
         if (P.get('k') or '') != ivr_key(con):
             return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
-        kv_set(con, 'ym_vm_on', '1'); con.commit()
+        kv_set(con, 'ym_vm_on', '1')
+        # לפי התיעוד של ימות: בלי תיקייה בפקודה — ההקלטה נשמרת בשלוחה עצמה (api_dir), בלי לפתוח תיקיות חדשות.
+        # שומרים איזו שלוחה זו (ApiExtension), כדי למשוך משם את ההקלטות
+        ext = str(P.get('ApiExtension') or '').strip().strip('/')
+        if ext and re.fullmatch(r'[\w/\-]+', ext):
+            kv_set(con, 'ym_vm_dir', '/' + ext)
+        con.commit()
         phone = _ym.norm_phone(P.get('ApiPhone') or '') or re.sub(r'\D', '', str(P.get('ApiPhone') or ''))[:12] or 'x'
         if 'VmRec' in P or P.get('hangup') == 'yes':
             threading.Thread(target=vm_sync_bg, daemon=True).start()
             return 'id_list_message=t-' + _ivr_t('ההודעה נשמרה, תודה רבה') + END if 'VmRec' in P else 'noop=hangup'
         fname = '%s_%s' % (phone, il_now().strftime('%Y%m%d%H%M%S'))
-        return ('read=t-' + _ivr_t('השאירו הודעה אחרי הצליל ובסיום הקישו סולמית') +
-                '=VmRec,no,record,%s,%s,no,yes,no,1,180' % (VM_DIR, fname))
+        # ימות משמיעים לבד אחר כך "אנא הקליטו את הודעתכם לאחר הצליל. בסיום הקישו סולמית" (M1012) וצליל
+        # פרמטרים: שם, לא להשתמש בקיים, record, תיקייה (ריק = השלוחה), שם קובץ, בלי תפריט אישור, לשמור בניתוק,
+        # לא לצרף, מינימום שנייה, מקסימום 3 דקות
+        return ('read=t-' + _ivr_t('כאן אפשר להשאיר הודעה לכולל חצות') +
+                '=VmRec,no,record,,%s,no,yes,no,1,180' % fname)
     finally:
         con.close()
+
+
+def vm_dir(con):
+    return kv_get(con, 'ym_vm_dir', '') or VM_DIR
 
 
 def vm_sync(con):
@@ -23642,7 +23656,7 @@ def vm_sync(con):
     import yemot as _ym
     if not _ym.configured():
         return 0
-    ok, res = _ym.call('GetIVR2Dir', {'path': VM_DIR})
+    ok, res = _ym.call('GetIVR2Dir', {'path': vm_dir(con)})
     if not ok:
         return 0
     idx = None

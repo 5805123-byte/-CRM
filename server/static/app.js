@@ -14050,7 +14050,7 @@ async function ymViewVm(){
       <pre class="ndini" id="vm_ini" dir="ltr">${esc(ini)}</pre>
       <div class="addrow"><button class="btn sm" id="vm_copy">📋 העתק</button></div>
       <div class="hintxt">2. בנוסח של ההודעה הקולית (לשונית 📤 שליחה) מוסיפים בסוף: <b>"להשארת הודעה הקישו 2"</b> (או המספר של השלוחה שפתחת).<br>
-      3. מי שמקיש שומע "השאירו הודעה אחרי הצליל", מדבר, ומנתק או מקיש סולמית. ההודעה נשמרת בימות בתיקייה ${esc(V.dir||'')} ומגיעה לכאן תוך דקות (או מיד ב"🔄 בדוק עכשיו"), עם השם שלו אם הטלפון מוכר.</div></details>
+      3. מי שמקיש שומע "אנא הקליטו את הודעתכם לאחר הצליל", מדבר, ומנתק או מקיש סולמית. ההודעה נשמרת בימות בתוך השלוחה הזו${V.on?' ('+esc(V.dir||'')+')':''} ומגיעה לכאן תוך דקות (או מיד ב"🔄 בדוק עכשיו"), עם השם שלו אם הטלפון מוכר.</div></details>
   </div>`;
   ymWireHead();const g=id=>document.getElementById(id);
   g('vm_ref').onclick=async()=>{CMVM=null;ymViewVm();};
