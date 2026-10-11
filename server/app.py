@@ -603,6 +603,9 @@ def ensure_schema():
     # מאיר (מקווה): "אופציה לשלוח מאוחר יותר" — send_at בשעון ישראל, status='scheduled' עד אז
     try: con.execute("ALTER TABLE ym_job ADD COLUMN send_at TEXT")
     except Exception: pass
+    # מאיר: "שאל תבלבל ואל תערב את נתן תתן עם הקהילה" — לאיזו קופה שייכת ההודעה ('' = הקהילה, 'natan')
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN fund TEXT")
+    except Exception: pass
     # מאיר: "זה רק היה דוגמא, תמחק את הנתונים האלה, מכניסים הכל מחדש" — פעם אחת: לוחות ותבניות שנשמרו עד עכשיו
     try:
         if not con.execute("SELECT 1 FROM app_kv WHERE k='zm_reset_1'").fetchone():
@@ -13515,9 +13518,21 @@ def member_nd(con, mid):
     charges = [dict(r) for r in con.execute("SELECT * FROM nd_charge WHERE member_id=? AND ok=1 AND transaction_id<>'' "
                                              "AND transaction_id NOT IN (SELECT id FROM nd_tx) "
                                              "AND transaction_id NOT IN (SELECT SUBSTR(id, INSTR(id, ':')+1) FROM nd_tx WHERE id LIKE '%:%') ORDER BY id DESC LIMIT 50", (mid,))]
+    # מאיר: "שאל תערב את נתן תתן עם הקהילה, את התרומות" — הסכומים בכרטיס = רק החשבון של הכולל.
+    # תשלומים מחשבון אחר (נתן תתן / מקווה) מופיעים ברשימה עם השם של החשבון, ולא נספרים
+    import nedarim as _ndc
+    nm_ = natan_mosad(con)
+    anames = {a['mosad']: a['name'] for a in _ndc.accounts() if not a['main']}
+    for t in txs:
+        mo = t.get('mosad') or ''
+        t['fund'] = '' if not mo else ('natan' if mo == nm_ else 'other')
+        t['acct'] = '' if not mo else (anames.get(mo) or ('נתן תתן' if mo == nm_ else 'מוסד ' + mo))
+    for k in kevas:
+        mo = k.get('mosad') or ''
+        k['acct'] = '' if not mo else (anames.get(mo) or ('נתן תתן' if mo == nm_ else 'מוסד ' + mo))
     years = {}
     for t in txs:
-        if (t['amount'] or 0) > 0:
+        if (t['amount'] or 0) > 0 and not t['fund']:
             years[(t['iso'] or '')[:4]] = round(years.get((t['iso'] or '')[:4], 0) + t['amount'], 2)
     debts = [dict(r) for r in con.execute("SELECT * FROM cm_debt WHERE member_id=? AND (status='open' OR (status='paid' AND COALESCE(closed_at,'')>=?)) "
                                            "ORDER BY status='paid', COALESCE(NULLIF(due,''),created)", (mid, (il_now() - datetime.timedelta(days=120)).strftime('%Y-%m-%d')))]
@@ -13528,7 +13543,8 @@ def member_nd(con, mid):
         "(SELECT rd.sent_at FROM receipt_docs rd WHERE rd.note LIKE '%nd:cm'||d.id||'%' ORDER BY rd.id DESC LIMIT 1) rc_sent "
         "FROM cm_don d WHERE d.member_id=? ORDER BY d.date DESC, d.id DESC", (mid,))]
     for d in dons:
-        years[(d['date'] or '')[:4]] = round(years.get((d['date'] or '')[:4], 0) + (d['amount'] or 0), 2)
+        if (d['fund'] or '') == '':           # רישום ידני לקופת נתן תתן — לא בסכומי הקהילה
+            years[(d['date'] or '')[:4]] = round(years.get((d['date'] or '')[:4], 0) + (d['amount'] or 0), 2)
     ew, ea = ["e.member_id=?"], [mid]
     if phs:
         ew.append("e.phone IN (%s)" % ','.join('?' * len(phs))); ea += phs
@@ -13536,7 +13552,8 @@ def member_nd(con, mid):
         ew.append("e.keva IN (%s)" % ','.join('?' * len(kids))); ea += kids
     errs = [dict(r) for r in con.execute("SELECT * FROM nd_err e WHERE " + " OR ".join(ew) + " ORDER BY e.iso DESC LIMIT 40", ea)]
     return {'ok': True, 'kevas': kevas, 'tx': txs, 'charges': charges, 'years': years, 'dons': dons, 'errs': errs,
-            'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0), 2),
+            'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0 and not t['fund']), 2),
+            'sum_natan': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0 and t['fund'] == 'natan'), 2),
             'since': min((t['iso'] or '' for t in txs if t['iso']), default=''),
             'debts': debts, 'tasks': tasks, 'email': (emails_of(m['email'])[0] if m['email'] else ''),
             'linked_by': 'ידני' if con.execute("SELECT 1 FROM nd_map WHERE member_id=?", (mid,)).fetchone() else ''}
@@ -13995,8 +14012,8 @@ def ym_redial(con, jid, lst, label):
                 (now_iso(), 'voice', j0['text'], j0['amount'] or '', len(lst), label, j0['bill_path'] or '', jid))
     nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
     for r in lst:
-        con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
-                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id']))
+        con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of,fund) VALUES(?,?,?,?,?,?,'queued',?,?,?,?)",
+                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id'], r['fund'] if 'fund' in r.keys() else ''))
         con.execute("UPDATE ym_msg SET retried=?, retry_at=? WHERE id=?",
                     (con.execute("SELECT last_insert_rowid()").fetchone()[0], il_now().strftime('%Y-%m-%d %H:%M'), r['id']))
     con.commit()
@@ -17347,15 +17364,16 @@ class H(BaseHTTPRequestHandler):
             # מאיר: "למה לא כתוב אצל כל אחד מהקהילה לגבי ההוראת קבע שלו" — סיכום נדרים פלוס לכל חבר
             kv = {}
             try:
-                for k in con.execute("SELECT member_id, amount, groupe, error, active FROM nd_keva WHERE member_id IS NOT NULL AND (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%')"):
+                # הקהילה — רק הוראות ותשלומים מהחשבון של הכולל (לא נתן תתן / מקווה)
+                for k in con.execute("SELECT member_id, amount, groupe, error, active FROM nd_keva WHERE member_id IS NOT NULL AND COALESCE(mosad,'')='' AND (active=1 OR COALESCE(off,'') LIKE 'הסתיימו%')"):
                     x = kv.setdefault(k['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
                     if k['active']:
                         x['amt'] = round(x['amt'] + _ivr_amt(k['amount']), 2); x['n'] += 1
                         x['groupe'] = x['groupe'] or (k['groupe'] or '')
                         x['bad'] = x['bad'] or (1 if (k['error'] or '').strip() else 0)
                 for t in con.execute("SELECT member_id, SUM(c) c, SUM(s) s, MAX(last) last FROM ("
-                                     "SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 GROUP BY member_id "
-                                     "UNION ALL SELECT member_id, COUNT(*), SUM(amount), MAX(date) FROM cm_don GROUP BY member_id) GROUP BY member_id"):
+                                     "SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 AND COALESCE(mosad,'')='' GROUP BY member_id "
+                                     "UNION ALL SELECT member_id, COUNT(*), SUM(amount), MAX(date) FROM cm_don WHERE COALESCE(fund,'')='' GROUP BY member_id) GROUP BY member_id"):
                     x = kv.setdefault(t['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
                     x.update(tx=t['c'], tx_sum=round(t['s'] or 0, 2), tx_last=(t['last'] or '')[:10])
             except Exception:
@@ -18662,7 +18680,8 @@ class H(BaseHTTPRequestHandler):
                 con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,1,?,0,?,'',?)",
                             (now_iso(), ch, text, '', 'scheduled' if send_at else 'queued', 'מקווה', send_at))
                 jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued','')",
+                # req_off='mikveh' — הודעה של המקווה אף פעם לא "שולמה" על ידי תשלום בנדרים פלוס
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off) VALUES(?,?,?,?,?,?,'queued','','mikveh')",
                             (jid, 'm' if mem else 't', mem['id'] if mem else 0, name, phone, text))
                 con.commit()
             finally:
@@ -18743,6 +18762,13 @@ class H(BaseHTTPRequestHandler):
                 ra = r.get('amount') or ym_amt(amount) or amount
                 con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued',?)",
                             (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or '', r.get('for') or b.get('for') or ''), r.get('amount') or ''))
+            # לאיזו קופה המשלוח: נתן תתן (החוב / הקישור של החשבון שלה) או הקהילה
+            nm_ = natan_mosad(con)
+            dids_ = [int(x) for x in (b.get('debt_ids') or []) if str(x).isdigit()]
+            is_nat = bool(nm_ and any(str((r or {}).get('mosad') or '') == nm_ for r in (b.get('recipients') or []) if isinstance(r, dict))) or bool(
+                dids_ and con.execute("SELECT 1 FROM cm_debt WHERE fund='natan' AND id IN (%s)" % ','.join('?' * len(dids_)), dids_).fetchone())
+            if is_nat:
+                con.execute("UPDATE ym_msg SET fund='natan' WHERE job=?", (jid,))
             if not b.get('test') and b.get('debt_ids'):
                 cm_debts_reminded(con, b.get('debt_ids'), ch)
                 # תזכורת על חוב קיים אינה בקשת תשלום נוספת — החוב עצמו הוא הבקשה (אחרת הסכום נספר פעמיים)
@@ -20408,10 +20434,11 @@ class H(BaseHTTPRequestHandler):
                                   if is_bank else ('💳 חויב ₪%g מהוראת הקבע (כרטיס ****%s)%s · אישור %s' % (amt, l4, (' עבור ' + groupe) if groupe else '', conf))) if ok
                                  else ('🔴 חיוב ₪%g מהוראת הקבע נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
                     # בבנקאית הכסף עוד לא נגבה (ויכול לחזור) — החוב נסגר כשהחיוב מופיע בהסטוריה
-                    if ok and not is_bank:
-                        cm_debt_pay_explicit(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf, groupe,
-                                             fund=fund_of_mosad(con, k['mosad'] if 'mosad' in k.keys() else ''))
-                        ym_mark_paid(con, (k['phone'] or '').split(';')[0], amt, 'חיוב מהמערכת')
+                    # רק החשבון של הכולל (הקהילה) או של נתן תתן (לקופה שלה) נוגעים בחובות; חשבון אחר (מקווה) — לא
+                    fk = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
+                    if ok and not is_bank and fk is not None:
+                        cm_debt_pay_explicit(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf, groupe, fund=fk)
+                        ym_mark_paid(con, (k['phone'] or '').split(';')[0], amt, 'חיוב מהמערכת', fund=fk)
                 con.commit()
             finally:
                 con.close()
@@ -22830,6 +22857,14 @@ def fund_of_mosad(con, mosad):
     return 'natan' if nm and re.sub(r'\D', '', str(mosad or '')) == nm else ''
 
 
+def fund_strict(con, mosad):
+    """'' = החשבון של הכולל (הקהילה) · 'natan' = נתן תתן · None = חשבון אחר (מקווה) — לא נוגע בחובות."""
+    mo = re.sub(r'\D', '', str(mosad or ''))
+    if not mo:
+        return ''
+    return 'natan' if mo == natan_mosad(con) else None
+
+
 def cm_debt_pay(con, member_id, amount, note='', fund='', only=None):
     """תשלום של חבר קהילה סוגר את החובות הפתוחים שלו — הישן קודם, רק באותה קופה. מחזיר כמה כוסה."""
     left = round(float(amount or 0), 2)
@@ -23066,14 +23101,15 @@ def ym_req_rows(con, st='open'):
     return rows
 
 
-def ym_mark_paid(con, phone, amount, via, at=None, before=None):
-    """ההודעה האחרונה עם סכום שנשלחה למספר (30 יום) ועוד לא סומנה — שולמה. מחזיר את מזהה ההודעה."""
+def ym_mark_paid(con, phone, amount, via, at=None, before=None, fund=''):
+    """ההודעה האחרונה עם סכום שנשלחה למספר (30 יום) ועוד לא סומנה — שולמה. מחזיר את מזהה ההודעה.
+    fund — רק הודעה של אותה קופה: תשלום לנתן תתן לא מסמן הודעה של הקהילה, ולהפך."""
     if not phone:
         return None
     at = at or il_now().strftime('%Y-%m-%d %H:%M:%S')
     since = (il_now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
     m = con.execute("SELECT id FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' AND COALESCE(sent_ts,'')>=? "
-                    "AND COALESCE(sent_ts,'')<=? ORDER BY id DESC LIMIT 1", (phone, since, before or '9999')).fetchone()
+                    "AND COALESCE(sent_ts,'')<=? AND COALESCE(fund,'')=? ORDER BY id DESC LIMIT 1", (phone, since, before or '9999', fund or '')).fetchone()
     if not m:
         return None
     con.execute("UPDATE ym_msg SET paid_amount=?, paid_at=?, paid_via=? WHERE id=?", (round(float(amount or 0), 2), at, via, m['id']))
@@ -23146,7 +23182,7 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         fund = fund_of_mosad(con, mosad)
         if mosad and fund != 'natan':
             continue
-        msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None) if ph else None
+        msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None, fund=fund) if ph else None
         if msg:
             con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, tid))
             marked += 1
@@ -23404,7 +23440,8 @@ def cm_don_to_nd(con, did):
     d = con.execute("SELECT * FROM cm_don WHERE id=?", (did,)).fetchone()
     if not d:
         return 'לא נמצא'
-    k = con.execute("SELECT id,kind,mosad FROM nd_keva WHERE member_id=? ORDER BY active DESC, CASE WHEN COALESCE(mosad,'')='' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+    # תרומה לקהילה נרשמת רק בחשבון של הכולל — לא בחשבון של נתן תתן / המקווה
+    k = con.execute("SELECT id,kind,mosad FROM nd_keva WHERE member_id=? AND COALESCE(mosad,'')='' ORDER BY active DESC, id DESC LIMIT 1",
                     (d['member_id'],)).fetchone()
     if not k:
         return 'אין לו הוראת קבע בנדרים פלוס — אין מספר זהות לרישום שם. נרשם אצלנו בלבד.'
@@ -23666,7 +23703,7 @@ def nd_mark_replaced(con):
     הישן". הוראה שחזרה, כשלאותו חבר יש הוראה חדשה יותר (מזהה גבוה יותר) תקינה לאותה מטרה — או
     באותו סכום כשאין מטרה — היא הוחלפה: לא פעילה, לא ב"חזרו", והחוב שלה נסגר."""
     norm = lambda x: re.sub(r'\s+', ' ', str(x or '')).strip()
-    ks = [dict(r) for r in con.execute("SELECT id,member_id,amount,groupe,error,last4,active FROM nd_keva WHERE member_id IS NOT NULL AND active=1")]
+    ks = [dict(r) for r in con.execute("SELECT id,member_id,amount,groupe,error,last4,active,COALESCE(mosad,'') mosad FROM nd_keva WHERE member_id IS NOT NULL AND active=1")]
     n = 0
     for old in ks:
         if not (old['error'] or '').strip():
@@ -23676,8 +23713,8 @@ def nd_mark_replaced(con):
         except ValueError:
             continue
         for new in ks:
-            if new['member_id'] != old['member_id'] or new['id'] == old['id'] or (new['error'] or '').strip():
-                continue
+            if new['member_id'] != old['member_id'] or new['id'] == old['id'] or (new['error'] or '').strip() or new['mosad'] != old['mosad']:
+                continue                      # הוראה חדשה בנתן תתן לא "מחליפה" הוראה של הקהילה
             try:
                 if int(new['id']) <= oid:
                     continue
@@ -24033,7 +24070,8 @@ def ivr_kevas(con, phone, mids=()):
     if not phone:
         return []
     mids = [int(m) for m in (mids or ()) if m]
-    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND active=1 AND "
+    # שלוחת התשלום של הקהילה — רק הוראות של החשבון של הכולל (לא לחייב חוב של הקהילה מהוראה של נתן תתן)
+    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND active=1 AND COALESCE(mosad,'')='' AND "
          "(';'||phone||';' LIKE ?" + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ") "
          "ORDER BY active DESC, CASE WHEN COALESCE(error,'')='' THEN 0 ELSE 1 END, id")
     return [dict(r) for r in con.execute(q, ['%;' + phone + ';%'] + mids)]
@@ -24173,11 +24211,11 @@ def ivr_answer(P):
                         (k['member_id'] or mid, today_iso(), 'תשלום',
                          ('💳 שילם ₪%g בטלפון מהוראת הקבע (כרטיס ****%s) · אישור %s' % (amt, l4, conf)) if ok
                          else ('🔴 ניסיון תשלום ₪%g בטלפון נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
-            if ok:
-                cm_debt_pay(con, k['member_id'] or mid, amt, 'שולם בטלפון %s (אישור %s)' % (today_iso(), conf),
-                            fund=fund_of_mosad(con, k['mosad'] if 'mosad' in k.keys() else ''))
-        if ok:
-            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון')
+            fk = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
+            if ok and fk is not None:
+                cm_debt_pay(con, k['member_id'] or mid, amt, 'שולם בטלפון %s (אישור %s)' % (today_iso(), conf), fund=fk)
+        if ok and fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '') is not None:
+            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund=fund_strict(con, k['mosad'] if 'mosad' in k.keys() else ''))
         con.commit()
         if ok:
             return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
