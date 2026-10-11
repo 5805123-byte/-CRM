@@ -582,6 +582,13 @@ def ensure_schema():
     for col, typ in (('listen_secs', 'INTEGER'), ('pressed', 'TEXT'), ('pressed_secs', 'INTEGER'), ('call_id', 'TEXT'), ('sent_ts', 'TEXT'), ('engine', 'TEXT')):
         try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
         except Exception: pass
+    # מאיר: "תוסיף ניסיון אחרי שעתיים למי שלא ענה" — retry_of: השיחה המקורית; retried: מזהה הניסיון
+    # החוזר (או 0 = לא נשלח, ראה retry_note); retry_at — מתי ייצא (כשהשעה לא מתאימה)
+    for col, typ in (('retry_of', 'INTEGER'), ('retried', 'INTEGER'), ('retry_at', 'TEXT'), ('retry_note', 'TEXT')):
+        try: con.execute(f"ALTER TABLE ym_msg ADD COLUMN {col} {typ}")
+        except Exception: pass
+    try: con.execute("ALTER TABLE ym_job ADD COLUMN retry_of INTEGER")
+    except Exception: pass
     try: con.execute("ALTER TABLE donations ADD COLUMN thanked INTEGER DEFAULT 0")   # האם הודינו על התרומה
     except Exception: pass
     try: con.execute("ALTER TABLE donors ADD COLUMN iz_note TEXT")
@@ -13928,6 +13935,103 @@ def ym_check_job(job_id):
         con.close()
 
 
+YM_RETRY_AFTER = datetime.timedelta(hours=2)
+
+
+def ym_call_ok(dt):
+    """שעה שבה מתקשרים: 9:00–21:00, לא בשבת וביום טוב, ובערב שבת / ערב חג רק עד 14:00."""
+    if not (9 <= dt.hour < 21):
+        return False
+    try:
+        from pyluach import dates as _pd
+        def holy(d):
+            g = _pd.GregorianDate(d.year, d.month, d.day)
+            return g.weekday() == 7 or bool(g.to_heb().festival(israel=True, include_working_days=False))
+        if holy(dt.date()):
+            return False
+        if holy(dt.date() + datetime.timedelta(days=1)) and dt.hour >= 14:
+            return False
+    except Exception:
+        if dt.weekday() == 5 or (dt.weekday() == 4 and dt.hour >= 14):
+            return False
+    return True
+
+
+def ym_next_ok(dt):
+    for _ in range(4 * 24 * 6):
+        if ym_call_ok(dt):
+            return dt
+        dt = (dt + datetime.timedelta(minutes=10)).replace(second=0, microsecond=0)
+    return dt
+
+
+def ym_retry_scan():
+    """כל כמה דקות: (1) בודק ביומן של ימות שיחות שעוד לא נבדקו (גם אחרי הפעלה מחדש של השרת);
+    (2) מי שלא ענה לפני שעתיים — מקבל ניסיון אחד נוסף, באותו נוסח, בשעה מתאימה."""
+    con = db()
+    try:
+        now = il_now()
+        since = (now - datetime.timedelta(days=3)).strftime('%Y-%m-%d')
+        jobs = [r[0] for r in con.execute(
+            "SELECT DISTINCT m.job FROM ym_msg m JOIN ym_job j ON j.id=m.job WHERE j.channel='voice' AND COALESCE(j.test,0)=0 "
+            "AND m.status='sent' AND m.answered IS NULL AND COALESCE(m.sent_ts,'')>=? AND m.sent_ts<=?",
+            (since, (now - datetime.timedelta(minutes=12)).strftime('%Y-%m-%d %H:%M:%S')))]
+    finally:
+        con.close()
+    for jid in jobs:
+        ym_check_job(jid)
+    con = db()
+    try:
+        now = il_now()
+        rows = con.execute(
+            "SELECT m.*, j.text jtext, j.amount jamount, j.bill_path FROM ym_msg m JOIN ym_job j ON j.id=m.job "
+            "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND m.answered=0 AND m.retry_of IS NULL "
+            "AND m.retried IS NULL AND COALESCE(m.paid_at,'')='' AND COALESCE(m.sent_ts,'')>=? AND m.sent_ts<=? ORDER BY m.id",
+            ((now - datetime.timedelta(days=3)).strftime('%Y-%m-%d'), (now - YM_RETRY_AFTER).strftime('%Y-%m-%d %H:%M:%S'))).fetchall()
+        if not rows:
+            return
+        if not ym_call_ok(now):
+            nxt = ym_next_ok(now).strftime('%Y-%m-%d %H:%M')
+            con.execute("UPDATE ym_msg SET retry_at=? WHERE id IN (%s)" % ','.join('?' * len(rows)), [nxt] + [r['id'] for r in rows])
+            con.commit()
+            return
+        by = {}
+        for r in rows:
+            # נשלחה לו בינתיים הודעה אחרת (שלחת שוב בעצמך) — אין צורך בניסיון חוזר
+            if con.execute("SELECT 1 FROM ym_msg WHERE phone=? AND id>? AND status IN ('sent','queued') AND COALESCE(retry_of,0)=0", (r['phone'], r['id'])).fetchone():
+                con.execute("UPDATE ym_msg SET retried=0, retry_note=? WHERE id=?", ('נשלחה לו בינתיים הודעה אחרת', r['id']))
+                continue
+            by.setdefault(r['job'], []).append(r)
+        for jid, lst in by.items():
+            j0 = lst[0]
+            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,retry_of) VALUES(?,?,?,?,?,'queued',0,?,?,?)",
+                        (now_iso(), 'voice', j0['jtext'], j0['jamount'] or '', len(lst), '🔁 ניסיון חוזר', j0['bill_path'] or '', jid))
+            nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for r in lst:
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
+                            (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id']))
+                con.execute("UPDATE ym_msg SET retried=?, retry_at=? WHERE id=?",
+                            (con.execute("SELECT last_insert_rowid()").fetchone()[0], now.strftime('%Y-%m-%d %H:%M'), r['id']))
+            con.commit()
+            threading.Thread(target=ym_worker, args=(nj,), daemon=True).start()
+        con.commit()
+    except Exception as e:
+        print('  ym retry error:', e)
+    finally:
+        con.close()
+
+
+def _ym_retry_loop():
+    while True:
+        time.sleep(300)
+        try:
+            import yemot as _ym
+            if _ym.configured():
+                ym_retry_scan()
+        except Exception as e:
+            print('  ym retry loop error:', e)
+
+
 def ym_mmss(sec):
     try:
         sec = int(sec or 0)
@@ -17044,7 +17148,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
-            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts,engine FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts,engine,retry_of,retried,retry_at,retry_note FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             if not job:
                 return self._send(404, {'ok': False})
@@ -23590,6 +23694,7 @@ def serve():
     threading.Thread(target=_bq_loop, daemon=True).start()
     threading.Thread(target=_nd_loop, daemon=True).start()
     threading.Thread(target=_vm_loop, daemon=True).start()
+    threading.Thread(target=_ym_retry_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

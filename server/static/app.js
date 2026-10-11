@@ -14438,11 +14438,14 @@ function ymAns(m,ch){
   // מאיר: "אם שלחנו הודעה עם סכום והוא שילם… המערכת צריכה להתעדכן שהוא שילם"
   const paid=m.paid_at?`<span class="ymans paid">💳 שילם ₪${esc(m.paid_amount)} · ${esc(m.paid_via||'')} · ${esc(String(m.paid_at).slice(5,16))}</span>`:'';
   return ymAns0(m,ch)+paid;}
+const ymAns1=m=>`<span class="ymans yes">📞 ענה · שמע ${ymMMSS(m.listen_secs)}</span>${m.pressed?`<span class="ymans pr">1️⃣ הקיש ${esc(m.pressed)} · ${ymMMSS(m.pressed_secs)}</span>`:''}`;
 function ymAns0(m,ch){
   if(ch==='sms')return m.status==='sent'?'<span class="ymans yes">💬 נשלח</span>':'';
   if(m.status!=='sent')return '';
-  if(m.answered===1)return `<span class="ymans yes">📞 ענה · שמע ${ymMMSS(m.listen_secs)}</span>${m.pressed?`<span class="ymans pr">1️⃣ הקיש ${esc(m.pressed)} · ${ymMMSS(m.pressed_secs)}</span>`:''}`;
-  if(m.answered===0)return '<span class="ymans no">📵 לא ענה</span>';
+  const rt=m.retry_of?'<span class="ymans">🔁 ניסיון חוזר</span>':'';
+  if(m.answered===1)return rt+ymAns1(m);
+  if(m.answered===0)return rt+'<span class="ymans no">📵 לא ענה</span>'+(m.retry_of?'':(m.retried?'<span class="ymans">🔁 נשלח ניסיון חוזר'+(m.retry_at?' '+esc(String(m.retry_at).slice(11,16)):'')+'</span>'
+    :(m.retried===0?`<span class="ymans">🔁 בלי ניסיון חוזר — ${esc(m.retry_note||'')}</span>`:`<span class="ymans">🔁 ניסיון חוזר ${m.retry_at?'ב-'+esc(String(m.retry_at).slice(5,16)):'שעתיים אחרי השיחה'}</span>`)));
   return `<span class="ymans">⏳ ${esc(m.call_status||'ממתין — נבדק ביומן של ימות דקה וחצי אחרי השליחה')}</span>`;}
 function ymJobChips(j){
   const c=[`<span class="ymch2">📤 ${j.sent}/${j.total}</span>`];
@@ -14456,7 +14459,7 @@ function ymViewJobs(){
     return `<div class="ymdet">
       <div class="addrow" style="justify-content:space-between;flex-wrap:wrap"><div class="ympv" style="flex:1;margin:0">${esc(j.text||'')}</div>
         <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button></span></div>
-      ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}
+      ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}${j.retry_of?'<div class="hintxt">🔁 ניסיון חוזר אוטומטי — למי שלא ענה שעתיים קודם</div>':''}
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${ms.some(m=>+m.amount)?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
       ${ms.map(m=>`<tr class="${m.status}"><td>${esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
         <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
