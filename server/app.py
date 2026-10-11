@@ -17013,7 +17013,7 @@ class H(BaseHTTPRequestHandler):
             import mikveh as _mk
             ok, msg = _mk.check()
             return self._send(200, {'ok': ok, 'configured': _mk.configured(), 'club': _mk.club(), 'msg': msg,
-                                    'last': dict(_mk.LAST)})
+                                    'last': dict(_mk.LAST), 'times': dict(_mk.TIMES)})
         if self.path.split('?')[0] == '/api/mikveh/clients':
             # לשונית המקווה — חי מהמקווה, לא נשמר אצלנו
             import mikveh as _mk
@@ -17063,6 +17063,18 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'status': r['status'] if r else '', 'error': (r['error'] or '') if r else '', 'at': (r['at'] or '') if r else ''})
+        if self.path.split('?')[0] == '/api/mikveh/prefetch':
+            # כשפותחים כרטיס לקוח — טוענים אותו מהמקווה מראש, כדי שההעברה עצמה תהיה מהירה
+            import mikveh as _mk
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            try:
+                t0 = time.time()
+                _mk.client(cid, max_age=60)
+                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000)})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
         if self.path.split('?')[0] == '/api/mikveh/get':
             # רק קריאה (GET), רק למנהל — כדי לבדוק נתיבים של המקווה מהשרת, בלי לשנות שם כלום
             import mikveh as _mk
@@ -18643,7 +18655,7 @@ class H(BaseHTTPRequestHandler):
                     con.commit()
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'client': row, 'group_name': gname})
+            return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'ms': dict(_mk.TIMES)})
         if self.path == '/api/mikveh/notify':
             # "ולשלוח לו הודעה במיידי דרך הטלפון שזה עודכן" — ידני, הודעה אחת, דרך ימות המשיח
             import yemot as _ym

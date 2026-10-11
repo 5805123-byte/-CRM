@@ -170,8 +170,13 @@ def _items(res):
     return []
 
 
-def groups():
-    """הקבוצות הפעילות (בלי מחוקות), לפי השם."""
+_GR = {'at': 0.0, 'rows': None}
+
+
+def groups(fresh=False):
+    """הקבוצות הפעילות (בלי מחוקות), לפי השם. זיכרון של 10 דקות — הן כמעט לא משתנות."""
+    if not fresh and _GR['rows'] is not None and time.time() - _GR['at'] < 600:
+        return _GR['rows']
     out = []
     for g in _items(get('Group')):
         if g.get('isDeleted'):
@@ -179,6 +184,7 @@ def groups():
         out.append({'id': g.get('id'), 'name': (g.get('name') or '').strip(), 'color': g.get('color') or '',
                     'price': (g.get('subscriptionPrice') or 0) / 100.0 if g.get('subscriptionPrice') is not None else None})
     out.sort(key=lambda g: g['name'])
+    _GR.update(at=time.time(), rows=out)
     return out
 
 
@@ -208,11 +214,28 @@ def clients(fresh=False):
     return rows
 
 
-def client(cid):
+# מאיר: "שמעבירים קבוצה ללקוח לוקח זמן עד שהשרת עונה… למה באמת לוקח לו הרבה זמן?" — כל העברה
+# הייתה: כל הקבוצות + ניסיון ללקוח בודד + (כשאין) כל רשימת הלקוחות + העדכון, אחד אחרי השני.
+# עכשיו: הקבוצות בזיכרון; הלקוח נטען כבר כשפותחים את הכרטיס (prefetch) ונשמר דקה וחצי;
+# אם אין במקווה קריאה ללקוח בודד — זוכרים את זה ולא מנסים שוב. TIMES — כמה לקח כל שלב.
+_ONE = {}
+_SINGLE = {'ok': None}
+TIMES = {}
+
+
+def client(cid, max_age=0):
     """הלקוח המלא כמו שהמקווה מחזיר (כולל הבנים) — בשביל העדכון."""
-    code, res = call('GET', 'Client/%s' % cid)
-    if code == 200 and isinstance(res, dict) and res.get('id'):
-        return res
+    hit = _ONE.get(str(cid))
+    if max_age and hit and time.time() - hit[0] < max_age:
+        return dict(hit[1])
+    if _SINGLE['ok'] is not False:
+        code, res = call('GET', 'Client/%s' % cid, timeout=20)
+        if code == 200 and isinstance(res, dict) and res.get('id'):
+            _SINGLE['ok'] = True
+            _ONE[str(cid)] = (time.time(), res)
+            return dict(res)
+        if code in (404, 405) and _SINGLE['ok'] is None:
+            _SINGLE['ok'] = False
     # אין קריאה ללקוח בודד — לוקחים אותו מהרשימה. ברשימה (GET /Client) חסרים שדות של
     # הלקוח עצמו: clubId / externalClubId ריקים, createdAt הוא שעת הבקשה ויש שדה נוסף
     # (hasPaymentMethod). מתקנים כדי לא לדרוס במקווה מועדון / תאריך פתיחה.
@@ -223,18 +246,29 @@ def client(cid):
             c.pop('createdAt', None)
             c['clubId'] = c.get('clubId') or _TOK.get('club_id') or None
             c['externalClubId'] = c.get('externalClubId') or int(club())
-            return c
+            _ONE[str(cid)] = (time.time(), c)
+            return dict(c)
     raise RuntimeError('הלקוח לא נמצא במקווה')
 
 
 def update_client(cid, changes):
     """PATCH /Client/{id} — כמו המסך של המקווה: שולחים את כל הלקוח, עם השינוי בלבד."""
-    obj = dict(client(cid))
+    t0 = time.time()
+    obj = dict(client(cid, max_age=90))
+    t1 = time.time()
     obj.update(changes)
     code, res = call('PATCH', 'Client/%s' % cid, body=obj)
+    t2 = time.time()
+    TIMES.update(at=time.strftime('%Y-%m-%d %H:%M:%S'), load_ms=int((t1 - t0) * 1000), patch_ms=int((t2 - t1) * 1000),
+                 single=_SINGLE['ok'])
     if code != 200:
         raise RuntimeError('העדכון במקווה נכשל: %s' % (LAST.get('error') or code))
-    _CL['rows'] = None
+    _ONE.pop(str(cid), None)
+    if isinstance(res, dict) and _CL['rows'] is not None:
+        # הרשימה בזיכרון מתעדכנת במקום — בלי למשוך שוב את כל הלקוחות
+        for i, c in enumerate(_CL['rows']):
+            if str(c.get('id')) == str(cid):
+                _CL['rows'][i] = dict(c, **{k: v for k, v in res.items() if k in ('groupId', 'updatedAt')})
     return res if isinstance(res, dict) else obj
 
 

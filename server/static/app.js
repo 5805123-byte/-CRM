@@ -1639,43 +1639,75 @@ async function mkLoad(fresh){
   MK=r&&r.ok?r:{ok:false,error:(r&&r.error)||'אין חיבור למקווה',groups:[],clients:[]};
   if(tab==='mikveh')renderMikveh();
 }
+// מאיר: "תשפר את ממשק המקווה… עיצוב יותר מתקדם". שורת לקוח: עיגול עם ראשי תיבות בצבע הקבוצה,
+// השם, טלפון / מספר לקוח, הקבוצה, מצב המנוי והרישיון, כניסה אחרונה, וכפתור הודעה.
+const mkInit=c=>((c.first||'').trim()[0]||'')+((c.last||'').trim()[0]||'')||'?';
+const mkColor=(g)=>g&&/^#[0-9a-f]{6}$/i.test(g.color||'')?g.color:'#5a52a8';
+const mkAgo=s=>{if(!s)return '';const d=new Date(s);if(isNaN(d))return '';
+  const days=Math.floor((new Date().setHours(0,0,0,0)-new Date(d).setHours(0,0,0,0))/864e5);
+  const hm=d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+  if(days<=0)return 'היום '+hm; if(days===1)return 'אתמול '+hm; if(days<7)return 'לפני '+days+' ימים';
+  if(days<60)return 'לפני '+Math.round(days/7)+' שבועות'; return mkDate(s);};
+const mkPast=s=>{if(!s)return false;const d=new Date(s);return !isNaN(d)&&d<new Date();};
+function mkSkel(){view.innerHTML=`<div class="mkw"><div class="mkhero"><h2>🛁 לקוחות המקווה<small>טוען מהמקווה…</small></h2><span class="mkspin lg" style="color:#fff"></span></div>
+  <div class="mklist">${'<div class="mkskel"></div>'.repeat(7)}</div></div>`;}
 function renderMikveh(){
-  if(MK===null){view.innerHTML='<div class="empty">⏳ טוען מהמקווה…</div>';if(!mkBusy)mkLoad();return;}
-  if(!MK.ok){view.innerHTML=`<div class="empty">⚠️ ${esc(MK.error)}<br><br><button class="btn" id="mkre">🔄 לנסות שוב</button></div>`;
+  if(MK===null){mkSkel();if(!mkBusy)mkLoad();return;}
+  if(!MK.ok){view.innerHTML=`<div class="mkw"><div class="mkempty"><b>⚠️</b>${esc(MK.error)}<br><br><button class="mkbtn" id="mkre">🔄 לנסות שוב</button></div></div>`;
     document.getElementById('mkre').onclick=()=>{MK=null;renderMikveh();};return;}
   mkQ=q;        // תיבת החיפוש העליונה ותיבת החיפוש של הלשונית — אותו חיפוש
   const cnt={}; MK.clients.forEach(c=>{cnt[c.group]=(cnt[c.group]||0)+1;});
-  // מאיר: "למה הוא לא מציג את כל הלקוחות? ולמה אין אפשרות חיפוש?" — חיפוש בתוך הלשונית,
-  // וכל הלקוחות מוצגים (בלי "להציג עוד"); החיפוש מסנן תוך כדי הקלדה בלי לצייר את המסך מחדש
-  view.innerHTML=`<div class="avbar noprint" style="position:sticky;top:0;z-index:5;background:var(--ground);padding:6px 0">
-      <input id="mkq" class="search" style="flex:1 1 220px" placeholder="🔍 חיפוש לקוח — שם / טלפון / מספר לקוח" value="${esc(mkQ)}" autocomplete="off">
-      <select id="mkgrp" class="avsortsel"><option value="">כל הקבוצות (${MK.clients.length})</option>
-        ${MK.groups.map(g=>`<option value="${esc(g.id)}"${g.id===mkGrp?' selected':''}>${esc(g.name)} (${cnt[g.id]||0})</option>`).join('')}</select>
-      <select id="mksort" class="avsortsel">${[['name','לפי שם'],['code','לפי מספר לקוח'],['last','לפי כניסה אחרונה']].map(([k,l])=>`<option value="${k}"${mkSort===k?' selected':''}>${l}</option>`).join('')}</select>
-      <button class="btn sm ghost" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button>
-      <button class="btn sm ghost hidden" id="mksched">⏰ מתוזמנות</button></div>
-    <div class="st" id="mkcount" style="margin:4px 0 8px"></div>
-    <div style="overflow-x:auto"><table class="avtable"><thead><tr><th class="mkhide">#</th><th>שם</th><th>טלפון</th><th>קבוצה</th><th class="mkhide">מנוי עד</th><th class="mkhide">כניסה אחרונה</th><th></th></tr></thead><tbody id="mkbody"></tbody></table></div>
-    <div class="empty hidden" id="mknone">אין לקוחות שמתאימים</div>`;
+  const used=MK.groups.filter(g=>cnt[g.id]).sort((a,b)=>(cnt[b.id]||0)-(cnt[a.id]||0));
+  const expired=MK.clients.filter(c=>mkPast(c.sub_end)).length;
+  view.innerHTML=`<div class="mkw">
+    <div class="mkhero"><h2>🛁 לקוחות המקווה<small>חי מהמקווה · לא נשמר במערכת · לחיצה על לקוח — העברת קבוצה והודעה</small></h2>
+      <div class="mkstat"><b>${MK.clients.length}</b><span>לקוחות</span></div>
+      <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
+      ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
+      <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button>
+      <button class="mkibtn" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button></div>
+    <div class="mktools noprint">
+      <div class="mksearch"><input id="mkq" placeholder="חיפוש לקוח — שם, טלפון או מספר לקוח" value="${esc(mkQ)}" autocomplete="off"></div>
+      <div class="mkchips" id="mkchips"><button class="mkchip${mkGrp?'':' on'}" data-g="">הכל <i>${MK.clients.length}</i></button>
+        ${used.map(g=>`<button class="mkchip${g.id===mkGrp?' on':''}" data-g="${esc(g.id)}"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g.name)} <i>${cnt[g.id]}</i></button>`).join('')}</div>
+      <div class="mkbar2"><span id="mkcount"></span>
+        <span class="mkseg" id="mksort">${[['name','א–ב'],['code','מספר לקוח'],['last','כניסה אחרונה']].map(([k,l])=>`<button data-s="${k}" class="${mkSort===k?'on':''}">${l}</button>`).join('')}</span></div></div>
+    <div class="mklist" id="mkbody"></div>
+    <div class="mkempty hidden" id="mknone"><b>🔍</b>אין לקוחות שמתאימים לחיפוש</div></div>`;
   const qi=document.getElementById('mkq');
   qi.oninput=()=>{mkQ=q=qi.value.trim();const tq=document.getElementById('q');if(tq)tq.value=qi.value;mkPaint();};
-  document.getElementById('mkgrp').onchange=e=>{mkGrp=e.target.value;mkPaint();};
-  document.getElementById('mksort').onchange=e=>{mkSort=e.target.value;mkPaint();};
+  document.getElementById('mkchips').onclick=e=>{const b=e.target.closest('[data-g]');if(!b)return;mkGrp=b.dataset.g;
+    document.querySelectorAll('#mkchips .mkchip').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
+  document.getElementById('mksort').onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;mkSort=b.dataset.s;
+    document.querySelectorAll('#mksort button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
-  document.getElementById('mkfresh').onclick=()=>{MK=null;view.innerHTML='<div class="empty">⏳ טוען מהמקווה…</div>';mkLoad(true);};
+  document.getElementById('mkfresh').onclick=()=>{MK=null;mkSkel();mkLoad(true);};
   const byId=id=>MK.clients.find(c=>c.id===id);
   document.getElementById('mkbody').onclick=async e=>{
-    const tr=e.target.closest('tr[data-id]'); if(!tr)return;
-    const c=byId(tr.dataset.id); if(!c)return;
+    const tr=e.target.closest('[data-id]'); if(!tr)return;
+    const c=byId(tr.dataset.id); if(!c||c._busy)return;
     const mem=e.target.closest('.mkmem');
-    if(mem){e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==+mem.dataset.mid);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');return;}
+    if(mem){e.preventDefault();e.stopPropagation();const ms=await cmLoad();const m=ms.find(x=>x.id==+mem.dataset.mid);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');return;}
     if(e.target.closest('.mkmsg')){if(c.phone)mkNotify(c,'free');return;}
-    e.preventDefault(); mkOpen(c);          // לחיצה על השורה / על הקבוצה — כרטיס הלקוח
+    mkOpen(c);
   };
   mkPaint();
   if(!('ontouchstart' in window))qi.focus();
 }
 const mkDigits=s=>String(s||'').replace(/\D/g,'');
+function mkRowHTML(c,G){
+  const g=G[c.group], subBad=mkPast(c.sub_end), licBad=mkPast(c.lic_exp);
+  return `<div class="mkrow" data-id="${esc(c.id)}">
+    <div class="mkav" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
+    <div class="mknm"><b>${esc(mkName(c))}</b>
+      <div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'<span>אין טלפון</span>'}<span>#${esc(c.code||'')}</span>
+        ${c.last_in?`<span>🚪 ${esc(mkAgo(c.last_in))}</span>`:''}${c.member?`<a href="#" class="mkmem" data-mid="${c.member.id}">🕍 ${esc(c.member.name)}</a>`:''}
+        ${c.parent?'<span class="mktag mu">בן</span>':''}${c.blocked?`<span class="mktag bad" title="${esc(c.block_reason)}">חסום</span>`:''}
+        ${subBad?'<span class="mktag bad">המנוי הסתיים</span>':''}${licBad?'<span class="mktag bad">רישיון פג</span>':''}</div></div>
+    <div class="mkgcol"><span class="mkgb"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g?g.name:'קבוצה שנמחקה')}</span></div>
+    <div class="mkact"><button class="mkround mkmsg" title="${c.phone?'שליחת הודעה':'אין טלפון במקווה'}"${c.phone?'':' disabled'}>💬</button></div>
+    ${c._busy?`<div class="mkbusy"><span class="mkspin"></span> ${esc(c._busy)}</div>`:''}</div>`;
+}
 function mkPaint(){
   const body=document.getElementById('mkbody'); if(!body||!MK||!MK.ok)return;
   const G={}; MK.groups.forEach(g=>G[g.id]=g);
@@ -1691,67 +1723,79 @@ function mkPaint(){
   rows.sort(mkSort==='code'?(a,b)=>(+a.code||0)-(+b.code||0)
     :mkSort==='last'?(a,b)=>ts(b.last_in)-ts(a.last_in)
     :(a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
-  const gp=id=>{const g=G[id];return `<button class="chip" style="padding:4px 10px;white-space:nowrap">${g&&g.color?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(g.color)};margin-inline-end:5px"></span>`:''}${esc(g?g.name:'— קבוצה שנמחקה —')}</button>`;};
-  body.innerHTML=rows.map(c=>`<tr data-id="${esc(c.id)}" style="cursor:pointer">
-      <td class="mkhide">${esc(c.code||'')}</td>
-      <td><b>${esc(mkName(c))}</b>${c.parent?' <span class="pill occ" title="בן של לקוח אחר">בן</span>':''}${c.blocked?` <span class="pill fresh" title="${esc(c.block_reason)}">חסום</span>`:''}
-        ${c.member?`<br><a href="#" class="mkmem" data-mid="${c.member.id}">🕍 ${esc(c.member.name)}</a>`:''}</td>
-      <td dir="ltr">${esc(c.phone||'')}</td>
-      <td>${gp(c.group)}</td>
-      <td class="mkhide">${esc(mkDate(c.sub_end))}</td>
-      <td class="mkhide">${esc(mkWhen(c.last_in))}</td>
-      <td><button class="btn sm ghost mkmsg"${c.phone?'':' disabled title="אין טלפון במקווה"'}>📞 הודעה</button></td></tr>`).join('');
-  document.getElementById('mkcount').textContent=(rows.length===MK.clients.length?'':rows.length+' מתוך ')+MK.clients.length+' לקוחות במקווה · לחיצה על לקוח — העברת קבוצה והודעה · חי מהמקווה, לא נשמר במערכת';
+  body.innerHTML=rows.map(c=>mkRowHTML(c,G)).join('');
+  document.getElementById('mkcount').textContent=rows.length===MK.clients.length?MK.clients.length+' לקוחות':rows.length+' מתוך '+MK.clients.length+' לקוחות';
   document.getElementById('mknone').classList.toggle('hidden',rows.length>0);
 }
+// שורה אחת בלבד (בזמן העברה) — בלי לצייר את כל הרשימה מחדש
+function mkRowRefresh(c){const el=document.querySelector('#mkbody [data-id="'+c.id+'"]');if(!el||!MK)return;
+  const G={}; MK.groups.forEach(g=>G[g.id]=g); el.outerHTML=mkRowHTML(c,G);}
 const mkGName=g=>(g&&g.name||'').replace(/^\s*\d+\.\s*/,'').trim();
 const mkMoney=a=>a==null?'':'₪'+(a/100).toLocaleString('he-IL',{maximumFractionDigits:2});
-// העברת קבוצה: אישור → עדכון במקווה → חלון הודעה מוכן (אפשר לוותר)
-async function mkSetGroup(c,g){
-  const G={}; MK.groups.forEach(x=>G[x.id]=x);
-  if(!await uiConfirm(`להעביר את ${mkName(c)} במקווה\nמ"${(G[c.group]&&G[c.group].name)||'—'}" ל"${g.name}"?`,'✓ להעביר','ביטול'))return false;
+// מאיר: "לוקח זמן עד שהשרת עונה ולא רואים כלום במסך… ספינר שמראה שזה מעדכן". ההעברה עצמה —
+// עם מצב חי (on): 'busy' (כמה שניות עברו), 'ok', 'err'. גם השורה ברשימה מראה "מעביר…"
+async function mkSetGroup(c,g,on){
+  on=on||(()=>{});
+  const t0=Date.now(); let tick=null;
+  c._busy='מעביר ל'+mkGName(g)+'…'; mkRowRefresh(c);
+  on('busy',0); tick=setInterval(()=>on('busy',Math.floor((Date.now()-t0)/1000)),1000);
   const r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});
-  if(!r||!r.ok){uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'שגיאה'));return false;}
-  c.group=g.id; toast('✓ עודכן במקווה: '+g.name);
-  if(tab==='mikveh')mkPaint();
-  if(c.phone)mkNotify(c,'group',{group:g.id});
-  else uiAlert('עודכן במקווה. אין טלפון ללקוח במקווה — אי אפשר לשלוח לו הודעה.');
+  clearInterval(tick); c._busy='';
+  if(!r||!r.ok){mkRowRefresh(c);on('err',(r&&r.error)||'שגיאה');return false;}
+  c.group=g.id; mkRowRefresh(c);
+  on('ok',((Date.now()-t0)/1000).toFixed(1));
   return true;
 }
-// כרטיס לקוח: הפרטים, הקבוצות כלחצנים (לחיצה אחת = העברה), והודעה
+// כרטיס לקוח: הפרטים כאריחים, הקבוצות כלחצנים. בחירה → שורת אישור למטה → "מעביר…" עם ספינר
+// ושניות → ✓ → חלון הודעה מוכן. הלקוח נטען מהמקווה כבר כשהכרטיס נפתח, כדי שההעברה תהיה מהירה.
 function mkOpen(c){
   if(!c)return;
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const G={}; MK.groups.forEach(x=>G[x.id]=x);
-  const now=new Date(), past=s=>s&&new Date(s)<now;
-  const line=(l,v,cls)=>v?`<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="color:var(--muted)">${l}</span><b${cls?` style="color:${cls}"`:''}>${v}</b></div>`:'';
-  const bal=c.balance!=null?mkMoney(c.balance):(c.last_balance!=null?mkMoney(c.last_balance)+' (אחרונה)':'');
+  api('GET','/api/mikveh/prefetch?id='+encodeURIComponent(c.id)).catch(()=>{});
+  let pick=null, state='', info='';
+  const tile=(l,v,cls)=>v?`<div class="mktile ${cls||''}"><span>${l}</span><b>${v}</b></div>`:'';
+  const bal=c.balance!=null?mkMoney(c.balance):(c.last_balance!=null?mkMoney(c.last_balance):'');
   const draw=()=>{
+    const g=G[c.group];
+    const busy=state==='busy';
     rs.innerHTML=`<button class="x" id="rx">✕</button>
-      <h2>🛁 ${esc(mkName(c))}</h2>
-      <div style="margin:6px 0 12px">
-        ${line('מספר לקוח',esc(c.code||''))}
-        ${line('טלפון',c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'— אין —')}
-        ${line('קבוצה',esc((G[c.group]&&G[c.group].name)||'— קבוצה שנמחקה —'))}
-        ${line('מנוי עד',esc(mkDate(c.sub_end)),past(c.sub_end)?'#a8321f':'')}
-        ${line('רישיון עד',esc(mkDate(c.lic_exp)),past(c.lic_exp)?'#a8321f':'')}
-        ${line('כניסה אחרונה',esc(mkWhen(c.last_in)))}
-        ${line('יתרה',esc(bal))}
-        ${line('טביעת אצבע',c.finger?'✓ רשומה':'')}
-        ${c.blocked?line('חסום',esc(c.block_reason||'כן'),'#a8321f'):''}
-        ${c.member?line('חבר קהילה',`<a href="#" id="mkmem1">🕍 ${esc(c.member.name)}</a>`):''}
+      <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
+        <div><h2>${esc(mkName(c))}</h2><div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span>
+          ${c.member?`<a href="#" id="mkmem1">🕍 ${esc(c.member.name)}</a>`:''}${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
+      <div class="mktiles">
+        ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
+        ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
+        ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
+        ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
+        ${tile(c.balance!=null?'יתרה':'יתרה אחרונה',esc(bal))}
+        ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
       </div>
-      <div style="font-weight:800;margin:10px 0 6px">🔄 להעביר לקבוצה</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${MK.groups.map(g=>`<button class="chip${g.id===c.group?' on':''}" data-g="${esc(g.id)}"${g.id===c.group?' disabled':''}>${g.color?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(g.color)};margin-inline-end:5px"></span>`:''}${esc(g.name)}</button>`).join('')}</div>
-      <div class="cbtns" style="display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap">
-        <button class="btn" id="mkmsg1"${c.phone?'':' disabled'}>📞 לשלוח הודעה</button>
+      <div class="mksec">🔄 העברה לקבוצה <small>בוחרים קבוצה ומאשרים</small></div>
+      <div class="mkgrid">${MK.groups.map(x=>`<button class="mkg${x.id===c.group?' cur':''}${pick&&x.id===pick.id?' pick':''}" data-g="${esc(x.id)}"${x.id===c.group||busy?' disabled':''}>
+          <span class="mkdot" style="background:${esc(mkColor(x))}"></span><span>${esc(x.name)}</span></button>`).join('')}</div>
+      ${pick||state?`<div class="mkconf ${state==='ok'?'ok':state==='err'?'err':''}">
+        ${state==='busy'?`<span class="mkspin" style="color:var(--accent)"></span><div class="t">מעביר את ${esc(c.first||mkName(c))} ל"${esc(pick.name)}" במקווה…<div class="mksub">${info>=3?info+' שניות · המקווה עונה לאט, עוד רגע…':'מתחבר למקווה ומעדכן'}</div></div>`
+        :state==='ok'?`<span class="mkcheck">✓</span><div class="t">הועבר ל"${esc(G[c.group]?G[c.group].name:'')}"<div class="mksub">עודכן במקווה (${esc(info)} שניות)</div></div>
+          ${c.phone?'<button class="mkbtn" id="mkafter">💬 לשלוח לו הודעה</button>':''}`
+        :state==='err'?`<span style="font-size:1.4rem">⚠️</span><div class="t">לא עודכן במקווה<div class="mksub">${esc(info)}</div></div><button class="mkbtn" id="mkgo">🔁 לנסות שוב</button><button class="mkbtn gh" id="mkno">ביטול</button>`
+        :`<div class="t">להעביר את ${esc(c.first||mkName(c))} מ"${esc(g?g.name:'—')}" ל"${esc(pick.name)}"?</div><button class="mkbtn" id="mkgo">✓ להעביר</button><button class="mkbtn gh" id="mkno">ביטול</button>`}
+      </div>`:''}
+      <div style="display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap">
+        <button class="mkbtn gh" id="mkmsg1"${c.phone?'':' disabled'}>💬 שליחת הודעה</button>
         <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>`;
-    document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
     const mm=document.getElementById('mkmem1');
     if(mm)mm.onclick=async e=>{e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==c.member.id);if(m){remov.classList.remove('show');openMember(m);}};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
-    rs.querySelectorAll('[data-g]').forEach(b=>b.onclick=async()=>{const g=G[b.dataset.g];
-      if(await mkSetGroup(c,g))draw();});
+    rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
+      const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
+    const no=document.getElementById('mkno'); if(no)no.onclick=()=>{pick=null;state='';draw();};
+    const go=document.getElementById('mkgo');
+    if(go)go.onclick=async()=>{const target=pick;
+      const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();});
+      if(ok){pick=target;if(c.phone)setTimeout(()=>{if(state==='ok'&&document.getElementById('mkafter'))mkNotify(c,'group',{group:target.id});},700);}};
+    const af=document.getElementById('mkafter'); if(af)af.onclick=()=>mkNotify(c,'group',{group:c.group});
   };
   draw(); remov.classList.add('show');
 }
@@ -1777,35 +1821,44 @@ const mkDTLabel=v=>{const d=new Date(v);if(isNaN(d))return v;
 async function mkNotify(c,tplId,ctx){
   const tpls=await mkTplLoad();
   let cur=tpls.find(t=>t.id===tplId)||tpls.find(t=>t.id==='free')||tpls[0]||{id:'',name:'',text:'שלום {שם}, '};
-  let later=false;
-  const o=document.createElement('div');o.className='confirmov';
-  o.innerHTML=`<div class="confirmbox" style="max-width:480px;max-height:92vh;overflow-y:auto">
-    <div class="cm" style="margin-bottom:10px">📞 הודעה ל${esc(mkName(c))}<div class="cmsub" dir="ltr">${esc(c.phone||'')}</div></div>
-    <div style="font-size:.82rem;font-weight:800;color:var(--muted);margin-bottom:4px">נוסח</div>
-    <div id="mkt" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px"></div>
-    <textarea class="cinp" id="mkta" rows="3" style="resize:vertical;margin:0 0 6px"></textarea>
-    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${MK_PH.map(([k,l])=>`<button class="chip" data-ph="${esc(k)}" style="padding:3px 8px;font-size:.75rem">+ ${esc(l)}</button>`).join('')}</div>
-    <div style="font-size:.82rem;font-weight:800;color:var(--muted)">כך זה ייצא</div>
-    <div id="mkpv" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:4px 0 8px;white-space:pre-wrap;font-weight:600"></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      <button class="btn sm ghost" id="mksave">💾 לשמור נוסח</button><button class="btn sm ghost" id="mkdel">🗑️ למחוק נוסח</button>
-      <button class="btn sm ghost" id="mklater">⏰ לשלוח מאוחר יותר</button></div>
-    <div id="mklt" class="hidden" style="background:var(--gold-soft);border-radius:10px;padding:8px;margin-bottom:10px">
-      <input type="datetime-local" id="mkdt" class="cinp" style="margin:0 0 6px">
-      <div style="display:flex;flex-wrap:wrap;gap:5px">${[['h1','בעוד שעה'],['ev','הערב 20:00'],['tm','מחר 09:00'],['tm2','מחר 20:00']].map(([k,l])=>`<button class="chip" data-q="${k}" style="padding:3px 9px;font-size:.78rem">${l}</button>`).join('')}</div>
-      <div class="cmsub" style="margin-top:6px">בשבת, בחג ובשעות הלילה לא נשלח — יידחה לבד לשעה המתאימה הבאה</div></div>
-    <div class="cbtns"><button class="btn ghost cno">לא עכשיו</button><button class="btn" data-ch="sms">💬 SMS</button><button class="btn" data-ch="voice">📞 קולית</button></div></div>`;
+  let later=false, ch=(()=>{try{return localStorage.getItem('mk_ch')||'sms';}catch(e){return 'sms';}})();
+  const G={}; (MK&&MK.groups||[]).forEach(g=>G[g.id]=g);
+  const o=document.createElement('div');o.className='mkov';
+  o.innerHTML=`<div class="mkdlg" role="dialog">
+    <div class="mkdh"><div class="mkav" style="background:${esc(mkColor(G[(ctx&&ctx.group)||c.group]))}">${esc(mkInit(c))}</div>
+      <div><b>הודעה ל${esc(mkName(c))}</b><span class="mksub" dir="ltr" style="justify-content:flex-end">${esc(c.phone||'')}</span></div>
+      <button class="x2" id="mkx" title="סגירה">✕</button></div>
+    <div class="mkdb">
+      <div class="mklbl"><span>נוסח</span><span><button class="mkx" id="mksave" title="לשמור את הנוסח שכאן">💾 לשמור נוסח</button><button class="mkx" id="mkdel" title="למחוק את הנוסח שנבחר">🗑️</button></span></div>
+      <div class="mktpl" id="mkt"></div>
+      <div class="mklbl"><span>הטקסט</span><span style="font-weight:600">{שם} וכו׳ מתמלאים לבד</span></div>
+      <textarea id="mkta" rows="3"></textarea>
+      <div class="mkph">${MK_PH.map(([k,l])=>`<button data-ph="${esc(k)}">+ ${esc(l)}</button>`).join('')}</div>
+      <div class="mklbl"><span>כך זה ייצא</span><span id="mklen"></span></div>
+      <div class="mkphone"><div class="mkbubble" id="mkpv"></div><div class="mkmeta" id="mkmeta"></div></div>
+      <div class="mklbl"><span>איך לשלוח</span></div>
+      <div class="mkchan"><button data-c="sms">💬 SMS</button><button data-c="voice">📞 הודעה קולית</button></div>
+      <div class="mksw" id="mklater"><i></i><span>⏰ לשלוח מאוחר יותר</span></div>
+      <div id="mklt" class="mklt hidden">
+        <input type="datetime-local" id="mkdt">
+        <div class="mktpl" style="margin-top:6px">${[['h1','בעוד שעה'],['ev','הערב 20:00'],['tm','מחר 09:00'],['tm2','מחר 20:00']].map(([k,l])=>`<button class="mkchip" data-q="${k}">${l}</button>`).join('')}</div>
+        <div class="mksub" style="margin-top:6px">בשבת, בחג ובשעות הלילה לא נשלח — יידחה לבד לשעה המתאימה הבאה</div></div>
+    </div>
+    <div class="mkdf"><button class="mkbtn gh" id="mkno">לא עכשיו</button><span class="grow"></span><button class="mkbtn" id="mkgo"></button></div></div>`;
   document.body.appendChild(o);
-  const ta=o.querySelector('#mkta'), pv=o.querySelector('#mkpv'), dt=o.querySelector('#mkdt');
-  const paintT=()=>{o.querySelector('#mkt').innerHTML=(MKTPL||[]).map(t=>`<button class="chip${t.id===cur.id?' on':''}" data-t="${esc(t.id)}" style="padding:4px 10px">${esc(t.name)}</button>`).join('');
+  const ta=o.querySelector('#mkta'), pv=o.querySelector('#mkpv'), dt=o.querySelector('#mkdt'), go=o.querySelector('#mkgo');
+  const close=()=>o.remove();
+  const paintT=()=>{o.querySelector('#mkt').innerHTML=(MKTPL||[]).map(t=>`<button class="mkchip${t.id===cur.id?' on':''}" data-t="${esc(t.id)}">${esc(t.name)}</button>`).join('')||'<span class="mksub">אין נוסחים שמורים</span>';
     o.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{cur=MKTPL.find(t=>t.id===b.dataset.t)||cur;ta.value=cur.text;paintT();upd();});
     o.querySelector('#mkdel').disabled=!MKTPL.some(t=>t.id===cur.id);};
-  const upd=()=>{pv.textContent=mkFill(ta.value,c,ctx).trim()||'—';
-    const when=later&&dt.value?' · '+mkDTLabel(dt.value):'';
-    o.querySelector('[data-ch="sms"]').textContent=(later?'⏰ ':'💬 ')+'SMS'+when;
-    o.querySelector('[data-ch="voice"]').textContent=(later?'⏰ ':'📞 ')+'קולית'+when;};
+  const upd=()=>{const txt=mkFill(ta.value,c,ctx).trim();pv.textContent=txt||'—';pv.classList.toggle('v',ch==='voice');
+    o.querySelector('#mklen').textContent=ch==='sms'&&txt?txt.length+' תווים'+(txt.length>70?' · '+Math.ceil(txt.length/67)+' הודעות':''):'';
+    o.querySelector('#mkmeta').textContent=ch==='sms'?'💬 SMS':'📞 תוקרא בשיחה';
+    o.querySelectorAll('.mkchan button').forEach(b=>b.classList.toggle('on',b.dataset.c===ch));
+    go.innerHTML=later?(dt.value?'⏰ לתזמן · '+esc(mkDTLabel(dt.value)):'⏰ לבחור מתי'):(ch==='sms'?'💬 לשלוח SMS עכשיו':'📞 להתקשר עכשיו');};
   ta.value=cur.text; paintT(); upd();
   ta.oninput=upd;
+  o.querySelectorAll('.mkchan button').forEach(b=>b.onclick=()=>{ch=b.dataset.c;try{localStorage.setItem('mk_ch',ch);}catch(e){}upd();});
   o.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{const t='{'+b.dataset.ph+'}',a=ta.selectionStart??ta.value.length,e=ta.selectionEnd??a;
     ta.value=ta.value.slice(0,a)+t+ta.value.slice(e);ta.focus();ta.setSelectionRange(a+t.length,a+t.length);upd();});
   o.querySelector('#mksave').onclick=async()=>{
@@ -1828,16 +1881,16 @@ async function mkNotify(c,tplId,ctx){
     else if(b.dataset.q==='ev'){d.setHours(20,0,0,0);if(d<new Date())d.setDate(d.getDate()+1);}
     else{d.setDate(d.getDate()+1);d.setHours(b.dataset.q==='tm'?9:20,0,0,0);}
     dt.value=mkLocalDT(d);upd();});
-  o.querySelector('.cno').onclick=()=>o.remove();
-  o.onclick=e=>{if(e.target===o)o.remove();};
-  // "שלוחצים על שליחת הודעה שלא יחכה" — החלון נסגר מיד וההודעה יוצאת ברקע. Ctrl+Enter = SMS
-  o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{
+  o.querySelector('#mkno').onclick=close; o.querySelector('#mkx').onclick=close;
+  o.onclick=e=>{if(e.target===o)close();};
+  // "שלוחצים על שליחת הודעה שלא יחכה" — החלון נסגר מיד וההודעה יוצאת ברקע. Ctrl+Enter = שליחה
+  go.onclick=()=>{
     const text=mkFill(ta.value,c,ctx).trim(); if(!text)return toast('חסר טקסט');
+    if(ch==='sms'&&c.phone&&!/^(05|9725)/.test(mkDigits(c.phone)))return uiAlert('SMS רק לנייד — זה מספר קווי. אפשר לבחור "הודעה קולית".');
     if(later&&!dt.value)return toast('לבחור מתי לשלוח');
-    o.remove(); mkSend(c,text,b.dataset.ch,later?dt.value:'');
-  });
-  ta.onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();o.querySelector('[data-ch="sms"]').click();}
-    if(e.key==='Escape')o.remove();};
+    close(); mkSend(c,text,ch,later?dt.value:'');
+  };
+  o.onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();go.click();} if(e.key==='Escape')close();};
   setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
 }
 async function mkSend(c,text,ch,when){
@@ -1868,16 +1921,17 @@ async function mkSchedCount(){const b=document.getElementById('mksched');if(!b)r
 async function mkSchedOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const r=await api('GET','/api/mikveh/scheduled'); const rows=(r&&r.rows)||[];
-  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>⏰ הודעות מתוזמנות</h2>
-    ${rows.length?rows.map(x=>`<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0" data-j="${x.id}">
-      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(x.name||'')} <span dir="ltr" style="color:var(--muted);font-weight:600">${esc(x.phone||'')}</span></b>
-        <span class="pill py">${x.channel==='sms'?'💬 SMS':'📞 קולית'} · ${esc(mkDTLabel(String(x.send_at||'').replace(' ','T')))}</span></div>
-      <div style="margin:6px 0;white-space:pre-wrap">${esc(x.text||'')}</div>
-      <div style="display:flex;gap:6px"><button class="btn sm" data-a="now">▶️ לשלוח עכשיו</button><button class="btn sm ghost" data-a="cancel">✕ לבטל</button></div></div>`).join('')
-      :'<div class="empty">אין הודעות מתוזמנות</div>'}`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">⏰</div><div><h2>הודעות מתוזמנות</h2><div class="mksub">${rows.length} מחכות לשעה שלהן</div></div></div>
+    ${rows.length?`<div class="mklist">${rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr;cursor:default" data-j="${x.id}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b>${esc(x.name||'')} <span dir="ltr" class="mksub" style="display:inline">${esc(x.phone||'')}</span></b>
+        <span class="mktag ok">${x.channel==='sms'?'💬 SMS':'📞 קולית'} · ${esc(mkDTLabel(String(x.send_at||'').replace(' ','T')))}</span></div>
+      <div class="mkphone" style="margin:2px 0"><div class="mkbubble${x.channel==='sms'?'':' v'}">${esc(x.text||'')}</div></div>
+      <div style="display:flex;gap:8px"><button class="mkbtn" data-a="now">▶️ לשלוח עכשיו</button><button class="mkbtn gh" data-a="cancel">✕ לבטל</button></div></div>`).join('')}</div>`
+      :'<div class="mkempty"><b>✓</b>אין הודעות מתוזמנות</div>'}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-j] [data-a]').forEach(b=>b.onclick=async()=>{const jid=b.closest('[data-j]').dataset.j,a=b.dataset.a;
     if(a==='cancel'&&!await uiConfirm('לבטל את ההודעה?','✕ לבטל','לא'))return;
+    b.disabled=true; b.innerHTML='<span class="mkspin"></span>';
     const x=await api('POST','/api/mikveh/scheduled/'+jid+'/'+a,{});
     if(!x||!x.ok)uiAlert((x&&x.error)||'שגיאה'); else toast(a==='now'?'▶️ יוצאת עכשיו':'ההודעה בוטלה');
     mkSchedOpen(); mkSchedCount();});

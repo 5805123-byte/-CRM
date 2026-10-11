@@ -513,6 +513,81 @@
   .avtable th{background:var(--gold-soft);color:var(--gold);font-weight:800}
   .avtable tr:nth-child(even) td{background:var(--ground)}
   @media (max-width:600px){.mkhide{display:none}}      /* מקווה בטלפון — הפרטים האלה בכרטיס הלקוח */
+  /* 🛁 לשונית המקווה — מאיר: "עיצוב יותר מתקדם (אל תשנה עיצוב במקומות אחרים)". הכל תחת mk- בלבד */
+  @keyframes mkspin{to{transform:rotate(360deg)}}
+  @keyframes mkshim{0%{background-position:-300px 0}100%{background-position:300px 0}}
+  @keyframes mkpop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+  @keyframes mkup{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+  .mkspin{display:inline-block;width:16px;height:16px;border:2.5px solid currentColor;border-inline-end-color:transparent;border-radius:50%;animation:mkspin .7s linear infinite;vertical-align:-3px;flex:0 0 auto}
+  .mkspin.lg{width:34px;height:34px;border-width:3.5px}
+  .mkw{max-width:1100px;margin:0 auto}
+  .mkhero{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(135deg,#3B357A,#5a52a8);color:#fff;border-radius:18px;padding:16px 18px;margin:10px 0 12px;box-shadow:var(--shadow)}
+  .mkhero h2{margin:0;font-size:1.25rem;flex:1 1 auto}.mkhero small{display:block;opacity:.8;font-weight:500;font-size:.8rem;margin-top:2px}
+  .mkstat{background:rgba(255,255,255,.14);border-radius:12px;padding:6px 12px;text-align:center;min-width:72px}.mkstat b{display:block;font-size:1.15rem}.mkstat span{font-size:.72rem;opacity:.85}
+  .mkibtn{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:11px;padding:8px 12px;font:inherit;font-weight:700;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+  .mkibtn:hover{background:rgba(255,255,255,.26)}
+  .mktools{position:sticky;top:0;z-index:5;background:var(--ground);padding:6px 0 8px}
+  .mksearch{position:relative}.mksearch input{width:100%;font:inherit;font-size:1.02rem;padding:13px 44px 13px 14px;border:1.5px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s}
+  .mksearch input:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}.mksearch::before{content:"🔍";position:absolute;inset-inline-start:14px;top:50%;transform:translateY(-50%);opacity:.6}
+  .mkchips{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;scrollbar-width:thin}
+  .mkchip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:6px 12px;font:inherit;font-size:.83rem;font-weight:600;cursor:pointer;white-space:nowrap}
+  .mkchip.on{background:var(--accent);border-color:var(--accent);color:var(--card)}.mkchip i{font-style:normal;opacity:.7;font-weight:700}
+  .mkdot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;background:var(--muted);box-shadow:0 0 0 2px rgba(255,255,255,.6)}
+  .mkbar2{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;color:var(--muted);font-size:.84rem}
+  .mkseg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px}
+  .mkseg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:.8rem;font-weight:700;padding:5px 10px;border-radius:8px;cursor:pointer}.mkseg button.on{background:var(--accent-soft);color:var(--accent)}
+  .mklist{display:flex;flex-direction:column;gap:6px;margin:6px 0 30px}
+  .mkrow{position:relative;display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}
+  .mkrow:hover{box-shadow:var(--shadow);border-color:var(--accent-soft);transform:translateY(-1px)}
+  .mkav{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#fff;font-size:.95rem;background:var(--accent);flex:0 0 auto;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .mkav.lg{width:60px;height:60px;font-size:1.3rem}
+  .mknm{min-width:0}.mknm b{display:block;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mksub{color:var(--muted);font-size:.8rem;display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}.mksub a{color:var(--accent);text-decoration:none;font-weight:700}
+  .mkgb{display:inline-flex;align-items:center;gap:6px;background:var(--ground);border:1px solid var(--line);border-radius:99px;padding:4px 10px;font-size:.8rem;font-weight:700;white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+  .mktag{display:inline-block;font-size:.7rem;font-weight:800;border-radius:6px;padding:2px 7px}.mktag.ok{background:var(--yes-soft);color:var(--yes)}.mktag.bad{background:var(--no-soft);color:var(--no)}.mktag.mu{background:var(--ground);color:var(--muted)}
+  .mkact{display:flex;gap:6px}.mkround{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--accent);display:grid;place-items:center;cursor:pointer;font-size:1rem}
+  .mkround:hover{background:var(--accent);color:var(--card);border-color:var(--accent)}.mkround:disabled{opacity:.35;cursor:default;background:var(--card);color:var(--muted)}
+  .mkrow .mkbusy{position:absolute;inset:0;border-radius:14px;background:color-mix(in srgb,var(--card) 82%,transparent);display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;color:var(--accent)}
+  .mkskel{height:64px;border-radius:14px;background:linear-gradient(90deg,var(--card) 0,var(--ground) 50%,var(--card) 100%);background-size:600px 100%;animation:mkshim 1.2s linear infinite;border:1px solid var(--line)}
+  .mkempty{text-align:center;color:var(--muted);padding:50px 10px}.mkempty b{display:block;font-size:2.2rem;margin-bottom:6px}
+  @media (max-width:640px){.mkrow{grid-template-columns:auto 1fr auto;gap:10px}.mkrow .mkgcol{grid-column:2/4;grid-row:2}.mkhero{padding:14px}.mkstat{min-width:60px}}
+  /* כרטיס לקוח */
+  .mkhead{display:flex;gap:14px;align-items:center;margin:4px 0 14px}.mkhead h2{margin:0;font-size:1.3rem}.mkhead .mksub{font-size:.85rem}
+  .mktiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+  .mktile{background:var(--ground);border:1px solid var(--line);border-radius:12px;padding:9px 11px}.mktile span{display:block;color:var(--muted);font-size:.74rem;font-weight:700}.mktile b{font-size:.98rem}
+  .mktile.bad{background:var(--no-soft);border-color:transparent}.mktile.bad b{color:var(--no)}.mktile.ok b{color:var(--yes)}
+  .mksec{font-weight:800;margin:14px 0 8px;display:flex;align-items:center;gap:8px}.mksec small{color:var(--muted);font-weight:600}
+  .mkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px}
+  .mkg{position:relative;text-align:start;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 12px 10px 10px;font:inherit;font-size:.86rem;font-weight:700;cursor:pointer;display:flex;gap:8px;align-items:center;transition:border-color .12s,background .12s}
+  .mkg:hover{border-color:var(--accent)}.mkg.cur{border-color:var(--accent);background:var(--accent-soft);cursor:default}.mkg.cur::after{content:"נוכחית";position:absolute;top:-8px;inset-inline-end:8px;background:var(--accent);color:var(--card);font-size:.62rem;padding:1px 6px;border-radius:6px}
+  .mkg.pick{border-color:var(--gold);background:var(--gold-soft)}.mkg:disabled:not(.cur){opacity:.45;cursor:default}
+  .mkconf{position:sticky;bottom:0;margin:14px -4px 0;background:var(--card);border:1.5px solid var(--accent);border-radius:14px;padding:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow);animation:mkup .18s ease-out}
+  .mkconf .t{flex:1 1 200px;font-weight:700}.mkconf.ok{border-color:var(--yes)}.mkconf.err{border-color:var(--no)}
+  .mkcheck{width:30px;height:30px;border-radius:50%;background:var(--yes);color:#fff;display:grid;place-items:center;font-weight:900;animation:mkpop .35s ease-out;flex:0 0 auto}
+  .mkbtn{border:0;border-radius:11px;padding:10px 16px;font:inherit;font-weight:800;cursor:pointer;background:var(--accent);color:var(--card);display:inline-flex;align-items:center;gap:8px}
+  .mkbtn.gh{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}.mkbtn:disabled{opacity:.6;cursor:default}
+  .mkbtn.ok{background:var(--yes)}
+  /* חלון ההודעה */
+  .mkov{position:fixed;inset:0;z-index:90;background:rgba(20,16,40,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:14px}
+  .mkdlg{background:var(--card);color:var(--ink);width:100%;max-width:520px;max-height:94vh;overflow-y:auto;border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.35);animation:mkup .2s ease-out}
+  .mkdh{display:flex;gap:12px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:1}.mkdh b{display:block;font-size:1.05rem}
+  .mkdh .x2{margin-inline-start:auto;border:0;background:var(--ground);color:var(--muted);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:1rem}
+  .mkdb{padding:14px 18px}.mklbl{font-size:.76rem;font-weight:800;color:var(--muted);margin:10px 0 6px;display:flex;justify-content:space-between;align-items:center}
+  .mkdb textarea{width:100%;font:inherit;font-size:.98rem;line-height:1.5;border:1.5px solid var(--line);border-radius:14px;padding:11px 13px;background:var(--ground);color:var(--ink);resize:vertical;min-height:84px;outline:none}
+  .mkdb textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .mkph{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.mkph button{border:1px dashed var(--line);background:transparent;color:var(--accent);border-radius:8px;padding:3px 8px;font:inherit;font-size:.74rem;font-weight:700;cursor:pointer}
+  .mkphone{background:var(--ground);border-radius:16px;padding:12px;margin-top:4px}
+  .mkbubble{background:#3B357A;color:#fff;border-radius:16px 16px 4px 16px;padding:10px 13px;white-space:pre-wrap;line-height:1.5;max-width:92%;margin-inline-start:auto;font-weight:500;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  .mkbubble.v{background:var(--gold-soft);color:var(--ink);border-radius:16px}.mkmeta{font-size:.72rem;color:var(--muted);text-align:end;margin-top:4px}
+  .mksw{display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer;font-weight:700;user-select:none}
+  .mksw i{width:40px;height:23px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:0 0 auto}.mksw i::after{content:"";position:absolute;top:3px;inset-inline-start:3px;width:17px;height:17px;border-radius:50%;background:#fff;transition:inset-inline-start .15s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .mksw.on i{background:var(--accent)}.mksw.on i::after{inset-inline-start:20px}
+  .mklt{background:var(--gold-soft);border-radius:14px;padding:10px;margin-top:8px}.mklt input{width:100%;font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+  .mkdf{display:flex;gap:8px;align-items:center;padding:12px 18px 16px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--card);flex-wrap:wrap}
+  .mkdf .grow{flex:1 1 auto}.mktpl{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+  .mkx{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:.85rem;padding:2px 6px;border-radius:6px}.mkx:hover{background:var(--ground);color:var(--ink)}
+  .mkchan{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mkchan button{border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px;font:inherit;font-weight:800;cursor:pointer}
+  .mkchan button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
   @media (max-width:600px){.zml{flex-wrap:wrap}.zml .zlab{flex-basis:100%!important}}   /* זמני תפילות בטלפון — השם בשורה מלאה */
   .avsort-th{cursor:pointer;user-select:none}
   .avsort-th:hover{background:var(--gold)}
