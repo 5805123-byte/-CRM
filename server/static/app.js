@@ -1237,7 +1237,7 @@ let ROLE='admin', AUTH_ON=false, _loginShown=false;
 // מאיר: "בשביל הגבאים שייפתח להם הדף של הקהילה ושל פרנס יום… באותה סיסמא" — /gabbai
 const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':(location.pathname==='/gabbai'?'gabbai':'admin'));
 const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
-const ROLE_TABS={comm:['comm','zmanim','sched'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','zmanim','sched']};
+const ROLE_TABS={comm:['comm','sched'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','sched']};
 const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};
 const ROLE_ONLY={comm:'הקהילה',parnes:'פרנס יום והקוויטל',gabbai:'הקהילה, פרנס יום והקוויטל'};
 function showLogin(msg){
@@ -1565,7 +1565,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','zmanim','sched'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','sched'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1615,7 +1615,6 @@ function render(){
   if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
   if(tab==='mikveh') return renderMikveh();
-  if(tab==='zmanim') return renderZmanim();
   if(tab==='sched') return renderSched();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
@@ -2025,7 +2024,7 @@ function renderSched(){
 let ZM=null, zmSub='list', zmBusy=false;
 const ZM_KIND={shabbat:['שבת','py'],chag:['חג','ishz'],fast:['צום','fresh'],custom:['מיוחד','occ'],weekday:['ימי חול','reg']};
 async function zmLoad(){zmBusy=true;const r=await api('GET','/api/zmanim?days=120');zmBusy=false;
-  ZM=r&&r.ok?r:{ok:false,error:(r&&r.error)||'שגיאה בטעינה'};if(tab==='zmanim')renderZmanim();}
+  ZM=r&&r.ok?r:{ok:false,error:(r&&r.error)||'שגיאה בטעינה'};if(tab==='comm'&&cmSub==='zmanim')renderZmanim();}
 // אותו חישוב כמו בשרת — כדי לראות את השעה תוך כדי הקלדה
 const ZM_BASE={'נץ':'n','הנץ':'n','זריחה':'n','שקיעה':'s','השקיעה':'s','הדלקה':'c','הדלקת נרות':'c','צאת':'t','צאת הכוכבים':'t'};
 // דקות מחצות לביטוי יחסי ("שקיעה-20"), או null
@@ -2060,8 +2059,9 @@ const zmDates=o=>{const d=o.days||[];if(!d.length)return '';const f=d[0],l=d[d.l
   const hb=x=>(x.heb||'').replace(/\s*תש[א-ת"״׳]+$/,'');
   return d.length===1?`${f.name} · ${hb(f)} · ${g(f)}`:`${f.name}–${l.name} · ${hb(f)} – ${hb(l)} · \u2066${g(f)}–${g(l)}\u2069`;};
 function renderZmanim(){
-  chips.innerHTML=[['list','📅 שבתות וחגים'],['week','🗓️ ימי חול'],['phone','📞 שלוחה בטלפון והגדרות']].map(([k,l])=>`<button class="chip ${zmSub===k?'on':''}" data-k="${k}">${l}</button>`).join('');
-  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{zmSub=c.dataset.k;renderZmanim();});
+  chips.innerHTML=`<button class="chip" id="zmback">← לרשימת הקהילה</button>`+[['list','📅 שבתות וחגים'],['week','🗓️ ימי חול'],['phone','📞 שלוחה בטלפון והגדרות']].map(([k,l])=>`<button class="chip ${zmSub===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{zmSub=c.dataset.k;renderZmanim();});
+  document.getElementById('zmback').onclick=()=>{cmSub='list';render();};
   if(ZM===null){view.innerHTML='<div class="empty">⏳ טוען…</div>';if(!zmBusy)zmLoad();return;}
   if(!ZM.ok){view.innerHTML=`<div class="empty">⚠️ ${esc(ZM.error)}</div>`;return;}
   if(zmSub==='week')return zmEdit(ZM.weekday,true);
@@ -13191,6 +13191,7 @@ function renderComm(){
   if(cmSub==='ledger') return renderCommLedger();
   if(cmSub==='cgifts') return renderCommGifts();
   if(cmSub==='jobs') return renderCommJobs();
+  if(cmSub==='zmanim') return renderZmanim();      // מאיר: "זמני תפילות תכניס בתוך קהילה"
   const all=MEMBERS;
   const chk=m=>!!m.pending;
   const F=[['','הכל',all.length],
@@ -13220,6 +13221,7 @@ function renderComm(){
       <button class="btn" id="cm_gifts" style="flex:2">💵 תרומות הקהילה</button>
       <button class="btn" id="cm_natan" style="flex:2" title="קופה נפרדת — התחייבויות, תרומות ושליחה, בלי לערב עם הקהילה">🎁 קופת נתן תתן</button>
       <button class="btn" id="cm_ledger" style="flex:2">📒 הכנסות והוצאות</button>
+      <button class="btn" id="cm_zm" style="flex:2">🕰️ זמני תפילות</button>
       <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
     </div>
     ${smSectionHTML()}
@@ -13272,6 +13274,7 @@ function renderComm(){
   // מאיר: "נתן תתן צריך להיות תחת לשונית קהילה… גם תרומות וגם כל מה שיש בקהילה, אבל לא לערב את התרומות"
   document.getElementById('cm_natan').onclick=()=>{cmSub='debts';cdFund='natan';cdData=null;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;render();window.scrollTo(0,0);};
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_zm').onclick=()=>{cmSub='zmanim';render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
   const nqb=document.getElementById('cm_nq'); if(nqb)nqb.onclick=()=>{cmFlt='nq';render();window.scrollTo(0,0);};
