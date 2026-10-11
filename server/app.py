@@ -18470,7 +18470,8 @@ class H(BaseHTTPRequestHandler):
                 con.commit()
             finally:
                 con.close()
-            threading.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+            import threading as _thr        # do_POST מייבא threading מקומית במקום אחר — בלי זה: UnboundLocalError (502)
+            _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
