@@ -6201,6 +6201,42 @@ function wireReconPend(d,body){
     };
   });
 }
+// 🔗 מאיר: "מרדכי ליפשיץ ועדן בידני ואהוב האופק — תורמים של הכולל, והם נמצאים בנדרים פלוס… לסנכרן
+// את התרומות שלהם בשמות התורמים". מקשרים את המשלם בנדרים פלוס (החשבון של הכולל) לכרטיס — כל
+// התשלומים שלו נכנסים כתרומות ב-₪, וגם כל תשלום חדש בסנכרון. הם יוצאים מרשימת התרומות של הקהילה.
+async function ndDonorBox(d){
+  const box=document.getElementById('ndlinkbox'); if(!box)return;
+  const r=await api('GET','/api/nddonor/'+d.id); if(!r||!r.ok){box.innerHTML='';return;}
+  const money=a=>'₪'+Math.round(+a||0).toLocaleString('en-US');
+  const C=r.candidates||[], linked=C.filter(c=>c.linked), free=C.filter(c=>!c.linked);
+  box.innerHTML=`<div class="k" style="font-weight:800;margin-bottom:6px">🔗 נדרים פלוס (החשבון של הכולל)</div>
+    ${r.links.length?`<div class="hintxt" style="margin-bottom:6px">✓ מקושר — <b>${r.n}</b> תרומות נכנסו מנדרים פלוס (${money(r.sum)}), וכל תשלום חדש ייכנס לבד</div>
+      ${linked.map(c=>`<div class="rf"><div class="k">${esc(c.name)}</div><div class="v">${c.n} תשלומים · ${money(c.sum)} · אחרון ${esc(c.last)}</div></div>`).join('')}
+      <button class="btn sm ghost" id="ndunlink" style="margin-top:6px">✕ לנתק מנדרים פלוס</button>`:''}
+    ${free.length?`<div class="hintxt" style="margin:8px 0 4px">${r.links.length?'עוד משלמים שנראים כמוהו:':'נמצאו בנדרים פלוס — לבחור את מי לקשר לכרטיס הזה:'}</div>
+      ${free.map((c,i)=>`<label class="rf" style="cursor:pointer;align-items:center"><div class="k"><input type="checkbox" data-i="${i}" ${!r.links.length&&c.by.includes('טלפון')&&!c.other_donor?'checked':''}${c.other_donor?' disabled':''}> ${esc(c.name)}</div>
+        <div class="v">${c.n} תשלומים · ${money(c.sum)} · אחרון ${esc(c.last)} · לפי ${esc(c.by.join(' + '))}${c.phones.length?' · <span dir="ltr">'+esc(c.phones.join(', '))+'</span>':''}${c.other_donor?' · <b>מקושר לכרטיס #'+c.other_donor+'</b>':''}</div></label>`).join('')}
+      <button class="btn sm" id="ndlink" style="margin-top:6px">🔗 לקשר ולהכניס את התרומות</button>`
+    :(r.links.length?'':'<div class="hintxt">לא נמצא בנדרים פלוס משלם עם אותו שם או טלפון. אפשר להוסיף לו טלפון או שם נוסף (כינוי) ולבדוק שוב.</div>')}`;
+  const lk=document.getElementById('ndlink');
+  if(lk)lk.onclick=async()=>{
+    const pick=[...box.querySelectorAll('input[data-i]:checked')].map(x=>free[+x.dataset.i]);
+    if(!pick.length)return toast('לסמן את המשלם');
+    lk.disabled=true; lk.textContent='⏳ מקשר…';
+    let n=0;
+    for(const c of pick){const x=await api('POST','/api/nddonor/'+d.id+'/link',{keys:c.keys,label:c.name});
+      if(!x||!x.ok){lk.disabled=false;lk.textContent='🔗 לקשר ולהכניס את התרומות';return uiAlert((x&&x.error)||'שגיאה');} n+=x.imported||0;}
+    toast('✓ קושר · '+n+' תרומות נכנסו בשקלים');
+    await load(); const nd=DB.find(x=>x.id===d.id)||d; openDonor(nd,'info');
+  };
+  const ul=document.getElementById('ndunlink');
+  if(ul)ul.onclick=async()=>{
+    if(!await uiConfirm('לנתק את הכרטיס מנדרים פלוס?','✕ לנתק','ביטול'))return;
+    const rm=await uiConfirm('למחוק גם את '+r.n+' התרומות שנכנסו מנדרים פלוס לכרטיס הזה?','🗑 למחוק אותן','להשאיר');
+    await api('POST','/api/nddonor/'+d.id+'/unlink',{remove_donations:rm?1:0});
+    toast('נותק'); await load(); const nd=DB.find(x=>x.id===d.id)||d; openDonor(nd,'info');
+  };
+}
 function cardInfo(d,body){
   // כל פרטי הקשר של התורם במקום אחד — כתובת, טלפונים, מיילים, שם לועזי והערות
   const f=(k,v,dir)=>v?`<div class="rf"><div class="k">${k}</div><div class="v" ${dir?'dir="ltr"':''}>${esc(v)}</div></div>`:'';
@@ -6220,6 +6256,7 @@ function cardInfo(d,body){
     ${f('סטטוס תשלום',d.pay_status)}${d.created?f('נוסף למערכת',d.created+(d.source?(' · דרך '+d.source):'')):''}
     ${d.months?`<div class="rf" style="flex-direction:column;gap:6px"><div class="k">מפת חודשים${gaps(d.months,d).length?' · <b style="color:var(--no)">'+gaps(d.months,d).length+' לא עברו</b>':''}</div>${monthGrid(d.months,d)}</div>`:''}`;
   renderPhones(d); renderEmails(d);
+  if(ROLE==='admin'||!ROLE_TABS[ROLE]){body.insertAdjacentHTML('beforeend','<div class="sec" id="ndlinkbox"><div class="hintxt">⏳ בודק בנדרים פלוס…</div></div>');ndDonorBox(d);}
   body.insertAdjacentHTML('beforeend',
     '<div class="sec" style="text-align:center"><button class="btn ghost delbig delcard" style="width:100%">🗑 מחיקת התורם לצמיתות</button></div>');
   wireDelete(d,body);

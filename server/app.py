@@ -606,6 +606,14 @@ def ensure_schema():
     # מאיר: "שאל תבלבל ואל תערב את נתן תתן עם הקהילה" — לאיזו קופה שייכת ההודעה ('' = הקהילה, 'natan')
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN fund TEXT")
     except Exception: pass
+    # מאיר: "מרדכי ליפשיץ ועדן בידני ואהוב האופק — תורמים של הכולל, והם בנדרים פלוס… לסנכרן את
+    # התרומות שלהם בשמות התורמים". קישור משלם בנדרים פלוס (טלפון / הו"ק / שם) לכרטיס תורם;
+    # התשלומים שלו נכנסים כתרומות ב-₪ בכרטיס (tid='ND'+מזהה העסקה), ולא נספרים בקהילה
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS nd_dlink(key TEXT PRIMARY KEY, donor_id INTEGER, label TEXT, at TEXT)")
+    except Exception: pass
+    try: con.execute("ALTER TABLE nd_tx ADD COLUMN donor_id INTEGER")
+    except Exception: pass
     # מאיר: "זה רק היה דוגמא, תמחק את הנתונים האלה, מכניסים הכל מחדש" — פעם אחת: לוחות ותבניות שנשמרו עד עכשיו
     try:
         if not con.execute("SELECT 1 FROM app_kv WHERE k='zm_reset_1'").fetchone():
@@ -13527,6 +13535,9 @@ def member_nd(con, mid):
         mo = t.get('mosad') or ''
         t['fund'] = '' if not mo else ('natan' if mo == nm_ else 'other')
         t['acct'] = '' if not mo else (anames.get(mo) or ('נתן תתן' if mo == nm_ else 'מוסד ' + mo))
+        if t.get('donor_id') and not mo:           # תרומה לכולל — רשומה בכרטיס התורם, לא של הקהילה
+            t['fund'], t['acct'] = 'donor', 'תרומה לכולל (כרטיס תורם)'
+
     for k in kevas:
         mo = k.get('mosad') or ''
         k['acct'] = '' if not mo else (anames.get(mo) or ('נתן תתן' if mo == nm_ else 'מוסד ' + mo))
@@ -16977,6 +16988,19 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
                                     'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
                                     'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
+        m = re.match(r'/api/nddonor/(\d+)$', self.path.split('?')[0])
+        if m:
+            # 🔗 כרטיס תורם ↔ המשלם בנדרים פלוס (החשבון של הכולל)
+            did = int(m.group(1))
+            con = db()
+            try:
+                links = [dict(r) for r in con.execute("SELECT key, label, at FROM nd_dlink WHERE donor_id=? ORDER BY key", (did,))]
+                cands = nd_donor_candidates(con, did)
+                n = con.execute("SELECT COUNT(*), COALESCE(SUM(CAST(amount AS REAL)),0) FROM donations WHERE donor_id=? AND tid LIKE 'ND%'", (did,)).fetchone()
+                seed = kv_get(con, 'nd_dlink_seed_1', '')
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'links': links, 'candidates': cands, 'n': n[0], 'sum': round(n[1] or 0, 2), 'seed': seed})
         if self.path.split('?')[0] == '/api/zmanim':
             # 🕰️ לשונית זמני התפילות — השבתות והחגים הקרובים, ימי חול, תבניות, הגדרות
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -17204,7 +17228,7 @@ class H(BaseHTTPRequestHandler):
                 mw = (" AND COALESCE(t.mosad,'')=?" if gf else " AND (COALESCE(t.mosad,'')='' OR ?='')")
                 for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
-                                     "WHERE COALESCE(t.amount,0)>=10" + (mw if gf else " AND COALESCE(t.mosad,'')=''") + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
+                                     "WHERE COALESCE(t.amount,0)>=10 AND t.donor_id IS NULL" + (mw if gf else " AND COALESCE(t.mosad,'')=''") + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
                                      ((nm or '-',) if gf else ())):
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
                     # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
@@ -17394,7 +17418,7 @@ class H(BaseHTTPRequestHandler):
                         x['groupe'] = x['groupe'] or (k['groupe'] or '')
                         x['bad'] = x['bad'] or (1 if (k['error'] or '').strip() else 0)
                 for t in con.execute("SELECT member_id, SUM(c) c, SUM(s) s, MAX(last) last FROM ("
-                                     "SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 AND COALESCE(mosad,'')='' GROUP BY member_id "
+                                     "SELECT member_id, COUNT(*) c, SUM(amount) s, MAX(iso) last FROM nd_tx WHERE member_id IS NOT NULL AND amount>0 AND COALESCE(mosad,'')='' AND donor_id IS NULL GROUP BY member_id "
                                      "UNION ALL SELECT member_id, COUNT(*), SUM(amount), MAX(date) FROM cm_don WHERE COALESCE(fund,'')='' GROUP BY member_id) GROUP BY member_id"):
                     x = kv.setdefault(t['member_id'], {'amt': 0.0, 'n': 0, 'groupe': '', 'bad': 0})
                     x.update(tx=t['c'], tx_sum=round(t['s'] or 0, 2), tx_last=(t['last'] or '')[:10])
@@ -18568,6 +18592,38 @@ class H(BaseHTTPRequestHandler):
             import yemot as _ym
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
             return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)})
+        m = re.match(r'/api/nddonor/(\d+)/(link|unlink)$', self.path)
+        if m:
+            did, act = int(m.group(1)), m.group(2)
+            con = db()
+            try:
+                if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                    return self._send(200, {'ok': False, 'error': 'אין כרטיס כזה'})
+                if act == 'link':
+                    keys = [str(k) for k in (b.get('keys') or []) if _nd_key_ok(str(k))][:20]
+                    if not keys:
+                        return self._send(200, {'ok': False, 'error': 'לא נבחר משלם'})
+                    for k in keys:
+                        ow = con.execute("SELECT donor_id FROM nd_dlink WHERE key=?", (k,)).fetchone()
+                        if ow and ow['donor_id'] != did:
+                            return self._send(200, {'ok': False, 'error': 'המשלם הזה כבר מקושר לכרטיס אחר (#%d)' % ow['donor_id']})
+                        con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)",
+                                    (k, did, str(b.get('label') or '')[:80], now_iso()))
+                    n = nd_donor_import(con, did)
+                    con.commit()
+                    bump_data()
+                    return self._send(200, {'ok': True, 'imported': n})
+                # ניתוק: הקישור יורד; התרומות שנכנסו מנדרים פלוס — נמחקות רק אם ביקשו
+                con.execute("DELETE FROM nd_dlink WHERE donor_id=?", (did,))
+                con.execute("UPDATE nd_tx SET donor_id=NULL WHERE donor_id=?", (did,))
+                rm = 0
+                if b.get('remove_donations'):
+                    rm = con.execute("DELETE FROM donations WHERE donor_id=? AND tid LIKE 'ND%'", (did,)).rowcount
+                con.commit()
+                bump_data()
+                return self._send(200, {'ok': True, 'removed': rm})
+            finally:
+                con.close()
         if self.path == '/api/zmanim/save':
             key = str(b.get('key') or '').strip()[:120]
             if not re.fullmatch(r'(shabbat:\d{4}-\d{2}-\d{2}|chag:\d{4}-\d{2}-\d{2}:.{1,60}|custom:\d+|weekday)', key):
@@ -23145,6 +23201,120 @@ def _nd_iso(t):
     return '%s-%02d-%02d %02d:%s:%s' % (m.group(3), int(m.group(2)), int(m.group(1)), int(m.group(4) or 0), m.group(5) or '00', m.group(6) or '00')
 
 
+# ---------- 🔗 תורמי הכולל בנדרים פלוס ----------
+
+def _nd_key_ok(k):
+    return bool(re.fullmatch(r'(phone:\d{9,12}|keva:[\w-]{1,30}|name:.{2,80})', k or ''))
+
+
+def nd_donor_candidates(con, did):
+    """מי בנדרים פלוס (החשבון של הכולל) נראה כמו התורם הזה — לפי טלפון או שם."""
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return []
+    phs = set(_phones_of(d['phone']))
+    names = [((d['first'] or '') + ' ' + (d['last'] or '')).strip(), d['business'] or '']
+    names += [x.strip() for x in re.split(r'[,;|\n]', d['aliases'] or '') if x.strip()]
+    toks = [set(_nd_toks(n)) for n in names if _nd_toks(n)]
+    linked = {r['key'] for r in con.execute("SELECT key FROM nd_dlink WHERE donor_id=?", (did,))}
+    pay = {}
+    for t in con.execute("SELECT name, phone, keva, amount, iso, donor_id FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0"):
+        w = set(_nd_toks(t['name']))
+        by = ''
+        if t['phone'] and t['phone'] in phs:
+            by = 'טלפון'
+        elif w and any(tk and (tk <= w or w <= tk) and len(tk & w) >= min(2, len(tk)) for tk in toks):
+            by = 'שם'
+        if not by:
+            continue
+        nm = re.sub(r'\s+', ' ', (t['name'] or '').strip())
+        x = pay.setdefault(nm, {'name': nm, 'phones': set(), 'kevas': set(), 'n': 0, 'sum': 0.0, 'last': '', 'by': set(), 'other': 0})
+        x['n'] += 1; x['sum'] += t['amount'] or 0; x['last'] = max(x['last'], t['iso'] or '')
+        x['by'].add(by)
+        if t['phone']:
+            x['phones'].add(t['phone'])
+        kv = str(t['keva'] or '').lstrip('-')
+        if kv:
+            x['kevas'].add(kv)
+        if t['donor_id'] and t['donor_id'] != did:
+            x['other'] = t['donor_id']
+    out = []
+    for x in pay.values():
+        keys = ['name:' + x['name']] + ['phone:' + p for p in sorted(x['phones'])]
+        out.append({'name': x['name'], 'phones': sorted(x['phones']), 'kevas': sorted(x['kevas']), 'n': x['n'],
+                    'sum': round(x['sum'], 2), 'last': x['last'][:10], 'by': sorted(x['by']), 'keys': keys,
+                    'linked': any(k in linked for k in keys), 'other_donor': x['other']})
+    out.sort(key=lambda x: (not x['linked'], 'טלפון' not in x['by'], -x['n']))
+    return out[:20]
+
+
+def _nd_tx_matches(t, keys):
+    kv = str(t['keva'] or '').lstrip('-')
+    nm = re.sub(r'\s+', ' ', (t['name'] or '').strip())
+    return (('phone:' + (t['phone'] or '-')) in keys) or (kv and ('keva:' + kv) in keys) or (('name:' + nm) in keys)
+
+
+def nd_donor_import(con, did=None):
+    """התשלומים בנדרים פלוס (החשבון של הכולל) של התורמים המקושרים → תרומות ב-₪ בכרטיס. בלי כפילויות."""
+    links = {}
+    for r in con.execute("SELECT key, donor_id FROM nd_dlink" + (" WHERE donor_id=?" if did else ""), ((did,) if did else ())):
+        links.setdefault(r['donor_id'], set()).add(r['key'])
+    ins = 0
+    for d_id, keys in links.items():
+        if not con.execute("SELECT 1 FROM donors WHERE id=?", (d_id,)).fetchone():
+            continue
+        for t in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 AND (donor_id IS NULL OR donor_id=?)", (d_id,)).fetchall():
+            if not _nd_tx_matches(t, keys):
+                continue
+            if t['donor_id'] != d_id:
+                con.execute("UPDATE nd_tx SET donor_id=? WHERE id=?", (d_id, t['id']))
+            tid = 'ND' + t['id']
+            if con.execute("SELECT 1 FROM donations WHERE tid=?", (tid,)).fetchone():
+                continue
+            auto = bool(t['keva']) and not str(t['keva']).startswith('-')
+            what = (t['groupe'] or '').strip()
+            cat = 'קבוע' if auto else (what[:60] or 'כללי')
+            note = 'נדרים פלוס' + (' · הו"ק' if auto else '') + (' · ' + what if what and auto else '') + \
+                   (' · ' + (t['comments'] or '').strip()[:80] if (t['comments'] or '').strip() else '') + \
+                   (' · אישור ' + t['conf'] if t['conf'] else '')
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'₪',1)",
+                        (d_id, (t['iso'] or '')[:10], ('%g' % t['amount']), cat, 'נדרים פלוס', note, tid))
+            ins += 1
+    return ins
+
+
+# מאיר ביקש במפורש את שלושת אלה — קישור אוטומטי פעם אחת (שם מלא, התאמה יחידה בלבד). השאר — מהכרטיס
+ND_DONOR_SEED = [('מרדכי', 'ליפשיץ'), ('עדן', 'בידני'), ('אהוב', 'האופק')]
+
+
+def nd_donor_seed(con):
+    if kv_get(con, 'nd_dlink_seed_1', ''):
+        return
+    if not con.execute("SELECT 1 FROM nd_tx WHERE COALESCE(mosad,'')='' LIMIT 1").fetchone():
+        return                                  # עוד לא נמשכה היסטוריה — ננסה בסנכרון הבא
+    rep = []
+    for first, last in ND_DONOR_SEED:
+        want = set(_nd_toks(first + ' ' + last))
+        ds = [r for r in con.execute("SELECT id, first, last, business, aliases FROM donors")
+              if want <= set(_nd_toks((r['first'] or '') + ' ' + (r['last'] or ''))) or want <= set(_nd_toks(r['business'] or ''))]
+        if len(ds) != 1:
+            rep.append('%s %s: %s' % (first, last, 'לא נמצא כרטיס תורם' if not ds else '%d כרטיסים מתאימים — לקשר ידנית' % len(ds)))
+            continue
+        did = ds[0]['id']
+        cands = [c for c in nd_donor_candidates(con, did) if want <= set(_nd_toks(c['name'])) and not c['other_donor']]
+        if not cands:
+            rep.append('%s %s: לא נמצא בנדרים פלוס — לקשר ידנית מהכרטיס' % (first, last))
+            continue
+        for c in cands:
+            for k in c['keys']:
+                con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)", (k, did, c['name'], now_iso()))
+        n = nd_donor_import(con, did)
+        con.execute("UPDATE donors SET region='il' WHERE id=?", (did,))      # "שלושתם בשקלים כמובן"
+        rep.append('%s %s: קושר ל-%s · %d תרומות נכנסו' % (first, last, ', '.join(c['name'] for c in cands), n))
+    kv_set(con, 'nd_dlink_seed_1', now_iso() + ' — ' + ' | '.join(rep))
+    con.commit()
+
+
 def nd_history_sync(con):
     """עסקאות חדשות בנדרים פלוס ← מי ששילם על הודעה שנשלחה אליו מסומן "שילם", והחוב שלו נסגר.
     חיוב אוטומטי של הוראת קבע (KevaId חיובי) לא נחשב תשלום על הודעה; תשלום בודד שצורף להוראה
@@ -23174,6 +23344,12 @@ def nd_history_sync(con):
         if top:
             con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, top))
         con.commit()
+    try:
+        nd_donor_seed(con)
+        if nd_donor_import(con):
+            con.commit()
+    except Exception as e:
+        print('  nd donor import error:', e)
     return new, marked
 
 
