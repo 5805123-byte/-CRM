@@ -1625,7 +1625,7 @@ function render(){
 /* ---------- מקווה ----------
    מאיר: "תעשה לשונית מקווה, לא צריך לסנכרן למערכת נתונים מהמקווה" — הכל חי מול
    מערכת המקווה: רואים את הלקוחות, מעבירים קבוצה, ושולחים לו מיד הודעה (ידני, לא אוטומטי). */
-let MK=null, mkGrp='', mkBusy=false, MKLIM=150;
+let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name';
 const mkDate=s=>{if(!s)return '';const d=new Date(s);if(isNaN(d))return '';if(d.getFullYear()>2090)return '∞';
   return d.toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',year:'numeric'});};
 const mkWhen=s=>{if(!s)return '';const d=new Date(s);if(isNaN(d))return '';
@@ -1642,47 +1642,64 @@ function renderMikveh(){
   if(MK===null){view.innerHTML='<div class="empty">⏳ טוען מהמקווה…</div>';if(!mkBusy)mkLoad();return;}
   if(!MK.ok){view.innerHTML=`<div class="empty">⚠️ ${esc(MK.error)}<br><br><button class="btn" id="mkre">🔄 לנסות שוב</button></div>`;
     document.getElementById('mkre').onclick=()=>{MK=null;renderMikveh();};return;}
-  const G={}; MK.groups.forEach(g=>G[g.id]=g);
+  mkQ=q;        // תיבת החיפוש העליונה ותיבת החיפוש של הלשונית — אותו חיפוש
   const cnt={}; MK.clients.forEach(c=>{cnt[c.group]=(cnt[c.group]||0)+1;});
-  let rows=MK.clients.filter(c=>(!mkGrp||c.group===mkGrp)&&(!q||matchQ(mkName(c)+' '+(c.phone||'')+' '+(c.code||'')+' '+((c.member&&c.member.name)||''))));
-  rows.sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
-  const tot=rows.length; rows=rows.slice(0,MKLIM);
-  const gopts=sel=>MK.groups.map(g=>`<option value="${esc(g.id)}"${g.id===sel?' selected':''}>${esc(g.name)}</option>`).join('')
-    +(sel&&!G[sel]?'<option value="" selected>— קבוצה שנמחקה —</option>':'');
-  view.innerHTML=`<div class="avbar noprint">
+  // מאיר: "למה הוא לא מציג את כל הלקוחות? ולמה אין אפשרות חיפוש?" — חיפוש בתוך הלשונית,
+  // וכל הלקוחות מוצגים (בלי "להציג עוד"); החיפוש מסנן תוך כדי הקלדה בלי לצייר את המסך מחדש
+  view.innerHTML=`<div class="avbar noprint" style="position:sticky;top:0;z-index:5;background:var(--ground);padding:6px 0">
+      <input id="mkq" class="search" style="flex:1 1 220px" placeholder="🔍 חיפוש לקוח — שם / טלפון / מספר לקוח" value="${esc(mkQ)}" autocomplete="off">
       <select id="mkgrp" class="avsortsel"><option value="">כל הקבוצות (${MK.clients.length})</option>
         ${MK.groups.map(g=>`<option value="${esc(g.id)}"${g.id===mkGrp?' selected':''}>${esc(g.name)} (${cnt[g.id]||0})</option>`).join('')}</select>
-      <button class="btn sm ghost" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button>
-      <span class="st">${tot} לקוחות${tot>rows.length?' · מוצגים '+rows.length:''} · חי מהמקווה, לא נשמר במערכת</span></div>
-    ${rows.length?`<div style="overflow-x:auto"><table class="avtable"><thead><tr><th>#</th><th>שם</th><th>טלפון</th><th>קבוצה</th><th>מנוי עד</th><th>כניסה אחרונה</th><th></th></tr></thead><tbody>
-      ${rows.map(c=>`<tr data-id="${esc(c.id)}">
-        <td>${esc(c.code||'')}</td>
-        <td><a href="#" class="mkopen"><b>${esc(mkName(c))}</b></a>${c.parent?' <span class="pill occ" title="בן של לקוח אחר">בן</span>':''}${c.sons?` <span class="pill occ">${c.sons} בנים</span>`:''}${c.blocked?` <span class="pill fresh" title="${esc(c.block_reason)}">חסום</span>`:''}
-          ${c.member?`<br><a href="#" class="mkmem" data-mid="${c.member.id}">🕍 ${esc(c.member.name)}</a>`:''}</td>
-        <td dir="ltr">${esc(c.phone||'')}</td>
-        <td><select class="avsortsel mkg" style="padding:5px 6px">${gopts(c.group)}</select></td>
-        <td>${esc(mkDate(c.sub_end))}</td>
-        <td>${esc(mkWhen(c.last_in))}</td>
-        <td><button class="btn sm ghost mkmsg"${c.phone?'':' disabled title="אין טלפון במקווה"'}>📞 הודעה</button></td></tr>`).join('')}
-      </tbody></table></div>${tot>rows.length?'<div class="empty"><button class="btn ghost" id="mkmore">להציג עוד</button></div>':''}`
-    :'<div class="empty">אין לקוחות שמתאימים</div>'}`;
-  document.getElementById('mkgrp').onchange=e=>{mkGrp=e.target.value;MKLIM=150;renderMikveh();};
+      <select id="mksort" class="avsortsel">${[['name','לפי שם'],['code','לפי מספר לקוח'],['last','לפי כניסה אחרונה']].map(([k,l])=>`<option value="${k}"${mkSort===k?' selected':''}>${l}</option>`).join('')}</select>
+      <button class="btn sm ghost" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button></div>
+    <div class="st" id="mkcount" style="margin:4px 0 8px"></div>
+    <div style="overflow-x:auto"><table class="avtable"><thead><tr><th class="mkhide">#</th><th>שם</th><th>טלפון</th><th>קבוצה</th><th class="mkhide">מנוי עד</th><th class="mkhide">כניסה אחרונה</th><th></th></tr></thead><tbody id="mkbody"></tbody></table></div>
+    <div class="empty hidden" id="mknone">אין לקוחות שמתאימים</div>`;
+  const qi=document.getElementById('mkq');
+  qi.oninput=()=>{mkQ=q=qi.value.trim();const tq=document.getElementById('q');if(tq)tq.value=qi.value;mkPaint();};
+  document.getElementById('mkgrp').onchange=e=>{mkGrp=e.target.value;mkPaint();};
+  document.getElementById('mksort').onchange=e=>{mkSort=e.target.value;mkPaint();};
   document.getElementById('mkfresh').onclick=()=>{MK=null;view.innerHTML='<div class="empty">⏳ טוען מהמקווה…</div>';mkLoad(true);};
-  const more=document.getElementById('mkmore'); if(more)more.onclick=()=>{MKLIM+=300;renderMikveh();};
   const byId=id=>MK.clients.find(c=>c.id===id);
-  view.querySelectorAll('.mkmem').forEach(a=>a.onclick=async e=>{e.preventDefault();
-    const ms=await cmLoad(); const m=ms.find(x=>x.id==+a.dataset.mid); if(m)openMember(m); else toast('חבר הקהילה לא נמצא');});
-  view.querySelectorAll('.mkopen').forEach(a=>a.onclick=e=>{e.preventDefault();mkOpen(byId(a.closest('tr').dataset.id));});
-  view.querySelectorAll('.mkmsg').forEach(b=>b.onclick=()=>{const c=byId(b.closest('tr').dataset.id);
-    mkNotify(c,`שלום ${c.first||''}, `);});
-  view.querySelectorAll('.mkg').forEach(sel=>sel.onchange=async()=>{
-    const c=byId(sel.closest('tr').dataset.id), g=G[sel.value];
-    if(!g){sel.value=c.group;return;}
-    sel.disabled=true;
-    const ok=await mkSetGroup(c,g);
-    sel.disabled=false;
-    if(!ok)sel.value=c.group;
+  document.getElementById('mkbody').onclick=async e=>{
+    const tr=e.target.closest('tr[data-id]'); if(!tr)return;
+    const c=byId(tr.dataset.id); if(!c)return;
+    const mem=e.target.closest('.mkmem');
+    if(mem){e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==+mem.dataset.mid);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');return;}
+    if(e.target.closest('.mkmsg')){if(c.phone)mkNotify(c,`שלום ${c.first||''}, `);return;}
+    e.preventDefault(); mkOpen(c);          // לחיצה על השורה / על הקבוצה — כרטיס הלקוח
+  };
+  mkPaint();
+  if(!('ontouchstart' in window))qi.focus();
+}
+const mkDigits=s=>String(s||'').replace(/\D/g,'');
+function mkPaint(){
+  const body=document.getElementById('mkbody'); if(!body||!MK||!MK.ok)return;
+  const G={}; MK.groups.forEach(g=>G[g.id]=g);
+  const qq=(mkQ||'').trim(), qd=mkDigits(qq);
+  let rows=MK.clients.filter(c=>{
+    if(mkGrp&&c.group!==mkGrp)return false;
+    if(!qq)return true;
+    if(qd&&qd.length>=3&&mkDigits(c.phone).indexOf(qd.replace(/^972/,'0'))>=0)return true;     // טלפון — גם עם מקפים / רווחים
+    if(qd&&qd===qq&&String(c.code||'')===qd)return true;                                       // מספר לקוח
+    return matchStr(mkName(c)+' '+(c.last||'')+' '+(c.first||'')+' '+((c.member&&c.member.name)||'')+' '+((G[c.group]&&G[c.group].name)||''),qq);
   });
+  const ts=s=>s?(new Date(s).getTime()||0):0;
+  rows.sort(mkSort==='code'?(a,b)=>(+a.code||0)-(+b.code||0)
+    :mkSort==='last'?(a,b)=>ts(b.last_in)-ts(a.last_in)
+    :(a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
+  const gp=id=>{const g=G[id];return `<button class="chip" style="padding:4px 10px;white-space:nowrap">${g&&g.color?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(g.color)};margin-inline-end:5px"></span>`:''}${esc(g?g.name:'— קבוצה שנמחקה —')}</button>`;};
+  body.innerHTML=rows.map(c=>`<tr data-id="${esc(c.id)}" style="cursor:pointer">
+      <td class="mkhide">${esc(c.code||'')}</td>
+      <td><b>${esc(mkName(c))}</b>${c.parent?' <span class="pill occ" title="בן של לקוח אחר">בן</span>':''}${c.blocked?` <span class="pill fresh" title="${esc(c.block_reason)}">חסום</span>`:''}
+        ${c.member?`<br><a href="#" class="mkmem" data-mid="${c.member.id}">🕍 ${esc(c.member.name)}</a>`:''}</td>
+      <td dir="ltr">${esc(c.phone||'')}</td>
+      <td>${gp(c.group)}</td>
+      <td class="mkhide">${esc(mkDate(c.sub_end))}</td>
+      <td class="mkhide">${esc(mkWhen(c.last_in))}</td>
+      <td><button class="btn sm ghost mkmsg"${c.phone?'':' disabled title="אין טלפון במקווה"'}>📞 הודעה</button></td></tr>`).join('');
+  document.getElementById('mkcount').textContent=(rows.length===MK.clients.length?'':rows.length+' מתוך ')+MK.clients.length+' לקוחות במקווה · לחיצה על לקוח — העברת קבוצה והודעה · חי מהמקווה, לא נשמר במערכת';
+  document.getElementById('mknone').classList.toggle('hidden',rows.length>0);
 }
 const mkGName=g=>(g&&g.name||'').replace(/^\s*\d+\.\s*/,'').trim();
 const mkMoney=a=>a==null?'':'₪'+(a/100).toLocaleString('he-IL',{maximumFractionDigits:2});
@@ -1693,7 +1710,7 @@ async function mkSetGroup(c,g){
   const r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});
   if(!r||!r.ok){uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'שגיאה'));return false;}
   c.group=g.id; toast('✓ עודכן במקווה: '+g.name);
-  if(tab==='mikveh')renderMikveh();
+  if(tab==='mikveh')mkPaint();
   if(c.phone)mkNotify(c,`שלום ${c.first||''}, עודכנת במקווה לקבוצה: ${mkGName(g)}.`);
   else uiAlert('עודכן במקווה. אין טלפון ללקוח במקווה — אי אפשר לשלוח לו הודעה.');
   return true;
