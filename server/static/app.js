@@ -540,11 +540,14 @@ function verBanner(v){
   b.onclick=()=>location.reload();
   document.body.appendChild(b);
 }
+// מאיר: "כשאני מסתכל על מספר הכרטיס בחלון אחר, זה קופץ ומתאפס" — כשטופס הכרטיס של בנק ווסט
+// פתוח, שום רענון ברקע (גרסה חדשה / חזרת חיבור / סנכרון) לא בונה את המסך מחדש
+const cardBusy=()=>!!document.querySelector('.bqcardframe');
 async function verCheck(){
   const v=await liveVer(); if(!v)return;
   if(!_VER){_VER=v;return;}
   if(v===_VER)return;
-  const busy=document.querySelector('.ov.show,.confirmov')
+  const busy=document.querySelector('.ov.show,.confirmov')||cardBusy()
     ||/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'')
     ||(document.activeElement&&document.activeElement.isContentEditable);
   if(busy){ verBanner(v); return; }
@@ -1560,6 +1563,7 @@ async function load(){
     const al=o.querySelector('[data-lo="all"]');
     if(al)al.onclick=async()=>{o.remove();if(!await uiConfirm('לנתק עכשיו את כל המכשירים — גם שלך וגם של הגבאים?\nכל אחד יתבקש להיכנס מחדש בסיסמה (או בגוגל).','🔒 כן, לנתק את כולם','ביטול'))return;
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
+  if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
   try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
