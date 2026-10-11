@@ -16897,6 +16897,21 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
                                     'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
                                     'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
+        if self.path.split('?')[0] == '/api/mikveh/status':
+            # מאיר: "צריך לחבר את מערכת המקווה" — בדיקה חיה: כניסה + פרטי המועדון
+            import mikveh as _mk
+            ok, msg = _mk.check()
+            return self._send(200, {'ok': ok, 'configured': _mk.configured(), 'club': _mk.club(), 'msg': msg,
+                                    'last': dict(_mk.LAST)})
+        if self.path.split('?')[0] == '/api/mikveh/get':
+            # רק קריאה (GET), רק למנהל — כדי לבדוק נתיבים של המקווה מהשרת, בלי לשנות שם כלום
+            import mikveh as _mk
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            path = (qs.get('path') or [''])[0].strip().lstrip('/')
+            if not path or '://' in path or '..' in path:
+                return self._send(400, {'ok': False, 'error': 'path חסר'})
+            code, out = _mk.call('GET', path, query={k: v[0] for k, v in qs.items() if k != 'path'})
+            return self._send(200, {'ok': code == 200, 'code': code, 'path': path, 'data': out})
         if self.path.split('?')[0] == '/api/nd/status':
             import nedarim as _nd
             con = db()
@@ -21699,6 +21714,13 @@ def health_report():
                 add('חיבור לבנק ווסט', 'ok', 'מוגדר · הסנכרון הראשון ירוץ בעוד רגע')
         except Exception:
             pass
+        # מערכת המקווה — כניסה חיה ופרטי המועדון
+        try:
+            import mikveh as _mkh
+            _ok3, _m3 = _mkh.check()
+            add('חיבור למערכת המקווה', 'ok' if _ok3 else ('warn' if not _mkh.configured() else 'bad'), _m3)
+        except Exception as e:
+            add('חיבור למערכת המקווה', 'bad', str(e)[:120])
         # החיבור החי ל-Authorize.net
         try:
             import authorize_sync as _an
