@@ -7013,7 +7013,16 @@ const STLBL={declined:'🔴 סורב',error:'⚠️ שגיאה',voided:'בוטל
    "יותר להפשיט… נוח וזורם וקליל". בנק ווסט מריץ את הוראות הקבע; כאן רואים, כותבים
    "עבור מה", מחייבים עכשיו כרטיס שמור, משהים ומשנים סכום / תאריך. */
 let bqTab='rec', bqQ='', bqOpen=null, bqStat=null, bqRows=null, bqNew=null, bqEditFor=null, bqHist={}, bqSwap=null, bqDay=null;
-const BQ_FOR=()=>[...new Set(RCATS.filter(Boolean).concat(['הכנסת כלה','מזדמן']))];
+// מאיר: "אני רוצה לחייב את יעקב גולד בחיוב של סוכות תשפ״ז — איפה אני כותב את זה?" — ✎ ייעוד אחר:
+// מקלידים ייעוד חופשי (גם כזה שרק לתורם הזה), והוא נשאר ברשימה לפעם הבאה
+let BQ_MY=[];try{BQ_MY=JSON.parse(localStorage.getItem('kc_bqfor')||'[]');}catch(e){}
+const BQ_FOR=()=>[...new Set(RCATS.filter(Boolean).concat(['הכנסת כלה','מזדמן'],BQ_MY))];
+document.addEventListener('change',async e=>{const s=e.target;if(!s||s.tagName!=='SELECT'||s.value!=='__other')return;
+  const v=String(await uiPrompt('עבור מה? — כתוב את הייעוד (למשל: סוכות תשפ״ז)','')||'').trim();
+  if(!v){s.value='';return;}
+  if(!BQ_FOR().includes(v)){BQ_MY=[v].concat(BQ_MY.filter(x=>x!==v)).slice(0,30);try{localStorage.setItem('kc_bqfor',JSON.stringify(BQ_MY));}catch(e){}}
+  let o=[...s.options].find(x=>x.value===v);if(!o){o=new Option(v,v);s.insertBefore(o,s.options[1]||null);}
+  s.value=v;});
 const bqMoney=a=>'$'+(+a||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const bqDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');return m?(m[3]+'.'+m[2]+'.'+m[1]):(s||'');};
 const BQ_BAD=['declined','error','blocked','expired','returned','cancelled'];
@@ -7021,7 +7030,7 @@ const BQ_ST={settled:['עבר','ok'],captured:['עבר','ok'],approved:['עבר'
   originated:['ממתין','wait'],declined:['נדחה','bad'],error:['שגיאה','bad'],blocked:['נחסם','bad'],expired:['פג','bad'],
   returned:['חזר','bad'],cancelled:['בוטל','off'],voided:['בוטל','off']};
 function bqForOpts(cur){const L=BQ_FOR();if(cur&&!L.includes(cur))L.unshift(cur);
-  return '<option value="">— עבור מה —</option>'+L.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');}
+  return '<option value="">— עבור מה —</option>'+L.map(c=>`<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('')+'<option value="__other">✎ ייעוד אחר (להקליד)…</option>';}
 // מאיר: "אצל רוב התורמים כתוב כבר במערכת עבור מה… לא צריך להיות כתוב כאן 'לחץ להוסיף' —
 // רק אם נכנסים לכרטיס שלו". ברשימה: מה שנקבע להוראה, ואם לא — מה שרשום בכרטיס. אחרת כלום.
 function bqForTxt(r){const t=[r.for_cat,r.for_note].filter(Boolean).join(' · ');return t?('עבור: '+t):(r.known_for?('עבור: '+r.known_for):'');}
