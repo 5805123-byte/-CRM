@@ -13970,6 +13970,22 @@ def ym_next_ok(dt):
     return dt
 
 
+def ym_redial(con, jid, lst, label):
+    """משלוח חדש לאותם נמענים, באותו נוסח (ההודעה האישית שכבר מולאה) — ניסיון חוזר / חיוג חוזר ידני."""
+    j0 = con.execute("SELECT * FROM ym_job WHERE id=?", (jid,)).fetchone()
+    con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,retry_of) VALUES(?,?,?,?,?,'queued',0,?,?,?)",
+                (now_iso(), 'voice', j0['text'], j0['amount'] or '', len(lst), label, j0['bill_path'] or '', jid))
+    nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for r in lst:
+        con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
+                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id']))
+        con.execute("UPDATE ym_msg SET retried=?, retry_at=? WHERE id=?",
+                    (con.execute("SELECT last_insert_rowid()").fetchone()[0], il_now().strftime('%Y-%m-%d %H:%M'), r['id']))
+    con.commit()
+    threading.Thread(target=ym_worker, args=(nj,), daemon=True).start()
+    return nj
+
+
 def ym_retry_scan():
     """כל כמה דקות: (1) בודק ביומן של ימות שיחות שעוד לא נבדקו (גם אחרי הפעלה מחדש של השרת);
     (2) מי שלא ענה לפני שעתיים — מקבל ניסיון אחד נוסף, באותו נוסח, בשעה מתאימה."""
@@ -14008,17 +14024,7 @@ def ym_retry_scan():
                 continue
             by.setdefault(r['job'], []).append(r)
         for jid, lst in by.items():
-            j0 = lst[0]
-            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,retry_of) VALUES(?,?,?,?,?,'queued',0,?,?,?)",
-                        (now_iso(), 'voice', j0['jtext'], j0['jamount'] or '', len(lst), '🔁 ניסיון חוזר', j0['bill_path'] or '', jid))
-            nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-            for r in lst:
-                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
-                            (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id']))
-                con.execute("UPDATE ym_msg SET retried=?, retry_at=? WHERE id=?",
-                            (con.execute("SELECT last_insert_rowid()").fetchone()[0], now.strftime('%Y-%m-%d %H:%M'), r['id']))
-            con.commit()
-            threading.Thread(target=ym_worker, args=(nj,), daemon=True).start()
+            ym_redial(con, jid, lst, '🔁 ניסיון חוזר')
         con.commit()
     except Exception as e:
         print('  ym retry error:', e)
@@ -18388,6 +18394,27 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             ym_check_job(int(m.group(1)))
             return self._send(200, {'ok': True})
+        m = re.match(r'/api/yemot/job/(\d+)/redial$', self.path)
+        if m:
+            # 📞 מאיר: "אפשרות ידנית לחייג שוב למי שלא ענה" — מי שנבחר (או כל מי שלא ענה)
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר'})
+            jid = int(m.group(1))
+            ids = [int(x) for x in (b.get('ids') or []) if str(x).isdigit()]
+            con = db()
+            try:
+                job = con.execute("SELECT * FROM ym_job WHERE id=?", (jid,)).fetchone()
+                if not job or job['channel'] != 'voice':
+                    return self._send(200, {'ok': False, 'error': 'רק בשיחה קולית'})
+                q_ = "SELECT * FROM ym_msg WHERE job=? AND status='sent' AND COALESCE(answered,0)<>1"
+                lst = [r for r in con.execute(q_, (jid,)).fetchall() if not ids or r['id'] in ids]
+                if not lst:
+                    return self._send(200, {'ok': False, 'error': 'אין למי לחייג — כולם ענו'})
+                nj = ym_redial(con, jid, lst, '📞 חיוג חוזר')
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'job': nj, 'n': len(lst)})
         m = re.match(r'/api/yemot/job/(\d+)/stop$', self.path)
         if m:
             con = db()

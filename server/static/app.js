@@ -14485,12 +14485,12 @@ function ymViewJobs(){
   const det=r=>{const j=r.job, ms=r.msgs||[];
     return `<div class="ymdet">
       <div class="addrow" style="justify-content:space-between;flex-wrap:wrap"><div class="ympv" style="flex:1;margin:0">${esc(j.text||'')}</div>
-        <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button></span></div>
-      ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}${j.retry_of?'<div class="hintxt">🔁 ניסיון חוזר אוטומטי — למי שלא ענה שעתיים קודם</div>':''}
+        <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}${j.channel==='voice'&&!j.test&&ms.some(m=>m.status==='sent'&&m.answered!==1)?`<button class="btn sm ymredial" data-j="${j.id}" data-ids="">📞 חייג שוב למי שלא ענה (${ms.filter(m=>m.status==='sent'&&m.answered!==1).length})</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button></span></div>
+      ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}${j.retry_of?`<div class="hintxt">${/חיוג חוזר/.test(j.label||'')?'📞 חיוג חוזר ידני':'🔁 ניסיון חוזר אוטומטי — למי שלא ענה שעתיים קודם'}</div>`:''}
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${ms.some(m=>+m.amount)?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
       ${ms.map(m=>`<tr class="${m.status}"><td>${esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
         <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
-        <td>${ymAns(m,j.channel)}</td></tr>`).join('')}</tbody></table></div></div>`;};
+        <td>${ymAns(m,j.channel)}${j.channel==='voice'&&!j.test&&m.status==='sent'&&m.answered!==1?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
   view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
       <div class="ymch3"><span class="ymjd">${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><b>${j.channel==='sms'?'💬 SMS':'📞 קולית'}</b>${j.test?'<span class="ymtag">בדיקה</span>':''}
         <span class="ymjt">${esc((j.text||'').slice(0,70))}${(j.text||'').length>70?'…':''}</span></div>
@@ -14503,6 +14503,12 @@ function ymViewJobs(){
   const ck=document.getElementById('ym_chk'); if(ck)ck.onclick=async()=>{ck.disabled=true;ck.textContent='בודק ביומן של ימות…';
     await api('POST','/api/yemot/job/'+ck.dataset.j+'/check',{});
     const r=await api('GET','/api/yemot/job/'+ck.dataset.j);if(r&&r.ok)ymJobView=r;await ymLoadStatus();renderCommYm();};
+  view.querySelectorAll('.ymredial').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();
+    const ids=b.dataset.ids?[+b.dataset.ids]:[];const n=ids.length||((ymJobView&&ymJobView.msgs)||[]).filter(m=>m.status==='sent'&&m.answered!==1).length;
+    if(!await uiConfirm('להתקשר שוב עכשיו ל-'+n+(n===1?' נמען':' נמענים')+', עם אותה הודעה?','📞 כן, לחייג','ביטול'))return;
+    b.disabled=true;const r=await api('POST','/api/yemot/job/'+b.dataset.j+'/redial',{ids});
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא יצא');return;}
+    toast('📞 החיוג החוזר יצא ל-'+r.n+' ✓');await ymLoadStatus();const x=await api('GET','/api/yemot/job/'+b.dataset.j);if(x&&x.ok)ymJobView=x;renderCommYm();});
   view.querySelectorAll('.ymjlog').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();ymLogJob=+b.dataset.j;ymView='log';await ymLoadLog();renderCommYm();window.scrollTo(0,0);});
 }
 // ---------------- 📞 יומן שיחות (LogFolderEnterExit של ימות) ----------------
