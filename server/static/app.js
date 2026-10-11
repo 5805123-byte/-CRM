@@ -1237,7 +1237,7 @@ let ROLE='admin', AUTH_ON=false, _loginShown=false;
 // מאיר: "בשביל הגבאים שייפתח להם הדף של הקהילה ושל פרנס יום… באותה סיסמא" — /gabbai
 const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':(location.pathname==='/gabbai'?'gabbai':'admin'));
 const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
-const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel']};
+const ROLE_TABS={comm:['comm','zmanim'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','zmanim']};
 const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};
 const ROLE_ONLY={comm:'הקהילה',parnes:'פרנס יום והקוויטל',gabbai:'הקהילה, פרנס יום והקוויטל'};
 function showLogin(msg){
@@ -1565,7 +1565,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','zmanim'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1585,7 +1585,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
 const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',stip:'חיפוש אברך…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
-  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',gifts:'חיפוש תרומה — שם תורם / סכום / עבור מה / אסמכתא…',camp:'חיפוש שם, משפחה או סכום…',mikveh:'חיפוש לקוח במקווה — שם / טלפון / מספר לקוח…',
+  debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',gifts:'חיפוש תרומה — שם תורם / סכום / עבור מה / אסמכתא…',camp:'חיפוש שם, משפחה או סכום…',mikveh:'חיפוש לקוח במקווה — שם / טלפון / מספר לקוח…',zmanim:'חיפוש שבת / חג / פרשה…',
   old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
 function render(){
   const qi=document.getElementById('q');
@@ -1615,6 +1615,7 @@ function render(){
   if(tab==='mails') return renderMails();
   if(tab==='camp') return renderCamp();
   if(tab==='mikveh') return renderMikveh();
+  if(tab==='zmanim') return renderZmanim();
   if(tab==='old') return renderOld();
   if(tab==='dups') return renderDups();
   if(tab==='unlinked') return renderUnlinked();
@@ -1881,6 +1882,155 @@ async function mkSchedOpen(){
     if(!x||!x.ok)uiAlert((x&&x.error)||'שגיאה'); else toast(a==='now'?'▶️ יוצאת עכשיו':'ההודעה בוטלה');
     mkSchedOpen(); mkSchedCount();});
   remov.classList.add('show');
+}
+
+/* ---------- 🕰️ זמני תפילות ----------
+   מאיר: "לעדכון זמני התפילות בשבת, תפתח לשונית חדשה ושלוחת API לשמיעת הזמנים — לפי פרשות,
+   למשל על חג". כל שבת (עם הפרשה), חג וצום מופיעים לבד; ממלאים שורות "מה — מתי". מתי = שעה
+   (6:10), ביטוי ("שקיעה-20", "הדלקה+15", "נץ") שמחושב לכל יום, או טקסט ("כוותיקין"). */
+let ZM=null, zmSub='list', zmBusy=false;
+const ZM_KIND={shabbat:['שבת','py'],chag:['חג','ishz'],fast:['צום','fresh'],custom:['מיוחד','occ'],weekday:['ימי חול','reg']};
+async function zmLoad(){zmBusy=true;const r=await api('GET','/api/zmanim?days=120');zmBusy=false;
+  ZM=r&&r.ok?r:{ok:false,error:(r&&r.error)||'שגיאה בטעינה'};if(tab==='zmanim')renderZmanim();}
+// אותו חישוב כמו בשרת — כדי לראות את השעה תוך כדי הקלדה
+const ZM_BASE={'נץ':'n','הנץ':'n','זריחה':'n','שקיעה':'s','השקיעה':'s','הדלקה':'c','הדלקת נרות':'c','צאת':'t','צאת הכוכבים':'t'};
+function zmCalc(expr,day){
+  const s=String(expr||'').trim(); let m=s.match(/^(\d{1,2})[:.](\d{2})$/);
+  if(m)return (+m[1])+':'+m[2];
+  m=s.match(/^(צאת הכוכבים|הדלקת נרות|השקיעה|שקיעה|זריחה|הדלקה|הנץ|צאת|נץ)\s*(?:([+-])\s*(\d{1,3}))?\s*(?:דק['׳]?|דקות)?$/);
+  if(!m||!day)return '';
+  const st=(ZM&&ZM.settings)||{}, b=ZM_BASE[m[1]];
+  let t=b==='n'?day.netz_m:day.shkia_m; if(t==null)return '';
+  if(b==='c')t-=(+st.candle||40); if(b==='t')t+=(+st.tzeis||18);
+  t+=(m[3]?+m[3]:0)*(m[2]==='-'?-1:1);
+  const h=Math.floor(t/60)%24, mi=((t%60)+60)%60; return ((h%12)||12)+':'+String(mi).padStart(2,'0');
+}
+const zmDates=o=>{const d=o.days||[];if(!d.length)return '';const f=d[0],l=d[d.length-1];
+  const g=x=>{const z=new Date(x.iso+'T12:00');return z.getDate()+'.'+(z.getMonth()+1);};
+  const hb=x=>(x.heb||'').replace(/\s*תש[א-ת"״׳]+$/,'');
+  return d.length===1?`${f.name} · ${hb(f)} · ${g(f)}`:`${f.name}–${l.name} · ${hb(f)} – ${hb(l)} · ${g(f)}–${g(l)}`;};
+function renderZmanim(){
+  chips.innerHTML=[['list','📅 שבתות וחגים'],['week','🗓️ ימי חול'],['phone','📞 שלוחה בטלפון והגדרות']].map(([k,l])=>`<button class="chip ${zmSub===k?'on':''}" data-k="${k}">${l}</button>`).join('');
+  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{zmSub=c.dataset.k;renderZmanim();});
+  if(ZM===null){view.innerHTML='<div class="empty">⏳ טוען…</div>';if(!zmBusy)zmLoad();return;}
+  if(!ZM.ok){view.innerHTML=`<div class="empty">⚠️ ${esc(ZM.error)}</div>`;return;}
+  if(zmSub==='week')return zmEdit(ZM.weekday,true);
+  if(zmSub==='phone')return zmPhone();
+  const rows=ZM.list.filter(o=>!q||matchQ(o.title+' '+(o.auto_title||'')+' '+o.days.map(d=>d.heb).join(' ')));
+  view.innerHTML=`<div class="avbar noprint"><button class="btn sm" id="zmadd">➕ אירוע מיוחד</button>
+      <span class="st">${ZM.list.filter(o=>o.lines.length).length} מתוך ${ZM.list.length} עם זמנים · לחיצה על שבת / חג — עריכת הזמנים</span></div>
+    ${rows.map(o=>{const [kl,kc]=ZM_KIND[o.kind]||['',''];
+      return `<div class="card zmcard" data-k="${esc(o.key)}" style="cursor:pointer;padding:12px 14px;margin:8px 0;border:1px solid var(--line);border-radius:14px;background:var(--card)">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+          <b style="font-size:1.05rem">${esc(o.title)}</b><span class="pill ${kc}">${kl}</span></div>
+        <div style="color:var(--muted);font-size:.85rem;margin:3px 0 6px">${esc(zmDates(o))}</div>
+        ${o.lines.length?`<div style="font-size:.88rem;line-height:1.7">${o.lines.map(l=>`<span style="white-space:nowrap">${esc(l.label)} <b>${esc(l.show||l.time)}</b></span>`).join(' · ')}</div>`
+          :'<div style="color:#a8321f;font-weight:700;font-size:.88rem">⚠️ עוד לא הוזנו זמנים</div>'}
+      </div>`;}).join('')||'<div class="empty">אין</div>'}`;
+  view.querySelectorAll('.zmcard').forEach(c=>c.onclick=()=>zmEdit(ZM.list.find(o=>o.key===c.dataset.k)));
+  document.getElementById('zmadd').onclick=zmAddCustom;
+}
+async function zmAddCustom(){
+  const title=await uiPrompt('שם האירוע (למשל: הילולת רבינו, ימי הסליחות)','');
+  if(!title)return;
+  const d1=await uiPrompt('מתאריך (לועזי, למשל 2026-10-20)',new Date().toISOString().slice(0,10)); if(!d1)return;
+  const d2=await uiPrompt('עד תאריך (אותו תאריך — יום אחד)',d1); if(!d2)return;
+  const r=await api('POST','/api/zmanim/custom',{title,from:d1,to:d2});
+  if(!r||!r.ok)return uiAlert((r&&r.error)||'שגיאה');
+  await zmLoad(); const o=ZM.list.find(x=>x.key===r.key); if(o)zmEdit(o);
+}
+// עריכת לוח אחד. inline=true — בתוך הלשונית (ימי חול); אחרת בחלון
+function zmEdit(o0,inline){
+  if(!o0)return;
+  const o=JSON.parse(JSON.stringify(o0)); o.lines=o.lines||[];
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const host=inline?view:rs;
+  const nd=Math.max(1,(o.days||[]).length);
+  const srcs=[...(ZM.templates||[]).map(t=>({v:'t:'+t.id,l:'📄 תבנית: '+t.name,lines:t.lines})),
+              ...(ZM.past||[]).filter(p=>p.key!==o.key).map(p=>({v:'p:'+p.key,l:'📋 '+p.title,lines:p.lines}))];
+  const draw=()=>{
+    const byDay=[]; for(let i=0;i<nd;i++)byDay.push([]);
+    o.lines.forEach((l,i)=>{byDay[Math.min(l.day||0,nd-1)].push(i);});
+    host.innerHTML=`${inline?'':'<button class="x" id="rx">✕</button>'}
+      <h2 style="margin-bottom:4px">🕰️ ${esc(o.title)}</h2>
+      ${o.kind==='weekday'?'<div class="st">הזמנים שחוזרים כל יום. "שקיעה-20" מחושב לבד לכל יום (כאן — לפי היום).</div>':`<div class="st">${esc(zmDates(o))}</div>`}
+      ${o.kind!=='weekday'?`<label class="fld" style="display:block;margin:8px 0"><span>כותרת (כך יוקרא בטלפון)</span><input id="zmtitle" value="${esc(o.title)}"></label>`:''}
+      <div class="avbar"><select id="zmsrc" class="avsortsel"><option value="">📋 להעתיק זמנים מ…</option>${srcs.map(x=>`<option value="${esc(x.v)}">${esc(x.l)}</option>`).join('')}</select></div>
+      ${byDay.map((idx,di)=>{const d=(o.days||[])[di]||{};
+        return `<div style="margin:12px 0 6px;font-weight:800;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span>${o.kind==='weekday'?'כל יום':esc(d.name||'')+' · '+esc((d.heb||'').replace(/\s*תש[א-ת"״׳]+$/,''))}</span>
+          <span style="font-weight:600;color:var(--muted);font-size:.82rem">נץ ${esc(d.netz||'')} · שקיעה ${esc(d.shkia||'')}${o.kind==='weekday'?'':' · הדלקה '+esc(zmCalc('הדלקה',d))}</span></div>
+          ${idx.map(i=>{const l=o.lines[i];return `<div class="zml" data-i="${i}" style="display:flex;gap:6px;align-items:center;margin:4px 0">
+            <input class="cinp zlab" style="flex:2 1 150px;margin:0" value="${esc(l.label)}" placeholder="מה (שחרית, מנחה…)">
+            <input class="cinp ztm" style="flex:1 1 90px;margin:0" value="${esc(l.time)}" placeholder="6:10 / שקיעה-20">
+            <b class="zsh" style="min-width:44px;color:var(--accent)">${esc(zmCalc(l.time,d)&&!/^\d/.test(l.time)?zmCalc(l.time,d):'')}</b>
+            <button class="btn sm ghost zup" title="למעלה">↑</button><button class="btn sm ghost zdel" title="למחוק">✕</button></div>`;}).join('')}
+          <button class="btn sm ghost zadd" data-d="${di}">➕ שורה${nd>1?' ל'+esc(d.name||''):''}</button>`;}).join('')}
+      <label class="fld" style="display:block;margin:12px 0 6px"><span>הודעה בסוף (רשות — תוקרא בטלפון אחרי הזמנים)</span><textarea id="zmnote" class="cinp" rows="2">${esc(o.note||'')}</textarea></label>
+      <div class="cmsub" style="margin-bottom:10px">אפשר לכתוב שעה (6:10), "שקיעה-20", "שקיעה+20", "הדלקה+15", "נץ", או מילים ("כוותיקין", "מיד לאחר מנחה").</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn" id="zmsave">💾 לשמור</button>
+        <button class="btn ghost" id="zmprev">🔊 מה ישמעו בטלפון</button>
+        <button class="btn ghost" id="zmtpl">📄 לשמור כתבנית</button>
+        ${o.saved&&o.kind!=='weekday'?'<button class="btn ghost" id="zmclr">🗑️ לנקות את הלוח</button>':''}</div>`;
+    const rx=host.querySelector('#rx'); if(rx)rx.onclick=()=>remov.classList.remove('show');
+    const sync=()=>{host.querySelectorAll('.zml').forEach(r=>{const l=o.lines[+r.dataset.i];l.label=r.querySelector('.zlab').value;l.time=r.querySelector('.ztm').value;});
+      const t=host.querySelector('#zmtitle'); if(t)o.title=t.value.trim()||o.title; o.note=host.querySelector('#zmnote').value;};
+    host.querySelectorAll('.zml').forEach(r=>{const i=+r.dataset.i, d=(o.days||[])[Math.min(o.lines[i].day||0,nd-1)];
+      r.querySelector('.ztm').oninput=e=>{const v=e.target.value;r.querySelector('.zsh').textContent=zmCalc(v,d)&&!/^\d/.test(v.trim())?zmCalc(v,d):'';};
+      r.querySelector('.zdel').onclick=()=>{sync();o.lines.splice(i,1);draw();};
+      r.querySelector('.zup').onclick=()=>{sync();const day=o.lines[i].day||0;let j=i-1;while(j>=0&&(o.lines[j].day||0)!==day)j--;
+        if(j>=0){const t=o.lines[i];o.lines[i]=o.lines[j];o.lines[j]=t;}draw();};});
+    host.querySelectorAll('.zadd').forEach(b=>b.onclick=()=>{sync();const di=+b.dataset.d;
+      let at=o.lines.length;for(let k=o.lines.length-1;k>=0;k--){if((o.lines[k].day||0)<=di){at=k+1;break;}if(k===0)at=0;}
+      o.lines.splice(at,0,{day:di,label:'',time:''});draw();
+      const ins=host.querySelectorAll('.zml .zlab');const el=[...host.querySelectorAll('.zml')].find(r=>+r.dataset.i===at);if(el)el.querySelector('.zlab').focus();});
+    host.querySelector('#zmsrc').onchange=async e=>{const x=srcs.find(s=>s.v===e.target.value);e.target.value='';if(!x)return;
+      sync(); if(o.lines.some(l=>l.label||l.time)&&!await uiConfirm('להחליף את הזמנים שכאן בזמנים מ"'+x.l.replace(/^\S+\s/,'')+'"?','📋 להחליף','ביטול'))return;
+      o.lines=x.lines.map(l=>({day:Math.min(l.day||0,nd-1),label:l.label,time:l.time}));draw();};
+    const save=async()=>{sync();
+      const r=await api('POST','/api/zmanim/save',{key:o.key,title:o.title,dates:(o.days||[]).map(d=>d.iso),lines:o.lines.filter(l=>l.label||l.time),note:o.note});
+      if(!r||!r.ok){uiAlert((r&&r.error)||'לא נשמר');return false;} o.saved=true; return true;};
+    host.querySelector('#zmsave').onclick=async()=>{if(await save()){toast('💾 נשמר');await zmLoad();
+      if(!inline)remov.classList.remove('show');}};
+    host.querySelector('#zmprev').onclick=async()=>{if(!await save())return;
+      const r=await api('GET','/api/zmanim/preview?key='+encodeURIComponent(o.key));
+      uiAlert('🔊 בטלפון ישמעו:\n\n'+((r&&r.text)||'—'));zmLoad();};
+    host.querySelector('#zmtpl').onclick=async()=>{sync();
+      const name=await uiPrompt('שם התבנית (אותו שם — מעדכן תבנית קיימת)',o.kind==='shabbat'?'שבת רגילה':o.title); if(!name)return;
+      const list=(ZM.templates||[]).slice(), ex=list.find(t=>t.name===name), lines=o.lines.filter(l=>l.label||l.time);
+      if(ex)ex.lines=lines; else list.push({id:'t'+Date.now().toString(36),name,lines});
+      const r=await api('POST','/api/zmanim/templates',{templates:list}); if(r&&r.ok){ZM.templates=r.templates;toast('📄 התבנית נשמרה');}};
+    const clr=host.querySelector('#zmclr');
+    if(clr)clr.onclick=async()=>{if(!await uiConfirm('לנקות את הזמנים של "'+o.title+'"?','🗑️ לנקות','ביטול'))return;
+      await api('POST','/api/zmanim/delete',{key:o.key});toast('נוקה');await zmLoad();remov.classList.remove('show');};
+  };
+  draw(); if(!inline)remov.classList.add('show');
+}
+function zmPhone(){
+  const st=ZM.settings||{};
+  view.innerHTML=`<div class="card" style="padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);margin:8px 0">
+      <h3 style="margin:0 0 6px">📞 שלוחת זמני התפילות</h3>
+      <div style="line-height:1.7">המתקשר שומע את הזמנים של השבת / החג הקרוב שמולא, ואחר כך תפריט:
+        <b>1</b> לשמוע שוב · <b>2</b> ימי חול (עם השעות של היום) · <b>3</b> השבת / החג הבא · <b>0</b> סיום.</div>
+      <div style="margin:10px 0 4px;font-weight:800">הגדרה בימות המשיח — בשלוחה (ext.ini):</div>
+      <pre dir="ltr" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all;user-select:all">type=api
+api_link=${esc(ZM.link)}
+api_hangup_send=no</pre>
+      <button class="btn sm ghost" id="zmcopy">📋 להעתיק</button>
+      <button class="btn sm ghost" id="zmhear">🔊 מה ישמעו עכשיו</button></div>
+    <div class="card" style="padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);margin:8px 0">
+      <h3 style="margin:0 0 6px">⚙️ חישוב הזמנים (ביתר עילית)</h3>
+      <label class="fld" style="display:block;margin:6px 0"><span>הדלקת נרות — דקות לפני השקיעה</span><input id="zmc" type="number" value="${esc(st.candle)}"></label>
+      <label class="fld" style="display:block;margin:6px 0"><span>צאת הכוכבים — דקות אחרי השקיעה</span><input id="zmt" type="number" value="${esc(st.tzeis)}"></label>
+      <label class="fld" style="display:block;margin:6px 0"><span>תיקון לשקיעה (דקות, + / -) — אם הלוח שלכם שונה</span><input id="zma" type="number" value="${esc(st.adj)}"></label>
+      <div class="cmsub">השקיעה מחושבת לגובה פני הים — מומלץ להשוות פעם אחת ללוח שנה שאתם עובדים איתו ולתקן אם צריך.</div>
+      <button class="btn" id="zmst" style="margin-top:8px">💾 לשמור</button></div>`;
+  document.getElementById('zmcopy').onclick=()=>{const t='type=api\napi_link='+ZM.link+'\napi_hangup_send=no';try{navigator.clipboard.writeText(t);toast('הועתק');}catch(e){uiAlert(t);}};
+  document.getElementById('zmhear').onclick=async()=>{const o=ZM.list.find(x=>x.lines.length);
+    const r=await api('GET','/api/zmanim/preview?key='+encodeURIComponent(o?o.key:'weekday'));uiAlert('🔊 בטלפון ישמעו:\n\n'+((r&&r.text)||'—'));};
+  document.getElementById('zmst').onclick=async()=>{const r=await api('POST','/api/zmanim/settings',{candle:+document.getElementById('zmc').value,tzeis:+document.getElementById('zmt').value,adj:+document.getElementById('zma').value});
+    if(r&&r.ok){toast('💾 נשמר');await zmLoad();}else uiAlert('לא נשמר');};
 }
 
 /* ---------- תורמים ---------- */

@@ -352,6 +352,9 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS ym_vm(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, at TEXT,
         member_id INTEGER, size INTEGER, heard INTEGER DEFAULT 0, done INTEGER DEFAULT 0, note TEXT, audio BLOB, found TEXT,
         transcript TEXT);
+    /* מאיר: "לעדכון זמני התפילות בשבת… לפי פרשות, למשל על חג" — לוח זמנים לכל שבת / חג / ימי חול.
+       key: shabbat:<תאריך שבת> · chag:<יום ראשון>:<שם> · custom:<מספר> · weekday. lines — JSON */
+    CREATE TABLE IF NOT EXISTS zm_event(key TEXT PRIMARY KEY, title TEXT, dates TEXT, lines TEXT, note TEXT, updated TEXT);
     DROP TABLE IF EXISTS ym_pron_rec;
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
@@ -12605,7 +12608,8 @@ GOOGLE_TOKENINFO = 'https://oauth2.googleapis.com/tokeninfo'
 # מה שלשונית הקהילה צריכה — ורק זה. כל השאר (תורמים, חיובים, קבלות…) חסום לסיסמת הקהילה
 AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/', '/api/nd/', '/api/nikud',
              '/api/nedarim/mosads', '/api/seats', '/seat-map-print', '/seat_layout.json', '/seat-map-original.png',
-             '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits')
+             '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits',
+             '/api/zmanim')
 # העובד של פרנס יום וקוויטל — הלוח, הימים, התעודות, שמות הקוויטל וההדפסה. בלי תרומות,
 # טלפונים ומיילים (ראה _data_parnes), ובלי מחיקת כרטיסים
 AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/hebmonth', '/api/prayer', '/api/donor',
@@ -12613,7 +12617,7 @@ AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/heb
 AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES))     # קהילה + פרנס יום וקוויטל, בסיסמה אחת
 AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES, 'gabbai': AUTH_GABBAI}
 PORTALS = {'/kehila': 'comm', '/parnes': 'parnes', '/gabbai': 'gabbai'}
-ROLE_DESC = {'comm': 'לשונית הקהילה', 'parnes': 'פרנס יום וקוויטל', 'gabbai': 'הקהילה, פרנס יום והקוויטל'}
+ROLE_DESC = {'comm': 'לשונית הקהילה וזמני התפילות', 'parnes': 'פרנס יום וקוויטל', 'gabbai': 'הקהילה, פרנס יום והקוויטל'}
 PARNES_DONOR_FIELDS = ('kv_skip', 'kv_year', 'kv_month', 'tier', 'last', 'first', 'english')
 _AUTH_FAIL = {}      # ip -> [כישלונות, זמן אחרון] — האטה אחרי ניסיונות שגויים
 _AUTH_LOCK = threading.Lock()
@@ -16775,7 +16779,7 @@ class H(BaseHTTPRequestHandler):
             out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
             return self._send(200, {'ok': True, 'month': ym, 'calls': out})
         # בנק ווסט חי — הסטטוס, הוראות הקבע והעסקאות לדף החיובים ולכרטיס התורם
-        m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?(/rec)?$', self.path.split('?')[0])
+        m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?(/rec|/zmanim)?$', self.path.split('?')[0])
         if m:
             # שלוחת התשלום בטלפון (type=api) — ימות המשיח פונים לכאן בכל שלב בשיחה.
             # הקוד הסודי בנתיב (ימות מוסיפים את הפרמטרים שלהם אחרי ?)
@@ -16783,7 +16787,7 @@ class H(BaseHTTPRequestHandler):
             if m.group(1):
                 P['k'] = m.group(1)
             try:
-                ans = ivr_rec(P) if m.group(2) else ivr_answer(P)
+                ans = zm_ivr(P) if m.group(2) == '/zmanim' else ivr_rec(P) if m.group(2) else ivr_answer(P)
             except Exception as e:
                 print('  ivr error:', e)
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
@@ -16948,6 +16952,36 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
                                     'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
                                     'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
+        if self.path.split('?')[0] == '/api/zmanim':
+            # 🕰️ לשונית זמני התפילות — השבתות והחגים הקרובים, ימי חול, תבניות, הגדרות
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                days = max(14, min(400, int((qs.get('days') or ['84'])[0])))
+            except ValueError:
+                days = 84
+            con = db()
+            try:
+                host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
+                out = {'ok': True, 'list': zm_list(con, days), 'weekday': zm_weekday(con), 'templates': zm_templates(con),
+                       'settings': zm_settings(con), 'past': zm_past(con), 'today': zm_today().isoformat(),
+                       'link': 'https://%s/api/yemot/ivr/%s/zmanim' % (host, ivr_key(con))}
+            finally:
+                con.close()
+            return self._send(200, out)
+        if self.path.split('?')[0] == '/api/zmanim/preview':
+            # מה המתקשר ישמע — אותו טקסט שהשלוחה מקריאה
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            key = (qs.get('key') or [''])[0]
+            con = db()
+            try:
+                if key == 'weekday':
+                    segs = zm_say_weekday(con)
+                else:
+                    o = next((x for x in zm_list(con, 400) if x['key'] == key), None)
+                    segs = zm_say(con, o) if o else []
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'text': ' '.join(segs)})
         if self.path.split('?')[0] == '/api/mikveh/status':
             # מאיר: "צריך לחבר את מערכת המקווה" — בדיקה חיה: כניסה + פרטי המועדון
             import mikveh as _mk
@@ -18485,6 +18519,77 @@ class H(BaseHTTPRequestHandler):
             import yemot as _ym
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
             return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)})
+        if self.path == '/api/zmanim/save':
+            key = str(b.get('key') or '').strip()[:120]
+            if not re.fullmatch(r'(shabbat:\d{4}-\d{2}-\d{2}|chag:\d{4}-\d{2}-\d{2}:.{1,60}|custom:\d+|weekday)', key):
+                return self._send(400, {'ok': False, 'error': 'אירוע לא מוכר'})
+            lines = zm_clean_lines(b.get('lines'))
+            dates = [d for d in (b.get('dates') or []) if re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(d))][:10]
+            con = db()
+            try:
+                con.execute("INSERT INTO zm_event(key,title,dates,lines,note,updated) VALUES(?,?,?,?,?,?) "
+                            "ON CONFLICT(key) DO UPDATE SET title=excluded.title, dates=excluded.dates, lines=excluded.lines, "
+                            "note=excluded.note, updated=excluded.updated",
+                            (key, str(b.get('title') or '').strip()[:120], json.dumps(dates), json.dumps(lines, ensure_ascii=False),
+                             str(b.get('note') or '').strip()[:600], now_iso()))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/zmanim/delete':
+            key = str(b.get('key') or '')
+            con = db()
+            try:
+                con.execute("DELETE FROM zm_event WHERE key=?", (key,)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/zmanim/custom':
+            # אירוע מיוחד (הילולא, ימי סליחות…) — שם ותאריכים
+            title = str(b.get('title') or '').strip()[:120]
+            d1, d2 = str(b.get('from') or ''), str(b.get('to') or b.get('from') or '')
+            if not title or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', d1) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', d2):
+                return self._send(200, {'ok': False, 'error': 'חסר שם או תאריך'})
+            a1, a2 = sorted([datetime.date.fromisoformat(d1), datetime.date.fromisoformat(d2)])
+            if (a2 - a1).days > 9:
+                return self._send(200, {'ok': False, 'error': 'עד עשרה ימים לאירוע'})
+            dates = [(a1 + datetime.timedelta(days=i)).isoformat() for i in range((a2 - a1).days + 1)]
+            con = db()
+            try:
+                n = int(time.time() * 1000) % 10**12
+                con.execute("INSERT INTO zm_event(key,title,dates,lines,note,updated) VALUES(?,?,?,?,?,?)",
+                            ('custom:%d' % n, title, json.dumps(dates), '[]', '', now_iso()))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'key': 'custom:%d' % n})
+        if self.path == '/api/zmanim/templates':
+            rows = []
+            for t in (b.get('templates') or [])[:40]:
+                name = str(t.get('name') or '').strip()[:60]
+                if name:
+                    rows.append({'id': re.sub(r'[^\w-]', '', str(t.get('id') or ''))[:40] or ('t%d' % len(rows)),
+                                 'name': name, 'lines': zm_clean_lines(t.get('lines'))})
+            con = db()
+            try:
+                kv_set(con, 'zm_templates', json.dumps(rows, ensure_ascii=False)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'templates': rows})
+        if self.path == '/api/zmanim/settings':
+            st = {}
+            for k, lo, hi in (('candle', 0, 90), ('adj', -15, 15), ('tzeis', 0, 90)):
+                try:
+                    st[k] = max(lo, min(hi, int(b.get(k))))
+                except (TypeError, ValueError):
+                    pass
+            con = db()
+            try:
+                cur = zm_settings(con); cur.update(st)
+                kv_set(con, 'zm_settings', json.dumps(cur)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'settings': cur})
         if self.path == '/api/mikveh/group':
             # מאיר: "עדכון קבוצה" — משנה במקווה עצמו את הקבוצה של הלקוח
             import mikveh as _mk
@@ -23680,6 +23785,204 @@ def nd_send_link(con, keva_id, phone=''):
                         (k['member_id'], today_iso(), 'SMS', '📲 נשלח קישור לעדכון כרטיס בהוראת הקבע', txt, 'out', '', now_iso()))
     con.commit()
     return bool(oks), link if oks else ('ה-SMS לא נשלח: %s' % r), to if oks else ''
+
+
+# ---------- 🕰️ זמני תפילות ----------
+
+def zm_today():
+    import zmanim as _z
+    return _z.il_today()
+
+
+def zm_settings(con):
+    import zmanim as _z
+    st = dict(_z.DEFAULT_SETTINGS)
+    try:
+        st.update(json.loads(kv_get(con, 'zm_settings', '') or '{}'))
+    except ValueError:
+        pass
+    return st
+
+
+def zm_templates(con):
+    import zmanim as _z
+    try:
+        rows = json.loads(kv_get(con, 'zm_templates', '') or 'null')
+    except ValueError:
+        rows = None
+    return rows if isinstance(rows, list) else _z.TEMPLATES
+
+
+def zm_clean_lines(lines):
+    out = []
+    for ln in (lines or [])[:60]:
+        if not isinstance(ln, dict):
+            continue
+        label, tm = str(ln.get('label') or '').strip()[:120], str(ln.get('time') or '').strip()[:60]
+        if not label and not tm:
+            continue
+        try:
+            day = max(0, min(9, int(ln.get('day') or 0)))
+        except (TypeError, ValueError):
+            day = 0
+        out.append({'day': day, 'label': label, 'time': tm})
+    return out
+
+
+def _zm_row(r):
+    try:
+        lines = json.loads(r['lines'] or '[]')
+    except ValueError:
+        lines = []
+    try:
+        dates = json.loads(r['dates'] or '[]')
+    except ValueError:
+        dates = []
+    return {'title': r['title'] or '', 'lines': lines, 'note': r['note'] or '', 'dates': dates, 'updated': r['updated'] or ''}
+
+
+def _zm_fill(o, st):
+    """לכל שורה — הזמן כפי שיופיע בלוח (ביטוי כמו "שקיעה-20" מחושב ליום שלו)."""
+    import zmanim as _z
+    ds = o.get('dates') or []
+    o['days'] = []
+    for d in ds:
+        dd = datetime.date.fromisoformat(d)
+        sn = _z.sun(dd, int(st.get('adj') or 0))
+        o['days'].append({'iso': d, 'name': _z.day_name(d), 'heb': _z.heb_str(dd), 'netz': _z.hm(sn['netz']), 'shkia': _z.hm(sn['shkia']),
+                          'netz_m': sn['netz'].hour * 60 + sn['netz'].minute if sn['netz'] else None,
+                          'shkia_m': sn['shkia'].hour * 60 + sn['shkia'].minute if sn['shkia'] else None})
+    for ln in o.get('lines') or []:
+        d = ds[min(ln.get('day') or 0, len(ds) - 1)] if ds else zm_today().isoformat()
+        ln['show'] = _z.show(ln.get('time'), datetime.date.fromisoformat(d), st)
+    return o
+
+
+def zm_list(con, days=84):
+    """השבתות, החגים והאירועים המיוחדים מהיום והלאה, עם מה שנשמר לכל אחד."""
+    import zmanim as _z
+    st = zm_settings(con)
+    today = zm_today()
+    saved = {r['key']: _zm_row(r) for r in con.execute("SELECT * FROM zm_event")}
+    out = []
+    for o in _z.occasions(today, days):
+        sv = saved.get(o['key'])
+        o.update(lines=sv['lines'] if sv else [], note=sv['note'] if sv else '', saved=bool(sv),
+                 auto_title=o['title'], title=(sv['title'] if sv and sv['title'] else o['title']))
+        out.append(o)
+    for k, sv in saved.items():
+        if k.startswith('custom:') and sv['dates'] and sv['dates'][-1] >= today.isoformat():
+            out.append({'key': k, 'kind': 'custom', 'title': sv['title'], 'auto_title': '', 'dates': sv['dates'],
+                        'lines': sv['lines'], 'note': sv['note'], 'saved': True})
+    out.sort(key=lambda o: (o['dates'][-1], o['dates'][0]))
+    return [_zm_fill(o, st) for o in out]
+
+
+def zm_weekday(con):
+    import zmanim as _z
+    r = con.execute("SELECT * FROM zm_event WHERE key='weekday'").fetchone()
+    sv = _zm_row(r) if r else None
+    o = {'key': 'weekday', 'kind': 'weekday', 'title': 'ימי חול', 'dates': [zm_today().isoformat()],
+         'lines': sv['lines'] if sv else [dict(x) for x in _z.WEEKDAY_LINES], 'note': sv['note'] if sv else '', 'saved': bool(sv)}
+    return _zm_fill(o, zm_settings(con))
+
+
+def zm_past(con):
+    """לוחות שכבר מולאו — כדי להעתיק מהם (השבת שעברה, אותו חג בשנה שעברה)."""
+    out = []
+    for r in con.execute("SELECT * FROM zm_event WHERE key<>'weekday' AND lines<>'[]' ORDER BY updated DESC LIMIT 40"):
+        sv = _zm_row(r)
+        out.append({'key': r['key'], 'title': sv['title'], 'dates': sv['dates'], 'lines': sv['lines']})
+    return out
+
+
+ZM_ABBR = [('עזר"נ', 'עזרת נשים'), ('עיו"ט', 'ערב יום טוב'), ('עיוה"כ', 'ערב יום כיפור'), ('עיו"כ', 'ערב יום כיפור'),
+           ('ר"ת', 'רבנו תם'), ('ויו"ט', 'ויום טוב'), ('הרשב"י', 'הרשבי'), ('מוצאי"ט', 'מוצאי יום טוב'), ('ש"ש', 'שבע שעות')]
+ZM_ORD = {'א': 'ראשון', 'ב': 'שני', 'ג': 'שלישי', 'ד': 'רביעי', 'ה': 'חמישי', 'ו': 'שישי', 'ז': 'שביעי'}
+
+
+def zm_speak(con, t):
+    """טקסט מהלוח כפי שיוקרא: ראשי תיבות, "שחרית א׳" -> "שחרית ראשון", בלי גרשיים."""
+    import yemot as _ym
+    t = str(t or '')
+    for w, say in ZM_ABBR:
+        for q in {w, w.replace('"', '״')}:
+            t = t.replace(q, say)
+    t = re.sub(r'(?<![\u0590-\u05ff])([א-ז])[\'׳](?![\u0590-\u05ff])', lambda m: ZM_ORD[m.group(1)], t)
+    t = _ym.speakable(t, kv_get(con, 'ym_pron', ''))
+    t = re.sub(r'["״׳\'()]', ' ', t).replace('–', ',').replace('—', ',').replace('|', ',')
+    return _ivr_t(t)
+
+
+def zm_say(con, o, today=None):
+    """הקטעים להקראה לאירוע אחד — לפי הימים ("ביום שישי", "בשבת"), כל שורה: מה + מתי."""
+    import zmanim as _z
+    if not o:
+        return []
+    segs = [zm_speak(con, 'זמני התפילות ל' + o['title'])]
+    ds = o.get('dates') or []
+    multi = len({min(ln.get('day') or 0, max(len(ds) - 1, 0)) for ln in o['lines']}) > 1
+    last_day = None
+    for ln in o['lines']:
+        di = min(ln.get('day') or 0, max(len(ds) - 1, 0))
+        if multi and di != last_day and ds:
+            nm = _z.day_name(ds[di])
+            segs.append(zm_speak(con, 'בשבת' if nm == 'שבת' else 'ב' + nm))
+            last_day = di
+        shown = ln.get('show') or ln.get('time') or ''
+        when = ('בשעה ' + _z.say_time(shown)) if _z._HM.match(shown) else shown
+        segs.append(zm_speak(con, (ln.get('label') or '') + ', ' + when))
+    if o.get('note'):
+        segs.append(zm_speak(con, o['note']))
+    return [x for x in segs if x]
+
+
+def zm_say_weekday(con):
+    o = zm_weekday(con)
+    o['title'] = 'ימי החול, היום'
+    return zm_say(con, o)
+
+
+def zm_ivr(P):
+    """📞 שלוחת זמני התפילות (type=api, הכתובת של שלוחת התשלום + /zmanim).
+    מקריאה את הלוח של השבת / החג הקרוב שמולא, ואז תפריט: 1 שוב, 2 ימי חול, 3 האירוע הבא, 0 סיום.
+    ימות שולחים בכל פנייה את כל ההקשות עד עכשיו (Z1, Z2…) — עוברים עליהן לפי הסדר."""
+    END = '&go_to_folder=hangup'
+    con = db()
+    try:
+        if (P.get('k') or '') != ivr_key(con):
+            return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
+        if P.get('hangup') == 'yes':
+            return 'noop=hangup'
+        evs = [o for o in zm_list(con, 120) if o['lines']]
+        page, n = (0 if evs else 'w'), 0
+        while ('Z%d' % (n + 1)) in P:
+            n += 1
+            v = str(P.get('Z%d' % n) or '')
+            if v in ('', '0'):
+                return 'id_list_message=t-' + _ivr_t('תודה, ' + ('שבת שלום' if zm_today().weekday() in (3, 4, 5) else 'יום טוב')) + END
+            if v == '2':
+                page = 'w'
+            elif v == '3':
+                page = ((page + 1) if isinstance(page, int) else 0) % len(evs) if evs else 'w'
+        if n >= 15:
+            return 'id_list_message=t-' + _ivr_t('תודה רבה') + END
+        segs = zm_say_weekday(con) if page == 'w' else zm_say(con, evs[page])
+        if not segs:
+            segs = [_ivr_t('עדיין לא עודכנו זמני תפילות')]
+        menu = ['לשמיעה חוזרת הקישו 1']
+        if page != 'w':
+            menu.append('לזמני ימי החול הקישו 2')
+        if evs:
+            nxt = evs[((page + 1) if isinstance(page, int) else 0) % len(evs)]
+            if page == 'w' or len(evs) > 1:
+                menu.append('ל' + zm_speak(con, nxt['title']) + ' הקישו 3')
+        menu.append('לסיום הקישו 0')
+        allowed = '0123'
+        msg = '.'.join('t-' + x for x in segs + [_ivr_t(', '.join(menu))])
+        return 'read=' + msg + '=Z%d,no,1,1,8,NO,yes,no,,%s,1,,,,no' % (n + 1, allowed)
+    finally:
+        con.close()
 
 
 def ivr_key(con):
