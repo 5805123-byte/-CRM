@@ -148,3 +148,35 @@ def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model='', hints=
             continue
         break
     return False, last
+
+
+def transcribe(audio, mime='audio/wav', trace=None):
+    """מאיר: "אחרי שמאזין הקליט — לשלוח לג'ימיני שיתמלל". הודעה קולית -> טקסט בעברית, כמו שנאמר."""
+    import nikud as _nk
+    if not configured():
+        return False, 'Gemini לא מוגדר'
+    model = (os.environ.get('GEMINI_TEXT_MODEL') or _nk.DEF_TEXT_MODEL).strip()
+    ask = ('Transcribe this phone voicemail exactly as spoken, in Hebrew (keep English words in English). '
+           'Write numbers as digits. Reply with the transcript text only, no comments. If nothing intelligible was said, reply: (אין דיבור)')
+    body = {'contents': [{'parts': [{'text': ask}, {'inlineData': {'mimeType': mime, 'data': base64.b64encode(audio).decode('ascii')}}]}],
+            'generationConfig': {'temperature': 0}}
+    base = _env('GEMINI_BASE', 'https://generativelanguage.googleapis.com').rstrip('/')
+    tried, code, raw, ms = [], 0, '', 0
+    for _try in range(3):
+        tried.append(model)
+        code, raw, ms = _nk._post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': _env('GEMINI_API_KEY')}, timeout=60)
+        if code == 200:
+            break
+        if trace:
+            trace('GeminiTranscribe', {'model': model}, False, (raw or '')[:800], ms)
+        nm = _nk.newer_model(code, raw)
+        model = nm if nm and nm not in tried else next((m for m in ('gemini-2.5-flash', 'gemini-2.0-flash') if m not in tried), '')
+        if not model:
+            break
+    try:
+        txt = ''.join(p.get('text', '') for p in json.loads(raw)['candidates'][0]['content']['parts']).strip()
+        if trace:
+            trace('GeminiTranscribe', {'model': model, 'bytes': len(audio)}, True, json.dumps({'responseStatus': 'OK', 'message': txt[:300]}, ensure_ascii=False), ms)
+        return True, txt[:4000]
+    except Exception:
+        return False, 'התמלול נכשל (%s)' % (code or '')

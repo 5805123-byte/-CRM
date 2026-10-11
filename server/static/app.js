@@ -14039,18 +14039,21 @@ async function ymViewVm(){
     <div class="vmlist">${R.map(x=>`<div class="vmrow${x.heard?'':' new'}${x.done?' done':''}">
       <div class="vmh"><b>${esc(who(x)||'מספר לא מזוהה')}</b> <small dir="ltr">${esc(x.phone||'')}</small> <small>${esc(ndDate((x.at||'').slice(0,10)))} ${esc((x.at||'').slice(11,16))}</small>${x.heard?'':' <span class="vmnew">חדש</span>'}</div>
       <audio controls preload="none" src="/api/yemot/vm/${x.id}.wav" data-vmid="${x.id}"></audio>
+      ${x.transcript==null?'<div class="hintxt">⏳ Gemini מתמלל…</div>':(x.transcript?`<div class="vmtr">📝 ${esc(x.transcript)}</div>`:`<div class="hintxt">התמלול לא הצליח <button class="btn sm ghost" data-vmretr="${x.id}">🔄 לתמלל שוב</button></div>`)}
       ${x.note?`<div class="hintxt">📝 ${esc(x.note)}</div>`:''}
       <div class="bqacts">${x.member_id?`<button class="btn sm ghost" data-vmcard="${x.member_id}" title="הכרטיס שלו">📂</button>`:''}
         <button class="btn sm ghost" data-vmnote="${x.id}" title="הערה">📝</button>
         ${x.done?`<button class="btn sm ghost" data-vma="undone" data-id="${x.id}">↩ לא טופל</button>`:`<button class="btn sm" data-vma="done" data-id="${x.id}">✓ טופל</button>`}
+        ${x.phone?`<button class="btn sm ghost" data-vmblock="${esc(x.phone)}" title="לחסום את המספר — לא יוכל להשאיר הודעות">🚫 חסום</button>`:''}
         <button class="btn sm ghost" data-vma="delete" data-id="${x.id}" title="למחוק">🗑️</button></div></div>`).join('')
       ||`<div class="hintxt">${V.on?'אין הודעות חדשות.':'עוד לא הגיעה אף הודעה — צריך קודם להגדיר את השלוחה בימות (למטה).'}</div>`}</div>
+    ${(V.blocked||[]).length?`<div class="hintxt">🚫 מספרים חסומים (לא יכולים להשאיר הודעה): ${V.blocked.map(p=>`<span class="chip" dir="ltr">${esc(p)} <button class="fdel" data-vmunblock="${esc(p)}" title="לבטל חסימה">✕</button></span>`).join(' ')}</div>`:''}
     <details class="cmdonadd" ${V.on?'':'open'}><summary>⚙️ איך מפעילים (פעם אחת, בימות המשיח)</summary>
       <div class="hintxt">1. בימות המשיח פותחים <b>שלוחה חדשה</b> — באותה רמה של שלוחת התשלום שמקישים אליה 1 (למשל שלוחה <b>2</b>), ומדביקים בהגדרות שלה:</div>
       <pre class="ndini" id="vm_ini" dir="ltr">${esc(ini)}</pre>
       <div class="addrow"><button class="btn sm" id="vm_copy">📋 העתק</button></div>
       <div class="hintxt">2. בנוסח של ההודעה הקולית (לשונית 📤 שליחה) מוסיפים בסוף: <b>"להשארת הודעה הקישו 2"</b> (או המספר של השלוחה שפתחת).<br>
-      3. מי שמקיש שומע "אנא הקליטו את הודעתכם לאחר הצליל", מדבר, ומנתק או מקיש סולמית. ההודעה נשמרת בימות בתוך השלוחה הזו${V.on?' ('+esc(V.dir||'')+')':''} ומגיעה לכאן תוך דקות (או מיד ב"🔄 בדוק עכשיו"), עם השם שלו אם הטלפון מוכר.</div></details>
+      3. מי שמקיש שומע "אנא השאירו את הודעתכם אחרי הצליל ובסיום הקישו סולמית", מדבר, ומנתק או מקיש סולמית. ההודעה נשמרת בימות בתיקייה ${esc(V.dir||'/KCmsg')}, Gemini מתמלל אותה, והיא מגיעה לכאן תוך דקות (או מיד ב"🔄 בדוק עכשיו"), עם השם שלו אם הטלפון מוכר.</div></details>
   </div>`;
   ymWireHead();const g=id=>document.getElementById(id);
   g('vm_ref').onclick=async()=>{CMVM=null;ymViewVm();};
@@ -14065,6 +14068,11 @@ async function ymViewVm(){
     ymViewVm();});
   view.querySelectorAll('[data-vmnote]').forEach(b=>b.onclick=async()=>{const x=(CMVM.rows||[]).find(y=>y.id==b.dataset.vmnote);if(!x)return;
     const v=await uiPrompt('הערה להודעה (מה ביקש / מה עשית):',x.note||'');if(v===null)return;x.note=v.trim();await act(x.id,{action:'note',note:x.note});ymViewVm();});
+  view.querySelectorAll('[data-vmblock]').forEach(b=>b.onclick=async()=>{const p=b.dataset.vmblock;
+    if(!await uiConfirm('לחסום את '+p+'?\nמהמספר הזה לא יהיה אפשר להשאיר הודעות. ההודעות שכבר השאיר יסומנו כטופלו.','🚫 כן, לחסום','ביטול'))return;
+    const r=await api('POST','/api/yemot/vm/block',{phone:p,hide:1});if(r&&r.ok){toast('🚫 נחסם');CMVM=null;ymViewVm();}});
+  view.querySelectorAll('[data-vmunblock]').forEach(b=>b.onclick=async()=>{const r=await api('POST','/api/yemot/vm/block',{phone:b.dataset.vmunblock,unblock:1});if(r&&r.ok){toast('✓ החסימה בוטלה');CMVM=null;ymViewVm();}});
+  view.querySelectorAll('[data-vmretr]').forEach(b=>b.onclick=async()=>{await api('POST','/api/yemot/vm/'+b.dataset.vmretr+'/retr',{});toast('⏳ מתמלל שוב…');setTimeout(()=>{CMVM=null;if(ymView==='vm')ymViewVm();},12000);});
   view.querySelectorAll('[data-vmcard]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(y=>y.id==b.dataset.vmcard);if(m)openMember(m);});
 }
 // ---------------- 💳 תשלום בטלפון (שלוחת API + נדרים פלוס) ----------------

@@ -350,7 +350,8 @@ def ensure_schema():
         phone TEXT, method TEXT, params TEXT, ok INTEGER, response TEXT, ms INTEGER);
     /* מאיר: "שבסוף ההודעה הוא יוכל להשאיר הודעה, ואני אקבל כל הודעה פה במערכת" — תא קולי */
     CREATE TABLE IF NOT EXISTS ym_vm(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, at TEXT,
-        member_id INTEGER, size INTEGER, heard INTEGER DEFAULT 0, done INTEGER DEFAULT 0, note TEXT, audio BLOB, found TEXT);
+        member_id INTEGER, size INTEGER, heard INTEGER DEFAULT 0, done INTEGER DEFAULT 0, note TEXT, audio BLOB, found TEXT,
+        transcript TEXT);
     DROP TABLE IF EXISTS ym_pron_rec;
     CREATE TABLE IF NOT EXISTS building_items(name TEXT PRIMARY KEY, created TEXT);
     -- קרן הבניין (בנק ווסט / USAePay): כל חיוב מהדוח, ומי המשלם (key) — כדי
@@ -565,6 +566,8 @@ def ensure_schema():
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN fund TEXT DEFAULT ''")
     except Exception: pass
     try: con.execute("ALTER TABLE cm_don ADD COLUMN fund TEXT DEFAULT ''")
+    except Exception: pass
+    try: con.execute("ALTER TABLE ym_vm ADD COLUMN transcript TEXT")
     except Exception: pass
     # "עבור מה" שהגבאי הוסיף לתשלום בנדרים פלוס (רשות) — לא נוגע במה שבנדרים
     try: con.execute("ALTER TABLE nd_tx ADD COLUMN for_local TEXT")
@@ -16744,7 +16747,7 @@ class H(BaseHTTPRequestHandler):
                     try: vm_sync(con)
                     except Exception as e: print('  vm sync error:', e)
                 rows = [dict(r) for r in con.execute(
-                    "SELECT v.id,v.name,v.phone,v.at,v.member_id,v.size,v.heard,v.done,v.note,m.last ml,m.first mf, "
+                    "SELECT v.id,v.name,v.phone,v.at,v.member_id,v.size,v.heard,v.done,v.note,v.transcript,m.last ml,m.first mf, "
                     "(SELECT y.name FROM ym_msg y WHERE y.phone=v.phone ORDER BY y.id DESC LIMIT 1) yname "
                     "FROM ym_vm v LEFT JOIN members m ON m.id=v.member_id WHERE v.done<2 ORDER BY v.at DESC, v.id DESC LIMIT 300")]
                 host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
@@ -16753,8 +16756,11 @@ class H(BaseHTTPRequestHandler):
                 vm_dir_v = vm_dir(con)
             finally:
                 con.close()
+            if any(r['transcript'] is None for r in rows):
+                threading.Thread(target=vm_transcribe_new, daemon=True).start()
+            con = db(); blk = sorted(vm_blocked(con)); con.close()
             return self._send(200, {'ok': True, 'rows': rows, 'new': sum(1 for r in rows if not r['heard'] and not r['done']),
-                                    'link': link, 'on': on, 'dir': vm_dir_v})
+                                    'link': link, 'on': on, 'dir': vm_dir_v, 'blocked': blk})
         m = re.match(r'/api/yemot/vm/(\d+)\.wav$', self.path.split('?')[0])
         if m:
             import yemot as _ym
@@ -18212,6 +18218,26 @@ class H(BaseHTTPRequestHandler):
                         val = val if val in [k for k, _ in _gt.MODELS] else ''
                     con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kvk, val))
             con.commit(); con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/yemot/vm/block':
+            import yemot as _ym
+            ph = _ym.norm_phone(b.get('phone') or '') or re.sub(r'\D', '', str(b.get('phone') or ''))[:12]
+            if not ph:
+                return self._send(200, {'ok': False, 'error': 'מספר לא תקין'})
+            con = db()
+            bl = vm_blocked(con)
+            if b.get('unblock'):
+                bl.discard(ph)
+            else:
+                bl.add(ph)
+                if b.get('hide'):
+                    con.execute("UPDATE ym_vm SET done=1, heard=1 WHERE phone=?", (ph,))
+            kv_set(con, 'ym_vm_block', ','.join(sorted(bl))); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'blocked': sorted(bl)})
+        m = re.match(r'/api/yemot/vm/(\d+)/retr$', self.path)
+        if m:
+            con = db(); con.execute("UPDATE ym_vm SET transcript=NULL WHERE id=?", (int(m.group(1)),)); con.commit(); con.close()
+            threading.Thread(target=vm_transcribe_new, daemon=True).start()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/yemot/vm/(\d+)$', self.path)
         if m:
@@ -23627,28 +23653,29 @@ def ivr_rec(P):
         if (P.get('k') or '') != ivr_key(con):
             return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
         kv_set(con, 'ym_vm_on', '1')
-        # לפי התיעוד של ימות: בלי תיקייה בפקודה — ההקלטה נשמרת בשלוחה עצמה (api_dir), בלי לפתוח תיקיות חדשות.
-        # שומרים איזו שלוחה זו (ApiExtension), כדי למשוך משם את ההקלטות
-        ext = str(P.get('ApiExtension') or '').strip().strip('/')
-        if ext and re.fullmatch(r'[\w/\-]+', ext):
-            kv_set(con, 'ym_vm_dir', '/' + ext)
         con.commit()
         phone = _ym.norm_phone(P.get('ApiPhone') or '') or re.sub(r'\D', '', str(P.get('ApiPhone') or ''))[:12] or 'x'
+        # 🚫 מאיר: "שיהיה אפשרות לחסום מספרים להקלטת הודעות"
+        if phone in vm_blocked(con):
+            return 'id_list_message=t-' + _ivr_t('לא ניתן להשאיר הודעה ממספר זה') + END
         if 'VmRec' in P or P.get('hangup') == 'yes':
             threading.Thread(target=vm_sync_bg, daemon=True).start()
             return 'id_list_message=t-' + _ivr_t('ההודעה נשמרה, תודה רבה') + END if 'VmRec' in P else 'noop=hangup'
         fname = '%s_%s' % (phone, il_now().strftime('%Y%m%d%H%M%S'))
-        # ימות משמיעים לבד אחר כך "אנא הקליטו את הודעתכם לאחר הצליל. בסיום הקישו סולמית" (M1012) וצליל
-        # פרמטרים: שם, לא להשתמש בקיים, record, תיקייה (ריק = השלוחה), שם קובץ, בלי תפריט אישור, לשמור בניתוק,
-        # לא לצרף, מינימום שנייה, מקסימום 3 דקות
-        return ('read=t-' + _ivr_t('כאן אפשר להשאיר הודעה לכולל חצות') +
-                '=VmRec,no,record,,%s,no,yes,no,1,180' % fname)
+        # פרמטרים (לפי התיעוד של ימות): שם, לא להשתמש בקיים, record, תיקייה (KCmsg), שם קובץ, בלי תפריט אישור,
+        # לשמור בניתוק, לא לצרף, מינימום שנייה, מקסימום 3 דקות
+        return ('read=t-' + _ivr_t('אנא השאירו את הודעתכם אחרי הצליל ובסיום הקישו סולמית') +
+                '=VmRec,no,record,%s,%s,no,yes,no,1,180' % (VM_DIR, fname))
     finally:
         con.close()
 
 
 def vm_dir(con):
-    return kv_get(con, 'ym_vm_dir', '') or VM_DIR
+    return VM_DIR
+
+
+def vm_blocked(con):
+    return {p for p in (kv_get(con, 'ym_vm_block', '') or '').split(',') if p}
 
 
 def vm_sync(con):
@@ -23675,7 +23702,40 @@ def vm_sync(con):
                     (nm, phone, at, next(iter(mids)) if len(mids) == 1 else None, int(f.get('size') or 0), now_iso()))
         n += 1
     con.commit()
+    if n:
+        threading.Thread(target=vm_transcribe_new, daemon=True).start()
     return n
+
+
+VM_TR_LOCK = threading.Lock()
+
+
+def vm_transcribe_new():
+    """מאיר: "אחרי שמאזין הקליט — תשלח את ההקלטה לג'ימיני שיתמלל". מושך את השמע מימות ומתמלל."""
+    import yemot as _ym, gemini_tts as _gt
+    if not _gt.configured() or not VM_TR_LOCK.acquire(blocking=False):
+        return
+    try:
+        con = db()
+        try:
+            rows = con.execute("SELECT id,name,audio FROM ym_vm WHERE transcript IS NULL AND done<2 ORDER BY id DESC LIMIT 20").fetchall()
+            for r in rows:
+                data = r['audio']
+                if not data:
+                    ok, data = _ym.download_bin('ivr2:%s/%s' % (vm_dir(con), r['name']))
+                    if not ok:
+                        continue
+                    con.execute("UPDATE ym_vm SET audio=? WHERE id=?", (sqlite3.Binary(data), r['id'])); con.commit()
+                _ym.begin_trace()
+                ok, txt = _gt.transcribe(bytes(data), 'audio/mpeg' if r['name'].lower().endswith('.mp3') else 'audio/wav', trace=_ym._trace)
+                ym_save_trace(con, _ym.end_trace())
+                con.execute("UPDATE ym_vm SET transcript=? WHERE id=?", (txt if ok else '', r['id'])); con.commit()
+        finally:
+            con.close()
+    except Exception as e:
+        print('  vm transcribe error:', e)
+    finally:
+        VM_TR_LOCK.release()
 
 
 def vm_sync_bg():
