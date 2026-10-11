@@ -14067,6 +14067,18 @@ def ym_names(con):
     return out
 
 
+def mk_phone_members(con):
+    """טלפון → חבר קהילה (id, שם) — כדי שפעולה במקווה תירשם גם ביומן של החבר."""
+    import yemot as _ym
+    out = {}
+    for r in con.execute("SELECT id, last, first, phone FROM members WHERE COALESCE(phone,'')<>''"):
+        for part in re.split(r'[,;/|]|\s{2,}', str(r['phone'] or '')):
+            ph = _ym.norm_phone(part)
+            if ph and ph not in out:
+                out[ph] = {'id': r['id'], 'name': ((r['first'] or '') + ' ' + (r['last'] or '')).strip()}
+    return out
+
+
 def ym_worker(job_id):
     """שולח את ההודעות של משלוח אחד, אחת אחרי השנייה, ומתעד אצל כל חבר/תורם."""
     import yemot as _ym
@@ -16903,6 +16915,26 @@ class H(BaseHTTPRequestHandler):
             ok, msg = _mk.check()
             return self._send(200, {'ok': ok, 'configured': _mk.configured(), 'club': _mk.club(), 'msg': msg,
                                     'last': dict(_mk.LAST)})
+        if self.path.split('?')[0] == '/api/mikveh/clients':
+            # לשונית המקווה — חי מהמקווה, לא נשמר אצלנו
+            import mikveh as _mk
+            if not _mk.configured():
+                return self._send(200, {'ok': False, 'error': 'המקווה לא מוגדר — חסרים MIKVEH_USER ו-MIKVEH_PASS ב-Render'})
+            fresh = 'fresh=1' in self.path
+            try:
+                gr = _mk.groups()
+                rows = [_mk.slim(c) for c in _mk.clients(fresh=fresh)]
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                pm = mk_phone_members(con)
+            finally:
+                con.close()
+            import yemot as _ym
+            for r in rows:
+                r['member'] = pm.get(_ym.norm_phone(r['phone']) or '-') if r['phone'] else None
+            return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
         if self.path.split('?')[0] == '/api/mikveh/get':
             # רק קריאה (GET), רק למנהל — כדי לבדוק נתיבים של המקווה מהשרת, בלי לשנות שם כלום
             import mikveh as _mk
@@ -18385,6 +18417,61 @@ class H(BaseHTTPRequestHandler):
             import yemot as _ym
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
             return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)})
+        if self.path == '/api/mikveh/group':
+            # מאיר: "עדכון קבוצה" — משנה במקווה עצמו את הקבוצה של הלקוח
+            import mikveh as _mk
+            cid, gid = str(b.get('id') or '').strip(), str(b.get('group') or '').strip()
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or not re.fullmatch(r'[0-9a-fA-F-]{36}', gid):
+                return self._send(400, {'ok': False, 'error': 'חסר לקוח או קבוצה'})
+            try:
+                gname = next((g['name'] for g in _mk.groups() if g['id'] == gid), '')
+                if not gname:
+                    return self._send(200, {'ok': False, 'error': 'הקבוצה לא קיימת במקווה'})
+                res = _mk.set_group(cid, gid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            row = _mk.slim(res)
+            if row['group'] != gid:
+                return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל הקבוצה לא השתנתה'})
+            con = db()
+            try:
+                import yemot as _ym
+                mid = mk_phone_members(con).get(_ym.norm_phone(row['phone']) or '-') if row['phone'] else None
+                if mid:
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out','',?)",
+                                (mid['id'], today_iso(), 'מקווה', '🛁 קבוצה במקווה עודכנה: ' + gname, '', now_iso()))
+                    con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'client': row, 'group_name': gname})
+        if self.path == '/api/mikveh/notify':
+            # "ולשלוח לו הודעה במיידי דרך הטלפון שזה עודכן" — ידני, הודעה אחת, דרך ימות המשיח
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר ב-Render (YEMOT_TOKEN)'})
+            ch = 'sms' if b.get('channel') == 'sms' else 'voice'
+            text = (b.get('text') or '').strip()
+            phone = _ym.norm_phone(b.get('phone') or '')
+            name = (b.get('name') or '').strip()[:80]
+            if not text:
+                return self._send(200, {'ok': False, 'error': 'חסר טקסט להודעה'})
+            if not phone:
+                return self._send(200, {'ok': False, 'error': 'אין טלפון תקין ללקוח'})
+            if ch == 'sms' and not _ym.is_mobile(phone):
+                return self._send(200, {'ok': False, 'error': 'SMS רק לנייד — זה מספר קווי'})
+            con = db()
+            try:
+                mem = mk_phone_members(con).get(phone)
+                con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,1,'queued',0,?,'')",
+                            (now_iso(), ch, text, '', 'מקווה'))
+                jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued','')",
+                            (jid, 'm' if mem else 't', mem['id'] if mem else 0, name, phone, text))
+                con.commit()
+            finally:
+                con.close()
+            threading.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': jid})
         if self.path == '/api/yemot/send':
             # מאיר: "לפי הקלדה שלי במערכת שתשלח הודעה קולית" — משלוח קולי / SMS, ברקע
             import yemot as _ym

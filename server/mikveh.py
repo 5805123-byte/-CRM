@@ -151,3 +151,82 @@ def check():
         return False, str(e)[:200]
     return True, 'מחובר · %s (מועדון %s) · %s רישיונות' % (
         (c.get('name') or '').strip(), c.get('externalClubId') or club(), c.get('licancesAmount') or 0)
+
+
+# ---------- פעולות מתוך ה-CRM (בלי סנכרון — הכל חי מול המקווה) ----------
+# מאיר: "אני לא רוצה לסנכרן, אלא לבצע פעולות דרך ה-CRM, למשל עדכון קבוצה, ולשלוח לו הודעה
+# במיידי דרך הטלפון שזה עודכן". שום דבר מהמקווה לא נשמר אצלנו; מספרי זהות / סיסמאות
+# של הלקוחות (password, personalId) לא יוצאים מהשרת אל המסך.
+_HIDE = ('password', 'personalId', 'cardSerial', 'faceImages')
+
+
+def _items(res):
+    if isinstance(res, list):
+        return res
+    if isinstance(res, dict):
+        for k in ('items', 'data', 'result', 'clients', 'list'):
+            if isinstance(res.get(k), list):
+                return res[k]
+    return []
+
+
+def groups():
+    """הקבוצות הפעילות (בלי מחוקות), לפי השם."""
+    out = []
+    for g in _items(get('Group')):
+        if g.get('isDeleted'):
+            continue
+        out.append({'id': g.get('id'), 'name': (g.get('name') or '').strip(), 'color': g.get('color') or '',
+                    'price': (g.get('subscriptionPrice') or 0) / 100.0 if g.get('subscriptionPrice') is not None else None})
+    out.sort(key=lambda g: g['name'])
+    return out
+
+
+def slim(c):
+    """לקוח בשביל המסך — בלי הפרטים הרגישים."""
+    return {'id': c.get('id'), 'code': c.get('clientCode'), 'first': (c.get('firstName') or '').strip(),
+            'last': (c.get('lastName') or '').strip(), 'phone': (c.get('phone') or '').strip(),
+            'email': c.get('email') or '', 'group': c.get('groupId') or '', 'type': c.get('type'),
+            'parent': c.get('parentId') or '', 'sub_end': c.get('subscriptionEndDate') or '',
+            'sub_start': c.get('subscriptionStartDate') or '', 'last_in': c.get('lastEntrance') or '',
+            'lic_exp': c.get('licenceExp') or '', 'balance': c.get('balance'), 'blocked': bool(c.get('isBlocked')),
+            'block_reason': c.get('blockReason') or '', 'remark': c.get('remark') or '',
+            'message': c.get('message') or '', 'sons': len(c.get('sons') or [])}
+
+
+_CL = {'at': 0.0, 'rows': None}
+
+
+def clients(fresh=False):
+    """כל הלקוחות (GET /Client). זיכרון של 2 דקות בלבד — לא נשמר בבסיס הנתונים."""
+    if not fresh and _CL['rows'] is not None and time.time() - _CL['at'] < 120:
+        return _CL['rows']
+    rows = [c for c in _items(get('Client')) if not c.get('isDeleted')]
+    _CL.update(at=time.time(), rows=rows)
+    return rows
+
+
+def client(cid):
+    """הלקוח המלא כמו שהמקווה מחזיר (כולל הבנים) — בשביל העדכון."""
+    code, res = call('GET', 'Client/%s' % cid)
+    if code == 200 and isinstance(res, dict) and res.get('id'):
+        return res
+    for c in clients(fresh=True):
+        if str(c.get('id')) == str(cid):
+            return c
+    raise RuntimeError('הלקוח לא נמצא במקווה')
+
+
+def update_client(cid, changes):
+    """PATCH /Client/{id} — כמו המסך של המקווה: שולחים את כל הלקוח, עם השינוי בלבד."""
+    obj = dict(client(cid))
+    obj.update(changes)
+    code, res = call('PATCH', 'Client/%s' % cid, body=obj)
+    if code != 200:
+        raise RuntimeError('העדכון במקווה נכשל: %s' % (LAST.get('error') or code))
+    _CL['rows'] = None
+    return res if isinstance(res, dict) else obj
+
+
+def set_group(cid, group_id):
+    return update_client(cid, {'groupId': group_id})

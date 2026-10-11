@@ -1,6 +1,6 @@
 // Service worker — installable app, always-fresh UI, and עבודה בלי אינטרנט.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v886';
+const CACHE = 'kc-crm-v887';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
 const DATA_CACHE = 'kc-data';      // העותק האחרון של הנתונים, לשימוש בלי רשת
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
@@ -144,6 +144,14 @@ self.addEventListener('fetch', e => {
       {status: 200, headers: {'Content-Type': 'application/json'}})));
     return;
   }
+  // המקווה — פעולה חיה (העברת קבוצה / הודעה ללקוח). בלי רשת לא נכנסת לתור: הודעה
+  // שיוצאת לבד אחרי שעה, או קבוצה שמשתנה בלי שרואים, זה לא מה שנלחץ.
+  if (e.request.method === 'POST' && url.pathname.startsWith('/api/mikveh/')) {
+    e.respondWith(fetch(e.request).catch(() => new Response(
+      JSON.stringify({ok: false, offline: true, error: 'אין חיבור לאינטרנט — פעולות במקווה דורשות חיבור'}),
+      {status: 200, headers: {'Content-Type': 'application/json'}})));
+    return;
+  }
   // שמירה בלי רשת — נכנסת לתור ותישלח כשהחיבור יחזור
   if (e.request.method !== 'GET' && url.pathname.startsWith('/api/')) {
     e.respondWith((async () => {
@@ -172,6 +180,7 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (e.request.method !== 'GET') return;
+  if (url.pathname.startsWith('/api/mikveh/')) return;      // חי מהמקווה — לא נשמר גם בטלפון
   if (url.pathname.startsWith('/api/')) {
     // נתונים חיים כשיש רשת; בלי רשת — העותק האחרון שנשמר, כדי שהכרטיסים
     // יהיו זמינים גם בלי wifi
