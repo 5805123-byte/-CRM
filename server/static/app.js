@@ -1739,9 +1739,17 @@ async function mkSetGroup(c,g,on){
   const t0=Date.now(); let tick=null;
   c._busy='מעביר ל'+mkGName(g)+'…'; mkRowRefresh(c);
   on('busy',0); tick=setInterval(()=>on('busy',Math.floor((Date.now()-t0)/1000)),1000);
-  const r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});
+  let r=null;
+  try{r=await api('POST','/api/mikveh/group',{id:c.id,group:g.id});}catch(e){r=null;}   // 502 / ניתוק — תשובה שאינה JSON
+  if(!r||!r.ok){
+    // מאיר: "באתר של המקווה אני רואה שהוא כן עדכן… פשוט השרת לא קורא שזה הצליח" — לפני שמודיעים
+    // על כישלון, בודקים במקווה עצמו מה הקבוצה שלו עכשיו
+    on('busy','בודק במקווה…');
+    try{const v=await api('GET','/api/mikveh/client?id='+encodeURIComponent(c.id));
+      if(v&&v.ok&&v.client&&v.client.group===g.id)r={ok:true};}catch(e){}
+  }
   clearInterval(tick); c._busy='';
-  if(!r||!r.ok){mkRowRefresh(c);on('err',(r&&r.error)||'שגיאה');return false;}
+  if(!r||!r.ok){mkRowRefresh(c);on('err',(r&&r.error)||'אין תשובה מהשרת');return false;}
   c.group=g.id; mkRowRefresh(c);
   on('ok',((Date.now()-t0)/1000).toFixed(1));
   return true;
@@ -1775,7 +1783,7 @@ function mkOpen(c){
       <div class="mkgrid">${MK.groups.map(x=>`<button class="mkg${x.id===c.group?' cur':''}${pick&&x.id===pick.id?' pick':''}" data-g="${esc(x.id)}"${x.id===c.group||busy?' disabled':''}>
           <span class="mkdot" style="background:${esc(mkColor(x))}"></span><span>${esc(x.name)}</span></button>`).join('')}</div>
       ${pick||state?`<div class="mkconf ${state==='ok'?'ok':state==='err'?'err':''}">
-        ${state==='busy'?`<span class="mkspin" style="color:var(--accent)"></span><div class="t">מעביר את ${esc(c.first||mkName(c))} ל"${esc(pick.name)}" במקווה…<div class="mksub">${info>=3?info+' שניות · המקווה עונה לאט, עוד רגע…':'מתחבר למקווה ומעדכן'}</div></div>`
+        ${state==='busy'?`<span class="mkspin" style="color:var(--accent)"></span><div class="t">מעביר את ${esc(c.first||mkName(c))} ל"${esc(pick.name)}" במקווה…<div class="mksub">${typeof info==='string'?esc(info):info>=3?info+' שניות · המקווה עונה לאט, עוד רגע…':'מתחבר למקווה ומעדכן'}</div></div>`
         :state==='ok'?`<span class="mkcheck">✓</span><div class="t">הועבר ל"${esc(G[c.group]?G[c.group].name:'')}"<div class="mksub">עודכן במקווה (${esc(info)} שניות)</div></div>
           ${c.phone?'<button class="mkbtn" id="mkafter">💬 לשלוח לו הודעה</button>':''}`
         :state==='err'?`<span style="font-size:1.4rem">⚠️</span><div class="t">לא עודכן במקווה<div class="mksub">${esc(info)}</div></div><button class="mkbtn" id="mkgo">🔁 לנסות שוב</button><button class="mkbtn gh" id="mkno">ביטול</button>`

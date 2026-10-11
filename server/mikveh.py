@@ -219,35 +219,30 @@ def clients(fresh=False):
 # עכשיו: הקבוצות בזיכרון; הלקוח נטען כבר כשפותחים את הכרטיס (prefetch) ונשמר דקה וחצי;
 # אם אין במקווה קריאה ללקוח בודד — זוכרים את זה ולא מנסים שוב. TIMES — כמה לקח כל שלב.
 _ONE = {}
-_SINGLE = {'ok': None}
 TIMES = {}
 
 
 def client(cid, max_age=0):
-    """הלקוח המלא כמו שהמקווה מחזיר (כולל הבנים) — בשביל העדכון."""
+    """הלקוח המלא כמו שהמקווה מחזיר (כולל הבנים) — בשביל העדכון.
+    מאיר: "באתר של המקווה… אחרי זה הוא טוען את הלקוח" — GET /GetClientFull/{id} (זו הקריאה של
+    המסך שלהם; ‏Client/{id} לא קיימת אצלם, ולכן כל העברה חיכתה לה ואז משכה את כל הרשימה → 502)."""
     hit = _ONE.get(str(cid))
     if max_age and hit and time.time() - hit[0] < max_age:
         return dict(hit[1])
-    if _SINGLE['ok'] is not False:
-        code, res = call('GET', 'Client/%s' % cid, timeout=20)
-        if code == 200 and isinstance(res, dict) and res.get('id'):
-            _SINGLE['ok'] = True
-            _ONE[str(cid)] = (time.time(), res)
-            return dict(res)
-        if code in (404, 405) and _SINGLE['ok'] is None:
-            _SINGLE['ok'] = False
-    # אין קריאה ללקוח בודד — לוקחים אותו מהרשימה. ברשימה (GET /Client) חסרים שדות של
-    # הלקוח עצמו: clubId / externalClubId ריקים, createdAt הוא שעת הבקשה ויש שדה נוסף
-    # (hasPaymentMethod). מתקנים כדי לא לדרוס במקווה מועדון / תאריך פתיחה.
-    for c in clients(fresh=True):
+    code, res = call('GET', 'GetClientFull/%s' % cid, timeout=20)
+    if code == 200 and isinstance(res, dict) and res.get('id'):
+        _ONE[str(cid)] = (time.time(), res)
+        return dict(res)
+    # גיבוי בלבד — מהרשימה. חסרים בה clubId / externalClubId, ו-createdAt הוא שעת הבקשה;
+    # מתקנים כדי לא לדרוס במקווה מועדון / תאריך פתיחה.
+    for c in clients(fresh=False):
         if str(c.get('id')) == str(cid):
             c = dict(c)
             c.pop('hasPaymentMethod', None)
             c.pop('createdAt', None)
             c['clubId'] = c.get('clubId') or _TOK.get('club_id') or None
             c['externalClubId'] = c.get('externalClubId') or int(club())
-            _ONE[str(cid)] = (time.time(), c)
-            return dict(c)
+            return c
     raise RuntimeError('הלקוח לא נמצא במקווה')
 
 
@@ -257,10 +252,10 @@ def update_client(cid, changes):
     obj = dict(client(cid, max_age=90))
     t1 = time.time()
     obj.update(changes)
-    code, res = call('PATCH', 'Client/%s' % cid, body=obj)
+    obj.setdefault('faceImages', [])          # כמו המסך של המקווה
+    code, res = call('PATCH', 'Client/%s' % cid, body=obj, timeout=30)
     t2 = time.time()
-    TIMES.update(at=time.strftime('%Y-%m-%d %H:%M:%S'), load_ms=int((t1 - t0) * 1000), patch_ms=int((t2 - t1) * 1000),
-                 single=_SINGLE['ok'])
+    TIMES.update(at=time.strftime('%Y-%m-%d %H:%M:%S'), load_ms=int((t1 - t0) * 1000), patch_ms=int((t2 - t1) * 1000))
     if code != 200:
         raise RuntimeError('העדכון במקווה נכשל: %s' % (LAST.get('error') or code))
     _ONE.pop(str(cid), None)

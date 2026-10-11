@@ -17063,6 +17063,16 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'status': r['status'] if r else '', 'error': (r['error'] or '') if r else '', 'at': (r['at'] or '') if r else ''})
+        if self.path.split('?')[0] == '/api/mikveh/client':
+            # הלקוח כמו שהוא עכשיו במקווה — כדי לוודא שהעברה באמת נקלטה (גם אם התשובה התעכבה)
+            import mikveh as _mk
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            try:
+                return self._send(200, {'ok': True, 'client': _mk.slim(_mk.client(cid))})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
         if self.path.split('?')[0] == '/api/mikveh/prefetch':
             # כשפותחים כרטיס לקוח — טוענים אותו מהמקווה מראש, כדי שההעברה עצמה תהיה מהירה
             import mikveh as _mk
