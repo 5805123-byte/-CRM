@@ -21269,11 +21269,14 @@ class H(BaseHTTPRequestHandler):
                     if jid:
                         con.execute("UPDATE cm_job SET title=?, note=?, to_who=?, due=? WHERE id=?", (title, note, to, due, jid))
                     else:
+                        # מאיר: "אל תכתוב מי אתה" — מי רשם: לפי הכניסה (הסיסמה הראשית = ראש הכולל, סיסמת גבאים = גבאי)
+                        by_ = who(b.get('by_who')) or ('ראש הכולל' if getattr(self, 'role', 'admin') in ('admin', '') else 'גבאי')
                         con.execute("INSERT INTO cm_job(title,note,to_who,by_who,due,status,created) VALUES(?,?,?,?,?,'open',?)",
-                                    (title, note, to, who(b.get('by_who')) or to, due, now_iso()))
+                                    (title, note, to, by_, due, now_iso()))
                         jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
                 elif act == 'done':
-                    con.execute("UPDATE cm_job SET status='done', done_at=?, done_by=? WHERE id=?", (now_iso(), who(b.get('by_who')), jid))
+                    con.execute("UPDATE cm_job SET status='done', done_at=?, done_by=? WHERE id=?",
+                                (now_iso(), who(b.get('by_who')) or ('ראש הכולל' if getattr(self, 'role', 'admin') in ('admin', '') else 'גבאי'), jid))
                 elif act == 'reopen':
                     con.execute("UPDATE cm_job SET status='open', done_at=NULL, done_by=NULL WHERE id=?", (jid,))
                 elif act == 'delete':
@@ -24593,7 +24596,7 @@ def nd_hook(con, d):
     return 'ignored'
 
 
-CM_TEAM = ['ראש הכולל', 'שמעון ברלב', 'אברהם רובינפלד']
+CM_TEAM = ['ראש הכולל', 'שמעון ברלב', 'אברהם רובינפלד', 'יוסף אורדנטליך']   # מאיר: "תוסיף עוד גבאי יוסף אורדנטליך"
 
 
 def cm_team(con):
@@ -24601,7 +24604,8 @@ def cm_team(con):
     try:
         t = json.loads(kv_get(con, 'cm_team', '') or 'null')
         if isinstance(t, list) and t:
-            return [str(x) for x in t]
+            t = [str(x) for x in t]
+            return t + [x for x in CM_TEAM if x not in t and x == 'יוסף אורדנטליך']
     except ValueError:
         pass
     return list(CM_TEAM)

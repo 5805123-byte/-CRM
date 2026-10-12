@@ -13551,7 +13551,9 @@ function lgPrint(){const L=LG||{rows:[]},w=window.open('','_blank');if(!w)return
     <style>body{font-family:Arial,sans-serif;margin:24px}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #bbb;padding:5px 7px;text-align:right;font-size:13px}th{background:#f1ede4}.t td{font-weight:bold;background:#faf8f3}</style></head>
     <body><h1>בית הכנסת — הכנסות והוצאות · ${esc(lgMonthName(lgMonth))}</h1>${tb('in')}${tb('out')}<h2>יתרה לחודש: ${cdMoney(L.net)}</h2><script>print()<\/script></body></html>`);
   w.document.close();}
-// ---- ✅ משימות הצוות: ראש הכולל, שמעון ברלב, אברהם רובינפלד ----
+// ---- ✅ משימות הצוות: ראש הכולל, שמעון ברלב, אברהם רובינפלד, יוסף אורדנטליך ----
+// מאיר: "אל תכתוב מי אתה — שאם אני רוצה לשים משימה עבור אברהם רובינפלד או שמעון ברלב שאוכל, או אם הם
+// רוצים לשים לראש הכולל משימה". בוחרים רק למי; מי רשם — לפי הכניסה
 // מאיר: "כל אחד יכול לרשום לשני משימות שעליו לבצע בעצמו או שהשני יעשה"
 let CMJOBS=null, jobMe='', jobView='', jobEdit=0, jobDone={};
 try{jobMe=localStorage.getItem('kc_jobme')||'';}catch(e){}
@@ -13572,30 +13574,28 @@ async function renderCommJobs(){
   const who=jobView?[jobView]:T;
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="jb_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">✅ משימות הצוות</div>
-    <div class="jobme">מי אתה? ${T.map(x=>`<button class="chip ${jobMe===x?'on':''}" data-jme="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     <div class="jobadd"><input id="jb_t" placeholder="➕ משימה חדשה — מה צריך לעשות?">
-      <div class="lgf"><label class="fld"><span>למי</span><select id="jb_to">${opts(jobMe||T[0])}</select></label><label class="fld"><span>עד מתי (לא חובה)</span><input type="date" id="jb_due"></label></div>
+      <div class="lgf"><label class="fld"><span>למי</span><select id="jb_to"><option value="">— בחר למי —</option>${opts('')}</select></label><label class="fld"><span>עד מתי (לא חובה)</span><input type="date" id="jb_due"></label></div>
       <input id="jb_n" placeholder="הערות (לא חובה)"><button class="btn sm" id="jb_add">➕ הוסף משימה</button></div>
     <div class="jobfl"><button class="chip ${jobView?'':'on'}" data-jv="">כולם</button>${T.map(x=>`<button class="chip ${jobView===x?'on':''}" data-jv="${esc(x)}">${esc(x)} <b>${R.filter(j=>j.to_who===x&&j.status!=='done').length}</b></button>`).join('')}</div>
     <div class="jobcols">${who.map(x=>{const op=R.filter(j=>j.to_who===x&&j.status!=='done'),dn=R.filter(j=>j.to_who===x&&j.status==='done');
-      return `<div class="jobcol"><h3>👤 ${esc(x)}${x===jobMe?' <small>(אני)</small>':''} <small>· ${op.length} פתוחות</small></h3>
+      return `<div class="jobcol"><h3>👤 ${esc(x)} <small>· ${op.length} פתוחות</small></h3>
         ${op.map(item).join('')||'<div class="hintxt">אין משימות פתוחות ✓</div>'}
         ${dn.length?`<button class="btn sm ghost jobdn" data-jd="${esc(x)}">✔ בוצעו (${dn.length}) ${jobDone[x]?'▲':'▼'}</button>${jobDone[x]?dn.slice(0,30).map(item).join(''):''}`:''}</div>`;}).join('')}</div>`;
   const g=id=>document.getElementById(id);
   g('jb_back').onclick=()=>{cmSub='list';render();};
-  view.querySelectorAll('[data-jme]').forEach(b=>b.onclick=()=>{jobMe=b.dataset.jme;try{localStorage.setItem('kc_jobme',jobMe);}catch(e){}renderCommJobs();});
   view.querySelectorAll('[data-jv]').forEach(b=>b.onclick=()=>{jobView=b.dataset.jv;renderCommJobs();});
   view.querySelectorAll('[data-jd]').forEach(b=>b.onclick=()=>{jobDone[b.dataset.jd]=!jobDone[b.dataset.jd];renderCommJobs();});
   g('jb_add').onclick=async()=>{const t=g('jb_t').value.trim();if(!t){toast('מה המשימה?');g('jb_t').focus();return;}
-    if(!jobMe){toast('בחר קודם למעלה מי אתה');return;}
-    const r=await api('POST','/api/cm/jobs',{title:t,to_who:g('jb_to').value,by_who:jobMe,due:g('jb_due').value,note:g('jb_n').value.trim()});
+    if(!g('jb_to').value){toast('למי המשימה?');g('jb_to').focus();return;}
+    const r=await api('POST','/api/cm/jobs',{title:t,to_who:g('jb_to').value,due:g('jb_due').value,note:g('jb_n').value.trim()});
     if(!r||!r.ok){await uiAlert((r&&r.error)||'לא נשמר');return;}
     toast('✅ המשימה נרשמה ל'+g('jb_to').value);CMJOBS=null;await renderCommJobs();const f=g('jb_t');if(f)f.focus();};
   g('jb_t').onkeydown=e=>{if(e.key==='Enter')g('jb_add').click();};
   view.querySelectorAll('[data-jb]').forEach(b=>b.onclick=async()=>{const a=b.dataset.jb,id=+b.dataset.id;
     if(a==='edit'){jobEdit=id;renderCommJobs();return;}
     if(a==='cancel'){jobEdit=0;renderCommJobs();return;}
-    let body={action:a,by_who:jobMe};
+    let body={action:a};
     if(a==='delete'&&!await uiConfirm('למחוק את המשימה?','🗑 כן, למחוק','ביטול'))return;
     if(a==='save'){const t=g('jbe_t').value.trim();if(!t){toast('מה המשימה?');return;}body={action:'edit',title:t,to_who:g('jbe_to').value,due:g('jbe_due').value,note:g('jbe_n').value.trim()};}
     b.disabled=true;
