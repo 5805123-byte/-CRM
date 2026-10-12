@@ -1709,8 +1709,6 @@ function renderMikveh(){
   document.getElementById('mkbody').onclick=async e=>{
     const tr=e.target.closest('[data-id]'); if(!tr)return;
     const c=byId(tr.dataset.id); if(!c||c._busy)return;
-    const mem=e.target.closest('.mkmem');
-    if(mem){e.preventDefault();e.stopPropagation();const ms=await cmLoad();const m=ms.find(x=>x.id==+mem.dataset.mid);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');return;}
     if(e.target.closest('.mkmsg')){if(c.phone)mkNotify(c,'free');return;}
     mkOpen(c);
   };
@@ -1726,7 +1724,7 @@ function mkRowHTML(c,G){
     <div class="mkav" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
     <div class="mknm"><b>${esc(mkName(c))}</b>
       <div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'<span>אין טלפון</span>'}<span>#${esc(c.code||'')}</span>
-        ${c.last_in?`<span>🚪 ${esc(mkAgo(c.last_in))}</span>`:''}${c.member?`<a href="#" class="mkmem" data-mid="${c.member.id}">🕍 ${esc(c.member.name)}</a>`:''}
+        ${c.last_in?`<span>🚪 ${esc(mkAgo(c.last_in))}</span>`:''}
         ${c.parent?'<span class="mktag mu">בן</span>':''}${c.blocked?`<span class="mktag bad" title="${esc(c.block_reason)}">חסום</span>`:''}
         ${subBad?'<span class="mktag bad">המנוי הסתיים</span>':''}${licBad?'<span class="mktag bad">רישיון פג</span>':''}</div></div>
     <div class="mkgcol"><span class="mkgb"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g?g.name:'קבוצה שנמחקה')}</span></div>
@@ -1742,7 +1740,7 @@ function mkPaint(){
     if(!qq)return true;
     if(qd&&qd.length>=3&&mkDigits(c.phone).indexOf(qd.replace(/^972/,'0'))>=0)return true;     // טלפון — גם עם מקפים / רווחים
     if(qd&&qd===qq&&String(c.code||'')===qd)return true;                                       // מספר לקוח
-    return matchStr(mkName(c)+' '+(c.last||'')+' '+(c.first||'')+' '+((c.member&&c.member.name)||'')+' '+((G[c.group]&&G[c.group].name)||''),qq);
+    return matchStr(mkName(c)+' '+(c.last||'')+' '+(c.first||'')+' '+((G[c.group]&&G[c.group].name)||''),qq);
   });
   const ts=s=>s?(new Date(s).getTime()||0):0;
   rows.sort(mkSort==='code'?(a,b)=>(+a.code||0)-(+b.code||0)
@@ -1802,7 +1800,7 @@ function mkOpen(c){
     rs.innerHTML=`<button class="x" id="rx">✕</button>
       <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
         <div><h2>${esc(mkName(c))}</h2><div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span>
-          ${c.member?`<a href="#" id="mkmem1">🕍 ${esc(c.member.name)}</a>`:''}${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
+          ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
         ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
@@ -1823,10 +1821,11 @@ function mkOpen(c){
       </div>`:''}
       <div style="display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap">
         <button class="mkbtn gh" id="mkmsg1"${c.phone?'':' disabled'}>💬 שליחת הודעה</button>
-        <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>`;
+        <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>
+      <div class="mksec" style="margin-top:18px">📜 היסטוריה <small>הודעות ששלחנו לו והתוצאות, והעברות קבוצה — רק של המקווה</small></div>
+      <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>`;
+    mkHistLoad(c.id);
     document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
-    const mm=document.getElementById('mkmem1');
-    if(mm)mm.onclick=async e=>{e.preventDefault();const ms=await cmLoad();const m=ms.find(x=>x.id==c.member.id);if(m){remov.classList.remove('show');openMember(m);}};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
       const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
@@ -1953,17 +1952,39 @@ async function mkSend(c,text,ch,when){
   const what=ch==='sms'?'💬 SMS':'📞 הודעה קולית', who=mkName(c);
   toast(what+' ל'+who+(when?' — מתוזמנת':' — יוצא…'));
   c.sent={ch,st:when?'sched':'sending',at:when?new Date(when):new Date()}; mkCardRefresh(c);
-  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch,send_at:when||''});
+  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch,send_at:when||'',cid:c.id});
+  mkHistLoad(c.id);
   if(!r||!r.ok){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא נשלחה:\n'+((r&&r.error)||'שגיאה'));}
   if(r.send_at){c.sent.at=new Date(r.send_at.replace(' ','T'));mkCardRefresh(c);mkSchedCount();
     return toast('⏰ '+what+' ל'+who+' תצא '+mkDTLabel(r.send_at.replace(' ','T'))+(r.moved?' (נדחה לשעה מתאימה — שבת / חג / לילה)':''));}
   for(let i=0;i<40;i++){                       // עד דקה — בדרך כלל יוצא תוך שניות
     await new Promise(res=>setTimeout(res,1500));
     const s2=await api('GET','/api/mikveh/notify/'+r.job);
-    if(s2&&s2.status==='sent'){c.sent.st='sent';mkCardRefresh(c);return toast('✓ '+what+' יצאה ל'+who);}
+    if(s2&&s2.status==='sent'){c.sent.st='sent';mkCardRefresh(c);mkHistLoad(c.id);return toast('✓ '+what+' יצאה ל'+who);}
     if(s2&&s2.status==='failed'){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא יצאה:\n'+(s2.error||'שגיאה'));}
   }
 }
+// מאיר: "איפה אני רואה תוצאות שליחה ששלחתי לגבי המקווה? שיראו את זה בכרטיס של הלקוח של המקווה —
+// הכרטיס של המקווה לא קשור בכלל לקהילה". היסטוריה מהיומן של המקווה בלבד (mk_log)
+const MKHIST={};
+const mkMMSS=n=>Math.floor((+n||0)/60)+':'+String((+n||0)%60).padStart(2,'0');
+function mkHistRes(r){if(r.kind!=='msg')return '';const v=r.ch;
+  if(r.j_st==='scheduled')return '<span class="mktag mu">⏰ מתוזמנת ל-'+esc(String(r.send_at||'').slice(5,16))+'</span>';
+  if(r.j_st==='cancelled'||r.y_st==='cancelled')return '<span class="mktag mu">בוטלה</span>';
+  if(!r.y_st||r.y_st==='queued')return '<span class="mktag mu">⏳ בתור</span>';
+  if(r.y_st==='failed')return '<span class="mktag bad">✗ לא יצאה'+(r.y_err?' — '+esc(String(r.y_err).slice(0,60)):'')+'</span>';
+  if(v==='sms')return '<span class="mktag ok">✓ ה-SMS נשלח</span>';
+  if(+r.y_ans===1)return `<span class="mktag ok">✅ ענה · שמע ${mkMMSS(r.y_listen)}${+r.y_secs?' (שיחה '+mkMMSS(r.y_secs)+')':''}${r.y_pressed?' · ☎️ הקיש '+esc(r.y_pressed):' · לא הקיש'}</span>`;
+  if(r.y_ans!=null&&+r.y_ans===0)return '<span class="mktag bad">📵 לא ענה'+(+r.y_retried>0?(+r.y_r_ans===1?' · ✅ ענה בניסיון השני':' · 🔁 ניסיון שני יצא'):(r.y_retry_at?' · 🔁 ינסה שוב '+esc(String(r.y_retry_at).slice(5,16)):''))+'</span>';
+  return '<span class="mktag mu" title="'+esc(r.y_call||'')+'">⏳ בודק אם ענה…</span>';}
+function mkHistHTML(cid){const L=MKHIST[cid];if(!L)return '<div class="mksub">⏳ טוען…</div>';if(!L.length)return '<div class="mksub">עוד לא נשלחו לו הודעות מכאן ולא הועבר קבוצה.</div>';
+  return '<div class="mklist">'+L.map(r=>`<div class="mkrow schrow"><div class="mknm"><b>${esc(String(r.at||'').slice(8,10)+'/'+String(r.at||'').slice(5,7)+' '+String(r.at||'').slice(11,16))} · ${esc(r.summary||'')}</b>
+    ${r.kind==='msg'?`<div class="mksub">${mkHistRes(r)}${r.y_sent?' · יצאה '+esc(String(r.y_sent).slice(11,16)):''}</div>${r.y_text?`<details><summary class="mksub">הטקסט</summary><div class="mksub">${esc(r.y_text)}</div></details>`:''}`:''}</div></div>`).join('')+'</div>';}
+async function mkHistLoad(cid){const r=await api('GET','/api/mikveh/log/'+encodeURIComponent(cid));if(!r||!r.ok)return;MKHIST[cid]=r.rows||[];
+  const el=document.getElementById('mkhist');if(el&&el.dataset.id===cid)el.innerHTML=mkHistHTML(cid);
+  // תוצאה שעוד לא הגיעה — שוב בעוד דקה, כל עוד הכרטיס פתוח
+  clearTimeout(MKHIST._t);if((r.rows||[]).some(x=>x.kind==='msg'&&(x.y_st==='queued'||(x.ch==='voice'&&x.y_st==='sent'&&x.y_ans==null))))
+    MKHIST._t=setTimeout(()=>{const e2=document.getElementById('mkhist');if(e2&&e2.dataset.id===cid)mkHistLoad(cid);},60000);}
 // הכרטיס פתוח על אותו לקוח — מעדכנים בו את שורת "הודעה אחרונה"
 function mkCardRefresh(c){const el=document.getElementById('mksent');if(!el||el.dataset.id!==c.id)return;el.innerHTML=mkSentTxt(c);}
 const mkSentTxt=c=>{const s=c.sent;if(!s)return '';

@@ -570,6 +570,24 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE cm_don ADD COLUMN fund TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "אני רוצה שיראו את זה בכרטיס של הלקוח של המקווה — הכרטיס של המקווה לא קשור בכלל לקהילה,
+    # מערכת נפרדת לגמרי". יומן הפעולות שלנו מול לקוח מקווה (העברת קבוצה, הודעה) — נפרד לגמרי מהקהילה.
+    # רק מה שאנחנו עשינו (לא נתונים מהמקווה): מזהה הלקוח במקווה, מתי, מה, ומזהה ההודעה בימות
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS mk_log(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, kind TEXT, summary TEXT, msg_id INTEGER)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_mklog_cid ON mk_log(cid)")
+    except Exception: pass
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
+    except Exception: pass
+    # פעם אחת: מה שנרשם בעבר ביומן של חברי הקהילה מהמקווה — יוצא משם
+    try:
+        if not con.execute("SELECT 1 FROM app_kv WHERE k='mk_unlink_1'").fetchone():
+            con.execute("DELETE FROM member_log WHERE channel='מקווה'")
+            con.execute("DELETE FROM member_log WHERE channel='ימות המשיח' AND EXISTS (SELECT 1 FROM ym_msg y WHERE y.req_off='mikveh' "
+                        "AND y.kind='m' AND y.ref_id=member_log.member_id AND y.text=member_log.body)")
+            con.execute("UPDATE ym_msg SET kind='k', ref_id=0 WHERE req_off='mikveh' AND kind='m'")
+            con.execute("INSERT INTO app_kv(k,v) VALUES('mk_unlink_1','1')")
+    except Exception: pass
     # מאיר: "מי שקיבל שיחה מאיתנו דרך חלון חובות והתחייבויות — שנראה אצלו את התוצאות, אם ענה" —
     # ההודעה האחרונה (ym_msg) שיצאה על החוב מהחלון
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN rem_msg INTEGER")
@@ -17367,15 +17385,23 @@ class H(BaseHTTPRequestHandler):
                 rows = [_mk.slim(c) for c in _mk.clients(fresh=fresh) if _mk.visible(c)]
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            # מערכת נפרדת לגמרי מהקהילה — בלי קישור לחבר קהילה
+            return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
+        m = re.match(r'/api/mikveh/log/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 📜 מה שעשינו מול לקוח המקווה: העברות קבוצה והודעות — עם תוצאת השליחה (ענה, כמה שמע, הקיש)
             con = db()
             try:
-                pm = mk_phone_members(con)
+                rows = []
+                for r in con.execute("SELECT l.*, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, "
+                                     "y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, j.channel ch, j.send_at, j.status j_st, "
+                                     "(SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans "
+                                     "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job WHERE l.cid=? ORDER BY l.at DESC, l.id DESC LIMIT 100",
+                                     (m.group(1),)):
+                    rows.append(dict(r))
             finally:
                 con.close()
-            import yemot as _ym
-            for r in rows:
-                r['member'] = pm.get(_ym.norm_phone(r['phone']) or '-') if r['phone'] else None
-            return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/mikveh/templates':
             con = db()
             try:
@@ -19166,16 +19192,14 @@ class H(BaseHTTPRequestHandler):
             # מאיר: "לפעמים לוקח פחות משנייה ולפעמים הרבה זמן, ובעצם הוא כן מתעדכן באותו שנייה במקווה…
             # הוא צריך לעדכן וזהו". הרישום ביומן של חבר הקהילה חיכה לתורו בבסיס הנתונים (כשסנכרון
             # ברקע כותב, עד דקה) — לפני התשובה. עכשיו: עונים מיד, והרישום נעשה ברקע.
-            def _log(phone=row['phone'], gname=gname):
+            def _log(cid=cid, gname=gname):
+                # היומן של לקוח המקווה בלבד — לא נוגע בקהילה
                 try:
-                    import yemot as _ym
                     con = db()
                     try:
-                        mid = mk_phone_members(con).get(_ym.norm_phone(phone) or '-') if phone else None
-                        if mid:
-                            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out','',?)",
-                                        (mid['id'], today_iso(), 'מקווה', '🛁 קבוצה במקווה עודכנה: ' + gname, '', now_iso()))
-                            con.commit()
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                    (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🔄 הועבר לקבוצה: ' + gname))
+                        con.commit()
                     finally:
                         con.close()
                 except Exception as e:
@@ -19215,13 +19239,18 @@ class H(BaseHTTPRequestHandler):
                     send_at = ok_dt.strftime('%Y-%m-%d %H:%M')
             con = db()
             try:
-                mem = mk_phone_members(con).get(phone)
                 con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,1,?,0,?,'',?)",
                             (now_iso(), ch, text, '', 'scheduled' if send_at else 'queued', 'מקווה', send_at))
                 jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-                # req_off='mikveh' — הודעה של המקווה אף פעם לא "שולמה" על ידי תשלום בנדרים פלוס
-                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off) VALUES(?,?,?,?,?,?,'queued','','mikveh')",
-                            (jid, 'm' if mem else 't', mem['id'] if mem else 0, name, phone, text))
+                # req_off='mikveh' — הודעה של המקווה אף פעם לא "שולמה" על ידי תשלום בנדרים פלוס.
+                # kind='k' — לקוח מקווה: לא נרשם אצל אף חבר קהילה (מערכת נפרדת); mk_cid — הלקוח במקווה
+                mkc = str(b.get('cid') or '').strip()
+                mkc = mkc if re.fullmatch(r'[0-9a-fA-F-]{36}', mkc) else ''
+                mid_ = con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,mk_cid) VALUES(?,?,?,?,?,?,'queued','','mikveh',?)",
+                                   (jid, 'k', 0, name, phone, text, mkc)).lastrowid
+                if mkc:
+                    con.execute("INSERT INTO mk_log(cid,at,kind,summary,msg_id) VALUES(?,?,?,?,?)",
+                                (mkc, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'msg', ('💬 SMS' if ch == 'sms' else '📞 הודעה קולית') + (' (מתוזמנת ל-%s)' % send_at if send_at else ''), mid_))
                 con.commit()
             finally:
                 con.close()
