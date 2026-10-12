@@ -13556,6 +13556,7 @@ function lgPrint(){const L=LG||{rows:[]},w=window.open('','_blank');if(!w)return
     <body><h1>בית הכנסת — הכנסות והוצאות · ${esc(lgMonthName(lgMonth))}</h1>${tb('in')}${tb('out')}<h2>יתרה לחודש: ${cdMoney(L.net)}</h2><script>print()<\/script></body></html>`);
   w.document.close();}
 // ---- ✅ משימות הצוות: ראש הכולל, שמעון ברלב, אברהם רובינפלד, יוסף אורדנטליך ----
+// מאיר: "ברגע שאני על הדף של שמעון ברלב — לא צריך לבחור למי, זה אוטומטי בשבילו" (jobView)
 // מאיר: "אל תכתוב מי אתה — שאם אני רוצה לשים משימה עבור אברהם רובינפלד או שמעון ברלב שאוכל, או אם הם
 // רוצים לשים לראש הכולל משימה". בוחרים רק למי; מי רשם — לפי הכניסה
 // מאיר: "כל אחד יכול לרשום לשני משימות שעליו לבצע בעצמו או שהשני יעשה"
@@ -13578,8 +13579,8 @@ async function renderCommJobs(){
   const who=jobView?[jobView]:T;
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="jb_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">✅ משימות הצוות</div>
-    <div class="jobadd"><input id="jb_t" placeholder="➕ משימה חדשה — מה צריך לעשות?">
-      <div class="lgf"><label class="fld"><span>למי</span><select id="jb_to"><option value="">— בחר למי —</option>${opts('')}</select></label><label class="fld"><span>עד מתי (לא חובה)</span><input type="date" id="jb_due"></label></div>
+    <div class="jobadd"><input id="jb_t" placeholder="${jobView?'➕ משימה חדשה ל'+esc(jobView)+' — מה צריך לעשות?':'➕ משימה חדשה — מה צריך לעשות?'}">
+      <div class="lgf"><label class="fld"><span>למי</span><select id="jb_to">${jobView?'':'<option value="">— בחר למי —</option>'}${opts(jobView)}</select></label><label class="fld"><span>עד מתי (לא חובה)</span><input type="date" id="jb_due"></label></div>
       <input id="jb_n" placeholder="הערות (לא חובה)"><button class="btn sm" id="jb_add">➕ הוסף משימה</button></div>
     <div class="jobfl"><button class="chip ${jobView?'':'on'}" data-jv="">כולם</button>${T.map(x=>`<button class="chip ${jobView===x?'on':''}" data-jv="${esc(x)}">${esc(x)} <b>${R.filter(j=>j.to_who===x&&j.status!=='done').length}</b></button>`).join('')}</div>
     <div class="jobcols">${who.map(x=>{const op=R.filter(j=>j.to_who===x&&j.status!=='done'),dn=R.filter(j=>j.to_who===x&&j.status==='done');
