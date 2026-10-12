@@ -17402,6 +17402,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
             # מערכת נפרדת לגמרי מהקהילה — בלי קישור לחבר קהילה
             return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
+        if self.path.split('?')[0] == '/api/mikveh/link':
+            con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
+            return self._send(200, {'ok': True, 'url': v})
         m = re.match(r'/api/mikveh/log/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
         if m:
             # 📜 מה שעשינו מול לקוח המקווה: העברות קבוצה והודעות — עם תוצאת השליחה (ענה, כמה שמע, הקיש)
@@ -19222,6 +19225,14 @@ class H(BaseHTTPRequestHandler):
             import threading as _thr
             _thr.Thread(target=_log, daemon=True).start()
             return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'ms': dict(_mk.TIMES)})
+        if self.path == '/api/mikveh/link':
+            # 🔗 מאיר: "אני רוצה להיכנס לכרטיס שלו במקווה כשאני לוחץ על שמו" — כתובת כרטיס לקוח באתר המקווה,
+            # עם {id} (המזהה הארוך) או {code} (מספר הלקוח) במקום הלקוח
+            u = str(b.get('url') or '').strip()[:400]
+            if u and not (re.match(r'https://', u) and ('{id}' in u or '{code}' in u)):
+                return self._send(200, {'ok': False, 'error': 'כתובת לא תקינה'})
+            con = db(); kv_set(con, 'mk_client_url', u); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'url': u})
         if self.path == '/api/mikveh/notify':
             # "ולשלוח לו הודעה במיידי דרך הטלפון שזה עודכן" — ידני, הודעה אחת, דרך ימות המשיח
             import yemot as _ym

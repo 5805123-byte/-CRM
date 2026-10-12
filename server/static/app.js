@@ -1799,7 +1799,7 @@ function mkOpen(c){
     const busy=state==='busy';
     rs.innerHTML=`<button class="x" id="rx">✕</button>
       <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
-        <div><h2>${esc(mkName(c))}</h2><div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span>
+        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
@@ -1827,6 +1827,8 @@ function mkOpen(c){
     mkHistLoad(c.id);
     document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
+    document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
+    document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
       const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
     const no=document.getElementById('mkno'); if(no)no.onclick=()=>{pick=null;state='';draw();};
@@ -1964,6 +1966,23 @@ async function mkSend(c,text,ch,when){
     if(s2&&s2.status==='failed'){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא יצאה:\n'+(s2.error||'שגיאה'));}
   }
 }
+// 🔗 מאיר: "אני רוצה להיכנס לכרטיס שלו במקווה כשאני לוחץ על שמו" — באתר המקווה. בפעם הראשונה מדביקים
+// כתובת של כרטיס לקוח כלשהו מהאתר; המערכת מזהה בה את הלקוח ושומרת תבנית לכולם
+let MKWEB=null;
+function mkWebPattern(u,c){u=String(u||'').trim();if(!/^https:\/\//.test(u))return '';
+  const g=u.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);if(g)return u.replace(g[0],'{id}');
+  if(c&&c.code&&new RegExp('(^|[^0-9])'+c.code+'([^0-9]|$)').test(u))return u.replace(new RegExp('(^|[^0-9])'+c.code+'(?=[^0-9]|$)'),'$1{code}');
+  const n=u.match(/([/=])(\d{1,8})(?=[/?&#]|$)/);if(n)return u.replace(n[0],n[1]+'{code}');return '';}
+async function mkOpenWeb(c,setup){
+  if(MKWEB===null){const r=await api('GET','/api/mikveh/link');MKWEB=(r&&r.url)||'';}
+  if(MKWEB&&!setup){window.open(MKWEB.replace('{id}',encodeURIComponent(c.id)).replace('{code}',encodeURIComponent(c.code||'')),'_blank','noopener');return;}
+  const v=await uiPrompt('כדי שלחיצה על השם תפתח את הכרטיס שלו באתר המקווה — פעם אחת:\n1. באתר המקווה פתח כרטיס של לקוח כלשהו\n2. העתק את הכתובת מהשורה למעלה בדפדפן\n3. הדבק אותה כאן',MKWEB?MKWEB:'');
+  if(v===null||v===undefined||!String(v).trim())return;
+  const pat=/\{(id|code)\}/.test(v)?String(v).trim():mkWebPattern(v,null);
+  if(!pat){await uiAlert('לא מצאתי בכתובת את הלקוח (מזהה או מספר לקוח).\nתוודא שהעתקת את הכתובת כשכרטיס של לקוח פתוח באתר המקווה.');return;}
+  const r=await api('POST','/api/mikveh/link',{url:pat});if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
+  MKWEB=pat;toast('🔗 נשמר — מעכשיו לחיצה על השם פותחת את הכרטיס באתר המקווה');
+  window.open(pat.replace('{id}',encodeURIComponent(c.id)).replace('{code}',encodeURIComponent(c.code||'')),'_blank','noopener');}
 // מאיר: "איפה אני רואה תוצאות שליחה ששלחתי לגבי המקווה? שיראו את זה בכרטיס של הלקוח של המקווה —
 // הכרטיס של המקווה לא קשור בכלל לקהילה". היסטוריה מהיומן של המקווה בלבד (mk_log)
 const MKHIST={};
