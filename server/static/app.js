@@ -1650,7 +1650,10 @@ function render(){
 /* ---------- מקווה ----------
    מאיר: "תעשה לשונית מקווה, לא צריך לסנכרן למערכת נתונים מהמקווה" — הכל חי מול
    מערכת המקווה: רואים את הלקוחות, מעבירים קבוצה, ושולחים לו מיד הודעה (ידני, לא אוטומטי). */
-let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name';
+let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name', mkExp=false;
+// מאיר: "שתי רשימות נפרדות — אלו שלא הסתיים להם המנוי או הרישיון, ואלו שהסתיים; את אלו שהסתיים רק בלחיצת
+// כפתור למעלה. בחיפוש — שיופיעו מיד, אבל מול העיניים רק אלו שלא הסתיים להם"
+const mkExpired=c=>mkPast(c.sub_end)||mkPast(c.lic_exp);
 const mkDate=s=>{if(!s)return '';const d=new Date(s);if(isNaN(d))return '';if(d.getFullYear()>2090)return '∞';
   return d.toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',year:'numeric'});};
 const mkWhen=s=>{if(!s)return '';const d=new Date(s);if(isNaN(d))return '';
@@ -1694,6 +1697,7 @@ function renderMikveh(){
       <div class="mksearch"><input id="mkq" placeholder="חיפוש לקוח — שם, טלפון או מספר לקוח" value="${esc(mkQ)}" autocomplete="off"></div>
       <div class="mkchips" id="mkchips"><button class="mkchip${mkGrp?'':' on'}" data-g="">הכל <i>${MK.clients.length}</i></button>
         ${used.map(g=>`<button class="mkchip${g.id===mkGrp?' on':''}" data-g="${esc(g.id)}"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g.name)} <i>${cnt[g.id]}</i></button>`).join('')}</div>
+      <div class="mkseg" id="mkexp" style="margin:8px 0"><button data-x="0" class="${mkExp?'':'on'}">✅ פעילים <i id="mkn_on"></i></button><button data-x="1" class="${mkExp?'on':''}">🔴 הסתיים מנוי / רישיון <i id="mkn_off"></i></button></div>
       <div class="mkbar2"><span id="mkcount"></span>
         <span class="mkseg" id="mksort">${[['name','א–ב'],['code','מספר לקוח'],['last','כניסה אחרונה']].map(([k,l])=>`<button data-s="${k}" class="${mkSort===k?'on':''}">${l}</button>`).join('')}</span></div></div>
     <div class="mklist" id="mkbody"></div>
@@ -1702,6 +1706,8 @@ function renderMikveh(){
   qi.oninput=()=>{mkQ=q=qi.value.trim();const tq=document.getElementById('q');if(tq)tq.value=qi.value;mkPaint();};
   document.getElementById('mkchips').onclick=e=>{const b=e.target.closest('[data-g]');if(!b)return;mkGrp=b.dataset.g;
     document.querySelectorAll('#mkchips .mkchip').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
+  document.getElementById('mkexp').onclick=e=>{const b=e.target.closest('[data-x]');if(!b)return;mkExp=b.dataset.x==='1';
+    document.querySelectorAll('#mkexp button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksort').onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;mkSort=b.dataset.s;
     document.querySelectorAll('#mksort button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
@@ -1738,7 +1744,7 @@ function mkPaint(){
   const qq=(mkQ||'').trim(), qd=mkDigits(qq);
   let rows=MK.clients.filter(c=>{
     if(mkGrp&&c.group!==mkGrp)return false;
-    if(!qq)return true;
+    if(!qq)return mkExpired(c)===mkExp;          // בלי חיפוש — רק הרשימה שנבחרה למעלה
     if(qd&&qd.length>=3&&mkDigits(c.phone).indexOf(qd.replace(/^972/,'0'))>=0)return true;     // טלפון — גם עם מקפים / רווחים
     if(qd&&qd===qq&&String(c.code||'')===qd)return true;                                       // מספר לקוח
     return matchStr(mkName(c)+' '+(c.last||'')+' '+(c.first||'')+' '+((G[c.group]&&G[c.group].name)||''),qq);
@@ -1747,8 +1753,12 @@ function mkPaint(){
   rows.sort(mkSort==='code'?(a,b)=>(+a.code||0)-(+b.code||0)
     :mkSort==='last'?(a,b)=>ts(b.last_in)-ts(a.last_in)
     :(a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
+  // בחיפוש — כולם (גם מי שהסתיים לו), הפעילים קודם
+  if(qq)rows.sort((a,b)=>mkExpired(a)-mkExpired(b));
   body.innerHTML=rows.map(c=>mkRowHTML(c,G)).join('');
-  document.getElementById('mkcount').textContent=rows.length===MK.clients.length?MK.clients.length+' לקוחות':rows.length+' מתוך '+MK.clients.length+' לקוחות';
+  const inG=MK.clients.filter(c=>!mkGrp||c.group===mkGrp), nOff=inG.filter(mkExpired).length;
+  const n1=document.getElementById('mkn_on'),n2=document.getElementById('mkn_off');if(n1)n1.textContent=inG.length-nOff;if(n2)n2.textContent=nOff;
+  document.getElementById('mkcount').textContent=qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
   document.getElementById('mknone').classList.toggle('hidden',rows.length>0);
 }
 // שורה אחת בלבד (בזמן העברה) — בלי לצייר את כל הרשימה מחדש
