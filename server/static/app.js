@@ -1609,6 +1609,9 @@ const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',stip
   debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',gifts:'חיפוש תרומה — שם תורם / סכום / עבור מה / אסמכתא…',camp:'חיפוש שם, משפחה או סכום…',mikveh:'חיפוש לקוח במקווה — שם / טלפון / מספר לקוח…',zmanim:'חיפוש שבת / חג / פרשה…',
   old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
 function render(){
+  // סיסמה מוגבלת — אף כפתור בתוך המערכת לא מעביר ללשונית שלא שלה (למשל "לרשימת התורמים" מכרטיס)
+  if(ROLE!=='admin'){const T=ROLE_TABS[ROLE]||[];if(!T.includes(tab)){tab=T[0]||'';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));}
+    if(!tab){view.innerHTML='';return;}}
   const qi=document.getElementById('q');
   if(qi)qi.placeholder=QPH[tab]||QPH.donors;
   chips.innerHTML='';

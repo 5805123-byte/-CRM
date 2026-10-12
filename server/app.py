@@ -12654,6 +12654,10 @@ AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/heb
                '/cert.png', '/cert.jpg', '/api/task', '/api/intake')
 AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES))     # קהילה + פרנס יום וקוויטל, בסיסמה אחת
 AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES, 'gabbai': AUTH_GABBAI}
+# מאיר: "הבאתי לגבאי סיסמה של גבאים ונכנס לו להכל, גם לתורמים". התחיליות למעלה תופסות גם כתובות
+# שלא נועדו להן ('/api/donor' תפס גם את '/api/donors.csv' — כל התורמים עם טלפון ומייל). אלה חסומות
+# לכל סיסמה שאינה הראשית, גם אם יש להן תחילית מותרת
+AUTH_LIMITED_DENY = ('/api/donors', '/api/intake/donorscan', '/api/intake/sync', '/api/intake/diag', '/api/taskkinds')
 PORTALS = {'/kehila': 'comm', '/parnes': 'parnes', '/gabbai': 'gabbai'}
 ROLE_DESC = {'comm': 'לשונית הקהילה וזמני התפילות', 'parnes': 'פרנס יום וקוויטל', 'gabbai': 'הקהילה, פרנס יום והקוויטל'}
 PARNES_DONOR_FIELDS = ('kv_skip', 'kv_year', 'kv_month', 'tier', 'last', 'first', 'english')
@@ -14780,7 +14784,7 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             if ok_rc:
                 return True
-        if allow is not None and (not any(path.startswith(x) for x in allow)
+        if allow is not None and (not any(path.startswith(x) for x in allow) or any(path.startswith(x) for x in AUTH_LIMITED_DENY)
                                   or (role in ('parnes', 'gabbai') and self.command == 'DELETE' and path.startswith('/api/donor'))):
             fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
             if self.command == 'GET' and (path in PORTALS or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
@@ -16719,10 +16723,17 @@ class H(BaseHTTPRequestHandler):
                              'status': b['status'], 'counts': st,
                              'audience': (b['audience'] if 'audience' in b.keys() else '') or 'donors'})
             con.close()
+            if getattr(self, 'role', 'admin') not in ('admin', ''):
+                rows = [r for r in rows if r['audience'] == 'members']     # סיסמה מוגבלת — רק משלוחים לקהילה
             return self._send(200, {'rows': rows})
         m = re.match(r'/api/mail/batch/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
+            if getattr(self, 'role', 'admin') not in ('admin', ''):
+                au = con.execute("SELECT audience FROM mail_batch WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not au or (au['audience'] or 'donors') != 'members':
+                    con.close()
+                    return self._send(403, {'ok': False, 'error': 'forbidden', 'detail': 'רק משלוחים לקהילה'})
             rows = [dict(r) for r in con.execute(
                 "SELECT donor_id,member_id,email,name,status,error,sent_at FROM mail_queue "
                 "WHERE batch=? ORDER BY id", (int(m.group(1)),))]
@@ -19099,7 +19110,9 @@ class H(BaseHTTPRequestHandler):
                     con.close(); return self._send(200, {'ok': False, 'error': 'מספר הבדיקה לא תקין'})
                 recs = [{'k': 't', 'id': 0, 'name': (b.get('test_name') or 'בדיקה').strip(), 'phone': test_phone, 'link': ym_link_ok(b.get('test_link')), 'for': str(b.get('test_for') or '')[:120]}]
             else:
-                recs = ym_recipients(con, b.get('recipients') or [])
+                # סיסמה מוגבלת — רק חברי קהילה ומספרים שהוקלדו, לא תורמים
+                rq_ = [r for r in (b.get('recipients') or []) if getattr(self, 'role', 'admin') in ('admin', '') or (isinstance(r, dict) and r.get('k') != 'd')]
+                recs = ym_recipients(con, rq_)
             if not recs:
                 con.close(); return self._send(200, {'ok': False, 'error': 'לא נבחרו נמענים'})
             # הקשה 1 = תשלום בשלוחת ה-API: הסכום של כל נמען נשמר כאן, והשלוחה שואלת את השרת
@@ -19334,6 +19347,9 @@ class H(BaseHTTPRequestHandler):
                                     'to': [x['email'] for x in to[:200]],
                                     'first': first, 'sample': sample})
         if self.path == '/api/mail/send':
+            # סיסמה מוגבלת (קהילה / גבאים) — מייל רק לחברי הקהילה, לא לתורמים
+            if getattr(self, 'role', 'admin') not in ('admin', '') and not b.get('members'):
+                return self._send(403, {'ok': False, 'error': 'forbidden', 'detail': 'בסיסמה הזו אפשר לשלוח רק לחברי הקהילה'})
             import bulkmail
             if not bulkmail.configured():
                 return self._send(200, {'ok': False, 'error': 'not_configured',
