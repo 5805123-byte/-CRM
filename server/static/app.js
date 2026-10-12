@@ -1268,9 +1268,25 @@ function showLogin(msg){
     err.textContent=(r&&r.error)||'לא הצליח — נסה שוב';f.querySelector('button').disabled=false;};
   setTimeout(()=>{const i=document.getElementById('login_pw');if(i)i.focus();},50);
 }
+// מאיר: "הבאתי לגבאי את הסיסמה רק של קהילה ופרנס יום, ונכנס לו להכל… וגם אני רוצה התראה כל מי שנכנס
+// למערכת" — כל כניסה: מתי, באיזו הרשאה, מאיזה קישור, מאיזה מכשיר, ואם נשלחה התראה
+async function authLogOpen(){
+  const r=await api('GET','/api/auth/log');if(!r||!r.ok){toast('לא נטען');return;}
+  const o=document.createElement('div');o.className='confirmov';
+  const row=x=>`<div class="alrow ${x.ok?(x.role==='admin'?'adm':''):'bad'}"><b>${esc(x.at.slice(5,16).replace('-','/'))}</b>
+    <span>${x.ok?esc(x.role_he):'❌ סיסמה שגויה'}${x.method==='google'?' · גוגל '+esc(x.email||''):''}</span>
+    <small>${esc(x.portal_he)} · ${esc(x.dev)} · <span dir="ltr">${esc(x.ip)}</span>${x.sent?' · 🔔 '+esc(x.sent):''}</small></div>`;
+  o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">📋 מי נכנס למערכת</div>
+    ${(r.pw_same||[]).length?`<div class="ymwarn">⚠️ ב-Render הסיסמה של ${r.pw_same.map(k=>({CRM_PASS_COMM:'הקהילה',CRM_PASS_PARNES:'פרנס יום',CRM_PASS_GABBAI:'הגבאים'})[k]).join(' / ')} <b>זהה לסיסמה הראשית</b> — מי שמקליד אותה בכניסה הראשית נכנס להכל. צריך להחליף אותה ב-Render לסיסמה אחרת.</div>`:''}
+    <div class="hintxt">${r.channels.length?'🔔 התראה על כל כניסה נשלחת ב: <b>'+esc(r.channels.join(', '))+'</b>':'🔔 עוד לא הוגדר לאן לשלוח התראה. ב-Render ← Environment: <b>ALERT_EMAIL</b> (מייל), <b>ALERT_SMS</b> (נייד, דרך ימות), או <b>ALERT_WHATSAPP</b> (וואטסאפ — צריך גם WA_TOKEN ו-WA_PHONE_ID מ-Meta).'}
+      ${r.channels.includes('וואטסאפ')&&!r.wa_ready?' · ⚠️ לוואטסאפ חסרים WA_TOKEN / WA_PHONE_ID':''}</div>
+    <div class="allist">${(r.rows||[]).map(row).join('')||'<div class="hintxt">אין עדיין כניסות ביומן — הוא מתחיל מעכשיו.</div>'}</div>
+    <div class="cbtns"><button class="btn ghost cno">סגור</button></div></div>`;
+  document.body.appendChild(o);o.querySelector('.cno').onclick=()=>o.remove();}
 function applyRole(){
   // סיסמה מוגבלת: רק הלשוניות שלה. הכותרת משתנה, בדיקת המערכת מוסתרת, והכתובת — הקישור המיוחד
-  const tabs=ROLE_TABS[ROLE]; if(!tabs)return;
+  if(ROLE==='admin')return;
+  const tabs=ROLE_TABS[ROLE]||[];
   document.querySelectorAll('.tab').forEach(b=>{if(!tabs.includes(b.dataset.tab))b.classList.add('hidden');});
   const h=document.querySelector('.brand h1'); if(h)h.textContent=ROLE_TITLE[ROLE]||h.textContent;
   const hb=document.getElementById('healthbtn'); if(hb)hb.hidden=true;
@@ -1555,11 +1571,12 @@ async function load(){
     const o=document.createElement('div');o.className='confirmov';
     o.innerHTML=`<div class="confirmbox"><div class="cm">🔒 יציאה מהמערכת<br><small>גם בלי לצאת, הכניסה פגה לבד אחרי 48 שעות.</small></div>
       <div class="bqfixopts"><button class="btn" data-lo="me">🔒 לצאת רק מהמכשיר הזה</button>
-      ${ROLE==='admin'?'<button class="btn ghost" data-lo="all">🔒 לנתק את כל המכשירים (כולל הגבאים) — כולם יתבקשו להיכנס מחדש</button>':''}</div>
+      ${ROLE==='admin'?'<button class="btn ghost" data-lo="log">📋 מי נכנס למערכת — יומן הכניסות והתראות</button><button class="btn ghost" data-lo="all">🔒 לנתק את כל המכשירים (כולל הגבאים) — כולם יתבקשו להיכנס מחדש</button>':''}</div>
       <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
     document.body.appendChild(o);
     o.querySelector('.cno').onclick=()=>o.remove();
     o.querySelector('[data-lo="me"]').onclick=()=>{o.remove();logout();};
+    const lg=o.querySelector('[data-lo="log"]');if(lg)lg.onclick=()=>{o.remove();authLogOpen();};
     const al=o.querySelector('[data-lo="all"]');
     if(al)al.onclick=async()=>{o.remove();if(!await uiConfirm('לנתק עכשיו את כל המכשירים — גם שלך וגם של הגבאים?\nכל אחד יתבקש להיכנס מחדש בסיסמה (או בגוגל).','🔒 כן, לנתק את כולם','ביטול'))return;
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}

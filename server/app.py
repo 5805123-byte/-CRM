@@ -570,6 +570,11 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE cm_don ADD COLUMN fund TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "כל מי שנכנס למערכת — שאני אקבל התראה על זה בוואטסאפ" — יומן הכניסות
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS auth_log(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, ok INTEGER, role TEXT, "
+                    "portal TEXT, method TEXT, ip TEXT, ua TEXT, email TEXT, sent TEXT)")
+    except Exception: pass
     # מאיר: "נתן תתן… הוספה ידנית למי שהבטיח או למי שתרם" — תרומה של מי שלא בקהילה (בשם בלבד)
     for col in ('name', 'phone'):
         try: con.execute(f"ALTER TABLE cm_don ADD COLUMN {col} TEXT")
@@ -12806,6 +12811,115 @@ def auth_check_password(pw, ip, portal='admin'):
 
 
 
+ROLE_HE = {'admin': 'מנהל — הכל', 'comm': 'קהילה בלבד', 'parnes': 'פרנס יום וקוויטל', 'gabbai': 'גבאי — קהילה, פרנס יום וקוויטל'}
+PORTAL_HE = {'admin': 'הכניסה הראשית (/)', 'comm': '/kehila', 'parnes': '/parnes', 'gabbai': '/gabbai'}
+_ALERT_FAIL = {}     # ip -> מתי נשלחה התראה על ניסיונות שגויים
+
+
+def ua_short(ua):
+    """"אנדרואיד · Chrome" — איזה מכשיר ודפדפן, בלי כל המחרוזת."""
+    u = str(ua or '')
+    dev = ('אנדרואיד' if 'Android' in u else 'אייפון' if 'iPhone' in u else 'אייפד' if 'iPad' in u else
+           'מחשב Windows' if 'Windows' in u else 'מק' if 'Macintosh' in u else 'לינוקס' if 'Linux' in u else 'מכשיר לא מזוהה')
+    br = ('Edge' if 'Edg/' in u else 'סמסונג' if 'SamsungBrowser' in u else 'Chrome' if 'Chrome/' in u else
+          'Firefox' if 'Firefox/' in u else 'Safari' if 'Safari/' in u else '')
+    return dev + (' · ' + br if br else '')
+
+
+def _wa_send(to, text):
+    """וואטסאפ דרך ה-API הרשמי של Meta (WhatsApp Cloud API). ב-Render: WA_TOKEN, WA_PHONE_ID, ALERT_WHATSAPP
+    (המספר שלך), ו-ALERT_WA_TEMPLATE — שם תבנית מאושרת עם משתנה אחד ({{1}}) בגוף. בלי תבנית — הודעה רגילה,
+    שוואטסאפ מעביר רק אם כתבת למספר של המערכת ב-24 השעות האחרונות."""
+    tok, pid = (os.environ.get('WA_TOKEN') or '').strip(), re.sub(r'\D', '', os.environ.get('WA_PHONE_ID') or '')
+    to = re.sub(r'\D', '', str(to or ''))
+    if to.startswith('0'):
+        to = '972' + to[1:]
+    if not (tok and pid and to):
+        return 'לא מוגדר'
+    tpl = (os.environ.get('ALERT_WA_TEMPLATE') or '').strip()
+    if tpl:
+        msg = {'messaging_product': 'whatsapp', 'to': to, 'type': 'template',
+               'template': {'name': tpl, 'language': {'code': (os.environ.get('ALERT_WA_LANG') or 'he').strip()},
+                            'components': [{'type': 'body', 'parameters': [{'type': 'text', 'text': text.replace('\n', ' · ')[:900]}]}]}}
+    else:
+        msg = {'messaging_product': 'whatsapp', 'to': to, 'type': 'text', 'text': {'body': text[:3500]}}
+    req = urllib.request.Request('https://graph.facebook.com/v21.0/%s/messages' % pid, data=json.dumps(msg).encode('utf-8'),
+                                 headers={'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            r.read()
+        return 'ok'
+    except urllib.error.HTTPError as e:
+        try:
+            return 'שגיאה: ' + str(json.loads(e.read().decode('utf-8', 'replace')).get('error', {}).get('message', e.code))[:150]
+        except Exception:
+            return 'שגיאה %s' % e.code
+    except Exception as e:
+        return 'שגיאה: %s' % str(e)[:120]
+
+
+def alert_owner(text, subject='התראה ממערכת כולל חצות'):
+    """שולח למאיר בכל הערוצים שהוגדרו ב-Render: וואטסאפ (ALERT_WHATSAPP), מייל (ALERT_EMAIL), SMS (ALERT_SMS).
+    מחזיר מה קרה בכל ערוץ — נשמר ביומן הכניסות."""
+    out = []
+    wa = (os.environ.get('ALERT_WHATSAPP') or '').strip()
+    if wa:
+        out.append('וואטסאפ: ' + _wa_send(wa, text))
+    em = (os.environ.get('ALERT_EMAIL') or '').strip()
+    if em:
+        try:
+            import mailer
+            r = mailer.send(em, subject, text, []) if mailer.configured() else {'ok': False, 'error': 'GMAIL לא מוגדר'}
+            out.append('מייל: ' + ('ok' if r.get('ok') else str(r.get('error') or 'נכשל')[:80]))
+        except Exception as e:
+            out.append('מייל: שגיאה %s' % str(e)[:80])
+    sm = (os.environ.get('ALERT_SMS') or '').strip()
+    if sm:
+        try:
+            import yemot as _ym
+            ok, res = _ym.send_sms(_ym.norm_phone(sm) or sm, text[:300])
+            out.append('SMS: ' + ('ok' if ok else str(res)[:80]))
+        except Exception as e:
+            out.append('SMS: שגיאה %s' % str(e)[:80])
+    return ' · '.join(out) or 'אין ערוץ התראה מוגדר'
+
+
+def auth_note(ok, role, portal, method, ip, ua, email=''):
+    """כל ניסיון כניסה נרשם. כניסה שהצליחה — התראה מיד; ניסיונות שגויים — התראה אחרי 5 מאותה כתובת."""
+    con = db()
+    try:
+        lid = con.execute("INSERT INTO auth_log(at,ok,role,portal,method,ip,ua,email) VALUES(?,?,?,?,?,?,?,?)",
+                          (il_now().strftime('%Y-%m-%d %H:%M:%S'), 1 if ok else 0, role or '', portal or '', method, ip or '',
+                           str(ua or '')[:300], email or '')).lastrowid
+        con.commit()
+        nfail = 0
+        if not ok:
+            since = (il_now() - datetime.timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+            nfail = con.execute("SELECT COUNT(*) FROM auth_log WHERE ok=0 AND ip=? AND at>=?", (ip or '', since)).fetchone()[0]
+    finally:
+        con.close()
+    if not ok and (nfail < 5 or time.time() - _ALERT_FAIL.get(ip, 0) < 1800):
+        return
+    if not ok:
+        _ALERT_FAIL[ip] = time.time()
+    t = il_now().strftime('%d/%m %H:%M')
+    if ok:
+        text = ('🔐 כניסה למערכת כולל חצות\n%s · %s\nהרשאה: %s\nדרך: %s%s\nמכשיר: %s · IP %s'
+                % (t, 'גוגל ' + email if method == 'google' else 'סיסמה', ROLE_HE.get(role, role), PORTAL_HE.get(portal, portal),
+                   '' if role != 'admin' or portal == 'admin' else ' (בסיסמה הראשית)', ua_short(ua), ip))
+    else:
+        text = '⚠️ %d ניסיונות כניסה שגויים למערכת כולל חצות\n%s · דרך %s\nמכשיר: %s · IP %s' % (nfail, t, PORTAL_HE.get(portal, portal), ua_short(ua), ip)
+
+    def run():
+        res = alert_owner(text, 'כניסה למערכת — ' + ROLE_HE.get(role, 'ניסיונות שגויים'))
+        c2 = db()
+        try:
+            c2.execute("UPDATE auth_log SET sent=? WHERE id=?", (res[:300], lid)); c2.commit()
+        finally:
+            c2.close()
+    threading.Thread(target=run, daemon=True).start()
+
+
 def load_mail_cfg(con=None):
     """טוען את הגדרות הדואר מהמסד אל מנוע השליחה."""
     import bulkmail
@@ -14706,15 +14820,24 @@ class H(BaseHTTPRequestHandler):
             return self._send(405, {'ok': False}) or False
         if not auth_on():
             return self._send(200, {'ok': True, 'role': 'admin'}) or False
+        ua_ = self.headers.get('User-Agent') or ''
         if path == '/api/login/google':
             role, em = auth_check_google(self._body().get('credential'))
             if not role:
+                auth_note(False, '', 'admin', 'google', self._ip(), ua_, em if '@' in str(em) else '')
                 return self._send(401, {'ok': False, 'error': em}) or False
+            portal_, meth_, em_ = 'admin', 'google', em
         else:
             b = self._body()
-            role = auth_check_password(b.get('password'), self._ip(), b.get('portal') if b.get('portal') in ('comm', 'parnes', 'gabbai') else 'admin')
+            portal_ = b.get('portal') if b.get('portal') in ('comm', 'parnes', 'gabbai') else 'admin'
+            role = auth_check_password(b.get('password'), self._ip(), portal_)
+            meth_, em_ = 'password', ''
         if role == 'wait':
             return self._send(429, {'ok': False, 'error': 'יותר מדי ניסיונות — נסה שוב בעוד דקה'}) or False
+        try:
+            auth_note(bool(role), role, portal_, meth_, self._ip(), ua_, em_)
+        except Exception as e:
+            print('  auth log error:', e)
         if not role:
             time.sleep(0.6)
             return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
@@ -17010,6 +17133,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2],
                                     'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo,
                                     'nd_accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main']} for x in _nd.accounts()]})
+        if self.path.split('?')[0] == '/api/auth/log':
+            # 🔐 מי נכנס למערכת — רק בכניסה הראשית (שאר הסיסמאות חסומות כאן ב-_gate)
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT * FROM auth_log ORDER BY id DESC LIMIT 200")]
+            finally:
+                con.close()
+            for r in rows:
+                r['dev'] = ua_short(r.pop('ua', ''))
+                r['role_he'] = ROLE_HE.get(r['role'], '')
+                r['portal_he'] = PORTAL_HE.get(r['portal'], r['portal'])
+            chans = [k for k, e in (('וואטסאפ', 'ALERT_WHATSAPP'), ('מייל', 'ALERT_EMAIL'), ('SMS', 'ALERT_SMS')) if (os.environ.get(e) or '').strip()]
+            wa_ready = bool((os.environ.get('WA_TOKEN') or '').strip() and (os.environ.get('WA_PHONE_ID') or '').strip())
+            return self._send(200, {'ok': True, 'rows': rows, 'channels': chans, 'wa_ready': wa_ready,
+                                    'pw_same': sorted(k for k in ('CRM_PASS_COMM', 'CRM_PASS_PARNES', 'CRM_PASS_GABBAI')
+                                                      if (os.environ.get(k) or '').strip() and (os.environ.get(k) or '').strip() == (os.environ.get('CRM_PASS') or '').strip())})
         if self.path.split('?')[0] == '/api/nd/kevas':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             bad = (qs.get('bad') or ['0'])[0] == '1'
