@@ -13749,14 +13749,17 @@ function cdForTxt(deb){const T=[...new Set((deb||[]).map(d=>d.kind==='hok'?Strin
 // ✎ מאיר: "יש הרבה בעיות באיות הקול של Gemini… שאוכל לתקן בקול על המילה הלא נכונה ולא רק באנגלית,
 // אבל שזה יהיה מהר" — כל מילה בטקסט שנשלח לקול היא כפתור: מתקנים (ניקוד / כתיב אחר), שומעים רק אותה, שומרים
 function ymWordsHTML(t){return `<div class="ymwords">${String(t||'').split(/(\s+)/).map(w=>/[\u05d0-\u05ea]/.test(w)?`<button type="button" class="ymw" data-w="${esc(w)}">${esc(w)}</button>`:esc(w)).join('')}</div>`;}
-function ymWordsWire(box,again){box.querySelectorAll('.ymw').forEach(b=>b.onclick=()=>ymWordFix(b.dataset.w.replace(/[.,!?:;"'()]/g,''),again));}
-async function ymWordFix(w,again){const plain=w.replace(/[\u0591-\u05c7]/g,'');
+function ymWordsWire(box,again){const ctx=[...box.querySelectorAll('.ymwords')].map(x=>x.textContent).join(' ');
+  box.querySelectorAll('.ymw').forEach(b=>b.onclick=()=>ymWordFix(b.dataset.w.replace(/[.,!?:;"'()]/g,''),again,ctx));}
+async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'');
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px"><div class="cm">✎ איך לומר "${esc(plain)}"?</div>
     <div class="hintxt">כתוב איך אומרים — עם ניקוד (למשל כּוֹלֵל) או בכתיב שנשמע נכון (למשל קולל). אפשר גם באנגלית.</div>
+    <div class="ywfopts" id="ywf_opts"><small class="hintxt">⏳ מחפש אפשרויות ניקוד…</small></div>
     <input id="ywf_say" value="${esc(w)}" style="width:100%;font-size:1.3rem;padding:8px;margin:6px 0">
     <div class="ymnk">${'ַ ָ ֵ ֶ ִ ֹ ֻ ְ ּ ׁ ׂ'.split(' ').map(c=>`<button type="button" class="btn sm ghost" data-nk="${c}">א${c}</button>`).join('')}</div>
     <div class="bqacts"><button class="btn sm" id="ywf_hear">🔊 שמע רק את המילה</button><button class="btn sm" id="ywf_save">💾 שמור לכל ההודעות</button>
+      <button class="btn sm ghost" id="ywf_mic" title="אומרים את המילה כמו שצריך — והמערכת כותבת אותה מנוקדת">🎙️ אמור את המילה</button>
       <button class="btn sm ghost" id="ywf_en">🇬🇧 באותיות אנגליות</button></div>
     <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(o);const inp=o.querySelector('#ywf_say');inp.focus();
@@ -13765,13 +13768,50 @@ async function ymWordFix(w,again){const plain=w.replace(/[\u0591-\u05c7]/g,'');
   const hb=o.querySelector('#ywf_hear');hb.onclick=async()=>{hb.disabled=true;hb.textContent='⏳';
     const r=await api('POST','/api/yemot/sample',{text:inp.value.trim(),word:1});hb.disabled=false;hb.textContent='🔊 שמע רק את המילה';
     if(r&&r.ok){try{new Audio('data:audio/wav;base64,'+r.wav).play();}catch(e){}}else toast((r&&r.error)||'לא נוצר');};
+  // מאיר: "שזה יציע לי כמה אפשרויות על מילה — למשל הקישו הוא עושה עם חיריק" — כל צורות הניקוד מדיקטה לפי המשפט;
+  // לחיצה על אפשרות שמה אותה בתיבה ומשמיעה אותה מיד
+  api('POST','/api/nikud/options',{word:plain,context:String(ctx||'').replace(/[\u0591-\u05c7]/g,'')}).then(r=>{const box=o.querySelector('#ywf_opts');if(!box)return;
+    const L=((r&&r.options)||[]).filter((v,i,a)=>a.indexOf(v)===i);if(w!==plain&&!L.includes(w))L.unshift(w);
+    box.innerHTML=L.length>1||(L.length&&L[0]!==w)?'<small class="hintxt">בחר צורה — היא תושמע:</small> '+L.map(v=>`<button type="button" class="btn sm ghost ywfo${v===w?' on':''}" data-v="${esc(v)}">${esc(v)}</button>`).join(''):'<small class="hintxt">אין אפשרויות נוספות — אפשר לנקד בעצמך למטה.</small>';
+    box.querySelectorAll('.ywfo').forEach(x=>x.onclick=()=>{inp.value=x.dataset.v;box.querySelectorAll('.ywfo').forEach(y=>y.classList.toggle('on',y===x));hb.click();});});
   o.querySelector('#ywf_en').onclick=async()=>{o.remove();if(await ymPronEn(plain)&&again)again();};
   o.querySelector('#ywf_save').onclick=async()=>{const v=inp.value.trim();
     const r=await api('POST','/api/yemot/pron_word',{word:plain,say:v===plain?'':v});
     if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
     if(ymStatus)ymStatus.pron=r.pron;const ta=document.getElementById('ym_pron');if(ta)ta.value=r.pron;
     o.remove();toast(v===plain?'התיקון נמחק':'✓ נשמר — "'+plain+'" ייאמר כך בכל ההודעות');
-    if(again&&await uiConfirm('לשמוע שוב את כל ההודעה עם התיקון?','🔊 כן','לא'))again();};}
+    if(again&&(again.auto||await uiConfirm('לשמוע שוב את כל ההודעה עם התיקון?','🔊 כן','לא')))again();};
+  // 🎙️ מאיר: "או הקראה קולית שלי שתישמע למערכת וזה יישמר" — לחיצה: מקליט; לחיצה שנייה (או 4 שניות): שולח
+  const mic=o.querySelector('#ywf_mic');let rec=null,tm=null;
+  mic.onclick=async()=>{
+    if(rec){try{rec.stop();}catch(e){}return;}
+    if(!navigator.mediaDevices||!window.MediaRecorder){toast('הדפדפן הזה לא תומך בהקלטה');return;}
+    let st;try{st=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){toast('אין הרשאה למיקרופון');return;}
+    const ch=[];rec=new MediaRecorder(st);rec.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data);};
+    rec.onstop=async()=>{clearTimeout(tm);st.getTracks().forEach(t=>t.stop());const mime=rec.mimeType||'audio/webm';rec=null;
+      mic.disabled=true;mic.textContent='⏳ מקשיב…';
+      const blob=new Blob(ch,{type:mime});const b64=await new Promise(ok=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.readAsDataURL(blob);});
+      const r=await api('POST','/api/nikud/hear',{word:plain,audio:b64,mime});mic.disabled=false;mic.textContent='🎙️ אמור את המילה';
+      if(!r||!r.ok){toast((r&&r.error)||'לא נשמע');return;}
+      inp.value=r.word;const box=o.querySelector('#ywf_opts');
+      if(box&&![...box.querySelectorAll('.ywfo')].some(x=>x.dataset.v===r.word)){const bt=document.createElement('button');bt.type='button';bt.className='btn sm ghost ywfo on';bt.dataset.v=r.word;bt.textContent='🎙️ '+r.word;
+        bt.onclick=()=>{inp.value=r.word;hb.click();};box.appendChild(bt);}
+      toast('🎙️ שמעתי: '+r.word+' — משמיע…');hb.click();};
+    rec.start();mic.textContent='⏺ מקליט… לחץ לסיום';tm=setTimeout(()=>{try{rec&&rec.stop();}catch(e){}},4000);};}
+// מאיר: "שכאן לפני שזה מתקשר אראה את הטקסט מנוקד נכון, ואם יש בעיה בניקוד אוכל לתקן" — אישור לפני שיחה:
+// הטקסט בדיוק כמו שיוקרא (מנוקד), כל מילה ניתנת לתיקון, ואחרי תיקון הטקסט מתעדכן במקום
+function ymCallConfirm(title,body){return new Promise(done=>{
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">${esc(title)}</div>
+    <div id="ycc_txt" class="hintxt">⏳ מכין את הטקסט כמו שיוקרא…</div>
+    <div class="hintxt">מילה לא נכונה (ניקוד / הגייה)? לחץ עליה — בחר אפשרות, אמור אותה בקול, או באנגלית. התיקון נשמר לכל ההודעות.</div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">📞 כן, להתקשר</button></div></div>`;
+  document.body.appendChild(o);const end=v=>{o.remove();done(v);};
+  o.querySelector('.cno').onclick=()=>end(false);o.querySelector('.cyes').onclick=()=>end(true);
+  const load=async()=>{const box=o.querySelector('#ycc_txt');const r=await api('POST','/api/yemot/speakable',body);
+    if(!o.isConnected)return;box.className='';box.innerHTML=r&&r.ok?(r.nikud?'':'<small class="hintxt">(ניקוד אוטומטי פועל רק בקול של Gemini)</small>')+ymWordsHTML(r.text):'<div class="ymwarn">לא הצלחתי להכין את הטקסט</div>';
+    const again=()=>load();again.auto=true;ymWordsWire(box,again);};
+  load();});}
 // ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
 async function ymPronEn(word){
   const w=await uiPrompt('איזו מילה נשמעת לא נכון? (בעברית, כמו שהיא כתובה בהודעה — למשל כולל)',word||'');if(!w||!w.trim())return false;
@@ -13795,7 +13835,8 @@ async function cdSendNow(g,ch){
   const rec={k:m.id?'m':'x',id:m.id,name:nm,phone:ph,amt:String(amt),mosad:nat?cdData.natan_mosad:''};
   const link=ch==='sms'&&/\{קישור\}/.test(text)?nedLink(rec):'';
   const prev=ymFillTxt(text,nm,String(amt),fr||' ').replace(/\{קישור\}/g,link||'');
-  if(!await uiConfirm((ch==='sms'?'לשלוח SMS עכשיו ל':'להתקשר עכשיו (הודעה קולית) ל')+nm+' ('+ph+')?\n\n'+prev,ch==='sms'?'💬 כן, לשלוח':'📞 כן, להתקשר','ביטול'))return;
+  if(ch==='sms'?!await uiConfirm('לשלוח SMS עכשיו ל'+nm+' ('+ph+')?\n\n'+prev,'💬 כן, לשלוח','ביטול')
+    :!await ymCallConfirm('📞 להתקשר עכשיו ל'+nm+' ('+ph+')? כך זה יוקרא:',{text,name:nm,amount:String(amt),for:fr||''}))return;
   // נתן תתן: בלי "הקישו 1" (שלוחת התשלום גובה לחשבון של הכולל)
   const r=await api('POST','/api/yemot/send',{channel:ch,text,amount:'',billing:ch==='voice'&&!nat?1:0,debt_ids:deb.map(d=>d.id),
     recipients:[m.id?{k:'m',id:m.id,amount:String(amt),link,for:fr}:{k:'x',name:nm,phone:ph,amount:String(amt),link,for:fr}]});
@@ -14737,7 +14778,12 @@ const YM_TPL=[
 let ymTplKey='';
 try{ymTplKey=localStorage.getItem('kc_ymtpl')||'';}catch(e){}
 const ymTplSaved=(k,ch)=>((ymStatus&&ymStatus.tpl)||{})[k+':'+ch];
-const ymTpl=(t,ch)=>{const v=ymTplSaved(t[0],ch);return v!=null?v:(ch==='sms'?t[3]:t[2]);};
+// מאיר: "זה לא עשה בהוראת קבע שחזרה את הסכום" — נוסח שמור של הו"ק שחזרה בלי {סכום}: הסכום ו"עבור מה" נכנסים
+// אחרי "הוראת הקבע שלך" (ואם המשפט הזה לא בנוסח — לפני "לא עברה")
+const ymHokAmt=(v,ch)=>{if(/\{סכום\}/.test(v))return v;const add=' בסך {סכום} '+(ch==='sms'?'ש"ח':'שקלים')+' עבור {עבור}';
+  if(/הוראת הקבע שלך/.test(v))return v.replace(/הוראת הקבע שלך/,'הוראת הקבע שלך'+add);
+  if(/לא עברה/.test(v))return v.replace(/\s*לא עברה/,add+' לא עברה');return v;};
+const ymTpl=(t,ch)=>{const v=ymTplSaved(t[0],ch);const x=v!=null?v:(ch==='sms'?t[3]:t[2]);return t[0]==='hok'?ymHokAmt(x,ch):x;};
 // ---- קישור תשלום ישיר — נדרים פלוס ----
 // מאיר: "יש שם אפשרות לשלוח קישור ישיר נעול עם פרמטרים, למשל השם שלו וכו', ויבחרו אם
 // לנעול על סכום וכו'". לכל נמען נבנה קישור משלו: שם, טלפון, מייל וכתובת ממולאים

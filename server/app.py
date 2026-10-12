@@ -18847,6 +18847,32 @@ class H(BaseHTTPRequestHandler):
             ok, out, prov = _nk.vocalize(str(b.get('text') or '')[:4000], trace=_ym._trace)
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             return self._send(200, {'ok': ok, 'text': out if ok else '', 'error': '' if ok else out, 'provider': prov})
+        if self.path == '/api/nikud/options':
+            import yemot as _ym, nikud as _nk
+            _ym.begin_trace()
+            opts = _nk.options(str(b.get('word') or '')[:40], str(b.get('context') or '')[:600], trace=_ym._trace)
+            con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'options': opts})
+        if self.path == '/api/nikud/hear':
+            # 🎙️ מאיר: "או הקראה קולית שלי שתישמע למערכת וזה יישמר" — אומרים את המילה למיקרופון,
+            # Gemini כותב אותה מנוקדת בדיוק כמו שנאמרה
+            import yemot as _ym, gemini_tts as _gt
+            w = re.sub(r'[\u0591-\u05c7]', '', str(b.get('word') or ''))[:40]
+            try:
+                audio = base64.b64decode(str(b.get('audio') or '').split(',')[-1])
+            except Exception:
+                audio = b''
+            if not audio or len(audio) > 3_000_000:
+                return self._send(200, {'ok': False, 'error': 'ההקלטה ריקה או ארוכה מדי'})
+            mime = str(b.get('mime') or 'audio/webm').split(';')[0][:40]
+            ask = ('The speaker says one Hebrew word%s. Write that word in Hebrew letters with FULL nikud (vowel points, dagesh, '
+                   'shin/sin dot) exactly as it was pronounced — the vowels you hear, not the dictionary form. Reply with the single word only.'
+                   % ((' (it is written: %s)' % w) if w else ''))
+            _ym.begin_trace()
+            ok, txt = _gt.transcribe(audio, mime, trace=_ym._trace, ask=ask)
+            con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
+            txt = re.sub(r'[^\u0590-\u05ff\s\'"־-]', '', txt or '').strip().split()[0] if ok and re.search(r'[\u05d0-\u05ea]', txt or '') else ''
+            return self._send(200, {'ok': bool(txt), 'word': txt, 'error': '' if txt else 'לא הצלחתי לשמוע את המילה — נסה שוב, קרוב למיקרופון'})
         if self.path == '/api/nikud/names':
             # "לפעמים במשפחות הוא לא אומר נורמלי" — הצעת ניקוד לשמות הנבחרים, למילון ההגייה
             import yemot as _ym, nikud as _nk

@@ -120,6 +120,70 @@ def dicta(text, trace=None):
     return False, last
 
 
+def _opts_all(o):
+    """כל אפשרויות הניקוד של מילה מתשובת דיקטה (בכל הצורות), בלי כפילויות."""
+    out = []
+    def add(v):
+        v = (v or '').replace('|', '').strip()
+        if v and v not in out:
+            out.append(v)
+    if isinstance(o, str):
+        add(o)
+    elif isinstance(o, list):
+        for x in o:
+            for v in _opts_all(x):
+                add(v)
+    elif isinstance(o, dict):
+        for k in ('w', 'word', 'nikud', 'text'):
+            if isinstance(o.get(k), str):
+                add(o[k]); break
+    return out
+
+
+def options(word, context='', trace=None):
+    """מאיר: "שזה יציע לי כמה אפשרויות על מילה" — כל צורות הניקוד שדיקטה מכירה למילה, לפי המשפט שבו היא נמצאת.
+    -> רשימה (הראשונה = מה שדיקטה הייתה בוחרת)."""
+    w = strip(word or '').strip()
+    if not w or not re.search(r'[א-ת]', w):
+        return []
+    text = strip(context or '').strip() or w
+    if w not in text:
+        text = w
+    urls = ([os.environ['DICTA_URL'].strip()] if (os.environ.get('DICTA_URL') or '').strip() else []) + DICTA_URLS
+    body = {'task': 'nakdan', 'data': text, 'genre': 'modern', 'addmorph': False, 'keepqq': False,
+            'nodageshdefmem': False, 'patachma': False, 'keepmetagim': True, 'useTokenization': True}
+    for u in urls:
+        code, raw, ms = _post(u, body, timeout=20)
+        if code != 200:
+            if trace:
+                trace('Nakdan', {'url': u, 'options': w}, False, raw[:500], ms)
+            continue
+        try:
+            res = json.loads(raw)
+        except Exception:
+            continue
+        items = res.get('data') if isinstance(res, dict) else res
+        out = []
+        for it in items if isinstance(items, list) else []:
+            if not isinstance(it, dict):
+                continue
+            nk = it.get('nakdan') if isinstance(it.get('nakdan'), dict) else it
+            ww = nk.get('word') or nk.get('str') or it.get('word') or ''
+            if strip(ww) != w:
+                continue
+            opts = nk.get('options')
+            if opts is None and not isinstance(it.get('nakdan'), dict):
+                opts = it.get('nakdan')
+            for v in _opts_all(opts):
+                if strip(v) == w and v not in out:
+                    out.append(v)
+        if trace:
+            trace('Nakdan', {'url': u, 'options': w}, True, json.dumps({'responseStatus': 'OK', 'message': ' / '.join(out)[:300]}, ensure_ascii=False), ms)
+        if out:
+            return out[:8]
+    return []
+
+
 DEF_TEXT_MODEL = 'gemini-3.8-flash'
 
 
