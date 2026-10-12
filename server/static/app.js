@@ -1876,6 +1876,9 @@ async function mkNotify(c,tplId,ctx){
       <div class="mkph">${MK_PH.map(([k,l])=>`<button data-ph="${esc(k)}">+ ${esc(l)}</button>`).join('')}</div>
       <div class="mklbl"><span>כך זה ייצא</span><span id="mklen"></span></div>
       <div class="mkphone"><div class="mkbubble" id="mkpv"></div><div class="mkmeta" id="mkmeta"></div></div>
+      <div id="mkvoc" class="mkvoc hidden"><div class="mklbl"><span>✨ כך זה יוקרא (מנוקד)</span><button class="mkx" id="mkhear">🔊 השמע</button></div>
+        <div id="mkvw" class="mksub">⏳ מנקד…</div><div id="mkaud"></div>
+        <div class="mksub">מילה לא נכונה? לחץ עליה — בחר ניקוד, אמור אותה בקול, או באנגלית. נשמר לכל ההודעות.</div></div>
       <div class="mklbl"><span>איך לשלוח</span></div>
       <div class="mkchan"><button data-c="sms">💬 SMS</button><button data-c="voice">📞 הודעה קולית</button></div>
       <div class="mksw" id="mklater"><i></i><span>⏰ לשלוח מאוחר יותר</span></div>
@@ -1887,7 +1890,7 @@ async function mkNotify(c,tplId,ctx){
     <div class="mkdf"><button class="mkbtn gh" id="mkno">לא עכשיו</button><span class="grow"></span><button class="mkbtn" id="mkgo"></button></div></div>`;
   document.body.appendChild(o);
   const ta=o.querySelector('#mkta'), pv=o.querySelector('#mkpv'), dt=o.querySelector('#mkdt'), go=o.querySelector('#mkgo');
-  const close=()=>o.remove();
+  const close=()=>{try{const a=o.querySelector('audio');if(a)a.pause();}catch(e){}o.remove();};
   const paintT=()=>{o.querySelector('#mkt').innerHTML=(MKTPL||[]).map(t=>`<button class="mkchip${t.id===cur.id?' on':''}" data-t="${esc(t.id)}">${esc(t.name)}</button>`).join('')||'<span class="mksub">אין נוסחים שמורים</span>';
     o.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{cur=MKTPL.find(t=>t.id===b.dataset.t)||cur;ta.value=cur.text;paintT();upd();});
     o.querySelector('#mkdel').disabled=!MKTPL.some(t=>t.id===cur.id);};
@@ -1895,9 +1898,22 @@ async function mkNotify(c,tplId,ctx){
     o.querySelector('#mklen').textContent=ch==='sms'&&txt?txt.length+' תווים'+(txt.length>70?' · '+Math.ceil(txt.length/67)+' הודעות':''):'';
     o.querySelector('#mkmeta').textContent=ch==='sms'?'💬 SMS':'📞 תוקרא בשיחה';
     o.querySelectorAll('.mkchan button').forEach(b=>b.classList.toggle('on',b.dataset.c===ch));
-    go.innerHTML=later?(dt.value?'⏰ לתזמן · '+esc(mkDTLabel(dt.value)):'⏰ לבחור מתי'):(ch==='sms'?'💬 לשלוח SMS עכשיו':'📞 להתקשר עכשיו');};
+    go.innerHTML=later?(dt.value?'⏰ לתזמן · '+esc(mkDTLabel(dt.value)):'⏰ לבחור מתי'):(ch==='sms'?'💬 לשלוח SMS עכשיו':'📞 להתקשר עכשיו');
+    o.querySelector('#mkvoc').classList.toggle('hidden',ch!=='voice');if(ch==='voice')vocSoon(txt);};
+  // מאיר: "גם בשליחת הודעות של המקווה — שיהיה ניקוד והקראה בשם או באנגלית כמו בחובות והתחייבויות"
+  let vocT=null,vocN=0,vocLast='';
+  const vocSoon=(txt,force)=>{if(!force&&txt===vocLast)return;clearTimeout(vocT);vocT=setTimeout(()=>voc(txt),force?0:600);};
+  const voc=async txt=>{const my=++vocN,box=o.querySelector('#mkvw');vocLast=txt;if(!txt){box.textContent='—';return;}
+    box.innerHTML=ymWordsHTML(txt)+'<small class="mksub"> ⏳ מנקד…</small>';
+    const r=await api('POST','/api/yemot/speakable',{text:txt});if(my!==vocN||!o.isConnected)return;
+    box.innerHTML=r&&r.ok?ymWordsHTML(r.text)+(r.late?'<small class="mksub">(הניקוד לא הספיק — בשליחה ינוקד)</small>':''):'<span class="mksub">לא הצלחתי להכין</span>';
+    const again=()=>{vocLast='';vocSoon(mkFill(ta.value,c,ctx).trim(),true);if(o.querySelector('#mkaud audio'))hear();};again.auto=true;ymWordsWire(box,again);};
+  const hear=async()=>{const a=o.querySelector('#mkaud'),txt=mkFill(ta.value,c,ctx).trim();if(!txt)return;const t0=Date.now();
+    const sh=()=>{if(a.dataset.w)a.innerHTML='<div class="mksub">⏳ Gemini מייצר את הקול… '+Math.round((Date.now()-t0)/1000)+' שנ׳</div>';};a.dataset.w=1;sh();const tk=setInterval(sh,500);
+    const r=await api('POST','/api/yemot/sample',{text:txt});clearInterval(tk);delete a.dataset.w;if(!o.isConnected)return;
+    a.innerHTML=r&&r.ok?`<audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%;margin-top:6px"></audio>`:`<div class="mksub">לא נוצר קול: ${esc((r&&r.error)||'')}</div>`;};
   ta.value=cur.text; paintT(); upd();
-  ta.oninput=upd;
+  ta.oninput=upd; o.querySelector('#mkhear').onclick=hear;
   o.querySelectorAll('.mkchan button').forEach(b=>b.onclick=()=>{ch=b.dataset.c;try{localStorage.setItem('mk_ch',ch);}catch(e){}upd();});
   o.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{const t='{'+b.dataset.ph+'}',a=ta.selectionStart??ta.value.length,e=ta.selectionEnd??a;
     ta.value=ta.value.slice(0,a)+t+ta.value.slice(e);ta.focus();ta.setSelectionRange(a+t.length,a+t.length);upd();});
