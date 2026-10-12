@@ -14150,11 +14150,13 @@ def ym_check_job(job_id):
                 return None
         months = sorted({(ts(m) or il_now()).strftime('%Y-%m') for m in msgs})
         calls = []
+        log_ok = False
         _ym.begin_trace()
         for ym in months:
             ok, res = _ym.month_calls(ym)
             if ok:
                 calls += res
+                log_ok = True
         ym_save_trace(con, _ym.end_trace(), job_id, 0, '')
         used = {r['call_id'] for r in con.execute("SELECT call_id FROM ym_msg WHERE COALESCE(call_id,'')<>''")}
         now = il_now()
@@ -14172,11 +14174,16 @@ def ym_check_job(job_id):
                     txt += ' · הקיש %s (%s)' % (','.join(c['pressed']), ym_mmss(c['pressed_secs']))
                 con.execute("UPDATE ym_msg SET answered=1, secs=?, listen_secs=?, pressed=?, pressed_secs=?, call_id=?, call_status=?, checked_at=? WHERE id=?",
                             (c['total'], c['listen'], ','.join(c['pressed']), c['pressed_secs'], c['call_id'], txt, now_iso(), m['id']))
-            elif now > t0 + datetime.timedelta(minutes=10):
+            elif not log_ok:
+                # היומן של ימות לא נקרא — לא קובעים "לא ענה" (זה היה מוציא ניסיון חוזר בטעות); ננסה שוב
+                con.execute("UPDATE ym_msg SET call_status=?, checked_at=? WHERE id=?",
+                            ('לא הצלחתי לקרוא את היומן של ימות (נבדק %s) — ננסה שוב' % now.strftime('%H:%M'), now_iso(), m['id']))
+            elif now > t0 + datetime.timedelta(minutes=5):
+                # ימות מצלצלים עד 35 שניות — אחרי 5 דקות בלי כניסה ביומן: לא ענה
                 con.execute("UPDATE ym_msg SET answered=0, call_status=?, checked_at=? WHERE id=?",
                             ('לא ענה (אין כניסה לשיחה ביומן של ימות)', now_iso(), m['id']))
             else:
-                con.execute("UPDATE ym_msg SET call_status=?, checked_at=? WHERE id=?", ('עוד לא מופיע ביומן', now_iso(), m['id']))
+                con.execute("UPDATE ym_msg SET call_status=?, checked_at=? WHERE id=?", ('עוד לא מופיע ביומן של ימות (נבדק %s)' % now.strftime('%H:%M'), now_iso(), m['id']))
         con.commit()
     except Exception as e:
         print('  ym check error:', e)
@@ -14240,7 +14247,7 @@ def ym_retry_scan():
         jobs = [r[0] for r in con.execute(
             "SELECT DISTINCT m.job FROM ym_msg m JOIN ym_job j ON j.id=m.job WHERE j.channel='voice' AND COALESCE(j.test,0)=0 "
             "AND m.status='sent' AND m.answered IS NULL AND COALESCE(m.sent_ts,'')>=? AND m.sent_ts<=?",
-            (since, (now - datetime.timedelta(minutes=12)).strftime('%Y-%m-%d %H:%M:%S')))]
+            (since, (now - datetime.timedelta(minutes=2)).strftime('%Y-%m-%d %H:%M:%S')))]
     finally:
         con.close()
     for jid in jobs:
@@ -14359,7 +14366,7 @@ def _ym_sched_loop():
 
 def _ym_retry_loop():
     while True:
-        time.sleep(300)
+        time.sleep(120)
         try:
             import yemot as _ym
             if _ym.configured():
@@ -14483,7 +14490,8 @@ def ym_worker(job_id, wait=True):
             con.execute("UPDATE ym_job SET status='done' WHERE id=?", (job_id,)); con.commit()
             if job['channel'] == 'voice':
                 # האם ענו וכמה זמן — בודקים אחרי דקה וחצי ושוב אחרי 5 דקות (שיחה שעוד בתור/בצלצול)
-                for dly in (90, 300, 900):
+                # מאיר: "ככה אני רואה כבר כמה דקות — זה לא זז" — בדיקות צפופות יותר
+                for dly in (60, 150, 300, 600):
                     threading.Timer(dly, ym_check_job, args=(job_id,)).start()
         except Exception as e:
             try:
@@ -17196,7 +17204,7 @@ class H(BaseHTTPRequestHandler):
                 rows = [dict(r) for r in con.execute(
                     "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail, "
                     "y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, y.pressed_secs y_psecs, y.call_status y_call, "
-                    "y.sent_ts y_sent, y.retry_at y_retry_at, y.retried y_retried, y.error y_err, y.id y_id, "
+                    "y.sent_ts y_sent, y.retry_at y_retry_at, y.retried y_retried, y.error y_err, y.id y_id, y.job y_job, "
                     "(SELECT r.answered FROM ym_msg r WHERE r.id=y.retried) y_r_ans, (SELECT r.listen_secs FROM ym_msg r WHERE r.id=y.retried) y_r_listen, "
                     "(SELECT r.pressed FROM ym_msg r WHERE r.id=y.retried) y_r_pressed "
                     # תזכורת שיצאה לפני שנשמר הקישור (rem_msg) — ההודעה האחרונה לאותו חבר מאותו יום ואילך

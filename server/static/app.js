@@ -13699,6 +13699,9 @@ async function renderCommDebts(){
     ${cdHistHTML()}${cdFund==='natan'?cdNatanHTML(D):''}
     ${cdMemberDL()}`;
   cdWire();cdVmWire(view);
+  view.querySelectorAll('[data-ymchk]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='⏳ בודק ביומן…';
+    const r=await api('POST','/api/yemot/job/'+b.dataset.ymchk+'/check',{});
+    if(!r||!r.ok)toast('הבדיקה לא הצליחה');cdData=null;renderCommDebts();});
   // תוצאה שעוד לא הגיעה (בתור / בודק אם ענה / ניסיון חוזר) — מתעדכן לבד כל דקה
   clearTimeout(window._cdResT);
   if((D.rows||[]).some(d=>d.status==='open'&&d.y_id&&(d.y_st==='queued'||(d.reminded_via==='voice'&&d.y_st==='sent'&&(d.y_ans==null||(+d.y_ans===0&&!(+d.y_retried>0)&&d.y_retry_at))))))
@@ -13905,7 +13908,8 @@ function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
     if(+d.y_retried>0)t+=+d.y_r_ans===1?' · ✅ ענה בניסיון השני · שמע '+Math.floor((+d.y_r_listen||0)/60)+':'+String((+d.y_r_listen||0)%60).padStart(2,'0')+(d.y_r_pressed?' · ☎️ הקיש '+d.y_r_pressed:' · לא הקיש'):(d.y_r_ans===null||d.y_r_ans===undefined?' · 🔁 ניסיון שני יצא':' · גם בניסיון השני לא');
     else if(d.y_retry_at)t+=' · 🔁 ינסה שוב '+ndDate(d.y_retry_at)+' '+String(d.y_retry_at).slice(11,16);}
   else t='⏳ בודק אם ענה…';
-  return `<small class="cdres ${c}" title="${esc('נשלח '+(d.y_sent||d.reminded_at||''))}">${esc(t)}</small>`;}
+  const chk=t.startsWith('⏳ בודק')&&d.y_job?` <button type="button" class="cdchk" data-ymchk="${d.y_job}" title="לבדוק עכשיו ביומן של ימות">🔄 בדוק עכשיו</button>`:'';
+  return `<small class="cdres ${c}" title="${esc('נשלח '+String(d.y_sent||d.reminded_at||'').slice(0,16)+(d.y_call?' · '+d.y_call:''))}">${esc(t)}${chk}</small>`;}
 // 🎙️ מאיר: "אם אחד השאיר הודעה במערכת של ימות המשיח — שההודעה תהיה בכרטיס שלו וגם בחלון החובות"
 function cdVmHTML(v){return `<div class="cdvm ${v.heard?'':'new'}"><b>🎙️ השאיר הודעה ${esc(ndDate(v.at))} ${esc(String(v.at||'').slice(11,16))}</b>${v.heard?'':' <small class="cdres bad">חדשה</small>'}
   <audio controls preload="none" src="/api/yemot/vm/${v.id}.wav" data-vmid="${v.id}"></audio>${(v.transcript||'').trim()?`<div class="cdvmt">📝 ${esc(v.transcript)}</div>`:''}</div>`;}
