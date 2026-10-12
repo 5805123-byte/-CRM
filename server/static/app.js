@@ -15036,6 +15036,8 @@ function ymViewSend(){
       <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
       <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}</div>
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום, {עבור} = עבור מה">${esc(ymText)}</textarea>
+      <div class="ymphs"><span class="hintxt">➕ להכניס במקום שהסמן עומד:</span>${[['{שם}','👤 שם','{שם}'],['{סכום}','💲 סכום','בסך {סכום} '+(ymCh==='sms'?'ש"ח':'שקלים')],['{עבור}','📝 עבור מה','עבור {עבור}']].concat(ymCh==='sms'?[['{קישור}','🔗 קישור תשלום','{קישור}']]:[]).map(([v,l,ins])=>`<button type="button" class="btn sm ghost" data-ymph="${esc(ins)}" title="מכניס: ${esc(ins)}">${l} <small>${esc(ins)}</small></button>`).join('')}</div>
+      ${ymText.trim()&&!/\{סכום\}/.test(ymText)&&(ymTplKey==='hok'||ymAmt||sel.some(r=>+r.amt))?`<div class="ymwarn">💡 בטקסט אין {סכום} — הסכום לא ייאמר. לחץ "💲 סכום" במקום שבו הוא צריך להיאמר (למשל אחרי "הוראת הקבע שלך בסך").</div>`:''}
       ${ymCh==='voice'?`<div class="ymnik"><button class="btn sm ghost" id="nk_all">✨ נקד את כל הטקסט</button><button class="btn sm ghost" id="nk_sel">✨ נקד רק את מה שסימנתי</button><button class="btn sm ghost" id="nk_clear">✖ הסר ניקוד</button>
         <span class="hintxt">מסמנים בעכבר מילה או משפט, ולוחצים "נקד רק את מה שסימנתי".</span></div>`:''}
       ${ymTplKey?(()=>{const t=YM_TPL.find(x=>x[0]===ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),saved=ymTplSaved(t[0],ymCh)!=null;
@@ -15090,6 +15092,12 @@ function ymViewSend(){
     const apply=()=>{ymText=nt;ymTplKey=t[0];try{localStorage.setItem('kc_ymtpl',ymTplKey);}catch(e){}if(ymCh==='voice'&&/הקישו 1/.test(nt)&&!ymBill){ymBill=true;try{localStorage.setItem('kc_ymbill','1');}catch(e){}}renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);};
     if(ymText.trim()&&nt&&ymText!==nt){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok)apply();});return;}
     apply();});
+  // מאיר: "איפה אני מכניס את הסכום? אני לא רואה תוספת עם סוגריים מתחת לקוביה"
+  view.querySelectorAll('[data-ymph]').forEach(b=>{b.onmousedown=e=>e.preventDefault();b.onclick=()=>{const ta=g('ym_text');if(!ta)return;
+    const v=b.dataset.ymph,a=ta.selectionStart??ta.value.length,z=ta.selectionEnd??a;
+    const pre=a>0&&!/\s$/.test(ta.value.slice(0,a))?' ':'',post=/^\s|^[.,]/.test(ta.value.slice(z))||z>=ta.value.length?'':' ';
+    ta.value=ta.value.slice(0,a)+pre+v+post+ta.value.slice(z);ymText=ta.value;const pos=a+pre.length+v.length;
+    renderCommYm();const n=g('ym_text');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}};});
   let _t; const keep=(id,fn)=>{const e=g(id);if(!e)return;e.oninput=()=>{fn(e.value);clearTimeout(_t);_t=setTimeout(()=>{const pos=e.selectionStart;renderCommYm();const n=g(id);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(x){}}},350);};};
   keep('ym_text',v=>ymText=v); keep('ym_amt',v=>ymAmt=v); keep('ym_for',v=>ymFor=v); keep('ym_q',v=>ymQ=v); keep('ym_dq',v=>ymDQ=v);
   const bc=g('ym_bill'); if(bc)bc.onchange=()=>{ymBill=bc.checked;try{localStorage.setItem('kc_ymbill',ymBill?'1':'0');}catch(e){}renderCommYm();};
