@@ -150,7 +150,7 @@ def synth(text, voice=DEF_VOICE, style='', trace=None, tries=3, model='', hints=
     return False, last
 
 
-def transcribe(audio, mime='audio/wav', trace=None, ask=''):
+def transcribe(audio, mime='audio/wav', trace=None, ask='', fast=False):
     """מאיר: "אחרי שמאזין הקליט — לשלוח לג'ימיני שיתמלל". הודעה קולית -> טקסט בעברית, כמו שנאמר.
     ask — הוראה אחרת (למשל: מילה אחת, מנוקדת בדיוק כמו שנאמרה)."""
     import nikud as _nk
@@ -161,13 +161,21 @@ def transcribe(audio, mime='audio/wav', trace=None, ask=''):
                   'Write numbers as digits. Reply with the transcript text only, no comments. If nothing intelligible was said, reply: (אין דיבור)')
     body = {'contents': [{'parts': [{'text': ask}, {'inlineData': {'mimeType': mime, 'data': base64.b64encode(audio).decode('ascii')}}]}],
             'generationConfig': {'temperature': 0}}
+    # מאיר: "יותר מידי זמן זה מקשיב למילה" — מילה אחת: בלי "חשיבה" של המודל (זה מה שלוקח זמן), וזמן המתנה קצר
+    if fast:
+        body['generationConfig']['thinkingConfig'] = {'thinkingBudget': 0}
+        body['generationConfig']['maxOutputTokens'] = 40
     base = _env('GEMINI_BASE', 'https://generativelanguage.googleapis.com').rstrip('/')
     tried, code, raw, ms = [], 0, '', 0
     for _try in range(3):
         tried.append(model)
-        code, raw, ms = _nk._post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': _env('GEMINI_API_KEY')}, timeout=60)
+        code, raw, ms = _nk._post('%s/v1beta/models/%s:generateContent' % (base, model), body, {'x-goog-api-key': _env('GEMINI_API_KEY')}, timeout=20 if fast else 60)
         if code == 200:
             break
+        if code == 400 and 'thinking' in (raw or '').lower() and 'thinkingConfig' in body['generationConfig']:
+            body['generationConfig'].pop('thinkingConfig', None)      # מודל שלא מכיר את ההגדרה — בלעדיה
+            tried.pop()
+            continue
         if trace:
             trace('GeminiTranscribe', {'model': model}, False, (raw or '')[:800], ms)
         nm = _nk.newer_model(code, raw)

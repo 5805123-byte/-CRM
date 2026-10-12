@@ -13782,22 +13782,32 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
     o.remove();toast(v===plain?'התיקון נמחק':'✓ נשמר — "'+plain+'" ייאמר כך בכל ההודעות');
     if(again&&(again.auto||await uiConfirm('לשמוע שוב את כל ההודעה עם התיקון?','🔊 כן','לא')))again();};
   // 🎙️ מאיר: "או הקראה קולית שלי שתישמע למערכת וזה יישמר" — לחיצה: מקליט; לחיצה שנייה (או 4 שניות): שולח
-  const mic=o.querySelector('#ywf_mic');let rec=null,tm=null;
+  const mic=o.querySelector('#ywf_mic');let rec=null,tm=null,tick=null,ctl=null;
+  // מאיר: "יותר מידי זמן זה מקשיב למילה — שזה יקשיב ויעשה לי כפתור עצירה": בזמן הקלטה — כפתור עצירה אדום עם שעון;
+  // אחרי העצירה — כמה שניות עברו, ואפשר לבטל
+  const micIdle=()=>{clearInterval(tick);mic.disabled=false;mic.classList.remove('rec');mic.textContent='🎙️ אמור את המילה';};
   mic.onclick=async()=>{
+    if(ctl){ctl.abort();ctl=null;micIdle();toast('בוטל');return;}
     if(rec){try{rec.stop();}catch(e){}return;}
     if(!navigator.mediaDevices||!window.MediaRecorder){toast('הדפדפן הזה לא תומך בהקלטה');return;}
     let st;try{st=await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){toast('אין הרשאה למיקרופון');return;}
     const ch=[];rec=new MediaRecorder(st);rec.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data);};
-    rec.onstop=async()=>{clearTimeout(tm);st.getTracks().forEach(t=>t.stop());const mime=rec.mimeType||'audio/webm';rec=null;
-      mic.disabled=true;mic.textContent='⏳ מקשיב…';
-      const blob=new Blob(ch,{type:mime});const b64=await new Promise(ok=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.readAsDataURL(blob);});
-      const r=await api('POST','/api/nikud/hear',{word:plain,audio:b64,mime});mic.disabled=false;mic.textContent='🎙️ אמור את המילה';
+    rec.onstop=async()=>{clearTimeout(tm);clearInterval(tick);st.getTracks().forEach(t=>t.stop());const mime=rec.mimeType||'audio/webm';rec=null;
+      const blob=new Blob(ch,{type:mime});if(!blob.size){micIdle();toast('לא נקלט קול');return;}
+      const b64=await new Promise(ok=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.readAsDataURL(blob);});
+      const t0=Date.now();mic.classList.remove('rec');const sh=()=>{mic.textContent='⏳ מזהה את המילה… '+Math.round((Date.now()-t0)/1000)+' שנ׳ · ✕ בטל';};sh();tick=setInterval(sh,500);
+      ctl=new AbortController();let r=null;
+      try{r=await (await fetch('/api/nikud/hear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word:plain,audio:b64,mime}),signal:ctl.signal})).json();}
+      catch(e){if(e&&e.name==='AbortError')return;}
+      ctl=null;micIdle();
       if(!r||!r.ok){toast((r&&r.error)||'לא נשמע');return;}
       inp.value=r.word;const box=o.querySelector('#ywf_opts');
       if(box&&![...box.querySelectorAll('.ywfo')].some(x=>x.dataset.v===r.word)){const bt=document.createElement('button');bt.type='button';bt.className='btn sm ghost ywfo on';bt.dataset.v=r.word;bt.textContent='🎙️ '+r.word;
         bt.onclick=()=>{inp.value=r.word;hb.click();};box.appendChild(bt);}
       toast('🎙️ שמעתי: '+r.word+' — משמיע…');hb.click();};
-    rec.start();mic.textContent='⏺ מקליט… לחץ לסיום';tm=setTimeout(()=>{try{rec&&rec.stop();}catch(e){}},4000);};}
+    rec.start();const r0=Date.now();mic.classList.add('rec');
+    const sh=()=>{mic.textContent='⏹ עצור ('+Math.max(0,4-Math.floor((Date.now()-r0)/1000))+')';};sh();tick=setInterval(sh,250);
+    tm=setTimeout(()=>{try{rec&&rec.stop();}catch(e){}},4000);};}
 // מאיר: "שכאן לפני שזה מתקשר אראה את הטקסט מנוקד נכון, ואם יש בעיה בניקוד אוכל לתקן" — אישור לפני שיחה:
 // הטקסט בדיוק כמו שיוקרא (מנוקד), כל מילה ניתנת לתיקון, ואחרי תיקון הטקסט מתעדכן במקום
 function ymCallConfirm(title,body){return new Promise(done=>{
