@@ -13701,7 +13701,7 @@ async function renderCommDebts(){
   cdWire();cdVmWire(view);
   // תוצאה שעוד לא הגיעה (בתור / בודק אם ענה / ניסיון חוזר) — מתעדכן לבד כל דקה
   clearTimeout(window._cdResT);
-  if((D.rows||[]).some(d=>d.status==='open'&&d.rem_msg&&(d.y_st==='queued'||(d.reminded_via==='voice'&&d.y_st==='sent'&&(d.y_ans==null||(+d.y_ans===0&&!(+d.y_retried>0)&&d.y_retry_at))))))
+  if((D.rows||[]).some(d=>d.status==='open'&&d.y_id&&(d.y_st==='queued'||(d.reminded_via==='voice'&&d.y_st==='sent'&&(d.y_ans==null||(+d.y_ans===0&&!(+d.y_retried>0)&&d.y_retry_at))))))
     window._cdResT=setTimeout(()=>{if(tab==='comm'&&cmSub==='debts'&&!document.querySelector('.confirmov')){cdData=null;renderCommDebts();}},60000);
 }
 // מאיר: "כל מי שהיה כבר ברשימה שסומן ששולם — שיהיה רשימה של היסטוריה מוסתרת שאפשר לפתוח בלחיצת
@@ -13898,9 +13898,11 @@ function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
   else if(d.y_st==='queued'){t='⏳ בתור לשליחה';}
   else if(d.y_st==='failed'||d.y_st==='cancelled'){t=(v==='sms'?'❌ ה-SMS לא נשלח':'❌ השיחה לא יצאה')+(d.y_err?' — '+String(d.y_err).slice(0,60):'');c='bad';}
   else if(v==='sms'){t='💬 ה-SMS נשלח';c='ok';}
-  else if(+d.y_ans===1){const ls=+d.y_listen||+d.y_secs||0;t='✅ ענה'+(ls?' · שמע '+sec(ls):'')+(d.y_pressed?' · הקיש '+d.y_pressed:'');c='ok';}
+  // מאיר: "שיהיה כתוב כאן הכל — כמה זמן שמע את ההודעה, ואם הקיש 1 או הקשה אחרת, אצל כולם"
+  else if(+d.y_ans===1){const mm=n=>Math.floor((+n||0)/60)+':'+String((+n||0)%60).padStart(2,'0');
+    t='✅ ענה · שמע '+mm(d.y_listen)+(+d.y_secs?' (שיחה '+mm(d.y_secs)+')':'')+(d.y_pressed?' · ☎️ הקיש '+d.y_pressed+(d.y_psecs?' אחרי '+mm(d.y_psecs):''):' · לא הקיש');c='ok';}
   else if(d.y_ans!==null&&d.y_ans!==undefined&&+d.y_ans===0){t='📵 לא ענה';c='bad';
-    if(+d.y_retried>0)t+=+d.y_r_ans===1?' · ✅ ענה בניסיון השני':(d.y_r_ans===null||d.y_r_ans===undefined?' · 🔁 ניסיון שני יצא':' · גם בניסיון השני לא');
+    if(+d.y_retried>0)t+=+d.y_r_ans===1?' · ✅ ענה בניסיון השני · שמע '+Math.floor((+d.y_r_listen||0)/60)+':'+String((+d.y_r_listen||0)%60).padStart(2,'0')+(d.y_r_pressed?' · ☎️ הקיש '+d.y_r_pressed:' · לא הקיש'):(d.y_r_ans===null||d.y_r_ans===undefined?' · 🔁 ניסיון שני יצא':' · גם בניסיון השני לא');
     else if(d.y_retry_at)t+=' · 🔁 ינסה שוב '+ndDate(d.y_retry_at)+' '+String(d.y_retry_at).slice(11,16);}
   else t='⏳ בודק אם ענה…';
   return `<small class="cdres ${c}" title="${esc('נשלח '+(d.y_sent||d.reminded_at||''))}">${esc(t)}</small>`;}
