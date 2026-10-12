@@ -13968,6 +13968,40 @@ def pron_hint_drop():
 _VOC_CACHE = {}
 
 
+_YM_SESS = {'at': 0, 'ok': None, 'res': '', 'busy': False}
+
+
+def _ym_session_run():
+    import yemot as _ym
+    try:
+        _ym.begin_trace()
+        ok, res = _ym.session()
+        tr = _ym.end_trace()
+        _YM_SESS.update(at=time.time(), ok=ok, res=res)
+        try:
+            con = db(); ym_save_trace(con, tr); con.commit(); con.close()
+        except Exception:
+            pass
+    except Exception as e:
+        _YM_SESS.update(at=time.time(), ok=False, res=str(e)[:200])
+    finally:
+        _YM_SESS['busy'] = False
+
+
+def ym_session_cached(max_age=90, wait=2.5):
+    """החיבור לימות (GetSession) — עד דקה וחצי מהזיכרון; ישן יותר: מחזירים את מה שיש ומרעננים ברקע.
+    בפעם הראשונה מחכים לכל היותר 2.5 שניות; אם ימות איטיים — (None, '') והמסך מציג "בודק"."""
+    if _YM_SESS['ok'] is not None and time.time() - _YM_SESS['at'] < (max_age if _YM_SESS['ok'] else 15):
+        return _YM_SESS['ok'], _YM_SESS['res']
+    if not _YM_SESS['busy']:
+        _YM_SESS['busy'] = True
+        th = threading.Thread(target=_ym_session_run, daemon=True)
+        th.start()
+        if _YM_SESS['ok'] is None:
+            th.join(wait)
+    return _YM_SESS['ok'], _YM_SESS['res'] if _YM_SESS['ok'] is not None else ''
+
+
 def ym_nikud_on(con):
     """מאיר: "שתמיד זה ייצא מנוקד לפי השליחה" — ניקוד אוטומטי לקול של Gemini (ברירת מחדל: פועל)."""
     return kv_get(con, 'ym_nikud', '1') != '0'
@@ -17649,11 +17683,10 @@ class H(BaseHTTPRequestHandler):
             return
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
-            _ym.begin_trace()
-            ok, res = (_ym.session() if _ym.configured() else (False, ''))
+            # מאיר: "זה לפעמים ממש מחכה הרבה זמן עד שמתחבר — תעשה שיהיה מהר מאוד" — בדיקת החיבור לימות
+            # נשמרת; המסך עולה מיד עם התוצאה האחרונה, ובדיקה חדשה רצה ברקע (connected=None — עוד בודק)
+            ok, res = ym_session_cached() if _ym.configured() else (False, '')
             con = db()
-            ym_save_trace(con, _ym.end_trace())
-            con.commit()
             ned_list = ned_mosads(con)
             try: _tpl = json.loads(kv_get(con, 'ym_tpl', '') or '{}')
             except Exception: _tpl = {}

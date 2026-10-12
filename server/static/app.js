@@ -14825,7 +14825,12 @@ function ymFillTxt(t,name,amt,fr){const a=(amt||ymAmt)||'';let x=String(t||'');
   x=x.replace(/\{עבור\}/g,f);
   if(!a)x=x.replace(/\s*(?:בסך|על סך|בסכום של)?\s*\{סכום\}\s*(?:שקלים|ש"ח|₪)?/g,'');   // בלי סכום — בלי "בסך … שקלים"
   return x.replace(/\{שם\}/g,name||'').replace(/\{סכום\}/g,a).replace(/\s{2,}/g,' ').replace(/\s+([,.])/g,'$1').trim();}
-async function ymLoadStatus(){const r=await api('GET','/api/yemot/status');ymStatus=r&&r.ok?r:{configured:false,connected:false,jobs:[]};}
+async function ymLoadStatus(){const r=await api('GET','/api/yemot/status');ymStatus=r&&r.ok?r:{configured:false,connected:false,jobs:[]};
+  // החיבור עוד נבדק ברקע — שואלים שוב בעוד 3 שניות ומעדכנים רק את השורה העליונה
+  if(r&&r.ok&&r.configured&&r.connected==null)setTimeout(async()=>{const r2=await api('GET','/api/yemot/status');if(!r2||!r2.ok||!ymStatus)return;
+    ymStatus.connected=r2.connected;ymStatus.info=r2.info;ymStatus.error=r2.error;
+    const el=document.getElementById('ym_conn');if(tab==='comm'&&cmSub==='ym'&&el){const t=document.createElement('div');t.innerHTML=ymHead(ymStatus);const n=t.querySelector('#ym_conn');if(n)el.innerHTML=n.innerHTML;}
+    if(r2.connected==null)ymLoadStatus();},3000);}
 function ymKey(k,id){return k+':'+id;}
 // מאיר: "תסדר את הממשק של ימות המשיח, שיראו את הלוגים יותר ויותר נוח" — ארבע לשוניות:
 // שליחה · משלוחים ותוצאות (מי ענה, כמה שמע, מי הקיש 1) · יומן השיחות של ימות · לוג טכני
@@ -14835,11 +14840,12 @@ const ymMMSS=s=>{s=+s||0;return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'
 function ymHead(st){
   const conn=!st.configured
     ?`<div class="ymwarn">⚠️ ימות המשיח עוד לא מחובר. ב-Render ← Environment צריך להוסיף <b>YEMOT_TOKEN</b> — מפתח ה-API של ימות המשיח (מתחיל ב-WU1BUElL.apik_). לא לשלוח אותו בצ'אט או בוואטסאפ.</div>`
-    :(st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc((+st.info.units).toLocaleString('he-IL',{maximumFractionDigits:2}))}</b> יחידות`:''}</div>`
+    :(st.connected===null||st.connected===undefined?`<div class="ymok" style="opacity:.75">🔗 בודק את החיבור לימות המשיח… <span class="mkspin" style="width:11px;height:11px"></span></div>`
+    :st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc((+st.info.units).toLocaleString('he-IL',{maximumFractionDigits:2}))}</b> יחידות`:''}</div>`
                   :`<div class="ymwarn">⚠️ החיבור לימות המשיח נכשל: ${esc(st.error||'')} — פרטים בלשונית "לוג טכני"</div>`);
   const T=[['send','📤 שליחה'],['vm','📥 הודעות שהשאירו'+(CMVM&&CMVM.new?' ('+CMVM.new+')':'')],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['log','📜 לוג טכני']];
   return `<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
-    <div class="rbtitle">📞 ימות המשיח — הודעה קולית / SMS</div>${conn}
+    <div class="rbtitle">📞 ימות המשיח — הודעה קולית / SMS</div><div id="ym_conn">${conn}</div>
     <div class="ymtabs">${T.map(([k,l])=>`<button class="ymtab${ymView===k?' on':''}" data-v="${k}">${l}</button>`).join('')}</div>`;
 }
 function ymWireHead(){
