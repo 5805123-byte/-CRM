@@ -14007,7 +14007,7 @@ def ym_nikud_on(con):
     return kv_get(con, 'ym_nikud', '1') != '0'
 
 
-def ym_voice_text(text, pron, nik=True, trace=None):
+def ym_voice_text(text, pron, nik=True, trace=None, fast=False):
     """הטקסט שנשלח לקול: מילון ההגייה (נשמר כמו שכתבת) → סכומים וטלפונים במילים → ניקוד אוטומטי.
     אותו טקסט בדיוק בשליחה, בדוגמה (🔊) ובהקלטה. ניקוד שכבר נעשה לאותו טקסט נשמר בזיכרון — מהיר."""
     import yemot as _ym, nikud as _nk
@@ -14016,7 +14016,7 @@ def ym_voice_text(text, pron, nik=True, trace=None):
         v = _VOC_CACHE.get(t)
         if v is None:
             base = t.replace('\u27e6', '{').replace('\u27e7', '}')
-            ok, out, _p = _nk.vocalize(base, trace=trace)
+            ok, out, _p = _nk.vocalize(base, trace=trace, fast=fast)
             v = out if ok else base
             if ok:
                 if len(_VOC_CACHE) > 800:
@@ -18983,7 +18983,7 @@ class H(BaseHTTPRequestHandler):
             # word=1 — מילה אחת בלבד (בדיקת תיקון הגייה) — מהיר, בלי התבנית ובלי ניקוד אוטומטי מחדש
             txt = (str(b.get('text') or '').strip()[:80] if b.get('word') else
                    ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
-                                 pron, nik, trace=_ym._trace))
+                                 pron, nik, trace=_ym._trace, fast=True))
             if not b.get('gvoice'):
                 # 🔊 מהחובות — בקול ובסגנון ששמרת
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
@@ -19000,9 +19000,9 @@ class H(BaseHTTPRequestHandler):
             nik = ym_nikud_on(con) and kv_get(con, 'ym_engine', '') == 'gemini'; con.close()
             _ym.begin_trace()
             t_ = ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
-                               pron, nik, trace=_ym._trace)
+                               pron, nik, trace=_ym._trace, fast=True)
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
-            return self._send(200, {'ok': True, 'text': t_, 'nikud': nik})
+            return self._send(200, {'ok': True, 'text': t_, 'nikud': nik, 'late': bool(nik and not re.search(r'[\u05b0-\u05bc\u05c1\u05c2]', t_))})
         if self.path == '/api/yemot/pron_word':
             # ✎ מאיר: "שאוכל לתקן בקול על המילה הלא נכונה, ולא רק באנגלית, ושזה יהיה מהר" — מילה=איך לומר
             # (עברית מנוקדת / כתיב אחר) נכנס למילון ההגייה, ומשם לכל הודעה

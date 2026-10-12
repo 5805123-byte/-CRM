@@ -13803,14 +13803,17 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
 function ymCallConfirm(title,body){return new Promise(done=>{
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">${esc(title)}</div>
-    <div id="ycc_txt" class="hintxt">⏳ מכין את הטקסט כמו שיוקרא…</div>
+    <div id="ycc_txt">${ymWordsHTML(ymFillTxt(body.text,body.name,body.amount,body.for||' ').replace(/\{[^{}]*\}/g,''))}<small class="hintxt" id="ycc_wait">⏳ מנקד…</small></div>
     <div class="hintxt">מילה לא נכונה (ניקוד / הגייה)? לחץ עליה — בחר אפשרות, אמור אותה בקול, או באנגלית. התיקון נשמר לכל ההודעות.</div>
     <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">📞 כן, להתקשר</button></div></div>`;
   document.body.appendChild(o);const end=v=>{o.remove();done(v);};
   o.querySelector('.cno').onclick=()=>end(false);o.querySelector('.cyes').onclick=()=>end(true);
   const load=async()=>{const box=o.querySelector('#ycc_txt');const r=await api('POST','/api/yemot/speakable',body);
-    if(!o.isConnected)return;box.className='';box.innerHTML=r&&r.ok?(r.nikud?'':'<small class="hintxt">(ניקוד אוטומטי פועל רק בקול של Gemini)</small>')+ymWordsHTML(r.text):'<div class="ymwarn">לא הצלחתי להכין את הטקסט</div>';
+    if(!o.isConnected)return;
+    if(r&&r.ok)box.innerHTML=(r.nikud?(r.late?'<small class="hintxt">(הניקוד לא הספיק להגיע לתצוגה — בשליחה עצמה הטקסט ינוקד)</small>':''):'<small class="hintxt">(ניקוד אוטומטי פועל רק בקול של Gemini)</small>')+ymWordsHTML(r.text);
+    else{const w=o.querySelector('#ycc_wait');if(w)w.textContent='';}
     const again=()=>load();again.auto=true;ymWordsWire(box,again);};
+  ymWordsWire(o.querySelector('#ycc_txt'),Object.assign(()=>load(),{auto:true}));
   load();});}
 // ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
 async function ymPronEn(word){

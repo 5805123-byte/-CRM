@@ -10,6 +10,7 @@
 בדיקת בטיחות: אחרי הסרת הניקוד התוצאה חייבת להיות זהה למקור — אחרת היא נדחית,
 כך שהניקוד לעולם לא משנה מילים.
 """
+import threading
 import json
 import os
 import re
@@ -93,19 +94,67 @@ def _dicta_join(res, text=''):
     return ''.join(out)
 
 
-def dicta(text, trace=None):
+_GOOD = {'url': ''}      # הכתובת של דיקטה שענתה אחרונה — מנסים אותה ראשונה
+
+
+def _dicta_urls():
     urls = ([os.environ['DICTA_URL'].strip()] if (os.environ.get('DICTA_URL') or '').strip() else []) + DICTA_URLS
+    if _GOOD['url'] in urls:
+        urls = [_GOOD['url']] + [u for u in urls if u != _GOOD['url']]
+    return urls
+
+
+def dicta_fast(text, trace=None, timeout=7):
+    """מאיר: "זה גם מחכה מידי הרבה זמן לראות מה יקריא לו" — לתצוגה: כל הכתובות של דיקטה במקביל,
+    הראשונה שעונה נכון קובעת, ובכל מקרה לא יותר מ-7 שניות."""
+    import queue
+    q = queue.Queue()
+    urls = _dicta_urls()
+    body = {'task': 'nakdan', 'data': text, 'genre': 'modern', 'addmorph': False, 'keepqq': False,
+            'nodageshdefmem': False, 'patachma': False, 'keepmetagim': True, 'useTokenization': True}
+
+    def one(u):
+        code, raw, ms = _post(u, body, timeout=timeout)
+        out = ''
+        if code == 200:
+            try:
+                out = _dicta_join(json.loads(raw), text)
+            except Exception:
+                out = ''
+        good = bool(out) and _same(out, text) and bool(_NIQ.search(out))
+        q.put((u, good, out, raw, ms))
+    for u in urls:
+        threading.Thread(target=one, args=(u,), daemon=True).start()
+    end = time.time() + timeout + 0.5
+    last = 'דיקטה לא ענתה בזמן'
+    for _ in urls:
+        try:
+            u, good, out, raw, ms = q.get(timeout=max(0.1, end - time.time()))
+        except Exception:
+            break
+        if good:
+            _GOOD['url'] = u
+            if trace:
+                trace('Nakdan', {'url': u, 'chars': len(text), 'fast': 1}, True, json.dumps({'responseStatus': 'OK', 'message': out[:300]}, ensure_ascii=False), ms)
+            return True, out
+        last = 'דיקטה: %s' % (raw or '')[:100]
+    return False, last
+
+
+def dicta(text, trace=None):
+    urls = _dicta_urls()
     body = {'task': 'nakdan', 'data': text, 'genre': 'modern', 'addmorph': False, 'keepqq': False,
             'nodageshdefmem': False, 'patachma': False, 'keepmetagim': True, 'useTokenization': True}
     last = ''
     for u in urls:
-        code, raw, ms = _post(u, body)
+        code, raw, ms = _post(u, body, timeout=20)
         ok = False
         if code == 200:
             try:
                 out = _dicta_join(json.loads(raw), text)
                 ok = bool(out) and _same(out, text) and bool(_NIQ.search(out))
                 if ok:
+                    _GOOD['url'] = u
                     if trace:
                         trace('Nakdan', {'url': u, 'chars': len(text), 'text': text[:200]}, True, json.dumps({'responseStatus': 'OK', 'message': out[:300]}, ensure_ascii=False), ms)
                     return True, out
@@ -232,8 +281,9 @@ def gemini(text, trace=None):
     return False, 'Gemini %s' % code
 
 
-def vocalize(text, trace=None):
-    """-> (הצלחה, טקסט מנוקד או שגיאה, ספק). טקסט שכבר מנוקד מנוקד מחדש."""
+def vocalize(text, trace=None, fast=False):
+    """-> (הצלחה, טקסט מנוקד או שגיאה, ספק). טקסט שכבר מנוקד מנוקד מחדש.
+    fast — לתצוגה: דיקטה במקביל, עד 7 שניות, בלי Gemini."""
     text = text or ''
     if not re.search(r'[א-ת]', text):
         return True, text, ''
@@ -248,9 +298,11 @@ def vocalize(text, trace=None):
 
     def back(t):
         return re.sub(r'QQ(\d+)QQ', lambda m: ph[int(m.group(1))] if int(m.group(1)) < len(ph) else m.group(0), t)
-    ok, out = dicta(base, trace)
+    ok, out = dicta_fast(base, trace) if fast else dicta(base, trace)
     if ok:
         return True, back(out), 'דיקטה'
+    if fast:
+        return False, out, ''
     ok2, out2 = gemini(base, trace)
     if ok2:
         return True, back(out2), 'Gemini'
