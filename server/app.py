@@ -14210,6 +14210,10 @@ def ym_check_job(job_id):
 
 
 YM_RETRY_AFTER = datetime.timedelta(hours=2)
+# מאיר: "מי שענה ולא שמע — שיהיה אפשרות לחייג אליו שוב, או שזה יתקשר אליו אחרי שעתיים אוטומטי".
+# ענה אבל שמע פחות מ-5 שניות (ניתק מיד / תא קולי) — כמו מי שלא ענה
+YM_HEARD_MIN = 5
+YM_NOT_HEARD_SQL = "(m.answered=0 OR (m.answered=1 AND COALESCE(m.listen_secs,0)<%d AND COALESCE(m.pressed,'')=''))" % YM_HEARD_MIN
 
 
 def ym_call_ok(dt):
@@ -14275,7 +14279,7 @@ def ym_retry_scan():
         now = il_now()
         rows = con.execute(
             "SELECT m.*, j.text jtext, j.amount jamount, j.bill_path FROM ym_msg m JOIN ym_job j ON j.id=m.job "
-            "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND m.answered=0 AND m.retry_of IS NULL "
+            "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND " + YM_NOT_HEARD_SQL + " AND m.retry_of IS NULL "
             "AND m.retried IS NULL AND COALESCE(m.paid_at,'')='' AND COALESCE(m.sent_ts,'')>=? AND m.sent_ts<=? ORDER BY m.id",
             ((now - datetime.timedelta(days=3)).strftime('%Y-%m-%d'), (now - YM_RETRY_AFTER).strftime('%Y-%m-%d %H:%M:%S'))).fetchall()
         if not rows:
@@ -14327,7 +14331,7 @@ def ym_sched_view(con, role='admin'):
     out['retries'] = []
     for m in con.execute(
             "SELECT m.id,m.job,m.name,m.phone,m.sent_ts,m.retry_at,m.amount,m.text,j.label,j.test FROM ym_msg m JOIN ym_job j ON j.id=m.job "
-            "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND m.answered=0 AND m.retry_of IS NULL "
+            "WHERE j.channel='voice' AND COALESCE(j.test,0)=0 AND m.status='sent' AND " + YM_NOT_HEARD_SQL + " AND m.retry_of IS NULL "
             "AND m.retried IS NULL AND COALESCE(m.paid_at,'')='' AND COALESCE(m.sent_ts,'')>=? ORDER BY m.sent_ts", (since,)):
         try:
             due = datetime.datetime.strptime((m['sent_ts'] or '')[:19], '%Y-%m-%d %H:%M:%S') + YM_RETRY_AFTER
@@ -19428,8 +19432,10 @@ class H(BaseHTTPRequestHandler):
                 job = con.execute("SELECT * FROM ym_job WHERE id=?", (jid,)).fetchone()
                 if not job or job['channel'] != 'voice':
                     return self._send(200, {'ok': False, 'error': 'רק בשיחה קולית'})
-                q_ = "SELECT * FROM ym_msg WHERE job=? AND status='sent' AND COALESCE(answered,0)<>1"
-                lst = [r for r in con.execute(q_, (jid,)).fetchall() if not ids or r['id'] in ids]
+                # מי שלא ענה, וגם מי שענה ולא שמע (פחות מ-5 שניות, בלי הקשה); בחירה ידנית — כל מי שנבחר
+                q_ = "SELECT * FROM ym_msg WHERE job=? AND status='sent'"
+                lst = [r for r in con.execute(q_, (jid,)).fetchall()
+                       if ((r['id'] in ids) if ids else (r['answered'] != 1 or ((r['listen_secs'] or 0) < YM_HEARD_MIN and not (r['pressed'] or ''))))]
                 if not lst:
                     return self._send(200, {'ok': False, 'error': 'אין למי לחייג — כולם ענו'})
                 nj = ym_redial(con, jid, lst, '📞 חיוג חוזר')

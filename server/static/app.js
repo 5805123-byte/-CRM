@@ -1974,6 +1974,7 @@ function mkHistRes(r){if(r.kind!=='msg')return '';const v=r.ch;
   if(!r.y_st||r.y_st==='queued')return '<span class="mktag mu">⏳ בתור</span>';
   if(r.y_st==='failed')return '<span class="mktag bad">✗ לא יצאה'+(r.y_err?' — '+esc(String(r.y_err).slice(0,60)):'')+'</span>';
   if(v==='sms')return '<span class="mktag ok">✓ ה-SMS נשלח</span>';
+  if(+r.y_ans===1&&(+r.y_listen||0)<5&&!r.y_pressed)return '<span class="mktag bad">⚠️ ענה אבל לא שמע ('+mkMMSS(r.y_listen)+')'+(+r.y_retried>0?' · 🔁 ניסיון שני יצא':' · 🔁 ינסה שוב שעתיים אחרי')+'</span>';
   if(+r.y_ans===1)return `<span class="mktag ok">✅ ענה · שמע ${mkMMSS(r.y_listen)}${+r.y_secs?' (שיחה '+mkMMSS(r.y_secs)+')':''}${r.y_pressed?' · ☎️ הקיש '+esc(r.y_pressed):' · לא הקיש'}</span>`;
   if(r.y_ans!=null&&+r.y_ans===0)return '<span class="mktag bad">📵 לא ענה'+(+r.y_retried>0?(+r.y_r_ans===1?' · ✅ ענה בניסיון השני':' · 🔁 ניסיון שני יצא'):(r.y_retry_at?' · 🔁 ינסה שוב '+esc(String(r.y_retry_at).slice(5,16)):''))+'</span>';
   return '<span class="mktag mu" title="'+esc(r.y_call||'')+'">⏳ בודק אם ענה…</span>';}
@@ -13939,6 +13940,8 @@ function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
   else if(d.y_st==='failed'||d.y_st==='cancelled'){t=(v==='sms'?'❌ ה-SMS לא נשלח':'❌ השיחה לא יצאה')+(d.y_err?' — '+String(d.y_err).slice(0,60):'');c='bad';}
   else if(v==='sms'){t='💬 ה-SMS נשלח';c='ok';}
   // מאיר: "שיהיה כתוב כאן הכל — כמה זמן שמע את ההודעה, ואם הקיש 1 או הקשה אחרת, אצל כולם"
+  else if(+d.y_ans===1&&(+d.y_listen||0)<5&&!d.y_pressed){t='⚠️ ענה אבל לא שמע ('+Math.floor((+d.y_listen||0)/60)+':'+String((+d.y_listen||0)%60).padStart(2,'0')+')';c='bad';
+    if(+d.y_retried>0)t+=+d.y_r_ans===1?' · ✅ ענה בניסיון השני':(d.y_r_ans==null?' · 🔁 ניסיון שני יצא':' · גם בניסיון השני לא');else t+=' · 🔁 ינסה שוב שעתיים אחרי';}
   else if(+d.y_ans===1){const mm=n=>Math.floor((+n||0)/60)+':'+String((+n||0)%60).padStart(2,'0');
     t='✅ ענה · שמע '+mm(d.y_listen)+(+d.y_secs?' (שיחה '+mm(d.y_secs)+')':'')+(d.y_pressed?' · ☎️ הקיש '+d.y_pressed+(d.y_psecs?' אחרי '+mm(d.y_psecs):''):' · לא הקיש');c='ok';}
   else if(d.y_ans!==null&&d.y_ans!==undefined&&+d.y_ans===0){t='📵 לא ענה';c='bad';
@@ -15388,10 +15391,13 @@ function ymAns(m,ch){
   const paid=m.paid_at?`<span class="ymans paid">💳 שילם ₪${esc(m.paid_amount)} · ${esc(m.paid_via||'')} · ${esc(String(m.paid_at).slice(5,16))}</span>`:'';
   return ymAns0(m,ch)+paid;}
 const ymAns1=m=>`<span class="ymans yes">📞 ענה · שמע ${ymMMSS(m.listen_secs)}</span>${m.pressed?`<span class="ymans pr">1️⃣ הקיש ${esc(m.pressed)} · ${ymMMSS(m.pressed_secs)}</span>`:''}`;
+// ענה אבל שמע פחות מ-5 שניות ולא הקיש — "לא שמע": מקבל ניסיון חוזר וכפתור חיוג שוב
+const ymNotHeard=m=>m.status==='sent'&&(m.answered!==1||((+m.listen_secs||0)<5&&!m.pressed));
 function ymAns0(m,ch){
   if(ch==='sms')return m.status==='sent'?'<span class="ymans yes">💬 נשלח</span>':'';
   if(m.status!=='sent')return '';
   const rt=m.retry_of?'<span class="ymans">🔁 ניסיון חוזר</span>':'';
+  if(m.answered===1&&ymNotHeard(m))return rt+`<span class="ymans no">⚠️ ענה אבל לא שמע (${ymMMSS(m.listen_secs)})</span>`+(m.retry_of?'':(m.retried?'<span class="ymans">🔁 נשלח ניסיון חוזר</span>':'<span class="ymans">🔁 ניסיון חוזר שעתיים אחרי השיחה</span>'));
   if(m.answered===1)return rt+ymAns1(m);
   if(m.answered===0)return rt+'<span class="ymans no">📵 לא ענה</span>'+(m.retry_of?'':(m.retried?'<span class="ymans">🔁 נשלח ניסיון חוזר'+(m.retry_at?' '+esc(String(m.retry_at).slice(11,16)):'')+'</span>'
     :(m.retried===0?`<span class="ymans">🔁 בלי ניסיון חוזר — ${esc(m.retry_note||'')}</span>`:`<span class="ymans">🔁 ניסיון חוזר ${m.retry_at?'ב-'+esc(String(m.retry_at).slice(5,16)):'שעתיים אחרי השיחה'}</span>`)));
@@ -15407,12 +15413,12 @@ function ymViewJobs(){
   const det=r=>{const j=r.job, ms=r.msgs||[];
     return `<div class="ymdet">
       <div class="addrow" style="justify-content:space-between;flex-wrap:wrap"><div class="ympv" style="flex:1;margin:0">${esc(j.text||'')}</div>
-        <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}${j.channel==='voice'&&!j.test&&ms.some(m=>m.status==='sent'&&m.answered!==1)?`<button class="btn sm ymredial" data-j="${j.id}" data-ids="">📞 חייג שוב למי שלא ענה (${ms.filter(m=>m.status==='sent'&&m.answered!==1).length})</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button></span></div>
+        <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}${j.channel==='voice'&&!j.test&&ms.some(ymNotHeard)?`<button class="btn sm ymredial" data-j="${j.id}" data-ids="">📞 חייג שוב למי שלא ענה / לא שמע (${ms.filter(ymNotHeard).length})</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button></span></div>
       ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}${j.retry_of?`<div class="hintxt">${/חיוג חוזר/.test(j.label||'')?'📞 חיוג חוזר ידני':'🔁 ניסיון חוזר אוטומטי — למי שלא ענה שעתיים קודם'}</div>`:''}
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${ms.some(m=>+m.amount)?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
       ${ms.map(m=>`<tr class="${m.status}"><td>${esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
         <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
-        <td>${ymAns(m,j.channel)}${j.channel==='voice'&&!j.test&&m.status==='sent'&&m.answered!==1?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
+        <td>${ymAns(m,j.channel)}${j.channel==='voice'&&!j.test&&ymNotHeard(m)?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
   view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
       <div class="ymch3"><span class="ymjd">${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><b>${j.channel==='sms'?'💬 SMS':'📞 קולית'}</b>${j.test?'<span class="ymtag">בדיקה</span>':''}
         ${(j.recips||[]).length?`<span class="ymjwho">👤 ${(j.recips||[]).slice(0,3).map(r=>esc(r.name||r.phone)).join(', ')}${j.total>3?` ועוד ${j.total-3}`:''}</span>`:''}
@@ -15427,7 +15433,7 @@ function ymViewJobs(){
     await api('POST','/api/yemot/job/'+ck.dataset.j+'/check',{});
     const r=await api('GET','/api/yemot/job/'+ck.dataset.j);if(r&&r.ok)ymJobView=r;await ymLoadStatus();renderCommYm();};
   view.querySelectorAll('.ymredial').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();
-    const ids=b.dataset.ids?[+b.dataset.ids]:[];const n=ids.length||((ymJobView&&ymJobView.msgs)||[]).filter(m=>m.status==='sent'&&m.answered!==1).length;
+    const ids=b.dataset.ids?[+b.dataset.ids]:[];const n=ids.length||((ymJobView&&ymJobView.msgs)||[]).filter(ymNotHeard).length;
     if(!await uiConfirm('להתקשר שוב עכשיו ל-'+n+(n===1?' נמען':' נמענים')+', עם אותה הודעה?','📞 כן, לחייג','ביטול'))return;
     b.disabled=true;const r=await api('POST','/api/yemot/job/'+b.dataset.j+'/redial',{ids});
     if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא יצא');return;}
