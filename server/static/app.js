@@ -749,7 +749,8 @@ function remNotify(items){
 }
 // מי אחראי על המשימה — מוצג בכל מקום שבו רואים משימה, וניתן להחליף בלחיצה
 const whoName=t=>(((t&&t.assignee)||'')==='אהרן'?'אהרן':'מאיר');
-function whoChipHTML(t,attrs){return `<button class="whoflip ${whoName(t)==='אהרן'?'ah':'me'}" ${attrs||''} title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${whoName(t)} ⇄</button>`;}
+// מאיר: "תמחק לגמרי את אהרן, הוא כבר לא עובד פה — אל תעשה מאיר ואהרן, רק תשאיר משימות" — אין יותר שיוך למבצע
+function whoChipHTML(t,attrs){return '';}
 // מחליף את האחראי ומעדכן את הרשומה בכל מקום שבו היא מוחזקת בזיכרון
 async function flipWho(id){
   let rec=GTASKS.find(x=>x.id==id);
@@ -3454,7 +3455,7 @@ function cardTasks(d,body){
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select id="ct_kind">${taskKindOpts('other')}</select></label>
         <label class="fld"><span>תאריך</span><input id="ct_date" type="date" value="${todayStr()}"></label></div>
       ${eventFieldsHTML('ct')}
-      <div class="two" style="margin-top:6px"><label class="fld"><span>מי מבצע</span><select id="ct_who">${assigneeOpts('')}</select></label><label class="fld"><span>&nbsp;</span><button class="btn" id="ct_add" style="width:100%">➕ הוסף משימה</button></label></div>
+      <div class="two" style="margin-top:6px"><input type="hidden" id="ct_who" value=""><label class="fld"><span>&nbsp;</span><button class="btn" id="ct_add" style="width:100%">➕ הוסף משימה</button></label></div>
       <div class="avfiles dnfiles" id="ct_files"><label class="filebtn sm">📎 צרף תמונה / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="ct_file" hidden></label></div>
       <div class="hintxt">כל משימה נכנסת גם ללשונית "משימות" הראשית וליומן Google.</div></div>
     <div class="sec"><h3>📋 המשימות של ${esc((d.last+' '+d.first).trim())}</h3><div id="ct_list"></div></div>
@@ -3518,7 +3519,7 @@ function renderCardTasks(d){
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select class="ctk" data-id="${t.id}">${taskKindOpts(t.kind)}</select></label>
         <label class="fld"><span>תאריך</span><input type="date" class="ctd" data-id="${t.id}" value="${esc(t.due_date||'')}"></label></div>
       ${eventFieldsHTML('cte'+t.id,t)}
-      <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select class="ctw" data-id="${t.id}">${assigneeOpts(t.assignee)}</select></label>
+      <input type="hidden" class="ctw" data-id="${t.id}" value="">
       <button class="btn sm ctsave" data-id="${t.id}" style="width:100%;margin-top:8px">💾 שמור שינויים</button>
     </div>`;}).join('')||'<div class="hintxt">אין משימות פתוחות. הוסף למעלה.</div>';
   // מאיר: "אצל כל תורם, אם יש משימה — אפילו שבוצעה — שיהיה כתוב שבוצעה
@@ -6307,7 +6308,7 @@ function reconPendHTML(d){
         <label class="fld"><span>&nbsp;</span><button class="btn sm rpok" style="width:100%">✓ הכנס לכרטיס</button></label></div>
       <label class="fld"><span>📝 הערה לתרומה (רשות) — תישמר גם בהערות התורם</span><input class="rpnote" placeholder="למשל: קרן מיוחדת שנתרמה דרך הבנק שבו היא עובדת"></label>
       <div class="two"><label class="fld"><span>✅ משימה (רשות)</span><select class="rptaskk">${taskKindOpts()}</select></label>
-        <label class="fld"><span>👤 מי מטפל</span><select class="rptaskw">${assigneeOpts('')}</select></label>
+        <input type="hidden" class="rptaskw" value="">
         <label class="fld"><span>מתי להזכיר</span><input type="date" class="rptaskd" value="${esc(todayStr())}"></label></div>
       <input class="rptask" placeholder="פרטי המשימה — למשל: לבדוק מתי צריכה לשלם בפעם הבאה" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;background:var(--card);color:var(--ink)">
       <div class="rpday hidden"><div class="two"><label class="fld"><span>חודש עברי</span><select class="rpmon">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
@@ -12955,6 +12956,7 @@ function calShowEntry(e){
   if(g('ce_card'))g('ce_card').onclick=()=>{close();openDonor(e.d,e.p?'details':'tasks');};
   if(g('ce_board'))g('ce_board').onclick=()=>{close();tab='parnes';pyKind=e.p.kind||'parnes';pyMonth=e.p.month;pyDay=+e.p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();window.scrollTo(0,0);};
 }
+let NT_OPEN=false;
 function renderTasksTab(){
   const today=todayStr();
   const opts=[['','הכל'],['charge','💳 לחייב'],['parnes','🌙 פרנס'],['prayer','🙏 תפילה'],['followup','📞 לחזור']];
@@ -12967,7 +12969,7 @@ function renderTasksTab(){
   DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(isDone(t)!==showDone||hideParnes(t))return;all.push({...t,donor:(d.last+' '+d.first).trim(),dref:d});}));
   GTASKS.forEach(t=>{if(isDone(t)!==showDone||hideParnes(t))return;all.push({...t,donor:'',dref:null});});   // משימות חופשיות בלי תורם
   if(flt) all=all.filter(t=>t.kind===flt);
-  if(taskWho) all=all.filter(t=>taskWho==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===taskWho);
+  taskWho='';
   all=all.filter(t=>matchQ(t.donor+' '+(t.note||'')));
   // פתוחות — לפי תאריך היעד הקרוב. שבוצעו — האחרונות שנעשו למעלה.
   if(showDone)all.sort((a,b)=>(b.done_at||b.done_date||b.due_date||'').localeCompare(a.done_at||a.done_date||a.due_date||''));
@@ -12975,8 +12977,7 @@ function renderTasksTab(){
   // ספירת משימות פתוחות לכל אחד (מאיר=ריק, אהרן)
   const openAll=[];DB.forEach(d=>(d.tasks||[]).forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);}));GTASKS.forEach(t=>{if(!(t.done&&t.done!=0)&&!hideParnes(t))openAll.push(t);});
   const cnt=w=>openAll.filter(t=>w===''?true:(w==='מאיר'?!(t.assignee||'').trim():(t.assignee||'')===w)).length;
-  const WHO=[['','📋 הכל'],['מאיר','👤 מאיר (אני)'],['אהרן','👤 אהרן']];
-  const inWho=taskWho==='אהרן'?'אהרן':(taskWho==='מאיר'?'מאיר':'');
+  const inWho='';
   const ics=location.origin+'/calendar.ics';
   // חובות פרנס — כל פרנס שאושר וטרם נגבה, מופיע כאן לגבייה (וגם בכרטיס התורם)
   // פרנס יום נכנס לרשימה רק משבוע לפני הלילה (או אם כבר עבר וטרם נגבה) — לא חודשים מראש
@@ -13000,7 +13001,19 @@ function renderTasksTab(){
   // מאיר: "אני רוצה שהלוח שנה יהיה למעלה במשימות, למעלה למעלה, וגם שזה יהיה יותר
   // גדול ויראו מה כתוב… שזה יעמוד על החודש… ויוכלו לדפדף מחודש לחודש או משנה לשנה"
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm" id="tk_view" style="width:100%">📅 פתח את היומן הגדול (חודש שלם, כמו ביומן Google)</button></div>
-    <div class="whobar">${WHO.map(([w,l])=>`<button class="whochip ${taskWho===w?'on':''}" data-w="${w}">${l} <b>${cnt(w)}</b></button>`).join('')}</div>${suggSec}${renewSec}${debtSec}
+
+    <div class="sec newtask" style="margin-top:6px"><h3>➕ משימה חדשה</h3>
+      <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
+      <div id="nt_more" class="${NT_OPEN?'':'hidden'}">
+      <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
+      <div id="nt_res" class="dpres"></div>
+      <div id="nt_chosen" class="pick" style="display:none"></div>
+      <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
+      ${eventFieldsHTML('nt')}
+      <input type="hidden" id="nt_who" value="">
+      <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
+      <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה</button>
+      <div class="hintxt">אפשר גם לשייך לתורם.</div></div></div>${suggSec}${renewSec}${debtSec}
     <div class="cnt" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${all.length} ${showDone?'משימות שבוצעו':'משימות · לפי תאריך קרוב'}</span><button class="btn sm ghost" id="toggledone">${showDone?'🔔 חזרה לפתוחות':'✓ הצג שבוצעו'}</button></div>
     ${showDone?'<div class="submuted">"↩️ החזר לפתוחות" מבטל את הווי והמשימה חוזרת לרשימה — גם הרישום בכרטיס התורם נמחק. "✏️ ערוך" משנה את הטקסט בלי לבטל את הביצוע.</div>':''}<div class="list">${all.map((t,i)=>{
     const over=t.due_date&&t.due_date<today, icon=kindLabel(t.kind).split(' ')[0], g=gcalLink(t,t.donor||t.note||'משימה');
@@ -13008,7 +13021,7 @@ function renderTasksTab(){
     return `<div class="rowc taskrow ${showDone?'donerow':''}" data-i="${i}"><button class="tdone ${showDone?'restore':''}" data-done="${i}" title="${showDone?'החזר לפתוחות':'בוצע'}">${showDone?'↩️ החזר לפתוחות':'✓'}</button>
       <div><div class="nm">${icon} ${esc(t.donor||t.note||'משימה')}</div>${isCustKind(t.kind)?`<div class="miss2">📌 ${esc(custKind(t.kind))}</div>`:''}${t.donor&&t.note?`<div class="miss2">${esc(t.note)}</div>`:''}${eventMeta(t)}${t.done_note?`<div class="dnotetxt">✍️ ${esc(t.done_note)}</div>`:''}${(t.files||[]).some(isAudioFile)?`<div class="avfiles" onclick="event.stopPropagation()">${(t.files||[]).filter(isAudioFile).map(fileChip).join('')}</div>`:''}${t.dref?contactBtns(t.dref):''}</div>
       <div class="meta"><span class="tdate ${showDone?'':(over?'over':'')}">${showDone?('✓ '+esc(t.done_date||t.due_date||'—')+(hhmm(t.done_at)?(' '+hhmm(t.done_at)):'')+' · ע"י '+esc(t.done_by||whoName(t))):esc(t.due_date||'—')}</span>
-        <button class="whoflip ${(t.assignee||'')==='אהרן'?'ah':'me'}" data-i="${i}" title="לחץ להחליף בין מאיר לאהרן" onclick="event.stopPropagation()">👤 ${(t.assignee||'')==='אהרן'?'אהרן':'מאיר'} ⇄</button>
+        
         <button class="tedit" data-i="${i}" title="ערוך משימה" onclick="event.stopPropagation()">✏️ ערוך</button>${g?`<a class="gcal" href="${g}" target="_blank" rel="noopener" onclick="event.stopPropagation()">ליומן</a>`:''}</div></div>
     <div class="donepanel hidden" data-dp="${i}">
       <label class="fld"><span>✍️ מה עשית? מה נסגר תכליס</span>
@@ -13021,26 +13034,17 @@ function renderTasksTab(){
       ${isParnes?`<button class="btn sm tparnes" data-i="${i}" style="background:var(--gold);width:100%;margin-bottom:8px">🌙 החלף/ערוך את הפרנס בלוח</button>`:''}
       <label class="fld"><span>✏️ טקסט המשימה</span><textarea class="tnote" data-i="${i}" rows="3" placeholder="מה צריך לעשות">${esc(t.note||'')}</textarea></label>
       <div class="two" style="margin-top:6px"><label class="fld"><span>סוג</span><select class="tkindsel" data-i="${i}">${taskKindOpts(t.kind)}</select></label>
-        <label class="fld"><span>👤 מי מטפל (אפשר להעביר לאהרן)</span><select class="twho" data-i="${i}">${assigneeOpts(t.assignee)}</select></label></div>
+        <input type="hidden" class="twho" data-i="${i}" value=""></div>
       <div class="addrow" style="margin-top:6px"><input type="date" class="tdate2" data-i="${i}" value="${esc(t.due_date||'')}"><button class="btn sm tsave" data-i="${i}">💾 שמור</button><button class="del tdel" data-i="${i}">🗑 מחק</button></div>
       <div class="avfiles" style="margin-top:6px">${(t.files||[]).map(fileChip).join('')}<label class="filebtn">📎 צרף תמונה / הקלטה / אסמכתא<input type="file" accept="image/*,audio/*,application/pdf" class="ttup" data-id="${t.id}" hidden></label></div>
     </div>`;
   }).join('')||`<div class="empty">${showDone?'עדיין לא סומנה אף משימה כבוצעה':'אין משימות פתוחות 🎉'}</div>`}</div>`;
   view.innerHTML+=`    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="tk_anetsync" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>
-    <div class="sec newtask"><h3>➕ משימה חדשה${taskWho==='אהרן'?' — לאהרן':(taskWho==='מאיר'?' — למאיר':'')}</h3>
-      <input id="nt_note" placeholder="✍️ מה צריך לעשות? (משימה חופשית)" autocomplete="off">
-      <input id="nt_q" placeholder="🔍 שייך לתורם (רשות) — שם / טלפון / עסק…" autocomplete="off" style="margin-top:6px">
-      <div id="nt_res" class="dpres"></div>
-      <div id="nt_chosen" class="pick" style="display:none"></div>
-      <div class="two" style="margin-top:6px"><select id="nt_kind">${taskKindOpts()}</select><input id="nt_date" type="date" value="${today}"></div>
-      ${eventFieldsHTML('nt')}
-      <label class="fld" style="margin-top:6px"><span>👤 מי מבצע</span><select id="nt_who">${assigneeOpts(inWho)}</select></label>
-      <div class="avfiles dnfiles" id="nt_files"><label class="filebtn sm">📎 צרף כרטיס אשראי / הקלטה / צילום<input type="file" multiple accept="image/*,audio/*,application/pdf" id="nt_file" hidden></label></div>
-      <button class="btn" id="nt_add" style="width:100%;margin-top:6px">➕ הוסף משימה${taskWho==='אהרן'?' לאהרן':''}</button>
-      <div class="hintxt">בחר מי מבצע — מאיר או אהרן. ברירת המחדל היא החלון שאתה נמצא בו. אפשר גם לשייך לתורם.</div></div>
     <details class="icsmini"><summary>📅 כתובת יומן Google (כבר חובר)</summary><span class="u" id="icsurl">${ics}</span><button class="btn sm" id="icscopy" style="margin-top:6px">העתק כתובת</button></details>`;
   view.querySelectorAll('.whochip').forEach(b=>b.onclick=()=>{taskWho=b.dataset.w;render();});
+  // מאיר: "בדף משימות הראשי צריך להיות שם למעלה שורה הוסף משימה חדשה" — שורה אחת למעלה; השדות הנוספים נפתחים כשמתחילים לכתוב
+  {const nn=document.getElementById('nt_note'),mo=document.getElementById('nt_more');if(nn&&mo)nn.addEventListener('focus',()=>{NT_OPEN=true;mo.classList.remove('hidden');});}
   // חובות פרנס — פתיחת כרטיס / סימון שנגבה
   view.querySelectorAll('.rowmain[data-did]').forEach(r=>r.onclick=e=>{if(e.target.closest('.cbtns'))return;openDonor(DB.find(x=>x.id==r.dataset.did));});
   view.querySelectorAll('.avopen2').forEach(b=>b.onclick=e=>{e.stopPropagation();openDonor(DB.find(x=>x.id==b.dataset.did));});

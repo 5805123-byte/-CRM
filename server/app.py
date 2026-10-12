@@ -590,6 +590,12 @@ def ensure_schema():
             cm_debts_from_keva(con)          # כרטיס שפג בהוראה פעילה — חוזר לרשימה
             con.execute("INSERT INTO app_kv(k,v) VALUES('hok_dead_2','1')")
     except Exception: pass
+    # מאיר: "תמחק לגמרי את אהרן, הוא כבר לא עובד פה" — המשימות שלו חוזרות לרשימה הכללית
+    try:
+        if not con.execute("SELECT 1 FROM app_kv WHERE k='no_aharon_1'").fetchone():
+            con.execute("UPDATE tasks SET assignee='' WHERE assignee='אהרן'")
+            con.execute("INSERT INTO app_kv(k,v) VALUES('no_aharon_1','1')")
+    except Exception: pass
     # פעם אחת: מה שנרשם בעבר ביומן של חברי הקהילה מהמקווה — יוצא משם
     try:
         if not con.execute("SELECT 1 FROM app_kv WHERE k='mk_unlink_1'").fetchone():
