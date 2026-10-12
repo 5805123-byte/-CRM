@@ -586,6 +586,9 @@ def ensure_schema():
                         "AND note LIKE '%הוראת הקבע עברה / עודכנה%' AND ref IN (SELECT id FROM nd_keva WHERE active=0 OR COALESCE(off,'')<>'')")
             cm_debts_from_keva(con)          # הפתוחים — יורדים מהרשימה מיד, בלי לחכות לסנכרון
             con.execute("INSERT INTO app_kv(k,v) VALUES('hok_dead_1','1')")
+        if not con.execute("SELECT 1 FROM app_kv WHERE k='hok_dead_2'").fetchone():
+            cm_debts_from_keva(con)          # כרטיס שפג בהוראה פעילה — חוזר לרשימה
+            con.execute("INSERT INTO app_kv(k,v) VALUES('hok_dead_2','1')")
     except Exception: pass
     # פעם אחת: מה שנרשם בעבר ביומן של חברי הקהילה מהמקווה — יוצא משם
     try:
@@ -23683,7 +23686,9 @@ def debt_autopay_revert():
 # מאיר: "אני רואה מלא רשימה שלמה של הוראות קבע לא פעילות, או שפג התוקף — אני לא רוצה שזה יהיה שם".
 # הוראה שהסתיימה / הוקפאה / בוטלה / שהכרטיס שלה פג, שנגמרו לה החיובים, או שלא חייבה כבר חודש וחצי —
 # היא לא "הו"ק שחזרה" (נדרים משאירים עליה את השגיאה האחרונה גם כשהיא כבר לא פעילה)
-_KEVA_DEAD_RX = re.compile(r'לא פעיל|אין סכום|פג|תוקף|הסתיימ|בוטל|מבוטל|הוקפא|מוקפא|נמחק|הופסק|expired|inactive|cancel', re.I)
+# מאיר: "אם פג תוקף האשראי ובגלל זה לא עבר הכרטיס עכשיו — בטח שיהיה ברשימה שצריכה טיפול". כרטיס שפג
+# בהוראה פעילה = חיוב שחזר, נשאר. רק ההוראה עצמה שאינה פעילה יורדת
+_KEVA_DEAD_RX = re.compile(r'לא פעיל|אין סכום|ההוראה הסתיימ|הוראה הסתיימ|ההוראה בוטל|הוראה מבוטל|הוקפא|מוקפא|נמחק|הופסק|inactive', re.I)
 
 
 def keva_dead(k):
@@ -23713,14 +23718,21 @@ def cm_debts_from_keva(con):
         dead = keva_dead(k)
         bad = not dead and (k['error'] or '').strip() and k['member_id'] and _ivr_amt(k['amount']) > 0
         if d and dead:
-            con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · הוראת הקבע לא פעילה / פג תוקפה — ירד מהרשימה') WHERE id=?",
+            con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · הוראת הקבע לא פעילה — ירד מהרשימה') WHERE id=?",
                         (now_iso(), now_iso(), d['id']))
             closed += 1
             continue
         # חוב שכבר נסגר (שולם בטלפון / ידנית) על אותה הוראה ב-25 הימים האחרונים — לא נפתח שוב
         recent = con.execute("SELECT 1 FROM cm_debt WHERE kind='hok' AND ref=? AND created>=?",
                              (k['id'], (il_now() - datetime.timedelta(days=25)).strftime('%Y-%m-%d'))).fetchone()
-        if bad and not d and not recent:
+        # חוב שירד מהרשימה כ"לא פעילה" (לפני התיקון — גם כרטיס שפג), וההוראה בעצם פעילה — חוזר לרשימה
+        back = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='canceled' AND note LIKE '%ירד מהרשימה%' ORDER BY id DESC LIMIT 1",
+                           (k['id'],)).fetchone() if bad and not d else None
+        if back:
+            con.execute("UPDATE cm_debt SET status='open', closed_at=NULL, updated=?, note=REPLACE(REPLACE(note,' · הוראת הקבע לא פעילה / פג תוקפה — ירד מהרשימה',''),' · הוראת הקבע לא פעילה — ירד מהרשימה','') WHERE id=?",
+                        (now_iso(), back['id']))
+            opened += 1
+        elif bad and not d and not recent:
             con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,ref,note,created,updated) "
                         "VALUES(?,?,?,?,0,?,'open','נדרים פלוס',?,?,?,?)",
                         (k['member_id'], 'hok', 'הוראת קבע שחזרה' + ((' · ' + k['groupe']) if k['groupe'] else ''),
