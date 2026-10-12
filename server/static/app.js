@@ -1592,7 +1592,11 @@ async function load(){
 }
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;DLIM=60;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));flt='';plaque=null;pyMonth=null;pyDay=null;pyKind='parnes';kvSub=null;try{localStorage.setItem('kc_tab',tab);localStorage.removeItem('kc_donor');}catch(e){}render();});
-document.getElementById('q').oninput=e=>{q=e.target.value.trim();DLIM=60;render();};
+document.getElementById('q').oninput=e=>{q=e.target.value.trim();DLIM=60;
+  // מאיר: "כשאני מקליד בדף של מקווה שם לחיפוש — זה עושה לי אותיות הפוכות" — במקווה לא בונים את הדף מחדש
+  // בכל אות (זה העביר את הסמן לתיבה של המקווה, לתחילת השורה); רק מסננים את הרשימה
+  const mq=tab==='mikveh'&&document.getElementById('mkq');if(mq&&MK&&MK.ok){mkQ=q;mq.value=e.target.value;mkPaint();return;}
+  render();};
 ov.onclick=e=>{if(e.target===ov){ov.classList.remove('show');try{localStorage.removeItem('kc_donor');}catch(e){}
   if(typeof restoreScroll==='function')restoreScroll();}};
 document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentTarget.classList.remove('show');};
@@ -1708,7 +1712,9 @@ function renderMikveh(){
     mkOpen(c);
   };
   mkPaint();
-  if(!('ontouchstart' in window))qi.focus();
+  // מיקוד בתיבת החיפוש רק כשנכנסים ללשונית (לא כשמקלידים בתיבה העליונה), והסמן בסוף הטקסט
+  const ae=document.activeElement;
+  if(!('ontouchstart' in window)&&!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))){qi.focus();try{qi.setSelectionRange(qi.value.length,qi.value.length);}catch(e){}}
 }
 const mkDigits=s=>String(s||'').replace(/\D/g,'');
 function mkRowHTML(c,G){
