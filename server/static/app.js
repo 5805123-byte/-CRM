@@ -13810,21 +13810,32 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
     tm=setTimeout(()=>{try{rec&&rec.stop();}catch(e){}},4000);};}
 // מאיר: "שכאן לפני שזה מתקשר אראה את הטקסט מנוקד נכון, ואם יש בעיה בניקוד אוכל לתקן" — אישור לפני שיחה:
 // הטקסט בדיוק כמו שיוקרא (מנוקד), כל מילה ניתנת לתיקון, ואחרי תיקון הטקסט מתעדכן במקום
-function ymCallConfirm(title,body){return new Promise(done=>{
+function ymCallConfirm(title,body,opt){opt=opt||{};return new Promise(done=>{
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">${esc(title)}</div>
+    <div id="ycc_aud">${opt.hear?'':`<button class="btn sm ghost" id="ycc_play">🔊 השמע איך זה יישמע</button>`}</div>
     <div id="ycc_txt">${ymWordsHTML(ymFillTxt(body.text,body.name,body.amount,body.for||' ').replace(/\{[^{}]*\}/g,''))}<small class="hintxt" id="ycc_wait">⏳ מנקד…</small></div>
     <div class="hintxt">מילה לא נכונה (ניקוד / הגייה)? לחץ עליה — בחר אפשרות, אמור אותה בקול, או באנגלית. התיקון נשמר לכל ההודעות.</div>
-    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">📞 כן, להתקשר</button></div></div>`;
-  document.body.appendChild(o);const end=v=>{o.remove();done(v);};
-  o.querySelector('.cno').onclick=()=>end(false);o.querySelector('.cyes').onclick=()=>end(true);
+    <div class="cbtns"><button class="btn ghost cno">${opt.hear?'סגור':'ביטול'}</button>${opt.hear?'':'<button class="btn cyes">📞 כן, להתקשר</button>'}</div></div>`;
+  document.body.appendChild(o);let alive=true,gen=0;
+  const end=v=>{alive=false;try{const a=o.querySelector('audio');if(a)a.pause();}catch(e){}o.remove();done(v);};
+  o.querySelector('.cno').onclick=()=>end(false);const y=o.querySelector('.cyes');if(y)y.onclick=()=>end(true);
+  // 🔊 הקול — נוצר ב-Gemini (לוקח כמה שניות); בינתיים רואים ומתקנים את הטקסט
+  const audio=async()=>{const box=o.querySelector('#ycc_aud'),my=++gen,t0=Date.now();
+    const sh=()=>{if(alive&&my===gen&&box.dataset.wait)box.innerHTML='<div class="hintxt">⏳ Gemini מייצר את הקול… '+Math.round((Date.now()-t0)/1000)+' שנ׳ (אפשר בינתיים לתקן מילים)</div>';};
+    box.dataset.wait=1;sh();const tk=setInterval(sh,500);
+    const r=await api('POST','/api/yemot/sample',body);clearInterval(tk);delete box.dataset.wait;if(!alive||my!==gen)return;
+    box.innerHTML=r&&r.ok?`<audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio>${r.cached?'<small class="hintxt">(מהזיכרון)</small>':''}`
+      :`<div class="ymwarn">לא נוצר קול: ${esc((r&&r.error)||'שגיאה')}</div><button class="btn sm ghost" id="ycc_play">🔊 לנסות שוב</button>`;
+    const pb=box.querySelector('#ycc_play');if(pb)pb.onclick=audio;};
+  const pb=o.querySelector('#ycc_play');if(pb)pb.onclick=audio;
   const load=async()=>{const box=o.querySelector('#ycc_txt');const r=await api('POST','/api/yemot/speakable',body);
     if(!o.isConnected)return;
     if(r&&r.ok)box.innerHTML=(r.nikud?(r.late?'<small class="hintxt">(הניקוד לא הספיק להגיע לתצוגה — בשליחה עצמה הטקסט ינוקד)</small>':''):'<small class="hintxt">(ניקוד אוטומטי פועל רק בקול של Gemini)</small>')+ymWordsHTML(r.text);
     else{const w=o.querySelector('#ycc_wait');if(w)w.textContent='';}
-    const again=()=>load();again.auto=true;ymWordsWire(box,again);};
-  ymWordsWire(o.querySelector('#ycc_txt'),Object.assign(()=>load(),{auto:true}));
-  load();});}
+    const again=()=>{load();if(opt.hear||o.querySelector('#ycc_aud audio'))audio();};again.auto=true;ymWordsWire(box,again);};
+  ymWordsWire(o.querySelector('#ycc_txt'),Object.assign(()=>{load();if(opt.hear)audio();},{auto:true}));
+  load();if(opt.hear)audio();});}
 // ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
 async function ymPronEn(word){
   const w=await uiPrompt('איזו מילה נשמעת לא נכון? (בעברית, כמו שהיא כתובה בהודעה — למשל כולל)',word||'');if(!w||!w.trim())return false;
@@ -14054,22 +14065,13 @@ function cdWire(){const g=id=>document.getElementById(id);
     const r=await api('POST','/api/cm/debts/link',{ids,new:{last:w[0],first:w.slice(1).join(' '),phone:g.phone||''}});
     if(r&&r.ok){toast('➕ נפתח חבר חדש ושויך ✓');await cmLoad(true);cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא נשמר');});
   // 🔊 מאיר: "אני רוצה לשמוע איך נשמע" — דוגמה בדפדפן, בלי להתקשר לאף אחד
+  // 🔊 מאיר: "ממש המון זמן" — החלון נפתח מיד עם הטקסט; הקול של Gemini נכנס כשהוא מוכן
   view.querySelectorAll('[data-cdhear]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdhear);if(!g)return;
-    const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m)return;if(!ymStatus)await ymLoadStatus();
+    const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m)return;
     const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
     const t=YM_TPL.find(x=>x[0]===(deb.some(d=>d.fund==='natan')?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge')));
-    b.disabled=true;b.textContent='⏳';
-    const r=await api('POST','/api/yemot/sample',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
-    b.disabled=false;b.textContent='🔊';
-    if(!r||!r.ok){const sp=await api('POST','/api/yemot/speakable',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
-      await uiAlert('לא הצלחתי להשמיע ('+((r&&r.error)||'שגיאה')+').\nזה הטקסט שיוקרא לו:\n\n'+((sp&&sp.text)||''));return;}
-    const o=document.createElement('div');o.className='confirmov';
-    o.innerHTML=`<div class="confirmbox" style="max-width:620px;width:96vw;text-align:right"><div class="cm">🔊 כך זה יישמע אצלו</div>
-      <audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio>${ymWordsHTML(r.text)}
-      <div class="hintxt">מילה נשמעת לא נכון? לחץ עליה — מתקנים, שומעים רק אותה, ושומרים לכל ההודעות.</div>
-      <div class="cbtns"><button class="btn ghost cno">סגור</button></div></div>`;
-    document.body.appendChild(o);const close=()=>{try{o.querySelector('audio').pause();}catch(e){}o.remove();};
-    o.querySelector('.cno').onclick=close;ymWordsWire(o,()=>{close();b.click();});});
+    if(!ymStatus)ymLoadStatus();
+    ymCallConfirm('🔊 כך זה יישמע אצל '+mName(m),{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)},{hear:1});});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();

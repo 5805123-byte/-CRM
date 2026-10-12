@@ -13966,6 +13966,7 @@ def pron_hint_drop():
 
 
 _VOC_CACHE = {}
+_TTS_CACHE = {}       # 🔊 דוגמאות קול שכבר נוצרו (טקסט + קול + סגנון) — השמעה חוזרת מיידית
 
 
 _YM_SESS = {'at': 0, 'ok': None, 'res': '', 'busy': False}
@@ -18988,11 +18989,20 @@ class H(BaseHTTPRequestHandler):
                 # 🔊 מהחובות — בקול ובסגנון ששמרת
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
             con = db(); _en = pron_en_list(con); con.close()
-            ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=1, model=str(b.get('gmodel') or ''),
-                                hints=pron_en_for(_en, txt))
+            # אותו טקסט באותו קול — מהזיכרון, מיד (השמעה חוזרת / אחרי תיקון של מילה אחרת שלא נמצאת בטקסט)
+            hints_ = pron_en_for(_en, txt)
+            ck = (txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', str(b.get('gmodel') or ''), tuple(hints_))
+            wav = _TTS_CACHE.get(ck)
+            if wav:
+                _ym.end_trace()
+                return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt, 'cached': True})
+            ok, wav = _gt.synth(txt, ck[1], ck[2], trace=_ym._trace, tries=1, model=ck[3], hints=hints_)
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:
                 return self._send(200, {'ok': False, 'error': str(wav)})
+            if len(_TTS_CACHE) > 40:
+                _TTS_CACHE.clear()
+            _TTS_CACHE[ck] = wav
             return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt})
         if self.path == '/api/yemot/speakable':
             import yemot as _ym
