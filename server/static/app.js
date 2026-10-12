@@ -13698,7 +13698,11 @@ async function renderCommDebts(){
     <div class="cdlist">${cdGroupsHTML(rows)}</div>
     ${cdHistHTML()}${cdFund==='natan'?cdNatanHTML(D):''}
     ${cdMemberDL()}`;
-  cdWire();
+  cdWire();cdVmWire(view);
+  // תוצאה שעוד לא הגיעה (בתור / בודק אם ענה / ניסיון חוזר) — מתעדכן לבד כל דקה
+  clearTimeout(window._cdResT);
+  if((D.rows||[]).some(d=>d.status==='open'&&d.rem_msg&&(d.y_st==='queued'||(d.reminded_via==='voice'&&d.y_st==='sent'&&(d.y_ans==null||(+d.y_ans===0&&!(+d.y_retried>0)&&d.y_retry_at))))))
+    window._cdResT=setTimeout(()=>{if(tab==='comm'&&cmSub==='debts'&&!document.querySelector('.confirmov')){cdData=null;renderCommDebts();}},60000);
 }
 // מאיר: "כל מי שהיה כבר ברשימה שסומן ששולם — שיהיה רשימה של היסטוריה מוסתרת שאפשר לפתוח בלחיצת
 // כפתור אחת, בלי שזה יבלוט, ואיזה שעה זה בוצע, ואיך שולם"
@@ -13739,8 +13743,35 @@ async function cdPayDialog(d,full){
     setTimeout(()=>{const f=o.querySelector('#cp_a')||o.querySelector('#cp_n');if(f)f.focus();},50);});}
 // 📞 / 💬 עכשיו — הודעה לחבר אחד, עם הסכום הפתוח שלו, בלי לעבור למסך המשלוח
 // "עבור מה" של החובות הפתוחים (למשל "שלושה חודשים חלב") — נכנס בהודעה במקום {עבור}
-function cdForTxt(deb){const T=[...new Set((deb||[]).filter(d=>d.kind!=='hok').map(d=>String(d.title||'').trim()).filter(Boolean))];
+// "עבור מה" להודעה. בהו"ק שחזרה — מה שאחרי "הוראת קבע שחזרה · " (למשל קביעת מקום)
+function cdForTxt(deb){const T=[...new Set((deb||[]).map(d=>d.kind==='hok'?String(d.title||'').replace(/^\s*הוראת קבע שחזרה\s*(·\s*)?/,''):String(d.title||'')).map(t=>t.trim()).filter(Boolean))];
   return T.length>1?T.slice(0,-1).join(', ')+' ו'+T[T.length-1]:(T[0]||'');}
+// ✎ מאיר: "יש הרבה בעיות באיות הקול של Gemini… שאוכל לתקן בקול על המילה הלא נכונה ולא רק באנגלית,
+// אבל שזה יהיה מהר" — כל מילה בטקסט שנשלח לקול היא כפתור: מתקנים (ניקוד / כתיב אחר), שומעים רק אותה, שומרים
+function ymWordsHTML(t){return `<div class="ymwords">${String(t||'').split(/(\s+)/).map(w=>/[\u05d0-\u05ea]/.test(w)?`<button type="button" class="ymw" data-w="${esc(w)}">${esc(w)}</button>`:esc(w)).join('')}</div>`;}
+function ymWordsWire(box,again){box.querySelectorAll('.ymw').forEach(b=>b.onclick=()=>ymWordFix(b.dataset.w.replace(/[.,!?:;"'()]/g,''),again));}
+async function ymWordFix(w,again){const plain=w.replace(/[\u0591-\u05c7]/g,'');
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px"><div class="cm">✎ איך לומר "${esc(plain)}"?</div>
+    <div class="hintxt">כתוב איך אומרים — עם ניקוד (למשל כּוֹלֵל) או בכתיב שנשמע נכון (למשל קולל). אפשר גם באנגלית.</div>
+    <input id="ywf_say" value="${esc(w)}" style="width:100%;font-size:1.3rem;padding:8px;margin:6px 0">
+    <div class="ymnk">${'ַ ָ ֵ ֶ ִ ֹ ֻ ְ ּ ׁ ׂ'.split(' ').map(c=>`<button type="button" class="btn sm ghost" data-nk="${c}">א${c}</button>`).join('')}</div>
+    <div class="bqacts"><button class="btn sm" id="ywf_hear">🔊 שמע רק את המילה</button><button class="btn sm" id="ywf_save">💾 שמור לכל ההודעות</button>
+      <button class="btn sm ghost" id="ywf_en">🇬🇧 באותיות אנגליות</button></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);const inp=o.querySelector('#ywf_say');inp.focus();
+  o.querySelectorAll('[data-nk]').forEach(b=>b.onclick=()=>{const p=inp.selectionStart??inp.value.length;inp.value=inp.value.slice(0,p)+b.dataset.nk+inp.value.slice(p);inp.focus();inp.setSelectionRange(p+1,p+1);});
+  o.querySelector('.cno').onclick=()=>o.remove();
+  const hb=o.querySelector('#ywf_hear');hb.onclick=async()=>{hb.disabled=true;hb.textContent='⏳';
+    const r=await api('POST','/api/yemot/sample',{text:inp.value.trim(),word:1});hb.disabled=false;hb.textContent='🔊 שמע רק את המילה';
+    if(r&&r.ok){try{new Audio('data:audio/wav;base64,'+r.wav).play();}catch(e){}}else toast((r&&r.error)||'לא נוצר');};
+  o.querySelector('#ywf_en').onclick=async()=>{o.remove();if(await ymPronEn(plain)&&again)again();};
+  o.querySelector('#ywf_save').onclick=async()=>{const v=inp.value.trim();
+    const r=await api('POST','/api/yemot/pron_word',{word:plain,say:v===plain?'':v});
+    if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
+    if(ymStatus)ymStatus.pron=r.pron;const ta=document.getElementById('ym_pron');if(ta)ta.value=r.pron;
+    o.remove();toast(v===plain?'התיקון נמחק':'✓ נשמר — "'+plain+'" ייאמר כך בכל ההודעות');
+    if(again&&await uiConfirm('לשמוע שוב את כל ההודעה עם התיקון?','🔊 כן','לא'))again();};}
 // ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
 async function ymPronEn(word){
   const w=await uiPrompt('איזו מילה נשמעת לא נכון? (בעברית, כמו שהיא כתובה בהודעה — למשל כולל)',word||'');if(!w||!w.trim())return false;
@@ -13793,6 +13824,25 @@ function cdItemHTML(d){if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['�
           <button class="btn sm ghost" data-cda="cancel" data-id="${d.id}" title="בטל">✕</button>`
           :`<button class="btn sm ghost" data-cda="reopen" data-id="${d.id}" title="פתח מחדש">↩</button>`}
           <button class="btn sm ghost" data-cda="delete" data-id="${d.id}" title="מחק לגמרי">🗑️</button></div></div>`;}
+// מאיר: "מי שקיבל שיחה מאיתנו דרך חלון חובות והתחייבויות — שנראה שם את התוצאות, אם ענה וכו'"
+function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
+  const sec=n=>n>=60?Math.floor(n/60)+':'+String(n%60).padStart(2,'0')+' דק׳':n+' שנ׳';
+  let t='',c='';
+  if(v==='email'){t='✉️ המייל נשלח';c='ok';}
+  else if(!d.y_st){return '';}
+  else if(d.y_st==='queued'){t='⏳ בתור לשליחה';}
+  else if(d.y_st==='failed'||d.y_st==='cancelled'){t=(v==='sms'?'❌ ה-SMS לא נשלח':'❌ השיחה לא יצאה')+(d.y_err?' — '+String(d.y_err).slice(0,60):'');c='bad';}
+  else if(v==='sms'){t='💬 ה-SMS נשלח';c='ok';}
+  else if(+d.y_ans===1){const ls=+d.y_listen||+d.y_secs||0;t='✅ ענה'+(ls?' · שמע '+sec(ls):'')+(d.y_pressed?' · הקיש '+d.y_pressed:'');c='ok';}
+  else if(d.y_ans!==null&&d.y_ans!==undefined&&+d.y_ans===0){t='📵 לא ענה';c='bad';
+    if(+d.y_retried>0)t+=+d.y_r_ans===1?' · ✅ ענה בניסיון השני':(d.y_r_ans===null||d.y_r_ans===undefined?' · 🔁 ניסיון שני יצא':' · גם בניסיון השני לא');
+    else if(d.y_retry_at)t+=' · 🔁 ינסה שוב '+ndDate(d.y_retry_at)+' '+String(d.y_retry_at).slice(11,16);}
+  else t='⏳ בודק אם ענה…';
+  return `<small class="cdres ${c}" title="${esc('נשלח '+(d.y_sent||d.reminded_at||''))}">${esc(t)}</small>`;}
+// 🎙️ מאיר: "אם אחד השאיר הודעה במערכת של ימות המשיח — שההודעה תהיה בכרטיס שלו וגם בחלון החובות"
+function cdVmHTML(v){return `<div class="cdvm ${v.heard?'':'new'}"><b>🎙️ השאיר הודעה ${esc(ndDate(v.at))} ${esc(String(v.at||'').slice(11,16))}</b>${v.heard?'':' <small class="cdres bad">חדשה</small>'}
+  <audio controls preload="none" src="/api/yemot/vm/${v.id}.wav" data-vmid="${v.id}"></audio>${(v.transcript||'').trim()?`<div class="cdvmt">📝 ${esc(v.transcript)}</div>`:''}</div>`;}
+function cdVmWire(box){(box||view).querySelectorAll('audio[data-vmid]').forEach(a=>a.onplay=()=>{if(a.dataset.done)return;a.dataset.done=1;api('POST','/api/yemot/vm/'+a.dataset.vmid,{action:'heard'});});}
 let CD_GROUPS=new Map();
 function cdGroupsHTML(rows){
   const G=new Map();CD_GROUPS=G;
@@ -13800,7 +13850,12 @@ function cdGroupsHTML(rows){
     if(!G.has(key))G.set(key,{key,mid:d.member_id||0,name:((d.ml||'')+' '+(d.mf||'')).trim()||d.name||'—',phone:d.mphone||d.phone||'',email:d.memail||'',cands:d.cands||[],items:[]});
     G.get(key).items.push(d);});
   if(!G.size)return '<div class="empty">אין כאן חובות</div>';
-  return [...G.values()].map(g=>{
+  // מאיר: "כל מי שקיבל שיחה או SMS או מייל מהחלון הזה — שיירד לתחתית הרשימה". מי שעוד לא הוזכר — למעלה
+  // (בסדר הרגיל); מי שהוזכר — למטה, מי שהוזכר הכי מזמן ראשון מביניהם
+  const remAt=g=>g.items.filter(d=>!d._req&&d.status==='open'&&d.reminded_at).map(d=>String(d.reminded_at)).sort().pop()||'';
+  const GL=[...G.values()].map((g,i)=>({g,i,r:remAt(g)})).sort((a,b)=>(!!a.r-!!b.r)||(a.r&&b.r?a.r.localeCompare(b.r):0)||a.i-b.i).map(x=>x.g);
+  const firstRem=GL.findIndex(g=>remAt(g));
+  return GL.map((g,gi)=>(gi===firstRem&&gi>0?'<div class="cdsep">🔔 כבר קיבלו תזכורת מהחלון הזה</div>':'')+(()=>{
     const op=g.items.filter(d=>d.status==='open'), deb=op.filter(d=>!d._req);
     // הודעה עם סכום אצל מי שיש לו חוב היא בדרך כלל תזכורת על אותו חוב — לא מוסיפים אותה לסכום
     const tot=deb.length?deb.reduce((t,d)=>t+cdOpen(d),0):op.reduce((t,d)=>t+(+d.amount||0),0);
@@ -13808,9 +13863,9 @@ function cdGroupsHTML(rows){
     const rem=deb.filter(d=>d.reminded_at).sort((a,b)=>String(b.reminded_at).localeCompare(String(a.reminded_at)))[0];
     return `<div class="cdgrp">
       <div class="cdgh">${deb.length?`<input type="checkbox" class="cdgck" data-ids="${deb.map(d=>d.id).join(',')}" ${allSel?'checked':''}>`:'<span></span>'}
-        <div class="cdmain"><b class="cdname" data-cdm="${g.mid||''}" title="כל החובות שלו">${esc(g.name)}</b>
+        <div class="cdmain"><b class="cdname" data-cdm="${g.mid||''}" title="לפתוח את הכרטיס שלו">${esc(g.name)}</b>
           ${g.phone?`<small class="cdmeta" dir="ltr">${esc(g.phone)}</small>`:''}
-          ${rem?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(rem.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[rem.reminded_via]||'')}${+rem.n_reminded>1?' (×'+rem.n_reminded+')':''}</small>`:''}
+          ${rem?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(rem.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[rem.reminded_via]||'')}${+rem.n_reminded>1?' (×'+rem.n_reminded+')':''}</small>${cdRemRes(rem)}`:''}
           ${deb.length?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${ch===k?'on':''}" data-cdgch="${k}" data-ids="${deb.map(d=>d.id).join(',')}" title="${l}${k==='email'&&!g.email?' — אין מייל':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(tot)}</b>${op.length>1?`<small>${op.length} פריטים</small>`:''}</div>
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
@@ -13818,7 +13873,9 @@ function cdGroupsHTML(rows){
           :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="השם נכתב אחרת / בטעות — לשייך לחבר קיים">🔗 שייך לחבר קהילה</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`):''}
         ${!g.mid&&deb.length?`<span class="cdnow"><button class="btn sm ghost" data-cdph="${esc(g.key)}" title="טלפון — כדי להזכיר לו בשיחה / SMS בלי לפתוח לו כרטיס">📱 ${g.phone?'':'טלפון'}</button>${g.phone?` שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button>`:''}</span>`:''}
         ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו"><button class="btn sm ghost" data-cdhear="${esc(g.key)}" title="לשמוע איך ההודעה הקולית תישמע אצלו — בלי להתקשר">🔊</button> שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
-      <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;}).join('');}
+      ${(()=>{const V=(cdData&&cdData.vms)||{},seen=new Set(),L=(V['m'+g.mid]||[]).concat(g.phone?(V['p'+ymPhone(g.phone)]||[]):[]).filter(v=>!seen.has(v.id)&&seen.add(v.id));
+        return L.length?`<div class="cdvms">${L.map(cdVmHTML).join('')}</div>`:'';})()}
+      <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;})()).join('');}
 function cdReqRow(d){
   const nm=((d.ml||'')+' '+(d.mf||'')).trim()||d.name||d.phone||'—';
   return `<div class="cdrow ${d.status}"><span></span>
@@ -13859,7 +13916,9 @@ function cdWire(){const g=id=>document.getElementById(id);
   ntWireNav();
   g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
   const am=g('cd_allm');if(am)am.onclick=()=>{cdMember=0;renderCommDebts();};
-  view.querySelectorAll('.cdname[data-cdm]').forEach(b=>{if(!b.dataset.cdm||cdMember)return;b.onclick=()=>{cdMember=+b.dataset.cdm;cdKind='';renderCommDebts();window.scrollTo(0,0);};});
+  // מאיר: "בשם של חבר הקהילה — שאם אני לוחץ על השם שלו זה ייכנס לכרטיס שלו"
+  view.querySelectorAll('.cdname[data-cdm]').forEach(b=>{if(!b.dataset.cdm)return;b.style.cursor='pointer';b.title='לפתוח את הכרטיס שלו';
+    b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==+b.dataset.cdm);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');};});
   view.querySelectorAll('[data-cdr]').forEach(b=>b.onclick=async()=>{const a=b.dataset.cdr,body={action:a};
     if(a==='amount'){const v=await uiPrompt('הסכום החדש (₪):','');if(!amtNum(v))return;body.amount=amtNum(v);}
     if(a==='cancel'&&!await uiConfirm('למחוק את בקשת התשלום?\nהיא לא תוצע יותר בשלוחת התשלום בטלפון.','🗑️ כן, למחוק','לא'))return;
@@ -13950,9 +14009,13 @@ function cdWire(){const g=id=>document.getElementById(id);
     b.disabled=false;b.textContent='🔊';
     if(!r||!r.ok){const sp=await api('POST','/api/yemot/speakable',{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)});
       await uiAlert('לא הצלחתי להשמיע ('+((r&&r.error)||'שגיאה')+').\nזה הטקסט שיוקרא לו:\n\n'+((sp&&sp.text)||''));return;}
-    const au=new Audio('data:audio/wav;base64,'+r.wav);try{au.play();}catch(e){}
-    const fix=await uiConfirm('🔊 כך זה יישמע אצלו:\n\n'+r.text,'✎ מילה נשמעת לא נכון','סגור');try{au.pause();}catch(e){}
-    if(fix&&await ymPronEn())b.click();});
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox" style="max-width:620px;width:96vw;text-align:right"><div class="cm">🔊 כך זה יישמע אצלו</div>
+      <audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio>${ymWordsHTML(r.text)}
+      <div class="hintxt">מילה נשמעת לא נכון? לחץ עליה — מתקנים, שומעים רק אותה, ושומרים לכל ההודעות.</div>
+      <div class="cbtns"><button class="btn ghost cno">סגור</button></div></div>`;
+    document.body.appendChild(o);const close=()=>{try{o.querySelector('audio').pause();}catch(e){}o.remove();};
+    o.querySelector('.cno').onclick=close;ymWordsWire(o,()=>{close();b.click();});});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
     if(b.dataset.cdnow==='email')cdMailNow(g);else cdSendNow(g,b.dataset.cdnow);});
   const hb=g('cd_hist');if(hb)hb.onclick=async()=>{cdHistOpen=!cdHistOpen;renderCommDebts();
@@ -14281,9 +14344,10 @@ function openMember(m){
     const paintLog=async()=>{
       const box=document.getElementById('cm_log'); if(!box)return;
       const r=await api('GET','/api/members/'+m.id+'/log'); const rows=(r&&r.rows)||[];
-      box.innerHTML=rows.length?rows.map(x=>`<div class="cmlog"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
+      box.innerHTML=rows.length?rows.map(x=>x.vm?cdVmHTML({id:x.vm,at:x.at,heard:x.heard,transcript:x.body}):`<div class="cmlog"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
         ${(x.body||'').trim()&&x.direction==='out'?`<details><summary>הצג את המכתב</summary><pre class="mhe">${esc(x.body)}</pre></details>`:''}</div>`).join('')
         :'<div class="hintxt">עדיין לא נשלח אליו כלום.</div>';
+      cdVmWire(box);
       box.querySelectorAll('.cmlogdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/members/log/'+b.dataset.id);paintLog();});
     };
     paintLog();
@@ -14662,8 +14726,9 @@ const YM_TPL=[
     'שלום {שם}, כאן כולל חצות. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח בכרטיס אשראי: {קישור} תודה רבה ותזכו למצוות.'],
   ['nedava','🪙 נדבה','שלום {שם}, כאן כולל חצות. רצינו להזכיר בכבוד את הנדבה שהתנדבת בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. תזכו למצוות.',
     'שלום {שם}, כאן כולל חצות. תזכורת בכבוד לנדבה שהתנדבת בסך {סכום} ש"ח. לתשלום מאובטח בכרטיס אשראי: {קישור} תזכו למצוות.'],
-  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה בבנק. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה.',
-    'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך החודש לא עברה. אפשר להסדיר בכרטיס אשראי כאן: {קישור} תודה רבה.'],
+  // מאיר: "כשחוזר הוראת קבע — שיגיד את הסכום ועבור מה, למשל 120 שקל עבור קביעת מקום"
+  ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך בסך {סכום} שקלים עבור {עבור} לא עברה החודש בבנק. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה.',
+    'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך בסך {סכום} ש"ח עבור {עבור} לא עברה החודש. אפשר להסדיר בכרטיס אשראי כאן: {קישור} תודה רבה.'],
   ['natan','🎁 נתן תתן','שלום {שם}, כאן קופת נתן תתן. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. תודה רבה, ותזכו למצוות.',
     'שלום {שם}, כאן קופת נתן תתן. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח: {קישור} תודה רבה!'],
   ['free','✍️ חופשי','','']];
@@ -15043,6 +15108,7 @@ function ymVoiceHTML(st){
         <label class="fld" style="margin:0;flex:1 1 160px"><span>⚙️ איכות</span><select id="ym_gmodel">${(st.gmodels||[['','Flash']]).map(([k,l])=>`<option value="${esc(k)}" ${k===(st.gmodel||'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
         <button class="btn sm" id="ym_sample" ${st.gemini?'':'disabled'}>▶️ השמע דוגמה כאן</button>
         <button class="btn sm ghost" id="ym_recnew" ${st.gemini?'':'disabled'} title="יוצר קובץ שמע ושומר אותו — בלי לחייג ובלי צינתוק">🎙️ צור הקלטה ושמור</button></div>
+      <label class="gvall"><input type="checkbox" id="ym_nikud" ${st.nikud!==false?'checked':''}> ניקוד אוטומטי לפני הקול (מומלץ — Gemini קורא עברית מנוקדת הרבה יותר נכון)</label>
       <label class="fld"><span>🎭 איך לומר (הוראה ל-Gemini, באנגלית עובד הכי טוב)</span><textarea id="ym_gstyle" dir="ltr" rows="2" placeholder="${esc(st.gstyle_def||'')}">${esc(st.gstyle||'')}</textarea></label>
       <button class="btn sm ghost" id="ym_gsave">💾 שמור הוראה</button>
       <div id="ym_sampleout"></div>
@@ -15085,13 +15151,15 @@ function ymWireVoice(first,sel){
     if(r&&r.ok){ymStatus.engine=e;renderCommYm();}});
   const gv=g('ym_gvoice'); if(gv)gv.onchange=async()=>{await api('POST','/api/yemot/voice',{gvoice:gv.value});ymStatus.gvoice=gv.value;toast('הקול נשמר ✓');};
   const gm=g('ym_gmodel'); if(gm)gm.onchange=async()=>{await api('POST','/api/yemot/voice',{gmodel:gm.value});ymStatus.gmodel=gm.value;toast('נשמר ✓');};
+  const nk=g('ym_nikud'); if(nk)nk.onchange=async()=>{const r=await api('POST','/api/yemot/nikud_on',{on:nk.checked?1:0});if(r&&r.ok){ymStatus.nikud=r.on;toast(r.on?'✓ ניקוד אוטומטי פועל':'ניקוד אוטומטי כבוי');}};
   const gs=g('ym_gsave'); if(gs)gs.onclick=async()=>{const v=g('ym_gstyle').value;await api('POST','/api/yemot/voice',{gstyle:v});ymStatus.gstyle=v;toast('נשמר ✓');};
   const sp=g('ym_sample'); if(sp)sp.onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     sp.disabled=true;const t0=sp.textContent;sp.textContent='⏳ Gemini מייצר…';
     const r=await api('POST','/api/yemot/sample',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,for:(first&&first.fr)||ymFor,gvoice:g('ym_gvoice').value,gstyle:g('ym_gstyle').value,gmodel:(g('ym_gmodel')||{}).value||''});
     sp.disabled=false;sp.textContent=t0;
-    g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio><div class="hintxt">${esc(r.text)}</div><div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz).</div></div>`
-      :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;};
+    g('ym_sampleout').innerHTML=r&&r.ok?`<div class="ympv"><audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%"></audio>${ymWordsHTML(r.text)}<div class="hintxt">בטלפון זה יישמע באיכות שיחה (8kHz). מילה נשמעת לא נכון? לחץ עליה.</div></div>`
+      :`<div class="ymwarn">${esc((r&&r.error)||'לא נוצר')}</div>`;
+    if(r&&r.ok)ymWordsWire(g('ym_sampleout'),()=>sp.click());};
   // 🎙️ הקלטה בלבד — מאיר: "ליצור הקלטה קולית בג'ימיני ולא לשלוח עדיין צינתוק"
   const ymRecList=async()=>{const box=g('ym_recs');if(!box)return;const r=await api('GET','/api/yemot/records');const R=(r&&r.rows)||[];
     box.innerHTML=R.length?R.map(x=>`<div class="ymrec"><b>${esc(x.title||'הקלטה')}</b> <small>${esc((x.created||'').slice(5,16))} · ${x.secs||''} שנ׳ · ${esc(x.voice||'')}</small>
@@ -15134,7 +15202,8 @@ function ymWireVoice(first,sel){
     toast(lines.length+' שמות נוספו למילון — בדוק ותקן, ואז "שמור מילון"');};
   g('ym_say').onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,for:(first&&first.fr)||ymFor,pron:g('ym_pron').value});
-    g('ym_sayout').innerHTML=r&&r.ok?`<div class="ympv"><b>👂 כך ימות יקריא:</b> ${esc(r.text)}</div>`:'';};
+    g('ym_sayout').innerHTML=r&&r.ok?`<div class="ympv"><b>👂 כך זה יוקרא${r.nikud?' (מנוקד)':''}:</b> ${ymWordsHTML(r.text)}<div class="hintxt">מילה לא נכונה? לחץ עליה ותקן.</div></div>`:'';
+    if(r&&r.ok)ymWordsWire(g('ym_sayout'),()=>g('ym_say').click());};
 }
 function ymLinkHTML(linkOn,prevLink){
   const st=ymStatus||{}, M=st.mosads||[], cur=ymLink.mosad||st.mosad||'';
@@ -15228,7 +15297,8 @@ function ymViewJobs(){
         <td>${ymAns(m,j.channel)}${j.channel==='voice'&&!j.test&&m.status==='sent'&&m.answered!==1?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
   view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
       <div class="ymch3"><span class="ymjd">${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><b>${j.channel==='sms'?'💬 SMS':'📞 קולית'}</b>${j.test?'<span class="ymtag">בדיקה</span>':''}
-        <span class="ymjt">${esc((j.text||'').slice(0,70))}${(j.text||'').length>70?'…':''}</span></div>
+        ${(j.recips||[]).length?`<span class="ymjwho">👤 ${(j.recips||[]).slice(0,3).map(r=>esc(r.name||r.phone)).join(', ')}${j.total>3?` ועוד ${j.total-3}`:''}</span>`:''}
+        <span class="ymjt">${(()=>{const t=(j.total===1&&j.text1)?j.text1:(j.text||'');return esc(t.slice(0,70))+(t.length>70?'…':'');})()}</span></div>
       <div class="ymch4">${ymJobChips(j)}</div></div>
       ${ymJobView&&ymJobView.job.id===j.id?det(ymJobView):''}`).join(''):'<div class="hintxt">עוד לא נשלחו משלוחים.</div>'}</div>`;
   ymWireHead();

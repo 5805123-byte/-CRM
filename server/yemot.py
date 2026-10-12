@@ -217,16 +217,18 @@ def _abbr(t):
     return t
 
 
-def speakable(text, pron=''):
+def speakable(text, pron='', keep=False):
     """הטקסט כפי שימות יקריא אותו: טלפונים ספרה-ספרה בקבוצות, סכומים במילים,
-    ש"ח/₪ -> שקלים, ומילון הגייה של מאיר ("מילה=איך לומר", שורה לכל מילה)."""
+    ש"ח/₪ -> שקלים, ומילון הגייה של מאיר ("מילה=איך לומר", שורה לכל מילה).
+    keep — מה שבא מהמילון נשאר בתוך ⟦…⟧ (כדי שהניקוד האוטומטי לא ישנה אותו)."""
     t = str(text or '')
     for ln in str(pron or '').replace('\r', '').split('\n'):
         if '=' in ln:
             w, say = ln.split('=', 1)
             w, say = w.strip(), say.strip()
             if w and say:
-                t = re.sub(r'(?<![\u0590-\u05ffA-Za-z])' + re.escape(w) + r'(?![\u0590-\u05ffA-Za-z])', say, t)
+                t = re.sub(r'(?<![\u0590-\u05ffA-Za-z])' + re.escape(w) + r'(?![\u0590-\u05ffA-Za-z])',
+                           lambda _m, say=say: ('\u27e6' + say + '\u27e7') if keep else say, t)
     t = _abbr(t)
     t = re.sub(r'(?<!\d)0\d{1,2}-?\d{3}-?\d{4}(?!\d)|(?<!\d)05\d-?\d{7}(?!\d)', _phone_words, t)
     t = re.sub(r'(\d)\s*(?:ש"ח|ש״ח|ש\'\'ח|₪|שח\b)', r'\1 שקלים', t)

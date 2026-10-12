@@ -179,7 +179,8 @@ def vocalize(text, trace=None):
     def keep(m):
         ph.append(m.group(0))
         return 'QQ%dQQ' % (len(ph) - 1)
-    base = re.sub(r'\{[^{}]*\}', keep, strip(text))
+    # הסימונים נשמרים לפני הסרת הניקוד — כך מילה מהמילון (מנוקדת כמו שמאיר כתב) לא משתנה
+    base = strip(re.sub(r'\{[^{}]*\}', keep, text))
 
     def back(t):
         return re.sub(r'QQ(\d+)QQ', lambda m: ph[int(m.group(1))] if int(m.group(1)) < len(ph) else m.group(0), t)

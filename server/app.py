@@ -570,6 +570,10 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE cm_don ADD COLUMN fund TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "מי שקיבל שיחה מאיתנו דרך חלון חובות והתחייבויות — שנראה אצלו את התוצאות, אם ענה" —
+    # ההודעה האחרונה (ym_msg) שיצאה על החוב מהחלון
+    try: con.execute("ALTER TABLE cm_debt ADD COLUMN rem_msg INTEGER")
+    except Exception: pass
     # מאיר: "כל מי שנכנס למערכת — שאני אקבל התראה על זה בוואטסאפ" — יומן הכניסות
     try:
         con.execute("CREATE TABLE IF NOT EXISTS auth_log(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, ok INTEGER, role TEXT, "
@@ -13961,6 +13965,33 @@ def pron_hint_drop():
         con.close()
 
 
+_VOC_CACHE = {}
+
+
+def ym_nikud_on(con):
+    """מאיר: "שתמיד זה ייצא מנוקד לפי השליחה" — ניקוד אוטומטי לקול של Gemini (ברירת מחדל: פועל)."""
+    return kv_get(con, 'ym_nikud', '1') != '0'
+
+
+def ym_voice_text(text, pron, nik=True, trace=None):
+    """הטקסט שנשלח לקול: מילון ההגייה (נשמר כמו שכתבת) → סכומים וטלפונים במילים → ניקוד אוטומטי.
+    אותו טקסט בדיוק בשליחה, בדוגמה (🔊) ובהקלטה. ניקוד שכבר נעשה לאותו טקסט נשמר בזיכרון — מהיר."""
+    import yemot as _ym, nikud as _nk
+    t = _ym.speakable(text, pron, keep=True)
+    if nik and re.search(r'[\u05d0-\u05ea]', t):
+        v = _VOC_CACHE.get(t)
+        if v is None:
+            base = t.replace('\u27e6', '{').replace('\u27e7', '}')
+            ok, out, _p = _nk.vocalize(base, trace=trace)
+            v = out if ok else base
+            if ok:
+                if len(_VOC_CACHE) > 800:
+                    _VOC_CACHE.clear()
+                _VOC_CACHE[t] = v
+        t = v
+    return re.sub(r'\s{2,}', ' ', t.replace('{', '').replace('}', '').replace('\u27e6', '').replace('\u27e7', '')).strip()
+
+
 def pron_en_list(con):
     """תיקוני הגייה באנגלית — שורה לכל מילה: "כולל=KOH-lel"."""
     out = []
@@ -14368,6 +14399,7 @@ def ym_worker(job_id, wait=True):
             ym_gs = kv_get(con, 'ym_gstyle', '')
             ym_gm = kv_get(con, 'ym_gmodel', '')
             ym_en = pron_en_list(con)
+            ym_nik = ym_nikud_on(con)
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
                 _ym.begin_trace()
@@ -14380,7 +14412,8 @@ def ym_worker(job_id, wait=True):
                 else:
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
-                    ok, res = _ym.send_tts(m['phone'], _ym.speakable(m['text'], ym_pron), voice=ym_voice,
+                    vt_ = ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace)
+                    ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
                                            hints=pron_en_for(ym_en, m['text']))
                     if ok and isinstance(res, dict):
@@ -17126,7 +17159,11 @@ class H(BaseHTTPRequestHandler):
             try:
                 w = "" if st == 'all' else " WHERE d.status=?"
                 rows = [dict(r) for r in con.execute(
-                    "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id" + w +
+                    "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail, "
+                    "y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, y.call_status y_call, "
+                    "y.sent_ts y_sent, y.retry_at y_retry_at, y.retried y_retried, y.error y_err, "
+                    "(SELECT r.answered FROM ym_msg r WHERE r.id=y.retried) y_r_ans "
+                    "FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id LEFT JOIN ym_msg y ON y.id=d.rem_msg" + w +
                     " ORDER BY d.status, COALESCE(NULLIF(d.due,''),d.created) DESC, d.id DESC", (() if st == 'all' else (st,)))]
                 cc = {}
                 for r in rows:
@@ -17135,6 +17172,18 @@ class H(BaseHTTPRequestHandler):
                         if r['name'] not in cc:
                             cc[r['name']] = cm_name_cands(con, r['name'])
                         r['cands'] = cc[r['name']]
+                # 🎙️ הודעות שהשאירו בימות (90 יום) — לכל חבר / טלפון, להצגה בחלון החובות
+                import yemot as _ymv
+                vms = {}
+                since = (il_now() - datetime.timedelta(days=90)).strftime('%Y-%m-%d')
+                pidx = nd_member_index(con)
+                for v in con.execute("SELECT id,phone,at,heard,transcript,member_id FROM ym_vm WHERE done<2 AND at>=? ORDER BY at DESC", (since,)).fetchall():
+                    ph = _ymv.norm_phone(v['phone'] or '')
+                    mids = {v['member_id']} if v['member_id'] else (pidx.get(ph) or set())
+                    x = {'id': v['id'], 'at': v['at'], 'heard': v['heard'], 'transcript': v['transcript'] or ''}
+                    for k in (['m%d' % i for i in mids if i] + (['p' + ph] if ph else [])):
+                        if len(vms.setdefault(k, [])) < 5:
+                            vms[k].append(x)
                 tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
                 reqs = ym_req_rows(con, st)
                 nmo = natan_mosad(con)
@@ -17142,7 +17191,7 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             import nedarim as _nd
             return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2],
-                                    'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo,
+                                    'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo, 'vms': vms,
                                     'nd_accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main']} for x in _nd.accounts()]})
         if self.path.split('?')[0] == '/api/auth/log':
             # 🔐 מי נכנס למערכת — רק בכניסה הראשית (שאר הסיסמאות חסומות כאן ב-_gate)
@@ -17614,6 +17663,7 @@ class H(BaseHTTPRequestHandler):
             import gemini_tts as _gt
             ym_v = ym_v[:4] + (_gt.voice_ok(ym_v[4]),) + ym_v[5:]
             ym_gvl = (_gt.VOICES, _gt.configured(), _gt.DEF_STYLE, _gt.MODELS)
+            ym_nik_on = ym_nikud_on(con)
             jobs = [dict(r) for r in con.execute(
                 "SELECT j.*, (SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=1) AS n_ans, "
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND m.answered=0) AS n_noans, "
@@ -17621,6 +17671,11 @@ class H(BaseHTTPRequestHandler):
                 "(SELECT COUNT(*) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.paid_at,'')<>'') AS n_paid, "
                 "(SELECT COALESCE(SUM(m.paid_amount),0) FROM ym_msg m WHERE m.job=j.id AND COALESCE(m.paid_at,'')<>'') AS paid_sum "
                 "FROM ym_job j ORDER BY j.id DESC LIMIT 50")]
+            # מאיר: "כאן שיראו למי זה התקשר — כתוב רק את המילה {שם}" — הנמענים (עד 4) והטקסט שהראשון שמע
+            for j in jobs:
+                ms = con.execute("SELECT name,phone,text FROM ym_msg WHERE job=? ORDER BY id LIMIT 4", (j['id'],)).fetchall()
+                j['recips'] = [{'name': x['name'] or '', 'phone': x['phone'] or ''} for x in ms]
+                j['text1'] = (ms[0]['text'] or '') if ms else ''
             con.close()
             return self._send(200, {'ok': True, 'configured': _ym.configured(), 'connected': ok,
                                     'info': res if ok else {}, 'error': '' if ok else res, 'jobs': jobs,
@@ -17628,7 +17683,7 @@ class H(BaseHTTPRequestHandler):
                                     'mosads': ned_list[0], 'mosad': ned_list[1],
                                     'voices': _ym.VOICES, 'voice': ym_v[0], 'pron': ym_v[1], 'tpl': ym_v[2], 'pron_en': ym_en,
                                     'engine': ym_v[3], 'gvoice': ym_v[4], 'gstyle': ym_v[5], 'gvoices': ym_gvl[0],
-                                    'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2], 'gmodels': ym_gvl[3], 'gmodel': ym_v[6]})
+                                    'gemini': ym_gvl[1], 'gstyle_def': ym_gvl[2], 'gmodels': ym_gvl[3], 'gmodel': ym_v[6], 'nikud': ym_nik_on})
         m = re.match(r'/api/yemot/job/(\d+)$', self.path.split('?')[0])
         if m:
             con = db()
@@ -17693,6 +17748,15 @@ class H(BaseHTTPRequestHandler):
             rows = [dict(r) for r in con.execute(
                 "SELECT id,date,channel,summary,body,direction,at FROM member_log "
                 "WHERE member_id=? ORDER BY date DESC, id DESC", (int(m.group(1)),))]
+            # מאיר: "אם אחד השאיר הודעה במערכת של ימות המשיח שלנו — שההודעה שלו תהיה בכרטיס שלו"
+            try:
+                for v in member_vms(con, int(m.group(1))):
+                    rows.append({'id': 0, 'vm': v['id'], 'date': (v['at'] or '')[:10], 'channel': 'ימות',
+                                 'summary': '🎙️ השאיר הודעה בימות המשיח' + (' (' + (v['at'] or '')[11:16] + ')' if (v['at'] or '')[11:16] else ''),
+                                 'body': v['transcript'] or '', 'direction': 'in', 'at': v['at'], 'heard': v['heard']})
+                rows.sort(key=lambda r: (str(r.get('date') or ''), str(r.get('at') or '')), reverse=True)
+            except Exception as e:
+                print('  member vm error:', e)
             con.close()
             return self._send(200, {'rows': rows})
         m = re.match(r'/api/mail/batch/(\d+)/stats$', self.path.split('?')[0])
@@ -18811,10 +18875,10 @@ class H(BaseHTTPRequestHandler):
             txt0 = str(b.get('text') or '').strip()
             if not txt0:
                 return self._send(200, {'ok': False, 'error': 'חסר טקסט'})
-            con = db(); pron = kv_get(con, 'ym_pron', ''); gm = kv_get(con, 'ym_gmodel', ''); con.close()
-            # הודעה כללית — בלי שם וסכום אישיים
-            txt = _ym.speakable(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron)
+            con = db(); pron = kv_get(con, 'ym_pron', ''); gm = kv_get(con, 'ym_gmodel', ''); nik = ym_nikud_on(con); con.close()
             _ym.begin_trace()
+            # הודעה כללית — בלי שם וסכום אישיים
+            txt = ym_voice_text(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron, nik, trace=_ym._trace)
             con = db(); _en = pron_en_list(con); con.close()
             ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
                                 model=str(b.get('gmodel') or gm or ''), hints=pron_en_for(_en, txt))
@@ -18855,9 +18919,12 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/yemot/sample':
             # השמעת דוגמה בדפדפן — הקול האנושי של Gemini, בלי להתקשר לאף אחד
             import yemot as _ym, gemini_tts as _gt
-            con = db(); pron = kv_get(con, 'ym_pron', ''); con.close()
-            txt = _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)
+            con = db(); pron = kv_get(con, 'ym_pron', ''); nik = ym_nikud_on(con); con.close()
             _ym.begin_trace()
+            # word=1 — מילה אחת בלבד (בדיקת תיקון הגייה) — מהיר, בלי התבנית ובלי ניקוד אוטומטי מחדש
+            txt = (str(b.get('text') or '').strip()[:80] if b.get('word') else
+                   ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
+                                 pron, nik, trace=_ym._trace))
             if not b.get('gvoice'):
                 # 🔊 מהחובות — בקול ובסגנון ששמרת
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
@@ -18870,8 +18937,31 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt})
         if self.path == '/api/yemot/speakable':
             import yemot as _ym
-            con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', ''); con.close()
-            return self._send(200, {'ok': True, 'text': _ym.speakable(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''), pron)})
+            con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', '')
+            nik = ym_nikud_on(con) and kv_get(con, 'ym_engine', '') == 'gemini'; con.close()
+            _ym.begin_trace()
+            t_ = ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
+                               pron, nik, trace=_ym._trace)
+            con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'text': t_, 'nikud': nik})
+        if self.path == '/api/yemot/pron_word':
+            # ✎ מאיר: "שאוכל לתקן בקול על המילה הלא נכונה, ולא רק באנגלית, ושזה יהיה מהר" — מילה=איך לומר
+            # (עברית מנוקדת / כתיב אחר) נכנס למילון ההגייה, ומשם לכל הודעה
+            w = re.sub(r'[\u0591-\u05c7]', '', str(b.get('word') or '')).strip(' .,!?:;"\'()־-')[:40]
+            say = str(b.get('say') or '').strip()[:80]
+            if not w or '=' in w or '\n' in w or '=' in say or '\n' in say:
+                return self._send(200, {'ok': False, 'error': 'מילה לא תקינה'})
+            con = db()
+            lines = [l for l in kv_get(con, 'ym_pron', '').replace('\r', '').split('\n') if l.strip() and l.split('=', 1)[0].strip() != w]
+            if say:
+                lines.append('%s=%s' % (w, say))
+            kv_set(con, 'ym_pron', '\n'.join(lines)); con.commit(); con.close()
+            _VOC_CACHE.clear()
+            return self._send(200, {'ok': True, 'pron': '\n'.join(lines)})
+        if self.path == '/api/yemot/nikud_on':
+            con = db(); kv_set(con, 'ym_nikud', '1' if b.get('on') else '0'); con.commit(); con.close()
+            _VOC_CACHE.clear()
+            return self._send(200, {'ok': True, 'on': bool(b.get('on'))})
         m = re.match(r'/api/nddonor/(\d+)/(link|unlink)$', self.path)
         if m:
             did, act = int(m.group(1)), m.group(2)
@@ -19140,6 +19230,7 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE ym_msg SET fund='natan' WHERE job=?", (jid,))
             if not b.get('test') and b.get('debt_ids'):
                 cm_debts_reminded(con, b.get('debt_ids'), ch)
+                cm_debts_link_msgs(con, jid, dids_)
                 # תזכורת על חוב קיים אינה בקשת תשלום נוספת — החוב עצמו הוא הבקשה (אחרת הסכום נספר פעמיים)
                 con.execute("UPDATE ym_msg SET req_off='debt' WHERE job=?", (jid,))
             con.commit(); con.close()
@@ -23286,6 +23377,36 @@ def cm_debt_log(con, member_id, debt_id, summary, body=''):
         pass
 
 
+def member_vms(con, mid, limit=20):
+    """ההודעות שחבר הקהילה השאיר בימות — מה שקושר אליו, וגם מה שהגיע מהטלפון שלו ועוד לא קושר."""
+    import yemot as _ym
+    m = con.execute("SELECT phone FROM members WHERE id=?", (mid,)).fetchone()
+    phs = set(_phones_of((m['phone'] if m else '') or ''))
+    out = []
+    for v in con.execute("SELECT id,phone,at,heard,done,transcript,member_id FROM ym_vm WHERE done<2 AND (member_id=? OR member_id IS NULL) "
+                         "ORDER BY at DESC, id DESC LIMIT 400", (mid,)).fetchall():
+        if v['member_id'] == mid or (_ym.norm_phone(v['phone'] or '') in phs):
+            out.append(dict(v))
+            if len(out) >= limit:
+                break
+    return out
+
+
+def cm_debts_link_msgs(con, jid, dids):
+    """כל חוב ← ההודעה שיצאה עליו במשלוח הזה (לפי החבר, או לפי הטלפון כשאין חבר) — לתוצאה בחלון החובות."""
+    import yemot as _ym
+    if not dids:
+        return
+    for d in con.execute("SELECT id,member_id,phone FROM cm_debt WHERE id IN (%s)" % ','.join('?' * len(dids)), dids).fetchall():
+        r = None
+        if d['member_id']:
+            r = con.execute("SELECT id FROM ym_msg WHERE job=? AND kind='m' AND ref_id=? ORDER BY id LIMIT 1", (jid, d['member_id'])).fetchone()
+        if not r and (d['phone'] or '').strip():
+            r = con.execute("SELECT id FROM ym_msg WHERE job=? AND phone=? ORDER BY id LIMIT 1", (jid, _ym.norm_phone(d['phone']) or d['phone'])).fetchone()
+        if r:
+            con.execute("UPDATE cm_debt SET rem_msg=? WHERE id=?", (r['id'], d['id']))
+
+
 def cm_debts_reminded(con, debt_ids, via):
     """התזכורת יצאה (שיחה / SMS / מייל) — נרשם על כל חוב וביומן של החבר."""
     ids = [int(x) for x in (debt_ids or []) if str(x).isdigit()]
@@ -23294,7 +23415,7 @@ def cm_debts_reminded(con, debt_ids, via):
     VIA = {'voice': '📞 שיחה', 'sms': '💬 SMS', 'email': '✉️ מייל'}
     n = 0
     for d in con.execute("SELECT id,member_id,title,amount,paid FROM cm_debt WHERE status='open' AND id IN (%s)" % ','.join('?' * len(ids)), ids).fetchall():
-        con.execute("UPDATE cm_debt SET reminded_at=?, reminded_via=?, n_reminded=COALESCE(n_reminded,0)+1, updated=? WHERE id=?",
+        con.execute("UPDATE cm_debt SET reminded_at=?, reminded_via=?, n_reminded=COALESCE(n_reminded,0)+1, updated=?, rem_msg=NULL WHERE id=?",
                     (now_iso(), via, now_iso(), d['id']))
         cm_debt_log(con, d['member_id'], d['id'], '🔔 נשלחה תזכורת ב%s על %s ₪%g' % (VIA.get(via, via), d['title'] or 'חוב', round((d['amount'] or 0) - (d['paid'] or 0), 2)))
         n += 1
