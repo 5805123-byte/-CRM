@@ -12688,7 +12688,7 @@ GOOGLE_TOKENINFO = 'https://oauth2.googleapis.com/tokeninfo'
 # מה שלשונית הקהילה צריכה — ורק זה. כל השאר (תורמים, חיובים, קבלות…) חסום לסיסמת הקהילה
 AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/', '/api/nd/', '/api/nikud',
              '/api/nedarim/mosads', '/api/seats', '/seat-map-print', '/seat_layout.json', '/seat-map-original.png',
-             '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits',
+             '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits', '/api/mail/setup',
              '/api/zmanim')
 # העובד של פרנס יום וקוויטל — הלוח, הימים, התעודות, שמות הקוויטל וההדפסה. בלי תרומות,
 # טלפונים ומיילים (ראה _data_parnes), ובלי מחיקת כרטיסים

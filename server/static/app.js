@@ -11512,8 +11512,8 @@ function renderMailSend(){
     if(st){mlStaleCheck();toast('הטקסט שבתיבה הוא גרסה ישנה של "'+st.t.name+'" — לחץ למעלה על "טען את הגרסה המעודכנת"');return;}
     const who=b.ids.length===1?('ל־'+dName(mlAudience()[0])+' בלבד'):('ל־'+b.ids.length+' התורמים שסימנת');
     if(!await uiConfirm('לשלוח '+who+'?\n\nכל אחד מקבל הודעה נפרדת משלו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
-    const r=await api('POST','/api/mail/send',b);
-    if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    let r=null;try{r=await api('POST','/api/mail/send',b);}catch(e){await uiAlert('לא נשלח — אין חיבור לשרת כרגע. נסה שוב בעוד רגע.');return;}
+    if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.detail)||'שגיאה'));return;}
     mlWatch();
   };
   mlHistory();
@@ -13260,7 +13260,11 @@ function renderOcc(){
 // בדיוק: הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר.
 // מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, הכל, תוריד את האפשרות של חצות בקהילה מהכל"
 let MLSETUP_C=null;   // מצב החיבור של neder1818 — הכתובת היחידה שממנה יוצאים מיילי הקהילה
-async function mlLoadSetupC(){ try{ MLSETUP_C=await api('GET','/api/mail/setup?p=comm'); }catch(e){ MLSETUP_C={ok:false,msg:'אין חיבור לשרת'}; } }
+// מאיר: "אני מנסה לשלוח וזה כותב לי אין חיבור לשרת" — הבדיקה נשמרה מהרגע שהמערכת עלתה מחדש ונתקעה כך.
+// עכשיו כישלון לא נשמר: לפני כל שליחה בודקים שוב, ואם השרת באמצע עלייה — אומרים את זה
+async function mlLoadSetupC(){ try{ const r=await api('GET','/api/mail/setup?p=comm'); MLSETUP_C=(r&&r.error==='forbidden')?{ok:false,msg:r.detail||'אין הרשאה'}:r; }
+  catch(e){ MLSETUP_C={ok:false,net:true,msg:'אין חיבור לשרת — כנראה המערכת עולה מחדש (אחרי שינוי ב-Render זה לוקח 2–3 דקות). נסה שוב בעוד רגע.'}; } }
+async function mlCommReady(){ if(!(MLSETUP_C&&MLSETUP_C.ok)) await mlLoadSetupC(); return MLSETUP_C; }
 let MEMBERS=null, MQ=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null, cmEditId=null;
 const mName=m=>((m.last||'')+' '+(m.first||'')).trim();
 const mHasMail=m=>(m.email||'').includes('@');
@@ -14038,13 +14042,13 @@ function cdMailDraft(kind,fr){
   q('cdd_go').onclick=async()=>{
     if(!si.value.trim()){toast('חסר נושא');return;}
     if(!bi.value.trim()){toast('חסר תוכן');return;}
-    if(MLSETUP_C===null)await mlLoadSetupC();
-    if(!(MLSETUP_C&&MLSETUP_C.ok)){toast((MLSETUP_C&&MLSETUP_C.msg)||'הדואר של נדר 18 לא מחובר');return;}
+    await mlCommReady();
+    if(!(MLSETUP_C&&MLSETUP_C.ok)){await uiAlert('לא נשלח:\n'+((MLSETUP_C&&MLSETUP_C.msg)||'הדואר של נדר 18 לא מחובר'));return;}
     if(!await uiConfirm('לשלוח '+(aud.length===1?'ל־'+mName(aud[0])+' בלבד':'ל־'+aud.length+' נמענים')+'?\n\nיוצא מ: '+(MLSETUP_C.from||'neder1818@gmail.com')+' (נדר 18)'))return;
     const b={members:aud.map(m=>m.id),subject:si.value.trim(),body:bi.value,sig:'',track:mlSaved('cm_track','0')==='1',base:location.origin,sender:'neder',...cmLinksPayload()};
     if(cdRem&&cdRem.ch==='email')b.debt_ids=cdRem.ids;
-    const r=await api('POST','/api/mail/send',b);
-    if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    let r=null;try{r=await api('POST','/api/mail/send',b);}catch(e){await uiAlert('לא נשלח — אין חיבור לשרת כרגע. נסה שוב בעוד רגע.');return;}
+    if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.detail)||'שגיאה'));return;}
     const go=q('cdd_go');go.disabled=true;go.textContent='✓ נשלח';
     if(b.debt_ids){cdRem=null;cdData=null;if(tab==='comm'&&cmSub==='debts')renderCommDebts();}
     toast('📤 יוצא ל־'+r.count+(r.skipped?(' · '+r.skipped+' דולגו'):''));
@@ -14927,12 +14931,13 @@ function renderCommSend(){
     if(!b.subject){toast('חסר נושא');return;}
     if(!b.body.trim()){toast('חסר תוכן');return;}
     if(!b.members.length){toast('אין נמענים');return;}
-    if(!(MLSETUP_C&&MLSETUP_C.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
+    await mlCommReady();
+    if(!(MLSETUP_C&&MLSETUP_C.ok)){renderCommSend();await uiAlert('לא נשלח:\n'+((MLSETUP_C&&MLSETUP_C.msg)||'הדואר של נדר 18 לא מחובר'));return;}
     const who=b.members.length===1?('ל־'+mName(cmAudience()[0])+' בלבד'):('ל־'+b.members.length+' חברי הקהילה שסימנת');
     if(!await uiConfirm('לשלוח '+who+'?\n\nיוצא מ: '+((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')+' (נדר 18)'+'\nכל אחד מקבל הודעה נפרדת משלו, בשמו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
     if(cdRem&&cdRem.ch==='email')b.debt_ids=cdRem.ids;
-    const r=await api('POST','/api/mail/send',b);
-    if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    let r=null;try{r=await api('POST','/api/mail/send',b);}catch(e){await uiAlert('לא נשלח — אין חיבור לשרת כרגע. נסה שוב בעוד רגע.');return;}
+    if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.detail)||'שגיאה'));return;}
     if(b.debt_ids){cdRem=null;cdData=null;}
     mlWatch();
   };
