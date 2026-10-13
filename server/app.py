@@ -579,6 +579,14 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
     except Exception: pass
+    # ✉️ מיילים מלשונית המקווה — מאיר: "שבמקווה יהיה גם את האפשרות של שליחה במייל או טלפון וכו' כמו בקהילה".
+    # רק מה שנשלח (לא נתונים מהמקווה): למי, מה ומתי — כמו ym_msg לשיחות ול-SMS
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS mk_mail(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, email TEXT, name TEXT, "
+                    "subject TEXT, body TEXT, sender TEXT, status TEXT DEFAULT 'queued', error TEXT, sent_at TEXT)")
+    except Exception: pass
+    try: con.execute("ALTER TABLE mk_log ADD COLUMN mail_id INTEGER")
+    except Exception: pass
     # פעם אחת: חובות "הו"ק חזרה" שנסגרו כ"שולם" רק כי ההוראה הפכה ללא פעילה — לא שולמו; יוצאים מההיסטוריה
     try:
         if not con.execute("SELECT 1 FROM app_kv WHERE k='hok_dead_1'").fetchone():
@@ -14569,6 +14577,54 @@ def mail_sent_today(con):
         return 0
 
 
+MK_MAIL_LOCK = threading.Lock()
+
+
+def mk_mail_worker(ids, sender, base=''):
+    """מיילים של המקווה — אחד־אחד, כל אחד לנמען אחד בלבד, בהפרש של כמה שניות."""
+    import bulkmail
+    with MK_MAIL_LOCK:
+        bulkmail.set_profile('comm' if sender == 'neder' else None)
+        con = db()
+        snd = None
+        try:
+            c = bulkmail.cfg()
+            secret = mail_secret(con)
+            off = mail_optouts(con)
+            snd = bulkmail.Sender()
+            for i, mid_ in enumerate(ids):
+                r = con.execute("SELECT * FROM mk_mail WHERE id=?", (mid_,)).fetchone()
+                if not r or r['status'] != 'queued':
+                    continue
+                em = (r['email'] or '').strip().lower()
+                if em in off:
+                    con.execute("UPDATE mk_mail SET status='failed', error=? WHERE id=?", ('ביקש להסיר את עצמו מהדיוור', mid_))
+                    commit_retry(con); continue
+                who = {'name': r['name'] or '', 'first': '', 'last': '', 'title': '', 'gender': 'm'}
+                try:
+                    msg = bulkmail.build(em, who, r['subject'] or '', r['body'] or '', mail_unsub_url(base, secret, em) if base else '', '')
+                    ok, err, dead = snd.send(msg)
+                except Exception as e:
+                    ok, err = False, str(e)
+                con.execute("UPDATE mk_mail SET status=?, error=?, sent_at=? WHERE id=?",
+                            ('sent' if ok else 'failed', '' if ok else str(err)[:300], now_iso() if ok else None, mid_))
+                commit_retry(con)
+                if i + 1 < len(ids):
+                    time.sleep(max(2.0, min(float(c.get('gap') or 4), 8.0)))
+        except Exception as e:
+            try:
+                con.execute("UPDATE mk_mail SET status='failed', error=? WHERE status='queued' AND id IN (%s)" % ','.join('?' * len(ids)),
+                            [str(e)[:300]] + list(ids))
+                commit_retry(con)
+            except Exception:
+                pass
+        finally:
+            if snd:
+                snd.close()
+            bulkmail.set_profile(None)
+            con.close()
+
+
 def mail_worker(batch_id):
     """שולח את התור, אחד־אחד, בקצב אנושי. כל הודעה נשלחת לנמען אחד בלבד."""
     import bulkmail
@@ -17426,6 +17482,20 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mikveh/link':
             con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
             return self._send(200, {'ok': True, 'url': v})
+        if self.path.split('?')[0] == '/api/mikveh/log':
+            # 📜 מאיר: "איפה אני רואה במקווה את ההודעות ששלחתי, בטלפון ימות המשיח או מייל?" — כל מה שיצא מהמקווה
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute(
+                    "SELECT l.*, COALESCE(y.name, mm.name, '') nm, y.phone y_phone, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, "
+                    "y.pressed y_pressed, y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, "
+                    "j.channel ch, j.send_at, j.status j_st, (SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
+                    "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email "
+                    "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job LEFT JOIN mk_mail mm ON mm.id=l.mail_id "
+                    "WHERE l.kind IN ('msg','mail') ORDER BY l.at DESC, l.id DESC LIMIT 400")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         m = re.match(r'/api/mikveh/log/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
         if m:
             # 📜 מה שעשינו מול לקוח המקווה: העברות קבוצה והודעות — עם תוצאת השליחה (ענה, כמה שמע, הקיש)
@@ -17434,8 +17504,10 @@ class H(BaseHTTPRequestHandler):
                 rows = []
                 for r in con.execute("SELECT l.*, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, "
                                      "y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, j.channel ch, j.send_at, j.status j_st, "
-                                     "(SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans "
-                                     "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job WHERE l.cid=? ORDER BY l.at DESC, l.id DESC LIMIT 100",
+                                     "(SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
+                                     "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email "
+                                     "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job "
+                                     "LEFT JOIN mk_mail mm ON mm.id=l.mail_id WHERE l.cid=? ORDER BY l.at DESC, l.id DESC LIMIT 100",
                                      (m.group(1),)):
                     rows.append(dict(r))
             finally:
@@ -19320,7 +19392,9 @@ class H(BaseHTTPRequestHandler):
                                    (jid, 'k', 0, name, phone, text, mkc)).lastrowid
                 if mkc:
                     con.execute("INSERT INTO mk_log(cid,at,kind,summary,msg_id) VALUES(?,?,?,?,?)",
-                                (mkc, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'msg', ('💬 SMS' if ch == 'sms' else '📞 הודעה קולית') + (' (מתוזמנת ל-%s)' % send_at if send_at else ''), mid_))
+                                (mkc, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'msg', ('💬 SMS' if ch == 'sms' else '📞 הודעה קולית') +
+                                 ((' · ' + str(b.get('cat') or '').strip()[:60]) if str(b.get('cat') or '').strip() else '') +
+                                 (' (מתוזמנת ל-%s)' % send_at if send_at else ''), mid_))
                 con.commit()
             finally:
                 con.close()
@@ -19330,14 +19404,96 @@ class H(BaseHTTPRequestHandler):
             # מאיר: "שלוחצים על שליחת הודעה שלא יחכה" — יוצאת מיד, גם כשמשלוח גדול באמצע
             _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid})
+        if self.path == '/api/mikveh/notify_bulk':
+            # 📤 שליחה לכמה לקוחות מקווה יחד — שיחה / SMS דרך ימות, כל אחד עם הטקסט שלו (השם וכו' כבר מולאו במסך)
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר ב-Render (YEMOT_TOKEN)'})
+            ch = 'sms' if b.get('channel') == 'sms' else 'voice'
+            cat = str(b.get('cat') or '').strip()[:60]
+            items, skip = [], 0
+            for it in (b.get('items') or [])[:2000]:
+                ph, tx = _ym.norm_phone(it.get('phone') or ''), str(it.get('text') or '').strip()[:1000]
+                cid = str(it.get('cid') or '').strip()
+                if not ph or not tx or (ch == 'sms' and not _ym.is_mobile(ph)) or not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                    skip += 1; continue
+                items.append((cid, str(it.get('name') or '').strip()[:80], ph, tx))
+            if not items:
+                return self._send(200, {'ok': False, 'error': 'אין אף לקוח עם ' + ('נייד' if ch == 'sms' else 'טלפון') + ' תקין'})
+            send_at = str(b.get('send_at') or '').strip().replace('T', ' ')[:16]
+            if send_at:
+                try:
+                    want = datetime.datetime.strptime(send_at, '%Y-%m-%d %H:%M')
+                except ValueError:
+                    return self._send(200, {'ok': False, 'error': 'שעת השליחה לא תקינה'})
+                send_at = '' if want <= il_now().replace(tzinfo=None) + datetime.timedelta(minutes=1) else ym_next_ok(want).strftime('%Y-%m-%d %H:%M')
+            con = db()
+            try:
+                con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,?,?,0,?,'',?)",
+                            (now_iso(), ch, items[0][3], '', len(items), 'scheduled' if send_at else 'queued', 'מקווה', send_at))
+                jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                at = il_now().strftime('%Y-%m-%d %H:%M:%S')
+                for cid, nm, ph, tx in items:
+                    mid_ = con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,mk_cid) VALUES(?,?,?,?,?,?,'queued','','mikveh',?)",
+                                       (jid, 'k', 0, nm, ph, tx, cid)).lastrowid
+                    con.execute("INSERT INTO mk_log(cid,at,kind,summary,msg_id) VALUES(?,?,?,?,?)",
+                                (cid, at, 'msg', ('💬 SMS' if ch == 'sms' else '📞 הודעה קולית') + (' · ' + cat if cat else '') +
+                                 (' (מתוזמנת ל-%s)' % send_at if send_at else ''), mid_))
+                con.commit()
+            finally:
+                con.close()
+            import threading as _thr
+            if not send_at:
+                _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': jid, 'count': len(items), 'skipped': skip, 'send_at': send_at})
+        if self.path == '/api/mikveh/mail':
+            # ✉️ מייל ללקוח / ללקוחות המקווה. הטקסט כבר ממולא במסך לכל לקוח; יוצא אחד־אחד, כל אחד בנפרד
+            import bulkmail
+            sender = 'neder' if b.get('sender') == 'neder' else 'main'
+            bulkmail.set_profile('comm' if sender == 'neder' else None)
+            try:
+                okc = bulkmail.configured()
+            finally:
+                bulkmail.set_profile(None)
+            if not okc:
+                return self._send(200, {'ok': False, 'error': 'הדואר לא מוגדר ב-Render'})
+            cat = str(b.get('cat') or '').strip()[:60]
+            items, skip = [], 0
+            for it in (b.get('items') or [])[:2000]:
+                em = (str(it.get('email') or '').replace(';', ',').split(',')[0]).strip()
+                cid = str(it.get('cid') or '').strip()
+                subj, body = str(it.get('subject') or '').strip()[:200], str(it.get('body') or '').strip()[:8000]
+                if not bulkmail._EMAIL_RE.match(em) or not subj or not body or not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                    skip += 1; continue
+                items.append((cid, em, str(it.get('name') or '').strip()[:80], subj, body))
+            if not items:
+                return self._send(200, {'ok': False, 'error': 'אין אף לקוח עם כתובת מייל תקינה (או שחסר נושא / תוכן)'})
+            con = db()
+            ids = []
+            try:
+                at = il_now().strftime('%Y-%m-%d %H:%M:%S')
+                for cid, em, nm, subj, body in items:
+                    mid_ = con.execute("INSERT INTO mk_mail(cid,at,email,name,subject,body,sender,status) VALUES(?,?,?,?,?,?,?,'queued')",
+                                       (cid, at, em, nm, subj, body, sender)).lastrowid
+                    con.execute("INSERT INTO mk_log(cid,at,kind,summary,mail_id) VALUES(?,?,?,?,?)",
+                                (cid, at, 'mail', '✉️ מייל' + (' · ' + cat if cat else ''), mid_))
+                    ids.append(mid_)
+                con.commit()
+            finally:
+                con.close()
+            import threading as _thr
+            _thr.Thread(target=mk_mail_worker, args=(ids, sender, b.get('base') or ''), daemon=True).start()
+            return self._send(200, {'ok': True, 'count': len(ids), 'skipped': skip, 'ids': ids})
         if self.path == '/api/mikveh/templates':
             # "נוסחים מוכנים, שמירת נוסחים" — רשימה אחת לכל המערכת
             rows = []
             for t in (b.get('templates') or [])[:60]:
                 name, text = str(t.get('name') or '').strip()[:60], str(t.get('text') or '').strip()[:1000]
-                if name and text:
-                    rows.append({'id': re.sub(r'[^\w-]', '', str(t.get('id') or ''))[:40] or hashlib.md5((name + text).encode('utf-8')).hexdigest()[:10],
-                                 'name': name, 'text': text})
+                # ✉️ לכל קטגוריה גם נוסח מייל (נושא + תוכן) — מאיר: "כמה נוסחאות, קבוע וחופשי… שישאל עבור מה המייל"
+                subj, mbody = str(t.get('subj') or '').strip()[:200], str(t.get('body') or '').strip()[:6000]
+                if name and (text or mbody):
+                    rows.append({'id': re.sub(r'[^\w-]', '', str(t.get('id') or ''))[:40] or hashlib.md5((name + text + mbody).encode('utf-8')).hexdigest()[:10],
+                                 'name': name, 'text': text, 'subj': subj, 'body': mbody})
             con = db()
             try:
                 kv_set(con, 'mk_templates', json.dumps(rows, ensure_ascii=False)); con.commit()
