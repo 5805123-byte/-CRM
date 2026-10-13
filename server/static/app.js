@@ -1861,6 +1861,7 @@ function mkOpen(c){
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
+        ${tile(c.price!=null?'💲 מחיר המנוי שלו':'💲 מחיר המנוי (של הקבוצה)',c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):''))}
         ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
@@ -1881,8 +1882,10 @@ function mkOpen(c){
         <button class="mkbtn gh" id="mkmsg1"${c.phone||mkHasMail(c)?'':' disabled'}>💬 שליחת הודעה / ✉️ מייל</button>
         <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>
       <div class="mksec" style="margin-top:18px">📜 היסטוריה <small>הודעות ששלחנו לו והתוצאות, והעברות קבוצה — רק של המקווה</small></div>
-      <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>`;
-    mkHistLoad(c.id);
+      <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>
+      <div class="mksec" style="margin-top:18px">💳 תשלומים <small>כל מה ששילם עד היום — מקופת המקווה בנדרים פלוס</small></div>
+      <div id="mkpay" data-id="${esc(c.id)}">${mkPayHTML(c.id)}</div>`;
+    mkHistLoad(c.id); mkPayLoad(c.id);
     document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
@@ -2126,6 +2129,23 @@ async function mkHistLoad(cid){const r=await api('GET','/api/mikveh/log/'+encode
   clearTimeout(MKHIST._t);if((r.rows||[]).some(x=>x.kind==='msg'&&(x.y_st==='queued'||(x.ch==='voice'&&x.y_st==='sent'&&x.y_ans==null))))
     MKHIST._t=setTimeout(()=>{const e2=document.getElementById('mkhist');if(e2&&e2.dataset.id===cid)mkHistLoad(cid);},60000);
   else if((r.rows||[]).some(x=>x.kind==='mail'&&x.m_st==='queued'))MKHIST._t=setTimeout(()=>{const e2=document.getElementById('mkhist');if(e2&&e2.dataset.id===cid)mkHistLoad(cid);},8000);}
+// 💳 מאיר: "במקווה אני רוצה לראות אצל כל אחד כמה המחיר שהוא משלם למנוי, ואת ההיסטוריה תשלומים שלו עד היום למטה"
+const MKPAY={};
+const mkNis=n=>n==null||n===''?'':'₪'+(+n).toLocaleString('he-IL',{maximumFractionDigits:2});
+async function mkPayLoad(cid){if(MKPAY[cid]&&Date.now()-MKPAY[cid]._at<60000)return;
+  let r=null;try{r=await api('GET','/api/mikveh/pay/'+encodeURIComponent(cid));}catch(e){}
+  MKPAY[cid]=r&&r.ok?r:{ok:false,error:(r&&r.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
+  const el=document.getElementById('mkpay');if(el&&el.dataset.id===cid)el.innerHTML=mkPayHTML(cid);}
+function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
+  if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
+  const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
+  const kv=(P.kevas||[]).filter(k=>+k.active);
+  const by={id:'לפי המזהה שלו במקווה',phone:'לפי הטלפון',name:'לפי השם'}[P.by]||'';
+  return `${kv.length?`<div class="mktiles">${kv.map(k=>`<div class="mktile ok"><span>🔁 הוראת קבע${k.kind==='bank'?' בנקאית':''}${k.last4?' · כרטיס '+esc(k.last4):''}</span><b>${esc(mkNis(String(k.amount||'').replace(/[^\d.]/g,'')))} לחודש</b>${k.next_date?`<span>החיוב הבא: ${esc(k.next_date)}</span>`:''}</div>`).join('')}</div>`:''}
+    ${(P.tx||[]).length?`<div class="mksub" style="margin:4px 2px 8px">שילם <b>${P.count}</b> פעמים · סה״כ <b>${esc(mkNis(P.sum))}</b>${P.since?' · מאז '+d({iso:P.since}):''}${by?' · נמצא '+by:''}</div>
+    <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)} · ${t.keva?'🔁 הוראת קבע':'💳 תשלום'}</b>
+      <div class="mksub">${t.last4?'כרטיס '+esc(t.last4):''}${t.type?' · '+esc(t.type):''}</div></div><b style="${(+t.amount||0)<0?'color:#c0392b':''}">${esc(mkNis(t.amount))}</b></div>`).join('')}</div>`
+    :`<div class="mksub">לא נמצאו תשלומים שלו בקופת המקווה בנדרים פלוס (מוסד ${esc(P.mosad||'')})${by?' — חיפשתי '+by:''}.</div>`}`;}
 // הכרטיס פתוח על אותו לקוח — מעדכנים בו את שורת "הודעה אחרונה"
 function mkCardRefresh(c){const el=document.getElementById('mksent');if(!el||el.dataset.id!==c.id)return;el.innerHTML=mkSentTxt(c);}
 const mkSentTxt=c=>{const s=c.sent;if(!s)return '';

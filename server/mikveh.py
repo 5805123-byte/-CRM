@@ -215,7 +215,10 @@ def slim(c):
             'temp_balance': c.get('tempBalance'), 'finger': bool(c.get('hasFingerPrint')),
             'pay_method': bool(c.get('hasPaymentMethod')), 'blocked': bool(c.get('isBlocked')),
             'block_reason': c.get('blockReason') or '', 'remark': c.get('remark') or '',
-            'message': c.get('message') or '', 'sons': len(c.get('sons') or [])}
+            'message': c.get('message') or '', 'sons': len(c.get('sons') or []),
+            # מחיר אישי ללקוח, אם המקווה מחזיר כזה (באגורות, כמו מחיר הקבוצה). בלי — מחיר הקבוצה
+            'price': next(((c.get(k) or 0) / 100.0 for k in ('subscriptionPrice', 'specialPrice', 'customPrice', 'price')
+                           if isinstance(c.get(k), (int, float)) and c.get(k)), None)}
 
 
 _CL = {'at': 0.0, 'rows': None}

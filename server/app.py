@@ -14577,6 +14577,46 @@ def mail_sent_today(con):
         return 0
 
 
+def mk_mosad():
+    """מוסד המקווה בנדרים פלוס (התשלומים של המקווה עוברים שם). ב-Render אפשר לשנות: MIKVEH_NEDARIM_MOSAD."""
+    return (os.environ.get('MIKVEH_NEDARIM_MOSAD') or '7000571').strip()
+
+
+def mk_payments(con, cid, c):
+    """התשלומים של לקוח מקווה — מקופת המקווה בנדרים פלוס: לפי המזהה שלו במקווה (כשהוא בהערות העסקה),
+    לפי הטלפון, או לפי השם המלא. רק קריאה — לא נשמר כלום על הלקוח."""
+    mos = mk_mosad()
+    phs = [p for p in _phones_of(c.get('phone') or '') if not re.fullmatch(r'0?5?0+', re.sub(r'\D', '', p))]
+    f, l = (c.get('firstName') or '').strip(), (c.get('lastName') or '').strip()
+    names = [n for n in {(l + ' ' + f).strip(), (f + ' ' + l).strip()} if f and l]
+    # המזהה בהערות — רק אם הוא באמת של לקוח אחד (ולא מזהה המועדון שמופיע אצל כולם)
+    by_id = con.execute("SELECT COUNT(DISTINCT TRIM(name)) n FROM nd_tx WHERE mosad=? AND comments LIKE ?", (mos, '%' + cid + '%')).fetchone()['n']
+    w, a = [], []
+    if 0 < by_id <= 3:
+        w.append("comments LIKE ?"); a.append('%' + cid + '%')
+    if phs:
+        w.append("phone IN (%s)" % ','.join('?' * len(phs))); a += phs
+    if names:
+        w.append("TRIM(name) IN (%s)" % ','.join('?' * len(names))); a += names
+    tx, kv = [], []
+    if w:
+        tx = [dict(r) for r in con.execute(
+            "SELECT id, iso, time, amount, keva, last4, type, groupe, comments, name FROM nd_tx WHERE mosad=? AND (" + " OR ".join(w) + ") "
+            "ORDER BY iso DESC LIMIT 500", [mos] + a)]
+        kw = [x for x in w if not x.startswith('comments')]
+        ka = [x for x in a if not str(x).startswith('%')]
+        if kw:
+            kv = [dict(r) for r in con.execute(
+                "SELECT id, amount, next_date, active, last4, itra, groupe, kind, name FROM nd_keva WHERE mosad=? AND (" +
+                " OR ".join(kw) + ") ORDER BY active DESC, id", [mos] + ka)]
+    for t in tx:
+        t.pop('comments', None)
+    paid = [t for t in tx if (t['amount'] or 0) > 0]
+    return {'mosad': mos, 'tx': tx, 'kevas': kv, 'sum': round(sum(t['amount'] or 0 for t in paid), 2),
+            'count': len(paid), 'since': min((t['iso'] or '' for t in paid if t['iso']), default=''),
+            'by': 'id' if 0 < by_id <= 3 else ('phone' if phs else ('name' if names else ''))}
+
+
 MK_MAIL_LOCK = threading.Lock()
 
 
@@ -17482,6 +17522,24 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mikveh/link':
             con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
             return self._send(200, {'ok': True, 'url': v})
+        m = re.match(r'/api/mikveh/pay/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 💳 מאיר: "במקווה אני רוצה לראות אצל כל אחד כמה המחיר שהוא משלם למנוי, ואת ההיסטוריה תשלומים שלו עד היום"
+            import mikveh as _mk
+            cid = m.group(1)
+            try:
+                c = next((x for x in _mk.clients() if str(x.get('id')) == cid), None)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            if not c:
+                return self._send(200, {'ok': False, 'error': 'הלקוח לא נמצא במקווה'})
+            con = db()
+            try:
+                out = mk_payments(con, cid, c)
+            finally:
+                con.close()
+            out['ok'] = True
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/mikveh/log':
             # 📜 מאיר: "איפה אני רואה במקווה את ההודעות ששלחתי, בטלפון ימות המשיח או מייל?" — כל מה שיצא מהמקווה
             con = db()
