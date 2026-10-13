@@ -17590,6 +17590,14 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'לא נמצא'})
+        if self.path.split('?')[0] == '/api/cm/mailtpl':
+            con = db()
+            try:
+                cur = json.loads(kv_get(con, 'cm_debt_mail', '') or '{}')
+            except ValueError:
+                cur = {}
+            con.close()
+            return self._send(200, {'ok': True, 'tpl': cur})
         if self.path.split('?')[0] == '/api/cm/gifts':
             # 💵 כל התרומות של הקהילה — מאיר: "חלון בקהילה של כל התרומות ביחד מרוכזות, כמו שעשית לי
             # בתורמים". נדרים פלוס (חד-פעמי, הו"ק, הוראה בנקאית) + תרומות ידניות (מזומן וכו')
@@ -18907,6 +18915,21 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'id': did, 'debt_paid': used})
+        if self.path == '/api/cm/mailtpl':
+            # ✉️ מאיר: "חוץ מאצל התורם עצמו — איפה יש את המייל המוכן לשליחה, לערוך אותו?" — נוסח מייל התזכורת
+            # (התחייבות / הו"ק שחזרה), נשמר במערכת לכל המכשירים
+            con = db()
+            try:
+                cur = json.loads(kv_get(con, 'cm_debt_mail', '') or '{}')
+            except ValueError:
+                cur = {}
+            k = 'hok' if b.get('kind') == 'hok' else 'pledge'
+            if b.get('reset'):
+                cur.pop(k, None)
+            else:
+                cur[k] = {'subj': str(b.get('subj') or '').strip()[:200], 'body': str(b.get('body') or '')[:6000]}
+            kv_set(con, 'cm_debt_mail', json.dumps(cur, ensure_ascii=False)); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'tpl': cur})
         if self.path == '/api/cm/natan_sync':
             import nedarim as _nd
             if not _nd.configured():
