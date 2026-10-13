@@ -7594,6 +7594,20 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_av_5786_v3')")
             con.commit()
             print('  מלגות אב תשפ"ו: תוקנה החלוקה ל-%d שורות' % n)
+        # מאיר: "תוסיף את הרשימה של תשרי תשפ"ז לדף אברכים — תחלק בין כולל חצות לכולל הוראה, כמו חודשים
+        # קודמים" — מהקובץ "מלגות תשרי תשפ"ז": כולל חצות 83 אברכים ₪72,868, כולל הוראה 22 ₪28,785.
+        # מי שלומד בשניהם — מופיע בשניהם, כל כולל עם הסכום שלו, ובפירוט: כמה קיבל בכולל השני והסה"כ.
+        _tf = os.path.join(HERE, 'stipends_tishrei_5787_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_tishrei_5787_v1'").fetchone() and os.path.exists(_tf):
+            n = 0
+            for r in json.load(open(_tf, encoding='utf-8')):
+                con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,0,'',?,?,?,?) "
+                            "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, details=excluded.details, att=excluded.att",
+                            (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0), r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_tishrei_5787_v1')")
+            con.commit()
+            print('  מלגות תשרי תשפ"ז: נטענו %d שורות (חצות + הוראה)' % n)
         # מאיר: "חלוקה נוספת לסוכות תשפ"ז לאברכי כולל חצות — שיהיה עוד רשימה של
         # 'מזומנים' ערב סוכות תשפ"ז" — 75 אברכים שקיבלו, ₪48,920 (מהקובץ "חלוקת ערב סוכות").
         _mf = os.path.join(HERE, 'stipends_sukkos_cash_seed.json')
