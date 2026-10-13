@@ -13896,9 +13896,11 @@ async function renderCommDebts(){
       <button class="btn sm ghost" id="cd_mailtpl" title="הנוסח של מייל התזכורת — לעריכה ושמירה">✉️ נוסח המייל</button>
       ${cdFund?'':`<button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>`}
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a></div>
+    ${cdCatsHTML()}
     <div class="cdquick"><input id="cdq_m" list="cd_mdl" placeholder="${cdFund?'➕ שם — חבר קהילה או כל שם…':'➕ חבר קהילה…'}" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}">
-      <input id="cdq_a" inputmode="decimal" placeholder="₪ סכום"><input id="cdq_t" placeholder="עבור מה (עליית שישי, מקום תשפ״ז…)">
-      <select id="cdq_k"><option value="pledge">התחייבות</option><option value="debt">חוב</option>${cdFund?'<option value="paid">✅ כבר נתן</option>':''}</select><button class="btn sm" id="cdq_go">הוסף</button></div>
+      <input id="cdq_a" inputmode="decimal" placeholder="₪ סכום"${cdQC&&cdQC.amount?` value="${cdQC.amount}"`:''}><input id="cdq_t" placeholder="עבור מה (עליית שישי, מקום תשפ״ז…)"${cdQC?` value="${esc(cdQC.name)}"`:''}>
+      ${cdQC&&cdQC.min&&cdQC.max&&cdQC.max>cdQC.min?`<label class="cdqr"><small>${cdMoney(cdQC.min)}</small><input type="range" id="cdq_r" min="${cdQC.min}" max="${cdQC.max}" step="${(cdQC.max-cdQC.min)%10?1:10}" value="${cdQC.amount||cdQC.min}"><small>${cdMoney(cdQC.max)}</small></label>`:''}
+      <select id="cdq_k"><option value="pledge">התחייבות</option><option value="debt"${cdQC&&cdQC.kind==='debt'?' selected':''}>חוב</option>${cdFund?'<option value="paid">✅ כבר נתן</option>':''}</select><button class="btn sm" id="cdq_go">הוסף</button></div>
     ${cdAdd?cdAddHTML():''}${cdImp?cdImpHTML():''}
     <div class="bqseg">${KF.map(([k,l])=>`<button class="${cdKind===k?'on':''}" data-cdk="${k}">${l} <small>${all.filter(d=>!k||d.kind===k).length}</small></button>`).join('')}</div>
     ${cdSt==='open'&&rows.some(d=>!d._req)?`<div class="bqbar"><button class="btn sm ghost" id="cd_selall">${selRows.length===rows.filter(d=>!d._req&&d.status==='open').length&&selRows.length?'✕ בטל סימון':'☑ סמן הכל'}</button>
@@ -14088,6 +14090,41 @@ const CD_MAIL_DEF={pledge:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצ
   hok:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצינו לעדכן בכבוד שהוראת הקבע שלך בסך {{סכום}} ₪ עבור {{עבור}} לא עברה החודש.\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות',
   // מאיר: "צריך גם מייל לכתיבה חופשית" — רק הפנייה והקישור; את השאר כותבים
   free:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\n\n\n{{קישור}}\n\nכולל חצות'};
+// 🏷 קטגוריות קבועות — לחיצה ממלאת "עבור מה", סכום וסוג; בקטגוריה עם טווח (הקמת הוראת קבע דמי חבר
+// 100–150 ₪) מזיזים את הסכום בפס, והוא לא יוצא מהטווח. ⚙️ — הגבאי מוסיף / משנה / מוחק לבד
+let CD_CATS=null, cdQC=null;
+async function cdCatsLoad(){if(CD_CATS)return CD_CATS;const r=await api('GET','/api/cm/debtcats');CD_CATS=(r&&r.cats)||[];return CD_CATS;}
+function cdCatsHTML(){
+  if(!CD_CATS){cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='debts')renderCommDebts();});return '';}
+  const rng=c=>c.min&&c.max&&c.max>c.min?cdMoney(c.min)+'–'+cdMoney(c.max):(c.amount?cdMoney(c.amount):'');
+  return `<div class="cdcats"><span class="hintxt">🏷 קטגוריה:</span>${CD_CATS.map((c,i)=>`<button class="fbchip${cdQC&&cdQC.name===c.name?' on':''}" data-cdcat="${i}">${esc(c.name)}${rng(c)?` <small>${rng(c)}</small>`:''}</button>`).join('')}
+    <button class="btn sm ghost" id="cd_cats" title="הוספה, שינוי ומחיקה של קטגוריות קבועות">⚙️ ניהול קטגוריות</button></div>`;}
+function cdCatsWire(g){
+  document.querySelectorAll('[data-cdcat]').forEach(b=>b.onclick=async()=>{const c=CD_CATS[+b.dataset.cdcat];
+    const m=g('cdq_m')&&g('cdq_m').value;cdQC=cdQC&&cdQC.name===c.name?null:c;await renderCommDebts();
+    const x=g('cdq_m');if(x&&m)x.value=m;const a=g('cdq_a');if(cdQC&&a)(x&&!x.value?x:a).focus();});
+  const r=g('cdq_r'),a=g('cdq_a');
+  if(r&&a){r.oninput=()=>{a.value=r.value;};a.addEventListener('input',()=>{const v=amtNum(a.value);if(v>=+r.min&&v<=+r.max)r.value=v;});}
+  const t=g('cdq_t');if(t&&cdQC)t.addEventListener('input',()=>{if(t.value.trim()!==cdQC.name&&r)r.disabled=true;else if(r)r.disabled=false;});
+  const m=g('cd_cats');if(m)m.onclick=()=>cdCatsEdit();}
+async function cdCatsEdit(){await cdCatsLoad();let L=CD_CATS.map(c=>Object.assign({},c));
+  const o=document.createElement('div');o.className='confirmov';
+  const row=(c,i)=>`<div class="cdcatrow" data-i="${i}"><input class="cc_n" placeholder="שם הקטגוריה" value="${esc(c.name||'')}">
+    <input class="cc_a" inputmode="decimal" placeholder="סכום" value="${c.amount||''}"><input class="cc_lo" inputmode="decimal" placeholder="מינ׳" value="${c.min||''}"><input class="cc_hi" inputmode="decimal" placeholder="מקס׳" value="${c.max||''}">
+    <select class="cc_k"><option value="pledge">התחייבות</option><option value="debt"${c.kind==='debt'?' selected':''}>חוב</option></select><button class="fdel cc_x" title="מחק">✕</button></div>`;
+  const read=()=>{L=[...o.querySelectorAll('.cdcatrow')].map(e=>({name:e.querySelector('.cc_n').value.trim(),amount:amtNum(e.querySelector('.cc_a').value)||0,
+    min:amtNum(e.querySelector('.cc_lo').value)||0,max:amtNum(e.querySelector('.cc_hi').value)||0,kind:e.querySelector('.cc_k').value}));};
+  const draw=()=>{o.innerHTML=`<div class="confirmbox" style="max-width:640px"><div class="cm"><b>🏷 קטגוריות קבועות — חובות והתחייבויות</b><br><small>סכום = ברירת המחדל. מינ׳ / מקס׳ — הטווח שאפשר לבחור (ריק = בלי הגבלה).</small></div>
+      <div class="cdcatlist">${L.map(row).join('')||'<div class="hintxt">אין קטגוריות.</div>'}</div>
+      <button class="btn sm ghost" id="cc_add">➕ קטגוריה חדשה</button>
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">💾 שמור</button></div></div>`;
+    o.querySelector('#cc_add').onclick=()=>{read();L.push({name:'',amount:0,min:0,max:0,kind:'pledge'});draw();const n=[...o.querySelectorAll('.cc_n')].pop();if(n)n.focus();};
+    o.querySelectorAll('.cc_x').forEach(b=>b.onclick=()=>{read();L.splice(+b.closest('.cdcatrow').dataset.i,1);draw();});
+    o.querySelector('.cno').onclick=()=>o.remove();
+    o.querySelector('.cyes').onclick=async()=>{read();const r=await api('POST','/api/cm/debtcats',{cats:L.filter(c=>c.name)});
+      if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
+      CD_CATS=r.cats||[];if(cdQC)cdQC=CD_CATS.find(c=>c.name===cdQC.name)||null;o.remove();toast('נשמר ✓');renderCommDebts();};};
+  document.body.appendChild(o);draw();}
 let CD_MAILTPL=null;
 async function cdMailTplLoad(){if(CD_MAILTPL)return CD_MAILTPL;const r=await api('GET','/api/cm/mailtpl');CD_MAILTPL=(r&&r.tpl)||{};return CD_MAILTPL;}
 const cdMailTplOf=k=>{const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||(k==='free'?'כולל חצות':CD_MAIL_SUBJ),body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
@@ -14317,11 +14354,14 @@ function cdWire(){const g=id=>document.getElementById(id);
   const qa=async()=>{const mid=cdPick(g('cdq_m').value),a=amtNum(g('cdq_a').value),kd=g('cdq_k').value,nm=g('cdq_m').value.trim();
     // נתן תתן — גם מי שלא בקהילה: נשמר בשם שלו (אפשר להוסיף טלפון ב-📱 או לשייך אחר כך ב-🔗)
     if(!mid&&!(cdFund&&nm)){toast('בחר חבר קהילה מהרשימה');g('cdq_m').focus();return;} if(!a){toast('חסר סכום');g('cdq_a').focus();return;}
+    const qc=cdQC&&g('cdq_t').value.trim()===cdQC.name?cdQC:null;
+    if(qc&&((qc.min&&a<qc.min)||(qc.max&&a>qc.max))){toast('ב"'+qc.name+'" הסכום בין '+cdMoney(qc.min||0)+' ל-'+cdMoney(qc.max||a));g('cdq_a').focus();return;}
     if(!mid&&!await uiConfirm('"'+nm+'" לא נמצא ברשימת הקהילה.\nלהוסיף אותו בשם הזה (בלי כרטיס)?','➕ כן, להוסיף','ביטול'))return;
     let via='';if(kd==='paid'){via=await uiPrompt('איך שילם? (מזומן / צ׳ק / ביט… — אשראי בנדרים פלוס נכנס לבד מהסנכרון)','מזומן');if(via===null||via===undefined)return;via=String(via).trim()||'מזומן';}
     const r=await api('POST','/api/cm/debts',{member_id:mid||0,name:mid?'':nm,kind:kd,via,amount:a,title:g('cdq_t').value.trim(),due:todayStr(),fund:cdFund});
     if(r&&r.ok){toast('נוסף ✓');cdData=null;await renderCommDebts();const n=g('cdq_m');if(n&&!cdMember){n.value='';n.focus();}}else toast((r&&r.error)||'לא נשמר');};
-  g('cdq_go').onclick=qa; ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
+  g('cdq_go').onclick=qa; cdCatsWire(g);
+  ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
   g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[],mode:'debt'};renderCommDebts();};
   g('cd_mailtpl').onclick=()=>cdMailTplEdit();
   cdMailTplLoad();

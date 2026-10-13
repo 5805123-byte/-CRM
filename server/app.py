@@ -17794,6 +17794,13 @@ class H(BaseHTTPRequestHandler):
                 cur = {}
             con.close()
             return self._send(200, {'ok': True, 'tpl': cur})
+        if self.path.split('?')[0] == '/api/cm/debtcats':
+            con = db()
+            try:
+                cats = cm_debt_cats(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'cats': cats})
         if self.path.split('?')[0] == '/api/cm/gifts':
             # 💵 כל התרומות של הקהילה — מאיר: "חלון בקהילה של כל התרומות ביחד מרוכזות, כמו שעשית לי
             # בתורמים". נדרים פלוס (חד-פעמי, הו"ק, הוראה בנקאית) + תרומות ידניות (מזומן וכו')
@@ -19111,6 +19118,32 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'id': did, 'debt_paid': used})
+        if self.path == '/api/cm/debtcats':
+            # 🏷 קטגוריות קבועות לחובות והתחייבויות — שם, סכום ברירת מחדל וטווח (למשל הקמת הוראת קבע
+            # דמי חבר: 100–150 ₪). נשמר במערכת לכל המכשירים; הגבאי מוסיף ומוחק לבד
+            out = []
+            for c in (b.get('cats') or [])[:60]:
+                if not isinstance(c, dict):
+                    continue
+                nm = str(c.get('name') or '').strip()[:120]
+                if not nm or any(x['name'] == nm for x in out):
+                    continue
+                num = lambda v: round(float(v), 2) if str(v or '').strip() not in ('', 'None') else 0
+                try:
+                    lo, hi, dflt = num(c.get('min')), num(c.get('max')), num(c.get('amount'))
+                except (TypeError, ValueError):
+                    lo = hi = dflt = 0
+                if lo and hi and lo > hi:
+                    lo, hi = hi, lo
+                if dflt and lo and dflt < lo:
+                    dflt = lo
+                if dflt and hi and dflt > hi:
+                    dflt = hi
+                out.append({'name': nm, 'amount': dflt, 'min': lo, 'max': hi,
+                            'kind': 'debt' if c.get('kind') == 'debt' else 'pledge'})
+            con = db()
+            kv_set(con, 'cm_debt_cats', json.dumps(out, ensure_ascii=False)); con.commit(); con.close()
+            return self._send(200, {'ok': True, 'cats': out})
         if self.path == '/api/cm/mailtpl':
             # ✉️ מאיר: "חוץ מאצל התורם עצמו — איפה יש את המייל המוכן לשליחה, לערוך אותו?" — נוסח מייל התזכורת
             # (התחייבות / הו"ק שחזרה), נשמר במערכת לכל המכשירים
@@ -23832,6 +23865,19 @@ def nd_member_index(con):
         for ph in _phones_of(m['phone']):
             idx.setdefault(ph, set()).add(m['id'])
     return idx
+
+
+# מאיר: "בחובות והתחייבויות צריך להוסיף עוד קטגוריה של הקמת הוראת קבע דמי חבר, ושנוכל לשנות את
+# הסכום בין מאה ל-150, גם שאוכל לבד להקים קטגוריה קבועה"
+CM_DEBT_CATS_DEF = [{'name': 'הקמת הוראת קבע דמי חבר', 'amount': 100, 'min': 100, 'max': 150, 'kind': 'pledge'}]
+
+
+def cm_debt_cats(con):
+    try:
+        v = json.loads(kv_get(con, 'cm_debt_cats', '') or 'null')
+    except ValueError:
+        v = None
+    return v if isinstance(v, list) else [dict(c) for c in CM_DEBT_CATS_DEF]
 
 
 def cm_debt_log(con, member_id, debt_id, summary, body=''):
