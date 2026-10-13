@@ -21038,19 +21038,30 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'sent': n, 'no_mobile': nomob, 'failed': fail})
         m = re.match(r'/api/nd/hook/([A-Za-z0-9]+)$', self.path.split('?')[0])
         if m:
+            # מאיר: "מה זה האימייל הזה?" (נדרים: "הקאלבק לא התקבל — The connection was closed unexpectedly") —
+            # נדרים מחכים לתשובה עד 10 שניות; העיבוד חיכה לבסיס הנתונים כשסנכרון ברקע כתב. עכשיו: עונים מיד,
+            # ומעבדים ברקע. (גם בלי הקאלבק העסקה נכנסת בסנכרון ההיסטוריה — לא הולך לאיבוד)
             con = db()
             try:
-                if m.group(1) != nd_hook_key(con):
-                    return self._send(403, {'ok': False})
-                try:
-                    res = nd_hook(con, b)
-                except Exception as e:
-                    res = 'error: %s' % str(e)[:80]
-                con.execute("INSERT INTO app_kv(k,v) VALUES('nd_hook_last',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", ('%s · %s' % (now_iso(), res),))
-                con.commit()
+                good = m.group(1) == nd_hook_key(con)
             finally:
                 con.close()
-            bump_data()
+            if not good:
+                return self._send(403, {'ok': False})
+
+            def _proc(body=dict(b)):
+                c2 = db()
+                try:
+                    try:
+                        res = nd_hook(c2, body)
+                    except Exception as e:
+                        res = 'error: %s' % str(e)[:80]
+                    c2.execute("INSERT INTO app_kv(k,v) VALUES('nd_hook_last',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", ('%s · %s' % (now_iso(), res),))
+                    c2.commit()
+                finally:
+                    c2.close()
+                bump_data()
+            threading.Thread(target=_proc, daemon=True).start()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/nd/keva/(M?[\d:]+)/action$', self.path)
         if m:
@@ -21107,6 +21118,12 @@ class H(BaseHTTPRequestHandler):
                 if k['member_id']:
                     cm_debt_log(con, k['member_id'], 'keva:' + kid, ('%s (%s₪%s%s)' % (what, 'בנקאית · ' if bank else '', k['amount'] or '', (' · ' + k['groupe']) if k['groupe'] else ''))
                                 if ok else '🔴 %s נכשל: %s' % (what.split(' ', 1)[-1], msg))
+                # מאיר: "אתייג אותו שהוא דמי חבר" — אחרי עדכון / הפעלה: בודקים מיד אם ההוראה הזו מחליפה הוראה שחזרה
+                if ok:
+                    try:
+                        nd_mark_replaced(con); cm_debts_from_keva(con)
+                    except Exception as e:
+                        print('  keva replace check error:', e)
                 con.commit()
             finally:
                 con.close()
