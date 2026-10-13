@@ -14098,6 +14098,7 @@ function cdCatsHTML(){
   if(!CD_CATS){cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='debts')renderCommDebts();});return '';}
   const rng=c=>c.min&&c.max&&c.max>c.min?cdMoney(c.min)+'–'+cdMoney(c.max):(c.amount?cdMoney(c.amount):'');
   return `<div class="cdcats"><span class="hintxt">🏷 קטגוריה:</span>${CD_CATS.map((c,i)=>`<button class="fbchip${cdQC&&cdQC.name===c.name?' on':''}" data-cdcat="${i}">${esc(c.name)}${rng(c)?` <small>${rng(c)}</small>`:''}</button>`).join('')}
+    <button class="btn sm" id="cd_catnew" title="קטגוריה קבועה חדשה — אם כבר כתבת 'עבור מה' וסכום, הם ייכנסו אליה">➕ קטגוריה חדשה</button>
     <button class="btn sm ghost" id="cd_cats" title="הוספה, שינוי ומחיקה של קטגוריות קבועות">⚙️ ניהול קטגוריות</button></div>`;}
 function cdCatsWire(g){
   document.querySelectorAll('[data-cdcat]').forEach(b=>b.onclick=async()=>{const c=CD_CATS[+b.dataset.cdcat];
@@ -14106,8 +14107,10 @@ function cdCatsWire(g){
   const r=g('cdq_r'),a=g('cdq_a');
   if(r&&a){r.oninput=()=>{a.value=r.value;};a.addEventListener('input',()=>{const v=amtNum(a.value);if(v>=+r.min&&v<=+r.max)r.value=v;});}
   const t=g('cdq_t');if(t&&cdQC)t.addEventListener('input',()=>{if(t.value.trim()!==cdQC.name&&r)r.disabled=true;else if(r)r.disabled=false;});
-  const m=g('cd_cats');if(m)m.onclick=()=>cdCatsEdit();}
-async function cdCatsEdit(){await cdCatsLoad();let L=CD_CATS.map(c=>Object.assign({},c));
+  const m=g('cd_cats');if(m)m.onclick=()=>cdCatsEdit();
+  const nw=g('cd_catnew');if(nw)nw.onclick=()=>{const t=(g('cdq_t')||{}).value||'',a=amtNum((g('cdq_a')||{}).value||'');
+    cdCatsEdit({name:cdQC&&t.trim()===cdQC.name?'':t.trim(),amount:a||0,min:0,max:0,kind:(g('cdq_k')||{}).value==='debt'?'debt':'pledge'});};}
+async function cdCatsEdit(nw){await cdCatsLoad();let L=CD_CATS.map(c=>Object.assign({},c));if(nw)L.push(nw);
   const o=document.createElement('div');o.className='confirmov';
   const row=(c,i)=>`<div class="cdcatrow" data-i="${i}"><input class="cc_n" placeholder="שם הקטגוריה" value="${esc(c.name||'')}">
     <input class="cc_a" inputmode="decimal" placeholder="סכום" value="${c.amount||''}"><input class="cc_lo" inputmode="decimal" placeholder="מינ׳" value="${c.min||''}"><input class="cc_hi" inputmode="decimal" placeholder="מקס׳" value="${c.max||''}">
@@ -14124,7 +14127,8 @@ async function cdCatsEdit(){await cdCatsLoad();let L=CD_CATS.map(c=>Object.assig
     o.querySelector('.cyes').onclick=async()=>{read();const r=await api('POST','/api/cm/debtcats',{cats:L.filter(c=>c.name)});
       if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
       CD_CATS=r.cats||[];if(cdQC)cdQC=CD_CATS.find(c=>c.name===cdQC.name)||null;o.remove();toast('נשמר ✓');renderCommDebts();};};
-  document.body.appendChild(o);draw();}
+  document.body.appendChild(o);draw();
+  if(nw){const n=[...o.querySelectorAll('.cc_n')].pop();if(n){n.focus();n.scrollIntoView({block:'nearest'});}}}
 let CD_MAILTPL=null;
 async function cdMailTplLoad(){if(CD_MAILTPL)return CD_MAILTPL;const r=await api('GET','/api/cm/mailtpl');CD_MAILTPL=(r&&r.tpl)||{};return CD_MAILTPL;}
 const cdMailTplOf=k=>{const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||(k==='free'?'כולל חצות':CD_MAIL_SUBJ),body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
