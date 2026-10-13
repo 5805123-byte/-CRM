@@ -586,6 +586,9 @@ def ensure_schema():
                         "AND note LIKE '%הוראת הקבע עברה / עודכנה%' AND ref IN (SELECT id FROM nd_keva WHERE active=0 OR COALESCE(off,'')<>'')")
             cm_debts_from_keva(con)          # הפתוחים — יורדים מהרשימה מיד, בלי לחכות לסנכרון
             con.execute("INSERT INTO app_kv(k,v) VALUES('hok_dead_1','1')")
+        if not con.execute("SELECT 1 FROM app_kv WHERE k='hok_repl_1'").fetchone():
+            nd_mark_replaced(con)            # הוראות שהוחלפו בהוראה חדשה — יורדות מהרשימה מיד
+            con.execute("INSERT INTO app_kv(k,v) VALUES('hok_repl_1','1')")
         if not con.execute("SELECT 1 FROM app_kv WHERE k='hok_dead_2'").fetchone():
             cm_debts_from_keva(con)          # כרטיס שפג בהוראה פעילה — חוזר לרשימה
             con.execute("INSERT INTO app_kv(k,v) VALUES('hok_dead_2','1')")
@@ -24783,8 +24786,10 @@ def nd_mark_replaced(con):
                     continue
             except ValueError:
                 continue
-            same = (norm(old['groupe']) and norm(old['groupe']) == norm(new['groupe'])) or \
-                   (not norm(old['groupe']) and not norm(new['groupe']) and _ivr_amt(old['amount']) == _ivr_amt(new['amount']))
+            # מאיר: "יגלניק דוד עשה הו"ק חדשה — למה הוא לא מחוק מהרשימה?" — ההוראה החדשה נפתחה בלי מטרה /
+            # במטרה אחרת בכתיב / בסכום מעוגל. מספיק: אותה מטרה, או אותו סכום, או שלאחת מהן אין מטרה
+            og, ng = norm(old['groupe']), norm(new['groupe'])
+            same = (og and og == ng) or _ivr_amt(old['amount']) == _ivr_amt(new['amount']) or not og or not ng
             if same:
                 con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?", ('הוחלפה בהוראה חדשה (****%s)' % (new['last4'] or ''), old['id']))
                 d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (old['id'],)).fetchone()
@@ -24793,6 +24798,9 @@ def nd_mark_replaced(con):
                                 (now_iso(), now_iso(), new['last4'] or '', d['id']))
                     cm_debt_log(con, old['member_id'], d['id'], '✅ סודר: הוראת קבע חדשה (****%s) במקום זו שחזרה (****%s)%s' %
                                 (new['last4'] or '', old['last4'] or '', (' · ' + old['groupe']) if old['groupe'] else ''))
+                # בקשת התשלום מהודעה על אותו סכום — כבר לא רלוונטית (לא תוצע יותר בשלוחת התשלום)
+                con.execute("UPDATE ym_msg SET req_off=? WHERE kind='m' AND ref_id=? AND COALESCE(paid_at,'')='' AND req_off IS NULL "
+                            "AND CAST(COALESCE(NULLIF(amount,''),'0') AS REAL)=?", (now_iso(), old['member_id'], _ivr_amt(old['amount'])))
                 n += 1
                 break
     return n
