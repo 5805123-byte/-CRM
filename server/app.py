@@ -13785,7 +13785,9 @@ def receipt_send(con, rid, email=''):
         return {'ok': False, 'error': 'mailer: %s' % e}
     if not mailer.configured():
         return {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render (GMAIL_USER / GMAIL_APP_PASSWORD)'}
-    res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)])
+    # קבלה של חבר קהילה — מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, גם בתרומות"
+    is_member = (r['note'] or '').startswith('member:')
+    res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)], profile='comm' if is_member else None)
     if res.get('ok'):
         con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=? WHERE id=?", (now_iso(), to, rid))
         con.commit()
@@ -16765,12 +16767,22 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mail/setup':
             try:
                 import bulkmail
-                ok, msg = bulkmail.check()
-                c = bulkmail.cfg()
+                # ?p=comm — הקהילה: בודקים את החיבור של neder1818 (כל מיילי הקהילה יוצאים ממנו)
+                comm = 'p=comm' in self.path
+                bulkmail.set_profile('comm' if comm else None)
+                try:
+                    ok, msg = bulkmail.check()
+                    c = bulkmail.cfg()
+                finally:
+                    bulkmail.set_profile(None)
+                if comm and ok and not bulkmail.comm_cfg()['own_login']:
+                    msg = ('חסר COMM_MAIL_PASS ב-Render — בלעדיו ג׳ימייל עלול לשלוח מהכתובת הראשית, '
+                           'אלא אם %s מוגדרת שם כ"שליחת דואר בשם"' % c['frm'])
                 con = db(); n = mail_sent_today(con)
                 off = con.execute("SELECT COUNT(*) c FROM mail_optout").fetchone()['c']
                 con.close()
-                return self._send(200, {'ok': ok, 'msg': msg, 'from': c['frm'],
+                return self._send(200, {'ok': ok, 'msg': msg, 'from': c['frm'], 'comm': comm,
+                                        'own_login': bulkmail.comm_cfg()['own_login'] if comm else True,
                                         'name': c['name'], 'cap': c['cap'], 'gap': c['gap'],
                                         'today': n, 'left': max(0, c['cap'] - n),
                                         'free_domain': bulkmail.free_domain(), 'optouts': off})
@@ -19655,8 +19667,8 @@ class H(BaseHTTPRequestHandler):
                              x.get('first', ''), x.get('last', ''), x.get('title', ''),
                              x.get('gender', 'm'), x.get('avreich', ''), x.get('kvittel', ''),
                              x.get('link', ''), x.get('amount', '')))
-            # "מייל נדרים ונדבות" (מחלון הקהילה / ימות המשיח) יוצא מ-neder1818@gmail.com
-            con.execute("UPDATE mail_batch SET sender=? WHERE id=?", ('neder' if (b.get('sender') == 'neder' and is_members) else 'main', bid))
+            # מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, הכל" — כל משלוח לחברי הקהילה יוצא מ-neder1818@gmail.com
+            con.execute("UPDATE mail_batch SET sender=? WHERE id=?", ('neder' if is_members else 'main', bid))
             if is_members and b.get('debt_ids'):
                 cm_debts_reminded(con, b.get('debt_ids'), 'email')
             con.commit(); con.close()

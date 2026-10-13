@@ -11,10 +11,19 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
-def send(to, subject, body, attachments=None, reply_to=None):
-    """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה."""
+def send(to, subject, body, attachments=None, reply_to=None, profile=None):
+    """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה.
+    profile='comm' — מיילי הקהילה, יוצאים מ-neder1818 (COMM_MAIL_PASS; בלעדיו — "מאת" בלבד)."""
     user = os.environ.get('GMAIL_USER')
     pw = os.environ.get('GMAIL_APP_PASSWORD')
+    frm = user
+    if profile == 'comm':
+        import bulkmail
+        cc = bulkmail.comm_cfg()
+        frm = cc['frm']
+        reply_to = reply_to or frm
+        if cc['own_login']:
+            user, pw = cc['user'], (os.environ.get('COMM_MAIL_PASS') or '').strip().replace(' ', '')
     if not (user and pw):
         return {'ok': False, 'error': 'not_configured'}
     to = (to or '').strip()
@@ -23,7 +32,7 @@ def send(to, subject, body, attachments=None, reply_to=None):
     msg = EmailMessage()
     mid = make_msgid(domain=(user.split('@')[-1] or 'gmail.com'))   # מזהה משלנו — כדי לתייק בלי כפילות
     msg['Message-ID'] = mid
-    msg['From'] = 'כולל חצות <%s>' % user
+    msg['From'] = 'כולל חצות <%s>' % frm
     msg['To'] = to
     msg['Subject'] = subject or 'כולל חצות'
     if reply_to:

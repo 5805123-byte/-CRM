@@ -11286,13 +11286,14 @@ function wireMlCfg(){
     await api('POST','/api/mail/config',{clear:1});
     MLCFG=null;MLSETUP=null;await mlLoadSetup();renderMailSend();};
 }
-function mlSetupHTML(){
-  const s=MLSETUP;
+function mlSetupHTML(s0){
+  const s=s0===undefined?MLSETUP:s0;
   if(!s) return '<div class="hintxt">בודק את החיבור לדואר…</div>';
   const warn=[];
   if(!s.ok) warn.push('❌ '+esc(s.msg||'הדואר לא מוגדר'));
   else{
     warn.push('✅ מחובר · שולח מ־<b>'+esc(s.from||'')+'</b>');
+    if(s.comm&&s.msg&&!s.own_login) warn.push('⚠️ '+esc(s.msg));
     warn.push('נשלחו היום '+(s.today||0)+' · נשארו '+(s.left||0)+' עד התקרה היומית ('+(s.cap||0)+')');
     if(s.optouts) warn.push('🚫 '+s.optouts+' כתובות ביקשו להסיר את עצמן — הן מדולגות אוטומטית');
   }
@@ -13257,9 +13258,9 @@ function renderOcc(){
 // שיהיה לך את המספר מקום שלו לפי המפה של בית כנסת."
 // הרשימה נפרדת מהתורמים (טבלת members), ושליחת המייל רצה באותו מנוע
 // בדיוק: הודעה נפרדת לכל אחד, בשמו, בלי עותק מוסתר.
-// מאיר: "בקהילה רק מה שקשור לימות המשיח יצא מ-neder1818, כל השאר — אפילו לקהילה — מחצות18.
-// תעשה לי שתי אפשרויות: מייל לקהילה, ומייל נדרים ונדבות"
-let cmSender='main';
+// מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, הכל, תוריד את האפשרות של חצות בקהילה מהכל"
+let MLSETUP_C=null;   // מצב החיבור של neder1818 — הכתובת היחידה שממנה יוצאים מיילי הקהילה
+async function mlLoadSetupC(){ try{ MLSETUP_C=await api('GET','/api/mail/setup?p=comm'); }catch(e){ MLSETUP_C={ok:false,msg:'אין חיבור לשרת'}; } }
 let MEMBERS=null, MQ=null, cmSub='list', cmFlt='', cmPick=new Set(), cmQ='', cmAdding=true, cmAddQ='', cmMergeId=null, cmEditId=null;
 const mName=m=>((m.last||'')+' '+(m.first||'')).trim();
 const mHasMail=m=>(m.email||'').includes('@');
@@ -13329,7 +13330,7 @@ function renderComm(){
   if(cmFlt==='seat')list.sort((a,b)=>(parseInt(a.seat)||9999)-(parseInt(b.seat)||9999)||byMName(a,b));
   view.innerHTML=`<div class="rbtitle">🕍 הקהילה — מתפללי בית הכנסת · ${all.length} חברים</div>
     <div class="addrow cmtools" style="margin:0 2px 8px;flex-wrap:wrap">
-      <button class="btn" id="cm_mail" style="flex:2" title="מחצות או מנדר 18 — בוחרים בפנים">✉️ משלוח מיילים</button>
+      <button class="btn" id="cm_mail" style="flex:2" title="יוצא מנדר 18 — neder1818@gmail.com">✉️ משלוח מיילים</button>
       <button class="btn" id="cm_ym" style="flex:2">📞 הודעה קולית / SMS — ימות המשיח</button>
       <button class="btn" id="cm_debts" style="flex:2">💰 חובות והתחייבויות</button>
       <button class="btn" id="cm_gifts" style="flex:2">💵 תרומות הקהילה</button>
@@ -13381,7 +13382,7 @@ function renderComm(){
   document.getElementById('cm_new').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}};
   if(CMVM===null){CMVM={rows:[],new:0};cmVmLoad(false).then(()=>{if(tab==='comm'&&cmSub==='list'&&CMVM.new)render();});}
   const vmb=document.getElementById('cm_vm');if(vmb)vmb.onclick=()=>{ymView='vm';cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
-  document.getElementById('cm_mail').onclick=()=>{cmSender='main';cmSub='send';render();window.scrollTo(0,0);};
+  document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
   document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;cdFund='';render();window.scrollTo(0,0);};
   document.getElementById('cm_ledger').onclick=()=>{cmSub='ledger';LG=null;render();window.scrollTo(0,0);};
@@ -13991,9 +13992,54 @@ async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toas
   cdRem={ids:deb.map(d=>d.id),ch:'email'};
   await cdMailTplLoad();const kind=await cdMailPick(deb.some(d=>d.kind==='hok'));if(!kind)return;
   cdMailPrefill(cdMailFill(cdMailTplOf(kind).body,cdForTxt(deb)),cdMailTplOf(kind).subj,true);
-  cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);
-  toast('✉️ המכתב מוכן עם הסכום והקישור — אפשר לערוך; למטה תצוגה מקדימה');
-  setTimeout(()=>{const p=document.getElementById('cm_prev');if(p)p.click();},300);}
+  cdMailDraft();}
+// מאיר: "אני לא רואה את הטיוטה של שליחת מייל לפני שאני שולח בדף חובות" — הטיוטה נפתחת כאן, בדף החובות:
+// נושא ותוכן לעריכה, איך זה ייראה אצל כל נמען (עם הסכום והקישור שלו), ושליחה — בלי לעבור מסך
+function cdMailDraft(){
+  if(MLSETUP_C===null)mlLoadSetupC();
+  const aud=cmAudience();if(!aud.length){toast('אין נמענים עם מייל');return;}
+  let idx=0,tm=null,seq=0;
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:680px;width:100%;max-height:92vh;overflow:auto">
+    <div class="cm">✉️ הטיוטה — עדיין לא נשלח כלום</div>
+    <div class="hintxt">📤 יוצא מ: <b>💰 נדר 18</b> <span dir="ltr">${esc((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')}</span> · אל: <b>${aud.length===1?esc(mName(aud[0])):aud.length+' נמענים'}</b> — כל אחד מקבל הודעה נפרדת, בשמו</div>
+    <label class="fld"><span>נושא</span><input id="cdd_s" value="${esc(mlSaved('cm_subj',''))}"></label>
+    <label class="fld"><span>תוכן המכתב</span><textarea id="cdd_b" rows="8">${esc(mlSaved('cm_body',''))}</textarea></label>
+    <div class="hintxt">{{שם}} · {{סכום}} · {{קישור}} מתמלאים לבד לכל נמען. שורה ריקה = פסקה חדשה.</div>
+    <div class="rbtitle" style="text-align:right;margin-top:10px">👁️ כך זה ייראה אצל <span id="cdd_who"></span>
+      ${aud.length>1?'<button class="btn sm ghost" id="cdd_prev">▶</button> <span id="cdd_n"></span> <button class="btn sm ghost" id="cdd_next">◀</button>':''}</div>
+    <div id="cdd_pv"><div class="hintxt">טוען…</div></div>
+    <div id="ml_prog"></div>
+    <div class="cbtns"><button class="btn ghost cno">סגור</button><button class="btn ghost" id="cdd_full">✎ למסך המיילים המלא</button><button class="btn cyes" id="cdd_go">📤 שלח ${aud.length===1?'ל'+esc(mName(aud[0])):'ל־'+aud.length+' נמענים'}</button></div></div>`;
+  document.body.appendChild(o);
+  const q=id=>o.querySelector('#'+id), si=q('cdd_s'), bi=q('cdd_b');
+  const pv=async()=>{const m=aud[idx],my=++seq;q('cdd_who').textContent=mName(m)+' · '+(mEmails(m)[0]||'');
+    if(q('cdd_n'))q('cdd_n').textContent=(idx+1)+'/'+aud.length;
+    const r=await api('POST','/api/mail/preview',{members:[m.id],subject:si.value,body:bi.value,sig:'',base:location.origin,sender:'neder',...cmLinksPayload()});
+    if(my!==seq)return;
+    q('cdd_pv').innerHTML=r&&r.first?`<div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div><div class="mlhtml">${r.html||''}</div>`
+      :`<div class="hintxt bad">${esc((r&&r.skipped&&r.skipped[0]&&r.skipped[0].why)||'לא ניתן להציג')}</div>`;};
+  const later=()=>{clearTimeout(tm);tm=setTimeout(pv,600);};
+  si.oninput=()=>{mlSave('cm_subj',si.value);later();};
+  bi.oninput=()=>{mlSave('cm_body',bi.value);later();};
+  if(q('cdd_prev')){q('cdd_prev').onclick=()=>{idx=(idx+aud.length-1)%aud.length;pv();};q('cdd_next').onclick=()=>{idx=(idx+1)%aud.length;pv();};}
+  o.querySelector('.cno').onclick=()=>{clearTimeout(tm);o.remove();};
+  q('cdd_full').onclick=()=>{o.remove();cmAdding=false;cmAddQ='';cmSub='send';tab='comm';render();window.scrollTo(0,0);};
+  q('cdd_go').onclick=async()=>{
+    if(!si.value.trim()){toast('חסר נושא');return;}
+    if(!bi.value.trim()){toast('חסר תוכן');return;}
+    if(MLSETUP_C===null)await mlLoadSetupC();
+    if(!(MLSETUP_C&&MLSETUP_C.ok)){toast((MLSETUP_C&&MLSETUP_C.msg)||'הדואר של נדר 18 לא מחובר');return;}
+    if(!await uiConfirm('לשלוח '+(aud.length===1?'ל־'+mName(aud[0])+' בלבד':'ל־'+aud.length+' נמענים')+'?\n\nיוצא מ: '+(MLSETUP_C.from||'neder1818@gmail.com')+' (נדר 18)'))return;
+    const b={members:aud.map(m=>m.id),subject:si.value.trim(),body:bi.value,sig:'',track:mlSaved('cm_track','0')==='1',base:location.origin,sender:'neder',...cmLinksPayload()};
+    if(cdRem&&cdRem.ch==='email')b.debt_ids=cdRem.ids;
+    const r=await api('POST','/api/mail/send',b);
+    if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
+    const go=q('cdd_go');go.disabled=true;go.textContent='✓ נשלח';
+    if(b.debt_ids){cdRem=null;cdData=null;if(tab==='comm'&&cmSub==='debts')renderCommDebts();}
+    toast('📤 יוצא ל־'+r.count+(r.skipped?(' · '+r.skipped+' דולגו'):''));
+    mlWatch();};
+  pv();}
 // מאיר: "למה הם כתובים פעמיים? שהכל יהיה באותו כרטיס" — כרטיס אחד לכל חבר: כל החובות, הו"ק שחזרו
 // ובקשות התשלום שלו, הסכום הפתוח, איך מזכירים לו ומתי הוזכר. הסימון והערוץ — פעם אחת לכל החבר.
 function cdItemHTML(d){if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['חוב',''],o=cdOpen(d);
@@ -14230,8 +14276,8 @@ function cdWire(){const g=id=>document.getElementById(id);
       cdMailPick(sel.length&&sel.every(d=>d.kind==='hok')).then(kind=>{if(!kind)return;const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,''),t.subj,true);
       by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
       if(!cmPick.size){toast('לאף אחד מהנבחרים אין מייל');return;}
-      cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);
-      toast(cmPick.size+' נמענים במייל, עם הסכום של כל אחד ב-{{סכום}} ובקישור'+(nomail?(' · '+nomail+' בלי מייל'):''));});return;}
+      if(nomail)toast(nomail+' בלי כתובת מייל — לא יקבלו');
+      cdMailDraft();});return;}
     ymRecs=new Map();let noph=0,hok=0;
     by.forEach((x,mid)=>{if(typeof mid==='string'){const d0=x.ds[0],ph=ymPhone(d0.phone||'');if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}
         ymRecs.set(ymKey('x',ph),{k:'x',id:0,name:d0.name||'',phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):''});return;}
@@ -14754,14 +14800,13 @@ function renderCommSend(){
       <span class="mlmeta"><b class="mltag">קהילה</b></span>
       <span class="mlad">${em.length?esc(em.join(' · ')):'<u class="mlno">אין כתובת מייל</u>'}</span>
     </div>`;};
-  const vars=MLVARS.filter(([v])=>!/קוויטל|אברך/.test(v)).concat(cmSender==='neder'?[['{{קישור}}','כפתור תשלום אישי בנדרים פלוס'],['{{סכום}}','הסכום']]:[]);
+  const vars=MLVARS.filter(([v])=>!/קוויטל|אברך/.test(v)).concat([['{{קישור}}','כפתור תשלום אישי בנדרים פלוס'],['{{סכום}}','הסכום']]);
   chips.innerHTML='';
   view.innerHTML=`<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="cm_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">✉️ משלוח מיילים</div>
-    <div class="cmsender ${cmSender}"><span>📤 יוצא מ:</span>
-      <span class="bqseg cmsseg"><button class="${cmSender!=='neder'?'on':''}" data-cmsnd="main" title="הכתובת הראשית של הכולל">✉️ מחצות</button><button class="${cmSender==='neder'?'on':''}" data-cmsnd="neder" title="neder1818@gmail.com — נדרים ונדבות, עם כפתור תשלום אישי">💰 מנדר 18</button></span>
-      <small dir="ltr">${cmSender==='neder'?'neder1818@gmail.com':''}</small></div>
-    ${mlSetupHTML()}
+    <div class="cmsender neder"><span>📤 יוצא מ:</span> <b>💰 נדר 18</b>
+      <small dir="ltr">${esc((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')}</small></div>
+    ${mlSetupHTML(MLSETUP_C)}
     <div class="hintxt mlnobcc">כל חבר מקבל <b>הודעה נפרדת משלו</b>, בשמו — אין כאן עותק מוסתר, ואף אחד אינו רואה את הכתובות של האחרים. בדיוק כמו אצל התורמים.</div>
     <div class="sec">
       <div class="rbtitle" style="text-align:right">1️⃣ למי שולחים</div>
@@ -14792,7 +14837,7 @@ function renderCommSend(){
       <label class="fld"><span>נושא</span><input id="cm_subj" value="${esc(mlSaved('cm_subj',''))}" placeholder="למשל: זמני התפילות לחג"></label>
       <label class="fld"><span>תוכן המכתב</span><textarea id="cm_body" rows="10" placeholder="לכבוד {{תואר}} {{שם}} {{הי&quot;ו}},&#10;&#10;...">${esc(mlSaved('cm_body',''))}</textarea></label>
       <div class="mlvars">${vars.map(([v,h])=>`<button class="mlvar" data-v="${esc(v)}" title="${esc(h)}">${esc(v)}</button>`).join('')}</div>
-      ${cmSender==='neder'?cmLinkHTML():''}
+      ${cmLinkHTML()}
       <div class="hintxt">לחיצה על סימון מכניסה אותו למכתב: <b>{{תואר}} {{שם}} {{הי"ו}}</b> ← <i>ה"ה</i> <b>נחמן בינדר</b> <i>הי"ו</i>.
         השם נמשך לבד מהכרטיס של כל חבר. שורה ריקה = פסקה חדשה. המערכת בונה את העיצוב בשליחה — אין מה לעצב ביד.</div>
       <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="cm_track" ${mlSaved('cm_track','0')==='1'?'checked':''}>
@@ -14836,8 +14881,8 @@ function renderCommSend(){
     e.value=e.value.slice(0,s)+v+e.value.slice(t2); e.focus(); e.setSelectionRange(s+v.length,s+v.length); mlSave(e.id,e.value);});
   const trk=document.getElementById('cm_track'); if(trk)trk.onchange=()=>mlSave('cm_track',trk.checked?'1':'0');
   const gv=()=>({members:cmAudience().map(m=>m.id),subject:document.getElementById('cm_subj').value.trim(),
-    body:document.getElementById('cm_body').value,sig:'',track:document.getElementById('cm_track').checked,base:location.origin,sender:cmSender,
-    ...(cmSender==='neder'?cmLinksPayload():{})});
+    body:document.getElementById('cm_body').value,sig:'',track:document.getElementById('cm_track').checked,base:location.origin,sender:'neder',
+    ...cmLinksPayload()});
   document.getElementById('cm_prev').onclick=async()=>{
     const b=gv(); const o=document.getElementById('ml_out');
     if(!b.members.length){toast('אין נמענים');return;}
@@ -14858,19 +14903,18 @@ function renderCommSend(){
     if(!b.subject){toast('חסר נושא');return;}
     if(!b.body.trim()){toast('חסר תוכן');return;}
     if(!b.members.length){toast('אין נמענים');return;}
-    if(!(MLSETUP&&MLSETUP.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
+    if(!(MLSETUP_C&&MLSETUP_C.ok)){toast('הדואר לא מוגדר — ראה למעלה');return;}
     const who=b.members.length===1?('ל־'+mName(cmAudience()[0])+' בלבד'):('ל־'+b.members.length+' חברי הקהילה שסימנת');
-    if(!await uiConfirm('לשלוח '+who+'?\n\nיוצא מ: '+(cmSender==='neder'?'neder1818@gmail.com (נדרים ונדבות)':'הכתובת הראשית של הכולל')+'\nכל אחד מקבל הודעה נפרדת משלו, בשמו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
+    if(!await uiConfirm('לשלוח '+who+'?\n\nיוצא מ: '+((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')+' (נדר 18)'+'\nכל אחד מקבל הודעה נפרדת משלו, בשמו. השליחה איטית בכוונה — כמה שניות בין הודעה להודעה.'))return;
     if(cdRem&&cdRem.ch==='email')b.debt_ids=cdRem.ids;
     const r=await api('POST','/api/mail/send',b);
     if(!r||!r.ok){toast(r&&r.detail||'לא נשלח');return;}
     if(b.debt_ids){cdRem=null;cdData=null;}
     mlWatch();
   };
-  view.querySelectorAll('[data-cmsnd]').forEach(b=>b.onclick=()=>{if(cmSender===b.dataset.cmsnd)return;cmSender=b.dataset.cmsnd;renderCommSend();});
   cmWireLink();
   cmHistory();
-  if(MLSETUP===null) mlLoadSetup().then(()=>{ if(tab==='comm'&&cmSub==='send') renderCommSend(); });
+  if(MLSETUP_C===null) mlLoadSetupC().then(()=>{ if(tab==='comm'&&cmSub==='send') renderCommSend(); });
   mlWatch(true);
 }
 async function cmHistory(){
@@ -15235,7 +15279,7 @@ function ymViewSend(){
   ymWireHead();
   const g=id=>document.getElementById(id);
   view.querySelectorAll('.ymc').forEach(b=>b.onclick=()=>{
-    if(b.dataset.ch==='mail'){cmPick=new Set(sel.filter(r=>r.k==='m').map(r=>r.id));cmSender='neder';cmSub='send';render();window.scrollTo(0,0);return;}
+    if(b.dataset.ch==='mail'){cmPick=new Set(sel.filter(r=>r.k==='m').map(r=>r.id));cmSub='send';render();window.scrollTo(0,0);return;}
     const t=YM_TPL.find(x=>x[0]===ymTplKey), wasTpl=t&&ymText===ymTpl(t,ymCh);
     ymCh=b.dataset.ch;try{localStorage.setItem('kc_ymch',ymCh);}catch(e){}
     if(t&&(wasTpl||!ymText.trim()))ymText=ymTpl(t,ymCh);
