@@ -13943,11 +13943,24 @@ async function cdSendNow(g,ch){
     recipients:[m.id?{k:'m',id:m.id,amount:String(amt),link,for:fr}:{k:'x',name:nm,phone:ph,amount:String(amt),link,for:fr}]});
   if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));return;}
   toast(ch==='sms'?'💬 ה-SMS נשלח ✓':'📞 השיחה יוצאת ✓');cdData=null;renderCommDebts();}
-function cdMailNow(g){const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m||!mHasMail(m)){toast('אין לו מייל');return;}
+// מאיר: "איפה אני רואה את האימייל עם הנוסח והקישור לפני שליחה? אני רוצה לערוך אותו" — ✉️ פותח את המכתב
+// עם נוסח תזכורת מוכן (הסכום, עבור מה, כפתור תשלום אישי), לעריכה, ומציג מיד תצוגה מקדימה. בלי מייל — מבקש אותו
+const CD_MAIL_SUBJ='תזכורת בכבוד — כולל חצות';
+const cdMailBody=(fr,hok)=>'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\n'+(hok?'רצינו לעדכן בכבוד שהוראת הקבע שלך בסך {{סכום}} ₪'+(fr?' עבור '+fr:'')+' לא עברה החודש.':
+  'רצינו להזכיר בכבוד את ההתחייבות שלך בסך {{סכום}} ₪'+(fr?' עבור '+fr:'')+'.')+'\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות';
+async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
+  if(!mHasMail(m)){const v=await uiPrompt('אין ל'+mName(m)+' כתובת מייל.\nכתוב את המייל שלו — הוא יישמר בכרטיס:','');if(!v)return;
+    const em=String(v).trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('כתובת מייל לא תקינה');return;}
+    const r=await api('PUT','/api/members/'+m.id,{email:em});if(!r||!r.ok){toast('המייל לא נשמר');return;}m.email=em;toast('✓ המייל נשמר בכרטיס');}
   const deb=g.items.filter(d=>!d._req&&d.status==='open');
   cmPick=new Set([m.id]);cmAmts={};cmAmts[m.id]=String(Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100);
   cdRem={ids:deb.map(d=>d.id),ch:'email'};
-  cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);toast('המייל מוכן עם הסכום שלו — בדוק ולחץ שלח');}
+  // הנוסח המוכן נכנס כשהתיבה ריקה או שיש בה נוסח תזכורת קודם (לא דורס מכתב אחר שכתבת)
+  const body=cdMailBody(cdForTxt(deb),deb.some(d=>d.kind==='hok')), cur=mlSaved('cm_body',''), auto=mlSaved('cm_body_auto','');
+  if(!cur.trim()||cur===auto){mlSave('cm_body',body);mlSave('cm_body_auto',body);if(!mlSaved('cm_subj','').trim()||mlSaved('cm_subj','')===CD_MAIL_SUBJ)mlSave('cm_subj',CD_MAIL_SUBJ);}
+  cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);
+  toast('✉️ המכתב מוכן עם הסכום והקישור — אפשר לערוך; למטה תצוגה מקדימה');
+  setTimeout(()=>{const p=document.getElementById('cm_prev');if(p)p.click();},300);}
 // מאיר: "למה הם כתובים פעמיים? שהכל יהיה באותו כרטיס" — כרטיס אחד לכל חבר: כל החובות, הו"ק שחזרו
 // ובקשות התשלום שלו, הסכום הפתוח, איך מזכירים לו ומתי הוזכר. הסימון והערוץ — פעם אחת לכל החבר.
 function cdItemHTML(d){if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['חוב',''],o=cdOpen(d);
