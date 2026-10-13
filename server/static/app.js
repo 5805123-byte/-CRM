@@ -1794,7 +1794,9 @@ async function mkLogOpen(){
   const chOf=x=>x.kind==='mail'?'mail':x.ch==='sms'?'sms':'voice';
   const n={'':all.length,sms:0,voice:0,mail:0};all.forEach(x=>n[chOf(x)]++);
   const rows=all.filter(x=>!mkLogF||chOf(x)===mkLogF);
-  const byId={};((MK&&MK.clients)||[]).forEach(c=>byId[c.id]=c);
+  const byId={},byPh={},pn=v=>mkDigits(v).replace(/^972/,'0');
+  ((MK&&MK.clients)||[]).forEach(c=>{byId[c.id]=c;const k=pn(c.phone);if(k.length>=9&&!byPh[k])byPh[k]=c;});
+  all.forEach(x=>{if(!byId[x.cid]){const c=byPh[pn(x.y_phone)];if(c)x.cid=c.id;}});   // הודעות מלפני היומן — לפי הטלפון
   const d=x=>esc(String(x.at||'').slice(8,10)+'/'+String(x.at||'').slice(5,7)+' '+String(x.at||'').slice(11,16));
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#3B357A">📜</div><div><h2>הודעות שנשלחו מהמקווה</h2><div class="mksub">SMS, שיחות ומיילים — עם התוצאה של כל אחד · לחיצה על שם פותחת את הכרטיס</div></div></div>
     <div class="mktpl" style="margin:10px 0">${[['','הכל'],['sms','💬 SMS'],['voice','📞 שיחות'],['mail','✉️ מיילים']].map(([k,l])=>`<button class="mkchip${mkLogF===k?' on':''}" data-f="${k}">${l} <i>${n[k]}</i></button>`).join('')}

@@ -14577,6 +14577,31 @@ def mail_sent_today(con):
         return 0
 
 
+MK_YCOLS = ("y.name nm, y.phone y_phone, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, "
+            "y.pressed y_pressed, y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, "
+            "j.channel ch, j.send_at, j.status j_st, (SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans")
+
+
+def mk_old_msgs(con, phones=None):
+    """הודעות מלשונית המקווה שנשלחו לפני שהיה יומן המקווה (mk_log) — מאיר: "שלחתי הרבה יותר משתי הודעות
+    מאז שהתחלנו… תעשה מההתחלה שיראו". כל הודעה של עבודת "מקווה" בימות שאין לה שורה ביומן.
+    phones — רק של הלקוח הזה (לפי הטלפון)."""
+    w, a = ["(j.label='מקווה' OR y.kind='k' OR y.req_off='mikveh')",
+            "y.id NOT IN (SELECT msg_id FROM mk_log WHERE msg_id IS NOT NULL)", "COALESCE(y.status,'')<>'cancelled'"], []
+    if phones is not None:
+        if not phones:
+            return []
+        w.append("y.phone IN (%s)" % ','.join('?' * len(phones))); a += phones
+    out = []
+    for r in con.execute("SELECT y.id msg_id, COALESCE(y.mk_cid,'') cid, COALESCE(j.created, y.at, '') at, 'msg' kind, " + MK_YCOLS +
+                         " FROM ym_msg y JOIN ym_job j ON j.id=y.job WHERE " + " AND ".join(w) + " ORDER BY y.id DESC LIMIT 600", a):
+        d = dict(r)
+        d['summary'] = '💬 SMS' if d['ch'] == 'sms' else '📞 הודעה קולית'
+        d['id'] = 'y%d' % d['msg_id']
+        out.append(d)
+    return out
+
+
 def mk_mosad():
     """מוסד המקווה בנדרים פלוס (התשלומים של המקווה עוברים שם). ב-Render אפשר לשנות: MIKVEH_NEDARIM_MOSAD."""
     return (os.environ.get('MIKVEH_NEDARIM_MOSAD') or '7000571').strip()
@@ -17550,10 +17575,12 @@ class H(BaseHTTPRequestHandler):
                     "j.channel ch, j.send_at, j.status j_st, (SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
                     "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email "
                     "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job LEFT JOIN mk_mail mm ON mm.id=l.mail_id "
-                    "WHERE l.kind IN ('msg','mail') ORDER BY l.at DESC, l.id DESC LIMIT 400")]
+                    "WHERE l.kind IN ('msg','mail') ORDER BY l.at DESC, l.id DESC LIMIT 600")]
+                rows += mk_old_msgs(con)
+                rows.sort(key=lambda r: str(r.get('at') or ''), reverse=True)
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'rows': rows})
+            return self._send(200, {'ok': True, 'rows': rows[:1000]})
         m = re.match(r'/api/mikveh/log/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
         if m:
             # 📜 מה שעשינו מול לקוח המקווה: העברות קבוצה והודעות — עם תוצאת השליחה (ענה, כמה שמע, הקיש)
@@ -17568,6 +17595,16 @@ class H(BaseHTTPRequestHandler):
                                      "LEFT JOIN mk_mail mm ON mm.id=l.mail_id WHERE l.cid=? ORDER BY l.at DESC, l.id DESC LIMIT 100",
                                      (m.group(1),)):
                     rows.append(dict(r))
+                # הודעות מלפני היומן — לפי המזהה (אם נשמר בהודעה) או לפי הטלפון של הלקוח במקווה
+                try:
+                    import mikveh as _mk
+                    cc = next((x for x in _mk.clients() if str(x.get('id')) == m.group(1)), None)
+                    phs = _phones_of(cc.get('phone') or '') if cc else []
+                except Exception:
+                    phs = []
+                old = [x for x in mk_old_msgs(con, phs) if x['cid'] in ('', m.group(1))] if phs else []
+                old += [x for x in mk_old_msgs(con) if x['cid'] == m.group(1) and x not in old]
+                rows = sorted(rows + old, key=lambda r: str(r.get('at') or ''), reverse=True)[:150]
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
