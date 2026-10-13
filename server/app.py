@@ -19449,8 +19449,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/mikveh/mail':
             # ✉️ מייל ללקוח / ללקוחות המקווה. הטקסט כבר ממולא במסך לכל לקוח; יוצא אחד־אחד, כל אחד בנפרד
             import bulkmail
-            sender = 'neder' if b.get('sender') == 'neder' else 'main'
-            bulkmail.set_profile('comm' if sender == 'neder' else None)
+            sender = 'neder'      # מאיר: "רק מנדר 18" — מיילי המקווה יוצאים תמיד מ-neder1818
+            bulkmail.set_profile('comm')
             try:
                 okc = bulkmail.configured()
             finally:

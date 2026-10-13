@@ -1931,7 +1931,7 @@ async function mkNotify(target,tplId,ctx){
   const tpls=await mkTplLoad();
   let cur=tpls.find(t=>t.id===tplId)||tpls.find(t=>t.id==='free')||tpls[0]||{id:'',name:'',text:'שלום {שם}, '};
   let later=false, pi=0, ch=(()=>{try{return localStorage.getItem('mk_ch')||'sms';}catch(e){return 'sms';}})();
-  let msnd=(()=>{try{return localStorage.getItem('mk_msnd')||'main';}catch(e){return 'main';}})();
+  const msnd='neder';   // מאיר: "רק מנדר 18" — כל המיילים של המקווה יוצאים מ-neder1818
   if(!['sms','voice','mail'].includes(ch))ch='sms';
   if(!multi&&!mkChOk(one,ch))ch=mkMobile(one)?'sms':one.phone?'voice':'mail';
   const G={}; (MK&&MK.groups||[]).forEach(g=>G[g.id]=g);
@@ -1948,7 +1948,7 @@ async function mkNotify(target,tplId,ctx){
       <div class="mklbl"><span>📂 עבור מה?</span><span><button class="mkx" id="mknew" title="קטגוריה חדשה עם הנוסח שכאן">➕ קטגוריה חדשה</button><button class="mkx" id="mksave" title="לשמור את הנוסח שכאן בקטגוריה שנבחרה">💾 לשמור</button><button class="mkx" id="mkdel" title="למחוק את הקטגוריה שנבחרה">🗑️</button></span></div>
       <div class="mktpl" id="mkt"></div>
       <div id="mkmail" class="hidden"><div class="mklbl"><span>נושא המייל</span></div><input id="mksj" style="width:100%;box-sizing:border-box">
-        <div class="mklbl"><span>יוצא מ</span></div><div class="mkseg" id="mkms"><button data-m="main">✉️ הכתובת הראשית</button><button data-m="neder">💰 נדר 18</button></div></div>
+        <div class="mksub" style="margin-top:6px">📤 יוצא מ: <b>💰 נדר 18</b> <span dir="ltr">neder1818@gmail.com</span></div></div>
       <div class="mklbl"><span id="mktl">הטקסט</span><span style="font-weight:600">{שם} וכו׳ מתמלאים לבד לכל לקוח</span></div>
       <textarea id="mkta" rows="4"></textarea>
       <div class="mkph">${MK_PH.map(([k,l])=>`<button data-ph="${esc(k)}">+ ${esc(l)}</button>`).join('')}</div>
@@ -1981,13 +1981,12 @@ async function mkNotify(target,tplId,ctx){
       :(L.length?'':`<span class="mktag bad">אין ל${esc(mkName(one))} ${ch==='mail'?'כתובת מייל במקווה':ch==='sms'?'נייד (SMS רק לנייד)':'טלפון'}</span>`);
     o.querySelector('#mkmail').classList.toggle('hidden',!isM);o.querySelector('#mklw').classList.toggle('hidden',isM);
     o.querySelector('#mktl').textContent=isM?'תוכן המייל':'הטקסט';ta.rows=isM?7:4;
-    o.querySelectorAll('#mkms button').forEach(b=>b.classList.toggle('on',b.dataset.m===msnd));
     const ps=o.querySelector('#mkpsj');ps.classList.toggle('hidden',!isM);ps.textContent=isM?'נושא: '+mkFill(sj.value,c,ctx):'';
     pv.textContent=txt||'—';pv.classList.toggle('v',ch!=='sms');
     o.querySelector('#mkpvw').textContent=multi&&L.length?'— אצל '+mkName(c):'';
     if(o.querySelector('#mkpn'))o.querySelector('#mkpn').textContent=L.length?((((pi%L.length)+L.length)%L.length)+1)+' / '+L.length:'';
     o.querySelector('#mklen').textContent=ch==='sms'&&txt?txt.length+' תווים'+(txt.length>70?' · '+Math.ceil(txt.length/67)+' הודעות':''):'';
-    o.querySelector('#mkmeta').textContent=ch==='sms'?'💬 SMS':ch==='voice'?'📞 תוקרא בשיחה':'✉️ מייל · יוצא מ'+(msnd==='neder'?'נדר 18':'הכתובת הראשית');
+    o.querySelector('#mkmeta').textContent=ch==='sms'?'💬 SMS':ch==='voice'?'📞 תוקרא בשיחה':'✉️ מייל · יוצא מנדר 18';
     o.querySelectorAll('.mkchan button').forEach(b=>b.classList.toggle('on',b.dataset.c===ch));
     o.querySelector('#mklt').classList.toggle('hidden',!later);o.querySelector('#mklater').classList.toggle('on',later);
     const n=multi?' ל־'+L.length:'';
@@ -2013,7 +2012,6 @@ async function mkNotify(target,tplId,ctx){
     const was=mkTplTxt(cur,ch), keep=ta.value.trim()&&ta.value!==was;
     ch=b.dataset.c;try{localStorage.setItem('mk_ch',ch);}catch(e){}
     if(!keep)ta.value=mkTplTxt(cur,ch); upd();});
-  o.querySelectorAll('#mkms button').forEach(b=>b.onclick=()=>{msnd=b.dataset.m;try{localStorage.setItem('mk_msnd',msnd);}catch(e){}upd();});
   o.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{const el=document.activeElement===sj?sj:ta,t='{'+b.dataset.ph+'}',a=el.selectionStart??el.value.length,e=el.selectionEnd??a;
     el.value=el.value.slice(0,a)+t+el.value.slice(e);el.focus();el.setSelectionRange(a+t.length,a+t.length);upd();});
   // שמירה בקטגוריה: מייל — נושא ותוכן המייל; SMS / שיחה — טקסט ההודעה. השאר נשאר כמו שהוא
@@ -2047,7 +2045,7 @@ async function mkNotify(target,tplId,ctx){
     if(later&&!dt.value)return toast('לבחור מתי לשלוח');
     const cat=MKTPL.some(t=>t.id===cur.id)?cur.name:'';
     if(ch==='mail'){
-      if(multi&&!await uiConfirm('לשלוח מייל ל־'+L.length+' לקוחות?\nכל אחד מקבל מייל נפרד, בשמו. יוצא מ'+(msnd==='neder'?'נדר 18':'הכתובת הראשית')+'.','✉️ לשלוח','ביטול'))return;
+      if(multi&&!await uiConfirm('לשלוח מייל ל־'+L.length+' לקוחות?\nכל אחד מקבל מייל נפרד, בשמו. יוצא מנדר 18.','✉️ לשלוח','ביטול'))return;
       close();
       const r=await api('POST','/api/mikveh/mail',{sender:msnd,cat,base:location.origin,items:L.map(c=>({cid:c.id,name:mkName(c),email:c.email,subject:mkFill(sj.value,c,ctx).trim(),body:mkFill(ta.value,c,ctx).trim()}))});
       if(!r||!r.ok)return uiAlert('המייל לא נשלח:\n'+((r&&r.error)||'שגיאה'));
