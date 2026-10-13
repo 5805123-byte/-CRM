@@ -19139,8 +19139,11 @@ class H(BaseHTTPRequestHandler):
                     dflt = lo
                 if dflt and hi and dflt > hi:
                     dflt = hi
+                # נוסח משלה לקטגוריה — הקראה בשיחה, SMS ומייל (ריק = הנוסח הרגיל של התחייבות)
                 out.append({'name': nm, 'amount': dflt, 'min': lo, 'max': hi,
-                            'kind': 'debt' if c.get('kind') == 'debt' else 'pledge'})
+                            'kind': 'debt' if c.get('kind') == 'debt' else 'pledge',
+                            'voice': str(c.get('voice') or '').strip()[:2000], 'sms': str(c.get('sms') or '').strip()[:1000],
+                            'subj': str(c.get('subj') or '').strip()[:200], 'mail': str(c.get('mail') or '')[:6000]})
             con = db()
             kv_set(con, 'cm_debt_cats', json.dumps(out, ensure_ascii=False)); con.commit(); con.close()
             return self._send(200, {'ok': True, 'cats': out})

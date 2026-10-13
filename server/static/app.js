@@ -13898,6 +13898,7 @@ async function renderCommDebts(){
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a></div>
     ${cdCatsHTML()}
     <div class="cdquick"><input id="cdq_m" list="cd_mdl" placeholder="${cdFund?'➕ שם — חבר קהילה או כל שם…':'➕ חבר קהילה…'}" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}">
+      ${(CD_CATS||[]).length?`<select id="cdq_c" title="באיזו קטגוריה"><option value="">🏷 קטגוריה…</option>${CD_CATS.map((c,i)=>`<option value="${i}"${cdQC&&cdQC.name===c.name?' selected':''}>${esc(c.name)}</option>`).join('')}</select>`:''}
       <input id="cdq_a" inputmode="decimal" placeholder="₪ סכום"${cdQC&&cdQC.amount?` value="${cdQC.amount}"`:''}><input id="cdq_t" placeholder="עבור מה (עליית שישי, מקום תשפ״ז…)"${cdQC?` value="${esc(cdQC.name)}"`:''}>
       ${cdQC&&cdQC.min&&cdQC.max&&cdQC.max>cdQC.min?`<label class="cdqr"><small>${cdMoney(cdQC.min)}</small><input type="range" id="cdq_r" min="${cdQC.min}" max="${cdQC.max}" step="${(cdQC.max-cdQC.min)%10?1:10}" value="${cdQC.amount||cdQC.min}"><small>${cdMoney(cdQC.max)}</small></label>`:''}
       <select id="cdq_k"><option value="pledge">התחייבות</option><option value="debt"${cdQC&&cdQC.kind==='debt'?' selected':''}>חוב</option>${cdFund?'<option value="paid">✅ כבר נתן</option>':''}</select><button class="btn sm" id="cdq_go">הוסף</button></div>
@@ -14069,7 +14070,7 @@ async function cdSendNow(g,ch){
   if(!ymStatus)await ymLoadStatus();
   const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
   const nat=deb.some(d=>d.fund==='natan');
-  const key=nat?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge'), t=YM_TPL.find(x=>x[0]===key);
+  await cdCatsLoad();const key=nat?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge'), t=cdYmTplFor(deb,key);
   const text=ymTpl(t,ch), nm=((m.first||'')+' '+(m.last||'')).trim(), fr=cdForTxt(deb);
   if(nat&&!(cdData&&cdData.natan_mosad)&&ch==='sms'&&/\{קישור\}/.test(text)){await uiAlert('קודם צריך לבחור למעלה בלשונית נתן תתן את החשבון שלה בנדרים פלוס — כדי שהתשלום ייכנס לשם.');return;}
   const rec={k:m.id?'m':'x',id:m.id,name:nm,phone:ph,amt:String(amt),mosad:nat?cdData.natan_mosad:''};
@@ -14093,45 +14094,73 @@ const CD_MAIL_DEF={pledge:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצ
 // 🏷 קטגוריות קבועות — לחיצה ממלאת "עבור מה", סכום וסוג; בקטגוריה עם טווח (הקמת הוראת קבע דמי חבר
 // 100–150 ₪) מזיזים את הסכום בפס, והוא לא יוצא מהטווח. ⚙️ — הגבאי מוסיף / משנה / מוחק לבד
 let CD_CATS=null, cdQC=null;
+// הקטגוריה של החובות — כשכולם על אותה קטגוריה ("עבור מה" = שם הקטגוריה), הנוסח שלה גובר
+const cdCatOf=deb=>{if(!CD_CATS||!(deb||[]).length)return null;const t=String(deb[0].title||'').trim();
+  return deb.every(d=>String(d.title||'').trim()===t)&&CD_CATS.find(c=>c.name===t)||null;};
+const cdCatByKey=k=>String(k||'').startsWith('cat:')&&(CD_CATS||[]).find(c=>c.name===k.slice(4))||null;
+// הנוסח לשיחה / SMS: של הקטגוריה אם נכתב לה, אחרת המובנה (התחייבות / הו"ק / נתן תתן)
+function cdYmTplFor(deb,base){const c=base==='pledge'&&cdCatOf(deb);return c&&(c.voice||c.sms)?ymTplFind('cat:'+c.name):YM_TPL.find(x=>x[0]===base);}
+function cdMailKindFor(deb,base){const c=base==='pledge'&&cdCatOf(deb);return c&&c.mail?'cat:'+c.name:base;}
 async function cdCatsLoad(){if(CD_CATS)return CD_CATS;const r=await api('GET','/api/cm/debtcats');CD_CATS=(r&&r.cats)||[];return CD_CATS;}
 function cdCatsHTML(){
   if(!CD_CATS){cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='debts')renderCommDebts();});return '';}
   const rng=c=>c.min&&c.max&&c.max>c.min?cdMoney(c.min)+'–'+cdMoney(c.max):(c.amount?cdMoney(c.amount):'');
   return `<div class="cdcats"><span class="hintxt">🏷 קטגוריה:</span>${CD_CATS.map((c,i)=>`<button class="fbchip${cdQC&&cdQC.name===c.name?' on':''}" data-cdcat="${i}">${esc(c.name)}${rng(c)?` <small>${rng(c)}</small>`:''}</button>`).join('')}
+    ${cdQC?`<button class="btn sm ghost" id="cd_cattxt" title="מה יוקרא בשיחה / ייכתב ב-SMS ובמייל לחובות של הקטגוריה הזו">📝 נוסח הקראה / מייל — ${esc(cdQC.name)}</button>`:''}
     <button class="btn sm" id="cd_catnew" title="קטגוריה קבועה חדשה — אם כבר כתבת 'עבור מה' וסכום, הם ייכנסו אליה">➕ קטגוריה חדשה</button>
     <button class="btn sm ghost" id="cd_cats" title="הוספה, שינוי ומחיקה של קטגוריות קבועות">⚙️ ניהול קטגוריות</button></div>`;}
 function cdCatsWire(g){
   document.querySelectorAll('[data-cdcat]').forEach(b=>b.onclick=async()=>{const c=CD_CATS[+b.dataset.cdcat];
     const m=g('cdq_m')&&g('cdq_m').value;cdQC=cdQC&&cdQC.name===c.name?null:c;await renderCommDebts();
     const x=g('cdq_m');if(x&&m)x.value=m;const a=g('cdq_a');if(cdQC&&a)(x&&!x.value?x:a).focus();});
+  const cs=g('cdq_c');if(cs)cs.onchange=async()=>{const m=g('cdq_m')&&g('cdq_m').value;cdQC=cs.value===''?null:CD_CATS[+cs.value];
+    if(!cdQC){const t=g('cdq_t');if(t)t.value='';}
+    await renderCommDebts();const x=g('cdq_m');if(x&&m)x.value=m;const a=g('cdq_a');if(cdQC&&a)(x&&!x.value?x:a).focus();};
   const r=g('cdq_r'),a=g('cdq_a');
   if(r&&a){r.oninput=()=>{a.value=r.value;};a.addEventListener('input',()=>{const v=amtNum(a.value);if(v>=+r.min&&v<=+r.max)r.value=v;});}
   const t=g('cdq_t');if(t&&cdQC)t.addEventListener('input',()=>{if(t.value.trim()!==cdQC.name&&r)r.disabled=true;else if(r)r.disabled=false;});
   const m=g('cd_cats');if(m)m.onclick=()=>cdCatsEdit();
+  const tx=g('cd_cattxt');if(tx)tx.onclick=()=>cdCatsEdit(null,cdQC&&cdQC.name);
   const nw=g('cd_catnew');if(nw)nw.onclick=()=>{const t=(g('cdq_t')||{}).value||'',a=amtNum((g('cdq_a')||{}).value||'');
     cdCatsEdit({name:cdQC&&t.trim()===cdQC.name?'':t.trim(),amount:a||0,min:0,max:0,kind:(g('cdq_k')||{}).value==='debt'?'debt':'pledge'});};}
-async function cdCatsEdit(nw){await cdCatsLoad();let L=CD_CATS.map(c=>Object.assign({},c));if(nw)L.push(nw);
+async function cdCatsSave(L){const r=await api('POST','/api/cm/debtcats',{cats:L.filter(c=>c.name)});if(!r||!r.ok)return null;
+  CD_CATS=r.cats||[];if(cdQC)cdQC=CD_CATS.find(c=>c.name===cdQC.name)||null;return r;}
+async function cdCatsEdit(nw,openName){await cdCatsLoad();await cdMailTplLoad();let L=CD_CATS.map(c=>Object.assign({},c));if(nw)L.push(nw);
+  const PT=YM_TPL.find(x=>x[0]==='pledge'),MT=cdMailTplOf('pledge'),open=new Set();
+  if(openName!=null){const i=L.findIndex(c=>c.name===openName);if(i>=0)open.add(i);}
   const o=document.createElement('div');o.className='confirmov';
   const row=(c,i)=>`<div class="cdcatrow" data-i="${i}"><input class="cc_n" placeholder="שם הקטגוריה" value="${esc(c.name||'')}">
     <input class="cc_a" inputmode="decimal" placeholder="סכום" value="${c.amount||''}"><input class="cc_lo" inputmode="decimal" placeholder="מינ׳" value="${c.min||''}"><input class="cc_hi" inputmode="decimal" placeholder="מקס׳" value="${c.max||''}">
-    <select class="cc_k"><option value="pledge">התחייבות</option><option value="debt"${c.kind==='debt'?' selected':''}>חוב</option></select><button class="fdel cc_x" title="מחק">✕</button></div>`;
+    <select class="cc_k"><option value="pledge">התחייבות</option><option value="debt"${c.kind==='debt'?' selected':''}>חוב</option></select>
+    <button class="btn sm ${c.voice||c.sms||c.mail?'':'ghost'} cc_t" title="הנוסח להקראה בשיחה, ל-SMS ולמייל של הקטגוריה הזו">📝 נוסח${c.voice||c.sms||c.mail?' ✓':''}</button><button class="fdel cc_x" title="מחק">✕</button>
+    <div class="cc_txt"${open.has(i)?'':' hidden'}>
+      <label class="fld"><span>📞 הקראה בשיחה</span><textarea class="cc_v" rows="3" placeholder="${esc(PT[2])}">${esc(c.voice||'')}</textarea></label>
+      <label class="fld"><span>💬 SMS</span><textarea class="cc_s" rows="2" placeholder="${esc(PT[3])}">${esc(c.sms||'')}</textarea></label>
+      <label class="fld"><span>✉️ נושא המייל</span><input class="cc_ms" placeholder="${esc(MT.subj)}" value="${esc(c.subj||'')}"></label>
+      <label class="fld"><span>✉️ המייל</span><textarea class="cc_mb" rows="6" placeholder="${esc(MT.body)}">${esc(c.mail||'')}</textarea></label>
+      <div class="hintxt">בשיחה וב-SMS: {שם} {סכום} {עבור}, וב-SMS גם {קישור} לתשלום. "הקישו 1" בשיחה מעביר לתשלום באשראי.<br>במייל: {{שם}} {{תואר}} {{הי"ו}} {{סכום}} {{עבור}} {{קישור}}. שדה ריק = הנוסח הרגיל של התחייבות.</div></div></div>`;
   const read=()=>{L=[...o.querySelectorAll('.cdcatrow')].map(e=>({name:e.querySelector('.cc_n').value.trim(),amount:amtNum(e.querySelector('.cc_a').value)||0,
-    min:amtNum(e.querySelector('.cc_lo').value)||0,max:amtNum(e.querySelector('.cc_hi').value)||0,kind:e.querySelector('.cc_k').value}));};
+    min:amtNum(e.querySelector('.cc_lo').value)||0,max:amtNum(e.querySelector('.cc_hi').value)||0,kind:e.querySelector('.cc_k').value,
+    voice:e.querySelector('.cc_v').value.trim(),sms:e.querySelector('.cc_s').value.trim(),subj:e.querySelector('.cc_ms').value.trim(),mail:e.querySelector('.cc_mb').value}));};
   const draw=()=>{o.innerHTML=`<div class="confirmbox" style="max-width:640px"><div class="cm"><b>🏷 קטגוריות קבועות — חובות והתחייבויות</b><br><small>סכום = ברירת המחדל. מינ׳ / מקס׳ — הטווח שאפשר לבחור (ריק = בלי הגבלה).</small></div>
       <div class="cdcatlist">${L.map(row).join('')||'<div class="hintxt">אין קטגוריות.</div>'}</div>
       <button class="btn sm ghost" id="cc_add">➕ קטגוריה חדשה</button>
       <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">💾 שמור</button></div></div>`;
     o.querySelector('#cc_add').onclick=()=>{read();L.push({name:'',amount:0,min:0,max:0,kind:'pledge'});draw();const n=[...o.querySelectorAll('.cc_n')].pop();if(n)n.focus();};
-    o.querySelectorAll('.cc_x').forEach(b=>b.onclick=()=>{read();L.splice(+b.closest('.cdcatrow').dataset.i,1);draw();});
+    o.querySelectorAll('.cc_x').forEach(b=>b.onclick=async()=>{read();const i=+b.closest('.cdcatrow').dataset.i;
+      if(L[i].name&&!await uiConfirm('למחוק את הקטגוריה "'+L[i].name+'"?\n(החובות שכבר נרשמו עליה נשארים)','🗑 כן, למחוק','לא'))return;
+      L.splice(i,1);open.clear();draw();});
+    o.querySelectorAll('.cc_t').forEach(b=>b.onclick=()=>{const i=+b.closest('.cdcatrow').dataset.i,x=b.closest('.cdcatrow').querySelector('.cc_txt');
+      x.hidden=!x.hidden;x.hidden?open.delete(i):open.add(i);if(!x.hidden)x.querySelector('.cc_v').focus();});
     o.querySelector('.cno').onclick=()=>o.remove();
-    o.querySelector('.cyes').onclick=async()=>{read();const r=await api('POST','/api/cm/debtcats',{cats:L.filter(c=>c.name)});
-      if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
-      CD_CATS=r.cats||[];if(cdQC)cdQC=CD_CATS.find(c=>c.name===cdQC.name)||null;o.remove();toast('נשמר ✓');renderCommDebts();};};
+    o.querySelector('.cyes').onclick=async()=>{read();const r=await cdCatsSave(L);
+      if(!r){toast('לא נשמר');return;}o.remove();toast('נשמר ✓');if(cmSub==='ym')renderCommYm();else renderCommDebts();};};
   document.body.appendChild(o);draw();
-  if(nw){const n=[...o.querySelectorAll('.cc_n')].pop();if(n){n.focus();n.scrollIntoView({block:'nearest'});}}}
+  if(nw){const n=[...o.querySelectorAll('.cc_n')].pop();if(n){n.focus();n.scrollIntoView({block:'nearest'});}}
+  else if(open.size){const x=o.querySelector('.cc_txt:not([hidden])');if(x){x.scrollIntoView({block:'nearest'});x.querySelector('.cc_v').focus();}}}
 let CD_MAILTPL=null;
 async function cdMailTplLoad(){if(CD_MAILTPL)return CD_MAILTPL;const r=await api('GET','/api/cm/mailtpl');CD_MAILTPL=(r&&r.tpl)||{};return CD_MAILTPL;}
-const cdMailTplOf=k=>{const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||(k==='free'?'כולל חצות':CD_MAIL_SUBJ),body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
+const cdMailTplOf=k=>{const c=cdCatByKey(k);if(c){const p=cdMailTplOf('pledge');return {subj:c.subj||p.subj,body:c.mail||p.body,saved:!!c.mail,cat:c};}const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||(k==='free'?'כולל חצות':CD_MAIL_SUBJ),body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
 const cdMailFill=(body,fr)=>fr?body.replace(/\{\{עבור\}\}/g,fr):body.replace(/\s*(?:עבור|בעבור)\s*\{\{עבור\}\}/g,'').replace(/\{\{עבור\}\}/g,'');
 const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
 // ✉️ עריכת נוסח מייל התזכורת — מכפתור למעלה בחלון החובות
@@ -14159,7 +14188,7 @@ async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toas
   const deb=g.items.filter(d=>!d._req&&d.status==='open');
   cmPick=new Set([m.id]);cmAmts={};cmAmts[m.id]=String(Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100);
   cdRem={ids:deb.map(d=>d.id),ch:'email'};
-  await cdMailTplLoad();const kind=deb.length&&deb.every(d=>d.kind==='hok')?'hok':'pledge',fr=cdForTxt(deb);
+  await cdMailTplLoad();await cdCatsLoad();const kind=cdMailKindFor(deb,deb.length&&deb.every(d=>d.kind==='hok')?'hok':'pledge'),fr=cdForTxt(deb);
   cdMailPrefill(cdMailFill(cdMailTplOf(kind).body,fr),cdMailTplOf(kind).subj,true);
   cdMailDraft(kind,fr);}
 // מאיר: "אני לא רואה את הטיוטה של שליחת מייל לפני שאני שולח בדף חובות" — הטיוטה נפתחת כאן, בדף החובות:
@@ -14175,7 +14204,7 @@ function cdMailDraft(kind,fr){
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:680px;width:100%;max-height:92vh;overflow:auto">
     <div class="cm">✉️ הטיוטה — עדיין לא נשלח כלום</div>
     <div class="hintxt">📤 יוצא מ: <b>💰 נדר 18</b> <span dir="ltr">${esc((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')}</span> · אל: <b>${aud.length===1?esc(mName(aud[0])):aud.length+' נמענים'}</b> — כל אחד מקבל הודעה נפרדת, בשמו</div>
-    <div class="fld"><span>📝 הנוסח</span><span class="bqseg" id="cdd_k"><button data-k="pledge">🤝 התחייבות / חוב</button><button data-k="hok">🔁 הו"ק שחזרה</button><button data-k="free">✍️ חופשי</button></span></div>
+    <div class="fld"><span>📝 הנוסח</span><span class="bqseg" id="cdd_k">${cdCatByKey(kind)?`<button data-k="${esc(kind)}">🏷 ${esc(kind.slice(4))}</button>`:''}<button data-k="pledge">🤝 התחייבות / חוב</button><button data-k="hok">🔁 הו"ק שחזרה</button><button data-k="free">✍️ חופשי</button></span></div>
     <label class="fld"><span>נושא</span><input id="cdd_s" value="${esc(mlSaved('cm_subj',''))}"></label>
     <label class="fld"><span>תוכן המכתב</span><textarea id="cdd_b" rows="8">${esc(mlSaved('cm_body',''))}</textarea></label>
     <div class="hintxt">{{שם}} · {{סכום}} · {{קישור}} מתמלאים לבד לכל נמען. שורה ריקה = פסקה חדשה.</div>
@@ -14195,10 +14224,13 @@ function cdMailDraft(kind,fr){
       :`<div class="hintxt bad">${esc((r&&r.skipped&&r.skipped[0]&&r.skipped[0].why)||'לא ניתן להציג')}</div>`;};
   const later=()=>{clearTimeout(tm);tm=setTimeout(pv,600);};
   // מאיר: "יש הו"ק שחזרה שאני צריך עוד לערוך אותה" — עורכים כאן ושומרים כנוסח הקבוע של אותו סוג
-  const KL={pledge:'התחייבות / חוב',hok:'הו"ק שחזרה',free:'מייל חופשי'};
+  const KL={pledge:'התחייבות / חוב',hok:'הו"ק שחזרה',free:'מייל חופשי'};if(cdCatByKey(kind))KL[kind]=kind.slice(4);
   const kb=()=>{o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===kind));q('cdd_save').textContent='💾 לשמור את הנוסח הזה כנוסח הקבוע של "'+KL[kind]+'"';};kb();
   q('cdd_save').onclick=async()=>{let body=bi.value;if(fr)body=body.split(fr).join('{{עבור}}');
     if(!await uiConfirm('לשמור כנוסח הקבוע של "'+KL[kind]+'"?\nמעכשיו כל מייל '+KL[kind]+' ייפתח בנוסח הזה.','💾 כן, לשמור','לא'))return;
+    const c=cdCatByKey(kind);
+    if(c){const r=await cdCatsSave(CD_CATS.map(x=>x===c?Object.assign({},x,{subj:si.value,mail:body}):x));
+      if(r){mlSave('cm_body_auto',bi.value);toast('💾 נשמר — זה הנוסח הקבוע של "'+KL[kind]+'"');}else toast('לא נשמר');return;}
     const r=await api('POST','/api/cm/mailtpl',{kind,subj:si.value,body});
     if(r&&r.ok){CD_MAILTPL=r.tpl;mlSave('cm_body_auto',bi.value);toast('💾 נשמר — זה הנוסח הקבוע של "'+KL[kind]+'"');}else toast('לא נשמר');};
   o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.onclick=async()=>{if(b.dataset.k===kind)return;
@@ -14434,7 +14466,7 @@ function cdWire(){const g=id=>document.getElementById(id);
   view.querySelectorAll('[data-cdhear]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdhear);if(!g)return;
     const m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m)return;
     const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
-    const t=YM_TPL.find(x=>x[0]===(deb.some(d=>d.fund==='natan')?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge')));
+    const t=cdYmTplFor(deb,deb.some(d=>d.fund==='natan')?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge'));
     if(!ymStatus)ymLoadStatus();
     ymCallConfirm('🔊 כך זה יישמע אצל '+mName(m),{text:ymTpl(t,'voice'),name:((m.first||'')+' '+(m.last||'')).trim(),amount:String(amt),for:cdForTxt(deb)},{hear:1});});
   view.querySelectorAll('[data-cdnow]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.gk);if(!g)return;
@@ -14462,7 +14494,7 @@ function cdWire(){const g=id=>document.getElementById(id);
     cdRem={ids:sel.map(d=>d.id),ch};
     const by=new Map();sel.forEach(d=>{const kk=d.member_id||('x'+(d.phone||d.name||d.id));const x=by.get(kk)||{amt:0,hok:false,ds:[]};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';x.ds.push(d);by.set(kk,x);});
     if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
-      cdMailTplLoad().then(()=>{const kind=sel.length&&sel.every(d=>d.kind==='hok')?'hok':'pledge';const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,''),t.subj,true);
+      Promise.all([cdMailTplLoad(),cdCatsLoad()]).then(()=>{const kind=cdMailKindFor(sel,sel.length&&sel.every(d=>d.kind==='hok')?'hok':'pledge');const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,''),t.subj,true);
       by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
       if(!cmPick.size){toast('לאף אחד מהנבחרים אין מייל');return;}
       if(nomail)toast(nomail+' בלי כתובת מייל — לא יקבלו');
@@ -14474,7 +14506,7 @@ function cdWire(){const g=id=>document.getElementById(id);
       ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):''});});
     if(!ymRecs.size){toast(ch==='sms'?'לאף אחד מהנבחרים אין נייד':'לאף אחד מהנבחרים אין טלפון');return;}
     ymCh=ch;ymBill=ch==='voice'&&cdFund!=='natan';
-    ymTplKey=cdFund==='natan'?'natan':(hok>ymRecs.size/2?'hok':'pledge');const t=YM_TPL.find(x=>x[0]===ymTplKey);if(t)ymText=ymTpl(t,ymCh);
+    ymTplKey=cdFund==='natan'?'natan':(hok>ymRecs.size/2?'hok':'pledge');{const t0=cdYmTplFor(sel,ymTplKey);if(t0)ymTplKey=t0[0];}const t=ymTplFind(ymTplKey);if(t)ymText=ymTpl(t,ymCh);
     cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);
     toast(ymRecs.size+' נמענים עם הסכום של כל אחד'+(noph?(' · '+noph+(ch==='sms'?' בלי נייד':' בלי טלפון')):''));});
 }
@@ -15169,6 +15201,8 @@ const YM_TPL=[
   ['free','✍️ חופשי','','']];
 // מאיר: "תוריד את הטקסט המוכן שאומר שאפשר דרך הטלפון, ואני אכניס נוסח לכל קטגוריה או שדה
 // חופשי, שזה יהיה בראש — ברירת מחדל". נוסח ששמרת לקטגוריה (לכל ערוץ בנפרד) גובר על המובנה.
+const ymTplFind=k=>{const t=YM_TPL.find(x=>x[0]===k);if(t)return t;const c=cdCatByKey(k);if(!c)return undefined;
+  const p=YM_TPL.find(x=>x[0]==='pledge');return [k,'🏷 '+c.name,c.voice||p[2],c.sms||p[3]];};
 let ymTplKey='';
 try{ymTplKey=localStorage.getItem('kc_ymtpl')||'';}catch(e){}
 const ymTplSaved=(k,ch)=>((ymStatus&&ymStatus.tpl)||{})[k+':'+ch];
@@ -15404,7 +15438,7 @@ async function ymViewPay(){
 // ---------------- 📤 שליחה ----------------
 function ymViewSend(){
   const st=ymStatus;
-  if(!ymText.trim()&&ymTplKey){const t=YM_TPL.find(x=>x[0]===ymTplKey);if(t)ymText=ymTpl(t,ymCh);}
+  if(!ymText.trim()&&ymTplKey){const t=ymTplFind(ymTplKey);if(t)ymText=ymTpl(t,ymCh);}
   const all=MEMBERS||[];
   const good=all.filter(m=>ymPhone(m.phone)), mob=good.filter(m=>ymMobile(ymPhone(m.phone))), bad=all.filter(m=>!ymPhone(m.phone));
   let list=ymFlt==='bad'?bad:(ymFlt==='sel'?all.filter(m=>ymRecs.has(ymKey('m',m.id))):good);
@@ -15434,13 +15468,15 @@ function ymViewSend(){
     </div>
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
-      <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}</div>
+      <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}
+        ${(CD_CATS||[]).map(c=>`<button class="chip${ymTplKey==='cat:'+c.name?' on':''}" data-t="${esc('cat:'+c.name)}">🏷 ${esc(c.name)}${c[ymCh==='sms'?'sms':'voice']?' ✎':''}</button>`).join('')}
+        <button class="chip" id="ym_catnew" title="קטגוריה חדשה עם נוסח משלה — נכנסת גם לחובות והתחייבויות">➕ קטגוריה חדשה</button>${(CD_CATS||[]).length?'<button class="chip" id="ym_cats" title="שינוי שם, סכום, נוסח ומחיקה">⚙️ קטגוריות</button>':''}</div>
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום, {עבור} = עבור מה">${esc(ymText)}</textarea>
       <div class="ymphs"><span class="hintxt">➕ להכניס במקום שהסמן עומד:</span>${[['{שם}','👤 שם','{שם}'],['{סכום}','💲 סכום','בסך {סכום} '+(ymCh==='sms'?'ש"ח':'שקלים')],['{עבור}','📝 עבור מה','עבור {עבור}']].concat(ymCh==='sms'?[['{קישור}','🔗 קישור תשלום','{קישור}']]:[]).map(([v,l,ins])=>`<button type="button" class="btn sm ghost" data-ymph="${esc(ins)}" title="מכניס: ${esc(ins)}">${l} <small>${esc(ins)}</small></button>`).join('')}</div>
       ${ymText.trim()&&!/\{סכום\}/.test(ymText)&&(ymTplKey==='hok'||ymAmt||sel.some(r=>+r.amt))?`<div class="ymwarn">💡 בטקסט אין {סכום} — הסכום לא ייאמר. לחץ "💲 סכום" במקום שבו הוא צריך להיאמר (למשל אחרי "הוראת הקבע שלך בסך").</div>`:''}
       ${ymCh==='voice'?`<div class="ymnik"><button class="btn sm ghost" id="nk_all">✨ נקד את כל הטקסט</button><button class="btn sm ghost" id="nk_sel">✨ נקד רק את מה שסימנתי</button><button class="btn sm ghost" id="nk_clear">✖ הסר ניקוד</button>
         <span class="hintxt">מסמנים בעכבר מילה או משפט, ולוחצים "נקד רק את מה שסימנתי".</span></div>`:''}
-      ${ymTplKey?(()=>{const t=YM_TPL.find(x=>x[0]===ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),saved=ymTplSaved(t[0],ymCh)!=null;
+      ${ymTplKey?(()=>{const t=ymTplFind(ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),yc=cdCatByKey(ymTplKey),saved=yc?!!yc[ymCh==='sms'?'sms':'voice']:ymTplSaved(t[0],ymCh)!=null;
         return `<div class="ymtplbar">${ymText.trim()&&ymText!==cur?`<button class="btn sm" id="ym_tplsave">💾 שמור כנוסח הקבוע של "${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</button>`:`<span class="hintxt">${saved?'✓ זה הנוסח הקבוע שלך':'הנוסח המובנה'} ל"${esc(t[1])}" (${ymCh==='sms'?'SMS':'הודעה קולית'})</span>`}
           ${saved?`<button class="btn sm ghost" id="ym_tplreset">↩ חזרה לנוסח המובנה</button>`:''}</div>`;})():''}
       <div class="ymrow2"><label class="fld"><span>💲 סכום (נכנס במקום {סכום})</span><input id="ym_amt" value="${esc(ymAmt)}" inputmode="decimal" placeholder="למשל 500"></label>
@@ -15484,11 +15520,20 @@ function ymViewSend(){
   const g=id=>document.getElementById(id);
   view.querySelectorAll('.ymc').forEach(b=>b.onclick=()=>{
     if(b.dataset.ch==='mail'){cmPick=new Set(sel.filter(r=>r.k==='m').map(r=>r.id));cmSub='send';render();window.scrollTo(0,0);return;}
-    const t=YM_TPL.find(x=>x[0]===ymTplKey), wasTpl=t&&ymText===ymTpl(t,ymCh);
+    const t=ymTplFind(ymTplKey), wasTpl=t&&ymText===ymTpl(t,ymCh);
     ymCh=b.dataset.ch;try{localStorage.setItem('kc_ymch',ymCh);}catch(e){}
     if(t&&(wasTpl||!ymText.trim()))ymText=ymTpl(t,ymCh);
     renderCommYm();});
-  view.querySelectorAll('.ymtpl .chip').forEach(b=>b.onclick=()=>{const t=YM_TPL.find(x=>x[0]===b.dataset.t), nt=ymTpl(t,ymCh);
+  if(!CD_CATS)cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='ym'&&(CD_CATS||[]).length)renderCommYm();});
+  const yc=g('ym_catnew');if(yc)yc.onclick=async()=>{await cdCatsLoad();const v=await uiPrompt('שם הקטגוריה החדשה (למשל: הקמת הוראת קבע דמי חבר):','');
+    const nm=String(v||'').trim();if(!nm)return;if(CD_CATS.some(c=>c.name===nm)){toast('כבר יש קטגוריה בשם הזה');return;}
+    const tx=ymText.trim(),c={name:nm,amount:0,min:0,max:0,kind:'pledge',voice:ymCh==='voice'?tx:'',sms:ymCh==='sms'?tx:''};
+    if(!await cdCatsSave(CD_CATS.concat([c]))){toast('לא נשמר');return;}
+    ymTplKey='cat:'+nm;try{localStorage.setItem('kc_ymtpl',ymTplKey);}catch(e){}
+    const t=ymTplFind(ymTplKey);if(!tx&&t)ymText=ymTpl(t,ymCh);
+    toast('🏷 הקטגוריה נוספה'+(tx?' עם הטקסט שכתבת':' — כתוב את הנוסח ולחץ 💾 שמור'));renderCommYm();};
+  const ycs=g('ym_cats');if(ycs)ycs.onclick=()=>cdCatsEdit(null,cdCatByKey(ymTplKey)?ymTplKey.slice(4):null);
+  view.querySelectorAll('.ymtpl .chip[data-t]').forEach(b=>b.onclick=()=>{const t=ymTplFind(b.dataset.t);if(!t)return;const nt=ymTpl(t,ymCh);
     const apply=()=>{ymText=nt;ymTplKey=t[0];try{localStorage.setItem('kc_ymtpl',ymTplKey);}catch(e){}if(ymCh==='voice'&&/הקישו 1/.test(nt)&&!ymBill){ymBill=true;try{localStorage.setItem('kc_ymbill','1');}catch(e){}}renderCommYm();setTimeout(()=>{const e=g('ym_text');if(e){e.focus();}},40);};
     if(ymText.trim()&&nt&&ymText!==nt){uiConfirm('להחליף את הטקסט שכתבת בנוסח המוכן?').then(ok=>{if(ok)apply();});return;}
     apply();});
@@ -15541,10 +15586,15 @@ function ymViewSend(){
   ymWireLink(prevLink);
   ymWireVoice(first,sel);
   ymWireNikud();
-  const ts=g('ym_tplsave'); if(ts)ts.onclick=async()=>{const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:ymText});
+  const ts=g('ym_tplsave'); if(ts)ts.onclick=async()=>{const c=cdCatByKey(ymTplKey);
+    if(c){const r=await cdCatsSave(CD_CATS.map(x=>x===c?Object.assign({},x,ymCh==='sms'?{sms:ymText}:{voice:ymText}):x));
+      if(r){toast('הנוסח נשמר לקטגוריה "'+c.name+'" ✓');renderCommYm();}else toast('לא נשמר');return;}
+    const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:ymText});
     if(r&&r.ok){ymStatus.tpl=r.tpl;toast('הנוסח נשמר — מעכשיו הוא ברירת המחדל ✓');renderCommYm();}else toast('לא נשמר');};
   const tr=g('ym_tplreset'); if(tr)tr.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח ששמרת ולחזור לנוסח המובנה?'))return;
-    const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:null});if(r&&r.ok){ymStatus.tpl=r.tpl;const t=YM_TPL.find(x=>x[0]===ymTplKey);ymText=t?ymTpl(t,ymCh):ymText;renderCommYm();}};
+    const yc=cdCatByKey(ymTplKey);
+    if(yc){const r=await cdCatsSave(CD_CATS.map(x=>x===yc?Object.assign({},x,ymCh==='sms'?{sms:''}:{voice:''}):x));if(r){const t=ymTplFind(ymTplKey);ymText=t?ymTpl(t,ymCh):ymText;renderCommYm();}return;}
+    const r=await api('POST','/api/yemot/tpl',{key:ymTplKey,ch:ymCh,text:null});if(r&&r.ok){ymStatus.tpl=r.tpl;const t=ymTplFind(ymTplKey);ymText=t?ymTpl(t,ymCh):ymText;renderCommYm();}};
   ymWireProg();
 }
 // מאיר: "אני גם רוצה להחליף קול, שיהיה יותר אנושי, ויותר נורמלי בלי טעויות"
