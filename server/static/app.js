@@ -13982,7 +13982,7 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k='pledge';
   document.body.appendChild(o);draw();}
 // מכניס את נוסח התזכורת למכתב (כשהתיבה ריקה או שיש בה נוסח תזכורת קודם — לא דורס מכתב אחר)
 function cdMailPrefill(body,subj,force){const cur=mlSaved('cm_body',''),auto=mlSaved('cm_body_auto','');
-  if(force||!cur.trim()||cur===auto){mlSave('cm_body',body);mlSave('cm_body_auto',body);const cs=mlSaved('cm_subj','');if(!cs.trim()||cs===mlSaved('cm_subj_auto','')||cs===CD_MAIL_SUBJ){mlSave('cm_subj',subj);mlSave('cm_subj_auto',subj);}}}
+  if(force||!cur.trim()||cur===auto){mlSave('cm_body',body);mlSave('cm_body_auto',body);const cs=mlSaved('cm_subj','');if(force||!cs.trim()||cs===mlSaved('cm_subj_auto','')||cs===CD_MAIL_SUBJ){mlSave('cm_subj',subj);mlSave('cm_subj_auto',subj);}}}
 async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
   if(!mHasMail(m)){const v=await uiPrompt('אין ל'+mName(m)+' כתובת מייל.\nכתוב את המייל שלו — הוא יישמר בכרטיס:','');if(!v)return;
     const em=String(v).trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('כתובת מייל לא תקינה');return;}
@@ -14761,17 +14761,20 @@ function cmAudience(){ return MEMBERS.filter(m=>cmPick.has(m.id)&&mHasMail(m)).s
 function cmBrowse(){ return cmAdding||!cmPick.size; }
 // ---- קישור תשלום נדרים פלוס במייל "נדרים ונדבות" ----
 // מאיר: "אני רוצה גם במייל כשאני שולח מהמייל של נדר1818" — אותו קישור אישי כמו ב-SMS
-let NEDM=null, cmLinkAmt='', cmAmts={};
+let NEDM=null, cmLinkAmt='', cmAmts={}, cmPvIdx=0, cmPvSeq=0;
 try{cmLinkAmt=localStorage.getItem('kc_cmlamt')||'';}catch(e){}
 async function nedLoad(){const r=await api('GET','/api/nedarim/mosads');NEDM=r&&r.ok?r:{mosads:[{id:'5777499',name:'כולל חצות נחלת יהושע (ברסלב-דויטש) ביתר עילית'}],mosad:'5777499'};}
 function cmLinkHTML(){
   if(NEDM===null){nedLoad().then(()=>{if(tab==='comm'&&cmSub==='send')renderCommSend();});return '<div class="hintxt">טוען את המוסדות…</div>';}
   const M=NEDM.mosads||[], cur=ymLink.mosad||NEDM.mosad;
-  const first=cmAudience()[0];
+  const first=cmAudience()[0], au=cmAudience();
+  const own=au.filter(m=>cmAmts[m.id]!=null&&cmAmts[m.id]!=='');
+  const oneId=(au.length===1&&own.length===1)?first.id:null;   // נמען אחד עם סכום מהחובות — השדה הוא הסכום שלו
   const L=first?nedLink({k:'m',id:first.id,name:((first.first||'')+' '+(first.last||'')).trim(),phone:ymPhone(first.phone),amt:cmAmts[first.id]||cmLinkAmt}):'';
   return `<div class="cmlink"><div class="lbl">🔗 קישור תשלום אישי — נדרים פלוס · <b>{{קישור}}</b> במכתב הופך לכפתור "💳 לתשלום מאובטח"</div>
     <div class="ymflt"><label class="fld" style="margin:0;flex:1 1 220px"><span>🏛️ מוסד</span><select id="cl_mosad">${M.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?'selected':''}>${esc(m.id)} · ${esc(m.name||'')}</option>`).join('')}</select></label>
-      <label class="fld" style="margin:0"><span>💲 סכום</span><input id="cl_amt" inputmode="decimal" value="${esc(cmLinkAmt)}" placeholder="רשות" style="width:110px"></label></div>
+      <label class="fld" style="margin:0"><span>💲 סכום</span><input id="cl_amt" inputmode="decimal" value="${esc(oneId?cmAmts[oneId]:cmLinkAmt)}" placeholder="רשות" style="width:110px"></label></div>
+    ${oneId?`<div class="hintxt">💲 הסכום הפתוח של ${esc(mName(first))} מדף החובות — אפשר לשנות כאן.</div>`:own.length?`<div class="hintxt">💲 ל־${own.length} מהנמענים יש סכום משלהם מדף החובות — הוא נכנס ל{{סכום}} ולקישור שלהם. השדה כאן חל רק על מי שאין לו סכום.</div>`:''}
     <div class="ymlopts"><label class="gvall"><input type="checkbox" id="cl_lock" ${ymLink.amtLock?'checked':''}> 🔒 לנעול את הסכום</label>
       <label class="gvall"><input type="checkbox" id="cl_prefill" ${ymLink.prefill?'checked':''}> 👤 למלא מראש שם, טלפון, מייל וכתובת של כל חבר (ננעלים בדף)</label></div>
     ${L?`<div class="ympv">🔗 הקישור של ${esc(mName(first))}: <a class="nllink" href="${esc(L)}" target="_blank" rel="noopener" dir="ltr">${esc(L.slice(0,80))}…</a></div>`:'<div class="hintxt">בחר נמענים כדי לראות את הקישור.</div>'}
@@ -14783,7 +14786,8 @@ function cmLinksPayload(){
 function cmWireLink(){
   const g=id=>document.getElementById(id); if(!g('cl_mosad'))return;
   g('cl_mosad').onchange=async()=>{ymLink.mosad=g('cl_mosad').value;ymLinkSave();await api('POST','/api/nedarim/mosads',{list:NEDM.mosads,current:ymLink.mosad});renderCommSend();};
-  let t; g('cl_amt').oninput=()=>{cmLinkAmt=g('cl_amt').value.trim();try{localStorage.setItem('kc_cmlamt',cmLinkAmt);}catch(e){}clearTimeout(t);t=setTimeout(()=>{renderCommSend();const n=g('cl_amt');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},500);};
+  const au=cmAudience(), oneId=(au.length===1&&cmAmts[au[0].id]!=null&&cmAmts[au[0].id]!=='')?au[0].id:null;
+  let t; g('cl_amt').oninput=()=>{const v=g('cl_amt').value.trim();if(oneId)cmAmts[oneId]=v;else{cmLinkAmt=v;try{localStorage.setItem('kc_cmlamt',cmLinkAmt);}catch(e){}}clearTimeout(t);t=setTimeout(()=>{renderCommSend();const n=g('cl_amt');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},500);};
   g('cl_lock').onchange=()=>{ymLink.amtLock=g('cl_lock').checked;ymLinkSave();renderCommSend();};
   g('cl_prefill').onchange=()=>{ymLink.prefill=g('cl_prefill').checked;ymLinkSave();renderCommSend();};
 }
@@ -14843,13 +14847,13 @@ function renderCommSend(){
       <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="cm_track" ${mlSaved('cm_track','0')==='1'?'checked':''}>
         <span>📊 עקוב אחרי מי פתח את המייל</span></label>
     </div>
+    <div id="ml_out"></div>
     <div class="addrow">
-      <button class="btn sm ghost" id="cm_prev" style="flex:1">👁️ תצוגה מקדימה — לא שולח כלום</button>
+      <button class="btn sm ghost" id="cm_prev" style="flex:1">👁️ רענן את התצוגה — לא שולח כלום</button>
       <button class="btn" id="cm_go" style="flex:1"${list.length?'':' disabled'}>📤 ${list.length?('שלח ל־'+list.length+' '+(list.length===1?'נמען שסימנת':'הנמענים שסימנת')):'לא סימנת אף נמען'}</button>
     </div>
     <div class="hintxt" style="text-align:center;margin-top:-2px">נשלח <b>רק</b> למי שמסומן ב-✔ למעלה${list.length===1?` — כרגע ${esc(mName(list[0]))} בלבד`:''}.</div>
     <div id="ml_prog"></div>
-    <div id="ml_out"></div>
     <div id="cm_hist"></div>`;
   document.getElementById('cm_back').onclick=()=>{clearInterval(MLPOLL);MLPOLL=null;cmSub='list';render();};
   const keepFocus=id=>{const e=document.getElementById(id);if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}};
@@ -14883,21 +14887,31 @@ function renderCommSend(){
   const gv=()=>({members:cmAudience().map(m=>m.id),subject:document.getElementById('cm_subj').value.trim(),
     body:document.getElementById('cm_body').value,sig:'',track:document.getElementById('cm_track').checked,base:location.origin,sender:'neder',
     ...cmLinksPayload()});
-  document.getElementById('cm_prev').onclick=async()=>{
-    const b=gv(); const o=document.getElementById('ml_out');
-    if(!b.members.length){toast('אין נמענים');return;}
-    o.innerHTML='<div class="hintxt">בודק…</div>';
-    const r=await api('POST','/api/mail/preview',b);
-    o.innerHTML=`<div class="sec mlprev"><div class="rbtitle">👁️ תצוגה מקדימה — עדיין לא נשלח כלום</div>
-      <div class="hintxt">כך ייראה המכתב אצל הנמען הראשון מתוך ${r.count}.</div>
-      ${r.first?`<div class="hintxt">אל: <b>${esc(r.first.name)}</b> &lt;${esc(r.first.email)}&gt; · בלבד. אין עותק מוסתר.</div>
+  // מאיר: "אני רוצה לראות איך המייל של משה קוסמן ייראה בדיוק" — התצוגה מתחת למכתב, מתעדכנת לבד בזמן ההקלדה,
+  // לכל נמען בנפרד (◀ ▶) — עם השם, הסכום והקישור שלו
+  const cmPv=async(quiet)=>{
+    const b=gv(); const o=document.getElementById('ml_out'); if(!o)return;
+    if(!b.members.length){if(!quiet)toast('אין נמענים');o.innerHTML='';return;}
+    const n=b.members.length; cmPvIdx=((cmPvIdx%n)+n)%n; const my=++cmPvSeq;
+    if(!o.innerHTML)o.innerHTML='<div class="hintxt">מכין תצוגה…</div>';
+    const r=await api('POST','/api/mail/preview',{...b,members:[b.members[cmPvIdx]]});
+    if(my!==cmPvSeq||!r)return;
+    o.innerHTML=`<div class="sec mlprev"><div class="rbtitle">👁️ כך בדיוק זה ייראה אצל ${r.first?esc(r.first.name):''} — עדיין לא נשלח כלום</div>
+      ${n>1?`<div class="mlfrow" style="justify-content:center"><button class="btn sm ghost" id="cmpv_p">▶ הקודם</button><span class="hintxt">${cmPvIdx+1} מתוך ${n}</span><button class="btn sm ghost" id="cmpv_n">הבא ◀</button></div>`:''}
+      ${r.first?`<div class="hintxt">אל: <b>${esc(r.first.name)}</b> &lt;${esc(r.first.email)}&gt; · בלבד. אין עותק מוסתר.${r.first.amount?` · סכום: <b>${esc(r.first.amount)} ₪</b>`:''}</div>
       <div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div>`:''}
       ${r.html?`<div class="mlhtml">${r.html}</div>`:''}
       <details class="mlplain"><summary>כך זה ייראה במייל שאינו תומך בעיצוב</summary><pre class="mlsample">${esc(r.sample||'')}</pre></details>
       ${(r.skipped||[]).length?`<details class="mlskip"><summary>${r.skipped.length} חברים לא יקבלו — ולמה</summary>
         ${r.skipped.map(s=>`<div class="mlskr">${esc(s.name)} — ${esc(s.why)}</div>`).join('')}</details>`:''}
       </div>`;
+    const pp=document.getElementById('cmpv_p'),pn=document.getElementById('cmpv_n');
+    if(pp)pp.onclick=()=>{cmPvIdx--;cmPv(true);}; if(pn)pn.onclick=()=>{cmPvIdx++;cmPv(true);};
   };
+  document.getElementById('cm_prev').onclick=()=>cmPv(false);
+  let _pvt=null;
+  ['cm_body','cm_subj'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{clearTimeout(_pvt);_pvt=setTimeout(()=>cmPv(true),700);});});
+  if(list.length)cmPv(true);
   document.getElementById('cm_go').onclick=async()=>{
     const b=gv();
     if(!b.subject){toast('חסר נושא');return;}
