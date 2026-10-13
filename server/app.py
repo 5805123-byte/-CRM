@@ -18923,7 +18923,7 @@ class H(BaseHTTPRequestHandler):
                 cur = json.loads(kv_get(con, 'cm_debt_mail', '') or '{}')
             except ValueError:
                 cur = {}
-            k = 'hok' if b.get('kind') == 'hok' else 'pledge'
+            k = b.get('kind') if b.get('kind') in ('hok', 'free') else 'pledge'
             if b.get('reset'):
                 cur.pop(k, None)
             else:

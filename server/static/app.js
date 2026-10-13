@@ -13949,17 +13949,26 @@ async function cdSendNow(g,ch){
 const CD_MAIL_SUBJ='תזכורת בכבוד — כולל חצות';
 // הנוסח המובנה; {{עבור}} מתמלא במה שהחוב עליו (ובמשלוח לכמה נמענים — יורד)
 const CD_MAIL_DEF={pledge:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצינו להזכיר בכבוד את ההתחייבות שלך בסך {{סכום}} ₪ עבור {{עבור}}.\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות',
-  hok:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצינו לעדכן בכבוד שהוראת הקבע שלך בסך {{סכום}} ₪ עבור {{עבור}} לא עברה החודש.\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות'};
+  hok:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצינו לעדכן בכבוד שהוראת הקבע שלך בסך {{סכום}} ₪ עבור {{עבור}} לא עברה החודש.\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות',
+  // מאיר: "צריך גם מייל לכתיבה חופשית" — רק הפנייה והקישור; את השאר כותבים
+  free:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\n\n\n{{קישור}}\n\nכולל חצות'};
 let CD_MAILTPL=null;
 async function cdMailTplLoad(){if(CD_MAILTPL)return CD_MAILTPL;const r=await api('GET','/api/cm/mailtpl');CD_MAILTPL=(r&&r.tpl)||{};return CD_MAILTPL;}
-const cdMailTplOf=k=>{const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||CD_MAIL_SUBJ,body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
+const cdMailTplOf=k=>{const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||(k==='free'?'כולל חצות':CD_MAIL_SUBJ),body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
+// ✉️ איזה מייל — תזכורת התחייבות / הו"ק שחזרה / חופשי
+function cdMailPick(hk){return new Promise(done=>{const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:420px"><div class="cm">✉️ איזה מייל?</div>
+    <div class="bqfixopts"><button class="btn${hk?' ghost':''}" data-k="pledge">🤝 תזכורת על התחייבות / חוב</button><button class="btn${hk?'':' ghost'}" data-k="hok">🔁 הו"ק שחזרה</button><button class="btn ghost" data-k="free">✍️ מייל חופשי — אני כותב</button></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);o.querySelector('.cno').onclick=()=>{o.remove();done(null);};
+  o.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{o.remove();done(b.dataset.k);});});}
 const cdMailFill=(body,fr)=>fr?body.replace(/\{\{עבור\}\}/g,fr):body.replace(/\s*(?:עבור|בעבור)\s*\{\{עבור\}\}/g,'').replace(/\{\{עבור\}\}/g,'');
 const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
 // ✉️ עריכת נוסח מייל התזכורת — מכפתור למעלה בחלון החובות
 async function cdMailTplEdit(){await cdMailTplLoad();let k='pledge';
   const o=document.createElement('div');o.className='confirmov';
   const draw=()=>{const t=cdMailTplOf(k);o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">✉️ נוסח מייל התזכורת</div>
-    <div class="bqseg"><button class="${k==='pledge'?'on':''}" data-k="pledge">🤝 התחייבות / חוב</button><button class="${k==='hok'?'on':''}" data-k="hok">🔁 הו"ק שחזרה</button></div>
+    <div class="bqseg"><button class="${k==='pledge'?'on':''}" data-k="pledge">🤝 התחייבות / חוב</button><button class="${k==='hok'?'on':''}" data-k="hok">🔁 הו"ק שחזרה</button><button class="${k==='free'?'on':''}" data-k="free">✍️ חופשי</button></div>
     <label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
     <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>
@@ -13971,8 +13980,8 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k='pledge';
     const rr=o.querySelector('#cmt_r');if(rr)rr.onclick=async()=>{const r=await api('POST','/api/cm/mailtpl',{kind:k,reset:1});if(r&&r.ok){CD_MAILTPL=r.tpl;toast('↩ חזר לנוסח המובנה');draw();}};};
   document.body.appendChild(o);draw();}
 // מכניס את נוסח התזכורת למכתב (כשהתיבה ריקה או שיש בה נוסח תזכורת קודם — לא דורס מכתב אחר)
-function cdMailPrefill(body,subj){const cur=mlSaved('cm_body',''),auto=mlSaved('cm_body_auto','');
-  if(!cur.trim()||cur===auto){mlSave('cm_body',body);mlSave('cm_body_auto',body);const cs=mlSaved('cm_subj','');if(!cs.trim()||cs===mlSaved('cm_subj_auto','')||cs===CD_MAIL_SUBJ){mlSave('cm_subj',subj);mlSave('cm_subj_auto',subj);}}}
+function cdMailPrefill(body,subj,force){const cur=mlSaved('cm_body',''),auto=mlSaved('cm_body_auto','');
+  if(force||!cur.trim()||cur===auto){mlSave('cm_body',body);mlSave('cm_body_auto',body);const cs=mlSaved('cm_subj','');if(!cs.trim()||cs===mlSaved('cm_subj_auto','')||cs===CD_MAIL_SUBJ){mlSave('cm_subj',subj);mlSave('cm_subj_auto',subj);}}}
 async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toast('לא נמצא חבר הקהילה');return;}
   if(!mHasMail(m)){const v=await uiPrompt('אין ל'+mName(m)+' כתובת מייל.\nכתוב את המייל שלו — הוא יישמר בכרטיס:','');if(!v)return;
     const em=String(v).trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('כתובת מייל לא תקינה');return;}
@@ -13980,8 +13989,8 @@ async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toas
   const deb=g.items.filter(d=>!d._req&&d.status==='open');
   cmPick=new Set([m.id]);cmAmts={};cmAmts[m.id]=String(Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100);
   cdRem={ids:deb.map(d=>d.id),ch:'email'};
-  await cdMailTplLoad();const hk=deb.some(d=>d.kind==='hok');
-  cdMailPrefill(cdMailBody(cdForTxt(deb),hk),cdMailTplOf(hk?'hok':'pledge').subj);
+  await cdMailTplLoad();const kind=await cdMailPick(deb.some(d=>d.kind==='hok'));if(!kind)return;
+  cdMailPrefill(cdMailFill(cdMailTplOf(kind).body,cdForTxt(deb)),cdMailTplOf(kind).subj,true);
   cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);
   toast('✉️ המכתב מוכן עם הסכום והקישור — אפשר לערוך; למטה תצוגה מקדימה');
   setTimeout(()=>{const p=document.getElementById('cm_prev');if(p)p.click();},300);}
@@ -14218,11 +14227,11 @@ function cdWire(){const g=id=>document.getElementById(id);
     cdRem={ids:sel.map(d=>d.id),ch};
     const by=new Map();sel.forEach(d=>{const kk=d.member_id||('x'+(d.phone||d.name||d.id));const x=by.get(kk)||{amt:0,hok:false,ds:[]};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';x.ds.push(d);by.set(kk,x);});
     if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
-      {const hk=sel.length&&sel.every(d=>d.kind==='hok');const t=cdMailTplOf(hk?'hok':'pledge');cdMailPrefill(cdMailFill(t.body,''),t.subj);}
+      cdMailPick(sel.length&&sel.every(d=>d.kind==='hok')).then(kind=>{if(!kind)return;const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,''),t.subj,true);
       by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
       if(!cmPick.size){toast('לאף אחד מהנבחרים אין מייל');return;}
       cmSender='neder';cmAdding=false;cmAddQ='';cmSub='send';render();window.scrollTo(0,0);
-      toast(cmPick.size+' נמענים במייל, עם הסכום של כל אחד ב-{{סכום}} ובקישור'+(nomail?(' · '+nomail+' בלי מייל'):''));return;}
+      toast(cmPick.size+' נמענים במייל, עם הסכום של כל אחד ב-{{סכום}} ובקישור'+(nomail?(' · '+nomail+' בלי מייל'):''));});return;}
     ymRecs=new Map();let noph=0,hok=0;
     by.forEach((x,mid)=>{if(typeof mid==='string'){const d0=x.ds[0],ph=ymPhone(d0.phone||'');if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}
         ymRecs.set(ymKey('x',ph),{k:'x',id:0,name:d0.name||'',phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):''});return;}
