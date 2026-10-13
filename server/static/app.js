@@ -14003,6 +14003,7 @@ function cdMailDraft(kind,fr){
     <label class="fld"><span>נושא</span><input id="cdd_s" value="${esc(mlSaved('cm_subj',''))}"></label>
     <label class="fld"><span>תוכן המכתב</span><textarea id="cdd_b" rows="8">${esc(mlSaved('cm_body',''))}</textarea></label>
     <div class="hintxt">{{שם}} · {{סכום}} · {{קישור}} מתמלאים לבד לכל נמען. שורה ריקה = פסקה חדשה.</div>
+    <div class="addrow" style="margin:4px 0"><button class="btn sm ghost" id="cdd_save"></button></div>
     <div class="rbtitle" style="text-align:right;margin-top:10px">👁️ כך זה ייראה אצל <span id="cdd_who"></span>
       ${aud.length>1?'<button class="btn sm ghost" id="cdd_prev">▶</button> <span id="cdd_n"></span> <button class="btn sm ghost" id="cdd_next">◀</button>':''}</div>
     <div id="cdd_pv"><div class="hintxt">טוען…</div></div>
@@ -14017,7 +14018,13 @@ function cdMailDraft(kind,fr){
     q('cdd_pv').innerHTML=r&&r.first?`<div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div><div class="mlhtml">${r.html||''}</div>`
       :`<div class="hintxt bad">${esc((r&&r.skipped&&r.skipped[0]&&r.skipped[0].why)||'לא ניתן להציג')}</div>`;};
   const later=()=>{clearTimeout(tm);tm=setTimeout(pv,600);};
-  const kb=()=>o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===kind));kb();
+  // מאיר: "יש הו"ק שחזרה שאני צריך עוד לערוך אותה" — עורכים כאן ושומרים כנוסח הקבוע של אותו סוג
+  const KL={pledge:'התחייבות / חוב',hok:'הו"ק שחזרה',free:'מייל חופשי'};
+  const kb=()=>{o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===kind));q('cdd_save').textContent='💾 לשמור את הנוסח הזה כנוסח הקבוע של "'+KL[kind]+'"';};kb();
+  q('cdd_save').onclick=async()=>{let body=bi.value;if(fr)body=body.split(fr).join('{{עבור}}');
+    if(!await uiConfirm('לשמור כנוסח הקבוע של "'+KL[kind]+'"?\nמעכשיו כל מייל '+KL[kind]+' ייפתח בנוסח הזה.','💾 כן, לשמור','לא'))return;
+    const r=await api('POST','/api/cm/mailtpl',{kind,subj:si.value,body});
+    if(r&&r.ok){CD_MAILTPL=r.tpl;mlSave('cm_body_auto',bi.value);toast('💾 נשמר — זה הנוסח הקבוע של "'+KL[kind]+'"');}else toast('לא נשמר');};
   o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.onclick=async()=>{if(b.dataset.k===kind)return;
     const ch=bi.value!==mlSaved('cm_body_auto','');
     if(ch&&!await uiConfirm('לעבור לנוסח אחר? מה שכתבת כאן יוחלף.','כן, להחליף','לא'))return;
