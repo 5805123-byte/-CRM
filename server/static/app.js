@@ -13956,13 +13956,6 @@ const CD_MAIL_DEF={pledge:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצ
 let CD_MAILTPL=null;
 async function cdMailTplLoad(){if(CD_MAILTPL)return CD_MAILTPL;const r=await api('GET','/api/cm/mailtpl');CD_MAILTPL=(r&&r.tpl)||{};return CD_MAILTPL;}
 const cdMailTplOf=k=>{const t=(CD_MAILTPL||{})[k];return {subj:(t&&t.subj)||(k==='free'?'כולל חצות':CD_MAIL_SUBJ),body:(t&&t.body)||CD_MAIL_DEF[k],saved:!!t};};
-// ✉️ איזה מייל — תזכורת התחייבות / הו"ק שחזרה / חופשי
-function cdMailPick(hk){return new Promise(done=>{const o=document.createElement('div');o.className='confirmov';
-  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:420px"><div class="cm">✉️ איזה מייל?</div>
-    <div class="bqfixopts"><button class="btn${hk?' ghost':''}" data-k="pledge">🤝 תזכורת על התחייבות / חוב</button><button class="btn${hk?'':' ghost'}" data-k="hok">🔁 הו"ק שחזרה</button><button class="btn ghost" data-k="free">✍️ מייל חופשי — אני כותב</button></div>
-    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
-  document.body.appendChild(o);o.querySelector('.cno').onclick=()=>{o.remove();done(null);};
-  o.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{o.remove();done(b.dataset.k);});});}
 const cdMailFill=(body,fr)=>fr?body.replace(/\{\{עבור\}\}/g,fr):body.replace(/\s*(?:עבור|בעבור)\s*\{\{עבור\}\}/g,'').replace(/\{\{עבור\}\}/g,'');
 const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
 // ✉️ עריכת נוסח מייל התזכורת — מכפתור למעלה בחלון החובות
@@ -13990,19 +13983,23 @@ async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toas
   const deb=g.items.filter(d=>!d._req&&d.status==='open');
   cmPick=new Set([m.id]);cmAmts={};cmAmts[m.id]=String(Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100);
   cdRem={ids:deb.map(d=>d.id),ch:'email'};
-  await cdMailTplLoad();const kind=await cdMailPick(deb.some(d=>d.kind==='hok'));if(!kind)return;
-  cdMailPrefill(cdMailFill(cdMailTplOf(kind).body,cdForTxt(deb)),cdMailTplOf(kind).subj,true);
-  cdMailDraft();}
+  await cdMailTplLoad();const kind=deb.length&&deb.every(d=>d.kind==='hok')?'hok':'pledge',fr=cdForTxt(deb);
+  cdMailPrefill(cdMailFill(cdMailTplOf(kind).body,fr),cdMailTplOf(kind).subj,true);
+  cdMailDraft(kind,fr);}
 // מאיר: "אני לא רואה את הטיוטה של שליחת מייל לפני שאני שולח בדף חובות" — הטיוטה נפתחת כאן, בדף החובות:
 // נושא ותוכן לעריכה, איך זה ייראה אצל כל נמען (עם הסכום והקישור שלו), ושליחה — בלי לעבור מסך
-function cdMailDraft(){
+// מאיר: "למה לא מופיע הנוסח של התחייבויות?" — נבחר בטעות "מייל חופשי" בחלון שלפני הטיוטה. עכשיו
+// הטיוטה נפתחת ישר בנוסח המתאים, והחלפת הנוסח (התחייבות / הו"ק שחזרה / חופשי) — בראש הטיוטה עצמה
+function cdMailDraft(kind,fr){
   if(MLSETUP_C===null)mlLoadSetupC();
+  kind=kind||'pledge';
   const aud=cmAudience();if(!aud.length){toast('אין נמענים עם מייל');return;}
   let idx=0,tm=null,seq=0;
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:680px;width:100%;max-height:92vh;overflow:auto">
     <div class="cm">✉️ הטיוטה — עדיין לא נשלח כלום</div>
     <div class="hintxt">📤 יוצא מ: <b>💰 נדר 18</b> <span dir="ltr">${esc((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')}</span> · אל: <b>${aud.length===1?esc(mName(aud[0])):aud.length+' נמענים'}</b> — כל אחד מקבל הודעה נפרדת, בשמו</div>
+    <div class="fld"><span>📝 הנוסח</span><span class="bqseg" id="cdd_k"><button data-k="pledge">🤝 התחייבות / חוב</button><button data-k="hok">🔁 הו"ק שחזרה</button><button data-k="free">✍️ חופשי</button></span></div>
     <label class="fld"><span>נושא</span><input id="cdd_s" value="${esc(mlSaved('cm_subj',''))}"></label>
     <label class="fld"><span>תוכן המכתב</span><textarea id="cdd_b" rows="8">${esc(mlSaved('cm_body',''))}</textarea></label>
     <div class="hintxt">{{שם}} · {{סכום}} · {{קישור}} מתמלאים לבד לכל נמען. שורה ריקה = פסקה חדשה.</div>
@@ -14020,6 +14017,12 @@ function cdMailDraft(){
     q('cdd_pv').innerHTML=r&&r.first?`<div class="hintxt">נושא: <b>${esc(r.subject||'')}</b></div><div class="mlhtml">${r.html||''}</div>`
       :`<div class="hintxt bad">${esc((r&&r.skipped&&r.skipped[0]&&r.skipped[0].why)||'לא ניתן להציג')}</div>`;};
   const later=()=>{clearTimeout(tm);tm=setTimeout(pv,600);};
+  const kb=()=>o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===kind));kb();
+  o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.onclick=async()=>{if(b.dataset.k===kind)return;
+    const ch=bi.value!==mlSaved('cm_body_auto','');
+    if(ch&&!await uiConfirm('לעבור לנוסח אחר? מה שכתבת כאן יוחלף.','כן, להחליף','לא'))return;
+    kind=b.dataset.k;const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,fr||''),t.subj,true);
+    si.value=mlSaved('cm_subj','');bi.value=mlSaved('cm_body','');kb();pv();});
   si.oninput=()=>{mlSave('cm_subj',si.value);later();};
   bi.oninput=()=>{mlSave('cm_body',bi.value);later();};
   if(q('cdd_prev')){q('cdd_prev').onclick=()=>{idx=(idx+aud.length-1)%aud.length;pv();};q('cdd_next').onclick=()=>{idx=(idx+1)%aud.length;pv();};}
@@ -14273,11 +14276,11 @@ function cdWire(){const g=id=>document.getElementById(id);
     cdRem={ids:sel.map(d=>d.id),ch};
     const by=new Map();sel.forEach(d=>{const kk=d.member_id||('x'+(d.phone||d.name||d.id));const x=by.get(kk)||{amt:0,hok:false,ds:[]};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';x.ds.push(d);by.set(kk,x);});
     if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
-      cdMailPick(sel.length&&sel.every(d=>d.kind==='hok')).then(kind=>{if(!kind)return;const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,''),t.subj,true);
+      cdMailTplLoad().then(()=>{const kind=sel.length&&sel.every(d=>d.kind==='hok')?'hok':'pledge';const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,''),t.subj,true);
       by.forEach((x,mid)=>{const m=(MEMBERS||[]).find(y=>y.id==mid);if(!m||!mHasMail(m)){nomail++;return;}cmPick.add(mid);cmAmts[mid]=String(Math.round(x.amt*100)/100);});
       if(!cmPick.size){toast('לאף אחד מהנבחרים אין מייל');return;}
       if(nomail)toast(nomail+' בלי כתובת מייל — לא יקבלו');
-      cdMailDraft();});return;}
+      cdMailDraft(kind,'');});return;}
     ymRecs=new Map();let noph=0,hok=0;
     by.forEach((x,mid)=>{if(typeof mid==='string'){const d0=x.ds[0],ph=ymPhone(d0.phone||'');if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}
         ymRecs.set(ymKey('x',ph),{k:'x',id:0,name:d0.name||'',phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):''});return;}
