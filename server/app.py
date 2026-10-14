@@ -24893,6 +24893,8 @@ def ym_req_rows(con, st='open'):
     rows = [dict(r) for r in con.execute(
         "SELECT m.id,m.kind,m.ref_id,m.name,m.phone,m.amount,m.sent_ts,m.paid_at,m.paid_amount,m.paid_via,m.req_off,m.job,"
         "j.label jlabel FROM ym_msg m LEFT JOIN ym_job j ON j.id=m.job WHERE m.status='sent' AND CAST(COALESCE(m.amount,'0') AS REAL)>0 "
+        # מאיר: "מה זה ה-10 שקל, לא הבנתי" — שיחות בדיקה אליי הן לא חוב
+        "AND COALESCE(j.test,0)=0 AND COALESCE(m.kind,'')<>'t' "
         "AND COALESCE(m.sent_ts,'')>=?" + w + " ORDER BY m.id DESC", (since,))]
     midx = nd_member_index(con)
     names = {r['id']: (r['last'], r['first']) for r in con.execute("SELECT id,last,first FROM members")}
