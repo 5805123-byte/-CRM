@@ -3199,6 +3199,22 @@ def ensure_schema():
     except Exception as e:
         print('  karmi wedding error:', e)
 
+    # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר" — משימה של מאיר להיום. אם יש
+    # כרטיס אחד בלבד של מילר יוסי/יוסף או שמחה/שמי — נתלית בו; אחרת משימה כללית עם השם בטקסט.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_transfer_miller_v1'").fetchone():
+            ds = con.execute("SELECT id FROM donors WHERE TRIM(last)='מילר' AND (first LIKE '%יוסי%' OR first LIKE '%יוסף%')").fetchall()
+            if len(ds) != 1:
+                ds = con.execute("SELECT id FROM donors WHERE TRIM(last)='מילר' AND (first LIKE '%שמחה%' OR first LIKE '%שמי%')").fetchall()
+            did = ds[0]['id'] if len(ds) == 1 else None
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                        (did, '2026-10-14', 'other', 'לעשות העברה לשמי יוסי מילר', 'מאיר', '', ''))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_transfer_miller_v1')")
+            con.commit()
+            print('  משימה: העברה לשמי יוסי מילר' + (' (בכרטיס #%s)' % did if did else ' (כללית)'))
+    except Exception as e:
+        print('  miller task error:', e)
+
     # בר המצווה של אלחנן חסידי — מאיר: "תרשום ביומן" (ההזמנה: יום שני ח' חשוון תשפ"ז,
     # 19.10.26, אולמי "פלטינום" (ארמונות הגפן), רחוב בנין דוד 3, ביתר עילית; קבלת פנים 19:30).
     # אם יוסף חיים חסידי הוא תורם — השמחה נרשמת אצלו, אחרת כמשימה כללית.
