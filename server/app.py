@@ -3224,6 +3224,18 @@ def ensure_schema():
     except Exception as e:
         print('  miller task v3 error:', e)
 
+    # מאיר (יום ד' 14.10): "תכניס לי למשימות ולוח שנה פגישה שבוע הבא יום שלישי עם רו"ח קסטנר" — 20.10.2026
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_kastner_meeting_v1'").fetchone():
+            note = 'פגישה עם רו"ח קסטנר'
+            if not con.execute("SELECT 1 FROM tasks WHERE note=? AND due_date='2026-10-20'", (note,)).fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,?,'','')",
+                            ('2026-10-20', 'other', note, 'מאיר'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_kastner_meeting_v1')")
+            con.commit()
+    except Exception as e:
+        print('  kastner meeting error:', e)
+
     # בר המצווה של אלחנן חסידי — מאיר: "תרשום ביומן" (ההזמנה: יום שני ח' חשוון תשפ"ז,
     # 19.10.26, אולמי "פלטינום" (ארמונות הגפן), רחוב בנין דוד 3, ביתר עילית; קבלת פנים 19:30).
     # אם יוסף חיים חסידי הוא תורם — השמחה נרשמת אצלו, אחרת כמשימה כללית.
