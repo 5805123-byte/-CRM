@@ -14485,7 +14485,9 @@ function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
     else if(d.mq_st==='failed'||d.mq_st==='dead'){t='❌ המייל לא נשלח';c='bad';}
     else if(d.mq_open){t='✉️ המייל נשלח · 👁 נפתח '+tm(d.mq_open)+(+d.mq_opens>1?' (×'+d.mq_opens+')':'');c='ok';}
     else if(d.mq_st==='sent'&&+d.mq_track){t='✉️ המייל נשלח · עוד לא נפתח';}
-    else{t='✉️ המייל נשלח';c='ok';}}
+    // מאיר: "למה לא רואים מכאן אם הוא ראה את האימייל" — מייל שיצא לפני שהיה מעקב פתיחות
+    else if(!d.rem_mail){t='✉️ המייל נשלח · לפני שהיה מעקב פתיחות — אין מידע אם נפתח';}
+    else{t='✉️ המייל נשלח · בלי מעקב פתיחות';}}
   else if(!d.y_st){return '';}
   else if(d.y_st==='queued'){t='⏳ בתור לשליחה';}
   else if(d.y_st==='failed'||d.y_st==='cancelled'){t=(v==='sms'?'❌ ה-SMS לא נשלח':'❌ השיחה לא יצאה')+(d.y_err?' — '+String(d.y_err).slice(0,60):'');c='bad';}
