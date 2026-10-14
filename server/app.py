@@ -7614,8 +7614,9 @@ def ensure_schema():
                                   (x['n'], x['date_text'], json.dumps(x['days'], ensure_ascii=False), x['kind_he'], x['dedication'], x['donor_txt'], x['years']))
                 r = con.execute("SELECT * FROM parnes_imp WHERE id=?", (cur.lastrowid,)).fetchone()
                 cands = pimp_candidates(con, x['donor_txt'])
-                if len(cands) == 1 and ' ו' not in x['donor_txt']:
-                    pimp_apply(con, r, cands[0]['id'])
+                known = pimp_known(con, r, cands)
+                if known or (len(cands) == 1 and ' ו' not in x['donor_txt']):
+                    pimp_apply(con, r, known or cands[0]['id'])
                     con.execute("UPDATE parnes_imp SET how='auto' WHERE id=?", (r['id'],))
                     na += 1
                 else:
@@ -7623,6 +7624,18 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_v1')")
             con.commit()
             print('  לימוד לזכות: %d נכנסו לבד לפרנס יום, %d מחכים לשיוך' % (na, nw))
+        # תאריך שכבר רשום אצל אחד התורמים המתאימים (משנה קודמת) — משויך לו לבד, גם בייבוא שכבר רץ
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_known_v1'").fetchone():
+            nk = 0
+            for r in con.execute("SELECT * FROM parnes_imp WHERE status='pending'").fetchall():
+                known = pimp_known(con, r, pimp_candidates(con, r['donor_txt']))
+                if known:
+                    pimp_apply(con, r, known)
+                    con.execute("UPDATE parnes_imp SET how='auto' WHERE id=?", (r['id'],))
+                    nk += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_known_v1')")
+            con.commit()
+            print('  לימוד לזכות: %d תאריכים שויכו לפי פרנס קיים באותו יום' % nk)
         # מאיר: "אצל טעפפער תכניס רק את י"ח שבט" — לילה אחד ולא כל השבוע
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_tepper_v1'").fetchone():
             r = con.execute("SELECT * FROM parnes_imp WHERE n=23").fetchone()
@@ -15094,6 +15107,17 @@ def pimp_candidates(con, txt):
                 seen.add(r['id'])
                 out.append({'id': r['id'], 'name': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(), 'english': r['english'] or '', 'city': r['city'] or ''})
     return out
+
+
+def pimp_known(con, r, cands):
+    """מאיר: "למה זה עדיין מחפש שיוך אם הוא משויך כבר לעזרא מקס" — תורם (מבין המתאימים בשם) שכבר יש לו פרנס לילה
+    באותו יום, משנה כלשהי, הוא בעל התאריך. מחזיר את התורם אם הוא אחד בלבד."""
+    days = json.loads(r['days'] or '[]') or [r['date_text']]
+    ids = {c['id'] for c in cands}
+    own = {x['donor_id'] for x in con.execute(
+        "SELECT DISTINCT donor_id FROM parnes WHERE COALESCE(kind,'parnes')='parnes' AND date_text IN (%s)" % ','.join('?' * len(days)), days)}
+    hit = (own & ids) if ids else set()
+    return next(iter(hit)) if len(hit) == 1 else None
 
 
 def pimp_hyear(date_text):
