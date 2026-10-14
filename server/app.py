@@ -26195,7 +26195,10 @@ def ivr_answer(P):
                             "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
         # מאיר: "לא חיברתי את ימות המשיח לנתן תתן. אז בינתיים הקשה 1 שתעביר לנדרים פלוס של הקהילה" —
         # הניתוב לקופה כבוי עד שמדליקים (app_kv natan_ivr=1, אחרי שנדרים פלוס יחברו את ימות למוסד שלה)
-        nat_mo = natan_mosad(con) if (kv_get(con, 'natan_ivr', '') == '1' and ((last and last['fund'] == 'natan') or (lastf and lastf['fund'] == 'natan'))) else ''
+        nat_call = bool((last and last['fund'] == 'natan') or (lastf and lastf['fund'] == 'natan'))
+        nat_mo = natan_mosad(con) if (kv_get(con, 'natan_ivr', '') == '1' and nat_call) else ''
+        # עד אז — החשבון של הכולל, אבל "עבור נתן תתן" (קבוצה בנדרים פלוס כשאפשר) והחוב של הקופה
+        nat_tag = nat_call and not nat_mo
         if nat_mo and not (last and last['fund'] == 'natan'):
             job_amt, job = 0, 0      # הסכום שבהודעה של הקהילה לא שייך לקופה
         pay_mo = nat_mo or _nd.mosad()
@@ -26207,7 +26210,7 @@ def ivr_answer(P):
             dm = mid or next((k['member_id'] for k in ks if k.get('member_id')), None)
             if dm:
                 ob = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')=?",
-                                 (dm, 'natan' if nat_mo else '')).fetchone()[0]
+                                 (dm, 'natan' if nat_call else '')).fetchone()[0]
                 job_amt = _ivr_amt(ob)
 
         def fallback(amt=0):
@@ -26297,8 +26300,9 @@ def ivr_answer(P):
                     '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
         jl = con.execute("SELECT label FROM ym_job WHERE id=?", (job,)).fetchone() if job else None
         with _nd.use(_nd.account_for(k.get('mosad') or '')):
-            ok, res = _nd.tashlum_boded(k['id'], amt, comments='תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
-                                    ajax=('ivr-' + call_id) if call_id else '')
+            ok, res = _nd.tashlum_boded(k['id'], amt, groupe='נתן תתן' if nat_tag else '',
+                                        comments=('עבור נתן תתן · ' if nat_tag else '') + 'תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
+                                        ajax=('ivr-' + call_id) if call_id else '')
         r = res if isinstance(res, dict) else {}
         msg = str(r.get('Message') or ('' if ok else res) or '')[:200]
         conf = str(r.get('Confirmation') or '')
@@ -26312,10 +26316,13 @@ def ivr_answer(P):
                          ('💳 שילם ₪%g בטלפון מהוראת הקבע (כרטיס ****%s) · אישור %s' % (amt, l4, conf)) if ok
                          else ('🔴 ניסיון תשלום ₪%g בטלפון נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
             fk = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
+            if nat_tag and fk == '':
+                fk = 'natan'
             if ok and fk is not None:
                 cm_debt_pay(con, k['member_id'] or mid, amt, 'שולם בטלפון %s (אישור %s)' % (today_iso(), conf), fund=fk)
-        if ok and fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '') is not None:
-            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund=fund_strict(con, k['mosad'] if 'mosad' in k.keys() else ''))
+        fk2 = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
+        if ok and fk2 is not None:
+            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund='natan' if (nat_tag and fk2 == '') else fk2)
         con.commit()
         if ok:
             return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
