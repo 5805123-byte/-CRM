@@ -14074,7 +14074,11 @@ function cdNatanHTML(D){
   const acc=D.nd_accounts||[], cur=D.natan_mosad||'';
   const sel=acc.length>1?`<label class="fld" style="max-width:420px"><span>🔗 החשבון של נתן תתן בנדרים פלוס</span><select id="nt_mosad"><option value="">— לא נבחר —</option>${acc.filter(a=>!a.main).map(a=>`<option value="${esc(a.mosad)}" ${a.mosad===cur?'selected':''}>${esc(a.name)} · מוסד ${esc(a.mosad)}</option>`).join('')}</select></label>`
     :`<div class="ymwarn">🔗 כדי לסנכרן את החשבון של נתן תתן בנדרים פלוס צריך להוסיף אותו ב-Render ← Environment: <b>NEDARIM_MOSAD3</b> (מספר המוסד), <b>NEDARIM_API_KEY3</b> (המפתח שלה) ו-<b>NEDARIM_NAME3</b> = נתן תתן. את המפתח לא שולחים בצ'אט.</div>`;
-  return `<div class="cdnatan">${sel}${cur?'':'<div class="hintxt">עד שבוחרים חשבון — תשלומים מנדרים פלוס לא נסגרים כאן אוטומטית; מה שמסמנים ✓ שולם / מדביקים כ"שילמו" — כן.</div>'}</div>`;}
+  const lk=D.natan_link||'';
+  const lnk=`<label class="fld" style="max-width:520px"><span>🔗 הקישור לדף התרומות של נתן תתן — נכנס לכל מייל ו-SMS במקום {{קישור}} (כללי, לא אישי)</span>
+    <span style="display:flex;gap:6px"><input id="nt_link" dir="ltr" placeholder="https://…" value="${esc(lk)}" style="flex:1"><button class="btn sm" id="nt_link_ok">💾 שמור</button></span></label>
+    ${lk?'':`<div class="hintxt">עד שמדביקים כאן — יוצא הדף הכללי של נדרים פלוס${cur?' למוסד '+esc(cur):''}, בלי שם ובלי סכום.</div>`}`;
+  return `<div class="cdnatan">${lnk}${sel}${cur?'':'<div class="hintxt">עד שבוחרים חשבון — תשלומים מנדרים פלוס לא נסגרים כאן אוטומטית; מה שמסמנים ✓ שולם / מדביקים כ"שילמו" — כן.</div>'}</div>`;}
 function cdHistHTML(){
   const btn=`<button class="cdhistb" id="cd_hist">📜 היסטוריה — מה ששולם${cdHist?` (${cdHist.filter(d=>(d.fund||'')===cdFund).length})`:''} ${cdHistOpen?'▲':'▼'}</button>`;
   if(!cdHistOpen)return `<div class="cdhist">${btn}</div>`;
@@ -14367,7 +14371,7 @@ async function cdMailNow(g){let m=(MEMBERS||[]).find(x=>x.id==g.mid);if(!m){toas
 // הטיוטה נפתחת ישר בנוסח המתאים, והחלפת הנוסח (התחייבות / הו"ק שחזרה / חופשי) — בראש הטיוטה עצמה
 function cdMailDraft(kind,fr){
   if(MLSETUP_C===null)mlLoadSetupC();
-  kind=kind||cdPK();
+  kind=kind||cdPK();NT_MAIL=cdFund==='natan';
   const aud=cmAudience();if(!aud.length){toast('אין נמענים עם מייל');return;}
   let idx=0,tm=null,seq=0;
   const o=document.createElement('div');o.className='confirmov';
@@ -14411,8 +14415,8 @@ function cdMailDraft(kind,fr){
   si.oninput=()=>{mlSave('cm_subj',si.value);later();};
   bi.oninput=()=>{mlSave('cm_body',bi.value);later();};
   if(q('cdd_prev')){q('cdd_prev').onclick=()=>{idx=(idx+aud.length-1)%aud.length;pv();};q('cdd_next').onclick=()=>{idx=(idx+1)%aud.length;pv();};}
-  o.querySelector('.cno').onclick=()=>{clearTimeout(tm);o.remove();};
-  q('cdd_full').onclick=()=>{o.remove();cmAdding=false;cmAddQ='';cmSub='send';tab='comm';render();window.scrollTo(0,0);};
+  o.querySelector('.cno').onclick=()=>{clearTimeout(tm);o.remove();NT_MAIL=false;};
+  q('cdd_full').onclick=()=>{o.remove();NT_MAIL=false;cmAdding=false;cmAddQ='';cmSub='send';tab='comm';render();window.scrollTo(0,0);};
   q('cdd_go').onclick=async()=>{
     if(!si.value.trim()){toast('חסר נושא');return;}
     if(!bi.value.trim()){toast('חסר תוכן');return;}
@@ -14539,6 +14543,8 @@ function cdImpHTML(){const R=cdImp.rows||[], paid=cdImp.mode==='paid';
       <div class="bqacts"><button class="btn sm" id="cdi_ok">💾 שמור ${okN} ${paid?'תשלומים':'שורות'}</button>
         <span class="hintxt">${unl?unl+' בלי חבר קהילה — נשמרים עם השם; אחר כך אפשר לשייך (🔗), לפתוח חבר חדש (➕), או להשאיר חד פעמי (👤).':''}${pn?' '+pn+' ששולמו — נרשמים בכרטיס כתרומה ועוברים להיסטוריה.':''}</span></div>`:''}</div>`;}
 function cdWire(){const g=id=>document.getElementById(id);
+  const ntl=g('nt_link_ok');if(ntl)ntl.onclick=async()=>{const r=await api('POST','/api/cm/natan_link',{link:g('nt_link').value.trim()});
+    if(r&&r.ok){cdData.natan_link=r.link;toast(r.link?'✓ נשמר — זה הקישור בכל מייל ו-SMS של נתן תתן':'נמחק');renderCommDebts();}else toast((r&&r.error)||'לא נשמר');};
   const ntm=g('nt_mosad');if(ntm)ntm.onchange=async()=>{const r=await api('POST','/api/cm/natan_mosad',{mosad:ntm.value});if(r&&r.ok){cdData.natan_mosad=r.mosad;toast(r.mosad?'✓ נשמר — תשלומים מהחשבון הזה נכנסים לנתן תתן':'בוטל');renderCommDebts();}};
   ntWireNav();
   g('cd_back').onclick=()=>{cmSub='list';cdMember=0;render();};
@@ -14671,9 +14677,9 @@ function cdWire(){const g=id=>document.getElementById(id);
       cdMailDraft(kind,'');});return;}
     ymRecs=new Map();let noph=0,hok=0;
     by.forEach((x,mid)=>{if(typeof mid==='string'){const d0=x.ds[0],ph=ymPhone(d0.phone||'');if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}
-        ymRecs.set(ymKey('x',ph),{k:'x',id:0,name:d0.name||'',phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):''});return;}
+        ymRecs.set(ymKey('x',ph),{k:'x',id:0,name:d0.name||'',phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):'',natan:cdFund==='natan'});return;}
       const m=(MEMBERS||[]).find(y=>y.id==mid);const ph=m&&ymPhone(m.phone);if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}if(x.hok)hok++;
-      ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):''});});
+      ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):'',natan:cdFund==='natan'});});
     if(!ymRecs.size){toast(ch==='sms'?'לאף אחד מהנבחרים אין נייד':'לאף אחד מהנבחרים אין טלפון');return;}
     ymCh=ch;ymBill=ch==='voice'&&cdFund!=='natan';
     ymTplKey=cdFund==='natan'?'natan':(hok>ymRecs.size/2?'hok':'pledge');{const t0=cdYmTplFor(sel,ymTplKey);if(t0)ymTplKey=t0[0];}const t=ymTplFind(ymTplKey);if(t)ymText=ymTpl(t,ymCh);
@@ -15172,6 +15178,7 @@ function cmLinkHTML(){
     <div class="hintxt">אפשרויות נוספות (סוג תשלום, תשלומים, קטגוריה) — כמו שנבחרו במסך ימות המשיח.</div></div>`;}
 function cmLinksPayload(){
   const links={};
+  if(NT_MAIL&&cdFund==='natan'){const L=ntGenLink();cmAudience().forEach(m=>{links[m.id]=L;});return {links,link_amount:'',amounts:cmAmts};}
   cmAudience().forEach(m=>{links[m.id]=nedLink({k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:cmAmts[m.id]||cmLinkAmt});});
   return {links,link_amount:cmLinkAmt,amounts:cmAmts};}
 function cmWireLink(){
@@ -15394,7 +15401,12 @@ function ymRecInfo(r){
   if(r.k==='m'){const m=(MEMBERS||[]).find(x=>x.id==r.id);if(m)return {email:(String(m.email||'').split(/[,;\s/]+/).find(x=>x.includes('@'))||''),street:m.addr||'',city:m.city||''};}
   if(r.k==='d'){const d=DB.find(x=>x.id==r.id);if(d)return {email:(splitEmails(d.email)[0]||''),street:d.addr||'',city:d.city||''};}
   return {email:'',street:'',city:''};}
+// מאיר: "את הקישור לאשראי באימייל תעשה קישור כללי לקופת נתן תתן ... לא לנעול על התורם הספציפי"
+let NT_MAIL=false;   // הטיוטה הפתוחה היא של נתן תתן
+const ntGenLink=()=>{const D=cdData||{};if(D.natan_link)return D.natan_link;const mo=String(D.natan_mosad||'').replace(/\D/g,'');
+  return mo?'https://www.matara.pro/nedarimplus/online/?mosad='+mo:'';};
 function nedLink(r){
+  if(r&&r.natan)return ntGenLink();
   const mosad=String((r&&r.mosad)||ymLink.mosad||(ymStatus&&ymStatus.mosad)||(NEDM&&NEDM.mosad)||'5777499').replace(/\D/g,''); if(!mosad)return '';
   const p=[['mosad',mosad]];
   const amt=String((r&&r.amt)||ymAmt||'').replace(/[^\d.]/g,'');

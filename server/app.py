@@ -14344,8 +14344,25 @@ def ym_recipients(con, recs):
     return out
 
 
+# מאיר: "את הקישור לאשראי באימייל תעשה קישור כללי לקופת נתן תתן ... לא לנעול על התורם הספציפי" —
+# הקישור הכללי לדף התרומות של נתן תתן (נשמר בלשונית נתן תתן); גם הוא מותר כקישור בהודעות
+NATAN_LINK = [None]   # None = עוד לא נקרא מהמסד
+
+
+def natan_link(con):
+    NATAN_LINK[0] = (kv_get(con, 'natan_link', '') or '').strip()
+    return NATAN_LINK[0]
+
+
 def ym_link_ok(v):
     v = str(v or '').strip()
+    if v and NATAN_LINK[0] is None:
+        try:
+            _c = db(); natan_link(_c); _c.close()
+        except Exception:
+            NATAN_LINK[0] = ''
+    if v and NATAN_LINK[0] and v == NATAN_LINK[0]:
+        return v
     return v if (v.startswith(NED_LINK_PREFIX) and len(v) < 1500 and not re.search(r'\s', v)) else ''
 
 
@@ -17841,11 +17858,12 @@ class H(BaseHTTPRequestHandler):
                 tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
                 reqs = ym_req_rows(con, st)
                 nmo = natan_mosad(con)
+                nlk = natan_link(con)
             finally:
                 con.close()
             import nedarim as _nd
             return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2],
-                                    'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo, 'vms': vms,
+                                    'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo, 'natan_link': nlk, 'vms': vms,
                                     'nd_accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main']} for x in _nd.accounts()]})
         if self.path.split('?')[0] == '/api/auth/log':
             # 🔐 מי נכנס למערכת — רק בכניסה הראשית (שאר הסיסמאות חסומות כאן ב-_gate)
@@ -19634,6 +19652,13 @@ class H(BaseHTTPRequestHandler):
             if not err:
                 bump_data()
             return self._send(200, {'ok': not err, 'new': n, 'error': err, 'natan': st_})
+        if self.path == '/api/cm/natan_link':
+            v = str(b.get('link') or '').strip()
+            if v and not (re.match(r'^https://[^\s]+$', v) and len(v) < 600):
+                return self._send(200, {'ok': False, 'error': 'קישור לא תקין — צריך להתחיל ב-https://'})
+            con = db()
+            kv_set(con, 'natan_link', v); con.commit(); natan_link(con); con.close()
+            return self._send(200, {'ok': True, 'link': v})
         if self.path == '/api/cm/natan_mosad':
             # מאיר: "לנתן תתן יש חשבון נפרד בנדרים פלוס" — איזה מהחשבונות שב-Render הוא של נתן תתן
             con = db()
