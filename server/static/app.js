@@ -14520,14 +14520,30 @@ function cdGroupsHTML(rows){
           ${deb.length?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${ch===k?'on':''}" data-cdgch="${k}" data-ids="${deb.map(d=>d.id).join(',')}" title="${l}${k==='email'&&!g.email?' — אין מייל':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(tot)}</b>${op.length>1?`<small>${op.length} פריטים</small>`:''}</div>
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
-        ${!g.mid&&deb.length?`<details class="cdlinkd"><summary>${deb.every(d=>+d.once)?'👤 חד פעמי':'🔗 לשייך'+((g.cands||[]).length?' — '+esc(g.cands[0].name)+'?':'…')}</summary>
+        ${!g.mid&&deb.length?`<details class="cdlinkd"><summary>${deb.every(d=>+d.once)?'👤 חד פעמי':'🔗 לשייך לחבר קהילה'+((g.cands||[]).length?' (אולי '+esc(g.cands[0].name)+')':'')}</summary>
         ${(deb.every(d=>+d.once)?`<span class="cdnow"><small class="cdonce" title="נשאר ברשימה, בלי כרטיס בקהילה">👤 חד פעמי — לא בקהילה</small><button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="בכל זאת לשייך לחבר קיים">🔗</button><button class="btn sm ghost" data-cdonce="0" data-gk="${esc(g.key)}" title="לבטל את הסימון חד פעמי">↩</button></span>`
-          :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="השם נכתב אחרת / בטעות — לשייך לחבר קיים">🔗 שייך לחבר קהילה</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`)}
+          :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="לחפש ולבחור כל חבר קהילה">🔍 לחפש חבר אחר…</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`)}
         ${!g.mid&&deb.length?`<span class="cdnow"><button class="btn sm ghost" data-cdph="${esc(g.key)}" title="טלפון — כדי להזכיר לו בשיחה / SMS בלי לפתוח לו כרטיס">📱 ${g.phone?'':'טלפון'}</button>${g.phone?` שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button>`:''}</span>`:''}</details>`:''}
         ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו"><button class="btn sm ghost" data-cdhear="${esc(g.key)}" title="לשמוע איך ההודעה הקולית תישמע אצלו — בלי להתקשר">🔊</button> שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
       ${(()=>{const V=(cdData&&cdData.vms)||{},seen=new Set(),L=(V['m'+g.mid]||[]).concat(g.phone?(V['p'+ymPhone(g.phone)]||[]):[]).filter(v=>!seen.has(v.id)&&seen.add(v.id));
         return L.length?`<div class="cdvms">${L.map(cdVmHTML).join('')}</div>`:'';})()}
       <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;})()).join('');}
+// מאיר: "שיהיה לי אפשרות לשייך למישהו אחר ולא רק לפי הניחוש הראשון" — חיפוש חי בכל חברי הקהילה,
+// לפי שם / טלפון; לחיצה על שורה בוחרת
+function cdMemberPick(title,q0){return new Promise(done=>{
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:480px;width:96vw"><div class="cm">${esc(title)}</div>
+    <input id="cmp_q" placeholder="🔍 שם או טלפון…" value="${esc(q0||'')}" style="width:100%;font-size:1.1rem;padding:8px;margin:6px 0">
+    <div id="cmp_l" style="max-height:50vh;overflow:auto"></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);
+  const q=o.querySelector('#cmp_q'),L=o.querySelector('#cmp_l'),end=v=>{o.remove();done(v);};
+  const draw=()=>{const t=q.value.trim(),d=t.replace(/\D/g,'');
+    const hits=t?(MEMBERS||[]).filter(m=>matchStr(mName(m),t)||(d.length>=4&&String(m.phone||'').replace(/\D/g,'').includes(d))).slice(0,30):[];
+    L.innerHTML=hits.map(m=>`<button class="btn ghost" data-pk="${m.id}" style="display:flex;width:100%;justify-content:space-between;margin:3px 0;text-align:right"><b>${esc(mName(m))}</b><small dir="ltr">${esc(m.phone||'')}</small></button>`).join('')
+      ||`<div class="hintxt">${t?'לא נמצא — נסה חלק מהשם, או שם המשפחה בלבד':'הקלד שם'}</div>`;
+    L.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>end((MEMBERS||[]).find(x=>x.id==b.dataset.pk)||null));};
+  q.oninput=draw;o.querySelector('.cno').onclick=()=>end(null);draw();setTimeout(()=>{q.focus();q.select();},40);});}
 function cdReqRow(d){
   const nm=((d.ml||'')+' '+(d.mf||'')).trim()||d.name||d.phone||'—';
   return `<div class="cdrow ${d.status}"><span></span>
@@ -14635,10 +14651,8 @@ function cdWire(){const g=id=>document.getElementById(id);
   // 🔗 שורות שנכנסו בלי חבר — לשייך לקיים (גם בטעות איות) או לפתוח חבר חדש
   view.querySelectorAll('[data-cdlink]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdlink);if(!g)return;
     const ids=g.items.filter(d=>!d._req).map(d=>d.id);
-    const v=await uiPrompt('לאיזה חבר קהילה לשייך את "'+g.name+'"? הקלד שם ובחר מהרשימה','');if(!v)return;
-    let mid=cdPick(v);if(!mid){const hits=(MEMBERS||[]).filter(m=>matchStr(mName(m),v.trim()));if(hits.length===1)mid=hits[0].id;}
-    if(!mid){toast('לא נמצא חבר אחד בשם הזה — נסה שם מדויק יותר');return;}
-    const m=(MEMBERS||[]).find(x=>x.id===mid);
+    const m=await cdMemberPick('🔗 לאיזה חבר קהילה לשייך את "'+g.name+'"?',String(g.name||'').split(/[\s–-]+/)[0]||'');if(!m)return;
+    const mid=m.id;
     if(!await uiConfirm('לשייך את "'+g.name+'" ('+ids.length+' שורות) ל'+mName(m)+'?','🔗 כן, לשייך','ביטול'))return;
     const r=await api('POST','/api/cm/debts/link',{ids,member_id:mid});if(r&&r.ok){toast('שויך ✓');cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא שויך');});
   view.querySelectorAll('[data-cdlnk1]').forEach(b=>b.onclick=async()=>{const g=CD_GROUPS.get(b.dataset.cdlnk1);if(!g)return;
