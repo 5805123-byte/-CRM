@@ -13016,7 +13016,8 @@ def auth_role_of(cookie):
             return ''
     except ValueError:
         return ''
-    return role
+    # מאיר: "קהילה והגבאים זה אותו דבר — אותה סיסמא, אותו קישור, ושייפתח להם הקהילה, פרנס יום וקוויטל"
+    return 'gabbai' if role == 'comm' else role
 
 
 def auth_exp_of(cookie):
@@ -13080,7 +13081,7 @@ def auth_check_google(credential):
     if em in _emails('GOOGLE_LOGIN_ADMIN', GOOGLE_ADMIN_DEFAULT):
         return 'admin', em
     if em in _emails('GOOGLE_LOGIN_COMM'):
-        return 'comm', em
+        return 'gabbai', em
     return '', 'החשבון %s לא מורשה להיכנס' % em
 
 
@@ -13093,10 +13094,17 @@ def auth_check_password(pw, ip, portal='admin'):
         if f[0] >= 8 and now - f[1] < 60:
             return 'wait'
     pw = (pw or '').strip().encode('utf-8')
-    env, r = {'comm': ('CRM_PASS_COMM', 'comm'), 'parnes': ('CRM_PASS_PARNES', 'parnes'),
-              'gabbai': ('CRM_PASS_GABBAI', 'gabbai')}.get(portal, ('CRM_PASS', 'admin'))
-    want = (os.environ.get(env) or '').strip().encode('utf-8')
-    role = r if (want and pw and hmac.compare_digest(pw, want)) else ''
+    # מאיר: "קהילה והגבאים זה אותו דבר" — בקישור של הקהילה ובקישור של הגבאים נכנסים באותה הרשאה
+    # (קהילה + פרנס יום + קוויטל), עם הסיסמה של הקהילה או של הגבאים
+    envs = {'comm': ('CRM_PASS_GABBAI', 'CRM_PASS_COMM'), 'gabbai': ('CRM_PASS_GABBAI', 'CRM_PASS_COMM'),
+            'parnes': ('CRM_PASS_PARNES',)}.get(portal, ('CRM_PASS',))
+    r = {'comm': 'gabbai', 'gabbai': 'gabbai', 'parnes': 'parnes'}.get(portal, 'admin')
+    role = ''
+    for env in envs:
+        want = (os.environ.get(env) or '').strip().encode('utf-8')
+        if want and pw and hmac.compare_digest(pw, want):
+            role = r
+            break
     # מאיר: "שאני כן אוכל להיכנס עם סיסמא שלי להכל" — סיסמת המערכת פותחת הכל גם בקישורים המיוחדים
     if not role and portal != 'admin':
         want = (os.environ.get('CRM_PASS') or '').strip().encode('utf-8')
@@ -15583,9 +15591,10 @@ class H(BaseHTTPRequestHandler):
             time.sleep(0.6)
             # מאיר: "זה הכתובת הנכונה אבל הוא אומר שהסיסמא לא נכונה" — כשהסיסמה של הקישור הזה בכלל לא
             # מוגדרת ב-Render (נמחקה / שם המשתנה השתנה), אומרים את זה במפורש
-            env_ = {'comm': 'CRM_PASS_COMM', 'parnes': 'CRM_PASS_PARNES', 'gabbai': 'CRM_PASS_GABBAI'}.get(portal_, 'CRM_PASS')
-            if meth_ == 'password' and not (os.environ.get(env_) or '').strip():
-                return self._send(401, {'ok': False, 'error': 'הסיסמה של הקישור הזה לא מוגדרת במערכת (חסר %s ב-Render) — רק הסיסמה הראשית נכנסת כאן' % env_}) or False
+            envs_ = {'comm': ('CRM_PASS_GABBAI', 'CRM_PASS_COMM'), 'gabbai': ('CRM_PASS_GABBAI', 'CRM_PASS_COMM'),
+                     'parnes': ('CRM_PASS_PARNES',)}.get(portal_, ('CRM_PASS',))
+            if meth_ == 'password' and not any((os.environ.get(e) or '').strip() for e in envs_):
+                return self._send(401, {'ok': False, 'error': 'הסיסמה של הקישור הזה לא מוגדרת במערכת (חסר %s ב-Render) — רק הסיסמה הראשית נכנסת כאן' % envs_[0]}) or False
             return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')

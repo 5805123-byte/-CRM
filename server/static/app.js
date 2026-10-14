@@ -1294,7 +1294,8 @@ function applyRole(){
   const hb=document.getElementById('healthbtn'); if(hb)hb.hidden=true;
   const st=document.getElementById('stat'); if(st)st.textContent='';
   if(!tabs.includes(tab))tab=tabs[0];
-  try{if(location.pathname!==PORTAL_PATH[ROLE])history.replaceState(null,'',PORTAL_PATH[ROLE]);}catch(e){}
+  // קהילה וגבאים — אותה הרשאה, ושני הקישורים (/kehila, /gabbai) נשארים כמו שהם
+  try{if(location.pathname!==PORTAL_PATH[ROLE]&&!(ROLE==='gabbai'&&PORTAL==='comm'))history.replaceState(null,'',PORTAL_PATH[ROLE]);}catch(e){}
 }
 // מאיר: "גם בטאבלט שזה יבקש כניסה מחדש כל 48 שעות" — מתי הכניסה פגה נשמר במכשיר, כדי שגם בלי
 // רשת (כשמוצג העותק השמור של הנתונים) תתבקש כניסה מחדש אחרי 48 שעות
