@@ -26138,29 +26138,8 @@ def ivr_key(con):
 
 
 def _ivr_t(s):
-    """טקסט להקראה בימות — בלי נקודה, מקף, & ו-= (הם מפרידים בפקודה).
-    מאיר: "את המספרים זה אומר באנגלית, וגם חלק ממילים" — כל מספר נכתב במילים בעברית
-    ("הקישו אחת", "עשרה שקלים"), כי ההקלטות של המספרים בימות יוצאות באנגלית."""
-    import yemot as _ym
-    t = re.sub(r'\d+', lambda m: _ym._DIG[int(m.group(0))] if len(m.group(0)) == 1 else _ym.num_words(int(m.group(0))), str(s or ''))
-    return re.sub(r'\s+', ' ', re.sub(r'[.\-&=_*#]', ' ', t)).strip()
-
-
-def _ivr_n(v):
-    """סכום / מספר להקראה — במילים בעברית (במקום n- של ימות)."""
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        return 't-' + _ivr_t(str(v))
-    import yemot as _ym
-    w = _ym.num_words(int(f))
-    ag = int(round((f - int(f)) * 100))
-    return 't-' + _ivr_t(w + ((' ו' + _ym.num_words(ag) + ' אגורות') if ag else ''))
-
-
-def _ivr_d(v):
-    """ספרות אחת-אחת (4 ספרות הכרטיס, מספר אישור) — במילים בעברית (במקום d- של ימות)."""
-    return 't-' + _ivr_t(' '.join(re.sub(r'\D', '', str(v or '')) or '0'))
+    """טקסט להקראה בימות — בלי נקודה, מקף, & ו-= (הם מפרידים בפקודה)."""
+    return re.sub(r'\s+', ' ', re.sub(r'[.\-&=_*#]', ' ', str(s or ''))).strip()
 
 
 def _ivr_amt(v):
@@ -26173,7 +26152,7 @@ def _ivr_amt(v):
     return round(a, 2) if 0 < a <= 100000 else 0
 
 
-def ivr_kevas(con, phone, mids=(), mosad=''):
+def ivr_kevas(con, phone, mids=()):
     """ההוראות של המתקשר: לפי הטלפון שבהוראה / בכרטיס התורם בנדרים, וגם לפי חבר הקהילה
     שהטלפון שלו (הוראה שמקושרת אליו בשם או ידנית). מאיר: "תמיד אמור להיות אפשרות לחיוב
     דרך ההוראת קבע למי שיש לו" — גם הוראה שהסתיימו בה התשלומים (הכרטיס עדיין שמור);
@@ -26182,11 +26161,10 @@ def ivr_kevas(con, phone, mids=(), mosad=''):
         return []
     mids = [int(m) for m in (mids or ()) if m]
     # שלוחת התשלום של הקהילה — רק הוראות של החשבון של הכולל (לא לחייב חוב של הקהילה מהוראה של נתן תתן)
-    # mosad — אחרי הודעה של קופת נתן תתן: רק ההוראות של החשבון שלה
-    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND active=1 AND COALESCE(mosad,'')=? AND "
+    q = ("SELECT * FROM nd_keva WHERE COALESCE(kind,'')<>'bank' AND active=1 AND COALESCE(mosad,'')='' AND "
          "(';'||phone||';' LIKE ?" + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ") "
          "ORDER BY active DESC, CASE WHEN COALESCE(error,'')='' THEN 0 ELSE 1 END, id")
-    return [dict(r) for r in con.execute(q, [mosad or '', '%;' + phone + ';%'] + mids)]
+    return [dict(r) for r in con.execute(q, ['%;' + phone + ';%'] + mids)]
 
 
 def ivr_answer(P):
@@ -26207,33 +26185,19 @@ def ivr_answer(P):
         mids = nd_member_index(con).get(phone) or set()
         mid = next(iter(mids)) if len(mids) == 1 else None
         # הסכום — מההודעה האחרונה שנשלחה למספר הזה (14 יום), אם הייתה
-        last = con.execute("SELECT amount,job,COALESCE(fund,'') fund FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
+        last = con.execute("SELECT amount,job FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
                            "AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' AND CAST(COALESCE(amount,'0') AS REAL)>0 "
                            "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
         job_amt = _ivr_amt(last['amount']) if last else 0
         job = last['job'] if last else 0
-        # מאיר: "לגבי שיחה כשהוא מקיש אחת — גם צריך שזה יופנה לקופת נתן תתן": ההודעה האחרונה שלו
-        # הייתה של נתן תתן (גם בלי סכום) — הסליקה והחוב של הקופה, במספר המוסד שלה
-        lastf = con.execute("SELECT COALESCE(fund,'') fund FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
-                            "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
-        # מאיר: "לא חיברתי את ימות המשיח לנתן תתן. אז בינתיים הקשה 1 שתעביר לנדרים פלוס של הקהילה" —
-        # הניתוב לקופה כבוי עד שמדליקים (app_kv natan_ivr=1, אחרי שנדרים פלוס יחברו את ימות למוסד שלה)
-        nat_call = bool((last and last['fund'] == 'natan') or (lastf and lastf['fund'] == 'natan'))
-        nat_mo = natan_mosad(con) if (kv_get(con, 'natan_ivr', '') == '1' and nat_call) else ''
-        # עד אז — החשבון של הכולל, אבל "עבור נתן תתן" (קבוצה בנדרים פלוס כשאפשר) והחוב של הקופה
-        nat_tag = nat_call and not nat_mo
-        if nat_mo and not (last and last['fund'] == 'natan'):
-            job_amt, job = 0, 0      # הסכום שבהודעה של הקהילה לא שייך לקופה
-        pay_mo = nat_mo or _nd.mosad()
-        ks = ivr_kevas(con, phone, mids, nat_mo)
+        ks = ivr_kevas(con, phone, mids)
         # מאיר: "אם אין חוב במערכת — לא יהיה התפריט ומייד יעבור להקשת סכום". הסכום המוצע
         # ("X שקלים הקישו 1, לסכום אחר 2") = הודעה עם סכום שעוד לא שולמה, אחרת החוב הפתוח
         # של חבר הקהילה. אין כזה — ישר להקשת סכום. הוראת הקבע מוצעת תמיד למי שיש לו.
         if not job_amt:
             dm = mid or next((k['member_id'] for k in ks if k.get('member_id')), None)
             if dm:
-                ob = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')=?",
-                                 (dm, 'natan' if nat_call else '')).fetchone()[0]
+                ob = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0) FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')=''", (dm,)).fetchone()[0]
                 job_amt = _ivr_amt(ob)
 
         def fallback(amt=0):
@@ -26243,12 +26207,12 @@ def ivr_answer(P):
             if not a:
                 if amt and P.get('CChoice') != '2':
                     if 'CChoice' not in P:
-                        return ('read=t-' + _ivr_t('לתשלום בכרטיס אשראי של') + '.' + _ivr_n(amt) + '.t-' +
+                        return ('read=t-' + _ivr_t('לתשלום בכרטיס אשראי של') + '.n-%g' % amt + '.t-' +
                                 _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') + '=CChoice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
                     a = amt
                 else:
                     return 'read=t-' + _ivr_t('הקישו את הסכום לתשלום בשקלים ובסיום סולמית') + '=Amt,no,5,1,15,Number,yes,yes,,,2,,,,'
-            return 'credit_card=nedarim_plus,%g,,1,1,,,%s' % (a, pay_mo)
+            return 'credit_card=nedarim_plus,%g,,1,1,,,%s' % (a, _nd.mosad())
 
         if 'CreditCard_CODE' in P:
             con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
@@ -26269,7 +26233,7 @@ def ivr_answer(P):
         if 'Way' not in P:
             if len(ks) == 1:
                 l40 = re.sub(r'\D', '', ks[0]['last4'] or '') or '0'
-                parts = ['t-' + _ivr_t('לתשלום מהוראת הקבע בכרטיס המסתיים בספרות'), _ivr_d(l40), 't-' + _ivr_t('הקישו 1')]
+                parts = ['t-' + _ivr_t('לתשלום מהוראת הקבע בכרטיס המסתיים בספרות'), 'd-' + l40, 't-' + _ivr_t('הקישו 1')]
             else:
                 parts = ['t-' + _ivr_t('לתשלום מאחת מהוראות הקבע שלכם הקישו 1')]
             parts.append('t-' + _ivr_t('לתשלום בכרטיס אשראי אחר הקישו 2'))
@@ -26290,7 +26254,7 @@ def ivr_answer(P):
             if 'Card' not in P:
                 parts = ['t-' + _ivr_t('נמצאו כמה הוראות קבע')]
                 for i, k in enumerate(ks[:9], 1):
-                    parts += ['t-' + _ivr_t('לכרטיס המסתיים בספרות'), _ivr_d(k['last4']), 't-' + _ivr_t('הקישו %d' % i)]
+                    parts += ['t-' + _ivr_t('לכרטיס המסתיים בספרות'), 'd-' + (re.sub(r'\D', '', k['last4'] or '') or '0'), 't-' + _ivr_t('הקישו'), 'n-%d' % i]
                 return 'read=' + '.'.join(parts) + '=Card,no,1,1,10,NO,yes,yes,,%s,2,,,,no' % ''.join(str(i) for i in range(1, min(len(ks), 9) + 1))
             try:
                 k = ks[int(P['Card']) - 1]
@@ -26305,27 +26269,26 @@ def ivr_answer(P):
             if job_amt and P.get('Choice') != '2':
                 if 'Choice' not in P:
                     return ('read=t-' + _ivr_t('לחיוב של') +
-                            '.' + _ivr_n(job_amt) + '.t-' + _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') +
+                            '.n-%g' % job_amt + '.t-' + _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') +
                             '=Choice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
                 amt = job_amt
             else:
                 return ('read=t-' + _ivr_t('הקישו את הסכום לתשלום בשקלים ובסיום סולמית') + '=Amt,no,5,1,15,Number,yes,yes,,,2,,,,')
         # אישור לפני חיוב
         if 'Ok' not in P:
-            return ('read=t-' + _ivr_t('לאישור חיוב של') + '.' + _ivr_n(amt) + '.t-' + _ivr_t('שקלים בכרטיס המסתיים בספרות') +
-                    '.' + _ivr_d(l4) + '.t-' + _ivr_t('הקישו 1, לביטול הקישו 2') + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+            return ('read=t-' + _ivr_t('לאישור חיוב של') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים בכרטיס המסתיים בספרות') +
+                    '.d-' + l4 + '.t-' + _ivr_t('הקישו 1, לביטול הקישו 2') + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no')
         if P['Ok'] != '1':
             return 'id_list_message=t-' + _ivr_t('החיוב בוטל, לא חויבתם') + END
         # כבר חויב בשיחה הזו (פנייה חוזרת) — לא מחייבים שוב
         done = con.execute("SELECT confirmation,amount FROM nd_charge WHERE call_id=? AND ok=1 AND keva_id<>''", (call_id,)).fetchone() if call_id else None
         if done:
-            return ('id_list_message=t-' + _ivr_t('התשלום התקבל בהצלחה, מספר אישור') + '.' + _ivr_d(done['confirmation']) +
+            return ('id_list_message=t-' + _ivr_t('התשלום התקבל בהצלחה, מספר אישור') + '.d-' + (re.sub(r'\D', '', done['confirmation'] or '') or '0') +
                     '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
         jl = con.execute("SELECT label FROM ym_job WHERE id=?", (job,)).fetchone() if job else None
         with _nd.use(_nd.account_for(k.get('mosad') or '')):
-            ok, res = _nd.tashlum_boded(k['id'], amt, groupe='נתן תתן' if nat_tag else '',
-                                        comments=('עבור נתן תתן · ' if nat_tag else '') + 'תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
-                                        ajax=('ivr-' + call_id) if call_id else '')
+            ok, res = _nd.tashlum_boded(k['id'], amt, comments='תשלום בטלפון — ימות המשיח' + ((' · ' + jl['label']) if jl and jl['label'] else ''),
+                                    ajax=('ivr-' + call_id) if call_id else '')
         r = res if isinstance(res, dict) else {}
         msg = str(r.get('Message') or ('' if ok else res) or '')[:200]
         conf = str(r.get('Confirmation') or '')
@@ -26339,17 +26302,14 @@ def ivr_answer(P):
                          ('💳 שילם ₪%g בטלפון מהוראת הקבע (כרטיס ****%s) · אישור %s' % (amt, l4, conf)) if ok
                          else ('🔴 ניסיון תשלום ₪%g בטלפון נכשל: %s' % (amt, msg)), '', 'in', '', now_iso()))
             fk = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
-            if nat_tag and fk == '':
-                fk = 'natan'
             if ok and fk is not None:
                 cm_debt_pay(con, k['member_id'] or mid, amt, 'שולם בטלפון %s (אישור %s)' % (today_iso(), conf), fund=fk)
-        fk2 = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
-        if ok and fk2 is not None:
-            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund='natan' if (nat_tag and fk2 == '') else fk2)
+        if ok and fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '') is not None:
+            ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund=fund_strict(con, k['mosad'] if 'mosad' in k.keys() else ''))
         con.commit()
         if ok:
-            return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.' + _ivr_n(amt) + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
-                    '.' + _ivr_d(conf) + '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
+            return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
+                    '.d-' + (re.sub(r'\D', '', conf) or '0') + '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
         return ('read=t-' + _ivr_t('החיוב לא עבר') + '.t-' + (_ivr_t(msg)[:120] or _ivr_t('סירוב')) +
                 '.t-' + _ivr_t('לתשלום בכרטיס אחר הקישו 1, לסיום הקישו 2') + '=Other,no,1,1,10,NO,yes,yes,,12,2,,,,no')
     finally:
