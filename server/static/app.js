@@ -14037,7 +14037,7 @@ async function renderCommDebts(){
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
       <button class="btn sm ghost" id="cd_paidbulk" title="הכנסת כמה אנשים ששילמו — נרשם בכרטיס, בהיסטוריה ובתרומות">✅ תשלומים במרוכז</button>
-      <button class="btn sm ghost" id="cd_mailtpl" title="הנוסח הקבוע של מייל התזכורת והנוסח החופשי — לעריכה ושמירה">✉️ נוסח המייל${cdFund==='natan'?' — קבוע / חופשי':''}</button>
+      <button class="btn sm ghost" id="cd_mailtpl" title="הנוסח הקבוע של מייל התזכורת והנוסח החופשי — לעריכה ושמירה">${cdFund==='natan'?'📝 נוסחים — מייל / שיחה / SMS':'✉️ נוסח המייל'}</button>
       ${cdFund?'':`<button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>`}
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a></div>
     ${cdCatsHTML()}
@@ -14319,20 +14319,34 @@ const cdMailTplOf=k=>{const c=cdCatByKey(k);if(c){const p=cdMailTplOf(cdPK());re
 const cdMailFill=(body,fr)=>fr?body.replace(/\{\{עבור\}\}/g,fr):body.replace(/\s*(?:עבור|בעבור)\s*\{\{עבור\}\}/g,'').replace(/\{\{עבור\}\}/g,'');
 const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
 // ✉️ עריכת נוסח מייל התזכורת — מכפתור למעלה בחלון החובות
-async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK();
+async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
+  // מאיר: "גם לשיחה טלפון צריך נוסחאות שאעשה להתחייבות" — בקופת נתן תתן: מייל / שיחה / SMS, לכל אחד קבוע וחופשי
+  if(cdFund==='natan'&&!ymStatus)try{await ymLoadStatus();}catch(e){}
   const o=document.createElement('div');o.className='confirmov';
-  const draw=()=>{const t=cdMailTplOf(k);o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">✉️ נוסח מייל התזכורת${cdFund==='natan'?' — 🎁 קופת נתן תתן':' — הקהילה'}</div>
-    <div class="hintxt">בוחרים למעלה איזה נוסח, מתקנים, ו־💾 שמור — מעכשיו כל מייל כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה בכפתור 📝 שליד הקטגוריות.'}</div>
+  const yk=x=>x==='natan_free'?'natanfree':x;
+  const draw=()=>{const ph=ch!=='mail',t=ph?null:cdMailTplOf(k);
+    let ptxt='',psaved=false;if(ph){const tt=ymTplFind(yk(k));const v=ymTplSaved(yk(k),ch);psaved=v!=null;ptxt=psaved?v:(tt?(ch==='sms'?tt[3]:tt[2]):'');}
+    o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">📝 נוסחים${cdFund==='natan'?' — 🎁 קופת נתן תתן':' — מייל התזכורת, הקהילה'}</div>
+    ${cdFund==='natan'?`<div class="bqseg"><button class="${ch==='mail'?'on':''}" data-ch="mail">✉️ מייל</button><button class="${ch==='voice'?'on':''}" data-ch="voice">📞 שיחה</button><button class="${ch==='sms'?'on':''}" data-ch="sms">💬 SMS</button></div>`:''}
     <div class="bqseg">${cdMailKinds().map(x=>`<button class="${k===x?'on':''}" data-k="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</div>
-    <label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
+    ${ph?`<label class="fld"><span>${ch==='sms'?'ההודעה ב-SMS':'מה יוקרא בשיחה'}</span><textarea id="cmt_b" rows="6">${esc(ptxt)}</textarea></label>
+      <div class="hintxt">{שם} — שם הנמען · {סכום} — הסכום הפתוח שלו · {עבור} — עבור מה${ch==='sms'?' · {קישור} — קישור לתשלום':''}. ${psaved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`
+    :`<label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
-    <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>
-    <div class="cbtns">${t.saved?'<button class="btn ghost" id="cmt_r">↩ חזרה לנוסח המובנה</button>':''}<button class="btn ghost cno">סגור</button><button class="btn cyes" id="cmt_ok">💾 שמור</button></div></div>`;
+    <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`}
+    <div class="hintxt">מתקנים ולוחצים 💾 שמור — מעכשיו כל ${ch==='voice'?'שיחה':ch==='sms'?'SMS':'מייל'} כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה בכפתור 📝 שליד הקטגוריות.'}</div>
+    <div class="cbtns">${(ph?psaved:t.saved)?'<button class="btn ghost" id="cmt_r">↩ חזרה לנוסח המובנה</button>':''}<button class="btn ghost cno">סגור</button><button class="btn cyes" id="cmt_ok">💾 שמור</button></div></div>`;
     o.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{k=b.dataset.k;draw();});
+    o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{ch=b.dataset.ch;draw();});
     o.querySelector('.cno').onclick=()=>o.remove();
-    o.querySelector('#cmt_ok').onclick=async()=>{const r=await api('POST','/api/cm/mailtpl',{kind:k,subj:o.querySelector('#cmt_s').value,body:o.querySelector('#cmt_b').value});
+    const yset=async text=>{const r=await api('POST','/api/yemot/tpl',{key:yk(k),ch,text});if(r&&r.ok){if(ymStatus)ymStatus.tpl=r.tpl;else ymStatus={tpl:r.tpl};}return r&&r.ok;};
+    o.querySelector('#cmt_ok').onclick=async()=>{
+      if(ph){if(await yset(o.querySelector('#cmt_b').value)){toast('💾 הנוסח נשמר');draw();}else toast('לא נשמר');return;}
+      const r=await api('POST','/api/cm/mailtpl',{kind:k,subj:o.querySelector('#cmt_s').value,body:o.querySelector('#cmt_b').value});
       if(r&&r.ok){CD_MAILTPL=r.tpl;toast('💾 הנוסח נשמר — כל מייל תזכורת ייצא כך');draw();}else toast('לא נשמר');};
-    const rr=o.querySelector('#cmt_r');if(rr)rr.onclick=async()=>{const r=await api('POST','/api/cm/mailtpl',{kind:k,reset:1});if(r&&r.ok){CD_MAILTPL=r.tpl;toast('↩ חזר לנוסח המובנה');draw();}};};
+    const rr=o.querySelector('#cmt_r');if(rr)rr.onclick=async()=>{
+      if(ph){if(await yset(null)){toast('↩ חזר לנוסח המובנה');draw();}return;}
+      const r=await api('POST','/api/cm/mailtpl',{kind:k,reset:1});if(r&&r.ok){CD_MAILTPL=r.tpl;toast('↩ חזר לנוסח המובנה');draw();}};};
   document.body.appendChild(o);draw();}
 // מכניס את נוסח התזכורת למכתב (כשהתיבה ריקה או שיש בה נוסח תזכורת קודם — לא דורס מכתב אחר)
 function cdMailPrefill(body,subj,force){const cur=mlSaved('cm_body',''),auto=mlSaved('cm_body_auto','');
@@ -15354,6 +15368,7 @@ const YM_TPL=[
     'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך בסך {סכום} ש"ח עבור {עבור} לא עברה החודש. אפשר להסדיר בכרטיס אשראי כאן: {קישור} תודה רבה.'],
   ['natan','🎁 נתן תתן','שלום {שם}, כאן קופת נתן תתן. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. תודה רבה, ותזכו למצוות.',
     'שלום {שם}, כאן קופת נתן תתן. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח: {קישור} תודה רבה!'],
+  ['natanfree','✍️ חופשי — נתן תתן','שלום {שם}, כאן קופת נתן תתן. ','שלום {שם}, כאן קופת נתן תתן. {קישור}'],
   ['free','✍️ חופשי','','']];
 // מאיר: "תוריד את הטקסט המוכן שאומר שאפשר דרך הטלפון, ואני אכניס נוסח לכל קטגוריה או שדה
 // חופשי, שזה יהיה בראש — ברירת מחדל". נוסח ששמרת לקטגוריה (לכל ערוץ בנפרד) גובר על המובנה.
@@ -15624,7 +15639,7 @@ function ymViewSend(){
     </div>
     <div class="sec ymsec">
       <div class="rbtitle" style="text-align:right">2️⃣ מה אומרים</div>
-      <div class="ymtpl">${YM_TPL.map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}
+      <div class="ymtpl">${YM_TPL.filter(([k])=>k!=='natanfree'||/^natan/.test(ymTplKey||'')).map(([k,l])=>`<button class="chip${ymTplKey===k?' on':''}" data-t="${k}">${l}${ymTplSaved(k,ymCh)!=null?' ✎':''}</button>`).join('')}
         ${(CD_CATS||[]).map(c=>`<button class="chip${ymTplKey==='cat:'+c.name?' on':''}" data-t="${esc('cat:'+c.name)}">🏷 ${esc(c.name)}${c[ymCh==='sms'?'sms':'voice']?' ✎':''}</button>`).join('')}
         <button class="chip" id="ym_catnew" title="קטגוריה חדשה עם נוסח משלה — נכנסת גם לחובות והתחייבויות">➕ קטגוריה חדשה</button>${(CD_CATS||[]).length?'<button class="chip" id="ym_cats" title="שינוי שם, סכום, נוסח ומחיקה">⚙️ קטגוריות</button>':''}</div>
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום, {עבור} = עבור מה">${esc(ymText)}</textarea>
