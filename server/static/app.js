@@ -14405,12 +14405,15 @@ function cdMailDraft(kind,fr){
     <div class="addrow" style="margin:4px 0"><button class="btn sm ghost" id="cdd_save"></button></div>
     <div class="rbtitle" style="text-align:right;margin-top:10px">👁️ כך זה ייראה אצל <span id="cdd_who"></span>
       ${aud.length>1?'<button class="btn sm ghost" id="cdd_prev">▶</button> <span id="cdd_n"></span> <button class="btn sm ghost" id="cdd_next">◀</button>':''}</div>
+    <div class="hintxt" id="cdd_lnk"></div>
     <div id="cdd_pv"><div class="hintxt">טוען…</div></div>
     <div id="ml_prog"></div>
     <div class="cbtns"><button class="btn ghost cno">סגור</button><button class="btn ghost" id="cdd_full">✎ למסך המיילים המלא</button><button class="btn cyes" id="cdd_go">📤 שלח ${aud.length===1?'ל'+esc(mName(aud[0])):'ל־'+aud.length+' נמענים'}</button></div></div>`;
   document.body.appendChild(o);
   const q=id=>o.querySelector('#'+id), si=q('cdd_s'), bi=q('cdd_b');
   const pv=async()=>{const m=aud[idx],my=++seq;q('cdd_who').textContent=mName(m)+' · '+(mEmails(m)[0]||'');
+    // מאיר: "למה לא רואים את הקישור לנתן תתן? אני רוצה לראות שזה אכן מנווט לשם" — הקישור עצמו, ללחיצה ובדיקה
+    {const L=(cmLinksPayload().links||{})[m.id]||'';q('cdd_lnk').innerHTML=L?`🔗 הכפתור "לתשלום מאובטח" מוביל אל: <a href="${esc(L)}" target="_blank" rel="noopener" dir="ltr" style="word-break:break-all">${esc(L)}</a>${NT_MAIL?' <b>(דף התרומות של נתן תתן)</b>':''}`:'<span class="bad">⚠️ אין קישור לתשלום</span>';}
     if(q('cdd_n'))q('cdd_n').textContent=(idx+1)+'/'+aud.length;
     const r=await api('POST','/api/mail/preview',{members:[m.id],subject:si.value,body:bi.value,sig:'',base:location.origin,sender:'neder',...cmLinksPayload()});
     if(my!==seq)return;
