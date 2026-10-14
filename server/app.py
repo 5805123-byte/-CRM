@@ -3281,6 +3281,30 @@ def ensure_schema():
     except Exception as e:
         print('  herman meeting error:', e)
 
+    # מאיר: "תכניס משימה ליומן לעוד עשר דקות. התבודדות רבע שעה. ושיתקשר אלי מיד כשאתה מכניס ליומן" — 14.10.2026 22:58
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_hitbodedut_v1'").fetchone():
+            note = 'התבודדות רבע שעה'
+            if not con.execute("SELECT 1 FROM tasks WHERE note=? AND due_date='2026-10-14'", (note,)).fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,?,?,'')",
+                            ('2026-10-14', 'other', note, 'מאיר', '22:58'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_hitbodedut_v1')")
+            con.commit()
+
+            def _hb_call():
+                c2 = db()
+                try:
+                    ph = remind_phone(remind_cfg(c2))
+                    if ph and il_now().strftime('%Y-%m-%d %H:%M') < '2026-10-14 23:20':
+                        remind_send(c2, ph, 'שלום מאיר, נכנסה ליומן משימה: התבודדות רבע שעה, היום בשעה עשר וחמישים ושמונה בלילה.')
+                except Exception as e:
+                    print('  hitbodedut call error:', e)
+                finally:
+                    c2.close()
+            threading.Timer(20, _hb_call).start()
+    except Exception as e:
+        print('  hitbodedut task error:', e)
+
     # מאיר: "תעשה בדיקה של שיחה לנתן תתן למספר שלי" — שיחה אחת בנוסח הקבוע שלו (הקשה 1 = סליקה לנתן תתן,
     # ₪10 לבדיקה), דקה אחרי העלייה
     try:
