@@ -3274,6 +3274,21 @@ def ensure_schema():
     except Exception as e:
         print('  herman meeting error:', e)
 
+    # מאיר שלח את הקישור לדף התרומות של קופת נתן תתן (מוסד 7014302) — הקישור הכללי במיילים וב-SMS,
+    # ואם עוד לא נבחר חשבון לקופה — זה מספר המוסד שלה (גם לסליקה בהקשה 1 בשיחה)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='natan_link_v1'").fetchone():
+            kv = lambda k: (con.execute("SELECT v FROM app_kv WHERE k=?", (k,)).fetchone() or [''])[0] or ''
+            put = lambda k, v: con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, v))
+            if not kv('natan_link').strip():
+                put('natan_link', 'https://www.matara.pro/nedarimplus/online/?mosad=7014302')
+            if not re.sub(r'\D', '', kv('natan_mosad')) and not natan_mosad(con):
+                put('natan_mosad', '7014302'); put('natan_mosad_off', '')
+            con.execute("INSERT INTO seed_flags(name) VALUES('natan_link_v1')")
+            con.commit()
+    except Exception as e:
+        print('  natan link error:', e)
+
     # בר המצווה של אלחנן חסידי — מאיר: "תרשום ביומן" (ההזמנה: יום שני ח' חשוון תשפ"ז,
     # 19.10.26, אולמי "פלטינום" (ארמונות הגפן), רחוב בנין דוד 3, ביתר עילית; קבלת פנים 19:30).
     # אם יוסף חיים חסידי הוא תורם — השמחה נרשמת אצלו, אחרת כמשימה כללית.
