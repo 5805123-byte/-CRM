@@ -26136,8 +26136,29 @@ def ivr_key(con):
 
 
 def _ivr_t(s):
-    """טקסט להקראה בימות — בלי נקודה, מקף, & ו-= (הם מפרידים בפקודה)."""
-    return re.sub(r'\s+', ' ', re.sub(r'[.\-&=_*#]', ' ', str(s or ''))).strip()
+    """טקסט להקראה בימות — בלי נקודה, מקף, & ו-= (הם מפרידים בפקודה).
+    מאיר: "את המספרים זה אומר באנגלית, וגם חלק ממילים" — כל מספר נכתב במילים בעברית
+    ("הקישו אחת", "עשרה שקלים"), כי ההקלטות של המספרים בימות יוצאות באנגלית."""
+    import yemot as _ym
+    t = re.sub(r'\d+', lambda m: _ym._DIG[int(m.group(0))] if len(m.group(0)) == 1 else _ym.num_words(int(m.group(0))), str(s or ''))
+    return re.sub(r'\s+', ' ', re.sub(r'[.\-&=_*#]', ' ', t)).strip()
+
+
+def _ivr_n(v):
+    """סכום / מספר להקראה — במילים בעברית (במקום n- של ימות)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 't-' + _ivr_t(str(v))
+    import yemot as _ym
+    w = _ym.num_words(int(f))
+    ag = int(round((f - int(f)) * 100))
+    return 't-' + _ivr_t(w + ((' ו' + _ym.num_words(ag) + ' אגורות') if ag else ''))
+
+
+def _ivr_d(v):
+    """ספרות אחת-אחת (4 ספרות הכרטיס, מספר אישור) — במילים בעברית (במקום d- של ימות)."""
+    return 't-' + _ivr_t(' '.join(re.sub(r'\D', '', str(v or '')) or '0'))
 
 
 def _ivr_amt(v):
@@ -26220,7 +26241,7 @@ def ivr_answer(P):
             if not a:
                 if amt and P.get('CChoice') != '2':
                     if 'CChoice' not in P:
-                        return ('read=t-' + _ivr_t('לתשלום בכרטיס אשראי של') + '.n-%g' % amt + '.t-' +
+                        return ('read=t-' + _ivr_t('לתשלום בכרטיס אשראי של') + '.' + _ivr_n(amt) + '.t-' +
                                 _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') + '=CChoice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
                     a = amt
                 else:
@@ -26246,7 +26267,7 @@ def ivr_answer(P):
         if 'Way' not in P:
             if len(ks) == 1:
                 l40 = re.sub(r'\D', '', ks[0]['last4'] or '') or '0'
-                parts = ['t-' + _ivr_t('לתשלום מהוראת הקבע בכרטיס המסתיים בספרות'), 'd-' + l40, 't-' + _ivr_t('הקישו 1')]
+                parts = ['t-' + _ivr_t('לתשלום מהוראת הקבע בכרטיס המסתיים בספרות'), _ivr_d(l40), 't-' + _ivr_t('הקישו 1')]
             else:
                 parts = ['t-' + _ivr_t('לתשלום מאחת מהוראות הקבע שלכם הקישו 1')]
             parts.append('t-' + _ivr_t('לתשלום בכרטיס אשראי אחר הקישו 2'))
@@ -26267,7 +26288,7 @@ def ivr_answer(P):
             if 'Card' not in P:
                 parts = ['t-' + _ivr_t('נמצאו כמה הוראות קבע')]
                 for i, k in enumerate(ks[:9], 1):
-                    parts += ['t-' + _ivr_t('לכרטיס המסתיים בספרות'), 'd-' + (re.sub(r'\D', '', k['last4'] or '') or '0'), 't-' + _ivr_t('הקישו'), 'n-%d' % i]
+                    parts += ['t-' + _ivr_t('לכרטיס המסתיים בספרות'), _ivr_d(k['last4']), 't-' + _ivr_t('הקישו %d' % i)]
                 return 'read=' + '.'.join(parts) + '=Card,no,1,1,10,NO,yes,yes,,%s,2,,,,no' % ''.join(str(i) for i in range(1, min(len(ks), 9) + 1))
             try:
                 k = ks[int(P['Card']) - 1]
@@ -26282,21 +26303,21 @@ def ivr_answer(P):
             if job_amt and P.get('Choice') != '2':
                 if 'Choice' not in P:
                     return ('read=t-' + _ivr_t('לחיוב של') +
-                            '.n-%g' % job_amt + '.t-' + _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') +
+                            '.' + _ivr_n(job_amt) + '.t-' + _ivr_t('שקלים הקישו 1, לסכום אחר הקישו 2') +
                             '=Choice,no,1,1,10,NO,yes,yes,,12,2,,,,no')
                 amt = job_amt
             else:
                 return ('read=t-' + _ivr_t('הקישו את הסכום לתשלום בשקלים ובסיום סולמית') + '=Amt,no,5,1,15,Number,yes,yes,,,2,,,,')
         # אישור לפני חיוב
         if 'Ok' not in P:
-            return ('read=t-' + _ivr_t('לאישור חיוב של') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים בכרטיס המסתיים בספרות') +
-                    '.d-' + l4 + '.t-' + _ivr_t('הקישו 1, לביטול הקישו 2') + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+            return ('read=t-' + _ivr_t('לאישור חיוב של') + '.' + _ivr_n(amt) + '.t-' + _ivr_t('שקלים בכרטיס המסתיים בספרות') +
+                    '.' + _ivr_d(l4) + '.t-' + _ivr_t('הקישו 1, לביטול הקישו 2') + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no')
         if P['Ok'] != '1':
             return 'id_list_message=t-' + _ivr_t('החיוב בוטל, לא חויבתם') + END
         # כבר חויב בשיחה הזו (פנייה חוזרת) — לא מחייבים שוב
         done = con.execute("SELECT confirmation,amount FROM nd_charge WHERE call_id=? AND ok=1 AND keva_id<>''", (call_id,)).fetchone() if call_id else None
         if done:
-            return ('id_list_message=t-' + _ivr_t('התשלום התקבל בהצלחה, מספר אישור') + '.d-' + (re.sub(r'\D', '', done['confirmation'] or '') or '0') +
+            return ('id_list_message=t-' + _ivr_t('התשלום התקבל בהצלחה, מספר אישור') + '.' + _ivr_d(done['confirmation']) +
                     '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
         jl = con.execute("SELECT label FROM ym_job WHERE id=?", (job,)).fetchone() if job else None
         with _nd.use(_nd.account_for(k.get('mosad') or '')):
@@ -26325,8 +26346,8 @@ def ivr_answer(P):
             ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund='natan' if (nat_tag and fk2 == '') else fk2)
         con.commit()
         if ok:
-            return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.n-%g' % amt + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
-                    '.d-' + (re.sub(r'\D', '', conf) or '0') + '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
+            return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.' + _ivr_n(amt) + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +
+                    '.' + _ivr_d(conf) + '.t-' + _ivr_t('תודה רבה ותזכו למצוות') + END)
         return ('read=t-' + _ivr_t('החיוב לא עבר') + '.t-' + (_ivr_t(msg)[:120] or _ivr_t('סירוב')) +
                 '.t-' + _ivr_t('לתשלום בכרטיס אחר הקישו 1, לסיום הקישו 2') + '=Other,no,1,1,10,NO,yes,yes,,12,2,,,,no')
     finally:
