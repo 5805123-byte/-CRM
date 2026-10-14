@@ -7636,6 +7636,46 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_known_v1')")
             con.commit()
             print('  לימוד לזכות: %d תאריכים שויכו לפי פרנס קיים באותו יום' % nk)
+        # מאיר: "סיימתי" — הבחירות מטופס השיוך (34 תאריכים): לכל תאריך התורם שבחר (מזוהה לפי השם, האנגלית והמספר),
+        # עם הנוסח שלו; "לדלג" — לא נכנס (אלא אם כבר נכנס לבד לפי פרנס קיים באותו יום). הבחירה שלו גוברת על זיהוי אוטומטי.
+        _cf2 = os.path.join(HERE, 'parnes_lezchus_choices.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_choices_v1'").fetchone() and os.path.exists(_cf2):
+            ok_n = sk_n = 0; miss = []
+            for c in json.load(open(_cf2, encoding='utf-8')):
+                r = con.execute("SELECT * FROM parnes_imp WHERE n=?", (c['n'],)).fetchone()
+                if not r:
+                    continue
+                if c['action'] == 'skip':
+                    if r['status'] == 'pending':
+                        con.execute("UPDATE parnes_imp SET status='skip', updated=? WHERE id=?", (now_iso(), r['id'])); sk_n += 1
+                    continue
+                nm, en = (c.get('donor_name') or '').strip(), (c.get('donor_en') or '').strip()
+                ids = [x['id'] for x in con.execute("SELECT id, english FROM donors WHERE TRIM(TRIM(COALESCE(last,''))||' '||TRIM(COALESCE(first,'')))=?", (nm,))
+                       if not en or (x['english'] or '').strip() == en] if nm else []
+                if len(ids) != 1 and en:
+                    ids = [x['id'] for x in con.execute("SELECT id FROM donors WHERE TRIM(COALESCE(english,''))=?", (en,))]
+                if len(ids) != 1 and c.get('donor_id'):
+                    x = con.execute("SELECT id, last FROM donors WHERE id=?", (c['donor_id'],)).fetchone()
+                    ids = [x['id']] if x and nm and (x['last'] or '').strip() and nm.startswith((x['last'] or '').strip()) else []
+                if len(ids) != 1:
+                    miss.append('%s→%s' % (r['date_text'], nm)); continue
+                did = ids[0]
+                if r['status'] == 'done' and r['donor_id'] == did:
+                    con.execute("UPDATE parnes_imp SET how='manual' WHERE id=?", (r['id'],))
+                    if c.get('dedication') and c['dedication'] != r['dedication']:
+                        con.execute("UPDATE parnes_imp SET dedication=? WHERE id=?", (c['dedication'], r['id']))
+                        for pid in json.loads(r['parnes_ids'] or '[]'):
+                            con.execute("UPDATE parnes SET dedication=? WHERE id=?", (c['dedication'], pid))
+                    ok_n += 1; continue
+                if r['status'] == 'done':
+                    pimp_undo(con, r)
+                    r = con.execute("SELECT * FROM parnes_imp WHERE id=?", (r['id'],)).fetchone()
+                pimp_apply(con, r, did, c.get('dedication') or None)
+                con.execute("UPDATE parnes_imp SET how='manual' WHERE id=?", (r['id'],))
+                ok_n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_choices_v1')")
+            con.commit()
+            print('  לימוד לזכות — הבחירות מהטופס: %d נכנסו, %d דולגו%s' % (ok_n, sk_n, (' · לא נמצאו: ' + ', '.join(miss)) if miss else ''))
         # מאיר: "אצל טעפפער תכניס רק את י"ח שבט" — לילה אחד ולא כל השבוע
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_tepper_v1'").fetchone():
             r = con.execute("SELECT * FROM parnes_imp WHERE n=23").fetchone()

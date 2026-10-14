@@ -1,0 +1,274 @@
+[
+{
+"n": 1,
+"action": "assign",
+"donor_id": 543,
+"donor_name": "שטטפלד יצחק וברכה",
+"donor_en": "Bracha Statfeld",
+"dedication": "לזכות מרדכי דוד בן ברכה – ליום הולדתו"
+},
+{
+"n": 2,
+"action": "assign",
+"donor_id": 521,
+"donor_name": "רוזנפלד יהושע",
+"donor_en": "Schia Rosenfeld",
+"dedication": "לזכות יהושע בן סימי – הושענא רבה"
+},
+{
+"n": 7,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות רחל אסתר בת הדסה רבקה – ליום הולדתה"
+},
+{
+"n": 9,
+"action": "assign",
+"donor_id": 317,
+"donor_name": "מאגאזינטש לינדה",
+"donor_en": "Linda Magazzinich",
+"dedication": "לע\"נ יוסף בן עליה ז\"ל (יארצייט)"
+},
+{
+"n": 11,
+"action": "assign",
+"donor_id": 543,
+"donor_name": "שטטפלד יצחק וברכה",
+"donor_en": "Bracha Statfeld",
+"dedication": "לזכות יצחק מאיר בן מרים שרה וזוג' ברכה בת צביה דבורה מלכה רות – ליום הנישואין"
+},
+{
+"n": 13,
+"action": "assign",
+"donor_id": 2,
+"donor_name": "אברמוביץ אלחנן",
+"donor_en": "Elchanan Abramowitz",
+"dedication": "לע\"נ צביה ליבא בת פנחס דוב הכהן ע\"ה (יארצייט)"
+},
+{
+"n": 15,
+"action": "assign",
+"donor_id": 521,
+"donor_name": "רוזנפלד יהושע",
+"donor_en": "Schia Rosenfeld",
+"dedication": "לזכות יהושע בן סימי וכל משפחתו – זאת חנוכה"
+},
+{
+"n": 17,
+"action": "assign",
+"donor_id": 510,
+"donor_name": "רוזובסקי יהודה",
+"donor_en": "",
+"dedication": "לזכות חנה בת שבע בת ברכה – ליום הולדתה"
+},
+{
+"n": 18,
+"action": "assign",
+"donor_id": 337,
+"donor_name": "מיטמן מאיר",
+"donor_en": "Meir Mittman",
+"dedication": "לזכות דניאל ראובן בן שירה לאה – ליום הולדתו"
+},
+{
+"n": 19,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות ברוך בן הדסה רבקה – ליום הולדתו"
+},
+{
+"n": 22,
+"action": "skip",
+"donor_id": null,
+"donor_name": "",
+"donor_en": "",
+"dedication": "לזכות עזרא מאיר בן חיה חנה – ליום הולדתו"
+},
+{
+"n": 23,
+"action": "assign",
+"donor_id": 245,
+"donor_name": "טעפפר יהושע",
+"donor_en": "Jerry Teppfer",
+"dedication": "לע\"נ ר' ישעיה ב\"ר נפתלי הערצקא ז\"ל (י\"ח שבט) ומינדל ב\"ר יהושע ע\"ה (כ\"ג שבט), ולזכות יהושע בן מינדל וזוג' רחל לאה בת שולמית"
+},
+{
+"n": 24,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות יוסף מרדכי בן לאה – ליום הולדתו"
+},
+{
+"n": 25,
+"action": "skip",
+"donor_id": null,
+"donor_name": "",
+"donor_en": "",
+"dedication": "לע\"נ מרת פייגא ב\"ר שניאור זלמן ע\"ה"
+},
+{
+"n": 29,
+"action": "assign",
+"donor_id": 543,
+"donor_name": "שטטפלד יצחק וברכה",
+"donor_en": "Bracha Statfeld",
+"dedication": "לע\"נ ר' בנימין ב\"ר יצחק מאיר ז\"ל"
+},
+{
+"n": 30,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות הדסה רבקה בת זלטה – ליום הולדתה"
+},
+{
+"n": 31,
+"action": "assign",
+"donor_id": 382,
+"donor_name": "סימקין אילנה",
+"donor_en": "Aryeh Simkin",
+"dedication": "לע\"נ דינה בת ניסים ומירה ע\"ה (יארצייט)"
+},
+{
+"n": 32,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות יהודה דוב בן הדסה – ליום הולדתו"
+},
+{
+"n": 33,
+"action": "assign",
+"donor_id": 543,
+"donor_name": "שטטפלד יצחק וברכה",
+"donor_en": "Bracha Statfeld",
+"dedication": "לזכות מיכל אילה לאה בת ברכה – ליום הולדתה"
+},
+{
+"n": 35,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לע\"נ הר\"ר אברהם צבי ב\"ר ברוך ז\"ל"
+},
+{
+"n": 36,
+"action": "assign",
+"donor_id": 281,
+"donor_name": "לאם חיה שרה [אלינה]",
+"donor_en": "",
+"dedication": "לע\"נ חיים יוסף זאב בן ויקטור ופייגא ז\"ל"
+},
+{
+"n": 41,
+"action": "assign",
+"donor_id": 240,
+"donor_name": "טאובנפלד מרים",
+"donor_en": "Miriam Taubenfeld",
+"dedication": "לע\"נ הרב אהרון בן הרב חיים דוד ז\"ל, ולע\"נ יחיאל משה ב\"ר פנחס זאב ז\"ל"
+},
+{
+"n": 42,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות אריה מלכיאל בן הענטשא דינה (חתן של מנדלסון) – ליום הולדתו"
+},
+{
+"n": 43,
+"action": "assign",
+"donor_id": 543,
+"donor_name": "שטטפלד יצחק וברכה",
+"donor_en": "Bracha Statfeld",
+"dedication": "לע\"נ ר' צבי הערש ב\"ר ברוך יהודה ז\"ל"
+},
+{
+"n": 44,
+"action": "assign",
+"donor_id": 154,
+"donor_name": "דויטש יהושע מאיר",
+"donor_en": "",
+"dedication": "לזכות הרבנית בלהה בת ציפורה – ליום הולדתה"
+},
+{
+"n": 45,
+"action": "assign",
+"donor_id": 521,
+"donor_name": "רוזנפלד יהושע",
+"donor_en": "Schia Rosenfeld",
+"dedication": "לזכות יהושע בן סימי וכל בני משפחתו – ל\"ג בעומר"
+},
+{
+"n": 46,
+"action": "assign",
+"donor_id": 471,
+"donor_name": "קאהן מנחם",
+"donor_en": "Marvin Kohn",
+"dedication": "לע\"נ ר' יחזקאל מאיר ב\"ר זאב הלוי ז\"ל"
+},
+{
+"n": 49,
+"action": "assign",
+"donor_id": 346,
+"donor_name": "מנדלסון יוסף מרדכי",
+"donor_en": "Motti Mendelson",
+"dedication": "לזכות דניאל משה בן הדסה רבקה – ליום הולדתו"
+},
+{
+"n": 51,
+"action": "assign",
+"donor_id": 543,
+"donor_name": "שטטפלד יצחק וברכה",
+"donor_en": "Bracha Statfeld",
+"dedication": "לזכות יצחק מאיר בן מרים שרה – ליום הולדתו"
+},
+{
+"n": 52,
+"action": "assign",
+"donor_id": 154,
+"donor_name": "דויטש יהושע מאיר",
+"donor_en": "",
+"dedication": "לע\"נ הרב הצדיק ר' ישראל חיים ב\"ר יעקב מנחם מנדל זצ\"ל (אבי ראש הכולל)"
+},
+{
+"n": 55,
+"action": "assign",
+"donor_id": 217,
+"donor_name": "וורצברגר יידל",
+"donor_en": "Yiddl Werzberger",
+"dedication": "לע\"נ בלומא ב\"ר חיים ע\"ה (יארצייט)"
+},
+{
+"n": 57,
+"action": "skip",
+"donor_id": null,
+"donor_name": "",
+"donor_en": "",
+"dedication": "לזכות יוסף בן דבורה חיה וזוג' מרים שרה בת שושנה רייזל – ליום הנישואין"
+},
+{
+"n": 59,
+"action": "assign",
+"donor_id": 382,
+"donor_name": "סימקין אילנה",
+"donor_en": "Aryeh Simkin",
+"dedication": "לע\"נ דוד בן סוליקה ועיוש לוגסי ז\"ל"
+},
+{
+"n": 60,
+"action": "assign",
+"donor_id": 317,
+"donor_name": "מאגאזינטש לינדה",
+"donor_en": "Linda Magazzinich",
+"dedication": "לע\"נ האשה החשובה איבן בת תמו ע\"ה"
+}
+]
