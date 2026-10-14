@@ -9319,13 +9319,64 @@ async function pyDowLoad(){
   }catch(e){ PYDOW[k]={}; }
   if(tab==='parnes'&&pyDowKey()===k)render();
 }
+// 📥 מאיר: "תכניס את זה לפרנסי לילה עם כל השמות לזכות… אם אתה לא יודע מי זה מה תורמים — תבנה לי צורת ווב
+// שאאשר או אכתוב או אשייך". מי שזוהה בוודאות — כבר נכנס; השאר מחכים כאן: לבחור תורם מההצעות או לחפש, לתקן את הנוסח, או לדלג
+let PIMP=null, pimpF='pending';
+async function pimpBarFill(){const el=document.getElementById('pimpbar');if(!el)return;
+  if(PIMP===null){try{PIMP=await api('GET','/api/parnes_imp');}catch(e){PIMP={rows:[]};}}
+  const rows=(PIMP&&PIMP.rows)||[];if(!rows.length){el.innerHTML='';return;}
+  const n=rows.filter(r=>r.status==='pending').length, d=rows.filter(r=>r.status==='done').length;
+  el.innerHTML=`<div class="pimpbar${n?' warn':''}"><span>📥 <b>לימוד לזכות</b> — ${d} נכנסו לפרנס לילה${n?` · <b>${n} מחכים שתשייך לתורם</b>`:' · הכל שויך ✓'}</span><button class="btn sm" id="pimpgo">${n?'לשייך עכשיו':'לראות'}</button></div>`;
+  document.getElementById('pimpgo').onclick=pimpOpen;}
+async function pimpOpen(){
+  PIMP=await api('GET','/api/parnes_imp');
+  const o=document.createElement('div');o.className='mkov';
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:760px"><div class="mkdh"><div class="mkav">📥</div><div><b>לימוד לזכות — שיוך לתורמים</b><span class="mksub">מהקובץ "תאריכים להכנסה ל-CRM" · כל תאריך נכנס כפרנס לילה לתורם, עם הנוסח</span></div><button class="x2" id="pix">✕</button></div>
+    <div class="mkdb"><div class="mktpl" id="pif"></div><div id="pil"></div></div></div>`;
+  document.body.appendChild(o);
+  const close=()=>{o.remove();PIMP=null;render();};
+  o.querySelector('#pix').onclick=close;o.onclick=e=>{if(e.target===o)close();};
+  const draw=()=>{const rows=PIMP.rows||[], cnt=k=>rows.filter(r=>r.status===k).length;
+    o.querySelector('#pif').innerHTML=[['pending','⏳ מחכים לשיוך'],['done','✓ נכנסו'],['skip','⏭ דולגו']].map(([k,l])=>`<button class="mkchip${pimpF===k?' on':''}" data-f="${k}">${l} <i>${cnt(k)}</i></button>`).join('');
+    o.querySelectorAll('#pif [data-f]').forEach(b=>b.onclick=()=>{pimpF=b.dataset.f;draw();});
+    const L=rows.filter(r=>r.status===pimpF);
+    o.querySelector('#pil').innerHTML=L.length?L.map(r=>`<div class="pimprow" data-id="${r.id}">
+      <div class="pimph"><b>${esc(r.date_text)}</b>${r.days.length>1?` <span class="mktag mu">${r.days.length} לילות</span>`:''} · <span>${esc(r.kind_he||'')}</span>
+        <span class="mksub" style="margin-inline-start:auto">בקובץ: <b>${esc(r.donor_txt||'— בלי שם תורם —')}</b>${r.years?' · '+esc(r.years):''}</span></div>
+      <textarea class="pimpded" rows="2">${esc(r.dedication||'')}</textarea>
+      ${r.status==='done'?`<div class="pimpok">✓ נכנס לפרנס לילה של <a href="#" data-open="${r.donor_id}">${esc(r.dname||'')}</a>${r.how==='auto'?' <span class="mksub">(זוהה לבד)</span>':''}</div>`:''}
+      ${r.status==='pending'&&(r.cands||[]).length?`<div class="mksub">${r.cands.length===1?'תורם מתאים:':'מי מהם? לחיצה מכניסה:'}</div><div class="mktpl">${r.cands.map(c=>`<button class="mkchip" data-as="${c.id}" title="${esc(c.english||'')} ${esc(c.city||'')}">👤 ${esc(c.name)}${c.english?` <small dir="ltr">${esc(c.english)}</small>`:''}</button>`).join('')}</div>`:''}
+      ${r.status==='pending'&&!(r.cands||[]).length?'<div class="mksub">לא מצאתי תורם בשם הזה — חפש למטה:</div>':''}
+      <div class="pimpact">${r.status!=='skip'?`<input class="pimpq" placeholder="🔍 ${r.status==='done'?'לשייך לתורם אחר':'חיפוש תורם'} — שם / אנגלית" autocomplete="off"><div class="pimphits"></div>`:''}
+        <span class="pimpbtns">${r.status!=='skip'?'<button class="mkbtn gh" data-a="save">💾 לשמור נוסח</button>':''}${r.status==='skip'?'<button class="mkbtn gh" data-a="unskip">↩ להחזיר</button>':'<button class="mkbtn gh" data-a="skip">⏭ לדלג</button>'}</span></div>
+    </div>`).join(''):'<div class="mkempty"><b>✓</b>אין כאן כלום</div>';
+    o.querySelectorAll('.pimprow').forEach(el=>{const id=+el.dataset.id, r=rows.find(x=>x.id===id), ta=el.querySelector('.pimpded');
+      const go=async(body,msg)=>{const x=await api('POST','/api/parnes_imp/'+id,body);if(!x||!x.ok)return uiAlert((x&&x.error)||'לא נשמר');
+        toast(msg);PIMP=await api('GET','/api/parnes_imp');draw();};
+      const assign=async(did,nm)=>{if(!await uiConfirm('להכניס "'+r.date_text+'" לפרנס לילה של '+nm+'?\n\n'+ta.value,'✓ להכניס','ביטול'))return;
+        go({action:'assign',donor_id:did,dedication:ta.value},'✓ נכנס לפרנס לילה של '+nm);};
+      el.querySelectorAll('[data-as]').forEach(b=>b.onclick=()=>{const c=(r.cands||[]).find(x=>x.id==b.dataset.as);assign(+b.dataset.as,c?c.name:'');});
+      const qi=el.querySelector('.pimpq'),hb=el.querySelector('.pimphits');
+      if(qi)qi.oninput=()=>{const v=qi.value.trim();if(v.length<2){hb.innerHTML='';return;}
+        const H=donorHits(d=>dName(d)+' '+(d.english||''),v,8).list;
+        hb.innerHTML=H.map(d=>`<button class="mkchip" data-hit="${d.id}">👤 ${esc(dName(d))}${d.english?` <small dir="ltr">${esc(d.english)}</small>`:''}</button>`).join('')||'<span class="mksub">לא נמצא</span>';
+        hb.querySelectorAll('[data-hit]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.hit);assign(+b.dataset.hit,d?dName(d):'');});};
+      el.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const a=b.dataset.a;
+        if(a==='save')go({action:'edit',dedication:ta.value},'💾 הנוסח נשמר');
+        else if(a==='skip')uiConfirm('לדלג על התאריך הזה?'+(r.status==='done'?'\nהפרנס לילה שנפתח לו יימחק (אם לא שולם).':''),'⏭ לדלג','ביטול').then(ok=>{if(ok)go({action:'skip'},'⏭ דולג');});
+        else go({action:'unskip'},'↩ חזר לרשימת הממתינים');});
+      const op=el.querySelector('[data-open]');if(op)op.onclick=e=>{e.preventDefault();const d=DB.find(x=>x.id==op.dataset.open);if(d){close();openDonor(d);}};
+    });};
+  draw();
+}
 function renderParnes(){
   chips.innerHTML='';
+  setTimeout(pimpBarFill,0);
   pyDowLoad();
   savePy();   // שמירת המקום (חודש/יום) לשחזור אחרי רענון
   const taken=parnesTaken(pyKind);
   if(!pyMonth){
-    view.innerHTML=kindToggle()+pyPickBar()+`<div class="cnt">בחר חודש לראות ולשבץ את 30 הימים</div>
+    view.innerHTML=kindToggle()+'<div id="pimpbar"></div>'+pyPickBar()+`<div class="cnt">בחר חודש לראות ולשבץ את 30 הימים</div>
       <div class="hmgrid">${HMORD.map(m=>{const cnt=Object.keys(taken).filter(k=>k.startsWith(m+'|')).length;return `<button class="hmbtn" data-m="${m}"><span>${m}</span>${cnt?`<span class="hmc">${cnt}</span>`:''}</button>`;}).join('')}</div>`;
     bindKindToggle(); wirePyPick();
     view.querySelectorAll('.hmbtn').forEach(b=>b.onclick=()=>{pyMonth=b.dataset.m;pyDay=null;render();});
@@ -9335,7 +9386,7 @@ function renderParnes(){
   // מגיע מהלוח האמיתי; עד שהוא נטען מציגים 30 כמו קודם.
   const mlen=PYLEN[pyDowKey()]||30;
   const days=[];for(let i=1;i<=mlen;i++)days.push(i);
-  view.innerHTML=kindToggle()+pyPickBar()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button>
+  view.innerHTML=kindToggle()+'<div id="pimpbar"></div>'+pyPickBar()+`<div class="pbar"><button class="back" id="pmback">→ כל החודשים</button>
       <div class="monthnav"><button class="mnav" id="pmprev">${esc(hMonHop(-1))}</button>
         <b>חודש ${pyMonth}</b>
         <button class="mnav" id="pmnext">${esc(hMonHop(1))}</button></div></div>

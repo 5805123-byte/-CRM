@@ -7602,6 +7602,30 @@ def ensure_schema():
     except Exception as e:
         print('  karp kv error:', e)
 
+    try:
+        # 📥 לימוד לזכות — 63 תאריכים לפרנסי לילה (ראה pimp_candidates)
+        con.execute("CREATE TABLE IF NOT EXISTS parnes_imp(id INTEGER PRIMARY KEY AUTOINCREMENT, n INTEGER, date_text TEXT, days TEXT, kind_he TEXT, "
+                    "dedication TEXT, donor_txt TEXT, years TEXT, status TEXT DEFAULT 'pending', donor_id INTEGER, parnes_ids TEXT, how TEXT, updated TEXT)")
+        _pf = os.path.join(HERE, 'parnes_lezchus_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_v1'").fetchone() and os.path.exists(_pf):
+            na = nw = 0
+            for x in json.load(open(_pf, encoding='utf-8')):
+                cur = con.execute("INSERT INTO parnes_imp(n,date_text,days,kind_he,dedication,donor_txt,years,status) VALUES(?,?,?,?,?,?,?,'pending')",
+                                  (x['n'], x['date_text'], json.dumps(x['days'], ensure_ascii=False), x['kind_he'], x['dedication'], x['donor_txt'], x['years']))
+                r = con.execute("SELECT * FROM parnes_imp WHERE id=?", (cur.lastrowid,)).fetchone()
+                cands = pimp_candidates(con, x['donor_txt'])
+                if len(cands) == 1 and ' ו' not in x['donor_txt']:
+                    pimp_apply(con, r, cands[0]['id'])
+                    con.execute("UPDATE parnes_imp SET how='auto' WHERE id=?", (r['id'],))
+                    na += 1
+                else:
+                    nw += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_v1')")
+            con.commit()
+            print('  לימוד לזכות: %d נכנסו לבד לפרנס יום, %d מחכים לשיוך' % (na, nw))
+    except Exception as e:
+        print('  parnes lezchus error:', e)
+
     # מלגות אברכים — הקבצים שמאיר שלח בצ'אט: סיכום מלגות אלול תשפ"ו (08/2026)
     # לשלושת הכוללים, ומלגות חג הסוכות תשפ"ז לכולל חצות (93) ולכולל הוראה (21).
     try:
@@ -15016,6 +15040,97 @@ def mail_worker(batch_id):
             pass
 
 
+# 📥 מאיר: "תכניס את זה לפרנסי לילה עם כל השמות לזכות, לכל התורמים שמופיעים כאן. אם אתה לא יודע מי זה
+# מה תורמים — תבנה לי צורת ווב שאאשר או אכתוב או אשייך". כל שורה מהקובץ נשמרת ב-parnes_imp; תורם אחד בלבד
+# שמתאים (שם משפחה, ושם פרטי אם בסוגריים) — נכנס לבד; אחרת מחכה בחלון "📥 לימוד לזכות" בלשונית פרנס יום.
+def pimp_candidates(con, txt):
+    txt = (txt or '').strip()
+    if not txt:
+        return []
+    out, seen = [], set()
+    for part in re.split(r'\s+ו(?=\S)', txt):          # "שטטפלד ולאקס" — שתי משפחות
+        m = re.match(r'^([^()]+?)\s*(?:\(([^)]*)\))?$', part.strip())
+        if not m:
+            continue
+        last, first = m.group(1).strip(), (m.group(2) or '').strip()
+        rows = con.execute("SELECT id, last, first, english, city FROM donors WHERE TRIM(last)=?", (last,)).fetchall()
+        if first:
+            f = [r for r in rows if first in (r['first'] or '') or first in (r['english'] or '')]
+            rows = f or rows
+        for r in rows:
+            if r['id'] not in seen:
+                seen.add(r['id'])
+                out.append({'id': r['id'], 'name': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(), 'english': r['english'] or '', 'city': r['city'] or ''})
+    return out
+
+
+def pimp_hyear(date_text):
+    """הלילה הקרוב: השנה הנוכחית אם עוד לא עבר, אחרת הבאה."""
+    from hebdate import heb_year_num, current_heb_year
+    cy = current_heb_year()
+    g = heb_greg_year(date_text, cy)
+    if g and g.isoformat() >= today_iso():
+        return cy, g
+    n = heb_year_num(cy)
+    import hebdate as _hd
+    for y in (n + 1, n + 2):
+        try:
+            from pyluach import dates as _pd
+            ys = _hd.hq(_pd.HebrewDate(y, 1, 1).hebrew_date_string().split()[-1])
+        except Exception:
+            continue
+        g = heb_greg_year(date_text, ys)
+        if g:
+            return ys, g
+    return cy, None
+
+
+def pimp_apply(con, r, donor_id, dedication=None):
+    """מכניס את השורה כפרנס לילה (כל הימים שלה) לתורם — כמו הוספה מהמסך: תזכורת שבוע לפני והצעות לשנים הבאות."""
+    import hebdate as _hd
+    ded = (dedication if dedication is not None else r['dedication']) or ''
+    dr = con.execute("SELECT region FROM donors WHERE id=?", (donor_id,)).fetchone()
+    ccy = '₪' if (dr and (dr['region'] or '') == 'il') else '$'
+    ids = []
+    for dt in json.loads(r['days'] or '[]') or [r['date_text']]:
+        parts = dt.split()
+        day, month = _hd._day(parts[0]), ' '.join(parts[1:])
+        hy, g = pimp_hyear(dt)
+        ex = con.execute("SELECT id, status, dedication FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')='parnes' AND date_text=? AND hyear=?",
+                         (donor_id, dt, hy)).fetchone()
+        if ex:
+            con.execute("UPDATE parnes SET status='confirmed', dedication=CASE WHEN COALESCE(dedication,'')='' OR status='suggested' THEN ? ELSE dedication END WHERE id=?", (ded, ex['id']))
+            ids.append(ex['id'])
+            continue
+        cur = con.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method,currency) "
+                          "VALUES(?,?,?,?,'',?,'parnes','confirmed',?,?,'',?)", (donor_id, day, month, dt, ded, g.isoformat() if g else '', hy, ccy))
+        ids.append(cur.lastrowid)
+        due = week_before(dt)
+        if due:
+            if due < today_iso():
+                due = today_iso()
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)", (donor_id, due, 'parnes', 'פרנס יום ' + dt + ' — הכן הדפסה וצור קשר'))
+        parnes_suggest(con, {'donor_id': donor_id, 'day': day, 'month': month, 'date_text': dt, 'amount': '', 'dedication': ded,
+                             'kind': 'parnes', 'hyear': hy, 'method': '', 'currency': ccy}, 3)
+    con.execute("UPDATE parnes_imp SET status='done', donor_id=?, parnes_ids=?, dedication=?, updated=? WHERE id=?",
+                (donor_id, json.dumps(ids), ded, now_iso(), r['id']))
+    return ids
+
+
+def pimp_undo(con, r):
+    """מבטל שיוך (כדי לשייך לתורם אחר): הפרנס שנפתח מהקובץ, ההצעות שלו והתזכורת — אם עוד לא שולם."""
+    for pid in json.loads(r['parnes_ids'] or '[]'):
+        p = con.execute("SELECT * FROM parnes WHERE id=?", (pid,)).fetchone()
+        if not p or int(p['paid'] or 0):
+            continue
+        con.execute("DELETE FROM parnes WHERE id=?", (pid,))
+        con.execute("DELETE FROM parnes WHERE donor_id=? AND date_text=? AND status='suggested' AND COALESCE(paid,0)=0 AND COALESCE(dedication,'')=?",
+                    (p['donor_id'], p['date_text'], p['dedication'] or ''))
+        con.execute("DELETE FROM tasks WHERE donor_id=? AND kind='parnes' AND COALESCE(done,0)=0 AND note=?",
+                    (p['donor_id'], 'פרנס יום ' + (p['date_text'] or '') + ' — הכן הדפסה וצור קשר'))
+    con.execute("UPDATE parnes_imp SET status='pending', donor_id=NULL, parnes_ids='', how='', updated=? WHERE id=?", (now_iso(), r['id']))
+
+
 def parnes_suggest(con, p, n=3):
     """הצעות לשנים הבאות עבור פרנס מאושר — אותו יום עברי, status='suggested'.
     מאיר: "גם אם בחרתי למישהו פרנס לילה בתאריך מסוים שזה יציע לי גם בשנה הבאה
@@ -17760,6 +17875,20 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mikveh/link':
             con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
             return self._send(200, {'ok': True, 'url': v})
+        if self.path.split('?')[0] == '/api/parnes_imp':
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT i.*, TRIM(COALESCE(d.last,'')||' '||COALESCE(d.first,'')) dname FROM parnes_imp i "
+                                                     "LEFT JOIN donors d ON d.id=i.donor_id ORDER BY i.n")]
+                for r in rows:
+                    r['days'] = json.loads(r['days'] or '[]')
+                    if r['status'] == 'pending':
+                        r['cands'] = pimp_candidates(con, r['donor_txt'])
+            except sqlite3.OperationalError:
+                rows = []
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'pending': sum(1 for r in rows if r['status'] == 'pending')})
         if self.path.split('?')[0] == '/api/remind_call':
             con = db()
             try:
@@ -19776,6 +19905,44 @@ class H(BaseHTTPRequestHandler):
             # מאיר: "שלוחצים על שליחת הודעה שלא יחכה" — יוצאת מיד, גם כשמשלוח גדול באמצע
             _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid})
+        m = re.match(r'/api/parnes_imp/(\d+)$', self.path)
+        if m:
+            con = db()
+            try:
+                r = con.execute("SELECT * FROM parnes_imp WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not r:
+                    return self._send(200, {'ok': False, 'error': 'השורה לא נמצאה'})
+                act = b.get('action')
+                ded = str(b.get('dedication')).strip()[:600] if b.get('dedication') is not None else None
+                if act == 'assign':
+                    did = int(b.get('donor_id') or 0)
+                    if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                        return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+                    if r['status'] == 'done':
+                        pimp_undo(con, r)
+                        r = con.execute("SELECT * FROM parnes_imp WHERE id=?", (r['id'],)).fetchone()
+                    ids = pimp_apply(con, r, did, ded)
+                    con.execute("UPDATE parnes_imp SET how='manual' WHERE id=?", (r['id'],))
+                elif act == 'skip':
+                    if r['status'] == 'done':
+                        pimp_undo(con, r)
+                    con.execute("UPDATE parnes_imp SET status='skip', updated=? WHERE id=?", (now_iso(), r['id']))
+                    ids = []
+                elif act == 'unskip':
+                    con.execute("UPDATE parnes_imp SET status='pending', updated=? WHERE id=?", (now_iso(), r['id']))
+                    ids = []
+                elif act == 'edit' and ded is not None:
+                    con.execute("UPDATE parnes_imp SET dedication=? WHERE id=?", (ded, r['id']))
+                    for pid in json.loads(r['parnes_ids'] or '[]'):
+                        con.execute("UPDATE parnes SET dedication=? WHERE id=?", (ded, pid))
+                    ids = json.loads(r['parnes_ids'] or '[]')
+                else:
+                    return self._send(200, {'ok': False, 'error': 'פעולה לא מוכרת'})
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'ids': ids})
         if self.path == '/api/remind_call':
             import yemot as _ym
             con = db()
