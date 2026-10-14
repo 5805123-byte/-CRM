@@ -7623,6 +7623,24 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_v1')")
             con.commit()
             print('  לימוד לזכות: %d נכנסו לבד לפרנס יום, %d מחכים לשיוך' % (na, nw))
+        # מאיר: "אצל טעפפער תכניס רק את י"ח שבט" — לילה אחד ולא כל השבוע
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_tepper_v1'").fetchone():
+            r = con.execute("SELECT * FROM parnes_imp WHERE n=23").fetchone()
+            if r:
+                one = 'י"ח שבט'
+                for pid in json.loads(r['parnes_ids'] or '[]'):
+                    p = con.execute("SELECT * FROM parnes WHERE id=?", (pid,)).fetchone()
+                    if p and p['date_text'] != one and not int(p['paid'] or 0):
+                        con.execute("DELETE FROM parnes WHERE id=?", (pid,))
+                        con.execute("DELETE FROM parnes WHERE donor_id=? AND date_text=? AND status='suggested' AND COALESCE(paid,0)=0", (p['donor_id'], p['date_text']))
+                        con.execute("DELETE FROM tasks WHERE donor_id=? AND kind='parnes' AND COALESCE(done,0)=0 AND note=?", (p['donor_id'], 'פרנס יום ' + p['date_text'] + ' — הכן הדפסה וצור קשר'))
+                keep = [pid for pid in json.loads(r['parnes_ids'] or '[]') if con.execute("SELECT 1 FROM parnes WHERE id=?", (pid,)).fetchone()]
+                con.execute("UPDATE parnes_imp SET date_text=?, days=?, parnes_ids=? WHERE id=?", (one, json.dumps([one], ensure_ascii=False), json.dumps(keep) if r['parnes_ids'] else r['parnes_ids'], r['id']))
+                con.execute("UPDATE parnes_imp SET dedication=REPLACE(dedication,'שבוע שלם: ','') WHERE id=?", (r['id'],))
+                for pid in keep:
+                    con.execute("UPDATE parnes SET dedication=REPLACE(dedication,'שבוע שלם: ','') WHERE id=?", (pid,))
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_tepper_v1')")
+            con.commit()
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_amt_v1'").fetchone():
             n = 0
             for r in con.execute("SELECT i.*, d.last dlast FROM parnes_imp i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.status='done'").fetchall():
