@@ -7623,6 +7623,20 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_v1')")
             con.commit()
             print('  לימוד לזכות: %d נכנסו לבד לפרנס יום, %d מחכים לשיוך' % (na, nw))
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_lezchus_amt_v1'").fetchone():
+            n = 0
+            for r in con.execute("SELECT i.*, d.last dlast FROM parnes_imp i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.status='done'").fetchall():
+                amt = pimp_amount(r['donor_txt'], r['dlast'])
+                for pid in json.loads(r['parnes_ids'] or '[]'):
+                    p = con.execute("SELECT donor_id, date_text, dedication FROM parnes WHERE id=?", (pid,)).fetchone()
+                    if not p:
+                        continue
+                    n += con.execute("UPDATE parnes SET amount=? WHERE id=? AND COALESCE(amount,'')=''", (amt, pid)).rowcount
+                    con.execute("UPDATE parnes SET amount=? WHERE donor_id=? AND date_text=? AND status='suggested' AND COALESCE(amount,'')='' "
+                                "AND COALESCE(dedication,'')=?", (amt, p['donor_id'], p['date_text'], p['dedication'] or ''))
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_lezchus_amt_v1')")
+            con.commit()
+            print('  לימוד לזכות: נקבע סכום ל-%d פרנסים (480, מנדלסון 500)' % n)
     except Exception as e:
         print('  parnes lezchus error:', e)
 
@@ -15089,7 +15103,8 @@ def pimp_apply(con, r, donor_id, dedication=None):
     """מכניס את השורה כפרנס לילה (כל הימים שלה) לתורם — כמו הוספה מהמסך: תזכורת שבוע לפני והצעות לשנים הבאות."""
     import hebdate as _hd
     ded = (dedication if dedication is not None else r['dedication']) or ''
-    dr = con.execute("SELECT region FROM donors WHERE id=?", (donor_id,)).fetchone()
+    dr = con.execute("SELECT region, last FROM donors WHERE id=?", (donor_id,)).fetchone()
+    amt = pimp_amount(r['donor_txt'], dr['last'] if dr else '')
     ccy = '₪' if (dr and (dr['region'] or '') == 'il') else '$'
     ids = []
     for dt in json.loads(r['days'] or '[]') or [r['date_text']]:
@@ -15099,22 +15114,28 @@ def pimp_apply(con, r, donor_id, dedication=None):
         ex = con.execute("SELECT id, status, dedication FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')='parnes' AND date_text=? AND hyear=?",
                          (donor_id, dt, hy)).fetchone()
         if ex:
-            con.execute("UPDATE parnes SET status='confirmed', dedication=CASE WHEN COALESCE(dedication,'')='' OR status='suggested' THEN ? ELSE dedication END WHERE id=?", (ded, ex['id']))
+            con.execute("UPDATE parnes SET status='confirmed', dedication=CASE WHEN COALESCE(dedication,'')='' OR status='suggested' THEN ? ELSE dedication END, "
+                        "amount=CASE WHEN COALESCE(amount,'')='' THEN ? ELSE amount END WHERE id=?", (ded, amt, ex['id']))
             ids.append(ex['id'])
             continue
         cur = con.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method,currency) "
-                          "VALUES(?,?,?,?,'',?,'parnes','confirmed',?,?,'',?)", (donor_id, day, month, dt, ded, g.isoformat() if g else '', hy, ccy))
+                          "VALUES(?,?,?,?,?,?,'parnes','confirmed',?,?,'',?)", (donor_id, day, month, dt, amt, ded, g.isoformat() if g else '', hy, ccy))
         ids.append(cur.lastrowid)
         due = week_before(dt)
         if due:
             if due < today_iso():
                 due = today_iso()
             con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)", (donor_id, due, 'parnes', 'פרנס יום ' + dt + ' — הכן הדפסה וצור קשר'))
-        parnes_suggest(con, {'donor_id': donor_id, 'day': day, 'month': month, 'date_text': dt, 'amount': '', 'dedication': ded,
+        parnes_suggest(con, {'donor_id': donor_id, 'day': day, 'month': month, 'date_text': dt, 'amount': amt, 'dedication': ded,
                              'kind': 'parnes', 'hyear': hy, 'method': '', 'currency': ccy}, 3)
     con.execute("UPDATE parnes_imp SET status='done', donor_id=?, parnes_ids=?, dedication=?, updated=? WHERE id=?",
                 (donor_id, json.dumps(ids), ded, now_iso(), r['id']))
     return ids
+
+
+def pimp_amount(donor_txt, last=''):
+    """מאיר: "לכל אחד תשים סכום של 480, אצל מנדלסון 500"."""
+    return '500' if ('מנדלסון' in (donor_txt or '') or (last or '').strip() == 'מנדלסון') else '480'
 
 
 def pimp_undo(con, r):
