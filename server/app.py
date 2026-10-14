@@ -17889,13 +17889,15 @@ class H(BaseHTTPRequestHandler):
                 rows = [dict(r) for r in con.execute(
                     "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail, "
                     "y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, y.pressed_secs y_psecs, y.call_status y_call, "
-                    "y.sent_ts y_sent, y.retry_at y_retry_at, y.retried y_retried, y.error y_err, y.id y_id, y.job y_job, "
+                    "y.sent_ts y_sent, y.retry_at y_retry_at, y.retried y_retried, y.error y_err, y.id y_id, y.job y_job, COALESCE(y.fund,'') y_fund, "
                     "(SELECT r.answered FROM ym_msg r WHERE r.id=y.retried) y_r_ans, (SELECT r.listen_secs FROM ym_msg r WHERE r.id=y.retried) y_r_listen, "
                     "(SELECT r.pressed FROM ym_msg r WHERE r.id=y.retried) y_r_pressed "
                     # תזכורת שיצאה לפני שנשמר הקישור (rem_msg) — ההודעה האחרונה לאותו חבר מאותו יום ואילך
                     "FROM cm_debt d LEFT JOIN members m ON m.id=d.member_id LEFT JOIN ym_msg y ON y.id=COALESCE(d.rem_msg, "
                     "CASE WHEN d.reminded_via IN ('voice','sms') AND d.member_id IS NOT NULL THEN (SELECT y2.id FROM ym_msg y2 JOIN ym_job j2 ON j2.id=y2.job "
                     "WHERE y2.kind='m' AND y2.ref_id=d.member_id AND j2.channel=d.reminded_via AND COALESCE(j2.test,0)=0 AND y2.retry_of IS NULL "
+                    # מאיר: "שלחתי בנתן תתן למי שכבר קיבל הודעה מהקהילה — רואים שהוא ענה, אבל זה היה לקהילה" — רק הודעה של אותה קופה
+                    "AND COALESCE(y2.fund,'')=COALESCE(d.fund,'') "
                     "AND substr(COALESCE(y2.sent_ts,y2.at,''),1,10)>=substr(d.reminded_at,1,10) ORDER BY y2.id DESC LIMIT 1) END)" + w +
                     " ORDER BY d.status, COALESCE(NULLIF(d.due,''),d.created) DESC, d.id DESC", (() if st == 'all' else (st,)))]
                 cc = {}

@@ -13664,7 +13664,8 @@ function renderComm(){
   if(CMVM===null){CMVM={rows:[],new:0};cmVmLoad(false).then(()=>{if(tab==='comm'&&cmSub==='list'&&CMVM.new)render();});}
   const vmb=document.getElementById('cm_vm');if(vmb)vmb.onclick=()=>{ymView='vm';cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_mail').onclick=()=>{cmSub='send';render();window.scrollTo(0,0);};
-  document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;render();window.scrollTo(0,0);};
+  document.getElementById('cm_ym').onclick=()=>{cmSub='ym';ymStatus=null;cdRem=null;   // משלוח רגיל — לא מסמן חובות שנבחרו קודם (למשל של נתן תתן)
+  render();window.scrollTo(0,0);};
   document.getElementById('cm_debts').onclick=()=>{cmSub='debts';cdData=null;cdFund='';render();window.scrollTo(0,0);};
   document.getElementById('cm_ledger').onclick=()=>{cmSub='ledger';LG=null;render();window.scrollTo(0,0);};
   document.getElementById('cm_gifts').onclick=()=>{cmSub='cgifts';cgFund='';CGF=null;render();window.scrollTo(0,0);};
@@ -14492,6 +14493,8 @@ function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
     else if(d.y_retry_at)t+=' · 🔁 ינסה שוב '+ndDate(d.y_retry_at)+' '+String(d.y_retry_at).slice(11,16);}
   else t='⏳ בודק אם ענה…';
   const chk=t.startsWith('⏳ בודק')&&d.y_job?` <button type="button" class="cdchk" data-ymchk="${d.y_job}" title="לבדוק עכשיו ביומן של ימות">🔄 בדוק עכשיו</button>`:'';
+  // מאיזו קופה יצאה ההודעה — כדי שלא יתבלבלו בין שיחה של הקהילה לשיחה של נתן תתן
+  if(d.y_st&&(d.y_fund||'')!==(d.fund||''))t+=d.y_fund==='natan'?' · (שיחה של נתן תתן)':' · (שיחה של הקהילה)';
   return `<small class="cdres ${c}" title="${esc('נשלח '+String(d.y_sent||d.reminded_at||'').slice(0,16)+(d.y_call?' · '+d.y_call:''))}">${esc(t)}${chk}</small>`;}
 // 🎙️ מאיר: "אם אחד השאיר הודעה במערכת של ימות המשיח — שההודעה תהיה בכרטיס שלו וגם בחלון החובות"
 function cdVmHTML(v){return `<div class="cdvm ${v.heard?'':'new'}"><b>🎙️ השאיר הודעה ${esc(ndDate(v.at))} ${esc(String(v.at||'').slice(11,16))}</b>${v.heard?'':' <small class="cdres bad">חדשה</small>'}
@@ -14519,7 +14522,7 @@ function cdGroupsHTML(rows){
       <div class="cdgh">${deb.length?`<input type="checkbox" class="cdgck" data-ids="${deb.map(d=>d.id).join(',')}" ${allSel?'checked':''}>`:'<span></span>'}
         <div class="cdmain"><b class="cdname" data-cdm="${g.mid||''}" title="לפתוח את הכרטיס שלו">${esc(g.name)}</b>
           ${g.phone?`<small class="cdmeta" dir="ltr">${esc(g.phone)}</small>`:''}
-          ${rem?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(rem.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[rem.reminded_via]||'')}${+rem.n_reminded>1?' (×'+rem.n_reminded+')':''}</small>${cdRemRes(rem)}`:''}
+          ${rem?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(rem.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[rem.reminded_via]||'')}${cdFund==='natan'?' של נתן תתן':''}${+rem.n_reminded>1?' (×'+rem.n_reminded+')':''}</small>${cdRemRes(rem)}`:''}
           ${deb.length?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${ch===k?'on':''}" data-cdgch="${k}" data-ids="${deb.map(d=>d.id).join(',')}" title="${l}${k==='email'&&!g.email?' — אין מייל':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(tot)}</b>${op.length>1?`<small>${op.length} פריטים</small>`:''}</div>
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
