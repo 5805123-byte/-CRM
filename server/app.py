@@ -26167,7 +26167,9 @@ def ivr_answer(P):
         # הייתה של נתן תתן (גם בלי סכום) — הסליקה והחוב של הקופה, במספר המוסד שלה
         lastf = con.execute("SELECT COALESCE(fund,'') fund FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
                             "ORDER BY id DESC LIMIT 1", (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
-        nat_mo = natan_mosad(con) if ((last and last['fund'] == 'natan') or (lastf and lastf['fund'] == 'natan')) else ''
+        # מאיר: "לא חיברתי את ימות המשיח לנתן תתן. אז בינתיים הקשה 1 שתעביר לנדרים פלוס של הקהילה" —
+        # הניתוב לקופה כבוי עד שמדליקים (app_kv natan_ivr=1, אחרי שנדרים פלוס יחברו את ימות למוסד שלה)
+        nat_mo = natan_mosad(con) if (kv_get(con, 'natan_ivr', '') == '1' and ((last and last['fund'] == 'natan') or (lastf and lastf['fund'] == 'natan'))) else ''
         if nat_mo and not (last and last['fund'] == 'natan'):
             job_amt, job = 0, 0      # הסכום שבהודעה של הקהילה לא שייך לקופה
         pay_mo = nat_mo or _nd.mosad()
