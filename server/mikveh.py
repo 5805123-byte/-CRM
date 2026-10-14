@@ -15,6 +15,7 @@
 import datetime
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -288,3 +289,39 @@ def update_client(cid, changes):
 
 def set_group(cid, group_id):
     return update_client(cid, {'groupId': group_id})
+
+
+# ---------- מחירים ----------
+# מאיר: "שאם אני לוחץ על הקוביה של מחיר שאוכל לשנות את המחיר… ושמכאן אוכל לשנות מחירים".
+# המחיר במקווה שמור בקבוצה (subscriptionPrice, באגורות). אם ללקוח יש שדה מחיר משלו — גם אותו.
+_PRICE_RE = re.compile(r'price|discount|cost|fee|amount', re.I)
+_NOT_PRICE = ('balance', 'lastBalance', 'tempBalance')
+
+
+def price_fields(cid):
+    """שדות מחיר שיש ללקוח עצמו במקווה (מספרים בלבד) — כדי לדעת אם אפשר מחיר אישי."""
+    c = client(cid, max_age=60)
+    return {k: v for k, v in c.items() if _PRICE_RE.search(k) and k not in _NOT_PRICE
+            and (v is None or isinstance(v, (int, float))) and not isinstance(v, bool)}
+
+
+def raw_group(gid):
+    for g in _items(get('Group')):
+        if str(g.get('id')) == str(gid):
+            return dict(g)
+    raise RuntimeError('הקבוצה לא נמצאה במקווה')
+
+
+def update_group(gid, changes):
+    """עדכון קבוצה במקווה — כמו עדכון לקוח: כל הקבוצה, עם השינוי בלבד."""
+    obj = raw_group(gid)
+    obj.update(changes)
+    code, res = call('PATCH', 'Group/%s' % gid, body=obj, timeout=30)
+    if code in (404, 405):
+        code, res = call('PUT', 'Group/%s' % gid, body=obj, timeout=30)
+    if code in (404, 405):
+        code, res = call('PUT', 'Group', body=obj, timeout=30)
+    if not (200 <= code < 300):
+        raise RuntimeError('העדכון במקווה נכשל: %s' % (LAST.get('error') or code))
+    _GR.update(rows=None)
+    return res if isinstance(res, dict) else obj

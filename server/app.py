@@ -17561,6 +17561,22 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mikveh/link':
             con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
             return self._send(200, {'ok': True, 'url': v})
+        if self.path.split('?')[0] == '/api/mikveh/price_info':
+            # 💲 מה אפשר לשנות: מחיר הקבוצה (וכמה לקוחות בה), ושדות מחיר אישיים של הלקוח במקווה אם יש
+            import mikveh as _mk
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            try:
+                full = _mk.client(cid, max_age=60)
+                gid = full.get('groupId') or ''
+                g = next((x for x in _mk.groups() if x['id'] == gid), None)
+                n = sum(1 for x in _mk.clients() if x.get('groupId') == gid)
+                fields = _mk.price_fields(cid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            return self._send(200, {'ok': True, 'group': {'id': gid, 'name': g['name'] if g else '', 'price': g['price'] if g else None, 'count': n},
+                                    'fields': {k: (v / 100.0 if isinstance(v, (int, float)) else v) for k, v in fields.items()}})
         m = re.match(r'/api/mikveh/pay/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
         if m:
             # 💳 מאיר: "במקווה אני רוצה לראות אצל כל אחד כמה המחיר שהוא משלם למנוי, ואת ההיסטוריה תשלומים שלו עד היום"
@@ -19549,6 +19565,44 @@ class H(BaseHTTPRequestHandler):
             # מאיר: "שלוחצים על שליחת הודעה שלא יחכה" — יוצאת מיד, גם כשמשלוח גדול באמצע
             _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid})
+        if self.path == '/api/mikveh/price':
+            # 💲 שינוי מחיר במקווה עצמו — של הלקוח (שדה מחיר אישי) או של כל הקבוצה. אחרי השינוי בודקים במקווה שזה נקלט
+            import mikveh as _mk
+            cid, scope = str(b.get('id') or '').strip(), b.get('scope')
+            try:
+                price = round(float(str(b.get('price') or '').replace(',', '').replace('₪', '').strip()), 2)
+            except ValueError:
+                return self._send(200, {'ok': False, 'error': 'מחיר לא תקין'})
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or price < 0 or price > 100000:
+                return self._send(200, {'ok': False, 'error': 'מחיר לא תקין'})
+            cents = int(round(price * 100))
+            try:
+                if scope == 'client':
+                    fld = str(b.get('field') or '')
+                    if fld not in _mk.price_fields(cid):
+                        return self._send(200, {'ok': False, 'error': 'אין ללקוח שדה מחיר כזה במקווה'})
+                    _mk.update_client(cid, {fld: cents})
+                    got = _mk.client(cid).get(fld)
+                    if got != cents:
+                        return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל המחיר לא השתנה'})
+                    what = '💲 מחיר אישי במקווה: ₪%g' % price
+                else:
+                    gid = _mk.client(cid, max_age=60).get('groupId') or ''
+                    gname = next((x['name'] for x in _mk.groups() if x['id'] == gid), '')
+                    _mk.update_group(gid, {'subscriptionPrice': cents})
+                    g2 = next((x for x in _mk.groups(fresh=True) if x['id'] == gid), None)
+                    if not g2 or g2['price'] is None or round(g2['price'] * 100) != cents:
+                        return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל המחיר לא השתנה'})
+                    what = '💲 מחיר הקבוצה "%s" במקווה: ₪%g' % (gname, price)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)", (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'price', what))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'price': price, 'what': what})
         if self.path == '/api/mikveh/notify_bulk':
             # 📤 שליחה לכמה לקוחות מקווה יחד — שיחה / SMS דרך ימות, כל אחד עם הטקסט שלו (השם וכו' כבר מולאו במסך)
             import yemot as _ym
@@ -21299,7 +21353,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'הקובץ לא נקרא: %s' % str(e)[:150]})
             finally:
                 con.close()
-        m = re.match(r'/api/nd/keva/(M?[\d:]+)/member$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/member$', urllib.parse.unquote(self.path))   # מזהה של מוסד נוסף: '7000571:123' (מגיע מקודד %3A)
         if m:
             mid = int(b.get('member_id') or 0) or None
             con = db()
@@ -21311,7 +21365,7 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE nd_keva SET member_id=? WHERE id=?", (mid, m.group(1)))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
-        m = re.match(r'/api/nd/keva/(M?[\d:]+)/link$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/link$', urllib.parse.unquote(self.path))   # מזהה של מוסד נוסף: '7000571:123' (מגיע מקודד %3A)
         if m:
             con = db()
             try:
@@ -21376,7 +21430,7 @@ class H(BaseHTTPRequestHandler):
                 bump_data()
             threading.Thread(target=_proc, daemon=True).start()
             return self._send(200, {'ok': True})
-        m = re.match(r'/api/nd/keva/(M?[\d:]+)/action$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/action$', urllib.parse.unquote(self.path))   # מזהה של מוסד נוסף: '7000571:123' (מגיע מקודד %3A)
         if m:
             # ⏸ הקפאה / ▶ הפעלה / ✎ שינוי סכום ותאריך / ⏭ דחייה בחודש — אשראי ובנקאית
             import nedarim as _nd
@@ -21428,7 +21482,11 @@ class H(BaseHTTPRequestHandler):
                         what = '⏭ הגביה נדחתה לחודש הבא' if act == 'month_next' else '⏮ הגביה הוקדמה לחודש קודם'
                     else:
                         return self._send(200, {'ok': False, 'error': 'פעולה לא מוכרת'})
-                if k['member_id']:
+                if str(k['mosad'] or '') == mk_mosad() and re.fullmatch(r'[0-9a-fA-F-]{36}', str(b.get('mk_cid') or '')):
+                    # הוראת קבע של המקווה — נרשם רק ביומן של לקוח המקווה (מערכת נפרדת מהקהילה)
+                    con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                (b.get('mk_cid'), il_now().strftime('%Y-%m-%d %H:%M:%S'), 'price', what if ok else '🔴 %s נכשל: %s' % (what, msg)))
+                elif k['member_id']:
                     cm_debt_log(con, k['member_id'], 'keva:' + kid, ('%s (%s₪%s%s)' % (what, 'בנקאית · ' if bank else '', k['amount'] or '', (' · ' + k['groupe']) if k['groupe'] else ''))
                                 if ok else '🔴 %s נכשל: %s' % (what.split(' ', 1)[-1], msg))
                 # מאיר: "אתייג אותו שהוא דמי חבר" — אחרי עדכון / הפעלה: בודקים מיד אם ההוראה הזו מחליפה הוראה שחזרה
@@ -21441,7 +21499,7 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': bool(ok), 'error': '' if ok else (msg or 'נדרים פלוס לא אישרו'), 'message': msg})
-        m = re.match(r'/api/nd/keva/(M?[\d:]+)/charge$', self.path)
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/charge$', urllib.parse.unquote(self.path))   # מזהה של מוסד נוסף: '7000571:123' (מגיע מקודד %3A)
         if m:
             # ⚡ חיוב מיידי מהוראת הקבע של חבר הקהילה (TashlumBodedNew, Join) — מאיר: "העברת תרומה…
             # חיובים כאילו חיים דרך נדרים פלוס". נרשם בכרטיס, סוגר חוב פתוח, ומסמן הודעה ששולמה.

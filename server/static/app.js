@@ -1863,7 +1863,8 @@ function mkOpen(c){
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
-        ${tile(c.price!=null?'💲 מחיר המנוי שלו':'💲 מחיר המנוי (של הקבוצה)',c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):''))}
+        <div class="mktile mkedit" id="mkprice" title="לחיצה — לשנות את המחיר"><span>💲 מחיר המנוי${c.price!=null?' (אישי)':' (של הקבוצה)'} ✎</span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
+        <div class="mktile mkedit" id="mkpaid" data-id="${esc(c.id)}" title="לחיצה — לשנות כמה הוא משלם"><span>💳 משלם בפועל ✎</span><b>${mkPaidTxt(c.id)}</b></div>
         ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
@@ -1890,6 +1891,8 @@ function mkOpen(c){
     mkHistLoad(c.id); mkPayLoad(c.id);
     document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
+    document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
+    document.getElementById('mkpaid').onclick=()=>mkPriceEdit(c,true);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
@@ -2137,7 +2140,68 @@ const mkNis=n=>n==null||n===''?'':'₪'+(+n).toLocaleString('he-IL',{maximumFrac
 async function mkPayLoad(cid){if(MKPAY[cid]&&Date.now()-MKPAY[cid]._at<60000)return;
   let r=null;try{r=await api('GET','/api/mikveh/pay/'+encodeURIComponent(cid));}catch(e){}
   MKPAY[cid]=r&&r.ok?r:{ok:false,error:(r&&r.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
-  const el=document.getElementById('mkpay');if(el&&el.dataset.id===cid)el.innerHTML=mkPayHTML(cid);}
+  const el=document.getElementById('mkpay');if(el&&el.dataset.id===cid)el.innerHTML=mkPayHTML(cid);
+  const pt=document.getElementById('mkpaid');if(pt&&pt.dataset.id===cid)pt.querySelector('b').innerHTML=mkPaidTxt(cid);}
+// 💳 "שאראה קוביה כמה הוא משלם באמת למנוי הזה" — הוראת הקבע הפעילה, ואם אין — התשלום האחרון
+const mkKevaAmt=k=>+String(k.amount||'').replace(/[^\d.]/g,'')||0;
+function mkPaidTxt(cid){const P=MKPAY[cid];if(!P)return '⏳';if(!P.ok)return '—';
+  const kv=(P.kevas||[]).filter(k=>+k.active);
+  if(kv.length)return esc(mkNis(kv.reduce((t,k)=>t+mkKevaAmt(k),0)))+' <small>לחודש · הו"ק</small>';
+  const t=(P.tx||[]).find(x=>(+x.amount||0)>0);
+  return t?esc(mkNis(t.amount))+' <small>אחרון · '+esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(2,4))+'</small>':'<small>לא נמצא תשלום</small>';}
+// 💲 מאיר: "שאם אני לוחץ על הקוביה של מחיר שאוכל לשנות את המחיר… ושמכאן אוכל לשנות מחירים וכו'".
+// המחיר במקווה (של הקבוצה, או אישי אם יש ללקוח שדה כזה), ומה שהוא משלם בפועל — הוראת הקבע בנדרים פלוס
+async function mkPriceEdit(c,paidFirst){
+  const o=document.createElement('div');o.className='mkov';
+  o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">💲</div><div><b>מחירים · ${esc(mkName(c))}</b></div><button class="x2" id="mpx">✕</button></div>
+    <div class="mkdb" id="mpb"><div class="mksub">⏳ טוען מהמקווה ומנדרים פלוס…</div></div>
+    <div class="mkdf"><span class="grow"></span><button class="mkbtn gh" id="mpno">סגירה</button></div></div>`;
+  document.body.appendChild(o);
+  let changed=false;
+  const close=()=>{o.remove();if(changed){mkOpen(c);}};
+  o.querySelector('#mpx').onclick=close;o.querySelector('#mpno').onclick=close;o.onclick=e=>{if(e.target===o)close();};
+  delete MKPAY[c.id];
+  const [pi]=await Promise.all([api('GET','/api/mikveh/price_info?id='+encodeURIComponent(c.id)).catch(()=>null),mkPayLoad(c.id)]);
+  const P=MKPAY[c.id]||{}, kv=(P.kevas||[]).filter(k=>+k.active), G=pi&&pi.group;
+  const flds=Object.entries((pi&&pi.fields)||{});
+  const box=o.querySelector('#mpb');
+  const sec=(t,sub)=>`<div class="mklbl" style="font-size:.85rem;color:var(--ink)"><span>${t}</span></div>${sub?`<div class="mksub" style="margin-bottom:6px">${sub}</div>`:''}`;
+  const row=(id,val,btn)=>`<div style="display:flex;gap:8px;align-items:center;margin:4px 0 10px"><span style="font-weight:800">₪</span><input id="${id}" inputmode="decimal" value="${esc(val==null?'':String(val))}" style="width:120px"><button class="mkbtn" data-save="${id}">${btn}</button></div>`;
+  const paidHTML=`<div id="mpPaid">${sec('💳 כמה הוא משלם בפועל','מהוראת הקבע שלו בקופת המקווה בנדרים פלוס — שינוי כאן משנה את החיוב החודשי שלו')}
+    ${kv.length?kv.map((k,i)=>`<div class="mksub">🔁 הוראת קבע${k.kind==='bank'?' בנקאית':''}${k.last4?' · כרטיס '+esc(k.last4):''}${k.next_date?' · חיוב הבא '+esc(k.next_date):''}</div>${row('mpk'+i,mkKevaAmt(k),'💾 לשנות את הסכום החודשי')}`).join('')
+      :`<div class="mksub" style="margin-bottom:10px">${P.ok?'אין לו הוראת קבע פעילה בקופת המקווה'+((P.tx||[]).length?' · תשלום אחרון: '+mkPaidTxt(c.id):''):'⚠️ '+esc(P.error||'לא נטען')}</div>`}</div>`;
+  const mkHTML=`<div>${sec('💲 המחיר במקווה','')}
+    ${pi&&pi.ok?`${flds.length?flds.map(([k,v],i)=>`<div class="mksub">מחיר אישי ל${esc(c.first||mkName(c))} <span dir="ltr">(${esc(k)})</span> — רק לו</div>${row('mpf'+i,v,'💾 לשמור לו')}`).join(''):''}
+      <div class="mksub">מחיר הקבוצה <b>${esc(G.name||'')}</b> — <b>חל על כל ${G.count} הלקוחות בקבוצה</b></div>${row('mpg',G.price,'💾 לשנות לכל הקבוצה')}
+      ${flds.length?'':`<div class="mksub">💡 במקווה המחיר נקבע לפי הקבוצה. כדי לתת לו מחיר אחר בלי לשנות לכולם — מעבירים אותו לקבוצה אחרת (למשל "מחיר מיוחד").</div>`}`
+      :`<div class="mksub">⚠️ ${esc((pi&&pi.error)||'לא נטען מהמקווה')}</div>`}</div>`;
+  box.innerHTML=paidFirst?paidHTML+'<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">'+mkHTML:mkHTML+'<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">'+paidHTML;
+  box.querySelectorAll('[data-save]').forEach(btn=>btn.onclick=async()=>{
+    const id=btn.dataset.save, v=box.querySelector('#'+id).value.trim(), n=+v.replace(/[^\d.]/g,'');
+    if(!v||isNaN(n))return toast('מחיר לא תקין');
+    let r=null;
+    if(id==='mpg'){
+      if(!await uiConfirm('לשנות את מחיר הקבוצה "'+G.name+'" ל־₪'+n+'?\nזה חל על כל '+G.count+' הלקוחות בקבוצה הזו במקווה.','💾 כן, לכל הקבוצה','ביטול'))return;
+      btn.disabled=true;btn.innerHTML='<span class="mkspin"></span>';
+      r=await api('POST','/api/mikveh/price',{id:c.id,scope:'group',price:n}).catch(()=>null);
+      if(r&&r.ok){const g=(MK.groups||[]).find(x=>x.id===G.id);if(g)g.price=n;G.price=n;}
+    }else if(id.startsWith('mpf')){
+      const [k]=flds[+id.slice(3)];
+      if(!await uiConfirm('לקבוע ל'+mkName(c)+' מחיר אישי ₪'+n+' במקווה?','💾 כן','ביטול'))return;
+      btn.disabled=true;btn.innerHTML='<span class="mkspin"></span>';
+      r=await api('POST','/api/mikveh/price',{id:c.id,scope:'client',field:k,price:n}).catch(()=>null);
+      if(r&&r.ok)c.price=n;
+    }else{
+      const k=kv[+id.slice(3)];
+      if(!await uiConfirm('לשנות את הוראת הקבע של '+mkName(c)+' ל־₪'+n+' לחודש?\nהשינוי נעשה בנדרים פלוס — מהחיוב הבא.','💾 כן, לשנות','ביטול'))return;
+      btn.disabled=true;btn.innerHTML='<span class="mkspin"></span>';
+      r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/action',{action:'edit',amount:n,mk_cid:c.id}).catch(()=>null);
+      if(r&&r.ok){k.amount=String(n);delete MKPAY[c.id];}
+    }
+    btn.disabled=false;btn.textContent='💾 לשמור';
+    if(!r||!r.ok)return uiAlert('לא עודכן:\n'+((r&&(r.error||r.detail))||'אין תשובה מהשרת'));
+    changed=true;toast('✓ עודכן'+(r.what?' — '+r.what:''));});
+}
 function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
   if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
   const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
