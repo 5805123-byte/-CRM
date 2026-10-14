@@ -1236,7 +1236,8 @@ function netInit(){
 let ROLE='admin', AUTH_ON=false, _loginShown=false;
 // הקישורים המיוחדים — /kehila (הגבאי) ו-/parnes (פרנס יום וקוויטל). כל קישור מבקש את הסיסמה שלו.
 // מאיר: "בשביל הגבאים שייפתח להם הדף של הקהילה ושל פרנס יום… באותה סיסמא" — /gabbai
-const PORTAL=location.pathname==='/kehila'?'comm':(location.pathname==='/parnes'?'parnes':(location.pathname==='/gabbai'?'gabbai':'admin'));
+const _PP=location.pathname.replace(/\/+$/,'').toLowerCase();   // גם /gabbai/ עם לוכסן בסוף
+const PORTAL=_PP==='/kehila'?'comm':(_PP==='/parnes'?'parnes':(_PP==='/gabbai'?'gabbai':'admin'));
 const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
 const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel']};
 const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};

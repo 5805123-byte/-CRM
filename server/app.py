@@ -12953,7 +12953,8 @@ AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES, 'gabbai': AUTH_GABB
 # שלא נועדו להן ('/api/donor' תפס גם את '/api/donors.csv' — כל התורמים עם טלפון ומייל). אלה חסומות
 # לכל סיסמה שאינה הראשית, גם אם יש להן תחילית מותרת
 AUTH_LIMITED_DENY = ('/api/donors', '/api/intake/donorscan', '/api/intake/sync', '/api/intake/diag', '/api/taskkinds')
-PORTALS = {'/kehila': 'comm', '/parnes': 'parnes', '/gabbai': 'gabbai'}
+PORTALS = {'/kehila': 'comm', '/parnes': 'parnes', '/gabbai': 'gabbai',
+           '/kehila/': 'comm', '/parnes/': 'parnes', '/gabbai/': 'gabbai'}   # גם עם לוכסן בסוף
 ROLE_DESC = {'comm': 'לשונית הקהילה וזמני התפילות', 'parnes': 'פרנס יום וקוויטל', 'gabbai': 'הקהילה, פרנס יום והקוויטל'}
 PARNES_DONOR_FIELDS = ('kv_skip', 'kv_year', 'kv_month', 'tier', 'last', 'first', 'english')
 _AUTH_FAIL = {}      # ip -> [כישלונות, זמן אחרון] — האטה אחרי ניסיונות שגויים
@@ -15580,6 +15581,11 @@ class H(BaseHTTPRequestHandler):
             print('  auth log error:', e)
         if not role:
             time.sleep(0.6)
+            # מאיר: "זה הכתובת הנכונה אבל הוא אומר שהסיסמא לא נכונה" — כשהסיסמה של הקישור הזה בכלל לא
+            # מוגדרת ב-Render (נמחקה / שם המשתנה השתנה), אומרים את זה במפורש
+            env_ = {'comm': 'CRM_PASS_COMM', 'parnes': 'CRM_PASS_PARNES', 'gabbai': 'CRM_PASS_GABBAI'}.get(portal_, 'CRM_PASS')
+            if meth_ == 'password' and not (os.environ.get(env_) or '').strip():
+                return self._send(401, {'ok': False, 'error': 'הסיסמה של הקישור הזה לא מוגדרת במערכת (חסר %s ב-Render) — רק הסיסמה הראשית נכנסת כאן' % env_}) or False
             return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
