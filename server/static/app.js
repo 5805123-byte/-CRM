@@ -14038,7 +14038,7 @@ async function renderCommDebts(){
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
       <button class="btn sm" id="cd_mailtpl" title="הנוסחים — מייל, שיחה ו-SMS: קבוע וחופשי">📝 נוסחים — מייל / שיחה / SMS</button>
       <button class="btn sm ghost" id="cd_more" title="העלאת קובץ, הדבקה, תשלומים במרוכז, אקסל">⋯ עוד</button></div>
-    <div class="bqbar"${cdMore?'':' hidden'} id="cd_morebar">
+    <div class="bqbar" id="cd_morebar"${cdMore?'':' style="display:none"'}>
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
       <button class="btn sm ghost" id="cd_paidbulk" title="הכנסת כמה אנשים ששילמו — נרשם בכרטיס, בהיסטוריה ובתרומות">✅ תשלומים במרוכז</button>
@@ -14083,7 +14083,7 @@ function cdNatanHTML(D){
   const lnk=`<label class="fld" style="max-width:520px"><span>🔗 הקישור לדף התרומות של נתן תתן — נכנס לכל מייל ו-SMS במקום {{קישור}} (כללי, לא אישי)</span>
     <span style="display:flex;gap:6px"><input id="nt_link" dir="ltr" placeholder="https://…" value="${esc(lk)}" style="flex:1"><button class="btn sm" id="nt_link_ok">💾 שמור</button></span></label>
     ${lk?'':`<div class="hintxt">עד שמדביקים כאן — יוצא הדף הכללי של נדרים פלוס${cur?' למוסד '+esc(cur):''}, בלי שם ובלי סכום.</div>`}`;
-  return `<div class="cdnatan">${lnk}${sel}${cur?'':'<div class="hintxt">עד שבוחרים חשבון — תשלומים מנדרים פלוס לא נסגרים כאן אוטומטית; מה שמסמנים ✓ שולם / מדביקים כ"שילמו" — כן.</div>'}</div>`;}
+  return `<details class="cdnatan"><summary>⚙️ הגדרות נתן תתן — קישור לתרומה וחשבון נדרים פלוס</summary>${lnk}${sel}${cur?'':'<div class="hintxt">עד שבוחרים חשבון — תשלומים מנדרים פלוס לא נסגרים כאן אוטומטית; מה שמסמנים ✓ שולם / מדביקים כ"שילמו" — כן.</div>'}</details>`;}
 function cdHistHTML(){
   const btn=`<button class="cdhistb" id="cd_hist">📜 היסטוריה — מה ששולם${cdHist?` (${cdHist.filter(d=>(d.fund||'')===cdFund).length})`:''} ${cdHistOpen?'▲':'▼'}</button>`;
   if(!cdHistOpen)return `<div class="cdhist">${btn}</div>`;
@@ -14518,9 +14518,10 @@ function cdGroupsHTML(rows){
           ${deb.length?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${ch===k?'on':''}" data-cdgch="${k}" data-ids="${deb.map(d=>d.id).join(',')}" title="${l}${k==='email'&&!g.email?' — אין מייל':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(tot)}</b>${op.length>1?`<small>${op.length} פריטים</small>`:''}</div>
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
-        ${!g.mid&&deb.length?(deb.every(d=>+d.once)?`<span class="cdnow"><small class="cdonce" title="נשאר ברשימה, בלי כרטיס בקהילה">👤 חד פעמי — לא בקהילה</small><button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="בכל זאת לשייך לחבר קיים">🔗</button><button class="btn sm ghost" data-cdonce="0" data-gk="${esc(g.key)}" title="לבטל את הסימון חד פעמי">↩</button></span>`
-          :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="השם נכתב אחרת / בטעות — לשייך לחבר קיים">🔗 שייך לחבר קהילה</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`):''}
-        ${!g.mid&&deb.length?`<span class="cdnow"><button class="btn sm ghost" data-cdph="${esc(g.key)}" title="טלפון — כדי להזכיר לו בשיחה / SMS בלי לפתוח לו כרטיס">📱 ${g.phone?'':'טלפון'}</button>${g.phone?` שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button>`:''}</span>`:''}
+        ${!g.mid&&deb.length?`<details class="cdlinkd"><summary>${deb.every(d=>+d.once)?'👤 חד פעמי':'🔗 לשייך'+((g.cands||[]).length?' — '+esc(g.cands[0].name)+'?':'…')}</summary>
+        ${(deb.every(d=>+d.once)?`<span class="cdnow"><small class="cdonce" title="נשאר ברשימה, בלי כרטיס בקהילה">👤 חד פעמי — לא בקהילה</small><button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="בכל זאת לשייך לחבר קיים">🔗</button><button class="btn sm ghost" data-cdonce="0" data-gk="${esc(g.key)}" title="לבטל את הסימון חד פעמי">↩</button></span>`
+          :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="השם נכתב אחרת / בטעות — לשייך לחבר קיים">🔗 שייך לחבר קהילה</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`)}
+        ${!g.mid&&deb.length?`<span class="cdnow"><button class="btn sm ghost" data-cdph="${esc(g.key)}" title="טלפון — כדי להזכיר לו בשיחה / SMS בלי לפתוח לו כרטיס">📱 ${g.phone?'':'טלפון'}</button>${g.phone?` שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button>`:''}</span>`:''}</details>`:''}
         ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו"><button class="btn sm ghost" data-cdhear="${esc(g.key)}" title="לשמוע איך ההודעה הקולית תישמע אצלו — בלי להתקשר">🔊</button> שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
       ${(()=>{const V=(cdData&&cdData.vms)||{},seen=new Set(),L=(V['m'+g.mid]||[]).concat(g.phone?(V['p'+ymPhone(g.phone)]||[]):[]).filter(v=>!seen.has(v.id)&&seen.add(v.id));
         return L.length?`<div class="cdvms">${L.map(cdVmHTML).join('')}</div>`:'';})()}
@@ -14594,7 +14595,7 @@ function cdWire(){const g=id=>document.getElementById(id);
   ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
   g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[],mode:'debt'};renderCommDebts();};
   g('cd_mailtpl').onclick=()=>cdMailTplEdit();
-  g('cd_more').onclick=()=>{cdMore=!cdMore;g('cd_morebar').hidden=!cdMore;};
+  g('cd_more').onclick=()=>{cdMore=!cdMore;g('cd_morebar').style.display=cdMore?'':'none';};
   cdMailTplLoad();
   g('cd_paidbulk').onclick=()=>{cdImp={paste:1,rows:[],mode:'paid'};renderCommDebts();};
   if(g('cd_nd'))g('cd_nd').onclick=async()=>{const b=g('cd_nd');b.disabled=true;b.textContent='🔄 מסנכרן…';

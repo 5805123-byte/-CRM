@@ -104,6 +104,12 @@
 .cdgh{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;background:var(--ground);border-bottom:1px solid var(--line)}
 .cdgh .cdmain{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center}.cdgh .cdamt b{font-size:1.05rem}
 .cdgh .cdnow{grid-column:2/-1;justify-self:start;flex-wrap:wrap;row-gap:4px;max-width:100%}
+.cdgh .cdlinkd{grid-column:2/-1;justify-self:start;max-width:100%}
+.cdlinkd>summary{cursor:pointer;list-style:none;display:inline-block;font-size:12px;padding:3px 10px;border:1px dashed var(--line,#ccc);border-radius:14px;color:var(--muted,#777)}
+.cdlinkd>summary::-webkit-details-marker{display:none}
+.cdlinkd[open]>summary{margin-bottom:4px}
+.cdlinkd .cdnow{display:flex;flex-wrap:wrap;row-gap:4px;margin:2px 0}
+details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;margin:10px 0 6px}
 .cdgitems .cdrow{border:none;border-radius:0;margin:0;border-bottom:1px dashed var(--line);grid-template-columns:minmax(0,1fr) auto;padding:6px 10px}.cdgitems .cdrow:last-child{border-bottom:none}
 .cdgitems .cdrow>span:first-child{display:none}.cdgitems .cdrow .bqacts{grid-column:1/-1;justify-content:flex-start}
 .cdgitems .cdrow>.cdck,.cdgitems .cdrow>input[type=checkbox],.cdgitems .cdname,.cdgitems .cdch,.cdgitems .cdrem,.cdgitems .cdmeta [dir=ltr]{display:none}
