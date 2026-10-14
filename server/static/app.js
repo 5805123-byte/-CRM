@@ -14681,7 +14681,7 @@ function cdWire(){const g=id=>document.getElementById(id);
       const m=(MEMBERS||[]).find(y=>y.id==mid);const ph=m&&ymPhone(m.phone);if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}if(x.hok)hok++;
       ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):'',natan:cdFund==='natan'});});
     if(!ymRecs.size){toast(ch==='sms'?'לאף אחד מהנבחרים אין נייד':'לאף אחד מהנבחרים אין טלפון');return;}
-    ymCh=ch;ymBill=ch==='voice'&&cdFund!=='natan';
+    ymCh=ch;ymBill=ch==='voice';   // גם בנתן תתן — הקשה 1 עוברת לסליקה בחשבון של הקופה
     ymTplKey=cdFund==='natan'?'natan':(hok>ymRecs.size/2?'hok':'pledge');{const t0=cdYmTplFor(sel,ymTplKey);if(t0)ymTplKey=t0[0];}const t=ymTplFind(ymTplKey);if(t)ymText=ymTpl(t,ymCh);
     cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);
     toast(ymRecs.size+' נמענים עם הסכום של כל אחד'+(noph?(' · '+noph+(ch==='sms'?' בלי נייד':' בלי טלפון')):''));});
@@ -15373,7 +15373,7 @@ const YM_TPL=[
   // מאיר: "כשחוזר הוראת קבע — שיגיד את הסכום ועבור מה, למשל 120 שקל עבור קביעת מקום"
   ['hok','🔁 הו"ק שחזרה','שלום {שם}, כאן כולל חצות. הוראת הקבע שלך בסך {סכום} שקלים עבור {עבור} לא עברה החודש בבנק. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה.',
     'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך בסך {סכום} ש"ח עבור {עבור} לא עברה החודש. אפשר להסדיר בכרטיס אשראי כאן: {קישור} תודה רבה.'],
-  ['natan','🎁 נתן תתן','שלום {שם}, כאן קופת נתן תתן. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. תודה רבה, ותזכו למצוות.',
+  ['natan','🎁 נתן תתן','שלום {שם}, כאן קופת נתן תתן. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה, ותזכו למצוות.',
     'שלום {שם}, כאן קופת נתן תתן. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח: {קישור} תודה רבה!'],
   ['natanfree','✍️ חופשי — נתן תתן','שלום {שם}, כאן קופת נתן תתן. ','שלום {שם}, כאן קופת נתן תתן. {קישור}'],
   ['free','✍️ חופשי','','']];
