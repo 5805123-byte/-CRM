@@ -25238,6 +25238,12 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         fund = fund_of_mosad(con, mosad)
         if mosad and fund != 'natan':
             continue
+        # מאיר: "מי שעבר להקיש 1 ושילם — שיהיה בכולל חצות, ושיהיה כתוב עבור נתן תתן, כי זה הגיע מהטלפון
+        # של נתן תתן" — תשלום בחשבון של הכולל שנעשה בשלוחה אחרי הודעה של נתן תתן נרשם לקופה
+        nat_ivr = bool(not mosad and ph and ivr_natan_paid(con, ph, iso))
+        if nat_ivr:
+            con.execute("UPDATE nd_tx SET for_local=? WHERE id=? AND COALESCE(for_local,'')=''", (IVR_NATAN_NOTE, tid))
+            fund = 'natan'
         msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None, fund=fund) if ph else None
         if msg:
             con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, tid))
@@ -25245,11 +25251,31 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         if mid:
             note_ = 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf'])
             rm = con.execute("SELECT req_off FROM ym_msg WHERE id=?", (msg,)).fetchone() if msg else None
-            if rm and (rm['req_off'] or '') == 'debt':
+            if nat_ivr or (rm and (rm['req_off'] or '') == 'debt'):
                 cm_debt_pay(con, mid, a, note_, fund=fund)       # שילם על התזכורת שנשלחה לו על החוב
             else:
                 cm_debt_pay_explicit(con, mid, a, note_, ' '.join(str(t.get(k) or '') for k in ('groupe', 'comments')), fund=fund)
     return new, marked
+
+
+IVR_NATAN_NOTE = 'נתן תתן — שולם בטלפון'
+
+
+def ivr_natan_paid(con, phone, iso):
+    """התשלום (בחשבון של הכולל) נעשה בשלוחת התשלום בשיחה שהגיעה מנתן תתן: ניסיון סליקה בכרטיס מהטלפון
+    הזה עד 3 שעות לפני העסקה, וההודעה האחרונה שנשלחה אליו לפני הניסיון הייתה של נתן תתן."""
+    try:
+        t = datetime.datetime.strptime((iso or '')[:16], '%Y-%m-%d %H:%M')
+    except ValueError:
+        return False
+    lo, hi = (t - datetime.timedelta(hours=3)).strftime('%Y-%m-%d %H:%M'), (t + datetime.timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M')
+    ch = con.execute("SELECT at FROM nd_charge WHERE phone=? AND via='כרטיס' AND substr(replace(at,'T',' '),1,16) BETWEEN ? AND ? ORDER BY id DESC LIMIT 1",
+                     (phone, lo, hi)).fetchone()
+    if not ch:
+        return False
+    m = con.execute("SELECT COALESCE(fund,'') f FROM ym_msg WHERE phone=? AND status='sent' AND substr(replace(COALESCE(sent_ts,''),'T',' '),1,16)<=? "
+                    "ORDER BY id DESC LIMIT 1", (phone, str(ch['at']).replace('T', ' ')[:16])).fetchone()
+    return bool(m and m['f'] == 'natan')
 
 
 ND_HIST_AT = {'t': 0}
