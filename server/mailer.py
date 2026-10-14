@@ -11,7 +11,7 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
-def send(to, subject, body, attachments=None, reply_to=None, profile=None):
+def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True):
     """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה.
     profile='comm' — מיילי הקהילה, יוצאים מ-neder1818 (COMM_MAIL_PASS; בלעדיו — "מאת" בלבד)."""
     user = os.environ.get('GMAIL_USER')
@@ -40,6 +40,13 @@ def send(to, subject, body, attachments=None, reply_to=None, profile=None):
     if reply_to:
         msg['Reply-To'] = reply_to
     msg.set_content(body or '')
+    if pixel:
+        # מאיר: "לראות כל מייל אם פתחו" — גרסת HTML של אותו טקסט, עם פיקסל מעקב זעיר
+        import html as _h
+        d = 'rtl' if rtl else 'ltr'
+        msg.add_alternative('<!doctype html><html dir="%s"><body style="font-family:Arial,sans-serif;font-size:15px;direction:%s;text-align:%s">%s'
+                            '<img src="%s" width="1" height="1" alt="" style="display:block;border:0"></body></html>'
+                            % (d, d, 'right' if rtl else 'left', _h.escape(body or '').replace('\n', '<br>'), _h.escape(pixel)), subtype='html')
     for (name, mime, data) in (attachments or []):
         if not data:
             continue

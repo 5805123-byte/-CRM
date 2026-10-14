@@ -585,6 +585,11 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS mk_mail(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, email TEXT, name TEXT, "
                     "subject TEXT, body TEXT, sender TEXT, status TEXT DEFAULT 'queued', error TEXT, sent_at TEXT)")
     except Exception: pass
+    # מאיר: "תוסיף גם במקווה ובקבלות" — מתי נפתח המייל (פיקסל מעקב)
+    for _t in ('mk_mail', 'receipt_docs'):
+        for _c in ('opened_at TEXT', 'opens INTEGER DEFAULT 0'):
+            try: con.execute("ALTER TABLE %s ADD COLUMN %s" % (_t, _c))
+            except Exception: pass
     try: con.execute("ALTER TABLE mk_log ADD COLUMN mail_id INTEGER")
     except Exception: pass
     # פעם אחת: חובות "הו"ק חזרה" שנסגרו כ"שולם" רק כי ההוראה הפכה ללא פעילה — לא שולמו; יוצאים מההיסטוריה
@@ -12933,7 +12938,8 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 # בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
 # מאיר: "כל 48 שעות שזה יבקש שוב את הסיסמא או חיבור דרך גוגל — גם אצלי בטאבלט או מחשב כרום"
 AUTH_HOURS = 48
-AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/')   # תחיליות; הכניסה עצמה מטופלת לפני
+AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+               '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
 #     GOOGLE_LOGIN_ADMIN   מיילים שנכנסים להכל (ברירת מחדל: 5805123@gmail.com), מופרדים בפסיק
@@ -13653,7 +13659,7 @@ def receipt_build(con, kind, don_id):
 
 def receipt_doc(con, rid):
     r = con.execute("SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,"
-                    "sent_at,sent_to,note,url,src,(pdf IS NOT NULL) AS has_pdf FROM receipt_docs WHERE id=?", (rid,)).fetchone()
+                    "sent_at,sent_to,note,url,src,opened_at,opens,(pdf IS NOT NULL) AS has_pdf FROM receipt_docs WHERE id=?", (rid,)).fetchone()
     return dict(r) if r else None
 
 
@@ -14051,9 +14057,10 @@ def receipt_send(con, rid, email=''):
         return {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render (GMAIL_USER / GMAIL_APP_PASSWORD)'}
     # קבלה של חבר קהילה — מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, גם בתרומות"
     is_member = (r['note'] or '').startswith('member:')
-    res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)], profile='comm' if is_member else None)
+    res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)], profile='comm' if is_member else None,
+                      pixel=open_pixel(con, 'rc', rid), rtl=(r['kind'] == 'il'))
     if res.get('ok'):
-        con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=? WHERE id=?", (now_iso(), to, rid))
+        con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=?, opened_at=NULL, opens=0 WHERE id=?", (now_iso(), to, rid))
         con.commit()
         # עותק למשרד — מאיר ביקש לבטל ("תבטל את העותק למשרד"). נשלח רק אם הוגדר במפורש
         # RECEIPT_COPY_TO ב-Render; בלי זה — לא נשלח עותק בכלל
@@ -15042,6 +15049,15 @@ def mk_payments(con, cid, c):
 MK_MAIL_LOCK = threading.Lock()
 
 
+def open_pixel(con, kind, rid, base=''):
+    """כתובת פיקסל המעקב למייל בודד (מקווה 'mk' / קבלה 'rc'). base — הכתובת של האתר."""
+    import bulkmail
+    base = (base or os.environ.get('RENDER_EXTERNAL_URL') or kv_get(con, 'site_base', '')).rstrip('/')
+    if not base:
+        return ''
+    return '%s/o.png?k=%s&i=%d&t=%s' % (base, kind, int(rid), bulkmail.open_token('%s%d' % (kind, int(rid)), mail_secret(con)))
+
+
 def mk_mail_worker(ids, sender, base=''):
     """מיילים של המקווה — אחד־אחד, כל אחד לנמען אחד בלבד, בהפרש של כמה שניות."""
     import bulkmail
@@ -15064,7 +15080,8 @@ def mk_mail_worker(ids, sender, base=''):
                     commit_retry(con); continue
                 who = {'name': r['name'] or '', 'first': '', 'last': '', 'title': '', 'gender': 'm'}
                 try:
-                    msg = bulkmail.build(em, who, r['subject'] or '', r['body'] or '', mail_unsub_url(base, secret, em) if base else '', '')
+                    msg = bulkmail.build(em, who, r['subject'] or '', r['body'] or '', mail_unsub_url(base, secret, em) if base else '', '',
+                                         pixel=open_pixel(con, 'mk', mid_, base))
                     ok, err, dead = snd.send(msg)
                 except Exception as e:
                     ok, err = False, str(e)
@@ -15861,7 +15878,15 @@ class H(BaseHTTPRequestHandler):
                 qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 qid = int(qs.get('i', ['0'])[0] or 0)
                 tok = (qs.get('t', [''])[0] or '').strip()
-                if qid and tok:
+                kd = (qs.get('k', [''])[0] or '').strip()
+                if qid and tok and kd in ('mk', 'rc'):
+                    con = db()
+                    if hmac.compare_digest(bulkmail.open_token('%s%d' % (kd, qid), mail_secret(con)), tok):
+                        con.execute("UPDATE %s SET opens=COALESCE(opens,0)+1, opened_at=CASE WHEN COALESCE(opened_at,'')='' THEN ? ELSE opened_at END "
+                                    "WHERE id=?" % ('mk_mail' if kd == 'mk' else 'receipt_docs'), (now_iso(), qid))
+                        con.commit()
+                    con.close()
+                elif qid and tok:
                     con = db()
                     if hmac.compare_digest(bulkmail.open_token(qid, mail_secret(con)), tok):
                         con.execute("UPDATE mail_queue SET opens=COALESCE(opens,0)+1, "
@@ -17570,7 +17595,7 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/receipts':
             con = db()
             rows = [dict(r) for r in con.execute(
-                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note,url,src,"
+                "SELECT id,kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,sent_at,sent_to,note,url,src,opened_at,opens,"
                 "(pdf IS NOT NULL) AS has_pdf FROM receipt_docs ORDER BY id DESC")]
             con.close()
             try:
@@ -18134,7 +18159,7 @@ class H(BaseHTTPRequestHandler):
                     "SELECT l.*, COALESCE(y.name, mm.name, '') nm, y.phone y_phone, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, "
                     "y.pressed y_pressed, y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, "
                     "j.channel ch, j.send_at, j.status j_st, (SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
-                    "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email "
+                    "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email, mm.opened_at m_open, mm.opens m_opens "
                     "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job LEFT JOIN mk_mail mm ON mm.id=l.mail_id "
                     "WHERE l.kind IN ('msg','mail') ORDER BY l.at DESC, l.id DESC LIMIT 600")]
                 rows += mk_old_msgs(con)
@@ -18151,7 +18176,7 @@ class H(BaseHTTPRequestHandler):
                 for r in con.execute("SELECT l.*, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, "
                                      "y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, j.channel ch, j.send_at, j.status j_st, "
                                      "(SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
-                                     "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email "
+                                     "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email, mm.opened_at m_open, mm.opens m_opens "
                                      "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job "
                                      "LEFT JOIN mk_mail mm ON mm.id=l.mail_id WHERE l.cid=? ORDER BY l.at DESC, l.id DESC LIMIT 100",
                                      (m.group(1),)):
