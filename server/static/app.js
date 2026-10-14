@@ -13686,6 +13686,7 @@ function renderComm(){
 // מאיר: "שיהיה מערכת חובות והתחייבויות של הקהילה בלבד… תסנכרן נדרים פלוס כל כמה זמן, שיראו
 // שם הוראות קבע שחזרו… להעלות חובות ידנית ע"י העלאת קבצים… וככה המערכת לשליחת התראות
 // תעבוד באופן מסודר". נפרד מהחובות של התורמים. תשלום בטלפון סוגר את החוב לבד.
+let cdMore=false;   // ⋯ עוד — הכפתורים שפחות משתמשים בהם
 let cdData=null, cdSt='open', cdKind='', cdSel=new Set(), cdAdd=false, cdImp=null, cdMember=0, cdRem=null;   // cdRem: {ids,ch} — החובות שהתזכורת עליהם בדרך
 const CD_KIND={debt:['חוב','cdk-debt'],pledge:['התחייבות','cdk-pl'],hok:['הו"ק חזרה','cdk-hok']};
 const cdOpen=d=>Math.max(0,(+d.amount||0)-(+d.paid||0));
@@ -14033,16 +14034,20 @@ async function renderCommDebts(){
         <button class="btn sm ghost" id="cd_allm">✕ הצג את כל הקהילה</button></div>`
       :`<div class="cdsum"><span>פתוח: <b>${cdMoney(cdSt==='open'?fSum:D.open_sum)}</b></span><span>${cdSt==='open'?fo.length:(D.open_n||0)} ${cdFund?'התחייבויות':'חובות'} · ${cdSt==='open'?fMem:(D.open_members||0)} חברים</span>
         ${cdSt==='open'&&reqOpen.length?`<span>📞 מהודעות (${D.req_days||14} יום): <b>${cdMoney(reqOpen.reduce((s,r)=>s+(+r.amount||0),0))}</b> · ${reqOpen.length}</span>`:''}</div>`}
+    <!-- מאיר: "למה יש כזה בלגן בדף חובות… אני רוצה מופשט, אפשרות ניסוח למייל או שיחה או סמס הכי פשוט וקל" -->
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
+      <button class="btn sm" id="cd_mailtpl" title="הנוסחים — מייל, שיחה ו-SMS: קבוע וחופשי">📝 נוסחים — מייל / שיחה / SMS</button>
+      <button class="btn sm ghost" id="cd_more" title="העלאת קובץ, הדבקה, תשלומים במרוכז, אקסל">⋯ עוד</button></div>
+    <div class="bqbar"${cdMore?'':' hidden'} id="cd_morebar">
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
       <button class="btn sm ghost" id="cd_paidbulk" title="הכנסת כמה אנשים ששילמו — נרשם בכרטיס, בהיסטוריה ובתרומות">✅ תשלומים במרוכז</button>
-      <button class="btn sm ghost" id="cd_mailtpl" title="הנוסח הקבוע של מייל התזכורת והנוסח החופשי — לעריכה ושמירה">${cdFund==='natan'?'📝 נוסחים — מייל / שיחה / SMS':'✉️ נוסח המייל'}</button>
       ${cdFund?'':`<button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>`}
-      <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a></div>
+      <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a>
+      ${cdFund?'':'<button class="btn sm ghost" id="cd_cats" title="הוספה, שינוי ומחיקה של קטגוריות קבועות ושל הנוסח שלהן">🏷 קטגוריות</button>'}</div>
     ${cdCatsHTML()}
     <div class="cdquick"><input id="cdq_m" list="cd_mdl" placeholder="${cdFund?'➕ שם — חבר קהילה או כל שם…':'➕ חבר קהילה…'}" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}">
-      ${!cdFund&&(CD_CATS||[]).length?`<select id="cdq_c" title="באיזו קטגוריה"><option value="">🏷 קטגוריה…</option>${CD_CATS.map((c,i)=>`<option value="${i}"${cdQC&&cdQC.name===c.name?' selected':''}>${esc(c.name)}</option>`).join('')}</select>`:''}
+      ${!cdFund&&(CD_CATS||[]).length?`<select id="cdq_c" title="באיזו קטגוריה"><option value="">🏷 קטגוריה…</option>${CD_CATS.map((c,i)=>`<option value="${i}"${cdQC&&cdQC.name===c.name?' selected':''}>${esc(c.name)}</option>`).join('')}<option value="__m">⚙️ קטגוריות — הוספה / שינוי…</option></select>`:''}
       <input id="cdq_a" inputmode="decimal" placeholder="₪ סכום"${cdQC&&cdQC.amount?` value="${cdQC.amount}"`:''}><input id="cdq_t" placeholder="עבור מה (עליית שישי, מקום תשפ״ז…)"${cdQC?` value="${esc(cdQC.name)}"`:''}>
       ${cdQC&&cdQC.min&&cdQC.max&&cdQC.max>cdQC.min?`<label class="cdqr"><small>${cdMoney(cdQC.min)}</small><input type="range" id="cdq_r" min="${cdQC.min}" max="${cdQC.max}" step="${(cdQC.max-cdQC.min)%10?1:10}" value="${cdQC.amount||cdQC.min}"><small>${cdMoney(cdQC.max)}</small></label>`:''}
       <select id="cdq_k"><option value="pledge">התחייבות</option><option value="debt"${cdQC&&cdQC.kind==='debt'?' selected':''}>חוב</option>${cdFund?'<option value="paid">✅ כבר נתן</option>':''}</select><button class="btn sm" id="cdq_go">הוסף</button></div>
@@ -14258,19 +14263,16 @@ function cdYmTplFor(deb,base){const c=base==='pledge'&&cdCatOf(deb);return c&&(c
 function cdMailKindFor(deb,base){const c=base==='pledge'&&cdCatOf(deb);return c&&c.mail?'cat:'+c.name:base;}
 async function cdCatsLoad(){if(CD_CATS)return CD_CATS;const r=await api('GET','/api/cm/debtcats');CD_CATS=(r&&r.cats)||[];return CD_CATS;}
 function cdCatsHTML(){
-  // מאיר: "זה בלגן הקטגוריה שם בנתן תתן. אני רוצה הכי מופשט וקל" — בקופת נתן תתן אין קטגוריות
-  if(cdFund)return '';
-  if(!CD_CATS){cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='debts')renderCommDebts();});return '';}
-  const rng=c=>c.min&&c.max&&c.max>c.min?cdMoney(c.min)+'–'+cdMoney(c.max):(c.amount?cdMoney(c.amount):'');
-  return `<div class="cdcats"><span class="hintxt">🏷 קטגוריה:</span>${CD_CATS.map((c,i)=>`<button class="fbchip${cdQC&&cdQC.name===c.name?' on':''}" data-cdcat="${i}">${esc(c.name)}${rng(c)?` <small>${rng(c)}</small>`:''}</button>`).join('')}
-    ${cdQC?`<button class="btn sm ghost" id="cd_cattxt" title="מה יוקרא בשיחה / ייכתב ב-SMS ובמייל לחובות של הקטגוריה הזו">📝 נוסח הקראה / מייל — ${esc(cdQC.name)}</button>`:''}
-    <button class="btn sm" id="cd_catnew" title="קטגוריה קבועה חדשה — אם כבר כתבת 'עבור מה' וסכום, הם ייכנסו אליה">➕ קטגוריה חדשה</button>
-    <button class="btn sm ghost" id="cd_cats" title="הוספה, שינוי ומחיקה של קטגוריות קבועות">⚙️ ניהול קטגוריות</button></div>`;}
+  // מאיר: "למה יש כזה בלגן בדף חובות… אני רוצה מופשט" (וכך גם בנתן תתן) — אין שורת קטגוריות; בוחרים
+  // קטגוריה ברשימה שבשורת ההוספה, ומנהלים אותן ב"⋯ עוד ← 🏷 קטגוריות". כאן רק טוענים אותן.
+  if(!CD_CATS)cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='debts')renderCommDebts();});
+  return '';}
 function cdCatsWire(g){
   document.querySelectorAll('[data-cdcat]').forEach(b=>b.onclick=async()=>{const c=CD_CATS[+b.dataset.cdcat];
     const m=g('cdq_m')&&g('cdq_m').value;cdQC=cdQC&&cdQC.name===c.name?null:c;await renderCommDebts();
     const x=g('cdq_m');if(x&&m)x.value=m;const a=g('cdq_a');if(cdQC&&a)(x&&!x.value?x:a).focus();});
-  const cs=g('cdq_c');if(cs)cs.onchange=async()=>{const m=g('cdq_m')&&g('cdq_m').value;cdQC=cs.value===''?null:CD_CATS[+cs.value];
+  const cs=g('cdq_c');if(cs)cs.onchange=async()=>{if(cs.value==='__m'){cs.value=cdQC?String(CD_CATS.indexOf(cdQC)):'';cdCatsEdit();return;}
+    const m=g('cdq_m')&&g('cdq_m').value;cdQC=cs.value===''?null:CD_CATS[+cs.value];
     if(!cdQC){const t=g('cdq_t');if(t)t.value='';}
     await renderCommDebts();const x=g('cdq_m');if(x&&m)x.value=m;const a=g('cdq_a');if(cdQC&&a)(x&&!x.value?x:a).focus();};
   const r=g('cdq_r'),a=g('cdq_a');
@@ -14325,13 +14327,13 @@ const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
 // ✉️ עריכת נוסח מייל התזכורת — מכפתור למעלה בחלון החובות
 async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
   // מאיר: "גם לשיחה טלפון צריך נוסחאות שאעשה להתחייבות" — בקופת נתן תתן: מייל / שיחה / SMS, לכל אחד קבוע וחופשי
-  if(cdFund==='natan'&&!ymStatus)try{await ymLoadStatus();}catch(e){}
+  if(!ymStatus)try{await ymLoadStatus();}catch(e){}
   const o=document.createElement('div');o.className='confirmov';
   const yk=x=>x==='natan_free'?'natanfree':x;
   const draw=()=>{const ph=ch!=='mail',t=ph?null:cdMailTplOf(k);
     let ptxt='',psaved=false;if(ph){const tt=ymTplFind(yk(k));const v=ymTplSaved(yk(k),ch);psaved=v!=null;ptxt=psaved?v:(tt?(ch==='sms'?tt[3]:tt[2]):'');}
-    o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">📝 נוסחים${cdFund==='natan'?' — 🎁 קופת נתן תתן':' — מייל התזכורת, הקהילה'}</div>
-    ${cdFund==='natan'?`<div class="bqseg"><button class="${ch==='mail'?'on':''}" data-ch="mail">✉️ מייל</button><button class="${ch==='voice'?'on':''}" data-ch="voice">📞 שיחה</button><button class="${ch==='sms'?'on':''}" data-ch="sms">💬 SMS</button></div>`:''}
+    o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">📝 נוסחים${cdFund==='natan'?' — 🎁 קופת נתן תתן':' — חובות הקהילה'}</div>
+    <div class="bqseg"><button class="${ch==='mail'?'on':''}" data-ch="mail">✉️ מייל</button><button class="${ch==='voice'?'on':''}" data-ch="voice">📞 שיחה</button><button class="${ch==='sms'?'on':''}" data-ch="sms">💬 SMS</button></div>
     <div class="bqseg">${cdMailKinds().map(x=>`<button class="${k===x?'on':''}" data-k="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</div>
     ${ph?`<label class="fld"><span>${ch==='sms'?'ההודעה ב-SMS':'מה יוקרא בשיחה'}</span><textarea id="cmt_b" rows="6">${esc(ptxt)}</textarea></label>
       <div class="hintxt">{שם} — שם הנמען · {סכום} — הסכום הפתוח שלו · {עבור} — עבור מה${ch==='sms'?' · {קישור} — קישור לתשלום':''}. ${psaved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>
@@ -14340,7 +14342,7 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
     :`<label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
     <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`}
-    <div class="hintxt">מתקנים ולוחצים 💾 שמור — מעכשיו כל ${ch==='voice'?'שיחה':ch==='sms'?'SMS':'מייל'} כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה בכפתור 📝 שליד הקטגוריות.'}</div>
+    <div class="hintxt">מתקנים ולוחצים 💾 שמור — מעכשיו כל ${ch==='voice'?'שיחה':ch==='sms'?'SMS':'מייל'} כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה — ⋯ עוד ← 🏷 קטגוריות.'}</div>
     <div class="cbtns">${(ph?psaved:t.saved)?'<button class="btn ghost" id="cmt_r">↩ חזרה לנוסח המובנה</button>':''}<button class="btn ghost cno">סגור</button><button class="btn cyes" id="cmt_ok">💾 שמור</button></div></div>`;
     o.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{k=b.dataset.k;draw();});
     o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{ch=b.dataset.ch;draw();});
@@ -14356,7 +14358,7 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
       if(!tp)return;if(!ymPhone(tp)||(ch==='sms'&&!ymMobile(ymPhone(tp)))){toast('מספר לא תקין');return;}
       try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
       const r=await api('POST','/api/yemot/send',{channel:ch,text:tx,amount:'10',test:1,test_phone:tp,test_name:'',billing:ch==='voice'?1:0,
-        test_amount:'10',test_for:'מגבית סוכות',test_link:ch==='sms'?ntGenLink():'',fund:cdFund==='natan'?'natan':''});
+        test_amount:'10',test_for:'מגבית סוכות',test_link:ch==='sms'?(cdFund==='natan'?ntGenLink():nedLink({name:'בדיקה',phone:ymPhone(tp),amt:'10'})):'',fund:cdFund==='natan'?'natan':''});
       if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
       toast('הבדיקה נשלחה — בעוד רגע '+(ch==='sms'?'תגיע הודעה':'הטלפון יצלצל'));};
     const yset=async text=>{const r=await api('POST','/api/yemot/tpl',{key:yk(k),ch,text});if(r&&r.ok){if(ymStatus)ymStatus.tpl=r.tpl;else ymStatus={tpl:r.tpl};}return r&&r.ok;};
@@ -14592,6 +14594,7 @@ function cdWire(){const g=id=>document.getElementById(id);
   ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
   g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[],mode:'debt'};renderCommDebts();};
   g('cd_mailtpl').onclick=()=>cdMailTplEdit();
+  g('cd_more').onclick=()=>{cdMore=!cdMore;g('cd_morebar').hidden=!cdMore;};
   cdMailTplLoad();
   g('cd_paidbulk').onclick=()=>{cdImp={paste:1,rows:[],mode:'paid'};renderCommDebts();};
   if(g('cd_nd'))g('cd_nd').onclick=async()=>{const b=g('cd_nd');b.disabled=true;b.textContent='🔄 מסנכרן…';
