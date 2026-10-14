@@ -3199,19 +3199,20 @@ def ensure_schema():
     except Exception as e:
         print('  karmi wedding error:', e)
 
-    # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר" — משימה של מאיר להיום. אם יש
-    # כרטיס אחד בלבד של מילר יוסי/יוסף או שמחה/שמי — נתלית בו; אחרת משימה כללית עם השם בטקסט.
+    # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
+    # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
-        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_transfer_miller_v1'").fetchone():
-            ds = con.execute("SELECT id FROM donors WHERE TRIM(last)='מילר' AND (first LIKE '%יוסי%' OR first LIKE '%יוסף%')").fetchall()
-            if len(ds) != 1:
-                ds = con.execute("SELECT id FROM donors WHERE TRIM(last)='מילר' AND (first LIKE '%שמחה%' OR first LIKE '%שמי%')").fetchall()
-            did = ds[0]['id'] if len(ds) == 1 else None
-            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
-                        (did, '2026-10-14', 'other', 'לעשות העברה לשמי יוסי מילר', 'מאיר', '', ''))
-            con.execute("INSERT INTO seed_flags(name) VALUES('task_transfer_miller_v1')")
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_transfer_miller_v2'").fetchone():
+            note = 'העברה לשמי יוסי מילר'
+            ex = con.execute("SELECT id FROM tasks WHERE note IN (?, ?)", (note, 'לעשות ' + note)).fetchall()
+            if ex:
+                con.execute("UPDATE tasks SET donor_id=NULL, note=? WHERE id IN (%s)" % ','.join(str(r['id']) for r in ex), (note,))
+            else:
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,?,'','')",
+                            ('2026-10-14', 'other', note, 'מאיר'))
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('task_transfer_miller_v1')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_transfer_miller_v2')")
             con.commit()
-            print('  משימה: העברה לשמי יוסי מילר' + (' (בכרטיס #%s)' % did if did else ' (כללית)'))
     except Exception as e:
         print('  miller task error:', e)
 
