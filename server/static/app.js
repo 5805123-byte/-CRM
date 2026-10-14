@@ -14056,10 +14056,10 @@ async function renderCommDebts(){
     ${cdAdd?cdAddHTML():''}${cdImp?cdImpHTML():''}
     <div class="bqseg">${KF.map(([k,l])=>`<button class="${cdKind===k?'on':''}" data-cdk="${k}">${l} <small>${all.filter(d=>!k||d.kind===k).length}</small></button>`).join('')}</div>
     ${cdSt==='open'&&rows.some(d=>!d._req)?`<div class="bqbar"><button class="btn sm ghost" id="cd_selall">${selRows.length===rows.filter(d=>!d._req&&d.status==='open').length&&selRows.length?'✕ בטל סימון':'☑ סמן הכל'}</button>
-      ${(()=>{const n=k=>selRows.filter(d=>(d.channel||'sms')===k).length;return `<button class="btn sm" data-cdsend="voice" ${n('voice')?'':'disabled'}>📞 שיחה (${n('voice')})</button>
+      ${(()=>{const n=k=>selRows.length;return `<button class="btn sm" data-cdsend="voice" ${n('voice')?'':'disabled'}>📞 שיחה (${n('voice')})</button>
       <button class="btn sm" data-cdsend="sms" ${n('sms')?'':'disabled'}>💬 SMS (${n('sms')})</button>
       <button class="btn sm" data-cdsend="email" ${n('email')?'':'disabled'}>✉️ מייל (${n('email')})</button>`;})()}
-      <span class="hintxt">${selRows.length?('סה"כ '+cdMoney(selRows.reduce((s,d)=>s+cdOpen(d),0))+' · כל אחד בערוץ שסומן לו (📞/💬/✉️ בשורה)'):'סמן חובות, ובחר בכל שורה איך להזכיר: 📞 שיחה · 💬 SMS · ✉️ מייל'}</span></div>`:''}
+      <span class="hintxt">${selRows.length?('סה"כ '+cdMoney(selRows.reduce((s,d)=>s+cdOpen(d),0))+' · הכפתור שלוחצים שולח לכל המסומנים'):'סמן את מי שצריך, ולחץ 📞 שיחה / 💬 SMS / ✉️ מייל — נשלח לכל המסומנים'}</span></div>`:''}
     <div class="cdlist">${cdGroupsHTML(rows)}</div>
     ${cdHistHTML()}${cdFund==='natan'?cdNatanHTML(D):''}
     ${cdMemberDL()}`;
@@ -14705,7 +14705,8 @@ function cdWire(){const g=id=>document.getElementById(id);
     if(r&&r.ok){const d=(cdData.rows||[]).find(x=>x.id==+b.dataset.id);if(d)d.channel=b.dataset.cdch;renderCommDebts();}else toast('לא נשמר');});
   // שליחה לפי הערוץ: שיחה / SMS דרך ימות (עם הסכום של כל אחד), מייל דרך "נדרים ונדבות"
   view.querySelectorAll('[data-cdsend]').forEach(btn=>btn.onclick=()=>{const ch=btn.dataset.cdsend;
-    const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open'&&(d.channel||'sms')===ch);
+    // מאיר: "שכפתור שיחה למעלה ישלח לכל המסומנים" — לא לפי הערוץ שנבחר בכל שורה
+    const sel=(cdData.rows||[]).filter(d=>cdSel.has(d.id)&&d.status==='open');
     cdRem={ids:sel.map(d=>d.id),ch};
     const by=new Map();sel.forEach(d=>{const kk=d.member_id||('x'+(d.phone||d.name||d.id));const x=by.get(kk)||{amt:0,hok:false,ds:[]};x.amt+=cdOpen(d);x.hok=x.hok||d.kind==='hok';x.ds.push(d);by.set(kk,x);});
     if(ch==='email'){cmPick=new Set();cmAmts={};let nomail=0;
