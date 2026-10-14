@@ -3215,6 +3215,14 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  miller task error:', e)
+    # מאיר: "לשמאי לא לשמי" — תיקון השם במשימה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_transfer_miller_v3'").fetchone():
+            con.execute("UPDATE tasks SET note='העברה לשמאי יוסי מילר' WHERE note IN ('העברה לשמי יוסי מילר','לעשות העברה לשמי יוסי מילר')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_transfer_miller_v3')")
+            con.commit()
+    except Exception as e:
+        print('  miller task v3 error:', e)
 
     # בר המצווה של אלחנן חסידי — מאיר: "תרשום ביומן" (ההזמנה: יום שני ח' חשוון תשפ"ז,
     # 19.10.26, אולמי "פלטינום" (ארמונות הגפן), רחוב בנין דוד 3, ביתר עילית; קבלת פנים 19:30).
