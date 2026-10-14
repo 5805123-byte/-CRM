@@ -4,7 +4,7 @@
 """
 import os, smtplib
 from email.message import EmailMessage
-from email.utils import make_msgid
+from email.utils import make_msgid, formataddr
 
 
 def configured():
@@ -17,11 +17,13 @@ def send(to, subject, body, attachments=None, reply_to=None, profile=None):
     user = os.environ.get('GMAIL_USER')
     pw = os.environ.get('GMAIL_APP_PASSWORD')
     frm = user
+    fname = 'כולל חצות'
     if profile == 'comm':
         import bulkmail
         cc = bulkmail.comm_cfg()
         frm = cc['frm']
         reply_to = reply_to or frm
+        fname = cc['name']
         if cc['own_login']:
             user, pw = cc['user'], (os.environ.get('COMM_MAIL_PASS') or '').strip().replace(' ', '')
     if not (user and pw):
@@ -32,7 +34,7 @@ def send(to, subject, body, attachments=None, reply_to=None, profile=None):
     msg = EmailMessage()
     mid = make_msgid(domain=(user.split('@')[-1] or 'gmail.com'))   # מזהה משלנו — כדי לתייק בלי כפילות
     msg['Message-ID'] = mid
-    msg['From'] = 'כולל חצות <%s>' % frm
+    msg['From'] = formataddr((fname, frm), charset='utf-8')
     msg['To'] = to
     msg['Subject'] = subject or 'כולל חצות'
     if reply_to:

@@ -78,6 +78,8 @@ OVERRIDE = {}
 # כ-"שליחת דואר בשם" (Send mail as), אחרת ג'ימייל מחליף לכתובת הראשית.
 import threading as _thr
 COMM_FROM_DEFAULT = 'neder1818@gmail.com'
+# מאיר: "אני לא רוצה שיראו את השם שלי באנגלית בשליחת המייל — רק כולל חצות נדרים נדבות"
+COMM_NAME_DEFAULT = 'כולל חצות נדרים נדבות'
 _PROF = _thr.local()
 
 
@@ -88,6 +90,7 @@ def set_profile(name):
 def comm_cfg():
     frm = (os.environ.get('COMM_MAIL_FROM') or COMM_FROM_DEFAULT).strip()
     return {'frm': frm, 'user': (os.environ.get('COMM_MAIL_USER') or frm).strip(),
+            'name': (os.environ.get('COMM_MAIL_FROM_NAME') or COMM_NAME_DEFAULT).strip(),
             'own_login': bool((os.environ.get('COMM_MAIL_PASS') or '').strip())}
 
 
@@ -95,6 +98,8 @@ def _comm_env(k):
     c = comm_cfg()
     if k in ('MAIL_FROM', 'MAIL_REPLY_TO'):
         return c['frm']
+    if k == 'MAIL_FROM_NAME':
+        return c['name']
     if c['own_login']:
         if k == 'MAIL_USER':
             return c['user']
