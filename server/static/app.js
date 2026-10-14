@@ -14012,7 +14012,7 @@ function ntWireNav(){view.querySelectorAll('[data-ntnav]').forEach(b=>b.onclick=
 async function renderCommDebts(){
   chips.innerHTML='';
   if(!cdData){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען חובות…</div>';await cdLoad();if(tab!=='comm'||cmSub!=='debts')return;}
-  const D=cdData;
+  const D=cdData;if(cdFund)cdQC=null;
   // מאיר: "אני רוצה מקום שיהיה אפשר לראות את כל החובות שלו במערכת, ולמחוק" — החובות, וגם
   // ההודעות שנשלחו עם סכום (מה שהטלפון מציע לשלם), באותה רשימה
   const reqs=cdFund?[]:(D.rows?(D.reqs||[]):[]).map(r=>({...r,_req:1,kind:'msg',title:r.jlabel||'בקשת תשלום בהודעה',mphone:r.phone,due:(r.sent_ts||'').slice(0,10)}));
@@ -14042,7 +14042,7 @@ async function renderCommDebts(){
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a></div>
     ${cdCatsHTML()}
     <div class="cdquick"><input id="cdq_m" list="cd_mdl" placeholder="${cdFund?'➕ שם — חבר קהילה או כל שם…':'➕ חבר קהילה…'}" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}">
-      ${(CD_CATS||[]).length?`<select id="cdq_c" title="באיזו קטגוריה"><option value="">🏷 קטגוריה…</option>${CD_CATS.map((c,i)=>`<option value="${i}"${cdQC&&cdQC.name===c.name?' selected':''}>${esc(c.name)}</option>`).join('')}</select>`:''}
+      ${!cdFund&&(CD_CATS||[]).length?`<select id="cdq_c" title="באיזו קטגוריה"><option value="">🏷 קטגוריה…</option>${CD_CATS.map((c,i)=>`<option value="${i}"${cdQC&&cdQC.name===c.name?' selected':''}>${esc(c.name)}</option>`).join('')}</select>`:''}
       <input id="cdq_a" inputmode="decimal" placeholder="₪ סכום"${cdQC&&cdQC.amount?` value="${cdQC.amount}"`:''}><input id="cdq_t" placeholder="עבור מה (עליית שישי, מקום תשפ״ז…)"${cdQC?` value="${esc(cdQC.name)}"`:''}>
       ${cdQC&&cdQC.min&&cdQC.max&&cdQC.max>cdQC.min?`<label class="cdqr"><small>${cdMoney(cdQC.min)}</small><input type="range" id="cdq_r" min="${cdQC.min}" max="${cdQC.max}" step="${(cdQC.max-cdQC.min)%10?1:10}" value="${cdQC.amount||cdQC.min}"><small>${cdMoney(cdQC.max)}</small></label>`:''}
       <select id="cdq_k"><option value="pledge">התחייבות</option><option value="debt"${cdQC&&cdQC.kind==='debt'?' selected':''}>חוב</option>${cdFund?'<option value="paid">✅ כבר נתן</option>':''}</select><button class="btn sm" id="cdq_go">הוסף</button></div>
@@ -14240,7 +14240,7 @@ const CD_MAIL_DEF={pledge:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצ
   natan_free:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\n\n\n{{קישור}}\n\nקופת נתן תתן'};
 // הנוסח הקבוע / החופשי של הקופה שפתוחה עכשיו (הקהילה או נתן תתן)
 const cdPK=()=>cdFund==='natan'?'natan':'pledge', cdFK=()=>cdFund==='natan'?'natan_free':'free';
-const CD_MAIL_KL={pledge:'🤝 התחייבות / חוב',hok:'🔁 הו"ק שחזרה',free:'✍️ חופשי',natan:'🎁 התחייבות נתן תתן',natan_free:'✍️ חופשי — נתן תתן'};
+const CD_MAIL_KL={pledge:'🤝 התחייבות / חוב',hok:'🔁 הו"ק שחזרה',free:'✍️ חופשי',natan:'📌 נוסח קבוע',natan_free:'✍️ חופשי'};
 const cdMailKinds=()=>cdFund==='natan'?['natan','natan_free']:['pledge','hok','free'];
 // 🏷 קטגוריות קבועות — לחיצה ממלאת "עבור מה", סכום וסוג; בקטגוריה עם טווח (הקמת הוראת קבע דמי חבר
 // 100–150 ₪) מזיזים את הסכום בפס, והוא לא יוצא מהטווח. ⚙️ — הגבאי מוסיף / משנה / מוחק לבד
@@ -14251,9 +14251,11 @@ const cdCatOf=deb=>{if(!CD_CATS||!(deb||[]).length)return null;const t=String(de
 const cdCatByKey=k=>String(k||'').startsWith('cat:')&&(CD_CATS||[]).find(c=>c.name===k.slice(4))||null;
 // הנוסח לשיחה / SMS: של הקטגוריה אם נכתב לה, אחרת המובנה (התחייבות / הו"ק / נתן תתן)
 function cdYmTplFor(deb,base){const c=base==='pledge'&&cdCatOf(deb);return c&&(c.voice||c.sms)?ymTplFind('cat:'+c.name):YM_TPL.find(x=>x[0]===base);}
-function cdMailKindFor(deb,base){const c=(base==='pledge'||base==='natan')&&cdCatOf(deb);return c&&c.mail?'cat:'+c.name:base;}
+function cdMailKindFor(deb,base){const c=base==='pledge'&&cdCatOf(deb);return c&&c.mail?'cat:'+c.name:base;}
 async function cdCatsLoad(){if(CD_CATS)return CD_CATS;const r=await api('GET','/api/cm/debtcats');CD_CATS=(r&&r.cats)||[];return CD_CATS;}
 function cdCatsHTML(){
+  // מאיר: "זה בלגן הקטגוריה שם בנתן תתן. אני רוצה הכי מופשט וקל" — בקופת נתן תתן אין קטגוריות
+  if(cdFund)return '';
   if(!CD_CATS){cdCatsLoad().then(()=>{if(tab==='comm'&&cmSub==='debts')renderCommDebts();});return '';}
   const rng=c=>c.min&&c.max&&c.max>c.min?cdMoney(c.min)+'–'+cdMoney(c.max):(c.amount?cdMoney(c.amount):'');
   return `<div class="cdcats"><span class="hintxt">🏷 קטגוריה:</span>${CD_CATS.map((c,i)=>`<button class="fbchip${cdQC&&cdQC.name===c.name?' on':''}" data-cdcat="${i}">${esc(c.name)}${rng(c)?` <small>${rng(c)}</small>`:''}</button>`).join('')}
@@ -14320,7 +14322,7 @@ const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
 async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK();
   const o=document.createElement('div');o.className='confirmov';
   const draw=()=>{const t=cdMailTplOf(k);o.innerHTML=`<div class="confirmbox" style="max-width:640px;width:96vw;text-align:right"><div class="cm">✉️ נוסח מייל התזכורת${cdFund==='natan'?' — 🎁 קופת נתן תתן':' — הקהילה'}</div>
-    <div class="hintxt">בוחרים למעלה איזה נוסח, מתקנים, ו־💾 שמור — מעכשיו כל מייל כזה ייפתח בנוסח הזה. לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה בכפתור 📝 שליד הקטגוריות.</div>
+    <div class="hintxt">בוחרים למעלה איזה נוסח, מתקנים, ו־💾 שמור — מעכשיו כל מייל כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה בכפתור 📝 שליד הקטגוריות.'}</div>
     <div class="bqseg">${cdMailKinds().map(x=>`<button class="${k===x?'on':''}" data-k="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</div>
     <label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
