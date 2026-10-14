@@ -3248,6 +3248,20 @@ def ensure_schema():
     except Exception as e:
         print('  mayor meeting error:', e)
 
+    # מאיר: "אני רוצה שתעשה ניסיון אחד, תכניס לי משימה עוד שעתיים וזה יתקשר אלי" — משימה בעוד שעתיים
+    # מרגע שהעדכון עולה; שיחת "שעתיים לפני" יוצאת מיד (כשיש מספר טלפון בהגדרות היומן)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_remind_test_v1'").fetchone():
+            t2 = il_now().replace(tzinfo=None) + datetime.timedelta(hours=2)
+            t2 = t2.replace(minute=(t2.minute // 5) * 5)
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,?,?,'')",
+                        (t2.strftime('%Y-%m-%d'), 'other', 'ניסיון — שיחת תזכורת מהיומן', 'מאיר', t2.strftime('%H:%M')))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_remind_test_v1')")
+            con.commit()
+            print('  משימת ניסיון לשיחת תזכורת: %s' % t2.strftime('%d/%m %H:%M'))
+    except Exception as e:
+        print('  remind test task error:', e)
+
     # בר המצווה של אלחנן חסידי — מאיר: "תרשום ביומן" (ההזמנה: יום שני ח' חשוון תשפ"ז,
     # 19.10.26, אולמי "פלטינום" (ארמונות הגפן), רחוב בנין דוד 3, ביתר עילית; קבלת פנים 19:30).
     # אם יוסף חיים חסידי הוא תורם — השמחה נרשמת אצלו, אחרת כמשימה כללית.
@@ -14470,6 +14484,126 @@ def ym_sched_scan():
         threading.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
 
 
+# 📞 מאיר: "כל המשימות ויומן אירועים — אני יכול לקבל צלצול בטלפון עם שיחה?" — שיחה בבוקר עם כל המשימות
+# והאירועים של היום, ושיחה לפני כל אירוע עם שעה (ברירת מחדל: שעתיים לפני). לא בשבת וביום טוב.
+REMIND_DEF = {'on': True, 'phone': '', 'morning': '08:00', 'lead': 120, 'who': 'מאיר'}
+
+
+def remind_cfg(con):
+    try:
+        c = json.loads(kv_get(con, 'remind_call', '') or '{}')
+    except ValueError:
+        c = {}
+    c = dict(REMIND_DEF, **c)
+    if not c.get('phone'):
+        c['phone_env'] = (os.environ.get('ALERT_CALL') or os.environ.get('ALERT_SMS') or '').strip()
+    return c
+
+
+def remind_phone(c):
+    import yemot as _ym
+    return _ym.norm_phone(c.get('phone') or c.get('phone_env') or '')
+
+
+def remind_ok(dt):
+    """שיחת תזכורת אליי: 7:00–22:00, לא בשבת וביום טוב (ובערב שבת / חג — עד 14:00)."""
+    if not (7 <= dt.hour < 22):
+        return False
+    return ym_call_ok(dt.replace(hour=max(9, min(dt.hour, 20))))
+
+
+def remind_tasks(con, day, who):
+    return [dict(r) for r in con.execute(
+        "SELECT t.*, d.last dl, d.first df FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.due_date=? AND COALESCE(t.done,0)=0 "
+        "AND (COALESCE(t.assignee,'')='' OR t.assignee=?) ORDER BY CASE WHEN COALESCE(t.at_time,'')='' THEN '99' ELSE t.at_time END, t.id", (day, who))]
+
+
+def remind_line(t):
+    s = (t.get('note') or KIND_HE.get(t.get('kind') or '', '') or 'משימה').strip()
+    s = re.sub(r'^[^\w"]+', '', s)
+    who = ((t.get('dl') or '') + ' ' + (t.get('df') or '')).strip()
+    if who and who not in s:
+        s += ', אצל ' + who
+    if (t.get('at_time') or '').strip():
+        s += ', בשעה ' + t['at_time'].strip()
+    if (t.get('place') or '').strip():
+        pl = t['place'].strip()
+        s += ', ' + (pl if pl.startswith('ב') else 'ב' + (pl[1:] if pl.startswith('ה') else pl))   # העירייה → בעירייה
+    return s
+
+
+def remind_morning_text(ts):
+    if not ts:
+        return 'בוקר טוב, זו תזכורת מכולל חצות. אין לך היום משימות או אירועים ביומן.'
+    head = 'בוקר טוב, זו תזכורת מכולל חצות. ' + ('יש לך היום משימה אחת: ' if len(ts) == 1 else 'יש לך היום %d משימות ואירועים. ' % len(ts))
+    if len(ts) == 1:
+        return head + remind_line(ts[0]) + '.'
+    body = ' '.join('%d. %s.' % (i + 1, remind_line(t)) for i, t in enumerate(ts[:15]))
+    return head + body + (' ועוד %d נוספות.' % (len(ts) - 15) if len(ts) > 15 else '')
+
+
+def remind_send(con, phone, text):
+    """שיחה אחת אליי דרך ימות — בלי ניסיון חוזר אחרי שעתיים (התזכורת כבר לא רלוונטית)."""
+    con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,1,'queued',0,?,'','')",
+                (now_iso(), 'voice', text, '', 'תזכורת לי'))
+    jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retried) VALUES(?,?,?,?,?,?,'queued','','self',0)",
+                (jid, 'o', 0, 'תזכורת לי', phone, text))
+    con.commit()
+    threading.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
+    return jid
+
+
+def remind_call_scan():
+    import yemot as _ym
+    if not _ym.configured():
+        return
+    con = db()
+    try:
+        c = remind_cfg(con)
+        phone = remind_phone(c)
+        if not c.get('on') or not phone:
+            return
+        now = il_now().replace(tzinfo=None)
+        day = now.strftime('%Y-%m-%d')
+        try:
+            sent = json.loads(kv_get(con, 'remind_call_sent', '') or '{}')
+        except ValueError:
+            sent = {}
+        old = (now - datetime.timedelta(days=3)).strftime('%Y-%m-%d')
+        sent = {k: v for k, v in sent.items() if str(v) >= old}
+        calls = []
+        try:
+            mh, mm = [int(x) for x in str(c.get('morning') or '08:00').split(':')[:2]]
+        except ValueError:
+            mh, mm = 8, 0
+        mt = now.replace(hour=mh, minute=mm, second=0, microsecond=0)
+        if mt <= now < mt + datetime.timedelta(hours=3) and ('m:' + day) not in sent:
+            sent['m:' + day] = day
+            if remind_ok(now):
+                calls.append(remind_morning_text(remind_tasks(con, day, c.get('who') or 'מאיר')))
+        lead = datetime.timedelta(minutes=int(c.get('lead') or 120))
+        for t in remind_tasks(con, day, c.get('who') or 'מאיר'):
+            m_ = re.fullmatch(r'(\d{1,2}):(\d{2})', (t.get('at_time') or '').strip())
+            if not m_:
+                continue
+            at = now.replace(hour=int(m_.group(1)), minute=int(m_.group(2)), second=0, microsecond=0)
+            key = 't:%s:%s' % (t['id'], day)
+            if at - lead <= now < at and key not in sent:
+                sent[key] = day
+                if remind_ok(now):
+                    mins = int((at - now).total_seconds() // 60)
+                    hrs = round(mins / 60.0)
+                    when = ({1: 'בעוד שעה', 2: 'בעוד שעתיים'}.get(hrs) or 'בעוד %d שעות' % hrs) if mins >= 50 else ('בעוד %d דקות' % mins if mins > 1 else 'עכשיו')
+                    calls.append('תזכורת מכולל חצות: %s, %s.' % (when, remind_line(t)))
+        con.execute("INSERT INTO app_kv(k,v) VALUES('remind_call_sent',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (json.dumps(sent),))
+        con.commit()
+        for tx in calls:
+            remind_send(con, phone, tx)
+    finally:
+        con.close()
+
+
 def _ym_sched_loop():
     while True:
         time.sleep(30)
@@ -14477,6 +14611,10 @@ def _ym_sched_loop():
             ym_sched_scan()
         except Exception as e:
             print('  ym sched loop error:', e)
+        try:
+            remind_call_scan()
+        except Exception as e:
+            print('  remind call error:', e)
 
 
 def _ym_retry_loop():
@@ -17610,6 +17748,18 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mikveh/link':
             con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
             return self._send(200, {'ok': True, 'url': v})
+        if self.path.split('?')[0] == '/api/remind_call':
+            con = db()
+            try:
+                c = remind_cfg(con)
+                day = il_now().strftime('%Y-%m-%d')
+                prev = remind_morning_text(remind_tasks(con, day, c.get('who') or 'מאיר'))
+            finally:
+                con.close()
+            ph = remind_phone(c)
+            return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
+                                    'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
+                                    'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
         if self.path.split('?')[0] == '/api/mikveh/price_info':
             # 💲 מה אפשר לשנות: מחיר הקבוצה (וכמה לקוחות בה), ושדות מחיר אישיים של הלקוח במקווה אם יש
             import mikveh as _mk
@@ -19613,6 +19763,43 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': True, 'job': jid, 'send_at': send_at, 'moved': moved})
             # מאיר: "שלוחצים על שליחת הודעה שלא יחכה" — יוצאת מיד, גם כשמשלוח גדול באמצע
             _thr.Thread(target=ym_worker, args=(jid, False), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': jid})
+        if self.path == '/api/remind_call':
+            import yemot as _ym
+            con = db()
+            try:
+                c = remind_cfg(con)
+                c.pop('phone_env', None)
+                if 'on' in b:
+                    c['on'] = bool(b.get('on'))
+                if 'phone' in b:
+                    ph = str(b.get('phone') or '').strip()
+                    if ph and not _ym.norm_phone(ph):
+                        return self._send(200, {'ok': False, 'error': 'מספר טלפון לא תקין'})
+                    c['phone'] = _ym.norm_phone(ph) if ph else ''
+                if re.fullmatch(r'\d{1,2}:\d{2}', str(b.get('morning') or '')):
+                    c['morning'] = '%02d:%s' % (int(b['morning'].split(':')[0]), b['morning'].split(':')[1])
+                if str(b.get('lead') or '').isdigit():
+                    c['lead'] = max(10, min(600, int(b['lead'])))
+                kv_set(con, 'remind_call', json.dumps(c, ensure_ascii=False)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/remind_call/test':
+            # 📞 שיחת ניסיון עכשיו — מקריאה את המשימות של היום
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר ב-Render (YEMOT_TOKEN)'})
+            con = db()
+            try:
+                c = remind_cfg(con)
+                ph = remind_phone(c)
+                if not ph:
+                    return self._send(200, {'ok': False, 'error': 'חסר מספר טלפון — כתוב אותו למעלה ושמור'})
+                tx = remind_morning_text(remind_tasks(con, il_now().strftime('%Y-%m-%d'), c.get('who') or 'מאיר'))
+                jid = remind_send(con, ph, 'שיחת ניסיון. ' + tx)
+            finally:
+                con.close()
             return self._send(200, {'ok': True, 'job': jid})
         if self.path == '/api/mikveh/price':
             # 💲 שינוי מחיר במקווה עצמו — של הלקוח (שדה מחיר אישי) או של כל הקבוצה. אחרי השינוי בודקים במקווה שזה נקלט

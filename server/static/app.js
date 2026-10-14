@@ -13040,12 +13040,41 @@ let calHeb=null, HMCACHE={}, calEdit=null;
 function hebTodayParts(){const ws=String(HEBTODAY||'').split(/\s+/).filter(Boolean);if(ws.length<3)return null;return {m:ws.slice(1,-1).join(' '),y:ws[ws.length-1]};}
 async function hebMonth(m,y){const k=m+'|'+y;if(!HMCACHE[k]){const r=await api('GET','/api/hebmonth?m='+encodeURIComponent(m)+'&y='+encodeURIComponent(y));HMCACHE[k]=(r&&r.ok)?r:null;}return HMCACHE[k];}
 function gregShort(iso){const p=String(iso||'').split('-');return p.length===3?(+p[2]+'.'+(+p[1])):'';}
+// 📞 מאיר: "כל המשימות ויומן אירועים — אני יכול לקבל צלצול בטלפון עם שיחה?" — בבוקר: כל המשימות והאירועים
+// של היום; לפני אירוע עם שעה: שעתיים לפני. לא בשבת ויום טוב. המספר והשעות נשמרים במערכת
+async function calRemindOpen(){
+  const r=await api('GET','/api/remind_call'); if(!r||!r.ok)return toast('לא נטען');
+  const o=document.createElement('div');o.className='mkov';
+  o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">📞</div><div><b>שיחות תזכורת לטלפון שלך</b><span class="mksub">דרך ימות המשיח · לא בשבת וביום טוב</span></div><button class="x2" id="rcx">✕</button></div>
+    <div class="mkdb">
+      <label class="gvall" style="margin-bottom:8px"><input type="checkbox" id="rc_on" ${r.on?'checked':''}> <b>להתקשר אליי</b></label>
+      <div class="mklbl"><span>📱 המספר שלי</span></div>
+      <input id="rc_ph" dir="ltr" inputmode="tel" value="${esc(r.phone||'')}" placeholder="${r.phone_env?esc('מוגדר ב-Render: '+(r.phone_show||'')):'05X-XXXXXXX'}" style="width:100%;box-sizing:border-box">
+      <div class="mklbl"><span>☀️ שיחת בוקר — כל המשימות והאירועים של היום</span></div>
+      <input type="time" id="rc_m" value="${esc(r.morning||'08:00')}">
+      <div class="mklbl"><span>⏰ לפני אירוע עם שעה</span></div>
+      <select id="rc_l">${[[30,'חצי שעה לפני'],[60,'שעה לפני'],[120,'שעתיים לפני'],[180,'שלוש שעות לפני']].map(([v,l])=>`<option value="${v}"${+r.lead===v?' selected':''}>${l}</option>`).join('')}</select>
+      <div class="mklbl"><span>🔊 כך תישמע שיחת הבוקר היום</span></div>
+      <div class="mkphone"><div class="mkbubble v">${esc(r.preview||'')}</div></div>
+    </div>
+    <div class="mkdf"><button class="mkbtn gh" id="rc_test">📞 שיחת ניסיון עכשיו</button><span class="grow"></span><button class="mkbtn" id="rc_save">💾 שמור</button></div></div>`;
+  document.body.appendChild(o);
+  const close=()=>o.remove(); o.querySelector('#rcx').onclick=close; o.onclick=e=>{if(e.target===o)close();};
+  const save=async()=>{const x=await api('POST','/api/remind_call',{on:o.querySelector('#rc_on').checked,phone:o.querySelector('#rc_ph').value.trim(),
+      morning:o.querySelector('#rc_m').value,lead:o.querySelector('#rc_l').value});
+    if(!x||!x.ok){uiAlert((x&&x.error)||'לא נשמר');return false;}return true;};
+  o.querySelector('#rc_save').onclick=async()=>{if(await save()){toast('💾 נשמר — המערכת תתקשר אליך');close();}};
+  o.querySelector('#rc_test').onclick=async()=>{if(!await save())return;const x=await api('POST','/api/remind_call/test',{});
+    if(x&&x.ok)toast('📞 מתקשר אליך עכשיו…');else uiAlert('לא יצאה שיחה:\n'+((x&&x.error)||'שגיאה'));};
+}
 async function renderCalTab(){
   const today=todayStr();
   if(!calHeb)calHeb=hebTodayParts()||{m:pyMonth||'תשרי',y:HEBYEAR};
   const F=[['','הכל'],['task','📋 משימות'],['event','🎉 שמחות'],['parnes','🌙 פרנס יום']];
-  chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('');
-  chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
+  chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('')
+    +(ROLE==='admin'?'<button class="chip" id="cal_rc" title="שיחה לטלפון שלך: בבוקר עם כל המשימות של היום, ולפני כל אירוע עם שעה">📞 שיחות תזכורת</button>':'');
+  chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
+  const rcb=document.getElementById('cal_rc'); if(rcb)rcb.onclick=calRemindOpen;
   view.innerHTML='<div class="cnt">טוען את החודש…</div>';
   const HM=await hebMonth(calHeb.m,calHeb.y);
   if(!HM){view.innerHTML='<div class="empty">לא הצלחתי לטעון את החודש העברי</div>';return;}
