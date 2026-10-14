@@ -14334,7 +14334,9 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
     ${cdFund==='natan'?`<div class="bqseg"><button class="${ch==='mail'?'on':''}" data-ch="mail">✉️ מייל</button><button class="${ch==='voice'?'on':''}" data-ch="voice">📞 שיחה</button><button class="${ch==='sms'?'on':''}" data-ch="sms">💬 SMS</button></div>`:''}
     <div class="bqseg">${cdMailKinds().map(x=>`<button class="${k===x?'on':''}" data-k="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</div>
     ${ph?`<label class="fld"><span>${ch==='sms'?'ההודעה ב-SMS':'מה יוקרא בשיחה'}</span><textarea id="cmt_b" rows="6">${esc(ptxt)}</textarea></label>
-      <div class="hintxt">{שם} — שם הנמען · {סכום} — הסכום הפתוח שלו · {עבור} — עבור מה${ch==='sms'?' · {קישור} — קישור לתשלום':''}. ${psaved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`
+      <div class="hintxt">{שם} — שם הנמען · {סכום} — הסכום הפתוח שלו · {עבור} — עבור מה${ch==='sms'?' · {קישור} — קישור לתשלום':''}. ${psaved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>
+      <div class="bqacts">${ch==='voice'?'<button class="btn sm" id="cmt_hear" title="לשמוע בקול של השיחה, לראות את הניקוד ולתקן מילה בלחיצה עליה">🔊 השמע · ניקוד ותיקון מילים</button>':''}
+        <button class="btn sm ghost" id="cmt_test">${ch==='voice'?'📞 שיחת בדיקה אליי':'💬 SMS בדיקה אליי'}</button></div>`
     :`<label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
     <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`}
@@ -14343,6 +14345,20 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
     o.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{k=b.dataset.k;draw();});
     o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{ch=b.dataset.ch;draw();});
     o.querySelector('.cno').onclick=()=>o.remove();
+    // מאיר: "אני רוצה אותו דבר כמו בקהילה בחובות — את הניקוד ואפשרות השמעה ותיקון ע"י הקראה או ניקוד"
+    const EX={name:'ישראל ישראלי',amount:'500',for:'מגבית סוכות'};
+    const hr=o.querySelector('#cmt_hear');if(hr)hr.onclick=()=>{const tx=o.querySelector('#cmt_b').value;if(!tx.trim()){toast('כתוב קודם את הנוסח');return;}
+      ymCallConfirm('🔊 כך זה יישמע — לדוגמה: '+EX.name+', ₪'+EX.amount,Object.assign({text:tx},EX),{hear:1});};
+    const ts=o.querySelector('#cmt_test');if(ts)ts.onclick=async()=>{const tx=o.querySelector('#cmt_b').value;if(!tx.trim()){toast('כתוב קודם את הנוסח');return;}
+      let dp='';try{dp=localStorage.getItem('kc_ymtp')||'';}catch(e){}
+      if(!dp){try{const rc=await api('GET','/api/remind_call');dp=(rc&&rc.phone)||'';}catch(e){}}
+      const tp=await uiPrompt((ch==='voice'?'לאיזה מספר להתקשר לבדיקה?':'לאיזה נייד לשלוח SMS בדיקה?')+'\n(בבדיקה: הסכום ₪10, עבור "מגבית סוכות"'+(ch==='voice'?'; הקשה 1 = תשלום לקופת נתן תתן':'')+')',dp);
+      if(!tp)return;if(!ymPhone(tp)||(ch==='sms'&&!ymMobile(ymPhone(tp)))){toast('מספר לא תקין');return;}
+      try{localStorage.setItem('kc_ymtp',tp);}catch(e){}
+      const r=await api('POST','/api/yemot/send',{channel:ch,text:tx,amount:'10',test:1,test_phone:tp,test_name:'',billing:ch==='voice'?1:0,
+        test_amount:'10',test_for:'מגבית סוכות',test_link:ch==='sms'?ntGenLink():'',fund:cdFund==='natan'?'natan':''});
+      if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
+      toast('הבדיקה נשלחה — בעוד רגע '+(ch==='sms'?'תגיע הודעה':'הטלפון יצלצל'));};
     const yset=async text=>{const r=await api('POST','/api/yemot/tpl',{key:yk(k),ch,text});if(r&&r.ok){if(ymStatus)ymStatus.tpl=r.tpl;else ymStatus={tpl:r.tpl};}return r&&r.ok;};
     o.querySelector('#cmt_ok').onclick=async()=>{
       if(ph){if(await yset(o.querySelector('#cmt_b').value)){toast('💾 הנוסח נשמר');draw();}else toast('לא נשמר');return;}

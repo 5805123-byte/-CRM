@@ -3274,6 +3274,38 @@ def ensure_schema():
     except Exception as e:
         print('  herman meeting error:', e)
 
+    # מאיר: "תעשה בדיקה של שיחה לנתן תתן למספר שלי" — שיחה אחת בנוסח הקבוע שלו (הקשה 1 = סליקה לנתן תתן,
+    # ₪10 לבדיקה), דקה אחרי העלייה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='natan_test_call_v1'").fetchone():
+            con.execute("INSERT INTO seed_flags(name) VALUES('natan_test_call_v1')")
+            con.commit()
+            def _nt_test():
+                c2 = db()
+                try:
+                    import yemot as _ym
+                    ph = remind_phone(remind_cfg(c2))
+                    if not (_ym.configured() and ph):
+                        print('  natan test call: no yemot / phone'); return
+                    try: tpl = json.loads(kv_get(c2, 'ym_tpl', '') or '{}')
+                    except ValueError: tpl = {}
+                    txt = tpl.get('natan:voice') or ('שלום {שם}, כאן קופת נתן תתן. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. '
+                                                     'למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה, ותזכו למצוות.')
+                    c2.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,1,'queued',1,?,'')",
+                               (now_iso(), 'voice', txt, '10', 'בדיקה — נתן תתן'))
+                    jid = c2.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    c2.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,fund) VALUES(?,?,?,?,?,?,'queued',?,'natan')",
+                               (jid, 't', 0, 'מאיר', ph, ym_fill(txt, 'מאיר', '10', '', 'מגבית סוכות'), '10'))
+                    c2.commit()
+                    ym_worker(jid, True)
+                except Exception as e:
+                    print('  natan test call error:', e)
+                finally:
+                    c2.close()
+            threading.Timer(60, _nt_test).start()
+    except Exception as e:
+        print('  natan test call seed error:', e)
+
     # מאיר שלח את הקישור לדף התרומות של קופת נתן תתן (מוסד 7014302) — הקישור הכללי במיילים וב-SMS,
     # ואם עוד לא נבחר חשבון לקופה — זה מספר המוסד שלה (גם לסליקה בהקשה 1 בשיחה)
     try:
@@ -20318,7 +20350,7 @@ class H(BaseHTTPRequestHandler):
             # לאיזו קופה המשלוח: נתן תתן (החוב / הקישור של החשבון שלה) או הקהילה
             nm_ = natan_mosad(con)
             dids_ = [int(x) for x in (b.get('debt_ids') or []) if str(x).isdigit()]
-            is_nat = bool(nm_ and any(str((r or {}).get('mosad') or '') == nm_ for r in (b.get('recipients') or []) if isinstance(r, dict))) or bool(
+            is_nat = (b.get('fund') == 'natan') or bool(nm_ and any(str((r or {}).get('mosad') or '') == nm_ for r in (b.get('recipients') or []) if isinstance(r, dict))) or bool(
                 dids_ and con.execute("SELECT 1 FROM cm_debt WHERE fund='natan' AND id IN (%s)" % ','.join('?' * len(dids_)), dids_).fetchone())
             if is_nat:
                 con.execute("UPDATE ym_msg SET fund='natan' WHERE job=?", (jid,))
