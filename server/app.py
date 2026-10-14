@@ -618,6 +618,8 @@ def ensure_schema():
     except Exception: pass
     # מאיר: "מי שקיבל שיחה מאיתנו דרך חלון חובות והתחייבויות — שנראה אצלו את התוצאות, אם ענה" —
     # ההודעה האחרונה (ym_msg) שיצאה על החוב מהחלון
+    try: con.execute("ALTER TABLE cm_debt ADD COLUMN rem_mail INTEGER")   # המייל (mail_queue) שיצא על החוב — לראות אם נפתח
+    except Exception: pass
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN rem_msg INTEGER")
     except Exception: pass
     # מאיר: "כל מי שנכנס למערכת — שאני אקבל התראה על זה בוואטסאפ" — יומן הכניסות
@@ -17479,8 +17481,10 @@ class H(BaseHTTPRequestHandler):
                 st = {r['status']: r['c'] for r in con.execute(
                     "SELECT status, COUNT(*) c FROM mail_queue WHERE batch=? GROUP BY status",
                     (b['id'],))}
+                opn = con.execute("SELECT COUNT(*) FROM mail_queue WHERE batch=? AND status='sent' AND COALESCE(opened_at,'')<>''", (b['id'],)).fetchone()[0]
                 rows.append({'id': b['id'], 'name': b['name'], 'subject': b['subject'],
-                             'created': b['created'], 'total': b['total'],
+                             'created': b['created'], 'total': b['total'], 'opened': opn,
+                             'track': int(b['track'] if 'track' in b.keys() else 1),
                              'status': b['status'], 'counts': st,
                              'audience': (b['audience'] if 'audience' in b.keys() else '') or 'donors'})
             con.close()
@@ -17890,6 +17894,8 @@ class H(BaseHTTPRequestHandler):
                     "SELECT d.*, m.last ml, m.first mf, m.phone mphone, m.email memail, "
                     "y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, y.pressed_secs y_psecs, y.call_status y_call, "
                     "y.sent_ts y_sent, y.retry_at y_retry_at, y.retried y_retried, y.error y_err, y.id y_id, y.job y_job, COALESCE(y.fund,'') y_fund, "
+                    "(SELECT q.status FROM mail_queue q WHERE q.id=d.rem_mail) mq_st, (SELECT q.opened_at FROM mail_queue q WHERE q.id=d.rem_mail) mq_open, "
+                    "(SELECT q.opens FROM mail_queue q WHERE q.id=d.rem_mail) mq_opens, (SELECT b.track FROM mail_queue q JOIN mail_batch b ON b.id=q.batch WHERE q.id=d.rem_mail) mq_track, "
                     "(SELECT r.answered FROM ym_msg r WHERE r.id=y.retried) y_r_ans, (SELECT r.listen_secs FROM ym_msg r WHERE r.id=y.retried) y_r_listen, "
                     "(SELECT r.pressed FROM ym_msg r WHERE r.id=y.retried) y_r_pressed "
                     # תזכורת שיצאה לפני שנשמר הקישור (rem_msg) — ההודעה האחרונה לאותו חבר מאותו יום ואילך
@@ -18619,6 +18625,8 @@ class H(BaseHTTPRequestHandler):
             b = con.execute("SELECT * FROM mail_batch WHERE id=?", (bid,)).fetchone()
             if not b:
                 con.close(); return self._send(404, {'error': 'not found'})
+            if getattr(self, 'role', 'admin') not in ('admin', '') and ((b['audience'] if 'audience' in b.keys() else '') or 'donors') != 'members':
+                con.close(); return self._send(403, {'ok': False, 'error': 'forbidden', 'detail': 'רק משלוחים לקהילה'})
             when = (b['created'] or '')[:10] or today_iso()
             rep = set()
             try:
@@ -20619,7 +20627,8 @@ class H(BaseHTTPRequestHandler):
                                # מעקב פתיחות מוסיף תמונה זעירה שיש תוכנות מייל
                                # שמציגות במקומה שורת כתובת גלויה. ברירת המחדל
                                # היא בלי מעקב, ורק סימון מפורש מפעיל אותו.
-                               1 if b.get('track') is True else 0,
+                               # מאיר: "אני רוצה לראות כל מייל אם פתחו את זה" — לקהילה: מעקב פתיחות תמיד, אלא אם ביטלו במפורש
+                               1 if (b.get('track') is True or (is_members and b.get('track') is not False)) else 0,
                                'members' if is_members else 'donors'))
             bid = cur.lastrowid
             for x in to:
@@ -20633,6 +20642,10 @@ class H(BaseHTTPRequestHandler):
             con.execute("UPDATE mail_batch SET sender=? WHERE id=?", ('neder' if is_members else 'main', bid))
             if is_members and b.get('debt_ids'):
                 cm_debts_reminded(con, b.get('debt_ids'), 'email')
+                dids_ = [int(x) for x in b.get('debt_ids') if str(x).isdigit()]
+                if dids_:
+                    con.execute("UPDATE cm_debt SET rem_mail=(SELECT q.id FROM mail_queue q WHERE q.batch=? AND q.member_id=cm_debt.member_id ORDER BY q.id LIMIT 1) "
+                                "WHERE id IN (%s)" % ','.join('?' * len(dids_)), [bid] + dids_)
             con.commit(); con.close()
             st.update({'running': True, 'done': False, 'stop': False, 'batch': bid,
                        'total': len(to), 'sent': 0, 'failed': 0, 'skipped': 0,

@@ -14447,7 +14447,7 @@ function cdMailDraft(kind,fr){
     await mlCommReady();
     if(!(MLSETUP_C&&MLSETUP_C.ok)){await uiAlert('לא נשלח:\n'+((MLSETUP_C&&MLSETUP_C.msg)||'הדואר של נדר 18 לא מחובר'));return;}
     if(!await uiConfirm('לשלוח '+(aud.length===1?'ל־'+mName(aud[0])+' בלבד':'ל־'+aud.length+' נמענים')+'?\n\nיוצא מ: '+(MLSETUP_C.from||'neder1818@gmail.com')+' (נדר 18)'))return;
-    const b={members:aud.map(m=>m.id),subject:si.value.trim(),body:bi.value,sig:'',track:mlSaved('cm_track','0')==='1',base:location.origin,sender:'neder',...cmLinksPayload()};
+    const b={members:aud.map(m=>m.id),subject:si.value.trim(),body:bi.value,sig:'',track:mlSaved('cm_track','1')==='1',base:location.origin,sender:'neder',...cmLinksPayload()};
     if(cdRem&&cdRem.ch==='email')b.debt_ids=cdRem.ids;
     let r=null;try{r=await api('POST','/api/mail/send',b);}catch(e){await uiAlert('לא נשלח — אין חיבור לשרת כרגע. נסה שוב בעוד רגע.');return;}
     if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.detail)||'שגיאה'));return;}
@@ -14478,7 +14478,13 @@ function cdItemHTML(d){if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['�
 function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
   const sec=n=>n>=60?Math.floor(n/60)+':'+String(n%60).padStart(2,'0')+' דק׳':n+' שנ׳';
   let t='',c='';
-  if(v==='email'){t='✉️ המייל נשלח';c='ok';}
+  // מאיר: "אני רוצה לראות כל מייל אם פתחו את זה"
+  if(v==='email'){const tm=x=>ndDate(x)+' '+String(x||'').slice(11,16);
+    if(d.mq_st==='queued'){t='✉️ המייל בתור לשליחה';}
+    else if(d.mq_st==='failed'||d.mq_st==='dead'){t='❌ המייל לא נשלח';c='bad';}
+    else if(d.mq_open){t='✉️ המייל נשלח · 👁 נפתח '+tm(d.mq_open)+(+d.mq_opens>1?' (×'+d.mq_opens+')':'');c='ok';}
+    else if(d.mq_st==='sent'&&+d.mq_track){t='✉️ המייל נשלח · עוד לא נפתח';}
+    else{t='✉️ המייל נשלח';c='ok';}}
   else if(!d.y_st){return '';}
   else if(d.y_st==='queued'){t='⏳ בתור לשליחה';}
   else if(d.y_st==='failed'||d.y_st==='cancelled'){t=(v==='sms'?'❌ ה-SMS לא נשלח':'❌ השיחה לא יצאה')+(d.y_err?' — '+String(d.y_err).slice(0,60):'');c='bad';}
@@ -15285,7 +15291,7 @@ function renderCommSend(){
       ${cmLinkHTML()}
       <div class="hintxt">לחיצה על סימון מכניסה אותו למכתב: <b>{{תואר}} {{שם}} {{הי"ו}}</b> ← <i>ה"ה</i> <b>נחמן בינדר</b> <i>הי"ו</i>.
         השם נמשך לבד מהכרטיס של כל חבר. שורה ריקה = פסקה חדשה. המערכת בונה את העיצוב בשליחה — אין מה לעצב ביד.</div>
-      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="cm_track" ${mlSaved('cm_track','0')==='1'?'checked':''}>
+      <label class="jointchk" style="margin-top:8px"><input type="checkbox" id="cm_track" ${mlSaved('cm_track','1')==='1'?'checked':''}>
         <span>📊 עקוב אחרי מי פתח את המייל</span></label>
     </div>
     <div id="ml_out"></div>
@@ -15381,10 +15387,18 @@ async function cmHistory(){
   const heb={queued:'ממתין',sending:'שולח',done:'הסתיים',paused:'נעצר באמצע'};
   el.innerHTML=`<div class="sec"><div class="rbtitle">משלוחים קודמים לקהילה</div>
     ${rows.map(b=>`<div class="mlbrow"><div><b>${esc(b.subject||b.name||'')}</b> <span class="hintxt">${esc(b.created||'')} · ${esc(heb[b.status]||b.status)}</span></div>
-      <div class="hintxt">נשלחו ${b.counts.sent||0} מתוך ${b.total}${b.counts.failed?` · נכשלו ${b.counts.failed}`:''}${b.counts.dead?` · כתובות פסולות ${b.counts.dead}`:''}</div>
+      <div class="hintxt">נשלחו ${b.counts.sent||0} מתוך ${b.total}${+b.track?` · 👁 נפתחו ${b.opened||0}`:''}${b.counts.failed?` · נכשלו ${b.counts.failed}`:''}${b.counts.dead?` · כתובות פסולות ${b.counts.dead}`:''}</div>
+      ${+b.track&&(b.counts.sent||0)?`<button class="btn sm ghost cmopen" data-id="${b.id}">👁 מי פתח ומי לא</button>`:''}
       ${((b.counts.failed||0)+(b.counts.dead||0))?`<button class="btn sm ghost cmfail" data-id="${b.id}">מי לא קיבל, ולמה</button>`:''}
       ${(b.status!=='done'&&(b.counts.queued||0))?`<button class="btn sm ghost cmres" data-id="${b.id}">▶️ המשך את המשלוח (${b.counts.queued} נותרו)</button>`:''}
       <div class="mlfx" data-id="${b.id}"></div></div>`).join('')}</div>`;
+  el.querySelectorAll('.cmopen').forEach(b=>b.onclick=async()=>{
+    const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
+    if(box.innerHTML){box.innerHTML='';return;}
+    const r2=await api('GET','/api/mail/batch/'+b.dataset.id+'/stats');if(!r2||!r2.rows){toast('לא נטען');return;}
+    const S=r2.rows.filter(x=>x.status==='sent').sort((a,c)=>(c.opened?1:0)-(a.opened?1:0)||String(a.name||'').localeCompare(String(c.name||''),'he'));
+    box.innerHTML=`<div class="hintxt">👁 נפתחו ${S.filter(x=>x.opened).length} מתוך ${S.length}. נספר רק מי שפתח והתוכנה שלו הציגה תמונות — לכן המספר האמיתי יכול להיות גבוה יותר.</div>`+
+      S.map(x=>`<div class="mlskr">${x.opened?'👁':'—'} <b>${esc(x.name||'')}</b> <span dir="ltr">${esc(x.email||'')}</span> ${x.opened?'· נפתח '+esc(String(x.opened_at).slice(5,16))+(x.opens>1?' (×'+x.opens+')':''):'· עוד לא נפתח'}</div>`).join('');});
   el.querySelectorAll('.cmres').forEach(b=>b.onclick=async()=>{const r2=await api('POST','/api/mail/batch/'+b.dataset.id+'/resume',{});if(r2&&r2.ok){toast('ממשיך…');mlWatch();}else toast('לא ניתן כרגע');});
   el.querySelectorAll('.cmfail').forEach(b=>b.onclick=async()=>{
     const box=el.querySelector('.mlfx[data-id="'+b.dataset.id+'"]');
