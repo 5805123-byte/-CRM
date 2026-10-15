@@ -2217,31 +2217,39 @@ async function mkPriceEdit(c,paidFirst){
 // המקווה, אני רוצה שזה יהיה פה גם". חידוש אוטומטי במקווה (השדה של הלקוח שם) + הוראות קבע בקופת המקווה בנדרים פלוס
 async function mkRenewOpen(c){
   const o=document.createElement('div');o.className='mkov';
-  o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">🔁</div><div><b>חידוש אוטומטי · ${esc(mkName(c))}</b></div><button class="x2" id="mrx">✕</button></div>
+  o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">🔁</div><div><b>פעולות אוטומטיות · ${esc(mkName(c))}</b></div><button class="x2" id="mrx">✕</button></div>
     <div class="mkdb" id="mrb"><div class="mksub">⏳ טוען מהמקווה ומנדרים פלוס…</div></div>
     <div class="mkdf"><span class="grow"></span><button class="mkbtn gh" id="mrno">סגירה</button></div></div>`;
   document.body.appendChild(o);const close=()=>o.remove();o.querySelector('#mrx').onclick=close;o.querySelector('#mrno').onclick=close;
-  const HE={autoRenew:'חידוש מנוי אוטומטי',isAutoRenew:'חידוש מנוי אוטומטי',renew:'חידוש אוטומטי',recurring:'חיוב חוזר'};
+  // ☑ פעולות אוטומטיות — בדיוק כמו באתר של המקווה: מסמנים / מורידים סימון ולוחצים "לשמור"
   const draw=async()=>{const B=o.querySelector('#mrb');
     const [r,p]=await Promise.all([api('GET','/api/mikveh/renew_info?id='+encodeURIComponent(c.id)),MKPAY[c.id]?Promise.resolve(MKPAY[c.id]):api('GET','/api/mikveh/pay/'+c.id)]);
     if(p&&p.ok)MKPAY[c.id]=p;
     const kv=((p&&p.kevas)||[]).filter(k=>+k.active);
-    const F=(r&&r.ok&&r.fields)||{};
-    B.innerHTML=`<div class="mksec">במקווה</div>
+    const A=(r&&r.ok&&r.actions)||[];
+    B.innerHTML=`<div class="mksec">פעולות אוטומטיות במקווה</div>
       ${!(r&&r.ok)?`<div class="mksub">⚠️ ${esc((r&&r.error)||'לא נטען מהמקווה')}</div>`
-       :Object.keys(F).length?Object.entries(F).map(([k,v])=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(HE[k]||k)}</b>
-          <div class="mksub">${v?'✅ פעיל — המנוי יתחדש לבד':'⏹ כבוי — המנוי לא יתחדש לבד'}</div></div>
-          <button class="mkbtn ${v?'':'gh'}" data-rf="${esc(k)}" data-v="${v?0:1}">${v?'🛑 לבטל חידוש אוטומטי':'▶ להחזיר חידוש אוטומטי'}</button></div>`).join('')
-       :`<div class="mksub">לא מצאתי אצל הלקוח במקווה שדה של חידוש אוטומטי. אם באתר של המקווה יש כפתור כזה — שלח לי צילום שלו ואחבר אותו.${(r.bools||[]).length?'<br><small dir="ltr">'+esc(r.bools.join(', '))+'</small>':''}</div>`}
+       :`<div class="mksub" style="margin-bottom:6px">מסומן = המקווה מחדש לבד. להוריד סימון = לא יתחדש. אחרי השינוי — "💾 לשמור במקווה".</div>
+        ${A.map(x=>`<label class="mkrow" style="grid-template-columns:auto 1fr;gap:10px;align-items:center;${x.field?'':'opacity:.55;cursor:default'}">
+          <input type="checkbox" data-aa="${esc(x.key)}" ${x.on?'checked':''} ${x.field?'':'disabled'} style="width:20px;height:20px">
+          <div class="mknm"><b>${esc(x.label)}</b><div class="mksub">${!x.field?'לא מצאתי את השדה הזה אצל הלקוח':x.on?'✅ פעיל':'⏹ כבוי'}</div></div></label>`).join('')}
+        <div style="display:flex;gap:8px;margin-top:8px"><button class="mkbtn" id="mraa" disabled>💾 לשמור במקווה</button></div>
+        ${(r.keys||[]).length?`<details style="margin-top:6px"><summary class="mksub">לא כל השדות זוהו — שמות השדות של הלקוח (לשלוח לי צילום)</summary><small dir="ltr" style="word-break:break-all">${esc(r.keys.join(', '))}</small></details>`:''}`}
       <div class="mksec" style="margin-top:14px">הוראת קבע בנדרים פלוס (קופת המקווה)</div>
       ${kv.length?kv.map(k=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>🔁 ${esc(mkNis(mkKevaAmt(k)))} לחודש${k.last4?' · כרטיס '+esc(k.last4):''}</b>
           <div class="mksub">${k.next_date?'חיוב הבא '+esc(k.next_date):''}${k.itra?' · נותרו '+esc(k.itra):''}</div></div>
           <button class="mkbtn" data-kv="${esc(k.id)}">🛑 לבטל את הוראת הקבע</button></div>`).join('')
        :'<div class="mksub">אין לו הוראת קבע פעילה בקופת המקווה בנדרים פלוס.</div>'}`;
-    B.querySelectorAll('[data-rf]').forEach(b=>b.onclick=async()=>{const on=b.dataset.v==='1';
-      if(!await uiConfirm(on?'להחזיר חידוש אוטומטי במקווה ל'+mkName(c)+'?':'לבטל את חידוש המנוי האוטומטי של '+mkName(c)+' במקווה?\nהמנוי לא יתחדש לבד אחרי שיסתיים.',on?'▶ כן, להחזיר':'🛑 כן, לבטל','לא'))return;
-      b.disabled=true;const x=await api('POST','/api/mikveh/renew',{id:c.id,field:b.dataset.rf,value:on?1:0});
-      if(x&&x.ok){toast(on?'▶ החידוש האוטומטי הוחזר':'🛑 החידוש האוטומטי בוטל במקווה');draw();}else{b.disabled=false;await uiAlert('לא נשמר:\n'+((x&&x.error)||'שגיאה'));}});
+    const sv=B.querySelector('#mraa'),cbs=[...B.querySelectorAll('[data-aa]')];
+    const dirty=()=>cbs.some(i=>i.checked!==!!(A.find(x=>x.key===i.dataset.aa)||{}).on);
+    cbs.forEach(i=>i.onchange=()=>{sv.disabled=!dirty();});
+    if(sv)sv.onclick=async()=>{const set={};cbs.forEach(i=>set[i.dataset.aa]=i.checked);
+      const off=A.filter(x=>x.field&&x.on&&!set[x.key]).map(x=>x.label);
+      if(off.length&&!await uiConfirm('לבטל במקווה ל'+mkName(c)+':\n'+off.join('\n')+'\n\nזה לא יתחדש לבד.','🛑 כן, לשמור','לא'))return;
+      sv.disabled=true;sv.innerHTML='<span class="mkspin"></span>';
+      const x=await api('POST','/api/mikveh/renew',{id:c.id,set});
+      if(x&&x.ok){toast('✓ נשמר במקווה'+((x.changed||[]).length?' — '+x.changed.join(' · '):''));draw();}
+      else{sv.disabled=false;sv.textContent='💾 לשמור במקווה';await uiAlert('לא נשמר:\n'+((x&&x.error)||'שגיאה'));draw();}};
     B.querySelectorAll('[data-kv]').forEach(b=>b.onclick=async()=>{
       if(!await uiConfirm('לבטל את הוראת הקבע של '+mkName(c)+' בנדרים פלוס?\nלא יהיו חיובים נוספים (אפשר להפעיל שוב מנדרים פלוס).','🛑 כן, לבטל','לא'))return;
       b.disabled=true;const x=await api('POST','/api/nd/keva/'+encodeURIComponent(b.dataset.kv)+'/action',{action:'freeze',mk_cid:c.id});

@@ -310,6 +310,79 @@ def price_fields(cid):
 # המקווה". השם המדויק של השדה אצלם לא ידוע מראש — מחפשים שדה כן/לא של חידוש / חיוב אוטומטי אצל הלקוח
 _RENEW_RE = re.compile(r'renew|recurr|autoCharge|autoPay|auto_?pay|autoRenew|standing|isAuto|automatic|subscriptionAuto|charge', re.I)
 
+# מאיר (צילום מהאתר של המקווה, "פעולות אוטומטיות"): ☑ חידוש רישיון · ☑ חידוש תוקף מנוי · ☐ הוספת יתרת פעימות —
+# "אני רוצה שזה יהיה פה בדיוק כמו באתר שלהם". מחפשים לכל אחת את השדה כן/לא שלה אצל הלקוח (גם בתוך אובייקט פנימי)
+AUTO_ACTIONS = (
+    ('licence', 'חידוש רישיון', re.compile(r'licen|licanc|lisen|lics', re.I)),
+    ('sub', 'חידוש תוקף מנוי', re.compile(r'subscri|valid|expir|member|tokef', re.I)),
+    ('balance', 'הוספת יתרת פעימות', re.compile(r'balanc|pulse|beat|entr|punch|ticket|credit|peim|amount', re.I)),
+)
+_AUTO_RE = re.compile(r'auto|renew|recur|refill|top_?up|extend|add', re.I)
+
+
+def _flat_bools(c):
+    """כל שדות הכן/לא של הלקוח (כולל 0/1), גם רמה אחת פנימה: {'a': v, 'obj.b': v}"""
+    out = {}
+    for k, v in c.items():
+        if isinstance(v, bool):
+            out[k] = v
+        elif isinstance(v, dict):
+            for k2, v2 in v.items():
+                if isinstance(v2, bool):
+                    out['%s.%s' % (k, k2)] = v2
+    return out
+
+
+def _key_list(c):
+    """שמות השדות בלבד (בלי ערכים) — כדי שאפשר יהיה לחבר שדה שלא זוהה"""
+    out = []
+    for k, v in c.items():
+        t = type(v).__name__
+        out.append('%s:%s' % (k, t))
+        if isinstance(v, dict):
+            out += ['%s.%s:%s' % (k, k2, type(v2).__name__) for k2, v2 in v.items()]
+        elif isinstance(v, list) and v and not isinstance(v[0], dict) and re.search(r'auto|action|renew', k, re.I):
+            out.append('%s=[%s]' % (k, ','.join(str(x)[:12] for x in v[:6])))
+    return out
+
+
+def auto_actions(cid, fresh=False):
+    c = client(cid, max_age=0 if fresh else 30)
+    bools = _flat_bools(c)
+    cand = {k: v for k, v in bools.items() if _AUTO_RE.search(k)}
+    acts, used = [], set()
+    for key, label, rx in AUTO_ACTIONS:
+        hit = next((k for k in cand if k not in used and rx.search(k)), None)
+        if not hit and key == 'sub':
+            # "autoRenew" / "isAutoRenew" בלי מילה נוספת — זה חידוש המנוי
+            hit = next((k for k in cand if k not in used and re.fullmatch(r'(is)?_?auto_?renew(al)?(enabled)?', k.split('.')[-1], re.I)), None)
+        if hit:
+            used.add(hit)
+        acts.append({'key': key, 'label': label, 'field': hit or '', 'on': bool(bools[hit]) if hit else None})
+    return acts, _key_list(c)
+
+
+def set_auto_actions(cid, want):
+    """want: {'licence': True, ...} — שומרים את כל השינויים בבת אחת, כמו "שמור" באתר שלהם"""
+    acts, _ = auto_actions(cid)
+    c = client(cid, max_age=30)
+    changes = {}
+    for a in acts:
+        if a['key'] not in want or not a['field'] or bool(want[a['key']]) == a['on']:
+            continue
+        f = a['field']
+        if '.' in f:
+            top, sub = f.split('.', 1)
+            d = dict(changes.get(top) or c.get(top) or {})
+            d[sub] = bool(want[a['key']])
+            changes[top] = d
+        else:
+            changes[f] = bool(want[a['key']])
+    if changes:
+        update_client(cid, changes)
+    after, _ = auto_actions(cid, fresh=True)
+    return acts, after
+
 
 def renew_fields(cid):
     c = client(cid, max_age=30)
