@@ -3312,6 +3312,35 @@ def ensure_schema():
     except Exception as e:
         print('  natan reconcile error:', e)
 
+    # מאיר: "יצחק לאווי רוצה קבלה על כל מה שהוא תרם בשנת 2025 — קבלה אמריקאית, בדף שלו וגם בקבלות,
+    # הכל במרוכז" — לפי הרשימה ששלח (סה"כ $21,797), קבלה שנתית אחת
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_lowy_2025_v1'").fetchone():
+            dl = con.execute("SELECT id FROM donors WHERE id=278 AND english LIKE '%Lowy%'").fetchone()
+            if not dl:
+                c_ = con.execute("SELECT id FROM donors WHERE english LIKE '%Yitzy Lowy%' OR (TRIM(last)='לאווי' AND first LIKE '%יצחק%')").fetchall()
+                dl = c_[0] if len(c_) == 1 else None
+            if dl:
+                did_ = dl['id']
+                L = [('2025-01-15', 800), ('2025-02-15', 800), ('2025-02-19', 5000), ('2025-03-12', 360), ('2025-03-15', 800),
+                     ('2025-04-02', 1100), ('2025-04-15', 800), ('2025-05-15', 800), ('2025-06-15', 800), ('2025-07-15', 800),
+                     ('2025-08-15', 800), ('2025-09-15', 800), ('2025-09-16', 1100), ('2025-10-15', 800), ('2025-11-15', 800),
+                     ('2025-12-01', 360), ('2025-12-03', 140), ('2025-12-09', 722), ('2025-12-09', 3215), ('2025-12-15', 1000)]
+                items_ = [{'date': d_, 'amount': a_, 'category': 'קבוע' if (a_ == 800 and d_.endswith('-15')) else 'כללי'} for d_, a_ in L]
+                kv_set(con, 'stmt_items:%d:2025' % did_, json.dumps(items_))
+                have = con.execute("SELECT COUNT(*) n, COALESCE(SUM(CAST(REPLACE(REPLACE(amount,'$',''),',','') AS REAL)),0) s FROM donations "
+                                   "WHERE donor_id=? AND substr(date,1,4)='2025' AND COALESCE(paid,0)=1", (did_,)).fetchone()
+                con.commit()
+                rid_ = statement_save(con, did_, '2025')
+                if rid_:
+                    con.execute("UPDATE receipt_docs SET note=? WHERE id=?",
+                                ('קבלה שנתית 2025 · לפי הרשימה שהתורם שלח: 20 תרומות, $21,797 · בכרטיס במערכת: %d תרומות, $%s'
+                                 % (have['n'], format(have['s'], ',.0f')), rid_))
+            con.execute("INSERT INTO seed_flags(name) VALUES('stmt_lowy_2025_v1')")
+            con.commit()
+    except Exception as e:
+        print('  lowy statement error:', e)
+
     # מאיר: "תעשה בדיקה של שיחה לנתן תתן למספר שלי" — שיחה אחת בנוסח הקבוע שלו (הקשה 1 = סליקה לנתן תתן,
     # ₪10 לבדיקה), דקה אחרי העלייה
     try:
@@ -8753,6 +8782,15 @@ def statement_data(con, did, year=''):
         y1, y2 = y2, y1
     year = y1 if y1 == y2 else '%s-%s' % (y1, y2)
     items = []
+    # רשימה קבועה לקבלה הזו (למשל לפי הרשימה שהתורם שלח) — במקום התרומות שבכרטיס
+    try:
+        ov = json.loads(kv_get(con, 'stmt_items:%d:%s' % (did, year), '') or 'null')
+    except ValueError:
+        ov = None
+    if ov:
+        items = [{'id': None, 'date': x['date'], 'amount': float(x['amount']), 'category': x.get('category') or '',
+                  'method': x.get('method') or '', 'cur': '$'} for x in ov]
+        rows = []
     for r in rows:
         if not (y1 <= (r['date'] or '')[:4] <= y2) or not int(r.get('paid') or 0):
             continue
@@ -8762,7 +8800,10 @@ def statement_data(con, did, year=''):
             continue
         items.append({'id': r['id'], 'date': r['date'], 'amount': a, 'category': r['category'] or '',
                       'method': r['method'] or '', 'cur': (r['cur'] or '').strip()})
-    ad = [str(d['addr'] or '').strip(),
+    # כמה כתובות בשדה ("… ::: …") — על הקבלה רק אחת: זו עם המיקוד והכי שלמה
+    _segs = [x.strip() for x in str(d['addr'] or '').split(':::') if x.strip()]
+    _best = max(_segs, key=lambda x: (bool(re.search(r'\b\d{5}\b', x)), x.count(','), len(x))) if _segs else ''
+    ad = [_best,
           ' '.join(x for x in (str(d['city'] or '').strip(), str(d['country'] or '').strip(),
                                str(d['zip'] or '').strip()) if x)]
     name = (d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
