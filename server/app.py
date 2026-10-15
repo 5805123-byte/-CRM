@@ -20136,10 +20136,14 @@ class H(BaseHTTPRequestHandler):
             nik = ym_nikud_on(con) and kv_get(con, 'ym_engine', '') == 'gemini'; con.close()
             _ym.begin_trace()
             con = db(); _en1 = pron_en_list(con); con.close()
+            # מאיר: "תראה איזה בלגן" — במסך נשאר הטקסט בעברית; מילה שתוקנה באנגלית מסומנת לידה (en), והאנגלית
+            # נכנסת רק לטקסט שנשלח לקול
             t_ = ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
-                               pron, nik, trace=_ym._trace, fast=True, en=_en1)
+                               pron, nik, trace=_ym._trace, fast=True)
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
-            return self._send(200, {'ok': True, 'text': t_, 'nikud': nik, 'late': bool(nik and not re.search(r'[\u05b0-\u05bc\u05c1\u05c2]', t_))})
+            _plain = re.sub(r'[\u0591-\u05c7]', '', t_)
+            en_used = [[re.sub(r'[\u0591-\u05c7]', '', w), pron_en_inline(w, [(w, l)]).strip()] for w, l in _en1 if re.sub(r'[\u0591-\u05c7]', '', w) and re.sub(r'[\u0591-\u05c7]', '', w) in _plain]
+            return self._send(200, {'ok': True, 'text': t_, 'nikud': nik, 'en': en_used, 'late': bool(nik and not re.search(r'[\u05b0-\u05bc\u05c1\u05c2]', t_))})
         if self.path == '/api/yemot/pron_word':
             # ✎ מאיר: "שאוכל לתקן בקול על המילה הלא נכונה, ולא רק באנגלית, ושזה יהיה מהר" — מילה=איך לומר
             # (עברית מנוקדת / כתיב אחר) נכנס למילון ההגייה, ומשם לכל הודעה

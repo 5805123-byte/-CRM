@@ -14143,7 +14143,11 @@ function cdForTxt(deb){const T=[...new Set((deb||[]).map(d=>d.kind==='hok'?Strin
   return T.length>1?T.slice(0,-1).join(', ')+' ו'+T[T.length-1]:(T[0]||'');}
 // ✎ מאיר: "יש הרבה בעיות באיות הקול של Gemini… שאוכל לתקן בקול על המילה הלא נכונה ולא רק באנגלית,
 // אבל שזה יהיה מהר" — כל מילה בטקסט שנשלח לקול היא כפתור: מתקנים (ניקוד / כתיב אחר), שומעים רק אותה, שומרים
-function ymWordsHTML(t){return `<div class="ymwords">${String(t||'').split(/(\s+)/).map(w=>/[\u05d0-\u05ea]/.test(w)?`<button type="button" class="ymw" data-w="${esc(w)}">${esc(w)}</button>`:esc(w)).join('')}</div>`;}
+// en — [[מילה, איך נאמרת באנגלית]]: המילה נשארת בעברית, ולידה קטן מה הקול אומר (בלי לערבב אנגלית בתוך המשפט)
+function ymWordsHTML(t,en){const E=(en||[]).filter(x=>x&&x[0]);
+  const tag=w=>{const p=w.replace(/[\u0591-\u05c7.,!?:;"'()]/g,'');const h=E.find(([e])=>p===e||(p.length>e.length&&p.endsWith(e)&&/^[בלוהמשכ]{1,2}$/.test(p.slice(0,p.length-e.length))));
+    return h?`<small class="ymen" dir="ltr" title="כך הקול אומר את המילה">🔤${esc(h[1])}</small>`:'';};
+  return `<div class="ymwords">${String(t||'').split(/(\s+)/).map(w=>/[\u05d0-\u05ea]/.test(w)?`<button type="button" class="ymw" data-w="${esc(w)}">${esc(w)}${tag(w)}</button>`:esc(w)).join('')}</div>`;}
 function ymWordsWire(box,again){const ctx=[...box.querySelectorAll('.ymwords')].map(x=>x.textContent).join(' ');
   box.querySelectorAll('.ymw').forEach(b=>b.onclick=()=>ymWordFix(b.dataset.w.replace(/[.,!?:;"'()]/g,''),again,ctx));}
 async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'');
@@ -14230,7 +14234,7 @@ function ymCallConfirm(title,body,opt){opt=opt||{};return new Promise(done=>{
   const pb=o.querySelector('#ycc_play');if(pb)pb.onclick=audio;
   const load=async()=>{const box=o.querySelector('#ycc_txt');const r=await api('POST','/api/yemot/speakable',body);
     if(!o.isConnected)return;
-    if(r&&r.ok)box.innerHTML=(r.nikud?(r.late?'<small class="hintxt">(הניקוד לא הספיק להגיע לתצוגה — בשליחה עצמה הטקסט ינוקד)</small>':''):'<small class="hintxt">(ניקוד אוטומטי פועל רק בקול של Gemini)</small>')+ymWordsHTML(r.text);
+    if(r&&r.ok)box.innerHTML=(r.nikud?(r.late?'<small class="hintxt">(הניקוד לא הספיק להגיע לתצוגה — בשליחה עצמה הטקסט ינוקד)</small>':''):'<small class="hintxt">(ניקוד אוטומטי פועל רק בקול של Gemini)</small>')+ymWordsHTML(r.text,r.en);
     else{const w=o.querySelector('#ycc_wait');if(w)w.textContent='';}
     const again=()=>{load();if(opt.hear||o.querySelector('#ycc_aud audio'))audio();};again.auto=true;ymWordsWire(box,again);};
   ymWordsWire(o.querySelector('#ycc_txt'),Object.assign(()=>{load();if(opt.hear)audio();},{auto:true}));
