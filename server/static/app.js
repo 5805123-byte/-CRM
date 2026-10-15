@@ -14152,6 +14152,7 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
     <div class="hintxt">כתוב איך אומרים — עם ניקוד (למשל כּוֹלֵל) או בכתיב שנשמע נכון (למשל קולל). אפשר גם באנגלית.</div>
     <div class="ywfopts" id="ywf_opts"><small class="hintxt">⏳ מחפש אפשרויות ניקוד…</small></div>
     <input id="ywf_say" value="${esc(w)}" style="width:100%;font-size:1.3rem;padding:8px;margin:6px 0">
+    <div class="hintxt" id="ywf_hint"></div>
     <div class="ymnk">${'ַ ָ ֵ ֶ ִ ֹ ֻ ְ ּ ׁ ׂ'.split(' ').map(c=>`<button type="button" class="btn sm ghost" data-nk="${c}">א${c}</button>`).join('')}</div>
     <div class="bqacts"><button class="btn sm" id="ywf_hear">🔊 שמע רק את המילה</button><button class="btn sm" id="ywf_save">💾 שמור לכל ההודעות</button>
       <button class="btn sm ghost" id="ywf_mic" title="אומרים את המילה כמו שצריך — והמערכת כותבת אותה מנוקדת">🎙️ אמור את המילה</button>
@@ -14162,7 +14163,10 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
   o.querySelector('.cno').onclick=()=>o.remove();
   const hb=o.querySelector('#ywf_hear');hb.onclick=async()=>{hb.disabled=true;hb.textContent='⏳';
     const r=await api('POST','/api/yemot/sample',{text:inp.value.trim(),word:1});hb.disabled=false;hb.textContent='🔊 שמע רק את המילה';
-    if(r&&r.ok){try{new Audio('data:audio/wav;base64,'+r.wav).play();}catch(e){}}else toast((r&&r.error)||'לא נוצר');};
+    if(r&&r.ok){try{new Audio('data:audio/wav;base64,'+r.wav).play();}catch(e){}
+      // ההגייה שנשלחה ל-Gemini לפי הניקוד — רואים מה הוא אמור לומר
+      const hx=o.querySelector('#ywf_hint');if(hx)hx.innerHTML=r.hint?'🔤 לפי הניקוד הוא אמור לומר: <b dir="ltr">'+esc(r.hint)+'</b> — לא נשמע נכון? שנה ניקוד, או 🇬🇧 כתוב באנגלית':'';}
+    else toast((r&&r.error)||'לא נוצר');};
   // מאיר: "שזה יציע לי כמה אפשרויות על מילה — למשל הקישו הוא עושה עם חיריק" — כל צורות הניקוד מדיקטה לפי המשפט;
   // לחיצה על אפשרות שמה אותה בתיבה ומשמיעה אותה מיד
   api('POST','/api/nikud/options',{word:plain,context:String(ctx||'').replace(/[\u0591-\u05c7]/g,'')}).then(r=>{const box=o.querySelector('#ywf_opts');if(!box)return;

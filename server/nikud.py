@@ -307,3 +307,50 @@ def vocalize(text, trace=None, fast=False):
     if ok2:
         return True, back(out2), 'Gemini'
     return False, out if not (os.environ.get('GEMINI_API_KEY') or '').strip() else (out + ' · ' + out2), ''
+
+
+# מאיר: "השמעת מילה לא עובדת טוב, וגם הניקוד… זה בקושי משתנה כשאני משמיע או מנסה לנקד".
+# Gemini כמעט לא מתייחס לניקוד, אבל כן מקשיב להנחיית הגייה באותיות לטיניות. מהמילה המנוקדת
+# בונים תעתיק (קְלֶפֶּר → kleper), והוא נשלח כהנחיה ("the Hebrew word X is pronounced ...").
+_V = {'ְ': '', 'ֱ': 'e', 'ֲ': 'a', 'ֳ': 'o', 'ִ': 'i', 'ֵ': 'e', 'ֶ': 'e',
+      'ַ': 'a', 'ָ': 'a', 'ֹ': 'o', 'ֺ': 'o', 'ֻ': 'u', 'ׇ': 'o'}
+_C = {'א': '', 'ב': 'v', 'ג': 'g', 'ד': 'd', 'ה': 'h', 'ו': 'v', 'ז': 'z', 'ח': 'ch', 'ט': 't', 'י': 'y',
+      'כ': 'ch', 'ך': 'ch', 'ל': 'l', 'מ': 'm', 'ם': 'm', 'נ': 'n', 'ן': 'n', 'ס': 's', 'ע': '', 'פ': 'f', 'ף': 'f',
+      'צ': 'ts', 'ץ': 'ts', 'ק': 'k', 'ר': 'r', 'ש': 'sh', 'ת': 't'}
+_HARD = {'ב': 'b', 'כ': 'k', 'ך': 'k', 'פ': 'p'}
+
+
+def translit(word):
+    """מילה מנוקדת -> תעתיק לטיני פשוט (הגייה ישראלית). בלי ניקוד — '' (אין ממה ללמוד)."""
+    w = str(word or '').replace('׳', "'").replace('״', '"')
+    if not re.search(r'[ְ-ׇּׁׂ]', w):
+        return ''
+    units = []
+    for ch in w:
+        if 'א' <= ch <= 'ת':
+            units.append([ch, ''])
+        elif units and ('֑' <= ch <= 'ׇ'):
+            units[-1][1] += ch
+    out = []
+    prev_v = ''
+    for i, (L, M) in enumerate(units):
+        dag, last = 'ּ' in M, i == len(units) - 1
+        v = next((_V[m] for m in M if m in _V), None)
+        if L == 'ו' and v == 'o' and 'ֹ' in M and len(M.replace('ֹ', '')) == 0:
+            out.append('o'); prev_v = 'o'; continue           # חולם מלא
+        if L == 'ו' and dag and v is None:
+            out.append('u'); prev_v = 'u'; continue            # שורוק
+        if L == 'י' and v is None and prev_v in ('i', 'e'):
+            continue                                            # י' אם קריאה
+        if L == 'ה' and last and v is None:
+            continue                                            # ה' בסוף בלי ניקוד
+        if L == 'ש':
+            c = 's' if 'ׂ' in M else 'sh'
+        else:
+            c = _HARD.get(L, _C.get(L, '')) if dag else _C.get(L, '')
+        if L == 'ח' and last and v == 'a':
+            out.append('ach'); prev_v = 'a'; continue          # פתח גנובה
+        out.append(c + (v or ''))
+        if v:
+            prev_v = v
+    return ''.join(out)

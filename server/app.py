@@ -14463,9 +14463,26 @@ def pron_en_list(con):
     return out
 
 
-def pron_en_for(lst, text):
+def pron_en_for(lst, text, pron=''):
     t = text or ''
-    return [(w, l) for w, l in lst if re.search(r'(?<![\u0590-\u05ff])[בלוהמשכ]{0,2}' + re.escape(w) + r'(?![\u0590-\u05ff])', t)]
+    out = [(w, l) for w, l in lst if re.search(r'(?<![\u0590-\u05ff])[בלוהמשכ]{0,2}' + re.escape(w) + r'(?![\u0590-\u05ff])', t)]
+    # מאיר: "הניקוד בקושי משנה" — לכל מילה שתיקנת בניקוד (מילון ההגייה) נשלחת גם הנחיית הגייה באותיות
+    # לטיניות שנבנית מהניקוד; Gemini מקשיב לה הרבה יותר מאשר לניקוד עצמו
+    try:
+        import nikud as _nk
+        have = {w for w, _l in out}
+        for ln in str(pron or '').replace('\r', '').split('\n'):
+            if '=' not in ln:
+                continue
+            _w, say = ln.split('=', 1)
+            say = say.strip()
+            if say and say not in have and say in t:
+                tr = _nk.translit(say)
+                if tr:
+                    out.append((say, tr)); have.add(say)
+    except Exception:
+        pass
+    return out
 
 
 def ym_fill(text, name, amount, link='', for_=''):
@@ -15027,7 +15044,7 @@ def ym_worker(job_id, wait=True):
                     vt_ = ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace)
                     ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
-                                           hints=pron_en_for(ym_en, m['text']))
+                                           hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']))
                     if ok and isinstance(res, dict):
                         con.execute("UPDATE ym_msg SET engine=? WHERE id=?", (res.get('engine') or '', m['id']))
                 tr = _ym.end_trace()
@@ -20007,7 +20024,7 @@ class H(BaseHTTPRequestHandler):
             txt = ym_voice_text(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron, nik, trace=_ym._trace)
             con = db(); _en = pron_en_list(con); con.close()
             ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
-                                model=str(b.get('gmodel') or gm or ''), hints=pron_en_for(_en, txt))
+                                model=str(b.get('gmodel') or gm or ''), hints=pron_en_for(_en, txt, pron))
             con = db(); ym_save_trace(con, _ym.end_trace())
             if not ok:
                 con.commit(); con.close()
@@ -20056,12 +20073,20 @@ class H(BaseHTTPRequestHandler):
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
             con = db(); _en = pron_en_list(con); con.close()
             # אותו טקסט באותו קול — מהזיכרון, מיד (השמעה חוזרת / אחרי תיקון של מילה אחרת שלא נמצאת בטקסט)
-            hints_ = pron_en_for(_en, txt)
+            hints_ = pron_en_for(_en, txt, pron)
+            if b.get('word'):
+                # מילה בודדת — ההגייה לפי הניקוד שהקלדת, ובהוראה קצרה (מילה אחת, ברור)
+                import nikud as _nk
+                tr_ = _nk.translit(txt)
+                if tr_:
+                    hints_ = [(txt, tr_)] + [h for h in hints_ if h[0] != txt]
+                b['gstyle'] = 'Say this single Hebrew word clearly, once, following the pronunciation guide exactly:'
             ck = (txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', str(b.get('gmodel') or ''), tuple(hints_))
             wav = _TTS_CACHE.get(ck)
             if wav:
                 _ym.end_trace()
-                return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt, 'cached': True})
+                return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt, 'cached': True,
+                                        'hint': next((h[1] for h in hints_ if h[0] == txt), '')})
             ok, wav = _gt.synth(txt, ck[1], ck[2], trace=_ym._trace, tries=1, model=ck[3], hints=hints_)
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             if not ok:
@@ -20069,7 +20094,8 @@ class H(BaseHTTPRequestHandler):
             if len(_TTS_CACHE) > 40:
                 _TTS_CACHE.clear()
             _TTS_CACHE[ck] = wav
-            return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt})
+            return self._send(200, {'ok': True, 'wav': base64.b64encode(wav).decode('ascii'), 'text': txt,
+                                    'hint': next((h[1] for h in hints_ if h[0] == txt), '')})
         if self.path == '/api/yemot/speakable':
             import yemot as _ym
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', '')
