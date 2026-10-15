@@ -2150,8 +2150,14 @@ const mkKevaAmt=k=>+String(k.amount||'').replace(/[^\d.]/g,'')||0;
 function mkPaidTxt(cid){const P=MKPAY[cid];if(!P)return '⏳';if(!P.ok)return '—';
   const kv=(P.kevas||[]).filter(k=>+k.active);
   if(kv.length)return esc(mkNis(kv.reduce((t,k)=>t+mkKevaAmt(k),0)))+' <small>לחודש · הו"ק</small>';
-  const t=(P.tx||[]).find(x=>(+x.amount||0)>0);
-  return t?esc(mkNis(t.amount))+' <small>אחרון · '+esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(2,4))+'</small>':'<small>לא נמצא תשלום</small>';}
+  // מאיר: "כתוב מחיר מיוחד 100 וכתוב משלם בפועל 10 — למה?" — אין לו הוראת קבע; מה שמוצג הוא התשלום
+  // החד-פעמי האחרון (טעינה / כניסה בודדת), לא מחיר מנוי. לכן כתוב במפורש, עם סכום 30 הימים האחרונים
+  const pd=(P.tx||[]).filter(x=>(+x.amount||0)>0), t=pd[0];
+  if(!t)return '<small>לא נמצא תשלום · אין הו"ק</small>';
+  const since=new Date(Date.now()-30*864e5).toISOString().slice(0,10), m=pd.filter(x=>String(x.iso||'')>=since);
+  const d=x=>String(x.iso||'').slice(8,10)+'/'+String(x.iso||'').slice(5,7)+'/'+String(x.iso||'').slice(2,4);
+  return esc(mkNis(m.reduce((s2,x)=>s2+(+x.amount||0),0)))+' <small>ב-30 יום ('+m.length+' תשלומים) · אין הו"ק</small>'
+    +'<br><small>אחרון: '+esc(mkNis(t.amount))+' · '+esc(d(t))+' · חד-פעמי</small>';}
 // 💲 מאיר: "שאם אני לוחץ על הקוביה של מחיר שאוכל לשנות את המחיר… ושמכאן אוכל לשנות מחירים וכו'".
 // המחיר במקווה (של הקבוצה, או אישי אם יש ללקוח שדה כזה), ומה שהוא משלם בפועל — הוראת הקבע בנדרים פלוס
 async function mkPriceEdit(c,paidFirst){
