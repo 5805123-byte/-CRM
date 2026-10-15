@@ -13734,7 +13734,7 @@ async function renderCommGifts(){
       <input id="cge_note" value="${esc(r.note||'')}" placeholder="הערה (לא חובה)">
       <div class="bqacts"><button class="btn sm" data-cga="save" data-k="${esc(k)}">💾 שמור</button><button class="btn sm ghost" data-cga="cancel">ביטול</button><button class="btn sm ghost" data-cga="del" data-k="${esc(k)}">🗑 מחק</button></div></div></div>`;
     return `<div class="gfrow"><span class="gfd">${esc(rcDate(r.date))}</span>
-      <button class="gfnm" data-cgm="${r.member_id||''}" title="${r.member_id?'לפתוח את הכרטיס':'לא מקושר לחבר קהילה'}">${esc(r.name||'—')}${r.linked?'':' <small class="bqno">לא מקושר</small>'}</button>
+      <button class="gfnm" data-cgm="${r.member_id||''}" title="${r.member_id?'לפתוח את הכרטיס':'לא מקושר לחבר קהילה'}">${esc(r.name||'—')}${r.linked?'':' <small class="bqno">לא מקושר</small>'}</button>${r.linked?'':`<button class="btn sm ghost" data-cglink="${esc(k)}" title="לשייך לחבר קהילה קיים, או לפתוח חבר חדש">🔗 לשייך</button>`}
       <b class="gfa">${cdMoney(r.amount)}</b>
       <span class="gfw">${r.purpose?esc(r.purpose):'<small>—</small>'}${r.note?`<small>${esc(r.note)}</small>`:''}</span>
       <span class="gfm">${(CG_SRC.find(x=>x[0]===r.src)||['',''])[1]}${r.src==='man'&&r.method?` <small>${esc(r.method)}</small>`:''}${r.conf?` <small>אישור ${esc(r.conf)}</small>`:''}</span>
@@ -13771,6 +13771,15 @@ async function renderCommGifts(){
   g('cg_new').onclick=()=>{cgNew=!cgNew;renderCommGifts();if(cgNew&&g('cgn_who'))g('cgn_who').focus();};
   const mo=g('cg_more');if(mo)mo.onclick=()=>{cgLim+=300;renderCommGifts();};
   view.querySelectorAll('[data-cgm]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==b.dataset.cgm);if(m)openMember(m);});
+  // מאיר: "בתרומות אני רוצה אפשרות לקשר ולמזג או לשייך או להקים חבר קהילה חדש"
+  view.querySelectorAll('[data-cglink]').forEach(b=>b.onclick=async()=>{const k=b.dataset.cglink,i=k.indexOf(':'),src=k.slice(0,i),id=k.slice(i+1);
+    const r0=all.find(x=>key(x)===k);if(!r0)return;
+    const m=await cdMemberPick('🔗 של מי התרומה של "'+(r0.name||'')+'"?',String(r0.name||'').split(/\s+/)[0]||'',{allowNew:true});if(!m)return;
+    let body={src,id};
+    if(m._new){const v=await uiPrompt('חבר קהילה חדש — שם משפחה ואז שם פרטי:',r0.name||'');if(!v||!v.trim())return;const w=v.trim().split(/\s+/);body.new={last:w[0],first:w.slice(1).join(' ')};}
+    else{if(!await uiConfirm('לשייך את התרומה של "'+(r0.name||'')+'" ל'+mName(m)+'?\nגם תרומות אחרות באותו שם יעברו אליו.','🔗 כן, לשייך','ביטול'))return;body.member_id=m.id;}
+    const r=await api('POST','/api/cm/gift_link',body);
+    if(r&&r.ok){toast(m._new?'➕ נפתח חבר חדש ושויך ✓':'שויך ✓'+(r.n>1?' ('+r.n+' תרומות)':''));if(m._new)await cmLoad(true);CGF=null;cdData=null;render();}else toast((r&&r.error)||'לא שויך');});
   if(cgNew){g('cgn_x').onclick=()=>{cgNew=false;renderCommGifts();};
     g('cgn_ok').onclick=async()=>{const mid=cdPick(g('cgn_who').value),nm=g('cgn_who').value.trim();
       if(!mid&&!(cgFund&&nm)){toast('בחר חבר קהילה מהרשימה');g('cgn_who').focus();return;}
@@ -14562,12 +14571,12 @@ function cdGroupsHTML(rows){
       <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;})()).join('');}
 // מאיר: "שיהיה לי אפשרות לשייך למישהו אחר ולא רק לפי הניחוש הראשון" — חיפוש חי בכל חברי הקהילה,
 // לפי שם / טלפון; לחיצה על שורה בוחרת
-function cdMemberPick(title,q0){return new Promise(done=>{
+function cdMemberPick(title,q0,opt){opt=opt||{};return new Promise(done=>{
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:480px;width:96vw"><div class="cm">${esc(title)}</div>
     <input id="cmp_q" placeholder="🔍 שם או טלפון…" value="${esc(q0||'')}" style="width:100%;font-size:1.1rem;padding:8px;margin:6px 0">
     <div id="cmp_l" style="max-height:50vh;overflow:auto"></div>
-    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button>${opt.allowNew?'<button class="btn ghost" id="cmp_new">➕ חבר קהילה חדש</button>':''}</div></div>`;
   document.body.appendChild(o);
   const q=o.querySelector('#cmp_q'),L=o.querySelector('#cmp_l'),end=v=>{o.remove();done(v);};
   const draw=()=>{const t=q.value.trim(),d=t.replace(/\D/g,'');
@@ -14575,7 +14584,8 @@ function cdMemberPick(title,q0){return new Promise(done=>{
     L.innerHTML=hits.map(m=>`<button class="btn ghost" data-pk="${m.id}" style="display:flex;width:100%;justify-content:space-between;margin:3px 0;text-align:right"><b>${esc(mName(m))}</b><small dir="ltr">${esc(m.phone||'')}</small></button>`).join('')
       ||`<div class="hintxt">${t?'לא נמצא — נסה חלק מהשם, או שם המשפחה בלבד':'הקלד שם'}</div>`;
     L.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>end((MEMBERS||[]).find(x=>x.id==b.dataset.pk)||null));};
-  q.oninput=draw;o.querySelector('.cno').onclick=()=>end(null);draw();setTimeout(()=>{q.focus();q.select();},40);});}
+  q.oninput=draw;o.querySelector('.cno').onclick=()=>end(null);
+  const nb=o.querySelector('#cmp_new');if(nb)nb.onclick=()=>end({_new:true});draw();setTimeout(()=>{q.focus();q.select();},40);});}
 function cdReqRow(d){
   const nm=((d.ml||'')+' '+(d.mf||'')).trim()||d.name||d.phone||'—';
   return `<div class="cdrow ${d.status}"><span></span>

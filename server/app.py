@@ -3305,6 +3305,13 @@ def ensure_schema():
     except Exception as e:
         print('  hitbodedut task error:', e)
 
+    # תשלומים לנתן תתן שכבר נכנסו (רוזן ישראל לייב ₪200, 14.10) — סוגרים את ההתחייבות עכשיו
+    try:
+        if natan_reconcile(con):
+            con.commit()
+    except Exception as e:
+        print('  natan reconcile error:', e)
+
     # מאיר: "תעשה בדיקה של שיחה לנתן תתן למספר שלי" — שיחה אחת בנוסח הקבוע שלו (הקשה 1 = סליקה לנתן תתן,
     # ₪10 לבדיקה), דקה אחרי העלייה
     try:
@@ -19808,6 +19815,54 @@ class H(BaseHTTPRequestHandler):
             if not err:
                 bump_data()
             return self._send(200, {'ok': not err, 'new': n, 'error': err, 'natan': st_})
+        if self.path == '/api/cm/gift_link':
+            # מאיר: "בתרומות אני רוצה אפשרות לקשר ולמזג או לשייך או להקים חבר קהילה חדש" — תרומה "לא מקושר"
+            # (נדרים פלוס או ידנית) עוברת לכרטיס של חבר קהילה; גם תרומות והתחייבויות אחרות באותו שם
+            con = db()
+            try:
+                src, rid = str(b.get('src') or ''), str(b.get('id') or '')
+                mid = int(b.get('member_id') or 0)
+                if not mid and b.get('new'):
+                    nw = b['new']
+                    last = str(nw.get('last') or '').strip()[:60]
+                    if not last:
+                        return self._send(200, {'ok': False, 'error': 'חסר שם משפחה'})
+                    mid = con.execute("INSERT INTO members(last,first,phone,category,source,active,created,updated) VALUES(?,?,?,'קהילה','מרשימת התרומות',1,?,?)",
+                                      (last, str(nw.get('first') or '').strip()[:60], str(nw.get('phone') or '').strip()[:30], now_iso(), now_iso())).lastrowid
+                if not mid or not con.execute("SELECT 1 FROM members WHERE id=?", (mid,)).fetchone():
+                    return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה'})
+                n = 0
+                if src == 'man':
+                    d = con.execute("SELECT name, COALESCE(fund,'') f FROM cm_don WHERE id=?", (int(rid or 0),)).fetchone()
+                    if not d:
+                        return self._send(200, {'ok': False, 'error': 'התרומה לא נמצאה'})
+                    nm = (d['name'] or '').strip()
+                    n += con.execute("UPDATE cm_don SET member_id=?, name='' WHERE member_id IS NULL AND (id=? OR (TRIM(name)=? AND ?<>'' AND COALESCE(fund,'')=?))",
+                                     (mid, int(rid), nm, nm, d['f'])).rowcount
+                    if nm:
+                        con.execute("UPDATE cm_debt SET member_id=?, name='', once=0, updated=? WHERE member_id IS NULL AND TRIM(name)=? AND COALESCE(fund,'')=?",
+                                    (mid, now_iso(), nm, d['f']))
+                else:
+                    t = con.execute("SELECT id,name,phone FROM nd_tx WHERE id=?", (rid,)).fetchone()
+                    if not t:
+                        return self._send(200, {'ok': False, 'error': 'העסקה לא נמצאה'})
+                    nm = (t['name'] or '').strip()
+                    n += con.execute("UPDATE nd_tx SET member_id=? WHERE member_id IS NULL AND (id=? OR (TRIM(name)=? AND ?<>''))", (mid, rid, nm, nm)).rowcount
+                    m0 = con.execute("SELECT last,first,phone,notes FROM members WHERE id=?", (mid,)).fetchone()
+                    # השם שבו הוא רשום בנדרים פלוס — בהערות, כדי שהתשלומים הבאים יתקשרו אליו לבד
+                    full = ((m0['last'] or '') + ' ' + (m0['first'] or '')).strip()
+                    if nm and nm not in (full, ((m0['first'] or '') + ' ' + (m0['last'] or '')).strip()) and ('נדרים פלוס: ' + nm) not in (m0['notes'] or ''):
+                        con.execute("UPDATE members SET notes=TRIM(COALESCE(notes,'')||char(10)||?), updated=? WHERE id=?", ('נדרים פלוס: ' + nm, now_iso(), mid))
+                    if (t['phone'] or '').strip() and not (m0['phone'] or '').strip():
+                        con.execute("UPDATE members SET phone=? WHERE id=?", (t['phone'], mid))
+                try:
+                    natan_reconcile(con)          # תרומה לנתן תתן — סוגרת את ההתחייבות שלו
+                except Exception as e:
+                    print('  natan reconcile error:', e)
+                con.commit()
+                return self._send(200, {'ok': True, 'member_id': mid, 'n': n})
+            finally:
+                con.close()
         if self.path == '/api/cm/natan_link':
             v = str(b.get('link') or '').strip()
             if v and not (re.match(r'^https://[^\s]+$', v) and len(v) < 600):
@@ -24716,7 +24771,35 @@ def natan_mosad(con):
         return ''
 
 
-ND_NATAN_RX = re.compile(r'נתן\s*תתן')
+# מאיר: "הוא תרם בנדרים פלוס בקופת נתן תתן את ההתחייבות שלו — למה זה לא יורד אוטומטית" — בקופה של נתן תתן
+# בחשבון של הכולל כתוב "תרומה למשפחות העניות לצרכי יו"ט סוכות", בלי המילים נתן תתן
+ND_NATAN_RX = re.compile(r'נתן\s*תתן|משפחות\s+ה?עניות')
+
+
+def natan_tx_pay(con, mid, amount, iso, conf):
+    """תשלום לנתן תתן (החשבון שלה, או הקופה שלה בחשבון של הכולל) סוגר את ההתחייבות של החבר בנתן תתן.
+    פעם אחת לכל עסקה (לפי מספר האישור)."""
+    if not mid or (amount or 0) <= 0:
+        return 0
+    note = 'שולם בנדרים פלוס %s (אישור %s)' % ((iso or '')[:10], conf or '')
+    if conf and con.execute("SELECT 1 FROM cm_debt WHERE member_id=? AND COALESCE(fund,'')='natan' AND note LIKE ?",
+                            (mid, '%(אישור ' + str(conf) + ')%')).fetchone():
+        return 0
+    return cm_debt_pay(con, mid, amount, note, fund='natan')
+
+
+def natan_reconcile(con):
+    """תשלומים חד-פעמיים לנתן תתן מאז תחילת המגבית שעוד לא סגרו את ההתחייבות — סוגרים עכשיו."""
+    nm = natan_mosad(con)
+    n = 0
+    for t in con.execute("SELECT id,iso,amount,conf,member_id,mosad,groupe,comments,for_local,keva FROM nd_tx WHERE member_id IS NOT NULL "
+                         "AND COALESCE(amount,0)>0 AND COALESCE(iso,'')>='2026-09-15' AND (COALESCE(keva,'')='' OR keva LIKE '-%')").fetchall():
+        mo = re.sub(r'\D', '', t['mosad'] or '')
+        txt = ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))
+        if (nm and mo == nm) or (not mo and ND_NATAN_RX.search(txt)):
+            if natan_tx_pay(con, t['member_id'], t['amount'], t['iso'], t['conf']):
+                n += 1
+    return n
 
 
 def natan_status(con):
@@ -25295,6 +25378,11 @@ def nd_history_sync(con):
             con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, top))
         con.commit()
     try:
+        if natan_reconcile(con):
+            con.commit()
+    except Exception as e:
+        print('  natan reconcile error:', e)
+    try:
         nd_donor_seed(con)
         if nd_donor_import(con):
             con.commit()
@@ -25360,6 +25448,8 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         if nat_ivr:
             con.execute("UPDATE nd_tx SET for_local=? WHERE id=? AND COALESCE(for_local,'')=''", (IVR_NATAN_NOTE, tid))
             fund = 'natan'
+        elif not mosad and ND_NATAN_RX.search(' '.join(str(t.get(k) or '') for k in ('groupe', 'comments'))):
+            fund = 'natan'                # הקופה של נתן תתן בחשבון של הכולל
         msg = ym_mark_paid(con, ph, a, 'נדרים פלוס', iso or None, before=iso or None, fund=fund) if ph else None
         if msg:
             con.execute("UPDATE nd_tx SET msg_id=? WHERE id=?", (msg, tid))
@@ -25367,7 +25457,9 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         if mid:
             note_ = 'שולם בנדרים פלוס %s (אישור %s)' % (iso[:10], t['conf'])
             rm = con.execute("SELECT req_off FROM ym_msg WHERE id=?", (msg,)).fetchone() if msg else None
-            if nat_ivr or (rm and (rm['req_off'] or '') == 'debt'):
+            if fund == 'natan':
+                natan_tx_pay(con, mid, a, iso, t['conf'])       # כל תשלום לנתן תתן — על ההתחייבות שלו בנתן תתן
+            elif nat_ivr or (rm and (rm['req_off'] or '') == 'debt'):
                 cm_debt_pay(con, mid, a, note_, fund=fund)       # שילם על התזכורת שנשלחה לו על החוב
             else:
                 cm_debt_pay_explicit(con, mid, a, note_, ' '.join(str(t.get(k) or '') for k in ('groupe', 'comments')), fund=fund)
