@@ -305,6 +305,19 @@ def price_fields(cid):
             and (v is None or isinstance(v, (int, float))) and not isinstance(v, bool)}
 
 
+# ---------- חידוש אוטומטי ----------
+# מאיר: "איך אני מבטל הוראת קבע של לקוח מקווה שרוצה לבטל — שלא יהיה חידוש מנוי אוטומטי. יש את זה באתר של
+# המקווה". השם המדויק של השדה אצלם לא ידוע מראש — מחפשים שדה כן/לא של חידוש / חיוב אוטומטי אצל הלקוח
+_RENEW_RE = re.compile(r'renew|recurr|autoCharge|autoPay|auto_?pay|autoRenew|standing|isAuto|automatic|subscriptionAuto|charge', re.I)
+
+
+def renew_fields(cid):
+    c = client(cid, max_age=30)
+    hits = {k: v for k, v in c.items() if _RENEW_RE.search(k) and isinstance(v, bool)}
+    bools = {k: v for k, v in c.items() if isinstance(v, bool)}
+    return hits, bools
+
+
 def raw_group(gid):
     for g in _items(get('Group')):
         if str(g.get('id')) == str(gid):

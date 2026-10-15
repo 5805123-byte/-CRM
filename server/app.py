@@ -18285,6 +18285,17 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
+        if self.path.split('?')[0] == '/api/mikveh/renew_info':
+            # 🔁 חידוש מנוי אוטומטי במקווה + הוראות הקבע שלו בקופת המקווה בנדרים פלוס
+            import mikveh as _mk
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            try:
+                hits, bools = _mk.renew_fields(cid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            return self._send(200, {'ok': True, 'fields': hits, 'bools': sorted(bools.keys())})
         if self.path.split('?')[0] == '/api/mikveh/price_info':
             # 💲 מה אפשר לשנות: מחיר הקבוצה (וכמה לקוחות בה), ושדות מחיר אישיים של הלקוח במקווה אם יש
             import mikveh as _mk
@@ -20437,6 +20448,32 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'job': jid})
+        if self.path == '/api/mikveh/renew':
+            # 🔁 ביטול / החזרה של חידוש אוטומטי במקווה — רק שדה כן/לא שנמצא כשדה חידוש
+            import mikveh as _mk
+            cid, fld = str(b.get('id') or ''), str(b.get('field') or '')
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            try:
+                hits, _bools = _mk.renew_fields(cid)
+                if fld not in hits:
+                    return self._send(200, {'ok': False, 'error': 'השדה הזה אינו שדה חידוש אוטומטי'})
+                val = bool(b.get('value'))
+                _mk.update_client(cid, {fld: val})
+                after, _b2 = _mk.renew_fields(cid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'renew', ('▶ הוחזר' if val else '🛑 בוטל') + ' חידוש אוטומטי במקווה (%s)' % fld))
+                con.commit()
+            except Exception:
+                pass
+            finally:
+                con.close()
+            return self._send(200, {'ok': after.get(fld) == val, 'fields': after,
+                                    'error': '' if after.get(fld) == val else 'המקווה לא שמר את השינוי'})
         if self.path == '/api/mikveh/price':
             # 💲 שינוי מחיר במקווה עצמו — של הלקוח (שדה מחיר אישי) או של כל הקבוצה. אחרי השינוי בודקים במקווה שזה נקלט
             import mikveh as _mk
