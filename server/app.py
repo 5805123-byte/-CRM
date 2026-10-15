@@ -18460,7 +18460,8 @@ class H(BaseHTTPRequestHandler):
                     tx_ = ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
                     # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
-                    if re.search(r'מקו?וה|מזגנ|טעינ', tx_):
+                    # מאיר: "כל מי שכתוב אצלו תרומות ערב שבת — שלא יהיה אצלנו כלל"
+                    if re.search(r'מקו?וה|מזגנ|טעינ|ערב\s*שבת', tx_):
                         continue
                     if not (t['mosad'] or '') and bool(ND_NATAN_RX.search(tx_)) != bool(gf):
                         continue
