@@ -10381,6 +10381,11 @@ def _cert_lines(text):
         ws = raw.split()
         if not ws:
             out.append(('', 'names')); continue
+        # "…, ולע\"נ יחיאל משה ב\"ר פנחס זאב ז\"ל" / "ולזכות יהושע בן מינדל" — פתיח קטן, שם גדול
+        if len(ws) > 1 and _CERT_VLEAD.match(ws[0]):
+            out.append((ws[0], 'lead'))
+            out.extend(_cert_body([], ws[1:]))
+            continue
         ded = -1
         # שורה שמתחילה בפתיח ("לעילוי נשמת…") היא כולה הקדשה — אין בה שם תורם,
         # ואסור שהמילה הראשונה תיחשב לשם התורם רק כי אחריה בא עוד פתיח
@@ -10513,6 +10518,12 @@ _CERT_BEN = re.compile(r'^(ו?ב[\u05DFת]|בר|ב["\'\u05F4\u05F3]ר)$')
 
 
 _CERT_DASH = ('—', '–', '-', '־', '―')
+# תואר שבסוף שם (פטירה / כבוד) — אחריו השם נגמר
+_CERT_VLEAD = re.compile(r'^ו(לע["\'״׳]?נ|לזכות|לזכר|לעילוי)$')
+_CERT_HON = re.compile(r'^(ז["\'״׳]ל|ע["\'״׳]ה|זצ["\'״׳]ל|זצוק["\'״׳]?ל|זיע["\'״׳]א|הי["\'״׳]ד|נ["\'״׳]י|שליט["\'״׳]א|'
+                       r'שיחי["\'״׳]?|תחי["\'״׳]?|ע["\'״׳]ש|יבדל["\'״׳]א)$')
+# מילת חיבור שפותחת שם נוסף בזנב ("ולע\"נ …", "וזוג' …") — הפתיח קטן, והשם שאחריו גדול
+_CERT_JOIN = re.compile(r'^(ולע["\'״׳]?נ|ולזכות|ולזכר|וזוג["\'״׳]?|וזוגתו|ובעלה|ואשתו|ורעייתו|ורעיתו)$')
 # מילת בקשה שבאה אחרי שם ההורה ("בן ראצא טובה פרנסה ברווח", "בת חנה לילך
 # בדרך ישראל סבא") — בלי ל' בתחילתה. נבדקת רק אחרי שם ההורה, כדי ש"שלום"
 # או "חיים" בתוך שם לא ייחשבו בקשה.
@@ -10543,7 +10554,10 @@ def _req_at(ws, start=0):
     # גם כששם האם הוא שתי מילים; הבקשה מתחילה במקף.
     for i in range(start + 1, len(ws)):
         if ws[i] in _CERT_DASH:
-            return i
+            # "בן הענטשא דינה (חתן של מנדלסון) – …" — מה שבסוגריים אחרי השם כבר קטן
+            rb = next((k for k in range(start, i) if _CERT_BEN.match(ws[k])), -1)
+            pp = next((k for k in range(rb + 2, i) if ws[k].startswith('(')), -1) if rb >= 0 else -1
+            return pp if pp > 0 else i
     for i in range(start, len(ws)):
         if _CERT_REQ.match(ws[i]):
             return i
@@ -10561,6 +10575,13 @@ def _req_at(ws, start=0):
         i += 1
         while i < len(ws) and _CERT_SMALL.match(ws[i]):
             i += 1
+        # מאיר: "למה השמות לא אותו גודל" — "בת ר' צבי הירש ע\"ה", "ב\"ר זלמן לייב ע\"ה (יארצייט)":
+        # כשאחרי שם ההורה באות עד 3 מילים ומיד אחריהן תואר פטירה / כבוד (ע\"ה, ז\"ל, זצ\"ל, שליט\"א) —
+        # הן המשך שם ההורה, והשם נגמר בתואר. מה שבסוגריים אחריו ("(יארצייט)") — קטן
+        t_ = ws[i:]
+        p_ = next((k for k, w in enumerate(t_) if w.startswith('(')), len(t_))
+        if 0 < p_ <= 4 and _CERT_HON.match(t_[p_ - 1]) and not any(_CERT_BEN.match(w) for w in t_[:p_]):
+            return i + p_ if p_ < len(t_) else -1
         # מילת בקשה מיד אחרי שם ההורה (או אחרי המילה השנייה של שם ההורה)
         for k in range(i, min(len(ws), i + 2)):
             if _CERT_REQ2.match(ws[k]) and not _CERT_BEN.match(ws[k]):
@@ -10571,10 +10592,12 @@ def _req_at(ws, start=0):
         # זנב שיש בו "בן"/"בת" הוא שם נוסף, ונשאר גדול. מילה בודדת אחרי שם
         # ההורה ("בן ראצא טובה") היא חלק משם ההורה, לא בקשה — בקשה בלי מקף
         # ובלי מילת ברכה מתחילה רק כשיש בה שתי מילים ומעלה.
-        if i < len(ws) and not fam and len(ws) - i >= 2 and not any(_CERT_BEN.match(w) for w in ws[i:]):
+        # מאיר: "למה השמות לא אותו גודל" — "בת ר' צבי הירש ע\"ה": תארים (ע\"ה, ז\"ל…) לא נספרים כמילות בקשה
+        if i < len(ws) and not fam and sum(1 for w in ws[i:] if not _CERT_SMALL.match(w)) >= 2 \
+                and not any(_CERT_BEN.match(w) for w in ws[i:]):
             return i
     if len(ws) - start > 4 and ws[start][:1] in ('\u05DC', '\u05D5') \
-            and _fam_at(ws[start:]) < 0:
+            and _fam_at(ws[start:]) < 0 and not (ws[start][:1] == '\u05D5' and any(_CERT_BEN.match(w) for w in ws[start:])):
         return start
     return -1
 
@@ -10627,6 +10650,18 @@ def _cert_body(lead, ws):
         # בת אילנה לשמחה..."). חותכים אותו לפי הפיסוק, וכל קטע שהוא שם
         # חוזר לפיצול המלא. בלי זה השם השני נבלע בתוך הבקשה.
         segs = _cert_tail(tail)
+        # "ולע\"נ יחיאל משה ב\"ר פנחס זאב ז\"ל", "וזוג' הילה יפה בת ציונה" — שם נוסף בזנב
+        if len(segs) == 1 and segs[0][1] and tail[0].startswith('('):
+            # "(י\"ח שבט) ומינדל ב\"ר יהושע ע\"ה (כ\"ג שבט)" — הסוגריים קטנים, השם שאחריהם גדול
+            e = next((k for k, w in enumerate(tail) if w.endswith(')')), -1)
+            if 0 <= e < len(tail) - 2:
+                out.append((' '.join(tail[:e + 1]), 'req'))
+                emit(tail[e + 1:])
+                return
+        if len(segs) == 1 and segs[0][1] and len(tail) > 2 and _CERT_JOIN.match(tail[0]):
+            out.append((tail[0], 'lead' if tail[0].startswith('ול') else 'ttl'))
+            emit(tail[1:])
+            return
         if len(segs) == 1 and not segs[0][1]:
             out.append((' '.join(tail), 'req'))
             return

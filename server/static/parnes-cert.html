@@ -136,6 +136,9 @@ const KIND = q.get('kind') || 'parnes';
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 // מאיר: "שיבדל"א" — כל ראשי תיבות עם גרשיים (ז"ל, שיבדל"א, זי"ע, נ"י) הם תואר, לא שם
 const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|[ושה]?יב[א-ת]{1,5}["'״׳][אט]|[א-ת]{1,6}["״][א-ת]{1,3}|ה["'״׳]ה|ר|רב|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
+// תואר שבסוף שם (פטירה / כבוד) — אחריו השם נגמר. מילת חיבור שפותחת שם נוסף בזנב ("ולע"נ", "וזוג'")
+const HONW=/^(ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|זיע["'״׳]א|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|תחי["'״׳]?|ע["'״׳]ש|יבדל["'״׳]א)$/;
+const JOINW=/^(ולע["'״׳]?נ|ולזכות|ולזכר|וזוג["'״׳]?|וזוגתו|ובעלה|ואשתו|ורעייתו|ורעיתו)$/;
 // מהמילה שבה מתחילה הבקשה ועד סוף השורה — אותיות קטנות יותר, כדי שהשם
 // ושם האם יקבלו את הדגש החזק ביותר
 // מאיר: "למה השם השני של האמא ליבא באותיות קטנות יותר?" — "בת מאשא ליבא שהחופה…": המילה
@@ -268,12 +271,16 @@ function bodyRows(ws, lead){
     let r=-1;
     // מקף בין השם לבקשה — השם הוא כל מה שלפניו (גם שם אם של שתי מילים)
     for(let i=1;i<rest.length;i++) if(/^[—–\-־―]$/.test(rest[i])){ r=i; break; }
+    // "בן הענטשא דינה (חתן של מנדלסון) – …" — מה שבסוגריים אחרי השם כבר קטן (כמו בשרת)
+    let dashPP=false;
+    if(r>0){ const rb=rest.findIndex(w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w));
+      if(rb>=0){ for(let k=rb+2;k<r;k++) if(rest[k].startsWith('(')){ r=k; dashPP=true; break; } } }
     if(r<0) for(let i=0;i<rest.length;i++) if(REQSTART.test(rest[i])){ r=i; break; }
     // מאיר: "המילים נא לכוון בברכות אמור להיות יותר קטן מהשם, רק השמות בגדול" — "משה בן נזהא ז"ל
     // נא לכוון בברכות לעלוי נשמתו": מילת הבקשה ("לעלוי") באה אחרי עוד מילים, והן נדבקו לשורת
     // השם. השם נגמר אחרי שם ההורה (ותארים צמודים); מה שבינו לבין הבקשה — קטן. מילה בודדת שם
     // נשארת חלק מהשם (שם שני של ההורה: "בן ראצא טובה לרפואה"), אלא אם היא "נא"/"אנא"
-    if(r>0){
+    if(r>0 && !dashPP){
       const isRel0=w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w);
       const rel0=rest.findIndex(isRel0);
       if(rel0>=0 && rel0+1<r){
@@ -281,7 +288,8 @@ function bodyRows(ws, lead){
         while(pe<rest.length-1 && SMALLWORD.test(rest[pe])) pe++;
         pe++;
         while(pe<rest.length && SMALLWORD.test(rest[pe])) pe++;
-        if(pe<r && !rest.slice(pe,r).some(isRel0) && (r-pe>=2 || /^(נא|אנא)$/.test(rest[pe]))) r=pe;
+        // "וכל משפחתו" — שורת שם שנייה, לא בקשה (כמו בשרת)
+        if(pe<r && !(FAM1.test(rest[pe])&&FAM2.test(rest[pe+1]||'')) && !rest.slice(pe,r).some(isRel0) && (r-pe>=2 || /^(נא|אנא)$/.test(rest[pe]))) r=pe;
       }
     }
     // מאיר: "השמות שמתפללים עליהם שיהיו הכי גדולים, הבקשות יותר קטנות".
@@ -291,6 +299,7 @@ function bodyRows(ws, lead){
     // השם שמתפללים עליו נגמר אחרי שם ההורה שבא אחרי "בן"/"בת" ואחרי
     // תארים צמודים (ז"ל, תחי'), וכל מה שאחריו קטן ממנו.
     // אם בזנב עצמו יש "בן"/"בת" — זה שם נוסף, והוא נשאר גדול.
+    let hon=false;
     if(r<0){
       const isRel=w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w);
       const rel=rest.findIndex(isRel);
@@ -301,8 +310,13 @@ function bodyRows(ws, lead){
         while(i<rest.length-1 && SMALLWORD.test(rest[i])) i++;
         i++;
         while(i<rest.length && SMALLWORD.test(rest[i])) i++;
+        // מאיר: "למה השמות לא אותו גודל" — "בת ר' צבי הירש ע"ה", "ב"ר זלמן לייב ע"ה (יארצייט)":
+        // עד 3 מילים אחרי שם ההורה ומיד אחריהן תואר פטירה / כבוד — המשך השם; מה שבסוגריים — קטן
+        // (אותו כלל בדיוק ב-_req_at בשרת)
+        { const t=rest.slice(i); let p=t.findIndex(w=>w.startsWith('(')); if(p<0)p=t.length;
+          if(p>0 && p<=4 && HONW.test(t[p-1]) && !t.slice(0,p).some(isRel)){ hon=true; if(p<t.length) r=i+p; } }
         // מילת בקשה מיד אחרי שם ההורה (או אחרי המילה השנייה שלו) — "פרנסה ברווח", "לילך בדרך"
-        for(let k=i;k<Math.min(rest.length,i+2);k++) if(REQ2.test(rest[k])&&!isRel(rest[k])){
+        if(!hon) for(let k=i;k<Math.min(rest.length,i+2);k++) if(REQ2.test(rest[k])&&!isRel(rest[k])){
           // שם שמתחיל ב-ל ("ליבא", "לאה", "ליפא") מיד אחרי שם ההורה, והמילה שאחריו היא
           // בקשה ברורה ("שהחופה", "לרפואה") — זה שם שני של ההורה, לא בקשה
           const w=rest[k], nx=rest[k+1];
@@ -311,12 +325,14 @@ function bodyRows(ws, lead){
         // "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
         const fam = i+1<rest.length && FAM1.test(rest[i]) && FAM2.test(rest[i+1]);
         // מילה בודדת אחרי שם ההורה ("בן ראצא טובה") היא חלק מהשם, לא בקשה
-        if(r<0 && i<rest.length && !fam && rest.length-i>=2 && !rest.slice(i).some(isRel)) r=i;
+        // מאיר: "למה השמות לא אותו גודל" — "בת ר' צבי הירש ע"ה": "הירש" הוא המשך שם האב, ו-ע"ה תואר.
+        // תארים (ע"ה, ז"ל, שליט"א…) לא נספרים כמילים של בקשה
+        if(!hon && r<0 && i<rest.length && !fam && rest.slice(i).filter(w=>!SMALLWORD.test(w)).length>=2 && !rest.slice(i).some(isRel)) r=i;
       }
     }
     // שורה שכולה ברכה — פותחת ב-ו/ל וארוכה. תגית משפחה קצרה
     // ("וכל משפחתו") אינה נכנסת לכאן: היא נשארת שורת שם משלה.
-    if(r<0 && rest.length>4 && /^[לו]/.test(rest[0]) && famAt(rest)<0) r=0;
+    if(!hon && r<0 && rest.length>4 && /^[לו]/.test(rest[0]) && famAt(rest)<0 && !(/^ו/.test(rest[0]) && rest.some(w=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test(w)))) r=0;
     if(r===0){ rows.push({ws:rest,role:'req'}); return; }   // שורה שכולה בקשה
     const head=(r>0)?rest.slice(0,r):rest, tail=(r>0)?rest.slice(r):[];
     const f=famAt(head);
@@ -330,6 +346,13 @@ function bodyRows(ws, lead){
   // המלא — אחרת השם השני נבלע בתוך הבקשה ויוצא בגופן של בקשה.
   const emitTail=tail=>{
     const segs=tailRows(tail);
+    // "ולע"נ יחיאל משה ב"ר פנחס זאב ז"ל", "וזוג' הילה יפה בת ציונה" — שם נוסף בזנב (כמו בשרת)
+    if(segs.length===1 && segs[0].rel && tail[0].startsWith('(')){
+      // "(י"ח שבט) ומינדל ב"ר יהושע ע"ה (כ"ג שבט)" — הסוגריים קטנים, השם שאחריהם גדול
+      const e=tail.findIndex(w=>w.endsWith(')'));
+      if(e>=0 && e<tail.length-2){ rows.push({ws:tail.slice(0,e+1),role:'req'}); emit(tail.slice(e+1)); return; } }
+    if(segs.length===1 && segs[0].rel && tail.length>2 && JOINW.test(tail[0])){
+      rows.push({ws:[tail[0]],role:/^ול/.test(tail[0])?'lead':'ttl'}); emit(tail.slice(1)); return; }
     if(segs.length===1 && !segs[0].rel){ rows.push({ws:tail,role:'req'}); return; }
     segs.forEach(sg=>{
       if(sg.rel && sg.ws.length<tail.length) emit(sg.ws);
@@ -424,6 +447,8 @@ function bodyPart(ws, lead){ return rowsHTML(joinSingles(bodyRows(ws, lead))); }
 function formatName(line, donorLine, afterName){
   const t=(line||'').trim(); if(!t) return '';
   const ws=t.split(/\s+/);
+  // "…, ולע"נ יחיאל משה ב"ר פנחס זאב ז"ל" / "ולזכות יהושע בן מינדל" — פתיח קטן, שם גדול (כמו בשרת)
+  if(ws.length>1 && /^ו(לע["'״׳]?נ|לזכות|לזכר|לעילוי)$/.test(ws[0])) return rowsHTML([{ws:[ws[0]],role:'lead'}])+bodyPart(ws.slice(1));
   let ded=-1;
   // שורה שמתחילה בפתיח היא כולה הקדשה — אין בה שם תורם, ואסור שהמילה
   // הראשונה תיחשב לשם התורם רק כי אחריה בא עוד פתיח ("לעילוי" ואז "נשמת")
