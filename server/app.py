@@ -18012,6 +18012,10 @@ class H(BaseHTTPRequestHandler):
                 for v in con.execute("SELECT id,phone,at,heard,transcript,member_id FROM ym_vm WHERE done<2 AND at>=? ORDER BY at DESC", (since,)).fetchall():
                     ph = _ymv.norm_phone(v['phone'] or '')
                     mids = {v['member_id']} if v['member_id'] else (pidx.get(ph) or set())
+                    # ההודעה נקשרת לכרטיס לתמיד — כדי שתישאר אצלו גם אחרי שהחוב שולם ויצא מהרשימה
+                    if not v['member_id'] and len(mids) == 1:
+                        try: con.execute("UPDATE ym_vm SET member_id=? WHERE id=? AND member_id IS NULL", (next(iter(mids)), v['id']))
+                        except Exception: pass
                     x = {'id': v['id'], 'at': v['at'], 'heard': v['heard'], 'transcript': v['transcript'] or ''}
                     for k in (['m%d' % i for i in mids if i] + (['p' + ph] if ph else [])):
                         if len(vms.setdefault(k, [])) < 5:
@@ -21929,6 +21933,13 @@ class H(BaseHTTPRequestHandler):
                 if not mid or not ids:
                     return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה'})
                 ph = ' / '.join(x['phone'] for x in con.execute("SELECT DISTINCT phone FROM cm_debt WHERE id IN (%s) AND COALESCE(phone,'')<>''" % ','.join('?' * len(ids)), ids))
+                # הודעות קוליות שהשאיר מהטלפון שעל החוב — עוברות לכרטיס שלו (גם אם בכרטיס יש טלפון אחר)
+                try:
+                    import yemot as _ymk
+                    for p_ in _phones_of(ph):
+                        con.execute("UPDATE ym_vm SET member_id=? WHERE member_id IS NULL AND phone=?", (mid, _ymk.norm_phone(p_) or p_))
+                except Exception as e:
+                    print('  vm link error:', e)
                 # תרומה שנרשמה בשם בלבד (מי שלא היה בקהילה) — עוברת לכרטיס שלו יחד עם החוב
                 for x in con.execute("SELECT DISTINCT name, COALESCE(fund,'') f FROM cm_debt WHERE id IN (%s) AND member_id IS NULL AND COALESCE(name,'')<>''" % ','.join('?' * len(ids)), ids).fetchall():
                     con.execute("UPDATE cm_don SET member_id=?, name='' WHERE member_id IS NULL AND name=? AND COALESCE(fund,'')=?", (mid, x['name'], x['f']))
@@ -24717,6 +24728,11 @@ def member_vms(con, mid, limit=20):
     import yemot as _ym
     m = con.execute("SELECT phone FROM members WHERE id=?", (mid,)).fetchone()
     phs = set(_phones_of((m['phone'] if m else '') or ''))
+    # מאיר: "אם מישהו השאיר הודעה קולית ואחר כך כבר שילם — שההודעה שלו תישאר בכרטיס שלו": גם הטלפון
+    # שנרשם על החובות שלו (גם אלה ששולמו) — לא רק הטלפון שבכרטיס
+    for r in con.execute("SELECT DISTINCT phone FROM cm_debt WHERE member_id=? AND COALESCE(phone,'')<>''", (mid,)):
+        phs |= set(_phones_of(r['phone'] or ''))
+    phs = {_ym.norm_phone(p) or p for p in phs}
     out = []
     for v in con.execute("SELECT id,phone,at,heard,done,transcript,member_id FROM ym_vm WHERE done<2 AND (member_id=? OR member_id IS NULL) "
                          "ORDER BY at DESC, id DESC LIMIT 400", (mid,)).fetchall():
