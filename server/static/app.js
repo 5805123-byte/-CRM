@@ -9819,6 +9819,7 @@ function renderCalls(){
   const ci=view.querySelector('#callimp2'); if(ci)ci.onchange=()=>uploadCallLog(ci,'callout2','callimpbtn2').then(r=>{
     if(tab!=='mails'||mailSub!=='calls')return; if(r&&r.ok){renderCalls(); toast(`נקראו ${r.calls} שיחות מ-30 שניות · ${(r.matched||[]).length} עם תורמים · ${r.added} חדשות נכנסו`);}});
 }
+let MISS_ND=null;   // הו"ק שחזרו בנדרים פלוס (חובות הקהילה ונתן תתן)
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
   const missed=q1.filter(d=>gaps(d.months,d).length>0).sort((a,b)=>gaps(b.months,b).length-gaps(a.months,a).length);
@@ -9832,7 +9833,15 @@ function renderMissed(){
   q1.forEach(d=>declinedGroups(d).forEach(r=>dec.push({d,r})));
   dec.sort((a,b)=>String(b.r.iso).localeCompare(String(a.r.iso)));
   const fD=n=>curSym()+Math.round(n).toLocaleString('en-US');
+  // מאיר: "יש כמה הוראות קבע שחזרו היום בנדרים פלוס, ואני לא רואה אותן בחיובים שלא עברו" — גם הן כאן
+  if((MISS_ND===null||Date.now()-(MISS_ND._t||0)>60000)&&ROLE==='admin'&&!(MISS_ND&&MISS_ND._busy)){const keep=MISS_ND||[];MISS_ND=keep;MISS_ND._busy=1;MISS_ND._t=Date.now();api('GET','/api/cm/debts').then(r=>{const L=((r&&r.rows)||[]).filter(d=>d.kind==='hok'&&d.status==='open');L._t=Date.now();MISS_ND=L;if(tab==='missed')renderMissed();}).catch(()=>{if(MISS_ND)MISS_ND._busy=0;});}
+  const ndh=(MISS_ND||[]).sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
   view.innerHTML=`
+    ${ndh.length?`<div class="misshead">🔴 הוראות קבע בנדרים פלוס שחזרו (${ndh.length}) — הקהילה${ndh.some(d=>d.fund==='natan')?' ונתן תתן':''}</div>
+    <div class="submuted">כל הוראה שחזרה בנדרים פלוס — גם של מי שעוד לא משויך לחבר קהילה (מסומן "לא שויך"; שם אפשר לשייך). לחיצה — לחובות.</div>
+    <div class="list">${ndh.map(d=>`<div class="rowc"><div class="rowmain ndmiss" data-fund="${esc(d.fund||'')}">
+      <div class="nm">${esc(((d.ml||'')+' '+(d.mf||'')).trim()||d.name||'—')}${d.member_id?'':' <small style="color:var(--no)">לא שויך</small>'}${d.fund==='natan'?' <small>🎁 נתן תתן</small>':''}</div>
+      <div class="miss">${esc(String(d.created||'').slice(0,10))} · <b style="color:var(--no)">₪${Math.round((+d.amount||0)-(+d.paid||0)).toLocaleString('en-US')}</b> · ${esc(String(d.title||'').replace(/^הוראת קבע שחזרה\s*·?\s*/,'')||'הו"ק')}${d.note?' <small>'+esc(String(d.note).slice(0,60))+'</small>':''}</div></div></div>`).join('')}</div>`:''}
     <div class="misshead">🔴 חיובי אשראי שחזרו ולא נגבו מאז (${dec.length})</div>
     <div class="submuted">רק חיובים שנדחו בפועל. התחייבות שעוד לא הגיע זמנה, או חודש
       שהקובץ שלו עדיין לא נטען — אינם "לא עבר", והם נמצאים במסך 💰 חובות.</div>
@@ -9847,7 +9856,8 @@ function renderMissed(){
       או מי ששילם שלושה חודשים רצופים. מזדמן שתרם פעם אחת לא נספר כמפספס.<br>
       לחץ על חודש כדי לסמן שנגבה · "הסר שורה" מסמן שטופל</div>
     <div class="list">${missed.map(d=>{const g=gaps(d.months,d);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months,d)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
-  view.querySelectorAll('.rowmain').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  view.querySelectorAll('.rowmain:not(.ndmiss)').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  view.querySelectorAll('.ndmiss').forEach(r=>r.onclick=()=>{tab='comm';cmSub='debts';cdFund=r.dataset.fund||'';cdKind=cdFund?'':'hok';cdData=null;render();window.scrollTo(0,0);});
   // "✓ סודר" על חיוב שחזר — מסתיר אותו מהרשימה (הכסף נכנס בדרך אחרת)
   view.querySelectorAll('.decdrop').forEach(b=>b.onclick=async e=>{e.stopPropagation();
     const x=dec[+b.dataset.ix]; if(!x)return;

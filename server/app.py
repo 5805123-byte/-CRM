@@ -3305,6 +3305,13 @@ def ensure_schema():
     except Exception as e:
         print('  hitbodedut task error:', e)
 
+    # הוראות קבע שחזרו בנדרים פלוס — גם של מי שלא מקושר לחבר קהילה — נפתחות כחוב כבר עכשיו (לא רק בסנכרון הבא)
+    try:
+        if cm_debts_from_keva(con)[0]:
+            con.commit()
+    except Exception as e:
+        print('  keva debts error:', e)
+
     # תשלומים לנתן תתן שכבר נכנסו (רוזן ישראל לייב ₪200, 14.10) — סוגרים את ההתחייבות עכשיו
     try:
         if natan_reconcile(con):
@@ -21985,6 +21992,10 @@ class H(BaseHTTPRequestHandler):
                 for x in con.execute("SELECT DISTINCT name, COALESCE(fund,'') f FROM cm_debt WHERE id IN (%s) AND member_id IS NULL AND COALESCE(name,'')<>''" % ','.join('?' * len(ids)), ids).fetchall():
                     con.execute("UPDATE cm_don SET member_id=?, name='' WHERE member_id IS NULL AND name=? AND COALESCE(fund,'')=?", (mid, x['name'], x['f']))
                 con.execute("UPDATE cm_debt SET member_id=?, name='', phone='', once=0, updated=? WHERE id IN (%s)" % ','.join('?' * len(ids)), [mid, now_iso()] + ids)
+                # הו"ק שחזרה ששויכה — גם ההוראה עצמה נקשרת לחבר (התשלומים והחזרות הבאות שלה ייכנסו אליו לבד)
+                for x in con.execute("SELECT DISTINCT ref FROM cm_debt WHERE kind='hok' AND COALESCE(ref,'')<>'' AND id IN (%s)" % ','.join('?' * len(ids)), ids).fetchall():
+                    con.execute("INSERT INTO nd_map(keva_id,member_id,at) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET member_id=excluded.member_id", (x['ref'], mid, now_iso()))
+                    con.execute("UPDATE nd_keva SET member_id=? WHERE id=?", (mid, x['ref']))
                 if ph:
                     m0 = con.execute("SELECT phone FROM members WHERE id=?", (mid,)).fetchone()
                     if m0 and not (m0['phone'] or '').strip():
@@ -25005,10 +25016,16 @@ def cm_debts_from_keva(con):
     """הוראת קבע של חבר קהילה שחזרה ← חוב פתוח ("הו\"ק חזרה"). עברה / עודכנה ← החוב נסגר.
     הוראה לא פעילה / שפג תוקפה ← החוב יורד מהרשימה (בוטל — לא "שולם")."""
     opened = closed = 0
-    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active,off,itra,next_date FROM nd_keva WHERE COALESCE(mosad,'')=''").fetchall():
+    # מאיר: "כל מה שבנדרים פלוס חזר — הוראת קבע — שיהיה בחיובים שלא עברו, אפילו שזה לא רשום שזה חבר
+    # קהילה (כנראה צריך לשייך אותו)". גם הוראה שלא מקושרת לחבר נפתחת כחוב בשם ובטלפון שבנדרים פלוס,
+    # וגם הוראות של נתן תתן (לקופה שלה)
+    nm_ = natan_mosad(con)
+    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active,off,itra,next_date,name,phone,COALESCE(mosad,'') mosad FROM nd_keva "
+                         "WHERE COALESCE(mosad,'')='' OR (?<>'' AND mosad=?)", (nm_, nm_)).fetchall():
+        fund_ = 'natan' if (nm_ and k['mosad'] == nm_) else ''
         d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (k['id'],)).fetchone()
         dead = keva_dead(k)
-        bad = not dead and (k['error'] or '').strip() and k['member_id'] and _ivr_amt(k['amount']) > 0
+        bad = not dead and (k['error'] or '').strip() and _ivr_amt(k['amount']) > 0
         if d and dead:
             con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · הוראת הקבע לא פעילה — ירד מהרשימה') WHERE id=?",
                         (now_iso(), now_iso(), d['id']))
@@ -25025,11 +25042,12 @@ def cm_debts_from_keva(con):
                         (now_iso(), back['id']))
             opened += 1
         elif bad and not d and not recent:
-            con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,ref,note,created,updated) "
-                        "VALUES(?,?,?,?,0,?,'open','נדרים פלוס',?,?,?,?)",
-                        (k['member_id'], 'hok', 'הוראת קבע שחזרה' + ((' · ' + k['groupe']) if k['groupe'] else ''),
+            con.execute("INSERT INTO cm_debt(member_id,name,phone,kind,title,amount,paid,due,status,source,ref,note,created,updated,fund) "
+                        "VALUES(?,?,?,?,?,?,0,?,'open','נדרים פלוס',?,?,?,?,?)",
+                        (k['member_id'], '' if k['member_id'] else (k['name'] or '').strip(), '' if k['member_id'] else (k['phone'] or '').split(';')[0].strip(),
+                         'hok', 'הוראת קבע שחזרה' + ((' · ' + k['groupe']) if k['groupe'] else ''),
                          _ivr_amt(k['amount']) or 0, today_iso(), k['id'], '%s · כרטיס ****%s' % (k['error'], k['last4'] or ''),
-                         now_iso(), now_iso()))
+                         now_iso(), now_iso(), fund_))
             opened += 1
         elif d and not bad:
             dd = con.execute("SELECT amount,paid FROM cm_debt WHERE id=?", (d['id'],)).fetchone()
@@ -25042,7 +25060,7 @@ def cm_debts_from_keva(con):
             closed += 1
         elif d and bad:
             # מאיר: "₪0" — חוב שנפתח כשהסכום לא נקרא, מקבל את הסכום של ההוראה (רק אם עוד לא שולם ממנו)
-            con.execute("UPDATE cm_debt SET member_id=?, note=?, amount=CASE WHEN COALESCE(amount,0)=0 AND COALESCE(paid,0)=0 THEN ? ELSE amount END WHERE id=?",
+            con.execute("UPDATE cm_debt SET member_id=COALESCE(?, member_id), note=?, amount=CASE WHEN COALESCE(amount,0)=0 AND COALESCE(paid,0)=0 THEN ? ELSE amount END WHERE id=?",
                         (k['member_id'], '%s · כרטיס ****%s' % (k['error'], k['last4'] or ''), _ivr_amt(k['amount']) or 0, d['id']))
     return opened, closed
 
