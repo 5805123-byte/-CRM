@@ -3348,6 +3348,18 @@ def ensure_schema():
     except Exception as e:
         print('  lowy statement error:', e)
 
+    # מאיר: "זה אמור להיות kleper" (מרדכי קלפר) — תיקון הגייה קבוע באנגלית, נכנס לתוך הטקסט שנשלח לקול
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='pron_kleper_v1'").fetchone():
+            cur_ = (con.execute("SELECT v FROM app_kv WHERE k='ym_pron_en'").fetchone() or [''])[0] or ''
+            lines_ = [l for l in cur_.replace('\r', '').split('\n') if l.strip() and l.split('=', 1)[0].strip() != 'קלפר']
+            lines_.append('קלפר=Kleper')
+            con.execute("INSERT INTO app_kv(k,v) VALUES('ym_pron_en',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", ('\n'.join(lines_),))
+            con.execute("INSERT INTO seed_flags(name) VALUES('pron_kleper_v1')")
+            con.commit()
+    except Exception as e:
+        print('  pron kleper error:', e)
+
     # מאיר: "תעשה בדיקה של שיחה לנתן תתן למספר שלי" — שיחה אחת בנוסח הקבוע שלו (הקשה 1 = סליקה לנתן תתן,
     # ₪10 לבדיקה), דקה אחרי העלייה
     try:
