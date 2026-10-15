@@ -14433,7 +14433,25 @@ def ym_nikud_on(con):
     return kv_get(con, 'ym_nikud', '1') != '0'
 
 
-def ym_voice_text(text, pron, nik=True, trace=None, fast=False):
+def pron_en_inline(text, en):
+    """מאיר: "ניסיתי לתקן באנגלית וגם לא עובד" — הנחיית ההגייה לבד לא מספיקה ל-Gemini. מילה שתוקנה באנגלית
+    מוחלפת בתוך הטקסט עצמו באותיות הלטיניות ("כולל=KOH-lel" → "Kohlel"), עם/בלי ניקוד ואותיות שימוש לפניה."""
+    t = text or ''
+    for w, say in (en or []):
+        w = re.sub(r'[\u0591-\u05c7]', '', w or '').strip()
+        if not w or not say:
+            continue
+        lat = re.sub(r'[^A-Za-z\' ]+', '', say.replace('-', '')).strip()
+        lat = lat[:1].upper() + lat[1:].lower() if lat else ''
+        if not lat:
+            continue
+        pat = ''.join(re.escape(c) + '[\u0591-\u05c7]*' for c in w)
+        t = re.sub(r'(?<![\u05d0-\u05ea\u0591-\u05c7])((?:[בלוהמשכ][\u0591-\u05c7]*){0,2})' + pat + r'(?![\u05d0-\u05ea])',
+                   lambda m: (m.group(1) + ' ' if m.group(1) else '') + lat, t)
+    return t
+
+
+def ym_voice_text(text, pron, nik=True, trace=None, fast=False, en=None):
     """הטקסט שנשלח לקול: מילון ההגייה (נשמר כמו שכתבת) → סכומים וטלפונים במילים → ניקוד אוטומטי.
     אותו טקסט בדיוק בשליחה, בדוגמה (🔊) ובהקלטה. ניקוד שכבר נעשה לאותו טקסט נשמר בזיכרון — מהיר."""
     import yemot as _ym, nikud as _nk
@@ -14449,6 +14467,8 @@ def ym_voice_text(text, pron, nik=True, trace=None, fast=False):
                     _VOC_CACHE.clear()
                 _VOC_CACHE[t] = v
         t = v
+    if en:
+        t = pron_en_inline(t, en)
     return re.sub(r'\s{2,}', ' ', t.replace('{', '').replace('}', '').replace('\u27e6', '').replace('\u27e7', '')).strip()
 
 
@@ -15041,7 +15061,8 @@ def ym_worker(job_id, wait=True):
                 else:
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
-                    vt_ = ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace)
+                    vt_ = ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace,
+                                        en=ym_en if ym_engine == 'gemini' else None)
                     ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
                                            hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']))
@@ -20021,8 +20042,8 @@ class H(BaseHTTPRequestHandler):
             con = db(); pron = kv_get(con, 'ym_pron', ''); gm = kv_get(con, 'ym_gmodel', ''); nik = ym_nikud_on(con); con.close()
             _ym.begin_trace()
             # הודעה כללית — בלי שם וסכום אישיים
-            txt = ym_voice_text(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron, nik, trace=_ym._trace)
             con = db(); _en = pron_en_list(con); con.close()
+            txt = ym_voice_text(ym_fill(txt0, str(b.get('name') or ''), ym_amt(b.get('amount')) or ''), pron, nik, trace=_ym._trace, en=_en)
             ok, wav = _gt.synth(txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', trace=_ym._trace, tries=2,
                                 model=str(b.get('gmodel') or gm or ''), hints=pron_en_for(_en, txt, pron))
             con = db(); ym_save_trace(con, _ym.end_trace())
@@ -20062,12 +20083,12 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/yemot/sample':
             # השמעת דוגמה בדפדפן — הקול האנושי של Gemini, בלי להתקשר לאף אחד
             import yemot as _ym, gemini_tts as _gt
-            con = db(); pron = kv_get(con, 'ym_pron', ''); nik = ym_nikud_on(con); con.close()
+            con = db(); pron = kv_get(con, 'ym_pron', ''); nik = ym_nikud_on(con); _en0 = pron_en_list(con); con.close()
             _ym.begin_trace()
             # word=1 — מילה אחת בלבד (בדיקת תיקון הגייה) — מהיר, בלי התבנית ובלי ניקוד אוטומטי מחדש
-            txt = (str(b.get('text') or '').strip()[:80] if b.get('word') else
+            txt = (pron_en_inline(str(b.get('text') or '').strip()[:80], _en0) if b.get('word') else
                    ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
-                                 pron, nik, trace=_ym._trace, fast=True))
+                                 pron, nik, trace=_ym._trace, fast=True, en=_en0))
             if not b.get('gvoice'):
                 # 🔊 מהחובות — בקול ובסגנון ששמרת
                 con = db(); b['gvoice'] = kv_get(con, 'ym_gvoice', ''); b.setdefault('gstyle', kv_get(con, 'ym_gstyle', '')); b.setdefault('gmodel', kv_get(con, 'ym_gmodel', '')); con.close()
@@ -20081,6 +20102,7 @@ class H(BaseHTTPRequestHandler):
                 if tr_:
                     hints_ = [(txt, tr_)] + [h for h in hints_ if h[0] != txt]
                 b['gstyle'] = 'Say this single Hebrew word clearly, once, following the pronunciation guide exactly:'
+                b['gmodel'] = ''          # מאיר: "ההשמעה מחכה המון זמן" — מילה בודדת תמיד במודל המהיר
             ck = (txt, _gt.voice_ok(b.get('gvoice') or ''), b.get('gstyle') or '', str(b.get('gmodel') or ''), tuple(hints_))
             wav = _TTS_CACHE.get(ck)
             if wav:
@@ -20101,8 +20123,9 @@ class H(BaseHTTPRequestHandler):
             con = db(); pron = b.get('pron') if 'pron' in b else kv_get(con, 'ym_pron', '')
             nik = ym_nikud_on(con) and kv_get(con, 'ym_engine', '') == 'gemini'; con.close()
             _ym.begin_trace()
+            con = db(); _en1 = pron_en_list(con); con.close()
             t_ = ym_voice_text(ym_fill(b.get('text') or '', b.get('name') or '', ym_amt(b.get('amount')) or str(b.get('amount') or ''), '', b.get('for') or ''),
-                               pron, nik, trace=_ym._trace, fast=True)
+                               pron, nik, trace=_ym._trace, fast=True, en=_en1)
             con = db(); ym_save_trace(con, _ym.end_trace()); con.commit(); con.close()
             return self._send(200, {'ok': True, 'text': t_, 'nikud': nik, 'late': bool(nik and not re.search(r'[\u05b0-\u05bc\u05c1\u05c2]', t_))})
         if self.path == '/api/yemot/pron_word':
