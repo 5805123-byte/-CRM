@@ -18285,6 +18285,70 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
+        if self.path.split('?')[0] == '/api/mikveh/expired_check':
+            # 🔍 מאיר: "יש מנויים שפתאום כתוב להם שפג תוקף המנוי, ויש להם חיוב חודשי כל חודש ואני לא רואה סירוב
+            # או בעיה בכרטיס" — כל מי שהמנוי / הרישיון שלו הסתיים, מול התשלומים שלו בקופת המקווה בנדרים פלוס
+            # והפעולות האוטומטיות שלו במקווה. רק קריאה — לא משנה כלום
+            import mikveh as _mk
+            from concurrent.futures import ThreadPoolExecutor
+            try:
+                rows = [c for c in _mk.clients() if _mk.visible(c)]
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            today = today_iso()
+            past = lambda v: bool(v) and str(v)[:10] < today
+            exp = [c for c in rows if past(c.get('subscriptionEndDate')) or past(c.get('licenceExp'))]
+            con = db()
+            out = []
+            try:
+                for c in exp:
+                    P = mk_payments(con, str(c.get('id')), c)
+                    paid = [t for t in P['tx'] if (t['amount'] or 0) > 0]
+                    kv = [k for k in P['kevas'] if k.get('active')]
+                    last = paid[0] if paid else None
+                    out.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                                'sub_end': str(c.get('subscriptionEndDate') or '')[:10], 'lic_exp': str(c.get('licenceExp') or '')[:10],
+                                'sub_bad': past(c.get('subscriptionEndDate')), 'lic_bad': past(c.get('licenceExp')),
+                                'pay_method': bool(c.get('hasPaymentMethod')), 'last_in': str(c.get('lastEntrance') or '')[:10],
+                                'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0,
+                                'last_keva': bool(last and last.get('keva')), 'keva': bool(kv),
+                                'keva_amt': kv[0]['amount'] if kv else '', 'keva_next': kv[0].get('next_date') if kv else ''})
+            finally:
+                con.close()
+            # רק מי שמשלם (תשלום ב-45 הימים האחרונים / הו"ק פעילה) — בודקים אצלו במקווה את הפעולות האוטומטיות
+            lim = (datetime.date.today() - datetime.timedelta(days=45)).isoformat()
+            pay = [r for r in out if r['keva'] or (r['last_pay'] or '') >= lim]
+            def chk(r):
+                try:
+                    acts, _k = _mk.auto_actions(r['id'])
+                    r['auto'] = {a['key']: a['on'] for a in acts}
+                except Exception as e:
+                    r['auto_err'] = str(e)[:120]
+            with ThreadPoolExecutor(4) as ex:
+                list(ex.map(chk, pay[:60]))
+            _dmy = lambda v: '%s/%s/%s' % (v[8:10], v[5:7], v[:4]) if len(v or '') >= 10 else (v or '')
+            for r in out:
+                a, why = r.get('auto') or {}, []
+                payer = r['keva'] or (r['last_pay'] or '') >= lim
+                if r['sub_bad'] and r['keva']:
+                    why.append('משלם בהו"ק בנדרים פלוס — אבל הו"ק בנדרים לא מאריכה את המנוי במקווה')
+                elif r['sub_bad'] and payer and (r['last_pay'] or '') < r['sub_end']:
+                    # כמו אברהם עטייה: המקווה חייב אותו בעצמו כל חודש (חד-פעמי בנדרים), והחיוב של סוף התקופה לא הגיע לנדרים
+                    why.append('המקווה מחייב אותו בעצמו כל חודש — החיוב האחרון %s, ואחרי שהמנוי הסתיים (%s) לא יצא חיוב חדש לנדרים פלוס (לא סירוב — החיוב לא נשלח)'
+                               % (_dmy(r['last_pay']), _dmy(r['sub_end'])))
+                elif r['sub_bad'] and payer:
+                    why.append('שילם בנדרים פלוס אחרי שהמנוי הסתיים (%s) — אבל המקווה לא האריך לו' % _dmy(r['last_pay']))
+                if r['sub_bad'] and a.get('sub') is False:
+                    why.append('"חידוש תוקף מנוי" כבוי במקווה')
+                if r['lic_bad'] and a.get('licence') is False:
+                    why.append('"חידוש רישיון" כבוי במקווה')
+                if (a.get('sub') or a.get('licence')) and not r['pay_method']:
+                    why.append('חידוש אוטומטי פעיל — אבל אין אמצעי תשלום במקווה')
+                if r['lic_bad'] and not r['sub_bad']:
+                    why.append('רק הרישיון (10 ₪) הסתיים — המנוי עצמו בתוקף')
+                r['payer'], r['why'] = payer, why
+            out.sort(key=lambda r: (not r['payer'], r['name']))
+            return self._send(200, {'ok': True, 'rows': out, 'payers': sum(1 for r in out if r['payer'])})
         if self.path.split('?')[0] == '/api/mikveh/renew_info':
             # 🔁 חידוש מנוי אוטומטי במקווה + הוראות הקבע שלו בקופת המקווה בנדרים פלוס
             import mikveh as _mk

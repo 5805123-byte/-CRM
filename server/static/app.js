@@ -1695,6 +1695,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${MK.clients.length}</b><span>לקוחות</span></div>
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
+      <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
       <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button>
       <button class="mkibtn" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button></div>
@@ -1719,6 +1720,7 @@ function renderMikveh(){
     document.querySelectorAll('#mksort button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
+  document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();
   document.getElementById('mkfresh').onclick=()=>{MK=null;mkSkel();mkLoad(true);};
@@ -2255,6 +2257,29 @@ async function mkRenewOpen(c){
       b.disabled=true;const x=await api('POST','/api/nd/keva/'+encodeURIComponent(b.dataset.kv)+'/action',{action:'freeze',mk_cid:c.id});
       if(x&&x.ok){toast('🛑 הוראת הקבע בוטלה בנדרים פלוס');delete MKPAY[c.id];draw();mkPayLoad&&mkPayLoad(c.id);}else{b.disabled=false;await uiAlert('לא בוטלה:\n'+((x&&x.error)||x&&x.msg||'שגיאה'));}});};
   draw();}
+// 🔍 מאיר: "יש מנויים שפתאום כתוב להם שפג תוקף המנוי, ויש להם חיוב חודשי כל חודש ואני לא רואה סירוב" —
+// כל מי שהסתיים לו מנוי / רישיון: מתי שילם לאחרונה בנדרים פלוס, הו"ק, החידוש האוטומטי במקווה, ולמה זה קרה
+async function mkExpCheck(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🔍</div><div><h2>בדיקת פג תוקף</h2><div class="mksub">⏳ בודק במקווה ובנדרים פלוס…</div></div></div>`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const r=await api('GET','/api/mikveh/expired_check');
+  if(!r||!r.ok){rs.querySelector('.mksub').textContent='⚠️ '+((r&&r.error)||'לא נטען');return;}
+  const d=s=>s?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):'—';
+  const A=(r.rows||[]), pay=A.filter(x=>x.payer), rest=A.filter(x=>!x.payer);
+  const fl=(x,k,l)=>x.auto&&k in x.auto?`<span class="mktag ${x.auto[k]?'ok':''}">${x.auto[k]?'☑':'☐'} ${l}</span>`:'';
+  const row=x=>`<div class="mkrow" data-xc="${esc(x.id)}" style="grid-template-columns:1fr;gap:4px">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(x.name)}</b>
+      <span class="mksub">${x.sub_bad?'🔴 מנוי עד '+d(x.sub_end):'✅ מנוי עד '+d(x.sub_end)} · ${x.lic_bad?'🔴 רישיון עד '+d(x.lic_exp):'רישיון עד '+d(x.lic_exp)}</span></div>
+    <div class="mksub">${x.last_pay?'💳 שילם לאחרונה '+d(x.last_pay)+' · '+esc(mkNis(x.last_amt))+(x.last_keva?' (הו"ק)':''):'לא נמצא תשלום בנדרים פלוס'}${x.keva?' · 🔁 הו"ק פעילה '+esc(mkNis(String(x.keva_amt||'').replace(/[^\d.]/g,'')))+(x.keva_next?' · הבא '+esc(x.keva_next):''):''}${x.last_in?' · כניסה אחרונה '+d(x.last_in):''}</div>
+    ${x.auto?`<div style="display:flex;gap:6px;flex-wrap:wrap">${fl(x,'licence','חידוש רישיון')}${fl(x,'sub','חידוש תוקף מנוי')}${fl(x,'balance','הוספת יתרת פעימות')}<span class="mktag ${x.pay_method?'ok':''}">${x.pay_method?'💳 יש אמצעי תשלום במקווה':'⚠️ אין אמצעי תשלום במקווה'}</span></div>`:''}
+    ${(x.why||[]).length?`<div style="color:#c0392b;font-weight:600">${x.why.map(esc).join('<br>')}</div>`:''}</div>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🔍</div><div><h2>בדיקת פג תוקף</h2>
+    <div class="mksub">${A.length} שהסתיים להם מנוי / רישיון · <b>${pay.length}</b> מהם משלמים (תשלום ב-45 יום / הו"ק פעילה)</div></div></div>
+    ${pay.length?`<div class="mksec">💳 משלמים — אבל פג תוקף</div><div class="mklist">${pay.map(row).join('')}</div>`:''}
+    ${rest.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">שאר מי שפג תוקף (${rest.length}) — לא נמצא תשלום אחרון</summary><div class="mklist">${rest.map(row).join('')}</div></details>`:''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-xc]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.xc);if(c){remov.classList.remove('show');mkOpen(c);}});}
 function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
   if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
   const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
