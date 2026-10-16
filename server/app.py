@@ -580,6 +580,11 @@ def ensure_schema():
     # 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
     # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
     con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
+    # 🔁 מאיר: "ההודעה של אברהם גרניצקי — אני רוצה שכל ראשון לחודש הוא יקבל את ההודעה הזאת" — הודעה חודשית
+    # מתוך משלוח שכבר יצא: cal 'h' = א' בחודש העברי / 'g' = 1 בחודש הלועזי; only_open — לא למי שאין לו חוב פתוח
+    con.execute("CREATE TABLE IF NOT EXISTS ym_repeat(id INTEGER PRIMARY KEY AUTOINCREMENT, job INTEGER, cal TEXT, day INTEGER, "
+                "at TEXT, only_open INTEGER DEFAULT 1, active INTEGER DEFAULT 1, created TEXT, last_run TEXT, next_run TEXT, "
+                "label TEXT, runs INTEGER DEFAULT 0, last_job INTEGER)")
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN ym_file TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
@@ -14757,6 +14762,85 @@ def ym_redial(con, jid, lst, label):
     return nj
 
 
+def ym_repeat_next(cal, day, at, after=None):
+    """המועד הבא (>= after) של היום בחודש — עברי ('h') או לועזי ('g'), בשעה at. מחזיר 'YYYY-MM-DD HH:MM'"""
+    after = after or il_now().replace(tzinfo=None)
+    try:
+        hh, mm = [int(x) for x in str(at or '10:00').split(':')[:2]]
+    except ValueError:
+        hh, mm = 10, 0
+    day = max(1, min(30 if cal == 'h' else 28, int(day or 1)))
+    d = after.date()
+    for _ in range(80):
+        if cal == 'h':
+            try:
+                from pyluach import dates as _pd
+                hit = _pd.GregorianDate(d.year, d.month, d.day).to_heb().day == day
+            except Exception:
+                hit = False
+        else:
+            hit = d.day == day
+        if hit:
+            dt = datetime.datetime(d.year, d.month, d.day, hh, mm)
+            if dt > after:
+                return dt.strftime('%Y-%m-%d %H:%M')
+        d += datetime.timedelta(days=1)
+    return ''
+
+
+def ym_repeat_run(con, rp):
+    """יוצר את המשלוח של החודש מהמשלוח המקורי (אותו נוסח, אותם נמענים). מחזיר (מזהה משלוח, כמה דולגו)"""
+    j0 = con.execute("SELECT * FROM ym_job WHERE id=?", (rp['job'],)).fetchone()
+    if not j0:
+        return None, 0
+    src = [r for r in con.execute("SELECT * FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id", (rp['job'],))]
+    lst, skip = [], 0
+    for r in src:
+        if rp['only_open'] and r['kind'] == 'm' and r['ref_id']:
+            fund = (r['fund'] if 'fund' in r.keys() else '') or ''
+            if not con.execute("SELECT 1 FROM cm_debt WHERE member_id=? AND status='open' AND COALESCE(fund,'')=? "
+                               "AND COALESCE(amount,0)>COALESCE(paid,0)", (r['ref_id'], fund)).fetchone():
+                skip += 1
+                continue
+        lst.append(r)
+    if not lst:
+        return None, skip
+    now = il_now().replace(tzinfo=None)
+    ok_at = ym_next_ok(now)
+    sched = ok_at > now + datetime.timedelta(minutes=2)
+    con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,?,?,0,?,?,?)",
+                (now_iso(), j0['channel'], j0['text'], j0['amount'] or '', len(lst), 'scheduled' if sched else 'queued',
+                 '🔁 הודעה חודשית', j0['bill_path'] or '', ok_at.strftime('%Y-%m-%d %H:%M') if sched else ''))
+    nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for r in lst:
+        con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,fund) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
+                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'],
+                     r['fund'] if 'fund' in r.keys() else ''))
+    con.commit()
+    if not sched:
+        threading.Thread(target=ym_worker, args=(nj,), daemon=True).start()
+    return nj, skip
+
+
+def ym_repeat_scan():
+    con = db()
+    try:
+        now = il_now().strftime('%Y-%m-%d %H:%M')
+        for rp in con.execute("SELECT * FROM ym_repeat WHERE active=1 AND COALESCE(next_run,'')<>'' AND next_run<=?", (now,)).fetchall():
+            nxt = ym_repeat_next(rp['cal'], rp['day'], rp['at'], il_now().replace(tzinfo=None) + datetime.timedelta(hours=1))
+            # קודם מקדמים את המועד — שלא ייצא פעמיים אם משהו נכשל באמצע
+            con.execute("UPDATE ym_repeat SET next_run=?, last_run=?, runs=runs+1 WHERE id=?", (nxt, now, rp['id']))
+            con.commit()
+            try:
+                nj, skip = ym_repeat_run(con, rp)
+                con.execute("UPDATE ym_repeat SET last_job=? WHERE id=?", (nj, rp['id']))
+                con.commit()
+            except Exception as e:
+                print('  ym repeat run error:', e)
+    finally:
+        con.close()
+
+
 def ym_retry_scan():
     """כל כמה דקות: (1) בודק ביומן של ימות שיחות שעוד לא נבדקו (גם אחרי הפעלה מחדש של השרת);
     (2) מי שלא ענה לפני שעתיים — מקבל ניסיון אחד נוסף, באותו נוסח, בשעה מתאימה."""
@@ -15006,6 +15090,10 @@ def _ym_sched_loop():
             remind_call_scan()
         except Exception as e:
             print('  remind call error:', e)
+        try:
+            ym_repeat_scan()
+        except Exception as e:
+            print('  ym repeat error:', e)
 
 
 def _ym_retry_loop():
@@ -18331,6 +18419,23 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
+        if self.path.split('?')[0] == '/api/yemot/repeat':
+            # 🔁 ההודעות החודשיות
+            con = db()
+            try:
+                rows = []
+                for r in con.execute("SELECT * FROM ym_repeat WHERE active=1 ORDER BY next_run"):
+                    d = dict(r)
+                    j = con.execute("SELECT channel,text FROM ym_job WHERE id=?", (r['job'],)).fetchone()
+                    d['channel'] = j['channel'] if j else ''
+                    d['who'] = [x['name'] or x['phone'] for x in con.execute(
+                        "SELECT name,phone FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id LIMIT 5", (r['job'],))]
+                    d['n'] = con.execute("SELECT COUNT(*) FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0", (r['job'],)).fetchone()[0]
+                    d['text1'] = (con.execute("SELECT text FROM ym_msg WHERE job=? ORDER BY id LIMIT 1", (r['job'],)).fetchone() or [''])[0] or (j['text'] if j else '')
+                    rows.append(d)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         m = re.match(r'/api/yemot/audio/(\d+)$', self.path.split('?')[0])
         if m:
             # 🎧 ההקלטה של הודעה קולית שנשלחה — להורדה / לשליחה בוואטסאפ. מה שנשמר בשליחה; אם אין —
@@ -20469,6 +20574,33 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'כתובת לא תקינה'})
             con = db(); kv_set(con, 'mk_client_url', u); con.commit(); con.close()
             return self._send(200, {'ok': True, 'url': u})
+        if self.path == '/api/yemot/repeat':
+            jid = int(b.get('job') or 0)
+            cal = 'g' if b.get('cal') == 'g' else 'h'
+            at = str(b.get('at') or '10:00').strip()
+            if not re.fullmatch(r'\d{1,2}:\d{2}', at):
+                at = '10:00'
+            day = max(1, min(30 if cal == 'h' else 28, int(b.get('day') or 1)))
+            con = db()
+            try:
+                if not con.execute("SELECT 1 FROM ym_job WHERE id=? AND COALESCE(test,0)=0", (jid,)).fetchone():
+                    return self._send(200, {'ok': False, 'error': 'המשלוח לא נמצא (או שהוא משלוח בדיקה)'})
+                nxt = ym_repeat_next(cal, day, at)
+                con.execute("UPDATE ym_repeat SET active=0 WHERE job=? AND active=1", (jid,))
+                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run) VALUES(?,?,?,?,?,1,?,?)",
+                            (jid, cal, day, at, 1 if b.get('only_open', 1) else 0, now_iso(), nxt))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'next_run': nxt})
+        m = re.match(r'/api/yemot/repeat/(\d+)/stop$', self.path)
+        if m:
+            con = db()
+            try:
+                con.execute("UPDATE ym_repeat SET active=0 WHERE id=?", (int(m.group(1)),)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/mikveh/phone':
             # 📞 מאיר: "כתוב אין טלפון תקין — יש לו טלפון בכרטיס" (במקווה נרשם 05276886647 — ספרה מיותרת).
             # תיקון הטלפון במקווה עצמו מהכרטיס, ובדיקה שזה נשמר
