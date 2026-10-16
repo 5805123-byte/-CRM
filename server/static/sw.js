@@ -1,6 +1,6 @@
 // Service worker — installable app, always-fresh UI, and עבודה בלי אינטרנט.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v975';
+const CACHE = 'kc-crm-v976';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
 const DATA_CACHE = 'kc-data';      // העותק האחרון של הנתונים, לשימוש בלי רשת
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
@@ -181,6 +181,7 @@ self.addEventListener('fetch', e => {
   }
   if (e.request.method !== 'GET') return;
   if (url.pathname.startsWith('/api/mikveh/')) return;      // חי מהמקווה — לא נשמר גם בטלפון
+  if (url.pathname.startsWith('/api/yemot/audio/')) return;  // הקלטות — לא נשמרות במטמון
   if (url.pathname.startsWith('/api/')) {
     // נתונים חיים כשיש רשת; בלי רשת — העותק האחרון שנשמר, כדי שהכרטיסים
     // יהיו זמינים גם בלי wifi

@@ -345,7 +345,8 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
     errs = res.get('errors') or {}
     if errs:
         return False, 'השיחה לא יצאה — %s' % json.dumps(errs, ensure_ascii=False)[:160]
-    return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used}
+    return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used,
+                  'wav': wav if used == 'gemini' else None}
 
 
 def send_sms(phone, text, from_=''):

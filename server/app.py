@@ -577,6 +577,11 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS mk_log(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, kind TEXT, summary TEXT, msg_id INTEGER)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mklog_cid ON mk_log(cid)")
     except Exception: pass
+    # 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
+    # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
+    con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN ym_file TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
     except Exception: pass
     # ✉️ מיילים מלשונית המקווה — מאיר: "שבמקווה יהיה גם את האפשרות של שליחה במייל או טלפון וכו' כמו בקהילה".
@@ -15099,7 +15104,14 @@ def ym_worker(job_id, wait=True):
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
                                            hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']))
                     if ok and isinstance(res, dict):
-                        con.execute("UPDATE ym_msg SET engine=? WHERE id=?", (res.get('engine') or '', m['id']))
+                        con.execute("UPDATE ym_msg SET engine=?, ym_file=? WHERE id=?", (res.get('engine') or '', res.get('file') or '', m['id']))
+                        wav_ = res.pop('wav', None)
+                        if wav_:
+                            try:
+                                con.execute("INSERT OR REPLACE INTO ym_audio(msg_id,at,wav) VALUES(?,?,?)", (m['id'], now_iso(), wav_))
+                                con.execute("DELETE FROM ym_audio WHERE at<?", ((il_now() - datetime.timedelta(days=30)).isoformat(),))
+                            except Exception:
+                                pass
                 tr = _ym.end_trace()
                 if not tr:      # נדחה אצלנו לפני שנשלח לימות — גם זה מופיע בלוג
                     tr = [{'method': 'SendSms' if job['channel'] == 'sms' else 'CallExtensionBridging',
@@ -15863,6 +15875,8 @@ class H(BaseHTTPRequestHandler):
                     # גיבוי קל לשליחה: כל הנתונים, בלי גוף הקבצים המצורפים
                     # (תעודות וצילומים). השמות נשארים, רק התוכן הכבד יורד.
                     dst.execute("UPDATE files SET data=x''")
+                    try: dst.execute("DELETE FROM ym_audio")
+                    except Exception: pass
                     dst.commit()
                     dst.isolation_level = None      # VACUUM לא רץ בתוך טרנזקציה
                     dst.execute("VACUUM")
@@ -18317,6 +18331,47 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
+        m = re.match(r'/api/yemot/audio/(\d+)$', self.path.split('?')[0])
+        if m:
+            # 🎧 ההקלטה של הודעה קולית שנשלחה — להורדה / לשליחה בוואטסאפ. מה שנשמר בשליחה; אם אין —
+            # הקובץ מימות; ואם גם אין (הודעה ישנה / קול של ימות) — מפיקים שוב באותו קול מאותו טקסט
+            import yemot as _ym, gemini_tts as _gt
+            mid = int(m.group(1))
+            con = db()
+            try:
+                r = con.execute("SELECT y.*, j.channel ch FROM ym_msg y JOIN ym_job j ON j.id=y.job WHERE y.id=?", (mid,)).fetchone()
+                if not r or r['ch'] != 'voice':
+                    return self._send(404, {'ok': False, 'error': 'אין הקלטה להודעה הזו'})
+                a = con.execute("SELECT wav FROM ym_audio WHERE msg_id=?", (mid,)).fetchone()
+                wav, src = (a['wav'], 'saved') if a and a['wav'] else (None, '')
+                fn = (r['ym_file'] if 'ym_file' in r.keys() else '') or ''
+                if not wav and fn.endswith('.wav') and r['phone']:
+                    okd, data = _ym.download_bin('ivr2:/Phone/%s/%s' % (r['phone'], fn))
+                    if okd and data[:4] == b'RIFF':
+                        wav, src = data, 'yemot'
+                if not wav:
+                    gv = _gt.voice_ok(kv_get(con, 'ym_gvoice', ''))
+                    pron, en = kv_get(con, 'ym_pron', ''), pron_en_list(con)
+                    vt_ = ym_voice_text(r['text'] or '', pron, ym_nikud_on(con), en=en)
+                    okg, wav = _gt.synth(vt_, gv, kv_get(con, 'ym_gstyle', ''), model=kv_get(con, 'ym_gmodel', ''), tries=2,
+                                         hints=pron_en_for(en, vt_, pron) or pron_en_for(en, r['text'] or ''))
+                    if not okg:
+                        return self._send(200, {'ok': False, 'error': 'לא הצלחתי להפיק את ההקלטה: %s' % str(wav)[:160]})
+                    src = 'regen'
+                    con.execute("INSERT OR REPLACE INTO ym_audio(msg_id,at,wav) VALUES(?,?,?)", (mid, now_iso(), wav))
+                    con.commit()
+            finally:
+                con.close()
+            nm = re.sub(r'[\\/:*?"<>|]+', '', (r['name'] or r['phone'] or 'הודעה').strip())[:40] or 'הודעה'
+            fname = 'הודעה קולית - %s - %s.wav' % (nm, str(r['at'] or '')[:10])
+            self.send_response(200)
+            self.send_header('Content-Type', 'audio/wav')
+            self.send_header('Content-Disposition', "attachment; filename=\"message-%d.wav\"; filename*=UTF-8''%s" % (mid, quote(fname)))
+            self.send_header('Content-Length', str(len(wav)))
+            self.send_header('X-Audio-Source', src)
+            self.end_headers()
+            self.wfile.write(wav)
+            return
         if self.path.split('?')[0] == '/api/mikveh/expired_check':
             # 🔍 מאיר: "יש מנויים שפתאום כתוב להם שפג תוקף המנוי, ויש להם חיוב חודשי כל חודש ואני לא רואה סירוב".
             # רק ממערכת המקווה (לא מנדרים פלוס — "אתה מערבב הו"ק של הקהילה עם המקווה"): מי שפג לו מנוי / רישיון,
