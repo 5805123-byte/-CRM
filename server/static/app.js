@@ -16181,20 +16181,23 @@ let YMREP=[], ymRepLoaded=false;
 async function ymRepLoad(){try{const r=await api('GET','/api/yemot/repeat');YMREP=(r&&r.rows)||[];}catch(e){}}
 const ymRepDt=s=>s?String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4)+' '+String(s).slice(11,16):'—';
 const HEBD=['','א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ז׳','ח׳','ט׳','י׳','י״א','י״ב','י״ג','י״ד','ט״ו','ט״ז','י״ז','י״ח','י״ט','כ׳','כ״א','כ״ב','כ״ג','כ״ד','כ״ה','כ״ו','כ״ז','כ״ח','כ״ט','ל׳'];
-const ymRepWhen=x=>(x.cal==='h'?HEBD[x.day]+' בכל חודש עברי':x.day+' בכל חודש לועזי')+' בשעה '+x.at+(+x.only_open?' · רק למי שעוד יש לו חוב':'');
+const ymRepWhen=x=>(x.freq==='daily'?'📞 כל יום בשעה '+x.at+' עד "סודר החודש" · מתחיל שוב ב'+(x.cal==='h'?HEBD[x.day]+' בחודש העברי':x.day+' בחודש הלועזי')
+  :(x.cal==='h'?HEBD[x.day]+' בכל חודש עברי':x.day+' בכל חודש לועזי')+' בשעה '+x.at)+(+x.only_open?' · רק למי שעוד יש לו חוב':'');
 function ymRepHTML(){if(!YMREP.length)return '';
   return `<details class="sec ymsec" open><summary style="cursor:pointer;font-weight:800">🔁 הודעות חודשיות (${YMREP.length})</summary>
     ${YMREP.map(x=>`<div class="ymcard" style="cursor:default"><div class="ymch3"><b>${x.channel==='sms'?'💬 SMS':'📞 קולית'}</b><span class="ymjwho">👤 ${x.who.map(esc).join(', ')}${x.n>5?' ועוד '+(x.n-5):''}</span>
       <span class="ymjt">${esc(String(x.text1||'').slice(0,70))}${String(x.text1||'').length>70?'…':''}</span></div>
-      <div class="ymch4"><span class="ymch2">${esc(ymRepWhen(x))}</span><span class="ymch2">הבאה: ${esc(ymRepDt(x.next_run))}</span>${x.runs?`<span class="ymch2">יצאה ${x.runs} פעמים</span>`:''}<button class="btn sm ghost ymrepstop" data-id="${x.id}">🛑 להפסיק</button></div></div>`).join('')}</details>`;}
+      <div class="ymch4"><span class="ymch2">${esc(ymRepWhen(x))}</span><span class="ymch2">הבאה: ${esc(ymRepDt(x.next_run))}</span>${x.runs?`<span class="ymch2">יצאה ${x.runs} פעמים</span>`:''}${x.freq==='daily'?(x.done_until?`<span class="ymch2 paid">✓ סודר החודש — מושהה עד ${esc(ymRepDt(x.done_until))}</span><button class="btn sm ghost ymrepdone" data-id="${x.id}" data-undo="1">↩️ בעצם לא סודר</button>`:`<button class="btn sm ymrepdone" data-id="${x.id}">✓ סודר החודש</button>`):''}<button class="btn sm ghost ymrepstop" data-id="${x.id}">🛑 להפסיק</button></div></div>`).join('')}</details>`;}
 function ymRepOpen(jid){
   const cur=YMREP.find(x=>x.job==jid)||{cal:'h',day:1,at:'10:00',only_open:1};
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">🔁 לשלוח את ההודעה הזו כל חודש</div>
     <div class="hintxt" style="margin:6px 0">אותו נוסח, לאותם נמענים. לא יוצא בשבת וביום טוב — נדחה לשעה המתאימה הבאה.</div>
+    <div class="mkseg" id="yrf" style="margin:6px 0"><button type="button" data-f="month" class="${cur.freq!=='daily'?'on':''}">פעם בחודש</button><button type="button" data-f="daily" class="${cur.freq==='daily'?'on':''}">📞 כל יום עד שאסמן "סודר"</button></div>
+    <div class="hintxt" id="yrfh"></div>
     <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" style="width:auto" name="yrc" value="h" ${cur.cal!=='g'?'checked':''}> לפי החודש העברי</label>
     <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" style="width:auto" name="yrc" value="g" ${cur.cal==='g'?'checked':''}> לפי החודש הלועזי</label>
-    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap">ביום <select id="yrd"></select> בחודש, בשעה <input id="yrt" type="time" value="${esc(cur.at||'10:00')}" style="width:110px"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><span id="yrdl">ביום</span> <select id="yrd"></select> בחודש, בשעה <input id="yrt" type="time" value="${esc(cur.at||'10:00')}" style="width:110px"></div>
     <label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" style="width:auto" id="yro" ${+cur.only_open?'checked':''}> לא לשלוח למי שכבר שילם (אין לו חוב פתוח)</label>
     <div class="hintxt" id="yrn"></div>
     <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">🔁 לשמור</button></div></div>`;
@@ -16202,8 +16205,13 @@ function ymRepOpen(jid){
   const sel=o.querySelector('#yrd'), calOf=()=>o.querySelector('input[name=yrc]:checked').value;
   const fill=()=>{const c=calOf(),v=+sel.value||+cur.day||1;sel.innerHTML=Array.from({length:c==='h'?30:28},(_,i)=>`<option value="${i+1}" ${i+1===v?'selected':''}>${c==='h'?HEBD[i+1]:i+1}</option>`).join('');};
   fill();o.querySelectorAll('input[name=yrc]').forEach(r=>r.onchange=fill);
+  let freq=cur.freq==='daily'?'daily':'month';
+  const fpaint=()=>{o.querySelectorAll('#yrf [data-f]').forEach(b=>b.classList.toggle('on',b.dataset.f===freq));
+    o.querySelector('#yrdl').textContent=freq==='daily'?'מתחיל כל חודש ביום':'ביום';
+    o.querySelector('#yrfh').textContent=freq==='daily'?'יתקשר כל יום (לא בשבת וביום טוב), עד שתלחץ "✓ סודר החודש". בחודש הבא מתחיל שוב מהיום שבחרת. מתחיל כבר מהיום / מחר.':'';};
+  o.querySelectorAll('#yrf [data-f]').forEach(b=>b.onclick=()=>{freq=b.dataset.f;fpaint();});fpaint();
   o.querySelector('.cno').onclick=()=>o.remove();
-  o.querySelector('.cyes').onclick=async()=>{const r=await api('POST','/api/yemot/repeat',{job:jid,cal:calOf(),day:+sel.value,at:o.querySelector('#yrt').value||'10:00',only_open:o.querySelector('#yro').checked?1:0});
+  o.querySelector('.cyes').onclick=async()=>{const r=await api('POST','/api/yemot/repeat',{job:jid,freq,cal:calOf(),day:+sel.value,at:o.querySelector('#yrt').value||'10:00',only_open:o.querySelector('#yro').checked?1:0});
     if(!r||!r.ok)return uiAlert('לא נשמר:\n'+((r&&r.error)||'שגיאה'));
     o.remove();toast('🔁 נקבע — הפעם הבאה: '+ymRepDt(r.next_run));await ymRepLoad();renderCommYm();};}
 function ymViewJobs(){
@@ -16241,6 +16249,9 @@ function ymViewJobs(){
     await api('POST','/api/yemot/job/'+ck.dataset.j+'/check',{});
     const r=await api('GET','/api/yemot/job/'+ck.dataset.j);if(r&&r.ok)ymJobView=r;await ymLoadStatus();renderCommYm();};
   view.querySelectorAll('.ymrep').forEach(b=>b.onclick=ev=>{ev.stopPropagation();ymRepOpen(+b.dataset.j);});
+  view.querySelectorAll('.ymrepdone').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();const undo=!!b.dataset.undo;
+    const r=await api('POST','/api/yemot/repeat/'+b.dataset.id+'/done',{undo});
+    if(r&&r.ok){toast(undo?'↩️ השיחות היומיות חוזרות — הבאה: '+ymRepDt(r.next_run):'✓ סודר — השיחות נעצרו עד '+ymRepDt(r.next_run));await ymRepLoad();renderCommYm();}});
   view.querySelectorAll('.ymrepstop').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();
     if(!await uiConfirm('להפסיק את ההודעה החודשית הזו?','🛑 כן, להפסיק','לא'))return;
     const r=await api('POST','/api/yemot/repeat/'+b.dataset.id+'/stop',{});if(r&&r.ok){toast('🛑 ההודעה החודשית הופסקה');await ymRepLoad();renderCommYm();}});

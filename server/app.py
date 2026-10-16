@@ -585,6 +585,11 @@ def ensure_schema():
     con.execute("CREATE TABLE IF NOT EXISTS ym_repeat(id INTEGER PRIMARY KEY AUTOINCREMENT, job INTEGER, cal TEXT, day INTEGER, "
                 "at TEXT, only_open INTEGER DEFAULT 1, active INTEGER DEFAULT 1, created TEXT, last_run TEXT, next_run TEXT, "
                 "label TEXT, runs INTEGER DEFAULT 0, last_job INTEGER)")
+    # מאיר: "גם אפשרות שזה יתקשר אליו כל יום, עד שאכתוב שזה סודר החודש" — freq 'daily': כל יום מהיום שנקבע בחודש,
+    # עד "✓ סודר החודש" (done_until — מושהה עד תחילת החודש הבא)
+    for col, typ in (('freq', 'TEXT'), ('done_until', 'TEXT')):
+        try: con.execute("ALTER TABLE ym_repeat ADD COLUMN %s %s" % (col, typ))
+        except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN ym_file TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
@@ -14788,6 +14793,28 @@ def ym_repeat_next(cal, day, at, after=None):
     return ''
 
 
+def ym_repeat_next2(rp, after=None):
+    """המועד הבא לפי סוג ההודעה: חודשית — היום בחודש; יומית — מחר (לא בשבת / יום טוב), אבל לא לפני
+    תחילת החודש הבא אם סומן "סודר החודש" """
+    after = after or il_now().replace(tzinfo=None)
+    if (rp['freq'] if 'freq' in rp.keys() else '') != 'daily':
+        return ym_repeat_next(rp['cal'], rp['day'], rp['at'], after)
+    try:
+        hh, mm = [int(x) for x in str(rp['at'] or '10:00').split(':')[:2]]
+    except ValueError:
+        hh, mm = 10, 0
+    du = (rp['done_until'] if 'done_until' in rp.keys() else '') or ''
+    if du and du > after.strftime('%Y-%m-%d %H:%M'):
+        return du
+    d = after.date()
+    for _ in range(14):
+        dt = datetime.datetime(d.year, d.month, d.day, hh, mm)
+        if dt > after and ym_call_ok(dt.replace(hour=max(9, min(hh, 20)))):
+            return dt.strftime('%Y-%m-%d %H:%M')
+        d += datetime.timedelta(days=1)
+    return ''
+
+
 def ym_repeat_run(con, rp):
     """יוצר את המשלוח של החודש מהמשלוח המקורי (אותו נוסח, אותם נמענים). מחזיר (מזהה משלוח, כמה דולגו)"""
     j0 = con.execute("SELECT * FROM ym_job WHERE id=?", (rp['job'],)).fetchone()
@@ -14827,7 +14854,7 @@ def ym_repeat_scan():
     try:
         now = il_now().strftime('%Y-%m-%d %H:%M')
         for rp in con.execute("SELECT * FROM ym_repeat WHERE active=1 AND COALESCE(next_run,'')<>'' AND next_run<=?", (now,)).fetchall():
-            nxt = ym_repeat_next(rp['cal'], rp['day'], rp['at'], il_now().replace(tzinfo=None) + datetime.timedelta(hours=1))
+            nxt = ym_repeat_next2(rp, il_now().replace(tzinfo=None) + datetime.timedelta(hours=1))
             # קודם מקדמים את המועד — שלא ייצא פעמיים אם משהו נכשל באמצע
             con.execute("UPDATE ym_repeat SET next_run=?, last_run=?, runs=runs+1 WHERE id=?", (nxt, now, rp['id']))
             con.commit()
@@ -20585,10 +20612,36 @@ class H(BaseHTTPRequestHandler):
             try:
                 if not con.execute("SELECT 1 FROM ym_job WHERE id=? AND COALESCE(test,0)=0", (jid,)).fetchone():
                     return self._send(200, {'ok': False, 'error': 'המשלוח לא נמצא (או שהוא משלוח בדיקה)'})
-                nxt = ym_repeat_next(cal, day, at)
+                freq = 'daily' if b.get('freq') == 'daily' else 'month'
+                if freq == 'daily':
+                    nxt = ym_repeat_next2({'freq': 'daily', 'at': at, 'done_until': ''},
+                                          il_now().replace(tzinfo=None) - datetime.timedelta(minutes=1))
+                else:
+                    nxt = ym_repeat_next(cal, day, at)
                 con.execute("UPDATE ym_repeat SET active=0 WHERE job=? AND active=1", (jid,))
-                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run) VALUES(?,?,?,?,?,1,?,?)",
-                            (jid, cal, day, at, 1 if b.get('only_open', 1) else 0, now_iso(), nxt))
+                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq) VALUES(?,?,?,?,?,1,?,?,?)",
+                            (jid, cal, day, at, 1 if b.get('only_open', 1) else 0, now_iso(), nxt, freq))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'next_run': nxt})
+        m = re.match(r'/api/yemot/repeat/(\d+)/done$', self.path)
+        if m:
+            # ✓ סודר החודש — השיחות היומיות נעצרות עד היום שנקבע בחודש הבא (עברי / לועזי), ושם מתחילות שוב
+            con = db()
+            try:
+                rp = con.execute("SELECT * FROM ym_repeat WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not rp:
+                    return self._send(404, {'ok': False})
+                undo = bool(b.get('undo'))
+                if undo:
+                    du = ''
+                    nxt = ym_repeat_next2(dict(dict(rp), done_until=''), il_now().replace(tzinfo=None) - datetime.timedelta(minutes=1))
+                else:
+                    # תחילת החודש הבא: הפעם הבאה של היום שנקבע בחודש (לא היום עצמו)
+                    du = ym_repeat_next(rp['cal'], rp['day'], rp['at'], il_now().replace(tzinfo=None) + datetime.timedelta(days=1))
+                    nxt = du
+                con.execute("UPDATE ym_repeat SET done_until=?, next_run=? WHERE id=?", (du, nxt, rp['id']))
                 con.commit()
             finally:
                 con.close()
