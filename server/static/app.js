@@ -16184,7 +16184,7 @@ function ymViewJobs(){
         <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}${j.channel==='voice'&&!j.test&&ms.some(ymNotHeard)?`<button class="btn sm ymredial" data-j="${j.id}" data-ids="">📞 חייג שוב למי שלא ענה / לא שמע (${ms.filter(ymNotHeard).length})</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button></span></div>
       ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}${j.retry_of?`<div class="hintxt">${/חיוג חוזר/.test(j.label||'')?'📞 חיוג חוזר ידני':'🔁 ניסיון חוזר אוטומטי — למי שלא ענה שעתיים קודם'}</div>`:''}
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${ms.some(m=>+m.amount)?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
-      ${ms.map(m=>`<tr class="${m.status}"><td>${esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
+      ${ms.map(m=>`<tr class="${m.status}"><td>${(m.kind==='m'||m.kind==='d')&&m.ref_id?`<a href="#" class="ymwho" data-k="${m.kind}" data-id="${m.ref_id}" title="לפתוח את הכרטיס שלו">${esc(m.name||'כרטיס')} ↗</a>`:esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
         <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
         <td>${ymAns(m,j.channel)}${j.channel==='voice'&&m.status==='sent'?` <button class="btn sm ghost ymaudio" data-id="${m.id}" data-nm="${esc(m.name||m.phone||'')}" title="לשמוע את ההקלטה ששלחת — ומשם לשמור / לשלוח בוואטסאפ">🎧 לשמוע הקלטה</button>`:''}${j.channel==='voice'&&!j.test&&ymNotHeard(m)?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
   view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
@@ -16196,7 +16196,16 @@ function ymViewJobs(){
   ymWireHead();
   view.querySelectorAll('.ymcard[data-j]').forEach(x=>x.onclick=async()=>{
     if(ymJobView&&ymJobView.job.id==x.dataset.j){ymJobView=null;renderCommYm();return;}
-    const r=await api('GET','/api/yemot/job/'+x.dataset.j);if(r&&r.ok){ymJobView=r;renderCommYm();}});
+    // מאיר: "אני לוחץ וכלום" — רואים שזה נטען, ואם השרת לא ענה (למשל באמצע עדכון) — אומרים
+    if(x.classList.contains('busy'))return; x.classList.add('busy'); const c4=x.querySelector('.ymch4'); const old=c4&&c4.innerHTML;
+    if(c4)c4.innerHTML='<span class="ymch2"><span class="mkspin"></span> פותח…</span>';
+    let r=null; try{r=await api('GET','/api/yemot/job/'+x.dataset.j);}catch(e){}
+    x.classList.remove('busy');
+    if(r&&r.ok){ymJobView=r;renderCommYm();return;}
+    if(c4)c4.innerHTML=old; toast('⚠️ השרת לא ענה — ייתכן שהוא באמצע עדכון. נסה שוב בעוד דקה');});
+  view.querySelectorAll('.ymwho').forEach(a=>a.onclick=ev=>{ev.preventDefault();ev.stopPropagation();
+    if(a.dataset.k==='m'){const m=(MEMBERS||[]).find(x=>x.id==a.dataset.id);if(m)openMember(m);else toast('חבר הקהילה לא נמצא');}
+    else{const d=(DB||[]).find(x=>x.id==a.dataset.id);if(d)openDonor(d);else toast('התורם לא נמצא');}});
   const ck=document.getElementById('ym_chk'); if(ck)ck.onclick=async()=>{ck.disabled=true;ck.textContent='בודק ביומן של ימות…';
     await api('POST','/api/yemot/job/'+ck.dataset.j+'/check',{});
     const r=await api('GET','/api/yemot/job/'+ck.dataset.j);if(r&&r.ok)ymJobView=r;await ymLoadStatus();renderCommYm();};
