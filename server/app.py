@@ -3310,13 +3310,17 @@ def ensure_schema():
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_deutsch_barmitzva_v1'").fetchone():
             note = 'בר מצווה — בן ציון יצחק בן ישראל זאב דייטש (נכדם של הרב חיים בנימין קירשנבוים והרב יצחק פסח ביבלה)'
-            d = con.execute("SELECT id FROM donors WHERE TRIM(last) IN ('דייטש','דויטש','דייטש ') AND first LIKE 'ישראל%' "
-                            "ORDER BY id LIMIT 1").fetchone()
+            d = None      # מאיר: "הוא לא תורם" — משימה כללית, לא בכרטיס
             if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-18' AND note LIKE 'בר מצווה — בן ציון%'").fetchone():
                 con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
                             (d['id'] if d else None, '2026-10-18', 'event', note, 'מאיר', '20:30',
                              'אולם "אבני חן", רח\' יסוד העבודה 12, ביתר עילית'))
             con.execute("INSERT INTO seed_flags(name) VALUES('task_deutsch_barmitzva_v1')")
+            con.commit()
+        # "הוא לא תורם" — אם המשימה כבר נקשרה לכרטיס תורם, מנתקים. התזכורת בטלפון: בבוקר ושעתיים לפני (הגדרות התזכורות)
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_deutsch_barmitzva_v2'").fetchone():
+            con.execute("UPDATE tasks SET donor_id=NULL, assignee='מאיר' WHERE due_date='2026-10-18' AND note LIKE 'בר מצווה — בן ציון%'")
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_deutsch_barmitzva_v2')")
             con.commit()
     except Exception as e:
         print('  deutsch bar mitzva task error:', e)
