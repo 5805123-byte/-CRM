@@ -391,6 +391,86 @@ def renew_fields(cid):
     return hits, bools
 
 
+# ---------- תשלומים במקווה ----------
+# מאיר: "כאן צריך להיות היסטוריה רק כמו שהוא מכניס למקווה דרך המכשיר, ורואים את זה במכשיר של המקווה —
+# לא מנדרים פלוס" (בנדרים הופיעה הו"ק של חבר קהילה לבית הכנסת). התשלומים נלקחים רק ממערכת המקווה:
+# קודם רשימות תשלומים בתוך הלקוח המלא, ואם אין — נתיבי קריאה (GET) של המקווה. הנתיב שעבד נזכר.
+_PAY_KEY = re.compile(r'pay|purchas|transact|charg|receipt|order|invoice|deal|deposit|topup|load|history', re.I)
+_PAY_PATHS = ('Payment/GetByClient/{id}', 'Payment/Client/{id}', 'Payment?clientId={id}', 'Payments?clientId={id}',
+              'ClientPayment/{id}', 'GetClientPayments/{id}', 'Transaction?clientId={id}', 'Transaction/GetByClient/{id}',
+              'ClientTransaction/{id}', 'Purchase?clientId={id}', 'Order?clientId={id}', 'Charge?clientId={id}',
+              'Receipt?clientId={id}', 'Invoice?clientId={id}')
+_PAY = {'path': None, 'bad': set()}
+
+
+def _is_pay_row(d):
+    if not isinstance(d, dict):
+        return False
+    ks = ' '.join(d.keys())
+    return bool(re.search(r'amount|sum|price|total', ks, re.I) and re.search(r'date|time|createdAt|at\b', ks, re.I))
+
+
+def _pay_norm(rows):
+    out = []
+    for d in rows:
+        if not _is_pay_row(d):
+            continue
+        ak = next((k for k in d if re.search(r'^(amount|sum|total|price)$', k, re.I)), None) or \
+            next((k for k in d if re.search(r'amount|sum|total|price', k, re.I) and isinstance(d[k], (int, float))), None)
+        dk = next((k for k in d if re.search(r'^(date|paymentDate|transactionDate|createdAt|time)$', k, re.I)), None) or \
+            next((k for k in d if re.search(r'date|time|createdAt', k, re.I) and d[k]), None)
+        if not ak or not dk or not isinstance(d.get(ak), (int, float)):
+            continue
+        desc = next((str(d[k]) for k in d if re.search(r'descr|product|type|item|name|remark|reason|note', k, re.I)
+                     and isinstance(d[k], str) and d[k].strip()), '')
+        how = next((str(d[k]) for k in d if re.search(r'method|source|device|terminal|channel', k, re.I)
+                    and isinstance(d[k], (str, int)) and str(d[k]).strip()), '')
+        ok = next((d[k] for k in d if re.search(r'success|approved|isOk|status', k, re.I)), None)
+        out.append({'iso': str(d[dk])[:10], 'time': str(d[dk])[11:16], 'amount': d[ak], 'desc': desc[:80], 'how': how[:40],
+                    'failed': ok is False or (isinstance(ok, str) and re.search(r'fail|declin|error|reject', ok, re.I) is not None)})
+    # המחירים במקווה שמורים באגורות — אם גם התשלומים (כל הסכומים שלמים וגדולים) — מחלקים ב-100
+    am = sorted(abs(x['amount']) for x in out if x['amount'])
+    if am and all(float(a).is_integer() for a in am) and am[len(am) // 2] >= 500:
+        for x in out:
+            x['amount'] = x['amount'] / 100.0
+    out.sort(key=lambda x: (x['iso'], x['time']), reverse=True)
+    return out
+
+
+def payments(cid):
+    """התשלומים של הלקוח במערכת המקווה. מחזיר (רשימה, מאיפה, שמות שדות לאבחון)"""
+    c = client(cid, max_age=60)
+    for k, v in c.items():
+        if isinstance(v, list) and v and _PAY_KEY.search(k) and any(_is_pay_row(x) for x in v[:5]):
+            return _pay_norm(v), 'client.' + k, []
+    paths = ([_PAY['path']] if _PAY['path'] else []) + [p for p in _PAY_PATHS if p != _PAY['path'] and p not in _PAY['bad']]
+    try:
+        tok = login()
+    except RuntimeError:
+        tok = ''
+    for p in paths if tok else ():
+        path, _, q = p.format(id=cid).partition('?')
+        # ישירות (לא דרך call) — ניסיון של נתיב שלא קיים לא יירשם כשגיאת חיבור למקווה
+        code, res = _http('GET', path, None, dict([q.split('=', 1)]) if q else None, tok, 15)
+        rows = res if isinstance(res, list) else next((res[k] for k in ('items', 'data', 'result', 'list', 'payments', 'transactions')
+                                                        if isinstance(res, dict) and isinstance(res.get(k), list)), None)
+        if code in (404, 405) or (code == 200 and rows is None):
+            _PAY['bad'].add(p)
+            continue
+        if code != 200 or not rows or not any(_is_pay_row(x) for x in rows[:5]):
+            continue
+        # שלא יוצגו תשלומים של אחרים: אם יש בשורות מזהה לקוח — רק שלו; נתיב בלי {id} בכתובת חייב מזהה כזה
+        ck = next((k for k in rows[0] if re.fullmatch(r'client_?id', k, re.I)), None)
+        if ck:
+            rows = [x for x in rows if str(x.get(ck)) == str(cid)]
+        elif '?' in p:
+            _PAY['bad'].add(p)
+            continue
+        _PAY['path'] = p
+        return _pay_norm(rows), p, []
+    return [], '', _key_list(c)
+
+
 def raw_group(gid):
     for g in _items(get('Group')):
         if str(g.get('id')) == str(gid):

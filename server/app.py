@@ -15175,7 +15175,7 @@ def mk_mosad():
     return (os.environ.get('MIKVEH_NEDARIM_MOSAD') or '7000571').strip()
 
 
-def mk_payments(con, cid, c):
+def mk_payments(con, cid, c):   # לא בשימוש בכרטיס המקווה — מאיר: "לא מנדרים פלוס"
     """התשלומים של לקוח מקווה — מקופת המקווה בנדרים פלוס: לפי המזהה שלו במקווה (כשהוא בהערות העסקה),
     לפי הטלפון, או לפי השם המלא. רק קריאה — לא נשמר כלום על הלקוח."""
     mos = mk_mosad()
@@ -18290,9 +18290,9 @@ class H(BaseHTTPRequestHandler):
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
         if self.path.split('?')[0] == '/api/mikveh/expired_check':
-            # 🔍 מאיר: "יש מנויים שפתאום כתוב להם שפג תוקף המנוי, ויש להם חיוב חודשי כל חודש ואני לא רואה סירוב
-            # או בעיה בכרטיס" — כל מי שהמנוי / הרישיון שלו הסתיים, מול התשלומים שלו בקופת המקווה בנדרים פלוס
-            # והפעולות האוטומטיות שלו במקווה. רק קריאה — לא משנה כלום
+            # 🔍 מאיר: "יש מנויים שפתאום כתוב להם שפג תוקף המנוי, ויש להם חיוב חודשי כל חודש ואני לא רואה סירוב".
+            # רק ממערכת המקווה (לא מנדרים פלוס — "אתה מערבב הו"ק של הקהילה עם המקווה"): מי שפג לו מנוי / רישיון,
+            # הפעולות האוטומטיות שלו, אמצעי התשלום והתשלומים שלו במקווה. רק קריאה — לא משנה כלום
             import mikveh as _mk
             from concurrent.futures import ThreadPoolExecutor
             try:
@@ -18301,72 +18301,56 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             today = today_iso()
             past = lambda v: bool(v) and str(v)[:10] < today
-            exp = [c for c in rows if past(c.get('subscriptionEndDate')) or past(c.get('licenceExp'))]
-            con = db()
-            out = []
-            try:
-                for c in exp:
-                    P = mk_payments(con, str(c.get('id')), c)
-                    paid = [t for t in P['tx'] if (t['amount'] or 0) > 0]
-                    kv = [k for k in P['kevas'] if k.get('active')]
-                    dead = [k for k in P['kevas'] if not k.get('active')]
-                    last = paid[0] if paid else None
-                    out.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
-                                'sub_end': str(c.get('subscriptionEndDate') or '')[:10], 'lic_exp': str(c.get('licenceExp') or '')[:10],
-                                'sub_bad': past(c.get('subscriptionEndDate')), 'lic_bad': past(c.get('licenceExp')),
-                                'pay_method': bool(c.get('hasPaymentMethod')), 'last_in': str(c.get('lastEntrance') or '')[:10],
-                                'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0,
-                                'last_keva': bool(last and last.get('keva')), 'keva': bool(kv),
-                                'keva_amt': kv[0]['amount'] if kv else '', 'keva_next': kv[0].get('next_date') if kv else '',
-                                'dead': [{'amount': k['amount'], 'off': k['off'] or k['error'] or 'לא פעילה', 'last': k['last_charge']} for k in dead][:4]})
-            finally:
-                con.close()
-            # רק מי שמשלם (תשלום ב-45 הימים האחרונים / הו"ק פעילה) — בודקים אצלו במקווה את הפעולות האוטומטיות
-            lim = (datetime.date.today() - datetime.timedelta(days=45)).isoformat()
-            pay = [r for r in out if r['keva'] or (r['last_pay'] or '') >= lim]
+            out = [{'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                    'sub_end': str(c.get('subscriptionEndDate') or '')[:10], 'lic_exp': str(c.get('licenceExp') or '')[:10],
+                    'sub_bad': past(c.get('subscriptionEndDate')), 'lic_bad': past(c.get('licenceExp')),
+                    'pay_method': bool(c.get('hasPaymentMethod')), 'last_in': str(c.get('lastEntrance') or '')[:10]}
+                   for c in rows if past(c.get('subscriptionEndDate')) or past(c.get('licenceExp'))]
+            # בודקים לעומק את מי שפג לו לאחרונה (60 יום) — הפעולות האוטומטיות והתשלומים במקווה
+            lim = (datetime.date.today() - datetime.timedelta(days=60)).isoformat()
+            rec = sorted([r for r in out if max(r['sub_end'] if r['sub_bad'] else '', r['lic_exp'] if r['lic_bad'] else '') >= lim],
+                         key=lambda r: max(r['sub_end'], r['lic_exp']), reverse=True)[:80]
             def chk(r):
                 try:
                     acts, _k = _mk.auto_actions(r['id'])
                     r['auto'] = {a['key']: a['on'] for a in acts}
                 except Exception as e:
                     r['auto_err'] = str(e)[:120]
+                try:
+                    tx, src, _k2 = _mk.payments(r['id'])
+                    ok = [t for t in tx if not t['failed'] and (t['amount'] or 0) > 0]
+                    r['last_pay'], r['last_amt'] = (ok[0]['iso'], ok[0]['amount']) if ok else ('', 0)
+                    r['fails'] = [t['iso'] for t in tx if t['failed']][:3]
+                    r['pay_src'] = src
+                except Exception:
+                    pass
             with ThreadPoolExecutor(4) as ex:
-                list(ex.map(chk, pay[:60]))
+                list(ex.map(chk, rec))
             _dmy = lambda v: '%s/%s/%s' % (v[8:10], v[5:7], v[:4]) if len(v or '') >= 10 else (v or '')
             for r in out:
                 a, why = r.get('auto') or {}, []
-                payer = r['keva'] or (r['last_pay'] or '') >= lim
-                if r['sub_bad'] and r['keva']:
-                    why.append('משלם בהו"ק בנדרים פלוס — אבל הו"ק בנדרים לא מאריכה את המנוי במקווה')
-                elif r['sub_bad'] and payer and (r['last_pay'] or '') < r['sub_end']:
-                    # כמו אברהם עטייה: המקווה חייב אותו בעצמו כל חודש (חד-פעמי בנדרים), והחיוב של סוף התקופה לא הגיע לנדרים
-                    why.append('המקווה מחייב אותו בעצמו כל חודש — החיוב האחרון %s, ואחרי שהמנוי הסתיים (%s) לא יצא חיוב חדש לנדרים פלוס (לא סירוב — החיוב לא נשלח)'
-                               % (_dmy(r['last_pay']), _dmy(r['sub_end'])))
-                elif r['sub_bad'] and payer:
-                    why.append('שילם בנדרים פלוס אחרי שהמנוי הסתיים (%s) — אבל המקווה לא האריך לו' % _dmy(r['last_pay']))
+                r['recent'] = 'auto' in r or 'auto_err' in r
                 if r['sub_bad'] and a.get('sub') is False:
-                    why.append('"חידוש תוקף מנוי" כבוי במקווה')
+                    why.append('"חידוש תוקף מנוי" כבוי במקווה — לכן לא התחדש')
                 if r['lic_bad'] and a.get('licence') is False:
                     why.append('"חידוש רישיון" כבוי במקווה')
                 if (a.get('sub') or a.get('licence')) and not r['pay_method']:
-                    why.append('חידוש אוטומטי פעיל — אבל אין אמצעי תשלום במקווה')
-                if r['sub_bad'] and not payer and r['last_pay']:
-                    # כמו בצילום: שתי הו"ק (120 + 101) כל חודש עד 21/06 — ומאז לא נגבה כלום
-                    why.append('החיוב האחרון בנדרים פלוס היה ב-%s — מאז לא נגבה ממנו כלום' % _dmy(r['last_pay']))
-                for k in r['dead']:
-                    if r['sub_bad'] and not r['keva']:
-                        why.append('הו"ק %s ₪ בנדרים: %s%s' % (k['amount'], k['off'], (' · חיוב אחרון ' + _dmy(k['last'])) if k['last'] else ''))
+                    why.append('חידוש אוטומטי פעיל — אבל אין לו אמצעי תשלום במקווה')
+                for f in r.get('fails') or []:
+                    why.append('חיוב שנכשל במקווה ב-' + _dmy(f))
+                if r['sub_bad'] and a.get('sub') and r['pay_method'] and not r.get('fails'):
+                    why.append('חידוש אוטומטי פעיל ויש אמצעי תשלום — ובכל זאת המקווה לא חייב ולא חידש (לברר מול המקווה)'
+                               + (' · תשלום אחרון במקווה ' + _dmy(r['last_pay']) if r.get('last_pay') else ''))
                 if r['lic_bad'] and not r['sub_bad']:
                     why.append('רק הרישיון (10 ₪) הסתיים — המנוי עצמו בתוקף')
-                r['payer'], r['why'] = payer, why
-            out.sort(key=lambda r: (not r['payer'], r['name']))
-            # כמה מנויים פגו בכל שבוע ב-8 השבועות האחרונים — לראות אם משהו השתנה פתאום (למשל מאז 08/10)
+                r['why'] = why
+            out.sort(key=lambda r: (not r['recent'], -int(re.sub(r'\D', '', max(r['sub_end'], r['lic_exp'])) or 0)))
             wk = []
             for i in range(8, 0, -1):
                 a0 = (datetime.date.today() - datetime.timedelta(days=7 * i)).isoformat()
                 a1 = (datetime.date.today() - datetime.timedelta(days=7 * (i - 1))).isoformat()
                 wk.append({'from': a0, 'n': sum(1 for r in out if r['sub_bad'] and a0 <= r['sub_end'] < a1)})
-            return self._send(200, {'ok': True, 'rows': out, 'payers': sum(1 for r in out if r['payer']), 'weeks': wk})
+            return self._send(200, {'ok': True, 'rows': out, 'recent': sum(1 for r in out if r['recent']), 'weeks': wk})
         if self.path.split('?')[0] == '/api/mikveh/renew_info':
             # 🔁 חידוש מנוי אוטומטי במקווה + הוראות הקבע שלו בקופת המקווה בנדרים פלוס
             import mikveh as _mk
@@ -18405,13 +18389,15 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             if not c:
                 return self._send(200, {'ok': False, 'error': 'הלקוח לא נמצא במקווה'})
-            con = db()
+            # רק ממערכת המקווה — מה שהוא משלם במקווה / במכשיר. לא מנדרים פלוס
             try:
-                out = mk_payments(con, cid, c)
-            finally:
-                con.close()
-            out['ok'] = True
-            return self._send(200, out)
+                tx, src, keys = _mk.payments(cid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            paid = [t for t in tx if not t['failed'] and (t['amount'] or 0) > 0]
+            return self._send(200, {'ok': True, 'tx': tx, 'src': src, 'keys': keys,
+                                    'sum': round(sum(t['amount'] for t in paid), 2), 'count': len(paid),
+                                    'since': min((t['iso'] for t in paid if t['iso']), default='')})
         if self.path.split('?')[0] == '/api/mikveh/log':
             # 📜 מאיר: "איפה אני רואה במקווה את ההודעות ששלחתי, בטלפון ימות המשיח או מייל?" — כל מה שיצא מהמקווה
             con = db()
