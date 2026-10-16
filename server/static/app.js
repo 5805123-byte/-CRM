@@ -2276,6 +2276,7 @@ async function mkExpCheck(){
     ${(x.why||[]).length?`<div style="color:#c0392b;font-weight:600">${x.why.map(esc).join('<br>')}</div>`:''}</div>`;
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🔍</div><div><h2>בדיקת פג תוקף</h2>
     <div class="mksub">${A.length} שהסתיים להם מנוי / רישיון · <b>${pay.length}</b> מהם משלמים (תשלום ב-45 יום / הו"ק פעילה)</div></div></div>
+    ${(r.weeks||[]).length?`<div class="mksec">כמה מנויים פגו בכל שבוע</div><div style="display:flex;gap:4px;align-items:flex-end;height:90px;margin:4px 0 12px">${(()=>{const mx=Math.max(1,...r.weeks.map(w=>w.n));return r.weeks.map(w=>`<div style="flex:1;text-align:center;font-size:11px"><b>${w.n}</b><div style="background:#c0392b;opacity:.75;border-radius:4px 4px 0 0;height:${Math.round(55*w.n/mx)}px"></div><span class="mksub">${esc(w.from.slice(8,10)+'/'+w.from.slice(5,7))}</span></div>`).join('');})()}</div>`:''}
     ${pay.length?`<div class="mksec">💳 משלמים — אבל פג תוקף</div><div class="mklist">${pay.map(row).join('')}</div>`:''}
     ${rest.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">שאר מי שפג תוקף (${rest.length}) — לא נמצא תשלום אחרון</summary><div class="mklist">${rest.map(row).join('')}</div></details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');

@@ -18348,7 +18348,13 @@ class H(BaseHTTPRequestHandler):
                     why.append('רק הרישיון (10 ₪) הסתיים — המנוי עצמו בתוקף')
                 r['payer'], r['why'] = payer, why
             out.sort(key=lambda r: (not r['payer'], r['name']))
-            return self._send(200, {'ok': True, 'rows': out, 'payers': sum(1 for r in out if r['payer'])})
+            # כמה מנויים פגו בכל שבוע ב-8 השבועות האחרונים — לראות אם משהו השתנה פתאום (למשל מאז 08/10)
+            wk = []
+            for i in range(8, 0, -1):
+                a0 = (datetime.date.today() - datetime.timedelta(days=7 * i)).isoformat()
+                a1 = (datetime.date.today() - datetime.timedelta(days=7 * (i - 1))).isoformat()
+                wk.append({'from': a0, 'n': sum(1 for r in out if r['sub_bad'] and a0 <= r['sub_end'] < a1)})
+            return self._send(200, {'ok': True, 'rows': out, 'payers': sum(1 for r in out if r['payer']), 'weeks': wk})
         if self.path.split('?')[0] == '/api/mikveh/renew_info':
             # 🔁 חידוש מנוי אוטומטי במקווה + הוראות הקבע שלו בקופת המקווה בנדרים פלוס
             import mikveh as _mk
