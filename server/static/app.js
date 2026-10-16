@@ -1679,6 +1679,9 @@ const mkAgo=s=>{if(!s)return '';const d=new Date(s);if(isNaN(d))return '';
   const hm=d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
   if(days<=0)return 'היום '+hm; if(days===1)return 'אתמול '+hm; if(days<7)return 'לפני '+days+' ימים';
   if(days<60)return 'לפני '+Math.round(days/7)+' שבועות'; return mkDate(s);};
+// טלפון ישראלי תקין — כמו בשרת (yemot.norm_phone)
+const mkPhoneOk=p=>{let d=String(p||'').replace(/\D/g,'');if(d.startsWith('00972'))d=d.slice(5);else if(d.startsWith('972'))d=d.slice(3);if(d&&d[0]!=='0')d='0'+d;
+  return /^0(5\d|7\d)\d{7}$/.test(d)||/^0[2-489]\d{7}$/.test(d);};
 const mkPast=s=>{if(!s)return false;const d=new Date(s);return !isNaN(d)&&d<new Date();};
 function mkSkel(){view.innerHTML=`<div class="mkw"><div class="mkhero"><h2>🛁 לקוחות המקווה<small>טוען מהמקווה…</small></h2><span class="mkspin lg" style="color:#fff"></span></div>
   <div class="mklist">${'<div class="mkskel"></div>'.repeat(7)}</div></div>`;}
@@ -1863,7 +1866,7 @@ function mkOpen(c){
     const busy=state==='busy';
     rs.innerHTML=`<button class="x" id="rx">✕</button>
       <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
-        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
+        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<a href="#" id="mkphed" title="לתקן את הטלפון במקווה" style="text-decoration:none">✎</a><span>#${esc(c.code||'')}</span><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
@@ -1900,6 +1903,12 @@ function mkOpen(c){
     document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
+    document.getElementById('mkphed').onclick=async e=>{e.preventDefault();
+      const v=await uiPrompt('הטלפון של '+mkName(c)+' במקווה'+(c.phone&&!mkPhoneOk(c.phone)?'\n⚠️ המספר שרשום עכשיו ('+c.phone+') לא תקין':''),c.phone||'');
+      if(v===null||!String(v).trim())return;
+      const r=await api('POST','/api/mikveh/phone',{id:c.id,phone:String(v).trim()});
+      if(!r||!r.ok)return uiAlert('הטלפון לא עודכן:\n'+((r&&r.error)||'שגיאה'));
+      c.phone=r.phone;toast('✓ הטלפון עודכן במקווה: '+r.phone);mkOpen(c);};
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
       const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
     const no=document.getElementById('mkno'); if(no)no.onclick=()=>{pick=null;state='';draw();};

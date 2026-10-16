@@ -20394,6 +20394,36 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'כתובת לא תקינה'})
             con = db(); kv_set(con, 'mk_client_url', u); con.commit(); con.close()
             return self._send(200, {'ok': True, 'url': u})
+        if self.path == '/api/mikveh/phone':
+            # 📞 מאיר: "כתוב אין טלפון תקין — יש לו טלפון בכרטיס" (במקווה נרשם 05276886647 — ספרה מיותרת).
+            # תיקון הטלפון במקווה עצמו מהכרטיס, ובדיקה שזה נשמר
+            import mikveh as _mk, yemot as _ym
+            cid = str(b.get('id') or '')
+            ph = _ym.norm_phone(b.get('phone') or '')
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            if not ph:
+                return self._send(200, {'ok': False, 'error': 'המספר לא תקין — צריך 10 ספרות לנייד (05…) או 9 לקווי'})
+            try:
+                old = (_mk.client(cid, max_age=30).get('phone') or '').strip()
+                res = _mk.update_client(cid, {'phone': ph})
+                now = (_mk.client(cid).get('phone') or '').strip()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            if _mk._CL['rows'] is not None:
+                for c in _mk._CL['rows']:
+                    if str(c.get('id')) == cid:
+                        c['phone'] = now
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'phone', '📞 הטלפון במקווה תוקן: %s ← %s' % (now, old or '—')))
+                con.commit()
+            except Exception:
+                pass
+            finally:
+                con.close()
+            return self._send(200, {'ok': now == ph, 'phone': now, 'error': '' if now == ph else 'המקווה לא שמר את הטלפון'})
         if self.path == '/api/mikveh/notify':
             # "ולשלוח לו הודעה במיידי דרך הטלפון שזה עודכן" — ידני, הודעה אחת, דרך ימות המשיח
             import yemot as _ym
@@ -20406,7 +20436,7 @@ class H(BaseHTTPRequestHandler):
             if not text:
                 return self._send(200, {'ok': False, 'error': 'חסר טקסט להודעה'})
             if not phone:
-                return self._send(200, {'ok': False, 'error': 'אין טלפון תקין ללקוח'})
+                return self._send(200, {'ok': False, 'error': 'אין טלפון תקין ללקוח (%s) — לתקן בלחיצה על ✎ ליד הטלפון בכרטיס' % ((b.get('phone') or '').strip() or 'ריק')})
             if ch == 'sms' and not _ym.is_mobile(phone):
                 return self._send(200, {'ok': False, 'error': 'SMS רק לנייד — זה מספר קווי'})
             # "אופציה לשלוח מאוחר יותר" — בשעה שנבחרה (שעון ישראל); לא בשבת / חג (נדחה למוצאי)
