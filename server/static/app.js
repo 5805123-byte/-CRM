@@ -6821,7 +6821,20 @@ function avOpts(sel){
     +'<option value="__new__">➕ אברך חדש — הוסף לרשימה…</option>';
 }
 async function loadAvList(){ try{const r=await api('GET','/api/avreichim');
-  AVLIST=(r&&r.rows)||r||[]; AVSTAT=(r&&r.rows)?r:null; AVPEND=(r&&r.pending)||[];}catch(e){} }
+  AVLIST=(r&&r.rows)||r||[]; AVSTAT=(r&&r.rows)?r:null; AVPEND=(r&&r.pending)||[]; AVOPEN=(r&&r.open)||[];}catch(e){} }
+let AVOPEN=[];
+// 🚪 מאיר: "אם אברך עזב את הכולל… אני רוצה לראות פה את אסתר קרפ ברשימה, ושאין לה אברך, כדי לשבץ לה אחר" —
+// זבולונים שהמקום שלהם התפנה, בראש הרשימה לפי אברכים, עם שיבוץ אברך חדש ישר מכאן
+function avOpenHTML(){
+  const q2=norm(String(q||'')), L=(AVOPEN||[]).filter(o=>!q2||norm(o.name+' '+o.prev).includes(q2));
+  if(!L.length)return '';
+  const free=(AVLIST||[]).filter(a=>!(a.holders||[]).length).map(a=>a.name), rest=(AVLIST||[]).filter(a=>(a.holders||[]).length).map(a=>a.name);
+  return `<datalist id="avopen_dl">${free.concat(rest).map(n=>`<option value="${esc(n)}">${free.includes(n)?'בלי שותף':''}</option>`).join('')}</datalist>
+    <div class="avopenbox"><div class="avopenh">🚪 <b>${L.length}</b> זבולונים בלי אברך — האברך שלהם יצא מהכולל</div>
+    ${L.map(o=>`<div class="avopenrow"><a class="avhold" data-did="${o.id}" title="פתח כרטיס">${esc(o.name)}</a>
+      <small>${esc(o.prev)} יצא מהכולל${o.prev_ended?' ב'+esc(o.prev_ended):''}${o.amount?' · $'+esc(o.amount):''}</small>
+      <span class="avopenpick"><input class="avopen_in" data-pid="${o.pid}" data-nm="${esc(o.name)}" list="avopen_dl" placeholder="לשבץ אברך חדש…" autocomplete="off"><button class="btn sm avopen_ok" data-pid="${o.pid}">שבץ</button></span></div>`).join('')}</div>`;
+}
 let AVPEND=[];
 // שם מהרשימה הרשמית של הכולל שדומה לאברך שכבר רשום — מאיר מחליט אם זה
 // אותו אדם (ואז הת"ז והטלפון מצטרפים אליו) או שני אנשים נפרדים.
@@ -9962,6 +9975,7 @@ async function renderAvByAv(){
         title="${avFreeOnly?'הצג את כולם':'הצג רק אברכים בלי שותף'}"><b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף ${avFreeOnly?'✕':'▸'}</button>${q2?` · מוצגים ${rows.length}`:''}</div>
     <div class="hintxt${avFreeOnly?'':' hidden'}" id="avfreehint" style="margin:0 2px 6px">מוצגים רק אברכים שאין להם שותף. לחץ שוב כדי לראות את כולם.</div>
     ${avPendHTML()}
+    <div id="avopenwrap">${avOpenHTML()}</div>
     <div class="addrow avnewbox"><input id="av_new" placeholder="➕ אברך חדש — שם משפחה ואז שם פרטי"><button class="btn sm" id="av_newbtn">הוסף</button></div>
     <div class="avwrap"><div class="avinner">
       <div class="avghead"><span class="g1">#</span><span class="g2">האברך</span><span class="g3">הזבולון</span><span class="g4">מתאריך</span><span class="g5">סכום</span><span class="g6">הערות</span><span class="g7"></span></div>
@@ -9994,6 +10008,7 @@ function paintByAv(){
   const rows=avFiltered();
   const el=view.querySelector('.avtlist'); if(!el)return;
   el.innerHTML=rows.map((a,i)=>avRowHTML(a,i)).join('')||'<div class="empty">אין תוצאות</div>';
+  const ow=view.querySelector('#avopenwrap'); if(ow)ow.innerHTML=avOpenHTML();
   // מצב הכפתור "בלי שותף" מתעדכן כאן, כי הרענון הזה אינו בונה את הכותרת
   const fb=view.querySelector('#avfreebtn');
   if(fb){
@@ -10201,6 +10216,13 @@ function wireByAv(){
         if(await saveH(pid,{donor_id:+x.dataset.id})){avSwapId=null;toast('הועבר לתורם החדש ✓');reload();}});};});
   // פתק הקוויטל של אברך אחד — לצפייה, להדפסה, ולהעתקה כתמונה (כמו פרנס יום)
   view.querySelectorAll('.avslip').forEach(b=>b.onclick=()=>openIzSlip(b.dataset.av));
+  view.querySelectorAll('.avopen_ok').forEach(b=>b.onclick=async()=>{
+    const inp=view.querySelector('.avopen_in[data-pid="'+b.dataset.pid+'"]'), nm=String(inp&&inp.value||'').trim();
+    if(!nm){inp&&inp.focus();return toast('בחר אברך מהרשימה');}
+    if(!(AVLIST||[]).some(a=>a.name===nm)&&!await uiConfirm('"'+nm+'" לא נמצא ברשימת האברכים. לשבץ בכל זאת?','כן','לא'))return;
+    if(!await uiConfirm('לשבץ את '+nm+' ל'+inp.dataset.nm+'?','✓ כן, לשבץ','ביטול'))return;
+    b.disabled=true;const r=await saveH(b.dataset.pid,{avreich:nm});b.disabled=false;
+    if(r){toast(nm+' שובץ ל'+inp.dataset.nm+' ✓');reload();}});
   view.querySelectorAll('.avassign').forEach(b=>b.onclick=()=>{
     avOpenId=(avOpenId===b.dataset.av)?null:b.dataset.av; avSwapId=null; paintByAv();});
   view.querySelectorAll('.avhist2').forEach(b=>b.onclick=()=>{

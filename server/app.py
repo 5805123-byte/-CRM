@@ -16457,9 +16457,17 @@ class H(BaseHTTPRequestHandler):
                         for r in con.execute("SELECT * FROM avreich_pending ORDER BY last,first")]
             except Exception:
                 pass
+            # מאיר: "שלום פרנק היה שותף של אסתר קרפ, ויצא מהכולל — אני רוצה לראות אותה ברשימה, שאין לה אברך,
+            # כדי לשבץ לה אברך אחר". מקומות פתוחים: שורה פעילה אצל התורם, בלי אברך (מי שהיה בה יצא מהכולל)
+            opens = [{'pid': r['id'], 'id': r['donor_id'], 'name': names.get(r['donor_id'], ''),
+                      'amount': r['amount'] or '', 'prev': r['prev_avreich'] or '', 'prev_ended': r['prev_ended'] or ''}
+                     for r in con.execute("SELECT id,donor_id,amount,prev_avreich,prev_ended FROM partners "
+                                          "WHERE COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')='' "
+                                          "AND COALESCE(TRIM(prev_avreich),'')<>'' ORDER BY id")]
+            opens.sort(key=lambda x: _srt(x['name']))
             con.close()
             return self._send(200, {'rows': rows, 'total': len(rows),
-                                    'pending': pend,
+                                    'pending': pend, 'open': opens,
                                     'free': sum(1 for x in rows if not x['holders'])})
         # ----- מסך הבדיקה: הסטטוס שנקבע לכל תורם -----
         if self.path.split('?')[0] == '/api/review':
