@@ -20405,9 +20405,16 @@ class H(BaseHTTPRequestHandler):
             if not ph:
                 return self._send(200, {'ok': False, 'error': 'המספר לא תקין — צריך 10 ספרות לנייד (05…) או 9 לקווי'})
             try:
-                old = (_mk.client(cid, max_age=30).get('phone') or '').strip()
-                res = _mk.update_client(cid, {'phone': ph})
-                now = (_mk.client(cid).get('phone') or '').strip()
+                full = _mk.client(cid)
+                old = (full.get('phone') or '').strip()
+                # כל שדה טלפון אצל הלקוח שרשום בו המספר השגוי (phone / mobile / tel…) — מתוקן יחד
+                flds = [k for k, v in full.items() if isinstance(v, str) and re.search(r'phone|mobile|cell|tel', k, re.I)
+                        and re.sub(r'\D', '', v) == re.sub(r'\D', '', old)] or ['phone']
+                if 'phone' not in flds:
+                    flds.append('phone')
+                _mk.update_client(cid, {k: ph for k in flds})
+                after = _mk.client(cid)
+                now = (after.get('phone') or '').strip()
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             if _mk._CL['rows'] is not None:
@@ -20423,7 +20430,8 @@ class H(BaseHTTPRequestHandler):
                 pass
             finally:
                 con.close()
-            return self._send(200, {'ok': now == ph, 'phone': now, 'error': '' if now == ph else 'המקווה לא שמר את הטלפון'})
+            return self._send(200, {'ok': now == ph, 'phone': now, 'fields': flds,
+                                    'error': '' if now == ph else 'המקווה קיבל את העדכון אבל הטלפון נשאר %s (שדות: %s)' % (now or 'ריק', ', '.join(flds))})
         if self.path == '/api/mikveh/notify':
             # "ולשלוח לו הודעה במיידי דרך הטלפון שזה עודכן" — ידני, הודעה אחת, דרך ימות המשיח
             import yemot as _ym

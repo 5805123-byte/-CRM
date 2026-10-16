@@ -1866,7 +1866,8 @@ function mkOpen(c){
     const busy=state==='busy';
     rs.innerHTML=`<button class="x" id="rx">✕</button>
       <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
-        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<a href="#" id="mkphed" title="לתקן את הטלפון במקווה" style="text-decoration:none">✎</a><span>#${esc(c.code||'')}</span><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
+        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
+          <button class="mkbtn ${c.phone&&!mkPhoneOk(c.phone)?'':'gh'}" id="mkphed" style="padding:6px 12px;font-size:.9rem">📞 ${c.phone&&!mkPhoneOk(c.phone)?'לתקן את הטלפון':'שינוי טלפון'}</button>
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
@@ -1906,8 +1907,10 @@ function mkOpen(c){
     document.getElementById('mkphed').onclick=async e=>{e.preventDefault();
       const v=await uiPrompt('הטלפון של '+mkName(c)+' במקווה'+(c.phone&&!mkPhoneOk(c.phone)?'\n⚠️ המספר שרשום עכשיו ('+c.phone+') לא תקין':''),c.phone||'');
       if(v===null||!String(v).trim())return;
-      const r=await api('POST','/api/mikveh/phone',{id:c.id,phone:String(v).trim()});
-      if(!r||!r.ok)return uiAlert('הטלפון לא עודכן:\n'+((r&&r.error)||'שגיאה'));
+      const bt=document.getElementById('mkphed');if(bt){bt.disabled=true;bt.innerHTML='<span class="mkspin"></span> שומר במקווה…';}
+      const r=await api('POST','/api/mikveh/phone',{id:c.id,phone:String(v).trim()}).catch(()=>null);
+      if(bt){bt.disabled=false;bt.textContent='📞 לתקן את הטלפון';}
+      if(!r||!r.ok)return uiAlert('הטלפון לא עודכן:\n'+((r&&r.error)||'אין תשובה מהשרת'));
       c.phone=r.phone;toast('✓ הטלפון עודכן במקווה: '+r.phone);mkOpen(c);};
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
       const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
