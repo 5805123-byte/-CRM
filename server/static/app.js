@@ -16152,21 +16152,30 @@ function ymJobChips(j){
   return c.join('');}
 // 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
 // בטלפון: חלון השיתוף (וואטסאפ וכו'); במחשב / כשאין שיתוף קבצים — הורדה
+// מאיר: "שזה ירד רק אם אני מבקש — שאשמע את ההקלטה ששלחתי, וגם אוכל לשמור" — נפתח נגן; שמירה / וואטסאפ רק בלחיצה
 async function ymAudio(id,nm,btn){
-  const t0=btn&&btn.innerHTML; if(btn){btn.disabled=true;btn.innerHTML='<span class="mkspin"></span> מכין…';}
+  const t0=btn&&btn.innerHTML; if(btn){btn.disabled=true;btn.innerHTML='<span class="mkspin"></span> טוען…';}
+  let blob=null;
   try{
     const r=await fetch('/api/yemot/audio/'+id,{cache:'no-store'});
     if(r.status===401){showLogin();return;}
     if(!(r.headers.get('Content-Type')||'').includes('audio')){const j=await r.json().catch(()=>({}));return uiAlert('אין הקלטה:\n'+(j.error||'שגיאה'));}
-    const blob=await r.blob(), name='הודעה קולית - '+String(nm||'').replace(/[\\/:*?"<>|]+/g,'').slice(0,40)+'.wav';
-    const f=new File([blob],name,{type:'audio/wav'});
-    if(navigator.canShare&&navigator.canShare({files:[f]})){
-      try{await navigator.share({files:[f],title:name});return;}catch(e){if(e&&e.name==='AbortError')return;}
-    }
-    const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(u),60000);toast('⬇️ ההקלטה הורדה');
-  }catch(e){uiAlert('ההקלטה לא נטענה:\n'+(e&&e.message||e));}
-  finally{if(btn){btn.disabled=false;btn.innerHTML=t0;}}}
+    blob=await r.blob();
+  }catch(e){return uiAlert('ההקלטה לא נטענה:\n'+(e&&e.message||e));}
+  finally{if(btn){btn.disabled=false;btn.innerHTML=t0;}}
+  const name='הודעה קולית - '+String(nm||'').replace(/[\\/:*?"<>|]+/g,'').slice(0,40)+'.wav';
+  const f=new File([blob],name,{type:'audio/wav'}), u=URL.createObjectURL(blob);
+  const canSh=!!(navigator.canShare&&navigator.canShare({files:[f]}));
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">🎧 ההקלטה ששלחת${nm?' ל'+esc(nm):''}</div>
+    <audio controls autoplay src="${u}" style="width:100%;margin:10px 0"></audio>
+    <div class="cbtns" style="flex-wrap:wrap"><button class="btn ghost cno">סגירה</button><button class="btn" id="yaSave">⬇️ לשמור</button>${canSh?'<button class="btn" id="yaShare">📤 וואטסאפ / שיתוף</button>':''}</div></div>`;
+  document.body.appendChild(o);
+  const close=()=>{const au=o.querySelector('audio');if(au)au.pause();o.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+  o.querySelector('.cno').onclick=close;o.onclick=e=>{if(e.target===o)close();};
+  o.querySelector('#yaSave').onclick=()=>{const a=document.createElement('a');a.href=u;a.setAttribute('download',name);a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),500);toast('⬇️ ההקלטה נשמרה');};
+  const sh=o.querySelector('#yaShare');
+  if(sh)sh.onclick=async()=>{try{await navigator.share({files:[f],title:name});}catch(e){if(!(e&&e.name==='AbortError'))uiAlert('השיתוף לא הצליח — אפשר "⬇️ לשמור" ולשלוח מהקבצים');}};}
 function ymViewJobs(){
   const st=ymStatus, jobs=st.jobs||[];
   const det=r=>{const j=r.job, ms=r.msgs||[];
@@ -16177,7 +16186,7 @@ function ymViewJobs(){
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${ms.some(m=>+m.amount)?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
       ${ms.map(m=>`<tr class="${m.status}"><td>${esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
         <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
-        <td>${ymAns(m,j.channel)}${j.channel==='voice'&&m.status==='sent'?` <button class="btn sm ghost ymaudio" data-id="${m.id}" data-nm="${esc(m.name||m.phone||'')}" title="להוריד את ההקלטה / לשלוח בוואטסאפ">🎧 הקלטה</button>`:''}${j.channel==='voice'&&!j.test&&ymNotHeard(m)?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
+        <td>${ymAns(m,j.channel)}${j.channel==='voice'&&m.status==='sent'?` <button class="btn sm ghost ymaudio" data-id="${m.id}" data-nm="${esc(m.name||m.phone||'')}" title="לשמוע את ההקלטה ששלחת — ומשם לשמור / לשלוח בוואטסאפ">🎧 לשמוע הקלטה</button>`:''}${j.channel==='voice'&&!j.test&&ymNotHeard(m)?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
   view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
       <div class="ymch3"><span class="ymjd">${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><b>${j.channel==='sms'?'💬 SMS':'📞 קולית'}</b>${j.test?'<span class="ymtag">בדיקה</span>':''}
         ${(j.recips||[]).length?`<span class="ymjwho">👤 ${(j.recips||[]).slice(0,3).map(r=>esc(r.name||r.phone)).join(', ')}${j.total>3?` ועוד ${j.total-3}`:''}</span>`:''}
