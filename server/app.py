@@ -15200,8 +15200,12 @@ def mk_payments(con, cid, c):
         ka = [x for x in a if not str(x).startswith('%')]
         if kw:
             kv = [dict(r) for r in con.execute(
-                "SELECT id, amount, next_date, active, last4, itra, groupe, kind, name FROM nd_keva WHERE mosad=? AND (" +
-                " OR ".join(kw) + ") ORDER BY active DESC, id", [mos] + ka)]
+                "SELECT id, amount, next_date, active, last4, itra, groupe, kind, name, COALESCE(off,'') off, COALESCE(error,'') error "
+                "FROM nd_keva WHERE mosad=? AND (" + " OR ".join(kw) + ") ORDER BY active DESC, id", [mos] + ka)]
+    # לכל הוראה — מתי נגבה בה לאחרונה (הוראה שהסתיימה / בוטלה: "מאז לא נגבה כלום")
+    for k in kv:
+        kid = str(k['id']).split(':')[-1]
+        k['last_charge'] = next((t['iso'] for t in tx if str(t.get('keva') or '').lstrip('-') == kid and (t['amount'] or 0) > 0), '')
     for t in tx:
         t.pop('comments', None)
     paid = [t for t in tx if (t['amount'] or 0) > 0]
@@ -18305,6 +18309,7 @@ class H(BaseHTTPRequestHandler):
                     P = mk_payments(con, str(c.get('id')), c)
                     paid = [t for t in P['tx'] if (t['amount'] or 0) > 0]
                     kv = [k for k in P['kevas'] if k.get('active')]
+                    dead = [k for k in P['kevas'] if not k.get('active')]
                     last = paid[0] if paid else None
                     out.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
                                 'sub_end': str(c.get('subscriptionEndDate') or '')[:10], 'lic_exp': str(c.get('licenceExp') or '')[:10],
@@ -18312,7 +18317,8 @@ class H(BaseHTTPRequestHandler):
                                 'pay_method': bool(c.get('hasPaymentMethod')), 'last_in': str(c.get('lastEntrance') or '')[:10],
                                 'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0,
                                 'last_keva': bool(last and last.get('keva')), 'keva': bool(kv),
-                                'keva_amt': kv[0]['amount'] if kv else '', 'keva_next': kv[0].get('next_date') if kv else ''})
+                                'keva_amt': kv[0]['amount'] if kv else '', 'keva_next': kv[0].get('next_date') if kv else '',
+                                'dead': [{'amount': k['amount'], 'off': k['off'] or k['error'] or 'לא פעילה', 'last': k['last_charge']} for k in dead][:4]})
             finally:
                 con.close()
             # רק מי שמשלם (תשלום ב-45 הימים האחרונים / הו"ק פעילה) — בודקים אצלו במקווה את הפעולות האוטומטיות
@@ -18344,6 +18350,12 @@ class H(BaseHTTPRequestHandler):
                     why.append('"חידוש רישיון" כבוי במקווה')
                 if (a.get('sub') or a.get('licence')) and not r['pay_method']:
                     why.append('חידוש אוטומטי פעיל — אבל אין אמצעי תשלום במקווה')
+                if r['sub_bad'] and not payer and r['last_pay']:
+                    # כמו בצילום: שתי הו"ק (120 + 101) כל חודש עד 21/06 — ומאז לא נגבה כלום
+                    why.append('החיוב האחרון בנדרים פלוס היה ב-%s — מאז לא נגבה ממנו כלום' % _dmy(r['last_pay']))
+                for k in r['dead']:
+                    if r['sub_bad'] and not r['keva']:
+                        why.append('הו"ק %s ₪ בנדרים: %s%s' % (k['amount'], k['off'], (' · חיוב אחרון ' + _dmy(k['last'])) if k['last'] else ''))
                 if r['lic_bad'] and not r['sub_bad']:
                     why.append('רק הרישיון (10 ₪) הסתיים — המנוי עצמו בתוקף')
                 r['payer'], r['why'] = payer, why

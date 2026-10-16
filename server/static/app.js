@@ -2284,9 +2284,10 @@ async function mkExpCheck(){
 function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
   if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
   const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
-  const kv=(P.kevas||[]).filter(k=>+k.active);
+  const kv=(P.kevas||[]).filter(k=>+k.active), dead=(P.kevas||[]).filter(k=>!+k.active);
   const by={id:'לפי המזהה שלו במקווה',phone:'לפי הטלפון',name:'לפי השם'}[P.by]||'';
   return `${kv.length?`<div class="mktiles">${kv.map(k=>`<div class="mktile ok"><span>🔁 הוראת קבע${k.kind==='bank'?' בנקאית':''}${k.last4?' · כרטיס '+esc(k.last4):''}</span><b>${esc(mkNis(String(k.amount||'').replace(/[^\d.]/g,'')))} לחודש</b>${k.next_date?`<span>החיוב הבא: ${esc(k.next_date)}</span>`:''}</div>`).join('')}</div>`:''}
+    ${dead.length?`<div class="mktiles">${dead.map(k=>`<div class="mktile bad"><span>⏹ הו"ק שהופסקה${k.last4?' · כרטיס '+esc(k.last4):''}</span><b>${esc(mkNis(String(k.amount||'').replace(/[^\d.]/g,'')))}</b><span>${esc(k.off||k.error||'לא פעילה')}${k.last_charge?' · חיוב אחרון '+d({iso:k.last_charge}):''}</span></div>`).join('')}</div>`:''}
     ${(P.tx||[]).length?`<div class="mksub" style="margin:4px 2px 8px">שילם <b>${P.count}</b> פעמים · סה״כ <b>${esc(mkNis(P.sum))}</b>${P.since?' · מאז '+d({iso:P.since}):''}${by?' · נמצא '+by:''}</div>
     <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)} · ${t.keva?'🔁 הוראת קבע':'💳 תשלום'}</b>
       <div class="mksub">${t.last4?'כרטיס '+esc(t.last4):''}${t.type?' · '+esc(t.type):''}</div></div><b style="${(+t.amount||0)<0?'color:#c0392b':''}">${esc(mkNis(t.amount))}</b></div>`).join('')}</div>`
