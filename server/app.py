@@ -16502,6 +16502,77 @@ class H(BaseHTTPRequestHandler):
             out.sort(key=lambda x: (_srt(x['avreich']), _srt(x['donor'])))
             return self._send(200, {'rows': out, 'total': len(out),
                                     'with_names': sum(1 for x in out if x['names'])})
+        if self.path.split('?')[0] == '/api/avreich/card':
+            # 🎓 מאיר: "כל אברך שיש לך את הפרטים שלו מהרשימה של יששכר־זבולון — אם אני לוחץ על השם שלו במלגות
+            # שיהיו לי כל הפרטים בלחיצה; היסטוריה של תרומות שלו בנדרים פלוס, ובנפרד היסטוריה של המקווה, ופרטי קשר"
+            # (מספר זהות לא נשלח למסך)
+            nm0 = re.sub(r'\s+', ' ', (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('name') or [''])[0]).strip()
+            if not nm0:
+                return self._send(400, {'ok': False})
+            key = lambda x: re.sub(r'["\'׳״\-\s]+', '', str(x or ''))
+            con = db()
+            try:
+                av = None
+                for r in con.execute("SELECT * FROM avreichim"):
+                    l, f = (r['last'] or '').strip(), (r['first'] or '').strip()
+                    if key(r['name']) == key(nm0) or (l and f and key(f + ' ' + l) == key(nm0)):
+                        av = r
+                        break
+                name = av['name'] if av else nm0
+                l, f = _split_av(name)
+                variants = list({name, (f + ' ' + l).strip(), (l + ' ' + f).strip()})
+                info = {'name': name, 'found': bool(av)}
+                if av:
+                    for k in ('phone', 'email', 'addr', 'seder', 'started', 'ended', 'note'):
+                        info[k] = (av[k] if k in av.keys() else '') or ''
+                phones = _phones_of(info.get('phone') or '')
+                hold = [dict(r) for r in con.execute(
+                    "SELECT p.id pid, p.donor_id did, d.last, d.first, p.amount, p.start_date, p.active, p.ended_date FROM partners p "
+                    "LEFT JOIN donors d ON d.id=p.donor_id WHERE TRIM(p.avreich)=? ORDER BY COALESCE(p.active,1) DESC, p.id DESC", (name,))]
+                stip = [dict(r) for r in con.execute(
+                    "SELECT kollel, kind, period, amount, extra, note, COALESCE(got,0) got FROM stipends WHERE TRIM(name) IN (%s) "
+                    "ORDER BY period DESC, id DESC" % ','.join('?' * len(variants)), variants)]
+                w, a = ["TRIM(name) IN (%s)" % ','.join('?' * len(variants))], list(variants)
+                if phones:
+                    w.append("phone IN (%s)" % ','.join('?' * len(phones))); a += phones
+                import nedarim as _nd
+                acc = {('' if x['main'] else x['mosad']): x['name'] for x in _nd.accounts()}
+                nd = []
+                for r in con.execute("SELECT iso, amount, keva, groupe, mosad, last4 FROM nd_tx WHERE (" + " OR ".join(w) + ") "
+                                     "AND COALESCE(amount,0)>0 ORDER BY iso DESC LIMIT 300", a):
+                    d = dict(r)
+                    mo = d.pop('mosad') or ''
+                    d['kupa'] = acc.get(mo) or ('מוסד ' + mo if mo else 'כולל חצות')
+                    d['keva'] = bool(str(d['keva'] or '').strip() and not str(d['keva']).startswith('-'))
+                    nd.append(d)
+                kv = [dict(r) for r in con.execute(
+                    "SELECT amount, next_date, groupe, COALESCE(mosad,'') mosad, last4 FROM nd_keva WHERE active=1 AND (" +
+                    " OR ".join(w) + ")", a)]
+                for k in kv:
+                    k['kupa'] = acc.get(k.pop('mosad')) or 'כולל חצות'
+            finally:
+                con.close()
+            # המקווה — חי מהמקווה (לא נשמר): לפי הטלפון, ואם אין — לפי השם המלא
+            mk = None
+            try:
+                import mikveh as _mk
+                if _mk.configured():
+                    cl = _mk.clients()
+                    hit = [c for c in cl if phones and _phones_of(c.get('phone') or '') and set(_phones_of(c.get('phone') or '')) & set(phones)]
+                    if not hit:
+                        hit = [c for c in cl if key((c.get('lastName') or '') + (c.get('firstName') or '')) in (key(l + f), key(f + l))
+                               or key((c.get('firstName') or '') + (c.get('lastName') or '')) in (key(l + f), key(f + l))]
+                    if hit:
+                        c = hit[0]
+                        g = next((x for x in _mk.groups() if x['id'] == c.get('groupId')), None)
+                        mk = {'id': c.get('id'), 'group': g['name'] if g else '', 'sub_end': str(c.get('subscriptionEndDate') or '')[:10],
+                              'lic_exp': str(c.get('licenceExp') or '')[:10], 'last_in': str(c.get('lastEntrance') or '')[:16],
+                              'by': 'phone' if phones and set(_phones_of(c.get('phone') or '')) & set(phones) else 'name',
+                              'more': len(hit) - 1}
+            except Exception as e:
+                mk = {'error': str(e)[:160]}
+            return self._send(200, {'ok': True, 'info': info, 'phones': phones, 'holders': hold, 'stip': stip,
+                                    'nd': nd, 'kevas': kv, 'mikveh': mk})
         if self.path.split('?')[0] == '/api/avreichim':
             # רשימת האברכים לפי שם משפחה, ולצד כל אחד מי מחזיק אותו, ממתי ובכמה.
             # אברך בלי שותף מופיע גם הוא — הרשימה היא של הכולל, לא של התורמים.

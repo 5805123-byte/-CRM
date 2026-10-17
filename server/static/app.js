@@ -10048,7 +10048,7 @@ function avRowHTML(a,ix){
     <span class="g5">${x&&!x.linked?`<input class="avh_amt" data-pid="${x.pid}" value="${esc(amtOf(x))}" inputmode="decimal" placeholder="—">`:''}</span>
     <span class="g6">${first?`<input class="avnote" data-av="${esc(a.name)}" data-id="${a.aid||''}" value="${esc(a.note||'')}" placeholder="הערות…">`:''}</span>
     <span class="g7">${x&&!x.linked?`<button class="ib avh_swap" data-pid="${x.pid}" title="החלף תורם">🔀</button><button class="ib rd avh_rm" data-pid="${x.pid}" title="הסר שותפות">✕</button>`:''}${
-      x&&x.linked?`<button class="ib avl_kv" data-did="${x.id}" title="שמות הקוויטל שלו">🕯️</button><button class="ib avl_full" data-did="${x.id}" data-av="${esc(a.name)}" title="הפוך לשותף מלא — שורה משלו עם תאריך וסכום">⬆️</button>${x.split_id?`<button class="ib rd avl_rm" data-sid="${x.split_id}" data-nm="${esc(x.name)}" title="בטל את ההחזקה המשותפת">✕</button>`:''}`:''}${first?`<button class="ib avslip" data-av="${esc(a.name)}" title="פתק קוויטל של האברך">🕯️</button><button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
+      x&&x.linked?`<button class="ib avl_kv" data-did="${x.id}" title="שמות הקוויטל שלו">🕯️</button><button class="ib avl_full" data-did="${x.id}" data-av="${esc(a.name)}" title="הפוך לשותף מלא — שורה משלו עם תאריך וסכום">⬆️</button>${x.split_id?`<button class="ib rd avl_rm" data-sid="${x.split_id}" data-nm="${esc(x.name)}" title="בטל את ההחזקה המשותפת">✕</button>`:''}`:''}${first?`<button class="ib avcardb" data-av="${esc(a.name)}" title="כל הפרטים: קשר, מלגות, נדרים פלוס, מקווה">📇</button><button class="ib avslip" data-av="${esc(a.name)}" title="פתק קוויטל של האברך">🕯️</button><button class="ib avassign" data-av="${esc(a.name)}" title="${h.length?'הוסף עוד שותף':'שבץ שותף'}">➕</button>${(a.log||[]).length?`<button class="ib avhist2" data-av="${esc(a.name)}" title="היסטוריה של האברך">🕘</button>`:''}<button class="ib rd avgone" data-av="${esc(a.name)}" title="יצא מהכולל">🚪</button>`:''}</span>
   </div>${sw&&x&&!x.linked&&sw===x.pid?`<div class="avswapbox"><input class="sw_q" data-pid="${x.pid}" placeholder="לאיזה תורם להעביר…" autocomplete="off"><div class="dpres sw_res" data-pid="${x.pid}"></div></div>`:''}`;
   return `<div class="avtrow ${h.length?'':'isfree'}" data-av="${esc(a.name)}">
     ${h.length?h.map((x,i)=>line(x,i===0)).join(''):line(null,true)}
@@ -10228,6 +10228,7 @@ function wireByAv(){
         if(await saveH(pid,{donor_id:+x.dataset.id})){avSwapId=null;toast('הועבר לתורם החדש ✓');reload();}});};});
   // פתק הקוויטל של אברך אחד — לצפייה, להדפסה, ולהעתקה כתמונה (כמו פרנס יום)
   view.querySelectorAll('.avslip').forEach(b=>b.onclick=()=>openIzSlip(b.dataset.av));
+  view.querySelectorAll('.avcardb').forEach(b=>b.onclick=e=>{e.stopPropagation();avCard(b.dataset.av);});
   view.querySelectorAll('.avopen_ok').forEach(b=>b.onclick=async()=>{
     const inp=view.querySelector('.avopen_in[data-pid="'+b.dataset.pid+'"]'), nm=String(inp&&inp.value||'').trim();
     if(!nm){inp&&inp.focus();return toast('בחר אברך מהרשימה');}
@@ -12641,6 +12642,53 @@ const STIP_KOL=[['חצות','🌙 כולל חצות'],['הוראה','📘 כול
 const stMoney=n=>'₪'+Math.round(n||0).toLocaleString('en-US');
 async function loadStip(){const r=await api('GET','/api/stipends');STIP=(r&&r.rows)||[];STIPLBL=(r&&r.labels)||{};STIPNAMES=(r&&r.names)||{};}
 function stipLabel(kind,period){return kind==='monthly'?(STIPLBL[period]||period):period;}
+// 📇 מאיר: "כל אברך — אם אני לוחץ על השם שלו במלגות, שיהיו לי כל הפרטים שלו בלחיצה: פרטי קשר, היסטוריה של
+// תרומות שלו בנדרים פלוס, ובנפרד היסטוריה של המקווה". מספר זהות לא מוצג
+async function avCard(name){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>📇 ${esc(name)}</h2><div class="hintxt">⏳ טוען…</div>`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const r=await api('GET','/api/avreich/card?name='+encodeURIComponent(name)).catch(()=>null);
+  if(!r||!r.ok){rs.querySelector('.hintxt').textContent='⚠️ לא נטען';return;}
+  const I=r.info||{}, d=x=>x?String(x).slice(8,10)+'/'+String(x).slice(5,7)+'/'+String(x).slice(0,4):'';
+  const wa=p=>'https://wa.me/972'+String(p).replace(/\D/g,'').replace(/^0/,'');
+  const sec=t=>`<div class="mksec" style="margin-top:16px">${t}</div>`;
+  const hold=(r.holders||[]).filter(h=>h.active!==0), old=(r.holders||[]).filter(h=>h.active===0);
+  const st=r.stip||[], stT=st.reduce((a,x)=>a+(+x.amount||0)+(+x.extra||0),0);
+  const nd=r.nd||[], ndT=nd.reduce((a,x)=>a+(+x.amount||0),0);
+  rs.innerHTML=`<button class="x" id="rx">✕</button>
+    <h2>📇 ${esc(I.name||name)}</h2>
+    <div class="hintxt">${[I.seder?'סדר: '+esc(I.seder):'',I.started?'נכנס: '+esc(I.started):'',I.ended?'🚪 יצא מהכולל: '+esc(I.ended):''].filter(Boolean).join(' · ')||(I.found?'':'⚠️ לא נמצא ברשימת האברכים של יששכר־זבולון — מוצג לפי השם')}</div>
+    ${I.note?`<div class="hintxt">📝 ${esc(I.note)}</div>`:''}
+    ${sec('📞 פרטי קשר')}
+    ${(r.phones||[]).map(p=>`<div class="remitem"><div class="ri"><b dir="ltr">${esc(p)}</b></div><div style="display:flex;gap:6px"><a class="btn sm" href="tel:${esc(p)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(p)}" target="_blank" rel="noopener">💬 וואטסאפ</a></div></div>`).join('')
+      ||(I.phone?`<div class="hintxt">טלפון: ${esc(I.phone)}</div>`:'<div class="hintxt">אין טלפון ברשימה</div>')}
+    ${I.email?`<div class="remitem"><div class="ri"><b dir="ltr">${esc(I.email)}</b></div><a class="btn sm ghost" href="mailto:${esc(I.email)}">✉️ מייל</a></div>`:''}
+    ${I.addr?`<div class="hintxt">🏠 ${esc(I.addr)}</div>`:''}
+    ${sec('🤝 יששכר־זבולון')}
+    ${hold.map(h=>`<div class="remitem"><div class="ri"><a href="#" class="avcd" data-did="${h.did}"><b>${esc(((h.last||'')+' '+(h.first||'')).trim()||'—')} ↗</b></a><br><small>${h.amount?'$'+esc(h.amount):''}${h.start_date?' · מ'+esc(h.start_date):''}</small></div></div>`).join('')||'<div class="hintxt">אין לו כרגע זבולון</div>'}
+    ${old.length?`<div class="hintxt">היו בעבר: ${old.map(h=>esc(((h.last||'')+' '+(h.first||'')).trim())+(h.ended_date?' (עד '+esc(h.ended_date)+')':'')).join(', ')}</div>`:''}
+    ${sec(`🎓 מלגות <small>${st.length} · סה״כ ${stMoney(stT)}</small>`)}
+    ${st.length?`<div class="mklist">${st.slice(0,24).map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(stipLabel(x.kind,x.period))}</b><div class="mksub">${esc(x.kollel||'')}${x.note?' · '+esc(x.note):''}${+x.got?' · ✓ קיבל':''}</div></div><b>${stMoney((+x.amount||0)+(+x.extra||0))}</b></div>`).join('')}</div>${st.length>24?`<div class="hintxt">ועוד ${st.length-24}</div>`:''}`:'<div class="hintxt">אין מלגות רשומות</div>'}
+    ${sec(`💳 תרומות בנדרים פלוס <small>${nd.length} · סה״כ ₪${Math.round(ndT).toLocaleString('he-IL')}</small>`)}
+    ${(r.kevas||[]).map(k=>`<div class="hintxt">🔁 הוראת קבע פעילה: ₪${esc(k.amount)} לחודש · ${esc(k.kupa)}${k.groupe?' · '+esc(k.groupe):''}${k.next_date?' · הבא '+esc(k.next_date):''}</div>`).join('')}
+    ${nd.length?`<div class="mklist">${nd.slice(0,40).map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(x.iso)} · ${x.keva?'🔁 הו"ק':'💳 תרומה'}</b><div class="mksub">${esc(x.kupa)}${x.groupe?' · '+esc(x.groupe):''}</div></div><b>₪${(+x.amount||0).toLocaleString('he-IL')}</b></div>`).join('')}</div>${nd.length>40?`<div class="hintxt">ועוד ${nd.length-40}</div>`:''}`:'<div class="hintxt">לא נמצאו תרומות שלו בנדרים פלוס (לפי הטלפון והשם)</div>'}
+    ${sec('🛁 מקווה')}
+    <div id="avmk">${!r.mikveh?'<div class="hintxt">לא נמצא במקווה (לפי הטלפון והשם)</div>':r.mikveh.error?`<div class="hintxt">⚠️ ${esc(r.mikveh.error)}</div>`
+      :`<div class="mktiles"><div class="mktile"><span>קבוצה</span><b>${esc(r.mikveh.group||'—')}</b></div><div class="mktile ${mkPast(r.mikveh.sub_end)?'bad':'ok'}"><span>מנוי עד</span><b>${esc(mkDate(r.mikveh.sub_end))}</b></div><div class="mktile ${mkPast(r.mikveh.lic_exp)?'bad':''}"><span>רישיון עד</span><b>${esc(mkDate(r.mikveh.lic_exp))}</b></div><div class="mktile"><span>כניסה אחרונה</span><b>${esc(mkAgo(r.mikveh.last_in)||'—')}</b></div></div>
+        <div class="hintxt">${r.mikveh.by==='phone'?'נמצא לפי הטלפון':'נמצא לפי השם'}${r.mikveh.more?' · יש עוד '+r.mikveh.more+' עם אותו שם/טלפון':''}</div>
+        <button class="btn sm" id="avmkopen">🛁 לפתוח את כרטיס המקווה שלו</button>
+        <div class="mksub" style="margin-top:8px">💳 תשלומים במקווה</div><div id="avmkpay"><div class="hintxt">⏳ טוען מהמקווה…</div></div>`}</div>`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('.avcd').forEach(a=>a.onclick=e=>{e.preventDefault();const x=DB.find(z=>z.id==a.dataset.did);if(x){remov.classList.remove('show');openDonor(x);}});
+  const mo=document.getElementById('avmkopen');
+  if(mo)mo.onclick=async()=>{mo.disabled=true;if(!MK||!MK.ok)await mkLoad();const c=MK&&MK.clients&&MK.clients.find(z=>z.id===r.mikveh.id);mo.disabled=false;
+    if(c)mkOpen(c);else toast('הלקוח לא נמצא ברשימת המקווה');};
+  if(r.mikveh&&r.mikveh.id){const cid=r.mikveh.id;
+    const p=await api('GET','/api/mikveh/pay/'+encodeURIComponent(cid)).catch(()=>null);
+    MKPAY[cid]=p&&p.ok?p:{ok:false,error:(p&&p.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
+    const el=document.getElementById('avmkpay');if(el)el.innerHTML=mkPayHTML(cid);}
+}
 async function renderStip(){
   if(!STIP){chips.innerHTML='';view.innerHTML='<div class="cnt">טוען מלגות…</div>';await loadStip();}
   const has=k=>STIP.some(r=>r.kollel===k);
@@ -12697,7 +12745,7 @@ async function renderStip(){
     return `<div class="stgrp" data-per="${esc(per)}">
       <div class="stgh stghd" data-per="${esc(per)}"><span class="stcar">${open?'▼':'◀'}</span><b>${esc(stipLabel(stipView,per))}</b><span class="stn">${all.length} אברכים</span><span class="sttot">${stMoney(base+ext)}</span></div>
       ${open?`${isCash(per)?`<div class="sthead"><span class="stidx">#</span><span class="stname">האברך · פירוט המזומנים</span><span class="stamt">מזומנים</span><span class="stusdh">100$ לאשה</span><span class="stgoth">קיבל</span></div>`:''}${list.map((r,i)=>`<div class="strow${isCash(per)?' cash':''}" data-id="${r.id}"><span class="stidx">${i+1}</span>
-          <span class="stname">${esc(r.name)}${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
+          <span class="stname"><a href="#" class="stav" data-nm="${esc(r.name)}" title="כל הפרטים של האברך">${esc(r.name)}</a>${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
           <span class="stamt">${stMoney(tot(r))}${+r.extra?`<small>+${stMoney(r.extra)} תוספת</small>`:''}</span>
           ${isCash(per)?`<button class="stusd${+r.usd?' on':''}" data-id="${r.id}" title="${+r.usd?'קיבלה 100$ — לחץ לבטל':'לחץ לסמן 100$ לאשה'}">${+r.usd?'$'+Math.round(+r.usd):'—'}</button>`:''}
           <button class="stgot${+r.got?' on':''}" data-id="${r.id}" title="${+r.got?'קיבל ✓ — לחץ לבטל':'לחץ לסמן שקיבל'}">✓</button>
@@ -12740,6 +12788,7 @@ async function renderStip(){
       ${periods.map(per=>{const g=rows.filter(r=>r.period===per);return `<div class="r"><span>${esc(stipLabel(stipView,per))} <small style="color:var(--muted)">${g.length} אברכים</small></span><b>${stMoney(g.reduce((s,r)=>s+tot(r),0))}</b></div>`;}).join('')}
       ${(()=>{const u=rows.filter(r=>+r.usd);return u.length?`<div class="r"><span>💵 100$ לאשה <small style="color:var(--muted)">${u.length} אברכים</small></span><b>$${u.reduce((s,r)=>s+(+r.usd||0),0).toLocaleString('en-US')}</b></div>`:'';})()}
       <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}${rows.some(r=>+r.usd)?` + $${rows.reduce((s,r)=>s+(+r.usd||0),0).toLocaleString('en-US')}`:''}</span></div></div>`:''}`;
+  view.querySelectorAll('.stav').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();avCard(a.dataset.nm);});
   view.querySelectorAll('.stghd').forEach(h=>h.onclick=()=>{const k=stipKollel+'|'+stipView+'|'+h.dataset.per;stipOpen[k]=!stipOpen[k];renderStip();});
   view.querySelectorAll('.stpc[data-per]').forEach(b=>b.onclick=()=>{stipPer[selKey]=b.dataset.per;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
   view.querySelectorAll('.stpc[data-fam]').forEach(b=>b.onclick=()=>{stipFamSel[selKey]=b.dataset.fam;stipPer[selKey]=undefined;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
