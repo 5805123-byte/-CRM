@@ -14849,6 +14849,29 @@ def mk_unpaid_run(days=30):
             if le >= since and sub >= today:
                 cand.append(c)
         MK_UNPAID['total'] = len(cand)
+        # הכי טוב: יומן הפעילויות של כל התקופה בבקשה אחת — כניסות ותשלומים של כולם
+        try:
+            raw = _mk.attendance(since, (now + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
+        except Exception:
+            raw = None
+        if raw is not None and any(_mk.att_norm(r)['cid'] for r in raw[:50]):
+            norm = [_mk.att_norm(r) for r in raw]
+            paid = {}
+            for n in norm:
+                if n['kind'] == 'pay' and n['cid'] and (n['amount'] or 0) > 0 and not re.search(r'נכשל|fail', n['text'], re.I):
+                    paid.setdefault(str(n['cid']), []).append(n)
+            out = []
+            for c in cand:
+                if str(c.get('id')) in paid:
+                    continue
+                out.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                            'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(), 'group': gr.get(c.get('groupId'), ''),
+                            'last_in': str(c.get('lastEntrance') or '')[:16], 'sub_end': str(c.get('subscriptionEndDate') or '')[:10],
+                            'last_pay': '', 'last_amt': 0, 'failed': []})
+            MK_UNPAID.update(done=len(cand), src=_mk.ATT_PATH)
+            out.sort(key=lambda r: r['last_in'], reverse=True)
+            MK_UNPAID['rows'] = out
+            return
         # קודם בודקים שיש בכלל נתיב תשלומים במקווה
         tx0, src0, _k = _mk.payments(cand[0]['id']) if cand else ([], '', [])
         if cand and not src0:
@@ -18835,7 +18858,8 @@ class H(BaseHTTPRequestHandler):
                                  'time': at.strftime('%H:%M'), 'cat': cat_of(c, gid, gname, first, e['casual']),
                                  'note': ((c or {}).get('remark') or '')[:120]})
             else:
-                tried = (_mk._ENTR.get('tried') or [])[:60]
+                tried = ([{'path': 'POST ' + _mk.ATT_PATH + ' ' + json.dumps(t['body'], ensure_ascii=False), 'code': t['code'], 'rows': None, 'resp': t['resp']}
+                          for t in (_mk._ATT.get('tries') or [])] + (_mk._ENTR.get('tried') or []))[:60]
                 # 2) גיבוי — "כניסה אחרונה" של כל לקוח
                 for c in cl:
                     dt = il_time(c.get('lastEntrance'))

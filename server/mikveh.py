@@ -511,8 +511,134 @@ def _entr_rows(res, day):
     return (rows, tk) if hit else None
 
 
+# ---------- יומן פעילויות (AttendanceLog/GetAttendanceLogs) ----------
+# מאיר שלח צילום של "יומן פעילויות" במקווה (מסננים: לקוח, תאריכים, סוג פעולה, קבוצה, סכום, אמצעי תשלום) —
+# הנתיב AttendanceLog/GetAttendanceLogs החזיר 405 ל-GET, כלומר זו בקשת POST עם גוף של מסננים (קריאה בלבד).
+# צורת הגוף לא ידועה מראש — מנסים כמה צורות נפוצות, והצורה שעבדה נזכרת.
+ATT_PATH = 'AttendanceLog/GetAttendanceLogs'
+_ATT = {'tpl': None, 'tries': []}
+
+
+def _att_bodies(d0, d1, cid=None):
+    f, t = d0 + 'T00:00:00', d1 + 'T00:00:00'
+    club_id = _TOK.get('club_id') or None
+    base_ = {'clientId': cid} if cid else {}
+    pg = {'page': 1, 'pageSize': 5000, 'pageNumber': 1, 'take': 5000, 'skip': 0}
+    out = []
+    for a, b in (('fromDate', 'toDate'), ('startDate', 'endDate'), ('dateFrom', 'dateTo'), ('from', 'to'), ('start', 'end')):
+        out.append(dict(base_, **{a: f, b: t}, **pg))
+    out.append(dict(base_, **{'dates': [f, t]}, **pg))
+    out.append(dict(base_, **{'dateRange': {'from': f, 'to': t}}, **pg))
+    if club_id:
+        out = out[:2] + [dict(x, clubId=club_id) for x in out[:2]] + out[2:]
+    return out
+
+
+def _att_rows(res):
+    if isinstance(res, list):
+        return res
+    if isinstance(res, dict):
+        for k in ('items', 'data', 'result', 'list', 'logs', 'attendanceLogs', 'records', 'rows'):
+            v = res.get(k)
+            if isinstance(v, list):
+                return v
+            if isinstance(v, dict):
+                for k2 in ('items', 'data', 'list', 'records'):
+                    if isinstance(v.get(k2), list):
+                        return v[k2]
+    return None
+
+
+def attendance(d0, d1, cid=None):
+    """שורות יומן הפעילויות בין d0 ל-d1 (YYYY-MM-DD, d1 לא כולל). מחזיר רשימה גולמית או None"""
+    try:
+        tok = login()
+    except RuntimeError:
+        return None
+    if not _ATT['tpl'] and time.time() - (_ATT.get('fail_at') or 0) < 600:
+        return None          # נוסה לפני פחות מ-10 דקות ולא עבד — לא מנסים שוב בכל כרטיס
+    bodies = []
+    if _ATT['tpl']:
+        a, b, extra = _ATT['tpl']
+        bodies.append(dict(extra, **({'clientId': cid} if cid else {}), **{a: d0 + 'T00:00:00', b: d1 + 'T00:00:00'}))
+    bodies += _att_bodies(d0, d1, cid)
+    tries = []
+    for body in bodies:
+        code, res = _http('POST', ATT_PATH, body, None, tok, 40)
+        rows = _att_rows(res) if code == 200 else None
+        tries.append({'body': {k: v for k, v in body.items() if k not in ('clientId',)}, 'code': code,
+                      'resp': (json.dumps(res, ensure_ascii=False)[:300] if not isinstance(res, str) else res[:300]) if code != 200 or rows is None else '(%d שורות)' % len(rows)})
+        if rows is not None:
+            keys = list(body.keys())
+            dk = [k for k in keys if isinstance(body[k], str) and body[k].endswith('T00:00:00')]
+            if len(dk) == 2:
+                _ATT['tpl'] = (dk[0], dk[1], {k: v for k, v in body.items() if k not in dk and k != 'clientId'})
+            _ATT['tries'] = tries
+            return rows
+    _ATT['tries'] = tries
+    _ATT['fail_at'] = time.time()
+    return None
+
+
+def _att_txt(r):
+    """תיאור הפעולה של שורה ביומן (טקסט), גם אם הוא בתוך אובייקט"""
+    parts = []
+    for k, v in r.items():
+        if re.search(r'action|type|descr|activ|operation|status|message|text|result', k, re.I):
+            if isinstance(v, str):
+                parts.append(v)
+            elif isinstance(v, dict):
+                parts += [str(x) for x in v.values() if isinstance(x, str)]
+    return ' '.join(parts)
+
+
+def att_norm(r):
+    """שורה ביומן → {'at', 'cid', 'name', 'group', 'gname', 'kind': entry/entry_fail/pay/other, 'amount', 'method', 'text'}"""
+    at = None
+    for k in r:
+        if re.search(r'date|time|created', k, re.I):
+            at = _dt_of(r.get(k))
+            if at:
+                break
+    ck = next((k for k in r if re.fullmatch(r'client_?id', k, re.I)), None)
+    cl = r.get('client') if isinstance(r.get('client'), dict) else {}
+    cid = r.get(ck) if ck else cl.get('id')
+    nm = next((str(r[k]) for k in r if re.search(r'client_?name|full_?name', k, re.I) and isinstance(r[k], str) and r[k].strip()), '') or \
+        ' '.join(str(x.get(k) or '').strip() for x in (r, cl) for k in ('firstName', 'lastName') if x.get(k)).strip()
+    grp = next((r[k] for k in r if re.fullmatch(r'group_?id', k, re.I)), None) or (cl.get('groupId') if cl else None)
+    gnm = next((str(r[k]) for k in r if re.search(r'group_?name', k, re.I) and r.get(k)), '')
+    if not gnm and isinstance(r.get('group'), dict):
+        gnm = str(r['group'].get('name') or '')
+    txt = _att_txt(r)
+    amt = next((r[k] for k in r if re.search(r'amount|sum|price|total', k, re.I) and isinstance(r[k], (int, float)) and not isinstance(r[k], bool)), None)
+    meth = next((str(r[k]) for k in r if re.search(r'payment_?(method|type)|method', k, re.I) and r.get(k) not in (None, '')), '')
+    if re.search(r'כניס', txt) and re.search(r'נכשל|נדח|חסר|fail|denied', txt, re.I):
+        kind = 'entry_fail'
+    elif re.search(r'תשלום|payment|paid|charge', txt, re.I) or (amt and not re.search(r'כניסה מאושרת', txt)):
+        kind = 'pay'
+    elif re.search(r'כניס|entr|enter', txt, re.I):
+        kind = 'entry'
+    else:
+        kind = 'other'
+    return {'at': at, 'cid': cid, 'name': nm, 'group': grp, 'gname': gnm, 'kind': kind, 'amount': amt, 'method': meth, 'text': txt[:120]}
+
+
 def entrances(day):
     """כל הכניסות של היום מהיומן של המקווה: [{'at': datetime, 'cid', 'name', 'group', 'casual', 'raw_keys'}] או None"""
+    d1 = (datetime.date.fromisoformat(day) + datetime.timedelta(days=1)).isoformat()
+    try:
+        raw = attendance(day, d1)
+    except Exception:
+        raw = None
+    if raw is not None:
+        out = []
+        for r in raw:
+            n = att_norm(r)
+            if n['kind'] != 'entry' or not n['at']:
+                continue
+            out.append({'at': n['at'], 'cid': n['cid'], 'name': n['name'], 'group': n['group'], 'gname': n['gname'],
+                        'casual': n['name'].strip().startswith('[') or 'מזדמ' in n['name'] or 'מזדמ' in n['gname']})
+        return {'rows': out, 'path': ATT_PATH, 'keys': sorted(raw[0].keys())[:30] if raw else []}
     try:
         tok = login()
     except RuntimeError:
@@ -591,6 +717,38 @@ def probe_payments(cid):
 
 def payments(cid):
     """התשלומים של הלקוח במערכת המקווה. מחזיר (רשימה, מאיפה, שמות שדות לאבחון)"""
+    # קודם יומן הפעילויות של הלקוח (שנה אחורה) — שורות "תשלום"
+    try:
+        t = datetime.date.today()
+        raw = attendance((t - datetime.timedelta(days=365)).isoformat(), (t + datetime.timedelta(days=1)).isoformat(), cid)
+    except Exception:
+        raw = None
+    if raw is not None:
+        rows = [att_norm(r) for r in raw]
+        if any(n['cid'] for n in rows):
+            mine = [n for n in rows if str(n['cid'] or '') == str(cid)]
+        else:
+            # בלי מזהה לקוח בשורות — רק לפי השם המלא (שלא יוצגו תשלומים של אחרים אם המקווה התעלם מהסינון)
+            try:
+                c0 = client(cid, max_age=120)
+                nk = lambda x: re.sub(r'\s+', '', str(x or ''))
+                full = {nk((c0.get('firstName') or '') + (c0.get('lastName') or '')), nk((c0.get('lastName') or '') + (c0.get('firstName') or ''))}
+                mine = [n for n in rows if nk(n['name']) in full]
+            except Exception:
+                mine = []
+        if raw == [] or mine:
+            out = []
+            for n in mine:
+                if n['kind'] != 'pay' or not n['at']:
+                    continue
+                out.append({'iso': n['at'].strftime('%Y-%m-%d'), 'time': n['at'].strftime('%H:%M'), 'amount': n['amount'] or 0,
+                            'desc': n['text'][:80], 'how': n['method'][:40], 'failed': bool(re.search(r'נכשל|fail|declin', n['text'], re.I))})
+            am = sorted(abs(x['amount']) for x in out if x['amount'])
+            if am and all(float(a).is_integer() for a in am) and am[len(am) // 2] >= 500:
+                for x in out:
+                    x['amount'] = x['amount'] / 100.0
+            out.sort(key=lambda x: (x['iso'], x['time']), reverse=True)
+            return out, ATT_PATH, []
     c = client(cid, max_age=60)
     for k, v in c.items():
         if isinstance(v, list) and v and _PAY_KEY.search(k) and any(_is_pay_row(x) for x in v[:5]):
