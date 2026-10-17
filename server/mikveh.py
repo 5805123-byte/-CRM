@@ -478,7 +478,10 @@ def discover_paths(force=False):
 # ---------- יומן כניסות (היסטוריה של היום) ----------
 # מאיר: "אין לך את הנתונים של כל משתמש מזדמן? יש את זה במערכת, בהיסטוריה של אותו יום" — הנתיב של ההיסטוריה
 # מתוך האתר של המקווה, ונזכר אחרי שנמצא. רק GET.
-_ENTR_WORD = re.compile(r'entr|enter|histor|visit|log(?!in|out)|report|daily|attend|access|door|gate|pass(?!word)|movement|event', re.I)
+# מאיר: "איך אתה לא רואה במקווה את יומן פעילות" — גם activity / journal / audit
+_ENTR_WORD = re.compile(r'activ|journal|audit|entr|enter|histor|visit|log(?!in|out)|report|daily|attend|access|door|gate|pass(?!word)|movement|event', re.I)
+_ENTR_GUESS = ('ActivityLog', 'Activity', 'ActivityLog/GetAll', 'Activities', 'ClientActivity', 'Log', 'Logs', 'EntranceLog',
+               'Entrance', 'Entrances', 'History', 'Journal')
 _ENTR = {'pat': None, 'tried': []}
 
 
@@ -520,7 +523,10 @@ def entrances(day):
             discover_paths()
         except Exception:
             pass
-        pats = [x for x in (_DISC.get('all') or []) if _ENTR_WORD.search(x)][:20]
+        found = [x for x in (_DISC.get('all') or []) if _ENTR_WORD.search(x)]
+        # קודם "יומן פעילות" (activity), אחר כך השאר; ובסוף ניחושים נפוצים
+        found.sort(key=lambda x: (0 if re.search(r'activ|journal|audit', x, re.I) else 1, x))
+        pats = (found + [g for g in _ENTR_GUESS if g not in found])[:30]
     tried = []
     for pth in pats:
         for path, q in _entr_forms(pth, day):
@@ -533,6 +539,13 @@ def entrances(day):
             if got:
                 _ENTR['pat'] = pth
                 rows, tk = got
+                # ביומן פעילות יש גם פעולות אחרות (תשלום, עדכון…) — אם יש שדה סוג / תיאור, רק הכניסות
+                dk = [k for k in rows[0] if re.search(r'type|action|kind|descr|event|activ|operation|text|message', k, re.I)
+                      and isinstance(rows[0].get(k), (str, int))]
+                if dk:
+                    ent = [r for r in rows if any(re.search(r'כניס|entr|enter|door|דלת|gate', str(r.get(k) or ''), re.I) for k in dk)]
+                    if ent:
+                        rows = ent
                 out = []
                 for r in rows:
                     at = _dt_of(r.get(tk))
