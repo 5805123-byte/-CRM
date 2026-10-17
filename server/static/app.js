@@ -16275,12 +16275,12 @@ function ymViewJobs(){
       ${ms.map(m=>`<tr class="${m.status}"><td>${(m.kind==='m'||m.kind==='d')&&m.ref_id?`<a href="#" class="ymwho" data-k="${m.kind}" data-id="${m.ref_id}" title="לפתוח את הכרטיס שלו">${esc(m.name||'כרטיס')} ↗</a>`:esc(m.name||'—')}</td><td dir="ltr">${esc(m.phone||'')}</td>${ms.some(x=>+x.amount)?`<td>${m.amount?'₪'+esc(m.amount):''}</td>`:''}
         <td>${m.status==='sent'?`✅ ${esc(String(m.sent_ts||m.at||'').slice(11,16))}${m.engine==='gemini'?' <span class="ymtag">🧑 Gemini</span>':(m.engine==='yemot'&&j.channel==='voice'?' <span class="ymtag">🤖 ימות</span>':'')}`:(m.status==='failed'?`<span class="ymf">✗ ${esc(m.error||'')}</span>`:'⏳')}</td>
         <td>${ymAns(m,j.channel)}${j.channel==='voice'&&m.status==='sent'?` <button class="btn sm ghost ymaudio" data-id="${m.id}" data-nm="${esc(m.name||m.phone||'')}" title="לשמוע את ההקלטה ששלחת — ומשם לשמור / לשלוח בוואטסאפ">🎧 לשמוע הקלטה</button>`:''}${j.channel==='voice'&&!j.test&&ymNotHeard(m)?` <button class="btn sm ghost ymredial" data-j="${j.id}" data-ids="${m.id}" title="להתקשר אליו שוב עכשיו">📞 חייג שוב</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;};
-  view.innerHTML=ymHead(st)+ymRepHTML()+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
+  view.innerHTML=ymHead(st)+`<div class="sec ymsec">${jobs.length?jobs.map(j=>`<div class="ymcard${ymJobView&&ymJobView.job.id===j.id?' open':''}" data-j="${j.id}">
       <div class="ymch3"><span class="ymjd">${esc(String(j.created||'').slice(0,16).replace('T',' '))}</span><b>${j.channel==='sms'?'💬 SMS':'📞 קולית'}</b>${j.test?'<span class="ymtag">בדיקה</span>':''}
         ${(j.recips||[]).length?`<span class="ymjwho">👤 ${(j.recips||[]).slice(0,3).map(r=>esc(r.name||r.phone)).join(', ')}${j.total>3?` ועוד ${j.total-3}`:''}</span>`:''}
         <span class="ymjt">${(()=>{const t=(j.total===1&&j.text1)?j.text1:(j.text||'');return esc(t.slice(0,70))+(t.length>70?'…':'');})()}</span></div>
       <div class="ymch4">${ymJobChips(j)}</div></div>
-      ${ymJobView&&ymJobView.job.id===j.id?det(ymJobView):''}`).join(''):'<div class="hintxt">עוד לא נשלחו משלוחים.</div>'}</div>`;
+      ${ymJobView&&ymJobView.job.id===j.id?det(ymJobView):''}`).join(''):'<div class="hintxt">עוד לא נשלחו משלוחים.</div>'}</div>`+ymRepHTML();
   ymWireHead();
   view.querySelectorAll('.ymcard[data-j]').forEach(x=>x.onclick=async()=>{
     if(ymJobView&&ymJobView.job.id==x.dataset.j){ymJobView=null;renderCommYm();return;}
