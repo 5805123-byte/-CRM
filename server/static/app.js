@@ -1662,6 +1662,39 @@ const mkTowelSrc=c=>mkTwlOf(c.remark)==='yes'?'remark':(mkTwlOf(c.message)==='ye
 const mkTowelUnk=c=>!mkTowelSrc(c)&&(mkTwlOf(c.remark)==='unk'||mkTwlOf(c.message)==='unk')&&mkTwlOf(c.remark)!=='no';
 const mkTowel=c=>!!mkTowelSrc(c);
 // 🧺 מאיר: "אני רוצה לראות במרוכז את מנויי המגבות" — חלון עם כולם: שם, טלפון, קבוצה, מנוי עד, ומה כתוב בהערה
+// 🧺 מאיר: "מי שנכנס ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו ביום שישי
+// האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס"
+async function mkTowelDay(day,frm){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const lastFri=()=>{const t=new Date();const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+2)%7));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  day=day||lastFri(); frm=frm||'06:00';
+  const head=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">🧺</div><div><h2>מגבות ליום</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="date" id="twd" value="${esc(day)}" style="width:160px"> משעה <input type="time" id="twf" value="${esc(frm)}" style="width:110px"><button class="btn sm" id="twgo">🔄 לחשב</button></div></div></div>`;
+  rs.innerHTML=head+'<div class="mksub">⏳ בודק במקווה…</div>';
+  remov.classList.add('show');
+  const wire=()=>{document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    document.getElementById('twgo').onclick=()=>mkTowelDay(document.getElementById('twd').value,document.getElementById('twf').value);};
+  wire();
+  const r=await api('GET','/api/mikveh/towel_day?date='+encodeURIComponent(day)+'&from='+encodeURIComponent(frm)).catch(()=>null);
+  if(!r||!r.ok){rs.innerHTML=head+'<div class="mksub">⚠️ '+esc((r&&r.error)||'לא נטען')+'</div>';wire();return;}
+  const C=r.count||{}, L=k=>(r.rows||[]).filter(x=>x.cat===k);
+  const lst=(k,t)=>{const a=L(k);return a.length?`<details ${k!=='other'?'open':''} style="margin-top:10px"><summary class="mksec" style="cursor:pointer">${t} (${a.length})</summary><div class="mklist">${a.map(x=>`<div class="mkrow" data-twc="${esc(x.id)}" style="grid-template-columns:auto 1fr"><b>${esc(x.time)}</b><div class="mknm"><b>${esc(x.name||'—')}</b><div class="mksub">${x.code?'#'+esc(x.code)+' · ':''}${esc(x.group||'')}${k==='towel'&&x.note?' · 📝 '+esc(x.note):''}</div></div></div>`).join('')}</div></details>`:'';};
+  rs.innerHTML=head+`<div class="mksub" style="margin:8px 0">${esc(r.heb||'')} · ${esc(r.date)} · משעה ${esc(r.from)}</div>
+    <div class="mktiles">
+      <div class="mktile"><span>🚶 מזדמן</span><b>${C.casual||0}</b></div>
+      <div class="mktile"><span>4. ערך צבור</span><b>${C.erech||0}</b></div>
+      <div class="mktile"><span>🧺 מנוי כולל מגבת</span><b>${C.towel||0}</b></div>
+      <div class="mktile ok"><span>סה״כ מגיעה מגבת</span><b>${r.towels||0}</b></div>
+      <div class="mktile"><span>שאר המנויים שנכנסו (בלי מגבת)</span><b>${C.other||0}</b></div></div>
+    <div class="hintxt">⚠️ המקווה מוסר רק את <b>הכניסה האחרונה</b> של כל לקוח. מי שנכנס ביום הזה ושוב אחריו — לא נספר כאן, ולכן החישוב מדויק ליום האחרון שהמקווה פעל. כניסות מזדמנות בלי כרטיס לקוח לא מופיעות כלל. כמה מגבות <b>נלקחו בפועל</b> — אין לי את זה מהמקווה.</div>
+    ${lst('casual','🚶 מזדמן')}${lst('erech','4. ערך צבור')}${lst('towel','🧺 מנוי כולל מגבת')}${lst('other','שאר המנויים שנכנסו')}
+    <button class="btn sm" id="twcsv2" style="margin-top:10px">⬇️ אקסל</button>`;
+  wire();
+  rs.querySelectorAll('[data-twc]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.twc);if(c)mkOpen(c);else toast('לקוח מזדמן — אין לו כרטיס ברשימה');});
+  const HE={casual:'מזדמן',erech:'ערך צבור',towel:'מנוי כולל מגבת',other:'בלי מגבת'};
+  document.getElementById('twcsv2').onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שעה,שם,מספר לקוח,קבוצה,סוג,מגיעה מגבת'].concat((r.rows||[]).map(x=>[x.time,x.name,x.code||'',x.group,HE[x.cat],x.cat==='other'?'לא':'כן'].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מגבות '+r.date+'.csv';document.body.appendChild(a);a.click();a.remove();};}
 function mkTowelOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
   const all=MK.clients.filter(mkTowel).sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
@@ -1732,6 +1765,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
+      <button class="mkibtn" id="mktwday" title="מי נכנס ביום מסוים ומגיעה לו מגבת: מזדמן, ערך צבור, מנוי כולל מגבת">🧺 מגבות ליום</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
       <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button>
@@ -1759,6 +1793,7 @@ function renderMikveh(){
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
+  document.getElementById('mktwday').onclick=()=>mkTowelDay();
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();
   document.getElementById('mkfresh').onclick=()=>{MK=null;mkSkel();mkLoad(true);};

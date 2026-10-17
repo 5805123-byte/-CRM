@@ -18658,6 +18658,60 @@ class H(BaseHTTPRequestHandler):
                 a1 = (datetime.date.today() - datetime.timedelta(days=7 * (i - 1))).isoformat()
                 wk.append({'from': a0, 'n': sum(1 for r in out if r['sub_bad'] and a0 <= r['sub_end'] < a1)})
             return self._send(200, {'ok': True, 'rows': out, 'recent': sum(1 for r in out if r['recent']), 'weeks': wk})
+        if self.path.split('?')[0] == '/api/mikveh/towel_day':
+            # 🧺 מאיר: "מי שנכנס למקווה ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו
+            # ביום שישי האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס". מהמקווה מגיעה רק "כניסה אחרונה"
+            # של כל לקוח — מי שנכנס שוב אחר כך כבר לא מופיע ביום הזה (ולכן היום האחרון מדויק יותר)
+            import mikveh as _mk
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            day = (qs.get('date') or [''])[0]
+            frm = (qs.get('from') or ['06:00'])[0]
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day):
+                t = il_now().date()
+                day = (t - datetime.timedelta(days=(t.weekday() - 4) % 7)).isoformat()   # יום שישי האחרון (או היום, אם שישי)
+            if not re.fullmatch(r'\d{1,2}:\d{2}', frm):
+                frm = '06:00'
+            try:
+                gr = {g['id']: g['name'] for g in _mk.groups()}
+                gr.update(_mk._GR.get('hidden_names') or {})
+                cl = _mk.clients(fresh=True)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            no_rx = re.compile(r'(אינו|איננו|אינה|לא|ללא|בלי|בטל|ביטל|הפסיק)\s*[-:]?\s*(כולל\s*)?(ה)?מגב')
+            yes_rx = re.compile(r'(כולל|מנוי|עם|\+)\s*[-:]?\s*(ה)?מגב|^\s*(ה)?מגב\S*\s*$')
+            def towel(t):
+                t = str(t or '')
+                return 'מגב' in t and not no_rx.search(t) and bool(yes_rx.search(t))
+            def il_time(v):
+                v = str(v or '').strip()
+                if not v:
+                    return None
+                try:
+                    dt = datetime.datetime.fromisoformat(v.replace('Z', '+00:00'))
+                except ValueError:
+                    return None
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(IL_TZ).replace(tzinfo=None) if IL_TZ else dt.replace(tzinfo=None) + datetime.timedelta(hours=3)
+                return dt
+            fh, fm = [int(x) for x in frm.split(':')]
+            start = datetime.datetime.fromisoformat(day).replace(hour=fh, minute=fm)
+            end = datetime.datetime.fromisoformat(day) + datetime.timedelta(days=1)
+            rows = []
+            for c in cl:
+                dt = il_time(c.get('lastEntrance'))
+                if not dt or not (start <= dt < end):
+                    continue
+                gname = gr.get(c.get('groupId'), '')
+                first = (c.get('firstName') or '').strip()
+                casual = c.get('groupId') in _mk.hidden_groups() or 'מזדמ' in gname or first.startswith('[')
+                cat = 'casual' if casual else ('erech' if 'ערך צבור' in gname else ('towel' if towel(c.get('remark')) or (towel(c.get('message')) and not no_rx.search(str(c.get('remark') or ''))) else 'other'))
+                rows.append({'id': c.get('id'), 'name': (first + ' ' + (c.get('lastName') or '').strip()).strip(), 'code': c.get('clientCode'),
+                             'group': gname, 'time': dt.strftime('%H:%M'), 'cat': cat, 'note': (c.get('remark') or '')[:120]})
+            rows.sort(key=lambda r: r['time'])
+            cnt = {k: sum(1 for r in rows if r['cat'] == k) for k in ('casual', 'erech', 'towel', 'other')}
+            return self._send(200, {'ok': True, 'date': day, 'from': frm, 'rows': rows, 'count': cnt,
+                                    'towels': cnt['casual'] + cnt['erech'] + cnt['towel'],
+                                    'heb': greg_to_heb_full(day) or ''})
         if self.path.split('?')[0] == '/api/mikveh/paypaths':
             # 🔎 איפה המקווה שומר את התשלומים — הנתיבים מהאתר שלו, ומה כל אחד החזיר ללקוח הזה (רק קריאה)
             import mikveh as _mk

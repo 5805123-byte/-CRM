@@ -186,6 +186,7 @@ def groups(fresh=False):
         # מאיר: "תסתיר מהמערכת את משתמש מזדמן ואת קבוצת מזדמן" — הקבוצה הכללית של המקווה (type=2)
         if g.get('type') == 2 or (g.get('name') or '').strip().startswith('['):
             hid.add(g.get('id'))
+            _GR.setdefault('hidden_names', {})[g.get('id')] = (g.get('name') or '').strip()
             continue
         out.append({'id': g.get('id'), 'name': (g.get('name') or '').strip(), 'color': g.get('color') or '',
                     'price': (g.get('subscriptionPrice') or 0) / 100.0 if g.get('subscriptionPrice') is not None else None})
