@@ -397,7 +397,8 @@ def renew_fields(cid):
 # לא מנדרים פלוס" (בנדרים הופיעה הו"ק של חבר קהילה לבית הכנסת). התשלומים נלקחים רק ממערכת המקווה:
 # קודם רשימות תשלומים בתוך הלקוח המלא, ואם אין — נתיבי קריאה (GET) של המקווה. הנתיב שעבד נזכר.
 _PAY_KEY = re.compile(r'pay|purchas|transact|charg|receipt|order|invoice|deal|deposit|topup|load|history', re.I)
-_PAY_PATHS = ('Payment/GetByClient/{id}', 'Payment/Client/{id}', 'Payment?clientId={id}', 'Payments?clientId={id}',
+_PAY_PATHS = ('Client/GetClientHistory?clientId={id}', 'Client/GetClientHistory/{id}', 'Client/GetClientHistory?id={id}',
+              'Payment/GetByClient/{id}', 'Payment/Client/{id}', 'Payment?clientId={id}', 'Payments?clientId={id}',
               'ClientPayment/{id}', 'GetClientPayments/{id}', 'Transaction?clientId={id}', 'Transaction/GetByClient/{id}',
               'ClientTransaction/{id}', 'Purchase?clientId={id}', 'Order?clientId={id}', 'Charge?clientId={id}',
               'Receipt?clientId={id}', 'Invoice?clientId={id}')
@@ -659,7 +660,9 @@ def entrances(day):
             code, res = _http('GET', path, None, q, tok, 15)
             got = _entr_rows(res, day) if code == 200 else None
             tried.append({'path': path + ('?' + urllib.parse.urlencode(q) if q else ''), 'code': code,
-                          'rows': len(res) if isinstance(res, list) else None, 'ok': bool(got)})
+                          'rows': len(res) if isinstance(res, list) else None, 'ok': bool(got),
+                          # 400 — המקווה אומר אילו פרמטרים חסרים
+                          'resp': (json.dumps(res, ensure_ascii=False) if not isinstance(res, str) else res)[:220] if code == 400 else ''})
             if code in (404, 405):
                 break
             if got:
@@ -774,6 +777,22 @@ def payments(cid):
         if code in (404, 405) or (code == 200 and rows is None):
             _PAY['bad'].add(p)
             continue
+        # ההיסטוריה של הלקוח (כמו יומן הפעילויות, רק שלו) — שורות "תשלום"
+        if code == 200 and rows and p.startswith('Client/GetClientHistory') and isinstance(rows[0], dict):
+            norm = [att_norm(x) for x in rows]
+            if any(n['at'] for n in norm):
+                if any(n['cid'] for n in norm):
+                    norm = [n for n in norm if str(n['cid'] or '') == str(cid)]
+                _PAY['path'] = p
+                out = [{'iso': n['at'].strftime('%Y-%m-%d'), 'time': n['at'].strftime('%H:%M'), 'amount': n['amount'] or 0,
+                        'desc': n['text'][:80], 'how': n['method'][:40], 'failed': bool(re.search(r'נכשל|fail|declin', n['text'], re.I))}
+                       for n in norm if n['kind'] == 'pay' and n['at']]
+                am = sorted(abs(x['amount']) for x in out if x['amount'])
+                if am and all(float(a).is_integer() for a in am) and am[len(am) // 2] >= 500:
+                    for x in out:
+                        x['amount'] = x['amount'] / 100.0
+                out.sort(key=lambda x: (x['iso'], x['time']), reverse=True)
+                return out, p, []
         if code != 200 or not rows or not any(_is_pay_row(x) for x in rows[:5]):
             continue
         # שלא יוצגו תשלומים של אחרים: אם יש בשורות מזהה לקוח — רק שלו; נתיב בלי {id} בכתובת חייב מזהה כזה
