@@ -1652,6 +1652,9 @@ function render(){
 /* ---------- מקווה ----------
    מאיר: "תעשה לשונית מקווה, לא צריך לסנכרן למערכת נתונים מהמקווה" — הכל חי מול
    מערכת המקווה: רואים את הלקוחות, מעבירים קבוצה, ושולחים לו מיד הודעה (ידני, לא אוטומטי). */
+// 🧺 מאיר: "כמה מנויים יש להם מנוי מגבות — זה רשום בהערות בדרך כלל במערכת המקווה"
+const mkTowel=c=>/מגב/.test((c.remark||'')+' '+(c.message||''));
+let mkTowelOnly=false;
 let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name', mkExp=false, mkSel=new Set(), mkSelOn=false;
 // מאיר: "שתי רשימות נפרדות — אלו שלא הסתיים להם המנוי או הרישיון, ואלו שהסתיים; את אלו שהסתיים רק בלחיצת
 // כפתור למעלה. בחיפוש — שיופיעו מיד, אבל מול העיניים רק אלו שלא הסתיים להם"
@@ -1698,6 +1701,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${MK.clients.length}</b><span>לקוחות</span></div>
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
+      <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה מציגה רק אותם"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
       <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button>
@@ -1723,6 +1727,7 @@ function renderMikveh(){
     document.querySelectorAll('#mksort button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
+  document.getElementById('mktowel').onclick=()=>{mkTowelOnly=!mkTowelOnly;renderMikveh();};
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();
@@ -1761,10 +1766,11 @@ function mkPaint(){
   const qq=(mkQ||'').trim(), qd=mkDigits(qq);
   let rows=MK.clients.filter(c=>{
     if(mkGrp&&c.group!==mkGrp)return false;
+    if(mkTowelOnly)return mkTowel(c)&&(!qq||matchStr(mkName(c)+' '+(c.remark||''),qq));
     if(!qq)return mkExpired(c)===mkExp;          // בלי חיפוש — רק הרשימה שנבחרה למעלה
     if(qd&&qd.length>=3&&mkDigits(c.phone).indexOf(qd.replace(/^972/,'0'))>=0)return true;     // טלפון — גם עם מקפים / רווחים
     if(qd&&qd===qq&&String(c.code||'')===qd)return true;                                       // מספר לקוח
-    return matchStr(mkName(c)+' '+(c.last||'')+' '+(c.first||'')+' '+((G[c.group]&&G[c.group].name)||''),qq);
+    return matchStr(mkName(c)+' '+(c.last||'')+' '+(c.first||'')+' '+((G[c.group]&&G[c.group].name)||'')+' '+(c.remark||'')+' '+(c.message||''),qq);   // גם בהערות
   });
   const ts=s=>s?(new Date(s).getTime()||0):0;
   rows.sort(mkSort==='code'?(a,b)=>(+a.code||0)-(+b.code||0)
@@ -1776,7 +1782,7 @@ function mkPaint(){
   body.innerHTML=rows.map(c=>mkRowHTML(c,G)).join('');
   const inG=MK.clients.filter(c=>!mkGrp||c.group===mkGrp), nOff=inG.filter(mkExpired).length;
   const n1=document.getElementById('mkn_on'),n2=document.getElementById('mkn_off');if(n1)n1.textContent=inG.length-nOff;if(n2)n2.textContent=nOff;
-  document.getElementById('mkcount').textContent=qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם / מזדמנים':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
+  document.getElementById('mkcount').textContent=mkTowelOnly?'🧺 '+rows.length+' עם מנוי מגבות (לפי ההערות במקווה) — לחץ שוב על הקוביה כדי לחזור':qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם / מזדמנים':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
   document.getElementById('mknone').classList.toggle('hidden',rows.length>0);
 }
 // ☑️ בחירה לשליחה — מסמנים לקוחות ברשימה (או את כל המוצגים: קבוצה / פעילים / חיפוש) ושולחים לכולם
