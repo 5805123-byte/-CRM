@@ -3340,6 +3340,27 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch bar mitzva task error:', e)
 
+    # מאיר: "תקבע לאברהם גרניצקי כל ראשון לחודש הלועזי בשעה 12 בצהריים, ומאז שיתקשר אליו כל יום עד שאכתוב
+    # סודר. החודש זה סודר" — ההודעה שלו מ-16.10, כל יום מ-1 בחודש הלועזי ב-12:00; החודש מסומן "סודר" (מתחיל ב-1.11).
+    # only_open=0 — רק "סודר" עוצר (שלא ידלג עליו בשקט אם החוב שלו לא רשום כחוב פתוח במערכת)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='repeat_granitzki_v1'").fetchone():
+            j = con.execute("SELECT j.id FROM ym_job j JOIN ym_msg m ON m.job=j.id WHERE j.channel='voice' AND COALESCE(j.test,0)=0 "
+                            "AND j.retry_of IS NULL AND m.status='sent' AND (m.name LIKE '%גרניצקי%' OR m.text LIKE '%גרניצקי%') "
+                            "AND COALESCE(m.retry_of,0)=0 ORDER BY j.id DESC LIMIT 1").fetchone()
+            if j:
+                du = '2026-11-01 12:00'
+                con.execute("UPDATE ym_repeat SET active=0 WHERE job=? AND active=1", (j['id'],))
+                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq,done_until) "
+                            "VALUES(?,?,?,?,0,1,?,?,'daily',?)", (j['id'], 'g', 1, '12:00', now_iso(), du, du))
+                print('  הודעה יומית לגרניצקי: משלוח %s, מתחיל ב-%s' % (j['id'], du))
+            else:
+                print('  repeat granitzki: ההודעה שלו לא נמצאה')
+            con.execute("INSERT INTO seed_flags(name) VALUES('repeat_granitzki_v1')")
+            con.commit()
+    except Exception as e:
+        print('  repeat granitzki error:', e)
+
     # הוראות קבע שחזרו בנדרים פלוס — גם של מי שלא מקושר לחבר קהילה — נפתחות כחוב כבר עכשיו (לא רק בסנכרון הבא)
     try:
         if cm_debts_from_keva(con)[0]:
