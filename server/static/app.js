@@ -1653,15 +1653,19 @@ function render(){
    מאיר: "תעשה לשונית מקווה, לא צריך לסנכרן למערכת נתונים מהמקווה" — הכל חי מול
    מערכת המקווה: רואים את הלקוחות, מעבירים קבוצה, ושולחים לו מיד הודעה (ידני, לא אוטומטי). */
 // 🧺 מאיר: "כמה מנויים יש להם מנוי מגבות — זה רשום בהערות בדרך כלל במערכת המקווה"
-// "ללא מגבת" / "בלי מגבות" / "לא מגבת" — לא נספר כמנוי מגבות
-const MK_TWL_NO=/(ללא|בלי|לא|בטל|ביטל|הפסיק)\s*[-:]?\s*(ה)?מגב/;
-const mkTowelSrc=c=>{const r=c.remark||'',m=c.message||'';return /מגב/.test(r)&&!MK_TWL_NO.test(r)?'remark':(/מגב/.test(m)&&!MK_TWL_NO.test(m)?'message':'');};
+// מאיר: "אם כתוב אינו כולל מגבת אל תכניס לרשימה". נספר רק מה שכתוב בו במפורש "כולל מגבת" / "מנוי מגבות" /
+// "עם מגבת" (או רק "מגבת"); "אינו כולל / לא כולל / ללא / בלי מגבת" — לא; ושאר האזכורים (למשל "קח מגבת") — "לא ברור", בנפרד
+const MK_TWL_NO=/(אינו|איננו|אינה|לא|ללא|בלי|בטל|ביטל|הפסיק)\s*[-:]?\s*(כולל\s*)?(ה)?מגב/;
+const MK_TWL_YES=/(כולל|מנוי|עם|\+)\s*[-:]?\s*(ה)?מגב|^\s*(ה)?מגב\S*\s*$/;
+const mkTwlOf=t=>{t=String(t||'');if(!/מגב/.test(t))return '';if(MK_TWL_NO.test(t))return 'no';return MK_TWL_YES.test(t)?'yes':'unk';};
+const mkTowelSrc=c=>mkTwlOf(c.remark)==='yes'?'remark':(mkTwlOf(c.message)==='yes'&&mkTwlOf(c.remark)!=='no'?'message':'');
+const mkTowelUnk=c=>!mkTowelSrc(c)&&(mkTwlOf(c.remark)==='unk'||mkTwlOf(c.message)==='unk')&&mkTwlOf(c.remark)!=='no';
 const mkTowel=c=>!!mkTowelSrc(c);
 // 🧺 מאיר: "אני רוצה לראות במרוכז את מנויי המגבות" — חלון עם כולם: שם, טלפון, קבוצה, מנוי עד, ומה כתוב בהערה
 function mkTowelOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
   const all=MK.clients.filter(mkTowel).sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
-  const act=all.filter(c=>!mkPast(c.sub_end)), no=MK.clients.filter(c=>/מגב/.test((c.remark||'')+' '+(c.message||''))&&!mkTowel(c));
+  const act=all.filter(c=>!mkPast(c.sub_end)), no=MK.clients.filter(c=>!mkTowel(c)&&(mkTwlOf(c.remark)==='no'||mkTwlOf(c.message)==='no')), unk=MK.clients.filter(mkTowelUnk);
   const nR=all.filter(c=>mkTowelSrc(c)==='remark').length;
   const hl=t=>esc(String(t||'').slice(0,160)).replace(/(מגב\S*)/g,'<b style="background:#fff3c4">$1</b>');
   const row=c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(mkName(c))}</b>
@@ -1673,7 +1677,8 @@ function mkTowelOpen(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn sm" id="twcsv">⬇️ אקסל</button></div>
     <div class="mksec">✅ מנוי בתוקף (${act.length})</div><div class="mklist">${act.map(row).join('')||'<div class="hintxt">אין</div>'}</div>
     ${all.length-act.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">🔴 המנוי הסתיים (${all.length-act.length})</summary><div class="mklist">${all.filter(c=>mkPast(c.sub_end)).map(row).join('')}</div></details>`:''}
-    ${no.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">לא נספרו — כתוב "ללא / בלי / לא מגבת" (${no.length})</summary><div class="mklist">${no.map(c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr"><div class="mknm"><b>${esc(mkName(c))}</b><div class="mksub">📝 ${hl(c.remark||c.message)}</div></div></div>`).join('')}</div></details>`:''}`;
+    ${unk.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">❓ לא ברור — מוזכרת מגבת אבל לא כתוב "כולל" (${unk.length})</summary><div class="mklist">${unk.map(c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr"><div class="mknm"><b>${esc(mkName(c))}</b><div class="mksub">📝 ${hl(mkTwlOf(c.remark)==='unk'?c.remark:c.message)}</div></div></div>`).join('')}</div></details>`:''}
+    ${no.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">🚫 לא נספרו — "אינו כולל / לא כולל / ללא מגבת" (${no.length})</summary><div class="mklist">${no.map(c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr"><div class="mknm"><b>${esc(mkName(c))}</b><div class="mksub">📝 ${hl(c.remark||c.message)}</div></div></div>`).join('')}</div></details>`:''}`;
   remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-tw]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.tw);if(c)mkOpen(c);});
   document.getElementById('twcsv').onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
