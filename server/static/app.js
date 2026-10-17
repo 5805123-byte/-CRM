@@ -1726,6 +1726,36 @@ async function mkReqOpen(sync=true){
   if(sync){const s2=await api('POST','/api/mikveh/requests/sync',{}).catch(()=>null);
     const r=await api('GET','/api/mikveh/requests').catch(()=>null);if(r&&r.ok)MKREQ=r;
     paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error):(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':''));}}
+// 📊 מאיר: "כמה מנוי ערך צבור נכנסו ביום שישי וכמה מזדמנים — אני שואל על מקווה, לא על מגבות"
+async function mkEntDay(day,frm){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const lastFri=()=>{const t=new Date();const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+2)%7));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  day=day||lastFri(); frm=frm||'00:00';
+  const head=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📊</div><div><h2>כניסות למקווה ליום</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="date" id="edd" value="${esc(day)}" style="width:160px"> משעה <input type="time" id="edf" value="${esc(frm)}" style="width:110px"><button class="btn sm" id="edgo">🔄 לחשב</button></div></div></div>`;
+  rs.innerHTML=head+'<div class="mksub">⏳ בודק במקווה…</div>';remov.classList.add('show');
+  const wire=()=>{document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    document.getElementById('edgo').onclick=()=>mkEntDay(document.getElementById('edd').value,document.getElementById('edf').value);};
+  wire();
+  const r=await api('GET','/api/mikveh/towel_day?date='+encodeURIComponent(day)+'&from='+encodeURIComponent(frm)).catch(()=>null);
+  if(!r||!r.ok){rs.innerHTML=head+'<div class="mksub">⚠️ '+esc((r&&r.error)||'לא נטען')+'</div>';wire();return;}
+  const R=r.rows||[], cas=R.filter(x=>x.cat==='casual'), erech=R.filter(x=>x.cat==='erech');
+  const byG={};R.filter(x=>x.cat!=='casual').forEach(x=>{const g=x.group||'בלי קבוצה';(byG[g]=byG[g]||[]).push(x);});
+  const gl=Object.entries(byG).sort((a,b)=>b[1].length-a[1].length);
+  const list=a=>`<div class="mklist">${a.map(x=>`<div class="mkrow" data-edc="${esc(x.id)}" style="grid-template-columns:auto 1fr"><b>${esc(x.time)}</b><div class="mknm"><b>${esc(x.name||'—')}</b><div class="mksub">${x.code?'#'+esc(x.code)+' · ':''}${esc(x.group||'')}</div></div></div>`).join('')}</div>`;
+  rs.innerHTML=head+`<div class="mksub" style="margin:8px 0">${esc(r.heb||'')} · ${esc(r.date)} · משעה ${esc(r.from)}</div>
+    <div class="mktiles">
+      <div class="mktile ok"><span>4. ערך צבור</span><b>${erech.length}</b></div>
+      <div class="mktile ok"><span>🚶 מזדמנים</span><b>${cas.length}</b></div>
+      <div class="mktile"><span>סה״כ כניסות</span><b>${R.length}</b></div></div>
+    ${r.src==='log'?'<div class="hintxt">✓ מתוך יומן הכניסות של המקווה — כל כניסה נספרת, גם של כל מזדמן.</div>'
+      :`<div class="hintxt">⚠️ לפי <b>הכניסה האחרונה</b> של כל לקוח (יומן הכניסות של המקווה עוד לא נמצא) — מזדמנים בלי כרטיס חסרים, ומי שנכנס שוב אחר כך לא נספר.</div>`}
+    <div class="mksec" style="margin-top:12px">לפי קבוצה</div>
+    <div class="mklist">${gl.map(([g,a])=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b>${esc(g)}</b><b>${a.length}</b></div>`).join('')}${cas.length?`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b>🚶 מזדמנים</b><b>${cas.length}</b></div>`:''}</div>
+    ${erech.length?`<details style="margin-top:10px"><summary class="mksec" style="cursor:pointer">4. ערך צבור — מי נכנס (${erech.length})</summary>${list(erech)}</details>`:''}
+    ${cas.length?`<details style="margin-top:10px"><summary class="mksec" style="cursor:pointer">🚶 מזדמנים (${cas.length})</summary>${list(cas)}</details>`:''}`;
+  wire();
+  rs.querySelectorAll('[data-edc]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.edc);if(c)mkOpen(c);});}
 async function mkTowelDay(day,frm){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const lastFri=()=>{const t=new Date();const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+2)%7));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
@@ -1832,6 +1862,7 @@ function renderMikveh(){
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
       <button class="mkibtn" id="mkunpaid" title="מנוי בתוקף ונכנס בחודש האחרון — ולא שילם במקווה (אשראי / מזומן)">💳 נכנס ולא שילם</button>
+      <button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
       <button class="mkibtn" id="mktwday" title="מי נכנס ביום מסוים ומגיעה לו מגבת: מזדמן, ערך צבור, מנוי כולל מגבת">🧺 מגבות ליום</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
@@ -1861,6 +1892,7 @@ function renderMikveh(){
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mktwday').onclick=()=>mkTowelDay();
+  document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
   document.getElementById('mkunpaid').onclick=()=>mkUnpaidOpen();
   if(!MKREQ){MKREQ={rows:[],new:0};api('GET','/api/mikveh/requests').then(r=>{if(r&&r.ok){MKREQ=r;if(tab==='mikveh')renderMikveh();}}).catch(()=>{});}
