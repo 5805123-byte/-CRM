@@ -1665,6 +1665,31 @@ const mkTowel=c=>!!mkTowelSrc(c);
 // 🧺 מאיר: "מי שנכנס ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו ביום שישי
 // האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס"
 // 📥 מאיר: "כל טופס שמגיע מנדרים פלוס וכתוב עליו מקווה — שיבוא לדף של המקווה, למעלה. תקרא לזה פניות"
+// 💳 מאיר: "מי לא שילם באשראי או מזומן בחודש האחרון ויש לו אישור כניסה והוא נכנס למקווה — תבנה לי רשימה"
+async function mkUnpaidOpen(start){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  remov.classList.add('show');
+  if(start)await api('POST','/api/mikveh/unpaid',{days:30});
+  const r=await api('GET','/api/mikveh/unpaid').catch(()=>null)||{};
+  const d=x=>x?String(x).slice(8,10)+'/'+String(x).slice(5,7)+'/'+String(x).slice(0,4):'';
+  const L=r.rows||[];
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">💳</div><div><h2>נכנס ולא שילם</h2>
+      <div class="mksub">מנוי בתוקף · נכנס ב-${r.days||30} הימים האחרונים · ואין לו תשלום במקווה (אשראי / מזומן) באותה תקופה</div></div></div>
+    ${r.running?`<div class="mksub"><span class="mkspin"></span> בודק ${r.done||0} מתוך ${r.total||'…'} לקוחות…</div>`
+      :`<button class="btn sm" id="unrun">${r.at?'🔄 לבדוק שוב':'▶️ לבנות את הרשימה'}</button>${r.at?` <span class="mksub">נבדק ${esc(r.at)} · ${r.total||0} לקוחות</span>`:''}`}
+    ${r.error==='no_payments_source'?`<div class="hintxt" style="color:#c0392b">⚠️ עוד לא מצאתי במערכת המקווה את רשימת התשלומים, ולכן אי אפשר לדעת מי שילם. פתח כרטיס של לקוח, ב"💳 תשלומים" לחץ "🔎 לחפש איפה המקווה שומר תשלומים", ושלח לי צילום של מה שיוצא.</div>`:(r.error?`<div class="hintxt">⚠️ ${esc(r.error)}</div>`:'')}
+    ${!r.running&&r.at&&!r.error?`<div class="mksec" style="margin-top:10px">${L.length} לא שילמו</div><div class="mklist">${L.map(x=>`<div class="mkrow" data-un="${esc(x.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(x.name)}</b>
+        <div class="mksub"><span dir="ltr">${esc(x.phone)}</span> · #${esc(x.code||'')} · ${esc(x.group)}</div>
+        <div class="mksub">כניסה אחרונה ${esc(mkAgo(x.last_in)||d(x.last_in))} · ${x.last_pay?'תשלום אחרון '+d(x.last_pay)+' · '+esc(mkNis(x.last_amt)):'לא נמצא אף תשלום'}${(x.failed||[]).length?' · ✗ חיוב נכשל '+x.failed.map(d).join(', '):''}</div></div>
+        <span class="mktag ok">מנוי עד ${esc(mkDate(x.sub_end))}</span></div>`).join('')||'<div class="hintxt">כולם שילמו ✓</div>'}</div>
+      ${L.length?'<button class="btn sm" id="uncsv" style="margin-top:8px">⬇️ אקסל</button>':''}`:''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const b=document.getElementById('unrun');if(b)b.onclick=()=>mkUnpaidOpen(true);
+  rs.querySelectorAll('[data-un]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.un);if(c)mkOpen(c);});
+  const cv=document.getElementById('uncsv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,כניסה אחרונה,מנוי עד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.last_in.replace('T',' '),x.sub_end,x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='נכנס ולא שילם.csv';document.body.appendChild(a);a.click();a.remove();};
+  if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='נכנס ולא שילם')mkUnpaidOpen();},2500);}
 let MKREQ=null;
 async function mkReqOpen(sync=true){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
@@ -1806,6 +1831,7 @@ function renderMikveh(){
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
+      <button class="mkibtn" id="mkunpaid" title="מנוי בתוקף ונכנס בחודש האחרון — ולא שילם במקווה (אשראי / מזומן)">💳 נכנס ולא שילם</button>
       <button class="mkibtn" id="mktwday" title="מי נכנס ביום מסוים ומגיעה לו מגבת: מזדמן, ערך צבור, מנוי כולל מגבת">🧺 מגבות ליום</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
@@ -1836,6 +1862,7 @@ function renderMikveh(){
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mktwday').onclick=()=>mkTowelDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
+  document.getElementById('mkunpaid').onclick=()=>mkUnpaidOpen();
   if(!MKREQ){MKREQ={rows:[],new:0};api('GET','/api/mikveh/requests').then(r=>{if(r&&r.ok){MKREQ=r;if(tab==='mikveh')renderMikveh();}}).catch(()=>{});}
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();

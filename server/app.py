@@ -14822,6 +14822,67 @@ def _mk_req_loop():
         time.sleep(900)
 
 
+# 💳 מאיר: "מי לא שילם באשראי או מזומן בחודש האחרון, ויש לו אישור כניסה, והוא נכנס למקווה — תבנה לי רשימה".
+# רץ ברקע (בדיקה של כל לקוח מול התשלומים שלו במקווה), רק קריאה. התוצאה בזיכרון — לא נשמר
+MK_UNPAID = {'running': False, 'done': 0, 'total': 0, 'rows': [], 'at': '', 'error': '', 'src': '', 'days': 30}
+
+
+def mk_unpaid_run(days=30):
+    import mikveh as _mk
+    from concurrent.futures import ThreadPoolExecutor
+    MK_UNPAID.update(running=True, done=0, total=0, rows=[], error='', src='', days=days)
+    try:
+        gr = {g['id']: g['name'] for g in _mk.groups()}
+        now = il_now().replace(tzinfo=None)
+        since = (now - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+        today = now.strftime('%Y-%m-%d')
+        cand = []
+        for c in _mk.clients(fresh=True):
+            if not _mk.visible(c) or c.get('isBlocked') or (c.get('firstName') or '').strip().startswith('['):
+                continue
+            gname = gr.get(c.get('groupId'), '')
+            if 'מזדמ' in gname:
+                continue
+            le = str(c.get('lastEntrance') or '')[:10]
+            sub = str(c.get('subscriptionEndDate') or '')[:10]
+            # "יש לו אישור כניסה" — מנוי בתוקף; "נכנס" — כניסה ב-days הימים האחרונים
+            if le >= since and sub >= today:
+                cand.append(c)
+        MK_UNPAID['total'] = len(cand)
+        # קודם בודקים שיש בכלל נתיב תשלומים במקווה
+        tx0, src0, _k = _mk.payments(cand[0]['id']) if cand else ([], '', [])
+        if cand and not src0:
+            MK_UNPAID.update(error='no_payments_source')
+            return
+        MK_UNPAID['src'] = src0
+        out = []
+        def one(c):
+            try:
+                tx, src, _k2 = _mk.payments(c['id'])
+            except Exception:
+                tx = None
+            MK_UNPAID['done'] += 1
+            if tx is None:
+                return
+            ok = [t for t in tx if not t['failed'] and (t['amount'] or 0) > 0 and (t['iso'] or '') >= since]
+            if ok:
+                return
+            last = next((t for t in tx if not t['failed'] and (t['amount'] or 0) > 0), None)
+            out.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                        'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(), 'group': gr.get(c.get('groupId'), ''),
+                        'last_in': str(c.get('lastEntrance') or '')[:16], 'sub_end': str(c.get('subscriptionEndDate') or '')[:10],
+                        'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0,
+                        'failed': [t['iso'] for t in tx if t['failed'] and (t['iso'] or '') >= since][:3]})
+        with ThreadPoolExecutor(5) as ex:
+            list(ex.map(one, cand))
+        out.sort(key=lambda r: r['last_in'], reverse=True)
+        MK_UNPAID['rows'] = out
+    except Exception as e:
+        MK_UNPAID['error'] = str(e)[:200]
+    finally:
+        MK_UNPAID.update(running=False, at=il_now().strftime('%Y-%m-%d %H:%M'))
+
+
 def ym_repeat_next(cal, day, at, after=None):
     """המועד הבא (>= after) של היום בחודש — עברי ('h') או לועזי ('g'), בשעה at. מחזיר 'YYYY-MM-DD HH:MM'"""
     after = after or il_now().replace(tzinfo=None)
@@ -18701,6 +18762,8 @@ class H(BaseHTTPRequestHandler):
             import gmail_intake as _gi
             return self._send(200, {'ok': True, 'rows': rows, 'new': sum(1 for r in rows if r['status'] == 'new'),
                                     'box': _gi.mk_req_box()[0], 'last': MKREQ_SYNC})
+        if self.path.split('?')[0] == '/api/mikveh/unpaid':
+            return self._send(200, dict(MK_UNPAID, ok=True))
         if self.path.split('?')[0] == '/api/mikveh/towel_day':
             # 🧺 מאיר: "מי שנכנס למקווה ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו
             # ביום שישי האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס". מהמקווה מגיעה רק "כניסה אחרונה"
@@ -20886,6 +20949,12 @@ class H(BaseHTTPRequestHandler):
                 con.execute("UPDATE ym_repeat SET active=0 WHERE id=?", (int(m.group(1)),)); con.commit()
             finally:
                 con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/unpaid':
+            if not MK_UNPAID['running']:
+                d = max(7, min(90, int(b.get('days') or 30)))
+                import threading as _th
+                _th.Thread(target=mk_unpaid_run, args=(d,), daemon=True).start()
             return self._send(200, {'ok': True})
         if self.path == '/api/mikveh/requests/sync':
             return self._send(200, mk_req_sync())
