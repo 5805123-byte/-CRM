@@ -18739,20 +18739,54 @@ class H(BaseHTTPRequestHandler):
             fh, fm = [int(x) for x in frm.split(':')]
             start = datetime.datetime.fromisoformat(day).replace(hour=fh, minute=fm)
             end = datetime.datetime.fromisoformat(day) + datetime.timedelta(days=1)
-            rows = []
-            for c in cl:
-                dt = il_time(c.get('lastEntrance'))
-                if not dt or not (start <= dt < end):
-                    continue
-                gname = gr.get(c.get('groupId'), '')
-                first = (c.get('firstName') or '').strip()
-                casual = c.get('groupId') in _mk.hidden_groups() or 'מזדמ' in gname or first.startswith('[')
-                cat = 'casual' if casual else ('erech' if 'ערך צבור' in gname else ('towel' if towel(c.get('remark')) or (towel(c.get('message')) and not no_rx.search(str(c.get('remark') or ''))) else 'other'))
-                rows.append({'id': c.get('id'), 'name': (first + ' ' + (c.get('lastName') or '').strip()).strip(), 'code': c.get('clientCode'),
-                             'group': gname, 'time': dt.strftime('%H:%M'), 'cat': cat, 'note': (c.get('remark') or '')[:120]})
+            byid = {str(c.get('id')): c for c in cl}
+            def cat_of(c, gid, gname, first, flag=False):
+                casual = flag or gid in _mk.hidden_groups() or 'מזדמ' in gname or first.startswith('[') or c is None
+                if casual:
+                    return 'casual'
+                if 'ערך צבור' in gname:
+                    return 'erech'
+                if towel(c.get('remark')) or (towel(c.get('message')) and not no_rx.search(str(c.get('remark') or ''))):
+                    return 'towel'
+                return 'other'
+            rows, src, tried = [], 'last', []
+            # 1) היומן של המקווה — כל הכניסות של היום, גם של כל מזדמן
+            try:
+                lg = _mk.entrances(day)
+            except Exception:
+                lg = None
+            if lg:
+                src = 'log'
+                for e in lg['rows']:
+                    at = e['at']
+                    if at.tzinfo is not None:
+                        at = at.astimezone(IL_TZ).replace(tzinfo=None) if IL_TZ else at.replace(tzinfo=None) + datetime.timedelta(hours=3)
+                    if not (start <= at < end):
+                        continue
+                    c = byid.get(str(e['cid'])) if e['cid'] else None
+                    gid = (c or {}).get('groupId') or e['group']
+                    gname = gr.get(gid, '') or e['gname'] or ''
+                    first = ((c or {}).get('firstName') or e['name'] or '').strip()
+                    nm = (first + ' ' + ((c or {}).get('lastName') or '').strip()).strip() if c else (e['name'] or 'מזדמן')
+                    rows.append({'id': (c or {}).get('id') or '', 'name': nm, 'code': (c or {}).get('clientCode'), 'group': gname,
+                                 'time': at.strftime('%H:%M'), 'cat': cat_of(c, gid, gname, first, e['casual']),
+                                 'note': ((c or {}).get('remark') or '')[:120]})
+            else:
+                tried = (_mk._ENTR.get('tried') or [])[:60]
+                # 2) גיבוי — "כניסה אחרונה" של כל לקוח
+                for c in cl:
+                    dt = il_time(c.get('lastEntrance'))
+                    if not dt or not (start <= dt < end):
+                        continue
+                    gname = gr.get(c.get('groupId'), '')
+                    first = (c.get('firstName') or '').strip()
+                    rows.append({'id': c.get('id'), 'name': (first + ' ' + (c.get('lastName') or '').strip()).strip(), 'code': c.get('clientCode'),
+                                 'group': gname, 'time': dt.strftime('%H:%M'), 'cat': cat_of(c, c.get('groupId'), gname, first),
+                                 'note': (c.get('remark') or '')[:120]})
             rows.sort(key=lambda r: r['time'])
             cnt = {k: sum(1 for r in rows if r['cat'] == k) for k in ('casual', 'erech', 'towel', 'other')}
-            return self._send(200, {'ok': True, 'date': day, 'from': frm, 'rows': rows, 'count': cnt,
+            return self._send(200, {'ok': True, 'date': day, 'from': frm, 'rows': rows, 'count': cnt, 'src': src, 'tried': tried,
+                                    'log_path': (lg or {}).get('path', ''),
                                     'towels': cnt['casual'] + cnt['erech'] + cnt['towel'],
                                     'heb': greg_to_heb_full(day) or ''})
         if self.path.split('?')[0] == '/api/mikveh/paypaths':

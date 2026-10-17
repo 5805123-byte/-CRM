@@ -448,7 +448,7 @@ def discover_paths(force=False):
     if not force and _DISC['paths'] and time.time() - _DISC['at'] < 86400:
         return _DISC['paths']
     root = base() + 'adminUi/'
-    out, files, err = set(), [], ''
+    out, allp, files, err = set(), set(), [], ''
     try:
         req = urllib.request.Request(root, headers={'User-Agent': UA})
         html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'replace')
@@ -463,14 +463,93 @@ def discover_paths(force=False):
             # גם קבצי chunk שנטענים בהמשך (lazy) — שמות כמו 123.abcdef.js
             for m_ in re.finditer(r'["\'`}]/?((?:api/)?[A-Z][A-Za-z]{2,}(?:/[A-Za-z]{2,}){0,3}/?)(?=["\'`$?])', js):
                 pth = m_.group(1)
-                # רק נתיבי קריאה — בלי שום נתיב שנשמע כמו פעולה (חיוב, ביטול, מחיקה, יצירה, שליחה)
-                if _PAYWORD.search(pth) and len(pth) < 80 and not re.search(
-                        r'charge|refund|cancel|delete|remove|create|add|update|save|send|set|pay(?!ment)|execute|approve|token', pth, re.I):
-                    out.add(pth)
+                # רק נתיבי קריאה — בלי שום נתיב שנשמע כמו פעולה (חיוב, ביטול, מחיקה, יצירה, שליחה, פתיחת דלת)
+                if len(pth) < 80 and not re.search(
+                        r'charge|refund|cancel|delete|remove|create|add|update|save|send|set|pay(?!ment)|execute|approve|token|open|unlock|login|logout|reset', pth, re.I):
+                    allp.add(pth)
+                    if _PAYWORD.search(pth):
+                        out.add(pth)
     except Exception as e:
         err = str(e)[:200]
-    _DISC.update(at=time.time(), paths=sorted(out)[:40], files=files, error=err)
+    _DISC.update(at=time.time(), paths=sorted(out)[:40], all=sorted(allp), files=files, error=err)
     return _DISC['paths']
+
+
+# ---------- יומן כניסות (היסטוריה של היום) ----------
+# מאיר: "אין לך את הנתונים של כל משתמש מזדמן? יש את זה במערכת, בהיסטוריה של אותו יום" — הנתיב של ההיסטוריה
+# מתוך האתר של המקווה, ונזכר אחרי שנמצא. רק GET.
+_ENTR_WORD = re.compile(r'entr|enter|histor|visit|log(?!in|out)|report|daily|attend|access|door|gate|pass(?!word)|movement|event', re.I)
+_ENTR = {'pat': None, 'tried': []}
+
+
+def _entr_forms(path, day):
+    d1 = (datetime.date.fromisoformat(day) + datetime.timedelta(days=1)).isoformat()
+    p = path.rstrip('/')
+    return [(p, {'date': day}), (p, {'fromDate': day, 'toDate': d1}), (p, {'from': day, 'to': d1}),
+            (p, {'startDate': day, 'endDate': d1}), (p + '/' + day, None), (p, None)]
+
+
+def _dt_of(v):
+    try:
+        return datetime.datetime.fromisoformat(str(v).replace('Z', '+00:00')[:32])
+    except Exception:
+        return None
+
+
+def _entr_rows(res, day):
+    rows = res if isinstance(res, list) else next((res[k] for k in ('items', 'data', 'result', 'list', 'entrances', 'history')
+                                                    if isinstance(res, dict) and isinstance(res.get(k), list)), None)
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return None
+    tk = next((k for k in rows[0] if re.search(r'entr|date|time|created|at$', k, re.I) and _dt_of(rows[0].get(k))), None)
+    if not tk:
+        return None
+    hit = [r for r in rows if str(_dt_of(r.get(tk)) or '')[:10] == day or str(r.get(tk) or '')[:10] == day]
+    return (rows, tk) if hit else None
+
+
+def entrances(day):
+    """כל הכניסות של היום מהיומן של המקווה: [{'at': datetime, 'cid', 'name', 'group', 'casual', 'raw_keys'}] או None"""
+    try:
+        tok = login()
+    except RuntimeError:
+        return None
+    pats = ([_ENTR['pat']] if _ENTR['pat'] else [])
+    if not pats:
+        try:
+            discover_paths()
+        except Exception:
+            pass
+        pats = [x for x in (_DISC.get('all') or []) if _ENTR_WORD.search(x)][:20]
+    tried = []
+    for pth in pats:
+        for path, q in _entr_forms(pth, day):
+            code, res = _http('GET', path, None, q, tok, 15)
+            got = _entr_rows(res, day) if code == 200 else None
+            tried.append({'path': path + ('?' + urllib.parse.urlencode(q) if q else ''), 'code': code,
+                          'rows': len(res) if isinstance(res, list) else None, 'ok': bool(got)})
+            if code in (404, 405):
+                break
+            if got:
+                _ENTR['pat'] = pth
+                rows, tk = got
+                out = []
+                for r in rows:
+                    at = _dt_of(r.get(tk))
+                    if not at:
+                        continue
+                    ck = next((k for k in r if re.fullmatch(r'client_?id', k, re.I)), None)
+                    cid = r.get(ck) if ck else None
+                    nm = ' '.join(str(r.get(k) or '').strip() for k in ('firstName', 'lastName') if r.get(k)) or \
+                        next((str(r[k]) for k in r if re.search(r'name', k, re.I) and isinstance(r[k], str) and r[k].strip()), '')
+                    cas = any(bool(r.get(k)) for k in r if re.search(r'casual|guest|anonym|temp|single', k, re.I) and isinstance(r.get(k), bool))
+                    grp = next((r[k] for k in r if re.fullmatch(r'group_?id', k, re.I)), None)
+                    gnm = next((str(r[k]) for k in r if re.search(r'group_?name', k, re.I) and r.get(k)), '')
+                    out.append({'at': at, 'cid': cid, 'name': nm, 'group': grp, 'gname': gnm, 'casual': cas})
+                _ENTR['tried'] = tried
+                return {'rows': out, 'path': pth, 'keys': sorted(rows[0].keys())[:30]}
+    _ENTR['tried'] = tried
+    return None
 
 
 def probe_payments(cid):

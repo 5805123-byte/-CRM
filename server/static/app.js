@@ -1723,7 +1723,10 @@ async function mkTowelDay(day,frm){
       <div class="mktile"><span>🧺 מנוי כולל מגבת</span><b>${C.towel||0}</b></div>
       <div class="mktile ok"><span>סה״כ מגיעה מגבת</span><b>${r.towels||0}</b></div>
       <div class="mktile"><span>שאר המנויים שנכנסו (בלי מגבת)</span><b>${C.other||0}</b></div></div>
-    <div class="hintxt">⚠️ המקווה מוסר רק את <b>הכניסה האחרונה</b> של כל לקוח. מי שנכנס ביום הזה ושוב אחריו — לא נספר כאן, ולכן החישוב מדויק ליום האחרון שהמקווה פעל. כניסות מזדמנות בלי כרטיס לקוח לא מופיעות כלל. כמה מגבות <b>נלקחו בפועל</b> — אין לי את זה מהמקווה.</div>
+    ${r.src==='log'?`<div class="hintxt">✓ מתוך <b>יומן הכניסות של המקווה</b> — כל כניסה של היום, גם של כל מזדמן (כל כניסה נספרת).</div>`
+      :`<div class="hintxt">⚠️ לא מצאתי עדיין את יומן הכניסות של המקווה, ולכן זה לפי <b>הכניסה האחרונה</b> של כל לקוח — מזדמנים בלי כרטיס לא מופיעים, ומי שנכנס שוב אחר כך לא נספר.</div>
+        <details style="margin:4px 0"><summary class="mksub" style="cursor:pointer">🔎 מה נוסה במקווה (לשלוח לי צילום)</summary><small dir="ltr" style="display:block;word-break:break-all;line-height:1.5">${(r.tried||[]).map(t=>esc(t.path)+' → '+t.code+(t.rows!=null?' ('+t.rows+')':'')).join('<br>')||'לא נמצאו נתיבים של היסטוריה באתר המקווה'}</small></details>`}
+    <div class="hintxt">כמה מגבות <b>נלקחו בפועל</b> — אין לי את זה מהמקווה.</div>
     ${lst('casual','🚶 מזדמן')}${lst('erech','4. ערך צבור')}${lst('towel','🧺 מנוי כולל מגבת')}${lst('other','שאר המנויים שנכנסו')}
     <button class="btn sm" id="twcsv2" style="margin-top:10px">⬇️ אקסל</button>`;
   wire();
