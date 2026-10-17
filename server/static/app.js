@@ -1653,7 +1653,32 @@ function render(){
    מאיר: "תעשה לשונית מקווה, לא צריך לסנכרן למערכת נתונים מהמקווה" — הכל חי מול
    מערכת המקווה: רואים את הלקוחות, מעבירים קבוצה, ושולחים לו מיד הודעה (ידני, לא אוטומטי). */
 // 🧺 מאיר: "כמה מנויים יש להם מנוי מגבות — זה רשום בהערות בדרך כלל במערכת המקווה"
-const mkTowel=c=>/מגב/.test((c.remark||'')+' '+(c.message||''));
+// "ללא מגבת" / "בלי מגבות" / "לא מגבת" — לא נספר כמנוי מגבות
+const MK_TWL_NO=/(ללא|בלי|לא|בטל|ביטל|הפסיק)\s*[-:]?\s*(ה)?מגב/;
+const mkTowelSrc=c=>{const r=c.remark||'',m=c.message||'';return /מגב/.test(r)&&!MK_TWL_NO.test(r)?'remark':(/מגב/.test(m)&&!MK_TWL_NO.test(m)?'message':'');};
+const mkTowel=c=>!!mkTowelSrc(c);
+// 🧺 מאיר: "אני רוצה לראות במרוכז את מנויי המגבות" — חלון עם כולם: שם, טלפון, קבוצה, מנוי עד, ומה כתוב בהערה
+function mkTowelOpen(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
+  const all=MK.clients.filter(mkTowel).sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
+  const act=all.filter(c=>!mkPast(c.sub_end)), no=MK.clients.filter(c=>/מגב/.test((c.remark||'')+' '+(c.message||''))&&!mkTowel(c));
+  const nR=all.filter(c=>mkTowelSrc(c)==='remark').length;
+  const hl=t=>esc(String(t||'').slice(0,160)).replace(/(מגב\S*)/g,'<b style="background:#fff3c4">$1</b>');
+  const row=c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(mkName(c))}</b>
+      <div class="mksub"><span dir="ltr">${esc(c.phone||'')}</span> · #${esc(c.code||'')} · ${esc((G[c.group]&&G[c.group].name)||'')}</div>
+      <div class="mksub">📝 ${hl(mkTowelSrc(c)==='remark'?c.remark:c.message)}</div></div>
+      <span class="mktag ${mkPast(c.sub_end)?'bad':'ok'}">${mkPast(c.sub_end)?'הסתיים':'עד'} ${esc(mkDate(c.sub_end))}</span></div>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">🧺</div><div><h2>מנויי מגבות</h2>
+      <div class="mksub"><b>${all.length}</b> לפי ההערות במקווה · <b>${act.length}</b> עם מנוי בתוקף · ${all.length-act.length} שהמנוי הסתיים${nR<all.length?` · ${all.length-nR} מתוכם מ"הודעה" ולא מ"הערה"`:''}</div></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn sm" id="twcsv">⬇️ אקסל</button></div>
+    <div class="mksec">✅ מנוי בתוקף (${act.length})</div><div class="mklist">${act.map(row).join('')||'<div class="hintxt">אין</div>'}</div>
+    ${all.length-act.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">🔴 המנוי הסתיים (${all.length-act.length})</summary><div class="mklist">${all.filter(c=>mkPast(c.sub_end)).map(row).join('')}</div></details>`:''}
+    ${no.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">לא נספרו — כתוב "ללא / בלי / לא מגבת" (${no.length})</summary><div class="mklist">${no.map(c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr"><div class="mknm"><b>${esc(mkName(c))}</b><div class="mksub">📝 ${hl(c.remark||c.message)}</div></div></div>`).join('')}</div></details>`:''}`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-tw]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.tw);if(c)mkOpen(c);});
+  document.getElementById('twcsv').onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,מנוי עד,הערה'].concat(all.map(c=>[mkName(c),c.phone||'',c.code||'',(G[c.group]&&G[c.group].name)||'',mkDate(c.sub_end),mkTowelSrc(c)==='remark'?c.remark:c.message].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנויי מגבות.csv';document.body.appendChild(a);a.click();a.remove();};}
 let mkTowelOnly=false;
 let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name', mkExp=false, mkSel=new Set(), mkSelOn=false;
 // מאיר: "שתי רשימות נפרדות — אלו שלא הסתיים להם המנוי או הרישיון, ואלו שהסתיים; את אלו שהסתיים רק בלחיצת
@@ -1701,7 +1726,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${MK.clients.length}</b><span>לקוחות</span></div>
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
-      <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה מציגה רק אותם"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
+      <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
       <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button>
@@ -1727,7 +1752,7 @@ function renderMikveh(){
     document.querySelectorAll('#mksort button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
-  document.getElementById('mktowel').onclick=()=>{mkTowelOnly=!mkTowelOnly;renderMikveh();};
+  document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();
