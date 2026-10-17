@@ -580,6 +580,9 @@ def ensure_schema():
     # 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
     # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
     con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
+    # 📥 פניות למקווה — "טופס פניות" של נדרים פלוס שמגיע במייל (gmail_intake.sync_mk_requests)
+    con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
+                "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
     # 🔁 מאיר: "ההודעה של אברהם גרניצקי — אני רוצה שכל ראשון לחודש הוא יקבל את ההודעה הזאת" — הודעה חודשית
     # מתוך משלוח שכבר יצא: cal 'h' = א' בחודש העברי / 'g' = 1 בחודש הלועזי; only_open — לא למי שאין לו חוב פתוח
     con.execute("CREATE TABLE IF NOT EXISTS ym_repeat(id INTEGER PRIMARY KEY AUTOINCREMENT, job INTEGER, cal TEXT, day INTEGER, "
@@ -14788,6 +14791,37 @@ def ym_redial(con, jid, lst, label):
     return nj
 
 
+MKREQ_SYNC = {'at': '', 'ok': None, 'new': 0, 'error': ''}
+MKREQ_LOCK = threading.Lock()
+
+
+def mk_req_sync():
+    """📥 פניות המקווה מהמייל — פעם ב-15 דקות ברקע, ומיד כשפותחים את החלון"""
+    import gmail_intake as _gi
+    if not MKREQ_LOCK.acquire(blocking=False):
+        return {'ok': True, 'busy': True, 'new': 0}
+    con = db()
+    try:
+        r = _gi.sync_mk_requests(con, days=90 if not MKREQ_SYNC['at'] else 14)
+    except Exception as e:
+        r = {'ok': False, 'error': str(e)[:200]}
+    finally:
+        con.close()
+        MKREQ_LOCK.release()
+    MKREQ_SYNC.update(at=il_now().strftime('%Y-%m-%d %H:%M'), ok=r.get('ok'), new=r.get('new') or 0, error=r.get('error') or '')
+    return r
+
+
+def _mk_req_loop():
+    time.sleep(90)
+    while True:
+        try:
+            mk_req_sync()
+        except Exception as e:
+            print('  mikveh requests sync error:', e)
+        time.sleep(900)
+
+
 def ym_repeat_next(cal, day, at, after=None):
     """המועד הבא (>= after) של היום בחודש — עברי ('h') או לועזי ('g'), בשעה at. מחזיר 'YYYY-MM-DD HH:MM'"""
     after = after or il_now().replace(tzinfo=None)
@@ -18658,6 +18692,15 @@ class H(BaseHTTPRequestHandler):
                 a1 = (datetime.date.today() - datetime.timedelta(days=7 * (i - 1))).isoformat()
                 wk.append({'from': a0, 'n': sum(1 for r in out if r['sub_bad'] and a0 <= r['sub_end'] < a1)})
             return self._send(200, {'ok': True, 'rows': out, 'recent': sum(1 for r in out if r['recent']), 'weeks': wk})
+        if self.path.split('?')[0] == '/api/mikveh/requests':
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT * FROM mk_req ORDER BY at DESC, id DESC LIMIT 300")]
+            finally:
+                con.close()
+            import gmail_intake as _gi
+            return self._send(200, {'ok': True, 'rows': rows, 'new': sum(1 for r in rows if r['status'] == 'new'),
+                                    'box': _gi.mk_req_box()[0], 'last': MKREQ_SYNC})
         if self.path.split('?')[0] == '/api/mikveh/towel_day':
             # 🧺 מאיר: "מי שנכנס למקווה ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו
             # ביום שישי האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס". מהמקווה מגיעה רק "כניסה אחרונה"
@@ -20807,6 +20850,22 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 con.execute("UPDATE ym_repeat SET active=0 WHERE id=?", (int(m.group(1)),)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/requests/sync':
+            return self._send(200, mk_req_sync())
+        m = re.match(r'/api/mikveh/requests/([^/]+)$', self.path)
+        if m:
+            rid = urllib.parse.unquote(m.group(1))
+            con = db()
+            try:
+                if 'status' in b:
+                    st = 'done' if b.get('status') == 'done' else 'new'
+                    con.execute("UPDATE mk_req SET status=?, handled_at=? WHERE id=?", (st, now_iso() if st == 'done' else None, rid))
+                if 'note' in b:
+                    con.execute("UPDATE mk_req SET note=? WHERE id=?", (str(b.get('note') or '')[:500], rid))
+                con.commit()
             finally:
                 con.close()
             return self._send(200, {'ok': True})
@@ -27541,6 +27600,7 @@ def serve():
     threading.Thread(target=_vm_loop, daemon=True).start()
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
+    threading.Thread(target=_mk_req_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

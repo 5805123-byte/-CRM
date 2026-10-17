@@ -2417,3 +2417,96 @@ def scan_donor_names(con, status=None, years=4, per_addr=60):
             except Exception: pass
     st['donors'] = len(hit_donors)
     return {'ok': True, 'found': st['found'], 'donors': len(hit_donors), 'scanned': st['scanned']}
+
+
+# ---------- 📥 פניות למקווה (טופס פניות של נדרים פלוס) ----------
+# מאיר: "טופס של המקווה שאנשים ממלאים בשביל כל מיני פניות. אני מקבל את זה באימייל של חצות 18 — כל טופס
+# שמגיע מנדרים פלוס וכתוב עליו מקווה, שיבוא לדף של המקווה, למעלה. תקרא לזה פניות".
+# קריאה בלבד מהתיבה; מספר זהות לא נשמר. התיבה: MIKVEH_MAIL_USER / MIKVEH_MAIL_PASS אם הוגדרו, אחרת GMAIL_USER.
+_MKR_FIELDS = (('first', r'שם\s*פרטי'), ('last', r'שם\s*משפחה'), ('phone', r'טלפון'), ('kind', r'סוג\s*ה?פניה'))
+
+
+def mk_req_box():
+    u = (os.environ.get('MIKVEH_MAIL_USER') or '').strip()
+    p = (os.environ.get('MIKVEH_MAIL_PASS') or '').strip().replace(' ', '')
+    if u and p:
+        return u, p
+    return (os.environ.get('GMAIL_USER') or '').strip(), os.environ.get('GMAIL_APP_PASSWORD') or ''
+
+
+def mk_req_parse(body):
+    """שדות הטופס מגוף המייל. מחזיר dict או None אם זה לא "טופס פניות" של המקווה"""
+    t = re.sub(r'\r', '', body or '')
+    if 'פני' not in t or not re.search(r'סוג\s*ה?פניה\s*:\s*\S*מקו', t):
+        return None
+    out = {}
+    for k, lbl in _MKR_FIELDS:
+        m = re.search(lbl + r'\s*:\s*([^\n]+)', t)
+        out[k] = m.group(1).strip() if m else ''
+    m = re.search(r'פירוט\s*:\s*(.+?)(?=\n\s*מייל\s*-\s*עותק|\n\s*-{3,}|\Z)', t, re.S)
+    out['text'] = re.sub(r'[ \t]+', ' ', m.group(1)).strip()[:3000] if m else ''
+    m = re.search(r'מספר\s*טופס\s*:\s*(\d+)', t)
+    out['form_no'] = m.group(1) if m else ''
+    m = re.search(r'בתאריך\s*:\s*(\d{1,2}:\d{2})\s+(\d{1,2})/(\d{1,2})/(\d{2,4})', t)
+    if m:
+        y = int(m.group(4)); y = y + 2000 if y < 100 else y
+        out['at'] = '%04d-%02d-%02d %s' % (y, int(m.group(3)), int(m.group(2)), m.group(1).zfill(5))
+    m = re.search(r'נוצר\s*באמצעות\s*:\s*([^\n]+)', t)
+    out['via'] = m.group(1).strip()[:120] if m else ''
+    out['phone'] = re.sub(r'[^\d+]', '', out.get('phone') or '')
+    return out
+
+
+def sync_mk_requests(con, days=90):
+    user, pw = mk_req_box()
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
+                "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
+    since = (datetime.date.today() - datetime.timedelta(days=days)).strftime('%d-%b-%Y')
+    new = 0
+    M = None
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=40)
+        M.login(user, pw)
+        M.select(os.environ.get('INTAKE_MAILBOX', 'INBOX'), readonly=True)
+        ids = set()
+        for word in ('טופס פניות', 'סוג הפניה'):
+            try:
+                typ, data = M.search('UTF-8', 'SINCE', since, 'TEXT', word.encode('utf-8'))
+                if typ == 'OK' and data and data[0]:
+                    ids |= set(data[0].split())
+            except Exception:
+                continue
+        have = {r[0] for r in con.execute("SELECT msg_id FROM mk_req WHERE COALESCE(msg_id,'')<>''")}
+        for i in sorted(ids, key=lambda x: int(x)):
+            typ, md = M.fetch(i, '(BODY.PEEK[])')
+            if typ != 'OK' or not md or not isinstance(md[0], tuple):
+                continue
+            msg = email.message_from_bytes(md[0][1])
+            mid = (msg.get('Message-ID') or '').strip() or ('imap:%s' % i.decode())
+            if mid in have:
+                continue
+            r = mk_req_parse(_extract_text(msg))
+            if not r:
+                continue
+            if not r.get('at'):
+                r['at'] = _mail_when(msg)[1]
+            key = r['form_no'] or mid
+            if con.execute("SELECT 1 FROM mk_req WHERE id=?", (key,)).fetchone():
+                continue
+            con.execute("INSERT INTO mk_req(id,form_no,at,first,last,phone,kind,text,via,msg_id,status,created) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,'new',?)",
+                        (key, r['form_no'], r['at'], r['first'], r['last'], r['phone'], r['kind'], r['text'], r['via'], mid,
+                         datetime.datetime.now().isoformat(timespec='seconds')))
+            new += 1
+        con.commit()
+        return {'ok': True, 'new': new, 'scanned': len(ids), 'box': user}
+    except imaplib.IMAP4.error as e:
+        return {'ok': False, 'error': '%s — %s' % (user, str(e)[:150]), 'box': user}
+    except Exception as e:
+        return {'ok': False, 'error': '%s: %s' % (type(e).__name__, str(e)[:150]), 'box': user}
+    finally:
+        if M is not None:
+            try: M.logout()
+            except Exception: pass

@@ -1664,6 +1664,43 @@ const mkTowel=c=>!!mkTowelSrc(c);
 // 🧺 מאיר: "אני רוצה לראות במרוכז את מנויי המגבות" — חלון עם כולם: שם, טלפון, קבוצה, מנוי עד, ומה כתוב בהערה
 // 🧺 מאיר: "מי שנכנס ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו ביום שישי
 // האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס"
+// 📥 מאיר: "כל טופס שמגיע מנדרים פלוס וכתוב עליו מקווה — שיבוא לדף של המקווה, למעלה. תקרא לזה פניות"
+let MKREQ=null;
+async function mkReqOpen(sync=true){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const paint=(msg)=>{const R=(MKREQ&&MKREQ.rows)||[], nw=R.filter(x=>x.status!=='done'), dn=R.filter(x=>x.status==='done');
+    const dt=s=>s?String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4)+' '+String(s).slice(11,16):'';
+    const wa=p=>'https://wa.me/972'+String(p).replace(/\D/g,'').replace(/^0/,'');
+    const cli=x=>{const d=String(x.phone||'').replace(/\D/g,'');return d.length>=9&&MK&&MK.ok?MK.clients.find(c=>String(c.phone||'').replace(/\D/g,'').endsWith(d.slice(-9))):null;};
+    const card=x=>{const c=cli(x);return `<div class="mkrow" style="grid-template-columns:1fr;cursor:default;${x.status==='done'?'opacity:.7':''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(((x.first||'')+' '+(x.last||'')).trim()||'—')}</b><span class="mksub">${esc(dt(x.at))}${x.form_no?' · טופס '+esc(x.form_no):''}</span></div>
+      ${x.phone?`<div class="mksub"><span dir="ltr">${esc(x.phone)}</span></div>`:''}
+      <div style="white-space:pre-wrap;margin:6px 0;line-height:1.5">${esc(x.text||'')}</div>
+      ${x.note?`<div class="mksub">📝 ${esc(x.note)}</div>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${x.phone?`<a class="btn sm" href="tel:${esc(x.phone)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(x.phone)}" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}
+        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}">✉️ לשלוח הודעה</button>`:''}
+        <button class="btn sm ghost" data-rqn="${esc(x.id)}">📝 הערה</button>
+        <button class="btn sm ${x.status==='done'?'ghost':''}" data-rqd="${esc(x.id)}" data-v="${x.status==='done'?'new':'done'}">${x.status==='done'?'↩️ להחזיר לחדשות':'✓ טופל'}</button></div></div>`;};
+    rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📥</div><div><h2>פניות</h2>
+        <div class="mksub">טופסי פניות מנדרים פלוס (סוג הפניה: מקווה) · מהמייל ${esc((MKREQ&&MKREQ.box)||'')}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11)):''}</div>
+        ${msg?`<div class="mksub">${msg}</div>`:''}</div></div>
+      <button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו במייל</button>
+      <div class="mksec" style="margin-top:10px">🆕 חדשות (${nw.length})</div><div class="mklist">${nw.map(card).join('')||'<div class="hintxt">אין פניות חדשות</div>'}</div>
+      ${dn.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">✓ טופלו (${dn.length})</summary><div class="mklist">${dn.map(card).join('')}</div></details>`:''}`;
+    document.getElementById('rx').onclick=()=>{remov.classList.remove('show');if(tab==='mikveh')renderMikveh();};
+    document.getElementById('rqsync').onclick=()=>mkReqOpen(true);
+    rs.querySelectorAll('[data-rqd]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqd),{status:b.dataset.v});
+      const x=MKREQ.rows.find(z=>z.id===b.dataset.rqd);if(x)x.status=b.dataset.v;MKREQ.new=MKREQ.rows.filter(z=>z.status==='new').length;paint();});
+    rs.querySelectorAll('[data-rqn]').forEach(b=>b.onclick=async()=>{const x=MKREQ.rows.find(z=>z.id===b.dataset.rqn);const v=await uiPrompt('הערה לפנייה',x&&x.note||'');if(v===null)return;
+      await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqn),{note:v});if(x)x.note=v;paint();});
+    rs.querySelectorAll('[data-rqc]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqc);if(c)mkOpen(c);});
+    rs.querySelectorAll('[data-rqm]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqm);if(c)mkNotify(c,'free');});};
+  remov.classList.add('show');
+  if(!MKREQ||!MKREQ.rows){MKREQ={rows:[],new:0};}
+  paint(sync?'<span class="mkspin"></span> בודק במייל…':'');
+  if(sync){const s2=await api('POST','/api/mikveh/requests/sync',{}).catch(()=>null);
+    const r=await api('GET','/api/mikveh/requests').catch(()=>null);if(r&&r.ok)MKREQ=r;
+    paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error):(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':''));}}
 async function mkTowelDay(day,frm){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const lastFri=()=>{const t=new Date();const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+2)%7));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
@@ -1765,6 +1802,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
+      <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
       <button class="mkibtn" id="mktwday" title="מי נכנס ביום מסוים ומגיעה לו מגבת: מזדמן, ערך צבור, מנוי כולל מגבת">🧺 מגבות ליום</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
@@ -1794,6 +1832,8 @@ function renderMikveh(){
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mktwday').onclick=()=>mkTowelDay();
+  document.getElementById('mkreqb').onclick=()=>mkReqOpen();
+  if(!MKREQ){MKREQ={rows:[],new:0};api('GET','/api/mikveh/requests').then(r=>{if(r&&r.ok){MKREQ=r;if(tab==='mikveh')renderMikveh();}}).catch(()=>{});}
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();
   document.getElementById('mkfresh').onclick=()=>{MK=null;mkSkel();mkLoad(true);};
