@@ -1749,7 +1749,8 @@ async function mkEntDay(day,frm){
       <div class="mktile ok"><span>🚶 מזדמנים</span><b>${cas.length}</b></div>
       <div class="mktile"><span>סה״כ כניסות</span><b>${R.length}</b></div></div>
     ${r.src==='log'?'<div class="hintxt">✓ מתוך יומן הכניסות של המקווה — כל כניסה נספרת, גם של כל מזדמן.</div>'
-      :`<div class="hintxt">⚠️ לפי <b>הכניסה האחרונה</b> של כל לקוח (יומן הכניסות של המקווה עוד לא נמצא) — מזדמנים בלי כרטיס חסרים, ומי שנכנס שוב אחר כך לא נספר.</div>`}
+      :`<div class="hintxt">⚠️ לפי <b>הכניסה האחרונה</b> של כל לקוח (יומן הכניסות של המקווה עוד לא נמצא) — <b>מזדמנים לא נספרים</b> (כולם נכנסים על כרטיס "משתמש מזדמן" אחד, שהכניסה האחרונה שלו כבר אחרי היום הזה), ומי שנכנס שוב אחר כך (למשל במוצאי שבת) לא נספר.</div>
+        <details style="margin:4px 0"><summary class="mksub" style="cursor:pointer">🔎 מה נוסה במקווה (לשלוח לי צילום)</summary><small dir="ltr" style="display:block;word-break:break-all;line-height:1.5">${(r.tried||[]).map(t=>esc(t.path)+' → '+t.code+(t.rows!=null?' ('+t.rows+')':'')).join('<br>')||'—'}</small></details>`}
     <div class="mksec" style="margin-top:12px">לפי קבוצה</div>
     <div class="mklist">${gl.map(([g,a])=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b>${esc(g)}</b><b>${a.length}</b></div>`).join('')}${cas.length?`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b>🚶 מזדמנים</b><b>${cas.length}</b></div>`:''}</div>
     ${erech.length?`<details style="margin-top:10px"><summary class="mksec" style="cursor:pointer">4. ערך צבור — מי נכנס (${erech.length})</summary>${list(erech)}</details>`:''}
