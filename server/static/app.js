@@ -2304,10 +2304,21 @@ async function mkExpCheck(){
     ${rest.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">שאר מי שפג תוקף (${rest.length}) — לפני יותר מ-60 יום</summary><div class="mklist">${rest.map(row).join('')}</div></details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-xc]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.xc);if(c){remov.classList.remove('show');mkOpen(c);}});}
+// 🔎 מאיר: "למה אין לך עדכון תשלום מהמקווה" — השרת מוצא באתר המקווה את הנתיבים של התשלומים ומנסה אותם (רק קריאה)
+async function mkPayProbe(cid,btn){btn.disabled=true;btn.innerHTML='<span class="mkspin"></span> מחפש באתר המקווה…';
+  const r=await api('GET','/api/mikveh/paypaths?id='+encodeURIComponent(cid)).catch(()=>null);
+  btn.disabled=false;btn.textContent='🔎 לחפש שוב';
+  const el=document.getElementById('mkprobe');if(!el)return;
+  if(!r||!r.ok){el.innerHTML='<div class="mksub">⚠️ '+esc((r&&r.error)||'אין תשובה')+'</div>';return;}
+  const hit=(r.tries||[]).find(t=>t.pay);
+  if(hit){delete MKPAY[cid];toast('✓ נמצא — טוען את התשלומים');await mkPayLoad(cid);return;}
+  el.innerHTML=`<div class="mksub" style="margin-top:6px">${r.error?'⚠️ '+esc(r.error)+'<br>':''}נמצאו ${(r.paths||[]).length} נתיבים באתר המקווה, ואף אחד לא החזיר תשלומים. שלח לי צילום של המסך הזה:</div>
+    <small dir="ltr" style="display:block;word-break:break-all;line-height:1.5">${(r.tries||[]).map(t=>esc(t.path)+' → '+t.code+(t.rows!=null?' ('+t.rows+')':'')).join('<br>')||esc((r.paths||[]).join(', '))||'—'}</small>`;}
 function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
   if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
   const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
-  if(!P.src)return `<div class="mksub">לא מצאתי במערכת המקווה את רשימת התשלומים של הלקוח. שלח לי צילום של מסך התשלומים שלו באתר המקווה ואחבר אותו.</div>
+  if(!P.src)return `<div class="mksub">לא מצאתי במערכת המקווה את רשימת התשלומים של הלקוח.</div>
+    <button class="btn sm" onclick="mkPayProbe('${esc(cid)}',this)" style="margin-top:6px">🔎 לחפש איפה המקווה שומר תשלומים</button><div id="mkprobe"></div>
     ${(P.keys||[]).length?`<details style="margin-top:6px"><summary class="mksub">שמות השדות של הלקוח במקווה</summary><small dir="ltr" style="word-break:break-all">${esc(P.keys.join(', '))}</small></details>`:''}`;
   return (P.tx||[]).length?`<div class="mksub" style="margin:4px 2px 8px">שילם <b>${P.count}</b> פעמים · סה״כ <b>${esc(mkNis(P.sum))}</b>${P.since?' · מאז '+d({iso:P.since}):''}</div>
     <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)}${t.time?' '+esc(t.time):''}${t.failed?' · ✗ נכשל':''}</b>

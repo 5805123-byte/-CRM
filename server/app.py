@@ -18658,6 +18658,16 @@ class H(BaseHTTPRequestHandler):
                 a1 = (datetime.date.today() - datetime.timedelta(days=7 * (i - 1))).isoformat()
                 wk.append({'from': a0, 'n': sum(1 for r in out if r['sub_bad'] and a0 <= r['sub_end'] < a1)})
             return self._send(200, {'ok': True, 'rows': out, 'recent': sum(1 for r in out if r['recent']), 'weeks': wk})
+        if self.path.split('?')[0] == '/api/mikveh/paypaths':
+            # 🔎 איפה המקווה שומר את התשלומים — הנתיבים מהאתר שלו, ומה כל אחד החזיר ללקוח הזה (רק קריאה)
+            import mikveh as _mk
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            _mk.discover_paths(force=True)
+            res = _mk.probe_payments(cid)
+            _mk._PAY['bad'].clear()
+            return self._send(200, dict(res, ok=True))
         if self.path.split('?')[0] == '/api/mikveh/renew_info':
             # 🔁 חידוש מנוי אוטומטי במקווה + הוראות הקבע שלו בקופת המקווה בנדרים פלוס
             import mikveh as _mk

@@ -437,13 +437,79 @@ def _pay_norm(rows):
     return out
 
 
+_DISC = {'at': 0.0, 'paths': [], 'files': [], 'error': ''}
+_PAYWORD = re.compile(r'pay|transact|charg|receipt|deal|invoice|purchas|order|credit|deposit|topup|history|financ|account(?!/login)', re.I)
+
+
+def discover_paths(force=False):
+    """נתיבי ה-API שמסך הניהול של המקווה עצמו קורא להם (מתוך קבצי ה-JS שלו) — שקשורים לתשלומים.
+    רק קריאה של קבצי האתר הציבוריים; נשמר בזיכרון ליום."""
+    if not force and _DISC['paths'] and time.time() - _DISC['at'] < 86400:
+        return _DISC['paths']
+    root = base() + 'adminUi/'
+    out, files, err = set(), [], ''
+    try:
+        req = urllib.request.Request(root, headers={'User-Agent': UA})
+        html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'replace')
+        srcs = re.findall(r'<script[^>]+src="([^"]+\.js)"', html)
+        for src in srcs[:12]:
+            u = urllib.parse.urljoin(root, src)
+            try:
+                js = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': UA}), timeout=30).read(6_000_000).decode('utf-8', 'replace')
+            except Exception:
+                continue
+            files.append(src.rsplit('/', 1)[-1])
+            # גם קבצי chunk שנטענים בהמשך (lazy) — שמות כמו 123.abcdef.js
+            for m_ in re.finditer(r'["\'`}]/?((?:api/)?[A-Z][A-Za-z]{2,}(?:/[A-Za-z]{2,}){0,3}/?)(?=["\'`$?])', js):
+                pth = m_.group(1)
+                # רק נתיבי קריאה — בלי שום נתיב שנשמע כמו פעולה (חיוב, ביטול, מחיקה, יצירה, שליחה)
+                if _PAYWORD.search(pth) and len(pth) < 80 and not re.search(
+                        r'charge|refund|cancel|delete|remove|create|add|update|save|send|set|pay(?!ment)|execute|approve|token', pth, re.I):
+                    out.add(pth)
+    except Exception as e:
+        err = str(e)[:200]
+    _DISC.update(at=time.time(), paths=sorted(out)[:40], files=files, error=err)
+    return _DISC['paths']
+
+
+def probe_payments(cid):
+    """מנסה (רק GET) את כל הנתיבים שנמצאו לתשלומים, עם מזהה הלקוח. מחזיר מה כל נתיב החזיר — לאבחון"""
+    try:
+        tok = login()
+    except RuntimeError as e:
+        return {'error': str(e), 'paths': [], 'tries': []}
+    tries = []
+    for pth in discover_paths():
+        base_p = pth.rstrip('/')
+        for form in (base_p + '/' + cid, base_p + '?clientId=' + cid, base_p):
+            path, _, q = form.partition('?')
+            code, res = _http('GET', path, None, dict([q.split('=', 1)]) if q else None, tok, 12)
+            rows = res if isinstance(res, list) else next((res[k] for k in ('items', 'data', 'result', 'list')
+                                                            if isinstance(res, dict) and isinstance(res.get(k), list)), None)
+            pay = bool(rows) and any(_is_pay_row(x) for x in rows[:5])
+            tries.append({'path': form.replace(cid, '{id}'), 'code': code, 'rows': len(rows) if isinstance(rows, list) else None,
+                          'pay': pay, 'keys': sorted(rows[0].keys())[:20] if pay and isinstance(rows[0], dict) else []})
+            if code in (404, 405):
+                break
+            if pay:
+                break
+    return {'paths': _DISC['paths'], 'files': _DISC['files'], 'error': _DISC['error'], 'tries': tries}
+
+
 def payments(cid):
     """התשלומים של הלקוח במערכת המקווה. מחזיר (רשימה, מאיפה, שמות שדות לאבחון)"""
     c = client(cid, max_age=60)
     for k, v in c.items():
         if isinstance(v, list) and v and _PAY_KEY.search(k) and any(_is_pay_row(x) for x in v[:5]):
             return _pay_norm(v), 'client.' + k, []
-    paths = ([_PAY['path']] if _PAY['path'] else []) + [p for p in _PAY_PATHS if p != _PAY['path'] and p not in _PAY['bad']]
+    disc = []
+    try:
+        for d_ in discover_paths():
+            b_ = d_.rstrip('/')
+            disc += [b_ + '/{id}', b_ + '?clientId={id}']
+    except Exception:
+        pass
+    paths = ([_PAY['path']] if _PAY['path'] else []) + [p for p in list(_PAY_PATHS) + disc if p != _PAY['path'] and p not in _PAY['bad']]
     try:
         tok = login()
     except RuntimeError:
