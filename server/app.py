@@ -3364,6 +3364,12 @@ def ensure_schema():
     except Exception as e:
         print('  repeat granitzki error:', e)
 
+    try:
+        if cm_keva_req_close(con):
+            con.commit()
+    except Exception as e:
+        print('  keva req close error:', e)
+
     # הוראות קבע שחזרו בנדרים פלוס — גם של מי שלא מקושר לחבר קהילה — נפתחות כחוב כבר עכשיו (לא רק בסנכרון הבא)
     try:
         if cm_debts_from_keva(con)[0]:
@@ -18489,7 +18495,7 @@ class H(BaseHTTPRequestHandler):
                     for k in (['m%d' % i for i in mids if i] + (['p' + ph] if ph else [])):
                         if len(vms.setdefault(k, [])) < 5:
                             vms[k].append(x)
-                tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open'").fetchone()
+                tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open' AND kind<>'keva'").fetchone()
                 reqs = ym_req_rows(con, st)
                 nmo = natan_mosad(con)
                 nlk = natan_link(con)
@@ -22816,7 +22822,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             con.execute("INSERT INTO cm_debt(member_id,kind,title,amount,paid,due,status,source,note,created,updated,channel,fund,name,phone,closed_at,paid_via) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (mid or None, 'pledge' if gave else (b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok') else 'debt'), ttl, a,
+                        (mid or None, 'pledge' if gave else (b.get('kind') if b.get('kind') in ('debt', 'pledge', 'hok', 'keva') else 'debt'), ttl, a,
                          a if gave else 0, str(b.get('due') or '')[:10], 'paid' if gave else 'open', 'ידני', str(b.get('note') or '')[:300], now_iso(), now_iso(),
                          b.get('channel') if b.get('channel') in ('voice', 'sms', 'email') else (cm_default_channel(con, mid) if mid else 'sms'),
                          fnd, nm_, ph_, now_iso() if gave else None, via if gave else None))
@@ -22826,9 +22832,10 @@ class H(BaseHTTPRequestHandler):
                             (mid or None, nm_, ph_, str(b.get('due') or today_iso())[:10], a, via, ('קופת נתן תתן — ' if fnd else '') + ttl, 'נרשם ידנית',
                              now_iso(), getattr(self, 'role', '') or '', fnd))
             cm_debt_log(con, mid, did, ('✅ נתן ₪%g%s: %s' % (a, (' ב' + via) if via else '', ttl.strip() or '—')) if gave else
-                        ('➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', ttl.strip() or '—', a)))
+                        ('➕ בקשה להקמת הוראת קבע: %s ₪%g לחודש' % (ttl.strip() or '—', a) if b.get('kind') == 'keva' else
+                         '➕ %s: %s ₪%g' % ('נרשמה התחייבות' if b.get('kind') == 'pledge' else 'נרשם חוב', ttl.strip() or '—', a)))
             con.commit(); con.close()
-            return self._send(200, {'ok': True})
+            return self._send(200, {'ok': True, 'id': did})
         if self.path == '/api/cm/debts/link':
             # 🔗 שורות שנכנסו בלי חבר קהילה — לשייך לחבר קיים (גם כשהשם נכתב בטעות) או לפתוח חבר חדש
             ids = [int(x) for x in (b.get('ids') or []) if str(x).isdigit()]
@@ -26501,6 +26508,30 @@ def nd_match_name(nidx, name, family=False):
     return None
 
 
+def cm_keva_req_close(con):
+    """➕ בקשה להקמת הוראת קבע (cm_debt kind='keva') נסגרת לבד כשמופיעה אצל החבר הוראת קבע פעילה בנדרים פלוס
+    באותו סכום (±1 ₪) או עם "עבור מה" שלה. מחזיר כמה נסגרו."""
+    n = 0
+    for d in con.execute("SELECT id, member_id, amount, title FROM cm_debt WHERE kind='keva' AND status='open' AND member_id IS NOT NULL").fetchall():
+        hit = None
+        for k in con.execute("SELECT k.id, k.amount, k.groupe FROM nd_keva k WHERE k.active=1 AND (k.member_id=? OR k.id IN "
+                             "(SELECT keva_id FROM nd_map WHERE member_id=?))", (d['member_id'], d['member_id'])):
+            try:
+                ka = float(re.sub(r'[^\d.]', '', str(k['amount'] or '')) or 0)
+            except ValueError:
+                ka = 0
+            ttl = (d['title'] or '').strip()
+            if abs(ka - (d['amount'] or 0)) <= 1 or (ttl and ttl in (k['groupe'] or '')):
+                hit = k
+                break
+        if hit:
+            con.execute("UPDATE cm_debt SET status='paid', paid=amount, closed_at=?, updated=?, paid_via=? WHERE id=?",
+                        (now_iso(), now_iso(), 'הוראת קבע בנדרים פלוס', d['id']))
+            cm_debt_log(con, d['member_id'], d['id'], '✅ הוקמה הוראת קבע ₪%s בנדרים פלוס — הבקשה נסגרה' % (hit['amount'] or ''))
+            n += 1
+    return n
+
+
 def nd_sync(con):
     """משיכת הוראות הקבע והתורמים מנדרים פלוס, וקישור לחברי הקהילה לפי טלפון."""
     import nedarim as _nd
@@ -26598,6 +26629,12 @@ def nd_sync(con):
             res['שילמו על הודעה'] = hm
     except Exception as e:
         res['היסטוריה'] = 'לא נמשכה: %s' % str(e)[:60]
+    try:
+        kc = cm_keva_req_close(con)
+        if kc:
+            res['בקשות הו"ק שהוקמו'] = kc
+    except Exception as e:
+        print('  keva req close error:', e)
     con.commit()
     return res
 
