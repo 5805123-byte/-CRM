@@ -2423,7 +2423,7 @@ def scan_donor_names(con, status=None, years=4, per_addr=60):
 # מאיר: "טופס של המקווה שאנשים ממלאים בשביל כל מיני פניות. אני מקבל את זה באימייל של חצות 18 — כל טופס
 # שמגיע מנדרים פלוס וכתוב עליו מקווה, שיבוא לדף של המקווה, למעלה. תקרא לזה פניות".
 # קריאה בלבד מהתיבה; מספר זהות לא נשמר. התיבה: MIKVEH_MAIL_USER / MIKVEH_MAIL_PASS אם הוגדרו, אחרת GMAIL_USER.
-_MKR_FIELDS = (('first', r'שם\s*פרטי'), ('last', r'שם\s*משפחה'), ('phone', r'טלפון'), ('kind', r'סוג\s*ה?פניה'))
+_MKR_FIELDS = (('first', r'שם\s*פרטי'), ('last', r'שם\s*משפחה'), ('phone', r'טלפון'), ('kind', r'סוג\s*ה?פני+ה'))
 
 
 def mk_req_box():
@@ -2437,13 +2437,13 @@ def mk_req_box():
 def mk_req_parse(body):
     """שדות הטופס מגוף המייל. מחזיר dict או None אם זה לא "טופס פניות" של המקווה"""
     t = re.sub(r'\r', '', body or '')
-    if 'פני' not in t or not re.search(r'סוג\s*ה?פניה\s*:\s*\S*מקו', t):
+    if 'פני' not in t or not re.search(r'סוג\s*ה?פני+ה\s*:?\s*\S*מקו', t):
         return None
     out = {}
     for k, lbl in _MKR_FIELDS:
-        m = re.search(lbl + r'\s*:\s*([^\n]+)', t)
+        m = re.search(lbl + r'\s*:?[ \t]*\n?[ \t]*([^\n]+)', t)
         out[k] = m.group(1).strip() if m else ''
-    m = re.search(r'פירוט\s*:\s*(.+?)(?=\n\s*מייל\s*-\s*עותק|\n\s*-{3,}|\Z)', t, re.S)
+    m = re.search(r'פירוט\s*:?\s*(.+?)(?=\n\s*מייל\s*-\s*עותק|\n\s*-{3,}|\Z)', t, re.S)
     out['text'] = re.sub(r'[ \t]+', ' ', m.group(1)).strip()[:3000] if m else ''
     m = re.search(r'מספר\s*טופס\s*:\s*(\d+)', t)
     out['form_no'] = m.group(1) if m else ''
@@ -2469,15 +2469,52 @@ def sync_mk_requests(con, days=90):
     try:
         M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=40)
         M.login(user, pw)
-        M.select(os.environ.get('INTAKE_MAILBOX', 'INBOX'), readonly=True)
-        ids = set()
-        for word in ('טופס פניות', 'סוג הפניה'):
+        # חיפוש עברית ב-IMAP — רק כ-literal (בייטים גולמיים נדחים בשקט). קודם בתיבה הראשית, ואם לא נמצא —
+        # בכל הדואר (מייל שעבר לתווית / לארכיון). ובסוף גיבוי: כותרות 60 הימים האחרונים, ומה שמנדרים — נבדק
+        boxes = [os.environ.get('INTAKE_MAILBOX', 'INBOX')]
+        try:
+            typ, lst = M.list()
+            for ln in lst or []:
+                t = ln.decode('utf-8', 'replace') if isinstance(ln, bytes) else str(ln)
+                if '\\All' in t:
+                    mb = t.split(' "/" ')[-1].strip()
+                    if mb not in boxes:
+                        boxes.append(mb)
+        except Exception:
+            pass
+        ids, box_used, errs = set(), boxes[0], []
+        for mb in boxes:
             try:
-                typ, data = M.search('UTF-8', 'SINCE', since, 'TEXT', word.encode('utf-8'))
-                if typ == 'OK' and data and data[0]:
-                    ids |= set(data[0].split())
-            except Exception:
-                continue
+                typ, _d = M.select(mb, readonly=True)
+                if typ != 'OK':
+                    continue
+            except Exception as e:
+                errs.append(str(e)[:80]); continue
+            for word in ('טופס פניות', 'סוג הפניה'):
+                try:
+                    M.literal = word.encode('utf-8')
+                    typ, data = M.search('UTF-8', 'SINCE', since, 'TEXT')
+                    if typ == 'OK' and data and data[0]:
+                        ids |= set(data[0].split())
+                except Exception as e:
+                    errs.append(str(e)[:80])
+                finally:
+                    M.literal = None
+            if not ids:
+                # גיבוי — כותרות של כל המיילים מהתקופה, ומה שנשלח מנדרים פלוס נבדק לפי התוכן
+                try:
+                    typ, data = M.search(None, 'SINCE', since)
+                    allids = data[0].split() if typ == 'OK' and data and data[0] else []
+                    for sid, hdr in _batch_headers(M, allids[-3000:], fields='FROM SUBJECT'):
+                        hm = email.message_from_bytes(hdr if isinstance(hdr, bytes) else str(hdr).encode('utf-8', 'replace'))
+                        h = _dec(hm.get('From')) + ' ' + _dec(hm.get('Subject'))
+                        if re.search(r'nedar|matara|נדרים|פניה|פנייה|טופס', h, re.I):
+                            ids.add(sid if isinstance(sid, bytes) else str(sid).encode())
+                except Exception as e:
+                    errs.append(str(e)[:80])
+            if ids:
+                box_used = mb
+                break
         have = {r[0] for r in con.execute("SELECT msg_id FROM mk_req WHERE COALESCE(msg_id,'')<>''")}
         for i in sorted(ids, key=lambda x: int(x)):
             typ, md = M.fetch(i, '(BODY.PEEK[])')
@@ -2501,7 +2538,7 @@ def sync_mk_requests(con, days=90):
                          datetime.datetime.now().isoformat(timespec='seconds')))
             new += 1
         con.commit()
-        return {'ok': True, 'new': new, 'scanned': len(ids), 'box': user}
+        return {'ok': True, 'new': new, 'scanned': len(ids), 'box': user, 'mailbox': box_used, 'errors': errs[:3]}
     except imaplib.IMAP4.error as e:
         return {'ok': False, 'error': '%s — %s' % (user, str(e)[:150]), 'box': user}
     except Exception as e:

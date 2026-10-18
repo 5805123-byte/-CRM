@@ -1725,7 +1725,8 @@ async function mkReqOpen(sync=true){
   paint(sync?'<span class="mkspin"></span> בודק במייל…':'');
   if(sync){const s2=await api('POST','/api/mikveh/requests/sync',{}).catch(()=>null);
     const r=await api('GET','/api/mikveh/requests').catch(()=>null);if(r&&r.ok)MKREQ=r;
-    paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error):(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':''));}}
+    paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error)
+      :(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':s2&&!s2.busy?'נבדקו '+(s2.scanned||0)+' מיילים מ-90 הימים האחרונים'+(s2.mailbox?' ('+esc(s2.mailbox)+')':'')+' — לא נמצאו פניות חדשות'+((s2.errors||[]).length?' · ⚠️ '+esc(s2.errors[0]):''):''));}}
 // 📊 מאיר: "כמה מנוי ערך צבור נכנסו ביום שישי וכמה מזדמנים — אני שואל על מקווה, לא על מגבות"
 async function mkEntDay(day,frm){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
@@ -1791,6 +1792,21 @@ async function mkTowelDay(day,frm){
   document.getElementById('twcsv2').onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שעה,שם,מספר לקוח,קבוצה,סוג,מגיעה מגבת'].concat((r.rows||[]).map(x=>[x.time,x.name,x.code||'',x.group,HE[x.cat],x.cat==='other'?'לא':'כן'].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מגבות '+r.date+'.csv';document.body.appendChild(a);a.click();a.remove();};}
+// 🧺 מאיר: "אפשרות להוסיף מנוי מגבות למישהו בכרטיס שלו — ושזה יעודכן גם במערכת של המקווה, במחיר"
+function mkTowelEdit(c){
+  const on=mkTowel(c), pm=(/₪\s*([\d.]+)|([\d.]+)\s*₪/.exec(c.remark||'')||[]);
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right"><div class="cm" style="font-weight:800">🧺 מנוי מגבות · ${esc(mkName(c))}</div>
+    <div class="hintxt">עכשיו: <b>${on?'כולל מגבות':'בלי מגבות'}</b>${c.remark?' · ההערה במקווה: '+esc(c.remark):''}</div>
+    <label class="fld"><span>מחיר מנוי המגבות ₪ לחודש (לא חובה)</span><input id="tw_p" inputmode="decimal" value="${esc(pm[1]||pm[2]||'')}"></label>
+    <div class="hintxt">נכתב בהערה של הלקוח במקווה ("כולל מגבות (₪… לחודש)") — כך זה מסומן אצלם. המחיר לחיוב בפועל נקבע לפי הקבוצה שלו במקווה.</div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button>${on?'<button class="btn ghost" id="tw_off">🚫 להסיר מנוי מגבות</button>':''}<button class="btn" id="tw_on">🧺 ${on?'לעדכן':'להוסיף מנוי מגבות'}</button></div></div>`;
+  document.body.appendChild(o);o.querySelector('.cno').onclick=()=>o.remove();
+  const go=async on2=>{const bs=o.querySelectorAll('.cbtns .btn');bs.forEach(b=>b.disabled=true);
+    const r=await api('POST','/api/mikveh/towel',{id:c.id,on:on2?1:0,price:o.querySelector('#tw_p').value.trim()}).catch(()=>null);
+    if(!r||!r.ok){bs.forEach(b=>b.disabled=false);return uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'אין תשובה'));}
+    c.remark=r.remark;o.remove();toast(on2?'🧺 נוסף מנוי מגבות — עודכן במקווה':'🚫 מנוי המגבות הוסר — עודכן במקווה');mkOpen(c);if(tab==='mikveh')mkPaint();};
+  o.querySelector('#tw_on').onclick=()=>go(true);const off=o.querySelector('#tw_off');if(off)off.onclick=()=>go(false);}
 function mkTowelOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
   const all=MK.clients.filter(mkTowel).sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
@@ -2049,6 +2065,7 @@ function mkOpen(c){
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>💳 שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
         ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
+        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?'כן'+((/₪\s*([\d.]+)|([\d.]+)\s*₪/.exec(c.remark||'')||[])[1]?' · ₪'+esc((/₪\s*([\d.]+)|([\d.]+)\s*₪/.exec(c.remark||'')||[])[1]||''):''):'לא'}</b></div>
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
         ${tile(c.balance!=null?'יתרה':'יתרה אחרונה',esc(bal))}
         ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
@@ -2078,6 +2095,7 @@ function mkOpen(c){
     document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
+    document.getElementById('mktwl').onclick=()=>mkTowelEdit(c);
     document.getElementById('mkphed').onclick=async e=>{e.preventDefault();
       const v=await uiPrompt('הטלפון של '+mkName(c)+' במקווה'+(c.phone&&!mkPhoneOk(c.phone)?'\n⚠️ המספר שרשום עכשיו ('+c.phone+') לא תקין':''),c.phone||'');
       if(v===null||!String(v).trim())return;

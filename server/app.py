@@ -14801,14 +14801,14 @@ MKREQ_SYNC = {'at': '', 'ok': None, 'new': 0, 'error': ''}
 MKREQ_LOCK = threading.Lock()
 
 
-def mk_req_sync():
-    """📥 פניות המקווה מהמייל — פעם ב-15 דקות ברקע, ומיד כשפותחים את החלון"""
+def mk_req_sync(days=None):
+    """📥 פניות המקווה מהמייל — פעם ב-15 דקות ברקע, ומיד כשפותחים את החלון (אז — 90 יום אחורה)"""
     import gmail_intake as _gi
     if not MKREQ_LOCK.acquire(blocking=False):
         return {'ok': True, 'busy': True, 'new': 0}
     con = db()
     try:
-        r = _gi.sync_mk_requests(con, days=90 if not MKREQ_SYNC['at'] else 14)
+        r = _gi.sync_mk_requests(con, days=days or (90 if not MKREQ_SYNC['at'] else 14))
     except Exception as e:
         r = {'ok': False, 'error': str(e)[:200]}
     finally:
@@ -21047,7 +21047,7 @@ class H(BaseHTTPRequestHandler):
                 pass
             return self._send(200, {'ok': True, 'debt_paid': used})
         if self.path == '/api/mikveh/requests/sync':
-            return self._send(200, mk_req_sync())
+            return self._send(200, mk_req_sync(days=90))
         m = re.match(r'/api/mikveh/requests/([^/]+)$', self.path)
         if m:
             rid = urllib.parse.unquote(m.group(1))
@@ -21062,6 +21062,41 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/towel':
+            # 🧺 מאיר: "אפשרות להוסיף מנוי מגבות למישהו בכרטיס שלו במקווה — ושזה יעודכן גם במערכת של המקווה, במחיר".
+            # במקווה מנוי המגבות רשום בהערה של הלקוח ("כולל מגבות" / "המנוי אינו כולל מגבת") — מעדכנים שם, ובודקים שנשמר
+            import mikveh as _mk
+            cid = str(b.get('id') or '')
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(400, {'ok': False})
+            on = bool(b.get('on'))
+            price = re.sub(r'[^\d.]', '', str(b.get('price') or ''))[:8]
+            try:
+                full = _mk.client(cid)
+                old = (full.get('remark') or '').strip()
+                # מוחקים כל אזכור קודם של מגבת (כולל / לא כולל / מחיר בסוגריים)
+                base_ = re.sub(r'(המנוי\s*)?(אינו|איננו|לא|ללא|בלי)?\s*(כולל\s*)?(מנוי\s*)?(ה)?מגב\S*(\s*\(₪?\s*[\d.]+\s*₪?[^)]*\))?', '', old)
+                base_ = re.sub(r'\s*[·,;|]\s*(?=[·,;|]|$)', '', re.sub(r'\s{2,}', ' ', base_)).strip(' ·,;|')
+                tw = ('כולל מגבות' + (' (₪%s לחודש)' % price if price else '')) if on else 'המנוי אינו כולל מגבת'
+                new = (base_ + ' · ' + tw) if base_ else tw
+                _mk.update_client(cid, {'remark': new})
+                now = (_mk.client(cid).get('remark') or '').strip()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            if _mk._CL['rows'] is not None:
+                for c in _mk._CL['rows']:
+                    if str(c.get('id')) == cid:
+                        c['remark'] = now
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'towel', ('🧺 נוסף מנוי מגבות' + (' ₪%s' % price if price else '')) if on else '🧺 הוסר מנוי המגבות'))
+                con.commit()
+            except Exception:
+                pass
+            finally:
+                con.close()
+            return self._send(200, {'ok': now == new, 'remark': now, 'error': '' if now == new else 'המקווה לא שמר את ההערה'})
         if self.path == '/api/mikveh/phone':
             # 📞 מאיר: "כתוב אין טלפון תקין — יש לו טלפון בכרטיס" (במקווה נרשם 05276886647 — ספרה מיותרת).
             # תיקון הטלפון במקווה עצמו מהכרטיס, ובדיקה שזה נשמר
