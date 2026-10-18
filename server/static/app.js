@@ -14441,7 +14441,7 @@ async function renderCommDebts(){
       :`<div class="cdsum"><span>פתוח: <b>${cdMoney(cdSt==='open'?fSum:D.open_sum)}</b></span><span>${cdSt==='open'?fo.length:(D.open_n||0)} ${cdFund?'התחייבויות':'חובות'} · ${cdSt==='open'?fMem:(D.open_members||0)} חברים</span>
         ${cdSt==='open'&&reqOpen.length?`<span>📞 מהודעות (${D.req_days||14} יום): <b>${cdMoney(reqOpen.reduce((s,r)=>s+(+r.amount||0),0))}</b> · ${reqOpen.length}</span>`:''}</div>`}
     <!-- מאיר: "למה יש כזה בלגן בדף חובות… אני רוצה מופשט, אפשרות ניסוח למייל או שיחה או סמס הכי פשוט וקל" -->
-    <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
+    <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>${cdFund?'':'<button class="btn sm" id="cd_addkv" title="התחייבות להקמת הוראת קבע — עבור מה וסכום לחודש, ושליחת הבקשה בנוסח שלה">🔁 הקמת הוראת קבע</button>'}
       <button class="btn sm" id="cd_mailtpl" title="הנוסחים — מייל, שיחה ו-SMS: קבוע וחופשי">📝 נוסחים — מייל / שיחה / SMS</button>
       <button class="btn sm" id="cd_direct" title="לשלוח נוסח ישר לאנשים שבוחרים — בלי לרשום חוב או התחייבות">📤 שליחה ישירה</button>
       <button class="btn sm ghost" id="cd_more" title="העלאת קובץ, הדבקה, תשלומים במרוכז, אקסל">⋯ עוד</button></div>
@@ -15070,9 +15070,10 @@ function cdReqRow(d){
       <button class="btn sm ghost" data-cdr="amount" data-id="${d.id}" title="שנה סכום">✎</button>
       <button class="btn sm ghost" data-cdr="cancel" data-id="${d.id}" title="מחק — לא יוצע יותר בטלפון">🗑️</button>`
       :`<button class="btn sm ghost" data-cdr="reopen" data-id="${d.id}" title="פתח מחדש">↩</button>`}</div></div>`;}
-function cdAddHTML(){return `<div class="bqform"><div class="bqfh"><b>➕ חוב / התחייבות ידני</b><button class="btn sm ghost" id="cda_x">✕</button></div>
+let cdAddKv=false;
+function cdAddHTML(){return `<div class="bqform"><div class="bqfh"><b>${cdAddKv?'🔁 התחייבות להקמת הוראת קבע':'➕ חוב / התחייבות ידני'}</b><button class="btn sm ghost" id="cda_x">✕</button></div>
   <div class="bq2"><label class="fld"><span>👤 חבר קהילה</span><input id="cda_m" list="cd_mdl" placeholder="הקלד שם…" value="${(()=>{const x=cdMember&&(MEMBERS||[]).find(y=>y.id==cdMember);return x?esc(mName(x)+' #'+x.id):'';})()}"></label>
-    <label class="fld"><span>סוג</span><select id="cda_k"><option value="debt">חוב</option><option value="pledge">התחייבות</option>${cdFund?'':'<option value="keva">➕ הקמת הוראת קבע</option>'}</select></label></div>
+    <label class="fld"><span>סוג</span><select id="cda_k"><option value="debt">חוב</option><option value="pledge">התחייבות</option>${cdFund?'':`<option value="keva"${cdAddKv?' selected':''}>🔁 הקמת הוראת קבע</option>`}</select></label></div>
   <div class="bq2"><label class="fld"><span id="cda_al">💲 סכום (₪)</span><input id="cda_a" inputmode="decimal"></label>
     <label class="fld"><span>📅 תאריך / מועד</span><input id="cda_d" type="date" value="${todayStr()}"></label></div>
   <label class="fld"><span>🎯 עבור מה</span><input id="cda_t" list="cda_tl" placeholder="למשל: מקום בבית הכנסת תשפ״ז / נדר בעלייה לתורה"></label>
@@ -15115,7 +15116,10 @@ function cdWire(){const g=id=>document.getElementById(id);
   view.querySelectorAll('.cdck').forEach(c=>c.onchange=()=>{c.checked?cdSel.add(+c.dataset.id):cdSel.delete(+c.dataset.id);renderCommDebts();});
   const sa=g('cd_selall');if(sa)sa.onclick=()=>{const op=(cdData.rows||[]).filter(d=>d.status==='open'&&(!cdKind||d.kind===cdKind));
     const allOn=op.every(d=>cdSel.has(d.id));op.forEach(d=>allOn?cdSel.delete(d.id):cdSel.add(d.id));renderCommDebts();};
-  g('cd_add').onclick=()=>{cdAdd=!cdAdd;renderCommDebts();};
+  g('cd_add').onclick=()=>{cdAdd=!cdAdd;cdAddKv=false;renderCommDebts();};
+  // 🔁 מאיר: "שגם בדף חובות והתחייבויות יהיה הוספת התחייבות — הקמת הוראת קבע, ואז את הנוסח הזה שעשינו"
+  {const kb=g('cd_addkv');if(kb)kb.onclick=async()=>{cdAdd=true;cdAddKv=true;await renderCommDebts();const k=g('cda_k');if(k){k.value='keva';k.onchange&&k.onchange();}
+    const f=g('cda_m');if(f){f.scrollIntoView({block:'center'});f.focus();}};}
   // מאיר: "שהגבאי או אני נוכל להוסיף לרשימה ידנית, כמו שאפשר להוסיף עוד אברך" — שורה אחת, Enter שומר
   const qa=async()=>{const mid=cdPick(g('cdq_m').value),a=amtNum(g('cdq_a').value),kd=g('cdq_k').value,nm=g('cdq_m').value.trim();
     // נתן תתן — גם מי שלא בקהילה: נשמר בשם שלו (אפשר להוסיף טלפון ב-📱 או לשייך אחר כך ב-🔗)
@@ -15145,7 +15149,7 @@ function cdWire(){const g=id=>document.getElementById(id);
     const r=await api('POST','/api/cm/debts/import',{file_b64:b64,filename:f.name});
     if(!r||!r.ok){await uiAlert((r&&r.error)||'הקובץ לא נקרא');return;}
     cdImp={filename:f.name,rows:r.rows||[]};renderCommDebts();if(!cdImp.rows.length)toast('לא נמצאו שורות עם שם וסכום');};
-  if(cdAdd){g('cda_x').onclick=()=>{cdAdd=false;renderCommDebts();};
+  if(cdAdd){g('cda_x').onclick=()=>{cdAdd=false;cdAddKv=false;renderCommDebts();};
     // ➕ מאיר: "גם כאן נוסח להקמת הוראת קבע — אבחר דמי חבר וכמה, שתהיה לי ההתחייבות שלו ואשלח לו בקשה עם הטופס"
     const kk=()=>{const kv=g('cda_k').value==='keva';g('cda_al').textContent=kv?'💲 סכום לחודש (₪)':'💲 סכום (₪)';g('cda_kh').style.display=kv?'':'none';
       if(kv&&!g('cda_t').value.trim()){const kd=cdKevaDef();if(kd.for)g('cda_t').value=kd.for;if(kd.amount&&!g('cda_a').value)g('cda_a').value=kd.amount;}};
@@ -15155,7 +15159,7 @@ function cdWire(){const g=id=>document.getElementById(id);
       if(kind==='keva'&&!g('cda_t').value.trim()){toast('בחר עבור מה (למשל דמי חבר)');g('cda_t').focus();return;}
       const r=await api('POST','/api/cm/debts',{member_id:mid,kind,amount:a,due:g('cda_d').value,title:g('cda_t').value.trim(),fund:cdFund});
       if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
-      toast('נשמר ✓');cdAdd=false;cdData=null;await renderCommDebts();
+      toast('נשמר ✓');cdAdd=false;cdAddKv=false;cdData=null;await renderCommDebts();
       if(kind==='keva'){const m=(MEMBERS||[]).find(x=>x.id==mid);
         const ch=await cdKevaSendPick(m);if(!ch)return;
         const grp={mid,items:[{id:r.id,status:'open',kind:'keva',amount:a,paid:0,title:g('cda_t')?g('cda_t').value.trim():''}]};
