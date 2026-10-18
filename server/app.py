@@ -18528,12 +18528,18 @@ class H(BaseHTTPRequestHandler):
             try:
                 rows = [dict(r) for r in con.execute(
                     "SELECT k.id,k.name,k.phone,k.amount,k.groupe,k.itra,k.next_date,k.last4,k.error,k.member_id,"
+                    "COALESCE(k.kind,'') kind,COALESCE(k.bank,'') bank,COALESCE(k.mosad,'') mosad,"
                     "m.last ml,m.first mf,l.link,l.sent_at,l.sent_to FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
                     "LEFT JOIN nd_link l ON l.keva_id=k.id WHERE k.active=1" + (" AND COALESCE(k.error,'')<>''" if bad else '') +
                     " ORDER BY k.name")]
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'rows': rows})
+            # 🔁 לכל הוראה — מאיזו קופה (הראשית / נתן תתן / מקווה…)
+            import nedarim as _nd
+            acc = {('' if a['main'] else a['mosad']): a['name'] for a in _nd.accounts()}
+            for r in rows:
+                r['kupa'] = acc.get(r['mosad']) or ('מוסד ' + r['mosad'] if r['mosad'] else 'כולל חצות')
+            return self._send(200, {'ok': True, 'rows': rows, 'mk_mosad': mk_mosad()})
         if self.path.split('?')[0] == '/api/nd/lookup':
             # 🔎 בדיקת מספר מתקשר — מה השלוחה מוצאת לו ולמה (בלי לחייב שום דבר)
             import yemot as _ym

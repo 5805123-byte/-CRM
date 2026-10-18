@@ -14078,7 +14078,7 @@ async function renderCommGifts(){
     <div class="hintxt">נדרים פלוס (חד-פעמי, הוראות קבע באשראי ובבנק) ותרומות ידניות — מזומן, צ׳ק, וגם מה שסומן ששולם על חוב. "עבור מה" — רשות, אפשר להוסיף ב-✎.</div>
     <div class="bqseg"><button class="${cgSrc?'':'on'}" data-cgs="">הכל <small>${all.length}</small></button>${CG_SRC.filter(([k])=>n[k]).map(([k,l])=>`<button class="${cgSrc===k?'on':''}" data-cgs="${k}">${l} <small>${n[k]}</small></button>`).join('')}</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="cg_from" value="${esc(cgFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="cg_to" value="${esc(cgTo)}"></label>
-      ${cgFund?'':'<button class="btn sm" id="cg_nd">💳 תרומה חדשה — כמו בנדרים פלוס</button>'}<button class="btn sm ghost" id="cg_new">➕ תרומה ידנית</button></div>
+      ${cgFund?'':'<button class="btn sm" id="cg_nd">💳 תרומה חדשה — כמו בנדרים פלוס</button><button class="btn sm ghost" id="cg_kv">🔁 בעלי הוראות קבע</button>'}<button class="btn sm ghost" id="cg_new">➕ תרומה ידנית</button></div>
     ${cgNew?`<div class="gfnewbox"><b>➕ תרומה ידנית — ${cgFund?'חבר קהילה (נכנסת לכרטיס שלו) או כל שם':'נכנסת לכרטיס של החבר'}</b>
       <input id="cgn_who" list="cd_mdl" placeholder="${cgFund?'שם — חבר קהילה מהרשימה, או כל שם…':'חבר קהילה — הקלד שם ובחר…'}">
       <div class="lgf"><input type="date" id="cgn_date" value="${todayStr()}"><input id="cgn_amt" inputmode="decimal" placeholder="₪ סכום"></div>
@@ -14100,6 +14100,7 @@ async function renderCommGifts(){
   g('cg_from').onchange=()=>{cgFrom=g('cg_from').value;renderCommGifts();}; g('cg_to').onchange=()=>{cgTo=g('cg_to').value;renderCommGifts();};
   g('cg_new').onclick=()=>{cgNew=!cgNew;renderCommGifts();if(cgNew&&g('cgn_who'))g('cgn_who').focus();};
   const ndb=g('cg_nd');if(ndb)ndb.onclick=()=>ndDonate();
+  const kvb=g('cg_kv');if(kvb)kvb.onclick=()=>{KVH=null;kvHolders();};
   const mo=g('cg_more');if(mo)mo.onclick=()=>{cgLim+=300;renderCommGifts();};
   view.querySelectorAll('[data-cgm]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==b.dataset.cgm);if(m)openMember(m);});
   // מאיר: "בתרומות אני רוצה אפשרות לקשר ולמזג או לשייך או להקים חבר קהילה חדש"
@@ -14135,6 +14136,40 @@ async function renderCommGifts(){
     const x=await api('POST','/api/cm/gifts/man/'+r0.id,body);if(!x||!x.ok){toast('לא נשמר');return;}
     Object.assign(r0,body);cgEdit='';toast('נשמר ✓');renderCommGifts();});
 }
+// 🔁 מאיר: "איפה אני רואה במערכת שלנו את כל בעלי ההוראות קבע? שיהיה מסודר לפי אלף בית" — כל ההוראות הפעילות
+// (אשראי ובנק), לפי א-ב, עם הסכום לחודש, עבור מה, הקופה והחיוב הבא; חיפוש, סינון, סה"כ לחודש ואקסל
+let KVH=null, kvhF='', kvhK='';
+async function kvHolders(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  remov.classList.add('show');
+  if(!KVH){rs.innerHTML='<button class="x" id="rx">✕</button><h2>🔁 בעלי הוראות קבע</h2><div class="hintxt">⏳ טוען…</div>';document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    const r=await api('GET','/api/nd/kevas').catch(()=>null);KVH=r&&r.ok?r:{rows:[]};if(!MEMBERS)await cmLoad();}
+  const nm=k=>(k.member_id&&(k.ml||k.mf)?((k.ml||'')+' '+(k.mf||'')).trim():(k.name||'')).trim()||'—';
+  const am=k=>+String(k.amount||'').replace(/[^\d.]/g,'')||0;
+  const all=(KVH.rows||[]).filter(k=>k.mosad!==KVH.mk_mosad);   // המקווה — נפרד
+  const kupas=[...new Set(all.map(k=>k.kupa))];
+  const qq=(document.getElementById('kvh_q')||{}).value||'';
+  const L=all.filter(k=>(!kvhK||(kvhK==='bank'?k.kind==='bank':k.kind!=='bank'))&&(!kvhF||k.kupa===kvhF)&&(!qq.trim()||matchStr(nm(k)+' '+(k.phone||'')+' '+(k.groupe||''),qq.trim())))
+    .sort((a,b)=>((nm(a)==='—')-(nm(b)==='—'))||nm(a).localeCompare(nm(b),'he'));
+  const tot=L.reduce((t,k)=>t+am(k),0);
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 בעלי הוראות קבע</h2>
+    <div class="hintxt"><b>${L.length}</b> הוראות פעילות · סה״כ <b>₪${Math.round(tot).toLocaleString('he-IL')}</b> לחודש · לפי א-ב</div>
+    <input id="kvh_q" placeholder="🔍 חיפוש שם / טלפון / עבור מה" value="${esc(qq)}" autocomplete="off" style="width:100%;margin:6px 0">
+    <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button></div>
+    ${kupas.length>1?`<div class="bqseg"><button class="${kvhF?'':'on'}" data-kf="">כל הקופות</button>${kupas.map(x=>`<button class="${kvhF===x?'on':''}" data-kf="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
+    <div class="mklist">${L.map(k=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:${k.member_id?'pointer':'default'}" ${k.member_id?`data-kvm="${k.member_id}"`:''}>
+      <div class="mknm"><b>${esc(nm(k))}${k.member_id?' ↗':' <small class="bqno">לא מקושר</small>'}</b>
+        <div class="mksub">${k.groupe?esc(k.groupe)+' · ':''}${k.kind==='bank'?'🏦 '+esc(k.bank||'בנק'):'💳'+(k.last4?' '+esc(k.last4):'')}${k.next_date?' · חיוב הבא '+esc(k.next_date):''}${k.itra?' · נותרו '+esc(k.itra):''}${kupas.length>1?' · '+esc(k.kupa):''}${k.error?' · <b style="color:#c0392b">⚠️ '+esc(k.error)+'</b>':''}</div></div>
+      <b>₪${am(k).toLocaleString('he-IL')}</b></div>`).join('')||'<div class="hintxt">אין</div>'}</div>
+    ${L.length?'<button class="btn sm" id="kvh_csv" style="margin-top:8px">⬇️ אקסל</button>':''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const qi=document.getElementById('kvh_q');qi.oninput=()=>{clearTimeout(window._kvhT);window._kvhT=setTimeout(()=>{const pos=qi.selectionStart;kvHolders().then(()=>{const n=document.getElementById('kvh_q');if(n){n.focus();n.setSelectionRange(pos,pos);}});},250);};
+  rs.querySelectorAll('[data-kk]').forEach(b=>b.onclick=()=>{kvhK=b.dataset.kk;kvHolders();});
+  rs.querySelectorAll('[data-kf]').forEach(b=>b.onclick=()=>{kvhF=b.dataset.kf;kvHolders();});
+  rs.querySelectorAll('[data-kvm]').forEach(el=>el.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==el.dataset.kvm);if(m){remov.classList.remove('show');openMember(m);}});
+  const cv=document.getElementById('kvh_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שם,טלפון,סכום לחודש,עבור מה,סוג,חיוב הבא,נותרו,קופה'].concat(L.map(k=>[nm(k),k.phone||'',am(k),k.groupe||'',k.kind==='bank'?'בנק':'אשראי',k.next_date||'',k.itra||'',k.kupa].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בעלי הוראות קבע.csv';document.body.appendChild(a);a.click();a.remove();};}
 // 💳 מאיר: "חלון לתרומות כמו שיש בנדרים פלוס — לתרומה בהוראת קבע בלי מסגרת, או ידני, ועבור מה… כל האפשרויות
 // שיש בנדרים פלוס, מסונכרן עם הקהילה". אשראי / הו"ק אשראי — בטופס המאובטח של נדרים פלוס (iframe) בתוך החלון,
 // כך שמספר הכרטיס לא עובר אצלנו; הו"ק בנקאי / ביט — בדף התרומות של נדרים פלוס; העברה / מזומן / צ'ק — נרשם כאן
