@@ -20531,11 +20531,19 @@ class H(BaseHTTPRequestHandler):
                 cur = json.loads(kv_get(con, 'cm_debt_mail', '') or '{}')
             except ValueError:
                 cur = {}
-            k = b.get('kind') if b.get('kind') in ('hok', 'free', 'natan', 'natan_free') else 'pledge'  # natan — קופת נתן תתן
+            k = b.get('kind') if b.get('kind') in ('hok', 'free', 'natan', 'natan_free', 'keva') else 'pledge'  # natan — קופת נתן תתן
             if b.get('reset'):
                 cur.pop(k, None)
             else:
-                cur[k] = {'subj': str(b.get('subj') or '').strip()[:200], 'body': str(b.get('body') or '')[:6000]}
+                prev = cur.get(k) or {}
+                cur[k] = {'subj': str(b.get('subj') if 'subj' in b else prev.get('subj') or '').strip()[:200],
+                          'body': str(b.get('body') if 'body' in b else prev.get('body') or '')[:6000]}
+                # 🔁 מאיר: "קטגוריה של הקמת הוראת קבע — ושאבחר לו עבור מה וסכום" — ברירת המחדל של הנוסח
+                if k == 'keva':
+                    cur[k]['for'] = str(b.get('for') if 'for' in b else prev.get('for') or '').strip()[:120]
+                    cur[k]['amount'] = re.sub(r'[^\d.]', '', str(b.get('amount') if 'amount' in b else prev.get('amount') or ''))[:10]
+                    if not cur[k]['body'] and 'body' not in b:
+                        cur[k].pop('body')
             kv_set(con, 'cm_debt_mail', json.dumps(cur, ensure_ascii=False)); con.commit(); con.close()
             return self._send(200, {'ok': True, 'tpl': cur})
         if self.path == '/api/cm/natan_sync':

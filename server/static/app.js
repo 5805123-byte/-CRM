@@ -14664,13 +14664,18 @@ const CD_MAIL_DEF={pledge:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצ
   hok:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצינו לעדכן בכבוד שהוראת הקבע שלך בסך {{סכום}} ₪ עבור {{עבור}} לא עברה החודש.\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות',
   // מאיר: "צריך גם מייל לכתיבה חופשית" — רק הפנייה והקישור; את השאר כותבים
   free:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\n\n\n{{קישור}}\n\nכולל חצות',
+  // 🔁 מאיר: "אני רוצה פה קטגוריה של הקמת הוראת קבע ושאבחר לו עבור מה וסכום"
+  keva:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nנשמח מאוד אם תצטרף להוראת קבע חודשית בסך {{סכום}} ₪ לחודש עבור {{עבור}}.\n\nלהקמת הוראת הקבע בכרטיס אשראי (ללא תפיסת מסגרת), בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nכולל חצות',
   // מאיר: "איפה אני מתקן ומעדכן נוסח קבוע להתחייבות של נתן תתן ואיפה יש חופשי" — לקופה נוסחים משלה
   natan:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\nרצינו להזכיר בכבוד את ההתחייבות שלך לקופת נתן תתן בסך {{סכום}} ₪ עבור {{עבור}}.\n\nלתשלום מאובטח בכרטיס אשראי, בלחיצה אחת:\n{{קישור}}\n\nתודה רבה, ותזכו למצוות.\nקופת נתן תתן',
   natan_free:'לכבוד {{תואר}} {{שם}} {{הי"ו}},\n\n\n\n{{קישור}}\n\nקופת נתן תתן'};
 // הנוסח הקבוע / החופשי של הקופה שפתוחה עכשיו (הקהילה או נתן תתן)
 const cdPK=()=>cdFund==='natan'?'natan':'pledge', cdFK=()=>cdFund==='natan'?'natan_free':'free';
-const CD_MAIL_KL={pledge:'🤝 התחייבות / חוב',hok:'🔁 הו"ק שחזרה',free:'✍️ חופשי',natan:'📌 נוסח קבוע',natan_free:'✍️ חופשי'};
-const cdMailKinds=()=>cdFund==='natan'?['natan','natan_free']:['pledge','hok','free'];
+const CD_MAIL_KL={pledge:'🤝 התחייבות / חוב',hok:'🔁 הו"ק שחזרה',keva:'➕ הקמת הוראת קבע',free:'✍️ חופשי',natan:'📌 נוסח קבוע',natan_free:'✍️ חופשי'};
+const cdMailKinds=()=>cdFund==='natan'?['natan','natan_free']:['pledge','hok','keva','free'];
+// הקמת הוראת קבע: עבור מה וסכום לחודש — ברירת מחדל מהנוסח, ואפשר לשנות בטיוטה לכל שליחה
+let KEVA_MAIL=null;   // {for, amount} כשהטיוטה בנוסח "הקמת הוראת קבע"
+const cdKevaDef=()=>{const t=(CD_MAILTPL||{}).keva||{};return {for:t.for||'',amount:t.amount||''};};
 // 🏷 קטגוריות קבועות — לחיצה ממלאת "עבור מה", סכום וסוג; בקטגוריה עם טווח (הקמת הוראת קבע דמי חבר
 // 100–150 ₪) מזיזים את הסכום בפס, והוא לא יוצא מהטווח. ⚙️ — הגבאי מוסיף / משנה / מוחק לבד
 let CD_CATS=null, cdQC=null, cdQK='';   // cdQK — סוג שנבחר בלי קטגוריה (התחייבות / חוב / הו"ק שחזרה)
@@ -14745,7 +14750,7 @@ async function cdCatsEdit(nw,openName){await cdCatsLoad();await cdMailTplLoad();
 let CD_MAILTPL=null;
 async function cdMailTplLoad(){if(CD_MAILTPL)return CD_MAILTPL;const r=await api('GET','/api/cm/mailtpl');CD_MAILTPL=(r&&r.tpl)||{};return CD_MAILTPL;}
 const cdMailTplOf=k=>{const c=cdCatByKey(k);if(c){const p=cdMailTplOf(cdPK());return {subj:c.subj||p.subj,body:c.mail||p.body,saved:!!c.mail,cat:c};}const t=(CD_MAILTPL||{})[k];
-  const ds=k==='free'?'כולל חצות':k==='natan_free'?'קופת נתן תתן':k==='natan'?'תזכורת בכבוד — קופת נתן תתן':CD_MAIL_SUBJ;
+  const ds=k==='keva'?'הצטרפות להוראת קבע — כולל חצות':k==='free'?'כולל חצות':k==='natan_free'?'קופת נתן תתן':k==='natan'?'תזכורת בכבוד — קופת נתן תתן':CD_MAIL_SUBJ;
   return {subj:(t&&t.subj)||ds,body:(t&&t.body)||CD_MAIL_DEF[k]||CD_MAIL_DEF.pledge,saved:!!t};};
 const cdMailFill=(body,fr)=>fr?body.replace(/\{\{עבור\}\}/g,fr):body.replace(/\s*(?:עבור|בעבור)\s*\{\{עבור\}\}/g,'').replace(/\{\{עבור\}\}/g,'');
 const cdMailBody=(fr,hok)=>cdMailFill(cdMailTplOf(hok?'hok':'pledge').body,fr);
@@ -14764,7 +14769,11 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
       <div class="hintxt">{שם} — שם הנמען · {סכום} — הסכום הפתוח שלו · {עבור} — עבור מה${ch==='sms'?' · {קישור} — קישור לתשלום':''}. ${psaved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>
       <div class="bqacts">${ch==='voice'?'<button class="btn sm" id="cmt_hear" title="לשמוע בקול של השיחה, לראות את הניקוד ולתקן מילה בלחיצה עליה">🔊 השמע · ניקוד ותיקון מילים</button>':''}
         <button class="btn sm ghost" id="cmt_test">${ch==='voice'?'📞 שיחת בדיקה אליי':'💬 SMS בדיקה אליי'}</button></div>`
-    :`<label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
+    :`${k==='keva'?`<div class="lgf"><label class="fld"><span>🔁 עבור מה (ברירת מחדל)</span><input id="cmt_kf" list="cmt_kfl" value="${esc(cdKevaDef().for)}" placeholder="למשל: דמי חבר"></label>
+        <label class="fld"><span>סכום לחודש ₪ (ברירת מחדל)</span><input id="cmt_ka" inputmode="decimal" value="${esc(cdKevaDef().amount)}" placeholder="למשל: 100"></label></div>
+      <datalist id="cmt_kfl">${['דמי חבר','קביעת מקום','נדרים ונדבות','החזקת הכולל'].concat((CD_CATS||[]).map(c=>c.name)).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+      <div class="hintxt">בכל שליחה אפשר לשנות בטיוטה. הקישור במייל פותח בנדרים פלוס רק הקמת הוראת קבע, עם הסכום הזה ו"עבור מה".</div>`:''}
+    <label class="fld"><span>נושא</span><input id="cmt_s" value="${esc(t.subj)}"></label>
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
     <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`}
     <div class="hintxt">מתקנים ולוחצים 💾 שמור — מעכשיו כל ${ch==='voice'?'שיחה':ch==='sms'?'SMS':'מייל'} כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה — ⋯ עוד ← 🏷 קטגוריות.'}</div>
@@ -14789,7 +14798,8 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
     const yset=async text=>{const r=await api('POST','/api/yemot/tpl',{key:yk(k),ch,text});if(r&&r.ok){if(ymStatus)ymStatus.tpl=r.tpl;else ymStatus={tpl:r.tpl};}return r&&r.ok;};
     o.querySelector('#cmt_ok').onclick=async()=>{
       if(ph){if(await yset(o.querySelector('#cmt_b').value)){toast('💾 הנוסח נשמר');draw();}else toast('לא נשמר');return;}
-      const r=await api('POST','/api/cm/mailtpl',{kind:k,subj:o.querySelector('#cmt_s').value,body:o.querySelector('#cmt_b').value});
+      const kx=k==='keva'?{for:o.querySelector('#cmt_kf').value.trim(),amount:o.querySelector('#cmt_ka').value.trim()}:{};
+      const r=await api('POST','/api/cm/mailtpl',Object.assign({kind:k,subj:o.querySelector('#cmt_s').value,body:o.querySelector('#cmt_b').value},kx));
       if(r&&r.ok){CD_MAILTPL=r.tpl;toast('💾 הנוסח נשמר — כל מייל תזכורת ייצא כך');draw();}else toast('לא נשמר');};
     const rr=o.querySelector('#cmt_r');if(rr)rr.onclick=async()=>{
       if(ph){if(await yset(null)){toast('↩ חזר לנוסח המובנה');draw();}return;}
@@ -14822,6 +14832,8 @@ function cdMailDraft(kind,fr){
     <div class="cm">✉️ הטיוטה — עדיין לא נשלח כלום</div>
     <div class="hintxt">📤 יוצא מ: <b>💰 נדר 18</b> <span dir="ltr">${esc((MLSETUP_C&&MLSETUP_C.from)||'neder1818@gmail.com')}</span> · אל: <b>${aud.length===1?esc(mName(aud[0])):aud.length+' נמענים'}</b> — כל אחד מקבל הודעה נפרדת, בשמו</div>
     <div class="fld"><span>📝 הנוסח</span><span class="bqseg" id="cdd_k">${cdCatByKey(kind)?`<button data-k="${esc(kind)}">🏷 ${esc(kind.slice(4))}</button>`:''}${cdMailKinds().map(x=>`<button data-k="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</span></div>
+    <div class="lgf" id="cdd_kv" style="display:none"><label class="fld"><span>🔁 עבור מה</span><input id="cdd_kf" list="cmt_kfl2"></label><label class="fld"><span>סכום לחודש ₪</span><input id="cdd_ka" inputmode="decimal"></label></div>
+    <datalist id="cmt_kfl2">${['דמי חבר','קביעת מקום','נדרים ונדבות','החזקת הכולל'].concat((CD_CATS||[]).map(c=>c.name)).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
     <label class="fld"><span>נושא</span><input id="cdd_s" value="${esc(mlSaved('cm_subj',''))}"></label>
     <label class="fld"><span>תוכן המכתב</span><textarea id="cdd_b" rows="8">${esc(mlSaved('cm_body',''))}</textarea></label>
     <div class="hintxt">{{שם}} · {{סכום}} · {{קישור}} מתמלאים לבד לכל נמען. שורה ריקה = פסקה חדשה.</div>
@@ -14845,7 +14857,15 @@ function cdMailDraft(kind,fr){
   const later=()=>{clearTimeout(tm);tm=setTimeout(pv,600);};
   // מאיר: "יש הו"ק שחזרה שאני צריך עוד לערוך אותה" — עורכים כאן ושומרים כנוסח הקבוע של אותו סוג
   const KL={pledge:'התחייבות / חוב',hok:'הו"ק שחזרה',free:'מייל חופשי',natan:'התחייבות נתן תתן',natan_free:'מייל חופשי — נתן תתן'};if(cdCatByKey(kind))KL[kind]=kind.slice(4);
-  const kb=()=>{o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===kind));q('cdd_save').textContent='💾 לשמור את הנוסח הזה כנוסח הקבוע של "'+KL[kind]+'"';};kb();
+  KL.keva='הקמת הוראת קבע';
+  const kb=()=>{o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===kind));q('cdd_save').textContent='💾 לשמור את הנוסח הזה כנוסח הקבוע של "'+KL[kind]+'"';
+    // הקמת הוראת קבע: עבור מה + סכום לחודש, ובקישור — רק הו"ק בנדרים פלוס
+    q('cdd_kv').style.display=kind==='keva'?'':'none';
+    if(kind==='keva'){if(!KEVA_MAIL)KEVA_MAIL=cdKevaDef();q('cdd_kf').value=KEVA_MAIL.for;q('cdd_ka').value=KEVA_MAIL.amount;}else KEVA_MAIL=null;};kb();
+  const kvRefill=()=>{KEVA_MAIL={for:q('cdd_kf').value.trim(),amount:q('cdd_ka').value.trim()};
+    if(bi.value===mlSaved('cm_body_auto','')){const t=cdMailTplOf('keva');cdMailPrefill(cdMailFill(t.body,KEVA_MAIL.for),t.subj,true);bi.value=mlSaved('cm_body','');}
+    later();};
+  q('cdd_kf').oninput=kvRefill;q('cdd_ka').oninput=kvRefill;
   q('cdd_save').onclick=async()=>{let body=bi.value;if(fr)body=body.split(fr).join('{{עבור}}');
     if(!await uiConfirm('לשמור כנוסח הקבוע של "'+KL[kind]+'"?\nמעכשיו כל מייל '+KL[kind]+' ייפתח בנוסח הזה.','💾 כן, לשמור','לא'))return;
     const c=cdCatByKey(kind);
@@ -14856,12 +14876,13 @@ function cdMailDraft(kind,fr){
   o.querySelectorAll('#cdd_k [data-k]').forEach(b=>b.onclick=async()=>{if(b.dataset.k===kind)return;
     const ch=bi.value!==mlSaved('cm_body_auto','');
     if(ch&&!await uiConfirm('לעבור לנוסח אחר? מה שכתבת כאן יוחלף.','כן, להחליף','לא'))return;
-    kind=b.dataset.k;const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,fr||''),t.subj,true);
+    kind=b.dataset.k;const t=cdMailTplOf(kind);KEVA_MAIL=kind==='keva'?cdKevaDef():null;
+    cdMailPrefill(cdMailFill(t.body,kind==='keva'?KEVA_MAIL.for:(fr||'')),t.subj,true);
     si.value=mlSaved('cm_subj','');bi.value=mlSaved('cm_body','');kb();pv();});
   si.oninput=()=>{mlSave('cm_subj',si.value);later();};
   bi.oninput=()=>{mlSave('cm_body',bi.value);later();};
   if(q('cdd_prev')){q('cdd_prev').onclick=()=>{idx=(idx+aud.length-1)%aud.length;pv();};q('cdd_next').onclick=()=>{idx=(idx+1)%aud.length;pv();};}
-  o.querySelector('.cno').onclick=()=>{clearTimeout(tm);o.remove();NT_MAIL=false;};
+  o.querySelector('.cno').onclick=()=>{clearTimeout(tm);o.remove();NT_MAIL=false;KEVA_MAIL=null;};
   q('cdd_full').onclick=()=>{o.remove();NT_MAIL=false;cmAdding=false;cmAddQ='';cmSub='send';tab='comm';render();window.scrollTo(0,0);};
   q('cdd_go').onclick=async()=>{
     if(!si.value.trim()){toast('חסר נושא');return;}
@@ -15657,6 +15678,9 @@ function cmLinkHTML(){
 function cmLinksPayload(){
   const links={};
   if(NT_MAIL&&cdFund==='natan'){const L=ntGenLink();cmAudience().forEach(m=>{links[m.id]=L;});return {links,link_amount:'',amounts:cmAmts};}
+  if(KEVA_MAIL){const am={},a=String(KEVA_MAIL.amount||'').replace(/[^\d.]/g,'');
+    cmAudience().forEach(m=>{am[m.id]=a;links[m.id]=nedLink({k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:a,keva:1,avour:KEVA_MAIL.for});});
+    return {links,link_amount:a,amounts:am};}
   cmAudience().forEach(m=>{links[m.id]=nedLink({k:'m',id:m.id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:cmAmts[m.id]||cmLinkAmt});});
   return {links,link_amount:cmLinkAmt,amounts:cmAmts};}
 function cmWireLink(){
@@ -15861,6 +15885,8 @@ const YM_TPL=[
     'שלום {שם}, כאן כולל חצות. הוראת הקבע שלך בסך {סכום} ש"ח עבור {עבור} לא עברה החודש. אפשר להסדיר בכרטיס אשראי כאן: {קישור} תודה רבה.'],
   ['natan','🎁 נתן תתן','שלום {שם}, כאן קופת נתן תתן. רצינו להזכיר בכבוד את ההתחייבות שלך בסך {סכום} שקלים. למעבר לתשלום בכרטיס אשראי, הקישו 1. תודה רבה, ותזכו למצוות.',
     'שלום {שם}, כאן קופת נתן תתן. תזכורת בכבוד להתחייבות שלך בסך {סכום} ש"ח. לתשלום מאובטח: {קישור} תודה רבה!'],
+  ['keva','➕ הקמת הוראת קבע','שלום {שם}, כאן כולל חצות. נשמח מאוד אם תצטרף להוראת קבע חודשית בסך {סכום} שקלים עבור {עבור}. שלחנו לך הודעה עם קישור להקמה בכרטיס אשראי. תודה רבה ותזכו למצוות.',
+    'שלום {שם}, כאן כולל חצות. נשמח אם תצטרף להוראת קבע חודשית בסך {סכום} ש"ח עבור {עבור}. להקמה בכרטיס אשראי (ללא תפיסת מסגרת): {קישור} תודה רבה!'],
   ['natanfree','✍️ חופשי — נתן תתן','שלום {שם}, כאן קופת נתן תתן. ','שלום {שם}, כאן קופת נתן תתן. {קישור}'],
   ['free','✍️ חופשי','','']];
 // מאיר: "תוריד את הטקסט המוכן שאומר שאפשר דרך הטלפון, ואני אכניס נוסח לכל קטגוריה או שדה
@@ -15898,9 +15924,11 @@ function nedLink(r){
   const amt=String((r&&r.amt)||ymAmt||'').replace(/[^\d.]/g,'');
   if(amt){p.push(['Amount',amt]);if(ymLink.amtLock)p.push(['AmountLock','1']);}
   if(ymLink.pay){p.push(['Payment',ymLink.pay]);if(ymLink.payLock)p.push(['PaymentLock','1']);}
-  if(ymLink.type==='normal')p.push(['OnlyNormal','1']);else if(ymLink.type==='keva')p.push(['OnlyKeva','1']);
-  if(ymLink.groupe){p.push(['Groupe',ymLink.groupe]);if(ymLink.groupeLock)p.push(['GroupeLock','1']);}
-  if(ymLink.avour){p.push(['Avour',ymLink.avour]);if(ymLink.avourLock)p.push(['AvourLock','1']);}
+  // r.keva — קישור להקמת הוראת קבע (נוסח "הקמת הוראת קבע"): רק הו"ק, עם "עבור מה" שנבחר
+  if(r&&r.keva)p.push(['OnlyKeva','1']);else if(ymLink.type==='normal')p.push(['OnlyNormal','1']);else if(ymLink.type==='keva')p.push(['OnlyKeva','1']);
+  if(r&&r.keva&&r.avour){p.push(['Groupe',r.avour]);p.push(['Avour',r.avour]);}
+  else{if(ymLink.groupe){p.push(['Groupe',ymLink.groupe]);if(ymLink.groupeLock)p.push(['GroupeLock','1']);}
+  if(ymLink.avour){p.push(['Avour',ymLink.avour]);if(ymLink.avourLock)p.push(['AvourLock','1']);}}
   if(ymLink.prefill&&r){
     if(r.name)p.push(['ClientName',r.name]);
     if(r.phone)p.push(['Phone',r.phone]);
