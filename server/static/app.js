@@ -1796,6 +1796,8 @@ async function mkTowelDay(day,frm){
 // 🧺 שני סוגים: קטנות (₪30 לחודש) / גדולות (₪50 לחודש), מא׳ בחודש העברי — המחירים ב-⚙️
 const mkTowelSize=c=>/מגב\S*\s*(ה)?גדול/.test(c.remark||'')?'large':/מגב\S*\s*(ה)?קטנ/.test(c.remark||'')?'small':'';
 let MKTW=null;
+// מחיר המגבות לחודש הנוכחי (חשון — מחיר מיוחד); עד שנטען — המחיר שכתוב בהערה
+const mkTwPr=c=>{const sz=mkTowelSize(c)||'small';if(MKTW&&MKTW.now&&MKTW.now[sz]!=null)return +MKTW.now[sz];const m=/₪\s*([\d.]+)/.exec(c.remark||'');return m?+m[1]:null;};
 async function mkTowelEdit(c){
   if(!MKTW){const r=await api('GET','/api/mikveh/towel_cfg').catch(()=>null);MKTW=r&&r.ok?r:{cfg:{small:30,large:50},now:{small:30,large:50},hmonth:''};}
   const on=mkTowel(c), sz=mkTowelSize(c), P=MKTW.now||MKTW.cfg;
@@ -1830,16 +1832,57 @@ function mkTowelOpen(){
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">🧺</div><div><h2>מנויי מגבות</h2>
       <div class="mksub">בתוקף: <b>${nS}</b> מגבות קטנות · <b>${nL}</b> מגבות גדולות${act.length-nS-nL?' · '+(act.length-nS-nL)+' בלי סוג':''}</div>
       <div class="mksub"><b>${all.length}</b> לפי ההערות במקווה · <b>${act.length}</b> עם מנוי בתוקף · ${all.length-act.length} שהמנוי הסתיים${nR<all.length?` · ${all.length-nR} מתוכם מ"הודעה" ולא מ"הערה"`:''}</div></div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn sm" id="twcsv">⬇️ אקסל</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn sm pri" id="twbill">💳 חיוב החודש — מי לא שילם</button><button class="btn sm" id="twcsv">⬇️ אקסל</button></div>
     <div class="mksec">✅ מנוי בתוקף (${act.length})</div><div class="mklist">${act.map(row).join('')||'<div class="hintxt">אין</div>'}</div>
     ${all.length-act.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">🔴 המנוי הסתיים (${all.length-act.length})</summary><div class="mklist">${all.filter(c=>mkPast(c.sub_end)).map(row).join('')}</div></details>`:''}
     ${unk.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">❓ לא ברור — מוזכרת מגבת אבל לא כתוב "כולל" (${unk.length})</summary><div class="mklist">${unk.map(c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr"><div class="mknm"><b>${esc(mkName(c))}</b><div class="mksub">📝 ${hl(mkTwlOf(c.remark)==='unk'?c.remark:c.message)}</div></div></div>`).join('')}</div></details>`:''}
     ${no.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">🚫 לא נספרו — "אינו כולל / לא כולל / ללא מגבת" (${no.length})</summary><div class="mklist">${no.map(c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr"><div class="mknm"><b>${esc(mkName(c))}</b><div class="mksub">📝 ${hl(c.remark||c.message)}</div></div></div>`).join('')}</div></details>`:''}`;
   remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-tw]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.tw);if(c)mkOpen(c);});
+  document.getElementById('twbill').onclick=()=>mkTowelBill();
   document.getElementById('twcsv').onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שם,טלפון,מספר לקוח,קבוצה,מנוי עד,הערה'].concat(all.map(c=>[mkName(c),c.phone||'',c.code||'',(G[c.group]&&G[c.group].name)||'',mkDate(c.sub_end),mkTowelSrc(c)==='remark'?c.remark:c.message].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנויי מגבות.csv';document.body.appendChild(a);a.click();a.remove();};}
+// 💳 חיוב מגבות לחודש העברי — מי שלא נגבה ממנו ולא שילם במזומן מקבל הודעה במסך של המקווה (שדה "הודעה")
+async function mkTowelBill(hm){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  rs.innerHTML='<div class="hintxt" style="padding:30px;text-align:center">⏳ טוען מהמקווה…</div>';remov.classList.add('show');
+  const r=await api('GET','/api/mikveh/towel_bill'+(hm?'?hm='+encodeURIComponent(hm):'')).catch(()=>null);
+  if(!r||!r.ok){rs.innerHTML=`<button class="x" id="rx">✕</button><div class="hintxt">לא נטען מהמקווה: ${esc((r&&r.error)||'אין תשובה')}</div>`;document.getElementById('rx').onclick=()=>remov.classList.remove('show');return;}
+  const H=r.hmonth, un=r.rows.filter(x=>!x.paid), pd=r.rows.filter(x=>x.paid), SZ={small:'קטנות',large:'גדולות'};
+  const sum=a=>a.reduce((s,x)=>s+(+x.price||0),0);
+  const row=x=>`<div class="mkrow" style="grid-template-columns:1fr auto;align-items:center"><div class="mknm" data-tbo="${esc(x.id)}" style="cursor:pointer"><b>${esc(x.name)}</b>
+      <div class="mksub">🧺 ${SZ[x.size]} · חסר <b>₪${esc(x.price)}</b>${x.total!=null?` · סה״כ לחודש <b>₪${esc(x.total)}</b> (מנוי ₪${esc(x.sub)} + מגבות ₪${esc(x.price)})`:''} · <span dir="ltr">${esc(x.phone)}</span> · #${esc(x.code||'')}</div>
+      ${x.paid?`<div class="mksub">✅ ${esc(x.method)} · ${esc(String(x.paid_at||'').slice(0,16).replace('T',' '))}</div>`:''}
+      ${!x.paid&&x.screen?`<div class="mksub">📺 במסך: ${esc(x.screen.slice(0,90))}</div>`:''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${x.paid?`<button class="btn sm" data-tbu="${esc(x.id)}">↩︎ ביטול</button>`:
+        `<button class="btn sm pri" data-tbp="${esc(x.id)}" data-m="מזומן">✓ מזומן</button><button class="btn sm" data-tbp="${esc(x.id)}" data-m="נגבה">✓ נגבה</button>`}</div></div>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">💳</div><div><h2>חיוב מגבות — ${esc(H)}</h2>
+      <div class="mksub">מחיר החודש: קטנות <b>₪${esc(r.price.small)}</b> · גדולות <b>₪${esc(r.price.large)}</b></div>
+      <div class="mksub">🔴 לא שילמו: <b>${un.length}</b> (₪${sum(un)}) · ✅ שילמו: <b>${pd.length}</b> (₪${sum(pd)})</div></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+      ${un.length?`<button class="btn sm pri" id="tbn">📺 להציג הודעה במסך לכל מי שלא שילם (${un.length})</button>`:''}
+      <button class="btn sm" id="tbcfg">⚙️ מחירים</button></div>
+    <div class="hintxt" style="margin-bottom:8px">ההודעה במסך: "חסר ₪25 למנוי מגבות קטנות לחודש חשון. סה״כ לחודש ₪165 (מנוי ₪140 + מגבות ₪25)". כשמסמנים ✓ — ההודעה נמחקת מהמסך. מי שיש לו הודעה אחרת במסך — לא נוגעים בה.</div>
+    <div class="mksec">🔴 לא שילם (${un.length})</div><div class="mklist">${un.map(row).join('')||'<div class="hintxt">כולם שילמו 👍</div>'}</div>
+    ${pd.length?`<div class="mksec" style="margin-top:12px">✅ שילם (${pd.length})</div><div class="mklist">${pd.map(row).join('')}</div>`:''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-tbo]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.tbo);if(c)mkOpen(c);});
+  const pay=async(id,m,undo)=>{const x=r.rows.find(z=>z.id===id);
+    const q=await api('POST','/api/mikveh/towel_bill/pay',{id,hm:H,method:m,amount:x&&x.price,undo:undo?1:0}).catch(()=>null);
+    if(!q||!q.ok)return uiAlert('לא נשמר');toast(undo?'↩︎ בוטל':'✓ סומן ששילם'+(q.cleared?' · ההודעה נמחקה מהמסך':''));mkTowelBill(hm);};
+  rs.querySelectorAll('[data-tbp]').forEach(b=>b.onclick=()=>pay(b.dataset.tbp,b.dataset.m));
+  rs.querySelectorAll('[data-tbu]').forEach(b=>b.onclick=()=>pay(b.dataset.tbu,'',1));
+  const n=document.getElementById('tbn');
+  if(n)n.onclick=async()=>{if(!await uiConfirm(`להציג במסך של המקווה הודעת תשלום ל-${un.length} מנויים שלא שילמו?`,'📺 כן, להציג','ביטול'))return;
+    n.disabled=true;n.textContent='⏳ מעדכן במקווה…';
+    const q=await api('POST','/api/mikveh/towel_bill/notify',{hm:H,ids:un.map(x=>x.id)}).catch(()=>null);
+    if(!q||!q.ok){n.disabled=false;return uiAlert('לא עודכן במקווה');}
+    await uiAlert(`📺 ההודעה הוצגה ל-${q.done}`+(q.skipped.length?`\n\nלא נגעתי (יש להם הודעה אחרת במסך):\n${q.skipped.join('\n')}`:'')+(q.failed?`\n\n⚠️ ${q.failed} נכשלו`:''));mkTowelBill(hm);};
+  document.getElementById('tbcfg').onclick=async()=>{const a=await uiPrompt(`מחיר מגבות קטנות ל${H} ₪`,String(r.price.small));if(a===null)return;
+    const b2=await uiPrompt(`מחיר מגבות גדולות ל${H} ₪`,String(r.price.large));if(b2===null)return;
+    const cfg=Object.assign({},r.cfg);cfg.month=Object.assign({},cfg.month||{});cfg.month[H]={small:+a||0,large:+b2||0};
+    const q=await api('POST','/api/mikveh/towel_cfg',cfg).catch(()=>null);if(q&&q.ok){MKTW=null;toast('✓ נשמר');mkTowelBill(hm);}else uiAlert('לא נשמר');};}
 let mkTowelOnly=false;
 let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name', mkExp=false, mkSel=new Set(), mkSelOn=false;
 // מאיר: "שתי רשימות נפרדות — אלו שלא הסתיים להם המנוי או הרישיון, ואלו שהסתיים; את אלו שהסתיים רק בלחיצת
@@ -2076,7 +2119,8 @@ function mkOpen(c){
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>💳 שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
         ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
-        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+((/₪\s*([\d.]+)/.exec(c.remark||'')||[])[1]?' · ₪'+esc((/₪\s*([\d.]+)/.exec(c.remark||'')||[])[1]):''):'לא'}</b></div>
+        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
+        ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
         ${tile(c.balance!=null?'יתרה':'יתרה אחרונה',esc(bal))}
         ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
@@ -2125,6 +2169,7 @@ function mkOpen(c){
     const af=document.getElementById('mkafter'); if(af)af.onclick=()=>mkNotify(c,'group',{group:c.group});
   };
   draw(); remov.classList.add('show');
+  if(!MKTW&&mkTowel(c))api('GET','/api/mikveh/towel_cfg').then(r=>{if(r&&r.ok){MKTW=r;if(document.getElementById('mktwl'))draw();}}).catch(()=>{});
 }
 // הודעה ללקוח — SMS או קולית, דרך ימות המשיח.
 // מאיר: "שיהיה יותר משוכלל, נוסחים מוכנים, שמירת נוסחים, אופציה לשלוח מאוחר יותר".
@@ -14194,7 +14239,8 @@ async function ndDonate(mid){
     <div class="mkdb">
       <label class="fld"><span>התורם — חבר קהילה מהרשימה, או כל שם</span><input id="nd_who" list="cd_mdl" placeholder="הקלד שם — ובחר מהרשימה, או השאר שם חופשי…" value="${M0?esc(mName(M0)+' #'+M0.id):''}"></label>
       <label class="gvall" id="nd_neww" style="display:none"><input type="checkbox" id="nd_new"> ➕ להוסיף אותו גם לרשימת הקהילה</label>
-      <label class="fld"><span>למה מיועדת תרומתך</span><input id="nd_pur" list="nd_purs" placeholder="תרומה" value="תרומה"></label>
+      <label class="fld"><span>למה מיועדת תרומתך — לבחור למטה, או לכתוב כאן משהו מיוחד רק לתרומה הזו</span><input id="nd_pur" list="nd_purs" placeholder="תרומה" value="תרומה"></label>
+      <div id="nd_chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px"></div>
       <datalist id="nd_purs">${(cfg.purposes||[]).map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
       <div class="lgf"><label class="fld"><span>שם משפחה ושם פרטי</span><input id="nd_name"></label><label class="fld"><span>טלפון</span><input id="nd_phone" inputmode="tel" dir="ltr"></label></div>
       <div class="lgf"><label class="fld"><span>כתובת</span><input id="nd_addr"></label><label class="fld"><span>עיר</span><input id="nd_city"></label></div>
@@ -14227,6 +14273,18 @@ async function ndDonate(mid){
     :`<button class="btn" id="nd_go" style="width:100%;margin-top:8px">💾 לרשום ${pt==='bank'?'העברה בנקאית':'מזומן / צ׳ק'}</button>`;
   const wireGo=()=>{const b=g('nd_go');if(b)b.onclick=submit;};
   o.querySelectorAll('.ndpt').forEach(b=>b.onclick=()=>{pt=b.dataset.pt;tlFill();});
+  // 🏷️ קטגוריות: הקבועות (לכולם) כלחצנים · ➕ להוסיף קטגוריה קבועה · ✕ למחוק · טקסט חופשי בשדה — רק לתרומה הזו
+  let MINE=cfg.mine||['תרומה','דמי חבר'];
+  const chips=()=>{const cur=g('nd_pur').value.trim();
+    g('nd_chips').innerHTML=MINE.map(x=>`<span class="btn sm" data-pc="${esc(x)}" style="cursor:pointer;${x===cur?'':'background:#fff;color:#333;border:1px solid #d8cfb8'}">${x===cur?'✓ ':''}${esc(x)} <b data-pdel="${esc(x)}" title="למחוק מהרשימה" style="opacity:.5;margin-inline-start:4px">✕</b></span>`).join('')
+      +`<button type="button" class="btn sm" id="nd_padd" style="background:#fff;color:#2d2a6e;border:1px dashed #2d2a6e">➕ קטגוריה חדשה</button>`;
+    g('nd_chips').querySelectorAll('[data-pc]').forEach(b=>b.onclick=async e=>{
+      if(e.target.dataset.pdel){if(!await uiConfirm('למחוק את "'+e.target.dataset.pdel+'" מרשימת הקטגוריות?'))return;
+        const r=await api('POST','/api/nd/purposes',{del:e.target.dataset.pdel}).catch(()=>null);if(r&&r.ok){MINE=r.mine;chips();}return;}
+      g('nd_pur').value=b.dataset.pc;chips();});
+    g('nd_padd').onclick=async()=>{const v=await uiPrompt('שם הקטגוריה החדשה (תופיע מעכשיו בכל תרומה)',cur&&!MINE.includes(cur)?cur:'');if(!v||!v.trim())return;
+      const r=await api('POST','/api/nd/purposes',{add:v.trim()}).catch(()=>null);if(r&&r.ok){MINE=r.mine;g('nd_pur').value=v.trim();chips();toast('✓ נוספה קטגוריה');}};};
+  chips();g('nd_pur').addEventListener('input',chips);
   tlFill();
   async function submit(){
     let mid2=cdPick(g('nd_who').value);const a=amtNum(g('nd_amt').value), pur=g('nd_pur').value.trim();

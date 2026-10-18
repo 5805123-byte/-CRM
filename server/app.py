@@ -580,6 +580,18 @@ def ensure_schema():
     # 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
     # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
     con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
+    # 🧺 תשלום מנוי המגבות לכל חודש עברי — מה שסומן אצלנו (מזומן / נגבה), וההודעה שהוצגה במסך המקווה
+    con.execute("CREATE TABLE IF NOT EXISTS mk_towel_pay(cid TEXT, hmonth TEXT, paid_at TEXT, method TEXT, amount REAL, msg_at TEXT, "
+                "PRIMARY KEY(cid, hmonth))")
+    try:
+        _tc = kv_get(con, 'mk_towel_cfg', '')
+        if _tc:
+            _tj = json.loads(_tc)
+            if 'חשון תשפ"ז' not in (_tj.get('month') or {}):
+                _tj.setdefault('month', {})['חשון תשפ"ז'] = {'small': 25}
+                kv_set(con, 'mk_towel_cfg', json.dumps(_tj, ensure_ascii=False))
+    except Exception:
+        pass
     # 📥 פניות למקווה — "טופס פניות" של נדרים פלוס שמגיע במייל (gmail_intake.sync_mk_requests)
     con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
                 "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
@@ -13097,6 +13109,20 @@ def kv_get(con, k, d=''):
         return d
 
 
+def nd_pur_list():
+    """קטגוריות התרומה הקבועות ('למה מיועדת תרומתך') — מאיר מוסיף ומוחק בחלון התרומה."""
+    con = db()
+    try:
+        v = kv_get(con, 'nd_pur_list', '')
+    finally:
+        con.close()
+    try:
+        L = json.loads(v) if v else None
+    except Exception:
+        L = None
+    return L if isinstance(L, list) else ['תרומה', 'דמי חבר']
+
+
 def kv_set(con, k, v):
     con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) "
                 "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
@@ -14914,7 +14940,7 @@ def mk_unpaid_run(days=30):
 
 # 🧺 מאיר: "יש 2 סוגי מנוי מגבות — קטנות 30 ש"ח לחודש, גדולות 50 ש"ח בחודש. החודש הזה חשון — 25 מגבות קטנות.
 # זה מתחיל מא' לחודש העברי". month — מחיר מיוחד לחודש עברי מסוים
-MK_TOWEL_DEF = {'small': 30, 'large': 50, 'month': {}}
+MK_TOWEL_DEF = {'small': 30, 'large': 50, 'month': {'חשון תשפ"ז': {'small': 25}}}   # מאיר: "לחשון זה מחיר מיוחד" 
 
 
 def mk_towel_cfg(con):
@@ -18833,9 +18859,11 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             purs = [x for x in purs if not ND_NATAN_RX.search(x)]       # נתן תתן — קופה נפרדת
+            mine = nd_pur_list()                                          # הרשימה הקבועה שמאיר מוסיף ידנית
             mos = _nd.mosad() if _nd.configured() else (os.environ.get('NEDARIM_MOSAD') or '')
             valid = (os.environ.get('NEDARIM_IFRAME_VALID') or os.environ.get('NEDARIM_API_VALID') or '').strip()
-            return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'purposes': purs[:40],
+            return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'mine': mine,
+                                    'purposes': [x for x in purs if x not in mine][:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
         if self.path.split('?')[0] == '/api/mikveh/towel_cfg':
             con = db()
@@ -18846,6 +18874,42 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'hmonth': hm, 'now': now_})
+        if self.path.split('?')[0] == '/api/mikveh/towel_bill':
+            # 🧺 מאיר: "לחשון זה מחיר מיוחד… הוא אמור לקבל הודעה במסך שעליו להוסיף 25 ש"ח למנוי מגבות קטנות, או 50
+            # למגבות גדולות — אם הוא מעודכן למנוי מגבות ולא נגבה ממנו אוטומטית או לא שילם במזומן"
+            import mikveh as _mk
+            hm = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('hm') or [''])[0] or \
+                greg_to_heb_monthyear(il_now().strftime('%Y-%m-%d'))
+            try:
+                cl = [c for c in _mk.clients() if _mk.visible(c)]
+                gpr = {g['id']: g.get('price') for g in _mk.groups()}
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            con = db()
+            try:
+                cfg = mk_towel_cfg(con)
+                paid = {r['cid']: dict(r) for r in con.execute("SELECT * FROM mk_towel_pay WHERE hmonth=?", (hm,))}
+            finally:
+                con.close()
+            rows = []
+            for c in cl:
+                rk = str(c.get('remark') or '')
+                if 'מגב' not in rk or re.search(r'(אינו|איננו|לא|ללא|בלי)\s*(כולל\s*)?(ה)?מגב', rk):
+                    continue
+                if not re.search(r'(כולל|מנוי|עם|\+)\s*(ה)?מגב|^\s*(ה)?מגב', rk):
+                    continue
+                size = 'large' if re.search(r'מגב\S*\s*(ה)?גדול', rk) else 'small'
+                pr = mk_towel_price(cfg, size, hm)[0]
+                p_ = paid.get(str(c.get('id'))) or {}
+                sub = _mk.slim(c).get('price')
+                sub = sub if sub is not None else gpr.get(c.get('groupId'))
+                rows.append({'sub': sub, 'total': (sub + pr) if sub is not None else None, 'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                             'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(), 'size': size, 'price': pr,
+                             'paid': bool(p_.get('paid_at')), 'method': p_.get('method') or '', 'paid_at': p_.get('paid_at') or '',
+                             'msg_at': p_.get('msg_at') or '', 'screen': (c.get('message') or '').strip()})
+            rows.sort(key=lambda r: (r['paid'], r['name']))
+            return self._send(200, {'ok': True, 'hmonth': hm, 'rows': rows, 'cfg': cfg,
+                                    'price': {k: mk_towel_price(cfg, k, hm)[0] for k in ('small', 'large')}})
         if self.path.split('?')[0] == '/api/mikveh/towel_day':
             # 🧺 מאיר: "מי שנכנס למקווה ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו
             # ביום שישי האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס". מהמקווה מגיעה רק "כניסה אחרונה"
@@ -21047,6 +21111,20 @@ class H(BaseHTTPRequestHandler):
                 import threading as _th
                 _th.Thread(target=mk_unpaid_run, args=(d,), daemon=True).start()
             return self._send(200, {'ok': True})
+        if self.path == '/api/nd/purposes':
+            # 🏷️ מאיר: "איך אני מוסיף בתרומה חדשה עוד קטגוריות — כמו דמי חבר, וכל קטגוריה שארצה להוסיף ידנית"
+            L = nd_pur_list()
+            a, d = str(b.get('add') or '').strip()[:60], str(b.get('del') or '').strip()
+            if a and a not in L:
+                L.append(a)
+            if d:
+                L = [x for x in L if x != d]
+            con = db()
+            try:
+                kv_set(con, 'nd_pur_list', json.dumps(L, ensure_ascii=False)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'mine': L})
         if self.path == '/api/nd/donate_done':
             # הטופס של נדרים פלוס החזיר "עבר" — מסמנים אצל החבר, סוגרים חוב אם ביקשו, והסנכרון מושך את העסקה עצמה
             mid = int(b.get('member_id') or 0)
@@ -21114,6 +21192,79 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': cfg})
+        if self.path == '/api/mikveh/towel_bill/pay':
+            # ✓ שילם (מזומן / נגבה) — ואם במסך שלו מוצגת הודעת המגבות שלנו — מוחקים אותה במקווה
+            import mikveh as _mk
+            cid, hm = str(b.get('id') or ''), str(b.get('hm') or '')[:30]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or not hm:
+                return self._send(400, {'ok': False})
+            con = db()
+            try:
+                if b.get('undo'):
+                    con.execute("UPDATE mk_towel_pay SET paid_at=NULL, method=NULL, amount=NULL WHERE cid=? AND hmonth=?", (cid, hm))
+                else:
+                    con.execute("INSERT INTO mk_towel_pay(cid,hmonth,paid_at,method,amount) VALUES(?,?,?,?,?) ON CONFLICT(cid,hmonth) DO UPDATE SET "
+                                "paid_at=excluded.paid_at, method=excluded.method, amount=excluded.amount",
+                                (cid, hm, now_iso(), str(b.get('method') or 'מזומן')[:30], float(re.sub(r'[^\d.]', '', str(b.get('amount') or '0')) or 0)))
+                    con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                (cid, now_iso(), 'towel', '🧺 שילם מנוי מגבות ל%s — %s' % (hm, str(b.get('method') or 'מזומן'))))
+                con.commit()
+            finally:
+                con.close()
+            cleared = False
+            if not b.get('undo'):
+                try:
+                    full = _mk.client(cid)
+                    if 'מגבות' in str(full.get('message') or '') and '₪' in str(full.get('message') or ''):
+                        _mk.update_client(cid, {'message': ''})
+                        cleared = True
+                except Exception:
+                    pass
+            return self._send(200, {'ok': True, 'cleared': cleared})
+        if self.path == '/api/mikveh/towel_bill/notify':
+            # 📺 הודעה במסך של המקווה (שדה "הודעה" של הלקוח) לכל מי שלא שילם — רק אם אין שם הודעה אחרת
+            import mikveh as _mk
+            hm = str(b.get('hm') or '')[:30]
+            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))]
+            if not hm or not ids:
+                return self._send(400, {'ok': False})
+            con = db()
+            cfg = mk_towel_cfg(con)
+            done, skip, fail = 0, [], 0
+            mon = hm.split(' ')[0]
+            try:
+                for cid in ids[:300]:
+                    try:
+                        full = _mk.client(cid)
+                        cur = str(full.get('message') or '').strip()
+                        rk = str(full.get('remark') or '')
+                        size = 'large' if re.search(r'מגב\S*\s*(ה)?גדול', rk) else 'small'
+                        pr = mk_towel_price(cfg, size, hm)[0]
+                        sub = _mk.slim(full).get('price')
+                        if sub is None:
+                            sub = next((g.get('price') for g in _mk.groups() if g['id'] == full.get('groupId')), None)
+                        szn = 'גדולות' if size == 'large' else 'קטנות'
+                        n_ = lambda v: ('%g' % v)
+                        if sub:
+                            # "סה"כ 165 ש"ח לחשון (140 + 25) — חסר לו עוד 25 למנוי מגבות קטנות"
+                            txt = 'חסר ₪%s למנוי מגבות %s לחודש %s. סה"כ לחודש ₪%s (מנוי ₪%s + מגבות ₪%s)' % (
+                                n_(pr), szn, mon, n_(sub + pr), n_(sub), n_(pr))
+                        else:
+                            txt = 'חסר ₪%s למנוי מגבות %s לחודש %s' % (n_(pr), szn, mon)
+                        if cur and not ('מגבות' in cur and '₪' in cur):
+                            skip.append(((full.get('firstName') or '') + ' ' + (full.get('lastName') or '')).strip())
+                            continue
+                        _mk.update_client(cid, {'message': txt})
+                        con.execute("INSERT INTO mk_towel_pay(cid,hmonth,msg_at) VALUES(?,?,?) ON CONFLICT(cid,hmonth) DO UPDATE SET msg_at=excluded.msg_at",
+                                    (cid, hm, now_iso()))
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)", (cid, now_iso(), 'towel', '📺 הודעה במסך: ' + txt))
+                        con.commit()
+                        done += 1
+                    except Exception:
+                        fail += 1
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'done': done, 'skipped': skip, 'failed': fail})
         if self.path == '/api/mikveh/towel':
             # 🧺 מאיר: "אפשרות להוסיף מנוי מגבות למישהו בכרטיס שלו במקווה — ושזה יעודכן גם במערכת של המקווה, במחיר".
             # במקווה מנוי המגבות רשום בהערה של הלקוח ("כולל מגבות" / "המנוי אינו כולל מגבת") — מעדכנים שם, ובודקים שנשמר
