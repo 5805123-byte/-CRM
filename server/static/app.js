@@ -14443,6 +14443,7 @@ async function renderCommDebts(){
     <!-- מאיר: "למה יש כזה בלגן בדף חובות… אני רוצה מופשט, אפשרות ניסוח למייל או שיחה או סמס הכי פשוט וקל" -->
     <div class="bqbar"><button class="btn sm" id="cd_add">➕ חוב / התחייבות</button>
       <button class="btn sm" id="cd_mailtpl" title="הנוסחים — מייל, שיחה ו-SMS: קבוע וחופשי">📝 נוסחים — מייל / שיחה / SMS</button>
+      <button class="btn sm" id="cd_direct" title="לשלוח נוסח ישר לאנשים שבוחרים — בלי לרשום חוב או התחייבות">📤 שליחה ישירה</button>
       <button class="btn sm ghost" id="cd_more" title="העלאת קובץ, הדבקה, תשלומים במרוכז, אקסל">⋯ עוד</button></div>
     <div class="bqbar" id="cd_morebar"${cdMore?'':' style="display:none"'}>
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
@@ -14635,6 +14636,46 @@ async function ymPronEn(word){
   if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return false;}
   if(ymStatus)ymStatus.pron_en=r.pron_en;
   toast(say.trim()?'✓ נשמר — משמיע שוב…':'✓ התיקון נמחק');return true;}
+// 📤 שליחה ישירה של נוסח לאנשים שבוחרים — בלי לרשום חוב / התחייבות. מייל → הטיוטה; שיחה / SMS → דף השליחה
+async function cdDirectSend(kind,ch,kv){
+  if(!MEMBERS)await cmLoad();await cdMailTplLoad();await cdCatsLoad();
+  kind=kind||(cdFund==='natan'?'natan':'keva');ch=ch||'mail';
+  const kd=kv||cdKevaDef(), pick=new Set();let qq='';
+  const o=document.createElement('div');o.className='confirmov';
+  const draw=()=>{const L=(MEMBERS||[]).filter(m=>!qq||matchStr(mName(m)+' '+(m.phone||'')+' '+(m.email||''),qq)).slice(0,60);
+    const ok=m=>ch==='mail'?mHasMail(m):ch==='sms'?ymMobile(ymPhone(m.phone)):!!ymPhone(m.phone);
+    o.innerHTML=`<div class="confirmbox" style="max-width:600px;width:96vw;text-align:right"><div class="cm">📤 שליחה ישירה — בלי לרשום חוב</div>
+      <div class="bqseg">${[['mail','✉️ מייל'],['sms','💬 SMS'],['voice','📞 שיחה']].map(([c,l])=>`<button class="${ch===c?'on':''}" data-dc="${c}">${l}</button>`).join('')}</div>
+      <div class="bqseg">${cdMailKinds().map(x=>`<button class="${kind===x?'on':''}" data-dk="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</div>
+      ${kind==='keva'?`<div class="lgf"><label class="fld"><span>🔁 עבור מה</span><input id="dd_f" list="dd_fl" value="${esc(kd.for||'')}"></label><label class="fld"><span>סכום לחודש ₪</span><input id="dd_a" inputmode="decimal" value="${esc(kd.amount||'')}"></label></div>
+        <datalist id="dd_fl">${['דמי חבר','קביעת מקום','נדרים ונדבות','החזקת הכולל'].concat((CD_CATS||[]).map(c=>c.name)).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`
+        :kind==='free'||kind==='natan_free'?'':`<div class="lgf"><label class="fld"><span>🎯 עבור מה (לא חובה)</span><input id="dd_f" value="${esc(kd.ff||'')}"></label><label class="fld"><span>סכום ₪ (לא חובה)</span><input id="dd_a" inputmode="decimal" value="${esc(kd.aa||'')}"></label></div>`}
+      <label class="fld"><span>👥 למי לשלוח — בחר אנשים (${pick.size} נבחרו)</span><input id="dd_q" placeholder="🔍 חיפוש שם / טלפון…" value="${esc(qq)}" autocomplete="off"></label>
+      ${pick.size?`<div class="hintxt">${[...pick].map(id=>{const m=MEMBERS.find(x=>x.id===id);return m?`<span class="mktag ok" data-un="${id}" style="cursor:pointer">${esc(mName(m))} ✕</span>`:'';}).join(' ')}</div>`:''}
+      <div class="mklist" style="max-height:38vh;overflow:auto">${L.map(m=>`<label class="mkrow" style="grid-template-columns:auto 1fr;gap:10px;align-items:center;${ok(m)?'':'opacity:.5'}"><input type="checkbox" data-pm="${m.id}" ${pick.has(m.id)?'checked':''} ${ok(m)?'':'disabled'} style="width:20px;height:20px">
+        <div class="mknm"><b>${esc(mName(m))}</b><div class="mksub">${ch==='mail'?esc(mEmails(m)[0]||'אין מייל'):`<span dir="ltr">${esc(ymPhone(m.phone)||'אין טלפון')}</span>`}</div></div></label>`).join('')||'<div class="hintxt">לא נמצא</div>'}</div>
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes" id="dd_go" ${pick.size?'':'disabled'}>➡️ המשך — ${ch==='mail'?'לטיוטת המייל':'לשליחה'} (${pick.size})</button></div></div>`;
+    const qi=o.querySelector('#dd_q');qi.oninput=()=>{qq=qi.value.trim();const pos=qi.selectionStart;draw();const n=o.querySelector('#dd_q');n.focus();n.setSelectionRange(pos,pos);};
+    const keep=()=>{const f=o.querySelector('#dd_f'),a=o.querySelector('#dd_a');if(kind==='keva'){if(f)kd.for=f.value.trim();if(a)kd.amount=a.value.trim();}else{if(f)kd.ff=f.value.trim();if(a)kd.aa=a.value.trim();}};
+    o.querySelectorAll('[data-dc]').forEach(b=>b.onclick=()=>{keep();ch=b.dataset.dc;draw();});
+    o.querySelectorAll('[data-dk]').forEach(b=>b.onclick=()=>{keep();kind=b.dataset.dk;draw();});
+    o.querySelectorAll('[data-pm]').forEach(c=>c.onchange=()=>{keep();const id=+c.dataset.pm;if(c.checked)pick.add(id);else pick.delete(id);draw();});
+    o.querySelectorAll('[data-un]').forEach(x=>x.onclick=()=>{keep();pick.delete(+x.dataset.un);draw();});
+    o.querySelector('.cno').onclick=()=>o.remove();
+    o.querySelector('#dd_go').onclick=()=>{keep();if(!pick.size)return;
+      const fr=kind==='keva'?kd.for:(kd.ff||''), am=String(kind==='keva'?kd.amount:(kd.aa||'')).replace(/[^\d.]/g,'');
+      if(kind==='keva'&&!am){toast('כתוב סכום לחודש');return;}
+      o.remove();const ids=[...pick];cdRem=null;
+      if(ch==='mail'){cmPick=new Set(ids);cmAmts={};ids.forEach(id=>cmAmts[id]=am);
+        KEVA_MAIL=kind==='keva'?{for:fr,amount:am}:null;NT_MAIL=cdFund==='natan';
+        const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,fr),t.subj,true);cdMailDraft(kind,fr);return;}
+      ymRecs=new Map();ids.forEach(id=>{const m=MEMBERS.find(x=>x.id===id);const ph=m&&ymPhone(m.phone);if(!ph)return;
+        ymRecs.set(ymKey('m',id),{k:'m',id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:am,fr,kvown:kind==='keva'?1:0,
+          mosad:cdFund==='natan'?((cdData&&cdData.natan_mosad)||''):'',natan:cdFund==='natan'});});
+      const yk=kind==='natan_free'?'natanfree':kind;
+      ymCh=ch;ymBill=ch==='voice'&&kind!=='keva'&&kind!=='free'&&kind!=='natan_free';ymTplKey=yk;{const t=ymTplFind(yk);if(t)ymText=ymTpl(t,ch);}
+      cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);toast(ymRecs.size+' נמענים — בודקים ושולחים');};};
+  document.body.appendChild(o);draw();setTimeout(()=>{const n=o.querySelector('#dd_q');if(n)n.focus();},50);}
 // אחרי רישום בקשה להקמת הוראת קבע — לשלוח לו מיד?
 function cdKevaSendPick(m){return new Promise(res=>{const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">➕ לשלוח ל${esc(m?mName(m):'')} עכשיו את הבקשה להקמת הוראת קבע?</div>
@@ -14802,9 +14843,12 @@ async function cdMailTplEdit(){await cdMailTplLoad();let k=cdPK(),ch='mail';
     <label class="fld"><span>המכתב</span><textarea id="cmt_b" rows="11">${esc(t.body)}</textarea></label>
     <div class="hintxt">{{שם}} {{תואר}} {{הי"ו}} — מהכרטיס · {{סכום}} — הסכום הפתוח שלו · {{עבור}} — על מה החוב · {{קישור}} — כפתור תשלום אישי בנדרים פלוס. ${t.saved?'✓ זה הנוסח ששמרת':'זה הנוסח המובנה'}</div>`}
     <div class="hintxt">מתקנים ולוחצים 💾 שמור — מעכשיו כל ${ch==='voice'?'שיחה':ch==='sms'?'SMS':'מייל'} כזה ייפתח בנוסח הזה.${cdFund?'':' לקטגוריה (כמו התחייבות סוכות) יש נוסח משלה — ⋯ עוד ← 🏷 קטגוריות.'}</div>
-    <div class="cbtns">${(ph?psaved:t.saved)?'<button class="btn ghost" id="cmt_r">↩ חזרה לנוסח המובנה</button>':''}<button class="btn ghost cno">סגור</button><button class="btn cyes" id="cmt_ok">💾 שמור</button></div></div>`;
+    <div class="cbtns">${(ph?psaved:t.saved)?'<button class="btn ghost" id="cmt_r">↩ חזרה לנוסח המובנה</button>':''}<button class="btn ghost cno">סגור</button><button class="btn ghost" id="cmt_send" title="לשלוח את הנוסח הזה ישר לאנשים שתבחר — בלי לרשום חוב">📤 לשלוח למישהו</button><button class="btn cyes" id="cmt_ok">💾 שמור</button></div></div>`;
     o.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{k=b.dataset.k;draw();});
     o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{ch=b.dataset.ch;draw();});
+    // 📤 מאיר: "שאני נכנס לנוסח הזה — שישאל אותי למי לשלוח, ואשלח, בלי להכניס לחובות"
+    o.querySelector('#cmt_send').onclick=()=>{const kf=o.querySelector('#cmt_kf'),ka=o.querySelector('#cmt_ka');
+      o.remove();cdDirectSend(k,ch,k==='keva'&&kf?{for:kf.value.trim(),amount:ka.value.trim()}:null);};
     o.querySelector('.cno').onclick=()=>o.remove();
     // מאיר: "אני רוצה אותו דבר כמו בקהילה בחובות — את הניקוד ואפשרות השמעה ותיקון ע"י הקראה או ניקוד"
     const EX={name:'ישראל ישראלי',amount:'500',for:'מגבית סוכות'};
@@ -15104,6 +15148,7 @@ function cdWire(){const g=id=>document.getElementById(id);
   ['cdq_m','cdq_a','cdq_t'].forEach(id=>{g(id).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();qa();}};});
   g('cd_paste').onclick=()=>{cdImp={paste:1,rows:[],mode:'debt'};renderCommDebts();};
   g('cd_mailtpl').onclick=()=>cdMailTplEdit();
+  {const dx=g('cd_direct');if(dx)dx.onclick=()=>cdDirectSend();}
   g('cd_more').onclick=()=>{cdMore=!cdMore;g('cd_morebar').style.display=cdMore?'':'none';};
   cdMailTplLoad();
   g('cd_paidbulk').onclick=()=>{cdImp={paste:1,rows:[],mode:'paid'};renderCommDebts();};
