@@ -24832,6 +24832,17 @@ class H(BaseHTTPRequestHandler):
                 task_id = cur.lastrowid
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})
+        if self.path == '/api/cal/parse':
+            # 📋 הדבקה ליומן — טקסט / תמונה של הזמנה → פריטים לאישור (לא נשמר כלום עד שמאיר מאשר)
+            import calparse as _cp
+            img = str(b.get('image') or '')
+            if len(img) > 12_000_000:
+                return self._send(200, {'ok': False, 'error': 'התמונה גדולה מדי'})
+            try:
+                items, src, err = _cp.parse(str(b.get('text') or '')[:20000], img or None)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            return self._send(200, {'ok': True, 'items': items, 'src': src, 'error': err})
         if self.path == '/api/task':
             con = db(); cur = con.cursor()
             did = b.get('donor_id'); due = b.get('due_date', '')

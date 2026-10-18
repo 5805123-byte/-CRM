@@ -13522,8 +13522,10 @@ async function renderCalTab(){
   if(!calHeb)calHeb=hebTodayParts()||{m:pyMonth||'תשרי',y:HEBYEAR};
   const F=[['','הכל'],['task','📋 משימות'],['event','🎉 שמחות'],['parnes','🌙 פרנס יום']];
   chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('')
+    +'<button class="chip" id="cal_paste" title="להדביק טקסט או תמונה של הזמנה — והמערכת מכניסה לתאריך הנכון" style="background:#2d2a6e;color:#fff">📋 הדבקה ליומן</button>'
     +(ROLE==='admin'?'<button class="chip" id="cal_rc" title="שיחה לטלפון שלך: בבוקר עם כל המשימות של היום, ולפני כל אירוע עם שעה">📞 שיחות תזכורת</button>':'');
   chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
+  document.getElementById('cal_paste').onclick=()=>calPasteOpen();
   const rcb=document.getElementById('cal_rc'); if(rcb)rcb.onclick=calRemindOpen;
   view.innerHTML='<div class="cnt">טוען את החודש…</div>';
   const HM=await hebMonth(calHeb.m,calHeb.y);
@@ -13617,6 +13619,59 @@ async function renderCalTab(){
       toast('נוסף ✓ — וגם ליומן Google');checkReminders();render();};
     document.getElementById('bc_note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('bc_add').click();}});}
 }
+// 📋 מאיר: "שאני יכול להדביק לבד ביומן — שיהיה לי שם מקום להדביק משימות ופגישות ואירועים, והמערכת תכניס
+// לתאריך שצריך". מדביקים טקסט (כמה שורות = כמה משימות) או תמונה של הזמנה → רשימה לבדיקה → ➕ להכניס ליומן
+function calPasteOpen(){
+  const o=document.createElement('div');o.className='mkov';let img='';
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:680px"><div class="mkdh"><div class="mkav">📋</div><div><b>הדבקה ליומן</b><div class="mksub">משימות, פגישות, אירועים והזמנות — המערכת מוצאת את התאריך והשעה</div></div><button class="x2" id="cpx">✕</button></div>
+    <div class="mkdb">
+      <textarea id="cp_t" rows="7" style="width:100%;font-size:1rem" placeholder="להדביק כאן (Ctrl+V) — טקסט או תמונה של הזמנה. למשל:
+להתקשר לכהן מחר ב-10:00
+פגישה עם רבינוביץ 25.10 בשעה 14:30
+לשלוח מייל ללוי ט״ו חשון"></textarea>
+      <div id="cp_img" style="display:none;margin:6px 0"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn" id="cp_go">🔍 לזהות</button>
+        <label class="btn ghost" style="cursor:pointer">🖼️ תמונה של הזמנה<input type="file" id="cp_f" accept="image/*" style="display:none"></label></div>
+      <div id="cp_res"></div></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('cpx').onclick=close;
+  const setImg=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{img=rd.result;
+    g('cp_img').style.display='';g('cp_img').innerHTML=`<img src="${img}" style="max-height:160px;border-radius:8px;border:1px solid #ddd"> <button class="btn sm ghost" id="cp_imgx">✕ להסיר</button>`;
+    g('cp_imgx').onclick=()=>{img='';g('cp_img').style.display='none';};g('cp_go').click();};rd.readAsDataURL(f);};
+  g('cp_t').addEventListener('paste',e=>{const it=[...((e.clipboardData||{}).items||[])].find(x=>x.type&&x.type.startsWith('image/'));if(it){e.preventDefault();setImg(it.getAsFile());}});
+  g('cp_f').onchange=e=>setImg(e.target.files[0]);
+  setTimeout(()=>g('cp_t').focus(),50);
+  let IT=[];
+  const paint=()=>{const R=g('cp_res');
+    if(!IT.length){R.innerHTML='<div class="hintxt">לא מצאתי תאריך. כתוב תאריך (25.10 / ט״ו חשון / מחר) ונסה שוב.</div>';return;}
+    R.innerHTML=`<div class="mksec">נמצאו ${IT.length} — לבדוק ולתקן אם צריך:</div>`+IT.map((x,i)=>`<div class="mkrow" style="grid-template-columns:auto 1fr;align-items:start;gap:8px">
+        <input type="checkbox" data-ci="${i}" ${x.date?'checked':''} style="margin-top:10px">
+        <div><input data-cf="title" data-i="${i}" value="${esc(x.title)}" style="width:100%;font-weight:700">
+          <div class="two" style="margin-top:4px"><input type="date" data-cf="date" data-i="${i}" value="${esc(x.date)}"><input type="time" data-cf="time" data-i="${i}" value="${esc(x.time)}"></div>
+          <div class="two" style="margin-top:4px"><select data-cf="kind" data-i="${i}">${taskKindOpts(x.kind)}</select><input data-cf="place" data-i="${i}" value="${esc(x.place)}" placeholder="📍 מקום (רשות)"></div>
+          <div class="mksub">${x.date?'📅 '+esc(fmtGreg(x.date))+(x.heb?' · '+esc(x.heb):''):'<b style="color:#c0392b">⚠️ חסר תאריך</b>'}</div></div></div>`).join('')
+      +`<button class="btn" id="cp_save" style="width:100%;margin-top:10px">➕ להכניס ליומן (<span id="cp_n"></span>)</button>`;
+    const cnt=()=>{g('cp_n').textContent=R.querySelectorAll('[data-ci]:checked').length;};cnt();
+    R.querySelectorAll('[data-ci]').forEach(c=>c.onchange=cnt);
+    R.querySelectorAll('[data-cf]').forEach(el=>el.onchange=async()=>{const x=IT[+el.dataset.i];
+      if(el.dataset.cf==='kind'&&el.value==='__new__'){const k=await kindValue(el);if(!k)return;x.kind=k;return;}
+      x[el.dataset.cf]=el.value;if(el.dataset.cf==='date'){const c=R.querySelector(`[data-ci="${el.dataset.i}"]`);if(el.value)c.checked=true;cnt();}});
+    g('cp_save').onclick=async ev=>{const sel=[...R.querySelectorAll('[data-ci]:checked')].map(c=>IT[+c.dataset.ci]);
+      if(!sel.length){toast('לא סומן כלום');return;}
+      if(sel.some(x=>!x.date||!x.title.trim())){toast('לכל פריט צריך תאריך ותוכן');return;}
+      ev.currentTarget.disabled=true;let n=0;
+      for(const x of sel){const body={due_date:x.date,kind:x.kind,note:x.title.trim(),assignee:'',at_time:x.time||'',place:(x.place||'').trim()};
+        const r=await api('POST','/api/task',body).catch(()=>null);
+        if(r&&r.id){n++;if(!r.existing)GTASKS.push({id:r.id,donor_id:null,done:0,...body});}}
+      close();toast('✓ '+n+' נכנסו ליומן');
+      const f=sel[0].date;if(f){calSel=f;const hp=await api('GET','/api/hebdate?d='+f).catch(()=>null),ws=String((hp&&hp.heb)||'').split(/\s+/).filter(Boolean);if(ws.length>=3)calHeb={m:ws.slice(1,-1).join(' '),y:ws[ws.length-1]};}
+      checkReminders();render();};};
+  g('cp_go').onclick=async()=>{const t=g('cp_t').value.trim();if(!t&&!img){toast('להדביק טקסט או תמונה');return;}
+    const b=g('cp_go');b.disabled=true;b.textContent='⏳ קורא…';
+    const r=await api('POST','/api/cal/parse',{text:t,image:img}).catch(()=>null);b.disabled=false;b.textContent='🔍 לזהות';
+    if(!r||!r.ok){g('cp_res').innerHTML=`<div class="hintxt">לא הצלחתי: ${esc((r&&r.error)||'אין תשובה')}</div>`;return;}
+    IT=r.items||[];paint();
+    if(r.src==='simple'&&r.error)g('cp_res').insertAdjacentHTML('afterbegin',`<div class="hintxt">זיהוי פשוט (${esc(r.error)}) — כדאי לבדוק.</div>`);};}
 // חלון פרטים של פריט ביומן — הטקסט המלא, שעה, מקום, התורם, ופעולות
 function calShowEntry(e){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
