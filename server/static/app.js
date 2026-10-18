@@ -16250,6 +16250,9 @@ function ymViewSend(){
       <textarea id="ym_text" rows="4" placeholder="כתוב כאן את ההודעה. {שם} = שם הנמען, {סכום} = הסכום, {עבור} = עבור מה">${esc(ymText)}</textarea>
       <div class="ymphs"><span class="hintxt">➕ להכניס במקום שהסמן עומד:</span>${[['{שם}','👤 שם','{שם}'],['{סכום}','💲 סכום','בסך {סכום} '+(ymCh==='sms'?'ש"ח':'שקלים')],['{עבור}','📝 עבור מה','עבור {עבור}']].concat(ymCh==='sms'?[['{קישור}','🔗 קישור תשלום','{קישור}']]:[]).map(([v,l,ins])=>`<button type="button" class="btn sm ghost" data-ymph="${esc(ins)}" title="מכניס: ${esc(ins)}">${l} <small>${esc(ins)}</small></button>`).join('')}</div>
       ${ymText.trim()&&!/\{סכום\}/.test(ymText)&&(ymTplKey==='hok'||ymAmt||sel.some(r=>+r.amt))?`<div class="ymwarn">💡 בטקסט אין {סכום} — הסכום לא ייאמר. לחץ "💲 סכום" במקום שבו הוא צריך להיאמר (למשל אחרי "הוראת הקבע שלך בסך").</div>`:''}
+      ${ymCh==='voice'&&ymText.trim()?`<div class="ympv" id="ym_live"><b>👂 כך זה יוקרא</b> <small class="hintxt">— לחץ על מילה שנשמעת לא נכון: ניקוד, אנגלית או השמעה. התיקון נשמר לכל ההודעות במערכת.</small>
+        <div id="ym_livew"><small class="hintxt">⏳ מנקד…</small></div>
+        <div class="bqacts"><button class="btn sm" id="ym_livehear">🔊 השמע את כל ההודעה</button></div><div id="ym_liveaud"></div></div>`:''}
       ${ymCh==='voice'?`<div class="ymnik"><button class="btn sm ghost" id="nk_all">✨ נקד את כל הטקסט</button><button class="btn sm ghost" id="nk_sel">✨ נקד רק את מה שסימנתי</button><button class="btn sm ghost" id="nk_clear">✖ הסר ניקוד</button>
         <span class="hintxt">מסמנים בעכבר מילה או משפט, ולוחצים "נקד רק את מה שסימנתי".</span></div>`:''}
       ${ymTplKey?(()=>{const t=ymTplFind(ymTplKey);if(!t)return '';const cur=ymTpl(t,ymCh),yc=cdCatByKey(ymTplKey),saved=yc?!!yc[ymCh==='sms'?'sms':'voice']:ymTplSaved(t[0],ymCh)!=null;
@@ -16481,6 +16484,20 @@ function ymWireVoice(first,sel){
     if(!lines.length){toast('לא נמצא מה להוסיף');return;}
     const ta=g('ym_pron');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+lines.join('\n');
     toast(lines.length+' שמות נוספו למילון — בדוק ותקן, ואז "שמור מילון"');};
+  // 👂 מאיר: "כאן זה לא נותן לי לנקד נורמלי או באנגלית או השמעה קולית של הניקוד, ושזה ישמור פעם אחת ולתמיד" —
+  // מתחת להודעה, תמיד גלוי: הטקסט המנוקד כמילים ללחיצה (✎ ניקוד / 🇬🇧 אנגלית / 🔊 מילה), נשמר במילון של כל המערכת
+  const lv=g('ym_livew');
+  if(lv){const pron=()=>g('ym_pron')?g('ym_pron').value:'';
+    const live=async()=>{const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,for:(first&&first.fr)||ymFor,pron:pron()}).catch(()=>null);
+      const box=g('ym_livew');if(!box)return;
+      box.innerHTML=r&&r.ok?ymWordsHTML(r.text,r.en):'<small class="hintxt">לא הצלחתי להכין</small>';
+      if(r&&r.ok){const again=()=>{if(ymStatus&&ymStatus.pron!=null&&g('ym_pron'))g('ym_pron').value=ymStatus.pron;live();};again.auto=true;ymWordsWire(box,again);}};
+    clearTimeout(window._ymLiveT);window._ymLiveT=setTimeout(live,350);
+    g('ym_livehear').onclick=async()=>{const b=g('ym_livehear'),a=g('ym_liveaud');b.disabled=true;const t0=Date.now();
+      const sh=()=>{b.textContent='⏳ מייצר קול… '+Math.round((Date.now()-t0)/1000)+' שנ׳';};sh();const tk=setInterval(sh,500);
+      const txt=ymFillTxt(ymText,first?first.name:'משה כהן',(first&&first.amt)||ymAmt||'',(first&&first.fr)||ymFor||'');
+      const r=await api('POST','/api/yemot/sample',{text:txt}).catch(()=>null);clearInterval(tk);b.disabled=false;b.textContent='🔊 השמע את כל ההודעה';
+      a.innerHTML=r&&r.ok?`<audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%;margin-top:6px"></audio>`:`<div class="hintxt">לא נוצר קול: ${esc((r&&r.error)||'')}</div>`;};}
   g('ym_say').onclick=async()=>{if(!ymText.trim()){toast('כתוב קודם את ההודעה');return;}
     const r=await api('POST','/api/yemot/speakable',{text:ymText,name:first?first.name:'משה כהן',amount:(first&&first.amt)||ymAmt,for:(first&&first.fr)||ymFor,pron:g('ym_pron').value});
     g('ym_sayout').innerHTML=r&&r.ok?`<div class="ympv"><b>👂 כך זה יוקרא${r.nikud?' (מנוקד)':''}:</b> ${ymWordsHTML(r.text)}<div class="hintxt">מילה לא נכונה? לחץ עליה ותקן.</div></div>`:'';
