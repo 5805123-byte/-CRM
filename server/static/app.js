@@ -1793,31 +1793,42 @@ async function mkTowelDay(day,frm){
     const csv=['שעה,שם,מספר לקוח,קבוצה,סוג,מגיעה מגבת'].concat((r.rows||[]).map(x=>[x.time,x.name,x.code||'',x.group,HE[x.cat],x.cat==='other'?'לא':'כן'].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מגבות '+r.date+'.csv';document.body.appendChild(a);a.click();a.remove();};}
 // 🧺 מאיר: "אפשרות להוסיף מנוי מגבות למישהו בכרטיס שלו — ושזה יעודכן גם במערכת של המקווה, במחיר"
-function mkTowelEdit(c){
-  const on=mkTowel(c), pm=(/₪\s*([\d.]+)|([\d.]+)\s*₪/.exec(c.remark||'')||[]);
+// 🧺 שני סוגים: קטנות (₪30 לחודש) / גדולות (₪50 לחודש), מא׳ בחודש העברי — המחירים ב-⚙️
+const mkTowelSize=c=>/מגב\S*\s*(ה)?גדול/.test(c.remark||'')?'large':/מגב\S*\s*(ה)?קטנ/.test(c.remark||'')?'small':'';
+let MKTW=null;
+async function mkTowelEdit(c){
+  if(!MKTW){const r=await api('GET','/api/mikveh/towel_cfg').catch(()=>null);MKTW=r&&r.ok?r:{cfg:{small:30,large:50},now:{small:30,large:50},hmonth:''};}
+  const on=mkTowel(c), sz=mkTowelSize(c), P=MKTW.now||MKTW.cfg;
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right"><div class="cm" style="font-weight:800">🧺 מנוי מגבות · ${esc(mkName(c))}</div>
-    <div class="hintxt">עכשיו: <b>${on?'כולל מגבות':'בלי מגבות'}</b>${c.remark?' · ההערה במקווה: '+esc(c.remark):''}</div>
-    <label class="fld"><span>מחיר מנוי המגבות ₪ לחודש (לא חובה)</span><input id="tw_p" inputmode="decimal" value="${esc(pm[1]||pm[2]||'')}"></label>
-    <div class="hintxt">נכתב בהערה של הלקוח במקווה ("כולל מגבות (₪… לחודש)") — כך זה מסומן אצלם. המחיר לחיוב בפועל נקבע לפי הקבוצה שלו במקווה.</div>
-    <div class="cbtns"><button class="btn ghost cno">ביטול</button>${on?'<button class="btn ghost" id="tw_off">🚫 להסיר מנוי מגבות</button>':''}<button class="btn" id="tw_on">🧺 ${on?'לעדכן':'להוסיף מנוי מגבות'}</button></div></div>`;
+    <div class="hintxt">עכשיו: <b>${on?'כולל מגבות'+(sz==='small'?' קטנות':sz==='large'?' גדולות':''):'בלי מגבות'}</b>${c.remark?' · ההערה במקווה: '+esc(c.remark):''}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">
+      <button class="btn${sz==='small'?'':' ghost'}" data-sz="small">🧺 מגבות קטנות — ₪${esc(P.small)} לחודש</button>
+      <button class="btn${sz==='large'?'':' ghost'}" data-sz="large">🧺 מגבות גדולות — ₪${esc(P.large)} לחודש</button>
+      ${on?'<button class="btn ghost" data-sz="off">🚫 להסיר מנוי מגבות</button>':''}</div>
+    <div class="hintxt">מתחיל מא׳ בחודש העברי. נכתב בהערה של הלקוח במקווה — כך זה מסומן אצלם.</div>
+    <div class="cbtns"><button class="btn ghost" id="tw_cfg">⚙️ מחירים</button><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(o);o.querySelector('.cno').onclick=()=>o.remove();
-  const go=async on2=>{const bs=o.querySelectorAll('.cbtns .btn');bs.forEach(b=>b.disabled=true);
-    const r=await api('POST','/api/mikveh/towel',{id:c.id,on:on2?1:0,price:o.querySelector('#tw_p').value.trim()}).catch(()=>null);
-    if(!r||!r.ok){bs.forEach(b=>b.disabled=false);return uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'אין תשובה'));}
-    c.remark=r.remark;o.remove();toast(on2?'🧺 נוסף מנוי מגבות — עודכן במקווה':'🚫 מנוי המגבות הוסר — עודכן במקווה');mkOpen(c);if(tab==='mikveh')mkPaint();};
-  o.querySelector('#tw_on').onclick=()=>go(true);const off=o.querySelector('#tw_off');if(off)off.onclick=()=>go(false);}
+  o.querySelector('#tw_cfg').onclick=async()=>{const a=await uiPrompt('מחיר מגבות קטנות ₪ לחודש',String(MKTW.cfg.small||30));if(a===null)return;
+    const b2=await uiPrompt('מחיר מגבות גדולות ₪ לחודש',String(MKTW.cfg.large||50));if(b2===null)return;
+    const r=await api('POST','/api/mikveh/towel_cfg',{small:a,large:b2});if(r&&r.ok){MKTW=null;o.remove();toast('✓ המחירים נשמרו');mkTowelEdit(c);}};
+  o.querySelectorAll('[data-sz]').forEach(b=>b.onclick=async()=>{const v=b.dataset.sz,on2=v!=='off';
+    o.querySelectorAll('button').forEach(x=>x.disabled=true);
+    const r=await api('POST','/api/mikveh/towel',{id:c.id,on:on2?1:0,size:on2?v:''}).catch(()=>null);
+    if(!r||!r.ok){o.querySelectorAll('button').forEach(x=>x.disabled=false);return uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'אין תשובה'));}
+    c.remark=r.remark;o.remove();toast(on2?'🧺 מגבות '+(v==='small'?'קטנות':'גדולות')+' — עודכן במקווה':'🚫 מנוי המגבות הוסר — עודכן במקווה');mkOpen(c);if(tab==='mikveh')mkPaint();});}
 function mkTowelOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
   const all=MK.clients.filter(mkTowel).sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
   const act=all.filter(c=>!mkPast(c.sub_end)), no=MK.clients.filter(c=>!mkTowel(c)&&(mkTwlOf(c.remark)==='no'||mkTwlOf(c.message)==='no')), unk=MK.clients.filter(mkTowelUnk);
-  const nR=all.filter(c=>mkTowelSrc(c)==='remark').length;
+  const nR=all.filter(c=>mkTowelSrc(c)==='remark').length, nS=act.filter(c=>mkTowelSize(c)==='small').length, nL=act.filter(c=>mkTowelSize(c)==='large').length;
   const hl=t=>esc(String(t||'').slice(0,160)).replace(/(מגב\S*)/g,'<b style="background:#fff3c4">$1</b>');
   const row=c=>`<div class="mkrow" data-tw="${esc(c.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(mkName(c))}</b>
       <div class="mksub"><span dir="ltr">${esc(c.phone||'')}</span> · #${esc(c.code||'')} · ${esc((G[c.group]&&G[c.group].name)||'')}</div>
       <div class="mksub">📝 ${hl(mkTowelSrc(c)==='remark'?c.remark:c.message)}</div></div>
       <span class="mktag ${mkPast(c.sub_end)?'bad':'ok'}">${mkPast(c.sub_end)?'הסתיים':'עד'} ${esc(mkDate(c.sub_end))}</span></div>`;
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">🧺</div><div><h2>מנויי מגבות</h2>
+      <div class="mksub">בתוקף: <b>${nS}</b> מגבות קטנות · <b>${nL}</b> מגבות גדולות${act.length-nS-nL?' · '+(act.length-nS-nL)+' בלי סוג':''}</div>
       <div class="mksub"><b>${all.length}</b> לפי ההערות במקווה · <b>${act.length}</b> עם מנוי בתוקף · ${all.length-act.length} שהמנוי הסתיים${nR<all.length?` · ${all.length-nR} מתוכם מ"הודעה" ולא מ"הערה"`:''}</div></div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button class="btn sm" id="twcsv">⬇️ אקסל</button></div>
     <div class="mksec">✅ מנוי בתוקף (${act.length})</div><div class="mklist">${act.map(row).join('')||'<div class="hintxt">אין</div>'}</div>
@@ -2065,7 +2076,7 @@ function mkOpen(c){
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>💳 שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
         ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
-        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?'כן'+((/₪\s*([\d.]+)|([\d.]+)\s*₪/.exec(c.remark||'')||[])[1]?' · ₪'+esc((/₪\s*([\d.]+)|([\d.]+)\s*₪/.exec(c.remark||'')||[])[1]||''):''):'לא'}</b></div>
+        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+((/₪\s*([\d.]+)/.exec(c.remark||'')||[])[1]?' · ₪'+esc((/₪\s*([\d.]+)/.exec(c.remark||'')||[])[1]):''):'לא'}</b></div>
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
         ${tile(c.balance!=null?'יתרה':'יתרה אחרונה',esc(bal))}
         ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}

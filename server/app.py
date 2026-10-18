@@ -14912,6 +14912,25 @@ def mk_unpaid_run(days=30):
         MK_UNPAID.update(running=False, at=il_now().strftime('%Y-%m-%d %H:%M'))
 
 
+# 🧺 מאיר: "יש 2 סוגי מנוי מגבות — קטנות 30 ש"ח לחודש, גדולות 50 ש"ח בחודש. החודש הזה חשון — 25 מגבות קטנות.
+# זה מתחיל מא' לחודש העברי". month — מחיר מיוחד לחודש עברי מסוים
+MK_TOWEL_DEF = {'small': 30, 'large': 50, 'month': {}}
+
+
+def mk_towel_cfg(con):
+    try:
+        c = json.loads(kv_get(con, 'mk_towel_cfg', '') or 'null')
+    except ValueError:
+        c = None
+    return c if isinstance(c, dict) else json.loads(json.dumps(MK_TOWEL_DEF))
+
+
+def mk_towel_price(cfg, size, hmonth=None):
+    hm = hmonth or greg_to_heb_monthyear(il_now().strftime('%Y-%m-%d'))
+    sp = ((cfg.get('month') or {}).get(hm) or {}).get(size)
+    return (sp if sp is not None else cfg.get(size)), hm, sp is not None
+
+
 def ym_repeat_next(cal, day, at, after=None):
     """המועד הבא (>= after) של היום בחודש — עברי ('h') או לועזי ('g'), בשעה at. מחזיר 'YYYY-MM-DD HH:MM'"""
     after = after or il_now().replace(tzinfo=None)
@@ -18818,6 +18837,15 @@ class H(BaseHTTPRequestHandler):
             valid = (os.environ.get('NEDARIM_IFRAME_VALID') or os.environ.get('NEDARIM_API_VALID') or '').strip()
             return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'purposes': purs[:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
+        if self.path.split('?')[0] == '/api/mikveh/towel_cfg':
+            con = db()
+            try:
+                cfg = mk_towel_cfg(con)
+                hm = greg_to_heb_monthyear(il_now().strftime('%Y-%m-%d'))
+                now_ = {k: mk_towel_price(cfg, k, hm)[0] for k in ('small', 'large')}
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'cfg': cfg, 'hmonth': hm, 'now': now_})
         if self.path.split('?')[0] == '/api/mikveh/towel_day':
             # 🧺 מאיר: "מי שנכנס למקווה ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו
             # ביום שישי האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס". מהמקווה מגיעה רק "כניסה אחרונה"
@@ -21068,6 +21096,24 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/towel_cfg':
+            # 🧺 מחירי מנוי המגבות: קטנות / גדולות, ומחיר מיוחד לחודש עברי
+            con = db()
+            try:
+                cfg = mk_towel_cfg(con)
+                for k in ('small', 'large'):
+                    if k in b:
+                        v = re.sub(r'[^\d.]', '', str(b.get(k) or ''))
+                        if v:
+                            cfg[k] = float(v) if '.' in v else int(v)
+                if isinstance(b.get('month'), dict):
+                    cfg['month'] = {str(m)[:30]: {k: (float(x) if '.' in str(x) else int(x)) for k, x in (v or {}).items()
+                                                  if k in ('small', 'large') and re.fullmatch(r'\d+(\.\d+)?', str(x))}
+                                    for m, v in b['month'].items() if str(m).strip()}
+                kv_set(con, 'mk_towel_cfg', json.dumps(cfg, ensure_ascii=False)); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'cfg': cfg})
         if self.path == '/api/mikveh/towel':
             # 🧺 מאיר: "אפשרות להוסיף מנוי מגבות למישהו בכרטיס שלו במקווה — ושזה יעודכן גם במערכת של המקווה, במחיר".
             # במקווה מנוי המגבות רשום בהערה של הלקוח ("כולל מגבות" / "המנוי אינו כולל מגבת") — מעדכנים שם, ובודקים שנשמר
@@ -21077,13 +21123,21 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {'ok': False})
             on = bool(b.get('on'))
             price = re.sub(r'[^\d.]', '', str(b.get('price') or ''))[:8]
+            size = b.get('size') if b.get('size') in ('small', 'large') else ''
+            if on and size and not price:
+                con0 = db()
+                try:
+                    price = str(mk_towel_cfg(con0).get(size) or '')
+                finally:
+                    con0.close()
             try:
                 full = _mk.client(cid)
                 old = (full.get('remark') or '').strip()
                 # מוחקים כל אזכור קודם של מגבת (כולל / לא כולל / מחיר בסוגריים)
-                base_ = re.sub(r'(המנוי\s*)?(אינו|איננו|לא|ללא|בלי)?\s*(כולל\s*)?(מנוי\s*)?(ה)?מגב\S*(\s*\(₪?\s*[\d.]+\s*₪?[^)]*\))?', '', old)
+                base_ = re.sub(r'(המנוי\s*)?(אינו|איננו|לא|ללא|בלי)?\s*(כולל\s*)?(מנוי\s*)?(ה)?מגב\S*(\s*(ה)?(קטנ|גדול)\S*)?(\s*\(₪?\s*[\d.]+\s*₪?[^)]*\))?', '', old)
                 base_ = re.sub(r'\s*[·,;|]\s*(?=[·,;|]|$)', '', re.sub(r'\s{2,}', ' ', base_)).strip(' ·,;|')
-                tw = ('כולל מגבות' + (' (₪%s לחודש)' % price if price else '')) if on else 'המנוי אינו כולל מגבת'
+                szt = {'small': ' קטנות', 'large': ' גדולות'}.get(size, '')
+                tw = ('כולל מגבות' + szt + (' (₪%s לחודש, מא׳ בחודש העברי)' % price if price else '')) if on else 'המנוי אינו כולל מגבת'
                 new = (base_ + ' · ' + tw) if base_ else tw
                 _mk.update_client(cid, {'remark': new})
                 now = (_mk.client(cid).get('remark') or '').strip()
@@ -21096,7 +21150,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (cid, now_iso(), 'towel', ('🧺 נוסף מנוי מגבות' + (' ₪%s' % price if price else '')) if on else '🧺 הוסר מנוי המגבות'))
+                            (cid, now_iso(), 'towel', ('🧺 נוסף מנוי מגבות' + {'small': ' קטנות', 'large': ' גדולות'}.get(size, '') + (' ₪%s לחודש' % price if price else '')) if on else '🧺 הוסר מנוי המגבות'))
                 con.commit()
             except Exception:
                 pass
