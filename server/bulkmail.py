@@ -668,7 +668,9 @@ def personalize(text, who, html=False, d='rtl'):
             url = (who.get('link') or '').strip()
             if not url:
                 return ''
-            return (PAYBTN % (_esc(url), 'לתשלום מאובטח בכרטיס אשראי')) if html else url
+            # קישור של "הקמת הוראת קבע" (OnlyKeva) — הכפתור אומר את זה
+            lbl = 'להקמת הוראת קבע בכרטיס אשראי' if 'OnlyKeva=1' in url else 'לתשלום מאובטח בכרטיס אשראי'
+            return (PAYBTN % (_esc(url), lbl)) if html else url
         if key in ('סכום', 'amount'):
             v = str(who.get('amount') or '').strip()
             return _esc(v) if html else v

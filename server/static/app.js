@@ -14635,6 +14635,15 @@ async function ymPronEn(word){
   if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return false;}
   if(ymStatus)ymStatus.pron_en=r.pron_en;
   toast(say.trim()?'✓ נשמר — משמיע שוב…':'✓ התיקון נמחק');return true;}
+// בחירת הנוסח לשיחה / SMS מהחובות: תזכורת על החוב, או הזמנה להקים הוראת קבע
+function cdKindPick(amt,kd,ch){return new Promise(res=>{const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">${ch==='sms'?'💬 איזה SMS לשלוח?':'📞 על מה השיחה?'}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <button class="btn" data-p="debt">🤝 תזכורת על החוב — ${cdMoney(amt)}</button>
+      <button class="btn ghost" data-p="keva">➕ הקמת הוראת קבע${kd.amount?' — ₪'+esc(kd.amount)+' לחודש':''}${kd.for?' עבור '+esc(kd.for):''}</button>
+      <button class="btn ghost" data-p="">ביטול</button></div></div>`;
+  document.body.appendChild(o);o.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{o.remove();res(b.dataset.p||null);});
+  o.onclick=e=>{if(e.target===o){o.remove();res(null);}};});}
 async function cdSendNow(g,ch){
   // מי שלא בקהילה (נתן תתן / חד פעמי) — לפי הטלפון שנרשם בשורה
   const m=g.mid?(MEMBERS||[]).find(x=>x.id==g.mid):{id:0,first:'',last:g.name,phone:g.phone};if(!m){toast('לא נמצא חבר הקהילה');return;}
@@ -14643,17 +14652,25 @@ async function cdSendNow(g,ch){
   if(!ymStatus)await ymLoadStatus();
   const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
   const nat=deb.some(d=>d.fund==='natan');
-  await cdCatsLoad();const key=nat?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge'), t=cdYmTplFor(deb,key);
-  const text=ymTpl(t,ch), nm=((m.first||'')+' '+(m.last||'')).trim(), fr=cdForTxt(deb);
+  await cdCatsLoad();let key=nat?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge'), t=cdYmTplFor(deb,key);
+  // ➕ מאיר: "תחבר גם לשיחה ו-SMS בחובות" — בוחרים: תזכורת על החוב, או הזמנה להקים הוראת קבע
+  let kv=null;
+  if(!nat){await cdMailTplLoad();const kd=cdKevaDef();
+    const pick=await cdKindPick(amt,kd,ch);if(!pick)return;
+    if(pick==='keva'){let a=String(kd.amount||'').replace(/[^\d.]/g,'');
+      if(!a){const v=await uiPrompt('הקמת הוראת קבע — כמה ₪ לחודש?','');if(!v)return;a=String(v).replace(/[^\d.]/g,'');if(!a)return;}
+      kv={amount:a,for:kd.for||''};key='keva';t=ymTplFind('keva');}}
+  const text=ymTpl(t,ch), nm=((m.first||'')+' '+(m.last||'')).trim(), fr=kv?kv.for:cdForTxt(deb);
   if(nat&&!(cdData&&cdData.natan_mosad)&&ch==='sms'&&/\{קישור\}/.test(text)){await uiAlert('קודם צריך לבחור למעלה בלשונית נתן תתן את החשבון שלה בנדרים פלוס — כדי שהתשלום ייכנס לשם.');return;}
-  const rec={k:m.id?'m':'x',id:m.id,name:nm,phone:ph,amt:String(amt),mosad:nat?cdData.natan_mosad:''};
+  const am=kv?kv.amount:String(amt);
+  const rec={k:m.id?'m':'x',id:m.id,name:nm,phone:ph,amt:am,mosad:nat?cdData.natan_mosad:'',keva:kv?1:0,avour:kv?kv.for:''};
   const link=ch==='sms'&&/\{קישור\}/.test(text)?nedLink(rec):'';
-  const prev=ymFillTxt(text,nm,String(amt),fr||' ').replace(/\{קישור\}/g,link||'');
+  const prev=ymFillTxt(text,nm,am,fr||' ').replace(/\{קישור\}/g,link||'');
   if(ch==='sms'?!await uiConfirm('לשלוח SMS עכשיו ל'+nm+' ('+ph+')?\n\n'+prev,'💬 כן, לשלוח','ביטול')
-    :!await ymCallConfirm('📞 להתקשר עכשיו ל'+nm+' ('+ph+')? כך זה יוקרא:',{text,name:nm,amount:String(amt),for:fr||''}))return;
-  // נתן תתן: בלי "הקישו 1" (שלוחת התשלום גובה לחשבון של הכולל)
-  const r=await api('POST','/api/yemot/send',{channel:ch,text,amount:'',billing:ch==='voice'&&!nat?1:0,debt_ids:deb.map(d=>d.id),
-    recipients:[m.id?{k:'m',id:m.id,amount:String(amt),link,for:fr}:{k:'x',name:nm,phone:ph,amount:String(amt),link,for:fr}]});
+    :!await ymCallConfirm('📞 להתקשר עכשיו ל'+nm+' ('+ph+')? כך זה יוקרא:',{text,name:nm,amount:am,for:fr||''}))return;
+  // נתן תתן: בלי "הקישו 1" (שלוחת התשלום גובה לחשבון של הכולל). הקמת הוראת קבע — בלי "הקישו 1" (ההקשה גובה חד-פעמי)
+  const r=await api('POST','/api/yemot/send',{channel:ch,text,amount:'',billing:ch==='voice'&&!nat&&!kv?1:0,debt_ids:kv?[]:deb.map(d=>d.id),
+    recipients:[m.id?{k:'m',id:m.id,amount:am,link,for:fr}:{k:'x',name:nm,phone:ph,amount:am,link,for:fr}]});
   if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));return;}
   toast(ch==='sms'?'💬 ה-SMS נשלח ✓':'📞 השיחה יוצאת ✓');cdData=null;renderCommDebts();}
 // מאיר: "איפה אני רואה את האימייל עם הנוסח והקישור לפני שליחה? אני רוצה לערוך אותו" — ✉️ פותח את המכתב
@@ -15179,6 +15196,7 @@ function cdWire(){const g=id=>document.getElementById(id);
       const m=(MEMBERS||[]).find(y=>y.id==mid);const ph=m&&ymPhone(m.phone);if(!ph||(ch==='sms'&&!ymMobile(ph))){noph++;return;}if(x.hok)hok++;
       ymRecs.set(ymKey('m',mid),{k:'m',id:mid,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:String(Math.round(x.amt*100)/100),fr:cdForTxt(x.ds),mosad:cdFund==='natan'?(cdData.natan_mosad||''):'',natan:cdFund==='natan'});});
     if(!ymRecs.size){toast(ch==='sms'?'לאף אחד מהנבחרים אין נייד':'לאף אחד מהנבחרים אין טלפון');return;}
+    cdMailTplLoad();
     ymCh=ch;ymBill=ch==='voice';   // גם בנתן תתן — הקשה 1 עוברת לסליקה בחשבון של הקופה
     ymTplKey=cdFund==='natan'?'natan':(hok>ymRecs.size/2?'hok':'pledge');{const t0=cdYmTplFor(sel,ymTplKey);if(t0)ymTplKey=t0[0];}const t=ymTplFind(ymTplKey);if(t)ymText=ymTpl(t,ymCh);
     cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);
@@ -16143,7 +16161,8 @@ function ymViewSend(){
   const sel=[...ymRecs.values()];
   const selOk=sel.filter(r=>ymCh==='sms'?ymMobile(r.phone):!!r.phone);
   const first=selOk[0]||sel[0];
-  const billOn=ymCh==='voice'&&ymBill;
+  const billOn=ymCh==='voice'&&ymBill&&ymTplKey!=='keva';   // הקמת הוראת קבע — בלי "הקישו 1" (ההקשה גובה חד-פעמי)
+  if(ymTplKey==='keva'&&!CD_MAILTPL)cdMailTplLoad().then(()=>{if(tab==='comm'&&cmSub==='ym')renderCommYm();});
   const linkOn=ymCh==='sms'&&/\{קישור\}/.test(ymText);
   const prevLink=nedLink(first||{name:'משה כהן',phone:'0501234567'});
   const prev=ymFillTxt(ymText,first?first.name:'משה כהן',first&&first.amt,first&&first.fr).replace(/\{קישור\}/g,prevLink);
@@ -16274,9 +16293,10 @@ function ymViewSend(){
     // מאיר: "גם מי שאין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי"
     const free=billOn?selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt)).length:0;
     if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 הסכום של כל נמען נשמר בשרת — שלוחת התשלום תיקח אותו משם':'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
-    const dids=cdRem&&cdRem.ch===ymCh?cdRem.ids:[];
+    const dids=cdRem&&cdRem.ch===ymCh&&ymTplKey!=='keva'?cdRem.ids:[];
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,debt_ids:dids,
-      recipients:selOk.map(x=>{const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L,for:x.fr||ymFor}:{k:x.k,id:x.id,amount:x.amt||'',link:L,for:x.fr||ymFor};})});
+      recipients:selOk.map(x=>{if(ymTplKey==='keva'){const kd=cdKevaDef();x=Object.assign({},x,{amt:String(kd.amount||x.amt||'').replace(/[^\d.]/g,''),fr:kd.for||x.fr,keva:1,avour:kd.for||''});}
+        const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L,for:x.fr||ymFor}:{k:x.k,id:x.id,amount:x.amt||'',link:L,for:x.fr||ymFor};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     if(dids.length){cdRem=null;cdData=null;}
     toast('המשלוח התחיל ✓'+(dids.length?' · נרשם בכרטיסים':''));ymTrack(r.job);};
