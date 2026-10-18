@@ -795,8 +795,12 @@ function checkReminders(){
       if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
       ban.textContent='🔔 '+due.length+' תזכורות קהילה ממתינות — לחץ לטיפול';ban.classList.add('show');ban.onclick=()=>openCmRems();});return;}
   const due=dueTasks(),up=upcomingReminders(),ban=document.getElementById('rembanner');
+  // 📝 גם התזכורות מחלון החובות / הקהילה (למשל "לבקש ממנו את היתרה ב-1.11") — אצל המנהל
+  if(CMREMS===null&&ROLE==='admin'){CMREMS=[];cmRemsLoad().then(()=>checkReminders()).catch(()=>{});}
+  const cmd=(CMREMS||[]).filter(t=>t.due&&t.due<=todayStr());
+  if(!due.length&&!up.length&&cmd.length){ban.textContent='🔔 '+cmd.length+' תזכורות קהילה / חובות להיום — לחץ לטיפול';ban.classList.add('show');ban.onclick=()=>openCmRems();return;}
   if(!due.length&&!up.length){ban.classList.remove('show');ban.textContent='';return;}
-  ban.textContent=`🔔 ${due.length?(due.length+' תזכורות ממתינות'):''}${due.length&&up.length?' · ':''}${up.length?('⏰ '+up.length+' מתקרבות'):''} — לחץ לטיפול`;ban.classList.add('show');
+  ban.textContent=`🔔 ${due.length?(due.length+' תזכורות ממתינות'):''}${due.length&&up.length?' · ':''}${up.length?('⏰ '+up.length+' מתקרבות'):''}${cmd.length?' · '+cmd.length+' של קהילה/חובות':''} — לחץ לטיפול`;ban.classList.add('show');
   ban.onclick=()=>openRemPopup();
   // שלב תזכורת חדש (יומיים לפני / מחר / 3 שעות / שעה) קופץ פעם אחת, גם כהתראת דפדפן
   // "נראה" נרשם רק כשסוגרים את החלון — אחרת רענון אוטומטי של הדף בולע את התזכורת
@@ -15167,6 +15171,7 @@ function cdGroupsHTML(rows){
         <div class="cdmain"><b class="cdname" data-cdm="${g.mid||''}" title="לפתוח את הכרטיס שלו">${esc(g.name)}</b>
           ${g.phone?`<small class="cdmeta" dir="ltr">${esc(g.phone)}</small>`:''}
           ${rem?`<small class="cdrem">🔔 הוזכר ${esc(ndDate(rem.reminded_at))} ב${esc({voice:'שיחה',sms:'SMS',email:'מייל'}[rem.reminded_via]||'')}${cdFund==='natan'?' של נתן תתן':''}${+rem.n_reminded>1?' (×'+rem.n_reminded+')':''}</small>${cdRemRes(rem)}`:''}
+          ${g.mid||deb.length?`<button class="btn sm ghost cdnoteb" data-cdnote="${esc(g.key)}" title="הערה / תזכורת עם תאריך / נתן חלק במזומן">📝 הערה / תזכורת</button>`:''}
           ${deb.length?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${ch===k?'on':''}" data-cdgch="${k}" data-ids="${deb.map(d=>d.id).join(',')}" title="${l}${k==='email'&&!g.email?' — אין מייל':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt"><b>${cdMoney(tot)}</b>${op.length>1?`<small>${op.length} פריטים</small>`:''}</div>
         ${g.mid?`<button class="btn sm ghost cdgcard" data-mid="${g.mid}" title="הכרטיס של החבר — תרומות, הוראת קבע, יומן">📂</button>`:'<span></span>'}
@@ -15175,9 +15180,55 @@ function cdGroupsHTML(rows){
           :`<span class="cdnow">${(g.cands||[]).length?`האם זה: ${g.cands.map(c=>`<button class="btn sm ghost" data-cdlnk1="${esc(g.key)}" data-mid="${c.id}" data-nm="${esc(c.name)}" title="לשייך אליו">${esc(c.name)}</button>`).join('')} · `:''}<button class="btn sm ghost" data-cdlink="${esc(g.key)}" title="לחפש ולבחור כל חבר קהילה">🔍 לחפש חבר אחר…</button><button class="btn sm ghost" data-cdnew="${esc(g.key)}" title="לפתוח לו כרטיס בקהילה">➕ חבר חדש</button><button class="btn sm ghost" data-cdonce="1" data-gk="${esc(g.key)}" title="לא בקהילה — נשאר ברשימה בשם שלו, בלי כרטיס">👤 חד פעמי</button></span>`)}
         ${!g.mid&&deb.length?`<span class="cdnow"><button class="btn sm ghost" data-cdph="${esc(g.key)}" title="טלפון — כדי להזכיר לו בשיחה / SMS בלי לפתוח לו כרטיס">📱 ${g.phone?'':'טלפון'}</button>${g.phone?` שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button>`:''}</span>`:''}</details>`:''}
         ${g.mid&&deb.length?`<span class="cdnow" title="לשלוח לו עכשיו, עם הסכום הפתוח שלו"><button class="btn sm ghost" data-cdhear="${esc(g.key)}" title="לשמוע איך ההודעה הקולית תישמע אצלו — בלי להתקשר">🔊</button> שלח עכשיו: <button class="btn sm ghost" data-cdnow="voice" data-gk="${esc(g.key)}">📞</button><button class="btn sm ghost" data-cdnow="sms" data-gk="${esc(g.key)}">💬</button><button class="btn sm ghost" data-cdnow="email" data-gk="${esc(g.key)}">✉️</button></span>`:''}</div>
+      ${cdNotesHTML(g)}
       ${(()=>{const V=(cdData&&cdData.vms)||{},seen=new Set(),L=(V['m'+g.mid]||[]).concat(g.phone?(V['p'+ymPhone(g.phone)]||[]):[]).filter(v=>!seen.has(v.id)&&seen.add(v.id));
         return L.length?`<div class="cdvms">${L.map(cdVmHTML).join('')}</div>`:'';})()}
       <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;})()).join('');}
+// 📝 מאיר: "אצל כל אחד שרשום בחובות והתחייבויות — הערה או משימה עם תאריך, כמו תזכורת; או שנתן חלק מזומן ושיעודכן;
+// או פשוט תזכורת לבקש ממנו בתאריך פלוני, או שאמר משהו לעשות עם זה". נשמר כתזכורת קהילה (cm_task) — מופיע גם בכרטיס
+function cdNoteKeys(g){return g.mid?['m'+g.mid]:g.items.filter(d=>!d._req).map(d=>'d'+d.id);}
+function cdNotesHTML(g){const N=(cdData&&cdData.notes)||{},td=todayStr(),L=[].concat(...cdNoteKeys(g).map(k=>N[k]||[]));
+  if(!L.length)return '';
+  return `<div class="cdnotes">${L.map(t=>{const ic=!t.due?'📝':(t.due<=td?'🔔':'⏰');
+    return `<div class="cdnote ${t.due&&t.due<=td?'due':''}"><span>${ic} ${t.due?`<b>${esc(ndDate(t.due))}</b> · `:''}${esc(t.note||'')}</span>
+      <span class="bqacts"><button class="btn sm ghost" data-cdnt="done" data-id="${t.id}" title="בוצע / לא רלוונטי יותר">✓</button><button class="btn sm ghost" data-cdnt="delete" data-id="${t.id}" title="למחוק">🗑️</button></span></div>`;}).join('')}</div>`;}
+function cdNoteAdd(g){
+  const deb=g.items.filter(d=>!d._req&&d.status==='open');
+  const tm=new Date(Date.now()+864e5), tmS=tm.getFullYear()+'-'+String(tm.getMonth()+1).padStart(2,'0')+'-'+String(tm.getDate()).padStart(2,'0');
+  const o=document.createElement('div');o.className='confirmov';let k='rem';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm"><b>📝 ${esc(g.name)}</b></div>
+    <div class="ndpay" style="grid-template-columns:repeat(3,1fr);margin:8px 0">
+      <button type="button" class="ndpt on" data-nk="rem"><span style="font-size:1.4rem">⏰</span><b>תזכורת</b><small>בתאריך</small></button>
+      <button type="button" class="ndpt" data-nk="note"><span style="font-size:1.4rem">📝</span><b>הערה</b><small>בלי תאריך</small></button>
+      ${deb.length?`<button type="button" class="ndpt" data-nk="cash"><span style="font-size:1.4rem">💵</span><b>נתן חלק</b><small>מזומן / אחר</small></button>`:''}</div>
+    <div id="nk_body"></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">💾 שמור</button></div></div>`;
+  document.body.appendChild(o);
+  const B=o.querySelector('#nk_body');
+  const paint=()=>{o.querySelectorAll('[data-nk]').forEach(b=>b.classList.toggle('on',b.dataset.nk===k));
+    B.innerHTML=k==='cash'?`<div class="hintxt">בלחיצה על שמור ייפתח חלון התשלום החלקי — כמה נתן ואיך, והחוב יתעדכן.</div>`
+      :`${k==='rem'?`<label class="fld"><span>מתי להזכיר</span><input id="nk_due" type="date" value="${tmS}"></label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 8px">${[['מחר',1],['בעוד שבוע',7],['בעוד שבועיים',14],['בעוד חודש',30]].map(([l,n])=>`<button type="button" class="btn sm ghost" data-nd="${n}">${l}</button>`).join('')}</div>`:''}
+        <label class="fld"><span>${k==='rem'?'מה להזכיר':'ההערה'}</span><textarea id="nk_t" rows="3" placeholder="${k==='rem'?'למשל: לבקש ממנו את היתרה · אמר שישלם אחרי החגים':'למשל: אמר שישלם בצ׳ק · ביקש לחלק לתשלומים'}"></textarea></label>`;
+    B.querySelectorAll('[data-nd]').forEach(b=>b.onclick=()=>{const d=new Date(Date.now()+b.dataset.nd*864e5);
+      B.querySelector('#nk_due').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');});
+    const t=B.querySelector('#nk_t');if(t)setTimeout(()=>t.focus(),40);};
+  o.querySelectorAll('[data-nk]').forEach(b=>b.onclick=()=>{k=b.dataset.nk;paint();});paint();
+  o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelector('.cyes').onclick=async()=>{
+    if(k==='cash'){let d=deb[0];
+      o.remove();
+      if(deb.length>1){d=await new Promise(res=>{const q=document.createElement('div');q.className='confirmov';
+        q.innerHTML=`<div class="confirmbox" style="text-align:right"><div class="cm"><b>על איזה חוב הוא נתן?</b></div>${deb.map(x=>`<button class="btn ghost" data-dp="${x.id}" style="display:flex;width:100%;justify-content:space-between;margin:4px 0"><span>${esc(x.title||'חוב')}</span><b>${cdMoney(cdOpen(x))}</b></button>`).join('')}<div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+        document.body.appendChild(q);q.querySelector('.cno').onclick=()=>{q.remove();res(null);};
+        q.querySelectorAll('[data-dp]').forEach(b=>b.onclick=()=>{q.remove();res(deb.find(x=>x.id==b.dataset.dp));});});if(!d)return;}const p=await cdPayDialog(d,false);if(!p)return;
+      const r=await api('POST','/api/cm/debts/'+d.id,Object.assign({action:'partial'},p));
+      if(r&&r.ok){toast('✓ נרשם תשלום חלקי — החוב עודכן');cdData=null;cdHist=null;renderCommDebts();}else uiAlert('לא נשמר');return;}
+    const n=(B.querySelector('#nk_t').value||'').trim();if(!n){toast('מה לכתוב?');return;}
+    const body={note:n};if(g.mid)body.member_id=g.mid;else body.debt_id=deb[0].id;
+    if(k==='note')body.note_only=1;else body.due=B.querySelector('#nk_due').value;
+    const r=await api('POST','/api/cm/tasks',body);
+    if(r&&r.ok){o.remove();toast(k==='note'?'📝 ההערה נשמרה':'⏰ התזכורת נשמרה ל-'+ndDate(body.due));CMREMS=null;cdData=null;renderCommDebts();}else toast((r&&r.error)||'לא נשמר');};}
 // מאיר: "שיהיה לי אפשרות לשייך למישהו אחר ולא רק לפי הניחוש הראשון" — חיפוש חי בכל חברי הקהילה,
 // לפי שם / טלפון; לחיצה על שורה בוחרת
 function cdMemberPick(title,q0,opt){opt=opt||{};return new Promise(done=>{
@@ -15368,6 +15419,10 @@ function cdWire(){const g=id=>document.getElementById(id);
   view.querySelectorAll('[data-cdgch]').forEach(b=>b.onclick=async()=>{const ids=b.dataset.ids.split(',').map(Number),ch=b.dataset.cdgch;
     await Promise.all(ids.map(id=>api('POST','/api/cm/debts/'+id,{action:'channel',channel:ch})));
     ids.forEach(id=>{const d=(cdData.rows||[]).find(x=>x.id===id);if(d)d.channel=ch;});renderCommDebts();});
+  view.querySelectorAll('[data-cdnote]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.cdnote);if(g)cdNoteAdd(g);});
+  view.querySelectorAll('[data-cdnt]').forEach(b=>b.onclick=async()=>{const a=b.dataset.cdnt;
+    if(a==='delete'&&!await uiConfirm('למחוק את ההערה / התזכורת?','🗑️ כן, למחוק','לא'))return;
+    const r=await api('POST','/api/cm/tasks/'+b.dataset.id,{action:a});if(r&&r.ok){toast(a==='done'?'✓ בוצע':'🗑️ נמחק');CMREMS=null;cdData=null;renderCommDebts();}});
   view.querySelectorAll('.cdgcard').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==b.dataset.mid);if(m)openMember(m);});
   // מאיר: "שאני אוכל לסמן למי זה יתקשר ולמי SMS ולמי אימייל" — הערוץ נשמר בשורה
   view.querySelectorAll('[data-cdch]').forEach(b=>b.onclick=async()=>{const r=await api('POST','/api/cm/debts/'+b.dataset.id,{action:'channel',channel:b.dataset.cdch});
@@ -15813,7 +15868,7 @@ async function cmRemsLoad(){const r=await api('GET','/api/cm/tasks');CMREMS=(r&&
 async function cmTasksPaint(m){
   const box=document.getElementById('cm_tasksbox'); if(!box)return;
   const r=await api('GET','/api/members/'+m.id+'/nd'); const T=(r&&r.tasks)||[];
-  box.innerHTML=T.length?T.map(t=>`<div class="cdline ${t.done?'done':''}"><span>${t.done?'✅':(t.due<=todayStr()?'🔔':'⏰')} <b>${esc(ndDate(t.due))}</b> · ${esc(t.note||'')}</span>
+  box.innerHTML=T.length?T.map(t=>`<div class="cdline ${t.done?'done':''}"><span>${t.done?'✅':(!t.due?'📝':(t.due<=todayStr()?'🔔':'⏰'))} ${t.due?`<b>${esc(ndDate(t.due))}</b> · `:''}${esc(t.note||'')}</span>
       <span class="bqacts">${t.done?`<button class="btn sm ghost" data-cmt="reopen" data-id="${t.id}">↩</button>`:`<button class="btn sm ghost" data-cmt="done" data-id="${t.id}" title="בוצע">✓</button>`}<button class="btn sm ghost" data-cmt="delete" data-id="${t.id}" title="מחק">🗑️</button></span></div>`).join('')
     :'<div class="hintxt">אין תזכורות.</div>';
   box.querySelectorAll('[data-cmt]').forEach(b=>b.onclick=async()=>{await api('POST','/api/cm/tasks/'+b.dataset.id,{action:b.dataset.cmt});CMREMS=null;cmTasksPaint(m);});

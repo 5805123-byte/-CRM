@@ -563,6 +563,9 @@ def ensure_schema():
         try: con.execute(f"ALTER TABLE cm_debt ADD COLUMN {col} TEXT")
         except Exception: pass
     # מאיר: "אם הוא חד פעמי ולא בקהילה — שלא יתווסף לקהילה, אבל ברשימה הוא חייב להיות"
+    # 📝 מאיר: "אצל כל אחד שרשום בחובות — הערה או משימה עם תאריך, כמו תזכורת" — גם למי שאינו חבר קהילה (לפי החוב)
+    try: con.execute("ALTER TABLE cm_task ADD COLUMN debt_id INTEGER")
+    except Exception: pass
     try: con.execute("ALTER TABLE cm_debt ADD COLUMN once INTEGER DEFAULT 0")
     except Exception: pass
     # מאיר: "רשימה של התחייבויות של קופת נתן תתן — שזה ייכנס לקטגוריה אחרת". '' = הקהילה, 'natan' = נתן תתן
@@ -18541,6 +18544,12 @@ class H(BaseHTTPRequestHandler):
                         if len(vms.setdefault(k, [])) < 5:
                             vms[k].append(x)
                 tot = con.execute("SELECT COALESCE(SUM(amount-COALESCE(paid,0)),0), COUNT(*), COUNT(DISTINCT member_id) FROM cm_debt WHERE status='open' AND kind<>'keva'").fetchone()
+                # 📝 הערות ותזכורות פתוחות של כל אחד ברשימה (לפי חבר, או לפי החוב אצל מי שאינו חבר)
+                notes = {}
+                for t in con.execute("SELECT id,member_id,debt_id,due,note,created FROM cm_task WHERE COALESCE(done,0)=0 "
+                                     "AND (member_id IS NOT NULL OR debt_id IS NOT NULL) ORDER BY COALESCE(NULLIF(due,''),'9999'), id").fetchall():
+                    k = ('m%d' % t['member_id']) if t['member_id'] else ('d%d' % t['debt_id'])
+                    notes.setdefault(k, []).append(dict(t))
                 reqs = ym_req_rows(con, st)
                 nmo = natan_mosad(con)
                 nlk = natan_link(con)
@@ -18548,7 +18557,7 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             import nedarim as _nd
             return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2],
-                                    'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo, 'natan_link': nlk, 'vms': vms,
+                                    'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo, 'natan_link': nlk, 'vms': vms, 'notes': notes,
                                     'nd_accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main']} for x in _nd.accounts()]})
         if self.path.split('?')[0] == '/api/auth/log':
             # 🔐 מי נכנס למערכת — רק בכניסה הראשית (שאר הסיסמאות חסומות כאן ב-_gate)
@@ -19351,8 +19360,9 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 rows = [dict(r) for r in con.execute(
-                    "SELECT t.*, m.last ml, m.first mf, m.phone mphone FROM cm_task t LEFT JOIN members m ON m.id=t.member_id "
-                    "WHERE COALESCE(t.done,0)=0 ORDER BY t.due, t.at_time, t.id")]
+                    "SELECT t.*, COALESCE(m.last, dd.name) ml, m.first mf, COALESCE(m.phone, dd.phone) mphone FROM cm_task t "
+                    "LEFT JOIN members m ON m.id=t.member_id LEFT JOIN cm_debt dd ON dd.id=t.debt_id "
+                    "WHERE COALESCE(t.done,0)=0 AND COALESCE(t.due,'')<>'' ORDER BY t.due, t.at_time, t.id")]
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows, 'today': today_iso()})
@@ -23661,12 +23671,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': jid})
         if self.path == '/api/cm/tasks':
             mid = int(b.get('member_id') or 0)
+            did = int(b.get('debt_id') or 0)
             note = str(b.get('note') or '').strip()
-            if not mid or not note:
+            if not (mid or did) or not note:
                 return self._send(200, {'ok': False, 'error': 'חסר חבר קהילה או תוכן'})
+            # הערה בלבד (בלי תאריך) — due ריק: נשארת אצלו בחלון החובות ובכרטיס, ולא קופצת כתזכורת
+            due = '' if b.get('note_only') else (b.get('due') or today_iso())[:10]
             con = db()
-            con.execute("INSERT INTO cm_task(member_id,due,at_time,note,done,created) VALUES(?,?,?,?,0,?)",
-                        (mid, (b.get('due') or today_iso())[:10], str(b.get('at_time') or '')[:5], note[:300], now_iso()))
+            con.execute("INSERT INTO cm_task(member_id,debt_id,due,at_time,note,done,created) VALUES(?,?,?,?,?,0,?)",
+                        (mid or None, did or None, due, str(b.get('at_time') or '')[:5], note[:300], now_iso()))
             con.commit(); con.close()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/cm/tasks/(\d+)$', self.path)
