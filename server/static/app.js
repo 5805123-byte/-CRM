@@ -14636,46 +14636,45 @@ async function ymPronEn(word){
   if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return false;}
   if(ymStatus)ymStatus.pron_en=r.pron_en;
   toast(say.trim()?'✓ נשמר — משמיע שוב…':'✓ התיקון נמחק');return true;}
-// 📤 שליחה ישירה של נוסח לאנשים שבוחרים — בלי לרשום חוב / התחייבות. מייל → הטיוטה; שיחה / SMS → דף השליחה
-async function cdDirectSend(kind,ch,kv){
-  if(!MEMBERS)await cmLoad();await cdMailTplLoad();await cdCatsLoad();
-  kind=kind||(cdFund==='natan'?'natan':'keva');ch=ch||'mail';
+// 📤 שליחה ישירה — מסך אחד פשוט: נוסח, (בהוראת קבע: עבור מה וסכום), מסמנים אנשים, ולוחצים מייל / SMS / שיחה.
+// בלי לרשום חוב. מאיר: "זה נשמע לי מאוד מסובך — תפשיט את הכל"
+async function cdDirectSend(kind,ch0,kv){
+  if(!MEMBERS)await cmLoad();await cdMailTplLoad();
+  kind=kind||(cdFund==='natan'?'natan':'keva');
   const kd=kv||cdKevaDef(), pick=new Set();let qq='';
   const o=document.createElement('div');o.className='confirmov';
-  const draw=()=>{const L=(MEMBERS||[]).filter(m=>!qq||matchStr(mName(m)+' '+(m.phone||'')+' '+(m.email||''),qq)).slice(0,60);
-    const ok=m=>ch==='mail'?mHasMail(m):ch==='sms'?ymMobile(ymPhone(m.phone)):!!ymPhone(m.phone);
-    o.innerHTML=`<div class="confirmbox" style="max-width:600px;width:96vw;text-align:right"><div class="cm">📤 שליחה ישירה — בלי לרשום חוב</div>
-      <div class="bqseg">${[['mail','✉️ מייל'],['sms','💬 SMS'],['voice','📞 שיחה']].map(([c,l])=>`<button class="${ch===c?'on':''}" data-dc="${c}">${l}</button>`).join('')}</div>
-      <div class="bqseg">${cdMailKinds().map(x=>`<button class="${kind===x?'on':''}" data-dk="${x}">${CD_MAIL_KL[x]}</button>`).join('')}</div>
-      ${kind==='keva'?`<div class="lgf"><label class="fld"><span>🔁 עבור מה</span><input id="dd_f" list="dd_fl" value="${esc(kd.for||'')}"></label><label class="fld"><span>סכום לחודש ₪</span><input id="dd_a" inputmode="decimal" value="${esc(kd.amount||'')}"></label></div>
-        <datalist id="dd_fl">${['דמי חבר','קביעת מקום','נדרים ונדבות','החזקת הכולל'].concat((CD_CATS||[]).map(c=>c.name)).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`
-        :kind==='free'||kind==='natan_free'?'':`<div class="lgf"><label class="fld"><span>🎯 עבור מה (לא חובה)</span><input id="dd_f" value="${esc(kd.ff||'')}"></label><label class="fld"><span>סכום ₪ (לא חובה)</span><input id="dd_a" inputmode="decimal" value="${esc(kd.aa||'')}"></label></div>`}
-      <label class="fld"><span>👥 למי לשלוח — בחר אנשים (${pick.size} נבחרו)</span><input id="dd_q" placeholder="🔍 חיפוש שם / טלפון…" value="${esc(qq)}" autocomplete="off"></label>
-      ${pick.size?`<div class="hintxt">${[...pick].map(id=>{const m=MEMBERS.find(x=>x.id===id);return m?`<span class="mktag ok" data-un="${id}" style="cursor:pointer">${esc(mName(m))} ✕</span>`:'';}).join(' ')}</div>`:''}
-      <div class="mklist" style="max-height:38vh;overflow:auto">${L.map(m=>`<label class="mkrow" style="grid-template-columns:auto 1fr;gap:10px;align-items:center;${ok(m)?'':'opacity:.5'}"><input type="checkbox" data-pm="${m.id}" ${pick.has(m.id)?'checked':''} ${ok(m)?'':'disabled'} style="width:20px;height:20px">
-        <div class="mknm"><b>${esc(mName(m))}</b><div class="mksub">${ch==='mail'?esc(mEmails(m)[0]||'אין מייל'):`<span dir="ltr">${esc(ymPhone(m.phone)||'אין טלפון')}</span>`}</div></div></label>`).join('')||'<div class="hintxt">לא נמצא</div>'}</div>
-      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes" id="dd_go" ${pick.size?'':'disabled'}>➡️ המשך — ${ch==='mail'?'לטיוטת המייל':'לשליחה'} (${pick.size})</button></div></div>`;
-    const qi=o.querySelector('#dd_q');qi.oninput=()=>{qq=qi.value.trim();const pos=qi.selectionStart;draw();const n=o.querySelector('#dd_q');n.focus();n.setSelectionRange(pos,pos);};
-    const keep=()=>{const f=o.querySelector('#dd_f'),a=o.querySelector('#dd_a');if(kind==='keva'){if(f)kd.for=f.value.trim();if(a)kd.amount=a.value.trim();}else{if(f)kd.ff=f.value.trim();if(a)kd.aa=a.value.trim();}};
-    o.querySelectorAll('[data-dc]').forEach(b=>b.onclick=()=>{keep();ch=b.dataset.dc;draw();});
-    o.querySelectorAll('[data-dk]').forEach(b=>b.onclick=()=>{keep();kind=b.dataset.dk;draw();});
+  const has={mail:m=>mHasMail(m),sms:m=>ymMobile(ymPhone(m.phone)),voice:m=>!!ymPhone(m.phone)};
+  const draw=()=>{const L=(MEMBERS||[]).filter(m=>!qq||matchStr(mName(m)+' '+(m.phone||''),qq)).slice(0,50);
+    const sel=[...pick].map(id=>MEMBERS.find(x=>x.id===id)).filter(Boolean), n=c=>sel.filter(has[c]).length;
+    o.innerHTML=`<div class="confirmbox" style="max-width:560px;width:96vw;text-align:right">
+      <div class="cm" style="font-weight:800">📤 לשלוח הודעה</div>
+      <select id="dd_k" style="width:100%;margin:6px 0">${cdMailKinds().map(x=>`<option value="${x}" ${kind===x?'selected':''}>${CD_MAIL_KL[x]}</option>`).join('')}</select>
+      ${kind==='keva'?`<div class="lgf"><input id="dd_f" placeholder="עבור מה (דמי חבר…)" value="${esc(kd.for||'')}"><input id="dd_a" inputmode="decimal" placeholder="₪ לחודש" value="${esc(kd.amount||'')}"></div>`:''}
+      <input id="dd_q" placeholder="🔍 למי? הקלד שם…" value="${esc(qq)}" autocomplete="off" style="width:100%;margin:6px 0">
+      <div class="mklist" style="max-height:40vh;overflow:auto">${L.map(m=>`<label class="mkrow" style="grid-template-columns:auto 1fr;gap:10px;align-items:center">
+        <input type="checkbox" data-pm="${m.id}" ${pick.has(m.id)?'checked':''} style="width:20px;height:20px"><b>${esc(mName(m))}</b></label>`).join('')||'<div class="hintxt">לא נמצא</div>'}</div>
+      ${sel.length?`<div class="hintxt">נבחרו ${sel.length}: ${sel.map(m=>esc(mName(m))).join(', ')}</div>`:''}
+      <div class="cbtns" style="flex-wrap:wrap"><button class="btn ghost cno">ביטול</button>
+        ${[['mail','✉️ מייל'],['sms','💬 SMS'],['voice','📞 שיחה']].map(([c,l])=>`<button class="btn" data-go="${c}" ${n(c)?'':'disabled'}>${l} (${n(c)})</button>`).join('')}</div></div>`;
+    const qi=o.querySelector('#dd_q');qi.oninput=()=>{qq=qi.value.trim();keep();draw();const x=o.querySelector('#dd_q');x.focus();x.setSelectionRange(x.value.length,x.value.length);};
+    o.querySelector('#dd_k').onchange=e=>{keep();kind=e.target.value;draw();};
     o.querySelectorAll('[data-pm]').forEach(c=>c.onchange=()=>{keep();const id=+c.dataset.pm;if(c.checked)pick.add(id);else pick.delete(id);draw();});
-    o.querySelectorAll('[data-un]').forEach(x=>x.onclick=()=>{keep();pick.delete(+x.dataset.un);draw();});
     o.querySelector('.cno').onclick=()=>o.remove();
-    o.querySelector('#dd_go').onclick=()=>{keep();if(!pick.size)return;
-      const fr=kind==='keva'?kd.for:(kd.ff||''), am=String(kind==='keva'?kd.amount:(kd.aa||'')).replace(/[^\d.]/g,'');
-      if(kind==='keva'&&!am){toast('כתוב סכום לחודש');return;}
-      o.remove();const ids=[...pick];cdRem=null;
-      if(ch==='mail'){cmPick=new Set(ids);cmAmts={};ids.forEach(id=>cmAmts[id]=am);
-        KEVA_MAIL=kind==='keva'?{for:fr,amount:am}:null;NT_MAIL=cdFund==='natan';
-        const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,fr),t.subj,true);cdMailDraft(kind,fr);return;}
-      ymRecs=new Map();ids.forEach(id=>{const m=MEMBERS.find(x=>x.id===id);const ph=m&&ymPhone(m.phone);if(!ph)return;
-        ymRecs.set(ymKey('m',id),{k:'m',id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ph,amt:am,fr,kvown:kind==='keva'?1:0,
-          mosad:cdFund==='natan'?((cdData&&cdData.natan_mosad)||''):'',natan:cdFund==='natan'});});
-      const yk=kind==='natan_free'?'natanfree':kind;
-      ymCh=ch;ymBill=ch==='voice'&&kind!=='keva'&&kind!=='free'&&kind!=='natan_free';ymTplKey=yk;{const t=ymTplFind(yk);if(t)ymText=ymTpl(t,ch);}
-      cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);toast(ymRecs.size+' נמענים — בודקים ושולחים');};};
-  document.body.appendChild(o);draw();setTimeout(()=>{const n=o.querySelector('#dd_q');if(n)n.focus();},50);}
+    o.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{keep();go(b.dataset.go,sel.filter(has[b.dataset.go]).map(m=>m.id));});};
+  const keep=()=>{const f=o.querySelector('#dd_f'),a=o.querySelector('#dd_a');if(f)kd.for=f.value.trim();if(a)kd.amount=a.value.trim();};
+  const go=(ch,ids)=>{const kv2=kind==='keva', fr=kv2?kd.for:'', am=kv2?String(kd.amount||'').replace(/[^\d.]/g,''):'';
+    if(kv2&&!am){toast('כתוב כמה ₪ לחודש');return;}
+    o.remove();cdRem=null;
+    if(ch==='mail'){cmPick=new Set(ids);cmAmts={};ids.forEach(id=>cmAmts[id]=am);
+      KEVA_MAIL=kv2?{for:fr,amount:am}:null;NT_MAIL=cdFund==='natan';
+      const t=cdMailTplOf(kind);cdMailPrefill(cdMailFill(t.body,fr),t.subj,true);cdMailDraft(kind,fr);return;}
+    ymRecs=new Map();ids.forEach(id=>{const m=MEMBERS.find(x=>x.id===id);
+      ymRecs.set(ymKey('m',id),{k:'m',id,name:((m.first||'')+' '+(m.last||'')).trim(),phone:ymPhone(m.phone),amt:am,fr,kvown:kv2?1:0,
+        mosad:cdFund==='natan'?((cdData&&cdData.natan_mosad)||''):'',natan:cdFund==='natan'});});
+    const yk=kind==='natan_free'?'natanfree':kind;
+    ymCh=ch;ymBill=ch==='voice'&&!kv2&&kind!=='free'&&kind!=='natan_free';ymTplKey=yk;{const t=ymTplFind(yk);if(t)ymText=ymTpl(t,ch);}
+    cmSub='ym';ymView='send';ymStatus=null;render();window.scrollTo(0,0);};
+  document.body.appendChild(o);draw();setTimeout(()=>{const x=o.querySelector('#dd_q');if(x)x.focus();},50);}
 // אחרי רישום בקשה להקמת הוראת קבע — לשלוח לו מיד?
 function cdKevaSendPick(m){return new Promise(res=>{const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">➕ לשלוח ל${esc(m?mName(m):'')} עכשיו את הבקשה להקמת הוראת קבע?</div>
@@ -14683,15 +14682,6 @@ function cdKevaSendPick(m){return new Promise(res=>{const o=document.createEleme
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center">
       <button class="btn" data-p="sms">💬 SMS</button><button class="btn" data-p="email">✉️ מייל</button><button class="btn" data-p="voice">📞 שיחה</button><button class="btn ghost" data-p="">אחר כך</button></div></div>`;
   document.body.appendChild(o);o.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{o.remove();res(b.dataset.p||null);});});}
-// בחירת הנוסח לשיחה / SMS מהחובות: תזכורת על החוב, או הזמנה להקים הוראת קבע
-function cdKindPick(amt,kd,ch){return new Promise(res=>{const o=document.createElement('div');o.className='confirmov';
-  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">${ch==='sms'?'💬 איזה SMS לשלוח?':'📞 על מה השיחה?'}</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-      <button class="btn" data-p="debt">🤝 תזכורת על החוב — ${cdMoney(amt)}</button>
-      <button class="btn ghost" data-p="keva">➕ הקמת הוראת קבע${kd.amount?' — ₪'+esc(kd.amount)+' לחודש':''}${kd.for?' עבור '+esc(kd.for):''}</button>
-      <button class="btn ghost" data-p="">ביטול</button></div></div>`;
-  document.body.appendChild(o);o.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{o.remove();res(b.dataset.p||null);});
-  o.onclick=e=>{if(e.target===o){o.remove();res(null);}};});}
 async function cdSendNow(g,ch){
   // מי שלא בקהילה (נתן תתן / חד פעמי) — לפי הטלפון שנרשם בשורה
   const m=g.mid?(MEMBERS||[]).find(x=>x.id==g.mid):{id:0,first:'',last:g.name,phone:g.phone};if(!m){toast('לא נמצא חבר הקהילה');return;}
@@ -14701,14 +14691,9 @@ async function cdSendNow(g,ch){
   const deb=g.items.filter(d=>!d._req&&d.status==='open'), amt=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
   const nat=deb.some(d=>d.fund==='natan');
   await cdCatsLoad();let key=nat?'natan':(deb.some(d=>d.kind==='hok')?'hok':'pledge'), t=cdYmTplFor(deb,key);
-  // ➕ מאיר: "תחבר גם לשיחה ו-SMS בחובות" — בוחרים: תזכורת על החוב, או הזמנה להקים הוראת קבע
+  // ➕ שורת "הקמת הוראת קבע" — נשלח נוסח ההקמה, עם הסכום ו"עבור מה" שלה (בשאר — תזכורת על החוב, בלי שאלה)
   let kv=null;
   if(deb.length&&deb.every(d=>d.kind==='keva')){kv={amount:String(deb[0].amount||'').replace(/[^\d.]/g,''),for:(deb[0].title||'').trim()};key='keva';t=ymTplFind('keva');}
-  else if(!nat){await cdMailTplLoad();const kd=cdKevaDef();
-    const pick=await cdKindPick(amt,kd,ch);if(!pick)return;
-    if(pick==='keva'){let a=String(kd.amount||'').replace(/[^\d.]/g,'');
-      if(!a){const v=await uiPrompt('הקמת הוראת קבע — כמה ₪ לחודש?','');if(!v)return;a=String(v).replace(/[^\d.]/g,'');if(!a)return;}
-      kv={amount:a,for:kd.for||''};key='keva';t=ymTplFind('keva');}}
   const text=ymTpl(t,ch), nm=((m.first||'')+' '+(m.last||'')).trim(), fr=kv?kv.for:cdForTxt(deb);
   if(nat&&!(cdData&&cdData.natan_mosad)&&ch==='sms'&&/\{קישור\}/.test(text)){await uiAlert('קודם צריך לבחור למעלה בלשונית נתן תתן את החשבון שלה בנדרים פלוס — כדי שהתשלום ייכנס לשם.');return;}
   const am=kv?kv.amount:String(amt);
