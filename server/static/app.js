@@ -14146,7 +14146,8 @@ async function ndDonate(mid){
   const PAY=[['ragil','💳','חיוב בודד / תשלומים','באמצעות אשראי'],['hk','🔁','הו"ק אשראי','ללא תפיסת מסגרת'],['masav','🏦','הו"ק בנקאי','מס"ב'],['bit','📱','ביט','BIT'],['bank','🏛️','העברה בנקאית','בקליק'],['cash','💵','מזומן / צ׳ק','נרשם ידנית']];
   o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:640px"><div class="mkdh"><div class="mkav">💳</div><div><b>תרומה חדשה</b><div class="mksub">כמו בנדרים פלוס · נכנסת לכרטיס של החבר</div></div><button class="x2" id="ndx">✕</button></div>
     <div class="mkdb">
-      <label class="fld"><span>חבר קהילה</span><input id="nd_who" list="cd_mdl" placeholder="הקלד שם ובחר…" value="${M0?esc(mName(M0)+' #'+M0.id):''}"></label>
+      <label class="fld"><span>התורם — חבר קהילה מהרשימה, או כל שם</span><input id="nd_who" list="cd_mdl" placeholder="הקלד שם — ובחר מהרשימה, או השאר שם חופשי…" value="${M0?esc(mName(M0)+' #'+M0.id):''}"></label>
+      <label class="gvall" id="nd_neww" style="display:none"><input type="checkbox" id="nd_new"> ➕ להוסיף אותו גם לרשימת הקהילה</label>
       <label class="fld"><span>למה מיועדת תרומתך</span><input id="nd_pur" list="nd_purs" placeholder="תרומה" value="תרומה"></label>
       <datalist id="nd_purs">${(cfg.purposes||[]).map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
       <div class="lgf"><label class="fld"><span>שם משפחה ושם פרטי</span><input id="nd_name"></label><label class="fld"><span>טלפון</span><input id="nd_phone" inputmode="tel" dir="ltr"></label></div>
@@ -14164,7 +14165,11 @@ async function ndDonate(mid){
   const fillM=()=>{const m=(MEMBERS||[]).find(x=>x.id==cdPick(g('nd_who').value));if(!m)return;
     g('nd_name').value=((m.last||'')+' '+(m.first||'')).trim();g('nd_phone').value=(String(m.phone||'').split(/[,;\s]+/)[0]||'');
     g('nd_mail').value=(String(m.email||'').split(/[,;\s]+/)[0]||'');g('nd_addr').value=m.addr||'';g('nd_city').value=m.city||'';};
-  g('nd_who').onchange=fillM; if(M0)fillM();
+  // מאיר: "ואם הוא לא חבר קהילה? צריך גם אפשרות תרומה" — שם חופשי: עובר לשם בנדרים, ואפשר לצרף אותו לקהילה
+  const whoChk=()=>{const mid0=cdPick(g('nd_who').value),v=g('nd_who').value.trim();g('nd_neww').style.display=!mid0&&v?'':'none';
+    if(!mid0&&v&&!g('nd_name').dataset.touched)g('nd_name').value=v;};
+  g('nd_name').oninput=()=>{g('nd_name').dataset.touched=1;};
+  g('nd_who').onchange=()=>{fillM();whoChk();};g('nd_who').oninput=whoChk; if(M0)fillM();
   const tlFill=()=>{const hk=pt==='hk';g('nd_tll').textContent=hk?'כמה חודשים':'תשלומים';
     g('nd_tl').innerHTML=hk?['<option value="0">ללא הגבלה</option>'].concat(Array.from({length:36},(_,i)=>`<option value="${i+1}">${i+1} חודשים</option>`)).join('')
       :Array.from({length:12},(_,i)=>`<option value="${i+1}">${i?i+1+' תשלומים':'תשלום אחד'}</option>`).join('');
@@ -14178,9 +14183,18 @@ async function ndDonate(mid){
   o.querySelectorAll('.ndpt').forEach(b=>b.onclick=()=>{pt=b.dataset.pt;tlFill();});
   tlFill();
   async function submit(){
-    const mid2=cdPick(g('nd_who').value), a=amtNum(g('nd_amt').value), pur=g('nd_pur').value.trim();
-    if(!mid2){toast('בחר חבר קהילה מהרשימה');g('nd_who').focus();return;}
+    let mid2=cdPick(g('nd_who').value);const a=amtNum(g('nd_amt').value), pur=g('nd_pur').value.trim();
+    const fname=(g('nd_name').value.trim()||g('nd_who').value.trim());
+    if(!mid2&&!fname){toast('כתוב שם תורם');g('nd_who').focus();return;}
     if(!a&&pt!=='masav'&&pt!=='bit'){toast('חסר סכום');g('nd_amt').focus();return;}
+    // ➕ לא חבר קהילה, וביקשו לצרף — פותחים חבר חדש (שם משפחה, ואז שם פרטי) עם הפרטים שבטופס
+    if(!mid2&&g('nd_new').checked){const w=fname.split(/\s+/);
+      const nr=await api('POST','/api/members',{last:w[0],first:w.slice(1).join(' '),phone:g('nd_phone').value.trim(),email:g('nd_mail').value.trim(),addr:g('nd_addr').value.trim(),city:g('nd_city').value.trim(),source:'תרומה חדשה'});
+      if(nr&&nr.ok){mid2=nr.id;await cmLoad(true);toast('➕ נוסף לקהילה');}}
+    if((pt==='cash'||pt==='bank')&&!mid2){
+      const r=await api('POST','/api/cm/don_free',{name:fname,date:todayStr(),amount:a,method:pt==='bank'?'העברה בנקאית':'מזומן',purpose:pur,note:g('nd_note').value.trim()});
+      if(!r||!r.ok)return uiAlert((r&&r.error)||'לא נשמר');
+      toast('💵 נרשם ✓');close();CGF=null;cdData=null;if(tab==='comm')render();return;}
     if(pt==='cash'||pt==='bank'){
       const r=await api('POST','/api/members/'+mid2+'/donation',{date:todayStr(),amount:a,method:pt==='bank'?'העברה בנקאית':'מזומן',purpose:pur,note:g('nd_note').value.trim(),pay_debt:g('nd_debt').checked?1:0,nd:1});
       if(!r||!r.ok)return uiAlert((r&&r.error)||'לא נשמר');
@@ -14191,7 +14205,7 @@ async function ndDonate(mid){
     const V={Mosad:cfg.mosad,ApiValid:cfg.valid,PaymentType:pt==='hk'?'HK':'Ragil',Currency:'1',Zeout:g('nd_zeout').value.replace(/\D/g,''),
       FirstName:nm.slice(1).join(' '),LastName:nm[0]||'',Street:g('nd_addr').value.trim(),City:g('nd_city').value.trim(),Phone:g('nd_phone').value.replace(/\D/g,''),
       Mail:g('nd_mail').value.trim(),Amount:String(a),Tashlumim:pt==='hk'?(tl==='0'?'':tl):tl,Groupe:pur,Comment:g('nd_note').value.trim(),
-      Param1:'m'+mid2,Param2:'',ForceUpdateMatching:'1',CallBack:'',CallBackMailError:'',Tokef:''};
+      Param1:mid2?'m'+mid2:'',Param2:'',ForceUpdateMatching:'1',CallBack:'',CallBackMailError:'',Tokef:''};
     g('nd_step').innerHTML=`<div class="hintxt" style="margin-top:8px">🔒 פרטי הכרטיס נכנסים ישירות לנדרים פלוס — לא אצלנו.</div>
       <iframe id="nd_if" src="https://www.matara.pro/nedarimplus/iframe?language=he" style="width:100%;height:330px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
       <button class="btn" id="nd_pay" style="width:100%;margin-top:8px">${pt==='hk'?'🔁 להקים הוראת קבע ₪'+a+' לחודש':'💳 לחייב ₪'+a+(+tl>1?' ב-'+tl+' תשלומים':'')}</button><div id="nd_res" class="mksub"></div>`;
