@@ -24886,6 +24886,10 @@ def health_report():
             add('חיבור למערכת המקווה', 'ok' if _ok3 else ('warn' if not _mkh.configured() else 'bad'), _m3)
         except Exception as e:
             add('חיבור למערכת המקווה', 'bad', str(e)[:120])
+        # 💳 טופס האשראי של נדרים פלוס בתוך המערכת (iframe) — "💳 תרומה חדשה"
+        _iv = (os.environ.get('NEDARIM_IFRAME_VALID') or os.environ.get('NEDARIM_API_VALID') or '').strip()
+        add('נדרים פלוס — טופס אשראי בתוך המערכת', 'ok' if _iv else 'warn',
+            ('מוגדר (NEDARIM_IFRAME_VALID, %d תווים) — לבדוק בתרומה של 1 ₪' % len(_iv)) if _iv else 'חסר NEDARIM_IFRAME_VALID ב-Render')
         # החיבור החי ל-Authorize.net
         try:
             import authorize_sync as _an
