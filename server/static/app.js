@@ -14060,7 +14060,7 @@ async function renderCommGifts(){
     <div class="hintxt">נדרים פלוס (חד-פעמי, הוראות קבע באשראי ובבנק) ותרומות ידניות — מזומן, צ׳ק, וגם מה שסומן ששולם על חוב. "עבור מה" — רשות, אפשר להוסיף ב-✎.</div>
     <div class="bqseg"><button class="${cgSrc?'':'on'}" data-cgs="">הכל <small>${all.length}</small></button>${CG_SRC.filter(([k])=>n[k]).map(([k,l])=>`<button class="${cgSrc===k?'on':''}" data-cgs="${k}">${l} <small>${n[k]}</small></button>`).join('')}</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="cg_from" value="${esc(cgFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="cg_to" value="${esc(cgTo)}"></label>
-      <button class="btn sm" id="cg_new">➕ תרומה ידנית</button></div>
+      ${cgFund?'':'<button class="btn sm" id="cg_nd">💳 תרומה חדשה — כמו בנדרים פלוס</button>'}<button class="btn sm ghost" id="cg_new">➕ תרומה ידנית</button></div>
     ${cgNew?`<div class="gfnewbox"><b>➕ תרומה ידנית — ${cgFund?'חבר קהילה (נכנסת לכרטיס שלו) או כל שם':'נכנסת לכרטיס של החבר'}</b>
       <input id="cgn_who" list="cd_mdl" placeholder="${cgFund?'שם — חבר קהילה מהרשימה, או כל שם…':'חבר קהילה — הקלד שם ובחר…'}">
       <div class="lgf"><input type="date" id="cgn_date" value="${todayStr()}"><input id="cgn_amt" inputmode="decimal" placeholder="₪ סכום"></div>
@@ -14081,6 +14081,7 @@ async function renderCommGifts(){
   view.querySelectorAll('[data-cgs]').forEach(b=>b.onclick=()=>{cgSrc=b.dataset.cgs;cgLim=300;renderCommGifts();});
   g('cg_from').onchange=()=>{cgFrom=g('cg_from').value;renderCommGifts();}; g('cg_to').onchange=()=>{cgTo=g('cg_to').value;renderCommGifts();};
   g('cg_new').onclick=()=>{cgNew=!cgNew;renderCommGifts();if(cgNew&&g('cgn_who'))g('cgn_who').focus();};
+  const ndb=g('cg_nd');if(ndb)ndb.onclick=()=>ndDonate();
   const mo=g('cg_more');if(mo)mo.onclick=()=>{cgLim+=300;renderCommGifts();};
   view.querySelectorAll('[data-cgm]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==b.dataset.cgm);if(m)openMember(m);});
   // מאיר: "בתרומות אני רוצה אפשרות לקשר ולמזג או לשייך או להקים חבר קהילה חדש"
@@ -14115,6 +14116,80 @@ async function renderCommGifts(){
     const body={date:g('cge_date').value,amount:amt,method:g('cge_meth').value.trim(),purpose:g('cge_pur').value.trim(),note:g('cge_note').value.trim()};
     const x=await api('POST','/api/cm/gifts/man/'+r0.id,body);if(!x||!x.ok){toast('לא נשמר');return;}
     Object.assign(r0,body);cgEdit='';toast('נשמר ✓');renderCommGifts();});
+}
+// 💳 מאיר: "חלון לתרומות כמו שיש בנדרים פלוס — לתרומה בהוראת קבע בלי מסגרת, או ידני, ועבור מה… כל האפשרויות
+// שיש בנדרים פלוס, מסונכרן עם הקהילה". אשראי / הו"ק אשראי — בטופס המאובטח של נדרים פלוס (iframe) בתוך החלון,
+// כך שמספר הכרטיס לא עובר אצלנו; הו"ק בנקאי / ביט — בדף התרומות של נדרים פלוס; העברה / מזומן / צ'ק — נרשם כאן
+async function ndDonate(mid){
+  const cfg=await api('GET','/api/nd/donate_cfg').catch(()=>null)||{};
+  if(!MEMBERS)await cmLoad();
+  const o=document.createElement('div');o.className='mkov';
+  const M0=mid?(MEMBERS||[]).find(x=>x.id==mid):null;
+  const PAY=[['ragil','💳','חיוב בודד / תשלומים','באמצעות אשראי'],['hk','🔁','הו"ק אשראי','ללא תפיסת מסגרת'],['masav','🏦','הו"ק בנקאי','מס"ב'],['bit','📱','ביט','BIT'],['bank','🏛️','העברה בנקאית','בקליק'],['cash','💵','מזומן / צ׳ק','נרשם ידנית']];
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:640px"><div class="mkdh"><div class="mkav">💳</div><div><b>תרומה חדשה</b><div class="mksub">כמו בנדרים פלוס · נכנסת לכרטיס של החבר</div></div><button class="x2" id="ndx">✕</button></div>
+    <div class="mkdb">
+      <label class="fld"><span>חבר קהילה</span><input id="nd_who" list="cd_mdl" placeholder="הקלד שם ובחר…" value="${M0?esc(mName(M0)+' #'+M0.id):''}"></label>
+      <label class="fld"><span>למה מיועדת תרומתך</span><input id="nd_pur" list="nd_purs" placeholder="תרומה" value="תרומה"></label>
+      <datalist id="nd_purs">${(cfg.purposes||[]).map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+      <div class="lgf"><label class="fld"><span>שם משפחה ושם פרטי</span><input id="nd_name"></label><label class="fld"><span>טלפון</span><input id="nd_phone" inputmode="tel" dir="ltr"></label></div>
+      <div class="lgf"><label class="fld"><span>כתובת</span><input id="nd_addr"></label><label class="fld"><span>עיר</span><input id="nd_city"></label></div>
+      <div class="lgf"><label class="fld"><span>מייל (הקבלה תישלח אליו)</span><input id="nd_mail" dir="ltr"></label><label class="fld"><span>תעודת זהות (לקבלה — לא נשמרת אצלנו)</span><input id="nd_zeout" inputmode="numeric" dir="ltr"></label></div>
+      <label class="fld"><span>הערות</span><input id="nd_note"></label>
+      <div class="lgf"><label class="fld"><span>סכום ₪</span><input id="nd_amt" inputmode="decimal"></label><label class="fld" id="nd_tlw"><span id="nd_tll">תשלומים</span><select id="nd_tl"></select></label></div>
+      <div class="ndpay">${PAY.map(([k,i,t,sub])=>`<button type="button" class="ndpt" data-pt="${k}"><span style="font-size:1.6rem">${i}</span><b>${t}</b><small>${sub}</small></button>`).join('')}</div>
+      <label class="gvall"><input type="checkbox" id="nd_debt" checked> לסגור מזה חוב פתוח שלו (אם יש)</label>
+      <div id="nd_step"></div>
+    </div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('ndx').onclick=close;
+  let pt='ragil';
+  const fillM=()=>{const m=(MEMBERS||[]).find(x=>x.id==cdPick(g('nd_who').value));if(!m)return;
+    g('nd_name').value=((m.last||'')+' '+(m.first||'')).trim();g('nd_phone').value=(String(m.phone||'').split(/[,;\s]+/)[0]||'');
+    g('nd_mail').value=(String(m.email||'').split(/[,;\s]+/)[0]||'');g('nd_addr').value=m.addr||'';g('nd_city').value=m.city||'';};
+  g('nd_who').onchange=fillM; if(M0)fillM();
+  const tlFill=()=>{const hk=pt==='hk';g('nd_tll').textContent=hk?'כמה חודשים':'תשלומים';
+    g('nd_tl').innerHTML=hk?['<option value="0">ללא הגבלה</option>'].concat(Array.from({length:36},(_,i)=>`<option value="${i+1}">${i+1} חודשים</option>`)).join('')
+      :Array.from({length:12},(_,i)=>`<option value="${i+1}">${i?i+1+' תשלומים':'תשלום אחד'}</option>`).join('');
+    g('nd_tlw').style.display=(pt==='ragil'||pt==='hk')?'':'none';
+    o.querySelectorAll('.ndpt').forEach(b=>b.classList.toggle('on',b.dataset.pt===pt));g('nd_step').innerHTML=go();wireGo();};
+  const go=()=>pt==='ragil'||pt==='hk'?`<button class="btn" id="nd_go" style="width:100%;margin-top:8px">${pt==='hk'?'🔁 להמשיך להקמת הוראת קבע':'💳 להמשיך לתשלום'} — טופס מאובטח של נדרים פלוס</button>`
+    :pt==='masav'||pt==='bit'?`<div class="hintxt">${pt==='masav'?'הו"ק בנקאי צריך טופס הרשאה לחיוב חשבון — נפתח בדף התרומות של נדרים פלוס.':'תשלום בביט — נפתח בדף התרומות של נדרים פלוס.'} אחרי שהתורם משלים שם, זה נכנס אצלנו בסנכרון ומתחבר לפי הטלפון.</div>
+       <button class="btn" id="nd_go" style="width:100%;margin-top:8px">↗ לפתוח את דף התרומות של נדרים פלוס</button>`
+    :`<button class="btn" id="nd_go" style="width:100%;margin-top:8px">💾 לרשום ${pt==='bank'?'העברה בנקאית':'מזומן / צ׳ק'}</button>`;
+  const wireGo=()=>{const b=g('nd_go');if(b)b.onclick=submit;};
+  o.querySelectorAll('.ndpt').forEach(b=>b.onclick=()=>{pt=b.dataset.pt;tlFill();});
+  tlFill();
+  async function submit(){
+    const mid2=cdPick(g('nd_who').value), a=amtNum(g('nd_amt').value), pur=g('nd_pur').value.trim();
+    if(!mid2){toast('בחר חבר קהילה מהרשימה');g('nd_who').focus();return;}
+    if(!a&&pt!=='masav'&&pt!=='bit'){toast('חסר סכום');g('nd_amt').focus();return;}
+    if(pt==='cash'||pt==='bank'){
+      const r=await api('POST','/api/members/'+mid2+'/donation',{date:todayStr(),amount:a,method:pt==='bank'?'העברה בנקאית':'מזומן',purpose:pur,note:g('nd_note').value.trim(),pay_debt:g('nd_debt').checked?1:0,nd:1});
+      if(!r||!r.ok)return uiAlert((r&&r.error)||'לא נשמר');
+      toast('💵 נרשם ✓ — בכרטיס שלו'+(r.nd?' · '+r.nd:''));close();CGF=null;cdData=null;if(tab==='comm')render();return;}
+    if(pt==='masav'||pt==='bit'){if(!cfg.online)return uiAlert('מספר המוסד בנדרים פלוס לא מוגדר');window.open(cfg.online,'_blank');return;}
+    if(!cfg.valid)return uiAlert('כדי לחייב כאן אשראי צריך את קוד ה-iframe של נדרים פלוס.\nבנדרים פלוס: הגדרות ← API ← iframe — הקוד (ApiValid).\nב-Render ← Environment: NEDARIM_IFRAME_VALID = הקוד, ואז Deploy.\n\nבינתיים אפשר "הו"ק בנקאי / ביט" — דף התרומות של נדרים פלוס.');
+    const nm=g('nd_name').value.trim().split(/\s+/), tl=g('nd_tl').value;
+    const V={Mosad:cfg.mosad,ApiValid:cfg.valid,PaymentType:pt==='hk'?'HK':'Ragil',Currency:'1',Zeout:g('nd_zeout').value.replace(/\D/g,''),
+      FirstName:nm.slice(1).join(' '),LastName:nm[0]||'',Street:g('nd_addr').value.trim(),City:g('nd_city').value.trim(),Phone:g('nd_phone').value.replace(/\D/g,''),
+      Mail:g('nd_mail').value.trim(),Amount:String(a),Tashlumim:pt==='hk'?(tl==='0'?'':tl):tl,Groupe:pur,Comment:g('nd_note').value.trim(),
+      Param1:'m'+mid2,Param2:'',ForceUpdateMatching:'1',CallBack:'',CallBackMailError:'',Tokef:''};
+    g('nd_step').innerHTML=`<div class="hintxt" style="margin-top:8px">🔒 פרטי הכרטיס נכנסים ישירות לנדרים פלוס — לא אצלנו.</div>
+      <iframe id="nd_if" src="https://www.matara.pro/nedarimplus/iframe?language=he" style="width:100%;height:330px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+      <button class="btn" id="nd_pay" style="width:100%;margin-top:8px">${pt==='hk'?'🔁 להקים הוראת קבע ₪'+a+' לחודש':'💳 לחייב ₪'+a+(+tl>1?' ב-'+tl+' תשלומים':'')}</button><div id="nd_res" class="mksub"></div>`;
+    const fr=g('nd_if'), post=d=>fr.contentWindow&&fr.contentWindow.postMessage(d,'*');
+    const onMsg=async e=>{const d=e.data||{};if(!d||typeof d!=='object')return;
+      if(d.Name==='Height'&&d.Value)fr.style.height=(+d.Value+20)+'px';
+      if(d.Name==='TransactionResponse'){const R=d.Value||{};
+        if(R.Status==='Error'){g('nd_res').innerHTML='<b style="color:#c0392b">✗ '+esc(R.Message||'החיוב נכשל')+'</b>';g('nd_pay').disabled=false;return;}
+        window.removeEventListener('message',onMsg);
+        const x=await api('POST','/api/nd/donate_done',{member_id:mid2,amount:a,kind:pt,tashlumim:+tl||0,purpose:pur,pay_debt:g('nd_debt').checked?1:0,resp:R}).catch(()=>null);
+        g('nd_step').innerHTML=`<div class="mkrow" style="grid-template-columns:1fr;cursor:default"><b style="color:var(--yes)">✓ ${pt==='hk'?'הוראת הקבע הוקמה':'התרומה עברה'} בנדרים פלוס${R.Confirmation?' · אישור '+esc(R.Confirmation):''}</b>
+          <div class="mksub">נרשם בכרטיס של החבר${x&&x.debt_paid?' · נסגר חוב ₪'+x.debt_paid:''}. העסקה עצמה תופיע ברשימת התרומות בסנכרון הקרוב (דקה-שתיים).</div></div>`;
+        CGF=null;cdData=null;}};
+    window.addEventListener('message',onMsg);
+    fr.onload=()=>post({Name:'GetHeight'});
+    g('nd_pay').onclick=()=>{g('nd_pay').disabled=true;g('nd_res').textContent='⏳ מעבד…';post({Name:'FinishTransaction2',Value:V});};}
 }
 // ---- 📒 קופת בית הכנסת: הכנסות והוצאות לפי חודש לועזי ----
 // מאיר: "לגבאי… הוצאות והכנסות לפי כל חודש שהוא יכניס ידנית… מזומנים או אופציה אחרת שזה לא
@@ -15424,7 +15499,7 @@ async function cmNdPaint(m,showAll,boxId){
   const lim=showAll?rows.length:8;
   // מאיר: "מיותר שכתוב על כל תרומה — שיהיה כפתור קטן קבלות למעלה, במיוחד שיש את זה בנדרים"
   const rcOn=CM_RC_ON===m.id;
-  const addHTML=`<details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
+  const addHTML=`<button class="btn sm cdn_ndwin" style="margin:6px 0;width:100%">💳 תרומה חדשה / הו״ק אשראי — כמו בנדרים פלוס</button><details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
       <div class="cdquick"><input type="date" class="cdn_d" value="${todayStr()}"><input class="cdn_a" inputmode="decimal" placeholder="₪ סכום">
         <select class="cdn_m">${CM_METH.map(x=>`<option>${esc(x)}</option>`).join('')}</select>
         <input class="cdn_p" placeholder="עבור מה (עליית שישי, דמי חבר, נדבה…)">
@@ -15442,6 +15517,7 @@ async function cmNdPaint(m,showAll,boxId){
       ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
       :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
   const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true,boxId);
+  const ndw=box.querySelector('.cdn_ndwin'); if(ndw)ndw.onclick=()=>ndDonate(m.id);
   const rcb=box.querySelector('.cmrcon'); if(rcb)rcb.onclick=()=>{CM_RC_ON=rcOn?0:m.id;cmNdPaint(m,showAll,boxId);};
   const q=c=>box.querySelector('.'+c);
   q('cdn_go').onclick=async()=>{const a=amtNum(q('cdn_a').value);if(!a){toast('חסר סכום');q('cdn_a').focus();return;}

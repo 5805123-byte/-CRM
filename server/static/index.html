@@ -803,6 +803,10 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   /* רשימת האברכים: תעודת זהות ואישור שמות מהרשימה הרשמית */
   .avid{display:inline-block;margin-inline-start:6px;color:var(--muted);font-size:.7rem;
     font-weight:600;direction:ltr;unicode-bidi:isolate}
+  .ndpay{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  .ndpt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);cursor:pointer;font:inherit}
+  .ndpt small{color:var(--muted);font-size:.75rem}.ndpt.on{border-color:var(--accent,#3d3580);box-shadow:0 0 0 2px var(--accent,#3d3580) inset}
+  @media(max-width:520px){.ndpay{grid-template-columns:repeat(2,1fr)}}
   .avopenbox{border:1px solid var(--gold);background:var(--gold-soft);border-radius:12px;padding:10px 12px;margin:0 0 10px}
   .avopenh{font-weight:700;margin-bottom:6px}
   .avopenrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 0;border-top:1px dashed var(--line)}

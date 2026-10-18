@@ -18787,6 +18787,25 @@ class H(BaseHTTPRequestHandler):
                                     'box': _gi.mk_req_box()[0], 'last': MKREQ_SYNC})
         if self.path.split('?')[0] == '/api/mikveh/unpaid':
             return self._send(200, dict(MK_UNPAID, ok=True))
+        if self.path.split('?')[0] == '/api/nd/donate_cfg':
+            # 💳 מאיר: "חלון לתרומות כמו שיש בנדרים פלוס — הוראת קבע בלי מסגרת, או ידני, ועבור מה… מסונכרן עם הקהילה".
+            # הכרטיס נקלט בטופס המאובטח של נדרים פלוס (iframe) — מספר כרטיס לא עובר אצלנו. ApiValid — קוד ה-iframe
+            # מנדרים פלוס (הגדרות ← API ← iframe), ב-Render: NEDARIM_IFRAME_VALID
+            import nedarim as _nd
+            con = db()
+            try:
+                purs = [r[0] for r in con.execute(
+                    "SELECT TRIM(groupe) g, COUNT(*) n FROM nd_tx WHERE COALESCE(mosad,'')='' AND TRIM(COALESCE(groupe,''))<>'' "
+                    "AND iso>=? GROUP BY g ORDER BY n DESC LIMIT 25", ((datetime.date.today() - datetime.timedelta(days=400)).isoformat(),))]
+                purs += [r[0] for r in con.execute("SELECT DISTINCT TRIM(purpose) FROM cm_don WHERE TRIM(COALESCE(purpose,''))<>'' LIMIT 25")
+                         if r[0] not in purs]
+            finally:
+                con.close()
+            purs = [x for x in purs if not ND_NATAN_RX.search(x)]       # נתן תתן — קופה נפרדת
+            mos = _nd.mosad() if _nd.configured() else (os.environ.get('NEDARIM_MOSAD') or '')
+            valid = (os.environ.get('NEDARIM_IFRAME_VALID') or os.environ.get('NEDARIM_API_VALID') or '').strip()
+            return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'purposes': purs[:40],
+                                    'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
         if self.path.split('?')[0] == '/api/mikveh/towel_day':
             # 🧺 מאיר: "מי שנכנס למקווה ויש לו ערך צבור או כניסה מזדמן — מגיע לו מגבת. כמה מזדמן וערך צבור נכנסו
             # ביום שישי האחרון משעה 6 בבוקר, וגם מי שיש לו מנוי כולל מגבת ונכנס". מהמקווה מגיעה רק "כניסה אחרונה"
@@ -20980,6 +20999,39 @@ class H(BaseHTTPRequestHandler):
                 import threading as _th
                 _th.Thread(target=mk_unpaid_run, args=(d,), daemon=True).start()
             return self._send(200, {'ok': True})
+        if self.path == '/api/nd/donate_done':
+            # הטופס של נדרים פלוס החזיר "עבר" — מסמנים אצל החבר, סוגרים חוב אם ביקשו, והסנכרון מושך את העסקה עצמה
+            mid = int(b.get('member_id') or 0)
+            a = round(_amt2(re.sub(r'[^\d.,]', '', str(b.get('amount') or ''))), 2)
+            kind = 'hk' if b.get('kind') == 'hk' else 'ragil'
+            R = b.get('resp') if isinstance(b.get('resp'), dict) else {}
+            conf = str(R.get('Confirmation') or R.get('confirmation') or '').strip()[:30]
+            kid = str(R.get('KevaId') or R.get('kevaId') or '').strip()[:30]
+            pur = str(b.get('purpose') or '').strip()[:120]
+            used = 0
+            con = db()
+            try:
+                if mid:
+                    if kid:
+                        con.execute("INSERT INTO nd_map(keva_id,member_id,at) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET member_id=excluded.member_id",
+                                    (kid, mid, now_iso()))
+                    tl = int(b.get('tashlumim') or 1)
+                    cm_debt_log(con, mid, 'ndif%s' % (conf or kid or now_iso()),
+                                ('🔁 הוקמה הוראת קבע באשראי ₪%g לחודש%s' % (a, (' ל-%d חודשים' % tl) if tl > 1 else ' ללא הגבלה') if kind == 'hk'
+                                 else '💳 תרומה בנדרים פלוס ₪%g%s' % (a, (' ב-%d תשלומים' % tl) if tl > 1 else ''))
+                                + ((' עבור ' + pur) if pur else '') + ((' · אישור ' + conf) if conf else ''))
+                    if b.get('pay_debt') and kind == 'ragil' and a > 0:
+                        used = cm_debt_pay(con, mid, a, 'שולם בנדרים פלוס %s%s' % (today_iso(), (' · אישור ' + conf) if conf else ''))
+                con.commit()
+            finally:
+                con.close()
+            try:
+                nd_history_soon()
+                if kind == 'hk':
+                    nd_sync_soon(60)
+            except Exception:
+                pass
+            return self._send(200, {'ok': True, 'debt_paid': used})
         if self.path == '/api/mikveh/requests/sync':
             return self._send(200, mk_req_sync())
         m = re.match(r'/api/mikveh/requests/([^/]+)$', self.path)
