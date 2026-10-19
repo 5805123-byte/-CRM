@@ -1754,7 +1754,13 @@ async function mkEntDay(day,frm){
       <div class="mktile ok"><span>🚶 מזדמנים</span><b>${cas.length}</b></div>
       <div class="mktile"><span>סה״כ כניסות</span><b>${R.length}</b></div></div>
     ${r.src==='log'?'<div class="hintxt">✓ מתוך יומן הכניסות של המקווה — כל כניסה נספרת, גם של כל מזדמן.</div>'
-      :`<div class="hintxt">⚠️ לפי <b>הכניסה האחרונה</b> של כל לקוח (יומן הכניסות של המקווה עוד לא נמצא) — <b>מזדמנים לא נספרים</b> (כולם נכנסים על כרטיס "משתמש מזדמן" אחד, שהכניסה האחרונה שלו כבר אחרי היום הזה), ומי שנכנס שוב אחר כך (למשל במוצאי שבת) לא נספר.</div>
+      :`${(r.tried||[]).some(t=>+t.code===403||+t.code===401)?`<div class="mkwarnbox" style="background:#fdecea;border:1px solid #e0a0a0;border-radius:10px;padding:10px 12px;margin:6px 0;line-height:1.6">
+          <b>🔒 המקווה לא נותן למערכת שלנו לראות את "יומן פעילויות"</b> — ולכן אין כאן מזדמנים.<br>
+          המערכת המקווה ענתה <b dir="ltr">403</b> (אין הרשאה) למשתמש שהמערכת שלנו נכנסת איתו (זה שכתוב ב-Render ב-<span dir="ltr">MIKVEH_USER</span>).<br>
+          <b>מה לעשות — פעם אחת:</b> להיכנס לאתר המקווה עם המשתמש הראשי ← <b>משתמשים / הרשאות</b> ← לבחור את המשתמש של המערכת ← לסמן <b>צפייה ב"יומן פעילויות"</b> ← לשמור.
+          אם אי אפשר — להחליף ב-Render את <span dir="ltr">MIKVEH_USER / MIKVEH_PASS</span> למשתמש שרואה את יומן הפעילויות.<br>
+          מיד אחרי זה לחץ כאן <b>🔄 לחשב</b> — וכל כניסה תיספר, כולל כל מזדמן.</div>`:''}
+        <div class="hintxt">⚠️ לפי <b>הכניסה האחרונה</b> של כל לקוח (יומן הכניסות של המקווה עוד לא נמצא) — <b>מזדמנים לא נספרים</b> (כולם נכנסים על כרטיס "משתמש מזדמן" אחד, שהכניסה האחרונה שלו כבר אחרי היום הזה), ומי שנכנס שוב אחר כך (למשל במוצאי שבת) לא נספר.</div>
         <details style="margin:4px 0"><summary class="mksub" style="cursor:pointer">🔎 מה נוסה במקווה (לשלוח לי צילום)</summary><small dir="ltr" style="display:block;word-break:break-all;line-height:1.5">${(r.tried||[]).map(t=>esc(t.path)+' → '+t.code+(t.rows!=null?' ('+t.rows+')':'')+(t.resp?'<br>&nbsp;&nbsp;'+esc(String(t.resp).slice(0,220)):'')).join('<br>')||'—'}</small></details>`}
     <div class="mksec" style="margin-top:12px">לפי קבוצה</div>
     <div class="mklist">${gl.map(([g,a])=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b>${esc(g)}</b><b>${a.length}</b></div>`).join('')}${cas.length?`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b>🚶 מזדמנים</b><b>${cas.length}</b></div>`:''}</div>

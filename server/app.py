@@ -19042,6 +19042,8 @@ class H(BaseHTTPRequestHandler):
                     return 'towel'
                 return 'other'
             rows, src, tried = [], 'last', []
+            # לחיצה של מאיר ("🔄 לחשב") — מנסים שוב מיד, בלי ההמתנה של 10 דקות אחרי סירוב (אולי ההרשאה כבר ניתנה)
+            _mk._ATT['fail_at'] = 0
             # 1) היומן של המקווה — כל הכניסות של היום, גם של כל מזדמן
             try:
                 lg = _mk.entrances(day)
