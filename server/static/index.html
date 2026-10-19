@@ -475,7 +475,7 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   /* טבלה רחבה — נגללת לצדדים בתוך עצמה, כמו אקסל, בלי לדחוס את הטורים */
   .avwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;background:var(--card)}
   .avinner{min-width:660px}
-  .avghead,.avg{display:grid;grid-template-columns:26px minmax(140px,1.4fr) minmax(130px,1.3fr) minmax(112px,1fr) 62px minmax(120px,1.1fr) 76px;
+  .avghead,.avg{display:grid;grid-template-columns:26px minmax(118px,1.4fr) minmax(108px,1.3fr) minmax(94px,1fr) 56px minmax(80px,1fr) 184px;
     gap:5px;align-items:center}
   .avghead{position:sticky;top:0;z-index:3;background:var(--ground);border-bottom:1px solid var(--line);
     padding:5px 8px;color:var(--muted);font-size:.7rem;font-weight:800}
@@ -501,7 +501,9 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .avg .avhold{color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;
     display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .avg .avfree{color:var(--no);font-weight:800;font-size:.74rem;white-space:nowrap}
-  .avg .g7{display:flex;gap:2px;justify-content:flex-end}
+  .avg .g7{display:flex;flex-wrap:wrap;gap:2px;justify-content:flex-end}
+  /* מאיר: "שלא ייכנסו סימונים אחד בשני" — כל עמודה נשארת בתוך המקום שלה */
+  .avg>span{min-width:0;overflow:hidden}
   .avg .ib{background:none;border:1px solid transparent;border-radius:6px;cursor:pointer;font-size:.82rem;
     padding:2px 4px;line-height:1;color:var(--muted)}
   .avg .ib:hover{border-color:var(--line);background:var(--card)}

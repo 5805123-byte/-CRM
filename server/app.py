@@ -3504,6 +3504,18 @@ def ensure_schema():
     except Exception as e:
         print('  chasidi bar mitzva error:', e)
 
+    # 📞 "רק פעם ביום" — גם בהגדרה שכבר נשמרה: בלי שיחה לפני כל אירוע
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='remind_once_v1'").fetchone():
+            _rc = json.loads(kv_get(con, 'remind_call', '') or '{}')
+            if _rc:
+                _rc['lead'] = 0
+                kv_set(con, 'remind_call', json.dumps(_rc, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('remind_once_v1')")
+            con.commit()
+    except Exception as e:
+        print('  remind once error:', e)
+
     # מאיר: "תכתוב לי יום חמישי בשעה ארבע וחצי, פגישה אצל ראש העיר ביומן" (נאמר ביום
     # שלישי 06.10.2026 → יום חמישי 08.10.2026, 16:30)
     try:
@@ -15215,7 +15227,9 @@ def ym_sched_scan():
 
 # 📞 מאיר: "כל המשימות ויומן אירועים — אני יכול לקבל צלצול בטלפון עם שיחה?" — שיחה בבוקר עם כל המשימות
 # והאירועים של היום, ושיחה לפני כל אירוע עם שעה (ברירת מחדל: שעתיים לפני). לא בשבת וביום טוב.
-REMIND_DEF = {'on': True, 'phone': '', 'morning': '08:00', 'lead': 120, 'who': 'מאיר'}
+# מאיר: "שהטלפון יתקשר אליי רק פעם ביום — של המשימות ביומן" — ברירת המחדל: רק שיחת הבוקר (lead=0),
+# ורק כשיש משימות היום. אפשר להחזיר שיחה לפני אירוע בהגדרות
+REMIND_DEF = {'on': True, 'phone': '', 'morning': '08:00', 'lead': 0, 'who': 'מאיר'}
 
 
 def remind_cfg(con):
@@ -15309,10 +15323,11 @@ def remind_call_scan():
         mt = now.replace(hour=mh, minute=mm, second=0, microsecond=0)
         if mt <= now < mt + datetime.timedelta(hours=3) and ('m:' + day) not in sent:
             sent['m:' + day] = day
-            if remind_ok(now):
-                calls.append(remind_morning_text(remind_tasks(con, day, c.get('who') or 'מאיר')))
-        lead = datetime.timedelta(minutes=int(c.get('lead') or 120))
-        for t in remind_tasks(con, day, c.get('who') or 'מאיר'):
+            ts_ = remind_tasks(con, day, c.get('who') or 'מאיר')
+            if remind_ok(now) and ts_:
+                calls.append(remind_morning_text(ts_))
+        lead = datetime.timedelta(minutes=int(c.get('lead') or 0))
+        for t in (remind_tasks(con, day, c.get('who') or 'מאיר') if lead else []):
             m_ = re.fullmatch(r'(\d{1,2}):(\d{2})', (t.get('at_time') or '').strip())
             if not m_:
                 continue
@@ -21499,7 +21514,7 @@ class H(BaseHTTPRequestHandler):
                 if re.fullmatch(r'\d{1,2}:\d{2}', str(b.get('morning') or '')):
                     c['morning'] = '%02d:%s' % (int(b['morning'].split(':')[0]), b['morning'].split(':')[1])
                 if str(b.get('lead') or '').isdigit():
-                    c['lead'] = max(10, min(600, int(b['lead'])))
+                    c['lead'] = 0 if int(b['lead']) == 0 else max(10, min(600, int(b['lead'])))
                 kv_set(con, 'remind_call', json.dumps(c, ensure_ascii=False)); con.commit()
             finally:
                 con.close()

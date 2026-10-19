@@ -13500,10 +13500,10 @@ async function calRemindOpen(){
       <label class="gvall" style="margin-bottom:8px"><input type="checkbox" id="rc_on" ${r.on?'checked':''}> <b>להתקשר אליי</b></label>
       <div class="mklbl"><span>📱 המספר שלי</span></div>
       <input id="rc_ph" dir="ltr" inputmode="tel" value="${esc(r.phone||'')}" placeholder="${r.phone_env?esc('מוגדר ב-Render: '+(r.phone_show||'')):'05X-XXXXXXX'}" style="width:100%;box-sizing:border-box">
-      <div class="mklbl"><span>☀️ שיחת בוקר — כל המשימות והאירועים של היום</span></div>
+      <div class="mklbl"><span>☀️ שיחה אחת ביום — כל המשימות והאירועים של היום (רק כשיש)</span></div>
       <input type="time" id="rc_m" value="${esc(r.morning||'08:00')}">
-      <div class="mklbl"><span>⏰ לפני אירוע עם שעה</span></div>
-      <select id="rc_l">${[[30,'חצי שעה לפני'],[60,'שעה לפני'],[120,'שעתיים לפני'],[180,'שלוש שעות לפני']].map(([v,l])=>`<option value="${v}"${+r.lead===v?' selected':''}>${l}</option>`).join('')}</select>
+      <div class="mklbl"><span>⏰ שיחה נוספת לפני אירוע עם שעה</span></div>
+      <select id="rc_l">${[[0,'לא — רק פעם ביום'],[30,'חצי שעה לפני'],[60,'שעה לפני'],[120,'שעתיים לפני'],[180,'שלוש שעות לפני']].map(([v,l])=>`<option value="${v}"${+r.lead===v?' selected':''}>${l}</option>`).join('')}</select>
       <div class="mklbl"><span>🔊 כך תישמע שיחת הבוקר היום</span></div>
       <div class="mkphone"><div class="mkbubble v">${esc(r.preview||'')}</div></div>
     </div>
