@@ -3744,8 +3744,12 @@ function openNewDonor(onCreate,pre){
     const cat=row.querySelector('.p_cat');
     cat.onchange=()=>{const day=cat.options[cat.selectedIndex].dataset.day;
       row.querySelector('.p_daybox').style.display=day?'block':'none';
-      row.querySelector('.p_free').style.display=(cat.value==='אחר'||cat.value==='קמפיין')?'block':'none';};
+      const fr=cat.value==='__personal__'||cat.value==='__new__';
+      row.querySelector('.p_free').style.display=fr?'block':'none';
+      row.querySelector('.p_freel').textContent=cat.value==='__new__'?'שם הקטגוריה החדשה (תופיע אצל כל התורמים)':'עבור מה (יישאר רק בכרטיס של התורם הזה)';
+      if(fr)row.querySelector('.p_catfree').focus();};
     const rm=row.querySelector('.rmpurp'); if(rm)rm.onclick=()=>row.remove();
+    const pm=row.querySelector('.p_meth');pm.onchange=()=>{const on=pm.value==='__new__';row.querySelector('.p_methfree').style.display=on?'block':'none';if(on)row.querySelector('.p_methnew').focus();};
   }
   function addPurp(first){purpBox.insertAdjacentHTML('beforeend',purpRowHTML(first));wirePurp(purpBox.lastElementChild);}
   addPurp(true);
@@ -3765,7 +3769,9 @@ function openNewDonor(onCreate,pre){
     const date=g('nd_date'); let anyDon=false;
     for(const row of purpBox.querySelectorAll('.purprow')){
       const amt=row.querySelector('.p_amt').value.trim();
-      const cs=row.querySelector('.p_cat'); let cat=cs.value; if(cat==='אחר'||cat==='קמפיין')cat=row.querySelector('.p_catfree').value.trim()||cat;
+      const cs=row.querySelector('.p_cat'); let cat=cs.value;
+      if(cat==='__personal__'||cat==='__new__'){const nw=cat==='__new__';cat=row.querySelector('.p_catfree').value.trim();
+        if(nw&&cat&&!dnCatList().includes(cat)){await api('POST','/api/campaigns',{name:cat});(CAMPAIGNS=CAMPAIGNS||[]).unshift(cat);}}
       const dayKind=cs.options[cs.selectedIndex].dataset.day;
       if(dayKind){
         // יום פרנס — נוצר גם בלי סכום (יש שתרמו באופן אחר). הסכום נשאר ריק למילוי ידני
@@ -3775,8 +3781,11 @@ function openNewDonor(onCreate,pre){
         anyDon=true;
       }else if(amt||cat){
         // תרומה רגילה — רק אם יש סכום או קטגוריה
-        const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date});
-        nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,hmonth:dr.hmonth});
+        let meth=row.querySelector('.p_meth').value;
+        if(meth==='__new__'){meth=row.querySelector('.p_methnew').value.trim();
+          if(meth&&!dnMethList().includes(meth)){await api('POST','/api/paychannels',{name:meth}).catch(()=>null);(CHAN_C=CHAN_C||[]).push(meth);}}
+        const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date,method:meth,paid:1});
+        nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,method:meth,paid:1,hmonth:dr.hmonth});
         anyDon=true;
       }
     }
@@ -3795,16 +3804,20 @@ function purpRowHTML(first){
   return `<div class="purprow" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px;position:relative">
     ${first?'':'<button type="button" class="rmpurp" style="position:absolute;left:0;top:6px;background:none;border:none;color:var(--no);font-size:1.05rem;cursor:pointer">✕</button>'}
     <div class="two"><label class="fld"><span>סכום</span><input class="p_amt" placeholder="0"></label>
-      <label class="fld"><span>עבור מה</span><select class="p_cat">
-        <option value="">— בחר —</option><option>קבוע</option><option>יששכר־זבולון</option>
+      <label class="fld"><span>איך שולם</span><select class="p_meth"><option value="">— בחר —</option>${dnMethList().map(x=>`<option value="${esc(x)}">${esc(x==='המחאה'?'המחאה (צ׳ק)':x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select></label></div>
+    <label class="fld p_methfree" style="display:none"><span>איך שולם (נשמר לרשימה)</span><input class="p_methnew" placeholder="למשל: קופת גמ&quot;ח"></label>
+    <div class="two"><label class="fld" style="grid-column:1/-1"><span>עבור מה</span><select class="p_cat">
+        <option value="">— בחר —</option>
         <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה</option>
         <option value="חדר קפה" data-day="coffee">☕ פרנס קפה</option>
         <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר</option>
-        <option value="קמפיין">🎊 קמפיין</option><option>נר למאור</option><option>חד-פעמי</option><option>אחר</option></select></label></div>
+        ${dnCatList().filter(c=>!['פרנס לילה','חדר קפה','ארוחת בוקר'].includes(c)).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        <option value="__personal__">✏️ קטגוריה אישית — רק לתורם הזה…</option>
+        <option value="__new__">➕ קטגוריה חדשה — לכל התורמים…</option></select></label></div>
     <div class="p_daybox" style="display:none"><div class="two"><label class="fld"><span>חודש עברי</span><select class="p_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
       <label class="fld"><span>יום</span><select class="p_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
       <label class="fld"><span>שנה עברית</span><select class="p_hy">${heYearOpts()}</select></label></div>
-    <label class="fld p_free" style="display:none"><span>שם הקמפיין / הקטגוריה</span><input class="p_catfree" placeholder="למשל: קמפיין סוכות"></label>
+    <label class="fld p_free" style="display:none"><span class="p_freel">שם הקטגוריה</span><input class="p_catfree" placeholder="למשל: קמפיין סוכות / דמי חבר"></label>
   </div>`;
 }
 
@@ -4786,8 +4799,8 @@ function commitHTML(d){
     <label class="fld"><span>📅 מתי</span><input id="dn_date" type="date"></label></div>
     <div class="two"><label class="fld" id="dn_meth_l"><span>איך נתרם</span><select id="dn_method">${dnMethList().map(x=>`<option${x===chLabel(d.channel||'')?' selected':''}>${esc(x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
       <div class="addrow hidden" id="dn_methnew"><input id="dn_methnewi" placeholder="איך הוא תרם? — למשל: קופת גמ&quot;ח"><button class="btn sm" id="dn_methnewb">➕ הוסף</button></div></label>
-    <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('')}
-    <option value="__personal__">✏️ ייעוד אישי — רק אצלו…</option>
+    <label class="fld"><span>עבור מה</span><select id="dn_cat">${dnCatOpts('',d)}
+    <option value="__personal__">✏️ קטגוריה אישית — רק לתורם הזה…</option>
     <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה (בחר יום)</option>
     <option value="חדר קפה" data-day="coffee">☕ חדר קפה (בחר יום)</option>
     <option value="ארוחת בוקר" data-day="breakfast">🍳 ארוחת בוקר (בחר יום)</option></select></label></div>
@@ -7313,12 +7326,15 @@ function wireAutoCat(d,body,redraw){
   box.querySelectorAll('.acdel').forEach(b=>b.onclick=()=>
     save(autoCatRules(d).filter((r,i)=>i!==+b.dataset.i)));
 }
-function dnCatOpts(cur){
-  const L=dnCatList();
+// d — התורם: הקטגוריות האישיות שכבר רשם אצלו (שלא ברשימה של כולם) מופיעות למעלה, לבחירה חוזרת
+function dnCatOpts(cur,d){
+  const L=dnCatList(), mine=d?[...new Set((d.donations||[]).map(x=>String(x.category||'').trim()).filter(c=>c&&!L.includes(c)))]:[];
   return `<option value="">— עבור מה? —</option>`
-    +(cur&&!L.includes(cur)?`<option value="${esc(cur)}" selected>${esc(cur)}</option>`:'')
+    +(cur&&!L.includes(cur)&&!mine.includes(cur)?`<option value="${esc(cur)}" selected>${esc(cur)}</option>`:'')
+    +(mine.length?`<optgroup label="⭐ אישי — של התורם הזה">${mine.map(c=>`<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)}</option>`).join('')}</optgroup><optgroup label="כללי — לכל התורמים">`:'')
     +L.map(c=>`<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)}</option>`).join('')
-    +`<option value="__new__">➕ ייעוד חדש…</option>`;
+    +(mine.length?'</optgroup>':'')
+    +`<option value="__new__">➕ קטגוריה חדשה — לכל התורמים…</option>`;
 }
 function dnRow(x,cur){cur=cur||'$';
   return `<div class="dncrow"><div class="dnci"><b>${donCur(x,cur)}${esc(x.amount)}</b>${donCur(x,cur)!==cur&&amtNum(x.eq)>0?` <small class="dnmeta">(= ${cur}${esc(x.eq)})</small>`:''}${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${x.receipt_num?`<span class="rcptmini">🧾 קבלה ${esc(x.receipt_num)} נשלחה</span>`:''}${dnNote(x)}</div>`+
