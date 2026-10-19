@@ -3749,7 +3749,8 @@ function openNewDonor(onCreate,pre){
       row.querySelector('.p_freel').textContent=cat.value==='__new__'?'שם הקטגוריה החדשה (תופיע אצל כל התורמים)':'עבור מה (יישאר רק בכרטיס של התורם הזה)';
       if(fr)row.querySelector('.p_catfree').focus();};
     const rm=row.querySelector('.rmpurp'); if(rm)rm.onclick=()=>row.remove();
-    const pm=row.querySelector('.p_meth');pm.onchange=()=>{const on=pm.value==='__new__';row.querySelector('.p_methfree').style.display=on?'block':'none';if(on)row.querySelector('.p_methnew').focus();};
+    const pm=row.querySelector('.p_meth');pm.onchange=()=>{const on=pm.value==='__new__';row.querySelector('.p_methfree').style.display=on?'block':'none';if(on)row.querySelector('.p_methnew').focus();
+      const ck=isChk(pm.value);row.querySelector('.p_chkbox').style.display=ck?'block':'none';if(ck)row.querySelector('.p_chk').focus();};
   }
   function addPurp(first){purpBox.insertAdjacentHTML('beforeend',purpRowHTML(first));wirePurp(purpBox.lastElementChild);}
   addPurp(true);
@@ -3784,8 +3785,9 @@ function openNewDonor(onCreate,pre){
         let meth=row.querySelector('.p_meth').value;
         if(meth==='__new__'){meth=row.querySelector('.p_methnew').value.trim();
           if(meth&&!dnMethList().includes(meth)){await api('POST','/api/paychannels',{name:meth}).catch(()=>null);(CHAN_C=CHAN_C||[]).push(meth);}}
-        const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date,method:meth,paid:1});
-        nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,method:meth,paid:1,hmonth:dr.hmonth});
+        const note=isChk(meth)?withChk('',row.querySelector('.p_chk').value):'';
+        const dr=await api('POST','/api/donation',{donor_id:nd.id,amount:amt,category:cat,date,method:meth,paid:1,note});
+        nd.donations.unshift({id:dr.id,donor_id:nd.id,amount:amt,category:cat,date,method:meth,paid:1,note,hmonth:dr.hmonth});
         anyDon=true;
       }
     }
@@ -3806,6 +3808,7 @@ function purpRowHTML(first){
     <div class="two"><label class="fld"><span>סכום</span><input class="p_amt" placeholder="0"></label>
       <label class="fld"><span>איך שולם</span><select class="p_meth"><option value="">— בחר —</option>${dnMethList().map(x=>`<option value="${esc(x)}">${esc(x==='המחאה'?'המחאה (צ׳ק)':x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select></label></div>
     <label class="fld p_methfree" style="display:none"><span>איך שולם (נשמר לרשימה)</span><input class="p_methnew" placeholder="למשל: קופת גמ&quot;ח"></label>
+    <label class="fld p_chkbox" style="display:none"><span>🧾 מספר הצ׳ק</span><input class="p_chk" inputmode="numeric" dir="ltr" placeholder="למשל 1234"></label>
     <div class="two"><label class="fld" style="grid-column:1/-1"><span>עבור מה</span><select class="p_cat">
         <option value="">— בחר —</option>
         <option value="פרנס לילה" data-day="parnes">🌙 פרנס לילה</option>
@@ -4809,6 +4812,7 @@ function commitHTML(d){
     <div class="hidden" id="dn_daybox"><div class="two"><label class="fld"><span>חודש עברי</span><select id="dn_hm">${HMORD.map(m=>`<option>${m}</option>`).join('')}</select></label>
     <label class="fld"><span>יום</span><select id="dn_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
     <label class="fld"><span>שנה עברית</span><select id="dn_hy">${heYearOpts()}</select></label></div>
+    <label class="fld hidden" id="dn_chkbox"><span>🧾 מספר הצ׳ק</span><input id="dn_chk" inputmode="numeric" dir="ltr" placeholder="למשל 1234"></label>
     <div class="two hidden" id="dn_ccbox"><label class="fld"><span>4 ספרות אחרונות</span><input id="dn_cc4" inputmode="numeric" maxlength="4" placeholder="1234"></label>
     <label class="fld"><span>תוקף</span><input id="dn_ccexp" placeholder="12/28" style="direction:ltr"></label></div>
     <label class="jointchk"><input type="checkbox" id="dn_rep"> 🔁 העביר את הסכום הזה <b>כל חודש</b> — רשום שורה לכל חודש</label>
@@ -5758,7 +5762,7 @@ function cardDetails(d,body){
       : (g.rcpt?`<span class="rcmini yes" title="קבלת EZcount ${esc(g.rcpt)} נשלחה">🧾 נשלחה</span>`
                :`<button class="gvrcpt" data-did="${g.did}" title="הפק קבלה ${curd==='₪'?'ישראלית (שקלים)':'לארה״ב (דולר)'}">🧾</button>`)):'';
     const ed=g.don
-      ? `<button class="gvedit" data-did="${g.did}" title="שנה עבור מה">✏️</button>`+rcm
+      ? `<button class="gvedit" data-did="${g.did}" title="תיקון — איך שולם (צ׳ק / העברה / מזומן…), סכום, עבור מה, הערה">✏️</button>`+rcm
       : (g.parnes?`<button class="pnedit" data-pid="${g.pid}" title="שנה סכום / הקדשה">✏️</button>`:'');
     const pnpan=g.parnes?`<div class="gvpanel hidden" data-pnpan="${g.pid}">
       <div class="gvlbl">💲 הסכום</div>
@@ -5775,7 +5779,11 @@ function cardDetails(d,body){
       ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
     // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
-      <div class="gvlbl">💲 הסכום</div>
+      <div class="gvlbl">💳 איך שולם</div>
+      <div class="addrow"><select class="gvmeth" data-did="${g.did}"><option value="">— לא ידוע —</option>${[...new Set((g.rm&&!dnMethList().includes(g.rm)?[g.rm]:[]).concat(dnMethList()))].map(x=>`<option value="${esc(x)}"${x===g.rm?' selected':''}>${esc(x==='המחאה'?'המחאה (צ׳ק)':x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
+        <input class="gvchk${isChk(g.rm)?'':' hidden'}" data-did="${g.did}" dir="ltr" inputmode="numeric" placeholder="🧾 מס׳ צ׳ק" value="${esc(chkOf(g.note))}" style="max-width:130px">
+        <button class="btn sm gvmethok" data-did="${g.did}">💾 שמור</button></div>
+      <div class="gvlbl" style="margin-top:8px">💲 הסכום</div>
       <div class="addrow"><input class="gvamti curpick2" data-did="${g.did}" inputmode="decimal" value="${esc(g.amt||'')}">
         <button class="btn sm gvamtok" data-did="${g.did}">💾 שמור סכום</button></div>
       <div class="gvlbl" style="margin-top:8px">עבור מה ${curd}${g.amt} האלה?</div>
@@ -5829,7 +5837,7 @@ function cardDetails(d,body){
         + (isIZcat(g.cat) ? `<button class="gvgo" data-go="iz" title="לפתוח את יששכר־זבולון — האברך, השותף והשטר">↗</button>` : '')
       : `<button class="gvgo wide" data-go="parnes" data-pid="${g.pid}" title="לפתוח את היום הזה — הקדשה, שמות ותעודה">${esc(g.what)} ↗</button>`;
     return `<div class="giverow"><span class="giveamt">${g.amt?(curd+g.amt):'—'}</span><div class="givewhat">${what}`
-      + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)} ${st}${tog}${ed}${fb}`
+      + `${g.when?`<span class="givedate">${esc(g.when)}</span>`:''} ${methChip(g.rm)}${g.don&&chkOf(g.note)?` <span class="givemeth" title="מספר הצ׳ק">🧾 ${esc(chkOf(g.note))}</span>`:''} ${st}${tog}${ed}${fb}`
       + `${amtNum(g.prev)>0.5?`<span class="prevchip">📌 ${curd}${Math.round(amtNum(g.prev)).toLocaleString('en-US')} ${esc(g.prevn||('על '+(GREGYEAR-1)))}</span>`:''}`
       + `${g.ded?`<div class="givesub" title="${esc(g.ded)}">📝 ${esc(g.don?shortNote(g.ded,3):g.ded)}</div>`:''}${pan}${pnpan}</div></div>`;
   };
@@ -5995,6 +6003,19 @@ function cardDetails(d,body){
     const r=await rcSendFlow({id:x.rc_id,num:x.rc_num,donor_id:d.id,email:d.email,name:(d.last||'')+' '+(d.first||'')});
     if(r){x.rc_sent=r.sent_at||new Date().toISOString().slice(0,10);cardDetails(d,body);}
   });
+  // 💳 מאיר: "איך עכשיו אני כותב שזה צ'ק וכו' — אחרי שכבר הכנסתי?" — בחלון התיקון: איך שולם + מס' צ'ק
+  body.querySelectorAll('.gvmeth').forEach(sel=>sel.onchange=async()=>{
+    if(sel.value==='__new__'){const v=await uiPrompt('איך הוא שילם? (נשמר לרשימה)','');if(!v||!v.trim()){sel.value='';return;}
+      const nm=v.trim();if(!dnMethList().includes(nm)){await api('POST','/api/paychannels',{name:nm}).catch(()=>null);(CHAN_C=CHAN_C||[]).push(nm);}
+      sel.insertAdjacentHTML('beforeend',`<option value="${esc(nm)}">${esc(nm)}</option>`);sel.value=nm;}
+    const ck=body.querySelector('.gvchk[data-did="'+sel.dataset.did+'"]');if(ck){ck.classList.toggle('hidden',!isChk(sel.value));if(isChk(sel.value))ck.focus();}});
+  body.querySelectorAll('.gvmethok').forEach(b=>b.onclick=async()=>{
+    const dn=(d.donations||[]).find(x=>x.id==b.dataset.did); if(!dn)return;
+    const m=body.querySelector('.gvmeth[data-did="'+b.dataset.did+'"]').value, ck=body.querySelector('.gvchk[data-did="'+b.dataset.did+'"]');
+    const note=withChk(dn.note,isChk(m)&&ck?ck.value:'');
+    b.disabled=true;const r=await api('PUT','/api/donation/'+dn.id,{method:m,note});b.disabled=false;
+    if(!r||!r.ok){toast('לא נשמר');return;}
+    dn.method=m;dn.note=note;toast('✓ נשמר'+(isChk(m)&&chkOf(note)?' — צ׳ק '+chkOf(note):''));openDonor(d,'details');});
   body.querySelectorAll('.gvedit').forEach(b=>b.onclick=()=>{
     const p=body.querySelector('.gvpanel[data-pan="'+b.dataset.did+'"]'); if(p)p.classList.toggle('hidden');});
   // עריכת יום פרנס — סכום, עבור מה, והקדשה
@@ -6341,6 +6362,7 @@ function cardDetails(d,body){
     if(nf)nf.placeholder=dnCat.value==='__personal__'?'עבור מה התחייב? (יישאר רק בכרטיס שלו)':'שם הייעוד החדש';
     document.getElementById('dn_bldg_l').classList.toggle('hidden',!isBldg(dnCat.value));
     document.getElementById('dn_ccbox').classList.toggle('hidden',pledge||!/אשראי|אונליין/.test(dnMeth.value));
+    document.getElementById('dn_chkbox').classList.toggle('hidden',pledge||!isChk(dnMeth.value));
     // בהתחייבות אין "איך נתרם" ואין תשלום חוזר — רק כמה, מתי ועבור מה
     const ml=document.getElementById('dn_meth_l'); if(ml)ml.classList.toggle('hidden',pledge);
     const rp=document.querySelector('#dnbox .jointchk'); if(rp)rp.classList.toggle('hidden',pledge);
@@ -6446,6 +6468,7 @@ function cardDetails(d,body){
     let note=document.getElementById('dn_note').value.trim();
     const c4=(document.getElementById('dn_cc4')||{}).value||'', cx=(document.getElementById('dn_ccexp')||{}).value||'';
     if(c4.trim()||cx.trim())note=(note?note+' · ':'')+'כרטיס ****'+c4.trim()+(cx.trim()?(' תוקף '+cx.trim()):'');
+    if(dnMode!=='pledge'&&isChk(dnMeth.value))note=withChk(note,(document.getElementById('dn_chk')||{}).value);
     if(!amt&&!pray){toast('מלא סכום או שם לתפילה');return;}
     dnAdd.disabled=true;
     const dcur=(dnCur&&dnCur.value)||'';
@@ -7167,9 +7190,15 @@ function dnNote(x){
 // במסך הראשי משאירים רק הערה אמיתית (מי תרם בשמו, דרך מי) — לא מספרי אסמכתא ולא שמות דוחות
 const GVNOISE=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|קבוע|מזדמן)$/;
 // חלקים טכניים בהערת התרומה (מאיפה הגיעה, על שם מי חויב, התאמות) — לא הערה של מאיר
-const GVDROP=/^(דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|אסמכתא .*|נגבה ב.*|על שם .*|נכנס מ.*|אומת מול.*|שויך ידנית.*|סווג ידנית|התאמת .*|Recurring monthly gift|ייבוא.*|לא סווג.*)$/;
+const GVDROP=/^(צ[׳']ק מס.*|דוח הקבועים|הוראת קבע|דרגת יששכר־זבולון|אסמכתא .*|נגבה ב.*|על שם .*|נכנס מ.*|אומת מול.*|שויך ידנית.*|סווג ידנית|התאמת .*|Recurring monthly gift|ייבוא.*|לא סווג.*)$/;
 // מאיר: "אפשרות של הערה על כל תרומה… שזה יופיע ב-3 מילים" — בשורה מוצגות המילים הראשונות
 function shortNote(t,n){const w=String(t||'').trim().split(/\s+/).filter(Boolean); n=n||3; return w.length>n?w.slice(0,n).join(' ')+'…':w.join(' ');}
+// 🧾 מאיר: "אם זה צ'ק — להכניס מס' צ'ק". נשמר בהערה של התרומה ("צ׳ק מס׳ 1234"), כמו 4 ספרות של כרטיס
+const isChk=m=>/המחאה|צ.?ק\b|צ׳ק|צ'ק|check|cheque/i.test(String(m||''));
+const CHK_RX=/צ[׳']ק מס[׳']?\s*([^\s·]+)/;
+const chkOf=n=>(CHK_RX.exec(String(n||''))||[])[1]||'';
+function withChk(note,n){note=String(note||'').replace(/\s*·?\s*צ[׳']ק מס[׳']?\s*[^\s·]+/,'').replace(/^\s*·\s*/,'').trim();n=String(n||'').trim();
+  return n?(note?note+' · ':'')+'צ׳ק מס׳ '+n:note;}
 function giveNote(x){
   let t=dnNoteText(x).split('·').map(s=>s.trim()).filter(s=>s&&!GVDROP.test(s)).join(' · ');
   t=t.replace(/^[\s·]+|[\s·]+$/g,'').trim();
@@ -7337,7 +7366,7 @@ function dnCatOpts(cur,d){
     +`<option value="__new__">➕ קטגוריה חדשה — לכל התורמים…</option>`;
 }
 function dnRow(x,cur){cur=cur||'$';
-  return `<div class="dncrow"><div class="dnci"><b>${donCur(x,cur)}${esc(x.amount)}</b>${donCur(x,cur)!==cur&&amtNum(x.eq)>0?` <small class="dnmeta">(= ${cur}${esc(x.eq)})</small>`:''}${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${x.receipt_num?`<span class="rcptmini">🧾 קבלה ${esc(x.receipt_num)} נשלחה</span>`:''}${dnNote(x)}</div>`+
+  return `<div class="dncrow"><div class="dnci"><b>${donCur(x,cur)}${esc(x.amount)}</b>${donCur(x,cur)!==cur&&amtNum(x.eq)>0?` <small class="dnmeta">(= ${cur}${esc(x.eq)})</small>`:''}${x.category?(' · '+esc(x.category)):''} <span class="dnmeta">${x.date?esc(gregLabel(x.date)):''}</span>${chkOf(x.note)?` <span class="dnmeta" title="מספר הצ׳ק">🧾 צ׳ק ${esc(chkOf(x.note))}</span>`:''}${x.method?(' '+(chBadgeRaw(x.method)||'<span class="givemeth">'+esc(chLabel(x.method))+'</span>')):''}${x.fb_channel?`<span class="fbmini">✓ ${FBCH[x.fb_channel]||esc(x.fb_channel)}${x.fb_followup?(' · 🔁'+esc(x.fb_followup)):''}</span>`:''}${x.receipt_num?`<span class="rcptmini">🧾 קבלה ${esc(x.receipt_num)} נשלחה</span>`:''}${dnNote(x)}</div>`+
     `<div class="dncact"><button class="dnpaid ${+x.paid?'yes':'no'}" data-paid="${x.id}">${+x.paid?'שולם ✓':'לא שולם'}</button><button class="dnedbtn" data-id="${x.id}" title="ערוך סכום/קטגוריה">✏️ ערוך</button><button class="dnrcpt" data-id="${x.id}" title="קבלה להדפסה">🧾</button><button class="dnsend" data-id="${x.id}" title="שלח קבלה במייל לתורם (EZcount)">📧</button><button class="dnfb" data-id="${x.id}" title="פידבק">${x.fb_channel?'✏️':'💬'}</button><button class="del" data-del="${x.id}" title="מחק">🗑</button></div></div>`+
     (needThanks(x)?`<div class="thxrow"><button class="thxbtn ${+x.thanked?'yes':'no'}" data-thx="${x.id}">${+x.thanked?'✅ הודינו':'🙏 להודות'}</button></div>`:'')+
     `<div class="avfiles dnfiles">${(x.files||[]).map(fileChip).join('')}<label class="filebtn sm">📎 אסמכתא (צ'ק / שובר / צילום)<input type="file" accept="image/*,audio/*,application/pdf" class="dnup" data-id="${x.id}" hidden></label></div>`+
@@ -7346,6 +7375,8 @@ function dnRow(x,cur){cur=cur||'$';
         <label class="fld"><span>🎯 עבור מה</span><select class="de_cat" data-id="${x.id}">${dnCatOpts(x.category||'')}</select></label></div>
       <div class="addrow hidden" data-denew="${x.id}"><input class="de_catnew" placeholder="שם הייעוד החדש…"></div>
       <div class="fbrow"><label class="fld"><span>אמצעי</span><input class="de_method" list="dnmeths" value="${esc(x.method||'')}"></label>
+        <label class="fld"><span>🧾 מס׳ צ׳ק (אם שולם בצ׳ק)</span><input class="de_chk" dir="ltr" inputmode="numeric" value="${esc(chkOf(x.note))}" placeholder="—"></label></div>
+      <div class="fbrow">
         <label class="fld"><span>סטטוס</span><select class="de_paid"><option value="1" ${+x.paid?'selected':''}>✓ שולם</option><option value="0" ${+x.paid?'':'selected'}>לא שולם</option></select></label></div>
       <label class="fld"><span>📅 תאריך מדויק${(x.date||'').length===7?' — חסר יום, אפשר להשלים':''}</span><input type="date" class="de_date" value="${esc((x.date||'').length===10?x.date:'')}"></label>
       <div class="fbrow"><label class="fld"><span>💱 מטבע התרומה</span><select class="de_cur">${curOpts(donCur(x,cur))}</select></label>
@@ -7390,9 +7421,10 @@ function renderDonations(d){
       if(!cat){toast('כתוב את שם הייעוד החדש');return;}}
     x.category=cat;
     x.method=box.querySelector('.de_method').value.trim(); x.paid=+box.querySelector('.de_paid').value;
+    const ck=box.querySelector('.de_chk'), noteChg=ck&&ck.value.trim()!==chkOf(x.note); if(noteChg)x.note=withChk(x.note,ck.value);
     const nd=box.querySelector('.de_date').value; if(nd)x.date=nd;
     x.cur=box.querySelector('.de_cur').value; x.eq=x.cur===curSym(d)?'':box.querySelector('.de_eq').value.trim();
-    await api('PUT','/api/donation/'+x.id,{amount:x.amount,category:x.category,method:x.method,paid:x.paid,date:x.date,cur:x.cur,eq:x.eq});
+    await api('PUT','/api/donation/'+x.id,Object.assign({amount:x.amount,category:x.category,method:x.method,paid:x.paid,date:x.date,cur:x.cur,eq:x.eq},noteChg?{note:x.note}:{}));
     if(x.category&&!(CAMPAIGNS||[]).includes(x.category)&&!['קבוע','מזדמן','יששכר־זבולון','פרנס לילה','חדר קפה','ארוחת בוקר','נר למאור','חד-פעמי'].includes(x.category)){api('POST','/api/campaigns',{name:x.category});CAMPAIGNS.unshift(x.category);}
     renderDonations(d);toast('עודכן ✓');
   });
