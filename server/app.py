@@ -10559,10 +10559,28 @@ def _add_leilui(ws):
     return (['לעילוי'] + ws) if ws and ws[0] == 'נשמת' else ws
 
 
+# מאיר: "המילה הירש כאן היא שם, וזה כתוב יותר קטן" — "בת ר' צבי הירש ע\"ה." (נקודה אחרי התואר) או "עה"
+# בלי גרשיים: התואר לא זוהה, ו"הירש" נחשב לבקשה. לפני הסידור: תואר בלי גרשיים מקבל גרשיים, ופיסוק
+# שנדבק לסוף התואר יורד. אותו כלל בדיוק ב-parnes-cert.html (certNorm)
+_CERT_HON_BARE = {'עה': 'ע"ה', 'זל': 'ז"ל', 'זצל': 'זצ"ל', 'זצוקל': 'זצוק"ל', 'זיע': 'זי"ע', 'זיעא': 'זיע"א',
+                  'היד': 'הי"ד', 'שליטא': 'שליט"א', 'נבגמ': 'נבג"מ', 'תנצבה': 'תנצב"ה'}
+
+
+def _cert_norm(text):
+    def one(w):
+        m = re.match(r'^(.*?)([.,:;!?]+)$', w)
+        core, punct = (m.group(1), m.group(2)) if m else (w, '')
+        bare = re.sub(r'["\'״׳]', '', core)
+        if bare in _CERT_HON_BARE:
+            return _CERT_HON_BARE[bare] + (punct if punct.strip('.') else '')   # פסיק נשאר — הוא חותך שמות
+        return w
+    return '\n'.join(' '.join(one(w) for w in ln.split(' ')) for ln in str(text or '').split('\n'))
+
+
 def _cert_lines(text):
     """פיצול לשורות כמו בתצוגה שבמסך: שם התורם בשורה משלו, "לע\"נ אביו"
     בשורה משלו, והשמות שמתפללים עליהם בשורה האחרונה."""
-    raws = _cert_expand(str(text or '').split('\n'))
+    raws = _cert_expand(_cert_norm(text).split('\n'))
     # השורה הראשונה היא שם התורם רק אם אחריה באה הקדשה עם שם ("לע\"נ אביו…").
     # שורת אירוע ("ליום היארצייט") או ברכה ("לרפואה שלמה") אחרי השם אינן
     # הקדשה של תורם — השם שלפניהן הוא מי שמתפללים עליו, והוא נשאר גדול.
@@ -10786,9 +10804,13 @@ def _req_at(ws, start=0):
         # ההורה ("בן ראצא טובה") היא חלק משם ההורה, לא בקשה — בקשה בלי מקף
         # ובלי מילת ברכה מתחילה רק כשיש בה שתי מילים ומעלה.
         # מאיר: "למה השמות לא אותו גודל" — "בת ר' צבי הירש ע\"ה": תארים (ע\"ה, ז\"ל…) לא נספרים כמילות בקשה
-        if i < len(ws) and not fam and sum(1 for w in ws[i:] if not _CERT_SMALL.match(w)) >= 2 \
-                and not any(_CERT_BEN.match(w) for w in ws[i:]):
-            return i
+        # שם פרטי מוכר מיד אחרי שם ההורה ("צבי הירש", "זלמן לייב") — המשך שם ההורה, לא בקשה
+        j = i
+        while j < len(ws) and j < i + 2 and ws[j] in _CERT_NAMEW:
+            j += 1
+        if j < len(ws) and not fam and sum(1 for w in ws[j:] if not _CERT_SMALL.match(w)) >= 2 \
+                and not any(_CERT_BEN.match(w) for w in ws[j:]):
+            return j
     if len(ws) - start > 4 and ws[start][:1] in ('\u05DC', '\u05D5') \
             and _fam_at(ws[start:]) < 0 and not (ws[start][:1] == '\u05D5' and any(_CERT_BEN.match(w) for w in ws[start:])):
         return start
@@ -10975,6 +10997,9 @@ _MALE = set("""
 אורי אליעזר אליקים אפרים ארז בועז ברקוביץ גרשון הלל זכריה חזקיהו יהוידע
 מוישי שרול סרולי איצי בערל וועלוול הירש ליפא מענדל נטע פישל קופל שמעלקא
 """.split())
+
+
+_CERT_NAMEW = _MALE | _FEM | set("""הירש הערש לייב ליב וולף וואלף בער בערל זעליג העשל מענדל פישל נטע שמעלקא יודל ליפא זלמן קאפל קופל פייבל אייזיק איסר איסרל גדליה זוסיא משולם אלטר שרגא פייוול פייביש מאטל טודרוס ברוך הלל יהודה צבי דוב אריה זאב נחום מרים חיה שרה רבקה רחל לאה מלכה ליבא פייגא גיטל חנה""".split())
 
 
 def _gender(first):
