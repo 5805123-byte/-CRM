@@ -18688,7 +18688,7 @@ class H(BaseHTTPRequestHandler):
                 links = [dict(r) for r in con.execute("SELECT key, label, at FROM nd_dlink WHERE donor_id=? ORDER BY key", (did,))]
                 cands = nd_donor_candidates(con, did)
                 n = con.execute("SELECT COUNT(*), COALESCE(SUM(CAST(amount AS REAL)),0) FROM donations WHERE donor_id=? AND tid LIKE 'ND%'", (did,)).fetchone()
-                seed = kv_get(con, 'nd_dlink_seed_1', '')
+                seed = ' · '.join(x for x in (kv_get(con, 'nd_dlink_seed_1', ''), kv_get(con, 'nd_dlink_seed_2', '')) if x)
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'links': links, 'candidates': cands, 'n': n[0], 'sum': round(n[1] or 0, 2), 'seed': seed})
@@ -26626,6 +26626,45 @@ def nd_donor_seed(con):
     con.commit()
 
 
+# מאיר: "התורם אברהם פלורנס — תרומה חודשית של 850 ש"ח בנדרים פלוס, כולל חצות ברסלב דויטש — תסנכרן את כל
+# התרומות שלו לכרטיס שלו". קישור אוטומטי פעם אחת (שם מלא; ואם בנדרים רשום רק שם המשפחה — התאמה יחידה)
+ND_DONOR_SEED2 = [('אברהם', 'פלורנס')]
+
+
+def nd_donor_seed2(con):
+    if kv_get(con, 'nd_dlink_seed_2', ''):
+        return
+    if not con.execute("SELECT 1 FROM nd_tx WHERE COALESCE(mosad,'')='' LIMIT 1").fetchone():
+        return
+    rep = []
+    for first, last in ND_DONOR_SEED2:
+        lt = set(_nd_toks(last))
+        ds = [r for r in con.execute("SELECT id, first, last, business, aliases FROM donors")
+              if lt <= set(_nd_toks(r['last'] or '')) and (set(_nd_toks(first)) <= set(_nd_toks(r['first'] or '')) or not (r['first'] or '').strip())]
+        if len(ds) != 1:
+            rep.append('%s %s: %s' % (first, last, 'לא נמצא כרטיס תורם' if not ds else '%d כרטיסים מתאימים — לקשר ידנית' % len(ds)))
+            continue
+        did = ds[0]['id']
+        all_c = [c for c in nd_donor_candidates(con, did) if not c['other_donor']]
+        want = set(_nd_toks(first + ' ' + last))
+        cands = [c for c in all_c if want <= set(_nd_toks(c['name']))]
+        if not cands:
+            only = [c for c in all_c if lt <= set(_nd_toks(c['name']))]
+            cands = only if len(only) == 1 else []
+        if not cands:
+            rep.append('%s %s: לא נמצא בנדרים פלוס — לקשר ידנית מהכרטיס' % (first, last))
+            continue
+        for c in cands:
+            for k in c['keys'] + ['keva:' + kv for kv in c['kevas']]:
+                con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)", (k, did, c['name'], now_iso()))
+        n = nd_donor_import(con, did)
+        con.execute("UPDATE donors SET region='il' WHERE id=? AND COALESCE(region,'')=''", (did,))
+        rep.append('%s %s: קושר ל-%s · %d תרומות נכנסו' % (first, last, ', '.join(c['name'] for c in cands), n))
+        print('  נדרים ← תורם:', rep[-1])
+    kv_set(con, 'nd_dlink_seed_2', now_iso() + ' — ' + ' | '.join(rep))
+    con.commit()
+
+
 def nd_history_sync(con):
     """עסקאות חדשות בנדרים פלוס ← מי ששילם על הודעה שנשלחה אליו מסומן "שילם", והחוב שלו נסגר.
     חיוב אוטומטי של הוראת קבע (KevaId חיובי) לא נחשב תשלום על הודעה; תשלום בודד שצורף להוראה
@@ -26668,6 +26707,7 @@ def nd_history_sync(con):
         print('  natan reconcile error:', e)
     try:
         nd_donor_seed(con)
+        nd_donor_seed2(con)
         if nd_donor_import(con):
             con.commit()
     except Exception as e:
