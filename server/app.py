@@ -6043,7 +6043,8 @@ def ensure_schema():
 
         # ב. אברכים שיצאו מהכולל לגמרי — המקום נשאר פתוח אצל התורם, עם
         #    שם היוצא והתאריך, בדיוק כמו כפתור "יצא מהכולל"
-        _out = ['עליס שמואל דוד', 'קעניג יעקב מנחם', 'הניג פנחס']
+        # (עליס שמואל דוד חזר לכולל מא' תשרי תשפ"ז — הוצא מכאן, אחרת היה "יוצא" שוב בכל עלייה)
+        _out = ['קעניג יעקב מנחם', 'הניג פנחס']
         _left = 0
         for anm in _out:
             r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
@@ -6067,6 +6068,29 @@ def ensure_schema():
             print('  אברכים: אוחדו %d, יצאו מהכולל %d' % (_merged, _left))
     except Exception as e:
         print('  avreich roster fix error:', e)
+
+    # מאיר: "תוסיף לרשימת האברכים את עליס שמואל דוד… בינתיים אין לו יששכר זבולון… נכנס לכולל מא' תשרי תשפ"ז".
+    # הוא נרשם בעבר כ"יצא מהכולל" — מחזירים אותו (בלי ended), עם הפרטים מכרטיס הכולל. ת"ז — כמו שאר האברכים
+    # (מקובץ הכולל avreichim_seed.json); תאריך הלידה בהערה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='avreich_alis_back_v1'").fetchone():
+            nm = 'עליס שמואל דוד'
+            st = greg_to_heb_full('2026-09-12') or 'א\' תשרי תשפ"ז'      # א' תשרי תשפ"ז
+            if not con.execute("SELECT 1 FROM avreichim WHERE name=?", (nm,)).fetchone():
+                con.execute("INSERT INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,'',?,?)",
+                            (nm, 'עליס', 'שמואל דוד', st, today_iso()))
+            _a = next((x for x in json.load(open(os.path.join(HERE, 'avreichim_seed.json'), encoding='utf-8'))
+                       if x.get('last') == 'עליס'), {})
+            con.execute("UPDATE avreichim SET ended=NULL, started=?, phone='052-713-7620', email='weightwinner@gmail.com', "
+                        "addr='מפעל השס 7/6, ביתר עילית', idnum=COALESCE(NULLIF(?,''),idnum), id_ok=1, seder='חצות', "
+                        "note=TRIM(COALESCE(note,'') || CASE WHEN COALESCE(note,'') LIKE '%21.11.1969%' THEN '' ELSE ' תאריך לידה: 21.11.1969' END) "
+                        "WHERE name=?", (st, _a.get('idnum') or '', nm))
+            iz_log(con, nm, None, '↩️ חזר לכולל מ%s — בינתיים בלי שותף יששכר־זבולון' % st, now_iso(), st)
+            con.execute("INSERT INTO seed_flags(name) VALUES('avreich_alis_back_v1')")
+            con.commit()
+            print('  אברך: עליס שמואל דוד חזר לכולל מ' + st)
+    except Exception as e:
+        print('  alis avreich error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
