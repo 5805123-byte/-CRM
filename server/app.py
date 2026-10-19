@@ -3530,6 +3530,16 @@ def ensure_schema():
                 print('  פגישה אצל ראש העיר: יום חמישי 08.10.2026 16:00')
             con.execute("INSERT INTO seed_flags(name) VALUES('event_mayor_meeting_v3')")
             con.commit()
+        # מאיר (זימון מגוגל): "תוסיף לי ליומן — פגישה עם ראש העיר, איחוד שטחים". יום חמישי 29.10.2026, 14:30–15:30,
+        # בלשכה. משתתפים: רובינשטיין מאיר (מארגן), דייטש יהודה, לבינסון נפתלי, יהושע דוייטש
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_mayor_merge_v1'").fetchone():
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-29' AND note LIKE '%איחוד שטחים%'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                            (None, '2026-10-29', 'other',
+                             'פגישה עם ראש העיר — איחוד שטחים (14:30–15:30) · עם רובינשטיין מאיר, דייטש יהודה, לבינסון נפתלי, יהושע דוייטש',
+                             'מאיר', '14:30', 'לשכת ראש העיר'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_mayor_merge_v1')")
+            con.commit()
     except Exception as e:
         print('  mayor meeting error:', e)
 
