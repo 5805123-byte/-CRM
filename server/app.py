@@ -18737,6 +18737,79 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
                                     'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
                                     'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
+        if self.path.split('?')[0] == '/api/nd/find':
+            # 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש בחצי שנה האחרונה, ארבע ספרות אחרונות 8529, אני לא
+            # יודע מי זה — בכל הקופות". חיפוש לפי 4 ספרות (וסכום, ותקופה) בכל המוסדות: עסקאות, הוראות קבע וסירובים
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            l4 = re.sub(r'\D', '', (qs.get('last4') or [''])[0])[-4:]
+            if len(l4) != 4:
+                return self._send(200, {'ok': False, 'error': 'צריך 4 ספרות'})
+            try:
+                amt = float(re.sub(r'[^\d.]', '', (qs.get('amount') or [''])[0]) or 0)
+            except ValueError:
+                amt = 0
+            try:
+                months = int((qs.get('months') or ['6'])[0] or 0)
+            except ValueError:
+                months = 6
+            since = (datetime.date.today() - datetime.timedelta(days=31 * months)).isoformat() if months > 0 else ''
+            import nedarim as _nd
+            acc = {('' if x['main'] else x['mosad']): x['name'] for x in _nd.accounts()}
+            kupa = lambda mo: acc.get(mo or '') or ('מוסד ' + mo if mo else 'כולל חצות')
+            con = db()
+            try:
+                cols = {r[1] for r in con.execute("PRAGMA table_info(nd_tx)")}
+                aw = " AND ABS(COALESCE(amount,0)-?)<0.5" if amt else ""
+                aa = [amt] if amt else []
+                tx = [dict(r) for r in con.execute(
+                    "SELECT id, iso, amount, name, phone, keva, groupe, comments, %s mosad, %s donor_id, member_id, type FROM nd_tx "
+                    "WHERE last4=? AND COALESCE(iso,'')>=?%s ORDER BY iso DESC LIMIT 400" % (
+                        "COALESCE(mosad,'')" if 'mosad' in cols else "''", 'donor_id' if 'donor_id' in cols else 'NULL', aw),
+                    [l4, since] + aa)]
+                kcols = {r[1] for r in con.execute("PRAGMA table_info(nd_keva)")}
+                kv = [dict(r) for r in con.execute(
+                    "SELECT id, name, phone, mail, amount, groupe, next_date, active, member_id, %s mosad, %s kind FROM nd_keva WHERE last4=?" % (
+                        "COALESCE(mosad,'')" if 'mosad' in kcols else "''", "COALESCE(kind,'')" if 'kind' in kcols else "''"), (l4,))]
+                if amt:
+                    kv = [k for k in kv if abs((float(re.sub(r'[^\d.]', '', str(k['amount'] or '')) or 0)) - amt) < 0.5]
+                er = [dict(r) for r in con.execute(
+                    "SELECT iso, amount, name, phone, error, COALESCE(mosad,'') mosad, keva FROM nd_err WHERE last4=? AND COALESCE(iso,'')>=?%s "
+                    "ORDER BY iso DESC LIMIT 100" % aw, [l4, since] + aa)]
+                # מי זה — חבר קהילה / תורם מקושר
+                def who(mid, did):
+                    if mid:
+                        m_ = con.execute("SELECT id, last, first, phone FROM members WHERE id=?", (mid,)).fetchone()
+                        if m_:
+                            return {'kind': 'member', 'id': m_['id'], 'name': ((m_['last'] or '') + ' ' + (m_['first'] or '')).strip()}
+                    if did:
+                        d_ = con.execute("SELECT id, last, first FROM donors WHERE id=?", (did,)).fetchone()
+                        if d_:
+                            return {'kind': 'donor', 'id': d_['id'], 'name': ((d_['last'] or '') + ' ' + (d_['first'] or '')).strip()}
+                    return None
+                grp = {}
+                for t in tx:
+                    k = (re.sub(r'\s+', ' ', (t['name'] or '').strip()), t['phone'] or '', t['mosad'])
+                    g = grp.setdefault(k, {'name': k[0], 'phone': k[1], 'kupa': kupa(k[2]), 'tx': [], 'kevas': [], 'errs': [], 'who': None})
+                    g['tx'].append({'iso': (t['iso'] or '')[:10], 'amount': t['amount'], 'keva': bool(str(t['keva'] or '').strip() and not str(t['keva']).startswith('-')),
+                                    'groupe': t['groupe'] or '', 'comments': (t['comments'] or '')[:80]})
+                    g['who'] = g['who'] or who(t['member_id'], t['donor_id'])
+                for k_ in kv:
+                    k = (re.sub(r'\s+', ' ', (k_['name'] or '').strip()), k_['phone'] or '', k_['mosad'])
+                    g = grp.setdefault(k, {'name': k[0], 'phone': k[1], 'kupa': kupa(k[2]), 'tx': [], 'kevas': [], 'errs': [], 'who': None})
+                    g['kevas'].append({'id': k_['id'], 'amount': k_['amount'], 'groupe': k_['groupe'] or '', 'next': k_['next_date'] or '',
+                                       'active': bool(k_['active']), 'mail': k_['mail'] or '', 'bank': k_['kind'] == 'bank'})
+                    g['who'] = g['who'] or who(k_['member_id'], None)
+                for e_ in er:
+                    k = (re.sub(r'\s+', ' ', (e_['name'] or '').strip()), e_['phone'] or '', e_['mosad'])
+                    g = grp.setdefault(k, {'name': k[0], 'phone': k[1], 'kupa': kupa(k[2]), 'tx': [], 'kevas': [], 'errs': [], 'who': None})
+                    g['errs'].append({'iso': (e_['iso'] or '')[:10], 'amount': e_['amount'], 'error': (e_['error'] or '')[:80]})
+                # גם המייל של ההוראה — שיהיה איך לברר מי זה
+                rows = sorted(grp.values(), key=lambda g: (-len(g['tx']), g['name']))
+                ah = {x['mosad'] or '': kv_get(con, 'nd_hist_at:' + x['mosad'], '') for x in _nd.accounts() if not x['main']}
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'last4': l4, 'amount': amt, 'months': months, 'rows': rows,
+                                    'kupot': [x['name'] for x in _nd.accounts()], 'synced': ah})
         m = re.match(r'/api/nddonor/(\d+)$', self.path.split('?')[0])
         if m:
             # 🔗 כרטיס תורם ↔ המשלם בנדרים פלוס (החשבון של הכולל)

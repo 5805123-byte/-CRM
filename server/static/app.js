@@ -14247,7 +14247,7 @@ async function renderCommGifts(){
     <div class="hintxt">נדרים פלוס (חד-פעמי, הוראות קבע באשראי ובבנק) ותרומות ידניות — מזומן, צ׳ק, וגם מה שסומן ששולם על חוב. "עבור מה" — רשות, אפשר להוסיף ב-✎.</div>
     <div class="bqseg"><button class="${cgSrc?'':'on'}" data-cgs="">הכל <small>${all.length}</small></button>${CG_SRC.filter(([k])=>n[k]).map(([k,l])=>`<button class="${cgSrc===k?'on':''}" data-cgs="${k}">${l} <small>${n[k]}</small></button>`).join('')}</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="cg_from" value="${esc(cgFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="cg_to" value="${esc(cgTo)}"></label>
-      ${cgFund?'':'<button class="btn sm" id="cg_nd">💳 תרומה חדשה — כמו בנדרים פלוס</button><button class="btn sm ghost" id="cg_kv">🔁 בעלי הוראות קבע</button>'}<button class="btn sm ghost" id="cg_new">➕ תרומה ידנית</button></div>
+      ${cgFund?'':'<button class="btn sm" id="cg_nd">💳 תרומה חדשה — כמו בנדרים פלוס</button><button class="btn sm ghost" id="cg_kv">🔁 בעלי הוראות קבע</button><button class="btn sm ghost" id="cg_find4">🔍 חיפוש לפי 4 ספרות</button>'}<button class="btn sm ghost" id="cg_new">➕ תרומה ידנית</button></div>
     ${cgNew?`<div class="gfnewbox"><b>➕ תרומה ידנית — ${cgFund?'חבר קהילה (נכנסת לכרטיס שלו) או כל שם':'נכנסת לכרטיס של החבר'}</b>
       <input id="cgn_who" list="cd_mdl" placeholder="${cgFund?'שם — חבר קהילה מהרשימה, או כל שם…':'חבר קהילה — הקלד שם ובחר…'}">
       <div class="lgf"><input type="date" id="cgn_date" value="${todayStr()}"><input id="cgn_amt" inputmode="decimal" placeholder="₪ סכום"></div>
@@ -14270,6 +14270,7 @@ async function renderCommGifts(){
   g('cg_new').onclick=()=>{cgNew=!cgNew;renderCommGifts();if(cgNew&&g('cgn_who'))g('cgn_who').focus();};
   const ndb=g('cg_nd');if(ndb)ndb.onclick=()=>ndDonate();
   const kvb=g('cg_kv');if(kvb)kvb.onclick=()=>{KVH=null;kvHolders();};
+  const f4b=g('cg_find4');if(f4b)f4b.onclick=()=>ndFind4();
   const mo=g('cg_more');if(mo)mo.onclick=()=>{cgLim+=300;renderCommGifts();};
   view.querySelectorAll('[data-cgm]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==b.dataset.cgm);if(m)openMember(m);});
   // מאיר: "בתרומות אני רוצה אפשרות לקשר ולמזג או לשייך או להקים חבר קהילה חדש"
@@ -14339,6 +14340,39 @@ async function kvHolders(){
   const cv=document.getElementById('kvh_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שם,טלפון,סכום לחודש,עבור מה,סוג,חיוב הבא,נותרו,קופה'].concat(L.map(k=>[nm(k),k.phone||'',am(k),k.groupe||'',k.kind==='bank'?'בנק':'אשראי',k.next_date||'',k.itra||'',k.kupa].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בעלי הוראות קבע.csv';document.body.appendChild(a);a.click();a.remove();};}
+// 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש… ארבע ספרות אחרונות 8529, אני לא יודע מי זה — בכל הקופות"
+async function ndFind4(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔍 חיפוש בנדרים פלוס לפי 4 ספרות</h2>
+    <div class="hintxt">בכל הקופות: עסקאות, הוראות קבע (אשראי ובנק) וסירובים — מה שכבר נמשך מנדרים פלוס לסנכרון.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:end">
+      <label class="fld" style="flex:1;min-width:110px"><span>4 ספרות אחרונות</span><input id="f4_l" inputmode="numeric" maxlength="4" dir="ltr" placeholder="8529"></label>
+      <label class="fld" style="flex:1;min-width:90px"><span>סכום ₪ (לא חובה)</span><input id="f4_a" inputmode="decimal" placeholder="100"></label>
+      <label class="fld" style="flex:1;min-width:110px"><span>תקופה</span><select id="f4_m"><option value="6">חצי שנה אחרונה</option><option value="12">שנה אחרונה</option><option value="0">הכל</option></select></label>
+      <button class="btn" id="f4_go">🔍 חפש</button></div>
+    <div id="f4_res"></div>`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const go=async()=>{const l=document.getElementById('f4_l').value.replace(/\D/g,'');if(l.length!==4){toast('צריך 4 ספרות');return;}
+    const R=document.getElementById('f4_res');R.innerHTML='<div class="hintxt">⏳ מחפש…</div>';
+    const r=await api('GET','/api/nd/find?last4='+l+'&amount='+encodeURIComponent(document.getElementById('f4_a').value)+'&months='+document.getElementById('f4_m').value).catch(()=>null);
+    if(!r||!r.ok){R.innerHTML=`<div class="hintxt">${esc((r&&r.error)||'אין תשובה')}</div>`;return;}
+    if(!r.rows.length){R.innerHTML=`<div class="hintxt">לא נמצא כרטיס שמסתיים ב-<b dir="ltr">${esc(r.last4)}</b>${r.amount?' בסכום ₪'+esc(r.amount):''} — בקופות: ${esc((r.kupot||[]).join(', '))}. אם החיוב חדש מאוד — כדאי ללחוץ על סנכרון נדרים ולחפש שוב.</div>`;return;}
+    R.innerHTML=`<div class="mksec">נמצאו ${r.rows.length} — כרטיס שמסתיים ב-<span dir="ltr">${esc(r.last4)}</span></div>`+r.rows.map((g,i)=>{
+      const sum=g.tx.reduce((t,x)=>t+(+x.amount||0),0);
+      return `<div class="mkrow" style="grid-template-columns:1fr;cursor:default"><div class="mknm">
+        <b style="font-size:1.05rem">${esc(g.name||'— בלי שם —')}</b> ${g.who?`<a href="#" data-f4w="${i}" style="font-size:.85rem">· ${g.who.kind==='member'?'👥 חבר קהילה':'💼 תורם'}: ${esc(g.who.name)} ↗</a>`:'<small class="cdres bad">לא מקושר לאף כרטיס</small>'}
+        <div class="mksub">🏦 קופה: <b>${esc(g.kupa)}</b>${g.phone?` · 📞 <span dir="ltr">${esc(g.phone)}</span>`:''}${g.kevas.find(k=>k.mail)?` · ✉️ <span dir="ltr">${esc(g.kevas.find(k=>k.mail).mail)}</span>`:''}</div>
+        ${g.kevas.map(k=>`<div class="mksub">🔁 הוראת קבע${k.bank?' (בנק)':''} ₪${esc(k.amount)}${k.groupe?' · '+esc(k.groupe):''} · ${k.active?'פעילה'+(k.next?' · חיוב הבא '+esc(k.next):''):'<b>לא פעילה</b>'}</div>`).join('')}
+        ${g.tx.length?`<details style="margin-top:4px"><summary class="mksub" style="cursor:pointer">💳 ${g.tx.length} חיובים · סה״כ ₪${Math.round(sum)} · אחרון ${esc(g.tx[0].iso)}</summary>
+          ${g.tx.map(x=>`<div class="mksub">${esc(x.iso)} · ₪${esc(x.amount)}${x.keva?' · הו״ק':''}${x.groupe?' · '+esc(x.groupe):''}${x.comments?' · '+esc(x.comments):''}</div>`).join('')}</details>`:''}
+        ${g.errs.length?`<div class="mksub" style="color:var(--no)">⚠️ ${g.errs.length} סירובים · אחרון ${esc(g.errs[0].iso)} — ${esc(g.errs[0].error)}</div>`:''}
+      </div></div>`;}).join('');
+    R.querySelectorAll('[data-f4w]').forEach(a=>a.onclick=async e=>{e.preventDefault();const w=r.rows[+a.dataset.f4w].who;remov.classList.remove('show');
+      if(w.kind==='member'){if(!MEMBERS)await cmLoad();const m=(MEMBERS||[]).find(x=>x.id==w.id);if(m)openMember(m);}
+      else{const d=DB.find(x=>x.id==w.id);if(d)openDonor(d,'details');}});};
+  document.getElementById('f4_go').onclick=go;
+  document.getElementById('f4_l').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+  setTimeout(()=>document.getElementById('f4_l').focus(),50);}
 // 💳 מאיר: "חלון לתרומות כמו שיש בנדרים פלוס — לתרומה בהוראת קבע בלי מסגרת, או ידני, ועבור מה… כל האפשרויות
 // שיש בנדרים פלוס, מסונכרן עם הקהילה". אשראי / הו"ק אשראי — בטופס המאובטח של נדרים פלוס (iframe) בתוך החלון,
 // כך שמספר הכרטיס לא עובר אצלנו; הו"ק בנקאי / ביט — בדף התרומות של נדרים פלוס; העברה / מזומן / צ'ק — נרשם כאן
