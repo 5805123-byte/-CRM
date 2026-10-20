@@ -14396,6 +14396,8 @@ async function kvHolders(){
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בעלי הוראות קבע.csv';document.body.appendChild(a);a.click();a.remove();};}
 // ✉️ מאיר: "שאוכל לשלוח לכל אחד בקהילה קישור לשינוי או עדכון פרטי האשראי או תאריך החיוב, עם הסכום שאשנה,
 // בנוסח שאני שולח לו — באימייל". סכום / תאריך שהשתנו מתעדכנים קודם בנדרים פלוס, ואז יוצא המייל עם הקישור האישי
+// מאיר: "אני רוצה אפשרות להוסיף תואר וכו'" — הסימונים, ללחיצה (אותם סימונים כמו בכל מייל לקהילה)
+const CARD_VARS=[['{{תואר}}','ה"ה'],['{{שם}}','השם המלא'],['{{הי"ו}}','אחרי השם'],['{{סכום}}','הסכום'],['{{תאריך}}','החיוב הבא'],['{{עבור}}','עבור מה'],['{{קישור}}','הקישור לעדכון הכרטיס'],['{{ה|י|ו}}','לשון זכר/נקבה/רבים']];
 // מאיר: "אבל איך אני מנסח?" — שלושה נוסחים מוכנים: [כפתור, נושא, גוף]
 const CARD_MAIL_PRESETS=[
   ['💳 החלפת כרטיס אשראי','עדכון כרטיס האשראי בהוראת הקבע — כולל חצות',
@@ -14451,19 +14453,32 @@ async function ndCardMail(k,m,after){
       <div class="fld"><span>📋 נוסחים מוכנים — לחיצה מכניסה אותו לעריכה למטה</span><div id="cm_pres" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <label class="fld"><span>✏️ נושא</span><input id="cm_subj" value="${esc(t.subj||'')}"></label>
       <label class="fld"><span>📝 הנוסח</span><textarea id="cm_body" rows="11" style="width:100%;font-size:.95rem">${esc(t.body||'')}</textarea></label>
-      <div class="mksub">אפשר לכתוב: <b>{{שם}}</b> · <b>{{תואר}}</b> · <b>{{סכום}}</b> · <b>{{תאריך}}</b> · <b>{{עבור}}</b> · <b>{{קישור}}</b> — הקישור האישי המאובטח של נדרים פלוס לעדכון הכרטיס (בתוקף 14 יום)</div>
+      <div class="mksub">➕ להוסיף לנוסח — לחיצה מכניסה במקום הסמן:</div>
+      <div class="mlvars" style="display:flex;gap:5px;flex-wrap:wrap;margin:3px 0 6px">${CARD_VARS.map(([v,h])=>`<button type="button" class="btn sm ghost" data-cmv="${esc(v)}" title="${esc(h)}">${esc(v)} <small style="opacity:.7">${esc(h)}</small></button>`).join('')}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><button class="btn sm ghost" id="cm_tsave">💾 לשמור כנוסח קבוע</button></div>
-      <div class="mksec">👁 כך זה ייראה אצלו</div><div id="cm_prev" style="white-space:pre-wrap;border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;font-size:.92rem"></div>
+      <div class="mksec">👁 הטיוטה — בדיוק כך המייל יגיע אליו</div>
+      <div class="mksub" id="cm_pmeta"></div>
+      <iframe id="cm_prev" style="width:100%;height:460px;border:1px solid #ddd;border-radius:10px;background:#fff"></iframe>
     </div>
     <div class="mkdf"><span class="grow"></span><button class="mkbtn" id="cm_send">✉️ לשלוח</button></div></div>`;
   document.body.appendChild(o);
   const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('cmx').onclick=close;
   const fmtD=v=>v?v.slice(8,10)+'.'+v.slice(5,7)+'.'+v.slice(0,4):'';
+  // הטיוטה המלאה — אותו מנוע ששולח (שם, תואר, לשון פנייה, חתימה, עיצוב), עם הסכום / התאריך / הקישור
+  let ptm=null, pseq=0;
   const prev=()=>{const amt=g('cm_amt').value.trim(),nx=g('cm_next').value;
     g('cm_chg').style.display=(amt!==a0||nx!==n0)?'':'none';
-    const f=x=>String(x||'').replace(/\{\{קישור\}\}/g,'🔗 [קישור מאובטח לעדכון הכרטיס]').replace(/\{\{סכום\}\}/g,amt).replace(/\{\{תאריך\}\}/g,fmtD(nx))
-      .replace(/\{\{עבור\}\}/g,k.groupe||'').replace(/\{\{שם\}\}/g,m.first||'').replace(/\{\{תואר\}\}/g,'').replace(/\{\{([^|}]*)\|[^}]*\}\}/g,'$1');
-    g('cm_prev').innerHTML='<b>'+esc(f(g('cm_subj').value))+'</b>\n\n'+esc(f(g('cm_body').value));};
+    clearTimeout(ptm);ptm=setTimeout(async()=>{const my=++pseq;
+      const f=x=>String(x||'').replace(/\{\{קישור\}\}/g,'https://www.matara.pro/nedarimplus/… (הקישור האישי שלו — נוצר ברגע השליחה)')
+        .replace(/\{\{סכום\}\}/g,amt).replace(/\{\{תאריך\}\}/g,fmtD(nx)).replace(/\{\{עבור\}\}/g,k.groupe||'');
+      const r=await api('POST','/api/mail/preview',{members:[m.id],subject:f(g('cm_subj').value),body:f(g('cm_body').value)}).catch(()=>null);
+      if(my!==pseq||!document.body.contains(o))return;
+      if(!r||!r.ok){g('cm_pmeta').textContent='לא נטענה התצוגה';return;}
+      g('cm_pmeta').innerHTML=`📤 מאת: <b>נדר 18</b> · אל: <span dir="ltr">${esc(g('cm_to').value)}</span><br>✏️ נושא: <b>${esc(r.subject||'')}</b>`;
+      g('cm_prev').srcdoc=r.html||('<pre dir="rtl" style="font-family:inherit;white-space:pre-wrap">'+esc(r.sample||'')+'</pre>');},350);};
+  let lastF='cm_body';['cm_subj','cm_body'].forEach(id=>g(id).addEventListener('focus',()=>{lastF=id;}));
+  o.querySelectorAll('[data-cmv]').forEach(b=>b.onclick=()=>{const el=g(lastF),v=b.dataset.cmv,st=el.selectionStart??el.value.length,en=el.selectionEnd??st;
+    el.value=el.value.slice(0,st)+v+el.value.slice(en);el.focus();el.selectionStart=el.selectionEnd=st+v.length;prev();});
   ['cm_amt','cm_next','cm_subj','cm_body'].forEach(id=>g(id).addEventListener('input',prev));prev();
   // הנוסחים המוכנים — של מאיר (נשמרים בשרת); בלי שמירה — שלושת ברירות המחדל
   let PR=(t.presets&&t.presets.length?t.presets:CARD_MAIL_PRESETS).map(x=>x.slice()), cur=-1;
