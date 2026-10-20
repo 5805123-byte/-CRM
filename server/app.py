@@ -24316,8 +24316,7 @@ class H(BaseHTTPRequestHandler):
                 out = bq_record_charge(con, res, amt, desc, fc, did, cu['id'] if cu else 0,
                                        ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), nm)
                 con.commit()
-                if b.get('receipt_email'):
-                    bq_charge_receipt(con, out, str(b.get('receipt_email')))
+                bq_charge_receipt(con, out, str(b.get('receipt_email') or ''))
                 con.close()
                 src = bq_card_src(res) if out['ok'] else ''
                 if src:
@@ -24376,8 +24375,7 @@ class H(BaseHTTPRequestHandler):
                                    ('%s %s' % (p['card_type'], p['last4'])).strip(), (cu['identifier'] if cu else ''),
                                    sched_id=int(b.get('sched_id') or 0))
             con.commit()
-            if b.get('receipt_email'):
-                bq_charge_receipt(con, out, str(b.get('receipt_email')))
+            bq_charge_receipt(con, out, str(b.get('receipt_email') or ''))
             con.close()
             bump_data()
             return self._send(200, out)
@@ -25092,6 +25090,60 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        m = re.match(r'/api/parnes/(\d+)/send$', self.path)
+        if m:
+            # מאיר: "בקבלה שיהיה כתוב לו עבור פרנס לילה ואיזה לילה, ולזכות מי עם השמות, ואשלח לו גם את
+            # ההקדשה שלו בנפרד באימייל" — אחרי ששובץ היום: קבלה (עם היום והשמות), ותעודת הפרנס במייל נפרד
+            con = db()
+            try:
+                pr = con.execute("SELECT * FROM parnes WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not pr:
+                    return self._send(200, {'ok': False, 'error': 'יום הפרנס לא נמצא'})
+                to = str(b.get('email') or '').strip()
+                if '@' not in to:
+                    return self._send(200, {'ok': False, 'error': 'חסר מייל'})
+                out = {'ok': True}
+                don = int(b.get('donation_id') or 0)
+                if b.get('receipt') and don:
+                    try:
+                        doc = receipt_issue(con, don, 'us', email=to, send=True)
+                        doc, err = receipt_autosend(con, doc, to)
+                        con.commit()
+                        out['receipt'] = {'num': (doc or {}).get('num') or '', 'sent': bool((doc or {}).get('sent_at'))}
+                        if err:
+                            out['receipt_error'] = err
+                    except Exception as e:
+                        out['receipt_error'] = str(e)[:160]
+                if b.get('cert'):
+                    try:
+                        import mailer
+                        kl = {'coffee': 'חדר קפה', 'breakfast': 'ארוחת בוקר'}.get(pr['kind'] or '', 'פרנס לילה')
+                        date = ' '.join(x for x in (str(pr['date_text'] or '').strip(), str(pr['hyear'] or '').strip()) if x)
+                        img = cert_png(pr['kind'] or 'parnes', date, (pr['dedication'] or '').strip(), '', 1600, 'jpg', '')
+                        d = con.execute("SELECT * FROM donors WHERE id=?", (pr['donor_id'],)).fetchone()
+                        nm = ((d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else ''
+                        subject = 'תעודת %s — %s · Kollel Chatzos' % (kl, date)
+                        body = ('Dear %s,\n\nAttached is your certificate for the %s you sponsored at Kollel Chatzos — %s.\n'
+                                'The learning and prayers at Chatzos that night will be dedicated as you requested.\n\n'
+                                'With deep appreciation,\nKollel Chatzos' % (nm or 'Friend', 'night of Torah study' if kl == 'פרנס לילה' else kl, date))
+                        if not mailer.configured():
+                            out['cert_error'] = 'שליחת מייל לא מוגדרת ב-Render'
+                        else:
+                            res = mailer.send(to, subject, body, [('Certificate.jpg', 'image/jpeg', img)])
+                            if res.get('ok'):
+                                out['cert_sent'] = True
+                                try:
+                                    log_sent_mail(pr['donor_id'], to, subject, body, res.get('msg_id'), 1)
+                                except Exception:
+                                    pass
+                            else:
+                                out['cert_error'] = str(res.get('error') or 'השליחה נכשלה')[:160]
+                    except Exception as e:
+                        out['cert_error'] = str(e)[:160]
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
         if self.path == '/api/parnes':
             con = db(); cur = con.cursor()
             # מטבע: אם לא נבחר, נקבע לפי האזור של התורם — תורם בארץ ב-₪
@@ -25989,11 +26041,15 @@ def bq_charge_receipt(con, out, email):
     """מאיר: "קבלה שייצא אוטומטית לאימייל מיד" — אחרי חיוב שעבר מכרטיס התורם: קבלה על התרומה
     שנרשמה מהחיוב, ונשלחת מיד לכתובת שנבחרה. מוסיף ל-out את receipt / receipt_error."""
     email = (email or '').strip()
-    if not out.get('ok') or not out.get('donor_id') or '@' not in email:
+    if not out.get('ok') or not out.get('donor_id'):
         return out
     try:
         ref = int(out.get('ref') or 0)
         dn = con.execute("SELECT id FROM donations WHERE donor_id=? AND tid=? ORDER BY id DESC", (out['donor_id'], 'BQ%d' % ref)).fetchone() if ref else None
+        if dn:
+            out['donation_id'] = dn['id']      # לשיבוץ פרנס לילה בלוח אחרי החיוב
+        if '@' not in email:
+            return out
         if not dn:
             out['receipt_error'] = 'התרומה עוד לא נרשמה בכרטיס — אפשר להפיק קבלה מהכרטיס'
             return out

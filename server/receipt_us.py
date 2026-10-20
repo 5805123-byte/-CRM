@@ -44,7 +44,7 @@ PMAP = [(r'יששכר|זבולון|zevulun|yissachar', 'Yissachar–Zevulun Part
         (r'פסח', 'Pesach'),
         (r'שבועות|shavu', 'Shavuos'),
         (r'ל.?ג.?בעומר|lag\s?ba', 'Lag BaOmer')]
-MMAP = [(r'אשראי|credit|אותורייז|authorize|banquest|בנק ווסט|card', 'Credit Card'),
+MMAP = [(r'אשראי|credit|אותורייז|authorize|banquest|בנק[ _]ווסט|card', 'Credit Card'),
         (r"צק|צ׳ק|צ'ק|check|cheque", 'Check'),
         (r'מזומן|cash', 'Cash'),
         (r'בנק|bank|wire|zelle|העברה', 'Bank Transfer'),
@@ -127,7 +127,24 @@ def receipt_data(con, don_id, RECEIPT_START, today_iso):
         amt = float(re.sub(r'[^\d.]', '', str(row['amount'] or '')) or 0)
     except ValueError:
         amt = 0.0
-    return {'donation_id': don_id, 'donor_id': row['donor_id'], 'name': name, 'addr': addr, 'email': email,
+    # מאיר: "בקבלה שיהיה כתוב לו עבור פרנס לילה ואיזה לילה, ולזכות מי עם השמות" — תרומה ששובץ לה
+    # יום בלוח: שורה בעברית עם היום, ושורת ההקדשה (מה שנכתב על יום הפרנס)
+    he_lines = []
+    pid = row['parnes_id'] if 'parnes_id' in row.keys() else None
+    if pid:
+        try:
+            pr = con.execute("SELECT * FROM parnes WHERE id=?", (pid,)).fetchone()
+        except Exception:
+            pr = None
+        if pr:
+            kl = {'coffee': 'חדר קפה', 'breakfast': 'ארוחת בוקר'}.get(pr['kind'] or '', 'פרנס לילה')
+            dt = ' '.join(x for x in (str(pr['date_text'] or '').strip(), str((pr['hyear'] if 'hyear' in pr.keys() else '') or '').strip()) if x)
+            if dt:
+                he_lines.append('%s — %s' % (kl, dt))
+            ded = re.sub(r'\s+', ' ', str(pr['dedication'] or '')).strip()
+            if ded:
+                he_lines.append(ded if re.match(r'^(ל|ולע|בעד|עבור)', ded) else 'לזכות ' + ded)
+    return {'donation_id': don_id, 'donor_id': row['donor_id'], 'name': name, 'addr': addr, 'email': email, 'he_lines': he_lines,
             'amount': amt, 'date': iso_day(row['date']) or today_iso(), 'issued': today_iso(),
             'purpose': ((row['purpose_en'] if 'purpose_en' in row.keys() else '') or '').strip() or purpose_en(row['category']), 'method': method_en(row['method']), 'num': num}
 
@@ -257,6 +274,34 @@ def receipt_file(con, don_id, fmt, STATIC, RECEIPT_START, today_iso):
     y = ay + int(1.5 * u + .9 * u + 6.2 * u * 1.05 + 2 * u)
     dr.line([(x0, y), (x1, y)], fill=LINE, width=max(2, int(.22 * u)))
     y += int(2.2 * u)
+    # ---- פרנס לילה: איזה יום ולזכות מי (עברית, מימין לשמאל) ----
+    if info.get('he_lines'):
+        try:
+            from PIL import features as _pf
+            raqm = bool(_pf.check('raqm'))
+        except Exception:
+            raqm = False
+        fh, fhb = font(2.0 * u), font(2.0 * u, True)
+        maxw = cw - int(3.6 * u)
+        hlh = int(2.0 * u * 1.5)
+        for i, t in enumerate(info['he_lines']):
+            f = fhb if i == 0 else fh
+            cur, rows = '', []
+            for w in t.split(' '):
+                c2 = (cur + ' ' + w).strip()
+                if cur and wid(c2, f) > maxw:
+                    rows.append(cur); cur = w
+                else:
+                    cur = c2
+            if cur:
+                rows.append(cur)
+            for ln in rows[:4]:
+                if raqm:
+                    dr.text((x1 - int(1.8 * u), y), ln, font=f, fill=DEEP if i == 0 else INK, anchor='ra', direction='rtl')
+                else:
+                    dr.text((x1 - int(1.8 * u), y), ln[::-1], font=f, fill=DEEP if i == 0 else INK, anchor='ra')
+                y += hlh
+        y += int(1.2 * u)
     # ---- ההצהרה ----
     lines = wrap_runs(STMT, cw - int(1.4 * u * 2 + .3 * u))
     lh = int(1.8 * u * 1.55)
