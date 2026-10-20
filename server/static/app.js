@@ -16056,9 +16056,18 @@ function openMember(m){
     const paintLog=async()=>{
       const box=document.getElementById('cm_log'); if(!box)return;
       const r=await api('GET','/api/members/'+m.id+'/log'); const rows=(r&&r.rows)||[];
-      box.innerHTML=rows.length?rows.map(x=>x.vm?cdVmHTML({id:x.vm,at:x.at,heard:x.heard,transcript:x.body}):`<div class="cmlog"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
-        ${(x.body||'').trim()&&x.direction==='out'?`<details><summary>הצג את המכתב</summary><pre class="mhe">${esc(x.body)}</pre></details>`:''}</div>`).join('')
-        :'<div class="hintxt">עדיין לא נשלח אליו כלום.</div>';
+      // 👁 נפתח / עוד לא נפתח — לכל מייל שיצא; 📥 תשובה שלו — עם התוכן
+      const opn=x=>x.direction!=='out'||x.channel!=='אימייל'||x.track==null?'':(!x.track?'':
+        (x.opened_at?` <small class="cdres ok" title="מספר הפתיחות נמדד בתמונה זעירה — מי שחוסם תמונות לא נספר">👁 נפתח ${esc(ndDate(x.opened_at))} ${esc(String(x.opened_at).slice(11,16))}${+x.opens>1?' (×'+x.opens+')':''}</small>`
+          :` <small class="cdres" title="ייתכן שקרא בלי להציג תמונות — אז זה לא נמדד">⏳ עוד לא נפתח</small>`));
+      box.innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:4px"><button class="btn sm ghost" id="cm_reps">📥 לבדוק אם ענה במייל</button></div>`
+        +(rows.length?rows.map(x=>x.vm?cdVmHTML({id:x.vm,at:x.at,heard:x.heard,transcript:x.body}):`<div class="cmlog${x.direction==='in'&&x.channel==='אימייל'?' cmin':''}"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')}${opn(x)} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
+        ${(x.body||'').trim()&&(x.direction==='out'||x.channel==='אימייל')?`<details${x.direction==='in'?' open':''}><summary>${x.direction==='in'?'הצג את התשובה שלו':'הצג את המכתב'}</summary><pre class="mhe">${esc(x.body)}</pre></details>`:''}</div>`).join('')
+        :'<div class="hintxt">עדיין לא נשלח אליו כלום.</div>');
+      const rb=document.getElementById('cm_reps');if(rb)rb.onclick=async()=>{rb.disabled=true;rb.textContent='⏳ בודק בתיבת המייל…';
+        const r=await api('POST','/api/members/replies/sync',{}).catch(()=>null);
+        if(!r||!r.ok){rb.disabled=false;rb.textContent='📥 לבדוק אם ענה במייל';return uiAlert((r&&r.error)||'לא נבדק');}
+        toast(r.new?'📥 נכנסו '+r.new+' תשובות חדשות':'אין תשובות חדשות'+(r.errors&&r.errors.length?' · '+r.errors[0]:''));paintLog();};
       cdVmWire(box);
       box.querySelectorAll('.cmlogdel').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/members/log/'+b.dataset.id);paintLog();});
     };

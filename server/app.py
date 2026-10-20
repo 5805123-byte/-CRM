@@ -441,6 +441,8 @@ def ensure_schema():
     for _c in ('fname', 'lname', 'title', 'gender', 'avreich', 'kvittel', 'opened_at'):
         try: con.execute("ALTER TABLE mail_queue ADD COLUMN %s TEXT DEFAULT ''" % _c)
         except Exception: pass
+    try: con.execute("ALTER TABLE member_log ADD COLUMN q_id INTEGER")    # 👁 איזה מייל בתור — לראות אם נפתח
+    except Exception: pass
     try: con.execute("ALTER TABLE mail_queue ADD COLUMN opens INTEGER DEFAULT 0")
     except Exception: pass
     try: con.execute("ALTER TABLE mail_batch ADD COLUMN track INTEGER DEFAULT 1")
@@ -3506,6 +3508,16 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  chasidi bar mitzva error:', e)
+
+    # מיילי "עדכון אשראי" מהגרסה הקודמת נרשמו ביומן פעמיים (פעם בשליחה ופעם במנגנון המיילים) — מוחקים את הכפולה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='cardmail_log_dedup_v1'").fetchone():
+            con.execute("DELETE FROM member_log WHERE summary LIKE '💳 נשלח מייל לעדכון אשראי%' AND EXISTS (SELECT 1 FROM member_log x "
+                        "WHERE x.member_id=member_log.member_id AND x.date=member_log.date AND x.summary LIKE '📤 שלחנו:%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('cardmail_log_dedup_v1')")
+            con.commit()
+    except Exception as e:
+        print('  cardmail log dedup error:', e)
 
     # 📋 משימות הגבאים מהדף של מאיר — לשמעון ברלב (פעם אחת; משימה שכבר קיימת לא נכנסת שוב)
     try:
@@ -14955,7 +14967,26 @@ def _mk_req_loop():
             mk_req_sync()
         except Exception as e:
             print('  mikveh requests sync error:', e)
+        try:
+            member_replies_sync()
+        except Exception as e:
+            print('  member replies sync error:', e)
         time.sleep(900)
+
+
+MEMREP = {'at': '', 'res': None}
+
+
+def member_replies_sync(days=30):
+    """📥 תשובות במייל של חברי הקהילה ← היומן בכרטיס שלהם (כל 15 דקות, וגם בלחיצה)"""
+    import gmail_intake as _gi
+    con = db()
+    try:
+        r = _gi.sync_member_replies(con, days)
+    finally:
+        con.close()
+    MEMREP.update(at=now_iso(), res=r)
+    return r
 
 
 # 💳 מאיר: "מי לא שילם באשראי או מזומן בחודש האחרון, ויש לו אישור כניסה, והוא נכנס למקווה — תבנה לי רשימה".
@@ -15566,16 +15597,16 @@ def ym_worker(job_id, wait=True):
             con.close()
 
 
-def log_member_mail(member_id, to, subject, body, msg_id=''):
-    """מתייק בכרטיס החבר כל מייל שנשלח אליו — כמו יומן הקשר אצל התורם."""
+def log_member_mail(member_id, to, subject, body, msg_id='', qid=None):
+    """מתייק בכרטיס החבר כל מייל שנשלח אליו — כמו יומן הקשר אצל התורם. q_id — כדי להראות אם נפתח"""
     if not member_id:
         return
     try:
         con = db()
-        con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) "
-                    "VALUES(?,?,?,?,?,'out',?,?)",
+        con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at,q_id) "
+                    "VALUES(?,?,?,?,?,'out',?,?,?)",
                     (member_id, today_iso(), 'אימייל', '📤 שלחנו: ' + (subject or 'מייל'),
-                     (body or '').strip(), (msg_id or '').strip(), now_iso()))
+                     (body or '').strip(), (msg_id or '').strip(), now_iso(), qid))
         con.commit(); con.close()
     except Exception:
         pass
@@ -15777,7 +15808,7 @@ def mail_worker(batch_id):
                     if mid:
                         log_member_mail(mid, em, b['subject'] or '',
                                         bulkmail.personalize(b['body'] or '', who),
-                                        msg['Message-ID'])
+                                        msg['Message-ID'], r['id'])
                     else:
                         log_sent_mail(r['donor_id'], em, b['subject'] or '',
                                       bulkmail.personalize(b['body'] or '', who),
@@ -19741,8 +19772,31 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             rows = [dict(r) for r in con.execute(
-                "SELECT id,date,channel,summary,body,direction,at FROM member_log "
+                "SELECT id,date,channel,summary,body,direction,at,q_id FROM member_log "
                 "WHERE member_id=? ORDER BY date DESC, id DESC", (int(m.group(1)),))]
+            # 👁 מאיר: "אני רוצה לראות אם הוא ראה את האימייל ששלחתי לו" — לכל מייל שיצא: נפתח מתי וכמה פעמים
+            # (לפי השורה בתור; במיילים ישנים — לפי הנושא והיום)
+            try:
+                qs_ = [dict(q) for q in con.execute(
+                    "SELECT q.id, q.sent_at, q.opened_at, q.opens, q.status, b.subject, COALESCE(b.track,1) track FROM mail_queue q "
+                    "JOIN mail_batch b ON b.id=q.batch WHERE q.member_id=?", (int(m.group(1)),))]
+                byid = {q['id']: q for q in qs_}
+                used = set()
+                for r_ in rows:
+                    if r_.get('direction') != 'out' or r_.get('channel') != 'אימייל':
+                        continue
+                    q = byid.get(r_.get('q_id'))
+                    if not q:
+                        subj = str(r_.get('summary') or '').replace('📤 שלחנו: ', '', 1)
+                        q = next((x for x in qs_ if x['id'] not in used and (x['subject'] or '') == subj
+                                  and str(x['sent_at'] or '')[:10] == str(r_.get('date') or '')), None)
+                    if q:
+                        used.add(q['id'])
+                        r_['track'] = int(q['track'] or 0)
+                        r_['opened_at'] = q['opened_at'] or ''
+                        r_['opens'] = int(q['opens'] or 0)
+            except Exception as e:
+                print('  member log opens error:', e)
             # מאיר: "אם אחד השאיר הודעה במערכת של ימות המשיח שלנו — שההודעה שלו תהיה בכרטיס שלו"
             try:
                 for v in member_vms(con, int(m.group(1))):
@@ -23546,6 +23600,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': ok, 'link': link if ok else '', 'error': '' if ok else link})
             finally:
                 con.close()
+        if self.path == '/api/members/replies/sync':
+            r = member_replies_sync(int(b.get('days') or 30))
+            if r.get('error') == 'not_configured':
+                return self._send(200, {'ok': False, 'error': 'אין גישה לתיבת המייל — חסר ב-Render COMM_MAIL_PASS (סיסמת אפליקציה של נדר 18) או GMAIL_APP_PASSWORD'})
+            return self._send(200, dict(r, ok=True))
         if self.path == '/api/nd/cardmail_tpl':
             # הנוסח הקבוע של "עדכון אשראי / תאריך חיוב" במייל — מאיר כותב ושומר
             # מאיר: "שאוכל לשנות את הנוסח גם" — גם הנוסחים המוכנים נשמרים כאן (שם, נושא, גוף), לעריכה, הוספה ומחיקה
@@ -23615,8 +23674,7 @@ class H(BaseHTTPRequestHandler):
                              '', '', '', amt))
                 con.execute("UPDATE mail_batch SET sender='neder' WHERE id=?", (bid,))
                 if mid:
-                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
-                                (mid, today_iso(), 'מייל', '💳 נשלח מייל לעדכון אשראי / תאריך חיוב' + (' · ₪' + amt if amt else ''), body[:2000], 'out', '', now_iso()))
+                    # היומן נרשם ע"י מנגנון השליחה עצמו (עם מעקב פתיחה) — לא פעמיים
                     if b.get('email_save') and mm and not (mm['email'] or '').strip():
                         con.execute("UPDATE members SET email=? WHERE id=?", (to_, mid))
                 con.commit()

@@ -2547,3 +2547,78 @@ def sync_mk_requests(con, days=90):
         if M is not None:
             try: M.logout()
             except Exception: pass
+
+
+
+# 📥 מאיר: "אם הוא החזיר לי אימייל — שאקבל את זה גם כאן במערכת". תשובות של חברי הקהילה: מיילי הקהילה יוצאים
+# מנדר 18 (COMM_MAIL_USER / COMM_MAIL_PASS), ולכן קוראים את התיבה שלו — וגם את הראשית (GMAIL_USER), למקרה
+# שענו לשם. כל מייל שהגיע מכתובת של חבר קהילה נכנס ליומן שלו (member_log, direction='in'). בלי כפילויות.
+def member_reply_boxes():
+    out = []
+    cu = (os.environ.get('COMM_MAIL_USER') or os.environ.get('COMM_MAIL_FROM') or '').strip()
+    cp = (os.environ.get('COMM_MAIL_PASS') or '').strip().replace(' ', '')
+    if cu and cp:
+        out.append((cu, cp))
+    gu, gp = (os.environ.get('GMAIL_USER') or '').strip(), (os.environ.get('GMAIL_APP_PASSWORD') or '').replace(' ', '')
+    if gu and gp and gu.lower() not in [x[0].lower() for x in out]:
+        out.append((gu, gp))
+    return out
+
+
+def sync_member_replies(con, days=30):
+    boxes = member_reply_boxes()
+    if not boxes:
+        return {'ok': False, 'error': 'not_configured'}
+    emap = {}
+    for r in con.execute("SELECT id, email FROM members WHERE COALESCE(email,'')<>''"):
+        for e in re.split(r'[,;\s]+', str(r['email'] or '').lower()):
+            if '@' in e:
+                emap.setdefault(e.strip(), r['id'])
+    if not emap:
+        return {'ok': True, 'new': 0, 'boxes': [b[0] for b in boxes]}
+    have = {r[0] for r in con.execute("SELECT msg_id FROM member_log WHERE direction='in' AND COALESCE(msg_id,'')<>''")}
+    since = (datetime.date.today() - datetime.timedelta(days=days)).strftime('%d-%b-%Y')
+    new, errs = 0, []
+    for user, pw in boxes:
+        M = None
+        try:
+            M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=40)
+            M.login(user, pw)
+            typ, _d = M.select('INBOX', readonly=True)
+            if typ != 'OK':
+                continue
+            typ, data = M.search(None, 'SINCE', since)
+            ids = data[0].split() if typ == 'OK' and data and data[0] else []
+            want = []
+            for sid, hdr in _batch_headers(M, ids[-2000:], fields='FROM DATE SUBJECT MESSAGE-ID'):
+                hm = email.message_from_bytes(hdr if isinstance(hdr, bytes) else str(hdr).encode('utf-8', 'replace'))
+                frm = email.utils.parseaddr(_dec(hm.get('From')))[1].lower()
+                mid_ = (hm.get('Message-ID') or '').strip()
+                if frm in emap and mid_ and mid_ not in have:
+                    want.append((sid, emap[frm], frm, mid_))
+            for sid, member_id, frm, mid_ in want[-200:]:
+                typ, md = M.fetch(sid if isinstance(sid, bytes) else str(sid).encode(), '(BODY.PEEK[])')
+                if typ != 'OK' or not md or not isinstance(md[0], tuple):
+                    continue
+                msg = email.message_from_bytes(md[0][1])
+                subj = _dec(msg.get('Subject')) or '(בלי נושא)'
+                try:
+                    dt = email.utils.parsedate_to_datetime(msg.get('Date'))
+                    day, at = dt.strftime('%Y-%m-%d'), dt.strftime('%Y-%m-%dT%H:%M:%S')
+                except Exception:
+                    day = at = datetime.date.today().isoformat()
+                body = _strip_quoted(_extract_text(msg) or '').strip()[:4000]
+                con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'in',?,?)",
+                            (member_id, day, 'אימייל', '📥 ענה במייל: ' + subj[:200], body, mid_, at))
+                have.add(mid_)
+                new += 1
+            con.commit()
+        except Exception as e:
+            errs.append('%s: %s' % (user, str(e)[:120]))
+        finally:
+            try:
+                if M:
+                    M.logout()
+            except Exception:
+                pass
+    return {'ok': not errs or bool(new), 'new': new, 'boxes': [b[0] for b in boxes], 'errors': errs}
