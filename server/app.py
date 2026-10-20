@@ -14492,6 +14492,61 @@ def receipt_mail_html(name, num, amount, date_txt, method, pn):
                (' <span style="font-size:14px;color:#6b6249;font-weight:normal">· %s</span>' % e(method)) if method else ''))
 
 
+def receipt_us_mail(con, name, num, amt, dd, method, donation_id):
+    """נושא, גוף טקסט ו-HTML של מייל הקבלה האמריקאית — אותו דבר בתצוגה המקדימה ובשליחה."""
+    pn = parnes_en(con, donation_id) if donation_id else None
+    if pn:
+        subject = 'Kollel Chatzos — Receipt for Your %s%s' % (pn['what'], (' · ' + pn['date']) if pn['date'] else '')
+    else:
+        subject = 'Donation Receipt No. %d — Kollel Chatzos' % num
+    body = ('Dear %s,\n\n%sAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
+            'No goods or services were provided in exchange for this contribution.\n\n'
+            'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
+            % (name, ('Thank you for sponsoring a %s at Kollel Chatzos%s.\n%s\n\n' % (pn['what'], (' on the night of ' + pn['date']) if pn['date'] else '',
+                                                                              pn['ded'])) if pn else '',
+               num, format(amt, ',.2f'), dd.strftime('%B %-d, %Y')))
+    return subject, body, receipt_mail_html(name, num, amt, dd.strftime('%B %-d, %Y'), method, pn)
+
+
+def receipt_mail_preview(con, don_id):
+    """מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — המייל בדיוק כפי שיישלח, בלי לשלוח
+    ובלי לשמור קבלה. מחזיר {subject, body, html, kind, num, name}."""
+    row = con.execute("SELECT * FROM donations WHERE id=?", (don_id,)).fetchone()
+    if not row:
+        return None
+    kind = receipt_kind_for(con, row)
+    if kind == 'il':
+        import receipt_il as _m
+        info = _m.receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
+        num = int(info.get('num') or 0)
+        amt = float(info.get('amount') or 0)
+        dd = datetime.date.fromisoformat(str(info.get('date') or today_iso())[:10])
+        subject = "קבלה מס' %04d על תרומתך — כולל חצות" % num
+        body = ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
+                "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
+                % (info.get('name') or '', num, format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
+        return {'subject': subject, 'body': body, 'html': '', 'kind': 'il', 'num': num, 'name': info.get('name') or ''}
+    import receipt_us as _m
+    info = _m.receipt_data(con, don_id, RECEIPT_START, today_iso)
+    dd = datetime.date.fromisoformat(str(info.get('date') or today_iso())[:10])
+    subject, body, html = receipt_us_mail(con, info['name'], info['num'], float(info['amount'] or 0), dd, info.get('method') or '', don_id)
+    return {'subject': subject, 'body': body, 'html': html, 'kind': 'us', 'num': info['num'], 'name': info['name']}
+
+
+def receipt_preview_jpg(con, don_id):
+    """תמונת הקבלה (JPG) לתצוגה מקדימה — לא נשמרת ולא נשלחת."""
+    row = con.execute("SELECT * FROM donations WHERE id=?", (don_id,)).fetchone()
+    if not row:
+        return b''
+    if receipt_kind_for(con, row) == 'il':
+        import receipt_il as _m
+        data, _fn = _m.receipt_file(con, don_id, 'jpg', STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full)
+    else:
+        import receipt_us as _m
+        data, _fn = _m.receipt_file(con, don_id, 'jpg', STATIC, RECEIPT_START, today_iso)
+    return data
+
+
 def receipt_send(con, rid, email=''):
     """שולח את הקבלה (PDF מצורף) למייל של התורם, ומסמן שנשלחה."""
     r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
@@ -14523,18 +14578,7 @@ def receipt_send(con, rid, email=''):
                 'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
                 % (r['name'], r['num'], ylab, format(amt, ',.2f')))
     else:
-        pn = parnes_en(con, r['donation_id']) if r['donation_id'] else None
-        if pn:
-            subject = 'Kollel Chatzos — Receipt for Your %s%s' % (pn['what'], (' · ' + pn['date']) if pn['date'] else '')
-        else:
-            subject = 'Donation Receipt No. %d — Kollel Chatzos' % r['num']
-        body = ('Dear %s,\n\n%sAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
-                'No goods or services were provided in exchange for this contribution.\n\n'
-                'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
-                % (r['name'], ('Thank you for sponsoring a %s at Kollel Chatzos%s.\n%s\n\n' % (pn['what'], (' on the night of ' + pn['date']) if pn['date'] else '',
-                                                                                      pn['ded'])) if pn else '',
-                   r['num'], format(amt, ',.2f'), dd.strftime('%B %-d, %Y')))
-        rc_html = receipt_mail_html(r['name'], r['num'], amt, dd.strftime('%B %-d, %Y'), r['method'] or '', pn)
+        subject, body, rc_html = receipt_us_mail(con, r['name'], r['num'], amt, dd, r['method'] or '', r['donation_id'])
     try:
         import mailer
     except Exception as e:
@@ -16865,6 +16909,35 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] in ('/api/receipts/preview', '/api/receipts/preview.jpg'):
+            # מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — תצוגה מקדימה: המייל כמו שיישלח,
+            # ותמונת הקבלה. לא שולח ולא שומר קבלה
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                don = int((qs.get('donation_id') or ['0'])[0])
+            except ValueError:
+                don = 0
+            con = db()
+            try:
+                if self.path.split('?')[0].endswith('.jpg'):
+                    data = receipt_preview_jpg(con, don)
+                    if not data:
+                        return self._send(404, {'ok': False, 'error': 'התרומה לא נמצאה'})
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Content-Length', str(len(data)))
+                    self.send_header('Cache-Control', 'no-store')
+                    self.end_headers(); self.wfile.write(data)
+                    return
+                pv = receipt_mail_preview(con, don)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            finally:
+                con.close()
+            if not pv:
+                return self._send(200, {'ok': False, 'error': 'התרומה לא נמצאה'})
+            pv['ok'] = True
+            return self._send(200, pv)
         if self.path.split('?')[0] in ('/cert.png', '/cert.jpg'):
             # התעודה כתמונה — JPEG נשלח בוואטסאפ כתמונה פתוחה, PNG משמש להעתקה ללוח
             fmt = 'jpg' if self.path.split('?')[0].endswith('.jpg') else 'png'

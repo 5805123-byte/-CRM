@@ -6072,9 +6072,10 @@ function cardDetails(d,body){
     if(!await uiConfirm('להפיק קבלה '+(cs==='₪'?'ישראלית':'לארה"ב')+' על '+cs+x.amount+'?'))return;
     // מאיר: "שהמערכת תשאל אותי לפני שליחת אימייל האם לשלוח את הקבלה באימייל" — שאלה נפרדת
     let em=(splitEmails(d.email)[0]||'').trim(), send=false;
-    if(em){send=await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן, לשלוח','לא, רק להפיק');}
-    else{const v=await uiPrompt('אין מייל בכרטיס. לשלוח את הקבלה במייל? הקלד כתובת (ריק = רק להפיק, בלי לשלוח)','');
-      em=(v||'').trim(); if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return;} send=!!em;}
+    if(!em){const v=await uiPrompt('אין מייל בכרטיס. לשלוח את הקבלה במייל? הקלד כתובת (ריק = רק להפיק, בלי לשלוח)','');
+      em=(v||'').trim(); if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return;}}
+    // מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — רואים את המייל והקבלה, ורק אז מאשרים
+    if(em)send=await rcSendApprove(em,x.id);
     b.disabled=true; toast('מפיק קבלה…');
     const r=await api('POST','/api/receipts/issue',{donation_id:x.id,email:em,send:send?1:0});
     b.disabled=false;
@@ -17762,6 +17763,20 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 // 💳 מאיר: "אין אצל כרטיס תורם תרומה באשראי? צריך אצלו כרטיס של חיוב אשראי שיהיה קל ופשוט, וקבלה,
 // ועבור מה… הכי למעלה… עם האימייל שלו… קבלה שייצא אוטומטית לאימייל מיד". כרטיס שמור או כרטיס חדש
 // בטופס המאובטח של בנק ווסט (המספר לא עובר אצלנו); אחרי שעבר — קבלה נשלחת מיד למייל שנבחר
+// מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — המייל בדיוק כפי שיישלח (iframe),
+// הקבלה כתמונה, והתעודה אם יש. נטען מהשרת בלי לשלוח ובלי לשמור
+function rcPreviewHTML(don,certUrl){
+  return `<div class="rcprev" data-don="${don||''}">${don?`<div class="rcpsub"><b>נושא:</b> <span class="rcp_subj">טוען…</span></div>
+      <iframe class="rcp_if" title="המייל" sandbox=""></iframe>
+      <div class="rcpcap">🧾 הקבלה (מצורפת ל-PDF) — <a href="/api/receipts/preview.jpg?donation_id=${don}" target="_blank">פתח גדול</a></div>
+      <img class="rcp_img" src="/api/receipts/preview.jpg?donation_id=${don}&t=${Date.now()}" alt="קבלה">`:''}
+    ${certUrl?`<div class="rcpcap">🖼️ התעודה (מייל נפרד) — <a href="${esc(certUrl)}" target="_blank">פתח גדול</a></div><img class="rcp_img" src="${esc(certUrl)}" alt="תעודה">`:''}</div>`;}
+async function rcPreviewFill(root){const box=root.querySelector('.rcprev');if(!box||!box.dataset.don)return;
+  const r=await api('GET','/api/receipts/preview?donation_id='+box.dataset.don).catch(()=>null);
+  const sj=box.querySelector('.rcp_subj'),f=box.querySelector('.rcp_if');
+  if(!r||!r.ok){if(sj)sj.textContent='לא נטען: '+((r&&r.error)||'');if(f)f.remove();return;}
+  if(sj)sj.textContent=r.subject||'';
+  if(f){if(r.html)f.srcdoc=r.html;else{f.srcdoc='<!doctype html><html dir="rtl"><body style="font-family:Arial;font-size:15px;white-space:pre-wrap;padding:12px">'+esc(r.body||'')+'</body></html>';}}}
 // מאיר: "אל תשלח אימייל לפני אישור סופי שלי" — חלון אישור לפני כל שליחה: למי, מה, היום והשמות
 async function qcMailApprove(o){
   const w=document.createElement('div');w.className='confirmov';
@@ -17771,13 +17786,23 @@ async function qcMailApprove(o){
       ${o.ded?`<div><b>לזכות:</b> ${esc(o.ded)}</div>`:''}
       ${o.dtext?`<div class="hintxt">המייל באנגלית: "Thank you for sponsoring a Night of Chatzos Torah Learning on the night of …" עם היום והשמות, והקבלה (PDF) מצורפת${o.cert?'; התעודה — במייל נפרד':''}.</div>`:'<div class="hintxt">מייל באנגלית עם הקבלה (PDF) מצורפת.</div>'}
       ${o.noDon?'<div class="bqwarn">התרומה עוד לא נרשמה בכרטיס — את הקבלה אפשר להפיק מהכרטיס בעוד רגע.</div>':''}</div>
+    ${rcPreviewHTML(o.don,o.certUrl)}
     <label class="qcchk"><input type="checkbox" id="qa_rc" ${o.receipt?'checked':''} ${o.receipt?'':'disabled'}> 🧾 לשלוח את הקבלה</label>
     ${o.cert?`<label class="qcchk"><input type="checkbox" id="qa_ct" checked> 🖼️ לשלוח גם את התעודה (מייל נפרד)</label>`:''}
     <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">לא לשלוח עכשיו</button></div></div>`;
-  document.body.appendChild(w);
+  document.body.appendChild(w);rcPreviewFill(w);
   const ok=await new Promise(res=>{w.querySelector('.cno').onclick=()=>res(false);w.querySelector('.cyes').onclick=()=>res(true);});
   const out=ok?{receipt:!!(w.querySelector('#qa_rc')||{}).checked,cert:!!(w.querySelector('#qa_ct')||{}).checked}:null;
   w.remove();return out;}
+// אישור לפני שליחת קבלה מהכרטיס — עם המייל והקבלה כמו שיישלחו
+async function rcSendApprove(em,don){
+  const w=document.createElement('div');w.className='confirmov';
+  w.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>📧 אישור סופי לפני שליחה</b><br><small>אל: <span dir="ltr">${esc(em)}</span></small></div>
+    ${rcPreviewHTML(don,'')}
+    <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">לא לשלוח — רק להפיק</button></div></div>`;
+  document.body.appendChild(w);rcPreviewFill(w);
+  const ok=await new Promise(res=>{w.querySelector('.cno').onclick=()=>res(false);w.querySelector('.cyes').onclick=()=>res(true);});
+  w.remove();return ok;}
 // מאיר: "שיהיה שם אפשרות לבחור עבור מה את פרנס יום או את כל הקטגוריות… או בחירת קטגוריה אישית או
 // לכולם, וגם לתרומה חודשית… אם זה עבור פרנס יום — שייפתח לשאול איזה יום וייפתח הלוח"
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.dnqc');if(!b)return;
@@ -17894,7 +17919,8 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     }
     // מאיר: "אל תשלח אימייל לפני אישור סופי שלי" — שום מייל לא יוצא לבד: רואים בדיוק מה יישלח ולמי, ומאשרים
     if(rc||(day&&pid&&em.includes('@'))){
-      const ap=await qcMailApprove({em,amt,cat,dtext:day?(dtext+' '+dhy):'',ded:day?dded:'',receipt:rc&&!!res.donation_id,cert:!!(day&&pid),noDon:rc&&!res.donation_id});
+      const certUrl=(day&&pid)?('/cert.jpg?'+new URLSearchParams({kind:day,date:dtext+' '+dhy,names:dded,w:'900'}).toString()):'';
+      const ap=await qcMailApprove({em,amt,cat,dtext:day?(dtext+' '+dhy):'',ded:day?dded:'',receipt:rc&&!!res.donation_id,cert:!!(day&&pid),noDon:rc&&!res.donation_id,don:res.donation_id||0,certUrl});
       if(ap&&(ap.receipt||ap.cert)){
         toast('שולח…');const m=[];
         if(day&&pid){const r2=await api('POST','/api/parnes/'+pid+'/send',{donation_id:res.donation_id||0,email:em,receipt:ap.receipt?1:0,cert:ap.cert?1:0}).catch(()=>null);
