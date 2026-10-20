@@ -17,16 +17,16 @@ ORG_LINE = '1540 40th Street, Brooklyn, NY 11218  ·  EIN 20-0447034  ·  501(c)
 ORG_LEGAL = 'registered as Cong. Zikhron Avos'
 SIGNER = 'Rabbi Yehoshua Meir Deutsch'
 SIGNER_ROLE = 'Rosh HaKollel · Authorized Signatory'
-WARM = 'With deep appreciation for your partnership in the Torah of Chatzos.'
+WARM = 'With deep appreciation for your partnership in the Torah of Chatzot.'
 STMT = [('This letter is your official receipt for tax purposes. ', False),
         ('No goods or services were provided', True),
-        (' in exchange for this contribution. Kollel Chatzos is exempt under Section 501(c)(3) of the '
+        (' in exchange for this contribution. Kollel Chatzot is exempt under Section 501(c)(3) of the '
          'Internal Revenue Code; contributions are tax-deductible to the extent allowed by law. '
          'Please retain this receipt for your records.', False)]
 
 # הייעוד ואמצעי התשלום — אותן טבלאות כמו ב-receipt.html
 PMAP = [(r'יששכר|זבולון|zevulun|yissachar', 'Yissachar–Zevulun Partnership in Torah'),
-        (r'פרנס.?לילה|לימוד.?לילה', 'Sponsorship of a Night of Chatzos Torah Learning'),
+        (r'פרנס.?לילה|לימוד.?לילה', 'Sponsorship of a Night of Chatzot Torah Learning'),
         (r'נר.?למאור|ner\s?la?maor', 'Ner LaMaor'),
         (r'חדר.?קפה|coffee', 'Refreshments for the Kollel'),
         (r'ארוחת.?בוקר|breakfast', 'Breakfast for the Kollel'),
@@ -328,7 +328,7 @@ def receipt_file(con, don_id, fmt, STATIC, RECEIPT_START, today_iso):
     f1, f2 = font(1.5 * u, True), font(1.5 * u)
     t2 = ' · EIN 20-0447034'
     dr.text((x1, yy), t2, font=f2, fill=SOFT, anchor='ra')
-    spaced('KOLLEL CHATZOS', f1, x1 - int(wid(t2, f2)) - int(spaced_w('KOLLEL CHATZOS', f1, .16 * u)), yy, GOLD, .16 * u)
+    spaced('KOLLEL CHATZOT', f1, x1 - int(wid(t2, f2)) - int(spaced_w('KOLLEL CHATZOT', f1, .16 * u)), yy, GOLD, .16 * u)
     fw = font(2.05 * u)
     wl = wrap(WARM, fw, cw)
     wy = sy - int(2.6 * u) - int(2.05 * u * 1.5) * len(wl)

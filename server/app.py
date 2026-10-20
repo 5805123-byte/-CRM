@@ -9387,7 +9387,7 @@ def statement_file(con, did, year, fmt='pdf'):
     # ---- שורת העמותה ----
     y += int(1.2 * u)
     fo, fob = font(1.55 * u), font(1.55 * u, True)
-    x = x0; dr.text((x, y), 'Kollel Chatzos', font=fob, fill=INK); x += wid('Kollel Chatzos', fob)
+    x = x0; dr.text((x, y), 'Kollel Chatzot', font=fob, fill=INK); x += wid('Kollel Chatzot', fob)
     dr.text((x, y), ' · Cong. Zikhron Avos · 501(c)(3)', font=fo, fill=SOFT)
     tid = 'Tax ID (EIN) '; ein = '20-0447034'
     dr.text((x1 - wid(ein, fob), y), ein, font=fob, fill=INK)
@@ -9462,8 +9462,8 @@ def statement_file(con, did, year, fmt='pdf'):
     dr.text((x1 - wid('Rabbi Yehoshua Meir Deutsch', fsg), sy), 'Rabbi Yehoshua Meir Deutsch', font=fsg, fill=DEEP); sy += int(2.3 * 1.2 * u)
     dr.text((x1 - wid('Rosh HaKollel', fsr), sy), 'Rosh HaKollel', font=fsr, fill=SOFT)
     fb = font(1.9 * u)
-    bl = ['A tremendous zechus — a full partner in the Torah of the Chatzos hours.',
-          'May you merit all the Brachos of one who arises at Chatzos to learn Torah.']
+    bl = ['A tremendous zechus — a full partner in the Torah of the Chatzot hours.',
+          'May you merit all the Brachos of one who arises at Chatzot to learn Torah.']
     blh = int(1.9 * 1.5 * u)
     by = bottom - int((2.3 * 1.2 + 1.7 * 1.3 + 1.9 * 1.3) * u) - int(1.8 * u) - int(1.2 * u) - blh * 2
     top_line = by - int(1.2 * u)
@@ -13484,7 +13484,7 @@ def auth_check_google(credential):
         return '', 'אסימון לא תקין'
     url = (os.environ.get('GOOGLE_TOKENINFO') or GOOGLE_TOKENINFO) + '?' + urllib.parse.urlencode({'id_token': tok})
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'KollelChatzosCRM/1.0'}), timeout=20) as r:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'KollelChatzotCRM/1.0'}), timeout=20) as r:
             info = json.loads(r.read().decode('utf-8', 'replace'))
     except urllib.error.HTTPError as e:
         return '', 'גוגל לא אישרו את הכניסה (%s)' % e.code
@@ -14446,7 +14446,7 @@ def _gem(s):
 
 
 def parnes_en(con, don_id):
-    """לקבלה ולמייל באנגלית: מה נתרם ('Night of Chatzos Torah Learning'), איזה יום ('10 Cheshvan 5787'),
+    """לקבלה ולמייל באנגלית: מה נתרם ('Night of Chatzot Torah Learning'), איזה יום ('10 Cheshvan 5787'),
     וההקדשה (עברית, כמו שנכתבה). None אם התרומה לא משובצת ליום."""
     try:
         r = con.execute("SELECT p.* FROM donations d JOIN parnes p ON p.id=d.parnes_id WHERE d.id=?", (don_id,)).fetchone()
@@ -14454,7 +14454,7 @@ def parnes_en(con, don_id):
         return None
     if not r:
         return None
-    what = {'coffee': 'Refreshments for the Kollel', 'breakfast': 'Breakfast for the Kollel'}.get(r['kind'] or '', 'Night of Chatzos Torah Learning')
+    what = {'coffee': 'Refreshments for the Kollel', 'breakfast': 'Breakfast for the Kollel'}.get(r['kind'] or '', 'Night of Chatzot Torah Learning')
     mon = str(r['month'] or '').strip()
     day = int(r['day'] or 0) or _gem(str(r['date_text'] or '').split(' ')[0])
     yr = str((r['hyear'] if 'hyear' in r.keys() else '') or '').strip()
@@ -14468,25 +14468,25 @@ def receipt_mail_html(name, num, amount, date_txt, method, pn):
     e = _h.escape
     night = ''
     if pn:
-        night = ('<tr><td style="padding:18px 28px 4px;font-size:17px;color:#3a2f1a">Thank you for sponsoring a <b>%s</b> at Kollel Chatzos'
+        night = ('<tr><td style="padding:18px 28px 4px;font-size:17px;color:#3a2f1a">Thank you for sponsoring a <b>%s</b> at Kollel Chatzot'
                  '%s.</td></tr>' % (e(pn['what']), (' on the night of <b style="color:#7a1f1f">%s</b>' % e(pn['date'])) if pn['date'] else ''))
         if pn['ded']:
             night += ('<tr><td style="padding:8px 28px 4px"><div style="background:#f6f1e5;border-right:4px solid #9c7a2e;padding:12px 16px;'
                       'direction:rtl;text-align:right;font-size:17px;color:#3a2f1a;font-family:Arial,sans-serif">%s</div></td></tr>' % e(pn['ded']))
-        night += ('<tr><td style="padding:8px 28px 4px;font-size:15px;color:#5b5470">The Torah learning and prayers at Chatzos that night'
+        night += ('<tr><td style="padding:8px 28px 4px;font-size:15px;color:#5b5470">The Torah learning and prayers at Chatzot that night'
                   ' are dedicated as you requested.</td></tr>')
     return ('<!doctype html><html><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
             '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f3eee2;padding:24px 0"><tr><td align="center">'
             '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%%;background:#fffdf7;border:1px solid #e3d9c2;border-radius:10px">'
-            '<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzos</div>'
-            '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT CHATZOS</div></td></tr>'
+            '<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzot</div>'
+            '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT CHATZOT</div></td></tr>'
             '<tr><td style="padding:20px 28px 0;font-size:17px;color:#3a2f1a">Dear %s,</td></tr>%s'
             '<tr><td style="padding:16px 28px"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border:1px solid #e3d9c2;border-radius:8px">'
             '<tr><td style="padding:12px 16px;font-size:13px;color:#6b6249;letter-spacing:1px">RECEIPT No. %s</td><td style="padding:12px 16px;font-size:13px;color:#6b6249;text-align:right">%s</td></tr>'
             '<tr><td colspan="2" style="padding:0 16px 12px;font-size:30px;color:#7a1f1f;font-weight:bold">%s%s</td></tr></table></td></tr>'
             '<tr><td style="padding:0 28px 6px;font-size:15px;color:#3a2f1a">Your official receipt is attached. No goods or services were provided in exchange for this contribution.</td></tr>'
-            '<tr><td style="padding:14px 28px 22px;font-size:16px;color:#7a1f1f">With deep appreciation for your partnership in the Torah of Chatzos,<br>'
-            '<b>Rabbi Yehoshua Meir Deutsch</b><br><span style="font-size:13px;color:#6b6249">Rosh HaKollel · Kollel Chatzos · EIN 20-0447034</span></td></tr>'
+            '<tr><td style="padding:14px 28px 22px;font-size:16px;color:#7a1f1f">With deep appreciation for your partnership in the Torah of Chatzot,<br>'
+            '<b>Rabbi Yehoshua Meir Deutsch</b><br><span style="font-size:13px;color:#6b6249">Rosh HaKollel · Kollel Chatzot · EIN 20-0447034</span></td></tr>'
             '</table></td></tr></table></body></html>'
             % (e(name), night, e(str(num)), e(date_txt), '$' + _usd(amount),
                (' <span style="font-size:14px;color:#6b6249;font-weight:normal">· %s</span>' % e(method)) if method else ''))
@@ -14505,13 +14505,13 @@ def receipt_us_mail(con, name, num, amt, dd, method, donation_id):
     """נושא, גוף טקסט ו-HTML של מייל הקבלה האמריקאית — אותו דבר בתצוגה המקדימה ובשליחה."""
     pn = parnes_en(con, donation_id) if donation_id else None
     if pn:
-        subject = 'Kollel Chatzos — Receipt for Your %s%s' % (pn['what'], (' · ' + pn['date']) if pn['date'] else '')
+        subject = 'Kollel Chatzot — Receipt for Your %s%s' % (pn['what'], (' · ' + pn['date']) if pn['date'] else '')
     else:
-        subject = 'Donation Receipt No. %d — Kollel Chatzos' % num
+        subject = 'Donation Receipt No. %d — Kollel Chatzot' % num
     body = ('Dear %s,\n\n%sAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
             'No goods or services were provided in exchange for this contribution.\n\n'
-            'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
-            % (name, ('Thank you for sponsoring a %s at Kollel Chatzos%s.\n%s\n\n' % (pn['what'], (' on the night of ' + pn['date']) if pn['date'] else '',
+            'With deep appreciation for your partnership in the Torah of Chatzot,\n\nKollel Chatzot\nEIN 20-0447034'
+            % (name, ('Thank you for sponsoring a %s at Kollel Chatzot%s.\n%s\n\n' % (pn['what'], (' on the night of ' + pn['date']) if pn['date'] else '',
                                                                               pn['ded'])) if pn else '',
                num, _usd(amt), dd.strftime('%B %-d, %Y')))
     return subject, body, receipt_mail_html(name, num, amt, dd.strftime('%B %-d, %Y'), method, pn)
@@ -14581,10 +14581,10 @@ def receipt_send(con, rid, email=''):
                 % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
     elif (r['src'] or '') == 'statement':
         ylab = re.sub(r'^\D+', '', r['purpose'] or '') or str(dd.year)
-        subject = 'Donation Receipt %s (No. %d) — Kollel Chatzos' % (ylab, r['num'])
+        subject = 'Donation Receipt %s (No. %d) — Kollel Chatzot' % (ylab, r['num'])
         body = ('Dear %s,\n\nAttached is your official receipt (No. %d) for your contributions during %s, totaling $%s.\n'
                 'No goods or services were provided in exchange for these contributions.\n\n'
-                'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
+                'With deep appreciation for your partnership in the Torah of Chatzot,\n\nKollel Chatzot\nEIN 20-0447034'
                 % (r['name'], r['num'], ylab, _usd(amt)))
     else:
         subject, body, rc_html = receipt_us_mail(con, r['name'], r['num'], amt, dd, r['method'] or '', r['donation_id'])
@@ -25325,10 +25325,10 @@ class H(BaseHTTPRequestHandler):
                         img = cert_png(pr['kind'] or 'parnes', date, (pr['dedication'] or '').strip(), '', 1600, 'jpg', '')
                         d = con.execute("SELECT * FROM donors WHERE id=?", (pr['donor_id'],)).fetchone()
                         nm = ((d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else ''
-                        subject = 'תעודת %s — %s · Kollel Chatzos' % (kl, date)
-                        body = ('Dear %s,\n\nAttached is your certificate for the %s you sponsored at Kollel Chatzos — %s.\n'
-                                'The learning and prayers at Chatzos that night will be dedicated as you requested.\n\n'
-                                'With deep appreciation,\nKollel Chatzos' % (nm or 'Friend', 'night of Chatzos Torah learning' if kl == 'פרנס לילה' else kl, date))
+                        subject = 'תעודת %s — %s · Kollel Chatzot' % (kl, date)
+                        body = ('Dear %s,\n\nAttached is your certificate for the %s you sponsored at Kollel Chatzot — %s.\n'
+                                'The learning and prayers at Chatzot that night will be dedicated as you requested.\n\n'
+                                'With deep appreciation,\nKollel Chatzot' % (nm or 'Friend', 'night of Chatzot Torah learning' if kl == 'פרנס לילה' else kl, date))
                         if not mailer.configured():
                             out['cert_error'] = 'שליחת מייל לא מוגדרת ב-Render'
                         else:

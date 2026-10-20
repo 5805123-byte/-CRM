@@ -498,10 +498,10 @@ DONATE = [
     ('💳', 'Credit Card', 'Donate by credit card on our website<br>'
      'Up to 3 monthly payments',
      'https://kollelchatzot.com/donate.php'),
-    ('💵', 'Zelle / QuickPay', 'Kollelchatzos1@gmail.com<br>'
-     '(appears as Congregation Zichron Avos)', 'mailto:Kollelchatzos1@gmail.com'),
-    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzos<br>Tax ID # 20-0447034', ''),
-    ('✉️', 'Check', 'Made out to Kollel Chatzos<br>'
+    ('💵', 'Zelle / QuickPay', 'Kollelchatzot1@gmail.com<br>'
+     '(appears as Congregation Zichron Avos)', 'mailto:Kollelchatzot1@gmail.com'),
+    ('🏦', 'OJC / Donors Fund', 'Kollel Chatzot<br>Tax ID # 20-0447034', ''),
+    ('✉️', 'Check', 'Made out to Kollel Chatzot<br>'
      'c/o Friedman Family<br>1540 40th Street, Brooklyn, NY 11218<br>'
      'Tax ID # 20-0447034',
      'https://maps.google.com/?q=1540+40th+Street+Brooklyn+NY+11218'),
