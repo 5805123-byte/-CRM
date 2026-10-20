@@ -17455,7 +17455,7 @@ function rcPurOpts(d){const seen=new Set(),o=[],add=(v,l)=>{v=String(v||'').trim
   h+='<optgroup label="ייעודים וקמפיינים">'+o.join('')+'</optgroup>';
   return h+'<option value="__new__">➕ אחר — לכתוב…</option>';}
 // כמו purpose_en בשרת (receipt_us.py) — רק כדי להציע את הנוסח האנגלי בטופס
-function purposeEnJS(p){p=String(p||'').trim();const M=[[/יששכר|זבולון|zevulun|yissachar/i,'Yissachar–Zevulun Partnership in Torah'],[/פרנס.?לילה|לימוד.?לילה/,'Sponsorship of a Night of Torah Learning'],
+function purposeEnJS(p){p=String(p||'').trim();const M=[[/יששכר|זבולון|zevulun|yissachar/i,'Yissachar–Zevulun Partnership in Torah'],[/פרנס.?לילה|לימוד.?לילה/,'Sponsorship of a Night of Chatzos Torah Learning'],
   [/נר.?למאור/,'Ner LaMaor'],[/חדר.?קפה/,'Refreshments for the Kollel'],[/ארוחת.?בוקר/,'Breakfast for the Kollel'],[/קמחא/,'Kimcha D’Pischa'],[/מתנות.?לאביונים/,'Matanos LaEvyonim'],
   [/הכנסת.?כלה/,'Hachnosas Kallah'],[/בנין|בניין/,'Building Fund'],[/קוויטל/,'Kvittel'],[/סוכות|סכות/,'Sukkos'],[/ראש.?השנה/,'Rosh Hashanah'],[/יום.?כיפור/,'Yom Kippur'],
   [/הושענא/,'Hoshana Rabbah'],[/חנוכה/,'Chanukah'],[/פורים/,'Purim'],[/פסח/,'Pesach'],[/שבועות/,'Shavuos'],[/ל.?ג.?בעומר/,'Lag BaOmer']];
@@ -17769,7 +17769,7 @@ async function qcMailApprove(o){
     <div class="qcprev"><div><b>אל:</b> <span dir="ltr">${esc(o.em)}</span></div>
       <div><b>קבלה:</b> ${bqMoney(o.amt)}${o.cat?' · '+esc(o.cat):''}${o.dtext?' · '+esc(o.dtext):''}</div>
       ${o.ded?`<div><b>לזכות:</b> ${esc(o.ded)}</div>`:''}
-      ${o.dtext?`<div class="hintxt">המייל באנגלית: "Thank you for sponsoring a Night of Torah Learning on the night of …" עם היום והשמות, והקבלה (PDF) מצורפת${o.cert?'; התעודה — במייל נפרד':''}.</div>`:'<div class="hintxt">מייל באנגלית עם הקבלה (PDF) מצורפת.</div>'}
+      ${o.dtext?`<div class="hintxt">המייל באנגלית: "Thank you for sponsoring a Night of Chatzos Torah Learning on the night of …" עם היום והשמות, והקבלה (PDF) מצורפת${o.cert?'; התעודה — במייל נפרד':''}.</div>`:'<div class="hintxt">מייל באנגלית עם הקבלה (PDF) מצורפת.</div>'}
       ${o.noDon?'<div class="bqwarn">התרומה עוד לא נרשמה בכרטיס — את הקבלה אפשר להפיק מהכרטיס בעוד רגע.</div>':''}</div>
     <label class="qcchk"><input type="checkbox" id="qa_rc" ${o.receipt?'checked':''} ${o.receipt?'':'disabled'}> 🧾 לשלוח את הקבלה</label>
     ${o.cert?`<label class="qcchk"><input type="checkbox" id="qa_ct" checked> 🖼️ לשלוח גם את התעודה (מייל נפרד)</label>`:''}

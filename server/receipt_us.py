@@ -26,7 +26,7 @@ STMT = [('This letter is your official receipt for tax purposes. ', False),
 
 # הייעוד ואמצעי התשלום — אותן טבלאות כמו ב-receipt.html
 PMAP = [(r'יששכר|זבולון|zevulun|yissachar', 'Yissachar–Zevulun Partnership in Torah'),
-        (r'פרנס.?לילה|לימוד.?לילה', 'Sponsorship of a Night of Torah Learning'),
+        (r'פרנס.?לילה|לימוד.?לילה', 'Sponsorship of a Night of Chatzos Torah Learning'),
         (r'נר.?למאור|ner\s?la?maor', 'Ner LaMaor'),
         (r'חדר.?קפה|coffee', 'Refreshments for the Kollel'),
         (r'ארוחת.?בוקר|breakfast', 'Breakfast for the Kollel'),
