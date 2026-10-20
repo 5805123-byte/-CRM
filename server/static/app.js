@@ -17774,7 +17774,12 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     <div class="bq2"><label class="fld"><span>💲 סכום ($)<small id="qc_per"></small></span><input id="qc_amt" inputmode="decimal" placeholder="0"></label>
       <label class="fld"><span>🎯 עבור מה</span><select id="qc_cat">${dnCatOpts('',d)}<option value="__personal__">✏️ קטגוריה אישית — רק לתורם הזה…</option></select></label></div>
     <div class="addrow" id="qc_freerow" hidden><input id="qc_free" placeholder="שם הייעוד החדש"></div>
-    <div class="hintxt" id="qc_dayh" hidden>🌙 אחרי שהחיוב עובר — נפתח הלוח לבחור את היום, והוא נרשם כנגבה.</div>
+    <div id="qc_dayh" hidden><div class="hintxt">🌙 איזה יום? — נרשם בלוח כנגבה, ויופיע בקבלה ובתעודה</div>
+      <div class="bq2"><label class="fld"><span>חודש עברי</span><select id="qc_hm">${HMORD.map(m=>`<option ${String(HEBTODAY||'').includes(m)?'selected':''}>${m}</option>`).join('')}</select></label>
+        <label class="fld"><span>יום</span><select id="qc_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
+      <label class="fld"><span>שנה עברית</span><select id="qc_hy">${heYearOpts()}</select></label>
+      <div class="bqwarn" id="qc_taken" hidden></div>
+      <label class="fld"><span>✍️ לזכות מי — השמות לתעודה ולקבלה</span><textarea id="qc_ded" rows="2" placeholder="למשל: שלווה גאלדא מיכל בת שרה ביילא לכבוד יום הבת מצווה…"></textarea></label></div>
     <div class="bq2" id="qc_recf" hidden><label class="fld"><span>📅 חיוב ראשון</span><input id="qc_next" type="date" value="${todayStr()}"></label>
       <label class="fld"><span>🔢 כמה חודשים (0 = עד שמבטלים)</span><input id="qc_n" inputmode="numeric" value="0"></label></div>
     <label class="fld"><span>פירוט (לא חובה)</span><input id="qc_note" placeholder="למשל: לע״נ אביו"></label>
@@ -17789,7 +17794,13 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   const catShow=()=>{const v=g('qc_cat').value;g('qc_freerow').hidden=!(v==='__new__'||v==='__personal__');
     g('qc_free').placeholder=v==='__personal__'?'עבור מה? (יישאר רק בכרטיס שלו)':'שם הייעוד החדש — לכל התורמים';
     if(!g('qc_freerow').hidden)g('qc_free').focus();
-    g('qc_dayh').hidden=!(WFDAY[v]&&kind==='once');};
+    g('qc_dayh').hidden=!(WFDAY[v]&&kind==='once');dayChk();};
+  // יום שכבר תפוס אצל תורם אחר — אזהרה מיד, לפני החיוב
+  const dayChk=()=>{const k=WFDAY[g('qc_cat').value],t=g('qc_taken');if(!k||kind!=='once'){t.hidden=true;return;}
+    const hm=g('qc_hm').value,hd=+g('qc_hd').value,hy=g('qc_hy').value;
+    const who=DB.filter(x=>(x.parnes||[]).some(p=>(p.kind||'parnes')===k&&p.month===hm&&+p.day===hd&&(p.hyear||HEBYEAR)===hy&&p.status!=='suggested'));
+    t.hidden=!who.length;t.textContent=who.length?('⚠️ '+heDay(hd)+' '+hm+' כבר תפוס אצל: '+who.map(x=>((x.last||'')+' '+(x.first||'')).trim()).join(', ')):'';};
+  ['qc_hm','qc_hd','qc_hy'].forEach(i=>g(i).onchange=dayChk);
   g('qc_cat').onchange=catShow;
   const kindShow=()=>{o.querySelectorAll('[data-qk]').forEach(x=>x.classList.toggle('on',x.dataset.qk===kind));const rec=kind==='rec';
     g('qc_recf').hidden=!rec;g('qc_rcl').hidden=rec;g('qc_rech').hidden=!rec;g('qc_per').textContent=rec?' — כל חודש':'';
@@ -17816,11 +17827,12 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     const day=kind==='once'?WFDAY[cat]:'';
     if(kind==='rec'&&WFDAY[cat]){toast(cat+' — זה חיוב חד-פעמי, לא הוראת קבע');return;}
     const note=g('qc_note').value.trim(), em=g('qc_em').value.trim();
+    const dhm=g('qc_hm').value,dhd=+g('qc_hd').value,dhy=g('qc_hy').value,dded=g('qc_ded').value.trim(),dtext=heDay(dhd)+' '+dhm;
     const rc=kind==='once'&&g('qc_rc').checked&&em.includes('@');
     if(kind==='once'&&g('qc_rc').checked&&!em.includes('@')){toast('מייל לא תקין');g('qc_em').focus();return;}
     const forT=[cat,note].filter(Boolean).join(' · '), next=g('qc_next').value, n=+g('qc_n').value||0;
     const ask=kind==='rec'?('ליצור הוראת קבע ל'+nm+': '+bqMoney(amt)+' כל חודש'+(n?(' × '+n):'')+(next?(' החל מ-'+bqDate(next)):'')+(forT?(' עבור '+forT):'')+'?')
-      :('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?'+(day?'\n🌙 אחר כך ייפתח הלוח לבחור את היום'+(rc?' — ואז הקבלה (עם היום והשמות) תישלח ל-'+em:'')+'.':(rc?'\n🧾 קבלה תישלח ל-'+em:'')));
+      :('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?'+(day?'\n🌙 '+dtext+' '+dhy+' — נרשם בלוח כנגבה'+(rc?'\n🧾 הקבלה (עם היום והשמות) תישלח ל-'+em:''):(rc?'\n🧾 קבלה תישלח ל-'+em:'')));
     if(!await uiConfirm(ask,kind==='rec'?'🔁 כן, ליצור':'⚡ כן, לחייב','ביטול'))return;
     go.disabled=true;go.textContent=kind==='rec'?'יוצר…':'מחייב…';
     const base={amount:amt,for_cat:cat,for_note:note,donor_id:d.id};
@@ -17838,11 +17850,24 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
       await load();const nd=DB.find(x=>x.id==d.id);if(nd)openDonor(nd);return;}
     const rcl=rc&&!day?(res.receipt&&res.receipt.sent?('\n🧾 קבלה '+(res.receipt.num||'')+' נשלחה ל-'+em):('\n⚠️ הקבלה לא נשלחה: '+(res.receipt_error||'?'))):'';
     await uiAlert('✅ החיוב עבר — '+bqMoney(amt)+(res.auth||res.ref?' · אישור '+(res.auth||res.ref):'')+rcl);
+    // פרנס לילה / חדר קפה / ארוחת בוקר: היום שנבחר בחלון נרשם בלוח כנגבה ומקושר לתרומה —
+    // ורק אז הקבלה (עם היום והשמות) והתעודה במייל נפרד
+    if(day){
+      const pr=await api('POST','/api/parnes',{donor_id:d.id,day:dhd,month:dhm,date_text:dtext,dedication:dded,amount:String(amt),
+        kind:day,status:'confirmed',currency:'$',hyear:dhy,method:'בנק_ווסט'}).catch(()=>null);
+      if(pr&&pr.id){await api('PUT','/api/parnes/'+pr.id,{paid:1});
+        if(res.donation_id)await api('PUT','/api/donation/'+res.donation_id,{category:cat,parnes_id:pr.id});
+        toast('🌙 '+dtext+' '+dhy+' — נרשם בלוח כנגבה');
+        if(em.includes('@')){
+          const cert=await uiConfirm('לשלוח ל-'+em+' גם את תעודת ה'+cat+' ('+dtext+') במייל נפרד?','🖼️ כן, לשלוח תעודה','לא');
+          if(rc||cert){const r2=await api('POST','/api/parnes/'+pr.id+'/send',{donation_id:res.donation_id||0,email:em,receipt:rc&&res.donation_id?1:0,cert:cert?1:0}).catch(()=>null);
+            const m=[];
+            if(rc)m.push(r2&&r2.receipt&&r2.receipt.sent?('🧾 קבלה '+(r2.receipt.num||'')+' נשלחה'):('⚠️ הקבלה לא נשלחה: '+((r2&&r2.receipt_error)||(res.donation_id?'?':'התרומה עוד לא נרשמה בכרטיס'))));
+            if(cert)m.push(r2&&r2.cert_sent?'🖼️ התעודה נשלחה':('⚠️ התעודה לא נשלחה: '+((r2&&r2.cert_error)||'?')));
+            await uiAlert(m.join('\n')+' → '+em);}}
+      }else await uiAlert('⚠️ החיוב עבר, אבל היום לא נרשם בלוח — אפשר לשבץ אותו מהכרטיס');
+    }
     await load();const nd=DB.find(x=>x.id==d.id);
-    const x=nd&&res.donation_id?(nd.donations||[]).find(y=>y.id==res.donation_id):null;
-    // ההקדשה ("פירוט") עוברת לשדה השמות של היום; הקבלה והתעודה נשלחות אחרי שהיום נבחר
-    if(day&&x){openParnesPick({x,d:nd},cat,note);if(PYPICK&&em.includes('@'))PYPICK.rc={email:em,receipt:rc,don:x.id};return;}
-    if(day)toast('התרומה עוד לא נרשמה בכרטיס — אפשר לשבץ את היום מהשורה בכרטיס');
     if(nd)openDonor(nd);};});
 // 💳 מאיר: "עוד כפתור עדכון כרטיס אשראי, כי יש הרבה שלא עובר להם הכרטיס ושלחו חדש".
 // הוראת קבע — נפתחת בלשונית "קבועים" עם טופס החלפת הכרטיס; חיוב חד-פעמי — טופס חיוב על כרטיס חדש

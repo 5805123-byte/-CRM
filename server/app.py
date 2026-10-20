@@ -2158,6 +2158,26 @@ def ensure_schema():
                 print('  קוויטל מנחם צבי קאהן: נוסף לכרטיס', kid)
     except Exception as e:
         print('  שגיאת קוויטל מנחם קאהן:', e)
+    # מאיר: "בחרתי לו לילה כבר לפני כן, אז שישלח לו את הקבלה עם התאריך של הלילה י' חשוון" — תרומת
+    # פרנס לילה / חדר קפה / ארוחת בוקר שנגבתה באשראי ולא קושרה ליום: אם לתורם יש בדיוק יום אחד
+    # מאותו סוג שעוד לא נגבה — התרומה מתחברת אליו והוא מסומן כנגבה. בלי שליחת מייל
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bq_parnes_link_v1'").fetchone():
+            kinds = {'פרנס לילה': 'parnes', 'חדר קפה': 'coffee', 'ארוחת בוקר': 'breakfast'}
+            n = 0
+            for dn in con.execute("SELECT id,donor_id,category FROM donations WHERE parnes_id IS NULL AND date>='2026-10-01' "
+                                  "AND COALESCE(tid,'') LIKE 'BQ%%' AND category IN (%s)" % ','.join('?' * len(kinds)), list(kinds)).fetchall():
+                ps = con.execute("SELECT id FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')=? AND COALESCE(paid,0)=0 "
+                                 "AND COALESCE(status,'confirmed')!='suggested' AND id NOT IN (SELECT parnes_id FROM donations WHERE parnes_id IS NOT NULL)",
+                                 (dn['donor_id'], kinds[dn['category']])).fetchall()
+                if len(ps) == 1:
+                    con.execute("UPDATE donations SET parnes_id=? WHERE id=?", (ps[0]['id'], dn['id']))
+                    con.execute("UPDATE parnes SET paid=1 WHERE id=?", (ps[0]['id'],))
+                    n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('bq_parnes_link_v1')")
+            print('  פרנס באשראי חובר ליום שכבר שובץ:', n)
+    except Exception as e:
+        print('  שגיאת חיבור פרנס:', e)
     # הדגמה — קוויטל שבועי של דניאל הדר בעברית מסודר
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='daniel_hadar_kvittel_v1'").fetchone():
@@ -10550,12 +10570,22 @@ def _evt_len(ws):
     return i
 
 
+def _wish_at(ws, n):
+    """מאיר: "ביקשתי רק את השמות ושם האמא יהיה באותיות גדולות… והשאר הכל אותו גופן ביותר קטן" —
+    "לכבוד יום הבת מצווה שתגדל בדרך התורה…": מילה שפותחת ב-ש ואינה שם מוכר ("שתגדל", "שיזכה"),
+    בלי בן/בת אחריה — זו ברכה, לא שם. השם לא גדל."""
+    if n >= len(ws):
+        return False
+    w = ws[n]
+    return w[:1] == 'ש' and len(w) > 2 and w not in _CERT_NAMEW and not any(_CERT_BEN.match(x) for x in ws[n:])
+
+
 def _evt_only(ws):
     """מאיר: "תמיד המילים ליום הולדת או ליום היארצייט וכדומה שזה יהיה בשורה
     נפרדת באותיות קצת יותר קטנות". צירוף אירוע שאין אחריו שם — רק ברכה או
     סוף השורה — הוא שורת אירוע משלו. מחזיר את אורכו, או 0."""
     n = _evt_len(ws)
-    if n and (n >= len(ws) or _CERT_REQ.match(ws[n])):
+    if n and (n >= len(ws) or _CERT_REQ.match(ws[n]) or _wish_at(ws, n)):
         return n
     return 0
 
@@ -10673,7 +10703,8 @@ def _cert_lines(text):
                 # בא "ליום הולדתו" ואז הברכה. אם אחרי הפתיח אין שם אלא ברכה, זו
                 # בקשה שאחרי השם (קטנה), לא הקדשה חדשה שמגדילה את "בכל העניינים".
                 _ll = _ded_chain(ws[k:])
-                if _CERT_DED.match(ws[k]) and _ll < len(ws[k:]) and not _CERT_REQ.match(ws[k + _ll]):
+                if _CERT_DED.match(ws[k]) and _ll < len(ws[k:]) and not _CERT_REQ.match(ws[k + _ll]) \
+                        and not _wish_at(ws, k + _ll):
                     ded = k; break
         if ded > 0:                       # "הר\"ר רפאל לע\"נ אביו יוסף"
             out.append((' '.join(ws[:ded]), 'donor'))
@@ -10872,6 +10903,12 @@ def _req_at(ws, start=0):
         j = i
         while j < len(ws) and j < i + 2 and ws[j] in _CERT_NAMEW:
             j += 1
+        # מאיר: "השמות כאן אמורים להיות גדולים גם ביילא וגם ואברהם מנחם" — ההורה השני ("ואברהם מנחם")
+        # הוא המשך השמות. אותו כלל ב-parnes-cert.html
+        while j < len(ws) and ws[j][:1] == 'ו' and ws[j][1:] in _CERT_NAMEW:
+            j += 1
+            while j < len(ws) and ws[j] in _CERT_NAMEW:
+                j += 1
         if j < len(ws) and not fam and sum(1 for w in ws[j:] if not _CERT_SMALL.match(w)) >= 2 \
                 and not any(_CERT_BEN.match(w) for w in ws[j:]):
             return j
@@ -10916,9 +10953,15 @@ def _cert_body(lead, ws):
             return
         head, tail = (rest[:r], rest[r:]) if r > 0 else (rest, [])
         f = _fam_at(head)
+        # מאיר: "השם… תמיד בשורה אחת וגם השם של האמא ושל האבא" — ההורה השני ("ואברהם מנחם") בשורה משלו
+        rb = next((k for k, w in enumerate(head) if _CERT_BEN.match(w)), -1)
+        p2 = next((k for k in range(rb + 2, len(head)) if head[k][:1] == 'ו' and head[k][1:] in _CERT_NAMEW), -1) if rb >= 0 else -1
         if f > 0:                        # "וכל משפחתו" בשורה שניה משלו
             out.append((' '.join(head[:f]), 'names'))
             out.append((' '.join(head[f:]), 'names'))
+        elif p2 > 0:
+            out.append((' '.join(head[:p2]), 'names'))
+            out.append((' '.join(head[p2:]), 'names'))
         else:
             out.append((' '.join(head), 'names'))
         if tail:
@@ -14134,8 +14177,17 @@ def receipt_issue(con, don_id, kind=None, email='', send=True):
     if not row:
         return None
     kind = kind if kind in ('il', 'us') else receipt_kind_for(con, row)
-    ex = con.execute("SELECT id FROM receipt_docs WHERE kind=? AND donation_id=?", (kind, don_id)).fetchone()
+    ex = con.execute("SELECT id,src FROM receipt_docs WHERE kind=? AND donation_id=?", (kind, don_id)).fetchone()
     if ex:
+        # מאיר: "בחרתי לו לילה כבר לפני כן, אז שישלח לו את הקבלה עם התאריך של הלילה" — קבלה בעיצוב שלנו
+        # על תרומה ששובץ לה יום אחרי שהקבלה הופקה: אותו מספר, הקובץ נבנה מחדש עם היום והשמות
+        if kind == 'us' and (ex['src'] or 'own') == 'own' and ('parnes_id' in row.keys() and row['parnes_id']):
+            try:
+                info, pdf, _fn = receipt_build(con, kind, don_id)
+                con.execute("UPDATE receipt_docs SET pdf=?, purpose=? WHERE id=?", (pdf, info.get('purpose') or '', ex['id']))
+                con.commit()
+            except Exception as e:
+                print('  receipt rebuild error:', e)
         return receipt_doc(con, ex['id'])
     if kind == 'il' and ez_ready():
         doc, err = receipt_issue_ez(con, don_id, email=email, send=send)
@@ -14380,6 +14432,64 @@ def member_nd(con, mid):
             'linked_by': 'ידני' if con.execute("SELECT 1 FROM nd_map WHERE member_id=?", (mid,)).fetchone() else ''}
 
 
+_HE_MON_EN = {'תשרי': 'Tishrei', 'חשון': 'Cheshvan', 'חשוון': 'Cheshvan', 'מרחשון': 'Cheshvan', 'כסלו': 'Kislev', 'כסליו': 'Kislev',
+              'טבת': 'Teves', 'שבט': 'Shevat', 'אדר': 'Adar', 'אדר א': 'Adar I', 'אדר ב': 'Adar II', 'ניסן': 'Nissan',
+              'אייר': 'Iyar', 'סיון': 'Sivan', 'סיוון': 'Sivan', 'תמוז': 'Tammuz', 'אב': 'Av', 'אלול': 'Elul'}
+_GEM = dict(zip('אבגדהוזחטיכלמנסעפצקרשת', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400]))
+_GEM.update({'ך': 20, 'ם': 40, 'ן': 50, 'ף': 80, 'ץ': 90})
+
+
+def _gem(s):
+    return sum(_GEM.get(ch, 0) for ch in str(s or ''))
+
+
+def parnes_en(con, don_id):
+    """לקבלה ולמייל באנגלית: מה נתרם ('Night of Torah Study'), איזה יום ('10 Cheshvan 5787'),
+    וההקדשה (עברית, כמו שנכתבה). None אם התרומה לא משובצת ליום."""
+    try:
+        r = con.execute("SELECT p.* FROM donations d JOIN parnes p ON p.id=d.parnes_id WHERE d.id=?", (don_id,)).fetchone()
+    except Exception:
+        return None
+    if not r:
+        return None
+    what = {'coffee': 'Refreshments for the Kollel', 'breakfast': 'Breakfast for the Kollel'}.get(r['kind'] or '', 'Night of Torah Study')
+    mon = str(r['month'] or '').strip()
+    day = int(r['day'] or 0) or _gem(str(r['date_text'] or '').split(' ')[0])
+    yr = str((r['hyear'] if 'hyear' in r.keys() else '') or '').strip()
+    date = ' '.join(x for x in (str(day) if day else '', _HE_MON_EN.get(mon, mon), str(5000 + _gem(yr)) if yr else '') if x)
+    return {'what': what, 'date': date, 'ded': re.sub(r'\s+', ' ', str(r['dedication'] or '')).strip()}
+
+
+def receipt_mail_html(name, num, amount, date_txt, method, pn):
+    """המייל של הקבלה — מאיר: "שיקבל אימייל יפה עם כותרת קבלה כולל חצות לילה לימוד באנגלית"."""
+    import html as _h
+    e = _h.escape
+    night = ''
+    if pn:
+        night = ('<tr><td style="padding:18px 28px 4px;font-size:17px;color:#3a2f1a">Thank you for sponsoring a <b>%s</b> at Kollel Chatzos'
+                 '%s.</td></tr>' % (e(pn['what']), (' on the night of <b style="color:#7a1f1f">%s</b>' % e(pn['date'])) if pn['date'] else ''))
+        if pn['ded']:
+            night += ('<tr><td style="padding:8px 28px 4px"><div style="background:#f6f1e5;border-right:4px solid #9c7a2e;padding:12px 16px;'
+                      'direction:rtl;text-align:right;font-size:17px;color:#3a2f1a;font-family:Arial,sans-serif">%s</div></td></tr>' % e(pn['ded']))
+        night += ('<tr><td style="padding:8px 28px 4px;font-size:15px;color:#5b5470">The Torah learning and prayers at Chatzos that night'
+                  ' are dedicated as you requested.</td></tr>')
+    return ('<!doctype html><html><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
+            '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f3eee2;padding:24px 0"><tr><td align="center">'
+            '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%%;background:#fffdf7;border:1px solid #e3d9c2;border-radius:10px">'
+            '<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzos</div>'
+            '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT MIDNIGHT</div></td></tr>'
+            '<tr><td style="padding:20px 28px 0;font-size:17px;color:#3a2f1a">Dear %s,</td></tr>%s'
+            '<tr><td style="padding:16px 28px"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border:1px solid #e3d9c2;border-radius:8px">'
+            '<tr><td style="padding:12px 16px;font-size:13px;color:#6b6249;letter-spacing:1px">RECEIPT No. %s</td><td style="padding:12px 16px;font-size:13px;color:#6b6249;text-align:right">%s</td></tr>'
+            '<tr><td colspan="2" style="padding:0 16px 12px;font-size:30px;color:#7a1f1f;font-weight:bold">%s%s</td></tr></table></td></tr>'
+            '<tr><td style="padding:0 28px 6px;font-size:15px;color:#3a2f1a">Your official receipt is attached. No goods or services were provided in exchange for this contribution.</td></tr>'
+            '<tr><td style="padding:14px 28px 22px;font-size:16px;color:#7a1f1f">With deep appreciation for your partnership in the Torah of Chatzos,<br>'
+            '<b>Rabbi Yehoshua Meir Deutsch</b><br><span style="font-size:13px;color:#6b6249">Rosh HaKollel · Kollel Chatzos · EIN 20-0447034</span></td></tr>'
+            '</table></td></tr></table></body></html>'
+            % (e(name), night, e(str(num)), e(date_txt), '$' + format(amount, ',.2f'),
+               (' <span style="font-size:14px;color:#6b6249;font-weight:normal">· %s</span>' % e(method)) if method else ''))
+
+
 def receipt_send(con, rid, email=''):
     """שולח את הקבלה (PDF מצורף) למייל של התורם, ומסמן שנשלחה."""
     r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
@@ -14397,6 +14507,7 @@ def receipt_send(con, rid, email=''):
         dd = datetime.date.fromisoformat((r['date'] or '')[:10])
     except ValueError:
         dd = datetime.date.today()
+    rc_html = ''
     if r['kind'] == 'il':
         subject = "קבלה מס' %04d על תרומתך — כולל חצות" % r['num']
         body = ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
@@ -14410,11 +14521,18 @@ def receipt_send(con, rid, email=''):
                 'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
                 % (r['name'], r['num'], ylab, format(amt, ',.2f')))
     else:
-        subject = 'Donation Receipt No. %d — Kollel Chatzos' % r['num']
-        body = ('Dear %s,\n\nAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
+        pn = parnes_en(con, r['donation_id']) if r['donation_id'] else None
+        if pn:
+            subject = 'Kollel Chatzos — Receipt for Your %s%s' % (pn['what'], (' · ' + pn['date']) if pn['date'] else '')
+        else:
+            subject = 'Donation Receipt No. %d — Kollel Chatzos' % r['num']
+        body = ('Dear %s,\n\n%sAttached is your official receipt (No. %d) for your contribution of $%s on %s.\n'
                 'No goods or services were provided in exchange for this contribution.\n\n'
                 'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
-                % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%B %-d, %Y')))
+                % (r['name'], ('Thank you for sponsoring a %s at Kollel Chatzos%s.\n%s\n\n' % (pn['what'], (' on the night of ' + pn['date']) if pn['date'] else '',
+                                                                                      pn['ded'])) if pn else '',
+                   r['num'], format(amt, ',.2f'), dd.strftime('%B %-d, %Y')))
+        rc_html = receipt_mail_html(r['name'], r['num'], amt, dd.strftime('%B %-d, %Y'), r['method'] or '', pn)
     try:
         import mailer
     except Exception as e:
@@ -14424,7 +14542,8 @@ def receipt_send(con, rid, email=''):
     # קבלה של חבר קהילה — מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, גם בתרומות"
     is_member = (r['note'] or '').startswith('member:')
     res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)], profile='comm' if is_member else None,
-                      pixel=open_pixel(con, 'rc', rid), rtl=(r['kind'] == 'il'))
+                      pixel=open_pixel(con, 'rc', rid), rtl=(r['kind'] == 'il'),
+                      html=rc_html)
     if res.get('ok'):
         con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=?, opened_at=NULL, opens=0 WHERE id=?", (now_iso(), to, rid))
         con.commit()
