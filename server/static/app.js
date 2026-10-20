@@ -4198,6 +4198,7 @@ function renderBuilding(d){
         <input class="blf bkt" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="שם האובייקט בעברית">
         <input class="blf bke" data-k="object_en" data-id="${x.id}" dir="ltr" value="${esc(x.object_en||'')}" placeholder="Object name in English">
       </div><button class="bkdel" data-del="${x.id}" title="מחיקה">🗑</button></div>
+      ${amt?`<div class="bkbig"><span>סכום ההקדשה</span><b>${cur}${amt.toLocaleString()}</b><small>${paid>=amt?'שולם במלואו ✓':('שולם '+cur+paid.toLocaleString())}</small></div>`:''}
       <input class="blf bksec" data-k="section" data-id="${x.id}" list="bldsecs" value="${esc(x.section||'')}" placeholder="מדור (למשל: חלונות)">
       <div class="bkmoney">
         <label>התחייב<input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" inputmode="decimal" placeholder="0"></label>
