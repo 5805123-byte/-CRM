@@ -14448,7 +14448,7 @@ async function ndCardMail(k,m,after){
       <div class="lgf"><label class="fld"><span>💰 סכום לחודש ₪ (אפשר לשנות)</span><input id="cm_amt" inputmode="decimal" value="${esc(a0)}"></label>
         <label class="fld"><span>📅 תאריך החיוב הבא (אפשר לשנות)</span><input type="date" id="cm_next" value="${esc(n0)}"></label></div>
       <div class="hintxt" id="cm_chg" style="display:none;color:#a15c00">⚠️ הסכום / התאריך ישתנו בהוראת הקבע בנדרים פלוס לפני שהמייל יוצא.</div>
-      <div class="fld"><span>📋 נוסח מוכן — לבחור ולשנות לפי הצורך</span><div style="display:flex;gap:6px;flex-wrap:wrap">${CARD_MAIL_PRESETS.map((p,i)=>`<button type="button" class="btn sm ghost" data-cmp="${i}">${esc(p[0])}</button>`).join('')}</div></div>
+      <div class="fld"><span>📋 נוסחים מוכנים — לחיצה מכניסה אותו לעריכה למטה</span><div id="cm_pres" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <label class="fld"><span>✏️ נושא</span><input id="cm_subj" value="${esc(t.subj||'')}"></label>
       <label class="fld"><span>📝 הנוסח</span><textarea id="cm_body" rows="11" style="width:100%;font-size:.95rem">${esc(t.body||'')}</textarea></label>
       <div class="mksub">אפשר לכתוב: <b>{{שם}}</b> · <b>{{תואר}}</b> · <b>{{סכום}}</b> · <b>{{תאריך}}</b> · <b>{{עבור}}</b> · <b>{{קישור}}</b> — הקישור האישי המאובטח של נדרים פלוס לעדכון הכרטיס (בתוקף 14 יום)</div>
@@ -14465,7 +14465,19 @@ async function ndCardMail(k,m,after){
       .replace(/\{\{עבור\}\}/g,k.groupe||'').replace(/\{\{שם\}\}/g,m.first||'').replace(/\{\{תואר\}\}/g,'').replace(/\{\{([^|}]*)\|[^}]*\}\}/g,'$1');
     g('cm_prev').innerHTML='<b>'+esc(f(g('cm_subj').value))+'</b>\n\n'+esc(f(g('cm_body').value));};
   ['cm_amt','cm_next','cm_subj','cm_body'].forEach(id=>g(id).addEventListener('input',prev));prev();
-  o.querySelectorAll('[data-cmp]').forEach(b=>b.onclick=()=>{const p=CARD_MAIL_PRESETS[+b.dataset.cmp];g('cm_subj').value=p[1];g('cm_body').value=p[2];prev();});
+  // הנוסחים המוכנים — של מאיר (נשמרים בשרת); בלי שמירה — שלושת ברירות המחדל
+  let PR=(t.presets&&t.presets.length?t.presets:CARD_MAIL_PRESETS).map(x=>x.slice()), cur=-1;
+  const savePR=async()=>{const r=await api('POST','/api/nd/cardmail_tpl',{presets:PR}).catch(()=>null);return r&&r.ok;};
+  const paintPR=()=>{g('cm_pres').innerHTML=PR.map((p,i)=>`<button type="button" class="btn sm ${i===cur?'':'ghost'}" data-cmp="${i}">${esc(p[0])}</button>`).join('')
+      +`<button type="button" class="btn sm ghost" id="cm_pnew" title="לשמור את מה שכתוב למטה כנוסח מוכן חדש">➕ נוסח חדש</button>`
+      +(cur>=0?`<button type="button" class="btn sm ghost" id="cm_psave" title="לשמור את השינויים שעשית בנוסח הזה">💾 לשמור שינויים ב"${esc(PR[cur][0])}"</button><button type="button" class="btn sm ghost" id="cm_pren">✎ שם</button><button type="button" class="btn sm ghost" id="cm_pdel" style="color:var(--no)">🗑</button>`:'');
+    g('cm_pres').querySelectorAll('[data-cmp]').forEach(b=>b.onclick=()=>{cur=+b.dataset.cmp;g('cm_subj').value=PR[cur][1];g('cm_body').value=PR[cur][2];prev();paintPR();});
+    g('cm_pnew').onclick=async()=>{const n=await uiPrompt('שם לנוסח החדש (יופיע ככפתור)','');if(!n||!n.trim())return;
+      PR.push([n.trim(),g('cm_subj').value,g('cm_body').value]);cur=PR.length-1;toast(await savePR()?'💾 הנוסח נשמר':'לא נשמר');paintPR();};
+    const ps=g('cm_psave');if(ps)ps.onclick=async()=>{PR[cur][1]=g('cm_subj').value;PR[cur][2]=g('cm_body').value;toast(await savePR()?'💾 הנוסח עודכן':'לא נשמר');};
+    const pr=g('cm_pren');if(pr)pr.onclick=async()=>{const n=await uiPrompt('שם חדש לנוסח',PR[cur][0]);if(!n||!n.trim())return;PR[cur][0]=n.trim();await savePR();paintPR();};
+    const pd=g('cm_pdel');if(pd)pd.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח "'+PR[cur][0]+'"?'))return;PR.splice(cur,1);cur=-1;await savePR();paintPR();};};
+  paintPR();
   g('cm_tsave').onclick=async()=>{const r=await api('POST','/api/nd/cardmail_tpl',{subj:g('cm_subj').value,body:g('cm_body').value});toast(r&&r.ok?'💾 הנוסח נשמר':'לא נשמר');};
   g('cm_send').onclick=async()=>{const to=g('cm_to').value.trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){toast('כתובת מייל לא תקינה');return;}
     const amt=g('cm_amt').value.trim(),nx=g('cm_next').value,btn=g('cm_send');btn.disabled=true;btn.textContent='⏳ שולח…';

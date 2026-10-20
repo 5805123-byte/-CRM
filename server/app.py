@@ -18752,7 +18752,8 @@ class H(BaseHTTPRequestHandler):
                 t = json.loads(v) if v else {}
             except ValueError:
                 t = {}
-            return self._send(200, {'ok': True, 'subj': t.get('subj') or ND_CARD_MAIL[0], 'body': t.get('body') or ND_CARD_MAIL[1]})
+            return self._send(200, {'ok': True, 'subj': t.get('subj') or ND_CARD_MAIL[0], 'body': t.get('body') or ND_CARD_MAIL[1],
+                                    'presets': t.get('presets') if isinstance(t.get('presets'), list) else None})
         if self.path.split('?')[0] == '/api/nd/find':
             # 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש בחצי שנה האחרונה, ארבע ספרות אחרונות 8529, אני לא
             # יודע מי זה — בכל הקופות". חיפוש לפי 4 ספרות (וסכום, ותקופה) בכל המוסדות: עסקאות, הוראות קבע וסירובים
@@ -23547,9 +23548,19 @@ class H(BaseHTTPRequestHandler):
                 con.close()
         if self.path == '/api/nd/cardmail_tpl':
             # הנוסח הקבוע של "עדכון אשראי / תאריך חיוב" במייל — מאיר כותב ושומר
+            # מאיר: "שאוכל לשנות את הנוסח גם" — גם הנוסחים המוכנים נשמרים כאן (שם, נושא, גוף), לעריכה, הוספה ומחיקה
             con = db()
             try:
-                kv_set(con, 'nd_card_mail', json.dumps({'subj': str(b.get('subj') or '')[:200], 'body': str(b.get('body') or '')[:6000]}, ensure_ascii=False))
+                try:
+                    cur_ = json.loads(kv_get(con, 'nd_card_mail', '') or '{}')
+                except ValueError:
+                    cur_ = {}
+                if 'subj' in b or 'body' in b:
+                    cur_['subj'], cur_['body'] = str(b.get('subj') or '')[:200], str(b.get('body') or '')[:6000]
+                if isinstance(b.get('presets'), list):
+                    cur_['presets'] = [[str(x[0])[:60], str(x[1])[:200], str(x[2])[:6000]] for x in b['presets'][:20]
+                                       if isinstance(x, list) and len(x) >= 3 and str(x[0]).strip()]
+                kv_set(con, 'nd_card_mail', json.dumps(cur_, ensure_ascii=False))
                 con.commit()
             finally:
                 con.close()
