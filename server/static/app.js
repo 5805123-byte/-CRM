@@ -3985,6 +3985,7 @@ function openDonor(d,startTab){
       <button class="ctab" data-c="kvittel">🕯️ קוויטל${(d.intake_pending||[]).length?` <b class="badge">${(d.intake_pending||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="building">🏛️ בניין${(d.building||[]).length?` <b class="badge">${(d.building||[]).length}</b>`:''}</button>
       <button class="ctab" data-c="contact">📞 קשר</button>
+      <button class="ctab" data-c="receipts">🧾 קבלות</button>
       <button class="ctab" data-c="tasks">📋 משימות${nopen?` <b class="badge">${nopen}</b>`:''}</button>
     </div>
     <div id="cardBody"></div>`;
@@ -4006,6 +4007,7 @@ function renderCard(d){
   if(cardTab==='info') return cardInfo(d,body);
   if(cardTab==='kvittel') return cardKvittel(d,body);
   if(cardTab==='building') return cardBuilding(d,body);
+  if(cardTab==='receipts') return cardReceipts(d,body);
   if(cardTab==='contact'){
     // נפתחה לשונית הקשר — מה שהיה חדש אצל התורם הזה נחשב נקרא
     if(unseenCount(d)){
@@ -4016,6 +4018,42 @@ function renderCard(d){
     return cardContact(d,body);
   }
   if(cardTab==='tasks') return cardTasks(d,body);
+}
+// מאיר: "תעשה לשונית אצל כל תורם קבלות, ואפיק לו משם על כל תרומה שתרם אם ארצה, וזה ישאל אותי
+// אם לשלוח באימייל — וחלאס". שורה לכל תרומה: הפק קבלה → שאלה אחת על המייל → נגמר
+function cardReceipts(d,body){
+  const cur=curSym(d), em0=(splitEmails(d.email)[0]||'').trim();
+  const dmy=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||''));return m?(m[3]+'.'+m[2]+'.'+m[1]):esc(s||'');};
+  const rows=(d.donations||[]).filter(x=>amtNum(x.amount)>0).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(b.id-a.id));
+  const line=x=>{const c=donCur(x,cur);
+    const st=x.rc_id?(x.rc_sent?`<span class="rcst ok">🧾 קבלה ${esc(x.rc_num||'')} · נשלחה ${dmy(x.rc_sent)}</span>`:`<span class="rcst wait">🧾 קבלה ${esc(x.rc_num||'')} · הופקה, לא נשלחה</span>`)
+      :(x.rcpt?`<span class="rcst ok">🧾 נשלחה (${esc(x.rcpt)})</span>`:'<span class="rcst no">אין קבלה</span>');
+    const acts=x.rc_id?`<a class="btn sm ghost" href="/api/receipts/${x.rc_id}.pdf" target="_blank">📄 פתח</a><button class="btn sm rcsend" data-id="${x.id}">📧 ${x.rc_sent?'שלח שוב':'שלח במייל'}</button>`
+      :(x.rcpt?'':`<button class="btn sm bqgo rcissue" data-id="${x.id}">🧾 הפק קבלה</button>`);
+    return `<div class="rcrow"><div class="rcl"><b>${c}${esc(x.amount)}</b> · ${dmy(x.date)}${x.category?' · '+esc(x.category):''}${x.method?' · '+chBadgeRaw(x.method):''}${x.note?`<div class="rcnote">${esc(x.note)}</div>`:''}${st}</div><div class="rcacts">${acts}</div></div>`;};
+  body.innerHTML=`<div class="rcbox"><div class="hintxt">📧 מייל לקבלות: ${em0?`<b dir="ltr">${esc(em0)}</b>`:'<b>אין מייל בכרטיס</b> — תישאל לכתובת בשליחה'}${rows.length?` · ${rows.length} תרומות`:''}</div>
+    ${rows.map(line).join('')||'<div class="hintxt">אין תרומות רשומות בכרטיס.</div>'}</div>`;
+  const askEmail=async()=>{let em=em0;
+    if(!em){const v=await uiPrompt('אין מייל בכרטיס. לאיזו כתובת לשלוח? (ריק = בלי שליחה)','');em=(v||'').trim();if(em&&!em.includes('@')){toast('כתובת מייל לא תקינה');return null;}return {em,send:!!em};}
+    const send=await uiConfirm('לשלוח את הקבלה במייל אל '+em+'?','📧 כן, לשלוח','לא, רק להפיק');return {em,send};};
+  body.querySelectorAll('.rcissue').forEach(b=>b.onclick=async()=>{const x=(d.donations||[]).find(y=>y.id==b.dataset.id);if(!x)return;
+    const c=donCur(x,cur);
+    if(!await uiConfirm('להפיק קבלה '+(c==='₪'?'ישראלית':'לארה"ב')+' על '+c+x.amount+(x.category?' ('+x.category+')':'')+'?','🧾 כן','ביטול'))return;
+    const m=await askEmail();if(!m)return;
+    b.disabled=true;toast('מפיק קבלה…');
+    const r=await api('POST','/api/receipts/issue',{donation_id:x.id,email:m.em,send:m.send?1:0}).catch(()=>null);
+    b.disabled=false;
+    if(!r||!r.ok){await uiAlert('הקבלה לא הופקה:\n'+((r&&r.error)||'שגיאה'));return;}
+    x.rc_id=r.doc.id;x.rc_num=r.doc.num;x.rc_kind=r.doc.kind;x.rc_sent=r.doc.sent_at||'';
+    if(m.em&&!d.email)d.email=m.em;RCPTS=null;
+    toast(m.send?(r.send_error?('הקבלה הופקה, אך לא נשלחה: '+r.send_error):'✅ הקבלה הופקה ונשלחה'):'✅ הקבלה הופקה');
+    cardReceipts(d,body);});
+  body.querySelectorAll('.rcsend').forEach(b=>b.onclick=async()=>{const x=(d.donations||[]).find(y=>y.id==b.dataset.id);if(!x||!x.rc_id)return;
+    let em=em0;if(!em){em=((await uiPrompt('לאיזו כתובת מייל לשלוח?',''))||'').trim();if(!em.includes('@')){if(em)toast('כתובת מייל לא תקינה');return;}}
+    if(!await uiConfirm('לשלוח את קבלה '+(x.rc_num||'')+' במייל אל '+em+'?','📧 כן, לשלוח','ביטול'))return;
+    b.disabled=true;const r=await api('POST','/api/receipts/'+x.rc_id+'/send',{email:em}).catch(()=>null);b.disabled=false;
+    if(!r||!r.ok){await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));return;}
+    x.rc_sent=todayStr();if(!d.email)d.email=em;RCPTS=null;toast('✅ נשלח');cardReceipts(d,body);});
 }
 function cardTasks(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
