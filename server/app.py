@@ -24315,7 +24315,10 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'donor_id': did, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
                 out = bq_record_charge(con, res, amt, desc, fc, did, cu['id'] if cu else 0,
                                        ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), nm)
-                con.commit(); con.close()
+                con.commit()
+                if b.get('receipt_email'):
+                    bq_charge_receipt(con, out, str(b.get('receipt_email')))
+                con.close()
                 src = bq_card_src(res) if out['ok'] else ''
                 if src:
                     bq_save_card_bg(cu['id'] if cu else 0, src, b.get('exp_m'), b.get('exp_y'), did,
@@ -24372,7 +24375,10 @@ class H(BaseHTTPRequestHandler):
             out = bq_record_charge(con, res, amt, desc, fc, did, p['customer_id'],
                                    ('%s %s' % (p['card_type'], p['last4'])).strip(), (cu['identifier'] if cu else ''),
                                    sched_id=int(b.get('sched_id') or 0))
-            con.commit(); con.close()
+            con.commit()
+            if b.get('receipt_email'):
+                bq_charge_receipt(con, out, str(b.get('receipt_email')))
+            con.close()
             bump_data()
             return self._send(200, out)
         if self.path == '/api/bq/sched/new':
@@ -25977,6 +25983,29 @@ def bq_record_charge(con, res, amt, desc, fc, did, customer_id, card_label='', n
                 banquest_post(con, BQ_SRC, only_tids=[tid])
     return {'ok': ok, 'status': res.get('status'), 'error': '' if ok else bq_hint(res.get('error_message') or res.get('status') or 'נדחה'),
             'ref': res.get('reference_number'), 'auth': res.get('auth_code'), 'donor_id': did}
+
+
+def bq_charge_receipt(con, out, email):
+    """מאיר: "קבלה שייצא אוטומטית לאימייל מיד" — אחרי חיוב שעבר מכרטיס התורם: קבלה על התרומה
+    שנרשמה מהחיוב, ונשלחת מיד לכתובת שנבחרה. מוסיף ל-out את receipt / receipt_error."""
+    email = (email or '').strip()
+    if not out.get('ok') or not out.get('donor_id') or '@' not in email:
+        return out
+    try:
+        ref = int(out.get('ref') or 0)
+        dn = con.execute("SELECT id FROM donations WHERE donor_id=? AND tid=? ORDER BY id DESC", (out['donor_id'], 'BQ%d' % ref)).fetchone() if ref else None
+        if not dn:
+            out['receipt_error'] = 'התרומה עוד לא נרשמה בכרטיס — אפשר להפיק קבלה מהכרטיס'
+            return out
+        doc = receipt_issue(con, dn['id'], 'us', email=email, send=True)
+        doc, err = receipt_autosend(con, doc, email)
+        con.commit()
+        out['receipt'] = {'num': (doc or {}).get('num') or '', 'sent': bool((doc or {}).get('sent_at')), 'email': email}
+        if err:
+            out['receipt_error'] = err
+    except Exception as e:
+        out['receipt_error'] = str(e)[:160]
+    return out
 
 
 def bq_card_src(res):

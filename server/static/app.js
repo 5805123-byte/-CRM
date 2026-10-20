@@ -5941,6 +5941,7 @@ function cardDetails(d,body){
   const pdebtsum=pdebts.reduce((s,p)=>s+amtNum(p.amount),0);
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
+    <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
     ${debtBarHTML(d)}
@@ -17747,6 +17748,59 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqfixb');if(!b)return;
   e.preventDefault();e.stopPropagation();
   if(await bqFixFlow(+b.dataset.tx,b.dataset.amt,b.dataset.who||''))renderBQ();});
+// 💳 מאיר: "אין אצל כרטיס תורם תרומה באשראי? צריך אצלו כרטיס של חיוב אשראי שיהיה קל ופשוט, וקבלה,
+// ועבור מה… הכי למעלה… עם האימייל שלו… קבלה שייצא אוטומטית לאימייל מיד". כרטיס שמור או כרטיס חדש
+// בטופס המאובטח של בנק ווסט (המספר לא עובר אצלנו); אחרי שעבר — קבלה נשלחת מיד למייל שנבחר
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.dnqc');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const d=DB.find(x=>x.id==b.dataset.did);if(!d)return;
+  const nm=((d.last||'')+' '+(d.first||'')).trim(), em0=((d.email||'').split(/[,;\s]+/).find(x=>x.includes('@'))||'');
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>💳 תרומה באשראי — ${esc(nm)}</b></div>
+    <div class="bq2"><label class="fld"><span>💲 סכום ($)</span><input id="qc_amt" inputmode="decimal" placeholder="0"></label>
+      <label class="fld"><span>🎯 עבור מה</span><select id="qc_cat">${bqForOpts('')}</select></label></div>
+    <label class="fld"><span>פירוט (לא חובה)</span><input id="qc_note" placeholder="למשל: לע״נ אביו"></label>
+    <div class="fld"><span>💳 כרטיס</span><div id="qc_pms" class="hintxt">טוען כרטיסים…</div></div>
+    <div id="qc_new" hidden><div id="bqf_card" class="bqcardframe"></div><div class="hintxt">🔒 מספר הכרטיס נכנס ישר לבנק ווסט ולא עובר אצלנו. הכרטיס יישמר לחיובים הבאים.</div></div>
+    <label class="fld"><span>📧 מייל לקבלה</span><input id="qc_em" dir="ltr" value="${esc(em0)}" placeholder="email@example.com"></label>
+    <label class="qcchk"><input type="checkbox" id="qc_rc" ${em0?'checked':''}> 🧾 לשלוח קבלה מיד למייל אחרי שהחיוב עובר</label>
+    <div class="cbtns"><button class="btn bqgo cyes">⚡ לחייב</button><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id);setTimeout(()=>g('qc_amt').focus(),50);
+  g('qc_em').oninput=()=>{if(g('qc_em').value.includes('@'))g('qc_rc').checked=true;};
+  let pm='new';const showNew=async()=>{g('qc_new').hidden=pm!=='new';if(pm!=='new')return;
+    if(!bqStat||!bqStat.token_key)bqStat=(await api('GET','/api/bq/status'))||{};
+    if(!bqStat.token_key){g('qc_new').innerHTML='<div class="bqwarn">כדי להכניס כרטיס חדש צריך ב-Render את BANQUEST_TOKEN_KEY.</div>';return;}
+    bqMountCard();};
+  const r=await api('GET','/api/bq/donor/'+d.id).catch(()=>null), pms=(r&&r.pms)||[];
+  if(pms.length)pm=String(pms[0].id);
+  g('qc_pms').className='qcpms';
+  g('qc_pms').innerHTML=pms.map(p=>`<label><input type="radio" name="qc_pm" value="${p.id}" ${String(p.id)===pm?'checked':''}> ${esc(p.card_type||'')} •••• ${esc(p.last4||'')}${p.exp_m?(' · '+String(p.exp_m).padStart(2,'0')+'/'+String(p.exp_y).slice(-2)):''}</label>`).join('')
+    +`<label><input type="radio" name="qc_pm" value="new" ${pm==='new'?'checked':''}> ➕ כרטיס חדש</label>`;
+  o.querySelectorAll('[name=qc_pm]').forEach(x=>x.onchange=()=>{pm=x.value;showNew();});
+  showNew();
+  o.querySelector('.cno').onclick=()=>o.remove();
+  const go=o.querySelector('.cyes');
+  go.onclick=async()=>{const amt=amtNum(g('qc_amt').value);if(!amt){toast('חסר סכום');g('qc_amt').focus();return;}
+    const cat=g('qc_cat').value==='__other'?'':g('qc_cat').value, note=g('qc_note').value.trim(), em=g('qc_em').value.trim();
+    const rc=g('qc_rc').checked&&em.includes('@');
+    if(g('qc_rc').checked&&!em.includes('@')){toast('מייל לא תקין');g('qc_em').focus();return;}
+    const forT=[cat,note].filter(Boolean).join(' · ');
+    if(!await uiConfirm('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?'+(rc?'\n🧾 קבלה תישלח ל-'+em:''),'⚡ כן, לחייב','ביטול'))return;
+    go.disabled=true;go.textContent='מחייב…';
+    let res;
+    if(pm==='new'){if(!bqHT){go.disabled=false;go.textContent='⚡ לחייב';toast('הטופס המאובטח עוד לא נטען');return;}
+      let tk;try{tk=await bqHT.getNonceToken();}catch(err){go.disabled=false;go.textContent='⚡ לחייב';
+        toast('פרטי הכרטיס לא תקינים'+((err&&err.fieldErrors&&err.fieldErrors.length)?(': '+err.fieldErrors.join(', ')):''));return;}
+      res=await api('POST','/api/bq/newcard',{nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType,zip:tk.avsZip||'',
+        kind:'once',amount:amt,for_cat:cat,for_note:note,donor_id:d.id,receipt_email:rc?em:''}).catch(()=>null);
+      try{bqHT.resetForm();}catch(err){}
+    }else res=await api('POST','/api/bq/charge',{pm_id:+pm,amount:amt,for_cat:cat,for_note:note,donor_id:d.id,receipt_email:rc?em:''}).catch(()=>null);
+    if(!res||!res.ok){go.disabled=false;go.textContent='⚡ לחייב';await uiAlert('❌ החיוב לא עבר:\n'+((res&&res.error)||'אין תשובה'));return;}
+    o.remove();
+    const rcl=rc?(res.receipt&&res.receipt.sent?('\n🧾 קבלה '+(res.receipt.num||'')+' נשלחה ל-'+em):('\n⚠️ הקבלה לא נשלחה: '+(res.receipt_error||'?'))):'';
+    await uiAlert('✅ החיוב עבר — '+bqMoney(amt)+(res.auth||res.ref?' · אישור '+(res.auth||res.ref):'')+rcl);
+    await load();const nd=DB.find(x=>x.id==d.id);if(nd)openDonor(nd);};});
 // 💳 מאיר: "עוד כפתור עדכון כרטיס אשראי, כי יש הרבה שלא עובר להם הכרטיס ושלחו חדש".
 // הוראת קבע — נפתחת בלשונית "קבועים" עם טופס החלפת הכרטיס; חיוב חד-פעמי — טופס חיוב על כרטיס חדש
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqnewcard');if(!b)return;
