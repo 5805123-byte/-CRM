@@ -14396,6 +14396,46 @@ async function kvHolders(){
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בעלי הוראות קבע.csv';document.body.appendChild(a);a.click();a.remove();};}
 // ✉️ מאיר: "שאוכל לשלוח לכל אחד בקהילה קישור לשינוי או עדכון פרטי האשראי או תאריך החיוב, עם הסכום שאשנה,
 // בנוסח שאני שולח לו — באימייל". סכום / תאריך שהשתנו מתעדכנים קודם בנדרים פלוס, ואז יוצא המייל עם הקישור האישי
+// מאיר: "אבל איך אני מנסח?" — שלושה נוסחים מוכנים: [כפתור, נושא, גוף]
+const CARD_MAIL_PRESETS=[
+  ['💳 החלפת כרטיס אשראי','עדכון כרטיס האשראי בהוראת הקבע — כולל חצות',
+`שלום {{שם}},
+
+תודה רבה על התמיכה הקבועה שלך ב{{עבור}} — ₪{{סכום}} בכל חודש.
+
+כדי שההוראה תמשיך לעבור בלי הפרעה, אפשר לעדכן את פרטי כרטיס האשראי בדף מאובטח של נדרים פלוס:
+{{קישור}}
+
+זה לוקח פחות מדקה. הקישור אישי ובתוקף ל-14 יום, ומספר הכרטיס לא עובר דרכנו.
+
+החיוב הבא: {{תאריך}}.
+
+בברכה ותודה,
+כולל חצות`],
+  ['🔴 ההוראה לא עברה','הוראת הקבע שלך לא עברה — עדכון קצר',
+`שלום {{שם}},
+
+ניסינו לגבות את הוראת הקבע החודשית שלך ל{{עבור}} (₪{{סכום}}), והחיוב לא עבר — כנראה הכרטיס הוחלף או שפג תוקפו.
+
+לעדכון כרטיס אשראי חדש, בדף מאובטח של נדרים פלוס:
+{{קישור}}
+
+אחרי העדכון ההוראה תמשיך כרגיל. אם משהו לא ברור — נשמח לעזור.
+
+תודה רבה, ותזכ{{ה|י|ו}} למצוות,
+כולל חצות`],
+  ['📅 שינוי סכום / תאריך','עדכון בהוראת הקבע שלך — כולל חצות',
+`שלום {{שם}},
+
+לפי מה שסיכמנו, עדכנו את הוראת הקבע שלך ל{{עבור}}:
+• הסכום החודשי: ₪{{סכום}}
+• החיוב הבא: {{תאריך}}
+
+אם תרצה לעדכן גם את כרטיס האשראי, אפשר כאן, בדף מאובטח של נדרים פלוס:
+{{קישור}}
+
+תודה רבה על השותפות,
+כולל חצות`]];
 async function ndCardMail(k,m,after){
   const t=await api('GET','/api/nd/cardmail_tpl').catch(()=>null)||{};
   const d2i=v=>{v=String(v||'').trim();let x=/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/.exec(v);if(x)return x[3]+'-'+x[2].padStart(2,'0')+'-'+x[1].padStart(2,'0');x=/^(\d{4}-\d{2}-\d{2})/.exec(v);return x?x[1]:'';};
@@ -14408,6 +14448,7 @@ async function ndCardMail(k,m,after){
       <div class="lgf"><label class="fld"><span>💰 סכום לחודש ₪ (אפשר לשנות)</span><input id="cm_amt" inputmode="decimal" value="${esc(a0)}"></label>
         <label class="fld"><span>📅 תאריך החיוב הבא (אפשר לשנות)</span><input type="date" id="cm_next" value="${esc(n0)}"></label></div>
       <div class="hintxt" id="cm_chg" style="display:none;color:#a15c00">⚠️ הסכום / התאריך ישתנו בהוראת הקבע בנדרים פלוס לפני שהמייל יוצא.</div>
+      <div class="fld"><span>📋 נוסח מוכן — לבחור ולשנות לפי הצורך</span><div style="display:flex;gap:6px;flex-wrap:wrap">${CARD_MAIL_PRESETS.map((p,i)=>`<button type="button" class="btn sm ghost" data-cmp="${i}">${esc(p[0])}</button>`).join('')}</div></div>
       <label class="fld"><span>✏️ נושא</span><input id="cm_subj" value="${esc(t.subj||'')}"></label>
       <label class="fld"><span>📝 הנוסח</span><textarea id="cm_body" rows="11" style="width:100%;font-size:.95rem">${esc(t.body||'')}</textarea></label>
       <div class="mksub">אפשר לכתוב: <b>{{שם}}</b> · <b>{{תואר}}</b> · <b>{{סכום}}</b> · <b>{{תאריך}}</b> · <b>{{עבור}}</b> · <b>{{קישור}}</b> — הקישור האישי המאובטח של נדרים פלוס לעדכון הכרטיס (בתוקף 14 יום)</div>
@@ -14424,6 +14465,7 @@ async function ndCardMail(k,m,after){
       .replace(/\{\{עבור\}\}/g,k.groupe||'').replace(/\{\{שם\}\}/g,m.first||'').replace(/\{\{תואר\}\}/g,'').replace(/\{\{([^|}]*)\|[^}]*\}\}/g,'$1');
     g('cm_prev').innerHTML='<b>'+esc(f(g('cm_subj').value))+'</b>\n\n'+esc(f(g('cm_body').value));};
   ['cm_amt','cm_next','cm_subj','cm_body'].forEach(id=>g(id).addEventListener('input',prev));prev();
+  o.querySelectorAll('[data-cmp]').forEach(b=>b.onclick=()=>{const p=CARD_MAIL_PRESETS[+b.dataset.cmp];g('cm_subj').value=p[1];g('cm_body').value=p[2];prev();});
   g('cm_tsave').onclick=async()=>{const r=await api('POST','/api/nd/cardmail_tpl',{subj:g('cm_subj').value,body:g('cm_body').value});toast(r&&r.ok?'💾 הנוסח נשמר':'לא נשמר');};
   g('cm_send').onclick=async()=>{const to=g('cm_to').value.trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){toast('כתובת מייל לא תקינה');return;}
     const amt=g('cm_amt').value.trim(),nx=g('cm_next').value,btn=g('cm_send');btn.disabled=true;btn.textContent='⏳ שולח…';
