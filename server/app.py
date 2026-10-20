@@ -26337,29 +26337,58 @@ def bq_days(con, d1, d2):
 
 def bq_fixed_map(con, bad_rows):
     """מאיר: "אם החיוב שלו בסוף כן עבר בחודש הזה — שאראה את זה בחלונית שכתוב נדחה… תלך לפי
-    הסכום". לכל חיוב שנדחה: חיוב שעבר אחריו (עד 45 יום), לאותו לקוח / תורם, באותו סכום."""
+    הסכום". לכל חיוב שנדחה: תשלום שהגיע אחריו (עד 45 יום) מאותו תורם —
+    1. חיוב בנק ווסט שעבר: אותו לקוח / תורם / מייל (גם כרטיס חדש שנפתח כלקוח אחר);
+    2. מאיר: "בסוף הסתדר יעקב גאלד אז למה לא ירד מהרשימה" — או תרומה שנרשמה בכרטיס התורם
+       בכל דרך אחרת (צ׳ק, זל, אוטרייז, מזומן…).
+    הסכום: אותו סכום, או סך כל מה שנדחה לו באותה תקופה (חיוב אחד שסוגר כמה שחזרו)."""
     import banquest as _bq
     out = {}
     okst = ','.join("'%s'" % x for x in _bq.OK_ST)
+    # סך מה שנדחה לכל תורם / לקוח — לחיוב אחד שסוגר כמה חיובים שחזרו (בלי ניסיונות חוזרים באותו יום)
+    tot = {}
+    for r in bad_rows:
+        k = r.get('donor_id') or ('c%s' % r.get('customer_id'))
+        tot.setdefault(k, {})[(str(r.get('created') or '')[:10], _amt2(r.get('amount')))] = 1
+    tot = {k: round(sum(a for _d, a in v), 2) for k, v in tot.items()}
     for r in bad_rows:
         if not r.get('created'):
             continue
         try:
-            hi = (datetime.date.fromisoformat(str(r['created'])[:10]) + datetime.timedelta(days=45)).isoformat() + ' 99'
+            d0 = datetime.date.fromisoformat(str(r['created'])[:10])
         except ValueError:
             continue
+        hi = (d0 + datetime.timedelta(days=45)).isoformat() + ' 99'
+        amt = _amt2(r.get('amount'))
+        sums = sorted({amt, tot.get(r.get('donor_id') or ('c%s' % r.get('customer_id')), amt)})
         who, args = [], []
         if r.get('customer_id'):
             who.append('customer_id=?'); args.append(r['customer_id'])
         if r.get('donor_id'):
             who.append('donor_id=?'); args.append(r['donor_id'])
+        em = str(r.get('email') or '').strip().lower()
+        if em and '@' in em:
+            who.append("lower(COALESCE(email,''))=?"); args.append(em)
         if not who:
             continue
         hit = con.execute("SELECT id,ref,created,amount FROM bq_tx WHERE (%s) AND status IN (%s) AND COALESCE(type,'') IN ('','charge') "
-                          "AND ROUND(amount,2)=ROUND(?,2) AND created>? AND created<=? ORDER BY created LIMIT 1" % (' OR '.join(who), okst),
-                          args + [r.get('amount') or 0, r['created'], hi]).fetchone()
+                          "AND ROUND(amount,2) IN (%s) AND created>? AND created<=? ORDER BY created LIMIT 1"
+                          % (' OR '.join(who), okst, ','.join('?' * len(sums))),
+                          args + sums + [r['created'], hi]).fetchone()
         if hit:
             out[r['id']] = dict(hit)
+            continue
+        if not r.get('donor_id'):
+            continue
+        for dn in con.execute("SELECT id,date,amount,method,cur,tid FROM donations WHERE donor_id=? AND date>=? AND date<=? "
+                              "ORDER BY date", (r['donor_id'], d0.isoformat(), hi[:10])):
+            if '₪' in str(dn['cur'] or '') or 'ILS' in str(dn['cur'] or '').upper():
+                continue
+            if _amt2(dn['amount']) in sums:
+                via = str(dn['method'] or '').replace('_', ' ').strip()
+                out[r['id']] = {'id': dn['id'], 'ref': dn['tid'] or '', 'created': dn['date'], 'amount': _amt2(dn['amount']),
+                                'via': via or 'נרשם בכרטיס'}
+                break
     return out
 
 
@@ -26379,7 +26408,7 @@ def bq_fix_annotate(con, rows):
             r['fix'] = {'state': 'partial', 'manual': 1, 'got': r.get('fix_amt') or 0, 'note': r.get('fix_note') or ''}
         elif r['id'] in auto:
             h = auto[r['id']]
-            r['fix'] = {'state': 'fixed', 'manual': 0, 'at': h['created'], 'amount': h['amount'], 'ref': h['ref'] or h['id']}
+            r['fix'] = {'state': 'fixed', 'manual': 0, 'at': h['created'], 'amount': h['amount'], 'ref': h['ref'] or h['id'], 'via': h.get('via') or ''}
         else:
             r['fix'] = {'state': 'open', 'manual': 0}
     return rows
@@ -26393,7 +26422,7 @@ def bq_close_fixed_tasks(con):
         if not ts:
             return 0
         ids = sorted({t['bq_tx'] for t in ts})
-        rows = [dict(r) for r in con.execute("SELECT id,created,amount,status,customer_id,donor_id,fix_state,fix_amt,fix_note "
+        rows = [dict(r) for r in con.execute("SELECT id,created,amount,status,customer_id,donor_id,email,fix_state,fix_amt,fix_note "
                                              "FROM bq_tx WHERE id IN (%s)" % ','.join('?' * len(ids)), ids)]
         fixed = {r['id'] for r in bq_fix_annotate(con, rows) if (r.get('fix') or {}).get('state') == 'fixed'}
         n = 0

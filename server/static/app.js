@@ -7910,7 +7910,7 @@ const bqLocalDate=s=>String(s||'').slice(0,10);
 // מאיר: "שזה יופיע גם בכרטיס תורם שסודר… ואם כתוב סודר והאמת שלא סודר כי זה תשלום אחר —
 // שיהיה לי עיפרון לתקן שזה עדיין לא סודר, לגמרי או חלקית"
 function bqFixLine(r){const f=r.fix||{};
-  if(f.state==='fixed')return `<span class="bqfixed">✅ ${f.manual?'סומן ידנית כמסודר':('בסוף חויב בהצלחה ב-'+esc(bqDate(bqLocalDate(f.at)))+' · '+bqMoney(f.amount))}${f.note?' · '+esc(f.note):''} — מסודר</span>`;
+  if(f.state==='fixed')return `<span class="bqfixed">✅ ${f.manual?'סומן ידנית כמסודר':((f.via?'בסוף שולם ב-':'בסוף חויב בהצלחה ב-')+esc(bqDate(bqLocalDate(f.at)))+' · '+bqMoney(f.amount)+(f.via?' · '+esc((chCfg(f.via)||{}).l||f.via):''))}${f.note?' · '+esc(f.note):''} — מסודר</span>`;
   if(f.state==='partial')return `<span class="bqfixed part">🟠 סודר חלקית: נגבו ${bqMoney(f.got)} מתוך ${bqMoney(r.amount)} · חסר ${bqMoney(Math.max(0,(+r.amount||0)-(+f.got||0)))}${f.note?' · '+esc(f.note):''}</span>`;
   if(f.manual)return `<span class="bqfixed no">✎ סומן ידנית: עדיין לא סודר${f.note?' · '+esc(f.note):''}</span>`;
   return '';}
