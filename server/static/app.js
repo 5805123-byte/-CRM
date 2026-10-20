@@ -4851,7 +4851,9 @@ function commitHTML(d){
   return `<div class="cmbox"><div class="cmbox-t">📋 ההתחייבויות שלו
       <button class="cmcur noprint" data-did="${d.id}" title="מטבע ההתחייבויות — לחץ כדי להחליף ל-${cur==='₪'?'דולר':'שקל'}">${cur==='₪'?'₪ שקל':'$ דולר'}</button>
       ${mo?`<span class="cmtot">${f(mo)} לחודש</span>`:''}
-      ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}</div>
+      ${inst?`<span class="cmtot inst">+${f(inst)} בתשלומים</span>`:''}
+      <button type="button" class="cmtoggle noprint" title="לפתוח או לסגור את ההתחייבויות">▸ פתח</button></div>
+    <div class="cmbody" hidden>
     ${viaInHTML}
     ${(d.building||[]).map(x=>{const paid=bldPaid(d,x),owed=amtNum(x.amount)-paid;return `<div class="cmrow${owed>0.5?' owe':' done'}">
       <div class="cmhead"><span class="cmwhat">🏛️ ${esc(x.object||'הקדשה')}</span><b class="cmfix">${f(amtNum(x.amount))}</b><span class="cmtag one">הקדשה</span><button class="cmbldgo noprint" title="פתח בלשונית בניין">↗</button></div>
@@ -4907,10 +4909,15 @@ function commitHTML(d){
         <div class="hintxt" style="margin:0 0 5px">התרומות במערכת מתחילות מינואר 2026. כאן רושמים מה הוא התחייב ולא נתן לפני כן — או מינוס, אם שילם מראש. הסכום נכנס לשורת החוב שבראש הכרטיס.</div>
         <div class="two"><input id="f_debt_open" value="${esc(d.debt_open||'')}" inputmode="decimal" placeholder="0">
           <input id="f_debt_open_note" value="${esc(d.debt_open_note||'')}" placeholder="עבור מה — למשל: קמחא דפסחא תשפ\"ה"></div></div></div>
-  </div>`;
+  </div></div>`;
 }
 function wireCommit(d,body){
   const box=body.querySelector('.cmbox'); if(!box)return;
+  // מאיר: "זה די יותר — תעשה שזה יהיה כפתור לפתיחה, אם ארצה אפתח" — הכל סגור, הכותרת עם הסכום נשארת
+  const cmt=box.querySelector('.cmtoggle'), cmb=box.querySelector('.cmbody');
+  if(cmt&&cmb){let op=false;try{op=localStorage.getItem('kc_cm_open')==='1';}catch(e){}
+    const show=()=>{cmb.hidden=!op;cmt.textContent=op?'▾ סגור':'▸ פתח';};show();
+    cmt.onclick=()=>{op=!op;try{localStorage.setItem('kc_cm_open',op?'1':'0');}catch(e){}show();};}
   const redraw=()=>{cardDetails(d,body);if(tab==='donors')renderDonors();};
   // הסכום הקבוע בכרטיס מסונכרן לשורות רק אצל מי שאין לו אברכים. אצל תורם
   // עם אברכים הסכום שבכרטיס הוא עדות היסטורית (אצל פינטער 12,800 שנגבים
