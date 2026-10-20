@@ -11547,9 +11547,11 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                     cut = next((i for i, (t, _z, _h) in enumerate(ws)
                                 if i and _CERT_BEN.match(t)), -1)
                     if cut > 0:
-                        for part in (ws[:cut], ws[cut:]):
+                        # מאיר: "תמיד שהמילה בן יהיה באמצע בין השם לאמא שלו, לא
+                        # באותה שורה של האמא" — שם / בן / שם האם
+                        for part, ro in ((ws[:cut], role), (ws[cut:cut + 1], 'ttl'), (ws[cut + 1:], role)):
                             if part:
-                                lines.append(_fitline(_join(part), dr)); rl.append(role)
+                                lines.append(_fitline(_join(part), dr)); rl.append(ro)
                         continue
                 else:
                     lines.append(full); rl.append(role); continue

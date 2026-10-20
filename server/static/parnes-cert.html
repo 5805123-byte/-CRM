@@ -61,6 +61,7 @@
   .nline{display:block;white-space:normal;text-wrap:balance}
   /* מאיר: "השם שלו ושל אמא שלו יהיה באותה שורה" — אחרי החתן / הכלה השורה לא נשברת, רק מוקטנת */
   .nline.nkeep{white-space:nowrap}
+  .nline.nben{line-height:.75}
   .nrow{display:block}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
@@ -645,6 +646,7 @@ function parnesSizes(sf){
 // שם שאינו נכנס לשורה אחת נשבר לפני "בן"/"בת" — כך קוראים
 // "חיים רפאל שאול" ומתחת "בן אסתר ז\"ל", ולא שבירה אקראית באמצע השם.
 function splitAtBen(){
+  let n=0;
   const isRel=t=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test((t||'').trim());
   document.querySelectorAll('#pairs .nline').forEach(el=>{
     if(el.dataset.split)return;
@@ -659,11 +661,16 @@ function splitAtBen(){
       if(isRel(t)){ cut=i; break; }
     }
     if(cut<1)return;
-    const nx=document.createElement('span');
-    nx.className='nline'; nx.dataset.split='1'; el.dataset.split='1';
+    // מאיר: "תמיד שהמילה בן יהיה באמצע בין השם לאמא שלו, לא באותה שורה של האמא"
+    // — שם / בן / שם האם, שלוש שורות
+    const mid=document.createElement('span'), nx=document.createElement('span');
+    mid.className='nline nben'; nx.className='nline';
+    mid.dataset.split=nx.dataset.split=el.dataset.split='1';
+    mid.appendChild(el.childNodes[cut]);
     while(el.childNodes.length>cut) nx.appendChild(el.childNodes[cut]);
-    el.after(nx);
+    el.after(mid); mid.after(nx); n++;
   });
+  return n;
 }
 function fitParnes(){
   const c=$('content'), body=document.getElementById('cbody');
@@ -684,10 +691,13 @@ function fitParnes(){
     // רק כל עוד השמות עצמם נשארים בגודל המלא שנקבע להם.
     // מאיר: "תמיד תתאים את הענין לדף" — ההגדלה נבלמת רק בגובה. השם
     // רשאי להישבר לשתי שורות ובלבד שיגדל וימלא את הדף.
-    lo=1; hi=2;
-    for(let i=0;i<20;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
-      if(H()<=avail*.92) lo=mid; else hi=mid; }
-    parnesSizes(lo);
+    const grow=()=>{ lo=1; hi=2;
+      for(let i=0;i<20;i++){ const mid=(lo+hi)/2; parnesSizes(mid);
+        if(H()<=avail*.92) lo=mid; else hi=mid; }
+      parnesSizes(lo); };
+    grow();
+    // שם שנשבר בהגדלה — שוברים לפני "בן" ו"בן" עומד בשורה משלו, ומגדילים מחדש
+    if(splitAtBen()) grow();
     growRequest(avail);
     return;
   }
