@@ -1299,7 +1299,7 @@ function applyRole(){
   const st=document.getElementById('stat'); if(st)st.textContent='';
   if(!tabs.includes(tab))tab=tabs[0];
   // קהילה וגבאים — אותה הרשאה, ושני הקישורים (/kehila, /gabbai) נשארים כמו שהם
-  try{if(location.pathname!==PORTAL_PATH[ROLE]&&!(ROLE==='gabbai'&&PORTAL==='comm'))history.replaceState(null,'',PORTAL_PATH[ROLE]);}catch(e){}
+  try{if(location.pathname!==PORTAL_PATH[ROLE]&&!(ROLE==='gabbai'&&(PORTAL==='comm'||PORTAL==='parnes')))history.replaceState(null,'',PORTAL_PATH[ROLE]);}catch(e){}
 }
 // מאיר: "גם בטאבלט שזה יבקש כניסה מחדש כל 48 שעות" — מתי הכניסה פגה נשמר במכשיר, כדי שגם בלי
 // רשת (כשמוצג העותק השמור של הנתונים) תתבקש כניסה מחדש אחרי 48 שעות
@@ -1589,7 +1589,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh'];if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
