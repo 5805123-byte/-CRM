@@ -16216,6 +16216,14 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._gate():
             return
+        if self.path.split('?')[0].rstrip('/') in ('/parnes', '/kehila'):
+            # מאיר: "אותו לינק לגבאים" — הקישורים הישנים (פרנס יום, קהילה) עוברים לקישור האחד של הגבאים
+            q_ = self.path.split('?', 1)[1] if '?' in self.path else ''
+            self.send_response(302)
+            self.send_header('Location', '/gabbai' + ('?' + q_ if q_ else ''))
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
         if self.path.split('?')[0] in PORTALS:
             # הקישורים המיוחדים — אותו מסך, והוא יודע לפי הכתובת איזו סיסמה לבקש
             return self._send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html')
@@ -25142,12 +25150,12 @@ def health_report():
             pass
         # כניסה בסיסמה — מאיר: "עכשיו שהמערכת אשראי עובדת, אנחנו חייבים לעשות סיסמה"
         add('כניסה בסיסמה', 'ok' if auth_on() else 'bad',
-            ('מוגדרת · גבאים — קהילה+פרנס יום+קוויטל (/gabbai) %s · קהילה בלבד (/kehila) %s · פרנס יום וקוויטל (/parnes) %s · כניסה עם גוגל %s' % (
-                'מוגדר (CRM_PASS_GABBAI)' if (os.environ.get('CRM_PASS_GABBAI') or '').strip() else 'לא מוגדר — להוסיף CRM_PASS_GABBAI ב-Render',
-                'מוגדר (CRM_PASS_COMM)' if (os.environ.get('CRM_PASS_COMM') or '').strip() else 'לא מוגדר — להוסיף CRM_PASS_COMM ב-Render',
-                'מוגדר (CRM_PASS_PARNES)' if (os.environ.get('CRM_PASS_PARNES') or '').strip() else 'לא מוגדר — להוסיף CRM_PASS_PARNES ב-Render',
-                                                           ('מוגדרת (%s)' % ', '.join(sorted(_emails('GOOGLE_LOGIN_ADMIN', GOOGLE_ADMIN_DEFAULT) | _emails('GOOGLE_LOGIN_COMM')))) if google_client_id() else 'לא מוגדרת (GOOGLE_CLIENT_ID)'))
-            if auth_on() else 'המערכת פתוחה בלי סיסמה! ב-Render ← Environment להוסיף CRM_PASS (סיסמת המערכת), CRM_PASS_COMM (גבאי — /kehila) ו-CRM_PASS_PARNES (פרנס יום וקוויטל — /parnes)')
+            ('מוגדרת · גבאים — קישור אחד /gabbai (קהילה + פרנס יום + קוויטל; הקישורים הישנים /parnes ו-/kehila עוברים אליו) · סיסמת הגבאים: %s · כניסה עם גוגל %s' % (
+                ('מוגדרת (%s)' % ', '.join(e for e in ('CRM_PASS_GABBAI', 'CRM_PASS_COMM', 'CRM_PASS_PARNES') if (os.environ.get(e) or '').strip()))
+                if any((os.environ.get(e) or '').strip() for e in ('CRM_PASS_GABBAI', 'CRM_PASS_COMM', 'CRM_PASS_PARNES'))
+                else 'לא מוגדרת — להוסיף CRM_PASS_GABBAI ב-Render',
+                ('מוגדרת (%s)' % ', '.join(sorted(_emails('GOOGLE_LOGIN_ADMIN', GOOGLE_ADMIN_DEFAULT) | _emails('GOOGLE_LOGIN_COMM')))) if google_client_id() else 'לא מוגדרת (GOOGLE_CLIENT_ID)'))
+            if auth_on() else 'המערכת פתוחה בלי סיסמה! ב-Render ← Environment להוסיף CRM_PASS (סיסמת המערכת) ו-CRM_PASS_GABBAI (גבאים — /gabbai)')
         # תעודות פרנס — נכשלו בעבר כי Pillow לא הותקן
         try:
             import PIL
