@@ -16082,7 +16082,13 @@ async function cmNdPaint(m,showAll,boxId){
     if(r&&r.ok){toast(r.bank?'🏦 נשלח לגבייה בבנק ✓ (ייגבה בשידור הקרוב)':('✅ החיוב עבר · אישור '+(r.confirmation||'')));cmNdPaint(m,false,boxId);}else{b.disabled=false;b.textContent='⚡ חיוב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}});
   box.querySelectorAll('[data-ndmail]').forEach(b=>b.onclick=()=>{const k=K.find(x=>String(x.id)===b.dataset.ndmail);if(k)ndCardMail(k,m,()=>cmNdPaint(m,showAll,boxId));});
   box.querySelectorAll('[data-ndsendm]').forEach(b=>b.onclick=async()=>{
-    if(!await uiConfirm('לשלוח לו SMS עם קישור מאובטח לעדכון הכרטיס בהוראת הקבע?','📲 כן','ביטול'))return;
+    // מאיר: "אני רוצה אפשרות לשלוח לו אימייל עם נוסח לשינוי מספר אשראי או תאריך" — בוחרים איך לשלוח
+    const how=await new Promise(res=>{const q=document.createElement('div');q.className='confirmov';
+      q.innerHTML=`<div class="confirmbox"><div class="cm"><b>איך לשלוח לו את הקישור המאובטח לעדכון הכרטיס?</b></div>
+        <div class="cbtns" style="flex-wrap:wrap"><button class="btn" data-h="mail">✉️ במייל — עם נוסח, סכום ותאריך</button><button class="btn ghost" data-h="sms">📲 SMS</button><button class="btn ghost" data-h="">ביטול</button></div></div>`;
+      document.body.appendChild(q);q.querySelectorAll('[data-h]').forEach(x=>x.onclick=()=>{q.remove();res(x.dataset.h);});});
+    if(!how)return;
+    if(how==='mail'){const k=K.find(x=>String(x.id)===b.dataset.ndsendm);if(k)ndCardMail(k,m,()=>cmNdPaint(m,showAll,boxId));return;}
     b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsendm+'/link',{send:1});
     if(r&&r.ok&&r.sent_to)toast('נשלח ל-'+r.sent_to+' ✓');else if(r&&r.ok)await uiAlert('אין נייד להוראה הזו. הקישור:\n'+r.link);else await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));b.disabled=false;});
   // קבלה — אותו תהליך כמו אצל התורמים: מאשרים, שואלים אם לשלוח במייל
