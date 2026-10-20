@@ -7914,15 +7914,41 @@ function bqFixLine(r){const f=r.fix||{};
   if(f.state==='partial')return `<span class="bqfixed part">🟠 סודר חלקית: נגבו ${bqMoney(f.got)} מתוך ${bqMoney(r.amount)} · חסר ${bqMoney(Math.max(0,(+r.amount||0)-(+f.got||0)))}${f.note?' · '+esc(f.note):''}</span>`;
   if(f.manual)return `<span class="bqfixed no">✎ סומן ידנית: עדיין לא סודר${f.note?' · '+esc(f.note):''}</span>`;
   return '';}
+// 📝 ההערה האחרונה על חיוב שחזר, ומתי לגבות שוב
+function bqNoteLine(r){if(!r.pay_note&&!r.pay_due)return '';const fixed=r.fix&&r.fix.state==='fixed';
+  return `<span class="bqnote">${esc(r.pay_note||'')}${r.pay_due&&!fixed?` · 📅 לגבות שוב ב-${esc(bqDate(r.pay_due))}`:''}</span>`;}
+// מאיר: "הערה כמו ששלחתי לו הודעה בווצאפ או אימייל או טלפון שוחחתי — שיסונכרן לקשר בכרטיס תורם",
+// "אם הוא אמר שהוא לא יכול החודש — לגבות ממנו בחודש הבא, שזה ייכנס לכרטיס שלו במשימות"
+const BQ_NOTE_CH=[['וואטסאפ','💬 שלחתי וואטסאפ'],['אימייל','📧 שלחתי מייל'],['טלפון','📞 שוחחתי בטלפון'],['SMS','📱 שלחתי SMS'],['הערה','📝 הערה']];
+async function bqNoteFlow(id,amt,who){
+  const o=document.createElement('div');o.className='confirmov';let ch='טלפון';
+  o.innerHTML=`<div class="confirmbox"><div class="cm"><b>📝 ${esc(who)} — חיוב של ${bqMoney(amt)} שחזר</b></div>
+    <div class="bqnch">${BQ_NOTE_CH.map(([k,l])=>`<button class="btn sm ${k===ch?'':'ghost'}" data-ch="${k}">${l}</button>`).join('')}</div>
+    <label class="fld"><span>מה היה / מה סוכם</span><textarea id="bqn_txt" rows="3" placeholder="למשל: אמר שהחודש לא יכול, לגבות בחודש הבא"></textarea></label>
+    <label class="fld"><span>📅 לגבות שוב בתאריך (לא חובה) — נכנס למשימות של התורם</span><input type="date" id="bqn_due"></label>
+    <div class="hintxt">נרשם בקשר בכרטיס התורם. כשהחיוב יסתדר — המשימה נסגרת לבד וייכתב "סודר".</div>
+    <div class="cbtns"><button class="btn cyes">💾 שמור</button><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);
+  o.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{ch=b.dataset.ch;o.querySelectorAll('[data-ch]').forEach(x=>x.classList.toggle('ghost',x!==b));});
+  setTimeout(()=>{const t=o.querySelector('#bqn_txt');if(t)t.focus();},50);
+  const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+  const note=o.querySelector('#bqn_txt').value.trim(),due=o.querySelector('#bqn_due').value;o.remove();
+  if(!ok)return false;if(!note&&!due){toast('לא נכתב כלום');return false;}
+  const d=new Date(),when=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const r=await api('POST','/api/bq/tx/'+id+'/note',{channel:ch,note,due,when});
+  if(!r||!r.ok){await uiAlert((r&&r.error)||'לא נשמר');return false;}
+  toast(due?'נשמר ✓ · נכנס לקשר ולמשימות של התורם':'נשמר ✓ · נכנס לקשר בכרטיס התורם');return true;}
 async function bqFixFlow(id,amt,who){
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm"><b>✎ ${esc(who)} — חיוב של ${bqMoney(amt)} שנדחה</b><br>מה המצב?</div>
     <div class="bqfixopts"><button class="btn" data-fs="yes">✅ סודר — נגבה במלואו</button><button class="btn ghost" data-fs="partial">🟠 סודר חלקית…</button>
-    <button class="btn ghost" data-fs="no">🔴 לא סודר (ההתאמה האוטומטית טעתה)</button><button class="btn ghost" data-fs="auto">↺ אוטומטי — לפי הסכום</button></div>
+    <button class="btn ghost" data-fs="no">🔴 לא סודר (ההתאמה האוטומטית טעתה)</button><button class="btn ghost" data-fs="auto">↺ אוטומטי — לפי הסכום</button>
+    <button class="btn ghost" data-fs="note">📝 הערה / לגבות בתאריך אחר…</button></div>
     <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(o);
   const st=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(null);o.querySelectorAll('[data-fs]').forEach(b=>b.onclick=()=>res(b.dataset.fs));});
   o.remove(); if(!st)return false;
+  if(st==='note')return bqNoteFlow(id,amt,who);
   const body={state:st};
   if(st==='partial'){const v=await uiPrompt('כמה נגבה בסוף מתוך '+bqMoney(amt)+'?','');const a=amtNum(v);if(!a)return false;body.amount=a;}
   if(st!=='auto'){const n=await uiPrompt('הערה (לא חובה) — למשל: שילם בצ׳ק / ההעברה הייתה תשלום אחר','');body.note=(n||'').trim();}
@@ -7936,14 +7962,14 @@ function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?
       <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך</small>'}
         <span class="bqfor">${esc(bqDate(r.created))} · ${esc(r.card||'')}${r.description?(' · '+esc(r.description)):''}</span>
         ${bad&&r.error?`<span class="bqwhy">${esc(r.error)}</span>`:''}
-        ${bad?bqFixLine(r):''}</span>
+        ${bad?bqFixLine(r):''}${bad?bqNoteLine(r):''}</span>
       <span class="bqamt"><b>${bqMoney(r.amount)}</b><small class="bqst ${fixed?'ok':(part?'wait':s[1])}">${fixed?'סודר':(part?'סודר חלקית':esc(s[0]))}${ok?(r.in_card?' · ✓ בכרטיס':' · ⚠️ לא בכרטיס'):''}</small></span></button>
     ${op?`<div class="bqrb"><div class="hintxt">עסקה ${esc(r.ref||r.id)} · ${esc(r.created||'')}${r.email?(' · '+esc(r.email)):''}</div>
       ${ok&&!r.in_card?`<div class="bq2"><label class="fld"><span>👤 תורם</span><input id="bqt_donor" list="bq_dl" value="${esc(r.donor_name||'')}" placeholder="הקלד שם תורם…"></label>
         <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
         <div class="bqacts"><button class="btn sm" data-bqa="post" data-id="${r.id}">➕ רשום בכרטיס</button></div>
         <div class="hintxt">רישום ידני ומכוון. לפני הרישום המערכת בודקת שאין כבר תרומה כזו בכרטיס.</div>`:''}
-      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}</div>
+      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad&&!fixed&&(r.schedule_id||r.donor_id)?`<button class="btn sm ghost bqnewcard" data-sid="${r.schedule_id||''}" data-did="${r.donor_id||''}" data-amt="${esc(r.amount)}" title="התורם שלח כרטיס חדש — להכניס אותו בטופס המאובטח של בנק ווסט, לחייב את הסכום שחזר ולשמור לחיוב החודשי">💳 עדכון כרטיס</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}${bad?`<button class="btn sm ghost bqnoteb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-did="${r.donor_id||''}" title="שלחתי וואטסאפ / מייל, שוחחתי בטלפון, אמר לגבות בחודש הבא — נרשם גם בקשר בכרטיס התורם">📝 הערה</button>`:''}</div>
     </div>`:''}</div>`;}
 function bqDonorDL(){return `<datalist id="bq_dl">${DB.slice(0,4000).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('')}</datalist>`;}
 function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
@@ -8133,8 +8159,8 @@ async function bqDonorBlock(d,body){
         <button class="btn sm ghost" data-bqgs="${s.id}" title="לפתוח את הוראת הקבע בדף החיובים — סכום, תאריך, עבור מה, השהיה">↗ בדף החיובים</button></span></div>`).join('')}
     ${tx.length?`<div class="bqhsum"><b>${r.n_ok||0} חיובים שעברו · ${bqMoney(r.sum_ok)}</b>${r.since?` · מאז ${esc(bqDate(r.since))}`:''}
         <div class="bqhyrs">${Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${bqMoney(v)}</b></span>`).join('')}</div></div>
-      <div class="bqpays" id="bqd_pays">${tx.filter(t=>!(BQ_BAD.includes(t.status)&&t.fix&&t.fix.state==='fixed')).map((t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay" ${i>=8?'hidden':''}><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
-      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span>${BQ_BAD.includes(t.status)?bqFixLine(t):''}${bqRefBtn(t,d.last+' '+(d.first||''))}</div>`;}).join('')}</div>
+      <div class="bqpays" id="bqd_pays">${tx.map((t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay" ${i>=8?'hidden':''}><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
+      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span>${BQ_BAD.includes(t.status)?bqFixLine(t)+bqNoteLine(t):''}${bqRefBtn(t,d.last+' '+(d.first||''))}</div>`;}).join('')}</div>
       ${tx.length>8?`<button class="btn sm ghost" id="bqd_more">📜 הצג את כל ההיסטוריה (${tx.length})</button>`:''}`:''}</div>`;
   const more=box.querySelector('#bqd_more'); if(more)more.onclick=()=>{box.querySelectorAll('#bqd_pays .bqpay[hidden]').forEach(e=>e.hidden=false);more.remove();};
   const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
@@ -17721,6 +17747,23 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqfixb');if(!b)return;
   e.preventDefault();e.stopPropagation();
   if(await bqFixFlow(+b.dataset.tx,b.dataset.amt,b.dataset.who||''))renderBQ();});
+// 💳 מאיר: "עוד כפתור עדכון כרטיס אשראי, כי יש הרבה שלא עובר להם הכרטיס ושלחו חדש".
+// הוראת קבע — נפתחת בלשונית "קבועים" עם טופס החלפת הכרטיס; חיוב חד-פעמי — טופס חיוב על כרטיס חדש
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqnewcard');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const sid=+b.dataset.sid||0, did=+b.dataset.did||0, amt=b.dataset.amt||'';
+  const qi=document.getElementById('q');if(qi)qi.value='';q='';bqQ='';
+  if(sid){bqTab='rec';bqNew=null;bqOpen='s'+sid;bqSwap=sid;await renderBQ();
+    let n=0;const t=setInterval(()=>{const el=document.querySelector('.bqrh[data-op="s'+sid+'"]');
+      if(el||++n>40){clearInterval(t);if(el)el.closest('.bqrow').scrollIntoView({behavior:'smooth',block:'start'});else toast('הוראת הקבע לא נמצאה — אפשר לחפש אותה בלשונית קבועים');}},150);
+    return;}
+  bqSwap=null;await bqOpenForm('once',did);
+  if(bqNew&&bqNew.did==did){bqNew.pm='new';bqNew.amt=String(amt);renderBQ(false);}
+  window.scrollTo({top:0,behavior:'smooth'});});
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqnoteb');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  if(!b.dataset.did){uiAlert('החיוב לא משויך לתורם — שייך אותו קודם לכרטיס תורם');return;}
+  if(await bqNoteFlow(+b.dataset.tx,b.dataset.amt,b.dataset.who||''))renderBQ();});
 // 🔁 מאיר: "אצל תורם שנדחה — כפתור של ניסיון חיוב שוב, שינסה לחייב אותו על הסכום שלא עבר"
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqretry');if(!b)return;
   e.preventDefault();e.stopPropagation();

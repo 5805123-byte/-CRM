@@ -537,7 +537,8 @@ def ensure_schema():
     try: con.execute("ALTER TABLE bq_tx ADD COLUMN refunded REAL DEFAULT 0")   # כמה הוחזר מהמערכת שלנו
     except Exception: pass
     # מצב "סודר" של חיוב שנדחה, כשמאיר מתקן ידנית: no / yes / partial (ריק = אוטומטי לפי סכום)
-    for col, ddl in (('fix_state', 'TEXT'), ('fix_amt', 'REAL'), ('fix_note', 'TEXT')):
+    # 📝 הערה על חיוב שחזר ("שלחתי לו וואטסאפ", "אמר לגבות בחודש הבא") — האחרונה מוצגת בשורה
+    for col, ddl in (('fix_state', 'TEXT'), ('fix_amt', 'REAL'), ('fix_note', 'TEXT'), ('pay_note', 'TEXT'), ('pay_due', 'TEXT')):
         try: con.execute("ALTER TABLE bq_tx ADD COLUMN %s %s" % (col, ddl))
         except Exception: pass
     try: con.execute("ALTER TABLE nd_torem ADD COLUMN addr TEXT")
@@ -866,6 +867,8 @@ def ensure_schema():
     except Exception: pass
     # שעת הביצוע לפי השעון של מאיר (הדפדפן שולח אותה) — השרת רץ בשעון אחר
     try: con.execute("ALTER TABLE tasks ADD COLUMN done_at TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE tasks ADD COLUMN bq_tx INTEGER")   # משימת גבייה של חיוב בנק ווסט שחזר — נסגרת כשסודר
     except Exception: pass
     try: con.execute("ALTER TABLE contacts_log ADD COLUMN task_id INTEGER")
     except Exception: pass
@@ -2127,6 +2130,34 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('elon_kahn_kvittel_v1')")
     except Exception as e:
         print('  שגיאת קוויטל אלון:', e)
+    # מאיר: "תכניס לכרטיס שלו" — שמות הקוויטל של מנחם צבי קאהן (mkohn@mfandco.com), כפי שמופיעים
+    # בקוויטל הכללי של כ"ח אדר ב' תשע"ט (גיליון Kvitel בדרייב). דרגה לא משתנה; הדגל נרשם רק כשנמצא כרטיס
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mkohn_kvittel_v1'").fetchone():
+            r = con.execute("SELECT id, tier FROM donors WHERE lower(COALESCE(email,'')) LIKE '%mkohn@mfandco.com%' ORDER BY id").fetchone()
+            if not r:
+                t = con.execute("SELECT donor_id FROM bq_tx WHERE lower(COALESCE(email,''))='mkohn@mfandco.com' AND donor_id>0 "
+                                "ORDER BY created DESC").fetchone()
+                if t: r = con.execute("SELECT id, tier FROM donors WHERE id=?", (t['donor_id'],)).fetchone()
+            if not r:
+                cand = con.execute("SELECT id, tier FROM donors WHERE last LIKE '%קאהן%' AND first LIKE '%מנחם%'").fetchall()
+                if len(cand) == 1: r = cand[0]
+            if r:
+                kid = r['id']
+                txt = ("מנחם צבי בן עטא — להצלחה\n"
+                       "וזוג' בת שבע בת בריינדל רבקה\n"
+                       "ב' רחל לאה בת בת שבע — לזיווג הגון בקרוב ממש\n"
+                       "ב' משה אריה, ב' יעקב יהודה, ב' צביה\n"
+                       "בריינדל רבקה בת חנה\n"
+                       "יהודית בת בריינדל רבקה — לרפואה שלמה\n"
+                       "משה דן בן ציפורה וזוג' גיטל בת בת שבע\n"
+                       "ב' חנה תהילה בת גיטל, ב' יחזקאל מאיר בן גיטל")
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND text LIKE '%מנחם צבי בן עטא%'", (kid,)).fetchone():
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (kid, txt, r['tier'] or ''))
+                con.execute("INSERT INTO seed_flags(name) VALUES('mkohn_kvittel_v1')")
+                print('  קוויטל מנחם צבי קאהן: נוסף לכרטיס', kid)
+    except Exception as e:
+        print('  שגיאת קוויטל מנחם קאהן:', e)
     # הדגמה — קוויטל שבועי של דניאל הדר בעברית מסודר
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='daniel_hadar_kvittel_v1'").fetchone():
@@ -24412,11 +24443,53 @@ class H(BaseHTTPRequestHandler):
                     con.execute("UPDATE bq_tx SET fix_state='yes', fix_amt=?, fix_note=? WHERE id=?",
                                 (amt, 'נגבה בניסיון חוזר %s · אסמכתא %s' % (now_iso(), out.get('ref') or ''), t['id']))
                 con.commit()
+                bq_close_fixed_tasks(con)
                 out['card'] = ('%s %s' % (p['card_type'] or '', p['last4'] or '')).strip() if p else ''
             finally:
                 con.close()
             bump_data()
             return self._send(200, out)
+        m = re.match(r'/api/bq/tx/(\d+)/note$', self.path)
+        if m:
+            # 📝 מאיר: "כפתור שאוכל לציין הערה כמו ששלחתי לו הודעה בווצאפ או אימייל או טלפון שוחחתי
+            # ושזה יסונכרן גם לקשר בכרטיס תורם" + "אם הוא אמר שהוא לא יכול החודש — לגבות ממנו
+            # בחודש הבא, שזה ייכנס לכרטיס שלו במשימות". תאריך = משימת גבייה שנסגרת לבד כשסודר
+            con = db(); cur = con.cursor()
+            try:
+                t = con.execute("SELECT * FROM bq_tx WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not t:
+                    return self._send(200, {'ok': False, 'error': 'העסקה לא נמצאה'})
+                if not t['donor_id']:
+                    return self._send(200, {'ok': False, 'error': 'החיוב לא משויך לתורם — שייך אותו קודם לכרטיס תורם'})
+                ch = str(b.get('channel') or 'הערה').strip()[:30] or 'הערה'
+                note = str(b.get('note') or '').strip()[:500]
+                due = str(b.get('due') or '').strip()[:10]
+                if due and not re.match(r'^\d{4}-\d{2}-\d{2}$', due):
+                    return self._send(200, {'ok': False, 'error': 'תאריך לא תקין'})
+                if not note and not due:
+                    return self._send(200, {'ok': False, 'error': 'מה לכתוב?'})
+                dmy = lambda x: '.'.join(reversed(str(x or '')[:10].split('-')))
+                amt_s = '$' + ('%.2f' % (t['amount'] or 0)).rstrip('0').rstrip('.')
+                summary = '💳 חיוב %s שחזר ב-%s%s%s%s' % (amt_s, dmy(t['created']), (' · ' + t['card']) if t['card'] else '',
+                                                        (' — ' + note) if note else '', (' · לגבות שוב ב-' + dmy(due)) if due else '')
+                when = str(b.get('when') or '').strip()[:16] or now_iso()
+                cur.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (t['donor_id'], when[:10], ch, summary, due, when))
+                task_id = None
+                if due:
+                    # משימה אחת פתוחה לכל חיוב שחזר — תאריך חדש מחליף את הקודם
+                    cur.execute("DELETE FROM tasks WHERE bq_tx=? AND COALESCE(done,0)=0", (t['id'],))
+                    cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,bq_tx) VALUES(?,?,'charge',?,?)",
+                                (t['donor_id'], due, '💳 לגבות %s שחזר%s' % (amt_s, (' — ' + note) if note else ''), t['id']))
+                    task_id = cur.lastrowid
+                icon = {'וואטסאפ': '💬', 'אימייל': '📧', 'טלפון': '📞', 'SMS': '📱'}.get(ch, '📝')
+                cur.execute("UPDATE bq_tx SET pay_note=?, pay_due=? WHERE id=?",
+                            ((icon + ' ' + (note or ch)).strip()[:300], due or (t['pay_due'] or ''), t['id']))
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'task_id': task_id})
         m = re.match(r'/api/bq/tx/(\d+)/fix$', self.path)
         if m:
             # ✎ מצב "סודר" ידני לחיוב שנדחה: auto (לפי הסכום) / no / yes / partial
@@ -24429,7 +24502,9 @@ class H(BaseHTTPRequestHandler):
             con = db()
             con.execute("UPDATE bq_tx SET fix_state=?, fix_amt=?, fix_note=? WHERE id=?",
                         ('' if st == 'auto' else st, amt, str(b.get('note') or '').strip()[:200], int(m.group(1))))
-            con.commit(); con.close()
+            con.commit()
+            bq_close_fixed_tasks(con)
+            con.close()
             bump_data()
             return self._send(200, {'ok': True})
         m = re.match(r'/api/bq/tx/(\d+)/refund$', self.path)
@@ -26090,6 +26165,7 @@ def bq_run(full=False):
     try:
         con = db()
         res = bq_sync(con, full=full)
+        bq_close_fixed_tasks(con)
         con.close()
         BQSTAT.update(last=now_iso(), last_ok=now_iso(), error='',
                       result=' · '.join('%s %s' % (k, v) for k, v in res.items()))
@@ -26309,6 +26385,31 @@ def bq_fix_annotate(con, rows):
     return rows
 
 
+def bq_close_fixed_tasks(con):
+    """מאיר: "וכשזה יסתדר שיהיה כתוב סודר וזה ימחק מהמשימות" — משימת גבייה של חיוב שחזר
+    נסגרת לבד (עם שורת "סודר" בקשר של התורם) כשהחיוב בסוף עבר או סומן כמסודר."""
+    try:
+        ts = con.execute("SELECT id,bq_tx FROM tasks WHERE COALESCE(bq_tx,0)>0 AND COALESCE(done,0)=0").fetchall()
+        if not ts:
+            return 0
+        ids = sorted({t['bq_tx'] for t in ts})
+        rows = [dict(r) for r in con.execute("SELECT id,created,amount,status,customer_id,donor_id,fix_state,fix_amt,fix_note "
+                                             "FROM bq_tx WHERE id IN (%s)" % ','.join('?' * len(ids)), ids)]
+        fixed = {r['id'] for r in bq_fix_annotate(con, rows) if (r.get('fix') or {}).get('state') == 'fixed'}
+        n = 0
+        cur = con.cursor()
+        for t in ts:
+            if t['bq_tx'] in fixed:
+                task_done_log(cur, t['id'], True, 'המערכת', '', 'סודר — החיוב עבר')
+                n += 1
+        if n:
+            con.commit()
+        return n
+    except Exception as e:
+        print('  bq tasks close error:', e)
+        return 0
+
+
 def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
     w, args = [], []
     if kind == 'bad':
@@ -26320,7 +26421,7 @@ def bq_tx_rows(con, kind='hist', donor_id=None, limit=400, q=''):
         w.append("(t.name LIKE ? OR t.email LIKE ? OR t.card LIKE ? OR CAST(t.amount AS TEXT) LIKE ? OR d.last LIKE ? OR d.english LIKE ?)")
         args += ['%' + q + '%'] * 6
     sql = ("SELECT t.id,t.ref,t.created,t.amount,t.status,t.error,t.type,t.schedule_id,t.description,t.customer_id,"
-           "t.email,t.name,t.card,t.donor_id,t.posted,COALESCE(t.refunded,0) refunded,t.fix_state,t.fix_amt,t.fix_note,d.last dl,d.first dfi,"
+           "t.email,t.name,t.card,t.donor_id,t.posted,COALESCE(t.refunded,0) refunded,t.fix_state,t.fix_amt,t.fix_note,t.pay_note,t.pay_due,d.last dl,d.first dfi,"
            "(SELECT COUNT(*) FROM recon r WHERE r.tid='BQ'||t.ref AND r.processed=1) AS in_card "
            "FROM bq_tx t LEFT JOIN donors d ON d.id=t.donor_id" + (" WHERE " + " AND ".join(w) if w else '') +
            " ORDER BY t.created DESC LIMIT ?")
