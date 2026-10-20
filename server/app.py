@@ -18742,6 +18742,17 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
                                     'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
                                     'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
+        if self.path.split('?')[0] == '/api/nd/cardmail_tpl':
+            con = db()
+            try:
+                v = kv_get(con, 'nd_card_mail', '')
+            finally:
+                con.close()
+            try:
+                t = json.loads(v) if v else {}
+            except ValueError:
+                t = {}
+            return self._send(200, {'ok': True, 'subj': t.get('subj') or ND_CARD_MAIL[0], 'body': t.get('body') or ND_CARD_MAIL[1]})
         if self.path.split('?')[0] == '/api/nd/find':
             # 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש בחצי שנה האחרונה, ארבע ספרות אחרונות 8529, אני לא
             # יודע מי זה — בכל הקופות". חיפוש לפי 4 ספרות (וסכום, ותקופה) בכל המוסדות: עסקאות, הוראות קבע וסירובים
@@ -23534,6 +23545,77 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': ok, 'link': link if ok else '', 'error': '' if ok else link})
             finally:
                 con.close()
+        if self.path == '/api/nd/cardmail_tpl':
+            # הנוסח הקבוע של "עדכון אשראי / תאריך חיוב" במייל — מאיר כותב ושומר
+            con = db()
+            try:
+                kv_set(con, 'nd_card_mail', json.dumps({'subj': str(b.get('subj') or '')[:200], 'body': str(b.get('body') or '')[:6000]}, ensure_ascii=False))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/mail$', urllib.parse.unquote(self.path))
+        if m:
+            # ✉️ מאיר: "שאוכל לשלוח לכל אחד בקהילה קישור לשינוי או עדכון פרטי האשראי או תאריך החיוב… עם הסכום
+            # שאשנה, בנוסח שאני שולח לו — באימייל". הקישור האישי המאובטח של נדרים פלוס (CreateKevaUpdateLink)
+            # נכנס לגוף המייל; יוצא מ-נדר 18 כמו כל מייל לקהילה, נרשם ביומן של החבר
+            import nedarim as _nd, bulkmail
+            if not bulkmail.configured():
+                return self._send(200, {'ok': False, 'error': 'החיבור לדואר לא הוגדר ב-Render'})
+            if bulkmail.STATUS.get('running'):
+                return self._send(200, {'ok': False, 'error': 'משלוח מיילים אחר עדיין רץ — נסה שוב בעוד רגע'})
+            to_ = str(b.get('to') or '').strip()
+            if not bulkmail.valid(to_):
+                return self._send(200, {'ok': False, 'error': 'כתובת מייל לא תקינה'})
+            subj, body = str(b.get('subj') or '').strip(), str(b.get('body') or '').strip()
+            if not subj or not body:
+                return self._send(200, {'ok': False, 'error': 'חסר נושא או תוכן'})
+            con = db()
+            try:
+                k = con.execute("SELECT * FROM nd_keva WHERE id=?", (m.group(1),)).fetchone()
+                if not k:
+                    return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
+                link = ''
+                if '{{קישור}}' in body:
+                    with _nd.use(_nd.account_for(k['mosad'] or '')):
+                        okl, link = _nd.update_link(k['id'])
+                    if not okl:
+                        return self._send(200, {'ok': False, 'error': 'נדרים פלוס לא יצרו קישור: %s' % link})
+                    con.execute("INSERT INTO nd_link(keva_id,link,created) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET link=excluded.link",
+                                (k['id'], link, now_iso()))
+                mid = int(b.get('member_id') or 0) or k['member_id']
+                mm = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone() if mid else None
+                amt = str(b.get('amount') or k['amount'] or '').strip()[:20]
+                nxt = str(b.get('next_date') or k['next_date'] or '').strip()[:20]
+                if re.fullmatch(r'\d{4}-\d{2}-\d{2}', nxt):
+                    nxt = '%s.%s.%s' % (nxt[8:10], nxt[5:7], nxt[:4])
+                fill = lambda t: t.replace('{{קישור}}', link).replace('{{סכום}}', amt).replace('{{תאריך}}', nxt) \
+                    .replace('{{עבור}}', str(k['groupe'] or '').strip())
+                subj, body = fill(subj), fill(body)
+                first = (mm['first'] if mm else '') or ((k['name'] or '').split() or [''])[-1]
+                last = (mm['last'] if mm else '') or ''
+                bid = con.execute("INSERT INTO mail_batch(name,subject,body,sig,base,created,total,status,track,audience) "
+                                  "VALUES(?,?,?,?,?,?,1,'queued',1,'members')",
+                                  (('💳 עדכון אשראי — ' + (first + ' ' + last).strip())[:120], subj, body, '', '', now_iso())).lastrowid
+                con.execute("INSERT INTO mail_queue(batch,donor_id,member_id,email,name,fname,lname,title,gender,avreich,kvittel,link,amount) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (bid, None, mid, to_, (first + ' ' + last).strip(), first, last, 'ה"ה',
+                             ((mm['gender'] or '').strip()[:1] if mm and (mm['gender'] or '').strip()[:1] in ('m', 'f', 'c') else _gender(first)),
+                             '', '', '', amt))
+                con.execute("UPDATE mail_batch SET sender='neder' WHERE id=?", (bid,))
+                if mid:
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                (mid, today_iso(), 'מייל', '💳 נשלח מייל לעדכון אשראי / תאריך חיוב' + (' · ₪' + amt if amt else ''), body[:2000], 'out', '', now_iso()))
+                    if b.get('email_save') and mm and not (mm['email'] or '').strip():
+                        con.execute("UPDATE members SET email=? WHERE id=?", (to_, mid))
+                con.commit()
+            finally:
+                con.close()
+            bulkmail.STATUS.update({'running': True, 'done': False, 'stop': False, 'batch': bid, 'total': 1, 'sent': 0, 'failed': 0,
+                                    'skipped': 0, 'left': 1, 'error': '', 'now': ''})
+            import threading as _th
+            _th.Thread(target=mail_worker, args=(bid,), daemon=True).start()
+            return self._send(200, {'ok': True, 'batch': bid, 'link': bool(link)})
         if self.path == '/api/nd/links/send_bad':
             # לכל מי שהוראת הקבע שלו חזרה ויש לו נייד — קישור לעדכון כרטיס
             con = db()
@@ -27641,6 +27723,20 @@ def _nd_loop():
         except Exception as e:
             print('  nedarim sync error:', e)
         time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 10800)))
+
+
+ND_CARD_MAIL = ('עדכון הוראת הקבע שלך — {{עבור}}',
+                '''שלום {{שם}},
+
+ברצוננו לעדכן אותך לגבי הוראת הקבע שלך ל{{עבור}}.
+הסכום החודשי: ₪{{סכום}} · החיוב הבא: {{תאריך}}.
+
+לעדכון פרטי כרטיס האשראי, בדף מאובטח של נדרים פלוס:
+{{קישור}}
+
+(הקישור אישי ובתוקף ל-14 יום. מספר הכרטיס לא עובר דרכנו.)
+
+תודה רבה, ותזכ{{ה|י|ו}} למצוות''')
 
 
 def nd_send_link(con, keva_id, phone=''):

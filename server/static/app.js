@@ -14394,6 +14394,46 @@ async function kvHolders(){
   const cv=document.getElementById('kvh_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שם,טלפון,סכום לחודש,עבור מה,סוג,חיוב הבא,נותרו,קופה'].concat(L.map(k=>[nm(k),k.phone||'',am(k),k.groupe||'',k.kind==='bank'?'בנק':'אשראי',k.next_date||'',k.itra||'',k.kupa].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בעלי הוראות קבע.csv';document.body.appendChild(a);a.click();a.remove();};}
+// ✉️ מאיר: "שאוכל לשלוח לכל אחד בקהילה קישור לשינוי או עדכון פרטי האשראי או תאריך החיוב, עם הסכום שאשנה,
+// בנוסח שאני שולח לו — באימייל". סכום / תאריך שהשתנו מתעדכנים קודם בנדרים פלוס, ואז יוצא המייל עם הקישור האישי
+async function ndCardMail(k,m,after){
+  const t=await api('GET','/api/nd/cardmail_tpl').catch(()=>null)||{};
+  const d2i=v=>{v=String(v||'').trim();let x=/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/.exec(v);if(x)return x[3]+'-'+x[2].padStart(2,'0')+'-'+x[1].padStart(2,'0');x=/^(\d{4}-\d{2}-\d{2})/.exec(v);return x?x[1]:'';};
+  const a0=String(k.amount||'').replace(/[^\d.]/g,''), n0=d2i(k.next_date);
+  const o=document.createElement('div');o.className='mkov';
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:680px"><div class="mkdh"><div class="mkav">✉️</div><div><b>מייל לעדכון אשראי / תאריך חיוב</b><div class="mksub">${esc(mName(m))} · הוראת קבע ${ndMoney(k.amount)}${k.groupe?' · '+esc(k.groupe):''}</div></div><button class="x2" id="cmx">✕</button></div>
+    <div class="mkdb">
+      <label class="fld"><span>📧 אל</span><input id="cm_to" dir="ltr" value="${esc(String(m.email||'').split(/[,;\s]+/)[0]||'')}" placeholder="name@example.com"></label>
+      ${(m.email||'').trim()?'':'<label class="gvall"><input type="checkbox" id="cm_tosave" checked> לשמור את המייל בכרטיס שלו</label>'}
+      <div class="lgf"><label class="fld"><span>💰 סכום לחודש ₪ (אפשר לשנות)</span><input id="cm_amt" inputmode="decimal" value="${esc(a0)}"></label>
+        <label class="fld"><span>📅 תאריך החיוב הבא (אפשר לשנות)</span><input type="date" id="cm_next" value="${esc(n0)}"></label></div>
+      <div class="hintxt" id="cm_chg" style="display:none;color:#a15c00">⚠️ הסכום / התאריך ישתנו בהוראת הקבע בנדרים פלוס לפני שהמייל יוצא.</div>
+      <label class="fld"><span>✏️ נושא</span><input id="cm_subj" value="${esc(t.subj||'')}"></label>
+      <label class="fld"><span>📝 הנוסח</span><textarea id="cm_body" rows="11" style="width:100%;font-size:.95rem">${esc(t.body||'')}</textarea></label>
+      <div class="mksub">אפשר לכתוב: <b>{{שם}}</b> · <b>{{תואר}}</b> · <b>{{סכום}}</b> · <b>{{תאריך}}</b> · <b>{{עבור}}</b> · <b>{{קישור}}</b> — הקישור האישי המאובטח של נדרים פלוס לעדכון הכרטיס (בתוקף 14 יום)</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><button class="btn sm ghost" id="cm_tsave">💾 לשמור כנוסח קבוע</button></div>
+      <div class="mksec">👁 כך זה ייראה אצלו</div><div id="cm_prev" style="white-space:pre-wrap;border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;font-size:.92rem"></div>
+    </div>
+    <div class="mkdf"><span class="grow"></span><button class="mkbtn" id="cm_send">✉️ לשלוח</button></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('cmx').onclick=close;
+  const fmtD=v=>v?v.slice(8,10)+'.'+v.slice(5,7)+'.'+v.slice(0,4):'';
+  const prev=()=>{const amt=g('cm_amt').value.trim(),nx=g('cm_next').value;
+    g('cm_chg').style.display=(amt!==a0||nx!==n0)?'':'none';
+    const f=x=>String(x||'').replace(/\{\{קישור\}\}/g,'🔗 [קישור מאובטח לעדכון הכרטיס]').replace(/\{\{סכום\}\}/g,amt).replace(/\{\{תאריך\}\}/g,fmtD(nx))
+      .replace(/\{\{עבור\}\}/g,k.groupe||'').replace(/\{\{שם\}\}/g,m.first||'').replace(/\{\{תואר\}\}/g,'').replace(/\{\{([^|}]*)\|[^}]*\}\}/g,'$1');
+    g('cm_prev').innerHTML='<b>'+esc(f(g('cm_subj').value))+'</b>\n\n'+esc(f(g('cm_body').value));};
+  ['cm_amt','cm_next','cm_subj','cm_body'].forEach(id=>g(id).addEventListener('input',prev));prev();
+  g('cm_tsave').onclick=async()=>{const r=await api('POST','/api/nd/cardmail_tpl',{subj:g('cm_subj').value,body:g('cm_body').value});toast(r&&r.ok?'💾 הנוסח נשמר':'לא נשמר');};
+  g('cm_send').onclick=async()=>{const to=g('cm_to').value.trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){toast('כתובת מייל לא תקינה');return;}
+    const amt=g('cm_amt').value.trim(),nx=g('cm_next').value,btn=g('cm_send');btn.disabled=true;btn.textContent='⏳ שולח…';
+    if(amt!==a0||nx!==n0){const body={action:'edit'};if(amt!==a0)body.amount=amt;if(nx!==n0)body.next_date=nx;
+      const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/action',body).catch(()=>null);
+      if(!r||!r.ok){btn.disabled=false;btn.textContent='✉️ לשלוח';return uiAlert('נדרים פלוס לא עדכנו את ההוראה — המייל לא נשלח:\n'+((r&&r.error)||'אין תשובה'));}}
+    const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/mail',{to,subj:g('cm_subj').value,body:g('cm_body').value,amount:amt,next_date:nx,member_id:m.id,email_save:(g('cm_tosave')||{}).checked?1:0}).catch(()=>null);
+    if(!r||!r.ok){btn.disabled=false;btn.textContent='✉️ לשלוח';return uiAlert('המייל לא נשלח:\n'+((r&&r.error)||'אין תשובה'));}
+    if((g('cm_tosave')||{}).checked)m.email=to;
+    close();toast('✉️ המייל יוצא ל-'+to+(amt!==a0||nx!==n0?' · ההוראה עודכנה בנדרים פלוס':''));if(after)after();};}
 // 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש… ארבע ספרות אחרונות 8529, אני לא יודע מי זה — בכל הקופות"
 async function ndFind4(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
@@ -15974,7 +16014,8 @@ async function cmNdPaint(m,showAll,boxId){
         ${k.kind==='bank'?`<button class="btn sm ghost" data-ndact="month_next" data-id="${esc(k.id)}" title="דחיית הגביה בחודש">⏭ חודש הבא</button>`:''}
         ${k.kind==='bank'?`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="תשלום בודד מהחשבון — נשלח לבנק בשידור הקרוב">🏦 גבייה בבנק</button>`
         :`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
-        <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button>`}</span></div>`).join('')
+        <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button>
+        <button class="btn sm ghost" data-ndmail="${esc(k.id)}" title="מייל עם קישור לעדכון האשראי, ושינוי סכום / תאריך חיוב — בנוסח שלך">✉️ במייל</button>`}</span></div>`).join('')
     :(KO.length?'':'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>'))+oldHTML;
   // מאיר: "שאל תבלבל ואל תערב את נתן תתן עם הקהילה, את התרומות" — תשלום מחשבון אחר (נתן תתן / מקווה)
   // מסומן בשם החשבון ולא נספר בסך התרומות לקהילה
@@ -16039,6 +16080,7 @@ async function cmNdPaint(m,showAll,boxId){
     if(!await uiConfirm('לחייב עכשיו את '+mName(m)+' ב-'+ndMoney(a)+(w?(' עבור '+w):'')+'?\n'+(bank?'הגבייה נשלחת לבנק בשידור הקרוב, בלי לשנות את ההוראה.':'החיוב מיידי בכרטיס השמור בהוראת הקבע, בלי לשנות את ההוראה.'),bank?'🏦 כן, לגבות':'⚡ כן, לחייב','ביטול'))return;
     b.disabled=true;b.textContent='מחייב…';const r=await api('POST','/api/nd/keva/'+b.dataset.ndchg+'/charge',{amount:a,groupe:w||'',member_id:m.id});
     if(r&&r.ok){toast(r.bank?'🏦 נשלח לגבייה בבנק ✓ (ייגבה בשידור הקרוב)':('✅ החיוב עבר · אישור '+(r.confirmation||'')));cmNdPaint(m,false,boxId);}else{b.disabled=false;b.textContent='⚡ חיוב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}});
+  box.querySelectorAll('[data-ndmail]').forEach(b=>b.onclick=()=>{const k=K.find(x=>String(x.id)===b.dataset.ndmail);if(k)ndCardMail(k,m,()=>cmNdPaint(m,showAll,boxId));});
   box.querySelectorAll('[data-ndsendm]').forEach(b=>b.onclick=async()=>{
     if(!await uiConfirm('לשלוח לו SMS עם קישור מאובטח לעדכון הכרטיס בהוראת הקבע?','📲 כן','ביטול'))return;
     b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsendm+'/link',{send:1});
