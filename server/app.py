@@ -476,6 +476,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN paid INTEGER DEFAULT 0")
     except Exception: pass
+    for _c in ("object_en","dedication","section"):
+        try: con.execute(f"ALTER TABLE building ADD COLUMN {_c} TEXT DEFAULT ''")
+        except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN night_date TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN hyear TEXT")
@@ -20153,7 +20156,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             b = self._body(); bid = int(m.group(1))
             con = db(); sets = []; vals = []
-            for k in ('object','amount','paid','note','date'):
+            for k in ('object','amount','paid','note','date','object_en','dedication','section'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             if sets:
                 con.execute("UPDATE building SET " + ",".join(sets) + " WHERE id=?", vals + [bid])
@@ -24725,8 +24728,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'keep': keep, 'dropped': drop, 'moved': moved})
         if self.path == '/api/building':
             con = db(); cur = con.cursor()
-            cur.execute("INSERT INTO building(donor_id,object,amount,paid,note,date) VALUES(?,?,?,?,?,?)",
-                        (b.get('donor_id'), b.get('object',''), b.get('amount',''), b.get('paid',''), b.get('note',''), b.get('date', today_iso())))
+            cur.execute("INSERT INTO building(donor_id,object,amount,paid,note,date,object_en,dedication,section) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (b.get('donor_id'), b.get('object',''), b.get('amount',''), b.get('paid',''), b.get('note',''), b.get('date', today_iso()), b.get('object_en',''), b.get('dedication',''), b.get('section','')))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/pledge':

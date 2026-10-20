@@ -1589,7 +1589,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1611,7 +1611,7 @@ document.getElementById('remov').onclick=e=>{if(e.target.id==='remov')e.currentT
 // מאיר: "תבדוק שאין בכמה מקומות אותו רעיון של חיפוש ומיון — שהכל יהיה
 // במקום אחד." יש תיבת חיפוש אחת, למעלה, והיא מסננת את המסך שפתוח.
 // הכיתוב שבתוכה אומר מה היא מחפשת כרגע, כדי שלא ייראה שהיא לא שייכת.
-const QPH={donors:'חיפוש שם / טלפון / אימייל / עסק…',stip:'חיפוש אברך…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
+const QPH={bldghq:'חיפוש תורם / אובייקט / נוסח…',donors:'חיפוש שם / טלפון / אימייל / עסק…',stip:'חיפוש אברך…',kvittel:'חיפוש שם תורם או שם שמוזכר בקוויטל…',
   avreich:'חיפוש אברך או שותף…',parnes:'חיפוש שם תורם…',charges:'חיפוש שם בחיובים…',
   debts:'חיפוש שם תורם…',tasks:'חיפוש במשימות…',mails:'חיפוש שם תורם…',comm:'חיפוש חבר קהילה — שם / טלפון / מייל / מקום…',rcpt:'חיפוש קבלה — שם תורם / מספר / סכום…',gifts:'חיפוש תרומה — שם תורם / סכום / עבור מה / אסמכתא…',camp:'חיפוש שם, משפחה או סכום…',mikveh:'חיפוש לקוח במקווה — שם / טלפון / מספר לקוח…',zmanim:'חיפוש שבת / חג / פרשה…',
   old:'חיפוש שם תורם…',dups:'חיפוש שם תורם…',unlinked:'חיפוש שם / מייל…',calls:'חיפוש שם תורם…'};
@@ -1631,6 +1631,7 @@ function render(){
     if(flt==='deposits')return renderDeposits();
     return renderDonors();
   }
+  if(tab==='bldghq') return renderBldgHQ();
   if(tab==='tasks') return renderTasksTab();
   if(tab==='cal') return renderCalTab();
   if(tab==='comm') return renderComm();
@@ -4170,26 +4171,78 @@ function bldAutoPaid(d,x){
 }
 function bldPaid(d,x){return amtNum(x.paid)+bldAutoPaid(d,x);}
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=bldPaid(d,x);});return {price,paid,owed:price-paid};}
+const BLD_SECTIONS=['הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
+function bldSecList(){const s=new Set(BLD_SECTIONS);(DB||[]).forEach(d=>(d.building||[]).forEach(x=>{if(x.section)s.add(x.section);}));return [...s];}
 function cardBuilding(d,body){
   const t=buildTotals(d),cur=curSym(d);
-  body.innerHTML=`<div class="totals"><div class="tot"><span>סה"כ הקדשות</span><b>${cur}${t.price}</b></div><div class="tot"><span>שולם</span><b>${cur}${t.paid}</b></div><div class="tot ${t.owed>0?'year':''}"><span>נשאר לתשלום</span><b>${cur}${t.owed}</b></div></div>
+  body.innerHTML=`<div class="totals"><div class="tot"><span>סה"כ הקדשות</span><b>${cur}${t.price.toLocaleString()}</b></div><div class="tot"><span>שולם</span><b>${cur}${t.paid.toLocaleString()}</b></div><div class="tot ${t.owed>0?'year':''}"><span>נשאר לתשלום</span><b>${cur}${t.owed.toLocaleString()}</b></div></div>
+    <datalist id="bldsecs">${bldSecList().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
     <div id="bldlist"></div>
     <div class="sec"><h3>➕ הוסף הקדשה בבניין</h3>
-      <label class="fld"><span>מה ההקדשה (אובייקט)</span><input id="bl_obj" placeholder="למשל: שולחן היכל זרע שמשון, עמוד, ספר תורה…"></label>
-      <div class="two"><label class="fld"><span>כמה התחייב (המחיר)</span><input id="bl_amt" placeholder="סכום"></label>
-        <label class="fld"><span>שולם לפני שנרשם במערכת (רשות)</span><input id="bl_paid" placeholder="0"></label></div>
-      <div class="hintxt">מכאן והלאה: כל תרומה שתרשום לו עם "הבניין הקדוש" ושם ההקדשה — יורדת מהחוב לבד.</div>
+      <label class="fld"><span>שם האובייקט (עברית)</span><input id="bl_obj" placeholder="למשל: שולחן בהיכל זרע שמשון"></label>
+      <label class="fld"><span>Object name (English)</span><input id="bl_en" dir="ltr" placeholder="e.g. Table in Heichal Zera Shimshon"></label>
+      <label class="fld"><span>מדור</span><input id="bl_sec" list="bldsecs" placeholder="בחר או כתוב"></label>
+      <div class="two"><label class="fld"><span>כמה התחייב</span><input id="bl_amt" inputmode="decimal" placeholder="סכום"></label>
+        <label class="fld"><span>שולם (לפני הרישום במערכת)</span><input id="bl_paid" inputmode="decimal" placeholder="0"></label></div>
       <button class="btn" id="bl_add">הוסף הקדשה</button></div>`;
   renderBuilding(d);
-  document.getElementById('bl_add').onclick=async()=>{const obj=document.getElementById('bl_obj').value.trim(),amt=document.getElementById('bl_amt').value.trim(),paid=document.getElementById('bl_paid').value.trim();if(!obj&&!amt){toast('הכנס אובייקט וסכום');return;}const r=await api('POST','/api/building',{donor_id:d.id,object:obj,amount:amt,paid:paid});d.building=d.building||[];d.building.push({id:r.id,donor_id:d.id,object:obj,amount:amt,paid:paid,note:'',date:todayStr()});cardBuilding(d,body);toast('נוסף ✓');if(tab==='donors')renderDonors();};
+  document.getElementById('bl_add').onclick=async()=>{const g=i=>document.getElementById(i).value.trim();const rec={donor_id:d.id,object:g('bl_obj'),object_en:g('bl_en'),section:g('bl_sec'),amount:g('bl_amt'),paid:g('bl_paid'),dedication:'',note:''};
+    if(!rec.object&&!rec.amount){toast('הכנס אובייקט וסכום');return;}
+    const r=await api('POST','/api/building',rec);d.building=d.building||[];d.building.push(Object.assign({id:r.id,date:todayStr()},rec));cardBuilding(d,body);toast('נוסף ✓');if(tab==='donors')renderDonors();};
 }
 function renderBuilding(d){
   const el=document.getElementById('bldlist');if(!el)return;const cur=curSym(d);
-  el.innerHTML=(d.building||[]).map(x=>{const auto=bldAutoPaid(d,x),paid=amtNum(x.paid)+auto,owed=amtNum(x.amount)-paid;return `<div class="plwrap"><div class="pledge ${owed>0?'pending':'given'}"><div class="pi"><b>🏛️ ${esc(x.object||'—')}</b><br><small>התחייב: ${cur}${esc(String(amtNum(x.amount)))} · שולם: ${cur}${esc(String(paid))}${auto?(' <span style="color:var(--muted)">(מזה '+cur+auto+' מתרומות שנרשמו)</span>'):''} · <b style="color:${owed>0?'var(--no)':'var(--yes)'}">${owed>0?('נשאר לתשלום '+cur+owed):'שולם במלואו ✓'}</b></small>${x.note?('<br><small>'+esc(x.note)+'</small>'):''}</div><button class="del" data-del="${x.id}">🗑</button></div>
-    <div class="bldedit"><input class="blf" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="אובייקט"><input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" placeholder="התחייב (מחיר)" inputmode="decimal"><input class="blf" data-k="paid" data-id="${x.id}" value="${esc(x.paid||'')}" placeholder="שולם לפני הרישום" inputmode="decimal" title="מה ששולם לפני שהתחילו לרשום תרומות במערכת. תרומות שנרשמות עם הייעוד 'הבניין הקדוש — ${esc(x.object||'')}' מתווספות לבד."></div></div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה, או שלח לי את אקסל הבניין ואמזג הכל.</div>';
-  if((d.building||[]).length)el.innerHTML+='<div class="hintxt" style="margin:4px 2px 8px">💡 כל תרומה שתרשום עם "עבור מה: הבניין הקדוש" ותכתוב בה את שם ההקדשה — מתקזזת מהחוב לבד.</div>';
-  el.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{await api('DELETE','/api/building/'+b.dataset.del);d.building=d.building.filter(x=>x.id!=b.dataset.del);cardBuilding(d,document.getElementById('cardBody'));toast('נמחק');if(tab==='donors')renderDonors();});
-  el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;x[inp.dataset.k]=inp.value;await api('PUT','/api/building/'+x.id,{[inp.dataset.k]:inp.value});cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
+  el.innerHTML=(d.building||[]).map(x=>{const auto=bldAutoPaid(d,x),paid=amtNum(x.paid)+auto,amt=amtNum(x.amount),owed=amt-paid;
+    return `<div class="bk ${owed>0?'owe':'done'}">
+      <div class="bkhead"><div class="bknames">
+        <input class="blf bkt" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="שם האובייקט בעברית">
+        <input class="blf bke" data-k="object_en" data-id="${x.id}" dir="ltr" value="${esc(x.object_en||'')}" placeholder="Object name in English">
+      </div><button class="bkdel" data-del="${x.id}" title="מחיקה">🗑</button></div>
+      <input class="blf bksec" data-k="section" data-id="${x.id}" list="bldsecs" value="${esc(x.section||'')}" placeholder="מדור (למשל: חלונות)">
+      <div class="bkmoney">
+        <label>התחייב<input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" inputmode="decimal" placeholder="0"></label>
+        <label>שולם<input class="blf" data-k="paid" data-id="${x.id}" value="${esc(x.paid||'')}" inputmode="decimal" placeholder="0" title="מה ששולם לפני שהתחילו לרשום תרומות במערכת"></label>
+        <div class="bkstat">${amt?(owed>0?`<b class="no">נשאר ${cur}${owed.toLocaleString()}</b>`:`<b class="yes">שולם במלואו ✓</b>`):''}${auto?`<small>כולל ${cur}${auto.toLocaleString()} מתרומות שנרשמו</small>`:''}</div>
+      </div>
+      <label class="bkded"><span>✍️ נוסח ההקדשה <small>(ימולא עם התורם)</small></span>
+        <textarea class="blf" data-k="dedication" data-id="${x.id}" rows="3" placeholder="">${esc(x.dedication||'')}</textarea></label>
+      <input class="blf bknote" data-k="note" data-id="${x.id}" value="${esc(x.note||'')}" placeholder="הערה (רשות)">
+    </div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה.</div>';
+  el.querySelectorAll('.bkdel').forEach(b=>b.onclick=async()=>{
+    if(!b.classList.contains('sure')){b.classList.add('sure');b.textContent='למחוק? לחץ שוב';setTimeout(()=>{if(b.isConnected){b.classList.remove('sure');b.textContent='🗑';}},4000);return;}
+    await api('DELETE','/api/building/'+b.dataset.del);d.building=d.building.filter(x=>x.id!=b.dataset.del);cardBuilding(d,document.getElementById('cardBody'));toast('נמחק');if(tab==='donors')renderDonors();});
+  el.querySelectorAll('.blf').forEach(inp=>inp.onchange=async()=>{const x=d.building.find(y=>y.id==inp.dataset.id);if(!x)return;const k=inp.dataset.k;x[k]=inp.value;
+    await api('PUT','/api/building/'+x.id,{[k]:inp.value});
+    if(k==='amount'||k==='paid')cardBuilding(d,document.getElementById('cardBody'));toast('נשמר ✓');});
+}
+// ===== לשונית "הבניין הקדוש" — כל ההקדשות של כל התורמים =====
+let bhqF='all';
+function bhqRows(){const out=[];(DB||[]).forEach(d=>(d.building||[]).forEach(x=>{const auto=bldAutoPaid(d,x),paid=amtNum(x.paid)+auto,amt=amtNum(x.amount);out.push({d,x,amt,paid,owed:amt-paid});}));return out;}
+function renderBldgHQ(){
+  const all=bhqRows();const qq=norm(q||'');
+  const F={all:['הכל',r=>true],noded:['✍️ חסר נוסח',r=>!String(r.x.dedication||'').trim()],noen:['🔤 חסר אנגלית',r=>!String(r.x.object_en||'').trim()],owe:['💲 נשאר לתשלום',r=>r.owed>0]};
+  let rows=all.filter(F[bhqF][1]);
+  if(qq)rows=rows.filter(r=>norm(`${r.d.last} ${r.d.first} ${r.d.english||''} ${r.x.object||''} ${r.x.object_en||''} ${r.x.dedication||''} ${r.x.section||''}`).includes(qq));
+  const sum=(a,k)=>a.reduce((s,r)=>s+r[k],0);
+  const groups={};rows.forEach(r=>{const s=r.x.section||'ללא מדור';(groups[s]=groups[s]||[]).push(r);});
+  const order=Object.keys(groups).sort((a,b)=>{const ia=BLD_SECTIONS.indexOf(a),ib=BLD_SECTIONS.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib)||a.localeCompare(b);});
+  const money=n=>'$'+Math.round(n).toLocaleString();
+  view.innerHTML=`<div class="bhq">
+    <div class="bhqhero"><h2>🏛️ הבניין הקדוש<small>כל ההקדשות · לחיצה על שורה פותחת את כרטיס התורם לעריכה</small></h2>
+      <div class="bhqstats"><div><b>${all.length}</b><span>הקדשות</span></div><div><b>${new Set(all.map(r=>r.d.id)).size}</b><span>תורמים</span></div>
+      <div><b>${money(sum(all,'amt'))}</b><span>התחייבו</span></div><div><b>${money(sum(all,'paid'))}</b><span>שולם</span></div>
+      <div><b>${all.filter(r=>String(r.x.dedication||'').trim()).length}/${all.length}</b><span>נוסח מולא</span></div></div></div>
+    <div class="bhqf">${Object.entries(F).map(([k,v])=>`<button class="chip ${bhqF===k?'on':''}" data-f="${k}">${v[0]} <small>${all.filter(v[1]).length}</small></button>`).join('')}</div>
+    ${order.map(s=>{const g=groups[s].sort((a,b)=>b.amt-a.amt);return `<div class="bhqsec"><h3>${esc(s)} <small>${g.length} · ${money(sum(g,'amt'))}</small></h3>
+      ${g.map(r=>`<div class="bhqrow" data-d="${r.d.id}">
+        <div class="bhqobj"><b>${esc(r.x.object||'—')}</b><span dir="ltr">${esc(r.x.object_en||'')}</span></div>
+        <div class="bhqwho">${esc(r.d.last||'')} ${esc(r.d.first||'')}</div>
+        <div class="bhqamt">${r.amt?money(r.amt):''}${r.amt?(r.owed>0?`<small class="no">נשאר ${money(r.owed)}</small>`:'<small class="yes">שולם ✓</small>'):''}</div>
+        <div class="bhqded ${r.x.dedication?'':'none'}">${r.x.dedication?esc(r.x.dedication):'נוסח ההקדשה — ריק'}</div>
+      </div>`).join('')}</div>`;}).join('')||'<div class="hintxt" style="padding:20px">אין הקדשות להצגה.</div>'}
+  </div>`;
+  view.querySelectorAll('.bhqf .chip').forEach(b=>b.onclick=()=>{bhqF=b.dataset.f;renderBldgHQ();});
+  view.querySelectorAll('.bhqrow').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.d);if(d)openDonor(d,'building');});
 }
 // סיכום לפי ייעוד — כמה נתרם לכל דבר, השנה ובסך הכל
 // "עבור מה" שמוצג בראש הכרטיס — הייעוד שנקבע לתורם, ואם לא נקבע אז לפי התרומות בפועל
