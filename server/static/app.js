@@ -5455,14 +5455,19 @@ function monthLedger(d,thruYM){
       if(m.length===7&&m.slice(0,4)===yr&&(!first||m<first))first=m;});
   if(!first)first=yr+'-01';
   // מה נכנס בכל חודש — בלי החלק שסגר חוב של שנה קודמת
-  const got={}, unconv=[];
+  const got={}, unconv=[], used=[], skip=[];   // 🔍 לפירוט: מה נספר ומה לא (ולמה)
   // מאיר: "זה סופר את מה שהוא הכניס לסוכות, וציינתי שזה לסוכות תשפ"ז" — תרומה לקמפיין היא כסף
   // נפרד ולא נספרת מול ההתחייבות החודשית (אלא אם הקמפיין עצמו הוא אחת משורות ההתחייבות)
   const rowCats=new Set(rows.map(r=>String(r.what||'').trim()));
   const sepCat=x=>{const c=String(x.category||'').trim();return !!c&&!rowCats.has(c)&&campIsReal(c);};
-  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);if(m.length!==7||sepCat(x))return;
+  dons.forEach(x=>{const m=String(x.date||'').slice(0,7);
+    if(m.length!==7){skip.push({x,why:'אין תאריך'});return;}
+    if(sepCat(x)){if(m>=first&&m<=thru)skip.push({x,why:'קמפיין נפרד: '+String(x.category||'').trim()});return;}
     const a=donIn(x,d);
-    if(a===null){if(m>=first)unconv.push(x);return;}        // במטבע אחר, בלי שווה ערך — לא נספר
+    if(a===null){if(m>=first)unconv.push(x);if(m>=first&&m<=thru)skip.push({x,why:'מטבע אחר בלי שווה ערך'});return;}        // במטבע אחר, בלי שווה ערך — לא נספר
+    if(m<first){skip.push({x,why:'לפני '+fmtMonth(first)+' (לפני תחילת ההתחייבות)'});}
+    else if(m>thru){skip.push({x,why:'אחרי החודש הנוכחי'});}
+    else used.push({x,a:a-amtNum(x.prev_year),prev:amtNum(x.prev_year)});
     got[m]=(got[m]||0)+a-amtNum(x.prev_year);});
   const dec={};
   declinedGroups(d).forEach(r=>{const m=r.iso.slice(0,7);dec[m]=(dec[m]||0)+r.a;});
@@ -5484,7 +5489,7 @@ function monthLedger(d,thruYM){
   // כדי שיהיה ברור למה החוב קטן מסכום החודשים שכתוב עליהם "לא כוסה"
   const miss=out.reduce((s,r)=>s+Math.max(0,r.due-r.got),0);
   const over=out.reduce((s,r)=>s+Math.max(0,r.got-r.due),0);
-  return {rows:out, first, thru, due:Math.round(totDue), got:Math.round(totGot), unconv,
+  return {rows:out, first, thru, due:Math.round(totDue), got:Math.round(totGot), unconv, used, skip, lines:rows,
           miss:Math.round(miss), over:Math.round(over),
           debt:Math.max(0,Math.round(totDue-totGot)),
           ahead:Math.max(0,Math.round(totGot-totDue)),
@@ -5577,6 +5582,7 @@ function debtBarHTML(d){
       <span>התחייב <b>${f(L.due)}</b></span>
       <span>נתן <b>${f(L.got)}</b></span>
       <span>חסר <b class="dbno">${f(L.debt)}</b></span></div>`:''}
+    ${L?ledgerExplainHTML(L,f,d):''}
     ${L&&L.unconv&&L.unconv.length?L.unconv.map(x=>`<div class="dbtot eqask"><span>💱 ${donCur(x,cur)}${Math.round(amtNum(x.amount)).toLocaleString('en-US')} מ-${esc(gregLabel(x.date))} — כמה זה ב-${cur}? (עד שירשם, לא נספר מול ההתחייבות)</span>
       <span><input class="eqin" data-id="${x.id}" inputmode="decimal" placeholder="${cur}" style="width:90px"> <button class="btn sm eqsave" data-id="${x.id}">💾</button></span></div>`).join(''):''}
     ${openPrev>0.5?`<div class="dbtot"><span>📌 מלפני ${GREGYEAR}${d.debt_open_note?(' · '+esc(d.debt_open_note)):''}</span>
@@ -5589,6 +5595,21 @@ function debtBarHTML(d){
         <button class="dechide" data-tids="${esc(r.tids.join(','))}" title="הסתר">✕</button></div>`).join('')}</details>`:''}
   </details>`;
 }
+// 🔍 מאיר: "כתוב לי שיעקב גאלד חייב 100 דולר — לפי כל הסכומים שעברו לא נראה שהוא חייב, תבדוק לעומק".
+// הפירוט המלא, מקופל: על מה הוא התחייב, חודש אחרי חודש (התחייב / נכנס / יתרה), כל תרומה שנספרה,
+// וכל תרומה שלא נספרה — ולמה (קמפיין נפרד, מטבע אחר, לפני תחילת ההתחייבות)
+function ledgerExplainHTML(L,f,d){
+  const what=(L.lines||[]).map(r=>`${esc(r.what||'התחייבות')} — ${f(r.inst?r.plan.per:r.amt)} לחודש${r.sinceM?' · מאז '+esc(fmtMonth(r.sinceM)):''}`).join('<br>');
+  const months=L.rows.map(r=>`<tr${r.got+0.5<r.due?' style="background:#fff1f1"':''}><td>${esc(fmtMonth(r.m))}</td><td>${f(r.due)}</td><td>${f(r.got)}${r.dec?` <small style="color:#c0392b">(נדחה ${f(r.dec)})</small>`:''}</td><td><b style="color:${r.bal<-0.5?'#c0392b':'#2e7d4f'}">${r.bal<-0.5?'חסר '+f(-r.bal):(r.bal>0.5?'עודף '+f(r.bal):'✓')}</b></td></tr>`).join('');
+  const usedL=(L.used||[]).slice().sort((a,b)=>String(a.x.date).localeCompare(String(b.x.date))).map(u=>`<div>✅ ${esc(gregLabel(u.x.date))} · <b>${f(u.a)}</b>${u.x.category?' · '+esc(u.x.category):''}${u.x.method?' · '+esc(chLabel(u.x.method)):''}${u.prev>0.5?` <small>(${f(u.prev)} מזה על שנה קודמת — לא נספר כאן)</small>`:''}</div>`).join('');
+  const skipL=(L.skip||[]).map(u=>`<div>⛔ ${esc(gregLabel(u.x.date)||'—')} · ${donCur(u.x,curSym(d))}${Math.round(amtNum(u.x.amount)).toLocaleString('en-US')}${u.x.category?' · '+esc(u.x.category):''} — <b>לא נספר:</b> ${esc(u.why)}</div>`).join('');
+  return `<details class="decsub"><summary>🔍 איך זה חושב — חודש אחרי חודש</summary>
+    <div class="hintxt" style="margin:4px 0">📋 על מה התחייב:<br>${what||'—'}</div>
+    <table class="ledtab" style="width:100%;border-collapse:collapse;font-size:.85rem;margin:4px 0"><thead><tr><th style="text-align:right">חודש</th><th style="text-align:right">התחייב</th><th style="text-align:right">נכנס</th><th style="text-align:right">יתרה מצטברת</th></tr></thead><tbody>${months}</tbody></table>
+    <div class="hintxt">החודש הנוכחי (${esc(fmtMonth(L.thru))}) כבר נספר כחודש שצריך לשלם עליו.</div>
+    <details style="margin-top:4px"><summary class="hintxt" style="cursor:pointer">✅ התרומות שנספרו (${(L.used||[]).length}) · ${f(L.got)}</summary><div style="font-size:.85rem;line-height:1.7">${usedL||'—'}</div></details>
+    ${(L.skip||[]).length?`<details open style="margin-top:4px"><summary class="hintxt" style="cursor:pointer">⛔ תרומות שלא נספרו מול ההתחייבות (${L.skip.length})</summary><div style="font-size:.85rem;line-height:1.7">${skipL}</div></details>`:''}
+  </details>`;}
 function declinedHTML(d){
   // חיוב שנדחה אינו חוב מעצמו: לרוב ניסו שוב וזה עבר, או שהתורם שילם
   // באותו חודש בדרך אחרת. לכן זו רשימה לבדיקה, ורק "זה חוב" מכניס לחוב.
