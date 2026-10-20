@@ -810,7 +810,7 @@ function checkReminders(){
 }
 setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm'||ROLE==='gabbai')checkReminders();}catch(e){}},60*1000);
 // מסך שנשאר פתוח — אחרי 48 שעות מבקש כניסה מחדש גם בלי פעולה וגם בלי רשת
-setInterval(()=>{if(authExpired()&&!_loginShown){view.innerHTML='';showLogin('עברו 48 שעות — צריך להיכנס שוב');}},60*1000);
+setInterval(()=>{if(authExpired()&&!_loginShown){view.innerHTML='';showLogin('תוקף הכניסה נגמר — צריך להיכנס שוב');}},60*1000);
 function openRemPopup(){
   const due=dueTasks(),up=upcomingReminders(),remov=document.getElementById('remov'),rs=document.getElementById('remsheet');
   if(!due.length&&!up.length){remov.classList.remove('show');return;}
@@ -1560,7 +1560,7 @@ async function load(){
     else { d=await r.json(); _LASTDATA=d;
       // כשאין רשת, ה-service worker מגיש את העותק האחרון ומסמן זאת
       OFFLINE=r.headers.get('X-KC-Offline')==='1';
-      if(OFFLINE&&authExpired()){_LASTDATA=null;showLogin('עברו 48 שעות — צריך להיכנס שוב (נדרש חיבור לאינטרנט)');return;}
+      if(OFFLINE&&authExpired()){_LASTDATA=null;showLogin('תוקף הכניסה נגמר — צריך להיכנס שוב (נדרש חיבור לאינטרנט)');return;}
       if(!OFFLINE&&!window._expSynced){window._expSynced=1;fetch('/api/me').then(x=>x.json()).then(me=>{if(me&&me.auth_on)authExpSet(me.exp);else authExpSet(0);}).catch(()=>{});}
       _ETAG=OFFLINE?'':(r.headers.get('ETag')||''); }
   }catch(e){ d = await api('GET','/api/data'); OFFLINE=true; }

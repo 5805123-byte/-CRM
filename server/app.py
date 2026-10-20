@@ -13229,6 +13229,12 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 # בלי CRM_PASS המערכת פתוחה כמו קודם (ומוצגת אזהרה). העוגייה חתומה בסוד שנוצר פעם אחת.
 # מאיר: "כל 48 שעות שזה יבקש שוב את הסיסמא או חיבור דרך גוגל — גם אצלי בטאבלט או מחשב כרום"
 AUTH_HOURS = 48
+# מאיר: "בכניסה למערכת גבאים תעשה שרק פעם בחודש יצטרכו להכניס סיסמא" — לגבאים (קהילה) 30 יום
+AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24}
+
+
+def auth_hours(role):
+    return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
@@ -13291,7 +13297,7 @@ def auth_logout_all(con=None):
 
 
 def auth_token(role):
-    exp = int(time.time()) + AUTH_HOURS * 3600
+    exp = int(time.time()) + auth_hours(role) * 3600
     body = '%s.%d.%s' % (role, exp, os.urandom(6).hex())
     sig = hmac.new(_sess_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:40]
     return body + '.' + sig
@@ -16199,8 +16205,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self._set_cookie(auth_token(role), AUTH_HOURS * 3600)
-        data = json.dumps({'ok': True, 'role': role, 'exp': int(time.time()) + AUTH_HOURS * 3600}).encode('utf-8')
+        self._set_cookie(auth_token(role), auth_hours(role) * 3600)
+        data = json.dumps({'ok': True, 'role': role, 'exp': int(time.time()) + auth_hours(role) * 3600}).encode('utf-8')
         self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
         return False
 
