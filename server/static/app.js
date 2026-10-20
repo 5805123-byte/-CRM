@@ -17762,6 +17762,22 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 // 💳 מאיר: "אין אצל כרטיס תורם תרומה באשראי? צריך אצלו כרטיס של חיוב אשראי שיהיה קל ופשוט, וקבלה,
 // ועבור מה… הכי למעלה… עם האימייל שלו… קבלה שייצא אוטומטית לאימייל מיד". כרטיס שמור או כרטיס חדש
 // בטופס המאובטח של בנק ווסט (המספר לא עובר אצלנו); אחרי שעבר — קבלה נשלחת מיד למייל שנבחר
+// מאיר: "אל תשלח אימייל לפני אישור סופי שלי" — חלון אישור לפני כל שליחה: למי, מה, היום והשמות
+async function qcMailApprove(o){
+  const w=document.createElement('div');w.className='confirmov';
+  w.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>📧 אישור סופי לפני שליחה</b></div>
+    <div class="qcprev"><div><b>אל:</b> <span dir="ltr">${esc(o.em)}</span></div>
+      <div><b>קבלה:</b> ${bqMoney(o.amt)}${o.cat?' · '+esc(o.cat):''}${o.dtext?' · '+esc(o.dtext):''}</div>
+      ${o.ded?`<div><b>לזכות:</b> ${esc(o.ded)}</div>`:''}
+      ${o.dtext?`<div class="hintxt">המייל באנגלית: "Thank you for sponsoring a Night of Torah Study on the night of …" עם היום והשמות, והקבלה (PDF) מצורפת${o.cert?'; התעודה — במייל נפרד':''}.</div>`:'<div class="hintxt">מייל באנגלית עם הקבלה (PDF) מצורפת.</div>'}
+      ${o.noDon?'<div class="bqwarn">התרומה עוד לא נרשמה בכרטיס — את הקבלה אפשר להפיק מהכרטיס בעוד רגע.</div>':''}</div>
+    <label class="qcchk"><input type="checkbox" id="qa_rc" ${o.receipt?'checked':''} ${o.receipt?'':'disabled'}> 🧾 לשלוח את הקבלה</label>
+    ${o.cert?`<label class="qcchk"><input type="checkbox" id="qa_ct" checked> 🖼️ לשלוח גם את התעודה (מייל נפרד)</label>`:''}
+    <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">לא לשלוח עכשיו</button></div></div>`;
+  document.body.appendChild(w);
+  const ok=await new Promise(res=>{w.querySelector('.cno').onclick=()=>res(false);w.querySelector('.cyes').onclick=()=>res(true);});
+  const out=ok?{receipt:!!(w.querySelector('#qa_rc')||{}).checked,cert:!!(w.querySelector('#qa_ct')||{}).checked}:null;
+  w.remove();return out;}
 // מאיר: "שיהיה שם אפשרות לבחור עבור מה את פרנס יום או את כל הקטגוריות… או בחירת קטגוריה אישית או
 // לכולם, וגם לתרומה חודשית… אם זה עבור פרנס יום — שייפתח לשאול איזה יום וייפתח הלוח"
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.dnqc');if(!b)return;
@@ -17775,9 +17791,10 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
       <label class="fld"><span>🎯 עבור מה</span><select id="qc_cat">${dnCatOpts('',d)}<option value="__personal__">✏️ קטגוריה אישית — רק לתורם הזה…</option></select></label></div>
     <div class="addrow" id="qc_freerow" hidden><input id="qc_free" placeholder="שם הייעוד החדש"></div>
     <div id="qc_dayh" hidden><div class="hintxt">🌙 איזה יום? — נרשם בלוח כנגבה, ויופיע בקבלה ובתעודה</div>
-      <div class="bq2"><label class="fld"><span>חודש עברי</span><select id="qc_hm">${HMORD.map(m=>`<option ${String(HEBTODAY||'').includes(m)?'selected':''}>${m}</option>`).join('')}</select></label>
+      <div id="qc_pex" class="qcpms"></div>
+      <div class="bq2" id="qc_newday"><label class="fld"><span>חודש עברי</span><select id="qc_hm">${HMORD.map(m=>`<option ${String(HEBTODAY||'').includes(m)?'selected':''}>${m}</option>`).join('')}</select></label>
         <label class="fld"><span>יום</span><select id="qc_hd">${[...Array(30)].map((_,i)=>`<option value="${i+1}">${heDay(i+1)}</option>`).join('')}</select></label></div>
-      <label class="fld"><span>שנה עברית</span><select id="qc_hy">${heYearOpts()}</select></label>
+      <label class="fld" id="qc_hyl"><span>שנה עברית</span><select id="qc_hy">${heYearOpts()}</select></label>
       <div class="bqwarn" id="qc_taken" hidden></div>
       <label class="fld"><span>✍️ לזכות מי — השמות לתעודה ולקבלה</span><textarea id="qc_ded" rows="2" placeholder="למשל: שלווה גאלדא מיכל בת שרה ביילא לכבוד יום הבת מצווה…"></textarea></label></div>
     <div class="bq2" id="qc_recf" hidden><label class="fld"><span>📅 חיוב ראשון</span><input id="qc_next" type="date" value="${todayStr()}"></label>
@@ -17786,7 +17803,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     <div class="fld"><span>💳 כרטיס</span><div id="qc_pms" class="hintxt">טוען כרטיסים…</div></div>
     <div id="qc_new" hidden><div id="bqf_card" class="bqcardframe"></div><div class="hintxt">🔒 מספר הכרטיס נכנס ישר לבנק ווסט ולא עובר אצלנו. הכרטיס יישמר לחיובים הבאים.</div></div>
     <label class="fld"><span>📧 מייל לקבלה</span><input id="qc_em" dir="ltr" value="${esc(em0)}" placeholder="email@example.com"></label>
-    <label class="qcchk" id="qc_rcl"><input type="checkbox" id="qc_rc" ${em0?'checked':''}> 🧾 לשלוח קבלה מיד למייל אחרי שהחיוב עובר</label>
+    <label class="qcchk" id="qc_rcl"><input type="checkbox" id="qc_rc" ${em0?'checked':''}> 🧾 להכין קבלה למייל — נשלחת רק אחרי אישור סופי שלך</label>
     <div class="hintxt" id="qc_rech" hidden>בהוראת קבע בנק ווסט שולחים אישור למייל הזה על כל חיוב.</div>
     <div class="cbtns"><button class="btn bqgo cyes">⚡ לחייב</button><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(o);
@@ -17794,13 +17811,27 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   const catShow=()=>{const v=g('qc_cat').value;g('qc_freerow').hidden=!(v==='__new__'||v==='__personal__');
     g('qc_free').placeholder=v==='__personal__'?'עבור מה? (יישאר רק בכרטיס שלו)':'שם הייעוד החדש — לכל התורמים';
     if(!g('qc_freerow').hidden)g('qc_free').focus();
-    g('qc_dayh').hidden=!(WFDAY[v]&&kind==='once');dayChk();};
+    g('qc_dayh').hidden=!(WFDAY[v]&&kind==='once');if(typeof pexShow==='function')pexShow();};
   // יום שכבר תפוס אצל תורם אחר — אזהרה מיד, לפני החיוב
   const dayChk=()=>{const k=WFDAY[g('qc_cat').value],t=g('qc_taken');if(!k||kind!=='once'){t.hidden=true;return;}
     const hm=g('qc_hm').value,hd=+g('qc_hd').value,hy=g('qc_hy').value;
     const who=DB.filter(x=>(x.parnes||[]).some(p=>(p.kind||'parnes')===k&&p.month===hm&&+p.day===hd&&(p.hyear||HEBYEAR)===hy&&p.status!=='suggested'));
     t.hidden=!who.length;t.textContent=who.length?('⚠️ '+heDay(hd)+' '+hm+' כבר תפוס אצל: '+who.map(x=>((x.last||'')+' '+(x.first||'')).trim()).join(', ')):'';};
   ['qc_hm','qc_hd','qc_hy'].forEach(i=>g(i).onchange=dayChk);
+  // מאיר: "אם בחרתי לו לילה כבר — אתה אמור לעלות על זה ולשאול: עבור הלילה הזה, או לבחור לילה חדש?"
+  let pex=0;
+  const pexShow=()=>{const k=WFDAY[g('qc_cat').value],box=g('qc_pex');
+    const L=k?(d.parnes||[]).filter(p=>(p.kind||'parnes')===k&&!+p.paid&&p.status!=='suggested'):[];
+    if(!L.length){pex=0;box.innerHTML='';}
+    else{if(!L.some(p=>p.id===pex))pex=L[0].id;
+      box.innerHTML=L.map(p=>`<label><input type="radio" name="qc_px" value="${p.id}" ${p.id===pex?'checked':''}> 📌 ${esc(p.date_text||(heDay(+p.day)+' '+p.month))} ${esc(p.hyear||'')} — כבר משובץ לו, טרם נגבה</label>`).join('')
+        +`<label><input type="radio" name="qc_px" value="0" ${pex?'':'checked'}> ➕ לילה אחר</label>`;
+      box.querySelectorAll('[name=qc_px]').forEach(x=>x.onchange=()=>{pex=+x.value;pexShow();});}
+    const cur=L.find(p=>p.id===pex);
+    g('qc_newday').hidden=!!cur;g('qc_hyl').hidden=!!cur;
+    if(cur){g('qc_taken').hidden=true;if(!g('qc_ded').dataset.touched)g('qc_ded').value=cur.dedication||'';}
+    else{if(!g('qc_ded').dataset.touched)g('qc_ded').value='';dayChk();}};
+  g('qc_ded').oninput=()=>{g('qc_ded').dataset.touched='1';};
   g('qc_cat').onchange=catShow;
   const kindShow=()=>{o.querySelectorAll('[data-qk]').forEach(x=>x.classList.toggle('on',x.dataset.qk===kind));const rec=kind==='rec';
     g('qc_recf').hidden=!rec;g('qc_rcl').hidden=rec;g('qc_rech').hidden=!rec;g('qc_per').textContent=rec?' — כל חודש':'';
@@ -17827,16 +17858,18 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     const day=kind==='once'?WFDAY[cat]:'';
     if(kind==='rec'&&WFDAY[cat]){toast(cat+' — זה חיוב חד-פעמי, לא הוראת קבע');return;}
     const note=g('qc_note').value.trim(), em=g('qc_em').value.trim();
-    const dhm=g('qc_hm').value,dhd=+g('qc_hd').value,dhy=g('qc_hy').value,dded=g('qc_ded').value.trim(),dtext=heDay(dhd)+' '+dhm;
+    const ex=pex?(d.parnes||[]).find(p=>p.id===pex):null;
+    const dhm=ex?ex.month:g('qc_hm').value,dhd=ex?+ex.day:+g('qc_hd').value,dhy=ex?(ex.hyear||HEBYEAR):g('qc_hy').value,dded=g('qc_ded').value.trim(),
+          dtext=ex?(ex.date_text||(heDay(+ex.day)+' '+ex.month)):(heDay(dhd)+' '+dhm);
     const rc=kind==='once'&&g('qc_rc').checked&&em.includes('@');
     if(kind==='once'&&g('qc_rc').checked&&!em.includes('@')){toast('מייל לא תקין');g('qc_em').focus();return;}
     const forT=[cat,note].filter(Boolean).join(' · '), next=g('qc_next').value, n=+g('qc_n').value||0;
     const ask=kind==='rec'?('ליצור הוראת קבע ל'+nm+': '+bqMoney(amt)+' כל חודש'+(n?(' × '+n):'')+(next?(' החל מ-'+bqDate(next)):'')+(forT?(' עבור '+forT):'')+'?')
-      :('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?'+(day?'\n🌙 '+dtext+' '+dhy+' — נרשם בלוח כנגבה'+(rc?'\n🧾 הקבלה (עם היום והשמות) תישלח ל-'+em:''):(rc?'\n🧾 קבלה תישלח ל-'+em:'')));
+      :('לחייב עכשיו את '+nm+' '+bqMoney(amt)+(forT?(' עבור '+forT):'')+'?'+(day?'\n🌙 '+dtext+' '+dhy+' — נרשם בלוח כנגבה':'')+(rc?'\n🧾 אחרי החיוב תתבקש לאשר את שליחת הקבלה ל-'+em:''));
     if(!await uiConfirm(ask,kind==='rec'?'🔁 כן, ליצור':'⚡ כן, לחייב','ביטול'))return;
     go.disabled=true;go.textContent=kind==='rec'?'יוצר…':'מחייב…';
     const base={amount:amt,for_cat:cat,for_note:note,donor_id:d.id};
-    if(kind==='rec')Object.assign(base,{next_run_date:next||'',num_left:n});else base.receipt_email=rc&&!day?em:'';
+    if(kind==='rec')Object.assign(base,{next_run_date:next||'',num_left:n});
     let res;
     if(pm==='new'){if(!bqHT){go.disabled=false;go.textContent=btxt();toast('הטופס המאובטח עוד לא נטען');return;}
       let tk;try{tk=await bqHT.getNonceToken();}catch(err){go.disabled=false;go.textContent=btxt();
@@ -17848,24 +17881,29 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     o.remove();
     if(kind==='rec'){await uiAlert('🔁 הוראת הקבע נוצרה בבנק ווסט: '+bqMoney(amt)+' כל חודש'+(next?(' החל מ-'+bqDate(next)):'')+(forT?(' עבור '+forT):''));
       await load();const nd=DB.find(x=>x.id==d.id);if(nd)openDonor(nd);return;}
-    const rcl=rc&&!day?(res.receipt&&res.receipt.sent?('\n🧾 קבלה '+(res.receipt.num||'')+' נשלחה ל-'+em):('\n⚠️ הקבלה לא נשלחה: '+(res.receipt_error||'?'))):'';
-    await uiAlert('✅ החיוב עבר — '+bqMoney(amt)+(res.auth||res.ref?' · אישור '+(res.auth||res.ref):'')+rcl);
-    // פרנס לילה / חדר קפה / ארוחת בוקר: היום שנבחר בחלון נרשם בלוח כנגבה ומקושר לתרומה —
-    // ורק אז הקבלה (עם היום והשמות) והתעודה במייל נפרד
+    await uiAlert('✅ החיוב עבר — '+bqMoney(amt)+(res.auth||res.ref?' · אישור '+(res.auth||res.ref):''));
+    // פרנס לילה / חדר קפה / ארוחת בוקר: היום שנבחר בחלון נרשם בלוח כנגבה ומקושר לתרומה
+    let pid=0;
     if(day){
-      const pr=await api('POST','/api/parnes',{donor_id:d.id,day:dhd,month:dhm,date_text:dtext,dedication:dded,amount:String(amt),
+      const pr=ex?{id:ex.id}:await api('POST','/api/parnes',{donor_id:d.id,day:dhd,month:dhm,date_text:dtext,dedication:dded,amount:String(amt),
         kind:day,status:'confirmed',currency:'$',hyear:dhy,method:'בנק_ווסט'}).catch(()=>null);
-      if(pr&&pr.id){await api('PUT','/api/parnes/'+pr.id,{paid:1});
+      if(pr&&pr.id){pid=pr.id;await api('PUT','/api/parnes/'+pr.id,ex?Object.assign({paid:1,amount:String(amt)},dded!==(ex.dedication||'')?{dedication:dded}:{}):{paid:1});
         if(res.donation_id)await api('PUT','/api/donation/'+res.donation_id,{category:cat,parnes_id:pr.id});
         toast('🌙 '+dtext+' '+dhy+' — נרשם בלוח כנגבה');
-        if(em.includes('@')){
-          const cert=await uiConfirm('לשלוח ל-'+em+' גם את תעודת ה'+cat+' ('+dtext+') במייל נפרד?','🖼️ כן, לשלוח תעודה','לא');
-          if(rc||cert){const r2=await api('POST','/api/parnes/'+pr.id+'/send',{donation_id:res.donation_id||0,email:em,receipt:rc&&res.donation_id?1:0,cert:cert?1:0}).catch(()=>null);
-            const m=[];
-            if(rc)m.push(r2&&r2.receipt&&r2.receipt.sent?('🧾 קבלה '+(r2.receipt.num||'')+' נשלחה'):('⚠️ הקבלה לא נשלחה: '+((r2&&r2.receipt_error)||(res.donation_id?'?':'התרומה עוד לא נרשמה בכרטיס'))));
-            if(cert)m.push(r2&&r2.cert_sent?'🖼️ התעודה נשלחה':('⚠️ התעודה לא נשלחה: '+((r2&&r2.cert_error)||'?')));
-            await uiAlert(m.join('\n')+' → '+em);}}
       }else await uiAlert('⚠️ החיוב עבר, אבל היום לא נרשם בלוח — אפשר לשבץ אותו מהכרטיס');
+    }
+    // מאיר: "אל תשלח אימייל לפני אישור סופי שלי" — שום מייל לא יוצא לבד: רואים בדיוק מה יישלח ולמי, ומאשרים
+    if(rc||(day&&pid&&em.includes('@'))){
+      const ap=await qcMailApprove({em,amt,cat,dtext:day?(dtext+' '+dhy):'',ded:day?dded:'',receipt:rc&&!!res.donation_id,cert:!!(day&&pid),noDon:rc&&!res.donation_id});
+      if(ap&&(ap.receipt||ap.cert)){
+        toast('שולח…');const m=[];
+        if(day&&pid){const r2=await api('POST','/api/parnes/'+pid+'/send',{donation_id:res.donation_id||0,email:em,receipt:ap.receipt?1:0,cert:ap.cert?1:0}).catch(()=>null);
+          if(ap.receipt)m.push(r2&&r2.receipt&&r2.receipt.sent?('🧾 קבלה '+(r2.receipt.num||'')+' נשלחה'):('⚠️ הקבלה לא נשלחה: '+((r2&&r2.receipt_error)||'?')));
+          if(ap.cert)m.push(r2&&r2.cert_sent?'🖼️ התעודה נשלחה':('⚠️ התעודה לא נשלחה: '+((r2&&r2.cert_error)||'?')));
+        }else{const r2=await api('POST','/api/receipts/issue',{donation_id:res.donation_id,kind:'us',email:em,send:1}).catch(()=>null);
+          m.push(r2&&r2.ok&&!r2.send_error?('🧾 קבלה '+((r2.doc||{}).num||'')+' נשלחה'):('⚠️ הקבלה לא נשלחה: '+((r2&&(r2.send_error||r2.error))||'?')));}
+        await uiAlert(m.join('\n')+' → '+em);
+      }else toast('לא נשלח מייל. אפשר לשלוח קבלה בכל רגע מהכרטיס');
     }
     await load();const nd=DB.find(x=>x.id==d.id);
     if(nd)openDonor(nd);};});

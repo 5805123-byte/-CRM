@@ -2167,9 +2167,11 @@ def ensure_schema():
             n = 0
             for dn in con.execute("SELECT id,donor_id,category FROM donations WHERE parnes_id IS NULL AND date>='2026-10-01' "
                                   "AND COALESCE(tid,'') LIKE 'BQ%%' AND category IN (%s)" % ','.join('?' * len(kinds)), list(kinds)).fetchall():
-                ps = con.execute("SELECT id FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')=? AND COALESCE(paid,0)=0 "
-                                 "AND COALESCE(status,'confirmed')!='suggested' AND id NOT IN (SELECT parnes_id FROM donations WHERE parnes_id IS NOT NULL)",
-                                 (dn['donor_id'], kinds[dn['category']])).fetchall()
+                free = con.execute("SELECT id, COALESCE(paid,0) paid FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')=? "
+                                   "AND COALESCE(status,'confirmed')!='suggested' AND COALESCE(hyear,'') IN (?, '') "
+                                   "AND id NOT IN (SELECT parnes_id FROM donations WHERE parnes_id IS NOT NULL)",
+                                   (dn['donor_id'], kinds[dn['category']], current_heb_year())).fetchall()
+                ps = [x for x in free if not x['paid']] or free     # קודם יום שטרם נגבה; אחרת היום היחיד הפנוי השנה
                 if len(ps) == 1:
                     con.execute("UPDATE donations SET parnes_id=? WHERE id=?", (ps[0]['id'], dn['id']))
                     con.execute("UPDATE parnes SET paid=1 WHERE id=?", (ps[0]['id'],))
