@@ -4198,7 +4198,6 @@ function renderBuilding(d){
         <input class="blf bkt" data-k="object" data-id="${x.id}" value="${esc(x.object||'')}" placeholder="שם האובייקט בעברית">
         <input class="blf bke" data-k="object_en" data-id="${x.id}" dir="ltr" value="${esc(x.object_en||'')}" placeholder="Object name in English">
       </div><button class="bkdel" data-del="${x.id}" title="מחיקה">🗑</button></div>
-      ${amt?`<div class="bkbig"><span>סכום ההקדשה</span><b>${cur}${amt.toLocaleString()}</b><small>${paid>=amt?'שולם במלואו ✓':('שולם '+cur+paid.toLocaleString())}</small></div>`:''}
       <input class="blf bksec" data-k="section" data-id="${x.id}" list="bldsecs" value="${esc(x.section||'')}" placeholder="מדור (למשל: חלונות)">
       <div class="bkmoney">
         <label>התחייב<input class="blf" data-k="amount" data-id="${x.id}" value="${esc(x.amount||'')}" inputmode="decimal" placeholder="0"></label>
@@ -4208,6 +4207,7 @@ function renderBuilding(d){
       <label class="bkded"><span>✍️ נוסח ההקדשה <small>(ימולא עם התורם)</small></span>
         <textarea class="blf" data-k="dedication" data-id="${x.id}" rows="3" placeholder="">${esc(x.dedication||'')}</textarea></label>
       <input class="blf bknote" data-k="note" data-id="${x.id}" value="${esc(x.note||'')}" placeholder="הערה (רשות)">
+      ${amt?`<div class="bkamt">סכום ההקדשה: <b>${cur}${amt.toLocaleString()}</b></div>`:''}
     </div>`;}).join('')||'<div class="hintxt">אין עדיין הקדשות בבניין. הוסף למטה.</div>';
   el.querySelectorAll('.bkdel').forEach(b=>b.onclick=async()=>{
     if(!b.classList.contains('sure')){b.classList.add('sure');b.textContent='למחוק? לחץ שוב';setTimeout(()=>{if(b.isConnected){b.classList.remove('sure');b.textContent='🗑';}},4000);return;}
