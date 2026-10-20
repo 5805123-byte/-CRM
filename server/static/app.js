@@ -14396,6 +14396,51 @@ async function kvHolders(){
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בעלי הוראות קבע.csv';document.body.appendChild(a);a.click();a.remove();};}
 // ✉️ מאיר: "שאוכל לשלוח לכל אחד בקהילה קישור לשינוי או עדכון פרטי האשראי או תאריך החיוב, עם הסכום שאשנה,
 // בנוסח שאני שולח לו — באימייל". סכום / תאריך שהשתנו מתעדכנים קודם בנדרים פלוס, ואז יוצא המייל עם הקישור האישי
+// 📞 מאיר: "צריך לעשות גם לשיחה בטלפון את האופציות של עדכון פרטי אשראי" — שיחה קולית בנוסח שלו, עם הסכום והתאריך;
+// הקשה 1 בשיחה = SMS עם הקישור המאובטח של נדרים פלוס. סכום / תאריך שהשתנו — מתעדכנים קודם בנדרים
+async function ndCardCall(k,m,after){
+  const t=await api('GET','/api/nd/cardcall_tpl').catch(()=>null)||{};
+  const d2i=v=>{v=String(v||'').trim();let x=/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/.exec(v);
+    if(x){const y=x[3].length===2?'20'+x[3]:x[3];return y+'-'+x[2].padStart(2,'0')+'-'+x[1].padStart(2,'0');}x=/^(\d{4}-\d{2}-\d{2})/.exec(v);return x?x[1]:'';};
+  const HM=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  const spoken=v=>v?(+v.slice(8,10))+' ב'+HM[+v.slice(5,7)-1]:'המועד הקבוע';
+  const a0=String(k.amount||'').replace(/[^\d.]/g,''), n0=d2i(k.next_date);
+  const mob=String(m.phone||'').split(/[,;\/\s]+/).map(x=>x.replace(/\D/g,'')).find(x=>/^05\d{8}$/.test(x))||String(m.phone||'');
+  const o=document.createElement('div');o.className='mkov';
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:640px"><div class="mkdh"><div class="mkav">📞</div><div><b>שיחה לעדכון אשראי / תאריך חיוב</b><div class="mksub">${esc(mName(m))} · הוראת קבע ${ndMoney(k.amount)}${k.groupe?' · '+esc(k.groupe):''}</div></div><button class="x2" id="ccx">✕</button></div>
+    <div class="mkdb">
+      <label class="fld"><span>📱 לאיזה מספר</span><input id="cc_ph" dir="ltr" inputmode="tel" value="${esc(mob)}"></label>
+      <div class="lgf"><label class="fld"><span>💰 סכום לחודש ₪ (אפשר לשנות)</span><input id="cc_amt" inputmode="decimal" value="${esc(a0)}"></label>
+        <label class="fld"><span>📅 תאריך החיוב הבא (אפשר לשנות)</span><input type="date" id="cc_next" value="${esc(n0)}"></label></div>
+      <div class="hintxt" id="cc_chg" style="display:none;color:#a15c00">⚠️ הסכום / התאריך ישתנו בהוראת הקבע בנדרים פלוס לפני שהשיחה יוצאת.</div>
+      <label class="fld"><span>🗣 מה יגידו לו בשיחה</span><textarea id="cc_txt" rows="6" style="width:100%;font-size:.95rem">${esc(t.text||'')}</textarea></label>
+      <div class="mksub">➕ להוסיף — לחיצה מכניסה במקום הסמן:</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin:3px 0 6px">${[['{שם}','השם'],['{סכום}','הסכום'],['{תאריך}','החיוב הבא'],['{עבור}','עבור מה']].map(([v,h])=>`<button type="button" class="btn sm ghost" data-ccv="${v}">${v} <small style="opacity:.7">${h}</small></button>`).join('')}</div>
+      <div class="hintxt">💡 כדאי שיהיה בנוסח "<b>לקבלת קישור לעדכון כרטיס האשראי הקישו 1</b>" — מי שמקיש 1 מקבל מיד SMS עם הקישור המאובטח של נדרים פלוס.</div>
+      <div class="mksec">👂 כך יישמע (עם הפרטים שלו)</div><div id="cc_prev" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;font-size:.95rem;line-height:1.7"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sm ghost" id="cc_hear">🔊 לשמוע בקול (ולתקן הגייה)</button><button class="btn sm ghost" id="cc_tsave">💾 לשמור כנוסח הקבוע לשיחה</button></div>
+    </div>
+    <div class="mkdf"><span class="grow"></span><button class="mkbtn" id="cc_send">📞 להתקשר אליו</button></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('ccx').onclick=close;
+  let base=g('cc_txt').value;
+  const fill=()=>g('cc_txt').value.replace(/\{תאריך\}/g,spoken(g('cc_next').value)).replace(/\{שם\}/g,m.first||'').replace(/\{סכום\}/g,g('cc_amt').value.trim()).replace(/\{עבור\}/g,k.groupe||'');
+  const prev=()=>{g('cc_chg').style.display=(g('cc_amt').value.trim()!==a0||g('cc_next').value!==n0)?'':'none';g('cc_prev').textContent=fill();};
+  ['cc_amt','cc_next','cc_txt'].forEach(id=>g(id).addEventListener('input',prev));prev();
+  o.querySelectorAll('[data-ccv]').forEach(b=>b.onclick=()=>{const el=g('cc_txt'),v=b.dataset.ccv,st=el.selectionStart??el.value.length,en=el.selectionEnd??st;
+    el.value=el.value.slice(0,st)+v+el.value.slice(en);el.focus();el.selectionStart=el.selectionEnd=st+v.length;prev();});
+  const saveDef=async()=>{const r=await api('POST','/api/nd/cardcall_tpl',{text:g('cc_txt').value}).catch(()=>null);if(r&&r.ok)base=g('cc_txt').value;return r&&r.ok;};
+  g('cc_tsave').onclick=async()=>{toast(await saveDef()?'💾 נשמר — זה הנוסח הקבוע לשיחת עדכון אשראי':'לא נשמר');};
+  g('cc_hear').onclick=()=>{if(!ymStatus)ymLoadStatus();ymCallConfirm('🔊 כך זה יישמע אצל '+mName(m),{text:fill(),name:m.first||'',amount:g('cc_amt').value.trim(),for:k.groupe||''},{hear:1});};
+  g('cc_send').onclick=async()=>{const ph=g('cc_ph').value.replace(/\D/g,'');if(ph.length<9){toast('מספר טלפון לא תקין');return;}
+    if(g('cc_txt').value!==base&&await uiConfirm('שינית את הנוסח.\nלשמור אותו כנוסח הקבוע לשיחת עדכון אשראי — שייפתח כך בפעם הבאה?','💾 כן, לשמור ולהתקשר','רק להתקשר')){await saveDef();toast('💾 הנוסח נשמר');}
+    const amt=g('cc_amt').value.trim(),nx=g('cc_next').value,btn=g('cc_send');btn.disabled=true;btn.textContent='⏳ …';
+    if(amt!==a0||nx!==n0){const body={action:'edit'};if(amt!==a0)body.amount=amt;if(nx!==n0)body.next_date=nx;
+      const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/action',body).catch(()=>null);
+      if(!r||!r.ok){btn.disabled=false;btn.textContent='📞 להתקשר אליו';return uiAlert('נדרים פלוס לא עדכנו את ההוראה — השיחה לא יצאה:\n'+((r&&r.error)||'אין תשובה'));}}
+    const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/call',{text:g('cc_txt').value,phone:ph,amount:amt,next_date:nx,member_id:m.id}).catch(()=>null);
+    if(!r||!r.ok){btn.disabled=false;btn.textContent='📞 להתקשר אליו';return uiAlert('השיחה לא יצאה:\n'+((r&&r.error)||'אין תשובה'));}
+    close();toast('📞 השיחה יוצאת ל-'+r.phone+(amt!==a0||nx!==n0?' · ההוראה עודכנה בנדרים פלוס':''));if(after)after();};}
 // מאיר: "אני רוצה אפשרות להוסיף תואר וכו'" — הסימונים, ללחיצה (אותם סימונים כמו בכל מייל לקהילה)
 const CARD_VARS=[['{{תואר}}','ה"ה'],['{{שם}}','השם המלא'],['{{הי"ו}}','אחרי השם'],['{{סכום}}','הסכום'],['{{תאריך}}','החיוב הבא'],['{{עבור}}','עבור מה'],['{{קישור}}','הקישור לעדכון הכרטיס'],['{{ה|י|ו}}','לשון זכר/נקבה/רבים']];
 // מאיר: "אבל איך אני מנסח?" — שלושה נוסחים מוכנים: [כפתור, נושא, גוף]
@@ -16102,7 +16147,8 @@ async function cmNdPaint(m,showAll,boxId){
         ${k.kind==='bank'?`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="תשלום בודד מהחשבון — נשלח לבנק בשידור הקרוב">🏦 גבייה בבנק</button>`
         :`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
         <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button>
-        <button class="btn sm ghost" data-ndmail="${esc(k.id)}" title="מייל עם קישור לעדכון האשראי, ושינוי סכום / תאריך חיוב — בנוסח שלך">✉️ במייל</button>`}</span></div>`).join('')
+        <button class="btn sm ghost" data-ndmail="${esc(k.id)}" title="מייל עם קישור לעדכון האשראי, ושינוי סכום / תאריך חיוב — בנוסח שלך">✉️ במייל</button>
+        <button class="btn sm ghost" data-ndcall="${esc(k.id)}" title="שיחה קולית: הסכום והתאריך בנוסח שלך, והקשה 1 שולחת לו קישור לעדכון הכרטיס">📞 בשיחה</button>`}</span></div>`).join('')
     :(KO.length?'':'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>'))+oldHTML;
   // מאיר: "שאל תבלבל ואל תערב את נתן תתן עם הקהילה, את התרומות" — תשלום מחשבון אחר (נתן תתן / מקווה)
   // מסומן בשם החשבון ולא נספר בסך התרומות לקהילה
@@ -16167,15 +16213,16 @@ async function cmNdPaint(m,showAll,boxId){
     if(!await uiConfirm('לחייב עכשיו את '+mName(m)+' ב-'+ndMoney(a)+(w?(' עבור '+w):'')+'?\n'+(bank?'הגבייה נשלחת לבנק בשידור הקרוב, בלי לשנות את ההוראה.':'החיוב מיידי בכרטיס השמור בהוראת הקבע, בלי לשנות את ההוראה.'),bank?'🏦 כן, לגבות':'⚡ כן, לחייב','ביטול'))return;
     b.disabled=true;b.textContent='מחייב…';const r=await api('POST','/api/nd/keva/'+b.dataset.ndchg+'/charge',{amount:a,groupe:w||'',member_id:m.id});
     if(r&&r.ok){toast(r.bank?'🏦 נשלח לגבייה בבנק ✓ (ייגבה בשידור הקרוב)':('✅ החיוב עבר · אישור '+(r.confirmation||'')));cmNdPaint(m,false,boxId);}else{b.disabled=false;b.textContent='⚡ חיוב עכשיו';await uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה'));}});
+  box.querySelectorAll('[data-ndcall]').forEach(b=>b.onclick=()=>{const k=K.find(x=>String(x.id)===b.dataset.ndcall);if(k)ndCardCall(k,m,()=>cmNdPaint(m,showAll,boxId));});
   box.querySelectorAll('[data-ndmail]').forEach(b=>b.onclick=()=>{const k=K.find(x=>String(x.id)===b.dataset.ndmail);if(k)ndCardMail(k,m,()=>cmNdPaint(m,showAll,boxId));});
   box.querySelectorAll('[data-ndsendm]').forEach(b=>b.onclick=async()=>{
     // מאיר: "אני רוצה אפשרות לשלוח לו אימייל עם נוסח לשינוי מספר אשראי או תאריך" — בוחרים איך לשלוח
     const how=await new Promise(res=>{const q=document.createElement('div');q.className='confirmov';
       q.innerHTML=`<div class="confirmbox"><div class="cm"><b>איך לשלוח לו את הקישור המאובטח לעדכון הכרטיס?</b></div>
-        <div class="cbtns" style="flex-wrap:wrap"><button class="btn" data-h="mail">✉️ במייל — עם נוסח, סכום ותאריך</button><button class="btn ghost" data-h="sms">📲 SMS</button><button class="btn ghost" data-h="">ביטול</button></div></div>`;
+        <div class="cbtns" style="flex-wrap:wrap"><button class="btn" data-h="mail">✉️ במייל — עם נוסח, סכום ותאריך</button><button class="btn" data-h="call">📞 בשיחה — והקשה 1 שולחת קישור</button><button class="btn ghost" data-h="sms">📲 SMS</button><button class="btn ghost" data-h="">ביטול</button></div></div>`;
       document.body.appendChild(q);q.querySelectorAll('[data-h]').forEach(x=>x.onclick=()=>{q.remove();res(x.dataset.h);});});
     if(!how)return;
-    if(how==='mail'){const k=K.find(x=>String(x.id)===b.dataset.ndsendm);if(k)ndCardMail(k,m,()=>cmNdPaint(m,showAll,boxId));return;}
+    if(how==='mail'||how==='call'){const k=K.find(x=>String(x.id)===b.dataset.ndsendm);if(k)(how==='mail'?ndCardMail:ndCardCall)(k,m,()=>cmNdPaint(m,showAll,boxId));return;}
     b.disabled=true;const r=await api('POST','/api/nd/keva/'+b.dataset.ndsendm+'/link',{send:1});
     if(r&&r.ok&&r.sent_to)toast('נשלח ל-'+r.sent_to+' ✓');else if(r&&r.ok)await uiAlert('אין נייד להוראה הזו. הקישור:\n'+r.link);else await uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));b.disabled=false;});
   // קבלה — אותו תהליך כמו אצל התורמים: מאשרים, שואלים אם לשלוח במייל

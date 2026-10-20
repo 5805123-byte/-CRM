@@ -615,6 +615,8 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN ym_file TEXT")
     except Exception: pass
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN card_keva TEXT")   # 💳 שיחת "עדכון אשראי" — הקשה 1 שולחת קישור לעדכון הכרטיס
+    except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
     except Exception: pass
     # ✉️ מיילים מלשונית המקווה — מאיר: "שבמקווה יהיה גם את האפשרות של שליחה במייל או טלפון וכו' כמו בקהילה".
@@ -18773,6 +18775,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'phone': phone, 'members': mem, 'kevas': allk, 'tormim': tor,
                                     'msg': dict(msg) if msg else None, 'debt': debt, 'first': first,
                                     'n_all': n_all, 'off': {(r['off'] or 'לא הופיעה בסנכרון האחרון'): r['n'] for r in n_off}})
+        if self.path.split('?')[0] == '/api/nd/cardcall_tpl':
+            con = db()
+            try:
+                v = kv_get(con, 'nd_card_call', '')
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'text': v or ND_CARD_CALL})
         if self.path.split('?')[0] == '/api/nd/cardmail_tpl':
             con = db()
             try:
@@ -23605,6 +23614,57 @@ class H(BaseHTTPRequestHandler):
             if r.get('error') == 'not_configured':
                 return self._send(200, {'ok': False, 'error': 'אין גישה לתיבת המייל — חסר ב-Render COMM_MAIL_PASS (סיסמת אפליקציה של נדר 18) או GMAIL_APP_PASSWORD'})
             return self._send(200, dict(r, ok=True))
+        if self.path == '/api/nd/cardcall_tpl':
+            con = db()
+            try:
+                kv_set(con, 'nd_card_call', str(b.get('text') or '')[:1500]); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/nd/keva/(M?[\d:]+)/call$', urllib.parse.unquote(self.path))
+        if m:
+            # 📞 שיחה קולית לחבר: הסכום / התאריך / עבור מה בנוסח של מאיר, והקשה 1 ← SMS עם הקישור המאובטח של נדרים
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר ב-Render'})
+            text = str(b.get('text') or '').strip()
+            if not text:
+                return self._send(200, {'ok': False, 'error': 'חסר נוסח לשיחה'})
+            con = db()
+            try:
+                k = con.execute("SELECT * FROM nd_keva WHERE id=?", (m.group(1),)).fetchone()
+                if not k:
+                    return self._send(200, {'ok': False, 'error': 'ההוראה לא נמצאה'})
+                mid = int(b.get('member_id') or 0) or k['member_id']
+                mm = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone() if mid else None
+                ph = _ym.norm_phone(b.get('phone') or '') or next((p for p in _phones_of(mm['phone'] if mm else '') if _ym.is_mobile(_ym.norm_phone(p))), '') \
+                    or next((p for p in (k['phone'] or '').split(';') if _ym.is_mobile(_ym.norm_phone(p))), '')
+                ph = _ym.norm_phone(ph)
+                if not ph:
+                    return self._send(200, {'ok': False, 'error': 'אין לו מספר טלפון'})
+                amt = str(b.get('amount') or k['amount'] or '').strip()[:20]
+                nxt = str(b.get('next_date') or '').strip()
+                if re.fullmatch(r'\d{4}-\d{2}-\d{2}', nxt):
+                    # בשיחה — "15 בנובמבר", לא "15.11.2026"
+                    nxt = '%d ב%s' % (int(nxt[8:10]), ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר',
+                                                     'אוקטובר', 'נובמבר', 'דצמבר'][int(nxt[5:7]) - 1])
+                nm = ((mm['first'] if mm else '') or ((k['name'] or '').split() or [''])[-1]).strip()
+                t2 = text.replace('{תאריך}', nxt or 'המועד הקבוע')
+                t2 = ym_fill(t2, nm, amt, '', str(k['groupe'] or '').strip())
+                con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,1,'queued',0,?,'')",
+                            (now_iso(), 'voice', text, amt, '💳 עדכון אשראי'))
+                jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,card_keva) VALUES(?,?,?,?,?,?,'queued',?,'card',?)",
+                            (jid, 'm' if mid else 'x', mid or 0, ((mm['first'] or '') + ' ' + (mm['last'] or '')).strip() if mm else (k['name'] or ''), ph, t2, '', k['id']))
+                if mid:
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                (mid, today_iso(), 'שיחה', '📞 שיחה לעדכון אשראי / תאריך חיוב (הקשה 1 = קישור ב-SMS)', t2, 'out', '', now_iso()))
+                con.commit()
+            finally:
+                con.close()
+            import threading as _thr
+            _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': jid, 'phone': ph})
         if self.path == '/api/nd/cardmail_tpl':
             # הנוסח הקבוע של "עדכון אשראי / תאריך חיוב" במייל — מאיר כותב ושומר
             # מאיר: "שאוכל לשנות את הנוסח גם" — גם הנוסחים המוכנים נשמרים כאן (שם, נושא, גוף), לעריכה, הוספה ומחיקה
@@ -27794,6 +27854,11 @@ def _nd_loop():
         time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 10800)))
 
 
+# 📞 מאיר: "צריך לעשות גם לשיחה בטלפון את האופציות של עדכון פרטי אשראי" — הנוסח הקולי (הקשה 1 = SMS עם הקישור)
+ND_CARD_CALL = ('שלום {שם}, כאן כולל חצות. רצינו לעדכן אותך לגבי הוראת הקבע שלך ל{עבור}, בסך {סכום} שקלים לחודש. '
+                'החיוב הבא יהיה ב{תאריך}. לקבלת הודעה עם קישור מאובטח לעדכון כרטיס האשראי, הקישו 1. תודה רבה ותזכו למצוות.')
+
+
 ND_CARD_MAIL = ('עדכון הוראת הקבע שלך — {{עבור}}',
                 '''שלום {{שם}},
 
@@ -28124,6 +28189,16 @@ def ivr_answer(P):
         call_id = str(P.get('ApiCallId') or '')[:60]
         mids = nd_member_index(con).get(phone) or set()
         mid = next(iter(mids)) if len(mids) == 1 else None
+        # 💳 שיחת "עדכון אשראי" — ההודעה האחרונה למספר הזה (14 יום) הייתה עדכון כרטיס: הקשה 1 = SMS עם הקישור
+        cmsg = con.execute("SELECT id, card_keva, job FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? ORDER BY id DESC LIMIT 1",
+                           (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
+        if cmsg and (cmsg['card_keva'] or '').strip():
+            if not _ym.is_mobile(phone):
+                return 'id_list_message=t-' + _ivr_t('לא ניתן לשלוח הודעה למספר קווי, אנא פנו למשרד') + END
+            okl, _l, _to = nd_send_link(con, cmsg['card_keva'], phone)
+            if okl:
+                return 'id_list_message=t-' + _ivr_t('שלחנו לכם הודעה עם קישור מאובטח לעדכון כרטיס האשראי. תודה רבה ותזכו למצוות') + END
+            return 'id_list_message=t-' + _ivr_t('לא הצלחנו לשלוח את הקישור כרגע, אנא נסו שוב מאוחר יותר') + END
         # הסכום — מההודעה האחרונה שנשלחה למספר הזה (14 יום), אם הייתה
         last = con.execute("SELECT amount,job,COALESCE(fund,'') fund FROM ym_msg WHERE phone=? AND status='sent' AND COALESCE(sent_ts,'')>=? "
                            "AND COALESCE(paid_at,'')='' AND COALESCE(req_off,'')='' AND CAST(COALESCE(amount,'0') AS REAL)>0 "
