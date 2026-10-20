@@ -14440,7 +14440,9 @@ const CARD_MAIL_PRESETS=[
 כולל חצות`]];
 async function ndCardMail(k,m,after){
   const t=await api('GET','/api/nd/cardmail_tpl').catch(()=>null)||{};
-  const d2i=v=>{v=String(v||'').trim();let x=/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/.exec(v);if(x)return x[3]+'-'+x[2].padStart(2,'0')+'-'+x[1].padStart(2,'0');x=/^(\d{4}-\d{2}-\d{2})/.exec(v);return x?x[1]:'';};
+  // מאיר: "למה לא רואים מתי החיוב הבא?" — בנדרים התאריך נשמר גם כ-15/11/26 (שנה בשתי ספרות)
+  const d2i=v=>{v=String(v||'').trim();let x=/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/.exec(v);
+    if(x){const y=x[3].length===2?'20'+x[3]:x[3];return y+'-'+x[2].padStart(2,'0')+'-'+x[1].padStart(2,'0');}x=/^(\d{4}-\d{2}-\d{2})/.exec(v);return x?x[1]:'';};
   const a0=String(k.amount||'').replace(/[^\d.]/g,''), n0=d2i(k.next_date);
   const o=document.createElement('div');o.className='mkov';
   o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:680px"><div class="mkdh"><div class="mkav">✉️</div><div><b>מייל לעדכון אשראי / תאריך חיוב</b><div class="mksub">${esc(mName(m))} · הוראת קבע ${ndMoney(k.amount)}${k.groupe?' · '+esc(k.groupe):''}</div></div><button class="x2" id="cmx">✕</button></div>
@@ -14455,7 +14457,7 @@ async function ndCardMail(k,m,after){
       <label class="fld"><span>📝 הנוסח</span><textarea id="cm_body" rows="11" style="width:100%;font-size:.95rem">${esc(t.body||'')}</textarea></label>
       <div class="mksub">➕ להוסיף לנוסח — לחיצה מכניסה במקום הסמן:</div>
       <div class="mlvars" style="display:flex;gap:5px;flex-wrap:wrap;margin:3px 0 6px">${CARD_VARS.map(([v,h])=>`<button type="button" class="btn sm ghost" data-cmv="${esc(v)}" title="${esc(h)}">${esc(v)} <small style="opacity:.7">${esc(h)}</small></button>`).join('')}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><button class="btn sm ghost" id="cm_tsave">💾 לשמור כנוסח קבוע</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><button class="btn sm ghost" id="cm_tsave">💾 לשמור כנוסח הקבוע לעדכון אשראי (ייפתח תמיד)</button></div>
       <div class="mksec">👁 הטיוטה — בדיוק כך המייל יגיע אליו</div>
       <div class="mksub" id="cm_pmeta"></div>
       <iframe id="cm_prev" style="width:100%;height:460px;border:1px solid #ddd;border-radius:10px;background:#fff"></iframe>
@@ -14463,7 +14465,7 @@ async function ndCardMail(k,m,after){
     <div class="mkdf"><span class="grow"></span><button class="mkbtn" id="cm_send">✉️ לשלוח</button></div></div>`;
   document.body.appendChild(o);
   const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('cmx').onclick=close;
-  const fmtD=v=>v?v.slice(8,10)+'.'+v.slice(5,7)+'.'+v.slice(0,4):'';
+  const fmtD=v=>v?v.slice(8,10)+'.'+v.slice(5,7)+'.'+v.slice(0,4):String(k.next_date||'');
   // הטיוטה המלאה — אותו מנוע ששולח (שם, תואר, לשון פנייה, חתימה, עיצוב), עם הסכום / התאריך / הקישור
   let ptm=null, pseq=0;
   const prev=()=>{const amt=g('cm_amt').value.trim(),nx=g('cm_next').value;
@@ -14486,15 +14488,22 @@ async function ndCardMail(k,m,after){
   const paintPR=()=>{g('cm_pres').innerHTML=PR.map((p,i)=>`<button type="button" class="btn sm ${i===cur?'':'ghost'}" data-cmp="${i}">${esc(p[0])}</button>`).join('')
       +`<button type="button" class="btn sm ghost" id="cm_pnew" title="לשמור את מה שכתוב למטה כנוסח מוכן חדש">➕ נוסח חדש</button>`
       +(cur>=0?`<button type="button" class="btn sm ghost" id="cm_psave" title="לשמור את השינויים שעשית בנוסח הזה">💾 לשמור שינויים ב"${esc(PR[cur][0])}"</button><button type="button" class="btn sm ghost" id="cm_pren">✎ שם</button><button type="button" class="btn sm ghost" id="cm_pdel" style="color:var(--no)">🗑</button>`:'');
-    g('cm_pres').querySelectorAll('[data-cmp]').forEach(b=>b.onclick=()=>{cur=+b.dataset.cmp;g('cm_subj').value=PR[cur][1];g('cm_body').value=PR[cur][2];prev();paintPR();});
+    g('cm_pres').querySelectorAll('[data-cmp]').forEach(b=>b.onclick=()=>{cur=+b.dataset.cmp;g('cm_subj').value=PR[cur][1];g('cm_body').value=PR[cur][2];base={s:PR[cur][1],b:PR[cur][2]};prev();paintPR();});
     g('cm_pnew').onclick=async()=>{const n=await uiPrompt('שם לנוסח החדש (יופיע ככפתור)','');if(!n||!n.trim())return;
       PR.push([n.trim(),g('cm_subj').value,g('cm_body').value]);cur=PR.length-1;toast(await savePR()?'💾 הנוסח נשמר':'לא נשמר');paintPR();};
-    const ps=g('cm_psave');if(ps)ps.onclick=async()=>{PR[cur][1]=g('cm_subj').value;PR[cur][2]=g('cm_body').value;toast(await savePR()?'💾 הנוסח עודכן':'לא נשמר');};
+    const ps=g('cm_psave');if(ps)ps.onclick=async()=>{PR[cur][1]=g('cm_subj').value;PR[cur][2]=g('cm_body').value;if(await savePR()){base={s:PR[cur][1],b:PR[cur][2]};toast('💾 הנוסח עודכן');}else toast('לא נשמר');};
     const pr=g('cm_pren');if(pr)pr.onclick=async()=>{const n=await uiPrompt('שם חדש לנוסח',PR[cur][0]);if(!n||!n.trim())return;PR[cur][0]=n.trim();await savePR();paintPR();};
     const pd=g('cm_pdel');if(pd)pd.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח "'+PR[cur][0]+'"?'))return;PR.splice(cur,1);cur=-1;await savePR();paintPR();};};
   paintPR();
-  g('cm_tsave').onclick=async()=>{const r=await api('POST','/api/nd/cardmail_tpl',{subj:g('cm_subj').value,body:g('cm_body').value});toast(r&&r.ok?'💾 הנוסח נשמר':'לא נשמר');};
+  // מאיר: "שזה ישאל אותי אם לשמור נוסח קבוע כשאני משנה נוסח" — מה שנפתח / נבחר / נשמר הוא הבסיס; שינוי ממנו — שואלים בשליחה
+  let base={s:g('cm_subj').value,b:g('cm_body').value};
+  const saveDef=async()=>{const r=await api('POST','/api/nd/cardmail_tpl',{subj:g('cm_subj').value,body:g('cm_body').value}).catch(()=>null);
+    if(r&&r.ok)base={s:g('cm_subj').value,b:g('cm_body').value};return r&&r.ok;};
+  g('cm_tsave').onclick=async()=>{toast(await saveDef()?'💾 נשמר — זה הנוסח הקבוע לעדכון אשראי':'לא נשמר');};
   g('cm_send').onclick=async()=>{const to=g('cm_to').value.trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){toast('כתובת מייל לא תקינה');return;}
+    if(g('cm_subj').value!==base.s||g('cm_body').value!==base.b){
+      const sv=await uiConfirm('שינית את הנוסח.\nלשמור אותו כנוסח הקבוע לעדכון פרטי אשראי — שייפתח כך בפעם הבאה, אצל כולם?'+(cur>=0?'\n(יתעדכן גם הנוסח המוכן "'+PR[cur][0]+'")':''),'💾 כן, לשמור ולשלוח','רק לשלוח');
+      if(sv){await saveDef();if(cur>=0){PR[cur][1]=g('cm_subj').value;PR[cur][2]=g('cm_body').value;await savePR();}toast('💾 הנוסח נשמר');}}
     const amt=g('cm_amt').value.trim(),nx=g('cm_next').value,btn=g('cm_send');btn.disabled=true;btn.textContent='⏳ שולח…';
     if(amt!==a0||nx!==n0){const body={action:'edit'};if(amt!==a0)body.amount=amt;if(nx!==n0)body.next_date=nx;
       const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/action',body).catch(()=>null);
