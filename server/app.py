@@ -26589,8 +26589,10 @@ def cm_debts_from_keva(con):
             closed += 1
             continue
         # חוב שכבר נסגר (שולם בטלפון / ידנית) על אותה הוראה ב-25 הימים האחרונים — לא נפתח שוב
-        recent = con.execute("SELECT 1 FROM cm_debt WHERE kind='hok' AND ref=? AND created>=?",
-                             (k['id'], (il_now() - datetime.timedelta(days=25)).strftime('%Y-%m-%d'))).fetchone()
+        # מאיר: "חזרו היום ואני לא רואה בחובות" — אם זה סירוב חדש (שגיאה אחרת / תאריך אחר מהחוב הקודם), נפתח שוב
+        recent = con.execute("SELECT 1 FROM cm_debt WHERE kind='hok' AND ref=? AND created>=? AND COALESCE(note,'') LIKE ?",
+                             (k['id'], (il_now() - datetime.timedelta(days=25)).strftime('%Y-%m-%d'),
+                              ((re.match(r'\s*\d{1,2}/\d{1,2}', k['error'] or '') or [None])[0] or (k['error'] or '').strip()[:60]).strip().replace('%', '') + '%')).fetchone()
         # חוב שירד מהרשימה כ"לא פעילה" (לפני התיקון — גם כרטיס שפג), וההוראה בעצם פעילה — חוזר לרשימה
         back = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='canceled' AND note LIKE '%ירד מהרשימה%' ORDER BY id DESC LIMIT 1",
                            (k['id'],)).fetchone() if bad and not d else None
@@ -27478,7 +27480,56 @@ def nd_errors_sync(con):
         if top:
             con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, top))
         con.commit()
+    nd_err_mark_kevas(con)
     return new
+
+
+def nd_err_mark_kevas(con, days=3):
+    """מאיר: "יש כמה הוראות קבע שחזרו היום בנדרים פלוס ואני לא רואה התראה בחובות". סירוב של הוראת קבע מיומן
+    הסירובים, שקרה אחרי הסנכרון המלא האחרון של ההוראה (כל 3 שעות), מסמן אותה מיד כ"חזרה" — והחוב נפתח.
+    מה שקרה לפני הסנכרון המלא — הסנכרון כבר יודע עליו (ואם ההוראה עברה מאז, לא מחזירים אותה לחוב)."""
+    since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+    hit = 0
+    for e in con.execute("SELECT iso, error, keva, COALESCE(mosad,'') mosad FROM nd_err WHERE COALESCE(keva,'')<>'' AND COALESCE(done,0)=0 "
+                         "AND COALESCE(iso,'')>=? ORDER BY iso", (since,)).fetchall():
+        kid = (e['mosad'] + ':' + str(e['keva'])) if e['mosad'] else str(e['keva'])
+        k = con.execute("SELECT id, error, synced FROM nd_keva WHERE id=? AND active=1", (kid,)).fetchone()
+        if not k:
+            continue
+        syn = str(k['synced'] or '').replace('T', ' ')[:19]
+        if syn and str(e['iso'] or '')[:19] <= syn:
+            continue
+        d_ = str(e['iso'] or '')
+        want = ('%s/%s | %s' % (d_[8:10], d_[5:7], (e['error'] or '')[:180])) if len(d_) >= 10 else (e['error'] or '')[:200]
+        if (k['error'] or '').strip()[:5] != want[:5]:
+            con.execute("UPDATE nd_keva SET error=? WHERE id=?", (want, kid))
+            hit += 1
+    if hit:
+        try:
+            cm_debts_from_keva(con)
+        except Exception as ex:
+            print('  keva debts after errors error:', ex)
+        con.commit()
+    return hit
+
+
+def _nd_err_loop():
+    """🔴 בדיקה מהירה של יומן הסירובים (כל 20 דקות) — הוראה שחזרה מופיעה בחובות תוך זמן קצר"""
+    time.sleep(120)
+    while True:
+        try:
+            import nedarim as _nd
+            if _nd.configured():
+                con = db()
+                try:
+                    n = nd_errors_sync(con)
+                    if n:
+                        print('  סירובים חדשים בנדרים:', n)
+                finally:
+                    con.close()
+        except Exception as e:
+            print('  nd errors loop error:', e)
+        time.sleep(1200)
 
 
 def nd_hook_key(con):
@@ -28621,6 +28672,7 @@ def serve():
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
+    threading.Thread(target=_nd_err_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 
