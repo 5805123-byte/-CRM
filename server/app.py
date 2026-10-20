@@ -9463,7 +9463,7 @@ def statement_file(con, did, year, fmt='pdf'):
     dr.text((x1 - wid('Rosh HaKollel', fsr), sy), 'Rosh HaKollel', font=fsr, fill=SOFT)
     fb = font(1.9 * u)
     bl = ['A tremendous zechus — a full partner in the Torah of the Chatzos hours.',
-          'May you merit all the Brachos of one who arises at midnight to learn Torah.']
+          'May you merit all the Brachos of one who arises at Chatzos to learn Torah.']
     blh = int(1.9 * 1.5 * u)
     by = bottom - int((2.3 * 1.2 + 1.7 * 1.3 + 1.9 * 1.3) * u) - int(1.8 * u) - int(1.2 * u) - blh * 2
     top_line = by - int(1.2 * u)
@@ -14479,7 +14479,7 @@ def receipt_mail_html(name, num, amount, date_txt, method, pn):
             '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f3eee2;padding:24px 0"><tr><td align="center">'
             '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%%;background:#fffdf7;border:1px solid #e3d9c2;border-radius:10px">'
             '<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzos</div>'
-            '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT MIDNIGHT</div></td></tr>'
+            '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT CHATZOS</div></td></tr>'
             '<tr><td style="padding:20px 28px 0;font-size:17px;color:#3a2f1a">Dear %s,</td></tr>%s'
             '<tr><td style="padding:16px 28px"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border:1px solid #e3d9c2;border-radius:8px">'
             '<tr><td style="padding:12px 16px;font-size:13px;color:#6b6249;letter-spacing:1px">RECEIPT No. %s</td><td style="padding:12px 16px;font-size:13px;color:#6b6249;text-align:right">%s</td></tr>'
