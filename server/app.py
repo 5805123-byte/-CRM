@@ -14446,7 +14446,7 @@ def _gem(s):
 
 
 def parnes_en(con, don_id):
-    """לקבלה ולמייל באנגלית: מה נתרם ('Night of Torah Study'), איזה יום ('10 Cheshvan 5787'),
+    """לקבלה ולמייל באנגלית: מה נתרם ('Night of Torah Learning'), איזה יום ('10 Cheshvan 5787'),
     וההקדשה (עברית, כמו שנכתבה). None אם התרומה לא משובצת ליום."""
     try:
         r = con.execute("SELECT p.* FROM donations d JOIN parnes p ON p.id=d.parnes_id WHERE d.id=?", (don_id,)).fetchone()
@@ -14454,7 +14454,7 @@ def parnes_en(con, don_id):
         return None
     if not r:
         return None
-    what = {'coffee': 'Refreshments for the Kollel', 'breakfast': 'Breakfast for the Kollel'}.get(r['kind'] or '', 'Night of Torah Study')
+    what = {'coffee': 'Refreshments for the Kollel', 'breakfast': 'Breakfast for the Kollel'}.get(r['kind'] or '', 'Night of Torah Learning')
     mon = str(r['month'] or '').strip()
     day = int(r['day'] or 0) or _gem(str(r['date_text'] or '').split(' ')[0])
     yr = str((r['hyear'] if 'hyear' in r.keys() else '') or '').strip()
@@ -25246,7 +25246,7 @@ class H(BaseHTTPRequestHandler):
                         subject = 'תעודת %s — %s · Kollel Chatzos' % (kl, date)
                         body = ('Dear %s,\n\nAttached is your certificate for the %s you sponsored at Kollel Chatzos — %s.\n'
                                 'The learning and prayers at Chatzos that night will be dedicated as you requested.\n\n'
-                                'With deep appreciation,\nKollel Chatzos' % (nm or 'Friend', 'night of Torah study' if kl == 'פרנס לילה' else kl, date))
+                                'With deep appreciation,\nKollel Chatzos' % (nm or 'Friend', 'night of Torah learning' if kl == 'פרנס לילה' else kl, date))
                         if not mailer.configured():
                             out['cert_error'] = 'שליחת מייל לא מוגדרת ב-Render'
                         else:
