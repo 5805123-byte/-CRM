@@ -192,7 +192,8 @@ function methodEn(m){
 function money(a){
   const n = parseFloat(String(a||'').replace(/[^\d.]/g,''));
   if (!n) return '$' + (a || '0');
-  return '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const whole=Math.abs(n-Math.round(n))<.005;
+  return '$' + n.toLocaleString('en-US',{minimumFractionDigits:whole?0:2,maximumFractionDigits:whole?0:2});
 }
 function niceDate(s){
   let d = s ? new Date(s + (/^\d{4}-\d{2}-\d{2}$/.test(s) ? 'T12:00:00' : '')) : new Date();

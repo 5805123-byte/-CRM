@@ -14488,8 +14488,17 @@ def receipt_mail_html(name, num, amount, date_txt, method, pn):
             '<tr><td style="padding:14px 28px 22px;font-size:16px;color:#7a1f1f">With deep appreciation for your partnership in the Torah of Chatzos,<br>'
             '<b>Rabbi Yehoshua Meir Deutsch</b><br><span style="font-size:13px;color:#6b6249">Rosh HaKollel · Kollel Chatzos · EIN 20-0447034</span></td></tr>'
             '</table></td></tr></table></body></html>'
-            % (e(name), night, e(str(num)), e(date_txt), '$' + format(amount, ',.2f'),
+            % (e(name), night, e(str(num)), e(date_txt), '$' + _usd(amount),
                (' <span style="font-size:14px;color:#6b6249;font-weight:normal">· %s</span>' % e(method)) if method else ''))
+
+
+def _usd(n):
+    """$480 כשאין אגורות, $480.50 כשיש — מאיר: "אני לא אוהב שרשום עוד 00"."""
+    try:
+        n = float(n or 0)
+    except (TypeError, ValueError):
+        n = 0.0
+    return format(n, ',.0f') if abs(n - round(n)) < .005 else format(n, ',.2f')
 
 
 def receipt_us_mail(con, name, num, amt, dd, method, donation_id):
@@ -14504,7 +14513,7 @@ def receipt_us_mail(con, name, num, amt, dd, method, donation_id):
             'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
             % (name, ('Thank you for sponsoring a %s at Kollel Chatzos%s.\n%s\n\n' % (pn['what'], (' on the night of ' + pn['date']) if pn['date'] else '',
                                                                               pn['ded'])) if pn else '',
-               num, format(amt, ',.2f'), dd.strftime('%B %-d, %Y')))
+               num, _usd(amt), dd.strftime('%B %-d, %Y')))
     return subject, body, receipt_mail_html(name, num, amt, dd.strftime('%B %-d, %Y'), method, pn)
 
 
@@ -14576,7 +14585,7 @@ def receipt_send(con, rid, email=''):
         body = ('Dear %s,\n\nAttached is your official receipt (No. %d) for your contributions during %s, totaling $%s.\n'
                 'No goods or services were provided in exchange for these contributions.\n\n'
                 'With deep appreciation for your partnership in the Torah of Chatzos,\n\nKollel Chatzos\nEIN 20-0447034'
-                % (r['name'], r['num'], ylab, format(amt, ',.2f')))
+                % (r['name'], r['num'], ylab, _usd(amt)))
     else:
         subject, body, rc_html = receipt_us_mail(con, r['name'], r['num'], amt, dd, r['method'] or '', r['donation_id'])
     try:

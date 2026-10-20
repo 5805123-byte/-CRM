@@ -76,7 +76,8 @@ def money(a):
         n = float(re.sub(r'[^\d.]', '', str(a or '')) or 0)
     except ValueError:
         n = 0.0
-    return '$' + format(n, ',.2f')
+    # מאיר: "אני לא אוהב שרשום עוד 00" — סכום עגול בלי אגורות: $480, ולא $480.00
+    return '$' + (format(n, ',.0f') if abs(n - round(n)) < .005 else format(n, ',.2f'))
 
 
 def iso_day(s):
