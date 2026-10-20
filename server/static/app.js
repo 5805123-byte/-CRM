@@ -7922,7 +7922,7 @@ function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?
         <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
         <div class="bqacts"><button class="btn sm" data-bqa="post" data-id="${r.id}">➕ רשום בכרטיס</button></div>
         <div class="hintxt">רישום ידני ומכוון. לפני הרישום המערכת בודקת שאין כבר תרומה כזו בכרטיס.</div>`:''}
-      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}</div>
+      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}</div>
     </div>`:''}</div>`;}
 function bqDonorDL(){return `<datalist id="bq_dl">${DB.slice(0,4000).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('')}</datalist>`;}
 function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
@@ -17700,6 +17700,16 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqfixb');if(!b)return;
   e.preventDefault();e.stopPropagation();
   if(await bqFixFlow(+b.dataset.tx,b.dataset.amt,b.dataset.who||''))renderBQ();});
+// 🔁 מאיר: "אצל תורם שנדחה — כפתור של ניסיון חיוב שוב, שינסה לחייב אותו על הסכום שלא עבר"
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqretry');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const v=await uiPrompt('לנסות לחייב שוב את '+(b.dataset.who||'')+(b.dataset.card?' — '+b.dataset.card:'')+'?\nהסכום ($):',String(b.dataset.amt||''));if(v===null)return;
+  const amt=amtNum(v);if(!amt){toast('סכום לא תקין');return;}
+  b.disabled=true;const o=b.textContent;b.textContent='⏳ מחייב…';
+  const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/retry',{amount:amt}).catch(()=>null);
+  b.disabled=false;b.textContent=o;
+  if(r&&r.ok){toast('✅ עבר! נגבו '+bqMoney(amt)+(r.ref?' · אסמכתא '+r.ref:'')+' — נרשם בכרטיס התורם');await load();render();}
+  else uiAlert('❌ החיוב לא עבר גם הפעם:\n'+((r&&r.error)||'אין תשובה'));});
 // ₪ / $ של ההתחייבויות — כל ההתחייבויות והאברכים של התורם עוברים למטבע שנבחר
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.cmcur');if(!b)return;
   e.preventDefault();const d=DB.find(o=>o.id==b.dataset.did);if(!d)return;

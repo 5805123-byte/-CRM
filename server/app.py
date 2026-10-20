@@ -24369,6 +24369,54 @@ class H(BaseHTTPRequestHandler):
             con.commit(); con.close()
             bump_data()
             return self._send(200, {'ok': True, 'id': res['id'], 'donor_id': did})
+        m = re.match(r'/api/bq/tx/(\d+)/retry$', self.path)
+        if m:
+            # 🔁 מאיר: "אצל תורם שנדחה — כפתור של ניסיון חיוב שוב, שינסה לחייב אותו על הסכום שלא עבר".
+            # אותו כרטיס שמור בבנק ווסט (של ההוראה, או הכרטיס של הלקוח עם אותן 4 ספרות); עבר — נרשם כתרומה, והחיוב שנדחה מסומן "סודר"
+            import banquest as _bq
+            if not _bq.configured():
+                return self._send(200, {'ok': False, 'error': 'בנק ווסט לא מוגדר ב-Render'})
+            con = db()
+            try:
+                t = con.execute("SELECT * FROM bq_tx WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not t:
+                    return self._send(200, {'ok': False, 'error': 'העסקה לא נמצאה'})
+                if (t['status'] or '').lower() in ('captured', 'approved', 'settled', 'pending'):
+                    return self._send(200, {'ok': False, 'error': 'העסקה הזו כבר עברה'})
+                amt = round(float(b.get('amount') or t['amount'] or 0), 2)
+                if amt <= 0:
+                    return self._send(200, {'ok': False, 'error': 'אין סכום'})
+                l4 = (re.findall(r'\d{4}', t['card'] or '') or [''])[-1]
+                pm = None
+                if t['schedule_id']:
+                    sc = con.execute("SELECT pm_id FROM bq_sched WHERE id=?", (t['schedule_id'],)).fetchone()
+                    pm = sc['pm_id'] if sc and sc['pm_id'] else None
+                if not pm and t['customer_id']:
+                    pr = con.execute("SELECT id FROM bq_pm WHERE customer_id=? ORDER BY (last4=?) DESC, is_default DESC, id DESC LIMIT 1",
+                                     (t['customer_id'], l4)).fetchone()
+                    pm = pr['id'] if pr else None
+                if not pm:
+                    return self._send(200, {'ok': False, 'error': 'אין כרטיס שמור בבנק ווסט ללקוח הזה — לחץ 🔄 סנכרון, או חייב מהכרטיס של התורם'})
+                p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone()
+                cu = con.execute("SELECT * FROM bq_cust WHERE id=?", (t['customer_id'],)).fetchone() if t['customer_id'] else None
+                desc = ('ניסיון חוזר · ' + (t['description'] or '')).strip(' ·')[:250]
+                code, res = _bq.charge_pm(pm, amt, description=desc, customer_id=t['customer_id'] or (p['customer_id'] if p else 0),
+                                          email=(t['email'] or (cu['email'] if cu else '') or ''), send_receipt=True)
+                if code != 200 or not isinstance(res, dict):
+                    return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
+                did = t['donor_id'] or (cu['donor_id'] if cu else None)
+                out = bq_record_charge(con, res, amt, t['description'] or '', '', did, t['customer_id'] or (p['customer_id'] if p else 0),
+                                       ('%s %s' % (p['card_type'] or '', p['last4'] or '')).strip() if p else (t['card'] or ''), t['name'] or '',
+                                       sched_id=t['schedule_id'] or 0)
+                if out.get('ok'):
+                    con.execute("UPDATE bq_tx SET fix_state='yes', fix_amt=?, fix_note=? WHERE id=?",
+                                (amt, 'נגבה בניסיון חוזר %s · אסמכתא %s' % (now_iso(), out.get('ref') or ''), t['id']))
+                con.commit()
+                out['card'] = ('%s %s' % (p['card_type'] or '', p['last4'] or '')).strip() if p else ''
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
         m = re.match(r'/api/bq/tx/(\d+)/fix$', self.path)
         if m:
             # ✎ מצב "סודר" ידני לחיוב שנדחה: auto (לפי הסכום) / no / yes / partial
