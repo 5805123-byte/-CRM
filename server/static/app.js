@@ -1712,7 +1712,8 @@ async function mkReqOpen(sync=true){
         <button class="btn sm ghost" data-rqn="${esc(x.id)}">📝 הערה</button>
         <button class="btn sm ${x.status==='done'?'ghost':''}" data-rqd="${esc(x.id)}" data-v="${x.status==='done'?'new':'done'}">${x.status==='done'?'↩️ להחזיר לחדשות':'✓ טופל'}</button></div></div>`;};
     rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📥</div><div><h2>פניות</h2>
-        <div class="mksub">טופסי פניות מנדרים פלוס (סוג הפניה: מקווה) · מהמייל ${esc((MKREQ&&MKREQ.box)||'')}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11)):''}</div>
+        <div class="mksub">טופסי פניות מנדרים פלוס (סוג הפניה: מקווה) · מהמייל ${esc((MKREQ&&MKREQ.box)||'')}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11))+(MKREQ.last.new?' · '+MKREQ.last.new+' חדשות':''):''}</div>
+        ${MKREQ&&MKREQ.last&&MKREQ.last.error?`<div class="mksub" style="color:#c0392b;font-weight:700">⚠️ הבדיקה במייל נכשלה: ${esc(MKREQ.last.error==='not_configured'?'אין חיבור למייל ב-Render (MIKVEH_MAIL_USER + MIKVEH_MAIL_PASS, או GMAIL_USER + GMAIL_APP_PASSWORD)':MKREQ.last.error)}</div>`:''}
         ${msg?`<div class="mksub">${msg}</div>`:''}</div></div>
       <button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו במייל</button>
       <div class="mksec" style="margin-top:10px">🆕 חדשות (${nw.length})</div><div class="mklist">${nw.map(card).join('')||'<div class="hintxt">אין פניות חדשות</div>'}</div>
@@ -1943,9 +1944,7 @@ function renderMikveh(){
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
-      <button class="mkibtn" id="mkunpaid" title="מנוי בתוקף ונכנס בחודש האחרון — ולא שילם במקווה (אשראי / מזומן)">💳 נכנס ולא שילם</button>
       <button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
-      <button class="mkibtn" id="mktwday" title="מי נכנס ביום מסוים ומגיעה לו מגבת: מזדמן, ערך צבור, מנוי כולל מגבת">🧺 מגבות ליום</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
       <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button>
@@ -1973,10 +1972,8 @@ function renderMikveh(){
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
-  document.getElementById('mktwday').onclick=()=>mkTowelDay();
   document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
-  document.getElementById('mkunpaid').onclick=()=>mkUnpaidOpen();
   if(!MKREQ){MKREQ={rows:[],new:0};api('GET','/api/mikveh/requests').then(r=>{if(r&&r.ok){MKREQ=r;if(tab==='mikveh')renderMikveh();}}).catch(()=>{});}
   document.getElementById('mkselb').onclick=()=>{mkSelOn=!mkSelOn;document.getElementById('mkselb').classList.toggle('on',mkSelOn);mkPaint();mkSelBar();};
   mkSelBar();
