@@ -2482,7 +2482,7 @@ async function mkBalanceEdit(c){
   const el=document.getElementById('mkbal');if(el)el.querySelector('b').innerHTML='<span class="mkspin"></span>';
   const r=await api('POST','/api/mikveh/balance',{id:c.id,balance:n,note:String(note||'').trim()}).catch(()=>null);
   if(!r||!r.ok){mkOpen(c);return uiAlert('היתרה לא עודכנה במקווה:\n'+((r&&r.error)||'אין תשובה מהשרת'));}
-  c.balance=r.balance;toast('✓ היתרה עודכנה במקווה: '+mkMoney(r.balance));mkOpen(c);}
+  c.balance=r.balance;c.last_balance=r.balance;toast('✓ היתרה עודכנה במקווה: '+mkMoney(r.balance)+(r.sec?' ('+r.sec+' שנ\')':''));mkOpen(c);}
 async function mkRenewOpen(c){
   const o=document.createElement('div');o.className='mkov';
   o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">🔁</div><div><b>פעולות אוטומטיות · ${esc(mkName(c))}</b></div><button class="x2" id="mrx">✕</button></div>

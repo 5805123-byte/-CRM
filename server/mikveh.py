@@ -289,10 +289,13 @@ def update_client(cid, changes):
 
 
 def balance(cid):
-    """היתרה של הלקוח — מהלקוח עצמו (GetClientFull): balance, ואם אין — lastBalance (כמו הקוביה במסך).
-    באגורות. (GET getBalance/{id} של המסך החזיר 0/404 גם כשהייתה יתרה — לא סומכים עליו.)"""
+    """היתרה של הלקוח — ישירות מ-GetClientFull (בלי הגיבוי שמושך את כל הרשימה — זה מה שלקח דקה):
+    balance, ואם אין — lastBalance (כמו הקוביה במסך). באגורות."""
     _ONE.pop(str(cid), None)
-    c = client(cid)
+    code, c = call('GET', 'GetClientFull/%s' % cid, timeout=15)
+    if code != 200 or not isinstance(c, dict):
+        raise RuntimeError('קריאת הלקוח מהמקווה נכשלה: %s' % (LAST.get('error') or code))
+    _ONE[str(cid)] = (time.time(), c)
     for k in ('balance', 'lastBalance'):
         v = c.get(k)
         if v is not None:

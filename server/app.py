@@ -22638,8 +22638,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
             cents = int(round(bal * 100))
             note = str(b.get('note') or '').strip()[:200]
+            t0 = time.time()
             try:
-                # כמו המסך של המקווה: קוראים את היתרה (getBalance), מוסיפים / מפחיתים את ההפרש (addCredit)
+                # כמו המסך של המקווה: קוראים את היתרה, מוסיפים / מפחיתים את ההפרש (addCredit)
                 old = _mk.balance(cid)
                 delta = cents - old
                 if delta == 0:
@@ -22655,11 +22656,11 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (cid, now_iso(), 'balance', '💰 יתרה במקווה: %s → ₪%g%s' % (('₪%g' % (old / 100.0)) if isinstance(old, (int, float)) else '—', bal, (' · ' + note) if note else '')))
+                            (cid, now_iso(), 'balance', '💰 יתרה במקווה: %s → ₪%g%s · %.1f שנ\'' % (('₪%g' % (old / 100.0)) if isinstance(old, (int, float)) else '—', bal, (' · ' + note) if note else '', time.time() - t0)))
                 con.commit()
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'balance': cents})
+            return self._send(200, {'ok': True, 'balance': cents, 'sec': round(time.time() - t0, 1)})
         if self.path == '/api/mikveh/price':
             # 💲 שינוי מחיר במקווה עצמו — של הלקוח (שדה מחיר אישי) או של כל הקבוצה. אחרי השינוי בודקים במקווה שזה נקלט
             import mikveh as _mk
