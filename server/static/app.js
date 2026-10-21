@@ -17849,7 +17849,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     const s2=await api('POST','/api/donor/'+d.id+'/cardlink/send',{email:em,subject:g('cl_subj').value,body:g('cl_body').value}).catch(()=>null);
     btn.disabled=false;
     if(!s2||!s2.ok){await uiAlert('לא נשלח:\n'+((s2&&s2.error)||'שגיאה'));return;}
-    if(!d.email)d.email=em;o.remove();await uiAlert('✅ נשלח.\nהמייל עם הקישור האישי נשלח ל-'+em+' ונרשם בקשר של התורם.');};});
+    if(!d.email)d.email=em;o.querySelector('.cbtns').innerHTML='<div class="ok" style="flex:1;background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:12px;font-size:16px;font-weight:bold;color:#1f5e33">✅ נשלח! המייל עם הקישור האישי נשלח ל-'+esc(em)+' ונרשם בקשר של התורם.</div><button class="btn ghost cno2" type="button">סגור</button>';o.querySelector('.cno2').onclick=()=>o.remove();toast('✅ נשלח ל-'+em);};});
 // מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — המייל בדיוק כפי שיישלח (iframe),
 // הקבלה כתמונה, והתעודה אם יש. נטען מהשרת בלי לשלוח ובלי לשמור
 function rcPreviewHTML(don,certUrl){
