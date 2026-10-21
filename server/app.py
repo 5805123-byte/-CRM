@@ -14604,7 +14604,7 @@ def cardlink_message(d, url, con=None):
     עדכון כרטיס אשראי מאובטח והשמות של הקוויטל… שכאן הוא יכול לשנות את הכרטיס וזה מתעדכן אצלנו מאובטח"."""
     nm = cardlink_salute(d)
     iz = cardlink_iz(con, d)
-    body = ('Dear %s,\n\n'
+    body = (('Dear %s,\n\n'
             + (iz + '\n\n' if iz else '')
             + 'Warm regards from Kollel Chatzot. We have prepared a personal, secure page just for you, where you can:\n'
             '\u2022 update your credit card or its expiry date \u2014 it is saved securely with us right away,\n'
@@ -14613,7 +14613,7 @@ def cardlink_message(d, url, con=None):
             '%s\n\n'
             'Your card details are encrypted and go directly to our payment processor; they are never seen or stored by us.\n'
             'Thank you for being part of the Torah of Chatzot.\n\n'
-            'With appreciation,\nKollel Chatzot' % (nm, url))
+            'With appreciation,\nKollel Chatzot') % (nm, url))
     return {'subject': 'Kollel Chatzot \u2014 Secure card update & your Kvitel names', 'body': body}
 
 
