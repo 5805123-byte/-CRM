@@ -631,6 +631,10 @@ def ensure_schema():
         for _c in ('opened_at TEXT', 'opens INTEGER DEFAULT 0'):
             try: con.execute("ALTER TABLE %s ADD COLUMN %s" % (_t, _c))
             except Exception: pass
+    # מאיר: "כל אימייל שאני מוציא דרך המערכת — שאראה אם הוא ראה את האימייל" — פיקסל גם ביומן הקשר
+    for _c in ('opened_at TEXT', 'opens INTEGER DEFAULT 0', 'tracked INTEGER DEFAULT 0'):
+        try: con.execute("ALTER TABLE contacts_log ADD COLUMN %s" % _c)
+        except Exception: pass
     try: con.execute("ALTER TABLE mk_log ADD COLUMN mail_id INTEGER")
     except Exception: pass
     # פעם אחת: חובות "הו"ק חזרה" שנסגרו כ"שולם" רק כי ההוראה הפכה ללא פעילה — לא שולמו; יוצאים מההיסטוריה
@@ -13308,12 +13312,39 @@ def log_sent_mail(donor_id, to, subject, body, msg_id='', natt=0):
     summary = '📤 שלחנו: ' + (subject or 'מייל') + ((' · 📎 %d קבצים מצורפים' % natt) if natt else '')
     try:
         con = db()
-        con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction,at)
+        lid = con.execute("""INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,msg_id,body,att_checked,direction,at)
                        VALUES(?,?,?,?,'',?,?,1,'out',?)""",
-                    (donor_id, today_iso(), 'אימייל', summary, key, (body or '').strip(), now_iso()))
+                    (donor_id, today_iso(), 'אימייל', summary, key, (body or '').strip(), now_iso())).lastrowid
         con.commit(); con.close()
+        return lid
     except Exception:
         pass
+
+
+def send_donor_mail(donor_id, to, subject, body, attachments=None, natt=None, **kw):
+    """מאיר: "כל אימייל שאני מוציא דרך המערכת שאראה אם הוא ראה את האימייל" — רושמים ביומן הקשר, שולחים עם
+    פיקסל מעקב שמצביע על השורה הזו, ובפתיחה נרשם 'נפתח'. נכשל — השורה נמחקת. מחזיר את תשובת mailer.send."""
+    import mailer
+    lid = log_sent_mail(donor_id, to, subject, body, '', natt if natt is not None else len(attachments or [])) if donor_id else None
+    px = ''
+    if lid:
+        try:
+            con = db(); px = open_pixel(con, 'cl', lid); con.close()
+        except Exception:
+            px = ''
+    res = mailer.send(to, subject, body, attachments or [], pixel=px, **kw)
+    if lid:
+        try:
+            con = db()
+            if res.get('ok'):
+                con.execute("UPDATE contacts_log SET msg_id=?, tracked=? WHERE id=?",
+                            ('out:%s|%s' % ((res.get('msg_id') or '').strip(), donor_id), 1 if px else 0, lid))
+            else:
+                con.execute("DELETE FROM contacts_log WHERE id=?", (lid,))
+            con.commit(); con.close()
+        except Exception:
+            pass
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -14955,6 +14986,7 @@ def cardlink_charge(con, did, b):
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
                     (did, today_iso(), 'קישור', '🔗 ניסה לתרום $%s דרך הקישור האישי והחיוב לא עבר: %s' % (('%.2f' % amt).rstrip('0').rstrip('.'), err), '', now_iso()))
         con.commit()
+        cardlink_alert(con, did, '• ⚠️ ניסה לתרום $%s דרך הקישור והחיוב לא עבר: %s' % (('%.2f' % amt).rstrip('0').rstrip('.'), err))
         return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % err}
     out = bq_record_charge(con, res, amt, desc, fc, did, cu['id'] if cu else 0,
                            ('%s %s' % (b.get('card_type') or '', b.get('last4') or '')).strip(), nm)
@@ -14981,6 +15013,7 @@ def cardlink_charge(con, did, b):
     con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
                 (did, today_iso(), 'קישור', '🔗 ' + ' · '.join(lines), '', now_iso()))
     con.commit()
+    cardlink_alert(con, did, '\n'.join('• ' + x for x in lines))
     src = bq_card_src(res)
     if src:
         toks = (d['english'] or '').split()
@@ -15000,7 +15033,32 @@ def cardlink_note(con, did, b):
                 (did, today_iso(), 'קישור', '📝 הערה מהתורם דרך הקישור האישי: ' + note, '', now_iso()))
     con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)", (did, today_iso(), 'followup', '📝 הערה מהתורם דרך הקישור: ' + note[:300]))
     con.commit()
+    cardlink_alert(con, did, '• 📝 הערה: ' + note)
     return {'ok': True}
+
+
+def cardlink_alert(con, did, what):
+    """מאיר: "אם מישהו הכניס אשראי אחר או עדכן קוויטל או כתובת וכו' — שאקבל אימייל על זה". נשלח ברקע
+    ל-ALERT_EMAIL (ואם לא הוגדר — לתיבת GMAIL_USER של המערכת)."""
+    try:
+        d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+        nm = ((d['first'] or '') + ' ' + (d['last'] or '')).strip() if d else '#%s' % did
+        en = (d['english'] or '').strip() if d else ''
+    except Exception:
+        nm, en = '#%s' % did, ''
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    if not to:
+        return
+    subject = '🔗 %s עדכן דרך הקישור האישי' % nm
+    body = '%s%s עדכן עכשיו דרך הקישור האישי שלו:\n\n%s\n\n(כל הפרטים נרשמו בקשר של התורם במערכת)' % (nm, (' (%s)' % en) if en else '', what)
+    def run():
+        try:
+            import mailer
+            if mailer.configured():
+                mailer.send(to, subject, body, [])
+        except Exception as e:
+            print('  cardlink alert error:', e)
+    threading.Thread(target=run, daemon=True).start()
 
 
 def cardlink_save(con, did, b):
@@ -15103,6 +15161,8 @@ def cardlink_save(con, did, b):
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
                     (did, today_iso(), 'קישור', '🔗 התורם עדכן דרך הקישור האישי: ' + ' · '.join(lines), '', now_iso()))
     con.commit()
+    if lines:
+        cardlink_alert(con, did, '\n'.join('• ' + x for x in lines))
     return out
 
 
@@ -16505,7 +16565,7 @@ MK_MAIL_LOCK = threading.Lock()
 
 
 def open_pixel(con, kind, rid, base=''):
-    """כתובת פיקסל המעקב למייל בודד (מקווה 'mk' / קבלה 'rc'). base — הכתובת של האתר."""
+    """כתובת פיקסל המעקב למייל בודד (מקווה 'mk' / קבלה 'rc' / יומן קשר 'cl'). base — הכתובת של האתר."""
     import bulkmail
     base = (base or os.environ.get('RENDER_EXTERNAL_URL') or kv_get(con, 'site_base', '')).rstrip('/')
     if not base:
@@ -17348,11 +17408,11 @@ class H(BaseHTTPRequestHandler):
                 qid = int(qs.get('i', ['0'])[0] or 0)
                 tok = (qs.get('t', [''])[0] or '').strip()
                 kd = (qs.get('k', [''])[0] or '').strip()
-                if qid and tok and kd in ('mk', 'rc'):
+                if qid and tok and kd in ('mk', 'rc', 'cl'):
                     con = db()
                     if hmac.compare_digest(bulkmail.open_token('%s%d' % (kd, qid), mail_secret(con)), tok):
                         con.execute("UPDATE %s SET opens=COALESCE(opens,0)+1, opened_at=CASE WHEN COALESCE(opened_at,'')='' THEN ? ELSE opened_at END "
-                                    "WHERE id=?" % ('mk_mail' if kd == 'mk' else 'receipt_docs'), (now_iso(), qid))
+                                    "WHERE id=?" % {'mk': 'mk_mail', 'rc': 'receipt_docs', 'cl': 'contacts_log'}[kd], (now_iso(), qid))
                         con.commit()
                     con.close()
                 elif qid and tok:
@@ -23890,9 +23950,7 @@ class H(BaseHTTPRequestHandler):
                 import mailer
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': 'module', 'detail': str(e)})
-            res = mailer.send(to, subject, body, atts)
-            if res.get('ok'):
-                log_sent_mail(p['donor_id'], to, subject, body, res.get('msg_id'), len(atts))
+            res = send_donor_mail(p['donor_id'], to, subject, body, atts)
             res['to'] = to
             res['count'] = len(atts)
             return self._send(200, res)
@@ -26054,14 +26112,10 @@ class H(BaseHTTPRequestHandler):
                     inl = [('globe', 'image/png', letterhead_logo(160))]
                 except Exception as e:
                     print('  logo error:', e); inl = None
-                res = mailer.send(to, subj, body_, rtl=False, html=cardlink_mail_html(body_, url), inline=inl,
-                                  from_name='Kollel Chatzot (Rabbi Deutsch)')
+                res = send_donor_mail(d['id'], to, subj, body_, [], rtl=False, html=cardlink_mail_html(body_, url), inline=inl,
+                                      from_name='Kollel Chatzot (Rabbi Deutsch)')
                 if not res.get('ok'):
                     return self._send(200, {'ok': False, 'error': str(res.get('detail') or res.get('error') or 'השליחה נכשלה')[:160]})
-                try:
-                    log_sent_mail(d['id'], to, subj, body_, res.get('msg_id'), 0)
-                except Exception:
-                    pass
                 con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (to, d['id']))
                 con.commit()
             finally:
@@ -26107,13 +26161,9 @@ class H(BaseHTTPRequestHandler):
                         if not mailer.configured():
                             out['cert_error'] = 'שליחת מייל לא מוגדרת ב-Render'
                         else:
-                            res = mailer.send(to, subject, body, [('Certificate.jpg', 'image/jpeg', img)])
+                            res = send_donor_mail(pr['donor_id'], to, subject, body, [('Certificate.jpg', 'image/jpeg', img)])
                             if res.get('ok'):
                                 out['cert_sent'] = True
-                                try:
-                                    log_sent_mail(pr['donor_id'], to, subject, body, res.get('msg_id'), 1)
-                                except Exception:
-                                    pass
                             else:
                                 out['cert_error'] = str(res.get('error') or 'השליחה נכשלה')[:160]
                     except Exception as e:
