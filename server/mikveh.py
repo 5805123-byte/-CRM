@@ -470,6 +470,22 @@ def grep_ui(pattern, ctx=140, limit=80):
     return {'files': files, 'paths': paths, 'hits': out}
 
 
+def ui_endpoints():
+    """אבחון: כל הקריאות של מסך הניהול לשרת — שם הפונקציה, השיטה והנתיב. קריאה בלבד של קבצי ה-JS."""
+    root = base() + 'adminUi/'
+    req = urllib.request.Request(root, headers={'User-Agent': UA})
+    html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'replace')
+    out = []
+    for src in re.findall(r'<script[^>]+src="([^"]+\.js)"', html)[:12]:
+        try:
+            js = urllib.request.urlopen(urllib.request.Request(urllib.parse.urljoin(root, src), headers={'User-Agent': UA}), timeout=30).read(6_000_000).decode('utf-8', 'replace')
+        except Exception:
+            continue
+        for m in re.finditer(r'(\w+)\(([^)]{0,40})\)\{return this\.http\.(get|post|put|patch|delete)\(`\$\{this\.url\}/([^`]+)`(,[^)]{0,60})?\)', js):
+            out.append('%s %s  ←  %s(%s)%s' % (m.group(3).upper(), m.group(4), m.group(1), m.group(2), (' body:' + m.group(5)[1:]) if m.group(5) else ''))
+    return sorted(set(out))
+
+
 def discover_paths(force=False):
     """נתיבי ה-API שמסך הניהול של המקווה עצמו קורא להם (מתוך קבצי ה-JS שלו) — שקשורים לתשלומים.
     רק קריאה של קבצי האתר הציבוריים; נשמר בזיכרון ליום."""
