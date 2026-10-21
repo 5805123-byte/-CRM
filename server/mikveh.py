@@ -556,6 +556,30 @@ def ui_endpoints():
     return sorted(set(out))
 
 
+def ui_context(name, back=1800, fwd=400, limit=6):
+    """אבחון: לכל מופע של שם (למשל getBalanceById) — הקטע מתחילת ה-class / constructor שלפניו ועד אחריו,
+    כדי לראות מה הבסיס (this.url) של השירות הזה. קריאה בלבד של קבצי ה-JS."""
+    root = base() + 'adminUi/'
+    req = urllib.request.Request(root, headers={'User-Agent': UA})
+    html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'replace')
+    out = []
+    for src in re.findall(r'<script[^>]+src="([^"]+\.js)"', html)[:12]:
+        try:
+            js = urllib.request.urlopen(urllib.request.Request(urllib.parse.urljoin(root, src), headers={'User-Agent': UA}), timeout=30).read(6_000_000).decode('utf-8', 'replace')
+        except Exception:
+            continue
+        for m in re.finditer(re.escape(name), js):
+            a = max(0, m.start() - back)
+            seg = js[a:m.start()]
+            k = max(seg.rfind('constructor('), seg.rfind('class '))
+            if k > 0:
+                a += k
+            out.append('%s @%d:\n%s' % (src.rsplit('/', 1)[-1], m.start(), js[a:m.end() + fwd]))
+            if len(out) >= limit:
+                return out
+    return out or ['לא נמצא: ' + name]
+
+
 def discover_paths(force=False):
     """נתיבי ה-API שמסך הניהול של המקווה עצמו קורא להם (מתוך קבצי ה-JS שלו) — שקשורים לתשלומים.
     רק קריאה של קבצי האתר הציבוריים; נשמר בזיכרון ליום."""
