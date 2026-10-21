@@ -12011,6 +12011,26 @@ def _dkey(last, first):
     return (_fz(last or '') + '|' + _fz(first or '')).strip('|')
 
 
+def remember_deleted_contact(con, did, old, new):
+    """מאיר: "הכתובת... עידכנתי כבר 3 פעמים ע"י שמחקתי... והנה שוב הכל חזר". מה שנמחק ביד (בכרטיס או
+    בקישור האישי) נרשם כדחוי — וההשלמה האוטומטית מהחיובים (backfill_from_recon) לא מחזירה אותו.
+    old/new: dict עם phone / addr (מה שהיה ומה שנשמר)."""
+    now = today_iso()
+    try:
+        if 'phone' in new:
+            o = [p.strip() for p in re.split(r'[/,;]', old.get('phone') or '') if p.strip()]
+            n = {_ph10(p) for p in re.split(r'[/,;]', new.get('phone') or '') if p.strip()}
+            if o and not n:
+                con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) VALUES(?,'phone','*',?)", (did, now))
+            for p in o:
+                if _ph10(p) and _ph10(p) not in n:
+                    con.execute("INSERT INTO sugg_reject(donor_id,kind,val,created) VALUES(?,'phone',?,?)", (did, p, now))
+        if 'addr' in new and (old.get('addr') or '').strip() and not (new.get('addr') or '').strip():
+            con.execute("INSERT OR IGNORE INTO addr_reject(donor_id,addr,created) VALUES(?,'*',?)", (did, now))
+    except Exception as e:
+        print('  remember_deleted_contact:', e)
+
+
 def backfill_from_recon(con):
     """מאיר: "היא תרמה לפני חודשיים ולא נכנס לפרטים שלה כלום." החיוב מביא
     איתו אימייל, טלפון וכתובת — כאן הם נכנסים לכרטיס של התורם שהחיוב שויך
@@ -12053,13 +12073,20 @@ def backfill_from_recon(con):
             have = emails_of(d['email'])
             sets['email'] = ', '.join(have + [em]) if have else em
         ph = (r['phone'] or '').strip()
-        if re.fullmatch(r'\d{10}', ph):
+        if re.fullmatch(r'05\d{8}', ph):
+            ph = '+972 %s-%s-%s' % (ph[1:3], ph[3:6], ph[6:])      # ישראלי שנרשם בחיוב בלי קידומת
+        elif re.fullmatch(r'\d{10}', ph):
             ph = '+1 %s-%s-%s' % (ph[:3], ph[3:6], ph[6:])
-        if ph and len(_ph10(ph)) >= 7:
+        try:
+            rej_ph = {(_ph10(x['val']) or x['val']) for x in con.execute("SELECT val FROM sugg_reject WHERE donor_id=? AND kind='phone'", (did,))}
+            rej_ad = {(x['addr'] or '').strip() for x in con.execute("SELECT addr FROM addr_reject WHERE donor_id=?", (did,))}
+        except Exception:
+            rej_ph, rej_ad = set(), set()
+        if ph and len(_ph10(ph)) >= 7 and '*' not in rej_ph and _ph10(ph) not in rej_ph:
             cur = [p.strip() for p in re.split(r'[/,]', d['phone'] or '') if p.strip()]
             if _ph10(ph) not in {_ph10(p) for p in cur}:
                 sets['phone'] = ' / '.join(cur + [ph])
-        if (r['addr'] or '').strip() and not (d['addr'] or '').strip():
+        if (r['addr'] or '').strip() and not (d['addr'] or '').strip() and '*' not in rej_ad:
             st_ = (r['state'] or '').strip().upper()
             parts = [_tc(r['addr']), _tc(r['city']), ' '.join(x for x in (st_, (r['zip'] or '').strip()) if x)]
             sets['addr'] = ', '.join(x for x in parts if x) + ', US'
@@ -15049,6 +15076,7 @@ def cardlink_save(con, did, b):
     if upd:
         if 'email' in upd and (d['email'] or '').strip():
             upd['email'] = upd['email'] + ', ' + (d['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
+        remember_deleted_contact(con, did, {'phone': d['phone'], 'addr': d['addr']}, upd)
         con.execute("UPDATE donors SET %s WHERE id=?" % ', '.join('%s=?' % k for k in upd), list(upd.values()) + [did])
         out['changes'] = len(upd)
     nn = re.sub(r'\s+', ' ', str(b.get('names') or '')).strip()
@@ -20853,6 +20881,10 @@ class H(BaseHTTPRequestHandler):
             linked = 0
             if fields:
                 con = db()
+                if 'phone' in fields or 'addr' in fields:
+                    _old = con.execute("SELECT phone,addr FROM donors WHERE id=?", (did,)).fetchone()
+                    if _old:
+                        remember_deleted_contact(con, did, {'phone': _old['phone'], 'addr': _old['addr']}, fields)
                 con.execute("UPDATE donors SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",
                             list(fields.values()) + [did]); con.commit()
                 # מאיר: "זה אמור להסתנכרן לפי האימייל". ברגע שנוספת כתובת
