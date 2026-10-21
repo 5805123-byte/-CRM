@@ -19911,6 +19911,8 @@ class H(BaseHTTPRequestHandler):
             try:
                 if q == '__endpoints__':
                     return self._send(200, '\n'.join(_mk.ui_endpoints()).encode('utf-8'), 'text/plain; charset=utf-8')
+                if q == '__urls__':
+                    return self._send(200, '\n\n'.join(_mk.ui_service_urls()).encode('utf-8'), 'text/plain; charset=utf-8')
                 r = _mk.grep_ui(q)
             except Exception as e:
                 return self._send(200, ('שגיאה: %s' % e).encode('utf-8'), 'text/plain; charset=utf-8')

@@ -288,9 +288,30 @@ def update_client(cid, changes):
     return res if isinstance(res, dict) else obj
 
 
+# getBalance / addCredit — במסך המקווה הם יושבים בשירות שה-url שלו לא ידוע לנו (הנתיב הישיר החזיר 404).
+# מנסים כמה בסיסים ושומרים את זה שעבד
+_BAL = {'prefix': None}
+_BAL_PREFIXES = ('', 'Client/', 'Balance/', 'Credit/', 'Purchase/', 'Pulse/', 'Clients/', 'api/')
+
+
+def _bal_call(method, path, body=None):
+    """קריאה עם הבסיס שעבד; 404 → מנסים את הבא."""
+    tries = [_BAL['prefix']] if _BAL['prefix'] is not None else []
+    tries += [p for p in _BAL_PREFIXES if p != _BAL['prefix']]
+    last = (0, None)
+    for p in tries:
+        code, res = call(method, p + path, body=body, timeout=30)
+        if code != 404:
+            if 200 <= code < 300:
+                _BAL['prefix'] = p
+            return code, res
+        last = (code, res)
+    return last
+
+
 def balance(cid):
-    """GET /getBalance/{id} — היתרה של הלקוח כמו שמסך המקווה קורא אותה (getBalanceById). באגורות."""
-    code, res = call('GET', 'getBalance/%s' % cid, timeout=20)
+    """היתרה של הלקוח כמו שמסך המקווה קורא אותה (getBalanceById → GET getBalance/{id})."""
+    code, res = _bal_call('GET', 'getBalance/%s' % cid)
     if code != 200:
         raise RuntimeError('קריאת היתרה מהמקווה נכשלה: %s' % (LAST.get('error') or code))
     v = res
@@ -306,13 +327,35 @@ def balance(cid):
 
 
 def add_credit(cid, amount):
-    """POST /addCredit/{id} {amount} — מה שכפתור "הוספת יתרה" / "הפחתת יתרה" במסך המקווה עושה (addCreditById).
+    """מה שכפתור "הוספת יתרה" / "הפחתת יתרה" במסך המקווה עושה (addCreditById → POST addCredit/{id} {amount}).
     סכום שלילי = הפחתה."""
-    code, res = call('POST', 'addCredit/%s' % cid, body={'amount': amount}, timeout=30)
+    code, res = _bal_call('POST', 'addCredit/%s' % cid, body={'amount': amount})
     if not (200 <= code < 300):
         raise RuntimeError('עדכון היתרה במקווה נכשל: %s' % (LAST.get('error') or code))
     _ONE.pop(str(cid), None)
     return res
+
+
+def ui_service_urls():
+    """אבחון: הבסיס (this.url) של כל שירות במסך הניהול, עם שמות הפונקציות שלו — כדי לדעת תחת איזה נתיב
+    יושבות קריאות כמו getBalance. קריאה בלבד של קבצי ה-JS."""
+    root = base() + 'adminUi/'
+    req = urllib.request.Request(root, headers={'User-Agent': UA})
+    html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'replace')
+    out = []
+    for src in re.findall(r'<script[^>]+src="([^"]+\.js)"', html)[:12]:
+        try:
+            js = urllib.request.urlopen(urllib.request.Request(urllib.parse.urljoin(root, src), headers={'User-Agent': UA}), timeout=30).read(6_000_000).decode('utf-8', 'replace')
+        except Exception:
+            continue
+        for m in re.finditer(r'this\.url\s*=\s*(`[^`]{1,200}`|[^,;}]{1,160})', js):
+            seg = js[m.end():m.end() + 2500]
+            fns = re.findall(r'(\w+)\([^)]{0,40}\)\{return this\.http\.(?:get|post|put|patch|delete)\(`\$\{this\.url\}/([^`]+)`', seg)
+            if fns:
+                out.append('%s\n    ' % m.group(1).strip() + '\n    '.join('%s → %s' % (f, p) for f, p in fns[:40]))
+    for m in re.finditer(r'(apiUrl|baseUrl|serverUrl|apiBase)\s*[:=]\s*["\'`]([^"\'`]{4,160})', html):
+        out.append('%s = %s' % (m.group(1), m.group(2)))
+    return out
 
 
 def set_group(cid, group_id):
