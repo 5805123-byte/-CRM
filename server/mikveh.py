@@ -288,30 +288,12 @@ def update_client(cid, changes):
     return res if isinstance(res, dict) else obj
 
 
-# getBalance / addCredit — במסך המקווה הם יושבים בשירות שה-url שלו לא ידוע לנו (הנתיב הישיר החזיר 404).
-# מנסים כמה בסיסים ושומרים את זה שעבד
-_BAL = {'prefix': None}
-_BAL_PREFIXES = ('', 'Client/', 'Balance/', 'Credit/', 'Purchase/', 'Pulse/', 'Clients/', 'api/')
-
-
-def _bal_call(method, path, body=None):
-    """קריאה עם הבסיס שעבד; 404 → מנסים את הבא."""
-    tries = [_BAL['prefix']] if _BAL['prefix'] is not None else []
-    tries += [p for p in _BAL_PREFIXES if p != _BAL['prefix']]
-    last = (0, None)
-    for p in tries:
-        code, res = call(method, p + path, body=body, timeout=30)
-        if code != 404:
-            if 200 <= code < 300:
-                _BAL['prefix'] = p
-            return code, res
-        last = (code, res)
-    return last
-
-
 def balance(cid):
-    """היתרה של הלקוח כמו שמסך המקווה קורא אותה (getBalanceById → GET getBalance/{id})."""
-    code, res = _bal_call('GET', 'getBalance/%s' % cid)
+    """היתרה של הלקוח כמו שמסך המקווה קורא אותה (getBalanceById → GET getBalance/{id}; אותו שירות כמו Group/Club/User).
+    404 = אין ללקוח רשומת יתרה עדיין (הקוביה מראה "—") → 0."""
+    code, res = call('GET', 'getBalance/%s' % cid, timeout=20)
+    if code == 404:
+        return 0
     if code != 200:
         raise RuntimeError('קריאת היתרה מהמקווה נכשלה: %s' % (LAST.get('error') or code))
     v = res
@@ -329,7 +311,7 @@ def balance(cid):
 def add_credit(cid, amount):
     """מה שכפתור "הוספת יתרה" / "הפחתת יתרה" במסך המקווה עושה (addCreditById → POST addCredit/{id} {amount}).
     סכום שלילי = הפחתה."""
-    code, res = _bal_call('POST', 'addCredit/%s' % cid, body={'amount': amount})
+    code, res = call('POST', 'addCredit/%s' % cid, body={'amount': amount}, timeout=30)
     if not (200 <= code < 300):
         raise RuntimeError('עדכון היתרה במקווה נכשל: %s' % (LAST.get('error') or code))
     _ONE.pop(str(cid), None)

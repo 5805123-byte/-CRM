@@ -2476,7 +2476,7 @@ async function mkBalanceEdit(c){
   const cur=c.balance!=null?c.balance/100:null;
   const v=await uiPrompt('היתרה של '+mkName(c)+' במקווה'+(cur!=null?' (עכשיו ₪'+cur.toLocaleString('he-IL')+')':'')+'\nכתוב יתרה חדשה בש"ח, או +50 / -50 כדי להוסיף / להוריד:', cur!=null?String(cur):'');
   if(v===null)return;const t=String(v).replace(/[₪,\s]/g,'');if(!t)return;
-  let n;if(/^[+-]/.test(t)){if(cur==null){toast('אין יתרה נוכחית — כתוב סכום מלא');return;}n=cur+parseFloat(t);}else n=parseFloat(t);
+  let n;if(/^[+-]/.test(t))n=(cur||0)+parseFloat(t);else n=parseFloat(t);
   if(isNaN(n)){toast('סכום לא תקין');return;}
   const note=await uiPrompt('הערה (לא חובה) — למשל: שילם 50 במזומן','');if(note===null)return;
   const el=document.getElementById('mkbal');if(el)el.querySelector('b').innerHTML='<span class="mkspin"></span>';
