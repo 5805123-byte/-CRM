@@ -8666,11 +8666,11 @@ function wireClkSel(sel){
 function renderContacts(d){
   const el=document.getElementById('clog');if(!el)return;
   // הכותרת כבר אומרת מה זה — אין צורך לחזור על "בוצע:" או "שלחנו:" גם בגוף
-  const csum=c=>String(c.summary||'').replace(/^✓ בוצע:\s*/,'').replace(/^📤 (עניתי|שלחנו|נשלח):\s*/,'');
+  const csum=c=>String(c.summary||'').replace(/^✓ בוצע:\s*/,'').replace(/^📤 (עניתי|שלחנו|נשלח):\s*/,'').replace(/^🔗 (התורם עדכן דרך הקישור האישי:\s*)?/,'');
   const isRep=c=>!!c.reply_to;
   // כותרת השורה: פנייה שהגיעה מהתורם, מייל ששלחנו, תשובה שמאיר ענה, או משימה
-  const head=c=>isRep(c)?'📤 עניתי לו':(c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':esc(c.channel)));
-  const rowHTML=c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}${isRep(c)?' replyrow':''}"><div class="pi"><b>${head(c)}</b> <small>${esc(c.date||'')}${hhmm(c.at)?(' · '+hhmm(c.at)):''}</small>${c.direction==='out'&&c.tracked?(c.opened_at?` <span class="mopen yes" title="המייל נפתח">👁 נפתח ${esc(String(c.opened_at).slice(5,16).replace('T',' '))}${c.opens>1?' ×'+c.opens:''}</span>`:' <span class="mopen no" title="עדיין לא נפתח אצל הנמען">✉️ לא נפתח עדיין</span>'):''}${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
+  const head=c=>isRep(c)?'📤 עניתי לו':(c.direction==='out'?'📤 שלחנו':(c.task_id?'✅ משימה שבוצעה':(c.channel==='קישור'?'🔗 התורם עדכן דרך הקישור האישי':esc(c.channel))));
+  const rowHTML=c=>`<div class="logrow${c.direction==='out'?' outmail':''}${c.task_id?' taskdone':''}${isRep(c)?' replyrow':''}${c.channel==='קישור'?' linkrow':''}"><div class="pi"><b>${head(c)}</b> <small>${esc(c.date||'')}${hhmm(c.at)?(' · '+hhmm(c.at)):''}</small>${c.direction==='out'&&c.tracked?(c.opened_at?` <span class="mopen yes" title="המייל נפתח">👁 נפתח ${esc(String(c.opened_at).slice(5,16).replace('T',' '))}${c.opens>1?' ×'+c.opens:''}</span>`:' <span class="mopen no" title="עדיין לא נפתח אצל הנמען">✉️ לא נפתח עדיין</span>'):''}${c.next_date?(' · <span style="color:var(--no)">חזור: '+esc(c.next_date)+'</span>'):''}<br>${esc(csum(c))}${(c.body||'').trim()?`<details class="mailfull"><summary>הצג את המייל המלא${(c.body_he||'').trim()?' (בעברית)':''}</summary>
       ${(c.body_he||'').trim()?`<pre class="mhe">${esc(c.body_he)}</pre>
         <details class="morig"><summary>🔤 הצג את המקור באנגלית</summary><pre>${esc(c.body)}</pre></details>`
       :`<pre>${esc(c.body)}</pre>${/[A-Za-z]{4}/.test(c.body||'')?`<button class="btn sm ghost mtr" data-cid="${c.id}">🌐 תרגם לעברית</button>`:''}`}
