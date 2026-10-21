@@ -13348,6 +13348,7 @@ AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin
 def auth_hours(role):
     return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+               '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -14529,6 +14530,169 @@ def _usd(n):
     except (TypeError, ValueError):
         n = 0.0
     return format(n, ',.0f') if abs(n - round(n)) < .005 else format(n, ',.2f')
+
+
+# ---------------- קישור אישי לתורם: עדכון כרטיס אשראי, שמות לתפילה וכתובת ----------------
+# מאיר: "תבנה לי לינק שאוכל לשלוח לתורמים לעדכן כרטיס אשראי, לווצאפ או לאימייל, בכמה מילים באנגלית
+# כל אחד עם השם שלו… שיעדכן את הכרטיס ואת התוקף, גם שזה ישלח לו את השמות שמתפללים עליו ואת הכתובת,
+# ואם יש שינוי שיתקן, ותכתוב שהכרטיס מוצפן וישר לחברת הסליקה". הכרטיס נכנס בטופס המאובטח של בנק ווסט
+# (nonce) — המספר לא עובר אצלנו. שינוי בשמות לא נכנס לבד לקוויטל — נכנס לחלון הבדיקה (הכלל: בלי מיזוג לבד)
+def _link_secret():
+    con = db()
+    try:
+        k = kv_get(con, 'link_secret', '')
+        if not k:
+            k = os.urandom(32).hex()
+            kv_set(con, 'link_secret', k)
+            con.commit()
+        return k.encode('ascii')
+    finally:
+        con.close()
+
+
+def cardlink_token(did, days=30):
+    exp = int(time.time()) + int(days) * 86400
+    body = '%d.%d' % (int(did), exp)
+    return body + '.' + hmac.new(_link_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:32]
+
+
+def cardlink_check(tok):
+    """-> donor_id, או 0 אם הקישור מזויף / פג."""
+    parts = str(tok or '').split('.')
+    if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        return 0
+    want = hmac.new(_link_secret(), ('%s.%s' % (parts[0], parts[1])).encode('ascii'), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(want, parts[2]) or int(parts[1]) < time.time():
+        return 0
+    return int(parts[0])
+
+
+def cardlink_name(d):
+    return (d['english'] or '').strip() or ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or 'Friend'
+
+
+def cardlink_names(con, did):
+    rows = con.execute("SELECT text FROM prayers WHERE donor_id=? ORDER BY id", (did,)).fetchall()
+    return '\n'.join(x for x in (str(r['text'] or '').strip() for r in rows) if x)
+
+
+def cardlink_message(d, url):
+    """ההודעה באנגלית (וואטסאפ / מייל) — קצרה, עם השם שלו."""
+    nm = cardlink_name(d)
+    body = ('Dear %s,\n\nThank you for your partnership with Kollel Chatzot.\n'
+            'Please take a moment to update your credit card and its expiry date, and to check the names we daven for '
+            'and your mailing address, at your personal secure link:\n%s\n\n'
+            'Your card details are encrypted and go directly to our payment processor. They are never seen or stored by us.\n\n'
+            'With appreciation,\nKollel Chatzot' % (nm, url))
+    return {'subject': 'Kollel Chatzot - please update your card', 'body': body}
+
+
+CARDLINK_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzot - update your details</title>\n<style>body{margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:560px;margin:0 auto;padding:18px 16px 40px}.hd{border-bottom:3px solid #9c7a2e;padding:10px 0 8px;margin-bottom:16px}\n.hd b{font-size:24px;color:#7a1f1f}.hd small{display:block;letter-spacing:2px;color:#9c7a2e;font-size:12px}\nh3{font-size:16px;color:#7a1f1f;margin:22px 0 6px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:110px;direction:rtl;text-align:right;font-family:Arial,sans-serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:8px;min-height:120px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\n.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}.chk input{width:auto}\nbutton{width:100%%;margin-top:18px;background:#7a1f1f;color:#fff;border:0;border-radius:10px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}\nbutton:disabled{opacity:.6}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px}\n.err{color:#b8452f;font-size:14px;margin-top:8px}.ftr{font-size:12px;color:#6b6249;margin-top:26px;text-align:center}</style></head>\n<body><div class="wrap"><div class="hd"><b>Kollel Chatzot</b><small>ERETZ YISROEL &middot; TORAH AT CHATZOT</small></div>\n<p>Dear %(name)s,</p><p>Thank you for your partnership. Please review the details below and update anything that has changed.</p>\n<form id="f">\n<h3>1 &middot; Credit card</h3>\n<label class="chk"><input type="checkbox" id="newcard" checked> I am entering a new card / new expiry date</label>\n%(card)s\n<h3>2 &middot; Names we daven for at Chatzot</h3>\n<div class="small">Please check the Hebrew names (name ben/bas mother\'s name) and correct anything that has changed. Changes are reviewed by our office before they are entered.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<h3>3 &middot; Contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="submit" id="go">Save my details</button><div class="err" id="err"></div></form>\n<div class="ok" id="done" hidden></div>\n<div class="ftr">Kollel Chatzot &middot; 1540 40th Street, Brooklyn, NY 11218 &middot; 718-972-7169 &middot; chatzot18@gmail.com</div></div>\n<script>\nvar KEY=%(key)s,HT=null;\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:true,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\ndocument.getElementById(\'newcard\').onchange=function(){document.getElementById(\'card\').style.display=this.checked?\'\':\'none\';};\ndocument.getElementById(\'f\').onsubmit=async function(ev){ev.preventDefault();var err=document.getElementById(\'err\'),go=document.getElementById(\'go\');err.textContent=\'\';\n  var g=function(id){return document.getElementById(id).value.trim();};\n  var body={names:g(\'names\'),addr:g(\'addr\'),city:g(\'city\'),zip:g(\'zip\'),country:g(\'country\'),email:g(\'email\'),phone:g(\'phone\')};\n  if(document.getElementById(\'newcard\').checked){if(!HT){err.textContent=\'The secure card form is not loaded yet. Please wait a moment, or uncheck the card option.\';return;}\n    go.disabled=true;go.textContent=\'Securing your card...\';\n    try{var tk=await HT.getNonceToken();body.nonce=tk.nonce;body.exp_m=tk.expiryMonth;body.exp_y=tk.expiryYear;body.last4=tk.last4;body.card_type=tk.cardType;}\n    catch(e){go.disabled=false;go.textContent=\'Save my details\';err.textContent=\'Please check the card details\'+((e&&e.fieldErrors&&e.fieldErrors.length)?(\': \'+e.fieldErrors.join(\', \')):\'\')+\'.\';return;}}\n  go.disabled=true;go.textContent=\'Saving...\';\n  var r=null;try{r=await (await fetch(location.pathname.replace(\'/u/\',\'/api/u/\')+\'/save\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){}\n  if(!r||!r.ok){go.disabled=false;go.textContent=\'Save my details\';err.textContent=(r&&r.error)||\'Something went wrong. Please try again or call us.\';return;}\n  document.getElementById(\'f\').hidden=true;var d=document.getElementById(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> \'+(r.card_ok?\'Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. \':\'\')+(r.changes?\'Your details were updated. \':\'\')+(r.names_changed?\'The name changes were sent to our office for review. \':\'\')+\'May you merit all the Brachos of the Torah of Chatzot.\';};\n</script></body></html>'
+
+
+def cardlink_page(con, did):
+    import banquest as _bq
+    import html as _h
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return None
+    e = _h.escape
+    key, js = _bq.token_key(), _bq.token_js()
+    names = cardlink_names(con, did)
+    em = (emails_of(d['email'] or '') or [''])[0]
+    card = ('<div id="card" class="cardbox"></div><div class="small">&#128274; Your card number is entered in an encrypted form of our payment '
+            'processor (Banquest) and is sent directly to them. It never passes through or is stored on our systems.</div>'
+            if key else '<div class="warn">The secure card form is temporarily unavailable. Please call us at 718-972-7169.</div>')
+    return (CARDLINK_PAGE % {'name': e(cardlink_name(d)), 'card': card, 'names': e(names), 'addr': e(d['addr'] or ''), 'city': e(d['city'] or ''),
+                             'zip': e(d['zip'] or ''), 'country': e(d['country'] or ''), 'email': e(em), 'phone': e(d['phone'] or ''),
+                             'key': json.dumps(key or ''), 'js': json.dumps(js)}).encode('utf-8')
+
+
+def cardlink_save(con, did, b):
+    """מה שהתורם מילא בקישור: כתובת / מייל / טלפון — נכנסים לכרטיס; שמות — לחלון הבדיקה; כרטיס — נשמר
+    בבנק ווסט ועובר להוראות הקבע הפעילות שלו. הכל נרשם בקשר של התורם."""
+    import banquest as _bq
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return {'ok': False, 'error': 'not found'}
+    out = {'ok': True, 'card_ok': False, 'changes': 0, 'names_changed': False, 'moved': 0}
+    lines = []
+    upd = {}
+    for k, lim in (('addr', 160), ('city', 80), ('zip', 20), ('country', 60), ('email', 120), ('phone', 60)):
+        v = str(b.get(k) or '').strip()[:lim]
+        if k == 'email':
+            if v and '@' not in v:
+                continue
+            cur = (emails_of(d['email'] or '') or [''])[0]
+        else:
+            cur = str(d[k] or '').strip()
+        if v and v != cur:
+            upd[k] = v
+            lines.append('%s: "%s" → "%s"' % ({'addr': 'כתובת', 'city': 'עיר', 'zip': 'מיקוד', 'country': 'מדינה', 'email': 'מייל', 'phone': 'טלפון'}[k], cur, v))
+    if upd:
+        if 'email' in upd and (d['email'] or '').strip():
+            upd['email'] = upd['email'] + ', ' + (d['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
+        con.execute("UPDATE donors SET %s WHERE id=?" % ', '.join('%s=?' % k for k in upd), list(upd.values()) + [did])
+        out['changes'] = len(upd)
+    nn = re.sub(r'\s+', ' ', str(b.get('names') or '')).strip()
+    cur_n = re.sub(r'\s+', ' ', cardlink_names(con, did)).strip()
+    if nn and nn != cur_n:
+        mid = 'cardlink:%d:%d' % (did, int(time.time()))
+        con.execute("""INSERT INTO intake(message_id,from_name,from_email,subject,received,body,names,donor_id,status,created)
+                       VALUES(?,?,?,?,?,?,?,?,'new',?)""",
+                    (mid, '🔗 ' + cardlink_name(d), (emails_of(d['email'] or '') or [''])[0], 'שמות מעודכנים מהקישור האישי', now_iso(),
+                     str(b.get('names') or '').strip()[:4000], str(b.get('names') or '').strip()[:4000], did, today_iso()))
+        out['names_changed'] = True
+        lines.append('שמות לתפילה: נשלח תיקון — ממתין לבדיקה בחלון "קוויטל מהמייל"')
+    nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
+    if nonce:
+        cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
+        nm = cardlink_name(d)
+        toks = (d['english'] or '').split()
+        em = upd.get('email', '').split(',')[0].strip() or (emails_of(d['email'] or '') or [''])[0]
+        cid = cu['id'] if cu else 0
+        if not cid:
+            code, res = _bq.create_customer(nm, first=(' '.join(toks[:-1]) if len(toks) > 1 else ''), last=(toks[-1] if toks else ''),
+                                            email=em, phone=d['phone'] or '', number=did)
+            if code in (200, 201) and isinstance(res, dict) and res.get('id'):
+                cid = int(res['id'])
+                con.execute("INSERT OR REPLACE INTO bq_cust(id,identifier,first,last,email,phone,number,active,donor_id,manual,synced) "
+                            "VALUES(?,?,?,?,?,?,?,1,?,1,?)", (cid, nm, res.get('first_name') or '', res.get('last_name') or '',
+                                                            em, d['phone'] or '', str(did), did, now_iso()))
+            else:
+                out['error'] = 'The card could not be saved (customer): ' + str(_bq.LAST.get('error') or code)
+        if cid:
+            code, res = _bq.create_pm_or_existing(cid, 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'), name=nm[:120], last4=str(b.get('last4') or ''))
+            if code in (200, 201) and isinstance(res, dict) and res.get('id'):
+                pm = int(res['id'])
+                l4 = res.get('last4') or b.get('last4') or ''
+                ct = res.get('card_type') or b.get('card_type') or ''
+                con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,1,?)",
+                            (pm, cid, ct, l4, int(res.get('expiry_month') or b.get('exp_m') or 0), int(res.get('expiry_year') or b.get('exp_y') or 0), nm))
+                out.update(card_ok=True, last4=l4)
+                moved, warns = 0, []
+                for row in con.execute("SELECT * FROM bq_sched WHERE customer_id=? AND active=1 AND COALESCE(pm_id,0)!=?", (cid, pm)).fetchall():
+                    _nid, warn, fatal = bq_sched_set_pm(con, row, pm)
+                    if fatal:
+                        warns.append(fatal)
+                    else:
+                        moved += 1
+                        if warn:
+                            warns.append(warn)
+                out['moved'] = moved
+                lines.append('💳 כרטיס חדש: %s •••• %s · תוקף %02d/%s%s%s' % (ct, l4, int(b.get('exp_m') or 0), str(b.get('exp_y') or '')[-2:],
+                                                                   (' · עבר ל-%d הוראות קבע' % moved) if moved else '',
+                                                                   (' · ⚠️ ' + ' · '.join(warns)) if warns else ''))
+            else:
+                out['error'] = 'The card could not be saved: ' + str(_bq.LAST.get('error') or code)
+                lines.append('⚠️ ניסה להכניס כרטיס חדש ולא נשמר: ' + str(_bq.LAST.get('error') or code))
+    if lines:
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                    (did, today_iso(), 'קישור', '🔗 התורם עדכן דרך הקישור האישי: ' + ' · '.join(lines), '', now_iso()))
+    con.commit()
+    if out.get('error') and not out['card_ok'] and not lines:
+        out['ok'] = False
+    return out
 
 
 def receipt_us_mail(con, name, num, amt, dd, method, donation_id):
@@ -16952,6 +17116,19 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        m = re.match(r'/u/([0-9.a-f]+)$', self.path.split('?')[0])
+        if m:
+            did = cardlink_check(m.group(1))
+            if not did:
+                return self._send(404, '<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:30px">This link has expired. Please contact Kollel Chatzot at 718-972-7169.</body>'.encode('utf-8'), 'text/html')
+            con = db()
+            try:
+                page = cardlink_page(con, did)
+            finally:
+                con.close()
+            if not page:
+                return self._send(404, {'ok': False})
+            return self._send(200, page, 'text/html')
         if self.path.split('?')[0] in ('/api/receipts/preview', '/api/receipts/preview.jpg'):
             # מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — תצוגה מקדימה: המייל כמו שיישלח,
             # ותמונת הקבלה. לא שולח ולא שומר קבלה
@@ -25327,6 +25504,55 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        m = re.match(r'/api/u/([0-9.a-f]+)/save$', self.path)
+        if m:
+            did = cardlink_check(m.group(1))
+            if not did:
+                return self._send(200, {'ok': False, 'error': 'This link has expired. Please contact Kollel Chatzot.'})
+            con = db()
+            try:
+                out = cardlink_save(con, did, b)
+            except Exception as e:
+                out = {'ok': False, 'error': 'Something went wrong: ' + str(e)[:120]}
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
+        m = re.match(r'/api/donor/(\d+)/cardlink(/send)?$', self.path)
+        if m:
+            # 🔗 קישור אישי לתורם לעדכון כרטיס — יצירה (קישור + הודעה באנגלית), או שליחה במייל אחרי אישור
+            con = db()
+            try:
+                d = con.execute("SELECT * FROM donors WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not d:
+                    return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+                base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+                url = base_url + '/u/' + cardlink_token(d['id'])
+                msg = cardlink_message(d, url)
+                if not m.group(2):
+                    return self._send(200, {'ok': True, 'url': url, 'subject': msg['subject'], 'body': msg['body'],
+                                            'email': (emails_of(d['email'] or '') or [''])[0], 'phone': d['phone'] or '', 'name': cardlink_name(d)})
+                to = str(b.get('email') or '').strip()
+                if '@' not in to:
+                    return self._send(200, {'ok': False, 'error': 'חסר מייל'})
+                import mailer
+                if not mailer.configured():
+                    return self._send(200, {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render'})
+                subj = str(b.get('subject') or msg['subject']).strip()[:200]
+                body_ = str(b.get('body') or msg['body']).strip()[:4000]
+                res = mailer.send(to, subj, body_, rtl=False)
+                if not res.get('ok'):
+                    return self._send(200, {'ok': False, 'error': str(res.get('detail') or res.get('error') or 'השליחה נכשלה')[:160]})
+                try:
+                    log_sent_mail(d['id'], to, subj, body_, res.get('msg_id'), 0)
+                except Exception:
+                    pass
+                con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (to, d['id']))
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/parnes/(\d+)/send$', self.path)
         if m:
             # מאיר: "בקבלה שיהיה כתוב לו עבור פרנס לילה ואיזה לילה, ולזכות מי עם השמות, ואשלח לו גם את

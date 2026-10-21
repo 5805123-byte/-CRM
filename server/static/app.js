@@ -5998,6 +5998,7 @@ function cardDetails(d,body){
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
+    <button class="btn ghost dncl" data-did="${d.id}" type="button">🔗 קישור לתורם לעדכון כרטיס — וואטסאפ / מייל</button>
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
     ${debtBarHTML(d)}
@@ -17808,6 +17809,36 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 // 💳 מאיר: "אין אצל כרטיס תורם תרומה באשראי? צריך אצלו כרטיס של חיוב אשראי שיהיה קל ופשוט, וקבלה,
 // ועבור מה… הכי למעלה… עם האימייל שלו… קבלה שייצא אוטומטית לאימייל מיד". כרטיס שמור או כרטיס חדש
 // בטופס המאובטח של בנק ווסט (המספר לא עובר אצלנו); אחרי שעבר — קבלה נשלחת מיד למייל שנבחר
+// 🔗 מאיר: "תבנה לי לינק שאוכל לשלוח לתורמים לעדכן כרטיס אשראי, לווצאפ או לאימייל, בכמה מילים
+// באנגלית כל אחד עם השם שלו" — קישור אישי חתום (30 יום) + הודעה מוכנה; המייל יוצא רק אחרי אישור
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.dncl');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const d=DB.find(x=>x.id==b.dataset.did);if(!d)return;
+  const r=await api('POST','/api/donor/'+d.id+'/cardlink',{}).catch(()=>null);
+  if(!r||!r.ok){uiAlert((r&&r.error)||'לא נוצר קישור');return;}
+  const ph=(splitPhones(d.phone||'')[0]||'').trim(), wa=ph?waHref(ph,d.region):'';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>🔗 קישור אישי ל${esc(r.name)} — עדכון כרטיס, שמות וכתובת</b></div>
+    <div class="qcprev"><div class="hintxt">הקישור תקף 30 יום. בדף: טופס כרטיס מאובטח של בנק ווסט (המספר לא עובר אצלנו), השמות שמתפללים עליו לתיקון (תיקון נכנס לחלון הבדיקה, לא ישירות לקוויטל), והכתובת / מייל / טלפון. כל עדכון נרשם בקשר של התורם.</div>
+      <input id="cl_url" dir="ltr" value="${esc(r.url)}" readonly style="font-size:12px"></div>
+    <label class="fld"><span>📧 מייל</span><input id="cl_em" dir="ltr" value="${esc(r.email||'')}" placeholder="email@example.com"></label>
+    <label class="fld"><span>נושא</span><input id="cl_subj" dir="ltr" value="${esc(r.subject)}"></label>
+    <label class="fld"><span>ההודעה (אפשר לערוך)</span><textarea id="cl_body" dir="ltr" rows="9" style="font-family:Arial;font-size:13px">${esc(r.body)}</textarea></label>
+    <div class="cbtns"><button class="btn cl_copy" type="button">📋 העתק קישור</button>${wa?`<a class="btn cl_wa" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}<button class="btn bqgo cl_mail" type="button">📧 שלח במייל</button><button class="btn ghost cno" type="button">סגור</button></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id);
+  const waNumOnly=String(wa).replace(/^.*wa\.me\//,'').replace(/[^\d].*$/,'');
+  const waUrl=()=>'https://wa.me/'+waNumOnly+'?text='+encodeURIComponent(g('cl_body').value);
+  const waA=o.querySelector('.cl_wa');if(waA){waA.href=waUrl();g('cl_body').oninput=()=>{waA.href=waUrl();};}
+  o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelector('.cl_copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);toast('הקישור הועתק ✓');}catch(x){g('cl_url').select();document.execCommand('copy');toast('הקישור הועתק ✓');}};
+  o.querySelector('.cl_mail').onclick=async()=>{const em=g('cl_em').value.trim();if(!em.includes('@')){toast('מייל לא תקין');g('cl_em').focus();return;}
+    if(!await uiConfirm('לשלוח את ההודעה עם הקישור במייל אל '+em+'?','📧 כן, לשלוח','ביטול'))return;
+    const btn=o.querySelector('.cl_mail');btn.disabled=true;
+    const s2=await api('POST','/api/donor/'+d.id+'/cardlink/send',{email:em,subject:g('cl_subj').value,body:g('cl_body').value}).catch(()=>null);
+    btn.disabled=false;
+    if(!s2||!s2.ok){await uiAlert('לא נשלח:\n'+((s2&&s2.error)||'שגיאה'));return;}
+    toast('✅ נשלח ל-'+em+' — נרשם בקשר');if(!d.email)d.email=em;o.remove();};});
 // מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — המייל בדיוק כפי שיישלח (iframe),
 // הקבלה כתמונה, והתעודה אם יש. נטען מהשרת בלי לשלוח ובלי לשמור
 function rcPreviewHTML(don,certUrl){
