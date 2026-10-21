@@ -3299,6 +3299,19 @@ def ensure_schema():
     except Exception as e:
         print('  donat wedding error:', e)
 
+    # מאיר (21.10.2026): "תכניס לי ליומן מחר וגם למשימות — להעביר לדוד דנברג 3,000 ₪ ולידידיה 2,140 ₪, מחר בשעה 12"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_transfers_2026_10_22_v1'").fetchone():
+            for note in ('💸 להעביר לדוד דנברג 3,000 ₪', '💸 להעביר לידידיה 2,140 ₪'):
+                if not con.execute("SELECT 1 FROM tasks WHERE donor_id IS NULL AND due_date='2026-10-22' AND note=?", (note,)).fetchone():
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,?,?,'')",
+                                ('2026-10-22', 'other', note, '', '12:00'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_transfers_2026_10_22_v1')")
+            con.commit()
+            print('  משימות העברה 22.10.2026 12:00: נרשמו')
+    except Exception as e:
+        print('  transfers task error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
