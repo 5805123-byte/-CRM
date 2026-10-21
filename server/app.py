@@ -13415,37 +13415,59 @@ def auth_token(role):
     return body + '.' + sig
 
 
-def auth_role_of(cookie):
-    """התפקיד מהעוגייה: 'admin' / 'comm', או '' אם אין / פג / מזויף."""
-    m = re.search(r'(?:^|;\s*)kc_s=([A-Za-z0-9.]+)', cookie or '')
+# מאיר: "ביקשתי שלא יבקש סיסמא רק פעם בחודש לגבאים ולי פעם בשבוע, והוא מבקש ממני כל הזמן" —
+# הכניסה הראשית והכניסה של הגבאים ישבו באותה עוגייה (kc_s), וכל כניסה לקישור אחד מחקה את
+# הכניסה לשני. עכשיו שתי עוגיות: kc_s — הראשית (7 ימים), kc_g — גבאים (30 יום). לא דורסות זו את זו
+AUTH_COOKIES = ('kc_s', 'kc_g')
+
+
+def auth_cookie_name(role):
+    return 'kc_s' if role == 'admin' else 'kc_g'
+
+
+def _auth_parse(cookie, name):
+    """(תפקיד, פקיעה) מעוגייה אחת — או ('', 0) אם אין / פגה / מזויפת."""
+    m = re.search(r'(?:^|;\s*)%s=([A-Za-z0-9.]+)' % name, cookie or '')
     if not m:
-        return ''
+        return '', 0
     parts = m.group(1).split('.')
     if len(parts) != 4:
-        return ''
+        return '', 0
     role, exp, nonce, sig = parts
     body = '.'.join(parts[:3])
     want = hmac.new(_sess_secret(), body.encode('ascii'), hashlib.sha256).hexdigest()[:40]
     if not hmac.compare_digest(sig, want) or role not in ('admin', 'comm', 'parnes', 'gabbai'):
-        return ''
+        return '', 0
     try:
-        if int(exp) < time.time():
-            return ''
+        exp = int(exp)
     except ValueError:
-        return ''
+        return '', 0
+    if exp < time.time():
+        return '', 0
     # מאיר: "קהילה והגבאים זה אותו דבר — אותה סיסמא, אותו קישור, ושייפתח להם הקהילה, פרנס יום וקוויטל"
-    return 'gabbai' if role in ('comm', 'parnes') else role
+    return ('gabbai' if role in ('comm', 'parnes') else role), exp
+
+
+def _auth_best(cookie):
+    """הכניסה החזקה שיש במכשיר: ראשית לפני גבאים. (תפקיד, פקיעה)."""
+    best = ('', 0)
+    for name in AUTH_COOKIES:
+        role, exp = _auth_parse(cookie, name)
+        if role == 'admin':
+            return role, exp
+        if role and not best[0]:
+            best = (role, exp)
+    return best
+
+
+def auth_role_of(cookie):
+    """התפקיד מהעוגיות: 'admin' / 'gabbai', או '' אם אין / פג / מזויף."""
+    return _auth_best(cookie)[0]
 
 
 def auth_exp_of(cookie):
-    """מתי פגה הכניסה (שניות) — כדי שגם טאבלט בלי רשת יבקש כניסה מחדש אחרי 48 שעות."""
-    if not auth_role_of(cookie):
-        return 0
-    m = re.search(r'(?:^|;\s*)kc_s=([A-Za-z0-9.]+)', cookie or '')
-    try:
-        return int(m.group(1).split('.')[1])
-    except Exception:
-        return 0
+    """מתי פגה הכניסה (שניות) — כדי שגם טאבלט בלי רשת יבקש כניסה מחדש בזמן."""
+    return _auth_best(cookie)[1]
 
 
 def google_client_id():
@@ -13528,6 +13550,14 @@ def auth_check_password(pw, ip, portal='admin'):
     if not role and portal != 'admin':
         want = (os.environ.get('CRM_PASS') or '').strip().encode('utf-8')
         role = 'admin' if (want and pw and hmac.compare_digest(pw, want)) else ''
+    # מאיר: "בגבאי לא מצליח להיכנס עם הסיסמא" — סיסמת הגבאים שהוקלדה בכניסה הראשית (למשל אחרי יציאה,
+    # שמחזירה תמיד ל-/) נכנסת כגבאי, והמסך עובר לבד ל-/gabbai. במקום "סיסמה שגויה"
+    if not role and portal == 'admin':
+        for env in _g:
+            want = (os.environ.get(env) or '').strip().encode('utf-8')
+            if want and pw and hmac.compare_digest(pw, want):
+                role = 'gabbai'
+                break
     with _AUTH_LOCK:
         if role:
             _AUTH_FAIL.pop(ip, None)
@@ -16358,9 +16388,13 @@ class H(BaseHTTPRequestHandler):
     def _ip(self):
         return (self.headers.get('X-Forwarded-For') or '').split(',')[0].strip() or self.client_address[0]
 
-    def _set_cookie(self, val, max_age):
+    def _set_cookie(self, val, max_age, name='kc_s'):
         secure = '; Secure' if (self.headers.get('X-Forwarded-Proto') or '').lower() == 'https' else ''
-        self.send_header('Set-Cookie', 'kc_s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax%s' % (val, max_age, secure))
+        self.send_header('Set-Cookie', '%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax%s' % (name, val, max_age, secure))
+
+    def _clear_cookies(self):
+        for name in AUTH_COOKIES:
+            self._set_cookie('x', 0, name)
 
     def _gate(self):
         """כניסה בסיסמה. מחזיר True אם אפשר להמשיך; אחרת כבר נשלחה תשובה (401 / 403).
@@ -16423,14 +16457,14 @@ class H(BaseHTTPRequestHandler):
             auth_logout_all()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self._set_cookie('x', 0)
+            self._clear_cookies()
             data = b'{"ok": true}'
             self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
             return False
         if path == '/api/logout':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self._set_cookie('x', 0)
+            self._clear_cookies()
             data = b'{"ok": true}'
             self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
             return False
@@ -16467,7 +16501,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(401, {'ok': False, 'error': 'סיסמה שגויה'}) or False
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self._set_cookie(auth_token(role), auth_hours(role) * 3600)
+        self._set_cookie(auth_token(role), auth_hours(role) * 3600, auth_cookie_name(role))
         data = json.dumps({'ok': True, 'role': role, 'exp': int(time.time()) + auth_hours(role) * 3600}).encode('utf-8')
         self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
         return False
