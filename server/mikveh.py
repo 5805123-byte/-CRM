@@ -288,6 +288,33 @@ def update_client(cid, changes):
     return res if isinstance(res, dict) else obj
 
 
+def balance(cid):
+    """GET /getBalance/{id} — היתרה של הלקוח כמו שמסך המקווה קורא אותה (getBalanceById). באגורות."""
+    code, res = call('GET', 'getBalance/%s' % cid, timeout=20)
+    if code != 200:
+        raise RuntimeError('קריאת היתרה מהמקווה נכשלה: %s' % (LAST.get('error') or code))
+    v = res
+    if isinstance(res, dict):
+        for k in ('balance', 'value', 'data', 'result', 'amount'):
+            if k in res:
+                v = res[k]
+                break
+    try:
+        return int(round(float(v)))
+    except (TypeError, ValueError):
+        raise RuntimeError('היתרה מהמקווה לא מובנת: %s' % str(res)[:80])
+
+
+def add_credit(cid, amount):
+    """POST /addCredit/{id} {amount} — מה שכפתור "הוספת יתרה" / "הפחתת יתרה" במסך המקווה עושה (addCreditById).
+    סכום שלילי = הפחתה."""
+    code, res = call('POST', 'addCredit/%s' % cid, body={'amount': amount}, timeout=30)
+    if not (200 <= code < 300):
+        raise RuntimeError('עדכון היתרה במקווה נכשל: %s' % (LAST.get('error') or code))
+    _ONE.pop(str(cid), None)
+    return res
+
+
 def set_group(cid, group_id):
     return update_client(cid, {'groupId': group_id})
 

@@ -22584,11 +22584,41 @@ class H(BaseHTTPRequestHandler):
             cents = int(round(bal * 100))
             note = str(b.get('note') or '').strip()[:200]
             try:
-                old = _mk.client(cid, max_age=30).get('balance')
-                _mk.update_client(cid, {'balance': cents})
-                got = _mk.client(cid).get('balance')
+                # כמו המסך של המקווה: קוראים את היתרה (getBalance), מוסיפים / מפחיתים את ההפרש (addCredit)
+                old = _mk.balance(cid)
+                delta = cents - old
+                if delta == 0:
+                    return self._send(200, {'ok': True, 'balance': old, 'same': True})
+                con0 = db()
+                try:
+                    unit = kv_get(con0, 'mk_credit_unit', '')
+                finally:
+                    con0.close()
+                # addCredit — ש"ח או אגורות? לא כתוב. שולחים קודם בש"ח (הטעות האפשרית קטנה פי 100) ובודקים
+                # ביתרה מה המקווה הבין; מהפעם השנייה כבר יודעים
+                if unit == 'agorot':
+                    _mk.add_credit(cid, delta)
+                    got = _mk.balance(cid)
+                else:
+                    amt = delta / 100.0
+                    _mk.add_credit(cid, int(amt) if amt == int(amt) else round(amt, 2))
+                    got = _mk.balance(cid)
+                    if got == old + delta:
+                        unit = 'ils'
+                    elif got == old + int(round(amt)) or got == old + int(amt):
+                        unit = 'agorot'          # המקווה הבין אגורות — משלימים את השאר
+                        _mk.add_credit(cid, delta - (got - old))
+                        got = _mk.balance(cid)
+                    if unit:
+                        con0 = db()
+                        try:
+                            kv_set(con0, 'mk_credit_unit', unit)
+                            con0.commit()
+                        finally:
+                            con0.close()
                 if got != cents:
-                    return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל היתרה לא השתנתה (%s)' % got})
+                    return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל היתרה יצאה אחרת: ₪%g (ביקשת ₪%g). תבדוק באתר המקווה' % (got / 100.0, bal)})
+                cents = got
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
             con = db()
