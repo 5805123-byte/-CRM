@@ -14592,7 +14592,8 @@ def cardlink_iz(con, d):
         for r in con.execute("SELECT avreich FROM partners WHERE donor_id=? AND COALESCE(active,1)=1 ORDER BY id", (d['id'],)):
             ws = str(r['avreich'] or '').split()
             if ws:
-                names.append('Rabbi ' + (' '.join(ws[1:] + ws[:1]) if len(ws) > 1 else ws[0]))
+                # מאיר: "שמות האברכים שהוא מחזיק שיהיה רק בעברית" — הרב + פרטי + משפחה, בלי Rabbi
+                names.append('הרב ' + (' '.join(ws[1:] + ws[:1]) if len(ws) > 1 else ws[0]))
     except Exception:
         pass
     if not names:
