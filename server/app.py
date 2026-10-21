@@ -14617,7 +14617,7 @@ def cardlink_mail_html(body, url):
             '</table></td></tr></table></body></html>' % txt)
 
 
-CARDLINK_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzot · Secure Update</title><meta property="og:title" content="Kollel Chatzot · Secure Update"><meta property="og:description" content="Your personal secure page: update your card, review your Kvitel names and confirm your address."><meta property="og:image" content="%(base)s/logo.png"><meta property="og:type" content="website">\n<style>body{margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:560px;margin:0 auto;padding:18px 16px 40px}.hd{border-bottom:3px solid #9c7a2e;padding:10px 0 8px;margin-bottom:16px}\n.hd b{font-size:24px;color:#7a1f1f}.hd small{display:block;letter-spacing:2px;color:#9c7a2e;font-size:12px}\nh3{font-size:16px;color:#7a1f1f;margin:22px 0 6px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:110px;direction:rtl;text-align:right;font-family:Arial,sans-serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:8px;min-height:120px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\n.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}.chk input{width:auto}\nbutton{width:100%%;margin-top:18px;background:#7a1f1f;color:#fff;border:0;border-radius:10px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}\nbutton:disabled{opacity:.6}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px}\n.err{color:#b8452f;font-size:14px;margin-top:8px}.ftr{font-size:12px;color:#6b6249;margin-top:26px;text-align:center}</style></head>\n<body><div class="wrap"><div class="hd"><b>Kollel Chatzot</b><small>ERETZ YISROEL &middot; TORAH AT CHATZOT</small></div>\n<p>Dear %(name)s,</p><p>Thank you for your partnership. Please review the details below and update anything that has changed.</p>\n<form id="f">\n<h3>1 &middot; Credit card</h3>\n<div class="small" style="margin-bottom:8px">If your card or its expiry date has changed, enter the new details below. If nothing has changed, simply leave this section empty.</div>\n%(card)s\n<h3>2 &middot; Names we daven for at Chatzot</h3>\n<div class="small">Please check the Hebrew names (name ben/bas mother\'s name) and correct anything that has changed. Your corrections go straight into our Kvitel.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<h3>3 &middot; Contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="submit" id="go">Save my details</button><div class="err" id="err"></div></form>\n<div class="ok" id="done" hidden></div>\n<div class="ftr">Kollel Chatzot &middot; 1540 40th Street, Brooklyn, NY 11218 &middot; 718-972-7169 &middot; chatzot18@gmail.com</div></div>\n<script>\nvar KEY=%(key)s,HT=null;\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\ndocument.getElementById(\'f\').onsubmit=async function(ev){ev.preventDefault();var err=document.getElementById(\'err\'),go=document.getElementById(\'go\');err.textContent=\'\';\n  var g=function(id){return document.getElementById(id).value.trim();};\n  var body={names:g(\'names\'),addr:g(\'addr\'),city:g(\'city\'),zip:g(\'zip\'),country:g(\'country\'),email:g(\'email\'),phone:g(\'phone\')};\n  if(HT){go.disabled=true;go.textContent=\'Checking your card...\';\n    try{var tk=await HT.getNonceToken();body.nonce=tk.nonce;body.exp_m=tk.expiryMonth;body.exp_y=tk.expiryYear;body.last4=tk.last4;body.card_type=tk.cardType;}\n    catch(e){var fe=(e&&e.fieldErrors)||[];\n      if(!(fe.length&&fe.every(function(x){return /required/i.test(String(x));}))){\n        go.disabled=false;go.textContent=\'Save my details\';err.textContent=\'Please check the card details\'+(fe.length?(\': \'+fe.join(\', \')):\'\')+\'. If you do not wish to change your card, leave the card fields empty.\';return;}}}\n  go.disabled=true;go.textContent=\'Saving...\';\n  var r=null;try{r=await (await fetch(location.pathname.replace(\'/u/\',\'/api/u/\')+\'/save\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){}\n  if(!r||!r.ok){go.disabled=false;go.textContent=\'Save my details\';err.textContent=(r&&r.error)||\'Something went wrong. Please try again or call us.\';return;}\n  document.getElementById(\'f\').hidden=true;var d=document.getElementById(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> \'+(r.card_ok?\'Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. \':\'\')+(r.changes?\'Your details were updated. \':\'\')+(r.names_changed?\'The names were updated in our Kvitel. \':\'\')+\'May you merit all the Brachos of the Torah of Chatzot.\';};\n</script></body></html>'
+CARDLINK_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzot · Secure Update</title><meta property="og:title" content="Kollel Chatzot · Secure Update"><meta property="og:description" content="Your personal secure page: update your card, review your Kvitel names and confirm your address."><meta property="og:image" content="%(base)s/logo.png"><meta property="og:type" content="website">\n<style>body{margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:560px;margin:0 auto;padding:18px 16px 40px}.hd{border-bottom:3px solid #9c7a2e;padding:10px 0 8px;margin-bottom:16px}\n.hd b{font-size:24px;color:#7a1f1f}.hd small{display:block;letter-spacing:2px;color:#9c7a2e;font-size:12px}\nh3{font-size:16px;color:#7a1f1f;margin:22px 0 6px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:110px;direction:rtl;text-align:right;font-family:Arial,sans-serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:8px;min-height:120px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\n.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}.chk input{width:auto}\nbutton{width:100%%;margin-top:18px;background:#7a1f1f;color:#fff;border:0;border-radius:10px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}\nbutton:disabled{opacity:.6}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px}\n.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}.ftr{font-size:12px;color:#6b6249;margin-top:26px;text-align:center}</style></head>\n<body><div class="wrap"><div class="hd"><b>Kollel Chatzot</b><small>ERETZ YISROEL &middot; TORAH AT CHATZOT</small></div>\n<p>Dear %(name)s,</p><p>Thank you for your partnership. Please review the details below and update anything that has changed.</p>\n<form id="f">\n<h3>1 &middot; Credit card</h3>\n<div class="small" style="margin-bottom:8px">If your card or its expiry date has changed, enter the new details below. If nothing has changed, simply leave this section empty.</div>\n%(card)s\n<h3>2 &middot; Names we daven for at Chatzot</h3>\n<div class="small">Please check the Hebrew names (name ben/bas mother\'s name) and correct anything that has changed. Your corrections go straight into our Kvitel.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<h3>3 &middot; Contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="submit" id="go">Save my details</button><div class="err" id="err"></div></form>\n<div class="ok" id="done" hidden></div>\n<div class="ftr">Kollel Chatzot &middot; 1540 40th Street, Brooklyn, NY 11218 &middot; 718-972-7169 &middot; chatzot18@gmail.com</div></div>\n<script>\nvar KEY=%(key)s,HT=null;\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\ndocument.getElementById(\'f\').onsubmit=async function(ev){ev.preventDefault();var err=document.getElementById(\'err\'),go=document.getElementById(\'go\');err.textContent=\'\';\n  var g=function(id){return document.getElementById(id).value.trim();};\n  var body={names:g(\'names\'),addr:g(\'addr\'),city:g(\'city\'),zip:g(\'zip\'),country:g(\'country\'),email:g(\'email\'),phone:g(\'phone\')};\n  if(HT){go.disabled=true;go.textContent=\'Checking your card...\';\n    try{var tk=await HT.getNonceToken();body.nonce=tk.nonce;body.exp_m=tk.expiryMonth;body.exp_y=tk.expiryYear;body.last4=tk.last4;body.card_type=tk.cardType;}\n    catch(e){var fe=(e&&e.fieldErrors)||[];\n      var empty=fe.length&&fe.some(function(x){return /card\\s*number.*required/i.test(String(x));});\n      if(!empty){go.disabled=false;go.textContent=\'Save my details\';\n        err.innerHTML=\'<b>Your card was not saved.</b> Please check the card number, expiry date and CVV\'+(fe.length?(\' (\'+fe.join(\', \')+\')\'):\'\')+\'. If you do not wish to change your card, leave all the card fields empty.\';return;}}}\n  go.disabled=true;go.textContent=\'Saving...\';\n  var r=null;try{r=await (await fetch(location.pathname.replace(\'/u/\',\'/api/u/\')+\'/save\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){}\n  if(!r||!r.ok){go.disabled=false;go.textContent=\'Save my details\';err.innerHTML=\'<b>Not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  document.getElementById(\'f\').hidden=true;var d=document.getElementById(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> \'+(r.card_ok?\'Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. \':\'\')+(r.changes?\'Your details were updated. \':\'\')+(r.names_changed?\'The names were updated in our Kvitel. \':\'\')+\'May you merit all the Brachos of the Torah of Chatzot.\';};\n</script></body></html>'
 
 
 def cardlink_page(con, did, base=''):
@@ -14647,40 +14647,15 @@ def cardlink_save(con, did, b):
         return {'ok': False, 'error': 'not found'}
     out = {'ok': True, 'card_ok': False, 'changes': 0, 'names_changed': False, 'moved': 0}
     lines = []
+    # מאיר: "אם הוא הכניס כרטיס שגוי או תוקף — שיהיה באדום ולא ייתן לו להמשיך בלי עדכון" — הכרטיס נבדק
+    # ראשון מול בנק ווסט; נכשל — שום דבר אחר לא נשמר, והדף מציג שגיאה אדומה
     upd = {}
-    for k, lim in (('addr', 160), ('city', 80), ('zip', 20), ('country', 60), ('email', 120), ('phone', 60)):
-        v = str(b.get(k) or '').strip()[:lim]
-        if k == 'email':
-            if v and '@' not in v:
-                continue
-            cur = (emails_of(d['email'] or '') or [''])[0]
-        else:
-            cur = str(d[k] or '').strip()
-        if v and v != cur:
-            upd[k] = v
-            lines.append('%s: "%s" → "%s"' % ({'addr': 'כתובת', 'city': 'עיר', 'zip': 'מיקוד', 'country': 'מדינה', 'email': 'מייל', 'phone': 'טלפון'}[k], cur, v))
-    if upd:
-        if 'email' in upd and (d['email'] or '').strip():
-            upd['email'] = upd['email'] + ', ' + (d['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
-        con.execute("UPDATE donors SET %s WHERE id=?" % ', '.join('%s=?' % k for k in upd), list(upd.values()) + [did])
-        out['changes'] = len(upd)
-    nn = re.sub(r'\s+', ' ', str(b.get('names') or '')).strip()
-    cur_n = re.sub(r'\s+', ' ', cardlink_names(con, did)).strip()
-    if nn and nn != cur_n:
-        # מאיר: "אם הוא אישית מתקן שמות בלינק שלו — אז שכן ייכנס לקוויטל שלו ישירות". הנוסח הישן נשמר בקשר
-        new_txt = re.sub(r'[ \t]+', ' ', str(b.get('names') or '')).strip()[:4000]
-        old_rows = con.execute("SELECT tier FROM prayers WHERE donor_id=? ORDER BY id", (did,)).fetchall()
-        tier = (old_rows[0]['tier'] if old_rows and old_rows[0]['tier'] else (d['tier'] or ''))
-        con.execute("DELETE FROM prayers WHERE donor_id=?", (did,))
-        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
-        out['names_changed'] = True
-        lines.append('שמות לתפילה עודכנו בקוויטל. היה: "%s" → עכשיו: "%s"' % (cur_n[:300] or '—', nn[:300]))
     nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
     if nonce:
         cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
         nm = cardlink_name(d)
         toks = (d['english'] or '').split()
-        em = upd.get('email', '').split(',')[0].strip() or (emails_of(d['email'] or '') or [''])[0]
+        em = (str(b.get('email') or '').strip() if '@' in str(b.get('email') or '') else '') or (emails_of(d['email'] or '') or [''])[0]
         cid = cu['id'] if cu else 0
         if not cid:
             code, res = _bq.create_customer(nm, first=(' '.join(toks[:-1]) if len(toks) > 1 else ''), last=(toks[-1] if toks else ''),
@@ -14717,12 +14692,44 @@ def cardlink_save(con, did, b):
             else:
                 out['error'] = 'The card could not be saved: ' + str(_bq.LAST.get('error') or code)
                 lines.append('⚠️ ניסה להכניס כרטיס חדש ולא נשמר: ' + str(_bq.LAST.get('error') or code))
+    if nonce and not out['card_ok']:
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                    (did, today_iso(), 'קישור', '🔗 ' + ' · '.join(lines), '', now_iso()))
+        con.commit()
+        return {'ok': False, 'error': 'Your card could not be saved: ' + str(out.get('error') or '').replace('The card could not be saved: ', '').replace('The card could not be saved (customer): ', '')
+                + '. Please check the card number, expiry date and CVV and try again.'}
+    upd = {}
+    for k, lim in (('addr', 160), ('city', 80), ('zip', 20), ('country', 60), ('email', 120), ('phone', 60)):
+        v = str(b.get(k) or '').strip()[:lim]
+        if k == 'email':
+            if v and '@' not in v:
+                continue
+            cur = (emails_of(d['email'] or '') or [''])[0]
+        else:
+            cur = str(d[k] or '').strip()
+        if v and v != cur:
+            upd[k] = v
+            lines.append('%s: "%s" → "%s"' % ({'addr': 'כתובת', 'city': 'עיר', 'zip': 'מיקוד', 'country': 'מדינה', 'email': 'מייל', 'phone': 'טלפון'}[k], cur, v))
+    if upd:
+        if 'email' in upd and (d['email'] or '').strip():
+            upd['email'] = upd['email'] + ', ' + (d['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
+        con.execute("UPDATE donors SET %s WHERE id=?" % ', '.join('%s=?' % k for k in upd), list(upd.values()) + [did])
+        out['changes'] = len(upd)
+    nn = re.sub(r'\s+', ' ', str(b.get('names') or '')).strip()
+    cur_n = re.sub(r'\s+', ' ', cardlink_names(con, did)).strip()
+    if nn and nn != cur_n:
+        # מאיר: "אם הוא אישית מתקן שמות בלינק שלו — אז שכן ייכנס לקוויטל שלו ישירות". הנוסח הישן נשמר בקשר
+        new_txt = re.sub(r'[ \t]+', ' ', str(b.get('names') or '')).strip()[:4000]
+        old_rows = con.execute("SELECT tier FROM prayers WHERE donor_id=? ORDER BY id", (did,)).fetchall()
+        tier = (old_rows[0]['tier'] if old_rows and old_rows[0]['tier'] else (d['tier'] or ''))
+        con.execute("DELETE FROM prayers WHERE donor_id=?", (did,))
+        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
+        out['names_changed'] = True
+        lines.append('שמות לתפילה עודכנו בקוויטל. היה: "%s" → עכשיו: "%s"' % (cur_n[:300] or '—', nn[:300]))
     if lines:
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
                     (did, today_iso(), 'קישור', '🔗 התורם עדכן דרך הקישור האישי: ' + ' · '.join(lines), '', now_iso()))
     con.commit()
-    if out.get('error') and not out['card_ok'] and not lines:
-        out['ok'] = False
     return out
 
 
