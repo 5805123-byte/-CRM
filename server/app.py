@@ -22589,33 +22589,10 @@ class H(BaseHTTPRequestHandler):
                 delta = cents - old
                 if delta == 0:
                     return self._send(200, {'ok': True, 'balance': old, 'same': True})
-                con0 = db()
-                try:
-                    unit = kv_get(con0, 'mk_credit_unit', '')
-                finally:
-                    con0.close()
-                # addCredit — ש"ח או אגורות? לא כתוב. שולחים קודם בש"ח (הטעות האפשרית קטנה פי 100) ובודקים
-                # ביתרה מה המקווה הבין; מהפעם השנייה כבר יודעים
-                if unit == 'agorot':
-                    _mk.add_credit(cid, delta)
-                    got = _mk.balance(cid)
-                else:
-                    amt = delta / 100.0
-                    _mk.add_credit(cid, int(amt) if amt == int(amt) else round(amt, 2))
-                    got = _mk.balance(cid)
-                    if got == old + delta:
-                        unit = 'ils'
-                    elif got == old + int(round(amt)) or got == old + int(amt):
-                        unit = 'agorot'          # המקווה הבין אגורות — משלימים את השאר
-                        _mk.add_credit(cid, delta - (got - old))
-                        got = _mk.balance(cid)
-                    if unit:
-                        con0 = db()
-                        try:
-                            kv_set(con0, 'mk_credit_unit', unit)
-                            con0.commit()
-                        finally:
-                            con0.close()
+                # מאיר: "אין אצלנו אגורות בכלל" — addCredit בשקלים, ואחר כך בודקים ביתרה שהמקווה קלט בדיוק את זה
+                amt = delta / 100.0
+                _mk.add_credit(cid, int(amt) if amt == int(amt) else round(amt, 2))
+                got = _mk.balance(cid)
                 if got != cents:
                     return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל היתרה יצאה אחרת: ₪%g (ביקשת ₪%g). תבדוק באתר המקווה' % (got / 100.0, bal)})
                 cents = got
