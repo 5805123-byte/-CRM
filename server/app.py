@@ -14658,7 +14658,7 @@ def cardlink_iz(con, d):
         for r in con.execute("SELECT avreich FROM partners WHERE donor_id=? AND COALESCE(active,1)=1 ORDER BY id", (d['id'],)):
             ws = str(r['avreich'] or '').split()
             if ws:
-                names.append('הרב ' + (' '.join(ws[1:] + ws[:1]) if len(ws) > 1 else ws[0]))
+                names.append('*הרב ' + (' '.join(ws[1:] + ws[:1]) if len(ws) > 1 else ws[0]) + '*')   # *…* = מודגש (וואטסאפ / מייל)
     except Exception:
         pass
     if not names:
@@ -14691,7 +14691,7 @@ def cardlink_message(d, url, con=None):
             'May the zechus of supporting Torah learning at the eis ratzon of chatzos halailah protect and shield you and your entire family, and may all the brachos and tefillos we daven for you at chatzos be fulfilled \u2014 Amen!\n\n'
             + CL_SIGNATURE) % (nm, url)
     # מאיר: "לווצאפ צריך לקצר משמעותית את הטקסט… בלי הרבה הסברים"
-    wa = ('%s\n'
+    wa = ('%s\n' + ((iz + '\n') if iz else '') +
           'Your personal secure link \u2013 update your credit card, your Kvittel names and address, or dedicate a night of learning:\n'
           '%s\n'
           'Valid for 30 days.\n\n'
@@ -14794,7 +14794,8 @@ def cardlink_mail_html(body, url, letter=False):
                     out.append('<p dir="rtl" style="margin:0 0 12px;font-size:21px;font-weight:bold;color:#7a1f1f;text-align:left;font-family:Arial,sans-serif">%s</p>' % e(texts[0]))
                     texts = texts[1:]
             if texts:
-                out.append('<p style="%s">%s</p>' % (P, '<br>'.join(e(x) for x in texts)))
+                # מאיר: "את השם של היששכר זבולון תדגיש יותר" — *שם* → מודגש בבורדו
+                out.append('<p style="%s">%s</p>' % (P, '<br>'.join(re.sub(r'\*([^*]+)\*', r'<b style="color:#7a1f1f;font-size:18px;font-family:Arial,sans-serif">\1</b>', e(x)) for x in texts)))
         if bullets:
             rows = ''.join('<tr><td valign="top" style="padding:3px 10px 3px 0;color:#9c7a2e;font-size:15px;line-height:1.65">\u25cf</td>'
                            '<td style="padding:3px 0;font-size:16px;line-height:1.65;color:#3a2f1a">%s</td></tr>' % e(ln.lstrip()[1:].strip()) for ln in bullets)
