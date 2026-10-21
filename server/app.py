@@ -14571,6 +14571,16 @@ def cardlink_name(d):
     return (d['english'] or '').strip() or ((d['first'] or '') + ' ' + (d['last'] or '')).strip() or 'Friend'
 
 
+def cardlink_salute(d):
+    """מאיר: "להוסיף לפני השם שלו ה"ה ואחרי השם את התואר הי"ו" — לאשה: מרת … תחי'."""
+    nm = cardlink_name(d)
+    try:
+        g = _gender((d['first'] or '').split()[0] if (d['first'] or '').strip() else '')
+    except Exception:
+        g = ''
+    return ('מרת %s תחי\'' % nm) if g == 'f' else ('ה"ה %s הי"ו' % nm)
+
+
 def cardlink_names(con, did):
     rows = con.execute("SELECT text FROM prayers WHERE donor_id=? ORDER BY id", (did,)).fetchall()
     return '\n'.join(x for x in (str(r['text'] or '').strip() for r in rows) if x)
@@ -14579,7 +14589,7 @@ def cardlink_names(con, did):
 def cardlink_message(d, url):
     """ההודעה באנגלית (וואטסאפ / מייל) — עדינה, עם השם שלו. מאיר: "נוסח יותר עדין ויפה…
     עדכון כרטיס אשראי מאובטח והשמות של הקוויטל… שכאן הוא יכול לשנות את הכרטיס וזה מתעדכן אצלנו מאובטח"."""
-    nm = cardlink_name(d)
+    nm = cardlink_salute(d)
     body = ('Dear %s,\n\n'
             'Warm regards from Kollel Chatzot. We have prepared a personal, secure page just for you, where you can:\n'
             '\u2022 update your credit card or its expiry date \u2014 it is saved securely with us right away,\n'
@@ -14696,7 +14706,7 @@ def cardlink_page(con, did, base=''):
     card = ('<div id="card" class="cardbox"></div><div class="small">&#128274; Your card number is entered in an encrypted form of our payment '
             'processor (Banquest) and is sent directly to them. It never passes through or is stored on our systems.</div>'
             if key else '<div class="warn">The secure card form is temporarily unavailable. Please call us at 718-972-7169.</div>')
-    return (CARDLINK_PAGE % {'name': e(cardlink_name(d)), 'card': card, 'names': e(names), 'addr': e(d['addr'] or ''), 'city': e(d['city'] or ''),
+    return (CARDLINK_PAGE % {'name': e(cardlink_salute(d)), 'card': card, 'names': e(names), 'addr': e(d['addr'] or ''), 'city': e(d['city'] or ''),
                              'zip': e(d['zip'] or ''), 'country': e(d['country'] or ''), 'email': e(em), 'phone': e(d['phone'] or ''),
                              'key': json.dumps(key or ''), 'js': json.dumps(js), 'base': e(base)}).encode('utf-8')
 
