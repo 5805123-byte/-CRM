@@ -2479,7 +2479,9 @@ def sync_mk_requests(con, days=90):
                 if '\\All' in t:
                     mb = t.split(' "/" ')[-1].strip()
                     if mb not in boxes:
-                        boxes.append(mb)
+                        # מאיר: "פניות לא עובד לי טוב, בכלל לא מסונכרן" — המיילים של נדרים פלוס עוברים בפילטר
+                        # לתווית ויוצאים מה-INBOX. "כל הדואר" כולל הכל, ולכן הוא נבדק ראשון; INBOX רק כגיבוי
+                        boxes.insert(0, mb)
         except Exception:
             pass
         ids, box_used, errs = set(), boxes[0], []

@@ -443,6 +443,33 @@ _DISC = {'at': 0.0, 'paths': [], 'files': [], 'error': ''}
 _PAYWORD = re.compile(r'pay|transact|charg|receipt|deal|invoice|purchas|order|credit|deposit|topup|history|financ|account(?!/login)', re.I)
 
 
+def grep_ui(pattern, ctx=140, limit=80):
+    """אבחון: קטעים מקוד מסך הניהול של המקווה (קבצי ה-JS הציבוריים) שמכילים ביטוי — כדי לראות איך
+    המסך שלהם מעדכן שדה (למשל יתרה). קריאה בלבד."""
+    root = base() + 'adminUi/'
+    rx = re.compile(pattern, re.I)
+    out, files = [], []
+    req = urllib.request.Request(root, headers={'User-Agent': UA})
+    html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'replace')
+    srcs = re.findall(r'<script[^>]+src="([^"]+\.js)"', html)
+    for src in srcs[:12]:
+        u = urllib.parse.urljoin(root, src)
+        try:
+            js = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': UA}), timeout=30).read(6_000_000).decode('utf-8', 'replace')
+        except Exception as e:
+            files.append('%s: %s' % (src, e)); continue
+        files.append('%s (%d KB)' % (src.rsplit('/', 1)[-1], len(js) // 1024))
+        for m in rx.finditer(js):
+            a, b = max(0, m.start() - ctx), min(len(js), m.end() + ctx)
+            out.append(js[a:b].replace('\n', ' '))
+            if len(out) >= limit:
+                break
+        if len(out) >= limit:
+            break
+    paths = sorted({m.group(0) for o in out for m in re.finditer(r'[A-Za-z]+(?:/[A-Za-z{}]+){1,3}', o) if rx.search(m.group(0))})
+    return {'files': files, 'paths': paths, 'hits': out}
+
+
 def discover_paths(force=False):
     """נתיבי ה-API שמסך הניהול של המקווה עצמו קורא להם (מתוך קבצי ה-JS שלו) — שקשורים לתשלומים.
     רק קריאה של קבצי האתר הציבוריים; נשמר בזיכרון ליום."""

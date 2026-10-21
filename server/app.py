@@ -19885,6 +19885,19 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'hmonth': hm, 'now': now_})
+        if self.path.split('?')[0] == '/api/mikveh/ui_grep':
+            # 🔍 אבחון (רק כניסה ראשית): איך מסך המקווה מעדכן שדה — למשל יתרה. ?q=balance
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            import mikveh as _mk
+            q = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('q') or ['balance'])[0][:60]
+            try:
+                r = _mk.grep_ui(q)
+            except Exception as e:
+                return self._send(200, ('שגיאה: %s' % e).encode('utf-8'), 'text/plain; charset=utf-8')
+            txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
+            txt += '\n\n---\n\n'.join(r['hits'])
+            return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
         if self.path.split('?')[0] == '/api/mikveh/towel_bill':
             # 🧺 מאיר: "לחשון זה מחיר מיוחד… הוא אמור לקבל הודעה במסך שעליו להוסיף 25 ש"ח למנוי מגבות קטנות, או 50
             # למגבות גדולות — אם הוא מעודכן למנוי מגבות ולא נגבה ממנו אוטומטית או לא שילם במזומן"
