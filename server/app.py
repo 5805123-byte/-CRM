@@ -22539,6 +22539,34 @@ class H(BaseHTTPRequestHandler):
                     con.close()
             return self._send(200, {'ok': not bad, 'actions': after, 'changed': ch,
                                     'error': ('המקווה לא שמר: ' + ', '.join(bad)) if bad else ''})
+        if self.path == '/api/mikveh/balance':
+            # 💰 מאיר: "איפה אני מעדכן לו יתרה בחשבון? כי הוא נתן חלק מזומן" — היתרה (balance) במקווה עצמו, באגורות
+            import mikveh as _mk
+            cid = str(b.get('id') or '').strip()
+            try:
+                bal = round(float(str(b.get('balance') or '0').replace(',', '').replace('₪', '').strip()), 2)
+            except ValueError:
+                return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or abs(bal) > 100000:
+                return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+            cents = int(round(bal * 100))
+            note = str(b.get('note') or '').strip()[:200]
+            try:
+                old = _mk.client(cid, max_age=30).get('balance')
+                _mk.update_client(cid, {'balance': cents})
+                got = _mk.client(cid).get('balance')
+                if got != cents:
+                    return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל היתרה לא השתנתה (%s)' % got})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'balance', '💰 יתרה במקווה: %s → ₪%g%s' % (('₪%g' % (old / 100.0)) if isinstance(old, (int, float)) else '—', bal, (' · ' + note) if note else '')))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'balance': cents})
         if self.path == '/api/mikveh/price':
             # 💲 שינוי מחיר במקווה עצמו — של הלקוח (שדה מחיר אישי) או של כל הקבוצה. אחרי השינוי בודקים במקווה שזה נקלט
             import mikveh as _mk

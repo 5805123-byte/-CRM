@@ -2133,7 +2133,7 @@ function mkOpen(c){
         <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
         ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
-        ${tile(c.balance!=null?'יתרה':'יתרה אחרונה',esc(bal))}
+        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>💰 יתרה${c.balance==null&&c.last_balance!=null?' אחרונה':''} ✎</span><b>${bal||'—'}</b></div>
         ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
       </div>
       <div class="mksec">🔄 העברה לקבוצה <small>בוחרים קבוצה ומאשרים</small></div>
@@ -2159,6 +2159,7 @@ function mkOpen(c){
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     document.getElementById('mkrenew').onclick=()=>mkRenewOpen(c);
     document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
+    document.getElementById('mkbal').onclick=()=>mkBalanceEdit(c);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
     document.getElementById('mktwl').onclick=()=>mkTowelEdit(c);
@@ -2472,6 +2473,19 @@ async function mkPriceEdit(c,paidFirst){
 }
 // 🔁 מאיר: "איך אני מבטל הוראת קבע של לקוח מקווה שרוצה לבטל — שלא יהיה חידוש מנוי אוטומטי. יש את זה באתר של
 // המקווה, אני רוצה שזה יהיה פה גם". חידוש אוטומטי במקווה (השדה של הלקוח שם)
+// 💰 מאיר: "איפה אני מעדכן לו יתרה בחשבון? כי הוא נתן חלק מזומן" — היתרה במקווה עצמו (באגורות אצלם,
+// בשקלים אצלנו). אפשר לכתוב סכום חדש, או +50 / -50 להוסיף / להוריד מהיתרה הנוכחית
+async function mkBalanceEdit(c){
+  const cur=c.balance!=null?c.balance/100:null;
+  const v=await uiPrompt('היתרה של '+mkName(c)+' במקווה'+(cur!=null?' (עכשיו ₪'+cur.toLocaleString('he-IL')+')':'')+'\nכתוב יתרה חדשה בש"ח, או +50 / -50 כדי להוסיף / להוריד:', cur!=null?String(cur):'');
+  if(v===null)return;const t=String(v).replace(/[₪,\s]/g,'');if(!t)return;
+  let n;if(/^[+-]/.test(t)){if(cur==null){toast('אין יתרה נוכחית — כתוב סכום מלא');return;}n=cur+parseFloat(t);}else n=parseFloat(t);
+  if(isNaN(n)){toast('סכום לא תקין');return;}
+  const note=await uiPrompt('הערה (לא חובה) — למשל: שילם 50 במזומן','');if(note===null)return;
+  const el=document.getElementById('mkbal');if(el)el.querySelector('b').innerHTML='<span class="mkspin"></span>';
+  const r=await api('POST','/api/mikveh/balance',{id:c.id,balance:n,note:String(note||'').trim()}).catch(()=>null);
+  if(!r||!r.ok){mkOpen(c);return uiAlert('היתרה לא עודכנה במקווה:\n'+((r&&r.error)||'אין תשובה מהשרת'));}
+  c.balance=r.balance;toast('✓ היתרה עודכנה במקווה: '+mkMoney(r.balance));mkOpen(c);}
 async function mkRenewOpen(c){
   const o=document.createElement('div');o.className='mkov';
   o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">🔁</div><div><b>פעולות אוטומטיות · ${esc(mkName(c))}</b></div><button class="x2" id="mrx">✕</button></div>
