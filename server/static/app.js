@@ -17834,13 +17834,14 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
       <input id="cl_url" dir="ltr" value="${esc(r.url)}" readonly style="font-size:12px"></div>
     <label class="fld"><span>📧 מייל</span><input id="cl_em" dir="ltr" value="${esc(r.email||'')}" placeholder="email@example.com"></label>
     <label class="fld"><span>נושא</span><input id="cl_subj" dir="ltr" value="${esc(r.subject)}"></label>
-    <label class="fld"><span>ההודעה (אפשר לערוך)</span><textarea id="cl_body" dir="ltr" rows="9" style="font-family:Arial;font-size:13px">${esc(r.body)}</textarea></label>
+    <label class="fld"><span>המייל (אפשר לערוך)</span><textarea id="cl_body" dir="ltr" rows="7" style="font-family:Arial;font-size:13px">${esc(r.body)}</textarea></label>
+    ${wa?`<label class="fld"><span>💬 וואטסאפ — נוסח קצר (אפשר לערוך)</span><textarea id="cl_wa" dir="ltr" rows="5" style="font-family:Arial;font-size:13px">${esc(r.wa||r.body)}</textarea></label>`:''}
     <div class="cbtns"><button class="btn cl_copy" type="button">📋 העתק קישור</button>${wa?`<a class="btn cl_wa" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}<button class="btn bqgo cl_mail" type="button">📧 שלח במייל</button><button class="btn ghost cno" type="button">סגור</button></div></div>`;
   document.body.appendChild(o);
   const g=id=>o.querySelector('#'+id);
   const waNumOnly=String(wa).replace(/^.*wa\.me\//,'').replace(/[^\d].*$/,'');
-  const waUrl=()=>'https://wa.me/'+waNumOnly+'?text='+encodeURIComponent(g('cl_body').value);
-  const waA=o.querySelector('.cl_wa');if(waA){waA.href=waUrl();g('cl_body').oninput=()=>{waA.href=waUrl();};}
+  const waUrl=()=>'https://wa.me/'+waNumOnly+'?text='+encodeURIComponent((g('cl_wa')||g('cl_body')).value);
+  const waA=o.querySelector('.cl_wa');if(waA){waA.href=waUrl();if(g('cl_wa'))g('cl_wa').oninput=()=>{waA.href=waUrl();};}
   o.querySelector('.cno').onclick=()=>o.remove();
   o.querySelector('.cl_copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);toast('הקישור הועתק ✓');}catch(x){g('cl_url').select();document.execCommand('copy');toast('הקישור הועתק ✓');}};
   o.querySelector('.cl_mail').onclick=async()=>{const em=g('cl_em').value.trim();if(!em.includes('@')){toast('מייל לא תקין');g('cl_em').focus();return;}
