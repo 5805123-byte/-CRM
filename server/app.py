@@ -28093,7 +28093,9 @@ def nd_donor_candidates(con, did):
             x['other'] = t['donor_id']
     out = []
     for x in pay.values():
-        keys = ['name:' + x['name']] + ['phone:' + p for p in sorted(x['phones'])]
+        # מאיר: "יש לאבובה אופק הוראת קבע… למה רואים רק את החודש האחרון?" — הקישור כולל גם את מספר
+        # הוראת הקבע, כך שכל החיובים שלה (גם בשם / טלפון שנכתבו אחרת) נכנסים לכרטיס
+        keys = ['name:' + x['name']] + ['phone:' + p for p in sorted(x['phones'])] + ['keva:' + k for k in sorted(x['kevas'])]
         out.append({'name': x['name'], 'phones': sorted(x['phones']), 'kevas': sorted(x['kevas']), 'n': x['n'],
                     'sum': round(x['sum'], 2), 'last': x['last'][:10], 'by': sorted(x['by']), 'keys': keys,
                     'linked': any(k in linked for k in keys), 'other_donor': x['other']})
@@ -28116,6 +28118,22 @@ def nd_donor_import(con, did=None):
     for d_id, keys in links.items():
         if not con.execute("SELECT 1 FROM donors WHERE id=?", (d_id,)).fetchone():
             continue
+        # הרחבה: חיוב שהותאם לפי שם / טלפון ושייך להוראת קבע — כל החיובים של אותה הוראה הם של אותו תורם
+        # (גם מלפני שהשם / הטלפון נכתבו כך). המפתח נשמר, אלא אם ההוראה כבר מקושרת לכרטיס אחר
+        for _ in range(3):
+            add = set()
+            for t in con.execute("SELECT DISTINCT LTRIM(COALESCE(keva,''),'-') kv, phone, name FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 "
+                                 "AND (donor_id IS NULL OR donor_id=?)", (d_id,)).fetchall():
+                if t['kv'] and ('keva:' + t['kv']) not in keys and _nd_tx_matches({'keva': '', 'phone': t['phone'], 'name': t['name']}, keys):
+                    add.add('keva:' + t['kv'])
+            for k in add:
+                ow = con.execute("SELECT donor_id FROM nd_dlink WHERE key=?", (k,)).fetchone()
+                if ow and ow['donor_id'] != d_id:
+                    continue
+                con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)", (k, d_id, 'אוטומטי — אותה הוראת קבע', now_iso()))
+                keys.add(k)
+            if not add:
+                break
         for t in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 AND (donor_id IS NULL OR donor_id=?)", (d_id,)).fetchall():
             if not _nd_tx_matches(t, keys):
                 continue
