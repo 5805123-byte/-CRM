@@ -289,28 +289,23 @@ def update_client(cid, changes):
 
 
 def balance(cid):
-    """היתרה של הלקוח כמו שמסך המקווה קורא אותה (getBalanceById → GET getBalance/{id}; אותו שירות כמו Group/Club/User).
-    404 = אין ללקוח רשומת יתרה עדיין (הקוביה מראה "—") → 0."""
-    code, res = call('GET', 'getBalance/%s' % cid, timeout=20)
-    if code == 404:
-        return 0
-    if code != 200:
-        raise RuntimeError('קריאת היתרה מהמקווה נכשלה: %s' % (LAST.get('error') or code))
-    v = res
-    if isinstance(res, dict):
-        for k in ('balance', 'value', 'data', 'result', 'amount'):
-            if k in res:
-                v = res[k]
-                break
-    try:
-        return int(round(float(v)))
-    except (TypeError, ValueError):
-        raise RuntimeError('היתרה מהמקווה לא מובנת: %s' % str(res)[:80])
+    """היתרה של הלקוח — מהלקוח עצמו (GetClientFull): balance, ואם אין — lastBalance (כמו הקוביה במסך).
+    באגורות. (GET getBalance/{id} של המסך החזיר 0/404 גם כשהייתה יתרה — לא סומכים עליו.)"""
+    _ONE.pop(str(cid), None)
+    c = client(cid)
+    for k in ('balance', 'lastBalance'):
+        v = c.get(k)
+        if v is not None:
+            try:
+                return int(round(float(v)))
+            except (TypeError, ValueError):
+                pass
+    return 0
 
 
 def add_credit(cid, amount):
     """מה שכפתור "הוספת יתרה" / "הפחתת יתרה" במסך המקווה עושה (addCreditById → POST addCredit/{id} {amount}).
-    סכום שלילי = הפחתה."""
+    הסכום באגורות (נבדק: 15 → ₪0.15). סכום שלילי = הפחתה."""
     code, res = call('POST', 'addCredit/%s' % cid, body={'amount': amount}, timeout=30)
     if not (200 <= code < 300):
         raise RuntimeError('עדכון היתרה במקווה נכשל: %s' % (LAST.get('error') or code))

@@ -22644,9 +22644,8 @@ class H(BaseHTTPRequestHandler):
                 delta = cents - old
                 if delta == 0:
                     return self._send(200, {'ok': True, 'balance': old, 'same': True})
-                # מאיר: "אין אצלנו אגורות בכלל" — addCredit בשקלים, ואחר כך בודקים ביתרה שהמקווה קלט בדיוק את זה
-                amt = delta / 100.0
-                _mk.add_credit(cid, int(amt) if amt == int(amt) else round(amt, 2))
+                # addCredit מקבל אגורות (נבדק אצל מאיר: 15 → ₪0.15). שולחים את ההפרש ובודקים אצל הלקוח שזה נקלט
+                _mk.add_credit(cid, delta)
                 got = _mk.balance(cid)
                 if got != cents:
                     return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל היתרה יצאה אחרת: ₪%g (ביקשת ₪%g). תבדוק באתר המקווה' % (got / 100.0, bal)})
