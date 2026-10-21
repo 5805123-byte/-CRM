@@ -11,7 +11,7 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
-def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True, html=''):
+def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True, html='', inline=None):
     """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה.
     profile='comm' — מיילי הקהילה, יוצאים מ-neder1818 (COMM_MAIL_PASS; בלעדיו — "מאת" בלבד)."""
     user = os.environ.get('GMAIL_USER')
@@ -45,6 +45,12 @@ def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel
         import html as _h
         px = ('<img src="%s" width="1" height="1" alt="" style="display:block;border:0">' % _h.escape(pixel)) if pixel else ''
         msg.add_alternative(html.replace('</body>', px + '</body>') if '</body>' in html else html + px, subtype='html')
+        # תמונות בתוך המייל (cid:) — למשל המכתב על הבלאנק
+        for cid, mime, data in (inline or []):
+            if not data:
+                continue
+            mt, _, st = (mime or 'image/jpeg').partition('/')
+            msg.get_payload()[-1].add_related(data, maintype=mt or 'image', subtype=st or 'jpeg', cid='<%s>' % cid)
     elif pixel:
         # מאיר: "לראות כל מייל אם פתחו" — גרסת HTML של אותו טקסט, עם פיקסל מעקב זעיר
         import html as _h

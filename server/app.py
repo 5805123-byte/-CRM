@@ -14592,29 +14592,92 @@ def cardlink_message(d, url):
     return {'subject': 'Kollel Chatzot \u2014 Secure card update & your Kvitel names', 'body': body}
 
 
-def cardlink_mail_html(body, url):
-    """המייל המעוצב: אותו טקסט, והקישור ככפתור יפה — מאיר: "שהקישור יהיה באופן כפתור יפה כזה שכתוב
-    שם כולל חצות עדכון, שהוא ירצה לפתוח"."""
+_CL_URL = re.compile(r'https?://\S+/u/\S+')
+
+
+def cardlink_letter_jpg(body, width=1200):
+    """המכתב על הבלאנק של כולל חצות — מאיר: "הייתי רוצה את כל הבלאנק כמו שהוא על זה". אותו בלאנק
+    של הקבלות; הטקסט באנגלית בתיבת התוכן, ושורת הקישור מוחלפת בהפניה לכפתור שמתחת למכתב."""
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.open(os.path.join(STATIC, 'letterhead.jpg')).convert('RGB')
+    W0, H0 = im.size
+    im = im.resize((int(width), int(H0 * width / W0)), Image.LANCZOS)
+    W, H = im.size
+    u = W / 100.0
+    dr = ImageDraw.Draw(im)
+    reg, bold = os.path.join(STATIC, 'frankruhl-regular.ttf'), os.path.join(STATIC, 'frankruhl-bold.ttf')
+    cache = {}
+
+    def font(px, heavy=False):
+        k = (int(px), heavy)
+        if k not in cache:
+            cache[k] = ImageFont.truetype(bold if heavy else reg, max(8, int(px)))
+        return cache[k]
+    INK, DEEP = (0x3a, 0x2f, 0x1a), (0x7a, 0x1f, 0x1f)
+    x0, x1 = int(W * .25), int(W * .945)
+    y = int(H * .105)
+    fs = 2.15 * u
+    lh = int(fs * 1.6)
+
+    def wrap(txt, f, maxw):
+        out, cur = [], ''
+        for w in str(txt).split(' '):
+            t = (cur + ' ' + w).strip()
+            if cur and dr.textlength(t, font=f) > maxw:
+                out.append(cur); cur = w
+            else:
+                cur = t
+        return out + ([cur] if cur else [])
+    for ln in str(body or '').split('\n'):
+        ln = ln.rstrip()
+        if not ln:
+            y += int(lh * .6); continue
+        heavy, col, f = False, INK, font(fs)
+        if _CL_URL.search(ln):
+            ln, heavy, col = '→ Please use the secure button below this letter.', True, DEEP
+            f = font(fs, True)
+        elif ln.startswith('Dear '):
+            heavy, f = True, font(fs * 1.15, True)
+        bullet = ln.startswith('•')
+        ind = int(2.2 * u) if bullet else 0
+        for i, row in enumerate(wrap(ln, f, x1 - x0 - ind)):
+            dr.text((x0 + (ind if i else 0), y), row, font=f, fill=col)
+            y += lh
+        if heavy and ln.startswith('→'):
+            y += int(lh * .3)
+    buf = io.BytesIO()
+    im.save(buf, 'JPEG', quality=86, optimize=True)
+    return buf.getvalue()
+
+
+def cardlink_mail_html(body, url, letter=False):
+    """המייל: המכתב על הבלאנק (תמונה בתוך המייל) + הקישור ככפתור יפה — מאיר: "שהקישור יהיה באופן
+    כפתור יפה כזה שכתוב שם כולל חצות עדכון, שהוא ירצה לפתוח"."""
     import html as _h
     e = _h.escape
-    btn = ('<div style="text-align:center;margin:22px 0"><a href="%s" style="display:inline-block;background:#7a1f1f;color:#ffffff;text-decoration:none;'
+    m = _CL_URL.search(str(body or ''))
+    url = (m.group(0) if m else url) or ''
+    btn = ('<div style="text-align:center;margin:22px 0 8px"><a href="%s" style="display:inline-block;background:#7a1f1f;color:#ffffff;text-decoration:none;'
            'font-size:18px;font-weight:bold;padding:15px 34px;border-radius:12px;border:2px solid #9c7a2e;font-family:Georgia,serif">'
-           '\U0001F512&nbsp; Kollel Chatzot \u00b7 Secure Update</a>'
-           '<div style="font-size:12px;color:#6b6249;margin-top:8px">Your personal secure page \u00b7 valid for 30 days</div></div>' % e(url))
-    parts = []
-    for ln in str(body or '').split('\n'):
-        if url and url in ln:
-            parts.append('__BTN__')
-        else:
-            parts.append(e(ln))
-    txt = '<br>'.join(parts).replace('__BTN__', '</div>' + btn + '<div style="font-size:16px;line-height:1.6;color:#3a2f1a">')
+           '\U0001F512&nbsp; Kollel Chatzot · Secure Update</a>'
+           '<div style="font-size:12px;color:#6b6249;margin-top:8px">Your personal secure page · valid for 30 days</div>'
+           '<div style="font-size:11px;color:#9a9284;margin-top:6px;word-break:break-all">If the button does not open: <a href="%s" style="color:#7a1f1f">%s</a></div></div>'
+           % (e(url), e(url), e(url)))
+    if letter:
+        inner = ('<tr><td style="padding:0"><img src="cid:letter" alt="Kollel Chatzot" style="width:100%%;max-width:600px;display:block;border-radius:10px 10px 0 0"></td></tr>'
+                 '<tr><td style="padding:4px 28px 18px">%s</td></tr>' % btn)
+    else:
+        parts = []
+        for ln in str(body or '').split('\n'):
+            parts.append('__BTN__' if _CL_URL.search(ln) else e(ln))
+        txt = '<br>'.join(parts).replace('__BTN__', '</div>' + btn + '<div style="font-size:16px;line-height:1.6;color:#3a2f1a">')
+        inner = ('<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzot</div>'
+                 '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT CHATZOT</div></td></tr>'
+                 '<tr><td style="padding:20px 28px 24px"><div style="font-size:16px;line-height:1.6;color:#3a2f1a">%s</div></td></tr>' % txt)
     return ('<!doctype html><html><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
             '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f3eee2;padding:24px 0"><tr><td align="center">'
             '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%%;background:#fffdf7;border:1px solid #e3d9c2;border-radius:10px">'
-            '<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzot</div>'
-            '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL \u00b7 TORAH AT CHATZOT</div></td></tr>'
-            '<tr><td style="padding:20px 28px 24px"><div style="font-size:16px;line-height:1.6;color:#3a2f1a">%s</div></td></tr>'
-            '</table></td></tr></table></body></html>' % txt)
+            '%s</table></td></tr></table></body></html>' % inner)
 
 
 CARDLINK_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzot · Secure Update</title><meta property="og:title" content="Kollel Chatzot · Secure Update"><meta property="og:description" content="Your personal secure page: update your card, review your Kvitel names and confirm your address."><meta property="og:image" content="%(base)s/logo.png"><meta property="og:type" content="website">\n<style>body{margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:560px;margin:0 auto;padding:18px 16px 40px}.hd{border-bottom:3px solid #9c7a2e;padding:10px 0 8px;margin-bottom:16px}\n.hd b{font-size:24px;color:#7a1f1f}.hd small{display:block;letter-spacing:2px;color:#9c7a2e;font-size:12px}\nh3{font-size:16px;color:#7a1f1f;margin:22px 0 6px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:110px;direction:rtl;text-align:right;font-family:Arial,sans-serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:8px;min-height:120px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\n.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}.chk input{width:auto}\nbutton{width:100%%;margin-top:18px;background:#7a1f1f;color:#fff;border:0;border-radius:10px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}\nbutton:disabled{opacity:.6}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px}\n.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}.ftr{font-size:12px;color:#6b6249;margin-top:26px;text-align:center}</style></head>\n<body><div class="wrap"><div class="hd"><b>Kollel Chatzot</b><small>ERETZ YISROEL &middot; TORAH AT CHATZOT</small></div>\n<p>Dear %(name)s,</p><p>Thank you for your partnership. Please review the details below and update anything that has changed.</p>\n<form id="f">\n<h3>1 &middot; Credit card</h3>\n<div class="small" style="margin-bottom:8px">If your card or its expiry date has changed, enter the new details below. If nothing has changed, simply leave this section empty.</div>\n%(card)s\n<h3>2 &middot; Names we daven for at Chatzot</h3>\n<div class="small">Please check the Hebrew names (name ben/bas mother\'s name) and correct anything that has changed. Your corrections go straight into our Kvitel.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<h3>3 &middot; Contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="submit" id="go">Save my details</button><div class="err" id="err"></div></form>\n<div class="ok" id="done" hidden></div>\n<div class="ftr">Kollel Chatzot &middot; 1540 40th Street, Brooklyn, NY 11218 &middot; 718-972-7169 &middot; chatzot18@gmail.com</div></div>\n<script>\nvar KEY=%(key)s,HT=null;\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\ndocument.getElementById(\'f\').onsubmit=async function(ev){ev.preventDefault();var err=document.getElementById(\'err\'),go=document.getElementById(\'go\');err.textContent=\'\';\n  var g=function(id){return document.getElementById(id).value.trim();};\n  var body={names:g(\'names\'),addr:g(\'addr\'),city:g(\'city\'),zip:g(\'zip\'),country:g(\'country\'),email:g(\'email\'),phone:g(\'phone\')};\n  if(HT){go.disabled=true;go.textContent=\'Checking your card...\';\n    try{var tk=await HT.getNonceToken();body.nonce=tk.nonce;body.exp_m=tk.expiryMonth;body.exp_y=tk.expiryYear;body.last4=tk.last4;body.card_type=tk.cardType;}\n    catch(e){var fe=(e&&e.fieldErrors)||[];\n      var empty=fe.length&&fe.some(function(x){return /card\\s*number.*required/i.test(String(x));});\n      if(!empty){go.disabled=false;go.textContent=\'Save my details\';\n        err.innerHTML=\'<b>Your card was not saved.</b> Please check the card number, expiry date and CVV\'+(fe.length?(\' (\'+fe.join(\', \')+\')\'):\'\')+\'. If you do not wish to change your card, leave all the card fields empty.\';return;}}}\n  go.disabled=true;go.textContent=\'Saving...\';\n  var r=null;try{r=await (await fetch(location.pathname.replace(\'/u/\',\'/api/u/\')+\'/save\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){}\n  if(!r||!r.ok){go.disabled=false;go.textContent=\'Save my details\';err.innerHTML=\'<b>Not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  document.getElementById(\'f\').hidden=true;var d=document.getElementById(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> \'+(r.card_ok?\'Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. \':\'\')+(r.changes?\'Your details were updated. \':\'\')+(r.names_changed?\'The names were updated in our Kvitel. \':\'\')+\'May you merit all the Brachos of the Torah of Chatzot.\';};\n</script></body></html>'
@@ -25579,7 +25642,12 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render'})
                 subj = str(b.get('subject') or msg['subject']).strip()[:200]
                 body_ = str(b.get('body') or msg['body']).strip()[:4000]
-                res = mailer.send(to, subj, body_, rtl=False, html=cardlink_mail_html(body_, url))
+                try:
+                    letter = cardlink_letter_jpg(body_)
+                except Exception as e:
+                    print('  cardlink letter error:', e); letter = b''
+                res = mailer.send(to, subj, body_, rtl=False, html=cardlink_mail_html(body_, url, letter=bool(letter)),
+                                  inline=[('letter', 'image/jpeg', letter)] if letter else None)
                 if not res.get('ok'):
                     return self._send(200, {'ok': False, 'error': str(res.get('detail') or res.get('error') or 'השליחה נכשלה')[:160]})
                 try:
