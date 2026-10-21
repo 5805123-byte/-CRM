@@ -17819,7 +17819,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   const ph=(splitPhones(d.phone||'')[0]||'').trim(), wa=ph?waHref(ph,d.region):'';
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>🔗 קישור אישי ל${esc(r.name)} — עדכון כרטיס, שמות וכתובת</b></div>
-    <div class="qcprev"><div class="hintxt">הקישור תקף 30 יום. בדף: טופס כרטיס מאובטח של בנק ווסט (המספר לא עובר אצלנו), השמות שמתפללים עליו לתיקון (תיקון שלו נכנס ישירות לקוויטל, והנוסח הקודם נשמר בקשר), והכתובת / מייל / טלפון. כל עדכון נרשם בקשר של התורם.</div>
+    <div class="qcprev"><div class="hintxt">הקישור תקף 30 יום. בדף: טופס כרטיס מאובטח של בנק ווסט (המספר לא עובר אצלנו), השמות שמתפללים עליו לתיקון (תיקון שלו נכנס ישירות לקוויטל, והנוסח הקודם נשמר בקשר), והכתובת / מייל / טלפון. כל עדכון נרשם בקשר של התורם. במייל הקישור מופיע ככפתור "🔒 Kollel Chatzot · Secure Update"; בוואטסאפ — כקישור עם תצוגה מקדימה.</div>
       <input id="cl_url" dir="ltr" value="${esc(r.url)}" readonly style="font-size:12px"></div>
     <label class="fld"><span>📧 מייל</span><input id="cl_em" dir="ltr" value="${esc(r.email||'')}" placeholder="email@example.com"></label>
     <label class="fld"><span>נושא</span><input id="cl_subj" dir="ltr" value="${esc(r.subject)}"></label>
