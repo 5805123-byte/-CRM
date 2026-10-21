@@ -11,7 +11,7 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
-def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True, html='', inline=None):
+def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True, html='', inline=None, from_name=None):
     """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה.
     profile='comm' — מיילי הקהילה, יוצאים מ-neder1818 (COMM_MAIL_PASS; בלעדיו — "מאת" בלבד)."""
     user = os.environ.get('GMAIL_USER')
@@ -26,6 +26,8 @@ def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel
         fname = cc['name']
         if cc['own_login']:
             user, pw = cc['user'], (os.environ.get('COMM_MAIL_PASS') or '').strip().replace(' ', '')
+    if from_name:
+        fname = from_name          # מאיר: "שיהיה מה שכתוב במייל את השם שלי באנגלית Kollel Chatzot (Rabbi Deutsch)"
     if not (user and pw):
         return {'ok': False, 'error': 'not_configured'}
     to = (to or '').strip()
