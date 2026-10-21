@@ -14506,7 +14506,7 @@ def receipt_mail_html(name, num, amount, date_txt, method, pn):
                       'direction:rtl;text-align:right;font-size:17px;color:#3a2f1a;font-family:Arial,sans-serif">%s</div></td></tr>' % e(pn['ded']))
         night += ('<tr><td style="padding:8px 28px 4px;font-size:15px;color:#5b5470">The Torah learning and prayers at Chatzot that night'
                   ' are dedicated as you requested.</td></tr>')
-    return ('<!doctype html><html><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
+    return ('<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
             '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f3eee2;padding:24px 0"><tr><td align="center">'
             '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%%;background:#fffdf7;border:1px solid #e3d9c2;border-radius:10px">'
             '<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzot</div>'
@@ -14634,7 +14634,7 @@ def cardlink_letter_jpg(body, width=1200):
             y += int(lh * .6); continue
         heavy, col, f = False, INK, font(fs)
         if _CL_URL.search(ln):
-            ln, heavy, col = '→ Please use the secure button below this letter.', True, DEEP
+            ln, heavy, col = 'Please use the secure button just below this letter.', True, DEEP
             f = font(fs, True)
         elif ln.startswith('Dear '):
             heavy, f = True, font(fs * 1.15, True)
@@ -14643,7 +14643,7 @@ def cardlink_letter_jpg(body, width=1200):
         for i, row in enumerate(wrap(ln, f, x1 - x0 - ind)):
             dr.text((x0 + (ind if i else 0), y), row, font=f, fill=col)
             y += lh
-        if heavy and ln.startswith('→'):
+        if heavy and ln.startswith('Please use the secure button'):
             y += int(lh * .3)
     buf = io.BytesIO()
     im.save(buf, 'JPEG', quality=86, optimize=True)
@@ -14674,7 +14674,7 @@ def cardlink_mail_html(body, url, letter=False):
         inner = ('<tr><td style="padding:22px 28px 6px;border-bottom:3px solid #9c7a2e"><div style="font-size:24px;color:#7a1f1f;font-weight:bold">Kollel Chatzot</div>'
                  '<div style="font-size:13px;letter-spacing:2px;color:#9c7a2e">ERETZ YISROEL · TORAH AT CHATZOT</div></td></tr>'
                  '<tr><td style="padding:20px 28px 24px"><div style="font-size:16px;line-height:1.6;color:#3a2f1a">%s</div></td></tr>' % txt)
-    return ('<!doctype html><html><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
+    return ('<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif">'
             '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f3eee2;padding:24px 0"><tr><td align="center">'
             '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%%;background:#fffdf7;border:1px solid #e3d9c2;border-radius:10px">'
             '%s</table></td></tr></table></body></html>' % inner)
