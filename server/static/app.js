@@ -17844,12 +17844,12 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   o.querySelector('.cno').onclick=()=>o.remove();
   o.querySelector('.cl_copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);toast('הקישור הועתק ✓');}catch(x){g('cl_url').select();document.execCommand('copy');toast('הקישור הועתק ✓');}};
   o.querySelector('.cl_mail').onclick=async()=>{const em=g('cl_em').value.trim();if(!em.includes('@')){toast('מייל לא תקין');g('cl_em').focus();return;}
-    if(!await uiConfirm('לשלוח את ההודעה עם הקישור במייל אל '+em+'?','📧 כן, לשלוח','ביטול'))return;
+    if(!await uiConfirm('לשלוח מייל עם הקישור האישי ל-'+em+'?','📧 כן, לשלוח','ביטול'))return;
     const btn=o.querySelector('.cl_mail');btn.disabled=true;
     const s2=await api('POST','/api/donor/'+d.id+'/cardlink/send',{email:em,subject:g('cl_subj').value,body:g('cl_body').value}).catch(()=>null);
     btn.disabled=false;
     if(!s2||!s2.ok){await uiAlert('לא נשלח:\n'+((s2&&s2.error)||'שגיאה'));return;}
-    toast('✅ נשלח ל-'+em+' — נרשם בקשר');if(!d.email)d.email=em;o.remove();};});
+    if(!d.email)d.email=em;o.remove();await uiAlert('✅ נשלח.\nהמייל עם הקישור האישי נשלח ל-'+em+' ונרשם בקשר של התורם.');};});
 // מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — המייל בדיוק כפי שיישלח (iframe),
 // הקבלה כתמונה, והתעודה אם יש. נטען מהשרת בלי לשלוח ובלי לשמור
 function rcPreviewHTML(don,certUrl){
