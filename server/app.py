@@ -14691,7 +14691,9 @@ def cardlink_message(d, url, con=None):
             'May the zechus of supporting Torah learning at the eis ratzon of chatzos halailah protect and shield you and your entire family, and may all the brachos and tefillos we daven for you at chatzos be fulfilled \u2014 Amen!\n\n'
             + CL_SIGNATURE) % (nm, url)
     # מאיר: "לווצאפ צריך לקצר משמעותית את הטקסט… בלי הרבה הסברים"
-    wa = ('%s\n' + ((iz + '\n') if iz else '') +
+    wa = ('%s\n'
+          'With deep appreciation for the great zechus you hold \u2013 supporting Torah learning at the eis ratzon of chatzos halailah. We daven for you at chatzos.\n'
+          + ((iz + '\n') if iz else '') +
           'Your personal secure link \u2013 update your credit card, your Kvittel names and address, or dedicate a night of learning:\n'
           '%s\n'
           'Valid for 30 days.\n\n'
