@@ -14573,7 +14573,9 @@ def cardlink_name(d):
 
 def cardlink_salute(d):
     """מאיר: "להוסיף לפני השם שלו ה"ה ואחרי השם את התואר הי"ו" — "גם לאיש וגם לאשה"."""
-    return 'ה"ה %s הי"ו' % cardlink_name(d)
+    # מאיר: "תמיד שהשם יהיה בעברית" — השם הפרטי ושם המשפחה מהכרטיס; באנגלית רק אם אין עברית
+    he = ((d['first'] or '').strip() + ' ' + (d['last'] or '').strip()).strip()
+    return 'ה"ה %s הי"ו' % (he or cardlink_name(d))
 
 
 def cardlink_names(con, did):
