@@ -14694,7 +14694,7 @@ def cardlink_save(con, did, b):
                 lines.append('⚠️ ניסה להכניס כרטיס חדש ולא נשמר: ' + str(_bq.LAST.get('error') or code))
     if nonce and not out['card_ok']:
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
-                    (did, today_iso(), 'קישור', '🔗 ' + ' · '.join(lines), '', now_iso()))
+                    (did, today_iso(), 'קישור', '🔗 ' + (' · '.join(lines) or ('⚠️ ניסה להכניס כרטיס חדש דרך הקישור ולא נשמר: ' + str(out.get('error') or ''))), '', now_iso()))
         con.commit()
         return {'ok': False, 'error': 'Your card could not be saved: ' + str(out.get('error') or '').replace('The card could not be saved: ', '').replace('The card could not be saved (customer): ', '')
                 + '. Please check the card number, expiry date and CVV and try again.'}
