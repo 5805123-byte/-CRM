@@ -14705,7 +14705,7 @@ def cardlink_mail_html(body, url, letter=False):
             '%s</table></td></tr></table></body></html>' % inner)
 
 
-CARDLINK_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzot · Secure Update</title><meta property="og:title" content="Kollel Chatzot · Secure Update"><meta property="og:description" content="Your personal secure page: update your card, review your Kvitel names and confirm your address."><meta property="og:image" content="%(base)s/logo.png"><meta property="og:type" content="website">\n<style>body{margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:560px;margin:0 auto;padding:18px 16px 40px}.hd{border-bottom:3px solid #9c7a2e;padding:10px 0 8px;margin-bottom:16px}\n.hd b{font-size:24px;color:#7a1f1f}.hd small{display:block;letter-spacing:2px;color:#9c7a2e;font-size:12px}\nh3{font-size:16px;color:#7a1f1f;margin:22px 0 6px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:110px;direction:rtl;text-align:right;font-family:Arial,sans-serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:8px;min-height:120px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\n.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}.chk input{width:auto}\nbutton{width:100%%;margin-top:18px;background:#7a1f1f;color:#fff;border:0;border-radius:10px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}\nbutton:disabled{opacity:.6}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px}\n.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}.ftr{font-size:12px;color:#6b6249;margin-top:26px;text-align:center}</style></head>\n<body><div class="wrap"><div class="hd"><b>Kollel Chatzot</b><small>ERETZ YISROEL &middot; TORAH AT CHATZOT</small></div>\n<p>Dear %(name)s,</p>%(iz)s<p>Thank you for your partnership. Please review the details below and update anything that has changed.</p>\n<form id="f">\n<h3>1 &middot; Credit card</h3>\n<div class="small" style="margin-bottom:8px">If your card or its expiry date has changed, enter the new details below. If nothing has changed, simply leave this section empty.</div>\n%(card)s\n<h3>2 &middot; Names we daven for at Chatzot</h3>\n<div class="small">Please check the Hebrew names (name ben/bas mother\'s name) and correct anything that has changed. Your corrections go straight into our Kvitel.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<h3>3 &middot; Contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="submit" id="go">Save my details</button><div class="err" id="err"></div></form>\n<div class="ok" id="done" hidden></div>\n<div class="ftr">Kollel Chatzot &middot; 1540 40th Street, Brooklyn, NY 11218 &middot; 718-972-7169 &middot; chatzot18@gmail.com</div></div>\n<script>\nvar KEY=%(key)s,HT=null;\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\ndocument.getElementById(\'f\').onsubmit=async function(ev){ev.preventDefault();var err=document.getElementById(\'err\'),go=document.getElementById(\'go\');err.textContent=\'\';\n  var g=function(id){return document.getElementById(id).value.trim();};\n  var body={names:g(\'names\'),addr:g(\'addr\'),city:g(\'city\'),zip:g(\'zip\'),country:g(\'country\'),email:g(\'email\'),phone:g(\'phone\')};\n  if(HT){go.disabled=true;go.textContent=\'Checking your card...\';\n    try{var tk=await HT.getNonceToken();body.nonce=tk.nonce;body.exp_m=tk.expiryMonth;body.exp_y=tk.expiryYear;body.last4=tk.last4;body.card_type=tk.cardType;}\n    catch(e){var fe=(e&&e.fieldErrors)||[];\n      var empty=fe.length&&fe.some(function(x){return /card\\s*number.*required/i.test(String(x));});\n      if(!empty){go.disabled=false;go.textContent=\'Save my details\';\n        err.innerHTML=\'<b>Your card was not saved.</b> Please check the card number, expiry date and CVV\'+(fe.length?(\' (\'+fe.join(\', \')+\')\'):\'\')+\'. If you do not wish to change your card, leave all the card fields empty.\';return;}}}\n  go.disabled=true;go.textContent=\'Saving...\';\n  var r=null;try{r=await (await fetch(location.pathname.replace(\'/u/\',\'/api/u/\')+\'/save\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){}\n  if(!r||!r.ok){go.disabled=false;go.textContent=\'Save my details\';err.innerHTML=\'<b>Not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  document.getElementById(\'f\').hidden=true;var d=document.getElementById(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> \'+(r.card_ok?\'Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. \':\'\')+(r.changes?\'Your details were updated. \':\'\')+(r.names_changed?\'The names were updated in our Kvitel. \':\'\')+\'May you merit all the Brachos of the Torah of Chatzot.\';};\n</script></body></html>'
+CARDLINK_PAGE = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzot · Secure Update</title><meta property="og:title" content="Kollel Chatzot · Secure Update"><meta property="og:description" content="Your personal secure page: update your card, review your Kvitel names and confirm your address."><meta property="og:image" content="%(base)s/logo.png"><meta property="og:type" content="website">\n<style>body{margin:0;background:#f3eee2;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:560px;margin:0 auto;padding:18px 16px 40px}.hd{border-bottom:3px solid #9c7a2e;padding:10px 0 8px;margin-bottom:16px}\n.hd b{font-size:24px;color:#7a1f1f}.hd small{display:block;letter-spacing:2px;color:#9c7a2e;font-size:12px}\nh3{font-size:16px;color:#7a1f1f;margin:22px 0 6px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:110px;direction:rtl;text-align:right;font-family:Arial,sans-serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:8px;min-height:120px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\n.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}.chk input{width:auto}\nbutton{width:100%%;margin-top:18px;background:#7a1f1f;color:#fff;border:0;border-radius:10px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}\nbutton:disabled{opacity:.6}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px}\n.cal{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:10px;margin-top:10px}.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:#7a1f1f;font-size:16px}\n.calnav{width:auto;margin:0;padding:6px 14px;font-size:20px;background:#fffdf7;color:#7a1f1f;border:1px solid #d9cfb5}.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}\n.cd{border:1px solid #d9cfb5;border-radius:8px;padding:6px 4px;text-align:center;font-size:13px;cursor:pointer;background:#e8f3ea;line-height:1.25}.cd b{display:block;font-size:17px}.cd small{display:block;font-size:11px;color:#6b6249}\n.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}.cd.mine{background:#f3e3a8;border-color:#9c7a2e}.cd.sel{outline:3px solid #7a1f1f}\n.callg{font-size:11px;color:#6b6249;margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.lg{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #d9cfb5}.lg.free{background:#e8f3ea}.lg.taken{background:#ececec}.lg.mine{background:#f3e3a8}.lg.block{background:#f6f1e5}\n.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}.ftr{font-size:12px;color:#6b6249;margin-top:26px;text-align:center}</style></head>\n<body><div class="wrap"><div class="hd"><b>Kollel Chatzot</b><small>ERETZ YISROEL &middot; TORAH AT CHATZOT</small></div>\n<p>Dear %(name)s,</p>%(iz)s<p>Thank you for your partnership. Please review the details below and update anything that has changed.</p>\n<form id="f">\n<h3>1 &middot; Credit card</h3>\n<div class="small" style="margin-bottom:8px">If your card or its expiry date has changed, enter the new details below. If nothing has changed, simply leave this section empty.</div>\n%(card)s\n<h3>2 &middot; Names we daven for at Chatzot</h3>\n<div class="small">Please check the Hebrew names (name ben/bas mother\'s name) and correct anything that has changed. Your corrections go straight into our Kvitel.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<h3>3 &middot; Contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="submit" id="go">Save my details</button><div class="err" id="err"></div></form>\n<div class="ok" id="done" hidden></div>\n<h3>4 &middot; Dedicate a night of Torah learning</h3>\n<div class="small">A birthday, a Yahrzeit, or any night you would like dedicated to the Torah learned at Chatzot: enter the names and choose the night in the calendar. Green nights are available; grey ones are already taken.</div>\n<label>Names for the night (for prayer and learning)</label><textarea id="n_names" style="min-height:70px" placeholder="e.g. Avraham ben Sarah"></textarea>\n<label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. Yahrzeit of my father">\n<div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>\n<div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg free"></span> available <span class="lg taken"></span> taken <span class="lg mine"></span> yours <span class="lg block"></span> Shabbos / Yom Tov</div></div>\n<div class="small" id="n_status"></div>\n<button type="button" id="n_go" disabled>Reserve this night</button><div class="err" id="n_err"></div><div class="ok" id="n_done" hidden></div>\n<div class="ftr">Kollel Chatzot &middot; 1540 40th Street, Brooklyn, NY 11218 &middot; 718-972-7169 &middot; chatzot18@gmail.com</div></div>\n<script>\nvar KEY=%(key)s,HT=null;\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\ndocument.getElementById(\'f\').onsubmit=async function(ev){ev.preventDefault();var err=document.getElementById(\'err\'),go=document.getElementById(\'go\');err.textContent=\'\';\n  var g=function(id){return document.getElementById(id).value.trim();};\n  var body={names:g(\'names\'),addr:g(\'addr\'),city:g(\'city\'),zip:g(\'zip\'),country:g(\'country\'),email:g(\'email\'),phone:g(\'phone\')};\n  if(HT){go.disabled=true;go.textContent=\'Checking your card...\';\n    try{var tk=await HT.getNonceToken();body.nonce=tk.nonce;body.exp_m=tk.expiryMonth;body.exp_y=tk.expiryYear;body.last4=tk.last4;body.card_type=tk.cardType;}\n    catch(e){var fe=(e&&e.fieldErrors)||[];\n      var empty=fe.length&&fe.some(function(x){return /card\\s*number.*required/i.test(String(x));});\n      if(!empty){go.disabled=false;go.textContent=\'Save my details\';\n        err.innerHTML=\'<b>Your card was not saved.</b> Please check the card number, expiry date and CVV\'+(fe.length?(\' (\'+fe.join(\', \')+\')\'):\'\')+\'. If you do not wish to change your card, leave all the card fields empty.\';return;}}}\n  go.disabled=true;go.textContent=\'Saving...\';\n  var r=null;try{r=await (await fetch(location.pathname.replace(\'/u/\',\'/api/u/\')+\'/save\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){}\n  if(!r||!r.ok){go.disabled=false;go.textContent=\'Save my details\';err.innerHTML=\'<b>Not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  document.getElementById(\'f\').hidden=true;var d=document.getElementById(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> \'+(r.card_ok?\'Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. \':\'\')+(r.changes?\'Your details were updated. \':\'\')+(r.names_changed?\'The names were updated in our Kvitel. \':\'\')+\'May you merit all the Brachos of the Torah of Chatzot.\';};\n\nvar CAL={m:\'\',y:\'\',sel:null,data:null},API=location.pathname.replace(\'/u/\',\'/api/u/\');\nvar MON=[\'Jan\',\'Feb\',\'Mar\',\'Apr\',\'May\',\'Jun\',\'Jul\',\'Aug\',\'Sep\',\'Oct\',\'Nov\',\'Dec\'];\nfunction gshort(g){if(!g)return \'\';var p=g.split(\'-\');return MON[+p[1]-1]+\' \'+(+p[2]);}\nasync function calLoad(m,y){var r=null;try{r=await (await fetch(API+\'/month?m=\'+encodeURIComponent(m||\'\')+\'&y=\'+encodeURIComponent(y||\'\'))).json();}catch(e){}\n  if(!r||!r.ok){document.getElementById(\'cal_title\').textContent=\'Calendar unavailable\';return;}\n  CAL.data=r;CAL.m=r.month;CAL.y=r.year;CAL.sel=null;document.getElementById(\'n_go\').disabled=true;document.getElementById(\'n_status\').textContent=\'\';\n  document.getElementById(\'cal_title\').textContent=r.en+\' \'+(r.ynum||r.year);\n  var g=document.getElementById(\'cal_grid\'),h=\'\';\n  for(var d=1;d<=r.len;d++){var v=r.days[String(d)]||{};var cls=v.block?\'block\':(v.taken?\'taken\':(v.mine?\'mine\':\'free\'));\n    h+=\'<div class="cd \'+cls+\'" data-d="\'+d+\'"><b>\'+d+\'</b><small>\'+(v.block?(v.why||\'Shabbos\'):(v.taken?\'Taken\':(v.mine?\'Yours\':gshort(v.greg))))+\'</small></div>\';}\n  g.innerHTML=h;\n  Array.prototype.forEach.call(g.querySelectorAll(\'.cd\'),function(el){el.onclick=function(){var d=+el.dataset.d,v=r.days[String(d)]||{};var st=document.getElementById(\'n_status\');\n    if(v.block){st.innerHTML=\'<span style="color:#8f2a1b">\'+d+\' \'+r.en+\' is \'+(v.why||\'Shabbos\')+\' and cannot be dedicated.</span>\';return;}\n    if(v.taken){st.innerHTML=\'<span style="color:#8f2a1b"><b>This date is already taken.</b> Please choose another night.</span>\';return;}\n    Array.prototype.forEach.call(g.querySelectorAll(\'.cd.sel\'),function(x){x.classList.remove(\'sel\');});el.classList.add(\'sel\');CAL.sel=d;\n    st.innerHTML=\'<span style="color:#2e7d4f"><b>\'+d+\' \'+r.en+\' \'+(r.ynum||\'\')+\'</b> (\'+gshort(v.greg)+\') is available\'+(v.mine?\' and already reserved for you\':\'\')+\'.</span>\';\n    document.getElementById(\'n_go\').disabled=false;};});}\ndocument.getElementById(\'cal_prev\').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};\ndocument.getElementById(\'cal_next\').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};\ndocument.getElementById(\'n_go\').onclick=async function(){var err=document.getElementById(\'n_err\'),btn=this;err.textContent=\'\';\n  var names=document.getElementById(\'n_names\').value.trim();if(!names){err.textContent=\'Please enter the names for the night.\';document.getElementById(\'n_names\').focus();return;}\n  if(!CAL.sel){err.textContent=\'Please choose a night in the calendar.\';return;}\n  btn.disabled=true;btn.textContent=\'Reserving...\';\n  var r=null;try{r=await (await fetch(API+\'/night\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({m:CAL.m,y:CAL.y,d:CAL.sel,names:names,occasion:document.getElementById(\'n_occ\').value.trim()})})).json();}catch(e){}\n  if(!r||!r.ok){btn.disabled=false;btn.textContent=\'Reserve this night\';err.innerHTML=\'<b>Not reserved.</b> \'+((r&&r.error)||\'Please try again.\');if(r&&/taken/i.test(r.error||\'\'))calLoad(CAL.m,CAL.y);return;}\n  btn.textContent=\'Reserved\';var dn=document.getElementById(\'n_done\');dn.hidden=false;\n  dn.innerHTML=\'<b>Thank you!</b> The night of <b>\'+r.en+\'</b> (\'+gshort(r.greg)+\') is reserved for you. Our office will be in touch about the details.\';calLoad(CAL.m,CAL.y);};\ncalLoad(\'\',\'\');\n</script></body></html>'
 
 
 def cardlink_page(con, did, base=''):
@@ -14725,6 +14725,91 @@ def cardlink_page(con, did, base=''):
                              'zip': e(d['zip'] or ''), 'country': e(d['country'] or ''), 'email': e(em), 'phone': e(d['phone'] or ''),
                              'key': json.dumps(key or ''), 'js': json.dumps(js), 'base': e(base),
                              'iz': ('<p style="color:#7a1f1f"><b>%s</b></p>' % e(cardlink_iz(con, d))) if cardlink_iz(con, d) else ''}).encode('utf-8')
+
+
+_HE_MON_EN2 = {'תשרי': 'Tishrei', 'חשון': 'Cheshvan', 'כסלו': 'Kislev', 'טבת': 'Teves', 'שבט': 'Shevat', 'אדר': 'Adar', 'אדר א': 'Adar I',
+               'אדר ב': 'Adar II', 'ניסן': 'Nissan', 'אייר': 'Iyar', 'סיון': 'Sivan', 'תמוז': 'Tammuz', 'אב': 'Av', 'אלול': 'Elul'}
+
+
+def _he_day(n):
+    """מספר יום → אותיות: 1 → א', 14 → י"ד, 15 → ט"ו (כמו heDay במסך)."""
+    n = int(n)
+    ones, tens = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'], ['', 'י', 'כ', 'ל']
+    t = 'טו' if n == 15 else ('טז' if n == 16 else tens[n // 10] + ones[n % 10])
+    return t + "'" if len(t) <= 1 else t[:-1] + '"' + t[-1]
+
+
+def cardlink_month(con, did, m='', y=''):
+    """מאיר: "שזה ייתן לו להיכנס ללוח ולבחור תאריך ולראות אם זה פנוי… ואם זה לא פנוי שזה יכתוב לו שתאריך
+    זה תפוס" — חודש עברי לדף האישי: לכל יום — לועזי, שבת/יו"ט, תפוס (אצל תורם אחר), שלו."""
+    from hebdate import month_days, current_heb_year as _cy, HMONTHS as _HM
+    cur = _cy()
+    if not m or not y:
+        today_he = greg_to_heb_full() or ''
+        parts = today_he.split()
+        m = m or (parts[1] if len(parts) == 3 else (' '.join(parts[1:-1]) if len(parts) > 3 else 'תשרי'))
+        y = y or cur
+    md = month_days(m, y)
+    if not md.get('ok'):
+        return None
+    mon = md['month']
+    taken, mine = set(), set()
+    for r in con.execute("SELECT donor_id, day FROM parnes WHERE COALESCE(kind,'parnes')='parnes' AND month=? "
+                         "AND COALESCE(status,'confirmed')!='suggested' AND (COALESCE(hyear,'')=? OR (COALESCE(hyear,'')='' AND ?=?))",
+                         (mon, md['year'], md['year'], cur)):
+        (mine if r['donor_id'] == did else taken).add(int(r['day'] or 0))
+    days = {}
+    for k, v in md['days'].items():
+        d = int(k)
+        why = v.get('why') or ''
+        why_en = 'Shabbos' if why == 'שבת' else (('Yom Tov' + ((' (' + (v.get('yomtov') or why) + ')') if (v.get('yomtov') or why) else '')) if why else '')
+        days[k] = {'greg': v.get('greg') or '', 'block': bool(v.get('block')), 'why': why_en, 'yomtov': v.get('yomtov') or '',
+                   'taken': d in taken, 'mine': d in mine, 'he': _he_day(d)}
+    return {'ok': True, 'month': mon, 'en': _HE_MON_EN2.get(mon, mon), 'year': md['year'], 'ynum': md.get('ynum'), 'len': md['len'],
+            'days': days, 'prev': md.get('prev'), 'next': md.get('next')}
+
+
+def cardlink_night(con, did, b):
+    """התורם בחר לילה פנוי בקישור: נרשם בלוח על שמו (טרם נגבה), משימה למשרד ושורה בקשר."""
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return {'ok': False, 'error': 'not found'}
+    try:
+        day = int(b.get('d') or 0)
+    except (TypeError, ValueError):
+        day = 0
+    m, y = str(b.get('m') or '').strip(), str(b.get('y') or '').strip()
+    names = re.sub(r'[ \t]+', ' ', str(b.get('names') or '')).strip()[:2000]
+    occ = str(b.get('occasion') or '').strip()[:200]
+    if not names:
+        return {'ok': False, 'error': 'Please enter the names for the night.'}
+    md = cardlink_month(con, did, m, y)
+    if not md or str(day) not in md['days']:
+        return {'ok': False, 'error': 'Please choose a date from the calendar.'}
+    dv = md['days'][str(day)]
+    if dv['block']:
+        return {'ok': False, 'error': 'That night is %s and cannot be dedicated. Please choose another date.' % (dv['why'] or 'Shabbos')}
+    if dv['taken']:
+        return {'ok': False, 'error': 'This date is already taken. Please choose another night.'}
+    dtext = _he_day(day) + ' ' + md['month']
+    ded = names + ((' — ' + occ) if occ else '')
+    if dv['mine']:
+        pid = con.execute("SELECT id FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')='parnes' AND month=? AND day=? "
+                          "AND COALESCE(status,'confirmed')!='suggested' ORDER BY id DESC", (did, md['month'], day)).fetchone()['id']
+        con.execute("UPDATE parnes SET dedication=? WHERE id=?", (ded, pid))
+    else:
+        cur = con.cursor()
+        cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method,currency) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (did, day, md['month'], dtext, '', ded, 'parnes', 'confirmed', dv['greg'], md['year'], '', '$'))
+        pid = cur.lastrowid
+        cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                    (did, today_iso(), 'charge', '🌙 ביקש דרך הקישור האישי פרנס לילה %s %s%s — לתאם סכום ולגבות' % (dtext, md['year'], (' · ' + occ) if occ else '')))
+    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                (did, today_iso(), 'קישור', '🌙 דרך הקישור האישי: %s לילה %s %s · לזכות: %s%s' % ('עדכן את' if dv['mine'] else 'שריין', dtext, md['year'], names, (' · ' + occ) if occ else ''),
+                 '', now_iso()))
+    con.commit()
+    return {'ok': True, 'id': pid, 'date_text': dtext, 'year': md['year'], 'en': '%d %s %s' % (day, md['en'], md.get('ynum') or ''), 'greg': dv['greg']}
 
 
 def cardlink_save(con, did, b):
@@ -17243,6 +17328,18 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
             return self._send(200, open(os.path.join(STATIC, 'reconcile.html'), 'rb').read(), 'text/html')
+        m = re.match(r'/api/u/([0-9.a-f]+)/month$', self.path.split('?')[0])
+        if m:
+            did = cardlink_check(m.group(1))
+            if not did:
+                return self._send(200, {'ok': False, 'error': 'expired'})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                out = cardlink_month(con, did, (qs.get('m') or [''])[0], (qs.get('y') or [''])[0])
+            finally:
+                con.close()
+            return self._send(200, out or {'ok': False, 'error': 'month'})
         m = re.match(r'/u/([0-9.a-f]+)$', self.path.split('?')[0])
         if m:
             did = cardlink_check(m.group(1))
@@ -25632,6 +25729,20 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        m = re.match(r'/api/u/([0-9.a-f]+)/night$', self.path)
+        if m:
+            did = cardlink_check(m.group(1))
+            if not did:
+                return self._send(200, {'ok': False, 'error': 'This link has expired. Please contact Kollel Chatzot.'})
+            con = db()
+            try:
+                out = cardlink_night(con, did, b)
+            except Exception as e:
+                out = {'ok': False, 'error': 'Something went wrong: ' + str(e)[:120]}
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
         m = re.match(r'/api/u/([0-9.a-f]+)/save$', self.path)
         if m:
             did = cardlink_check(m.group(1))
