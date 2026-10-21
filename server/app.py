@@ -2180,6 +2180,17 @@ def ensure_schema():
             print('  פרנס באשראי חובר ליום שכבר שובץ:', n)
     except Exception as e:
         print('  שגיאת חיבור פרנס:', e)
+    # מאיר: "פניות נדרים פלוס תעלה רק מהיום והלאה, מה שהיה עד עכשיו לא חשוב לי" — הישנות יורדות מהחלון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mk_req_from_v1'").fetchone():
+            try:
+                n = con.execute("DELETE FROM mk_req WHERE COALESCE(at,'')<'2026-10-21'").rowcount
+                print('  פניות מקווה ישנות הוסרו:', n)
+            except Exception as e:
+                print('  mk_req cleanup:', e)
+            con.execute("INSERT INTO seed_flags(name) VALUES('mk_req_from_v1')")
+    except Exception as e:
+        print('  שגיאת mk_req_from:', e)
     # הדגמה — קוויטל שבועי של דניאל הדר בעברית מסודר
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='daniel_hadar_kvittel_v1'").fetchone():

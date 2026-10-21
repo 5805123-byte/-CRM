@@ -2426,6 +2426,9 @@ def scan_donor_names(con, status=None, years=4, per_addr=60):
 _MKR_FIELDS = (('first', r'שם\s*פרטי'), ('last', r'שם\s*משפחה'), ('phone', r'טלפון'), ('kind', r'סוג\s*ה?פני+ה'))
 
 
+MK_REQ_FROM = datetime.date(2026, 10, 21)     # פניות מקווה — רק מהתאריך הזה והלאה
+
+
 def mk_req_box():
     u = (os.environ.get('MIKVEH_MAIL_USER') or '').strip()
     p = (os.environ.get('MIKVEH_MAIL_PASS') or '').strip().replace(' ', '')
@@ -2463,7 +2466,9 @@ def sync_mk_requests(con, days=90):
         return {'ok': False, 'error': 'not_configured'}
     con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
                 "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
-    since = (datetime.date.today() - datetime.timedelta(days=days)).strftime('%d-%b-%Y')
+    # מאיר: "פניות נדרים פלוס תעלה רק מהיום והלאה, מה שהיה עד עכשיו לא חשוב לי"
+    since_d = max(datetime.date.today() - datetime.timedelta(days=days), MK_REQ_FROM)
+    since = since_d.strftime('%d-%b-%Y')
     new = 0
     M = None
     try:
@@ -2528,6 +2533,8 @@ def sync_mk_requests(con, days=90):
                 continue
             r = mk_req_parse(_extract_text(msg))
             if not r:
+                continue
+            if (r.get('at') or '')[:10] and (r.get('at') or '')[:10] < MK_REQ_FROM.isoformat():
                 continue
             if not r.get('at'):
                 r['at'] = _mail_when(msg)[1]
