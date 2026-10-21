@@ -14572,13 +14572,8 @@ def cardlink_name(d):
 
 
 def cardlink_salute(d):
-    """מאיר: "להוסיף לפני השם שלו ה"ה ואחרי השם את התואר הי"ו" — לאשה: מרת … תחי'."""
-    nm = cardlink_name(d)
-    try:
-        g = _gender((d['first'] or '').split()[0] if (d['first'] or '').strip() else '')
-    except Exception:
-        g = ''
-    return ('מרת %s תחי\'' % nm) if g == 'f' else ('ה"ה %s הי"ו' % nm)
+    """מאיר: "להוסיף לפני השם שלו ה"ה ואחרי השם את התואר הי"ו" — "גם לאיש וגם לאשה"."""
+    return 'ה"ה %s הי"ו' % cardlink_name(d)
 
 
 def cardlink_names(con, did):
