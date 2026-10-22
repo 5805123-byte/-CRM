@@ -8263,6 +8263,7 @@ function renderCharges(){
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
   view.innerHTML=`<div id="bqbox" class="bqbox"></div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn" id="chwizbtn" style="background:#6b1d1d;color:#fff">📝 חיובים בלי תורם — לענות אחד־אחד</button></div>
     <div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_anet" style="width:100%">💳 משוך חיובים מאוטרייז עכשיו</button></div>
@@ -11209,6 +11210,79 @@ async function renderOnlineCards(){
    בבנק או באשראי ואינו רשום אצל אף תורם. מקובץ לפי המשלם — אותו אדם
    חוזר כל חודש — כך שהחלטה אחת מטפלת בכל החיובים שלו יחד. */
 let ULDATA=null;
+// ===== מאיר: "אני לא אוהב את הלשונית של חיובים בלי תורם. אני אוהב שזה בצורת וב, ואני עונה אחד אחד — או משייך,
+// או בונה חדש… וגם שישאל אותי עבור מה". חלון אחד, שאלה אחת בכל פעם (משלם אחד עם כל החיובים שלו).
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#chwizbtn');if(b){e.preventDefault();ulWizard(0);}});
+async function ulWizard(startAt){
+  let data=null; try{data=await api('GET','/api/unlinked');}catch(e){}
+  const rows=(data&&data.rows)||[];
+  const g={}, order=[];
+  rows.forEach(r=>{const k=ulKey(r); if(!g[k]){g[k]={k,first:r.first||'',last:r.last||'',email:r.email||'',items:[],sugg:r.sugg||[]};order.push(k);} g[k].items.push(r); if(!g[k].sugg.length&&(r.sugg||[]).length)g[k].sugg=r.sugg;});
+  const groups=order.map(k=>g[k]); groups.forEach(x=>{x.sum=x.items.reduce((a,r)=>a+amtNum(r.amount),0);}); groups.sort((a,b)=>b.sum-a.sum);
+  if(!groups.length){uiAlert('🎉 אין חיובים שמחכים לשיוך — הכל בכרטיסים.');return;}
+  const f=n=>'$'+Math.round(n).toLocaleString('en-US');
+  const srcHe=s=>({'Checks 2026':"🧾 צ'ק",'Zelle 2026':'Ⓩ זל','Donors Fund 2026':'💼 דונרס פאנד','OJC 2026':'🏛️ OJC','Fidelity 2026':'💼 פידליטי','ACH 2026':'🏦 ACH','Wire 2026':'🏦 העברה'}[s]||(/Banquest/.test(s||'')?'🏦 בנק ווסט':(/Authorize/.test(s||'')?'💳 אוטורייז':(s||''))));
+  let i=Math.max(0,Math.min(groups.length-1,+startAt||0)), done=0;
+  const o=document.createElement('div');o.className='confirmov';document.body.appendChild(o);
+  const close=()=>{o.remove();if(done){load().catch(()=>{});}};
+  function show(){
+    if(i>=groups.length){o.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>🎉 סיימנו</b></div><div class="hintxt">${done} משלמים טופלו. מה ששויך כבר בכרטיסים.</div><div class="cbtns"><button class="btn cno">סגור</button></div></div>`;o.querySelector('.cno').onclick=close;return;}
+    const x=groups[i], en=((x.first||'')+' '+(x.last||'')).trim()||'—';
+    const srcs=[...new Set(x.items.map(r=>srcHe(r.source)))].join(' · ');
+    let chosen=x.sugg[0]?x.sugg[0].id:null;
+    o.innerHTML=`<div class="confirmbox qcbox ulwz">
+      <div class="cm"><b>📝 שאלה ${i+1} מתוך ${groups.length}</b> <small>· ${done} טופלו</small></div>
+      <div class="ulwzname" dir="ltr">${esc(en)}</div>
+      <div class="ulwzmeta">${srcs} · ${x.items.length} ${x.items.length===1?'תשלום':'תשלומים'} · <b>${f(x.sum)}</b>${x.email?` · <span dir="ltr">${esc(x.email)}</span>`:''}</div>
+      <div class="ulwzrows">${x.items.slice(0,10).map(r=>`<span>${esc(gregLabel(r.iso||r.date))} · ${f(amtNum(r.amount))}</span>`).join('')}${x.items.length>10?`<span>ועוד ${x.items.length-10}</span>`:''}</div>
+      <div class="ulwzq">1 · של מי זה?</div>
+      <div class="ulwzsugg">${x.sugg.map(s=>`<button class="btn sm ulwzs ${s.id===chosen?'on':''}" data-id="${s.id}">${esc(s.name)} <small>${esc(s.why||'')}</small></button>`).join('')||'<span class="hintxt">אין הצעה אוטומטית — חפש למטה או פתח כרטיס חדש</span>'}</div>
+      <input class="ulwzfind" placeholder="🔍 חפש כרטיס קיים — שם בעברית / באנגלית / עסק" autocomplete="off">
+      <div class="ulwzhits"></div>
+      <div class="ulwzpick">${chosen?'✓ נבחר: <b>'+esc((x.sugg[0]||{}).name||'')+'</b>':'לא נבחר כרטיס'}</div>
+      <div class="ulwzq">2 · עבור מה?</div>
+      <div class="two"><select class="ulwzcat">${dnCatOpts('',null)}</select><input class="ulwznote" placeholder="הערה (לא חובה)"></div>
+      <div class="cbtns">
+        <button class="btn ulwzok">✓ שייך והבא</button>
+        <button class="btn ghost ulwznew">➕ כרטיס חדש</button>
+        <button class="btn ghost ulwzlater">⏭ אחר כך</button>
+        <button class="btn ghost ulwzskip">✕ לא תרומה</button>
+        <button class="btn ghost cno">סגור</button></div></div>`;
+    const q=s=>o.querySelector(s);
+    const setChosen=(id,name)=>{chosen=id;q('.ulwzpick').innerHTML=id?('✓ נבחר: <b>'+esc(name)+'</b>'):'לא נבחר כרטיס';o.querySelectorAll('.ulwzs').forEach(b=>b.classList.toggle('on',+b.dataset.id===id));
+      const d=DB.find(z=>z.id==id); q('.ulwzcat').innerHTML=dnCatOpts('',d||null);};
+    o.querySelectorAll('.ulwzs').forEach(b=>b.onclick=()=>setChosen(+b.dataset.id,b.textContent.replace(/\s+/g,' ').trim()));
+    q('.ulwzfind').oninput=()=>{const s=q('.ulwzfind').value.trim();const H=q('.ulwzhits');if(!s){H.innerHTML='';return;}
+      const hits=DB.filter(d=>matchStr((d.last||'')+' '+(d.first||'')+' '+(d.english||'')+' '+(d.business||'')+' '+(d.aliases||''),s)).slice(0,8);
+      H.innerHTML=hits.map(d=>`<button class="btn sm ulwzh" data-id="${d.id}">${esc((d.last+' '+d.first).trim())}${d.english?` <small dir="ltr">${esc(d.english)}</small>`:''}</button>`).join('')||'<span class="hintxt">לא נמצא</span>';
+      H.querySelectorAll('.ulwzh').forEach(b=>b.onclick=()=>setChosen(+b.dataset.id,b.textContent.replace(/\s+/g,' ').trim()));};
+    q('.ulwzfind').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const b=q('.ulwzh');if(b)b.click();}};
+    q('.ulwzcat').onchange=async()=>{if(q('.ulwzcat').value==='__new__'){const v=await uiPrompt('שם הקטגוריה החדשה','');if(v&&v.trim()){const sel=q('.ulwzcat');sel.insertAdjacentHTML('afterbegin',`<option value="${esc(v.trim())}" selected>${esc(v.trim())}</option>`);sel.value=v.trim();}else q('.ulwzcat').value='';}};
+    const tids=x.items.map(r=>r.tid);
+    const apply=async(did)=>{const cat=q('.ulwzcat').value, note=q('.ulwznote').value.trim();
+      const r=await api('POST','/api/unlinked',{tids,donor_id:did,category:cat==='__new__'?'':cat,note});
+      if(!r||!r.ok){uiAlert('לא נשמר: '+((r&&r.error)||'שגיאה'));return false;}
+      toast('✓ שויך · '+(r.donations||0)+' תרומות');done++;return true;};
+    q('.ulwzok').onclick=async()=>{if(!chosen){toast('בחר כרטיס, או ➕ כרטיס חדש');q('.ulwzfind').focus();return;}
+      if(!q('.ulwzcat').value&&!await uiConfirm('לא בחרת עבור מה. להמשיך בלי ייעוד?','כן, להמשיך','חזרה'))return;
+      if(await apply(chosen)){i++;show();}};
+    q('.ulwznew').onclick=()=>{const r0=x.items[0]||{};
+      const enN=en.toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase());
+      openNewDonor(async nd=>{if(await apply(nd.id)){i++;show();}},
+        {english:enN,email:x.email||'',phone:r0.phone||'',addr:r0.addr||'',city:r0.city||'',country:r0.state||'',zip:r0.zip||''});};
+    q('.ulwzlater').onclick=()=>{i++;show();};
+    q('.ulwzskip').onclick=async()=>{if(!await uiConfirm('לסמן ש-'+en+' אינו תרומה / לא שייך לאף תורם?'))return;
+      await api('POST','/api/unlinked',{tids,skip:1});done++;i++;show();};
+    q('.cno').onclick=close;
+    setTimeout(()=>{const fnd=q('.ulwzfind');if(fnd&&!chosen)fnd.focus();},50);
+  }
+  show();
+}
+async function ulWizardBtn(){
+  // כפתור עם מספר הממתינים — נטען ברקע
+  let n=0; try{const d=await api('GET','/api/unlinked');n=((d&&d.rows)||[]).length;}catch(e){}
+  return n;
+}
 function ulKey(r){
   return ((r.first||'')+'|'+(r.last||'')+'|'+(r.email||'')).toLowerCase();
 }
@@ -11229,6 +11303,7 @@ async function renderUnlinked(){
     .map(d=>`<option value="${d.id}"${String(d.id)===String(sel)?' selected':''}>${esc((d.last+' '+d.first).trim())}</option>`).join('');
   view.innerHTML=`<div class="cnt">💳 חיובים שנגבו ואינם רשומים אצל אף תורם
       <small style="color:var(--muted)"> · ${rows.length} חיובים · ${f(ULDATA.total||0)}</small></div>
+    <div class="addrow" style="margin:0 2px 10px"><button class="btn" id="ulwizbtn" style="background:#6b1d1d;color:#fff">📝 לענות אחד־אחד (${groups.length} משלמים)</button></div>
     <div class="hintxt" style="margin:0 2px 10px">הכסף נכנס בפועל, אבל הוא לא מופיע אצל אף אחד — ולכן גם לא בסיכומים.
       לכל שורה יש הצעה לפי מייל או שם. אשר, בחר תורם אחר, או סמן שאינו שייך לאף אחד.</div>
     ${ulMonthsHTML()}
@@ -11255,6 +11330,7 @@ async function renderUnlinked(){
     ${ulFailedHTML()}`;
   wireUnlinked(groups);
   wireUlFailed();
+  const _wb=document.getElementById('ulwizbtn'); if(_wb)_wb.onclick=()=>ulWizard(0);
 }
 // מאיר: "יש פה כמה שלא עבר להם הכרטיס מאיזו סיבה שהיא — תכתוב לי שם,
 // במקום שממנו אני ממיין, שזה לא עבר, ותכתוב את הסיבה שכתוב באקסל."

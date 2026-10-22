@@ -21616,12 +21616,24 @@ class H(BaseHTTPRequestHandler):
                     src = r['source'] or ''
                     meth = 'בנק ווסט' if src.startswith('Banquest') else (
                         'אוטורייז' if src.startswith('Authorize') else src)
-                    if merge_manual_donation(con, did, iso, a, t, meth):
+                    # דוחות צ'קים / זל / דונרס / OJC / Fidelity / ACH / Wire — אמצעי התשלום לפי המקור
+                    for _pfx, _pm in (('Checks', "צ'ק"), ('צ׳קים', "צ'ק"), ('Zelle', 'Zelle'), ('Donors Fund', 'דונרס'), ('OJC', 'OJC'),
+                                      ('Fidelity', 'Fidelity'), ('ACH', 'ACH'), ('Wire', 'Wire')):
+                        if src.startswith(_pfx):
+                            meth = _pm
+                            break
+                    # מאיר: "שישאל אותי עבור מה" — הייעוד וההערה מהחלון של אחד־אחד
+                    cat = (str(b.get('category') or '').strip() or (r['category'] or '')).strip()
+                    unote = str(b.get('note') or '').strip()
+                    mid_ = merge_manual_donation(con, did, iso, a, t, meth)
+                    if mid_:
+                        if cat:
+                            con.execute("UPDATE donations SET category=? WHERE id=? AND COALESCE(TRIM(category),'')=''", (cat, mid_))
                         made += 1; continue           # כבר נרשם ביד — אותו כסף
                     con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
                                 "VALUES(?,?,?,?,?,?,1,?)",
-                                (did, iso, '%.2f' % a, (r['category'] or '').strip(), meth,
-                                 'שויך ידנית מהחיובים ללא תורם', t))
+                                (did, iso, '%.2f' % a, cat, meth,
+                                 'שויך ידנית מהחיובים ללא תורם' + ((' · ' + unote) if unote else ''), t))
                     made += 1
             # ייעוד קבוע לפי סכום, אם הוגדר לתורם — כדי שלא יצטרך לסווג ידנית
             auto = apply_autocat(con, did)
