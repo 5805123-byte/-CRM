@@ -3493,6 +3493,38 @@ def ensure_schema():
     except Exception as e:
         print('  stetfeld task error:', e)
 
+    # מאיר (22.10.2026): "תכניס לפרנס לילה י"ב חשון לעילוי נשמת יעקב בן סטי ז"ל וגם לארוחת בוקר. התורם זה אברהם דואק"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_douek_12cheshvan_v1'").fetchone():
+            cand = con.execute("SELECT id FROM donors WHERE ((last LIKE '%דואק%' OR last LIKE '%דוואק%' OR last LIKE '%דוויק%' OR last LIKE '%דווק%') AND first LIKE '%אברהם%') "
+                               "OR (lower(COALESCE(english,'')) LIKE '%douek%' OR lower(COALESCE(english,'')) LIKE '%doueck%' OR lower(COALESCE(english,'')) LIKE '%dweck%') "
+                               "AND (lower(COALESCE(english,'')) LIKE '%avraham%' OR lower(COALESCE(english,'')) LIKE '%abraham%')").fetchall()
+            dtext, hy, ded = 'י"ב חשון', 'תשפ"ז', 'לעילוי נשמת יעקב בן סטי ז"ל'
+            ng = heb_greg_year(dtext, hy)
+            if len(cand) == 1:
+                did = cand[0]['id']
+                taken = con.execute("SELECT donor_id FROM parnes WHERE COALESCE(kind,'parnes')='parnes' AND date_text=? AND hyear=? "
+                                    "AND COALESCE(status,'confirmed')!='suggested' AND donor_id<>?", (dtext, hy, did)).fetchone()
+                for kind in ('parnes', 'breakfast'):
+                    if not con.execute("SELECT 1 FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')=? AND date_text=? AND hyear=?", (did, kind, dtext, hy)).fetchone():
+                        con.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method,currency) "
+                                    "VALUES(?,?,?,?,?,?,?,'confirmed',0,?,?,'','$')",
+                                    (did, 12, 'חשון', dtext, '', ded, kind, ng.isoformat() if ng else '', hy))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', '🌙 נרשם פרנס לילה + 🍳 ארוחת בוקר %s %s — %s' % (dtext, hy, ded), '', now_iso()))
+                if taken:
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                                (did, today_iso(), 'parnes', '⚠️ י"ב חשון כבר רשום גם אצל תורם אחר (#%s) — לבדוק את הלילה של אברהם דואק' % taken['donor_id']))
+                print('  פרנס לילה + ארוחת בוקר י"ב חשון — דואק אברהם (#%s)%s' % (did, ' · ⚠️ הלילה תפוס גם אצל #%s' % taken['donor_id'] if taken else ''))
+            else:
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)",
+                            (today_iso(), 'parnes', '🌙 להכניס פרנס לילה + ארוחת בוקר י"ב חשון תשפ"ז לעילוי נשמת יעקב בן סטי ז"ל — התורם אברהם דואק (לא נמצא כרטיס יחיד: %d מועמדים)' % len(cand)))
+                print('  פרנס דואק: לא נמצא כרטיס יחיד (%d) — נרשמה משימה' % len(cand))
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_douek_12cheshvan_v1')")
+            con.commit()
+    except Exception as e:
+        print('  parnes douek error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
