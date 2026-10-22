@@ -20400,6 +20400,69 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'hmonth': hm, 'now': now_})
+        if self.path.split('?')[0] == '/api/nd/who':
+            # 🔍 מאיר: "תחפש לי את ברוך גדלביץ בנדרים פלוס… אני לא מוצא אותו בכלל" — חיפוש בכל מה שנמשך מנדרים
+            # פלוס (הוראות קבע בכל מצב, תורמים, עסקאות, הוראות בנקאיות) לפי שם / טלפון, בכל המוסדות. קריאה בלבד.
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            q = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('q') or [''])[0].strip()[:60]
+            if not q:
+                return self._send(200, 'חסר ?q=שם או טלפון'.encode('utf-8'), 'text/plain; charset=utf-8')
+            con = db()
+            try:
+                qs = {q}
+                for a, b_ in (('גדלביץ', 'גדליביץ'), ('גדליביץ', 'גדלביץ'), ("'", ''), ('׳', ''), ('י', 'יי'), ('וו', 'ו'), ('ו', 'וו')):
+                    if a in q:
+                        qs.add(q.replace(a, b_))
+                ph = re.sub(r'\D', '', q)
+                out = ['חיפוש נדרים פלוס: %s' % ' / '.join(sorted(qs)) + (' · טלפון %s' % ph if len(ph) >= 7 else ''), '']
+                mem = con.execute("SELECT id,last,first,phone FROM members WHERE " + ' OR '.join(['last LIKE ? OR first LIKE ?'] * len(qs)),
+                                  tuple(x for t in qs for x in ('%' + t + '%', '%' + t + '%'))).fetchall()
+                phones = set()
+                for m_ in mem:
+                    phones.update(_phones_of(m_['phone']))
+                if len(ph) >= 7:
+                    phones.add(ph[-9:])
+                out.append('חברי קהילה: ' + (' · '.join('#%d %s %s (%s)' % (m_['id'], m_['last'], m_['first'], m_['phone'] or 'בלי טלפון') for m_ in mem) or 'לא נמצאו'))
+                like = ' OR '.join(['name LIKE ?'] * len(qs))
+                vals = tuple('%' + t + '%' for t in qs)
+                def rows(sql, args):
+                    try:
+                        return [dict(r) for r in con.execute(sql, args).fetchall()]
+                    except Exception as e:
+                        return [{'error': str(e)[:80]}]
+                pw = (' OR ' + ' OR '.join(['phone LIKE ?'] * len(phones))) if phones else ''
+                pv = tuple('%' + p[-7:] + '%' for p in phones)
+                ks = rows("SELECT id,name,phone,amount,groupe,active,off,error,kind,mosad,next_date,last4,member_id FROM nd_keva WHERE " + like + pw +
+                          " OR member_id IN (%s)" % (','.join(str(m_['id']) for m_ in mem) or '-1'), vals + pv)
+                out.append('')
+                out.append('הוראות קבע (כל המצבים): %d' % len(ks))
+                for k in ks:
+                    out.append('  %s · %s · ₪%s · %s · %s · %s%s%s · חבר #%s · טלפון %s · חיוב הבא %s' % (
+                        k.get('id'), k.get('name'), k.get('amount'), k.get('groupe') or '', 'בנקאית' if k.get('kind') == 'bank' else 'אשראי',
+                        'פעילה' if k.get('active') else 'לא פעילה', (' · ' + k['off']) if k.get('off') else '', (' · ⚠️ ' + k['error']) if k.get('error') else '',
+                        k.get('member_id'), k.get('phone'), k.get('next_date')))
+                ts = rows("SELECT id,name,phones,mail,city,member_id FROM nd_torem WHERE " + like.replace('name', 'name') + (' OR ' + ' OR '.join(['phones LIKE ?'] * len(phones)) if phones else ''), vals + pv)
+                out.append('')
+                out.append('תורמים ברשימת נדרים פלוס: %d' % len(ts))
+                for t in ts[:20]:
+                    out.append('  %s · %s · %s · חבר #%s' % (t.get('id'), t.get('name'), t.get('phones'), t.get('member_id')))
+                xs = rows("SELECT iso,amount,keva,name,phone,groupe,mosad FROM nd_tx WHERE " + like + pw + " ORDER BY iso DESC LIMIT 15", vals + pv)
+                out.append('')
+                out.append('עסקאות אחרונות: %d' % len(xs))
+                for x in xs:
+                    out.append('  %s · ₪%s · הוראה %s · %s · %s · %s' % (x.get('iso'), x.get('amount'), x.get('keva') or '—', x.get('name'), x.get('phone'), x.get('groupe') or ''))
+                lg = rows("SELECT at,summary FROM cm_debt_log WHERE member_id IN (%s) ORDER BY id DESC LIMIT 10" % (','.join(str(m_['id']) for m_ in mem) or '-1'), ())
+                out.append('')
+                out.append('יומן החבר (אחרונים): %d' % len(lg))
+                for l_ in lg:
+                    out.append('  %s · %s' % (l_.get('at'), l_.get('summary')))
+                tk = rows("SELECT due_date,done,note FROM tasks WHERE note LIKE ? ORDER BY id DESC LIMIT 5", ('%' + q + '%',))
+                out.append('')
+                out.append('משימות: ' + (' | '.join('%s %s %s' % (t.get('due_date'), '✓' if t.get('done') else '○', t.get('note')) for t in tk) or '—'))
+            finally:
+                con.close()
+            return self._send(200, '\n'.join(out).encode('utf-8'), 'text/plain; charset=utf-8')
         if self.path.split('?')[0] == '/api/mikveh/ui_grep':
             # 🔍 אבחון (רק כניסה ראשית): איך מסך המקווה מעדכן שדה — למשל יתרה. ?q=balance
             if auth_on() and self.role != 'admin':
