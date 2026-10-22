@@ -20452,7 +20452,7 @@ class H(BaseHTTPRequestHandler):
                 out.append('עסקאות אחרונות: %d' % len(xs))
                 for x in xs:
                     out.append('  %s · ₪%s · הוראה %s · %s · %s · %s' % (x.get('iso'), x.get('amount'), x.get('keva') or '—', x.get('name'), x.get('phone'), x.get('groupe') or ''))
-                lg = rows("SELECT at,summary FROM cm_debt_log WHERE member_id IN (%s) ORDER BY id DESC LIMIT 10" % (','.join(str(m_['id']) for m_ in mem) or '-1'), ())
+                lg = rows("SELECT COALESCE(at,date) at,summary FROM member_log WHERE member_id IN (%s) ORDER BY id DESC LIMIT 10" % (','.join(str(m_['id']) for m_ in mem) or '-1'), ())
                 out.append('')
                 out.append('יומן החבר (אחרונים): %d' % len(lg))
                 for l_ in lg:
