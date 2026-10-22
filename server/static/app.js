@@ -10252,6 +10252,86 @@ function donorDebts(d){
   }catch(e){}
   return out;
 }
+// ===== מאיר: "תבדוק ותעבור על כל הרשימה של יששכר זבולון אחד אחד — חוב / לא שילם חודש-חודשיים / שילם מראש —
+// ודו"ח מפורט. ואח"כ דו"ח של כל הקבועים החודשיים". הדו"ח נבנה מאותם כללים של מסך החובות (monthLedger / izSummary):
+// רק חודשים שנסגרו נספרים, החודש הנוכחי לא; חודש שדולג ושולם כפול אחריו מתקזז.
+function rptStatus(d){
+  const sym=curSym(d), f=n=>sym+Math.round(n).toLocaleString('en-US');
+  const dons=(d.donations||[]).filter(x=>String(x.date||'').length>=7&&amtNum(x.amount)>0);
+  const last=dons.reduce((m,x)=>x.date>m?x.date:m,'');
+  const lastTxt=last?(fmtGreg(last.slice(0,10))+' · '+f(amtNum(dons.find(x=>x.date===last).amount))):'אין תשלומים רשומים';
+  let s=null,L=null; try{s=izSummary(d);}catch(e){} try{L=monthLedger(d, prevMonth(todayStr().slice(0,7)));}catch(e){}
+  const o={d,sym,f,last,lastTxt,s,L,cls:'none',amt:0,title:'',lines:[]};
+  if(String(d.debt_ok||'').trim()){o.cls='settled';o.title='✅ סודר עם התורם'+(d.debt_note?(' — '+d.debt_note):'')+' ('+fmtGreg(d.debt_ok)+')';}
+  else if(s&&s.manual!=null&&s.manual>0.5){o.cls='debt';o.amt=s.manual;o.title='🔴 חוב '+f(s.manual)+' (עודכן ידנית בכרטיס)';}
+  else if(s&&s.thru&&s.thru.length&&s.thruDebt>0.5){o.cls='debt';o.amt=s.thruDebt;
+    o.title='🔴 חוב '+f(s.thruDebt)+' — '+s.thru.filter(t=>t.months).map(t=>t.av+' שולם עד '+fmtMonth(t.thru)+' ('+t.months+' חודשים × '+f(t.amt)+')').join(' · ');}
+  else if(L&&L.debt>0.5){o.cls='debt';o.amt=L.debt;
+    const miss=(L.rows||[]).filter(r=>r.due>0.5&&r.got<r.due-0.5);
+    const nm=L.per>0.5?Math.round(L.debt/L.per*10)/10:0;
+    o.title='🔴 חוב '+f(L.debt)+(nm?(' ≈ '+nm+' חודשים'):'');
+    o.lines.push('מאז '+fmtMonth(L.first)+' עד '+fmtMonth(L.thru)+': היה אמור להיכנס '+f(L.due)+' · נכנס '+f(L.got));
+    if(miss.length)o.lines.push('חודשים חסרים: '+miss.map(r=>fmtMonth(r.m)+(r.got>0.5?(' (נכנס רק '+f(r.got)+')'):'')).join(' · '));
+    if(L.over>0.5)o.lines.push('חודשים ששולמו מעבר: '+f(L.over)+' (קוזז מהחוב)');}
+  else if(L&&L.ahead>0.5){o.cls='ahead';o.amt=L.ahead;
+    const nm=L.per>0.5?Math.round(L.ahead/L.per*10)/10:0;
+    o.title='🟢 שילם מראש '+f(L.ahead)+(nm?(' ≈ '+nm+' חודשים'):'');
+    o.lines.push('מאז '+fmtMonth(L.first)+' עד '+fmtMonth(L.thru)+': היה אמור להיכנס '+f(L.due)+' · נכנס '+f(L.got));}
+  else if(L){o.cls='ok';o.title='✔️ מסודר — שולם עד '+fmtMonth(L.thru);
+    o.lines.push('מאז '+fmtMonth(L.first)+': היה אמור להיכנס '+f(L.due)+' · נכנס '+f(L.got));}
+  else{o.cls='none';o.title='⚪ אין התחייבות חודשית רשומה (אי אפשר לחשב חוב)';}
+  if(L&&(L.joint||[]).length)o.lines.push('התחייבות משותפת עם: '+L.joint.join(', '));
+  // מה נכנס בחודשים האחרונים — כדי לראות בעין "לא שילם חודש-חודשיים"
+  if(L&&L.rows&&L.rows.length){const rr=L.rows.slice(-6);
+    o.lines.push('חודשים אחרונים: '+rr.map(r=>MON[+r.m.slice(5,7)-1]+' '+(r.got>0.5?f(r.got):'—')+(r.dec>0.5?' ⛔':'')).join(' · ')+(rr.some(r=>r.dec>0.5)?' (⛔ = חיוב שנדחה)':''));}
+  return o;
+}
+function rptIZ(){
+  const list=DB.filter(d=>d.tier==='יששכר_זבולון'||(d.partners||[]).some(p=>p.active!=0)||izLinkedRows(d).length)
+    .map(d=>{const o=rptStatus(d);
+      const parts=(d.partners||[]).filter(p=>p.active!=0);
+      o.commit=parts.length?('אברכים: '+parts.map(p=>(p.avreich||'אברך')+(amtNum(p.amount)?(' '+o.f(partnerMonthly(p))):'')+(p.paid_thru?(' · שולם עד '+fmtMonth(p.paid_thru)):'')).join(' · ')):'אין אברכים רשומים';
+      if(o.s&&o.s.monthly>0.5)o.commit+=' · התחייבות חודשית '+Object.keys(o.s.byCur||{}).map(c=>c+Math.round(o.s.byCur[c]).toLocaleString('en-US')).join(' + ');
+      return o;});
+  rptShow('🤝 דו"ח יששכר־זבולון — מצב התשלומים', list, 'יששכר־זבולון');
+}
+function rptMonthly(){
+  const list=DB.filter(d=>{try{return commitRows(d).some(r=>r.mo&&!r.iz&&r.conf>0&&!r.ended&&r.amt>0.5);}catch(e){return false;}})
+    .map(d=>{const o=rptStatus(d);
+      const rows=commitRows(d).filter(r=>r.mo&&r.conf>0&&!r.ended&&r.amt>0.5);
+      o.commit='קבוע: '+rows.map(r=>(r.icon||'')+' '+r.what+' '+o.f(r.amt)+' לחודש'+(r.sinceM?(' מאז '+fmtMonth(r.sinceM)):'')).join(' · ');
+      return o;});
+  rptShow('🔁 דו"ח קבועים חודשיים — מצב התשלומים', list, 'קבועים חודשיים');
+}
+function rptShow(title,list,kind){
+  const ord={debt:0,ahead:1,ok:2,none:3,settled:4};
+  list.sort((a,b)=>(ord[a.cls]-ord[b.cls])||(b.amt-a.amt)||String(a.d.last||'').localeCompare(String(b.d.last||''),'he'));
+  const tot={};list.forEach(o=>{if(o.cls==='debt'||o.cls==='ahead'){const k=o.cls+o.sym;tot[k]=(tot[k]||0)+o.amt;}});
+  const cnt=c=>list.filter(o=>o.cls===c).length;
+  const sum=`<div class="rptsum"><span>🔴 חייבים: <b>${cnt('debt')}</b>${Object.keys(tot).filter(k=>k.startsWith('debt')).map(k=>' · '+k.slice(4)+Math.round(tot[k]).toLocaleString('en-US')).join('')}</span>
+    <span>🟢 שילמו מראש: <b>${cnt('ahead')}</b>${Object.keys(tot).filter(k=>k.startsWith('ahead')).map(k=>' · '+k.slice(5)+Math.round(tot[k]).toLocaleString('en-US')).join('')}</span>
+    <span>✔️ מסודרים: <b>${cnt('ok')}</b></span><span>⚪ בלי התחייבות רשומה: <b>${cnt('none')}</b></span><span>✅ סודר ידנית: <b>${cnt('settled')}</b></span></div>`;
+  const row=(o,i)=>`<div class="rptrow ${o.cls}" data-did="${o.d.id}"><div class="rpth"><b>${i+1}. ${esc(o.d.last)} ${esc(o.d.first)}</b>${o.d.english?` <small dir="ltr">${esc(o.d.english)}</small>`:''}<span class="rptst">${esc(o.title)}</span></div>
+    <div class="rptl">${esc(o.commit||'')}</div>${o.lines.map(l=>`<div class="rptl">${esc(l)}</div>`).join('')}<div class="rptl">תשלום אחרון: ${esc(o.lastTxt)}</div></div>`;
+  const body=`<div class="rptdate">נכון ל-${fmtGreg(todayStr())} · ${list.length} תורמים · חוב = מה שהיה אמור להיכנס עד החודש שנסגר ולא נכנס (החודש הנוכחי לא נספר)</div>${sum}<div class="rptlist">${list.map(row).join('')||'<div class="empty">אין נתונים</div>'}</div>`;
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox rptbox"><div class="cm"><b>${esc(title)}</b></div>${body}
+    <div class="cbtns"><button class="btn rpt_print" type="button">🖨️ הדפסה / PDF</button><button class="btn ghost rpt_copy" type="button">📋 העתק טקסט</button><button class="btn ghost cno" type="button">סגור</button></div></div>`;
+  document.body.appendChild(o);
+  o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelectorAll('.rptrow').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.did);if(d){o.remove();openDonor(d);}});
+  const txt=()=>title+'\n'+fmtGreg(todayStr())+'\n\n'+list.map((x,i)=>(i+1)+'. '+x.d.last+' '+x.d.first+(x.d.english?(' ('+x.d.english+')'):'')+'\n   '+x.title+'\n   '+(x.commit||'')+'\n'+x.lines.map(l=>'   '+l+'\n').join('')+'   תשלום אחרון: '+x.lastTxt).join('\n\n');
+  o.querySelector('.rpt_copy').onclick=async()=>{try{await navigator.clipboard.writeText(txt());toast('הדו"ח הועתק ✓');}catch(e){uiAlert('לא הועתק');}};
+  o.querySelector('.rpt_print').onclick=()=>{
+    const doc=`<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>${esc(title)}</title>
+    <style>@page{size:A4;margin:12mm}body{font-family:Arial,sans-serif;color:#222;font-size:11pt}h1{font-size:16pt;color:#6b1d1d;margin:0 0 4mm}
+    .rptdate{color:#666;font-size:9.5pt;margin-bottom:3mm}.rptsum{display:flex;flex-wrap:wrap;gap:4mm;font-size:10pt;border:1px solid #ccc;border-radius:2mm;padding:2mm 3mm;margin-bottom:4mm}
+    .rptrow{border:1px solid #ddd;border-right:4px solid #999;border-radius:2mm;padding:2mm 3mm;margin-bottom:2.5mm;break-inside:avoid}.rptrow.debt{border-right-color:#c62828}.rptrow.ahead{border-right-color:#2e7d32}.rptrow.ok{border-right-color:#1565c0}
+    .rpth{display:flex;justify-content:space-between;gap:3mm;flex-wrap:wrap}.rptst{font-weight:bold}.rptl{font-size:9.5pt;color:#444;margin-top:1mm}</style></head><body><h1>${esc(title)}</h1>${body}</body></html>`;
+    const f=document.createElement('iframe');f.style.cssText='position:fixed;left:-9999px;width:210mm;height:297mm;border:0';
+    document.body.appendChild(f);f.contentDocument.open();f.contentDocument.write(doc);f.contentDocument.close();
+    setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){uiAlert('ההדפסה לא נפתחה');}setTimeout(()=>f.remove(),60000);},300);};
+}
 function renderDebts(){
   const rows=[];
   DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english+' '+d.business)).forEach(d=>{
@@ -10273,6 +10353,7 @@ function renderDebts(){
     ${whats.length?`<div class="cattot"><div class="cattot-t">🎯 החוב לפי ייעוד</div>
       ${whats.map(w=>`<div class="catrow"><span>${esc(wlbl[w]||w)}</span><b>${f(byWhat[w])}</b></div>`).join('')}</div>`:''}
     <div class="cnt">${rows.length} תורמים · לפי גובה החוב</div>
+    <div class="addrow" style="margin:0 2px 8px"><button class="btn sm" id="rpt_iz" style="background:#6b1d1d;color:#fff">📊 דו"ח יששכר־זבולון</button><button class="btn sm" id="rpt_mo" style="background:#1565c0;color:#fff">📊 דו"ח קבועים חודשיים</button></div>
     <div class="hintxt" style="margin:0 2px 8px">חוב = מה שהתורם התחייב ועדיין לא נתן. נכנס לכאן: 🤝 יששכר־זבולון שלא שולם (לפי "שולם עד חודש" או עדכון ידני) · 🎯 התחייבות/קמפיין שטרם ניתן · 🌙 פרנס יום שנתפס ולא נגבה · 🏛️ יתרה בבניין.<br>תרומות שנכנסו בפועל אינן חוב ואינן נספרות כאן.</div>
     <div class="list">${rows.map((r,i)=>`<div class="rowc debtrow"><div class="rowmain" data-did="${r.d.id}">
       <div class="nm">${esc(r.d.last)} <small>${esc(r.d.first)}</small></div>
@@ -10282,6 +10363,7 @@ function renderDebts(){
       <div class="meta"><b class="debtsum">${f(r.sum)}</b></div></div>`).join('')
       ||'<div class="empty">אין חובות פתוחים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowmain').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.did);if(d)openDonor(d);});
+  const _ri=document.getElementById('rpt_iz'), _rm=document.getElementById('rpt_mo'); if(_ri)_ri.onclick=rptIZ; if(_rm)_rm.onclick=rptMonthly;
   view.querySelectorAll('.dbpaid').forEach(b=>b.onclick=async e=>{
     e.stopPropagation();
     const r=rows[+b.dataset.i], x=r.list[+b.dataset.j]; if(!r||!x)return;
@@ -10841,10 +10923,11 @@ function renderAvreich(){
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
   view.innerHTML=`<div class="avbar">
       ${avSortSel('avsort')}
-      <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button></div>
+      <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button></div>
     <div class="cnt" id="avcnt"></div>
     <div class="avlist" id="avlistwrap"></div>`;
   const sortSel=document.getElementById('avsort'); sortSel.value=avSort;
+  document.getElementById('avrptbtn').onclick=rptIZ;
   function paintList(){
     const izd=filterIZ();
     document.getElementById('avcnt').innerHTML=`${izd.length} תורמי יששכר־זבולון · ${totalAv} אברכים פעילים · טור אברך / תאריך / סכום / הערות`;
