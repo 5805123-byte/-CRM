@@ -3493,6 +3493,19 @@ def ensure_schema():
     except Exception as e:
         print('  stetfeld task error:', e)
 
+    # מאיר (22.10.2026): "יש לי ליומן להתקשר למכונות כביסה מקווה ביום ראשון בשעה 13:00"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_mikveh_washers_v1'").fetchone():
+            note = '📞 להתקשר למכונות כביסה — מקווה'
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-25' AND note=?", (note,)).fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,?,?,'')",
+                            ('2026-10-25', 'followup', note, '', '13:00'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_mikveh_washers_v1')")
+            con.commit()
+            print('  משימת מכונות כביסה מקווה 25.10.2026 13:00: נרשמה')
+    except Exception as e:
+        print('  washers task error:', e)
+
     # מאיר (22.10.2026): "תכניס לפרנס לילה י"ב חשון לעילוי נשמת יעקב בן סטי ז"ל וגם לארוחת בוקר. התורם זה אברהם דואק"
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_douek_12cheshvan_v1'").fetchone():
