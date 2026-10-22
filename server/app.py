@@ -3525,6 +3525,31 @@ def ensure_schema():
     except Exception as e:
         print('  parnes douek error:', e)
 
+    # מאיר: "הוא שילם 200 דולר באתר אוטרייז" — הלילה וארוחת הבוקר של דואק נגבו ($200 באוטורייז)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_douek_12cheshvan_paid_v1'").fetchone():
+            rows = con.execute("SELECT id,donor_id,kind FROM parnes WHERE date_text='י\"ב חשון' AND hyear='תשפ\"ז' AND dedication LIKE '%יעקב בן סטי%'").fetchall()
+            if rows:
+                did = rows[0]['donor_id']
+                for r in rows:
+                    con.execute("UPDATE parnes SET paid=1, method='אותורייז', amount=? WHERE id=?", ('200' if r['kind'] == 'parnes' else '', r['id']))
+                # החיוב עצמו מגיע מהסנכרון של אוטורייז לכרטיס; אם כבר נכנס — מקושר ללילה, ואם עוד לא — משימה לבדוק
+                pid = next((r['id'] for r in rows if r['kind'] == 'parnes'), rows[0]['id'])
+                dn = con.execute("SELECT id FROM donations WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=200 AND date>='2026-10-01' "
+                                 "AND (method LIKE '%אותורייז%' OR method LIKE '%Authorize%' OR method LIKE '%אוטורייז%') ORDER BY date DESC", (did,)).fetchone()
+                if dn:
+                    con.execute("UPDATE donations SET category='פרנס לילה', parnes_id=? WHERE id=?", (pid, dn['id']))
+                else:
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                                (did, today_iso(), 'verify', '💰 לבדוק שהחיוב של $200 באוטורייז (פרנס לילה + ארוחת בוקר י\"ב חשון) נכנס לכרטיס אחרי הסנכרון'))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', '💳 שילם $200 באתר אוטורייז על פרנס לילה + ארוחת בוקר י\"ב חשון — סומן נגבה', '', now_iso()))
+                print('  דואק י\"ב חשון: סומן נגבה $200 אוטורייז%s' % ('' if dn else ' (החיוב עוד לא בכרטיס — משימה לבדוק)'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_douek_12cheshvan_paid_v1')")
+            con.commit()
+    except Exception as e:
+        print('  parnes douek paid error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
