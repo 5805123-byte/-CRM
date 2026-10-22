@@ -3584,6 +3584,56 @@ def ensure_schema():
     except Exception as e:
         print('  parnes douek v2 error:', e)
 
+    # מאיר (22.10.2026): "גדלביץ' ברוך — תקפיא את ההוראת קבע שלו בנדרים פלוס" — הקפאה אמיתית (DisableKeva),
+    # בדיוק כמו כפתור ⏸ בכרטיס החבר. התוצאה נרשמת ביומן החוב של החבר ובמשימה שמאיר רשם ליום הזה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='freeze_gedalevich_v1'").fetchone():
+            import nedarim as _nd
+            mem = con.execute("SELECT id,last,first FROM members WHERE (last LIKE '%גדלביץ%' OR last LIKE '%גדליביץ%' OR last LIKE '%גדלוביץ%' OR last LIKE '%גדעלביץ%') "
+                              "AND first LIKE '%ברוך%' AND COALESCE(active,1)=1").fetchall()
+            res_lines = []
+            if len(mem) != 1:
+                res_lines.append('🔴 לא נמצא כרטיס קהילה יחיד של גדלביץ ברוך (%d נמצאו) — ההוראה לא הוקפאה' % len(mem))
+            else:
+                mid = mem[0]['id']
+                ks = con.execute("SELECT * FROM nd_keva WHERE member_id=? AND COALESCE(active,1)=1", (mid,)).fetchall()
+                if not ks:
+                    res_lines.append('🔴 לא נמצאה הוראת קבע פעילה בנדרים פלוס אצל %s %s — לא הוקפא כלום' % (mem[0]['last'], mem[0]['first']))
+                for k in ks:
+                    kid = k['id']
+                    bank = (k['kind'] or '') == 'bank'
+                    rid = re.sub(r'^M(?:\d+:)?', '', kid) if bank else kid
+                    try:
+                        with _nd.use(_nd.account_for(k['mosad'] or '')):
+                            ok, msg = _nd.masav_status(rid, 7) if bank else _nd.disable_keva(rid)
+                    except Exception as e:
+                        ok, msg = False, str(e)[:120]
+                    what = '⏸ הוקפאה הוראת הקבע (%s₪%s%s)' % ('בנקאית · ' if bank else '', k['amount'] or '', (' · ' + k['groupe']) if k['groupe'] else '')
+                    if ok:
+                        con.execute("UPDATE nd_keva SET active=0, off='מוקפאת' WHERE id=?", (kid,))
+                        res_lines.append('✅ ' + what)
+                    else:
+                        res_lines.append('🔴 ההקפאה נכשלה (%s): %s' % (kid, msg or 'נדרים פלוס לא אישרו'))
+                    try:
+                        cm_debt_log(con, mid, 'keva:' + kid, what if ok else '🔴 ההקפאה נכשלה: %s' % (msg or ''))
+                    except Exception as e:
+                        print('  gedalevich log error:', e)
+            txt = ' · '.join(res_lines)
+            okall = res_lines and all(x.startswith('✅') for x in res_lines)
+            # המשימה שמאיר רשם ליום הזה — מסומנת כבוצעה עם התוצאה, או מקבלת את הסיבה לכישלון
+            t = con.execute("SELECT id FROM tasks WHERE note LIKE '%גדלביץ%' AND COALESCE(done,0)=0 ORDER BY due_date DESC, id DESC").fetchone()
+            if t and okall:
+                con.execute("UPDATE tasks SET done=1, done_date=?, done_at=?, done_by='המערכת', done_note=? WHERE id=?", (today_iso(), now_iso(), txt, t['id']))
+            elif t:
+                con.execute("UPDATE tasks SET note=note||' — '||? WHERE id=?", (txt, t['id']))
+            else:
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)", (today_iso(), 'other', 'הקפאת הוראת הקבע של גדלביץ ברוך בנדרים פלוס — ' + txt))
+            con.execute("INSERT INTO seed_flags(name) VALUES('freeze_gedalevich_v1')")
+            con.commit()
+            print('  הקפאת גדלביץ: ' + txt)
+    except Exception as e:
+        print('  freeze gedalevich error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
