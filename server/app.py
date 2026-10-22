@@ -3327,6 +3327,21 @@ def ensure_schema():
     except Exception as e:
         print('  mukai task error:', e)
 
+    # מאיר (22.10.2026): "תרשום ביומן להתקשר לשטטפלד על ארבע מינים"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_stetfeld_4minim_v1'").fetchone():
+            note = '📞 להתקשר לשטטפלד — על ארבעת המינים'
+            cand = con.execute("SELECT id FROM donors WHERE last LIKE '%שטטפלד%' OR last LIKE '%שטאטפלד%' OR last LIKE '%שטעטפלד%' OR aliases LIKE '%שטטפלד%'").fetchall()
+            did = cand[0]['id'] if len(cand) == 1 else None
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-22' AND note=?", (note,)).fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,'','')",
+                            (did, '2026-10-22', 'followup', note, ''))
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_stetfeld_4minim_v1')")
+            con.commit()
+            print('  משימת שטטפלד 22.10.2026: נרשמה' + (' (בכרטיס #%s)' % did if did else ' (כללית)'))
+    except Exception as e:
+        print('  stetfeld task error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
