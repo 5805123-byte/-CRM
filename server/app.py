@@ -215,6 +215,157 @@ def dedup_prayers(con, donor_id=None):
     return ndrop
 
 
+# ערוצים שמגיעים ממעבד סליקה — כסף אחר מצ'ק/זל, ולכן לא נחשבים "אותו תשלום" בבדיקת הכפילות
+_QB_CARD_METH = ('בנק_ווסט', 'בנק ווסט', 'Banquest', 'banquest', 'אותורייז', 'אוטורייז', 'Authorize', 'authorize',
+                 'אשראי', 'נדרים', 'נדרים פלוס', 'Pledger', 'Annualy')
+
+
+def _qb_match_existing(con, did, items, days=25):
+    """אותו כסף שכבר נרשם ביד (למשל ליום טוב): אותו תורם, אותו סכום, תאריך עד 25 יום הפרש, לא מערוץ אשראי,
+    ולא שורת הערכה 'ייבוא 2026'. items = [(i, date, amount)] של אותו תורם מהדוח. כל שורה קיימת נתפסת פעם
+    אחת, והזיווג הוא לפי התאריך הקרוב ביותר (ולא לפי סדר הדוח). מחזיר {i: שורה קיימת}."""
+    pairs = []
+    for i, diso, a in items:
+        try:
+            d0 = datetime.date.fromisoformat(str(diso)[:10])
+        except ValueError:
+            continue
+        lo, hi = (d0 - datetime.timedelta(days=days)).isoformat(), (d0 + datetime.timedelta(days=days)).isoformat()
+        for r in con.execute("SELECT id,date,method,COALESCE(note,'') n,COALESCE(tid,'') tid FROM donations WHERE donor_id=? "
+                             "AND ROUND(CAST(amount AS REAL),2)=? AND length(COALESCE(date,''))=10 AND date BETWEEN ? AND ?",
+                             (did, a, lo, hi)).fetchall():
+            if r['tid'].startswith('qb26-') or r['n'].startswith('ייבוא 2026') or (r['method'] or '') in _QB_CARD_METH:
+                continue
+            pairs.append((abs((datetime.date.fromisoformat(r['date']) - d0).days), i, r['id'], r))
+    pairs.sort(key=lambda p: (p[0], p[1]))
+    out, taken = {}, set()
+    for dist, i, rid, r in pairs:
+        if i in out or rid in taken:
+            continue
+        out[i] = r; taken.add(rid)
+    return out
+
+
+def qb_chase_import(con):
+    """הדוח המשולב QuickBooks + Chase (אוג'–אוק' 2026): צ'קים, זל, דונרס, OJC, Fidelity, ACH, Wire.
+    מי שזוהה — התשלום נכנס לכרטיס (אלא אם כבר רשום — אז השורה הקיימת מקבלת את המזהה והערה);
+    מי שלא — לדף "חיובים בלי תורם" לשיוך ידני. אפשר להריץ שוב אחרי הוספת שמות — לפי גרסת הקובץ."""
+    path = os.path.join(HERE, 'checks_aug_oct_2026.json')
+    if not os.path.exists(path):
+        return
+    with open(path, encoding='utf-8') as f:
+        book = json.load(f)
+    ver = str(book.get('version') or '')
+    if kv_get(con, 'qb26_ver', '') == ver:
+        return
+    byhe, byen = {}, {}
+    for r in con.execute("SELECT id,last,first,english,business,aliases FROM donors"):
+        byhe.setdefault(((r['last'] or '') + ' ' + (r['first'] or '')).strip(), []).append(r['id'])
+        for fld in (r['english'], r['business'], r['aliases']):
+            t = re.sub(r'\s+', ' ', (fld or '')).strip().lower()
+            if t:
+                byen.setdefault(t, []).append(r['id'])
+
+    def whois(hint):
+        he = (hint.get('he') or '').strip()
+        if len(byhe.get(he, [])) == 1:
+            return byhe[he][0]
+        en = re.sub(r'\s+', ' ', (hint.get('en') or '')).strip().lower()
+        if len(byen.get(en, [])) == 1:
+            return byen[en][0]
+        if en and len(en) >= 6:
+            hit = {i for k, v in byen.items() if en in k or k in en for i in v}
+            if len(hit) == 1:
+                return hit.pop()
+        return None
+
+    rules = {}
+    try:
+        for r in con.execute("SELECT donor_id,amount,category FROM donor_rules"):
+            rules[(r['donor_id'], round(float(r['amount'] or 0), 2))] = r['category']
+    except Exception:
+        pass
+    dcat = {r['id']: (r['category'] or '') for r in con.execute("SELECT id,category FROM donors")}
+    people = book.get('people', {})
+    found = {w: (whois(h) if h else None) for w, h in people.items()}
+    SRCNAME = {"צ'ק": 'Checks 2026', 'Zelle': 'Zelle 2026', 'דונרס': 'Donors Fund 2026', 'OJC': 'OJC 2026',
+               'Fidelity': 'Fidelity 2026', 'ACH': 'ACH 2026', 'Wire': 'Wire 2026'}
+    ins = dup = wait = repl = 0
+    rows = book.get('rows', [])
+    # למי שייכת כל שורה (זיהוי לפי שם, או שיוך ידני שמאיר עשה בדף החיובים), ומה כבר רשום אצלו
+    who_of, per_donor = {}, {}
+    for i, r in enumerate(rows):
+        tid = 'qb26-%03d' % i
+        if con.execute("SELECT 1 FROM donations WHERE tid=?", (tid,)).fetchone():
+            continue                                   # כבר נרשם בריצה קודמת
+        did = found.get(r['who'])
+        if not did:
+            # מאיר שייך שורה של המשלם הזה ידנית בדף החיובים — אותו כרטיס לכל השורות שלו
+            same = tuple('qb26-%03d' % j for j, x in enumerate(rows) if x['who'] == r['who'])
+            rc = con.execute("SELECT r.donor_id FROM recon r WHERE r.tid IN (%s) AND r.donor_id IS NOT NULL LIMIT 1"
+                             % ','.join('?' * len(same)), same).fetchone()
+            if not rc:
+                rc = con.execute("SELECT d.donor_id FROM donations d WHERE d.tid IN (%s) AND d.donor_id IS NOT NULL LIMIT 1"
+                                 % ','.join('?' * len(same)), same).fetchone()
+            if rc and rc['donor_id']:
+                did = rc['donor_id']
+        who_of[i] = did
+        if did:
+            per_donor.setdefault(did, []).append((i, r['date'], round(float(r['amount'] or 0), 2)))
+    matched = {}
+    for did, items in per_donor.items():
+        matched.update(_qb_match_existing(con, did, items))
+    for i, r in enumerate(rows):
+        if i not in who_of:
+            continue
+        tid = 'qb26-%03d' % i
+        a = round(float(r['amount'] or 0), 2)
+        meth = r['method']
+        did = who_of[i]
+        if did:
+            con.execute("DELETE FROM recon WHERE tid=?", (tid,))
+            srcnote = 'דוח QuickBooks/Chase ' + r['date'][5:7] + '/' + r['date'][:4] + ((' · ' + r['note']) if r.get('note') else '')
+            ex = matched.get(i)
+            if ex:
+                # אותו כסף כבר רשום ביד — לא פעמיים. השורה הקיימת מקבלת את המזהה, שלא תיבדק שוב
+                con.execute("UPDATE donations SET tid=?, note=TRIM(COALESCE(note,'')||' · מופיע גם ב'||?,' ·') WHERE id=?", (tid, srcnote, ex['id']))
+                dup += 1
+                continue
+            old = con.execute("SELECT id,category FROM donations WHERE donor_id=? AND date=? AND length(COALESCE(date,''))=7 "
+                              "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND ROUND(CAST(amount AS REAL),2)=?",
+                              (did, r['date'][:7], a)).fetchone()
+            cat = rules.get((did, a)) or (old['category'] if old else '') or ''
+            note = 'ייבוא ' + SRCNAME.get(meth, meth) + ' · ' + srcnote
+            if old:
+                con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
+                repl += 1
+            if not cat:
+                cat = dcat.get(did) or 'מזדמן'
+                note += ' · לא סווג — לבדוק עבור מה'
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'$',1)",
+                        (did, r['date'], a, cat, meth, note, tid))
+            ins += 1
+        else:
+            nm = re.sub(r'\s*\([^)]*\)', '', r['who'].replace(',,', ',')).strip()
+            if ',' in nm:
+                last, _, first = nm.partition(',')
+            else:
+                first, _, last = nm.rpartition(' ')
+            if r['who'] == 'Unknown':
+                first, last = '', 'לא ידוע — ' + (r.get('note') or '')[:60]
+            if con.execute("INSERT OR IGNORE INTO recon(tid,first,last,amount,date,recurring,donor_id,processed,source,status) "
+                           "VALUES(?,?,?,?,?,0,NULL,0,?,'settled')",
+                           (tid, first.strip(), last.strip(), '%.2f' % a, r['date'], SRCNAME.get(meth, meth))).rowcount:
+                wait += 1
+    kv_set(con, 'qb26_ver', ver)
+    con.commit()
+    print('  QuickBooks/Chase אוג׳–אוק׳ 2026 (%s): נכנסו %d, כבר היו ביד %d, החליפו הערכות %d, ממתינים לשיוך %d'
+          % (ver, ins, dup, repl, wait))
+    for w, d0 in sorted(found.items()):
+        if not d0 and w != 'Unknown':
+            print('      לא זוהה כרטיס: %s' % w)
+
+
 def _already_posted(con, did, diso, meth, a):
     """האם אותו תשלום כבר רשום. אותו חיוב מדווח לפעמים בשני קבצים עם תאריך
     רישום שונה (14 מול 15 במאי), ולכן ההשוואה היא לפי חודש ולא לפי יום.
@@ -4678,6 +4829,14 @@ def ensure_schema():
                     print('      לא זוהה כרטיס: %s' % w)
     except Exception as e:
         print('  checks/ojc 2026 error:', e)
+
+    # מאיר (22.10.2026): "הצ'קים ושל זל… אוגוסט, ספטמבר, אוקטובר — תכניס לתוך התורמים לכולם. מי שאתה לא יודע
+    # — תשאל… והכי חשוב — שלא ייכנסו כפילויות, כי הרבה הכנסתי ליום טוב". הדוח המשולב QuickBooks + Chase
+    # (checks_aug_oct_2026.json). רץ מחדש בכל שינוי גרסה של הקובץ, ובלי לרשום פעמיים: לכל שורה מזהה (qb26-NNN).
+    try:
+        qb_chase_import(con)
+    except Exception as e:
+        print('  qb/chase aug-oct 2026 error:', e)
 
     # קלמן לאקס — תורם חדש (לא חיים לאקס). נפתח לו כרטיס, ושלוש תרומות הדונרס שלו נכנסות אליו.
     try:
@@ -10263,6 +10422,8 @@ def recon_apply(cur, tid, b):
     dm = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', row['date'] or '')
     # תאריך מלא (יום-חודש-שנה) ולא רק חודש — כדי שיוצג מתי בדיוק נגבה
     diso = f"{dm.group(3)}-{MON.get(dm.group(2),'01')}-{dm.group(1)}" if dm else ''
+    if not diso and re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(row['date'] or '')):
+        diso = str(row['date'])                  # שורות מדוחות צ'קים / זל — התאריך כבר ISO
     cat = b.get('category', '') or row['category'] or ''
     if not cat and did:                       # אין בחירה — אולי יש כלל קבוע לסכום הזה אצל התורם
         _rr = cur.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
@@ -10277,6 +10438,12 @@ def recon_apply(cur, tid, b):
         cur.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (cat, today_iso()))
     # אמצעי התשלום לפי מקור ההתאמה (Authorize / Banquest / בנק ווסט)
     pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
+    # שורות מדוחות צ'קים / זל / דונרס / OJC / Fidelity / ACH / Wire — אמצעי התשלום לפי המקור, לא "אותורייז"
+    for _pfx, _pm in (('Checks', "צ'ק"), ('צ׳קים', "צ'ק"), ('Zelle', 'Zelle'), ('Donors Fund', 'דונרס'), ('OJC', 'OJC'),
+                      ('Fidelity', 'Fidelity'), ('ACH', 'ACH'), ('Wire', 'Wire')):
+        if str(row['source'] or '').startswith(_pfx):
+            pay_method = _pm
+            break
     # מילוי ערוץ החיוב בכרטיס (ובאברכים) לפי אמצעי התשלום — אוטומטית
     _chan = {'Authorize': 'אותורייז', 'Banquest': 'בנק_ווסט'}.get(pay_method, '')
     if _chan and did:

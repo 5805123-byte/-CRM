@@ -1,0 +1,961 @@
+{
+ "label": "QuickBooks + Chase — צ׳קים, זל, דונרס, OJC, Fidelity, ACH, Wire · אוגוסט–אוקטובר 2026",
+ "version": "2026-10-22a",
+ "people": {
+  "Adlin": {
+   "he": "אדלין יצחק",
+   "en": "Itzi Adlin"
+  },
+  "B & C Lead Consultants LLC": {
+   "en": "B & C Lead Consultants LLC",
+   "guess": 1
+  },
+  "Babakhanov, Arkady": {
+   "en": "Arkady Babakhanov",
+   "guess": 1
+  },
+  "Bendel, Bryna": {
+   "en": "Bryna Bendel",
+   "guess": 1
+  },
+  "Berkowitz, Jacob": {
+   "en": "Jacob Berkowitz",
+   "guess": 1
+  },
+  "Brody, Yisroel": {
+   "he": "ברודי ישראל",
+   "en": "Israel Brody"
+  },
+  "Cohen, Shmuel": {
+   "en": "Shmuel Cohen",
+   "guess": 1
+  },
+  "Core Compliance - Statfeld": {
+   "he": "בנימין שטטפלד",
+   "en": "Benjamin & Joel Statfeld"
+  },
+  "David J. Pack Foundation": {
+   "he": "פק דוד",
+   "en": "David Pack"
+  },
+  "Deutsch, Moishe (VentureDBVE LLC)": {
+   "en": "Moishe Deutsch",
+   "guess": 1
+  },
+  "Disabled Veteran Org (DVS)": {
+   "en": "Disabled Veteran Org",
+   "guess": 1
+  },
+  "Dworkin, Meir": {
+   "en": "Meir Dworkin",
+   "guess": 1
+  },
+  "Fine, Andrew": {
+   "en": "Andrew Fine",
+   "guess": 1
+  },
+  "Frankel": {
+   "he": "פרנקל יהושע",
+   "en": "Yehoshua Frankel"
+  },
+  "Friedlander, David": {
+   "en": "David Friedlander",
+   "guess": 1
+  },
+  "Gevertzman, Phyllis": {
+   "en": "Phyllis Gevertzman",
+   "guess": 1
+  },
+  "Goldstein, Avraham Menachem": {
+   "en": "Avraham Menachem Goldstein",
+   "guess": 1
+  },
+  "Goldstein, Jakob T": {
+   "en": "Jakob T Goldstein",
+   "guess": 1
+  },
+  "Halberstam, Mark": {
+   "he": "הלברשטם מארק",
+   "en": "Mark Halberstam"
+  },
+  "Hochman, Chaim": {
+   "he": "הוכמן חיים",
+   "en": "Chaim Hochman"
+  },
+  "Hoffman, Todd": {
+   "en": "Todd Hoffman",
+   "guess": 1
+  },
+  "Klein, Felicia": {
+   "en": "Felicia Klein",
+   "guess": 1
+  },
+  "Knobel Therapy Inc.": {
+   "en": "Knobel Therapy Inc.",
+   "guess": 1
+  },
+  "Kohn, Zevi": {
+   "en": "Zevi Kohn",
+   "guess": 1
+  },
+  "Lamm, Steven": {
+   "he": "לאם אסתר",
+   "en": "steven Lamm"
+  },
+  "Liviem, Ryan": {
+   "en": "Ryan Liviem",
+   "guess": 1
+  },
+  "Lorbert, Adam": {
+   "he": "לורברט אדם",
+   "en": "Adam Lorbert"
+  },
+  "Loveman, Michael": {
+   "en": "Michael Loveman",
+   "guess": 1
+  },
+  "MGM Electrical Corp (Lawrence NY)": {
+   "en": "MGM Electrical Corp",
+   "guess": 1
+  },
+  "Max, Ezra M.": {
+   "he": "מקס ברכה",
+   "en": "Ezra Max"
+  },
+  "Mendelsohn, Alfred": {
+   "he": "מנדלסון לאה",
+   "en": "Alferd Mendelson"
+  },
+  "Perlow, Amy": {
+   "en": "Amy Perlow",
+   "guess": 1
+  },
+  "Pinter, Samson": {
+   "he": "פינטער שמשון",
+   "en": "Samson Pinter"
+  },
+  "Rosenfeld Family Foundation (Monsey)": {
+   "en": "Rosenfeld Family Foundation",
+   "guess": 1
+  },
+  "Rosenfeld, Jerry - Tova": {
+   "he": "רוזנפלד ישראל אבא",
+   "en": "Jerry Rosenfeld"
+  },
+  "Schachter, Barry": {
+   "he": "שכטר בערי",
+   "en": "Barry Schacter"
+  },
+  "Schweitzer, Elya": {
+   "en": "Elya Schweitzer",
+   "guess": 1
+  },
+  "Shymo Corp.": {
+   "en": "Shymo Corp.",
+   "guess": 1
+  },
+  "Siegal, Abraham": {
+   "en": "Abraham Siegal",
+   "guess": 1
+  },
+  "Silber, Meyer": {
+   "en": "Meyer Silber",
+   "guess": 1
+  },
+  "Sims, Rachel": {
+   "en": "Rachel Sims",
+   "guess": 1
+  },
+  "Taubenfeld, Gabe & Miriam": {
+   "he": "טאובנפלד מרים",
+   "en": "Miriam Taubenfeld"
+  },
+  "Tepfer, Jerry": {
+   "he": "טעפפר יהושע",
+   "en": "Jerry Teppfer"
+  },
+  "Thriveway Fundin": {
+   "en": "Thriveway Fundin",
+   "guess": 1
+  },
+  "Vago, Michael": {
+   "he": "ואגו מיכאל",
+   "en": "Micahel Vago"
+  },
+  "Viders, Elaine M": {
+   "en": "Elaine M Viders",
+   "guess": 1
+  },
+  "Wald, Baila": {
+   "en": "Baila Wald",
+   "guess": 1
+  },
+  "YSW Group LLC": {
+   "en": "YSW Group LLC",
+   "guess": 1
+  },
+  "Unknown": {}
+ },
+ "rows": [
+  {
+   "who": "Adlin",
+   "date": "2026-08-03",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-09-03",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Adlin",
+   "date": "2026-10-05",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "B & C Lead Consultants LLC",
+   "date": "2026-09-18",
+   "amount": 360.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "B & C Lead Consultants LLC",
+   "date": "2026-10-13",
+   "amount": 501.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Babakhanov, Arkady",
+   "date": "2026-09-10",
+   "amount": 180.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Bendel, Bryna",
+   "date": "2026-09-08",
+   "amount": 150.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Berkowitz, Jacob",
+   "date": "2026-09-09",
+   "amount": 2000.0,
+   "method": "דונרס",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Brody, Yisroel",
+   "date": "2026-08-20",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase 8/26"
+  },
+  {
+   "who": "Brody, Yisroel",
+   "date": "2026-09-20",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase 9/23 (with Kohn)"
+  },
+  {
+   "who": "Cohen, Shmuel",
+   "date": "2026-08-26",
+   "amount": 5.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-08-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-09-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase 9/3"
+  },
+  {
+   "who": "Core Compliance - Statfeld",
+   "date": "2026-10-01",
+   "amount": 1000.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase pending (with Dworkin)"
+  },
+  {
+   "who": "David J. Pack Foundation",
+   "date": "2026-08-13",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "David J. Pack Foundation",
+   "date": "2026-09-10",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "David J. Pack Foundation",
+   "date": "2026-10-08",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Deutsch, Moishe (VentureDBVE LLC)",
+   "date": "2026-10-08",
+   "amount": 100.0,
+   "method": "ACH",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Disabled Veteran Org (DVS)",
+   "date": "2026-08-31",
+   "amount": 1800.0,
+   "method": "ACH",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Disabled Veteran Org (DVS)",
+   "date": "2026-09-30",
+   "amount": 1800.0,
+   "method": "ACH",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Dworkin, Meir",
+   "date": "2026-09-28",
+   "amount": 3600.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase pending (with Core)"
+  },
+  {
+   "who": "Fine, Andrew",
+   "date": "2026-09-08",
+   "amount": 1300.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-08-03",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-09-03",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-09-20",
+   "amount": 1200.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Frankel",
+   "date": "2026-10-06",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Friedlander, David",
+   "date": "2026-09-23",
+   "amount": 100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Gevertzman, Phyllis",
+   "date": "2026-09-01",
+   "amount": 800.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Gevertzman, Phyllis",
+   "date": "2026-09-02",
+   "amount": 1100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Gevertzman, Phyllis",
+   "date": "2026-09-23",
+   "amount": 2500.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Gevertzman, Phyllis",
+   "date": "2026-09-24",
+   "amount": 800.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Gevertzman, Phyllis",
+   "date": "2026-10-19",
+   "amount": 2500.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Goldstein, Avraham Menachem",
+   "date": "2026-09-18",
+   "amount": 100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Goldstein, Avraham Menachem",
+   "date": "2026-10-19",
+   "amount": 100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Goldstein, Jakob T",
+   "date": "2026-09-14",
+   "amount": 101.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-08-26",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Halberstam, Mark",
+   "date": "2026-10-02",
+   "amount": 100.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-08-11",
+   "amount": 180.0,
+   "method": "Zelle",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-09-11",
+   "amount": 180.0,
+   "method": "Zelle",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-09-18",
+   "amount": 260.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-10-08",
+   "amount": 180.0,
+   "method": "Zelle",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Hochman, Chaim",
+   "date": "2026-10-19",
+   "amount": 260.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Hoffman, Todd",
+   "date": "2026-09-10",
+   "amount": 360.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Klein, Felicia",
+   "date": "2026-09-10",
+   "amount": 1200.0,
+   "method": "OJC",
+   "src": "Both",
+   "note": "Chase 9/15"
+  },
+  {
+   "who": "Knobel Therapy Inc.",
+   "date": "2026-09-15",
+   "amount": 1000.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Kohn, Zevi",
+   "date": "2026-09-17",
+   "amount": 18000.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase 9/23 (with Brody)"
+  },
+  {
+   "who": "Lamm, Steven",
+   "date": "2026-09-08",
+   "amount": 1300.0,
+   "method": "דונרס",
+   "src": "Both",
+   "note": "Chase 9/15"
+  },
+  {
+   "who": "Liviem, Ryan",
+   "date": "2026-09-08",
+   "amount": 360.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-08-24",
+   "amount": 218.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Lorbert, Adam",
+   "date": "2026-09-25",
+   "amount": 218.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Loveman, Michael",
+   "date": "2026-09-08",
+   "amount": 100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Max, Ezra M.",
+   "date": "2026-09-07",
+   "amount": 1800.0,
+   "method": "OJC",
+   "src": "Both",
+   "note": "Chase 9/9"
+  },
+  {
+   "who": "Max, Ezra M.",
+   "date": "2026-10-19",
+   "amount": 1000.0,
+   "method": "OJC",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-08-17",
+   "amount": 360.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-09-15",
+   "amount": 360.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Mendelsohn, Alfred",
+   "date": "2026-10-19",
+   "amount": 360.0,
+   "method": "Fidelity",
+   "src": "Both",
+   "note": "Chase pending (with Schachter)"
+  },
+  {
+   "who": "MGM Electrical Corp (Lawrence NY)",
+   "date": "2026-09-17",
+   "amount": 19000.0,
+   "method": "Wire",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Perlow, Amy",
+   "date": "2026-09-08",
+   "amount": 72.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Perlow, Amy",
+   "date": "2026-09-21",
+   "amount": 36.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Perlow, Amy",
+   "date": "2026-10-05",
+   "amount": 36.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Perlow, Amy",
+   "date": "2026-10-19",
+   "amount": 180.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-08-26",
+   "amount": 5896.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-09-22",
+   "amount": 5803.0,
+   "method": "Fidelity",
+   "src": "Both",
+   "note": "Chase 9/23"
+  },
+  {
+   "who": "Pinter, Samson",
+   "date": "2026-09-23",
+   "amount": 16000.0,
+   "method": "Fidelity",
+   "src": "Both",
+   "note": "Chase 9/23"
+  },
+  {
+   "who": "Rosenfeld Family Foundation (Monsey)",
+   "date": "2026-09-15",
+   "amount": 10000.0,
+   "method": "Wire",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-08-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Rosenfeld, Jerry - Tova",
+   "date": "2026-09-15",
+   "amount": 1000.0,
+   "method": "צ'ק",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-08-03",
+   "amount": 360.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-09-03",
+   "amount": 360.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-09-25",
+   "amount": 1300.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Schachter, Barry",
+   "date": "2026-10-07",
+   "amount": 360.0,
+   "method": "Fidelity",
+   "src": "Both",
+   "note": "Chase pending (with Mendelsohn)"
+  },
+  {
+   "who": "Schweitzer, Elya",
+   "date": "2026-09-09",
+   "amount": 6.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Shymo Corp.",
+   "date": "2026-09-18",
+   "amount": 2100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Siegal, Abraham",
+   "date": "2026-09-22",
+   "amount": 100.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Silber, Meyer",
+   "date": "2026-09-11",
+   "amount": 26.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Silber, Meyer",
+   "date": "2026-09-11",
+   "amount": 26.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Silber, Meyer",
+   "date": "2026-09-21",
+   "amount": 26.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Sims, Rachel",
+   "date": "2026-09-16",
+   "amount": 1200.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Sims, Rachel",
+   "date": "2026-10-19",
+   "amount": 480.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-08-03",
+   "amount": 2300.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-09-02",
+   "amount": 2300.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-09-06",
+   "amount": 2680.0,
+   "method": "Fidelity",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-09-23",
+   "amount": 2600.0,
+   "method": "Fidelity",
+   "src": "Both",
+   "note": "Chase 9/23"
+  },
+  {
+   "who": "Taubenfeld, Gabe & Miriam",
+   "date": "2026-10-06",
+   "amount": 2300.0,
+   "method": "Fidelity",
+   "src": "Both",
+   "note": "Chase pending $2,600 - see note"
+  },
+  {
+   "who": "Tepfer, Jerry",
+   "date": "2026-08-18",
+   "amount": 180.0,
+   "method": "Zelle",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Tepfer, Jerry",
+   "date": "2026-09-08",
+   "amount": 1200.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Thriveway Fundin",
+   "date": "2026-09-25",
+   "amount": 2000.0,
+   "method": "ACH",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Vago, Michael",
+   "date": "2026-08-03",
+   "amount": 900.0,
+   "method": "OJC",
+   "src": "QuickBooks",
+   "note": ""
+  },
+  {
+   "who": "Vago, Michael",
+   "date": "2026-09-01",
+   "amount": 900.0,
+   "method": "OJC",
+   "src": "Both",
+   "note": "Chase 9/3"
+  },
+  {
+   "who": "Vago, Michael",
+   "date": "2026-10-06",
+   "amount": 900.0,
+   "method": "OJC",
+   "src": "Both",
+   "note": "Chase 10/7"
+  },
+  {
+   "who": "Viders, Elaine M",
+   "date": "2026-10-06",
+   "amount": 1000.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Wald, Baila",
+   "date": "2026-09-17",
+   "amount": 300.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "YSW Group LLC",
+   "date": "2026-09-21",
+   "amount": 101.0,
+   "method": "Zelle",
+   "src": "Chase",
+   "note": ""
+  },
+  {
+   "who": "Unknown",
+   "date": "2026-09-15",
+   "amount": 5000.0,
+   "method": "Wire",
+   "src": "Chase",
+   "note": "transfer from CHK ...4323 #30828778121, marked \"Misc\" - donor unknown"
+  },
+  {
+   "who": "Unknown",
+   "date": "2026-10-06",
+   "amount": 300.0,
+   "method": "Fidelity",
+   "src": "Chase",
+   "note": "pending $2,600 transfer: $2,300 is Taubenfeld, $300 unassigned"
+  }
+ ]
+}
