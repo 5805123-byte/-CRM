@@ -20444,6 +20444,23 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'hmonth': hm, 'now': now_})
+        if self.path.split('?')[0] == '/api/donors/names.txt':
+            # 📋 רשימת השמות לטופס השיוך (קלוד): מזהה | עברית | לועזי | עסק | כינויים | ייעודים — טקסט קטן להעתקה
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            con = db()
+            try:
+                out = []
+                for r in con.execute("SELECT id,last,first,english,business,aliases,"
+                                     "(SELECT GROUP_CONCAT(DISTINCT TRIM(category)) FROM donations dn WHERE dn.donor_id=d.id AND COALESCE(TRIM(category),'')<>'') cats "
+                                     "FROM donors d ORDER BY id"):
+                    out.append('|'.join(str(x or '').replace('|', '/').replace('\n', ' ').strip() for x in
+                                        (r['id'], ((r['last'] or '') + ' ' + (r['first'] or '')).strip(), r['english'], r['business'], r['aliases'], r['cats'])))
+                cps = [str(x[0]) for x in con.execute("SELECT name FROM campaigns ORDER BY rowid DESC") if x[0]]
+            finally:
+                con.close()
+            txt = 'campaigns: ' + ' ; '.join(cps) + '\n' + '\n'.join(out)
+            return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
         if self.path.split('?')[0] == '/api/nd/who':
             # 🔍 מאיר: "תחפש לי את ברוך גדלביץ בנדרים פלוס… אני לא מוצא אותו בכלל" — חיפוש בכל מה שנמשך מנדרים
             # פלוס (הוראות קבע בכל מצב, תורמים, עסקאות, הוראות בנקאיות) לפי שם / טלפון, בכל המוסדות. קריאה בלבד.
