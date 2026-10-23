@@ -1832,6 +1832,21 @@ async function mkTowelEdit(c){
     const r=await api('POST','/api/mikveh/towel',{id:c.id,on:on2?1:0,size:on2?v:''}).catch(()=>null);
     if(!r||!r.ok){o.querySelectorAll('button').forEach(x=>x.disabled=false);return uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'אין תשובה'));}
     c.remark=r.remark;o.remove();toast(on2?'🧺 מגבות '+(v==='small'?'קטנות':'גדולות')+' — עודכן במקווה':'🚫 מנוי המגבות הוסר — עודכן במקווה');mkOpen(c);if(tab==='mikveh')mkPaint();});}
+// 💳 מאיר: יתרות צבורות — מי יש לו כסף לזכותו במקווה (ערך צבור שנשאר, זיכויים)
+function mkCreditOpen(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
+  const bal=c=>(c.balance!=null?c.balance:c.last_balance)||0;
+  const all=MK.clients.filter(c=>bal(c)>0).sort((a,b)=>bal(b)-bal(a));
+  const tot=all.reduce((s,c)=>s+bal(c),0);
+  const row=c=>`<div class="mkrow" data-cr="${esc(c.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(mkName(c))}</b>
+      <div class="mksub"><span dir="ltr">${esc(c.phone||'')}</span> · #${esc(c.code||'')} · ${esc((G[c.group]&&G[c.group].name)||'')}${c.sub_end?(' · מנוי עד '+esc(mkDate(c.sub_end))):''}</div></div>
+      <span class="mktag ok">${esc(mkMoney(bal(c)))}</span></div>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2e7d4f">💳</div><div><h2>יתרות וזיכויים</h2>
+      <div class="mksub"><b>${all.length}</b> לקוחות עם כסף לזכותם במקווה · סה"כ <b>${esc(mkMoney(tot))}</b></div>
+      <div class="mksub">ערך צבור שנשאר אחרי מעבר למנוי, או זיכוי שנרשם. לחיצה על לקוח פותחת את הכרטיס; שם, בקוביית היתרה, מורידים כשהוא מנצל.</div></div></div>
+    <div class="mklist">${all.map(row).join('')||'<div class="hintxt">אין יתרות</div>'}</div>`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-cr]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.cr);if(c)mkOpen(c);});}
 function mkTowelOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
   const all=MK.clients.filter(mkTowel).sort((a,b)=>(a.last||'').localeCompare(b.last||'','he')||(a.first||'').localeCompare(b.first||'','he'));
@@ -1943,6 +1958,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${MK.clients.length}</b><span>לקוחות</span></div>
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
+      <button class="mkstat" id="mkcredit" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם יתרה צבורה / זיכוי — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>((c.balance!=null?c.balance:c.last_balance)||0)>0).length}</b><span>💳 יתרות / זיכויים</span></button>
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
       <button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
@@ -1972,6 +1988,7 @@ function renderMikveh(){
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
+  const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=mkCreditOpen;
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
@@ -2102,6 +2119,9 @@ async function mkSetGroup(c,g,on){
   if(!r||!r.ok){mkRowRefresh(c);on('err',(r&&r.error)||'אין תשובה מהשרת');return false;}
   c.group=g.id; mkRowRefresh(c);
   on('ok',((Date.now()-t0)/1000).toFixed(1));
+  // מאיר: "ערך צבור ששילם 200 ₪ והעברתי אותו למנוי אחר — יש לו זיכוי יתרה, זה אמור להיות במערכת"
+  const _bal=(c.balance!=null?c.balance:c.last_balance)||0;
+  if(_bal>0)setTimeout(()=>uiAlert('💳 נשארה לו יתרה צבורה של '+mkMoney(_bal)+'.\nהיא נשארת לזכותו במקווה ורשומה בכרטיס בקוביית היתרה. כשהוא מנצל אותה — לוחצים על הקובייה ומורידים (למשל ‎-50).'),300);
   return true;
 }
 // כרטיס לקוח: הפרטים כאריחים, הקבוצות כלחצנים. בחירה → שורת אישור למטה → "מעביר…" עם ספינר
@@ -2131,7 +2151,7 @@ function mkOpen(c){
         <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
         ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
-        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>💰 יתרה${c.balance==null&&c.last_balance!=null?' אחרונה':''} ✎</span><b>${bal||'—'}</b></div>
+        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>${((c.balance!=null?c.balance:c.last_balance)||0)>0?'💳 יתרה / זיכוי':'💰 יתרה'}${c.balance==null&&c.last_balance!=null?' (אחרונה)':''} ✎</span><b>${bal||'—'}</b></div>
         ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
       </div>
       <div class="mksec">🔄 העברה לקבוצה <small>בוחרים קבוצה ומאשרים</small></div>
