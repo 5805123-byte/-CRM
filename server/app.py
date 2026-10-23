@@ -20504,7 +20504,8 @@ class H(BaseHTTPRequestHandler):
                 pw = (' OR ' + ' OR '.join(['phone LIKE ?'] * len(phones))) if phones else ''
                 pv = tuple('%' + p[-7:] + '%' for p in phones)
                 ks = rows("SELECT id,name,phone,amount,groupe,active,off,error,kind,mosad,next_date,last4,member_id FROM nd_keva WHERE " + like + pw +
-                          " OR member_id IN (%s)" % (','.join(str(m_['id']) for m_ in mem) or '-1'), vals + pv)
+                          (" OR lower(COALESCE(mail,'')) LIKE ?" if '@' in q else '') +
+                          " OR member_id IN (%s)" % (','.join(str(m_['id']) for m_ in mem) or '-1'), vals + pv + (('%' + q.lower() + '%',) if '@' in q else ()))
                 out.append('')
                 out.append('הוראות קבע (כל המצבים): %d' % len(ks))
                 for k in ks:
@@ -20512,7 +20513,8 @@ class H(BaseHTTPRequestHandler):
                         k.get('id'), k.get('name'), k.get('amount'), k.get('groupe') or '', 'בנקאית' if k.get('kind') == 'bank' else 'אשראי',
                         'פעילה' if k.get('active') else 'לא פעילה', (' · ' + k['off']) if k.get('off') else '', (' · ⚠️ ' + k['error']) if k.get('error') else '',
                         k.get('member_id'), k.get('phone'), k.get('next_date')))
-                ts = rows("SELECT id,name,phones,mail,city,member_id FROM nd_torem WHERE " + like.replace('name', 'name') + (' OR ' + ' OR '.join(['phones LIKE ?'] * len(phones)) if phones else ''), vals + pv)
+                ts = rows("SELECT id,name,phones,mail,city,member_id FROM nd_torem WHERE " + like + (' OR ' + ' OR '.join(['phones LIKE ?'] * len(phones)) if phones else '') +
+                          (" OR lower(COALESCE(mail,'')) LIKE ?" if '@' in q or len(q) >= 5 else ''), vals + pv + (('%' + q.lower() + '%',) if '@' in q or len(q) >= 5 else ()))
                 out.append('')
                 out.append('תורמים ברשימת נדרים פלוס: %d' % len(ts))
                 for t in ts[:20]:
