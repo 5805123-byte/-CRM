@@ -23306,6 +23306,30 @@ class H(BaseHTTPRequestHandler):
                     con.close()
             return self._send(200, {'ok': not bad, 'actions': after, 'changed': ch,
                                     'error': ('המקווה לא שמר: ' + ', '.join(bad)) if bad else ''})
+        if self.path == '/api/mikveh/subdates':
+            # 📅 מאיר: "במקווה תעשה לי שאוכל לשנות תאריך מנוי" — מנוי עד (ואם רוצים גם מתאריך), במקווה עצמו
+            import mikveh as _mk
+            cid = str(b.get('id') or '').strip()
+            end = str(b.get('end') or '').strip()[:10]
+            start = str(b.get('start') or '').strip()[:10]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', end) or (start and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', start)):
+                return self._send(200, {'ok': False, 'error': 'תאריך לא תקין'})
+            note = str(b.get('note') or '').strip()[:200]
+            try:
+                old = str(_mk.client(cid, max_age=30).get('subscriptionEndDate') or '')[:10]
+                res = _mk.set_sub_dates(cid, end=end, start=start or None)
+                if res['sub_end'] != end:
+                    return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל התאריך יצא אחרת (%s). תבדוק באתר המקווה' % (res['sub_end'] or '—')})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'sub', '📅 מנוי עד: %s → %s%s' % (old or '—', end, (' · ' + note) if note else '')))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'sub_end': res['sub_end'], 'sub_start': res['sub_start']})
         if self.path == '/api/mikveh/balance':
             # 💰 מאיר: "איפה אני מעדכן לו יתרה בחשבון? כי הוא נתן חלק מזומן" — היתרה (balance) במקווה עצמו, באגורות
             import mikveh as _mk

@@ -338,6 +338,28 @@ def ui_service_urls():
     return out
 
 
+def set_sub_dates(cid, end=None, start=None):
+    """📅 תאריכי המנוי — כמו המסך של המקווה (setClientSubscriptionDates → PATCH Client/{id}/SubscriptionDates).
+    end/start: 'YYYY-MM-DD'. מה שלא נשלח — נשאר כמו שהוא אצל הלקוח."""
+    c = client(cid, max_age=60)
+    def iso(v, cur):
+        if not v:
+            return cur or None
+        return v[:10] + 'T00:00:00'
+    body = {'subscriptionStartDate': iso(start, c.get('subscriptionStartDate')),
+            'subscriptionEndDate': iso(end, c.get('subscriptionEndDate'))}
+    code, res = call('PATCH', 'Client/%s/SubscriptionDates' % cid, body=body, timeout=30)
+    if not (200 <= code < 300):
+        raise RuntimeError('עדכון תאריכי המנוי במקווה נכשל: %s' % (LAST.get('error') or code))
+    _ONE.pop(str(cid), None)
+    c2 = client(cid)
+    if _CL['rows'] is not None:
+        for i, r in enumerate(_CL['rows']):
+            if str(r.get('id')) == str(cid):
+                _CL['rows'][i] = dict(r, subscriptionEndDate=c2.get('subscriptionEndDate'), subscriptionStartDate=c2.get('subscriptionStartDate'))
+    return {'sub_end': str(c2.get('subscriptionEndDate') or '')[:10], 'sub_start': str(c2.get('subscriptionStartDate') or '')[:10]}
+
+
 def set_group(cid, group_id):
     return update_client(cid, {'groupId': group_id})
 

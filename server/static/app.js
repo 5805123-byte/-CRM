@@ -2126,7 +2126,7 @@ function mkOpen(c){
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
         <div class="mktile mkedit" id="mkprice" title="לחיצה — לשנות את המחיר"><span>💲 מחיר המנוי${c.price!=null?' (אישי)':' (של הקבוצה)'} ✎</span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>💳 שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
-        ${tile('מנוי עד',esc(mkDate(c.sub_end)),mkPast(c.sub_end)?'bad':'ok')}
+        <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך המנוי במקווה"><span>מנוי עד ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b></div>
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
         <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
         ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
@@ -2158,6 +2158,7 @@ function mkOpen(c){
     document.getElementById('mkrenew').onclick=()=>mkRenewOpen(c);
     document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
     document.getElementById('mkbal').onclick=()=>mkBalanceEdit(c);
+    const _ms=document.getElementById('mksub'); if(_ms)_ms.onclick=()=>mkSubEdit(c);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
     document.getElementById('mktwl').onclick=()=>mkTowelEdit(c);
@@ -2473,6 +2474,23 @@ async function mkPriceEdit(c,paidFirst){
 // המקווה, אני רוצה שזה יהיה פה גם". חידוש אוטומטי במקווה (השדה של הלקוח שם)
 // 💰 מאיר: "איפה אני מעדכן לו יתרה בחשבון? כי הוא נתן חלק מזומן" — היתרה במקווה עצמו (באגורות אצלם,
 // בשקלים אצלנו). אפשר לכתוב סכום חדש, או +50 / -50 להוסיף / להוריד מהיתרה הנוכחית
+// 📅 מאיר: "במקווה תעשה לי שאוכל לשנות תאריך מנוי" — תאריך סיום המנוי, במקווה עצמו (כמו במסך שלהם)
+async function mkSubEdit(c){
+  const cur=String(c.sub_end||'').slice(0,10);
+  const v=await uiPrompt('מנוי עד — '+mkName(c)+(cur?' (עכשיו '+mkDate(cur)+')':'')+'\nכתוב תאריך חדש: יום.חודש.שנה (למשל 11.11.2026), או +30 להוסיף 30 יום:',cur?mkDate(cur):'');
+  if(v===null)return;const t=String(v).trim();if(!t)return;
+  let d;
+  if(/^[+-]\d+$/.test(t)){const base=cur?new Date(cur+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(t,10));d=base;}
+  else{const m=t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/)||null;const m2=t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(m){let y=+m[3];if(y<100)y+=2000;d=new Date(y,+m[2]-1,+m[1]);}else if(m2){d=new Date(+m2[1],+m2[2]-1,+m2[3]);}}
+  if(!d||isNaN(d.getTime())){toast('תאריך לא תקין');return;}
+  const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const note=await uiPrompt('הערה (לא חובה) — למשל: שילם במזומן לחודש','');if(note===null)return;
+  const el=document.getElementById('mksub');if(el)el.querySelector('b').innerHTML='<span class="mkspin"></span>';
+  const r=await api('POST','/api/mikveh/subdates',{id:c.id,end:iso,note:String(note||'').trim()}).catch(()=>null);
+  if(!r||!r.ok){mkOpen(c);return uiAlert('תאריך המנוי לא עודכן במקווה:\n'+((r&&r.error)||'אין תשובה מהשרת'));}
+  c.sub_end=r.sub_end;const x=(MK.clients||[]).find(y=>y.id===c.id);if(x)x.sub_end=r.sub_end;
+  toast('✓ מנוי עד '+mkDate(r.sub_end)+' עודכן במקווה');mkOpen(c);}
 async function mkBalanceEdit(c){
   const cur=c.balance!=null?c.balance/100:null;
   const v=await uiPrompt('היתרה של '+mkName(c)+' במקווה'+(cur!=null?' (עכשיו ₪'+cur.toLocaleString('he-IL')+')':'')+'\nכתוב יתרה חדשה בש"ח, או +50 / -50 כדי להוסיף / להוריד:', cur!=null?String(cur):'');
