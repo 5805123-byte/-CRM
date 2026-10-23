@@ -22830,16 +22830,23 @@ class H(BaseHTTPRequestHandler):
             row = _mk.slim(res)
             if row['group'] != gid:
                 return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל הקבוצה לא השתנתה'})
+            # מאיר: "אם מישהו עשה ערך צבור ושילם 200 ₪ והעברתי אותו למנוי אחר — יש לו זיכוי יתרה של כסף, זה אמור
+            # להיות במערכת" — היתרה נשארת לזכותו במקווה; כאן היא נרשמת במפורש כזיכוי ביומן ומוחזרת למסך
+            bal = row.get('balance') if row.get('balance') is not None else row.get('last_balance')
+            credit = round(float(bal or 0) / 100.0, 2) if isinstance(bal, (int, float)) and bal > 0 else 0
             # מאיר: "לפעמים לוקח פחות משנייה ולפעמים הרבה זמן, ובעצם הוא כן מתעדכן באותו שנייה במקווה…
             # הוא צריך לעדכן וזהו". הרישום ביומן של חבר הקהילה חיכה לתורו בבסיס הנתונים (כשסנכרון
             # ברקע כותב, עד דקה) — לפני התשובה. עכשיו: עונים מיד, והרישום נעשה ברקע.
-            def _log(cid=cid, gname=gname):
+            def _log(cid=cid, gname=gname, credit=credit):
                 # היומן של לקוח המקווה בלבד — לא נוגע בקהילה
                 try:
                     con = db()
                     try:
                         con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                     (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🔄 הועבר לקבוצה: ' + gname))
+                        if credit:
+                            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                        (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'credit', '💳 זיכוי: עבר ל"%s" עם יתרה צבורה של ₪%g — הכסף נשאר לזכותו במקווה (קוביית היתרה)' % (gname, credit)))
                         con.commit()
                     finally:
                         con.close()
@@ -22847,7 +22854,7 @@ class H(BaseHTTPRequestHandler):
                     print('  mikveh log error:', e)
             import threading as _thr
             _thr.Thread(target=_log, daemon=True).start()
-            return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'ms': dict(_mk.TIMES)})
+            return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'credit': credit, 'ms': dict(_mk.TIMES)})
         if self.path == '/api/mikveh/link':
             # 🔗 מאיר: "אני רוצה להיכנס לכרטיס שלו במקווה כשאני לוחץ על שמו" — כתובת כרטיס לקוח באתר המקווה,
             # עם {id} (המזהה הארוך) או {code} (מספר הלקוח) במקום הלקוח
