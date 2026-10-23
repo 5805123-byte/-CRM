@@ -12399,6 +12399,37 @@ def remember_deleted_contact(con, did, old, new):
         print('  remember_deleted_contact:', e)
 
 
+_ORG_RX = re.compile(r'\b(llc|inc|corp|corporation|co|company|ltd|llp|fund|foundation|trust|group|holdings|partners|capital|'
+                     r'realty|properties|services|management|enterprises|industries|systems|solutions|consultants|therapy|org|organization)\b', re.I)
+
+
+def learn_payer_name(con, did, payer):
+    """מאיר: "ברגע שאני מאשר שזה יצחק ברגר — בשם העסק שלו יהיה את השם הזה באנגלית… ככה פעם הבאה כבר תדע לבד".
+    שם המשלם כפי שהופיע בחיוב נשמר בכרטיס: חברה → שם העסק (אם ריק, אחרת לכינויים); אדם → השם הלועזי
+    (אם ריק, אחרת לכינויים). הזיהוי הבא (whois / byen) משתמש בכל השדות האלה."""
+    payer = re.sub(r'\s+', ' ', str(payer or '')).strip().strip(',')
+    if not did or len(payer) < 3:
+        return False
+    d = con.execute("SELECT english,business,aliases FROM donors WHERE id=?", (did,)).fetchone()
+    if not d:
+        return False
+    have = {re.sub(r'\s+', ' ', x).strip().lower() for x in re.split(r'[,;|\n]', (d['aliases'] or '')) if x.strip()}
+    have |= {(d['english'] or '').strip().lower(), (d['business'] or '').strip().lower()}
+    if payer.lower() in have:
+        return False
+    if _ORG_RX.search(payer) and not (d['business'] or '').strip():
+        con.execute("UPDATE donors SET business=? WHERE id=?", (payer, did))
+    elif not _ORG_RX.search(payer) and not (d['english'] or '').strip():
+        nm = payer
+        if ',' in nm:
+            last, _, first = nm.partition(',')
+            nm = (first.strip() + ' ' + last.strip()).strip()
+        con.execute("UPDATE donors SET english=? WHERE id=?", (nm, did))
+    else:
+        con.execute("UPDATE donors SET aliases=TRIM(COALESCE(aliases,'')||CASE WHEN COALESCE(TRIM(aliases),'')='' THEN '' ELSE ', ' END||?) WHERE id=?", (payer, did))
+    return True
+
+
 def backfill_from_recon(con):
     """מאיר: "היא תרמה לפני חודשיים ולא נכנס לפרטים שלה כלום." החיוב מביא
     איתו אימייל, טלפון וכתובת — כאן הם נכנסים לכרטיס של התורם שהחיוב שויך
@@ -21761,6 +21792,14 @@ class H(BaseHTTPRequestHandler):
                                 (did, iso, '%.2f' % a, cat, meth,
                                  'שויך ידנית מהחיובים ללא תורם' + ((' · ' + unote) if unote else ''), t))
                     made += 1
+            # שם המשלם נשמר בכרטיס — בפעם הבאה הזיהוי אוטומטי
+            try:
+                for t in tids:
+                    r = con.execute("SELECT first,last FROM recon WHERE tid=?", (t,)).fetchone()
+                    if r:
+                        learn_payer_name(con, did, ((r['first'] or '') + ' ' + (r['last'] or '')).strip())
+            except Exception as e:
+                print('  learn payer error:', e)
             # ייעוד קבוע לפי סכום, אם הוגדר לתורם — כדי שלא יצטרך לסווג ידנית
             auto = apply_autocat(con, did)
             con.commit(); con.close()
