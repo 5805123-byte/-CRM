@@ -3515,6 +3515,42 @@ def ensure_schema():
     except Exception as e:
         print('  qb26 unknown label error:', e)
 
+    # מאיר: "תבדוק בנדרים" — מוזיק שמעון יהושע טוען שתרם 306 ₪ (=$101) בערב יום כיפור. חיפוש בכל מה שנמשך
+    # מנדרים פלוס (עסקאות, תורמים, הוראות) לפי שם / מייל / סכום ותאריך — התוצאה נכתבת למשימה שמאיר רואה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='check_mozik_306_v1'").fetchone():
+            L = []
+            def q(sql, args=()):
+                try:
+                    return [dict(r) for r in con.execute(sql, args).fetchall()]
+                except Exception as e:
+                    L.append('שגיאה: %s' % str(e)[:60]); return []
+            tx = q("SELECT iso,amount,name,phone,keva,groupe,comments,conf,mosad,member_id,donor_id FROM nd_tx WHERE "
+                   "lower(COALESCE(name,'')) LIKE '%mozik%' OR lower(COALESCE(name,'')) LIKE '%muzik%' OR lower(COALESCE(name,'')) LIKE '%music%' "
+                   "OR name LIKE '%מוזיק%' OR name LIKE '%מוסיק%' OR phone LIKE '%733670%' OR lower(COALESCE(comments,'')) LIKE '%smpersonal%' "
+                   "OR (CAST(amount AS REAL) BETWEEN 300 AND 310 AND iso BETWEEN '2026-09-17' AND '2026-09-24') ORDER BY iso DESC LIMIT 20")
+            L.append('עסקאות בנדרים פלוס (שם/טלפון/מייל, או 300–310 ₪ בין 17–24/9): %d' % len(tx))
+            for t in tx:
+                L.append('  %s · ₪%s · %s · %s · %s · %s · מוסד %s · תורם #%s' % (t['iso'], t['amount'], t['name'], t['phone'], t['groupe'] or '', t['comments'] or '', t['mosad'] or 'הכולל', t['donor_id']))
+            tr = q("SELECT id,name,phones,mail,member_id FROM nd_torem WHERE lower(COALESCE(mail,'')) LIKE '%smpersonal%' OR lower(COALESCE(name,'')) LIKE '%mozik%' "
+                   "OR lower(COALESCE(name,'')) LIKE '%music%' OR name LIKE '%מוזיק%' OR phones LIKE '%733670%'")
+            L.append('תורמים ברשימת נדרים פלוס: %d' % len(tr))
+            for t in tr:
+                L.append('  %s · %s · %s · %s' % (t['id'], t['name'], t['phones'], t['mail']))
+            ks = q("SELECT id,name,phone,amount,groupe,active,off,mosad FROM nd_keva WHERE lower(COALESCE(name,'')) LIKE '%mozik%' OR lower(COALESCE(name,'')) LIKE '%music%' OR name LIKE '%מוזיק%' OR phone LIKE '%733670%'")
+            L.append('הוראות קבע: %d' % len(ks))
+            for k in ks:
+                L.append('  %s · %s · ₪%s · %s · %s' % (k['id'], k['name'], k['amount'], 'פעילה' if k['active'] else ('לא פעילה ' + (k['off'] or '')), k['mosad'] or 'הכולל'))
+            txt = '\n'.join(L)
+            d = con.execute("SELECT id FROM donors WHERE last LIKE '%מוזיק%' ORDER BY id LIMIT 1").fetchone()
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                        (d['id'] if d else None, today_iso(), 'verify', '🔍 בדיקת נדרים פלוס — מוזיק שמעון יהושע, 306 ₪ ערב יום כיפור:\n' + txt))
+            con.execute("INSERT INTO seed_flags(name) VALUES('check_mozik_306_v1')")
+            con.commit()
+            print('  בדיקת מוזיק בנדרים: ' + txt.replace('\n', ' | '))
+    except Exception as e:
+        print('  mozik check error:', e)
+
     # מאיר (22.10.2026): "תכניס לפרנס לילה י"ב חשון לעילוי נשמת יעקב בן סטי ז"ל וגם לארוחת בוקר. התורם זה אברהם דואק"
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_douek_12cheshvan_v1'").fetchone():
