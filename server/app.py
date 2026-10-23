@@ -15716,9 +15716,12 @@ def receipt_send(con, rid, email='', extra='', subject_override=''):
     rc_html = ''
     if r['kind'] == 'il':
         subject = subject_override or ("קבלה מס' %04d על תרומתך — כולל חצות" % r['num'])
-        body = extra or ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
-                         "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
-                         % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
+        body = ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
+                "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
+                % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
+        if (extra or '').strip():
+            # מאיר: "ואכתוב לו כמה מילים תודה" — המילים האישיות לפני הנוסח הקבוע
+            body = extra.strip() + '\n\n' + body
     elif (r['src'] or '') == 'statement':
         ylab = re.sub(r'^\D+', '', r['purpose'] or '') or str(dd.year)
         subject = 'Donation Receipt %s (No. %d) — Kollel Chatzot' % (ylab, r['num'])
@@ -22181,7 +22184,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             try:
-                res = receipt_send(con, int(m.group(1)), b.get('email') or '')
+                res = receipt_send(con, int(m.group(1)), b.get('email') or '', extra=str(b.get('extra') or '')[:3000])
             except Exception as e:
                 con.close(); return self._send(200, {'ok': False, 'error': 'השליחה נכשלה: %s' % str(e)[:160]})
             con.close()

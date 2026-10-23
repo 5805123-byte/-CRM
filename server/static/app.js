@@ -17686,9 +17686,17 @@ async function rcSendFlow(rc){
   let em=(splitEmails(rc.email||'')[0]||'').trim();
   if(!em){em=(await uiPrompt('אין מייל לתורם. לאיזו כתובת לשלוח את קבלה '+rc.num+'?',''))||'';em=em.trim();if(!em)return null;
     if(!em.includes('@')){toast('כתובת מייל לא תקינה');return null;}}
-  else if(!await uiConfirm('לשלוח את קבלה '+rc.num+' במייל אל '+em+'?'))return null;
+  // מאיר: "ואכתוב לו כמה מילים תודה" — חלון אישור עם מקום למילים אישיות, לפני הנוסח הקבוע של הקבלה
+  const w=document.createElement('div');w.className='confirmov';
+  w.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>📧 אישור סופי לפני שליחה — קבלה ${esc(rc.num)}</b><br><small>אל: <span dir="ltr">${esc(em)}</span>${rc.name?(' · '+esc(rc.name)):''}</small></div>
+    <label class="fld"><span>✍️ כמה מילים אישיות (לא חובה) — יופיעו בתחילת המייל, לפני הנוסח הקבוע</span><textarea id="rc_extra" rows="5" placeholder="למשל: תודה רבה על התרומה בערב יום כיפור…"></textarea></label>
+    <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(w);addMics(w,['#rc_extra']);
+  const ok=await new Promise(res=>{w.querySelector('.cno').onclick=()=>res(false);w.querySelector('.cyes').onclick=()=>res(true);});
+  const extra=(w.querySelector('#rc_extra').value||'').trim();w.remove();
+  if(!ok)return null;
   toast('שולח…');
-  const r=await api('POST','/api/receipts/'+rc.id+'/send',{email:em});
+  const r=await api('POST','/api/receipts/'+rc.id+'/send',{email:em,extra});
   if(!r||!r.ok){await uiAlert('הקבלה לא נשלחה:\n'+((r&&r.error)||'שגיאה לא ידועה'));return null;}
   RCPTS=null; toast('קבלה '+rc.num+' נשלחה אל '+(r.to||em)+' ✓');
   return {sent_at:new Date().toISOString().slice(0,10),to:r.to||em};
@@ -17851,7 +17859,7 @@ function renderReceipts(){
       <span class="rcpur">${r.src==='ez'?'<b class="rcez">איזיקאונט</b> · ':''}${esc(r.purpose||'')}${r.method?` · ${esc(r.method)}`:''}</span>
       <span class="rcst ${r.sent_at?'yes':'no'}" title="${r.sent_at?('נשלחה '+esc(String(r.sent_at).slice(0,16))+' אל '+esc(r.sent_to||'')):'עדיין לא נשלחה לתורם'}">${r.sent_at?'✅ נשלחה':'⬜ לא נשלחה'}</span>${r.sent_at?(r.opened_at?`<span class="rcst yes" title="נפתח ${esc(String(r.opened_at).slice(0,16))}${+r.opens>1?' · '+r.opens+' פעמים':''}">👁 נפתחה ${esc(String(r.opened_at).slice(5,16).replace('-','/'))}</span>`:'<span class="rcst no" title="נספר רק כשתוכנת המייל מציגה תמונות">עוד לא נפתחה</span>'):''}
       <span class="rcact">${(r.src==='ez'&&!r.has_pdf)
-        ? `${r.url?`<a class="btn sm ghost" href="${esc(r.url)}" target="_blank" title="לפתוח את הקבלה אצל איזיקאונט">👁 באיזיקאונט</a>`:''}<button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
+        ? `${r.url?`<a class="btn sm ghost" href="${esc(r.url)}" target="_blank" title="לפתוח את הקבלה אצל איזיקאונט">👁 באיזיקאונט</a>`:''}<button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="שליחה במייל לתורם — הקובץ נמשך מאיזיקאונט">📧 ${r.sent_at?'שלח שוב':'שלח'}</button><button class="btn sm rcattach" data-id="${r.id}" title="הקבלה הופקה באיזיקאונט אבל הקובץ לא התקבל — הורד את ה-PDF מאתר איזיקאונט וצרף כאן, ואז אפשר לשלוח מהמערכת">📎 צרף את ה-PDF מאיזיקאונט</button>`
         : `<button class="btn sm ghost rcprevb" data-id="${r.id}" title="לראות את הקבלה כאן, בתוך האפליקציה">🖼 תצוגה</button><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?v=${Date.now()}" target="_blank" title="צפייה / הדפסה">👁 PDF</a><a class="btn sm ghost" href="/api/receipts/${r.id}.pdf?dl=1&v=${Date.now()}" title="הורדה">⬇️</a><button class="btn sm ${r.sent_at?'ghost':''} rcsend" data-id="${r.id}" title="${r.sent_at?'שליחה חוזרת במייל':'שליחה במייל לתורם'}">📧 ${r.sent_at?'שלח שוב':'שלח'}</button>${r.src==='ez'?'':`<button class="btn sm ghost rcredo" data-id="${r.id}" title="לבנות את הקבלה מחדש לפי מה שרשום עכשיו בתרומה — תאריך, סכום, עבור מה (אותו מספר קבלה)">🔄 הפק מחדש</button>`}`}${r.sent_at||(r.src==='ez'&&r.has_pdf)?'':`<button class="btn sm ghost rcdel" data-id="${r.id}" title="${r.src==='ez'?'מחיקת הרישום אצלנו (את הקבלה עצמה מבטלים באתר איזיקאונט)':'ביטול קבלה שהופקה בטעות'}">🗑</button>`}</span>
     </div>`).join(''):`<div class="hintxt" style="padding:14px;text-align:center">אין עדיין קבלות ${rcKind==='il'?'ישראליות':'לארה"ב'}${qq?' שמתאימות לחיפוש':''}.</div>`;
   view.innerHTML=`<div class="sec rcsec">${head}${newbox}<div class="rclist">${list}</div></div>`;
