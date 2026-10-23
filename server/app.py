@@ -3551,6 +3551,41 @@ def ensure_schema():
     except Exception as e:
         print('  mozik check error:', e)
 
+    # מאיר: "מצאתי — הוא תרם בהעברה בנקאית בתאריך 22/9. תעשה לו קבלה ישראלית אצלנו במערכת ושלח לו באימייל"
+    # התרומה והקבלה מופקות כאן; השליחה — רק אחרי אישור של מאיר (כלל קבוע: אין מייל בלי אישור)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mozik_306_receipt_v1'").fetchone():
+            d = con.execute("SELECT * FROM donors WHERE last LIKE '%מוזיק%' AND first LIKE '%שמעון%' ORDER BY id LIMIT 1").fetchone()
+            if d:
+                did = d['id']
+                if not (d['email'] or '').strip():
+                    con.execute("UPDATE donors SET email=? WHERE id=?", ('smpersonal613@yahoo.com', did))
+                dn = con.execute("SELECT id FROM donations WHERE donor_id=? AND date='2026-09-22' AND ROUND(CAST(amount AS REAL),2)=306", (did,)).fetchone()
+                if dn:
+                    don_id = dn['id']
+                else:
+                    don_id = con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,'₪',1)",
+                                         (did, '2026-09-22', '306', 'זכות החזקת תורה בחצות הלילה', 'העברה בנקאית',
+                                          'העברה בנקאית ערב יום כיפור · "The merit of one Avreich learning for 20 hours at chatzot" · $101')).lastrowid
+                con.commit()
+                try:
+                    doc = receipt_issue(con, don_id, 'il', send=False)
+                    rid = doc['id'] if isinstance(doc, dict) else None
+                    msg = '🧾 קבלה ישראלית %s הופקה למוזיק שמעון יהושע על ₪306 (22.9) — ממתינה לאישור שליחה' % (('מס\' %s' % doc.get('num')) if isinstance(doc, dict) else '')
+                except Exception as e:
+                    rid, msg = None, '🔴 הפקת הקבלה הישראלית למוזיק נכשלה: %s — להפיק מלשונית קבלות' % str(e)[:120]
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)", (did, today_iso(), 'email', msg))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', 'נרשמה תרומה ₪306 בהעברה בנקאית מ-22.9.2026 (ערב יום כיפור) · ' + msg, '', now_iso()))
+                print('  מוזיק 306: ' + msg)
+            else:
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)", (today_iso(), 'email', '🧾 להכניס תרומה ₪306 (העברה 22.9) למוזיק שמעון יהושע ולהפיק קבלה ישראלית — לא נמצא כרטיס'))
+                print('  מוזיק 306: לא נמצא כרטיס')
+            con.execute("INSERT INTO seed_flags(name) VALUES('mozik_306_receipt_v1')")
+            con.commit()
+    except Exception as e:
+        print('  mozik receipt error:', e)
+
     # מאיר (22.10.2026): "תכניס לפרנס לילה י"ב חשון לעילוי נשמת יעקב בן סטי ז"ל וגם לארוחת בוקר. התורם זה אברהם דואק"
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_douek_12cheshvan_v1'").fetchone():
@@ -15661,7 +15696,7 @@ def receipt_preview_jpg(con, don_id):
     return data
 
 
-def receipt_send(con, rid, email=''):
+def receipt_send(con, rid, email='', extra='', subject_override=''):
     """שולח את הקבלה (PDF מצורף) למייל של התורם, ומסמן שנשלחה."""
     r = con.execute("SELECT * FROM receipt_docs WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -15680,10 +15715,10 @@ def receipt_send(con, rid, email=''):
         dd = datetime.date.today()
     rc_html = ''
     if r['kind'] == 'il':
-        subject = "קבלה מס' %04d על תרומתך — כולל חצות" % r['num']
-        body = ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
-                "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
-                % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
+        subject = subject_override or ("קבלה מס' %04d על תרומתך — כולל חצות" % r['num'])
+        body = extra or ("לכבוד %s,\n\nמצורפת קבלה מס' %04d על תרומתך בסך ₪%s מתאריך %s.\n\n"
+                         "תודה על שותפותך בתורת חצות. תזכו למצוות!\n\nכולל חצות\n02-5803545"
+                         % (r['name'], r['num'], format(amt, ',.2f'), dd.strftime('%d.%m.%Y')))
     elif (r['src'] or '') == 'statement':
         ylab = re.sub(r'^\D+', '', r['purpose'] or '') or str(dd.year)
         subject = 'Donation Receipt %s (No. %d) — Kollel Chatzot' % (ylab, r['num'])
@@ -15702,7 +15737,7 @@ def receipt_send(con, rid, email=''):
     # קבלה של חבר קהילה — מאיר: "בקהילה שכל המיילים יהיו רק מנדר 18 בלבד, גם בתרומות"
     is_member = (r['note'] or '').startswith('member:')
     res = mailer.send(to, subject, body, [(fname, 'application/pdf', pdf)], profile='comm' if is_member else None,
-                      pixel=open_pixel(con, 'rc', rid), rtl=(r['kind'] == 'il'),
+                      pixel=open_pixel(con, 'rc', rid), rtl=(r['kind'] == 'il' and not re.search(r'[A-Za-z]{4}', extra or '')),
                       html=rc_html)
     if res.get('ok'):
         con.execute("UPDATE receipt_docs SET sent_at=?, sent_to=?, opened_at=NULL, opens=0 WHERE id=?", (now_iso(), to, rid))
