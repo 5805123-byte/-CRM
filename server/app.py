@@ -352,7 +352,7 @@ def qb_chase_import(con):
             else:
                 first, _, last = nm.rpartition(' ')
             if r['who'] == 'Unknown':
-                first, last = '', 'לא ידוע — ' + (r.get('note') or '')[:60]
+                first, last = '', 'לא ידוע'
             if con.execute("INSERT OR IGNORE INTO recon(tid,first,last,amount,date,recurring,donor_id,processed,source,status) "
                            "VALUES(?,?,?,?,?,0,NULL,0,?,'settled')",
                            (tid, first.strip(), last.strip(), '%.2f' % a, r['date'], SRCNAME.get(meth, meth))).rowcount:
@@ -3505,6 +3505,15 @@ def ensure_schema():
             print('  משימת מכונות כביסה מקווה 25.10.2026 13:00: נרשמה')
     except Exception as e:
         print('  washers task error:', e)
+
+    # מאיר: "זה לא של מיוזיק ואל תנחש" — שתי ההעברות הלא ידועות מהדוח נשארות 'לא ידוע' בלי שם משלם
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='qb26_unknown_label_v1'").fetchone():
+            con.execute("UPDATE recon SET first='', last='לא ידוע' WHERE tid LIKE 'qb26-%' AND (last LIKE 'לא ידוע%' OR last LIKE '%Misc%')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('qb26_unknown_label_v1')")
+            con.commit()
+    except Exception as e:
+        print('  qb26 unknown label error:', e)
 
     # מאיר (22.10.2026): "תכניס לפרנס לילה י"ב חשון לעילוי נשמת יעקב בן סטי ז"ל וגם לארוחת בוקר. התורם זה אברהם דואק"
     try:
@@ -19036,9 +19045,12 @@ class H(BaseHTTPRequestHandler):
                               r'cybergrants|veteran|community)\b', re.I)
 
             def _sugg(r):
-                """עד שלוש הצעות, מהחזקה לחלשה: מייל, שם מלא, שם משפחה."""
+                """עד שלוש הצעות, רק ודאיות: אותו מייל, או אותו שם מלא. מאיר: "אל תנחש בבקשה לשים אצל תורם
+                אחד כי אולי זה הוא" — לכן אין הצעה לפי שם משפחה בלבד, ושורה שמסומנת 'לא ידוע' לא מוצעת לאף אחד."""
                 out, seen = [], set()
                 who = ((r['first'] or '') + ' ' + (r['last'] or '')).strip()
+                if who.startswith('לא ידוע') or who.lower().startswith('unknown') or 'marked "misc"' in who.lower():
+                    return out
                 org = bool(_ORG.search(who)) or who.isupper() and len(who.split()) > 2
 
                 def add(ids, why):
@@ -19053,14 +19065,11 @@ class H(BaseHTTPRequestHandler):
                 ln, fn = (r['last'] or '').strip(), (r['first'] or '').strip()
                 if org:
                     return out                    # ארגון — רק מייל, בלי ניחוש שמות
-                if _gi and ln:
+                if _gi and ln and fn:
                     for a, b in ((ln, fn), (fn, ln)):
                         for jy in (False, True):
                             add(byfz.get((_fz(_he_alt(_gi, a, jy)), _fz(_he_alt(_gi, b, jy)))), 'אותו שם')
-                    for w in re.split(r'[\s\-]+', ln):
-                        if len(re.sub(r'[^A-Za-z]', '', w)) >= 4:
-                            for jy in (False, True):
-                                add(bysur.get(_fz(_he_alt(_gi, w, jy))), 'אותו שם משפחה')
+                # הצעה לפי שם משפחה בלבד הייתה ניחוש (Misc → מוזיק) — הוסרה
                 return out
             rows = []
             for r in con.execute(
