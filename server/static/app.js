@@ -15382,7 +15382,7 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
     box.querySelectorAll('.ywfo').forEach(x=>x.onclick=()=>{inp.value=x.dataset.v;box.querySelectorAll('.ywfo').forEach(y=>y.classList.toggle('on',y===x));hb.click();});});
   o.querySelector('#ywf_en').onclick=async()=>{o.remove();if(await ymPronEn(plain)&&again)again();};
   o.querySelector('#ywf_save').onclick=async()=>{const v=inp.value.trim();
-    const r=await api('POST','/api/yemot/pron_word',{word:plain,say:v===plain?'':v});
+    const r=await api('POST','/api/yemot/pron_word',{word:plain,say:v});   // גם הצורה בלי ניקוד נשמרת — אחרת הניקוד האוטומטי מחזיר את הצורה הישנה
     if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
     if(ymStatus)ymStatus.pron=r.pron;const ta=document.getElementById('ym_pron');if(ta)ta.value=r.pron;
     o.remove();toast(v===plain?'התיקון נמחק':'✓ נשמר — "'+plain+'" ייאמר כך בכל ההודעות');
