@@ -3739,13 +3739,14 @@ def ensure_schema():
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_v1'").fetchone():
             import nedarim as _nd
-            _p = {'name': 'שר רפאל', 'z': '201525052', 'bank': '12', 'ag': '170', 'ac': '342631', 'amt': 300, 'day': '25', 'grp': 'תרומה חודשית'}
+            # הריצה בוצעה ב-24.10.2026 (הוראה 413800 בנדרים פלוס); פרטי הזיהוי והחשבון הוסרו מהקוד אחרי הריצה
+            _p = {'name': 'שר רפאל', 'z': '', 'bank': '12', 'ag': '170', 'ac': '', 'amt': 300, 'day': '25', 'grp': 'תרומה חודשית'}
             mem = con.execute("SELECT * FROM members WHERE last LIKE '%שר%' AND first LIKE '%רפאל%' AND COALESCE(active,1)=1 ORDER BY id").fetchall()
             mem = [x for x in mem if (x['last'] or '').strip() in ('שר', 'שר ', 'שער')] or mem
             mid = mem[0]['id'] if len(mem) == 1 else None
             lines = []
-            if not _nd.configured():
-                lines.append('🔴 נדרים פלוס לא מוגדר ב-Render — ההוראה לא הוקמה')
+            if not _nd.configured() or not _p['z'] or not _p['ac']:
+                lines.append('🔴 נדרים פלוס לא מוגדר ב-Render או שפרטי ההוראה כבר הוסרו — ההוראה לא הוקמה')
                 ok = False
             elif mid and con.execute("SELECT 1 FROM nd_keva WHERE member_id=? AND kind='bank' AND COALESCE(active,1)=1", (mid,)).fetchone():
                 lines.append('ℹ️ כבר יש לרפאל שר הוראה בנקאית פעילה בנדרים פלוס — לא הוקמה כפולה')
