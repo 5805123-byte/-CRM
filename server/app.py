@@ -20548,6 +20548,40 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'mine': mine,
                                     'purposes': [x for x in purs if x not in mine][:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
+        if self.path.split('?')[0] == '/api/nd/paymethods':
+            # 🏦 מאיר: "מה אני אמור לשלוח לו בדיוק להוראות קבע?" — אילו אמצעי תשלום פתוחים בדף התרומות שלנו
+            # בנדרים פלוס (GetMosad — קריאה ציבורית). נשמר ליום, כי נדרים מבקשים לא לקרוא לזה הרבה.
+            import nedarim as _nd
+            mos = (_nd.mosad() if _nd.configured() else (os.environ.get('NEDARIM_MOSAD') or '5777499')).strip()
+            con = db()
+            try:
+                cached = kv_get(con, 'nd_paymethods', '')
+                try:
+                    cj = json.loads(cached) if cached else None
+                except Exception:
+                    cj = None
+                fresh = bool(cj and cj.get('mosad') == mos and (time.time() - float(cj.get('at') or 0)) < 86400 and 'refresh' not in self.path)
+                if not fresh:
+                    try:
+                        req = urllib.request.Request('https://www.matara.pro/nedarimplus/online/Files/Manage.aspx?Action=GetMosad&MosadId=%s' % mos,
+                                                     headers={'User-Agent': 'KollelChatzosCRM/1.0'})
+                        with urllib.request.urlopen(req, timeout=20) as r:
+                            txt = r.read().decode('utf-8-sig', 'replace')
+                        j = json.loads(txt)
+                        paybt = str(j.get('PayBt') or '')
+                        cj = {'mosad': mos, 'at': time.time(), 'name': str(j.get('MosadName') or ''), 'paybt': paybt,
+                              'masav': bool(str(j.get('Masav') or '').strip()) and paybt[3:4] == '1', 'masav_name': str(j.get('Masav') or ''),
+                              'keva': paybt[2:3] == '1', 'bit': str(j.get('Bit') or '') in ('1',), 'need_zeout': str(j.get('NeedZeout') or '') == '1',
+                              'tofes': bool(j.get('Status')), 'error': ''}
+                    except Exception as e:
+                        cj = cj or {'mosad': mos, 'at': 0, 'masav': None, 'error': str(e)[:160]}
+                        cj['error'] = 'לא הצלחתי לבדוק בנדרים פלוס: ' + str(e)[:120]
+                    kv_set(con, 'nd_paymethods', json.dumps(cj, ensure_ascii=False)); con.commit()
+            finally:
+                con.close()
+            cj = dict(cj or {}); cj['ok'] = True
+            cj['link'] = 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos
+            return self._send(200, cj)
         if self.path.split('?')[0] == '/api/mikveh/towel_cfg':
             con = db()
             try:

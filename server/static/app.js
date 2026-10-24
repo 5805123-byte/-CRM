@@ -15504,6 +15504,33 @@ async function ndMasavNew(m,cb){
     if(r.message&&!/^ok$/i.test(r.message))await uiAlert('נדרים פלוס: '+r.message);
     if(cb)cb();};
 }
+// 📲 מאיר: "מה אני אמור לשלוח לו בדיוק להוראות קבע? ואיך אני אמור למלא את הפרטים כל פעם בידני?" —
+// הודעה מוכנה עם הקישור לדף התרומות שלנו בנדרים פלוס: החבר בוחר שם "הוראת קבע בנקאית", ממלא וחותם בעצמו,
+// נדרים פלוס שולחים את טופס ההרשאה לסניף שלו, ואחרי אישור הבנק ההוראה נכנסת אצלנו בסנכרון. בלי הקלדה אצלנו.
+async function ndMasavInvite(m){
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="max-width:560px;text-align:right"><div class="cm">📲 הו"ק בנקאית — הודעה ל${esc(mName(m))}</div><div class="hintxt" id="mi_st">⏳ בודק בנדרים פלוס אם "הוראת קבע בנקאית" פתוחה בדף התרומות שלנו…</div>
+    <label class="fld"><span>סכום חודשי ₪ (לא חובה — ייכנס מראש בדף)</span><input id="mi_amt" inputmode="decimal" placeholder="300"></label>
+    <textarea id="mi_txt" class="fbtxt" rows="9"></textarea>
+    <div class="cbtns"><button class="btn ghost cno">סגור</button><button class="btn ghost" id="mi_copy">📋 העתק</button><button class="btn" id="mi_wa">💬 וואטסאפ</button></div></div>`;
+  document.body.appendChild(o);const g=id=>o.querySelector('#'+id);o.querySelector('.cno').onclick=()=>o.remove();
+  const r=await api('GET','/api/nd/paymethods').catch(()=>null);
+  const mos=(r&&r.mosad)||'5777499';
+  const link=()=>{const p=[['mosad',mos]];const a=amtNum(g('mi_amt').value);if(a){p.push(['Amount',String(a)]);}
+    if(m.first||m.last)p.push(['ClientName',mName(m)]);const ph=ymPhone(m.phone||'');if(ph)p.push(['Phone',ph]);p.push(['HideParameters','1']);
+    return 'https://www.matara.pro/nedarimplus/online/?'+p.map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');};
+  const txt=()=>`שלום ${m.first||mName(m)},\nכדי להקים הוראת קבע בנקאית לכולל חצות:\n1. נכנסים לקישור: ${link()}\n2. בוחרים "הוראת קבע בנקאית", ממלאים את פרטי החשבון${amtNum(g('mi_amt').value)?'':' והסכום החודשי'}, וחותמים על המסך.\n3. נדרים פלוס שולחים את טופס ההרשאה לסניף הבנק שלך, ואחרי אישור הבנק ההוראה מתחילה לפעול.\n\nאפשר גם ללכת לסניף ולבקש "הרשאה לחיוב חשבון" לקוד מוסד 35740 (נחלת יהושע), ולשלוח לנו צילום של הטופס עם החותמת.\n\nתזכו למצוות, כולל חצות`;
+  const paint=()=>{g('mi_txt').value=txt();};paint();g('mi_amt').oninput=paint;
+  const st=g('mi_st');
+  if(!r)st.textContent='לא הצלחתי לבדוק בנדרים פלוס (אין תשובה) — אפשר לשלוח, ולוודא בדף שיש "הוראת קבע בנקאית".';
+  else if(r.masav===true)st.innerHTML='✅ בדף התרומות שלנו פתוחה <b>הוראת קבע בנקאית</b>'+(r.masav_name?' (מוטב: '+esc(r.masav_name)+')':'')+'. החבר ממלא וחותם בעצמו — אין מה להקליד אצלנו.';
+  else if(r.masav===false)st.innerHTML='⚠️ בדף התרומות שלנו <b>לא פתוחה</b> הוראת קבע בנקאית (אמצעים פתוחים: '+esc(r.paybt||'')+'). בנדרים פלוס ← הגדרות ← אמצעי תשלום: להפעיל "הוראת קבע בנקאית (מס"ב)" ושם מוטב. עד אז — החבר הולך לבנק עם קוד מוסד 35740, ואתה רושם את הטופס בכפתור "רישום טופס חתום".';
+  else st.textContent=r.error||'';
+  g('mi_copy').onclick=async()=>{try{await navigator.clipboard.writeText(g('mi_txt').value);toast('הועתק ✓');}catch(e){g('mi_txt').select();document.execCommand('copy');toast('הועתק ✓');}};
+  g('mi_wa').onclick=()=>{const n=waNum(ymPhone(m.phone||'')||m.phone||'');if(!n){toast('אין לו טלפון בכרטיס — אפשר להעתיק ולשלוח');return;}
+    window.open('https://wa.me/'+n+'?text='+encodeURIComponent(g('mi_txt').value),'_blank');
+    api('POST','/api/members/'+m.id+'/log',{channel:'וואטסאפ',summary:'📲 נשלח קישור להקמת הוראת קבע בנקאית',body:g('mi_txt').value}).catch(()=>{});};
+}
 // ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
 async function ymPronEn(word){
   const w=await uiPrompt('איזו מילה נשמעת לא נכון? (בעברית, כמו שהיא כתובה בהודעה — למשל כולל)',word||'');if(!w||!w.trim())return false;
@@ -16538,7 +16565,8 @@ async function cmNdPaint(m,showAll,boxId){
   // מאיר: "מיותר שכתוב על כל תרומה — שיהיה כפתור קטן קבלות למעלה, במיוחד שיש את זה בנדרים"
   const rcOn=CM_RC_ON===m.id;
   const addHTML=`<button class="btn sm cdn_ndwin" style="margin:6px 0;width:100%">💳 תרומה חדשה / הו״ק אשראי — כמו בנדרים פלוס</button>
-      <button class="btn sm ghost cdn_masav" style="margin:0 0 6px;width:100%" title="טופס הרשאה לחיוב חשבון שחתום בבנק — ההוראה מוקמת בנדרים פלוס">🏦 הוראת קבע בנקאית חדשה (טופס חתום מהבנק)</button><details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
+      <div class="bqacts" style="margin:0 0 6px"><button class="btn sm ghost cdn_masav" style="flex:1" title="טופס הרשאה לחיוב חשבון שחתום בבנק — ההוראה מוקמת בנדרים פלוס">🏦 הו"ק בנקאית — רישום טופס חתום</button>
+        <button class="btn sm ghost cdn_masavinv" style="flex:1" title="הודעה מוכנה עם קישור: הוא ממלא פרטי חשבון וחותם בעצמו בדף של נדרים פלוס">📲 הו"ק בנקאית — לשלוח לו קישור</button></div><details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
       <div class="cdquick"><input type="date" class="cdn_d" value="${todayStr()}"><input class="cdn_a" inputmode="decimal" placeholder="₪ סכום">
         <select class="cdn_m">${CM_METH.map(x=>`<option>${esc(x)}</option>`).join('')}</select>
         <input class="cdn_p" placeholder="עבור מה (עליית שישי, דמי חבר, נדבה…)">
@@ -16558,6 +16586,7 @@ async function cmNdPaint(m,showAll,boxId){
   const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true,boxId);
   const ndw=box.querySelector('.cdn_ndwin'); if(ndw)ndw.onclick=()=>ndDonate(m.id);
   const ndm=box.querySelector('.cdn_masav'); if(ndm)ndm.onclick=()=>ndMasavNew(m,()=>cmNdPaint(m,showAll,boxId));
+  const ndi=box.querySelector('.cdn_masavinv'); if(ndi)ndi.onclick=()=>ndMasavInvite(m);
   const rcb=box.querySelector('.cmrcon'); if(rcb)rcb.onclick=()=>{CM_RC_ON=rcOn?0:m.id;cmNdPaint(m,showAll,boxId);};
   const q=c=>box.querySelector('.'+c);
   q('cdn_go').onclick=async()=>{const a=amtNum(q('cdn_a').value);if(!a){toast('חסר סכום');q('cdn_a').focus();return;}
