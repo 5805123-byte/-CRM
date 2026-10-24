@@ -3987,6 +3987,20 @@ def ensure_schema():
     except Exception as e:
         print('  karmi wedding error:', e)
 
+    # חתונת וויצהנדלר–שאפר — מאיר: "תכניס ליומן" (ההזמנה מחיים וויצהנדלר בוואטסאפ: יום חמישי פרשת וירא
+    # י"ח חשוון תשפ"ז, 29.10.26, אולמי "בית ברכה", רחוב רבי עקיבא 31 ביתר עילית; קבלת פנים 17:30, חופה 18:30)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_vitzhandler_shafer_wedding_v1'").fetchone():
+            note = 'חתונת נריה רפאל וויצהנדלר (בן חיים וויצהנדלר) עם אורה ברכה שאפר (בת דן חיים שאפר) · י"ח חשוון תשפ"ז · קבלת פנים 17:30, חופה 18:30'
+            if not con.execute("SELECT 1 FROM tasks WHERE kind='event' AND due_date='2026-10-29' AND note LIKE '%וויצהנדלר%'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
+                            (None, '2026-10-29', 'event', note, '', '17:30', 'אולמי "בית ברכה", רחוב רבי עקיבא 31, ביתר עילית'))
+                print('  חתונת וויצהנדלר–שאפר: נרשמה כשמחה ב-29.10.2026')
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_vitzhandler_shafer_wedding_v1')")
+            con.commit()
+    except Exception as e:
+        print('  vitzhandler wedding error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
