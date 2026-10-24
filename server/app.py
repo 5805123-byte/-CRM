@@ -3935,6 +3935,43 @@ def ensure_schema():
     except Exception as e:
         print('  masav sher day25 v2 error:', e)
 
+    # ניסיון שלישי ליום 25 — אחרי תיקון הקריאה (Status '1' = הוראה פעילה, לא שגיאה)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_day25_v3'").fetchone():
+            import nedarim as _nd
+            txt, done_ok = 'נדרים פלוס לא מוגדר', False
+            if _nd.configured():
+                okd, d = _nd.call('GetMasavId', {'MasavId': '413800'}, masav=True)
+                day = str((d or {}).get('NextDate') or '').strip() if okd and isinstance(d, dict) else ''
+                if day == '25':
+                    done_ok, txt = True, '✅ יום הגביה של ההוראה הבנקאית של רפאל שר (413800) הוא 25 · החיוב הבא %s' % d.get('FullNextDate', '')
+                else:
+                    ok, msg = _nd.masav_edit('413800', day='25')
+                    okd2, d2 = _nd.call('GetMasavId', {'MasavId': '413800'}, masav=True)
+                    day2 = str((d2 or {}).get('NextDate') or '').strip() if okd2 and isinstance(d2, dict) else '?'
+                    full2 = str((d2 or {}).get('FullNextDate') or '') if okd2 and isinstance(d2, dict) else ''
+                    done_ok = bool(ok and day2 == '25')
+                    txt = ('✅ יום הגביה של ההוראה הבנקאית של רפאל שר (413800) שונה ל-25 · החיוב הבא %s' % full2) if done_ok else \
+                          ('🔴 שינוי ליום 25 לא הצליח: %s · נדרים פלוס מראים יום %s' % (msg or 'OK', day2))
+                    if done_ok and full2:
+                        con.execute("UPDATE nd_keva SET next_date=? WHERE id='M413800'", (full2,))
+            k = con.execute("SELECT member_id FROM nd_keva WHERE id='M413800'").fetchone()
+            if k and k['member_id']:
+                try: cm_debt_log(con, k['member_id'], 'keva:M413800', txt)
+                except Exception: pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('masav_sher_day25_v3')")
+            con.commit()
+            print('  day25 v3: ' + txt)
+            try:
+                import mailer
+                to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+                if to and mailer.configured():
+                    mailer.send(to, ('✅' if done_ok else '🔴') + ' רפאל שר — יום הגביה 25 (ניסיון שלישי)', 'הוראת קבע בנקאית — רפאל שר\n\n' + txt, [])
+            except Exception as e:
+                print('  day25 v3 mail error:', e)
+    except Exception as e:
+        print('  masav sher day25 v3 error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.

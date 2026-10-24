@@ -121,7 +121,16 @@ def call(action, params=None, post=False, timeout=45, raw=False, masav=False, pa
     except ValueError:
         LAST.update(at=time.strftime('%Y-%m-%d %H:%M'), ok=False, error=txt[:200], action=action)
         return False, txt
-    st = str((out.get('Result') or out.get('Status') or 'OK') if isinstance(out, dict) else 'OK').lower()
+    # 'Status' הוא תוצאת הפעולה רק כשאין 'Result' והוא מילה (OK / Error / Tofes). בפרטי הוראה בנקאית (GetMasavId)
+    # 'Status' הוא קוד מצב ההוראה (1 = פעילה) — לא כישלון. (בגלל זה שינוי יום הגביה של רפאל שר נכשל)
+    if isinstance(out, dict):
+        res_ = out.get('Result')
+        if res_ in (None, ''):
+            stv = out.get('Status')
+            res_ = stv if isinstance(stv, str) and stv.strip() and not stv.strip().isdigit() else 'OK'
+        st = str(res_).lower()
+    else:
+        st = 'ok'
     ok = st in ('ok', 'success', '')
     LAST.update(at=time.strftime('%Y-%m-%d %H:%M'), ok=ok,
                 error='' if ok else str(out.get('Message') or out)[:200], action=action)
