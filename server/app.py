@@ -3739,7 +3739,7 @@ def ensure_schema():
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_v1'").fetchone():
             import nedarim as _nd
-            _p = {'name': 'שר רפאל', 'z': '201525052', 'bank': '12', 'ag': '170', 'ac': '342631', 'amt': 300, 'day': '10', 'grp': 'תרומה חודשית'}
+            _p = {'name': 'שר רפאל', 'z': '201525052', 'bank': '12', 'ag': '170', 'ac': '342631', 'amt': 300, 'day': '25', 'grp': 'תרומה חודשית'}
             mem = con.execute("SELECT * FROM members WHERE last LIKE '%שר%' AND first LIKE '%רפאל%' AND COALESCE(active,1)=1 ORDER BY id").fetchall()
             mem = [x for x in mem if (x['last'] or '').strip() in ('שר', 'שר ', 'שער')] or mem
             mid = mem[0]['id'] if len(mem) == 1 else None
@@ -3766,7 +3766,7 @@ def ensure_schema():
                         con.execute("INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad,off,kind,bank) "
                                     "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,'','','','bank',?) ON CONFLICT(id) DO UPDATE SET member_id=excluded.member_id, active=1, kind='bank'",
                                     (kid, '', _p['name'], phone, mail, '300', _p['grp'], '', nxt, '', '', mid, now_iso(), 'בנק 12 ***631'))
-                    lines.append('✅ הוקמה בנדרים פלוס הוראת קבע בנקאית לרפאל שר: ₪300 לחודש, יום 10, ללא הגבלה, בנק 12 סניף 170 · מזהה %s%s' % (nid or '?', (' · החיוב הראשון ' + nxt) if nxt else ''))
+                    lines.append('✅ הוקמה בנדרים פלוס הוראת קבע בנקאית לרפאל שר: ₪300 לחודש, יום 25, ללא הגבלה, בנק 12 סניף 170 · מזהה %s%s' % (nid or '?', (' · החיוב הראשון ' + nxt) if nxt else ''))
                     if not mid:
                         lines.append('⚠️ לא נמצא כרטיס קהילה יחיד של רפאל שר (%d) — ההוראה תתחבר בסנכרון לפי הטלפון/השם' % len(mem))
                 else:
@@ -3789,6 +3789,34 @@ def ensure_schema():
                 print('  masav sher alert error:', e)
     except Exception as e:
         print('  masav sher error:', e)
+
+    # מאיר: "תבחר כל 25 לחודש" — אם ההוראה של רפאל שר כבר הוקמה (ביום 10) לפני ההוראה הזו, יום הגביה משתנה ל-25
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_day25_v1'").fetchone():
+            import nedarim as _nd
+            k = con.execute("SELECT k.* FROM nd_keva k JOIN members m ON m.id=k.member_id WHERE k.kind='bank' AND COALESCE(k.active,1)=1 "
+                            "AND m.last LIKE '%שר%' AND m.first LIKE '%רפאל%' ORDER BY k.synced DESC").fetchone()
+            if k and _nd.configured():
+                rid = re.sub(r'^M(?:\d+:)?', '', k['id'])
+                try:
+                    d = _nd.call('GetMasavId', {'MasavId': rid}, masav=True)[1]
+                    cur_day = str((d or {}).get('NextDate') or '').strip() if isinstance(d, dict) else ''
+                except Exception:
+                    cur_day = ''
+                if cur_day == '25':
+                    txt = 'ℹ️ יום הגביה של רפאל שר כבר 25'
+                else:
+                    ok, msg = _nd.masav_edit(rid, day='25')
+                    txt = ('✅ יום הגביה של ההוראה הבנקאית של רפאל שר שונה ל-25 לחודש' if ok else '🔴 שינוי יום הגביה ל-25 נכשל: %s' % (msg or ''))
+                    try: cm_debt_log(con, k['member_id'], 'keva:' + k['id'], txt)
+                    except Exception: pass
+                    if not ok:
+                        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)", (today_iso(), 'other', 'רפאל שר — ' + txt))
+                print('  ' + txt)
+            con.execute("INSERT INTO seed_flags(name) VALUES('masav_sher_day25_v1')")
+            con.commit()
+    except Exception as e:
+        print('  masav sher day25 error:', e)
 
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
