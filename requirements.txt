@@ -3,3 +3,4 @@ pyluach
 Pillow
 pypdf
 pymupdf
+lameenc

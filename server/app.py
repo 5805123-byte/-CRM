@@ -828,6 +828,12 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS auth_log(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, ok INTEGER, role TEXT, "
                     "portal TEXT, method TEXT, ip TEXT, ua TEXT, email TEXT, sent TEXT)")
     except Exception: pass
+    # 🛠️ מאיר: "הגבאי שאין לו גישה למערכת כאן של קלוד קוד… איך הוא יכול לשלוח לך לתקן דברים" —
+    # בקשות תיקון מתוך המערכת. נשמרות פה ונשלחות במייל למאיר (ALERT_EMAIL / GMAIL_USER), והוא מעביר לקלוד
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS feedback(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, role TEXT, tab TEXT, "
+                    "text TEXT, url TEXT, ua TEXT, shot BLOB, shot_mime TEXT, sent TEXT, status TEXT DEFAULT 'open')")
+    except Exception: pass
     # מאיר: "נתן תתן… הוספה ידנית למי שהבטיח או למי שתרם" — תרומה של מי שלא בקהילה (בשם בלבד)
     for col in ('name', 'phone'):
         try: con.execute(f"ALTER TABLE cm_don ADD COLUMN {col} TEXT")
@@ -13904,11 +13910,11 @@ GOOGLE_TOKENINFO = 'https://oauth2.googleapis.com/tokeninfo'
 AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/', '/api/nd/', '/api/nikud',
              '/api/nedarim/mosads', '/api/seats', '/seat-map-print', '/seat_layout.json', '/seat-map-original.png',
              '/kehila-print', '/api/mail/preview', '/api/mail/send', '/api/mail/batch', '/api/mail/stop', '/api/mail/limits', '/api/mail/setup',
-             '/api/zmanim')
+             '/api/zmanim', '/api/feedback')     # 🛠️ בקשת תיקון — פתוחה לכל סיסמה
 # העובד של פרנס יום וקוויטל — הלוח, הימים, התעודות, שמות הקוויטל וההדפסה. בלי תרומות,
 # טלפונים ומיילים (ראה _data_parnes), ובלי מחיקת כרטיסים
 AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/hebmonth', '/api/prayer', '/api/donor',
-               '/cert.png', '/cert.jpg', '/api/task', '/api/intake')
+               '/cert.png', '/cert.jpg', '/api/task', '/api/intake', '/api/feedback')
 AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES))     # קהילה + פרנס יום וקוויטל, בסיסמה אחת
 AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES, 'gabbai': AUTH_GABBAI}
 # מאיר: "הבאתי לגבאי סיסמה של גבאים ונכנס לו להכל, גם לתורמים". התחיליות למעלה תופסות גם כתובות
@@ -14184,6 +14190,24 @@ def alert_owner(text, subject='התראה ממערכת כולל חצות'):
         except Exception as e:
             out.append('SMS: שגיאה %s' % str(e)[:80])
     return ' · '.join(out) or 'אין ערוץ התראה מוגדר'
+
+
+def wav_to_mp3(wav, kbps=48):
+    """🎧 מאיר: "זה שומר לקובץ הזה את ההודעה הקולית ואי אפשר לשלוח אותה בווצאפ — תעשה שזה יהיה לקובץ MP3".
+    WAV (PCM 16 ביט) -> MP3 עם lameenc. אם המקודד לא מותקן — None (ואז נשלח ה-WAV כמו קודם)."""
+    try:
+        import lameenc, wave as _wave
+        with _wave.open(io.BytesIO(wav), 'rb') as w:
+            ch, sw, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
+            pcm = w.readframes(w.getnframes())
+        if sw != 2 or ch not in (1, 2):
+            return None
+        enc = lameenc.Encoder()
+        enc.set_bit_rate(kbps); enc.set_in_sample_rate(rate); enc.set_channels(ch); enc.set_quality(5)
+        return bytes(enc.encode(pcm) + enc.flush())
+    except Exception as e:
+        print('  mp3 encode:', str(e)[:120])
+        return None
 
 
 def auth_note(ok, role, portal, method, ip, ua, email=''):
@@ -20415,14 +20439,20 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             nm = re.sub(r'[\\/:*?"<>|]+', '', (r['name'] or r['phone'] or 'הודעה').strip())[:40] or 'הודעה'
-            fname = 'הודעה קולית - %s - %s.wav' % (nm, str(r['at'] or '')[:10])
+            # ברירת המחדל MP3 — נפתח ונשלח בוואטסאפ מכל מכשיר; ?fmt=wav — הקובץ המקורי
+            ext, ctype, data = 'wav', 'audio/wav', wav
+            if 'fmt=wav' not in self.path:
+                mp3 = wav_to_mp3(wav)
+                if mp3:
+                    ext, ctype, data = 'mp3', 'audio/mpeg', mp3
+            fname = 'הודעה קולית - %s - %s.%s' % (nm, str(r['at'] or '')[:10], ext)
             self.send_response(200)
-            self.send_header('Content-Type', 'audio/wav')
-            self.send_header('Content-Disposition', "attachment; filename=\"message-%d.wav\"; filename*=UTF-8''%s" % (mid, quote(fname)))
-            self.send_header('Content-Length', str(len(wav)))
+            self.send_header('Content-Type', ctype)
+            self.send_header('Content-Disposition', "attachment; filename=\"message-%d.%s\"; filename*=UTF-8''%s" % (mid, ext, quote(fname)))
+            self.send_header('Content-Length', str(len(data)))
             self.send_header('X-Audio-Source', src)
             self.end_headers()
-            self.wfile.write(wav)
+            self.wfile.write(data)
             return
         if self.path.split('?')[0] == '/api/mikveh/expired_check':
             # 🔍 מאיר: "יש מנויים שפתאום כתוב להם שפג תוקף המנוי, ויש להם חיוב חודשי כל חודש ואני לא רואה סירוב".
@@ -20527,6 +20557,36 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'hmonth': hm, 'now': now_})
+        if self.path.split('?')[0] == '/api/feedback/list':
+            # 🛠️ רשימת בקשות התיקון (למאיר / לקלוד): טקסט פשוט, החדשות למעלה. ?all=1 — גם הסגורות
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                rows = con.execute("SELECT id,at,role,tab,text,sent,status,length(shot) AS sh FROM feedback %s ORDER BY id DESC LIMIT 200"
+                                   % ('' if qs.get('all') else "WHERE status='open'")).fetchall()
+            finally:
+                con.close()
+            out = ['בקשות תיקון (%d)' % len(rows), '']
+            for r in rows:
+                out.append('#%d · %s · %s · לשונית %s · מייל: %s%s' % (r['id'], (r['at'] or '')[:16].replace('T', ' '), r['role'] or '', r['tab'] or '—', r['sent'] or '—',
+                                                                     (' · 📷 /api/feedback/%d.png' % r['id']) if r['sh'] else ''))
+                out.append(r['text'] or '')
+                out.append('')
+            return self._send(200, '\n'.join(out).encode('utf-8'), 'text/plain; charset=utf-8')
+        mfb = re.match(r'/api/feedback/(\d+)\.(png|jpg)$', self.path.split('?')[0])
+        if mfb:
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            con = db()
+            try:
+                r = con.execute("SELECT shot, shot_mime FROM feedback WHERE id=?", (int(mfb.group(1)),)).fetchone()
+            finally:
+                con.close()
+            if not r or not r['shot']:
+                return self._send(404, {'ok': False})
+            return self._send(200, bytes(r['shot']), r['shot_mime'] or 'image/png')
         if self.path.split('?')[0] == '/api/donors/names.txt':
             # 📋 רשימת השמות לטופס השיוך (קלוד): מזהה | עברית | לועזי | עסק | כינויים | ייעודים — טקסט קטן להעתקה
             if auth_on() and self.role != 'admin':
@@ -21179,16 +21239,21 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows, 'folder': fold})
-        m = re.match(r'/api/yemot/record/(\d+)\.wav$', self.path.split('?')[0])
+        m = re.match(r'/api/yemot/record/(\d+)\.(wav|mp3)$', self.path.split('?')[0])
         if m:
             con = db(); r = con.execute("SELECT wav,title FROM ym_rec WHERE id=?", (int(m.group(1)),)).fetchone(); con.close()
             if not r:
                 return self._send(404, {'error': 'not found'})
-            data = bytes(r['wav'])
+            data, ext, ctype = bytes(r['wav']), 'wav', 'audio/wav'
+            if m.group(2) == 'mp3':
+                # 🎧 להורדה ולשליחה בוואטסאפ — MP3 (ה-WAV נשאר לשלוחה בימות)
+                mp3 = wav_to_mp3(data)
+                if mp3:
+                    data, ext, ctype = mp3, 'mp3', 'audio/mpeg'
             self.send_response(200)
-            self.send_header('Content-Type', 'audio/wav')
+            self.send_header('Content-Type', ctype)
             self.send_header('Content-Length', str(len(data)))
-            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s.wav" % urllib.parse.quote((r['title'] or 'recording')[:40]))
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s.%s" % (urllib.parse.quote((r['title'] or 'recording')[:40]), ext))
             self.end_headers(); self.wfile.write(data)
             return
         if self.path.split('?')[0] == '/api/yemot/status':
@@ -21835,6 +21900,59 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             return
         b = self._body()
+        if self.path == '/api/feedback':
+            # 🛠️ בקשת תיקון / דיווח מתוך המערכת (גם מהגבאי). נשמרת בטבלת feedback ונשלחת במייל למאיר,
+            # שמעביר אותה לקלוד. הגוף: text, tab, shot (data:image/...;base64,...) לא חובה
+            text = str(b.get('text') or '').strip()[:4000]
+            if len(text) < 3:
+                return self._send(200, {'ok': False, 'error': 'כתוב מה לתקן'})
+            role = self.role or 'admin'
+            tab_ = str(b.get('tab') or '').strip()[:40]
+            url = str(b.get('url') or '').strip()[:300]
+            ua = (self.headers.get('User-Agent') or '')[:300]
+            shot, mime = None, ''
+            s = str(b.get('shot') or '')
+            m = re.match(r'data:(image/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+/=\s]+)$', s)
+            if m:
+                try:
+                    shot = base64.b64decode(m.group(2))
+                    mime = m.group(1)
+                    if len(shot) > 4 * 1024 * 1024:
+                        shot, mime = None, ''
+                except Exception:
+                    shot, mime = None, ''
+            con = db()
+            try:
+                cur = con.execute("INSERT INTO feedback(at,role,tab,text,url,ua,shot,shot_mime,sent) VALUES(?,?,?,?,?,?,?,?,?)",
+                                  (now_iso(), role, tab_, text, url, ua, shot, mime, ''))
+                fid = cur.lastrowid
+                con.commit()
+            finally:
+                con.close()
+            to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+            who = {'admin': 'מאיר', 'gabbai': 'הגבאי', 'comm': 'קהילה', 'parnes': 'פרנס יום'}.get(role, role)
+            subject = '🛠️ בקשת תיקון במערכת #%d — %s' % (fid, who)
+            body = ('בקשת תיקון #%d מתוך המערכת\nמי: %s\nלשונית: %s\nזמן: %s\nכתובת: %s\n\n%s\n\n'
+                    '— להעתיק את ההודעה הזו לקלוד קוד, או לכתוב לו: "תקרא בקשת תיקון #%d"' % (fid, who, tab_ or '—', now_iso()[:16].replace('T', ' '), url or '—', text, fid))
+            def run(fid=fid, to=to, subject=subject, body=body, shot=shot, mime=mime):
+                res = 'אין יעד'
+                try:
+                    import mailer
+                    if to and mailer.configured():
+                        att = [('screenshot.' + ('png' if 'png' in mime else 'jpg'), mime, shot)] if shot else []
+                        r = mailer.send(to, subject, body, att)
+                        res = 'ok' if r.get('ok') else str(r.get('error') or 'נכשל')[:120]
+                    elif to:
+                        res = 'GMAIL לא מוגדר'
+                except Exception as e:
+                    res = 'שגיאה: ' + str(e)[:120]
+                try:
+                    c2 = db(); c2.execute("UPDATE feedback SET sent=? WHERE id=?", (res, fid)); c2.commit(); c2.close()
+                except Exception:
+                    pass
+            import threading as _th     # (בתוך do_POST 'threading' מיובא מקומית בהמשך — לכן בשם אחר)
+            _th.Thread(target=run, daemon=True).start()
+            return self._send(200, {'ok': True, 'id': fid, 'mail': bool(to)})
         if self.path == '/api/unlinked':
             # שיוך חיוב לתורם — ורישום התרומה מיד, בלי להמתין לעליית השרת
             # מקבל רשימת חיובים, כי אותו משלם חוזר כל חודש והחלטה אחת

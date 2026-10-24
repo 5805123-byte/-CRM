@@ -14399,6 +14399,36 @@ function renderOcc(){
 
 // כפתור ההכתבה הצף — זמין בכל מסך. אם הדפדפן לא תומך בהכתבה, מסתירים אותו
 (function(){const h=document.getElementById('healthbtn');if(h)h.onclick=()=>openHealth();})();
+// 🛠️ מאיר: "הגבאי שאין לו גישה למערכת כאן של קלוד קוד והוא יושב על המערכת — איך הוא יכול לשלוח לך לתקן דברים" —
+// כפתור בכותרת, לכל סיסמה: כותבים מה לתקן (אפשר לצרף צילום מסך), נשמר במערכת ונשלח במייל למאיר, שמעביר לקלוד
+(function(){const br=document.querySelector('.brand');if(!br||document.getElementById('fbbtn'))return;
+  const b=document.createElement('button');b.id='fbbtn';b.className='healthbtn';b.title='בקשת תיקון / דיווח על תקלה';b.textContent='🛠️';b.onclick=()=>fbOpen();br.appendChild(b);})();
+async function fbOpen(){
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="max-width:520px;text-align:right"><div class="cm">🛠️ בקשת תיקון במערכת</div>
+    <div class="hintxt">כתוב מה לא עובד או מה לשנות — איפה זה קורה ומה ציפית שיקרה. ההודעה נשמרת ונשלחת במייל למאיר, והוא מעביר אותה לתיקון.</div>
+    <textarea id="fb_txt" class="fbtxt" rows="6" placeholder="למשל: בלשונית קהילה, כשאני לוחץ על… זה…"></textarea>
+    <label class="fbshot"><input type="file" id="fb_file" accept="image/*" hidden><span class="btn sm ghost" id="fb_pick">📷 צרף צילום מסך</span><span id="fb_fn" class="hintxt"></span></label>
+    <div class="hintxt">לשונית: <b>${esc(tab||'')}</b></div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes" id="fb_send">📨 שלח</button></div></div>`;
+  document.body.appendChild(o);
+  const ta=o.querySelector('#fb_txt');setTimeout(()=>ta.focus(),50);
+  const close=()=>o.remove();o.querySelector('.cno').onclick=close;
+  const fi=o.querySelector('#fb_file');o.querySelector('#fb_pick').onclick=()=>fi.click();
+  let shot='';
+  fi.onchange=async()=>{const f=fi.files&&fi.files[0];if(!f)return;
+    try{shot=await fbShrink(f);o.querySelector('#fb_fn').textContent='✓ '+f.name;}catch(e){shot='';toast('התמונה לא נטענה');}};
+  o.querySelector('#fb_send').onclick=async()=>{const t=ta.value.trim();if(t.length<3){toast('כתוב מה לתקן');ta.focus();return;}
+    const sb=o.querySelector('#fb_send');sb.disabled=true;sb.textContent='⏳ שולח…';
+    const r=await api('POST','/api/feedback',{text:t,tab:tab||'',url:location.pathname,shot}).catch(()=>null);
+    if(!r||!r.ok){sb.disabled=false;sb.textContent='📨 שלח';return uiAlert('לא נשלח: '+((r&&r.error)||'אין תשובה מהשרת'));}
+    close();await uiAlert('✓ הבקשה נשמרה (#'+r.id+')'+(r.mail?' ונשלחה במייל למאיר.':'.')+'\nתודה — זה יטופל.');};
+}
+// צילום מסך — מוקטן ל-JPEG עד 1400 פיקסל, כדי שהמייל יהיה קל
+function fbShrink(file){return new Promise((res,rej)=>{const img=new Image();const u=URL.createObjectURL(file);
+  img.onload=()=>{const mx=1400,k=Math.min(1,mx/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',0.82));};
+  img.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('bad image'));};img.src=u;});}
 (function(){const f=document.getElementById('dictfab');if(!f)return;
   if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){f.style.display='none';return;}
   f.onclick=()=>{if(SRACT){try{stopDictation();}catch(e){}SRACT=null;f.classList.remove('rec');}openDictPad();};})();
@@ -15385,7 +15415,7 @@ async function ymWordFix(w,again,ctx){const plain=w.replace(/[\u0591-\u05c7]/g,'
     const r=await api('POST','/api/yemot/pron_word',{word:plain,say:v});   // גם הצורה בלי ניקוד נשמרת — אחרת הניקוד האוטומטי מחזיר את הצורה הישנה
     if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
     if(ymStatus)ymStatus.pron=r.pron;const ta=document.getElementById('ym_pron');if(ta)ta.value=r.pron;
-    o.remove();toast(v===plain?'התיקון נמחק':'✓ נשמר — "'+plain+'" ייאמר כך בכל ההודעות');
+    o.remove();toast(v===plain?'✓ נשמר — "'+plain+'" יישאר בלי ניקוד בכל ההודעות':'✓ נשמר — "'+plain+'" ייאמר כך בכל ההודעות');
     if(again&&(again.auto||await uiConfirm('לשמוע שוב את כל ההודעה עם התיקון?','🔊 כן','לא')))again();};
   // 🎙️ מאיר: "או הקראה קולית שלי שתישמע למערכת וזה יישמר" — לחיצה: מקליט; לחיצה שנייה (או 4 שניות): שולח
   const mic=o.querySelector('#ywf_mic');let rec=null,tm=null,tick=null,ctl=null;
@@ -17333,7 +17363,7 @@ function ymWireVoice(first,sel){
   const ymRecList=async()=>{const box=g('ym_recs');if(!box)return;const r=await api('GET','/api/yemot/records');const R=(r&&r.rows)||[];
     box.innerHTML=R.length?R.map(x=>`<div class="ymrec"><b>${esc(x.title||'הקלטה')}</b> <small>${esc((x.created||'').slice(5,16))} · ${x.secs||''} שנ׳ · ${esc(x.voice||'')}</small>
       <audio controls preload="none" src="/api/yemot/record/${x.id}.wav" style="width:100%;height:34px"></audio>
-      <div class="bqacts"><a class="btn sm ghost" href="/api/yemot/record/${x.id}.wav" download>⬇️ הורד</a>
+      <div class="bqacts"><a class="btn sm ghost" href="/api/yemot/record/${x.id}.mp3" download title="MP3 — לשליחה בוואטסאפ">⬇️ הורד MP3</a>
         <button class="btn sm ghost" data-recup="${x.id}">⬆️ העלה לשלוחה</button><button class="btn sm ghost" data-recdel="${x.id}">🗑</button>
         ${x.path?`<small class="ndok">✓ בשלוחה ${esc(x.path.replace('ivr2:',''))}</small>`:''}</div></div>`).join('')
       :'עוד אין הקלטות. כתוב את הנוסח ולחץ "🎙️ צור הקלטה ושמור".';
@@ -17483,8 +17513,10 @@ async function ymAudio(id,nm,btn){
     blob=await r.blob();
   }catch(e){return uiAlert('ההקלטה לא נטענה:\n'+(e&&e.message||e));}
   finally{if(btn){btn.disabled=false;btn.innerHTML=t0;}}
-  const name='הודעה קולית - '+String(nm||'').replace(/[\\/:*?"<>|]+/g,'').slice(0,40)+'.wav';
-  const f=new File([blob],name,{type:'audio/wav'}), u=URL.createObjectURL(blob);
+  // מאיר: "תעשה שזה יהיה לקובץ MP3 שאפשר להעביר ישירות בווצאפ" — השרת שולח MP3 (WAV רק אם המקודד חסר)
+  const isMp3=(blob.type||'').includes('mpeg');
+  const name='הודעה קולית - '+String(nm||'').replace(/[\\/:*?"<>|]+/g,'').slice(0,40)+(isMp3?'.mp3':'.wav');
+  const f=new File([blob],name,{type:isMp3?'audio/mpeg':'audio/wav'}), u=URL.createObjectURL(blob);
   const canSh=!!(navigator.canShare&&navigator.canShare({files:[f]}));
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">🎧 ההקלטה ששלחת${nm?' ל'+esc(nm):''}</div>
