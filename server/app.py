@@ -3871,6 +3871,70 @@ def ensure_schema():
     except Exception as e:
         print('  masav sher day25 confirm error:', e)
 
+    # ניסיון שני ליום 25 + אבחון: GetMasavId נכשל להוראה 413800 ("לא הצלחתי למשוך את פרטי ההוראה"). בודקים ברשימת
+    # ההוראות (GetMasavKevaNew) מה המזהה האמיתי של ההוראה של רפאל שר, מנסים שוב, ושולחים למאיר דו"ח (בלי ת"ז/חשבון)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_day25_v2'").fetchone():
+            import nedarim as _nd
+            rep = []
+            done_ok = False
+            if _nd.configured():
+                def _safe(d):
+                    return {k: v for k, v in d.items() if k not in ('ClientZeout', 'Account', 'ClientAdresse', 'ClientPhone', 'ClientMail', 'BankData')} if isinstance(d, dict) else str(d)[:200]
+                okd, d0 = _nd.call('GetMasavId', {'MasavId': '413800'}, masav=True)
+                rep.append('GetMasavId 413800: ok=%s · %s · LAST=%s' % (okd, str(_safe(d0))[:300], _nd.LAST.get('error', '')[:120]))
+                cands = []
+                try:
+                    ks = _nd.masav_kevas()
+                    cands = [k for k in ks if 'שר' in (k['name'] or '') and ('רפאל' in (k['name'] or '') or k['id'] == '413800')]
+                    rep.append('ברשימת ההוראות הבנקאיות (%d): %s' % (len(ks), '; '.join('%s · %s · ₪%s · הבא %s · %s' % (k['id'], k['name'], k['amount'], k['next'], k['groupe']) for k in cands) or 'לא נמצאה הוראה על שם שר רפאל'))
+                except Exception as e:
+                    rep.append('רשימת ההוראות: שגיאה %s' % str(e)[:120])
+                ids = []
+                for k in cands:
+                    if k['id'] not in ids:
+                        ids.append(k['id'])
+                if '413800' not in ids:
+                    ids.append('413800')
+                for rid in ids:
+                    okd, d = _nd.call('GetMasavId', {'MasavId': rid}, masav=True)
+                    if okd and isinstance(d, dict) and d.get('Account'):
+                        day = str(d.get('NextDate') or '').strip()
+                        if day == '25':
+                            rep.append('✅ הוראה %s כבר ביום 25 · החיוב הבא %s' % (rid, d.get('FullNextDate') or ''))
+                            done_ok = True
+                        else:
+                            ok, msg = _nd.masav_edit(rid, day='25')
+                            okd2, d2 = _nd.call('GetMasavId', {'MasavId': rid}, masav=True)
+                            day2 = str((d2 or {}).get('NextDate') or '').strip() if okd2 and isinstance(d2, dict) else '?'
+                            rep.append('%s הוראה %s: שינוי ליום 25 — %s · עכשיו יום %s · החיוב הבא %s' % ('✅' if ok and day2 == '25' else '🔴', rid, msg or 'OK', day2, (d2 or {}).get('FullNextDate') or '' if okd2 and isinstance(d2, dict) else ''))
+                            done_ok = done_ok or (ok and day2 == '25')
+                            if ok and day2 == '25':
+                                kid = 'M' + rid
+                                con.execute("UPDATE nd_keva SET next_date=? WHERE id=?", (str(d2.get('FullNextDate') or ''), kid))
+                        break
+                    else:
+                        rep.append('הוראה %s: GetMasavId לא החזיר פרטים (%s)' % (rid, str(_safe(d))[:160]))
+            else:
+                rep.append('נדרים פלוס לא מוגדר')
+            txt = '\n'.join(rep)
+            k = con.execute("SELECT * FROM nd_keva WHERE id='M413800'").fetchone()
+            if k and k['member_id']:
+                try: cm_debt_log(con, k['member_id'], 'keva:M413800', ('✅ יום הגביה שונה ל-25' if done_ok else '🔴 יום הגביה עדיין לא 25 — ראה מייל'))
+                except Exception: pass
+            con.execute("INSERT INTO seed_flags(name) VALUES('masav_sher_day25_v2')")
+            con.commit()
+            print('  day25 v2: ' + txt.replace('\n', ' | '))
+            try:
+                import mailer
+                to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+                if to and mailer.configured():
+                    mailer.send(to, ('✅' if done_ok else '🔴') + ' רפאל שר — יום הגביה 25 (ניסיון שני)', 'הוראת קבע בנקאית — רפאל שר\n\n' + txt + '\n\n(אם עדיין 🔴 — להעתיק את המייל הזה לקלוד)', [])
+            except Exception as e:
+                print('  day25 v2 mail error:', e)
+    except Exception as e:
+        print('  masav sher day25 v2 error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
