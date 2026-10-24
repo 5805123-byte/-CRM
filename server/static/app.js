@@ -15472,6 +15472,38 @@ function ymCallConfirm(title,body,opt){opt=opt||{};return new Promise(done=>{
     const again=()=>{load();if(opt.hear||o.querySelector('#ycc_aud audio'))audio();};again.auto=true;ymWordsWire(box,again);};
   ymWordsWire(o.querySelector('#ycc_txt'),Object.assign(()=>{load();if(opt.hear)audio();},{auto:true}));
   load();if(opt.hear)audio();});}
+// 🏦 מאיר: "רפאל שר ביקש להקים הוראת קבע בנקאי… תקים לו הוראת קבע… 300 שקל" — הקמת הוראה בנקאית (מס"ב)
+// בנדרים פלוס מתוך הכרטיס, לפי טופס ההרשאה החתום מהבנק. ת"ז ומספר החשבון עוברים לנדרים פלוס בלבד ולא נשמרים אצלנו.
+async function ndMasavNew(m,cb){
+  const o=document.createElement('div');o.className='confirmov';
+  const DAYS=['1','5','10','15','20','25','28'];
+  o.innerHTML=`<div class="confirmbox" style="max-width:520px;text-align:right"><div class="cm">🏦 הוראת קבע בנקאית חדשה — ${esc(mName(m))}</div>
+    <div class="hintxt">הפרטים מטופס ההרשאה לחיוב חשבון שחתום בבנק. הם נשלחים לנדרים פלוס בלבד — ת"ז ומספר החשבון לא נשמרים במערכת.</div>
+    <label class="fld"><span>שם בעל החשבון (כמו בטופס)</span><input id="mv_name" value="${esc(mName(m))}"></label>
+    <label class="fld"><span>תעודת זהות</span><input id="mv_z" inputmode="numeric" autocomplete="off" placeholder="9 ספרות"></label>
+    <div class="two" style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:6px"><label class="fld"><span>בנק</span><input id="mv_b" inputmode="numeric" placeholder="12"></label>
+      <label class="fld"><span>סניף</span><input id="mv_ag" inputmode="numeric" placeholder="170"></label>
+      <label class="fld"><span>מספר חשבון</span><input id="mv_ac" inputmode="numeric" autocomplete="off"></label></div>
+    <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><label class="fld"><span>סכום חודשי ₪</span><input id="mv_amt" inputmode="decimal" placeholder="300"></label>
+      <label class="fld"><span>יום גביה בחודש</span><select id="mv_day">${DAYS.map(d=>`<option value="${d}"${d==='10'?' selected':''}>${d}</option>`).join('')}</select></label></div>
+    <label class="fld"><span>עבור מה</span><input id="mv_g" list="mv_gl" placeholder="דמי חבר / תרומה חודשית…"><datalist id="mv_gl"><option value="דמי חבר"><option value="תרומה חודשית"><option value="החזקת בית המדרש"></datalist></label>
+    <label class="fld"><span>מצב הטופס</span><select id="mv_st"><option value="3">הבנק כבר אישר (טופס עם חותמת הסניף) — ההוראה פעילה</option><option value="2">טופס חתום, עוד לא אושר בבנק — נדרים ישלחו לסניף</option></select></label>
+    <label class="fld"><span>הערה (לא חובה)</span><input id="mv_note"></label>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes" id="mv_go">🏦 להקים בנדרים פלוס</button></div></div>`;
+  document.body.appendChild(o);const g=id=>o.querySelector('#'+id);setTimeout(()=>g('mv_z').focus(),50);
+  o.querySelector('.cno').onclick=()=>o.remove();
+  g('mv_go').onclick=async()=>{
+    const body={member_id:m.id,name:g('mv_name').value.trim(),zeout:g('mv_z').value.trim(),bank:g('mv_b').value.trim(),agency:g('mv_ag').value.trim(),account:g('mv_ac').value.trim(),
+      amount:amtNum(g('mv_amt').value),day:g('mv_day').value,groupe:g('mv_g').value.trim(),status:g('mv_st').value,note:g('mv_note').value.trim()};
+    if(!body.name||body.zeout.replace(/\D/g,'').length<5||!body.bank||!body.agency||!body.account||!body.amount){toast('חסרים פרטים: ת"ז, בנק, סניף, חשבון וסכום');return;}
+    if(!await uiConfirm('להקים בנדרים פלוס הוראת קבע בנקאית ל'+body.name+'?\n'+ndMoney(body.amount)+' כל חודש ב-'+body.day+' לחודש'+(body.groupe?' עבור '+body.groupe:'')+'\nבנק '+body.bank+' סניף '+body.agency+' חשבון ***'+body.account.slice(-3)+'\n'+(body.status==='3'?'✓ הבנק כבר אישר — תתחיל להיגבות בחיוב הקרוב':'הטופס עוד לא אושר — תיגבה רק אחרי אישור הבנק'),'🏦 כן, להקים','ביטול'))return;
+    const bt=g('mv_go');bt.disabled=true;bt.textContent='⏳ מקים בנדרים פלוס…';
+    const r=await api('POST','/api/nd/masav/new',body).catch(()=>null);
+    if(!r||!r.ok){bt.disabled=false;bt.textContent='🏦 להקים בנדרים פלוס';return uiAlert('נדרים פלוס לא הקימו את ההוראה:\n'+((r&&r.error)||'אין תשובה'));}
+    o.remove();toast('🏦 ההוראה הוקמה בנדרים פלוס ✓'+(r.next?' · החיוב הבא '+r.next:''));
+    if(r.message&&!/^ok$/i.test(r.message))await uiAlert('נדרים פלוס: '+r.message);
+    if(cb)cb();};
+}
 // ✎ מאיר: "לתקן לפי איות באנגלית" (למשל כולל = KOH-lel) — נשמר, וכל הודעה בקול של Gemini אומרת כך
 async function ymPronEn(word){
   const w=await uiPrompt('איזו מילה נשמעת לא נכון? (בעברית, כמו שהיא כתובה בהודעה — למשל כולל)',word||'');if(!w||!w.trim())return false;
@@ -16505,7 +16537,8 @@ async function cmNdPaint(m,showAll,boxId){
   const lim=showAll?rows.length:8;
   // מאיר: "מיותר שכתוב על כל תרומה — שיהיה כפתור קטן קבלות למעלה, במיוחד שיש את זה בנדרים"
   const rcOn=CM_RC_ON===m.id;
-  const addHTML=`<button class="btn sm cdn_ndwin" style="margin:6px 0;width:100%">💳 תרומה חדשה / הו״ק אשראי — כמו בנדרים פלוס</button><details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
+  const addHTML=`<button class="btn sm cdn_ndwin" style="margin:6px 0;width:100%">💳 תרומה חדשה / הו״ק אשראי — כמו בנדרים פלוס</button>
+      <button class="btn sm ghost cdn_masav" style="margin:0 0 6px;width:100%" title="טופס הרשאה לחיוב חשבון שחתום בבנק — ההוראה מוקמת בנדרים פלוס">🏦 הוראת קבע בנקאית חדשה (טופס חתום מהבנק)</button><details class="cmdonadd"${showAll==='add'?' open':''}><summary>➕ רישום תרומה (מזומן / העברה / צ׳ק…)</summary>
       <div class="cdquick"><input type="date" class="cdn_d" value="${todayStr()}"><input class="cdn_a" inputmode="decimal" placeholder="₪ סכום">
         <select class="cdn_m">${CM_METH.map(x=>`<option>${esc(x)}</option>`).join('')}</select>
         <input class="cdn_p" placeholder="עבור מה (עליית שישי, דמי חבר, נדבה…)">
@@ -16524,6 +16557,7 @@ async function cmNdPaint(m,showAll,boxId){
       :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
   const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true,boxId);
   const ndw=box.querySelector('.cdn_ndwin'); if(ndw)ndw.onclick=()=>ndDonate(m.id);
+  const ndm=box.querySelector('.cdn_masav'); if(ndm)ndm.onclick=()=>ndMasavNew(m,()=>cmNdPaint(m,showAll,boxId));
   const rcb=box.querySelector('.cmrcon'); if(rcb)rcb.onclick=()=>{CM_RC_ON=rcOn?0:m.id;cmNdPaint(m,showAll,boxId);};
   const q=c=>box.querySelector('.'+c);
   q('cdn_go').onclick=async()=>{const a=amtNum(q('cdn_a').value);if(!a){toast('חסר סכום');q('cdn_a').focus();return;}

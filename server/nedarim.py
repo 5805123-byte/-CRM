@@ -429,6 +429,29 @@ def masav_edit(masav_id, amount=None, day=None, groupe=None, tashlumim=None):
     return _txt_ok(*call('EditMasavKeva', p, post=True, masav=True, raw=True))
 
 
+def masav_new(name, zeout, bank, agency, account, day, amount, groupe='', comments='', phone='', mail='', addr='', status=2, tashlumim=''):
+    """🏦 הקמת הוראת קבע בנקאית חדשה (NewMasavKeva). מאיר: "רפאל שר ביקש להקים הוראת קבע בנקאי… תקים לו".
+    status: 2 = טופס הרשאה פיזי חתום · 3 = הבנק כבר אישר (הטופס חתום וחתום בחותמת הסניף).
+    ת"ז ומספר החשבון עוברים לנדרים פלוס ולא נשמרים אצלנו. מחזיר (הצלחה, תשובה/שגיאה)."""
+    p = {'ClientName': str(name or '').strip()[:50], 'ClientZeout': re.sub(r'\D', '', str(zeout or ''))[:9],
+         'ClientAdresse': str(addr or '').strip()[:50], 'ClientPhone': re.sub(r'\D', '', str(phone or ''))[:10],
+         'ClientMail': str(mail or '').strip(),
+         'Bank': re.sub(r'\D', '', str(bank or ''))[:2], 'Agency': re.sub(r'\D', '', str(agency or ''))[:3],
+         'Account': re.sub(r'\D', '', str(account or ''))[:9], 'NextDate': str(day or '').strip(),
+         'Amount': ('%.2f' % float(amount)).rstrip('0').rstrip('.'), 'Tashlumim': str(tashlumim or ''),
+         'Groupe': str(groupe or '').strip()[:200], 'Comments': str(comments or '').strip()[:300],
+         'Status': str(status or 2), 'AjaxId': str(int(time.time() * 1000))}
+    ok, txt = call('NewMasavKeva', p, post=True, masav=True, timeout=60, raw=True)
+    if not ok:
+        return False, str(txt)[:200]
+    try:
+        res = json.loads((txt or '').strip())
+    except ValueError:
+        return (txt or '').strip().upper().startswith('OK'), {'Message': (txt or '').strip()[:200]}
+    good = isinstance(res, dict) and str(res.get('Result') or res.get('Status') or '').lower() in ('ok', 'success')
+    return good, res if isinstance(res, dict) else {'Message': str(res)[:200]}
+
+
 def error_logs(last_id='', loops=5):
     """יומן הסירובים (GetErrorLogsJson) מ-last_id והלאה: סירובי אשראי וסירובי הוראות קבע שכבר נרשמו.
     בלי ת"ז ובלי תוקף. מחזיר (רשימה, המזהה הגבוה)."""

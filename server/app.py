@@ -25506,6 +25506,57 @@ class H(BaseHTTPRequestHandler):
                 bump_data()
             threading.Thread(target=_proc, daemon=True).start()
             return self._send(200, {'ok': True})
+        if self.path == '/api/nd/masav/new':
+            # 🏦 מאיר: "רפאל שר ביקש להקים הוראת קבע בנקאי… אני רוצה שתקים לו הוראת קבע" — הקמה בנדרים פלוס
+            # (NewMasavKeva) מתוך כרטיס חבר הקהילה. ת"ז ומספר החשבון נשלחים לנדרים פלוס בלבד — לא נשמרים אצלנו.
+            import nedarim as _nd
+            if not _nd.configured():
+                return self._send(200, {'ok': False, 'error': 'נדרים פלוס לא מוגדר ב-Render'})
+            name = str(b.get('name') or '').strip()
+            zeout = re.sub(r'\D', '', str(b.get('zeout') or ''))
+            bank, agency, account = (re.sub(r'\D', '', str(b.get(k) or '')) for k in ('bank', 'agency', 'account'))
+            day = str(b.get('day') or '').strip()
+            amt = round(_amt2(b.get('amount')), 2)
+            status = str(b.get('status') or '2')
+            groupe = str(b.get('groupe') or '').strip()[:200]
+            if not name or len(zeout) < 5 or not bank or not agency or not account or day not in ('1', '5', '10', '15', '20', '25', '28') or amt <= 0 or status not in ('2', '3'):
+                return self._send(200, {'ok': False, 'error': 'חסרים פרטים: שם, ת"ז, בנק, סניף, חשבון, יום גביה וסכום'})
+            mid = int(b.get('member_id') or 0) or None
+            con = db()
+            try:
+                mem = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone() if mid else None
+                phone = (str(b.get('phone') or '') or (mem['phone'] if mem and 'phone' in mem.keys() else '') or '').split(';')[0]
+                mail = str(b.get('mail') or '') or ((mem['email'] if mem and 'email' in mem.keys() else '') or '')
+                ok, res = _nd.masav_new(name, zeout, bank, agency, account, day, amt, groupe=groupe, comments=str(b.get('note') or '')[:300],
+                                        phone=phone, mail=mail, status=status)
+                if not ok:
+                    msg = (res.get('Message') if isinstance(res, dict) else str(res)) or 'נדרים פלוס לא אישרו'
+                    if mid:
+                        cm_debt_log(con, mid, 'masav:new', '🔴 הקמת הוראה בנקאית נכשלה: %s' % str(msg)[:150])
+                        con.commit()
+                    return self._send(200, {'ok': False, 'error': str(msg)[:200]})
+                nid = str(res.get('ID') or '').strip()
+                nxt = str(res.get('NextDate') or '').strip()
+                bank_lbl = ('בנק %s ***%s' % (bank, account[-3:])).strip()
+                kid = 'M' + nid if nid else ''
+                if kid:
+                    con.execute("INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad,off,kind,bank) "
+                                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,'','','', 'bank',?) "
+                                "ON CONFLICT(id) DO UPDATE SET member_id=excluded.member_id, amount=excluded.amount, groupe=excluded.groupe, "
+                                "next_date=excluded.next_date, active=1, kind='bank', bank=excluded.bank",
+                                (kid, '', name, phone, mail, '%g' % amt, groupe, '', nxt, '', '', mid, now_iso(), bank_lbl))
+                what = '🏦 הוקמה הוראת קבע בנקאית בנדרים פלוס: ₪%g לחודש, יום %s%s · %s%s' % (
+                    amt, day, (' · עבור ' + groupe) if groupe else '', bank_lbl,
+                    ' · הבנק כבר אישר' if status == '3' else ' · טופס חתום — ממתין לאישור הבנק')
+                if mid:
+                    cm_debt_log(con, mid, 'keva:' + (kid or 'new'), what + (' · החיוב הבא ' + nxt if nxt else ''))
+                con.commit()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'id': kid, 'next': nxt, 'message': str(res.get('Message') or '')[:200], 'fax': str(res.get('FaxTo') or '')})
         m = re.match(r'/api/nd/keva/(M?[\d:]+)/action$', urllib.parse.unquote(self.path))   # מזהה של מוסד נוסף: '7000571:123' (מגיע מקודד %3A)
         if m:
             # ⏸ הקפאה / ▶ הפעלה / ✎ שינוי סכום ותאריך / ⏭ דחייה בחודש — אשראי ובנקאית
