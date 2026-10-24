@@ -3733,6 +3733,63 @@ def ensure_schema():
     except Exception as e:
         print('  freeze gedalevich error:', e)
 
+    # 🏦 מאיר: "רפאל שר ביקש להקים הוראת קבע בנקאי… תקים לו הוראת קבע ושלח לי אישור" — הקמה חד-פעמית בנדרים
+    # פלוס (NewMasavKeva, מצב 3 = הטופס חתום בבנק עם חותמת הסניף, בלי הגבלת חיובים). הפרטים מהטופס החתום.
+    # פרטי הזיהוי והחשבון נמסרים לנדרים פלוס בלבד ואינם נשמרים במסד; השורות האלה נמחקות מהקוד אחרי הריצה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_v1'").fetchone():
+            import nedarim as _nd
+            _p = {'name': 'שר רפאל', 'z': '201525052', 'bank': '12', 'ag': '170', 'ac': '342631', 'amt': 300, 'day': '10', 'grp': 'תרומה חודשית'}
+            mem = con.execute("SELECT * FROM members WHERE last LIKE '%שר%' AND first LIKE '%רפאל%' AND COALESCE(active,1)=1 ORDER BY id").fetchall()
+            mem = [x for x in mem if (x['last'] or '').strip() in ('שר', 'שר ', 'שער')] or mem
+            mid = mem[0]['id'] if len(mem) == 1 else None
+            lines = []
+            if not _nd.configured():
+                lines.append('🔴 נדרים פלוס לא מוגדר ב-Render — ההוראה לא הוקמה')
+                ok = False
+            elif mid and con.execute("SELECT 1 FROM nd_keva WHERE member_id=? AND kind='bank' AND COALESCE(active,1)=1", (mid,)).fetchone():
+                lines.append('ℹ️ כבר יש לרפאל שר הוראה בנקאית פעילה בנדרים פלוס — לא הוקמה כפולה')
+                ok = True
+            else:
+                phone = (mem[0]['phone'] or '').split(';')[0] if mid else ''
+                mail = (mem[0]['email'] or '') if mid else ''
+                try:
+                    ok, res = _nd.masav_new(_p['name'], _p['z'], _p['bank'], _p['ag'], _p['ac'], _p['day'], _p['amt'], groupe=_p['grp'],
+                                            comments='טופס הרשאה חתום בבנק הפועלים סניף 170', phone=phone, mail=mail, status=3)
+                except Exception as e:
+                    ok, res = False, {'Message': str(e)[:160]}
+                if ok:
+                    nid = str(res.get('ID') or '').strip()
+                    nxt = str(res.get('NextDate') or '').strip()
+                    kid = ('M' + nid) if nid else ''
+                    if kid:
+                        con.execute("INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad,off,kind,bank) "
+                                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,'','','','bank',?) ON CONFLICT(id) DO UPDATE SET member_id=excluded.member_id, active=1, kind='bank'",
+                                    (kid, '', _p['name'], phone, mail, '300', _p['grp'], '', nxt, '', '', mid, now_iso(), 'בנק 12 ***631'))
+                    lines.append('✅ הוקמה בנדרים פלוס הוראת קבע בנקאית לרפאל שר: ₪300 לחודש, יום 10, ללא הגבלה, בנק 12 סניף 170 · מזהה %s%s' % (nid or '?', (' · החיוב הראשון ' + nxt) if nxt else ''))
+                    if not mid:
+                        lines.append('⚠️ לא נמצא כרטיס קהילה יחיד של רפאל שר (%d) — ההוראה תתחבר בסנכרון לפי הטלפון/השם' % len(mem))
+                else:
+                    lines.append('🔴 נדרים פלוס לא הקימו את ההוראה: %s' % str((res or {}).get('Message') if isinstance(res, dict) else res)[:200])
+            txt = ' · '.join(lines)
+            if mid:
+                try: cm_debt_log(con, mid, 'masav:new', txt)
+                except Exception: pass
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,done,done_date,done_at,done_by,done_note) VALUES(NULL,?,?,?,?,?,?,?,?)",
+                        (today_iso(), 'other', 'הקמת הוראת קבע בנקאית לרפאל שר בנדרים פלוס — ' + txt, 1 if ok else 0,
+                         today_iso() if ok else None, now_iso() if ok else None, 'המערכת' if ok else None, txt if ok else None))
+            con.execute("INSERT INTO seed_flags(name) VALUES('masav_sher_v1')")
+            con.commit()
+            print('  הו"ק בנקאית רפאל שר: ' + txt)
+            try:
+                sent = alert_owner('הוראת קבע בנקאית — רפאל שר\n\n%s\n\n(נרשם גם במשימות ובכרטיס שלו בקהילה)' % txt,
+                                   subject=('✅' if ok else '🔴') + ' הוראת קבע בנקאית לרפאל שר — ' + ('הוקמה בנדרים פלוס' if ok else 'לא הוקמה'))
+                print('  אישור נשלח: ' + sent)
+            except Exception as e:
+                print('  masav sher alert error:', e)
+    except Exception as e:
+        print('  masav sher error:', e)
+
     # חתונת כרמי–הרמן — מאיר: "תכניס לי ליומן" (ההזמנה: יום שני א' חשוון תשפ"ז, 12.10.26,
     # אולמי "הכרמים", שדרות נהר הירדן 1, בית שמש; קבלת פנים 18:30, חופה 19:00).
     # יצחק הרמן הוא מחברי הקהילה — השמחה נרשמת כמשימה כללית, בלי תורם.
