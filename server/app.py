@@ -3781,14 +3781,24 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('masav_sher_v1')")
             con.commit()
             print('  הו"ק בנקאית רפאל שר: ' + txt)
-            try:
-                sent = alert_owner('הוראת קבע בנקאית — רפאל שר\n\n%s\n\n(נרשם גם במשימות ובכרטיס שלו בקהילה)' % txt,
-                                   subject=('✅' if ok else '🔴') + ' הוראת קבע בנקאית לרפאל שר — ' + ('הוקמה בנדרים פלוס' if ok else 'לא הוקמה'))
-                print('  אישור נשלח: ' + sent)
-            except Exception as e:
-                print('  masav sher alert error:', e)
+            print('  אישור: ' + masav_sher_notify(ok, txt))
+            con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('masav_sher_notify_v1')")
+            con.commit()
     except Exception as e:
         print('  masav sher error:', e)
+
+    # מאיר: "לא קיבלתי אימייל" — אם ההקמה כבר רצה בעלייה קודמת והאישור לא יצא (ALERT_EMAIL לא מוגדר),
+    # התוצאה נשלחת שוב, הפעם גם לתיבת המערכת (GMAIL_USER) אם אין ALERT_EMAIL
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_v1'").fetchone() and \
+           not con.execute("SELECT 1 FROM seed_flags WHERE name='masav_sher_notify_v1'").fetchone():
+            t = con.execute("SELECT note FROM tasks WHERE note LIKE 'הקמת הוראת קבע בנקאית לרפאל שר%' ORDER BY id DESC").fetchone()
+            txt = (t['note'].split(' — ', 1)[-1] if t else 'אין רישום של התוצאה')
+            print('  אישור (חוזר): ' + masav_sher_notify(txt.startswith('✅'), txt))
+            con.execute("INSERT INTO seed_flags(name) VALUES('masav_sher_notify_v1')")
+            con.commit()
+    except Exception as e:
+        print('  masav sher notify error:', e)
 
     # מאיר: "תבחר כל 25 לחודש" — אם ההוראה של רפאל שר כבר הוקמה (ביום 10) לפני ההוראה הזו, יום הגביה משתנה ל-25
     try:
@@ -14293,6 +14303,31 @@ def wav_to_mp3(wav, kbps=48):
     except Exception as e:
         print('  mp3 encode:', str(e)[:120])
         return None
+
+
+def masav_sher_notify(ok, txt):
+    """האישור למאיר על ההוראה הבנקאית של רפאל שר: במייל ל-ALERT_EMAIL, ואם לא הוגדר — לתיבת המערכת (GMAIL_USER);
+    ובנוסף בערוצי ההתראה האחרים (וואטסאפ / SMS) אם הוגדרו."""
+    subject = ('✅' if ok else '🔴') + ' הוראת קבע בנקאית לרפאל שר — ' + ('הוקמה בנדרים פלוס' if ok else 'לא הוקמה')
+    body = 'הוראת קבע בנקאית — רפאל שר\n\n%s\n\n(נרשם גם במשימות ובכרטיס שלו בקהילה)' % txt
+    out = []
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    try:
+        import mailer
+        if to and mailer.configured():
+            r = mailer.send(to, subject, body, [])
+            out.append('מייל ל-%s: %s' % (to, 'ok' if r.get('ok') else str(r.get('error') or 'נכשל')[:80]))
+        else:
+            out.append('מייל: GMAIL לא מוגדר' if to else 'מייל: אין כתובת')
+    except Exception as e:
+        out.append('מייל: שגיאה %s' % str(e)[:80])
+    wa = (os.environ.get('ALERT_WHATSAPP') or '').strip()
+    if wa:
+        try:
+            out.append('וואטסאפ: ' + _wa_send(wa, subject + '\n' + txt))
+        except Exception as e:
+            out.append('וואטסאפ: שגיאה %s' % str(e)[:80])
+    return ' · '.join(x for x in out if x)
 
 
 def auth_note(ok, role, portal, method, ip, ua, email=''):
