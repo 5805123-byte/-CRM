@@ -18198,7 +18198,17 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   o.querySelector('.cno').onclick=()=>o.remove();
   o.querySelector('.cl_copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);toast('הקישור הועתק ✓');}catch(x){g('cl_url').select();document.execCommand('copy');toast('הקישור הועתק ✓');}};
   o.querySelector('.cl_mail').onclick=async()=>{const em=g('cl_em').value.trim();if(!em.includes('@')){toast('מייל לא תקין');g('cl_em').focus();return;}
-    if(!await uiConfirm('לשלוח מייל עם הקישור האישי ל-'+em+'?','📧 כן, לשלוח','ביטול'))return;
+    // מאיר: "לפני שאני שולח לו באימייל אני רוצה לראות איך המייל ייראה… ואז לאשר" — תצוגה של המייל כפי שיישלח
+    const pv=await api('POST','/api/donor/'+d.id+'/cardlink/preview',{subject:g('cl_subj').value,body:g('cl_body').value}).catch(()=>null);
+    if(!pv||!pv.ok){await uiAlert('לא הצלחתי להכין תצוגה מקדימה:\n'+((pv&&pv.error)||'שגיאה'));return;}
+    const ok=await new Promise(res=>{const w=document.createElement('div');w.className='confirmov';
+      w.innerHTML=`<div class="confirmbox" style="max-width:min(760px,96vw);width:96vw;text-align:right;max-height:94vh;overflow:auto"><div class="cm"><b>👁 כך המייל ייראה אצל ${esc(r.name)}</b><br><small>אל: <span dir="ltr">${esc(em)}</span> · נושא: <span dir="ltr">${esc(pv.subject)}</span></small></div>
+        <iframe class="rcp_if" title="המייל" sandbox="" style="height:min(70vh,640px)"></iframe>
+        <div class="hintxt">הקישור בכפתור הוא הקישור האישי שלו (תקף 30 יום). כל עדכון שיעשה בדף נרשם בקשר שלו ותקבל מייל.</div>
+        <div class="cbtns"><button class="btn ghost cno">↩ חזרה לעריכה</button><button class="btn bqgo cyes">✅ אישור ושליחה ל-${esc(em)}</button></div></div>`;
+      document.body.appendChild(w);w.querySelector('iframe').srcdoc=pv.html;
+      w.querySelector('.cno').onclick=()=>{w.remove();res(false);};w.querySelector('.cyes').onclick=()=>{w.remove();res(true);};});
+    if(!ok)return;
     const btn=o.querySelector('.cl_mail');btn.disabled=true;
     const s2=await api('POST','/api/donor/'+d.id+'/cardlink/send',{email:em,subject:g('cl_subj').value,body:g('cl_body').value}).catch(()=>null);
     btn.disabled=false;

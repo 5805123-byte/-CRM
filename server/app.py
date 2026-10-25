@@ -15699,7 +15699,7 @@ def cardlink_monthly(con, d):
 
 # מאיר: "נוסח מיוחד בשבילו — שהוא תורם בכל חודש ושלושה אברכים מתפללים עליו בכל לילה בחצות… קצר וקולע"
 CL_MONTHLY_LINE = ('As our monthly partner, your support sustains the learning every single night, and three avreichim daven '
-                   'for you and your family at chatzos, when the gates of Heaven are open.')
+                   'for you and your family at chatzos.')
 CL_MONTHLY_MIN_USD = 100
 
 
@@ -27456,6 +27456,23 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             bump_data()
             return self._send(200, out)
+        m = re.match(r'/api/donor/(\d+)/cardlink/preview$', self.path)
+        if m:
+            # 👁 מאיר: "לפני שאני שולח לו באימייל אני רוצה לראות איך המייל ייראה עם הקישור… ואז לאשר" —
+            # אותו HTML בדיוק שיישלח (הלוגו מהקובץ במקום cid), בלי לשלוח ובלי לשמור
+            con = db()
+            try:
+                d = con.execute("SELECT * FROM donors WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not d:
+                    return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+                base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+                url = base_url + '/u/' + cardlink_token(d['id'])
+                msg = cardlink_message(d, url, con)
+            finally:
+                con.close()
+            body_ = str(b.get('body') or msg['body']).strip()[:4000]
+            html = cardlink_mail_html(body_, url).replace('cid:globe', '/logo_full.png')
+            return self._send(200, {'ok': True, 'html': html, 'subject': str(b.get('subject') or msg['subject']).strip()[:200]})
         m = re.match(r'/api/donor/(\d+)/cardlink(/send)?$', self.path)
         if m:
             # 🔗 קישור אישי לתורם לעדכון כרטיס — יצירה (קישור + הודעה באנגלית), או שליחה במייל אחרי אישור
