@@ -555,6 +555,19 @@ async function verCheck(){
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden)verCheck(); });
 setInterval(verCheck, 4*60*1000);
+// מאיר: "במחשב לא מופיע שום תזכורת, רק בטלפון" — חלון שנשאר פתוח במחשב ימים לא טען מחדש את הנתונים, ומשימות
+// שנרשמו מהטלפון (או מהשרת) לא הופיעו בו. עכשיו הנתונים נטענים מחדש כשחוזרים לחלון וכל 5 דקות — בלי להפריע
+// כשחלון פתוח או כשמקלידים (אם לא השתנה כלום, השרת עונה 304 וזה זול)
+function dataRefresh(){
+  if(!(DB&&DB.length)||OFFLINE)return;
+  const busy=document.querySelector('.ov.show,.confirmov')||cardBusy()
+    ||/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'')
+    ||(document.activeElement&&document.activeElement.isContentEditable);
+  if(busy)return;
+  load().catch(()=>{});
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden)setTimeout(dataRefresh,800); });
+setInterval(dataRefresh, 5*60*1000);
 verCheck();
 
 async function openHealth(){
