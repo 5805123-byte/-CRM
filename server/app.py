@@ -14588,6 +14588,170 @@ def anet_declined_alert(con, res):
     print('  אוטורייז — לא עברו: ' + ' | '.join(lines))
 
 
+def anet_mail_run(con, days=60):
+    """אוטורייז מהמיילים (תווית אוטרייז): מה שחסר נכנס ל-recon, מתחבר לתורם ונרשם בכרטיס; "לא עבר" → התרעה."""
+    import authorize_mail as _am
+    if not _am.configured():
+        return {'שגיאה': 'GMAIL לא מוגדר'}
+    res = _am.scan(con, days=days)
+    if res.get('נוספו'):
+        # כמו בטעינת הדוח החודשי: אותו שם (פרטי+משפחה) שכבר שויך בחיוב קודם, או שם לועזי / עסק בכרטיס
+        try:
+            def _ne(x): return re.sub(r'[^a-z0-9]', '', (x or '').lower())
+            byeng, byprev = {}, {}
+            for d in con.execute("SELECT id,english,business FROM donors"):
+                for v in (d['english'], d['business']):
+                    if (v or '').strip():
+                        byeng.setdefault(_ne(v), d['id'])
+            for r in con.execute("SELECT first,last,donor_id FROM recon WHERE donor_id IS NOT NULL ORDER BY rowid DESC"):
+                byprev.setdefault(_ne((r['first'] or '') + (r['last'] or '')), r['donor_id'])
+            for r in con.execute("SELECT tid,first,last FROM recon WHERE source=? AND donor_id IS NULL", (_am.SRC,)).fetchall():
+                k = _ne((r['first'] or '') + (r['last'] or ''))
+                did = (byprev.get(k) or byeng.get(k)) if k else None
+                if did:
+                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, r['tid']))
+        except Exception as e:
+            print('  anet mail prev-link:', e)
+        try: apply_name_map(con)
+        except Exception as e: print('  anet mail name_map:', e)
+        try: link_by_identity(con)
+        except Exception as e: print('  anet mail link:', e)
+        try: backfill_from_recon(con)
+        except Exception as e: print('  anet mail backfill:', e)
+        try:
+            ins, merged, had, unk, by = banquest_post(con, _am.SRC)
+            res['נרשמו בכרטיסים'] = ins
+        except Exception as e:
+            print('  anet mail post:', e)
+        con.commit()
+        bump_data()
+    try: anet_declined_alert(con, res)
+    except Exception as e: print('  anet mail alert:', e)
+    return res
+
+
+def missing_report(con, days_grace=5):
+    """מאיר: "אני רוצה התרעה מרוכזת: כל מי שלא עובר לו… מי חסר ומי לא עבר לו, גם אוטרייז… מרוכז לפי כל שבוע".
+    מחזיר (שורות "לא עבר" פתוחות, שורות "חסר החודש") לתורמים הקבועים."""
+    today = il_now().date()
+    m0 = today.strftime('%Y-%m')
+    prev = (today.replace(day=1) - datetime.timedelta(days=1))
+    m1 = prev.strftime('%Y-%m')
+    cutoff = (today - datetime.timedelta(days=75)).isoformat()
+    name = {r['id']: (((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')) for r in con.execute("SELECT id,last,first,english FROM donors")}
+    # --- א. חיובים שנדחו ולא כוסו (בנק ווסט / אוטורייז) ---
+    ok = {}
+    for r in con.execute("SELECT donor_id,amount,date FROM recon WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
+        iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+        if iso >= cutoff:
+            ok.setdefault(r['donor_id'], []).append((iso, _amt2(r['amount'])))
+    for r in con.execute("SELECT donor_id,amount,date FROM donations WHERE donor_id IS NOT NULL AND date>=?", (cutoff,)):
+        ok.setdefault(r['donor_id'], []).append(((r['date'] or '')[:10], _amt2(r['amount'])))
+    dec = {}
+    for r in con.execute("SELECT donor_id,amount,date,source,note,COALESCE(no_debt,0) nd FROM recon WHERE donor_id IS NOT NULL "
+                         "AND COALESCE(status,'settled') NOT IN ('settled','') ORDER BY date DESC"):
+        iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+        if not iso or iso < cutoff or r['nd']:
+            continue
+        a = _amt2(r['amount'])
+        dd = _days(iso)
+        hit = any(abs(x - a) < 0.005 and (-3 <= _days(i) - dd <= 14 or i[:7] == iso[:7]) for i, x in ok.get(r['donor_id'], []))
+        if hit:
+            continue
+        k = (r['donor_id'], a, iso[:7])
+        if k in dec:
+            dec[k]['n'] += 1
+            continue
+        why = re.sub(r'^לא עבר\s*·?\s*', '', str(r['note'] or '')).strip()
+        dec[k] = {'did': r['donor_id'], 'a': a, 'iso': iso, 'src': 'אוטורייז' if 'uthorize' in (r['source'] or '') else 'בנק ווסט', 'why': why, 'n': 1}
+    lines_dec = ['🔴 %s — $%s · %s · %s%s%s' % (name.get(v['did'], '#%s' % v['did']), ('%g' % v['a']), v['iso'], v['src'],
+                                              (' · %d ניסיונות' % v['n']) if v['n'] > 1 else '', (' · ' + v['why'][:60]) if v['why'] else '')
+                 for v in sorted(dec.values(), key=lambda x: x['iso'], reverse=True)]
+    # --- ב. קבועים שהחודש (או החודש הקודם) לא נכנס להם כלום ---
+    expect = {}
+    for p in con.execute("SELECT donor_id,amount,permo,cur,monthly,confirmed,status FROM pledges WHERE COALESCE(monthly,0)=1"):
+        if (p['confirmed'] is not None and int(p['confirmed'] or 0) <= 0) or (p['status'] or '') == 'הסתיים':
+            continue
+        a = _amt2(p['permo']) if _amt2(p['permo']) > 0 else _amt2(p['amount'])
+        if a > 0:
+            expect[p['donor_id']] = expect.get(p['donor_id'], 0) + a
+    paid = {}
+    for r in con.execute("SELECT donor_id,date,amount FROM donations WHERE donor_id IS NOT NULL AND date>=? AND CAST(amount AS REAL)>0",
+                         ((today - datetime.timedelta(days=130)).isoformat(),)):
+        paid.setdefault(r['donor_id'], []).append(((r['date'] or '')[:10], _amt2(r['amount'])))
+    # קבוע לפי היסטוריה: שלושה חודשים רצופים לפני החודש הנוכחי, סכום דומה
+    ms = [(today.replace(day=1) - datetime.timedelta(days=1)).replace(day=1)]
+    for _ in range(2):
+        ms.append((ms[-1] - datetime.timedelta(days=1)).replace(day=1))
+    ms_keys = [x.strftime('%Y-%m') for x in ms]
+    for did, L in paid.items():
+        if did in expect:
+            continue
+        by = {}
+        for iso, a in L:
+            by.setdefault(iso[:7], []).append(a)
+        if all(k in by for k in ms_keys):
+            amts = [max(by[k]) for k in ms_keys]
+            if max(amts) - min(amts) <= 0.25 * max(amts):
+                expect[did] = min(amts)
+    lines_miss = []
+    for did, a in sorted(expect.items(), key=lambda x: -x[1]):
+        L = paid.get(did, [])
+        days_ = sorted(int(i[8:10]) for i, _a in L if len(i) == 10 and i[:7] in ms_keys)
+        usual = days_[len(days_) // 2] if days_ else 1
+        got0 = sum(x for i, x in L if i[:7] == m0)
+        got1 = sum(x for i, x in L if i[:7] == m1)
+        miss = []
+        if got1 < 0.9 * a:
+            miss.append('%s (נכנס $%g מתוך $%g)' % (m1, got1, a) if got1 > 0 else m1)
+        if today.day > usual + days_grace and got0 < 0.9 * a:
+            miss.append('%s (נכנס $%g מתוך $%g)' % (m0, got0, a) if got0 > 0 else m0)
+        if miss:
+            lines_miss.append('⚠️ %s — קבוע $%g בערך ב-%d לחודש · חסר: %s' % (name.get(did, '#%s' % did), a, usual, ', '.join(miss)))
+    return lines_dec, lines_miss
+
+
+def missing_report_send(con, force=False):
+    """המייל השבועי המרוכז (ובלחיצה — מיד). מחזיר את הטקסט שנשלח."""
+    dec, miss = missing_report(con)
+    today = il_now().date().isoformat()
+    body = ['דו"ח שבועי — מי לא עבר ומי חסר (נכון ל-%s)' % today, '']
+    body.append('🔴 חיובים שלא עברו ועדיין לא כוסו (%d):' % len(dec))
+    body += (dec or ['— אין —'])
+    body += ['', '⚠️ תורמים קבועים שלא נכנס להם החודש / בחודש הקודם (%d):' % len(miss)]
+    body += (miss or ['— אין —'])
+    body += ['', 'הרשימה המלאה: לשונית 🔴 לא עבר, וכרטיס כל תורם.']
+    txt = '\n'.join(body)
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    try:
+        import mailer
+        if to and mailer.configured() and (force or dec or miss):
+            mailer.send(to, '📋 דו"ח שבועי: %d לא עברו · %d חסרים' % (len(dec), len(miss)), txt, [])
+    except Exception as e:
+        print('  missing report mail:', e)
+    kv_set(con, 'missing_report_last', today); con.commit()
+    return txt
+
+
+def _weekly_report_loop():
+    """כל יום ראשון אחרי 09:00 (שעון ישראל) — פעם בשבוע."""
+    while True:
+        time.sleep(600)
+        try:
+            now = il_now()
+            if now.weekday() == 6 and now.hour >= 9:
+                con = db()
+                try:
+                    last = kv_get(con, 'missing_report_last', '')
+                    if last != now.date().isoformat() and (not last or (now.date() - datetime.date.fromisoformat(last)).days >= 6):
+                        missing_report_send(con, force=True)
+                        print('  דו"ח שבועי נשלח')
+                finally:
+                    con.close()
+        except Exception as e:
+            print('  weekly report error:', e)
+
+
 def wav_to_mp3(wav, kbps=48):
     """🎧 מאיר: "זה שומר לקובץ הזה את ההודעה הקולית ואי אפשר לשלוח אותה בווצאפ — תעשה שזה יהיה לקובץ MP3".
     WAV (PCM 16 ביט) -> MP3 עם lameenc. אם המקודד לא מותקן — None (ואז נשלח ה-WAV כמו קודם)."""
@@ -21213,6 +21377,20 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'mine': mine,
                                     'purposes': [x for x in purs if x not in mine][:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
+        if self.path.split('?')[0] == '/api/report/missing':
+            # 📋 הדו"ח המרוכז "מי לא עבר ומי חסר" — תצוגה (טקסט); ?send=1 שולח עכשיו במייל
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            con = db()
+            try:
+                if 'send=1' in self.path:
+                    txt = missing_report_send(con, force=True)
+                else:
+                    dec, miss = missing_report(con)
+                    txt = '\n'.join(['🔴 לא עברו ולא כוסו (%d):' % len(dec)] + (dec or ['— אין —']) + ['', '⚠️ קבועים שחסר להם (%d):' % len(miss)] + (miss or ['— אין —']))
+            finally:
+                con.close()
+            return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
         if self.path.split('?')[0] == '/api/push/vapid':
             # 📱 המפתח הציבורי לרישום הטלפון, ומצב הרישומים
             con = db()
@@ -27027,7 +27205,14 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': 'המודול לא נטען: %s' % e})
             if not anet.configured():
-                return self._send(200, {'ok': False, 'error': 'not_configured'})
+                # בלי מפתחות API — הסריקה מהמיילים (תווית אוטרייז)
+                con = db()
+                try:
+                    resm = anet_mail_run(con, days=int(b.get('days') or 60))
+                finally:
+                    con.close()
+                ANETSTAT.update(last=now_iso(), last_ok=now_iso(), result=str(resm), error='', runs=ANETSTAT['runs'] + 1)
+                return self._send(200, {'ok': 'שגיאה' not in resm, 'result': resm, 'error': resm.get('שגיאה', '')})
             try:
                 con = db()
                 res = anet.sync(con, days=int(b.get('days') or 10), link=link_by_identity)
@@ -31409,9 +31594,22 @@ def _authnet_loop():
     first = True
     while True:
         try:
+            if first:
+                time.sleep(25)
+            # 📧 אוטורייז מהמיילים — עובד גם בלי מפתחות API (מאיר: "אין בכלל תרומה שלו של אוקטובר במערכת")
+            try:
+                import authorize_mail as _am
+                if _am.configured():
+                    con = db()
+                    try:
+                        resm = anet_mail_run(con, days=60 if first else 7)
+                    finally:
+                        con.close()
+                    if (resm or {}).get('נוספו'):
+                        print('  אוטורייז (מייל) — חדשים:', resm)
+            except Exception as e:
+                print('  authorize mail scan error:', e)
             if anet.configured():
-                if first:
-                    time.sleep(25)
                 con = db()
                 res = anet.sync(con, days=int(os.environ.get('AUTHNET_DAYS') or 10),
                                 link=link_by_identity)
@@ -31551,6 +31749,7 @@ def serve():
     threading.Thread(target=_mk_req_loop, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
+    threading.Thread(target=_weekly_report_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 
