@@ -4022,6 +4022,15 @@ def ensure_schema():
     except Exception as e:
         print('  tasks 25.10 error:', e)
 
+    # מאיר: "נברשות בשעה 7" — יצירת הקשר עם הנברשות עוברת ל-19:00 (שאר המשימות נשארות ב-13:00)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tasks_2026_10_25_nivreshot_19_v1'").fetchone():
+            con.execute("UPDATE tasks SET at_time='19:00' WHERE due_date='2026-10-25' AND note='נברשות — ליצור איתו קשר'")
+            con.execute("INSERT INTO seed_flags(name) VALUES('tasks_2026_10_25_nivreshot_19_v1')")
+            con.commit()
+    except Exception as e:
+        print('  nivreshot 19 error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
