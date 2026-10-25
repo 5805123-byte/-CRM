@@ -14630,6 +14630,48 @@ def anet_mail_run(con, days=60):
     return res
 
 
+def anet_declined_rows(con, days=60):
+    cutoff = (il_now().date() - datetime.timedelta(days=days)).isoformat()
+    out = []
+    for r in con.execute("SELECT r.*, d.last dl, d.first df FROM recon r LEFT JOIN donors d ON d.id=r.donor_id "
+                         "WHERE r.source LIKE 'Authorize%' AND COALESCE(r.status,'settled') NOT IN ('settled','') ORDER BY r.date DESC"):
+        iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+        if iso < cutoff:
+            continue
+        nm = ((r['dl'] or '') + ' ' + (r['df'] or '')).strip()
+        out.append({'date': iso, 'amount': r['amount'], 'name_he': nm, 'name_en': ((r['first'] or '') + ' ' + (r['last'] or '')).strip(),
+                    'linked': bool(r['donor_id']), 'why': (r['note'] or '').replace('לא עבר · ', '').replace('לא עבר', '').strip(' ·'),
+                    'no_debt': bool(r['no_debt']), 'tid': r['tid'], 'email': r['email'] or ''})
+    return out
+
+
+def anet_declined_csv(con, days=60):
+    """📄 מאיר: "תעשה לי קובץ של הכל ביחד מהאימיילים, מה שלא עבר" — CSV לאקסל (UTF-8 עם BOM)."""
+    rows = anet_declined_rows(con, days)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['תאריך', 'סכום $', 'שם בכרטיס', 'שם באוטורייז', 'משויך לתורם', 'סיבה', 'סודר/אין חוב', 'מספר עסקה', 'מייל'])
+    for r in rows:
+        w.writerow([r['date'], r['amount'], r['name_he'], r['name_en'], 'כן' if r['linked'] else 'לא', r['why'], 'כן' if r['no_debt'] else '', r['tid'], r['email']])
+    return ('\ufeff' + buf.getvalue()).encode('utf-8'), len(rows)
+
+
+def anet_declined_file_mail(con, days=60, subject_extra=''):
+    """שולח למאיר את קובץ הדחיות של אוטורייז כקובץ מצורף."""
+    data, n = anet_declined_csv(con, days)
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    try:
+        import mailer
+        if to and mailer.configured():
+            mailer.send(to, '📄 אוטורייז — %d חיובים שלא עברו ב-%d הימים האחרונים%s' % (n, days, subject_extra),
+                        'מצורף קובץ אקסל (CSV) עם כל החיובים שנדחו באוטורייז, כפי שנאספו מהמיילים ומהדוחות.\n'
+                        'אותה רשימה: /api/authorize/declined.txt · קובץ: /api/authorize/declined.csv', [('authorize-declined.csv', 'text/csv', data)])
+            return True
+    except Exception as e:
+        print('  declined file mail:', e)
+    return False
+
+
 def missing_report(con, days_grace=5):
     """מאיר: "אני רוצה התרעה מרוכזת: כל מי שלא עובר לו… מי חסר ומי לא עבר לו, גם אוטרייז… מרוכז לפי כל שבוע".
     מחזיר (שורות "לא עבר" פתוחות, שורות "חסר החודש") לתורמים הקבועים."""
@@ -21377,6 +21419,26 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'mine': mine,
                                     'purposes': [x for x in purs if x not in mine][:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
+        if self.path.split('?')[0] == '/api/authorize/declined.csv':
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: days = int((qs.get('days') or ['60'])[0])
+            except ValueError: days = 60
+            con = db()
+            try:
+                if 'mail=1' in self.path:
+                    ok = anet_declined_file_mail(con, days)
+                    return self._send(200, {'ok': ok})
+                data, n = anet_declined_csv(con, days)
+            finally:
+                con.close()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/csv; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="authorize-declined.csv"')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/authorize/declined.txt':
             # 📄 מאיר: "איפה הקובץ עם כל החיובים שנדחו בחודשיים האחרונים באוטרייז?" — רשימה כטקסט, ?days=60
             if auth_on() and self.role != 'admin':
@@ -31632,6 +31694,15 @@ def _authnet_loop():
                         con.close()
                     if (resm or {}).get('נוספו'):
                         print('  אוטורייז (מייל) — חדשים:', resm)
+                    # מאיר: "תעשה לי קובץ של הכל ביחד מהאימיילים, מה שלא עבר" — פעם אחת, אחרי הסריקה הראשונה
+                    if first and 'שגיאה' not in (resm or {}):
+                        con = db()
+                        try:
+                            if not kv_get(con, 'anet_declined_file_v1', ''):
+                                if anet_declined_file_mail(con, 60, ' (חודשיים אחורה)'):
+                                    kv_set(con, 'anet_declined_file_v1', now_iso()); con.commit()
+                        finally:
+                            con.close()
             except Exception as e:
                 print('  authorize mail scan error:', e)
             if anet.configured():
