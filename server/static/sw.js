@@ -1,6 +1,6 @@
 // Service worker — installable app, always-fresh UI, and עבודה בלי אינטרנט.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v1088';
+const CACHE = 'kc-crm-v1089';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
 const DATA_CACHE = 'kc-data';      // העותק האחרון של הנתונים, לשימוש בלי רשת
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
@@ -113,6 +113,25 @@ self.addEventListener('message', e => {
   if (d.kc === 'pending') e.waitUntil(qCount().then(n => tell({ kc: 'pending', n })));
 });
 self.addEventListener('sync', e => { if (e.tag === 'kc-sync') e.waitUntil(replay().catch(() => {})); });
+
+// 📱 מאיר: "שכל תזכורת שיש לי, שיקפוץ לי בטלפון… כמו ביומן גוגל" — הודעת דחיפה מהשרת מוצגת
+// כהתראה במסך הראשי גם כשהאפליקציה סגורה; לחיצה פותחת את היומן
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: 'כולל חצות', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || '🔔 תזכורת — כולל חצות', {
+    body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag || 'kc-rem', renotify: true,
+    dir: 'rtl', lang: 'he', vibrate: [200, 100, 200], data: { url: d.url || '/?tab=cal' }
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    for (const c of cs) { if ('focus' in c) { c.navigate(url).catch(() => {}); return c.focus(); } }
+    return self.clients.openWindow(url);
+  }));
+});
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);

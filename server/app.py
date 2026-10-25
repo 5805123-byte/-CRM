@@ -828,6 +828,13 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS auth_log(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, ok INTEGER, role TEXT, "
                     "portal TEXT, method TEXT, ip TEXT, ua TEXT, email TEXT, sent TEXT)")
     except Exception: pass
+    # 📱 מאיר: "שכל תזכורת שיש לי, שיקפוץ לי בטלפון… כמו ביומן גוגל" — רישומי הטלפונים ל-Web Push,
+    # ומה כבר נשלח (שלא תקפוץ אותה תזכורת פעמיים)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS push_subs(id INTEGER PRIMARY KEY AUTOINCREMENT, endpoint TEXT UNIQUE, p256dh TEXT, auth TEXT, "
+                    "role TEXT, ua TEXT, created TEXT, last_ok TEXT, fails INTEGER DEFAULT 0)")
+        con.execute("CREATE TABLE IF NOT EXISTS push_sent(k TEXT PRIMARY KEY, at TEXT)")
+    except Exception: pass
     # 🛠️ מאיר: "הגבאי שאין לו גישה למערכת כאן של קלוד קוד… איך הוא יכול לשלוח לך לתקן דברים" —
     # בקשות תיקון מתוך המערכת. נשמרות פה ונשלחות במייל למאיר (ALERT_EMAIL / GMAIL_USER), והוא מעביר לקלוד
     try:
@@ -4000,6 +4007,20 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  vitzhandler wedding error:', e)
+
+    # מאיר (25.10.2026): "עושים לי ביומן היום נברשות ליצור איתו קשר, לבדוק בבנק שנכנס הכסף מהנברשות, לטפל בציורי
+    # קיר, ומשה כהן. כל אחד זה משימה נפרדת לשעה אחד בצהריים" — ארבע משימות כלליות להיום 13:00
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tasks_2026_10_25_13_v1'").fetchone():
+            for kind, note in (('followup', 'נברשות — ליצור איתו קשר'), ('verify', 'לבדוק בבנק שנכנס הכסף מהנברשות'),
+                               ('other', 'לטפל בציורי קיר'), ('other', 'משה כהן')):
+                if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-25' AND note=?", (note,)).fetchone():
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,'2026-10-25',?,?,'','13:00','')", (kind, note))
+            con.execute("INSERT INTO seed_flags(name) VALUES('tasks_2026_10_25_13_v1')")
+            con.commit()
+            print('  4 משימות ל-25.10.2026 13:00 נרשמו')
+    except Exception as e:
+        print('  tasks 25.10 error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
@@ -14463,6 +14484,94 @@ def wav_to_mp3(wav, kbps=48):
         return None
 
 
+def push_keys(con):
+    """מפתחות ה-VAPID — נוצרים פעם אחת ונשמרים במסד. מחזיר (PEM פרטי, ציבורי base64url)."""
+    import webpush as _wp
+    pem = kv_get(con, 'push_vapid_pem', '')
+    if not pem:
+        pem, pub = _wp.new_keys()
+        kv_set(con, 'push_vapid_pem', pem); con.commit()
+    return pem, _wp.public_of(pem)
+
+
+def push_send_all(con, payload, roles=('admin',)):
+    """שליחת הודעה לכל הטלפונים הרשומים (של התפקידים שנבחרו). רישום שפג (410/404) נמחק."""
+    import webpush as _wp
+    pem, _pub = push_keys(con)
+    sub_email = 'mailto:' + ((os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or 'admin@example.com').strip())
+    rows = con.execute("SELECT * FROM push_subs WHERE role IN (%s)" % ','.join('?' * len(roles)), tuple(roles)).fetchall()
+    out = []
+    for r in rows:
+        ok, res = _wp.send({'endpoint': r['endpoint'], 'keys': {'p256dh': r['p256dh'], 'auth': r['auth']}}, payload, pem, sub_email)
+        if ok:
+            con.execute("UPDATE push_subs SET last_ok=?, fails=0 WHERE id=?", (now_iso(), r['id']))
+        elif res.startswith('410') or res.startswith('404'):
+            con.execute("DELETE FROM push_subs WHERE id=?", (r['id'],))
+        else:
+            con.execute("UPDATE push_subs SET fails=fails+1 WHERE id=?", (r['id'],))
+        out.append((r['id'], ok, res))
+    con.commit()
+    return out
+
+
+def push_scan():
+    """כל 30 שניות: אילו תזכורות הגיע זמנן — ושולח אותן לטלפון. השלבים כמו במסך (remStage): יומיים לפני (9:00),
+    יום לפני (9:00), 3 שעות לפני, שעה לפני, ובזמן עצמו; משימה בלי שעה — ב-8:00 בבוקר של אותו יום."""
+    con = db()
+    try:
+        if not con.execute("SELECT 1 FROM push_subs LIMIT 1").fetchone():
+            return
+        now = il_now()
+        today = now.date()
+        rows = con.execute("SELECT t.*, d.last, d.first FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id "
+                           "WHERE COALESCE(t.done,0)=0 AND t.due_date BETWEEN ? AND ?",
+                           ((today - datetime.timedelta(days=1)).isoformat(), (today + datetime.timedelta(days=2)).isoformat())).fetchall()
+        for t in rows:
+            try:
+                y, m, d = (int(x) for x in t['due_date'].split('-'))
+            except Exception:
+                continue
+            due = datetime.datetime(y, m, d)
+            hm = re.match(r'^(\d{1,2}):(\d{2})', t['at_time'] or '')
+            stages = [('d2', due - datetime.timedelta(days=2) + datetime.timedelta(hours=9), 'בעוד יומיים'),
+                      ('d1', due - datetime.timedelta(days=1) + datetime.timedelta(hours=9), 'מחר')]
+            if hm:
+                at = due + datetime.timedelta(hours=int(hm.group(1)), minutes=int(hm.group(2)))
+                stages += [('h3', at - datetime.timedelta(hours=3), 'בעוד 3 שעות'), ('h1', at - datetime.timedelta(hours=1), 'בעוד שעה!'),
+                           ('now', at, 'עכשיו')]
+            else:
+                stages.append(('d0', due + datetime.timedelta(hours=8), 'היום'))
+            for key, when, label in stages:
+                # רק מה שהגיע זמנו בחצי השעה האחרונה — שלא יקפצו תזכורות ישנות אחרי שהשרת היה כבוי
+                if not (when <= now < when + datetime.timedelta(minutes=30)):
+                    continue
+                k = '%s:%s' % (t['id'], key)
+                if con.execute("SELECT 1 FROM push_sent WHERE k=?", (k,)).fetchone():
+                    continue
+                con.execute("INSERT INTO push_sent(k,at) VALUES(?,?)", (k, now_iso())); con.commit()
+                who = ((t['last'] or '') + ' ' + (t['first'] or '')).strip()
+                kind = {'event': '🎉', 'followup': '📞', 'email': '📧', 'verify': '💰', 'card': '💳', 'charge': '🧾', 'prayer': '🙏', 'parnes': '🌙', 'cert': '📜'}.get(t['kind'] or '', '🔔')
+                title = '%s %s — %s' % (kind, label, who or (t['note'] or 'משימה')[:40])
+                body = ' · '.join(x for x in [(t['note'] or '') if who else '', (t['at_time'] or ''), (t['place'] or '')] if x)
+                payload = {'title': title, 'body': body or t['due_date'], 'tag': 'kc-task-' + k, 'url': '/?tab=cal&d=' + t['due_date'],
+                           'donor': t['donor_id'] or 0}
+                res = push_send_all(con, payload)
+                print('  push %s: %s' % (k, '; '.join('%s %s %s' % x for x in res)))
+        # ניקוי ישן
+        con.execute("DELETE FROM push_sent WHERE at < ?", ((now - datetime.timedelta(days=14)).isoformat(),)); con.commit()
+    finally:
+        con.close()
+
+
+def _push_loop():
+    while True:
+        time.sleep(30)
+        try:
+            push_scan()
+        except Exception as e:
+            print('  push loop error:', e)
+
+
 def masav_sher_notify(ok, txt):
     """האישור למאיר על ההוראה הבנקאית של רפאל שר: במייל ל-ALERT_EMAIL, ואם לא הוגדר — לתיבת המערכת (GMAIL_USER);
     ובנוסף בערוצי ההתראה האחרים (וואטסאפ / SMS) אם הוגדרו."""
@@ -20826,6 +20935,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'mine': mine,
                                     'purposes': [x for x in purs if x not in mine][:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
+        if self.path.split('?')[0] == '/api/push/vapid':
+            # 📱 המפתח הציבורי לרישום הטלפון, ומצב הרישומים
+            con = db()
+            try:
+                _pem, pub = push_keys(con)
+                n = con.execute("SELECT COUNT(*) FROM push_subs").fetchone()[0]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'key': pub, 'subs': n})
         if self.path.split('?')[0] == '/api/nd/paymethods':
             # 🏦 מאיר: "מה אני אמור לשלוח לו בדיוק להוראות קבע?" — אילו אמצעי תשלום פתוחים בדף התרומות שלנו
             # בנדרים פלוס (GetMosad — קריאה ציבורית). נשמר ליום, כי נדרים מבקשים לא לקרוא לזה הרבה.
@@ -22212,6 +22330,32 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             return
         b = self._body()
+        if self.path in ('/api/push/subscribe', '/api/push/unsubscribe', '/api/push/test'):
+            # 📱 רישום הטלפון לתזכורות קופצות / ביטול / הודעת בדיקה
+            sub = b.get('sub') if isinstance(b.get('sub'), dict) else b
+            ep = str(sub.get('endpoint') or '').strip()
+            keys = sub.get('keys') or {}
+            con = db()
+            try:
+                if self.path == '/api/push/unsubscribe':
+                    con.execute("DELETE FROM push_subs WHERE endpoint=?", (ep,)); con.commit()
+                    return self._send(200, {'ok': True})
+                if not ep.startswith('https://') or not keys.get('p256dh') or not keys.get('auth'):
+                    return self._send(200, {'ok': False, 'error': 'רישום לא תקין'})
+                con.execute("INSERT INTO push_subs(endpoint,p256dh,auth,role,ua,created) VALUES(?,?,?,?,?,?) "
+                            "ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, role=excluded.role, ua=excluded.ua",
+                            (ep, str(keys['p256dh']), str(keys['auth']), self.role or 'admin', (self.headers.get('User-Agent') or '')[:200], now_iso()))
+                con.commit()
+                if self.path == '/api/push/test':
+                    import webpush as _wp
+                    pem, _pub = push_keys(con)
+                    ok, res = _wp.send({'endpoint': ep, 'keys': {'p256dh': keys['p256dh'], 'auth': keys['auth']}},
+                                       {'title': '🔔 כולל חצות — התזכורות פועלות', 'body': 'כל תזכורת ביומן תקפוץ כאן, גם כשהאפליקציה סגורה', 'tag': 'kc-test', 'url': '/?tab=cal'},
+                                       pem, 'mailto:' + ((os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or 'admin@example.com').strip()))
+                    return self._send(200, {'ok': ok, 'error': '' if ok else 'שירות הדחיפה לא קיבל: ' + res})
+                return self._send(200, {'ok': True})
+            finally:
+                con.close()
         if self.path == '/api/feedback':
             # 🛠️ בקשת תיקון / דיווח מתוך המערכת (גם מהגבאי). נשמרת בטבלת feedback ונשלחת במייל למאיר,
             # שמעביר אותה לקלוד. הגוף: text, tab, shot (data:image/...;base64,...) לא חובה
@@ -31074,6 +31218,7 @@ def serve():
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
+    threading.Thread(target=_push_loop, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 

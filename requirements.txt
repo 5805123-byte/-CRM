@@ -4,3 +4,4 @@ Pillow
 pypdf
 pymupdf
 lameenc
+cryptography

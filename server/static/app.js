@@ -790,6 +790,25 @@ function putLog(d,c){
   if(ix>=0)d.contacts[ix]=c; else d.contacts.unshift(c);
   if(CURD&&CURD.id===d.id&&document.getElementById('clog'))renderContacts(d);
 }
+// 📱 מאיר: "שכל תזכורת שיש לי, שיקפוץ לי בטלפון במסך הראשי, כמו ביומן גוגל" — רישום המכשיר ל-Web Push.
+// השרת שולח בזמן של כל שלב תזכורת (יומיים לפני, מחר, 3 שעות, שעה, ובזמן עצמו) — גם כשהאפליקציה סגורה.
+let PUSH_ON=false;
+function pushKey(s){const b=atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0));}
+async function pushEnable(quiet){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)){if(!quiet)uiAlert('הדפדפן הזה לא תומך בהתראות דחיפה.\nבאייפון: צריך קודם "הוסף למסך הבית" ולפתוח משם.');return false;}
+  try{
+    const p=await Notification.requestPermission();if(p!=='granted'){if(!quiet)toast('לא אושרו התראות');return false;}
+    const reg=await navigator.serviceWorker.ready;const k=await api('GET','/api/push/vapid');if(!k||!k.key)throw new Error('אין מפתח');
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKey(k.key)});
+    const r=await api('POST',quiet?'/api/push/subscribe':'/api/push/test',{sub:sub.toJSON()});
+    if(!r||!r.ok)throw new Error((r&&r.error)||'הרישום נכשל');
+    PUSH_ON=true;try{localStorage.setItem('kc_push','1');}catch(e){}
+    if(!quiet)toast('📱 התזכורות יקפצו בטלפון ✓ — נשלחה הודעת בדיקה');return true;
+  }catch(e){if(!quiet)uiAlert('לא הצלחתי להפעיל תזכורות בטלפון:\n'+(e&&e.message||e));return false;}
+}
+// אחרי כניסה: אם כבר אושר פעם — מוודאים שהרישום עדיין קיים (אחרי התקנה מחדש / ניקוי) בלי לשאול
+(function(){try{if(localStorage.getItem('kc_push')==='1'&&'Notification' in window&&Notification.permission==='granted'){PUSH_ON=true;setTimeout(()=>pushEnable(true),4000);}}catch(e){}})();
 function checkReminders(){
   if(ROLE==='comm'||ROLE==='gabbai'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
       if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
@@ -822,10 +841,10 @@ function openRemPopup(){
     <div class="hintxt">לחיצה על שם התורם פותחת את הכרטיס שלו.</div>
     ${due.map((t,i)=>`<div class="remitem over"><div class="ri"><b>${esc(kindLabel(t.kind))} ${t.dref?`<a class="remname" data-i="${i}">${esc(t.donor)} ↗</a>`:esc(t.donor)}</b><br><small>${esc(t.due_date)} ${esc(t.note||'')}</small><br>${whoChipHTML(t,'data-rwho="'+t.id+'"')}</div>
       <button class="btn sm rdone" data-i="${i}">בוצע ✓</button><button class="no rsnooze" data-i="${i}">דחה מחר</button></div>`).join('')}`:''}${upHTML}
-    ${('Notification' in window)&&Notification.permission!=='granted'?'<button class="btn sm ghost" id="remperm" style="margin-top:10px;width:100%">🔔 הפעל התראות קופצות בדפדפן (גם כשהחלון ברקע)</button>':''}`;
+    ${ROLE==='admin'&&!PUSH_ON?'<button class="btn sm ghost" id="remperm" style="margin-top:10px;width:100%">📱 תזכורות קופצות בטלפון — גם כשהאפליקציה סגורה</button>':''}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>{remov.classList.remove('show');remMarkSeen(up);};
-  const rp=document.getElementById('remperm'); if(rp)rp.onclick=()=>{Notification.requestPermission().then(p=>{toast(p==='granted'?'התראות הופעלו ✓':'לא אושר');openRemPopup();});};
+  const rp=document.getElementById('remperm'); if(rp)rp.onclick=()=>pushEnable().then(()=>openRemPopup());
   rs.querySelectorAll('.remname[data-u]').forEach(a=>a.onclick=e=>{e.stopPropagation();const t=up[a.dataset.u];if(!t.dref)return;remov.classList.remove('show');remMarkSeen(up);openDonor(t.dref,'tasks');});
   rs.querySelectorAll('.rdone[data-u]').forEach(b=>b.onclick=async()=>{const t=up[b.dataset.u];if(!await doneWithNote(t,t.dref))return;checkReminders();openRemPopup();render();toast('בוצע ✓ · נרשם בכרטיס');});
   // שם התורם פותח את הכרטיס שלו — כדי לטפל בתזכורת מול כל המידע שלפניך
@@ -1590,7 +1609,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -13946,10 +13965,11 @@ async function renderCalTab(){
   const F=[['','הכל'],['task','📋 משימות'],['event','🎉 שמחות'],['parnes','🌙 פרנס יום']];
   chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('')
     +'<button class="chip" id="cal_paste" title="להדביק טקסט או תמונה של הזמנה — והמערכת מכניסה לתאריך הנכון" style="background:#2d2a6e;color:#fff">📋 הדבקה ליומן</button>'
-    +(ROLE==='admin'?'<button class="chip" id="cal_rc" title="שיחה לטלפון שלך: בבוקר עם כל המשימות של היום, ולפני כל אירוע עם שעה">📞 שיחות תזכורת</button>':'');
+    +(ROLE==='admin'?'<button class="chip" id="cal_rc" title="שיחה לטלפון שלך: בבוקר עם כל המשימות של היום, ולפני כל אירוע עם שעה">📞 שיחות תזכורת</button><button class="chip" id="cal_push" title="כל תזכורת קופצת בטלפון במסך הראשי, גם כשהאפליקציה סגורה">📱 '+(PUSH_ON?'תזכורות בטלפון פועלות ✓':'תזכורות קופצות בטלפון')+'</button>':'');
   chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
   document.getElementById('cal_paste').onclick=()=>calPasteOpen();
   const rcb=document.getElementById('cal_rc'); if(rcb)rcb.onclick=calRemindOpen;
+  const pcb=document.getElementById('cal_push'); if(pcb)pcb.onclick=async()=>{if(await pushEnable())render();};
   view.innerHTML='<div class="cnt">טוען את החודש…</div>';
   const HM=await hebMonth(calHeb.m,calHeb.y);
   if(!HM){view.innerHTML='<div class="empty">לא הצלחתי לטעון את החודש העברי</div>';return;}
