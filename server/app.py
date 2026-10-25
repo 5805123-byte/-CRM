@@ -14530,6 +14530,64 @@ def alert_owner(text, subject='התראה ממערכת כולל חצות'):
     return ' · '.join(out) or 'אין ערוץ התראה מוגדר'
 
 
+def anet_declined_alert(con, res):
+    """מאיר: "אתה אמור להתריע לי על כל תרומה שלא עברה באוטרייז" — אחרי כל משיכה מאוטורייז: חיובים שנדחו
+    שנכנסו עכשיו → שורה בקשר של התורם + מייל למאיר (ALERT_EMAIL / GMAIL_USER); הוראת קבע שהושעתה — גם."""
+    tids = list((res or {}).get('new_declined') or [])
+    sus = list((res or {}).get('suspended') or [])
+    if not tids and not sus:
+        return
+    lines, by_donor = [], {}
+    for tid in tids:
+        r = con.execute("SELECT r.*, d.last dl, d.first df, d.english de FROM recon r LEFT JOIN donors d ON d.id=r.donor_id WHERE r.tid=?", (tid,)).fetchone()
+        if not r:
+            continue
+        nm = ((r['dl'] or '') + ' ' + (r['df'] or '')).strip() or ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or '?'
+        iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+        why = str(r['note'] or '').replace('לא עבר · ', '').replace('לא עבר', '').strip(' ·')
+        line = '🔴 %s — $%s · %s%s%s' % (nm, r['amount'], iso, (' · הוראת קבע' if r['recurring'] else ''), (' · ' + why) if why else '')
+        lines.append(line + ('' if r['donor_id'] else ' · (לא שויך לתורם)'))
+        if r['donor_id']:
+            by_donor.setdefault(r['donor_id'], []).append('🔴 חיוב באוטורייז לא עבר: $%s · %s%s%s' % (r['amount'], iso, (' · הוראת קבע' if r['recurring'] else ''), (' · ' + why) if why else ''))
+    for did, ls in by_donor.items():
+        for l in ls:
+            try:
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                            (did, today_iso(), 'אוטורייז', l, '', now_iso()))
+            except Exception:
+                pass
+    # הוראת קבע שהושעתה / בוטלה אצלם — פעם אחת לכל מנוי
+    try:
+        seen = set(json.loads(kv_get(con, 'anet_sus_seen', '') or '[]'))
+    except Exception:
+        seen = set()
+    for x in sus:
+        k = '%s:%s' % (x.get('sub_id'), x.get('status'))
+        if k in seen:
+            continue
+        seen.add(k)
+        lines.append('⏸ הוראת קבע באוטורייז %s: %s %s — $%s (מנוי %s)' % ('הושעתה' if x.get('status') == 'suspended' else 'בוטלה', x.get('last') or '', x.get('first') or '', x.get('amount'), x.get('sub_id')))
+    kv_set(con, 'anet_sus_seen', json.dumps(sorted(seen)[-500:]))
+    con.commit()
+    if not lines:
+        return
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    subject = '🔴 אוטורייז: %d חיוב%s לא עבר%s' % (len(lines), 'ים' if len(lines) > 1 else '', 'ו' if len(lines) > 1 else '')
+    body = 'חיובים באוטורייז שלא עברו (נרשמו בכרטיסי התורמים וב-"🔴 לא עבר"):\n\n' + '\n'.join(lines)
+    def run():
+        try:
+            import mailer
+            if to and mailer.configured():
+                mailer.send(to, subject, body, [])
+            wa = (os.environ.get('ALERT_WHATSAPP') or '').strip()
+            if wa:
+                _wa_send(wa, subject + '\n' + '\n'.join(lines[:10]))
+        except Exception as e:
+            print('  anet alert error:', e)
+    threading.Thread(target=run, daemon=True).start()
+    print('  אוטורייז — לא עברו: ' + ' | '.join(lines))
+
+
 def wav_to_mp3(wav, kbps=48):
     """🎧 מאיר: "זה שומר לקובץ הזה את ההודעה הקולית ואי אפשר לשלוח אותה בווצאפ — תעשה שזה יהיה לקובץ MP3".
     WAV (PCM 16 ביט) -> MP3 עם lameenc. אם המקודד לא מותקן — None (ואז נשלח ה-WAV כמו קודם)."""
@@ -22528,6 +22586,8 @@ class H(BaseHTTPRequestHandler):
                 tid = anet.webhook_tid(ev)
                 con = db()
                 res = anet.sync(con, link=link_by_identity, only_tid=tid) if tid else {}
+                try: anet_declined_alert(con, res)
+                except Exception as e: print('  anet alert:', e)
                 try: backfill_from_recon(con)
                 except Exception: pass
                 con.close()
@@ -26971,6 +27031,15 @@ class H(BaseHTTPRequestHandler):
             try:
                 con = db()
                 res = anet.sync(con, days=int(b.get('days') or 10), link=link_by_identity)
+                try: anet_declined_alert(con, res)
+                except Exception as e: print('  anet alert:', e)
+                # 🔄 סנכרון ידני — גם סריקת הוראות הקבע (ניסיונות שנכשלו), כדי שמה שחסר ייכנס מיד
+                try:
+                    res2 = anet.sync_arb(con, days=60, link=link_by_identity)
+                    anet_declined_alert(con, res2)
+                    res['הו"ק שנכשלו'] = len(res2.get('new_declined') or [])
+                except Exception as e:
+                    print('  anet arb sync:', e)
                 try: backfill_from_recon(con)
                 except Exception: pass
                 con.close()
@@ -31324,6 +31393,9 @@ def ivr_log(P, ans):
         pass
 
 
+_ARB_LAST = [0.0]
+
+
 def _authnet_loop():
     """רשת הביטחון של החיבור ל-Authorize.net. ה-Webhook מביא כל חיוב תוך שניות,
     והסריקה הזו רצה כל שעה ואוספת כל מה שאולי לא הגיע — הודעה שאבדה, שרת
@@ -31343,6 +31415,18 @@ def _authnet_loop():
                 con = db()
                 res = anet.sync(con, days=int(os.environ.get('AUTHNET_DAYS') or 10),
                                 link=link_by_identity)
+                try: anet_declined_alert(con, res)
+                except Exception as e: print('  anet alert:', e)
+                # הוראות קבע שנכשלו — בעלייה ואחר כך פעם ביום (מאיר: "אין בכלל תרומה שלו של אוקטובר במערכת")
+                if first or time.time() - _ARB_LAST[0] > 86400:
+                    try:
+                        res2 = anet.sync_arb(con, days=60, link=link_by_identity)
+                        anet_declined_alert(con, res2)
+                        _ARB_LAST[0] = time.time()
+                        if res2.get('new_declined'):
+                            print('  Authorize.net — הו"ק שנכשלו:', len(res2['new_declined']))
+                    except Exception as e:
+                        print('  anet arb scan:', e)
                 try: backfill_from_recon(con)
                 except Exception: pass
                 con.close()

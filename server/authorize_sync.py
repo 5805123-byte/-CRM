@@ -132,10 +132,91 @@ def _row(t, detail=None):
         'sub_id': str(sub.get('id') or ''),
         'sub_pay': str(sub.get('payNum') or ''),
         'status': (d.get('transactionStatus') or t.get('transactionStatus') or ''),
+        # מאיר: "אתה אמור להתריע לי על כל תרומה שלא עברה באוטרייז" — הסיבה לדחייה, כשיש
+        'reason': (d.get('responseReasonDescription') or t.get('responseReasonDescription') or '').strip(),
     }
 
 
 LIVE_OK = ('settledSuccessfully', 'capturedPendingSettlement', 'authorizedPendingCapture')
+# חיוב שלא עבר — נכנס למערכת כ"לא עבר" (כמו חיוב שחזר בבנק ווסט), ומאיר מקבל התרעה
+DECLINED = ('declined', 'generalError', 'communicationError', 'expired', 'returnedItem', 'failedReview', 'settlementError')
+
+
+def _classify(rows):
+    out = []
+    for r in rows:
+        if r['status'] in LIVE_OK:
+            r['st'] = 'settled'
+        elif r['status'] in DECLINED:
+            r['st'] = 'declined'
+        else:
+            continue
+        if float(r['amount'] or 0) > 0:
+            out.append(r)
+    return out
+
+
+# ---------- הוראות קבע (ARB): חיובים שנכשלו ----------
+# רשימת העסקאות הרגילה מביאה רק מה שנסגר לאצווה; חיוב של הוראת קבע שנדחה לא מגיע לשם בכלל.
+# לכן פעם ביום עוברים על המנויים (הוראות הקבע) ומביאים מההיסטוריה שלהם את הניסיונות שנכשלו.
+
+def arb_subscriptions(kind='subscriptionActive'):
+    rows, offset = [], 1
+    while True:
+        out = call('ARBGetSubscriptionListRequest', {'searchType': kind,
+                   'sorting': {'orderBy': 'id', 'orderDescending': True}, 'paging': {'limit': 1000, 'offset': offset}}) or {}
+        page = out.get('subscriptionDetails') or []
+        rows += page
+        if len(page) < 1000:
+            return rows
+        offset += 1
+
+
+def arb_subscription(sid):
+    return (call('ARBGetSubscriptionRequest', {'subscriptionId': str(sid), 'includeTransactions': True}) or {}).get('subscription') or {}
+
+
+def arb_failed(days=45):
+    """הניסיונות שנכשלו בהוראות הקבע ב-days הימים האחרונים — שורות כמו של collect, עם st='declined'.
+    מחזיר (שורות, רשימת מנויים שהושעו/בוטלו)."""
+    cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+    rows, sus = [], []
+    subs = []
+    for kind in ('subscriptionActive', 'subscriptionInactive'):
+        try:
+            subs += arb_subscriptions(kind)
+        except Exception as e:
+            print('  ARB list error:', e)
+    for s in subs:
+        sid = str(s.get('id') or '')
+        if not sid:
+            continue
+        st = str(s.get('status') or '')
+        if st in ('suspended', 'terminated') and (s.get('createTimeStampUTC') or '')[:10] >= '2000':
+            sus.append({'sub_id': sid, 'status': st, 'first': s.get('firstName') or '', 'last': s.get('lastName') or '',
+                        'amount': '%.2f' % float(s.get('amount') or 0), 'name': s.get('name') or ''})
+        try:
+            sub = arb_subscription(sid)
+        except Exception as e:
+            print('  ARB sub error:', sid, e)
+            continue
+        prof = sub.get('profile') or {}
+        pp = prof.get('paymentProfile') or {}
+        bill = pp.get('billTo') or {}
+        for t in (sub.get('arbTransactions') or []):
+            resp = str(t.get('response') or '')
+            when = str(t.get('submitTimeUTC') or '')[:10]
+            if 'approved' in resp.lower() or not when or when < cutoff:
+                continue
+            tid = str(t.get('transId') or '')
+            rows.append({'tid': ('anet-' + tid) if tid else 'anet-arb-%s-%s-%s' % (sid, t.get('payNum') or '', t.get('attemptNum') or ''),
+                         'first': (bill.get('firstName') or s.get('firstName') or '').strip(), 'last': (bill.get('lastName') or s.get('lastName') or '').strip(),
+                         'business': (bill.get('company') or '').strip(), 'amount': '%.2f' % float(s.get('amount') or sub.get('amount') or 0), 'date': when,
+                         'email': (prof.get('email') or '').strip(), 'phone': (bill.get('phoneNumber') or '').strip(),
+                         'addr': (bill.get('address') or '').strip(), 'city': (bill.get('city') or '').strip(), 'state': (bill.get('state') or '').strip(),
+                         'zip': (bill.get('zip') or '').strip(), 'recurring': 1, 'sub_id': sid, 'sub_pay': str(t.get('payNum') or ''),
+                         'status': 'declined', 'reason': resp, 'st': 'declined', 'sub_status': st})
+    return rows, sus
 
 
 def collect(days=10, with_detail=True, only_tid=None):
@@ -145,7 +226,7 @@ def collect(days=10, with_detail=True, only_tid=None):
         d = transaction(only_tid)
         if d:
             out.append(_row({'transId': only_tid}, d))
-        return out
+        return _classify(out)
     for t in unsettled():
         tid = str(t.get('transId') or '')
         if tid and tid not in seen:
@@ -158,7 +239,7 @@ def collect(days=10, with_detail=True, only_tid=None):
                 continue
             seen.add(tid)
             out.append(_row(t, transaction(tid) if with_detail else None))
-    return [r for r in out if r['status'] in LIVE_OK and float(r['amount'] or 0) > 0]
+    return _classify(out)
 
 
 # ---------- שמירה במערכת ----------
@@ -168,30 +249,46 @@ def save(con, rows, link=None):
     ולכן אפשר להריץ את המשיכה שוב ושוב בלי לפחד מכפילויות."""
     cur = con.cursor()
     added = matched = 0
+    new_dec = []
     for r in rows:
         if cur.execute("SELECT 1 FROM recon WHERE tid=?", (r['tid'],)).fetchone():
             continue
+        st = r.get('st') or 'settled'
         note = 'חיוב קבוע · תשלום %s' % r['sub_pay'] if r['recurring'] and r['sub_pay'] else ''
+        if st == 'declined':
+            note = ('לא עבר' + (' · ' + r['reason'] if r.get('reason') else '') + (' · ' + note if note else ''))[:200]
         cur.execute("""INSERT INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,
                            email,recurring,donor_id,category,processed,source,status)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,0,?,'settled')""",
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,0,?,?)""",
                     (r['tid'], r['first'], r['last'] or r['business'], r['amount'], r['date'],
                      r['addr'], r['city'], r['state'], r['zip'], r['phone'], r['email'],
-                     r['recurring'], note, SRC))
+                     r['recurring'], note, SRC, st))
         added += 1
+        if st == 'declined':
+            new_dec.append(r['tid'])
     con.commit()
     if added and link:
         try:
             matched = link(con) or 0        # שיוך לפי מייל / טלפון / שם
         except Exception:
             matched = 0
-    return {'נבדקו': len(rows), 'נוספו': added, 'שויכו': matched}
+    return {'נבדקו': len(rows), 'נוספו': added, 'שויכו': matched, 'new_declined': new_dec}
 
 
 def sync(con, days=10, link=None, only_tid=None):
     if not configured():
         return {'שגיאה': 'לא הוגדרו פרטי חיבור ל-Authorize.net'}
     return save(con, collect(days=days, only_tid=only_tid), link=link)
+
+
+def sync_arb(con, days=45, link=None):
+    """סריקת הוראות הקבע: ניסיונות שנכשלו → recon בסטטוס 'declined' (+ רשימת מנויים מושעים)."""
+    if not configured():
+        return {'שגיאה': 'לא הוגדרו פרטי חיבור ל-Authorize.net'}
+    rows, sus = arb_failed(days)
+    res = save(con, rows, link=link)
+    res['suspended'] = sus
+    return res
 
 
 # ---------- Webhook ----------
