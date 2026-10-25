@@ -4061,6 +4061,16 @@ def ensure_schema():
     except Exception as e:
         print('  sher call task error:', e)
 
+    # מאיר: "מחר פגישה אמנית זהב 1 וחצי בצהריים" — 26.10.2026 13:30
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_2026_10_26_omanit_zahav_v1'").fetchone():
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-26' AND note LIKE '%אמנית זהב%'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,'2026-10-26','other','פגישה — אמנית זהב','','13:30','')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_2026_10_26_omanit_zahav_v1')")
+            con.commit()
+    except Exception as e:
+        print('  omanit zahav task error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
