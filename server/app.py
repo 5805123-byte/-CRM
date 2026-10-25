@@ -21377,6 +21377,31 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'mosad': mos, 'valid': valid, 'mine': mine,
                                     'purposes': [x for x in purs if x not in mine][:40],
                                     'online': 'https://www.matara.pro/nedarimplus/online/?mosad=%s' % mos if mos else ''})
+        if self.path.split('?')[0] == '/api/authorize/declined.txt':
+            # 📄 מאיר: "איפה הקובץ עם כל החיובים שנדחו בחודשיים האחרונים באוטרייז?" — רשימה כטקסט, ?days=60
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try: days = int((qs.get('days') or ['60'])[0])
+            except ValueError: days = 60
+            cutoff = (il_now().date() - datetime.timedelta(days=days)).isoformat()
+            con = db()
+            try:
+                out = ['חיובים שנדחו באוטורייז — %d הימים האחרונים (מהמיילים + הדוחות)' % days, '']
+                n = 0
+                for r in con.execute("SELECT r.*, d.last dl, d.first df FROM recon r LEFT JOIN donors d ON d.id=r.donor_id "
+                                     "WHERE r.source LIKE 'Authorize%' AND COALESCE(r.status,'settled') NOT IN ('settled','') ORDER BY r.date DESC"):
+                    iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+                    if iso < cutoff:
+                        continue
+                    n += 1
+                    nm = ((r['dl'] or '') + ' ' + (r['df'] or '')).strip() or ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                    out.append('%s · $%s · %s%s · %s%s' % (iso, r['amount'], nm, '' if r['donor_id'] else ' (לא שויך)', (r['note'] or '').replace('לא עבר · ', ''),
+                                                        ' · ✓ אין חוב' if r['no_debt'] else ''))
+                out.insert(1, 'סה"כ %d' % n)
+            finally:
+                con.close()
+            return self._send(200, '\n'.join(out).encode('utf-8'), 'text/plain; charset=utf-8')
         if self.path.split('?')[0] == '/api/report/missing':
             # 📋 הדו"ח המרוכז "מי לא עבר ומי חסר" — תצוגה (טקסט); ?send=1 שולח עכשיו במייל
             if auth_on() and self.role != 'admin':
