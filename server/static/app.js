@@ -7982,7 +7982,7 @@ async function renderBQ(reload=true){
       <button class="bqt ${bqTab==='bad'?'on':''}" data-bqt="bad">חזרו</button>
       <button class="bqt ${bqTab==='hist'?'on':''}" data-bqt="hist">היסטוריה <small>מ-${esc(bqDate(st.hist_from))}</small></button></div>
     <input class="bqsearch" id="bq_q" placeholder="${(q||'').trim()&&!bqQ?'מסונן לפי החיפוש שלמעלה: '+esc(q.trim()):'חיפוש — שם, 4 ספרות, סכום…'}" value="${esc(bqQ)}">
-    <div class="bqlist">${bqRows.map(row).join('')||'<div class="hintxt">'+(st.n_tx||bqTab==='rec'?'אין כאן כלום':'עוד לא נמשכו עסקאות — לחץ 🔄 סנכרון')+'</div>'}</div>
+    <div class="bqlist">${(bqTab==='bad'?bqBadHTML(bqRows):bqRows.map(row).join(''))||'<div class="hintxt">'+(st.n_tx||bqTab==='rec'?'אין כאן כלום':'עוד לא נמשכו עסקאות — לחץ 🔄 סנכרון')+'</div>'}</div>
     ${bqTab==='hist'?`<div class="hintxt">היסטוריה לבדיקה בלבד. רק עסקאות מ-${esc(bqDate(st.post_from))} נרשמות לבד בכרטיסי התורמים, כדי שלא יהיו כפילויות. ✓ = רשום בכרטיס.</div>`:''}`;
   bqWire(box);
 }
@@ -8114,6 +8114,33 @@ async function bqFixFlow(id,amt,who){
   const r=await api('POST','/api/bq/tx/'+id+'/fix',body);
   if(!r||!r.ok){await uiAlert((r&&r.error)||'לא נשמר');return false;}
   toast('נשמר ✓');return true;}
+// מאיר: "אם גאלד יעקב כבר עבר לו והסתדר לו לגמרי אז למה כתוב לי עדיין כל החיובים שלא עברו… אם הסתדר אז שיימחק
+// הכיתוב שלא עבר ואראה רק שלא עבר ואח"כ הסתדר בירוק" — בלשונית "חזרו": למעלה רק מה שעדיין פתוח, מקובץ לפי תורם
+// עם הסכום הפתוח שלו, וניסיונות חוזרים של אותו חיוב (אותו סכום, עד 14 יום) בשורה אחת; מה שהסתדר — שורה ירוקה
+// קצרה אחת לכל חיוב, בקבוצה מקופלת למטה
+function bqBadHTML(rows){
+  const key=r=>String(r.donor_id||('n:'+(r.donor_name||r.name||'')));
+  const fixed=rows.filter(r=>(r.fix||{}).state==='fixed'), open=rows.filter(r=>(r.fix||{}).state!=='fixed');
+  // ניסיונות חוזרים → שורה אחת (האחרונה), עם תאריכי הניסיונות
+  const groups=[];
+  open.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||''))).forEach(r=>{
+    const g=groups.find(x=>x.k===key(r)&&Math.abs(+x.rep.amount-+r.amount)<0.005&&Math.abs(new Date(String(x.rep.created).slice(0,10))-new Date(String(r.created).slice(0,10)))<=14*864e5);
+    if(g)g.tries.push(r);else groups.push({k:key(r),rep:r,tries:[r]});});
+  // לפי תורם: כותרת עם הסכום הפתוח שלו, ואז השורות
+  const byDon={};groups.forEach(g=>(byDon[g.k]=byDon[g.k]||[]).push(g));
+  let h='';
+  Object.values(byDon).sort((a,b)=>String(b[0].rep.created||'').localeCompare(String(a[0].rep.created||''))).forEach(G=>{
+    const r0=G[0].rep,who=r0.donor_name||r0.name||'?';
+    const tot=G.reduce((t,g)=>{const f=g.rep.fix||{};return t+Math.max(0,(+g.rep.amount||0)-(f.state==='partial'?(+f.got||0):0));},0);
+    h+=`<div class="bqdonhd">${esc(who)} — עדיין לא עבר: <b style="color:var(--no)">${bqMoney(tot)}</b>${G.length>1?' · '+G.length+' חיובים':''}</div>`;
+    G.forEach(g=>{const r=Object.assign({},g.rep);if(g.tries.length>1)r._tries=g.tries.map(x=>bqDate(x.created));h+=bqTxRow(r);});});
+  if(!groups.length&&fixed.length)h+='<div class="hintxt" style="color:#2e7d4f;font-weight:bold">✅ אין כרגע חיובים שחזרו ולא הסתדרו.</div>';
+  // מה שהסתדר — פעם אחת לכל חיוב שעבר בסוף
+  const seen=new Set(),fx=[];
+  fixed.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||''))).forEach(r=>{const f=r.fix||{};const k=key(r)+'|'+(+r.amount)+'|'+(f.ref||f.at||'');if(seen.has(k))return;seen.add(k);fx.push(r);});
+  if(fx.length)h+=`<details class="bqfixedgrp"${bqQ?' open':''}><summary>✅ הסתדרו (${fx.length}) — חיובים שחזרו ואחר כך עברו</summary>
+    ${fx.map(r=>{const f=r.fix||{};return `<div class="bqfxl"><b>${esc(r.donor_name||r.name||'?')}</b> · ${bqMoney(r.amount)} · לא עבר ${esc(bqDate(r.created))} → ${f.manual?'סומן כמסודר':(f.via?'שולם ':'חויב בהצלחה ')+esc(bqDate(bqLocalDate(f.at)))}${f.amount&&Math.abs(+f.amount-+r.amount)>0.005?' ('+bqMoney(f.amount)+')':''}${f.via?' · '+esc((chCfg(f.via)||{}).l||f.via):''}${f.note?' · '+esc(f.note):''} <button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(r.donor_name||r.name||'')}" title="לא נכון? לסמן שעדיין לא סודר">✎</button></div>`;}).join('')}</details>`;
+  return h;}
 function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?','off'], bad=BQ_BAD.includes(r.status);
   const ok=s[1]==='ok', who=r.donor_name||r.name||'?', fx=bad?(r.fix||{state:'open'}):null, fixed=fx&&fx.state==='fixed', part=fx&&fx.state==='partial';
   return `<div class="bqrow ${op?'op':''} ${fixed?'fixed':''}"><button class="bqrh" data-op="t${r.id}">
@@ -8121,6 +8148,7 @@ function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?
       <span class="bqwho"><b>${esc(who)}</b>${r.donor_name?'':' <small class="bqno">לא שויך</small>'}
         <span class="bqfor">${esc(bqDate(r.created))} · ${esc(r.card||'')}${r.description?(' · '+esc(r.description)):''}</span>
         ${bad&&r.error?`<span class="bqwhy">${esc(r.error)}</span>`:''}
+        ${r._tries?`<span class="bqtries">🔁 ${r._tries.length} ניסיונות שחזרו: ${esc(r._tries.join(', '))}</span>`:''}
         ${bad?bqFixLine(r):''}${bad?bqNoteLine(r):''}</span>
       <span class="bqamt"><b>${bqMoney(r.amount)}</b><small class="bqst ${fixed?'ok':(part?'wait':s[1])}">${fixed?'סודר':(part?'סודר חלקית':esc(s[0]))}${ok?(r.in_card?' · ✓ בכרטיס':' · ⚠️ לא בכרטיס'):''}</small></span></button>
     ${op?`<div class="bqrb"><div class="hintxt">עסקה ${esc(r.ref||r.id)} · ${esc(r.created||'')}${r.email?(' · '+esc(r.email)):''}</div>
