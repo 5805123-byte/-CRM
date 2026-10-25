@@ -4071,6 +4071,63 @@ def ensure_schema():
     except Exception as e:
         print('  omanit zahav task error:', e)
 
+    # מאיר: "תכניס לליומן מחר ב12 פגישה עם רו"ח קסטנר" — 26.10.2026 12:00
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_2026_10_26_kastner_v1'").fetchone():
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-26' AND note LIKE '%קסטנר%'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,'2026-10-26','other','פגישה עם רו\"ח קסטנר','','12:00','')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_2026_10_26_kastner_v1')")
+            con.commit()
+    except Exception as e:
+        print('  kastner task error:', e)
+
+    # מאיר: "Disabled Veteran Org (DVS) — זה משה דויטש שמשלם על 2 יששכר זבולון בכל חודש".
+    # כל ההעברות ACH בצ'ייס על שם DISABLED VETERAN (memo DVS-<חודש>, $1,800 בסוף כל חודש) —
+    # לכרטיס של משה דויטש, ייעוד יששכר־זבולון. השם נשמר בכרטיס (שם העסק) וב-name_map,
+    # כך שההעברה הבאה תזוהה לבד. לא נרשם פעמיים: לכל שורה מזהה (tid).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='dvs_moshe_deutsch_v1'").fetchone():
+            cands = con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall()
+            if len(cands) != 1:
+                cands = con.execute("SELECT id FROM donors WHERE lower(TRIM(COALESCE(english,'')))='moshe deutch'").fetchall()
+            if len(cands) == 1:
+                did = cands[0]['id']
+                _CAT = 'יששכר־זבולון'
+                rows = list(con.execute("""SELECT tid,amount,date,source,category FROM recon
+                                           WHERE upper(TRIM(COALESCE(first,'')||' '||COALESCE(last,''))) LIKE '%DISABLED VETERAN%'
+                                             AND (donor_id IS NULL OR donor_id=?) ORDER BY date""", (did,)))
+                n = 0
+                for r in rows:
+                    a = round(float(str(r['amount']).replace(',', '') or 0), 2)
+                    src = r['source'] or ''
+                    meth = "צ'ייס ACH" if src.startswith("צ'ייס") else 'ACH'
+                    memo = (r['category'] or '').strip()
+                    if not con.execute("SELECT 1 FROM donations WHERE tid=?", (r['tid'],)).fetchone() and \
+                       not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND ROUND(CAST(amount AS REAL),2)=?",
+                                       (did, r['date'], a)).fetchone():
+                        note = 'נכנס מ' + meth + ' · ע"ש Disabled Veteran Org (DVS)' + ((' · ' + memo) if memo.upper().startswith('DVS') else '') + ' · 2 יששכר־זבולון'
+                        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'$',1)",
+                                    (did, r['date'], '%.2f' % a, _CAT, meth, note, r['tid']))
+                        n += 1
+                    con.execute("UPDATE recon SET donor_id=?, processed=1, recurring=1, category=? WHERE tid=?", (did, _CAT, r['tid']))
+                for k in ('disabled veteran', 'disabled veteran org', 'disabled veteran org dvs'):
+                    con.execute("INSERT OR IGNORE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", (k, did, today_iso()))
+                try: learn_payer_name(con, did, 'Disabled Veteran Org (DVS)')
+                except Exception as e: print('  dvs learn name:', e)
+                _nt = 'DVS = Disabled Veteran Org — ההעברות החודשיות ($1,800 ACH בצ\'ייס) הן שלו, עבור 2 יששכר־זבולון'
+                _old = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
+                if 'Disabled Veteran' not in _old:
+                    con.execute("UPDATE donors SET notes=? WHERE id=?", ((_old + ' · ' + _nt).strip(' ·') if _old.strip() else _nt, did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', 'שויכו %d העברות DVS (Disabled Veteran Org, $1,800 לחודש) לכרטיס — יששכר־זבולון ×2' % len(rows), '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('dvs_moshe_deutsch_v1')")
+                con.commit()
+                print('  DVS → משה דויטש #%d: %d העברות, %d תרומות חדשות' % (did, len(rows), n))
+            else:
+                print('  DVS: לא נמצא כרטיס יחיד של משה דויטש (%d) — לא שויך' % len(cands))
+    except Exception as e:
+        print('  dvs deutsch error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
