@@ -818,10 +818,28 @@ async function pushEnable(quiet){
     if(!r||!r.ok)throw new Error((r&&r.error)||'הרישום נכשל');
     PUSH_ON=true;try{localStorage.setItem('kc_push','1');}catch(e){}
     if(!quiet)toast('📱 התזכורות יקפצו בטלפון ✓ — נשלחה הודעת בדיקה');return true;
-  }catch(e){if(!quiet)uiAlert('לא הצלחתי להפעיל תזכורות בטלפון:\n'+(e&&e.message||e));return false;}
+  }catch(e){if(!quiet)await pushFailed(e&&e.message||String(e));return false;}
+}
+// הרישום לדחיפה נכשל (למשל "push service error" — הדפדפן לא הצליח להירשם אצל גוגל): מסבירים מה לנסות,
+// ומציעים את אותן תזכורות בוואטסאפ / SMS אם מוגדרים ב-Render
+async function pushFailed(msg){
+  const k=await api('GET','/api/push/vapid').catch(()=>null);
+  const chans=[k&&k.wa?'וואטסאפ':'',k&&k.sms?'SMS':''].filter(Boolean);
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px"><div class="cm">לא הצלחתי להפעיל תזכורות קופצות בטלפון</div>
+    <div class="hintxt" dir="ltr" style="text-align:left">${esc(msg)}</div>
+    <div class="hintxt">זו שגיאה של הדפדפן מול שירות ההתראות של גוגל, לא של המערכת. מה עוזר בדרך כלל:<br>
+    1. לנסות שוב בעוד דקה (לפעמים זה חולף).<br>2. לפתוח את המערכת ב-<b>Chrome</b> (לא בדפדפן של סמסונג), להוסיף למסך הבית משם, ולהפעיל שוב.<br>
+    3. הגדרות הטלפון ← אפליקציות ← Chrome ← התראות: מופעל. וגם: Google Play Services מעודכן.</div>
+    ${chans.length?`<div class="hintxt" style="margin-top:8px">בינתיים אפשר לקבל את אותן תזכורות ב-<b>${esc(chans.join(' + '))}</b> (למספר שמוגדר ב-Render), באותם זמנים בדיוק.</div>`:'<div class="hintxt" style="margin-top:8px">אפשר גם תזכורות בוואטסאפ / SMS: ב-Render ← Environment להגדיר ALERT_WHATSAPP (עם WA_TOKEN ו-WA_PHONE_ID) או ALERT_SMS (דרך ימות), ואז לחזור לכאן.</div>'}
+    <div class="cbtns"><button class="btn ghost cno">סגור</button><button class="btn" id="pf_retry">🔄 לנסות שוב</button>${chans.length?`<button class="btn bqgo" id="pf_alt">📲 תזכורות ב${esc(chans.join(' + '))}</button>`:''}</div></div>`;
+  document.body.appendChild(o);o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelector('#pf_retry').onclick=()=>{o.remove();pushEnable();};
+  const al=o.querySelector('#pf_alt');if(al)al.onclick=async()=>{const r=await api('POST','/api/push/alt',{on:1});o.remove();if(r&&r.ok){PUSH_ON=true;toast('📲 התזכורות יישלחו ב'+chans.join(' + ')+' ✓');render();}};
 }
 // אחרי כניסה: אם כבר אושר פעם — מוודאים שהרישום עדיין קיים (אחרי התקנה מחדש / ניקוי) בלי לשאול
-(function(){try{if(localStorage.getItem('kc_push')==='1'&&'Notification' in window&&Notification.permission==='granted'){PUSH_ON=true;setTimeout(()=>pushEnable(true),4000);}}catch(e){}})();
+(function(){try{if(localStorage.getItem('kc_push')==='1'&&'Notification' in window&&Notification.permission==='granted'){PUSH_ON=true;setTimeout(()=>pushEnable(true),4000);}}catch(e){}
+  setTimeout(()=>{if(ROLE==='admin')api('GET','/api/push/vapid').then(k=>{if(k&&k.alt){PUSH_ON=true;}}).catch(()=>{});},6000);})();
 function checkReminders(){
   if(ROLE==='comm'||ROLE==='gabbai'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
       if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
@@ -18166,6 +18184,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   o.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>🔗 קישור אישי ל${esc(r.name)} — עדכון כרטיס, שמות וכתובת</b></div>
     <div class="qcprev"><div class="hintxt">הקישור תקף 30 יום. בדף: טופס כרטיס מאובטח של בנק ווסט (המספר לא עובר אצלנו), השמות שמתפללים עליו לתיקון (תיקון שלו נכנס ישירות לקוויטל, והנוסח הקודם נשמר בקשר), והכתובת / מייל / טלפון. כל עדכון נרשם בקשר של התורם. במייל הקישור מופיע ככפתור "🔒 Kollel Chatzot · Secure Update"; בוואטסאפ — כקישור עם תצוגה מקדימה.</div>
       <input id="cl_url" dir="ltr" value="${esc(r.url)}" readonly style="font-size:12px"></div>
+    ${+r.monthly>=100?`<div class="hintxt" style="color:#7a1f1f">🔁 זוהה כתורם חודשי (כ-$${Math.round(+r.monthly)} לחודש) — הנוסח כולל את השורה "שלושה אברכים מתפללים עליו בכל לילה בחצות".</div>`:''}
     <label class="fld"><span>📧 מייל</span><input id="cl_em" dir="ltr" value="${esc(r.email||'')}" placeholder="email@example.com"></label>
     <label class="fld"><span>נושא</span><input id="cl_subj" dir="ltr" value="${esc(r.subject)}"></label>
     <label class="fld"><span>המייל (אפשר לערוך)</span><textarea id="cl_body" dir="ltr" rows="7" style="font-family:Arial;font-size:13px">${esc(r.body)}</textarea></label>

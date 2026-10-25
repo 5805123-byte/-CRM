@@ -14568,7 +14568,12 @@ def push_scan():
     יום לפני (9:00), 3 שעות לפני, שעה לפני, ובזמן עצמו; משימה בלי שעה — ב-8:00 בבוקר של אותו יום."""
     con = db()
     try:
-        if not con.execute("SELECT 1 FROM push_subs LIMIT 1").fetchone():
+        # מאיר: "Registration failed - push service error" — כשהטלפון לא נרשם לדחיפה, אותן תזכורות יוצאות
+        # בוואטסאפ (ALERT_WHATSAPP) / SMS (ALERT_SMS) אם הופעל בכפתור
+        alt = kv_get(con, 'push_alt', '') == '1'
+        wa_to = (os.environ.get('ALERT_WHATSAPP') or '').strip() if alt else ''
+        sms_to = (os.environ.get('ALERT_SMS') or '').strip() if alt else ''
+        if not con.execute("SELECT 1 FROM push_subs LIMIT 1").fetchone() and not (wa_to or sms_to):
             return
         now = il_now()
         today = now.date()
@@ -14605,6 +14610,18 @@ def push_scan():
                 payload = {'title': title, 'body': body or t['due_date'], 'tag': 'kc-task-' + k, 'url': '/?tab=cal&d=' + t['due_date'],
                            'donor': t['donor_id'] or 0}
                 res = push_send_all(con, payload)
+                if wa_to or sms_to:
+                    txt_ = '%s\n%s' % (title, body or t['due_date'])
+                    if wa_to:
+                        try: res.append(('wa', True, _wa_send(wa_to, txt_)))
+                        except Exception as e: res.append(('wa', False, str(e)[:80]))
+                    if sms_to:
+                        try:
+                            import yemot as _ym
+                            ok_, r_ = _ym.send_sms(_ym.norm_phone(sms_to) or sms_to, txt_[:300])
+                            res.append(('sms', ok_, str(r_)[:80]))
+                        except Exception as e:
+                            res.append(('sms', False, str(e)[:80]))
                 print('  push %s: %s' % (k, '; '.join('%s %s %s' % x for x in res)))
         # ניקוי ישן
         con.execute("DELETE FROM push_sent WHERE at < ?", ((now - datetime.timedelta(days=14)).isoformat(),)); con.commit()
@@ -15638,10 +15655,67 @@ CL_SIGNATURE = ('With deep appreciation,\nRabbi Yehoshua Meir Deutsch\nRosh Koll
                 'Tel : 972-2-580-3545\nCellphone : +972-527628272\nEmail: chatzot18@gmail.com')
 
 
+def cardlink_monthly(con, d):
+    """מאיר: "שיידע לזהות מי שנותן בכל חודש חיוב חודשי מעל 100 דולר" — הסכום החודשי של התורם בדולרים (0 = לא חודשי).
+    קודם לפי התחייבות חודשית רשומה בכרטיס; אם אין — לפי החיובים בפועל: תרומה בכל אחד משני החודשים האחרונים
+    (או חיוב חוזר שעבר ב-45 הימים האחרונים). שקלים מומרים בערך (3.6) רק לצורך הסף."""
+    if con is None or not d:
+        return 0.0
+    il = (d['region'] or '') == 'il' if 'region' in d.keys() else False
+    def usd(a, cur=''):
+        v = _amt2(a)
+        return round(v / 3.6, 2) if (cur == '₪' or (not cur and il)) else v
+    tot = 0.0
+    try:
+        for p in con.execute("SELECT * FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1", (d['id'],)):
+            k = p.keys()
+            if ('confirmed' in k and p['confirmed'] is not None and int(p['confirmed'] or 0) <= 0) or ('status' in k and (p['status'] or '') == 'הסתיים'):
+                continue
+            a = (p['permo'] if 'permo' in k and _amt2(p['permo']) > 0 else p['amount'])
+            tot += usd(a, (p['cur'] or '') if 'cur' in k else '')
+    except Exception:
+        pass
+    if tot > 0.5:
+        return round(tot, 2)
+    try:
+        today = il_now().date()
+        m0 = today.strftime('%Y-%m')
+        m1 = (today.replace(day=1) - datetime.timedelta(days=1)).strftime('%Y-%m')
+        m2 = ((today.replace(day=1) - datetime.timedelta(days=1)).replace(day=1) - datetime.timedelta(days=1)).strftime('%Y-%m')
+        by = {}
+        for r in con.execute("SELECT substr(date,1,7) m, amount FROM donations WHERE donor_id=? AND substr(date,1,7) IN (?,?,?)", (d['id'], m0, m1, m2)):
+            by.setdefault(r['m'], []).append(usd(r['amount']))
+        months = [max(v) for v in by.values() if v]
+        if len(months) >= 2:
+            return round(min(months), 2)
+        r = con.execute("SELECT amount FROM transactions WHERE donor_id=? AND COALESCE(recurring,0)=1 AND status IN ('success','settled','ok','approved') "
+                        "AND date >= ? ORDER BY date DESC LIMIT 1", (d['id'], (today - datetime.timedelta(days=45)).isoformat())).fetchone()
+        if r:
+            return usd(r['amount'])
+    except Exception:
+        pass
+    return 0.0
+
+
+# מאיר: "נוסח מיוחד בשבילו — שהוא תורם בכל חודש ושלושה אברכים מתפללים עליו בכל לילה בחצות… קצר וקולע"
+CL_MONTHLY_LINE = ('As our monthly partner, your support sustains the learning every single night, and three avreichim daven '
+                   'for you and your family at chatzos, when the gates of Heaven are open.')
+CL_MONTHLY_MIN_USD = 100
+
+
 def cardlink_message(d, url, con=None):
     """הנוסח של מאיר, מקוצר לפי בקשתו ("הטקסט למעלה מידי ארוך… תקצר אותו מאוד"), עם החתימה הקבועה שלו."""
     nm = cardlink_salute(d)
     iz = cardlink_iz(con, d)
+    # תורם חודשי (מעל $100 לחודש) שאינו יששכר־זבולון — שורה משלו במקום השורה הכללית
+    mo = 0.0
+    if not iz:
+        try:
+            mo = cardlink_monthly(con, d)
+        except Exception:
+            mo = 0.0
+    if mo >= CL_MONTHLY_MIN_USD:
+        iz = CL_MONTHLY_LINE
     # מאיר: "שהשם בעברית יהיה שורה לבד מתחת התואר באנגלית"
     body = ('To our dear partner\n%s\n'
             'You have merited a true partnership in the holy Torah learning at the eis ratzon of Chatzos, when the gates of Heaven are open.'
@@ -15664,7 +15738,7 @@ def cardlink_message(d, url, con=None):
           '%s\n'
           'Valid for 30 days.\n\n'
           'With deep appreciation,\nRabbi Yehoshua Meir Deutsch \u00b7 Kollel Chatzot') % (nm, url)
-    return {'subject': 'Card & Kvittel Updates \u2014 Your Secure Portal', 'body': body, 'wa': wa}
+    return {'subject': 'Card & Kvittel Updates \u2014 Your Secure Portal', 'body': body, 'wa': wa, 'monthly': mo}
 
 
 _CL_URL = re.compile(r'https?://\S+/u/\S+')
@@ -20990,9 +21064,12 @@ class H(BaseHTTPRequestHandler):
             try:
                 _pem, pub = push_keys(con)
                 n = con.execute("SELECT COUNT(*) FROM push_subs").fetchone()[0]
+                alt = kv_get(con, 'push_alt', '') == '1'
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'key': pub, 'subs': n})
+            return self._send(200, {'ok': True, 'key': pub, 'subs': n, 'alt': alt,
+                                    'wa': bool((os.environ.get('ALERT_WHATSAPP') or '').strip() and (os.environ.get('WA_TOKEN') or '').strip()),
+                                    'sms': bool((os.environ.get('ALERT_SMS') or '').strip())})
         if self.path.split('?')[0] == '/api/nd/paymethods':
             # 🏦 מאיר: "מה אני אמור לשלוח לו בדיוק להוראות קבע?" — אילו אמצעי תשלום פתוחים בדף התרומות שלנו
             # בנדרים פלוס (GetMosad — קריאה ציבורית). נשמר ליום, כי נדרים מבקשים לא לקרוא לזה הרבה.
@@ -22379,6 +22456,14 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             return
         b = self._body()
+        if self.path == '/api/push/alt':
+            # 📲 תזכורות בוואטסאפ / SMS במקום (או בנוסף ל) דחיפה לטלפון
+            con = db()
+            try:
+                kv_set(con, 'push_alt', '1' if b.get('on') else ''); con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'alt': bool(b.get('on'))})
         if self.path in ('/api/push/subscribe', '/api/push/unsubscribe', '/api/push/test'):
             # 📱 רישום הטלפון לתזכורות קופצות / ביטול / הודעת בדיקה
             sub = b.get('sub') if isinstance(b.get('sub'), dict) else b
@@ -27383,7 +27468,7 @@ class H(BaseHTTPRequestHandler):
                 url = base_url + '/u/' + cardlink_token(d['id'])
                 msg = cardlink_message(d, url, con)
                 if not m.group(2):
-                    return self._send(200, {'ok': True, 'url': url, 'subject': msg['subject'], 'body': msg['body'], 'wa': msg['wa'],
+                    return self._send(200, {'ok': True, 'url': url, 'subject': msg['subject'], 'body': msg['body'], 'wa': msg['wa'], 'monthly': msg.get('monthly') or 0,
                                             'email': (emails_of(d['email'] or '') or [''])[0], 'phone': d['phone'] or '', 'name': cardlink_name(d)})
                 to = str(b.get('email') or '').strip()
                 if '@' not in to:
