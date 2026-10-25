@@ -206,6 +206,14 @@ def save(con, rows, checked=0):
         if cur.execute("SELECT 1 FROM recon WHERE tid=?", (r['tid'],)).fetchone():
             # כבר נכנס מהדוח / מה-API — אם שם זה "לא עבר" ופה אישור, לא נוגעים
             continue
+        # מאיר: "כשאביא לך את אוטרייז תזכור שלא יהיה כפילויות מהאימייל" — המזהה כאן הוא מספר העסקה של אוטורייז
+        # בדיוק כמו בדוח, ולכן הדוח (INSERT OR IGNORE לפי tid) מדלג על מה שכבר נכנס מהמייל. שורה בלי מספר עסקה
+        # (Failed.csv) נכנסת רק אם אין כבר "לא עבר" לאותו שם, סכום ותאריך
+        if str(r['tid']).startswith('anet-arb-') and cur.execute(
+                "SELECT 1 FROM recon WHERE COALESCE(status,'settled')<>'settled' AND ROUND(CAST(amount AS REAL),2)=? AND substr(date,1,10)=? "
+                "AND lower(COALESCE(last,''))=? AND lower(COALESCE(first,''))=?",
+                (round(float(r['amount']), 2), r['date'], (r.get('last') or '').lower(), (r.get('first') or '').lower())).fetchone():
+            continue
         st = r.get('st') or 'settled'
         note = (r.get('card') or '')
         if st == 'declined':
