@@ -4051,6 +4051,16 @@ def ensure_schema():
     except Exception as e:
         print('  meltacha task error:', e)
 
+    # מאיר: "תשים ביומן להיום בשעה 3 להתקשר לרפאל שר" — 15:00 (חבר קהילה, משימה כללית)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='task_2026_10_25_sher_call_v1'").fetchone():
+            if not con.execute("SELECT 1 FROM tasks WHERE due_date='2026-10-25' AND note='להתקשר לרפאל שר'").fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,'2026-10-25','followup','להתקשר לרפאל שר','','15:00','')")
+            con.execute("INSERT INTO seed_flags(name) VALUES('task_2026_10_25_sher_call_v1')")
+            con.commit()
+    except Exception as e:
+        print('  sher call task error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
