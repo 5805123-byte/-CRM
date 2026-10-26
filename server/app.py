@@ -11328,8 +11328,9 @@ def banquest_post(con, source, only_tids=None):
         d = dict(r)
         d['iso'] = _recon_iso(r['date'])
         d['a'] = _amt2(r['amount'])
-        if meth == 'Authorize' and abs(d['a'] - 480) < 0.01:
-            continue        # פרנס לילה ($480) — דורש בחירת לילה, נשאר לאישור בדף החיובים
+        # מאיר (26.10.2026): "גולדגראב תרם 480 היום לפרנס לילה… הסכום הזה תמיד זה פרנס לילה… סיכמנו שזה מיד
+        # עובר לכאן למערכת ואני רק אשבץ לו לילה" — 480$ נרשם מיד בכרטיס כפרנס לילה (בלי לחכות לבחירת לילה),
+        # ונפתחת משימה "לקבוע יום לפרנס". קודם זה נשאר תקוע בדף החיובים.
         if d['iso'] and d['a'] > 0:
             allr.append(d)
     need = {}
@@ -11384,6 +11385,8 @@ def banquest_post(con, source, only_tids=None):
                 merged += 1
                 continue
             cat, why, chk = _guess(did, a, r['recurring'])
+            if abs(a - 480) < 0.01 and not (r.get('category') or '').strip() and not cat:
+                cat, why, chk = 'פרנס לילה', 'פרנס לילה ($480)', False
             if (r.get('category') or '').strip():
                 # מאיר: "שיהיה כתוב… על מה כל תשלום שלו" — "עבור מה" שנכתב בדף החיובים
                 cat, why, chk = r['category'].strip(), 'עבור מה מהחיוב', False
@@ -14821,12 +14824,16 @@ def anet_mail_run(con, days=60):
         except Exception as e: print('  anet mail link:', e)
         try: backfill_from_recon(con)
         except Exception as e: print('  anet mail backfill:', e)
-        try:
-            ins, merged, had, unk, by = banquest_post(con, _am.SRC)
+    # רישום בכרטיסים — תמיד, גם בלי מיילים חדשים (חיובים שחיכו, כמו 480$ של פרנס לילה)
+    try:
+        ins, merged, had, unk, by = banquest_post(con, _am.SRC)
+        if ins:
             res['נרשמו בכרטיסים'] = ins
-        except Exception as e:
-            print('  anet mail post:', e)
-        con.commit()
+            print('  אוטורייז (מייל) — נרשמו בכרטיסים: %d' % ins)
+    except Exception as e:
+        print('  anet mail post:', e)
+    con.commit()
+    if res.get('נוספו') or res.get('נרשמו בכרטיסים'):
         bump_data()
     try: anet_declined_alert(con, res)
     except Exception as e: print('  anet mail alert:', e)
