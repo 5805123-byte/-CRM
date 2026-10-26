@@ -14961,6 +14961,55 @@ def anet_mail_kick():
     threading.Thread(target=_run, daemon=True).start()
 
 
+def anet_diag_mail(res, tag='anet_diag_v1'):
+    """🔧 דיווח מצב חד־פעמי לתיבת המערכת: מה הסריקה מהמייל עשתה בפועל בשרת (מאיר: "למה גולדגראב לא מופיע לו
+    עדיין התרומה מהיום???" — מהסנדבוקס אין גישה לשרת, והמייל הזה הוא הדרך לראות)."""
+    import authorize_mail as _am, mailer
+    to = (os.environ.get('GMAIL_USER') or '').strip()
+    if not to:
+        return False
+    con = db()
+    try:
+        if kv_get(con, tag, ''):
+            return False
+        L = ['דיווח מצב — אוטרייז מהמייל · %s' % now_iso(), 'סריקה: %s' % (res,), 'ANETSTAT: %s' % (ANETSTAT,),
+             'GMAIL מוגדר: %s' % _am.configured(), '']
+        def q(sql, *a):
+            try:
+                return [tuple(r) for r in con.execute(sql, a)] or [('—',)]
+            except Exception as e:
+                return [('שגיאה: %s' % str(e)[:80],)]
+        L.append('recon מהמייל: סה"כ %s · עם כרטיס %s · בלי כרטיס %s · נרשמו %s' % (
+            q("SELECT COUNT(*) FROM recon WHERE source=?", _am.SRC)[0][0],
+            q("SELECT COUNT(*) FROM recon WHERE source=? AND donor_id IS NOT NULL", _am.SRC)[0][0],
+            q("SELECT COUNT(*) FROM recon WHERE source=? AND donor_id IS NULL", _am.SRC)[0][0],
+            q("SELECT COUNT(*) FROM recon WHERE source=? AND COALESCE(processed,0)=1", _am.SRC)[0][0]))
+        L.append('anet_mail (מיילים שנקראו): %s · אחרונים: %s' % (q("SELECT COUNT(*) FROM anet_mail")[0][0],
+                                                                 q("SELECT at,kind FROM anet_mail ORDER BY rowid DESC LIMIT 6")))
+        L.append('')
+        L.append('--- שורות recon אחרונות מהמייל (tid, שם, סכום, תאריך, כרטיס, ייעוד, נרשם, סטטוס):')
+        for r in q("SELECT tid,first,last,amount,date,donor_id,category,processed,status FROM recon WHERE source=? ORDER BY date DESC, rowid DESC LIMIT 12", _am.SRC):
+            L.append('  %s' % (r,))
+        L.append('--- בלי כרטיס (כל המקורות, אוקטובר 2026):')
+        for r in q("SELECT tid,first,last,amount,date,source,email FROM recon WHERE donor_id IS NULL AND (date LIKE '2026-10%' OR date LIKE '%Oct-2026') ORDER BY rowid DESC LIMIT 15"):
+            L.append('  %s' % (r,))
+        L.append('--- גולדגראב:')
+        for r in q("SELECT id,last,first,english,email FROM donors WHERE lower(COALESCE(english,'')) LIKE '%goldgrab%' OR last LIKE '%גולדגר%'"):
+            L.append('  כרטיס %s' % (r,))
+        for r in q("SELECT tid,first,last,amount,date,donor_id,category,processed,source,status FROM recon WHERE lower(COALESCE(last,'')) LIKE '%goldgrab%' ORDER BY rowid DESC LIMIT 6"):
+            L.append('  חיוב %s' % (r,))
+        for r in q("SELECT d.donor_id,d.date,d.amount,d.category,d.method,d.note,d.tid FROM donations d JOIN donors x ON x.id=d.donor_id WHERE lower(COALESCE(x.english,'')) LIKE '%goldgrab%' ORDER BY d.date DESC LIMIT 6"):
+            L.append('  תרומה %s' % (r,))
+        L.append('--- משימות פרנס אחרונות: %s' % q("SELECT due_date,note FROM tasks WHERE kind='parnes' ORDER BY id DESC LIMIT 3"))
+        r = mailer.send(to, '🔧 אוטרייז מהמייל — דיווח מצב (%s)' % tag, '\n'.join(L), rtl=False)
+        ok = bool((r or {}).get('ok', r))
+        if ok:
+            kv_set(con, tag, now_iso()); con.commit()
+        return ok
+    finally:
+        con.close()
+
+
 def anet_mail_run(con, days=60):
     """אוטורייז מהמיילים (תווית אוטרייז): מה שחסר נכנס ל-recon, מתחבר לתורם ונרשם בכרטיס; "לא עבר" → התרעה."""
     import authorize_mail as _am
@@ -14968,8 +15017,17 @@ def anet_mail_run(con, days=60):
         return {'שגיאה': 'GMAIL לא מוגדר'}
     import time
     _ANET_KICK['at'] = time.time()
-    res = _am.scan(con, days=days)
-    if res.get('נוספו'):
+    # קריאת המייל נכשלה (IMAP עמוס אחרי כמה עליות, פסק זמן) — לא עוצרים: מה שכבר נכנס ל-recon עדיין נרשם בכרטיסים
+    try:
+        res = _am.scan(con, days=days)
+    except Exception as e:
+        res = {'שגיאה': ('IMAP: ' + str(e))[:200], 'נבדקו': 0, 'נמצאו': 0, 'נוספו': 0, 'new_declined': []}
+        print('  authorize mail scan:', e)
+    ANETSTAT['mail_last'] = now_iso(); ANETSTAT['mail_res'] = str(res)[:300]
+    # חיוב מהמייל שעדיין בלי כרטיס (גם מסריקה קודמת) — מנסים לקשר בכל ריצה, לא רק כשנוספו חדשים
+    if not res.get('נוספו') and con.execute("SELECT 1 FROM recon WHERE source=? AND donor_id IS NULL AND COALESCE(skipped,0)=0", (_am.SRC,)).fetchone():
+        res['נוספו'] = 0; res['_relink'] = True
+    if res.get('נוספו') or res.get('_relink'):
         # כמו בטעינת הדוח החודשי: אותו שם (פרטי+משפחה) שכבר שויך בחיוב קודם, או שם לועזי / עסק בכרטיס
         try:
             def _ne(x): return re.sub(r'[^a-z0-9]', '', (x or '').lower())
@@ -32246,6 +32304,9 @@ def _authnet_loop():
                         con.close()
                     if (resm or {}).get('נוספו'):
                         print('  אוטורייז (מייל) — חדשים:', resm)
+                    if first:
+                        try: anet_diag_mail(resm)
+                        except Exception as e: print('  anet diag:', e)
                     # מאיר: "תעשה לי קובץ של הכל ביחד מהאימיילים, מה שלא עבר" — פעם אחת, אחרי הסריקה הראשונה
                     if first and 'שגיאה' not in (resm or {}):
                         con = db()
