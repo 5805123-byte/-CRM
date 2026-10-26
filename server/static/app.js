@@ -837,6 +837,26 @@ async function pushFailed(msg){
   o.querySelector('#pf_retry').onclick=()=>{o.remove();pushEnable();};
   const al=o.querySelector('#pf_alt');if(al)al.onclick=async()=>{const r=await api('POST','/api/push/alt',{on:1});o.remove();if(r&&r.ok){PUSH_ON=true;toast('📲 התזכורות יישלחו ב'+chans.join(' + ')+' ✓');render();}};
 }
+// מאיר: "למה לא מקבל הודעות קופצות בטאבלט על משימות היום?" — מצב התזכורות: אילו מכשירים רשומים,
+// האם המכשיר הזה ביניהם, מתי נשלחה הודעה לאחרונה; וכפתור לרשום/לבדוק את המכשיר הזה
+async function pushStatus(){
+  const k=await api('GET','/api/push/vapid').catch(()=>null);
+  let myEp='';try{const reg=await navigator.serviceWorker.ready;const s=await reg.pushManager.getSubscription();myEp=s?s.endpoint.slice(-10):'';}catch(e){}
+  const devs=(k&&k.devices)||[];
+  const fmt=s=>s?s.replace('T',' ').slice(5,16):'';
+  const rows=devs.length?devs.map(d=>`<div class="hintxt" style="margin:2px 0">${d.ep===myEp?'👉 ':'📱 '}<b>${esc(d.dev)}${d.br?' · '+esc(d.br):''}</b>${d.ep===myEp?' (המכשיר הזה)':''} — נרשם ${esc(fmt(d.created))}${d.last_ok?' · נשלח בהצלחה '+esc(fmt(d.last_ok)):' · עוד לא נשלחה אליו הודעה'}${+d.fails?' · <span style="color:#c00">'+d.fails+' כשלונות</span>':''}</div>`).join('')
+    :'<div class="hintxt" style="color:#c00">אף מכשיר לא רשום לתזכורות קופצות.</div>';
+  const mine=devs.some(d=>d.ep===myEp);
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:480px"><div class="cm">📱 תזכורות קופצות — מצב</div>
+    ${rows}
+    ${!mine?'<div class="hintxt" style="margin-top:6px;color:#c00">המכשיר הזה לא רשום. הרישום הוא לכל מכשיר בנפרד — לחץ "הפעל במכשיר הזה".</div>':''}
+    ${k&&k.alt?'<div class="hintxt" style="margin-top:6px">📲 בנוסף: התזכורות נשלחות גם בוואטסאפ / SMS.</div>':''}
+    <div class="hintxt" style="margin-top:8px">מה קופץ: ב-8:00 הודעה אחת עם כל משימות היום; למשימה עם שעה — גם 3 שעות לפני, שעה לפני ובזמן; ואירועים — יומיים ויום לפני ב-9:00.${k&&k.last_sent?'<br>הודעה אחרונה שיצאה: '+esc(fmt(k.last_sent.at)):''}</div>
+    <div class="cbtns"><button class="btn ghost cno">סגור</button><button class="btn" id="ps_on">${mine?'🔔 הודעת בדיקה למכשיר הזה':'🔔 הפעל במכשיר הזה'}</button></div></div>`;
+  document.body.appendChild(o);o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelector('#ps_on').onclick=async()=>{o.remove();if(await pushEnable())render();};
+}
 // אחרי כניסה: אם כבר אושר פעם — מוודאים שהרישום עדיין קיים (אחרי התקנה מחדש / ניקוי) בלי לשאול
 (function(){try{if(localStorage.getItem('kc_push')==='1'&&'Notification' in window&&Notification.permission==='granted'){PUSH_ON=true;setTimeout(()=>pushEnable(true),4000);}}catch(e){}
   setTimeout(()=>{if(ROLE==='admin')api('GET','/api/push/vapid').then(k=>{if(k&&k.alt){PUSH_ON=true;}}).catch(()=>{});},6000);})();
@@ -14028,7 +14048,7 @@ async function renderCalTab(){
   chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
   document.getElementById('cal_paste').onclick=()=>calPasteOpen();
   const rcb=document.getElementById('cal_rc'); if(rcb)rcb.onclick=calRemindOpen;
-  const pcb=document.getElementById('cal_push'); if(pcb)pcb.onclick=async()=>{if(await pushEnable())render();};
+  const pcb=document.getElementById('cal_push'); if(pcb)pcb.onclick=async()=>{if(PUSH_ON){pushStatus();return;}if(await pushEnable())render();};
   view.innerHTML='<div class="cnt">טוען את החודש…</div>';
   const HM=await hebMonth(calHeb.m,calHeb.y);
   if(!HM){view.innerHTML='<div class="empty">לא הצלחתי לטעון את החודש העברי</div>';return;}

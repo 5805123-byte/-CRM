@@ -4128,6 +4128,28 @@ def ensure_schema():
     except Exception as e:
         print('  dvs deutsch error:', e)
 
+    # מאיר: "יש לו [משה דויטש] התחייבות בסוכות האחרון של 2000 דולר לסוכות תשפז" — התחייבות פתוחה, לא חודשית
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_sukkos_5787_v1'").fetchone():
+            cands = con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall()
+            if len(cands) != 1:
+                cands = con.execute("SELECT id FROM donors WHERE lower(TRIM(COALESCE(english,'')))='moshe deutch'").fetchall()
+            if len(cands) == 1:
+                did = cands[0]['id']
+                if not con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND category='סוכות תשפ\"ז'", (did,)).fetchone():
+                    _st = _stamp()
+                    con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,confirmed,cur,created,created_heb) "
+                                "VALUES(?,'סוכות תשפ\"ז','2000','טרם',?,'התחייב בסוכות תשפ\"ז — $2,000 (מאיר, 26.10.2026)',0,'',1,'$',?,?)",
+                                (did, today_iso(), _st['created'], _st['created_heb']))
+                    con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES('סוכות תשפ\"ז',?)", (today_iso(),))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (did, today_iso(), 'מערכת', 'נרשמה התחייבות: סוכות תשפ"ז — $2,000 (טרם שולם)', '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_sukkos_5787_v1')")
+                con.commit()
+                print('  משה דויטש: התחייבות סוכות תשפ"ז $2,000')
+    except Exception as e:
+        print('  deutsch sukkos error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -14913,9 +14935,48 @@ def push_scan():
             return
         now = il_now()
         today = now.date()
+        # מאיר: "למה לא מקבל הודעות קופצות בטאבלט על משימות היום?" — החלון היה חצי שעה בלבד: אם השרת ישן
+        # (Render) או עלה מחדש בדיוק אז, התזכורת נפלה. עכשיו: עד שעתיים אחרי הזמן, ואם מאוחר — כתוב "(מאוחר)".
+        WIN = datetime.timedelta(hours=2)
         rows = con.execute("SELECT t.*, d.last, d.first FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id "
                            "WHERE COALESCE(t.done,0)=0 AND t.due_date BETWEEN ? AND ?",
                            ((today - datetime.timedelta(days=1)).isoformat(), (today + datetime.timedelta(days=2)).isoformat())).fetchall()
+        KIND = {'event': '🎉', 'followup': '📞', 'email': '📧', 'verify': '💰', 'card': '💳', 'charge': '🧾', 'prayer': '🙏', 'parnes': '🌙', 'cert': '📜'}
+
+        def _deliver(k, title, body, url, donor=0):
+            con.execute("INSERT INTO push_sent(k,at) VALUES(?,?)", (k, now_iso())); con.commit()
+            res = push_send_all(con, {'title': title, 'body': body, 'tag': 'kc-task-' + k, 'url': url, 'donor': donor or 0})
+            if wa_to or sms_to:
+                txt_ = '%s\n%s' % (title, body)
+                if wa_to:
+                    try: res.append(('wa', True, _wa_send(wa_to, txt_)))
+                    except Exception as e: res.append(('wa', False, str(e)[:80]))
+                if sms_to:
+                    try:
+                        import yemot as _ym
+                        ok_, r_ = _ym.send_sms(_ym.norm_phone(sms_to) or sms_to, txt_[:300])
+                        res.append(('sms', ok_, str(r_)[:80]))
+                    except Exception as e:
+                        res.append(('sms', False, str(e)[:80]))
+            print('  push %s: %s' % (k, '; '.join('%s %s %s' % x for x in res)))
+
+        # 📅 8:00 בבוקר — הודעה אחת עם כל המשימות של היום (כמו ביומן גוגל), עם או בלי שעה
+        at8 = datetime.datetime(today.year, today.month, today.day, 8, 0)
+        dk = 'day:' + today.isoformat()
+        if at8 <= now < at8 + WIN and not con.execute("SELECT 1 FROM push_sent WHERE k=?", (dk,)).fetchone():
+            todays = [t for t in rows if t['due_date'] == today.isoformat()]
+            if todays:
+                todays.sort(key=lambda t: (not re.match(r'^\d{1,2}:\d{2}', t['at_time'] or ''), t['at_time'] or ''))
+                lines = []
+                for t in todays[:8]:
+                    who = ((t['last'] or '') + ' ' + (t['first'] or '')).strip()
+                    txt = (who + (' — ' + (t['note'] or '') if (t['note'] or '').strip() else '')) if who else (t['note'] or 'משימה')
+                    lines.append('%s %s %s' % ((t['at_time'] or '').strip() or '•', KIND.get(t['kind'] or '', '🔔'), txt[:60]))
+                if len(todays) > 8:
+                    lines.append('… ועוד %d' % (len(todays) - 8))
+                _deliver(dk, '📅 היום — %d משימות' % len(todays) if len(todays) > 1 else '📅 היום — משימה אחת',
+                         '\n'.join(lines), '/?tab=cal&d=' + today.isoformat())
+
         for t in rows:
             try:
                 y, m, d = (int(x) for x in t['due_date'].split('-'))
@@ -14929,36 +14990,20 @@ def push_scan():
                 at = due + datetime.timedelta(hours=int(hm.group(1)), minutes=int(hm.group(2)))
                 stages += [('h3', at - datetime.timedelta(hours=3), 'בעוד 3 שעות'), ('h1', at - datetime.timedelta(hours=1), 'בעוד שעה!'),
                            ('now', at, 'עכשיו')]
-            else:
-                stages.append(('d0', due + datetime.timedelta(hours=8), 'היום'))
+            # משימה בלי שעה — נכנסת להודעת הבוקר של 8:00 (למעלה), בלי תזכורת נפרדת
             for key, when, label in stages:
-                # רק מה שהגיע זמנו בחצי השעה האחרונה — שלא יקפצו תזכורות ישנות אחרי שהשרת היה כבוי
-                if not (when <= now < when + datetime.timedelta(minutes=30)):
+                if not (when <= now < when + WIN):
                     continue
                 k = '%s:%s' % (t['id'], key)
                 if con.execute("SELECT 1 FROM push_sent WHERE k=?", (k,)).fetchone():
                     continue
-                con.execute("INSERT INTO push_sent(k,at) VALUES(?,?)", (k, now_iso())); con.commit()
+                if now > when + datetime.timedelta(minutes=30):
+                    label += ' (מאוחר)'
                 who = ((t['last'] or '') + ' ' + (t['first'] or '')).strip()
-                kind = {'event': '🎉', 'followup': '📞', 'email': '📧', 'verify': '💰', 'card': '💳', 'charge': '🧾', 'prayer': '🙏', 'parnes': '🌙', 'cert': '📜'}.get(t['kind'] or '', '🔔')
+                kind = KIND.get(t['kind'] or '', '🔔')
                 title = '%s %s — %s' % (kind, label, who or (t['note'] or 'משימה')[:40])
                 body = ' · '.join(x for x in [(t['note'] or '') if who else '', (t['at_time'] or ''), (t['place'] or '')] if x)
-                payload = {'title': title, 'body': body or t['due_date'], 'tag': 'kc-task-' + k, 'url': '/?tab=cal&d=' + t['due_date'],
-                           'donor': t['donor_id'] or 0}
-                res = push_send_all(con, payload)
-                if wa_to or sms_to:
-                    txt_ = '%s\n%s' % (title, body or t['due_date'])
-                    if wa_to:
-                        try: res.append(('wa', True, _wa_send(wa_to, txt_)))
-                        except Exception as e: res.append(('wa', False, str(e)[:80]))
-                    if sms_to:
-                        try:
-                            import yemot as _ym
-                            ok_, r_ = _ym.send_sms(_ym.norm_phone(sms_to) or sms_to, txt_[:300])
-                            res.append(('sms', ok_, str(r_)[:80]))
-                        except Exception as e:
-                            res.append(('sms', False, str(e)[:80]))
-                print('  push %s: %s' % (k, '; '.join('%s %s %s' % x for x in res)))
+                _deliver(k, title, body or t['due_date'], '/?tab=cal&d=' + t['due_date'], t['donor_id'])
         # ניקוי ישן
         con.execute("DELETE FROM push_sent WHERE at < ?", ((now - datetime.timedelta(days=14)).isoformat(),)); con.commit()
     finally:
@@ -21542,9 +21587,19 @@ class H(BaseHTTPRequestHandler):
                 _pem, pub = push_keys(con)
                 n = con.execute("SELECT COUNT(*) FROM push_subs").fetchone()[0]
                 alt = kv_get(con, 'push_alt', '') == '1'
+                # אילו מכשירים רשומים — כדי שמאיר יראה אם הטאבלט בכלל נרשם, ומתי נשלחה אליו הודעה בהצלחה
+                devs = []
+                for r in con.execute("SELECT endpoint,ua,role,created,last_ok,fails FROM push_subs ORDER BY id"):
+                    ua = r['ua'] or ''
+                    dev = next((x for x in ('iPad', 'iPhone', 'Android', 'Windows', 'Macintosh', 'Linux') if x in ua), 'מכשיר')
+                    br = 'Firefox' if 'Firefox' in ua else ('Edge' if 'Edg/' in ua else ('Samsung' if 'SamsungBrowser' in ua else ('Chrome' if 'Chrome' in ua else ('Safari' if 'Safari' in ua else ''))))
+                    devs.append({'dev': dev, 'br': br, 'role': r['role'] or '', 'created': (r['created'] or '')[:16], 'last_ok': (r['last_ok'] or '')[:16],
+                                 'fails': r['fails'] or 0, 'ep': (r['endpoint'] or '')[-10:]})
+                last_sent = con.execute("SELECT k,at FROM push_sent ORDER BY at DESC LIMIT 1").fetchone()
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'key': pub, 'subs': n, 'alt': alt,
+            return self._send(200, {'ok': True, 'key': pub, 'subs': n, 'alt': alt, 'devices': devs,
+                                    'last_sent': dict(last_sent) if last_sent else None,
                                     'wa': bool((os.environ.get('ALERT_WHATSAPP') or '').strip() and (os.environ.get('WA_TOKEN') or '').strip()),
                                     'sms': bool((os.environ.get('ALERT_SMS') or '').strip())})
         if self.path.split('?')[0] == '/api/nd/paymethods':
