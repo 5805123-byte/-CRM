@@ -15281,6 +15281,15 @@ function gfFamOf(x){const m=String(x.method||'')+' '+String(x.tid||'').slice(0,2
   return 'other';}
 // חיוב אשראי שעבר אצלנו (בנק ווסט / אוטרייז, עם מזהה עסקה) — נעול; מתקנים אותו רק דרך ביטול/החזר
 const gfLocked=x=>!!String(x.tid||'').trim()&&['bq','az'].includes(gfFamOf(x));
+let GF_UNL=null, gfUnlOpen=false;   // מאיר: "דף תרומות מרכזי שם מרוכז הכל" — גם מה שנכנס בלי כרטיס
+async function gfLoadUnlinked(){try{const r=await api('GET','/api/gifts/unlinked');GF_UNL=(r&&r.ok)?r:{rows:[],total:0};}catch(e){GF_UNL={rows:[],total:0};}if(tab==='gifts')render();}
+function gfUnlinkedHTML(){
+  if(!GF_UNL)return '<div class="hintxt">טוען מה שנכנס בלי כרטיס…</div>';
+  const rows=GF_UNL.rows||[];if(!rows.length)return '';
+  const srcL=s=>s.replace(/ ?\d{2}-\d{2}-\d{4}$/,'').replace(/ ?20\d\d$/,'');
+  return `<div class="gfunl"><div class="gfunlh"><button class="chip ${gfUnlOpen?'on':''}" id="gf_unl">💤 נכנסו בלי כרטיס <b>${rows.length}</b> · $${Math.round(GF_UNL.total).toLocaleString('en-US')}</button>
+    <small class="hintxt">כסף שהגיע (אוטרייז / בנק ווסט / צ'ייס / צ'קים / זל…) ועדיין לא שויך לתורם — לכן אינו בשום כרטיס. לחיצה על שורה פותחת אותה בדף החיובים לשיוך.</small></div>
+    ${gfUnlOpen?`<div class="gflist">${rows.map(r=>`<div class="gfrow unl" data-unl="${esc(r.name)}"><span class="gfd">${esc(rcDate(r.date)||r.date)}</span><span class="gfnm">${esc(r.name||'(בלי שם)')}</span><b class="gfa">$${Math.round(r.amount).toLocaleString('en-US')}</b><span class="gfw">${esc(r.memo||'')}</span><span class="gfm">${esc(srcL(r.source))}</span></div>`).join('')}</div>`:''}</div>`;}
 function gfRows(){const out=[];
   DB.forEach(d=>(d.donations||[]).forEach(x=>{const dt=String(x.date||'');if(!dt)return;
     out.push({x,d,dt,c:donCur(x,curSym(d)),fam:gfFamOf(x),nm:((d.last||'')+' '+(d.first||'')).trim()});}));
@@ -15321,6 +15330,7 @@ function renderGifts(){
       <div class="lgf"><select id="gfn_cat">${dnCatOpts('')}</select><input id="gfn_meth" list="gf_meths" placeholder="אמצעי — צ׳ק / Zelle / Chase / מזומן…"></div>
       <input id="gfn_note" placeholder="הערה / אסמכתא (לא חובה)">
       <div class="bqacts"><button class="btn sm" id="gfn_ok">💾 שמור — נכנס גם לכרטיס התורם</button><button class="btn sm ghost" id="gfn_x">ביטול</button></div></div>`:''}
+    ${gfUnlinkedHTML()}
     <div class="gfsum">${rows.length} תרומות${gfFam||gfFrom||gfTo||gfCur||(q||'').trim()?' (מסונן)':''} · סה״כ <b>${sum(rows)}</b></div>
     <div class="gflist">${body||'<div class="empty">אין תרומות שמתאימות לסינון.</div>'}</div>
     ${rows.length>gfLim?`<button class="btn sm ghost" id="gf_more" style="width:100%">📜 הצג עוד (${rows.length-gfLim})</button>`:''}
@@ -15331,6 +15341,11 @@ function renderGifts(){
   g('gf_cur').onchange=()=>{gfCur=g('gf_cur').value;render();};
   g('gf_new').onclick=()=>{gfNew=!gfNew;render();if(gfNew&&g('gfn_who'))g('gfn_who').focus();};
   const mo=g('gf_more');if(mo)mo.onclick=()=>{gfLim+=300;render();};
+  if(!GF_UNL)gfLoadUnlinked();
+  const ub=g('gf_unl');if(ub)ub.onclick=()=>{gfUnlOpen=!gfUnlOpen;render();};
+  view.querySelectorAll('[data-unl]').forEach(b=>b.onclick=()=>{// פותח את דף החיובים מסונן לשם הזה
+    tab='charges';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='charges'));
+    q=b.dataset.unl||'';const qi=document.getElementById('q');if(qi)qi.value=q;render();});
   view.querySelectorAll('[data-gfd]').forEach(b=>b.onclick=()=>openDonor(DB.find(x=>x.id==b.dataset.gfd)));
   if(gfNew){g('gfn_x').onclick=()=>{gfNew=false;render();};
     const wh=g('gfn_who');wh.onchange=()=>{const d=DB.find(x=>x.id==bqPickDonor(wh.value));if(d)g('gfn_cur').value=curSym(d);};
@@ -15339,7 +15354,7 @@ function renderGifts(){
       const d=DB.find(x=>x.id==did), body={donor_id:did,date:g('gfn_date').value||todayStr(),amount:String(amt),cur:g('gfn_cur').value,category:g('gfn_cat').value.replace('__new__',''),method:g('gfn_meth').value.trim(),note:g('gfn_note').value.trim(),paid:1};
       const same=await campDupAsk(d,body.category);
       const r=same?await api('PUT','/api/donation/'+same.id,body):await api('POST','/api/donation',body);if(!r||!r.ok){await uiAlert('לא נשמר');return;}
-      toast('💵 נרשם ✓ — גם בכרטיס של '+((d.last||'')+' '+(d.first||'')).trim());gfNew=false;await load();render();};}
+      toast('💵 נרשם ✓ — גם בכרטיס של '+((d.last||'')+' '+(d.first||'')).trim());gfNew=false;GF_UNL=null;await load();render();};}
   view.querySelectorAll('[data-gfa]').forEach(b=>b.onclick=async()=>{const a=b.dataset.gfa,id=+b.dataset.id;
     if(a==='edit'){gfEdit=id;render();return;} if(a==='cancel'){gfEdit=0;render();return;}
     const r0=all.find(r=>r.x.id===id);if(!r0)return;

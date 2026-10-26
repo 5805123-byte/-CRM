@@ -392,6 +392,128 @@ def _find_donat(con):
     return None
 
 
+def post_linked_recon(con):
+    """כסף שנכנס ויש לו כרטיס — נרשם בכרטיס התורם, מכל מקור (בנק ווסט, אוטרייז, צ'ייס, צ'קים, זל…).
+    מאיר (26.10.2026): "שכל תרומה שנכנסה מכל תורם שהוא תיכנס לכרטיס שלו". רץ בכל עלייה, כל שעה,
+    ומיד כשמאיר משייך חיוב לכרטיס. בלי כפילויות: לפי מזהה עסקה, ומול מה שכבר רשום באותו חודש ומסלול."""
+    SRCLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז', 'Checks': "צ'ק", 'צ׳קים': "צ'ק", 'Zelle': 'Zelle',
+              'Donors Fund': 'דונרס', 'OJC': 'OJC', 'Fidelity': 'Fidelity', 'ACH': 'ACH', 'Wire': 'Wire'}
+
+    def _fam(s):
+        s = (s or '').strip().lower()
+        if 'banquest' in s or 'בנק ווסט' in s: return 'bq'
+        if 'authorize' in s or 'אוטרייז' in s or 'אוטורייז' in s or 'אותורייז' in s: return 'az'
+        if 'chase' in s or "צ'ייס" in s or 'צייס' in s: return 'ch'
+        return s
+
+    allrows = []
+    for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed,recurring FROM recon "
+                         "WHERE donor_id IS NOT NULL AND COALESCE(skipped,0)=0 "
+                         "AND (status IS NULL OR status='settled') ORDER BY date,tid"):
+        iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
+        if not iso or len(iso) < 7:
+            continue
+        if iso < '2026-01-01':
+            continue          # מאיר: "ביקשתי רק 2026" — חיוב ישן לא נכנס לכרטיס מעצמו
+        try:
+            amt = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
+        except Exception:
+            continue
+        allrows.append((dict(r), iso, amt))
+    # מאיר: "אם הוא הזדכה והחזרנו את החיוב אל תכניס את החיוב שזוכה."
+    # זיכוי מבטל חיוב אחד באותו סכום, אצל אותו תורם ובאותו מסלול —
+    # שניהם יורדים, ומה שנרשם בכרטיס הוא רק מה שבאמת נגבה. מבוטל
+    # החיוב המאוחר ביותר שקדם לזיכוי, כי הוא זה שנעשה בטעות.
+    refunded = set()
+    for cr, ciso, camt in sorted([x for x in allrows if x[2] < 0], key=lambda x: x[1]):
+        cand = [x for x in allrows if x[2] == -camt and x[1] <= ciso
+                and x[0]['donor_id'] == cr['donor_id']
+                and _fam(x[0]['source']) == _fam(cr['source'])
+                and x[0]['tid'] not in refunded]
+        if cand:
+            refunded.add(max(cand, key=lambda x: x[1])[0]['tid'])
+            refunded.add(cr['tid'])
+    # חיוב שזוכה ונרשם בכרטיס בעלייה קודמת — יורד משם עכשיו
+    if refunded:
+        gone = con.execute("DELETE FROM donations WHERE tid IN (%s)"
+                           % ','.join('?' * len(refunded)), tuple(refunded)).rowcount
+        if gone:
+            print('  חיובים שזוכו והוסרו מהכרטיסים: %d' % gone)
+    pend = {}
+    for r, iso, amt in allrows:
+        if amt > 0 and r['tid'] not in refunded:
+            pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((r, iso, amt))
+    # חיוב שכבר נרשם — מזוהה לפי מזהה העסקה עצמו ולא לפי ניחוש. כך
+    # חיוב השלמה על חודש שלא נגבה (פערל שילם שלוש פעמים ביולי על
+    # אפריל-מאי-יוני) נספר, ואילו אותו חיוב שדווח פעמיים אינו נספר.
+    done_tids = {r['tid'] for r in con.execute(
+        "SELECT tid FROM donations WHERE COALESCE(tid,'')<>''")}
+    # תרומה שמאיר רשם ביד על אותו כסף (סכום זהה, עד 10 ימים מהחיוב) — מקבלת את
+    # מזהה העסקה במקום שתיפתח שורה שנייה
+    _mg = 0
+    for k, lst in pend.items():
+        for r, iso, amt in lst:
+            if r['tid'] in done_tids:
+                continue
+            _meth = next((v for pre, v in SRCLBL.items() if (r['source'] or '').startswith(pre)), r['source'] or '')
+            if merge_manual_donation(con, r['donor_id'], iso, amt, r['tid'], _meth):
+                done_tids.add(r['tid']); _mg += 1
+    if _mg:
+        print('  חיובים שהותאמו לתרומות שנרשמו ביד: %d' % _mg)
+    # חיוב חד־פעמי בסכום של התחייבות פתוחה — נשאר לשאלה "עבור מה" בכרטיס
+    _held = set()
+    for k, lst in pend.items():
+        for r, iso, amt in lst:
+            if r['tid'] not in done_tids and not r.get('recurring') and open_pledge_for(con, r['donor_id'], amt):
+                _held.add(r['tid'])
+    for k, lst in pend.items():
+        pend[k] = [x for x in lst if x[0]['tid'] not in done_tids and x[0]['tid'] not in _held]
+    # שורות ותיקות שנרשמו לפני שהיה שדה מזהה עסקה. כל שורה כזו מכסה
+    # חיוב אחד בלבד, ולכן היא "נצרכת" ברגע שהותאמה — אחרת חיוב תאום
+    # אמיתי נחסם על ידה. מאיר על פערל: "אמנם זה לא עבר שלושה חודשים
+    # אבל אחר כך זה כן עבר שלוש פעמים" — שני החיובים של 22 ביולי הם
+    # השלמה על אפריל ועל מאי, שני תשלומים נפרדים באותו יום.
+    legacy = {}
+    for r in con.execute("SELECT id,donor_id,date,ROUND(CAST(amount AS REAL),2) a "
+                         "FROM donations WHERE COALESCE(tid,'')='' AND donor_id IS NOT NULL"):
+        legacy.setdefault((r['donor_id'], r['date'], r['a']), []).append(r['id'])
+    paid_by = {}
+    # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
+    # נראה חסר וכל עלייה מוסיפה בו עוד שורה
+    for r in con.execute("SELECT donor_id, SUBSTR(COALESCE(date,''),1,7) mo, method, "
+                         "ROUND(CAST(amount AS REAL),2) a FROM donations "
+                         "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
+        k = (r['donor_id'], r['mo'], _fam(r['method']))
+        paid_by[k] = round(paid_by.get(k, 0) + (r['a'] or 0), 2)
+    n = 0
+    for key, lst in pend.items():
+        gap = round(sum(a for _, _, a in lst) - paid_by.get(key, 0), 2)
+        for r, iso, amt in sorted(lst, key=lambda x: -x[2]):
+            # זהות החיוב היא מזהה העסקה, ולא "אותו יום ואותו סכום". חיוב
+            # שכבר נרשם סוּנן קודם לפי המזהה שלו, ולכן כאן נשאר רק לוודא
+            # שאין שורה ותיקה בלי מזהה שמכסה בדיוק את החיוב הזה.
+            lk = (r['donor_id'], iso, amt)
+            if legacy.get(lk):
+                legacy[lk].pop()          # השורה הוותיקה היא החיוב הזה
+            elif gap >= amt - 0.01:
+                src = r['source'] or ''
+                meth = next((v for pre, v in SRCLBL.items() if src.startswith(pre)), src)
+                cat = (r['category'] or '').strip()
+                note = 'נכנס מ' + (meth or 'ייבוא')
+                if not cat:
+                    note += ' · לא סווג — לבדוק עבור מה'
+                con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
+                            "VALUES(?,?,?,?,?,?,1,?)",
+                            (r['donor_id'], iso, '%.2f' % amt, cat, meth, note, r['tid']))
+                gap = round(gap - amt, 2); n += 1
+            if not r.get('processed'):
+                con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
+    if n:
+        con.commit()
+        print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
+    return n
+
+
 def ensure_schema():
     """יוצר טבלאות חדשות אם חסרות — כדי שעדכונים לא ידרשו למחוק נתונים קיימים (דיסק קבוע)."""
     con = db()
@@ -7332,120 +7454,7 @@ def ensure_schema():
     # גם צ׳ק וגם זל וגם חיוב אשראי — כסף נפרד לגמרי. חסר בחודש מושלם
     # מהחיובים הגדולים לקטנים.
     try:
-        SRCLBL = {'Banquest': 'בנק ווסט', 'Authorize': 'אוטרייז'}
-
-        def _fam(s):
-            s = (s or '').strip().lower()
-            if 'banquest' in s or 'בנק ווסט' in s: return 'bq'
-            if 'authorize' in s or 'אוטרייז' in s or 'אוטורייז' in s or 'אותורייז' in s: return 'az'
-            if 'chase' in s or "צ'ייס" in s or 'צייס' in s: return 'ch'
-            return s
-
-        allrows = []
-        for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed,recurring FROM recon "
-                             "WHERE donor_id IS NOT NULL AND COALESCE(skipped,0)=0 "
-                             "AND (status IS NULL OR status='settled') ORDER BY date,tid"):
-            iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
-            if not iso or len(iso) < 7:
-                continue
-            if iso < '2026-01-01':
-                continue          # מאיר: "ביקשתי רק 2026" — חיוב ישן לא נכנס לכרטיס מעצמו
-            try:
-                amt = round(float(str(r['amount'] or 0).replace(',', '').replace('$', '')), 2)
-            except Exception:
-                continue
-            allrows.append((dict(r), iso, amt))
-        # מאיר: "אם הוא הזדכה והחזרנו את החיוב אל תכניס את החיוב שזוכה."
-        # זיכוי מבטל חיוב אחד באותו סכום, אצל אותו תורם ובאותו מסלול —
-        # שניהם יורדים, ומה שנרשם בכרטיס הוא רק מה שבאמת נגבה. מבוטל
-        # החיוב המאוחר ביותר שקדם לזיכוי, כי הוא זה שנעשה בטעות.
-        refunded = set()
-        for cr, ciso, camt in sorted([x for x in allrows if x[2] < 0], key=lambda x: x[1]):
-            cand = [x for x in allrows if x[2] == -camt and x[1] <= ciso
-                    and x[0]['donor_id'] == cr['donor_id']
-                    and _fam(x[0]['source']) == _fam(cr['source'])
-                    and x[0]['tid'] not in refunded]
-            if cand:
-                refunded.add(max(cand, key=lambda x: x[1])[0]['tid'])
-                refunded.add(cr['tid'])
-        # חיוב שזוכה ונרשם בכרטיס בעלייה קודמת — יורד משם עכשיו
-        if refunded:
-            gone = con.execute("DELETE FROM donations WHERE tid IN (%s)"
-                               % ','.join('?' * len(refunded)), tuple(refunded)).rowcount
-            if gone:
-                print('  חיובים שזוכו והוסרו מהכרטיסים: %d' % gone)
-        pend = {}
-        for r, iso, amt in allrows:
-            if amt > 0 and r['tid'] not in refunded:
-                pend.setdefault((r['donor_id'], iso[:7], _fam(r['source'])), []).append((r, iso, amt))
-        # חיוב שכבר נרשם — מזוהה לפי מזהה העסקה עצמו ולא לפי ניחוש. כך
-        # חיוב השלמה על חודש שלא נגבה (פערל שילם שלוש פעמים ביולי על
-        # אפריל-מאי-יוני) נספר, ואילו אותו חיוב שדווח פעמיים אינו נספר.
-        done_tids = {r['tid'] for r in con.execute(
-            "SELECT tid FROM donations WHERE COALESCE(tid,'')<>''")}
-        # תרומה שמאיר רשם ביד על אותו כסף (סכום זהה, עד 10 ימים מהחיוב) — מקבלת את
-        # מזהה העסקה במקום שתיפתח שורה שנייה
-        _mg = 0
-        for k, lst in pend.items():
-            for r, iso, amt in lst:
-                if r['tid'] in done_tids:
-                    continue
-                _meth = next((v for pre, v in SRCLBL.items() if (r['source'] or '').startswith(pre)), r['source'] or '')
-                if merge_manual_donation(con, r['donor_id'], iso, amt, r['tid'], _meth):
-                    done_tids.add(r['tid']); _mg += 1
-        if _mg:
-            print('  חיובים שהותאמו לתרומות שנרשמו ביד: %d' % _mg)
-        # חיוב חד־פעמי בסכום של התחייבות פתוחה — נשאר לשאלה "עבור מה" בכרטיס
-        _held = set()
-        for k, lst in pend.items():
-            for r, iso, amt in lst:
-                if r['tid'] not in done_tids and not r.get('recurring') and open_pledge_for(con, r['donor_id'], amt):
-                    _held.add(r['tid'])
-        for k, lst in pend.items():
-            pend[k] = [x for x in lst if x[0]['tid'] not in done_tids and x[0]['tid'] not in _held]
-        # שורות ותיקות שנרשמו לפני שהיה שדה מזהה עסקה. כל שורה כזו מכסה
-        # חיוב אחד בלבד, ולכן היא "נצרכת" ברגע שהותאמה — אחרת חיוב תאום
-        # אמיתי נחסם על ידה. מאיר על פערל: "אמנם זה לא עבר שלושה חודשים
-        # אבל אחר כך זה כן עבר שלוש פעמים" — שני החיובים של 22 ביולי הם
-        # השלמה על אפריל ועל מאי, שני תשלומים נפרדים באותו יום.
-        legacy = {}
-        for r in con.execute("SELECT id,donor_id,date,ROUND(CAST(amount AS REAL),2) a "
-                             "FROM donations WHERE COALESCE(tid,'')='' AND donor_id IS NOT NULL"):
-            legacy.setdefault((r['donor_id'], r['date'], r['a']), []).append(r['id'])
-        paid_by = {}
-        # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
-        # נראה חסר וכל עלייה מוסיפה בו עוד שורה
-        for r in con.execute("SELECT donor_id, SUBSTR(COALESCE(date,''),1,7) mo, method, "
-                             "ROUND(CAST(amount AS REAL),2) a FROM donations "
-                             "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
-            k = (r['donor_id'], r['mo'], _fam(r['method']))
-            paid_by[k] = round(paid_by.get(k, 0) + (r['a'] or 0), 2)
-        n = 0
-        for key, lst in pend.items():
-            gap = round(sum(a for _, _, a in lst) - paid_by.get(key, 0), 2)
-            for r, iso, amt in sorted(lst, key=lambda x: -x[2]):
-                # זהות החיוב היא מזהה העסקה, ולא "אותו יום ואותו סכום". חיוב
-                # שכבר נרשם סוּנן קודם לפי המזהה שלו, ולכן כאן נשאר רק לוודא
-                # שאין שורה ותיקה בלי מזהה שמכסה בדיוק את החיוב הזה.
-                lk = (r['donor_id'], iso, amt)
-                if legacy.get(lk):
-                    legacy[lk].pop()          # השורה הוותיקה היא החיוב הזה
-                elif gap >= amt - 0.01:
-                    src = r['source'] or ''
-                    meth = next((v for pre, v in SRCLBL.items() if src.startswith(pre)), src)
-                    cat = (r['category'] or '').strip()
-                    note = 'נכנס מ' + (meth or 'ייבוא')
-                    if not cat:
-                        note += ' · לא סווג — לבדוק עבור מה'
-                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
-                                "VALUES(?,?,?,?,?,?,1,?)",
-                                (r['donor_id'], iso, '%.2f' % amt, cat, meth, note, r['tid']))
-                    gap = round(gap - amt, 2); n += 1
-                if not r.get('processed'):
-                    con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
-        if n:
-            con.commit()
-            print('  חיובים שנכנסו לכרטיסי התורמים: %d' % n)
+        post_linked_recon(con)
     except Exception as ex:
         print('  post pending error:', ex)
 
@@ -21793,6 +21802,24 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, (r['text'] or '').encode('utf-8'), 'text/plain; charset=utf-8')
             finally:
                 con.close()
+        if self.path.split('?')[0] == '/api/gifts/unlinked':
+            # 💵 מאיר: "דף תרומות מרכזי שם מרוכז הכל" — גם מה שנכנס ועדיין בלי כרטיס (מכל מקור)
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            con = db(); out = []
+            try:
+                for r in con.execute("SELECT tid,first,last,amount,date,source,category,note,email FROM recon "
+                                     "WHERE donor_id IS NULL AND COALESCE(skipped,0)=0 AND COALESCE(status,'settled') IN ('settled','')"):
+                    iso = _recon_iso_any(r['date'])
+                    a = _amt2(r['amount'])
+                    if not iso or iso < '2026-01-01' or a <= 0:
+                        continue
+                    out.append({'tid': r['tid'], 'date': iso, 'amount': a, 'name': ((r['first'] or '') + ' ' + (r['last'] or '')).strip(),
+                                'source': r['source'] or '', 'memo': (r['category'] or r['note'] or '').strip(), 'email': r['email'] or ''})
+            finally:
+                con.close()
+            out.sort(key=lambda x: x['date'], reverse=True)
+            return self._send(200, {'ok': True, 'rows': out, 'total': round(sum(x['amount'] for x in out), 2)})
         if self.path.split('?')[0] == '/api/push/vapid':
             # 📱 המפתח הציבורי לרישום הטלפון, ומצב הרישומים
             con = db()
@@ -22849,8 +22876,17 @@ class H(BaseHTTPRequestHandler):
             if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
                 con.close(); return self._send(404, {'error': 'donor not found'})
             con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (did, tid))
-            con.commit(); con.close()
-            return self._send(200, {'ok': True, 'donor_id': did})
+            con.commit()
+            # מאיר: "שכל תרומה שנכנסה מכל תורם שהוא תיכנס לכרטיס שלו" — מיד עם השיוך, לא רק בעלייה הבאה
+            posted = 0
+            try:
+                posted = post_linked_recon(con) or 0
+            except Exception as e:
+                print('  post after link:', e)
+            con.close()
+            if posted:
+                bump_data()
+            return self._send(200, {'ok': True, 'donor_id': did, 'posted': posted})
         m = re.match(r'/api/intake/(\d+)$', self.path)
         if m:
             b = self._body()
@@ -32030,6 +32066,17 @@ def _authnet_loop():
                             con.close()
             except Exception as e:
                 print('  authorize mail scan error:', e)
+            # כל חיוב משויך מכל מקור → לכרטיס (לא רק בעלייה)
+            try:
+                con = db()
+                try:
+                    _k = post_linked_recon(con) or 0
+                finally:
+                    con.close()
+                if _k:
+                    bump_data()
+            except Exception as e:
+                print('  post linked error:', e)
             if anet.configured():
                 con = db()
                 res = anet.sync(con, days=int(os.environ.get('AUTHNET_DAYS') or 10),
