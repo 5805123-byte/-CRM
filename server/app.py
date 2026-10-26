@@ -4234,6 +4234,29 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch fix3 error:', e)
 
+    # מאיר (26.10.2026): "לפסח הוא היה צריך לתת 4,400… אני לא רואה את זה אצלו בכרטיס בכלל… כנראה שה-3,000 דולר זה של פסח".
+    # ה-4,400$ היו רק ברשימת הקמפיין (campaign_lists.json), לא בכרטיס. עכשיו: התחייבות "קמחא דפסחא תשפ"ו" 4,400$
+    # בכרטיס, וההעברות 3,000$ (24.4) + 1,500$ (14.5) מסווגות אליה → שולם 4,500$, ההתחייבות מסומנת "נתן".
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_pesach_5786_v1'").fetchone():
+            for r in con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall():
+                did = r['id']
+                _PC = 'קמחא דפסחא תשפ"ו'
+                con.execute("""UPDATE donations SET category=?, note=REPLACE(COALESCE(note,''),' · על חשבון יששכר־זבולון (מאיר 26.10.2026)','')||' · קמחא דפסחא תשפ"ו (מאיר 26.10.2026)'
+                               WHERE donor_id=? AND date='2026-04-24' AND ROUND(CAST(amount AS REAL),2)=3000 AND COALESCE(note,'') NOT LIKE '%קמחא דפסחא תשפ"ו (מאיר%'""", (_PC, did))
+                paid = con.execute("SELECT COALESCE(SUM(CAST(amount AS REAL)),0) FROM donations WHERE donor_id=? AND category=?", (did, _PC)).fetchone()[0]
+                if not con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND category=?", (did, _PC)).fetchone():
+                    _st = _stamp()
+                    con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,confirmed,cur,created,created_heb) "
+                                "VALUES(?,?,'4400',?,'2026-03-01',?,0,?,1,'$',?,?)",
+                                (did, _PC, 'נתן' if paid >= 4400 else 'טרם', 'מרשימת קמחא דפסחא תשפ"ו (4,400$ באשראי) · שולם בהעברות צ\'ייס 24.4 ו-14.5',
+                                 str(int(paid)) if paid else '', _st['created'], _st['created_heb']))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', 'קמחא דפסחא תשפ"ו: התחייבות 4,400$ נרשמה בכרטיס; שולם %s$ (3,000$ ב-24.4 + 1,500$ ב-14.5)' % '{:,}'.format(int(paid)), '', now_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_pesach_5786_v1')"); con.commit()
+    except Exception as e:
+        print('  deutsch pesach error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
