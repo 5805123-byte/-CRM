@@ -4150,6 +4150,47 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch sukkos error:', e)
 
+    # מאיר (26.10.2026): "יולי נובמבר אני לא יודע אם שולם — תעשה חיפוש בכל הדוחות… תעשה לי חשבון".
+    # נמצא בדוחות בנק ווסט (USAePay) שבמייל: הוראת הקבע 1,700$ של משה דויטש עברה ב-1.7.2025 וב-1.8.2025,
+    # ונדחתה מספטמבר 2025 ואילך. שני התשלומים נרשמים; כל הכסף שלו נספר על חשבון יששכר־זבולון (4 אברכים);
+    # והחוב המחושב (45,900$ התחייבות מתמוז תשפ"ה − 29,900$ ששולם = 16,000$) נכתב בכרטיס כעדכון ידני.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_iz_calc_v1'").fetchone():
+            cands = con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall()
+            if len(cands) != 1:
+                cands = con.execute("SELECT id FROM donors WHERE lower(TRIM(COALESCE(english,'')))='moshe deutch'").fetchall()
+            if len(cands) == 1:
+                did = cands[0]['id']
+                _CAT = 'יששכר־זבולון'
+                n = 0
+                for _d in ('2025-07-01', '2025-08-01'):
+                    _tid = 'bqmail-' + _d + '-deutch'
+                    if not con.execute("SELECT 1 FROM donations WHERE tid=?", (_tid,)).fetchone() and \
+                       not con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date=? AND ROUND(CAST(amount AS REAL),2)=1700", (did, _d)).fetchone():
+                        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'$',1)",
+                                    (did, _d, '1700.00', _CAT, 'Banquest',
+                                     'הוראת קבע בנק ווסט · לפי דוח USAePay במייל (' + _d[8:10].lstrip('0') + '.' + _d[5:7].lstrip('0') + '.2025) · 2 אברכים', _tid))
+                        n += 1
+                # שאר התשלומים שלו ב-2026 (בנק ווסט 400+500, צ'ייס "zichron avos") — על חשבון היששכר־זבולון
+                m = con.execute("""UPDATE donations SET category=?, note=TRIM(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','')||' · על חשבון יששכר־זבולון (מאיר 26.10.2026)',' ·')
+                                   WHERE donor_id=? AND CAST(amount AS REAL)>0 AND COALESCE(category,'') NOT LIKE '%יששכר%'
+                                     AND COALESCE(category,'') NOT LIKE 'סוכות%' AND COALESCE(note,'') NOT LIKE '%על חשבון יששכר%'""",
+                                (_CAT, did)).rowcount
+                con.execute("UPDATE donors SET iz_debt='16000' WHERE id=?", (did,))
+                _nt = ('חוב יששכר־זבולון 16,000$ נכון ל-26.10.2026 (עדכון ידני): 4 אברכים × 850$ מתמוז תשפ"ה (הרביעי מסיוון תשפ"ו) = 45,900$ '
+                       'עד אוקטובר 2026; שולם 29,900$ (בנק ווסט 7–8/2025 3,400$, בנק ווסט 1/2026 900$, צ\'ייס 7,500$, DVS 18,000$). '
+                       'ספטמבר–נובמבר 2025 לא שולם (הוראת הקבע נדחתה). לעדכן כשנכנס DVS של אוקטובר.')
+                _old = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
+                if 'חוב יששכר־זבולון 16,000' not in _old:
+                    con.execute("UPDATE donors SET notes=? WHERE id=?", ((_old + ' · ' + _nt).strip(' ·') if _old.strip() else _nt, did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', 'חישוב חוב יששכר־זבולון: נרשמו %d תשלומי 2025 מדוחות בנק ווסט, %d תשלומים סווגו ליששכר־זבולון, החוב נקבע 16,000$ (+ סוכות תשפ"ז 2,000$)' % (n, m), '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_iz_calc_v1')")
+                con.commit()
+                print('  משה דויטש: %d תשלומי 2025, %d סווגו, חוב 16,000$' % (n, m))
+    except Exception as e:
+        print('  deutsch iz calc error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
