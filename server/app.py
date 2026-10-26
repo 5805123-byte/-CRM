@@ -4396,6 +4396,39 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch purim error:', e)
 
+    # מאיר (26.10.2026): "100 דולר תקשר למשה דויטש כן" — ההעברה 100$ מ-8.10.2026 בצ'ייס ע"ש
+    # "Deutsch, Moishe (VentureDBVE LLC)" היא שלו; נקשרת לכרטיס, נספרת ליששכר־זבולון כמו שאר הכסף שלו,
+    # והשם נלמד כדי שהעברה הבאה מאותו שם תתקשר לבד.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_venturedbve_100_v1'").fetchone():
+            cands = con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall()
+            if len(cands) != 1:
+                cands = con.execute("SELECT id FROM donors WHERE lower(TRIM(COALESCE(english,'')))='moshe deutch'").fetchall()
+            if len(cands) == 1:
+                did = cands[0]['id']
+                _NM = "upper(COALESCE(first,'')||' '||COALESCE(last,'')||' '||COALESCE(category,'')||' '||COALESCE(note,''))"
+                rows = list(con.execute("""SELECT tid FROM recon WHERE donor_id IS NULL AND COALESCE(skipped,0)=0
+                                           AND ROUND(CAST(REPLACE(REPLACE(amount,',',''),'$','') AS REAL),2)=100.0
+                                           AND (date LIKE '2026-10-%%' OR date LIKE '%%-Oct-2026')
+                                           AND (%s LIKE '%%VENTUREDBVE%%' OR (%s LIKE '%%DEUTSCH%%' AND %s LIKE '%%MOISHE%%'))""" % (_NM, _NM, _NM)))
+                for r in rows:
+                    con.execute("UPDATE recon SET donor_id=?, category=COALESCE(NULLIF(TRIM(category),''),'יששכר־זבולון') WHERE tid=?", (did, r['tid']))
+                for k in ('Deutsch, Moishe (VentureDBVE LLC)', 'Deutsch, Moishe', 'Moishe Deutsch', 'VentureDBVE LLC'):
+                    con.execute("INSERT OR IGNORE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", (_nkey(k), did, today_iso()))
+                try: learn_payer_name(con, did, 'Deutsch, Moishe (VentureDBVE LLC)')
+                except Exception as e: print('  venture learn name:', e)
+                if rows:
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (did, today_iso(), 'מערכת', 'שויכה העברה 100$ מ-8.10.2026 (צ\'ייס, ע"ש Deutsch, Moishe / VentureDBVE LLC) — מאיר אישר', '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_venturedbve_100_v1')")
+                con.commit()
+                n = 0
+                try: n = post_linked_recon(con) or 0
+                except Exception as e: print('  venture post:', e)
+                print('  VentureDBVE 100$ → משה דויטש #%d: %d שורות, נרשמו %d' % (did, len(rows), n))
+    except Exception as e:
+        print('  deutsch venture error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -9571,8 +9604,13 @@ def _hedate(d):
 
 
 def _recon_iso(d):
-    """'24-Mar-2026' -> '2026-03-24'."""
-    m = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', d or '')
+    """'24-Mar-2026' -> '2026-03-24'. בחיבור החי (אוטרייז מהמייל, Webhook) התאריך כבר ISO וחוזר כמו שהוא.
+    מאיר (26.10.2026): "עדיין לא רואה אצל גולדגראב את התרומה של 480" — השורה מהמייל נכנסה עם תאריך ISO,
+    וכאן חזר '' ולכן banquest_post דילג עליה ושום חיוב מהמייל לא נרשם בכרטיס."""
+    d = str(d or '').strip()
+    if re.match(r'^\d{4}-\d{2}-\d{2}', d):
+        return d[:10]
+    m = re.match(r'(\d{2})-([A-Za-z]{3})-(\d{4})', d)
     return f"{m.group(3)}-{_MONI.get(m.group(2).lower(), '01')}-{m.group(1)}" if m else ''
 
 
@@ -14803,11 +14841,47 @@ def anet_declined_alert(con, res):
     print('  אוטורייז — לא עברו: ' + ' | '.join(lines))
 
 
+_ANET_KICK = {'at': 0.0, 'busy': False}
+
+
+def anet_mail_kick():
+    """Render מרדים את השרת כשאין פעילות, ואז לולאת השעה לא רצה — מייל של אוטרייז שהגיע בלילה מחכה.
+    כשמאיר פותח את האפליקציה (/api/data) ועברו 20 דקות מהסריקה האחרונה — סורקים ברקע, והכרטיס מתעדכן
+    תוך כמה שניות (bump_data). מאיר (26.10.2026): "עדיין לא רואה אצל גולדגראב את התרומה של 480"."""
+    import time
+    if _ANET_KICK['busy'] or time.time() - _ANET_KICK['at'] < 1200:
+        return
+    try:
+        import authorize_mail as _am
+        if not _am.configured():
+            return
+    except Exception:
+        return
+    _ANET_KICK.update(at=time.time(), busy=True)
+
+    def _run():
+        try:
+            con = db()
+            try:
+                res = anet_mail_run(con, days=7)
+            finally:
+                con.close()
+            if (res or {}).get('נוספו') or (res or {}).get('נרשמו בכרטיסים'):
+                print('  אוטורייז (מייל, בפתיחת האפליקציה):', res)
+        except Exception as e:
+            print('  anet mail kick:', e)
+        finally:
+            _ANET_KICK['busy'] = False
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def anet_mail_run(con, days=60):
     """אוטורייז מהמיילים (תווית אוטרייז): מה שחסר נכנס ל-recon, מתחבר לתורם ונרשם בכרטיס; "לא עבר" → התרעה."""
     import authorize_mail as _am
     if not _am.configured():
         return {'שגיאה': 'GMAIL לא מוגדר'}
+    import time
+    _ANET_KICK['at'] = time.time()
     res = _am.scan(con, days=days)
     if res.get('נוספו'):
         # כמו בטעינת הדוח החודשי: אותו שם (פרטי+משפחה) שכבר שויך בחיוב קודם, או שם לועזי / עסק בכרטיס
@@ -18749,6 +18823,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/api/data':
             if getattr(self, 'role', '') in ('parnes', 'gabbai'):
                 return self._send(200, dict(_data_parnes(), role=self.role))
+            try: anet_mail_kick()
+            except Exception as e: print('  anet kick:', e)
             if getattr(self, 'role', '') == 'comm':
                 # סיסמת הקהילה — בלי התורמים בכלל. רק מה שהמסך צריך כדי לעלות
                 return self._send(200, {'donors': [], 'mail_names': None, 'unlinked_prayers': [], 'general_tasks': [], 'campaigns': [],
