@@ -4176,20 +4176,29 @@ def ensure_schema():
                                    WHERE donor_id=? AND CAST(amount AS REAL)>0 AND COALESCE(category,'') NOT LIKE '%יששכר%'
                                      AND COALESCE(category,'') NOT LIKE 'סוכות%' AND COALESCE(note,'') NOT LIKE '%על חשבון יששכר%'""",
                                 (_CAT, did)).rowcount
-                con.execute("UPDATE donors SET iz_debt='16000' WHERE id=?", (did,))
-                _nt = ('חוב יששכר־זבולון 16,000$ נכון ל-26.10.2026 (עדכון ידני): 4 אברכים × 850$ מתמוז תשפ"ה (הרביעי מסיוון תשפ"ו) = 45,900$ '
-                       'עד אוקטובר 2026; שולם 29,900$ (בנק ווסט 7–8/2025 3,400$, בנק ווסט 1/2026 900$, צ\'ייס 7,500$, DVS 18,000$). '
+                con.execute("UPDATE donors SET iz_debt='16100' WHERE id=?", (did,))
+                _nt = ('חוב יששכר־זבולון 16,100$ נכון ל-26.10.2026 (עדכון ידני): 4 אברכים × 850$ מתמוז תשפ"ה (הרביעי מסיוון תשפ"ו) = 45,900$ '
+                       'עד אוקטובר 2026; שולם 29,800$ (בנק ווסט 7–8/2025 3,400$, בנק ווסט 1/2026 900$, צ\'ייס 7,500$, DVS 18,000$). '
                        'ספטמבר–נובמבר 2025 לא שולם (הוראת הקבע נדחתה). לעדכן כשנכנס DVS של אוקטובר.')
                 _old = (con.execute("SELECT notes FROM donors WHERE id=?", (did,)).fetchone()['notes'] or '')
-                if 'חוב יששכר־זבולון 16,000' not in _old:
+                if 'חוב יששכר־זבולון 16,1' not in _old:
                     con.execute("UPDATE donors SET notes=? WHERE id=?", ((_old + ' · ' + _nt).strip(' ·') if _old.strip() else _nt, did))
                 con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
-                            (did, today_iso(), 'מערכת', 'חישוב חוב יששכר־זבולון: נרשמו %d תשלומי 2025 מדוחות בנק ווסט, %d תשלומים סווגו ליששכר־זבולון, החוב נקבע 16,000$ (+ סוכות תשפ"ז 2,000$)' % (n, m), '', now_iso()))
+                            (did, today_iso(), 'מערכת', 'חישוב חוב יששכר־זבולון: נרשמו %d תשלומי 2025 מדוחות בנק ווסט, %d תשלומים סווגו ליששכר־זבולון, החוב נקבע 16,100$ (+ סוכות תשפ"ז 2,000$)' % (n, m), '', now_iso()))
                 con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_iz_calc_v1')")
                 con.commit()
-                print('  משה דויטש: %d תשלומי 2025, %d סווגו, חוב 16,000$' % (n, m))
+                print('  משה דויטש: %d תשלומי 2025, %d סווגו, חוב 16,100$' % (n, m))
     except Exception as e:
         print('  deutsch iz calc error:', e)
+
+    # תיקון חישוב: 18,000 + 900 + 7,500 = 26,400 (לא 26,500) → שולם 29,800$, חוב 16,100$
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_iz_calc_fix_v1'").fetchone():
+            for r in con.execute("SELECT id,notes FROM donors WHERE last='דויטש' AND first LIKE 'משה%' AND iz_debt='16000'").fetchall():
+                con.execute("UPDATE donors SET iz_debt='16100', notes=REPLACE(REPLACE(COALESCE(notes,''),'16,000$','16,100$'),'שולם 29,900$','שולם 29,800$') WHERE id=?", (r['id'],))
+            con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_iz_calc_fix_v1')"); con.commit()
+    except Exception as e:
+        print('  deutsch fix error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
