@@ -31873,29 +31873,23 @@ def ivr_answer(P):
             if 'Move' in P:
                 if P['Move'] != '1' or not ks:
                     return 'id_list_message=t-' + _ivr_t('הוראת הקבע נשארת בכרטיס הקיים, תודה רבה ותזכו למצוות') + END
+                # מאיר: "לרובם אין SMS" — לא שולחים קישור. הבקשה נרשמת, ונפתחת משימה למשרד עם פרטי התשלום:
+                # העסקה נמצאת בנדרים פלוס (עם הכרטיס), ושם מעבירים את ההוראה אליו. בלי ניחוש ובלי כרטיס אצלנו.
                 k = next((x for x in ks if (x.get('error') or '').strip()), ks[0])
                 l4m = re.sub(r'\D', '', k.get('last4') or '') or '0'
-                okl = False
-                if _ym.is_mobile(phone):
-                    try:
-                        okl, _l, _to = nd_send_link(con, k['id'], phone)
-                    except Exception as e:
-                        print('  ivr move link:', e)
                 who = (k.get('name') or '').strip() or phone
-                note = ('💳 %s ביקש בטלפון להעביר את הוראת הקבע (כרטיס ****%s, ₪%s) לכרטיס החדש שבו שילם עכשיו — %s' %
-                        (who, l4m, k.get('amount') or '', 'נשלח לו קישור מאובטח ב-SMS, לבדוק שהכרטיס עודכן בנדרים פלוס' if okl
-                         else 'לא נשלח קישור (מספר קווי / שגיאה) — ליצור איתו קשר'))
+                pamt = _ivr_amt(P.get('Amt')) or job_amt
+                note = ('💳 %s ביקש בטלפון להעביר את הוראת הקבע (כרטיס ****%s, ₪%s) לכרטיס החדש שבו שילם עכשיו ₪%g (%s %s, טל\' %s) — '
+                        'לעדכן את הכרטיס בהוראה בנדרים פלוס לפי העסקה הזו' % (who, l4m, k.get('amount') or '', pamt, today_iso(), il_now().strftime('%H:%M'), phone))
                 if not con.execute("SELECT 1 FROM tasks WHERE donor_id IS NULL AND note=? AND COALESCE(done,0)=0", (note,)).fetchone():
                     con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)", (today_iso(), 'other', note))
                 if k.get('member_id') or mid:
                     con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
                                 (k.get('member_id') or mid, today_iso(), 'תשלום',
-                                 '💳 ביקש בטלפון להעביר את הוראת הקבע (****%s) לכרטיס החדש' % l4m + (' · נשלח קישור מאובטח ב-SMS' if okl else ' · לא נשלח קישור'),
+                                 '💳 ביקש בטלפון להעביר את הוראת הקבע (****%s) לכרטיס החדש שבו שילם ₪%g — נפתחה משימה למשרד' % (l4m, pamt),
                                  '', 'in', '', now_iso()))
                 con.commit()
-                if okl:
-                    return 'id_list_message=t-' + _ivr_t('רשמנו את בקשתכם, שלחנו לכם הודעה עם קישור מאובטח, הקישו בו את הכרטיס החדש והוראת הקבע תעבור אליו, תודה רבה ותזכו למצוות') + END
-                return 'id_list_message=t-' + _ivr_t('רשמנו את בקשתכם, המשרד ייצור איתכם קשר לעדכון הוראת הקבע, תודה רבה ותזכו למצוות') + END
+                return 'id_list_message=t-' + _ivr_t('רשמנו את בקשתכם, הוראת הקבע תעבור לכרטיס החדש, תודה רבה ותזכו למצוות') + END
             con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'כרטיס')",
                         (now_iso(), call_id, phone, '', mid, _ivr_amt(P.get('Amt')) or job_amt, 0,
