@@ -4257,6 +4257,23 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch pesach error:', e)
 
+    # מאיר (26.10.2026): "הוא התחייב 720 על מתנות לאביונים פורים — תבדוק אם נכנס". נבדק: בנק ווסט (כל 2026), אוטורייז, צ'ייס —
+    # אין 720$ ממנו; ב-22–25.2.2026 היו 4 ניסיונות חיוב בכרטיס (100+100+100+400) וכולם נדחו. ההתחייבות נרשמת בכרטיס כפתוחה.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_purim_5786_v1'").fetchone():
+            for r in con.execute("SELECT id FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall():
+                did, _PU = r['id'], 'מתנות לאביונים תשפ"ו'
+                if not con.execute("SELECT 1 FROM pledges WHERE donor_id=? AND category=?", (did, _PU)).fetchone():
+                    _st = _stamp()
+                    con.execute("INSERT INTO pledges(donor_id,category,amount,status,date,note,monthly,paid,confirmed,cur,created,created_heb) "
+                                "VALUES(?,?,'720','טרם','2026-02-15',?,0,'',1,'$',?,?)",
+                                (did, _PU, 'מרשימת מתנות לאביונים תשפ"ו (720$ באשראי) · לא נמצא תשלום: ניסיונות חיוב 22–25.2.2026 נדחו', _st['created'], _st['created_heb']))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', 'מתנות לאביונים תשפ"ו: התחייבות 720$ נרשמה — לא שולם (נבדק בנק ווסט, אוטורייז, צ\'ייס; ניסיונות החיוב בפברואר נדחו)', '', now_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_purim_5786_v1')"); con.commit()
+    except Exception as e:
+        print('  deutsch purim error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
