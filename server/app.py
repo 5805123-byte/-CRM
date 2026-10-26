@@ -515,9 +515,12 @@ def post_linked_recon(con):
     paid_by = {}
     # החזרים (סכום שלילי) אינם נספרים בשני הצדדים, אחרת חודש עם החזר
     # נראה חסר וכל עלייה מוסיפה בו עוד שורה
+    # רק שורות בלי מזהה עסקה נספרות כ"כבר שולם": תרומה עם מזהה שייכת לחיוב שלה, שכבר סונן למעלה (done_tids).
+    # מאיר (26.10.2026): "למה גולדגראב לא מופיע לו עדיין התרומה מהיום???" — נתן 480$ ב-5.10 וגם ב-26.10; התרומה
+    # של 5.10 (עם מזהה) נספרה כאילו היא מכסה את החודש, השורה של 26.10 סומנה "נרשם" ולא נרשמה בשום מקום.
     for r in con.execute("SELECT donor_id, SUBSTR(COALESCE(date,''),1,7) mo, method, "
                          "ROUND(CAST(amount AS REAL),2) a FROM donations "
-                         "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
+                         "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0 AND COALESCE(tid,'')=''"):
         k = (r['donor_id'], r['mo'], _fam(r['method']))
         paid_by[k] = round(paid_by.get(k, 0) + (r['a'] or 0), 2)
     n = 0
@@ -546,11 +549,20 @@ def post_linked_recon(con):
                         rr = None
                     if rr and (rr['category'] or '').strip():
                         cat = rr['category'].strip(); note += ' · כלל קבוע'
+                if not cat and abs(amt - 480) < 0.01 and _fam(r['source']) in ('az', 'bq'):
+                    # מאיר: "480 תמיד זה פרנס לילה" — כמו בבנק ווסט/אוטרייז, גם כשהרישום נעשה מכאן
+                    cat = 'פרנס לילה'
                 if not cat:
                     note += ' · לא סווג — לבדוק עבור מה'
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
                             "VALUES(?,?,?,?,?,?,1,?)",
                             (r['donor_id'], iso, '%.2f' % amt, cat, meth, note, r['tid']))
+                if cat == 'פרנס לילה':
+                    nm0 = con.execute("SELECT last,first FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+                    _pn = '🌙 לקבוע יום לפרנס — ' + (((nm0['last'] or '') + ' ' + (nm0['first'] or '')).strip() if nm0 else '')
+                    if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND note=? AND COALESCE(done,0)=0",
+                                       (r['donor_id'], _pn)).fetchone():
+                        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'parnes',?)", (r['donor_id'], today_iso(), _pn))
                 gap = round(gap - amt, 2); n += 1
             if not r.get('processed'):
                 con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
@@ -4514,6 +4526,22 @@ def ensure_schema():
                 print('  Thriveway: לא נמצאו כרטיסי אדלין/דהאן — לא שויך')
     except Exception as e:
         print('  thriveway error:', e)
+
+    # מאיר (26.10.2026): "למה גולדגראב לא מופיע לו עדיין התרומה מהיום???" — חיובים מהמייל של אוטרייז שסומנו
+    # "נרשם" בלי שנרשמה תרומה (ראו post_linked_recon): חוזרים למצב "לא נרשם" ונרשמים עכשיו עם הכלל המתוקן.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mail_rows_unprocess_v1'").fetchone():
+            cur0 = con.execute("""UPDATE recon SET processed=0 WHERE source='Authorize מייל' AND COALESCE(processed,0)=1
+                                  AND COALESCE(skipped,0)=0 AND donor_id IS NOT NULL AND COALESCE(status,'settled')='settled'
+                                  AND tid NOT IN (SELECT COALESCE(tid,'') FROM donations WHERE COALESCE(tid,'')<>'')""")
+            con.execute("INSERT INTO seed_flags(name) VALUES('mail_rows_unprocess_v1')")
+            con.commit()
+            n = 0
+            try: n = post_linked_recon(con) or 0
+            except Exception as ex: print('  unprocess post:', ex)
+            print('  חיובים מהמייל שסומנו "נרשם" בלי תרומה: %d הוחזרו, %d נרשמו' % (cur0.rowcount, n))
+    except Exception as e:
+        print('  unprocess error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
@@ -32304,9 +32332,6 @@ def _authnet_loop():
                         con.close()
                     if (resm or {}).get('נוספו'):
                         print('  אוטורייז (מייל) — חדשים:', resm)
-                    if first:
-                        try: anet_diag_mail(resm)
-                        except Exception as e: print('  anet diag:', e)
                     # מאיר: "תעשה לי קובץ של הכל ביחד מהאימיילים, מה שלא עבר" — פעם אחת, אחרי הסריקה הראשונה
                     if first and 'שגיאה' not in (resm or {}):
                         con = db()
