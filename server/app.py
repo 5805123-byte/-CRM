@@ -4200,6 +4200,21 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch fix error:', e)
 
+    # מאיר (26.10.2026): "יש לו התחייבות חודשית של 4×850 — למה כתוב 2,550?" — 4 אברכים מתמוז תשפ"ה, לא 3:
+    # 16 חודשים × 3,400$ = 54,400$; שולם 29,800$ → חוב 24,600$ (+ סוכות תשפ"ז 2,000$)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_iz_calc_fix_v2'").fetchone():
+            for r in con.execute("SELECT id,notes FROM donors WHERE last='דויטש' AND first LIKE 'משה%' AND iz_debt IN ('16000','16100')").fetchall():
+                _old = r['notes'] or ''
+                _old = re.sub(r'חוב יששכר־זבולון 16,[01]00\$ נכון ל-26\.10\.2026 \(עדכון ידני\):[^·]*', '', _old).strip(' ·')
+                _nt = ('חוב יששכר־זבולון 24,600$ נכון ל-26.10.2026 (עדכון ידני): 4 אברכים × 850$ = 3,400$ לחודש מתמוז תשפ"ה, '
+                       '16 חודשים עד אוקטובר 2026 = 54,400$; שולם 29,800$ (בנק ווסט 7–8/2025 3,400$, בנק ווסט 1/2026 900$, צ\'ייס 7,500$, DVS 18,000$). '
+                       'ספטמבר–נובמבר 2025 לא שולם. לפי הקובץ בדרייב (עוד 5,100$ בינואר–מרץ 2026) — 19,500$. לעדכן כשנכנס DVS של אוקטובר.')
+                con.execute("UPDATE donors SET iz_debt='24600', notes=? WHERE id=?", ((_old + ' · ' + _nt).strip(' ·') if _old else _nt, r['id']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_iz_calc_fix_v2')"); con.commit()
+    except Exception as e:
+        print('  deutsch fix2 error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -14914,7 +14929,8 @@ def mail_docs_report(con, pattern=DEUTSCH_DOC_RX, title='משה דויטש'):
     hits = _md.find(con, pattern)
     lines = ['📎 מסמכים שנסרקו מהמייל (%d):' % len(docs)]
     for d in docs:
-        lines.append('  • %s — %s · %s · %s עמודים · %s תווים' % (d['fname'], d['mail_date'], (d['subject'] or '')[:50], d['pages'], d['chars']))
+        lines.append('  • %s — %s · %s · %s עמודים · %s תווים%s' % (d['fname'], d['mail_date'], (d['subject'] or '')[:50], d['pages'], d['chars'],
+                                                               {1: ' · OCR ✓', -1: ' · OCR: הקובץ לא נמצא שוב'}.get(d.get('ocr') or 0, '')))
     lines += ['', '🔎 אזכורים של %s (%d מסמכים):' % (title, len(hits))]
     if not hits:
         lines.append('  — לא נמצא אף אזכור —')
@@ -14938,7 +14954,12 @@ def _mail_docs_once():
                 if _md.configured():
                     n_mail, n_docs = _md.scan(con)
                     print('  mail_docs: נבדקו %d מיילים, נשמרו %d קבצים' % (n_mail, n_docs))
-                    if not con.execute("SELECT 1 FROM seed_flags WHERE name='mail_docs_deutsch_mail_v1'").fetchone():
+                    # דפי צ'ייס סרוקים (תמונה) — OCR דרך Gemini, עמוד־עמוד
+                    od, op = _md.ocr_scan(con)
+                    if od or op:
+                        print('  mail_docs OCR: %d קבצים, %d עמודים' % (od, op))
+                    _flag = 'mail_docs_deutsch_mail_v2' if not _md.ocr_pending(con) else 'mail_docs_deutsch_mail_v1'
+                    if not con.execute("SELECT 1 FROM seed_flags WHERE name=?", (_flag,)).fetchone():
                         txt = mail_docs_report(con)
                         to = (os.environ.get('GMAIL_USER') or '').strip()
                         alert = (os.environ.get('ALERT_EMAIL') or '').strip()
@@ -14946,8 +14967,8 @@ def _mail_docs_once():
                         if to and mailer.configured():
                             for addr in dict.fromkeys([to, alert]):
                                 if addr:
-                                    mailer.send(addr, '🔎 משה דויטש בדפי צ\'ייס ובדוחות פרידמן שבמייל', txt)
-                        con.execute("INSERT INTO seed_flags(name) VALUES('mail_docs_deutsch_mail_v1')"); con.commit()
+                                    mailer.send(addr, '🔎 משה דויטש בדפי צ\'ייס ובדוחות פרידמן שבמייל' + (' (אחרי OCR)' if _flag.endswith('v2') else ''), txt)
+                        con.execute("INSERT INTO seed_flags(name) VALUES(?)", (_flag,)); con.commit()
             finally:
                 con.close()
         except Exception as e:
