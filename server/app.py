@@ -4215,6 +4215,25 @@ def ensure_schema():
     except Exception as e:
         print('  deutsch fix2 error:', e)
 
+    # מאיר (26.10.2026): "ניצמד לדוח שמופיע בדרייב… ה-1,500 דולר שנכנס במאי בהעברה בנקאית זה בשביל קמחא דפסחא תשפ"ו…
+    # תסכם לי חוב שלו החל מחודש מאי שמאז האשראי לא עבר" — לפי הדוח עד אפריל 2026 הכל שולם; ממאי: 6 × 3,400$ = 20,400$,
+    # שולם 12,000$ (DVS 5 × 1,800$ + צ'ייס 3,000$ ב-1.6) → חוב 8,400$ (+ סוכות תשפ"ז 2,000$)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='deutsch_iz_calc_fix_v3'").fetchone():
+            for r in con.execute("SELECT id,notes FROM donors WHERE last='דויטש' AND first LIKE 'משה%'").fetchall():
+                did = r['id']
+                con.execute("""UPDATE donations SET category='קמחא דפסחא תשפ"ו', note=REPLACE(COALESCE(note,''),' · על חשבון יששכר־זבולון (מאיר 26.10.2026)','')||' · קמחא דפסחא תשפ"ו (מאיר 26.10.2026)'
+                               WHERE donor_id=? AND date='2026-05-14' AND ROUND(CAST(amount AS REAL),2)=1500 AND COALESCE(note,'') NOT LIKE '%קמחא דפסחא תשפ"ו (מאיר%'""", (did,))
+                _old = re.sub(r'חוב יששכר־זבולון \d[\d,]*\$ נכון ל-26\.10\.2026 \(עדכון ידני\):[^·]*', '', r['notes'] or '').strip(' ·')
+                _nt = ('חוב יששכר־זבולון 8,400$ נכון ל-26.10.2026 (עדכון ידני, לפי הדוח בדרייב): עד אפריל 2026 שולם הכל; ממאי 2026 הכרטיס (1,700$) לא עובר. '
+                       'מאי–אוקטובר 6 × 3,400$ = 20,400$, שולם 12,000$ (DVS 5 × 1,800$ + צ\'ייס 3,000$ ב-1.6). ה-1,500$ מ-14.5 — קמחא דפסחא תשפ"ו. + סוכות תשפ"ז 2,000$. לעדכן כשנכנס DVS של אוקטובר.')
+                con.execute("UPDATE donors SET iz_debt='8400', notes=? WHERE id=?", ((_old + ' · ' + _nt).strip(' ·') if _old else _nt, did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (did, today_iso(), 'מערכת', 'חוב יששכר־זבולון נקבע 8,400$ ממאי 2026 (לפי הדוח בדרייב) + סוכות תשפ"ז 2,000$; ה-1,500$ מ-14.5 סווג קמחא דפסחא תשפ"ו', '', now_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('deutsch_iz_calc_fix_v3')"); con.commit()
+    except Exception as e:
+        print('  deutsch fix3 error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
