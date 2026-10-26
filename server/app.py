@@ -392,6 +392,41 @@ def _find_donat(con):
     return None
 
 
+def _heb_year_label(iso):
+    """תווית שנה עברית לפי תאריך לועזי (ראש השנה: תשפ"ה 3.10.2024, תשפ"ו 23.9.2025, תשפ"ז 12.9.2026, תשפ"ח 2.10.2027)."""
+    for start, lab in (('2027-10-02', 'תשפ"ח'), ('2026-09-12', 'תשפ"ז'), ('2025-09-23', 'תשפ"ו'), ('2024-10-03', 'תשפ"ה')):
+        if (iso or '') >= start:
+            return lab
+    return ''
+
+
+_SPLIT_TAG = 'חצי מהעברה משותפת'
+
+
+def _memo_cat(memo, iso):
+    """"עבור מה" מהמזכר של הבנק → ייעוד בעברית. מאיר (26.10.2026) על Thriveway: "זה יצחק אדלין אלירן דאהן כל אחד אלף" —
+    המזכר "CHARITY · YISS ZEV" הוא יששכר־זבולון, "KIMCHA D'PISKA" קמחא דפסחא וכו'. מזכר שלא מוכר נשאר כפי שהוא
+    (כמו קודם). מחזיר (ייעוד, הערה) — הסימון "חצי מהעברה משותפת" של apply_pay_split עובר להערה."""
+    memo = (memo or '').strip()
+    note = ''
+    if _SPLIT_TAG in memo:
+        memo = ' · '.join(p for p in memo.split(' · ') if p.strip() != _SPLIT_TAG).strip(' ·')
+        note = _SPLIT_TAG
+    up = re.sub(r'[^A-Z ]', ' ', memo.upper())
+    yr = _heb_year_label(iso)
+    if re.search(r'\bYISS?\s*ZEVU?\b|\bYISSACHAR\b', up):
+        return 'יששכר־זבולון', note
+    if 'KIMCHA' in up or 'KIMCHE' in up:
+        return ('קמחא דפסחא ' + yr).strip(), note
+    if 'MATANO' in up or 'PURIM' in up:
+        return ('מתנות לאביונים ' + yr).strip(), note
+    if 'SUKKO' in up or 'SUCCO' in up:
+        return ('סוכות ' + yr).strip(), note
+    if up.strip() in ('CHARITY', 'DONATION', 'ACH PMT'):
+        return '', note            # מזכר כללי של הבנק — לא ייעוד; הכלל הקבוע של התורם (donor_rules) או "לבדוק עבור מה"
+    return memo, note
+
+
 def post_linked_recon(con):
     """כסף שנכנס ויש לו כרטיס — נרשם בכרטיס התורם, מכל מקור (בנק ווסט, אוטרייז, צ'ייס, צ'קים, זל…).
     מאיר (26.10.2026): "שכל תרומה שנכנסה מכל תורם שהוא תיכנס לכרטיס שלו". רץ בכל עלייה, כל שעה,
@@ -407,7 +442,7 @@ def post_linked_recon(con):
         return s
 
     allrows = []
-    for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed,recurring FROM recon "
+    for r in con.execute("SELECT tid,donor_id,amount,date,source,category,processed,recurring,note FROM recon "
                          "WHERE donor_id IS NOT NULL AND COALESCE(skipped,0)=0 "
                          "AND (status IS NULL OR status='settled') ORDER BY date,tid"):
         iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
@@ -498,8 +533,19 @@ def post_linked_recon(con):
             elif gap >= amt - 0.01:
                 src = r['source'] or ''
                 meth = next((v for pre, v in SRCLBL.items() if src.startswith(pre)), src)
-                cat = (r['category'] or '').strip()
+                cat, xnote = _memo_cat(r['category'], iso)
                 note = 'נכנס מ' + (meth or 'ייבוא')
+                if xnote:
+                    note += ' · ' + xnote
+                if not cat:
+                    # כלל קבוע שמאיר רשם לתורם ("כל $X = ייעוד") — כמו בבנק ווסט/אוטרייז
+                    try:
+                        rr = con.execute("SELECT category FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=?",
+                                         (r['donor_id'], amt)).fetchone()
+                    except Exception:
+                        rr = None
+                    if rr and (rr['category'] or '').strip():
+                        cat = rr['category'].strip(); note += ' · כלל קבוע'
                 if not cat:
                     note += ' · לא סווג — לבדוק עבור מה'
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
@@ -4428,6 +4474,46 @@ def ensure_schema():
                 print('  VentureDBVE 100$ → משה דויטש #%d: %d שורות, נרשמו %d' % (did, len(rows), n))
     except Exception as e:
         print('  deutsch venture error:', e)
+
+    # מאיר (26.10.2026) על ההעברות של 2,000$ מ-Thriveway בצ'ייס ("cong zichron avos koll yiss zev"):
+    # "זה יצחק אדלין אלירן דאהן כל אחד אלף". ההעברה מגיעה על שם אדלין, והחלוקה חצי־חצי (pay_split) כבר
+    # רשומה — כאן רק מקשרים את כל ההעברות של Thriveway לאדלין, החלוקה חותכת כל אחת ל-1,000+1,000,
+    # והשם נלמד כדי שההעברה הבאה תתקשר ותתחלק לבד.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='thriveway_adlin_dahan_v1'").fetchone():
+            a = con.execute("SELECT id FROM donors WHERE last='אדלין' AND first='יצחק'").fetchone()
+            e = con.execute("SELECT id FROM donors WHERE last LIKE 'דה%ן' AND first='אלירן'").fetchone()
+            if a and e:
+                con.execute("INSERT OR IGNORE INTO pay_split(payer_id,donor_id,pct,note,created) VALUES(?,?,50,'ההעברה מגיעה על שם אדלין — חצי־חצי',?)",
+                            (a['id'], e['id'], today_iso()))
+                rows = list(con.execute("""SELECT tid FROM recon WHERE donor_id IS NULL AND COALESCE(skipped,0)=0
+                                           AND upper(COALESCE(first,'')||' '||COALESCE(last,'')) LIKE '%THRIVEWAY%'"""))
+                for r in rows:
+                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (a['id'], r['tid']))
+                for k in ('THRIVEWAY 1636', 'THRIVEWAY FUNDIN', 'Thriveway Fundin', 'Thriveway Funding Group LLC'):
+                    con.execute("INSERT OR IGNORE INTO name_map(src,donor_id,ignored,created) VALUES(?,?,0,?)", (_nkey(k), a['id'], today_iso()))
+                try: learn_payer_name(con, a['id'], 'Thriveway Funding Group LLC')
+                except Exception as ex: print('  thriveway learn name:', ex)
+                # כלל קבוע: 1,000$ לכל אחד מהם (חצי מ-2,000) = יששכר־זבולון — גם כשהבנק כותב רק "charity"
+                for did in (a['id'], e['id']):
+                    if not con.execute("SELECT 1 FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=1000", (did,)).fetchone():
+                        con.execute("INSERT INTO donor_rules(donor_id,amount,category,note,created) VALUES(?,1000,'יששכר־זבולון','חצי מהעברת Thriveway של 2,000$ (מאיר, 26.10.2026)',?)",
+                                    (did, today_iso()))
+                sp = apply_pay_split(con)
+                if rows:
+                    for did in (a['id'], e['id']):
+                        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                    (did, today_iso(), 'מערכת', 'ההעברות של Thriveway בצ\'ייס (2,000$ לחודש, יששכר־זבולון) שויכו: אדלין ודהאן — 1,000$ לכל אחד (מאיר, 26.10.2026)', '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('thriveway_adlin_dahan_v1')")
+                con.commit()
+                n = 0
+                try: n = post_linked_recon(con) or 0
+                except Exception as ex: print('  thriveway post:', ex)
+                print('  Thriveway → אדלין #%d + דהאן #%d: %d העברות, %d נחתכו, נרשמו %d' % (a['id'], e['id'], len(rows), sp, n))
+            else:
+                print('  Thriveway: לא נמצאו כרטיסי אדלין/דהאן — לא שויך')
+    except Exception as e:
+        print('  thriveway error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
