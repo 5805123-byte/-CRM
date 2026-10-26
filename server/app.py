@@ -550,19 +550,14 @@ def post_linked_recon(con):
                     if rr and (rr['category'] or '').strip():
                         cat = rr['category'].strip(); note += ' · כלל קבוע'
                 if not cat and abs(amt - 480) < 0.01 and _fam(r['source']) in ('az', 'bq'):
-                    # מאיר: "480 תמיד זה פרנס לילה" — כמו בבנק ווסט/אוטרייז, גם כשהרישום נעשה מכאן
-                    cat = 'פרנס לילה'
-                if not cat:
+                    # מאיר (26.10.2026): "אני רוצה לראות תשלום שלו, לא שיבוץ של פרנס" — 480$ נכנס כתשלום רגיל,
+                    # בלי ייעוד ובלי משימה; את הלילה מאיר משבץ ידנית ומשייך לתרומה
+                    note += ' · 480$ — לשבץ פרנס ידנית'
+                elif not cat:
                     note += ' · לא סווג — לבדוק עבור מה'
                 con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,paid,tid) "
                             "VALUES(?,?,?,?,?,?,1,?)",
                             (r['donor_id'], iso, '%.2f' % amt, cat, meth, note, r['tid']))
-                if cat == 'פרנס לילה':
-                    nm0 = con.execute("SELECT last,first FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
-                    _pn = '🌙 לקבוע יום לפרנס — ' + (((nm0['last'] or '') + ' ' + (nm0['first'] or '')).strip() if nm0 else '')
-                    if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND kind='parnes' AND note=? AND COALESCE(done,0)=0",
-                                       (r['donor_id'], _pn)).fetchone():
-                        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'parnes',?)", (r['donor_id'], today_iso(), _pn))
                 gap = round(gap - amt, 2); n += 1
             if not r.get('processed'):
                 con.execute("UPDATE recon SET processed=1 WHERE tid=?", (r['tid'],))
@@ -4542,6 +4537,21 @@ def ensure_schema():
             print('  חיובים מהמייל שסומנו "נרשם" בלי תרומה: %d הוחזרו, %d נרשמו' % (cur0.rowcount, n))
     except Exception as e:
         print('  unprocess error:', e)
+
+    # מאיר (26.10.2026): "אני רוצה לראות תשלום שלו, לא שיבוץ של פרנס. שיבוץ של פרנס אעשה ידני ואשייך את זה לתרומה"
+    # — שני ה-480$ של גולדגראב (5.10, 26.10) שנרשמו היום כ"פרנס לילה" חוזרים לתשלום רגיל, והמשימה שנפתחה נסגרת.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='goldgrab_480_plain_v1'").fetchone():
+            n1 = con.execute("""UPDATE donations SET category='', note=REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','') || ' · 480$ — לשבץ פרנס ידנית'
+                                WHERE tid IN ('81837771553','81873525966') AND category='פרנס לילה'""").rowcount
+            n2 = con.execute("""UPDATE tasks SET done=1, done_date=?, done_note='בוטל — מאיר משבץ פרנס ידנית'
+                                WHERE kind='parnes' AND note LIKE '%לקבוע יום לפרנס — גולדגראב%' AND COALESCE(done,0)=0 AND due_date>='2026-10-26'""",
+                             (today_iso(),)).rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('goldgrab_480_plain_v1')")
+            con.commit()
+            print('  גולדגראב 480$ → תשלום רגיל: %d תרומות, %d משימות נסגרו' % (n1, n2))
+    except Exception as e:
+        print('  goldgrab plain error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
@@ -11547,7 +11557,10 @@ def banquest_post(con, source, only_tids=None):
                 continue
             cat, why, chk = _guess(did, a, r['recurring'])
             if abs(a - 480) < 0.01 and not (r.get('category') or '').strip() and not cat:
-                cat, why, chk = 'פרנס לילה', 'פרנס לילה ($480)', False
+                # מאיר (26.10.2026): "אני רוצה לראות תשלום שלו, לא שיבוץ של פרנס. שיבוץ של פרנס אעשה ידני ואשייך
+                # את זה לתרומה" — 480$ נכנס כתשלום רגיל בלי ייעוד ובלי משימה; מאיר משבץ את הלילה בעצמו.
+                cat, why, chk = '', '480$ — פרנס ידני', False
+                r['note'] = ((r['note'] or '').strip() + ' · ' if (r['note'] or '').strip() else '') + '480$ — לשבץ פרנס ידנית'
             if (r.get('category') or '').strip():
                 # מאיר: "שיהיה כתוב… על מה כל תשלום שלו" — "עבור מה" שנכתב בדף החיובים
                 cat, why, chk = r['category'].strip(), 'עבור מה מהחיוב', False
