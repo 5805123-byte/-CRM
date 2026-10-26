@@ -14895,6 +14895,57 @@ def missing_report_send(con, force=False):
     return txt
 
 
+DEUTSCH_DOC_RX = r'deut[sc]h|tosfos|disabled\s*veteran|zichron\s*avos|venturedbve|\bDVS\b'
+
+
+def mail_docs_report(con, pattern=DEUTSCH_DOC_RX, title='משה דויטש'):
+    """📎 מה נמצא בדפי הבנק ובדוחות שבמייל על תורם — טקסט למייל / למסך."""
+    import mail_docs as _md
+    docs = _md.summary(con)
+    hits = _md.find(con, pattern)
+    lines = ['📎 מסמכים שנסרקו מהמייל (%d):' % len(docs)]
+    for d in docs:
+        lines.append('  • %s — %s · %s · %s עמודים · %s תווים' % (d['fname'], d['mail_date'], (d['subject'] or '')[:50], d['pages'], d['chars']))
+    lines += ['', '🔎 אזכורים של %s (%d מסמכים):' % (title, len(hits))]
+    if not hits:
+        lines.append('  — לא נמצא אף אזכור —')
+    for h in hits:
+        lines += ['', '📄 %s (%s) — %d שורות מתאימות:' % (h['fname'], h['mail_date'], h['n'])]
+        for b in h['blocks'][:120]:
+            lines.append('   ' + b.replace('\n', '\n   '))
+            lines.append('   ---')
+    txt = '\n'.join(lines)
+    return txt[:120000]
+
+
+def _mail_docs_once():
+    """ריצה חד־פעמית (ואחריה פעם ביום): שליפת דפי צ'ייס ודוחות פרידמן מהתיבה, ומייל עם מה שנמצא על דויטש."""
+    time.sleep(120)
+    while True:
+        try:
+            import mail_docs as _md
+            con = db()
+            try:
+                if _md.configured():
+                    n_mail, n_docs = _md.scan(con)
+                    print('  mail_docs: נבדקו %d מיילים, נשמרו %d קבצים' % (n_mail, n_docs))
+                    if not con.execute("SELECT 1 FROM seed_flags WHERE name='mail_docs_deutsch_mail_v1'").fetchone():
+                        txt = mail_docs_report(con)
+                        to = (os.environ.get('GMAIL_USER') or '').strip()
+                        alert = (os.environ.get('ALERT_EMAIL') or '').strip()
+                        import mailer
+                        if to and mailer.configured():
+                            for addr in dict.fromkeys([to, alert]):
+                                if addr:
+                                    mailer.send(addr, '🔎 משה דויטש בדפי צ\'ייס ובדוחות פרידמן שבמייל', txt)
+                        con.execute("INSERT INTO seed_flags(name) VALUES('mail_docs_deutsch_mail_v1')"); con.commit()
+            finally:
+                con.close()
+        except Exception as e:
+            print('  mail_docs error:', str(e)[:160])
+        time.sleep(86400)
+
+
 def _weekly_report_loop():
     """כל יום ראשון אחרי 09:00 (שעון ישראל) — פעם בשבוע."""
     while True:
@@ -21621,6 +21672,31 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] in ('/api/maildocs', '/api/maildocs/find', '/api/maildocs/scan') or re.match(r'/api/maildocs/\d+\.txt$', self.path.split('?')[0]):
+            # 📎 דפי בנק ודוחות שנשמרו מהמייל: רשימה · חיפוש (?q=ביטוי) · טקסט מלא · סריקה עכשיו
+            if auth_on() and self.role != 'admin':
+                return self._send(403, {'ok': False})
+            import mail_docs as _md
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            p = self.path.split('?')[0]
+            con = db()
+            try:
+                _md.ensure(con)
+                if p == '/api/maildocs/scan':
+                    n_mail, n_docs = _md.scan(con)
+                    return self._send(200, {'ok': True, 'mails': n_mail, 'docs': n_docs})
+                if p == '/api/maildocs/find':
+                    q = (qs.get('q') or [DEUTSCH_DOC_RX])[0]
+                    return self._send(200, mail_docs_report(con, q, q).encode('utf-8'), 'text/plain; charset=utf-8')
+                if p == '/api/maildocs':
+                    return self._send(200, {'ok': True, 'docs': _md.summary(con)})
+                did_ = int(re.search(r'(\d+)', p).group(1))
+                r = con.execute("SELECT fname,text FROM mail_docs WHERE id=?", (did_,)).fetchone()
+                if not r:
+                    return self._send(404, {'ok': False})
+                return self._send(200, (r['text'] or '').encode('utf-8'), 'text/plain; charset=utf-8')
+            finally:
+                con.close()
         if self.path.split('?')[0] == '/api/push/vapid':
             # 📱 המפתח הציבורי לרישום הטלפון, ומצב הרישומים
             con = db()
@@ -31999,6 +32075,7 @@ def serve():
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()
+    threading.Thread(target=_mail_docs_once, daemon=True).start()
     print(f'CRM כולל חצות רץ על פורט {PORT}')
     ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
 
