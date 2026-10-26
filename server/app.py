@@ -31866,6 +31866,36 @@ def ivr_answer(P):
             return 'credit_card=nedarim_plus,%g,,1,1,,,%s' % (a, pay_mo)
 
         if 'CreditCard_CODE' in P:
+            # מאיר (26.10.2026): "כשמישהו מקיש 1 לתשלום באשראי והוא הקיש מספר אחר באשראי במקום הכרטיס הישן
+            # שיש לו הוראת קבע אצלנו — שתמיד ישאל אותו אם לחייב את הכרטיס החדש שהוא הזין בהוראת הקבע".
+            # הכרטיס שהוקש בטלפון עובר ישירות לנדרים פלוס ולא אצלנו, ולכן ההעברה להוראת הקבע נעשית
+            # בקישור המאובטח שלהם (SMS מיידי) + משימה למשרד לוודא. סבב שני (Move) — החיוב לא נרשם פעמיים.
+            if 'Move' in P:
+                if P['Move'] != '1' or not ks:
+                    return 'id_list_message=t-' + _ivr_t('הוראת הקבע נשארת בכרטיס הקיים, תודה רבה ותזכו למצוות') + END
+                k = next((x for x in ks if (x.get('error') or '').strip()), ks[0])
+                l4m = re.sub(r'\D', '', k.get('last4') or '') or '0'
+                okl = False
+                if _ym.is_mobile(phone):
+                    try:
+                        okl, _l, _to = nd_send_link(con, k['id'], phone)
+                    except Exception as e:
+                        print('  ivr move link:', e)
+                who = (k.get('name') or '').strip() or phone
+                note = ('💳 %s ביקש בטלפון להעביר את הוראת הקבע (כרטיס ****%s, ₪%s) לכרטיס החדש שבו שילם עכשיו — %s' %
+                        (who, l4m, k.get('amount') or '', 'נשלח לו קישור מאובטח ב-SMS, לבדוק שהכרטיס עודכן בנדרים פלוס' if okl
+                         else 'לא נשלח קישור (מספר קווי / שגיאה) — ליצור איתו קשר'))
+                if not con.execute("SELECT 1 FROM tasks WHERE donor_id IS NULL AND note=? AND COALESCE(done,0)=0", (note,)).fetchone():
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)", (today_iso(), 'other', note))
+                if k.get('member_id') or mid:
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                (k.get('member_id') or mid, today_iso(), 'תשלום',
+                                 '💳 ביקש בטלפון להעביר את הוראת הקבע (****%s) לכרטיס החדש' % l4m + (' · נשלח קישור מאובטח ב-SMS' if okl else ' · לא נשלח קישור'),
+                                 '', 'in', '', now_iso()))
+                con.commit()
+                if okl:
+                    return 'id_list_message=t-' + _ivr_t('רשמנו את בקשתכם, שלחנו לכם הודעה עם קישור מאובטח, הקישו בו את הכרטיס החדש והוראת הקבע תעבור אליו, תודה רבה ותזכו למצוות') + END
+                return 'id_list_message=t-' + _ivr_t('רשמנו את בקשתכם, המשרד ייצור איתכם קשר לעדכון הוראת הקבע, תודה רבה ותזכו למצוות') + END
             con.execute("INSERT INTO nd_charge(at,call_id,phone,keva_id,member_id,amount,ok,message,transaction_id,confirmation,last4,job,via) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'כרטיס')",
                         (now_iso(), call_id, phone, '', mid, _ivr_amt(P.get('Amt')) or job_amt, 0,
@@ -31874,6 +31904,11 @@ def ivr_answer(P):
             nd_history_soon()      # נדרים פלוס יאשרו את התשלום, וההודעה תסומן "שילם"
             if P['CreditCard_CODE'] == 'GoBack':
                 return 'id_list_message=t-' + _ivr_t('התשלום בוטל') + END
+            if ks:
+                # יש לו הוראת קבע ושילם עכשיו בכרטיס אחר — תמיד שואלים אם להעביר אליו את ההוראה
+                return ('read=t-' + _ivr_t('התשלום התקבל, תודה רבה') + '.t-' +
+                        _ivr_t('להעברת הוראת הקבע שלכם לכרטיס החדש שהקשתם הקישו 1, להשארת הכרטיס הקיים הקישו 2') +
+                        '=Move,no,1,1,10,NO,yes,yes,,12,2,,,,no')
             return 'id_list_message=t-' + _ivr_t('תודה רבה ותזכו למצוות') + END
         if 'Other' in P:
             return fallback(_ivr_amt(P.get('Amt')) or job_amt) if P['Other'] == '1' else ('id_list_message=t-' + _ivr_t('תודה רבה') + END)
