@@ -128,7 +128,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v483";
+const BUILD = "v484";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -136,7 +136,7 @@ const KIND = q.get('kind') || 'parnes';
 // ----- כל השם באותו גודל; רק בן/בת/ז"ל/ע"ה מוקטנים (פשוט ואמין, בלי ניחוש שם מול בקשה) -----
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 // מאיר: "שיבדל"א" — כל ראשי תיבות עם גרשיים (ז"ל, שיבדל"א, זי"ע, נ"י) הם תואר, לא שם
-const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|ז["'״׳]ל|[ושה]?יב[א-ת]{1,5}["'״׳][אט]|[א-ת]{1,6}["״][א-ת]{1,3}|ה["'״׳]ה|ר|רב|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
+const SMALLWORD=/^(בן|בת|בר|ב["'״׳]ר|ובן|ובת|זוגתו|וזוגתו|זוגתה|בעלה|ובעלה|ז["'״׳]ל|[ושה]?יב[א-ת]{1,5}["'״׳][אט]|[א-ת]{1,6}["״][א-ת]{1,3}|ה["'״׳]ה|ר|רב|ע["'״׳]ה|ע["'״׳]י|ע["'״׳]ש|זצ["'״׳]ל|זצוק["'״׳]?ל|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|שיחיו|תחי["'״׳]?|ותחי["'״׳]?|הר["'״׳]ר|הרר|הרב|רבי|ר["'״׳]|מוה["'״׳]ר|הרה["'״׳][גחצקי]|הגה["'״׳]צ|מרן|מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|ו?ה?חתן|ו?ה?כלה|האברך|הנישאים|הנישאין|היום|עב["'״׳]?ג|אביו|אביה|אמו|אמה|בנו|בנה|בתו|בתה|אחיו|אחיה|אחותו|אחותה|זקנו|זקנתו|חמיו|חמותו|בעלה|אשתו|נכדו|נכדתו|חתנו|כלתו|דודו|דודתו)$/;
 // תואר שבסוף שם (פטירה / כבוד) — אחריו השם נגמר. מילת חיבור שפותחת שם נוסף בזנב ("ולע"נ", "וזוג'")
 const HONW=/^(ז["'״׳]ל|ע["'״׳]ה|זצ["'״׳]ל|זצוק["'״׳]?ל|זיע["'״׳]א|הי["'״׳]ד|נ["'״׳]י|שליט["'״׳]א|שיחי["'״׳]?|תחי["'״׳]?|ע["'״׳]ש|יבדל["'״׳]א)$/;
 const JOINW=/^(ולע["'״׳]?נ|ולזכות|ולזכר|וזוג["'״׳]?|וזוגתו|ובעלה|ואשתו|ורעייתו|ורעיתו)$/;
@@ -273,7 +273,7 @@ function bodyRows(ws, lead){
     const ld=(lead||[]).concat(ws.slice(0,o)); ws=ws.slice(o);
     const rows0=[]; if(ld.length) rows0.push({ws:ld,role:'lead'});
     let k=ws.findIndex(w=>w.replace(/[.,:;!?]+$/,'')==='אמן'); if(k<0)k=ws.length;
-    rows0.push({ws:ws.slice(0,k),role:'names'}); if(k<ws.length) rows0.push({ws:ws.slice(k),role:'req'});
+    rows0.push({ws:ws.slice(0,k),role:'klal'}); if(k<ws.length) rows0.push({ws:ws.slice(k),role:'req'});
     return rows0;
   }
   const [a,b]=nameSpan(ws), rows=[];
@@ -485,6 +485,8 @@ function rowsHTML(rows){
     if(r.role==='lead' && evtLen(r.ws)===r.ws.length) return `<span class="nrow nevt">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     if(r.role==='lead') return `<span class="nrow nlead">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     if(r.role==='ttl')  return `<span class="nrow nttl">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
+    // הקדשה לכלל ישראל — כל המילים בגדול, בלי זיהוי בקשה בתוך השורה (מאיר: "כל מה שסימנתי שיהיה אותיות גדולות")
+    if(r.role==='klal') return `<span class="nline nall" data-role="klal">${r.ws.map(w=>esc(w)).join(' ')}</span>`;
     if(r.role==='req'){
       // ברכה שפותחת באירוע: "ליום הולדתו" בשורה משלו, והברכה מתחתיו
       const n=evtLen(r.ws);
@@ -888,7 +890,8 @@ function certRows(){
       const t=(n.innerText||n.textContent||'').trim(); if(!t)return;
       const c=n.className||'';
       let r='names';
-      if(n.classList.contains('ndon')) r='donor';
+      if(n.dataset&&n.dataset.role==='klal') r='klal';
+      else if(n.classList.contains('ndon')) r='donor';
       else if(/\bnlead\b/.test(c)) r='lead';
       else if(/\bnttl\b/.test(c)) r='ttl';
       else if(/\bnevt\b/.test(c)) r='evt';

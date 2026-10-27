@@ -11723,7 +11723,7 @@ _CERT_CFG = {
     'breakfast': {'bg': 'letterhead-coffee.jpg', 'box': (0.09, 0.24, 0.91, 0.79)},
 }
 _CERT_SMALL = re.compile(
-    r'^(בן|בת|בר|ב["\'״׳]ר|ובן|ובת|ז["\'״׳]ל|[ושה]?יב[א-ת]{1,5}["\'״׳][אט]|[א-ת]{1,6}["״][א-ת]{1,3}|ה["\'״׳]ה|ר|רב|ע["\'״׳]ה|ע["\'״׳]י|ע["\'״׳]ש|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|'
+    r'^(בן|בת|בר|ב["\'״׳]ר|ובן|ובת|זוגתו|וזוגתו|זוגתה|בעלה|ובעלה|ז["\'״׳]ל|[ושה]?יב[א-ת]{1,5}["\'״׳][אט]|[א-ת]{1,6}["״][א-ת]{1,3}|ה["\'״׳]ה|ר|רב|ע["\'״׳]ה|ע["\'״׳]י|ע["\'״׳]ש|זצ["\'״׳]ל|זצוק["\'״׳]?ל|הי["\'״׳]ד|'
     r'נ["\'״׳]י|שליט["\'״׳]א|שיחי["\'״׳]?|שיחיו|תחי["\'״׳]?|ותחי["\'״׳]?|'
     r'הר["\'״׳]ר|הרר|הרב|רבי|ר["\'״׳]|מוה["\'״׳]ר|הרה["\'״׳][גחצקי]|הגה["\'״׳]צ|מרן|'
     r'מרת|מר|האשה|הבחור|הבתולה|הילד|הילדה|הנער|הנערה|'
@@ -12215,7 +12215,7 @@ def _cert_body(lead, ws):
         ws = ws[o:]
         out = [(' '.join(lead), 'lead')] if lead else []
         k = next((i for i, w in enumerate(ws) if re.sub(r'[.,:;!?]+$', '', w) == 'אמן'), len(ws))
-        out.append((' '.join(ws[:k]), 'names'))
+        out.append((' '.join(ws[:k]), 'klal'))
         if k < len(ws):
             out.append((' '.join(ws[k:]), 'req'))
         return out
@@ -12853,6 +12853,8 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
         ws = raw.split()
         if role == 'ttl':                  # "רבי" / "מרת" — כגודל זצוק"ל
             return [(w, px * _SML_R, True) for w in ws]
+        if role == 'klal':                 # הקדשה לכלל ישראל — כל המילים בגדול (מאיר: "כל מה שסימנתי שיהיה אותיות גדולות")
+            return [(w, px, heavy) for w in ws]
         # הגודל קבוע (40), אבל כשהשמות מתכווצים בגלל ריבוי טקסט הוא מתכווץ
         # איתם — אחרת הבקשה הייתה יוצאת גדולה מהשם, וזה בדיוק ההפך מהכלל.
         if role == 'lead':                 # "לעילוי נשמת" / "לע\"נ אביו"
@@ -12954,7 +12956,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             # שורת שם שאינה נשברת נעצרת בשולי התיבה ומתכווצת חזרה, ולכן
             # ההגדלה לא הועילה. עכשיו היא נשברת בצורה מאוזנת וגדלה עד
             # שהיא ממלאת את הדף. כיווץ נשאר רק למילה בודדת רחבה מהתיבה.
-            if role in ('names', 'donor'):
+            if role in ('names', 'donor', 'klal'):
                 full = _join(ws)
                 wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
                 if wpx > bw:
@@ -12990,7 +12992,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
             # הארוכה יצאה קטנה מהקצרה. כאן כל שורות השמות מיושרות לגודל
             # הקטן שביניהן, וכך הן תמיד באותו גודל בדיוק.
             ni = [i for i, (ln, ro) in enumerate(zip(lines, rl))
-                  if ro == 'names' and ln]
+                  if ro in ('names', 'klal') and ln]
             if len(ni) > 1:
                 tgt = min(max(z for _, z, _ in lines[i]) for i in ni)
                 for i in ni:
@@ -12999,7 +13001,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                         f = tgt / top
                         lines[i] = [(t, z * f, h) for t, z, h in lines[i]]
             nm = [max(z for _, z, _ in ln) for ln, ro in zip(lines, rl)
-                  if ro in ('names', 'donor') and ln]
+                  if ro in ('names', 'donor', 'klal') and ln]
             if nm:
                 cap = min(nm) * (40.0 / 70.0)
                 capq = min(nm) * req_r            # הבקשה — קטנה מהפתיח
