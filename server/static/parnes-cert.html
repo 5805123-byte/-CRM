@@ -128,7 +128,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v481";
+const BUILD = "v482";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -328,7 +328,8 @@ function bodyRows(ws, lead){
           // שם שמתחיל ב-ל ("ליבא", "לאה", "ליפא") מיד אחרי שם ההורה, והמילה שאחריו היא
           // בקשה ברורה ("שהחופה", "לרפואה") — זה שם שני של ההורה, לא בקשה
           const w=rest[k], nx=rest[k+1];
-          if(k===i && /^ו?ל\S{2,}$/.test(w) && !REQSTART.test(w) && (!nx || REQSTART.test(nx) || (REQ2.test(nx)&&!/^ו?ל/.test(nx)))) continue;
+          // רק שם מוכר ("לאה", "ליבא") — "לשמחה" אחרי שם ההורה היא בקשה (אותו כלל בשרת)
+          if(k===i && /^ו?ל\S{2,}$/.test(w) && !REQSTART.test(w) && NAMEW.has(w.replace(/^ו/,'')) && (!nx || REQSTART.test(nx) || (REQ2.test(nx)&&!/^ו?ל/.test(nx)))) continue;
           r=k; break; }
         // "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
         const fam = i+1<rest.length && FAM1.test(rest[i]) && FAM2.test(rest[i+1]);
@@ -683,8 +684,14 @@ function parnesSizes(sf){
 }
 // שם שאינו נכנס לשורה אחת נשבר לפני "בן"/"בת" — כך קוראים
 // "חיים רפאל שאול" ומתחת "בן אסתר ז\"ל", ולא שבירה אקראית באמצע השם.
+// מאיר (חשוון תשפ"ז): "כשיש כמה שמות לתפילה — השם ושם האמא באותה שורה, לא כל שם בנפרד ובת באמצע.
+// רק כשיש שם אחד או שני שמות מקסימום לעשות בנפרד" — שלושה שמות ומעלה: כל שם בשורה אחת (מתכווץ אם צריך)
+function manyNames(){
+  return [...document.querySelectorAll('#pairs .nline')].filter(e=>!e.classList.contains('nben')&&!e.dataset.split).length>2;
+}
 function splitAtBen(){
   let n=0;
+  if(manyNames()) return 0;
   const isRel=t=>/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/.test((t||'').trim());
   document.querySelectorAll('#pairs .nline').forEach(el=>{
     if(el.dataset.split)return;
@@ -713,6 +720,9 @@ function splitAtBen(){
 function fitParnes(){
   const c=$('content'), body=document.getElementById('cbody');
   fitNusach();
+  // שלושה שמות ומעלה: שורת שם לא נשברת (שם ושם האם יחד), אלא מתכווצת — וכל השמות יחד (parnesSizes)
+  const many=manyNames();
+  document.querySelectorAll('#pairs .nline').forEach(e=>{ if(many&&!e.dataset.split) e.classList.add('nkeep'); });
   parnesSizes(1);
   splitAtBen();
   parnesSizes(1);

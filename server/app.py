@@ -12076,6 +12076,12 @@ def _req_at(ws, start=0):
         # מילת בקשה מיד אחרי שם ההורה (או אחרי המילה השנייה של שם ההורה)
         for k in range(i, min(len(ws), i + 2)):
             if _CERT_REQ2.match(ws[k]) and not _CERT_BEN.match(ws[k]):
+                # שם שמתחיל ב-ל ("לאה", "ליבא", "ליפא") מיד אחרי שם ההורה, והמילה שאחריו היא בקשה ברורה
+                # (או סוף השורה) — שם שני של ההורה, לא בקשה. אותו כלל ב-parnes-cert.html
+                nx = ws[k + 1] if k + 1 < len(ws) else ''
+                if k == i and re.match(r'^ו?ל\w{2,}$', ws[k]) and not _CERT_REQ.match(ws[k]) and ws[k].lstrip('ו') in _CERT_NAMEW and \
+                        (not nx or _CERT_REQ.match(nx) or (_CERT_REQ2.match(nx) and not re.match(r'^ו?ל', nx))):
+                    continue
                 return k
         # "וכל משפחתו" אינו זנב — הוא שורת שם שנייה, לפי כלל של מאיר
         fam = (i + 1 < len(ws) and _CERT_FAM1.match(ws[i])
@@ -12824,6 +12830,9 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
 
         rl = []                       # התפקיד של כל שורה שנוצרה
         prev_raw = prev_role = ''
+        # מאיר (חשוון תשפ"ז): "כשיש כמה שמות לתפילה — השם ושם האמא באותה שורה, לא כל שם בנפרד ובת באמצע.
+        # רק כשיש שם אחד או שני שמות מקסימום לעשות בנפרד" — שלושה שמות ומעלה: השורה מתכווצת ולא נשברת
+        many = sum(1 for _r, _ro in src if _ro == 'names') > 2
         for raw, role in src:
             # מאיר: "המילה החתן מעל השם שלו, והשם שלו ושל אמא שלו באותה שורה" —
             # אחרי החתן / הכלה שורת השם לא נשברת לפני "בן"/"בת", אלא מוקטנת
@@ -12841,7 +12850,7 @@ def cert_png(kind='parnes', date='', names='', dedic='', width=1000, fmt='png', 
                 full = _join(ws)
                 wpx = sum(dr.textlength(t, font=font(z, h)) for t, z, h in full)
                 if wpx > bw:
-                    if len(ws) <= 1 or keep:
+                    if len(ws) <= 1 or keep or many:
                         f = bw / wpx
                         lines.append(_fitline([(t, z * f, h) for t, z, h in full], dr))
                         rl.append(role); continue
