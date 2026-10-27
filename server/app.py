@@ -22712,8 +22712,17 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {'ok': False})
             try:
                 t0 = time.time()
-                _mk.client(cid, max_age=60)
-                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000)})
+                # מאיר (27.10.2026): "מרדכי קניג יש לו יתרה של 70 שקל שעשיתי לו במקווה באתר שלהם, למה זה לא מופיע
+                # ביתרה כאן?" — הקוביה הראתה את "היתרה האחרונה" מרשימת הלקוחות (מתרעננת כל 2 דקות ואין בה
+                # את היתרה השוטפת). כאן, בפתיחת הכרטיס, היתרה החיה מהלקוח המלא חוזרת למסך (באגורות).
+                cl = _mk.client(cid, max_age=15)
+                bal = None
+                for k in ('balance', 'lastBalance'):
+                    v = cl.get(k) if isinstance(cl, dict) else None
+                    if v is not None:
+                        try: bal = int(round(float(v))); break
+                        except (TypeError, ValueError): pass
+                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000), 'balance': bal})
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
         if self.path.split('?')[0] == '/api/mikveh/get':

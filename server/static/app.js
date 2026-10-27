@@ -2200,7 +2200,14 @@ function mkOpen(c){
   if(!c)return;
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const G={}; MK.groups.forEach(x=>G[x.id]=x);
-  api('GET','/api/mikveh/prefetch?id='+encodeURIComponent(c.id)).catch(()=>{});
+  // היתרה החיה מהמקווה (לא "האחרונה" מהרשימה) — מתעדכנת בקוביה ברגע שמגיעה
+  api('GET','/api/mikveh/prefetch?id='+encodeURIComponent(c.id)).then(r=>{
+    if(!r||!r.ok||r.balance==null)return; c.balance=r.balance;
+    const el=document.getElementById('mkbal'); if(!el)return;
+    el.classList.toggle('bad',r.balance<0);
+    el.querySelector('span').textContent=(r.balance>0?'💳 יתרה / זיכוי':'💰 יתרה')+' ✎';
+    el.querySelector('b').textContent=mkMoney(r.balance);
+  }).catch(()=>{});
   let pick=null, state='', info='';
   const tile=(l,v,cls)=>v?`<div class="mktile ${cls||''}"><span>${l}</span><b>${v}</b></div>`:'';
   const bal=c.balance!=null?mkMoney(c.balance):(c.last_balance!=null?mkMoney(c.last_balance):'');
