@@ -401,6 +401,7 @@ def _heb_year_label(iso):
 
 
 _SPLIT_TAG = 'חצי מהעברה משותפת'
+_SPLIT_TAGS = ('חצי מהעברה משותפת', 'חלק מחיוב משותף')
 
 
 def _memo_cat(memo, iso):
@@ -409,9 +410,10 @@ def _memo_cat(memo, iso):
     (כמו קודם). מחזיר (ייעוד, הערה) — הסימון "חצי מהעברה משותפת" של apply_pay_split עובר להערה."""
     memo = (memo or '').strip()
     note = ''
-    if _SPLIT_TAG in memo:
-        memo = ' · '.join(p for p in memo.split(' · ') if p.strip() != _SPLIT_TAG).strip(' ·')
-        note = _SPLIT_TAG
+    for _tg in _SPLIT_TAGS:
+        if _tg in memo:
+            memo = ' · '.join(p for p in memo.split(' · ') if p.strip() != _tg).strip(' ·')
+            note = _tg
     up = re.sub(r'[^A-Z ]', ' ', memo.upper())
     yr = _heb_year_label(iso)
     if re.search(r'\bYISS?\s*ZEVU?\b|\bYISSACHAR\b', up):
@@ -809,6 +811,11 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN night_date TEXT")
     except Exception: pass
+    # 🤝 חלוקה בסכום קבוע (מאיר, 27.10.2026: "אירני משלם מהכרטיס שלו בשביל בליסקו… 720 במקום 180"):
+    # fixed = כמה מכל חיוב הולך לשותף (0 = לפי אחוז); on_amount = רק כשהחיוב הוא בדיוק הסכום הזה (0 = כל חיוב)
+    for _c in ("fixed REAL DEFAULT 0", "on_amount REAL DEFAULT 0"):
+        try: con.execute("ALTER TABLE pay_split ADD COLUMN " + _c)
+        except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN hyear TEXT")
     except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN method TEXT")   # דרך מה תיגבה ההתחייבות
@@ -1708,6 +1715,46 @@ def ensure_schema():
             print('  מטבע שהושלם לימי פרנס: %d' % n)
     except Exception as e:
         print('  parnes currency error:', e)
+    # מאיר (27.10.2026): "בליסקו הפסיק את החיוב החודשי שלו באשראי… אירני משלם מהכרטיס שלו בשביל בליסקו.
+    # ה-1,000$ שלא עבר לו (ספטמבר + אוקטובר) אני גובה עכשיו מהכרטיס של אירני, ומנובמבר אירני יחויב ב-720 במקום ב-180."
+    # (1) כלל קבוע: מכל חיוב של 720$ של אירני — 540$ (720 − 180) לבליסקו, 180$ נשארים אצל אירני.
+    # (2) חד־פעמי: החיוב של 1,000$ בכרטיס של אירני (מ-27.10.2026 ואילך) — כולו לבליסקו, עבור ספטמבר ואוקטובר.
+    try:
+        _ir = con.execute("SELECT id,last,first FROM donors WHERE last LIKE 'אירנ%' OR lower(COALESCE(english,'')) LIKE '%irani%'").fetchall()
+        _bl = con.execute("SELECT id,last,first FROM donors WHERE last LIKE 'בליסק%' OR lower(COALESCE(english,'')) LIKE '%blisko%'").fetchall()
+        if len(_ir) == 1 and len(_bl) == 1:
+            ir, bl = _ir[0]['id'], _bl[0]['id']
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='irani_blisko_split_v1'").fetchone():
+                con.execute("INSERT OR REPLACE INTO pay_split(payer_id,donor_id,pct,note,created,fixed,on_amount) VALUES(?,?,50,?,?,540,720)",
+                            (ir, bl, 'מכל חיוב של 720$ בכרטיס של אירני — 540$ לבליסקו (יששכר־זבולון), 180$ של אירני עצמו (מאיר, 27.10.2026)', today_iso()))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (bl, today_iso(), 'מערכת', 'החיוב החודשי נגבה מהכרטיס של אירני: 540$ מתוך 720$ בכל חודש מנובמבר 2026 (מאיר)', '', now_iso()))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (ir, today_iso(), 'מערכת', 'משלם גם עבור בליסקו: מכל 720$ בכרטיס — 540$ נרשמים אצל בליסקו, 180$ אצלו (מאיר, 27.10.2026)', '', now_iso()))
+                # כלל קבוע לבליסקו: 540$ = יששכר־זבולון (כך החלק שלו נרשם עם הייעוד הנכון, בלי "לבדוק עבור מה")
+                if not con.execute("SELECT 1 FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=540", (bl,)).fetchone():
+                    con.execute("INSERT INTO donor_rules(donor_id,amount,category,note,created) VALUES(?,540,'יששכר־זבולון','החלק שלו מתוך 720$ בכרטיס של אירני (מאיר, 27.10.2026)',?)", (bl, today_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('irani_blisko_split_v1')"); con.commit()
+                print('  אירני → בליסקו: כלל 540 מתוך 720 נרשם')
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='irani_blisko_1000_v1'").fetchone():
+                # רץ בכל עלייה עד שהחיוב של 1,000$ מופיע; אז עובר לבליסקו (גם אם כבר נרשם בכרטיס של אירני)
+                _rows = con.execute("""SELECT tid FROM recon WHERE donor_id=? AND ROUND(CAST(REPLACE(REPLACE(amount,',',''),'$','') AS REAL),2)=1000.0
+                                       AND COALESCE(skipped,0)=0 AND COALESCE(status,'settled')='settled' AND (source LIKE 'Banquest%' OR source LIKE 'בנק ווסט%')""", (ir,)).fetchall()
+                _rows = [r for r in _rows if (_recon_iso(con.execute("SELECT date FROM recon WHERE tid=?", (r['tid'],)).fetchone()['date']) or '') >= '2026-10-27']
+                if _rows:
+                    _tid = _rows[0]['tid']
+                    _nt = 'עבור ספטמבר + אוקטובר 2026 (2 × 500$) — נגבה מהכרטיס של אירני'
+                    con.execute("UPDATE recon SET donor_id=?, category='יששכר־זבולון', processed=COALESCE(processed,0) WHERE tid=?", (bl, _tid))
+                    con.execute("UPDATE donations SET donor_id=?, category='יששכר־זבולון', note=COALESCE(note,'') || ' · ' || ? WHERE tid=?", (bl, _nt, _tid))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (bl, today_iso(), 'מערכת', '1,000$ ' + _nt, '', now_iso()))
+                    con.execute("INSERT INTO seed_flags(name) VALUES('irani_blisko_1000_v1')"); con.commit()
+                    print('  אירני → בליסקו: 1,000$ (ספט׳+אוק׳) הועבר לבליסקו, חיוב %s' % _tid)
+        else:
+            print('  אירני/בליסקו: לא נמצא כרטיס יחיד (אירני %d, בליסקו %d) — לא נרשם' % (len(_ir), len(_bl)))
+    except Exception as e:
+        print('  irani/blisko error:', e)
+
     # יצחק אדלין ואלירן דהאן שולחים לבנק העברה אחת ומתחלקים בה חצי־חצי.
     # הכסף מגיע על שם אדלין, ולכן כל סכום שלו נחתך לשניים בין שני הכרטיסים.
     try:
@@ -9566,16 +9613,15 @@ def get_all():
     try:
         nm = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
               for r in c.execute("SELECT id,last,first FROM donors")}
-        for r in c.execute("SELECT id,payer_id,donor_id,pct,note FROM pay_split"):
+        for r in c.execute("SELECT id,payer_id,donor_id,pct,note,COALESCE(fixed,0) fixed,COALESCE(on_amount,0) on_amount FROM pay_split"):
             pct = float(r['pct'] or 50)
+            ex = {'pct': pct, 'note': r['note'] or '', 'fixed': float(r['fixed'] or 0), 'on_amount': float(r['on_amount'] or 0)}
             if r['payer_id'] in byid:
                 byid[r['payer_id']]['paysplit'].append(
-                    {'id': r['id'], 'role': 'payer', 'with_id': r['donor_id'],
-                     'with': nm.get(r['donor_id'], ''), 'pct': pct, 'note': r['note'] or ''})
+                    dict({'id': r['id'], 'role': 'payer', 'with_id': r['donor_id'], 'with': nm.get(r['donor_id'], '')}, **ex))
             if r['donor_id'] in byid:
                 byid[r['donor_id']]['paysplit'].append(
-                    {'id': r['id'], 'role': 'partner', 'with_id': r['payer_id'],
-                     'with': nm.get(r['payer_id'], ''), 'pct': pct, 'note': r['note'] or ''})
+                    dict({'id': r['id'], 'role': 'partner', 'with_id': r['payer_id'], 'with': nm.get(r['payer_id'], '')}, **ex))
     except Exception:
         pass
     for d in donors: d['unclassified'] = []
@@ -11490,6 +11536,9 @@ def banquest_post(con, source, only_tids=None):
     חודש וסכום (לפי כמות), אחר כך אימות מול רישום ידני באותו סכום, ורק מה שחדש
     נפתח כשורה. מחזירה (נרשמו, אומתו, היו כבר, נכשלו, לפי-סיבה)."""
     meth = 'Banquest' if 'Banquest' in (source or '') else 'Authorize'   # אמצעי התשלום לפי המקור (כמו ב-recon_apply)
+    # 🤝 חיוב של משלם שמתחלק עם שותף (אדלין/דהאן, אירני/בליסקו) נחתך לפני הרישום — בכל מסלול ייבוא, לא רק בעלייה
+    try: apply_pay_split(con)
+    except Exception as e: print('  pay split:', e)
     dinfo = {r['id']: ((r['tier'] or ''), (r['category'] or ''))
              for r in con.execute("SELECT id,tier,category FROM donors")}
     allr = []
@@ -13473,17 +13522,18 @@ def apply_pay_split(con):
     נחתכת לשתיים: חלקו נשאר אצלו, וחלקו עובר לכרטיס של השותף. שורה שכבר
     אושרה לא נוגעים בה, ושורה שכבר נחתכה (הסיומת #a/#b) לא נחתכת שוב."""
     try:
-        splits = list(con.execute("SELECT payer_id,donor_id,pct FROM pay_split"))
+        splits = list(con.execute("SELECT payer_id,donor_id,pct,COALESCE(fixed,0) fixed,COALESCE(on_amount,0) on_amount FROM pay_split"))
     except Exception:
         return 0
     n = 0
     for s in splits:
         pct = float(s['pct'] or 50)
-        if not (0 < pct < 100):
+        fixed, on_amt = float(s['fixed'] or 0), float(s['on_amount'] or 0)
+        if fixed <= 0 and not (0 < pct < 100):
             continue
         rows = list(con.execute(
-            "SELECT * FROM recon WHERE donor_id=? AND COALESCE(processed,0)=0 "
-            "AND tid NOT LIKE '%#a' AND tid NOT LIKE '%#b'", (s['payer_id'],)))
+            "SELECT * FROM recon WHERE donor_id=? AND COALESCE(processed,0)=0 AND COALESCE(skipped,0)=0 "
+            "AND COALESCE(status,'settled')='settled' AND tid NOT LIKE '%#a' AND tid NOT LIKE '%#b'", (s['payer_id'],)))
         for r in rows:
             try:
                 amt = float(str(r['amount'] or 0).replace(',', '').replace('$', ''))
@@ -13491,18 +13541,28 @@ def apply_pay_split(con):
                 continue
             if amt <= 0:
                 continue
-            other = round(amt * pct / 100.0, 2)
+            # מאיר (27.10.2026): "אירני… מנובמבר יחויב ב-720 במקום ב-180" — הכלל חל רק על חיוב של הסכום שנקבע,
+            # והשותף מקבל סכום קבוע; שאר הסכום נשאר אצל המשלם
+            if on_amt > 0 and abs(amt - on_amt) > 0.01:
+                continue
+            if fixed > 0:
+                other = round(min(fixed, amt), 2); tag = 'חלק מחיוב משותף'
+            else:
+                other = round(amt * pct / 100.0, 2); tag = 'חצי מהעברה משותפת'
             mine = round(amt - other, 2)
             cols = [k for k in r.keys() if k != 'tid']
             for suf, did, val in (('#a', r['donor_id'], mine), ('#b', s['donor_id'], other)):
+                if val <= 0:
+                    continue
                 vals = []
                 for k in cols:
                     if k == 'donor_id':
                         vals.append(did)
                     elif k == 'amount':
                         vals.append('%.2f' % val)
-                    elif k == 'category':
-                        vals.append(((r['category'] or '') + ' · חצי מהעברה משותפת').strip(' ·'))
+                    elif k == 'note':
+                        # הסימון בהערה, לא בייעוד — שהייעוד ייקבע לפי הכלל של התורם (יששכר־זבולון וכו')
+                        vals.append(((r['note'] or '') + ' · ' + tag).strip(' ·'))
                     else:
                         vals.append(r[k])
                 con.execute("INSERT OR IGNORE INTO recon(tid,%s) VALUES(?%s)"
@@ -28046,14 +28106,19 @@ class H(BaseHTTPRequestHandler):
             pid, did = int(b.get('payer_id') or 0), int(b.get('donor_id') or 0)
             try: pct = float(b.get('pct') or 50)
             except Exception: pct = 50.0
-            if not pid or not did or pid == did or not (0 < pct < 100):
+            # סכום קבוע לשותף (במקום אחוז), ורק כשהחיוב הוא סכום מסוים — "מתוך 720$ של אירני, 540$ לבליסקו"
+            try: fixed = float(b.get('fixed') or 0)
+            except Exception: fixed = 0.0
+            try: on_amt = float(b.get('on_amount') or 0)
+            except Exception: on_amt = 0.0
+            if not pid or not did or pid == did or (fixed <= 0 and not (0 < pct < 100)) or fixed < 0 or on_amt < 0:
                 con.close(); return self._send(400, {'ok': False, 'error': 'bad_args'})
             for x in (pid, did):
                 if not cur.execute("SELECT 1 FROM donors WHERE id=?", (x,)).fetchone():
                     con.close(); return self._send(400, {'ok': False, 'error': 'no_donor'})
-            cur.execute("INSERT OR REPLACE INTO pay_split(payer_id,donor_id,pct,note,created) "
-                        "VALUES(?,?,?,?,?)", (pid, did, pct, (b.get('note') or '').strip()[:120],
-                                              today_iso()))
+            cur.execute("INSERT OR REPLACE INTO pay_split(payer_id,donor_id,pct,note,created,fixed,on_amount) "
+                        "VALUES(?,?,?,?,?,?,?)", (pid, did, pct, (b.get('note') or '').strip()[:120],
+                                                  today_iso(), fixed, on_amt))
             n = apply_pay_split(con)
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'split': n})

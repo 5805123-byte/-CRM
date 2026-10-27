@@ -5803,10 +5803,14 @@ function splitHTML(d){
   const hasIz=(d.partners||[]).some(p=>p.active!=0)||d.tier==='יששכר_זבולון';
   if(!rows.length&&!hasIz)return '';       // בלי יששכר־זבולון — לא מציקים עם זה
   const body=rows.map(s=>{
-    const pct=Math.round(s.pct), mine=100-pct;
-    const t=s.role==='payer'
+    const pct=Math.round(s.pct), mine=100-pct, fx=+s.fixed||0, on=+s.on_amount||0;
+    const when=on?` (רק כשהחיוב הוא $${on.toLocaleString('en-US')})`:'';
+    const t=fx?(s.role==='payer'
+      ? `מכל חיוב על שמו${when} — $${fx.toLocaleString('en-US')} נרשמים אצל <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b>, והשאר אצלו.`
+      : `הכסף שלו מגיע דרך הכרטיס של <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — $${fx.toLocaleString('en-US')} מכל חיוב${when} נרשמים כאן.`)
+      : (s.role==='payer'
       ? `הכסף מגיע לבנק על שמו, ומתחלק עם <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${mine}% אצלו, ${pct}% אצל השותף.`
-      : `הכסף שלו מגיע דרך <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${pct}% מכל סכום שנכנס על שמו נרשם כאן.`;
+      : `הכסף שלו מגיע דרך <b class="splgo" data-id="${s.with_id}">${esc(s.with)}</b> — ${pct}% מכל סכום שנכנס על שמו נרשם כאן.`);
     return `<div class="splrow">🤝 ${t}${s.note?`<div class="splnote">${esc(s.note)}</div>`:''}
       <button class="del splx" data-id="${s.id}" title="בטל את החלוקה">🗑</button></div>`;}).join('');
   return `<div class="splbox">${body}
@@ -5818,6 +5822,11 @@ function splitHTML(d){
       <div class="dpres spl_res"></div>
       <label class="fld"><span>כמה אחוז שייך לשותף</span>
         <input class="spl_pct" value="50" inputmode="decimal"></label>
+      <label class="fld"><span>או סכום קבוע לשותף ($) — במקום אחוז</span>
+        <input class="spl_fixed" placeholder="למשל 540" inputmode="decimal"></label>
+      <label class="fld"><span>רק כשהחיוב הוא בדיוק ($) — ריק = כל חיוב</span>
+        <input class="spl_on" placeholder="למשל 720" inputmode="decimal"></label>
+      <div class="hintxt">דוגמה: אירני משלם 720$ בחודש, מתוכם 540$ עבור בליסקו: סכום קבוע 540, רק כשהחיוב הוא 720.</div>
       <button class="btn sm splcancel ghost">ביטול</button></div></div>`;
 }
 function wireSplit(d,body,redraw){
@@ -5837,7 +5846,8 @@ function wireSplit(d,body,redraw){
       ||'<div class="dpr" style="color:var(--muted)">אין תוצאות</div>';
     res.querySelectorAll('.dpr[data-id]').forEach(el=>el.onclick=async()=>{
       const pct=parseFloat(body.querySelector('.spl_pct').value)||50;
-      const r=await api('POST','/api/paysplit',{payer_id:d.id,donor_id:+el.dataset.id,pct});
+      const fixed=parseFloat((body.querySelector('.spl_fixed')||{}).value)||0, on_amount=parseFloat((body.querySelector('.spl_on')||{}).value)||0;
+      const r=await api('POST','/api/paysplit',{payer_id:d.id,donor_id:+el.dataset.id,pct,fixed,on_amount});
       if(!r||!r.ok){toast('לא נשמר');return;}
       toast('נרשם ✓'+(r.split?(' — '+r.split+' סכומים נחתכו'):'')); await load(); redraw();});};
   body.querySelectorAll('.splx').forEach(b=>b.onclick=async()=>{
