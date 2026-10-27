@@ -128,7 +128,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v482";
+const BUILD = "v483";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -176,7 +176,9 @@ function evtOnly(ws){ const n=evtLen(ws); return (n && (n>=ws.length || REQSTART
 function wishAt(ws,n){ if(n>=ws.length) return false; const w=ws[n];
   return w[0]==='ש' && w.length>2 && !NAMEW.has(w) && !ws.slice(n).some(x=>BENW.test(x)); }
 const BENW=/^(ו?ב[ןת]|בר|ב["'״׳]ר)$/;
-const LEAD2={'לרפואה':['שלמה','שלימה'],'לברכה':['והצלחה'],'להצלחה':['וברכה'],
+// מילות זוגיות / קרבה — אינן תחילת שם ("זוגתו חיה יהודית בת שרה": "זוגתו" נשאר בקטן). אותו כלל בשרת (_CERT_PAIRW)
+const PAIRW=new Set(['זוגתו','וזוגתו','זוגתה','בעלה','ובעלה','אשתו','ואשתו','ורעייתו','ורעיתו','רעייתו','נכדו','נכדתו','בנו','בתו','אביו','אמו']);
+const LEAD2={'לרפואה':['שלמה','שלימה'],'לברכה':['והצלחה'],'להצלחה':['וברכה'],'לבריאות':['טובה','איתנה'],
   'לזיווג':['הגון'],'לפרנסה':['טובה'],'לזרע':['של','קודש'],'של':['קיימא'],'לישועה':['שלמה'],
   'ליום':EVENTW,'לשמחת':EVENTW,'לרגל':EVENTW,'לכבוד':EVENTW,'יום':EVENTW,'שמחת':EVENTW,
   'הבר':['מצוה','מצווה'],'הבת':['מצוה','מצווה'],'בר':['מצוה','מצווה'],'בת':['מצוה','מצווה'],'לבר':['מצוה','מצווה'],'לבת':['מצוה','מצווה'],'חנוכת':['הבית'],'מצוה':['של'],'מצווה':['של'],
@@ -265,6 +267,15 @@ function famAt(ws){
   return -1;
 }
 function bodyRows(ws, lead){
+  // מאיר (גירשבוים): "לזכות עם ישראל יושבי ארץ ישראל לשלום ואחדות…" — כל השורה בגדול (הפתיח קטן), עד "אמן"
+  const o=(ws.length&&LEADWORD.test(ws[0]))?1:0;
+  if(ws.length>=o+2 && (ws[o]==='עם'||ws[o]==='כלל') && ws[o+1].startsWith('ישראל') && !ws.some(w=>BENW.test(w))){
+    const ld=(lead||[]).concat(ws.slice(0,o)); ws=ws.slice(o);
+    const rows0=[]; if(ld.length) rows0.push({ws:ld,role:'lead'});
+    let k=ws.findIndex(w=>w.replace(/[.,:;!?]+$/,'')==='אמן'); if(k<0)k=ws.length;
+    rows0.push({ws:ws.slice(0,k),role:'names'}); if(k<ws.length) rows0.push({ws:ws.slice(k),role:'req'});
+    return rows0;
+  }
   const [a,b]=nameSpan(ws), rows=[];
   const head=(lead||[]).concat(ws.slice(0,a));
   if(head.length) rows.push({ws:head,role:'lead'});
@@ -394,15 +405,20 @@ function bodyRows(ws, lead){
 // אותו כלל בדיוק ב-app.py (_name_starts)
 function nameStarts(c){
   const isRel=w=>/^(ו?ב[ןת]|בר|ב["'\u05f4\u05f3]ר)$/.test(w);
-  const notName=(w,prev)=>REQSTART.test(w)||TAILW.test(w)||isRel(w)||
-    (!!prev && (LEAD2[prev]||[]).indexOf(w)>=0 && (REQSTART.test(prev)||TAILW.test(prev)));
-  const starts=[]; let prevEnd=0;
-  c.forEach((w,r)=>{ if(!isRel(w)) return;
+  const bare=w=>(w||'').replace(/[.,:;!?]+$/,'');
+  const notName=(w,prev)=>{ w=bare(w); prev=bare(prev);
+    return REQSTART.test(w)||TAILW.test(w)||isRel(w)||PAIRW.has(w)||
+    (!!prev && (LEAD2[prev]||[]).indexOf(w)>=0 && (REQSTART.test(prev)||TAILW.test(prev))); };
+  const starts=[]; let prevEnd=-1;
+  c.forEach((w,r)=>{ if(!isRel(bare(w))) return;
     let s=r;
-    while(s-1>=prevEnd && r-s<3 && !notName(c[s-1], s-2>=0?c[s-2]:'')){
-      // מילה שמתחילה ב-ש ואינה שם מוכר ("שיזכה") — ברכה, לא תחילת שם; המילה הצמודה ל"בן" היא תמיד שם
-      if(s-1<r-1 && c[s-1][0]==='ש' && c[s-1].length>2 && !NAMEW.has(c[s-1])) break;
+    // שתי מילים חופשיות אחורה; המילה שאחרי "בן"/"בת" הקודם שמורה לשם ההורה
+    while(s-1>prevEnd && r-s<2 && !notName(c[s-1], s-2>=0?c[s-2]:'')){
+      if(s-1<r-1 && c[s-1][0]==='ש' && c[s-1].length>2 && !NAMEW.has(bare(c[s-1]))) break;
       s--; }
+    // מילה שלישית רק כשהיא שם מוכר ולפניה גבול ברור (בקשה / תחילת הקטע / שם ההורה הקודם)
+    if(r-s===2 && s-1>prevEnd && NAMEW.has(bare(c[s-1])) && !notName(c[s-1], s-2>=0?c[s-2]:'') &&
+       (s-2<0 || s-2<=prevEnd || notName(c[s-2], s-3>=0?c[s-3]:''))) s--;
     if(s<r){ starts.push(s); prevEnd=r+1; }
   });
   return starts;
@@ -412,13 +428,13 @@ function tailRows(ws){
   const isRel=w=>/^(ו?ב[ןת]|בר|ב["'\u05f4\u05f3]ר)$/.test(w);
   const chunks=[]; let cur=[];
   ws.forEach(w=>{ cur.push(w);
-    if(/[,;·]$/.test(w)){ chunks.push(cur); cur=[]; } });
+    if(/[,;·]$/.test(w) || (/\.$/.test(w) && w.length>2 && !/["'״׳]\.$/.test(w))){ chunks.push(cur); cur=[]; } });
   if(cur.length) chunks.push(cur);
   const out=[];
   const pieces=[];
   chunks.forEach(ch=>{
     // מנקים פסיק מסוף הקטע — הוא סימן חיתוך, לא חלק מהשם
-    const c=ch.map((w,i)=>i===ch.length-1?w.replace(/[,;·]+$/,''):w).filter(Boolean);
+    const c=ch.map((w,i)=>i===ch.length-1?w.replace(/[,;·.]+$/,''):w).filter(Boolean);
     if(!c.length)return;
     const st=nameStarts(c).filter(s=>s>0);
     let p=0; st.forEach(s=>{ pieces.push(c.slice(p,s)); p=s; }); pieces.push(c.slice(p));
@@ -520,6 +536,8 @@ function expandLines(ls){
 const HONBARE={'עה':'ע"ה','זל':'ז"ל','זצל':'זצ"ל','זצוקל':'זצוק"ל','זיע':'זי"ע','זיעא':'זיע"א','היד':'הי"ד','שליטא':'שליט"א','נבגמ':'נבג"מ','תנצבה':'תנצב"ה'};
 const NAMEW=new Set('אבא אבי אביגיל אברהם אדם אהובה אהרן אוהד אורה אורי אורית אייזיק אילנה אינה איסר איסרל איצי איתן אלחנן אלטר אלי אליהו אלימלך אליעזר אליקים אלירן אלישבע אסתי אסתר אפרים אפרת ארז ארי אריה אשר בועז ביילא ביילה בילא בלימא בנימין בער בערי בערל בצלאל ברוך ברכה ברנדי ברק ברקוביץ בת־שבע בתשבע גבריאל גד גדליה גואל גולדא גולדה גיטי גיטל גרשון דבורה דבורי דוב דובי דוד דינה דן דנה דניאל הדסה הינדא הינדה הירש הלל הערש הערשל העשל וואלף וולף וועלוול זאב זאבי זבולון זהבה זוסיא זכריה זלמן זעליג חוה חזקיהו חיה חיי חיים חנה חנוך חני חנן חנניה טוב טובה טוביה טודרוס טויבא טויבע טליה יאיר יהודה יהודית יהוידע יהונתן יהושע יואל יודל יוחאי יוכבד יונה יונתן יוסי יוסלה יוסף יחזקאל יחיאל יעל יעקב יפה יצחק ירדן ישי ישעיהו ישראל כלב לאה לוי ליאת ליב ליבא ליזה לייב לילי לימור ליסה ליפא מאטי מאטל מאיה מאיר מוטי מוישי מיטל מיכאל מיכל מינדי מיקי מלאכי מלכה מנחם מנשה מענדל מרגלית מרדכי מרים מרתה משה משולם נועה נחום נחמה נחמי נחמיה נחמן נטע נעמי נפתלי נתן נתנאל סיגל סימא סימה סנדר סנדרה סרולי עדינה עדנה עובדיה עזרא עטרה עליזה עמנואל עמרם ענת פייביש פייבל פייגא פייוול פישל פנחס פעסא פעסי פערל פרידא פריידא פרל פרץ צבי צביה צדוק קאפל קופל קיילא קלמן קרן ראובן רבקה רבקי רוזה רוני רות רחל רייזא רייזל רינה רפאל שאול שבתי שולמית שושנה שיינא שיינדי שיינדל שירה שלום שלי שלמה שמאי שמואל שמחה שמעון שמעלקא שני שפרה שרגא שרה שרול שרי תמר תנחום'.split(' '));
 function certNorm(text){
+  // מאיר (גירשבוים): "אמן. אביאל אברהם בן רבקה" — נקודה אחרי אמן = סוף משפט ושורה חדשה (כמו בשרת)
+  text=String(text||'').replace(/(אמן)[.!]\s+/g,'$1\n');
   return String(text||'').split('\n').map(ln=>ln.split(' ').map(w=>{
     const m=/^(.*?)([.,:;!?]+)$/.exec(w), core=m?m[1]:w, punct=m?m[2]:'';
     const bare=core.replace(/["'״׳]/g,'');

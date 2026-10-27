@@ -400,6 +400,7 @@ def _heb_year_label(iso):
     return ''
 
 
+_CERT_PAIRW = {'זוגתו', 'וזוגתו', 'זוגתה', 'בעלה', 'ובעלה', 'אשתו', 'ואשתו', 'ורעייתו', 'ורעיתו', 'רעייתו', 'נכדו', 'נכדתו', 'בנו', 'בתו', 'אביו', 'אמו'}
 _SPLIT_TAG = 'חצי מהעברה משותפת'
 _SPLIT_TAGS = ('חצי מהעברה משותפת', 'חלק מחיוב משותף')
 
@@ -4599,6 +4600,28 @@ def ensure_schema():
             print('  גולדגראב 480$ → תשלום רגיל: %d תרומות, %d משימות נסגרו' % (n1, n2))
     except Exception as e:
         print('  goldgrab plain error:', e)
+
+    # מאיר (27.10.2026, גירשבוים): "היא נתנה 100 דולר על חשבון 480 דולר — לא הכל נגבה, וזה כתב לי שהכל נגבה"
+    # — הלילה חוזר למחירו (480$) ולמצב "טרם נגבה"; הכרטיס מראה "שולם 100 מתוך 480 · נשאר 380"
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gershbaum_parnes_partial_v1'").fetchone():
+            _gs = con.execute("SELECT id FROM donors WHERE last LIKE 'גירשבוים%' OR last LIKE 'גרשבוים%' OR lower(COALESCE(english,'')) LIKE '%ershb%'").fetchall()
+            if len(_gs) == 1:
+                gid = _gs[0]['id']; nfix = 0
+                for p in con.execute("SELECT id,amount,paid,currency FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')='parnes' AND COALESCE(status,'')<>'suggested'", (gid,)).fetchall():
+                    psum = con.execute("SELECT COALESCE(SUM(CAST(REPLACE(REPLACE(amount,',',''),'$','') AS REAL)),0) FROM donations WHERE parnes_id=?", (p['id'],)).fetchone()[0] or 0
+                    price = _amt2(p['amount']) if _amt2(p['amount']) >= 480 else 480.0
+                    if 0 < psum < price - 0.5 and (p['currency'] or '$') == '$':
+                        con.execute("UPDATE parnes SET amount=?, paid=0 WHERE id=?", ('%g' % price, p['id'])); nfix += 1
+                if nfix:
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (gid, today_iso(), 'מערכת', 'פרנס לילה: שולם חלק (100$ מתוך 480$) — הלילה נשאר פתוח עד השלמת היתרה (מאיר, 27.10.2026)', '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('gershbaum_parnes_partial_v1')"); con.commit()
+                print('  גירשבוים: לילות שתוקנו לתשלום חלקי: %d' % nfix)
+            else:
+                print('  גירשבוים: לא נמצא כרטיס יחיד (%d) — לא תוקן' % len(_gs))
+    except Exception as e:
+        print('  gershbaum partial error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
@@ -11782,7 +11805,7 @@ _EVENT = ('הולדתו', 'הולדתה', 'הולדת', 'ההולדת', 'הול�
 # מילה שפותחת צירוף אירוע — "ליום הולדתו", "ליום היארצייט", "לרגל הבר מצוה"
 _EVT_LEAD = re.compile(r'^(ליום|לשמחת|לרגל|לכבוד|לנישואי|לאירוסי|לבר|לבת|יום|שמחת)$')
 _CERT_LEAD2 = {'לרפואה': ('שלמה', 'שלימה'), 'לברכה': ('והצלחה',), 'להצלחה': ('וברכה',),
-               'לזיווג': ('הגון',), 'לפרנסה': ('טובה',), 'לזרע': ('של', 'קודש'),
+               'לזיווג': ('הגון',), 'לפרנסה': ('טובה',), 'לזרע': ('של', 'קודש'), 'לבריאות': ('טובה', 'איתנה'),
                'של': ('קיימא',), 'לישועה': ('שלמה',),
                'ליום': _EVENT, 'לשמחת': _EVENT, 'לרגל': _EVENT, 'לכבוד': _EVENT, 'יום': _EVENT,
                'שמחת': _EVENT, 'הבר': ('מצוה', 'מצווה'), 'הבת': ('מצוה', 'מצווה'), 'בר': ('מצוה', 'מצווה'),
@@ -11908,7 +11931,8 @@ def _cert_norm(text):
 def _cert_lines(text):
     """פיצול לשורות כמו בתצוגה שבמסך: שם התורם בשורה משלו, "לע\"נ אביו"
     בשורה משלו, והשמות שמתפללים עליהם בשורה האחרונה."""
-    raws = _cert_expand(_cert_norm(text).split('\n'))
+    # מאיר (גירשבוים): "אמן. אביאל אברהם בן רבקה" — "אמן." נדבק לשם הבא בגדול. נקודה אחרי אמן = סוף משפט ושורה חדשה
+    raws = _cert_expand(re.sub(r'(אמן)[.!]\s+', '\\1\n', _cert_norm(text)).split('\n'))
     # השורה הראשונה היא שם התורם רק אם אחריה באה הקדשה עם שם ("לע\"נ אביו…").
     # שורת אירוע ("ליום היארצייט") או ברכה ("לרפואה שלמה") אחרי השם אינן
     # הקדשה של תורם — השם שלפניהן הוא מי שמתפללים עליו, והוא נשאר גדול.
@@ -12100,6 +12124,21 @@ def _req_at(ws, start=0):
             return pp if pp > 0 else i
     for i in range(start, len(ws)):
         if _CERT_REQ.match(ws[i]):
+            # "בן חיה יהודית לגדול בתורה ויראת שמים- לכל המשפחה…" — הבקשה הראשונה ("לכל") באה אחרי מילים
+            # שאינן שם: הבקשה מתחילה מיד אחרי שם ההורה (אותו כלל ב-parnes-cert.html)
+            rel0 = next((k for k in range(start, i) if _CERT_BEN.match(ws[k])), -1)
+            if rel0 >= 0 and rel0 + 1 < i:
+                pe = rel0 + 1
+                while pe < len(ws) - 1 and _CERT_SMALL.match(ws[pe]):
+                    pe += 1
+                pe += 1
+                while pe < len(ws) and _CERT_SMALL.match(ws[pe]):
+                    pe += 1
+                while pe < i and (ws[pe] in _CERT_NAMEW or (ws[pe][:1] == 'ו' and ws[pe][1:] in _CERT_NAMEW)):
+                    pe += 1
+                if pe < i and not (pe + 1 < len(ws) and _CERT_FAM1.match(ws[pe]) and _CERT_FAM2.match(ws[pe + 1])) \
+                        and not any(_CERT_BEN.match(w) for w in ws[pe:i]) and (i - pe >= 2 or ws[pe] in ('נא', 'אנא')):
+                    return pe
             return i
     rel = -1
     for i in range(start, len(ws)):
@@ -12168,6 +12207,18 @@ def _fam_at(ws):
 
 def _cert_body(lead, ws):
     """שורת הפתיח, אחריה השמות בגדול, ואחריה הברכה בקטן — כל אחת בשורה שלה."""
+    # מאיר (גירשבוים): "לזכות עם ישראל יושבי ארץ ישראל לשלום ואחדות וגאולה שלמה בקרוב" — "שכל השורה הראשונה
+    # תהיה באותיות גדולות": הקדשה לכלל ישראל (בלי בן/בת) — הפתיח קטן, וכל השאר גדול עד "אמן"
+    o = 1 if (ws and _CERT_LEAD.match(ws[0])) else 0
+    if len(ws) >= o + 2 and ws[o] in ('עם', 'כלל') and ws[o + 1].startswith('ישראל') and not any(_CERT_BEN.match(w) for w in ws):
+        lead = list(lead) + ws[:o]
+        ws = ws[o:]
+        out = [(' '.join(lead), 'lead')] if lead else []
+        k = next((i for i, w in enumerate(ws) if re.sub(r'[.,:;!?]+$', '', w) == 'אמן'), len(ws))
+        out.append((' '.join(ws[:k]), 'names'))
+        if k < len(ws):
+            out.append((' '.join(ws[k:]), 'req'))
+        return out
     a, b = _cert_split(ws)
     out = []
     head = list(lead) + ws[:a]
@@ -12259,20 +12310,28 @@ _CERT_REL = re.compile(r'^(ו?ב[\u05df\u05ea]|בר|ב["\'\u05f4\u05f3]ר)$')
 def _name_starts(c):
     """מאיר (חשוון תשפ"ז): "ביקשתי שכל השמות יהיו אותו גודל של אותיות והבקשות בקטן וגם בן או בת" —
     כמה שמות ברצף בלי פסיקים נבלעו בבקשה הראשונה ויצאו קטנים. מזהים היכן מתחיל כל "שם בן/בת שם":
-    הולכים אחורה מ"בן"/"בת" עד שלוש מילים, ועוצרים במילת בקשה, בסיומת ברכה (אמן, במהרה) או בהמשך
-    בקשה ("שלמה" שאחרי "לרפואה"). אותו כלל בדיוק ב-parnes-cert.html (nameStarts)."""
+    הולכים אחורה מ"בן"/"בת" — שתי מילים חופשיות (עד מילת בקשה, סיומת ברכה כמו אמן/במהרה, או המשך בקשה
+    כמו "שלמה" שאחרי "לרפואה"), ומילה שלישית רק כשהיא שם מוכר ולפניה גבול ברור (בקשה / תחילת הקטע).
+    המילה הראשונה אחרי "בן"/"בת" הקודם שמורה לשם ההורה ואינה נלקחת. אותו כלל בדיוק ב-parnes-cert.html."""
+    def bare(w):
+        return re.sub(r'[.,:;!?]+$', '', w or '')
+
     def not_name(w, prev):
-        if _CERT_REQ.match(w) or _CERT_TAIL.match(w) or _CERT_REL.match(w):
+        w, prev = bare(w), bare(prev)
+        if _CERT_REQ.match(w) or _CERT_TAIL.match(w) or _CERT_REL.match(w) or w in _CERT_PAIRW:
             return True
         return bool(prev) and w in _CERT_LEAD2.get(prev, ()) and bool(_CERT_REQ.match(prev) or _CERT_TAIL.match(prev))
-    starts, prev_end = [], 0
+    starts, prev_end = [], -1
     for r, w in enumerate(c):
-        if not _CERT_REL.match(w):
+        if not _CERT_REL.match(bare(w)):
             continue
         s = r
-        while s - 1 >= prev_end and r - s < 3 and not not_name(c[s - 1], c[s - 2] if s - 2 >= 0 else ''):
-            if s - 1 < r - 1 and c[s - 1][:1] == 'ש' and len(c[s - 1]) > 2 and c[s - 1] not in _CERT_NAMEW:
+        while s - 1 > prev_end and r - s < 2 and not not_name(c[s - 1], c[s - 2] if s - 2 >= 0 else ''):
+            if s - 1 < r - 1 and c[s - 1][:1] == 'ש' and len(c[s - 1]) > 2 and bare(c[s - 1]) not in _CERT_NAMEW:
                 break
+            s -= 1
+        if r - s == 2 and s - 1 > prev_end and bare(c[s - 1]) in _CERT_NAMEW and not not_name(c[s - 1], c[s - 2] if s - 2 >= 0 else '') \
+                and (s - 2 < 0 or s - 2 <= prev_end or not_name(c[s - 2], c[s - 3] if s - 3 >= 0 else '')):
             s -= 1
         if s < r:
             starts.append(s); prev_end = r + 1
@@ -12285,13 +12344,13 @@ def _cert_tail(ws):
     chunks, cur = [], []
     for w in ws:
         cur.append(w)
-        if w[-1:] in (',', ';', '\u00b7'):
+        if w[-1:] in (',', ';', '\u00b7') or (w[-1:] == '.' and len(w) > 2 and not re.search(r'["\'\u05f4\u05f3]\.$', w)):
             chunks.append(cur); cur = []
     if cur:
         chunks.append(cur)
     pieces = []
     for ch in chunks:
-        c = ch[:-1] + [ch[-1].rstrip(',;\u00b7')] if ch else []
+        c = ch[:-1] + [ch[-1].rstrip(',;\u00b7.')] if ch else []
         c = [w for w in c if w]
         if not c:
             continue

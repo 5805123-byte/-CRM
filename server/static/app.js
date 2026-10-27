@@ -3604,7 +3604,7 @@ function wirePyPick(){
   if(k)k.onclick=()=>{const did=PYPICK&&PYPICK.donor_id;PYPICK=null;render();pyPickBack(did);};
 }
 // היום נבחר: התרומה מקבלת את הייעוד, והלילה מסומן כנגבה
-async function pyPickDone(pid){
+async function pyPickDone(pid,nightAmt){
   const P=PYPICK; if(!P)return;
   if(P.quick){
     // קיצור דרך מהכרטיס — אין תרומה לסמן; הפרנס נרשם, וחוזרים לכרטיס לראות אותו
@@ -3613,12 +3613,20 @@ async function pyPickDone(pid){
     pyPickBack(P.donor_id);
     return;
   }
-  if(pid)await api('PUT','/api/parnes/'+pid,{paid:1});
+  // מאיר (גירשבוים): "היא נתנה 100 דולר על חשבון 480 — לא הכל נגבה, וזה כתב לי שהכל נגבה" — הלילה
+  // מסומן "נגבה" רק כשהתרומה מכסה את מחירו; אחרת נשאר פתוח, והכרטיס מראה כמה שולם וכמה נשאר
+  let full=true;
+  if(pid){
+    const nd=DB.find(x=>x.id==P.donor_id), pr=nd&&(nd.parnes||[]).find(p=>String(p.id)===String(pid));
+    const price=amtNum(nightAmt!=null?nightAmt:(pr?pr.amount:P.amount));
+    full=!(price>0.5 && amtNum(P.amount)+0.01<price);
+    await api('PUT','/api/parnes/'+pid,{paid:full?1:0});
+  }
   // הלילה נשמר על התרומה עצמה, כדי שבכרטיס ייכתב ליד "פרנס" איזה לילה
   await api('PUT','/api/donation/'+P.id,
             {category:P.cat,note:P.note,parnes_id:(pid||null)});
   PYPICK=null;
-  await load(); toast('✓ '+P.name+' — הלילה נתפס ונרשם כנגבה');
+  await load(); toast('✓ '+P.name+(full?' — הלילה נתפס ונרשם כנגבה':' — הלילה נתפס; שולם חלק, השאר נשאר פתוח'));
   // מאיר: "בקבלה שיהיה כתוב לו עבור פרנס לילה ואיזה לילה, ולזכות מי עם השמות, ואשלח לו גם את
   // ההקדשה שלו בנפרד באימייל" — אחרי חיוב מהיר מהכרטיס
   if(P.rc&&pid){const R=P.rc;
@@ -5031,6 +5039,13 @@ function commitHTML(d){
       <button type="button" class="cmq" data-q="building">🏛️ הקדשה בבניין</button>
       <button type="button" class="cmq" data-q="avreich">🤝 אברך</button>
       <button type="button" class="cmq" data-q="donation">💵 תרומה</button></div>
+    <div class="newgift noprint"><div class="newgift-t">➕ תרומה חדשה / חיוב חדש</div>
+      <div class="newgift-b">
+        <button type="button" class="btn sm ng" data-ng="paid">💵 תרומה שנכנסה</button>
+        <button type="button" class="btn sm ng" data-ng="once">⚡ לחייב את הכרטיס עכשיו</button>
+        <button type="button" class="btn sm ng" data-ng="rec">🔁 הוראת קבע חדשה</button>
+        <button type="button" class="btn sm ng" data-ng="pledge">🎯 התחייבות (עדיין לא שולם)</button></div>
+      <div class="hintxt" style="margin-top:6px">בוחרים מה קרה, ובטופס שנפתח: כמה, עבור מה, ומתי.</div></div>
     <details class="dsec cmsub"><summary>➕ הוספת התחייבות / הוראת קבע</summary>
     ${add}</details>
     <details class="dsec cmsub" id="dnbox"><summary>💵 רישום תרומה שנכנסה / התחייבות</summary>
@@ -5255,6 +5270,19 @@ function wireCommit(d,body){
   box.querySelectorAll('.cmbldgo').forEach(b=>b.onclick=()=>{cardTab='building';renderCard(d);});
   // מאיר: "להיכנס מהכרטיס ראשי של התורם לפרנס לילה וכדומה… באופן קצר וקולע
   // להגיע לעוד אובייקטים בלי הרבה סיבוכים ולמלא טפסים — רק שזה יוביל לשם"
+  // ➕ תרומה חדשה / חיוב חדש — כפתור אחד לכל דרך: הטופס המתאים נפתח במקומו
+  box.querySelectorAll('.ng').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.ng;
+    if(k==='paid'||k==='pledge'){
+      const dn=document.getElementById('dnbox'); if(!dn)return;
+      dn.open=true; const m=dn.querySelector('.dnm[data-m="'+k+'"]'); if(m)m.click();
+      dn.scrollIntoView({block:'start'}); setTimeout(()=>{const a=document.getElementById('dn_amt');if(a)a.focus();},80); return;}
+    const el=document.getElementById(k==='once'?'bqd_once':'bqd_rec');
+    if(el){const dt=el.closest('details');if(dt)dt.open=true;el.scrollIntoView({block:'center'});el.click();return;}
+    const hd=[...document.querySelectorAll('b')].find(x=>/בנק ווסט/.test(x.textContent||''));
+    if(hd){const dt=hd.closest('details');if(dt)dt.open=true;hd.scrollIntoView({block:'start'});}
+    toast('אין כרטיס אשראי שמור לתורם — קודם "החלפת כרטיס" בקופסת בנק ווסט, ואז לחייב');
+  });
   box.querySelectorAll('.cmq').forEach(b=>b.onclick=async()=>{
     const k=b.dataset.q;
     if(k==='parnes'||k==='coffee'||k==='breakfast')return openParnesQuick(d,k);
@@ -6002,7 +6030,8 @@ function cardDetails(d,body){
   const gitems=[];
   // מאיר: "אל תכניס ככה למשימות של תורם בדף ראשי שלו, רק תשמור את זה בפרנס
   // לילה" — הצעות לשנים הבאות אינן חוב ואינן ברשימת "מה תרם"
-  (d.parnes||[]).filter(p=>p.status!=='suggested').forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,kind:p.kind||'parnes',cur:pCur(p,d),rm:p.method||d.channel||''}));
+  (d.parnes||[]).filter(p=>p.status!=='suggested').forEach(p=>gitems.push({k:p.night_date||'',amt:amtNum(p.amount),what:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.hyear?(' '+p.hyear):''),ded:p.dedication||'',parnes:true,pid:p.id,paid:+p.paid,kind:p.kind||'parnes',cur:pCur(p,d),rm:p.method||d.channel||'',
+    psum:(d.donations||[]).filter(x=>String(x.parnes_id||'')===String(p.id)).reduce((s,x)=>s+amtNum(x.amount),0)}));
   (d.donations||[]).forEach(x=>gitems.push({k:x.date||'',amt:amtNum(x.amount),what:'',when:x.date?gregLabel(x.date):'',
     cur:(String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curd)),
     ded:giveNote(x),rm:x.method||'',don:true,did:x.id,cat:x.category||'',note:x.note||'',
@@ -6016,7 +6045,10 @@ function cardDetails(d,body){
   const GVSHOW=8;                       // מציגים את האחרונות; השאר נפתחות בלחיצה — פחות גלילה
   const gvrow=g=>{
     const curd=g.cur||curSym(d);            // מטבע השורה עצמה
-    const st=g.parnes?`<span class="pstat ${pPaidCls(g.paid)}">${pPaidLbl(g.paid)}</span>`:'';
+    // מאיר (גירשבוים): תשלום חלקי על הלילה — "שולם 100 מתוך 480 · נשאר 380", לא "נגבה"
+    const part=g.parnes&&+g.paid!==1&&+g.paid!==2&&g.psum>0.5&&g.amt>0.5&&g.psum+0.5<g.amt;
+    const st=g.parnes?(part?`<span class="pstat part" title="שולם חלק — השאר עדיין לגבייה">🟡 שולם ${curd}${Math.round(g.psum).toLocaleString('en-US')} מתוך ${curd}${Math.round(g.amt).toLocaleString('en-US')} · נשאר ${curd}${Math.round(g.amt-g.psum).toLocaleString('en-US')}</span>`
+      :`<span class="pstat ${pPaidCls(g.paid)}">${pPaidLbl(g.paid)}</span>`):'';
     const tog=g.parnes?`<button class="collectbtn ${+g.paid===1?'yes':'no'}" data-pid="${g.pid}">${+g.paid===1?'בטל גבייה':'✓ סמן נגבה'}</button>`
       +`<button class="collectbtn setl setlbtn ${+g.paid===2?'on':''}" data-pid="${g.pid}" title="הכסף הגיע בתרומה נפרדת — אין מה לגבות">${+g.paid===2?'בטל סודר':'סודר'}</button>`:'';
     // מאיר: "ביקשתי שיהיה לי אפשרות לתקן סכום או לפצל או לעדכן ייעוד,
@@ -10203,7 +10235,9 @@ function renderDayPanel(taken){
     if(tk)tk.onclick=async()=>{
       tk.disabled=true;
       const ded=(document.getElementById('pyp_ded')||{value:''}).value.trim();
-      const amt=Q?(document.getElementById('pyp_amt')||{value:''}).value.trim():PYPICK.amount;
+      // פרנס לילה בדולרים: מחיר הלילה 480$ גם כשהתרומה קטנה ממנו (תשלום חלקי) — הלילה נרשם במחירו המלא
+      const std=(pyKind==='parnes'&&PYPICK.cur==='$')?480:0;
+      const amt=Q?(document.getElementById('pyp_amt')||{value:''}).value.trim():((std&&amtNum(PYPICK.amount)<std)?String(std):PYPICK.amount);
       const ccy=Q?((document.getElementById('pyp_cur')||{}).value||PYPICK.cur):PYPICK.cur;
       const hy=Q?((document.getElementById('pyp_yr')||{}).value||HEBYEAR):HEBYEAR;
       const r=await api('POST','/api/parnes',{donor_id:PYPICK.donor_id,day:pyDay,month:pyMonth,
@@ -10211,7 +10245,7 @@ function renderDayPanel(taken){
         currency:ccy,hyear:hy,method:PYPICK.meth||''});
       if(!r||!r.id){tk.disabled=false;toast('לא שובץ');return;}
       if(r.existing&&Q){toast('היום הזה כבר רשום עליו');}
-      await pyPickDone(r.id);};
+      await pyPickDone(r.id,amt);};
   }
   const qi=document.getElementById('dp_q'),res=document.getElementById('dp_res');let chosen=null;
   const pickChosen=nd=>{chosen=nd;
