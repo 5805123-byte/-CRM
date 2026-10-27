@@ -15438,6 +15438,21 @@ def push_scan():
                            "WHERE COALESCE(t.done,0)=0 AND t.due_date BETWEEN ? AND ?",
                            ((today - datetime.timedelta(days=1)).isoformat(), (today + datetime.timedelta(days=2)).isoformat())).fetchall()
         KIND = {'event': '🎉', 'followup': '📞', 'email': '📧', 'verify': '💰', 'card': '💳', 'charge': '🧾', 'prayer': '🙏', 'parnes': '🌙', 'cert': '📜'}
+        # מאיר (27.10.2026): "אני לא מקבל התראות קופצות בטאבלט מהיומן" — ביומן יש גם לילות פרנס ותזכורות
+        # קהילה (חובות), והם לא נשלחו לטלפון בכלל. עכשיו: בהודעת הבוקר, ולילה של מחר — גם ערב קודם ב-9:00
+        DAYK = {'parnes': '🌙 פרנס לילה', 'coffee': '☕ חדר קפה', 'breakfast': '🍳 ארוחת בוקר'}
+        tomorrow = (today + datetime.timedelta(days=1)).isoformat()
+        try:
+            pn = con.execute("SELECT p.id,p.night_date,p.kind,p.date_text,p.dedication,p.donor_id,d.last,d.first FROM parnes p "
+                             "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.status,'')<>'suggested' AND p.night_date IN (?,?)",
+                             (today.isoformat(), tomorrow)).fetchall()
+        except Exception:
+            pn = []
+        try:
+            cmt = con.execute("SELECT t.id,t.due,t.at_time,t.note,m.last,m.first FROM cm_task t LEFT JOIN members m ON m.id=t.member_id "
+                              "WHERE COALESCE(t.done,0)=0 AND t.due=?", (today.isoformat(),)).fetchall()
+        except Exception:
+            cmt = []
 
         def _deliver(k, title, body, url, donor=0):
             con.execute("INSERT INTO push_sent(k,at) VALUES(?,?)", (k, now_iso())); con.commit()
@@ -15461,17 +15476,55 @@ def push_scan():
         dk = 'day:' + today.isoformat()
         if at8 <= now < at8 + WIN and not con.execute("SELECT 1 FROM push_sent WHERE k=?", (dk,)).fetchone():
             todays = [t for t in rows if t['due_date'] == today.isoformat()]
-            if todays:
-                todays.sort(key=lambda t: (not re.match(r'^\d{1,2}:\d{2}', t['at_time'] or ''), t['at_time'] or ''))
-                lines = []
-                for t in todays[:8]:
-                    who = ((t['last'] or '') + ' ' + (t['first'] or '')).strip()
-                    txt = (who + (' — ' + (t['note'] or '') if (t['note'] or '').strip() else '')) if who else (t['note'] or 'משימה')
-                    lines.append('%s %s %s' % ((t['at_time'] or '').strip() or '•', KIND.get(t['kind'] or '', '🔔'), txt[:60]))
-                if len(todays) > 8:
-                    lines.append('… ועוד %d' % (len(todays) - 8))
-                _deliver(dk, '📅 היום — %d משימות' % len(todays) if len(todays) > 1 else '📅 היום — משימה אחת',
+            items = []          # (שעה למיון, שורה)
+            for t in todays:
+                who = ((t['last'] or '') + ' ' + (t['first'] or '')).strip()
+                txt = (who + (' — ' + (t['note'] or '') if (t['note'] or '').strip() else '')) if who else (t['note'] or 'משימה')
+                items.append(((t['at_time'] or '').strip(), '%s %s %s' % ((t['at_time'] or '').strip() or '•', KIND.get(t['kind'] or '', '🔔'), txt[:60])))
+            for p in pn:
+                if p['night_date'] == today.isoformat():
+                    who = ((p['last'] or '') + ' ' + (p['first'] or '')).strip()
+                    items.append(('', '• %s — %s%s' % (DAYK.get(p['kind'] or 'parnes', '🌙 פרנס'), who or '', (' · ' + p['dedication'][:40]) if (p['dedication'] or '').strip() else '')))
+            for c in cmt:
+                who = ((c['last'] or '') + ' ' + (c['first'] or '')).strip()
+                items.append(((c['at_time'] or '').strip(), '%s 📝 %s' % ((c['at_time'] or '').strip() or '•', ((who + ' — ') if who else '') + (c['note'] or '')[:60])))
+            if items:
+                items.sort(key=lambda x: (not re.match(r'^\d{1,2}:\d{2}', x[0]), x[0]))
+                lines = [x[1] for x in items[:8]]
+                if len(items) > 8:
+                    lines.append('… ועוד %d' % (len(items) - 8))
+                _deliver(dk, '📅 היום — %d ביומן' % len(items) if len(items) > 1 else '📅 היום — דבר אחד ביומן',
                          '\n'.join(lines), '/?tab=cal&d=' + today.isoformat())
+        # 🌙 לילה של מחר — תזכורת ערב קודם ב-9:00 (כמו "מחר" של משימה)
+        at9 = datetime.datetime(today.year, today.month, today.day, 9, 0)
+        if at9 <= now < at9 + WIN:
+            for p in pn:
+                if p['night_date'] != tomorrow:
+                    continue
+                k = 'p%s:d1' % p['id']
+                if con.execute("SELECT 1 FROM push_sent WHERE k=?", (k,)).fetchone():
+                    continue
+                who = ((p['last'] or '') + ' ' + (p['first'] or '')).strip()
+                _deliver(k, '%s מחר — %s' % (DAYK.get(p['kind'] or 'parnes', '🌙 פרנס'), who or (p['date_text'] or '')),
+                         ' · '.join(x for x in [(p['date_text'] or ''), (p['dedication'] or '')[:80]] if x) or tomorrow,
+                         '/?tab=cal&d=' + tomorrow, p['donor_id'])
+        # 📝 תזכורת קהילה עם שעה — שעה לפני ובזמן
+        for c in cmt:
+            hm = re.match(r'^(\d{1,2}):(\d{2})', c['at_time'] or '')
+            if not hm:
+                continue
+            at = datetime.datetime(today.year, today.month, today.day, int(hm.group(1)), int(hm.group(2)))
+            for key, when, label in (('h1', at - datetime.timedelta(hours=1), 'בעוד שעה!'), ('now', at, 'עכשיו')):
+                if not (when <= now < when + WIN):
+                    continue
+                k = 'c%s:%s' % (c['id'], key)
+                if con.execute("SELECT 1 FROM push_sent WHERE k=?", (k,)).fetchone():
+                    continue
+                if now > when + datetime.timedelta(minutes=30):
+                    label += ' (מאוחר)'
+                who = ((c['last'] or '') + ' ' + (c['first'] or '')).strip()
+                _deliver(k, '📝 %s — %s' % (label, who or (c['note'] or '')[:40]), ' · '.join(x for x in [(c['note'] or '') if who else '', c['at_time'] or ''] if x) or today.isoformat(),
+                         '/?tab=cal&d=' + today.isoformat())
 
         for t in rows:
             try:
