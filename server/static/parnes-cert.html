@@ -128,7 +128,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v484";
+const BUILD = "v485";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -266,6 +266,18 @@ function famAt(ws){
   for(let i=1;i<ws.length-1;i++) if(FAM1.test(ws[i])&&FAM2.test(ws[i+1])) return i;
   return -1;
 }
+// מאיר (חשוון תשפ"ז): "לא יהיה באותיות הגדולות יותר מ-4 מילים באותה שורה אף פעם" — צמדים טבעיים לא נפרדים (כמו בשרת)
+const GLUE=new Set(['עם ישראל','ארץ ישראל','כלל ישראל','גאולה שלמה','וגאולה שלמה','רפואה שלמה','ורפואה שלמה','ישועה שלמה','בני ישראל','וכל משפחתו','וכל משפחתה','וכל משפחתם']);
+const MAXW=4;
+const BLESSW=new Set(['נחת','ושמחה','שמחה','ברכה','והצלחה','הצלחה','בריאות','פרנסה','ישועה','שמירה','אושר','שלום','ושלום','אריכות','ימים','סייעתא','דשמיא','וכל','כל','טוב','טובה','הטוב','בכל','מעשי','ידיו','ידיה','ידיהם','לגדול','בתורה','ויראת','שמים','אמן','במהרה','בקרוב','שלמה','לכל','המשפחה','ונחת','ובריאות','ופרנסה','ברווח','בשפע','ואושר','העניינים','הענינים','בגשמיות','וברוחניות','ברוחניות']);
+function maxWords(ws,n){ n=n||MAXW; const groups=[]; let i=0;
+  while(i<ws.length){ if(i+1<ws.length && GLUE.has(ws[i]+' '+ws[i+1])){ groups.push(ws.slice(i,i+2)); i+=2; } else { groups.push(ws.slice(i,i+1)); i++; } }
+  const lines=[]; let cur=[];
+  groups.forEach(g=>{ if(cur.length && cur.length+g.length>n){ lines.push(cur); cur=[]; } cur=cur.concat(g); });
+  if(cur.length) lines.push(cur); return lines; }
+// שורת שם עם יותר מ-4 מילים גדולות — נשברת לפני "בן"/"בת": השם, ומתחתיו בן + שם האם
+function split4(ws){ const big=ws.filter(w=>!SMALLWORD.test(w)); if(big.length<=MAXW) return [ws];
+  const rb=ws.findIndex((w,k)=>k&&BENW.test(w)); if(rb>0) return [ws.slice(0,rb), ws.slice(rb)]; return maxWords(ws); }
 function bodyRows(ws, lead){
   // מאיר (גירשבוים): "לזכות עם ישראל יושבי ארץ ישראל לשלום ואחדות…" — כל השורה בגדול (הפתיח קטן), עד "אמן"
   const o=(ws.length&&LEADWORD.test(ws[0]))?1:0;
@@ -273,8 +285,13 @@ function bodyRows(ws, lead){
     const ld=(lead||[]).concat(ws.slice(0,o)); ws=ws.slice(o);
     const rows0=[]; if(ld.length) rows0.push({ws:ld,role:'lead'});
     let k=ws.findIndex(w=>w.replace(/[.,:;!?]+$/,'')==='אמן'); if(k<0)k=ws.length;
-    rows0.push({ws:ws.slice(0,k),role:'klal'}); if(k<ws.length) rows0.push({ws:ws.slice(k),role:'req'});
+    maxWords(ws.slice(0,k)).forEach(ln=>rows0.push({ws:ln,role:'klal'})); if(k<ws.length) rows0.push({ws:ws.slice(k),role:'req'});
     return rows0;
+  }
+  // מאיר (גירשבוים): "נחת ושמחה וכל טוב — זה אותיות קטנות, זה לא שם" — שורה שכולה מילות ברכה, בלי בן/בת ובלי שם מוכר
+  const bareW=w=>w.replace(/[.,:;!?]+$/,'');
+  if(ws.length && !ws.some(w=>BENW.test(w)) && !ws.some(w=>NAMEW.has(bareW(w))&&!BLESSW.has(bareW(w))) && ws.every(w=>BLESSW.has(bareW(w))||/^[לש]/.test(w))){
+    const rows0=[]; if(lead&&lead.length) rows0.push({ws:lead,role:'lead'}); rows0.push({ws,role:'req'}); return rows0;
   }
   const [a,b]=nameSpan(ws), rows=[];
   const head=(lead||[]).concat(ws.slice(0,a));
@@ -360,9 +377,9 @@ function bodyRows(ws, lead){
     if(r===0){ rows.push({ws:rest,role:'req'}); return; }   // שורה שכולה בקשה
     const head=(r>0)?rest.slice(0,r):rest, tail=(r>0)?rest.slice(r):[];
     const f=famAt(head);
-    if(f>0){ rows.push({ws:head.slice(0,f),role:'names'});   // "וכל משפחתו" לשורה שניה
+    if(f>0){ split4(head.slice(0,f)).forEach(ln=>rows.push({ws:ln,role:'names'}));   // "וכל משפחתו" לשורה שניה
              rows.push({ws:head.slice(f),role:'names'}); }
-    else rows.push({ws:head,role:'names'});
+    else split4(head).forEach(ln=>rows.push({ws:ln,role:'names'}));
     if(tail.length) emitTail(tail);
   };
   // הזנב שאחרי השם עלול להכיל עוד שמות ("...על ראש השנה, אלישבע בת
@@ -472,7 +489,8 @@ function joinSingles(rows){
       prev.ws=prev.ws.concat(ws); return;
     }
     // סיומת ברכה בודדת ("אמן") נצמדת לברכה שמעליה
-    if(role==='req' && ws.length===1 && prev && prev.role==='req'){
+    // מאיר: "נחת ושמחה וכו' זה המשך של הברכה, ביחד עם הטקסט של הברכות" — שורת ברכה שאחרי ברכה מצטרפת אליה
+    if(role==='req' && prev && prev.role==='req' && (ws.length===1 || ws.every(w=>BLESSW.has(w.replace(/[.,:;!?]+$/,''))||/^[לש]/.test(w)))){
       prev.ws=prev.ws.concat(ws); return;
     }
     if(ws.length) out.push({ws,role});
@@ -555,7 +573,12 @@ function formatLines(text){
     return ws.length && DEDWORD.test(ws[0]) && !evtOnly(ws); });
   // כל שורה היא כבר בלוק (nline / nrow / ndon) — בלי '\n' ביניהן, אחרת
   // white-space:pre-line מוסיף שורה ריקה בין שם לשם והשמות מתכווצים לחינם
-  return ls.map((l,i)=>formatName(l, i===0 && hasLead, i>0 && !hasLead)).map(x=>/^<span/.test(x.trim())?x:x+'\n').join('');
+  let h=ls.map((l,i)=>formatName(l, i===0 && hasLead, i>0 && !hasLead)).map(x=>/^<span/.test(x.trim())?x:x+'\n').join('');
+  // מאיר: "נחת ושמחה וכו' זה המשך של הברכה, ביחד עם הטקסט של הברכות" — שורת ברכה שנכתבה בשורה נפרדת
+  // אחרי ברכה (או "אמן" לבד) מצטרפת לשורת הברכה שלפניה (כמו _cert_join1 בשרת)
+  const isBless=t=>{ const ws=t.trim().split(/\s+/).filter(Boolean); return ws.length===1 || ws.every(w=>BLESSW.has(w.replace(/[.,:;!?]+$/,''))||/^[לש]/.test(w)); };
+  for(let n=0;n<20;n++){ const h2=h.replace(/<span class="nrow nreq">([^<]*)<\/span>\s*<span class="nrow nreq">([^<]*)<\/span>/g,(m,a,b)=>isBless(b)?'<span class="nrow nreq">'+a+' '+b.trim()+'</span>':m); if(h2===h)break; h=h2; }
+  return h;
 }
 function wireFmt(el){
   el.addEventListener('focus',()=>{ el.textContent=el.innerText; });      // עריכה בטקסט רגיל
@@ -699,7 +722,11 @@ function parnesSizes(sf){
     const w=el.scrollWidth;
     if(w>avail) minf=Math.min(minf, Math.max(.3, avail/w));
   });
-  if(minf<1) nl.forEach(el=>el.style.setProperty('font-size',(70*u*minf).toFixed(2)+'px','important'));
+  if(minf<1){ nl.forEach(el=>el.style.setProperty('font-size',(70*u*minf).toFixed(2)+'px','important'));
+    // מאיר: "השמות צריכים תמיד להיות יותר גדולים ומודגשים" — כשהשמות מתכווצים, הבקשות והפתיח מתכווצים איתם
+    document.querySelectorAll('#pairs .nreq').forEach(e=>e.style.setProperty('font-size',(25*u*minf).toFixed(2)+'px','important'));
+    document.querySelectorAll('#pairs .nevt').forEach(e=>e.style.setProperty('font-size',(22*u*minf).toFixed(2)+'px','important'));
+    document.querySelectorAll('#pairs .nlead').forEach(e=>e.style.setProperty('font-size',(40*uq*minf).toFixed(2)+'px','important')); }
   return minf;
 }
 // שם שאינו נכנס לשורה אחת נשבר לפני "בן"/"בת" — כך קוראים

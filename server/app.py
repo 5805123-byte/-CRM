@@ -12033,6 +12033,8 @@ def _cert_join1(rows):
     שנגררו לסופה ("...הרה\"ק", "...בן") יורדות אל שורת התואר שאחריהן
     ומצטרפות אליה — "הרה\"ק רבי", "בן רבי" — בגודל של זצוק\"ל.
     מילת לוואי בסוף השם האחרון, שאין אחריה תואר, נשארת במקומה."""
+    def _bless(ws):
+        return all(re.sub(r'[.,:;!?]+$', '', w) in _CERT_BLESSW or w[:1] in ('ל', 'ש') for w in ws)
     out = []
     for txt, role in rows:
         ws = str(txt or '').split()
@@ -12052,8 +12054,8 @@ def _cert_join1(rows):
                 and not _CERT_BRIDE.match(ws[0]):
             out[-1] = (out[-1][0] + ' ' + ws[0], out[-1][1])
             continue
-        if role == 'req' and len(ws) == 1 and out and out[-1][1] == 'req':
-            out[-1] = (out[-1][0] + ' ' + ws[0], 'req')
+        if role == 'req' and out and out[-1][1] == 'req' and (len(ws) == 1 or _bless(ws)):
+            out[-1] = (out[-1][0] + ' ' + ' '.join(ws), 'req')
             continue
         out.append((' '.join(ws), role))
     return [r for r in out if r[0] or r[1] == 'names']
@@ -12205,6 +12207,48 @@ def _fam_at(ws):
     return -1
 
 
+# מאיר (חשוון תשפ"ז): "לא יהיה באותיות הגדולות יותר מ-4 מילים באותה שורה אף פעם" — שורה גדולה נחתכת
+# לשורות של עד 4 מילים; צמדים טבעיים ("עם ישראל", "ארץ ישראל", "גאולה שלמה") לא נפרדים
+_CERT_GLUE = {('עם', 'ישראל'), ('ארץ', 'ישראל'), ('כלל', 'ישראל'), ('גאולה', 'שלמה'), ('וגאולה', 'שלמה'),
+              ('רפואה', 'שלמה'), ('ורפואה', 'שלמה'), ('ישועה', 'שלמה'), ('בני', 'ישראל'), ('וכל', 'משפחתו'),
+              ('וכל', 'משפחתה'), ('וכל', 'משפחתם')}
+_CERT_MAXW = 4
+# מילים של ברכה — שורה שכולה כזו (בלי בן/בת ובלי שם מוכר) היא בקשה קטנה, לא שם
+_CERT_BLESSW = {'נחת', 'ושמחה', 'שמחה', 'ברכה', 'והצלחה', 'הצלחה', 'בריאות', 'פרנסה', 'ישועה', 'שמירה', 'אושר', 'שלום', 'ושלום',
+                'אריכות', 'ימים', 'סייעתא', 'דשמיא', 'וכל', 'כל', 'טוב', 'טובה', 'הטוב', 'בכל', 'מעשי', 'ידיו', 'ידיה', 'ידיהם',
+                'לגדול', 'בתורה', 'ויראת', 'שמים', 'אמן', 'במהרה', 'בקרוב', 'שלמה', 'לכל', 'המשפחה', 'ונחת', 'ובריאות', 'ופרנסה',
+                'ברווח', 'בשפע', 'ואושר', 'העניינים', 'הענינים', 'בגשמיות', 'וברוחניות', 'ברוחניות'}
+
+
+def _cert_maxw(ws, n=_CERT_MAXW):
+    """חיתוך רשימת מילים לשורות של עד n מילים, בלי לפרק צמד טבעי."""
+    groups, i = [], 0
+    while i < len(ws):
+        if i + 1 < len(ws) and (ws[i], ws[i + 1]) in _CERT_GLUE:
+            groups.append(ws[i:i + 2]); i += 2
+        else:
+            groups.append(ws[i:i + 1]); i += 1
+    lines, cur = [], []
+    for g in groups:
+        if cur and len(cur) + len(g) > n:
+            lines.append(cur); cur = []
+        cur = cur + g
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _cert_split4(ws):
+    """שורת שם עם יותר מ-4 מילים גדולות (בלי בן/בת ותארים) — נשברת לפני "בן"/"בת": השם, ומתחתיו בן + שם האם."""
+    big = [w for w in ws if not _CERT_SMALL.match(w)]
+    if len(big) <= _CERT_MAXW:
+        return [ws]
+    rb = next((k for k, w in enumerate(ws) if k and _CERT_BEN.match(w)), -1)
+    if rb > 0:
+        return [ws[:rb], ws[rb:]]
+    return _cert_maxw(ws)
+
+
 def _cert_body(lead, ws):
     """שורת הפתיח, אחריה השמות בגדול, ואחריה הברכה בקטן — כל אחת בשורה שלה."""
     # מאיר (גירשבוים): "לזכות עם ישראל יושבי ארץ ישראל לשלום ואחדות וגאולה שלמה בקרוב" — "שכל השורה הראשונה
@@ -12215,9 +12259,18 @@ def _cert_body(lead, ws):
         ws = ws[o:]
         out = [(' '.join(lead), 'lead')] if lead else []
         k = next((i for i, w in enumerate(ws) if re.sub(r'[.,:;!?]+$', '', w) == 'אמן'), len(ws))
-        out.append((' '.join(ws[:k]), 'klal'))
+        for ln in _cert_maxw(ws[:k]):
+            out.append((' '.join(ln), 'klal'))
         if k < len(ws):
             out.append((' '.join(ws[k:]), 'req'))
+        return out
+    # מאיר (גירשבוים): "נחת ושמחה וכל טוב — זה אותיות קטנות, זה לא שם" — שורה שכולה מילות ברכה, בלי בן/בת
+    # ובלי שם מוכר, היא בקשה
+    if ws and not any(_CERT_BEN.match(w) for w in ws) \
+            and not any(re.sub(r'[.,:;!?]+$', '', w) in _CERT_NAMEW and re.sub(r'[.,:;!?]+$', '', w) not in _CERT_BLESSW for w in ws) \
+            and all(re.sub(r'[.,:;!?]+$', '', w) in _CERT_BLESSW or w[:1] in ('ל', 'ש') for w in ws):
+        out = [(' '.join(lead), 'lead')] if lead else []
+        out.append((' '.join(ws), 'req'))
         return out
     a, b = _cert_split(ws)
     out = []
@@ -12248,13 +12301,16 @@ def _cert_body(lead, ws):
         rb = next((k for k, w in enumerate(head) if _CERT_BEN.match(w)), -1)
         p2 = next((k for k in range(rb + 2, len(head)) if head[k][:1] == 'ו' and head[k][1:] in _CERT_NAMEW), -1) if rb >= 0 else -1
         if f > 0:                        # "וכל משפחתו" בשורה שניה משלו
-            out.append((' '.join(head[:f]), 'names'))
+            for ln in _cert_split4(head[:f]):
+                out.append((' '.join(ln), 'names'))
             out.append((' '.join(head[f:]), 'names'))
         elif p2 > 0:
-            out.append((' '.join(head[:p2]), 'names'))
+            for ln in _cert_split4(head[:p2]):
+                out.append((' '.join(ln), 'names'))
             out.append((' '.join(head[p2:]), 'names'))
         else:
-            out.append((' '.join(head), 'names'))
+            for ln in _cert_split4(head):
+                out.append((' '.join(ln), 'names'))
         if tail:
             emit_tail(tail)
 
