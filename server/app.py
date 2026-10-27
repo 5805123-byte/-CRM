@@ -12201,9 +12201,32 @@ def _cert_body(lead, ws):
 _CERT_REL = re.compile(r'^(ו?ב[\u05df\u05ea]|בר|ב["\'\u05f4\u05f3]ר)$')
 
 
+def _name_starts(c):
+    """מאיר (חשוון תשפ"ז): "ביקשתי שכל השמות יהיו אותו גודל של אותיות והבקשות בקטן וגם בן או בת" —
+    כמה שמות ברצף בלי פסיקים נבלעו בבקשה הראשונה ויצאו קטנים. מזהים היכן מתחיל כל "שם בן/בת שם":
+    הולכים אחורה מ"בן"/"בת" עד שלוש מילים, ועוצרים במילת בקשה, בסיומת ברכה (אמן, במהרה) או בהמשך
+    בקשה ("שלמה" שאחרי "לרפואה"). אותו כלל בדיוק ב-parnes-cert.html (nameStarts)."""
+    def not_name(w, prev):
+        if _CERT_REQ.match(w) or _CERT_TAIL.match(w) or _CERT_REL.match(w):
+            return True
+        return bool(prev) and w in _CERT_LEAD2.get(prev, ()) and bool(_CERT_REQ.match(prev) or _CERT_TAIL.match(prev))
+    starts, prev_end = [], 0
+    for r, w in enumerate(c):
+        if not _CERT_REL.match(w):
+            continue
+        s = r
+        while s - 1 >= prev_end and r - s < 3 and not not_name(c[s - 1], c[s - 2] if s - 2 >= 0 else ''):
+            if s - 1 < r - 1 and c[s - 1][:1] == 'ש' and len(c[s - 1]) > 2 and c[s - 1] not in _CERT_NAMEW:
+                break
+            s -= 1
+        if s < r:
+            starts.append(s); prev_end = r + 1
+    return starts
+
+
 def _cert_tail(ws):
-    """חיתוך הזנב שאחרי הברכה הראשונה לקטעים לפי פיסוק, וסימון מי מהם
-    שם ("X בן/בת Y") ומי המשך הבקשה."""
+    """חיתוך הזנב שאחרי הברכה הראשונה לקטעים לפי פיסוק (וגם לפי תחילת שם חדש — _name_starts),
+    וסימון מי מהם שם ("X בן/בת Y") ומי המשך הבקשה."""
     chunks, cur = [], []
     for w in ws:
         cur.append(w)
@@ -12211,10 +12234,18 @@ def _cert_tail(ws):
             chunks.append(cur); cur = []
     if cur:
         chunks.append(cur)
-    out = []
+    pieces = []
     for ch in chunks:
         c = ch[:-1] + [ch[-1].rstrip(',;\u00b7')] if ch else []
         c = [w for w in c if w]
+        if not c:
+            continue
+        p = 0
+        for s in [x for x in _name_starts(c) if x > 0]:
+            pieces.append(c[p:s]); p = s
+        pieces.append(c[p:])
+    out = []
+    for c in pieces:
         if not c:
             continue
         rel = next((i for i, w in enumerate(c) if _CERT_REL.match(w)), -1)

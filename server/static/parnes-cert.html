@@ -128,7 +128,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v480";
+const BUILD = "v481";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -386,7 +386,27 @@ function bodyRows(ws, lead){
   if(b<ws.length) emitTail(ws.slice(b));
   return rows;
 }
-// חיתוך הזנב לקטעים לפי פיסוק, וסימון מי מהם הוא שם ומי בקשה
+// מאיר (חשוון תשפ"ז): "ביקשתי שכל השמות יהיו אותו גודל של אותיות והבקשות בקטן וגם בן או בת" —
+// כמה שמות ברצף בלי פסיקים ("… לברכה והצלחה אמן אהבה רבקה בת יהודית לרפואה שלמה רחל לאה בת יטא …")
+// נבלעו כולם בבקשה הראשונה ויצאו קטנים. כאן מזהים היכן מתחיל כל "שם בן/בת שם": הולכים אחורה מ"בן"/"בת"
+// עד שלוש מילים, ועוצרים במילת בקשה, בסיומת ברכה (אמן, במהרה) או בהמשך בקשה ("שלמה" שאחרי "לרפואה").
+// אותו כלל בדיוק ב-app.py (_name_starts)
+function nameStarts(c){
+  const isRel=w=>/^(ו?ב[ןת]|בר|ב["'\u05f4\u05f3]ר)$/.test(w);
+  const notName=(w,prev)=>REQSTART.test(w)||TAILW.test(w)||isRel(w)||
+    (!!prev && (LEAD2[prev]||[]).indexOf(w)>=0 && (REQSTART.test(prev)||TAILW.test(prev)));
+  const starts=[]; let prevEnd=0;
+  c.forEach((w,r)=>{ if(!isRel(w)) return;
+    let s=r;
+    while(s-1>=prevEnd && r-s<3 && !notName(c[s-1], s-2>=0?c[s-2]:'')){
+      // מילה שמתחילה ב-ש ואינה שם מוכר ("שיזכה") — ברכה, לא תחילת שם; המילה הצמודה ל"בן" היא תמיד שם
+      if(s-1<r-1 && c[s-1][0]==='ש' && c[s-1].length>2 && !NAMEW.has(c[s-1])) break;
+      s--; }
+    if(s<r){ starts.push(s); prevEnd=r+1; }
+  });
+  return starts;
+}
+// חיתוך הזנב לקטעים לפי פיסוק (וגם לפי תחילת שם חדש — nameStarts), וסימון מי מהם הוא שם ומי בקשה
 function tailRows(ws){
   const isRel=w=>/^(ו?ב[ןת]|בר|ב["'\u05f4\u05f3]ר)$/.test(w);
   const chunks=[]; let cur=[];
@@ -394,9 +414,15 @@ function tailRows(ws){
     if(/[,;·]$/.test(w)){ chunks.push(cur); cur=[]; } });
   if(cur.length) chunks.push(cur);
   const out=[];
+  const pieces=[];
   chunks.forEach(ch=>{
     // מנקים פסיק מסוף הקטע — הוא סימן חיתוך, לא חלק מהשם
     const c=ch.map((w,i)=>i===ch.length-1?w.replace(/[,;·]+$/,''):w).filter(Boolean);
+    if(!c.length)return;
+    const st=nameStarts(c).filter(s=>s>0);
+    let p=0; st.forEach(s=>{ pieces.push(c.slice(p,s)); p=s; }); pieces.push(c.slice(p));
+  });
+  pieces.forEach(c=>{
     if(!c.length)return;
     const rel=c.findIndex(isRel);
     // "שם בן/בת אם" — צריך מילה לפניו ומילה אחריו
@@ -642,14 +668,17 @@ function parnesSizes(sf){
   // ורק עכשיו, מול הגודל הסופי, מקטינים שם ארוך כדי שיישאר בשורה אחת.
   // מוחזר המקדם הקטן ביותר — 1 פירושו שאף שם לא הוקטן ברוחב.
   // רשת ביטחון בלבד: מילה בודדת רחבה מהמסגרת ואי אפשר לשבור אותה
+  // מאיר (חשוון תשפ"ז): "ביקשתי שכל השמות יהיו אותו גודל של אותיות" — שורה אחת שהוקטנה כדי להיכנס
+  // מקטינה את כל שורות השמות יחד, שלא יצא שם אחד קטן משכניו
   let minf=1;
-  document.querySelectorAll('#pairs .nline').forEach(el=>{
+  const nl=[...document.querySelectorAll('#pairs .nline')];
+  nl.forEach(el=>{
     const box=el.parentElement, avail=box?box.clientWidth:0;
     if(!avail)return;
     const w=el.scrollWidth;
-    if(w>avail){ const f=Math.max(.3, avail/w); minf=Math.min(minf,f);
-      el.style.setProperty('font-size',(70*u*f).toFixed(2)+'px','important'); }
+    if(w>avail) minf=Math.min(minf, Math.max(.3, avail/w));
   });
+  if(minf<1) nl.forEach(el=>el.style.setProperty('font-size',(70*u*minf).toFixed(2)+'px','important'));
   return minf;
 }
 // שם שאינו נכנס לשורה אחת נשבר לפני "בן"/"בת" — כך קוראים
