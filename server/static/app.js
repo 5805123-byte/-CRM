@@ -13743,12 +13743,16 @@ async function renderStip(){
   const has=k=>STIP.some(r=>r.kollel===k);
   chips.innerHTML=STIP_KOL.filter(([k])=>k!=='חיים טובים'||has(k)).map(([k,l])=>`<button class="chip ${stipKollel===k?'on':''}" data-k="${k}">${l}</button>`).join('')
     +'<span style="flex-basis:100%"></span>'
-    +[['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('');
+    +[['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('')
+    // מאיר: "אני רוצה את זה כאן בלשונית אברכים, זה הכי ריאלי" — השיחה הקולית לכל האברכים מכאן
+    +'<button class="chip" id="stymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button>';
   chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{stipKollel=c.dataset.k;if(stipView==='iz'&&stipKollel!=='חצות')stipView='monthly';stipEdit=null;renderStip();});
   chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;stipEdit=null;renderStip();});
+  {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;}
   if(stipView==='iz'){const keep=chips.innerHTML;await renderAvByAv();chips.innerHTML=keep;
     chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{stipKollel=c.dataset.k;if(stipKollel!=='חצות')stipView='monthly';renderStip();});
-    chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;renderStip();});return;}
+    chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;renderStip();});
+    {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;}return;}
   const rows=STIP.filter(r=>r.kollel===stipKollel&&r.kind===stipView);
   const qq=String(q||'').trim();
   // קבוצות לפי תקופה — חודשים מהחדש לישן; חגים לפי סדר הוספה (החדש למעלה)
