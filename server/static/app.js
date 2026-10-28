@@ -10869,7 +10869,8 @@ async function renderAvByAv(){
   const q2=String(q||'').trim();
   const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
-      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button></div>
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
+      <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
         title="${avFreeOnly?'הצג את כולם':'הצג רק אברכים בלי שותף'}"><b class="${st.free?'avfreen':''}">${st.free}</b> בלי שותף ${avFreeOnly?'✕':'▸'}</button>${q2?` · מוצגים ${rows.length}`:''}</div>
@@ -10884,6 +10885,7 @@ async function renderAvByAv(){
   const afb=document.getElementById('avfreebtn');
   if(afb)afb.onclick=()=>{avFreeOnly=!avFreeOnly;paintByAv();};
   document.getElementById('avcards2').onclick=()=>{avView='cards';render();};
+  document.getElementById('avymbtn2').onclick=avYmOpen;
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
@@ -11242,7 +11244,7 @@ function renderAvreich(){
   view.innerHTML=`<div class="avbar">
       ${avSortSel('avsort')}
       <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button>
-      <button class="btn sm" id="avymbtn" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
+      <button class="btn sm" id="avymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="cnt" id="avcnt"></div>
     <div class="avlist" id="avlistwrap"></div>`;
   const sortSel=document.getElementById('avsort'); sortSel.value=avSort;
