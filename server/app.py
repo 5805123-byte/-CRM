@@ -1081,6 +1081,11 @@ def ensure_schema():
     try:
         con.execute("CREATE TABLE IF NOT EXISTS nd_dlink(key TEXT PRIMARY KEY, donor_id INTEGER, label TEXT, at TEXT)")
     except Exception: pass
+    # מאיר: "העסקאות אצל אנשין הם שייכות ליעקב יוסף אנשין" — שיוך מפורש של עסקה / הו"ק בנדרים פלוס לאברך (לפי שם)
+    try: con.execute("ALTER TABLE nd_tx ADD COLUMN avreich TEXT")
+    except Exception: pass
+    try: con.execute("ALTER TABLE nd_keva ADD COLUMN avreich TEXT")
+    except Exception: pass
     try: con.execute("ALTER TABLE nd_tx ADD COLUMN donor_id INTEGER")
     except Exception: pass
     # מאיר: "זה רק היה דוגמא, תמחק את הנתונים האלה, מכניסים הכל מחדש" — פעם אחת: לוחות ותבניות שנשמרו עד עכשיו
@@ -4654,6 +4659,22 @@ def ensure_schema():
                 print('  אנשין יעקב (קהילה): נמצאו %d כרטיסים — לא נותק' % len(_am))
     except Exception as e:
         print('  anshin split error:', e)
+
+    # מאיר (28.10.2026): "העסקאות אצל אנשין הם שייכות ליעקב יוסף אנשין כן" — העסקאות וההו"ק בנדרים פלוס
+    # על הטלפון הזה (שנותקו מחבר הקהילה) משויכות במפורש לאברך אנשין יעקב יוסף; יופיעו בכרטיס האברך שלו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='anshin_nd_to_avreich_v1'").fetchone():
+            _av = [r['name'] for r in con.execute("SELECT name FROM avreichim WHERE name LIKE 'אנשין%' AND name LIKE '%יעקב%'")]
+            _an = next((x for x in _av if 'יוסף' in x), _av[0] if len(_av) == 1 else '')
+            if _an:
+                n1 = con.execute("UPDATE nd_tx SET avreich=? WHERE member_id IS NULL AND COALESCE(avreich,'')='' AND REPLACE(REPLACE(COALESCE(phone,''),'-',''),' ','') LIKE '%7184129%'", (_an,)).rowcount
+                n2 = con.execute("UPDATE nd_keva SET avreich=? WHERE member_id IS NULL AND COALESCE(avreich,'')='' AND REPLACE(REPLACE(COALESCE(phone,''),'-',''),' ','') LIKE '%7184129%'", (_an,)).rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('anshin_nd_to_avreich_v1')"); con.commit()
+                print('  אנשין יעקב יוסף (אברך): שויכו %d עסקאות, %d הו"ק' % (n1, n2))
+            else:
+                print('  אנשין יעקב יוסף (אברך): נמצאו %d ברשימת האברכים (%s) — לא שויך' % (len(_av), ', '.join(_av)))
+    except Exception as e:
+        print('  anshin avreich link error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
@@ -20027,6 +20048,14 @@ class H(BaseHTTPRequestHandler):
                     "SELECT kollel, kind, period, amount, extra, note, COALESCE(got,0) got FROM stipends WHERE TRIM(name) IN (%s) "
                     "ORDER BY period DESC, id DESC" % ','.join('?' * len(variants)), variants)]
                 w, a = ["TRIM(name) IN (%s)" % ','.join('?' * len(variants))], list(variants)
+                # שויך אליו במפורש (nd_tx.avreich) — גם אם השם נרשם בשתי צורות ("אנשין יעקב" / "אנשין יעקב יוסף")
+                avn = set(variants)
+                for r in con.execute("SELECT name FROM avreichim"):
+                    kn, k0 = key(r['name']), key(name)
+                    if kn and k0 and (kn.startswith(k0) or k0.startswith(kn)):
+                        avn.add(r['name'].strip())
+                avn = sorted(avn)
+                w.append("TRIM(COALESCE(avreich,'')) IN (%s)" % ','.join('?' * len(avn))); a += avn
                 if phones:
                     w.append("phone IN (%s)" % ','.join('?' * len(phones))); a += phones
                 import nedarim as _nd
