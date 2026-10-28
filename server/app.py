@@ -17961,7 +17961,8 @@ def ym_check_job(job_id):
                 c = cand[0]; used.add(c['call_id'])
                 txt = 'ענה · שמע %s' % ym_mmss(c['listen'])
                 if c['pressed']:
-                    txt += ' · הקיש %s (%s)' % (','.join(c['pressed']), ym_mmss(c['pressed_secs']))
+                    tt = c.get('titles') or {}
+                    txt += ' · הקיש %s (%s)' % (', '.join(p + ((' = ' + tt[p]) if tt.get(p) and tt[p] != p else '') for p in c['pressed']), ym_mmss(c['pressed_secs']))
                 con.execute("UPDATE ym_msg SET answered=1, secs=?, listen_secs=?, pressed=?, pressed_secs=?, call_id=?, call_status=?, checked_at=? WHERE id=?",
                             (c['total'], c['listen'], ','.join(c['pressed']), c['pressed_secs'], c['call_id'], txt, now_iso(), m['id']))
             elif not log_ok:

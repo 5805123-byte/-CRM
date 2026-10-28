@@ -477,6 +477,8 @@ def group_calls(recs):
         c = calls[cid]
         other = [x for x in c['steps'] if x['folder'] not in ('main', '')]
         c['pressed'] = sorted({x['folder'] for x in other})
+        # מאיר: "מה זה נקרא הקיש אפס? לאן מגיעים?" — שם השלוחה (PathTitle) ליד הספרה
+        c['titles'] = {x['folder']: (x['title'] or '').strip() for x in other if (x['title'] or '').strip()}
         c['pressed_secs'] = sum(x['secs'] for x in other)
         c['outgoing'] = not c['incoming']
         c['dt'] = _dt(c['date'], c['start'])
