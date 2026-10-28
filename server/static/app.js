@@ -290,21 +290,36 @@ function _hebParts(d){if(!_HEBFMT)_HEBFMT=new Intl.DateTimeFormat('he-u-ca-hebre
   return {day:parseInt(P.day,10),mo:_HMONTH_FIX[P.month]||P.month||'',yr:parseInt(P.year,10)};}
 function hebOfIso(iso){try{if(!iso)return '';const d=new Date(String(iso).slice(0,10)+'T12:00:00');if(isNaN(d))return '';
   const p=_hebParts(d);if(!p.day||!p.mo||!p.yr)return '';return heDay(p.day)+' '+p.mo+' '+heYearStr(p.yr);}catch(e){return '';}}
-// מאיר: "אני רוצה עברי לוח שנה" — בחירה בעברית (יום, חודש, שנה) → תאריך לועזי. מחפשים ביומן הדפדפן
-// משנה אחורה עד שנתיים קדימה; '' אם אין תאריך כזה (למשל "אדר" בשנה מעוברת, או ל' בחודש של 29)
-const HMORD_PICK=['תשרי','חשון','כסלו','טבת','שבט','אדר',"אדר א'","אדר ב'",'ניסן','אייר','סיון','תמוז','אב','אלול'];
-const _hqn=s=>String(s||'').replace(/[״"׳']/g,'').replace(/\s+/g,' ').trim();
-function isoOfHeb(day,mo,yr){try{day=+day;const moN=_hqn(mo),yrN=_hqn(yr);if(!day||!moN||!yrN)return '';
-  const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-400);
-  for(let i=0;i<1200;i++){const p=_hebParts(d);
-    if(p.day===day&&_hqn(p.mo)===moN&&_hqn(heYearStr(p.yr))===yrN)return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    d.setDate(d.getDate()+1);}
-  return '';}catch(e){return '';}}
-// שלושת הבוררים (יום / חודש / שנה) של לוח עברי, מכוונים לתאריך לועזי נתון
-function hebPickHTML(id,iso){const p=iso&&hebOfIso(iso)?_hebParts(new Date(iso.slice(0,10)+'T12:00:00')):null;const yr=p?heYearStr(p.yr):'';
-  return `<div class="hedate" data-pick="${id}"><select class="hd_d">${HEDAYS.map((d,i)=>`<option value="${i+1}" ${p&&p.day===i+1?'selected':''}>${d}</option>`).join('')}</select>
-    <select class="hd_m">${HMORD_PICK.map(m=>`<option ${p&&_hqn(m)===_hqn(p.mo)?'selected':''}>${m}</option>`).join('')}</select>
-    <select class="hd_y">${heYearOpts(yr||HEBYEAR)}</select></div>`;}
+// מאיר: "אני רוצה עברי לוח שנה… תעשה מאמץ שיהיה עברית בלוח עצמו בבחירה שלי" — לוח חודש עברי שלוחצים
+// בו על יום: הימים באותיות (א', ב'…), מתחת בקטן התאריך הלועזי, דפדוף חודש עברי קדימה/אחורה
+const _isoOfD=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function hebMonthOf(d){ // כל הימים של החודש העברי שבו נמצא d
+  const p0=_hebParts(d), first=new Date(d);
+  for(let i=0;i<31;i++){const p=new Date(first);p.setDate(p.getDate()-1);const pp=_hebParts(p);if(pp.mo!==p0.mo||pp.yr!==p0.yr)break;first.setDate(first.getDate()-1);}
+  const days=[], x=new Date(first);
+  for(let i=0;i<31;i++){const px=_hebParts(x);if(px.mo!==p0.mo||px.yr!==p0.yr)break;days.push({d:new Date(x),n:px.day,iso:_isoOfD(x)});x.setDate(x.getDate()+1);}
+  return {mo:p0.mo,yr:p0.yr,days};}
+function hebCalPick(iso,title){
+  return new Promise(res=>{
+    let cur=iso&&!isNaN(new Date(iso))?new Date(String(iso).slice(0,10)+'T12:00:00'):new Date();cur.setHours(12,0,0,0);
+    const sel=iso?String(iso).slice(0,10):'', today=_isoOfD(new Date());
+    const o=document.createElement('div');o.className='confirmov';
+    const done=v=>{o.remove();res(v);};
+    const draw=()=>{
+      let M;try{M=hebMonthOf(cur);}catch(e){done(null);return;}
+      const first=M.days[0].d, last=M.days[M.days.length-1].d, gm=d=>d.toLocaleDateString('he-IL',{month:'long'});
+      const grange=(gm(first)===gm(last)?gm(first):gm(first)+' – '+gm(last))+' '+last.getFullYear();
+      o.innerHTML=`<div class="confirmbox hcal"><div class="cm" style="margin-bottom:8px">${esc(title||'בחירת תאריך')}</div>
+        <div class="hcnav"><button class="btn sm ghost" data-nav="-1">‹ הקודם</button><div class="hct"><b>${esc(M.mo)} ${esc(heYearStr(M.yr))}</b><small>${esc(grange)}</small></div><button class="btn sm ghost" data-nav="1">הבא ›</button></div>
+        <div class="hcgrid">${['א','ב','ג','ד','ה','ו','ש'].map(w=>`<div class="hcw">${w}'</div>`).join('')}${'<div></div>'.repeat(first.getDay())}
+          ${M.days.map(x=>`<button type="button" class="hcd${x.iso===sel?' sel':''}${x.iso===today?' today':''}" data-iso="${x.iso}"><b>${heDay(x.n)}</b><small>${x.d.getDate()}.${x.d.getMonth()+1}</small></button>`).join('')}</div>
+        <div class="cbtns" style="margin-top:12px"><button class="btn ghost cno">ביטול</button><button class="btn ghost" data-today="1">היום (${esc(hebOfIso(today))})</button></div></div>`;
+      o.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const k=+b.dataset.nav;cur=new Date(k<0?first:last);cur.setDate(cur.getDate()+k);draw();});
+      o.querySelectorAll('.hcd').forEach(b=>b.onclick=()=>done(b.dataset.iso));
+      o.querySelector('[data-today]').onclick=()=>done(today);
+      o.querySelector('.cno').onclick=()=>done(null);};
+    o.onclick=e=>{if(e.target===o)done(null);};
+    document.body.appendChild(o);draw();});}
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
@@ -2609,14 +2624,10 @@ async function mkSubEdit(c){
     const o=document.createElement('div');o.className='confirmov';
     o.innerHTML=`<div class="confirmbox"><div class="cm">📅 תאריכי המנוי — ${esc(mkName(c))}</div>
       <label class="cmsub" style="display:block;margin-bottom:4px">תחילת המנוי${cs?' (עכשיו '+esc(mkDate(cs))+')':''}</label>
-      ${hebPickHTML('mksd_s',cs)}
-      <input class="cinp" type="date" id="mksd_s" value="${esc(cs)}" style="margin:6px 0 2px">
-      <div class="mksub" id="mksd_sh" style="margin:0 0 12px;font-weight:800;color:var(--accent)">${esc(hebOfIso(cs))||'&nbsp;'}</div>
-      <label class="cmsub" style="display:block;margin-bottom:4px">סוף המנוי${ce?' (עכשיו '+esc(mkDate(ce))+')':''}</label>
-      ${hebPickHTML('mksd_e',ce)}
-      <input class="cinp" type="date" id="mksd_e" value="${esc(ce)}" style="margin:6px 0 2px">
-      <div class="mksub" id="mksd_eh" style="margin:0 0 12px;font-weight:800;color:var(--accent)">${esc(hebOfIso(ce))||'&nbsp;'}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 12px"><button class="btn sm ghost" data-add="rc">עד סוף החודש העברי</button><button class="btn sm ghost" data-add="30">+30 יום לסוף</button><button class="btn sm ghost" data-add="m1">חודש מההתחלה</button><button class="btn sm ghost" data-add="365">+שנה לסוף</button></div>
+      <div class="hcrow"><button type="button" class="btn hcbtn" data-cal="mksd_s" id="mksd_sb"></button><input class="cinp" type="date" id="mksd_s" value="${esc(cs)}" title="או תאריך לועזי"></div>
+      <label class="cmsub" style="display:block;margin:10px 0 4px">סוף המנוי${ce?' (עכשיו '+esc(mkDate(ce))+')':''}</label>
+      <div class="hcrow"><button type="button" class="btn hcbtn" data-cal="mksd_e" id="mksd_eb"></button><input class="cinp" type="date" id="mksd_e" value="${esc(ce)}" title="או תאריך לועזי"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px"><button class="btn sm ghost" data-add="rc">עד סוף החודש העברי</button><button class="btn sm ghost" data-add="30">+30 יום לסוף</button><button class="btn sm ghost" data-add="m1">חודש מההתחלה</button><button class="btn sm ghost" data-add="365">+שנה לסוף</button></div>
       <div class="mksub" id="mksd_days" style="margin:-6px 0 12px"></div>
       <label class="cmsub" style="display:block;margin-bottom:4px">💳 זיכוי ליתרה (לא חובה) — סכום בש"ח שיתווסף ליתרה שלו במקווה${c.balance!=null?' (יתרה עכשיו '+esc(mkMoney(c.balance))+')':''}</label>
       <input class="cinp" id="mksd_cr" inputmode="decimal" placeholder="למשל 37">
@@ -2626,28 +2637,23 @@ async function mkSubEdit(c){
     document.body.appendChild(o);
     const S=o.querySelector('#mksd_s'), E=o.querySelector('#mksd_e'), N=o.querySelector('#mksd_n'), CR=o.querySelector('#mksd_cr');
     const isoOf=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    // הבוררים העבריים ↔ שדה התאריך — כל צד מעדכן את השני
-    const pickOf=id=>o.querySelector(`[data-pick="${id}"]`);
-    const setPick=(id,iso)=>{const P=pickOf(id);if(!P||!iso||!hebOfIso(iso))return;const p=_hebParts(new Date(iso.slice(0,10)+'T12:00:00'));
-      P.querySelector('.hd_d').value=String(p.day);const M=P.querySelector('.hd_m');[...M.options].forEach(op=>{if(_hqn(op.value)===_hqn(p.mo))M.value=op.value;});
-      const Y=P.querySelector('.hd_y'),ys=heYearStr(p.yr);if(![...Y.options].some(op=>_hqn(op.value)===_hqn(ys))){Y.insertAdjacentHTML('afterbegin',`<option>${esc(ys)}</option>`);}[...Y.options].forEach(op=>{if(_hqn(op.value)===_hqn(ys))Y.value=op.value;});};
     const days=()=>{const el=o.querySelector('#mksd_days');if(!S.value||!E.value){el.textContent='';return;}
       const n=Math.round((new Date(E.value+'T12:00:00')-new Date(S.value+'T12:00:00'))/864e5)+1;el.textContent=n>0?('📏 '+n+' ימים (כולל יום ההתחלה ויום הסיום)'):'';};
     // התאריך העברי מתעדכן מיד כשבוחרים תאריך
-    const heb=()=>{o.querySelector('#mksd_sh').innerHTML=esc(hebOfIso(S.value))||'&nbsp;';o.querySelector('#mksd_eh').innerHTML=esc(hebOfIso(E.value))||'&nbsp;';days();};
-    S.oninput=S.onchange=()=>{setPick('mksd_s',S.value);heb();};E.oninput=E.onchange=()=>{setPick('mksd_e',E.value);heb();};
-    o.querySelectorAll('.hedate[data-pick] select').forEach(sel=>sel.onchange=()=>{const P=sel.closest('.hedate');const inp=o.querySelector('#'+P.dataset.pick);
-      const iso=isoOfHeb(P.querySelector('.hd_d').value,P.querySelector('.hd_m').value,P.querySelector('.hd_y').value);
-      if(!iso){toast('אין תאריך כזה בשנה הזו');return;}inp.value=iso;heb();});
+    // הכפתור מראה את התאריך העברי (והלועזי בקטן) ופותח את הלוח העברי; שדה התאריך הלועזי לידו — למי שנוח לו
+    const heb=()=>{[['mksd_sb',S],['mksd_eb',E]].forEach(([id,inp])=>{const h=hebOfIso(inp.value);o.querySelector('#'+id).innerHTML=h?'📅 '+esc(h)+'<small>'+esc(mkDate(inp.value))+'</small>':'📅 לבחור בלוח העברי';});days();};
+    S.oninput=S.onchange=heb;E.oninput=E.onchange=heb;
+    o.querySelectorAll('[data-cal]').forEach(b=>b.onclick=async()=>{const inp=o.querySelector('#'+b.dataset.cal);
+      const v=await hebCalPick(inp.value||(b.dataset.cal==='mksd_e'&&S.value)||'',b.dataset.cal==='mksd_s'?'תחילת המנוי':'סוף המנוי');if(v){inp.value=v;heb();}});
     o.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
       const k=b.dataset.add;
       if(k==='rc'){ // מאיר: "מהיום עד ראש חודש כסליו" — הסוף = היום האחרון של החודש העברי של תאריך ההתחלה (ערב ראש חודש)
         const d=S.value?new Date(S.value+'T12:00:00'):new Date();d.setHours(12,0,0,0);const m0=_hebParts(d).mo;
         for(let i=0;i<31;i++){const nx=new Date(d);nx.setDate(nx.getDate()+1);if(_hebParts(nx).mo!==m0)break;d.setDate(d.getDate()+1);}
-        E.value=isoOf(d);setPick('mksd_e',E.value);heb();return;}
-      if(k==='m1'){const base=S.value?new Date(S.value+'T00:00:00'):new Date();base.setMonth(base.getMonth()+1);base.setDate(base.getDate()-1);E.value=isoOf(base);setPick('mksd_e',E.value);heb();return;}
-      const base=E.value?new Date(E.value+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(k,10));E.value=isoOf(base);setPick('mksd_e',E.value);heb();});
-    days();
+        E.value=isoOf(d);heb();return;}
+      if(k==='m1'){const base=S.value?new Date(S.value+'T00:00:00'):new Date();base.setMonth(base.getMonth()+1);base.setDate(base.getDate()-1);E.value=isoOf(base);heb();return;}
+      const base=E.value?new Date(E.value+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(k,10));E.value=isoOf(base);heb();});
+    heb();
     const done=v=>{o.remove();res(v);};
     o.querySelector('.cno').onclick=()=>done(null);
     o.querySelector('.cyes').onclick=()=>done({start:S.value,end:E.value,note:N.value.trim(),credit:CR.value.replace(/[₪,\s]/g,'')});
