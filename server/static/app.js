@@ -11277,9 +11277,11 @@ function renderAvreich(){
 // הודעה קולית לכל האברכים עם השם שלהם… אם הוא רוצה להירשם שיקיש 1, ואז אם יש לו הוראת קבע — האם לחייב את הכרטיס
 // שאצלנו, או דרך מספר אשראי אחר, או להירשם ולשלם מזומן, או שישאיר הודעה… שיהיה בחלונית של אברכים, ומקושר לימות המשיח"
 let AVYM={text:'שלום {שם}, כאן כולל חצות. הערב יוצא אוטובוס לנסיעה למירון לאברכי הכולל. היציאה בשעה אחת עשרה וארבעים וחמש דקות בלילה. דמי ההרשמה עשרים שקלים. להרשמה הקישו 1.',
-  event:'נסיעה למירון',amount:'20',sel:new Set(),job:null,poll:null};
+  event:'נסיעה למירון',amount:'20',sel:new Set(),job:null,poll:null,tpls:null,cur:''};
 async function avYmOpen(){
   if(!(AVLIST||[]).length)await loadAvList();
+  // מאיר: "רוצה שיהיה לי כל פעם אפשרות לנוסח אחר… נוסח מירון, או הודעות אחרות" — נוסחים שמורים במערכת
+  if(!AVYM.tpls){const r=await api('GET','/api/avym/tpls').catch(()=>null);AVYM.tpls=(r&&r.tpls)||[];}
   const o=document.createElement('div');o.className='mkov';
   const all=(AVLIST||[]).filter(a=>a.aid&&!(a.ended||'').trim());
   const good=all.filter(a=>ymPhone(a.phone)), bad=all.filter(a=>!ymPhone(a.phone));
@@ -11295,6 +11297,8 @@ async function avYmOpen(){
       <div class="mklist">${(J.msgs||[]).map(m=>`<div class="mkrow schrow ${m.status==='failed'?'bad':''}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(m.name||'')}</b><div class="mksub"><span dir="ltr">${esc(m.phone||'')}</span>${m.status==='failed'?' · ✗ '+esc(m.error||''):m.answered==null?' · ממתין':m.answered?' · ענה'+(m.listen_secs?' · שמע '+m.listen_secs+' שנ\'':'')+(m.pressed?' · הקיש '+esc(m.pressed):''):' · לא ענה'}</div></div><b>${m.reg?esc(RG[m.reg]||m.reg)+(m.reg_note?' <small>'+esc(m.reg_note)+'</small>':''):''}</b></div>`).join('')}</div>`:'';
     o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">📞</div><div><b>הודעה קולית לאברכים</b><span class="mksub">ימות המשיח · שיחה עם השם של כל אחד · הקשה 1 = הרשמה ותשלום</span></div><button class="x2" id="avy_x">✕</button></div>
       <div class="mkdb">
+        <div class="mklbl"><span>📝 נוסחים שמורים</span><button class="btn sm" id="avy_save" title="שומר את השם, האירוע, הסכום והטקסט שלמטה בשם שתבחר — לשימוש בפעם הבאה">💾 שמור את הנוסח הזה</button></div>
+        <div class="ymtpl">${(AVYM.tpls||[]).map(t=>`<button class="chip${AVYM.cur===t.name?' on':''}" data-tpl="${esc(t.name)}">${esc(t.name)}</button>`).join('')}<button class="chip${AVYM.cur?'':' on'}" data-tpl="">✍️ נוסח חדש</button>${AVYM.cur?`<button class="chip" id="avy_del" title="מחיקת הנוסח השמור">🗑 מחק "${esc(AVYM.cur)}"</button>`:''}</div>
         <div class="mklbl"><span>🚌 שם האירוע (נאמר בתפריט ההרשמה)</span></div><input id="avy_ev" value="${esc(AVYM.event)}" placeholder="למשל: נסיעה למירון">
         <div class="mklbl"><span>💲 דמי הרשמה בש"ח (הסכום שנגבה בהקשה 1)</span></div><input id="avy_amt" inputmode="decimal" value="${esc(AVYM.amount)}">
         <div class="mklbl"><span>🔊 הטקסט שיוקרא ({שם} = שם האברך)</span></div><textarea id="avy_txt" rows="5">${esc(AVYM.text)}</textarea>
@@ -11313,6 +11317,15 @@ async function avYmOpen(){
     const keep=()=>{AVYM.text=g('avy_txt').value;AVYM.event=g('avy_ev').value.trim();AVYM.amount=g('avy_amt').value.trim();};
     ['avy_txt','avy_ev','avy_amt'].forEach(id=>g(id).onchange=()=>{keep();draw();});
     g('avy_x').onclick=()=>{clearInterval(AVYM.poll);o.remove();};
+    o.querySelectorAll('.chip[data-tpl]').forEach(c=>c.onclick=()=>{keep();const t=(AVYM.tpls||[]).find(x=>x.name===c.dataset.tpl);
+      if(t){AVYM.cur=t.name;AVYM.event=t.event||'';AVYM.amount=t.amount||'';AVYM.text=t.text||'';}
+      else{AVYM.cur='';AVYM.event='';AVYM.amount='';AVYM.text='שלום {שם}, כאן כולל חצות. ';}
+      draw();});
+    g('avy_save').onclick=async()=>{keep();const nm=await uiPrompt('שם לנוסח (למשל: מירון):',AVYM.cur||AVYM.event||'');if(nm===null)return;const name=String(nm).trim();if(!name){toast('חסר שם');return;}
+      const r=await api('POST','/api/avym/tpls',{save:{name,event:AVYM.event,amount:AVYM.amount,text:AVYM.text}}).catch(()=>null);
+      if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}AVYM.tpls=r.tpls;AVYM.cur=name;toast('💾 הנוסח "'+name+'" נשמר');draw();};
+    const dl=g('avy_del');if(dl)dl.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח "'+AVYM.cur+'"?'))return;
+      const r=await api('POST','/api/avym/tpls',{delete:AVYM.cur}).catch(()=>null);if(!r||!r.ok){toast('לא נמחק');return;}AVYM.tpls=r.tpls;AVYM.cur='';toast('נמחק');draw();};
     g('avy_all').onclick=()=>{good.forEach(a=>AVYM.sel.add(a.aid));draw();};
     g('avy_none').onclick=()=>{AVYM.sel.clear();draw();};
     o.querySelectorAll('.ymrow[data-aid]').forEach(r=>r.onclick=()=>{const id=+r.dataset.aid;if(AVYM.sel.has(id))AVYM.sel.delete(id);else AVYM.sel.add(id);draw();});

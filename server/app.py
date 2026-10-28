@@ -23061,6 +23061,16 @@ class H(BaseHTTPRequestHandler):
                 cur = {}
             con.close()
             return self._send(200, {'ok': True, 'tpl': cur})
+        if self.path.split('?')[0] == '/api/avym/tpls':
+            # 📞 מאיר: "רוצה שיהיה לי כל פעם אפשרות לנוסח אחר… נוסח מירון, או הודעות אחרות" — נוסחים שמורים
+            # להודעה הקולית לאברכים (שם, אירוע, סכום, טקסט), לכל המכשירים
+            con = db()
+            try:
+                cur = json.loads(kv_get(con, 'avym_tpls', '') or '[]')
+            except ValueError:
+                cur = []
+            con.close()
+            return self._send(200, {'ok': True, 'tpls': cur if isinstance(cur, list) else []})
         if self.path.split('?')[0] == '/api/cm/debtcats':
             con = db()
             try:
@@ -24568,6 +24578,29 @@ class H(BaseHTTPRequestHandler):
             con = db()
             kv_set(con, 'cm_debt_cats', json.dumps(out, ensure_ascii=False)); con.commit(); con.close()
             return self._send(200, {'ok': True, 'cats': out})
+        if self.path == '/api/avym/tpls':
+            # 📞 נוסחים שמורים להודעה הקולית לאברכים: save = {name,event,amount,text} (מחליף נוסח באותו שם), delete = name
+            con = db()
+            try:
+                try:
+                    cur = json.loads(kv_get(con, 'avym_tpls', '') or '[]')
+                except ValueError:
+                    cur = []
+                cur = [t for t in cur if isinstance(t, dict) and t.get('name')]
+                if b.get('delete'):
+                    cur = [t for t in cur if t.get('name') != str(b.get('delete')).strip()]
+                elif isinstance(b.get('save'), dict):
+                    t = b['save']
+                    nm = re.sub(r'\s+', ' ', str(t.get('name') or '')).strip()[:40]
+                    if not nm:
+                        return self._send(200, {'ok': False, 'error': 'חסר שם לנוסח'})
+                    rec = {'name': nm, 'event': str(t.get('event') or '').strip()[:60], 'amount': str(t.get('amount') or '').strip()[:12], 'text': str(t.get('text') or '').strip()[:2000]}
+                    cur = [x for x in cur if x.get('name') != nm] + [rec]
+                kv_set(con, 'avym_tpls', json.dumps(cur[:40], ensure_ascii=False))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'tpls': cur[:40]})
         if self.path == '/api/cm/mailtpl':
             # ✉️ מאיר: "חוץ מאצל התורם עצמו — איפה יש את המייל המוכן לשליחה, לערוך אותו?" — נוסח מייל התזכורת
             # (התחייבות / הו"ק שחזרה), נשמר במערכת לכל המכשירים
