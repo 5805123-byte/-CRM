@@ -4690,6 +4690,71 @@ def ensure_schema():
     except Exception as e:
         print('  meron redial seed error:', e)
 
+    # מאיר (28.10.2026): "חיה קירשבאום שלחה עדכון בנוסף לשמות שיש לה בקוויטל ואתה מחקת את השמות והשארת את
+    # האנגלית… תעדכן את זה דחוף" — השמות שהיו (מהמייל של העדכון דרך הקישור, 27.10 20:20) חוזרים ראשונים,
+    # והטקסט באנגלית נשאר אחריהם כתוספת
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kirschbaum_names_restore_v1'").fetchone():
+            _kd = con.execute("SELECT id, tier FROM donors WHERE (last LIKE 'קירשבאום%' AND first LIKE 'חיה%') OR (id=487 AND last LIKE '%קירשבאום%')").fetchall()
+            if len(_kd) == 1:
+                _kid = _kd[0]['id']
+                _old = ('אביאל אברהם בן רבקה לברכה והצלחה בכל מעשי ידיו, זוגתו חיה יהודית בת שרה, אמיתי גדעון בן חיה יהודית לבריאות טובה, '
+                        'יאיר בצלאל בן חיה יהודית לגדול בתורה ויראת שמים- לכל המשפחה שמירה, נחת ושמחה וכל טוב אמן')
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND text LIKE '%אביאל אברהם%'", (_kid,)).fetchone():
+                    _en = con.execute("SELECT id, text, tier FROM prayers WHERE donor_id=? AND text LIKE 'In the merit%' ORDER BY id LIMIT 1", (_kid,)).fetchone()
+                    _tier = (_en['tier'] if _en and _en['tier'] else (_kd[0]['tier'] or ''))
+                    if _en:
+                        con.execute("UPDATE prayers SET text=? WHERE id=?", (_old, _en['id']))             # העברית ראשונה
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (_kid, _en['text'], _tier))   # האנגלית אחריה
+                    else:
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (_kid, _old, _tier))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (_kid, today_iso(), 'מערכת', '🙏 השמות בקוויטל הוחזרו (נמחקו בטעות בעדכון דרך הקישור ב-27.10); הטקסט באנגלית נשאר כתוספת', '', now_iso()))
+                    print('  קירשבאום חיה: השמות בקוויטל הוחזרו')
+                con.execute("INSERT INTO seed_flags(name) VALUES('kirschbaum_names_restore_v1')"); con.commit()
+            else:
+                print('  קירשבאום חיה: נמצאו %d כרטיסים — לא הוחזר' % len(_kd))
+    except Exception as e:
+        print('  kirschbaum restore error:', e)
+
+    # מאיר (28.10.2026): "היא שילמה 100 מתוך 480 שהיא חייבת על פרנס לילה יז חשוון, תעדכן את זה" (קירשבאום חיה) —
+    # הלילה סומן "נגבה" ונספר פעמיים (480 + 100). מחזירים ל"פתוח" עם התשלום של 100 משויך אליו; נשאר 380
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kirschbaum_parnes_partial_v1'").fetchone():
+            _kd = con.execute("SELECT id FROM donors WHERE (last LIKE 'קירשבאום%' AND first LIKE 'חיה%') OR (id=487 AND last LIKE '%קירשבאום%')").fetchall()
+            if len(_kd) == 1:
+                _kid = _kd[0]['id']; _n = 0
+                for p in con.execute("SELECT id,amount,paid,date_text FROM parnes WHERE donor_id=? AND COALESCE(kind,'parnes')='parnes' AND COALESCE(status,'')<>'suggested' "
+                                     "AND (date_text LIKE '%חשו%' OR date_text LIKE '%חשון%')", (_kid,)).fetchall():
+                    # התשלום של 100 — אם עוד לא משויך ללילה, משייכים אותו
+                    if not con.execute("SELECT 1 FROM donations WHERE parnes_id=?", (p['id'],)).fetchone():
+                        d1 = con.execute("SELECT id FROM donations WHERE donor_id=? AND ROUND(CAST(REPLACE(amount,',','') AS REAL))=100 "
+                                         "AND COALESCE(parnes_id,0)=0 AND date>='2026-10-20' ORDER BY date DESC LIMIT 1", (_kid,)).fetchone()
+                        if d1:
+                            con.execute("UPDATE donations SET parnes_id=?, category='פרנס לילה' WHERE id=?", (p['id'], d1['id']))
+                    psum = con.execute("SELECT COALESCE(SUM(CAST(REPLACE(REPLACE(amount,',',''),'$','') AS REAL)),0) FROM donations WHERE parnes_id=?", (p['id'],)).fetchone()[0] or 0
+                    price = _amt2(p['amount']) if _amt2(p['amount']) >= 480 else 480.0
+                    if 0 < psum < price - 0.5:
+                        con.execute("UPDATE parnes SET amount=?, paid=0 WHERE id=?", ('%g' % price, p['id'])); _n += 1
+                if _n:
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (_kid, today_iso(), 'מערכת', 'פרנס לילה י"ז חשון: שולם 100$ מתוך 480$ — נשאר 380$ לגבייה (מאיר, 28.10.2026)', '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('kirschbaum_parnes_partial_v1')"); con.commit()
+                print('  קירשבאום חיה: לילות שתוקנו לתשלום חלקי: %d' % _n)
+            else:
+                print('  קירשבאום חיה (פרנס): נמצאו %d כרטיסים — לא תוקן' % len(_kd))
+    except Exception as e:
+        print('  kirschbaum parnes error:', e)
+
+    # מאיר (28.10.2026): "למה כל מי שקיבל טלפון ולא נרשם למירון רשום בחובות של הקהילה?" — ההזמנות שכבר יצאו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='event_msgs_not_debts_v1'").fetchone():
+            n = con.execute("UPDATE ym_msg SET req_off='event' WHERE COALESCE(event,'')<>'' AND COALESCE(req_off,'')=''").rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('event_msgs_not_debts_v1')"); con.commit()
+            print('  הזמנות לאירוע שהוצאו מחובות הקהילה: %d' % n)
+    except Exception as e:
+        print('  event msgs fix error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -17378,13 +17443,21 @@ def cardlink_save(con, did, b):
     cur_n = re.sub(r'\s+', ' ', cardlink_names(con, did)).strip()
     if nn and nn != cur_n:
         # מאיר: "אם הוא אישית מתקן שמות בלינק שלו — אז שכן ייכנס לקוויטל שלו ישירות". הנוסח הישן נשמר בקשר
+        # מאיר (28.10.2026, קירשבאום): "שלחה עדכון בנוסף לשמות שיש לה בקוויטל ואתה מחקת את השמות" — טקסט חדש
+        # שלא מכיל את השמות הקיימים הוא תוספת: השמות הישנים נשארים והחדש נוסף אחריהם. רק כשהטקסט החדש
+        # מכיל את הישן (תיקון / הרחבה של אותו נוסח) — הוא מחליף אותו
         new_txt = re.sub(r'[ \t]+', ' ', str(b.get('names') or '')).strip()[:4000]
         old_rows = con.execute("SELECT tier FROM prayers WHERE donor_id=? ORDER BY id", (did,)).fetchall()
         tier = (old_rows[0]['tier'] if old_rows and old_rows[0]['tier'] else (d['tier'] or ''))
-        con.execute("DELETE FROM prayers WHERE donor_id=?", (did,))
-        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
+        _k = lambda x: re.sub(r'[\s,.;:\-"\'׳״]+', '', str(x or ''))
+        if not cur_n or _k(cur_n) in _k(nn):
+            con.execute("DELETE FROM prayers WHERE donor_id=?", (did,))
+            con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
+            lines.append('שמות לתפילה עודכנו בקוויטל. היה: "%s" → עכשיו: "%s"' % (cur_n[:300] or '—', nn[:300]))
+        else:
+            con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
+            lines.append('נוסף לקוויטל (השמות הקיימים נשארו): "%s"' % nn[:300])
         out['names_changed'] = True
-        lines.append('שמות לתפילה עודכנו בקוויטל. היה: "%s" → עכשיו: "%s"' % (cur_n[:300] or '—', nn[:300]))
     if lines:
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
                     (did, today_iso(), 'קישור', '🔗 התורם עדכן דרך הקישור האישי: ' + ' · '.join(lines), '', now_iso()))
@@ -25873,6 +25946,8 @@ class H(BaseHTTPRequestHandler):
                 dids_ and con.execute("SELECT 1 FROM cm_debt WHERE fund='natan' AND id IN (%s)" % ','.join('?' * len(dids_)), dids_).fetchone())
             if is_nat:
                 con.execute("UPDATE ym_msg SET fund='natan' WHERE job=?", (jid,))
+            if event:
+                con.execute("UPDATE ym_msg SET req_off='event' WHERE job=?", (jid,))   # הרשמה לאירוע — לא בקשת תשלום / חוב
             if not b.get('test') and b.get('debt_ids'):
                 cm_debts_reminded(con, b.get('debt_ids'), ch)
                 cm_debts_link_msgs(con, jid, dids_)
@@ -31037,6 +31112,9 @@ def ym_req_rows(con, st='open'):
     since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
     w = {'open': " AND COALESCE(m.paid_at,'')='' AND COALESCE(m.req_off,'')=''",
          'paid': " AND COALESCE(m.paid_at,'')<>''", 'canceled': " AND COALESCE(m.req_off,'')<>''"}.get(st, '') + " AND COALESCE(m.req_off,'')<>'debt'"
+    # מאיר (28.10.2026): "כל מי שקיבל טלפון ולא נרשם למירון רשום בחובות של הקהילה?? מה הקשר בכלל לקהילה ולמה
+    # חובות?" — הזמנה לאירוע עם דמי הרשמה (event) היא לא חוב ולא בקשת תשלום; לא מופיעה כאן בכלל
+    w += " AND COALESCE(m.event,'')='' AND COALESCE(m.kind,'')<>'a'"
     rows = [dict(r) for r in con.execute(
         "SELECT m.id,m.kind,m.ref_id,m.name,m.phone,m.amount,m.sent_ts,m.paid_at,m.paid_amount,m.paid_via,m.req_off,m.job,"
         "j.label jlabel FROM ym_msg m LEFT JOIN ym_job j ON j.id=m.job WHERE m.status='sent' AND CAST(COALESCE(m.amount,'0') AS REAL)>0 "
