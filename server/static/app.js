@@ -16881,7 +16881,10 @@ async function cmNdPaint(m,showAll,boxId){
         ${K.length?`<label class="gvall" style="flex:1 1 100%"><input type="checkbox" class="cdn_nd" checked> 📤 לרשום גם בנדרים פלוס — והם יפיקו וישלחו לו קבלה</label>`:''}
         <button class="btn sm cdn_go">💾 רשום</button></div></details>`;
   const errHTML=ER.length?`<details class="cmdonadd"><summary>🔴 סירובים בנדרים פלוס (${ER.length})</summary>${ER.map(e=>`<div class="bqpay"><span><b>${esc(ndDate(e.iso||''))}</b> · ${ndMoney(e.amount)}${e.groupe?' · '+esc(e.groupe):''}${e.last4?' · ****'+esc(e.last4):''} · <span class="ndbad">${esc(e.error||'')}</span>${+e.done?' <small class="ndok">טופל</small>':''}</span></div>`).join('')}</details>`:'';
-  box.innerHTML=`${kevaHTML}${errHTML}${addHTML}
+  // מאיר: "ביקשתי שאל תערבב בין שניהם בכלל אף פעם" — חבר שהופרד: לא משייכים לו תשלומים מנדרים פלוס לפי טלפון
+  const splitHTML=r.nd_nomatch?`<div class="hintxt" style="color:#c0392b;font-weight:700">⛔ מופרד מנדרים פלוס — לא משייכים לו תשלומים לפי טלפון (מוצג רק מה ששויך אליו ידנית). <button class="btn sm ghost cdn_split" data-on="0" style="width:auto">להחזיר שיוך לפי טלפון</button></div>`
+    :`<div style="display:flex;justify-content:flex-end"><button class="btn sm ghost cdn_split" data-on="1" style="width:auto;flex:0 0 auto" title="אם התשלומים שמופיעים כאן הם של מישהו אחר עם אותו טלפון — ניתוק: מה ששויך אוטומטית יורד, ולא ישויך לו יותר לפי טלפון">⛔ התשלומים כאן לא שלו</button></div>`;
+  box.innerHTML=`${splitHTML}${kevaHTML}${errHTML}${addHTML}
     ${rows.length?`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn sm ghost cmrcon${rcOn?' on':''}" title="להוציא לו קבלה — מנדרים פלוס או מכאן" style="width:auto;flex:0 0 auto">${rcOn?'✕ סגור קבלות':'🧾 קבלות'}</button></div><div class="bqhsum" style="margin-top:4px"><b>${rows.filter(x=>+x.amount>0&&!x.fund).length} תרומות לקהילה · ${ndMoney(rows.reduce((t,x)=>t+(+x.amount>0&&!x.fund?+x.amount:0),0))}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div>
         ${(()=>{const ot={};rows.filter(x=>+x.amount>0&&x.fund).forEach(x=>{const k=x.acct||'חשבון אחר';ot[k]=ot[k]||{n:0,s:0};ot[k].n++;ot[k].s+=+x.amount;});
           return Object.keys(ot).map(k=>`<div class="hintxt">${k==='נתן תתן'?'🎁':'🔹'} ${esc(k)} (נפרד, לא בסכום של הקהילה): ${ot[k].n} · ${ndMoney(ot[k].s)}</div>`).join('');})()}</div>
@@ -16891,6 +16894,11 @@ async function cmNdPaint(m,showAll,boxId){
       ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
       :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
   const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true,boxId);
+  const spl=box.querySelector('.cdn_split'); if(spl)spl.onclick=async()=>{const on=spl.dataset.on==='1';
+    if(on&&!await uiConfirm('לנתק את '+((m.last||'')+' '+(m.first||'')).trim()+' מנדרים פלוס?\nכל מה ששויך אליו אוטומטית (הוראות קבע ותשלומים) יורד מהכרטיס ונשאר לא־משויך, ולא ישויך לו יותר לפי טלפון.'))return;
+    const x=await api('POST','/api/members/'+m.id+'/nd_nomatch',{on:on?1:0}).catch(()=>null);
+    if(!x||!x.ok){toast((x&&x.error)||'לא נשמר');return;}
+    toast(on?('נותק ✓ — '+x.tx+' תשלומים, '+x.kevas+' הו"ק'):'השיוך לפי טלפון הופעל');cmNdPaint(m,showAll,boxId);};
   const ndw=box.querySelector('.cdn_ndwin'); if(ndw)ndw.onclick=()=>ndDonate(m.id);
   const ndm=box.querySelector('.cdn_masav'); if(ndm)ndm.onclick=()=>ndMasavNew(m,()=>cmNdPaint(m,showAll,boxId));
   const ndi=box.querySelector('.cdn_masavinv'); if(ndi)ndi.onclick=()=>ndMasavInvite(m);

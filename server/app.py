@@ -759,6 +759,10 @@ def ensure_schema():
     # pending=1 — יש שאלה אם הוא שייך לקהילה; מאיר עונה כן/לא בשורה
     try: con.execute("ALTER TABLE members ADD COLUMN pending INTEGER DEFAULT 0")
     except Exception: pass
+    # מאיר: "ביקשתי שאל תערבב בין שניהם בכלל אף פעם" (אנשין יעקב מהקהילה ≠ אנשין יעקב יוסף האברך) —
+    # nd_nomatch=1: לא משייכים לחבר הזה תשלומים / הוראות מנדרים פלוס לפי טלפון; רק מה ששויך אליו ידנית
+    try: con.execute("ALTER TABLE members ADD COLUMN nd_nomatch INTEGER DEFAULT 0")
+    except Exception: pass
     for col in ('link', 'amount'):     # קישור תשלום אישי בנדרים פלוס ({{קישור}}) והסכום שלו ({{סכום}})
         try: con.execute(f"ALTER TABLE mail_queue ADD COLUMN {col} TEXT")
         except Exception: pass
@@ -4629,6 +4633,27 @@ def ensure_schema():
                 print('  גירשבוים: לא נמצא כרטיס יחיד (%d) — לא תוקן' % len(_gs))
     except Exception as e:
         print('  gershbaum partial error:', e)
+
+    # מאיר (28.10.2026): "יעקב אנשין הזה הוא חדש בקהילה ועירבבת אותו ביחד עם אנשין יעקב יוסף שהוא אברך מהכולל…
+    # הטלפון והאימייל שלו נכונים אבל כל התשלומים שמופיעים שם לא נכונים" — מנתקים ממנו את כל מה ששויך
+    # מנדרים פלוס (עסקאות והוראות קבע), ומסמנים שלא ישייכו לו לפי טלפון יותר. העסקאות נשארות לא־משויכות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='anshin_member_nd_split_v1'").fetchone():
+            _am = con.execute("SELECT id FROM members WHERE TRIM(last)='אנשין' AND TRIM(first)='יעקב' AND REPLACE(REPLACE(COALESCE(phone,''),'-',''),' ','') LIKE '%7184129%'").fetchall()
+            if len(_am) == 1:
+                _mid = _am[0]['id']
+                n1 = con.execute("UPDATE nd_tx SET member_id=NULL WHERE member_id=?", (_mid,)).rowcount
+                n2 = con.execute("UPDATE nd_keva SET member_id=NULL WHERE member_id=?", (_mid,)).rowcount
+                con.execute("DELETE FROM nd_map WHERE member_id=?", (_mid,))
+                con.execute("UPDATE members SET nd_nomatch=1 WHERE id=?", (_mid,))
+                con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                            (_mid, today_iso(), 'מערכת', 'הופרד מנדרים פלוס: %d עסקאות ו-%d הוראות קבע נותקו (לא שלו — של אנשין יעקב יוסף, אברך). לא משייכים לו לפי טלפון יותר' % (n1, n2), '', 'note', 'nd_split', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('anshin_member_nd_split_v1')"); con.commit()
+                print('  אנשין יעקב (קהילה): נותקו %d עסקאות, %d הו"ק' % (n1, n2))
+            else:
+                print('  אנשין יעקב (קהילה): נמצאו %d כרטיסים — לא נותק' % len(_am))
+    except Exception as e:
+        print('  anshin split error:', e)
 
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
@@ -16537,7 +16562,8 @@ def member_nd(con, mid):
     m = con.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone()
     if not m:
         return None
-    phs = _phones_of(m['phone'])
+    nomatch = bool(m['nd_nomatch']) if 'nd_nomatch' in m.keys() else False
+    phs = [] if nomatch else _phones_of(m['phone'])      # מופרד — לא לפי טלפון, רק מה ששויך אליו ידנית
     kall = [dict(r) for r in con.execute("SELECT k.*, l.link, l.sent_at FROM nd_keva k LEFT JOIN nd_link l ON l.keva_id=k.id "
                                           "WHERE k.member_id=? ORDER BY k.active DESC, k.id", (mid,))]
     kids = [k['id'] for k in kall]          # ההיסטוריה של ההוראות הישנות עדיין שלו
@@ -16596,7 +16622,7 @@ def member_nd(con, mid):
             'sum': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0 and not t['fund']), 2),
             'sum_natan': round(sum(t['amount'] or 0 for t in txs if (t['amount'] or 0) > 0 and t['fund'] == 'natan'), 2),
             'since': min((t['iso'] or '' for t in txs if t['iso']), default=''),
-            'debts': debts, 'tasks': tasks, 'email': (emails_of(m['email'])[0] if m['email'] else ''),
+            'debts': debts, 'tasks': tasks, 'email': (emails_of(m['email'])[0] if m['email'] else ''), 'nd_nomatch': int(nomatch),
             'linked_by': 'ידני' if con.execute("SELECT 1 FROM nd_map WHERE member_id=?", (mid,)).fetchone() else ''}
 
 
@@ -27665,6 +27691,28 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             bump_data()
             return self._send(200, {'ok': True, 'doc': doc, 'send_error': send_error})
+        m = re.match(r'/api/members/(\d+)/nd_nomatch$', self.path)
+        if m:
+            # מאיר: "אל תערבב בין שניהם בכלל אף פעם" — ניתוק חבר קהילה מנדרים פלוס: לא משייכים לו לפי טלפון,
+            # ומה שכבר שויך אליו אוטומטית מתנתק (נשאר לא־משויך). ביטול — חוזרים לשיוך לפי טלפון
+            mid = int(m.group(1)); on = 1 if b.get('on') else 0
+            con = db()
+            try:
+                if not con.execute("SELECT 1 FROM members WHERE id=?", (mid,)).fetchone():
+                    return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+                con.execute("UPDATE members SET nd_nomatch=? WHERE id=?", (on, mid))
+                n1 = n2 = 0
+                if on:
+                    n1 = con.execute("UPDATE nd_tx SET member_id=NULL WHERE member_id=?", (mid,)).rowcount
+                    n2 = con.execute("UPDATE nd_keva SET member_id=NULL WHERE member_id=?", (mid,)).rowcount
+                    con.execute("DELETE FROM nd_map WHERE member_id=?", (mid,))
+                con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                            (mid, today_iso(), 'מערכת', ('הופרד מנדרים פלוס: %d עסקאות ו-%d הוראות קבע נותקו. לא משייכים לו לפי טלפון' % (n1, n2)) if on else 'שיוך מנדרים פלוס לפי טלפון הופעל מחדש',
+                             '', 'note', 'nd_split', now_iso()))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'on': on, 'tx': n1, 'kevas': n2})
         m = re.match(r'/api/members/(\d+)/donation$', self.path)
         if m:
             mid = int(m.group(1)); a = round(_amt2(re.sub(r'[^\d.,]', '', str(b.get('amount') or ''))), 2)
@@ -30379,7 +30427,7 @@ def _phones_of(s):
 
 def nd_member_index(con):
     idx = {}
-    for m in con.execute("SELECT id,phone FROM members WHERE COALESCE(active,1)=1"):
+    for m in con.execute("SELECT id,phone FROM members WHERE COALESCE(active,1)=1 AND COALESCE(nd_nomatch,0)=0"):
         for ph in _phones_of(m['phone']):
             idx.setdefault(ph, set()).add(m['id'])
     return idx
