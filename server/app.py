@@ -17955,41 +17955,6 @@ def mk_req_sync(days=None):
     return r
 
 
-def _mk_goldman_once():
-    """מאיר (כ"ח תשרי / 28.10.2026): "גולדמן יעקב שילם 70 על מנוי חודשי… ברעיון זה מתחיל מראש חודש תמיד,
-    ואצלו נתתי אישור שמהיום שלושים יום" — לקוח #1744: תחילת המנוי 28.10.2026, סוף 27.11.2026, במקווה עצמו.
-    חד־פעמי; אם המקווה לא ענה — מנסים שוב כמה פעמים, ואם לא הצליח, שוב בהפעלה הבאה."""
-    time.sleep(60)
-    for _ in range(6):
-        try:
-            con = db()
-            try:
-                if con.execute("SELECT 1 FROM seed_flags WHERE name='goldman_1744_subdates_v1'").fetchone():
-                    return
-            finally:
-                con.close()
-            import mikveh as _mk
-            c = next((x for x in _mk.clients(fresh=True) if str(x.get('clientCode') or '') == '1744'
-                      and re.sub(r'\D', '', str(x.get('phone') or '')).endswith('504100328')), None)
-            if not c:
-                print('  goldman 1744: לא נמצא במקווה')
-                return
-            res = _mk.set_sub_dates(str(c.get('id')), end='2026-11-27', start='2026-10-28')
-            con = db()
-            try:
-                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (str(c.get('id')), now_iso(), 'sub', '📅 תחילת המנוי: 2026-10-28 · מנוי עד: %s · אישור מיוחד של מאיר — שלושים יום מהיום (שילם 70₪)' % res['sub_end']))
-                con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('goldman_1744_subdates_v1')")
-                con.commit()
-            finally:
-                con.close()
-            print('  goldman 1744: המנוי נקבע 28.10.2026 → %s' % res['sub_end'])
-            return
-        except Exception as e:
-            print('  goldman 1744 subdates error:', e)
-            time.sleep(600)
-
-
 def _mk_req_loop():
     time.sleep(90)
     while True:
@@ -25434,8 +25399,10 @@ class H(BaseHTTPRequestHandler):
             # 💰 מאיר: "איפה אני מעדכן לו יתרה בחשבון? כי הוא נתן חלק מזומן" — היתרה (balance) במקווה עצמו, באגורות
             import mikveh as _mk
             cid = str(b.get('id') or '').strip()
+            # מאיר: "אופציה של זיכוי יתרה" — add = סכום להוסיף ליתרה הנוכחית (במקום יתרה חדשה מוחלטת)
+            add = b.get('add')
             try:
-                bal = round(float(str(b.get('balance') or '0').replace(',', '').replace('₪', '').strip()), 2)
+                bal = round(float(str((add if add is not None else b.get('balance')) or '0').replace(',', '').replace('₪', '').strip()), 2)
             except ValueError:
                 return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
             if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or abs(bal) > 100000:
@@ -25446,6 +25413,9 @@ class H(BaseHTTPRequestHandler):
             try:
                 # כמו המסך של המקווה: קוראים את היתרה, מוסיפים / מפחיתים את ההפרש (addCredit)
                 old = _mk.balance(cid)
+                if add is not None:
+                    cents = old + cents
+                    bal = cents / 100.0
                 delta = cents - old
                 if delta == 0:
                     return self._send(200, {'ok': True, 'balance': old, 'same': True})
@@ -32851,7 +32821,6 @@ def serve():
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
-    threading.Thread(target=_mk_goldman_once, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()

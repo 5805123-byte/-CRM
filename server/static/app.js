@@ -284,10 +284,27 @@ const _HMONTH_FIX={'חשוון':'חשון','מרחשון':'חשון','מרחשו
 function heYearStr(n){n=+n;if(!n)return '';n=n%1000;const H=[[400,'ת'],[300,'ש'],[200,'ר'],[100,'ק'],[90,'צ'],[80,'פ'],[70,'ע'],[60,'ס'],[50,'נ'],[40,'מ'],[30,'ל'],[20,'כ'],[10,'י'],[9,'ט'],[8,'ח'],[7,'ז'],[6,'ו'],[5,'ה'],[4,'ד'],[3,'ג'],[2,'ב'],[1,'א']];
   let s='';for(const[v,l]of H){while(n>=v){if((n===15&&v===10)||(n===16&&v===10)){s+=n===15?'טו':'טז';n=0;break;}s+=l;n-=v;}}
   return s.length>1?s.slice(0,-1)+'"'+s.slice(-1):s+"'";}
+let _HEBFMT=null;
+function _hebParts(d){if(!_HEBFMT)_HEBFMT=new Intl.DateTimeFormat('he-u-ca-hebrew',{day:'numeric',month:'long',year:'numeric'});
+  const P={};_HEBFMT.formatToParts(d).forEach(p=>P[p.type]=p.value);
+  return {day:parseInt(P.day,10),mo:_HMONTH_FIX[P.month]||P.month||'',yr:parseInt(P.year,10)};}
 function hebOfIso(iso){try{if(!iso)return '';const d=new Date(String(iso).slice(0,10)+'T12:00:00');if(isNaN(d))return '';
-  const P={};new Intl.DateTimeFormat('he-u-ca-hebrew',{day:'numeric',month:'long',year:'numeric'}).formatToParts(d).forEach(p=>P[p.type]=p.value);
-  const day=parseInt(P.day,10),mo=_HMONTH_FIX[P.month]||P.month||'',yr=parseInt(P.year,10);
-  if(!day||!mo||!yr)return '';return heDay(day)+' '+mo+' '+heYearStr(yr);}catch(e){return '';}}
+  const p=_hebParts(d);if(!p.day||!p.mo||!p.yr)return '';return heDay(p.day)+' '+p.mo+' '+heYearStr(p.yr);}catch(e){return '';}}
+// מאיר: "אני רוצה עברי לוח שנה" — בחירה בעברית (יום, חודש, שנה) → תאריך לועזי. מחפשים ביומן הדפדפן
+// משנה אחורה עד שנתיים קדימה; '' אם אין תאריך כזה (למשל "אדר" בשנה מעוברת, או ל' בחודש של 29)
+const HMORD_PICK=['תשרי','חשון','כסלו','טבת','שבט','אדר',"אדר א'","אדר ב'",'ניסן','אייר','סיון','תמוז','אב','אלול'];
+const _hqn=s=>String(s||'').replace(/[״"׳']/g,'').replace(/\s+/g,' ').trim();
+function isoOfHeb(day,mo,yr){try{day=+day;const moN=_hqn(mo),yrN=_hqn(yr);if(!day||!moN||!yrN)return '';
+  const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-400);
+  for(let i=0;i<1200;i++){const p=_hebParts(d);
+    if(p.day===day&&_hqn(p.mo)===moN&&_hqn(heYearStr(p.yr))===yrN)return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    d.setDate(d.getDate()+1);}
+  return '';}catch(e){return '';}}
+// שלושת הבוררים (יום / חודש / שנה) של לוח עברי, מכוונים לתאריך לועזי נתון
+function hebPickHTML(id,iso){const p=iso&&hebOfIso(iso)?_hebParts(new Date(iso.slice(0,10)+'T12:00:00')):null;const yr=p?heYearStr(p.yr):'';
+  return `<div class="hedate" data-pick="${id}"><select class="hd_d">${HEDAYS.map((d,i)=>`<option value="${i+1}" ${p&&p.day===i+1?'selected':''}>${d}</option>`).join('')}</select>
+    <select class="hd_m">${HMORD_PICK.map(m=>`<option ${p&&_hqn(m)===_hqn(p.mo)?'selected':''}>${m}</option>`).join('')}</select>
+    <select class="hd_y">${heYearOpts(yr||HEBYEAR)}</select></div>`;}
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
@@ -2592,39 +2609,67 @@ async function mkSubEdit(c){
     const o=document.createElement('div');o.className='confirmov';
     o.innerHTML=`<div class="confirmbox"><div class="cm">📅 תאריכי המנוי — ${esc(mkName(c))}</div>
       <label class="cmsub" style="display:block;margin-bottom:4px">תחילת המנוי${cs?' (עכשיו '+esc(mkDate(cs))+')':''}</label>
-      <input class="cinp" type="date" id="mksd_s" value="${esc(cs)}" style="margin-bottom:4px">
+      ${hebPickHTML('mksd_s',cs)}
+      <input class="cinp" type="date" id="mksd_s" value="${esc(cs)}" style="margin:6px 0 2px">
       <div class="mksub" id="mksd_sh" style="margin:0 0 12px;font-weight:800;color:var(--accent)">${esc(hebOfIso(cs))||'&nbsp;'}</div>
       <label class="cmsub" style="display:block;margin-bottom:4px">סוף המנוי${ce?' (עכשיו '+esc(mkDate(ce))+')':''}</label>
-      <input class="cinp" type="date" id="mksd_e" value="${esc(ce)}" style="margin-bottom:4px">
+      ${hebPickHTML('mksd_e',ce)}
+      <input class="cinp" type="date" id="mksd_e" value="${esc(ce)}" style="margin:6px 0 2px">
       <div class="mksub" id="mksd_eh" style="margin:0 0 12px;font-weight:800;color:var(--accent)">${esc(hebOfIso(ce))||'&nbsp;'}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 12px"><button class="btn sm ghost" data-add="30">+30 יום לסוף</button><button class="btn sm ghost" data-add="365">+שנה לסוף</button><button class="btn sm ghost" data-add="m1">חודש מההתחלה</button></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 12px"><button class="btn sm ghost" data-add="rc">עד סוף החודש העברי</button><button class="btn sm ghost" data-add="30">+30 יום לסוף</button><button class="btn sm ghost" data-add="m1">חודש מההתחלה</button><button class="btn sm ghost" data-add="365">+שנה לסוף</button></div>
+      <div class="mksub" id="mksd_days" style="margin:-6px 0 12px"></div>
+      <label class="cmsub" style="display:block;margin-bottom:4px">💳 זיכוי ליתרה (לא חובה) — סכום בש"ח שיתווסף ליתרה שלו במקווה${c.balance!=null?' (יתרה עכשיו '+esc(mkMoney(c.balance))+')':''}</label>
+      <input class="cinp" id="mksd_cr" inputmode="decimal" placeholder="למשל 37">
       <label class="cmsub" style="display:block;margin-bottom:4px">הערה (לא חובה) — למשל: אישור מיוחד, התחיל באמצע החודש</label>
       <input class="cinp" id="mksd_n" placeholder="הערה">
       <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">💾 לעדכן במקווה</button></div></div>`;
     document.body.appendChild(o);
-    const S=o.querySelector('#mksd_s'), E=o.querySelector('#mksd_e'), N=o.querySelector('#mksd_n');
+    const S=o.querySelector('#mksd_s'), E=o.querySelector('#mksd_e'), N=o.querySelector('#mksd_n'), CR=o.querySelector('#mksd_cr');
     const isoOf=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    // הבוררים העבריים ↔ שדה התאריך — כל צד מעדכן את השני
+    const pickOf=id=>o.querySelector(`[data-pick="${id}"]`);
+    const setPick=(id,iso)=>{const P=pickOf(id);if(!P||!iso||!hebOfIso(iso))return;const p=_hebParts(new Date(iso.slice(0,10)+'T12:00:00'));
+      P.querySelector('.hd_d').value=String(p.day);const M=P.querySelector('.hd_m');[...M.options].forEach(op=>{if(_hqn(op.value)===_hqn(p.mo))M.value=op.value;});
+      const Y=P.querySelector('.hd_y'),ys=heYearStr(p.yr);if(![...Y.options].some(op=>_hqn(op.value)===_hqn(ys))){Y.insertAdjacentHTML('afterbegin',`<option>${esc(ys)}</option>`);}[...Y.options].forEach(op=>{if(_hqn(op.value)===_hqn(ys))Y.value=op.value;});};
+    const days=()=>{const el=o.querySelector('#mksd_days');if(!S.value||!E.value){el.textContent='';return;}
+      const n=Math.round((new Date(E.value+'T12:00:00')-new Date(S.value+'T12:00:00'))/864e5)+1;el.textContent=n>0?('📏 '+n+' ימים (כולל יום ההתחלה ויום הסיום)'):'';};
     // התאריך העברי מתעדכן מיד כשבוחרים תאריך
-    const heb=()=>{o.querySelector('#mksd_sh').innerHTML=esc(hebOfIso(S.value))||'&nbsp;';o.querySelector('#mksd_eh').innerHTML=esc(hebOfIso(E.value))||'&nbsp;';};
-    S.oninput=S.onchange=heb;E.oninput=E.onchange=heb;
+    const heb=()=>{o.querySelector('#mksd_sh').innerHTML=esc(hebOfIso(S.value))||'&nbsp;';o.querySelector('#mksd_eh').innerHTML=esc(hebOfIso(E.value))||'&nbsp;';days();};
+    S.oninput=S.onchange=()=>{setPick('mksd_s',S.value);heb();};E.oninput=E.onchange=()=>{setPick('mksd_e',E.value);heb();};
+    o.querySelectorAll('.hedate[data-pick] select').forEach(sel=>sel.onchange=()=>{const P=sel.closest('.hedate');const inp=o.querySelector('#'+P.dataset.pick);
+      const iso=isoOfHeb(P.querySelector('.hd_d').value,P.querySelector('.hd_m').value,P.querySelector('.hd_y').value);
+      if(!iso){toast('אין תאריך כזה בשנה הזו');return;}inp.value=iso;heb();});
     o.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
       const k=b.dataset.add;
-      if(k==='m1'){const base=S.value?new Date(S.value+'T00:00:00'):new Date();base.setMonth(base.getMonth()+1);base.setDate(base.getDate()-1);E.value=isoOf(base);heb();return;}
-      const base=E.value?new Date(E.value+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(k,10));E.value=isoOf(base);heb();});
+      if(k==='rc'){ // מאיר: "מהיום עד ראש חודש כסליו" — הסוף = היום האחרון של החודש העברי של תאריך ההתחלה (ערב ראש חודש)
+        const d=S.value?new Date(S.value+'T12:00:00'):new Date();d.setHours(12,0,0,0);const m0=_hebParts(d).mo;
+        for(let i=0;i<31;i++){const nx=new Date(d);nx.setDate(nx.getDate()+1);if(_hebParts(nx).mo!==m0)break;d.setDate(d.getDate()+1);}
+        E.value=isoOf(d);setPick('mksd_e',E.value);heb();return;}
+      if(k==='m1'){const base=S.value?new Date(S.value+'T00:00:00'):new Date();base.setMonth(base.getMonth()+1);base.setDate(base.getDate()-1);E.value=isoOf(base);setPick('mksd_e',E.value);heb();return;}
+      const base=E.value?new Date(E.value+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(k,10));E.value=isoOf(base);setPick('mksd_e',E.value);heb();});
+    days();
     const done=v=>{o.remove();res(v);};
     o.querySelector('.cno').onclick=()=>done(null);
-    o.querySelector('.cyes').onclick=()=>done({start:S.value,end:E.value,note:N.value.trim()});
-    o.onclick=e=>{if(e.target===o)done(null);};
-    setTimeout(()=>E.focus(),30);});
+    o.querySelector('.cyes').onclick=()=>done({start:S.value,end:E.value,note:N.value.trim(),credit:CR.value.replace(/[₪,\s]/g,'')});
+    o.onclick=e=>{if(e.target===o)done(null);};});
   if(!r0)return;
   const start=r0.start&&r0.start!==cs?r0.start:'', end=r0.end&&r0.end!==ce?r0.end:'';
-  if(!start&&!end){toast('לא שונה כלום');return;}
+  const credit=r0.credit?parseFloat(r0.credit):0;
+  if(r0.credit&&(isNaN(credit)||credit===0)){uiAlert('סכום הזיכוי לא תקין');return;}
+  if(!start&&!end&&!credit){toast('לא שונה כלום');return;}
   if((r0.start&&r0.end)&&r0.end<r0.start){uiAlert('סוף המנוי לפני תחילת המנוי — תבדוק את התאריכים');return;}
   const el=document.getElementById('mksub');if(el)el.querySelector('b').innerHTML='<span class="mkspin"></span>';
-  const r=await api('POST','/api/mikveh/subdates',{id:c.id,start,end,note:r0.note}).catch(()=>null);
-  if(!r||!r.ok){mkOpen(c);return uiAlert('תאריכי המנוי לא עודכנו במקווה:\n'+((r&&r.error)||'אין תשובה מהשרת'));}
-  c.sub_end=r.sub_end;c.sub_start=r.sub_start;const x=(MK.clients||[]).find(y=>y.id===c.id);if(x){x.sub_end=r.sub_end;x.sub_start=r.sub_start;}
-  toast('✓ המנוי'+(r.sub_start?' מ-'+mkDate(r.sub_start):'')+' עד '+mkDate(r.sub_end)+(hebOfIso(r.sub_end)?' ('+hebOfIso(r.sub_end)+')':'')+' — עודכן במקווה');mkOpen(c);}
+  let msg='';
+  if(start||end){
+    const r=await api('POST','/api/mikveh/subdates',{id:c.id,start,end,note:r0.note}).catch(()=>null);
+    if(!r||!r.ok){mkOpen(c);return uiAlert('תאריכי המנוי לא עודכנו במקווה:\n'+((r&&r.error)||'אין תשובה מהשרת'));}
+    c.sub_end=r.sub_end;c.sub_start=r.sub_start;const x=(MK.clients||[]).find(y=>y.id===c.id);if(x){x.sub_end=r.sub_end;x.sub_start=r.sub_start;}
+    msg='✓ המנוי'+(r.sub_start?' מ-'+mkDate(r.sub_start):'')+' עד '+mkDate(r.sub_end)+(hebOfIso(r.sub_end)?' ('+hebOfIso(r.sub_end)+')':'')+' — עודכן במקווה';}
+  if(credit){ // מאיר: "אופציה של זיכוי יתרה — אם ארצה ארשום ידנית" — מתווסף ליתרה שלו במקווה
+    const rb=await api('POST','/api/mikveh/balance',{id:c.id,add:credit,note:(r0.note?r0.note+' · ':'')+'זיכוי עם שינוי תאריכי המנוי'}).catch(()=>null);
+    if(!rb||!rb.ok){mkOpen(c);return uiAlert((msg?msg+'\n\n':'')+'אבל הזיכוי ליתרה לא נקלט במקווה:\n'+((rb&&rb.error)||'אין תשובה מהשרת'));}
+    c.balance=rb.balance;c.last_balance=rb.balance;msg+=(msg?' · ':'✓ ')+'זיכוי ₪'+credit.toLocaleString('he-IL')+' — יתרה עכשיו '+mkMoney(rb.balance);}
+  toast(msg);mkOpen(c);}
 async function mkBalanceEdit(c){
   const cur=c.balance!=null?c.balance/100:null;
   const v=await uiPrompt('היתרה של '+mkName(c)+' במקווה'+(cur!=null?' (עכשיו ₪'+cur.toLocaleString('he-IL')+')':'')+'\nכתוב יתרה חדשה בש"ח, או +50 / -50 כדי להוסיף / להוריד:', cur!=null?String(cur):'');
